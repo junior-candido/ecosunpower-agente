@@ -1,5 +1,6 @@
 import { Queue, Worker, Job } from 'bullmq';
 import Redis from 'ioredis';
+const IORedis = Redis.default ?? Redis;
 
 export interface QueueMessage {
   type: 'text' | 'audio' | 'image' | 'location';
@@ -16,13 +17,13 @@ const QUEUE_NAME = 'whatsapp-messages';
 export class MessageQueue {
   private queue: Queue;
   private worker: Worker;
-  private redis: Redis;
+  private redis: any;
   private processedIds: Set<string> = new Set();
 
   constructor(redisHost: string, redisPort: number, handler: MessageHandler) {
     const connection = { host: redisHost, port: redisPort };
 
-    this.redis = new Redis({ host: redisHost, port: redisPort, maxRetriesPerRequest: null });
+    this.redis = new IORedis({ host: redisHost, port: redisPort, maxRetriesPerRequest: null });
 
     this.queue = new Queue(QUEUE_NAME, { connection });
 
