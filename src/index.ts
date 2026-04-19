@@ -6,6 +6,7 @@ import { SupabaseService } from './modules/supabase.js';
 import { KnowledgeBase } from './modules/knowledge.js';
 import { Brain } from './modules/brain.js';
 import { DossierBuilder } from './modules/dossier.js';
+import { calculateSolarEstimate, formatEstimateForPrompt } from './modules/solar.js';
 import { buildHealthStatus } from './health.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -81,6 +82,25 @@ async function main() {
           if (identified.length > 0) leadContext += `- Oportunidades identificadas: ${identified.join(', ')}\n`;
         }
         if (!lead.name) leadContext += '\nObs: Ainda nao temos o nome deste contato. Pergunte de forma natural.\n';
+
+        // Calculate solar estimate if we have city and consumption/bill
+        if (lead.city && lead.energy_data) {
+          const ed = lead.energy_data as Record<string, unknown>;
+          if (ed.monthly_bill || ed.consumption_kwh) {
+            try {
+              const estimate = await calculateSolarEstimate(
+                lead.city,
+                ed.monthly_bill as number | undefined,
+                ed.consumption_kwh as number | undefined
+              );
+              if (estimate) {
+                leadContext += '\n' + formatEstimateForPrompt(estimate);
+              }
+            } catch (err) {
+              console.error('[solar] Calculation error:', err);
+            }
+          }
+        }
       } else {
         leadContext = '\n\n## Este e um CONTATO NOVO - primeira vez que escreve\n';
         leadContext += 'Siga o fluxo de primeiro contato: saudacao + LGPD + conversa natural.\n';
