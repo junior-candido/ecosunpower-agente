@@ -77,17 +77,21 @@ async function main() {
     console.log(`[meta] Marketing integration disabled. Missing env vars: ${missing}`);
   }
 
-  const marketing = (config.openaiApiKey && meta)
+  const marketing = (config.replicateApiToken && meta)
     ? new MarketingService(
       config.anthropicApiKey,
       supabase.getClient(),
-      new ImageGenerator(config.openaiApiKey),
+      new ImageGenerator(config.replicateApiToken),
     )
     : null;
   if (marketing) {
-    console.log('[marketing] Content generator enabled (Claude + DALL-E 3)');
+    console.log('[marketing] Content generator enabled (Claude + FLUX 1.1 Pro)');
   } else {
-    console.log('[marketing] Content generator disabled (needs OPENAI_API_KEY and Meta config)');
+    const missing = [
+      !config.replicateApiToken && 'REPLICATE_API_TOKEN',
+      !meta && 'Meta config',
+    ].filter(Boolean).join(', ');
+    console.log(`[marketing] Content generator disabled. Missing: ${missing}`);
   }
 
   // Simulate human typing delay: ~35ms per char, clamped between 900ms and 3500ms.

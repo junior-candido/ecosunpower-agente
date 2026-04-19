@@ -27,6 +27,7 @@ const configSchema = z.object({
   metaAccessToken: z.string().optional(),
   metaFacebookPageId: z.string().optional(),
   metaInstagramBusinessId: z.string().optional(),
+  replicateApiToken: z.string().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -56,5 +57,6 @@ export function loadConfig(): Config {
     metaAccessToken: process.env.META_ACCESS_TOKEN || undefined,
     metaFacebookPageId: process.env.META_FACEBOOK_PAGE_ID || undefined,
     metaInstagramBusinessId: process.env.META_INSTAGRAM_BUSINESS_ID || undefined,
+    replicateApiToken: process.env.REPLICATE_API_TOKEN || undefined,
   });
 }

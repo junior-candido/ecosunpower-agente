@@ -93,16 +93,17 @@ export class MarketingService {
       throw new Error(`Invalid JSON from Claude: ${(err as Error).message}`);
     }
 
-    // 2) Generate image via DALL-E (HD quality for better faces)
-    const { url: tempUrl, revisedPrompt } = await this.imageGen.generate({
+    // 2) Generate image via FLUX 1.1 Pro (photorealistic)
+    const { url: tempUrl } = await this.imageGen.generate({
       prompt: parsed.image_prompt,
-      size: '1024x1024',
-      quality: 'hd',
+      aspectRatio: '1:1',
+      outputFormat: 'jpg',
+      outputQuality: 95,
     });
 
     // 3) Download and upload to Supabase Storage for permanent URL
     const { bytes, contentType } = await this.imageGen.downloadImage(tempUrl);
-    const filename = `${Date.now()}-${randomBytes(4).toString('hex')}.png`;
+    const filename = `${Date.now()}-${randomBytes(4).toString('hex')}.jpg`;
     const { error: uploadErr } = await this.supabase.storage
       .from('marketing-images')
       .upload(filename, bytes, { contentType, upsert: false });
@@ -120,7 +121,7 @@ export class MarketingService {
       .insert({
         topic: parsed.topic,
         caption: parsed.caption,
-        image_prompt: revisedPrompt ?? parsed.image_prompt,
+        image_prompt: parsed.image_prompt,
         image_url: imageUrl,
         platforms: ['instagram', 'facebook'],
         status: 'pending_approval',

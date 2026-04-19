@@ -1,58 +1,87 @@
-const OPENAI_IMAGES_URL = 'https://api.openai.com/v1/images/generations';
+// Image generator using Replicate (FLUX 1.1 Pro).
+// More photorealistic than DALL-E 3 and cheaper (~R$0.20 vs R$0.40).
 
-export type ImageSize = '1024x1024' | '1024x1792' | '1792x1024';
+const REPLICATE_API = 'https://api.replicate.com/v1';
+const MODEL = 'black-forest-labs/flux-1.1-pro';
+
+export type AspectRatio = '1:1' | '4:5' | '9:16' | '16:9' | '3:2' | '2:3';
 
 export interface GenerateImageOptions {
   prompt: string;
-  size?: ImageSize;
-  quality?: 'standard' | 'hd';
+  aspectRatio?: AspectRatio;
+  outputFormat?: 'webp' | 'jpg' | 'png';
+  outputQuality?: number; // 1-100
+}
+
+interface Prediction {
+  id: string;
+  status: 'starting' | 'processing' | 'succeeded' | 'failed' | 'canceled';
+  output?: string | string[];
+  error?: string;
+  urls: { get: string };
 }
 
 export class ImageGenerator {
-  private apiKey: string;
+  private token: string;
 
-  constructor(apiKey: string) {
-    this.apiKey = apiKey;
+  constructor(token: string) {
+    this.token = token;
   }
 
-  // Generates an image via DALL-E 3. Returns a temporary URL valid for 1 hour.
   async generate(opts: GenerateImageOptions): Promise<{ url: string; revisedPrompt?: string }> {
-    const res = await fetch(OPENAI_IMAGES_URL, {
+    // Use the sync endpoint: Prefer: wait=60 tells Replicate to wait up to 60s for completion
+    const res = await fetch(`${REPLICATE_API}/models/${MODEL}/predictions`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${this.apiKey}`,
+        Authorization: `Bearer ${this.token}`,
         'Content-Type': 'application/json',
+        Prefer: 'wait=60',
       },
       body: JSON.stringify({
-        model: 'dall-e-3',
-        prompt: opts.prompt,
-        n: 1,
-        size: opts.size ?? '1024x1024',
-        quality: opts.quality ?? 'standard',
+        input: {
+          prompt: opts.prompt,
+          aspect_ratio: opts.aspectRatio ?? '1:1',
+          output_format: opts.outputFormat ?? 'jpg',
+          output_quality: opts.outputQuality ?? 90,
+          safety_tolerance: 2,
+          prompt_upsampling: true,
+        },
       }),
     });
 
-    const data = await res.json() as {
-      data?: Array<{ url: string; revised_prompt?: string }>;
-      error?: { message: string };
-    };
-
-    if (!res.ok || data.error) {
-      throw new Error(`DALL-E generation failed: ${data.error?.message ?? res.statusText}`);
+    let prediction = await res.json() as Prediction;
+    if (!res.ok) {
+      throw new Error(`Replicate prediction create failed: ${prediction.error ?? res.statusText}`);
     }
 
-    const image = data.data?.[0];
-    if (!image?.url) throw new Error('DALL-E returned no image URL');
+    // Poll if not yet complete (in case Prefer: wait=60 timed out)
+    const deadline = Date.now() + 120000;
+    while (prediction.status !== 'succeeded' && prediction.status !== 'failed' && prediction.status !== 'canceled') {
+      if (Date.now() > deadline) {
+        throw new Error('Replicate prediction timed out after 2 minutes');
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+      const pollRes = await fetch(prediction.urls.get, {
+        headers: { Authorization: `Bearer ${this.token}` },
+      });
+      prediction = await pollRes.json() as Prediction;
+    }
 
-    return { url: image.url, revisedPrompt: image.revised_prompt };
+    if (prediction.status !== 'succeeded') {
+      throw new Error(`Replicate prediction ${prediction.status}: ${prediction.error ?? 'unknown error'}`);
+    }
+
+    const url = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
+    if (!url) throw new Error('Replicate returned no output URL');
+
+    return { url };
   }
 
-  // Downloads a remote image URL and returns the raw bytes plus content type.
   async downloadImage(url: string): Promise<{ bytes: Buffer; contentType: string }> {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to download image: HTTP ${res.status}`);
     const bytes = Buffer.from(await res.arrayBuffer());
-    const contentType = res.headers.get('content-type') ?? 'image/png';
+    const contentType = res.headers.get('content-type') ?? 'image/jpeg';
     return { bytes, contentType };
   }
 }
