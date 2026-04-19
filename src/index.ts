@@ -7,6 +7,8 @@ import { KnowledgeBase } from './modules/knowledge.js';
 import { Brain } from './modules/brain.js';
 import { DossierBuilder } from './modules/dossier.js';
 import { calculateSolarEstimate, formatEstimateForPrompt } from './modules/solar.js';
+import { Transcriber } from './modules/transcriber.js';
+import { VisionAnalyzer } from './modules/vision.js';
 import { buildHealthStatus } from './health.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -22,7 +24,13 @@ async function main() {
   const evolution = new EvolutionService(config);
   const supabase = new SupabaseService(config);
   const brain = new Brain(config.anthropicApiKey);
+  const vision = new VisionAnalyzer(config.anthropicApiKey);
+  const transcriber = config.openaiApiKey ? new Transcriber(config.openaiApiKey) : null;
   const knowledgeBase = new KnowledgeBase(join(__dirname, '..', 'conhecimento'));
+
+  if (!transcriber) {
+    console.warn('[init] OPENAI_API_KEY not set — audio transcription disabled');
+  }
 
   knowledgeBase.load();
   if (knowledgeBase.isOverLimit()) {
@@ -248,16 +256,100 @@ async function main() {
     }
   }
 
+  // Handle audio messages
+  async function handleAudioMessage(from: string, audioUrl: string) {
+    if (!transcriber) {
+      const msg = 'Nao consegui ouvir o audio. Pode me enviar por texto, por favor? 😊';
+      if (!isSandbox) await evolution.sendText(from, msg);
+      return;
+    }
+
+    try {
+      // Send "processing" feedback
+      if (!isSandbox) await evolution.sendText(from, 'Ouvindo seu audio... 🎧');
+
+      const text = await transcriber.transcribe(audioUrl);
+      if (!text) {
+        const msg = 'O audio ficou um pouco dificil de entender. Pode mandar de novo ou escrever por texto? 😊';
+        if (!isSandbox) await evolution.sendText(from, msg);
+        return;
+      }
+
+      console.log(`[audio] Transcribed from ${from}: "${text.substring(0, 80)}..."`);
+      await handleTextMessage(from, text);
+    } catch (error) {
+      console.error(`[audio] Error processing audio from ${from}:`, error);
+      const msg = 'Nao consegui processar o audio. Pode me enviar por texto? 😊';
+      if (!isSandbox) await evolution.sendText(from, msg);
+    }
+  }
+
+  // Handle image messages
+  async function handleImageMessage(from: string, imageUrl: string) {
+    try {
+      // Get lead context for vision analysis
+      const lead = await supabase.getLeadByPhone(from);
+      const context = lead?.name
+        ? `Cliente: ${lead.name}, Cidade: ${lead.city ?? 'nao informada'}, Perfil: ${lead.profile ?? 'indefinido'}`
+        : 'Cliente novo, ainda sem dados coletados';
+
+      if (!isSandbox) await evolution.sendText(from, 'Recebi a foto! Analisando... 📋');
+
+      const analysisText = await vision.analyzeImage(imageUrl, context);
+      const displayText = brain.getDisplayText(analysisText);
+      const action = brain.parseAction(analysisText);
+
+      if (!isSandbox) {
+        await evolution.sendText(from, displayText);
+      } else {
+        console.log(`[sandbox] Image analysis for ${from}: ${displayText}`);
+      }
+
+      // Save to conversation
+      if (lead) {
+        const conversation = await supabase.getOrCreateConversation(lead.id);
+        const updatedMessages = [
+          ...conversation.messages,
+          { role: 'user' as const, content: '[Enviou uma foto]', timestamp: new Date().toISOString() },
+          { role: 'assistant' as const, content: analysisText, timestamp: new Date().toISOString() },
+        ];
+        await supabase.updateConversation(conversation.id, {
+          messages: updatedMessages.slice(-20),
+          message_count: conversation.message_count + 2,
+        });
+
+        // Handle actions (update_lead with energy data from bill photo)
+        if (action) {
+          await handleAction(action, lead.id, from, conversation.id);
+        }
+      }
+
+      await supabase.logEvent('info', 'vision', `Analyzed image from ${from}`);
+    } catch (error) {
+      console.error(`[vision] Error processing image from ${from}:`, error);
+      const msg = 'A foto ficou um pouco dificil de ler. Consegue tirar outra mais nitida? 📸';
+      if (!isSandbox) await evolution.sendText(from, msg);
+    }
+  }
+
   // Initialize queue
   const queue = new MessageQueue(config.redisHost, config.redisPort, async (msg) => {
-    if (msg.type === 'text') {
-      await handleTextMessage(msg.from, msg.content);
-    } else {
-      const fallback = 'Por enquanto consigo atender apenas por texto. Pode me enviar sua duvida digitando?';
-      if (!isSandbox) {
-        await evolution.sendText(msg.from, fallback);
-      }
-      console.log(`[router] Unsupported message type "${msg.type}" from ${msg.from}`);
+    switch (msg.type) {
+      case 'text':
+        await handleTextMessage(msg.from, msg.content);
+        break;
+      case 'audio':
+        await handleAudioMessage(msg.from, msg.content);
+        break;
+      case 'image':
+        await handleImageMessage(msg.from, msg.content);
+        break;
+      case 'location':
+        // Save location for future visit scheduling
+        await handleTextMessage(msg.from, `[Cliente compartilhou localizacao: ${msg.content}]`);
+        break;
+      default:
+        console.log(`[router] Unknown message type "${msg.type}" from ${msg.from}`);
     }
   }, config.redisPassword);
 

@@ -16,6 +16,7 @@ const configSchema = z.object({
   redisHost: z.string().default('127.0.0.1'),
   redisPort: z.coerce.number().default(6379),
   redisPassword: z.string().optional(),
+  openaiApiKey: z.string().optional(),
   engineerPhone: z.string().min(1),
   engineerName: z.string().min(1),
 });
@@ -36,6 +37,7 @@ export function loadConfig(): Config {
     redisHost: process.env.REDIS_HOST,
     redisPort: process.env.REDIS_PORT,
     redisPassword: process.env.REDIS_PASSWORD || undefined,
+    openaiApiKey: process.env.OPENAI_API_KEY || undefined,
     engineerPhone: process.env.ENGINEER_PHONE,
     engineerName: process.env.ENGINEER_NAME,
   });
