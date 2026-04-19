@@ -907,6 +907,149 @@ Responda CURTO, maximo 2 paragrafos.`,
     }
   });
 
+  // Send a single draft to Junior's WhatsApp with image + caption + action links
+  async function sendDraftToJunior(draftId: string) {
+    if (!marketing || !meta) return;
+    const draft = await marketing.getDraft(draftId);
+    if (!draft || draft.status !== 'pending_approval') return;
+
+    const baseUrl = process.env.PUBLIC_BASE_URL
+      ?? 'https://aula-aprendendo-agente-whatsapp.oigz6g.easypanel.host';
+    const t = draft.approval_token;
+    const approveLink = `${baseUrl}/marketing/approve/${draft.id}?t=${t}`;
+    const regenLink = `${baseUrl}/marketing/regenerate/${draft.id}?t=${t}`;
+    const discardLink = `${baseUrl}/marketing/discard/${draft.id}?t=${t}`;
+
+    const caption = [
+      `📝 Rascunho de post — ${draft.topic}`,
+      '',
+      draft.caption,
+      '',
+      '─────────────',
+      `✅ Aprovar e publicar: ${approveLink}`,
+      `🔄 Gerar outra imagem: ${regenLink}`,
+      `❌ Descartar: ${discardLink}`,
+    ].join('\n');
+
+    try {
+      await evolution.sendMedia(config.engineerPhone, draft.image_url, caption, 'image');
+      console.log(`[marketing] Sent draft ${draft.id} to Junior`);
+    } catch (err) {
+      console.error('[marketing] Failed to send draft to WhatsApp:', err);
+    }
+  }
+
+  // Public HTML pages for approve/regenerate/discard (links clicked from WhatsApp)
+  const htmlPage = (title: string, body: string) => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head><body style="font-family:-apple-system,sans-serif;padding:40px;max-width:600px;margin:0 auto;color:#333;line-height:1.5">${body}</body></html>`;
+
+  app.get('/marketing/approve/:id', async (req, res) => {
+    const token = (req.query.t as string) ?? '';
+    if (!marketing || !meta) {
+      res.status(503).send(htmlPage('Indisponivel', '<h2>Integracao desativada.</h2>'));
+      return;
+    }
+    const draft = await marketing.validateToken(req.params.id, token);
+    if (!draft) {
+      res.status(403).send(htmlPage('Erro', '<h2>Link invalido ou expirado.</h2>'));
+      return;
+    }
+    if (draft.status === 'published') {
+      res.send(htmlPage('Ja publicado', '<h2>Esse post ja foi publicado.</h2>'));
+      return;
+    }
+    try {
+      const results: Record<string, unknown> = {};
+      const platforms = (draft.platforms as string[]) ?? ['instagram', 'facebook'];
+      if (platforms.includes('facebook')) {
+        results.facebook = await meta.publishFacebookImage(draft.image_url, draft.caption);
+      }
+      if (platforms.includes('instagram')) {
+        results.instagram = await meta.publishInstagramImage(draft.image_url, draft.caption);
+      }
+      await marketing.markPublished(draft.id, results);
+      console.log(`[marketing] Approved + published draft ${draft.id}`);
+      res.send(htmlPage(
+        'Publicado!',
+        `<h2>✅ Post publicado com sucesso!</h2><p>Acabou de subir no Instagram e no Facebook. Pode fechar esta aba.</p>`,
+      ));
+    } catch (err) {
+      console.error('[marketing] Approve publish failed:', err);
+      res.status(500).send(htmlPage('Erro', `<h2>❌ Falhou ao publicar</h2><p>${(err as Error).message}</p>`));
+    }
+  });
+
+  app.get('/marketing/regenerate/:id', async (req, res) => {
+    const token = (req.query.t as string) ?? '';
+    if (!marketing) {
+      res.status(503).send(htmlPage('Indisponivel', '<h2>Integracao desativada.</h2>'));
+      return;
+    }
+    const draft = await marketing.validateToken(req.params.id, token);
+    if (!draft) {
+      res.status(403).send(htmlPage('Erro', '<h2>Link invalido ou expirado.</h2>'));
+      return;
+    }
+    // Regenerate in background; send a new WhatsApp when ready
+    res.send(htmlPage(
+      'Gerando nova imagem',
+      '<h2>🔄 Ja estou gerando uma nova imagem.</h2><p>Em menos de 1 minuto chega no seu WhatsApp. Pode fechar esta aba.</p>',
+    ));
+    (async () => {
+      try {
+        await marketing.regenerateImage(draft.id);
+        await sendDraftToJunior(draft.id);
+      } catch (err) {
+        console.error('[marketing] Regenerate failed:', err);
+      }
+    })();
+  });
+
+  app.get('/marketing/discard/:id', async (req, res) => {
+    const token = (req.query.t as string) ?? '';
+    if (!marketing) {
+      res.status(503).send(htmlPage('Indisponivel', '<h2>Integracao desativada.</h2>'));
+      return;
+    }
+    const draft = await marketing.validateToken(req.params.id, token);
+    if (!draft) {
+      res.status(403).send(htmlPage('Erro', '<h2>Link invalido ou expirado.</h2>'));
+      return;
+    }
+    try {
+      await marketing.markDiscarded(draft.id);
+      console.log(`[marketing] Discarded draft ${draft.id}`);
+      res.send(htmlPage('Descartado', '<h2>❌ Rascunho descartado.</h2><p>Pode fechar esta aba.</p>'));
+    } catch (err) {
+      res.status(500).send(htmlPage('Erro', `<h2>Falhou</h2><p>${(err as Error).message}</p>`));
+    }
+  });
+
+  // Manual trigger for the weekly generation (useful for testing without waiting for Monday)
+  app.post('/marketing/run-weekly', async (req, res) => {
+    const token = (req.headers['x-webhook-token'] as string)
+      ?? (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    if (!marketing) {
+      res.status(503).json({ error: 'Marketing disabled' });
+      return;
+    }
+    const ids: string[] = [];
+    try {
+      for (let i = 0; i < 3; i++) {
+        const draft = await marketing.generateDraft();
+        ids.push(draft.id);
+        await sendDraftToJunior(draft.id);
+        await new Promise((r) => setTimeout(r, 15000));
+      }
+      res.json({ status: 'generated', count: ids.length, ids });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message, ids });
+    }
+  });
+
   // Publish an approved draft to FB + IG
   app.post('/marketing/publish/:id', async (req, res) => {
     const token = (req.headers['x-webhook-token'] as string)
@@ -1000,6 +1143,53 @@ Responda CURTO, maximo 2 paragrafos.`,
   setTimeout(() => runCanalSolarIngestion(false), 2 * 60 * 1000);
   setInterval(() => runCanalSolarIngestion(true), 3 * 24 * 60 * 60 * 1000);
   console.log('[canal-solar] Scheduler started (every 3 days)');
+
+  // Marketing weekly scheduler: every Monday 08:00 BRT generates 3 drafts
+  // and sends each to Junior's WhatsApp for approval.
+  if (!isSandbox && marketing) {
+    const checkMarketingSchedule = async () => {
+      const nowBrt = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      const isMonday = nowBrt.getDay() === 1;
+      const isEightAM = nowBrt.getHours() === 8 && nowBrt.getMinutes() < 15;
+      if (!isMonday || !isEightAM) return;
+
+      const lastRunKey = 'last_weekly_marketing_run';
+      const { data: flag } = await supabase.getClient()
+        .from('app_flags')
+        .select('value')
+        .eq('key', lastRunKey)
+        .maybeSingle();
+      const today = nowBrt.toISOString().slice(0, 10);
+      if (flag?.value === today) return; // already ran today
+
+      console.log('[marketing] Weekly run: generating 3 drafts...');
+      try {
+        for (let i = 0; i < 3; i++) {
+          const draft = await marketing.generateDraft();
+          await sendDraftToJunior(draft.id);
+          await new Promise((r) => setTimeout(r, 30000));
+        }
+        await supabase.getClient()
+          .from('app_flags')
+          .upsert({ key: lastRunKey, value: today, updated_at: new Date().toISOString() });
+        console.log('[marketing] Weekly run complete');
+      } catch (err) {
+        console.error('[marketing] Weekly run failed:', err);
+      }
+    };
+    setInterval(checkMarketingSchedule, 10 * 60 * 1000); // check every 10 min
+    console.log('[marketing] Weekly scheduler started (Mondays 08:00 BRT)');
+
+    // Also auto-discard stale drafts daily
+    setInterval(async () => {
+      try {
+        const count = await marketing.autoDiscardStale(7);
+        if (count > 0) console.log(`[marketing] Auto-discarded ${count} stale drafts`);
+      } catch (err) {
+        console.error('[marketing] Auto-discard failed:', err);
+      }
+    }, 24 * 60 * 60 * 1000);
+  }
 
   app.listen(config.port, () => {
     console.log(`[server] Listening on port ${config.port}`);

@@ -104,6 +104,38 @@ export class EvolutionService {
     return null;
   }
 
+  async sendMedia(to: string, mediaUrl: string, caption: string, mediatype: 'image' | 'video' = 'image'): Promise<{ messageId: string }> {
+    const res = await fetch(
+      `${this.baseUrl}/message/sendMedia/${this.instance}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: this.apiKey,
+        },
+        body: JSON.stringify({
+          number: to,
+          mediatype,
+          media: mediaUrl,
+          caption,
+        }),
+      },
+    );
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Evolution sendMedia failed: ${res.status} ${err}`);
+    }
+    try {
+      const data = await res.json() as Record<string, unknown>;
+      const key = (data.key ?? (data as { data?: { key?: Record<string, string> } }).data?.key) as
+        | Record<string, string>
+        | undefined;
+      return { messageId: key?.id ?? '' };
+    } catch {
+      return { messageId: '' };
+    }
+  }
+
   async getMediaBase64(messageId: string): Promise<{ base64: string; mimetype: string } | null> {
     try {
       const response = await fetch(

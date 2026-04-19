@@ -163,4 +163,69 @@ export class MarketingService {
       .eq('id', id);
     if (error) throw new Error(`Failed to mark published: ${error.message}`);
   }
+
+  async markDiscarded(id: string) {
+    const { error } = await this.supabase
+      .from('marketing_drafts')
+      .update({ status: 'discarded' })
+      .eq('id', id);
+    if (error) throw new Error(`Failed to discard: ${error.message}`);
+  }
+
+  // Validates a draft id + approval_token pair. Returns the draft if valid.
+  async validateToken(id: string, token: string) {
+    const { data, error } = await this.supabase
+      .from('marketing_drafts')
+      .select('*')
+      .eq('id', id)
+      .eq('approval_token', token)
+      .single();
+    if (error || !data) return null;
+    return data;
+  }
+
+  // Regenerates only the image of an existing draft (keeps same caption).
+  // Returns the updated draft.
+  async regenerateImage(id: string) {
+    const draft = await this.getDraft(id);
+    if (draft.status !== 'pending_approval') {
+      throw new Error(`Cannot regenerate: draft status is "${draft.status}"`);
+    }
+    const { url: tempUrl } = await this.imageGen.generate({
+      prompt: draft.image_prompt ?? 'Fotografia profissional realista sobre energia solar',
+      aspectRatio: '1:1',
+      outputFormat: 'jpg',
+      outputQuality: 95,
+    });
+    const { bytes, contentType } = await this.imageGen.downloadImage(tempUrl);
+    const filename = `${Date.now()}-${randomBytes(4).toString('hex')}.jpg`;
+    const { error: uploadErr } = await this.supabase.storage
+      .from('marketing-images')
+      .upload(filename, bytes, { contentType, upsert: false });
+    if (uploadErr) throw new Error(`Failed to upload image: ${uploadErr.message}`);
+    const { data: publicData } = this.supabase.storage
+      .from('marketing-images')
+      .getPublicUrl(filename);
+    const newImageUrl = publicData.publicUrl;
+
+    const { error: updateErr } = await this.supabase
+      .from('marketing_drafts')
+      .update({ image_url: newImageUrl })
+      .eq('id', id);
+    if (updateErr) throw new Error(`Failed to update image: ${updateErr.message}`);
+    return { ...draft, image_url: newImageUrl };
+  }
+
+  // Auto-discards drafts older than N days still in pending_approval
+  async autoDiscardStale(olderThanDays = 7): Promise<number> {
+    const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await this.supabase
+      .from('marketing_drafts')
+      .update({ status: 'discarded' })
+      .eq('status', 'pending_approval')
+      .lt('created_at', cutoff)
+      .select('id');
+    if (error) throw new Error(`Failed to auto-discard: ${error.message}`);
+    return data?.length ?? 0;
+  }
 }
