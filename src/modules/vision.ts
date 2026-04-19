@@ -8,22 +8,32 @@ export class VisionAnalyzer {
     this.client = new Anthropic({ apiKey });
   }
 
-  async analyzeImage(imageUrl: string, context: string): Promise<string> {
+  async analyzeImage(imageDataUrl: string, context: string): Promise<string> {
     try {
-      // Download image
-      const imageResponse = await fetch(imageUrl);
-      if (!imageResponse.ok) {
-        return 'Nao consegui baixar a imagem. Pode enviar novamente?';
+      // Parse data URL: data:image/jpeg;base64,xxxxx
+      let base64: string;
+      let mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+
+      if (imageDataUrl.startsWith('data:')) {
+        const match = imageDataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+        if (!match) return 'Nao consegui processar a imagem. Pode enviar novamente? 📸';
+        mediaType = match[1] as typeof mediaType;
+        base64 = match[2];
+      } else {
+        // Fallback: download from URL
+        const imageResponse = await fetch(imageDataUrl);
+        if (!imageResponse.ok) return 'Nao consegui baixar a imagem. Pode enviar novamente?';
+        const buffer = await imageResponse.arrayBuffer();
+        base64 = Buffer.from(buffer).toString('base64');
+        const ct = imageResponse.headers.get('content-type') ?? 'image/jpeg';
+        mediaType = ct.includes('png') ? 'image/png' :
+                    ct.includes('webp') ? 'image/webp' : 'image/jpeg';
       }
 
-      const imageBuffer = await imageResponse.arrayBuffer();
-      const base64 = Buffer.from(imageBuffer).toString('base64');
-
-      // Detect media type
-      const contentType = imageResponse.headers.get('content-type') ?? 'image/jpeg';
-      const mediaType = contentType.includes('png') ? 'image/png' :
-                        contentType.includes('webp') ? 'image/webp' :
-                        contentType.includes('gif') ? 'image/gif' : 'image/jpeg';
+      // Normalize media type
+      if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mediaType)) {
+        mediaType = 'image/jpeg';
+      }
 
       const response = await this.client.messages.create({
         model: 'claude-haiku-4-5-20251001',
@@ -34,52 +44,36 @@ export class VisionAnalyzer {
             content: [
               {
                 type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
-                  data: base64,
-                },
+                source: { type: 'base64', media_type: mediaType, data: base64 },
               },
               {
                 type: 'text',
                 text: `Voce e a Eva, consultora de energia solar da Ecosunpower.
-O cliente enviou esta imagem. Analise:
+O cliente enviou esta imagem. Analise de forma curta e direta:
 
 Se for uma CONTA DE LUZ:
-- Identifique a distribuidora (CEB/Neoenergia, Equatorial/CELG/Enel Goias)
-- Extraia: consumo em kWh, valor em R$, grupo (A ou B), demanda contratada se houver
-- Se a imagem estiver ruim, peca outra foto
-- Confirme os dados com o cliente antes de prosseguir
-- Responda incluindo um JSON com os dados extraidos:
-\`\`\`json
-{"action":"update_lead","data":{"energy_data":{"monthly_bill":VALOR,"consumption_kwh":CONSUMO,"group":"B","tariff_type":"convencional"}}}
-\`\`\`
+- Identifique a distribuidora (Neoenergia/CEB, Equatorial/CELG/Enel Goias)
+- Extraia: consumo em kWh, valor em R$, grupo (A ou B), demanda contratada
+- Confirme os dados com o cliente
+- Inclua JSON: \`\`\`json\n{"action":"update_lead","data":{"energy_data":{"monthly_bill":VALOR,"consumption_kwh":CONSUMO,"group":"B"}}}\n\`\`\`
 
-Se for FOTO DO TELHADO ou LOCAL:
-- Comente o tipo de telhado (ceramico, metalico, laje)
-- Observe orientacao se possivel
-- Comente se parece adequado para instalacao
+Se for FOTO DO TELHADO/LOCAL: comente tipo de telhado e adequacao
+Se for OUTRA IMAGEM: responda naturalmente
 
-Se for OUTRA IMAGEM:
-- Responda naturalmente ao contexto
-
-Contexto da conversa: ${context}
-
-Responda de forma curta e natural, como a Eva faria no WhatsApp.`,
+Contexto: ${context}
+Responda CURTO, maximo 2 paragrafos, como no WhatsApp.`,
               },
             ],
           },
         ],
       });
 
-      const text = response.content
+      return response.content
         .filter((block): block is Anthropic.TextBlock => block.type === 'text')
         .map(block => block.text)
         .join('');
-
-      return text;
     } catch (error) {
-      console.error('[vision] Error analyzing image:', error);
+      console.error('[vision] Error:', error);
       return 'A foto ficou um pouco dificil de ler. Consegue tirar outra mais nitida? 📸';
     }
   }

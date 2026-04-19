@@ -257,7 +257,7 @@ async function main() {
   }
 
   // Handle audio messages
-  async function handleAudioMessage(from: string, audioUrl: string) {
+  async function handleAudioMessage(from: string, messageId: string) {
     if (!transcriber) {
       const msg = 'Nao consegui ouvir o audio. Pode me enviar por texto, por favor? 😊';
       if (!isSandbox) await evolution.sendText(from, msg);
@@ -265,10 +265,17 @@ async function main() {
     }
 
     try {
-      // Send "processing" feedback
       if (!isSandbox) await evolution.sendText(from, 'Ouvindo seu audio... 🎧');
 
-      const text = await transcriber.transcribe(audioUrl);
+      // Download audio via Evolution API
+      const media = await evolution.getMediaBase64(messageId);
+      if (!media) {
+        const msg = 'Nao consegui baixar o audio. Pode mandar de novo? 😊';
+        if (!isSandbox) await evolution.sendText(from, msg);
+        return;
+      }
+
+      const text = await transcriber.transcribeFromBase64(media.base64, media.mimetype);
       if (!text) {
         const msg = 'O audio ficou um pouco dificil de entender. Pode mandar de novo ou escrever por texto? 😊';
         if (!isSandbox) await evolution.sendText(from, msg);
@@ -285,9 +292,8 @@ async function main() {
   }
 
   // Handle image messages
-  async function handleImageMessage(from: string, imageUrl: string) {
+  async function handleImageMessage(from: string, messageId: string) {
     try {
-      // Get lead context for vision analysis
       const lead = await supabase.getLeadByPhone(from);
       const context = lead?.name
         ? `Cliente: ${lead.name}, Cidade: ${lead.city ?? 'nao informada'}, Perfil: ${lead.profile ?? 'indefinido'}`
@@ -295,7 +301,16 @@ async function main() {
 
       if (!isSandbox) await evolution.sendText(from, 'Recebi a foto! Analisando... 📋');
 
-      const analysisText = await vision.analyzeImage(imageUrl, context);
+      // Download image via Evolution API
+      const media = await evolution.getMediaBase64(messageId);
+      if (!media) {
+        const msg = 'Nao consegui abrir a foto. Pode enviar novamente? 📸';
+        if (!isSandbox) await evolution.sendText(from, msg);
+        return;
+      }
+
+      const imageDataUrl = `data:${media.mimetype};base64,${media.base64}`;
+      const analysisText = await vision.analyzeImage(imageDataUrl, context);
       const displayText = brain.getDisplayText(analysisText);
       const action = brain.parseAction(analysisText);
 
@@ -339,10 +354,10 @@ async function main() {
         await handleTextMessage(msg.from, msg.content);
         break;
       case 'audio':
-        await handleAudioMessage(msg.from, msg.content);
+        await handleAudioMessage(msg.from, msg.messageId);
         break;
       case 'image':
-        await handleImageMessage(msg.from, msg.content);
+        await handleImageMessage(msg.from, msg.messageId);
         break;
       case 'location':
         // Save location for future visit scheduling

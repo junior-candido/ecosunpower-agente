@@ -1,5 +1,4 @@
 // Audio transcription using OpenAI Whisper API
-import type { Config } from '../config.js';
 
 export class Transcriber {
   private apiKey: string;
@@ -8,26 +7,26 @@ export class Transcriber {
     this.apiKey = apiKey;
   }
 
-  async transcribe(audioUrl: string): Promise<string | null> {
+  async transcribeFromBase64(base64: string, mimetype: string): Promise<string | null> {
     try {
-      // Download the audio file from Evolution API
-      const audioResponse = await fetch(audioUrl);
-      if (!audioResponse.ok) {
-        console.error(`[transcriber] Failed to download audio: ${audioResponse.status}`);
-        return null;
-      }
-
-      const audioBuffer = await audioResponse.arrayBuffer();
-      const audioBlob = new Blob([audioBuffer], { type: 'audio/ogg' });
+      const audioBuffer = Buffer.from(base64, 'base64');
 
       // Check size (max 25MB for Whisper)
       if (audioBuffer.byteLength > 25 * 1024 * 1024) {
-        return null; // Too large
+        console.warn('[transcriber] Audio too large (>25MB)');
+        return null;
       }
 
-      // Send to OpenAI Whisper API
+      const extension = mimetype.includes('ogg') ? 'ogg' :
+                         mimetype.includes('mp4') ? 'mp4' :
+                         mimetype.includes('mpeg') ? 'mp3' :
+                         mimetype.includes('webm') ? 'webm' :
+                         mimetype.includes('wav') ? 'wav' : 'ogg';
+
+      const audioBlob = new Blob([audioBuffer], { type: mimetype });
+
       const formData = new FormData();
-      formData.append('file', audioBlob, 'audio.ogg');
+      formData.append('file', audioBlob, `audio.${extension}`);
       formData.append('model', 'whisper-1');
       formData.append('language', 'pt');
 
@@ -46,7 +45,7 @@ export class Transcriber {
       }
 
       const result = await response.json() as { text: string };
-      console.log(`[transcriber] Transcribed: "${result.text.substring(0, 50)}..."`);
+      console.log(`[transcriber] Transcribed: "${result.text.substring(0, 80)}..."`);
       return result.text;
     } catch (error) {
       console.error('[transcriber] Error:', error);

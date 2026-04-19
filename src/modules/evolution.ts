@@ -84,6 +84,36 @@ export class EvolutionService {
     return null;
   }
 
+  async getMediaBase64(messageId: string): Promise<{ base64: string; mimetype: string } | null> {
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/chat/getBase64FromMediaMessage/${this.instance}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': this.apiKey,
+          },
+          body: JSON.stringify({
+            message: { key: { id: messageId } },
+            convertToMp4: false,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        console.error(`[evolution] getMediaBase64 failed: ${response.status}`);
+        return null;
+      }
+
+      const data = await response.json() as { base64: string; mimetype: string };
+      return data;
+    } catch (error) {
+      console.error('[evolution] getMediaBase64 error:', error);
+      return null;
+    }
+  }
+
   validateWebhookToken(token: string): boolean {
     return token === this.webhookToken;
   }
