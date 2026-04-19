@@ -318,6 +318,7 @@ async function main() {
         const d = action.data as Record<string, unknown>;
         const startISO = d.datetime_iso as string | undefined;
         const durationMinutes = (d.duration_minutes as number | undefined) ?? 60;
+        const clientEmail = (d.client_email as string | undefined)?.trim();
 
         if (!startISO) {
           console.warn(`[calendar] schedule_visit without datetime_iso for ${from}`);
@@ -334,7 +335,7 @@ async function main() {
           const available = await calendar.isAvailable(startISO, endISO);
 
           if (!available) {
-            const msg = 'Opa, o Junior tem compromisso nesse horario 😅 Pode ser outro dia ou horario?';
+            const msg = 'opa, o junior ja tem compromisso nesse horario. pode ser outro dia ou horario?';
             if (!isSandbox) await sendText(from, msg);
             console.log(`[calendar] Conflict for ${from} at ${startISO} — asked for another time`);
             break;
@@ -350,20 +351,30 @@ async function main() {
             lead?.energy_data && typeof lead.energy_data === 'object'
               ? `Conta: R$ ${(lead.energy_data as Record<string, unknown>).monthly_bill ?? '-'}/mes`
               : '',
+            clientEmail ? `Email cliente: ${clientEmail}` : '',
             d.notes ? `\nObservacoes: ${d.notes}` : '',
           ].filter(Boolean).join('\n');
 
-          const event = await calendar.createEvent({ summary, description, startISO, endISO });
-          console.log(`[calendar] Event created for ${from}: ${event.htmlLink}`);
+          const attendeeEmails = clientEmail ? [clientEmail] : [];
+          const event = await calendar.createEvent({
+            summary,
+            description,
+            startISO,
+            endISO,
+            attendeeEmails,
+            attendeeName: lead?.name ?? undefined,
+          });
+          console.log(`[calendar] Event created for ${from}: ${event.htmlLink}${clientEmail ? ` (invite sent to ${clientEmail})` : ''}`);
 
           await supabase.logEvent('info', 'calendar', `Visit scheduled for ${from}`, {
             event_id: event.eventId,
             start: startISO,
             html_link: event.htmlLink,
+            client_email: clientEmail ?? null,
           });
         } catch (err) {
           console.error(`[calendar] Failed to schedule visit for ${from}:`, err);
-          const msg = 'Tive uma dificuldade pra agendar aqui, mas ja anotei. O Junior vai confirmar com voce 😊';
+          const msg = 'tive uma dificuldade pra agendar aqui, mas ja anotei. o junior confirma com voce.';
           if (!isSandbox) await sendText(from, msg);
         }
         break;

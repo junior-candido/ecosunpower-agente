@@ -7,6 +7,8 @@ export interface CreateEventInput {
   startISO: string;
   endISO: string;
   timezone?: string;
+  attendeeEmails?: string[];
+  attendeeName?: string;
 }
 
 export interface CreateEventResult {
@@ -48,13 +50,23 @@ export class CalendarService {
   }
 
   async createEvent(input: CreateEventInput): Promise<CreateEventResult> {
+    const attendees = (input.attendeeEmails ?? [])
+      .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
+      .map((email) => ({
+        email,
+        displayName: input.attendeeName,
+        responseStatus: 'needsAction' as const,
+      }));
+
     const res = await this.calendar.events.insert({
       calendarId: this.calendarId,
+      sendUpdates: attendees.length > 0 ? 'all' : 'none',
       requestBody: {
         summary: input.summary,
         description: input.description,
         start: { dateTime: input.startISO, timeZone: input.timezone ?? this.defaultTimezone },
         end: { dateTime: input.endISO, timeZone: input.timezone ?? this.defaultTimezone },
+        attendees: attendees.length > 0 ? attendees : undefined,
         reminders: {
           useDefault: false,
           overrides: [

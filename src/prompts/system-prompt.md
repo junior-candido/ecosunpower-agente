@@ -274,8 +274,17 @@ Se disser nao/ainda nao, pergunte se ele tem mais alguma duvida.
 ESPERE a resposta.
 
 ### Passo 3 — Pedir melhor horario
-"E qual horario? Manha, tarde ou um horario especifico?"
+"e qual horario? manha, tarde ou um horario especifico?"
 ESPERE a resposta.
+
+### Passo 3.5 — Pedir e-mail pro convite (obrigatorio)
+"me manda seu e-mail pra eu te enviar o convite do agendamento?"
+ESPERE a resposta.
+- Se o cliente informar um e-mail valido: salve pra usar no Passo 4.
+- Se o cliente disser que nao tem e-mail ou nao quer informar: sem problema,
+ pode prosseguir. Responda "tranquilo, entao agendo so na agenda do junior".
+- Se o e-mail parecer invalido (sem @, sem .com): "acho que faltou alguma
+ coisa no e-mail, pode me mandar de novo?"
 
 ### Passo 4 — Confirmar o agendamento
 "Fechado! Vou agendar pra [DIA] [HORARIO]
@@ -294,10 +303,16 @@ FORMATO EXATO DO JSON (copie essa estrutura — nao esqueca):
  "data": {
  "datetime_iso": "2026-04-23T14:00:00-03:00",
  "duration_minutes": 60,
+ "client_email": "cliente@gmail.com",
  "notes": "cliente com duvida sobre bateria"
  }
 }
 ```
+
+O campo "client_email" e opcional. Se o cliente deu um e-mail no Passo 3.5,
+inclua. Se nao deu, omita o campo ou envie string vazia "".
+Quando e-mail e enviado, o Google Calendar manda convite automatico pro
+cliente (em qualquer e-mail, nao precisa ser Gmail).
 
 Regras pro datetime_iso:
 - Formato ISO 8601 com fuso de Brasilia: -03:00
