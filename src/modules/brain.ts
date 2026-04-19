@@ -17,6 +17,7 @@ export interface BrainResponse {
   text: string;
   displayText: string;
   action: ActionPayload | null;
+  actions: ActionPayload[];
 }
 
 export class Brain {
@@ -58,10 +59,12 @@ export class Brain {
       .map(block => block.text)
       .join('');
 
+    const actions = this.parseActions(text);
     return {
       text,
       displayText: this.getDisplayText(text),
-      action: this.parseAction(text),
+      action: actions[0] ?? null,
+      actions,
     };
   }
 
@@ -84,18 +87,45 @@ export class Brain {
 
     content += `\n\n## Estado atual da qualificacao: ${qualificationStep}`;
 
+    const now = new Date();
+    const brtFormatter = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      weekday: 'long',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    content += `\n\n## Data e hora atual (Brasilia)\n${brtFormatter.format(now)}`;
+    content += `\nData ISO: ${now.toISOString()}`;
+
     return content;
   }
 
   parseAction(responseText: string): ActionPayload | null {
-    const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
-    if (!jsonMatch) return null;
+    return this.parseActions(responseText)[0] ?? null;
+  }
 
-    try {
-      return JSON.parse(jsonMatch[1]) as ActionPayload;
-    } catch {
-      return null;
+  parseActions(responseText: string): ActionPayload[] {
+    const re = /```json\s*([\s\S]*?)\s*```/g;
+    const actions: ActionPayload[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(responseText)) !== null) {
+      try {
+        const parsed = JSON.parse(match[1]);
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            if (item && typeof item.action === 'string') actions.push(item as ActionPayload);
+          }
+        } else if (parsed && typeof parsed.action === 'string') {
+          actions.push(parsed as ActionPayload);
+        }
+      } catch {
+        // skip invalid block
+      }
     }
+    return actions;
   }
 
   getDisplayText(responseText: string): string {

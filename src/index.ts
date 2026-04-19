@@ -193,19 +193,23 @@ async function main() {
         qualification_step: conversation.qualification_step,
       });
 
-      // Handle actions from Claude
-      if (response.action) {
-        await handleAction(response.action, leadId, from, conversation.id);
+      // Handle actions from Claude (may be multiple in a single response)
+      for (const act of response.actions) {
+        try {
+          await handleAction(act, leadId, from, conversation.id);
+        } catch (err) {
+          console.error(`[action] Failed to handle "${act.action}":`, err);
+        }
       }
 
       await supabase.logEvent('info', 'brain', `Processed message from ${from}`, {
         lead_id: leadId,
         is_new: isNewLead,
-        action: response.action?.action ?? null,
+        actions: response.actions.map(a => a.action),
       });
 
       // Learn from conversation
-      const wasTransferred = response.action?.action === 'transfer_to_human';
+      const wasTransferred = response.actions.some(a => a.action === 'transfer_to_human');
       learning.analyzeConversation(
         messagesToKeep.map(m => ({ role: m.role, content: m.content })),
         leadId,
