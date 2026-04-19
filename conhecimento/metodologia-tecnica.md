@@ -86,8 +86,9 @@ Capacidade (kWh) = Consumo diario x dias de autonomia / profundidade de descarga
 ## 6. Respostas padrao para duvidas frequentes
 
 ### "Vai zerar minha conta?"
-Nao zera totalmente por causa da taxa minima da concessionaria, mas reduz
-ate 90-95%.
+Nao zera 100% porque sempre fica um valor minimo mensal da distribuidora
+(custo de disponibilidade OU Fio B — o maior dos dois, nao somados).
+Reducao real: 90-95% da conta.
 
 ### "Funciona a noite?"
 Sistemas on-grid nao funcionam a noite. Para isso, e necessario sistema

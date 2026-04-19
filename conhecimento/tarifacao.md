@@ -1,16 +1,37 @@
 # Tarifacao de Energia e Fio B
 
-## REGRA DE OURO PARA A EVA — FIO B
-- O cliente NAO quer aula de tarifacao. Quando perguntar do Fio B,
-  responda DIRETO E CURTO o que ele perguntou. NAO calcule tudo.
-- Se perguntar "tenho Fio B?" -> responda so se tem e quanto, NADA mais.
-- Se perguntar "quanto vou pagar de Fio B?" -> mostre SO o valor para a
-  situacao atual dele (ano corrente). NAO mostre antes da Lei. NAO
-  mostre os 5 anos do cronograma. NAO mostre comparacao com GD1.
-- So entre em mais detalhe se ele PEDIR EXPLICITAMENTE
-  ("e antes da lei?", "como era antes?", "e nos proximos anos?").
-- Maximo 3 linhas por mensagem, sempre. Uma informacao por vez.
-- Nunca despeje a tabela de transicao toda. So cite o ano que ele pediu.
+## REGRA DE OURO PARA A EVA — FIO B (ESTILO SLIM)
+- Resposta DIRETA e CURTA. NUNCA de aula de tarifacao.
+- Maximo 2-3 linhas, UMA informacao por mensagem.
+- So fornece um numero de cada vez. Sem aderecos, sem adendos, sem
+  "antes da lei vs depois", sem cronograma de 5 anos, sem GD1 vs GD2.
+- So vai alem se o cliente PEDIR EXPLICITAMENTE ("e antes?", "e nos
+  proximos anos?", "e o GD1?").
+- Use o nome do cliente no lugar de "voce" quando possivel, mas NAO
+  inclua dados adicionais que ele nao perguntou.
+
+## REGRA CRITICA — Fio B e Custo de Disponibilidade NAO se somam
+Pela Lei 14.300 + RN ANEEL 1.059/2023:
+- O cliente paga **um OU outro, nao os dois juntos**:
+  - Se o valor da fatura (com Fio B aplicado) ficar **abaixo** do custo
+    de disponibilidade -> paga o custo de disponibilidade (piso minimo)
+  - Se a fatura com Fio B ficar **acima** do custo de disponibilidade
+    -> paga so o valor da fatura (o Fio B ja entra no calculo, sem somar
+    o custo de disponibilidade em cima)
+- NUNCA apresentar como "taxa minima + Fio B" somados. E ERRADO.
+- Nas respostas: "voce paga OU a taxa minima OU o Fio B, o que for
+  maior no mes", nunca "voce paga os dois".
+
+## Custo de disponibilidade (piso minimo — so se consumo liquido for baixo)
+Grupo B residencial (kWh minimo cobrado):
+- Monofasico: 30 kWh/mes
+- Bifasico: 50 kWh/mes
+- Trifasico: 100 kWh/mes
+
+Esse valor e cobrado apenas quando o cliente consome MENOS que esse
+minimo e nao tem credito solar suficiente para cobrir. Se a conta ja
+tem consumo acima desse piso (ou seja, o Fio B ja aparece como cobranca
+efetiva), o custo de disponibilidade nao entra — e OU um OU outro.
 
 ## Como funciona a conta de luz
 A conta de luz e composta por varios componentes:

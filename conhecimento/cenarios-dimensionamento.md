@@ -29,8 +29,10 @@ consumo (media 12 meses).
 ## Cenario 2 - Cliente que quer "zerar a conta"
 **Contexto:** cliente quer eliminar totalmente a conta.
 
-**Raciocinio:** explicar que o sistema reduz fortemente, mas a taxa minima
-da distribuidora continua (custo de disponibilidade + Fio B gradual). Nao
+**Raciocinio:** explicar que o sistema reduz fortemente, mas sempre
+existe um valor minimo mensal — OU o custo de disponibilidade (piso,
+30/50/100 kWh conforme mono/bi/tri), OU o Fio B aplicado sobre a
+energia compensada — o que for maior no mes. Nao sao somados. Nao
 prometer conta zerada.
 
 **Solucao:** on-grid ajustado ao consumo compensavel.
