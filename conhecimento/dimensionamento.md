@@ -292,12 +292,52 @@ Formula: Oversize = (Potencia total paineis Wp) / (Potencia nominal inversor W)
 
 ---
 
+## REGRA CRITICA: SISTEMA SOLAR NAO E CARGA!
+
+### ENTENDA ISSO ANTES DE DIMENSIONAR:
+O sistema fotovoltaico e GERACAO, nao e CARGA!
+- CARGA = o que CONSOME energia (ar-condicionado, chuveiro, geladeira, etc.)
+- GERACAO = o que PRODUZ energia (paineis + inversor solar)
+
+### O padrao de entrada e dimensionado SOMENTE pela CARGA da edificacao!
+- O inversor solar NAO entra no calculo de carga do padrao de entrada
+- A corrente do inversor NAO se soma a corrente de carga da casa
+- A potencia do sistema solar NAO aumenta a demanda do padrao
+- O disjuntor do padrao de entrada protege a CARGA, nao a geracao
+
+### Exemplo do que NAO fazer (ERRADO!):
+- Casa com carga de 30A + inversor de 45A = 75A → "precisa trocar padrao" ← ERRADO!
+- A corrente do inversor NAO soma com a carga!
+
+### Exemplo CORRETO:
+- Casa com carga de 30A e disjuntor de 40A
+- Instala inversor solar de 10kW (45A)
+- O padrao de entrada continua o mesmo (40A) porque a CARGA nao mudou!
+- O inversor nao aumenta a carga — ele GERA energia
+- So precisa trocar padrao se a CARGA da casa aumentar (novo ar-condicionado, etc.)
+
+### Quando PRECISA alterar padrao por causa do solar:
+- SOMENTE se a potencia do inversor for MAIOR que a potencia disponibilizada
+  no padrao (a distribuidora pode limitar a injecao ao padrao existente)
+- Ou se a distribuidora exigir no parecer de acesso (raro para micro)
+- Em geral: sistema ate 75kW NAO exige mudanca de padrao por causa do solar
+
+### Regra da concessionaria:
+- A potencia do sistema de microgeracao deve ser MENOR OU IGUAL a potencia
+  disponibilizada (carga instalada / demanda contratada) da unidade consumidora
+- Isso NAO significa que soma — significa que o sistema nao pode ser MAIOR
+  que o padrao ja existente
+- Exemplo: padrao de 40A monofasico 220V = ~8.8kW disponibilizado
+  → pode instalar sistema solar de ate 8.8kW sem alterar padrao
+
+---
+
 ## COMO DIMENSIONAR UM KIT (passo a passo para a Eva)
 
 ### Passo 1: Definir consumo do cliente
 - Consumo mensal em kWh (da conta de luz ou calculo NASA)
 
-### Passo 2: Calcular potencia necessaria
+### Passo 2: Calcular potencia necessaria do sistema
 - Potencia kWp = consumo_kwh / (irradiacao x 30 x 0.82)
 - Irradiacao media BSB/GO: 5.2 kWh/m2/dia
 - Fator de performance: 0.82
@@ -307,7 +347,7 @@ Formula: Oversize = (Potencia total paineis Wp) / (Potencia nominal inversor W)
 - Arredondar para cima
 
 ### Passo 4: Escolher inversor
-- Potencia total paineis (Wp) deve ser <= potencia inversor x 1.5
+- Potencia total paineis (Wp) deve ser <= potencia inversor x 1.5 (oversize max 50%)
 - Verificar se tensao dos modulos em serie nao ultrapassa Vmax do inversor
 - Verificar se corrente dos modulos nao ultrapassa Imax do MPPT
 
@@ -315,16 +355,40 @@ Formula: Oversize = (Potencia total paineis Wp) / (Potencia nominal inversor W)
 - Oversize = potencia_total_paineis / potencia_inversor
 - Se > 1.5: reduzir paineis ou aumentar inversor
 
-### Exemplo pratico:
+### Passo 6: Verificar padrao de entrada (IMPORTANTE!)
+- A potencia do inversor NAO se soma a carga da casa!
+- Verificar: potencia do inversor <= potencia disponibilizada no padrao atual?
+  - Padrao monofasico 40A x 220V = ~8.8kW disponivel
+  - Padrao monofasico 50A x 220V = ~11kW disponivel
+  - Padrao trifasico 40A x 380V = ~26kW disponivel
+  - Padrao trifasico 63A x 380V = ~41kW disponivel
+- Se o inversor for MENOR que a potencia disponivel: NAO precisa mudar padrao!
+- Se o inversor for MAIOR: pode precisar aumentar padrao (mas e raro em residencial)
+- Na DUVIDA: o engenheiro Junior verifica na visita tecnica
+
+### Exemplo pratico CORRETO:
 Cliente em Brasilia, conta de R$900, consumo ~620 kWh/mes
+Padrao atual: monofasico 40A (220V) = ~8.8kW disponivel
+
 1. Potencia: 620 / (5.2 x 30 x 0.82) = 4.85 kWp
 2. Com paineis Trina 720W: 4850 / 720 = 6.7 → **7 paineis**
 3. Potencia total: 7 x 720W = **5040Wp**
-4. Inversor Huawei SUN2000-5KTL-L1 (5000W): oversize = 5040/5000 = **1.008x** (perfeito!)
-5. Ou 2x micro Hoymiles HMS-2000-4T: cada um com 3-4 paineis (1440-2160Wp por micro, dentro do limite)
+4. Inversor Huawei SUN2000-5KTL-L1 (5kW): oversize = 5040/5000 = 1.008x ✅
+5. Padrao: inversor 5kW < 8.8kW disponivel → **NAO precisa mudar padrao!** ✅
+6. Alternativa: 2x micro Hoymiles HMS-2000-4T (total 4kW) → tambem NAO precisa mudar
+
+### Exemplo com sistema MAIOR:
+Cliente comercial, padrao trifasico 63A (380V) = ~41kW disponivel
+Quer sistema de 50kWp
+
+1. Inversor Sungrow SG50CX (50kW)
+2. Potencia do inversor (50kW) > disponivel (41kW) → PODE precisar adequar padrao
+3. Neste caso, verificar com a distribuidora no parecer de acesso
 
 ### ALERTAS para a Eva:
-- Se oversize > 1.5: "Esse dimensionamento ficaria com sobredimensionamento acima do recomendado. Vou ajustar!"
-- Se tensao em serie > Vmax: "Precisamos ajustar a quantidade de paineis em serie pra ficar dentro do limite do inversor"
-- Se corrente > Imax MPPT: "A corrente do modulo excede o limite do MPPT. Vou recomendar outro inversor"
-- SEMPRE diga que o dimensionamento EXATO e feito pelo engenheiro Junior na visita tecnica
+- NUNCA diga que precisa mudar padrao porque "a corrente do inversor + carga ultrapassa o disjuntor"
+- O correto e: "O inversor de X kW cabe no seu padrao atual de Y kW? Se sim, nao precisa mudar nada!"
+- Se oversize > 1.5: "Vou ajustar o dimensionamento pra ficar dentro do recomendado"
+- Se tensao em serie > Vmax: "Preciso ajustar a configuracao das strings"
+- SEMPRE: "O engenheiro Junior confirma tudo na visita tecnica — pode ficar tranquilo!"
+- NUNCA some corrente do inversor com corrente de carga — sao coisas DIFERENTES!

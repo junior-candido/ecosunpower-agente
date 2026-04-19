@@ -153,12 +153,20 @@ Para consumidores Grupo A (13.8kV):
 ## Adequacao de padrao para instalar solar (GO)
 
 ### Quando precisa adequar
-1. Carga + inversor ultrapassa 12 kW monofasico -> migrar para trifasico
-2. Padrao antigo (ex-CELG) fora do modelo Equatorial -> adequar
-3. Sem aterramento -> instalar
-4. Caixa de medicao antiga -> trocar
-5. Poste inadequado -> substituir
-6. Cabo subdimensionado -> substituir
+ATENCAO: o sistema solar NAO e carga! NAO some corrente do inversor com carga!
+
+Precisa adequar SOMENTE quando:
+1. Potencia do INVERSOR e MAIOR que potencia disponivel no padrao
+   (ex: inversor 15kW num padrao monofasico de 50A que suporta 11kW)
+2. Distribuidora exigir no parecer de acesso
+3. Padrao antigo (ex-CELG) fora do modelo Equatorial
+4. Sem aterramento -> instalar
+5. Caixa de medicao antiga -> trocar
+6. Poste inadequado ou cabo subdimensionado
+
+NAO precisa adequar quando:
+- Inversor cabe na potencia disponivel do padrao (maioria dos casos!)
+- Ex: inversor 8kW num padrao monofasico 50A (11kW disponivel) = OK!
 
 ### Custo estimado de adequacao (GO)
 | Servico | Custo estimado |
@@ -169,11 +177,15 @@ Para consumidores Grupo A (13.8kV):
 | Adequacao completa (poste + caixa + cabos) | R$ 3.000 - R$ 6.000 |
 
 ### Exemplo pratico
-Cliente em Goiania, padrao monofasico 40A, quer sistema de 8 kWp:
-- Inversor 8kW = ~36A em 220V
-- Carga da casa: ~30A
-- Total: ~66A > 50A do monofasico
-- Precisa migrar para TRIFASICO
+Cliente em Goiania, padrao monofasico 50A (220V) = ~11kW disponivel
+Quer sistema de 8 kWp com inversor de 8kW:
+- Inversor 8kW < 11kW disponivel no padrao → NAO precisa mudar!
+- O solar NAO e carga — nao soma com a carga da casa
+- O padrao atual suporta o inversor normalmente
+
+Outro exemplo: padrao monofasico 40A (220V) = ~8.8kW disponivel
+Quer sistema de 10 kWp com inversor de 10kW:
+- Inversor 10kW > 8.8kW disponivel → PODE precisar adequar para trifasico
 - Custo: ~R$ 2.500 - R$ 4.000
 
 ---

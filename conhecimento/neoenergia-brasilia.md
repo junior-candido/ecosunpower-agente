@@ -67,11 +67,19 @@ Aplica-se a instalacoes com carga ate 75 kW.
 - Transformador de corrente (TC) para cargas maiores
 
 ### Quando precisa mudar o padrao para instalar solar
-- Monofasico com carga + inversor > disjuntor atual: migrar para TRIFASICO
-- Caixa de medicao antiga: trocar por modelo atual
-- Sem aterramento: instalar obrigatoriamente
-- Poste inadequado: substituir
-- Cabo subdimensionado: substituir
+ATENCAO: o sistema solar NAO e carga! NAO some corrente do inversor com carga da casa!
+
+Precisa mudar padrao SOMENTE quando:
+- A potencia do INVERSOR for MAIOR que a potencia disponivel no padrao atual
+  (ex: inversor de 10kW num padrao monofasico de 40A que so suporta 8.8kW)
+- A distribuidora exigir no parecer de acesso (raro)
+- Caixa de medicao antiga que nao aceita medidor bidirecional
+- Sem aterramento (obrigatorio para solar)
+- Poste ou cabo em condicoes inadequadas
+
+NAO precisa mudar padrao quando:
+- O inversor cabe na potencia disponivel do padrao (maioria dos casos!)
+- Ex: inversor 5kW num padrao monofasico 40A (8.8kW disponivel) = OK!
 
 ### Custo estimado de adequacao (DF)
 | Servico | Custo estimado |
