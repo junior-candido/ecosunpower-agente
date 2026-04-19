@@ -10,6 +10,7 @@ export class MetaService {
   private token: string;
   private pageId: string;
   private instagramId: string;
+  private pageTokenCache: string | null = null;
 
   constructor(opts: { accessToken: string; pageId: string; instagramId: string }) {
     this.token = opts.accessToken;
@@ -17,8 +18,24 @@ export class MetaService {
     this.instagramId = opts.instagramId;
   }
 
+  // Lazily fetch the Page Access Token. Publishing to a Page requires a page-scoped
+  // token, not a user/system-user token. Cached for the lifetime of the process.
+  private async getPageToken(): Promise<string> {
+    if (this.pageTokenCache) return this.pageTokenCache;
+    const res = await fetch(
+      `${GRAPH_API}/${this.pageId}?fields=access_token&access_token=${this.token}`,
+    );
+    const data = await res.json() as { access_token?: string; error?: { message: string } };
+    if (!res.ok || !data.access_token) {
+      throw new Error(`Failed to fetch page access token: ${data.error?.message ?? res.statusText}`);
+    }
+    this.pageTokenCache = data.access_token;
+    return this.pageTokenCache;
+  }
+
   // Publish an image + caption to the Facebook Page
   async publishFacebookImage(imageUrl: string, caption: string): Promise<MetaPublishResult> {
+    const pageToken = await this.getPageToken();
     const url = `${GRAPH_API}/${this.pageId}/photos`;
     const res = await fetch(url, {
       method: 'POST',
@@ -26,7 +43,7 @@ export class MetaService {
       body: JSON.stringify({
         url: imageUrl,
         message: caption,
-        access_token: this.token,
+        access_token: pageToken,
       }),
     });
     const data = await res.json() as { id?: string; post_id?: string; error?: { message: string } };
@@ -42,13 +59,14 @@ export class MetaService {
 
   // Publish a single image to Instagram (2-step: container + publish)
   async publishInstagramImage(imageUrl: string, caption: string): Promise<MetaPublishResult> {
+    const pageToken = await this.getPageToken();
     const containerRes = await fetch(`${GRAPH_API}/${this.instagramId}/media`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         image_url: imageUrl,
         caption,
-        access_token: this.token,
+        access_token: pageToken,
       }),
     });
     const containerData = await containerRes.json() as { id?: string; error?: { message: string } };
@@ -64,7 +82,7 @@ export class MetaService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         creation_id: containerData.id,
-        access_token: this.token,
+        access_token: pageToken,
       }),
     });
     const publishData = await publishRes.json() as { id?: string; error?: { message: string } };
@@ -87,6 +105,7 @@ export class MetaService {
 
   // Publish a carousel (2+ images) to Instagram
   async publishInstagramCarousel(imageUrls: string[], caption: string): Promise<MetaPublishResult> {
+    const pageToken = await this.getPageToken();
     if (imageUrls.length < 2 || imageUrls.length > 10) {
       throw new Error('Instagram carousel requires 2 to 10 images');
     }
@@ -100,7 +119,7 @@ export class MetaService {
         body: JSON.stringify({
           image_url: imageUrl,
           is_carousel_item: true,
-          access_token: this.token,
+          access_token: pageToken,
         }),
       });
       const data = await res.json() as { id?: string; error?: { message: string } };
@@ -118,7 +137,7 @@ export class MetaService {
         media_type: 'CAROUSEL',
         children: childIds.join(','),
         caption,
-        access_token: this.token,
+        access_token: pageToken,
       }),
     });
     const carouselData = await carouselRes.json() as { id?: string; error?: { message: string } };
@@ -134,7 +153,7 @@ export class MetaService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         creation_id: carouselData.id,
-        access_token: this.token,
+        access_token: pageToken,
       }),
     });
     const publishData = await publishRes.json() as { id?: string; error?: { message: string } };
