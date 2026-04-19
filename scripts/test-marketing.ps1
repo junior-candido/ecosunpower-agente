@@ -1,13 +1,27 @@
+param(
+    [string]$Topic = ""
+)
+
 $url = "https://aula-aprendendo-agente-whatsapp.oigz6g.easypanel.host"
 $token = "ecosunpower-webhook-2026"
 
-Write-Host "Gerando rascunho de post... (30-60s)" -ForegroundColor Cyan
+$body = if ($Topic) {
+    @{ topic_type = $Topic } | ConvertTo-Json
+} else {
+    "{}"
+}
+
+if ($Topic) {
+    Write-Host "Gerando rascunho de post (tipo: $Topic)... (30-60s)" -ForegroundColor Cyan
+} else {
+    Write-Host "Gerando rascunho de post (tipo aleatorio)... (30-60s)" -ForegroundColor Cyan
+}
 
 $r = Invoke-RestMethod `
     -Uri "$url/marketing/generate?token=$token" `
     -Method Post `
     -ContentType "application/json" `
-    -Body "{}" `
+    -Body $body `
     -TimeoutSec 180
 
 Write-Host ""
@@ -23,3 +37,7 @@ Write-Host "IMAGEM: $($r.draft.image_url)" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Abra a imagem no navegador. Se gostar, pra publicar rode:" -ForegroundColor Cyan
 Write-Host ".\scripts\publish-marketing.ps1 $($r.draft.id)" -ForegroundColor White
+Write-Host ""
+Write-Host "Tipos disponiveis (use -Topic):" -ForegroundColor DarkGray
+Write-Host "  objecao_desmistificada, dica_tecnica, economia_antes_depois," -ForegroundColor DarkGray
+Write-Host "  curiosidade_setor, lei_regulacao, comparativo" -ForegroundColor DarkGray
