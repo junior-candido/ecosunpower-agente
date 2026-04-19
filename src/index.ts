@@ -11,6 +11,7 @@ import { Transcriber } from './modules/transcriber.js';
 import { VisionAnalyzer } from './modules/vision.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { LearningModule } from './modules/learning.js';
+import { FollowupModule } from './modules/followup.js';
 import { buildHealthStatus } from './health.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -31,6 +32,7 @@ async function main() {
   const knowledgeBase = new KnowledgeBase(join(__dirname, '..', 'conhecimento'));
 
   const learning = new LearningModule(supabase.getClient());
+  const followup = new FollowupModule(supabase.getClient(), (to, text) => evolution.sendText(to, text));
 
   if (!transcriber) {
     console.warn('[init] OPENAI_API_KEY not set — audio transcription disabled');
@@ -265,6 +267,33 @@ async function main() {
         console.log(`[action] Transfer to human for ${from}`);
         break;
       }
+
+      case 'opt_out': {
+        // Client requested to stop receiving messages
+        await supabase.getClient()
+          .from('leads')
+          .update({ opt_out: true, updated_at: new Date().toISOString() })
+          .eq('phone', from);
+        console.log(`[action] Opt-out registered for ${from}`);
+        break;
+      }
+    }
+
+    // Handle contact_type if present
+    if (action.data.contact_type) {
+      await supabase.getClient()
+        .from('leads')
+        .update({ contact_type: action.data.contact_type, updated_at: new Date().toISOString() })
+        .eq('phone', from);
+    }
+
+    // Handle "perdido" status (bought from competitor)
+    if (action.data.status === 'perdido') {
+      await supabase.getClient()
+        .from('leads')
+        .update({ status: 'inativo', contact_type: 'perdido', updated_at: new Date().toISOString() })
+        .eq('phone', from);
+      console.log(`[action] Lead ${from} marked as lost (bought from competitor)`);
     }
   }
 
@@ -506,6 +535,12 @@ Responda CURTO, maximo 2 paragrafos.`,
       return;
     }
 
+    // Ignore messages from the owner (Junior) - he uses WhatsApp directly
+    if (parsed.from === config.engineerPhone) {
+      res.status(200).json({ status: 'ignored_owner' });
+      return;
+    }
+
     await queue.addMessage({
       type: parsed.type,
       from: parsed.from,
@@ -555,10 +590,23 @@ Responda CURTO, maximo 2 paragrafos.`,
     res.status(httpStatus).json(status);
   });
 
+  // Follow-up timer (runs every hour)
+  if (!isSandbox) {
+    setInterval(async () => {
+      console.log('[followup] Running scheduled follow-up check...');
+      await followup.processFollowups();
+    }, 60 * 60 * 1000); // Every 1 hour
+
+    // Run first check 5 minutes after startup
+    setTimeout(() => followup.processFollowups(), 5 * 60 * 1000);
+    console.log('[followup] Follow-up scheduler started (checks every 1 hour)');
+  }
+
   app.listen(config.port, () => {
     console.log(`[server] Listening on port ${config.port}`);
     console.log(`[server] Webhook URL: http://localhost:${config.port}/webhook`);
     console.log(`[server] Health check: http://localhost:${config.port}/health`);
+    console.log(`[server] Learning report: http://localhost:${config.port}/learning`);
     if (isSandbox) {
       console.log('[server] SANDBOX MODE - messages will not be sent to WhatsApp');
     }
