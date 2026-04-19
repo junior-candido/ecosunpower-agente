@@ -38,18 +38,26 @@ Define como deve ser o padrao de entrada de energia da edificacao.
 - Eletroduto (conduite)
 - Poste padrao (se necessario)
 
+**IMPORTANTE: No DF (Neoenergia) NAO existe padrao bifasico!**
+A Neoenergia Brasilia trabalha SOMENTE com:
+- MONOFASICO (1 fase + neutro, 220V)
+- TRIFASICO (3 fases + neutro, 220/380V)
+
+Se o cliente tiver um padrao bifasico antigo (da epoca da CEB), ele pode
+continuar usando, mas para novas ligacoes ou alteracoes, sera monofasico
+ou trifasico conforme a norma atual.
+
 **Classificacao por carga instalada (residencial):**
 
 | Tipo | Fases | Tensao | Disjuntor | Carga |
 |---|---|---|---|---|
 | Monofasico | 1F + N | 220V | ate 40A | ate 8 kW |
-| Bifasico | 2F + N | 220/380V | ate 40A | ate 15 kW |
 | Trifasico | 3F + N | 220/380V | ate 63A | ate 25 kW |
 | Trifasico | 3F + N | 220/380V | ate 100A | ate 50 kW |
 
 **Quando precisa mudar o padrao de entrada para instalar solar:**
 - Se o sistema solar exigir mais corrente do que o disjuntor atual suporta
-- Se o padrao atual for monofasico e o sistema exigir bifasico ou trifasico
+- Se o padrao atual for monofasico e o sistema exigir trifasico
 - Se a caixa de medicao for antiga e nao suportar medidor bidirecional
 - Se nao tiver aterramento adequado
 
@@ -57,8 +65,9 @@ Define como deve ser o padrao de entrada de energia da edificacao.
 Cliente com padrao monofasico 40A quer instalar sistema de 8 kWp:
 - 8 kWp / 220V = ~36A de corrente do inversor
 - O padrao monofasico suporta ate 40A, mas a soma da carga da casa + solar
-  pode ultrapassar. Neste caso, precisa migrar para BIFASICO ou TRIFASICO.
-- Custo da adequacao: R$ 1.500 a R$ 4.000 (dependendo da situacao)
+  pode ultrapassar. Neste caso, precisa migrar para TRIFASICO.
+- No DF NAO existe bifasico — vai direto para trifasico!
+- Custo da adequacao: R$ 2.500 a R$ 4.000 (dependendo da situacao)
 
 ### DIS-NOR-030 - Fornecimento em Tensao Secundaria (Edificacoes Individuais)
 Norma complementar para fornecimento de energia em baixa tensao.

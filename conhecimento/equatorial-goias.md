@@ -9,16 +9,27 @@ atende o estado de Goias. Todo sistema solar em Goias segue suas normas.
 
 **Classificacao por carga instalada:**
 
-| Tipo | Tensao | Carga maxima | Disjuntor |
-|---|---|---|---|
-| Monofasico | 220V | ate 12 kW | ate 50A |
-| Trifasico | 380/220V | 12 a 75 kW | ate 100A |
+| Tipo | Fios | Tensao | Carga maxima | Disjuntor |
+|---|---|---|---|---|
+| Monofasico | 1 fase + neutro | 220V | ate 12 kW | ate 50A |
+| Trifasico | 3 fases + neutro | 380/220V | 12 a 75 kW | ate 100A |
 
-**OBS:** Em Goias NAO existe padrao bifasico! E monofasico ou trifasico.
+**ATENCAO sobre o "bifasico" em Goias:**
+Em Goias, o que popularmente chamam de "bifasico" e na verdade um tipo de
+fornecimento MONOFASICO com 2 fios de fase + 1 neutro (220V entre fases).
+NAO e um padrao separado como em outros estados. Na classificacao da
+Equatorial Goias, existem apenas DUAS categorias:
+- Monofasico (inclui o antigo "bifasico" com 2F+N) — ate 12 kW
+- Trifasico (3F+N) — acima de 12 kW
+
+Se o cliente falar que tem "bifasico", na pratica e monofasico pela norma
+da Equatorial. O importante e verificar a carga e o disjuntor.
 
 **Diferenca importante em relacao a Brasilia:**
-- Neoenergia-DF: tem monofasico, bifasico e trifasico
-- Equatorial-GO: so monofasico (220V) ou trifasico (380/220V)
+- Neoenergia-DF: SOMENTE monofasico (1F+N) ou trifasico (3F+N). NAO tem bifasico!
+- Equatorial-GO: SOMENTE monofasico (1F+N ou 2F+N) ou trifasico (3F+N).
+  O "bifasico" de GO e classificado como monofasico na norma.
+- Em NENHUMA das duas distribuidoras existe padrao bifasico oficial para novas ligacoes!
 
 **Quando precisa mudar padrao para instalar solar:**
 - Se carga da casa + inversor ultrapassa 12 kW -> migrar para trifasico
@@ -118,11 +129,17 @@ O cliente NAO precisa ir a Equatorial — a Ecosunpower cuida de tudo!
 
 | Aspecto | Neoenergia (Brasilia) | Equatorial (Goias) |
 |---|---|---|
-| Fases | Mono, bi e tri | Mono e tri (sem bi!) |
-| Tensao mono | 220V | 220V |
-| Tensao tri | 220/380V | 220/380V |
+| Fases disponiveis | Mono e tri (SEM bifasico!) | Mono e tri (SEM bifasico!) |
+| "Bifasico" | NAO existe | E monofasico 2F+N (mesma categoria) |
+| Tensao mono | 220V (1F+N) | 220V (1F+N ou 2F+N) |
+| Tensao tri | 220/380V (3F+N) | 220/380V (3F+N) |
 | Limite mono | ~8 kW | 12 kW |
 | Norma padrao entrada | NTD 6.07 | NT.001 |
 | Norma solar | NTD 6.09 | NT.020 |
 | Prazo parecer (micro) | 15 dias | 15-30 dias |
 | Medidor | Bidirecional (Neoenergia fornece) | Bidirecional (Equatorial fornece) |
+
+## O que a Eva deve dizer sobre bifasico
+Se o cliente perguntar sobre bifasico:
+- DF: "Aqui em Brasilia a Neoenergia so trabalha com monofasico ou trifasico. Se voce tem um padrao bifasico antigo da CEB, ele pode continuar funcionando, mas pra novas ligacoes e mono ou tri."
+- GO: "Em Goias, o que chamam de bifasico e na verdade um monofasico com dois fios de fase. Pela Equatorial, sao duas categorias: monofasico (ate 12kW) e trifasico (acima de 12kW)."
