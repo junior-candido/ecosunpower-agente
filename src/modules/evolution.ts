@@ -6,6 +6,7 @@ export interface IncomingMessage {
   content: string;
   timestamp: Date;
   messageId: string;
+  fromMe: boolean;
 }
 
 export class EvolutionService {
@@ -21,7 +22,7 @@ export class EvolutionService {
     this.webhookToken = config.webhookToken;
   }
 
-  async sendText(to: string, text: string): Promise<void> {
+  async sendText(to: string, text: string): Promise<{ messageId: string }> {
     const response = await fetch(
       `${this.baseUrl}/message/sendText/${this.instance}`,
       {
@@ -38,6 +39,16 @@ export class EvolutionService {
       const error = await response.text();
       throw new Error(`Evolution API sendText failed: ${response.status} ${error}`);
     }
+
+    try {
+      const data = await response.json() as Record<string, unknown>;
+      const key = (data.key ?? (data as { data?: { key?: Record<string, string> } }).data?.key) as
+        | Record<string, string>
+        | undefined;
+      return { messageId: key?.id ?? '' };
+    } catch {
+      return { messageId: '' };
+    }
   }
 
   parseWebhook(payload: Record<string, unknown>): IncomingMessage | null {
@@ -53,9 +64,7 @@ export class EvolutionService {
     // Ignorar mensagens de grupos (grupos terminam com @g.us)
     if (key.remoteJid?.endsWith('@g.us')) return null;
 
-    // Ignorar mensagens enviadas por mim (fromMe)
-    if (key.fromMe) return null;
-
+    const fromMe = Boolean(key.fromMe);
     const from = key.remoteJid?.replace('@s.whatsapp.net', '') ?? '';
     const messageId = key.id ?? '';
 
@@ -63,27 +72,27 @@ export class EvolutionService {
       const text = (message.conversation as string)
         ?? (message.extendedTextMessage as Record<string, string>)?.text
         ?? '';
-      return { type: 'text', from, content: text, timestamp: new Date(timestamp * 1000), messageId };
+      return { type: 'text', from, content: text, timestamp: new Date(timestamp * 1000), messageId, fromMe };
     }
 
     if (message.audioMessage) {
       const audio = message.audioMessage as Record<string, string>;
-      return { type: 'audio', from, content: audio.url ?? '', timestamp: new Date(timestamp * 1000), messageId };
+      return { type: 'audio', from, content: audio.url ?? '', timestamp: new Date(timestamp * 1000), messageId, fromMe };
     }
 
     if (message.imageMessage) {
       const image = message.imageMessage as Record<string, string>;
-      return { type: 'image', from, content: image.url ?? '', timestamp: new Date(timestamp * 1000), messageId };
+      return { type: 'image', from, content: image.url ?? '', timestamp: new Date(timestamp * 1000), messageId, fromMe };
     }
 
     if (message.documentMessage) {
       const doc = message.documentMessage as Record<string, string>;
-      return { type: 'document', from, content: doc.mimetype ?? '', timestamp: new Date(timestamp * 1000), messageId };
+      return { type: 'document', from, content: doc.mimetype ?? '', timestamp: new Date(timestamp * 1000), messageId, fromMe };
     }
 
     if (message.locationMessage) {
       const loc = message.locationMessage as Record<string, number>;
-      return { type: 'location', from, content: JSON.stringify({ lat: loc.degreesLatitude, lng: loc.degreesLongitude }), timestamp: new Date(timestamp * 1000), messageId };
+      return { type: 'location', from, content: JSON.stringify({ lat: loc.degreesLatitude, lng: loc.degreesLongitude }), timestamp: new Date(timestamp * 1000), messageId, fromMe };
     }
 
     return null;

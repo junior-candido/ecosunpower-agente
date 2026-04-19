@@ -13,6 +13,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { LearningModule } from './modules/learning.js';
 import { FollowupModule } from './modules/followup.js';
 import { ingestCanalSolar } from './modules/canal-solar.js';
+import { TakeoverService } from './modules/takeover.js';
 import { buildHealthStatus } from './health.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -31,9 +32,16 @@ async function main() {
   const vision = new VisionAnalyzer(config.anthropicApiKey);
   const transcriber = config.openaiApiKey ? new Transcriber(config.openaiApiKey) : null;
   const knowledgeBase = new KnowledgeBase(join(__dirname, '..', 'conhecimento'));
+  const takeover = new TakeoverService(config.redisHost, config.redisPort, config.redisPassword);
+
+  // Wrapped sendText: tracks bot-sent message IDs so Junior's typed messages can be distinguished
+  const sendText = async (to: string, text: string): Promise<void> => {
+    const { messageId } = await evolution.sendText(to, text);
+    if (messageId) await takeover.markBotSent(messageId);
+  };
 
   const learning = new LearningModule(supabase.getClient());
-  const followup = new FollowupModule(supabase.getClient(), (to, text) => evolution.sendText(to, text));
+  const followup = new FollowupModule(supabase.getClient(), sendText);
 
   if (!transcriber) {
     console.warn('[init] OPENAI_API_KEY not set — audio transcription disabled');
@@ -51,6 +59,10 @@ async function main() {
 
   // Message handler
   async function handleTextMessage(from: string, text: string) {
+    if (await takeover.isPaused(from)) {
+      console.log(`[takeover] Skipping message from ${from} — human takeover active`);
+      return;
+    }
     try {
       let lead = await supabase.getLeadByPhone(from);
       const isNewLead = !lead;
@@ -131,7 +143,7 @@ async function main() {
 
       // Send response
       if (!isSandbox) {
-        await evolution.sendText(from, response.displayText);
+        await sendText(from, response.displayText);
       } else {
         console.log(`[sandbox] Would send to ${from}: ${response.displayText}`);
       }
@@ -179,7 +191,7 @@ async function main() {
 
       const fallbackMsg = 'Estou com uma dificuldade tecnica. Um momento, por favor.';
       if (!isSandbox) {
-        try { await evolution.sendText(from, fallbackMsg); } catch { /* ignore */ }
+        try { await sendText(from, fallbackMsg); } catch { /* ignore */ }
       }
     }
   }
@@ -243,7 +255,7 @@ async function main() {
           });
 
           if (!isSandbox) {
-            await evolution.sendText(config.engineerPhone, dossierText);
+            await sendText(config.engineerPhone, dossierText);
           } else {
             console.log(`[sandbox] Dossier for engineer:\n${dossierText}`);
           }
@@ -261,7 +273,7 @@ async function main() {
 
         const transferMsg = `TRANSFERENCIA DE ATENDIMENTO\nCliente: ${from}\nMotivo: ${(action.data as Record<string, string>).reason ?? 'Solicitado pelo cliente'}`;
         if (!isSandbox) {
-          await evolution.sendText(config.engineerPhone, transferMsg);
+          await sendText(config.engineerPhone, transferMsg);
         } else {
           console.log(`[sandbox] Transfer to engineer:\n${transferMsg}`);
         }
@@ -300,27 +312,31 @@ async function main() {
 
   // Handle audio messages
   async function handleAudioMessage(from: string, messageId: string) {
+    if (await takeover.isPaused(from)) {
+      console.log(`[takeover] Skipping audio from ${from} — human takeover active`);
+      return;
+    }
     if (!transcriber) {
       const msg = 'Nao consegui ouvir o audio. Pode me enviar por texto, por favor? 😊';
-      if (!isSandbox) await evolution.sendText(from, msg);
+      if (!isSandbox) await sendText(from, msg);
       return;
     }
 
     try {
-      if (!isSandbox) await evolution.sendText(from, 'Ouvindo seu audio... 🎧');
+      if (!isSandbox) await sendText(from, 'Ouvindo seu audio... 🎧');
 
       // Download audio via Evolution API
       const media = await evolution.getMediaBase64(messageId);
       if (!media) {
         const msg = 'Nao consegui baixar o audio. Pode mandar de novo? 😊';
-        if (!isSandbox) await evolution.sendText(from, msg);
+        if (!isSandbox) await sendText(from, msg);
         return;
       }
 
       const text = await transcriber.transcribeFromBase64(media.base64, media.mimetype);
       if (!text) {
         const msg = 'O audio ficou um pouco dificil de entender. Pode mandar de novo ou escrever por texto? 😊';
-        if (!isSandbox) await evolution.sendText(from, msg);
+        if (!isSandbox) await sendText(from, msg);
         return;
       }
 
@@ -329,25 +345,29 @@ async function main() {
     } catch (error) {
       console.error(`[audio] Error processing audio from ${from}:`, error);
       const msg = 'Nao consegui processar o audio. Pode me enviar por texto? 😊';
-      if (!isSandbox) await evolution.sendText(from, msg);
+      if (!isSandbox) await sendText(from, msg);
     }
   }
 
   // Handle image messages
   async function handleImageMessage(from: string, messageId: string) {
+    if (await takeover.isPaused(from)) {
+      console.log(`[takeover] Skipping image from ${from} — human takeover active`);
+      return;
+    }
     try {
       const lead = await supabase.getLeadByPhone(from);
       const context = lead?.name
         ? `Cliente: ${lead.name}, Cidade: ${lead.city ?? 'nao informada'}, Perfil: ${lead.profile ?? 'indefinido'}`
         : 'Cliente novo, ainda sem dados coletados';
 
-      if (!isSandbox) await evolution.sendText(from, 'Recebi a foto! Analisando... 📋');
+      if (!isSandbox) await sendText(from, 'Recebi a foto! Analisando... 📋');
 
       // Download image via Evolution API
       const media = await evolution.getMediaBase64(messageId);
       if (!media) {
         const msg = 'Nao consegui abrir a foto. Pode enviar novamente? 📸';
-        if (!isSandbox) await evolution.sendText(from, msg);
+        if (!isSandbox) await sendText(from, msg);
         return;
       }
 
@@ -357,7 +377,7 @@ async function main() {
       const action = brain.parseAction(analysisText);
 
       if (!isSandbox) {
-        await evolution.sendText(from, displayText);
+        await sendText(from, displayText);
       } else {
         console.log(`[sandbox] Image analysis for ${from}: ${displayText}`);
       }
@@ -385,16 +405,20 @@ async function main() {
     } catch (error) {
       console.error(`[vision] Error processing image from ${from}:`, error);
       const msg = 'A foto ficou um pouco dificil de ler. Consegue tirar outra mais nitida? 📸';
-      if (!isSandbox) await evolution.sendText(from, msg);
+      if (!isSandbox) await sendText(from, msg);
     }
   }
 
   // Handle document messages (PDF)
   async function handleDocumentMessage(from: string, messageId: string, mimetype: string) {
+    if (await takeover.isPaused(from)) {
+      console.log(`[takeover] Skipping document from ${from} — human takeover active`);
+      return;
+    }
     try {
       if (!mimetype.includes('pdf')) {
         const msg = 'Recebi o arquivo! Por enquanto consigo analisar PDFs e imagens. Se for uma conta de luz, pode mandar como foto ou PDF 😊';
-        if (!isSandbox) await evolution.sendText(from, msg);
+        if (!isSandbox) await sendText(from, msg);
         return;
       }
 
@@ -403,13 +427,13 @@ async function main() {
         ? `Cliente: ${lead.name}, Cidade: ${lead.city ?? 'nao informada'}, Perfil: ${lead.profile ?? 'indefinido'}`
         : 'Cliente novo, ainda sem dados coletados';
 
-      if (!isSandbox) await evolution.sendText(from, 'Recebi o PDF! Analisando... 📄');
+      if (!isSandbox) await sendText(from, 'Recebi o PDF! Analisando... 📄');
 
       // Download PDF via Evolution API
       const media = await evolution.getMediaBase64(messageId);
       if (!media) {
         const msg = 'Nao consegui abrir o PDF. Pode enviar novamente? 📄';
-        if (!isSandbox) await evolution.sendText(from, msg);
+        if (!isSandbox) await sendText(from, msg);
         return;
       }
 
@@ -458,7 +482,7 @@ Responda CURTO, maximo 2 paragrafos.`,
       const action = brain.parseAction(analysisText);
 
       if (!isSandbox) {
-        await evolution.sendText(from, displayText);
+        await sendText(from, displayText);
       } else {
         console.log(`[sandbox] PDF analysis for ${from}: ${displayText}`);
       }
@@ -482,7 +506,7 @@ Responda CURTO, maximo 2 paragrafos.`,
     } catch (error) {
       console.error(`[document] Error processing PDF from ${from}:`, error);
       const msg = 'Nao consegui ler o PDF. Pode mandar como foto ou tentar novamente? 📸';
-      if (!isSandbox) await evolution.sendText(from, msg);
+      if (!isSandbox) await sendText(from, msg);
     }
   }
 
@@ -536,7 +560,30 @@ Responda CURTO, maximo 2 paragrafos.`,
       return;
     }
 
-    // Ignore messages from the owner (Junior) - he uses WhatsApp directly
+    // Handle fromMe messages: distinguish bot echoes from Junior typing manually in WhatsApp
+    if (parsed.fromMe) {
+      const isBotEcho = await takeover.isBotSent(parsed.messageId);
+      if (isBotEcho) {
+        res.status(200).json({ status: 'ignored_bot_echo' });
+        return;
+      }
+
+      // Junior typed directly in the client chat
+      const content = parsed.type === 'text' ? parsed.content.trim().toLowerCase() : '';
+      if (content === '/eva on' || content === '/eva voltar' || content === '/bot on') {
+        await takeover.resumeFor(parsed.from);
+        console.log(`[takeover] Eva resumed for ${parsed.from} by human command`);
+        res.status(200).json({ status: 'eva_resumed' });
+        return;
+      }
+
+      await takeover.pauseFor(parsed.from);
+      console.log(`[takeover] Eva paused for ${parsed.from} — human took over`);
+      res.status(200).json({ status: 'human_takeover' });
+      return;
+    }
+
+    // Ignore messages from the owner (Junior) when he messages the bot directly
     if (parsed.from === config.engineerPhone) {
       res.status(200).json({ status: 'ignored_owner' });
       return;
