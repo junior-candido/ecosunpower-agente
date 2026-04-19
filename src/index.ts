@@ -589,6 +589,23 @@ Responda CURTO, maximo 2 paragrafos.`,
 
   // Initialize queue
   const queue = new MessageQueue(config.redisHost, config.redisPort, async (msg) => {
+    // Seed WhatsApp profile name as lead.name if we don't have a name yet
+    if (msg.pushName) {
+      const trimmed = msg.pushName.trim();
+      const looksLikeNumber = /^\+?\d/.test(trimmed);
+      if (trimmed && !looksLikeNumber) {
+        try {
+          const existing = await supabase.getLeadByPhone(msg.from);
+          if (!existing?.name) {
+            await supabase.upsertLead({ phone: msg.from, name: trimmed });
+            console.log(`[lead] Seeded pushName "${trimmed}" for ${msg.from}`);
+          }
+        } catch (err) {
+          console.warn('[lead] Failed to seed pushName:', (err as Error).message);
+        }
+      }
+    }
+
     switch (msg.type) {
       case 'text':
         await handleTextMessage(msg.from, msg.content);
@@ -672,6 +689,7 @@ Responda CURTO, maximo 2 paragrafos.`,
       content: parsed.content,
       timestamp: parsed.timestamp.toISOString(),
       messageId: parsed.messageId,
+      pushName: parsed.pushName,
     });
 
     res.status(200).json({ status: 'queued' });

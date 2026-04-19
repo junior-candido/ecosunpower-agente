@@ -7,6 +7,7 @@ export interface IncomingMessage {
   timestamp: Date;
   messageId: string;
   fromMe: boolean;
+  pushName?: string;
 }
 
 export class EvolutionService {
@@ -67,32 +68,35 @@ export class EvolutionService {
     const fromMe = Boolean(key.fromMe);
     const from = key.remoteJid?.replace('@s.whatsapp.net', '') ?? '';
     const messageId = key.id ?? '';
+    const pushName = (data.pushName as string) || undefined;
+
+    const base = { from, timestamp: new Date(timestamp * 1000), messageId, fromMe, pushName };
 
     if (message.conversation || message.extendedTextMessage) {
       const text = (message.conversation as string)
         ?? (message.extendedTextMessage as Record<string, string>)?.text
         ?? '';
-      return { type: 'text', from, content: text, timestamp: new Date(timestamp * 1000), messageId, fromMe };
+      return { ...base, type: 'text', content: text };
     }
 
     if (message.audioMessage) {
       const audio = message.audioMessage as Record<string, string>;
-      return { type: 'audio', from, content: audio.url ?? '', timestamp: new Date(timestamp * 1000), messageId, fromMe };
+      return { ...base, type: 'audio', content: audio.url ?? '' };
     }
 
     if (message.imageMessage) {
       const image = message.imageMessage as Record<string, string>;
-      return { type: 'image', from, content: image.url ?? '', timestamp: new Date(timestamp * 1000), messageId, fromMe };
+      return { ...base, type: 'image', content: image.url ?? '' };
     }
 
     if (message.documentMessage) {
       const doc = message.documentMessage as Record<string, string>;
-      return { type: 'document', from, content: doc.mimetype ?? '', timestamp: new Date(timestamp * 1000), messageId, fromMe };
+      return { ...base, type: 'document', content: doc.mimetype ?? '' };
     }
 
     if (message.locationMessage) {
       const loc = message.locationMessage as Record<string, number>;
-      return { type: 'location', from, content: JSON.stringify({ lat: loc.degreesLatitude, lng: loc.degreesLongitude }), timestamp: new Date(timestamp * 1000), messageId, fromMe };
+      return { ...base, type: 'location', content: JSON.stringify({ lat: loc.degreesLatitude, lng: loc.degreesLongitude }) };
     }
 
     return null;

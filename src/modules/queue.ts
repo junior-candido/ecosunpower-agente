@@ -8,6 +8,7 @@ export interface QueueMessage {
   content: string;
   timestamp: string;
   messageId: string;
+  pushName?: string;
 }
 
 type MessageHandler = (message: QueueMessage) => Promise<void>;
