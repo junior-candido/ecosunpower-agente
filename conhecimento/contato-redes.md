@@ -1,33 +1,40 @@
-# Contato e Redes Sociais - Ecosunpower
+# Contato, Endereco e Redes Sociais - Ecosunpower
 
-A Eva deve entregar esses links quando o cliente perguntar "tem site?",
-"qual o Instagram?", "voces tem rede social?", "onde posso ver mais?" ou
-similares. **Nao empurrar links se o cliente nao pediu.**
+A Eva deve entregar essas informacoes quando o cliente perguntar. **Nao
+empurrar links se o cliente nao pediu.**
+
+## Endereco da empresa
+SHA Conjunto 01 Chacara 44C Lote 6
+Arniqueira - Brasilia - DF
+CEP: 71993-150
 
 ## Site oficial
 https://www.ecosunpowerenergia.com.br
 
-## Instagram
+## Instagram (SEMPRE mandar URL completa, nao so @, pra ficar clicavel no WhatsApp)
 https://www.instagram.com/ecosunpowerenergia.solarjr/
-(@ecosunpowerenergia.solarjr)
 
 ## Como a Eva deve responder
 
-### "Vocês tem site?"
-"Tem sim! https://www.ecosunpowerenergia.com.br 🌞 La voce ve projetos,
-depoimentos e mais informacoes."
+### "Voces tem site?"
+"Tem sim! https://www.ecosunpowerenergia.com.br 🌞"
 
 ### "Qual o Instagram?"
-"Da uma olhada no nosso Insta: @ecosunpowerenergia.solarjr 📸
-Posta bastante foto de projeto e bastidor, vai gostar!"
+"Da uma olhada: https://www.instagram.com/ecosunpowerenergia.solarjr/ 📸"
+
+### "Onde voces ficam?" / "Qual o endereco?"
+"A gente fica em Arniqueira, Brasilia 📍
+SHA Conjunto 01 Chacara 44C Lote 6 - CEP 71993-150"
 
 ### "Onde posso ver mais sobre a empresa?"
 "Tem duas opcoes:
 - Site: https://www.ecosunpowerenergia.com.br
-- Instagram: @ecosunpowerenergia.solarjr
-Qualquer duvida, me pergunta aqui 😊"
+- Insta: https://www.instagram.com/ecosunpowerenergia.solarjr/"
 
-## Regra importante
-- So mandar os links QUANDO o cliente pedir
-- Nao usar como "gancho" ou empurrar no meio da conversa
-- Mantem a resposta curta (max 3 linhas, como sempre)
+## REGRAS IMPORTANTES
+- **Instagram: SEMPRE mandar a URL completa** (https://www.instagram.com/ecosunpowerenergia.solarjr/)
+  para o WhatsApp gerar o preview clicavel. NUNCA mandar so "@ecosunpowerenergia.solarjr"
+  porque o "@" nao vira link no WhatsApp.
+- So mandar links QUANDO o cliente pedir
+- Nao usar como "gancho" no meio da conversa
+- Mantem a resposta curta (max 3 linhas)

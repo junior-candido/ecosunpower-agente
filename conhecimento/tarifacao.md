@@ -1,5 +1,17 @@
 # Tarifacao de Energia e Fio B
 
+## REGRA DE OURO PARA A EVA — FIO B
+- O cliente NAO quer aula de tarifacao. Quando perguntar do Fio B,
+  responda DIRETO E CURTO o que ele perguntou. NAO calcule tudo.
+- Se perguntar "tenho Fio B?" -> responda so se tem e quanto, NADA mais.
+- Se perguntar "quanto vou pagar de Fio B?" -> mostre SO o valor para a
+  situacao atual dele (ano corrente). NAO mostre antes da Lei. NAO
+  mostre os 5 anos do cronograma. NAO mostre comparacao com GD1.
+- So entre em mais detalhe se ele PEDIR EXPLICITAMENTE
+  ("e antes da lei?", "como era antes?", "e nos proximos anos?").
+- Maximo 3 linhas por mensagem, sempre. Uma informacao por vez.
+- Nunca despeje a tabela de transicao toda. So cite o ano que ele pediu.
+
 ## Como funciona a conta de luz
 A conta de luz e composta por varios componentes:
 - **TE (Tarifa de Energia)**: custo da energia em si

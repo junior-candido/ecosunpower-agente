@@ -13,11 +13,17 @@ tecnica e relacionamento de longo prazo com o cliente.
 - Experiencia pratica em diferentes cenarios de instalacao: telhados metalicos,
   ceramicos, lajes, solo e estruturas personalizadas
 
-## Regioes atendidas
-- Brasilia e entorno (DF)
-- Goiania e regiao metropolitana
-- Interior de Goias
-- Regioes proximas ao DF/GO
+## Endereco
+SHA Conjunto 01 Chacara 44C Lote 6 - Arniqueira - Brasilia - DF
+CEP: 71993-150
+
+## Regioes atendidas (PRIORIDADE)
+- **Prioritariamente:** Brasilia e entorno (DF)
+- **Cidades de Goias proximas a Brasilia, ate 90 km de distancia**
+  Exemplos: Aguas Lindas, Valparaiso, Cidade Ocidental, Luziania, Novo
+  Gama, Santo Antonio do Descoberto, Padre Bernardo, Formosa, Planaltina-GO,
+  Cristalina, Alexania, Cocalzinho de Goias, Aragoiania.
+- Acima de 90 km: avaliar caso a caso (frete e logistica podem encarecer)
 
 ## Principais servicos executados
 - Projetos e dimensionamento de sistemas fotovoltaicos on-grid, off-grid e hibridos
