@@ -357,22 +357,36 @@ async function main() {
             d.notes ? `\nObservacoes: ${d.notes}` : '',
           ].filter(Boolean).join('\n');
 
-          const attendeeEmails = clientEmail ? [clientEmail] : [];
-          const event = await calendar.createEvent({
+          // Internal event (Ecosunpower side only — full details, map button, no attendees)
+          const internalEvent = await calendar.createEvent({
             summary,
             description,
             startISO,
             endISO,
-            attendeeEmails,
-            attendeeName: lead?.name ?? undefined,
             location: clientAddress || undefined,
           });
-          console.log(`[calendar] Event created for ${from}: ${event.htmlLink}${clientEmail ? ` (invite sent to ${clientEmail})` : ''}`);
+          console.log(`[calendar] Internal event created for ${from}: ${internalEvent.htmlLink}`);
+
+          // Client invite (minimal info — no address, no internal data)
+          let clientInviteLink: string | undefined;
+          if (clientEmail) {
+            const clientInvite = await calendar.createEvent({
+              summary: `Visita tecnica - Ecosunpower Energia Solar`,
+              description: 'Agendamento da visita tecnica com o engenheiro Junior da Ecosunpower Energia Solar.\n\nSe precisar remarcar, entre em contato pelo WhatsApp.',
+              startISO,
+              endISO,
+              attendeeEmails: [clientEmail],
+              attendeeName: lead?.name ?? undefined,
+            });
+            clientInviteLink = clientInvite.htmlLink;
+            console.log(`[calendar] Client invite sent to ${clientEmail}: ${clientInvite.htmlLink}`);
+          }
 
           await supabase.logEvent('info', 'calendar', `Visit scheduled for ${from}`, {
-            event_id: event.eventId,
+            internal_event_id: internalEvent.eventId,
+            internal_html_link: internalEvent.htmlLink,
+            client_invite_html_link: clientInviteLink ?? null,
             start: startISO,
-            html_link: event.htmlLink,
             client_email: clientEmail ?? null,
           });
         } catch (err) {
