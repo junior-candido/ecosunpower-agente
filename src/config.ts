@@ -19,6 +19,11 @@ const configSchema = z.object({
   openaiApiKey: z.string().optional(),
   engineerPhone: z.string().min(1),
   engineerName: z.string().min(1),
+  googleClientId: z.string().optional(),
+  googleClientSecret: z.string().optional(),
+  googleRefreshToken: z.string().optional(),
+  googleCalendarId: z.string().optional(),
+  timezone: z.string().default('America/Sao_Paulo'),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -40,5 +45,10 @@ export function loadConfig(): Config {
     openaiApiKey: process.env.OPENAI_API_KEY || undefined,
     engineerPhone: process.env.ENGINEER_PHONE,
     engineerName: process.env.ENGINEER_NAME,
+    googleClientId: process.env.GOOGLE_CLIENT_ID || undefined,
+    googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || undefined,
+    googleRefreshToken: process.env.GOOGLE_REFRESH_TOKEN || undefined,
+    googleCalendarId: process.env.GOOGLE_CALENDAR_ID || undefined,
+    timezone: process.env.TIMEZONE,
   });
 }

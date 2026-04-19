@@ -14,6 +14,7 @@ import { LearningModule } from './modules/learning.js';
 import { FollowupModule } from './modules/followup.js';
 import { ingestCanalSolar } from './modules/canal-solar.js';
 import { TakeoverService } from './modules/takeover.js';
+import { CalendarService } from './modules/calendar.js';
 import { buildHealthStatus } from './health.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -33,6 +34,21 @@ async function main() {
   const transcriber = config.openaiApiKey ? new Transcriber(config.openaiApiKey) : null;
   const knowledgeBase = new KnowledgeBase(join(__dirname, '..', 'conhecimento'));
   const takeover = new TakeoverService(config.redisHost, config.redisPort, config.redisPassword);
+  const calendar = (config.googleClientId && config.googleClientSecret
+    && config.googleRefreshToken && config.googleCalendarId)
+    ? new CalendarService({
+      clientId: config.googleClientId,
+      clientSecret: config.googleClientSecret,
+      refreshToken: config.googleRefreshToken,
+      calendarId: config.googleCalendarId,
+      timezone: config.timezone,
+    })
+    : null;
+  if (calendar) {
+    console.log('[calendar] Google Calendar integration enabled');
+  } else {
+    console.log('[calendar] Google Calendar disabled (missing env vars)');
+  }
 
   // Wrapped sendText: tracks bot-sent message IDs so Junior's typed messages can be distinguished
   const sendText = async (to: string, text: string): Promise<void> => {
@@ -278,6 +294,61 @@ async function main() {
           console.log(`[sandbox] Transfer to engineer:\n${transferMsg}`);
         }
         console.log(`[action] Transfer to human for ${from}`);
+        break;
+      }
+
+      case 'schedule_visit': {
+        const d = action.data as Record<string, unknown>;
+        const startISO = d.datetime_iso as string | undefined;
+        const durationMinutes = (d.duration_minutes as number | undefined) ?? 60;
+
+        if (!startISO) {
+          console.warn(`[calendar] schedule_visit without datetime_iso for ${from}`);
+          break;
+        }
+
+        if (!calendar) {
+          console.warn(`[calendar] schedule_visit requested but Calendar integration disabled`);
+          break;
+        }
+
+        try {
+          const endISO = new Date(new Date(startISO).getTime() + durationMinutes * 60000).toISOString();
+          const available = await calendar.isAvailable(startISO, endISO);
+
+          if (!available) {
+            const msg = 'Opa, o Junior tem compromisso nesse horario 😅 Pode ser outro dia ou horario?';
+            if (!isSandbox) await sendText(from, msg);
+            console.log(`[calendar] Conflict for ${from} at ${startISO} — asked for another time`);
+            break;
+          }
+
+          const lead = await supabase.getLeadByPhone(from);
+          const summary = `Visita tecnica - ${lead?.name ?? from} - ${lead?.city ?? ''}`.trim();
+          const description = [
+            `Cliente: ${lead?.name ?? 'Nao informado'}`,
+            `WhatsApp: ${from}`,
+            `Cidade: ${lead?.city ?? 'Nao informada'}`,
+            `Perfil: ${lead?.profile ?? 'indefinido'}`,
+            lead?.energy_data && typeof lead.energy_data === 'object'
+              ? `Conta: R$ ${(lead.energy_data as Record<string, unknown>).monthly_bill ?? '-'}/mes`
+              : '',
+            d.notes ? `\nObservacoes: ${d.notes}` : '',
+          ].filter(Boolean).join('\n');
+
+          const event = await calendar.createEvent({ summary, description, startISO, endISO });
+          console.log(`[calendar] Event created for ${from}: ${event.htmlLink}`);
+
+          await supabase.logEvent('info', 'calendar', `Visit scheduled for ${from}`, {
+            event_id: event.eventId,
+            start: startISO,
+            html_link: event.htmlLink,
+          });
+        } catch (err) {
+          console.error(`[calendar] Failed to schedule visit for ${from}:`, err);
+          const msg = 'Tive uma dificuldade pra agendar aqui, mas ja anotei. O Junior vai confirmar com voce 😊';
+          if (!isSandbox) await sendText(from, msg);
+        }
         break;
       }
 
