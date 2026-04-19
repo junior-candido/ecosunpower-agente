@@ -23,7 +23,9 @@ export class EvolutionService {
     this.webhookToken = config.webhookToken;
   }
 
-  async sendText(to: string, text: string): Promise<{ messageId: string }> {
+  async sendText(to: string, text: string, delayMs?: number): Promise<{ messageId: string }> {
+    const body: Record<string, unknown> = { number: to, text };
+    if (delayMs && delayMs > 0) body.delay = delayMs;
     const response = await fetch(
       `${this.baseUrl}/message/sendText/${this.instance}`,
       {
@@ -32,7 +34,7 @@ export class EvolutionService {
           'Content-Type': 'application/json',
           'apikey': this.apiKey,
         },
-        body: JSON.stringify({ number: to, text }),
+        body: JSON.stringify(body),
       }
     );
 

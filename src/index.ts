@@ -56,9 +56,16 @@ async function main() {
     console.log(`[calendar] Google Calendar disabled. Missing env vars: ${missing}`);
   }
 
-  // Wrapped sendText: tracks bot-sent message IDs so Junior's typed messages can be distinguished
+  // Simulate human typing delay: ~35ms per char, clamped between 900ms and 3500ms.
+  const typingDelay = (text: string): number => {
+    const ms = Math.round(text.length * 35);
+    return Math.max(900, Math.min(3500, ms));
+  };
+
+  // Wrapped sendText: shows "digitando..." presence and tracks bot-sent IDs.
   const sendText = async (to: string, text: string): Promise<void> => {
-    const { messageId } = await evolution.sendText(to, text);
+    const delay = typingDelay(text);
+    const { messageId } = await evolution.sendText(to, text, delay);
     if (messageId) await takeover.markBotSent(messageId);
   };
 
