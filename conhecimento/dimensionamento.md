@@ -16,6 +16,32 @@ Formula: Oversize = (Potencia total paineis Wp) / (Potencia nominal inversor W)
 
 ## MICRO INVERSORES - Limites por MPPT
 
+### Hoymiles HMS-800-2T (800W, 2 MPPT)
+- Potencia nominal saida: 800W
+- Entradas: 2 (2 paineis)
+- Tensao maxima entrada: 60V
+- Corrente maxima por entrada: 14A
+- Faixa MPPT: 16-60V
+- Max PV recomendado: 800W x 1.5 = **1200Wp total (600Wp por entrada)**
+- Modulos compativeis: ate 600W por entrada
+- ATENCAO: modulos acima de 600W NAO recomendados neste micro
+
+### Hoymiles HMS-900-2T (900W, 2 MPPT)
+- Potencia nominal saida: 900W
+- Entradas: 2
+- Tensao maxima entrada: 60V
+- Corrente maxima por entrada: 15A
+- Max PV recomendado: 900W x 1.5 = **1350Wp total (675Wp por entrada)**
+- Modulos compativeis: ate 670W por entrada
+
+### Hoymiles HMS-1000-2T (1000W, 2 MPPT)
+- Potencia nominal saida: 1000W
+- Entradas: 2
+- Tensao maxima entrada: 65V
+- Corrente maxima por entrada: 16A
+- Max PV recomendado: 1000W x 1.5 = **1500Wp total (750Wp por entrada)**
+- Modulos compativeis: ate 720W por entrada
+
 ### Hoymiles HMS-2000-4T (2000W, 4 MPPT)
 - Potencia nominal saida: 2000W
 - Potencia maxima por entrada: 500W cada (4 entradas)
@@ -69,6 +95,28 @@ Formula: Oversize = (Potencia total paineis Wp) / (Potencia nominal inversor W)
 - Potencia nominal saida: 2250W
 - Max PV recomendado: 2250W x 1.5 = **3375Wp total (843Wp por entrada)**
 
+### Hoymiles HMT-1800-6T (1800W, 6 entradas, TRIFASICO)
+- Potencia nominal saida: 1800W
+- Entradas: 6 (6 paineis) — 3 MPPT com 2 entradas cada
+- Tensao maxima entrada: 60V
+- Corrente maxima por entrada: 11.5A
+- Faixa MPPT: 16-60V
+- Max PV recomendado: 1800W x 1.5 = **2700Wp total (450Wp por entrada)**
+- ATENCAO: max 450Wp por entrada — nao aceita modulos de 600W+!
+- Ideal para modulos menores ou projetos trifasicos pequenos
+
+### Hoymiles HMT-2250-6T (2250W, 6 entradas, TRIFASICO)
+- Potencia nominal saida: 2250W
+- Entradas: 6 (6 paineis) — 3 MPPT com 2 entradas cada
+- Tensao maxima entrada: 60V
+- Corrente maxima por entrada: 11.5A
+- Faixa MPPT: 16-60V
+- Eficiencia MPPT: 99.8%
+- Max PV recomendado: 2250W x 1.5 = **3375Wp total (562Wp por entrada)**
+- Modulos compativeis: ate 560W por entrada
+- ATENCAO: modulos acima de 560W NAO recomendados neste HMT!
+- Para modulos de 620W+ em trifasico, usar string inversor
+
 ---
 
 ## INVERSORES STRING - Limites
@@ -120,6 +168,83 @@ Formula: Oversize = (Potencia total paineis Wp) / (Potencia nominal inversor W)
 - Faixa MPPT: 160-1000V
 - Corrente max: 37.5A total (25A + 12.5A por MPPT)
 - MPPTs: 2
+
+### Solis S6-GR1P2.5K (2.5kW monofasico)
+- Potencia nominal: 2500W
+- Max PV recomendado fabricante: 3750Wp (oversize 1.5)
+- Max PV Ecosunpower: **3750Wp**
+- Tensao maxima entrada: 600V
+- Faixa MPPT: 50-450V
+- Corrente max por string: 16A
+- MPPTs: 2 (1 string cada)
+
+### Solis S6-GR1P3K (3kW monofasico)
+- Potencia nominal: 3000W
+- Max PV recomendado: 4500Wp (oversize 1.5)
+- Max PV Ecosunpower: **4500Wp**
+- Tensao maxima entrada: 600V
+- Faixa MPPT: 50-450V
+- MPPTs: 2 (1 string cada)
+- Eficiencia: 97.3%
+
+### Solis S6-GR1P5K (5kW monofasico)
+- Potencia nominal: 5000W
+- Max PV recomendado: 7500Wp (oversize 1.5)
+- Max PV Ecosunpower: **7500Wp**
+- Tensao maxima entrada: 600V
+- Faixa MPPT: 50-450V
+- Corrente max por string: 16A
+- MPPTs: 2 (1 string cada)
+- Eficiencia: 97.7%
+- AFCI integrado (protecao arco eletrico)
+
+### Solis S6-GR1P6K (6kW monofasico)
+- Potencia nominal: 6000W
+- Max PV recomendado: 9000Wp (oversize 1.5)
+- Max PV Ecosunpower: **9000Wp**
+- Tensao maxima entrada: 600V
+- MPPTs: 2 (1 string cada)
+
+### Solis S5-GC15K-LV (15kW trifasico 220V)
+- Potencia nominal: 15000W
+- Max PV recomendado: 22500Wp (oversize 1.5)
+- Max PV Ecosunpower: **22500Wp**
+- Tensao maxima entrada: 1100V
+- Corrente max por MPPT: 32A
+- MPPTs: 3 (2 strings cada)
+- Eficiencia: 98.3%
+
+### Solis S5-GC25K-LV (25kW trifasico 220V)
+- Potencia nominal: 25000W
+- Max PV recomendado: 37500Wp (oversize 1.5)
+- Max PV Ecosunpower: **37500Wp**
+- Tensao maxima entrada: 1100V
+- MPPTs: 4
+
+### Solis S5-GC30K-LV (30kW trifasico 220V)
+- Potencia nominal: 30000W
+- Max PV entrada: 45000Wp
+- Tensao maxima entrada: 1100V
+- MPPTs: 4
+
+### Solis S5-GC50K (50kW trifasico 380V)
+- Potencia nominal: 50000W
+- Max PV entrada: 75000Wp
+- Tensao maxima entrada: 1100V
+- MPPTs: 5
+
+### Solis S5-GC60K (60kW trifasico 380V)
+- Potencia nominal: 60000W
+- Max PV entrada: 90000Wp
+- Tensao maxima entrada: 1100V
+- MPPTs: 6
+
+### Solis S5-GC75K (75kW trifasico 380V - 5G Pro)
+- Potencia nominal: 75000W
+- Max PV entrada: 112500Wp
+- Tensao maxima entrada: 1100V
+- MPPTs: 6
+- Eficiencia: 98.3%
 
 ### SolarEdge SE5000H Home Hub (5kW monofasico)
 - Potencia nominal: 5000W
