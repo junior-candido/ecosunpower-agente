@@ -277,7 +277,7 @@ ESPERE a resposta.
 "e qual horario? manha, tarde ou um horario especifico?"
 ESPERE a resposta.
 
-### Passo 3.5 — Pedir e-mail pro convite (obrigatorio)
+### Passo 3.5 — Pedir e-mail pro convite
 "me manda seu e-mail pra eu te enviar o convite do agendamento?"
 ESPERE a resposta.
 - Se o cliente informar um e-mail valido: salve pra usar no Passo 4.
@@ -285,6 +285,13 @@ ESPERE a resposta.
  pode prosseguir. Responda "tranquilo, entao agendo so na agenda do junior".
 - Se o e-mail parecer invalido (sem @, sem .com): "acho que faltou alguma
  coisa no e-mail, pode me mandar de novo?"
+
+### Passo 3.7 — Pedir endereco da visita
+"me passa o endereco onde vai ser a visita? rua, numero, bairro e cidade."
+ESPERE a resposta.
+- Se o cliente ja falou bairro/cidade antes, peca so o complemento
+ (rua e numero): "falta so a rua e o numero, pode mandar?"
+- Endereco vai aparecer no evento da agenda pra o junior abrir no maps direto.
 
 ### Passo 4 — Confirmar o agendamento
 "Fechado! Vou agendar pra [DIA] [HORARIO]
@@ -304,15 +311,18 @@ FORMATO EXATO DO JSON (copie essa estrutura — nao esqueca):
  "datetime_iso": "2026-04-23T14:00:00-03:00",
  "duration_minutes": 60,
  "client_email": "cliente@gmail.com",
+ "client_address": "Rua das Flores 123, Aguas Claras, Brasilia - DF",
  "notes": "cliente com duvida sobre bateria"
  }
 }
 ```
 
-O campo "client_email" e opcional. Se o cliente deu um e-mail no Passo 3.5,
-inclua. Se nao deu, omita o campo ou envie string vazia "".
-Quando e-mail e enviado, o Google Calendar manda convite automatico pro
-cliente (em qualquer e-mail, nao precisa ser Gmail).
+Campos opcionais:
+- "client_email": se o cliente deu no Passo 3.5, inclua. Senao, omita.
+  Quando presente, o Google Calendar manda convite automatico em qualquer
+  e-mail (nao precisa ser Gmail).
+- "client_address": se o cliente deu no Passo 3.7, inclua. Vai pro campo
+  "location" do evento — aparece botao "Abrir no Maps" pro junior.
 
 Regras pro datetime_iso:
 - Formato ISO 8601 com fuso de Brasilia: -03:00

@@ -319,6 +319,7 @@ async function main() {
         const startISO = d.datetime_iso as string | undefined;
         const durationMinutes = (d.duration_minutes as number | undefined) ?? 60;
         const clientEmail = (d.client_email as string | undefined)?.trim();
+        const clientAddress = (d.client_address as string | undefined)?.trim();
 
         if (!startISO) {
           console.warn(`[calendar] schedule_visit without datetime_iso for ${from}`);
@@ -352,6 +353,7 @@ async function main() {
               ? `Conta: R$ ${(lead.energy_data as Record<string, unknown>).monthly_bill ?? '-'}/mes`
               : '',
             clientEmail ? `Email cliente: ${clientEmail}` : '',
+            clientAddress ? `Endereco: ${clientAddress}` : '',
             d.notes ? `\nObservacoes: ${d.notes}` : '',
           ].filter(Boolean).join('\n');
 
@@ -363,6 +365,7 @@ async function main() {
             endISO,
             attendeeEmails,
             attendeeName: lead?.name ?? undefined,
+            location: clientAddress || undefined,
           });
           console.log(`[calendar] Event created for ${from}: ${event.htmlLink}${clientEmail ? ` (invite sent to ${clientEmail})` : ''}`);
 

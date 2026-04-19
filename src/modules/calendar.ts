@@ -9,6 +9,7 @@ export interface CreateEventInput {
   timezone?: string;
   attendeeEmails?: string[];
   attendeeName?: string;
+  location?: string;
 }
 
 export interface CreateEventResult {
@@ -64,6 +65,7 @@ export class CalendarService {
       requestBody: {
         summary: input.summary,
         description: input.description,
+        location: input.location,
         start: { dateTime: input.startISO, timeZone: input.timezone ?? this.defaultTimezone },
         end: { dateTime: input.endISO, timeZone: input.timezone ?? this.defaultTimezone },
         attendees: attendees.length > 0 ? attendees : undefined,
