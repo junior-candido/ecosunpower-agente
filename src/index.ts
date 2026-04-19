@@ -387,37 +387,22 @@ async function main() {
             d.notes ? `\nObservacoes: ${d.notes}` : '',
           ].filter(Boolean).join('\n');
 
-          // Internal event (Ecosunpower side only — full details, map button, no attendees)
-          const internalEvent = await calendar.createEvent({
+          // Single internal event (Ecosunpower side only — full details + map, no attendees)
+          const event = await calendar.createEvent({
             summary,
             description,
             startISO,
             endISO,
             location: clientAddress || undefined,
           });
-          console.log(`[calendar] Internal event created for ${from}: ${internalEvent.htmlLink}`);
-
-          // Client invite (minimal info — no address, no internal data)
-          let clientInviteLink: string | undefined;
-          if (clientEmail) {
-            const clientInvite = await calendar.createEvent({
-              summary: `Visita tecnica - Ecosunpower Energia Solar`,
-              description: 'Agendamento da visita tecnica com o engenheiro Junior da Ecosunpower Energia Solar.\n\nSe precisar remarcar, entre em contato pelo WhatsApp.',
-              startISO,
-              endISO,
-              attendeeEmails: [clientEmail],
-              attendeeName: lead?.name ?? undefined,
-            });
-            clientInviteLink = clientInvite.htmlLink;
-            console.log(`[calendar] Client invite sent to ${clientEmail}: ${clientInvite.htmlLink}`);
-          }
+          console.log(`[calendar] Event created for ${from}: ${event.htmlLink} (location=${clientAddress ?? 'none'})`);
 
           await supabase.logEvent('info', 'calendar', `Visit scheduled for ${from}`, {
-            internal_event_id: internalEvent.eventId,
-            internal_html_link: internalEvent.htmlLink,
-            client_invite_html_link: clientInviteLink ?? null,
+            event_id: event.eventId,
+            html_link: event.htmlLink,
             start: startISO,
             client_email: clientEmail ?? null,
+            has_location: Boolean(clientAddress),
           });
         } catch (err) {
           console.error(`[calendar] Failed to schedule visit for ${from}:`, err);
