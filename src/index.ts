@@ -348,7 +348,10 @@ async function main() {
           session_status: 'completed',
         });
 
-        const transferMsg = `TRANSFERENCIA DE ATENDIMENTO\nCliente: ${from}\nMotivo: ${(action.data as Record<string, string>).reason ?? 'Solicitado pelo cliente'}`;
+        const lead = await supabase.getLeadByPhone(from);
+        const contactTypeLabel = lead?.contact_type ? ` (${lead.contact_type})` : '';
+        const nameLabel = lead?.name ? ` - ${lead.name}` : '';
+        const transferMsg = `🔔 TRANSFERENCIA DE ATENDIMENTO${contactTypeLabel}\n\nContato: ${from}${nameLabel}\n\nMotivo:\n${(action.data as Record<string, string>).reason ?? 'Solicitado pelo cliente'}\n\nVoce pode responder direto por aqui. A Eva fica em pausa nesse chat.`;
         if (!isSandbox) {
           await sendText(config.engineerPhone, transferMsg);
         } else {
