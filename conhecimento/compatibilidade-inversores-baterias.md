@@ -8,10 +8,17 @@
 - **FoxESS** H1 e H3
 - **SolarEdge Home Hub**
 
-### Baterias disponiveis
+### Baterias disponiveis (SOMENTE estas marcas!)
 - **Deye** RW-M5.12 / RW-M10.24
 - **Dyness** B4850 / B51100
 - **Unipower** UPLFP48
+- **Huawei LUNA2000** (somente com inversor Huawei + Backup Box)
+- **SolarEdge Home Battery** (somente com inversor SolarEdge Home Hub)
+
+IMPORTANTE: NAO oferecer baterias Pylontech, FoxESS ECS, Sungrow SBR ou
+qualquer outra marca que nao esteja nesta lista. Se o cliente perguntar
+sobre outra marca, diga que trabalhamos com Deye, Dyness, Unipower,
+Huawei LUNA e SolarEdge, que sao marcas de referencia no mercado.
 
 ### Inversores On-grid (sem bateria - maioria dos projetos)
 - Micro inversores: Hoymiles, NEP, Deye
@@ -90,5 +97,7 @@
 ### Cliente quer bateria mas tem micro inversor:
 "Micro inversores nao tem entrada pra bateria. Pra ter armazenamento, precisamos adicionar um inversor hibrido (como o Deye) dedicado so pra bateria. Seus micros continuam gerando normal!"
 
-### Cliente pergunta se pode usar Pylontech no Huawei:
-"Infelizmente nao — o Huawei so aceita a bateria LUNA2000 dele. Se quiser usar Pylontech, o inversor ideal e o Deye, que aceita varias marcas!"
+### Cliente pergunta sobre bateria que NAO trabalhamos (Pylontech, Sungrow SBR, etc):
+"A gente trabalha com Deye, Dyness, Unipower, Huawei LUNA e SolarEdge — sao marcas de
+referencia com otima garantia e suporte no Brasil. Posso te recomendar a melhor opcao
+pro seu caso! 😊"
