@@ -3,9 +3,29 @@ import { join } from 'path';
 
 const SITEMAP_INDEX = 'https://canalsolar.com.br/sitemap_index.xml';
 const USER_AGENT = 'EcosunpowerBot/1.0 (+https://ecosunpower.com.br)';
-const MAX_ARTICLES = 60;
+const MAX_ARTICLES = 30;
+const CANDIDATES_POOL = 80;
 const FETCH_TIMEOUT_MS = 15000;
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+
+const RELEVANCE_KEYWORDS = [
+  'solar', 'fotovoltaic', 'painel', 'modulo', 'módulo', 'inversor',
+  'bateria', 'armazenamento', 'bess', 'geracao distribuida', 'geração distribuída',
+  'gd', 'microgeracao', 'microgeração', 'minigeracao', 'minigeração',
+  'autoconsumo', 'autoconsumidor', 'tarifa', 'tarifac', 'fio b',
+  'aneel', 'resolucao', 'resolução', 'lei 14.300', 'mmgd',
+  'conta de luz', 'economia', 'financiamento', 'consumidor',
+  'distribuidora', 'concessionaria', 'concessionária',
+  'renovavel', 'renovável', 'irradiacao', 'irradiação', 'eficiencia',
+  'eficiência', 'mercado livre', 'net metering', 'compensacao',
+  'compensação', 'credito', 'crédito',
+];
+
+function isRelevant(title: string | undefined, description: string | undefined): boolean {
+  const haystack = `${title ?? ''} ${description ?? ''}`.toLowerCase();
+  if (!haystack.trim()) return false;
+  return RELEVANCE_KEYWORDS.some((kw) => haystack.includes(kw));
+}
 
 interface Article {
   url: string;
@@ -150,23 +170,32 @@ export async function ingestCanalSolar(knowledgeDir: string, force = false): Pro
 
   const urls: Array<{ loc: string; lastmod: string }> = [];
   for (const sm of sitemaps) {
-    if (urls.length >= MAX_ARTICLES) break;
+    if (urls.length >= CANDIDATES_POOL) break;
     const xml = await fetchWithTimeout(sm.loc);
     urls.push(...extractUrlsFromSitemap(xml));
   }
   const topUrls = urls
     .sort((a, b) => (a.lastmod < b.lastmod ? 1 : -1))
-    .slice(0, MAX_ARTICLES);
+    .slice(0, CANDIDATES_POOL);
 
   const articles: Article[] = [];
+  let skippedIrrelevant = 0;
   for (const u of topUrls) {
+    if (articles.length >= MAX_ARTICLES) break;
     try {
       const meta = await fetchArticleMeta(u.loc);
+      if (!isRelevant(meta.title, meta.description)) {
+        skippedIrrelevant++;
+        continue;
+      }
       articles.push({ url: u.loc, lastmod: u.lastmod, ...meta });
     } catch (err) {
       console.warn(`[canal-solar] Failed to fetch ${u.loc}:`, (err as Error).message);
     }
     await new Promise((r) => setTimeout(r, 400));
+  }
+  if (skippedIrrelevant > 0) {
+    console.log(`[canal-solar] Filtered out ${skippedIrrelevant} off-topic articles`);
   }
 
   const markdown = buildMarkdown(articles, new Date());
