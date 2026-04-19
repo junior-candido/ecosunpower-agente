@@ -320,6 +320,15 @@ async function main() {
         const durationMinutes = (d.duration_minutes as number | undefined) ?? 60;
         const clientEmail = (d.client_email as string | undefined)?.trim();
         const clientAddress = (d.client_address as string | undefined)?.trim();
+        let clientCoordinates = (d.client_coordinates as string | undefined)?.trim();
+        // Fall back to coords saved from a shared WhatsApp location
+        if (!clientCoordinates) {
+          const leadNow = await supabase.getLeadByPhone(from);
+          const ed = leadNow?.energy_data as Record<string, unknown> | undefined;
+          if (ed?.shared_coordinates && typeof ed.shared_coordinates === 'string') {
+            clientCoordinates = ed.shared_coordinates;
+          }
+        }
 
         if (!startISO) {
           console.warn(`[calendar] schedule_visit without datetime_iso for ${from}`);
@@ -384,18 +393,24 @@ async function main() {
               : '',
             clientEmail ? `Email cliente: ${clientEmail}` : '',
             clientAddress ? `Endereco: ${clientAddress}` : '',
+            clientCoordinates ? `Coordenadas: ${clientCoordinates}` : '',
+            clientCoordinates ? `Maps: https://www.google.com/maps?q=${clientCoordinates}` : '',
             d.notes ? `\nObservacoes: ${d.notes}` : '',
           ].filter(Boolean).join('\n');
 
           // Single internal event (Ecosunpower side only — full details + map, no attendees)
+          // Prefer coordinates in location field (more precise for Maps); fallback to address
+          const eventLocation = clientCoordinates
+            ? (clientAddress ? `${clientAddress} (${clientCoordinates})` : clientCoordinates)
+            : (clientAddress || undefined);
           const event = await calendar.createEvent({
             summary,
             description,
             startISO,
             endISO,
-            location: clientAddress || undefined,
+            location: eventLocation,
           });
-          console.log(`[calendar] Event created for ${from}: ${event.htmlLink} (location=${clientAddress ?? 'none'})`);
+          console.log(`[calendar] Event created for ${from}: ${event.htmlLink} (location=${eventLocation ?? 'none'})`);
 
           await supabase.logEvent('info', 'calendar', `Visit scheduled for ${from}`, {
             event_id: event.eventId,
@@ -673,9 +688,33 @@ Responda CURTO, maximo 2 paragrafos.`,
       case 'document':
         await handleDocumentMessage(msg.from, msg.messageId, msg.content);
         break;
-      case 'location':
-        await handleTextMessage(msg.from, `[Cliente compartilhou localizacao: ${msg.content}]`);
+      case 'location': {
+        try {
+          const parsed = JSON.parse(msg.content) as { lat?: number; lng?: number };
+          if (typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
+            const coords = `${parsed.lat.toFixed(6)},${parsed.lng.toFixed(6)}`;
+            const mapsUrl = `https://www.google.com/maps?q=${coords}`;
+            // Persist on the lead so Eva can use in schedule_visit later
+            const existing = await supabase.getLeadByPhone(msg.from);
+            const mergedEnergy = {
+              ...(existing?.energy_data as Record<string, unknown> | undefined ?? {}),
+              shared_coordinates: coords,
+              shared_maps_url: mapsUrl,
+            };
+            await supabase.upsertLead({ phone: msg.from, energy_data: mergedEnergy });
+            console.log(`[location] Saved coords for ${msg.from}: ${coords}`);
+            await handleTextMessage(
+              msg.from,
+              `[O cliente acabou de compartilhar a localizacao exata pelo WhatsApp. Coordenadas: ${coords}. Link do Maps: ${mapsUrl}. Use essas coordenadas no campo client_coordinates quando for agendar a visita. Agora pergunte o endereco textual (rua/numero/bairro) pra complementar, caso ainda nao tenha.]`,
+            );
+          } else {
+            await handleTextMessage(msg.from, `[Cliente compartilhou localizacao mas nao foi possivel ler as coordenadas.]`);
+          }
+        } catch {
+          await handleTextMessage(msg.from, `[Cliente compartilhou localizacao: ${msg.content}]`);
+        }
         break;
+      }
       default:
         console.log(`[router] Unknown message type "${msg.type}" from ${msg.from}`);
     }
