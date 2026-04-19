@@ -12,6 +12,7 @@ import { VisionAnalyzer } from './modules/vision.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { LearningModule } from './modules/learning.js';
 import { FollowupModule } from './modules/followup.js';
+import { ingestCanalSolar } from './modules/canal-solar.js';
 import { buildHealthStatus } from './health.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -601,6 +602,25 @@ Responda CURTO, maximo 2 paragrafos.`,
     setTimeout(() => followup.processFollowups(), 5 * 60 * 1000);
     console.log('[followup] Follow-up scheduler started (checks every 1 hour)');
   }
+
+  // Canal Solar ingestion (every 3 days)
+  const knowledgeDir = join(__dirname, '..', 'conhecimento');
+  const runCanalSolarIngestion = async (force = false) => {
+    try {
+      console.log('[canal-solar] Starting ingestion...');
+      const result = await ingestCanalSolar(knowledgeDir, force);
+      if (result.skipped) {
+        console.log(`[canal-solar] Skipped: ${result.reason}`);
+      } else {
+        console.log(`[canal-solar] Ingested ${result.articlesFetched} articles -> ${result.outputPath}`);
+      }
+    } catch (err) {
+      console.error('[canal-solar] Ingestion failed:', (err as Error).message);
+    }
+  };
+  setTimeout(() => runCanalSolarIngestion(false), 2 * 60 * 1000);
+  setInterval(() => runCanalSolarIngestion(true), 3 * 24 * 60 * 60 * 1000);
+  console.log('[canal-solar] Scheduler started (every 3 days)');
 
   app.listen(config.port, () => {
     console.log(`[server] Listening on port ${config.port}`);
