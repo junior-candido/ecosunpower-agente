@@ -333,6 +333,36 @@ async function main() {
 
         try {
           const endISO = new Date(new Date(startISO).getTime() + durationMinutes * 60000).toISOString();
+
+          // Business hours check (America/Sao_Paulo): Mon-Fri, 08:00-16:00
+          const fmt = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Sao_Paulo',
+            weekday: 'short',
+            hour: 'numeric',
+            minute: 'numeric',
+            hour12: false,
+          });
+          const parts = fmt.formatToParts(new Date(startISO));
+          const weekday = parts.find((p) => p.type === 'weekday')?.value ?? '';
+          const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+          const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+
+          const endParts = fmt.formatToParts(new Date(new Date(startISO).getTime() + durationMinutes * 60000));
+          const endHour = Number(endParts.find((p) => p.type === 'hour')?.value ?? '0');
+          const endMinute = Number(endParts.find((p) => p.type === 'minute')?.value ?? '0');
+
+          const isWeekday = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].includes(weekday);
+          const startsInRange = (hour > 8) || (hour === 8 && minute >= 0);
+          const endsInRange = (endHour < 16) || (endHour === 16 && endMinute === 0);
+          const inBusinessHours = hour >= 8 && (endHour < 16 || (endHour === 16 && endMinute === 0));
+
+          if (!isWeekday || !startsInRange || !endsInRange || !inBusinessHours) {
+            const msg = 'ops, so consigo agendar de segunda a sexta, das 8h as 16h. pode ser outro dia ou horario dentro desse intervalo?';
+            if (!isSandbox) await sendText(from, msg);
+            console.log(`[calendar] Outside business hours for ${from} at ${startISO} (weekday=${weekday}, ${hour}:${minute}-${endHour}:${endMinute})`);
+            break;
+          }
+
           const available = await calendar.isAvailable(startISO, endISO);
 
           if (!available) {
