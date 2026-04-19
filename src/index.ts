@@ -348,9 +348,11 @@ async function main() {
           session_status: 'completed',
         });
 
-        const lead = await supabase.getLeadByPhone(from);
-        const contactTypeLabel = lead?.contact_type ? ` (${lead.contact_type})` : '';
-        const nameLabel = lead?.name ? ` - ${lead.name}` : '';
+        const lead = await supabase.getLeadByPhone(from) as (Record<string, unknown> | null);
+        const contactType = lead?.contact_type as string | undefined;
+        const contactTypeLabel = contactType ? ` (${contactType})` : '';
+        const leadName = lead?.name as string | undefined;
+        const nameLabel = leadName ? ` - ${leadName}` : '';
         const transferMsg = `🔔 TRANSFERENCIA DE ATENDIMENTO${contactTypeLabel}\n\nContato: ${from}${nameLabel}\n\nMotivo:\n${(action.data as Record<string, string>).reason ?? 'Solicitado pelo cliente'}\n\nVoce pode responder direto por aqui. A Eva fica em pausa nesse chat.`;
         if (!isSandbox) {
           await sendText(config.engineerPhone, transferMsg);
