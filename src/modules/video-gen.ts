@@ -48,9 +48,15 @@ export class VideoGenerator {
       body: JSON.stringify({ input }),
     });
 
-    let prediction = await res.json() as Prediction;
+    const rawBody = await res.text();
+    let prediction: Prediction;
+    try {
+      prediction = JSON.parse(rawBody) as Prediction;
+    } catch {
+      throw new Error(`Replicate video create failed [${res.status}]: ${rawBody.slice(0, 500)}`);
+    }
     if (!res.ok) {
-      throw new Error(`Replicate video create failed: ${prediction.error ?? res.statusText}`);
+      throw new Error(`Replicate video create failed [${res.status}]: ${prediction.error ?? rawBody.slice(0, 500)}`);
     }
 
     const deadline = Date.now() + 300000; // 5 min
