@@ -47,7 +47,13 @@ async function main() {
   if (calendar) {
     console.log('[calendar] Google Calendar integration enabled');
   } else {
-    console.log('[calendar] Google Calendar disabled (missing env vars)');
+    const missing = [
+      !config.googleClientId && 'GOOGLE_CLIENT_ID',
+      !config.googleClientSecret && 'GOOGLE_CLIENT_SECRET',
+      !config.googleRefreshToken && 'GOOGLE_REFRESH_TOKEN',
+      !config.googleCalendarId && 'GOOGLE_CALENDAR_ID',
+    ].filter(Boolean).join(', ');
+    console.log(`[calendar] Google Calendar disabled. Missing env vars: ${missing}`);
   }
 
   // Wrapped sendText: tracks bot-sent message IDs so Junior's typed messages can be distinguished
