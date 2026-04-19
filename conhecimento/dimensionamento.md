@@ -338,9 +338,10 @@ O sistema fotovoltaico e GERACAO, nao e CARGA!
 - Consumo mensal em kWh (da conta de luz ou calculo NASA)
 
 ### Passo 2: Calcular potencia necessaria do sistema
-- Potencia kWp = consumo_kwh / (irradiacao x 30 x 0.82)
+- Potencia kWp = consumo_kwh / (irradiacao x 30 x 0.80)
 - Irradiacao media BSB/GO: 5.2 kWh/m2/dia
-- Fator de performance: 0.82
+- Fator de performance: 0.80 (padrao Ecosunpower: considera 20% de perdas totais
+  — cabos, inversor, temperatura, sujeira, mismatch, disponibilidade)
 
 ### Passo 3: Escolher quantidade de paineis
 - Qtd paineis = potencia_kwp x 1000 / potencia_painel_w
@@ -370,8 +371,8 @@ O sistema fotovoltaico e GERACAO, nao e CARGA!
 Cliente em Brasilia, conta de R$900, consumo ~620 kWh/mes
 Padrao atual: monofasico 40A (220V) = ~8.8kW disponivel
 
-1. Potencia: 620 / (5.2 x 30 x 0.82) = 4.85 kWp
-2. Com paineis Trina 720W: 4850 / 720 = 6.7 → **7 paineis**
+1. Potencia: 620 / (5.2 x 30 x 0.80) = 4.97 kWp
+2. Com paineis Trina 720W: 4970 / 720 = 6.9 → **7 paineis**
 3. Potencia total: 7 x 720W = **5040Wp**
 4. Inversor Huawei SUN2000-5KTL-L1 (5kW): oversize = 5040/5000 = 1.008x ✅
 5. Padrao: inversor 5kW < 8.8kW disponivel → **NAO precisa mudar padrao!** ✅

@@ -15,25 +15,27 @@ O dimensionamento sempre parte do consumo do cliente.
 - Identificar padrao de ligacao (monofasico, bifasico, trifasico)
 - Considerar taxa minima da concessionaria
 - Avaliar irradiacao solar da regiao
-- Aplicar perdas do sistema (15% a 25%)
+- **Aplicar SEMPRE 20% de perdas totais no dimensionamento (fator 0.80)**
+  — padrao Ecosunpower: contempla perdas de cabos, inversor, temperatura,
+  sujeira, mismatch, disponibilidade e envelhecimento.
 
 ### Formula base
 
-Potencia do sistema (kWp) = Consumo mensal (kWh) / (HSP x 30 x eficiencia)
+Potencia do sistema (kWp) = Consumo mensal (kWh) / (HSP x 30 x 0.80)
 
 Onde:
-- HSP = horas de sol pleno (media da regiao, Brasilia/Goias ~5.2)
-- eficiencia do sistema = 0.75 a 0.85
+- HSP = horas de sol pleno (Brasilia/Goias ~5.2)
+- 0.80 = fator de performance padrao Ecosunpower (20% de perdas)
 
 ---
 
 ## 2. Estimativa de geracao
 
-Geracao mensal (kWh/mes) = Potencia (kWp) x HSP x 30 x eficiencia
+Geracao mensal (kWh/mes) = Potencia (kWp) x HSP x 30 x 0.80
 
-### Exemplo pratico
-- Cliente consome 600 kWh/mes
-- Sistema estimado: 600 / (5 x 30 x 0.8) = **5 kWp**
+### Exemplo pratico (padrao 20% de perdas)
+- Cliente consome 600 kWh/mes, HSP = 5.0
+- Sistema estimado: 600 / (5.0 x 30 x 0.80) = **5 kWp**
 
 ---
 
