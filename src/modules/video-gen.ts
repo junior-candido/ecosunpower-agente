@@ -43,7 +43,6 @@ export class VideoGenerator {
       headers: {
         Authorization: `Bearer ${this.token}`,
         'Content-Type': 'application/json',
-        Prefer: 'wait=60',
       },
       body: JSON.stringify({ input }),
     });
