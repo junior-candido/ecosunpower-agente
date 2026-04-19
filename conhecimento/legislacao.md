@@ -10,7 +10,9 @@ o Programa de Energia Renovavel Social (PERS).
 ### Principais pontos
 - Garante DIREITO ADQUIRIDO para quem ja tinha sistema (GD1) ate 2045
 - Criou cronograma de transicao para cobranca do Fio B (GD2)
-- Definiu regras claras para autoconsumo remoto e geracao compartilhada
+- Definiu regras claras para as 5 modalidades (ver modalidades-compensacao.md):
+  autoconsumo local, autoconsumo remoto, EMUC, geracao compartilhada/cooperativa,
+  condominio solar
 - Criou categorias GD1, GD2 e GD3
 - Proibiu cobranca de ICMS sobre a energia compensada em varios estados
 - Estabeleceu prazo de ate 120 dias para conexao do sistema pela distribuidora
@@ -27,6 +29,12 @@ Quem instalou sistema solar ate 06/01/2023:
 - A tarifa de energia aumenta todo ano (reajuste medio de 8-10%/ano)
 - O sistema se paga em 3-5 anos e dura 25+ anos
 - Quanto mais esperar, mais Fio B paga (100% a partir de 2029)
+
+## Resolucao Normativa ANEEL 482/2012 (revogada, mas historica)
+Foi a primeira resolucao a permitir micro e minigeracao distribuida no Brasil.
+Criou o Sistema de Compensacao de Energia (SCEE). Hoje esta revogada e
+substituida pela RN 1.000/2021 + Lei 14.300/2022 + RN 1.059/2023.
+Sistemas homologados ate 07/01/2023 seguem no regime GD1 (baseado na RN 482).
 
 ## Resolucao Normativa ANEEL 1.000/2021
 
