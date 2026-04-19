@@ -38,24 +38,43 @@ export class VideoGenerator {
       prompt: opts.prompt ?? 'subtle camera movement, cinematic, warm natural light',
     };
 
-    const res = await fetch(`${REPLICATE_API}/models/${MODEL}/predictions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ input }),
-    });
+    // Retry loop to handle 429 throttling (Replicate reduces limits below $5 credit)
+    const maxRetries = 5;
+    let prediction: Prediction | undefined;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const res = await fetch(`${REPLICATE_API}/models/${MODEL}/predictions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ input }),
+      });
+      const rawBody = await res.text();
 
-    const rawBody = await res.text();
-    let prediction: Prediction;
-    try {
-      prediction = JSON.parse(rawBody) as Prediction;
-    } catch {
-      throw new Error(`Replicate video create failed [${res.status}]: ${rawBody.slice(0, 500)}`);
+      if (res.status === 429 && attempt < maxRetries) {
+        let retryAfter = 10;
+        try {
+          const parsed = JSON.parse(rawBody) as { retry_after?: number };
+          if (parsed.retry_after) retryAfter = parsed.retry_after + 1;
+        } catch { /* use default */ }
+        console.warn(`[video-gen] Rate limited. Retrying in ${retryAfter}s (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise((r) => setTimeout(r, retryAfter * 1000));
+        continue;
+      }
+
+      try {
+        prediction = JSON.parse(rawBody) as Prediction;
+      } catch {
+        throw new Error(`Replicate video create failed [${res.status}]: ${rawBody.slice(0, 500)}`);
+      }
+      if (!res.ok) {
+        throw new Error(`Replicate video create failed [${res.status}]: ${prediction.error ?? rawBody.slice(0, 500)}`);
+      }
+      break;
     }
-    if (!res.ok) {
-      throw new Error(`Replicate video create failed [${res.status}]: ${prediction.error ?? rawBody.slice(0, 500)}`);
+    if (!prediction) {
+      throw new Error('Replicate video create failed: exhausted retries on 429');
     }
 
     const deadline = Date.now() + 300000; // 5 min
