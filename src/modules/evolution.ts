@@ -105,34 +105,38 @@ export class EvolutionService {
   }
 
   async sendMedia(to: string, mediaUrl: string, caption: string, mediatype: 'image' | 'video' = 'image'): Promise<{ messageId: string }> {
-    const res = await fetch(
-      `${this.baseUrl}/message/sendMedia/${this.instance}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: this.apiKey,
-        },
-        body: JSON.stringify({
-          number: to,
-          mediatype,
-          media: mediaUrl,
-          caption,
-        }),
-      },
-    );
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`Evolution sendMedia failed: ${res.status} ${err}`);
-    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
     try {
+      const res = await fetch(
+        `${this.baseUrl}/message/sendMedia/${this.instance}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: this.apiKey,
+          },
+          body: JSON.stringify({
+            number: to,
+            mediatype,
+            media: mediaUrl,
+            caption,
+            fileName: 'post.jpg',
+          }),
+          signal: controller.signal,
+        },
+      );
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Evolution sendMedia ${res.status}: ${err}`);
+      }
       const data = await res.json() as Record<string, unknown>;
       const key = (data.key ?? (data as { data?: { key?: Record<string, string> } }).data?.key) as
         | Record<string, string>
         | undefined;
       return { messageId: key?.id ?? '' };
-    } catch {
-      return { messageId: '' };
+    } finally {
+      clearTimeout(timer);
     }
   }
 

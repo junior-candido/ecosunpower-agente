@@ -909,9 +909,15 @@ Responda CURTO, maximo 2 paragrafos.`,
 
   // Send a single draft to Junior's WhatsApp with image + caption + action links
   async function sendDraftToJunior(draftId: string) {
-    if (!marketing || !meta) return;
+    if (!marketing || !meta) {
+      console.warn(`[marketing] sendDraftToJunior skipped: marketing=${!!marketing} meta=${!!meta}`);
+      return;
+    }
     const draft = await marketing.getDraft(draftId);
-    if (!draft || draft.status !== 'pending_approval') return;
+    if (!draft || draft.status !== 'pending_approval') {
+      console.warn(`[marketing] sendDraftToJunior skipped: status=${draft?.status}`);
+      return;
+    }
 
     const baseUrl = process.env.PUBLIC_BASE_URL
       ?? 'https://aula-aprendendo-agente-whatsapp.oigz6g.easypanel.host';
@@ -931,11 +937,23 @@ Responda CURTO, maximo 2 paragrafos.`,
       `❌ Descartar: ${discardLink}`,
     ].join('\n');
 
+    console.log(`[marketing] Trying to send draft ${draft.id} to ${config.engineerPhone}...`);
     try {
       await evolution.sendMedia(config.engineerPhone, draft.image_url, caption, 'image');
-      console.log(`[marketing] Sent draft ${draft.id} to Junior`);
+      console.log(`[marketing] ✓ Sent draft ${draft.id} (image) to Junior`);
+      return;
     } catch (err) {
-      console.error('[marketing] Failed to send draft to WhatsApp:', err);
+      console.error(`[marketing] sendMedia failed for ${draft.id}:`, (err as Error).message);
+    }
+
+    // Fallback: send as plain text with image URL inline so at least something arrives
+    console.log(`[marketing] Falling back to text-only for draft ${draft.id}`);
+    try {
+      const textFallback = `${caption}\n\n🖼 Imagem: ${draft.image_url}`;
+      await sendText(config.engineerPhone, textFallback);
+      console.log(`[marketing] ✓ Sent draft ${draft.id} (text fallback) to Junior`);
+    } catch (err2) {
+      console.error(`[marketing] Text fallback also failed for ${draft.id}:`, (err2 as Error).message);
     }
   }
 
