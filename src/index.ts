@@ -10,6 +10,7 @@ import { calculateSolarEstimate, formatEstimateForPrompt } from './modules/solar
 import { Transcriber } from './modules/transcriber.js';
 import { VisionAnalyzer } from './modules/vision.js';
 import Anthropic from '@anthropic-ai/sdk';
+import { LearningModule } from './modules/learning.js';
 import { buildHealthStatus } from './health.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -28,6 +29,8 @@ async function main() {
   const vision = new VisionAnalyzer(config.anthropicApiKey);
   const transcriber = config.openaiApiKey ? new Transcriber(config.openaiApiKey) : null;
   const knowledgeBase = new KnowledgeBase(join(__dirname, '..', 'conhecimento'));
+
+  const learning = new LearningModule(supabase.getClient());
 
   if (!transcriber) {
     console.warn('[init] OPENAI_API_KEY not set — audio transcription disabled');
@@ -156,6 +159,14 @@ async function main() {
         is_new: isNewLead,
         action: response.action?.action ?? null,
       });
+
+      // Learn from conversation
+      const wasTransferred = response.action?.action === 'transfer_to_human';
+      learning.analyzeConversation(
+        messagesToKeep.map(m => ({ role: m.role, content: m.content })),
+        leadId,
+        wasTransferred
+      ).catch(err => console.error('[learning] Error:', err));
 
     } catch (error) {
       console.error(`[handler] Error processing message from ${from}:`, error);
@@ -504,6 +515,16 @@ Responda CURTO, maximo 2 paragrafos.`,
     });
 
     res.status(200).json({ status: 'queued' });
+  });
+
+  // Learning report endpoint
+  app.get('/learning', async (_req, res) => {
+    try {
+      const report = await learning.generateReport();
+      res.type('text/plain').send(report);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to generate report' });
+    }
   });
 
   // Health check

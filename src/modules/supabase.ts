@@ -48,6 +48,10 @@ export class SupabaseService {
     this.client = createClient(config.supabaseUrl, config.supabaseServiceKey);
   }
 
+  getClient(): SupabaseClient {
+    return this.client;
+  }
+
   async upsertLead(data: LeadData): Promise<{ id: string }> {
     const { data: result, error } = await this.client
       .from('leads')
