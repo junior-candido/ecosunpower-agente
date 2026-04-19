@@ -7,6 +7,7 @@ RUN npm install
 
 COPY . .
 RUN npm run build
+RUN cp -r src/prompts dist/prompts
 
 EXPOSE 3000
 
