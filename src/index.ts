@@ -170,11 +170,15 @@ async function main() {
         conversation.qualification_step
       );
 
-      // Send response
+      // Send response (possibly split across multiple WhatsApp messages)
       if (!isSandbox) {
-        await sendText(from, response.displayText);
+        for (const part of response.displayMessages) {
+          await sendText(from, part);
+        }
       } else {
-        console.log(`[sandbox] Would send to ${from}: ${response.displayText}`);
+        for (const part of response.displayMessages) {
+          console.log(`[sandbox] Would send to ${from}: ${part}`);
+        }
       }
 
       // Update conversation

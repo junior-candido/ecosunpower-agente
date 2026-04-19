@@ -16,6 +16,7 @@ interface ActionPayload {
 export interface BrainResponse {
   text: string;
   displayText: string;
+  displayMessages: string[];
   action: ActionPayload | null;
   actions: ActionPayload[];
 }
@@ -60,9 +61,11 @@ export class Brain {
       .join('');
 
     const actions = this.parseActions(text);
+    const displayText = this.getDisplayText(text);
     return {
       text,
-      displayText: this.getDisplayText(text),
+      displayText,
+      displayMessages: this.getDisplayMessages(displayText),
       action: actions[0] ?? null,
       actions,
     };
@@ -133,5 +136,21 @@ export class Brain {
       .replace(/```json\s*[\s\S]*?\s*```/g, '')
       .replace(/\n{3,}/g, '\n')
       .trim();
+  }
+
+  // Splits a response into WhatsApp-sized messages. If Eva used the
+  // [MENSAGEM N] markers, split on those. Otherwise return as a single
+  // message for backwards compatibility.
+  getDisplayMessages(cleanedText: string): string[] {
+    const text = cleanedText.trim();
+    if (!text) return [];
+    const markerRe = /\[MENSAGEM\s*\d+\]/gi;
+    if (!markerRe.test(text)) return [text];
+
+    const parts = text.split(/\[MENSAGEM\s*\d+\]/gi);
+    const msgs = parts
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    return msgs.length > 0 ? msgs : [text];
   }
 }
