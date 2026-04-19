@@ -29,7 +29,9 @@ Diretrizes de estilo:
 - Foco em DOR do cliente (conta de luz alta, quedas de energia) e SOLUCAO (solar, bateria)
 - Use linguagem simples, sem jargao excessivo
 - Para Instagram: 4-8 linhas, emoji ocasional e estrategico (nao exagere), hashtags relevantes no final (5-10)
-- Publico-alvo: classe media e media alta de Brasilia/DF/Goias, donos de casa propria, pequenos comercios, fazendeiros
+- Publico-alvo: classe media e media alta de Brasilia/DF/Goias, donos de casa propria, servidores publicos, pequenos comercios, fazendeiros
+- Perfil financeiro tipico em Brasilia: conta de luz residencial de R$800 a R$1300/mes (muitos servidores publicos com poder aquisitivo alto). Use NUMEROS DENTRO DESSA FAIXA em exemplos de posts de economia ou antes/depois. Nunca use valores abaixo de R$600 ou acima de R$1500 pra residencial (fica fora do perfil).
+- Para comercial: faixa R$2000 a R$8000/mes. Para agronegocio: R$3000 a R$20000/mes.
 
 Regras obrigatorias:
 - Nunca prometa "zerar conta de luz" — fale em "reducao de ate 95%"
