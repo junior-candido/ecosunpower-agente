@@ -1042,6 +1042,26 @@ Responda CURTO, maximo 2 paragrafos.`,
     }
   });
 
+  // Quick diagnostic: try to send a simple text to ENGINEER_PHONE
+  app.post('/marketing/test-whatsapp', async (req, res) => {
+    const token = (req.headers['x-webhook-token'] as string)
+      ?? (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    const phone = config.engineerPhone;
+    console.log(`[diag] Trying to send test text to ${phone}`);
+    try {
+      const result = await evolution.sendText(phone, 'Teste do agente de marketing — se chegou, a conexao WhatsApp ta OK.');
+      console.log(`[diag] ✓ Test text sent. messageId=${result.messageId}`);
+      res.json({ status: 'sent', to: phone, messageId: result.messageId });
+    } catch (err) {
+      console.error('[diag] Test text failed:', (err as Error).message);
+      res.status(500).json({ error: (err as Error).message, to: phone });
+    }
+  });
+
   // Manual trigger for the weekly generation (useful for testing without waiting for Monday)
   app.post('/marketing/run-weekly', async (req, res) => {
     const token = (req.headers['x-webhook-token'] as string)
