@@ -192,7 +192,7 @@ async function main() {
       }
       console.log(`[router] Unsupported message type "${msg.type}" from ${msg.from}`);
     }
-  });
+  }, config.redisPassword);
 
   // Express server
   const app = express();

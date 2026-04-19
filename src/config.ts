@@ -15,6 +15,7 @@ const configSchema = z.object({
   supabaseServiceKey: z.string().min(1),
   redisHost: z.string().default('127.0.0.1'),
   redisPort: z.coerce.number().default(6379),
+  redisPassword: z.string().optional(),
   engineerPhone: z.string().min(1),
   engineerName: z.string().min(1),
 });
@@ -34,6 +35,7 @@ export function loadConfig(): Config {
     supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY,
     redisHost: process.env.REDIS_HOST,
     redisPort: process.env.REDIS_PORT,
+    redisPassword: process.env.REDIS_PASSWORD || undefined,
     engineerPhone: process.env.ENGINEER_PHONE,
     engineerName: process.env.ENGINEER_NAME,
   });

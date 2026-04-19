@@ -20,10 +20,10 @@ export class MessageQueue {
   private redis: any;
   private processedIds: Set<string> = new Set();
 
-  constructor(redisHost: string, redisPort: number, handler: MessageHandler) {
-    const connection = { host: redisHost, port: redisPort };
+  constructor(redisHost: string, redisPort: number, handler: MessageHandler, redisPassword?: string) {
+    const connection = { host: redisHost, port: redisPort, password: redisPassword };
 
-    this.redis = new IORedis({ host: redisHost, port: redisPort, maxRetriesPerRequest: null });
+    this.redis = new IORedis({ host: redisHost, port: redisPort, password: redisPassword, maxRetriesPerRequest: null });
 
     this.queue = new Queue(QUEUE_NAME, { connection });
 
