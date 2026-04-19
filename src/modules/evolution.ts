@@ -121,7 +121,7 @@ export class EvolutionService {
             mediatype,
             media: mediaUrl,
             caption,
-            fileName: 'post.jpg',
+            fileName: mediatype === 'video' ? 'post.mp4' : 'post.jpg',
           }),
           signal: controller.signal,
         },
