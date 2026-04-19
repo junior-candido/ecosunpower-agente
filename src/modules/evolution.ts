@@ -1,7 +1,7 @@
 import type { Config } from '../config.js';
 
 export interface IncomingMessage {
-  type: 'text' | 'audio' | 'image' | 'location';
+  type: 'text' | 'audio' | 'image' | 'location' | 'document';
   from: string;
   content: string;
   timestamp: Date;
@@ -74,6 +74,11 @@ export class EvolutionService {
     if (message.imageMessage) {
       const image = message.imageMessage as Record<string, string>;
       return { type: 'image', from, content: image.url ?? '', timestamp: new Date(timestamp * 1000), messageId };
+    }
+
+    if (message.documentMessage) {
+      const doc = message.documentMessage as Record<string, string>;
+      return { type: 'document', from, content: doc.mimetype ?? '', timestamp: new Date(timestamp * 1000), messageId };
     }
 
     if (message.locationMessage) {

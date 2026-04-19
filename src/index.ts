@@ -9,6 +9,7 @@ import { DossierBuilder } from './modules/dossier.js';
 import { calculateSolarEstimate, formatEstimateForPrompt } from './modules/solar.js';
 import { Transcriber } from './modules/transcriber.js';
 import { VisionAnalyzer } from './modules/vision.js';
+import Anthropic from '@anthropic-ai/sdk';
 import { buildHealthStatus } from './health.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -347,6 +348,103 @@ async function main() {
     }
   }
 
+  // Handle document messages (PDF)
+  async function handleDocumentMessage(from: string, messageId: string, mimetype: string) {
+    try {
+      if (!mimetype.includes('pdf')) {
+        const msg = 'Recebi o arquivo! Por enquanto consigo analisar PDFs e imagens. Se for uma conta de luz, pode mandar como foto ou PDF 😊';
+        if (!isSandbox) await evolution.sendText(from, msg);
+        return;
+      }
+
+      const lead = await supabase.getLeadByPhone(from);
+      const context = lead?.name
+        ? `Cliente: ${lead.name}, Cidade: ${lead.city ?? 'nao informada'}, Perfil: ${lead.profile ?? 'indefinido'}`
+        : 'Cliente novo, ainda sem dados coletados';
+
+      if (!isSandbox) await evolution.sendText(from, 'Recebi o PDF! Analisando... 📄');
+
+      // Download PDF via Evolution API
+      const media = await evolution.getMediaBase64(messageId);
+      if (!media) {
+        const msg = 'Nao consegui abrir o PDF. Pode enviar novamente? 📄';
+        if (!isSandbox) await evolution.sendText(from, msg);
+        return;
+      }
+
+      // Use Claude to analyze the PDF
+      const analysisResponse = await new Anthropic({ apiKey: config.anthropicApiKey }).messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'document',
+                source: { type: 'base64', media_type: 'application/pdf', data: media.base64 },
+              },
+              {
+                type: 'text',
+                text: `Voce e a Eva, consultora de energia solar da Ecosunpower.
+O cliente enviou este PDF. Provavelmente e uma conta de luz.
+
+Extraia e apresente de forma curta:
+- Distribuidora (Neoenergia/CEB ou Equatorial/CELG)
+- Consumo em kWh
+- Valor em R$
+- Grupo (A ou B)
+- Demanda contratada (se Grupo A)
+
+Confirme os dados com o cliente.
+Inclua JSON: \`\`\`json\n{"action":"update_lead","data":{"energy_data":{"monthly_bill":VALOR,"consumption_kwh":CONSUMO,"group":"B"}}}\n\`\`\`
+
+Se NAO for conta de luz, descreva o que e e responda naturalmente.
+Contexto: ${context}
+Responda CURTO, maximo 2 paragrafos.`,
+              },
+            ],
+          },
+        ],
+      });
+
+      const analysisText = analysisResponse.content
+        .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+        .map(block => block.text)
+        .join('');
+
+      const displayText = brain.getDisplayText(analysisText);
+      const action = brain.parseAction(analysisText);
+
+      if (!isSandbox) {
+        await evolution.sendText(from, displayText);
+      } else {
+        console.log(`[sandbox] PDF analysis for ${from}: ${displayText}`);
+      }
+
+      // Save to conversation
+      if (lead) {
+        const conversation = await supabase.getOrCreateConversation(lead.id);
+        const updatedMessages = [
+          ...conversation.messages,
+          { role: 'user' as const, content: '[Enviou um PDF]', timestamp: new Date().toISOString() },
+          { role: 'assistant' as const, content: analysisText, timestamp: new Date().toISOString() },
+        ];
+        await supabase.updateConversation(conversation.id, {
+          messages: updatedMessages.slice(-20),
+          message_count: conversation.message_count + 2,
+        });
+        if (action) await handleAction(action, lead.id, from, conversation.id);
+      }
+
+      await supabase.logEvent('info', 'document', `Analyzed PDF from ${from}`);
+    } catch (error) {
+      console.error(`[document] Error processing PDF from ${from}:`, error);
+      const msg = 'Nao consegui ler o PDF. Pode mandar como foto ou tentar novamente? 📸';
+      if (!isSandbox) await evolution.sendText(from, msg);
+    }
+  }
+
   // Initialize queue
   const queue = new MessageQueue(config.redisHost, config.redisPort, async (msg) => {
     switch (msg.type) {
@@ -359,8 +457,10 @@ async function main() {
       case 'image':
         await handleImageMessage(msg.from, msg.messageId);
         break;
+      case 'document':
+        await handleDocumentMessage(msg.from, msg.messageId, msg.content);
+        break;
       case 'location':
-        // Save location for future visit scheduling
         await handleTextMessage(msg.from, `[Cliente compartilhou localizacao: ${msg.content}]`);
         break;
       default:

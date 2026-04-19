@@ -3,7 +3,7 @@ import Redis from 'ioredis';
 const IORedis = Redis.default ?? Redis;
 
 export interface QueueMessage {
-  type: 'text' | 'audio' | 'image' | 'location';
+  type: 'text' | 'audio' | 'image' | 'location' | 'document';
   from: string;
   content: string;
   timestamp: string;
