@@ -18,25 +18,19 @@ async function main() {
 
   console.log(`[init] Starting Ecosunpower Agent (${config.nodeEnv} mode)`);
 
-  // Initialize services
   const evolution = new EvolutionService(config);
   const supabase = new SupabaseService(config);
   const brain = new Brain(config.anthropicApiKey);
   const knowledgeBase = new KnowledgeBase(join(__dirname, '..', 'conhecimento'));
 
-  // Load knowledge base
   knowledgeBase.load();
   if (knowledgeBase.isOverLimit()) {
-    console.warn('[knowledge] WARNING: knowledge base exceeds 15,000 token estimate. Consider reducing content.');
+    console.warn('[knowledge] WARNING: knowledge base exceeds 15,000 token estimate.');
   }
   console.log(`[knowledge] Loaded. Estimated tokens: ${knowledgeBase.getTokenEstimate()}`);
 
-  // Watch for changes
   knowledgeBase.startWatching(() => {
     console.log('[knowledge] Reloaded after file change');
-    if (knowledgeBase.isOverLimit()) {
-      console.warn('[knowledge] WARNING: knowledge base exceeds 15,000 token estimate');
-    }
   });
 
   // Message handler
@@ -53,25 +47,50 @@ async function main() {
       const leadId = lead.id;
       const conversation = await supabase.getOrCreateConversation(leadId);
 
+      // Build history from conversation messages
       const history = (conversation.messages ?? []).map(m => ({
         role: m.role as 'user' | 'assistant',
         content: m.content,
       }));
 
+      // Build lead context so Claude knows what was already collected
+      let leadContext = '';
+      if (!isNewLead && lead.name) {
+        leadContext = '\n\n## Dados ja coletados deste cliente (NAO pergunte de novo)\n';
+        if (lead.name) leadContext += `- Nome: ${lead.name}\n`;
+        if (lead.city) leadContext += `- Cidade: ${lead.city}\n`;
+        if (lead.profile && lead.profile !== 'indefinido') leadContext += `- Perfil: ${lead.profile}\n`;
+        if (lead.consent_given) leadContext += `- Consentimento LGPD: Sim (ja dado)\n`;
+        if (lead.energy_data && Object.keys(lead.energy_data).length > 0) {
+          const ed = lead.energy_data as Record<string, unknown>;
+          if (ed.monthly_bill) leadContext += `- Valor da conta: R$ ${ed.monthly_bill}/mes\n`;
+          if (ed.consumption_kwh) leadContext += `- Consumo: ${ed.consumption_kwh} kWh/mes\n`;
+          if (ed.group) leadContext += `- Grupo: ${ed.group}\n`;
+        }
+        if (lead.future_demand) leadContext += `- Demanda futura: ${lead.future_demand}\n`;
+        if (lead.opportunities && Object.keys(lead.opportunities).length > 0) {
+          const opp = lead.opportunities as Record<string, boolean>;
+          const identified = Object.entries(opp).filter(([, v]) => v).map(([k]) => k);
+          if (identified.length > 0) leadContext += `- Oportunidades: ${identified.join(', ')}\n`;
+        }
+      }
+
       const response = await brain.processMessage(
         text,
         history,
-        knowledgeBase.getContent(),
+        knowledgeBase.getContent() + leadContext,
         conversation.summary,
         conversation.qualification_step
       );
 
+      // Send response
       if (!isSandbox) {
         await evolution.sendText(from, response.displayText);
       } else {
         console.log(`[sandbox] Would send to ${from}: ${response.displayText}`);
       }
 
+      // Update conversation
       const updatedMessages = [
         ...conversation.messages,
         { role: 'user' as const, content: text, timestamp: new Date().toISOString() },
@@ -87,6 +106,7 @@ async function main() {
         qualification_step: conversation.qualification_step,
       });
 
+      // Handle actions from Claude
       if (response.action) {
         await handleAction(response.action, leadId, from, conversation.id);
       }
@@ -105,7 +125,7 @@ async function main() {
 
       const fallbackMsg = 'Estou com uma dificuldade tecnica. Um momento, por favor.';
       if (!isSandbox) {
-        try { await evolution.sendText(from, fallbackMsg); } catch { /* ignore send error */ }
+        try { await evolution.sendText(from, fallbackMsg); } catch { /* ignore */ }
       }
     }
   }
@@ -117,12 +137,26 @@ async function main() {
     conversationId: string
   ) {
     switch (action.action) {
-      case 'update_lead':
-        await supabase.upsertLead({
-          phone: from,
-          ...(action.data as { name?: string; city?: string; profile?: 'residencial' | 'comercial' | 'agronegocio' | 'indefinido' }),
-        });
+      case 'update_lead': {
+        // Save ALL data from Claude, not just limited fields
+        const leadUpdate: Record<string, unknown> = { phone: from };
+        const d = action.data;
+        if (d.name) leadUpdate.name = d.name;
+        if (d.city) leadUpdate.city = d.city;
+        if (d.profile) leadUpdate.profile = d.profile;
+        if (d.consent_given !== undefined) {
+          leadUpdate.consent_given = d.consent_given;
+          if (d.consent_given) leadUpdate.consent_date = new Date().toISOString();
+        }
+        if (d.energy_data) leadUpdate.energy_data = d.energy_data;
+        if (d.opportunities) leadUpdate.opportunities = d.opportunities;
+        if (d.future_demand) leadUpdate.future_demand = d.future_demand;
+        leadUpdate.status = 'qualificando';
+
+        await supabase.upsertLead(leadUpdate as unknown as Parameters<typeof supabase.upsertLead>[0]);
+        console.log(`[action] Updated lead ${from}:`, Object.keys(leadUpdate).join(', '));
         break;
+      }
 
       case 'qualification_complete': {
         await supabase.upsertLead({ phone: from, status: 'qualificado' });
@@ -160,6 +194,7 @@ async function main() {
             console.log(`[sandbox] Dossier for engineer:\n${dossierText}`);
           }
         }
+        console.log(`[action] Qualification complete for ${from}`);
         break;
       }
 
@@ -176,6 +211,7 @@ async function main() {
         } else {
           console.log(`[sandbox] Transfer to engineer:\n${transferMsg}`);
         }
+        console.log(`[action] Transfer to human for ${from}`);
         break;
       }
     }
@@ -212,6 +248,12 @@ async function main() {
     const parsed = evolution.parseWebhook(req.body);
     if (!parsed) {
       res.status(200).json({ status: 'ignored' });
+      return;
+    }
+
+    // Double check: ignore groups
+    if (parsed.from.includes('-') || parsed.from.length > 15) {
+      res.status(200).json({ status: 'ignored_group' });
       return;
     }
 
@@ -254,7 +296,6 @@ async function main() {
     res.status(httpStatus).json(status);
   });
 
-  // Start server
   app.listen(config.port, () => {
     console.log(`[server] Listening on port ${config.port}`);
     console.log(`[server] Webhook URL: http://localhost:${config.port}/webhook`);
