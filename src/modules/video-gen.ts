@@ -2,7 +2,7 @@
 // Takes a static image URL, returns a URL to a generated MP4 video.
 
 const REPLICATE_API = 'https://api.replicate.com/v1';
-const MODEL = 'luma/ray-flash-2-720p';
+const MODEL = 'kwaivgi/kling-v1.6-standard';
 
 export type VideoAspectRatio = '9:16' | '1:1' | '16:9' | '4:3' | '3:4';
 
@@ -31,12 +31,12 @@ export class VideoGenerator {
 
   async generate(opts: GenerateVideoOptions): Promise<{ url: string }> {
     const input: Record<string, unknown> = {
-      start_image_url: opts.imageUrl,
+      start_image: opts.imageUrl,
       aspect_ratio: opts.aspectRatio ?? '9:16',
-      duration: String(opts.duration ?? 5),
-      loop: opts.loop ?? false,
+      duration: opts.duration ?? 5,
+      cfg_scale: 0.5,
+      prompt: opts.prompt ?? 'subtle camera movement, cinematic, warm natural light',
     };
-    if (opts.prompt) input.prompt = opts.prompt;
 
     const res = await fetch(`${REPLICATE_API}/models/${MODEL}/predictions`, {
       method: 'POST',
