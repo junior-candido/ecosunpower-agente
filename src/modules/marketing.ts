@@ -50,7 +50,7 @@ Saida obrigatoria em JSON valido, sem markdown, sem comentarios:
   "topic": "string curta descrevendo o tema (5-10 palavras)",
   "topic_type": "objecao_desmistificada|dica_tecnica|economia_antes_depois|curiosidade_setor|lei_regulacao|comparativo",
   "caption": "o texto completo do post pronto pra Instagram/Facebook",
-  "image_prompt": "descricao EM INGLES da imagem ideal pra este post (para DALL-E). Deve sugerir: fotografico realista, familia brasileira feliz OU casa com paineis solares OU paisagem de Brasilia/cerrado com sol, cores vibrantes, composicao limpa. Nunca texto em portugues dentro da imagem."
+  "image_prompt": "descricao EM INGLES da imagem ideal (DALL-E 3). Regras criticas pra evitar rostos distorcidos: PREFIRA cenas SEM ROSTOS ou com NO MAXIMO UMA pessoa em primeiro plano bem visivel. Ideias boas: casa brasileira de classe media com paineis solares no telhado / contador de luz com moedas / paisagem do cerrado com usina solar / maos segurando conta de luz / gotas de dinheiro caindo em cofre / close em painel fotovoltaico refletindo sol / fazenda com paineis. EVITE grupos de pessoas, familias em segundo plano, multidoes, criancas. Quando incluir pessoa, seja UMA unica, frontal, proxima, nitida. Estilo: fotografico realista, cores quentes e vibrantes, composicao limpa, luz natural de sol. Nunca inclua texto em nenhum idioma dentro da imagem."
 }`;
 
 export class MarketingService {
@@ -93,10 +93,11 @@ export class MarketingService {
       throw new Error(`Invalid JSON from Claude: ${(err as Error).message}`);
     }
 
-    // 2) Generate image via DALL-E
+    // 2) Generate image via DALL-E (HD quality for better faces)
     const { url: tempUrl, revisedPrompt } = await this.imageGen.generate({
       prompt: parsed.image_prompt,
       size: '1024x1024',
+      quality: 'hd',
     });
 
     // 3) Download and upload to Supabase Storage for permanent URL
