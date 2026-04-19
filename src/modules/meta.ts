@@ -103,6 +103,89 @@ export class MetaService {
     };
   }
 
+  // Publish a video to the Facebook Page
+  async publishFacebookVideo(videoUrl: string, caption: string): Promise<MetaPublishResult> {
+    const pageToken = await this.getPageToken();
+    const res = await fetch(`${GRAPH_API}/${this.pageId}/videos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        file_url: videoUrl,
+        description: caption,
+        published: true,
+        access_token: pageToken,
+      }),
+    });
+    const data = await res.json() as { id?: string; error?: { message: string } };
+    if (!res.ok || data.error) {
+      throw new Error(`Facebook video publish failed: ${data.error?.message ?? res.statusText}`);
+    }
+    return {
+      platform: 'facebook',
+      id: data.id ?? '',
+      permalink: data.id ? `https://www.facebook.com/${data.id}` : undefined,
+    };
+  }
+
+  // Publish a Reel to Instagram. 9:16 vertical video, up to 90s. 2-step upload.
+  async publishInstagramReel(videoUrl: string, caption: string): Promise<MetaPublishResult> {
+    const pageToken = await this.getPageToken();
+    const containerRes = await fetch(`${GRAPH_API}/${this.instagramId}/media`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        media_type: 'REELS',
+        video_url: videoUrl,
+        caption,
+        share_to_feed: true,
+        access_token: pageToken,
+      }),
+    });
+    const containerData = await containerRes.json() as { id?: string; error?: { message: string } };
+    if (!containerRes.ok || !containerData.id) {
+      throw new Error(`Instagram Reel container failed: ${containerData.error?.message ?? containerRes.statusText}`);
+    }
+
+    // Poll status until FINISHED (Reels need processing time)
+    const deadline = Date.now() + 180000;
+    let status = 'IN_PROGRESS';
+    while (status !== 'FINISHED' && status !== 'ERROR' && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 5000));
+      const statusRes = await fetch(
+        `${GRAPH_API}/${containerData.id}?fields=status_code&access_token=${pageToken}`,
+      );
+      const statusData = await statusRes.json() as { status_code?: string };
+      status = statusData.status_code ?? 'IN_PROGRESS';
+    }
+    if (status !== 'FINISHED') {
+      throw new Error(`Instagram Reel processing did not finish (status=${status})`);
+    }
+
+    const publishRes = await fetch(`${GRAPH_API}/${this.instagramId}/media_publish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        creation_id: containerData.id,
+        access_token: pageToken,
+      }),
+    });
+    const publishData = await publishRes.json() as { id?: string; error?: { message: string } };
+    if (!publishRes.ok || !publishData.id) {
+      throw new Error(`Instagram Reel publish failed: ${publishData.error?.message ?? publishRes.statusText}`);
+    }
+
+    const permalinkRes = await fetch(
+      `${GRAPH_API}/${publishData.id}?fields=permalink&access_token=${this.token}`,
+    );
+    const permalinkData = await permalinkRes.json() as { permalink?: string };
+
+    return {
+      platform: 'instagram',
+      id: publishData.id,
+      permalink: permalinkData.permalink,
+    };
+  }
+
   // Publish a carousel (2+ images) to Instagram
   async publishInstagramCarousel(imageUrls: string[], caption: string): Promise<MetaPublishResult> {
     const pageToken = await this.getPageToken();

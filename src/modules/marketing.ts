@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { randomBytes } from 'crypto';
 import { ImageGenerator } from './image-gen.js';
+import { VideoGenerator } from './video-gen.js';
 
 export type PostTopicType =
   | 'objecao_desmistificada'
@@ -49,7 +50,8 @@ Saida obrigatoria em JSON valido, sem markdown, sem comentarios:
 {
   "topic": "string curta descrevendo o tema (5-10 palavras)",
   "topic_type": "objecao_desmistificada|dica_tecnica|economia_antes_depois|curiosidade_setor|lei_regulacao|comparativo",
-  "caption": "o texto completo do post pronto pra Instagram/Facebook",
+  "caption": "o texto completo do post pronto pra Instagram/Facebook (formato Reels 9:16 — emojis ok, hashtags no final)",
+  "video_prompt": "descricao EM INGLES do movimento/animacao da imagem pro video de 5s. Exemplos: 'slow camera zoom in, warm golden light, leaves gently moving', 'slight parallax, sun rays subtly shifting, cinematic', 'gentle pan to the right, depth of field shift'. Mantenha movimento SUTIL e cinematografico, nunca brusco.",
   "image_prompt": "descricao EM INGLES da imagem (FLUX 1.1 Pro). REGRAS: 1) Preferencia por composicoes cinematograficas, fotograficas realistas, tipo Getty Images ou Unsplash de alto padrao. 2) Se incluir PESSOA, seja UMA unica (retrato frontal ou 3/4), BRASILEIRA realista (nao modelo generico americano), traje casual ou camisa social casual, expressao autentica. Close-up ou plano medio. Fundo desfocado (bokeh). 3) Pra cenas sem pessoa: painel solar em close / telhado com paineis / paisagem do cerrado com usina / casa de classe media brasileira / fazenda com irrigacao solar / medidor de energia / conta de luz sobre mesa. 4) EVITE multidoes, familias grandes, varias pessoas juntas, criancas, cenas lotadas, fundos urbanos confusos. 5) Estilo: iluminacao natural golden hour, cores quentes e saturadas naturais (nao artificiais), nitidez alta no sujeito, profundidade de campo rasa quando apropriado. Nunca incluir texto em qualquer idioma dentro da imagem."
 }`;
 
@@ -57,14 +59,21 @@ export class MarketingService {
   private anthropic: Anthropic;
   private supabase: SupabaseClient;
   private imageGen: ImageGenerator;
+  private videoGen: VideoGenerator | null;
 
-  constructor(anthropicApiKey: string, supabase: SupabaseClient, imageGen: ImageGenerator) {
+  constructor(
+    anthropicApiKey: string,
+    supabase: SupabaseClient,
+    imageGen: ImageGenerator,
+    videoGen?: VideoGenerator,
+  ) {
     this.anthropic = new Anthropic({ apiKey: anthropicApiKey });
     this.supabase = supabase;
     this.imageGen = imageGen;
+    this.videoGen = videoGen ?? null;
   }
 
-  async generateDraft(preferredType?: PostTopicType): Promise<GeneratedDraft> {
+  async generateDraft(preferredType?: PostTopicType, asVideo = true): Promise<GeneratedDraft & { video_url?: string; content_type: string }> {
     // 1) Ask Claude for caption + image prompt
     const userPrompt = preferredType
       ? `Crie um post do tipo "${preferredType}". Retorne apenas o JSON, sem explicacoes.`
@@ -86,35 +95,61 @@ export class MarketingService {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('Claude returned no JSON for marketing draft');
 
-    let parsed: { topic: string; topic_type: PostTopicType; caption: string; image_prompt: string };
+    let parsed: {
+      topic: string;
+      topic_type: PostTopicType;
+      caption: string;
+      image_prompt: string;
+      video_prompt?: string;
+    };
     try {
       parsed = JSON.parse(jsonMatch[0]);
     } catch (err) {
       throw new Error(`Invalid JSON from Claude: ${(err as Error).message}`);
     }
 
-    // 2) Generate image via FLUX 1.1 Pro (photorealistic)
+    const useVideo = asVideo && this.videoGen !== null;
+
+    // 2) Generate image via FLUX. Use 9:16 if we're making a Reel, 1:1 otherwise.
     const { url: tempUrl } = await this.imageGen.generate({
       prompt: parsed.image_prompt,
-      aspectRatio: '1:1',
+      aspectRatio: useVideo ? '9:16' : '1:1',
       outputFormat: 'jpg',
       outputQuality: 95,
     });
 
-    // 3) Download and upload to Supabase Storage for permanent URL
-    const { bytes, contentType } = await this.imageGen.downloadImage(tempUrl);
-    const filename = `${Date.now()}-${randomBytes(4).toString('hex')}.jpg`;
-    const { error: uploadErr } = await this.supabase.storage
+    // 3) Download and upload image to Supabase Storage
+    const { bytes: imgBytes, contentType: imgContentType } = await this.imageGen.downloadImage(tempUrl);
+    const imageFilename = `${Date.now()}-${randomBytes(4).toString('hex')}.jpg`;
+    const { error: imgUploadErr } = await this.supabase.storage
       .from('marketing-images')
-      .upload(filename, bytes, { contentType, upsert: false });
-    if (uploadErr) throw new Error(`Failed to upload image: ${uploadErr.message}`);
+      .upload(imageFilename, imgBytes, { contentType: imgContentType, upsert: false });
+    if (imgUploadErr) throw new Error(`Failed to upload image: ${imgUploadErr.message}`);
+    const imageUrl = this.supabase.storage.from('marketing-images').getPublicUrl(imageFilename).data.publicUrl;
 
-    const { data: publicData } = this.supabase.storage
-      .from('marketing-images')
-      .getPublicUrl(filename);
-    const imageUrl = publicData.publicUrl;
+    // 4) If making a video, animate the image via Luma Ray and upload
+    let videoUrl: string | undefined;
+    if (useVideo && this.videoGen) {
+      try {
+        const { url: videoTempUrl } = await this.videoGen.generate({
+          imageUrl,
+          prompt: parsed.video_prompt ?? 'subtle camera zoom in, warm natural light, cinematic',
+          aspectRatio: '9:16',
+          duration: 5,
+        });
+        const { bytes: vidBytes, contentType: vidContentType } = await this.videoGen.downloadVideo(videoTempUrl);
+        const videoFilename = `${Date.now()}-${randomBytes(4).toString('hex')}.mp4`;
+        const { error: vidUploadErr } = await this.supabase.storage
+          .from('marketing-videos')
+          .upload(videoFilename, vidBytes, { contentType: vidContentType, upsert: false });
+        if (vidUploadErr) throw new Error(`Failed to upload video: ${vidUploadErr.message}`);
+        videoUrl = this.supabase.storage.from('marketing-videos').getPublicUrl(videoFilename).data.publicUrl;
+      } catch (err) {
+        console.warn(`[marketing] Video generation failed, falling back to image:`, (err as Error).message);
+      }
+    }
 
-    // 4) Save draft in DB
+    // 5) Save draft in DB
     const approvalToken = randomBytes(16).toString('hex');
     const { data: draft, error: insertErr } = await this.supabase
       .from('marketing_drafts')
@@ -123,6 +158,8 @@ export class MarketingService {
         caption: parsed.caption,
         image_prompt: parsed.image_prompt,
         image_url: imageUrl,
+        video_url: videoUrl ?? null,
+        content_type: videoUrl ? 'video' : 'image',
         platforms: ['instagram', 'facebook'],
         status: 'pending_approval',
         approval_token: approvalToken,
@@ -138,6 +175,8 @@ export class MarketingService {
       caption: parsed.caption,
       image_prompt: parsed.image_prompt,
       image_url: imageUrl,
+      video_url: videoUrl,
+      content_type: videoUrl ? 'video' : 'image',
       approval_token: approvalToken,
     };
   }

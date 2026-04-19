@@ -17,6 +17,7 @@ import { TakeoverService } from './modules/takeover.js';
 import { CalendarService } from './modules/calendar.js';
 import { MetaService } from './modules/meta.js';
 import { ImageGenerator } from './modules/image-gen.js';
+import { VideoGenerator } from './modules/video-gen.js';
 import { MarketingService } from './modules/marketing.js';
 import { buildHealthStatus } from './health.js';
 import { join, dirname } from 'path';
@@ -82,10 +83,11 @@ async function main() {
       config.anthropicApiKey,
       supabase.getClient(),
       new ImageGenerator(config.replicateApiToken),
+      new VideoGenerator(config.replicateApiToken),
     )
     : null;
   if (marketing) {
-    console.log('[marketing] Content generator enabled (Claude + FLUX 1.1 Pro)');
+    console.log('[marketing] Content generator enabled (Claude + FLUX 1.1 Pro + Luma Ray Flash 2)');
   } else {
     const missing = [
       !config.replicateApiToken && 'REPLICATE_API_TOKEN',
@@ -937,10 +939,14 @@ Responda CURTO, maximo 2 paragrafos.`,
       `❌ Descartar: ${discardLink}`,
     ].join('\n');
 
-    console.log(`[marketing] Trying to send draft ${draft.id} to ${config.engineerPhone}...`);
+    const isVideo = draft.content_type === 'video' && draft.video_url;
+    const mediaUrl = isVideo ? draft.video_url : draft.image_url;
+    const mediaType = isVideo ? 'video' : 'image';
+
+    console.log(`[marketing] Trying to send draft ${draft.id} (${mediaType}) to ${config.engineerPhone}...`);
     try {
-      await evolution.sendMedia(config.engineerPhone, draft.image_url, caption, 'image');
-      console.log(`[marketing] ✓ Sent draft ${draft.id} (image) to Junior`);
+      await evolution.sendMedia(config.engineerPhone, mediaUrl, caption, mediaType);
+      console.log(`[marketing] ✓ Sent draft ${draft.id} (${mediaType}) to Junior`);
       return;
     } catch (err) {
       console.error(`[marketing] sendMedia failed for ${draft.id}:`, (err as Error).message);
@@ -978,14 +984,19 @@ Responda CURTO, maximo 2 paragrafos.`,
     try {
       const results: Record<string, unknown> = {};
       const platforms = (draft.platforms as string[]) ?? ['instagram', 'facebook'];
+      const isVideo = draft.content_type === 'video' && draft.video_url;
       if (platforms.includes('facebook')) {
-        results.facebook = await meta.publishFacebookImage(draft.image_url, draft.caption);
+        results.facebook = isVideo
+          ? await meta.publishFacebookVideo(draft.video_url, draft.caption)
+          : await meta.publishFacebookImage(draft.image_url, draft.caption);
       }
       if (platforms.includes('instagram')) {
-        results.instagram = await meta.publishInstagramImage(draft.image_url, draft.caption);
+        results.instagram = isVideo
+          ? await meta.publishInstagramReel(draft.video_url, draft.caption)
+          : await meta.publishInstagramImage(draft.image_url, draft.caption);
       }
       await marketing.markPublished(draft.id, results);
-      console.log(`[marketing] Approved + published draft ${draft.id}`);
+      console.log(`[marketing] Approved + published draft ${draft.id} (${isVideo ? 'video/Reel' : 'image'})`);
       res.send(htmlPage(
         'Publicado!',
         `<h2>✅ Post publicado com sucesso!</h2><p>Acabou de subir no Instagram e no Facebook. Pode fechar esta aba.</p>`,
@@ -1108,14 +1119,19 @@ Responda CURTO, maximo 2 paragrafos.`,
       }
       const results: Record<string, unknown> = {};
       const platforms = (draft.platforms as string[]) ?? ['instagram', 'facebook'];
+      const isVideo = draft.content_type === 'video' && draft.video_url;
       if (platforms.includes('facebook')) {
-        results.facebook = await meta.publishFacebookImage(draft.image_url, draft.caption);
+        results.facebook = isVideo
+          ? await meta.publishFacebookVideo(draft.video_url, draft.caption)
+          : await meta.publishFacebookImage(draft.image_url, draft.caption);
       }
       if (platforms.includes('instagram')) {
-        results.instagram = await meta.publishInstagramImage(draft.image_url, draft.caption);
+        results.instagram = isVideo
+          ? await meta.publishInstagramReel(draft.video_url, draft.caption)
+          : await meta.publishInstagramImage(draft.image_url, draft.caption);
       }
       await marketing.markPublished(draft.id, results);
-      console.log(`[marketing] Published draft ${draft.id}`);
+      console.log(`[marketing] Published draft ${draft.id} (${isVideo ? 'video/Reel' : 'image'})`);
       res.json({ status: 'published', results });
     } catch (err) {
       console.error('[marketing] Publish failed:', err);
