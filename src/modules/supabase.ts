@@ -92,7 +92,7 @@ export class SupabaseService {
         .eq('id', conv.id);
     }
 
-    const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const { data: newConv, error: createError } = await this.client
       .from('conversations')
       .insert({
@@ -121,7 +121,7 @@ export class SupabaseService {
       .update({
         ...updates,
         last_message_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       })
       .eq('id', conversationId);
 

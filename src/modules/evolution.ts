@@ -50,6 +50,12 @@ export class EvolutionService {
 
     if (!key || !message) return null;
 
+    // Ignorar mensagens de grupos (grupos terminam com @g.us)
+    if (key.remoteJid?.endsWith('@g.us')) return null;
+
+    // Ignorar mensagens enviadas por mim (fromMe)
+    if (key.fromMe) return null;
+
     const from = key.remoteJid?.replace('@s.whatsapp.net', '') ?? '';
     const messageId = key.id ?? '';
 
