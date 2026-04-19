@@ -15,6 +15,7 @@ import { FollowupModule } from './modules/followup.js';
 import { ingestCanalSolar } from './modules/canal-solar.js';
 import { TakeoverService } from './modules/takeover.js';
 import { CalendarService } from './modules/calendar.js';
+import { MetaService } from './modules/meta.js';
 import { buildHealthStatus } from './health.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -54,6 +55,24 @@ async function main() {
       !config.googleCalendarId && 'GOOGLE_CALENDAR_ID',
     ].filter(Boolean).join(', ');
     console.log(`[calendar] Google Calendar disabled. Missing env vars: ${missing}`);
+  }
+
+  const meta = (config.metaAccessToken && config.metaFacebookPageId && config.metaInstagramBusinessId)
+    ? new MetaService({
+      accessToken: config.metaAccessToken,
+      pageId: config.metaFacebookPageId,
+      instagramId: config.metaInstagramBusinessId,
+    })
+    : null;
+  if (meta) {
+    console.log('[meta] Marketing integration enabled (Facebook + Instagram)');
+  } else {
+    const missing = [
+      !config.metaAccessToken && 'META_ACCESS_TOKEN',
+      !config.metaFacebookPageId && 'META_FACEBOOK_PAGE_ID',
+      !config.metaInstagramBusinessId && 'META_INSTAGRAM_BUSINESS_ID',
+    ].filter(Boolean).join(', ');
+    console.log(`[meta] Marketing integration disabled. Missing env vars: ${missing}`);
   }
 
   // Simulate human typing delay: ~35ms per char, clamped between 900ms and 3500ms.
@@ -799,6 +818,40 @@ Responda CURTO, maximo 2 paragrafos.`,
       res.type('text/plain').send(report);
     } catch (error) {
       res.status(500).json({ error: 'Failed to generate report' });
+    }
+  });
+
+  // Test marketing publish endpoint (protected by webhook token)
+  app.post('/marketing/test-publish', async (req, res) => {
+    const token = (req.headers['x-webhook-token'] as string)
+      ?? (req.query.token as string)
+      ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    if (!meta) {
+      res.status(503).json({ error: 'Meta integration disabled' });
+      return;
+    }
+    const body = req.body as { image_url?: string; caption?: string; platform?: 'facebook' | 'instagram' | 'both' };
+    if (!body.image_url || !body.caption) {
+      res.status(400).json({ error: 'image_url and caption required' });
+      return;
+    }
+    const target = body.platform ?? 'both';
+    const results: Record<string, unknown> = {};
+    try {
+      if (target === 'facebook' || target === 'both') {
+        results.facebook = await meta.publishFacebookImage(body.image_url, body.caption);
+      }
+      if (target === 'instagram' || target === 'both') {
+        results.instagram = await meta.publishInstagramImage(body.image_url, body.caption);
+      }
+      res.json({ status: 'published', results });
+    } catch (err) {
+      console.error('[meta] Test publish failed:', err);
+      res.status(500).json({ error: (err as Error).message });
     }
   });
 

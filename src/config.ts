@@ -24,6 +24,9 @@ const configSchema = z.object({
   googleRefreshToken: z.string().optional(),
   googleCalendarId: z.string().optional(),
   timezone: z.string().default('America/Sao_Paulo'),
+  metaAccessToken: z.string().optional(),
+  metaFacebookPageId: z.string().optional(),
+  metaInstagramBusinessId: z.string().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -50,5 +53,8 @@ export function loadConfig(): Config {
     googleRefreshToken: process.env.GOOGLE_REFRESH_TOKEN || undefined,
     googleCalendarId: process.env.GOOGLE_CALENDAR_ID || undefined,
     timezone: process.env.TIMEZONE,
+    metaAccessToken: process.env.META_ACCESS_TOKEN || undefined,
+    metaFacebookPageId: process.env.META_FACEBOOK_PAGE_ID || undefined,
+    metaInstagramBusinessId: process.env.META_INSTAGRAM_BUSINESS_ID || undefined,
   });
 }
