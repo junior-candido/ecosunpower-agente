@@ -55,24 +55,35 @@ async function main() {
 
       // Build lead context so Claude knows what was already collected
       let leadContext = '';
-      if (!isNewLead && lead.name) {
-        leadContext = '\n\n## Dados ja coletados deste cliente (NAO pergunte de novo)\n';
+      if (!isNewLead) {
+        leadContext = '\n\n## ATENCAO: Este e um contato que JA EXISTE no sistema\n';
+        leadContext += 'NAO trate como novo. NAO peca consentimento LGPD de novo (se ja dado).\n';
+        leadContext += 'Use as informacoes abaixo e continue a conversa naturalmente.\n\n';
+        leadContext += '### Dados ja coletados (NAO pergunte de novo):\n';
         if (lead.name) leadContext += `- Nome: ${lead.name}\n`;
         if (lead.city) leadContext += `- Cidade: ${lead.city}\n`;
+        if (lead.neighborhood) leadContext += `- Bairro: ${lead.neighborhood}\n`;
         if (lead.profile && lead.profile !== 'indefinido') leadContext += `- Perfil: ${lead.profile}\n`;
-        if (lead.consent_given) leadContext += `- Consentimento LGPD: Sim (ja dado)\n`;
+        if (lead.consent_given) leadContext += `- Consentimento LGPD: JA DADO - nao peca novamente!\n`;
+        if (lead.status) leadContext += `- Status: ${lead.status}\n`;
         if (lead.energy_data && Object.keys(lead.energy_data).length > 0) {
           const ed = lead.energy_data as Record<string, unknown>;
           if (ed.monthly_bill) leadContext += `- Valor da conta: R$ ${ed.monthly_bill}/mes\n`;
           if (ed.consumption_kwh) leadContext += `- Consumo: ${ed.consumption_kwh} kWh/mes\n`;
           if (ed.group) leadContext += `- Grupo: ${ed.group}\n`;
+          if (ed.contracted_demand_kw) leadContext += `- Demanda contratada: ${ed.contracted_demand_kw} kW\n`;
+          if (ed.tariff_type) leadContext += `- Tarifa: ${ed.tariff_type}\n`;
         }
         if (lead.future_demand) leadContext += `- Demanda futura: ${lead.future_demand}\n`;
         if (lead.opportunities && Object.keys(lead.opportunities).length > 0) {
           const opp = lead.opportunities as Record<string, boolean>;
           const identified = Object.entries(opp).filter(([, v]) => v).map(([k]) => k);
-          if (identified.length > 0) leadContext += `- Oportunidades: ${identified.join(', ')}\n`;
+          if (identified.length > 0) leadContext += `- Oportunidades identificadas: ${identified.join(', ')}\n`;
         }
+        if (!lead.name) leadContext += '\nObs: Ainda nao temos o nome deste contato. Pergunte de forma natural.\n';
+      } else {
+        leadContext = '\n\n## Este e um CONTATO NOVO - primeira vez que escreve\n';
+        leadContext += 'Siga o fluxo de primeiro contato: saudacao + LGPD + conversa natural.\n';
       }
 
       const response = await brain.processMessage(
