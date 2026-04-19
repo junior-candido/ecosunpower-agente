@@ -1,99 +1,94 @@
-# Compatibilidade entre Inversores e Baterias - IMPORTANTE!
+# Compatibilidade Inversores x Baterias - Ecosunpower
 
-## REGRA GERAL
-Nem todo inversor funciona com qualquer bateria! Algumas marcas so aceitam
-suas proprias baterias (ecossistema fechado) e outras sao mais flexiveis.
-O agente DEVE informar isso ao cliente antes de recomendar um sistema.
+## O QUE A ECOSUNPOWER TRABALHA HOJE
 
-## Matriz de Compatibilidade
+### Inversores Hibridos disponiveis
+- **Deye** (monofasico e trifasico) — principal opcao hibrida
+- **Huawei** (precisa de Backup Box adicional para funcionar com bateria)
+- **FoxESS** H1 e H3
+- **SolarEdge Home Hub**
 
-### ECOSSISTEMAS FECHADOS (so usa bateria da propria marca)
+### Baterias disponiveis
+- **Deye** RW-M5.12 / RW-M10.24
+- **Dyness** B4850 / B51100
+- **Unipower** UPLFP48
 
-#### Huawei (fechado)
-- Inversor: SUN2000 L1/M1/MB0
-- Bateria: SOMENTE Huawei LUNA2000
-- NAO funciona com Pylontech, Dyness, Deye, etc.
-- Motivo: protocolo de comunicacao proprietario
-- Vantagem: integracao perfeita, melhor monitoramento
+### Inversores On-grid (sem bateria - maioria dos projetos)
+- Micro inversores: Hoymiles, NEP, Deye
+- String: Huawei, Sungrow, Solis, SolarEdge
 
-#### SolarEdge (fechado para residencial)
-- Inversor: Home Hub (monofasico)
-- Bateria: SOMENTE SolarEdge Home Battery (BAT-10K1P)
-- NAO funciona com outras baterias no modo residencial
-- Inversor trifasico comercial: aceita algumas baterias terceiras
-- Vantagem: acoplamento CC, eficiencia maxima
+---
 
-#### Sungrow (fechado)
-- Inversor: SH-RS e SH-RT (hibridos)
-- Bateria: SOMENTE Sungrow SBR
-- NAO funciona com Pylontech, Dyness, etc.
-- Motivo: barramento de comunicacao exclusivo
-- Vantagem: integracao otimizada, melhor custo-beneficio em bateria modular
+## MATRIZ DE COMPATIBILIDADE (o que funciona com o que)
 
-#### FoxESS (fechado)
-- Inversor: H1, H3, H3-PRO (hibridos)
-- Bateria: SOMENTE FoxESS ECS ou MIRA ou HV 2600
-- NAO funciona com Pylontech, Dyness, Deye, etc.
-- Vantagem: certificacao UL 9540, seguranca maxima
+### Deye Hibrido (ABERTO - mais opcoes de bateria!)
+- Baterias compativeis: **Deye, Dyness, Unipower, Pylontech, VTAC**
+- Todas as baterias 48V com protocolo CAN/RS485
+- Melhor opcao quando o cliente quer flexibilidade de bateria
+- Modelos: SUN-5K, SUN-7.5K, SUN-8K (mono) / SUN-8K, 10K, 12K (tri)
 
-### ECOSSISTEMAS ABERTOS (aceita varias marcas de bateria)
+### Huawei (PRECISA DE BACKUP BOX!)
+- O inversor Huawei SUN2000 e string (on-grid) por padrao
+- Para usar bateria LUNA2000, PRECISA da **Backup Box** (acessorio adicional)
+- Bateria compativel: SOMENTE Huawei LUNA2000
+- NAO funciona com Dyness, Deye ou Unipower
+- Custo extra: Backup Box + LUNA2000
 
-#### Deye (ABERTO - mais flexivel do mercado!)
-- Inversor: SUN-5K a SUN-12K (hibridos 48V)
-- Baterias compativeis:
-  - Deye RW-M5.12 / RW-M10.24
-  - Pylontech US3000C / US5000
-  - Dyness B4850 / B51100 / BX51100
-  - Unipower UPLFP48
-  - Freedom Lite
-  - VTAC
-  - Felicity Solar
-  - Pylon HV (com adaptador)
-- Motivo: protocolo aberto 48V compativel com diversas marcas
-- Vantagem: LIBERDADE de escolher bateria pelo melhor preco
+### SolarEdge Home Hub (FECHADO)
+- Bateria compativel: SOMENTE SolarEdge Home Battery
+- NAO funciona com outras baterias
+- Acoplamento CC (mais eficiente)
+- Opcao premium para quem quer o melhor em tecnologia
 
-#### Solis (ABERTO - boa flexibilidade)
-- Inversor: RHI series (hibridos 48V)
-- Baterias compativeis:
-  - Pylontech US3000C / US5000
-  - Dyness B4850 / B51100
-  - VTAC
-  - Puredrive
-  - Outras baterias 48V com protocolo CAN/RS485
-- Inversor S6-EH (alta tensao): compativel com baterias HV especificas
+### FoxESS H1/H3 (FECHADO)
+- Bateria compativel: SOMENTE FoxESS ECS / MIRA
+- NAO funciona com Dyness, Deye ou Unipower
+- Opcao boa para sistemas comerciais escalaveis (H3-PRO ate 300kW)
 
-## TABELA RESUMO RAPIDA
+### IMPORTANTE: Inversor on-grid NAO aceita bateria!
+- Micro inversores (Hoymiles, NEP, Deye micro) = NAO tem entrada de bateria
+- Inversores string on-grid (Huawei SUN2000 sem Backup Box, Sungrow SG, Solis S6-GR) = NAO tem entrada de bateria
+- Para ter bateria, PRECISA de inversor HIBRIDO ou sistema AC-coupled
 
-| Inversor | Bateria propria | Aceita terceiros? | Baterias compativeis |
-|---|---|---|---|
-| Huawei SUN2000 | LUNA2000 | NAO | Somente LUNA2000 |
-| SolarEdge Home Hub | Home Battery | NAO (resid.) | Somente SolarEdge |
-| Sungrow SH | SBR | NAO | Somente SBR |
-| FoxESS H1/H3 | ECS | NAO | Somente ECS/MIRA |
-| Deye Hibrido | RW-M | SIM! | Pylontech, Dyness, Unipower, etc. |
-| Solis RHI | - | SIM! | Pylontech, Dyness, VTAC, etc. |
+---
 
-## COMO O AGENTE DEVE USAR ESTA INFORMACAO
+## QUANDO O AGENTE DEVE RECOMENDAR BATERIA
 
-### Cenario 1: Cliente quer inversor Huawei + bateria Pylontech
-RESPOSTA: "Boa pergunta! O inversor Huawei so funciona com a bateria LUNA2000 da propria Huawei.
-Se voce quer usar Pylontech, a melhor opcao e o inversor Deye ou Solis, que sao compativeis!"
+### SIM, sugira bateria quando:
+- Cliente reclama de **quedas de energia** frequentes -> "Com bateria, sua casa continua funcionando!"
+- Cliente menciona **Fio B / taxacao** -> "Bateria ajuda a reduzir o impacto do Fio B — voce usa a energia armazenada em vez de pegar da rede"
+- Cliente quer **independencia da rede** -> "Com solar + bateria, voce fica praticamente independente!"
+- Cliente tem **carro eletrico** ou pretende ter -> "Bateria permite carregar o carro a noite com energia solar do dia"
+- Cliente e **GD2** (instalou apos jan/2023) -> "Bateria pode compensar parte do Fio B, armazenando e usando direto em vez de injetar na rede"
+- Cliente tem **comercio** com equipamentos sensiveis -> "Backup protege seus equipamentos de quedas"
+- Cliente tem **home office** -> "Imagina ficar sem energia no meio de uma reuniao? Bateria resolve isso!"
+- Cliente em **area rural** com rede instavel -> "Bateria e essencial pra garantir fornecimento estavel"
 
-### Cenario 2: Cliente quer o melhor custo em bateria
-RESPOSTA: "Se o foco e custo-beneficio em bateria, recomendo o inversor Deye — ele aceita
-varias marcas de bateria, entao voce pode escolher a mais em conta, como Dyness ou Pylontech!"
+### NAO sugira bateria quando:
+- Cliente so quer economizar na conta (on-grid ja resolve)
+- Orcamento muito apertado (bateria adiciona custo significativo)
+- Cliente nao demonstrou nenhuma dor relacionada a backup/independencia
 
-### Cenario 3: Cliente quer tudo da mesma marca (simplicidade)
-RESPOSTA: "Se prefere um sistema todo integrado, Huawei + LUNA2000 ou Sungrow + SBR
-sao otimas opcoes. Tudo da mesma marca, monitoramento unificado, garantia unica."
+### COMO sugerir (de forma natural, nao forcada):
+- "Voce mencionou que falta energia ai no bairro... ja pensou em bateria? Com ela, mesmo sem luz na rua, sua casa funciona normal 😊"
+- "Como voce instalou depois de 2023, voce paga o Fio B ne? Uma bateria pode ajudar a reduzir esse impacto, porque voce usa a energia direto em vez de injetar na rede"
+- "Pra quem tem home office como voce, bateria e quase obrigatoria — imagina ficar sem internet no meio do trabalho? 😅"
 
-### Cenario 4: Cliente ja tem inversor e quer adicionar bateria
-VERIFICAR: qual inversor ele tem? Se for Huawei, so LUNA2000. Se for Deye, tem opcoes.
-Se for string on-grid (sem ser hibrido), NAO da pra adicionar bateria diretamente —
-precisa de um inversor hibrido ou AC-coupled.
+---
 
-## ATENCAO: Inversor on-grid NAO aceita bateria!
-Inversores string comuns (on-grid) como Huawei SUN2000-M1, Sungrow SG, Solis S6-GR, etc.
-NAO possuem entrada para bateria. Para adicionar armazenamento, as opcoes sao:
-1. Trocar por um inversor HIBRIDO (mais eficiente)
-2. Adicionar um inversor de bateria separado (AC-coupled — mais caro)
+## CENARIOS DE RECOMENDACAO
+
+### Cliente quer solar + bateria (melhor custo):
+"Recomendo o inversor **Deye hibrido** com bateria **Dyness ou Deye**. E a combinacao com melhor custo-beneficio — e o Deye aceita varias marcas de bateria!"
+
+### Cliente quer solar + bateria (premium):
+"Para um sistema premium, o **SolarEdge Home Hub** com bateria SolarEdge e imbativel — 99% de eficiencia e otimizacao por painel!"
+
+### Cliente ja tem Huawei on-grid e quer bateria:
+"Seu inversor Huawei precisa da **Backup Box** pra conectar bateria. A bateria compativel e a LUNA2000 da propria Huawei. Outra opcao e adicionar um inversor Deye hibrido dedicado so pra bateria."
+
+### Cliente quer bateria mas tem micro inversor:
+"Micro inversores nao tem entrada pra bateria. Pra ter armazenamento, precisamos adicionar um inversor hibrido (como o Deye) dedicado so pra bateria. Seus micros continuam gerando normal!"
+
+### Cliente pergunta se pode usar Pylontech no Huawei:
+"Infelizmente nao — o Huawei so aceita a bateria LUNA2000 dele. Se quiser usar Pylontech, o inversor ideal e o Deye, que aceita varias marcas!"
