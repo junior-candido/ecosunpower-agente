@@ -16,6 +16,8 @@ import { ingestCanalSolar } from './modules/canal-solar.js';
 import { TakeoverService } from './modules/takeover.js';
 import { CalendarService } from './modules/calendar.js';
 import { MetaService } from './modules/meta.js';
+import { ImageGenerator } from './modules/image-gen.js';
+import { MarketingService } from './modules/marketing.js';
 import { buildHealthStatus } from './health.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -73,6 +75,19 @@ async function main() {
       !config.metaInstagramBusinessId && 'META_INSTAGRAM_BUSINESS_ID',
     ].filter(Boolean).join(', ');
     console.log(`[meta] Marketing integration disabled. Missing env vars: ${missing}`);
+  }
+
+  const marketing = (config.openaiApiKey && meta)
+    ? new MarketingService(
+      config.anthropicApiKey,
+      supabase.getClient(),
+      new ImageGenerator(config.openaiApiKey),
+    )
+    : null;
+  if (marketing) {
+    console.log('[marketing] Content generator enabled (Claude + DALL-E 3)');
+  } else {
+    console.log('[marketing] Content generator disabled (needs OPENAI_API_KEY and Meta config)');
   }
 
   // Simulate human typing delay: ~35ms per char, clamped between 900ms and 3500ms.
@@ -851,6 +866,74 @@ Responda CURTO, maximo 2 paragrafos.`,
       res.json({ status: 'published', results });
     } catch (err) {
       console.error('[meta] Test publish failed:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Generate a marketing draft (copy + image). Saved as pending_approval.
+  app.post('/marketing/generate', async (req, res) => {
+    const token = (req.headers['x-webhook-token'] as string)
+      ?? (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    if (!marketing) {
+      res.status(503).json({ error: 'Marketing generator disabled' });
+      return;
+    }
+    try {
+      const body = req.body as { topic_type?: string };
+      const draft = await marketing.generateDraft(body.topic_type as never);
+      console.log(`[marketing] Draft generated: ${draft.id} (${draft.topic})`);
+      res.json({
+        status: 'draft_created',
+        draft: {
+          id: draft.id,
+          topic: draft.topic,
+          topic_type: draft.topic_type,
+          caption: draft.caption,
+          image_url: draft.image_url,
+          approval_token: draft.approval_token,
+        },
+      });
+    } catch (err) {
+      console.error('[marketing] Generate failed:', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Publish an approved draft to FB + IG
+  app.post('/marketing/publish/:id', async (req, res) => {
+    const token = (req.headers['x-webhook-token'] as string)
+      ?? (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    if (!marketing || !meta) {
+      res.status(503).json({ error: 'Marketing/Meta disabled' });
+      return;
+    }
+    try {
+      const draft = await marketing.getDraft(req.params.id);
+      if (draft.status === 'published') {
+        res.status(409).json({ error: 'Draft already published' });
+        return;
+      }
+      const results: Record<string, unknown> = {};
+      const platforms = (draft.platforms as string[]) ?? ['instagram', 'facebook'];
+      if (platforms.includes('facebook')) {
+        results.facebook = await meta.publishFacebookImage(draft.image_url, draft.caption);
+      }
+      if (platforms.includes('instagram')) {
+        results.instagram = await meta.publishInstagramImage(draft.image_url, draft.caption);
+      }
+      await marketing.markPublished(draft.id, results);
+      console.log(`[marketing] Published draft ${draft.id}`);
+      res.json({ status: 'published', results });
+    } catch (err) {
+      console.error('[marketing] Publish failed:', err);
       res.status(500).json({ error: (err as Error).message });
     }
   });
