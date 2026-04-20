@@ -144,7 +144,11 @@ async function main() {
   };
 
   const learning = new LearningModule(supabase.getClient());
-  const followup = new FollowupModule(supabase.getClient(), sendText);
+  const followup = new FollowupModule(
+    supabase.getClient(),
+    sendText,
+    new Anthropic({ apiKey: config.anthropicApiKey }),
+  );
   const reengagement = new ReengagementCadence(
     supabase.getClient(),
     new Anthropic({ apiKey: config.anthropicApiKey }),
@@ -211,6 +215,14 @@ async function main() {
       if (lead?.id && await reengagement.hasPendingTouches(lead.id)) {
         const canceled = await reengagement.cancelAllTouches(lead.id);
         console.log(`[reengagement] Canceled ${canceled} pending touches for ${from} (replied)`);
+      }
+      // Cliente respondeu — reseta cadencia de auto-followup pro proximo silencio
+      // comecar do step 1. NAO aplica pra leads 'perdido' (esses tem cadencia
+      // semestral propria — resetForLead ja filtra step<100 internamente mas
+      // melhor nem chamar se for perdido).
+      // Cast porque LeadData.status enum nao lista 'perdido' mas codigo usa.
+      if (lead?.id && (lead.status as string) !== 'perdido') {
+        await followup.resetForLead(lead.id).catch(() => { /* nao critico */ });
       }
       const isNewLead = !lead;
 
