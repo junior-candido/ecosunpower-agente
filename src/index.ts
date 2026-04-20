@@ -1107,8 +1107,10 @@ Responda CURTO, maximo 2 paragrafos.`,
     }
     const ids: string[] = [];
     try {
-      for (let i = 0; i < 3; i++) {
-        const draft = await marketing.generateDraft();
+      // First draft: video (Reel 9:16). Second draft: still image (feed 1:1).
+      for (let i = 0; i < 2; i++) {
+        const asVideo = i === 0;
+        const draft = await marketing.generateDraft(undefined, asVideo);
         ids.push(draft.id);
         await sendDraftToJunior(draft.id);
         await new Promise((r) => setTimeout(r, 15000));
@@ -1347,8 +1349,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   setInterval(() => runCanalSolarIngestion(true), 3 * 24 * 60 * 60 * 1000);
   console.log('[canal-solar] Scheduler started (every 3 days)');
 
-  // Marketing weekly scheduler: every Monday 08:00 BRT generates 3 drafts
-  // and sends each to Junior's WhatsApp for approval.
+  // Marketing weekly scheduler: every Monday 08:00 BRT generates 1 video Reel
+  // and 1 still image draft, sending both to Junior's WhatsApp for approval.
   if (!isSandbox && marketing) {
     const checkMarketingSchedule = async () => {
       const nowBrt = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
@@ -1365,10 +1367,11 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
       const today = nowBrt.toISOString().slice(0, 10);
       if (flag?.value === today) return; // already ran today
 
-      console.log('[marketing] Weekly run: generating 3 drafts...');
+      console.log('[marketing] Weekly run: generating 1 video + 1 image...');
       try {
-        for (let i = 0; i < 3; i++) {
-          const draft = await marketing.generateDraft();
+        for (let i = 0; i < 2; i++) {
+          const asVideo = i === 0;
+          const draft = await marketing.generateDraft(undefined, asVideo);
           await sendDraftToJunior(draft.id);
           await new Promise((r) => setTimeout(r, 30000));
         }
