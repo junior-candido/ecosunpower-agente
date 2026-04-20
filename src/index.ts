@@ -1749,7 +1749,8 @@ Responda CURTO, maximo 2 paragrafos.`,
   });
 
   // Manual trigger for the weekly generation (useful for testing without waiting for Monday)
-  app.post('/marketing/run-weekly', async (req, res) => {
+  // Implementacao compartilhada GET/POST pra /marketing/run-weekly
+  const runWeeklyHandler = async (req: express.Request, res: express.Response) => {
     const token = (req.headers['x-webhook-token'] as string)
       ?? (req.query.token as string) ?? '';
     if (!evolution.validateWebhookToken(token)) {
@@ -1774,7 +1775,9 @@ Responda CURTO, maximo 2 paragrafos.`,
     } catch (err) {
       res.status(500).json({ error: (err as Error).message, ids });
     }
-  });
+  };
+  app.post('/marketing/run-weekly', runWeeklyHandler);
+  app.get('/marketing/run-weekly', runWeeklyHandler);
 
   // Publish an approved draft to FB + IG
   // Reengagement: list pending contacts for manual outreach with personalized messages
