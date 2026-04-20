@@ -1500,6 +1500,77 @@ Responda CURTO, maximo 2 paragrafos.`,
     }
   });
 
+  // Meta Lead Ads: associa o app a Pagina do Facebook pra receber eventos de
+  // leadgen. Usa o Page Access Token ja cacheado pelo MetaService — elimina
+  // a necessidade de dar a volta pelo Graph API Explorer manualmente.
+  // Chame UMA vez (nao e idempotente-seguro pra chamadas em loop, mas Meta
+  // aceita inscricao duplicada sem erro).
+  app.post('/meta-leadgen/subscribe-page', async (req, res) => {
+    const token = (req.headers['x-webhook-token'] as string)
+      ?? (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    if (!meta || !config.metaFacebookPageId) {
+      res.status(503).json({ error: 'Meta integration disabled' });
+      return;
+    }
+    try {
+      const pageToken = await meta.getPageAccessToken();
+      const url = `https://graph.facebook.com/v21.0/${config.metaFacebookPageId}/subscribed_apps`;
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          subscribed_fields: 'leadgen',
+          access_token: pageToken,
+        }).toString(),
+      });
+      const data = await r.json() as { success?: boolean; error?: { message: string } };
+      if (!r.ok || data.error) {
+        res.status(r.status || 500).json({ error: data.error?.message ?? 'unknown' });
+        return;
+      }
+      res.json({ status: 'subscribed', response: data });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // GET equivalente pra poder bater direto do navegador (passa ?token=)
+  app.get('/meta-leadgen/subscribe-page', async (req, res) => {
+    const token = (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    if (!meta || !config.metaFacebookPageId) {
+      res.status(503).json({ error: 'Meta integration disabled' });
+      return;
+    }
+    try {
+      const pageToken = await meta.getPageAccessToken();
+      const url = `https://graph.facebook.com/v21.0/${config.metaFacebookPageId}/subscribed_apps`;
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          subscribed_fields: 'leadgen',
+          access_token: pageToken,
+        }).toString(),
+      });
+      const data = await r.json() as { success?: boolean; error?: { message: string } };
+      if (!r.ok || data.error) {
+        res.status(r.status || 500).json({ error: data.error?.message ?? 'unknown' });
+        return;
+      }
+      res.json({ status: 'subscribed', response: data });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
   // Quick diagnostic: try to send a simple text to ENGINEER_PHONE
   app.post('/marketing/test-whatsapp', async (req, res) => {
     const token = (req.headers['x-webhook-token'] as string)
