@@ -1538,6 +1538,93 @@ Responda CURTO, maximo 2 paragrafos.`,
     }
   });
 
+  // Endpoint de TESTE do fluxo Lead Ads: injeta um lead fake direto na
+  // pipeline (skip Meta, skip HMAC), gera mensagem proativa em 30-60s.
+  // Uso: GET /meta-leadgen/test?token=...&phone=5561987654321&name=Teste&city=Brasilia
+  // Util pra validar o fluxo SEM precisar da Testing Tool da Meta funcionar.
+  app.get('/meta-leadgen/test', async (req, res) => {
+    const token = (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    if (!metaLeadgen) {
+      res.status(503).json({ error: 'Meta leadgen disabled' });
+      return;
+    }
+    const rawPhone = (req.query.phone as string) ?? '';
+    const rawName = (req.query.name as string) ?? 'Teste Lead';
+    const rawCity = (req.query.city as string) ?? 'Brasilia';
+    const phone = normalizeBrazilianPhone(rawPhone);
+    if (!phone) {
+      res.status(400).json({ error: 'phone invalid. Use format like 5561987654321 or +55 61 98765-4321' });
+      return;
+    }
+
+    try {
+      const fakeDetails = {
+        leadgen_id: `test-${Date.now()}`,
+        ad_name: 'ANUNCIO DE TESTE - Lead Ads Flow',
+        campaign_name: 'TESTE - Ecosunpower',
+        form_name: 'Form de Teste',
+        field_data: [
+          { name: 'full_name', values: [rawName] },
+          { name: 'phone_number', values: [phone] },
+          { name: 'city', values: [rawCity] },
+        ],
+      };
+      const normalized = metaLeadgen.normalize(fakeDetails, 'instagram');
+
+      const { id: leadId } = await supabase.upsertLead({
+        phone: normalized.phone as string,
+        name: normalized.name ?? undefined,
+        city: normalized.city ?? undefined,
+        origin: 'ad_ig_leadform',
+      });
+
+      await supabase.getClient()
+        .from('leads')
+        .update({
+          lead_source: 'ad_ig_leadform',
+          ad_campaign_id: 'test-campaign',
+          ad_id: 'test-ad',
+          ad_form_id: 'test-form',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', leadId);
+
+      // Delay menor pra facilitar teste (10-30s em vez de 60-180s)
+      const delayMs = 10000 + Math.floor(Math.random() * 20000);
+      setTimeout(async () => {
+        try {
+          const welcome = await metaLeadgen.generateWelcome(
+            normalized,
+            fakeDetails,
+            knowledgeBase.getContent(),
+          );
+          await sendText(normalized.phone as string, welcome);
+          await supabase.getClient()
+            .from('leads')
+            .update({ welcome_sent_at: new Date().toISOString() })
+            .eq('id', leadId);
+          console.log(`[meta-leadgen-test] Welcome sent to ${normalized.phone}: "${welcome.slice(0, 80)}..."`);
+        } catch (err) {
+          console.error(`[meta-leadgen-test] Welcome failed:`, (err as Error).message);
+        }
+      }, delayMs);
+
+      console.log(`[meta-leadgen-test] Fake lead created: ${leadId} (${normalized.phone}), welcome em ${(delayMs / 1000).toFixed(0)}s`);
+      res.json({
+        status: 'test lead created',
+        lead_id: leadId,
+        phone: normalized.phone,
+        welcome_eta_seconds: Math.round(delayMs / 1000),
+      });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
   // GET equivalente pra poder bater direto do navegador (passa ?token=)
   app.get('/meta-leadgen/subscribe-page', async (req, res) => {
     const token = (req.query.token as string) ?? '';
