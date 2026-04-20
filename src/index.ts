@@ -20,6 +20,10 @@ import { ImageGenerator } from './modules/image-gen.js';
 import { VideoGenerator } from './modules/video-gen.js';
 import { MarketingService } from './modules/marketing.js';
 import { ReengagementCadence } from './modules/reengagement-cadence.js';
+import { PostInstallService, INSTALLATION_STATUSES } from './modules/post-install.js';
+
+// RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { buildHealthStatus } from './health.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -118,6 +122,19 @@ async function main() {
     sendText,
     () => knowledgeBase.getContent(),
   );
+
+  const googleReviewUrl = process.env.GOOGLE_REVIEW_URL ?? '';
+  const postInstall = googleReviewUrl
+    ? new PostInstallService(
+        supabase.getClient(),
+        new Anthropic({ apiKey: config.anthropicApiKey }),
+        sendText,
+        googleReviewUrl,
+      )
+    : null;
+  if (!googleReviewUrl) {
+    console.warn('[init] GOOGLE_REVIEW_URL not set — post-install flow disabled');
+  }
 
   if (!transcriber) {
     console.warn('[init] OPENAI_API_KEY not set — audio transcription disabled');
@@ -497,6 +514,11 @@ async function main() {
         // Also cancel any pending reengagement touches
         const canceled = await reengagement.cancelAllTouches(leadId);
         if (canceled > 0) console.log(`[reengagement] Canceled ${canceled} touches after opt-out`);
+        // Also cancel pending post-install touches
+        if (postInstall) {
+          const canceledPost = await postInstall.cancelAll(leadId);
+          if (canceledPost > 0) console.log(`[post-install] Canceled ${canceledPost} touches after opt-out`);
+        }
         console.log(`[action] Opt-out registered for ${from}`);
         break;
       }
@@ -1251,6 +1273,72 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     res.json({ status: 'marked_sent', id: req.params.id, cadence: 'scheduled' });
   });
 
+  // Post-install: Junior marca que o medidor foi trocado -> inicia cadencia
+  // de pedido de avaliacao no Google (dia 0, dia 7, dia 30 pra indicacao).
+  app.post('/leads/:id/meter-swapped', async (req, res) => {
+    const token = (req.headers['x-webhook-token'] as string)
+      ?? (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    if (!UUID_RE.test(req.params.id)) {
+      res.status(400).json({ error: 'Invalid lead id (expected UUID)' });
+      return;
+    }
+    if (!postInstall) {
+      res.status(503).json({ error: 'Post-install flow disabled (GOOGLE_REVIEW_URL not set)' });
+      return;
+    }
+    try {
+      await postInstall.scheduleOnMeterSwap(req.params.id);
+      res.json({ status: 'scheduled', id: req.params.id });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Atualizar installation_status de um lead (contrato_assinado, instalado, etc.)
+  // Nao agenda toques — so registra o estado. Use /meter-swapped pra ativar cadencia.
+  app.post('/leads/:id/installation-status', async (req, res) => {
+    const token = (req.headers['x-webhook-token'] as string)
+      ?? (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    if (!UUID_RE.test(req.params.id)) {
+      res.status(400).json({ error: 'Invalid lead id (expected UUID)' });
+      return;
+    }
+    const status = (req.body?.status ?? req.query.status) as string;
+    if (!(INSTALLATION_STATUSES as readonly string[]).includes(status)) {
+      res.status(400).json({ error: `status invalido. Use um de: ${INSTALLATION_STATUSES.join(', ')}` });
+      return;
+    }
+    const update: Record<string, unknown> = {
+      installation_status: status,
+      updated_at: new Date().toISOString(),
+    };
+    if (status === 'contrato_assinado') update.contract_signed_at = new Date().toISOString();
+    if (status === 'instalado') update.installed_at = new Date().toISOString();
+    if (status === 'medidor_trocado') update.meter_swapped_at = new Date().toISOString();
+
+    const { error } = await supabase.getClient()
+      .from('leads')
+      .update(update)
+      .eq('id', req.params.id);
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+    // Se marcou medidor_trocado, agenda os toques automaticamente
+    if (status === 'medidor_trocado' && postInstall) {
+      await postInstall.scheduleOnMeterSwap(req.params.id);
+    }
+    res.json({ status: 'updated', id: req.params.id, installation_status: status });
+  });
+
   app.post('/marketing/publish/:id', async (req, res) => {
     const token = (req.headers['x-webhook-token'] as string)
       ?? (req.query.token as string) ?? '';
@@ -1410,6 +1498,21 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     setTimeout(runReengagementCheck, 10 * 60 * 1000); // first check 10 min after boot
     setInterval(runReengagementCheck, 2 * 60 * 60 * 1000); // then every 2h
     console.log('[reengagement-cadence] Scheduler started (every 2h)');
+  }
+
+  // Post-install cadence: check every 2 hours for due review/indication touches
+  if (!isSandbox && postInstall) {
+    const runPostInstallCheck = async () => {
+      try {
+        const sent = await postInstall.processDueTouches();
+        if (sent > 0) console.log(`[post-install] Scheduler sent ${sent} touches`);
+      } catch (err) {
+        console.error('[post-install] Scheduler failed:', err);
+      }
+    };
+    setTimeout(runPostInstallCheck, 12 * 60 * 1000);
+    setInterval(runPostInstallCheck, 2 * 60 * 60 * 1000);
+    console.log('[post-install] Scheduler started (every 2h)');
   }
 
   app.listen(config.port, () => {
