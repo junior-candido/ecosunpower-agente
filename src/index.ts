@@ -24,9 +24,43 @@ import { PostInstallService, INSTALLATION_STATUSES } from './modules/post-instal
 import { TestimonialService, TestimonialFormat } from './modules/testimonials.js';
 import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone } from './modules/meta-leadgen.js';
 import { parseTrackingTag } from './modules/tracking.js';
+import { generateWeeklyReport, formatReportForWhatsApp } from './modules/ads-report.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Helper de fuso: retorna hour/minute/weekday/dateISO em America/Sao_Paulo
+// SEM depender do TZ do servidor. O truque antigo `new Date(toLocaleString('en-US'))`
+// so funcionava por acidente quando servidor rodava em UTC — trocamos por
+// Intl.DateTimeFormat.formatToParts que e timezone-safe em qualquer servidor.
+function getBrtParts(): {
+  hour: number;
+  minute: number;
+  weekday: number; // 0=domingo, 1=segunda, ..., 6=sabado
+  dateISO: string; // YYYY-MM-DD
+} {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    weekday: 'short',
+    hour12: false,
+  }).formatToParts(new Date());
+  const o: Record<string, string> = {};
+  for (const p of parts) o[p.type] = p.value;
+  const weekdayMap: Record<string, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  };
+  return {
+    hour: parseInt(o.hour, 10),
+    minute: parseInt(o.minute, 10),
+    weekday: weekdayMap[o.weekday] ?? 0,
+    dateISO: `${o.year}-${o.month}-${o.day}`,
+  };
+}
 import { buildHealthStatus } from './health.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -2169,10 +2203,9 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // and 1 still image draft, sending both to Junior's WhatsApp for approval.
   if (!isSandbox && marketing) {
     const checkMarketingSchedule = async () => {
-      const nowBrt = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      const isMonday = nowBrt.getDay() === 1;
-      const isEightAM = nowBrt.getHours() === 8 && nowBrt.getMinutes() < 15;
-      if (!isMonday || !isEightAM) return;
+      const brt = getBrtParts();
+      if (brt.weekday !== 1) return; // segunda
+      if (brt.hour !== 8 || brt.minute >= 15) return; // 08:00-08:14 BRT
 
       const lastRunKey = 'last_weekly_marketing_run';
       const { data: flag } = await supabase.getClient()
@@ -2180,8 +2213,17 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         .select('value')
         .eq('key', lastRunKey)
         .maybeSingle();
-      const today = nowBrt.toISOString().slice(0, 10);
+      const today = brt.dateISO;
       if (flag?.value === today) return; // already ran today
+
+      // Grava flag ANTES de rodar — evita double-run se loop demorar mais que 15min
+      // (upsert com onConflict:'key' pra atualizar em vez de duplicar)
+      await supabase.getClient()
+        .from('app_flags')
+        .upsert(
+          { key: lastRunKey, value: today, updated_at: new Date().toISOString() },
+          { onConflict: 'key' },
+        );
 
       console.log('[marketing] Weekly run: generating 1 video + 1 image...');
       try {
@@ -2191,9 +2233,6 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
           await sendDraftToJunior(draft.id);
           await new Promise((r) => setTimeout(r, 30000));
         }
-        await supabase.getClient()
-          .from('app_flags')
-          .upsert({ key: lastRunKey, value: today, updated_at: new Date().toISOString() });
         console.log('[marketing] Weekly run complete');
       } catch (err) {
         console.error('[marketing] Weekly run failed:', err);
@@ -2212,6 +2251,82 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
       }
     }, 24 * 60 * 60 * 1000);
   }
+
+  // Weekly ads report: domingo 09:00 BRT manda resumo da semana pro Junior
+  if (!isSandbox) {
+    const checkWeeklyReportSchedule = async () => {
+      const brt = getBrtParts();
+      if (brt.weekday !== 0) return; // domingo
+      if (brt.hour !== 9 || brt.minute >= 15) return;
+
+      const flagKey = 'last_weekly_ads_report';
+      const today = brt.dateISO;
+      const { data: flag } = await supabase.getClient()
+        .from('app_flags')
+        .select('value')
+        .eq('key', flagKey)
+        .maybeSingle();
+      if (flag?.value === today) return;
+
+      // Grava flag ANTES de enviar pra evitar double-send (race com tick proximo).
+      // Se envio falhar, flag ja esta setada — Junior pode usar /send-now pra refazer.
+      await supabase.getClient()
+        .from('app_flags')
+        .upsert(
+          { key: flagKey, value: today, updated_at: new Date().toISOString() },
+          { onConflict: 'key' },
+        );
+
+      try {
+        const report = await generateWeeklyReport(supabase.getClient());
+        const msg = formatReportForWhatsApp(report);
+        await sendText(config.engineerPhone, msg);
+        console.log(`[ads-report] Weekly report sent to ${config.engineerPhone}`);
+      } catch (err) {
+        console.error('[ads-report] Weekly report failed:', err);
+      }
+    };
+    setInterval(checkWeeklyReportSchedule, 10 * 60 * 1000);
+    console.log('[ads-report] Weekly scheduler started (Sundays 09:00 BRT)');
+  }
+
+  // On-demand: GET /reports/ads-weekly?token=X&format=json|text
+  app.get('/reports/ads-weekly', async (req, res) => {
+    const token = (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    try {
+      const report = await generateWeeklyReport(supabase.getClient());
+      const format = (req.query.format as string) ?? 'json';
+      if (format === 'text') {
+        res.type('text/plain').send(formatReportForWhatsApp(report));
+      } else {
+        res.json(report);
+      }
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Forca envio do relatorio agora (nao espera domingo). Util pra testar
+  // ou rodar on-demand quando Junior quiser ver no WhatsApp.
+  app.get('/reports/ads-weekly/send-now', async (req, res) => {
+    const token = (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    try {
+      const report = await generateWeeklyReport(supabase.getClient());
+      const msg = formatReportForWhatsApp(report);
+      await sendText(config.engineerPhone, msg);
+      res.json({ status: 'sent', to: config.engineerPhone, report });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
 
   // Reengagement cadence: check every 2 hours for due touches
   if (!isSandbox) {
