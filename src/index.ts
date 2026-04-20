@@ -22,6 +22,7 @@ import { MarketingService } from './modules/marketing.js';
 import { ReengagementCadence } from './modules/reengagement-cadence.js';
 import { PostInstallService, INSTALLATION_STATUSES } from './modules/post-install.js';
 import { TestimonialService, TestimonialFormat } from './modules/testimonials.js';
+import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone } from './modules/meta-leadgen.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -82,6 +83,26 @@ async function main() {
       !config.metaInstagramBusinessId && 'META_INSTAGRAM_BUSINESS_ID',
     ].filter(Boolean).join(', ');
     console.log(`[meta] Marketing integration disabled. Missing env vars: ${missing}`);
+  }
+
+  // Lead Ads webhook — recebe leads de formularios do IG/FB direto no sistema
+  const metaLeadgen = (meta && config.metaAppSecret && config.metaVerifyToken)
+    ? new MetaLeadgenService(
+        config.metaAppSecret,
+        config.metaVerifyToken,
+        () => meta.getPageAccessToken(),
+        supabase.getClient(),
+        new Anthropic({ apiKey: config.anthropicApiKey }),
+      )
+    : null;
+  if (metaLeadgen) {
+    console.log('[meta-leadgen] Lead Ads webhook enabled');
+  } else if (meta) {
+    const missing = [
+      !config.metaAppSecret && 'META_APP_SECRET',
+      !config.metaVerifyToken && 'META_VERIFY_TOKEN',
+    ].filter(Boolean).join(', ');
+    console.log(`[meta-leadgen] Webhook disabled. Missing: ${missing}`);
   }
 
   const marketing = (config.replicateApiToken && meta)
@@ -984,9 +1005,216 @@ Responda CURTO, maximo 2 paragrafos.`,
 
   // Express server
   const app = express();
-  app.use(express.json());
+  // `verify` captura o buffer bruto antes de parsear JSON — necessario pra
+  // validar o HMAC-SHA256 do webhook Lead Ads da Meta (o X-Hub-Signature-256
+  // e calculado sobre o body bytewise, e JSON.stringify(parsed) nao bate).
+  app.use(express.json({
+    verify: (req, _res, buf) => {
+      (req as unknown as { rawBody: string }).rawBody = buf.toString('utf8');
+    },
+  }));
 
   // Webhook endpoint
+  // ==========================================================================
+  // META LEAD ADS WEBHOOK
+  // ==========================================================================
+
+  // GET: challenge de verificacao (Meta chama 1x pra confirmar que o endpoint e nosso)
+  app.get('/webhook/meta/leadgen', (req, res) => {
+    if (!metaLeadgen) {
+      res.status(503).send('Meta leadgen disabled');
+      return;
+    }
+    const mode = req.query['hub.mode'] as string;
+    const token = req.query['hub.verify_token'] as string;
+    const challenge = req.query['hub.challenge'] as string;
+    if (metaLeadgen.validateChallenge(mode, token)) {
+      console.log('[meta-leadgen] Challenge verified, subscribing');
+      res.status(200).send(challenge);
+    } else {
+      console.warn('[meta-leadgen] Challenge failed (bad mode or token)');
+      res.status(403).send('Forbidden');
+    }
+  });
+
+  // POST: evento real de novo lead preenchido no formulario do IG/FB
+  app.post('/webhook/meta/leadgen', async (req, res) => {
+    if (!metaLeadgen) {
+      res.status(503).json({ error: 'Meta leadgen disabled' });
+      return;
+    }
+    const rawBody = (req as unknown as { rawBody?: string }).rawBody ?? '';
+    const signature = req.headers['x-hub-signature-256'] as string | undefined;
+    if (!metaLeadgen.validateSignature(rawBody, signature)) {
+      console.warn('[meta-leadgen] HMAC signature invalid');
+      res.status(403).json({ error: 'Invalid signature' });
+      return;
+    }
+
+    // IMPORTANTE: respondemos 200 imediato. Meta tem timeout agressivo (5s) e
+    // retenta se nao receber resposta rapida. O processamento e async.
+    res.status(200).json({ status: 'received' });
+
+    const payload = req.body as LeadgenPayload;
+    if (payload.object !== 'page') return;
+
+    // Processa cada entry / change de forma independente (varios leads
+    // podem chegar no mesmo payload em teoria). Erros nao devem derrubar
+    // os outros — cada um tem try/catch isolado.
+    for (const entry of payload.entry ?? []) {
+      for (const change of entry.changes ?? []) {
+        if (change.field !== 'leadgen') continue;
+        const leadgenId = change.value.leadgen_id;
+        if (!leadgenId) continue;
+
+        try {
+          // 1) Grava evento minimo PRIMEIRO pra dedup (custa so 1 INSERT).
+          //    Se retry, o unique index barra aqui e evitamos re-fetch no Graph API.
+          const minimalDetails = {
+            leadgen_id: leadgenId,
+            field_data: [],
+          };
+          const { isNew } = await metaLeadgen.recordEvent(minimalDetails, change.value);
+          if (!isNew) {
+            console.log(`[meta-leadgen] Event ${leadgenId} already received, skipping (dedup)`);
+            continue;
+          }
+
+          // 2) So agora paga o Graph API pra detalhes completos
+          const details = await metaLeadgen.fetchLeadDetails(leadgenId);
+
+          // 3) Detecta plataforma via adset targeting (mais preciso que nome).
+          //    Se nome tiver "instagram" e shortcut. Se nao, consulta adset.
+          let platform: 'facebook' | 'instagram' = 'facebook';
+          const nameSignal = (details.ad_name ?? '') + (details.adset_name ?? '') + (details.campaign_name ?? '');
+          if (nameSignal.toLowerCase().includes('instagram')) {
+            platform = 'instagram';
+          } else if (details.adset_id) {
+            try {
+              const pageToken = await meta!.getPageAccessToken();
+              const pRes = await fetch(
+                `https://graph.facebook.com/v21.0/${details.adset_id}?fields=targeting&access_token=${pageToken}`,
+              );
+              const pData = await pRes.json() as {
+                targeting?: { publisher_platforms?: string[] };
+              };
+              const platforms = pData.targeting?.publisher_platforms ?? [];
+              if (platforms.length === 1 && platforms[0] === 'instagram') {
+                platform = 'instagram';
+              }
+              // Se tem ambas (fb+ig), nao sabemos qual exatamente disparou esse lead —
+              // mantem default facebook e flagea em notes pra analise depois.
+            } catch (err) {
+              console.warn(`[meta-leadgen] Platform detection via adset failed:`, (err as Error).message);
+            }
+          }
+
+          const normalized = metaLeadgen.normalize(details, platform);
+
+          if (!normalized.phone) {
+            console.warn(`[meta-leadgen] Lead ${leadgenId} sem telefone, salvando so evento`);
+            await metaLeadgen.markEventFailed(leadgenId, 'phone missing');
+            continue;
+          }
+
+          // Checa se lead ja existe pra decidir se podemos sobrescrever lead_source.
+          // Lead que JA avancou no funil (status != 'novo') nao tem origem
+          // sobrescrita — preserva historico.
+          const existing = await supabase.getLeadByPhone(normalized.phone);
+          const isHot = existing && existing.status && existing.status !== 'novo';
+
+          const { id: leadId } = await supabase.upsertLead({
+            phone: normalized.phone,
+            name: normalized.name ?? undefined,
+            city: normalized.city ?? undefined,
+            // Mantem 'origin' historico so pra leads novos
+            origin: isHot ? existing.origin : normalized.source,
+          });
+
+          // Atualiza campos do funil de ads APENAS se for lead novo ou ainda
+          // nao tinha source. Protege atribuicao de leads que ja estavam
+          // engajando via outro canal.
+          const updatePayload: Record<string, unknown> = {
+            ad_campaign_id: details.campaign_id ?? null,
+            ad_id: details.ad_id ?? null,
+            ad_form_id: details.form_id ?? null,
+            updated_at: new Date().toISOString(),
+          };
+          if (!isHot) {
+            updatePayload.lead_source = normalized.source;
+          }
+          await supabase.getClient()
+            .from('leads')
+            .update(updatePayload)
+            .eq('id', leadId);
+
+          try {
+            await metaLeadgen.markEventProcessed(leadgenId, leadId);
+          } catch (err) {
+            console.error(`[meta-leadgen] markEventProcessed failed for ${leadgenId}:`, (err as Error).message);
+          }
+
+          // C3 — anti double-welcome: se welcome_sent_at ja tem valor, nao
+          // agenda de novo. Cliente ja recebeu a primeira mensagem.
+          // Cast dinamico porque LeadData interface nao lista colunas de migrations recentes.
+          const existingWelcome = (existing as Record<string, unknown> | null)?.welcome_sent_at as string | null | undefined;
+          if (existingWelcome) {
+            console.log(`[meta-leadgen] Welcome already sent for ${normalized.phone} at ${existingWelcome}, skipping`);
+            continue;
+          }
+
+          // Agenda mensagem proativa com delay humano (1-3 min) pra nao parecer bot.
+          // TODO futuro: persistir a fila em DB pra recover no restart (hoje um restart
+          // entre o recebimento e o disparo perde o welcome).
+          const delayMs = 60000 + Math.floor(Math.random() * 120000); // 60-180s
+          setTimeout(async () => {
+            try {
+              // Recheck dentro do timeout (mais uma camada de protecao contra race)
+              const beforeSend = await supabase.getLeadByPhone(normalized.phone as string);
+              const beforeWelcome = (beforeSend as Record<string, unknown> | null)?.welcome_sent_at;
+              if (beforeWelcome) {
+                console.log(`[meta-leadgen] Welcome already sent during delay, skipping`);
+                return;
+              }
+
+              const welcome = await metaLeadgen.generateWelcome(
+                normalized,
+                details,
+                knowledgeBase.getContent(),
+              );
+              await sendText(normalized.phone as string, welcome);
+
+              // Marca welcome_sent_at pra bloquear futuros re-welcomes
+              await supabase.getClient()
+                .from('leads')
+                .update({ welcome_sent_at: new Date().toISOString() })
+                .eq('id', leadId);
+
+              const conversation = await supabase.getOrCreateConversation(leadId);
+              await supabase.updateConversation(conversation.id, {
+                messages: [
+                  ...conversation.messages,
+                  { role: 'assistant' as const, content: welcome, timestamp: new Date().toISOString() },
+                ],
+                message_count: conversation.message_count + 1,
+              });
+              console.log(`[meta-leadgen] Welcome sent to ${normalized.phone} (lead ${leadId}) after ${(delayMs / 1000).toFixed(0)}s`);
+            } catch (err) {
+              console.error(`[meta-leadgen] Welcome failed for ${leadId}:`, (err as Error).message);
+            }
+          }, delayMs);
+
+          console.log(`[meta-leadgen] Lead ${leadgenId} -> ${leadId} (${normalized.phone}, ${platform}, hot=${isHot}), welcome em ${(delayMs / 1000).toFixed(0)}s`);
+        } catch (err) {
+          console.error(`[meta-leadgen] Processing ${leadgenId} failed:`, (err as Error).message);
+          await metaLeadgen.markEventFailed(leadgenId, (err as Error).message).catch((e) => {
+            console.error(`[meta-leadgen] markEventFailed also failed:`, (e as Error).message);
+          });
+        }
+      }
+    }
+  });
+
   app.post('/webhook', async (req, res) => {
     const token = (req.headers['x-webhook-token'] as string)
       ?? (req.query.token as string)

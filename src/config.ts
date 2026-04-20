@@ -27,6 +27,8 @@ const configSchema = z.object({
   metaAccessToken: z.string().optional(),
   metaFacebookPageId: z.string().optional(),
   metaInstagramBusinessId: z.string().optional(),
+  metaAppSecret: z.string().optional(),     // pra HMAC do webhook Lead Ads
+  metaVerifyToken: z.string().optional(),   // pro challenge do subscribe
   replicateApiToken: z.string().optional(),
 });
 
@@ -57,6 +59,8 @@ export function loadConfig(): Config {
     metaAccessToken: process.env.META_ACCESS_TOKEN || undefined,
     metaFacebookPageId: process.env.META_FACEBOOK_PAGE_ID || undefined,
     metaInstagramBusinessId: process.env.META_INSTAGRAM_BUSINESS_ID || undefined,
+    metaAppSecret: process.env.META_APP_SECRET || undefined,
+    metaVerifyToken: process.env.META_VERIFY_TOKEN || undefined,
     replicateApiToken: process.env.REPLICATE_API_TOKEN || undefined,
   });
 }

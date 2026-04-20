@@ -18,6 +18,12 @@ export class MetaService {
     this.instagramId = opts.instagramId;
   }
 
+  // Exposed pra outros modulos (ex: MetaLeadgenService) poderem usar o mesmo
+  // Page Access Token cacheado, sem duplicar chamada ao Graph API.
+  async getPageAccessToken(): Promise<string> {
+    return this.getPageToken();
+  }
+
   // Lazily fetch the Page Access Token. Publishing to a Page requires a page-scoped
   // token, not a user/system-user token. Cached for the lifetime of the process.
   private async getPageToken(): Promise<string> {
