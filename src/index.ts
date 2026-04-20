@@ -1105,7 +1105,7 @@ Responda CURTO, maximo 2 paragrafos.`,
   });
 
   // Publish an approved draft to FB + IG
-  // Reengagement: list pending contacts for manual outreach
+  // Reengagement: list pending contacts for manual outreach with personalized messages
   app.get('/reengagement/daily', async (req, res) => {
     const token = (req.headers['x-webhook-token'] as string)
       ?? (req.query.token as string) ?? '';
@@ -1131,18 +1131,74 @@ Responda CURTO, maximo 2 paragrafos.`,
       })
       .slice(0, limit);
 
-    const template = (name: string) =>
-      `Oi ${name}, tudo bem? Aqui é o Junior da Ecosunpower. Faz um tempinho que a gente não se fala — vi seu contato aqui e lembrei da nossa conversa sobre energia solar. Quis dar um oi e ver como tá aí a situação da conta de luz. Se tiver interesse, posso te mostrar as condições novas e fazer uma simulação sem compromisso.`;
+    if (pending.length === 0) {
+      res.json({ count: 0, items: [] });
+      return;
+    }
 
-    const items = pending.map((l) => {
+    // Extract top 5 recent headlines from canal-solar.md knowledge base
+    const kb = knowledgeBase.getContent();
+    const canalSection = kb.match(/# Canal Solar[\s\S]*?(?=\n# |$)/)?.[0] ?? '';
+    const headlines = Array.from(canalSection.matchAll(/^## (.+)$/gm))
+      .slice(0, 5)
+      .map((m) => m[1])
+      .join('\n');
+
+    // Ask Claude to generate a personalized message per contact
+    const anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
+    const systemPrompt = `Voce gera mensagens de reengajamento no WhatsApp em nome do Junior (dono da Ecosunpower Energia Solar, Brasilia/DF e Goias). Publico: pessoas que ja conversaram com ele sobre solar mas nao fecharam.
+
+Regras:
+- Tom: amigo reencontrando um amigo. Curto, natural, humano, NUNCA comercial agressivo.
+- Sem emoji exagerado. Zero markdown. Zero asteriscos.
+- Maximo 4 linhas. Primeira pessoa, como se o Junior tivesse escrito.
+- Cada mensagem DEVE ser DIFERENTE (nao repita a mesma estrutura).
+- Pode puxar 1 gancho atual do setor solar (da lista de manchetes que vou te passar), mas seja sutil — nao seja didatico.
+- Termine abrindo espaco pra conversa, sem pressao.
+- NAO prometa "zerar conta". Fale em "reduzir".
+
+Entrada: JSON com { names: string[], headlines: string }
+Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem do JSON.`;
+
+    const userPrompt = JSON.stringify({
+      names: pending.map((l) => (l.name ?? '').split(' ')[0] || 'tudo bem'),
+      headlines,
+    });
+
+    let messages: string[] = [];
+    try {
+      const aiRes = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 2048,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+      });
+      const raw = aiRes.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('');
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]) as { messages?: string[] };
+        if (Array.isArray(parsed.messages)) messages = parsed.messages;
+      }
+    } catch (err) {
+      console.error('[reengagement] Claude generation failed, using fallback:', (err as Error).message);
+    }
+
+    // Fallback template if Claude failed
+    const fallback = (name: string) =>
+      `Oi ${name}, tudo bem? Aqui e o Junior da Ecosunpower. Faz um tempinho que a gente nao se fala, dei uma olhada nos contatos e lembrei de voce. Queria saber como ta a situacao da conta de luz ai e se tem interesse em dar uma atualizada. Sem compromisso.`;
+
+    const items = pending.map((l, i) => {
       const firstName = (l.name ?? '').split(' ')[0] || 'tudo bem';
-      const message = template(firstName);
-      const waLink = `https://wa.me/${l.phone}?text=${encodeURIComponent(message)}`;
+      const msg = (messages[i] && messages[i].trim().length > 20) ? messages[i] : fallback(firstName);
+      const waLink = `https://wa.me/${l.phone}?text=${encodeURIComponent(msg)}`;
       return {
         id: l.id,
         phone: l.phone,
         name: l.name,
-        message,
+        message: msg,
         wa_link: waLink,
       };
     });
