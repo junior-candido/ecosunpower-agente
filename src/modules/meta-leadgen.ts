@@ -229,18 +229,43 @@ ${extras ? `- Outros dados do form:\n${extras}` : ''}
 Contexto da empresa (use como referencia, nao copie):
 ${kbSnippet}
 
-Regras estritas:
-- MAXIMO 3-4 linhas curtas, tom WhatsApp natural
-- Primeira pessoa, como se o Junior tivesse escrito
-- Nao parece robo — "opa [nome]", "fala [nome]" funciona bem
-- Mencione que viu o interesse pelo anuncio de forma leve
-- Termine com UMA pergunta aberta pra conversa fluir (ex: "qual ta sendo sua conta de luz hoje?" ou "me conta rapidinho como e teu imovel")
-- Sem emoji, sem asterisco, sem markdown, sem ponto final em toda frase
-- Nao dizer "vai zerar conta"
-- Use ${firstName || 'o primeiro nome'} UMA vez, no maximo
-- Nao introduza LGPD nesta primeira mensagem (vira na resposta, se for o caso)
+REGRAS ESTRITAS DE FORMATO:
 
-Gere APENAS o texto da mensagem, sem explicacao.`;
+- EXATAMENTE 3 LINHAS CURTAS (nem mais, nem menos)
+  - Linha 1: saudacao curta com o primeiro nome ("opa ${firstName}, tudo bem")
+  - Linha 2: reconhece o form de forma leve
+  - Linha 3: UMA pergunta qualificadora direta
+
+- Tom: primeira pessoa, Junior falando com amigo no whatsapp
+- Minusculas em tudo, pontuacao leve (virgula ok, ponto final SO se realmente precisar)
+
+PROIBIDO:
+- Descrever o que a Ecosunpower faz ("a gente trabalha com paineis solares e..."). O cliente JA sabe, ele preencheu o form. NAO introduza servicos.
+- Construcoes tipo "por ai em Brasilia", "aqui em Brasilia" com preposicoes estranhas. Se mencionar cidade, usa "voce e de brasilia ne" ou omite.
+- Emoji, asterisco, markdown, "rs", "kkk"
+- Frases feitas: "excelente escolha", "maravilha", "perfeito", "parabens pela decisao"
+- Prometer "zerar conta de luz"
+- Convidar pra agendar visita nesta primeira msg (e cedo demais)
+- Mencionar LGPD
+- Usar o primeiro nome mais de UMA vez
+
+PERGUNTA QUALIFICADORA (ultima linha) — escolha UMA dessas variacoes (ou similar):
+- "me conta, qual ta sendo tua conta de luz hoje pra eu ja te dar uma visao"
+- "pra eu te passar uma estimativa certinha, quanto ta vindo tua conta de luz"
+- "qual valor medio da tua conta de luz pra eu ja dimensionar algo pra ti"
+- "me conta rapidinho: conta de luz mensal e se e casa, apartamento ou empresa"
+
+NUNCA use pergunta binaria generica tipo "e casa ou empresa" sozinha — sempre acoplada a conta de luz.
+
+EXEMPLO DE VERSAO IDEAL (nao copie literal, use de referencia):
+
+opa ${firstName || 'junior'}, tudo bem
+
+vi que voce mandou um sinal pelo form sobre solar
+
+me conta, qual ta sendo tua conta de luz hoje pra eu ja te dar uma visao
+
+Gere APENAS o texto da mensagem, sem nenhuma explicacao, sem prefixo.`;
 
     const res = await this.anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
