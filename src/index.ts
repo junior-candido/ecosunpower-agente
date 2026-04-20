@@ -2140,6 +2140,121 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     }
   });
 
+  // Pagina publica de Politica de Privacidade pra uso nos Lead Ads da Meta.
+  // LGPD (Lei 13.709/2018) exige transparencia sobre coleta/uso de dados.
+  // URL publica: /privacidade (usar no campo do Meta Lead Form)
+  app.get('/privacidade', (_req, res) => {
+    const html = `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Politica de Privacidade — Ecosunpower Energia Solar</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 760px; margin: 0 auto; padding: clamp(20px,5vw,40px); line-height: 1.6; color: #222; }
+h1 { font-size: clamp(24px,5vw,32px); margin-top: 0; }
+h2 { font-size: clamp(18px,3vw,22px); margin-top: 28px; color: #1a1a1a; border-bottom: 1px solid #e5e5e5; padding-bottom: 6px; }
+.meta { color: #666; font-size: 14px; margin-bottom: 24px; }
+ul { padding-left: 20px; }
+li { margin-bottom: 6px; }
+a { color: #d97706; }
+.highlight { background: #fef3c7; padding: 2px 6px; border-radius: 3px; }
+footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e5e5; font-size: 14px; color: #666; }
+</style>
+</head>
+<body>
+<h1>Politica de Privacidade</h1>
+<p class="meta"><strong>Ecosunpower Energia Solar</strong><br>
+SHA Conjunto 01 Chacara 44C Lote 6, Arniqueira, Brasilia - DF, CEP 71993-150<br>
+Ultima atualizacao: 20 de abril de 2026</p>
+
+<h2>1. Quem somos</h2>
+<p>A Ecosunpower Energia Solar e uma empresa especializada em sistemas fotovoltaicos, com atuacao em Brasilia-DF e Goias desde 2019. Nos comprometemos com a protecao dos seus dados pessoais, em conformidade com a Lei Geral de Protecao de Dados (Lei 13.709/2018 - LGPD).</p>
+
+<h2>2. Quais dados coletamos</h2>
+<p>Quando voce interage conosco (formulario no Instagram/Facebook, mensagem no WhatsApp, site), coletamos apenas os dados necessarios para oferecer um atendimento personalizado:</p>
+<ul>
+  <li><strong>Dados de identificacao:</strong> nome, e-mail, telefone</li>
+  <li><strong>Dados de qualificacao tecnica:</strong> cidade, valor aproximado da conta de luz, tipo de imovel, tipo de telhado</li>
+  <li><strong>Dados de conversa:</strong> mensagens trocadas pelo WhatsApp, audios, imagens (ex: foto da conta de luz)</li>
+  <li><strong>Dados tecnicos:</strong> metadados das suas mensagens (horario, origem)</li>
+</ul>
+
+<h2>3. Por que coletamos</h2>
+<ul>
+  <li>Entender sua necessidade e elaborar proposta tecnica personalizada</li>
+  <li>Manter historico de atendimento para continuidade</li>
+  <li>Enviar informacoes relevantes sobre energia solar, agendamento de visita tecnica e acompanhamento pos-venda</li>
+  <li>Cumprir obrigacoes legais (fiscais, contratuais)</li>
+</ul>
+
+<h2>4. Base legal</h2>
+<p>Coletamos e tratamos seus dados com base em:</p>
+<ul>
+  <li><strong>Consentimento</strong> explicito ao preencher formulario ou iniciar conversa conosco</li>
+  <li><strong>Execucao de contrato</strong> quando voce contrata nossos servicos</li>
+  <li><strong>Legitimo interesse</strong> para melhorar o atendimento e responder suas solicitacoes</li>
+</ul>
+
+<h2>5. Com quem compartilhamos</h2>
+<p><strong>Nao compartilhamos seus dados com terceiros para fins comerciais.</strong> Usamos apenas ferramentas operacionais necessarias para prestar o servico:</p>
+<ul>
+  <li>Meta (Facebook/Instagram) — quando voce preenche um formulario de anuncio, conforme a <a href="https://www.facebook.com/privacy/policy" target="_blank">politica de privacidade da Meta</a></li>
+  <li>Provedores de infraestrutura de WhatsApp e armazenamento na nuvem, sob contrato de confidencialidade</li>
+  <li>Autoridades legais, quando obrigados por lei</li>
+</ul>
+
+<h2>6. Por quanto tempo guardamos</h2>
+<p>Mantemos seus dados pelo periodo necessario para:</p>
+<ul>
+  <li>Continuidade do atendimento (enquanto a relacao comercial estiver ativa)</li>
+  <li>Cumprimento de obrigacoes legais (5 anos apos a ultima interacao, conforme legislacao fiscal)</li>
+  <li>Manutencao de historico tecnico para suporte pos-instalacao (durante a vida util do sistema)</li>
+</ul>
+<p>Voce pode solicitar a exclusao dos seus dados a qualquer momento — veja secao 8.</p>
+
+<h2>7. Seguranca</h2>
+<p>Adotamos medidas tecnicas e organizacionais razoaveis para proteger seus dados: criptografia em transito, controle de acesso, autenticacao segura, e armazenamento em provedores reconhecidos (Supabase, nuvens AWS-compativeis).</p>
+
+<h2>8. Seus direitos sob a LGPD</h2>
+<p>Voce tem direito a qualquer momento a:</p>
+<ul>
+  <li>Confirmar se tratamos seus dados</li>
+  <li>Acessar os dados que temos sobre voce</li>
+  <li>Corrigir dados incompletos, inexatos ou desatualizados</li>
+  <li>Solicitar a <span class="highlight">exclusao dos seus dados</span></li>
+  <li>Solicitar a portabilidade dos seus dados</li>
+  <li>Revogar o consentimento a qualquer momento</li>
+  <li>Solicitar informacoes sobre com quem compartilhamos seus dados</li>
+</ul>
+
+<h2>9. Como exercer seus direitos</h2>
+<p>Para qualquer solicitacao relacionada aos seus dados, entre em contato:</p>
+<ul>
+  <li><strong>E-mail:</strong> <a href="mailto:ecosunpower2032@gmail.com">ecosunpower2032@gmail.com</a></li>
+  <li><strong>WhatsApp:</strong> nos envie uma mensagem pedindo a acao desejada ("quero apagar meus dados", "quero sair da lista")</li>
+</ul>
+<p>Respondemos em ate 15 dias uteis.</p>
+
+<h2>10. Cookies e tecnologias similares</h2>
+<p>Nosso site institucional pode usar cookies tecnicos para funcionamento basico. Nao utilizamos cookies de rastreamento publicitario sem o seu consentimento.</p>
+
+<h2>11. Menores de idade</h2>
+<p>Nossos servicos sao destinados a maiores de 18 anos. Nao coletamos dados de menores de idade conscientemente.</p>
+
+<h2>12. Alteracoes nesta politica</h2>
+<p>Esta politica pode ser atualizada periodicamente. A data da ultima atualizacao sempre estara no topo. Alteracoes relevantes serao comunicadas pelos canais que voce ja interage conosco.</p>
+
+<footer>
+<p>Ecosunpower Energia Solar — Brasilia/DF<br>
+Contato: <a href="mailto:ecosunpower2032@gmail.com">ecosunpower2032@gmail.com</a></p>
+</footer>
+</body>
+</html>`;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  });
+
   // Health check
   app.get('/health', async (_req, res) => {
     const status = await buildHealthStatus({
