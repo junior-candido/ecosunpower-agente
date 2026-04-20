@@ -3,6 +3,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { randomBytes } from 'crypto';
 import { ImageGenerator } from './image-gen.js';
 import { VideoGenerator } from './video-gen.js';
+import { buildTrackedWaLink } from './tracking.js';
 
 export type PostTopicType =
   | 'objecao_desmistificada'
@@ -36,7 +37,7 @@ Diretrizes de estilo:
 Regras obrigatorias:
 - Nunca prometa "zerar conta de luz" — fale em "reducao de ate 95%"
 - Nunca minta numeros ou prazos
-- Sempre termine com chamada sutil pra acao (DM, link na bio, WhatsApp)
+- Termine com chamada sutil pra acao ("fala com a gente aqui", "manda um oi", "chama no whatsapp") MAS NUNCA inclua URL nem wa.me nem numero de telefone na caption — o sistema adiciona o link rastreado automaticamente no final. Seu papel e so deixar o GANCHO ("fala com a gente").
 - Mencione "Ecosunpower" naturalmente, nao agressivo
 - Regiao: Brasilia/Goias (menciona quando fizer sentido)
 
@@ -62,17 +63,20 @@ export class MarketingService {
   private supabase: SupabaseClient;
   private imageGen: ImageGenerator;
   private videoGen: VideoGenerator | null;
+  private businessPhone: string;
 
   constructor(
     anthropicApiKey: string,
     supabase: SupabaseClient,
     imageGen: ImageGenerator,
+    businessPhone: string,
     videoGen?: VideoGenerator,
   ) {
     this.anthropic = new Anthropic({ apiKey: anthropicApiKey });
     this.supabase = supabase;
     this.imageGen = imageGen;
     this.videoGen = videoGen ?? null;
+    this.businessPhone = businessPhone;
   }
 
   async generateDraft(preferredType?: PostTopicType, asVideo = true): Promise<GeneratedDraft & { video_url?: string; content_type: string }> {
@@ -151,13 +155,13 @@ export class MarketingService {
       }
     }
 
-    // 5) Save draft in DB
+    // 5) Save draft in DB (sem caption ainda, precisa do id pra tag)
     const approvalToken = randomBytes(16).toString('hex');
     const { data: draft, error: insertErr } = await this.supabase
       .from('marketing_drafts')
       .insert({
         topic: parsed.topic,
-        caption: parsed.caption,
+        caption: parsed.caption, // vai ser atualizado logo abaixo com o link rastreado
         image_prompt: parsed.image_prompt,
         image_url: imageUrl,
         video_url: videoUrl ?? null,
@@ -169,6 +173,28 @@ export class MarketingService {
       .select('id')
       .single();
     if (insertErr || !draft) throw new Error(`Failed to save draft: ${insertErr?.message}`);
+
+    // 6) Build tracked wa.me link. Usamos randomBytes pra entropia real
+    //    (cryptographic random, ~16M combos, colisao ~0) — o draft.id NAO
+    //    entra na tag porque o hash dele teria baixa entropia.
+    //    O texto pre-preenchido usa "pelas redes sociais" pra ser neutro
+    //    entre IG e FB (o mesmo caption vai pros dois).
+    const shortId = randomBytes(3).toString('hex');
+    const waLink = buildTrackedWaLink(
+      this.businessPhone,
+      'oi, vim pelas redes sociais sobre solar',
+      'post',
+      shortId,
+    );
+    // trimEnd pra nao duplicar newlines se o Claude terminou com \n
+    const captionWithLink = `${parsed.caption.trimEnd()}\n\nfala com a gente aqui: ${waLink}`;
+    parsed.caption = captionWithLink;
+
+    // Atualiza caption com link rastreado + salva tracking_tag pra lookup depois
+    await this.supabase
+      .from('marketing_drafts')
+      .update({ caption: captionWithLink, tracking_tag: `post-${shortId}` })
+      .eq('id', draft.id);
 
     return {
       id: draft.id,

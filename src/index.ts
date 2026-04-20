@@ -23,6 +23,7 @@ import { ReengagementCadence } from './modules/reengagement-cadence.js';
 import { PostInstallService, INSTALLATION_STATUSES } from './modules/post-install.js';
 import { TestimonialService, TestimonialFormat } from './modules/testimonials.js';
 import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone } from './modules/meta-leadgen.js';
+import { parseTrackingTag } from './modules/tracking.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -110,6 +111,7 @@ async function main() {
       config.anthropicApiKey,
       supabase.getClient(),
       new ImageGenerator(config.replicateApiToken),
+      config.engineerPhone, // phone pro wa.me rastreado no caption
       new VideoGenerator(config.replicateApiToken),
     )
     : null;
@@ -213,6 +215,62 @@ async function main() {
       }
 
       const leadId = lead.id;
+
+      // TRACKING DE ORIGEM: se e a primeira mensagem e contem tag tipo
+      // #ig-abc123 / #fb-xyz / #ad-ca1 / #rem-x, extrai e classifica lead_source.
+      // So atualiza pra leads NOVOS (preserva atribuicao de leads que ja engajaram
+      // por outro canal antes).
+      let detectedOrigin: { source: string; campaign: string; hint: string } | null = null;
+      if (isNewLead) {
+        const parsed = parseTrackingTag(text);
+        if (parsed) {
+          let source: string = parsed.source;
+          let hint: string = parsed.source;
+
+          // Se for tag "post-*" generica, tenta descobrir a plataforma real
+          // cruzando com marketing_drafts (temos published_results la com
+          // permalinks do IG e FB). Se nao achar, mantem default organico_ig.
+          if (parsed.campaign.startsWith('post-')) {
+            try {
+              const { data: draftRow } = await supabase.getClient()
+                .from('marketing_drafts')
+                .select('published_results, content_type')
+                .eq('tracking_tag', parsed.campaign)
+                .maybeSingle();
+              const results = draftRow?.published_results as Record<string, { permalink?: string }> | null;
+              const hasIG = results?.instagram?.permalink;
+              const hasFB = results?.facebook?.permalink;
+              // Se so saiu em uma plataforma OU uma tem permalink valido,
+              // classifica como aquela. Se ambas, mantem ig (mais provavel
+              // em mobile onde link nao clica no IG mas clica no FB).
+              if (hasFB && !hasIG) source = 'organico_fb';
+              else if (hasIG && !hasFB) source = 'organico_ig';
+              else source = 'organico_ig'; // default (ambas ou indefinido)
+              hint = source;
+            } catch (err) {
+              console.warn(`[tracking] Platform lookup failed:`, (err as Error).message);
+            }
+          }
+
+          try {
+            await supabase.getClient()
+              .from('leads')
+              .update({
+                lead_source: source,
+                utm_source: source,
+                utm_campaign: parsed.campaign,
+                utm_content: parsed.content ?? null,
+                origin: source,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', leadId);
+            detectedOrigin = { source, campaign: parsed.campaign, hint };
+            console.log(`[tracking] Lead ${leadId} classificado como ${source} via tag ${parsed.rawTag}`);
+          } catch (err) {
+            console.error(`[tracking] Failed to classify lead:`, (err as Error).message);
+          }
+        }
+      }
       const conversation = await supabase.getOrCreateConversation(leadId);
 
       // Build history from conversation messages
@@ -271,6 +329,18 @@ async function main() {
       } else {
         leadContext = '\n\n## Este e um CONTATO NOVO - primeira vez que escreve\n';
         leadContext += 'Siga o fluxo de primeiro contato: saudacao + LGPD + conversa natural.\n';
+        if (detectedOrigin) {
+          const sourceLabel: Record<string, string> = {
+            organico_ig: 'Instagram (post organico)',
+            organico_fb: 'Facebook (post organico)',
+            ad_ig_cta_wa: 'anuncio do Instagram',
+            ad_fb_cta_wa: 'anuncio do Facebook',
+            reengajamento_link: 'link de reengajamento',
+          };
+          const label = sourceLabel[detectedOrigin.source] ?? detectedOrigin.source;
+          leadContext += `\n### Origem detectada do lead\n`;
+          leadContext += `Este contato chegou via ${label}. A mensagem inicial dele inclui uma tag de rastreamento — IGNORE a tag no seu retorno mas leve em conta a origem pra contextualizar o atendimento (ex: se veio do Instagram, pode dizer "vi que voce chegou pelo instagram" naturalmente).\n`;
+        }
       }
 
       const response = await brain.processMessage(
