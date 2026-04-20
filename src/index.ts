@@ -111,10 +111,15 @@ async function main() {
       config.anthropicApiKey,
       supabase.getClient(),
       new ImageGenerator(config.replicateApiToken),
-      config.engineerPhone, // phone pro wa.me rastreado no caption
+      // Prefere businessPhone (WhatsApp do negocio onde Eva opera).
+      // Se nao setado, fallback pra engineerPhone por compat (mas com warn).
+      config.businessPhone ?? config.engineerPhone,
       new VideoGenerator(config.replicateApiToken),
     )
     : null;
+  if (marketing && !config.businessPhone) {
+    console.warn('[marketing] WARNING: BUSINESS_PHONE nao setado. wa.me links no caption apontam pro engineerPhone (pessoal). Defina BUSINESS_PHONE=55XXXXXXXXXX (numero do Evolution onde Eva opera).');
+  }
   if (marketing) {
     console.log('[marketing] Content generator enabled (Claude + FLUX 1.1 Pro + Luma Ray Flash 2)');
   } else {

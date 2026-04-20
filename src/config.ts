@@ -19,6 +19,10 @@ const configSchema = z.object({
   openaiApiKey: z.string().optional(),
   engineerPhone: z.string().min(1),
   engineerName: z.string().min(1),
+  // Numero do WhatsApp do NEGOCIO (onde Eva opera, clientes mandam msg).
+  // Diferente de engineerPhone (pessoal do Junior pra notificacoes internas).
+  // Se nao setado, fallback pra engineerPhone por compat.
+  businessPhone: z.string().optional(),
   googleClientId: z.string().optional(),
   googleClientSecret: z.string().optional(),
   googleRefreshToken: z.string().optional(),
@@ -51,6 +55,7 @@ export function loadConfig(): Config {
     openaiApiKey: process.env.OPENAI_API_KEY || undefined,
     engineerPhone: process.env.ENGINEER_PHONE,
     engineerName: process.env.ENGINEER_NAME,
+    businessPhone: process.env.BUSINESS_PHONE || undefined,
     googleClientId: process.env.GOOGLE_CLIENT_ID || undefined,
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || undefined,
     googleRefreshToken: process.env.GOOGLE_REFRESH_TOKEN || undefined,
