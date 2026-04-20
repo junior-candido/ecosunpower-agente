@@ -1446,9 +1446,9 @@ Responda CURTO, maximo 2 paragrafos.`,
     const baseUrl = process.env.PUBLIC_BASE_URL
       ?? 'https://aula-aprendendo-agente-whatsapp.oigz6g.easypanel.host';
     const t = draft.approval_token;
-    const approveLink = `${baseUrl}/marketing/approve/${draft.id}?t=${t}`;
-    const regenLink = `${baseUrl}/marketing/regenerate/${draft.id}?t=${t}`;
-    const discardLink = `${baseUrl}/marketing/discard/${draft.id}?t=${t}`;
+    // UM link soh pro painel de revisao (mobile-friendly com 3 botoes grandes).
+    // Substitui os 3 links antigos no corpo da mensagem.
+    const reviewLink = `${baseUrl}/marketing/review/${draft.id}?t=${t}`;
 
     const caption = [
       `📝 Rascunho de post — ${draft.topic}`,
@@ -1456,9 +1456,8 @@ Responda CURTO, maximo 2 paragrafos.`,
       draft.caption,
       '',
       '─────────────',
-      `✅ Aprovar e publicar: ${approveLink}`,
-      `🔄 Gerar outra imagem: ${regenLink}`,
-      `❌ Descartar: ${discardLink}`,
+      `👉 Abrir painel pra aprovar ou descartar:`,
+      reviewLink,
     ].join('\n');
 
     const isVideo = draft.content_type === 'video' && draft.video_url;
@@ -1486,7 +1485,81 @@ Responda CURTO, maximo 2 paragrafos.`,
   }
 
   // Public HTML pages for approve/regenerate/discard (links clicked from WhatsApp)
-  const htmlPage = (title: string, body: string) => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head><body style="font-family:-apple-system,sans-serif;padding:40px;max-width:600px;margin:0 auto;color:#333;line-height:1.5">${body}</body></html>`;
+  const htmlPage = (title: string, body: string) => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head><body style="font-family:-apple-system,sans-serif;padding:clamp(16px,4vw,40px);max-width:640px;margin:0 auto;color:#333;line-height:1.5">${body}</body></html>`;
+
+  // Escape helper pra prevenir XSS no caption/topic (que vem do Claude e pode
+  // conter caracteres especiais ou, em teoria, HTML malicioso se prompt injetado).
+  const esc = (s: string) => String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  // Permite soh URLs http/https. Bloqueia javascript:, data:, vbscript:, etc.
+  // Usa no src de <img>/<video> pra evitar XSS se Claude alucinar URL estranha.
+  const safeUrl = (u: string | null | undefined): string =>
+    typeof u === 'string' && /^https?:\/\//i.test(u) ? u : '';
+
+  // Painel de revisao mobile-friendly: preview do post + 3 botoes grandes
+  // (Aprovar / Regenerar imagem / Descartar). Abre quando Junior clica no
+  // link unico que a Eva manda no WhatsApp depois de gerar um draft.
+  app.get('/marketing/review/:id', async (req, res) => {
+    // Pagina nunca e cacheada — Junior pode revisar em 2 abas diferentes,
+    // se aprovar em uma, a outra mostra estado atualizado ao recarregar.
+    res.setHeader('Cache-Control', 'no-store, must-revalidate');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+
+    const token = (req.query.t as string) ?? '';
+    if (!marketing) {
+      res.status(503).send(htmlPage('Indisponivel', '<h2>Integracao desativada.</h2>'));
+      return;
+    }
+    const draft = await marketing.validateToken(req.params.id, token);
+    if (!draft) {
+      res.status(403).send(htmlPage('Erro', '<h2>Link invalido ou expirado.</h2>'));
+      return;
+    }
+    if (draft.status === 'published') {
+      res.send(htmlPage('Ja publicado', '<h2>✅ Esse post ja foi publicado.</h2><p>Pode fechar esta aba.</p>'));
+      return;
+    }
+    if (draft.status === 'discarded') {
+      res.send(htmlPage('Descartado', '<h2>❌ Rascunho ja descartado.</h2><p>Pode fechar esta aba.</p>'));
+      return;
+    }
+
+    // Valida que a midia tem URL segura antes de renderizar
+    const videoUrl = safeUrl(draft.video_url);
+    const imageUrl = safeUrl(draft.image_url);
+    if (!videoUrl && !imageUrl) {
+      res.send(htmlPage('Midia indisponivel', '<h2>⚠️ Nao ha midia associada a esse rascunho.</h2><p>Descarte e gere de novo.</p>'));
+      return;
+    }
+
+    const isVideo = draft.content_type === 'video' && !!videoUrl;
+    const previewHtml = isVideo
+      ? `<video controls playsinline preload="metadata" style="width:100%;border-radius:12px;background:#000;margin-bottom:16px"><source src="${esc(videoUrl)}" type="video/mp4"></video>`
+      : `<img src="${esc(imageUrl)}" alt="preview" style="width:100%;border-radius:12px;margin-bottom:16px" />`;
+
+    const tokenEnc = encodeURIComponent(token);
+    const approveUrl = `/marketing/approve/${draft.id}?t=${tokenEnc}`;
+    const regenUrl = `/marketing/regenerate/${draft.id}?t=${tokenEnc}`;
+    const discardUrl = `/marketing/discard/${draft.id}?t=${tokenEnc}`;
+
+    const body = `
+<div style="max-width:560px;margin:0 auto">
+  <div style="color:#888;font-size:13px;margin-bottom:4px">rascunho de post — ecosunpower</div>
+  <h1 style="margin:0 0 16px 0;font-size:22px">${esc(draft.topic)}</h1>
+  ${previewHtml}
+  <div style="background:#f5f5f5;padding:14px 16px;border-radius:10px;white-space:pre-wrap;font-size:15px;line-height:1.5;margin-bottom:20px;word-break:break-word">${esc(draft.caption)}</div>
+  <a href="${approveUrl}" style="display:block;background:#16a34a;color:#fff;text-decoration:none;text-align:center;padding:18px;border-radius:10px;font-size:17px;font-weight:600;margin-bottom:10px">✅ Aprovar e publicar</a>
+  <a href="${regenUrl}" style="display:block;background:#eab308;color:#fff;text-decoration:none;text-align:center;padding:18px;border-radius:10px;font-size:17px;font-weight:600;margin-bottom:10px">🔄 Gerar outra imagem</a>
+  <a href="${discardUrl}" style="display:block;background:#dc2626;color:#fff;text-decoration:none;text-align:center;padding:18px;border-radius:10px;font-size:17px;font-weight:600">❌ Descartar</a>
+  <p style="color:#999;font-size:12px;text-align:center;margin-top:20px">ecosunpower energia solar — painel de aprovacao de conteudo</p>
+</div>`;
+    res.send(htmlPage(`Revisar: ${draft.topic}`, body));
+  });
 
   app.get('/marketing/approve/:id', async (req, res) => {
     const token = (req.query.t as string) ?? '';
@@ -1499,8 +1572,10 @@ Responda CURTO, maximo 2 paragrafos.`,
       res.status(403).send(htmlPage('Erro', '<h2>Link invalido ou expirado.</h2>'));
       return;
     }
-    if (draft.status === 'published') {
-      res.send(htmlPage('Ja publicado', '<h2>Esse post ja foi publicado.</h2>'));
+    if (draft.status !== 'pending_approval') {
+      // Bloqueia aprovar draft ja publicado OU descartado (evita republicar).
+      const label = draft.status === 'published' ? 'Ja publicado' : `Status "${draft.status}" — nao pode aprovar`;
+      res.send(htmlPage(label, `<h2>${label}.</h2><p>Pode fechar esta aba.</p>`));
       return;
     }
     try {
