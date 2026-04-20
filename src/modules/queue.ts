@@ -3,12 +3,13 @@ import Redis from 'ioredis';
 const IORedis = Redis.default ?? Redis;
 
 export interface QueueMessage {
-  type: 'text' | 'audio' | 'image' | 'location' | 'document';
+  type: 'text' | 'audio' | 'image' | 'video' | 'location' | 'document';
   from: string;
   content: string;
   timestamp: string;
   messageId: string;
   pushName?: string;
+  caption?: string;
 }
 
 type MessageHandler = (message: QueueMessage) => Promise<void>;

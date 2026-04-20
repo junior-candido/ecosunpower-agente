@@ -19,28 +19,42 @@ interface TouchStep {
   type: 'review_request' | 'review_nudge' | 'indication_invite';
 }
 
-// Cadencia a partir da troca do medidor (dia 0 = medidor trocado).
+// Cadencia decrescente a partir da troca do medidor (dia 0 = medidor trocado).
 // Junior mencionou que geralmente pede avaliacao ~10 dias apos instalacao,
 // que coincide com a troca do medidor pela distribuidora.
+//
+// A cadencia para assim que o cliente confirma avaliacao (via action
+// `mark_review_confirmed` disparada pela Eva ao detectar "ja avaliei" ou
+// screenshot do GMB). Se nao confirmar em 30 dias, o sistema para de pedir
+// pra nao queimar relacionamento — independente do resultado, o convite de
+// indicacao ainda dispara no dia 30.
 const CADENCE: TouchStep[] = [
-  { days: 0, type: 'review_request' },    // mesmo dia da troca do medidor
-  { days: 7, type: 'review_nudge' },      // 1 semana depois se nao avaliou
-  { days: 30, type: 'indication_invite' }, // 1 mes depois: convite pra indicar
+  { days: 0, type: 'review_request' },      // mesmo dia da troca do medidor
+  { days: 7, type: 'review_nudge' },        // 1 semana: reforco leve
+  { days: 15, type: 'review_nudge' },       // 2 semanas: "nao esqueci"
+  { days: 30, type: 'review_nudge' },       // 1 mes: ultima tentativa
+  { days: 33, type: 'indication_invite' },  // dia 33: convite indicacao
+  // Obs: indication vai 3 dias depois do ultimo review_nudge pra nao
+  // empilhar 2 mensagens no mesmo dia (parece robotico).
 ];
 
 const TOPIC_GUIDE: Record<TouchStep['type'], string> = {
   review_request:
-    'pedir uma avaliacao no Google de forma calorosa. Tom: amigo do cliente, ' +
-    'nao vendedor. Mencione que medidor foi trocado e sistema esta operando. ' +
-    'Inclua o link: {{review_link}}. Lembre que 1 minuto ajuda muito. Sem pressao.',
+    'primeiro pedido de avaliacao no Google apos troca do medidor. Tom: ' +
+    'amigo do cliente, nao vendedor. Mencione que medidor foi trocado e ' +
+    'sistema ja esta operando. Inclua o link: {{review_link}}. Lembre que ' +
+    '1 minuto ajuda muito. Sem pressao. Pode dizer que audio ou texto do ' +
+    'cliente tambem seria bem-vindo (o cliente pode mandar pra Eva).',
   review_nudge:
-    'reforco super leve pra avaliacao no Google. Nao insistir, so lembrar. ' +
-    'Tom: casual, como quem passa pra dar um oi e aproveita pra lembrar. ' +
-    'Link: {{review_link}}. Mencione que o cliente ja deve estar vendo economia ' +
-    'na conta (se fizer sentido). Maximo 3 linhas.',
+    'reforco leve pra avaliacao no Google. Nao insistir, so lembrar. Tom: ' +
+    'casual, como quem passa pra dar um oi e aproveita pra lembrar. Link: ' +
+    '{{review_link}}. Pode mencionar que o cliente ja deve estar vendo ' +
+    'economia na conta. Reconheca sutilmente que ja pediu antes (sem drama). ' +
+    'Maximo 3 linhas. Se preferir, convide pra mandar audio ou escrever ' +
+    'aqui no whatsapp que o Junior organiza.',
   indication_invite:
-    'convite pro programa de indicacao da Ecosunpower: quem indica alguem e essa ' +
-    'pessoa fecha contrato, ganha R$300 no PIX. Tom: amigavel, informal. ' +
+    'convite pro programa de indicacao da Ecosunpower: quem indica alguem e ' +
+    'essa pessoa fecha contrato, ganha R$300 no PIX. Tom: amigavel, informal. ' +
     'Pergunte como o sistema esta indo e deixa o convite sutil.',
 };
 
@@ -111,15 +125,31 @@ export class PostInstallService {
   }
 
   async markReviewConfirmed(leadId: string): Promise<void> {
+    const now = new Date().toISOString();
+
+    // Marca o lead como tendo avaliado (idempotente — so seta se ainda for null)
+    await this.supabase
+      .from('leads')
+      .update({ review_confirmed_at: now })
+      .eq('id', leadId)
+      .is('review_confirmed_at', null);
+
     // So atualiza toques AINDA pending pra nao sobrescrever historico de
     // sent/failed com 'review_confirmed'. Se o cliente avaliar depois do
     // envio, queremos preservar o sent_at original.
-    await this.supabase
+    const { data, error } = await this.supabase
       .from('post_install_touches')
       .update({ status: 'review_confirmed' })
       .eq('lead_id', leadId)
       .eq('status', 'pending')
-      .in('touch_type', ['review_request', 'review_nudge']);
+      .in('touch_type', ['review_request', 'review_nudge'])
+      .select('id');
+    if (error) {
+      console.error('[post-install] markReviewConfirmed failed:', error.message);
+      return;
+    }
+    const canceled = data?.length ?? 0;
+    console.log(`[post-install] Review confirmed for ${leadId} — canceled ${canceled} pending nudges`);
   }
 
   // Chamado periodicamente pelo scheduler (a cada 2h). Busca toques vencidos,

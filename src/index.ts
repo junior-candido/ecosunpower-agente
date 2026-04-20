@@ -21,6 +21,7 @@ import { VideoGenerator } from './modules/video-gen.js';
 import { MarketingService } from './modules/marketing.js';
 import { ReengagementCadence } from './modules/reengagement-cadence.js';
 import { PostInstallService, INSTALLATION_STATUSES } from './modules/post-install.js';
+import { TestimonialService, TestimonialFormat } from './modules/testimonials.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -38,7 +39,7 @@ async function main() {
 
   const evolution = new EvolutionService(config);
   const supabase = new SupabaseService(config);
-  const brain = new Brain(config.anthropicApiKey);
+  const brain = new Brain(config.anthropicApiKey, process.env.GOOGLE_REVIEW_URL ?? '');
   const vision = new VisionAnalyzer(config.anthropicApiKey);
   const transcriber = config.openaiApiKey ? new Transcriber(config.openaiApiKey) : null;
   const knowledgeBase = new KnowledgeBase(join(__dirname, '..', 'conhecimento'));
@@ -135,6 +136,26 @@ async function main() {
   if (!googleReviewUrl) {
     console.warn('[init] GOOGLE_REVIEW_URL not set — post-install flow disabled');
   }
+
+  const testimonials = new TestimonialService(supabase.getClient());
+
+  // Valida que o bucket 'testimonials' existe. Se nao existir, videos de
+  // depoimento nao serao salvos (fluxo continua funcionando mas sem storage).
+  // Junior precisa criar o bucket no Supabase -> Storage -> "New bucket".
+  (async () => {
+    try {
+      const { data: buckets } = await supabase.getClient().storage.listBuckets();
+      const hasBucket = (buckets ?? []).some((b) => b.name === 'testimonials');
+      if (!hasBucket) {
+        console.warn('[init] WARNING: bucket "testimonials" not found in Supabase Storage.');
+        console.warn('[init] Videos de depoimento NAO serao salvos. Crie o bucket em: Supabase -> Storage -> New bucket -> name "testimonials" -> public off recomendado');
+      } else {
+        console.log('[init] Bucket "testimonials" found, video testimonials will be stored');
+      }
+    } catch (err) {
+      console.warn('[init] Could not verify testimonials bucket:', (err as Error).message);
+    }
+  })();
 
   if (!transcriber) {
     console.warn('[init] OPENAI_API_KEY not set — audio transcription disabled');
@@ -522,6 +543,72 @@ async function main() {
         console.log(`[action] Opt-out registered for ${from}`);
         break;
       }
+
+      case 'mark_review_confirmed': {
+        // Eva detectou que o cliente ja avaliou no Google. Cancela toques
+        // pendentes de review e marca timestamp no lead.
+        if (postInstall) {
+          await postInstall.markReviewConfirmed(leadId);
+          console.log(`[action] Review confirmed for ${from}`);
+        } else {
+          console.warn(`[action] mark_review_confirmed received but postInstall disabled`);
+        }
+        break;
+      }
+
+      case 'save_testimonial': {
+        // Eva capturou um depoimento espontaneo do cliente (texto/audio/video).
+        // Payload esperado:
+        //   data: { format: 'audio'|'video'|'text'|'screenshot',
+        //           content?: string, media_url?: string,
+        //           google_posted?: boolean, sentiment?: 'positivo'|'neutro'|'negativo',
+        //           source_message_id?: string, notes?: string }
+        const d = action.data as Record<string, unknown>;
+        const fmt = d.format as TestimonialFormat | undefined;
+        if (!fmt || !['audio', 'video', 'text', 'screenshot'].includes(fmt)) {
+          console.warn(`[action] save_testimonial invalid format: ${fmt}`);
+          break;
+        }
+        // Sentiment vem do modelo — pode vir "positive" em vez de "positivo" se
+        // ele alucinar em ingles. CHECK constraint do DB rejeitaria. Normaliza.
+        const rawSent = (d.sentiment as string | undefined)?.toLowerCase();
+        const sentimentMap: Record<string, 'positivo' | 'neutro' | 'negativo'> = {
+          positivo: 'positivo', positive: 'positivo', good: 'positivo',
+          neutro: 'neutro', neutral: 'neutro',
+          negativo: 'negativo', negative: 'negativo', bad: 'negativo',
+        };
+        const sentiment = rawSent ? sentimentMap[rawSent] : undefined;
+        try {
+          const saved = await testimonials.save({
+            leadId,
+            format: fmt,
+            content: (d.content as string) ?? null,
+            mediaUrl: (d.media_url as string) ?? null,
+            googlePosted: Boolean(d.google_posted),
+            sentiment,
+            sourceMessageId: (d.source_message_id as string) ?? null,
+            notes: (d.notes as string) ?? null,
+          });
+          if (saved.duplicate) {
+            console.log(`[action] Testimonial already existed ${saved.id} (${fmt}), skipping notification`);
+            break;
+          }
+          console.log(`[action] Testimonial saved ${saved.id} (${fmt}) for ${from}`);
+          // Se depoimento em video ou audio positivo, avisar Junior pra usar no marketing
+          if ((fmt === 'video' || fmt === 'audio') && sentiment === 'positivo' && !isSandbox) {
+            // getLeadByPhone e best-effort: falha aqui nao deve estourar o handler
+            const lead = await supabase.getLeadByPhone(from).catch(() => null);
+            const leadName = lead?.name ?? from;
+            await sendText(
+              config.engineerPhone,
+              `depoimento em ${fmt} chegou de ${leadName}. salvei no banco pra usar no marketing — ve a biblioteca quando quiser.`,
+            ).catch(() => { /* nao bloqueante */ });
+          }
+        } catch (err) {
+          console.error(`[action] save_testimonial failed:`, (err as Error).message);
+        }
+        break;
+      }
     }
 
     // Handle contact_type if present
@@ -638,6 +725,92 @@ async function main() {
       console.error(`[vision] Error processing image from ${from}:`, error);
       const msg = 'A foto ficou um pouco dificil de ler. Consegue tirar outra mais nitida? 📸';
       if (!isSandbox) await sendText(from, msg);
+    }
+  }
+
+  // Handle video messages (depoimentos, casos, registros)
+  async function handleVideoMessage(from: string, messageId: string, caption?: string) {
+    if (await takeover.isPaused(from)) {
+      console.log(`[takeover] Skipping video from ${from} — human takeover active`);
+      return;
+    }
+    try {
+      const lead = await supabase.getLeadByPhone(from);
+      if (!isSandbox) await sendText(from, 'Recebi o video! Deixa eu dar uma olhada...');
+
+      const media = await evolution.getMediaBase64(messageId);
+      if (!media) {
+        if (!isSandbox) await sendText(from, 'nao consegui baixar o video aqui, pode tentar enviar de novo?');
+        return;
+      }
+
+      // Upload to Supabase Storage pra preservar o original
+      const videoBuffer = Buffer.from(media.base64, 'base64');
+      const filename = `${Date.now()}-${from}-${messageId.slice(0, 8)}.mp4`;
+      let mediaUrl: string | null = null;
+      try {
+        const { error: uploadErr } = await supabase.getClient().storage
+          .from('testimonials')
+          .upload(filename, videoBuffer, {
+            contentType: media.mimetype || 'video/mp4',
+            upsert: false,
+          });
+        if (uploadErr) {
+          console.warn(`[video] Upload failed (bucket "testimonials" existe?):`, uploadErr.message);
+        } else {
+          mediaUrl = supabase.getClient().storage
+            .from('testimonials')
+            .getPublicUrl(filename).data.publicUrl;
+          console.log(`[video] Uploaded to ${mediaUrl}`);
+        }
+      } catch (e) {
+        console.warn(`[video] Storage upload exception:`, (e as Error).message);
+      }
+
+      // Tentar transcrever o audio do video. Whisper aceita mp4 direto mas
+      // o cap hard e 25MB — usamos 20MB pra deixar margem (o container inclui
+      // video + audio, a API julga pelo tamanho total do upload).
+      let transcription: string | null = null;
+      const WHISPER_SAFE_CAP = 20 * 1024 * 1024;
+      if (transcriber && videoBuffer.byteLength <= WHISPER_SAFE_CAP) {
+        transcription = await transcriber.transcribeFromBase64(media.base64, 'video/mp4');
+      } else if (videoBuffer.byteLength > WHISPER_SAFE_CAP) {
+        console.log(`[video] Too large to transcribe safely (${(videoBuffer.byteLength / 1024 / 1024).toFixed(1)}MB > 20MB)`);
+      }
+
+      // Passa pra Eva decidir o que fazer com o conteudo do video.
+      // Passamos source_message_id pra ela ecoar no save_testimonial,
+      // o que previne duplicatas caso a mensagem volte pela fila.
+      const parts: string[] = ['[Cliente enviou um VIDEO.'];
+      if (caption) parts.push(`Legenda: "${caption}".`);
+      if (transcription) {
+        parts.push(`Transcricao do audio do video: "${transcription}".`);
+      } else {
+        parts.push('(audio do video nao foi transcrito).');
+      }
+      if (mediaUrl) {
+        parts.push(`Video salvo em: ${mediaUrl}.`);
+      } else {
+        parts.push('(nao consegui salvar o video no storage — bucket "testimonials" pode nao existir). ');
+      }
+      parts.push(`source_message_id desta mensagem: "${messageId}".`);
+      parts.push(
+        'Se este video parecer ser um DEPOIMENTO ou avaliacao positiva do sistema/servico, ' +
+        'dispare save_testimonial com format="video", content=transcricao (se houver), ' +
+        'media_url=URL acima (se houver), sentiment="positivo", source_message_id=valor acima. ' +
+        'Depois responda calorosamente ao cliente agradecendo. Se o cliente NAO mencionou ' +
+        'que postou no Google, aproveite e peca gentilmente pra colar a mesma ideia na ' +
+        'avaliacao do Google. Se o video nao for depoimento (ex: foto de conta, telhado, ' +
+        'etc.), responda adequadamente ao conteudo sem salvar depoimento.]',
+      );
+      await handleTextMessage(from, parts.join(' '));
+
+      if (lead) {
+        await supabase.logEvent('info', 'video', `Received video from ${from} (${(videoBuffer.byteLength / 1024).toFixed(0)}KB, transcribed=${Boolean(transcription)})`);
+      }
+    } catch (error) {
+      console.error(`[video] Error processing video from ${from}:`, error);
+      if (!isSandbox) await sendText(from, 'tive um problema pra processar o video. pode tentar reenviar?');
     }
   }
 
@@ -771,6 +944,9 @@ Responda CURTO, maximo 2 paragrafos.`,
       case 'image':
         await handleImageMessage(msg.from, msg.messageId);
         break;
+      case 'video':
+        await handleVideoMessage(msg.from, msg.messageId, msg.caption);
+        break;
       case 'document':
         await handleDocumentMessage(msg.from, msg.messageId, msg.content);
         break;
@@ -869,6 +1045,7 @@ Responda CURTO, maximo 2 paragrafos.`,
       timestamp: parsed.timestamp.toISOString(),
       messageId: parsed.messageId,
       pushName: parsed.pushName,
+      caption: parsed.caption,
     });
 
     res.status(200).json({ status: 'queued' });

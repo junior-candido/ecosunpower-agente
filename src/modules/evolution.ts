@@ -1,13 +1,14 @@
 import type { Config } from '../config.js';
 
 export interface IncomingMessage {
-  type: 'text' | 'audio' | 'image' | 'location' | 'document';
+  type: 'text' | 'audio' | 'image' | 'video' | 'location' | 'document';
   from: string;
   content: string;
   timestamp: Date;
   messageId: string;
   fromMe: boolean;
   pushName?: string;
+  caption?: string; // legenda em imagem/video
 }
 
 export class EvolutionService {
@@ -88,7 +89,22 @@ export class EvolutionService {
 
     if (message.imageMessage) {
       const image = message.imageMessage as Record<string, string>;
-      return { ...base, type: 'image', content: image.url ?? '' };
+      return {
+        ...base,
+        type: 'image',
+        content: image.url ?? '',
+        caption: image.caption ?? undefined,
+      };
+    }
+
+    if (message.videoMessage) {
+      const video = message.videoMessage as Record<string, string>;
+      return {
+        ...base,
+        type: 'video',
+        content: video.url ?? '',
+        caption: video.caption ?? undefined,
+      };
     }
 
     if (message.documentMessage) {

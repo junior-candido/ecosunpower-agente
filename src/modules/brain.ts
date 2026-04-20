@@ -25,13 +25,15 @@ export class Brain {
   private client: Anthropic;
   private systemPrompt: string;
   private residencialPrompt: string;
+  private reviewLink: string;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, reviewLink = '') {
     this.client = new Anthropic({ apiKey });
 
     const promptsDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'prompts');
     this.systemPrompt = readFileSync(join(promptsDir, 'system-prompt.md'), 'utf-8');
     this.residencialPrompt = readFileSync(join(promptsDir, 'residencial.md'), 'utf-8');
+    this.reviewLink = reviewLink;
   }
 
   async processMessage(
@@ -76,7 +78,10 @@ export class Brain {
     summary: string | null,
     qualificationStep: string
   ): string {
-    let content = this.systemPrompt;
+    // Substitui placeholder do link de avaliacao no Google. Se nao tiver
+    // configurado (env GOOGLE_REVIEW_URL), substitui por string vazia — Eva
+    // aprende pelo prompt que nao tem link disponivel.
+    let content = this.systemPrompt.replaceAll('{{review_link}}', this.reviewLink);
 
     content += '\n\n## Base de Conhecimento da Ecosunpower\n\n' + knowledgeBase;
 
