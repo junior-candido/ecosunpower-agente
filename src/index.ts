@@ -19,6 +19,7 @@ import { MetaService } from './modules/meta.js';
 import { ImageGenerator } from './modules/image-gen.js';
 import { VideoGenerator } from './modules/video-gen.js';
 import { MarketingService } from './modules/marketing.js';
+import { ReengagementCadence } from './modules/reengagement-cadence.js';
 import { buildHealthStatus } from './health.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -111,6 +112,12 @@ async function main() {
 
   const learning = new LearningModule(supabase.getClient());
   const followup = new FollowupModule(supabase.getClient(), sendText);
+  const reengagement = new ReengagementCadence(
+    supabase.getClient(),
+    new Anthropic({ apiKey: config.anthropicApiKey }),
+    sendText,
+    () => knowledgeBase.getContent(),
+  );
 
   if (!transcriber) {
     console.warn('[init] OPENAI_API_KEY not set — audio transcription disabled');
@@ -134,6 +141,11 @@ async function main() {
     }
     try {
       let lead = await supabase.getLeadByPhone(from);
+      // If this lead has an active reengagement cadence, cancel it — they replied
+      if (lead?.id && await reengagement.hasPendingTouches(lead.id)) {
+        const canceled = await reengagement.cancelAllTouches(lead.id);
+        console.log(`[reengagement] Canceled ${canceled} pending touches for ${from} (replied)`);
+      }
       const isNewLead = !lead;
 
       if (!lead) {
@@ -482,6 +494,9 @@ async function main() {
           .from('leads')
           .update({ opt_out: true, updated_at: new Date().toISOString() })
           .eq('phone', from);
+        // Also cancel any pending reengagement touches
+        const canceled = await reengagement.cancelAllTouches(leadId);
+        if (canceled > 0) console.log(`[reengagement] Canceled ${canceled} touches after opt-out`);
         console.log(`[action] Opt-out registered for ${from}`);
         break;
       }
@@ -1229,7 +1244,9 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
       res.status(500).json({ error: error.message });
       return;
     }
-    res.json({ status: 'marked_sent', id: req.params.id });
+    // Schedule the 7-touch follow-up cadence (only once per lead)
+    await reengagement.scheduleAllTouches(req.params.id);
+    res.json({ status: 'marked_sent', id: req.params.id, cadence: 'scheduled' });
   });
 
   app.post('/marketing/publish/:id', async (req, res) => {
@@ -1375,6 +1392,21 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         console.error('[marketing] Auto-discard failed:', err);
       }
     }, 24 * 60 * 60 * 1000);
+  }
+
+  // Reengagement cadence: check every 2 hours for due touches
+  if (!isSandbox) {
+    const runReengagementCheck = async () => {
+      try {
+        const sent = await reengagement.processDueTouches();
+        if (sent > 0) console.log(`[reengagement-cadence] Scheduler sent ${sent} touches`);
+      } catch (err) {
+        console.error('[reengagement-cadence] Scheduler failed:', err);
+      }
+    };
+    setTimeout(runReengagementCheck, 10 * 60 * 1000); // first check 10 min after boot
+    setInterval(runReengagementCheck, 2 * 60 * 60 * 1000); // then every 2h
+    console.log('[reengagement-cadence] Scheduler started (every 2h)');
   }
 
   app.listen(config.port, () => {
