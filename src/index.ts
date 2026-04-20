@@ -1105,6 +1105,77 @@ Responda CURTO, maximo 2 paragrafos.`,
   });
 
   // Publish an approved draft to FB + IG
+  // Reengagement: list pending contacts for manual outreach
+  app.get('/reengagement/daily', async (req, res) => {
+    const token = (req.headers['x-webhook-token'] as string)
+      ?? (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    const limit = Number(req.query.limit ?? 10);
+    const { data, error } = await supabase.getClient()
+      .from('leads')
+      .select('id, phone, name, energy_data')
+      .eq('origin', 'reengagement_manual')
+      .order('created_at', { ascending: true })
+      .limit(50);
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+    const pending = (data ?? [])
+      .filter((l) => {
+        const ed = l.energy_data as Record<string, unknown> | null;
+        return !ed?.reengagement_sent_at;
+      })
+      .slice(0, limit);
+
+    const template = (name: string) =>
+      `Oi ${name}, tudo bem? Aqui é o Junior da Ecosunpower. Faz um tempinho que a gente não se fala — vi seu contato aqui e lembrei da nossa conversa sobre energia solar. Quis dar um oi e ver como tá aí a situação da conta de luz. Se tiver interesse, posso te mostrar as condições novas e fazer uma simulação sem compromisso.`;
+
+    const items = pending.map((l) => {
+      const firstName = (l.name ?? '').split(' ')[0] || 'tudo bem';
+      const message = template(firstName);
+      const waLink = `https://wa.me/${l.phone}?text=${encodeURIComponent(message)}`;
+      return {
+        id: l.id,
+        phone: l.phone,
+        name: l.name,
+        message,
+        wa_link: waLink,
+      };
+    });
+
+    res.json({ count: items.length, items });
+  });
+
+  // Mark a reengagement contact as sent
+  app.post('/reengagement/mark-sent/:id', async (req, res) => {
+    const token = (req.headers['x-webhook-token'] as string)
+      ?? (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    const { data: existing } = await supabase.getClient()
+      .from('leads')
+      .select('energy_data')
+      .eq('id', req.params.id)
+      .single();
+    const ed = (existing?.energy_data as Record<string, unknown> | null) ?? {};
+    ed.reengagement_sent_at = new Date().toISOString();
+    const { error } = await supabase.getClient()
+      .from('leads')
+      .update({ energy_data: ed, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id);
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+    res.json({ status: 'marked_sent', id: req.params.id });
+  });
+
   app.post('/marketing/publish/:id', async (req, res) => {
     const token = (req.headers['x-webhook-token'] as string)
       ?? (req.query.token as string) ?? '';
