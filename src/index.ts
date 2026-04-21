@@ -2140,6 +2140,54 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     }
   });
 
+  // Gera uma imagem on-demand pra usar como criativo de anuncio.
+  // Uso: GET /ad/generate-creative?token=X&prompt=...&aspect=1:1
+  // Retorna { url } com URL publica no Supabase Storage. Junior baixa e
+  // sobe no Meta Ads Manager. Aspect 1:1 = feed, 9:16 = Reels/Stories,
+  // 1.91:1 = Lead Ad single image.
+  app.get('/ad/generate-creative', async (req, res) => {
+    const token = (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    if (!config.replicateApiToken) {
+      res.status(503).json({ error: 'Replicate API not configured' });
+      return;
+    }
+    const validAspects = ['1:1', '4:5', '9:16', '16:9', '3:2', '2:3'] as const;
+    const requested = (req.query.aspect as string) ?? '1:1';
+    const aspect = (validAspects as readonly string[]).includes(requested) ? requested as typeof validAspects[number] : '1:1';
+    const customPrompt = req.query.prompt as string | undefined;
+    const defaultPrompt = `Professional photography, magazine quality. Modern luxury Brazilian house in Brasilia (Lago Sul style architecture), white minimalist facade with large windows, beautiful tropical landscaping with native trees, golden hour light. Solar panels visible on the roof, integrated cleanly. Single confident Brazilian man (early 40s, business casual shirt, professional but approachable) standing in front of the house gesturing to the panels with a calm proud expression. Shallow depth of field, cinematic. NO TEXT, no letters, no numbers, no currency symbols, no signage, no watermark, no typography of any kind on the image. Sharp focus on the man, slight bokeh on background.`;
+    try {
+      const imageGen = new ImageGenerator(config.replicateApiToken);
+      const { url } = await imageGen.generate({
+        prompt: customPrompt ?? defaultPrompt,
+        aspectRatio: aspect,
+        outputFormat: 'jpg',
+        outputQuality: 95,
+      });
+      // Upload pro Supabase Storage pra ter URL persistente
+      const { bytes, contentType } = await imageGen.downloadImage(url);
+      const filename = `ad-${Date.now()}.jpg`;
+      const { error: uploadErr } = await supabase.getClient().storage
+        .from('marketing-images')
+        .upload(filename, bytes, { contentType, upsert: false });
+      if (uploadErr) {
+        // Se upload falhar, devolve URL temporaria do Replicate
+        res.json({ url, persistent: false, warning: uploadErr.message });
+        return;
+      }
+      const publicUrl = supabase.getClient().storage
+        .from('marketing-images')
+        .getPublicUrl(filename).data.publicUrl;
+      res.json({ url: publicUrl, persistent: true, prompt_used: customPrompt ?? 'default' });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
   // Pagina publica de Politica de Privacidade pra uso nos Lead Ads da Meta.
   // LGPD (Lei 13.709/2018) exige transparencia sobre coleta/uso de dados.
   // URL publica: /privacidade (usar no campo do Meta Lead Form)
