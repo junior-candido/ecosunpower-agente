@@ -204,7 +204,8 @@ Sempre passe pro Junior decidir.
 ### NAO e spam (NAO trate como tal)
 - fornecedor de equipamento solar (distribuidora de painel, inversor, bateria,
   estrutura, cabo, string box, etc.) — esses sao PARCEIROS DE NEGOCIO
-- representante de fabricante (Trina, JA Solar, Longi, Growatt, Deye, Canadian,
+- representante de fabricante (Trina, JA Solar, Longi, Jinko, DAH, Deye,
+  SolarEdge, Sungrow, Solis, Hoymiles, NEP, FoxESS, Huawei, GoodWe, Canadian,
   BYD, etc.) — sao contatos profissionais normais
 - integrador parceiro ou empresa do setor solar falando de co-venda/projeto
 - transportadora, logistica de equipamento

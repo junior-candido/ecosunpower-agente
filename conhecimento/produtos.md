@@ -1,139 +1,188 @@
 # Produtos e Equipamentos - Ecosunpower
 
+A Ecosunpower trabalha exclusivamente com marcas premium Tier 1, validadas
+pelo mercado brasileiro e com suporte tecnico nacional. NUNCA usamos marcas
+de qualidade inferior, mesmo que mais baratas — preferimos perder venda a
+entregar projeto que vai dar problema em 2-3 anos.
+
 ## Modulos Solares (Paineis)
 
-### Linha Padrao (excelente custo-beneficio)
-
-#### RASE Energy - 700W
-- Tecnologia: N-Type TOPCon
-- Potencia: 700W
-- Excelente custo-beneficio para projetos residenciais e comerciais
+### Premium global Tier 1 (que usamos diariamente)
 
 #### Trina Solar - Vertex N 715W / 720W
-- Tecnologia: N-Type i-TOPCon bifacial
-- Potencia: 715W a 720W (serie TSM-NEG21C.20)
-- Eficiencia: ate 23.2%
-- Uma das maiores fabricantes mundiais, primeira a produzir em massa modulos 700W+
-- Garantia de 25 anos de performance
+- Tecnologia N-Type i-TOPCon bifacial
+- Potencia 715-720W (serie TSM-NEG21C.20)
+- Eficiencia ate 23.2%
+- Garantia 25 anos performance
+- Top 3 mundial em volume e tecnologia avancada
 
 #### JA Solar - DeepBlue 4.0 - 620W / 625W
-- Tecnologia: N-Type TOPCon Half-Cell
-- Potencia: 620W a 625W
-- Eficiencia: ate 22.5%
-- Marca reconhecida mundialmente por qualidade e confiabilidade
-- Garantia de 25 anos de performance
+- Tecnologia N-Type TOPCon Half-Cell
+- Potencia 620-625W
+- Eficiencia ate 22.5%
+- Reconhecida mundialmente por confiabilidade
 
-#### Longi - 635W BPC / 640W
-- Tecnologia: N-Type TOPCon Bifacial
-- Potencia: 635W a 640W
-- Lider mundial em tecnologia monocristalina
-- Alta eficiencia mesmo em dias nublados
-- Garantia de 25 anos de performance
+#### LONGi - 635W BPC / 640W
+- Tecnologia N-Type TOPCon Bifacial
+- Potencia 635-640W
+- LIDER MUNDIAL em eficiencia e volume
+- Otima geracao mesmo em dias nublados
 
-### Linha Premium (alta performance e tecnologia avancada)
+#### Jinko Solar
+- Top 3 global em modulos
+- Linha N-Type de altissimo desempenho
+- Excelente pra cliente exigente
 
-#### Trina Solar - Vertex N 720W+ Premium
-- Tecnologia: N-Type i-TOPCon avancado bifacial
-- Potencia: ate 725W
-- Eficiencia: 23.2%
-- O modulo mais potente da Trina, ideal para quem quer maximo aproveitamento
-- Menor degradacao anual
-- Garantia de 25 anos
+#### DAH Solar
+- Premium emergente, tecnologia N-Type
+- Excelente pra cliente que quer diferenciacao
 
-#### JA Solar - DeepBlue 5.0 - 670W
-- Tecnologia: N-Type TOPCon 1/3-cut cell (ultima geracao 2026)
-- Potencia: 670W
-- Eficiencia: 24.8% - uma das maiores do mercado!
-- Design inovador com celulas cortadas em 1/3 para maior durabilidade
-- Resistencia superior a ventos fortes, neve e ciclagem termica
-- Ideal para quem busca o que ha de mais moderno
+### Tier 1 adicional disponivel (sob demanda)
 
-#### Canadian Solar - HiKu7 TOPCon 610W
-- Tecnologia: N-Type TOPCon Bifacial
-- Potencia: 610W
-- Eficiencia: 22.6%
-- Marca canadense de altissima confiabilidade
-- Otima opcao premium com excelente garantia
+- Canadian Solar — muito forte no Brasil, suporte robusto
+- Risen Energy — alta performance, excelente custo-beneficio premium
 
-#### Maxeon (ex-SunPower) - Maxeon 7 - 440W
-- Tecnologia: IBC (Interdigitated Back Contact) - a mais avancada do mercado
-- Potencia: 440W (residencial - menor tamanho, maior eficiencia por m2)
-- Eficiencia: 24.1% - a mais alta do mercado residencial!
-- Garantia de 40 ANOS (unica no mercado!)
-- Degradacao de apenas 0.25% no primeiro ano e 0.2% depois
-- Garante 92% da potencia no ano 25
-- O painel mais premium do mundo - ideal para telhados pequenos
-- Coeficiente termico de -0.26%/C (excelente para Brasilia/Goias)
+### Logica de recomendacao por perfil
 
-#### REC - Alpha Pure-R
-- Tecnologia: HJT (Heterojunction)
-- Potencia: ate 430W
-- Eficiencia: 22.3%
-- Melhor desempenho em altas temperaturas (otimo para cerrado!)
-- Coeficiente termico de -0.26%/C
-- Garantia de 25 anos com 92% de potencia
-- Fabricante noruegues com altissima qualidade
+- **Cliente padrao (residencial/comercial geral):** Trina, JA Solar ou LONGi
+- **Cliente exigente (alto padrao):** Jinko N-Type ou DAH
 
-#### Risen Energy - Hyper-ion HJT 700W
-- Tecnologia: HJT (Heterojunction) Bifacial
-- Potencia: 700W a 715W
-- Eficiencia: ate 23.0%
-- Degradacao de apenas 0.24% ao ano - excepcional!
-- Um dos modulos mais potentes e eficientes do mercado
+### Tecnologias premium atuais (que usamos)
 
-### Comparativo de tecnologias
-- **TOPCon**: melhor custo-beneficio, alta eficiencia. Usado pela maioria dos fabricantes
-- **HJT (Heterojunction)**: melhor em altas temperaturas, menor degradacao. Premium
-- **IBC (Back Contact)**: maxima eficiencia por m2, estetica superior. Ultra-premium
+- **TOPCon** — nova geracao, eficiencia maior, degradacao menor
+- **N-Type** — mais duravel que P-Type
+- **Half-cell + Multi-busbar** — melhor performance em sombreamento parcial
+- **Bifacial** — geracao adicional pelo verso (quando aplicavel)
+
+---
 
 ## Inversores
 
-### Micro Inversores (padrao Ecosunpower - maioria dos projetos)
-Vantagens dos micro inversores:
-- Cada painel opera de forma independente — se um tiver sombra, os outros nao sao afetados
-- Monitoramento individual de cada painel pelo aplicativo
-- Maior seguranca (sem alta tensao DC no telhado)
-- Facilidade de expansao futura (basta adicionar mais paineis + micro)
-- Garantia de 10 a 15 anos
+### Premium e Profissionais (que usamos no dia a dia)
 
-#### Marcas utilizadas:
-- **Hoymiles** - referencia mundial em micro inversores
-  - Monitoramento via app S-Miles muito intuitivo
-  - Modelos de 1, 2 e 4 entradas
-  - Alta confiabilidade e suporte no Brasil
-- **NEP** - micro inversor robusto e confiavel
-  - Excelente custo-beneficio
-  - Boa rede de suporte no Brasil
-- **Deye** - marca em forte crescimento
-  - Otima tecnologia e preco competitivo
-  - App de monitoramento proprio
-
-### SolarEdge (para clientes exigentes)
-- Sistema de otimizadores + inversor central
+#### SolarEdge
+- Sistema de otimizadores por modulo + inversor central
 - Monitoramento individual de cada painel
 - Maxima eficiencia em telhados com sombreamento parcial
-- Tecnologia premium israelense
-- Garantia estendida de ate 25 anos
-- Ideal para projetos que exigem maximo desempenho e controle
+- Garantia ate 25 anos
+- Premium israelense, padrao top mundial
 
-### Como escolhemos o equipamento para cada cliente
+#### Sungrow
+- Top global, eficiencia >99%
+- Excelente pra projetos comerciais e residenciais grandes
+
+#### Solis
+- Muito forte no Brasil (top ranking)
+- Otimo custo-beneficio premium
+
+#### Deye
+- Hibrido forte (crescendo muito no mercado)
+- Excelente pra residencial com bateria
+
+#### FoxESS
+- Hibrido custo-beneficio premium intermediario
+- Boa opcao quando cliente quer hibrido sem pagar SolarEdge/Huawei
+
+#### Hoymiles (microinversor)
+- Top 2 microinversor no Brasil
+- Monitoramento individual via app S-Miles
+- Modelos 1, 2 e 4 entradas
+- Ideal pra telhados com sombras pontuais
+
+#### NEP - Northern Electric Power (microinversor)
+- Microinversor confiavel e robusto
+- Excelente custo-beneficio
+- Boa rede de suporte BR
+
+### Inversores adicionais disponiveis (sob demanda)
+
+- **Huawei** — hoje o mais forte em hibrido + bateria no Brasil
+- **Fronius** — premium austriaco
+- **SMA** — referencia alema
+- **GoodWe** — top 3 ranking BR
+- **APsystems** — lider mundial em microinversor
+- **SolaX** — premium intermediario
+
+### NAO trabalhamos com
+
+- **Growatt** — qualidade abaixo do nosso padrao. Ecosunpower nao instala
+  Growatt mesmo se cliente pedir. Sempre direcionamos pra Deye, FoxESS,
+  Sungrow ou Solis como alternativa de hibrido custo-beneficio.
+
+---
+
+## Baterias (Sistemas de Armazenamento)
+
+### Premium (que usamos)
+
+- **Deye** — hibrido + bateria integrado, otimo custo-beneficio
+- **FoxESS** — hibrido residencial premium
+- **SolarEdge** — bateria + otimizadores, sistema mais sofisticado
+- **Huawei** — hibrido + bateria forte no Brasil
+
+### Bateria standalone Tier 1
+
+- **BYD** — referencia mundial em LFP, garantia robusta
+- **Pylontech** — chinesa solida, muito usada no Brasil
+
+---
+
+## Estruturas de Fixacao
+
+### Premium nacional (que usamos)
+
+- **2P Solar** — excelente qualidade, padrao Ecosunpower
+- **Romagnole** — premium nacional, alternativa de qualidade
+
+### Cobertura de tipo de telhado
+
+- Ceramico (colonial, romana, portuguesa) — perfis especificos
+- Metalico (trapezoidal, ondulado, kalhetao) — fixacao com grampos
+- Fibrocimento — fixacao com parabolts
+- Laje plana — estrutura triangular com lastro ou fixacao
+- Solo (propriedades rurais e agronegocio) — estrutura aterrada
+
+Aluminio anodizado, garantia 25 anos contra corrosao.
+
+---
+
+## Cabos Solares
+
+- **Prysmian** — top mundial em cabos
+- **Conduspar** — premium nacional
+- **Cobrecom** — alternativa premium nacional
+
+Especificacoes: 4mm2, 6mm2 ou 10mm2 conforme dimensionamento, dupla
+isolacao com cobertura UV protected.
+
+---
+
+## String Box / Protecao Eletrica
+
+- **WEG** — referencia nacional em equipamento eletrico
+- **Steck** — qualidade premium BR
+- **Clamper** — DPS (Dispositivo de Protecao contra Surtos), OBRIGATORIO em
+  todo projeto pra atender NBR 5410 e proteger contra raios e surtos da rede
+
+Componentes string box:
+- Fusivel CC (curto-circuito do lado do painel)
+- DPS CC (surtos do lado dos paineis)
+- DPS CA (surtos do lado da rede)
+- Disjuntor CC e CA dimensionados conforme inversor
+
+---
+
+## Como escolhemos o equipamento pra cada cliente
+
 A Ecosunpower dimensiona o melhor conjunto considerando:
 - Espaco disponivel no telhado
 - Orcamento e expectativa do cliente
 - Tipo de telhado e orientacao
-- Sombreamento
+- Sombreamento (se tiver muito = SolarEdge ou microinversor)
 - Clima da regiao (temperatura, irradiacao)
-- Necessidade de expansao futura
+- Necessidade de expansao futura ou bateria
+- Preferencia da marca (se cliente pediu)
 
-Se o cliente tiver preferencia por alguma marca especifica, a gente trabalha
-com ela sem problema! O importante e que o sistema seja bem dimensionado.
-
-## Estruturas de Fixacao
-- Aluminio anodizado para todos os tipos de telhado:
-  - Ceramico (colonial, romana, portuguesa)
-  - Metalico (trapezoidal, ondulado)
-  - Fibrocimento
-  - Laje plana
-- Instalacao em solo (propriedades rurais e agronegocio)
-- Garantia de 25 anos contra corrosao
-- Sistema de fixacao com grampos e trilhos de alta resistencia
+Se cliente pedir uma marca que nao usamos (ex: Growatt), explicamos
+educadamente o porque e oferecemos alternativa premium do mesmo nivel
+de preco mas com qualidade superior.
