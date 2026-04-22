@@ -1488,6 +1488,77 @@ Responda CURTO, maximo 2 paragrafos.`,
         return;
       }
 
+      // Comando: ativa Eva em massa pra todos contatos com <termo> no nome salvo.
+      // Ex: "eva ativar nome neemias" => lista contatos do WhatsApp (via Evolution
+      // API), filtra por name ou pushName contendo 'neemias', e ativa Eva pra todos.
+      // Feedback vai pro ENGINEER_PHONE (Junior) por mensagem separada.
+      const ativarMatch = normalized.match(/^\/?(eva\s+)?ativar\s+nome\s+(.+)$/);
+      if (ativarMatch) {
+        const termo = ativarMatch[2].trim().toLowerCase();
+        if (termo.length < 2) {
+          res.status(200).json({ status: 'ativar_termo_curto' });
+          return;
+        }
+
+        console.log(`[eva-bulk] Buscando contatos com "${termo}" no nome...`);
+        res.status(200).json({ status: 'eva_bulk_activate_started', termo });
+
+        // roda em background pra nao travar o webhook
+        (async () => {
+          try {
+            const contacts = await evolution.findContacts();
+            const matches = contacts.filter((c) => {
+              const name = (c.name ?? '').toLowerCase();
+              const pushName = (c.pushName ?? '').toLowerCase();
+              return name.includes(termo) || pushName.includes(termo);
+            });
+
+            if (matches.length === 0) {
+              await sendText(config.engineerPhone,
+                `Nenhum contato encontrado com "${termo}" no nome.`);
+              return;
+            }
+
+            let activated = 0;
+            const labels: string[] = [];
+            for (const contact of matches) {
+              try {
+                let lead = await supabase.getLeadByPhone(contact.phone);
+                if (!lead) {
+                  const created = await supabase.upsertLead({
+                    phone: contact.phone,
+                    name: contact.name ?? contact.pushName,
+                    status: 'novo',
+                  });
+                  lead = { id: created.id, phone: contact.phone } as NonNullable<typeof lead>;
+                }
+                await supabase.setEvaActive(contact.phone, true);
+                await takeover.resumeFor(contact.phone);
+                activated++;
+                labels.push(`- ${contact.name ?? contact.pushName ?? contact.phone} (${contact.phone})`);
+              } catch (err) {
+                console.error(`[eva-bulk] Falha ao ativar ${contact.phone}:`, (err as Error).message);
+              }
+            }
+
+            const summary = [
+              `Ativei Eva em *${activated}* contatos com "${termo}" no nome:`,
+              '',
+              labels.slice(0, 40).join('\n'),
+              labels.length > 40 ? `\n...e mais ${labels.length - 40}` : '',
+            ].filter(Boolean).join('\n');
+
+            await sendText(config.engineerPhone, summary);
+            console.log(`[eva-bulk] ${activated} contatos ativados com termo "${termo}"`);
+          } catch (err) {
+            console.error('[eva-bulk] Erro:', (err as Error).message);
+            await sendText(config.engineerPhone,
+              `Erro ao ativar em massa: ${(err as Error).message}`).catch(() => {});
+          }
+        })();
+        return;
+      }
+
       await takeover.pauseFor(parsed.from);
       console.log(`[takeover] Eva paused for ${parsed.from} — human took over`);
       res.status(200).json({ status: 'human_takeover' });

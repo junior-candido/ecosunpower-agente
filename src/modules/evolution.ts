@@ -189,4 +189,64 @@ export class EvolutionService {
   validateWebhookToken(token: string): boolean {
     return token === this.webhookToken;
   }
+
+  /**
+   * Lista todos os contatos sincronizados do WhatsApp do Junior via Evolution API.
+   * Retorna JID (numero@s.whatsapp.net), pushName (nome de perfil do contato) e,
+   * quando disponivel, o 'name' salvo na agenda do telefone do Junior.
+   *
+   * Usado pro comando "eva ativar nome <termo>" que ativa Eva em massa pra um
+   * grupo de contatos identificados pelo nome salvo na agenda.
+   */
+  async findContacts(): Promise<Array<{
+    jid: string;
+    phone: string;
+    pushName?: string;
+    name?: string;
+  }>> {
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/chat/findContacts/${this.instance}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': this.apiKey,
+          },
+          body: JSON.stringify({ where: {} }),
+        }
+      );
+
+      if (!response.ok) {
+        const err = await response.text();
+        console.error(`[evolution] findContacts failed: ${response.status} ${err}`);
+        return [];
+      }
+
+      const data = await response.json() as Array<Record<string, unknown>>;
+      if (!Array.isArray(data)) {
+        console.warn('[evolution] findContacts: response nao eh array');
+        return [];
+      }
+
+      return data
+        .map((raw) => {
+          const jid = String(raw.id ?? raw.remoteJid ?? raw.jid ?? '');
+          if (!jid) return null;
+          // Ignora grupos e status
+          if (jid.includes('-') || jid.endsWith('@g.us') || jid.endsWith('@broadcast')) return null;
+          const phone = jid.replace(/@.*$/, '');
+          return {
+            jid,
+            phone,
+            pushName: raw.pushName ? String(raw.pushName) : undefined,
+            name: raw.name ? String(raw.name) : (raw.verifiedName ? String(raw.verifiedName) : undefined),
+          };
+        })
+        .filter((c): c is NonNullable<typeof c> => c !== null);
+    } catch (error) {
+      console.error('[evolution] findContacts error:', error);
+      return [];
+    }
+  }
 }
