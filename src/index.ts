@@ -1432,7 +1432,8 @@ Responda CURTO, maximo 2 paragrafos.`,
       // Fluxo: marca eva_active=true, NAO responde imediatamente, agenda
       // intro de apresentacao pra 2h depois. Se cliente responder antes,
       // o intro eh cancelado pelo handleTextMessage (cliente ja iniciou).
-      if (/^\/eva\s+(on|voltar)$/.test(content) || content === '/bot on') {
+      // Aceita com ou sem barra inicial (Junior digita de ambos os jeitos).
+      if (/^\/?eva\s+(on|voltar)$/.test(content) || /^\/?bot\s+on$/.test(content)) {
         await takeover.resumeFor(parsed.from);
 
         // Garante que o lead existe ANTES de tentar setar eva_active
@@ -1453,7 +1454,7 @@ Responda CURTO, maximo 2 paragrafos.`,
       }
 
       // Comando: desativar Eva permanentemente neste contato
-      if (/^\/eva\s+off$/.test(content) || content === '/bot off') {
+      if (/^\/?eva\s+off$/.test(content) || /^\/?bot\s+off$/.test(content)) {
         await supabase.setEvaActive(parsed.from, false);
         await takeover.pauseFor(parsed.from);
         // cancela intro pendente se houver
@@ -1468,9 +1469,8 @@ Responda CURTO, maximo 2 paragrafos.`,
       // Aceita variantes com e sem cedilha/acento (celular auto-corrige diferente).
       const normalized = content.normalize('NFD').replace(/[̀-ͯ]/g, '');
       if (
-        normalized === '/manutencao' ||
-        normalized === '/manutencao on' ||
-        normalized === '/limpeza'
+        /^\/?manutencao(\s+on)?$/.test(normalized) ||
+        /^\/?limpeza$/.test(normalized)
       ) {
         let lead = await supabase.getLeadByPhone(parsed.from);
         if (!lead) {
