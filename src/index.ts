@@ -1492,21 +1492,32 @@ Responda CURTO, maximo 2 paragrafos.`,
       // Ex: "eva ativar nome neemias" => lista contatos do WhatsApp (via Evolution
       // API), filtra por name ou pushName contendo 'neemias', e ativa Eva pra todos.
       // Feedback vai pro ENGINEER_PHONE (Junior) por mensagem separada.
-      const ativarMatch = normalized.match(/^\/?(eva\s+)?ativar\s+nome\s+(.+)$/);
-      if (ativarMatch) {
-        const termo = ativarMatch[2].trim().toLowerCase();
+      //
+      // Variante "contar" faz dry-run: nao ativa, so retorna contagem e amostra
+      // pra diagnosticar quando o resultado vem menor que o esperado.
+      const bulkMatch = normalized.match(/^\/?(eva\s+)?(ativar|contar)\s+nome\s+(.+)$/);
+      if (bulkMatch) {
+        const action = bulkMatch[2] as 'ativar' | 'contar';
+        const termo = bulkMatch[3].trim().toLowerCase();
         if (termo.length < 2) {
-          res.status(200).json({ status: 'ativar_termo_curto' });
+          res.status(200).json({ status: 'bulk_termo_curto' });
           return;
         }
 
-        console.log(`[eva-bulk] Buscando contatos com "${termo}" no nome...`);
-        res.status(200).json({ status: 'eva_bulk_activate_started', termo });
+        console.log(`[eva-bulk] ${action} contatos com "${termo}" no nome...`);
+        res.status(200).json({ status: `eva_bulk_${action}_started`, termo });
 
         // roda em background pra nao travar o webhook
         (async () => {
           try {
             const contacts = await evolution.findContacts();
+            console.log(`[eva-bulk] Total de contatos escaneados na Evolution: ${contacts.length}`);
+
+            // Estatisticas de diagnostico
+            const hasName = contacts.filter((c) => c.name && c.name.trim().length > 0).length;
+            const hasPush = contacts.filter((c) => c.pushName && c.pushName.trim().length > 0).length;
+            console.log(`[eva-bulk] Contatos com 'name': ${hasName}, com 'pushName': ${hasPush}`);
+
             const matches = contacts.filter((c) => {
               const name = (c.name ?? '').toLowerCase();
               const pushName = (c.pushName ?? '').toLowerCase();
@@ -1515,7 +1526,29 @@ Responda CURTO, maximo 2 paragrafos.`,
 
             if (matches.length === 0) {
               await sendText(config.engineerPhone,
-                `Nenhum contato encontrado com "${termo}" no nome.`);
+                `Nenhum contato encontrado com "${termo}" no nome.\n\n` +
+                `Total escaneado: ${contacts.length}\n` +
+                `Com 'name' preenchido: ${hasName}\n` +
+                `Com 'pushName' preenchido: ${hasPush}`);
+              return;
+            }
+
+            // Modo 'contar' (dry-run): so mostra a lista, nao ativa
+            if (action === 'contar') {
+              const labels = matches.slice(0, 50).map((c) =>
+                `- ${c.name ?? c.pushName ?? '(sem nome)'} — ${c.phone}`
+              );
+              const summary = [
+                `*DRY RUN* — ${matches.length} contatos com "${termo}" no nome:`,
+                `(Total escaneado: ${contacts.length} | com name: ${hasName} | com pushName: ${hasPush})`,
+                '',
+                labels.join('\n'),
+                matches.length > 50 ? `\n...e mais ${matches.length - 50}` : '',
+                '',
+                `Pra ativar esses, digita: *eva ativar nome ${termo}*`,
+              ].filter(Boolean).join('\n');
+              await sendText(config.engineerPhone, summary);
+              console.log(`[eva-bulk] DRY RUN encontrou ${matches.length} matches pro termo "${termo}"`);
               return;
             }
 
@@ -1543,6 +1576,7 @@ Responda CURTO, maximo 2 paragrafos.`,
 
             const summary = [
               `Ativei Eva em *${activated}* contatos com "${termo}" no nome:`,
+              `(Total escaneado: ${contacts.length} | com name: ${hasName} | com pushName: ${hasPush})`,
               '',
               labels.slice(0, 40).join('\n'),
               labels.length > 40 ? `\n...e mais ${labels.length - 40}` : '',
