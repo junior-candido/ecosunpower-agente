@@ -1418,13 +1418,21 @@ Responda CURTO, maximo 2 paragrafos.`,
       }
 
       // Junior typed directly in the client chat
-      const content = parsed.type === 'text' ? parsed.content.trim().toLowerCase() : '';
+      // Normaliza: trim, lowercase, colapsa multiplos espacos em 1 e remove
+      // caracteres invisiveis (ZWSP, BOM) que o WhatsApp as vezes insere.
+      const content = parsed.type === 'text'
+        ? parsed.content.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[​-‍﻿]/g, '')
+        : '';
+
+      if (content) {
+        console.log(`[fromMe] content="${content}" (len=${content.length}) from=${parsed.from}`);
+      }
 
       // Comando: liberar Eva pra atender este contato
       // Fluxo: marca eva_active=true, NAO responde imediatamente, agenda
       // intro de apresentacao pra 2h depois. Se cliente responder antes,
       // o intro eh cancelado pelo handleTextMessage (cliente ja iniciou).
-      if (content === '/eva on' || content === '/eva voltar' || content === '/bot on') {
+      if (/^\/eva\s+(on|voltar)$/.test(content) || content === '/bot on') {
         await takeover.resumeFor(parsed.from);
 
         // Garante que o lead existe ANTES de tentar setar eva_active
@@ -1445,7 +1453,7 @@ Responda CURTO, maximo 2 paragrafos.`,
       }
 
       // Comando: desativar Eva permanentemente neste contato
-      if (content === '/eva off' || content === '/bot off') {
+      if (/^\/eva\s+off$/.test(content) || content === '/bot off') {
         await supabase.setEvaActive(parsed.from, false);
         await takeover.pauseFor(parsed.from);
         // cancela intro pendente se houver
