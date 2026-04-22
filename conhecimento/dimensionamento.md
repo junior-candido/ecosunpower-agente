@@ -65,6 +65,96 @@ Formula: Oversize = (Potencia total paineis Wp) / (Potencia nominal inversor W)
 - Modulos compativeis: ate 600W por entrada
 - ATENCAO: modulos acima de 600W NAO sao recomendados neste micro
 
+### Hoymiles HMS-1875DW-4T (1875VA, 2 MPPT pareados / 4 entradas)
+- Potencia nominal saida: 1875 VA — corrente saida: 8.52A em 220V
+- Entradas: 4 (2 MPPT com 2 entradas pareadas cada)
+- Tensao maxima entrada: 65V
+- Faixa MPPT: 16-60V (start 22V)
+- Corrente max entrada: 16A por entrada (curto-circuito 20A)
+- Modulos compativeis: 400W a 670W+ POR PAR (nao por entrada)
+- Max PV recomendado: 1875 x 1.5 = **2812Wp total**
+- Eficiencia CEC: 96.5% / MPPT: 99.8%
+- Comunicacao: Wi-Fi integrado (S-Miles Cloud)
+- IP67 NEMA 6, transformador HF galvanico
+- Conformidade: INMETRO 140
+- Max 3 unidades por ramo (cabo 10AWG)
+- ATENCAO: como entradas sao PAREADAS, os 2 modulos do mesmo MPPT
+  precisam ser IGUAIS (mesmo modelo, mesma orientacao, mesma sombra)
+
+### Hoymiles HMS-2250DW-4T (2250VA, 2 MPPT pareados / 4 entradas)
+- Potencia nominal saida: 2250 VA — corrente saida: 10.22A em 220V
+- Entradas: 4 (2 MPPT com 2 entradas pareadas cada)
+- Tensao maxima entrada: 65V
+- Faixa MPPT: 16-60V
+- Corrente max entrada: 18A por entrada
+- Modulos compativeis: 450W a 760W+ POR PAR
+- Max PV recomendado: 2250 x 1.5 = **3375Wp total**
+- AFCI integrado (protecao arco eletrico)
+- Eficiencia CEC: 96.6% / MPPT: 99.8%
+- Conformidade: ABNT NBR 16149/16150, INMETRO
+- IDEAL para projetos com modulos 700W+ atuais
+
+### Deye SUN-S130/160/180/200/220/225G4-EU-Q0 (familia monofasica 220V, 2 MPPT)
+- Familia com 6 potencias: **1300, 1600, 1800, 2000, 2200, 2250 VA**
+- 2 MPPT, 2 entradas DC
+- Tensao maxima entrada: 65V
+- Wi-Fi integrado (cloud Solarman)
+- IP67, design slim
+- Compatibilidade: requer DRM via DIN VDE V0126-95 (200ms desligamento)
+- Eficiencia: ~96.5%
+- Garantia padrao: 12 anos (extensao 25 anos disponivel)
+- USO IDEAL: alternativa ao Hoymiles 4T quando cliente quer 2 entradas
+  apenas (1 modulo grande por entrada, sem pareamento)
+
+### Enphase IQ8P (475VA, 1 MPPT)
+- Potencia nominal saida: 475 VA — corrente saida: 2.16A em 220V
+- 1 MPPT, 1 entrada (1 modulo por microinversor)
+- Tensao maxima entrada: 60V
+- Faixa MPPT: 27-45V
+- Corrente curto-circuito DC: 14A
+- Modulos compativeis: **235-440W (3-leadwire) ou 60/72 celulas**
+- ATENCAO: NAO compatativel com modulos 540W+ (entrada limita)
+- Eficiencia CEC: 97.5% (a maior dessa lista)
+- Conformidade: INMETRO 575
+- Sistema requer cabo Engage Q + Envoy Gateway (custo adicional)
+- USO IDEAL: telhados com sombreamento severo onde individualidade
+  de cada modulo se paga; cliente premium que quer Enphase
+
+### FoxESS Serie Q (Q1-1600/1800/2000/2500, 4 MPPT)
+- Familia: Q1-1600, Q1-1800, Q1-2000, Q1-2500 (W de saida)
+- 4 MPPT independentes, 4 entradas DC (1 modulo por entrada)
+- Tensao maxima entrada: 60V
+- Faixa MPPT: 25-55V
+- Corrente max entrada: 16A por MPPT
+- Modulos compativeis: ate 670W+ por entrada
+- Max PV recomendado (1.5x):
+  - Q1-1600: 2400Wp
+  - Q1-1800: 2700Wp
+  - Q1-2000: 3000Wp
+  - Q1-2500: 3750Wp
+- Eficiencia: 96.8%
+- IP67, Wi-Fi via FoxCloud V2.0
+- Conformidade: ABNT NBR 16149/16150, INMETRO
+- USO IDEAL: cliente quer micro com 4 MPPT INDEPENDENTES (sem
+  pareamento) — vantagem sobre Hoymiles em telhados com orientacoes
+  diferentes nos 4 modulos
+
+### Sungrow S2500S-L (2500VA, 2 MPPT)
+- Potencia nominal saida: 2500 VA — corrente saida: 11.4A em 220V
+- 2 MPPT, 2 entradas DC
+- Tensao maxima entrada: 60V (Voc), 50V operacional
+- Faixa MPPT: 18-43V
+- Corrente max entrada: 16.2A por MPPT (curto 19.4A)
+- Modulos compativeis: ate 720W por entrada
+- Max PV recomendado: 2500 x 1.5 = **3750Wp total (1875Wp por MPPT)**
+- Eficiencia max: 98.5% (a melhor dessa categoria)
+- Eficiencia MPPT: 99.5%
+- IP67, Wi-Fi
+- Conformidade: ABNT NBR 16149/16150, IEC 62109
+- USO IDEAL: maior potencia em micro hoje no portfolio Ecosunpower
+  — cliente que quer micro mas precisa de saida alta sem pulverizar
+  em varios equipamentos
+
 ### NEP BDM-2000 (2000W, 4 MPPT)
 - Potencia nominal saida: 2000W
 - Tensao maxima entrada: 60V
@@ -73,11 +163,28 @@ Formula: Oversize = (Potencia total paineis Wp) / (Potencia nominal inversor W)
 - Max PV recomendado pelo fabricante: **3000Wp total (750Wp por entrada)**
 - Modulos compativeis: ate 720W por entrada
 
-### NEP BDM-2250 (2250W, 4 MPPT)
-- Potencia nominal saida: 2250W
+### NEP BDM-2250 (2250VA, 4 MPPT INDEPENDENTES) — DATASHEET CONFIRMADO
+- Potencia nominal saida: 2250 VA / corrente saida: 10.23A em 220V
+- 4 entradas DC INDEPENDENTES (1 modulo por entrada, sem pareamento)
 - Tensao maxima entrada: 60V
-- Max PV recomendado: 2250W x 1.5 = **3375Wp total (843Wp por entrada)**
-- Modulos compativeis: todos os modulos atuais (ate 720W)
+- Faixa MPPT: 22-55V (start 24V)
+- Corrente maxima por entrada: 18A
+- **Max PV recomendado fabricante: 750W x 4 = 3000Wp total**
+  (especificacao do datasheet — limite POR entrada eh 750Wp)
+- Modulos compativeis: ate 750W por entrada (cobre TODOS modulos atuais
+  incluindo Jinko Tiger Neo 735W)
+- Eficiencia max: 97.3% / Eficiencia MPPT: >99.5%
+- Consumo noturno: 110 mW
+- Comunicacao: PLC ou WiFi (modelos variantes)
+- Conexao CA: cabo trunco
+- Quantidade max por ramal de 32A: 3 unidades
+- Faixa temperatura: -40 a +65 C
+- Dimensoes: 351 x 275.5 x 39.5 mm / Peso: 6 kg / IP67
+- Conector DC: MC4
+
+VANTAGEM NEP vs Hoymiles HMS-1875/2250: 4 MPPT INDEPENDENTES (Hoymiles 4T
+pareia entradas em 2 MPPTs). NEP permite 4 modulos diferentes ou
+orientacoes diferentes nas 4 entradas.
 
 ### NEP BDM-600 (500W, 2 MPPT)
 - Potencia nominal saida: 500W
@@ -121,21 +228,77 @@ Formula: Oversize = (Potencia total paineis Wp) / (Potencia nominal inversor W)
 
 ## INVERSORES STRING - Limites
 
-### Huawei SUN2000-5KTL-L1 (5kW monofasico)
-- Potencia nominal: 5000W
-- Max PV recomendado fabricante: 5520Wp (oversize 1.1)
-- Max PV Ecosunpower (1.5x): **7500Wp**
-- Tensao maxima entrada: 600V
-- Faixa MPPT: 90-560V
-- Corrente max por MPPT: 12.5A
-- MPPTs: 2 (1 string cada)
-- Strings: calcular tensao dos modulos em serie (nao ultrapassar 600V)
+### Huawei SUN2000-2/3/3.68/4/4.6/5/6KTL-L1 (familia 2-6kW monofasico, High Current Version)
 
-### Huawei SUN2000-6KTL-L1 (6kW monofasico)
-- Potencia nominal: 6000W
-- Max PV recomendado fabricante: 6600Wp
-- Max PV Ecosunpower (1.5x): **9000Wp**
-- Mesmas specs de tensao/corrente do 5KTL
+Familia monofasica 220V Brasil/LATAM com 7 modelos. **2 MPPTs, 1 string por MPPT.**
+Tensao max entrada: 600V | Faixa MPPT: 90-560V (rated 360V)
+Corrente max por MPPT: **13.5A** | Corrente curto-circuito por MPPT: **20A**
+Eficiencia max: **98.3%** | Eur weighted: 96.7-97.5%
+Compativel com bateria LUNA2000-5/10/15-S0 e otimizadores SUN2000-450W-P2/600W-P
+Backup: via SmartGuard ESA SG | Standards: ABNT 16149/16150, INMETRO
+
+| Modelo | Pnom AC | Max AC | Saida A | Max PV fabricante | Max PV Eco (1.5x) |
+|--------|---------|--------|---------|-------------------|-------------------|
+| SUN2000-2KTL-L1 | 2000W | 2000W | 10.0A | 3,000 Wp | 3,000 Wp |
+| SUN2000-3KTL-L1 | 3000W | 3000W | 14.5A | 4,500 Wp | 4,500 Wp |
+| SUN2000-3.68KTL-L1 | 3680W | 3680W | 17.0A | 5,520 Wp | 5,520 Wp |
+| SUN2000-4KTL-L1 | 4000W | 4000W | 18.0A | 6,000 Wp | 6,000 Wp |
+| SUN2000-4.6KTL-L1 | 4600W | 4600W | 21.0A | 6,900 Wp | 6,900 Wp |
+| SUN2000-5KTL-L1 | 5000W | 5000W | 23.0A | 7,500 Wp | 7,500 Wp |
+| SUN2000-6KTL-L1 | 6000W | 6000W | 27.3A | 9,000 Wp | 9,000 Wp |
+
+NOTA: a "High Current Version" L1 ja vem com max PV recomendado fabricante
+no LIMITE de oversize 1.5x — ou seja, ja eh o limite Ecosunpower.
+
+### Huawei SUN2000-7.5K-LC0 (7.5kW monofasico — VERSAO BRASIL)
+- Potencia nominal saida: 7500W (single-phase)
+- Max apparent power: 7500 VA / corrente max saida: 34.09A em 220V
+- Max PV recomendado fabricante: **11,250 Wp** (oversize 1.5x)
+- 3 MPPTs, 1 entrada por MPPT
+- Tensao maxima entrada: 600V | Startup: 50V | Vmpp: 40-560V
+- Corrente max por MPPT: 16A / curto: 22A
+- Eficiencia max: 98.1% / Eur weighted: 97.5%
+- Bateria: LUNA2000-5/10/15-S0 ou LUNA2000-7/14/21-S1 (350-560V, 25A)
+- Carga max: 7,500W / Descarga max: 7,500W
+- Backup: SmartGuard ESA SG | Tensao saida: 220V (180-264V), 50/60Hz
+- Active Arc Protection (AFCI) | DPS tipo II (CC e CA)
+- Comunicacao: WLAN nativa + LED, RS485, Ethernet, Smart Dongle
+- Dimensoes: 425 x 500 x 156.5 mm / Peso: 14.5 kg / IP65
+- Faixa temp operacao: -25 a +60 C (>45 C aplica derate)
+- Otimizadores compativeis: SUN2000-450W-P2, 600W-P
+- Standards: ABNT 16149, NBR 16150, IEC 62109-1/-2, Ordinance 140
+
+### Huawei SUN2000-8K-LC0 e SUN2000-10K-LC0 (8 e 10kW monofasicos — VERSAO BRASIL)
+
+Compartilham mesma plataforma (3 MPPTs, mesmas specs DC). Diferenca: potencia AC.
+
+| Spec | 8K-LC0 | 10K-LC0 |
+|------|--------|---------|
+| Potencia nominal AC | 8000W | 10000W |
+| Max apparent power | 8800VA | 10000VA |
+| Corrente max saida (220V) | 40.0A | 45.5A |
+| Max PV recomendado fabricante | **12,000 Wp** | **15,000 Wp** |
+| Carga max bateria | 8000W | 10000W |
+| Descarga max bateria | 8800W | 10000W |
+| Cooling | Conveccao natural | Smart Air Cooling |
+| Peso | 14.5 kg | 15 kg |
+
+Specs comuns 8K/10K-LC0:
+- 3 MPPTs, 1 entrada por MPPT
+- Tensao maxima entrada: 600V | Vmpp: 40-560V | Startup: 50V
+- Corrente max por MPPT: 16A / curto: 22A
+- Eficiencia max: 98.1%
+- Bateria: LUNA2000-5/10/15-S0 ou LUNA2000-7/14/21-S1
+- Tensao saida: 220V (180-264V), 50/60Hz, single-phase
+- Backup: SmartGuard ESA SG
+- Comunicacao: WLAN + LED, RS485, Ethernet, Smart Dongle
+- Dimensoes: 425 x 500 x 156.5 mm / IP65
+- Active Arc Protection | DPS II CC e CA
+- Standards: ABNT 16149/16150, IEC 62109, Ordinance 140
+
+ATENCAO COMERCIAL: Linha LC0 (Brasil) eh BATTERY-READY de fabrica — cliente
+que pretende adicionar bateria depois ja sai com hardware preparado, so
+liga LUNA2000 sem trocar inversor.
 
 ### Huawei SUN2000-10KTL-M1 (10kW trifasico)
 - Potencia nominal: 10000W

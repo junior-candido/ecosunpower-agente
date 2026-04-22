@@ -28,10 +28,13 @@ entregar projeto que vai dar problema em 2-3 anos.
 - LIDER MUNDIAL em eficiencia e volume
 - Otima geracao mesmo em dias nublados
 
-#### Jinko Solar
+#### Jinko Solar - Tiger Neo 66HL5-BDV 710-735W
 - Top 3 global em modulos
-- Linha N-Type de altissimo desempenho
-- Excelente pra cliente exigente
+- Tecnologia N-Type TOPCon + HOT 3.0 + SMBB + Anti-PID
+- Eficiencia ate 23.66% (a maior da nossa lista)
+- Garantia 12 anos produto / **30 anos performance** (degrada 0.40%/ano)
+- Bifacial dual glass | 5400 Pa carga frontal
+- Excelente pra cliente exigente que valoriza garantia longa
 
 #### DAH Solar
 - Premium emergente, tecnologia N-Type
@@ -64,8 +67,9 @@ entregar projeto que vai dar problema em 2-3 anos.
 - Sistema de otimizadores por modulo + inversor central
 - Monitoramento individual de cada painel
 - Maxima eficiencia em telhados com sombreamento parcial
-- Garantia ate 25 anos
+- Garantia ate 25 anos (otimizadores) / 12 anos (inversor, ext 25)
 - Premium israelense, padrao top mundial
+- DETALHES COMPLETOS, ARGUMENTOS DE VENDA E COMPARATIVOS: ver `solaredge.md`
 
 #### Sungrow
 - Top global, eficiencia >99%

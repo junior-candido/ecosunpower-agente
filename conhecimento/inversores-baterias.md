@@ -10,22 +10,26 @@ Potencias disponiveis no Brasil:
 - **HMS-1800DW-4T**: 1800W, 4 entradas, WiFi integrado
 - **HMS-1875DW-4T**: 1875W, 4 entradas, WiFi integrado
 - **HMS-2000DW-4T**: 2000W, 4 entradas, WiFi integrado, eficiencia 99.8%
+- **HMS-2250DW-4T**: 2250W monofasico, 4 entradas pareadas, AFCI, eficiencia 96.6% (modulos ate 760W+ por par)
 - **HMT-2250-6T**: 2250W, 6 entradas, trifasico
 - **MiT-5000-8T**: 5000W, 8 entradas (lancamento 2025)
 Certificacoes: IEC 62109-1/-2, ABNT NBR 16150, INMETRO, IEC 61000
 Garantia: 12 anos (extensivel para 25)
 Monitoramento: S-Miles Installer app
 
-### NEP BDM (robusto, WiFi integrado)
+### NEP BDM (robusto, WiFi integrado, 4 MPPT INDEPENDENTES)
 Potencias disponiveis no Brasil:
 - **BDM-600**: 500W saida, 2 entradas, mono/bifasico 220V
 - **BDM-800**: 800W, 2 entradas
 - **BDM-1600**: 1600W, 4 entradas
 - **BDM-2000**: 2000W, 4 MPPT, eficiencia 97.1%, WiFi nativo
-- **BDM-2250**: 2250W, 4 MPPT, eficiencia 97.3%, WiFi nativo
+- **BDM-2250**: 2250 VA, 4 MPPT INDEPENDENTES, max 750Wp por entrada
+  (3000Wp total fabricante), eficiencia 97.3%, faixa MPPT 22-55V,
+  18A por entrada, IP67, comunicacao PLC ou WiFi
 Certificacoes: UL1741, TUV, IEC 61727, INMETRO
 Garantia: 12 anos
-Destaque: WiFi integrado sem gateway extra
+Destaque: 4 MPPT INDEPENDENTES (sem pareamento como Hoymiles 4T) — permite
+4 modulos diferentes ou 4 orientacoes diferentes
 
 ### Deye Micro Inversores
 Potencias disponiveis no Brasil:
@@ -39,12 +43,40 @@ Certificacoes: IEC 62109, INMETRO
 Garantia: 10 anos
 Monitoramento: SolarMAN app
 
+### Deye SUN-S G4-Q0 (linha S monofasica - nova geracao 2 MPPT)
+Potencias disponiveis: **1300, 1600, 1800, 2000, 2200, 2250 VA**
+- **SUN-S130G4-EU-Q0**: 1300 VA, 2 MPPT, Wi-Fi integrado, IP67
+- **SUN-S160G4-EU-Q0**: 1600 VA, 2 MPPT
+- **SUN-S180G4-EU-Q0**: 1800 VA, 2 MPPT
+- **SUN-S200G4-EU-Q0**: 2000 VA, 2 MPPT
+- **SUN-S220G4-EU-Q0**: 2200 VA, 2 MPPT
+- **SUN-S225G4-EU-Q0**: 2250 VA, 2 MPPT
+Diferenca pra linha M: 2 MPPT (nao 4) — ideal pra 2 modulos grandes
+Eficiencia: ~96.5% | Garantia padrao 12 anos (extensao 25)
+
 ### Sungrow Micro Inversores
 Potencias disponiveis no Brasil:
 - **SG2.0RS-S**: 2000W, compacto
-- **SG2.5RS-S**: 2500W (lancamento 2025)
-Certificacoes: IEC 62109, INMETRO
-Garantia: 10 anos
+- **S2500S-L**: 2500 VA, 2 MPPT, eficiencia max 98.5% (a maior dessa categoria), Wi-Fi, IP67
+Certificacoes: IEC 62109, INMETRO, ABNT NBR 16149/16150
+Garantia: 25 anos (S2500S-L)
+
+### Enphase Micro Inversores
+- **IQ8P**: 475 VA, 1 MPPT (1 modulo por unidade), eficiencia CEC 97.5%
+Tensao entrada max: 60V | Faixa MPPT: 27-45V | Modulos compativeis: 235-440W
+Requer cabo Engage Q + Envoy Gateway (sistema completo Enphase)
+Certificacoes: INMETRO 575 | Garantia: 25 anos
+USO IDEAL: telhados com sombreamento severo + cliente premium
+
+### FoxESS Micro Inversores (Serie Q - 4 MPPT independentes)
+- **Q1-1600**: 1600W, 4 MPPT independentes
+- **Q1-1800**: 1800W, 4 MPPT independentes
+- **Q1-2000**: 2000W, 4 MPPT independentes
+- **Q1-2500**: 2500W, 4 MPPT independentes
+Modulos compativeis: ate 670W+ por entrada | Eficiencia: 96.8%
+Wi-Fi via FoxCloud V2.0 | IP67 | Certificacao ABNT 16149/16150 + INMETRO
+DIFERENCIAL: 4 MPPT INDEPENDENTES (sem pareamento) — melhor que Hoymiles
+em telhados com 4 orientacoes diferentes
 
 ---
 
@@ -53,14 +85,22 @@ Garantia: 10 anos
 ### Huawei SUN2000 (#1 mundial)
 Potencias disponiveis no Brasil:
 
-**Monofasicos (residencial):**
-- **SUN2000-3KTL-L1**: 3kW, 2 MPPT
-- **SUN2000-4KTL-L1**: 4kW, 2 MPPT
-- **SUN2000-4.6KTL-L1**: 4.6kW, 2 MPPT
-- **SUN2000-5KTL-L1**: 5kW, 2 MPPT
-- **SUN2000-6KTL-L1**: 6kW, 2 MPPT
-- **SUN2000-7.5K-LC0**: 7.5kW (lancamento 2025)
-- **SUN2000-10K-LC0**: 10kW (lancamento 2025)
+**Monofasicos (residencial) — Linha L1 (High Current Version):**
+- **SUN2000-2KTL-L1**: 2kW, 2 MPPT (max PV 3000Wp)
+- **SUN2000-3KTL-L1**: 3kW, 2 MPPT (max PV 4500Wp)
+- **SUN2000-3.68KTL-L1**: 3.68kW, 2 MPPT (max PV 5520Wp)
+- **SUN2000-4KTL-L1**: 4kW, 2 MPPT (max PV 6000Wp)
+- **SUN2000-4.6KTL-L1**: 4.6kW, 2 MPPT (max PV 6900Wp)
+- **SUN2000-5KTL-L1**: 5kW, 2 MPPT (max PV 7500Wp)
+- **SUN2000-6KTL-L1**: 6kW, 2 MPPT (max PV 9000Wp)
+- Eficiencia max 98.3% | bateria-ready (LUNA2000-S0)
+
+**Monofasicos (residencial) — Linha LC0 (versao Brasil, battery-ready de fabrica):**
+- **SUN2000-7.5K-LC0**: 7.5kW, 3 MPPT (max PV 11250Wp), AFCI, 14.5kg
+- **SUN2000-8K-LC0**: 8kW, 3 MPPT (max PV 12000Wp), AFCI, 14.5kg
+- **SUN2000-10K-LC0**: 10kW, 3 MPPT (max PV 15000Wp), AFCI, Smart Air Cooling, 15kg
+- Todos: tensao saida 220V, IP65, eficiencia 98.1%, backup via SmartGuard ESA SG
+- Compativeis com baterias LUNA2000-5/10/15-S0 e LUNA2000-7/14/21-S1
 
 **Trifasicos (residencial/comercial):**
 - **SUN2000-5KTL-M1**: 5kW, 2 MPPT
