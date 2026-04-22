@@ -13,6 +13,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { LearningModule } from './modules/learning.js';
 import { FollowupModule } from './modules/followup.js';
 import { MaintenanceService } from './modules/maintenance.js';
+import { CadenceService } from './modules/cadence.js';
 import { ingestCanalSolar } from './modules/canal-solar.js';
 import { TakeoverService } from './modules/takeover.js';
 import { CalendarService } from './modules/calendar.js';
@@ -191,6 +192,11 @@ async function main() {
     () => knowledgeBase.getContent(),
   );
   const maintenance = new MaintenanceService(
+    supabase,
+    new Anthropic({ apiKey: config.anthropicApiKey }),
+    sendText,
+  );
+  const cadence = new CadenceService(
     supabase,
     new Anthropic({ apiKey: config.anthropicApiKey }),
     sendText,
@@ -792,10 +798,16 @@ async function main() {
   }
 
   // Helper: se cliente respondeu (qualquer midia/texto), cancela intro pendente
-  // pra Eva nao mandar a apresentacao depois da conversa ja iniciada.
+  // E CADENCIA PENDENTE pra Eva nao mandar toques automatizados depois da
+  // conversa ja iniciada. Eva entra no fluxo normal de qualificacao.
   async function cancelIntroIfPending(from: string): Promise<void> {
     const lead = await supabase.getLeadByPhone(from);
-    if (lead?.id) await supabase.cancelEvaIntro(lead.id, 'client_replied').catch(() => {});
+    if (!lead?.id) return;
+    await supabase.cancelEvaIntro(lead.id, 'client_replied').catch(() => {});
+    const cancelled = await supabase.cancelCadence(lead.id, 'client_replied').catch(() => 0);
+    if (cancelled > 0) {
+      console.log(`[cadence] ${cancelled} toques cancelados pra ${from} (cliente respondeu)`);
+    }
   }
 
   // Handle audio messages
@@ -1457,9 +1469,12 @@ Responda CURTO, maximo 2 paragrafos.`,
       if (/^\/?eva\s+off$/.test(content) || /^\/?bot\s+off$/.test(content)) {
         await supabase.setEvaActive(parsed.from, false);
         await takeover.pauseFor(parsed.from);
-        // cancela intro pendente se houver
+        // cancela intro pendente E cadencia de reengajamento se houver
         const lead = await supabase.getLeadByPhone(parsed.from);
-        if (lead?.id) await supabase.cancelEvaIntro(lead.id, 'eva_off_command').catch(() => {});
+        if (lead?.id) {
+          await supabase.cancelEvaIntro(lead.id, 'eva_off_command').catch(() => {});
+          await supabase.cancelCadence(lead.id, 'eva_off_command').catch(() => {});
+        }
         console.log(`[eva-active] Eva DESATIVADA permanentemente pra ${parsed.from}`);
         res.status(200).json({ status: 'eva_disabled' });
         return;
@@ -1482,6 +1497,8 @@ Responda CURTO, maximo 2 paragrafos.`,
         console.log(`[maintenance] ${parsed.from} marcado como cliente de manutencao + ${count} lembretes agendados`);
         // Eva continua desativada por padrao — cliente de manutencao nao recebe Eva
         // automatica, apenas os lembretes anuais e o que Junior liberar com /eva on.
+        // Cancela cadencia tambem (cliente de manutencao ja tem os 2 lembretes anuais).
+        await supabase.cancelCadence(lead.id, 'maintenance_client').catch(() => {});
         await supabase.setEvaActive(parsed.from, false);
         await takeover.pauseFor(parsed.from);
         res.status(200).json({ status: 'maintenance_client_registered' });
@@ -2614,6 +2631,19 @@ Contato: <a href="mailto:ecosunpower2032@gmail.com">ecosunpower2032@gmail.com</a
     setInterval(checkMaintenanceDaily, 60 * 60 * 1000); // checa a cada hora
     setTimeout(checkMaintenanceDaily, 5 * 60 * 1000);   // roda 5min apos start
     console.log('[maintenance] Reminder scheduler started (1x/day apos 9h BRT, idempotente)');
+
+    // Cadencia de reengajamento: 5 toques (0h, 15d, 30d, 45d, 60d).
+    // Processa vencidos a cada 15 min, respeita horario comercial 9h-20h BRT.
+    setInterval(async () => {
+      const sent = await cadence.processCadence().catch((err) => {
+        console.error('[cadence] processCadence error:', (err as Error).message);
+        return 0;
+      });
+      if (sent > 0) console.log(`[cadence] ${sent} toques de cadencia enviados`);
+    }, 15 * 60 * 1000);
+    // Primeira passada 2min apos start (captura backlog de toques vencidos durante restart)
+    setTimeout(() => cadence.processCadence().catch(() => {}), 2 * 60 * 1000);
+    console.log('[cadence] Cadence scheduler started (checks every 15 min, 9h-20h BRT)');
   }
 
   // Canal Solar ingestion (every 3 days)

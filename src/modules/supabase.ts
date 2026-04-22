@@ -359,4 +359,128 @@ export class SupabaseService {
       .update({ status: 'failed', error_message: errorMessage })
       .eq('id', id);
   }
+
+  // ==========================================================================
+  // Cadencia de reengajamento (5 toques: 0h, 15d, 30d, 45d, 60d)
+  // ==========================================================================
+
+  async scheduleCadence(leadId: string, startOffsetMinutes: number = 0): Promise<void> {
+    await this.client
+      .from('eva_cadence')
+      .update({ status: 'cancelled', cancelled_reason: 'superseded' })
+      .eq('lead_id', leadId)
+      .eq('status', 'pending');
+
+    const now = Date.now();
+    const steps = [
+      { step: 1, offsetDays: 0 },
+      { step: 2, offsetDays: 15 },
+      { step: 3, offsetDays: 30 },
+      { step: 4, offsetDays: 45 },
+      { step: 5, offsetDays: 60 },
+    ];
+
+    const rows = steps.map((s) => ({
+      lead_id: leadId,
+      step: s.step,
+      scheduled_for: new Date(now + startOffsetMinutes * 60_000 + s.offsetDays * 24 * 60 * 60_000).toISOString(),
+      status: 'pending',
+    }));
+
+    const { error } = await this.client
+      .from('eva_cadence')
+      .upsert(rows, { onConflict: 'lead_id,step', ignoreDuplicates: false });
+
+    if (error) throw new Error(`Failed to schedule cadence: ${error.message}`);
+  }
+
+  async cancelCadence(leadId: string, reason: string): Promise<number> {
+    const { data, error } = await this.client
+      .from('eva_cadence')
+      .update({ status: 'cancelled', cancelled_reason: reason })
+      .eq('lead_id', leadId)
+      .eq('status', 'pending')
+      .select('id');
+
+    if (error) {
+      console.warn(`[supabase] cancelCadence error: ${error.message}`);
+      return 0;
+    }
+    return Array.isArray(data) ? data.length : 0;
+  }
+
+  async cancelCadenceByPhone(phone: string, reason: string): Promise<number> {
+    const lead = await this.getLeadByPhone(phone);
+    if (!lead?.id) return 0;
+    return this.cancelCadence(lead.id, reason);
+  }
+
+  async getDueCadenceSteps(): Promise<Array<{
+    id: string;
+    lead_id: string;
+    step: number;
+    scheduled_for: string;
+    phone: string;
+    name: string | null;
+  }>> {
+    const { data, error } = await this.client
+      .from('eva_cadence')
+      .select('id, lead_id, step, scheduled_for, leads!inner(phone, name)')
+      .eq('status', 'pending')
+      .lte('scheduled_for', new Date().toISOString())
+      .order('scheduled_for', { ascending: true })
+      .limit(50);
+
+    if (error) {
+      console.error(`[supabase] getDueCadenceSteps error: ${error.message}`);
+      return [];
+    }
+
+    return (data ?? []).map((row: any) => ({
+      id: row.id,
+      lead_id: row.lead_id,
+      step: row.step,
+      scheduled_for: row.scheduled_for,
+      phone: row.leads.phone,
+      name: row.leads.name,
+    }));
+  }
+
+  async lockCadenceForSending(id: string): Promise<boolean> {
+    const { data, error } = await this.client
+      .from('eva_cadence')
+      .update({ status: 'sending' })
+      .eq('id', id)
+      .eq('status', 'pending')
+      .select('id');
+
+    if (error) {
+      console.error(`[supabase] lockCadenceForSending error: ${error.message}`);
+      return false;
+    }
+    return Array.isArray(data) && data.length > 0;
+  }
+
+  async unlockCadence(id: string): Promise<void> {
+    await this.client
+      .from('eva_cadence')
+      .update({ status: 'pending' })
+      .eq('id', id)
+      .eq('status', 'sending');
+  }
+
+  async markCadenceSent(id: string, messageSent: string): Promise<void> {
+    await this.client
+      .from('eva_cadence')
+      .update({ status: 'sent', sent_at: new Date().toISOString(), message_sent: messageSent })
+      .eq('id', id)
+      .eq('status', 'sending');
+  }
+
+  async markCadenceFailed(id: string, errorMessage: string): Promise<void> {
+    await this.client
+      .from('eva_cadence')
+      .update({ status: 'failed', error_message: errorMessage })
+      .eq('id', id);
+  }
 }
