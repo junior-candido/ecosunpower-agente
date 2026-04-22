@@ -153,4 +153,210 @@ export class SupabaseService {
       .from('logs')
       .insert({ level, module, message, metadata: metadata ?? {} });
   }
+
+  // ==========================================================================
+  // Eva-active flag (controle de quem Eva atende)
+  // ==========================================================================
+
+  async isEvaActiveForPhone(phone: string): Promise<boolean> {
+    const { data, error } = await this.client
+      .from('leads')
+      .select('eva_active')
+      .eq('phone', phone)
+      .maybeSingle();
+
+    if (error) {
+      console.warn(`[supabase] isEvaActiveForPhone error: ${error.message}`);
+      return true; // fail-open: na duvida, deixa Eva responder (lead novo cai aqui)
+    }
+    if (!data) return true; // lead nao existe ainda = Eva responde (vai ser criado com default true)
+    return data.eva_active === true;
+  }
+
+  async setEvaActive(phone: string, active: boolean): Promise<void> {
+    const updates: Record<string, unknown> = { eva_active: active };
+    if (active) updates.eva_activated_at = new Date().toISOString();
+
+    const { error } = await this.client
+      .from('leads')
+      .update(updates)
+      .eq('phone', phone);
+
+    if (error) throw new Error(`Failed to set eva_active: ${error.message}`);
+  }
+
+  async markMaintenanceClient(phone: string): Promise<{ leadId: string } | null> {
+    const lead = await this.getLeadByPhone(phone);
+    if (!lead) return null;
+
+    const { error } = await this.client
+      .from('leads')
+      .update({ maintenance_client: true })
+      .eq('id', lead.id);
+
+    if (error) throw new Error(`Failed to mark maintenance client: ${error.message}`);
+    return { leadId: lead.id };
+  }
+
+  // ==========================================================================
+  // Eva intro pendente (delay 2h apos /eva on)
+  // ==========================================================================
+
+  async scheduleEvaIntro(leadId: string, scheduledFor: Date): Promise<void> {
+    // cancela qualquer intro anterior pendente do mesmo lead
+    await this.client
+      .from('eva_intro_pending')
+      .update({ status: 'cancelled', cancelled_reason: 'superseded' })
+      .eq('lead_id', leadId)
+      .eq('status', 'pending');
+
+    const { error } = await this.client
+      .from('eva_intro_pending')
+      .insert({ lead_id: leadId, scheduled_for: scheduledFor.toISOString() });
+
+    if (error) throw new Error(`Failed to schedule eva intro: ${error.message}`);
+  }
+
+  async cancelEvaIntro(leadId: string, reason: string): Promise<void> {
+    // Cancela apenas se ainda esta 'pending'. Se ja virou 'sending' (cron
+    // travou pra enviar), eh tarde demais — Eva ja vai mandar a intro.
+    // Trade-off aceito: melhor cliente receber intro tardiamente do que
+    // ter race onde Eva manda apos ja ter conversado.
+    await this.client
+      .from('eva_intro_pending')
+      .update({ status: 'cancelled', cancelled_reason: reason })
+      .eq('lead_id', leadId)
+      .eq('status', 'pending');
+  }
+
+  async getDueEvaIntros(): Promise<Array<{ id: string; lead_id: string; phone: string; name: string | null }>> {
+    const { data, error } = await this.client
+      .from('eva_intro_pending')
+      .select('id, lead_id, leads!inner(phone, name)')
+      .eq('status', 'pending')
+      .lte('scheduled_for', new Date().toISOString());
+
+    if (error) {
+      console.error(`[supabase] getDueEvaIntros error: ${error.message}`);
+      return [];
+    }
+
+    return (data ?? []).map((row: any) => ({
+      id: row.id,
+      lead_id: row.lead_id,
+      phone: row.leads.phone,
+      name: row.leads.name,
+    }));
+  }
+
+  /**
+   * CAS: tenta marcar intro como 'sending' pra travar contra cancelamento
+   * concorrente do cliente. Retorna true se travou, false se outro processo
+   * (ou cancelEvaIntro) ja mudou o status.
+   */
+  async lockEvaIntroForSending(id: string): Promise<boolean> {
+    const { data, error } = await this.client
+      .from('eva_intro_pending')
+      .update({ status: 'sending' })
+      .eq('id', id)
+      .eq('status', 'pending')
+      .select('id');
+
+    if (error) {
+      console.error(`[supabase] lockEvaIntroForSending error: ${error.message}`);
+      return false;
+    }
+    return Array.isArray(data) && data.length > 0;
+  }
+
+  /**
+   * Devolve uma intro travada como 'sending' pra 'pending' (em caso de erro
+   * no envio — permite retry no proximo ciclo).
+   */
+  async unlockEvaIntro(id: string): Promise<void> {
+    await this.client
+      .from('eva_intro_pending')
+      .update({ status: 'pending' })
+      .eq('id', id)
+      .eq('status', 'sending');
+  }
+
+  async markEvaIntroSent(id: string): Promise<void> {
+    // CAS: so marca como sent se ainda esta como sending (foi travada por nos).
+    await this.client
+      .from('eva_intro_pending')
+      .update({ status: 'sent', sent_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('status', 'sending');
+  }
+
+  // ==========================================================================
+  // Lembretes de manutencao (maio e agosto recorrentes)
+  // ==========================================================================
+
+  async scheduleMaintenanceReminders(leadId: string): Promise<number> {
+    // gera proximo maio e proximo agosto a partir de hoje
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth(); // 0-indexed: maio=4, agosto=7
+
+    const nextMay = new Date(month >= 4 ? year + 1 : year, 4, 1);     // 1 de maio
+    const nextAug = new Date(month >= 7 ? year + 1 : year, 7, 1);     // 1 de agosto
+
+    const rows = [
+      { lead_id: leadId, scheduled_date: nextMay.toISOString().slice(0, 10), topic: 'limpeza_maio' },
+      { lead_id: leadId, scheduled_date: nextAug.toISOString().slice(0, 10), topic: 'limpeza_agosto' },
+    ];
+
+    const { error } = await this.client
+      .from('maintenance_reminders')
+      .upsert(rows, { onConflict: 'lead_id,scheduled_date,topic', ignoreDuplicates: true });
+
+    if (error) throw new Error(`Failed to schedule maintenance reminders: ${error.message}`);
+    return rows.length;
+  }
+
+  async getDueMaintenanceReminders(): Promise<Array<{
+    id: string;
+    lead_id: string;
+    topic: string;
+    scheduled_date: string;
+    phone: string;
+    name: string | null;
+  }>> {
+    const today = new Date().toISOString().slice(0, 10);
+    const { data, error } = await this.client
+      .from('maintenance_reminders')
+      .select('id, lead_id, topic, scheduled_date, leads!inner(phone, name)')
+      .eq('status', 'pending')
+      .lte('scheduled_date', today);
+
+    if (error) {
+      console.error(`[supabase] getDueMaintenanceReminders error: ${error.message}`);
+      return [];
+    }
+
+    return (data ?? []).map((row: any) => ({
+      id: row.id,
+      lead_id: row.lead_id,
+      topic: row.topic,
+      scheduled_date: row.scheduled_date,
+      phone: row.leads.phone,
+      name: row.leads.name,
+    }));
+  }
+
+  async markMaintenanceReminderSent(id: string, messageSent: string): Promise<void> {
+    await this.client
+      .from('maintenance_reminders')
+      .update({ status: 'sent', sent_at: new Date().toISOString(), message_sent: messageSent })
+      .eq('id', id);
+  }
+
+  async markMaintenanceReminderFailed(id: string, errorMessage: string): Promise<void> {
+    await this.client
+      .from('maintenance_reminders')
+      .update({ status: 'failed', error_message: errorMessage })
+      .eq('id', id);
+  }
 }

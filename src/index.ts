@@ -12,6 +12,7 @@ import { VisionAnalyzer } from './modules/vision.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { LearningModule } from './modules/learning.js';
 import { FollowupModule } from './modules/followup.js';
+import { MaintenanceService } from './modules/maintenance.js';
 import { ingestCanalSolar } from './modules/canal-solar.js';
 import { TakeoverService } from './modules/takeover.js';
 import { CalendarService } from './modules/calendar.js';
@@ -189,6 +190,11 @@ async function main() {
     sendText,
     () => knowledgeBase.getContent(),
   );
+  const maintenance = new MaintenanceService(
+    supabase,
+    new Anthropic({ apiKey: config.anthropicApiKey }),
+    sendText,
+  );
 
   const googleReviewUrl = process.env.GOOGLE_REVIEW_URL ?? '';
   const postInstall = googleReviewUrl
@@ -245,6 +251,20 @@ async function main() {
     }
     try {
       let lead = await supabase.getLeadByPhone(from);
+
+      // Bloqueio: se lead existe e Eva esta INATIVA pra ele, ignora (Junior atende manual)
+      // Lead novo (lead == null) sempre passa — sera criado com eva_active=true (default).
+      if (lead && (lead as any).eva_active === false) {
+        console.log(`[eva-active] Skipping message from ${from} — eva_active=false (Junior atende)`);
+        return;
+      }
+
+      // Se cliente respondeu antes do delay 2h da intro automatica, cancela a intro.
+      // (lead?.id pode ser null aqui pra primeira mensagem de lead novo — sem intro pra cancelar)
+      if (lead?.id) {
+        await supabase.cancelEvaIntro(lead.id, 'client_replied').catch(() => {});
+      }
+
       // If this lead has an active reengagement cadence, cancel it — they replied
       if (lead?.id && await reengagement.hasPendingTouches(lead.id)) {
         const canceled = await reengagement.cancelAllTouches(lead.id);
@@ -771,12 +791,24 @@ async function main() {
     }
   }
 
+  // Helper: se cliente respondeu (qualquer midia/texto), cancela intro pendente
+  // pra Eva nao mandar a apresentacao depois da conversa ja iniciada.
+  async function cancelIntroIfPending(from: string): Promise<void> {
+    const lead = await supabase.getLeadByPhone(from);
+    if (lead?.id) await supabase.cancelEvaIntro(lead.id, 'client_replied').catch(() => {});
+  }
+
   // Handle audio messages
   async function handleAudioMessage(from: string, messageId: string) {
     if (await takeover.isPaused(from)) {
       console.log(`[takeover] Skipping audio from ${from} — human takeover active`);
       return;
     }
+    if (!(await supabase.isEvaActiveForPhone(from))) {
+      console.log(`[eva-active] Skipping audio from ${from} — eva_active=false`);
+      return;
+    }
+    await cancelIntroIfPending(from);
     if (!transcriber) {
       const msg = 'Nao consegui ouvir o audio. Pode me enviar por texto, por favor? 😊';
       if (!isSandbox) await sendText(from, msg);
@@ -816,6 +848,11 @@ async function main() {
       console.log(`[takeover] Skipping image from ${from} — human takeover active`);
       return;
     }
+    if (!(await supabase.isEvaActiveForPhone(from))) {
+      console.log(`[eva-active] Skipping image from ${from} — eva_active=false`);
+      return;
+    }
+    await cancelIntroIfPending(from);
     try {
       const lead = await supabase.getLeadByPhone(from);
       const context = lead?.name
@@ -876,6 +913,11 @@ async function main() {
       console.log(`[takeover] Skipping video from ${from} — human takeover active`);
       return;
     }
+    if (!(await supabase.isEvaActiveForPhone(from))) {
+      console.log(`[eva-active] Skipping video from ${from} — eva_active=false`);
+      return;
+    }
+    await cancelIntroIfPending(from);
     try {
       const lead = await supabase.getLeadByPhone(from);
       if (!isSandbox) await sendText(from, 'Recebi o video! Deixa eu dar uma olhada...');
@@ -962,6 +1004,11 @@ async function main() {
       console.log(`[takeover] Skipping document from ${from} — human takeover active`);
       return;
     }
+    if (!(await supabase.isEvaActiveForPhone(from))) {
+      console.log(`[eva-active] Skipping document from ${from} — eva_active=false`);
+      return;
+    }
+    await cancelIntroIfPending(from);
     try {
       if (!mimetype.includes('pdf')) {
         const msg = 'Recebi o arquivo! Por enquanto consigo analisar PDFs e imagens. Se for uma conta de luz, pode mandar como foto ou PDF 😊';
@@ -1368,10 +1415,64 @@ Responda CURTO, maximo 2 paragrafos.`,
 
       // Junior typed directly in the client chat
       const content = parsed.type === 'text' ? parsed.content.trim().toLowerCase() : '';
+
+      // Comando: liberar Eva pra atender este contato
+      // Fluxo: marca eva_active=true, NAO responde imediatamente, agenda
+      // intro de apresentacao pra 2h depois. Se cliente responder antes,
+      // o intro eh cancelado pelo handleTextMessage (cliente ja iniciou).
       if (content === '/eva on' || content === '/eva voltar' || content === '/bot on') {
         await takeover.resumeFor(parsed.from);
-        console.log(`[takeover] Eva resumed for ${parsed.from} by human command`);
-        res.status(200).json({ status: 'eva_resumed' });
+
+        // Garante que o lead existe ANTES de tentar setar eva_active
+        // (lead novo entra com default true, mas precisamos do id pra agendar intro)
+        let lead = await supabase.getLeadByPhone(parsed.from);
+        if (!lead) {
+          const created = await supabase.upsertLead({ phone: parsed.from, status: 'novo' });
+          lead = { id: created.id, phone: parsed.from } as NonNullable<typeof lead>;
+        }
+        await supabase.setEvaActive(parsed.from, true);
+
+        const introAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2h
+        await supabase.scheduleEvaIntro(lead.id, introAt);
+        console.log(`[eva-active] Eva ativada pra ${parsed.from} — intro agendada pra ${introAt.toISOString()}`);
+
+        res.status(200).json({ status: 'eva_resumed_with_intro_scheduled' });
+        return;
+      }
+
+      // Comando: desativar Eva permanentemente neste contato
+      if (content === '/eva off' || content === '/bot off') {
+        await supabase.setEvaActive(parsed.from, false);
+        await takeover.pauseFor(parsed.from);
+        // cancela intro pendente se houver
+        const lead = await supabase.getLeadByPhone(parsed.from);
+        if (lead?.id) await supabase.cancelEvaIntro(lead.id, 'eva_off_command').catch(() => {});
+        console.log(`[eva-active] Eva DESATIVADA permanentemente pra ${parsed.from}`);
+        res.status(200).json({ status: 'eva_disabled' });
+        return;
+      }
+
+      // Comando: marcar como cliente de manutencao + agendar lembretes maio/agosto.
+      // Aceita variantes com e sem cedilha/acento (celular auto-corrige diferente).
+      const normalized = content.normalize('NFD').replace(/[̀-ͯ]/g, '');
+      if (
+        normalized === '/manutencao' ||
+        normalized === '/manutencao on' ||
+        normalized === '/limpeza'
+      ) {
+        let lead = await supabase.getLeadByPhone(parsed.from);
+        if (!lead) {
+          const created = await supabase.upsertLead({ phone: parsed.from, status: 'novo' });
+          lead = { id: created.id, phone: parsed.from } as NonNullable<typeof lead>;
+        }
+        await supabase.markMaintenanceClient(parsed.from);
+        const count = await supabase.scheduleMaintenanceReminders(lead.id);
+        console.log(`[maintenance] ${parsed.from} marcado como cliente de manutencao + ${count} lembretes agendados`);
+        // Eva continua desativada por padrao — cliente de manutencao nao recebe Eva
+        // automatica, apenas os lembretes anuais e o que Junior liberar com /eva on.
+        await supabase.setEvaActive(parsed.from, false);
+        await takeover.pauseFor(parsed.from);
+        res.status(200).json({ status: 'maintenance_client_registered' });
         return;
       }
 
@@ -2349,6 +2450,53 @@ Contato: <a href="mailto:ecosunpower2032@gmail.com">ecosunpower2032@gmail.com</a
     // Run first check 5 minutes after startup
     setTimeout(() => followup.processFollowups(), 5 * 60 * 1000);
     console.log('[followup] Follow-up scheduler started (checks every 1 hour)');
+
+    // Eva intro pendente (delay 2h apos /eva on): checa a cada 2 minutos
+    setInterval(async () => {
+      const sent = await maintenance.processIntros().catch((err) => {
+        console.error('[maintenance] processIntros error:', (err as Error).message);
+        return 0;
+      });
+      if (sent > 0) console.log(`[maintenance] ${sent} intros Eva enviadas`);
+    }, 2 * 60 * 1000);
+    console.log('[maintenance] Intro scheduler started (checks every 2 min)');
+
+    // Lembretes de manutencao (maio e agosto): roda 1x por dia.
+    // Janela: das 9h BRT em diante. Idempotente via flag 'maintenance_last_run'
+    // no app_flags (data ISO YYYY-MM-DD). Se restart pular as 9h, recupera depois.
+    const checkMaintenanceDaily = async () => {
+      const now = new Date();
+      const brtHour = (now.getUTCHours() - 3 + 24) % 24;
+      if (brtHour < 9) return;
+
+      const today = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+      const { data: flag } = await supabase.getClient()
+        .from('app_flags')
+        .select('value')
+        .eq('key', 'maintenance_last_run')
+        .maybeSingle();
+
+      if (flag?.value === today) return; // ja rodou hoje
+
+      // Trava ANTES de rodar pra evitar double-run em caso de restart concorrente.
+      const { error: lockErr } = await supabase.getClient()
+        .from('app_flags')
+        .upsert({ key: 'maintenance_last_run', value: today }, { onConflict: 'key' });
+      if (lockErr) {
+        console.warn('[maintenance] Failed to lock daily flag:', lockErr.message);
+        return;
+      }
+
+      const sent = await maintenance.processMaintenanceReminders().catch((err) => {
+        console.error('[maintenance] processReminders error:', (err as Error).message);
+        return 0;
+      });
+      if (sent > 0) console.log(`[maintenance] ${sent} lembretes de limpeza enviados (data ${today})`);
+    };
+    setInterval(checkMaintenanceDaily, 60 * 60 * 1000); // checa a cada hora
+    setTimeout(checkMaintenanceDaily, 5 * 60 * 1000);   // roda 5min apos start
+    console.log('[maintenance] Reminder scheduler started (1x/day apos 9h BRT, idempotente)');
   }
 
   // Canal Solar ingestion (every 3 days)
