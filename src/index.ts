@@ -1173,10 +1173,14 @@ Responda CURTO, maximo 2 paragrafos.`,
 
   // Express server
   const app = express();
+  // Limit 50mb: webhooks da Evolution API chegam com imagem/video em base64
+  // inline (PayloadTooLargeError no default de 100kb). 50mb cobre videos curtos
+  // do zap (~25mb MP4 + overhead base64 ~33%).
   // `verify` captura o buffer bruto antes de parsear JSON — necessario pra
   // validar o HMAC-SHA256 do webhook Lead Ads da Meta (o X-Hub-Signature-256
   // e calculado sobre o body bytewise, e JSON.stringify(parsed) nao bate).
   app.use(express.json({
+    limit: '50mb',
     verify: (req, _res, buf) => {
       (req as unknown as { rawBody: string }).rawBody = buf.toString('utf8');
     },
