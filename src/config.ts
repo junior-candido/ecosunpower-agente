@@ -34,6 +34,9 @@ const configSchema = z.object({
   metaAppSecret: z.string().optional(),     // pra HMAC do webhook Lead Ads
   metaVerifyToken: z.string().optional(),   // pro challenge do subscribe
   replicateApiToken: z.string().optional(),
+  tavusApiKey: z.string().optional(),
+  tavusApiUrl: z.string().url().default('https://tavusapi.com'),
+  tavusReplicaId: z.string().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -67,5 +70,8 @@ export function loadConfig(): Config {
     metaAppSecret: process.env.META_APP_SECRET || undefined,
     metaVerifyToken: process.env.META_VERIFY_TOKEN || undefined,
     replicateApiToken: process.env.REPLICATE_API_TOKEN || undefined,
+    tavusApiKey: process.env.TAVUS_API_KEY || undefined,
+    tavusApiUrl: process.env.TAVUS_API_URL,
+    tavusReplicaId: process.env.TAVUS_REPLICA_ID || undefined,
   });
 }
