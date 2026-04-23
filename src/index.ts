@@ -1223,6 +1223,7 @@ Responda CURTO, maximo 2 paragrafos.`,
 
   // POST: evento real de novo lead preenchido no formulario do IG/FB
   app.post('/webhook/meta/leadgen', async (req, res) => {
+    console.log(`[meta-leadgen] POST received, body size=${((req as unknown as { rawBody?: string }).rawBody ?? '').length}, sig=${req.headers['x-hub-signature-256'] ? 'present' : 'MISSING'}`);
     if (!metaLeadgen) {
       res.status(503).json({ error: 'Meta leadgen disabled' });
       return;
@@ -1239,8 +1240,18 @@ Responda CURTO, maximo 2 paragrafos.`,
     // retenta se nao receber resposta rapida. O processamento e async.
     res.status(200).json({ status: 'received' });
 
-    const payload = req.body as LeadgenPayload;
-    if (payload.object !== 'page') return;
+    const payload = req.body as LeadgenPayload & { sample?: { field: string; value: unknown } };
+    // Teste do painel Webhooks manda `{ sample: {...} }` sem object=page. Loga e
+    // retorna pra reviewer ver 200, mas sem processar (IDs sao fake 4444...).
+    if (payload.sample) {
+      console.log('[meta-leadgen] Test payload from Webhooks panel received (sample data, no processing)');
+      return;
+    }
+    if (payload.object !== 'page') {
+      console.log(`[meta-leadgen] Payload object != 'page' (got '${payload.object}'), skipping`);
+      return;
+    }
+    console.log(`[meta-leadgen] Processing leadgen webhook (${payload.entry?.length ?? 0} entries)`);
 
     // Processa cada entry / change de forma independente (varios leads
     // podem chegar no mesmo payload em teoria). Erros nao devem derrubar
