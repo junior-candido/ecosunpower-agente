@@ -2546,6 +2546,121 @@ Contato: <a href="mailto:ecosunpower2032@gmail.com">ecosunpower2032@gmail.com</a
     res.send(html);
   });
 
+  // Pagina publica de Termos de Uso pra atender requisito do App Review da Meta.
+  // Junto com /privacidade, eh o minimo legal pra publicar app que usa permissoes
+  // sensiveis (leads_retrieval, pages_manage_metadata).
+  // URL publica: /termos
+  app.get('/termos', (_req, res) => {
+    const html = `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Termos de Uso — Ecosunpower Energia Solar</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 760px; margin: 0 auto; padding: clamp(20px,5vw,40px); line-height: 1.6; color: #222; }
+h1 { font-size: clamp(24px,5vw,32px); margin-top: 0; }
+h2 { font-size: clamp(18px,3vw,22px); margin-top: 28px; color: #1a1a1a; border-bottom: 1px solid #e5e5e5; padding-bottom: 6px; }
+.meta { color: #666; font-size: 14px; margin-bottom: 24px; }
+ul { padding-left: 20px; }
+li { margin-bottom: 6px; }
+a { color: #d97706; }
+footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e5e5; font-size: 14px; color: #666; }
+</style>
+</head>
+<body>
+<h1>Termos de Uso</h1>
+<p class="meta"><strong>Ecosunpower Energia Solar</strong><br>
+SHA Conjunto 01 Chacara 44C Lote 6, Arniqueira, Brasilia - DF, CEP 71993-150<br>
+CNPJ: a ser publicado | Email: <a href="mailto:ecosunpower2032@gmail.com">ecosunpower2032@gmail.com</a><br>
+Atualizado em: 22 de abril de 2026</p>
+
+<h2>1. Aceitacao dos Termos</h2>
+<p>Ao interagir com a Ecosunpower Energia Solar atraves de qualquer um de nossos canais digitais (formularios de anuncios Meta, WhatsApp, Instagram, Facebook ou nosso site), voce concorda integralmente com estes Termos de Uso e com nossa <a href="/privacidade">Politica de Privacidade</a>. Caso nao concorde, por favor nao utilize nossos canais.</p>
+
+<h2>2. Sobre nos</h2>
+<p>A Ecosunpower Energia Solar e uma empresa de engenharia de geracao de energia solar fotovoltaica, atuante em Brasilia-DF e em todo o Distrito Federal e entorno de Goias. Atuamos no projeto, dimensionamento, fornecimento e instalacao de sistemas de energia solar conectados a rede e em sistemas com armazenamento (baterias), bem como em servicos de manutencao, consultoria em eficiencia energetica e migracao para o mercado livre de energia.</p>
+
+<h2>3. Servicos oferecidos</h2>
+<p>Atraves de nossos canais digitais, oferecemos:</p>
+<ul>
+  <li>Atendimento comercial e tecnico para projetos de energia solar fotovoltaica</li>
+  <li>Calculo de payback, simulacao de geracao e analise da sua conta de luz</li>
+  <li>Visita tecnica para vistoria do imovel e elaboracao de proposta personalizada</li>
+  <li>Instalacao, comissionamento e legalizacao do sistema na concessionaria</li>
+  <li>Suporte pos-instalacao, manutencao e ampliacao de sistemas existentes</li>
+  <li>Solucoes de armazenamento (baterias) e migracao para mercado livre</li>
+  <li>Conteudo informativo sobre o setor de energia (sazonalidade, regulacao, mercado)</li>
+</ul>
+
+<h2>4. Uso autorizado</h2>
+<p>Voce concorda em utilizar nossos canais de forma licita e respeitosa. E proibido:</p>
+<ul>
+  <li>Enviar conteudo ofensivo, discriminatorio, ilegal, falso ou enganoso</li>
+  <li>Tentar invadir, hackear ou interferir no funcionamento dos nossos sistemas</li>
+  <li>Usar nossos canais para spam, fraude ou disseminar virus/malware</li>
+  <li>Personificar terceiros ou prestar informacoes falsas sobre identidade</li>
+  <li>Reproduzir, copiar ou redistribuir conteudo da empresa sem autorizacao</li>
+</ul>
+
+<h2>5. Atendimento por inteligencia artificial</h2>
+<p>Para agilizar o primeiro atendimento e qualificacao de leads, utilizamos um agente conversacional baseado em inteligencia artificial chamado "Eva", que opera atraves de WhatsApp. Eva eh treinada com nossa base de conhecimento tecnico e atua como engenheira especialista virtual da empresa.</p>
+<p>Voce sera sempre informado quando estiver conversando com Eva. Caso prefira atendimento exclusivamente humano, basta solicitar a qualquer momento e o engenheiro responsavel assumira a conversa.</p>
+<p>As respostas geradas pela Eva tem carater consultivo inicial e devem ser sempre validadas com nossa equipe tecnica para projetos definitivos. A Ecosunpower nao se responsabiliza por decisoes tomadas exclusivamente com base em respostas automatizadas sem confirmacao posterior.</p>
+
+<h2>6. Anuncios e captura de leads</h2>
+<p>Veiculamos anuncios em plataformas Meta (Facebook e Instagram) com formularios de geracao de leads. Ao preencher um formulario, voce autoriza:</p>
+<ul>
+  <li>O recebimento dos seus dados (nome, telefone, email e respostas do formulario) pela nossa equipe de atendimento</li>
+  <li>O contato comercial via WhatsApp, telefone ou email para apresentar nossas solucoes e dar continuidade ao seu interesse</li>
+  <li>O processamento desses dados conforme nossa <a href="/privacidade">Politica de Privacidade</a> e a Lei Geral de Protecao de Dados (LGPD - Lei 13.709/2018)</li>
+</ul>
+<p>Voce pode solicitar o cancelamento do contato e a exclusao dos seus dados a qualquer momento pelo email <a href="mailto:ecosunpower2032@gmail.com">ecosunpower2032@gmail.com</a>.</p>
+
+<h2>7. Propostas e orcamentos</h2>
+<p>Propostas e orcamentos enviados sao informacoes preliminares baseadas nas informacoes que voce nos forneceu. O orcamento final, valor da instalacao e prazo de execucao dependem de visita tecnica presencial, condicoes do imovel e disponibilidade de equipamentos no momento do fechamento. Propostas tem validade conforme indicado no proprio documento (geralmente 15 a 30 dias).</p>
+
+<h2>8. Garantias</h2>
+<p>Os equipamentos e servicos fornecidos pela Ecosunpower seguem as garantias dos fabricantes (geralmente 12 a 30 anos para modulos fotovoltaicos e 5 a 12 anos para inversores) e a garantia legal aplicavel a servicos no Brasil (90 dias conforme Codigo de Defesa do Consumidor). Detalhes especificos de garantia sao informados no contrato de cada projeto.</p>
+
+<h2>9. Marcas premium e proibicoes internas</h2>
+<p>Trabalhamos exclusivamente com marcas premium homologadas pela INMETRO/ANEEL: Trina Solar, JA Solar, Risen, Jinko Solar, Honor (modulos), SolarEdge, Deye, Sungrow, Huawei, Hoymiles, Enphase, FoxESS e NEP (inversores e microinversores). Nao trabalhamos com a marca Growatt. Pedidos de cotacao com marcas nao homologadas serao redirecionados para opcoes equivalentes da nossa linha.</p>
+
+<h2>10. Limitacao de responsabilidade</h2>
+<p>A Ecosunpower trabalha com diligencia para fornecer informacoes corretas e atualizadas, porem nao se responsabiliza por:</p>
+<ul>
+  <li>Variacoes na tarifa de energia eletrica que afetem o calculo de payback estimado</li>
+  <li>Condicoes climaticas atipicas que impactem a geracao real do sistema</li>
+  <li>Mudancas regulatorias futuras (ANEEL, Lei 14.300, etc) que impactem o modelo de compensacao</li>
+  <li>Interrupcoes de servico de terceiros (concessionaria, internet, plataformas Meta/Google)</li>
+  <li>Decisoes tomadas exclusivamente com base em respostas automatizadas sem confirmacao da equipe tecnica</li>
+</ul>
+
+<h2>11. Modificacoes nestes Termos</h2>
+<p>Estes Termos podem ser atualizados periodicamente para refletir mudancas em nossos servicos ou na legislacao. A data da ultima atualizacao sempre estara no topo desta pagina. Mudancas relevantes serao comunicadas pelos canais que voce ja interage conosco.</p>
+
+<h2>12. Foro e legislacao aplicavel</h2>
+<p>Estes Termos sao regidos pelas leis da Republica Federativa do Brasil. Fica eleito o foro da Comarca de Brasilia-DF para dirimir qualquer controversia decorrente da aplicacao destes Termos, com renuncia expressa a qualquer outro, por mais privilegiado que seja.</p>
+
+<h2>13. Contato</h2>
+<p>Duvidas sobre estes Termos ou sobre nossos servicos:</p>
+<ul>
+  <li>Email: <a href="mailto:ecosunpower2032@gmail.com">ecosunpower2032@gmail.com</a></li>
+  <li>WhatsApp: vide canais oficiais nas redes sociais Ecosunpower</li>
+  <li>Endereco: SHA Conjunto 01 Chacara 44C Lote 6, Arniqueira, Brasilia - DF</li>
+</ul>
+
+<footer>
+<p>Ecosunpower Energia Solar — Brasilia/DF<br>
+Contato: <a href="mailto:ecosunpower2032@gmail.com">ecosunpower2032@gmail.com</a><br>
+Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
+</footer>
+</body>
+</html>`;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  });
+
   // Health check
   app.get('/health', async (_req, res) => {
     const status = await buildHealthStatus({
