@@ -33,6 +33,12 @@ const configSchema = z.object({
   metaInstagramBusinessId: z.string().optional(),
   metaAppSecret: z.string().optional(),     // pra HMAC do webhook Lead Ads
   metaVerifyToken: z.string().optional(),   // pro challenge do subscribe
+  // WhatsApp Business Cloud API (WABA) — substitui Evolution API gradualmente
+  metaWabaPhoneNumberId: z.string().optional(),       // ID do numero WABA (fornecido pela Meta)
+  metaWabaAccessToken: z.string().optional(),         // token de longa duracao (system user)
+  metaWabaBusinessAccountId: z.string().optional(),   // WABA account ID (pra listar templates)
+  metaWabaVerifyToken: z.string().optional(),         // challenge do subscribe do webhook WABA
+  useWabaCloudApi: z.coerce.boolean().default(false), // flag: quando true, usa WABA; quando false, usa Evolution
   replicateApiToken: z.string().optional(),
   tavusApiKey: z.string().optional(),
   tavusApiUrl: z.string().url().default('https://tavusapi.com'),
@@ -69,6 +75,11 @@ export function loadConfig(): Config {
     metaInstagramBusinessId: process.env.META_INSTAGRAM_BUSINESS_ID || undefined,
     metaAppSecret: process.env.META_APP_SECRET || undefined,
     metaVerifyToken: process.env.META_VERIFY_TOKEN || undefined,
+    metaWabaPhoneNumberId: process.env.META_WABA_PHONE_NUMBER_ID || undefined,
+    metaWabaAccessToken: process.env.META_WABA_ACCESS_TOKEN || undefined,
+    metaWabaBusinessAccountId: process.env.META_WABA_BUSINESS_ACCOUNT_ID || undefined,
+    metaWabaVerifyToken: process.env.META_WABA_VERIFY_TOKEN || undefined,
+    useWabaCloudApi: process.env.USE_WABA_CLOUD_API,
     replicateApiToken: process.env.REPLICATE_API_TOKEN || undefined,
     tavusApiKey: process.env.TAVUS_API_KEY || undefined,
     tavusApiUrl: process.env.TAVUS_API_URL,
