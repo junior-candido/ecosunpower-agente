@@ -5,6 +5,7 @@ import { MessageQueue } from './modules/queue.js';
 import { SupabaseService } from './modules/supabase.js';
 import { KnowledgeBase } from './modules/knowledge.js';
 import { detectTopics } from './modules/knowledge-topics.js';
+import { BlogGenerator, publishDraftToGitHub } from './modules/blog-generator.js';
 import { Brain } from './modules/brain.js';
 import { DossierBuilder } from './modules/dossier.js';
 import { calculateSolarEstimate, formatEstimateForPrompt } from './modules/solar.js';
@@ -82,6 +83,16 @@ async function main() {
   const vision = new VisionAnalyzer(config.anthropicApiKey);
   const transcriber = config.openaiApiKey ? new Transcriber(config.openaiApiKey) : null;
   const knowledgeBase = new KnowledgeBase(join(__dirname, '..', 'conhecimento'));
+  const blogGenerator = new BlogGenerator(
+    new Anthropic({ apiKey: config.anthropicApiKey }),
+    supabase.getClient(),
+    join(__dirname, '..', 'conhecimento'),
+  );
+  if (config.githubPat) {
+    console.log(`[blog] Auto-blog enabled (GitHub repo: ${config.githubSiteRepo}@${config.githubSiteBranch})`);
+  } else {
+    console.log('[blog] Auto-blog: drafts vao salvar no Supabase mas publicacao no site precisa GITHUB_PAT setado.');
+  }
   const takeover = new TakeoverService(config.redisHost, config.redisPort, config.redisPassword);
   const calendar = (config.googleClientId && config.googleClientSecret
     && config.googleRefreshToken && config.googleCalendarId)
@@ -250,8 +261,94 @@ async function main() {
     console.log('[knowledge] Reloaded after file change');
   });
 
+  // Helper pra detectar e processar comandos de blog vindos do Junior.
+  // Junior recebe notificacao de novo draft no WhatsApp dele e responde
+  // "publicar" ou "descartar" — comandos sao detectados aqui.
+  // Retorna true se comando foi processado (handler deve return depois).
+  async function tryHandleJuniorBlogCommand(from: string, text: string): Promise<boolean> {
+    const isJuniorPhone = from === config.engineerPhone || from.endsWith(config.engineerPhone.replace(/\D/g, ''));
+    if (!isJuniorPhone) return false;
+    const norm = text.trim().toLowerCase();
+
+    const publishMatch = norm.match(/^publicar(?:\s+([\w-]+))?$/);
+    if (publishMatch) {
+      const slug = publishMatch[1];
+      let draft = slug
+        ? (await blogGenerator.getPendingDrafts()).find((d) => d.slug === slug)
+        : await blogGenerator.getMostRecentPending();
+
+      if (!draft) {
+        await sendText(from, slug
+          ? `Nao achei draft pendente com slug "${slug}". Manda "publicar" sem o slug pra publicar o mais recente.`
+          : 'Nao tem draft pendente agora. Vou avisar quando o proximo sair.');
+        return true;
+      }
+
+      if (!config.githubPat) {
+        await sendText(from, `⚠️ GitHub PAT nao configurado no Easypanel (env GITHUB_PAT). Draft "${draft.title}" segue marcado como aprovado mas precisa publicar manualmente.`);
+        await blogGenerator.markApproved(draft.id);
+        return true;
+      }
+
+      try {
+        await blogGenerator.markApproved(draft.id);
+        const { commitSha, url } = await publishDraftToGitHub({
+          pat: config.githubPat,
+          repo: config.githubSiteRepo,
+          branch: config.githubSiteBranch,
+          draft,
+        });
+        await blogGenerator.markPublished(draft.id);
+        await sendText(from, `✅ Publicado!
+
+📝 ${draft.title}
+🔗 https://ecosunpower.eng.br/blog/${draft.slug}/
+
+Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
+        console.log(`[blog] Junior publicou ${draft.slug} via WhatsApp. Commit: ${url}`);
+      } catch (err) {
+        const msg = (err as Error).message;
+        await blogGenerator.markFailed(draft.id, msg);
+        await sendText(from, `❌ Falha ao publicar: ${msg}`);
+        console.error('[blog] Publish failed:', err);
+      }
+      return true;
+    }
+
+    const discardMatch = norm.match(/^descartar(?:\s+([\w-]+))?$/);
+    if (discardMatch) {
+      const slug = discardMatch[1];
+      const draft = slug
+        ? (await blogGenerator.getPendingDrafts()).find((d) => d.slug === slug)
+        : await blogGenerator.getMostRecentPending();
+      if (!draft) {
+        await sendText(from, 'Nao tem draft pendente pra descartar.');
+        return true;
+      }
+      await blogGenerator.markDiscarded(draft.id, 'descartado_pelo_junior');
+      await sendText(from, `🗑️ Descartado: "${draft.title}". Vou gerar outro no proximo ciclo.`);
+      return true;
+    }
+
+    if (norm === 'blog status' || norm === 'status blog') {
+      const pending = await blogGenerator.getPendingDrafts();
+      if (pending.length === 0) {
+        await sendText(from, 'Nenhum draft pendente. Proximo gera no proximo ciclo de 3 dias.');
+      } else {
+        const lines = pending.slice(0, 5).map((d, i) => `${i + 1}. ${d.title}\n   slug: ${d.slug}`).join('\n\n');
+        await sendText(from, `📋 Drafts pendentes (${pending.length}):\n\n${lines}\n\nResponde "publicar" pra publicar o primeiro, ou "publicar <slug>" pra escolher.`);
+      }
+      return true;
+    }
+
+    return false;
+  }
+
   // Message handler
   async function handleTextMessage(from: string, text: string) {
+    // Comandos de blog do Junior tem prioridade sobre fluxo de cliente
+    if (await tryHandleJuniorBlogCommand(from, text)) return;
+
     if (await takeover.isPaused(from)) {
       console.log(`[takeover] Skipping message from ${from} — human takeover active`);
       return;
@@ -2829,6 +2926,148 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
   setTimeout(() => runCanalSolarIngestion(false), 2 * 60 * 1000);
   setInterval(() => runCanalSolarIngestion(true), 3 * 24 * 60 * 60 * 1000);
   console.log('[canal-solar] Scheduler started (every 3 days)');
+
+  // Auto-blog generator: a cada 3 dias gera 1 draft e manda no WhatsApp do
+  // Junior pra aprovacao. NAO gated por passive mode pq so envia pro proprio
+  // Junior (1 mensagem/3 dias, baixo risco). Junior responde "publicar" e o
+  // draft vai pro repo do site via GitHub API (Cloudflare publica em ~2 min).
+  const generateAndNotifyBlogDraft = async () => {
+    try {
+      console.log('[blog] Gerando novo draft...');
+      const draft = await blogGenerator.generateDraft();
+      const summary = `📝 *Novo draft pronto pra revisar*
+
+*${draft.title}*
+
+${draft.description}
+
+Categoria: ${draft.category}
+Tempo de leitura: ${draft.readingTime} min
+Slug: ${draft.slug}
+
+Responda *publicar* pra publicar no ar, ou *descartar* pra dispensar.`;
+      if (!isSandbox) {
+        await sendText(config.engineerPhone, summary);
+        await supabase.getClient()
+          .from('blog_drafts')
+          .update({ whatsapp_notified_at: new Date().toISOString() })
+          .eq('id', draft.id);
+      } else {
+        console.log(`[blog] [sandbox] Would notify ${config.engineerPhone}: ${summary}`);
+      }
+      console.log(`[blog] Draft gerado e enviado: ${draft.title} (${draft.slug})`);
+      return draft;
+    } catch (err) {
+      console.error('[blog] Falha ao gerar draft:', (err as Error).message);
+      throw err;
+    }
+  };
+
+  // Scheduler 3-dias: gera 1 draft a cada 3 dias, idempotente via app_flags.
+  // Roda 30min apos canal-solar pra usar artigos frescos.
+  const checkBlogSchedule = async () => {
+    const flagKey = 'last_blog_draft_generated_at';
+    const { data: flag } = await supabase.getClient()
+      .from('app_flags')
+      .select('value')
+      .eq('key', flagKey)
+      .maybeSingle();
+
+    const last = flag?.value ? new Date(flag.value).getTime() : 0;
+    const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+    if (Date.now() - last < threeDaysMs) return;
+
+    // Lock antes de gerar
+    await supabase.getClient()
+      .from('app_flags')
+      .upsert({ key: flagKey, value: new Date().toISOString() }, { onConflict: 'key' });
+
+    await generateAndNotifyBlogDraft().catch((err) => {
+      console.error('[blog] Scheduler error:', (err as Error).message);
+    });
+  };
+  // Roda 30min apos boot pra dar tempo do canal-solar refrescar
+  setTimeout(checkBlogSchedule, 30 * 60 * 1000);
+  // Checa a cada 6h (idempotente via app_flags)
+  setInterval(checkBlogSchedule, 6 * 60 * 60 * 1000);
+  console.log('[blog] Auto-blog scheduler started (drafts a cada 3 dias)');
+
+  // Endpoint manual pra teste/debug: gera 1 draft on-demand
+  app.post('/blog/generate', async (req, res) => {
+    const token = (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    try {
+      const category = req.body?.category as string | undefined;
+      const topicHint = req.body?.topicHint as string | undefined;
+      const draft = await generateAndNotifyBlogDraft();
+      res.json({
+        status: 'ok',
+        draft: {
+          id: draft.id,
+          slug: draft.slug,
+          title: draft.title,
+          description: draft.description,
+          category: draft.category,
+          readingTime: draft.readingTime,
+        },
+        message: 'Draft gerado e notificado no WhatsApp do Junior. Responda "publicar" pra publicar.',
+        ...(category || topicHint ? { hint: 'category/topicHint ainda nao implementado em rotacao automatica' } : {}),
+      });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Endpoint manual: lista drafts pendentes
+  app.get('/blog/drafts', async (req, res) => {
+    const token = (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    const drafts = await blogGenerator.getPendingDrafts();
+    res.json({ count: drafts.length, drafts });
+  });
+
+  // Endpoint manual: publica um draft especifico (forca via API mesmo sem zap)
+  app.post('/blog/publish/:id', async (req, res) => {
+    const token = (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    if (!config.githubPat) {
+      res.status(500).json({ error: 'GITHUB_PAT nao configurado no env' });
+      return;
+    }
+    try {
+      const drafts = await blogGenerator.getPendingDrafts();
+      const draft = drafts.find((d) => d.id === req.params.id);
+      if (!draft) {
+        res.status(404).json({ error: 'Draft nao encontrado ou ja foi publicado/descartado' });
+        return;
+      }
+      await blogGenerator.markApproved(draft.id);
+      const result = await publishDraftToGitHub({
+        pat: config.githubPat,
+        repo: config.githubSiteRepo,
+        branch: config.githubSiteBranch,
+        draft,
+      });
+      await blogGenerator.markPublished(draft.id);
+      res.json({
+        status: 'published',
+        url: `https://ecosunpower.eng.br/blog/${draft.slug}/`,
+        commit: result.commitSha,
+        commitUrl: result.url,
+      });
+    } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
 
   // Marketing weekly scheduler: every Monday 08:00 BRT generates 1 video Reel
   // and 1 still image draft, sending both to Junior's WhatsApp for approval.

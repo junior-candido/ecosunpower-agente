@@ -43,6 +43,10 @@ const configSchema = z.object({
   tavusApiKey: z.string().optional(),
   tavusApiUrl: z.string().url().default('https://tavusapi.com'),
   tavusReplicaId: z.string().optional(),
+  // Blog auto-publisher: GitHub PAT pra commitar drafts aprovados no repo do site
+  githubPat: z.string().optional(),
+  githubSiteRepo: z.string().default('junior-candido/ecosunpower-site'),
+  githubSiteBranch: z.string().default('main'),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -84,5 +88,8 @@ export function loadConfig(): Config {
     tavusApiKey: process.env.TAVUS_API_KEY || undefined,
     tavusApiUrl: process.env.TAVUS_API_URL,
     tavusReplicaId: process.env.TAVUS_REPLICA_ID || undefined,
+    githubPat: process.env.GITHUB_PAT || undefined,
+    githubSiteRepo: process.env.GITHUB_SITE_REPO || 'junior-candido/ecosunpower-site',
+    githubSiteBranch: process.env.GITHUB_SITE_BRANCH || 'main',
   });
 }
