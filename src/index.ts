@@ -2475,12 +2475,22 @@ footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e5e5; fon
 </head>
 <body>
 <h1>Politica de Privacidade</h1>
-<p class="meta"><strong>Ecosunpower Energia Solar</strong><br>
+<p class="meta"><strong>ECOSUNPOWER ENERGIA SOLAR LTDA</strong><br>
+CNPJ: 33.020.459/0001-06<br>
 SHA Conjunto 01 Chacara 44C Lote 6, Arniqueira, Brasilia - DF, CEP 71993-150<br>
-Ultima atualizacao: 20 de abril de 2026</p>
+Ultima atualizacao: 26 de abril de 2026</p>
 
 <h2>1. Quem somos</h2>
-<p>A Ecosunpower Energia Solar e uma empresa especializada em sistemas fotovoltaicos, com atuacao em Brasilia-DF e Goias desde 2019. Nos comprometemos com a protecao dos seus dados pessoais, em conformidade com a Lei Geral de Protecao de Dados (Lei 13.709/2018 - LGPD).</p>
+<p>A ECOSUNPOWER ENERGIA SOLAR LTDA (CNPJ 33.020.459/0001-06) e empresa de engenharia em energia, com foco principal em solar fotovoltaica e atuacao em Brasilia-DF e Goias desde 2019. Nos comprometemos com a protecao dos seus dados pessoais, em conformidade com a Lei Geral de Protecao de Dados (Lei 13.709/2018 - LGPD).</p>
+
+<h2>1.1 Encarregado de Protecao de Dados (DPO)</h2>
+<p>Conforme art. 41 da LGPD, indicamos como Encarregado:</p>
+<ul>
+  <li><strong>Nome:</strong> Junior Candido Rodrigues</li>
+  <li><strong>Email:</strong> <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a></li>
+  <li><strong>WhatsApp:</strong> +55 61 99880-5002</li>
+</ul>
+<p>Use os contatos acima pra exercer seus direitos como titular dos dados, tirar duvidas ou comunicar incidentes.</p>
 
 <h2>2. Quais dados coletamos</h2>
 <p>Quando voce interage conosco (formulario no Instagram/Facebook, mensagem no WhatsApp, site), coletamos apenas os dados necessarios para oferecer um atendimento personalizado:</p>
@@ -2507,13 +2517,19 @@ Ultima atualizacao: 20 de abril de 2026</p>
   <li><strong>Legitimo interesse</strong> para melhorar o atendimento e responder suas solicitacoes</li>
 </ul>
 
-<h2>5. Com quem compartilhamos</h2>
-<p><strong>Nao compartilhamos seus dados com terceiros para fins comerciais.</strong> Usamos apenas ferramentas operacionais necessarias para prestar o servico:</p>
+<h2>5. Com quem compartilhamos (Operadores LGPD)</h2>
+<p><strong>Nao vendemos seus dados.</strong> Compartilhamos apenas com operadores estritamente necessarios pra prestar o servico, todos sob contrato e obrigacoes LGPD:</p>
 <ul>
-  <li>Meta (Facebook/Instagram) — quando voce preenche um formulario de anuncio, conforme a <a href="https://www.facebook.com/privacy/policy" target="_blank">politica de privacidade da Meta</a></li>
-  <li>Provedores de infraestrutura de WhatsApp e armazenamento na nuvem, sob contrato de confidencialidade</li>
-  <li>Autoridades legais, quando obrigados por lei</li>
+  <li><strong>Anthropic, Inc.</strong> (EUA) — processamento de linguagem natural pela IA Eva (Claude API)</li>
+  <li><strong>Supabase Inc.</strong> (EUA) — banco de dados pra leads e historico de conversas</li>
+  <li><strong>Meta Platforms</strong> (BR/EUA) — WhatsApp Business e Lead Ads (<a href="https://www.facebook.com/privacy/policy" target="_blank">politica Meta</a>)</li>
+  <li><strong>Google LLC</strong> (EUA/BR) — Workspace (email corporativo) e Google Calendar</li>
+  <li><strong>Cloudflare Inc.</strong> (EUA) — hospedagem do site e CDN</li>
+  <li><strong>Equipe interna</strong> — engenheiros, instaladores, atendimento</li>
+  <li><strong>Parceiros de equipamentos</strong> — distribuidores quando necessario pra cotacao (apenas dados estritamente necessarios)</li>
+  <li><strong>Autoridades legais</strong> — quando obrigados por lei (ANEEL, CREA, Receita Federal, ordem judicial)</li>
 </ul>
+<p>Algumas transferencias ocorrem pra fora do Brasil (EUA), em conformidade com art. 33 da LGPD, com clausulas contratuais padrao e nivel de protecao equivalente.</p>
 
 <h2>6. Por quanto tempo guardamos</h2>
 <p>Mantemos seus dados pelo periodo necessario para:</p>
