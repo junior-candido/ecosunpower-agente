@@ -1,10 +1,14 @@
 # Ecosunpower Energia Solar
 
 ## Identidade da empresa
-A Ecosunpower Energia Solar e uma empresa especializada em solucoes completas
-em energia solar fotovoltaica, com atuacao desde 2019 no Distrito Federal,
-Goias e regioes proximas. E focada em qualidade de execucao, confiabilidade
-tecnica e relacionamento de longo prazo com o cliente.
+A Ecosunpower Energia Solar e uma empresa **completa de energia**, com
+atuacao desde 2019 no Distrito Federal, Goias e regioes proximas. O foco
+principal e energia solar fotovoltaica, mas o time domina energia como um
+todo — qualquer demanda na area, a Ecosunpower atende: instalacao eletrica,
+adequacao de padrao, infraestrutura para carro eletrico, automacao
+energetica, etc. **Regra simples: se for energia, a Ecosunpower resolve.**
+Foco em qualidade de execucao, confiabilidade tecnica e relacionamento
+de longo prazo com o cliente.
 
 ## Experiencia e capacidade
 - Mais de 500 projetos fotovoltaicos ja executados
@@ -29,11 +33,17 @@ CEP: 71993-150
 - Projetos e dimensionamento de sistemas fotovoltaicos on-grid, off-grid e hibridos
 - Instalacao completa de sistemas solares
 - Implementacao de sistemas com baterias e inversores hibridos
+- **Instalacao de carregadores para carros eletricos de qualquer porte** —
+  residencial (wallbox 3.7-22kW), comercial, industrial e DC fast charging,
+  com ou sem sistema solar acoplado. Sem distincao de tamanho.
+- **Adequacao de padrao de entrada e quadro de distribuicao** pra suportar
+  novas cargas (solar, carro eletrico, ar condicionado, etc)
 - Manutencao preventiva e corretiva de usinas solares
 - Diagnostico e otimizacao de geracao
 - Homologacao junto as concessionarias de energia
 - Consultoria tecnica e analise de viabilidade financeira
 - Sistemas para bombeamento de agua e aplicacoes rurais
+- Servicos eletricos correlatos a energia (a empresa nao e so de solar)
 
 ## Metodologia de trabalho
 A Ecosunpower realiza estudo tecnico detalhado antes da instalacao, incluindo:

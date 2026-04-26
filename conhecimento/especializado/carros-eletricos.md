@@ -139,12 +139,36 @@
 
 ## Carregamento em casa com energia solar
 
-### Wallbox (carregador residencial)
-- Equipamento instalado na parede da garagem
-- Potencia: 3.7 kW a 22 kW (residencial mais comum: 7.4 kW)
-- Custo do equipamento + instalacao: R$ 4.000 a R$ 8.000
-- Tempo de carga completa (bateria de 50 kWh com wallbox 7kW): ~7 horas
-- Ideal para carregar durante a noite
+### Carregadores — A ECOSUNPOWER INSTALA QUALQUER PORTE
+**A Ecosunpower instala carregadores de carro eletrico de QUALQUER tamanho,
+sem distincao** — residencial, comercial, industrial e DC fast charging.
+Pode ser servico independente ou integrado a um sistema solar. E parte
+do nosso escopo principal (somos empresa de energia completa).
+
+Tipos atendidos:
+- **Wallbox residencial** (3.7 kW a 22 kW) — instalado na parede da garagem,
+  carga overnight em ~5-8h
+- **Carregador comercial** (22 kW a 50 kW AC) — empresas, condominios,
+  shoppings, frota leve
+- **DC fast charging** (50 kW a 350 kW) — postos, estacionamentos
+  publicos, frota pesada, carga em 20-40 min
+- **Industrial** — instalacoes de alta potencia, projeto sob medida
+
+Combos comuns:
+- Carregador standalone (so o carregador, sem solar)
+- Carregador + sistema solar (combustivel praticamente gratis)
+- Carregador + solar + bateria (melhor custo-beneficio em longo prazo)
+
+Servicos incluidos:
+- Projeto eletrico e dimensionamento da nova carga
+- **Adequacao do padrao de entrada e quadro de distribuicao** (se necessario)
+- Instalacao do equipamento e infraestrutura
+- Homologacao junto a concessionaria (quando aplicavel)
+- Pos-venda e suporte tecnico
+
+Custos (referencia):
+- Wallbox 7.4 kW residencial: R$ 4.000 a R$ 8.000 (equipamento + instalacao)
+- Comerciais e DC fast: orcamento personalizado conforme projeto
 
 ### Energia solar + bateria + carro eletrico
 - Sistema solar gera energia durante o dia
@@ -166,8 +190,13 @@ Alguns carros eletricos ja permitem usar a bateria do carro como backup
 da casa durante quedas de energia. Tecnologia em expansao no Brasil.
 
 ## Como a Eva deve usar estas informacoes
-- Quando o cliente mencionar carro eletrico, pergunte qual modelo tem ou pretende comprar
-- Calcule o consumo adicional e quantos paineis extras seriam necessarios
-- Sugira bateria residencial para carga noturna
-- Mostre a economia: "Voce nunca mais vai gastar com combustivel!"
-- Use os dados especificos do modelo para ser precisa nos calculos
+- **NUNCA dizer que a Ecosunpower nao instala carregador.** A Ecosunpower
+  INSTALA wallbox — e servico ativo, com ou sem solar.
+- Cumprimentar a compra do carro eletrico (se cliente mencionar).
+- Posicionar combo solar + wallbox como o ideal (combustivel quase gratis).
+- Mas se cliente quiser SO o wallbox, atendemos tambem (sem empurrar solar).
+- Quando cliente mencionar modelo, calcular consumo adicional e quantos
+  paineis extras seriam necessarios pro sistema solar (caso tenha interesse).
+- Sugerir bateria residencial pra carga noturna se fizer sentido pro caso.
+- Mostrar a economia: combustivel R$ 400-600/mes vai pra praticamente zero.
+- Usar dados especificos do modelo para ser precisa nos calculos.
