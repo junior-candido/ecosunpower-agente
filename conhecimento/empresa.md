@@ -21,13 +21,14 @@ de longo prazo com o cliente.
 SHA Conjunto 01 Chacara 44C Lote 6 - Arniqueira - Brasilia - DF
 CEP: 71993-150
 
-## Regioes atendidas (PRIORIDADE)
-- **Prioritariamente:** Brasilia e entorno (DF)
-- **Cidades de Goias proximas a Brasilia, ate 90 km de distancia**
+## Regioes atendidas
+- **Brasilia e Entorno (DF) + cidades de Goias ate 100 km de distancia.**
   Exemplos: Aguas Lindas, Valparaiso, Cidade Ocidental, Luziania, Novo
   Gama, Santo Antonio do Descoberto, Padre Bernardo, Formosa, Planaltina-GO,
-  Cristalina, Alexania, Cocalzinho de Goias, Aragoiania.
-- Acima de 90 km: avaliar caso a caso (frete e logistica podem encarecer)
+  Cristalina, Alexania, Cocalzinho de Goias, Aragoiania, Pirenopolis,
+  Anapolis (avaliar caso a caso quando proximo do limite).
+- Acima de 100 km: avaliar caso a caso (frete e logistica podem encarecer
+  mas em projetos comerciais/industriais maiores costuma compensar).
 
 ## Principais servicos executados
 - Projetos e dimensionamento de sistemas fotovoltaicos on-grid, off-grid e hibridos
