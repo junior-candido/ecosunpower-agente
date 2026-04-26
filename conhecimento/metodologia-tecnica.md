@@ -1,65 +1,65 @@
-# Metodologia Tecnica Avancada - Dimensionamento e Atendimento
+# Metodologia Técnica Avançada - Dimensionamento e Atendimento
 
-Conteudo de referencia tecnica para a Eva atuar como especialista em energia
+Conteúdo de referência técnica para a Eva atuar como especialista em energia
 solar. Complementa o arquivo dimensionamento.md (que cobre oversize e limites
 de inversor).
 
 ---
 
-## 1. Logica de dimensionamento de sistemas fotovoltaicos
+## 1. Lógica de dimensionamento de sistemas fotovoltaicos
 
 O dimensionamento sempre parte do consumo do cliente.
 
 ### Etapas fundamentais
-- Levantar consumo medio mensal (kWh/mes)
-- Identificar padrao de ligacao (monofasico, bifasico, trifasico)
-- Considerar taxa minima da concessionaria
-- Avaliar irradiacao solar da regiao
+- Levantar consumo médio mensal (kWh/mês)
+- Identificar padrão de ligação (monofásico, bifásico, trifásico)
+- Considerar taxa mínima da concessionária
+- Avaliar irradiação solar da região
 - **Aplicar SEMPRE 20% de perdas totais no dimensionamento (fator 0.80)**
-  — padrao Ecosunpower: contempla perdas de cabos, inversor, temperatura,
+  — padrão Ecosunpower: contempla perdas de cabos, inversor, temperatura,
   sujeira, mismatch, disponibilidade e envelhecimento.
 
-### Formula base
+### Fórmula base
 
-Potencia do sistema (kWp) = Consumo mensal (kWh) / (HSP x 30 x 0.80)
+Potência do sistema (kWp) = Consumo mensal (kWh) / (HSP x 30 x 0.80)
 
 Onde:
-- HSP = horas de sol pleno (Brasilia/Goias ~5.2)
-- 0.80 = fator de performance padrao Ecosunpower (20% de perdas)
+- HSP = horas de sol pleno (Brasília/Goiás ~5.2)
+- 0.80 = fator de performance padrão Ecosunpower (20% de perdas)
 
 ---
 
-## 2. Estimativa de geracao
+## 2. Estimativa de geração
 
-Geracao mensal (kWh/mes) = Potencia (kWp) x HSP x 30 x 0.80
+Geração mensal (kWh/mês) = Potência (kWp) x HSP x 30 x 0.80
 
-### Exemplo pratico (padrao 20% de perdas)
-- Cliente consome 600 kWh/mes, HSP = 5.0
+### Exemplo prático (padrão 20% de perdas)
+- Cliente consome 600 kWh/mês, HSP = 5.0
 - Sistema estimado: 600 / (5.0 x 30 x 0.80) = **5 kWp**
 
 ---
 
-## 3. Fatores criticos no projeto (estilo PV*Sol)
+## 3. Fatores críticos no projeto (estilo PV*Sol)
 
-- Inclinacao do telhado (ideal proxima da latitude local)
-- Orientacao (norte e melhor no Brasil)
+- Inclinação do telhado (ideal próxima da latitude local)
+- Orientação (norte é melhor no Brasil)
 - Sombreamento parcial ou total
-- Tipo de telha (ceramica, metalica, fibrocimento)
-- Area disponivel
-- Distancia ate o inversor
-- Quedas de tensao
-- Temperatura (impacto na eficiencia dos modulos)
+- Tipo de telha (cerâmica, metálica, fibrocimento)
+- Área disponível
+- Distância até o inversor
+- Quedas de tensão
+- Temperatura (impacto na eficiência dos módulos)
 
 ---
 
-## 4. Tipos de sistema e aplicacao
+## 4. Tipos de sistema e aplicação
 
 ### On-grid
-- Conectado a rede
+- Conectado à rede
 - Sem bateria
 - Foco em economia da conta
 
-### Hibrido
+### Híbrido
 - Com baterias
 - Backup em falta de energia
 - Maior complexidade e custo
@@ -67,43 +67,43 @@ Geracao mensal (kWh/mes) = Potencia (kWp) x HSP x 30 x 0.80
 ### Off-grid
 - Totalmente isolado
 - Dimensionamento de autonomia
-- Uso comum em areas rurais sem rede
+- Uso comum em áreas rurais sem rede
 
 ---
 
-## 5. Dimensionamento de baterias (basico)
+## 5. Dimensionamento de baterias (básico)
 
-Capacidade (kWh) = Consumo diario x dias de autonomia / profundidade de descarga
+Capacidade (kWh) = Consumo diário x dias de autonomia / profundidade de descarga
 
 ### Exemplo
-- Consumo diario: 10 kWh
+- Consumo diário: 10 kWh
 - Autonomia: 1 dia
 - DoD: 80%
 - Capacidade = 10 / 0.8 = **12.5 kWh**
 
 ---
 
-## 6. Respostas padrao para duvidas frequentes
+## 6. Respostas padrão para dúvidas frequentes
 
 ### "Vai zerar minha conta?"
-Nao zera 100% porque sempre fica um valor minimo mensal da distribuidora
-(custo de disponibilidade OU Fio B — o maior dos dois, nao somados).
-Reducao real: 90-95% da conta.
+Não zera 100% porque sempre fica um valor mínimo mensal da distribuidora
+(custo de disponibilidade OU Fio B — o maior dos dois, não somados).
+Redução real: 90-95% da conta.
 
-### "Funciona a noite?"
-Sistemas on-grid nao funcionam a noite. Para isso, e necessario sistema
+### "Funciona à noite?"
+Sistemas on-grid não funcionam à noite. Para isso, é necessário sistema
 com bateria.
 
 ### "E quando falta energia?"
-Sistema on-grid desliga por seguranca (anti-ilhamento obrigatorio). Para
-ter energia em quedas, precisa de sistema hibrido com backup.
+Sistema on-grid desliga por segurança (anti-ilhamento obrigatório). Para
+ter energia em quedas, precisa de sistema híbrido com backup.
 
 ### "Quanto tempo dura?"
-- Modulos: 25+ anos
+- Módulos: 25+ anos
 - Inversores: 8 a 15 anos
 
 ### "Qual o retorno do investimento?"
-Payback medio entre 3 a 6 anos, dependendo do consumo e tarifa.
+Payback médio entre 3 a 6 anos, dependendo do consumo e tarifa.
 
 ---
 
@@ -111,45 +111,45 @@ Payback medio entre 3 a 6 anos, dependendo do consumo e tarifa.
 
 - Subdimensionar o sistema
 - Ignorar sombreamento
-- Nao considerar taxa minima da distribuidora
-- Instalacao mal posicionada (orientacao/inclinacao ruim)
-- Falta de analise estrutural do telhado
-- Nao prever expansao futura
+- Não considerar taxa mínima da distribuidora
+- Instalação mal posicionada (orientação/inclinação ruim)
+- Falta de análise estrutural do telhado
+- Não prever expansão futura
 
 ---
 
-## 8. Argumentacao tecnica para vendas
+## 8. Argumentação técnica para vendas
 
-A Eva deve reforcar (quando pertinente na conversa):
+A Eva deve reforçar (quando pertinente na conversa):
 - Economia a longo prazo
-- Protecao contra aumento de tarifa
-- Valorizacao do imovel
+- Proteção contra aumento de tarifa
+- Valorização do imóvel
 - Sustentabilidade
-- Independencia energetica
+- Independência energética
 
 ---
 
-## 9. Boas praticas de engenharia aplicadas pela Ecosunpower
+## 9. Boas práticas de engenharia aplicadas pela Ecosunpower
 
 - Equipamentos homologados pelo INMETRO
 - Conformidade com NBR 16690 e NBR 5410
 - Aterramento correto
 - Dimensionamento adequado de cabos
-- Protecao contra surtos (DPS)
-- Organizacao e padrao na instalacao
+- Proteção contra surtos (DPS)
+- Organização e padrão na instalação
 
 ---
 
 ## 10. Comportamento esperado do agente
 
 - Responder com clareza, sem complicar
-- Traduzir termos tecnicos para linguagem simples quando necessario
-- Demonstrar dominio tecnico sem ser arrogante
-- Focar sempre na solucao do cliente
-- Evitar respostas genericas
+- Traduzir termos técnicos para linguagem simples quando necessário
+- Demonstrar domínio técnico sem ser arrogante
+- Focar sempre na solução do cliente
+- Evitar respostas genéricas
 
 ---
 
-Este conhecimento deve ser usado para responder duvidas, dimensionar sistemas
-e orientar clientes com precisao, sempre alinhado a realidade tecnica e as
-boas praticas do setor fotovoltaico.
+Este conhecimento deve ser usado para responder dúvidas, dimensionar sistemas
+e orientar clientes com precisão, sempre alinhado à realidade técnica e às
+boas práticas do setor fotovoltaico.

@@ -1,61 +1,61 @@
 # Produtos e Equipamentos - Ecosunpower
 
 A Ecosunpower trabalha exclusivamente com marcas premium Tier 1, validadas
-pelo mercado brasileiro e com suporte tecnico nacional. NUNCA usamos marcas
+pelo mercado brasileiro e com suporte técnico nacional. NUNCA usamos marcas
 de qualidade inferior, mesmo que mais baratas — preferimos perder venda a
 entregar projeto que vai dar problema em 2-3 anos.
 
-## Modulos Solares (Paineis)
+## Módulos Solares (Painéis)
 
 ### Premium global Tier 1 (que usamos diariamente)
 
 #### Trina Solar - Vertex N 715W / 720W
 - Tecnologia N-Type i-TOPCon bifacial
-- Potencia 715-720W (serie TSM-NEG21C.20)
-- Eficiencia ate 23.2%
+- Potência 715-720W (série TSM-NEG21C.20)
+- Eficiência até 23.2%
 - Garantia 25 anos performance
-- Top 3 mundial em volume e tecnologia avancada
+- Top 3 mundial em volume e tecnologia avançada
 
 #### JA Solar - DeepBlue 4.0 - 620W / 625W
 - Tecnologia N-Type TOPCon Half-Cell
-- Potencia 620-625W
-- Eficiencia ate 22.5%
+- Potência 620-625W
+- Eficiência até 22.5%
 - Reconhecida mundialmente por confiabilidade
 
 #### LONGi - 635W BPC / 640W
 - Tecnologia N-Type TOPCon Bifacial
-- Potencia 635-640W
-- LIDER MUNDIAL em eficiencia e volume
-- Otima geracao mesmo em dias nublados
+- Potência 635-640W
+- LÍDER MUNDIAL em eficiência e volume
+- Ótima geração mesmo em dias nublados
 
 #### Jinko Solar - Tiger Neo 66HL5-BDV 710-735W
-- Top 3 global em modulos
+- Top 3 global em módulos
 - Tecnologia N-Type TOPCon + HOT 3.0 + SMBB + Anti-PID
-- Eficiencia ate 23.66% (a maior da nossa lista)
+- Eficiência até 23.66% (a maior da nossa lista)
 - Garantia 12 anos produto / **30 anos performance** (degrada 0.40%/ano)
 - Bifacial dual glass | 5400 Pa carga frontal
 - Excelente pra cliente exigente que valoriza garantia longa
 
 #### DAH Solar
 - Premium emergente, tecnologia N-Type
-- Excelente pra cliente que quer diferenciacao
+- Excelente pra cliente que quer diferenciação
 
-### Tier 1 adicional disponivel (sob demanda)
+### Tier 1 adicional disponível (sob demanda)
 
 - Canadian Solar — muito forte no Brasil, suporte robusto
-- Risen Energy — alta performance, excelente custo-beneficio premium
+- Risen Energy — alta performance, excelente custo-benefício premium
 
-### Logica de recomendacao por perfil
+### Lógica de recomendação por perfil
 
-- **Cliente padrao (residencial/comercial geral):** Trina, JA Solar ou LONGi
-- **Cliente exigente (alto padrao):** Jinko N-Type ou DAH
+- **Cliente padrão (residencial/comercial geral):** Trina, JA Solar ou LONGi
+- **Cliente exigente (alto padrão):** Jinko N-Type ou DAH
 
 ### Tecnologias premium atuais (que usamos)
 
-- **TOPCon** — nova geracao, eficiencia maior, degradacao menor
-- **N-Type** — mais duravel que P-Type
+- **TOPCon** — nova geração, eficiência maior, degradação menor
+- **N-Type** — mais durável que P-Type
 - **Half-cell + Multi-busbar** — melhor performance em sombreamento parcial
-- **Bifacial** — geracao adicional pelo verso (quando aplicavel)
+- **Bifacial** — geração adicional pelo verso (quando aplicável)
 
 ---
 
@@ -64,28 +64,28 @@ entregar projeto que vai dar problema em 2-3 anos.
 ### Premium e Profissionais (que usamos no dia a dia)
 
 #### SolarEdge
-- Sistema de otimizadores por modulo + inversor central
+- Sistema de otimizadores por módulo + inversor central
 - Monitoramento individual de cada painel
-- Maxima eficiencia em telhados com sombreamento parcial
-- Garantia ate 25 anos (otimizadores) / 12 anos (inversor, ext 25)
-- Premium israelense, padrao top mundial
+- Máxima eficiência em telhados com sombreamento parcial
+- Garantia até 25 anos (otimizadores) / 12 anos (inversor, ext 25)
+- Premium israelense, padrão top mundial
 - DETALHES COMPLETOS, ARGUMENTOS DE VENDA E COMPARATIVOS: ver `solaredge.md`
 
 #### Sungrow
-- Top global, eficiencia >99%
+- Top global, eficiência >99%
 - Excelente pra projetos comerciais e residenciais grandes
 
 #### Solis
 - Muito forte no Brasil (top ranking)
-- Otimo custo-beneficio premium
+- Ótimo custo-benefício premium
 
 #### Deye
-- Hibrido forte (crescendo muito no mercado)
+- Híbrido forte (crescendo muito no mercado)
 - Excelente pra residencial com bateria
 
 #### FoxESS
-- Hibrido custo-beneficio premium intermediario
-- Boa opcao quando cliente quer hibrido sem pagar SolarEdge/Huawei
+- Híbrido custo-benefício premium intermediário
+- Boa opção quando cliente quer híbrido sem pagar SolarEdge/Huawei
 
 #### Hoymiles (microinversor)
 - Top 2 microinversor no Brasil
@@ -94,24 +94,24 @@ entregar projeto que vai dar problema em 2-3 anos.
 - Ideal pra telhados com sombras pontuais
 
 #### NEP - Northern Electric Power (microinversor)
-- Microinversor confiavel e robusto
-- Excelente custo-beneficio
+- Microinversor confiável e robusto
+- Excelente custo-benefício
 - Boa rede de suporte BR
 
-### Inversores adicionais disponiveis (sob demanda)
+### Inversores adicionais disponíveis (sob demanda)
 
-- **Huawei** — hoje o mais forte em hibrido + bateria no Brasil
-- **Fronius** — premium austriaco
-- **SMA** — referencia alema
+- **Huawei** — hoje o mais forte em híbrido + bateria no Brasil
+- **Fronius** — premium austríaco
+- **SMA** — referência alemã
 - **GoodWe** — top 3 ranking BR
-- **APsystems** — lider mundial em microinversor
-- **SolaX** — premium intermediario
+- **APsystems** — líder mundial em microinversor
+- **SolaX** — premium intermediário
 
-### NAO trabalhamos com
+### NÃO trabalhamos com
 
-- **Growatt** — qualidade abaixo do nosso padrao. Ecosunpower nao instala
+- **Growatt** — qualidade abaixo do nosso padrão. Ecosunpower não instala
   Growatt mesmo se cliente pedir. Sempre direcionamos pra Deye, FoxESS,
-  Sungrow ou Solis como alternativa de hibrido custo-beneficio.
+  Sungrow ou Solis como alternativa de híbrido custo-benefício.
 
 ---
 
@@ -119,34 +119,34 @@ entregar projeto que vai dar problema em 2-3 anos.
 
 ### Premium (que usamos)
 
-- **Deye** — hibrido + bateria integrado, otimo custo-beneficio
-- **FoxESS** — hibrido residencial premium
+- **Deye** — híbrido + bateria integrado, ótimo custo-benefício
+- **FoxESS** — híbrido residencial premium
 - **SolarEdge** — bateria + otimizadores, sistema mais sofisticado
-- **Huawei** — hibrido + bateria forte no Brasil
+- **Huawei** — híbrido + bateria forte no Brasil
 
 ### Bateria standalone Tier 1
 
-- **BYD** — referencia mundial em LFP, garantia robusta
-- **Pylontech** — chinesa solida, muito usada no Brasil
+- **BYD** — referência mundial em LFP, garantia robusta
+- **Pylontech** — chinesa sólida, muito usada no Brasil
 
 ---
 
-## Estruturas de Fixacao
+## Estruturas de Fixação
 
 ### Premium nacional (que usamos)
 
-- **2P Solar** — excelente qualidade, padrao Ecosunpower
+- **2P Solar** — excelente qualidade, padrão Ecosunpower
 - **Romagnole** — premium nacional, alternativa de qualidade
 
 ### Cobertura de tipo de telhado
 
-- Ceramico (colonial, romana, portuguesa) — perfis especificos
-- Metalico (trapezoidal, ondulado, kalhetao) — fixacao com grampos
-- Fibrocimento — fixacao com parabolts
-- Laje plana — estrutura triangular com lastro ou fixacao
-- Solo (propriedades rurais e agronegocio) — estrutura aterrada
+- Cerâmico (colonial, romana, portuguesa) — perfis específicos
+- Metálico (trapezoidal, ondulado, kalhetão) — fixação com grampos
+- Fibrocimento — fixação com parabolts
+- Laje plana — estrutura triangular com lastro ou fixação
+- Solo (propriedades rurais e agronegócio) — estrutura aterrada
 
-Aluminio anodizado, garantia 25 anos contra corrosao.
+Alumínio anodizado, garantia 25 anos contra corrosão.
 
 ---
 
@@ -156,21 +156,21 @@ Aluminio anodizado, garantia 25 anos contra corrosao.
 - **Conduspar** — premium nacional
 - **Cobrecom** — alternativa premium nacional
 
-Especificacoes: 4mm2, 6mm2 ou 10mm2 conforme dimensionamento, dupla
-isolacao com cobertura UV protected.
+Especificações: 4mm², 6mm² ou 10mm² conforme dimensionamento, dupla
+isolação com cobertura UV protected.
 
 ---
 
-## String Box / Protecao Eletrica
+## String Box / Proteção Elétrica
 
-- **WEG** — referencia nacional em equipamento eletrico
+- **WEG** — referência nacional em equipamento elétrico
 - **Steck** — qualidade premium BR
-- **Clamper** — DPS (Dispositivo de Protecao contra Surtos), OBRIGATORIO em
+- **Clamper** — DPS (Dispositivo de Proteção contra Surtos), OBRIGATÓRIO em
   todo projeto pra atender NBR 5410 e proteger contra raios e surtos da rede
 
 Componentes string box:
-- Fusivel CC (curto-circuito do lado do painel)
-- DPS CC (surtos do lado dos paineis)
+- Fusível CC (curto-circuito do lado do painel)
+- DPS CC (surtos do lado dos painéis)
 - DPS CA (surtos do lado da rede)
 - Disjuntor CC e CA dimensionados conforme inversor
 
@@ -179,14 +179,14 @@ Componentes string box:
 ## Como escolhemos o equipamento pra cada cliente
 
 A Ecosunpower dimensiona o melhor conjunto considerando:
-- Espaco disponivel no telhado
-- Orcamento e expectativa do cliente
-- Tipo de telhado e orientacao
+- Espaço disponível no telhado
+- Orçamento e expectativa do cliente
+- Tipo de telhado e orientação
 - Sombreamento (se tiver muito = SolarEdge ou microinversor)
-- Clima da regiao (temperatura, irradiacao)
-- Necessidade de expansao futura ou bateria
-- Preferencia da marca (se cliente pediu)
+- Clima da região (temperatura, irradiação)
+- Necessidade de expansão futura ou bateria
+- Preferência da marca (se cliente pediu)
 
-Se cliente pedir uma marca que nao usamos (ex: Growatt), explicamos
-educadamente o porque e oferecemos alternativa premium do mesmo nivel
-de preco mas com qualidade superior.
+Se cliente pedir uma marca que não usamos (ex: Growatt), explicamos
+educadamente o porquê e oferecemos alternativa premium do mesmo nível
+de preço mas com qualidade superior.

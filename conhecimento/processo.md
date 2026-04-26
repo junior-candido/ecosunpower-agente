@@ -1,29 +1,29 @@
-# Processo de Instalacao
+# Processo de Instalação
 
 ## Etapas
 
 ### 1. Consulta inicial
-Nosso engenheiro avalia seu consumo, local de instalacao e necessidades
+Nosso engenheiro avalia seu consumo, local de instalação e necessidades
 para dimensionar o sistema ideal.
 
-### 2. Proposta tecnica e comercial
-Apresentamos o projeto com detalhes tecnicos, simulacao de economia,
-opcoes de equipamento e formas de pagamento.
+### 2. Proposta técnica e comercial
+Apresentamos o projeto com detalhes técnicos, simulação de economia,
+opções de equipamento e formas de pagamento.
 
-### 3. Aprovacao e contrato
-Apos aprovacao, formalizamos o contrato e iniciamos o processo.
+### 3. Aprovação e contrato
+Após aprovação, formalizamos o contrato e iniciamos o processo.
 
-### 4. Projeto e homologacao
-Elaboramos o projeto eletrico e submetemos a distribuidora para aprovacao.
-Prazo medio: 15 a 30 dias.
+### 4. Projeto e homologação
+Elaboramos o projeto elétrico e submetemos à distribuidora para aprovação.
+Prazo médio: 15 a 30 dias.
 
-### 5. Instalacao
-Equipe tecnica realiza a instalacao no local.
+### 5. Instalação
+Equipe técnica realiza a instalação no local.
 Residencial: 1 a 3 dias. Comercial: 1 a 2 semanas.
 
-### 6. Vistoria e conexao
-A distribuidora faz a vistoria e conecta o sistema a rede.
-Prazo: 7 a 15 dias apos a instalacao.
+### 6. Vistoria e conexão
+A distribuidora faz a vistoria e conecta o sistema à rede.
+Prazo: 7 a 15 dias após a instalação.
 
 ### 7. Monitoramento
-Acompanhamos a geracao do seu sistema e garantimos o funcionamento ideal.
+Acompanhamos a geração do seu sistema e garantimos o funcionamento ideal.
