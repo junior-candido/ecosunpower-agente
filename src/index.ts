@@ -4,6 +4,7 @@ import { EvolutionService } from './modules/evolution.js';
 import { MessageQueue } from './modules/queue.js';
 import { SupabaseService } from './modules/supabase.js';
 import { KnowledgeBase } from './modules/knowledge.js';
+import { detectTopics } from './modules/knowledge-topics.js';
 import { Brain } from './modules/brain.js';
 import { DossierBuilder } from './modules/dossier.js';
 import { calculateSolarEstimate, formatEstimateForPrompt } from './modules/solar.js';
@@ -420,10 +421,18 @@ async function main() {
         }
       }
 
+      // Topic detection: injeta core sempre + especializados detectados no texto
+      const detectedTopics = detectTopics(text);
+      const specializedKnowledge = knowledgeBase.getSpecialized(detectedTopics);
+      const injectedKnowledge = knowledgeBase.getCore() + specializedKnowledge + leadContext;
+      if (detectedTopics.length > 0) {
+        console.log(`[knowledge] Topics detected: ${detectedTopics.join(', ')} (+${Math.ceil(specializedKnowledge.length / 4)} tokens)`);
+      }
+
       const response = await brain.processMessage(
         text,
         history,
-        knowledgeBase.getContent() + leadContext,
+        injectedKnowledge,
         conversation.summary,
         conversation.qualification_step
       );
@@ -1375,7 +1384,7 @@ Responda CURTO, maximo 2 paragrafos.`,
               const welcome = await metaLeadgen.generateWelcome(
                 normalized,
                 details,
-                knowledgeBase.getContent(),
+                knowledgeBase.getCore(),
               );
               await sendText(normalized.phone as string, welcome);
 
@@ -2042,7 +2051,7 @@ Responda CURTO, maximo 2 paragrafos.`,
           const welcome = await metaLeadgen.generateWelcome(
             normalized,
             fakeDetails,
-            knowledgeBase.getContent(),
+            knowledgeBase.getCore(),
           );
           await sendText(normalized.phone as string, welcome);
           await supabase.getClient()

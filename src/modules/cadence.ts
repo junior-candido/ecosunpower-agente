@@ -103,7 +103,7 @@ export class CadenceService {
     }
 
     try {
-      const path = join(__dirname, '..', '..', 'conhecimento', 'canal-solar.md');
+      const path = join(__dirname, '..', '..', 'conhecimento', 'especializado', 'canal-solar.md');
       const content = readFileSync(path, 'utf-8');
       this.articles = this.parseArticles(content);
       this.articlesLoadedAt = now;

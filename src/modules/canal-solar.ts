@@ -150,7 +150,10 @@ export interface IngestResult {
 }
 
 export async function ingestCanalSolar(knowledgeDir: string, force = false): Promise<IngestResult> {
-  const outputPath = join(knowledgeDir, 'canal-solar.md');
+  // canal-solar.md fica em conhecimento/especializado/ — fora do core pra
+  // nao injetar artigos em toda mensagem do cliente. Usado apenas pelo
+  // /reengagement/daily endpoint e cadence touches.
+  const outputPath = join(knowledgeDir, 'especializado', 'canal-solar.md');
 
   if (!force && existsSync(outputPath)) {
     const ageMs = Date.now() - statSync(outputPath).mtimeMs;
