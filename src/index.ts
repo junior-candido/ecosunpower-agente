@@ -2700,8 +2700,18 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
     res.status(httpStatus).json(status);
   });
 
+  // EVA_PASSIVE_MODE: quando true, desliga TODOS os schedulers de outbound
+  // (followup, maintenance intros, maintenance reminders, cadence). Eva so
+  // responde mensagens recebidas. Usar enquanto WhatsApp estiver restrito ou
+  // antes da migracao pra WABA Cloud API. Setar no Easypanel: EVA_PASSIVE_MODE=true
+  const passiveMode = (process.env.EVA_PASSIVE_MODE || '').toLowerCase() === 'true';
+  if (passiveMode) {
+    console.log('[eva] 🔇 PASSIVE MODE ATIVO — schedulers de outbound DESLIGADOS (followup/maintenance/cadence).');
+    console.log('[eva] Eva so vai responder mensagens recebidas. Pra reativar: EVA_PASSIVE_MODE=false no Easypanel + restart.');
+  }
+
   // Follow-up timer (runs every hour)
-  if (!isSandbox) {
+  if (!isSandbox && !passiveMode) {
     setInterval(async () => {
       console.log('[followup] Running scheduled follow-up check...');
       await followup.processFollowups();
@@ -2710,6 +2720,10 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
     // Run first check 5 minutes after startup
     setTimeout(() => followup.processFollowups(), 5 * 60 * 1000);
     console.log('[followup] Follow-up scheduler started (checks every 1 hour)');
+  }
+
+  // Outbound schedulers (gated by passiveMode)
+  if (!isSandbox && !passiveMode) {
 
     // Eva intro pendente (delay 2h apos /eva on): checa a cada 2 minutos
     setInterval(async () => {
@@ -2845,7 +2859,7 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
   }
 
   // Weekly ads report: domingo 09:00 BRT manda resumo da semana pro Junior
-  if (!isSandbox) {
+  if (!isSandbox && !passiveMode) {
     const checkWeeklyReportSchedule = async () => {
       const brt = getBrtParts();
       if (brt.weekday !== 0) return; // domingo
@@ -2921,7 +2935,7 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
   });
 
   // Reengagement cadence: check every 2 hours for due touches
-  if (!isSandbox) {
+  if (!isSandbox && !passiveMode) {
     const runReengagementCheck = async () => {
       try {
         const sent = await reengagement.processDueTouches();
@@ -2936,7 +2950,7 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
   }
 
   // Post-install cadence: check every 2 hours for due review/indication touches
-  if (!isSandbox && postInstall) {
+  if (!isSandbox && postInstall && !passiveMode) {
     const runPostInstallCheck = async () => {
       try {
         const sent = await postInstall.processDueTouches();
