@@ -2527,7 +2527,7 @@ Ultima atualizacao: 26 de abril de 2026</p>
   <li><strong>Cloudflare Inc.</strong> (EUA) — hospedagem do site e CDN</li>
   <li><strong>Equipe interna</strong> — engenheiros, instaladores, atendimento</li>
   <li><strong>Parceiros de equipamentos</strong> — distribuidores quando necessario pra cotacao (apenas dados estritamente necessarios)</li>
-  <li><strong>Autoridades legais</strong> — quando obrigados por lei (ANEEL, CREA, Receita Federal, ordem judicial)</li>
+  <li><strong>Autoridades legais</strong> — quando obrigados por lei (ANEEL, CREA, CFT, Receita Federal, ordem judicial)</li>
 </ul>
 <p>Algumas transferencias ocorrem pra fora do Brasil (EUA), em conformidade com art. 33 da LGPD, com clausulas contratuais padrao e nivel de protecao equivalente.</p>
 
