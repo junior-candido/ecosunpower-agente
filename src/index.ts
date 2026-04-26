@@ -2542,7 +2542,7 @@ Ultima atualizacao: 20 de abril de 2026</p>
 <h2>9. Como exercer seus direitos</h2>
 <p>Para qualquer solicitacao relacionada aos seus dados, entre em contato:</p>
 <ul>
-  <li><strong>E-mail:</strong> <a href="mailto:ecosunpower2032@gmail.com">ecosunpower2032@gmail.com</a></li>
+  <li><strong>E-mail:</strong> <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a></li>
   <li><strong>WhatsApp:</strong> nos envie uma mensagem pedindo a acao desejada ("quero apagar meus dados", "quero sair da lista")</li>
 </ul>
 <p>Respondemos em ate 15 dias uteis.</p>
@@ -2558,7 +2558,7 @@ Ultima atualizacao: 20 de abril de 2026</p>
 
 <footer>
 <p>Ecosunpower Energia Solar — Brasilia/DF<br>
-Contato: <a href="mailto:ecosunpower2032@gmail.com">ecosunpower2032@gmail.com</a></p>
+Contato: <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a></p>
 </footer>
 </body>
 </html>`;
@@ -2592,7 +2592,7 @@ footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e5e5; fon
 <h1>Termos de Uso</h1>
 <p class="meta"><strong>Ecosunpower Energia Solar</strong><br>
 SHA Conjunto 01 Chacara 44C Lote 6, Arniqueira, Brasilia - DF, CEP 71993-150<br>
-CNPJ: a ser publicado | Email: <a href="mailto:ecosunpower2032@gmail.com">ecosunpower2032@gmail.com</a><br>
+CNPJ: 33.020.459/0001-06 | Email: <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a><br>
 Atualizado em: 22 de abril de 2026</p>
 
 <h2>1. Aceitacao dos Termos</h2>
@@ -2635,7 +2635,7 @@ Atualizado em: 22 de abril de 2026</p>
   <li>O contato comercial via WhatsApp, telefone ou email para apresentar nossas solucoes e dar continuidade ao seu interesse</li>
   <li>O processamento desses dados conforme nossa <a href="/privacidade">Politica de Privacidade</a> e a Lei Geral de Protecao de Dados (LGPD - Lei 13.709/2018)</li>
 </ul>
-<p>Voce pode solicitar o cancelamento do contato e a exclusao dos seus dados a qualquer momento pelo email <a href="mailto:ecosunpower2032@gmail.com">ecosunpower2032@gmail.com</a>.</p>
+<p>Voce pode solicitar o cancelamento do contato e a exclusao dos seus dados a qualquer momento pelo email <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a>.</p>
 
 <h2>7. Propostas e orcamentos</h2>
 <p>Propostas e orcamentos enviados sao informacoes preliminares baseadas nas informacoes que voce nos forneceu. O orcamento final, valor da instalacao e prazo de execucao dependem de visita tecnica presencial, condicoes do imovel e disponibilidade de equipamentos no momento do fechamento. Propostas tem validade conforme indicado no proprio documento (geralmente 15 a 30 dias).</p>
@@ -2665,14 +2665,14 @@ Atualizado em: 22 de abril de 2026</p>
 <h2>13. Contato</h2>
 <p>Duvidas sobre estes Termos ou sobre nossos servicos:</p>
 <ul>
-  <li>Email: <a href="mailto:ecosunpower2032@gmail.com">ecosunpower2032@gmail.com</a></li>
+  <li>Email: <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a></li>
   <li>WhatsApp: vide canais oficiais nas redes sociais Ecosunpower</li>
   <li>Endereco: SHA Conjunto 01 Chacara 44C Lote 6, Arniqueira, Brasilia - DF</li>
 </ul>
 
 <footer>
 <p>Ecosunpower Energia Solar — Brasilia/DF<br>
-Contato: <a href="mailto:ecosunpower2032@gmail.com">ecosunpower2032@gmail.com</a><br>
+Contato: <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a><br>
 Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
 </footer>
 </body>
