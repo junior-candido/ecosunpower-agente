@@ -6,6 +6,7 @@ import { SupabaseService } from './modules/supabase.js';
 import { KnowledgeBase } from './modules/knowledge.js';
 import { detectTopics } from './modules/knowledge-topics.js';
 import { BlogGenerator, publishDraftToGitHub } from './modules/blog-generator.js';
+import { MetaWhatsAppService } from './modules/meta-whatsapp.js';
 import { Brain } from './modules/brain.js';
 import { DossierBuilder } from './modules/dossier.js';
 import { calculateSolarEstimate, formatEstimateForPrompt } from './modules/solar.js';
@@ -78,6 +79,31 @@ async function main() {
   console.log(`[init] Starting Ecosunpower Agent (${config.nodeEnv} mode)`);
 
   const evolution = new EvolutionService(config);
+
+  // WABA Cloud API (Meta oficial). Quando USE_WABA_CLOUD_API=true, vira o
+  // canal padrao de envio E recebimento. Mantemos Evolution instanciado
+  // pra fallback/transicao mas messaging-layer usa apenas um por vez.
+  const metaWaba = (config.useWabaCloudApi
+    && config.metaWabaPhoneNumberId
+    && config.metaWabaAccessToken
+    && config.metaAppSecret
+    && config.metaWabaVerifyToken)
+    ? new MetaWhatsAppService(config)
+    : null;
+  if (metaWaba) {
+    console.log('[waba] ✅ WhatsApp Business Cloud API ATIVA — Eva opera via Meta oficial');
+    console.log(`[waba] Phone Number ID: ${config.metaWabaPhoneNumberId}`);
+    console.log(`[waba] Business Account ID: ${config.metaWabaBusinessAccountId ?? '(nao setado)'}`);
+  } else if (config.useWabaCloudApi) {
+    console.warn('[waba] ⚠️ USE_WABA_CLOUD_API=true mas faltam env vars. WABA NAO ativada — usando Evolution. Necessarios: META_WABA_PHONE_NUMBER_ID, META_WABA_ACCESS_TOKEN, META_APP_SECRET, META_WABA_VERIFY_TOKEN');
+  } else {
+    console.log('[waba] WhatsApp Cloud API desativada (USE_WABA_CLOUD_API=false). Usando Evolution.');
+  }
+
+  // Camada de mensagens unificada — usa WABA se disponivel, senao Evolution.
+  // Ambos implementam a mesma interface (sendText, parseWebhook, etc).
+  const messaging = metaWaba ?? evolution;
+
   const supabase = new SupabaseService(config);
   const brain = new Brain(config.anthropicApiKey, process.env.GOOGLE_REVIEW_URL ?? '');
   const vision = new VisionAnalyzer(config.anthropicApiKey);
@@ -185,9 +211,10 @@ async function main() {
   };
 
   // Wrapped sendText: shows "digitando..." presence and tracks bot-sent IDs.
+  // Roteia automaticamente WABA Cloud API ou Evolution conforme USE_WABA_CLOUD_API.
   const sendText = async (to: string, text: string): Promise<void> => {
     const delay = typingDelay(text);
-    const { messageId } = await evolution.sendText(to, text, delay);
+    const { messageId } = await messaging.sendText(to, text, delay);
     if (messageId) await takeover.markBotSent(messageId);
   };
 
@@ -937,7 +964,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       if (!isSandbox) await sendText(from, 'Ouvindo seu audio... 🎧');
 
       // Download audio via Evolution API
-      const media = await evolution.getMediaBase64(messageId);
+      const media = await messaging.getMediaBase64(messageId);
       if (!media) {
         const msg = 'Nao consegui baixar o audio. Pode mandar de novo? 😊';
         if (!isSandbox) await sendText(from, msg);
@@ -980,7 +1007,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       if (!isSandbox) await sendText(from, 'Recebi a foto! Analisando... 📋');
 
       // Download image via Evolution API
-      const media = await evolution.getMediaBase64(messageId);
+      const media = await messaging.getMediaBase64(messageId);
       if (!media) {
         const msg = 'Nao consegui abrir a foto. Pode enviar novamente? 📸';
         if (!isSandbox) await sendText(from, msg);
@@ -1040,7 +1067,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       const lead = await supabase.getLeadByPhone(from);
       if (!isSandbox) await sendText(from, 'Recebi o video! Deixa eu dar uma olhada...');
 
-      const media = await evolution.getMediaBase64(messageId);
+      const media = await messaging.getMediaBase64(messageId);
       if (!media) {
         if (!isSandbox) await sendText(from, 'nao consegui baixar o video aqui, pode tentar enviar de novo?');
         return;
@@ -1142,7 +1169,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       if (!isSandbox) await sendText(from, 'Recebi o PDF! Analisando... 📄');
 
       // Download PDF via Evolution API
-      const media = await evolution.getMediaBase64(messageId);
+      const media = await messaging.getMediaBase64(messageId);
       if (!media) {
         const msg = 'Nao consegui abrir o PDF. Pode enviar novamente? 📄';
         if (!isSandbox) await sendText(from, msg);
@@ -1515,6 +1542,89 @@ Responda CURTO, maximo 2 paragrafos.`,
       }
     }
   });
+
+  // ==========================================================================
+  // WHATSAPP BUSINESS CLOUD API (WABA) — webhook oficial Meta
+  // ==========================================================================
+  // Configurar no Meta Developers app -> WhatsApp -> Configuracao -> Webhook:
+  //   Callback URL: https://aula-aprendendo-agente-whatsapp.oigz6g.easypanel.host/webhook-waba
+  //   Verify token: o que voce setou em META_WABA_VERIFY_TOKEN (ex: ecosun-waba-2026)
+  //   Subscribe to: messages, message_status (mais tarde adicionar message_template_status)
+  if (metaWaba) {
+    // GET: challenge de verificacao (Meta chama 1x quando voce configura o webhook)
+    app.get('/webhook-waba', (req, res) => {
+      const mode = req.query['hub.mode'] as string;
+      const token = req.query['hub.verify_token'] as string;
+      const challenge = req.query['hub.challenge'] as string;
+      if (metaWaba.validateChallenge(mode, token)) {
+        console.log('[waba] Challenge verified, webhook subscribed');
+        res.status(200).send(challenge);
+        return;
+      }
+      console.warn(`[waba] Challenge failed: mode=${mode}, token_match=${token === config.metaWabaVerifyToken}`);
+      res.status(403).send('Forbidden');
+    });
+
+    // POST: recebe mensagens e status updates da Meta Cloud API
+    app.post('/webhook-waba', async (req, res) => {
+      const signature = req.headers['x-hub-signature-256'] as string | undefined;
+      const rawBody = (req as unknown as { rawBody?: string }).rawBody ?? '';
+
+      if (!metaWaba.validateSignature(rawBody, signature)) {
+        console.warn('[waba] Invalid HMAC signature, rejecting webhook');
+        res.status(403).json({ error: 'Invalid signature' });
+        return;
+      }
+
+      // Sempre responde 200 rapido pra Meta nao reenviar (o processamento real
+      // pode ser async via Redis Queue).
+      res.status(200).json({ status: 'received' });
+
+      try {
+        // Status updates (sent/delivered/read/failed) — log e prossegue
+        const statuses = metaWaba.parseStatusUpdates(req.body);
+        for (const s of statuses) {
+          if (s.status === 'failed') {
+            console.warn(`[waba-status] ❌ FALHOU msg=${s.messageId} to=${s.recipientPhone} err=${s.errorCode}: ${s.errorTitle}`);
+          } else {
+            console.log(`[waba-status] ${s.status} msg=${s.messageId} to=${s.recipientPhone}`);
+          }
+        }
+
+        // Mensagens recebidas
+        const parsed = metaWaba.parseWebhook(req.body);
+        if (!parsed) return; // pode ser status only ou tipo nao suportado
+
+        // Filtra grupos (numero >15 chars normalmente)
+        if (parsed.from.includes('-') || parsed.from.length > 15) {
+          console.log(`[waba] Ignored group message from ${parsed.from}`);
+          return;
+        }
+
+        // Ignora mensagens do proprio Junior pro numero da Eva
+        if (parsed.from === config.engineerPhone) {
+          console.log(`[waba] Ignored owner message from ${parsed.from}`);
+          return;
+        }
+
+        console.log(`[waba] 📥 Mensagem recebida de ${parsed.from} (${parsed.type}): ${parsed.content.slice(0, 80)}`);
+
+        await queue.addMessage({
+          type: parsed.type,
+          from: parsed.from,
+          content: parsed.content,
+          timestamp: parsed.timestamp.toISOString(),
+          messageId: parsed.messageId,
+          pushName: parsed.pushName,
+          caption: parsed.caption,
+        });
+      } catch (err) {
+        console.error('[waba] Webhook processing error:', (err as Error).message);
+      }
+    });
+
+    console.log('[waba] Webhook endpoints registered: GET/POST /webhook-waba');
+  }
 
   app.post('/webhook', async (req, res) => {
     const token = (req.headers['x-webhook-token'] as string)
