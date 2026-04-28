@@ -475,6 +475,23 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       }
       const conversation = await supabase.getOrCreateConversation(leadId);
 
+      // Auto-ack template: dispara `eva_resposta_inicial` (Utility) em primeira sessao
+      // ou pausa >1h pra UX — cliente nao fica esperando 5-30s no vacuo enquanto Eva
+      // processa via Claude. So roda no canal WABA (Evolution nao tem template formal).
+      // Fire-and-forget; nao bloqueia processamento principal.
+      if (metaWaba) {
+        const isNewSession = conversation.message_count === 0;
+        const elapsedMs = Date.now() - new Date(conversation.last_message_at).getTime();
+        const isLongPause = elapsedMs > 60 * 60 * 1000; // 1h
+        if (isNewSession || isLongPause) {
+          const reason = isNewSession ? 'new-session' : 'long-pause';
+          metaWaba
+            .sendTemplate(from, 'eva_resposta_inicial', 'pt_BR')
+            .then(() => console.log(`[auto-ack] Template eva_resposta_inicial enviado pra ${from} lead=${leadId} (${reason})`))
+            .catch((err: Error) => console.warn(`[auto-ack] Template send falhou pra ${from} lead=${leadId}: ${err.message}`));
+        }
+      }
+
       // Build history from conversation messages
       const history = (conversation.messages ?? []).map(m => ({
         role: m.role as 'user' | 'assistant',
