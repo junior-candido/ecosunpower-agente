@@ -305,7 +305,10 @@ async function main() {
   // "publicar" ou "descartar" — comandos sao detectados aqui.
   // Retorna true se comando foi processado (handler deve return depois).
   async function tryHandleJuniorBlogCommand(from: string, text: string): Promise<boolean> {
-    const isJuniorPhone = from === config.engineerPhone || from.endsWith(config.engineerPhone.replace(/\D/g, ''));
+    // Normaliza ambos pra forma canonica BR (resolve WABA mandar 12 dig vs env 13 dig)
+    const fromNorm = normalizeBrazilianPhone(from);
+    const engNorm = normalizeBrazilianPhone(config.engineerPhone);
+    const isJuniorPhone = !!(fromNorm && engNorm && fromNorm === engNorm);
     if (!isJuniorPhone) return false;
     const norm = text.trim().toLowerCase();
 
@@ -388,15 +391,20 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
   // pra cliente comum nem entra nesse caminho. Helper de phone tolera variação de formato
   // entre WABA e Evolution (com/sem +55, com/sem @c.us) — mesma logica do blog command.
   async function tryHandlePricingCommand(from: string, text: string): Promise<boolean> {
-    const isJuniorPhone = from === config.engineerPhone || from.endsWith(config.engineerPhone.replace(/\D/g, ''));
+    // Normaliza ambos pra forma canonica brasileira (13 dig com 9). Resolve
+    // o caso WABA mandar "556198805002" (12 dig sem 9) enquanto env tem
+    // "5561998805002" (13 dig com 9) — bug classico do Meta Cloud API BR.
+    const fromNorm = normalizeBrazilianPhone(from);
+    const engNorm = normalizeBrazilianPhone(config.engineerPhone);
+    const isJuniorPhone = !!(fromNorm && engNorm && fromNorm === engNorm);
+
+    const inMode = isJuniorPhone ? await pricingAssistant.isInPricingMode(from) : false;
+    const isTrigger = isJuniorPhone ? PricingAssistant.isPricingTrigger(text) : false;
+
+    // Log de debug pra rastrear no Easypanel — sempre logamos pra ver match
+    console.log(`[pricing] gate from=${from}(${fromNorm}) eng=(${engNorm}) match=${isJuniorPhone} inMode=${inMode} isTrigger=${isTrigger} text="${text.slice(0,40)}"`);
+
     if (!isJuniorPhone) return false;
-
-    const inMode = await pricingAssistant.isInPricingMode(from);
-    const isTrigger = PricingAssistant.isPricingTrigger(text);
-
-    // Log de debug pra rastrear no Easypanel
-    console.log(`[pricing] gate from=${from} match=${isJuniorPhone} inMode=${inMode} isTrigger=${isTrigger} text="${text.slice(0,40)}"`);
-
     if (!inMode && !isTrigger) return false;
 
     try {
