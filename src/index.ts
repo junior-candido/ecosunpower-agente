@@ -1339,20 +1339,27 @@ Responda CURTO, maximo 2 paragrafos.`,
       }
     }
 
+    // WABA usa media_id pra baixar midia (vindo em msg.content do parseMessage),
+    // enquanto Evolution usa messageId. Roteamento condicional pra ambos funcionarem.
+    const mediaRef = (mediaContent: string, fallbackId: string) =>
+      metaWaba ? mediaContent : fallbackId;
+
     switch (msg.type) {
       case 'text':
         await handleTextMessage(msg.from, msg.content);
         break;
       case 'audio':
-        await handleAudioMessage(msg.from, msg.messageId);
+        await handleAudioMessage(msg.from, mediaRef(msg.content, msg.messageId));
         break;
       case 'image':
-        await handleImageMessage(msg.from, msg.messageId);
+        await handleImageMessage(msg.from, mediaRef(msg.content, msg.messageId));
         break;
       case 'video':
-        await handleVideoMessage(msg.from, msg.messageId, msg.caption);
+        await handleVideoMessage(msg.from, mediaRef(msg.content, msg.messageId), msg.caption);
         break;
       case 'document':
+        // Documento no WABA tem id separado do mime_type (parseMessage atualmente
+        // armazena mime_type em content). Mantido com messageId — bug separado a tratar.
         await handleDocumentMessage(msg.from, msg.messageId, msg.content);
         break;
       case 'location': {
