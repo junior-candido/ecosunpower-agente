@@ -318,16 +318,27 @@ async function main() {
     console.log('[knowledge] Reloaded after file change');
   });
 
+  // Pre-compute lista de phones admin normalizados (engineerPhone + extras).
+  // Usado pelos gates de comandos /preco, /agenda, blog. Notificacoes outbound
+  // continuam indo so pro engineerPhone (o "primario" nao muda).
+  const adminPhonesNormalized = [
+    normalizeBrazilianPhone(config.engineerPhone),
+    ...config.adminExtraPhones.map(p => normalizeBrazilianPhone(p)),
+  ].filter((p): p is string => !!p);
+  console.log(`[admin] Phones autorizados pra comandos admin: ${adminPhonesNormalized.join(', ')}`);
+
+  function isAdminPhone(from: string): boolean {
+    const fromNorm = normalizeBrazilianPhone(from);
+    if (!fromNorm) return false;
+    return adminPhonesNormalized.includes(fromNorm);
+  }
+
   // Helper pra detectar e processar comandos de blog vindos do Junior.
   // Junior recebe notificacao de novo draft no WhatsApp dele e responde
   // "publicar" ou "descartar" — comandos sao detectados aqui.
   // Retorna true se comando foi processado (handler deve return depois).
   async function tryHandleJuniorBlogCommand(from: string, text: string): Promise<boolean> {
-    // Normaliza ambos pra forma canonica BR (resolve WABA mandar 12 dig vs env 13 dig)
-    const fromNorm = normalizeBrazilianPhone(from);
-    const engNorm = normalizeBrazilianPhone(config.engineerPhone);
-    const isJuniorPhone = !!(fromNorm && engNorm && fromNorm === engNorm);
-    if (!isJuniorPhone) return false;
+    if (!isAdminPhone(from)) return false;
     const norm = text.trim().toLowerCase();
 
     const publishMatch = norm.match(/^publicar(?:\s+([\w-]+))?$/);
@@ -409,20 +420,13 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
   // pra cliente comum nem entra nesse caminho. Helper de phone tolera variação de formato
   // entre WABA e Evolution (com/sem +55, com/sem @c.us) — mesma logica do blog command.
   async function tryHandlePricingCommand(from: string, text: string): Promise<boolean> {
-    // Normaliza ambos pra forma canonica brasileira (13 dig com 9). Resolve
-    // o caso WABA mandar "556198805002" (12 dig sem 9) enquanto env tem
-    // "5561998805002" (13 dig com 9) — bug classico do Meta Cloud API BR.
-    const fromNorm = normalizeBrazilianPhone(from);
-    const engNorm = normalizeBrazilianPhone(config.engineerPhone);
-    const isJuniorPhone = !!(fromNorm && engNorm && fromNorm === engNorm);
+    const isAdmin = isAdminPhone(from);
+    const inMode = isAdmin ? await pricingAssistant.isInPricingMode(from) : false;
+    const isTrigger = isAdmin ? PricingAssistant.isPricingTrigger(text) : false;
 
-    const inMode = isJuniorPhone ? await pricingAssistant.isInPricingMode(from) : false;
-    const isTrigger = isJuniorPhone ? PricingAssistant.isPricingTrigger(text) : false;
+    console.log(`[pricing] gate from=${from}(${normalizeBrazilianPhone(from)}) admin=${isAdmin} inMode=${inMode} isTrigger=${isTrigger} text="${text.slice(0,40)}"`);
 
-    // Log de debug pra rastrear no Easypanel — sempre logamos pra ver match
-    console.log(`[pricing] gate from=${from}(${fromNorm}) eng=(${engNorm}) match=${isJuniorPhone} inMode=${inMode} isTrigger=${isTrigger} text="${text.slice(0,40)}"`);
-
-    if (!isJuniorPhone) return false;
+    if (!isAdmin) return false;
     if (!inMode && !isTrigger) return false;
 
     try {
@@ -444,16 +448,13 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
   async function tryHandleSchedulingCommand(from: string, text: string): Promise<boolean> {
     if (!schedulingAssistant) return false;
 
-    const fromNorm = normalizeBrazilianPhone(from);
-    const engNorm = normalizeBrazilianPhone(config.engineerPhone);
-    const isJuniorPhone = !!(fromNorm && engNorm && fromNorm === engNorm);
+    const isAdmin = isAdminPhone(from);
+    const inMode = isAdmin ? await schedulingAssistant.isInSchedulingMode(from) : false;
+    const isTrigger = isAdmin ? SchedulingAssistant.isSchedulingTrigger(text) : false;
 
-    const inMode = isJuniorPhone ? await schedulingAssistant.isInSchedulingMode(from) : false;
-    const isTrigger = isJuniorPhone ? SchedulingAssistant.isSchedulingTrigger(text) : false;
+    console.log(`[scheduling] gate from=${from}(${normalizeBrazilianPhone(from)}) admin=${isAdmin} inMode=${inMode} isTrigger=${isTrigger} text="${text.slice(0,40)}"`);
 
-    console.log(`[scheduling] gate from=${from}(${fromNorm}) eng=(${engNorm}) match=${isJuniorPhone} inMode=${inMode} isTrigger=${isTrigger} text="${text.slice(0,40)}"`);
-
-    if (!isJuniorPhone) return false;
+    if (!isAdmin) return false;
     if (!inMode && !isTrigger) return false;
 
     try {
