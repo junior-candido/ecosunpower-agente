@@ -30,6 +30,7 @@ import { TestimonialService, TestimonialFormat } from './modules/testimonials.js
 import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone } from './modules/meta-leadgen.js';
 import { parseTrackingTag } from './modules/tracking.js';
 import { generateWeeklyReport, formatReportForWhatsApp } from './modules/ads-report.js';
+import { PricingAssistant } from './modules/pricing-assistant.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -241,6 +242,17 @@ async function main() {
     sendText,
   );
 
+  // Eva Precificadora: modo /preco conversacional pra Junior calcular projetos
+  // (solar, híbrido, carregador VE, padrão de entrada). Usa Redis pra estado
+  // de modo ativo + histórico Claude. Acessível APENAS pelo engineerPhone.
+  const pricingAssistant = new PricingAssistant(
+    config.anthropicApiKey,
+    config.redisHost,
+    config.redisPort,
+    config.redisPassword,
+    join(__dirname, '..', 'conhecimento'),
+  );
+
   const googleReviewUrl = process.env.GOOGLE_REVIEW_URL ?? '';
   const postInstall = googleReviewUrl
     ? new PostInstallService(
@@ -371,8 +383,39 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return false;
   }
 
+  // Eva Precificadora: prioridade ABSOLUTA quando Junior está em modo precificação,
+  // ou quando ele dispara /preco. So responde pro engineerPhone (numero do Junior),
+  // pra cliente comum nem entra nesse caminho. Helper de phone tolera variação de formato
+  // entre WABA e Evolution (com/sem +55, com/sem @c.us) — mesma logica do blog command.
+  async function tryHandlePricingCommand(from: string, text: string): Promise<boolean> {
+    const isJuniorPhone = from === config.engineerPhone || from.endsWith(config.engineerPhone.replace(/\D/g, ''));
+    if (!isJuniorPhone) return false;
+
+    const inMode = await pricingAssistant.isInPricingMode(from);
+    const isTrigger = PricingAssistant.isPricingTrigger(text);
+
+    if (!inMode && !isTrigger) return false;
+
+    try {
+      let reply: string;
+      if (!inMode && isTrigger) {
+        reply = await pricingAssistant.startPricingMode(from, text);
+      } else {
+        reply = await pricingAssistant.processPricingMessage(from, text);
+      }
+      await sendText(from, reply);
+    } catch (err) {
+      console.error('[pricing] Error:', (err as Error).message);
+      await sendText(from, '⚠️ Erro no cálculo. Tenta de novo ou /sair pra fechar.');
+    }
+    return true;
+  }
+
   // Message handler
   async function handleTextMessage(from: string, text: string) {
+    // Eva Precificadora tem prioridade total quando Junior usa /preco ou esta em modo
+    if (await tryHandlePricingCommand(from, text)) return;
+
     // Comandos de blog do Junior tem prioridade sobre fluxo de cliente
     if (await tryHandleJuniorBlogCommand(from, text)) return;
 
