@@ -298,7 +298,8 @@ export class MetaWhatsAppService {
   async getMediaBase64(mediaId: string): Promise<{ base64: string; mimetype: string } | null> {
     try {
       // Passo 1: pegar URL temporaria da midia
-      const metaRes = await fetch(`${GRAPH_API}/${mediaId}`, {
+      // OBS: phone_number_id e OBRIGATORIO na query string desde v17 (Meta retorna 400 sem ele)
+      const metaRes = await fetch(`${GRAPH_API}/${mediaId}?phone_number_id=${this.phoneNumberId}`, {
         headers: { Authorization: `Bearer ${this.accessToken}` },
       });
       if (!metaRes.ok) {

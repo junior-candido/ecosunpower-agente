@@ -394,6 +394,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     const inMode = await pricingAssistant.isInPricingMode(from);
     const isTrigger = PricingAssistant.isPricingTrigger(text);
 
+    // Log de debug pra rastrear no Easypanel
+    console.log(`[pricing] gate from=${from} match=${isJuniorPhone} inMode=${inMode} isTrigger=${isTrigger} text="${text.slice(0,40)}"`);
+
     if (!inMode && !isTrigger) return false;
 
     try {
