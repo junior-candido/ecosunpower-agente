@@ -82,20 +82,43 @@ export class PricingAssistant {
     this.systemPrompt = buildSystemPrompt(precificacao, greener, marcas);
   }
 
-  // Junior digitou /preco ou linguagem natural? Detecta intencao de entrar
-  // no modo precificacao. Aceita variacoes comuns.
+  // Junior digitou /preco, palavra solta ou linguagem natural?
+  // Cobre: texto livre ("preço", "precificar"), comando barra ("/preco solar 11.2"),
+  // verbos diretos ("orçar", "calcular preço") e áudio transcrito (gera texto natural).
+  // Pontuação e acentos são tolerados (remove tudo que não é letra antes de comparar).
   static isPricingTrigger(text: string): boolean {
-    const norm = text.toLowerCase().trim();
-    if (norm === '/preco' || norm === '/precificar' || norm === '/preço') return true;
-    if (/^\/(preco|precificar|preço)(\s|$)/.test(norm)) return true; // /preco com args
-    if (/^(preciso )?(precificar|orçar|orcar|calcular)(\s|$)/.test(norm)) return true;
+    const raw = text.toLowerCase().trim();
+    if (!raw) return false;
+
+    // Normaliza: remove acentos + sinais de pontuação no início pra pegar "preço!", "preço?" etc
+    const stripAccents = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const norm = stripAccents(raw).replace(/[^\w\s\/]/g, '').trim();
+
+    // Comando barra com ou sem args
+    if (/^\/(preco|precificar|preci?o|orcar|calcular)(\s|$)/.test(norm)) return true;
+
+    // Palavra solta (texto OU áudio transcrito)
+    const palavrasSoltas = ['preco', 'precos', 'precificar', 'precificacao', 'orcar', 'orcamento', 'orcamentos'];
+    if (palavrasSoltas.includes(norm)) return true;
+
+    // Verbos no início + algum complemento
+    if (/^(preciso |quero |me ajuda a |vou )?(precificar|orcar|calcular preco|fazer um orcamento)(\s|$)/.test(norm)) return true;
+
+    // "calcular sistema/projeto" no início
+    if (/^calcular (sistema|projeto|preco|orcamento)(\s|$)/.test(norm)) return true;
+
     return false;
   }
 
   // Junior digitou /sair ou similar pra sair do modo?
   static isExitTrigger(text: string): boolean {
-    const norm = text.toLowerCase().trim();
-    return ['/sair', '/exit', '/preco off', 'sair', 'fechar', 'parar precificacao'].includes(norm);
+    const stripAccents = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const norm = stripAccents(text.toLowerCase().trim()).replace(/[^\w\s\/]/g, '').trim();
+    return [
+      '/sair', '/exit', '/preco off', '/precificar off',
+      'sair', 'fechar', 'parar', 'parar precificacao',
+      'sair do modo', 'sair do preco', 'finalizar', 'encerrar',
+    ].includes(norm);
   }
 
   async isInPricingMode(phone: string): Promise<boolean> {
@@ -108,9 +131,14 @@ export class PricingAssistant {
     await this.redis.setex(`pricing:${phone}`, PRICING_MODE_TTL_SECONDS, '1');
     await this.redis.del(`pricing:history:${phone}`);
 
-    // Se Junior ja descreveu o que quer junto com /preco (ex: "/preco solar 11.2 kit 16987"),
-    // vai direto pro Claude calcular. Senao, mostra o menu padrao.
-    const stripped = (initialMessage ?? '').replace(/^\/(preco|precificar|preço)\s*/i, '').trim();
+    // Se Junior ja descreveu o que quer junto com o trigger (ex: "preço solar 11.2 kit 16987",
+    // "/preco solar...", "preciso precificar 11.2..."), vai direto pro Claude calcular.
+    // Senao, mostra o menu padrao.
+    const stripped = (initialMessage ?? '')
+      .replace(/^\/(preco|precificar|preço|preci?o|orcar|calcular)\s*/i, '')
+      .replace(/^(preciso |quero |me ajuda a |vou )?(precificar|orçar|orcar|precificacao|orcamento|calcular preço|calcular preco|fazer um orcamento|fazer um orçamento)\s*/i, '')
+      .replace(/^(preço|preco|orcamento|orçamento)\s*/i, '')
+      .trim();
     if (stripped.length > 5) {
       return await this.processPricingMessage(phone, stripped);
     }
