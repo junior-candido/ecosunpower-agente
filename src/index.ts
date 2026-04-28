@@ -31,6 +31,7 @@ import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone } from './m
 import { parseTrackingTag } from './modules/tracking.js';
 import { generateWeeklyReport, formatReportForWhatsApp } from './modules/ads-report.js';
 import { PricingAssistant } from './modules/pricing-assistant.js';
+import { SchedulingAssistant } from './modules/scheduling-assistant.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -253,6 +254,23 @@ async function main() {
     join(__dirname, '..', 'conhecimento'),
   );
 
+  // Eva Agendadora: modo /agenda conversacional pra Junior gerenciar Calendar
+  // (Meet, visita técnica, instalação, etc). Acessível APENAS pelo engineerPhone.
+  // Requer CalendarService — só ativa se config Google Calendar OK.
+  const schedulingAssistant = calendar ? new SchedulingAssistant(
+    config.anthropicApiKey,
+    config.redisHost,
+    config.redisPort,
+    config.redisPassword,
+    join(__dirname, '..', 'conhecimento'),
+    calendar,
+  ) : null;
+  if (schedulingAssistant) {
+    console.log('[scheduling] Eva Agendadora ATIVA (Google Calendar integrado)');
+  } else {
+    console.log('[scheduling] Eva Agendadora DESATIVADA — Google Calendar não configurado');
+  }
+
   const googleReviewUrl = process.env.GOOGLE_REVIEW_URL ?? '';
   const postInstall = googleReviewUrl
     ? new PostInstallService(
@@ -422,10 +440,44 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // Eva Agendadora: prioridade absoluta apos pricing. Mesmo padrao de gate.
+  async function tryHandleSchedulingCommand(from: string, text: string): Promise<boolean> {
+    if (!schedulingAssistant) return false;
+
+    const fromNorm = normalizeBrazilianPhone(from);
+    const engNorm = normalizeBrazilianPhone(config.engineerPhone);
+    const isJuniorPhone = !!(fromNorm && engNorm && fromNorm === engNorm);
+
+    const inMode = isJuniorPhone ? await schedulingAssistant.isInSchedulingMode(from) : false;
+    const isTrigger = isJuniorPhone ? SchedulingAssistant.isSchedulingTrigger(text) : false;
+
+    console.log(`[scheduling] gate from=${from}(${fromNorm}) eng=(${engNorm}) match=${isJuniorPhone} inMode=${inMode} isTrigger=${isTrigger} text="${text.slice(0,40)}"`);
+
+    if (!isJuniorPhone) return false;
+    if (!inMode && !isTrigger) return false;
+
+    try {
+      let reply: string;
+      if (!inMode && isTrigger) {
+        reply = await schedulingAssistant.startSchedulingMode(from, text);
+      } else {
+        reply = await schedulingAssistant.processSchedulingMessage(from, text);
+      }
+      await sendText(from, reply);
+    } catch (err) {
+      console.error('[scheduling] Error:', (err as Error).message);
+      await sendText(from, '⚠️ Erro no agendamento. Tenta de novo ou /sair pra fechar.');
+    }
+    return true;
+  }
+
   // Message handler
   async function handleTextMessage(from: string, text: string) {
     // Eva Precificadora tem prioridade total quando Junior usa /preco ou esta em modo
     if (await tryHandlePricingCommand(from, text)) return;
+
+    // Eva Agendadora — prioridade depois do pricing
+    if (await tryHandleSchedulingCommand(from, text)) return;
 
     // Comandos de blog do Junior tem prioridade sobre fluxo de cliente
     if (await tryHandleJuniorBlogCommand(from, text)) return;
