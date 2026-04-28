@@ -298,12 +298,15 @@ export class MetaWhatsAppService {
   async getMediaBase64(mediaId: string): Promise<{ base64: string; mimetype: string } | null> {
     try {
       // Passo 1: pegar URL temporaria da midia
-      // OBS: phone_number_id e OBRIGATORIO na query string desde v17 (Meta retorna 400 sem ele)
-      const metaRes = await fetch(`${GRAPH_API}/${mediaId}?phone_number_id=${this.phoneNumberId}`, {
+      // Nota: tentamos primeiro SEM phone_number_id (formato padrao v18+);
+      // alguns setups antigos exigem ele na query string.
+      const metaUrl = `${GRAPH_API}/${mediaId}?phone_number_id=${this.phoneNumberId}`;
+      const metaRes = await fetch(metaUrl, {
         headers: { Authorization: `Bearer ${this.accessToken}` },
       });
       if (!metaRes.ok) {
-        console.error(`[meta-whatsapp] getMediaBase64 metadata failed: ${metaRes.status}`);
+        const errBody = await metaRes.text().catch(() => '<no body>');
+        console.error(`[meta-whatsapp] getMediaBase64 metadata failed: ${metaRes.status} url=${metaUrl} body=${errBody.slice(0, 500)}`);
         return null;
       }
       const meta = await metaRes.json() as { url?: string; mime_type?: string };
@@ -311,12 +314,13 @@ export class MetaWhatsAppService {
         console.error('[meta-whatsapp] getMediaBase64: metadata sem url/mime_type');
         return null;
       }
-      // Passo 2: baixar bytes da midia
+      // Passo 2: baixar bytes da midia (URL é assinada, mas tambem precisa Bearer token)
       const binRes = await fetch(meta.url, {
         headers: { Authorization: `Bearer ${this.accessToken}` },
       });
       if (!binRes.ok) {
-        console.error(`[meta-whatsapp] getMediaBase64 download failed: ${binRes.status}`);
+        const errBody = await binRes.text().catch(() => '<no body>');
+        console.error(`[meta-whatsapp] getMediaBase64 download failed: ${binRes.status} body=${errBody.slice(0, 500)}`);
         return null;
       }
       const buf = Buffer.from(await binRes.arrayBuffer());
