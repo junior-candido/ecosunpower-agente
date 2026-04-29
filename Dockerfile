@@ -2,6 +2,7 @@
 # pre-instaladas e configuradas. Resolve "libglib-2.0.so.0 missing" sem
 # precisar gerenciar deps Chromium na mao.
 # https://pptr.dev/guides/docker
+# Cache bust: 2026-04-29-2008 (mude essa string pra forcar rebuild Docker)
 FROM ghcr.io/puppeteer/puppeteer:24
 
 # Chromium ja esta no PATH do container; pula download durante npm install.
