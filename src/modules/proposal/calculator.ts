@@ -11,8 +11,15 @@ export interface ProposalInput {
   // Consumo & tarifa
   consumoMensalKwh: number;
   tarifaRsKwh: number;
-  custoDisponibilidadeMensal: number; // R$/mes, mesmo apos solar
   reajusteAnualEnergia: number; // ex: 0.10 = 10%
+
+  // Fio B (Lei 14.300/2022 — substitui custo disponibilidade pra solar)
+  // Em 2026 cliente paga 60% do Fio B sobre o que injeta na rede.
+  // Cronograma: 2024=30%, 2025=45%, 2026=60%, 2027=75%, 2028=90%, 2029+=100%.
+  tusdFioBRsKwh: number; // ex: Neoenergia DF ~0.30, Equatorial GO ~0.28
+  percentualFioBVigente: number; // ex: 2026 = 0.60
+  percentualGeracaoInjetada: number; // residencial sem bateria ~0.70 (70% vai pra rede)
+  custoIluminacaoPublica: number; // R$/mes, valor fixo da fatura
 
   // Investimento
   valorTotalRs: number;
@@ -74,15 +81,30 @@ export function calcularGeracaoMensalDistribuida(geracaoMediaMensal: number): nu
   return SAZONALIDADE_DF.map(s => Math.round(geracaoMediaMensal * s));
 }
 
+// Calcula conta mensal pos-solar considerando Fio B (Lei 14.300/2022).
+// Fio B = TUSD Fio B (R$/kWh) × kWh injetado × percentual vigente do ano.
+// Quando geracao supera consumo, sobra eh injetada na rede e gera credito pra
+// abater meses futuros, mas o cliente PAGA Fio B sobre o injetado.
+// Cliente sempre paga: Fio B + custo iluminacao publica + (consumo nao-coberto × tarifa).
 export function calcularContaMensal(
   consumoKwh: number,
   geracaoKwh: number,
   tarifaRsKwh: number,
-  custoDisponibilidade: number,
+  tusdFioBRsKwh: number,
+  percentualFioBVigente: number,
+  percentualGeracaoInjetada: number,
+  custoIluminacaoPublica: number,
 ): number {
-  // Quando geracao >= consumo, paga so disponibilidade (TUSD min ou Fio B)
+  // Estimativa do que vai pra rede (depende de quando consome — sem bateria,
+  // residencial tipico injeta 60-80% da geracao).
+  const kwhInjetado = geracaoKwh * percentualGeracaoInjetada;
+  const fioBPago = kwhInjetado * tusdFioBRsKwh * percentualFioBVigente;
+
+  // Consumo nao coberto pela geracao (compra da rede ao preco cheio)
   const consumoLiquido = Math.max(0, consumoKwh - geracaoKwh);
-  return Math.max(custoDisponibilidade, consumoLiquido * tarifaRsKwh);
+  const consumoPago = consumoLiquido * tarifaRsKwh;
+
+  return fioBPago + consumoPago + custoIluminacaoPublica;
 }
 
 // TIR via metodo Newton-Raphson. Aproximacao iterativa do zero do VPL.
@@ -136,7 +158,10 @@ export function calcular(input: ProposalInput): ProposalCalculations {
     hsp,
     consumoMensalKwh,
     tarifaRsKwh,
-    custoDisponibilidadeMensal,
+    tusdFioBRsKwh,
+    percentualFioBVigente,
+    percentualGeracaoInjetada,
+    custoIluminacaoPublica,
     reajusteAnualEnergia,
     valorTotalRs,
     vidaUtilAnos,
@@ -151,10 +176,16 @@ export function calcular(input: ProposalInput): ProposalCalculations {
   const geracaoMensalDistribuida = calcularGeracaoMensalDistribuida(geracaoMensalKwh);
   const consumoMensalDistribuido = Array(12).fill(consumoMensalKwh);
 
-  // Conta mensal sem/com sistema
-  const contaSemSistemaMensal = consumoMensalKwh * tarifaRsKwh;
+  // Conta mensal sem/com sistema (com Fio B na conta com sistema)
+  const contaSemSistemaMensal = consumoMensalKwh * tarifaRsKwh + custoIluminacaoPublica;
   const contaComSistemaMensal = calcularContaMensal(
-    consumoMensalKwh, geracaoMensalKwh, tarifaRsKwh, custoDisponibilidadeMensal,
+    consumoMensalKwh,
+    geracaoMensalKwh,
+    tarifaRsKwh,
+    tusdFioBRsKwh,
+    percentualFioBVigente,
+    percentualGeracaoInjetada,
+    custoIluminacaoPublica,
   );
   const economiaMensal = contaSemSistemaMensal - contaComSistemaMensal;
   const economiaAnual = economiaMensal * 12;

@@ -59,10 +59,13 @@ Eva sempre apresenta as **3 opções padrão** abaixo na proposta (a menos que J
 - Início imediato do projeto
 - Maior economia no longo prazo
 
-### 2. Cartão de Crédito até 24×
-- Parcelamento em até 24× com juros
-- Aprovação imediata
-- Bom pra valores menores ou clientes que querem agilidade
+### 2. Cartão Belenus até 24×
+- **Parceria EcoSunPower x Belenus** — taxa muito menor que cartão de mercado
+- Calibrado abr/26: kit ~R$ 13k em 24× = acréscimo R$ 1.838 sobre à vista
+- Acréscimo fixo de R$ 250 mesmo à vista (taxa admin Belenus)
+- Taxa equivalente: ~0,42% a.m. (vs 6,5% cartão comum)
+- Aprovação imediata, sem análise de crédito formal
+- Ideal pra começar rápido
 
 ### 3. Financiamento até 90× com carência até 120 dias
 - **Bancos parceiros: Solfácil, Sol Agora, BV Solar, Santander Crédito Solar**
@@ -80,7 +83,7 @@ Eva sempre apresenta as **3 opções padrão** abaixo na proposta (a menos que J
 | BV Solar | 1,17% (CET 1,35–1,50%) | 96× | 60d | Líder 47% market share |
 | Solfácil | CET 1,32–1,57% | 24–144× | 1–6 meses (até 150d) | Aprovação biométrica em 30s |
 | Sol Agora | (consultar) | 84× | até 150d | Foco em carência longa |
-| Cartão crédito | ~6,5% a.m. | 24× | imediato | Aprovação na hora, sem análise formal |
+| Cartão Belenus | ~0,42% a.m. | 24× | imediato | Parceria EcoSunPower, taxa muito menor que cartão comum |
 
 **Eva usa nos cálculos:**
 - Cartão 24×: taxa 6,5% a.m. (Tabela Price)
@@ -102,8 +105,12 @@ Junior pode pedir variações: "só à vista", "cartão 12x sem juros (eu absorv
 | Tarifa Equatorial-GO | R$ 0,98/kWh (atualizar trimestralmente) |
 | Reajuste anual energia | 10% (média histórica 5 anos) |
 | Vida útil sistema | 25 anos |
-| Custo disponibilidade Neoenergia 220V | R$ 50/mês |
-| Custo disponibilidade trifásico | R$ 100/mês |
+| TUSD Fio B Neoenergia DF | R$ 0,30/kWh (atualizar trimestralmente) |
+| TUSD Fio B Equatorial GO | R$ 0,28/kWh (atualizar trimestralmente) |
+| Percentual Fio B vigente 2026 | 60% (Lei 14.300/2022) |
+| Cronograma Fio B | 2024=30%, 2025=45%, 2026=60%, 2027=75%, 2028=90%, 2029+=100% |
+| % geração injetada (residencial sem bateria) | 70% (resto consumido na hora) |
+| Custo iluminação pública (CIP) | R$ 35/mês média |
 | Validade da proposta | 5 dias corridos |
 | Garantia EcoSunPower instalação | 12 meses |
 | Garantia módulo (defeito) | conforme fabricante (Trina 12, Jinko 12, JA 12) |
@@ -118,8 +125,16 @@ Junior pode pedir variações: "só à vista", "cartão 12x sem juros (eu absorv
 ```
 Geração mensal kWh = potência_kwp × HSP × 30 × fator_perda
 Geração anual kWh = geração_mensal × 12
-Economia mensal R$ = (consumo - custo_disponibilidade) × tarifa
-Economia anual R$ = economia_mensal × 12
+
+Conta SEM sistema = consumo × tarifa + iluminação_pública
+
+Conta COM sistema (Lei 14.300/2022 — Fio B):
+  kWh_injetado = geração × % geração injetada (residencial ~70%)
+  Fio_B_pago = kWh_injetado × TUSD_Fio_B × % Fio B vigente
+  consumo_não_coberto = max(0, consumo - geração) × tarifa
+  conta = Fio_B_pago + consumo_não_coberto + iluminação_pública
+
+Economia mensal = conta_sem - conta_com
 Valor R$/Wp final = valor_total / (kwp × 1000)
 Payback (anos) = valor_total / economia_anual_média (com reajuste 10%)
 ROI 25 anos = economia_25_anos / valor_total
@@ -128,6 +143,13 @@ Economia 25 anos R$ = soma do fluxo de caixa anual
 CO2 evitado = geração_25_anos × 0,084 kg/kWh (matriz BR)
 Comparação Greener = R$/Wp_final vs faixa Greener correspondente
 ```
+
+**IMPORTANTE — Fio B (Lei 14.300/2022):**
+- Não existe mais "custo de disponibilidade" pra cliente solar
+- Cliente paga Fio B sobre o kWh injetado na rede
+- Em 2026 paga 60% do Fio B (cronograma sobe até 100% em 2029)
+- Cliente sem bateria injeta ~70% da geração (resto consome no momento)
+- Por isso payback ficou um pouco maior que antigamente (3.5-5a tipico)
 
 ## Validações que Eva DEVE fazer
 

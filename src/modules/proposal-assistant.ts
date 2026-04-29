@@ -376,10 +376,21 @@ export class ProposalAssistant {
   }
 
   // Mapeia o JSON do Claude pro formato do calculator.ts.
+  // Tarifas reais 2026 + Fio B (Lei 14.300/2022).
   private dataToCalculatorInput(data: any): ProposalInput {
     const concessionaria = (data.concessionaria || '').toLowerCase();
-    const tarifaDefault = concessionaria.includes('equatorial') ? 0.98 : 1.05;
-    const hsp = concessionaria.includes('equatorial') ? 5.3 : 5.2;
+    const isEquatorial = concessionaria.includes('equatorial');
+    const tarifaDefault = isEquatorial ? 0.98 : 1.05;
+    const tusdFioBDefault = isEquatorial ? 0.28 : 0.30; // R$/kWh
+    const hsp = isEquatorial ? 5.3 : 5.2;
+
+    // Cronograma Lei 14.300/2022:
+    // 2024=30%, 2025=45%, 2026=60%, 2027=75%, 2028=90%, 2029+=100%
+    const ano = new Date().getFullYear();
+    const fioBPercentMap: Record<number, number> = {
+      2024: 0.30, 2025: 0.45, 2026: 0.60, 2027: 0.75, 2028: 0.90,
+    };
+    const percentualFioB = fioBPercentMap[ano] ?? 1.00;
 
     return {
       potenciaKwp: Number(data.potenciaKwp),
@@ -387,7 +398,10 @@ export class ProposalAssistant {
       hsp,
       consumoMensalKwh: Number(data.consumoMensalKwh),
       tarifaRsKwh: Number(data.tarifaRsKwh ?? tarifaDefault),
-      custoDisponibilidadeMensal: Number(data.custoDisponibilidadeMensal ?? 50),
+      tusdFioBRsKwh: Number(data.tusdFioBRsKwh ?? tusdFioBDefault),
+      percentualFioBVigente: Number(data.percentualFioBVigente ?? percentualFioB),
+      percentualGeracaoInjetada: Number(data.percentualGeracaoInjetada ?? 0.70),
+      custoIluminacaoPublica: Number(data.custoIluminacaoPublica ?? 35),
       reajusteAnualEnergia: 0.10,
       valorTotalRs: Number(data.valorTotalRs),
       vidaUtilAnos: 25,
@@ -422,12 +436,14 @@ export class ProposalAssistant {
     };
   }
 
-  // Taxas reais abril/2026 — fonte: Solfacil blog, Santander, BV, Canal Solar.
-  // CET (custo efetivo total) inclui IOF, seguros, tarifas — eh o que cliente paga real.
-  // Cartao credito parcelado solar: media ~6,5% a.m. (varia 5-9% conforme bandeira).
-  // Financiamento solar 2026: Santander 1,11-1,25%, BV 1,17%, Solfacil CET 1,32-1,57%.
-  // Usamos media realista 1,40% a.m. CET (cobre Solfacil/BV/Santander/Sol Agora).
-  private static readonly TAXA_CARTAO_AM = 0.065;
+  // Taxas reais abril/2026.
+  // CARTAO BELENUS (parceria EcoSunPower): muito menor que cartao normal de mercado.
+  // Calibrado pelo Junior: kit ~R$ 13k em 24x tem acrescimo R$ 1.838 sobre a vista.
+  // Taxa equivalente: ~0,42% a.m. (vs 6,5% cartao comum).
+  // Acrescimo a vista R$ 250 = taxa administrativa fixa Belenus.
+  // FINANCIAMENTO SOLAR 2026: Santander 1,11-1,25%, BV 1,17%, Solfacil CET 1,32-1,57%.
+  // Media realista 1,40% a.m. CET (cobre Solfacil/BV/Santander/Sol Agora).
+  private static readonly TAXA_CARTAO_AM = 0.0042; // Belenus
   private static readonly TAXA_FINANC_AM = 0.014; // 1,4% a.m. CET medio
   private static readonly MESES_CARENCIA_FINANC = 4; // 120 dias padrao
 
@@ -464,14 +480,15 @@ export class ProposalAssistant {
         bullets: ['Sem juros, sem entrada', 'Início imediato do projeto', 'Maior economia no longo prazo'],
       },
       {
-        tipo: 'Cartão de Crédito',
-        titulo: 'Em até 24× com juros',
+        tipo: 'Cartão Belenus',
+        titulo: 'Em até 24× com juros baixos',
         valorPrincipal: fmtRs(cartaoParcela),
         valorSecundario: '24× no cartão · aprovação imediata',
         bullets: [
-          'Sem análise de crédito formal',
-          'Aprovação na hora',
-          'Taxa cartão ~6,5% a.m. — comece sem espera',
+          'Parceria EcoSunPower x Belenus — taxa especial pra solar',
+          'Muito menor que cartão tradicional',
+          'Aprovação imediata, sem análise formal',
+          'Comece sem espera',
         ],
       },
       {

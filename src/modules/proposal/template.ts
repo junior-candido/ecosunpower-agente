@@ -84,7 +84,6 @@ export function renderProposalHTML(data: ProposalData, calc: ProposalCalculation
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{--primary-50:#E6F7FD;--primary-300:#66CFF3;--primary-500:#1FB8E8;--primary-600:#0E7CB8;--primary-700:#0B5A87;--primary-800:#073E5C;--accent-500:#FFC72C;--accent-600:#E5A800;--dark:#0F172A;--dark-soft:#1E293B;--muted:#64748B;--surface:#FFFFFF;--surface-alt:#F8FAFC;--border:#E2E8F0;--success:#10B981}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -317,7 +316,7 @@ footer strong{color:#fff;font-weight:600}
           <div class="legend-item"><span class="legend-dot" style="background:#94A3B8"></span> Consumo</div>
         </div>
       </div>
-      <div class="chart-container"><canvas id="generationChart"></canvas></div>
+      <div class="chart-container">${renderGraficoSVG(calc.geracaoMensalDistribuida, calc.consumoMensalDistribuido)}</div>
     </div>
   </div>
 </section>
@@ -355,6 +354,52 @@ footer strong{color:#fff;font-weight:600}
   </div>
 </section>
 
+<section style="background:#fff;padding:80px 0">
+  <div class="container">
+    <span class="section-tag">Por que EcoSunPower</span>
+    <h2 class="section-title">Não é só painel no telhado</h2>
+    <p class="section-subtitle">Engenharia, segurança e responsabilidade técnica que vão muito além do equipamento.</p>
+
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:24px">
+      <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
+        <div style="width:48px;height:48px;border-radius:12px;background:var(--primary-50);color:var(--primary-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">🛡️</div>
+        <h3 style="font-size:20px;margin-bottom:12px">Garantia EcoSunPower 12 meses</h3>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">Cobrimos <strong>tudo</strong> que decorrer da nossa instalação: curtos elétricos, fiação CC e CA, fixação, disjuntores, quadros elétricos e até vazamentos no telhado por nossa fixação. Acionamento direto pelo WhatsApp.</p>
+      </div>
+
+      <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
+        <div style="width:48px;height:48px;border-radius:12px;background:#FFF8E1;color:var(--accent-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">📋</div>
+        <h3 style="font-size:20px;margin-bottom:12px">ART CREA + Normas ABNT</h3>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">Anotação de Responsabilidade Técnica assinada por engenheiro registrado. Projeto e instalação seguem ABNT NBR 5410, NBR 16690, NBR 16149/16150 e NR-10. Sem improviso.</p>
+      </div>
+
+      <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
+        <div style="width:48px;height:48px;border-radius:12px;background:var(--primary-50);color:var(--primary-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">⚡</div>
+        <h3 style="font-size:20px;margin-bottom:12px">Marcas Tier 1 INMETRO</h3>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">Trabalhamos só com fabricantes Tier 1 homologados — Trina, Jinko, JA, Sungrow, Huawei, Solis, Deye, SolarEdge. Não economizamos na qualidade dos equipamentos: sua geração é a nossa reputação.</p>
+      </div>
+
+      <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
+        <div style="width:48px;height:48px;border-radius:12px;background:#FFF8E1;color:var(--accent-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">📊</div>
+        <h3 style="font-size:20px;margin-bottom:12px">Monitoramento incluído</h3>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">12 meses de monitoramento remoto sem custo adicional. Detectamos quedas de geração antes de você sentir na conta. Suporte direto comigo (Junior, eng. responsável) pelo WhatsApp.</p>
+      </div>
+
+      <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
+        <div style="width:48px;height:48px;border-radius:12px;background:var(--primary-50);color:var(--primary-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">🤝</div>
+        <h3 style="font-size:20px;margin-bottom:12px">Relação direta, sem terceirização</h3>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">Equipe própria, do projeto à pós-venda. Você fala direto com quem executa. Sem subcontratado, sem repassar problema.</p>
+      </div>
+
+      <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
+        <div style="width:48px;height:48px;border-radius:12px;background:#FFF8E1;color:var(--accent-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">🌐</div>
+        <h3 style="font-size:20px;margin-bottom:12px">Eva, sua engenheira virtual</h3>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">Atendimento 24/7 via WhatsApp pra dúvidas, agendamento, status do projeto, garantia. Eva responde rápido — Junior entra em casos complexos.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="financial-section">
   <div class="container">
     <span class="section-tag">Análise Financeira</span>
@@ -374,7 +419,7 @@ footer strong{color:#fff;font-weight:600}
       <div class="compare-card after">
         <span class="compare-tag">Com EcoSunPower</span>
         <div class="compare-amount">R$ ${fmtRs(calc.contaComSistemaMensal, 0)}</div>
-        <div class="compare-period">por mês · custo de disponibilidade</div>
+        <div class="compare-period">por mês · Fio B + iluminação pública</div>
         <ul class="compare-list">
           <li><span>Custo anual</span> <strong>R$ ${fmtRs(calc.contaComSistemaMensal * 12, 0)}</strong></li>
           <li><span>Economia mensal</span> <strong>R$ ${fmtRs(calc.economiaMensal, 0)}</strong></li>
@@ -465,28 +510,6 @@ footer strong{color:#fff;font-weight:600}
   </div>
 </footer>
 
-<script>
-const ctx = document.getElementById('generationChart').getContext('2d');
-new Chart(ctx, {
-  type: 'line',
-  data: {
-    labels: ${JSON.stringify(meses)},
-    datasets: [
-      {label:'Geração',data:${JSON.stringify(calc.geracaoMensalDistribuida)},borderColor:'#1FB8E8',backgroundColor:'rgba(31,184,232,0.1)',borderWidth:3,tension:0.4,fill:true,pointRadius:4,pointBackgroundColor:'#1FB8E8'},
-      {label:'Consumo',data:${JSON.stringify(calc.consumoMensalDistribuido)},borderColor:'#94A3B8',backgroundColor:'rgba(148,163,184,0.05)',borderWidth:2,borderDash:[6,4],tension:0,fill:false,pointRadius:0}
-    ]
-  },
-  options: {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: {
-      y: { beginAtZero: true, grid: { color: '#E2E8F0' }, ticks: { color: '#64748B', callback: v => v + ' kWh' } },
-      x: { grid: { display: false }, ticks: { color: '#64748B' } }
-    }
-  }
-});
-</script>
-
 </body>
 </html>`;
 }
@@ -495,4 +518,76 @@ function escapeHtml(s: string): string {
   return String(s).replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   })[c]!);
+}
+
+// Renderiza o grafico Consumo x Geracao como SVG inline (sem JS).
+// Necessario porque Drive sandbox nao executa Chart.js no preview HTML.
+// Recebe arrays de 12 meses (geracao + consumo) e devolve SVG completo.
+function renderGraficoSVG(geracao: number[], consumo: number[]): string {
+  const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  const W = 1000, H = 320;
+  const pad = { top: 30, right: 30, bottom: 50, left: 70 };
+  const innerW = W - pad.left - pad.right;
+  const innerH = H - pad.top - pad.bottom;
+
+  const maxValue = Math.max(...geracao, ...consumo) * 1.15;
+  const stepX = innerW / (meses.length - 1);
+
+  const xScale = (i: number) => pad.left + i * stepX;
+  const yScale = (v: number) => pad.top + innerH - (v / maxValue) * innerH;
+
+  // Pontos da linha de geracao (suavizada com path Q curves)
+  const geracaoPath = geracao.map((v, i) => {
+    const x = xScale(i);
+    const y = yScale(v);
+    return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`;
+  }).join(' ');
+
+  // Area sob a linha de geracao (fill suave)
+  const geracaoArea = `${geracaoPath} L ${xScale(11)} ${yScale(0)} L ${xScale(0)} ${yScale(0)} Z`;
+
+  // Linha tracejada de consumo
+  const consumoPath = consumo.map((v, i) => {
+    const x = xScale(i);
+    const y = yScale(v);
+    return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`;
+  }).join(' ');
+
+  // Pontos circulos pra geracao
+  const pontos = geracao.map((v, i) =>
+    `<circle cx="${xScale(i)}" cy="${yScale(v)}" r="5" fill="#1FB8E8" stroke="#fff" stroke-width="2"/>`
+  ).join('');
+
+  // Labels mes (eixo X)
+  const labelsX = meses.map((m, i) =>
+    `<text x="${xScale(i)}" y="${H - 20}" text-anchor="middle" fill="#64748B" font-size="12" font-family="Inter">${m}</text>`
+  ).join('');
+
+  // Linhas grade horizontal (4 niveis) + labels Y
+  const niveisY = [0, 0.25, 0.5, 0.75, 1.0];
+  const grade = niveisY.map(p => {
+    const y = pad.top + innerH * (1 - p);
+    const valor = Math.round(maxValue * p);
+    return `
+      <line x1="${pad.left}" y1="${y}" x2="${W - pad.right}" y2="${y}" stroke="#E2E8F0" stroke-dasharray="${p === 0 ? '0' : '0'}" stroke-width="1"/>
+      <text x="${pad.left - 10}" y="${y + 4}" text-anchor="end" fill="#64748B" font-size="12" font-family="Inter">${valor.toLocaleString('pt-BR')} kWh</text>
+    `;
+  }).join('');
+
+  return `
+    <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block">
+      <defs>
+        <linearGradient id="geracaoGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#1FB8E8" stop-opacity="0.25"/>
+          <stop offset="100%" stop-color="#1FB8E8" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      ${grade}
+      <path d="${geracaoArea}" fill="url(#geracaoGrad)" />
+      <path d="${geracaoPath}" fill="none" stroke="#1FB8E8" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="${consumoPath}" fill="none" stroke="#94A3B8" stroke-width="2" stroke-dasharray="6 4"/>
+      ${pontos}
+      ${labelsX}
+    </svg>
+  `;
 }
