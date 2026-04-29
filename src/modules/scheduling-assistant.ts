@@ -131,12 +131,26 @@ export class SchedulingAssistant {
 
   static isSchedulingTrigger(text: string): boolean {
     const stripAccents = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
-    const norm = stripAccents(text.toLowerCase().trim()).replace(/[^\w\s\/]/g, '').trim();
+    let norm = stripAccents(text.toLowerCase().trim()).replace(/[^\w\s\/]/g, '').trim();
     if (!norm) return false;
 
+    // Tolera prefixo "eva ", "eva, " no inicio (Junior costuma chamar pelo nome)
+    norm = norm.replace(/^eva[\s,]+/, '').trim();
+
+    // Comando barra
     if (/^\/(agenda|agendamento|agendar|marca|marcar)(\s|$)/.test(norm)) return true;
-    if (['agenda', 'agendamento', 'agendar', 'marcar'].includes(norm)) return true;
-    if (/^(quero |preciso |vou |me ajuda a )?(agendar|marcar)\s/.test(norm)) return true;
+
+    // Palavras soltas (texto OU áudio transcrito)
+    if (['agenda', 'agendamento', 'agendar', 'marcar', 'remarcar', 'agendar visita', 'agendar reuniao', 'agendar meet'].includes(norm)) return true;
+
+    // Inicio com agenda/agendar + qualquer coisa
+    if (/^(agenda|agendamento|agendar|marca|marcar|remarcar)(\s|$)/.test(norm)) return true;
+
+    // Verbos no inicio com modal
+    if (/^(quero |preciso |vou |me ajuda a |por favor )?(agendar|marcar|remarcar|criar)\s/.test(norm)) return true;
+
+    // "criar evento/reuniao/visita/meet"
+    if (/^criar (evento|reuniao|visita|meet|agenda)/.test(norm)) return true;
 
     return false;
   }

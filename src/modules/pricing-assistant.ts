@@ -92,7 +92,10 @@ export class PricingAssistant {
 
     // Normaliza: remove acentos + sinais de pontuação no início pra pegar "preço!", "preço?" etc
     const stripAccents = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
-    const norm = stripAccents(raw).replace(/[^\w\s\/]/g, '').trim();
+    let norm = stripAccents(raw).replace(/[^\w\s\/]/g, '').trim();
+
+    // Tolera prefixo "eva ", "eva, " no inicio (Junior costuma chamar pelo nome)
+    norm = norm.replace(/^eva[\s,]+/, '').trim();
 
     // Comando barra com ou sem args
     if (/^\/(preco|precificar|preci?o|orcar|calcular)(\s|$)/.test(norm)) return true;
