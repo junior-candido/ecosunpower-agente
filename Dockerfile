@@ -5,11 +5,11 @@
 # Cache bust: 2026-04-29-2008 (mude essa string pra forcar rebuild Docker)
 FROM ghcr.io/puppeteer/puppeteer:24
 
-# Chromium ja esta no PATH do container; pula download durante npm install.
+# A imagem oficial puppeteer ja tras o Chromium em ~pptruser/.cache/puppeteer.
+# Puppeteer detecta automaticamente — NAO setar PUPPETEER_EXECUTABLE_PATH
+# (caminho varia entre versoes da imagem).
 # NAO setar NODE_ENV=production AINDA — npm pularia devDependencies (typescript, @types/*)
 # que sao necessarias pro build TypeScript funcionar.
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome
 
 # A imagem puppeteer roda como user 'pptruser' por seguranca.
 USER root
