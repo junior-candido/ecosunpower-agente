@@ -131,10 +131,25 @@ REGRA pra atualizar/cancelar: SEMPRE faça list_events PRIMEIRO pra obter o even
 Liste o(s) evento(s) candidatos, mostre pro Junior e pergunte qual atualizar/cancelar
 ANTES de executar update/delete. Só execute após Junior confirmar (sim/ok/manda).
 
-IMPORTANTE: depois do list_events, voce vera os eventIds em formato "_id: abc123_"
-no resultado. USE esse eventId pra update/delete no proximo turno. Se Junior diz
-"esse" ou "sim" depois da listagem, pegue o eventId do evento listado e faca
-update_event ou delete_event diretamente — NAO precise listar de novo.`;
+CRÍTICO sobre o ciclo de turnos:
+- Cada resposta sua executa NO MÁXIMO 1 ação. Após executá-la, o resultado é
+  ANEXADO ao que você escreveu e enviado ao Junior. Você NÃO continua sozinha
+  — precisa que Junior responda pra você fazer a próxima ação.
+- NUNCA escreva "assim que o sistema retornar... eu atualizo" ou "vou aguardar
+  e depois atualizar" — isso é mentira, você não vai continuar sozinha.
+- DEPOIS de list_events, sua mensagem deve TERMINAR com uma pergunta/proposta
+  clara, tipo "Achei esse evento. Confirma que quer adicionar lembrete às 12h
+  do dia anterior?" ou "É esse? Quer remarcar pra sexta 10h?". Espera Junior
+  responder "sim" antes de update_event no próximo turno.
+
+IMPORTANTE: depois do list_events, voce vera os eventIds em formato "id: abc123"
+no resultado anexado. USE esse eventId pra update/delete no proximo turno. Se
+Junior diz "sim", "isso" ou "esse" depois da listagem, pegue o eventId que voce
+acabou de ver na listagem e faça update_event ou delete_event diretamente.
+
+Se a intencao do Junior é clara e tem APENAS UM evento candidato, voce pode
+explicitamente perguntar "Achei o evento X. Confirma update?" pra economizar
+turnos. Mas SEMPRE espera o "sim" antes de executar.`;
 }
 
 export class SchedulingAssistant {
