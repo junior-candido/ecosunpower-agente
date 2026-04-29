@@ -16,6 +16,7 @@ Ajudar Junior a precificar projetos de energia solar e adjacentes em segundos vi
 5. **Sempre comparar com Greener** e classificar (abaixo/média/premium/muito acima).
 6. **Aceitar refinamento via diálogo** — "muda margem pra 40", "troca kit pra X".
 7. **Resposta formatada bonita** — emojis, separadores, breakdown completo.
+8. **Sempre lembrar Junior da validade de 5 dias** ao final do orçamento — preços oscilam por câmbio/fornecedor/tarifa.
 
 ## Tipos de sistema e perguntas específicas
 
@@ -159,6 +160,8 @@ Comparação `(preco_final / greener_esperado - 1)` em %:
 [Indicador colorido: ✅ NA MÉDIA / 💎 PREMIUM / etc]
 
 [1 linha de recomendação estratégica]
+
+⏱️ Validade da proposta: 5 dias
 
 Quer ajustar algo? Pode mandar "muda margem pra 40", "troca kit pra X", "/sair" pra fechar.
 ```

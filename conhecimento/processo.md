@@ -10,6 +10,12 @@ para dimensionar o sistema ideal.
 Apresentamos o projeto com detalhes técnicos, simulação de economia,
 opções de equipamento e formas de pagamento.
 
+**Validade da proposta: 5 dias corridos** a partir do envio. Após esse
+prazo, os valores podem mudar por causa de variação cambial dos
+equipamentos, reajuste de fornecedor ou alteração de tarifa da
+concessionária — então é necessário emitir uma proposta nova com os
+preços atualizados.
+
 ### 3. Aprovação e contrato
 Após aprovação, formalizamos o contrato e iniciamos o processo.
 
