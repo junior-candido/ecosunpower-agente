@@ -46,6 +46,18 @@ entregamos em **30 dias**. O fluxo é:
 7. **Primeiro abatimento na conta de luz** → aparece na fatura do mês
    seguinte ao primeiro mês completo de geração
 
+## Qual é a garantia do sistema?
+- **Mão de obra e instalação EcoSunPower:** 12 meses (1 ano completo)
+  cobrindo defeitos de instalação, fixação, cabeamento e conexões.
+- **Módulos fotovoltaicos:** 25 anos contra defeitos de fabricação +
+  garantia linear de eficiência (conforme cada fabricante — Trina/JA/Risen).
+- **Inversor:** conforme fabricante (Sungrow/Huawei/Solis/Deye/Goodwe
+  variam de 5 a 12 anos, com extensão paga em alguns modelos).
+- **Estrutura de fixação:** mínimo 5 anos.
+A garantia EcoSunPower **não cobre** descargas atmosféricas (raio),
+vandalismo, furto ou danos de terceiros não autorizados — para isso
+recomendamos seguro residencial com cobertura específica.
+
 ## E se eu tiver outras unidades pra receber crédito (rateio)?
 Funciona com **autoconsumo remoto** ou geração compartilhada. Após o
 sistema estar funcionando, a Neoenergia pede de **30 a 60 dias** para
