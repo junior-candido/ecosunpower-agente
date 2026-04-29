@@ -129,7 +129,12 @@ Aceita os mesmos campos do create_event — só passa o que quer mudar.
 
 REGRA pra atualizar/cancelar: SEMPRE faça list_events PRIMEIRO pra obter o eventId.
 Liste o(s) evento(s) candidatos, mostre pro Junior e pergunte qual atualizar/cancelar
-ANTES de executar update/delete. Só execute após Junior confirmar (sim/ok/manda).`;
+ANTES de executar update/delete. Só execute após Junior confirmar (sim/ok/manda).
+
+IMPORTANTE: depois do list_events, voce vera os eventIds em formato "_id: abc123_"
+no resultado. USE esse eventId pra update/delete no proximo turno. Se Junior diz
+"esse" ou "sim" depois da listagem, pegue o eventId do evento listado e faca
+update_event ou delete_event diretamente — NAO precise listar de novo.`;
 }
 
 export class SchedulingAssistant {
@@ -276,7 +281,10 @@ export class SchedulingAssistant {
       }
     }
 
-    history.push({ role: 'assistant', content: claudeReply });
+    // Salva no histórico o conteúdo COMPLETO (texto + resultado da ação)
+    // pra Claude ter continuidade nos turnos seguintes (ex: lembrar eventId
+    // após list_events pra fazer update_event no proximo turno).
+    history.push({ role: 'assistant', content: finalReply });
     const trimmed = history.slice(-20);
     await this.redis.setex(
       `scheduling:history:${phone}`,
@@ -329,7 +337,8 @@ export class SchedulingAssistant {
           const time = startD.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
           const meetTag = e.meetLink ? ' 📹' : '';
           const locTag = e.location ? `\n   📍 ${e.location}` : '';
-          return `• ${day} ${time} — ${e.summary}${meetTag}${locTag}`;
+          // Inclui eventId discreto pro Claude ter referencia em turnos seguintes (atualizar/cancelar)
+          return `• ${day} ${time} — ${e.summary}${meetTag}${locTag}\n   _id: ${e.id}_`;
         }).join('\n');
         return `📅 *Eventos:*\n${formatted}`;
       }
