@@ -6,24 +6,28 @@
 FROM ghcr.io/puppeteer/puppeteer:24
 
 # Chromium ja esta no PATH do container; pula download durante npm install.
+# NAO setar NODE_ENV=production AINDA — npm pularia devDependencies (typescript, @types/*)
+# que sao necessarias pro build TypeScript funcionar.
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome \
-    NODE_ENV=production
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome
 
 # A imagem puppeteer roda como user 'pptruser' por seguranca.
-# WORKDIR usa o home dele.
 USER root
 WORKDIR /app
 
-# Copia package files e instala deps (sem baixar Chromium novamente).
+# Copia package files e instala TODAS deps (incluindo dev pra ter tsc + @types).
 COPY package*.json ./
-RUN npm install && chown -R pptruser:pptruser /app
+RUN npm install --include=dev && chown -R pptruser:pptruser /app
 
 # Copia o resto do projeto.
 COPY --chown=pptruser:pptruser . .
 
-# Build TypeScript + copia prompts (mantém comportamento anterior).
+# Build TypeScript + copia prompts.
 RUN npm run build && cp -r src/prompts dist/prompts && chown -R pptruser:pptruser /app
+
+# AGORA sim, setar NODE_ENV=production pro runtime. Build ja foi feito,
+# devDependencies nao sao mais necessarias em runtime.
+ENV NODE_ENV=production
 
 # Volta pro user nao-root.
 USER pptruser
