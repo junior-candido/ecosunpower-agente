@@ -47,16 +47,27 @@ entregamos em **30 dias**. O fluxo é:
    seguinte ao primeiro mês completo de geração
 
 ## Qual é a garantia do sistema?
-- **Mão de obra e instalação EcoSunPower:** 12 meses (1 ano completo)
-  cobrindo defeitos de instalação, fixação, cabeamento e conexões.
+
+**Garantia EcoSunPower de 12 meses** cobre TUDO que decorre da instalação:
+- Curtos elétricos
+- Fiação (seja CC ou CA)
+- Fixação do sistema (estruturas, parafusos, suportes)
+- Disjuntores e quadros elétricos instalados pela equipe
+- Vazamentos no telhado decorrentes da instalação
+- Qualquer problema causado pela execução do projeto pela EcoSunPower
+
+**Garantias dos equipamentos** (independente da EcoSunPower):
 - **Módulos fotovoltaicos:** 25 anos contra defeitos de fabricação +
-  garantia linear de eficiência (conforme cada fabricante — Trina/JA/Risen).
+  garantia linear de eficiência (conforme cada fabricante — Trina, JA, Risen, Jinko).
 - **Inversor:** conforme fabricante (Sungrow/Huawei/Solis/Deye/Goodwe
   variam de 5 a 12 anos, com extensão paga em alguns modelos).
 - **Estrutura de fixação:** mínimo 5 anos.
-A garantia EcoSunPower **não cobre** descargas atmosféricas (raio),
-vandalismo, furto ou danos de terceiros não autorizados — para isso
-recomendamos seguro residencial com cobertura específica.
+
+**A garantia EcoSunPower NÃO cobre** descargas atmosféricas (raio),
+vandalismo, furto, danos de terceiros não autorizados, intervenção do
+próprio cliente no sistema, ou caso fortuito (granizo, ventos extremos,
+enchente). Para esses casos recomendamos seguro residencial com
+cobertura específica para sistemas fotovoltaicos.
 
 ## E se eu tiver outras unidades pra receber crédito (rateio)?
 Funciona com **autoconsumo remoto** ou geração compartilhada. Após o

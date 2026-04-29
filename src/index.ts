@@ -32,6 +32,8 @@ import { parseTrackingTag } from './modules/tracking.js';
 import { generateWeeklyReport, formatReportForWhatsApp } from './modules/ads-report.js';
 import { PricingAssistant } from './modules/pricing-assistant.js';
 import { SchedulingAssistant } from './modules/scheduling-assistant.js';
+import { ProposalAssistant } from './modules/proposal-assistant.js';
+import { DriveUploader } from './modules/proposal/drive-uploader.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -271,6 +273,33 @@ async function main() {
     console.log('[scheduling] Eva Agendadora DESATIVADA — Google Calendar não configurado');
   }
 
+  // Eva Proposta: modo /proposta conversacional pra Junior gerar propostas
+  // comerciais (PDF + web no Drive). Reusa OAuth do Calendar pra Drive API.
+  // Requer scope drive.file no refresh_token. Acessível APENAS pelo engineerPhone.
+  const driveUploader = (config.googleClientId && config.googleClientSecret && config.googleRefreshToken)
+    ? new DriveUploader({
+        clientId: config.googleClientId,
+        clientSecret: config.googleClientSecret,
+        refreshToken: config.googleRefreshToken,
+      })
+    : null;
+
+  const proposalAssistant = new ProposalAssistant({
+    apiKey: config.anthropicApiKey,
+    redisHost: config.redisHost,
+    redisPort: config.redisPort,
+    redisPassword: config.redisPassword,
+    knowledgeBaseDir: join(__dirname, '..', 'conhecimento'),
+    driveUploader,
+    engineerPhone: config.engineerPhone,
+  });
+
+  if (driveUploader) {
+    console.log('[proposal] Eva Proposta ATIVA (Drive integrado)');
+  } else {
+    console.log('[proposal] Eva Proposta limitada — Drive desativado, gerar local apenas');
+  }
+
   const googleReviewUrl = process.env.GOOGLE_REVIEW_URL ?? '';
   const postInstall = googleReviewUrl
     ? new PostInstallService(
@@ -444,6 +473,33 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // Eva Proposta: prioridade alta. Junior digita /proposta + dados do cliente,
+  // Eva coleta conversacionalmente, gera PDF + HTML, salva Drive, retorna links.
+  async function tryHandleProposalCommand(from: string, text: string): Promise<boolean> {
+    const isAdmin = isAdminPhone(from);
+    const inMode = isAdmin ? await proposalAssistant.isInProposalMode(from) : false;
+    const isTrigger = isAdmin ? ProposalAssistant.isProposalTrigger(text) : false;
+
+    console.log(`[proposal] gate from=${from}(${normalizeBrazilianPhone(from)}) admin=${isAdmin} inMode=${inMode} isTrigger=${isTrigger} text="${text.slice(0,40)}"`);
+
+    if (!isAdmin) return false;
+    if (!inMode && !isTrigger) return false;
+
+    try {
+      let reply: string;
+      if (!inMode && isTrigger) {
+        reply = await proposalAssistant.startProposalMode(from, text);
+      } else {
+        reply = await proposalAssistant.processProposalMessage(from, text);
+      }
+      await sendText(from, reply);
+    } catch (err) {
+      console.error('[proposal] Error:', (err as Error).message);
+      await sendText(from, '⚠️ Erro na proposta. Tenta de novo ou /sair pra fechar.');
+    }
+    return true;
+  }
+
   // Eva Agendadora: prioridade absoluta apos pricing. Mesmo padrao de gate.
   async function tryHandleSchedulingCommand(from: string, text: string): Promise<boolean> {
     if (!schedulingAssistant) return false;
@@ -476,6 +532,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
   async function handleTextMessage(from: string, text: string) {
     // Eva Precificadora tem prioridade total quando Junior usa /preco ou esta em modo
     if (await tryHandlePricingCommand(from, text)) return;
+
+    // Eva Proposta — Junior gera proposta comercial completa (PDF + web)
+    if (await tryHandleProposalCommand(from, text)) return;
 
     // Eva Agendadora — prioridade depois do pricing
     if (await tryHandleSchedulingCommand(from, text)) return;

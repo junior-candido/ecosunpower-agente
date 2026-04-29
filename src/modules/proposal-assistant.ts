@@ -1,0 +1,491 @@
+// Eva Proposta Assistant - modulo /proposta
+// Coleta dados conversacionalmente, valida obrigatorios (REGRA DE OURO em propostas.md),
+// gera proposta (HTML + PDF), faz upload no Drive, manda links pro Junior revisar antes
+// de enviar pro cliente.
+
+import Anthropic from '@anthropic-ai/sdk';
+import Redis from 'ioredis';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { calcular, compararGreener, type ProposalInput } from './proposal/calculator.js';
+import { renderProposalHTML, type ProposalData } from './proposal/template.js';
+import { htmlToPdf } from './proposal/pdf-generator.js';
+import type { DriveUploader } from './proposal/drive-uploader.js';
+
+const IORedis = (Redis as any).default ?? Redis;
+const PROPOSAL_MODE_TTL_SECONDS = 60 * 60;
+
+interface ProposalMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+// Estrutura JSON que o Claude retorna pra Eva entender o estado.
+// Quando action='ready_to_generate', data contem ProposalData completo.
+interface ClaudeResponse {
+  action: 'ask_more' | 'ready_to_generate' | 'confirm_generate' | 'chat';
+  message: string;
+  missing?: string[];
+  data?: Partial<ProposalData> & {
+    consumoMensalKwh?: number;
+    fatorPerda?: number;
+    tarifaRsKwh?: number;
+    custoDisponibilidadeMensal?: number;
+  };
+}
+
+function buildSystemPrompt(propostasKnowledge: string, marcasKnowledge: string): string {
+  return `Você é a Eva, assistente de geração de propostas comerciais da EcoSunPower. Está conversando com Junior (engenheiro proprietário, 5+ anos de experiência) pra coletar dados de um cliente e gerar uma proposta profissional em PDF e versão web.
+
+TOM: direto, técnico, sem ladainha. Junior conhece tudo. Vá pros números.
+
+# KNOWLEDGE: PROPOSTAS
+
+${propostasKnowledge}
+
+# KNOWLEDGE: MARCAS OFICIAIS ECOSUNPOWER
+
+${marcasKnowledge}
+
+# REGRAS CRÍTICAS
+
+1. **REGRA DE OURO**: NUNCA prossiga pra geração com campos obrigatórios faltando. Sempre liste o que falta.
+2. **Fator de perda SEMPRE pergunta** — Junior decide caso a caso (típicos: 0.75 / 0.80 / 0.85). NUNCA assume default.
+3. Use APENAS marcas oficiais da lista. NUNCA Growatt.
+4. Concessionária inferida do endereço: Brasília=Neoenergia-DF, Goiás=Equatorial-GO. Confirme com Junior.
+5. Tarifa default: Neoenergia-DF R$ 1,05/kWh, Equatorial-GO R$ 0,98/kWh. Junior pode sobrescrever.
+6. Custo disponibilidade default: monofásico R$ 50/mês, trifásico R$ 100/mês.
+7. Reajuste anual energia: 10%.
+8. Vida útil: 25 anos.
+9. Validade da proposta: 5 dias.
+
+# FORMATO DE RESPOSTA
+
+Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem markdown, sem explicação extra), seguindo este schema:
+
+\`\`\`json
+{
+  "action": "ask_more" | "ready_to_generate" | "confirm_generate" | "chat",
+  "message": "string que será mostrada pro Junior no WhatsApp",
+  "missing": ["lista", "de", "campos", "faltando"],
+  "data": {
+    "nomeCliente": "string",
+    "documentoCliente": "string",
+    "enderecoCliente": "string",
+    "telefoneCliente": "string",
+    "emailCliente": "string",
+    "potenciaKwp": 8.4,
+    "fatorPerda": 0.80,
+    "consumoMensalKwh": 1000,
+    "tarifaRsKwh": 1.05,
+    "custoDisponibilidadeMensal": 50,
+    "tipoCliente": "residencial",
+    "modalidade": "autoconsumo local",
+    "concessionaria": "Neoenergia DF",
+    "modulo": { "fabricante": "Trina", "modelo": "Vertex 700W", "potenciaW": 700, "quantidade": 12, "garantiaDefeito": 12, "garantiaEficiencia": 30 },
+    "inversor": { "fabricante": "Sungrow", "modelo": "SG5.0RS-L", "potenciaW": 5000, "quantidade": 1, "garantia": 10, "eficiencia": 0.985 },
+    "valorTotalRs": 38500,
+    "formasPagamento": [
+      { "tipo": "À Vista", "titulo": "PIX ou TED", "valorPrincipal": "R$ 38.500", "valorSecundario": "pagamento único", "recomendado": true, "bullets": ["Sem juros", "Início imediato", "Maior economia"] }
+    ]
+  }
+}
+\`\`\`
+
+## QUANDO USAR CADA ACTION
+
+- **ask_more**: faltam dados obrigatórios. \`missing\` lista os campos. \`message\` formato curto: "Falta:\\n• campo1\\n• campo2\\nManda tudo junto."
+- **ready_to_generate**: TUDO coletado. Faz um RESUMO confirmando os dados pro Junior. \`message\` deve ser o resumo formatado (com emojis e separadores). \`data\` contém TODOS os campos.
+- **confirm_generate**: Junior respondeu "gerar"/"ok"/"manda" depois do resumo. Repete \`data\` completo. \`message\` deve ser curto: "✅ Gerando proposta..."
+- **chat**: conversa solta (Junior tirando dúvida sobre algo). Apenas \`message\`.
+
+## CAMPOS OBRIGATÓRIOS
+
+Cliente: nomeCliente, documentoCliente, enderecoCliente, telefoneCliente, emailCliente
+Sistema: potenciaKwp, fatorPerda, consumoMensalKwh, tipoCliente, modalidade, concessionaria
+Equipamentos: modulo (todos), inversor (todos)
+Comercial: valorTotalRs
+
+## DEFAULTS QUE VOCÊ APLICA
+
+- tarifaRsKwh: Neoenergia DF 1.05, Equatorial GO 0.98
+- custoDisponibilidadeMensal: monofásico 50, trifásico 100
+- modulo.garantiaDefeito: Trina/JA/Jinko = 12, Risen = 12
+- modulo.garantiaEficiencia: TOPCon N-Type = 30, mono normal = 25
+- inversor.garantia: Sungrow/Solis/Deye/Huawei = 10, Goodwe = 10
+- formasPagamento: SEMPRE incluir 3 opções padrão:
+  1. À vista PIX/TED (recomendado, sem juros)
+  2. Cartão de crédito até 24× com juros (~2.5%a.m., fator total ~1.65)
+  3. Financiamento até 90× com carência até 120 dias (Solfácil/Sol Agora/BV/Santander, ~1.7%a.m., fator ~2.10)
+  Calcule parcelas baseadas em valorTotalRs. Se Junior pedir customização ("só à vista", "12x sem juros"), respeitar.
+
+## EXEMPLO DE FLUXO
+
+Junior: "/proposta Marcos Silva CPF 111.222.333-44, 8.4kWp Trina 700W, valor 38500"
+
+Você: \`{"action":"ask_more","missing":["RG","Endereço completo","Telefone","E-mail","Modelo do inversor","Modalidade","Concessionária","Fator de perda","Consumo médio (kWh/mês)"],"message":"Beleza, Marcos Silva 8,4 kWp por R$ 38.500. Falta:\\n• RG\\n• Endereço completo\\n• Telefone e e-mail\\n• Modelo do inversor (qual?)\\n• Modalidade: autoconsumo local, remoto ou compartilhado?\\n• Concessionária: Neoenergia DF ou Equatorial GO?\\n• Fator de perda (0,75 / 0,80 / 0,85?)\\n• Consumo médio mensal em kWh\\nPode mandar tudo junto."}\`
+
+## SAÍDA E COMANDOS
+
+Se Junior digitar "/sair", "sair", "fechar", responda \`{"action":"chat","message":"👍 Saiu do modo proposta."}\`.
+
+Se Junior digitar "ajuda" ou "/proposta ajuda", explique o fluxo curto.`;
+}
+
+export class ProposalAssistant {
+  private client: Anthropic;
+  private redis: any;
+  private systemPrompt: string;
+  private driveUploader: DriveUploader | null;
+  private engineerPhone: string;
+  private companyDefaults: ProposalData['empresa'];
+
+  constructor(opts: {
+    apiKey: string;
+    redisHost: string;
+    redisPort: number;
+    redisPassword: string | undefined;
+    knowledgeBaseDir: string;
+    driveUploader: DriveUploader | null;
+    engineerPhone: string;
+    companyDefaults?: Partial<ProposalData['empresa']>;
+  }) {
+    this.client = new Anthropic({ apiKey: opts.apiKey });
+    this.redis = new IORedis({
+      host: opts.redisHost,
+      port: opts.redisPort,
+      password: opts.redisPassword,
+      maxRetriesPerRequest: null,
+    });
+
+    const propostas = readFileSync(join(opts.knowledgeBaseDir, 'propostas.md'), 'utf-8');
+    let marcas = '';
+    try {
+      marcas = readFileSync(join(opts.knowledgeBaseDir, 'produtos.md'), 'utf-8');
+    } catch {
+      marcas = 'Marcas oficiais: Trina, JA Solar, LONGi, Jinko, DAH, Risen (placas); Sungrow, Solis, Deye, FoxESS, SolarEdge, Huawei, GoodWe, Hoymiles, NEP (inversores). NUNCA Growatt.';
+    }
+
+    this.systemPrompt = buildSystemPrompt(propostas, marcas);
+    this.driveUploader = opts.driveUploader;
+    this.engineerPhone = opts.engineerPhone;
+
+    this.companyDefaults = {
+      nome: 'EcoSunPower Energia Solar LTDA',
+      cnpj: '33.020.459/0001-06',
+      cidade: 'Brasília-DF',
+      telefone: '(61) 99697-8781',
+      site: 'ecosunpower.eng.br',
+      ...opts.companyDefaults,
+    };
+  }
+
+  // Detecta se mensagem dispara modo proposta.
+  // Cobre: comando barra, palavra solta, verbos diretos, audio transcrito.
+  static isProposalTrigger(text: string): boolean {
+    const raw = text.toLowerCase().trim();
+    if (!raw) return false;
+    const stripAccents = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+    let norm = stripAccents(raw).replace(/[^\w\s\/]/g, '').trim();
+    norm = norm.replace(/^eva[\s,]+/, '').trim();
+
+    if (/^\/(proposta|propor|gerar?\s*proposta)(\s|$)/.test(norm)) return true;
+
+    const palavrasSoltas = ['proposta', 'propostas', 'gerar proposta', 'fazer proposta'];
+    if (palavrasSoltas.includes(norm)) return true;
+
+    if (/^(preciso |quero |vou |me ajuda a )?(gerar|fazer|montar|criar)\s+(uma\s+)?proposta(\s|$)/.test(norm)) return true;
+
+    return false;
+  }
+
+  static isExitTrigger(text: string): boolean {
+    const stripAccents = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const norm = stripAccents(text.toLowerCase().trim()).replace(/[^\w\s\/]/g, '').trim();
+    return [
+      '/sair', '/exit', '/proposta off',
+      'sair', 'fechar', 'parar', 'cancelar',
+      'sair do modo', 'sair da proposta', 'finalizar', 'encerrar',
+    ].includes(norm);
+  }
+
+  async isInProposalMode(phone: string): Promise<boolean> {
+    const result = await this.redis.get(`proposal:${phone}`);
+    return result !== null;
+  }
+
+  async startProposalMode(phone: string, initialMessage?: string): Promise<string> {
+    await this.redis.setex(`proposal:${phone}`, PROPOSAL_MODE_TTL_SECONDS, '1');
+    await this.redis.del(`proposal:history:${phone}`);
+
+    // Se Junior ja descreveu junto com o trigger, vai direto pro Claude.
+    const stripped = (initialMessage ?? '')
+      .replace(/^\/(proposta|propor|gerar\s*proposta)\s*/i, '')
+      .replace(/^(preciso |quero |vou |me ajuda a )?(gerar|fazer|montar|criar)\s+(uma\s+)?proposta\s*/i, '')
+      .trim();
+    if (stripped.length > 5) {
+      return await this.processProposalMessage(phone, stripped);
+    }
+
+    return [
+      '📋 *Modo Proposta ATIVO*',
+      '',
+      'Manda os dados do cliente. Posso receber tudo de uma vez ou em partes.',
+      '',
+      '*Mínimo necessário:*',
+      '• Nome + CPF/CNPJ + endereço + telefone + e-mail',
+      '• kWp + fator de perda (0,75 / 0,80 / 0,85?)',
+      '• Consumo médio mensal (kWh)',
+      '• Marca/modelo módulo + qtd + inversor',
+      '• Modalidade (autoconsumo local / remoto / compartilhada)',
+      '• Valor total da venda',
+      '',
+      'Pra sair: `/sair`',
+    ].join('\n');
+  }
+
+  async exitProposalMode(phone: string): Promise<void> {
+    await this.redis.del(`proposal:${phone}`);
+    await this.redis.del(`proposal:history:${phone}`);
+  }
+
+  async processProposalMessage(phone: string, message: string): Promise<string> {
+    if (ProposalAssistant.isExitTrigger(message)) {
+      await this.exitProposalMode(phone);
+      return '👍 Saiu do modo proposta.';
+    }
+
+    const histRaw = await this.redis.get(`proposal:history:${phone}`);
+    const history: ProposalMessage[] = histRaw ? JSON.parse(histRaw) : [];
+    history.push({ role: 'user', content: message });
+
+    const response = await this.client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2500,
+      system: [{ type: 'text', text: this.systemPrompt, cache_control: { type: 'ephemeral' } }],
+      messages: history,
+    }, { timeout: 30_000 });
+
+    const rawReply = response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map(b => b.text)
+      .join('')
+      .trim();
+
+    let parsed: ClaudeResponse;
+    try {
+      // Aceita resposta com ou sem code fence
+      const jsonMatch = rawReply.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : rawReply;
+      parsed = JSON.parse(jsonStr);
+    } catch (err) {
+      console.warn('[proposal] Claude nao retornou JSON valido:', rawReply.slice(0, 200));
+      // fallback: trata como chat puro
+      parsed = { action: 'chat', message: rawReply };
+    }
+
+    history.push({ role: 'assistant', content: rawReply });
+    const trimmed = history.slice(-30);
+    await this.redis.setex(`proposal:history:${phone}`, PROPOSAL_MODE_TTL_SECONDS, JSON.stringify(trimmed));
+    await this.redis.setex(`proposal:${phone}`, PROPOSAL_MODE_TTL_SECONDS, '1');
+
+    if (parsed.action === 'confirm_generate' && parsed.data) {
+      return await this.generateProposal(phone, parsed.data, parsed.message);
+    }
+
+    return parsed.message ?? 'Ok.';
+  }
+
+  // Gera o PDF + HTML, faz upload no Drive, retorna links pro Junior.
+  // Salva tambem em Redis pra "enviar" depois disparar pro cliente.
+  private async generateProposal(
+    phone: string,
+    data: any,
+    confirmMsg: string,
+  ): Promise<string> {
+    if (!this.driveUploader) {
+      return '⚠️ Drive uploader nao configurado. Adicione GOOGLE_REFRESH_TOKEN com scope drive.file no env.';
+    }
+
+    try {
+      const calcInput = this.dataToCalculatorInput(data);
+
+      // Validacao defense-in-depth: campos numericos precisam ser finitos e > 0.
+      // REGRA DE OURO ja cobre no Claude, mas se vier NaN aqui evita propagar lixo.
+      const ensureNum = (name: string, v: number) => {
+        if (!isFinite(v) || v <= 0) throw new Error(`Campo "${name}" inválido: ${v}`);
+      };
+      ensureNum('potenciaKwp', calcInput.potenciaKwp);
+      ensureNum('fatorPerda', calcInput.fatorPerda);
+      ensureNum('consumoMensalKwh', calcInput.consumoMensalKwh);
+      ensureNum('tarifaRsKwh', calcInput.tarifaRsKwh);
+      ensureNum('valorTotalRs', calcInput.valorTotalRs);
+
+      const calculations = calcular(calcInput);
+
+      const proposalData = this.dataToProposalData(data, calculations);
+      const html = renderProposalHTML(proposalData, calculations);
+
+      const pdfBuffer = await htmlToPdf(html, { waitForChartMs: 2000 });
+
+      const upload = await this.driveUploader.uploadProposal({
+        nomeCliente: data.nomeCliente,
+        numeroProposta: proposalData.numeroProposta,
+        pdfBuffer,
+        htmlContent: html,
+        inputDataJson: JSON.stringify({ data, calcInput }, null, 2),
+        shareWithEmail: data.emailCliente,
+      });
+
+      // Salva o estado pra Junior depois falar "enviar"
+      await this.redis.setex(
+        `proposal:last:${phone}`,
+        PROPOSAL_MODE_TTL_SECONDS * 24,
+        JSON.stringify({ data, upload, proposalData }),
+      );
+
+      const greener = compararGreener(calcInput.potenciaKwp, calculations.rsPorWp);
+
+      return [
+        '✅ Proposta gerada!',
+        '',
+        `📄 PDF: ${upload.pdfWebViewLink}`,
+        `🌐 Web: ${upload.htmlWebViewLink}`,
+        '',
+        `💰 R$/Wp: R$ ${calculations.rsPorWp.toFixed(2)}/Wp`,
+        `🎯 Greener: R$ ${greener.rsPorWpReferencia.toFixed(2)}/Wp`,
+        `${greener.rotulo} (${greener.diferencaPct >= 0 ? '+' : ''}${greener.diferencaPct.toFixed(1)}%)`,
+        '',
+        `📊 Payback: ${calculations.paybackAnos}a ${calculations.paybackMeses}m`,
+        `📈 TIR: ${calculations.tirPercentual.toFixed(1)}%`,
+        '',
+        '_Manda "enviar" pra mandar pro cliente, ou "ajusta X" pra refazer._',
+      ].join('\n');
+    } catch (err) {
+      console.error('[proposal] Generation error:', err);
+      // Sanitiza mensagem pra nao vazar tokens/URLs/stack pro WhatsApp
+      const raw = (err as Error).message ?? 'erro desconhecido';
+      const safe = raw.length > 120 ? raw.slice(0, 120) + '...' : raw;
+      const friendly = /timeout|ECONN|chromium|puppeteer/i.test(raw)
+        ? 'PDF demorou demais ou Chromium falhou. Tenta de novo em 30s.'
+        : /refresh|token|auth/i.test(raw)
+          ? 'Token Google expirou — regerar GOOGLE_REFRESH_TOKEN com scope drive.file.'
+          : safe;
+      return `⚠️ Erro ao gerar proposta: ${friendly}`;
+    }
+  }
+
+  // Mapeia o JSON do Claude pro formato do calculator.ts.
+  private dataToCalculatorInput(data: any): ProposalInput {
+    const concessionaria = (data.concessionaria || '').toLowerCase();
+    const tarifaDefault = concessionaria.includes('equatorial') ? 0.98 : 1.05;
+    const hsp = concessionaria.includes('equatorial') ? 5.3 : 5.2;
+
+    return {
+      potenciaKwp: Number(data.potenciaKwp),
+      fatorPerda: Number(data.fatorPerda),
+      hsp,
+      consumoMensalKwh: Number(data.consumoMensalKwh),
+      tarifaRsKwh: Number(data.tarifaRsKwh ?? tarifaDefault),
+      custoDisponibilidadeMensal: Number(data.custoDisponibilidadeMensal ?? 50),
+      reajusteAnualEnergia: 0.10,
+      valorTotalRs: Number(data.valorTotalRs),
+      vidaUtilAnos: 25,
+    };
+  }
+
+  // Mapeia o JSON do Claude pro ProposalData (template).
+  // Numero unico: ano+timestamp em base36 (curto, sem colisao em ms).
+  private dataToProposalData(data: any, _calc: any): ProposalData {
+    const ano = new Date().getFullYear();
+    const sufixo = Date.now().toString(36).toUpperCase().slice(-5);
+    const numero = `${ano}-${sufixo}`;
+    return {
+      numeroProposta: numero,
+      dataProposta: new Date().toLocaleDateString('pt-BR'),
+      validadeDias: 5,
+      nomeCliente: data.nomeCliente,
+      documentoCliente: data.documentoCliente,
+      enderecoCliente: data.enderecoCliente,
+      telefoneCliente: data.telefoneCliente,
+      emailCliente: data.emailCliente,
+      potenciaKwp: Number(data.potenciaKwp),
+      fatorPerda: Number(data.fatorPerda),
+      tipoCliente: data.tipoCliente,
+      modalidade: data.modalidade,
+      concessionaria: data.concessionaria,
+      modulo: data.modulo,
+      inversor: data.inversor,
+      valorTotalRs: Number(data.valorTotalRs),
+      formasPagamento: data.formasPagamento ?? this.defaultPaymentOptions(Number(data.valorTotalRs)),
+      empresa: this.companyDefaults,
+    };
+  }
+
+  // Taxas reais abril/2026 — fonte: Solfacil blog, Santander, BV, Canal Solar.
+  // CET (custo efetivo total) inclui IOF, seguros, tarifas — eh o que cliente paga real.
+  // Cartao credito parcelado solar: media ~6,5% a.m. (varia 5-9% conforme bandeira).
+  // Financiamento solar 2026: Santander 1,11-1,25%, BV 1,17%, Solfacil CET 1,32-1,57%.
+  // Usamos media realista 1,40% a.m. CET (cobre Solfacil/BV/Santander/Sol Agora).
+  private static readonly TAXA_CARTAO_AM = 0.065;
+  private static readonly TAXA_FINANC_AM = 0.014; // 1,4% a.m. CET medio
+  private static readonly MESES_CARENCIA_FINANC = 4; // 120 dias padrao
+
+  // Tabela Price: parcela = PV * i / (1 - (1+i)^-n).
+  // Quando ha carencia, PV capitaliza durante n_carencia meses antes de comecar Price.
+  private static parcelaTabelaPrice(valor: number, taxaMensal: number, parcelas: number, mesesCarencia = 0): number {
+    const valorPosCarencia = valor * Math.pow(1 + taxaMensal, mesesCarencia);
+    const fator = taxaMensal / (1 - Math.pow(1 + taxaMensal, -parcelas));
+    return valorPosCarencia * fator;
+  }
+
+  private defaultPaymentOptions(valorRs: number): ProposalData['formasPagamento'] {
+    const fmtRs = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+
+    const cartaoParcela = Math.round(
+      ProposalAssistant.parcelaTabelaPrice(valorRs, ProposalAssistant.TAXA_CARTAO_AM, 24),
+    );
+    const financiamentoParcela = Math.round(
+      ProposalAssistant.parcelaTabelaPrice(
+        valorRs,
+        ProposalAssistant.TAXA_FINANC_AM,
+        90,
+        ProposalAssistant.MESES_CARENCIA_FINANC,
+      ),
+    );
+
+    return [
+      {
+        tipo: 'À Vista',
+        titulo: 'PIX ou TED',
+        valorPrincipal: fmtRs(valorRs),
+        valorSecundario: 'pagamento único',
+        recomendado: true,
+        bullets: ['Sem juros, sem entrada', 'Início imediato do projeto', 'Maior economia no longo prazo'],
+      },
+      {
+        tipo: 'Cartão de Crédito',
+        titulo: 'Em até 24× com juros',
+        valorPrincipal: fmtRs(cartaoParcela),
+        valorSecundario: '24× no cartão · aprovação imediata',
+        bullets: [
+          'Sem análise de crédito formal',
+          'Aprovação na hora',
+          'Taxa cartão ~6,5% a.m. — comece sem espera',
+        ],
+      },
+      {
+        tipo: 'Financiamento Solar',
+        titulo: 'Até 90× · carência 120 dias',
+        valorPrincipal: fmtRs(financiamentoParcela),
+        valorSecundario: 'por mês · 1ª parcela em até 120 dias',
+        bullets: [
+          'Bancos parceiros: Solfácil, Sol Agora, BV Solar, Santander',
+          'CET médio ~1,40% a.m. (taxas reais abr/26)',
+          'Sua geração já paga a parcela',
+          'Aprovação 24-48h conforme CPF',
+        ],
+      },
+    ];
+  }
+}
