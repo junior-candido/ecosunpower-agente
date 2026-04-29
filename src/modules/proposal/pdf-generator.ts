@@ -35,10 +35,24 @@ export async function htmlToPdf(html: string, options: PdfOptions = {}): Promise
     waitForChartMs = 1500,
   } = options;
 
-  const browser = await puppeteer.launch({
+  // Em containers (Easypanel/Docker), puppeteer roda Chrome do sistema setado
+  // via PUPPETEER_EXECUTABLE_PATH (resolve libs faltantes do Chromium baixado).
+  // Local (dev), usa o Chromium baixado pelo npm.
+  const launchOptions: any = {
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-  });
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-first-run',
+    ],
+  };
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+
+  const browser = await puppeteer.launch(launchOptions);
 
   try {
     const page = await browser.newPage();
