@@ -144,6 +144,43 @@ export class CalendarService {
     });
   }
 
+  // Atualiza campos de um evento existente. Usa events.patch (partial update),
+  // entao so altera os campos passados — nao zera os outros.
+  async updateEvent(
+    eventId: string,
+    updates: Partial<CreateEventInput>,
+  ): Promise<{ eventId: string; htmlLink: string }> {
+    const requestBody: calendar_v3.Schema$Event = {};
+
+    if (updates.summary !== undefined) requestBody.summary = updates.summary;
+    if (updates.description !== undefined) requestBody.description = updates.description;
+    if (updates.location !== undefined) requestBody.location = updates.location;
+    if (updates.startISO) {
+      requestBody.start = { dateTime: updates.startISO, timeZone: updates.timezone ?? this.defaultTimezone };
+    }
+    if (updates.endISO) {
+      requestBody.end = { dateTime: updates.endISO, timeZone: updates.timezone ?? this.defaultTimezone };
+    }
+    if (updates.reminders !== undefined) {
+      requestBody.reminders = {
+        useDefault: false,
+        overrides: updates.reminders,
+      };
+    }
+
+    const res = await this.calendar.events.patch({
+      calendarId: this.calendarId,
+      eventId,
+      sendUpdates: 'all',
+      requestBody,
+    });
+
+    return {
+      eventId: res.data.id ?? '',
+      htmlLink: res.data.htmlLink ?? '',
+    };
+  }
+
   // Busca slots livres no periodo, considerando duracao e horario comercial.
   // Default: 8h-18h, segunda-sexta. Retorna ate 5 sugestoes.
   async findFreeSlots(

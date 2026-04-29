@@ -14,7 +14,7 @@ interface SchedulingMessage {
 }
 
 interface CalendarAction {
-  type: 'create_event' | 'list_events' | 'delete_event' | 'find_slots';
+  type: 'create_event' | 'update_event' | 'list_events' | 'delete_event' | 'find_slots';
   summary?: string;
   start?: string;
   end?: string;
@@ -98,6 +98,13 @@ Se Junior pedir lembrete específico, ajuste:
 {"type":"list_events","start":"2026-04-29T00:00:00-03:00","end":"2026-04-29T23:59:59-03:00"}
 \`\`\`
 
+## update_event
+Atualiza campos de evento existente. Precisa do eventId (obtido via list_events antes).
+Aceita os mesmos campos do create_event — só passa o que quer mudar.
+\`\`\`json
+{"type":"update_event","eventId":"abc123","start":"2026-04-30T10:00:00-03:00","end":"2026-04-30T10:30:00-03:00","reminders":[{"method":"popup","minutes":1440}]}
+\`\`\`
+
 ## delete_event
 \`\`\`json
 {"type":"delete_event","eventId":"abc123"}
@@ -115,7 +122,14 @@ Se Junior pedir lembrete específico, ajuste:
 - "agenda hoje" → list_events do dia atual
 - "agenda semana" → list_events próximos 7 dias
 - "cancela visita do Marcos" → primeiro list_events pra achar id, depois delete_event
-- "agenda livre quinta tarde" → find_slots quinta 13h-18h, duração 120min`;
+- "agenda livre quinta tarde" → find_slots quinta 13h-18h, duração 120min
+- "remarca a visita do Marcos pra sexta 10h" → list_events pra achar id, depois update_event com novo start/end
+- "adiciona lembrete na véspera no Meet do João" → list_events pra achar id, update_event com reminders
+- "muda local do evento das 14h pra Águas Claras" → list_events, update_event com location
+
+REGRA pra atualizar/cancelar: SEMPRE faça list_events PRIMEIRO pra obter o eventId.
+Liste o(s) evento(s) candidatos, mostre pro Junior e pergunte qual atualizar/cancelar
+ANTES de executar update/delete. Só execute após Junior confirmar (sim/ok/manda).`;
 }
 
 export class SchedulingAssistant {
@@ -318,6 +332,19 @@ export class SchedulingAssistant {
           return `• ${day} ${time} — ${e.summary}${meetTag}${locTag}`;
         }).join('\n');
         return `📅 *Eventos:*\n${formatted}`;
+      }
+
+      case 'update_event': {
+        if (!action.eventId) return '⚠️ Falta o eventId pra atualizar';
+        const result = await this.calendar.updateEvent(action.eventId, {
+          summary: action.summary,
+          startISO: action.start,
+          endISO: action.end,
+          location: action.location,
+          description: action.description,
+          reminders: action.reminders,
+        });
+        return `✅ Evento atualizado!\n🔗 ${result.htmlLink}`;
       }
 
       case 'delete_event': {
