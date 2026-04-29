@@ -30,6 +30,28 @@ Exemplo: um sistema de 5 kWp em Brasília gera em média
 Em média, a instalação leva de 1 a 3 dias para residências e de 1 a 2 semanas
 para projetos comerciais maiores.
 
+## Em quanto tempo o sistema fica funcionando depois que eu fecho?
+Oficialmente pedimos **45 dias**, mas com nossas parcerias normalmente
+entregamos em **30 dias**. O fluxo é:
+
+1. **Fechamento + pagamento** → 2 dias úteis para processar
+2. **Distribuidora despacha o material** → até 15 dias
+3. **Em paralelo, EcoSunPower entra com o projeto na concessionária
+   (Neoenergia DF / Equatorial GO)** → aprovação sai em ~15 a 20 dias,
+   geralmente alinhada com a chegada do material
+4. **Agendamento e instalação** → 1 a 3 dias (residencial)
+5. **Solicitação de vistoria à Neoenergia/Equatorial** → após instalada
+6. **Religação e aprovação da concessionária** → liga o disjuntor e o
+   sistema começa a gerar
+7. **Primeiro abatimento na conta de luz** → aparece na fatura do mês
+   seguinte ao primeiro mês completo de geração
+
+## E se eu tiver outras unidades pra receber crédito (rateio)?
+Funciona com **autoconsumo remoto** ou geração compartilhada. Após o
+sistema estar funcionando, a Neoenergia pede de **30 a 60 dias** para
+incluir as demais unidades consumidoras no rateio dos créditos. A
+EcoSunPower cuida de toda a documentação junto à concessionária.
+
 ## Qual a economia na conta de luz?
 Com energia solar, é possível reduzir a conta de luz em até 95%. O sistema
 gera créditos que compensam o consumo.
