@@ -84,7 +84,22 @@ Quando você quiser executar uma operação no Calendar, devolva um BLOCO especi
 ### Criar evento
 ```
 <action>
-{"type":"create_event","summary":"Visita técnica Marcos","start":"2026-04-29T14:00:00-03:00","end":"2026-04-29T16:00:00-03:00","location":"Lago Sul QI 23 conjunto 5","description":"Visita técnica pra medição","withMeet":false,"colorId":"6"}
+{"type":"create_event","summary":"Visita técnica Marcos","start":"2026-04-29T14:00:00-03:00","end":"2026-04-29T16:00:00-03:00","location":"Lago Sul QI 23 conjunto 5","description":"Visita técnica pra medição","withMeet":false,"colorId":"6","reminders":[{"method":"popup","minutes":30},{"method":"email","minutes":60}]}
+</action>
+
+### Lembretes (campo `reminders` opcional)
+- Default (se omitido): popup 30min antes + email 60min antes
+- Lista vazia `"reminders":[]` desativa lembretes
+- Custom: lista com objetos `{method:"popup"|"email", minutes:N}`
+- Exemplos comuns:
+  - "Lembrete na véspera": `[{"method":"popup","minutes":1440}]` (24h = 1440min)
+  - "Lembrete 1h antes": `[{"method":"popup","minutes":60}]`
+  - "Combo - dia anterior 12h + 1h antes": `[{"method":"email","minutes":1080},{"method":"popup","minutes":60}]`
+  - "12h00 do dia anterior" se evento é 4/5 14h: lembrete 26h antes = 1560min
+
+```
+<action>
+{"type":"create_event","summary":"Visita Marcos","start":"...","end":"...","reminders":[{"method":"popup","minutes":1440}]}
 </action>
 
 ✅ Vou criar visita técnica:

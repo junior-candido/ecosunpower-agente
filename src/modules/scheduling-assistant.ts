@@ -24,6 +24,7 @@ interface CalendarAction {
   colorId?: string;
   eventId?: string;
   durationMinutes?: number;
+  reminders?: Array<{ method: 'popup' | 'email'; minutes: number }>;
 }
 
 function buildSystemPrompt(agendamentoKnowledge: string): string {
@@ -81,8 +82,16 @@ Você (passo 2, AGORA com action):
 
 ## create_event
 \`\`\`json
-{"type":"create_event","summary":"Visita Marcos","start":"2026-04-29T14:00:00-03:00","end":"2026-04-29T16:00:00-03:00","location":"...","description":"...","withMeet":false,"colorId":"6"}
+{"type":"create_event","summary":"Visita Marcos","start":"2026-04-29T14:00:00-03:00","end":"2026-04-29T16:00:00-03:00","location":"...","description":"...","withMeet":false,"colorId":"6","reminders":[{"method":"popup","minutes":30}]}
 \`\`\`
+
+Campo \`reminders\` é opcional (default = popup 30min + email 60min antes).
+Se Junior pedir lembrete específico, ajuste:
+- "lembrete na véspera" → \`[{"method":"popup","minutes":1440}]\` (24h)
+- "lembrete 1h antes" → \`[{"method":"popup","minutes":60}]\`
+- "lembrete 12h00 do dia anterior" → calcula minutes entre 12h00 do dia D-1 e o evento
+- "sem lembrete" → \`[]\` (lista vazia)
+- Combo: pode ter múltiplos itens na lista
 
 ## list_events
 \`\`\`json
@@ -289,6 +298,7 @@ export class SchedulingAssistant {
           description: action.description,
           withMeet: action.withMeet,
           colorId: action.colorId,
+          reminders: action.reminders,
         });
         const lines = [`✅ Evento criado!`, `🔗 ${result.htmlLink}`];
         if (result.meetLink) lines.push(`📹 Meet: ${result.meetLink}`);

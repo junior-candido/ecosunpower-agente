@@ -10,6 +10,9 @@ export interface CreateEventInput {
   attendeeEmails?: string[];
   attendeeName?: string;
   location?: string;
+  // Lembretes customizados. Se omitido, usa default popup 30min + email 60min.
+  // Lista vazia [] desativa todos lembretes. Cada item: minutos antes do evento.
+  reminders?: Array<{ method: 'popup' | 'email'; minutes: number }>;
 }
 
 export interface CreateEventResult {
@@ -69,7 +72,7 @@ export class CalendarService {
       colorId: input.colorId,
       reminders: {
         useDefault: false,
-        overrides: [
+        overrides: input.reminders ?? [
           { method: 'popup', minutes: 30 },
           { method: 'email', minutes: 60 },
         ],
