@@ -27,6 +27,9 @@ export interface ProposalData {
   // Equipamentos
   modulo: { fabricante: string; modelo: string; potenciaW: number; quantidade: number; garantiaDefeito: number; garantiaEficiencia: number; tecnologia?: string };
   inversor: { fabricante: string; modelo: string; potenciaW: number; quantidade: number; garantia: number; eficiencia?: number };
+  // Tipo de estrutura de fixacao - ex: "Telha cerâmica", "Telha metálica",
+  // "Telha fibrocimento", "Laje", "Solo", "Carport". Pode incluir marca/material.
+  estruturaFixacao?: { tipo: string; material?: string; descricao?: string };
 
   // Comercial
   valorTotalRs: number;
@@ -351,6 +354,17 @@ footer strong{color:#fff;font-weight:600}
         </div>
       </div>
     </div>
+
+    ${data.estruturaFixacao ? `
+    <div style="margin-top:24px;background:linear-gradient(180deg,#fff 0%,var(--surface-alt) 100%);border:1px solid var(--border);border-radius:20px;padding:32px;display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:center">
+      <div style="width:64px;height:64px;border-radius:16px;background:var(--primary-50);color:var(--primary-600);display:flex;align-items:center;justify-content:center;font-size:32px">🔩</div>
+      <div>
+        <div class="equipment-cat">Estrutura de fixação</div>
+        <div class="equipment-name">${escapeHtml(data.estruturaFixacao.tipo)}</div>
+        <div class="equipment-brand">${data.estruturaFixacao.material ? escapeHtml(data.estruturaFixacao.material) : 'Alumínio anodizado + parafusos inox'}${data.estruturaFixacao.descricao ? ' · ' + escapeHtml(data.estruturaFixacao.descricao) : ''} · Garantia mínima 5 anos</div>
+      </div>
+    </div>
+    ` : ''}
   </div>
 </section>
 

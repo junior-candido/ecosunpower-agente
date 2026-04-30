@@ -82,8 +82,9 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
     "tipoCliente": "residencial",
     "modalidade": "autoconsumo local",
     "concessionaria": "Neoenergia DF",
-    "modulo": { "fabricante": "Trina", "modelo": "Vertex 700W", "potenciaW": 700, "quantidade": 12, "garantiaDefeito": 12, "garantiaEficiencia": 30 },
+    "modulo": { "fabricante": "Trina", "modelo": "Vertex 700W", "potenciaW": 700, "quantidade": 12, "garantiaDefeito": 12, "garantiaEficiencia": 30, "tecnologia": "TOPCon N-Type Bifacial" },
     "inversor": { "fabricante": "Sungrow", "modelo": "SG5.0RS-L", "potenciaW": 5000, "quantidade": 1, "garantia": 10, "eficiencia": 0.985 },
+    "estruturaFixacao": { "tipo": "Telha cerâmica", "material": "Alumínio anodizado + parafusos inox", "descricao": "Ganchos com regulagem de altura" },
     "valorTotalRs": 38500,
     "formasPagamento": [
       { "tipo": "À Vista", "titulo": "PIX ou TED", "valorPrincipal": "R$ 38.500", "valorSecundario": "pagamento único", "recomendado": true, "bullets": ["Sem juros", "Início imediato", "Maior economia"] }
@@ -103,7 +104,7 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
 
 Cliente: nomeCliente, documentoCliente, enderecoCliente, telefoneCliente, emailCliente
 Sistema: potenciaKwp, fatorPerda, consumoMensalKwh, tipoCliente, modalidade, concessionaria
-Equipamentos: modulo (todos), inversor (todos)
+Equipamentos: modulo (todos), inversor (todos), estruturaFixacao (tipo)
 Comercial: valorTotalRs
 
 ## DEFAULTS QUE VOCÊ APLICA
@@ -113,6 +114,16 @@ Comercial: valorTotalRs
 - modulo.garantiaDefeito: Trina/JA/Jinko = 12, Risen = 12
 - modulo.garantiaEficiencia: TOPCon N-Type = 30, mono normal = 25
 - inversor.garantia: Sungrow/Solis/Deye/Huawei = 10, Goodwe = 10
+- estruturaFixacao.tipo: Junior diz tipo do telhado/superficie. Mapeie:
+  - "cerâmica/colonial/portuguesa" → "Telha cerâmica"
+  - "metálica/sanduíche/zipada" → "Telha metálica"
+  - "fibrocimento/eternit" → "Telha fibrocimento"
+  - "laje/concreto" → "Laje"
+  - "solo/chão/aterrada" → "Solo"
+  - "carport/garagem/pergolado" → "Carport"
+  - Se Junior não disser, ASSUMA "Telha cerâmica" mas adicione em missing pra confirmar.
+- estruturaFixacao.material: default "Alumínio anodizado + parafusos inox" salvo se Junior especificar.
+
 - formasPagamento: SEMPRE incluir 3 opções padrão:
   1. À vista PIX/TED (recomendado, sem juros)
   2. Cartão de crédito até 24× com juros (~2.5%a.m., fator total ~1.65)
@@ -430,6 +441,7 @@ export class ProposalAssistant {
       concessionaria: data.concessionaria,
       modulo: data.modulo,
       inversor: data.inversor,
+      estruturaFixacao: data.estruturaFixacao,
       valorTotalRs: Number(data.valorTotalRs),
       formasPagamento: data.formasPagamento ?? this.defaultPaymentOptions(Number(data.valorTotalRs)),
       empresa: this.companyDefaults,

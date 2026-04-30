@@ -45,6 +45,7 @@ Se Junior mandar dados parciais, Eva responde com a lista exata do que ainda pre
 - Marca + potência módulo (Trina 700W, JA 615W, Jinko 635W, etc.)
 - Quantidade de módulos
 - Marca + modelo inversor (Sungrow SG5.0RS-L, Solis S6, Deye, etc.)
+- **Tipo de estrutura de fixação** (telha cerâmica, metálica, fibrocimento, laje, solo, carport)
 
 ### Comercial
 - Valor total da proposta (R$)
