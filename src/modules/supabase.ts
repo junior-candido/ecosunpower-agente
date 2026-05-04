@@ -483,4 +483,85 @@ export class SupabaseService {
       .update({ status: 'failed', error_message: errorMessage })
       .eq('id', id);
   }
+
+  // ==========================================================================
+  // Propostas publicas (HTML hospedado em /p/:slug, TTL 60d)
+  // Resolve a limitacao do Drive desktop que abre HTML como codigo fonte.
+  // ==========================================================================
+
+  async savePropostaPublica(input: {
+    slug: string;
+    numeroProposta: string;
+    clienteNome: string;
+    clienteTelefone?: string;
+    htmlContent: string;
+    dadosInput?: Record<string, unknown>;
+  }): Promise<{ id: string; expiresAt: string }> {
+    const { data, error } = await this.client
+      .from('propostas_publicas')
+      .insert({
+        slug: input.slug,
+        numero_proposta: input.numeroProposta,
+        cliente_nome: input.clienteNome,
+        cliente_telefone: input.clienteTelefone ?? null,
+        html_content: input.htmlContent,
+        dados_input: input.dadosInput ?? null,
+      })
+      .select('id, expires_at')
+      .single();
+
+    if (error) throw new Error(`Failed to save proposta publica: ${error.message}`);
+    return { id: data.id, expiresAt: data.expires_at };
+  }
+
+  async getPropostaPublicaBySlug(slug: string): Promise<{
+    status: 'ok' | 'not_found' | 'expired' | 'revoked';
+    html?: string;
+    numeroProposta?: string;
+    clienteNome?: string;
+  }> {
+    // .maybeSingle() retorna data=null sem error pra "no rows".
+    // Erro aqui = falha real de DB (conexao, schema, RLS) — propaga pro endpoint
+    // retornar 500 em vez de 404 silencioso.
+    const { data, error } = await this.client
+      .from('propostas_publicas')
+      .select('html_content, numero_proposta, cliente_nome, expires_at, revoked')
+      .eq('slug', slug)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to get proposta publica: ${error.message}`);
+    if (!data) return { status: 'not_found' };
+    if (data.revoked) return { status: 'revoked' };
+    if (new Date(data.expires_at) < new Date()) return { status: 'expired' };
+
+    return {
+      status: 'ok',
+      html: data.html_content,
+      numeroProposta: data.numero_proposta,
+      clienteNome: data.cliente_nome,
+    };
+  }
+
+  // Fire-and-forget. Race condition em counter de view e tolerada (~best effort).
+  // Nao bloqueia a resposta HTTP da proposta.
+  async incrementPropostaPublicaAcesso(slug: string): Promise<void> {
+    try {
+      const { data } = await this.client
+        .from('propostas_publicas')
+        .select('acessos')
+        .eq('slug', slug)
+        .maybeSingle();
+
+      if (!data) return;
+      await this.client
+        .from('propostas_publicas')
+        .update({
+          acessos: (data.acessos ?? 0) + 1,
+          ultimo_acesso_at: new Date().toISOString(),
+        })
+        .eq('slug', slug);
+    } catch (err) {
+      console.warn('[supabase] incrementPropostaPublicaAcesso (non-blocking):', err);
+    }
+  }
 }

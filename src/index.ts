@@ -38,6 +38,50 @@ import { DriveUploader } from './modules/proposal/drive-uploader.js';
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Pagina de erro pra /p/:slug (proposta nao encontrada, expirada ou erro tecnico).
+// Standalone HTML com cores EcoSunPower (navy/amarelo).
+function propostaErrorHtml(kind: 'not_found' | 'expired' | 'error'): string {
+  const titles = {
+    not_found: 'Proposta não encontrada',
+    expired: 'Proposta expirada',
+    error: 'Erro ao carregar proposta',
+  };
+  const messages = {
+    not_found: 'O link que você acessou não existe ou foi removido. Se você recebeu esse link da EcoSunPower e ele deveria estar ativo, fale com a gente no WhatsApp.',
+    expired: 'Essa proposta passou da data de validade (60 dias após geração). Pra receber uma proposta atualizada, fale com a gente no WhatsApp.',
+    error: 'Tivemos um problema temporário ao carregar essa proposta. Tente de novo em alguns minutos ou fale com a gente no WhatsApp.',
+  };
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>${titles[kind]} — EcoSunPower</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #0a1f3d 0%, #1a3a5c 100%); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #fff; padding: 20px; }
+.box { max-width: 480px; text-align: center; }
+.icon { font-size: 64px; margin-bottom: 16px; }
+h1 { font-size: clamp(24px,5vw,32px); margin: 0 0 16px; color: #ffd23f; }
+p { font-size: 16px; line-height: 1.6; margin: 0 0 24px; opacity: 0.92; }
+a.btn { display: inline-block; background: #25d366; color: #fff; padding: 14px 28px; border-radius: 999px; text-decoration: none; font-weight: 600; font-size: 16px; transition: transform .15s; }
+a.btn:hover { transform: translateY(-2px); }
+.brand { margin-top: 32px; opacity: 0.6; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="box">
+<div class="icon">${kind === 'expired' ? '⏰' : kind === 'error' ? '⚠️' : '🔍'}</div>
+<h1>${titles[kind]}</h1>
+<p>${messages[kind]}</p>
+<a class="btn" href="https://wa.me/5561996978781">Falar no WhatsApp</a>
+<div class="brand">EcoSunPower Energia Solar · ecosunpower.eng.br</div>
+</div>
+</body>
+</html>`;
+}
+
 // Helper de fuso: retorna hour/minute/weekday/dateISO em America/Sao_Paulo
 // SEM depender do TZ do servidor. O truque antigo `new Date(toLocaleString('en-US'))`
 // so funcionava por acidente quando servidor rodava em UTC — trocamos por
@@ -292,13 +336,12 @@ async function main() {
     knowledgeBaseDir: join(__dirname, '..', 'conhecimento'),
     driveUploader,
     engineerPhone: config.engineerPhone,
+    supabaseService: supabase,
+    publicProposalBaseUrl: config.publicProposalBaseUrl,
   });
 
-  if (driveUploader) {
-    console.log('[proposal] Eva Proposta ATIVA (Drive integrado)');
-  } else {
-    console.log('[proposal] Eva Proposta limitada — Drive desativado, gerar local apenas');
-  }
+  const driveOk = !!driveUploader;
+  console.log(`[proposal] Eva Proposta ATIVA — Drive: ${driveOk ? 'on' : 'off'}, Web publica: on (${config.publicProposalBaseUrl})`);
 
   const googleReviewUrl = process.env.GOOGLE_REVIEW_URL ?? '';
   const postInstall = googleReviewUrl
@@ -2845,6 +2888,56 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
       });
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Pagina publica de proposta hospedada (Eva Proposta /proposta).
+  // Slug urlsafe ~64 bits de entropia (nao enumeravel). TTL 60 dias por padrao.
+  // Hosteia HTML interativo do template — resolve a limitacao Drive desktop
+  // que abre HTML como codigo fonte.
+  app.get('/p/:slug', async (req, res) => {
+    const slug = String(req.params.slug ?? '');
+    // Slug valido = base64url 16-32 chars (gerados sao sempre 16 = 12 bytes/96 bits).
+    // Faixa permite migracao futura pra mais entropia sem quebrar URLs antigos.
+    // Rejeita cedo pra evitar query desnecessaria com input malformado.
+    if (!/^[A-Za-z0-9_-]{16,32}$/.test(slug)) {
+      return res.status(404).type('text/html').send(propostaErrorHtml('not_found'));
+    }
+
+    try {
+      const result = await supabase.getPropostaPublicaBySlug(slug);
+
+      if (result.status === 'expired') {
+        return res.status(410).type('text/html').send(propostaErrorHtml('expired'));
+      }
+      if (result.status === 'revoked' || result.status === 'not_found') {
+        return res.status(404).type('text/html').send(propostaErrorHtml('not_found'));
+      }
+
+      // Cache desabilitado: proposta tem dados financeiros do cliente.
+      // noindex pra nao aparecer em buscadores.
+      // CSP + X-Frame-Options bloqueiam clickjacking / iframe embedding.
+      // Vary: * pra qualquer CDN/Cloudflare na frente nao cachear (defesa em profundidade).
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('Vary', '*');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      // Template usa CSS inline + SVG inline (sem JS). Permite data: pra imagens base64.
+      res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+      );
+      res.type('text/html').send(result.html!);
+
+      // Tracking fire-and-forget (nao bloqueia resposta).
+      supabase.incrementPropostaPublicaAcesso(slug).catch((err) => {
+        console.warn('[proposta-publica] track acesso falhou:', err);
+      });
+    } catch (err) {
+      console.error('[proposta-publica] erro:', err);
+      res.status(500).type('text/html').send(propostaErrorHtml('error'));
     }
   });
 

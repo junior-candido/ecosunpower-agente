@@ -52,6 +52,8 @@ const configSchema = z.object({
   githubPat: z.string().optional(),
   githubSiteRepo: z.string().default('junior-candido/ecosunpower-site'),
   githubSiteBranch: z.string().default('main'),
+  // Base URL pra propostas web publicas (Eva Proposta /p/:slug). CNAME aponta pro Easypanel.
+  publicProposalBaseUrl: z.string().url().default('https://propostas.ecosunpower.eng.br'),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -98,5 +100,6 @@ export function loadConfig(): Config {
     githubPat: process.env.GITHUB_PAT || undefined,
     githubSiteRepo: process.env.GITHUB_SITE_REPO || 'junior-candido/ecosunpower-site',
     githubSiteBranch: process.env.GITHUB_SITE_BRANCH || 'main',
+    publicProposalBaseUrl: process.env.PUBLIC_PROPOSAL_BASE_URL,
   });
 }

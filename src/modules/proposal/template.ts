@@ -496,7 +496,7 @@ footer strong{color:#fff;font-weight:600}
     <h2>Pronto pra economizar?</h2>
     <p>Aceite a proposta agora e a gente já dá início no projeto. Em 30 dias seu sistema está gerando.</p>
     <div class="cta-buttons">
-      <a href="https://wa.me/55${data.empresa.telefone.replace(/\D/g, '')}?text=Aceito%20a%20proposta%20${data.numeroProposta}" class="btn btn-primary">✓ Aceitar proposta</a>
+      <a href="https://wa.me/55${data.empresa.telefone.replace(/\D/g, '')}?text=${encodeURIComponent('Aceito a proposta ' + data.numeroProposta)}" class="btn btn-primary">✓ Aceitar proposta</a>
       <a href="https://wa.me/55${data.empresa.telefone.replace(/\D/g, '')}" class="btn btn-secondary">💬 Tirar dúvidas no WhatsApp</a>
     </div>
     <div class="cta-badges">

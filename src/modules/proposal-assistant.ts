@@ -7,10 +7,12 @@ import Anthropic from '@anthropic-ai/sdk';
 import Redis from 'ioredis';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { randomBytes } from 'crypto';
 import { calcular, compararGreener, type ProposalInput } from './proposal/calculator.js';
 import { renderProposalHTML, type ProposalData } from './proposal/template.js';
 import { htmlToPdf } from './proposal/pdf-generator.js';
 import type { DriveUploader } from './proposal/drive-uploader.js';
+import type { SupabaseService } from './supabase.js';
 
 const IORedis = (Redis as any).default ?? Redis;
 const PROPOSAL_MODE_TTL_SECONDS = 60 * 60;
@@ -150,6 +152,8 @@ export class ProposalAssistant {
   private driveUploader: DriveUploader | null;
   private engineerPhone: string;
   private companyDefaults: ProposalData['empresa'];
+  private supabaseService: SupabaseService | null;
+  private publicProposalBaseUrl: string;
 
   constructor(opts: {
     apiKey: string;
@@ -160,6 +164,8 @@ export class ProposalAssistant {
     driveUploader: DriveUploader | null;
     engineerPhone: string;
     companyDefaults?: Partial<ProposalData['empresa']>;
+    supabaseService?: SupabaseService | null;
+    publicProposalBaseUrl?: string;
   }) {
     this.client = new Anthropic({ apiKey: opts.apiKey });
     this.redis = new IORedis({
@@ -180,6 +186,8 @@ export class ProposalAssistant {
     this.systemPrompt = buildSystemPrompt(propostas, marcas);
     this.driveUploader = opts.driveUploader;
     this.engineerPhone = opts.engineerPhone;
+    this.supabaseService = opts.supabaseService ?? null;
+    this.publicProposalBaseUrl = (opts.publicProposalBaseUrl ?? 'https://propostas.ecosunpower.eng.br').replace(/\/$/, '');
 
     this.companyDefaults = {
       nome: 'EcoSunPower Energia Solar LTDA',
@@ -314,8 +322,8 @@ export class ProposalAssistant {
     data: any,
     confirmMsg: string,
   ): Promise<string> {
-    if (!this.driveUploader) {
-      return '⚠️ Drive uploader nao configurado. Adicione GOOGLE_REFRESH_TOKEN com scope drive.file no env.';
+    if (!this.driveUploader && !this.supabaseService) {
+      return '⚠️ Nenhum destino configurado. Configure GOOGLE_REFRESH_TOKEN (Drive) ou SUPABASE_URL (web publica).';
     }
 
     try {
@@ -339,29 +347,94 @@ export class ProposalAssistant {
 
       const pdfBuffer = await htmlToPdf(html, { waitForChartMs: 2000 });
 
-      const upload = await this.driveUploader.uploadProposal({
-        nomeCliente: data.nomeCliente,
-        numeroProposta: proposalData.numeroProposta,
-        pdfBuffer,
-        htmlContent: html,
-        inputDataJson: JSON.stringify({ data, calcInput }, null, 2),
-        shareWithEmail: data.emailCliente,
-      });
+      // Slug urlsafe 96 bits de entropia (16 chars base64url) — luxo, mas zero custo.
+      const slug = randomBytes(12).toString('base64url');
+
+      // Drive (PDF + HTML interno) e Supabase (HTML publico) em paralelo.
+      // Supabase eh prioridade — se Drive falhar, Junior ainda tem o link web pro cliente.
+      const drivePromise = this.driveUploader
+        ? this.driveUploader.uploadProposal({
+            nomeCliente: data.nomeCliente,
+            numeroProposta: proposalData.numeroProposta,
+            pdfBuffer,
+            htmlContent: html,
+            inputDataJson: JSON.stringify({ data, calcInput }, null, 2),
+            shareWithEmail: data.emailCliente,
+          })
+        : Promise.reject(new Error('Drive uploader nao configurado'));
+
+      // dados_input NAO inclui PII completa do cliente — html_content ja tem
+      // os dados visiveis ao cliente. Dump completo (com CPF/RG) fica so no Drive
+      // _internal/dados-*.json, que e auditado e tem retencao maior.
+      // Salva apenas calcInput (numeros) + meta minima pra debugging.
+      const dadosInputMinimo: Record<string, unknown> = {
+        calcInput,
+        sistema: {
+          potenciaKwp: data.potenciaKwp,
+          tipoCliente: data.tipoCliente,
+          modalidade: data.modalidade,
+          concessionaria: data.concessionaria,
+          modulo: data.modulo,
+          inversor: data.inversor,
+          estruturaFixacao: data.estruturaFixacao,
+        },
+        comercial: { valorTotalRs: data.valorTotalRs },
+      };
+
+      const supabasePromise = this.supabaseService
+        ? this.supabaseService.savePropostaPublica({
+            slug,
+            numeroProposta: proposalData.numeroProposta,
+            clienteNome: data.nomeCliente,
+            clienteTelefone: data.telefoneCliente,
+            htmlContent: html,
+            dadosInput: dadosInputMinimo,
+          })
+        : Promise.reject(new Error('Supabase service nao configurado'));
+
+      const [uploadResult, publicResult] = await Promise.allSettled([drivePromise, supabasePromise]);
+
+      const upload = uploadResult.status === 'fulfilled' ? uploadResult.value : null;
+      const publicSaved = publicResult.status === 'fulfilled';
+      const publicUrl = publicSaved ? `${this.publicProposalBaseUrl}/p/${slug}` : null;
+
+      if (!upload && !publicSaved) {
+        const driveErr = uploadResult.status === 'rejected' ? (uploadResult.reason as Error).message : 'ok';
+        const pubErr = publicResult.status === 'rejected' ? (publicResult.reason as Error).message : 'ok';
+        throw new Error(`Drive: ${driveErr} | Web: ${pubErr}`);
+      }
+      if (!upload) {
+        console.warn('[proposal] Drive upload falhou:', (uploadResult as PromiseRejectedResult).reason);
+      }
+      if (!publicSaved) {
+        console.warn('[proposal] Save Supabase falhou:', (publicResult as PromiseRejectedResult).reason);
+      }
 
       // Salva o estado pra Junior depois falar "enviar"
       await this.redis.setex(
         `proposal:last:${phone}`,
         PROPOSAL_MODE_TTL_SECONDS * 24,
-        JSON.stringify({ data, upload, proposalData }),
+        JSON.stringify({ data, upload, proposalData, publicUrl, slug }),
       );
 
       const greener = compararGreener(calcInput.potenciaKwp, calculations.rsPorWp);
 
+      const linkLines: string[] = [];
+      if (publicUrl) {
+        linkLines.push(`🌐 Web (manda pro cliente): ${publicUrl}`);
+      }
+      if (upload) {
+        linkLines.push(`📄 PDF (Drive): ${upload.pdfWebViewLink}`);
+        if (!publicUrl) linkLines.push(`🌐 Web (Drive fallback): ${upload.htmlWebViewLink}`);
+      }
+      if (linkLines.length === 0) {
+        linkLines.push('⚠️ Nenhum link disponivel — checar logs.');
+      }
+
       return [
         '✅ Proposta gerada!',
         '',
-        `📄 PDF: ${upload.pdfWebViewLink}`,
-        `🌐 Web: ${upload.htmlWebViewLink}`,
+        ...linkLines,
         '',
         `💰 R$/Wp: R$ ${calculations.rsPorWp.toFixed(2)}/Wp`,
         `🎯 Greener: R$ ${greener.rsPorWpReferencia.toFixed(2)}/Wp`,
