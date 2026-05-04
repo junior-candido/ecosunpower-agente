@@ -33,6 +33,7 @@ import { generateWeeklyReport, formatReportForWhatsApp } from './modules/ads-rep
 import { PricingAssistant } from './modules/pricing-assistant.js';
 import { SchedulingAssistant } from './modules/scheduling-assistant.js';
 import { ProposalAssistant } from './modules/proposal-assistant.js';
+import { NewsScraperService } from './modules/news-scraper.js';
 import { DriveUploader } from './modules/proposal/drive-uploader.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
@@ -157,10 +158,12 @@ async function main() {
   const vision = new VisionAnalyzer(config.anthropicApiKey);
   const transcriber = config.openaiApiKey ? new Transcriber(config.openaiApiKey) : null;
   const knowledgeBase = new KnowledgeBase(join(__dirname, '..', 'conhecimento'));
+  const newsScraper = new NewsScraperService(supabase.getClient());
   const blogGenerator = new BlogGenerator(
     new Anthropic({ apiKey: config.anthropicApiKey }),
     supabase.getClient(),
     join(__dirname, '..', 'conhecimento'),
+    newsScraper,
   );
   if (config.githubPat) {
     console.log(`[blog] Auto-blog enabled (GitHub repo: ${config.githubSiteRepo}@${config.githubSiteBranch})`);
@@ -3422,6 +3425,64 @@ Responda *publicar* pra publicar no ar, ou *descartar* pra dispensar.`;
   // Checa a cada 6h (idempotente via app_flags)
   setInterval(checkBlogSchedule, 6 * 60 * 60 * 1000);
   console.log('[blog] Auto-blog scheduler started (drafts a cada 3 dias)');
+
+  // News scraper diario: ANEEL 03:00 BRT. Idempotente via app_flags
+  // + guard em memoria (newsScraperRunning) pra evitar double-run no
+  // mesmo processo. Janela 03:00-03:29 + check a cada 20min = sempre cai
+  // exatamente 1 vez por dia. Falha de scrape nao bloqueia outras schedulers.
+  if (!isSandbox) {
+    let newsScraperRunning = false;
+    const checkNewsScraperSchedule = async () => {
+      if (newsScraperRunning) return;
+      const brt = getBrtParts();
+      if (brt.hour !== 3) return; // somente entre 03:00-03:59 BRT
+
+      const flagKey = 'last_news_scraper_run';
+      const today = brt.dateISO;
+      const { data: flag } = await supabase.getClient()
+        .from('app_flags')
+        .select('value')
+        .eq('key', flagKey)
+        .maybeSingle();
+      if (flag?.value === today) return;
+
+      // Lock antes de iniciar (atomico via UPDATE com WHERE) — 2 instancias
+      // simultaneas no mesmo container nao acontece graças ao guard em memoria,
+      // mas ainda assim o flag protege contra restart no meio da janela.
+      newsScraperRunning = true;
+      try {
+        await supabase.getClient()
+          .from('app_flags')
+          .upsert({ key: flagKey, value: today }, { onConflict: 'key' });
+
+        console.log('[news-scraper] Daily run starting...');
+        const result = await newsScraper.scrapeAneel();
+        console.log(`[news-scraper] Daily done: ${JSON.stringify(result)}`);
+      } catch (err) {
+        console.error('[news-scraper] Daily run failed:', (err as Error).message);
+      } finally {
+        newsScraperRunning = false;
+      }
+    };
+    setInterval(checkNewsScraperSchedule, 20 * 60 * 1000); // checa a cada 20 min
+    console.log('[news-scraper] Daily scheduler started (ANEEL @ 03:00 BRT)');
+
+    // Endpoint manual pra forcar scrape (debug/test). Reusa webhook token.
+    app.post('/news-scraper/run', async (req, res) => {
+      const token = (req.headers['x-webhook-token'] as string)
+        ?? (req.query.token as string) ?? '';
+      if (!evolution.validateWebhookToken(token)) {
+        res.status(401).json({ error: 'Invalid token' });
+        return;
+      }
+      try {
+        const result = await newsScraper.scrapeAneel();
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+  }
 
   // Endpoint manual pra teste/debug: gera 1 draft on-demand
   app.post('/blog/generate', async (req, res) => {
