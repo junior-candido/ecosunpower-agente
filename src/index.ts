@@ -2321,23 +2321,44 @@ Responda CURTO, maximo 2 paragrafos.`,
     }
     try {
       const results: Record<string, unknown> = {};
+      const errors: Record<string, string> = {};
       const platforms = (draft.platforms as string[]) ?? ['instagram', 'facebook'];
       const isVideo = draft.content_type === 'video' && draft.video_url;
       if (platforms.includes('facebook')) {
-        results.facebook = isVideo
-          ? await meta.publishFacebookVideo(draft.video_url, draft.caption)
-          : await meta.publishFacebookImage(draft.image_url, draft.caption);
+        try {
+          results.facebook = isVideo
+            ? await meta.publishFacebookVideo(draft.video_url, draft.caption)
+            : await meta.publishFacebookImage(draft.image_url, draft.caption);
+        } catch (err) {
+          errors.facebook = (err as Error).message;
+          console.error('[marketing] Facebook publish failed:', err);
+        }
       }
       if (platforms.includes('instagram')) {
-        results.instagram = isVideo
-          ? await meta.publishInstagramReel(draft.video_url, draft.caption)
-          : await meta.publishInstagramImage(draft.image_url, draft.caption);
+        try {
+          results.instagram = isVideo
+            ? await meta.publishInstagramReel(draft.video_url, draft.caption)
+            : await meta.publishInstagramImage(draft.image_url, draft.caption);
+        } catch (err) {
+          errors.instagram = (err as Error).message;
+          console.error('[marketing] Instagram publish failed:', err);
+        }
       }
-      await marketing.markPublished(draft.id, results);
-      console.log(`[marketing] Approved + published draft ${draft.id} (${isVideo ? 'video/Reel' : 'image'})`);
+      const successPlatforms = Object.keys(results);
+      const failedPlatforms = Object.keys(errors);
+      if (successPlatforms.length === 0) {
+        const combined = failedPlatforms.map((p) => `${p}: ${errors[p]}`).join(' | ');
+        throw new Error(combined);
+      }
+      await marketing.markPublished(draft.id, { ...results, errors });
+      console.log(`[marketing] Approved draft ${draft.id} (${isVideo ? 'video/Reel' : 'image'}) — success=${successPlatforms.join(',')} failed=${failedPlatforms.join(',') || 'none'}`);
+      const successLabel = successPlatforms.map((p) => p === 'instagram' ? 'Instagram' : 'Facebook').join(' e ');
+      const failureBlock = failedPlatforms.length > 0
+        ? `<p style="color:#c00">⚠️ Mas falhou em ${failedPlatforms.map((p) => p === 'instagram' ? 'Instagram' : 'Facebook').join(' e ')}: ${failedPlatforms.map((p) => errors[p]).join(' | ')}</p>`
+        : '';
       res.send(htmlPage(
         'Publicado!',
-        `<h2>✅ Post publicado com sucesso!</h2><p>Acabou de subir no Instagram e no Facebook. Pode fechar esta aba.</p>`,
+        `<h2>✅ Post publicado em ${successLabel}!</h2>${failureBlock}<p>Pode fechar esta aba.</p>`,
       ));
     } catch (err) {
       console.error('[marketing] Approve publish failed:', err);
@@ -2814,21 +2835,38 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         return;
       }
       const results: Record<string, unknown> = {};
+      const errors: Record<string, string> = {};
       const platforms = (draft.platforms as string[]) ?? ['instagram', 'facebook'];
       const isVideo = draft.content_type === 'video' && draft.video_url;
       if (platforms.includes('facebook')) {
-        results.facebook = isVideo
-          ? await meta.publishFacebookVideo(draft.video_url, draft.caption)
-          : await meta.publishFacebookImage(draft.image_url, draft.caption);
+        try {
+          results.facebook = isVideo
+            ? await meta.publishFacebookVideo(draft.video_url, draft.caption)
+            : await meta.publishFacebookImage(draft.image_url, draft.caption);
+        } catch (err) {
+          errors.facebook = (err as Error).message;
+          console.error('[marketing] Facebook publish failed:', err);
+        }
       }
       if (platforms.includes('instagram')) {
-        results.instagram = isVideo
-          ? await meta.publishInstagramReel(draft.video_url, draft.caption)
-          : await meta.publishInstagramImage(draft.image_url, draft.caption);
+        try {
+          results.instagram = isVideo
+            ? await meta.publishInstagramReel(draft.video_url, draft.caption)
+            : await meta.publishInstagramImage(draft.image_url, draft.caption);
+        } catch (err) {
+          errors.instagram = (err as Error).message;
+          console.error('[marketing] Instagram publish failed:', err);
+        }
       }
-      await marketing.markPublished(draft.id, results);
-      console.log(`[marketing] Published draft ${draft.id} (${isVideo ? 'video/Reel' : 'image'})`);
-      res.json({ status: 'published', results });
+      const successPlatforms = Object.keys(results);
+      const failedPlatforms = Object.keys(errors);
+      if (successPlatforms.length === 0) {
+        const combined = failedPlatforms.map((p) => `${p}: ${errors[p]}`).join(' | ');
+        throw new Error(combined);
+      }
+      await marketing.markPublished(draft.id, { ...results, errors });
+      console.log(`[marketing] Published draft ${draft.id} (${isVideo ? 'video/Reel' : 'image'}) — success=${successPlatforms.join(',')} failed=${failedPlatforms.join(',') || 'none'}`);
+      res.json({ status: 'published', results, ...(failedPlatforms.length > 0 ? { errors } : {}) });
     } catch (err) {
       console.error('[marketing] Publish failed:', err);
       res.status(500).json({ error: (err as Error).message });
