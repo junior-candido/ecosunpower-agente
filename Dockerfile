@@ -15,6 +15,11 @@ FROM ghcr.io/puppeteer/puppeteer:24
 USER root
 WORKDIR /app
 
+# Garante ffmpeg disponivel pro fluent-ffmpeg (extracao de frame de video).
+# A base puppeteer e Debian-based; instala se nao existir.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
+
 # Copia package files e instala TODAS deps (incluindo dev pra ter tsc + @types).
 COPY package*.json ./
 RUN npm install --include=dev && chown -R pptruser:pptruser /app
