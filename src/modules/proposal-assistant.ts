@@ -37,7 +37,9 @@ interface ProposalSessionState {
 // Estrutura JSON que o Claude retorna pra Eva entender o estado.
 // Quando action='ready_to_generate', data contem ProposalData completo.
 interface ClaudeResponse {
-  action: 'ask_more' | 'ready_to_generate' | 'confirm_generate' | 'chat';
+  action: 'ask_modo' | 'ask_tipo' | 'ask_more' | 'ready_to_generate' | 'confirm_generate' | 'chat';
+  modoEnvio?: ModoEnvio | null;
+  tipo?: TipoProposta | null;
   message: string;
   missing?: string[];
   data?: Partial<ProposalData> & {
@@ -79,7 +81,9 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
 
 \`\`\`json
 {
-  "action": "ask_more" | "ready_to_generate" | "confirm_generate" | "chat",
+  "action": "ask_modo" | "ask_tipo" | "ask_more" | "ready_to_generate" | "confirm_generate" | "chat",
+  "modoEnvio": "junior_envia" | "eva_envia" | null,
+  "tipo": "basica" | "personalizada" | null,
   "message": "string que será mostrada pro Junior no WhatsApp",
   "missing": ["lista", "de", "campos", "faltando"],
   "data": {
@@ -109,17 +113,29 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
 
 ## QUANDO USAR CADA ACTION
 
-- **ask_more**: faltam dados obrigatórios. \`missing\` lista os campos. \`message\` formato curto: "Falta:\\n• campo1\\n• campo2\\nManda tudo junto."
+- **ask_modo**: PRIMEIRA mensagem. Pergunta quem envia (Junior ou Eva). \`modoEnvio: null\`. Mensagem curta com default "você envia". Veja seção MODOS DE ENVIO no knowledge.
+- **ask_tipo**: depois que modoEnvio foi capturado, pergunta básica/personalizada. \`tipo: null\`. Veja seção TIPOS DE PROPOSTA.
+- **ask_more**: faltam dados obrigatórios (LEMBRE dos modos: junior_envia tem só nome+geração obrigatórios). \`missing\` lista os campos. \`message\` formato curto: "Falta:\\n• campo1\\n• campo2\\nManda tudo junto."
 - **ready_to_generate**: TUDO coletado. Faz um RESUMO confirmando os dados pro Junior. \`message\` deve ser o resumo formatado (com emojis e separadores). \`data\` contém TODOS os campos.
 - **confirm_generate**: Junior respondeu "gerar"/"ok"/"manda" depois do resumo. Repete \`data\` completo. \`message\` deve ser curto: "✅ Gerando proposta..."
 - **chat**: conversa solta (Junior tirando dúvida sobre algo). Apenas \`message\`.
 
 ## CAMPOS OBRIGATÓRIOS
 
-Cliente: nomeCliente, documentoCliente, enderecoCliente, telefoneCliente, emailCliente
-Sistema: potenciaKwp, fatorPerda, consumoMensalKwh, tipoCliente, modalidade, concessionaria
-Equipamentos: modulo (todos), inversor (todos), estruturaFixacao (tipo)
-Comercial: valorTotalRs
+⚠️ **Lista MUDA conforme modoEnvio.** Veja seções "MODOS DE ENVIO" e "CAMPOS POR MODO DE ENVIO" no knowledge acima.
+
+**Sempre obrigatórios (independente do modo):**
+- nomeCliente
+- Sistema: potenciaKwp, fatorPerda, consumoMensalKwh, tipoCliente, modalidade, concessionaria
+- Equipamentos: modulo (todos), inversor (todos), estruturaFixacao (tipo)
+- Comercial: valorTotalRs
+
+**Modo \`junior_envia\` — adicionalmente OPCIONAIS (NÃO listar em missing):**
+- enderecoCliente, telefoneCliente, emailCliente, documentoCliente
+
+**Modo \`eva_envia\` — adicionalmente OBRIGATÓRIOS:**
+- telefoneCliente (com validação de formato BR)
+- (recomendados: emailCliente, documentoCliente, enderecoCliente)
 
 ## DEFAULTS QUE VOCÊ APLICA
 
@@ -344,6 +360,15 @@ export class ProposalAssistant {
     const trimmed = history.slice(-30);
     await this.redis.setex(`proposal:history:${phone}`, PROPOSAL_MODE_TTL_SECONDS, JSON.stringify(trimmed));
     await this.redis.setex(`proposal:${phone}`, PROPOSAL_MODE_TTL_SECONDS, '1');
+
+    // Persiste modoEnvio e tipo no estado da sessao quando Claude retornar valor concreto.
+    // null/undefined nao sobrescreve (Claude usa null em ask_modo/ask_tipo).
+    if (parsed.modoEnvio || parsed.tipo) {
+      const state = await this.loadState(phone);
+      if (parsed.modoEnvio) state.modoEnvio = parsed.modoEnvio;
+      if (parsed.tipo) state.tipo = parsed.tipo;
+      await this.saveState(phone, state);
+    }
 
     if (parsed.action === 'confirm_generate' && parsed.data) {
       return await this.generateProposal(phone, parsed.data, parsed.message);
