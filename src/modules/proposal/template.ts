@@ -10,12 +10,12 @@ export interface ProposalData {
   dataProposta: string;   // ex: "29/04/2026"
   validadeDias: number;   // padrao 5
 
-  // Cliente
+  // Cliente — opcional no modo junior_envia, exceto nome
   nomeCliente: string;
-  documentoCliente: string;
-  enderecoCliente: string; // resumido (cidade-UF)
-  telefoneCliente: string;
-  emailCliente: string;
+  documentoCliente?: string;
+  enderecoCliente?: string; // resumido (cidade-UF)
+  telefoneCliente?: string;
+  emailCliente?: string;
 
   // Sistema
   potenciaKwp: number;
@@ -262,7 +262,7 @@ footer strong{color:#fff;font-weight:600}
   <div class="client-card">
     <div class="client-grid">
       <div><div class="client-grid-label">Cliente</div><div class="client-grid-value">${escapeHtml(data.nomeCliente)}</div></div>
-      <div><div class="client-grid-label">Endereço</div><div class="client-grid-value">${escapeHtml(data.enderecoCliente)}</div></div>
+      ${data.enderecoCliente ? `<div><div class="client-grid-label">Endereço</div><div class="client-grid-value">${escapeHtml(data.enderecoCliente)}</div></div>` : ''}
       <div><div class="client-grid-label">Concessionária</div><div class="client-grid-value">${escapeHtml(data.concessionaria)}</div></div>
       <div><div class="client-grid-label">Modalidade</div><div class="client-grid-value">${escapeHtml(data.modalidade)}</div></div>
     </div>
@@ -311,7 +311,7 @@ footer strong{color:#fff;font-weight:600}
     <div class="chart-card">
       <div class="chart-header">
         <div>
-          <div style="font-family:'Space Grotesk';font-size:20px;font-weight:600;margin-bottom:4px">Projeção mensal — ${escapeHtml(data.enderecoCliente)}</div>
+          <div style="font-family:'Space Grotesk';font-size:20px;font-weight:600;margin-bottom:4px">Projeção mensal${data.enderecoCliente ? ` — ${escapeHtml(data.enderecoCliente)}` : ''}</div>
           <div style="font-size:14px;color:var(--muted)">Fator perda ${fmtNum(data.fatorPerda, 2)} aplicado · sazonalidade real</div>
         </div>
         <div class="chart-legend">
