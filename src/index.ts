@@ -341,6 +341,7 @@ async function main() {
     engineerPhone: config.engineerPhone,
     supabaseService: supabase,
     publicProposalBaseUrl: config.publicProposalBaseUrl,
+    metaService: metaWaba,
   });
 
   const driveOk = !!driveUploader;

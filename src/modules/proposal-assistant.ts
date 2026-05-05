@@ -14,6 +14,8 @@ import { htmlToPdf } from './proposal/pdf-generator.js';
 import type { DriveUploader } from './proposal/drive-uploader.js';
 import type { SupabaseService } from './supabase.js';
 import type { ModoEnvio, TipoProposta, AttachmentInput } from './proposal/attachments/types.js';
+import type { MetaWhatsAppService } from './meta-whatsapp.js';
+import { enviarPropostaParaCliente } from './eva-sender.js';
 
 const IORedis = (Redis as any).default ?? Redis;
 const PROPOSAL_MODE_TTL_SECONDS = 60 * 60;
@@ -182,6 +184,7 @@ export class ProposalAssistant {
   private companyDefaults: ProposalData['empresa'];
   private supabaseService: SupabaseService | null;
   private publicProposalBaseUrl: string;
+  private metaService: MetaWhatsAppService | null;
 
   constructor(opts: {
     apiKey: string;
@@ -194,6 +197,7 @@ export class ProposalAssistant {
     companyDefaults?: Partial<ProposalData['empresa']>;
     supabaseService?: SupabaseService | null;
     publicProposalBaseUrl?: string;
+    metaService?: MetaWhatsAppService | null;
   }) {
     this.client = new Anthropic({ apiKey: opts.apiKey });
     this.redis = new IORedis({
@@ -216,6 +220,7 @@ export class ProposalAssistant {
     this.engineerPhone = opts.engineerPhone;
     this.supabaseService = opts.supabaseService ?? null;
     this.publicProposalBaseUrl = (opts.publicProposalBaseUrl ?? 'https://propostas.ecosunpower.eng.br').replace(/\/$/, '');
+    this.metaService = opts.metaService ?? null;
 
     this.companyDefaults = {
       nome: 'EcoSunPower Energia Solar LTDA',
@@ -327,6 +332,14 @@ export class ProposalAssistant {
       return '👍 Saiu do modo proposta.';
     }
 
+    // Intercepta "enviar"/"manda"/"envia" quando ha proposta gerada e modo eva_envia.
+    // Isso evita ir pro Claude pra cada confirmacao — Junior diz "enviar" e Eva dispara.
+    if (/^(enviar|envia|manda|mandar|mandar pro cliente|envia pro cliente|aprovado)\s*$/i.test(message.trim())) {
+      const sendResult = await this.tryDispatchToClient(phone);
+      if (sendResult !== null) return sendResult;
+      // se retornou null, modo nao era eva_envia ou nao havia proposta — segue fluxo normal Claude
+    }
+
     const histRaw = await this.redis.get(`proposal:history:${phone}`);
     const history: ProposalMessage[] = histRaw ? JSON.parse(histRaw) : [];
     history.push({ role: 'user', content: message });
@@ -375,6 +388,60 @@ export class ProposalAssistant {
     }
 
     return parsed.message ?? 'Ok.';
+  }
+
+  // Quando Junior disser "enviar" (modo eva_envia), Eva dispara pro telefone
+  // do cliente: saudacao + link web + PDF como documento.
+  // Retorna null se contexto nao se aplica (modo errado, sem proposta salva, etc) —
+  // nesse caso o handler segue o fluxo normal pro Claude.
+  private async tryDispatchToClient(phone: string): Promise<string | null> {
+    const state = await this.loadState(phone);
+    if (state.modoEnvio !== 'eva_envia') return null;
+
+    const lastRaw = await this.redis.get(`proposal:last:${phone}`);
+    if (!lastRaw) return null;
+
+    if (!this.metaService) {
+      return '⚠️ MetaWhatsAppService nao configurado — nao consigo mandar pro cliente. Junior, manda manualmente pelo zap.';
+    }
+
+    let last: { data: any; proposalData: ProposalData; publicUrl: string | null; upload: any };
+    try {
+      last = JSON.parse(lastRaw);
+    } catch {
+      return '⚠️ Erro ao carregar proposta salva. Gera de novo, por favor.';
+    }
+
+    const telefone = last.data?.telefoneCliente;
+    const nome = last.data?.nomeCliente;
+    if (!telefone) return '⚠️ Telefone do cliente nao foi capturado. Re-gera a proposta com o telefone certo.';
+    if (!last.publicUrl) return '⚠️ Link publico nao disponivel. Re-gera com Supabase configurado.';
+
+    // Re-gera o PDF buffer (nao salvamos buffer no Redis pra economizar memoria).
+    try {
+      const calcInput = this.dataToCalculatorInput(last.data);
+      const calculations = calcular(calcInput);
+      const html = renderProposalHTML(last.proposalData, calculations);
+      const pdfBuffer = await htmlToPdf(html, { waitForChartMs: 2000 });
+
+      const result = await enviarPropostaParaCliente(this.metaService, {
+        telefoneCliente: telefone,
+        nomeCliente: nome,
+        linkWebPublico: last.publicUrl,
+        pdfBuffer,
+        pdfFilename: `Proposta-EcoSunPower-${nome.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '-')}.pdf`,
+      });
+
+      if (!result.ok) {
+        return `⚠️ Erro ao enviar pro cliente: ${result.reason.slice(0, 150)}`;
+      }
+
+      // Limpa estado depois do envio (sucesso = ciclo encerrado)
+      await this.exitProposalMode(phone);
+      return `✅ Proposta enviada pra ${nome} (${telefone}). Vou ficar de olho se ele responde.`;
+    } catch (err) {
+      return `⚠️ Erro ao gerar PDF pra envio: ${(err as Error).message.slice(0, 150)}`;
+    }
   }
 
   // Gera o PDF + HTML, faz upload no Drive, retorna links pro Junior.
