@@ -303,21 +303,32 @@ export class ProposalAssistant {
       return await this.processProposalMessage(phone, stripped);
     }
 
-    return [
+    // Sem dados iniciais — pergunta o modo de envio (primeira pergunta do fluxo novo).
+    // Semeia o historico com essa pergunta como mensagem da assistente, pra quando
+    // Junior responder ("ok"/"eu"/"eva"), o Claude tenha contexto e consiga capturar
+    // o modoEnvio sem confusao.
+    const welcomeMessage = [
       '📋 *Modo Proposta ATIVO*',
       '',
-      'Manda os dados do cliente. Posso receber tudo de uma vez ou em partes.',
-      '',
-      '*Mínimo necessário:*',
-      '• Nome + CPF/CNPJ + endereço + telefone + e-mail',
-      '• kWp + fator de perda (0,75 / 0,80 / 0,85?)',
-      '• Consumo médio mensal (kWh)',
-      '• Marca/modelo módulo + qtd + inversor',
-      '• Modalidade (autoconsumo local / remoto / compartilhada)',
-      '• Valor total da venda',
+      'Quem envia essa proposta? Você ou eu mando direto pro cliente?',
+      '_(default: você envia — só responde "ok" pra ir nesse)_',
       '',
       'Pra sair: `/sair`',
     ].join('\n');
+
+    // Seed history com formato JSON que o Claude usa nas proximas turnos
+    const seededAssistantTurn = JSON.stringify({
+      action: 'ask_modo',
+      modoEnvio: null,
+      message: welcomeMessage,
+    });
+    await this.redis.setex(
+      `proposal:history:${phone}`,
+      PROPOSAL_MODE_TTL_SECONDS,
+      JSON.stringify([{ role: 'assistant', content: seededAssistantTurn }]),
+    );
+
+    return welcomeMessage;
   }
 
   async exitProposalMode(phone: string): Promise<void> {
