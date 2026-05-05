@@ -101,6 +101,47 @@ export class MetaWhatsAppService {
     return this.postMessage(body);
   }
 
+  // Upload media buffer to Meta Cloud API and return media_id.
+  // Useful when we have a Buffer (e.g. PDF gerado in-memory) instead of a public URL.
+  async uploadMedia(buffer: Buffer, mimeType: string, filename: string): Promise<{ mediaId: string }> {
+    const url = `${GRAPH_API}/${this.phoneNumberId}/media`;
+    // Buffer extends Uint8Array — Blob aceita Uint8Array como BlobPart sem ambiguidade.
+    const blob = new Blob([new Uint8Array(buffer)], { type: mimeType });
+    const form = new FormData();
+    form.set('messaging_product', 'whatsapp');
+    form.set('type', mimeType);
+    form.set('file', blob, filename);
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.accessToken}` },
+      body: form,
+    });
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      throw new Error(`Meta uploadMedia falhou (${resp.status}): ${errBody.slice(0, 300)}`);
+    }
+    const json = await resp.json() as { id: string };
+    return { mediaId: json.id };
+  }
+
+  // Envia documento usando media_id (ja foi feito upload via uploadMedia).
+  async sendDocumentById(
+    to: string,
+    mediaId: string,
+    filename: string,
+    caption?: string,
+  ): Promise<{ messageId: string }> {
+    const body = {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'document',
+      document: { id: mediaId, filename, ...(caption ? { caption } : {}) },
+    };
+    return this.postMessage(body);
+  }
+
   async sendAudio(to: string, mediaUrl: string): Promise<{ messageId: string }> {
     const body = {
       messaging_product: 'whatsapp',

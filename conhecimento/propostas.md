@@ -318,3 +318,29 @@ Quando Junior digitar `/proposta`, "proposta", "gera proposta pra X", áudio sim
 4. Calcular + gerar PDF + upload Drive + responder com links
 5. Aguardar "enviar" pra mandar pro cliente
 6. Quando cliente aceitar, disparar `/fechar` automático com os dados
+
+## TEMPLATE DE SAUDAÇÃO PRO CLIENTE (modo eva_envia)
+
+Quando Junior aprovar a proposta no modo `eva_envia` (responde "enviar", "manda", "envia"), Eva manda 3 mensagens em sequência pro telefone do cliente:
+
+**Mensagem 1 — Saudação:**
+```
+Olá, {{nomeCliente}}! 👋
+
+Sou a Eva, assistente da EcoSunPower Energia Solar.
+
+Junior preparou uma proposta personalizada de energia solar pra você. Vou te mandar agora pra dar uma olhada com calma.
+
+Qualquer dúvida, é só me perguntar aqui mesmo. 😊
+```
+
+**Mensagem 2 — Link web:**
+```
+🔗 Versão online (recomendada — abre no celular):
+{{linkWebPublico}}
+
+(Link válido por 60 dias)
+```
+
+**Mensagem 3 — PDF (anexo de documento):**
+Caption: `📎 Versão em PDF pra arquivar ou imprimir.`
