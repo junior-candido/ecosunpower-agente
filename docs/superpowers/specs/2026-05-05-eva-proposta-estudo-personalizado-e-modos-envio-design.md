@@ -134,14 +134,13 @@ src/modules/
 │                                          fluxo conversacional inicial, auto-detect mídia
 └── eva-sender.ts                   [NOVO] Envia proposta direto pro cliente (modo eva_envia) — manda 3 mensagens em sequência: (1) saudação personalizada com nome do cliente, (2) link da proposta web, (3) PDF como documento. Template da saudação fica em `conhecimento/propostas.md`.
 
-src/routes/
-└── public-proposal.ts              [MOD] Renderiza vídeo HTML5 + selo "Personalizada"
+src/index.ts                        [MOD] Handler de GET /p/:slug (linha ~2939) renderiza vídeo HTML5 + selo "Personalizada"
 
 conhecimento/
 └── propostas.md                    [MOD] Regras dos 2 modos + tipos + comportamento de campos opcionais
 
 supabase/migrations/
-└── 017_proposta_attachments.sql    [NOVO] Tabela attachments + storage bucket policy
+└── 018_proposta_attachments.sql    [NOVO] Tabela attachments + storage bucket policy
 ```
 
 ### Schema de dados
@@ -306,7 +305,7 @@ Sem campo → linha some, layout não fica esquisito.
 
 ## Migration deploy
 
-1. Aplicar `017_proposta_attachments.sql` em prod (Supabase)
+1. Aplicar `018_proposta_attachments.sql` em prod (Supabase)
 2. Criar bucket `estudos-personalizados` com policy de leitura assinada
 3. Adicionar `ffmpeg` no Dockerfile (já tem Puppeteer base, ffmpeg é leve ~30MB)
 4. Adicionar libs npm: `qrcode` (gera QR), `fluent-ffmpeg` ou `ffmpeg-static`
