@@ -13,6 +13,7 @@ import { renderProposalHTML, type ProposalData } from './proposal/template.js';
 import { htmlToPdf } from './proposal/pdf-generator.js';
 import type { DriveUploader } from './proposal/drive-uploader.js';
 import type { SupabaseService } from './supabase.js';
+import type { ModoEnvio, TipoProposta, AttachmentInput } from './proposal/attachments/types.js';
 
 const IORedis = (Redis as any).default ?? Redis;
 const PROPOSAL_MODE_TTL_SECONDS = 60 * 60;
@@ -20,6 +21,17 @@ const PROPOSAL_MODE_TTL_SECONDS = 60 * 60;
 interface ProposalMessage {
   role: 'user' | 'assistant';
   content: string;
+}
+
+// Estado estruturado da sessao /proposta. Armazena modo de envio, tipo e anexos pendentes.
+// Persistido em Redis sob a chave `proposal:state:${phone}`.
+interface ProposalSessionState {
+  modoEnvio?: ModoEnvio;
+  tipo?: TipoProposta;
+  attachments: AttachmentInput[];
+  pendingMediaId?: string;     // media_id WABA aguardando legenda
+  pendingMediaType?: 'foto' | 'video';
+  reopenedSlug?: string;        // se setado, regenera proposta existente em vez de criar nova
 }
 
 // Estrutura JSON que o Claude retorna pra Eva entender o estado.
@@ -233,9 +245,33 @@ export class ProposalAssistant {
     return result !== null;
   }
 
+  // State helpers — sessao estruturada (modo, tipo, anexos) separada do historico de mensagens.
+  private stateKey(phone: string): string {
+    return `proposal:state:${phone}`;
+  }
+
+  private async loadState(phone: string): Promise<ProposalSessionState> {
+    const raw = await this.redis.get(this.stateKey(phone));
+    if (!raw) return { attachments: [] };
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return { attachments: [] };
+    }
+  }
+
+  private async saveState(phone: string, state: ProposalSessionState): Promise<void> {
+    await this.redis.setex(this.stateKey(phone), PROPOSAL_MODE_TTL_SECONDS, JSON.stringify(state));
+  }
+
+  async getSessionState(phone: string): Promise<ProposalSessionState> {
+    return await this.loadState(phone);
+  }
+
   async startProposalMode(phone: string, initialMessage?: string): Promise<string> {
     await this.redis.setex(`proposal:${phone}`, PROPOSAL_MODE_TTL_SECONDS, '1');
     await this.redis.del(`proposal:history:${phone}`);
+    await this.saveState(phone, { attachments: [] });
 
     // Se Junior ja descreveu junto com o trigger, vai direto pro Claude.
     const stripped = (initialMessage ?? '')
@@ -266,6 +302,7 @@ export class ProposalAssistant {
   async exitProposalMode(phone: string): Promise<void> {
     await this.redis.del(`proposal:${phone}`);
     await this.redis.del(`proposal:history:${phone}`);
+    await this.redis.del(this.stateKey(phone));
   }
 
   async processProposalMessage(phone: string, message: string): Promise<string> {
