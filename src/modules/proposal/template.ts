@@ -78,10 +78,10 @@ function renderEstudoPersonalizado(estudo: NonNullable<ProposalData['estudoPerso
   const { fotos, video, qrCodeDataUrl } = estudo;
   const fotoCount = fotos.length;
 
-  // Marca d'agua EcoSunPower com logo oficial (PNG branco transparente).
-  // Posicionada no canto inferior direito com leve sombra pra garantir leitura
-  // sobre fundos claros e escuros.
-  const watermark = `<img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" style="position:absolute;bottom:12px;right:12px;height:42px;width:auto;opacity:0.92;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.5))">`;
+  // Marca d'agua EcoSunPower com logo oficial (PNG transparente, cores originais).
+  // Tamanho usa max-width responsivo (10% da imagem) pra nao dominar em mobile.
+  // Sombra suave + opacidade pra leitura em qualquer fundo sem chamar atencao demais.
+  const watermark = `<img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" style="position:absolute;bottom:8px;right:8px;width:auto;height:auto;max-width:14%;max-height:32px;opacity:0.85;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.4));pointer-events:none">`;
 
   const renderFoto = (f: { url: string; legenda: string }, extra = '') => `
     <figure style="margin:0;${extra}">

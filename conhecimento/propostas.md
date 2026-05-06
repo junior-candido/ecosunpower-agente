@@ -106,6 +106,24 @@ Sinais de override (Junior te deu o número):
 
 **NUNCA aplique a margem +10% no override.** Os números do Junior já são finais.
 
+**EXEMPLO ESPECÍFICO QUE VOCÊ DEVE SEGUIR:**
+
+Junior: *"painel risen 700w, fator 0.80, consumo 1000kwh, 12 painéis, geração 950 kWh/mês"*
+
+Sua resposta no `data` do JSON:
+```json
+"potenciaKwp": 8.4,            // ← 12 × 700 ÷ 1000, calculado a partir do override de Junior
+"modulo": { ..., "quantidade": 12, ... },  // ← exato que Junior pediu
+```
+
+NÃO retorne `"potenciaKwp": 9.1, "quantidade": 13` (que seria o auto-cálculo). Junior disse 12 painéis = 12 painéis. Ponto.
+
+**Quando ele AJUSTAR depois do resumo** ("ajusta pra 14 painéis", "troca pra 10 kWp"):
+1. Capture o novo número
+2. No próximo `ready_to_generate`, RECALCULE a partir do override (se ele deu qtd, ajuste kWp; se deu kWp, ajuste qtd)
+3. Mostre no resumo: `🔢 Dimensionamento ajustado: 9.8 kWp · 14 painéis (Trina 700W) — definido pelo Junior`
+4. NÃO volte pro auto-cálculo. NÃO sugira "mas o ideal seria...". Junior decidiu, ele decide.
+
 ### MODO 2 — Auto-cálculo (só quando Junior NÃO passou override)
 
 Quando Junior passar **só consumo + painel + fator** (sem mencionar quantidade nem kWp), você calcula:

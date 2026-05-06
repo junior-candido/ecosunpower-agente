@@ -3030,7 +3030,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     <source src="${signed.signedUrl}" type="video/mp4">
     Seu navegador não suporta vídeo HTML5.
   </video>
-  <img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" style="position:absolute;bottom:50px;right:12px;height:42px;width:auto;opacity:0.92;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.5));pointer-events:none">
+  <img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" style="position:absolute;bottom:50px;right:8px;max-width:14%;max-height:32px;opacity:0.85;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.4));pointer-events:none">
 </div>
 <p style="text-align:center;font-size:13px;color:#555;font-style:italic;margin-top:10px">🎥 ${escLegenda}</p>`;
 
