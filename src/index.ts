@@ -3478,24 +3478,44 @@ Responda *publicar* pra publicar no ar, ou *descartar* pra dispensar.`;
   // Roda 30min apos canal-solar pra usar artigos frescos.
   const checkBlogSchedule = async () => {
     const flagKey = 'last_blog_draft_generated_at';
-    const { data: flag } = await supabase.getClient()
+    const lockKey = 'blog_draft_in_progress_until';
+    const client = supabase.getClient();
+
+    const { data: flag } = await client
       .from('app_flags')
       .select('value')
       .eq('key', flagKey)
       .maybeSingle();
-
     const last = flag?.value ? new Date(flag.value).getTime() : 0;
     const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
     if (Date.now() - last < threeDaysMs) return;
 
-    // Lock antes de gerar
-    await supabase.getClient()
+    // Lock de short-circuit: se outra instancia comecou ha menos de 10min, skipa
+    // pra evitar duplo-disparo. Lock expira por timestamp, nao trava 3 dias se falhar.
+    const { data: lock } = await client
       .from('app_flags')
-      .upsert({ key: flagKey, value: new Date().toISOString() }, { onConflict: 'key' });
+      .select('value')
+      .eq('key', lockKey)
+      .maybeSingle();
+    const lockUntil = lock?.value ? new Date(lock.value).getTime() : 0;
+    if (Date.now() < lockUntil) return;
 
-    await generateAndNotifyBlogDraft().catch((err) => {
-      console.error('[blog] Scheduler error:', (err as Error).message);
-    });
+    await client
+      .from('app_flags')
+      .upsert({ key: lockKey, value: new Date(Date.now() + 10 * 60 * 1000).toISOString() }, { onConflict: 'key' });
+
+    try {
+      await generateAndNotifyBlogDraft();
+      // SO marca o flag de "gerado" depois de sucesso real (com WhatsApp notificado).
+      await client
+        .from('app_flags')
+        .upsert({ key: flagKey, value: new Date().toISOString() }, { onConflict: 'key' });
+    } catch (err) {
+      console.error('[blog] Scheduler error (flag NAO atualizado, retry no proximo ciclo):', (err as Error).message);
+    } finally {
+      // Libera lock assim que terminar (ou falhar)
+      await client.from('app_flags').delete().eq('key', lockKey);
+    }
   };
   // Roda 30min apos boot pra dar tempo do canal-solar refrescar
   setTimeout(checkBlogSchedule, 30 * 60 * 1000);
