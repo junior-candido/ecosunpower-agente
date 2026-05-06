@@ -77,6 +77,51 @@ export function calcularGeracaoMensal(
   return potenciaKwp * hsp * 30 * fatorPerda;
 }
 
+// Margem tecnica padrao aplicada sobre o dimensionamento bruto:
+// +5% Fio B (Lei 14.300 — energia injetada paga taxa, sistema gera um pouco a mais)
+// +3% degradacao ano 1 (placas perdem ~3% no primeiro ano)
+// +2% temperatura (placas mais quentes = menos eficientes)
+// Total +10% sobre kWp_minimo. Junior pode override falando "sem margem" ou valor exato.
+export const MARGEM_TECNICA_DEFAULT = 0.10;
+
+// Dimensiona sistema partindo do consumo. Inversa de calcularGeracaoMensal.
+// kWp = consumo / (HSP * 30 * fatorPerda)  -> kWp minimo (cobre 100% do consumo)
+// kWp_recomendado = kWp_minimo * (1 + margem)
+// quantidadePaineis = ceil(kWp_recomendado * 1000 / painelPotenciaW)  -> sempre pra cima
+// kWpReal = quantidadePaineis * painelPotenciaW / 1000   -> potencia depois de arredondar
+export interface Dimensionamento {
+  kWpMinimo: number;       // teorico, cobre exatamente o consumo
+  kWpRecomendado: number;  // com margem tecnica
+  quantidadePaineis: number;
+  kWpReal: number;         // potencia real instalada (apos arredondamento de paineis)
+  margemAplicada: number;
+}
+
+export function dimensionarSistema(input: {
+  consumoMensalKwh: number;
+  painelPotenciaW: number;
+  hsp: number;
+  fatorPerda: number;
+  margem?: number; // default MARGEM_TECNICA_DEFAULT
+}): Dimensionamento {
+  if (input.consumoMensalKwh <= 0 || input.painelPotenciaW <= 0 || input.hsp <= 0 || input.fatorPerda <= 0) {
+    throw new Error('dimensionarSistema: todos os inputs precisam ser positivos');
+  }
+  const margem = input.margem ?? MARGEM_TECNICA_DEFAULT;
+  const kWpMinimo = input.consumoMensalKwh / (input.hsp * 30 * input.fatorPerda);
+  const kWpRecomendado = kWpMinimo * (1 + margem);
+  const quantidadePaineis = Math.ceil((kWpRecomendado * 1000) / input.painelPotenciaW);
+  const kWpReal = (quantidadePaineis * input.painelPotenciaW) / 1000;
+
+  return {
+    kWpMinimo: Math.round(kWpMinimo * 100) / 100,
+    kWpRecomendado: Math.round(kWpRecomendado * 100) / 100,
+    quantidadePaineis,
+    kWpReal: Math.round(kWpReal * 100) / 100,
+    margemAplicada: margem,
+  };
+}
+
 export function calcularGeracaoMensalDistribuida(geracaoMediaMensal: number): number[] {
   return SAZONALIDADE_DF.map(s => Math.round(geracaoMediaMensal * s));
 }
