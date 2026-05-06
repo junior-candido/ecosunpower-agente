@@ -2989,11 +2989,54 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
       res.setHeader('X-Frame-Options', 'DENY');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       // Template usa CSS inline + SVG inline (sem JS). Permite data: pra imagens base64.
+      // media-src https: necessario pra <video> de proposta personalizada (Supabase signed URL).
       res.setHeader(
         'Content-Security-Policy',
-        "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+        "default-src 'self'; img-src 'self' data: https:; media-src https:; style-src 'self' 'unsafe-inline'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'",
       );
-      res.type('text/html').send(result.html!);
+
+      // Se proposta personalizada tem video, substitui o bloco do thumbnail por <video> nativo.
+      // O template gerou <div data-video-block data-video-url="..."> com img dentro;
+      // a gente troca pelo <video controls autoplay muted loop>.
+      let html = result.html!;
+      if (result.tipo === 'personalizada') {
+        try {
+          const { data: attachments } = await supabase.getClient()
+            .from('proposta_attachments')
+            .select('*')
+            .eq('proposta_slug', slug)
+            .eq('tipo', 'video')
+            .limit(1);
+
+          if (attachments && attachments.length > 0) {
+            const videoAttach = attachments[0];
+            const { data: signed } = await supabase.getClient().storage
+              .from('estudos-personalizados')
+              .createSignedUrl(videoAttach.storage_path, 60 * 60); // 1h, regen a cada acesso
+
+            if (signed?.signedUrl) {
+              const escLegenda = String(videoAttach.legenda).replace(/[<>&"]/g, (c) =>
+                ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] ?? c));
+              const videoTag = `<video controls autoplay muted loop playsinline style="width:100%;border-radius:12px;display:block;background:#000">
+  <source src="${signed.signedUrl}" type="video/mp4">
+  Seu navegador não suporta vídeo HTML5.
+</video>
+<p style="text-align:center;font-size:13px;color:#555;font-style:italic;margin-top:10px">🎥 ${escLegenda}</p>`;
+
+              // Substitui o bloco data-video-block inteiro pelo <video>
+              html = html.replace(
+                /<div data-video-block[^>]*>[\s\S]*?<\/div>\s*<\/div>/,
+                videoTag,
+              );
+            }
+          }
+        } catch (err) {
+          console.warn('[proposta-publica] video swap falhou:', (err as Error).message);
+          // segue com HTML original (thumbnail aparece)
+        }
+      }
+
+      res.type('text/html').send(html);
 
       // Tracking fire-and-forget (nao bloqueia resposta).
       supabase.incrementPropostaPublicaAcesso(slug).catch((err) => {

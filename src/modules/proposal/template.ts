@@ -35,6 +35,14 @@ export interface ProposalData {
   valorTotalRs: number;
   formasPagamento: Array<{ tipo: string; titulo: string; descricao?: string; valorPrincipal: string; valorSecundario: string; recomendado?: boolean; bullets: string[] }>;
 
+  // Tipo da proposta (basica/personalizada) e estudo personalizado opcional
+  tipo?: 'basica' | 'personalizada';
+  estudoPersonalizado?: {
+    fotos: Array<{ url: string; legenda: string; ordem: number }>;
+    video?: { thumbnailUrl: string; legenda: string; webVideoUrl: string };
+    qrCodeDataUrl?: string;
+  };
+
   // Empresa (defaults)
   empresa: {
     nome: string;       // "EcoSunPower Energia Solar LTDA"
@@ -60,6 +68,68 @@ function fmtPaybackTexto(anos: number, meses: number): string {
   if (anos === 0) return `${meses} meses`;
   if (meses === 0) return `${anos} ${anos === 1 ? 'ano' : 'anos'}`;
   return `${anos} ${anos === 1 ? 'ano' : 'anos'} e ${meses} ${meses === 1 ? 'mês' : 'meses'}`;
+}
+
+// Renderiza secao "Estudamos seu Telhado" — fotos com layout 1/2/3 + bloco video com QR Code.
+// O bloco do video tem o atributo data-video-block + data-video-url pra que a versao web
+// (src/index.ts /p/:slug) possa substituir o thumbnail por um <video> nativo na hora.
+function renderEstudoPersonalizado(estudo: NonNullable<ProposalData['estudoPersonalizado']>): string {
+  const { fotos, video, qrCodeDataUrl } = estudo;
+  const fotoCount = fotos.length;
+
+  let fotosHtml = '';
+  if (fotoCount === 1) {
+    fotosHtml = `<div style="display:flex;justify-content:center"><figure style="max-width:90%;margin:0">
+      <img src="${escapeHtml(fotos[0].url)}" style="width:100%;border-radius:12px;display:block">
+      <figcaption style="text-align:center;margin-top:10px;font-size:13px;color:#555;font-style:italic">${escapeHtml(fotos[0].legenda)}</figcaption>
+    </figure></div>`;
+  } else if (fotoCount === 2) {
+    fotosHtml = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      ${fotos.map(f => `<figure style="margin:0">
+        <img src="${escapeHtml(f.url)}" style="width:100%;border-radius:12px;display:block">
+        <figcaption style="text-align:center;margin-top:10px;font-size:13px;color:#555;font-style:italic">${escapeHtml(f.legenda)}</figcaption>
+      </figure>`).join('')}
+    </div>`;
+  } else if (fotoCount >= 3) {
+    fotosHtml = `
+      <figure style="margin:0 0 16px">
+        <img src="${escapeHtml(fotos[0].url)}" style="width:100%;border-radius:12px;display:block">
+        <figcaption style="text-align:center;margin-top:10px;font-size:13px;color:#555;font-style:italic">${escapeHtml(fotos[0].legenda)}</figcaption>
+      </figure>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        ${[fotos[1], fotos[2]].map(f => `<figure style="margin:0">
+          <img src="${escapeHtml(f.url)}" style="width:100%;border-radius:12px;display:block">
+          <figcaption style="text-align:center;margin-top:10px;font-size:13px;color:#555;font-style:italic">${escapeHtml(f.legenda)}</figcaption>
+        </figure>`).join('')}
+      </div>`;
+  }
+
+  let videoHtml = '';
+  if (video) {
+    videoHtml = `
+      <div data-video-block data-video-url="${escapeHtml(video.webVideoUrl)}" style="margin-top:24px;background:#f7f9fc;padding:24px;border-radius:12px;display:grid;grid-template-columns:2fr 1fr;gap:24px;align-items:center">
+        <figure style="margin:0">
+          ${video.thumbnailUrl ? `<img src="${escapeHtml(video.thumbnailUrl)}" style="width:100%;border-radius:8px;display:block">` : `<div style="width:100%;aspect-ratio:16/9;background:#1a3a52;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:48px">▶</div>`}
+          <figcaption style="margin-top:10px;font-size:13px;color:#555;font-style:italic">🎥 ${escapeHtml(video.legenda)}</figcaption>
+        </figure>
+        <div style="text-align:center">
+          ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" style="width:140px;height:140px;display:block;margin:0 auto">` : ''}
+          <p style="font-size:11px;margin-top:8px;color:#666;line-height:1.4">Aponte a câmera<br>do celular pra<br>assistir o vídeo</p>
+        </div>
+      </div>`;
+  }
+
+  return `
+<div class="container" style="padding-top:24px">
+  <section style="margin:24px 0;padding:32px;border-left:4px solid #f4a83d;background:linear-gradient(180deg,#fdf8f0 0%,#fff 100%);border-radius:12px">
+    <span style="display:inline-block;padding:4px 12px;background:#f4a83d;color:#1a3a52;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">Estudo Técnico</span>
+    <h2 style="color:#1a3a52;margin:8px 0 12px 0;font-size:28px">Estudamos seu Telhado</h2>
+    <p style="color:#555;margin:0 0 24px 0;font-size:14px;line-height:1.5">Análise técnica personalizada do imóvel pra dimensionar o sistema ideal.</p>
+    ${fotosHtml}
+    ${videoHtml}
+  </section>
+</div>
+`;
 }
 
 export function renderProposalHTML(data: ProposalData, calc: ProposalCalculations): string {
@@ -257,6 +327,16 @@ footer strong{color:#fff;font-weight:600}
     </div>
   </div>
 </header>
+
+${data.tipo === 'personalizada' ? `
+<div class="container" style="padding-top:16px">
+  <div style="background:linear-gradient(135deg,#1a3a52 0%,#f4a83d 100%);color:#fff;padding:14px 24px;text-align:center;font-weight:700;font-size:13px;letter-spacing:1px;border-radius:12px;text-transform:uppercase">
+    📐 Proposta com Estudo Técnico Personalizado
+  </div>
+</div>
+` : ''}
+
+${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado) : ''}
 
 <div class="container">
   <div class="client-card">

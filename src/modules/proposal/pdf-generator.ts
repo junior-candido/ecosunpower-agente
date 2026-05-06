@@ -4,6 +4,17 @@
 // Pra Easypanel: precisa instalar dependencias do Chromium (apt: libnss3 libatk-bridge2.0-0 libxss1 libgtk-3-0).
 // Alternativa pra deploy mais leve: trocar 'puppeteer' por 'puppeteer-core' + chromium do sistema.
 
+import QRCode from 'qrcode';
+
+// Gera QR Code como data URL pra embutir no HTML/PDF (aponta pra versao web da proposta).
+export async function gerarQrCodeDataUrl(url: string): Promise<string> {
+  return await QRCode.toDataURL(url, {
+    width: 280,
+    margin: 1,
+    color: { dark: '#1a3a52', light: '#ffffff' },
+  });
+}
+
 let _puppeteer: any | null = null;
 async function getPuppeteer(): Promise<any> {
   if (_puppeteer) return _puppeteer;

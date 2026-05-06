@@ -10,10 +10,12 @@ import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { calcular, compararGreener, type ProposalInput } from './proposal/calculator.js';
 import { renderProposalHTML, type ProposalData } from './proposal/template.js';
-import { htmlToPdf } from './proposal/pdf-generator.js';
+import { htmlToPdf, gerarQrCodeDataUrl } from './proposal/pdf-generator.js';
 import type { DriveUploader } from './proposal/drive-uploader.js';
 import type { SupabaseService } from './supabase.js';
 import type { ModoEnvio, TipoProposta, AttachmentInput } from './proposal/attachments/types.js';
+import { processAttachment } from './proposal/attachments/index.js';
+import { getSignedUrlFromPath } from './proposal/attachments/storage-uploader.js';
 import type { MetaWhatsAppService } from './meta-whatsapp.js';
 import { enviarPropostaParaCliente } from './eva-sender.js';
 
@@ -530,6 +532,68 @@ export class ProposalAssistant {
     }
   }
 
+  // Processa attachments pendentes (foram salvos no Redis com mediaIdWaba + legenda).
+  // Para cada um: download WABA -> validate -> upload Supabase Storage -> persist DB.
+  // Retorna estrutura pronta pra o template renderizar (URLs assinadas + QR Code).
+  private async processarAnexosPendentes(
+    slug: string,
+    attachments: AttachmentInput[],
+  ): Promise<NonNullable<ProposalData['estudoPersonalizado']>> {
+    if (!this.supabaseService) throw new Error('SupabaseService nao configurado');
+    const supabase = this.supabaseService.getClient();
+    const accessToken = process.env.META_WABA_ACCESS_TOKEN;
+    if (!accessToken) throw new Error('META_WABA_ACCESS_TOKEN nao configurado');
+
+    const fotos: Array<{ url: string; legenda: string; ordem: number }> = [];
+    let video: NonNullable<ProposalData['estudoPersonalizado']>['video'] | undefined;
+
+    let fotoCount = 0;
+    let videoCount = 0;
+
+    for (const att of attachments) {
+      const result = await processAttachment(supabase, {
+        mediaIdWaba: att.mediaIdWaba,
+        accessToken,
+        proposalSlug: slug,
+        legenda: att.legenda,
+        fotoCount,
+        videoCount,
+      });
+
+      if (!result.ok) {
+        console.warn('[proposal] processAttachment falhou:', result.reason);
+        continue;
+      }
+
+      const r = result.record;
+      if (r.tipo === 'foto') {
+        fotoCount++;
+        fotos.push({
+          url: await getSignedUrlFromPath(supabase, r.storagePath),
+          legenda: r.legenda,
+          ordem: r.ordem,
+        });
+      } else {
+        videoCount++;
+        video = {
+          thumbnailUrl: r.thumbnailPath ? await getSignedUrlFromPath(supabase, r.thumbnailPath) : '',
+          legenda: r.legenda,
+          webVideoUrl: await getSignedUrlFromPath(supabase, r.storagePath),
+        };
+      }
+    }
+
+    fotos.sort((a, b) => a.ordem - b.ordem);
+
+    let qrCodeDataUrl: string | undefined;
+    if (video) {
+      const linkPublico = `${this.publicProposalBaseUrl}/p/${slug}`;
+      qrCodeDataUrl = await gerarQrCodeDataUrl(linkPublico);
+    }
+
+    return { fotos, video, qrCodeDataUrl };
+  }
+
   // Gera o PDF + HTML, faz upload no Drive, retorna links pro Junior.
   // Salva tambem em Redis pra "enviar" depois disparar pro cliente.
   private async generateProposal(
@@ -558,12 +622,30 @@ export class ProposalAssistant {
       const calculations = calcular(calcInput);
 
       const proposalData = this.dataToProposalData(data, calculations);
+
+      // Slug urlsafe 96 bits de entropia (16 chars base64url) — luxo, mas zero custo.
+      // Gerado ANTES do render pra que attachments referenciem este slug.
+      const slug = randomBytes(12).toString('base64url');
+
+      // Se modo personalizada com anexos pendentes, processa upload + thumbnail + QR.
+      const sessionState = await this.loadState(phone);
+      proposalData.tipo = sessionState.tipo ?? 'basica';
+
+      if (sessionState.tipo === 'personalizada' && sessionState.attachments.length > 0 && this.supabaseService) {
+        try {
+          proposalData.estudoPersonalizado = await this.processarAnexosPendentes(
+            slug,
+            sessionState.attachments,
+          );
+        } catch (err) {
+          console.warn('[proposal] Falha ao processar anexos:', (err as Error).message);
+          // Segue sem anexos — proposta gera mesmo, sem a secao "Estudamos seu Telhado"
+        }
+      }
+
       const html = renderProposalHTML(proposalData, calculations);
 
       const pdfBuffer = await htmlToPdf(html, { waitForChartMs: 2000 });
-
-      // Slug urlsafe 96 bits de entropia (16 chars base64url) — luxo, mas zero custo.
-      const slug = randomBytes(12).toString('base64url');
 
       // Drive (PDF + HTML interno) e Supabase (HTML publico) em paralelo.
       // Supabase eh prioridade — se Drive falhar, Junior ainda tem o link web pro cliente.
@@ -604,6 +686,7 @@ export class ProposalAssistant {
             clienteTelefone: data.telefoneCliente,
             htmlContent: html,
             dadosInput: dadosInputMinimo,
+            tipo: sessionState.tipo ?? 'basica',
           })
         : Promise.reject(new Error('Supabase service nao configurado'));
 

@@ -496,6 +496,7 @@ export class SupabaseService {
     clienteTelefone?: string;
     htmlContent: string;
     dadosInput?: Record<string, unknown>;
+    tipo?: 'basica' | 'personalizada';
   }): Promise<{ id: string; expiresAt: string }> {
     const { data, error } = await this.client
       .from('propostas_publicas')
@@ -506,6 +507,7 @@ export class SupabaseService {
         cliente_telefone: input.clienteTelefone ?? null,
         html_content: input.htmlContent,
         dados_input: input.dadosInput ?? null,
+        tipo: input.tipo ?? 'basica',
       })
       .select('id, expires_at')
       .single();
@@ -519,13 +521,14 @@ export class SupabaseService {
     html?: string;
     numeroProposta?: string;
     clienteNome?: string;
+    tipo?: 'basica' | 'personalizada';
   }> {
     // .maybeSingle() retorna data=null sem error pra "no rows".
     // Erro aqui = falha real de DB (conexao, schema, RLS) — propaga pro endpoint
     // retornar 500 em vez de 404 silencioso.
     const { data, error } = await this.client
       .from('propostas_publicas')
-      .select('html_content, numero_proposta, cliente_nome, expires_at, revoked')
+      .select('html_content, numero_proposta, cliente_nome, expires_at, revoked, tipo')
       .eq('slug', slug)
       .maybeSingle();
 
@@ -539,6 +542,7 @@ export class SupabaseService {
       html: data.html_content,
       numeroProposta: data.numero_proposta,
       clienteNome: data.cliente_nome,
+      tipo: data.tipo ?? 'basica',
     };
   }
 
