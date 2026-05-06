@@ -470,7 +470,7 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
         <div style="width:48px;height:48px;border-radius:12px;background:var(--primary-50);color:var(--primary-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">⚡</div>
         <h3 style="font-size:20px;margin-bottom:12px">Marcas Tier 1 INMETRO</h3>
-        <p style="color:var(--muted);font-size:15px;line-height:1.6">Trabalhamos só com fabricantes Tier 1 homologados — Trina, Jinko, JA, Sungrow, Huawei, Solis, Deye, SolarEdge. Não economizamos na qualidade dos equipamentos: sua geração é a nossa reputação.</p>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">Trabalhamos só com fabricantes Tier 1 homologados pelo INMETRO — <strong>Módulos:</strong> Trina, JA Solar, Jinko, LONGi, Risen, DAH. <strong>Inversores:</strong> Sungrow, Solis, Deye, Huawei, GoodWe, SolarEdge, Hoymiles, NEP. Não economizamos na qualidade: sua geração é a nossa reputação.</p>
       </div>
 
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
@@ -481,8 +481,8 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
 
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
         <div style="width:48px;height:48px;border-radius:12px;background:var(--primary-50);color:var(--primary-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">🤝</div>
-        <h3 style="font-size:20px;margin-bottom:12px">Relação direta, sem terceirização</h3>
-        <p style="color:var(--muted);font-size:15px;line-height:1.6">Equipe própria, do projeto à pós-venda. Você fala direto com quem executa. Sem subcontratado, sem repassar problema.</p>
+        <h3 style="font-size:20px;margin-bottom:12px">Engenheiro que atende direto</h3>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">Junior — <strong>engenheiro responsável, CREA-DF</strong> — assina sua ART e fica como ponto único de contato pelo WhatsApp. Do orçamento ao pós-venda, você fala com quem entende e decide. Instalação executada por equipe certificada sob supervisão técnica EcoSunPower.</p>
       </div>
 
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">

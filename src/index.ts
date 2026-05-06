@@ -1539,9 +1539,13 @@ Responda CURTO, maximo 2 paragrafos.`,
         await handleVideoMessage(msg.from, mediaRef(msg.content, msg.messageId), msg.caption);
         break;
       case 'document':
-        // Documento no WABA tem id separado do mime_type (parseMessage atualmente
-        // armazena mime_type em content). Mantido com messageId — bug separado a tratar.
-        await handleDocumentMessage(msg.from, msg.messageId, msg.content);
+        // Apos fix do parseMessage: msg.content = media_id (igual image/video),
+        // msg.mimeType = mime_type. Permite tryHandleProposalMedia baixar pelo media_id.
+        await handleDocumentMessage(
+          msg.from,
+          mediaRef(msg.content, msg.messageId),
+          msg.mimeType ?? msg.content,
+        );
         break;
       case 'location': {
         try {
@@ -1876,6 +1880,7 @@ Responda CURTO, maximo 2 paragrafos.`,
           messageId: parsed.messageId,
           pushName: parsed.pushName,
           caption: parsed.caption,
+          mimeType: parsed.mimeType,
         });
       } catch (err) {
         console.error('[waba] Webhook processing error:', (err as Error).message);
@@ -2116,6 +2121,7 @@ Responda CURTO, maximo 2 paragrafos.`,
       messageId: parsed.messageId,
       pushName: parsed.pushName,
       caption: parsed.caption,
+      mimeType: parsed.mimeType,
     });
 
     res.status(200).json({ status: 'queued' });

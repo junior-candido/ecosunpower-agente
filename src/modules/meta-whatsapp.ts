@@ -283,8 +283,10 @@ export class MetaWhatsAppService {
         return {
           ...base,
           type: 'document',
-          content: doc?.mime_type ?? '',
+          // content = media_id (consistente com image/video). mime_type vai em mimeType.
+          content: doc?.id ?? '',
           caption: doc?.filename,
+          mimeType: doc?.mime_type,
         };
       }
       case 'location': {

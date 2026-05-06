@@ -10,6 +10,7 @@ export interface QueueMessage {
   messageId: string;
   pushName?: string;
   caption?: string;
+  mimeType?: string;
 }
 
 type MessageHandler = (message: QueueMessage) => Promise<void>;

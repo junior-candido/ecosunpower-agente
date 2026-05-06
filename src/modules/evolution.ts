@@ -9,6 +9,7 @@ export interface IncomingMessage {
   fromMe: boolean;
   pushName?: string;
   caption?: string; // legenda em imagem/video
+  mimeType?: string; // mime do anexo (preenchido em document; tambem populado em image/video se vier no payload)
 }
 
 export class EvolutionService {
