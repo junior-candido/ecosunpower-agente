@@ -627,11 +627,26 @@ export class ProposalAssistant {
       // Gerado ANTES do render pra que attachments referenciem este slug.
       const slug = randomBytes(12).toString('base64url');
 
-      // Se modo personalizada com anexos pendentes, processa upload + thumbnail + QR.
       const sessionState = await this.loadState(phone);
       proposalData.tipo = sessionState.tipo ?? 'basica';
+      const temAnexos = sessionState.tipo === 'personalizada'
+        && sessionState.attachments.length > 0
+        && !!this.supabaseService;
 
-      if (sessionState.tipo === 'personalizada' && sessionState.attachments.length > 0 && this.supabaseService) {
+      // Pre-flight: se tem anexos, INSERT propostas_publicas STUB primeiro pra satisfazer FK.
+      // O html_content sera atualizado no fim com o conteudo real (com fotos embutidas).
+      // Sem essa pre-insercao, processAttachment falha com FK violation.
+      if (temAnexos) {
+        await this.supabaseService!.savePropostaPublica({
+          slug,
+          numeroProposta: proposalData.numeroProposta,
+          clienteNome: data.nomeCliente,
+          clienteTelefone: data.telefoneCliente,
+          htmlContent: '<!doctype html><html><body>Generating...</body></html>',
+          dadosInput: undefined,
+          tipo: sessionState.tipo,
+        });
+
         try {
           proposalData.estudoPersonalizado = await this.processarAnexosPendentes(
             slug,
@@ -639,7 +654,7 @@ export class ProposalAssistant {
           );
         } catch (err) {
           console.warn('[proposal] Falha ao processar anexos:', (err as Error).message);
-          // Segue sem anexos — proposta gera mesmo, sem a secao "Estudamos seu Telhado"
+          // Segue sem anexos — proposta sai sem a secao "Estudamos seu Telhado"
         }
       }
 
@@ -679,15 +694,18 @@ export class ProposalAssistant {
       };
 
       const supabasePromise = this.supabaseService
-        ? this.supabaseService.savePropostaPublica({
-            slug,
-            numeroProposta: proposalData.numeroProposta,
-            clienteNome: data.nomeCliente,
-            clienteTelefone: data.telefoneCliente,
-            htmlContent: html,
-            dadosInput: dadosInputMinimo,
-            tipo: sessionState.tipo ?? 'basica',
-          })
+        ? (temAnexos
+            // Stub ja foi inserido antes; aqui so atualiza o html_content com o real.
+            ? this.supabaseService.updatePropostaPublicaHtml(slug, html).then(() => ({ id: slug, expiresAt: '' }))
+            : this.supabaseService.savePropostaPublica({
+                slug,
+                numeroProposta: proposalData.numeroProposta,
+                clienteNome: data.nomeCliente,
+                clienteTelefone: data.telefoneCliente,
+                htmlContent: html,
+                dadosInput: dadosInputMinimo,
+                tipo: sessionState.tipo ?? 'basica',
+              }))
         : Promise.reject(new Error('Supabase service nao configurado'));
 
       const [uploadResult, publicResult] = await Promise.allSettled([drivePromise, supabasePromise]);

@@ -516,6 +516,14 @@ export class SupabaseService {
     return { id: data.id, expiresAt: data.expires_at };
   }
 
+  async updatePropostaPublicaHtml(slug: string, htmlContent: string): Promise<void> {
+    const { error } = await this.client
+      .from('propostas_publicas')
+      .update({ html_content: htmlContent })
+      .eq('slug', slug);
+    if (error) throw new Error(`Failed to update proposta html: ${error.message}`);
+  }
+
   async getPropostaPublicaBySlug(slug: string): Promise<{
     status: 'ok' | 'not_found' | 'expired' | 'revoked';
     html?: string;
