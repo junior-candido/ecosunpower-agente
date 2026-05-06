@@ -806,11 +806,28 @@ export class ProposalAssistant {
     };
     const percentualFioB = fioBPercentMap[ano] ?? 1.00;
 
+    // Fallback de consumoMensalKwh: campo critico do calculator (define payback/ROI).
+    // Quando Junior passa override de geracao mas esquece consumo, derivamos:
+    // 1. Se ele deu geracaoMensalKwh explicito, assume consumo == geracao (autoconsumo 100%)
+    // 2. Se nao, calcula geracao a partir de potenciaKwp/HSP/fator e usa como consumo
+    // 3. So depois cai em zero (quando nem kWp tem)
+    const fatorPerda = Number(data.fatorPerda) || 0.80;
+    const potenciaKwp = Number(data.potenciaKwp);
+    let consumoMensalKwh = Number(data.consumoMensalKwh);
+    if (!isFinite(consumoMensalKwh) || consumoMensalKwh <= 0) {
+      const geracaoExplicita = Number(data.geracaoMensalKwh ?? data.geracaoKwh ?? data.geracao);
+      if (isFinite(geracaoExplicita) && geracaoExplicita > 0) {
+        consumoMensalKwh = geracaoExplicita;
+      } else if (isFinite(potenciaKwp) && potenciaKwp > 0) {
+        consumoMensalKwh = potenciaKwp * hsp * 30 * fatorPerda;
+      }
+    }
+
     return {
-      potenciaKwp: Number(data.potenciaKwp),
-      fatorPerda: Number(data.fatorPerda),
+      potenciaKwp,
+      fatorPerda,
       hsp,
-      consumoMensalKwh: Number(data.consumoMensalKwh),
+      consumoMensalKwh,
       tarifaRsKwh: Number(data.tarifaRsKwh ?? tarifaDefault),
       tusdFioBRsKwh: Number(data.tusdFioBRsKwh ?? tusdFioBDefault),
       percentualFioBVigente: Number(data.percentualFioBVigente ?? percentualFioB),
