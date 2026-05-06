@@ -432,8 +432,10 @@ async function main() {
       }
 
       if (!config.githubPat) {
-        await sendText(from, `⚠️ GitHub PAT nao configurado no Easypanel (env GITHUB_PAT). Draft "${draft.title}" segue marcado como aprovado mas precisa publicar manualmente.`);
-        await blogGenerator.markApproved(draft.id);
+        // NAO marca como aprovado: deixa em pending pra Junior retentar quando configurar
+        // o PAT. Marcar como aprovado fazia o draft sumir de getPendingDrafts e quebrava
+        // o retry sem intervencao manual no banco.
+        await sendText(from, `⚠️ GitHub PAT nao configurado no Easypanel (env GITHUB_PAT). Draft "${draft.title}" segue como pendente — configure o GITHUB_PAT e responda "publicar" de novo.`);
         return true;
       }
 
