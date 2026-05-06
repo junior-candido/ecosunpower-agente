@@ -26,7 +26,7 @@ export interface ProposalData {
 
   // Equipamentos
   modulo: { fabricante: string; modelo: string; potenciaW: number; quantidade: number; garantiaDefeito: number; garantiaEficiencia: number; tecnologia?: string };
-  inversor: { fabricante: string; modelo: string; potenciaW: number; quantidade: number; garantia: number; eficiencia?: number };
+  inversor: { fabricante: string; modelo: string; potenciaW: number; quantidade: number; garantia: number; eficiencia?: number; tipoInversor?: 'string' | 'microinversor' | 'solaredge' };
   // Tipo de estrutura de fixacao - ex: "Telha cerâmica", "Telha metálica",
   // "Telha fibrocimento", "Laje", "Solo", "Carport". Pode incluir marca/material.
   estruturaFixacao?: { tipo: string; material?: string; descricao?: string };
@@ -349,7 +349,7 @@ footer strong{color:#fff;font-weight:600}
         <div class="equipment-specs">
           <div><div class="spec-label">Quantidade</div><div class="spec-value">${data.inversor.quantidade} unidade${data.inversor.quantidade > 1 ? 's' : ''}</div></div>
           <div><div class="spec-label">Potência</div><div class="spec-value">${fmtNum(data.inversor.potenciaW)} W</div></div>
-          <div><div class="spec-label">Garantia</div><div class="spec-value">${data.inversor.garantia} anos</div></div>
+          <div><div class="spec-label">Garantia</div><div class="spec-value">${data.inversor.garantia} anos${data.inversor.tipoInversor === 'solaredge' ? ' · extensível até 20 anos' : ''}</div></div>
           <div><div class="spec-label">Monitoramento</div><div class="spec-value">Wi-Fi nativo</div></div>
         </div>
       </div>

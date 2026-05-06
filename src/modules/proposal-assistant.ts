@@ -103,7 +103,7 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
     "modalidade": "autoconsumo local",
     "concessionaria": "Neoenergia DF",
     "modulo": { "fabricante": "Trina", "modelo": "Vertex 700W", "potenciaW": 700, "quantidade": 12, "garantiaDefeito": 12, "garantiaEficiencia": 30, "tecnologia": "TOPCon N-Type Bifacial" },
-    "inversor": { "fabricante": "Sungrow", "modelo": "SG5.0RS-L", "potenciaW": 5000, "quantidade": 1, "garantia": 10, "eficiencia": 0.985 },
+    "inversor": { "fabricante": "Sungrow", "modelo": "SG5.0RS-L", "potenciaW": 5000, "quantidade": 1, "garantia": 10, "eficiencia": 0.985, "tipoInversor": "string" },
     "estruturaFixacao": { "tipo": "Telha cerâmica", "material": "Alumínio anodizado + parafusos inox", "descricao": "Ganchos com regulagem de altura" },
     "valorTotalRs": 38500,
     "formasPagamento": [
@@ -145,7 +145,19 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
 - custoDisponibilidadeMensal: monofásico 50, trifásico 100
 - modulo.garantiaDefeito: Trina/JA/Jinko = 12, Risen = 12
 - modulo.garantiaEficiencia: TOPCon N-Type = 30, mono normal = 25
-- inversor.garantia: Sungrow/Solis/Deye/Huawei = 10, Goodwe = 10
+- inversor.garantia (REGRA POR TIPO):
+  - **MICROINVERSOR** (Hoymiles, Enphase, NEP, APsystems): **12 anos**
+  - **INVERSOR STRING** (Sungrow, Solis, Deye, Huawei, Goodwe): **10 anos**
+  - **SOLAREDGE** (otimizadores): **12 anos** padrão, com nota "extensível até 20 anos sob demanda" no template
+- inversor.tipoInversor: detecta pelo fabricante:
+  - "hoymiles", "enphase", "nep", "apsystems" → "microinversor"
+  - "solaredge" → "solaredge"
+  - resto → "string"
+- inversor.modelo (DEFAULTS quando Junior fala só fabricante):
+  - **Hoymiles**: padrão HM-2250-4T (microinversor 2,25 kW 4 entradas — mais atual). Junior fala se for outro.
+  - **Sungrow**: padrão SG5.0RS-L. Junior fala se for outro.
+  - **Solis**: padrão S6-GR1P5K. Junior fala se for outro.
+  - **Deye**: padrão SUN-5K-G. Junior fala se for outro.
 - estruturaFixacao.tipo: Junior diz tipo do telhado/superficie. Mapeie:
   - "cerâmica/colonial/portuguesa" → "Telha cerâmica"
   - "metálica/sanduíche/zipada" → "Telha metálica"
