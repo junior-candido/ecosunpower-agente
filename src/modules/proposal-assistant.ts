@@ -395,13 +395,27 @@ export class ProposalAssistant {
     }
 
     // Intercepta legenda quando ha midia pendente esperando descricao.
+    // Aceita qualquer frase: 1 ate 250 chars, ou "pula"/"sem legenda" pra deixar vazio.
     {
       const state = await this.loadState(phone);
       if (state.pendingMediaId && state.pendingMediaType) {
-        const legenda = message.trim();
-        if (legenda.length === 0 || legenda.length > 100) {
-          return '⚠️ Legenda inválida (precisa ter entre 1 e 100 caracteres). Tenta de novo:';
+        let legenda = message.trim();
+
+        // Junior pode pular: usa fallback automatico
+        if (/^(pula|pular|sem legenda|nada|skip|-)$/i.test(legenda)) {
+          const fotosAtuais = state.attachments.filter((a) => a.tipo === 'foto').length;
+          legenda = state.pendingMediaType === 'foto'
+            ? `Estudo ${fotosAtuais + 1}`
+            : 'Simulação';
         }
+
+        if (legenda.length === 0) {
+          return '⚠️ Manda algum texto pra legenda — ou responde "pula" pra usar legenda padrão.';
+        }
+        if (legenda.length > 250) {
+          legenda = legenda.slice(0, 247) + '...';
+        }
+
         state.attachments.push({
           tipo: state.pendingMediaType,
           legenda,

@@ -77,31 +77,28 @@ function renderEstudoPersonalizado(estudo: NonNullable<ProposalData['estudoPerso
   const { fotos, video, qrCodeDataUrl } = estudo;
   const fotoCount = fotos.length;
 
+  // Marca d'agua EcoSunPower no canto inferior direito de cada foto/video.
+  // Usa o mesmo branding do header (texto + dot dourado glow) com fundo escuro semi-transparente.
+  const watermark = `<div style="position:absolute;bottom:10px;right:10px;background:rgba(26,58,82,0.88);color:#fff;padding:5px 11px;border-radius:6px;font-family:'Space Grotesk',-apple-system,sans-serif;font-weight:700;font-size:10px;letter-spacing:1.5px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.2)"><span style="width:6px;height:6px;border-radius:50%;background:#FFC72C;box-shadow:0 0 6px rgba(255,199,44,0.8)"></span>ECOSUNPOWER</div>`;
+
+  const renderFoto = (f: { url: string; legenda: string }, extra = '') => `
+    <figure style="margin:0;${extra}">
+      <div style="position:relative">
+        <img src="${escapeHtml(f.url)}" style="width:100%;border-radius:12px;display:block">
+        ${watermark}
+      </div>
+      <figcaption style="text-align:center;margin-top:10px;font-size:13px;color:#555;font-style:italic">${escapeHtml(f.legenda)}</figcaption>
+    </figure>`;
+
   let fotosHtml = '';
   if (fotoCount === 1) {
-    fotosHtml = `<div style="display:flex;justify-content:center"><figure style="max-width:90%;margin:0">
-      <img src="${escapeHtml(fotos[0].url)}" style="width:100%;border-radius:12px;display:block">
-      <figcaption style="text-align:center;margin-top:10px;font-size:13px;color:#555;font-style:italic">${escapeHtml(fotos[0].legenda)}</figcaption>
-    </figure></div>`;
+    fotosHtml = `<div style="display:flex;justify-content:center"><div style="max-width:90%;width:100%">${renderFoto(fotos[0])}</div></div>`;
   } else if (fotoCount === 2) {
-    fotosHtml = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-      ${fotos.map(f => `<figure style="margin:0">
-        <img src="${escapeHtml(f.url)}" style="width:100%;border-radius:12px;display:block">
-        <figcaption style="text-align:center;margin-top:10px;font-size:13px;color:#555;font-style:italic">${escapeHtml(f.legenda)}</figcaption>
-      </figure>`).join('')}
-    </div>`;
+    fotosHtml = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">${fotos.map(f => renderFoto(f)).join('')}</div>`;
   } else if (fotoCount >= 3) {
     fotosHtml = `
-      <figure style="margin:0 0 16px">
-        <img src="${escapeHtml(fotos[0].url)}" style="width:100%;border-radius:12px;display:block">
-        <figcaption style="text-align:center;margin-top:10px;font-size:13px;color:#555;font-style:italic">${escapeHtml(fotos[0].legenda)}</figcaption>
-      </figure>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-        ${[fotos[1], fotos[2]].map(f => `<figure style="margin:0">
-          <img src="${escapeHtml(f.url)}" style="width:100%;border-radius:12px;display:block">
-          <figcaption style="text-align:center;margin-top:10px;font-size:13px;color:#555;font-style:italic">${escapeHtml(f.legenda)}</figcaption>
-        </figure>`).join('')}
-      </div>`;
+      ${renderFoto(fotos[0], 'margin-bottom:16px')}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">${[fotos[1], fotos[2]].map(f => renderFoto(f)).join('')}</div>`;
   }
 
   let videoHtml = '';
@@ -109,7 +106,10 @@ function renderEstudoPersonalizado(estudo: NonNullable<ProposalData['estudoPerso
     videoHtml = `
       <div data-video-block data-video-url="${escapeHtml(video.webVideoUrl)}" style="margin-top:24px;background:#f7f9fc;padding:24px;border-radius:12px;display:grid;grid-template-columns:2fr 1fr;gap:24px;align-items:center">
         <figure style="margin:0">
-          ${video.thumbnailUrl ? `<img src="${escapeHtml(video.thumbnailUrl)}" style="width:100%;border-radius:8px;display:block">` : `<div style="width:100%;aspect-ratio:16/9;background:#1a3a52;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:48px">▶</div>`}
+          <div style="position:relative">
+            ${video.thumbnailUrl ? `<img src="${escapeHtml(video.thumbnailUrl)}" style="width:100%;border-radius:8px;display:block">` : `<div style="width:100%;aspect-ratio:16/9;background:#1a3a52;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:48px">▶</div>`}
+            ${watermark}
+          </div>
           <figcaption style="margin-top:10px;font-size:13px;color:#555;font-style:italic">🎥 ${escapeHtml(video.legenda)}</figcaption>
         </figure>
         <div style="text-align:center">
