@@ -577,6 +577,12 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
   // Message handler
   async function handleTextMessage(from: string, text: string) {
+    // Comandos admin de blog (publicar/descartar/blog status) PRECISAM vir primeiro,
+    // antes dos modos /preco /proposta /agenda — porque Junior pode estar em qualquer
+    // modo e ainda assim querer publicar/descartar um draft. tryHandleJuniorBlogCommand
+    // ja gateia em isAdminPhone, entao nao afeta clientes.
+    if (await tryHandleJuniorBlogCommand(from, text)) return;
+
     // Eva Precificadora tem prioridade total quando Junior usa /preco ou esta em modo
     if (await tryHandlePricingCommand(from, text)) return;
 
@@ -585,9 +591,6 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // Eva Agendadora — prioridade depois do pricing
     if (await tryHandleSchedulingCommand(from, text)) return;
-
-    // Comandos de blog do Junior tem prioridade sobre fluxo de cliente
-    if (await tryHandleJuniorBlogCommand(from, text)) return;
 
     if (await takeover.isPaused(from)) {
       console.log(`[takeover] Skipping message from ${from} — human takeover active`);
