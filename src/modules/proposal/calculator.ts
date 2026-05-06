@@ -26,6 +26,11 @@ export interface ProposalInput {
 
   // Outros parametros
   vidaUtilAnos: number; // default 25
+
+  // Override opcional de geracao (PVSol/PVsyst real). Quando setado, calcular()
+  // usa esse valor em vez de derivar de kWp×HSP×30×fator. Util pra propostas
+  // baseadas em estudo de simulacao do telhado real (com orientacao/sombreamento).
+  geracaoMensalKwhOverride?: number;
 }
 
 export interface ProposalCalculations {
@@ -210,10 +215,14 @@ export function calcular(input: ProposalInput): ProposalCalculations {
     reajusteAnualEnergia,
     valorTotalRs,
     vidaUtilAnos,
+    geracaoMensalKwhOverride,
   } = input;
 
-  // Geracao
-  const geracaoMensalKwh = calcularGeracaoMensal(potenciaKwp, hsp, fatorPerda);
+  // Geracao: usa override do PVSol/PVsyst se fornecido (estudo real do telhado),
+  // caso contrario calcula pela formula simples.
+  const geracaoMensalKwh = (geracaoMensalKwhOverride && geracaoMensalKwhOverride > 0)
+    ? geracaoMensalKwhOverride
+    : calcularGeracaoMensal(potenciaKwp, hsp, fatorPerda);
   const geracaoAnualKwh = geracaoMensalKwh * 12;
   const geracaoVidaUtilKwh = geracaoAnualKwh * vidaUtilAnos;
 

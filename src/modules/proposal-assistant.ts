@@ -48,6 +48,7 @@ interface ClaudeResponse {
   missing?: string[];
   data?: Partial<ProposalData> & {
     consumoMensalKwh?: number;
+    geracaoMensalKwh?: number;     // override do PVSol/PVsyst, se Junior fornecer
     fatorPerda?: number;
     tarifaRsKwh?: number;
     custoDisponibilidadeMensal?: number;
@@ -99,6 +100,7 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
     "potenciaKwp": 8.4,
     "fatorPerda": 0.80,
     "consumoMensalKwh": 1000,
+    "geracaoMensalKwh": 1080,
     "tarifaRsKwh": 1.05,
     "custoDisponibilidadeMensal": 50,
     "tipoCliente": "residencial",
@@ -823,6 +825,12 @@ export class ProposalAssistant {
       }
     }
 
+    // Override de geracao: quando Junior passa o numero do PVSol/PVsyst, respeita.
+    const geracaoOverrideRaw = Number(data.geracaoMensalKwh ?? data.geracaoKwh ?? data.geracao);
+    const geracaoMensalKwhOverride = (isFinite(geracaoOverrideRaw) && geracaoOverrideRaw > 0)
+      ? geracaoOverrideRaw
+      : undefined;
+
     return {
       potenciaKwp,
       fatorPerda,
@@ -836,6 +844,7 @@ export class ProposalAssistant {
       reajusteAnualEnergia: 0.10,
       valorTotalRs: Number(data.valorTotalRs),
       vidaUtilAnos: 25,
+      geracaoMensalKwhOverride,
     };
   }
 
