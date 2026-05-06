@@ -3023,10 +3023,15 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
             if (signed?.signedUrl) {
               const escLegenda = String(videoAttach.legenda).replace(/[<>&"]/g, (c) =>
                 ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] ?? c));
-              const videoTag = `<video controls autoplay muted loop playsinline style="width:100%;border-radius:12px;display:block;background:#000">
-  <source src="${signed.signedUrl}" type="video/mp4">
-  Seu navegador não suporta vídeo HTML5.
-</video>
+              // Importa logo base64 dinamicamente pra adicionar watermark sobre o video
+              const { LOGO_ECOSUNPOWER_BRANCO_BASE64 } = await import('./modules/proposal/assets/logo-base64.js');
+              const videoTag = `<div style="position:relative">
+  <video controls autoplay muted loop playsinline style="width:100%;border-radius:12px;display:block;background:#000">
+    <source src="${signed.signedUrl}" type="video/mp4">
+    Seu navegador não suporta vídeo HTML5.
+  </video>
+  <img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" style="position:absolute;bottom:50px;right:12px;height:42px;width:auto;opacity:0.92;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.5));pointer-events:none">
+</div>
 <p style="text-align:center;font-size:13px;color:#555;font-style:italic;margin-top:10px">🎥 ${escLegenda}</p>`;
 
               // Substitui o bloco data-video-block inteiro pelo <video>

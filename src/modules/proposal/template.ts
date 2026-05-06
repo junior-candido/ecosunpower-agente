@@ -3,6 +3,7 @@
 // Standalone (CSS inline). Usado tanto pra publicacao web quanto pra geracao de PDF.
 
 import type { ProposalCalculations } from './calculator.js';
+import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './assets/logo-base64.js';
 
 export interface ProposalData {
   // Identificacao
@@ -77,9 +78,10 @@ function renderEstudoPersonalizado(estudo: NonNullable<ProposalData['estudoPerso
   const { fotos, video, qrCodeDataUrl } = estudo;
   const fotoCount = fotos.length;
 
-  // Marca d'agua EcoSunPower no canto inferior direito de cada foto/video.
-  // Usa o mesmo branding do header (texto + dot dourado glow) com fundo escuro semi-transparente.
-  const watermark = `<div style="position:absolute;bottom:10px;right:10px;background:rgba(26,58,82,0.88);color:#fff;padding:5px 11px;border-radius:6px;font-family:'Space Grotesk',-apple-system,sans-serif;font-weight:700;font-size:10px;letter-spacing:1.5px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,0.2)"><span style="width:6px;height:6px;border-radius:50%;background:#FFC72C;box-shadow:0 0 6px rgba(255,199,44,0.8)"></span>ECOSUNPOWER</div>`;
+  // Marca d'agua EcoSunPower com logo oficial (PNG branco transparente).
+  // Posicionada no canto inferior direito com leve sombra pra garantir leitura
+  // sobre fundos claros e escuros.
+  const watermark = `<img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" style="position:absolute;bottom:12px;right:12px;height:42px;width:auto;opacity:0.92;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.5))">`;
 
   const renderFoto = (f: { url: string; legenda: string }, extra = '') => `
     <figure style="margin:0;${extra}">
