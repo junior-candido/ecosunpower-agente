@@ -301,6 +301,43 @@ export class ProposalAssistant {
     return await this.loadState(phone);
   }
 
+  // Detecta se Junior esta em modo proposta personalizada e envia midia.
+  // Salva o media_id como pendente, pede legenda. Quando legenda chegar (proxima msg de texto),
+  // o processProposalMessage adiciona ao state.attachments e responde confirmacao.
+  async handleIncomingMedia(
+    phone: string,
+    mediaId: string,
+    mediaType: 'image' | 'video' | 'document',
+  ): Promise<string | null> {
+    const state = await this.loadState(phone);
+    if (state.tipo !== 'personalizada') {
+      return null; // nao esta em modo personalizada — nao processa
+    }
+
+    // Detecta categoria. Image e video sao obvios. Document pode ser foto ou video
+    // dependendo do mimeType — mas a essa altura nao temos o mimeType ainda.
+    // Trata document como "video se mediaType==='video' else foto" — vai validar depois quando baixar.
+    // Junior costuma mandar imagens e videos como "document" pra preservar qualidade.
+    // Por enquanto marcamos como tipo provavel; processAttachment valida real quando baixar.
+    const tipoProvavel: 'foto' | 'video' = mediaType === 'video' ? 'video' : 'foto';
+
+    state.pendingMediaId = mediaId;
+    state.pendingMediaType = tipoProvavel;
+    await this.saveState(phone, state);
+
+    const fotosAtuais = state.attachments.filter((a) => a.tipo === 'foto').length;
+    const videosAtuais = state.attachments.filter((a) => a.tipo === 'video').length;
+    const numero = tipoProvavel === 'foto' ? fotosAtuais + 1 : videosAtuais + 1;
+    const limite = tipoProvavel === 'foto' ? 3 : 1;
+
+    return [
+      `📎 ${tipoProvavel === 'foto' ? `Foto ${numero}/${limite}` : 'Vídeo'} recebida.`,
+      '',
+      `Qual a legenda? (ex: ${tipoProvavel === 'foto' ? '"Vista superior do telhado"' : '"Simulação sombreamento 7h-18h"'})`,
+      '_(curta, máx 100 caracteres)_',
+    ].join('\n');
+  }
+
   async startProposalMode(phone: string, initialMessage?: string): Promise<string> {
     await this.redis.setex(`proposal:${phone}`, PROPOSAL_MODE_TTL_SECONDS, '1');
     await this.redis.del(`proposal:history:${phone}`);
@@ -353,6 +390,32 @@ export class ProposalAssistant {
     if (ProposalAssistant.isExitTrigger(message)) {
       await this.exitProposalMode(phone);
       return '👍 Saiu do modo proposta.';
+    }
+
+    // Intercepta legenda quando ha midia pendente esperando descricao.
+    {
+      const state = await this.loadState(phone);
+      if (state.pendingMediaId && state.pendingMediaType) {
+        const legenda = message.trim();
+        if (legenda.length === 0 || legenda.length > 100) {
+          return '⚠️ Legenda inválida (precisa ter entre 1 e 100 caracteres). Tenta de novo:';
+        }
+        state.attachments.push({
+          tipo: state.pendingMediaType,
+          legenda,
+          mediaIdWaba: state.pendingMediaId,
+        });
+        state.pendingMediaId = undefined;
+        state.pendingMediaType = undefined;
+        await this.saveState(phone, state);
+
+        const fotos = state.attachments.filter((a) => a.tipo === 'foto').length;
+        const videos = state.attachments.filter((a) => a.tipo === 'video').length;
+        const partes: string[] = [];
+        if (fotos > 0) partes.push(`${fotos}/3 fotos`);
+        if (videos > 0) partes.push(`${videos}/1 vídeo`);
+        return `✅ Anexado: "${legenda}"\n\nTotal: ${partes.join(' + ')}.\n\nManda mais arquivo(s) ou continue com os dados do cliente/sistema.`;
+      }
     }
 
     // Intercepta "enviar"/"manda"/"envia" quando ha proposta gerada e modo eva_envia.

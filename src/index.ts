@@ -1219,6 +1219,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
   // Handle image messages
   async function handleImageMessage(from: string, messageId: string) {
+    if (await tryHandleProposalMedia(from, messageId, 'image')) return;
+
     if (await takeover.isPaused(from)) {
       console.log(`[takeover] Skipping image from ${from} — human takeover active`);
       return;
@@ -1284,6 +1286,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
   // Handle video messages (depoimentos, casos, registros)
   async function handleVideoMessage(from: string, messageId: string, caption?: string) {
+    if (await tryHandleProposalMedia(from, messageId, 'video')) return;
+
     if (await takeover.isPaused(from)) {
       console.log(`[takeover] Skipping video from ${from} — human takeover active`);
       return;
@@ -1373,8 +1377,26 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     }
   }
 
+  // Helper: se admin em modo proposta personalizada, intercepta midia pro
+  // fluxo de anexos (estudo personalizado). Retorna true se tratou.
+  async function tryHandleProposalMedia(
+    from: string,
+    messageId: string,
+    mediaType: 'image' | 'video' | 'document',
+  ): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    if (!(await proposalAssistant.isInProposalMode(from))) return false;
+    const reply = await proposalAssistant.handleIncomingMedia(from, messageId, mediaType);
+    if (reply === null) return false; // nao era personalizada
+    await sendText(from, reply);
+    return true;
+  }
+
   // Handle document messages (PDF)
   async function handleDocumentMessage(from: string, messageId: string, mimetype: string) {
+    // PRIORIDADE: se Junior anexou doc pra proposta personalizada, captura aqui
+    if (await tryHandleProposalMedia(from, messageId, 'document')) return;
+
     if (await takeover.isPaused(from)) {
       console.log(`[takeover] Skipping document from ${from} — human takeover active`);
       return;
