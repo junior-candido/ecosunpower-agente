@@ -28,6 +28,7 @@ import { ReengagementCadence } from './modules/reengagement-cadence.js';
 import { PostInstallService, INSTALLATION_STATUSES } from './modules/post-install.js';
 import { TestimonialService, TestimonialFormat } from './modules/testimonials.js';
 import { SiteDeployService } from './modules/site-deploy.js';
+import { PublicReviewsService } from './modules/public-reviews.js';
 import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone } from './modules/meta-leadgen.js';
 import { parseTrackingTag } from './modules/tracking.js';
 import { generateWeeklyReport, formatReportForWhatsApp } from './modules/ads-report.js';
@@ -366,6 +367,7 @@ async function main() {
 
   const testimonials = new TestimonialService(supabase.getClient());
   const siteDeploy = new SiteDeployService({ hookUrl: config.cloudflareDeployHookUrl });
+  const publicReviews = new PublicReviewsService(supabase.getClient());
 
   // Valida que o bucket 'testimonials' existe. Se nao existir, videos de
   // depoimento nao serao salvos (fluxo continua funcionando mas sem storage).
@@ -582,17 +584,21 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
-  // Comandos admin de depoimento (tabela testimonials).
-  // /aprovar-depoimento <id> -> seta usable_for_marketing=true e dispara rebuild Cloudflare
-  // /google-postou <id>      -> seta google_posted=true e dispara rebuild
+  // Comandos admin de depoimento (tabela testimonials) e review publico (tabela public_reviews).
+  // /aprovar-depoimento <id>  -> testimonials.usable_for_marketing=true + rebuild
+  // /google-postou <id>       -> testimonials.google_posted=true + rebuild
+  // /aprovar-review <id>      -> public_reviews.approved_for_marketing=true + rebuild
+  // /reviews-pendentes        -> lista as ultimas 10 public_reviews aguardando aprovacao
   async function tryHandleTestimonialAdminCommand(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
 
     const trimmed = text.trim();
     const matchAprovar = trimmed.match(/^\/aprovar-depoimento\s+(\S+)$/i);
     const matchGoogle = trimmed.match(/^\/google-postou\s+(\S+)$/i);
+    const matchAprovarReview = trimmed.match(/^\/aprovar-review\s+(\S+)$/i);
+    const matchListarReviews = /^\/reviews-pendentes$/i.test(trimmed);
 
-    if (!matchAprovar && !matchGoogle) return false;
+    if (!matchAprovar && !matchGoogle && !matchAprovarReview && !matchListarReviews) return false;
 
     try {
       if (matchAprovar) {
@@ -607,6 +613,24 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         const ok = await siteDeploy.dispatchRebuild();
         const tail = ok ? 'Selo "Verificado no Google" aparece apos rebuild.' : 'Site nao rebuildou (deploy hook ausente).';
         await sendText(from, `✅ Depoimento ${id} marcado como postado no Google. ${tail}`);
+      } else if (matchAprovarReview) {
+        const id = matchAprovarReview[1];
+        const row = await publicReviews.approve(id);
+        const ok = await siteDeploy.dispatchRebuild();
+        const tail = ok ? 'Site rebuildando em ~30s.' : 'CLOUDFLARE_DEPLOY_HOOK_URL nao configurado — review aprovado mas site nao rebuildou.';
+        await sendText(from, `✅ Review ${row.cliente_nome} (${row.estrelas}⭐) aprovado. ${tail}`);
+      } else if (matchListarReviews) {
+        const pending = await publicReviews.listPending(10);
+        if (pending.length === 0) {
+          await sendText(from, 'Nenhum review pendente de aprovacao 🎉');
+        } else {
+          const lines = pending.map(r => {
+            const cidade = r.cliente_cidade ? ` · ${r.cliente_cidade}` : '';
+            const texto = r.texto ? `\n   "${r.texto.slice(0, 120)}${r.texto.length > 120 ? '...' : ''}"` : '';
+            return `• ${r.cliente_nome} (${r.estrelas}⭐)${cidade}${texto}\n   id: ${r.id}`;
+          });
+          await sendText(from, `📝 ${pending.length} review(s) pendente(s):\n\n${lines.join('\n\n')}\n\nPra aprovar: /aprovar-review <id>`);
+        }
       }
     } catch (err) {
       console.error('[testimonial-admin] Error:', (err as Error).message);
