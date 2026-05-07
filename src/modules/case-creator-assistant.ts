@@ -320,12 +320,15 @@ export class CaseCreatorAssistant {
         const ext = this.extFromMime(downloaded.mimetype);
 
         if (m.type === 'video') {
-          // Upload do video pro Supabase
-          const videoKey = `${slugWithNum}/video.${ext}`;
-          const url = await this.uploadToSupabase(videoKey, buf, downloaded.mimetype);
+          // Garante MP4 web-ready (moov atom no inicio) — sem isso Chrome desktop
+          // nao toca videos do WhatsApp (que vem com metadata no final do arquivo).
+          const webReady = await this.makeWebReadyVideo(buf);
+
+          const videoKey = `${slugWithNum}/video.mp4`; // forca .mp4 apos remux
+          const url = await this.uploadToSupabase(videoKey, webReady, 'video/mp4');
           if (!videoUrl) videoUrl = url;
 
-          // Extrai frame se ainda nao tem cover
+          // Extrai frame se ainda nao tem cover (usa o original mesmo, mais rapido)
           if (!coverPath) {
             const frame = await this.extractFrameFromVideo(buf);
             if (frame) {
@@ -465,6 +468,44 @@ export class CaseCreatorAssistant {
     if (error) throw new Error(`Supabase upload falhou: ${error.message}`);
     const { data } = this.supabase.storage.from(CASES_BUCKET).getPublicUrl(key);
     return data.publicUrl;
+  }
+
+  // Roda ffmpeg "remux" com faststart. NAO re-encoda (rapido, alguns segundos).
+  // Move o moov atom (metadata) pro INICIO do arquivo, permitindo streaming
+  // progressivo no Chrome/Firefox desktop. Sem isso, video do WhatsApp nao toca
+  // no desktop (so no celular que tem player tolerante).
+  private async makeWebReadyVideo(videoBuf: Buffer): Promise<Buffer> {
+    let tempDir: string | undefined;
+    try {
+      tempDir = await mkdtemp(join(tmpdir(), 'case-remux-'));
+      const inputPath = join(tempDir, 'input.mp4');
+      const outputPath = join(tempDir, 'output.mp4');
+      await writeFile(inputPath, videoBuf);
+
+      const ok = await new Promise<boolean>((resolve) => {
+        const args = ['-y', '-i', inputPath, '-c', 'copy', '-movflags', '+faststart', outputPath];
+        const p = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+        p.on('error', () => resolve(false));
+        p.on('close', code => resolve(code === 0));
+      });
+
+      if (!ok) {
+        console.warn('[case-creator] ffmpeg remux falhou, usando video original (pode nao tocar no desktop)');
+        return videoBuf;
+      }
+
+      return await readFile(outputPath);
+    } catch (err) {
+      console.warn('[case-creator] erro no remux:', (err as Error).message);
+      return videoBuf;
+    } finally {
+      if (tempDir) {
+        try {
+          await unlink(join(tempDir, 'input.mp4')).catch(() => {});
+          await unlink(join(tempDir, 'output.mp4')).catch(() => {});
+        } catch {}
+      }
+    }
   }
 
   // Extrai 1 frame (segundo 5) do video usando ffmpeg local. Retorna Buffer JPEG.
