@@ -2,6 +2,8 @@ import type { QueueMessage } from './queue.js';
 
 interface RouterHandlers {
   onTextMessage: (from: string, text: string) => Promise<void>;
+  onImageMessage?: (from: string, mediaId: string) => Promise<void>;
+  onVideoMessage?: (from: string, mediaId: string) => Promise<void>;
   onUnsupported?: (from: string, type: string) => void;
 }
 
@@ -30,9 +32,23 @@ export class Router {
       case 'text':
         await this.handlers.onTextMessage(message.from, message.content);
         break;
-      case 'audio':
       case 'image':
+        if (this.handlers.onImageMessage) {
+          await this.handlers.onImageMessage(message.from, message.content);
+        } else {
+          this.handlers.onUnsupported?.(message.from, message.type);
+        }
+        break;
+      case 'video':
+        if (this.handlers.onVideoMessage) {
+          await this.handlers.onVideoMessage(message.from, message.content);
+        } else {
+          this.handlers.onUnsupported?.(message.from, 'video');
+        }
+        break;
+      case 'audio':
       case 'location':
+      case 'document':
         this.handlers.onUnsupported?.(message.from, message.type);
         break;
     }

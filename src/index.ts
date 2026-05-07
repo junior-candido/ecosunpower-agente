@@ -29,6 +29,7 @@ import { PostInstallService, INSTALLATION_STATUSES } from './modules/post-instal
 import { TestimonialService, TestimonialFormat } from './modules/testimonials.js';
 import { SiteDeployService } from './modules/site-deploy.js';
 import { PublicReviewsService } from './modules/public-reviews.js';
+import { CaseCreatorAssistant } from './modules/case-creator-assistant.js';
 import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone } from './modules/meta-leadgen.js';
 import { parseTrackingTag } from './modules/tracking.js';
 import { generateWeeklyReport, formatReportForWhatsApp } from './modules/ads-report.js';
@@ -369,6 +370,23 @@ async function main() {
   const siteDeploy = new SiteDeployService({ hookUrl: config.cloudflareDeployHookUrl });
   const publicReviews = new PublicReviewsService(supabase.getClient());
 
+  const caseCreator = (config.githubPat && metaWaba)
+    ? new CaseCreatorAssistant({
+        redisHost: config.redisHost,
+        redisPort: config.redisPort,
+        redisPassword: config.redisPassword,
+        supabase: supabase.getClient(),
+        metaService: metaWaba,
+        siteDeploy,
+        githubPat: config.githubPat,
+        githubRepo: config.githubSiteRepo,
+        githubBranch: config.githubSiteBranch,
+      })
+    : null;
+  if (!caseCreator) {
+    console.warn('[case-creator] /novo-case desabilitado (faltando GITHUB_PAT ou WABA service)');
+  }
+
   // Valida que o bucket 'testimonials' existe. Se nao existir, videos de
   // depoimento nao serao salvos (fluxo continua funcionando mas sem storage).
   // Junior precisa criar o bucket no Supabase -> Storage -> "New bucket".
@@ -639,6 +657,47 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // Eva /novo-case — Junior cadastra obra (case) via WhatsApp.
+  // Estado em Redis. Aceita texto (perguntas) e midia (foto/video) na fase final.
+  async function tryHandleCaseCreatorCommand(from: string, text: string): Promise<boolean> {
+    if (!caseCreator) return false;
+    if (!isAdminPhone(from)) return false;
+
+    const inMode = await caseCreator.isInCreatorMode(from);
+    const isTrigger = CaseCreatorAssistant.isCaseCreatorTrigger(text);
+
+    if (!inMode && !isTrigger) return false;
+
+    try {
+      let reply: string;
+      if (!inMode && isTrigger) {
+        reply = await caseCreator.startMode(from);
+      } else {
+        reply = await caseCreator.processMessage(from, text);
+      }
+      if (reply) await sendText(from, reply);
+    } catch (err) {
+      console.error('[case-creator] Error:', (err as Error).message);
+      await sendText(from, '⚠️ Erro no /novo-case. Tenta de novo ou /cancelar-case pra abortar.');
+    }
+    return true;
+  }
+
+  // Captura midia (foto/video) quando Junior esta em modo /novo-case.
+  async function tryHandleCaseCreatorMedia(from: string, mediaId: string, type: 'image' | 'video'): Promise<boolean> {
+    if (!caseCreator) return false;
+    if (!isAdminPhone(from)) return false;
+    if (!(await caseCreator.isInCreatorMode(from))) return false;
+
+    try {
+      const reply = await caseCreator.processMedia(from, mediaId, type);
+      if (reply) await sendText(from, reply);
+    } catch (err) {
+      console.error('[case-creator] media error:', (err as Error).message);
+    }
+    return true;
+  }
+
   // Message handler
   async function handleTextMessage(from: string, text: string) {
     // Comandos admin de blog (publicar/descartar/blog status) PRECISAM vir primeiro,
@@ -650,6 +709,10 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // Comandos admin de depoimento — alta prioridade pra Junior poder aprovar
     // mesmo no meio de outro modo (precificacao/proposta/agenda).
     if (await tryHandleTestimonialAdminCommand(from, text)) return;
+
+    // Eva /novo-case — cadastrar obra via WhatsApp. Captura tudo enquanto em modo,
+    // entao precisa vir antes dos outros assistants pra eles nao "roubarem" a msg.
+    if (await tryHandleCaseCreatorCommand(from, text)) return;
 
     // Eva Precificadora tem prioridade total quando Junior usa /preco ou esta em modo
     if (await tryHandlePricingCommand(from, text)) return;
@@ -1290,6 +1353,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
   // Handle image messages
   async function handleImageMessage(from: string, messageId: string) {
+    if (await tryHandleCaseCreatorMedia(from, messageId, 'image')) return;
     if (await tryHandleProposalMedia(from, messageId, 'image')) return;
 
     if (await takeover.isPaused(from)) {
@@ -1357,6 +1421,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
   // Handle video messages (depoimentos, casos, registros)
   async function handleVideoMessage(from: string, messageId: string, caption?: string) {
+    if (await tryHandleCaseCreatorMedia(from, messageId, 'video')) return;
     if (await tryHandleProposalMedia(from, messageId, 'video')) return;
 
     if (await takeover.isPaused(from)) {
