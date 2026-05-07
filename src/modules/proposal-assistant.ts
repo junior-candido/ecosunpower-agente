@@ -18,6 +18,8 @@ import { processAttachment } from './proposal/attachments/index.js';
 import { getSignedUrlFromPath } from './proposal/attachments/storage-uploader.js';
 import type { MetaWhatsAppService } from './meta-whatsapp.js';
 import { enviarPropostaParaCliente } from './eva-sender.js';
+import { CasesFetcher, type Case } from './cases-fetcher.js';
+import { renderSocialProofPage } from './proposal/social-proof-page.js';
 
 const IORedis = (Redis as any).default ?? Redis;
 const PROPOSAL_MODE_TTL_SECONDS = 60 * 60;
@@ -203,6 +205,9 @@ export class ProposalAssistant {
   private supabaseService: SupabaseService | null;
   private publicProposalBaseUrl: string;
   private metaService: MetaWhatsAppService | null;
+  private casesFetcher: CasesFetcher;
+  private googleNota: string;
+  private googleQtdAvaliacoes: number;
 
   constructor(opts: {
     apiKey: string;
@@ -216,6 +221,9 @@ export class ProposalAssistant {
     supabaseService?: SupabaseService | null;
     publicProposalBaseUrl?: string;
     metaService?: MetaWhatsAppService | null;
+    siteUrl?: string;
+    googleNota?: string;
+    googleQtdAvaliacoes?: number;
   }) {
     this.client = new Anthropic({ apiKey: opts.apiKey });
     this.redis = new IORedis({
@@ -248,6 +256,43 @@ export class ProposalAssistant {
       site: 'ecosunpower.eng.br',
       ...opts.companyDefaults,
     };
+
+    this.casesFetcher = new CasesFetcher({
+      siteUrl: opts.siteUrl ?? 'https://ecosunpower.eng.br',
+    });
+    this.googleNota = opts.googleNota ?? '4.9';
+    this.googleQtdAvaliacoes = opts.googleQtdAvaliacoes ?? 0;
+  }
+
+  // Mapeia o tipoCliente da proposta (string livre que pode vir variada do
+  // Claude) pro enum Case.tipo. Fallback pra 'residencial' se nao bater.
+  private tipoToCaseTipo(tipoCliente: string | undefined): Case['tipo'] {
+    const t = (tipoCliente ?? '').toLowerCase().trim();
+    if (t.includes('hibrido') || t.includes('híbrido') || t.includes('bateria')) return 'hibrido';
+    if (t.includes('industrial') || t.includes('industria') || t.includes('indústria')) return 'industrial';
+    if (t.includes('rural') || t.includes('agro') || t.includes('fazenda')) return 'rural';
+    if (t.includes('usina') || t.includes('investimento') || t.includes('gd ')) return 'usina';
+    if (t.includes('comercial') || t.includes('comercio') || t.includes('comércio')) return 'comercial';
+    return 'residencial';
+  }
+
+  // Busca 3 cases similares ao tipo do cliente e renderiza o HTML da pagina
+  // de prova social que vai antes do CTA "fechar" no PDF/web da proposta.
+  // Retorna '' se algo falhar — proposta segue sem prova social, sem quebrar.
+  private async buildSocialProofHtml(tipoCliente: string | undefined): Promise<string> {
+    try {
+      const tipo = this.tipoToCaseTipo(tipoCliente);
+      const cases = await this.casesFetcher.getByTipo(tipo, 3);
+      if (cases.length === 0) return '';
+      return renderSocialProofPage({
+        cases,
+        googleNota: this.googleNota,
+        googleQtdAvaliacoes: this.googleQtdAvaliacoes,
+      });
+    } catch (err) {
+      console.warn('[proposal/social-proof] erro montando bloco:', (err as Error).message);
+      return '';
+    }
   }
 
   // Detecta se mensagem dispara modo proposta.
@@ -527,7 +572,8 @@ export class ProposalAssistant {
     try {
       const calcInput = this.dataToCalculatorInput(last.data);
       const calculations = calcular(calcInput);
-      const html = renderProposalHTML(last.proposalData, calculations);
+      const socialProofHtml = await this.buildSocialProofHtml(last.proposalData.tipoCliente);
+      const html = renderProposalHTML(last.proposalData, calculations, socialProofHtml);
       const pdfBuffer = await htmlToPdf(html, { waitForChartMs: 2000 });
 
       const result = await enviarPropostaParaCliente(this.metaService, {
@@ -676,7 +722,8 @@ export class ProposalAssistant {
         }
       }
 
-      const html = renderProposalHTML(proposalData, calculations);
+      const socialProofHtml = await this.buildSocialProofHtml(proposalData.tipoCliente);
+      const html = renderProposalHTML(proposalData, calculations, socialProofHtml);
 
       const pdfBuffer = await htmlToPdf(html, { waitForChartMs: 2000 });
 

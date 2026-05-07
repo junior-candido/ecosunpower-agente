@@ -54,6 +54,13 @@ const configSchema = z.object({
   githubSiteBranch: z.string().default('main'),
   // Base URL pra propostas web publicas (Eva Proposta /p/:slug). CNAME aponta pro Easypanel.
   publicProposalBaseUrl: z.string().url().default('https://propostas.ecosunpower.eng.br'),
+  // Cases social proof: site publico que serve /cases.json
+  siteUrl: z.string().url().default('https://ecosunpower.eng.br'),
+  // Selo Google na proposta (manual — Junior atualiza periodicamente)
+  googleNota: z.string().default('4.9'),
+  googleQtdAvaliacoes: z.coerce.number().int().nonnegative().default(0),
+  // Cloudflare Pages deploy hook — disparado quando Junior aprova depoimento via WhatsApp
+  cloudflareDeployHookUrl: z.string().url().or(z.literal('')).default(''),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -101,5 +108,9 @@ export function loadConfig(): Config {
     githubSiteRepo: process.env.GITHUB_SITE_REPO || 'junior-candido/ecosunpower-site',
     githubSiteBranch: process.env.GITHUB_SITE_BRANCH || 'main',
     publicProposalBaseUrl: process.env.PUBLIC_PROPOSAL_BASE_URL,
+    siteUrl: process.env.SITE_URL,
+    googleNota: process.env.GOOGLE_NOTA,
+    googleQtdAvaliacoes: process.env.GOOGLE_QTD_AVALIACOES,
+    cloudflareDeployHookUrl: process.env.CLOUDFLARE_DEPLOY_HOOK_URL ?? '',
   });
 }

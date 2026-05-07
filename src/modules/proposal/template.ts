@@ -134,7 +134,7 @@ function renderEstudoPersonalizado(estudo: NonNullable<ProposalData['estudoPerso
 `;
 }
 
-export function renderProposalHTML(data: ProposalData, calc: ProposalCalculations): string {
+export function renderProposalHTML(data: ProposalData, calc: ProposalCalculations, socialProofHtml = ''): string {
   // Guards contra dados invalidos que estouram o render
   if (!data.nomeCliente || !data.potenciaKwp || data.potenciaKwp <= 0) {
     throw new Error('renderProposalHTML: dados incompletos (nomeCliente ou potenciaKwp)');
@@ -574,6 +574,8 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
     </div>
   </div>
 </section>
+
+${socialProofHtml}
 
 <section class="cta-section">
   <div class="container">

@@ -27,6 +27,7 @@ import { MarketingService } from './modules/marketing.js';
 import { ReengagementCadence } from './modules/reengagement-cadence.js';
 import { PostInstallService, INSTALLATION_STATUSES } from './modules/post-install.js';
 import { TestimonialService, TestimonialFormat } from './modules/testimonials.js';
+import { SiteDeployService } from './modules/site-deploy.js';
 import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone } from './modules/meta-leadgen.js';
 import { parseTrackingTag } from './modules/tracking.js';
 import { generateWeeklyReport, formatReportForWhatsApp } from './modules/ads-report.js';
@@ -342,6 +343,9 @@ async function main() {
     supabaseService: supabase,
     publicProposalBaseUrl: config.publicProposalBaseUrl,
     metaService: metaWaba,
+    siteUrl: config.siteUrl,
+    googleNota: config.googleNota,
+    googleQtdAvaliacoes: config.googleQtdAvaliacoes,
   });
 
   const driveOk = !!driveUploader;
@@ -361,6 +365,7 @@ async function main() {
   }
 
   const testimonials = new TestimonialService(supabase.getClient());
+  const siteDeploy = new SiteDeployService({ hookUrl: config.cloudflareDeployHookUrl });
 
   // Valida que o bucket 'testimonials' existe. Se nao existir, videos de
   // depoimento nao serao salvos (fluxo continua funcionando mas sem storage).
@@ -577,6 +582,39 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // Comandos admin de depoimento (tabela testimonials).
+  // /aprovar-depoimento <id> -> seta usable_for_marketing=true e dispara rebuild Cloudflare
+  // /google-postou <id>      -> seta google_posted=true e dispara rebuild
+  async function tryHandleTestimonialAdminCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+
+    const trimmed = text.trim();
+    const matchAprovar = trimmed.match(/^\/aprovar-depoimento\s+(\S+)$/i);
+    const matchGoogle = trimmed.match(/^\/google-postou\s+(\S+)$/i);
+
+    if (!matchAprovar && !matchGoogle) return false;
+
+    try {
+      if (matchAprovar) {
+        const id = matchAprovar[1];
+        await testimonials.setUsableForMarketing(id, true);
+        const ok = await siteDeploy.dispatchRebuild();
+        const tail = ok ? 'Site rebuildando em ~30s.' : 'CLOUDFLARE_DEPLOY_HOOK_URL nao configurado — depoimento aprovado mas site nao rebuildou.';
+        await sendText(from, `✅ Depoimento ${id} aprovado pra marketing. ${tail}`);
+      } else if (matchGoogle) {
+        const id = matchGoogle[1];
+        await testimonials.markGooglePosted(id);
+        const ok = await siteDeploy.dispatchRebuild();
+        const tail = ok ? 'Selo "Verificado no Google" aparece apos rebuild.' : 'Site nao rebuildou (deploy hook ausente).';
+        await sendText(from, `✅ Depoimento ${id} marcado como postado no Google. ${tail}`);
+      }
+    } catch (err) {
+      console.error('[testimonial-admin] Error:', (err as Error).message);
+      await sendText(from, `⚠️ Erro: ${(err as Error).message}`);
+    }
+    return true;
+  }
+
   // Message handler
   async function handleTextMessage(from: string, text: string) {
     // Comandos admin de blog (publicar/descartar/blog status) PRECISAM vir primeiro,
@@ -584,6 +622,10 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // modo e ainda assim querer publicar/descartar um draft. tryHandleJuniorBlogCommand
     // ja gateia em isAdminPhone, entao nao afeta clientes.
     if (await tryHandleJuniorBlogCommand(from, text)) return;
+
+    // Comandos admin de depoimento — alta prioridade pra Junior poder aprovar
+    // mesmo no meio de outro modo (precificacao/proposta/agenda).
+    if (await tryHandleTestimonialAdminCommand(from, text)) return;
 
     // Eva Precificadora tem prioridade total quando Junior usa /preco ou esta em modo
     if (await tryHandlePricingCommand(from, text)) return;
