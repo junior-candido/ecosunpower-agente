@@ -1,7 +1,7 @@
 # Perguntas Frequentes
 
 ## Quanto custa um sistema de energia solar?
-O valor depende do seu consumo mensal de energia. Nosso engenheiro faz uma
+O valor depende do seu consumo mensal de energia. Nosso Responsável Técnico faz uma
 análise personalizada para dimensionar o sistema ideal e apresentar as opções.
 
 ## Por quanto tempo a proposta é válida?
@@ -17,7 +17,7 @@ Partimos do seu consumo mensal (kWh) da conta de luz e aplicamos:
 de horas de sol pleno da sua região (Brasília/Goiás ~5,2h) e 0,80 é o
 fator de performance que considera 20% de perdas reais (cabos, inversor,
 temperatura, sujeira, envelhecimento). Esse cálculo dá a potência ideal
-para zerar a parte compensável da conta. O engenheiro Junior valida tudo
+para zerar a parte compensável da conta. O Junior, Responsável Técnico CREA/CFT da EcoSunPower, valida tudo
 na visita técnica e ajusta conforme orientação do telhado, sombreamento
 e área disponível.
 

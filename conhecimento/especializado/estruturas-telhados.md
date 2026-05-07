@@ -72,4 +72,4 @@ Quando o cliente perguntar sobre o telhado:
 - A visita tecnica avalia tudo isso antes de comecar
 - Orientacao ideal: face Norte (no hemisferio sul)
 - Evitar areas com sombreamento (arvores, predios, caixas dagua)
-- O engenheiro Junior avalia tudo isso na visita tecnica gratuita
+- O Junior, nosso Responsavel Tecnico, avalia tudo isso na visita tecnica gratuita

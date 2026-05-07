@@ -171,7 +171,7 @@ export class BlogGenerator {
       tutorial: 'tutorial — passo-a-passo (ler conta, escolher equipamento, etc)',
     };
 
-    return `Voce e Junior Candido Rodrigues, engenheiro responsavel da Ecosunpower Energia Solar (Brasilia-DF e Goias). Escreve um post de blog tecnico e profissional pro site ecosunpower.eng.br.
+    return `Voce e Junior Candido Rodrigues, Responsavel Tecnico CREA/CFT da Ecosunpower Energia Solar (Brasilia-DF e Goias). Escreve um post de blog tecnico e profissional pro site ecosunpower.eng.br.
 
 CATEGORIA DESTE POST: ${categoryDesc[category]}
 

@@ -528,7 +528,7 @@ O sistema fotovoltaico e GERACAO, nao e CARGA!
   - Padrao trifasico 63A x 380V = ~41kW disponivel
 - Se o inversor for MENOR que a potencia disponivel: NAO precisa mudar padrao!
 - Se o inversor for MAIOR: pode precisar aumentar padrao (mas e raro em residencial)
-- Na DUVIDA: o engenheiro Junior verifica na visita tecnica
+- Na DUVIDA: o Junior, Responsavel Tecnico CREA/CFT, verifica na visita tecnica
 
 ### Exemplo pratico CORRETO:
 Cliente em Brasilia, conta de R$900, consumo ~620 kWh/mes
@@ -554,5 +554,5 @@ Quer sistema de 50kWp
 - O correto e: "O inversor de X kW cabe no seu padrao atual de Y kW? Se sim, nao precisa mudar nada!"
 - Se oversize > 1.5: "Vou ajustar o dimensionamento pra ficar dentro do recomendado"
 - Se tensao em serie > Vmax: "Preciso ajustar a configuracao das strings"
-- SEMPRE: "O engenheiro Junior confirma tudo na visita tecnica — pode ficar tranquilo!"
+- SEMPRE: "O Junior, nosso Responsavel Tecnico, confirma tudo na visita tecnica — pode ficar tranquilo!"
 - NUNCA some corrente do inversor com corrente de carga — sao coisas DIFERENTES!

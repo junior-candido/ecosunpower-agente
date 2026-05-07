@@ -11,7 +11,7 @@ comerciais maiores ou Grupo A.
 ## Etapas
 
 ### 1. Consulta inicial
-Nosso engenheiro avalia seu consumo, local de instalação e necessidades
+Nosso Responsável Técnico avalia seu consumo, local de instalação e necessidades
 para dimensionar o sistema ideal.
 
 ### 2. Proposta técnica e comercial

@@ -58,7 +58,7 @@ e desempenho do sistema.
 
 ## Diferenciais operacionais
 - Mais de 6 anos de experiência no mercado solar (desde 2019)
-- Equipe técnica própria com engenheiros especializados
+- Equipe técnica própria liderada por Responsável Técnico CREA/CFT
 - Estudo personalizado de cada projeto (não utiliza soluções genéricas)
 - Forte atuação em pós-venda e acompanhamento do cliente
 - Compromisso com qualidade na instalação para evitar retrabalho

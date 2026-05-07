@@ -31,6 +31,13 @@ export interface ProposalInput {
   // usa esse valor em vez de derivar de kWp×HSP×30×fator. Util pra propostas
   // baseadas em estudo de simulacao do telhado real (com orientacao/sombreamento).
   geracaoMensalKwhOverride?: number;
+
+  // Override opcional de consumo mes a mes (12 valores em kWh). Quando o cliente
+  // trouxe historico real da conta de luz dos 12 ultimos meses, usar isso em vez
+  // de assumir consumo fixo igual a media. Mostra sazonalidade real do cliente
+  // (ar-condicionado verao, ferias dezembro, etc) no grafico Consumo x Geracao.
+  // Quando ausente, distribuicao usa Array(12).fill(consumoMensalKwh).
+  consumoMensalKwhDistribuidoOverride?: number[];
 }
 
 export interface ProposalCalculations {
@@ -228,7 +235,11 @@ export function calcular(input: ProposalInput): ProposalCalculations {
 
   // Distribuicao mensal (sazonalidade)
   const geracaoMensalDistribuida = calcularGeracaoMensalDistribuida(geracaoMensalKwh);
-  const consumoMensalDistribuido = Array(12).fill(consumoMensalKwh);
+  // Consumo: usa override mes-a-mes se cliente trouxe historico real, senao plano
+  const consumoMensalDistribuido = (input.consumoMensalKwhDistribuidoOverride
+    && input.consumoMensalKwhDistribuidoOverride.length === 12)
+    ? input.consumoMensalKwhDistribuidoOverride
+    : Array(12).fill(consumoMensalKwh);
 
   // Conta mensal sem/com sistema (com Fio B na conta com sistema)
   const contaSemSistemaMensal = consumoMensalKwh * tarifaRsKwh + custoIluminacaoPublica;

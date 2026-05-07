@@ -79,7 +79,7 @@ Util quando: o cliente quer instalar solar com inversor trifasico.
 ## NT.020 - Conexao de Micro e Minigeracao Distribuida (Energia Solar)
 
 ### Requisitos para conectar sistema solar em Goias
-- Projeto eletrico assinado por engenheiro (ART ou TRT)
+- Projeto eletrico assinado por Responsavel Tecnico habilitado (ART CREA ou TRT CFT)
 - Formulario de solicitacao de acesso (via portal online Equatorial)
 - Diagrama unifilar do sistema fotovoltaico
 - Memorial descritivo dos equipamentos
@@ -193,7 +193,7 @@ Quer sistema de 10 kWp com inversor de 10kW:
 ## Processo completo de instalacao solar em Goias
 
 1. Ecosunpower faz visita tecnica gratuita
-2. Engenheiro Junior dimensiona sistema e verifica padrao
+2. Junior, nosso Responsavel Tecnico, dimensiona sistema e verifica padrao
 3. Se precisa adequar padrao: inclui no orcamento
 4. Elabora projeto eletrico com ART
 5. Solicita acesso na Equatorial (portal online)
@@ -223,7 +223,7 @@ O cliente NAO precisa ir a Equatorial — a Ecosunpower cuida de TUDO!
 | Medidor | Bidirecional fornecido | Bidirecional fornecido |
 
 ## O que a Eva deve dizer sobre padrao de entrada
-- Se DF: "A Neoenergia trabalha com monofasico ou trifasico. O engenheiro Junior verifica seu padrao na visita tecnica e, se precisar adequar, ja inclui no orcamento."
+- Se DF: "A Neoenergia trabalha com monofasico ou trifasico. O Junior, nosso Responsavel Tecnico, verifica seu padrao na visita tecnica e, se precisar adequar, ja inclui no orcamento."
 - Se GO: "A Equatorial trabalha com monofasico (ate 12kW) ou trifasico. Se seu sistema precisar de mais potencia, a gente cuida da mudanca de padrao pra voce."
 - Sobre bifasico: explicar conforme a distribuidora do cliente
 - Sempre: "A Ecosunpower cuida de toda a burocracia — voce nao precisa se preocupar com isso!"

@@ -94,7 +94,7 @@ NAO precisa mudar padrao quando:
 ## NTD 6.09 - Conexao de Geracao Distribuida (Energia Solar)
 
 ### Requisitos para conectar sistema solar
-- Projeto eletrico assinado por engenheiro (ART/TRT)
+- Projeto eletrico assinado por Responsavel Tecnico habilitado (ART CREA ou TRT CFT)
 - Potencia da ART = potencia dos modulos OU inversores
 - Formulario de solicitacao de acesso
 - Diagrama unifilar do sistema
@@ -170,7 +170,7 @@ Para sistemas de 75 kW a 5 MW em media tensao.
 ## Processo completo de instalacao solar em Brasilia
 
 1. Ecosunpower faz visita tecnica gratuita
-2. Engenheiro Junior dimensiona o sistema e verifica padrao de entrada
+2. Junior, nosso Responsavel Tecnico, dimensiona o sistema e verifica padrao de entrada
 3. Se precisa adequar padrao: inclui no orcamento
 4. Elabora projeto eletrico com ART
 5. Solicita acesso na Neoenergia

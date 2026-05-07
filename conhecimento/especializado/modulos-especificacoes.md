@@ -3,7 +3,7 @@
 Specs eletricas e mecanicas dos modulos premium que a Ecosunpower trabalha
 no dia-a-dia. Use essas referencias para responder duvidas tecnicas e fazer
 estimativas de quantidade/area. Para STRING DESIGN final (V em serie x Vmax
-do inversor), o engenheiro Junior valida na visita tecnica.
+do inversor), o Junior, nosso Responsavel Tecnico, valida na visita tecnica.
 
 ---
 
@@ -102,7 +102,7 @@ Familia 675-700W, 210mm M10 LG, 132 celulas, half-cell n-type TOPCon.
 > **ATENCAO:** valores eletricos exatos por variante (Voc/Vmpp/Isc/Impp)
 > NAO estao consolidados aqui — para projeto final consultar datasheet
 > oficial em PDF (`Datasheet_MFHN_1.2_MO_132_700W.pdf`) ou pedir pro
-> engenheiro Junior validar na visita tecnica.
+> Junior, Responsavel Tecnico, validar na visita tecnica.
 
 **Mecanico tipico familia:** ~2278 x 1134 x 30 mm | ~32 kg | MC4 | IP68
 **Garantia:** 12 anos produto / 25 anos performance (~84% no ano 25)

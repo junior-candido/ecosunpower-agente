@@ -48,6 +48,7 @@ interface ClaudeResponse {
   missing?: string[];
   data?: Partial<ProposalData> & {
     consumoMensalKwh?: number;
+    consumoMensalKwhDistribuido?: number[];  // OPCIONAL: historico 12 meses do cliente
     geracaoMensalKwh?: number;     // override do PVSol/PVsyst, se Junior fornecer
     fatorPerda?: number;
     tarifaRsKwh?: number;
@@ -56,7 +57,7 @@ interface ClaudeResponse {
 }
 
 function buildSystemPrompt(propostasKnowledge: string, marcasKnowledge: string): string {
-  return `Você é a Eva, assistente de geração de propostas comerciais da EcoSunPower. Está conversando com Junior (engenheiro proprietário, 5+ anos de experiência) pra coletar dados de um cliente e gerar uma proposta profissional em PDF e versão web.
+  return `Você é a Eva, assistente de geração de propostas comerciais da EcoSunPower. Está conversando com Junior (Responsável Técnico CREA/CFT, 10+ anos de experiência) pra coletar dados de um cliente e gerar uma proposta profissional em PDF e versão web.
 
 TOM: direto, técnico, sem ladainha. Junior conhece tudo. Vá pros números.
 
@@ -100,6 +101,7 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
     "potenciaKwp": 8.4,
     "fatorPerda": 0.80,
     "consumoMensalKwh": 1000,
+    "consumoMensalKwhDistribuido": [1100, 1080, 1020, 950, 880, 850, 870, 920, 980, 1050, 1120, 1180],
     "geracaoMensalKwh": 1080,
     "tarifaRsKwh": 1.05,
     "custoDisponibilidadeMensal": 50,
@@ -831,6 +833,16 @@ export class ProposalAssistant {
       ? geracaoOverrideRaw
       : undefined;
 
+    // Override de consumo mes-a-mes: quando Junior tem historico real da conta de luz
+    // dos 12 meses do cliente, passa array. Senao, usa consumoMensalKwh fixo (default).
+    // Aceita data.consumoMensalKwhDistribuido ou data.consumoMensal12Meses (alias).
+    const consumoArray = data.consumoMensalKwhDistribuido ?? data.consumoMensal12Meses;
+    const consumoMensalKwhDistribuidoOverride = (Array.isArray(consumoArray)
+      && consumoArray.length === 12
+      && consumoArray.every((v: unknown) => typeof v === 'number' && isFinite(v) && v >= 0))
+      ? (consumoArray as number[])
+      : undefined;
+
     return {
       potenciaKwp,
       fatorPerda,
@@ -845,6 +857,7 @@ export class ProposalAssistant {
       valorTotalRs: Number(data.valorTotalRs),
       vidaUtilAnos: 25,
       geracaoMensalKwhOverride,
+      consumoMensalKwhDistribuidoOverride,
     };
   }
 

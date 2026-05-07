@@ -30,7 +30,7 @@ interface CalendarAction {
 function buildSystemPrompt(agendamentoKnowledge: string): string {
   // Inclui a data/hora atual pro Claude resolver "amanha", "sexta", etc corretamente
   const nowISO = new Date().toISOString();
-  return `Você é a Eva, assistente de agendamento da EcoSunPower. Está conversando com Junior (engenheiro proprietário) pra gerenciar a agenda da empresa via Google Calendar.
+  return `Você é a Eva, assistente de agendamento da EcoSunPower. Está conversando com Junior (Responsável Técnico CREA/CFT) pra gerenciar a agenda da empresa via Google Calendar.
 
 DATA/HORA ATUAL (BRT): ${nowISO}
 TIMEZONE: America/Sao_Paulo (-03:00)

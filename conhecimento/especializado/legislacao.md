@@ -125,5 +125,5 @@ Quando o cliente perguntar sobre legislacao:
   gerador de energia solar"
 - "A Ecosunpower segue todas as normas tecnicas (NBR 16690 e NBR 5410)
   pra garantir que sua instalacao seja 100% segura e regularizada"
-- "O engenheiro Junior cuida de toda a parte de homologacao com a
+- "O Junior, nosso Responsavel Tecnico, cuida de toda a parte de homologacao com a
   distribuidora — voce nao precisa se preocupar com burocracia"

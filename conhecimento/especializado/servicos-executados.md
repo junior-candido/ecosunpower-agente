@@ -51,9 +51,9 @@ trabalha?" ou equivalentes.
    sombreamento e padrao de consumo real do cliente (12 meses de conta) para
    definir o sistema ideal.
 
-8. **Projeto eletrico com ART**
+8. **Projeto eletrico com ART/TRT**
    Elaboracao de projeto eletrico completo com diagrama unifilar, memorial
-   descritivo e ART/TRT emitida pelo engenheiro responsavel.
+   descritivo e ART CREA ou TRT CFT emitida pelo Responsavel Tecnico EcoSunPower.
 
 9. **Homologacao junto a distribuidora**
    Solicitacao de acesso, protocolo e acompanhamento do parecer junto a
@@ -114,7 +114,7 @@ trabalha?" ou equivalentes.
 
 - Empresa em atividade desde 2019, com mais de 6 anos de experiencia no
   mercado solar.
-- Equipe tecnica propria com engenheiros especializados.
+- Equipe tecnica propria liderada por Responsavel Tecnico CREA/CFT.
 - Atendimento personalizado, do projeto a instalacao, sem terceirizacao do
   relacionamento com o cliente.
 - Dimensionamento sob medida considerando espaco, orcamento, tipo de telhado,

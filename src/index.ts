@@ -3138,7 +3138,7 @@ Ultima atualizacao: 26 de abril de 2026</p>
   <li><strong>Meta Platforms</strong> (BR/EUA) — WhatsApp Business e Lead Ads (<a href="https://www.facebook.com/privacy/policy" target="_blank">politica Meta</a>)</li>
   <li><strong>Google LLC</strong> (EUA/BR) — Workspace (email corporativo) e Google Calendar</li>
   <li><strong>Cloudflare Inc.</strong> (EUA) — hospedagem do site e CDN</li>
-  <li><strong>Equipe interna</strong> — engenheiros, instaladores, atendimento</li>
+  <li><strong>Equipe interna</strong> — Responsavel Tecnico, instaladores, atendimento</li>
   <li><strong>Parceiros de equipamentos</strong> — distribuidores quando necessario pra cotacao (apenas dados estritamente necessarios)</li>
   <li><strong>Autoridades legais</strong> — quando obrigados por lei (ANEEL, CREA, CFT, Receita Federal, ordem judicial)</li>
 </ul>
@@ -3254,7 +3254,7 @@ Atualizado em: 22 de abril de 2026</p>
 
 <h2>5. Atendimento por inteligencia artificial</h2>
 <p>Para agilizar o primeiro atendimento e qualificacao de leads, utilizamos um agente conversacional baseado em inteligencia artificial chamado "Eva", que opera atraves de WhatsApp. Eva eh treinada com nossa base de conhecimento tecnico e atua como engenheira especialista virtual da empresa.</p>
-<p>Voce sera sempre informado quando estiver conversando com Eva. Caso prefira atendimento exclusivamente humano, basta solicitar a qualquer momento e o engenheiro responsavel assumira a conversa.</p>
+<p>Voce sera sempre informado quando estiver conversando com Eva. Caso prefira atendimento exclusivamente humano, basta solicitar a qualquer momento e o Responsavel Tecnico da EcoSunPower assumira a conversa.</p>
 <p>As respostas geradas pela Eva tem carater consultivo inicial e devem ser sempre validadas com nossa equipe tecnica para projetos definitivos. A Ecosunpower nao se responsabiliza por decisoes tomadas exclusivamente com base em respostas automatizadas sem confirmacao posterior.</p>
 
 <h2>6. Anuncios e captura de leads</h2>

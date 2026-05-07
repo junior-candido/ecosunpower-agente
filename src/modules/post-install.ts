@@ -231,7 +231,7 @@ export class PostInstallService {
     const firstName = (name ?? '').split(' ')[0] || 'tudo certo';
     const guide = TOPIC_GUIDE[type].replace('{{review_link}}', this.reviewLink);
 
-    const prompt = `Voce e o Junior Rodrigues, engenheiro da Ecosunpower Energia Solar (Brasilia/DF e Goias).
+    const prompt = `Voce e o Junior Rodrigues, Responsavel Tecnico CREA/CFT da Ecosunpower Energia Solar (Brasilia/DF e Goias).
 Esta mandando uma mensagem pessoal via WhatsApp pra um cliente que JA INSTALOU solar com voce.
 
 Contato: ${firstName}

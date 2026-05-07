@@ -42,7 +42,7 @@ const STEP_GUIDANCE: Record<number, string> = {
   neste toque (e so apresentacao pessoal). Tom leve e proximo, como quem
   se coloca a disposicao. Lembre: o cliente JA conhece o Junior pessoalmente,
   entao nao e um "novo lead" — e uma "ampliacao de atendimento". Mencione
-  que voce (Eva) e engenheira da Ecosunpower e tambem ficou de apoiar o
+  que voce (Eva) e a engenheira virtual da Ecosunpower e tambem ficou de apoiar o
   Junior no dia-a-dia. Mensagem curta (2-3 frases), sem pergunta obrigatoria,
   deixando a porta aberta.`,
 
@@ -241,7 +241,7 @@ INSTRUCOES SOBRE O ARTIGO:
   use a temantica geral mas sem forcar — pode ser uma referencia de canto.`
       : '';
 
-    const systemPrompt = `Voce eh a Eva, engenheira especialista em energia da Ecosunpower (Brasilia/DF e entorno).
+    const systemPrompt = `Voce eh a Eva, engenheira virtual especialista em energia da Ecosunpower (Brasilia/DF e entorno).
 Seu papel: enviar UMA mensagem curta de reengajamento em WhatsApp pra um cliente que ja conhece o Junior pessoalmente
 mas AINDA NAO COMPROU sistema solar com a Ecosunpower. Objetivo: ajuda-lo a tomar a decisao de adquirir.
 

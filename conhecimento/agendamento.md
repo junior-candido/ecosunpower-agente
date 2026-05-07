@@ -71,7 +71,7 @@ Isso evita Junior gastar 2-3h em deslocamento de leads não qualificados.
 
 Quando cliente demonstra interesse e tem dados básicos:
 
-> "Vi que você tá interessado em solar. Pra fazer uma proposta certinha, posso te oferecer 30min comigo (e às vezes com o engenheiro Junior junto) por **Google Meet**. É grátis, sem compromisso, e a gente já te apresenta uma simulação ao vivo na sua conta. Quer que eu agende? Tenho [horários disponíveis]."
+> "Vi que você tá interessado em solar. Pra fazer uma proposta certinha, posso te oferecer 30min comigo (e às vezes com o Junior, nosso Responsável Técnico, junto) por **Google Meet**. É grátis, sem compromisso, e a gente já te apresenta uma simulação ao vivo na sua conta. Quer que eu agende? Tenho [horários disponíveis]."
 
 Quando cliente já fez Meet e quer avançar:
 

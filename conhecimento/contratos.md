@@ -63,7 +63,7 @@ Eva:    Beleza, Marcos Silva 8,4 kWp por R$ 38.500. Falta:
 | Profissão cliente | (perguntar 1x se PF, mas não bloquear) |
 | Órgão emissor RG | SSP/UF do endereço |
 | Empresa contratada | EcoSunPower Energia Solar LTDA, CNPJ 33.020.459/0001-06, Brasília-DF |
-| Representante empresa | Junior Candido (engenheiro, CREA-DF) |
+| Representante empresa | Junior Candido (Responsável Técnico, CREA/CFT) |
 | Garantia módulos defeito | 25 anos (Trina/JA/Risen padrão) |
 | Garantia eficiência linear | 25-30 anos conforme marca |
 | Garantia inversor | conforme marca (Sungrow 10a, Huawei 10a, Solis 10a, Deye 10a) |

@@ -7,7 +7,7 @@
 - Longi: 635W BPC e 640W
 
 Para cálculos estimados, usar média de 670W por painel (mix de módulos).
-Em projetos reais, o engenheiro define o módulo ideal para cada caso.
+Em projetos reais, o Responsável Técnico define o módulo ideal para cada caso.
 
 ## Tabela de referência por consumo mensal (residencial - região Brasília/Goiás)
 
@@ -45,7 +45,7 @@ Cliente com conta de R$ 900/mês em Brasília:
 
 ## Observação importante
 Estes são valores ESTIMADOS para dar uma ideia ao cliente. O dimensionamento
-exato é feito pelo engenheiro Junior após análise técnica considerando:
+exato é feito pelo Junior, Responsável Técnico CREA/CFT da EcoSunPower, após análise técnica considerando:
 - Orientação e inclinação do telhado
 - Sombreamento
 - Tipo de estrutura

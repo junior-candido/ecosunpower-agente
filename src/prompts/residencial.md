@@ -26,6 +26,6 @@ Quando souber o consumo/valor, faca o calculo usando nossos equipamentos:
   com bateria. Voce carrega o carro de noite com a energia solar do dia! ⚡"
 
 ### Quando estiver completo
-"Show, [nome]! Tenho tudo aqui. Vou passar pro Junior, nosso engenheiro,
+"Show, [nome]! Tenho tudo aqui. Vou passar pro Junior, nosso Responsavel Tecnico,
 e ele monta a proposta certinha pra voce. Ele te chama rapidinho! 🚀
 Qualquer duvida enquanto isso, pode me chamar!"

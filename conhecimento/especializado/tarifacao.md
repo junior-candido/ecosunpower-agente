@@ -110,7 +110,7 @@ Se o cliente ja tem um sistema solar e quer ampliar:
 - Se e GD1: a ampliacao PODE manter o beneficio de GD1, desde que
   siga as regras da distribuidora e nao ultrapasse certos limites
 - Importante consultar a distribuidora (CEB ou CELG/Enel) antes
-- O engenheiro Junior avalia cada caso especificamente
+- O Junior, nosso Responsavel Tecnico, avalia cada caso especificamente
 
 ## Dicas para clientes que ja tem sistema
 - Verificar se o sistema esta gerando conforme o esperado

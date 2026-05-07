@@ -1,4 +1,4 @@
-// Template HTML da proposta EcoSunPower v1.
+// Template HTML da proposta EcoSunPower v2.
 // Renderiza com base em ProposalData + ProposalCalculations.
 // Standalone (CSS inline). Usado tanto pra publicacao web quanto pra geracao de PDF.
 
@@ -207,7 +207,7 @@ section{padding:80px 0}
 .chart-legend{display:flex;gap:24px;font-size:13px;font-weight:500}
 .legend-item{display:flex;align-items:center;gap:8px}
 .legend-dot{width:10px;height:10px;border-radius:3px}
-.chart-container{height:320px;position:relative}
+.chart-container{min-height:320px;position:relative}
 .equipment-section{background:#fff}
 .equipment-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:24px;margin-top:8px}
 .equipment-card{background:linear-gradient(180deg,#fff 0%,var(--surface-alt) 100%);border:1px solid var(--border);border-radius:20px;padding:32px;position:relative;overflow:hidden}
@@ -397,11 +397,13 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
           <div style="font-size:14px;color:var(--muted)">Fator perda ${fmtNum(data.fatorPerda, 2)} aplicado · sazonalidade real</div>
         </div>
         <div class="chart-legend">
-          <div class="legend-item"><span class="legend-dot" style="background:var(--primary-500)"></span> Geração</div>
-          <div class="legend-item"><span class="legend-dot" style="background:#94A3B8"></span> Consumo</div>
+          <div class="legend-item"><span class="legend-dot" style="background:linear-gradient(180deg,#FFC72C 0%,#1FB8E8 60%,#0E7CB8 100%)"></span> Geração (kWh)</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#CBD5E1"></span> Consumo (kWh)</div>
+          <div class="legend-item" style="color:#64748B">☀ = mês cobre 100% do consumo</div>
         </div>
       </div>
       <div class="chart-container">${renderGraficoSVG(calc.geracaoMensalDistribuida, calc.consumoMensalDistribuido)}</div>
+      ${renderNotaSazonalidade(calc.geracaoMensalDistribuida, calc.consumoMensalDistribuido, calc.geracaoAnualKwh)}
     </div>
   </div>
 </section>
@@ -415,7 +417,7 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
       <div class="equipment-card featured">
         <span class="equipment-badge">Tier 1</span>
         <div class="equipment-cat">Módulos Fotovoltaicos</div>
-        <div class="equipment-name">${escapeHtml(data.modulo.fabricante)} ${escapeHtml(data.modulo.modelo)}</div>
+        <div class="equipment-name">${escapeHtml(formataNomeEquipamento(data.modulo.fabricante, data.modulo.modelo))}</div>
         <div class="equipment-brand">${data.modulo.potenciaW} W${data.modulo.tecnologia ? ' · ' + escapeHtml(data.modulo.tecnologia) : ''}</div>
         <div class="equipment-specs">
           <div><div class="spec-label">Quantidade</div><div class="spec-value">${data.modulo.quantidade} unidades</div></div>
@@ -426,8 +428,8 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
       </div>
       <div class="equipment-card">
         <div class="equipment-cat">Inversor</div>
-        <div class="equipment-name">${escapeHtml(data.inversor.fabricante)} ${escapeHtml(data.inversor.modelo)}</div>
-        <div class="equipment-brand">${escapeHtml(data.inversor.fabricante)}${data.inversor.eficiencia ? ` · Eficiência ${fmtPct(data.inversor.eficiencia * 100)}` : ''}</div>
+        <div class="equipment-name">${escapeHtml(formataNomeEquipamento(data.inversor.fabricante, data.inversor.modelo))}</div>
+        <div class="equipment-brand">${data.inversor.tipoInversor === 'microinversor' ? 'Microinversor' : data.inversor.tipoInversor === 'solaredge' ? 'Inversor com otimizadores' : 'Inversor string'}${data.inversor.eficiencia ? ` · Eficiência ${fmtPct(data.inversor.eficiencia * 100)}` : ''}</div>
         <div class="equipment-specs">
           <div><div class="spec-label">Quantidade</div><div class="spec-value">${data.inversor.quantidade} unidade${data.inversor.quantidade > 1 ? 's' : ''}</div></div>
           <div><div class="spec-label">Potência</div><div class="spec-value">${fmtNum(data.inversor.potenciaW)} W</div></div>
@@ -465,8 +467,8 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
 
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
         <div style="width:48px;height:48px;border-radius:12px;background:#FFF8E1;color:var(--accent-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">📋</div>
-        <h3 style="font-size:20px;margin-bottom:12px">ART CREA + Normas ABNT</h3>
-        <p style="color:var(--muted);font-size:15px;line-height:1.6">Anotação de Responsabilidade Técnica assinada por engenheiro registrado. Projeto e instalação seguem ABNT NBR 5410, NBR 16690, NBR 16149/16150 e NR-10. Sem improviso.</p>
+        <h3 style="font-size:20px;margin-bottom:12px">ART/TRT + Normas ABNT</h3>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">Anotação de Responsabilidade Técnica (ART CREA / TRT CFT) assinada pelo nosso Responsável Técnico. Projeto e instalação seguem ABNT NBR 5410, NBR 16690, NBR 16149/16150 e NR-10. Sem improviso.</p>
       </div>
 
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
@@ -478,13 +480,13 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
         <div style="width:48px;height:48px;border-radius:12px;background:#FFF8E1;color:var(--accent-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">📊</div>
         <h3 style="font-size:20px;margin-bottom:12px">Monitoramento incluído</h3>
-        <p style="color:var(--muted);font-size:15px;line-height:1.6">12 meses de monitoramento remoto sem custo adicional. Detectamos quedas de geração antes de você sentir na conta. Suporte direto comigo (Junior, eng. responsável) pelo WhatsApp.</p>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">12 meses de monitoramento remoto sem custo adicional. Detectamos quedas de geração antes de você sentir na conta. Suporte direto comigo (Junior, Responsável Técnico) pelo WhatsApp.</p>
       </div>
 
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
         <div style="width:48px;height:48px;border-radius:12px;background:var(--primary-50);color:var(--primary-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">🤝</div>
-        <h3 style="font-size:20px;margin-bottom:12px">Engenheiro que atende direto</h3>
-        <p style="color:var(--muted);font-size:15px;line-height:1.6">Junior — <strong>engenheiro responsável, CREA-DF</strong> — assina sua ART e fica como ponto único de contato pelo WhatsApp. Do orçamento ao pós-venda, você fala com quem entende e decide. Instalação executada por equipe certificada sob supervisão técnica EcoSunPower.</p>
+        <h3 style="font-size:20px;margin-bottom:12px">Responsável Técnico que atende direto</h3>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">Junior Candido — <strong>Responsável Técnico CREA/CFT da EcoSunPower</strong> — assina a ART/TRT do seu projeto e fica como ponto único de contato pelo WhatsApp. Do orçamento ao pós-venda, você fala com quem entende e decide. Instalação executada por equipe certificada sob supervisão técnica EcoSunPower.</p>
       </div>
 
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
@@ -616,74 +618,188 @@ function escapeHtml(s: string): string {
   })[c]!);
 }
 
+// Concatena "Fabricante Modelo" sem duplicar quando modelo ja comeca com palavras
+// do fabricante. Caminha palavra a palavra (case-insensitive) descartando do modelo
+// as palavras iniciais que coincidem com as do fabricante.
+// Exemplos:
+//   ("Risen Energy", "Risen 715W")          -> "Risen Energy 715W"
+//   ("Risen Energy", "Risen Energy 715W")   -> "Risen Energy 715W"
+//   ("JA Solar",     "JA Solar JAM66")      -> "JA Solar JAM66"
+//   ("JA Solar",     "JA JAM66")            -> "JA Solar JAM66"
+//   ("Hoymiles",     "Hoymiles HM-2250-4T") -> "Hoymiles HM-2250-4T"
+//   ("Risen Energy", "RSM132-715BHDG")      -> "Risen Energy RSM132-715BHDG"
+function formataNomeEquipamento(fabricante: string, modelo: string): string {
+  const f = (fabricante ?? '').trim();
+  const m = (modelo ?? '').trim();
+  if (!m) return f;
+  if (!f) return m;
+
+  const palavrasFab = f.split(/\s+/);
+  const palavrasMod = m.split(/\s+/);
+
+  let i = 0;
+  while (i < palavrasFab.length && i < palavrasMod.length
+         && palavrasMod[i].toLowerCase() === palavrasFab[i].toLowerCase()) {
+    i++;
+  }
+
+  const resto = palavrasMod.slice(i).join(' ');
+  return resto ? `${f} ${resto}` : f;
+}
+
+// Renderiza nota explicativa abaixo do grafico SO se houver mes(es) sem cobertura.
+// Educa o cliente: "vi que mai/jun/jul nao tem sol — significa que sistema falhou?"
+// Resposta: nao, e a sazonalidade real do DF, e a Lei 14.300 garante que creditos
+// dos meses bons cobrem automaticamente os meses ruins.
+function renderNotaSazonalidade(geracao: number[], consumo: number[], geracaoAnualKwh: number): string {
+  const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  const mesesSemCobertura = geracao
+    .map((v, i) => ({ mes: meses[i], cobre: v >= consumo[i] }))
+    .filter(x => !x.cobre)
+    .map(x => x.mes);
+
+  if (mesesSemCobertura.length === 0) return '';
+
+  const consumoAnual = consumo.reduce((a, b) => a + b, 0);
+  const percentCoberturaAnual = consumoAnual > 0
+    ? Math.round((geracaoAnualKwh / consumoAnual) * 100)
+    : 0;
+
+  const lista = mesesSemCobertura.length === 1
+    ? mesesSemCobertura[0]
+    : mesesSemCobertura.length === 2
+      ? `${mesesSemCobertura[0]} e ${mesesSemCobertura[1]}`
+      : mesesSemCobertura.slice(0, -1).join(', ') + ' e ' + mesesSemCobertura.slice(-1);
+
+  return `
+    <div style="margin-top:24px;padding:16px 20px;background:#FFF8E1;border-left:3px solid #FFC72C;border-radius:8px;font-size:14px;color:#1E293B;line-height:1.55">
+      <strong style="color:#0E7CB8">💡 Por que ${mesesSemCobertura.length === 1 ? 'esse mês' : 'esses meses'} (${lista}) ${mesesSemCobertura.length === 1 ? 'fica' : 'ficam'} sem ☀?</strong><br>
+      No nosso clima, o sol é mais baixo no inverno (dias mais curtos, ar seco). Mas pela
+      <strong>Lei 14.300/2022</strong>, os créditos gerados nos meses de pico cobrem
+      automaticamente os meses de menor geração — você não paga conta cheia em nenhum mês.
+      <br>
+      <span style="display:inline-block;margin-top:6px;color:#0E7CB8;font-weight:600">
+        Anualmente, seu sistema gera ${percentCoberturaAnual}% do consumo — saldo positivo garantido.
+      </span>
+    </div>
+  `;
+}
+
 // Renderiza o grafico Consumo x Geracao como SVG inline (sem JS).
-// Necessario porque Drive sandbox nao executa Chart.js no preview HTML.
-// Recebe arrays de 12 meses (geracao + consumo) e devolve SVG completo.
+// Design "Linha do Sol": 12 grupos de 2 barras (consumo cinza fina + geracao com gradiente
+// azul -> amarelo grossa), numero kWh em destaque acima da barra de geracao, mini sol
+// quando geracao >= consumo no mes, linha tracejada de media de consumo cruzando.
+// Necessario SVG inline porque Drive sandbox nao executa Chart.js no preview HTML.
 function renderGraficoSVG(geracao: number[], consumo: number[]): string {
   const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-  const W = 1000, H = 320;
-  const pad = { top: 30, right: 30, bottom: 50, left: 70 };
+  const W = 1000, H = 400;
+  const pad = { top: 64, right: 24, bottom: 80, left: 24 };
   const innerW = W - pad.left - pad.right;
   const innerH = H - pad.top - pad.bottom;
 
-  const maxValue = Math.max(...geracao, ...consumo) * 1.15;
-  const stepX = innerW / (meses.length - 1);
+  const maxValue = Math.max(...geracao, ...consumo) * 1.18;
+  if (maxValue <= 0) return '<div style="padding:40px;text-align:center;color:#64748B">Sem dados de geração/consumo</div>';
 
-  const xScale = (i: number) => pad.left + i * stepX;
+  // Cada mes ocupa uma "celula" — duas barras lado a lado dentro
+  const groupW = innerW / meses.length;
+  const barW = Math.min(22, groupW * 0.32); // largura de cada barra
+  const gap = 4; // gap entre as 2 barras do grupo
   const yScale = (v: number) => pad.top + innerH - (v / maxValue) * innerH;
 
-  // Pontos da linha de geracao (suavizada com path Q curves)
-  const geracaoPath = geracao.map((v, i) => {
-    const x = xScale(i);
-    const y = yScale(v);
-    return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`;
-  }).join(' ');
+  // Media anual de consumo (linha tracejada de referencia)
+  const mediaConsumo = consumo.reduce((a, b) => a + b, 0) / consumo.length;
+  const yMediaConsumo = yScale(mediaConsumo);
 
-  // Area sob a linha de geracao (fill suave)
-  const geracaoArea = `${geracaoPath} L ${xScale(11)} ${yScale(0)} L ${xScale(0)} ${yScale(0)} Z`;
+  // Renderiza um grupo (mes) com 2 barras + labels + sol opcional
+  const grupos = meses.map((m, i) => {
+    const cx = pad.left + i * groupW + groupW / 2;
+    const xConsumo = cx - barW - gap / 2;
+    const xGeracao = cx + gap / 2;
+    const vConsumo = consumo[i] ?? 0;
+    const vGeracao = geracao[i] ?? 0;
 
-  // Linha tracejada de consumo
-  const consumoPath = consumo.map((v, i) => {
-    const x = xScale(i);
-    const y = yScale(v);
-    return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`;
-  }).join(' ');
+    const yC = yScale(vConsumo);
+    const yG = yScale(vGeracao);
+    const hC = pad.top + innerH - yC;
+    const hG = pad.top + innerH - yG;
 
-  // Pontos circulos pra geracao
-  const pontos = geracao.map((v, i) =>
-    `<circle cx="${xScale(i)}" cy="${yScale(v)}" r="5" fill="#1FB8E8" stroke="#fff" stroke-width="2"/>`
-  ).join('');
+    const cobre = vGeracao >= vConsumo;
+    const sol = cobre ? `
+      <g transform="translate(${cx},${yG - 26})">
+        <circle r="9" fill="#FFC72C" stroke="#fff" stroke-width="2"/>
+        <g stroke="#FFC72C" stroke-width="2" stroke-linecap="round">
+          <line x1="0" y1="-13" x2="0" y2="-16"/>
+          <line x1="0" y1="13" x2="0" y2="16"/>
+          <line x1="-13" y1="0" x2="-16" y2="0"/>
+          <line x1="13" y1="0" x2="16" y2="0"/>
+          <line x1="-9" y1="-9" x2="-12" y2="-12"/>
+          <line x1="9" y1="-9" x2="12" y2="-12"/>
+          <line x1="-9" y1="9" x2="-12" y2="12"/>
+          <line x1="9" y1="9" x2="12" y2="12"/>
+        </g>
+      </g>
+    ` : '';
 
-  // Labels mes (eixo X)
-  const labelsX = meses.map((m, i) =>
-    `<text x="${xScale(i)}" y="${H - 20}" text-anchor="middle" fill="#64748B" font-size="12" font-family="Inter">${m}</text>`
-  ).join('');
+    // Numero da geracao (destaque) — posicao acima da barra ou do sol
+    const yLabelGeracao = cobre ? yG - 44 : yG - 8;
+    const labelGeracao = `
+      <text x="${cx}" y="${yLabelGeracao}" text-anchor="middle" fill="#0E7CB8"
+            font-size="13" font-weight="700" font-family="Inter,system-ui,sans-serif">
+        ${Math.round(vGeracao).toLocaleString('pt-BR')}
+      </text>
+    `;
 
-  // Linhas grade horizontal (4 niveis) + labels Y
-  const niveisY = [0, 0.25, 0.5, 0.75, 1.0];
-  const grade = niveisY.map(p => {
-    const y = pad.top + innerH * (1 - p);
-    const valor = Math.round(maxValue * p);
+    // Mes (eixo X)
+    const labelMes = `
+      <text x="${cx}" y="${H - 52}" text-anchor="middle" fill="#0F172A"
+            font-size="12" font-weight="700" font-family="Inter,system-ui,sans-serif">
+        ${m}
+      </text>
+    `;
+
+    // Numero do consumo embaixo do mes (cinza escuro, sempre visivel).
+    // Posicao isolada da barra evita sobreposicao com numero da geracao acima.
+    const labelConsumo = `
+      <text x="${cx}" y="${H - 30}" text-anchor="middle" fill="#475569"
+            font-size="11" font-weight="600" font-family="Inter,system-ui,sans-serif">
+        ${Math.round(vConsumo).toLocaleString('pt-BR')}
+      </text>
+    `;
+
     return `
-      <line x1="${pad.left}" y1="${y}" x2="${W - pad.right}" y2="${y}" stroke="#E2E8F0" stroke-dasharray="${p === 0 ? '0' : '0'}" stroke-width="1"/>
-      <text x="${pad.left - 10}" y="${y + 4}" text-anchor="end" fill="#64748B" font-size="12" font-family="Inter">${valor.toLocaleString('pt-BR')} kWh</text>
+      <g>
+        <rect x="${xConsumo}" y="${yC}" width="${barW}" height="${hC}" rx="4" ry="4" fill="#CBD5E1"/>
+        <rect x="${xGeracao}" y="${yG}" width="${barW}" height="${hG}" rx="4" ry="4" fill="url(#barGeracaoGrad)"/>
+        ${labelGeracao}
+        ${sol}
+        ${labelMes}
+        ${labelConsumo}
+      </g>
     `;
   }).join('');
 
+  // Linha base (eixo X)
+  const baseY = pad.top + innerH;
+
+  // Linha tracejada de media de consumo — sem texto (a legenda do header ja diz "Consumo").
+  // Renderizada DEPOIS das barras (ordem visual = z-index).
+  const linhaMedia = `
+    <line x1="${pad.left}" y1="${yMediaConsumo}" x2="${W - pad.right}" y2="${yMediaConsumo}"
+          stroke="#475569" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.7"/>
+  `;
+
   return `
-    <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block">
+    <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Gráfico mensal de consumo versus geração de energia em kWh, com indicação dos meses em que a geração cobre 100% do consumo" style="width:100%;height:auto;display:block" preserveAspectRatio="xMidYMid meet">
       <defs>
-        <linearGradient id="geracaoGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#1FB8E8" stop-opacity="0.25"/>
-          <stop offset="100%" stop-color="#1FB8E8" stop-opacity="0"/>
+        <linearGradient id="barGeracaoGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#FFC72C"/>
+          <stop offset="35%" stop-color="#1FB8E8"/>
+          <stop offset="100%" stop-color="#0E7CB8"/>
         </linearGradient>
       </defs>
-      ${grade}
-      <path d="${geracaoArea}" fill="url(#geracaoGrad)" />
-      <path d="${geracaoPath}" fill="none" stroke="#1FB8E8" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-      <path d="${consumoPath}" fill="none" stroke="#94A3B8" stroke-width="2" stroke-dasharray="6 4"/>
-      ${pontos}
-      ${labelsX}
+      <line x1="${pad.left}" y1="${baseY}" x2="${W - pad.right}" y2="${baseY}" stroke="#E2E8F0" stroke-width="1"/>
+      ${grupos}
+      ${linhaMedia}
     </svg>
   `;
 }
