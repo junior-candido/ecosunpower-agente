@@ -127,23 +127,29 @@ export class CaseCreatorAssistant {
     if (!state) return '⚠️ Sessão expirou. Manda /novo-case pra recomeçar.';
 
     const trimmed = text.trim();
+    const lower = trimmed.toLowerCase();
 
-    if (trimmed === '/cancelar-case' || trimmed === '/cancelar') {
+    // Cancelar — aceita varias formas
+    if (/^(\/cancelar(-case)?|cancelar)$/i.test(trimmed)) {
       await this.cancel(phone);
       return '❌ Cadastro cancelado. Nada foi salvo.';
     }
 
-    if (trimmed === '/pronto') {
-      if (state.step !== 'midia' && !this.hasMinimumData(state)) {
-        return '⚠️ Ainda faltam dados básicos. Continua respondendo as perguntas.';
-      }
+    // Finalizar — aceita /pronto, pronto, terminei, finalizar, ok (varias variacoes
+    // comuns que Junior pode mandar apos enviar as midias). So vale na fase 'midia'
+    // pra nao confundir com input de campos como kwp ou descricao.
+    const finalizeWords = /^(\/pronto|pronto( pra finalizar)?|terminei|terminou|finalizar|finalizei|acabei|acabou|ok|tava mandei[ ,.]?\s*terminou|tava mandei[ ,.]?\s*acabei|todas|enviei tudo|so isso)$/i;
+    if (state.step === 'midia' && finalizeWords.test(trimmed)) {
       if (state.midias.length === 0) {
         return '⚠️ Você precisa mandar pelo menos 1 foto ou vídeo da obra antes de finalizar.';
+      }
+      if (!this.hasMinimumData(state)) {
+        return '⚠️ Faltam dados básicos. /cancelar-case e recomeça com /novo-case.';
       }
       return await this.finalize(phone, state);
     }
 
-    if (trimmed === '/pular') {
+    if (/^(\/pular|pular|nao tem|nao sei)$/i.test(trimmed)) {
       return await this.handlePular(phone, state);
     }
 
@@ -159,7 +165,7 @@ export class CaseCreatorAssistant {
     }
     state.midias.push({ mediaId, type, receivedAt: Date.now() });
     await this.saveState(phone, state);
-    return `✅ Recebi ${type === 'video' ? 'o vídeo' : 'a foto'}. Manda mais ou */pronto* pra finalizar (${state.midias.length} já recebido${state.midias.length > 1 ? 's' : ''}).`;
+    return `✅ Recebi ${type === 'video' ? 'o vídeo' : 'a foto'} (${state.midias.length} no total). Manda mais ou escreve *pronto* pra finalizar.`;
   }
 
   private hasMinimumData(state: State): boolean {
@@ -225,7 +231,7 @@ export class CaseCreatorAssistant {
 
       case 'midia':
         if (input.length > 0) {
-          return 'Manda foto ou vídeo da obra agora. Quando terminar, manda */pronto*.';
+          return `Manda foto ou vídeo da obra direto pelo WhatsApp. Quando terminar, escreve *pronto* pra finalizar (já recebi ${state.midias.length}).`;
         }
         return '';
     }
@@ -274,7 +280,7 @@ export class CaseCreatorAssistant {
       case 'inversor': return 'Marca do inversor? (Sungrow, Solis, Deye, FoxESS, SolarEdge, GoodWe, Hoymiles...) ou /pular';
       case 'modulo': return 'Marca do módulo? (Trina, JA Solar, LONGi, Jinko, DAH, Risen...) ou /pular';
       case 'descricao': return 'Descreva a obra em 1 frase pra aparecer no card (20-300 letras). Ex: "Sistema solar residencial premium em Águas Claras com inversor Sungrow."';
-      case 'midia': return 'Pronto! Agora me manda *fotos e/ou vídeos* da obra. Pode mandar várias. Quando terminar, manda */pronto*.';
+      case 'midia': return 'Pronto! Agora me manda *fotos e/ou vídeos* da obra direto aqui. Pode mandar várias. Quando terminar, escreve *pronto* (ou /pronto).';
     }
   }
 
