@@ -105,6 +105,77 @@ export class MonitoringService {
     return { totalSistemas: sistemas.length, sucessos, falhas, marcasSemAdapter };
   }
 
+  // Backfill: puxa historico completo do sistema desde data_instalacao
+  // (ou 24 meses atras se nao tiver data). Util pra sistemas recem-cadastrados
+  // ou pra preencher gaps. Quebra em chunks de 11 meses pra contornar limite
+  // SolarEdge de 1 ano por chamada.
+  async backfillHistorico(
+    sistemaId: string,
+    options: { mesesMaximo?: number } = {},
+  ): Promise<{ ok: boolean; reason?: string; totalDias: number; chunks: number }> {
+    const { data, error } = await this.supabase.getClient()
+      .from('sistemas_clientes')
+      .select('*')
+      .eq('id', sistemaId)
+      .maybeSingle();
+    if (error || !data) return { ok: false, reason: 'Sistema nao encontrado', totalDias: 0, chunks: 0 };
+
+    const sistema = data as SistemaCliente;
+    const adapter = getAdapter(sistema.marca_inversor);
+    if (!adapter) return { ok: false, reason: `Sem adapter pra marca ${sistema.marca_inversor}`, totalDias: 0, chunks: 0 };
+
+    // Define range: data instalacao OU 24 meses atras (cap pelo mesesMaximo)
+    const mesesMaximo = options.mesesMaximo ?? 24;
+    const hoje = new Date();
+    let dataInicio: Date;
+    if (sistema.data_instalacao) {
+      dataInicio = new Date(sistema.data_instalacao);
+    } else {
+      dataInicio = new Date(hoje);
+      dataInicio.setMonth(dataInicio.getMonth() - mesesMaximo);
+    }
+    // Cap absoluto pra nao explodir
+    const dataMin = new Date(hoje);
+    dataMin.setMonth(dataMin.getMonth() - mesesMaximo);
+    if (dataInicio < dataMin) dataInicio = dataMin;
+
+    // Quebra em chunks de 330 dias (~11 meses, margem vs limite 1 ano da SolarEdge)
+    const CHUNK_DIAS = 330;
+    let cursor = new Date(dataInicio);
+    let totalDias = 0;
+    let chunks = 0;
+    let ultimoErro: string | undefined;
+
+    while (cursor < hoje) {
+      const chunkFim = new Date(Math.min(cursor.getTime() + CHUNK_DIAS * 24 * 60 * 60 * 1000, hoje.getTime()));
+      const result = await adapter.fetchGeneration(
+        sistema.api_credentials,
+        isoDate(cursor),
+        isoDate(chunkFim),
+      );
+      if (!result.ok) {
+        ultimoErro = result.reason;
+        if (result.invalidCredentials) break; // sem ponto continuar
+        // Erro temporario: tenta proximo chunk mesmo assim
+      } else {
+        await this.upsertGeracoes(sistemaId, result.geracoes);
+        totalDias += result.geracoes.length;
+      }
+      chunks++;
+      cursor = new Date(chunkFim.getTime() + 24 * 60 * 60 * 1000); // dia seguinte
+    }
+
+    await this.atualizarStatusSistema(sistemaId, {
+      ultima_sincronizacao: new Date().toISOString(),
+      ultimo_erro: ultimoErro ?? null,
+    });
+
+    if (totalDias === 0 && ultimoErro) {
+      return { ok: false, reason: ultimoErro, totalDias: 0, chunks };
+    }
+    return { ok: true, totalDias, chunks };
+  }
+
   // Sincroniza UM sistema sob demanda (usado por botao "atualizar agora" no dashboard).
   async syncOne(sistemaId: string): Promise<{ ok: boolean; reason?: string }> {
     const { data, error } = await this.supabase.getClient()

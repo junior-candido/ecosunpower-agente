@@ -266,6 +266,23 @@ export function createDashboardRouter(
     res.redirect(`/dashboard/monitoramento/${id}`);
   });
 
+  // Backfill: puxa historico completo (ate 24 meses) via API.
+  // Usado pra preencher gaps de sistemas recem-cadastrados.
+  router.post('/monitoramento/:id/backfill', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).send('UUID invalido');
+    try {
+      const r = await monitoringService.backfillHistorico(id);
+      if (!r.ok) {
+        return res.status(500).send(`<h2>Erro ao carregar historico</h2><pre>${escapeHtmlSimple(r.reason ?? 'desconhecido')}</pre><a href="/dashboard/monitoramento/${id}">← voltar</a>`);
+      }
+      res.redirect(`/dashboard/monitoramento/${id}`);
+    } catch (err) {
+      console.error('[dashboard/backfill]', err);
+      res.status(500).send(`<h2>Erro</h2><pre>${(err as Error).message}</pre>`);
+    }
+  });
+
   // Sync manual de um sistema. Re-busca dados da API e popula geracao_diaria.
   router.post('/monitoramento/:id/sync', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
