@@ -3153,6 +3153,19 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // Pagina publica de proposta hospedada (Eva Proposta /proposta).
   // Slug urlsafe ~64 bits de entropia (nao enumeravel). TTL 60 dias por padrao.
   // Hosteia HTML interativo do template — resolve a limitacao Drive desktop
+  // Rewrite de hostname pra subdominio do dashboard. Quando o request chega
+  // em dashboard.ecosunpower.eng.br/<path>, reescreve internamente pra
+  // /dashboard/<path>. Resultado: URL fica limpa
+  // (ex: dashboard.ecosunpower.eng.br/home em vez de .../dashboard/home),
+  // sem precisar duplicar rotas. Aplicado ANTES do app.use('/dashboard').
+  app.use((req, _res, next) => {
+    const host = (req.hostname ?? '').toLowerCase();
+    if (host.startsWith('dashboard.') && !req.url.startsWith('/dashboard')) {
+      req.url = '/dashboard' + (req.url === '/' ? '' : req.url);
+    }
+    next();
+  });
+
   // Dashboard interno EcoSun (Modulo 3 da plataforma). Auth basica via senha
   // env DASHBOARD_PASSWORD. Rotas: /dashboard/home, /dashboard/propostas,
   // /dashboard/manutencao. Mais paginas serao adicionadas em fases.
