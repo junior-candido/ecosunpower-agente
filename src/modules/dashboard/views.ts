@@ -138,12 +138,12 @@ export function renderLayout(input: LayoutInput): string {
           <div class="text-xs text-sky-200 mt-1">Dashboard interno</div>
         </div>
       </div>
-      <nav class="flex gap-1 text-sm">
-        <a href="/dashboard/home" class="px-4 py-2 rounded-lg transition ${navClass('home')}">Home</a>
-        <a href="/dashboard/propostas" class="px-4 py-2 rounded-lg transition ${navClass('propostas')}">Propostas</a>
-        <a href="/dashboard/manutencao" class="px-4 py-2 rounded-lg transition ${navClass('manutencao')}">Manutenção</a>
+      <nav class="flex flex-wrap gap-1 text-sm w-full sm:w-auto justify-end">
+        <a href="/dashboard/home" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('home')}">🏠 <span class="hidden sm:inline">Home</span></a>
+        <a href="/dashboard/propostas" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('propostas')}">📊 <span class="hidden sm:inline">Propostas</span></a>
+        <a href="/dashboard/manutencao" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('manutencao')}">🔧 <span class="hidden sm:inline">Manutenção</span></a>
         <form action="/dashboard/logout" method="post" class="inline">
-          <button type="submit" class="px-3 py-2 rounded-lg text-sky-200 hover:bg-white/10 hover:text-white transition text-xs">Sair</button>
+          <button type="submit" class="px-3 py-2 rounded-lg text-sky-200 hover:bg-white/10 hover:text-white transition text-xs" title="Sair">🚪 <span class="hidden sm:inline">Sair</span></button>
         </form>
       </nav>
     </div>
@@ -154,12 +154,12 @@ export function renderLayout(input: LayoutInput): string {
   </main>
 
   <footer class="max-w-7xl mx-auto px-4 sm:px-6 py-6 text-xs text-slate-500 text-center border-t border-slate-200 mt-8">
-    <div class="flex items-center justify-center gap-2">
+    <div class="flex items-center justify-center gap-2 flex-wrap">
       <span>☀</span>
       <span>EcoSunPower Energia Solar</span>
-      <span class="text-slate-300">·</span>
+      <span class="text-slate-300 hidden sm:inline">·</span>
       <span>CNPJ 33.020.459/0001-06</span>
-      <span class="text-slate-300">·</span>
+      <span class="text-slate-300 hidden sm:inline">·</span>
       <span>Brasília-DF</span>
     </div>
   </footer>
@@ -406,19 +406,19 @@ export function renderPropostasPage(input: PropostasPageInput): string {
   }).join('');
 
   const body = `
-    <div class="flex items-center justify-between mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
       <div>
         <h1 class="text-2xl font-bold text-slate-900">Propostas</h1>
         <p class="text-slate-600 text-sm">${total} ${total === 1 ? 'proposta' : 'propostas'} ${search ? `encontrada(s) pra "${escapeHtml(search)}"` : 'no total'}</p>
       </div>
-      <form action="/dashboard/propostas" method="get" class="flex gap-2">
-        <input type="text" name="q" value="${escapeHtml(search)}" placeholder="Buscar por nome do cliente..." class="px-4 py-2 border border-slate-300 rounded-lg text-sm w-64">
-        <button class="px-4 py-2 bg-sky-700 text-white rounded-lg text-sm hover:bg-sky-800">Buscar</button>
+      <form action="/dashboard/propostas" method="get" class="flex gap-2 w-full sm:w-auto">
+        <input type="text" name="q" value="${escapeHtml(search)}" placeholder="Buscar por nome..." class="flex-1 sm:flex-none sm:w-64 px-4 py-2 border border-slate-300 rounded-lg text-sm">
+        <button class="px-4 py-2 bg-sky-700 text-white rounded-lg text-sm hover:bg-sky-800 whitespace-nowrap">🔍 Buscar</button>
       </form>
     </div>
 
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-      <table class="w-full">
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+      <table class="w-full min-w-[800px]">
         <thead class="bg-slate-100 border-b border-slate-200">
           <tr class="text-left text-xs uppercase tracking-wider text-slate-500">
             <th class="px-4 py-3 font-semibold">Cliente</th>
@@ -510,8 +510,8 @@ export function renderManutencaoPage(rows: ManutencaoRow[]): string {
     </div>
     ` : ''}
 
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-      <table class="w-full">
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+      <table class="w-full min-w-[800px]">
         <thead class="bg-slate-100 border-b border-slate-200">
           <tr class="text-left text-xs uppercase tracking-wider text-slate-500">
             <th class="px-4 py-3 font-semibold">Cliente</th>
