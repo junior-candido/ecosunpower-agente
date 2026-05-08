@@ -615,8 +615,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     const matchGoogle = trimmed.match(/^\/google-postou\s+(\S+)$/i);
     const matchAprovarReview = trimmed.match(/^\/aprovar-review\s+(\S+)$/i);
     const matchListarReviews = /^\/reviews-pendentes$/i.test(trimmed);
+    // Botoes interativos enviam id no formato "approve:<reviewId>" ou "ignore:<reviewId>"
+    const matchApproveBtn = trimmed.match(/^approve:(.+)$/);
+    const matchIgnoreBtn = trimmed.match(/^ignore:(.+)$/);
 
-    if (!matchAprovar && !matchGoogle && !matchAprovarReview && !matchListarReviews) return false;
+    if (!matchAprovar && !matchGoogle && !matchAprovarReview && !matchListarReviews && !matchApproveBtn && !matchIgnoreBtn) return false;
 
     try {
       if (matchAprovar) {
@@ -649,6 +652,16 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           });
           await sendText(from, `📝 ${pending.length} review(s) pendente(s):\n\n${lines.join('\n\n')}\n\nPra aprovar: /aprovar-review <id>`);
         }
+      } else if (matchApproveBtn) {
+        const id = matchApproveBtn[1];
+        const row = await publicReviews.approve(id);
+        const ok = await siteDeploy.dispatchRebuild();
+        const tail = ok ? 'Site rebuildando em ~30s.' : 'Deploy hook nao configurado.';
+        await sendText(from, `✅ Review do ${row.cliente_nome} aprovada e publicada. ${tail}`);
+      } else if (matchIgnoreBtn) {
+        // Ignorar = nao publicar. Review fica em public_reviews mas approved=false.
+        // Ja foi marcado como notified, entao nao notifica de novo. Suficiente.
+        await sendText(from, '🗑️ Review ignorada. Não vai aparecer no site.');
       }
     } catch (err) {
       console.error('[testimonial-admin] Error:', (err as Error).message);
@@ -3542,8 +3555,9 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
     console.log('[maintenance] Reminder scheduler started (1x/day apos 9h BRT, idempotente)');
 
     // Notificacao de review novo do /avaliar (form publico do site).
-    // A cada 5min, busca reviews ainda nao notificados e manda mensagem pro
-    // engineerPhone com botao /aprovar-review e contexto da review.
+    // A cada 5min, busca reviews ainda nao notificados e manda no WhatsApp
+    // do engineerPhone com BOTOES interativos ✅ Aprovar / ❌ Ignorar.
+    // Junior so clica — sem precisar digitar comando.
     async function notifyNewReviews() {
       try {
         const pending = await publicReviews.listUnnotified(5);
@@ -3551,20 +3565,37 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
         for (const r of pending) {
           const stars = '⭐'.repeat(r.estrelas);
           const cidade = r.cliente_cidade ? ` · ${r.cliente_cidade}` : '';
-          const texto = r.texto ? `\n💬 "${r.texto.slice(0, 200)}${r.texto.length > 200 ? '...' : ''}"` : '';
+          const texto = r.texto ? `\n💬 "${r.texto.slice(0, 250)}${r.texto.length > 250 ? '...' : ''}"` : '';
           const tel = r.cliente_telefone ? `\n📞 ${r.cliente_telefone}` : '';
-          const msg = [
+          const body = [
             '🌟 *Nova avaliação no site!*',
             '',
             `👤 ${r.cliente_nome}${cidade}`,
             `${stars} (${r.estrelas} estrela${r.estrelas > 1 ? 's' : ''})`,
             texto,
             tel,
-            '',
-            `✅ Aprovar pra publicar: */aprovar-review ${r.id}*`,
-            'Ou ignora se for spam.',
           ].filter(Boolean).join('\n');
-          await sendText(config.engineerPhone, msg);
+
+          // Tenta enviar com botoes WABA. Se nao tiver WABA disponivel, fallback
+          // pra texto puro com instrucao de comando.
+          if (metaWaba) {
+            try {
+              await metaWaba.sendInteractiveButtons(
+                config.engineerPhone,
+                body,
+                [
+                  { id: `approve:${r.id}`, title: '✅ Aprovar' },
+                  { id: `ignore:${r.id}`, title: '❌ Ignorar' },
+                ],
+                'Toque pra responder',
+              );
+            } catch (err) {
+              console.warn('[reviews-notifier] botoes falharam, fallback texto:', (err as Error).message);
+              await sendText(config.engineerPhone, `${body}\n\n✅ /aprovar-review ${r.id}\n❌ Ignora se for spam`);
+            }
+          } else {
+            await sendText(config.engineerPhone, `${body}\n\n✅ /aprovar-review ${r.id}\n❌ Ignora se for spam`);
+          }
           await publicReviews.markNotified(r.id);
         }
         console.log(`[reviews-notifier] notificou ${pending.length} review(s)`);
