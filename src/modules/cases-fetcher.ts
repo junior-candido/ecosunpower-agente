@@ -52,7 +52,13 @@ export class CasesFetcher {
     try {
       const res = await this.fetcher(`${this.siteUrl}/cases.json`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as Case[];
+      const raw = (await res.json()) as Case[];
+      // Normaliza URLs relativas pra absolutas. O cases.json do site Astro
+      // gera paths como "/cases/<slug>/cover.jpg" — quando o HTML da proposta
+      // eh renderizado em outro subdominio (propostas.ecosunpower.eng.br), o
+      // browser resolveria pra propostas.ecosunpower.eng.br/cases/... que
+      // nao existe. Pre-resolve aqui pra manter siteUrl como fonte unica.
+      const data = raw.map(c => this.absolutizarUrls(c));
       this.cache = { at: now, data };
       return data;
     } catch (err) {
@@ -63,6 +69,27 @@ export class CasesFetcher {
       console.error('[cases-fetcher] erro e sem cache:', err);
       return [];
     }
+  }
+
+  // Resolve URL relativa pra absoluta usando siteUrl como base.
+  // - "https://x" -> mantem (ja absoluta, ex: imagens no Supabase Storage)
+  // - "/cases/..." -> "${siteUrl}/cases/..." (path absoluto sob raiz do site)
+  // - undefined/'' -> undefined (nao mexe)
+  // - outros (data:, blob:) -> mantem
+  private absoluteUrl(url: string | undefined): string | undefined {
+    if (!url) return url;
+    if (/^https?:\/\//i.test(url)) return url;
+    if (url.startsWith('/')) return `${this.siteUrl}${url}`;
+    return url;
+  }
+
+  private absolutizarUrls(c: Case): Case {
+    return {
+      ...c,
+      fotoPrincipal: this.absoluteUrl(c.fotoPrincipal) ?? c.fotoPrincipal,
+      fotos: (c.fotos ?? []).map(f => this.absoluteUrl(f) ?? f),
+      videoUrl: this.absoluteUrl(c.videoUrl),
+    };
   }
 
   async getByTipo(tipo: Case['tipo'], limit = 3): Promise<Case[]> {
