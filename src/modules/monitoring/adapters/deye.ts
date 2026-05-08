@@ -10,18 +10,29 @@
 //
 // Auth flow:
 //   - Junior cria App no portal Deye (já tem: AppId + AppSecret).
-//   - POST /v1.0/account/token com appId+appSecret+email+password do master.
+//   - POST /v1.0/account/token com appId+appSecret+email+password (SHA-256!).
 //   - Token expira em ~30 dias.
 //
+// Body do token (descoberto via doc oficial):
+//   {
+//     "appSecret": "...",
+//     "email": "...",
+//     "password": "<SHA-256 hex do password>",
+//     "countryCode": "55" (Brasil),
+//     "identity_type": 1 (1=email, 2=mobile, 3=username)
+//   }
+//
 // Credenciais esperadas no api_credentials JSONB:
-//   { appId, appSecret, email, password, dataCenter? }
+//   { appId, appSecret, email, password, dataCenter?, countryCode? }
 //   dataCenter default 'us1' (cobre Brasil)
+//   countryCode default '55' (Brasil)
 //
 // Endpoints usados:
 //   POST /v1.0/account/token   — obter access_token
 //   POST /v1.0/station/list    — listar plantas da conta
 //   POST /v1.0/station/history — histórico de geração da planta
 
+import crypto from 'crypto';
 import type { AdapterResult, ListSitesResult, MonitoringAdapter } from '../types.js';
 
 function baseUrl(creds: ParsedCreds): string {
@@ -50,10 +61,11 @@ interface ParsedCreds {
   email: string;
   password: string;
   dataCenter: string;
+  countryCode: string;
 }
 
 function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: string } {
-  const cc = c as DeyeCredenciais;
+  const cc = c as DeyeCredenciais & { countryCode?: unknown };
   const appId = String(cc.appId ?? '').trim();
   const appSecret = String(cc.appSecret ?? '').trim();
   const email = String(cc.email ?? '').trim();
@@ -61,6 +73,8 @@ function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: string }
   // Default 'us1' — Americas/Brasil. Junior pode escolher 'eu1' se for Europa.
   let dataCenter = String(cc.dataCenter ?? 'us1').trim().toLowerCase();
   if (!['us1', 'eu1'].includes(dataCenter)) dataCenter = 'us1';
+  // Default Brasil. Junior pode mudar pelo form.
+  const countryCode = String(cc.countryCode ?? '55').trim() || '55';
 
   if (!appId || !appSecret) {
     return { error: 'Faltam appId/appSecret (cadastre no portal Deye)' };
@@ -68,11 +82,25 @@ function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: string }
   if (!email || !password) {
     return { error: 'Faltam email/password da conta Deye master' };
   }
-  return { appId, appSecret, email, password, dataCenter };
+  return { appId, appSecret, email, password, dataCenter, countryCode };
 }
 
 async function obterToken(creds: ParsedCreds): Promise<{ ok: true; token: string } | { ok: false; reason: string; invalidCredentials?: boolean }> {
-  const url = `${baseUrl(creds)}/v1.0/account/token?appId=${encodeURIComponent(creds.appId)}`;
+  const base = baseUrl(creds);
+  const url = `${base}/v1.0/account/token?appId=${encodeURIComponent(creds.appId)}`;
+
+  // Deye exige password como hash SHA-256 (descoberto via doc oficial).
+  // identity_type=1 = login por email (vs 2=mobile, 3=username).
+  // countryCode em formato numerico ("55" Brasil, "1" US, "86" China, etc).
+  const passwordHash = crypto.createHash('sha256').update(creds.password).digest('hex');
+  const body = {
+    appSecret: creds.appSecret,
+    email: creds.email,
+    password: passwordHash,
+    identity_type: 1,
+    countryCode: creds.countryCode,
+  };
+
   let resp: Response;
   try {
     const controller = new AbortController();
@@ -80,12 +108,14 @@ async function obterToken(creds: ParsedCreds): Promise<{ ok: true; token: string
     try {
       resp = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          appSecret: creds.appSecret,
-          email: creds.email,
-          password: creds.password,
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+          // Deye doc lista 'host' como header obrigatorio. fetch ja seta
+          // 'Host' automaticamente baseado na URL, mas garantimos explicito
+          // pra cobrir validacao em minusculas.
+          'host': new URL(base).host,
+        },
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
     } finally {
