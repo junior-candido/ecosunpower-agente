@@ -101,6 +101,37 @@ export class MetaWhatsAppService {
     return this.postMessage(body);
   }
 
+  // Envia mensagem com botoes interativos (ate 3 botoes "reply").
+  // Cada botao tem id (callback) e title (texto exibido, max 20 chars).
+  // Quando usuario clica, vem webhook tipo "interactive.button_reply.id".
+  async sendInteractiveButtons(
+    to: string,
+    body: string,
+    buttons: Array<{ id: string; title: string }>,
+    footer?: string,
+  ): Promise<{ messageId: string }> {
+    if (buttons.length === 0 || buttons.length > 3) {
+      throw new Error('sendInteractiveButtons: precisa de 1 a 3 botoes');
+    }
+    const payload: Record<string, unknown> = {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: body.slice(0, 1024) },
+        ...(footer ? { footer: { text: footer.slice(0, 60) } } : {}),
+        action: {
+          buttons: buttons.map(b => ({
+            type: 'reply',
+            reply: { id: b.id.slice(0, 256), title: b.title.slice(0, 20) },
+          })),
+        },
+      },
+    };
+    return this.postMessage(payload);
+  }
+
   // Upload media buffer to Meta Cloud API and return media_id.
   // Useful when we have a Buffer (e.g. PDF gerado in-memory) instead of a public URL.
   async uploadMedia(buffer: Buffer, mimeType: string, filename: string): Promise<{ mediaId: string }> {
@@ -297,8 +328,16 @@ export class MetaWhatsAppService {
           content: JSON.stringify({ lat: loc?.latitude, lng: loc?.longitude }),
         };
       }
-      // Tipos nao suportados (interactive, button, contacts, sticker, system...)
-      // sao ignorados por enquanto. Adicionar conforme necessidade.
+      // Botoes interativos (Eva manda mensagem com botoes, Junior clica).
+      // Tratamos como uma mensagem de texto cujo conteudo eh o button_id (ex:
+      // "approve:abc-123"). O handler downstream interpreta o prefixo.
+      case 'interactive': {
+        const ia = msg.interactive as { type?: string; button_reply?: { id?: string }; list_reply?: { id?: string } } | undefined;
+        const id = ia?.button_reply?.id ?? ia?.list_reply?.id ?? '';
+        if (!id) return null;
+        return { ...base, type: 'text', content: id };
+      }
+      // Tipos nao suportados (button quote, contacts, sticker, system...)
       default:
         return null;
     }
