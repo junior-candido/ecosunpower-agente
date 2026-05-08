@@ -438,6 +438,22 @@ export class ProposalAssistant {
   }
 
   async processProposalMessage(phone: string, message: string): Promise<string> {
+    // Botoes interativos WABA chegam como text com id "prop:gerar" / "prop:ajustar"
+    // / "prop:cancelar". Normaliza pra texto natural ANTES de qualquer outro
+    // intercept — assim o resto do fluxo funciona igual ao Junior digitar a palavra.
+    const btnMatch = message.trim().toLowerCase().match(/^prop:(gerar|ajustar|cancelar)$/);
+    if (btnMatch) {
+      const acao = btnMatch[1];
+      if (acao === 'gerar') {
+        message = 'gerar';
+      } else if (acao === 'ajustar') {
+        return 'Beleza, me fala o que ajustar (ex: "tarifa pra 1.10", "troca pro inversor X", "muda pra 10 kWp").';
+      } else if (acao === 'cancelar') {
+        await this.exitProposalMode(phone);
+        return '🗑️ Proposta cancelada. Manda /proposta quando quiser comecar outra.';
+      }
+    }
+
     if (ProposalAssistant.isExitTrigger(message)) {
       await this.exitProposalMode(phone);
       return '👍 Saiu do modo proposta.';
@@ -536,6 +552,28 @@ export class ProposalAssistant {
 
     if (parsed.action === 'confirm_generate' && parsed.data) {
       return await this.generateProposal(phone, parsed.data, parsed.message);
+    }
+
+    // Quando Claude monta o resumo dos dados (ready_to_generate), manda botoes
+    // interativos COMPLEMENTARES ao texto pra Junior aprovar com 1 toque.
+    // Texto principal vai pelo return; botoes via metaService direto. Sem
+    // fallback no catch — o texto ja diz "Manda gerar...". Regra
+    // feedback_botoes_zap.md: toda acao da Eva pro zap deve ter botao.
+    if (parsed.action === 'ready_to_generate' && this.metaService) {
+      try {
+        await this.metaService.sendInteractiveButtons(
+          phone,
+          'Confirmar e gerar a proposta?',
+          [
+            { id: 'prop:gerar', title: '✅ Gerar' },
+            { id: 'prop:ajustar', title: '✏️ Ajustar' },
+            { id: 'prop:cancelar', title: '❌ Cancelar' },
+          ],
+          'Ou digite "ajusta X" pra detalhar',
+        );
+      } catch (err) {
+        console.warn('[proposal] botoes ready_to_generate falharam:', (err as Error).message);
+      }
     }
 
     return parsed.message ?? 'Ok.';
