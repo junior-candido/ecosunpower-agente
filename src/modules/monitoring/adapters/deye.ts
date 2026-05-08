@@ -90,14 +90,15 @@ async function obterToken(creds: ParsedCreds): Promise<{ ok: true; token: string
   const url = `${base}/v1.0/account/token?appId=${encodeURIComponent(creds.appId)}`;
 
   // Deye exige password como hash SHA-256 (descoberto via doc oficial).
-  // identity_type=1 = login por email (vs 2=mobile, 3=username).
   // countryCode em formato numerico ("55" Brasil, "1" US, "86" China, etc).
+  // identity_type removido — exemplo na doc nao tinha esse campo, e adicionar
+  // como number causa "invalid param type". Inferido pelo proprio campo
+  // enviado (email vs mobile vs username).
   const passwordHash = crypto.createHash('sha256').update(creds.password).digest('hex');
   const body = {
     appSecret: creds.appSecret,
     email: creds.email,
     password: passwordHash,
-    identity_type: 1,
     countryCode: creds.countryCode,
   };
 
@@ -130,27 +131,30 @@ async function obterToken(creds: ParsedCreds): Promise<{ ok: true; token: string
     return { ok: false, reason: `Deye token ${resp.status}: ${body.slice(0, 200)}` };
   }
 
-  let json: { access_token?: string; success?: boolean; msg?: string; code?: string };
+  let json: { access_token?: string; Bearer?: string; id?: string; success?: boolean; msg?: string; code?: string };
   try {
     json = (await resp.json()) as typeof json;
   } catch (err) {
     return { ok: false, reason: `Deye token JSON: ${(err as Error).message}` };
   }
 
-  // Deye retorna {success: true, access_token: "...", expires_in: 7776000}
+  // Deye retorna {success: true, Bearer: "..." OR access_token: "...", ...}
   // ou {success: false, code: "...", msg: "..."}
   if (json.success === false) {
-    const isAuth = /password|credential|token|secret|account/i.test(json.msg ?? '');
+    const isAuth = /password|credential|token|secret|account|invalid/i.test(json.msg ?? '');
     return {
       ok: false,
       reason: `Deye: ${json.msg ?? json.code ?? 'erro desconhecido'}`,
       invalidCredentials: isAuth,
     };
   }
-  if (!json.access_token) {
-    return { ok: false, reason: 'Deye não retornou access_token' };
+  // A doc Deye mostra response com campo "Bearer" (capitalizado);
+  // tambem aceitamos access_token e id por seguranca.
+  const token = json.Bearer ?? json.access_token ?? json.id;
+  if (!token) {
+    return { ok: false, reason: 'Deye nao retornou token (Bearer/access_token)' };
   }
-  return { ok: true, token: json.access_token };
+  return { ok: true, token };
 }
 
 // ============================================================================
