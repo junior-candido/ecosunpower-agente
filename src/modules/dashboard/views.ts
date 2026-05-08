@@ -654,20 +654,27 @@ export function renderDetalheSistemaPage(d: DetalheSistema): string {
       }).join('');
 
   // Dados pros graficos (Chart.js)
-  const labels30 = d.serie30.map((p) => {
-    const [, m, dia] = p.data.split('-');
-    return `${dia}/${m}`;
-  });
-  const valores30 = d.serie30.map((p) => Number(p.kwh.toFixed(1)));
-  const esperado30 = d.serie30.map((p) => Number(p.esperado.toFixed(1)));
-
   const meses = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-  const labelsMensal = d.serieMensal.map((p) => {
+
+  // Serie do periodo selecionado (diaria ou mensal dependendo do range)
+  const labelsPeriodo = d.serie.map((p) => {
+    if (d.periodo.granularidade === 'mensal') {
+      const [y, m] = p.data.split('-');
+      return `${meses[parseInt(m, 10) - 1]}/${y.slice(2)}`;
+    }
+    const [, mm, dia] = p.data.split('-');
+    return `${dia}/${mm}`;
+  });
+  const valoresPeriodo = d.serie.map((p) => Number(p.kwh.toFixed(1)));
+  const esperadoPeriodo = d.serie.map((p) => Number(p.esperado.toFixed(1)));
+
+  // Serie mensal completa (overview de TODA a vida do sistema)
+  const labelsMensal = d.serieMensalCompleta.map((p) => {
     const [y, m] = p.mes.split('-');
     return `${meses[parseInt(m, 10) - 1]}/${y.slice(2)}`;
   });
-  const valoresMensal = d.serieMensal.map((p) => Math.round(p.kwh));
-  const esperadoMensal = d.serieMensal.map((p) => Math.round(p.esperado));
+  const valoresMensal = d.serieMensalCompleta.map((p) => Math.round(p.kwh));
+  const esperadoMensal = d.serieMensalCompleta.map((p) => Math.round(p.esperado));
 
   const ratioPct = Math.round(d.kpis.ratioUltimos7 * 100);
   const ratioCor = ratioPct < 70 ? 'rose' : ratioPct > 110 ? 'emerald' : 'sky';
@@ -732,19 +739,41 @@ export function renderDetalheSistemaPage(d: DetalheSistema): string {
       ${alertasHtml}
     </section>
 
-    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
-      <h2 class="text-base font-semibold text-slate-900 mb-4">Geração últimos 30 dias</h2>
-      <div style="height:300px;position:relative">
-        <canvas id="grafico30"></canvas>
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-sm font-semibold text-slate-700">📅 Período:</span>
+        ${(['30d', '90d', '6m', '1a', '2a', '5a', 'tudo'] as const).map((p) => {
+          const labels: Record<string, string> = { '30d': '30 dias', '90d': '90 dias', '6m': '6 meses', '1a': '1 ano', '2a': '2 anos', '5a': '5 anos', 'tudo': 'Tudo' };
+          const ativo = d.periodo.presetAtual === p;
+          return `<a href="/dashboard/monitoramento/${escapeHtml(s.id)}?preset=${p}" class="px-3 py-1.5 rounded-md text-sm transition ${ativo ? 'bg-sky-700 text-white font-semibold' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">${labels[p]}</a>`;
+        }).join('')}
+        <form method="get" action="/dashboard/monitoramento/${escapeHtml(s.id)}" class="flex flex-wrap items-center gap-2 ml-auto">
+          <input type="date" name="inicio" value="${d.periodo.inicio}" class="px-2 py-1 border border-slate-300 rounded-md text-sm">
+          <span class="text-slate-500 text-sm">até</span>
+          <input type="date" name="fim" value="${d.periodo.fim}" class="px-2 py-1 border border-slate-300 rounded-md text-sm">
+          <button class="px-3 py-1.5 rounded-md text-sm bg-amber-500 hover:bg-amber-600 text-white font-medium">Aplicar</button>
+        </form>
       </div>
     </section>
 
     <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
-      <h2 class="text-base font-semibold text-slate-900 mb-4">Geração últimos 12 meses</h2>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-base font-semibold text-slate-900">Geração — ${escapeHtml(d.periodo.label)}</h2>
+        <span class="text-xs text-slate-500">${d.periodo.granularidade === 'diaria' ? 'visão diária' : 'visão mensal'}</span>
+      </div>
+      <div style="height:300px;position:relative">
+        <canvas id="graficoPeriodo"></canvas>
+      </div>
+    </section>
+
+    ${d.serieMensalCompleta.length > 1 ? `
+    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
+      <h2 class="text-base font-semibold text-slate-900 mb-4">📊 Histórico mensal completo</h2>
       <div style="height:300px;position:relative">
         <canvas id="graficoMensal"></canvas>
       </div>
-    </section>
+      <p class="text-xs text-slate-500 mt-2">Todos os meses desde o início do tracking. Use pra ver sazonalidade e degradação ano sobre ano.</p>
+    </section>` : ''}
 
     ${s.ultimo_erro ? `
     <section class="bg-rose-50 border border-rose-200 rounded-xl p-4 mb-6 text-sm">
@@ -757,25 +786,26 @@ export function renderDetalheSistemaPage(d: DetalheSistema): string {
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
   // Auto-refresh 30s pra mostrar dado mais fresco do nosso banco.
+  // NAO recarrega se cliente clicou em algum filtro/preset (preserva URL).
   setTimeout(() => location.reload(), 30000);
 
-  const ctx30 = document.getElementById('grafico30');
-  if (ctx30) {
-    new Chart(ctx30, {
+  const ctxPeriodo = document.getElementById('graficoPeriodo');
+  if (ctxPeriodo) {
+    new Chart(ctxPeriodo, {
       type: 'bar',
       data: {
-        labels: ${JSON.stringify(labels30)},
+        labels: ${JSON.stringify(labelsPeriodo)},
         datasets: [
           {
             label: 'Real (kWh)',
-            data: ${JSON.stringify(valores30)},
+            data: ${JSON.stringify(valoresPeriodo)},
             backgroundColor: '#f59e0b',
             borderRadius: 4,
             order: 2,
           },
           {
             label: 'Esperado (kWh)',
-            data: ${JSON.stringify(esperado30)},
+            data: ${JSON.stringify(esperadoPeriodo)},
             type: 'line',
             borderColor: '#0ea5e9',
             borderDash: [4, 4],

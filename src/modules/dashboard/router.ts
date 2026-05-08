@@ -203,8 +203,23 @@ export function createDashboardRouter(
     if (!/^[0-9a-f-]{36}$/i.test(id)) {
       return res.status(400).send('UUID invalido');
     }
+    // Periodo: ?preset=30d|90d|6m|1a|2a|5a|tudo  OU  ?inicio=YYYY-MM-DD&fim=YYYY-MM-DD
+    const preset = typeof req.query.preset === 'string' ? req.query.preset : undefined;
+    const inicio = typeof req.query.inicio === 'string' ? req.query.inicio : undefined;
+    const fim = typeof req.query.fim === 'string' ? req.query.fim : undefined;
+    const isDate = (s?: string) => s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+    const validPreset = ['30d', '90d', '6m', '1a', '2a', '5a', 'tudo'].includes(preset ?? '');
+
+    const options: Parameters<typeof monitoringService.getDetalheSistema>[1] = {};
+    if (isDate(inicio) && isDate(fim)) {
+      options.inicio = inicio;
+      options.fim = fim;
+    } else if (validPreset) {
+      options.preset = preset as '30d' | '90d' | '6m' | '1a' | '2a' | '5a' | 'tudo';
+    }
+
     try {
-      const detalhe = await monitoringService.getDetalheSistema(id);
+      const detalhe = await monitoringService.getDetalheSistema(id, options);
       if (!detalhe) {
         return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
       }

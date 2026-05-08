@@ -31,8 +31,18 @@ export interface DetalheSistema {
     esperadoDiaKwh: number;
     ratioUltimos7: number;
   };
-  serie30: { data: string; kwh: number; esperado: number }[];
-  serieMensal: { mes: string; kwh: number; esperado: number }[];
+  // Periodo selecionado
+  periodo: {
+    inicio: string; // YYYY-MM-DD
+    fim: string;    // YYYY-MM-DD
+    label: string;  // "Últimos 30 dias", "Ano 2024", "Personalizado", etc
+    granularidade: 'diaria' | 'mensal'; // baseado no range
+    presetAtual: '30d' | '90d' | '6m' | '1a' | '2a' | '5a' | 'tudo' | 'custom';
+  };
+  // Serie principal do periodo selecionado (formato depende da granularidade)
+  serie: { data: string; kwh: number; esperado: number }[];
+  // Mantemos o overview mensal de SEMPRE (ate hoje, todos os meses com dados)
+  serieMensalCompleta: { mes: string; kwh: number; esperado: number }[];
   alertas: Array<{ tipo: string; severidade: 'aviso' | 'urgente' | 'info'; texto: string }>;
 }
 
@@ -458,9 +468,17 @@ export class MonitoringService {
   }
 
   // Detalhe completo de UM sistema pra pagina de analise.
-  // Inclui: dados base, KPIs (hoje/mes/ano/total), serie diaria 90 dias,
-  // serie mensal 12 meses, calculo de geracao esperada (HSP x kWp), alertas.
-  async getDetalheSistema(sistemaId: string): Promise<DetalheSistema | null> {
+  // periodo opcional: { preset: '30d'|'90d'|'6m'|'1a'|'2a'|'5a'|'tudo' }
+  //                OR { inicio: 'YYYY-MM-DD', fim: 'YYYY-MM-DD' }
+  // Default: ultimos 30 dias.
+  async getDetalheSistema(
+    sistemaId: string,
+    options: {
+      preset?: '30d' | '90d' | '6m' | '1a' | '2a' | '5a' | 'tudo';
+      inicio?: string;
+      fim?: string;
+    } = {},
+  ): Promise<DetalheSistema | null> {
     const { data: sistema, error } = await this.supabase.getClient()
       .from('sistemas_clientes')
       .select('*')
@@ -469,79 +487,119 @@ export class MonitoringService {
     if (error || !sistema) return null;
 
     const s = sistema as SistemaCliente;
+    const hojeDate = new Date();
+    const hojeStr = isoDate(hojeDate);
 
-    // Busca todas as geracoes dos ultimos 13 meses (cobre 30d + 12m mensal)
-    const inicio13meses = new Date();
-    inicio13meses.setMonth(inicio13meses.getMonth() - 13);
-    const inicioStr = inicio13meses.toISOString().slice(0, 10);
+    // Resolve range do periodo
+    const { inicio, fim, label, presetAtual } = this.resolverPeriodo(options, s.data_instalacao);
 
-    const { data: geracoes } = await this.supabase.getClient()
+    // Busca TODAS as geracoes do sistema (pra KPIs ano/total + serie mensal completa)
+    const { data: todasGeracoes } = await this.supabase.getClient()
       .from('geracao_diaria')
       .select('data, geracao_kwh')
       .eq('sistema_id', sistemaId)
-      .gte('data', inicioStr)
       .order('data', { ascending: true });
 
-    const geracoesArr = (geracoes ?? []) as { data: string; geracao_kwh: number }[];
+    const geracoesArr = (todasGeracoes ?? []) as { data: string; geracao_kwh: number }[];
 
-    // KPIs
-    const hoje = isoDate(new Date());
-    const hojeRow = geracoesArr.find((g) => g.data === hoje);
-    const inicioMes = isoDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-    const inicioAno = isoDate(new Date(new Date().getFullYear(), 0, 1));
-
+    // KPIs (sempre fixos: hoje/mes/ano/total)
+    const hojeRow = geracoesArr.find((g) => g.data === hojeStr);
+    const inicioMes = isoDate(new Date(hojeDate.getFullYear(), hojeDate.getMonth(), 1));
+    const inicioAno = isoDate(new Date(hojeDate.getFullYear(), 0, 1));
     const geracaoMes = geracoesArr.filter((g) => g.data >= inicioMes)
       .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
     const geracaoAno = geracoesArr.filter((g) => g.data >= inicioAno)
       .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
     const geracaoTotal = geracoesArr.reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
 
-    // Serie 30 dias (preenche dias sem dados com 0)
-    const serie30: { data: string; kwh: number; esperado: number }[] = [];
     const hsp = s.uf === 'GO' ? 5.3 : 5.2;
     const fator = 0.80;
     const kWp = Number(s.potencia_kwp ?? 0);
     const esperadoDia = kWp * hsp * fator;
 
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const ds = isoDate(d);
-      const row = geracoesArr.find((g) => g.data === ds);
-      serie30.push({
-        data: ds,
-        kwh: row ? Number(row.geracao_kwh) : 0,
-        esperado: esperadoDia,
-      });
+    // Serie do periodo selecionado
+    const diasRange = Math.ceil((new Date(fim).getTime() - new Date(inicio).getTime()) / (24 * 60 * 60 * 1000)) + 1;
+    const granularidade: 'diaria' | 'mensal' = diasRange <= 60 ? 'diaria' : 'mensal';
+
+    const geracoesDoRange = geracoesArr.filter((g) => g.data >= inicio && g.data <= fim);
+
+    let serie: { data: string; kwh: number; esperado: number }[] = [];
+    if (granularidade === 'diaria') {
+      // Bucket por dia, preenchendo gaps com 0
+      const cursor = new Date(inicio);
+      while (cursor <= new Date(fim)) {
+        const ds = isoDate(cursor);
+        const row = geracoesDoRange.find((g) => g.data === ds);
+        serie.push({
+          data: ds,
+          kwh: row ? Number(row.geracao_kwh) : 0,
+          esperado: esperadoDia,
+        });
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    } else {
+      // Bucket por mes
+      const inicioBucket = new Date(inicio);
+      inicioBucket.setDate(1);
+      const fimBucket = new Date(fim);
+      const cursor = new Date(inicioBucket);
+      while (cursor <= fimBucket) {
+        const ano = cursor.getFullYear();
+        const mes = cursor.getMonth() + 1;
+        const mesKey = `${ano}-${String(mes).padStart(2, '0')}`;
+        const diasNoMes = new Date(ano, mes, 0).getDate();
+        const kwhMes = geracoesDoRange
+          .filter((g) => g.data.startsWith(mesKey))
+          .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
+        serie.push({
+          data: mesKey,
+          kwh: kwhMes,
+          esperado: esperadoDia * diasNoMes,
+        });
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
     }
 
-    // Serie mensal 12 meses
-    const serieMensal: { mes: string; kwh: number; esperado: number }[] = [];
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date();
-      d.setMonth(d.getMonth() - i);
-      const ano = d.getFullYear();
-      const mes = d.getMonth() + 1;
-      const mesKey = `${ano}-${String(mes).padStart(2, '0')}`;
-      const diasNoMes = new Date(ano, mes, 0).getDate();
-      const kwhMes = geracoesArr
-        .filter((g) => g.data.startsWith(mesKey))
-        .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
-      serieMensal.push({
-        mes: mesKey,
-        kwh: kwhMes,
-        esperado: esperadoDia * diasNoMes,
-      });
+    // Serie mensal COMPLETA (todos os meses com dados desde primeira geracao)
+    const serieMensalCompleta: { mes: string; kwh: number; esperado: number }[] = [];
+    if (geracoesArr.length > 0) {
+      const primeiroDia = new Date(geracoesArr[0].data);
+      const cursor = new Date(primeiroDia.getFullYear(), primeiroDia.getMonth(), 1);
+      const fimMensal = new Date(hojeDate.getFullYear(), hojeDate.getMonth(), 1);
+      while (cursor <= fimMensal) {
+        const ano = cursor.getFullYear();
+        const mes = cursor.getMonth() + 1;
+        const mesKey = `${ano}-${String(mes).padStart(2, '0')}`;
+        const diasNoMes = new Date(ano, mes, 0).getDate();
+        const kwhMes = geracoesArr
+          .filter((g) => g.data.startsWith(mesKey))
+          .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
+        serieMensalCompleta.push({
+          mes: mesKey,
+          kwh: kwhMes,
+          esperado: esperadoDia * diasNoMes,
+        });
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
     }
 
-    // Status / alertas inline (regras simples)
-    const ultimos7 = serie30.slice(-7);
-    const realUltimos7 = ultimos7.reduce((s2, d) => s2 + d.kwh, 0);
+    // Status / alertas (baseado em ULTIMOS 7 DIAS reais — independente do range selecionado)
+    const ultimos7Inicio = isoDate(new Date(hojeDate.getTime() - 7 * 24 * 60 * 60 * 1000));
+    const ultimos7Geracoes = geracoesArr.filter((g) => g.data >= ultimos7Inicio);
+    const realUltimos7 = ultimos7Geracoes.reduce((s2, d) => s2 + Number(d.geracao_kwh), 0);
     const esperadoUltimos7 = esperadoDia * 7;
     const ratioUltimos7 = esperadoUltimos7 > 0 ? realUltimos7 / esperadoUltimos7 : 1;
 
-    const diasOffline = serie30.slice().reverse().findIndex((d) => d.kwh > 0);
-    const offlineHa = diasOffline === -1 ? 30 : diasOffline;
+    // Quantos dias atras teve geracao > 0 (pra detectar offline)
+    let offlineHa = 30;
+    for (let i = 0; i < 30; i++) {
+      const d = isoDate(new Date(hojeDate.getTime() - i * 24 * 60 * 60 * 1000));
+      const r = geracoesArr.find((g) => g.data === d);
+      if (r && Number(r.geracao_kwh) > 0) {
+        offlineHa = i;
+        break;
+      }
+    }
 
     const alertas: Array<{ tipo: string; severidade: 'aviso' | 'urgente' | 'info'; texto: string }> = [];
     if (offlineHa >= 3) {
@@ -574,12 +632,63 @@ export class MonitoringService {
         anoKwh: geracaoAno,
         totalKwh: geracaoTotal,
         esperadoDiaKwh: esperadoDia,
-        ratioUltimos7: ratioUltimos7,
+        ratioUltimos7,
       },
-      serie30,
-      serieMensal,
+      periodo: { inicio, fim, label, granularidade, presetAtual },
+      serie,
+      serieMensalCompleta,
       alertas,
     };
+  }
+
+  private resolverPeriodo(
+    options: { preset?: string; inicio?: string; fim?: string },
+    dataInstalacao?: string | null,
+  ): {
+    inicio: string;
+    fim: string;
+    label: string;
+    presetAtual: '30d' | '90d' | '6m' | '1a' | '2a' | '5a' | 'tudo' | 'custom';
+  } {
+    const hoje = new Date();
+    const hojeStr = isoDate(hoje);
+
+    // Range customizado tem prioridade
+    if (options.inicio && options.fim) {
+      return {
+        inicio: options.inicio,
+        fim: options.fim,
+        label: `${options.inicio} a ${options.fim}`,
+        presetAtual: 'custom',
+      };
+    }
+
+    const preset = (options.preset ?? '30d') as '30d' | '90d' | '6m' | '1a' | '2a' | '5a' | 'tudo';
+    const labels: Record<string, string> = {
+      '30d': 'Últimos 30 dias',
+      '90d': 'Últimos 90 dias',
+      '6m': 'Últimos 6 meses',
+      '1a': 'Último ano',
+      '2a': 'Últimos 2 anos',
+      '5a': 'Últimos 5 anos',
+      'tudo': dataInstalacao ? `Desde a instalação (${dataInstalacao})` : 'Tudo',
+    };
+
+    const inicio = new Date(hoje);
+    if (preset === '30d') inicio.setDate(inicio.getDate() - 30);
+    else if (preset === '90d') inicio.setDate(inicio.getDate() - 90);
+    else if (preset === '6m') inicio.setMonth(inicio.getMonth() - 6);
+    else if (preset === '1a') inicio.setFullYear(inicio.getFullYear() - 1);
+    else if (preset === '2a') inicio.setFullYear(inicio.getFullYear() - 2);
+    else if (preset === '5a') inicio.setFullYear(inicio.getFullYear() - 5);
+    else if (preset === 'tudo') {
+      if (dataInstalacao) {
+        return { inicio: dataInstalacao, fim: hojeStr, label: labels['tudo'], presetAtual: 'tudo' };
+      }
+      inicio.setFullYear(inicio.getFullYear() - 10); // fallback 10a
+    }
+
+    return { inicio: isoDate(inicio), fim: hojeStr, label: labels[preset] ?? 'Período custom', presetAtual: preset };
   }
 
   // Listagem pra dashboard. Inclui geracao do dia atual.
