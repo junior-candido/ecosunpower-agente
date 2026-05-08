@@ -244,11 +244,13 @@ export const deyeAdapter: MonitoringAdapter = {
 
     // POST /v1.0/station/history
     // Body: { stationId, startAt: "YYYY-MM-DD", endAt: "YYYY-MM-DD", timeType: "DAY" }
+    // Tenta com stationId como Number (formato esperado pela API).
+    // Se Deye exigir string, basta trocar pra String(stationId).
     const result = await deyePost(baseUrl(parsed), '/v1.0/station/history', tokenResp.token, {
       stationId: Number(stationId),
       startAt: dataInicio,
       endAt: dataFim,
-      timeType: 'DAY',
+      timeType: 1, // 1=DAY, 2=MONTH, 3=YEAR (padrao Deye/SolarMan numerico)
     });
 
     if (!result.ok) {
