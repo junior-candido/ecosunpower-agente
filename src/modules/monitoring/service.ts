@@ -21,6 +21,21 @@ interface SyncResult {
   marcasSemAdapter: number;
 }
 
+export interface DetalheSistema {
+  sistema: SistemaCliente;
+  kpis: {
+    hojeKwh: number | null;
+    mesKwh: number;
+    anoKwh: number;
+    totalKwh: number;
+    esperadoDiaKwh: number;
+    ratioUltimos7: number;
+  };
+  serie30: { data: string; kwh: number; esperado: number }[];
+  serieMensal: { mes: string; kwh: number; esperado: number }[];
+  alertas: Array<{ tipo: string; severidade: 'aviso' | 'urgente' | 'info'; texto: string }>;
+}
+
 export class MonitoringService {
   constructor(private supabase: SupabaseService) {}
 
@@ -322,6 +337,131 @@ export class MonitoringService {
       return null;
     }
     return (data as SistemaCliente) ?? null;
+  }
+
+  // Detalhe completo de UM sistema pra pagina de analise.
+  // Inclui: dados base, KPIs (hoje/mes/ano/total), serie diaria 90 dias,
+  // serie mensal 12 meses, calculo de geracao esperada (HSP x kWp), alertas.
+  async getDetalheSistema(sistemaId: string): Promise<DetalheSistema | null> {
+    const { data: sistema, error } = await this.supabase.getClient()
+      .from('sistemas_clientes')
+      .select('*')
+      .eq('id', sistemaId)
+      .maybeSingle();
+    if (error || !sistema) return null;
+
+    const s = sistema as SistemaCliente;
+
+    // Busca todas as geracoes dos ultimos 13 meses (cobre 30d + 12m mensal)
+    const inicio13meses = new Date();
+    inicio13meses.setMonth(inicio13meses.getMonth() - 13);
+    const inicioStr = inicio13meses.toISOString().slice(0, 10);
+
+    const { data: geracoes } = await this.supabase.getClient()
+      .from('geracao_diaria')
+      .select('data, geracao_kwh')
+      .eq('sistema_id', sistemaId)
+      .gte('data', inicioStr)
+      .order('data', { ascending: true });
+
+    const geracoesArr = (geracoes ?? []) as { data: string; geracao_kwh: number }[];
+
+    // KPIs
+    const hoje = isoDate(new Date());
+    const hojeRow = geracoesArr.find((g) => g.data === hoje);
+    const inicioMes = isoDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+    const inicioAno = isoDate(new Date(new Date().getFullYear(), 0, 1));
+
+    const geracaoMes = geracoesArr.filter((g) => g.data >= inicioMes)
+      .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
+    const geracaoAno = geracoesArr.filter((g) => g.data >= inicioAno)
+      .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
+    const geracaoTotal = geracoesArr.reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
+
+    // Serie 30 dias (preenche dias sem dados com 0)
+    const serie30: { data: string; kwh: number; esperado: number }[] = [];
+    const hsp = s.uf === 'GO' ? 5.3 : 5.2;
+    const fator = 0.80;
+    const kWp = Number(s.potencia_kwp ?? 0);
+    const esperadoDia = kWp * hsp * fator;
+
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const ds = isoDate(d);
+      const row = geracoesArr.find((g) => g.data === ds);
+      serie30.push({
+        data: ds,
+        kwh: row ? Number(row.geracao_kwh) : 0,
+        esperado: esperadoDia,
+      });
+    }
+
+    // Serie mensal 12 meses
+    const serieMensal: { mes: string; kwh: number; esperado: number }[] = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const ano = d.getFullYear();
+      const mes = d.getMonth() + 1;
+      const mesKey = `${ano}-${String(mes).padStart(2, '0')}`;
+      const diasNoMes = new Date(ano, mes, 0).getDate();
+      const kwhMes = geracoesArr
+        .filter((g) => g.data.startsWith(mesKey))
+        .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
+      serieMensal.push({
+        mes: mesKey,
+        kwh: kwhMes,
+        esperado: esperadoDia * diasNoMes,
+      });
+    }
+
+    // Status / alertas inline (regras simples)
+    const ultimos7 = serie30.slice(-7);
+    const realUltimos7 = ultimos7.reduce((s2, d) => s2 + d.kwh, 0);
+    const esperadoUltimos7 = esperadoDia * 7;
+    const ratioUltimos7 = esperadoUltimos7 > 0 ? realUltimos7 / esperadoUltimos7 : 1;
+
+    const diasOffline = serie30.slice().reverse().findIndex((d) => d.kwh > 0);
+    const offlineHa = diasOffline === -1 ? 30 : diasOffline;
+
+    const alertas: Array<{ tipo: string; severidade: 'aviso' | 'urgente' | 'info'; texto: string }> = [];
+    if (offlineHa >= 3) {
+      alertas.push({
+        tipo: 'sistema_offline',
+        severidade: 'urgente',
+        texto: `Sem geração há ${offlineHa} dias. Verificar inversor / conexão WiFi.`,
+      });
+    } else if (kWp > 0 && ratioUltimos7 < 0.70 && realUltimos7 > 0) {
+      const pct = Math.round((1 - ratioUltimos7) * 100);
+      alertas.push({
+        tipo: 'queda_geracao',
+        severidade: 'aviso',
+        texto: `Geração últimos 7 dias ${pct}% ABAIXO do esperado. Pode ser sujeira/sombreamento — agendar limpeza.`,
+      });
+    } else if (kWp > 0 && ratioUltimos7 > 1.10) {
+      const pct = Math.round((ratioUltimos7 - 1) * 100);
+      alertas.push({
+        tipo: 'milestone_economia',
+        severidade: 'info',
+        texto: `Geração últimos 7 dias ${pct}% ACIMA do esperado. Sistema operando excelente!`,
+      });
+    }
+
+    return {
+      sistema: s,
+      kpis: {
+        hojeKwh: hojeRow ? Number(hojeRow.geracao_kwh) : null,
+        mesKwh: geracaoMes,
+        anoKwh: geracaoAno,
+        totalKwh: geracaoTotal,
+        esperadoDiaKwh: esperadoDia,
+        ratioUltimos7: ratioUltimos7,
+      },
+      serie30,
+      serieMensal,
+      alertas,
+    };
   }
 
   // Listagem pra dashboard. Inclui geracao do dia atual.

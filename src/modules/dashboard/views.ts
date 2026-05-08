@@ -2,6 +2,7 @@
 // Tailwind via CDN + Chart.js via CDN. Identidade EcoSun: azul navy + amarelo solar.
 
 import type { DashboardKpi, PropostaRow, ManutencaoRow, GraficoMensal, SistemaMonitorRow } from './queries.js';
+import type { DetalheSistema } from '../monitoring/service.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.js';
 
 function escapeHtml(s: string | null | undefined): string {
@@ -501,9 +502,9 @@ export function renderMonitoramentoPage(rows: SistemaMonitorRow[]): string {
     const mesStr = r.geracao_mes_kwh > 0 ? `${r.geracao_mes_kwh.toFixed(0)} kWh` : '—';
 
     return `
-      <tr class="hover:bg-slate-50">
+      <tr class="hover:bg-slate-50 cursor-pointer" onclick="window.location='/dashboard/monitoramento/${escapeHtml(r.id)}'">
         <td class="px-4 py-3 text-sm">
-          <div class="font-medium text-slate-900">${escapeHtml(r.apelido)}</div>
+          <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="font-medium text-sky-700 hover:underline">${escapeHtml(r.apelido)}</a>
           <div class="text-xs text-slate-500">${escapeHtml(local)}</div>
         </td>
         <td class="px-4 py-3 text-sm">
@@ -514,7 +515,7 @@ export function renderMonitoramentoPage(rows: SistemaMonitorRow[]): string {
         <td class="px-4 py-3 text-sm text-emerald-700 font-medium">${mesStr}</td>
         <td class="px-4 py-3 text-sm">${status}</td>
         <td class="px-4 py-3 text-sm text-slate-500">${r.ultima_sincronizacao ? relativeTime(r.ultima_sincronizacao) : 'nunca'}</td>
-        <td class="px-4 py-3 text-right">
+        <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
           <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/sync" method="post" class="inline">
             <button class="px-3 py-1 rounded-md bg-sky-100 text-sky-700 hover:bg-sky-200 text-xs font-medium" title="Atualizar agora">🔄</button>
           </form>
@@ -572,11 +573,234 @@ export function renderMonitoramentoPage(rows: SistemaMonitorRow[]): string {
     </section>
 
     <div class="mt-4 text-xs text-slate-500 text-center">
-      💡 Sincronização automática roda 1x/dia (~3h BRT). Toque no 🔄 pra forçar atualização agora.
+      💡 Sincronização automática a cada <strong>15 min</strong> (alinhado com taxa do SolarEdge).
+      Esta página atualiza sozinha a cada <strong>30s</strong> mostrando o dado mais fresco do nosso banco.
     </div>`}
   `;
 
-  return renderLayout({ active: 'monitoramento', title: 'Monitoramento', body });
+  // Auto-refresh 30s: pega dados frescos do nosso banco (que vem do cron 15min).
+  // Sem chamadas extras a SolarEdge — apenas reload local.
+  const scripts = `
+<script>
+  setTimeout(() => location.reload(), 30000);
+</script>`;
+
+  return renderLayout({ active: 'monitoramento', title: 'Monitoramento', body, scripts });
+}
+
+// =========================================================================
+// DETALHE DE 1 SISTEMA — analise completa de uma usina
+// =========================================================================
+
+export function renderDetalheSistemaPage(d: DetalheSistema): string {
+  const s = d.sistema;
+  const localizacao = [s.cidade, s.uf].filter(Boolean).join('/') || '—';
+  const marca = MARCAS_LABEL[s.marca_inversor] ?? s.marca_inversor;
+
+  // Card de KPI com border-left colorido
+  const card = (
+    titulo: string,
+    valor: string,
+    sub: string,
+    accent: 'amber' | 'sky' | 'emerald' | 'violet' | 'rose' | 'indigo',
+    valorCor: string,
+  ) => `
+    <div class="bg-white rounded-xl shadow-md border border-slate-200 accent-${accent} p-5">
+      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">${escapeHtml(titulo)}</div>
+      <div class="text-3xl font-bold ${valorCor} mt-2">${escapeHtml(valor)}</div>
+      <div class="text-xs text-slate-500 mt-1">${escapeHtml(sub)}</div>
+    </div>`;
+
+  // Alertas
+  const alertasHtml = d.alertas.length === 0
+    ? '<div class="px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">✅ Sistema operando normalmente, sem alertas.</div>'
+    : d.alertas.map((a) => {
+        const cor = a.severidade === 'urgente'
+          ? 'bg-rose-50 border-rose-200 text-rose-800'
+          : a.severidade === 'aviso'
+            ? 'bg-amber-50 border-amber-200 text-amber-900'
+            : 'bg-sky-50 border-sky-200 text-sky-900';
+        const icone = a.severidade === 'urgente' ? '🚨' : a.severidade === 'aviso' ? '⚠️' : 'ℹ️';
+        return `<div class="px-4 py-3 rounded-lg border ${cor} text-sm mb-2">${icone} ${escapeHtml(a.texto)}</div>`;
+      }).join('');
+
+  // Dados pros graficos (Chart.js)
+  const labels30 = d.serie30.map((p) => {
+    const [, m, dia] = p.data.split('-');
+    return `${dia}/${m}`;
+  });
+  const valores30 = d.serie30.map((p) => Number(p.kwh.toFixed(1)));
+  const esperado30 = d.serie30.map((p) => Number(p.esperado.toFixed(1)));
+
+  const meses = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  const labelsMensal = d.serieMensal.map((p) => {
+    const [y, m] = p.mes.split('-');
+    return `${meses[parseInt(m, 10) - 1]}/${y.slice(2)}`;
+  });
+  const valoresMensal = d.serieMensal.map((p) => Math.round(p.kwh));
+  const esperadoMensal = d.serieMensal.map((p) => Math.round(p.esperado));
+
+  const ratioPct = Math.round(d.kpis.ratioUltimos7 * 100);
+  const ratioCor = ratioPct < 70 ? 'rose' : ratioPct > 110 ? 'emerald' : 'sky';
+  const ratioCorClass = ratioPct < 70 ? 'text-rose-600' : ratioPct > 110 ? 'text-emerald-600' : 'text-sky-700';
+
+  const body = `
+    <div class="mb-4">
+      <a href="/dashboard/monitoramento" class="text-sm text-slate-600 hover:underline">← Voltar pra lista</a>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold text-slate-900">${escapeHtml(s.apelido)}</h1>
+          <div class="text-slate-600 text-sm mt-1 flex flex-wrap gap-3">
+            <span><span class="text-slate-400">📍</span> ${escapeHtml(localizacao)}</span>
+            <span><span class="text-slate-400">⚡</span> ${s.potencia_kwp ? `${Number(s.potencia_kwp).toFixed(2)} kWp` : 'sem potência'}</span>
+            <span><span class="text-slate-400">🏷</span> ${escapeHtml(marca)}</span>
+            ${s.data_instalacao ? `<span><span class="text-slate-400">📅</span> Instalado ${formatDate(s.data_instalacao)}</span>` : ''}
+          </div>
+        </div>
+        <form action="/dashboard/monitoramento/${escapeHtml(s.id)}/sync" method="post">
+          <button class="px-4 py-2 bg-sky-700 hover:bg-sky-800 text-white text-sm rounded-lg font-medium">🔄 Atualizar agora</button>
+        </form>
+      </div>
+    </div>
+
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      ${card(
+        'Hoje',
+        d.kpis.hojeKwh !== null ? `${d.kpis.hojeKwh.toFixed(1)} kWh` : '—',
+        d.kpis.hojeKwh !== null ? `de ${d.kpis.esperadoDiaKwh.toFixed(1)} esperado` : 'sem dados ainda',
+        'amber',
+        'text-amber-600',
+      )}
+      ${card('Mês', `${d.kpis.mesKwh.toFixed(0)} kWh`, 'mês corrente', 'sky', 'text-sky-700')}
+      ${card('Ano', `${d.kpis.anoKwh.toFixed(0)} kWh`, 'desde 1º jan', 'emerald', 'text-emerald-700')}
+      ${card('Total monitorado', `${d.kpis.totalKwh.toFixed(0)} kWh`, 'desde início do tracking', 'indigo', 'text-indigo-700')}
+    </section>
+
+    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6 ${ratioPct < 70 ? 'accent-rose' : ratioPct > 110 ? 'accent-emerald' : 'accent-sky'}">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-base font-semibold text-slate-900">Performance últimos 7 dias</h2>
+        <span class="text-3xl font-bold ${ratioCorClass}">${ratioPct}%</span>
+      </div>
+      <div class="text-sm text-slate-600">
+        Comparação geração real vs esperada (kWp × HSP regional × fator 0.80).
+        ${ratioPct < 70 ? '⚠️ <strong class="text-rose-600">Performance baixa</strong> — possível sujeira/sombreamento.' : ratioPct > 110 ? '✨ <strong class="text-emerald-600">Acima do esperado</strong> — condições ótimas.' : '✅ Dentro da faixa normal de operação.'}
+      </div>
+    </section>
+
+    <section class="mb-6">
+      <h2 class="text-base font-semibold text-slate-900 mb-3">Status & Alertas</h2>
+      ${alertasHtml}
+    </section>
+
+    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
+      <h2 class="text-base font-semibold text-slate-900 mb-4">Geração últimos 30 dias</h2>
+      <div style="height:300px;position:relative">
+        <canvas id="grafico30"></canvas>
+      </div>
+    </section>
+
+    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
+      <h2 class="text-base font-semibold text-slate-900 mb-4">Geração últimos 12 meses</h2>
+      <div style="height:300px;position:relative">
+        <canvas id="graficoMensal"></canvas>
+      </div>
+    </section>
+
+    ${s.ultimo_erro ? `
+    <section class="bg-rose-50 border border-rose-200 rounded-xl p-4 mb-6 text-sm">
+      <div class="font-semibold text-rose-800 mb-1">⚠️ Último erro de sincronização:</div>
+      <div class="text-rose-700 font-mono text-xs">${escapeHtml(s.ultimo_erro)}</div>
+    </section>` : ''}
+  `;
+
+  const scripts = `
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+  // Auto-refresh 30s pra mostrar dado mais fresco do nosso banco.
+  setTimeout(() => location.reload(), 30000);
+
+  const ctx30 = document.getElementById('grafico30');
+  if (ctx30) {
+    new Chart(ctx30, {
+      type: 'bar',
+      data: {
+        labels: ${JSON.stringify(labels30)},
+        datasets: [
+          {
+            label: 'Real (kWh)',
+            data: ${JSON.stringify(valores30)},
+            backgroundColor: '#f59e0b',
+            borderRadius: 4,
+            order: 2,
+          },
+          {
+            label: 'Esperado (kWh)',
+            data: ${JSON.stringify(esperado30)},
+            type: 'line',
+            borderColor: '#0ea5e9',
+            borderDash: [4, 4],
+            borderWidth: 2,
+            fill: false,
+            pointRadius: 0,
+            order: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'top' } },
+        scales: {
+          y: { beginAtZero: true, title: { display: true, text: 'kWh' } },
+          x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 15 } }
+        }
+      }
+    });
+  }
+
+  const ctxMensal = document.getElementById('graficoMensal');
+  if (ctxMensal) {
+    new Chart(ctxMensal, {
+      type: 'bar',
+      data: {
+        labels: ${JSON.stringify(labelsMensal)},
+        datasets: [
+          {
+            label: 'Real (kWh)',
+            data: ${JSON.stringify(valoresMensal)},
+            backgroundColor: '#10b981',
+            borderRadius: 6,
+          },
+          {
+            label: 'Esperado (kWh)',
+            data: ${JSON.stringify(esperadoMensal)},
+            backgroundColor: '#cbd5e1',
+            borderRadius: 6,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'top' } },
+        scales: {
+          y: { beginAtZero: true, title: { display: true, text: 'kWh' } },
+          x: { grid: { display: false } }
+        }
+      }
+    });
+  }
+</script>`;
+
+  return renderLayout({
+    active: 'monitoramento',
+    title: s.apelido,
+    body,
+    scripts,
+  });
 }
 
 // =========================================================================

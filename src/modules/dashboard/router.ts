@@ -34,6 +34,7 @@ import {
   renderLoginPage,
   renderMonitoramentoPage,
   renderImportarSitesPage,
+  renderDetalheSistemaPage,
 } from './views.js';
 import type { MarcaInversor } from '../monitoring/types.js';
 
@@ -180,6 +181,25 @@ export function createDashboardRouter(
       res.status(500).send(renderImportarSitesPage({
         errorMsg: `Erro inesperado: ${(err as Error).message}`,
       }));
+    }
+  });
+
+  // Detalhe de UMA usina: KPIs (hoje/mes/ano/total), grafico 30 dias,
+  // grafico mensal 12m, alertas. Auto-refresh 30s.
+  router.get('/monitoramento/:id', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!/^[0-9a-f-]{36}$/i.test(id)) {
+      return res.status(400).send('UUID invalido');
+    }
+    try {
+      const detalhe = await monitoringService.getDetalheSistema(id);
+      if (!detalhe) {
+        return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
+      }
+      res.send(renderDetalheSistemaPage(detalhe));
+    } catch (err) {
+      console.error('[dashboard/monitoramento/detalhe]', err);
+      res.status(500).send(`<h2>Erro ao carregar detalhe</h2><pre>${(err as Error).message}</pre>`);
     }
   });
 
