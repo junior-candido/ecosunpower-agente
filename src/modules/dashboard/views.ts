@@ -471,31 +471,37 @@ const MARCAS_LABEL: Record<string, string> = {
   nep: 'NEP',
 };
 
-// Cores oficiais aproximadas de cada marca (pra badge sem precisar de logo PNG).
-// Quando Junior tiver as logos em arquivo, dá pra substituir o SVG por <img>.
-const MARCAS_COR: Record<string, { bg: string; text: string; sigla: string }> = {
-  solaredge: { bg: '#ED1C24', text: '#FFFFFF', sigla: 'SE' }, // SolarEdge vermelho
-  sungrow:   { bg: '#F58220', text: '#FFFFFF', sigla: 'SG' }, // Sungrow laranja
-  deye:      { bg: '#D9261C', text: '#FFFFFF', sigla: 'DY' }, // Deye vermelho
-  hoymiles:  { bg: '#0091D5', text: '#FFFFFF', sigla: 'HY' }, // Hoymiles azul
-  goodwe:    { bg: '#E60012', text: '#FFFFFF', sigla: 'GW' }, // GoodWe vermelho
-  huawei:    { bg: '#C7000B', text: '#FFFFFF', sigla: 'HW' }, // Huawei vermelho
-  foxess:    { bg: '#1F1F1F', text: '#FFFFFF', sigla: 'FX' }, // FoxESS cinza-escuro
-  nep:       { bg: '#0070C0', text: '#FFFFFF', sigla: 'NE' }, // NEP azul
+// Logos oficiais hospedadas no site EcoSunPower (public/logos/).
+// Mesma fonte usada na pagina pública pra consistencia visual.
+const MARCAS_LOGO_URL: Record<string, string> = {
+  solaredge: 'https://ecosunpower.eng.br/logos/solaredge.svg',
+  sungrow:   'https://ecosunpower.eng.br/logos/sungrow.png',
+  deye:      'https://ecosunpower.eng.br/logos/deye.png',
+  hoymiles:  'https://ecosunpower.eng.br/logos/hoymiles.png',
+  goodwe:    'https://ecosunpower.eng.br/logos/goodwe.png',
+  huawei:    'https://ecosunpower.eng.br/logos/huawei.png',
+  foxess:    'https://ecosunpower.eng.br/logos/foxess.png',
+  nep:       'https://ecosunpower.eng.br/logos/nep.png',
 };
 
-// Gera badge visual da marca: quadradinho colorido com sigla + label ao lado.
-// Sem imagem externa = leve, rápido, sem broken images.
-function marcaBadge(marca: string, options: { compact?: boolean } = {}): string {
-  const cor = MARCAS_COR[marca] ?? { bg: '#64748B', text: '#FFFFFF', sigla: '?' };
+// Gera badge visual da marca usando as logos oficiais do site.
+// Compact = só a logo (pra header). Default = logo + nome ao lado (pra tabela).
+function marcaBadge(marca: string, options: { compact?: boolean; size?: number } = {}): string {
+  const url = MARCAS_LOGO_URL[marca];
   const label = MARCAS_LABEL[marca] ?? marca;
-  if (options.compact) {
-    return `<span class="inline-flex items-center justify-center rounded-md font-bold text-[10px] tracking-tight" style="background:${cor.bg};color:${cor.text};width:28px;height:28px" title="${escapeHtml(label)}">${escapeHtml(cor.sigla)}</span>`;
+  const tam = options.size ?? (options.compact ? 32 : 22);
+
+  if (!url) {
+    // Fallback texto quando nao tem logo (marca nova, etc)
+    return `<span class="inline-block px-2 py-1 rounded text-xs bg-slate-100 text-slate-700 font-medium">${escapeHtml(label)}</span>`;
   }
-  return `<span class="inline-flex items-center gap-2 px-2 py-1 rounded-md text-xs font-medium bg-slate-50 border border-slate-200">
-    <span class="inline-flex items-center justify-center rounded font-bold text-[10px] tracking-tight" style="background:${cor.bg};color:${cor.text};width:22px;height:22px">${escapeHtml(cor.sigla)}</span>
-    <span class="text-slate-800">${escapeHtml(label)}</span>
-  </span>`;
+
+  const img = `<img src="${url}" alt="${escapeHtml(label)}" loading="lazy" style="height:${tam}px;width:auto;max-width:${tam * 3}px;object-fit:contain;display:inline-block;vertical-align:middle">`;
+
+  if (options.compact) {
+    return `<span class="inline-flex items-center justify-center bg-white rounded-md border border-slate-200 px-2 py-1" title="${escapeHtml(label)}">${img}</span>`;
+  }
+  return `<span class="inline-flex items-center gap-2 px-2 py-1 rounded-md bg-white border border-slate-200">${img}<span class="text-xs font-medium text-slate-800">${escapeHtml(label)}</span></span>`;
 }
 
 export function renderMonitoramentoPage(rows: SistemaMonitorRow[]): string {
@@ -675,13 +681,12 @@ export function renderDetalheSistemaPage(d: DetalheSistema): string {
     <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
       <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div class="flex items-start gap-4">
-          ${marcaBadge(s.marca_inversor, { compact: true }).replace('width:28px;height:28px', 'width:48px;height:48px;font-size:14px')}
+          ${marcaBadge(s.marca_inversor, { compact: true, size: 48 })}
           <div>
             <h1 class="text-2xl font-bold text-slate-900">${escapeHtml(s.apelido)}</h1>
-            <div class="text-slate-600 text-sm mt-1 flex flex-wrap gap-3">
+            <div class="text-slate-600 text-sm mt-1 flex flex-wrap gap-3 items-center">
               <span><span class="text-slate-400">📍</span> ${escapeHtml(localizacao)}</span>
               <span><span class="text-slate-400">⚡</span> ${s.potencia_kwp ? `${Number(s.potencia_kwp).toFixed(2)} kWp` : 'sem potência'}</span>
-              <span>${marcaBadge(s.marca_inversor)}</span>
               ${s.data_instalacao ? `<span><span class="text-slate-400">📅</span> Instalado ${formatDate(s.data_instalacao)}</span>` : ''}
             </div>
           </div>
