@@ -166,16 +166,41 @@ export function createDashboardRouter(
 
   router.post('/monitoramento/importar', async (req: Request, res: Response) => {
     const marca = String(req.body?.marca ?? '').trim() as MarcaInversor;
-    const apiKey = String(req.body?.api_key ?? '').trim();
-
-    if (!marca || !apiKey) {
+    if (!marca) {
       return res.status(400).send(renderImportarSitesPage({
-        errorMsg: 'Marca e API key sao obrigatorias.',
+        errorMsg: 'Marca obrigatoria.',
+      }));
+    }
+
+    // Monta credenciais conforme a marca (cada API tem seu shape)
+    let credenciais: Record<string, unknown> = {};
+    if (marca === 'solaredge') {
+      const apiKey = String(req.body?.api_key ?? '').trim();
+      if (!apiKey) {
+        return res.status(400).send(renderImportarSitesPage({
+          errorMsg: 'API key obrigatoria pra SolarEdge.',
+        }));
+      }
+      credenciais = { api_key: apiKey };
+    } else if (marca === 'deye') {
+      const appId = String(req.body?.appId ?? '').trim();
+      const appSecret = String(req.body?.appSecret ?? '').trim();
+      const email = String(req.body?.email ?? '').trim();
+      const password = String(req.body?.password ?? '').trim();
+      if (!appId || !appSecret || !email || !password) {
+        return res.status(400).send(renderImportarSitesPage({
+          errorMsg: 'AppId, AppSecret, email e senha obrigatorios pra Deye.',
+        }));
+      }
+      credenciais = { appId, appSecret, email, password };
+    } else {
+      return res.status(400).send(renderImportarSitesPage({
+        errorMsg: `Marca ${marca} ainda nao tem adapter implementado.`,
       }));
     }
 
     try {
-      const result = await monitoringService.importarSitesEmMassa(marca, { api_key: apiKey });
+      const result = await monitoringService.importarSitesEmMassa(marca, credenciais);
       if (!result.ok) {
         return res.status(400).send(renderImportarSitesPage({
           errorMsg: result.reason ?? 'Falha ao importar.',

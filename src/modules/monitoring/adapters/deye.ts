@@ -1,0 +1,301 @@
+// Adapter Deye Cloud Developer (data center AMEA).
+// Doc oficial: developer.deyecloud.com (login required)
+//
+// Base URL: https://api-developer.deyecloud.com (porta 443 = HTTPS)
+// API version: v2.2 (paths versionados como /v1.0/...)
+//
+// Auth flow (diferente do SolarEdge):
+//   - Junior cria uma App no portal Deye (já tem: AppId 202601151929002 + AppSecret).
+//   - Pra obter access_token, faz POST /v1.0/account/token com appId+appSecret+
+//     email+password DA CONTA do Junior (cliente master que enxerga as plantas dele).
+//   - Token expira em ~30 dias (típico Deye/SolarMan).
+//
+// Credenciais esperadas no api_credentials JSONB:
+//   { appId: "...", appSecret: "...", email: "...", password: "..." }
+// + após primeiro auth, o adapter cacheia: { access_token, token_expires_at }
+// (mas como o JSONB é só leitura aqui, vamos pedir token novo a cada chamada
+// ou guardar em redis. Pra V1, pedir token novo.)
+//
+// Endpoints usados:
+//   POST /v1.0/account/token  — obter access_token
+//   POST /v1.0/station/list   — listar plantas da conta
+//   POST /v1.0/station/history — histórico de geração da planta
+
+import type { AdapterResult, ListSitesResult, MonitoringAdapter } from '../types.js';
+
+const BASE_URL = 'https://api-developer.deyecloud.com';
+
+// ============================================================================
+// AUTH
+// ============================================================================
+
+interface DeyeCredenciais {
+  appId?: unknown;
+  appSecret?: unknown;
+  email?: unknown;
+  password?: unknown;
+  // Cache de token (preenchido após primeira chamada — não persiste no banco
+  // por enquanto; cada chamada gera novo token. Otimizar depois com Redis.)
+  access_token?: unknown;
+  token_expires_at?: unknown;
+}
+
+interface ParsedCreds {
+  appId: string;
+  appSecret: string;
+  email: string;
+  password: string;
+}
+
+function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: string } {
+  const cc = c as DeyeCredenciais;
+  const appId = String(cc.appId ?? '').trim();
+  const appSecret = String(cc.appSecret ?? '').trim();
+  const email = String(cc.email ?? '').trim();
+  const password = String(cc.password ?? '').trim();
+
+  if (!appId || !appSecret) {
+    return { error: 'Faltam appId/appSecret (cadastre no portal Deye)' };
+  }
+  if (!email || !password) {
+    return { error: 'Faltam email/password da conta Deye master' };
+  }
+  return { appId, appSecret, email, password };
+}
+
+async function obterToken(creds: ParsedCreds): Promise<{ ok: true; token: string } | { ok: false; reason: string; invalidCredentials?: boolean }> {
+  const url = `${BASE_URL}/v1.0/account/token?appId=${encodeURIComponent(creds.appId)}`;
+  let resp: Response;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    try {
+      resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appSecret: creds.appSecret,
+          email: creds.email,
+          password: creds.password,
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (err) {
+    return { ok: false, reason: `network: ${(err as Error).message}` };
+  }
+
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    return { ok: false, reason: `Deye token ${resp.status}: ${body.slice(0, 200)}` };
+  }
+
+  let json: { access_token?: string; success?: boolean; msg?: string; code?: string };
+  try {
+    json = (await resp.json()) as typeof json;
+  } catch (err) {
+    return { ok: false, reason: `Deye token JSON: ${(err as Error).message}` };
+  }
+
+  // Deye retorna {success: true, access_token: "...", expires_in: 7776000}
+  // ou {success: false, code: "...", msg: "..."}
+  if (json.success === false) {
+    const isAuth = /password|credential|token|secret|account/i.test(json.msg ?? '');
+    return {
+      ok: false,
+      reason: `Deye: ${json.msg ?? json.code ?? 'erro desconhecido'}`,
+      invalidCredentials: isAuth,
+    };
+  }
+  if (!json.access_token) {
+    return { ok: false, reason: 'Deye não retornou access_token' };
+  }
+  return { ok: true, token: json.access_token };
+}
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+async function deyePost(
+  endpoint: string,
+  token: string,
+  body: Record<string, unknown>,
+): Promise<{ ok: true; data: any } | { ok: false; reason: string; status?: number }> {
+  const url = `${BASE_URL}${endpoint}`;
+  let resp: Response;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    try {
+      resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (err) {
+    return { ok: false, reason: `network: ${(err as Error).message}` };
+  }
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    return { ok: false, reason: `Deye ${endpoint} ${resp.status}: ${text.slice(0, 200)}`, status: resp.status };
+  }
+
+  let json: any;
+  try {
+    json = await resp.json();
+  } catch (err) {
+    return { ok: false, reason: `JSON inválido: ${(err as Error).message}` };
+  }
+
+  if (json && json.success === false) {
+    return { ok: false, reason: `Deye: ${json.msg ?? json.code ?? 'erro'}` };
+  }
+
+  return { ok: true, data: json };
+}
+
+// ============================================================================
+// ADAPTER
+// ============================================================================
+
+export const deyeAdapter: MonitoringAdapter = {
+  marca: 'deye',
+
+  async fetchGeneration(
+    credenciais: Record<string, unknown>,
+    dataInicio: string,
+    dataFim: string,
+  ): Promise<AdapterResult> {
+    const parsed = parseCreds(credenciais);
+    if ('error' in parsed) {
+      return { ok: false, reason: parsed.error, invalidCredentials: true };
+    }
+
+    // Auth
+    const tokenResp = await obterToken(parsed);
+    if (!tokenResp.ok) {
+      return { ok: false, reason: tokenResp.reason, invalidCredentials: tokenResp.invalidCredentials };
+    }
+
+    // stationId está nas creds (importado por listSites)
+    const stationId = (credenciais as { stationId?: unknown }).stationId;
+    if (!stationId) {
+      return { ok: false, reason: 'stationId não cadastrado nas credenciais — importe via /importar' };
+    }
+
+    // POST /v1.0/station/history
+    // Body: { stationId, startAt: "YYYY-MM-DD", endAt: "YYYY-MM-DD", timeType: "DAY" }
+    const result = await deyePost('/v1.0/station/history', tokenResp.token, {
+      stationId: Number(stationId),
+      startAt: dataInicio,
+      endAt: dataFim,
+      timeType: 'DAY',
+    });
+
+    if (!result.ok) {
+      return { ok: false, reason: result.reason };
+    }
+
+    // Resposta esperada (padrão Deye/SolarMan):
+    //   { stationDataItems: [{ date: "YYYY-MM-DD", generationValue: <kWh> }, ...] }
+    // Variações possíveis: dataList, items
+    const items =
+      (result.data?.stationDataItems as { date?: string; generationValue?: number }[]) ??
+      (result.data?.dataList as { date?: string; generationValue?: number }[]) ??
+      (result.data?.items as { date?: string; generationValue?: number }[]) ??
+      [];
+
+    const geracoes = items
+      .filter((it) => typeof it.date === 'string' && typeof it.generationValue === 'number')
+      .map((it) => ({
+        data: it.date!.slice(0, 10),
+        geracao_kwh: Math.max(0, Number(it.generationValue ?? 0)),
+      }));
+
+    return { ok: true, geracoes };
+  },
+
+  // Lista todas as plantas da conta Deye master.
+  // Endpoint: POST /v1.0/station/list
+  // Body: { page: 1, size: 100 }
+  async listSites(credenciaisConta: Record<string, unknown>): Promise<ListSitesResult> {
+    const parsed = parseCreds(credenciaisConta);
+    if ('error' in parsed) {
+      return { ok: false, reason: parsed.error, invalidCredentials: true };
+    }
+
+    const tokenResp = await obterToken(parsed);
+    if (!tokenResp.ok) {
+      return { ok: false, reason: tokenResp.reason, invalidCredentials: tokenResp.invalidCredentials };
+    }
+
+    const result = await deyePost('/v1.0/station/list', tokenResp.token, {
+      page: 1,
+      size: 100,
+    });
+
+    if (!result.ok) {
+      return { ok: false, reason: result.reason };
+    }
+
+    // Resposta (estrutura comum Deye/SolarMan):
+    //   { stationList: [{ id, name, locationLat, locationLng, installedCapacity,
+    //     installationDate, regionNationName, address, ... }] }
+    const stationList =
+      (result.data?.stationList as Array<Record<string, unknown>>) ??
+      (result.data?.dataList as Array<Record<string, unknown>>) ??
+      (result.data?.list as Array<Record<string, unknown>>) ??
+      [];
+
+    const sites = stationList.flatMap((st) => {
+      const id = st.id !== undefined ? String(st.id) : null;
+      const apelido = String(st.name ?? '').trim();
+      if (!id || !apelido) return [];
+
+      // installedCapacity vem em kWp (típico Deye/SolarMan)
+      const potencia_kwp = typeof st.installedCapacity === 'number' && Number.isFinite(st.installedCapacity)
+        ? st.installedCapacity
+        : null;
+
+      // Localização: tenta address ou regionNationName
+      const cidade = typeof st.regionCityName === 'string' && st.regionCityName.trim()
+        ? st.regionCityName.trim()
+        : (typeof st.address === 'string' && st.address.trim() ? st.address.trim().split(',')[0] : null);
+
+      const data_instalacao =
+        typeof st.installationDate === 'string' ? st.installationDate.slice(0, 10) :
+        typeof st.gridConnectionDate === 'string' ? st.gridConnectionDate.slice(0, 10) :
+        null;
+
+      return [{
+        externalId: id,
+        apelido,
+        potencia_kwp,
+        cidade,
+        uf: null, // Deye não retorna UF brasileira separado
+        data_instalacao,
+        // Credenciais que ficam por planta (incluem stationId pra fetchGeneration)
+        credenciais: {
+          appId: parsed.appId,
+          appSecret: parsed.appSecret,
+          email: parsed.email,
+          password: parsed.password,
+          stationId: id,
+        },
+      }];
+    });
+
+    return { ok: true, sites };
+  },
+};

@@ -1102,14 +1102,15 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
     ${sucesso}
 
     <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 max-w-2xl">
-      <form action="/dashboard/monitoramento/importar" method="post" class="space-y-4">
+      <form action="/dashboard/monitoramento/importar" method="post" class="space-y-4" id="form-importar">
         <div>
           <label for="marca" class="block text-sm font-semibold text-slate-700 mb-2">Marca do inversor</label>
           <select name="marca" id="marca" required
+                  onchange="document.getElementById('campos-solaredge').style.display=this.value==='solaredge'?'block':'none';document.getElementById('campos-deye').style.display=this.value==='deye'?'block':'none';"
                   class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition">
             <option value="solaredge">SolarEdge</option>
+            <option value="deye">Deye Cloud</option>
             <option value="sungrow" disabled>Sungrow (em breve)</option>
-            <option value="deye" disabled>Deye (em breve)</option>
             <option value="hoymiles" disabled>Hoymiles (em breve)</option>
             <option value="goodwe" disabled>GoodWe (em breve)</option>
             <option value="huawei" disabled>Huawei (em breve)</option>
@@ -1117,19 +1118,47 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
           </select>
         </div>
 
-        <div>
-          <label for="api_key" class="block text-sm font-semibold text-slate-700 mb-2">API Key da conta</label>
+        <div id="campos-solaredge">
+          <label for="api_key" class="block text-sm font-semibold text-slate-700 mb-2">API Key da conta SolarEdge</label>
           <input
             id="api_key"
             name="api_key"
             type="text"
-            required
-            autofocus
             placeholder="cola aqui a API key gerada no painel SolarEdge"
             class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition font-mono text-sm">
           <p class="text-xs text-slate-500 mt-2">
-            Pega em: monitoring.solaredge.com → Admin → Site Access → API Access (gerar/copiar a chave).
+            Pega em: monitoring.solaredge.com → Admin → Site Access → API Access.
           </p>
+        </div>
+
+        <div id="campos-deye" style="display:none">
+          <div class="space-y-3">
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">AppId</label>
+              <input name="appId" type="text" placeholder="Ex: 202601151929002"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-sm focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">AppSecret</label>
+              <input name="appSecret" type="password" placeholder="cola o AppSecret do portal Deye"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-sm focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">E-mail da conta master Deye</label>
+              <input name="email" type="email" placeholder="seu email Deye"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">Senha da conta Deye</label>
+              <input name="password" type="password" placeholder="senha Deye"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
+            </div>
+          </div>
+          <div class="mt-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+            <strong>📋 Onde achar:</strong> developer.deyecloud.com → Application →
+            AppId visível, AppSecret oculto (clica no olho). E-mail/senha são da conta
+            Deye master que vê todas as plantas.
+          </div>
         </div>
 
         <button type="submit"
