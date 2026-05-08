@@ -1134,6 +1134,14 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
         <div id="campos-deye" style="display:none">
           <div class="space-y-3">
             <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">Data Center</label>
+              <select name="dataCenter" class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
+                <option value="us1">US1 (Americas — recomendado pra Brasil)</option>
+                <option value="eu1">EU1 (Europa)</option>
+              </select>
+              <p class="text-xs text-slate-500 mt-1">Mesmo que o portal mostre "AMEA", a API real fica em US1 ou EU1.</p>
+            </div>
+            <div>
               <label class="block text-sm font-semibold text-slate-700 mb-1">AppId</label>
               <input name="appId" type="text" placeholder="Ex: 202601151929002"
                      class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-sm focus:outline-none focus:border-amber-500">

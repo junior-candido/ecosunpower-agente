@@ -1,29 +1,32 @@
-// Adapter Deye Cloud Developer (data center AMEA).
+// Adapter Deye Cloud Developer.
 // Doc oficial: developer.deyecloud.com (login required)
 //
-// Base URL: https://api-developer.deyecloud.com (porta 443 = HTTPS)
+// Base URL VARIA por região: <region>1-developer.deyecloud.com
+//   - us1: Americas (incluindo Brasil — default)
+//   - eu1: Europa
+//   - (AMEA mostra no portal mas usa endpoint padrao us1/eu1 conforme aprovado)
+//
 // API version: v2.2 (paths versionados como /v1.0/...)
 //
-// Auth flow (diferente do SolarEdge):
-//   - Junior cria uma App no portal Deye (já tem: AppId 202601151929002 + AppSecret).
-//   - Pra obter access_token, faz POST /v1.0/account/token com appId+appSecret+
-//     email+password DA CONTA do Junior (cliente master que enxerga as plantas dele).
-//   - Token expira em ~30 dias (típico Deye/SolarMan).
+// Auth flow:
+//   - Junior cria App no portal Deye (já tem: AppId + AppSecret).
+//   - POST /v1.0/account/token com appId+appSecret+email+password do master.
+//   - Token expira em ~30 dias.
 //
 // Credenciais esperadas no api_credentials JSONB:
-//   { appId: "...", appSecret: "...", email: "...", password: "..." }
-// + após primeiro auth, o adapter cacheia: { access_token, token_expires_at }
-// (mas como o JSONB é só leitura aqui, vamos pedir token novo a cada chamada
-// ou guardar em redis. Pra V1, pedir token novo.)
+//   { appId, appSecret, email, password, dataCenter? }
+//   dataCenter default 'us1' (cobre Brasil)
 //
 // Endpoints usados:
-//   POST /v1.0/account/token  — obter access_token
-//   POST /v1.0/station/list   — listar plantas da conta
+//   POST /v1.0/account/token   — obter access_token
+//   POST /v1.0/station/list    — listar plantas da conta
 //   POST /v1.0/station/history — histórico de geração da planta
 
 import type { AdapterResult, ListSitesResult, MonitoringAdapter } from '../types.js';
 
-const BASE_URL = 'https://api-developer.deyecloud.com';
+function baseUrl(creds: ParsedCreds): string {
+  return `https://${creds.dataCenter}-developer.deyecloud.com`;
+}
 
 // ============================================================================
 // AUTH
@@ -34,6 +37,7 @@ interface DeyeCredenciais {
   appSecret?: unknown;
   email?: unknown;
   password?: unknown;
+  dataCenter?: unknown;
   // Cache de token (preenchido após primeira chamada — não persiste no banco
   // por enquanto; cada chamada gera novo token. Otimizar depois com Redis.)
   access_token?: unknown;
@@ -45,6 +49,7 @@ interface ParsedCreds {
   appSecret: string;
   email: string;
   password: string;
+  dataCenter: string;
 }
 
 function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: string } {
@@ -53,6 +58,9 @@ function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: string }
   const appSecret = String(cc.appSecret ?? '').trim();
   const email = String(cc.email ?? '').trim();
   const password = String(cc.password ?? '').trim();
+  // Default 'us1' — Americas/Brasil. Junior pode escolher 'eu1' se for Europa.
+  let dataCenter = String(cc.dataCenter ?? 'us1').trim().toLowerCase();
+  if (!['us1', 'eu1'].includes(dataCenter)) dataCenter = 'us1';
 
   if (!appId || !appSecret) {
     return { error: 'Faltam appId/appSecret (cadastre no portal Deye)' };
@@ -60,11 +68,11 @@ function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: string }
   if (!email || !password) {
     return { error: 'Faltam email/password da conta Deye master' };
   }
-  return { appId, appSecret, email, password };
+  return { appId, appSecret, email, password, dataCenter };
 }
 
 async function obterToken(creds: ParsedCreds): Promise<{ ok: true; token: string } | { ok: false; reason: string; invalidCredentials?: boolean }> {
-  const url = `${BASE_URL}/v1.0/account/token?appId=${encodeURIComponent(creds.appId)}`;
+  const url = `${baseUrl(creds)}/v1.0/account/token?appId=${encodeURIComponent(creds.appId)}`;
   let resp: Response;
   try {
     const controller = new AbortController();
@@ -120,11 +128,12 @@ async function obterToken(creds: ParsedCreds): Promise<{ ok: true; token: string
 // ============================================================================
 
 async function deyePost(
+  baseUrlStr: string,
   endpoint: string,
   token: string,
   body: Record<string, unknown>,
 ): Promise<{ ok: true; data: any } | { ok: false; reason: string; status?: number }> {
-  const url = `${BASE_URL}${endpoint}`;
+  const url = `${baseUrlStr}${endpoint}`;
   let resp: Response;
   try {
     const controller = new AbortController();
@@ -196,7 +205,7 @@ export const deyeAdapter: MonitoringAdapter = {
 
     // POST /v1.0/station/history
     // Body: { stationId, startAt: "YYYY-MM-DD", endAt: "YYYY-MM-DD", timeType: "DAY" }
-    const result = await deyePost('/v1.0/station/history', tokenResp.token, {
+    const result = await deyePost(baseUrl(parsed), '/v1.0/station/history', tokenResp.token, {
       stationId: Number(stationId),
       startAt: dataInicio,
       endAt: dataFim,
@@ -240,7 +249,7 @@ export const deyeAdapter: MonitoringAdapter = {
       return { ok: false, reason: tokenResp.reason, invalidCredentials: tokenResp.invalidCredentials };
     }
 
-    const result = await deyePost('/v1.0/station/list', tokenResp.token, {
+    const result = await deyePost(baseUrl(parsed), '/v1.0/station/list', tokenResp.token, {
       page: 1,
       size: 100,
     });
