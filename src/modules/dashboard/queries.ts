@@ -2,6 +2,7 @@
 // Centraliza acesso a dados pra views ficarem so com formato/HTML.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { MarcaInversor } from '../monitoring/types.js';
 
 export interface DashboardKpi {
   totalPropostas: number;
@@ -47,6 +48,20 @@ export interface LeadRow {
   meter_swapped_at: string | null;
   lead_source: string | null;
   created_at: string;
+}
+
+export interface SistemaMonitorRow {
+  id: string;
+  apelido: string;
+  marca_inversor: MarcaInversor;
+  potencia_kwp: number | null;
+  cidade: string | null;
+  uf: string | null;
+  ativo: boolean;
+  ultima_sincronizacao: string | null;
+  ultimo_erro: string | null;
+  geracao_hoje_kwh: number | null;
+  geracao_mes_kwh: number;
 }
 
 export interface ManutencaoRow {

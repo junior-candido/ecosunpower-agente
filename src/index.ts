@@ -39,6 +39,7 @@ import { ProposalAssistant } from './modules/proposal-assistant.js';
 import { ProposalFollowupService } from './modules/proposal-followup.js';
 import { NewsScraperService } from './modules/news-scraper.js';
 import { DriveUploader } from './modules/proposal/drive-uploader.js';
+import { MonitoringService } from './modules/monitoring/service.js';
 import { createDashboardRouter } from './modules/dashboard/router.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
@@ -365,6 +366,12 @@ async function main() {
     engineerPhone: config.engineerPhone,
   });
   console.log('[proposal-followup] Servico ativo (dispara no primeiro acesso a /p/:slug)');
+
+  // Modulo 5 — Monitoramento de sistemas FV via API dos inversores.
+  // Adapter SolarEdge ja implementado; demais marcas adicionadas conforme
+  // Junior cadastrar credenciais.
+  const monitoringService = new MonitoringService(supabase);
+  console.log('[monitoring] Servico ativo. Marcas suportadas: solaredge (mais virao)');
 
   const googleReviewUrl = process.env.GOOGLE_REVIEW_URL ?? '';
   const postInstall = googleReviewUrl
@@ -3198,7 +3205,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // Dashboard interno EcoSun (Modulo 3 da plataforma). Auth basica via senha
   // env DASHBOARD_PASSWORD. Rotas: /dashboard/home, /dashboard/propostas,
   // /dashboard/manutencao. Mais paginas serao adicionadas em fases.
-  app.use('/dashboard', createDashboardRouter(supabase));
+  app.use('/dashboard', createDashboardRouter(supabase, monitoringService));
 
   // que abre HTML como codigo fonte.
   app.get('/p/:slug', async (req, res) => {
@@ -3719,6 +3726,40 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
     setInterval(notifyNewReviews, 5 * 60 * 1000);  // a cada 5 min
     setTimeout(notifyNewReviews, 30 * 1000);       // tambem 30s apos start (pra pegar pendentes)
     console.log('[reviews-notifier] cron started (a cada 5min)');
+  }
+
+  // Monitoramento Modulo 5: cron diario que puxa geracao FV de TODOS os
+  // sistemas ativos cadastrados. Admin pull (Junior usa pra ver o monitoramento),
+  // NAO eh outbound pra cliente — fica fora do gate de passive mode.
+  // Janela: 1x/dia em torno de 03h BRT (madrugada, APIs estaveis).
+  // Idempotente via UPSERT em geracao_diaria.
+  if (!isSandbox) {
+    const checkMonitoringDaily = async () => {
+      const now = new Date();
+      const brtHour = (now.getUTCHours() - 3 + 24) % 24;
+      // Janela 03h-04h BRT pra evitar correr todo dia toda hora
+      if (brtHour < 3 || brtHour >= 4) return;
+      // Lock idempotente: app_flags 'monitoring_last_run' = YYYY-MM-DD
+      const today = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const { data: flag } = await supabase.getClient()
+        .from('app_flags').select('value').eq('key', 'monitoring_last_run').maybeSingle();
+      if (flag?.value === today) return; // ja rodou hoje
+      await supabase.getClient()
+        .from('app_flags')
+        .upsert({ key: 'monitoring_last_run', value: today }, { onConflict: 'key' });
+
+      try {
+        const result = await monitoringService.syncAll();
+        console.log(
+          `[monitoring] sync diario: ${result.sucessos}/${result.totalSistemas} ok, ${result.falhas} falhas, ${result.marcasSemAdapter} sem adapter`,
+        );
+      } catch (err) {
+        console.error('[monitoring] sync diario falhou:', (err as Error).message);
+      }
+    };
+    setInterval(checkMonitoringDaily, 30 * 60 * 1000); // checa a cada 30min
+    setTimeout(checkMonitoringDaily, 5 * 60 * 1000);   // 5min apos start (pra cobrir restart matinal)
+    console.log('[monitoring] Cron diario started (sync 1x/dia ~3h BRT)');
   }
 
   // Canal Solar ingestion (every 3 days)

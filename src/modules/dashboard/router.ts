@@ -14,6 +14,7 @@
 
 import express, { Router, type Request, type Response } from 'express';
 import type { SupabaseService } from '../supabase.js';
+import type { MonitoringService } from '../monitoring/service.js';
 import {
   dashboardSessionAuth,
   setSessionCookie,
@@ -31,9 +32,13 @@ import {
   renderPropostasPage,
   renderManutencaoPage,
   renderLoginPage,
+  renderMonitoramentoPage,
 } from './views.js';
 
-export function createDashboardRouter(supabaseService: SupabaseService): Router {
+export function createDashboardRouter(
+  supabaseService: SupabaseService,
+  monitoringService: MonitoringService,
+): Router {
   const router = Router();
   const supabase = supabaseService.getClient();
 
@@ -112,6 +117,48 @@ export function createDashboardRouter(supabaseService: SupabaseService): Router 
     } catch (err) {
       console.error('[dashboard/propostas]', err);
       res.status(500).send(`<h2>Erro ao listar propostas</h2><pre>${(err as Error).message}</pre>`);
+    }
+  });
+
+  // Monitoramento: lista de sistemas FV instalados com geracao do dia/mes.
+  router.get('/monitoramento', async (_req: Request, res: Response) => {
+    try {
+      const sistemas = await monitoringService.listarParaDashboard();
+      const rows = sistemas.map((s) => ({
+        id: s.id,
+        apelido: s.apelido,
+        marca_inversor: s.marca_inversor,
+        potencia_kwp: s.potencia_kwp,
+        cidade: s.cidade,
+        uf: s.uf,
+        ativo: s.ativo,
+        ultima_sincronizacao: s.ultima_sincronizacao,
+        ultimo_erro: s.ultimo_erro,
+        geracao_hoje_kwh: s.geracao_hoje_kwh,
+        geracao_mes_kwh: s.geracao_mes_kwh,
+      }));
+      res.send(renderMonitoramentoPage(rows));
+    } catch (err) {
+      console.error('[dashboard/monitoramento]', err);
+      res.status(500).send(`<h2>Erro ao listar monitoramento</h2><pre>${(err as Error).message}</pre>`);
+    }
+  });
+
+  // Sync manual de um sistema. Re-busca dados da API e popula geracao_diaria.
+  router.post('/monitoramento/:id/sync', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!/^[0-9a-f-]{36}$/i.test(id)) {
+      return res.status(400).send('UUID invalido');
+    }
+    try {
+      const result = await monitoringService.syncOne(id);
+      if (!result.ok) {
+        return res.status(500).send(`<h2>Erro</h2><pre>${result.reason}</pre><a href="/dashboard/monitoramento">← voltar</a>`);
+      }
+      res.redirect('/dashboard/monitoramento');
+    } catch (err) {
+      console.error('[dashboard/monitoramento/sync]', err);
+      res.status(500).send(`<h2>Erro</h2><pre>${(err as Error).message}</pre>`);
     }
   });
 

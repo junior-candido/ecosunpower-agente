@@ -1,7 +1,7 @@
 // Renderizacao HTML do dashboard — server-side. Sem framework, sem build step.
 // Tailwind via CDN + Chart.js via CDN. Identidade EcoSun: azul navy + amarelo solar.
 
-import type { DashboardKpi, PropostaRow, ManutencaoRow, GraficoMensal } from './queries.js';
+import type { DashboardKpi, PropostaRow, ManutencaoRow, GraficoMensal, SistemaMonitorRow } from './queries.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.js';
 
 function escapeHtml(s: string | null | undefined): string {
@@ -76,7 +76,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'home' | 'propostas' | 'manutencao';
+  active: 'home' | 'propostas' | 'manutencao' | 'monitoramento';
   title: string;
   body: string;
   scripts?: string;
@@ -141,6 +141,7 @@ export function renderLayout(input: LayoutInput): string {
       <nav class="flex flex-wrap gap-1 text-sm w-full sm:w-auto justify-end">
         <a href="/dashboard/home" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('home')}">🏠 <span class="hidden sm:inline">Home</span></a>
         <a href="/dashboard/propostas" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('propostas')}">📊 <span class="hidden sm:inline">Propostas</span></a>
+        <a href="/dashboard/monitoramento" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('monitoramento')}">⚡ <span class="hidden sm:inline">Monitoramento</span></a>
         <a href="/dashboard/manutencao" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('manutencao')}">🔧 <span class="hidden sm:inline">Manutenção</span></a>
         <form action="/dashboard/logout" method="post" class="inline">
           <button type="submit" class="px-3 py-2 rounded-lg text-sky-200 hover:bg-white/10 hover:text-white transition text-xs" title="Sair">🚪 <span class="hidden sm:inline">Sair</span></button>
@@ -452,6 +453,126 @@ export function renderPropostasPage(input: PropostasPageInput): string {
   `;
 
   return renderLayout({ active: 'propostas', title: 'Propostas', body });
+}
+
+// =========================================================================
+// MONITORAMENTO — sistemas FV com geracao em tempo real (via API inversor)
+// =========================================================================
+
+const MARCAS_LABEL: Record<string, string> = {
+  solaredge: 'SolarEdge',
+  sungrow: 'Sungrow',
+  deye: 'Deye',
+  hoymiles: 'Hoymiles',
+  goodwe: 'GoodWe',
+  huawei: 'Huawei',
+  foxess: 'FoxESS',
+  nep: 'NEP',
+};
+
+export function renderMonitoramentoPage(rows: SistemaMonitorRow[]): string {
+  const totalSistemas = rows.length;
+  const totalGeracaoHoje = rows.reduce((s, r) => s + (r.geracao_hoje_kwh ?? 0), 0);
+  const totalGeracaoMes = rows.reduce((s, r) => s + r.geracao_mes_kwh, 0);
+  const totalKwp = rows.reduce((s, r) => s + (r.potencia_kwp ?? 0), 0);
+
+  const kpiCard = (titulo: string, valor: string, sub: string, accent: string, valorCor: string) => `
+    <div class="bg-white rounded-xl shadow-md hover:shadow-lg transition border border-slate-200 ${accent} p-5">
+      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">${escapeHtml(titulo)}</div>
+      <div class="text-3xl font-bold ${valorCor} mt-2">${escapeHtml(valor)}</div>
+      <div class="text-xs text-slate-500 mt-1">${escapeHtml(sub)}</div>
+    </div>`;
+
+  const linhas = rows.map((r) => {
+    const local = [r.cidade, r.uf].filter(Boolean).join('/') || '—';
+    const marca = MARCAS_LABEL[r.marca_inversor] ?? r.marca_inversor;
+    const sincOk = r.ultima_sincronizacao
+      && (Date.now() - new Date(r.ultima_sincronizacao).getTime() < 36 * 60 * 60 * 1000);
+    const status = !r.ativo
+      ? '<span class="px-2 py-1 rounded text-xs bg-slate-100 text-slate-500">⏸ Pausado</span>'
+      : r.ultimo_erro
+        ? `<span class="px-2 py-1 rounded text-xs bg-rose-100 text-rose-700" title="${escapeHtml(r.ultimo_erro)}">⚠️ Erro</span>`
+        : sincOk
+          ? '<span class="px-2 py-1 rounded text-xs bg-emerald-100 text-emerald-800">✅ OK</span>'
+          : '<span class="px-2 py-1 rounded text-xs bg-amber-100 text-amber-800">⏳ Aguardando</span>';
+
+    const hojeNum = r.geracao_hoje_kwh ?? null;
+    const hojeStr = hojeNum !== null ? `${hojeNum.toFixed(1)} kWh` : '—';
+    const mesStr = r.geracao_mes_kwh > 0 ? `${r.geracao_mes_kwh.toFixed(0)} kWh` : '—';
+
+    return `
+      <tr class="hover:bg-slate-50">
+        <td class="px-4 py-3 text-sm">
+          <div class="font-medium text-slate-900">${escapeHtml(r.apelido)}</div>
+          <div class="text-xs text-slate-500">${escapeHtml(local)}</div>
+        </td>
+        <td class="px-4 py-3 text-sm">
+          <span class="inline-block px-2 py-1 rounded text-xs bg-sky-100 text-sky-800 font-medium">${escapeHtml(marca)}</span>
+        </td>
+        <td class="px-4 py-3 text-sm text-slate-700">${r.potencia_kwp ? `${r.potencia_kwp.toFixed(2)} kWp` : '—'}</td>
+        <td class="px-4 py-3 text-sm text-amber-700 font-bold">${hojeStr}</td>
+        <td class="px-4 py-3 text-sm text-emerald-700 font-medium">${mesStr}</td>
+        <td class="px-4 py-3 text-sm">${status}</td>
+        <td class="px-4 py-3 text-sm text-slate-500">${r.ultima_sincronizacao ? relativeTime(r.ultima_sincronizacao) : 'nunca'}</td>
+        <td class="px-4 py-3 text-right">
+          <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/sync" method="post" class="inline">
+            <button class="px-3 py-1 rounded-md bg-sky-100 text-sky-700 hover:bg-sky-200 text-xs font-medium" title="Atualizar agora">🔄</button>
+          </form>
+        </td>
+      </tr>`;
+  }).join('');
+
+  const body = `
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-slate-900">⚡ Monitoramento</h1>
+      <p class="text-slate-600 text-sm">Geração em tempo real dos sistemas FV instalados nos clientes (via API dos inversores).</p>
+    </div>
+
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      ${kpiCard('Sistemas ativos', String(totalSistemas), `${totalKwp.toFixed(1)} kWp total`, 'accent-amber', 'text-amber-600')}
+      ${kpiCard('Geração hoje', `${totalGeracaoHoje.toFixed(1)} kWh`, 'somatório de todos', 'accent-sky', 'text-sky-700')}
+      ${kpiCard('Geração mês', `${totalGeracaoMes.toFixed(0)} kWh`, 'mês corrente', 'accent-emerald', 'text-emerald-700')}
+      ${kpiCard('Marcas', String(new Set(rows.map(r => r.marca_inversor)).size), 'integradas', 'accent-violet', 'text-violet-700')}
+    </section>
+
+    ${rows.length === 0 ? `
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center">
+      <div class="text-5xl mb-3">⚡</div>
+      <div class="text-slate-700 font-medium mb-2">Nenhum sistema cadastrado ainda.</div>
+      <div class="text-slate-500 text-sm max-w-md mx-auto">
+        Pra cadastrar um sistema, abra o Supabase Dashboard → Table Editor →
+        <code class="bg-slate-100 px-1 rounded text-xs">sistemas_clientes</code> →
+        Insert row. Mínimo: <code class="bg-slate-100 px-1 rounded text-xs">apelido</code>,
+        <code class="bg-slate-100 px-1 rounded text-xs">marca_inversor</code>,
+        <code class="bg-slate-100 px-1 rounded text-xs">api_credentials</code>
+        (JSONB com <code class="bg-slate-100 px-1 rounded text-xs">site_id</code> e
+        <code class="bg-slate-100 px-1 rounded text-xs">api_key</code> pra SolarEdge).
+      </div>
+    </section>` : `
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+      <table class="w-full min-w-[800px]">
+        <thead class="bg-slate-100 border-b border-slate-200">
+          <tr class="text-left text-xs uppercase tracking-wider text-slate-500">
+            <th class="px-4 py-3 font-semibold">Sistema</th>
+            <th class="px-4 py-3 font-semibold">Marca</th>
+            <th class="px-4 py-3 font-semibold">Potência</th>
+            <th class="px-4 py-3 font-semibold">Hoje</th>
+            <th class="px-4 py-3 font-semibold">Mês</th>
+            <th class="px-4 py-3 font-semibold">Status</th>
+            <th class="px-4 py-3 font-semibold">Última sinc</th>
+            <th class="px-4 py-3 font-semibold text-right">Ação</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">${linhas}</tbody>
+      </table>
+    </section>
+
+    <div class="mt-4 text-xs text-slate-500 text-center">
+      💡 Sincronização automática roda 1x/dia (~3h BRT). Toque no 🔄 pra forçar atualização agora.
+    </div>`}
+  `;
+
+  return renderLayout({ active: 'monitoramento', title: 'Monitoramento', body });
 }
 
 // =========================================================================
