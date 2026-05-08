@@ -3554,59 +3554,6 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
     setTimeout(checkMaintenanceDaily, 5 * 60 * 1000);   // roda 5min apos start
     console.log('[maintenance] Reminder scheduler started (1x/day apos 9h BRT, idempotente)');
 
-    // Notificacao de review novo do /avaliar (form publico do site).
-    // A cada 5min, busca reviews ainda nao notificados e manda no WhatsApp
-    // do engineerPhone com BOTOES interativos ✅ Aprovar / ❌ Ignorar.
-    // Junior so clica — sem precisar digitar comando.
-    async function notifyNewReviews() {
-      try {
-        const pending = await publicReviews.listUnnotified(5);
-        if (pending.length === 0) return;
-        for (const r of pending) {
-          const stars = '⭐'.repeat(r.estrelas);
-          const cidade = r.cliente_cidade ? ` · ${r.cliente_cidade}` : '';
-          const texto = r.texto ? `\n💬 "${r.texto.slice(0, 250)}${r.texto.length > 250 ? '...' : ''}"` : '';
-          const tel = r.cliente_telefone ? `\n📞 ${r.cliente_telefone}` : '';
-          const body = [
-            '🌟 *Nova avaliação no site!*',
-            '',
-            `👤 ${r.cliente_nome}${cidade}`,
-            `${stars} (${r.estrelas} estrela${r.estrelas > 1 ? 's' : ''})`,
-            texto,
-            tel,
-          ].filter(Boolean).join('\n');
-
-          // Tenta enviar com botoes WABA. Se nao tiver WABA disponivel, fallback
-          // pra texto puro com instrucao de comando.
-          if (metaWaba) {
-            try {
-              await metaWaba.sendInteractiveButtons(
-                config.engineerPhone,
-                body,
-                [
-                  { id: `approve:${r.id}`, title: '✅ Aprovar' },
-                  { id: `ignore:${r.id}`, title: '❌ Ignorar' },
-                ],
-                'Toque pra responder',
-              );
-            } catch (err) {
-              console.warn('[reviews-notifier] botoes falharam, fallback texto:', (err as Error).message);
-              await sendText(config.engineerPhone, `${body}\n\n✅ /aprovar-review ${r.id}\n❌ Ignora se for spam`);
-            }
-          } else {
-            await sendText(config.engineerPhone, `${body}\n\n✅ /aprovar-review ${r.id}\n❌ Ignora se for spam`);
-          }
-          await publicReviews.markNotified(r.id);
-        }
-        console.log(`[reviews-notifier] notificou ${pending.length} review(s)`);
-      } catch (err) {
-        console.error('[reviews-notifier] erro:', (err as Error).message);
-      }
-    }
-    setInterval(notifyNewReviews, 5 * 60 * 1000);  // a cada 5 min
-    setTimeout(notifyNewReviews, 30 * 1000);       // tambem 30s apos start (pra pegar pendentes)
-    console.log('[reviews-notifier] cron started (a cada 5min)');
-
     // Cadencia de reengajamento: 5 toques (0h, 15d, 30d, 45d, 60d).
     // Processa vencidos a cada 15 min, respeita horario comercial 9h-20h BRT.
     setInterval(async () => {
@@ -3619,6 +3566,63 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
     // Primeira passada 2min apos start (captura backlog de toques vencidos durante restart)
     setTimeout(() => cadence.processCadence().catch(() => {}), 2 * 60 * 1000);
     console.log('[cadence] Cadence scheduler started (checks every 15 min, 9h-20h BRT)');
+  }
+
+  // Notificacao de review novo do /avaliar (form publico do site).
+  // A cada 5min, busca reviews ainda nao notificados e manda no WhatsApp
+  // do engineerPhone com BOTOES interativos ✅ Aprovar / ❌ Ignorar.
+  // NAO gated por passive mode pq so envia pro proprio Junior — admin alert,
+  // nao outbound pra cliente. (Antes estava no gate errado e quebrava com
+  // EVA_PASSIVE_MODE=true; fix 08/05.)
+  async function notifyNewReviews() {
+    try {
+      const pending = await publicReviews.listUnnotified(5);
+      if (pending.length === 0) return;
+      for (const r of pending) {
+        const stars = '⭐'.repeat(r.estrelas);
+        const cidade = r.cliente_cidade ? ` · ${r.cliente_cidade}` : '';
+        const texto = r.texto ? `\n💬 "${r.texto.slice(0, 250)}${r.texto.length > 250 ? '...' : ''}"` : '';
+        const tel = r.cliente_telefone ? `\n📞 ${r.cliente_telefone}` : '';
+        const body = [
+          '🌟 *Nova avaliação no site!*',
+          '',
+          `👤 ${r.cliente_nome}${cidade}`,
+          `${stars} (${r.estrelas} estrela${r.estrelas > 1 ? 's' : ''})`,
+          texto,
+          tel,
+        ].filter(Boolean).join('\n');
+
+        // Tenta enviar com botoes WABA. Se nao tiver WABA disponivel, fallback
+        // pra texto puro com instrucao de comando.
+        if (metaWaba) {
+          try {
+            await metaWaba.sendInteractiveButtons(
+              config.engineerPhone,
+              body,
+              [
+                { id: `approve:${r.id}`, title: '✅ Aprovar' },
+                { id: `ignore:${r.id}`, title: '❌ Ignorar' },
+              ],
+              'Toque pra responder',
+            );
+          } catch (err) {
+            console.warn('[reviews-notifier] botoes falharam, fallback texto:', (err as Error).message);
+            await sendText(config.engineerPhone, `${body}\n\n✅ /aprovar-review ${r.id}\n❌ Ignora se for spam`);
+          }
+        } else {
+          await sendText(config.engineerPhone, `${body}\n\n✅ /aprovar-review ${r.id}\n❌ Ignora se for spam`);
+        }
+        await publicReviews.markNotified(r.id);
+      }
+      console.log(`[reviews-notifier] notificou ${pending.length} review(s)`);
+    } catch (err) {
+      console.error('[reviews-notifier] erro:', (err as Error).message);
+    }
+  }
+  if (!isSandbox) {
+    setInterval(notifyNewReviews, 5 * 60 * 1000);  // a cada 5 min
+    setTimeout(notifyNewReviews, 30 * 1000);       // tambem 30s apos start (pra pegar pendentes)
+    console.log('[reviews-notifier] cron started (a cada 5min)');
   }
 
   // Canal Solar ingestion (every 3 days)
