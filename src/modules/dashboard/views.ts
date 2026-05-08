@@ -2,6 +2,7 @@
 // Tailwind via CDN + Chart.js via CDN. Identidade EcoSun: azul navy + amarelo solar.
 
 import type { DashboardKpi, PropostaRow, ManutencaoRow, GraficoMensal } from './queries.js';
+import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.js';
 
 function escapeHtml(s: string | null | undefined): string {
   if (s === null || s === undefined) return '';
@@ -85,8 +86,8 @@ export function renderLayout(input: LayoutInput): string {
   const { active, title, body, scripts } = input;
   const navClass = (key: string) =>
     active === key
-      ? 'bg-amber-400 text-slate-900 font-semibold'
-      : 'text-slate-300 hover:bg-slate-700 hover:text-white';
+      ? 'bg-amber-400 text-slate-900 font-semibold shadow-md'
+      : 'text-sky-100 hover:bg-white/10 hover:text-white';
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -97,36 +98,163 @@ export function renderLayout(input: LayoutInput): string {
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  .ecosun-bg { background: linear-gradient(135deg, #0c4a6e 0%, #075985 100%); }
+  .ecosun-header {
+    background: linear-gradient(135deg, #0c4a6e 0%, #075985 50%, #0369a1 100%);
+    position: relative;
+    overflow: hidden;
+  }
+  .ecosun-header::after {
+    content: '';
+    position: absolute;
+    top: -40px;
+    right: -60px;
+    width: 220px;
+    height: 220px;
+    background: radial-gradient(circle, rgba(245, 158, 11, 0.25), transparent 70%);
+    pointer-events: none;
+  }
+  .ecosun-body {
+    background:
+      radial-gradient(ellipse at top left, rgba(14, 165, 233, 0.08), transparent 50%),
+      radial-gradient(ellipse at bottom right, rgba(245, 158, 11, 0.05), transparent 50%),
+      #f8fafc;
+    min-height: 100vh;
+  }
+  .accent-amber { border-left: 4px solid #f59e0b; }
+  .accent-sky { border-left: 4px solid #0ea5e9; }
+  .accent-emerald { border-left: 4px solid #10b981; }
+  .accent-violet { border-left: 4px solid #8b5cf6; }
+  .accent-rose { border-left: 4px solid #f43f5e; }
+  .accent-indigo { border-left: 4px solid #6366f1; }
 </style>
 </head>
-<body class="bg-slate-50 min-h-screen">
-  <header class="ecosun-bg text-white shadow-md">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+<body class="ecosun-body">
+  <header class="ecosun-header text-white shadow-lg relative z-10">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
       <div class="flex items-center gap-3">
-        <div class="text-2xl">☀</div>
+        <img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" class="h-10 w-auto bg-white rounded-lg p-1.5 shadow-md">
         <div>
-          <div class="font-bold text-lg leading-none">EcoSunPower</div>
-          <div class="text-xs text-sky-200">Dashboard interno</div>
+          <div class="font-bold text-lg leading-none tracking-tight">EcoSunPower</div>
+          <div class="text-xs text-sky-200 mt-1">Dashboard interno</div>
         </div>
       </div>
       <nav class="flex gap-1 text-sm">
         <a href="/dashboard/home" class="px-4 py-2 rounded-lg transition ${navClass('home')}">Home</a>
         <a href="/dashboard/propostas" class="px-4 py-2 rounded-lg transition ${navClass('propostas')}">Propostas</a>
         <a href="/dashboard/manutencao" class="px-4 py-2 rounded-lg transition ${navClass('manutencao')}">Manutenção</a>
+        <form action="/dashboard/logout" method="post" class="inline">
+          <button type="submit" class="px-3 py-2 rounded-lg text-sky-200 hover:bg-white/10 hover:text-white transition text-xs">Sair</button>
+        </form>
       </nav>
     </div>
   </header>
 
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-8 relative z-0">
     ${body}
   </main>
 
-  <footer class="max-w-7xl mx-auto px-4 sm:px-6 py-6 text-xs text-slate-400 text-center">
-    EcoSunPower Energia Solar · CNPJ 33.020.459/0001-06 · Brasília-DF
+  <footer class="max-w-7xl mx-auto px-4 sm:px-6 py-6 text-xs text-slate-500 text-center border-t border-slate-200 mt-8">
+    <div class="flex items-center justify-center gap-2">
+      <span>☀</span>
+      <span>EcoSunPower Energia Solar</span>
+      <span class="text-slate-300">·</span>
+      <span>CNPJ 33.020.459/0001-06</span>
+      <span class="text-slate-300">·</span>
+      <span>Brasília-DF</span>
+    </div>
   </footer>
 
   ${scripts ?? ''}
+</body>
+</html>`;
+}
+
+// =========================================================================
+// LOGIN — tela de auth com logo + form
+// =========================================================================
+
+interface LoginPageInput {
+  errorMsg?: string;
+  next?: string;
+}
+
+export function renderLoginPage(input: LoginPageInput = {}): string {
+  const { errorMsg, next } = input;
+  const erro = errorMsg
+    ? `<div class="mb-4 px-4 py-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-sm">⚠️ ${escapeHtml(errorMsg)}</div>`
+    : '';
+
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Login · EcoSun Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .login-bg {
+    background:
+      radial-gradient(circle at 20% 30%, rgba(245, 158, 11, 0.18), transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(14, 165, 233, 0.25), transparent 50%),
+      linear-gradient(135deg, #0c4a6e 0%, #075985 50%, #0369a1 100%);
+  }
+  .sun-pulse {
+    animation: sun-pulse 4s ease-in-out infinite;
+  }
+  @keyframes sun-pulse {
+    0%, 100% { box-shadow: 0 0 60px rgba(245, 158, 11, 0.4); }
+    50% { box-shadow: 0 0 100px rgba(245, 158, 11, 0.65); }
+  }
+</style>
+</head>
+<body class="login-bg min-h-screen flex items-center justify-center p-4">
+  <div class="w-full max-w-md">
+    <div class="text-center mb-8">
+      <div class="inline-block bg-white rounded-2xl p-4 shadow-2xl sun-pulse mb-4">
+        <img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" class="h-16 w-auto">
+      </div>
+      <h1 class="text-3xl font-bold text-white tracking-tight">EcoSunPower</h1>
+      <p class="text-sky-200 text-sm mt-2">Dashboard interno · Acesso restrito</p>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-2xl p-8">
+      ${erro}
+      <form action="/dashboard/login" method="post" class="space-y-5">
+        ${next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : ''}
+
+        <div>
+          <label for="senha" class="block text-sm font-semibold text-slate-700 mb-2">
+            🔐 Senha de acesso
+          </label>
+          <input
+            id="senha"
+            name="senha"
+            type="password"
+            required
+            autocomplete="current-password"
+            autofocus
+            class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition"
+            placeholder="Digite sua senha">
+        </div>
+
+        <button
+          type="submit"
+          class="w-full bg-gradient-to-r from-sky-700 to-sky-600 hover:from-sky-800 hover:to-sky-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-0.5">
+          Entrar →
+        </button>
+      </form>
+
+      <div class="mt-6 pt-6 border-t border-slate-100 text-center text-xs text-slate-400">
+        Em caso de dúvida, fale com o líder técnico.<br>
+        EcoSunPower Energia Solar · Brasília-DF
+      </div>
+    </div>
+
+    <div class="text-center mt-6 text-xs text-sky-200/60">
+      ☀ Plataforma proprietária · CNPJ 33.020.459/0001-06
+    </div>
+  </div>
 </body>
 </html>`;
 }
@@ -136,10 +264,16 @@ export function renderLayout(input: LayoutInput): string {
 // =========================================================================
 
 export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[]): string {
-  const card = (titulo: string, valor: string, sub?: string, cor: string = 'bg-white') => `
-    <div class="${cor} rounded-xl shadow-sm border border-slate-200 p-5">
+  const card = (
+    titulo: string,
+    valor: string,
+    sub?: string,
+    accent: 'amber' | 'sky' | 'emerald' | 'violet' | 'rose' | 'indigo' = 'sky',
+    valorCor: string = 'text-slate-900',
+  ) => `
+    <div class="bg-white rounded-xl shadow-md hover:shadow-lg transition border border-slate-200 accent-${accent} p-5">
       <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">${escapeHtml(titulo)}</div>
-      <div class="text-3xl font-bold text-slate-900 mt-2">${escapeHtml(valor)}</div>
+      <div class="text-3xl font-bold ${valorCor} mt-2">${escapeHtml(valor)}</div>
       ${sub ? `<div class="text-xs text-slate-500 mt-1">${escapeHtml(sub)}</div>` : ''}
     </div>`;
 
@@ -157,16 +291,16 @@ export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[]): st
     </div>
 
     <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-      ${card('Propostas mês', String(kpis.propostasMesAtual), `${kpis.propostasAnoAtual} no ano · ${kpis.totalPropostas} total`)}
-      ${card('Ticket médio', brl(kpis.ticketMedio), 'baseado nas últimas 50 propostas')}
-      ${card('Leads mês', String(kpis.leadsMesAtual), `${kpis.totalLeads} total`)}
-      ${card('Em qualificação', String(kpis.leadsQualificando), 'Eva ativa neles')}
+      ${card('Propostas mês', String(kpis.propostasMesAtual), `${kpis.propostasAnoAtual} no ano · ${kpis.totalPropostas} total`, 'amber', 'text-amber-600')}
+      ${card('Ticket médio', brl(kpis.ticketMedio), 'baseado nas últimas 50 propostas', 'emerald', 'text-emerald-700')}
+      ${card('Leads mês', String(kpis.leadsMesAtual), `${kpis.totalLeads} total`, 'sky', 'text-sky-700')}
+      ${card('Em qualificação', String(kpis.leadsQualificando), 'Eva ativa neles', 'violet', 'text-violet-700')}
     </section>
 
     <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-      ${card('Clientes instalados', String(kpis.clientesInstalados), 'sistemas operando')}
-      ${card('Manutenção próx 30d', String(kpis.manutencaoPendente), 'lembretes pendentes', kpis.manutencaoPendente > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white')}
-      ${card('Total propostas', String(kpis.totalPropostas), 'desde sempre')}
+      ${card('Clientes instalados', String(kpis.clientesInstalados), 'sistemas operando', 'emerald')}
+      ${card('Manutenção próx 30d', String(kpis.manutencaoPendente), 'lembretes pendentes', kpis.manutencaoPendente > 0 ? 'rose' : 'sky', kpis.manutencaoPendente > 0 ? 'text-rose-600' : 'text-slate-900')}
+      ${card('Total propostas', String(kpis.totalPropostas), 'desde sempre', 'indigo')}
     </section>
 
     <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
