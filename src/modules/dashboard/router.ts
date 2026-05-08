@@ -33,7 +33,9 @@ import {
   renderManutencaoPage,
   renderLoginPage,
   renderMonitoramentoPage,
+  renderImportarSitesPage,
 } from './views.js';
+import type { MarcaInversor } from '../monitoring/types.js';
 
 export function createDashboardRouter(
   supabaseService: SupabaseService,
@@ -141,6 +143,43 @@ export function createDashboardRouter(
     } catch (err) {
       console.error('[dashboard/monitoramento]', err);
       res.status(500).send(`<h2>Erro ao listar monitoramento</h2><pre>${(err as Error).message}</pre>`);
+    }
+  });
+
+  // Importar sites em massa: form GET + POST.
+  router.get('/monitoramento/importar', (_req: Request, res: Response) => {
+    res.send(renderImportarSitesPage());
+  });
+
+  router.post('/monitoramento/importar', async (req: Request, res: Response) => {
+    const marca = String(req.body?.marca ?? '').trim() as MarcaInversor;
+    const apiKey = String(req.body?.api_key ?? '').trim();
+
+    if (!marca || !apiKey) {
+      return res.status(400).send(renderImportarSitesPage({
+        errorMsg: 'Marca e API key sao obrigatorias.',
+      }));
+    }
+
+    try {
+      const result = await monitoringService.importarSitesEmMassa(marca, { api_key: apiKey });
+      if (!result.ok) {
+        return res.status(400).send(renderImportarSitesPage({
+          errorMsg: result.reason ?? 'Falha ao importar.',
+        }));
+      }
+      res.send(renderImportarSitesPage({
+        successMsg: `Importacao concluida (${marca})`,
+        novos: result.novos,
+        atualizados: result.atualizados,
+        total: result.total,
+        sitesNomes: result.sitesPorNome,
+      }));
+    } catch (err) {
+      console.error('[dashboard/importar]', err);
+      res.status(500).send(renderImportarSitesPage({
+        errorMsg: `Erro inesperado: ${(err as Error).message}`,
+      }));
     }
   });
 

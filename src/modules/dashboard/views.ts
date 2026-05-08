@@ -535,19 +535,23 @@ export function renderMonitoramentoPage(rows: SistemaMonitorRow[]): string {
       ${kpiCard('Marcas', String(new Set(rows.map(r => r.marca_inversor)).size), 'integradas', 'accent-violet', 'text-violet-700')}
     </section>
 
+    <div class="mb-4 flex flex-wrap gap-2">
+      <a href="/dashboard/monitoramento/importar" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold shadow-md transition">
+        📥 Importar todos do SolarEdge
+      </a>
+    </div>
+
     ${rows.length === 0 ? `
     <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center">
       <div class="text-5xl mb-3">⚡</div>
       <div class="text-slate-700 font-medium mb-2">Nenhum sistema cadastrado ainda.</div>
-      <div class="text-slate-500 text-sm max-w-md mx-auto">
-        Pra cadastrar um sistema, abra o Supabase Dashboard → Table Editor →
-        <code class="bg-slate-100 px-1 rounded text-xs">sistemas_clientes</code> →
-        Insert row. Mínimo: <code class="bg-slate-100 px-1 rounded text-xs">apelido</code>,
-        <code class="bg-slate-100 px-1 rounded text-xs">marca_inversor</code>,
-        <code class="bg-slate-100 px-1 rounded text-xs">api_credentials</code>
-        (JSONB com <code class="bg-slate-100 px-1 rounded text-xs">site_id</code> e
-        <code class="bg-slate-100 px-1 rounded text-xs">api_key</code> pra SolarEdge).
+      <div class="text-slate-500 text-sm max-w-md mx-auto mb-4">
+        Maneira mais rápida: clica no botão amarelo acima <strong>"Importar todos do SolarEdge"</strong>,
+        cola tua API key da conta SolarEdge, e o sistema cadastra todos os sites automaticamente.
       </div>
+      <a href="/dashboard/monitoramento/importar" class="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold shadow-lg transition">
+        📥 Importar agora
+      </a>
     </section>` : `
     <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
       <table class="w-full min-w-[800px]">
@@ -573,6 +577,104 @@ export function renderMonitoramentoPage(rows: SistemaMonitorRow[]): string {
   `;
 
   return renderLayout({ active: 'monitoramento', title: 'Monitoramento', body });
+}
+
+// =========================================================================
+// IMPORTAR SITES — form com API key SolarEdge / outras marcas
+// =========================================================================
+
+interface ImportarPageInput {
+  errorMsg?: string;
+  successMsg?: string;
+  novos?: number;
+  atualizados?: number;
+  total?: number;
+  sitesNomes?: string[];
+}
+
+export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
+  const { errorMsg, successMsg, novos, atualizados, total, sitesNomes } = input;
+
+  const erro = errorMsg
+    ? `<div class="mb-4 px-4 py-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-sm">⚠️ ${escapeHtml(errorMsg)}</div>`
+    : '';
+
+  const sucesso = successMsg
+    ? `<div class="mb-4 px-4 py-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900">
+        <div class="font-semibold mb-2">✅ ${escapeHtml(successMsg)}</div>
+        <div class="text-sm">${total} sites encontrados — ${novos} novos cadastrados, ${atualizados} atualizados.</div>
+        ${sitesNomes && sitesNomes.length > 0 ? `
+          <details class="mt-2">
+            <summary class="text-xs cursor-pointer hover:underline">Ver lista de sites</summary>
+            <ul class="text-xs mt-2 space-y-1 ml-4 list-disc">
+              ${sitesNomes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}
+            </ul>
+          </details>` : ''}
+      </div>`
+    : '';
+
+  const body = `
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-slate-900">📥 Importar sistemas em massa</h1>
+      <p class="text-slate-600 text-sm">Cole a API key da conta e o sistema cadastra todos os sites automaticamente.</p>
+    </div>
+
+    ${erro}
+    ${sucesso}
+
+    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 max-w-2xl">
+      <form action="/dashboard/monitoramento/importar" method="post" class="space-y-4">
+        <div>
+          <label for="marca" class="block text-sm font-semibold text-slate-700 mb-2">Marca do inversor</label>
+          <select name="marca" id="marca" required
+                  class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition">
+            <option value="solaredge">SolarEdge</option>
+            <option value="sungrow" disabled>Sungrow (em breve)</option>
+            <option value="deye" disabled>Deye (em breve)</option>
+            <option value="hoymiles" disabled>Hoymiles (em breve)</option>
+            <option value="goodwe" disabled>GoodWe (em breve)</option>
+            <option value="huawei" disabled>Huawei (em breve)</option>
+            <option value="foxess" disabled>FoxESS (em breve)</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="api_key" class="block text-sm font-semibold text-slate-700 mb-2">API Key da conta</label>
+          <input
+            id="api_key"
+            name="api_key"
+            type="text"
+            required
+            autofocus
+            placeholder="cola aqui a API key gerada no painel SolarEdge"
+            class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition font-mono text-sm">
+          <p class="text-xs text-slate-500 mt-2">
+            Pega em: monitoring.solaredge.com → Admin → Site Access → API Access (gerar/copiar a chave).
+          </p>
+        </div>
+
+        <button type="submit"
+                class="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-0.5">
+          📥 Importar agora
+        </button>
+      </form>
+
+      <div class="mt-6 pt-6 border-t border-slate-100 text-xs text-slate-500 space-y-2">
+        <p>💡 <strong>Como funciona:</strong> a gente chama <code class="bg-slate-100 px-1 rounded">/sites/list</code>
+        da SolarEdge com tua API key, recebe todos os sites associados, e cadastra cada um em
+        <code class="bg-slate-100 px-1 rounded">sistemas_clientes</code>.</p>
+        <p>🔄 <strong>Atualização automática:</strong> de hora em hora, o sistema usa essa API key pra
+        verificar se você criou plantas novas no painel SolarEdge — se criou, aparecem aqui sem você fazer nada.</p>
+        <p>🔁 <strong>Re-importar:</strong> rodar de novo é seguro — sites que já existem só são atualizados (apelido, potência, etc).</p>
+      </div>
+    </section>
+
+    <div class="mt-4">
+      <a href="/dashboard/monitoramento" class="text-sm text-slate-600 hover:underline">← Voltar pro monitoramento</a>
+    </div>
+  `;
+
+  return renderLayout({ active: 'monitoramento', title: 'Importar sites', body });
 }
 
 // =========================================================================

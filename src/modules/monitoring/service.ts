@@ -12,7 +12,7 @@
 
 import type { SupabaseService } from '../supabase.js';
 import { getAdapter, marcasSuportadas } from './adapter-registry.js';
-import type { MarcaInversor, SistemaCliente } from './types.js';
+import type { MarcaInversor, SistemaCliente, SiteResumo } from './types.js';
 
 interface SyncResult {
   totalSistemas: number;
@@ -161,6 +161,167 @@ export class MonitoringService {
     if (error) {
       console.warn(`[monitoring] atualizarStatusSistema: ${error.message}`);
     }
+  }
+
+  // Importa em massa todos os sites de uma marca usando credenciais da CONTA
+  // (ex: API key SolarEdge global). Cria sistemas_clientes ainda nao existentes
+  // e atualiza (apelido, potencia, cidade, etc) os ja existentes — match por
+  // (marca + site_id).
+  // Junior usa isso pra cadastrar X sistemas de uma vez sem clicar 1 a 1.
+  async importarSitesEmMassa(
+    marca: MarcaInversor,
+    credenciaisConta: Record<string, unknown>,
+  ): Promise<{
+    ok: boolean;
+    reason?: string;
+    novos: number;
+    atualizados: number;
+    total: number;
+    sitesPorNome?: string[];
+  }> {
+    const adapter = getAdapter(marca);
+    if (!adapter) {
+      return { ok: false, reason: `Sem adapter pra marca ${marca}`, novos: 0, atualizados: 0, total: 0 };
+    }
+    if (!adapter.listSites) {
+      return {
+        ok: false,
+        reason: `Adapter ${marca} nao suporta listSites (import em massa). Cadastrar sites manualmente.`,
+        novos: 0,
+        atualizados: 0,
+        total: 0,
+      };
+    }
+
+    const result = await adapter.listSites(credenciaisConta);
+    if (!result.ok) {
+      return { ok: false, reason: result.reason, novos: 0, atualizados: 0, total: 0 };
+    }
+
+    if (result.sites.length === 0) {
+      return { ok: true, novos: 0, atualizados: 0, total: 0 };
+    }
+
+    let novos = 0;
+    let atualizados = 0;
+    const nomes: string[] = [];
+
+    for (const site of result.sites) {
+      const ja = await this.buscarSistemaPorMarcaESiteId(marca, site.externalId);
+      if (ja) {
+        // Atualiza dados que podem ter mudado (apelido renomeado, potencia
+        // ajustada, cidade) E renova api_key (caso Junior tenha rotacionado).
+        await this.supabase.getClient()
+          .from('sistemas_clientes')
+          .update({
+            apelido: site.apelido,
+            api_credentials: site.credenciais,
+            potencia_kwp: site.potencia_kwp ?? ja.potencia_kwp,
+            cidade: site.cidade ?? ja.cidade,
+            data_instalacao: site.data_instalacao ?? ja.data_instalacao,
+            ativo: true,
+            ultimo_erro: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', ja.id);
+        atualizados++;
+      } else {
+        // Cria novo
+        await this.supabase.getClient()
+          .from('sistemas_clientes')
+          .insert({
+            apelido: site.apelido,
+            marca_inversor: marca,
+            api_credentials: site.credenciais,
+            potencia_kwp: site.potencia_kwp,
+            cidade: site.cidade,
+            uf: site.uf,
+            data_instalacao: site.data_instalacao,
+            ativo: true,
+          });
+        novos++;
+      }
+      nomes.push(site.apelido);
+    }
+
+    return {
+      ok: true,
+      novos,
+      atualizados,
+      total: result.sites.length,
+      sitesPorNome: nomes,
+    };
+  }
+
+  // Descoberta automatica: usa as api_keys ja cadastradas em sistemas_clientes
+  // pra detectar sites NOVOS criados no painel SolarEdge (ou outra marca) sem
+  // Junior precisar adicionar manualmente. Cron periodico chama isto.
+  // Tambem renova credenciais de sites existentes que mudaram (ex: api_key
+  // rotacionada).
+  async descobrirNovosSites(): Promise<{
+    porMarca: Record<string, { novos: number; atualizados: number; erros: number }>;
+  }> {
+    const resultado: Record<string, { novos: number; atualizados: number; erros: number }> = {};
+
+    for (const marca of marcasSuportadas()) {
+      const adapter = getAdapter(marca);
+      if (!adapter || !adapter.listSites) continue;
+
+      // Pega todas api_keys distintas daquela marca
+      const { data, error } = await this.supabase.getClient()
+        .from('sistemas_clientes')
+        .select('api_credentials')
+        .eq('marca_inversor', marca);
+      if (error) {
+        console.warn(`[monitoring/discovery] ${marca}:`, error.message);
+        continue;
+      }
+
+      const apiKeys = new Set<string>();
+      for (const row of data ?? []) {
+        const k = (row.api_credentials as Record<string, unknown>)?.api_key;
+        if (typeof k === 'string' && k.trim()) apiKeys.add(k.trim());
+      }
+      if (apiKeys.size === 0) continue; // marca nao tem nenhum sistema cadastrado ainda
+
+      let novos = 0;
+      let atualizados = 0;
+      let erros = 0;
+      for (const apiKey of apiKeys) {
+        const r = await this.importarSitesEmMassa(marca, { api_key: apiKey });
+        if (r.ok) {
+          novos += r.novos;
+          atualizados += r.atualizados;
+        } else {
+          erros++;
+        }
+      }
+      resultado[marca] = { novos, atualizados, erros };
+      if (novos > 0) {
+        console.log(
+          `[monitoring/discovery] ${marca}: ${novos} sites NOVOS detectados (${atualizados} atualizados, ${erros} erros)`,
+        );
+      }
+    }
+
+    return { porMarca: resultado };
+  }
+
+  private async buscarSistemaPorMarcaESiteId(
+    marca: MarcaInversor,
+    siteId: string,
+  ): Promise<SistemaCliente | null> {
+    const { data, error } = await this.supabase.getClient()
+      .from('sistemas_clientes')
+      .select('*')
+      .eq('marca_inversor', marca)
+      .eq('api_credentials->>site_id', siteId)
+      .maybeSingle();
+    if (error) {
+      console.warn('[monitoring] buscarSistemaPorMarcaESiteId:', error.message);
+      return null;
+    }
+    return (data as SistemaCliente) ?? null;
   }
 
   // Listagem pra dashboard. Inclui geracao do dia atual.

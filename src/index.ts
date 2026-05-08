@@ -3760,6 +3760,24 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
     setInterval(checkMonitoringDaily, 30 * 60 * 1000); // checa a cada 30min
     setTimeout(checkMonitoringDaily, 5 * 60 * 1000);   // 5min apos start (pra cobrir restart matinal)
     console.log('[monitoring] Cron diario started (sync 1x/dia ~3h BRT)');
+
+    // Cron de descoberta: a cada 1h, usa as api_keys ja cadastradas pra
+    // detectar plantas NOVAS criadas no painel da marca (ex: cliente novo
+    // adicionado no SolarEdge). Junior nao precisa cadastrar manual.
+    const checkMonitoringDiscovery = async () => {
+      try {
+        const result = await monitoringService.descobrirNovosSites();
+        const totalNovos = Object.values(result.porMarca).reduce((s, m) => s + m.novos, 0);
+        if (totalNovos > 0) {
+          console.log(`[monitoring/discovery] ${totalNovos} sites NOVOS descobertos automaticamente`);
+        }
+      } catch (err) {
+        console.warn('[monitoring/discovery] erro:', (err as Error).message);
+      }
+    };
+    setInterval(checkMonitoringDiscovery, 60 * 60 * 1000);  // 1x por hora
+    setTimeout(checkMonitoringDiscovery, 10 * 60 * 1000);   // 10min apos start
+    console.log('[monitoring] Cron de descoberta started (1x/hora)');
   }
 
   // Canal Solar ingestion (every 3 days)

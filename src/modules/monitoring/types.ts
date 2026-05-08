@@ -58,4 +58,33 @@ export interface MonitoringAdapter {
     dataInicio: string,
     dataFim: string,
   ): Promise<AdapterResult>;
+  // Opcional: listar sites/plantas associadas a uma chave de conta.
+  // Permite import em massa pelo dashboard. Adapter sem suporte retorna null.
+  listSites?(credenciaisConta: Record<string, unknown>): Promise<ListSitesResult>;
 }
+
+// Site/planta retornado por listSites — schema unificado pra qualquer marca.
+export interface SiteResumo {
+  externalId: string;             // id do site na API da marca
+  apelido: string;                 // nome amigavel ("Casa Silva")
+  potencia_kwp: number | null;
+  cidade: string | null;
+  uf: string | null;
+  data_instalacao: string | null;  // YYYY-MM-DD
+  // Credenciais especificas pra DEPOIS chamar fetchGeneration desse site.
+  // Inclui externalId + secrets da conta.
+  credenciais: Record<string, unknown>;
+}
+
+export interface ListSitesOk {
+  ok: true;
+  sites: SiteResumo[];
+}
+
+export interface ListSitesError {
+  ok: false;
+  reason: string;
+  invalidCredentials?: boolean;
+}
+
+export type ListSitesResult = ListSitesOk | ListSitesError;

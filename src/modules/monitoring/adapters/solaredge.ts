@@ -11,7 +11,7 @@
 //
 // Conversao: value vem em Wh, dividimos por 1000 pra obter kWh.
 
-import type { AdapterResult, MonitoringAdapter } from '../types.js';
+import type { AdapterResult, ListSitesResult, MonitoringAdapter } from '../types.js';
 
 const BASE_URL = 'https://monitoringapi.solaredge.com';
 
@@ -94,5 +94,93 @@ export const solarEdgeAdapter: MonitoringAdapter = {
       }));
 
     return { ok: true, geracoes };
+  },
+
+  // Lista todos os sites da conta SolarEdge associados a uma API key.
+  // Endpoint: GET /sites/list?api_key=XXX&size=N
+  // Resposta:
+  //   { sites: { count: 3, site: [
+  //     { id: 12345, name: "Casa Silva", peakPower: 8.4,
+  //       installationDate: "2025-03-12",
+  //       location: { country: "Brazil", city: "Brasilia", ... }
+  //     }, ... ] } }
+  async listSites(credenciaisConta: Record<string, unknown>): Promise<ListSitesResult> {
+    const apiKey = String(credenciaisConta.api_key ?? '').trim();
+    if (!apiKey) {
+      return {
+        ok: false,
+        reason: 'Faltam credenciais (precisa de api_key da conta SolarEdge)',
+        invalidCredentials: true,
+      };
+    }
+
+    const url = new URL(`${BASE_URL}/sites/list`);
+    url.searchParams.set('size', '100'); // SolarEdge: max 100 por chamada
+    url.searchParams.set('api_key', apiKey);
+
+    let resp: Response;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 30_000);
+      try {
+        resp = await fetch(url, { signal: controller.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (err) {
+      return { ok: false, reason: `network: ${(err as Error).message}` };
+    }
+
+    if (resp.status === 401 || resp.status === 403) {
+      return {
+        ok: false,
+        reason: `SolarEdge ${resp.status} (api_key invalida ou sem permissao)`,
+        invalidCredentials: true,
+      };
+    }
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      return { ok: false, reason: `SolarEdge ${resp.status}: ${body.slice(0, 200)}` };
+    }
+
+    interface RawSite {
+      id?: number | string;
+      name?: string;
+      peakPower?: number;
+      installationDate?: string;
+      location?: { country?: string; city?: string; address?: string; zip?: string };
+    }
+    let json: { sites?: { site?: RawSite[] } };
+    try {
+      json = (await resp.json()) as typeof json;
+    } catch (err) {
+      return { ok: false, reason: `JSON invalido: ${(err as Error).message}` };
+    }
+
+    const rawSites = json.sites?.site ?? [];
+    if (!Array.isArray(rawSites)) {
+      return { ok: false, reason: 'Resposta SolarEdge sem campo sites.site (array)' };
+    }
+
+    const sites = rawSites.flatMap((s) => {
+      const id = s.id !== undefined ? String(s.id) : null;
+      const apelido = s.name?.trim() ?? '';
+      if (!id || !apelido) return [];
+      return [{
+        externalId: id,
+        apelido,
+        potencia_kwp: typeof s.peakPower === 'number' && Number.isFinite(s.peakPower) ? s.peakPower : null,
+        cidade: s.location?.city?.trim() || null,
+        uf: null, // SolarEdge nao retorna UF separado; Junior pode editar depois
+        data_instalacao: s.installationDate ? s.installationDate.slice(0, 10) : null,
+        // Credenciais que vao no api_credentials JSONB do sistema
+        credenciais: {
+          site_id: id,
+          api_key: apiKey,
+        },
+      }];
+    });
+
+    return { ok: true, sites };
   },
 };
