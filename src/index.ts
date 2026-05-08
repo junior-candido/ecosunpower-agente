@@ -36,6 +36,7 @@ import { generateWeeklyReport, formatReportForWhatsApp } from './modules/ads-rep
 import { PricingAssistant } from './modules/pricing-assistant.js';
 import { SchedulingAssistant } from './modules/scheduling-assistant.js';
 import { ProposalAssistant } from './modules/proposal-assistant.js';
+import { ProposalFollowupService } from './modules/proposal-followup.js';
 import { NewsScraperService } from './modules/news-scraper.js';
 import { DriveUploader } from './modules/proposal/drive-uploader.js';
 import { createDashboardRouter } from './modules/dashboard/router.js';
@@ -353,6 +354,17 @@ async function main() {
 
   const driveOk = !!driveUploader;
   console.log(`[proposal] Eva Proposta ATIVA — Drive: ${driveOk ? 'on' : 'off'}, Web publica: on (${config.publicProposalBaseUrl})`);
+
+  // Follow-up automatico de proposta: quando cliente abre o link publico
+  // pela 1a vez, Eva notifica Junior e (apos 60s) manda mensagem pro cliente
+  // perguntando se ficou alguma duvida. Trigger fire-and-forget.
+  const proposalFollowup = new ProposalFollowupService({
+    supabase,
+    metaService: metaWaba,
+    sendText,
+    engineerPhone: config.engineerPhone,
+  });
+  console.log('[proposal-followup] Servico ativo (dispara no primeiro acesso a /p/:slug)');
 
   const googleReviewUrl = process.env.GOOGLE_REVIEW_URL ?? '';
   const postInstall = googleReviewUrl
@@ -737,6 +749,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
   // Message handler
   async function handleTextMessage(from: string, text: string) {
+    // Hook: se essa mensagem eh de cliente que recebeu followup automatico
+    // de proposta, marca como "cliente respondeu" no banco. Fire-and-forget,
+    // nao bloqueia o handler. No-op se nao houver proposta correspondente.
+    proposalFollowup.markClienteRespondeu(from);
+
     // Comandos admin de blog (publicar/descartar/blog status) PRECISAM vir primeiro,
     // antes dos modos /preco /proposta /agenda — porque Junior pode estar em qualquer
     // modo e ainda assim querer publicar/descartar um draft. tryHandleJuniorBlogCommand
@@ -3256,10 +3273,19 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
 
       res.type('text/html').send(html);
 
-      // Tracking fire-and-forget (nao bloqueia resposta).
-      supabase.incrementPropostaPublicaAcesso(slug).catch((err) => {
-        console.warn('[proposta-publica] track acesso falhou:', err);
-      });
+      // Tracking fire-and-forget (nao bloqueia resposta). Detecta primeira
+      // visualizacao (acessosAntes === 0) e dispara followup automatico:
+      // notifica Junior + manda mensagem pro cliente apos 60s.
+      supabase.incrementPropostaPublicaAcesso(slug)
+        .then((result) => {
+          if (result && result.acessosAntes === 0) {
+            console.log(`[proposta-publica] PRIMEIRA visualizacao slug=${slug} — disparando followup`);
+            proposalFollowup.triggerOnFirstView(slug);
+          }
+        })
+        .catch((err) => {
+          console.warn('[proposta-publica] track acesso falhou:', err);
+        });
     } catch (err) {
       console.error('[proposta-publica] erro:', err);
       res.status(500).type('text/html').send(propostaErrorHtml('error'));

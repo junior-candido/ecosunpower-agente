@@ -25,6 +25,10 @@ export interface PropostaRow {
   acessos: number;
   ultimo_acesso_at: string | null;
   revoked: boolean;
+  // followup automatico de proposta
+  followup_sent_at: string | null;
+  cliente_respondeu_at: string | null;
+  followup_skipped_reason: string | null;
   // dados extraidos de dados_input
   kwp?: number | null;
   valorTotal?: number | null;
@@ -162,7 +166,7 @@ export async function listPropostas(
   let query = supabase
     .from('propostas_publicas')
     .select(
-      'id, slug, numero_proposta, cliente_nome, cliente_telefone, created_at, acessos, ultimo_acesso_at, revoked, dados_input',
+      'id, slug, numero_proposta, cliente_nome, cliente_telefone, created_at, acessos, ultimo_acesso_at, revoked, dados_input, followup_sent_at, cliente_respondeu_at, followup_skipped_reason',
       { count: 'exact' },
     )
     .order('created_at', { ascending: false })
@@ -185,6 +189,9 @@ export async function listPropostas(
     acessos: p.acessos ?? 0,
     ultimo_acesso_at: p.ultimo_acesso_at,
     revoked: p.revoked ?? false,
+    followup_sent_at: p.followup_sent_at ?? null,
+    cliente_respondeu_at: p.cliente_respondeu_at ?? null,
+    followup_skipped_reason: p.followup_skipped_reason ?? null,
     kwp: extrairKwp(p.dados_input),
     valorTotal: extrairValorTotal(p.dados_input),
     cidade: extrairCidade(p.dados_input),

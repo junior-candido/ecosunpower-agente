@@ -37,6 +37,39 @@ function relativeTime(iso: string | null): string {
   return `${Math.floor(dias / 365)}a atrás`;
 }
 
+// Formata status do follow-up automatico de proposta como badge colorido.
+// Hierarquia (do mais avancado pro inicial):
+//   1. revogada
+//   2. cliente respondeu (ouro — venda em curso)
+//   3. eva engajou ou skipped
+//   4. cliente visualizou (sem followup ainda)
+//   5. so enviada (sem acesso)
+function formatStatusFollowup(p: PropostaRow): string {
+  if (p.revoked) {
+    return '<span class="inline-block px-2 py-1 rounded text-xs bg-slate-200 text-slate-600">🚫 Revogada</span>';
+  }
+  if (p.cliente_respondeu_at) {
+    return `<span class="inline-block px-2 py-1 rounded text-xs bg-emerald-100 text-emerald-800 font-semibold" title="Respondeu ${relativeTime(p.cliente_respondeu_at)}">✉️ Respondeu</span>`;
+  }
+  if (p.followup_sent_at) {
+    if (p.followup_skipped_reason) {
+      const motivos: Record<string, string> = {
+        cliente_sem_telefone: 'sem fone',
+        waba_indisponivel: 'sem WABA',
+        fora_janela_24h: 'fora 24h',
+        envio_falhou: 'erro envio',
+      };
+      const motivo = motivos[p.followup_skipped_reason] ?? p.followup_skipped_reason;
+      return `<span class="inline-block px-2 py-1 rounded text-xs bg-amber-100 text-amber-800" title="${escapeHtml(p.followup_skipped_reason)}">⚠️ ${escapeHtml(motivo)}</span>`;
+    }
+    return `<span class="inline-block px-2 py-1 rounded text-xs bg-sky-100 text-sky-800" title="Eva engajou ${relativeTime(p.followup_sent_at)}">💬 Eva engajou</span>`;
+  }
+  if (p.acessos > 0) {
+    return `<span class="inline-block px-2 py-1 rounded text-xs bg-yellow-100 text-yellow-800" title="${p.acessos} acesso${p.acessos > 1 ? 's' : ''}">👁 Visualizada</span>`;
+  }
+  return '<span class="inline-block px-2 py-1 rounded text-xs bg-slate-100 text-slate-600">📤 Enviada</span>';
+}
+
 // =========================================================================
 // LAYOUT (wrapper comum)
 // =========================================================================
@@ -216,6 +249,7 @@ export function renderPropostasPage(input: PropostasPageInput): string {
     const url = p.revoked
       ? '#'
       : `https://propostas.ecosunpower.eng.br/p/${escapeHtml(p.slug)}`;
+    const status = formatStatusFollowup(p);
     return `
       <tr class="hover:bg-slate-50 ${p.revoked ? 'opacity-50' : ''}">
         <td class="px-4 py-3 text-sm">
@@ -226,6 +260,7 @@ export function renderPropostasPage(input: PropostasPageInput): string {
         <td class="px-4 py-3 text-sm text-slate-700">${p.kwp ? `${p.kwp.toFixed(2)} kWp` : '—'}</td>
         <td class="px-4 py-3 text-sm text-slate-700 font-medium">${brl(p.valorTotal)}</td>
         <td class="px-4 py-3 text-sm text-slate-600">${formatDate(p.created_at)}</td>
+        <td class="px-4 py-3 text-sm">${status}</td>
         <td class="px-4 py-3 text-sm text-slate-600">${p.acessos}x ${p.ultimo_acesso_at ? `· ${relativeTime(p.ultimo_acesso_at)}` : ''}</td>
         <td class="px-4 py-3 text-sm text-right">
           ${p.revoked
@@ -257,12 +292,13 @@ export function renderPropostasPage(input: PropostasPageInput): string {
             <th class="px-4 py-3 font-semibold">Sistema</th>
             <th class="px-4 py-3 font-semibold">Valor</th>
             <th class="px-4 py-3 font-semibold">Gerada</th>
+            <th class="px-4 py-3 font-semibold">Status</th>
             <th class="px-4 py-3 font-semibold">Acessos</th>
             <th class="px-4 py-3 font-semibold text-right">Link</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
-          ${rows.length > 0 ? linhas : '<tr><td colspan="7" class="px-4 py-8 text-center text-slate-500 text-sm">Nenhuma proposta encontrada.</td></tr>'}
+          ${rows.length > 0 ? linhas : '<tr><td colspan="8" class="px-4 py-8 text-center text-slate-500 text-sm">Nenhuma proposta encontrada.</td></tr>'}
         </tbody>
       </table>
     </section>

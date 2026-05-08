@@ -556,7 +556,10 @@ export class SupabaseService {
 
   // Fire-and-forget. Race condition em counter de view e tolerada (~best effort).
   // Nao bloqueia a resposta HTTP da proposta.
-  async incrementPropostaPublicaAcesso(slug: string): Promise<void> {
+  // Retorna { acessosAntes } pra caller detectar primeira visualizacao
+  // (acessosAntes === 0) e disparar followup automatico. Retorna null se
+  // proposta nao encontrada ou erro.
+  async incrementPropostaPublicaAcesso(slug: string): Promise<{ acessosAntes: number } | null> {
     try {
       const { data } = await this.client
         .from('propostas_publicas')
@@ -564,16 +567,19 @@ export class SupabaseService {
         .eq('slug', slug)
         .maybeSingle();
 
-      if (!data) return;
+      if (!data) return null;
+      const acessosAntes = data.acessos ?? 0;
       await this.client
         .from('propostas_publicas')
         .update({
-          acessos: (data.acessos ?? 0) + 1,
+          acessos: acessosAntes + 1,
           ultimo_acesso_at: new Date().toISOString(),
         })
         .eq('slug', slug);
+      return { acessosAntes };
     } catch (err) {
       console.warn('[supabase] incrementPropostaPublicaAcesso (non-blocking):', err);
+      return null;
     }
   }
 }
