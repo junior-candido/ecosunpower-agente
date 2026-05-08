@@ -105,13 +105,14 @@ export class MonitoringService {
     return { totalSistemas: sistemas.length, sucessos, falhas, marcasSemAdapter };
   }
 
-  // Backfill: puxa historico completo do sistema desde data_instalacao
-  // (ou 24 meses atras se nao tiver data). Util pra sistemas recem-cadastrados
-  // ou pra preencher gaps. Quebra em chunks de 11 meses pra contornar limite
-  // SolarEdge de 1 ano por chamada.
+  // Backfill: puxa historico COMPLETO do sistema desde data_instalacao.
+  // SolarEdge guarda historico desde a instalacao do site (sem limite),
+  // entao podemos puxar 5, 10, 15 anos sem problema.
+  // Quebra em chunks de 330 dias pra contornar limite 1 ano por chamada.
+  // Se nao tiver data_instalacao cadastrada, usa fallback de 10 anos atras.
   async backfillHistorico(
     sistemaId: string,
-    options: { mesesMaximo?: number } = {},
+    options: { mesesMaximoFallback?: number } = {},
   ): Promise<{ ok: boolean; reason?: string; totalDias: number; chunks: number }> {
     const { data, error } = await this.supabase.getClient()
       .from('sistemas_clientes')
@@ -124,20 +125,21 @@ export class MonitoringService {
     const adapter = getAdapter(sistema.marca_inversor);
     if (!adapter) return { ok: false, reason: `Sem adapter pra marca ${sistema.marca_inversor}`, totalDias: 0, chunks: 0 };
 
-    // Define range: data instalacao OU 24 meses atras (cap pelo mesesMaximo)
-    const mesesMaximo = options.mesesMaximo ?? 24;
+    // Range: desde data_instalacao (se cadastrada) OU 10 anos atras (fallback).
+    // Cap absoluto de 20 anos pra evitar runaway em cadastros corrompidos.
+    const mesesMaximoFallback = options.mesesMaximoFallback ?? 120; // 10 anos
     const hoje = new Date();
     let dataInicio: Date;
     if (sistema.data_instalacao) {
       dataInicio = new Date(sistema.data_instalacao);
     } else {
       dataInicio = new Date(hoje);
-      dataInicio.setMonth(dataInicio.getMonth() - mesesMaximo);
+      dataInicio.setMonth(dataInicio.getMonth() - mesesMaximoFallback);
     }
-    // Cap absoluto pra nao explodir
-    const dataMin = new Date(hoje);
-    dataMin.setMonth(dataMin.getMonth() - mesesMaximo);
-    if (dataInicio < dataMin) dataInicio = dataMin;
+    // Cap defensivo de 20 anos (caso data_instalacao venha errada do banco)
+    const capAbsoluto = new Date(hoje);
+    capAbsoluto.setFullYear(capAbsoluto.getFullYear() - 20);
+    if (dataInicio < capAbsoluto) dataInicio = capAbsoluto;
 
     // Quebra em chunks de 330 dias (~11 meses, margem vs limite 1 ano da SolarEdge)
     const CHUNK_DIAS = 330;

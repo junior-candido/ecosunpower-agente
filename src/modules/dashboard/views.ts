@@ -696,8 +696,8 @@ export function renderDetalheSistemaPage(d: DetalheSistema): string {
           <form action="/dashboard/monitoramento/${escapeHtml(s.id)}/sync" method="post" class="inline">
             <button class="px-4 py-2 bg-sky-700 hover:bg-sky-800 text-white text-sm rounded-lg font-medium">🔄 Atualizar</button>
           </form>
-          <form action="/dashboard/monitoramento/${escapeHtml(s.id)}/backfill" method="post" class="inline" onsubmit="return confirm('Vai puxar até 24 meses de histórico via API SolarEdge. Demora ~5-30s por sistema. Continuar?')">
-            <button class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm rounded-lg font-medium">📅 Carregar histórico</button>
+          <form action="/dashboard/monitoramento/${escapeHtml(s.id)}/backfill" method="post" class="inline" onsubmit="return confirm('Vai puxar TODO o histórico desde a instalação do sistema (até 10 anos se não tiver data cadastrada). Pode demorar 30s-2min dependendo do volume. Continuar?')">
+            <button class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm rounded-lg font-medium">📅 Carregar histórico completo</button>
           </form>
         </div>
       </div>
