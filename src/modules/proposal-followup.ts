@@ -60,26 +60,50 @@ export class ProposalFollowupService {
 
     const clienteNome = proposta.cliente_nome;
     const clienteTelefone = this.normalizarTelefone(proposta.cliente_telefone);
+    const modoEnvio = proposta.modo_envio ?? 'junior_envia';
 
-    // 3. SEMPRE notifica Junior (nao depende do cliente ter telefone valido)
-    await this.notifyJunior(clienteNome, clienteTelefone, slug)
-      .catch((err) => console.warn('[proposal-followup] notify junior falhou:', err.message));
-
-    // 4. Se cliente nao tem telefone valido OU WABA indisponivel,
-    //    marca skipped e sai. Junior pode contatar manualmente.
+    // 3. Se cliente nao tem telefone valido, so notifica Junior
     if (!clienteTelefone) {
+      await this.notifyJunior(clienteNome, null, slug)
+        .catch((err) => console.warn('[proposal-followup] notify junior:', err.message));
       await this.markSkipped(slug, 'cliente_sem_telefone');
       return;
     }
     if (!this.metaService) {
+      await this.notifyJunior(clienteNome, clienteTelefone, slug)
+        .catch((err) => console.warn('[proposal-followup] notify junior:', err.message));
       await this.markSkipped(slug, 'waba_indisponivel');
       return;
     }
 
-    // 5. Aguarda delay (deixa cliente ler a proposta antes de incomodar)
-    await new Promise((resolve) => setTimeout(resolve, this.delayMs));
+    // 4. CAMINHO A — junior_envia: cliente NAO conhece o numero da Eva.
+    //    Pergunta a Junior antes de mandar (botoes interativos).
+    if (modoEnvio === 'junior_envia') {
+      await this.notifyJuniorComBotoes(clienteNome, clienteTelefone, slug);
+      console.log(`[proposal-followup] junior_envia: aguardando decisao do Junior slug=${slug}`);
+      return;
+    }
 
-    // 6. Manda mensagem pro cliente
+    // 5. CAMINHO B — eva_envia: cliente JA conhece o numero da Eva (recebeu
+    //    proposta dele). Mandar follow-up direto sem perguntar.
+    await this.notifyJunior(clienteNome, clienteTelefone, slug)
+      .catch((err) => console.warn('[proposal-followup] notify junior:', err.message));
+    // Aguarda delay (deixa cliente ler a proposta antes de incomodar)
+    await new Promise((resolve) => setTimeout(resolve, this.delayMs));
+    await this.executarEnvio(slug, clienteNome, clienteTelefone);
+  }
+
+  // Executa o envio da mensagem de followup pro cliente.
+  // Chamado em 2 lugares: (a) auto, modo eva_envia; (b) Junior tocou [Eva manda].
+  private async executarEnvio(
+    slug: string,
+    clienteNome: string,
+    clienteTelefone: string,
+  ): Promise<void> {
+    if (!this.metaService) {
+      await this.markSkipped(slug, 'waba_indisponivel');
+      return;
+    }
     const mensagem = this.montarMensagemCliente(clienteNome);
     try {
       await this.metaService.sendText(clienteTelefone, mensagem);
@@ -87,7 +111,6 @@ export class ProposalFollowupService {
       console.log(
         `[proposal-followup] enviado pra ${clienteNome} (${clienteTelefone}) slug=${slug}`,
       );
-      // Avisa Junior que mandou
       await this.sendText(
         this.engineerPhone,
         `✅ Eva mandou follow-up pra ${clienteNome}.`,
@@ -98,12 +121,10 @@ export class ProposalFollowupService {
         `[proposal-followup] falha ao enviar pra cliente ${clienteTelefone}:`,
         msg,
       );
-      // Erro 24h-window vai cair aqui — cliente nao mandou nada nas ultimas 24h.
       const reason = /131047|24.?hour|re-engagement/i.test(msg)
         ? 'fora_janela_24h'
         : 'envio_falhou';
       await this.markSkipped(slug, reason);
-      // Avisa Junior pra contatar manualmente
       await this.sendText(
         this.engineerPhone,
         `⚠️ Nao consegui mandar follow-up pra ${clienteNome} (${reason}). Contata manualmente: ${clienteTelefone}`,
@@ -111,17 +132,70 @@ export class ProposalFollowupService {
     }
   }
 
+  // Hook chamado quando Junior toca o botao [✅ Eva manda]. Re-busca proposta
+  // e dispara envio. Idempotente: se ja foi enviado, no-op.
+  triggerEnvioPorBotao(slug: string): void {
+    this.triggerEnvioPorBotaoAsync(slug).catch((err) => {
+      console.error('[proposal-followup] triggerEnvioPorBotao:', err.message);
+    });
+  }
+
+  private async triggerEnvioPorBotaoAsync(slug: string): Promise<void> {
+    const proposta = await this.loadPropostaParaFollowup(slug);
+    if (!proposta) return;
+    if (proposta.followup_sent_at) {
+      await this.sendText(this.engineerPhone, '🤔 Ja tinha mandado essa antes, ignorei.').catch(() => {});
+      return;
+    }
+    const clienteTelefone = this.normalizarTelefone(proposta.cliente_telefone);
+    if (!clienteTelefone) {
+      await this.markSkipped(slug, 'cliente_sem_telefone');
+      return;
+    }
+    await this.executarEnvio(slug, proposta.cliente_nome, clienteTelefone);
+  }
+
+  // Hook chamado quando Junior toca o botao [👤 Eu mando]. Marca como skipped
+  // pra anti-duplicacao e nao dispara mais.
+  marcarJuniorVaiContatar(slug: string): void {
+    this.marcarJuniorVaiContatarAsync(slug).catch((err) => {
+      console.warn('[proposal-followup] marcarJuniorVaiContatar:', err.message);
+    });
+  }
+
+  private async marcarJuniorVaiContatarAsync(slug: string): Promise<void> {
+    await this.markSkipped(slug, 'junior_atendendo');
+    await this.sendText(
+      this.engineerPhone,
+      '👍 Beleza, fica na sua mão. Eva nao vai mandar nada pra esse cliente.',
+    ).catch(() => {});
+  }
+
+  // Hook chamado quando Junior toca [⏰ Esperar 1h]. Re-pergunta dali a 1h.
+  postergarFollowup(slug: string): void {
+    setTimeout(() => {
+      this.runFollowupAsync(slug).catch((err) => {
+        console.error('[proposal-followup] reschedule:', err.message);
+      });
+    }, 60 * 60 * 1000);
+    this.sendText(
+      this.engineerPhone,
+      '⏰ Beleza, te pergunto de novo daqui 1h.',
+    ).catch(() => {});
+  }
+
   // Loader: junta proposta + dados_input pra extrair telefone do cliente
   private async loadPropostaParaFollowup(slug: string): Promise<{
     cliente_nome: string;
     cliente_telefone: string | null;
     followup_sent_at: string | null;
+    modo_envio: 'junior_envia' | 'eva_envia' | null;
     dados_input: any;
   } | null> {
     try {
       const { data, error } = await this.supabase.getClient()
         .from('propostas_publicas')
-        .select('cliente_nome, cliente_telefone, followup_sent_at, dados_input')
+        .select('cliente_nome, cliente_telefone, followup_sent_at, modo_envio, dados_input')
         .eq('slug', slug)
         .maybeSingle();
       if (error || !data) {
@@ -138,6 +212,7 @@ export class ProposalFollowupService {
         cliente_nome: data.cliente_nome,
         cliente_telefone: telefone,
         followup_sent_at: data.followup_sent_at,
+        modo_envio: data.modo_envio ?? null,
         dados_input: data.dados_input,
       };
     } catch (err) {
@@ -173,6 +248,8 @@ export class ProposalFollowupService {
     ].join('\n');
   }
 
+  // Caso eva_envia ou cliente sem telefone/sem WABA: so notifica Junior por
+  // texto, sem perguntar nada (Eva ja vai mandar / nao consegue mandar).
   private async notifyJunior(
     clienteNome: string,
     clienteTelefone: string | null,
@@ -185,11 +262,54 @@ export class ProposalFollowupService {
       `📣 *${clienteNome}* abriu a proposta agora!`,
       linha,
       ``,
-      `Vou aguardar 1 minuto e mandar follow-up pra ele perguntando se ficou alguma dúvida. Se preferir contatar manualmente antes, fica à vontade.`,
+      clienteTelefone
+        ? `Vou aguardar 1 minuto e mandar follow-up pra ele perguntando se ficou alguma dúvida.`
+        : `Sem telefone do cliente, follow-up automático nao acontece. Contata manualmente.`,
       ``,
       `🔗 https://propostas.ecosunpower.eng.br/p/${slug}`,
     ].join('\n');
     await this.sendText(this.engineerPhone, msg);
+  }
+
+  // Caso junior_envia: cliente NAO conhece o numero da Eva. Pergunta a Junior
+  // antes de mandar (botoes interativos). Junior decide caso a caso.
+  private async notifyJuniorComBotoes(
+    clienteNome: string,
+    clienteTelefone: string,
+    slug: string,
+  ): Promise<void> {
+    const body = [
+      `📣 *${clienteNome}* abriu a proposta agora!`,
+      `📞 ${clienteTelefone}`,
+      ``,
+      `Voce mandou a proposta pelo seu numero comercial — cliente NAO conhece o numero da Eva.`,
+      ``,
+      `Como prossigo?`,
+      `🔗 https://propostas.ecosunpower.eng.br/p/${slug}`,
+    ].join('\n');
+
+    if (this.metaService) {
+      try {
+        await this.metaService.sendInteractiveButtons(
+          this.engineerPhone,
+          body,
+          [
+            { id: `prop:fwup-eva:${slug}`, title: '✅ Eva manda' },
+            { id: `prop:fwup-junior:${slug}`, title: '👤 Eu mando' },
+            { id: `prop:fwup-esperar:${slug}`, title: '⏰ Esperar 1h' },
+          ],
+          'Toque pra responder',
+        );
+        return;
+      } catch (err) {
+        console.warn('[proposal-followup] botoes falharam, fallback texto:', (err as Error).message);
+      }
+    }
+    // Fallback texto puro
+    await this.sendText(
+      this.engineerPhone,
+      `${body}\n\n💡 Responda:\n• "eva ${slug}" pra Eva mandar\n• "eu ${slug}" pra voce contatar manualmente`,
+    ).catch(() => {});
   }
 
   private async markFollowupSent(slug: string): Promise<void> {

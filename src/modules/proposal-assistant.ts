@@ -747,6 +747,7 @@ export class ProposalAssistant {
           htmlContent: '<!doctype html><html><body>Generating...</body></html>',
           dadosInput: undefined,
           tipo: sessionState.tipo,
+          modoEnvio: sessionState.modoEnvio ?? 'junior_envia',
         });
 
         try {
@@ -808,6 +809,7 @@ export class ProposalAssistant {
                 htmlContent: html,
                 dadosInput: dadosInputMinimo,
                 tipo: sessionState.tipo ?? 'basica',
+                modoEnvio: sessionState.modoEnvio ?? 'junior_envia',
               }))
         : Promise.reject(new Error('Supabase service nao configurado'));
 

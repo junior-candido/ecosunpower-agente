@@ -754,6 +754,18 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // nao bloqueia o handler. No-op se nao houver proposta correspondente.
     proposalFollowup.markClienteRespondeu(from);
 
+    // Botoes do followup de proposta (junior_envia, modo "Eva pergunta antes
+    // de mandar"). So Junior (admin) toca esses botoes — early return.
+    const fwupBtn = text.trim().toLowerCase().match(/^prop:fwup-(eva|junior|esperar):([\w-]{8,40})$/);
+    if (fwupBtn && isAdminPhone(from)) {
+      const acao = fwupBtn[1];
+      const slug = fwupBtn[2];
+      if (acao === 'eva') proposalFollowup.triggerEnvioPorBotao(slug);
+      else if (acao === 'junior') proposalFollowup.marcarJuniorVaiContatar(slug);
+      else if (acao === 'esperar') proposalFollowup.postergarFollowup(slug);
+      return;
+    }
+
     // Comandos admin de blog (publicar/descartar/blog status) PRECISAM vir primeiro,
     // antes dos modos /preco /proposta /agenda — porque Junior pode estar em qualquer
     // modo e ainda assim querer publicar/descartar um draft. tryHandleJuniorBlogCommand

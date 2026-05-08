@@ -497,6 +497,7 @@ export class SupabaseService {
     htmlContent: string;
     dadosInput?: Record<string, unknown>;
     tipo?: 'basica' | 'personalizada';
+    modoEnvio?: 'junior_envia' | 'eva_envia';
   }): Promise<{ id: string; expiresAt: string }> {
     const { data, error } = await this.client
       .from('propostas_publicas')
@@ -508,6 +509,7 @@ export class SupabaseService {
         html_content: input.htmlContent,
         dados_input: input.dadosInput ?? null,
         tipo: input.tipo ?? 'basica',
+        modo_envio: input.modoEnvio ?? 'junior_envia',
       })
       .select('id, expires_at')
       .single();
