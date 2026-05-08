@@ -2,16 +2,18 @@
 # pre-instaladas e configuradas. Resolve "libglib-2.0.so.0 missing" sem
 # precisar gerenciar deps Chromium na mao.
 # https://pptr.dev/guides/docker
-# Cache bust: 2026-04-29-2008 (mude essa string pra forcar rebuild Docker)
+# Cache bust: 2026-05-08-1400 (mude essa string pra forcar rebuild Docker)
 FROM ghcr.io/puppeteer/puppeteer:24
 
-# A imagem oficial puppeteer ja tras o Chromium em ~pptruser/.cache/puppeteer.
-# Puppeteer detecta automaticamente — NAO setar PUPPETEER_EXECUTABLE_PATH
-# (caminho varia entre versoes da imagem).
-# NAO setar NODE_ENV=production AINDA — npm pularia devDependencies (typescript, @types/*)
-# que sao necessarias pro build TypeScript funcionar.
+# A imagem oficial puppeteer ja tras UM Chromium em ~pptruser/.cache/puppeteer.
+# MAS: 'ghcr.io/puppeteer/puppeteer:24' eh major-pinning (latest 24.x.y) e
+# 'puppeteer ^24.42.0' tambem eh range. As duas podem RESOLVER pra versoes
+# diferentes na hora do build, gerando erro:
+#   "Could not find Chrome (ver. 147.0.7727.57). cache: /home/pptruser/.cache/puppeteer"
+# Fix: APOS npm install, rodar 'puppeteer browsers install chrome' que detecta
+# a versao do puppeteer no node_modules e baixa o Chrome correspondente.
+# NAO setar PUPPETEER_EXECUTABLE_PATH — puppeteer detecta o cache automaticamente.
 
-# A imagem puppeteer roda como user 'pptruser' por seguranca.
 USER root
 WORKDIR /app
 
@@ -23,6 +25,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
 # Copia package files e instala TODAS deps (incluindo dev pra ter tsc + @types).
 COPY package*.json ./
 RUN npm install --include=dev && chown -R pptruser:pptruser /app
+
+# Garante que o Chrome compativel com a versao EXATA do puppeteer instalado
+# esta presente no cache do pptruser. Sem isso, a imagem base pode trazer um
+# Chrome de versao diferente do que o puppeteer recem-instalado pede.
+# Roda como pptruser pra cache cair em /home/pptruser/.cache/puppeteer.
+USER pptruser
+RUN cd /app && npx puppeteer browsers install chrome
+USER root
 
 # Copia o resto do projeto.
 COPY --chown=pptruser:pptruser . .
