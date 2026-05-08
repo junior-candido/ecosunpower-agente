@@ -471,6 +471,33 @@ const MARCAS_LABEL: Record<string, string> = {
   nep: 'NEP',
 };
 
+// Cores oficiais aproximadas de cada marca (pra badge sem precisar de logo PNG).
+// Quando Junior tiver as logos em arquivo, dá pra substituir o SVG por <img>.
+const MARCAS_COR: Record<string, { bg: string; text: string; sigla: string }> = {
+  solaredge: { bg: '#ED1C24', text: '#FFFFFF', sigla: 'SE' }, // SolarEdge vermelho
+  sungrow:   { bg: '#F58220', text: '#FFFFFF', sigla: 'SG' }, // Sungrow laranja
+  deye:      { bg: '#D9261C', text: '#FFFFFF', sigla: 'DY' }, // Deye vermelho
+  hoymiles:  { bg: '#0091D5', text: '#FFFFFF', sigla: 'HY' }, // Hoymiles azul
+  goodwe:    { bg: '#E60012', text: '#FFFFFF', sigla: 'GW' }, // GoodWe vermelho
+  huawei:    { bg: '#C7000B', text: '#FFFFFF', sigla: 'HW' }, // Huawei vermelho
+  foxess:    { bg: '#1F1F1F', text: '#FFFFFF', sigla: 'FX' }, // FoxESS cinza-escuro
+  nep:       { bg: '#0070C0', text: '#FFFFFF', sigla: 'NE' }, // NEP azul
+};
+
+// Gera badge visual da marca: quadradinho colorido com sigla + label ao lado.
+// Sem imagem externa = leve, rápido, sem broken images.
+function marcaBadge(marca: string, options: { compact?: boolean } = {}): string {
+  const cor = MARCAS_COR[marca] ?? { bg: '#64748B', text: '#FFFFFF', sigla: '?' };
+  const label = MARCAS_LABEL[marca] ?? marca;
+  if (options.compact) {
+    return `<span class="inline-flex items-center justify-center rounded-md font-bold text-[10px] tracking-tight" style="background:${cor.bg};color:${cor.text};width:28px;height:28px" title="${escapeHtml(label)}">${escapeHtml(cor.sigla)}</span>`;
+  }
+  return `<span class="inline-flex items-center gap-2 px-2 py-1 rounded-md text-xs font-medium bg-slate-50 border border-slate-200">
+    <span class="inline-flex items-center justify-center rounded font-bold text-[10px] tracking-tight" style="background:${cor.bg};color:${cor.text};width:22px;height:22px">${escapeHtml(cor.sigla)}</span>
+    <span class="text-slate-800">${escapeHtml(label)}</span>
+  </span>`;
+}
+
 export function renderMonitoramentoPage(rows: SistemaMonitorRow[]): string {
   const totalSistemas = rows.length;
   const totalGeracaoHoje = rows.reduce((s, r) => s + (r.geracao_hoje_kwh ?? 0), 0);
@@ -486,7 +513,6 @@ export function renderMonitoramentoPage(rows: SistemaMonitorRow[]): string {
 
   const linhas = rows.map((r) => {
     const local = [r.cidade, r.uf].filter(Boolean).join('/') || '—';
-    const marca = MARCAS_LABEL[r.marca_inversor] ?? r.marca_inversor;
     const sincOk = r.ultima_sincronizacao
       && (Date.now() - new Date(r.ultima_sincronizacao).getTime() < 36 * 60 * 60 * 1000);
     const status = !r.ativo
@@ -507,9 +533,7 @@ export function renderMonitoramentoPage(rows: SistemaMonitorRow[]): string {
           <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="font-medium text-sky-700 hover:underline">${escapeHtml(r.apelido)}</a>
           <div class="text-xs text-slate-500">${escapeHtml(local)}</div>
         </td>
-        <td class="px-4 py-3 text-sm">
-          <span class="inline-block px-2 py-1 rounded text-xs bg-sky-100 text-sky-800 font-medium">${escapeHtml(marca)}</span>
-        </td>
+        <td class="px-4 py-3 text-sm">${marcaBadge(r.marca_inversor)}</td>
         <td class="px-4 py-3 text-sm text-slate-700">${r.potencia_kwp ? `${r.potencia_kwp.toFixed(2)} kWp` : '—'}</td>
         <td class="px-4 py-3 text-sm text-amber-700 font-bold">${hojeStr}</td>
         <td class="px-4 py-3 text-sm text-emerald-700 font-medium">${mesStr}</td>
@@ -595,7 +619,6 @@ export function renderMonitoramentoPage(rows: SistemaMonitorRow[]): string {
 export function renderDetalheSistemaPage(d: DetalheSistema): string {
   const s = d.sistema;
   const localizacao = [s.cidade, s.uf].filter(Boolean).join('/') || '—';
-  const marca = MARCAS_LABEL[s.marca_inversor] ?? s.marca_inversor;
 
   // Card de KPI com border-left colorido
   const card = (
@@ -650,14 +673,17 @@ export function renderDetalheSistemaPage(d: DetalheSistema): string {
     </div>
 
     <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
-      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 class="text-2xl font-bold text-slate-900">${escapeHtml(s.apelido)}</h1>
-          <div class="text-slate-600 text-sm mt-1 flex flex-wrap gap-3">
-            <span><span class="text-slate-400">📍</span> ${escapeHtml(localizacao)}</span>
-            <span><span class="text-slate-400">⚡</span> ${s.potencia_kwp ? `${Number(s.potencia_kwp).toFixed(2)} kWp` : 'sem potência'}</span>
-            <span><span class="text-slate-400">🏷</span> ${escapeHtml(marca)}</span>
-            ${s.data_instalacao ? `<span><span class="text-slate-400">📅</span> Instalado ${formatDate(s.data_instalacao)}</span>` : ''}
+      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div class="flex items-start gap-4">
+          ${marcaBadge(s.marca_inversor, { compact: true }).replace('width:28px;height:28px', 'width:48px;height:48px;font-size:14px')}
+          <div>
+            <h1 class="text-2xl font-bold text-slate-900">${escapeHtml(s.apelido)}</h1>
+            <div class="text-slate-600 text-sm mt-1 flex flex-wrap gap-3">
+              <span><span class="text-slate-400">📍</span> ${escapeHtml(localizacao)}</span>
+              <span><span class="text-slate-400">⚡</span> ${s.potencia_kwp ? `${Number(s.potencia_kwp).toFixed(2)} kWp` : 'sem potência'}</span>
+              <span>${marcaBadge(s.marca_inversor)}</span>
+              ${s.data_instalacao ? `<span><span class="text-slate-400">📅</span> Instalado ${formatDate(s.data_instalacao)}</span>` : ''}
+            </div>
           </div>
         </div>
         <form action="/dashboard/monitoramento/${escapeHtml(s.id)}/sync" method="post">
