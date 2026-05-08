@@ -436,11 +436,18 @@ async function main() {
 
   // Helper pra detectar e processar comandos de blog vindos do Junior.
   // Junior recebe notificacao de novo draft no WhatsApp dele e responde
-  // "publicar" ou "descartar" — comandos sao detectados aqui.
+  // "publicar" ou "descartar" — OU clica nos botoes interativos
+  // ("publish-blog:<slug>" / "discard-blog:<slug>"), que normalizamos pro
+  // mesmo formato textual logo abaixo pra reusar a logica.
   // Retorna true se comando foi processado (handler deve return depois).
   async function tryHandleJuniorBlogCommand(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
-    const norm = text.trim().toLowerCase();
+    const raw = text.trim().toLowerCase();
+    // Botao WABA → comando textual equivalente
+    const btnMatch = raw.match(/^(publish|discard)-blog:([\w-]+)$/);
+    const norm = btnMatch
+      ? `${btnMatch[1] === 'publish' ? 'publicar' : 'descartar'} ${btnMatch[2]}`
+      : raw;
 
     const publishMatch = norm.match(/^publicar(?:\s+([\w-]+))?$/);
     if (publishMatch) {
@@ -3660,17 +3667,33 @@ ${draft.description}
 
 Categoria: ${draft.category}
 Tempo de leitura: ${draft.readingTime} min
-Slug: ${draft.slug}
-
-Responda *publicar* pra publicar no ar, ou *descartar* pra dispensar.`;
+Slug: ${draft.slug}`;
+      const fallbackText = `${summary}\n\nResponda *publicar* pra publicar no ar, ou *descartar* pra dispensar.`;
       if (!isSandbox) {
-        await sendText(config.engineerPhone, summary);
+        if (metaWaba) {
+          try {
+            await metaWaba.sendInteractiveButtons(
+              config.engineerPhone,
+              summary,
+              [
+                { id: `publish-blog:${draft.slug}`, title: '📤 Publicar' },
+                { id: `discard-blog:${draft.slug}`, title: '🗑️ Descartar' },
+              ],
+              'Toque pra responder',
+            );
+          } catch (err) {
+            console.warn('[blog] botoes falharam, fallback texto:', (err as Error).message);
+            await sendText(config.engineerPhone, fallbackText);
+          }
+        } else {
+          await sendText(config.engineerPhone, fallbackText);
+        }
         await supabase.getClient()
           .from('blog_drafts')
           .update({ whatsapp_notified_at: new Date().toISOString() })
           .eq('id', draft.id);
       } else {
-        console.log(`[blog] [sandbox] Would notify ${config.engineerPhone}: ${summary}`);
+        console.log(`[blog] [sandbox] Would notify ${config.engineerPhone}: ${fallbackText}`);
       }
       console.log(`[blog] Draft gerado e enviado: ${draft.title} (${draft.slug})`);
       return draft;
