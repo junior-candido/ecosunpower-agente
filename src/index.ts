@@ -625,8 +625,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // Botoes interativos enviam id no formato "approve:<reviewId>" ou "ignore:<reviewId>"
     const matchApproveBtn = trimmed.match(/^approve:(.+)$/);
     const matchIgnoreBtn = trimmed.match(/^ignore:(.+)$/);
+    // Botoes de depoimento (testimonials) — disparados pelo aviso de depoimento positivo
+    const matchApproveTest = trimmed.match(/^approve-testimonial:(.+)$/);
+    const matchIgnoreTest = trimmed.match(/^ignore-testimonial:(.+)$/);
 
-    if (!matchAprovar && !matchGoogle && !matchAprovarReview && !matchListarReviews && !matchApproveBtn && !matchIgnoreBtn) return false;
+    if (!matchAprovar && !matchGoogle && !matchAprovarReview && !matchListarReviews && !matchApproveBtn && !matchIgnoreBtn && !matchApproveTest && !matchIgnoreTest) return false;
 
     try {
       if (matchAprovar) {
@@ -669,6 +672,19 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         // Ignorar = nao publicar. Review fica em public_reviews mas approved=false.
         // Ja foi marcado como notified, entao nao notifica de novo. Suficiente.
         await sendText(from, '🗑️ Review ignorada. Não vai aparecer no site.');
+      } else if (matchApproveTest) {
+        const id = matchApproveTest[1];
+        await testimonials.setUsableForMarketing(id, true);
+        const ok = await siteDeploy.dispatchRebuild();
+        const tail = ok ? 'Site rebuildando em ~30s.' : 'CLOUDFLARE_DEPLOY_HOOK_URL nao configurado — depoimento aprovado mas site nao rebuildou.';
+        await sendText(from, `✅ Depoimento ${id} aprovado pra marketing. ${tail}`);
+      } else if (matchIgnoreTest) {
+        const id = matchIgnoreTest[1];
+        // Ignorar = nao usar no marketing. Depoimento fica em testimonials mas
+        // usable_for_marketing=false (default). Suficiente — nao precisa deletar.
+        // Log barato pra rastrear caso Junior reclame "perdi um depoimento".
+        console.log(`[testimonial-admin] ignored ${id}`);
+        await sendText(from, '🗑️ Depoimento ignorado. Não vai aparecer no marketing.');
       }
     } catch (err) {
       console.error('[testimonial-admin] Error:', (err as Error).message);
@@ -1284,10 +1300,26 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
             // getLeadByPhone e best-effort: falha aqui nao deve estourar o handler
             const lead = await supabase.getLeadByPhone(from).catch(() => null);
             const leadName = lead?.name ?? from;
-            await sendText(
-              config.engineerPhone,
-              `depoimento em ${fmt} chegou de ${leadName}. salvei no banco pra usar no marketing — ve a biblioteca quando quiser.`,
-            ).catch(() => { /* nao bloqueante */ });
+            const body = `🎤 *Depoimento em ${fmt} chegou!*\n\nDe: ${leadName}\nSalvei no banco. Aprovar pra usar no marketing?`;
+            const fallback = `${body}\n\n✅ /aprovar-depoimento ${saved.id}\n❌ Ignora se nao for usavel`;
+            if (metaWaba) {
+              try {
+                await metaWaba.sendInteractiveButtons(
+                  config.engineerPhone,
+                  body,
+                  [
+                    { id: `approve-testimonial:${saved.id}`, title: '✅ Aprovar' },
+                    { id: `ignore-testimonial:${saved.id}`, title: '❌ Ignorar' },
+                  ],
+                  'Toque pra responder',
+                );
+              } catch (err) {
+                console.warn('[testimonial] botoes falharam, fallback texto:', (err as Error).message);
+                await sendText(config.engineerPhone, fallback).catch(() => {});
+              }
+            } else {
+              await sendText(config.engineerPhone, fallback).catch(() => { /* nao bloqueante */ });
+            }
           }
         } catch (err) {
           console.error(`[action] save_testimonial failed:`, (err as Error).message);
