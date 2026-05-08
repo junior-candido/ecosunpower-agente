@@ -16,6 +16,7 @@ export interface PublicReviewRow {
   created_at: string;
   approved_for_marketing: boolean;
   approved_at: string | null;
+  notified_at: string | null;
 }
 
 export class PublicReviewsService {
@@ -52,5 +53,25 @@ export class PublicReviewsService {
       .maybeSingle();
     if (error) throw new Error(`Failed to fetch review ${id}: ${error.message}`);
     return (data as PublicReviewRow) ?? null;
+  }
+
+  // Reviews recebidas mas que ainda nao foram notificadas pro Junior via WhatsApp.
+  async listUnnotified(limit = 5): Promise<PublicReviewRow[]> {
+    const { data, error } = await this.supabase
+      .from('public_reviews')
+      .select('*')
+      .is('notified_at', null)
+      .order('created_at', { ascending: true })
+      .limit(limit);
+    if (error) throw new Error(`Failed to list unnotified: ${error.message}`);
+    return (data ?? []) as PublicReviewRow[];
+  }
+
+  async markNotified(id: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('public_reviews')
+      .update({ notified_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw new Error(`Failed to mark notified: ${error.message}`);
   }
 }

@@ -3541,6 +3541,41 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
     setTimeout(checkMaintenanceDaily, 5 * 60 * 1000);   // roda 5min apos start
     console.log('[maintenance] Reminder scheduler started (1x/day apos 9h BRT, idempotente)');
 
+    // Notificacao de review novo do /avaliar (form publico do site).
+    // A cada 5min, busca reviews ainda nao notificados e manda mensagem pro
+    // engineerPhone com botao /aprovar-review e contexto da review.
+    async function notifyNewReviews() {
+      try {
+        const pending = await publicReviews.listUnnotified(5);
+        if (pending.length === 0) return;
+        for (const r of pending) {
+          const stars = '⭐'.repeat(r.estrelas);
+          const cidade = r.cliente_cidade ? ` · ${r.cliente_cidade}` : '';
+          const texto = r.texto ? `\n💬 "${r.texto.slice(0, 200)}${r.texto.length > 200 ? '...' : ''}"` : '';
+          const tel = r.cliente_telefone ? `\n📞 ${r.cliente_telefone}` : '';
+          const msg = [
+            '🌟 *Nova avaliação no site!*',
+            '',
+            `👤 ${r.cliente_nome}${cidade}`,
+            `${stars} (${r.estrelas} estrela${r.estrelas > 1 ? 's' : ''})`,
+            texto,
+            tel,
+            '',
+            `✅ Aprovar pra publicar: */aprovar-review ${r.id}*`,
+            'Ou ignora se for spam.',
+          ].filter(Boolean).join('\n');
+          await sendText(config.engineerPhone, msg);
+          await publicReviews.markNotified(r.id);
+        }
+        console.log(`[reviews-notifier] notificou ${pending.length} review(s)`);
+      } catch (err) {
+        console.error('[reviews-notifier] erro:', (err as Error).message);
+      }
+    }
+    setInterval(notifyNewReviews, 5 * 60 * 1000);  // a cada 5 min
+    setTimeout(notifyNewReviews, 30 * 1000);       // tambem 30s apos start (pra pegar pendentes)
+    console.log('[reviews-notifier] cron started (a cada 5min)');
+
     // Cadencia de reengajamento: 5 toques (0h, 15d, 30d, 45d, 60d).
     // Processa vencidos a cada 15 min, respeita horario comercial 9h-20h BRT.
     setInterval(async () => {
