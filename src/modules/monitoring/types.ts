@@ -11,6 +11,9 @@ export type MarcaInversor =
   | 'foxess'
   | 'nep';
 
+export type TelhadoTipo = 'ceramica' | 'fibrocimento' | 'laje' | 'metalico' | 'solo' | 'outro';
+export type Orientacao = 'N' | 'NE' | 'L' | 'SE' | 'S' | 'SO' | 'O' | 'NO';
+
 export interface SistemaCliente {
   id: string;
   lead_id: string | null;
@@ -24,6 +27,16 @@ export interface SistemaCliente {
   ativo: boolean;
   ultima_sincronizacao: string | null;
   ultimo_erro: string | null;
+  // Dados detalhados (migration 022) — cruzamento com geração real
+  painel_marca?: string | null;
+  painel_modelo?: string | null;
+  qtd_paineis?: number | null;
+  inversor_modelo?: string | null;
+  telhado_tipo?: TelhadoTipo | null;
+  telhado_orientacao?: Orientacao | null;
+  telhado_inclinacao_graus?: number | null;
+  sombreamento_pct?: number | null;
+  observacoes?: string | null;
 }
 
 export interface GeracaoDiaria {

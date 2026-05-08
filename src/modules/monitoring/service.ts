@@ -339,6 +339,51 @@ export class MonitoringService {
     return (data as SistemaCliente) ?? null;
   }
 
+  // Atualiza dados detalhados de um sistema (form edit no dashboard).
+  // Sanitiza inputs e ignora campos nao-permitidos pra evitar mass-assignment.
+  async atualizarSistema(
+    id: string,
+    fields: Partial<{
+      apelido: string;
+      potencia_kwp: number | null;
+      cidade: string | null;
+      uf: string | null;
+      data_instalacao: string | null;
+      ativo: boolean;
+      painel_marca: string | null;
+      painel_modelo: string | null;
+      qtd_paineis: number | null;
+      inversor_modelo: string | null;
+      telhado_tipo: string | null;
+      telhado_orientacao: string | null;
+      telhado_inclinacao_graus: number | null;
+      sombreamento_pct: number | null;
+      observacoes: string | null;
+    }>,
+  ): Promise<{ ok: boolean; reason?: string }> {
+    // Filtra apenas campos suportados (nao deixa cliente passar marca_inversor,
+    // api_credentials, etc — campos sensiveis ficam fora).
+    const allowed = [
+      'apelido', 'potencia_kwp', 'cidade', 'uf', 'data_instalacao', 'ativo',
+      'painel_marca', 'painel_modelo', 'qtd_paineis', 'inversor_modelo',
+      'telhado_tipo', 'telhado_orientacao', 'telhado_inclinacao_graus',
+      'sombreamento_pct', 'observacoes',
+    ];
+    const update: Record<string, unknown> = {};
+    for (const k of allowed) {
+      if (k in fields) update[k] = (fields as Record<string, unknown>)[k];
+    }
+    if (Object.keys(update).length === 0) return { ok: false, reason: 'Nada pra atualizar' };
+    update.updated_at = new Date().toISOString();
+
+    const { error } = await this.supabase.getClient()
+      .from('sistemas_clientes')
+      .update(update)
+      .eq('id', id);
+    if (error) return { ok: false, reason: error.message };
+    return { ok: true };
+  }
+
   // Detalhe completo de UM sistema pra pagina de analise.
   // Inclui: dados base, KPIs (hoje/mes/ano/total), serie diaria 90 dias,
   // serie mensal 12 meses, calculo de geracao esperada (HSP x kWp), alertas.

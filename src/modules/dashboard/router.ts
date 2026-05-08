@@ -13,6 +13,17 @@
 //   GET  /manutencao - lembretes pendentes
 
 import express, { Router, type Request, type Response } from 'express';
+
+// Helper local pra mensagens de erro inline (sem importar das views pra
+// evitar dependencia circular).
+function escapeHtmlSimple(s: string): string {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 import type { SupabaseService } from '../supabase.js';
 import type { MonitoringService } from '../monitoring/service.js';
 import {
@@ -35,6 +46,7 @@ import {
   renderMonitoramentoPage,
   renderImportarSitesPage,
   renderDetalheSistemaPage,
+  renderEditarSistemaPage,
 } from './views.js';
 import type { MarcaInversor } from '../monitoring/types.js';
 
@@ -201,6 +213,57 @@ export function createDashboardRouter(
       console.error('[dashboard/monitoramento/detalhe]', err);
       res.status(500).send(`<h2>Erro ao carregar detalhe</h2><pre>${(err as Error).message}</pre>`);
     }
+  });
+
+  // Editar dados detalhados do sistema (paineis, telhado, etc).
+  router.get('/monitoramento/:id/editar', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).send('UUID invalido');
+    const detalhe = await monitoringService.getDetalheSistema(id);
+    if (!detalhe) return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
+    res.send(renderEditarSistemaPage(detalhe.sistema));
+  });
+
+  router.post('/monitoramento/:id/editar', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).send('UUID invalido');
+    const body = req.body ?? {};
+    // Conversoes de tipo. Strings vazias viram null pra permitir clear de campos.
+    const numOuNull = (v: unknown): number | null => {
+      if (v === undefined || v === null || v === '') return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    const strOuNull = (v: unknown): string | null => {
+      if (v === undefined || v === null) return null;
+      const s = String(v).trim();
+      return s === '' ? null : s;
+    };
+    const fields = {
+      apelido: strOuNull(body.apelido) ?? '',
+      potencia_kwp: numOuNull(body.potencia_kwp),
+      cidade: strOuNull(body.cidade),
+      uf: strOuNull(body.uf)?.toUpperCase() ?? null,
+      data_instalacao: strOuNull(body.data_instalacao),
+      ativo: String(body.ativo) === 'true',
+      painel_marca: strOuNull(body.painel_marca),
+      painel_modelo: strOuNull(body.painel_modelo),
+      qtd_paineis: numOuNull(body.qtd_paineis),
+      inversor_modelo: strOuNull(body.inversor_modelo),
+      telhado_tipo: strOuNull(body.telhado_tipo),
+      telhado_orientacao: strOuNull(body.telhado_orientacao),
+      telhado_inclinacao_graus: numOuNull(body.telhado_inclinacao_graus),
+      sombreamento_pct: numOuNull(body.sombreamento_pct),
+      observacoes: strOuNull(body.observacoes),
+    };
+    if (!fields.apelido) {
+      return res.status(400).send('<h2>Apelido eh obrigatorio</h2><a href="javascript:history.back()">← voltar</a>');
+    }
+    const r = await monitoringService.atualizarSistema(id, fields);
+    if (!r.ok) {
+      return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.reason ?? 'desconhecido')}</h2><a href="javascript:history.back()">← voltar</a>`);
+    }
+    res.redirect(`/dashboard/monitoramento/${id}`);
   });
 
   // Sync manual de um sistema. Re-busca dados da API e popula geracao_diaria.

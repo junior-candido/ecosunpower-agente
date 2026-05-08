@@ -686,9 +686,12 @@ export function renderDetalheSistemaPage(d: DetalheSistema): string {
             </div>
           </div>
         </div>
-        <form action="/dashboard/monitoramento/${escapeHtml(s.id)}/sync" method="post">
-          <button class="px-4 py-2 bg-sky-700 hover:bg-sky-800 text-white text-sm rounded-lg font-medium">🔄 Atualizar agora</button>
-        </form>
+        <div class="flex gap-2">
+          <a href="/dashboard/monitoramento/${escapeHtml(s.id)}/editar" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm rounded-lg font-medium">✏️ Editar</a>
+          <form action="/dashboard/monitoramento/${escapeHtml(s.id)}/sync" method="post" class="inline">
+            <button class="px-4 py-2 bg-sky-700 hover:bg-sky-800 text-white text-sm rounded-lg font-medium">🔄 Atualizar</button>
+          </form>
+        </div>
       </div>
     </div>
 
@@ -827,6 +830,194 @@ export function renderDetalheSistemaPage(d: DetalheSistema): string {
     body,
     scripts,
   });
+}
+
+// =========================================================================
+// EDITAR SISTEMA — form pra cadastrar dados detalhados (paineis, telhado, etc)
+// =========================================================================
+
+// Marcas oficiais EcoSunPower (memoria project_marcas_ecosunpower.md)
+const PAINEIS_SUGESTOES = [
+  'Trina Solar', 'JA Solar', 'LONGi', 'Jinko Solar', 'DAH Solar',
+  'Risen Energy', 'Canadian Solar',
+];
+const INVERSORES_SUGESTOES = [
+  'SolarEdge', 'Sungrow', 'Solis', 'Deye', 'FoxESS', 'Hoymiles', 'NEP',
+  'Huawei', 'Fronius', 'SMA', 'GoodWe', 'APsystems', 'SolaX',
+];
+// Modelos populares — autocomplete pra agilizar
+const PAINEIS_MODELOS_SUGESTOES = [
+  'Trina Vertex S+ TSM-NEG21C.20-700',
+  'Trina Vertex S+ TSM-NEG21C.20-720',
+  'JA Solar JAM72D40-580/MB (DeepBlue 4.0X)',
+  'Jinko Tiger Neo JKM625N-78HL4-BDV',
+  'LONGi Hi-MO X6 LR5-72HTH-585M',
+  'LONGi Hi-MO 7 LR5-72HPH-590M',
+  'Risen Hyper-Ion RSM132-8-660BHDG',
+  'Risen Energy RSM144-8-715BHDG',
+  'Canadian HiKu6 CS6R-460MS',
+  'DAH 580W Bifacial',
+];
+const INVERSORES_MODELOS_SUGESTOES = [
+  'Sungrow SG5.0RS-L',
+  'Sungrow SG8.0RS',
+  'Sungrow SG10RS',
+  'Solis S6-GR1P5K',
+  'Solis S6-GH3P10K',
+  'Deye SUN-5K-G',
+  'Deye SUN-8K-SG04LP3',
+  'FoxESS H1-5.0',
+  'Hoymiles HM-2250-4T',
+  'Hoymiles HMS-2000-4T',
+  'NEP BDM-1000',
+  'GoodWe GW5K-DT',
+  'SolarEdge SE5000H',
+  'Huawei SUN2000-5KTL-L1',
+];
+
+export function renderEditarSistemaPage(s: import('../monitoring/types.js').SistemaCliente): string {
+  const dl = (id: string, items: string[]) =>
+    `<datalist id="${id}">${items.map(i => `<option value="${escapeHtml(i)}"></option>`).join('')}</datalist>`;
+
+  const inputClass = 'w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition';
+  const selectClass = inputClass;
+
+  const orientacoes: Array<{ v: string; l: string }> = [
+    { v: '', l: '— escolha —' },
+    { v: 'N', l: 'N (Norte)' },
+    { v: 'NE', l: 'NE' }, { v: 'L', l: 'L (Leste)' },
+    { v: 'SE', l: 'SE' }, { v: 'S', l: 'S (Sul)' },
+    { v: 'SO', l: 'SO' }, { v: 'O', l: 'O (Oeste)' },
+    { v: 'NO', l: 'NO' },
+  ];
+  const tiposTelhado = [
+    { v: '', l: '— escolha —' },
+    { v: 'ceramica', l: 'Cerâmica' },
+    { v: 'fibrocimento', l: 'Fibrocimento' },
+    { v: 'laje', l: 'Laje' },
+    { v: 'metalico', l: 'Metálico' },
+    { v: 'solo', l: 'Solo (usina)' },
+    { v: 'outro', l: 'Outro' },
+  ];
+
+  const body = `
+    <div class="mb-4">
+      <a href="/dashboard/monitoramento/${escapeHtml(s.id)}" class="text-sm text-slate-600 hover:underline">← Voltar pra ${escapeHtml(s.apelido)}</a>
+    </div>
+
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-slate-900">✏️ Editar dados do sistema</h1>
+      <p class="text-slate-600 text-sm">Quanto mais detalhe, mais precisa fica a análise (PR, ranking, calibragem de propostas).</p>
+    </div>
+
+    <form action="/dashboard/monitoramento/${escapeHtml(s.id)}/editar" method="post" class="space-y-6">
+      ${dl('paineis-marcas', PAINEIS_SUGESTOES)}
+      ${dl('paineis-modelos', PAINEIS_MODELOS_SUGESTOES)}
+      ${dl('inversores-modelos', INVERSORES_MODELOS_SUGESTOES)}
+
+      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <h2 class="font-semibold text-slate-900 mb-4">📌 Identificação</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">Apelido</label>
+            <input name="apelido" type="text" value="${escapeHtml(s.apelido)}" required class="${inputClass}">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">Potência (kWp)</label>
+            <input name="potencia_kwp" type="number" step="0.01" value="${s.potencia_kwp ?? ''}" class="${inputClass}">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">Cidade</label>
+            <input name="cidade" type="text" value="${escapeHtml(s.cidade ?? '')}" class="${inputClass}">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">UF</label>
+            <input name="uf" type="text" maxlength="2" value="${escapeHtml(s.uf ?? '')}" class="${inputClass} uppercase">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">Data instalação</label>
+            <input name="data_instalacao" type="date" value="${s.data_instalacao ?? ''}" class="${inputClass}">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">Ativo</label>
+            <select name="ativo" class="${selectClass}">
+              <option value="true" ${s.ativo ? 'selected' : ''}>Sim</option>
+              <option value="false" ${!s.ativo ? 'selected' : ''}>Não (pausar monitoramento)</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <h2 class="font-semibold text-slate-900 mb-4">☀ Painéis solares</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">Marca</label>
+            <input name="painel_marca" type="text" list="paineis-marcas" value="${escapeHtml(s.painel_marca ?? '')}" placeholder="Ex: Trina Solar" class="${inputClass}">
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-sm font-semibold text-slate-700 mb-1">Modelo</label>
+            <input name="painel_modelo" type="text" list="paineis-modelos" value="${escapeHtml(s.painel_modelo ?? '')}" placeholder="Ex: TSM-NEG21C.20-700" class="${inputClass}">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">Quantidade</label>
+            <input name="qtd_paineis" type="number" min="1" value="${s.qtd_paineis ?? ''}" placeholder="Ex: 12" class="${inputClass}">
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <h2 class="font-semibold text-slate-900 mb-4">⚡ Inversor (modelo específico)</h2>
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-1">Modelo</label>
+          <input name="inversor_modelo" type="text" list="inversores-modelos" value="${escapeHtml(s.inversor_modelo ?? '')}" placeholder="Ex: Sungrow SG5.0RS-L" class="${inputClass}">
+          <p class="text-xs text-slate-500 mt-1">Marca já é <strong>${escapeHtml(MARCAS_LABEL[s.marca_inversor] ?? s.marca_inversor)}</strong> (vinda da API). Aqui é o modelo específico.</p>
+        </div>
+      </section>
+
+      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <h2 class="font-semibold text-slate-900 mb-4">🏠 Telhado</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">Tipo</label>
+            <select name="telhado_tipo" class="${selectClass}">
+              ${tiposTelhado.map(t => `<option value="${t.v}" ${s.telhado_tipo === t.v ? 'selected' : ''}>${escapeHtml(t.l)}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">Orientação predominante</label>
+            <select name="telhado_orientacao" class="${selectClass}">
+              ${orientacoes.map(o => `<option value="${o.v}" ${s.telhado_orientacao === o.v ? 'selected' : ''}>${escapeHtml(o.l)}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">Inclinação (graus)</label>
+            <input name="telhado_inclinacao_graus" type="number" min="0" max="90" value="${s.telhado_inclinacao_graus ?? ''}" placeholder="Ex: 23" class="${inputClass}">
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-slate-700 mb-1">Sombreamento estimado (%)</label>
+            <input name="sombreamento_pct" type="number" min="0" max="100" value="${s.sombreamento_pct ?? ''}" placeholder="0=sem sombra" class="${inputClass}">
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <h2 class="font-semibold text-slate-900 mb-4">📝 Observações</h2>
+        <textarea name="observacoes" rows="3" class="${inputClass}" placeholder="Manutenções, situações especiais, troca de equipamento, etc.">${escapeHtml(s.observacoes ?? '')}</textarea>
+      </section>
+
+      <div class="flex flex-col sm:flex-row gap-3 sticky bottom-4">
+        <button type="submit" class="flex-1 bg-gradient-to-r from-sky-700 to-sky-600 hover:from-sky-800 hover:to-sky-700 text-white font-semibold py-3 rounded-xl shadow-lg transition">
+          💾 Salvar alterações
+        </button>
+        <a href="/dashboard/monitoramento/${escapeHtml(s.id)}" class="flex-1 bg-white border-2 border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold py-3 rounded-xl text-center transition">
+          Cancelar
+        </a>
+      </div>
+    </form>
+  `;
+
+  return renderLayout({ active: 'monitoramento', title: `Editar ${s.apelido}`, body });
 }
 
 // =========================================================================
