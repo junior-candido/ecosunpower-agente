@@ -38,6 +38,7 @@ import { SchedulingAssistant } from './modules/scheduling-assistant.js';
 import { ProposalAssistant } from './modules/proposal-assistant.js';
 import { NewsScraperService } from './modules/news-scraper.js';
 import { DriveUploader } from './modules/proposal/drive-uploader.js';
+import { createDashboardRouter } from './modules/dashboard/router.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -3152,6 +3153,11 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // Pagina publica de proposta hospedada (Eva Proposta /proposta).
   // Slug urlsafe ~64 bits de entropia (nao enumeravel). TTL 60 dias por padrao.
   // Hosteia HTML interativo do template — resolve a limitacao Drive desktop
+  // Dashboard interno EcoSun (Modulo 3 da plataforma). Auth basica via senha
+  // env DASHBOARD_PASSWORD. Rotas: /dashboard/home, /dashboard/propostas,
+  // /dashboard/manutencao. Mais paginas serao adicionadas em fases.
+  app.use('/dashboard', createDashboardRouter(supabase));
+
   // que abre HTML como codigo fonte.
   app.get('/p/:slug', async (req, res) => {
     const slug = String(req.params.slug ?? '');
