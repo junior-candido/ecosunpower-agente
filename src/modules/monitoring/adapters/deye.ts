@@ -243,38 +243,88 @@ export const deyeAdapter: MonitoringAdapter = {
       return { ok: false, reason: 'site_id nao cadastrado nas credenciais — importe via /importar' };
     }
 
-    // POST /v1.0/station/history
-    // Body: { stationId, startAt: "YYYY-MM-DD", endAt: "YYYY-MM-DD", timeType: "DAY" }
-    // Tenta com stationId como Number (formato esperado pela API).
-    // Se Deye exigir string, basta trocar pra String(stationId).
-    const result = await deyePost(baseUrl(parsed), '/v1.0/station/history', tokenResp.token, {
-      stationId: Number(stationId),
-      startAt: dataInicio,
-      endAt: dataFim,
-      timeType: 1, // 1=DAY, 2=MONTH, 3=YEAR (padrao Deye/SolarMan numerico)
-    });
+    // POST /v1.0/station/history (doc oficial Deye Cloud)
+    // Body: { stationId, startAt:"YYYY-MM-DD", endAt:"YYYY-MM-DD", granularity:2 }
+    // - granularity=2 (day): retorna kWh diario, formato startAt/endAt yyyy-MM-dd
+    // - endAt eh EXCLUSIVO (Return from startAt to endAt(excluded))
+    // - Limite 31 dias por chamada — chunko se intervalo for maior.
+    // Resposta:
+    //   { stationDataItems: [{ dateTime, generationValue, year, month, day }] }
+    //   generationValue em kWh.
 
-    if (!result.ok) {
-      return { ok: false, reason: result.reason };
+    const startDate = new Date(dataInicio + 'T00:00:00Z');
+    const endDate = new Date(dataFim + 'T00:00:00Z');
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime()) || startDate > endDate) {
+      return { ok: false, reason: `Range invalido: ${dataInicio}..${dataFim}` };
     }
 
-    // Resposta esperada (padrão Deye/SolarMan):
-    //   { stationDataItems: [{ date: "YYYY-MM-DD", generationValue: <kWh> }, ...] }
-    // Variações possíveis: dataList, items
-    const items =
-      (result.data?.stationDataItems as { date?: string; generationValue?: number }[]) ??
-      (result.data?.dataList as { date?: string; generationValue?: number }[]) ??
-      (result.data?.items as { date?: string; generationValue?: number }[]) ??
-      [];
+    const todasGeracoes: { data: string; geracao_kwh: number }[] = [];
+    const CHUNK_DAYS = 30; // margem de seguranca abaixo do limite 31
 
-    const geracoes = items
-      .filter((it) => typeof it.date === 'string' && typeof it.generationValue === 'number')
-      .map((it) => ({
-        data: it.date!.slice(0, 10),
-        geracao_kwh: Math.max(0, Number(it.generationValue ?? 0)),
-      }));
+    let chunkStart = new Date(startDate);
+    while (chunkStart <= endDate) {
+      // chunkEnd = min(chunkStart + 30d, endDate)
+      const chunkEndCandidato = new Date(chunkStart);
+      chunkEndCandidato.setUTCDate(chunkEndCandidato.getUTCDate() + CHUNK_DAYS);
+      const chunkEnd = chunkEndCandidato > endDate ? new Date(endDate) : chunkEndCandidato;
 
-    return { ok: true, geracoes };
+      // endAt eh exclusivo na Deye, entao pra pegar chunkEnd inclusive,
+      // mandamos chunkEnd + 1 dia.
+      const endExclusivo = new Date(chunkEnd);
+      endExclusivo.setUTCDate(endExclusivo.getUTCDate() + 1);
+
+      const startAt = chunkStart.toISOString().slice(0, 10);
+      const endAt = endExclusivo.toISOString().slice(0, 10);
+
+      const result = await deyePost(baseUrl(parsed), '/v1.0/station/history', tokenResp.token, {
+        stationId: Number(stationId),
+        startAt,
+        endAt,
+        granularity: 2, // 1=frame, 2=day, 3=month, 4=year
+      });
+
+      if (!result.ok) {
+        // Se ja pegou alguma coisa, retorna o que tem; senao falha
+        if (todasGeracoes.length === 0) return { ok: false, reason: result.reason };
+        console.warn(`[deye] history chunk ${startAt}..${endAt} falhou, retornando ${todasGeracoes.length} pontos`);
+        break;
+      }
+
+      const items = (result.data?.stationDataItems as Array<{
+        dateTime?: string | null;
+        year?: number;
+        month?: number;
+        day?: number;
+        generationValue?: number | null;
+      }>) ?? [];
+
+      for (const it of items) {
+        // dateTime pode vir como "yyyy-MM-dd HH:mm:ss" ou apenas "yyyy-MM-dd"
+        // Fallback: monta a partir de year/month/day.
+        let data: string | null = null;
+        if (typeof it.dateTime === 'string' && /^\d{4}-\d{2}-\d{2}/.test(it.dateTime)) {
+          data = it.dateTime.slice(0, 10);
+        } else if (
+          typeof it.year === 'number' && it.year > 0 &&
+          typeof it.month === 'number' && it.month > 0 &&
+          typeof it.day === 'number' && it.day > 0
+        ) {
+          data = `${it.year}-${String(it.month).padStart(2, '0')}-${String(it.day).padStart(2, '0')}`;
+        }
+        if (!data) continue;
+
+        const kwh = Number(it.generationValue ?? 0);
+        if (!Number.isFinite(kwh)) continue;
+
+        todasGeracoes.push({ data, geracao_kwh: Math.max(0, kwh) });
+      }
+
+      // Avanca pro proximo chunk
+      chunkStart = new Date(chunkEnd);
+      chunkStart.setUTCDate(chunkStart.getUTCDate() + 1);
+    }
+
+    return { ok: true, geracoes: todasGeracoes };
   },
 
   // Lista todas as plantas da conta Deye master, paginando ate pegar tudo.
