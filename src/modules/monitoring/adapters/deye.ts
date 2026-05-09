@@ -173,6 +173,9 @@ async function deyePost(
   body: Record<string, unknown>,
 ): Promise<{ ok: true; data: any } | { ok: false; reason: string; status?: number }> {
   const url = `${baseUrlStr}${endpoint}`;
+  // Log do body pra debug — deye eh chato com tipos. Nao loga token nem
+  // credenciais (so o body do request, que so tem ids/datas).
+  console.log(`[deye] POST ${endpoint} body=${JSON.stringify(body)}`);
   let resp: Response;
   try {
     const controller = new AbortController();
@@ -196,6 +199,7 @@ async function deyePost(
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
+    console.warn(`[deye] ${endpoint} status=${resp.status} body=${text.slice(0, 300)}`);
     return { ok: false, reason: `Deye ${endpoint} ${resp.status}: ${text.slice(0, 200)}`, status: resp.status };
   }
 
