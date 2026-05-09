@@ -1171,12 +1171,15 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
               <label class="block text-sm font-semibold text-slate-700 mb-1">
                 Company ID <span class="text-slate-400 font-normal">(opcional)</span>
               </label>
-              <input name="companyId" type="text" placeholder="Ex: 12345 — deixe vazio pra perfil pessoal"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-sm focus:outline-none focus:border-amber-500">
-              <p class="text-xs text-slate-500 mt-1">
-                Se sua conta tem várias empresas (ex: "Ecosunpower super admin"), cole o ID dela aqui pra puxar todas as plantas.
-                Sem isso, importa apenas as plantas do perfil pessoal.
-              </p>
+              <div class="flex gap-2">
+                <input id="deye-companyId" name="companyId" type="text" placeholder="vazio = perfil pessoal · clique 🔍 pra listar empresas"
+                       class="flex-1 px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-sm focus:outline-none focus:border-amber-500">
+                <button type="button" id="deye-buscar-empresas"
+                        class="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold whitespace-nowrap">
+                  🔍 Buscar empresas
+                </button>
+              </div>
+              <div id="deye-empresas-result" class="mt-2 text-xs"></div>
             </div>
           </div>
           <div class="mt-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
@@ -1208,7 +1211,59 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
     </div>
   `;
 
-  return renderLayout({ active: 'monitoramento', title: 'Importar sites', body });
+  // JS pro botao "Buscar empresas Deye" — chama o endpoint AJAX, mostra a
+  // lista de companyId / companyName, ao clicar numa preenche o input.
+  const scripts = `
+<script>
+  (function(){
+    var btn = document.getElementById('deye-buscar-empresas');
+    if (!btn) return;
+    var resultDiv = document.getElementById('deye-empresas-result');
+    var inputId = document.getElementById('deye-companyId');
+    btn.addEventListener('click', async function(){
+      function v(name){ var el = document.querySelector('[name="'+name+'"]'); return el ? el.value : ''; }
+      var creds = { appId: v('appId'), appSecret: v('appSecret'), email: v('email'), password: v('password'), dataCenter: v('dataCenter') };
+      if (!creds.appId || !creds.appSecret || !creds.email || !creds.password) {
+        resultDiv.innerHTML = '<div class="p-2 rounded bg-rose-50 text-rose-700">Preenche AppId, AppSecret, e-mail e senha primeiro.</div>';
+        return;
+      }
+      btn.disabled = true; btn.textContent = '⏳ Buscando...';
+      resultDiv.innerHTML = '';
+      try {
+        var resp = await fetch('/dashboard/monitoramento/buscar-empresas-deye', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(creds),
+        });
+        var data = await resp.json();
+        if (!data.ok) throw new Error(data.error || 'erro');
+        if (!data.empresas || data.empresas.length === 0) {
+          resultDiv.innerHTML = '<div class="p-2 rounded bg-amber-50 text-amber-800">Nenhuma empresa encontrada.</div>';
+        } else {
+          var html = '<div class="p-2 rounded bg-emerald-50 border border-emerald-200"><div class="font-semibold text-emerald-900 mb-1">Empresas encontradas — clica pra usar:</div><div class="space-y-1">';
+          for (var i = 0; i < data.empresas.length; i++) {
+            var e = data.empresas[i];
+            html += '<button type="button" data-id="'+e.companyId+'" class="block w-full text-left px-2 py-1 rounded hover:bg-emerald-100 text-emerald-900 font-mono text-xs"><strong>'+e.companyId+'</strong> · '+e.companyName+' <span class="text-emerald-600">('+e.roleName+')</span></button>';
+          }
+          html += '</div></div>';
+          resultDiv.innerHTML = html;
+          resultDiv.querySelectorAll('button[data-id]').forEach(function(b){
+            b.addEventListener('click', function(){
+              inputId.value = b.getAttribute('data-id');
+              resultDiv.innerHTML = '<div class="p-2 rounded bg-emerald-100 text-emerald-900">✅ Company ID '+inputId.value+' selecionado. Clica em "Importar agora".</div>';
+            });
+          });
+        }
+      } catch(err) {
+        resultDiv.innerHTML = '<div class="p-2 rounded bg-rose-50 text-rose-700">Erro: '+(err.message || err)+'</div>';
+      } finally {
+        btn.disabled = false; btn.textContent = '🔍 Buscar empresas';
+      }
+    });
+  })();
+</script>`;
+
+  return renderLayout({ active: 'monitoramento', title: 'Importar sites', body, scripts });
 }
 
 // =========================================================================

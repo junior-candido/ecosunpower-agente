@@ -164,6 +164,24 @@ export function createDashboardRouter(
     res.send(renderImportarSitesPage());
   });
 
+  // AJAX: lista empresas/companies da conta Deye (pra Junior pegar o companyId
+  // sem caçar no portal). Retorna JSON.
+  router.post('/monitoramento/buscar-empresas-deye', async (req: Request, res: Response) => {
+    const { listarEmpresasDeye } = await import('../monitoring/adapters/deye.js');
+    const credenciais: Record<string, unknown> = {
+      appId: String(req.body?.appId ?? '').trim(),
+      appSecret: String(req.body?.appSecret ?? '').trim(),
+      email: String(req.body?.email ?? '').trim(),
+      password: String(req.body?.password ?? '').trim(),
+      dataCenter: String(req.body?.dataCenter ?? 'us1').trim().toLowerCase(),
+    };
+    const result = await listarEmpresasDeye(credenciais);
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.reason });
+    }
+    res.json({ ok: true, empresas: result.empresas });
+  });
+
   router.post('/monitoramento/importar', async (req: Request, res: Response) => {
     const marca = String(req.body?.marca ?? '').trim() as MarcaInversor;
     if (!marca) {

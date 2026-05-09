@@ -445,3 +445,45 @@ export const deyeAdapter: MonitoringAdapter = {
     return { ok: true, sites };
   },
 };
+
+// ============================================================================
+// HELPER: lista empresas/organizacoes que a conta tem acesso
+// ============================================================================
+//
+// Endpoint POST /v1.0/account/info — retorna orgInfoList[{companyId,companyName,roleName}]
+// Junior usa pra descobrir o companyId da empresa "Ecosunpower super admin"
+// (sem precisar caçar no portal Deye).
+export async function listarEmpresasDeye(
+  credenciais: Record<string, unknown>,
+): Promise<
+  | { ok: true; empresas: Array<{ companyId: string; companyName: string; roleName: string }> }
+  | { ok: false; reason: string; invalidCredentials?: boolean }
+> {
+  const parsed = parseCreds(credenciais);
+  if ('error' in parsed) return { ok: false, reason: parsed.error, invalidCredentials: true };
+
+  const tokenResp = await obterToken(parsed);
+  if (!tokenResp.ok) {
+    return { ok: false, reason: tokenResp.reason, invalidCredentials: tokenResp.invalidCredentials };
+  }
+
+  const result = await deyePost(baseUrl(parsed), '/v1.0/account/info', tokenResp.token, {});
+  if (!result.ok) return { ok: false, reason: result.reason };
+
+  const orgList = (result.data?.orgInfoList as Array<{
+    companyId?: number | string;
+    companyName?: string;
+    roleName?: string;
+  }>) ?? [];
+
+  const empresas = orgList.flatMap((o) => {
+    if (o.companyId === undefined || o.companyId === null) return [];
+    return [{
+      companyId: String(o.companyId),
+      companyName: String(o.companyName ?? '').trim() || `Empresa ${o.companyId}`,
+      roleName: String(o.roleName ?? '').trim() || '—',
+    }];
+  });
+
+  return { ok: true, empresas };
+}
