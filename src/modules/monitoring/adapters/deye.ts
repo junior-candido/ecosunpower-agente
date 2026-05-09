@@ -244,8 +244,13 @@ export const deyeAdapter: MonitoringAdapter = {
       return { ok: false, reason: parsed.error, invalidCredentials: true };
     }
 
-    // Auth
-    const tokenResp = await obterToken(parsed);
+    // Auth — ignora companyId pra fetchGeneration. Descoberto na pratica:
+    // token gerado COM companyId autoriza /station/list mas retorna 403
+    // 'access Denied' em /station/history. Token sem companyId (perfil
+    // pessoal admin) tem permissao em /station/history pra qualquer planta
+    // que a conta admin acessa.
+    const credsParaToken = { ...parsed, companyId: undefined };
+    const tokenResp = await obterToken(credsParaToken);
     if (!tokenResp.ok) {
       return { ok: false, reason: tokenResp.reason, invalidCredentials: tokenResp.invalidCredentials };
     }
