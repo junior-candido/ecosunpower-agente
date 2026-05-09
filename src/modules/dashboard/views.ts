@@ -545,9 +545,9 @@ export function renderMonitoramentoPage(rows: SistemaMonitorRow[]): string {
         <td class="px-4 py-3 text-sm text-emerald-700 font-medium">${mesStr}</td>
         <td class="px-4 py-3 text-sm">${status}</td>
         <td class="px-4 py-3 text-sm text-slate-500">${r.ultima_sincronizacao ? relativeTime(r.ultima_sincronizacao) : 'nunca'}</td>
-        <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
+        <td class="px-4 py-3 text-right whitespace-nowrap" onclick="event.stopPropagation()">
           <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/sync" method="post" class="inline">
-            <button class="px-3 py-1 rounded-md bg-sky-100 text-sky-700 hover:bg-sky-200 text-xs font-medium" title="Atualizar agora">🔄</button>
+            <button class="px-3 py-1.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shadow-sm" title="Sincronizar agora com a API do inversor">🔄 Sincronizar</button>
           </form>
         </td>
       </tr>`;
@@ -568,8 +568,14 @@ export function renderMonitoramentoPage(rows: SistemaMonitorRow[]): string {
 
     <div class="mb-4 flex flex-wrap gap-2">
       <a href="/dashboard/monitoramento/importar" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold shadow-md transition">
-        📥 Importar todos do SolarEdge
+        📥 Importar sites
       </a>
+      ${rows.length > 0 ? `
+      <form action="/dashboard/monitoramento/sync-todos" method="post" class="inline">
+        <button class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold shadow-md transition">
+          🔄 Atualizar todas agora
+        </button>
+      </form>` : ''}
     </div>
 
     ${rows.length === 0 ? `

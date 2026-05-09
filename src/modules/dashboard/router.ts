@@ -324,6 +324,19 @@ export function createDashboardRouter(
     }
   });
 
+  // Sync manual de TODOS os sistemas (botao "Atualizar todas agora" no dashboard).
+  // Importante: declarar antes da rota /:id/sync pra Express nao confundir
+  // 'sync-todos' com um UUID.
+  router.post('/monitoramento/sync-todos', async (_req: Request, res: Response) => {
+    try {
+      await monitoringService.syncAll();
+      res.redirect('/dashboard/monitoramento');
+    } catch (err) {
+      console.error('[dashboard/monitoramento/sync-todos]', err);
+      res.status(500).send(`<h2>Erro</h2><pre>${(err as Error).message}</pre><a href="/dashboard/monitoramento">← voltar</a>`);
+    }
+  });
+
   // Sync manual de um sistema. Re-busca dados da API e popula geracao_diaria.
   router.post('/monitoramento/:id/sync', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
