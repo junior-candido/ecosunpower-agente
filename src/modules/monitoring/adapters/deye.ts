@@ -263,7 +263,10 @@ export const deyeAdapter: MonitoringAdapter = {
     }
 
     const todasGeracoes: { data: string; geracao_kwh: number }[] = [];
-    const CHUNK_DAYS = 30; // margem de seguranca abaixo do limite 31
+    // Deye limita intervalo a 31 dias por chamada. Como endAt eh exclusivo
+    // (mandamos chunkEnd+1), o intervalo enviado eh CHUNK_DAYS+1. Pra ficar
+    // claramente abaixo do limite, usamos 29 (intervalo enviado = 30 dias).
+    const CHUNK_DAYS = 29;
 
     let chunkStart = new Date(startDate);
     while (chunkStart <= endDate) {
