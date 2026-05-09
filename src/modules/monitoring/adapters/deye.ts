@@ -276,9 +276,10 @@ export const deyeAdapter: MonitoringAdapter = {
     return { ok: true, geracoes };
   },
 
-  // Lista todas as plantas da conta Deye master.
+  // Lista todas as plantas da conta Deye master, paginando ate pegar tudo.
   // Endpoint: POST /v1.0/station/list
-  // Body: { page: 1, size: 100 }
+  // Body: { page, size } (size max 100)
+  // Response: { stationList: [...], total: <int>, success: true, ... }
   async listSites(credenciaisConta: Record<string, unknown>): Promise<ListSitesResult> {
     const parsed = parseCreds(credenciaisConta);
     if ('error' in parsed) {
@@ -290,50 +291,74 @@ export const deyeAdapter: MonitoringAdapter = {
       return { ok: false, reason: tokenResp.reason, invalidCredentials: tokenResp.invalidCredentials };
     }
 
-    const result = await deyePost(baseUrl(parsed), '/v1.0/station/list', tokenResp.token, {
-      page: 1,
-      size: 100,
-    });
+    // Pagina ate pegar todas — total vem na response.
+    const PAGE_SIZE = 100;
+    const todasStations: Array<Record<string, unknown>> = [];
+    let page = 1;
+    let total = 0;
+    const MAX_PAGES = 50; // hard cap defensivo (5000 plantas)
 
-    if (!result.ok) {
-      return { ok: false, reason: result.reason };
+    while (page <= MAX_PAGES) {
+      const result = await deyePost(baseUrl(parsed), '/v1.0/station/list', tokenResp.token, {
+        page,
+        size: PAGE_SIZE,
+      });
+
+      if (!result.ok) {
+        // Se ja pegou alguma planta, retorna o que tem; senao falha
+        if (todasStations.length === 0) {
+          return { ok: false, reason: result.reason };
+        }
+        console.warn(`[deye] listSites pagina ${page} falhou, retornando ${todasStations.length} ja coletadas`);
+        break;
+      }
+
+      const stationList =
+        (result.data?.stationList as Array<Record<string, unknown>>) ??
+        (result.data?.dataList as Array<Record<string, unknown>>) ??
+        [];
+      total = Number(result.data?.total ?? stationList.length);
+
+      todasStations.push(...stationList);
+
+      // Termina se ja tem tudo (ou se essa pagina veio menor que size = ultima)
+      if (todasStations.length >= total || stationList.length < PAGE_SIZE) break;
+      page++;
     }
 
-    // Resposta (estrutura comum Deye/SolarMan):
-    //   { stationList: [{ id, name, locationLat, locationLng, installedCapacity,
-    //     installationDate, regionNationName, address, ... }] }
-    const stationList =
-      (result.data?.stationList as Array<Record<string, unknown>>) ??
-      (result.data?.dataList as Array<Record<string, unknown>>) ??
-      (result.data?.list as Array<Record<string, unknown>>) ??
-      [];
+    console.log(`[deye] listSites: ${todasStations.length}/${total} plantas coletadas em ${page} pagina(s)`);
 
-    const sites = stationList.flatMap((st) => {
+    const sites = todasStations.flatMap((st) => {
       const id = st.id !== undefined ? String(st.id) : null;
       const apelido = String(st.name ?? '').trim();
       if (!id || !apelido) return [];
 
-      // installedCapacity vem em kWp (típico Deye/SolarMan)
+      // installedCapacity vem em kWp (confirmado pelo example)
       const potencia_kwp = typeof st.installedCapacity === 'number' && Number.isFinite(st.installedCapacity)
         ? st.installedCapacity
         : null;
 
-      // Localização: tenta address ou regionNationName
-      const cidade = typeof st.regionCityName === 'string' && st.regionCityName.trim()
-        ? st.regionCityName.trim()
-        : (typeof st.address === 'string' && st.address.trim() ? st.address.trim().split(',')[0] : null);
+      // Localizacao: locationAddress eh o campo certo (confirmado pelo example).
+      // Pega primeiro componente (separado por virgula) como cidade aproximada.
+      const cidade = typeof st.locationAddress === 'string' && st.locationAddress.trim()
+        ? st.locationAddress.trim().split(',')[0].trim()
+        : null;
 
-      const data_instalacao =
-        typeof st.installationDate === 'string' ? st.installationDate.slice(0, 10) :
-        typeof st.gridConnectionDate === 'string' ? st.gridConnectionDate.slice(0, 10) :
-        null;
+      // startOperatingTime eh Unix timestamp em SEGUNDOS (ex: 1705593600)
+      // Converte pra YYYY-MM-DD.
+      let data_instalacao: string | null = null;
+      const ts = st.startOperatingTime ?? st.createdDate;
+      if (typeof ts === 'number' && ts > 0) {
+        const d = new Date(ts * 1000);
+        if (!isNaN(d.getTime())) data_instalacao = d.toISOString().slice(0, 10);
+      }
 
       return [{
         externalId: id,
         apelido,
         potencia_kwp,
         cidade,
-        uf: null, // Deye não retorna UF brasileira separado
+        uf: null, // Deye nao retorna UF brasileira separado
         data_instalacao,
         // Credenciais que ficam por planta (incluem stationId pra fetchGeneration)
         credenciais: {
@@ -341,6 +366,8 @@ export const deyeAdapter: MonitoringAdapter = {
           appSecret: parsed.appSecret,
           email: parsed.email,
           password: parsed.password,
+          dataCenter: parsed.dataCenter,
+          countryCode: parsed.countryCode,
           stationId: id,
         },
       }];
