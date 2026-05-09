@@ -1167,11 +1167,23 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
               <input name="password" type="password" placeholder="senha Deye"
                      class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
             </div>
+            <div class="md:col-span-2">
+              <label class="block text-sm font-semibold text-slate-700 mb-1">
+                Company ID <span class="text-slate-400 font-normal">(opcional)</span>
+              </label>
+              <input name="companyId" type="text" placeholder="Ex: 12345 — deixe vazio pra perfil pessoal"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-sm focus:outline-none focus:border-amber-500">
+              <p class="text-xs text-slate-500 mt-1">
+                Se sua conta tem várias empresas (ex: "Ecosunpower super admin"), cole o ID dela aqui pra puxar todas as plantas.
+                Sem isso, importa apenas as plantas do perfil pessoal.
+              </p>
+            </div>
           </div>
           <div class="mt-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
             <strong>📋 Onde achar:</strong> developer.deyecloud.com → Application →
             AppId visível, AppSecret oculto (clica no olho). E-mail/senha são da conta
-            Deye master que vê todas as plantas.
+            Deye master que vê todas as plantas. Company ID aparece no app/portal Deye
+            ao trocar entre Personal e empresas (super admin).
           </div>
         </div>
 

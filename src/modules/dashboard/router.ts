@@ -188,12 +188,14 @@ export function createDashboardRouter(
       const email = String(req.body?.email ?? '').trim();
       const password = String(req.body?.password ?? '').trim();
       const dataCenter = String(req.body?.dataCenter ?? 'us1').trim().toLowerCase();
+      const companyId = String(req.body?.companyId ?? '').trim();
       if (!appId || !appSecret || !email || !password) {
         return res.status(400).send(renderImportarSitesPage({
           errorMsg: 'AppId, AppSecret, email e senha obrigatorios pra Deye.',
         }));
       }
       credenciais = { appId, appSecret, email, password, dataCenter };
+      if (companyId) credenciais.companyId = companyId;
     } else {
       return res.status(400).send(renderImportarSitesPage({
         errorMsg: `Marca ${marca} ainda nao tem adapter implementado.`,

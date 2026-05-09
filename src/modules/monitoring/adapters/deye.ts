@@ -62,10 +62,14 @@ interface ParsedCreds {
   password: string;
   dataCenter: string;
   countryCode: string;
+  // Opcional — quando setado, autentica contra a empresa especifica
+  // (ex: 'Ecosunpower super admin') em vez do perfil pessoal. Sem ele,
+  // Deye autentica como Personal e so retorna plantas pessoais.
+  companyId?: string;
 }
 
 function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: string } {
-  const cc = c as DeyeCredenciais & { countryCode?: unknown };
+  const cc = c as DeyeCredenciais & { countryCode?: unknown; companyId?: unknown };
   const appId = String(cc.appId ?? '').trim();
   const appSecret = String(cc.appSecret ?? '').trim();
   const email = String(cc.email ?? '').trim();
@@ -75,6 +79,8 @@ function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: string }
   if (!['us1', 'eu1'].includes(dataCenter)) dataCenter = 'us1';
   // Default Brasil. Junior pode mudar pelo form.
   const countryCode = String(cc.countryCode ?? '55').trim() || '55';
+  // companyId opcional — string vazia = perfil pessoal
+  const companyId = String(cc.companyId ?? '').trim() || undefined;
 
   if (!appId || !appSecret) {
     return { error: 'Faltam appId/appSecret (cadastre no portal Deye)' };
@@ -82,7 +88,7 @@ function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: string }
   if (!email || !password) {
     return { error: 'Faltam email/password da conta Deye master' };
   }
-  return { appId, appSecret, email, password, dataCenter, countryCode };
+  return { appId, appSecret, email, password, dataCenter, countryCode, companyId };
 }
 
 async function obterToken(creds: ParsedCreds): Promise<{ ok: true; token: string } | { ok: false; reason: string; invalidCredentials?: boolean }> {
@@ -95,11 +101,15 @@ async function obterToken(creds: ParsedCreds): Promise<{ ok: true; token: string
   // identity_type tambem nao funciona como number — eh inferido pelo campo
   // de identidade enviado (email).
   const passwordHash = crypto.createHash('sha256').update(creds.password).digest('hex');
-  const body = {
+  // companyId, quando fornecido, faz o token autenticar contra uma empresa
+  // especifica em vez do perfil pessoal — necessario pra contas integrador
+  // que tem multiplas organizacoes (ex: Ecosunpower super admin).
+  const body: Record<string, unknown> = {
     appSecret: creds.appSecret,
     email: creds.email,
     password: passwordHash,
   };
+  if (creds.companyId) body.companyId = creds.companyId;
 
   let resp: Response;
   try {
