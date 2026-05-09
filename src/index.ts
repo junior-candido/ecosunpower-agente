@@ -371,7 +371,10 @@ async function main() {
   // Adapter SolarEdge ja implementado; demais marcas adicionadas conforme
   // Junior cadastrar credenciais.
   const monitoringService = new MonitoringService(supabase);
-  console.log('[monitoring] Servico ativo. Marcas suportadas: solaredge (mais virao)');
+  // Lista marcas dinamicamente do registry pra confirmar deploy/registry.
+  const { marcasSuportadas } = await import('./modules/monitoring/adapter-registry.js');
+  console.log(`[monitoring] Servico ativo. Marcas suportadas: ${marcasSuportadas().join(', ')}`);
+  console.log(`[monitoring] BUILD_MARKER deye-history-fix-2026-05-08T${new Date().toISOString()}`);
 
   const googleReviewUrl = process.env.GOOGLE_REVIEW_URL ?? '';
   const postInstall = googleReviewUrl
