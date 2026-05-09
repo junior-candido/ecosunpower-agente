@@ -109,7 +109,10 @@ async function obterToken(creds: ParsedCreds): Promise<{ ok: true; token: string
     email: creds.email,
     password: passwordHash,
   };
-  if (creds.companyId) body.companyId = creds.companyId;
+  if (creds.companyId) body.companyId = Number(creds.companyId);
+
+  // Log debug — sem expor password (mostra hash truncado)
+  console.log(`[deye] POST /account/token body={appSecret:'${creds.appSecret.slice(0,4)}...',email:'${creds.email}',companyId:${body.companyId ?? 'none'},password:'${passwordHash.slice(0,8)}...'}`);
 
   let resp: Response;
   try {
@@ -244,13 +247,10 @@ export const deyeAdapter: MonitoringAdapter = {
       return { ok: false, reason: parsed.error, invalidCredentials: true };
     }
 
-    // Auth — ignora companyId pra fetchGeneration. Descoberto na pratica:
-    // token gerado COM companyId autoriza /station/list mas retorna 403
-    // 'access Denied' em /station/history. Token sem companyId (perfil
-    // pessoal admin) tem permissao em /station/history pra qualquer planta
-    // que a conta admin acessa.
-    const credsParaToken = { ...parsed, companyId: undefined };
-    const tokenResp = await obterToken(credsParaToken);
+    // Auth — usa companyId nas creds (Business member token).
+    // Doc oficial Deye (obtain_token.py): "When companyId is provided, the token
+    // retrieved will correspond to the business member"
+    const tokenResp = await obterToken(parsed);
     if (!tokenResp.ok) {
       return { ok: false, reason: tokenResp.reason, invalidCredentials: tokenResp.invalidCredentials };
     }
@@ -298,12 +298,17 @@ export const deyeAdapter: MonitoringAdapter = {
       const startAt = chunkStart.toISOString().slice(0, 10);
       const endAt = endExclusivo.toISOString().slice(0, 10);
 
-      const result = await deyePost(baseUrl(parsed), '/v1.0/station/history', tokenResp.token, {
+      // Body: doc oficial pede stationId+granularity+startAt+endAt apenas.
+      // Tentativa: tambem passamos companyId no body se a planta tem (defensive)
+      // pra cobrir caso a Deye filtre por companyId no /history.
+      const historyBody: Record<string, unknown> = {
         stationId: Number(stationId),
         startAt,
         endAt,
         granularity: 2, // 1=frame, 2=day, 3=month, 4=year
-      });
+      };
+      if (parsed.companyId) historyBody.companyId = Number(parsed.companyId);
+      const result = await deyePost(baseUrl(parsed), '/v1.0/station/history', tokenResp.token, historyBody);
 
       if (!result.ok) {
         // Se ja pegou alguma coisa, retorna o que tem; senao falha
