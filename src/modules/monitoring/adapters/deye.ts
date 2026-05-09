@@ -236,10 +236,11 @@ export const deyeAdapter: MonitoringAdapter = {
       return { ok: false, reason: tokenResp.reason, invalidCredentials: tokenResp.invalidCredentials };
     }
 
-    // stationId está nas creds (importado por listSites)
-    const stationId = (credenciais as { stationId?: unknown }).stationId;
+    // site_id (padrao adapter) ou stationId (legado) nas creds — importado por listSites
+    const stationId = (credenciais as { site_id?: unknown; stationId?: unknown }).site_id
+      ?? (credenciais as { stationId?: unknown }).stationId;
     if (!stationId) {
-      return { ok: false, reason: 'stationId não cadastrado nas credenciais — importe via /importar' };
+      return { ok: false, reason: 'site_id nao cadastrado nas credenciais — importe via /importar' };
     }
 
     // POST /v1.0/station/history
@@ -360,7 +361,8 @@ export const deyeAdapter: MonitoringAdapter = {
         cidade,
         uf: null, // Deye nao retorna UF brasileira separado
         data_instalacao,
-        // Credenciais que ficam por planta (incluem stationId pra fetchGeneration)
+        // Credenciais que ficam por planta. Usa 'site_id' (padrao do adapter
+        // registry — service.ts faz upsert por api_credentials->>site_id).
         credenciais: {
           appId: parsed.appId,
           appSecret: parsed.appSecret,
@@ -368,7 +370,7 @@ export const deyeAdapter: MonitoringAdapter = {
           password: parsed.password,
           dataCenter: parsed.dataCenter,
           countryCode: parsed.countryCode,
-          stationId: id,
+          site_id: id,
         },
       }];
     });
