@@ -11,7 +11,10 @@ export class PersonasService {
       .select('*')
       .eq('codigo', codigo)
       .single();
-    if (error) return null;
+    if (error) {
+      if (error.code === 'PGRST116') return null;
+      throw new Error(`Failed to get persona ${codigo}: ${error.message}`);
+    }
     return data as Persona;
   }
 
