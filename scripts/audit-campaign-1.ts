@@ -205,8 +205,6 @@ async function main() {
   if (adsets.length === 0) obs.push('ALERTA: campanha sem adsets — nada vai rodar.');
   if (ads.length === 0) obs.push('ALERTA: campanha sem ads — nada vai rodar.');
   if (totalSpend > 0 && totalClicks === 0) obs.push('ALERTA: gastou mas nao gerou cliques — problema de criativo/segmentacao.');
-  if (avgCtr > 0 && avgCtr < 1) obs.push(`ALERTA: CTR baixo (${avgCtr.toFixed(2)}%). Benchmark Meta solar > 1%.`);
-  if (avgCpc > 5) obs.push(`ALERTA: CPC alto (R$ ${avgCpc.toFixed(2)}). Revisar segmentacao/criativo.`);
   const distinctOptGoals = Array.from(new Set(adsets.map((a) => a.optimization_goal).filter(Boolean)));
   if (distinctOptGoals.length > 1) obs.push(`Multiplos optimization_goal entre adsets: ${distinctOptGoals.join(', ')}`);
 
