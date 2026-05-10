@@ -3560,6 +3560,121 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
     res.send(html);
   });
 
+  // Pagina publica de Instrucoes de Exclusao de Dados pra atender requisito
+  // do App Review da Meta (User Data Deletion Instructions URL). LGPD art. 18
+  // garante direito de exclusao; Meta exige instrucao publica de como exercer.
+  // URL publica: /exclusao-dados
+  app.get('/exclusao-dados', (_req, res) => {
+    const html = `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Exclusao de Dados — Ecosunpower Energia Solar</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 760px; margin: 0 auto; padding: clamp(20px,5vw,40px); line-height: 1.6; color: #222; }
+h1 { font-size: clamp(24px,5vw,32px); margin-top: 0; }
+h2 { font-size: clamp(18px,4vw,22px); margin-top: 32px; color: #f59e0b; }
+a { color: #f59e0b; }
+footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid #eee; font-size: 14px; color: #666; }
+ol { padding-left: 22px; }
+li { margin-bottom: 8px; }
+.box { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 16px 20px; margin: 24px 0; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>Instrucoes para Exclusao dos Seus Dados</h1>
+<p><strong>Ultima atualizacao:</strong> 10 de maio de 2026</p>
+
+<p>A Ecosunpower Energia Solar Ltda (CNPJ 33.020.459/0001-06) respeita seu direito
+de solicitar a exclusao dos dados pessoais que mantemos sobre voce, conforme
+garantido pela <strong>Lei Geral de Protecao de Dados (LGPD, Lei 13.709/2018, art. 18, VI)</strong>.
+Esta pagina explica como exercer esse direito.</p>
+
+<h2>1. Quais dados podemos manter sobre voce</h2>
+<ul>
+  <li>Nome, telefone e email fornecidos em formularios de leads (anuncios Meta, site, WhatsApp)</li>
+  <li>Historico de conversas com nossa assistente Eva via WhatsApp</li>
+  <li>Endereco e dados de consumo eletrico (kWh, valor da conta) para dimensionamento de propostas</li>
+  <li>Fotos do local enviadas voluntariamente para estudo personalizado</li>
+  <li>Propostas comerciais geradas e historico de interacoes</li>
+</ul>
+
+<h2>2. Como solicitar a exclusao</h2>
+<p>Voce pode solicitar a exclusao integral dos seus dados por <strong>qualquer um</strong>
+dos canais abaixo. Nao cobramos pela solicitacao.</p>
+
+<div class="box">
+  <strong>Canal preferencial — Email:</strong><br>
+  Envie email para <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a>
+  com o assunto <strong>"Exclusao de Dados LGPD"</strong> e informe:
+  <ol>
+    <li>Nome completo</li>
+    <li>Telefone usado no contato (com DDD)</li>
+    <li>Email (se aplicavel)</li>
+  </ol>
+</div>
+
+<div class="box">
+  <strong>Canal alternativo — WhatsApp:</strong><br>
+  Envie mensagem para <strong>+55 61 99697-8781</strong> com o texto
+  <em>"Solicito exclusao dos meus dados conforme LGPD"</em>. Nossa assistente
+  encaminhara para o responsavel.
+</div>
+
+<h2>3. Prazo de resposta</h2>
+<p>Confirmaremos o recebimento em ate <strong>2 dias uteis</strong> e
+concluiremos a exclusao em ate <strong>15 dias uteis</strong>, conforme prazo
+recomendado pela ANPD (Autoridade Nacional de Protecao de Dados).</p>
+
+<h2>4. O que sera excluido</h2>
+<ul>
+  <li>Todos os dados de identificacao (nome, telefone, email, endereco)</li>
+  <li>Historico de conversas no WhatsApp</li>
+  <li>Fotos enviadas para estudo</li>
+  <li>Dados de consumo e propostas comerciais nao convertidas</li>
+</ul>
+
+<h2>5. O que nao podemos excluir</h2>
+<p>Por exigencia legal, alguns dados sao mantidos mesmo apos solicitacao de
+exclusao:</p>
+<ul>
+  <li><strong>Notas fiscais e contratos de clientes ativos:</strong> 5 anos (Codigo Tributario, art. 174)</li>
+  <li><strong>Dados financeiros de pagamentos:</strong> 5 anos (legislacao fiscal)</li>
+  <li><strong>Logs de seguranca e acesso:</strong> 6 meses (Marco Civil da Internet, art. 15)</li>
+</ul>
+<p>Esses dados ficam restritos ao cumprimento das obrigacoes legais e nao sao
+usados para qualquer outra finalidade.</p>
+
+<h2>6. Confirmacao da exclusao</h2>
+<p>Apos concluida, voce recebera confirmacao por email (ou WhatsApp, se preferir)
+com a data e o escopo do que foi excluido.</p>
+
+<h2>7. Outros direitos LGPD</h2>
+<p>Alem da exclusao, voce tambem pode solicitar:</p>
+<ul>
+  <li>Acesso aos seus dados (saber o que mantemos)</li>
+  <li>Correcao de dados incompletos ou desatualizados</li>
+  <li>Portabilidade dos dados</li>
+  <li>Revogacao do consentimento</li>
+</ul>
+<p>Use os mesmos canais acima.</p>
+
+<h2>8. Encarregado pela Protecao de Dados</h2>
+<p>Junior Rodrigues — Responsavel Tecnico CREA/CFT<br>
+Email: <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a></p>
+
+<footer>
+<p>Ecosunpower Energia Solar Ltda — CNPJ 33.020.459/0001-06<br>
+SHA Conjunto 01 Chacara 44C Lote 6, Arniqueira, Brasilia - DF<br>
+Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/termos">Termos de Uso</a></p>
+</footer>
+</body>
+</html>`;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  });
+
   // Health check
   app.get('/health', async (_req, res) => {
     const status = await buildHealthStatus({
