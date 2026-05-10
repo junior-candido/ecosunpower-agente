@@ -24,6 +24,7 @@ import { MetaService } from './modules/meta.js';
 import { ImageGenerator } from './modules/image-gen.js';
 import { VideoGenerator } from './modules/video-gen.js';
 import { MarketingService } from './modules/marketing.js';
+import { CreativeAgent } from './modules/marketing/creative-agent.js';
 import { ReengagementCadence } from './modules/reengagement-cadence.js';
 import { PostInstallService, INSTALLATION_STATUSES } from './modules/post-install.js';
 import { TestimonialService, TestimonialFormat } from './modules/testimonials.js';
@@ -259,6 +260,19 @@ async function main() {
       !meta && 'Meta config',
     ].filter(Boolean).join(', ');
     console.log(`[marketing] Content generator disabled. Missing: ${missing}`);
+  }
+
+  // Agente Criativo (Task 3.x): orquestra personas + copy + 3 imagens estilizadas
+  // + filtros + storage. Disparado por /criativo no zap pelo Junior.
+  // Independente do `marketing` (este precisa de Meta pra publicar; o /criativo
+  // so precisa do Replicate pra gerar — Junior aprova manualmente).
+  const creativeAgent = config.replicateApiToken
+    ? new CreativeAgent(supabase.getClient(), config.replicateApiToken)
+    : null;
+  if (creativeAgent) {
+    console.log('[creative-agent] Initialized — comando /criativo ativo');
+  } else {
+    console.warn('[creative-agent] Disabled: REPLICATE_API_TOKEN nao setado');
   }
 
   // Simulate human typing delay: ~35ms per char, clamped between 900ms and 3500ms.
@@ -757,6 +771,161 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // Eva /criativo — Junior dispara geracao de pacote criativo (3 copies + 3 imagens)
+  // por uma persona/briefing. Eva responde com preview + botoes Aprovar/Regenerar/Descartar.
+  // Botoes interativos chegam no webhook como text com content = button_id (ex:
+  // "criativo_aprovar_42") — handler unifica os dois caminhos (texto livre /criativo e
+  // tap em botao) na mesma funcao, mesmo padrao do tryHandleTestimonialAdminCommand.
+  async function tryHandleCreativeCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const trimmed = text.trim();
+
+    // Botoes (clicks) viram texto com prefixo "criativo_<acao>_<id>"
+    const aprovarBtn = trimmed.match(/^criativo_aprovar_(\d+)$/);
+    const descartarBtn = trimmed.match(/^criativo_descartar_(\d+)$/);
+    const regenerarBtn = trimmed.match(/^criativo_regenerar_(\d+)$/);
+
+    if (aprovarBtn) {
+      const id = parseInt(aprovarBtn[1], 10);
+      try {
+        const { error } = await supabase.getClient()
+          .from('marketing_creatives')
+          .update({
+            status: 'aprovado',
+            approved_at: new Date().toISOString(),
+            approved_by_phone: from,
+          })
+          .eq('id', id);
+        if (error) throw error;
+        await sendText(from, `✅ Criativo #${id} aprovado. Pronto pra usar em campanha.`);
+      } catch (err) {
+        console.error('[creative-agent] aprovar erro:', (err as Error).message);
+        await sendText(from, `⚠️ Erro ao aprovar criativo #${id}: ${(err as Error).message}`);
+      }
+      return true;
+    }
+
+    if (descartarBtn) {
+      const id = parseInt(descartarBtn[1], 10);
+      try {
+        const { error } = await supabase.getClient()
+          .from('marketing_creatives')
+          .update({ status: 'descartado' })
+          .eq('id', id);
+        if (error) throw error;
+        await sendText(from, `🗑 Criativo #${id} descartado.`);
+      } catch (err) {
+        console.error('[creative-agent] descartar erro:', (err as Error).message);
+        await sendText(from, `⚠️ Erro ao descartar criativo #${id}: ${(err as Error).message}`);
+      }
+      return true;
+    }
+
+    if (regenerarBtn) {
+      await sendText(from, `🔄 Pra regenerar, manda /criativo de novo com o briefing ajustado (ou mesma persona).`);
+      return true;
+    }
+
+    // Comando textual /criativo <persona_codigo> <briefing>
+    if (!trimmed.toLowerCase().startsWith('/criativo')) return false;
+
+    if (!creativeAgent) {
+      await sendText(from, '❌ Agente Criativo desabilitado (REPLICATE_API_TOKEN nao setado no Easypanel).');
+      return true;
+    }
+
+    // Aceita "/criativo" sozinho (mostra ajuda) ou "/criativo <persona> <briefing>"
+    const args = trimmed.slice('/criativo'.length).trim();
+    const firstSpace = args.indexOf(' ');
+    if (!args || firstSpace === -1) {
+      await sendText(from,
+        'Uso: /criativo <persona_codigo> <briefing>\n\n' +
+        'Personas disponiveis:\n' +
+        '• residencial_df_alto\n' +
+        '• residencial_go_alto\n' +
+        '• comercial_loja\n' +
+        '• hibrido_baterias\n' +
+        '• off_grid_rural\n' +
+        '• ev_charger\n\n' +
+        'Exemplo: /criativo residencial_df_alto Casa em Aguas Claras conta R$ 1200');
+      return true;
+    }
+
+    const personaCode = args.slice(0, firstSpace).trim();
+    const briefing = args.slice(firstSpace + 1).trim();
+
+    if (!briefing) {
+      await sendText(from, 'Faltou o briefing. Manda assim: /criativo <persona_codigo> <briefing>');
+      return true;
+    }
+
+    await sendText(from, `🎨 Gerando pacote criativo pra *${personaCode}*...\n\nBriefing: "${briefing}"\n\nIsso leva 2-3 min (3 imagens + 3 copies). Aguarda.`);
+
+    try {
+      const { creative_id, pkg, persona } = await creativeAgent.generatePackage({
+        briefing,
+        persona_codigo: personaCode,
+      });
+
+      let preview = `🎨 *Criativo #${creative_id}* — ${persona.nome}\n\n📝 *Copies (3 variacoes):*\n`;
+      pkg.copies.forEach((c, i) => {
+        preview += `\n${i + 1}. [${c.length}]\n*${c.headline}*\n${c.body}\n→ CTA: _${c.cta}_\n`;
+      });
+      preview += `\n🖼 3 imagens chegando...`;
+      await sendText(from, preview);
+
+      // Manda as 3 imagens (Eva ja persistiu URLs em Supabase Storage — duraveis)
+      for (const img of pkg.imagens) {
+        if (metaWaba) {
+          try {
+            await metaWaba.sendMedia(from, img.url, `[${img.style}]`, 'image');
+          } catch (err) {
+            console.warn(`[creative-agent] sendMedia falhou (${img.style}):`, (err as Error).message);
+            await sendText(from, `🖼 [${img.style}]\n${img.url}`);
+          }
+        } else {
+          // Sem WABA: manda URL como texto (Evolution tambem tem sendMedia mas evitamos
+          // dependencia opcional aqui — fallback simples)
+          await sendText(from, `🖼 [${img.style}]\n${img.url}`);
+        }
+      }
+
+      // Botoes de aprovacao
+      const buttonBody = `O que faço com o criativo #${creative_id}?`;
+      if (metaWaba) {
+        try {
+          await metaWaba.sendInteractiveButtons(
+            from,
+            buttonBody,
+            [
+              { id: `criativo_aprovar_${creative_id}`, title: '✅ Aprovar' },
+              { id: `criativo_regenerar_${creative_id}`, title: '🔄 Regenerar' },
+              { id: `criativo_descartar_${creative_id}`, title: '❌ Descartar' },
+            ],
+            'Toque pra responder',
+          );
+        } catch (err) {
+          console.warn('[creative-agent] botoes falharam, fallback texto:', (err as Error).message);
+          await sendText(from,
+            `${buttonBody}\n\n` +
+            `✅ criativo_aprovar_${creative_id}\n` +
+            `🔄 criativo_regenerar_${creative_id}\n` +
+            `❌ criativo_descartar_${creative_id}`);
+        }
+      } else {
+        await sendText(from,
+          `${buttonBody}\n\n` +
+          `✅ Responde: criativo_aprovar_${creative_id}\n` +
+          `🔄 Responde: criativo_regenerar_${creative_id}\n` +
+          `❌ Responde: criativo_descartar_${creative_id}`);
+      }
+    } catch (err) {
+      console.error('[creative-agent] erro:', (err as Error).message);
+      await sendText(from, `❌ Erro gerando criativo: ${(err as Error).message}`);
+    }
+    return true;
+  }
+
   // Message handler
   async function handleTextMessage(from: string, text: string) {
     // Hook: se essa mensagem eh de cliente que recebeu followup automatico
@@ -785,6 +954,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // Comandos admin de depoimento — alta prioridade pra Junior poder aprovar
     // mesmo no meio de outro modo (precificacao/proposta/agenda).
     if (await tryHandleTestimonialAdminCommand(from, text)) return;
+
+    // Eva /criativo — Junior gera pacote criativo (3 copies + 3 imagens) por
+    // persona/briefing. Tambem captura cliques nos botoes Aprovar/Regenerar/Descartar.
+    // Comando one-shot (nao tem modo conversacional persistente), seguro chamar antes.
+    if (await tryHandleCreativeCommand(from, text)) return;
 
     // Eva /novo-case — cadastrar obra via WhatsApp. Captura tudo enquanto em modo,
     // entao precisa vir antes dos outros assistants pra eles nao "roubarem" a msg.
