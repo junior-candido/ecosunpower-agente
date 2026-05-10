@@ -101,6 +101,58 @@ export class MetaWhatsAppService {
     return this.postMessage(body);
   }
 
+  // Envia lista interativa (Interactive List Message — ate 10 rows totais
+  // distribuidos em ate 10 sections). Quando usuario toca uma row, o webhook
+  // chega como interactive.list_reply.id (nosso webhook converte pra texto =
+  // row id). Limites WABA aplicados via slice(): header 60, body 1024,
+  // buttonText 20, section.title 24, row.title 24, row.description 72,
+  // row.id 200. Use isso pra escolhas com 4+ opcoes (acima do limite de 3
+  // botoes do sendInteractiveButtons).
+  async sendInteractiveList(
+    to: string,
+    opts: {
+      header?: string;
+      body: string;
+      buttonText: string;
+      footer?: string;
+      sections: Array<{
+        title: string;
+        rows: Array<{ id: string; title: string; description?: string }>;
+      }>;
+    },
+  ): Promise<{ messageId: string }> {
+    if (opts.sections.length === 0) {
+      throw new Error('sendInteractiveList: precisa de pelo menos 1 section');
+    }
+    const totalRows = opts.sections.reduce((acc, s) => acc + s.rows.length, 0);
+    if (totalRows === 0 || totalRows > 10) {
+      throw new Error(`sendInteractiveList: total de rows deve ser 1-10 (recebido ${totalRows})`);
+    }
+    const payload: Record<string, unknown> = {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        ...(opts.header ? { header: { type: 'text', text: opts.header.slice(0, 60) } } : {}),
+        body: { text: opts.body.slice(0, 1024) },
+        ...(opts.footer ? { footer: { text: opts.footer.slice(0, 60) } } : {}),
+        action: {
+          button: opts.buttonText.slice(0, 20),
+          sections: opts.sections.map(s => ({
+            title: s.title.slice(0, 24),
+            rows: s.rows.map(r => ({
+              id: r.id.slice(0, 200),
+              title: r.title.slice(0, 24),
+              ...(r.description ? { description: r.description.slice(0, 72) } : {}),
+            })),
+          })),
+        },
+      },
+    };
+    return this.postMessage(payload);
+  }
+
   // Envia mensagem com botoes interativos (ate 3 botoes "reply").
   // Cada botao tem id (callback) e title (texto exibido, max 20 chars).
   // Quando usuario clica, vem webhook tipo "interactive.button_reply.id".

@@ -776,11 +776,39 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
   // Botoes interativos chegam no webhook como text com content = button_id (ex:
   // "criativo_aprovar_42") — handler unifica os dois caminhos (texto livre /criativo e
   // tap em botao) na mesma funcao, mesmo padrao do tryHandleTestimonialAdminCommand.
+  //
+  // FLUXO CONVERSACIONAL (refatorado 10/05 — feedback Junior: texto livre + codigo
+  // com underscore = UX terrivel + persona faltava porque lista era hard-coded):
+  //   1. Junior digita "criativo" (sem barra) ou "/criativo" sozinho
+  //   2. Eva manda Interactive List com personas DO BANCO (sem hard-code)
+  //   3. Junior toca uma persona → id "criativo_persona_<codigo>" chega como texto
+  //   4. Eva pergunta o briefing texto livre (estado em creativeFlowState)
+  //   5. Junior responde briefing → generatePackage dispara
+  //
+  // Compat: parse antigo "/criativo <persona> <briefing>" continua funcionando.
+
+  // Estado conversacional do fluxo /criativo. In-memory (replicas separadas tem
+  // estados independentes — aceitavel pq fluxo dura segundos/minutos e Junior
+  // sempre fala com a mesma replica via WhatsApp). Auto-cleanup 10min.
+  const creativeFlowState = new Map<string, {
+    step: 'awaiting_persona' | 'awaiting_briefing';
+    persona_codigo?: string;
+    createdAt: number;
+  }>();
+
+  setInterval(() => {
+    const cutoff = Date.now() - 10 * 60 * 1000;
+    for (const [k, v] of creativeFlowState) {
+      if (v.createdAt < cutoff) creativeFlowState.delete(k);
+    }
+  }, 5 * 60 * 1000).unref();
+
   async function tryHandleCreativeCommand(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
     const trimmed = text.trim();
+    const trimmedLower = trimmed.toLowerCase();
 
-    // Botoes (clicks) viram texto com prefixo "criativo_<acao>_<id>"
+    // 1. Botoes existentes (aprovar/regenerar/descartar) — mantidos inalterados
     const aprovarBtn = trimmed.match(/^criativo_aprovar_(\d+)$/);
     const descartarBtn = trimmed.match(/^criativo_descartar_(\d+)$/);
     const regenerarBtn = trimmed.match(/^criativo_regenerar_(\d+)$/);
@@ -822,49 +850,163 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     }
 
     if (regenerarBtn) {
-      await sendText(from, `🔄 Pra regenerar, manda /criativo de novo com o briefing ajustado (ou mesma persona).`);
+      await sendText(from, `🔄 Pra regenerar, manda "criativo" de novo com o briefing ajustado (ou mesma persona).`);
       return true;
     }
 
-    // Comando textual /criativo <persona_codigo> <briefing>
-    if (!trimmed.toLowerCase().startsWith('/criativo')) return false;
-
-    if (!creativeAgent) {
-      await sendText(from, '❌ Agente Criativo desabilitado (REPLICATE_API_TOKEN nao setado no Easypanel).');
+    // 2. Clique em persona da lista interativa: id = "criativo_persona_<codigo>"
+    const personaClick = trimmed.match(/^criativo_persona_(.+)$/);
+    if (personaClick) {
+      if (!creativeAgent) {
+        await sendText(from, '❌ Agente Criativo desabilitado (REPLICATE_API_TOKEN faltando no Easypanel).');
+        return true;
+      }
+      const personaCodigo = personaClick[1].trim();
+      try {
+        const allPersonas = await creativeAgent.listPersonas();
+        const persona = allPersonas.find(p => p.codigo === personaCodigo);
+        if (!persona) {
+          await sendText(from, `❌ Persona "${personaCodigo}" não encontrada. Manda "criativo" pra ver a lista de novo.`);
+          creativeFlowState.delete(from);
+          return true;
+        }
+        creativeFlowState.set(from, {
+          step: 'awaiting_briefing',
+          persona_codigo: personaCodigo,
+          createdAt: Date.now(),
+        });
+        await sendText(from,
+          `✅ Persona: *${persona.nome}*\n\n` +
+          `Agora me conta o briefing — onde fica, conta de luz, detalhes do imóvel. Pode ser 1 frase corrida.\n\n` +
+          `Exemplo: _"Casa Lago Sul, conta R$ 4500, projeto moderno com piscina"_`);
+      } catch (err) {
+        console.error('[creative-agent] persona click erro:', (err as Error).message);
+        await sendText(from, `⚠️ Erro buscando persona: ${(err as Error).message}`);
+      }
       return true;
     }
 
-    // Aceita "/criativo" sozinho (mostra ajuda) ou "/criativo <persona> <briefing>"
-    const args = trimmed.slice('/criativo'.length).trim();
-    const firstSpace = args.indexOf(' ');
-    if (!args || firstSpace === -1) {
-      await sendText(from,
-        'Uso: /criativo <persona_codigo> <briefing>\n\n' +
-        'Personas disponiveis:\n' +
-        '• residencial_df_alto\n' +
-        '• residencial_go_alto\n' +
-        '• comercial_loja\n' +
-        '• hibrido_baterias\n' +
-        '• off_grid_rural\n' +
-        '• ev_charger\n\n' +
-        'Exemplo: /criativo residencial_df_alto Casa em Aguas Claras conta R$ 1200');
+    // 3. Trigger inicial: "criativo", "/criativo" (sem args) → mostra lista de personas DO BANCO
+    if (trimmedLower === 'criativo' || trimmedLower === '/criativo') {
+      if (!creativeAgent) {
+        await sendText(from, '❌ Agente Criativo desabilitado (REPLICATE_API_TOKEN faltando no Easypanel).');
+        return true;
+      }
+      let personas;
+      try {
+        personas = await creativeAgent.listPersonas();
+      } catch (err) {
+        console.error('[creative-agent] listPersonas erro:', (err as Error).message);
+        await sendText(from, `⚠️ Erro buscando personas: ${(err as Error).message}`);
+        return true;
+      }
+      if (!personas || personas.length === 0) {
+        await sendText(from, '❌ Nenhuma persona cadastrada no banco. Roda o seed `npm run seed:marketing-personas`.');
+        return true;
+      }
+
+      // WABA Interactive List suporta ate 10 rows totais — exatamente o que precisamos
+      const sections = [{
+        title: 'Personas',
+        rows: personas.slice(0, 10).map(p => ({
+          id: `criativo_persona_${p.codigo}`,
+          title: p.nome.slice(0, 24),
+          description: `Conta ≥ R$ ${p.conta_minima_brl} · ${p.regiao_alvo}`,
+        })),
+      }];
+
+      let listSent = false;
+      if (metaWaba) {
+        try {
+          await metaWaba.sendInteractiveList(from, {
+            header: '🎨 Novo Criativo',
+            body: 'Pra qual persona vou gerar?',
+            buttonText: 'Escolher persona',
+            sections,
+            footer: 'Toque pra escolher',
+          });
+          listSent = true;
+        } catch (err) {
+          console.warn('[creative-agent] lista interativa falhou, fallback texto:', (err as Error).message);
+        }
+      }
+
+      if (!listSent) {
+        // Fallback texto — lista do BANCO, nunca hard-code
+        let msg = '🎨 *Pra qual persona vou gerar?*\n\n';
+        personas.forEach((p, i) => {
+          msg += `${i + 1}. *${p.nome}*\n   Conta ≥ R$ ${p.conta_minima_brl} · ${p.regiao_alvo}\n   _código: ${p.codigo}_\n\n`;
+        });
+        msg += `Responde com: /criativo <codigo> <briefing>`;
+        await sendText(from, msg);
+      }
+
+      creativeFlowState.set(from, { step: 'awaiting_persona', createdAt: Date.now() });
       return true;
     }
 
-    const personaCode = args.slice(0, firstSpace).trim();
-    const briefing = args.slice(firstSpace + 1).trim();
-
-    if (!briefing) {
-      await sendText(from, 'Faltou o briefing. Manda assim: /criativo <persona_codigo> <briefing>');
+    // 4. Estado awaiting_briefing → texto livre vira briefing → dispara generatePackage
+    const flow = creativeFlowState.get(from);
+    if (
+      flow &&
+      flow.step === 'awaiting_briefing' &&
+      flow.persona_codigo &&
+      trimmed.length > 5 &&
+      !trimmed.startsWith('/') &&
+      !trimmed.startsWith('criativo_') &&
+      trimmedLower !== 'criativo' &&
+      trimmedLower !== 'menu'
+    ) {
+      if (!creativeAgent) {
+        await sendText(from, '❌ Agente Criativo desabilitado (REPLICATE_API_TOKEN faltando no Easypanel).');
+        creativeFlowState.delete(from);
+        return true;
+      }
+      const personaCodigo = flow.persona_codigo;
+      const briefing = trimmed;
+      creativeFlowState.delete(from);
+      await runCreativeGeneration(from, personaCodigo, briefing);
       return true;
     }
 
-    await sendText(from, `🎨 Gerando pacote criativo pra *${personaCode}*...\n\nBriefing: "${briefing}"\n\nIsso leva 2-3 min (3 imagens + 3 copies). Aguarda.`);
+    // 5. Compat: parse antigo "/criativo <persona> <briefing>" (one-shot)
+    if (trimmedLower.startsWith('/criativo ')) {
+      if (!creativeAgent) {
+        await sendText(from, '❌ Agente Criativo desabilitado (REPLICATE_API_TOKEN faltando no Easypanel).');
+        return true;
+      }
+      const args = trimmed.slice('/criativo'.length).trim();
+      const firstSpace = args.indexOf(' ');
+      if (!args || firstSpace === -1) {
+        await sendText(from, 'Faltou o briefing. Manda assim: /criativo <persona_codigo> <briefing>\n\nOu manda só "criativo" pra abrir a lista interativa.');
+        return true;
+      }
+      const personaCodigo = args.slice(0, firstSpace).trim();
+      const briefing = args.slice(firstSpace + 1).trim();
+      if (!briefing) {
+        await sendText(from, 'Faltou o briefing. Manda assim: /criativo <persona_codigo> <briefing>');
+        return true;
+      }
+      creativeFlowState.delete(from);
+      await runCreativeGeneration(from, personaCodigo, briefing);
+      return true;
+    }
+
+    return false;
+  }
+
+  // Helper extraido pra ser reusado pelos caminhos: (a) clique persona + briefing texto
+  // e (b) parse antigo /criativo <persona> <briefing>. Mesmo bloco que existia
+  // no handler original, agora reutilizavel.
+  async function runCreativeGeneration(from: string, personaCodigo: string, briefing: string): Promise<void> {
+    if (!creativeAgent) return; // ja gateado pelos callers, defensive
+
+    await sendText(from, `🎨 Gerando pacote criativo pra *${personaCodigo}*...\n\nBriefing: "${briefing}"\n\nIsso leva 2-3 min (3 imagens + 3 copies). Aguarda.`);
 
     try {
       const { creative_id, pkg, persona } = await creativeAgent.generatePackage({
         briefing,
-        persona_codigo: personaCode,
+        persona_codigo: personaCodigo,
       });
 
       let preview = `🎨 *Criativo #${creative_id}* — ${persona.nome}\n\n📝 *Copies (3 variacoes):*\n`;
@@ -884,8 +1026,6 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
             await sendText(from, `🖼 [${img.style}]\n${img.url}`);
           }
         } else {
-          // Sem WABA: manda URL como texto (Evolution tambem tem sendMedia mas evitamos
-          // dependencia opcional aqui — fallback simples)
           await sendText(from, `🖼 [${img.style}]\n${img.url}`);
         }
       }
@@ -923,7 +1063,100 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       console.error('[creative-agent] erro:', (err as Error).message);
       await sendText(from, `❌ Erro gerando criativo: ${(err as Error).message}`);
     }
-    return true;
+  }
+
+  // Eva /menu — lista interativa com TODOS os modos admin disponiveis. Aceita
+  // "menu" (sem barra) e "/menu". Toque numa row dispara o modo correspondente
+  // chamando o tryHandle*Command com a string-trigger natural daquele modo
+  // (ex: "criativo", "/preco", "/agenda"...). Reaproveita os triggers ja
+  // existentes — nao duplica logica de cada modo aqui.
+  //
+  // Aplica feedback_botoes_zap + feedback_opcoes_abc: comando admin sempre
+  // fluxo conversacional + opcoes rotuladas, nunca texto livre + memorizar codigos.
+  async function tryHandleMenuCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const trimmedLower = text.trim().toLowerCase();
+
+    // Trigger inicial
+    const isMenuTrigger = trimmedLower === 'menu' || trimmedLower === '/menu';
+
+    // Clique numa row do menu — id "menu_<modo>"
+    const menuClick = text.trim().match(/^menu_([a-z_]+)$/);
+
+    if (!isMenuTrigger && !menuClick) return false;
+
+    if (isMenuTrigger) {
+      const sections = [{
+        title: 'Modos disponíveis',
+        rows: [
+          { id: 'menu_criativo', title: '🎨 Gerar Criativo', description: 'Anúncio com 3 imagens + 3 copies' },
+          { id: 'menu_preco', title: '💰 Calcular Preço', description: 'Simulação rápida de sistema solar' },
+          { id: 'menu_proposta', title: '📋 Gerar Proposta', description: 'PDF + link público propostas.ecosunpower' },
+          { id: 'menu_agenda', title: '📅 Agendar Reunião', description: 'Visita técnica ou Meet com cliente' },
+          { id: 'menu_novo_case', title: '👤 Cadastrar Case', description: 'Obra concluída pra prova social' },
+          { id: 'menu_reviews', title: '✅ Aprovar Reviews', description: 'Reviews públicos pendentes' },
+          { id: 'menu_blog', title: '📝 Status Blog', description: 'Drafts pendentes de aprovação' },
+        ],
+      }];
+
+      let listSent = false;
+      if (metaWaba) {
+        try {
+          await metaWaba.sendInteractiveList(from, {
+            header: '⚙️ Menu Admin',
+            body: 'O que você quer fazer agora?',
+            buttonText: 'Escolher modo',
+            sections,
+            footer: 'Toque pra abrir',
+          });
+          listSent = true;
+        } catch (err) {
+          console.warn('[menu-admin] lista interativa falhou, fallback texto:', (err as Error).message);
+        }
+      }
+
+      if (!listSent) {
+        const lines = sections[0].rows.map(r => `${r.title}\n   _${r.description}_`).join('\n\n');
+        await sendText(from,
+          `⚙️ *Menu Admin*\n\nO que você quer fazer?\n\n${lines}\n\n` +
+          `Responde com o nome (ex: "criativo", "/preco", "/agenda")`);
+      }
+      return true;
+    }
+
+    // Clique numa row → re-roteia chamando o tryHandle* correspondente
+    if (menuClick) {
+      const modo = menuClick[1];
+      // Mapa modo → string-trigger natural (a mesma que cada handler aceita).
+      // Cuidado pra usar a forma que cada isXxxTrigger entende: pricing/proposal/scheduling
+      // aceitam "/preco" "/proposta" "/agenda"; case-creator aceita "/novo-case";
+      // criativo (refatorado) aceita "criativo"; testimonial-admin aceita "/reviews-pendentes";
+      // blog aceita "blog status".
+      const reroute: Record<string, { trigger: string; handler: (from: string, text: string) => Promise<boolean> }> = {
+        criativo:   { trigger: 'criativo',           handler: tryHandleCreativeCommand },
+        preco:      { trigger: '/preco',             handler: tryHandlePricingCommand },
+        proposta:   { trigger: '/proposta',          handler: tryHandleProposalCommand },
+        agenda:     { trigger: '/agenda',            handler: tryHandleSchedulingCommand },
+        novo_case:  { trigger: '/novo-case',         handler: tryHandleCaseCreatorCommand },
+        reviews:    { trigger: '/reviews-pendentes', handler: tryHandleTestimonialAdminCommand },
+        blog:       { trigger: 'blog status',        handler: tryHandleJuniorBlogCommand },
+      };
+      const target = reroute[modo];
+      if (!target) {
+        await sendText(from, `⚠️ Modo "${modo}" não reconhecido. Manda "menu" pra ver a lista de novo.`);
+        return true;
+      }
+      // Re-roteia. Cada handler ja gateia em isAdminPhone e nao chama menu de volta,
+      // entao nao tem risco de loop. Se o handler retornar false (caso edge: modo
+      // desabilitado por env var faltando), avisamos.
+      const handled = await target.handler(from, target.trigger);
+      if (!handled) {
+        await sendText(from, `⚠️ Modo "${modo}" indisponível agora (provavelmente env var faltando). Olha os logs do Easypanel.`);
+      }
+      return true;
+    }
+
+    return false;
   }
 
   // Message handler
@@ -944,6 +1177,12 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       else if (acao === 'esperar') proposalFollowup.postergarFollowup(slug);
       return;
     }
+
+    // /menu (Junior) — lista interativa com TODOS os modos admin. Vem ANTES de
+    // tudo pra Junior conseguir abrir o menu mesmo dentro de outro modo (escapa).
+    // Cliques nas rows tambem chegam aqui (id "menu_<modo>") e re-roteiam pra
+    // tryHandle* correspondente. Gateado em isAdminPhone — cliente nem entra.
+    if (await tryHandleMenuCommand(from, text)) return;
 
     // Comandos admin de blog (publicar/descartar/blog status) PRECISAM vir primeiro,
     // antes dos modos /preco /proposta /agenda — porque Junior pode estar em qualquer

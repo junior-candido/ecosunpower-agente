@@ -29,6 +29,12 @@ export class CreativeAgent {
     this.replicateToken = replicateToken;
   }
 
+  // Reexpoe listAll pra evitar acoplamento de quem usa o agente (ex: handler
+  // /criativo no zap) com a tabela marketing_personas direto.
+  async listPersonas(): Promise<Persona[]> {
+    return this.personas.listAll();
+  }
+
   async generatePackage(params: {
     briefing: string;
     persona_codigo: string;
