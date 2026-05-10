@@ -193,7 +193,10 @@ Bot M4 (se ≥ R$ 700): "Show, esse perfil tem economia muito
 
 Se aceita: link wa.me com mensagem pré-preenchida + contexto
            da conversa salvo em Supabase pra Eva continuar
-Se não:    Eva continua no IG mesmo (mais lento)
+Se recusa handoff: Qualificador escala pra Junior responder
+           manualmente no IG Inbox (Eva completa no IG está
+           fora de escopo deste MVP — avaliar depois se demanda
+           justifica). Junior recebe alerta zap com link da DM
 Se < R$ 700: descarte polido (texto da memória project_criterio_qualificacao_lead.md)
 ```
 
@@ -309,10 +312,11 @@ Página nova `/dashboard/marketing` com widgets:
 
 ### Migrations necessárias
 - `023_marketing_schema.sql` (todas as tabelas novas + colunas)
+- ⚠️ Pré-requisito: Migration `022` (pendente da maratona 08/05) precisa ser aplicada antes em prod, senão schema fica inconsistente. Verificar com Junior antes de partir pra implementação
 
 ## 7. Roadmap Express (10-12 dias úteis)
 
-### Dia 1-2 (Sábado 10/05 - Domingo 11/05) — Diagnóstico + Quick Win
+### Dia 1-2 (Domingo 10/05 - Segunda 11/05) — Diagnóstico + Quick Win
 
 **Entregas:**
 - Auditoria PDF da Campanha 1 (Claude analisa via Meta API)
