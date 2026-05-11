@@ -820,6 +820,204 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     }
   }, 5 * 60 * 1000).unref();
 
+  // Estado conversacional do /banner — in-memory, limpa apos 30min de inatividade.
+  interface BannerModeState {
+    step: 'titulo' | 'kit' | 'kwh' | 'preco' | 'modulo' | 'inversor' | 'tipo' | 'estrutura' | 'confirm';
+    data: {
+      titulo?: string;
+      kit?: number;
+      kwh?: number;
+      preco?: number;
+      marca_modulo?: string;
+      marca_inversor?: string;
+      tipo_inversor?: 'micro' | 'string' | 'otimizado';
+      tipo_estrutura?: string;
+    };
+    started_at: number;
+  }
+  const bannerModes = new Map<string, BannerModeState>();
+  const BANNER_MODE_TIMEOUT_MS = 30 * 60 * 1000;
+
+  function clearStaleBannerModes() {
+    const now = Date.now();
+    for (const [phone, state] of bannerModes.entries()) {
+      if (now - state.started_at > BANNER_MODE_TIMEOUT_MS) bannerModes.delete(phone);
+    }
+  }
+
+  // Gera banner com state pronto + envia via WABA + persiste em marketing_creatives.
+  async function generateAndSendBanner(from: string, state: BannerModeState) {
+    const d = state.data;
+    if (!d.titulo || !d.kit || !d.kwh || !d.preco) {
+      await sendText(from, '❌ Faltam campos obrigatórios.');
+      return;
+    }
+    try {
+      const { renderBannerMegaOferta } = await import('./modules/marketing/banner-renderer.js');
+      const png = await renderBannerMegaOferta({
+        titulo: d.titulo,
+        kit_placas: d.kit,
+        kwh_mes: d.kwh,
+        preco_brl: d.preco,
+        ...(d.marca_modulo ? { marca_modulo: d.marca_modulo } : {}),
+        ...(d.marca_inversor ? { marca_inversor: d.marca_inversor } : {}),
+        ...(d.tipo_inversor ? { tipo_inversor: d.tipo_inversor } : {}),
+        ...(d.tipo_estrutura ? { tipo_estrutura: d.tipo_estrutura } : {}),
+      });
+      if (!metaWaba) {
+        await sendText(from, '❌ metaWaba nao configurado.');
+        return;
+      }
+      const { mediaId } = await metaWaba.uploadMedia(png, 'image/png', `banner-${Date.now()}.png`);
+      const caption = `🎨 *${d.titulo}*\nKit ${d.kit} placas · ${d.kwh} kWh/mês · R$ ${d.preco.toFixed(2).replace('.', ',')}`;
+      await metaWaba.sendImageById(from, mediaId, caption);
+
+      // Persiste briefing pra reaproveitar (regenerar variacoes depois)
+      try {
+        await supabase.getClient().from('marketing_creatives').insert({
+          persona_id: 1, // placeholder; banners nao tem persona dedicada
+          briefing: `Banner promo: ${d.titulo}`,
+          status: 'em_uso',
+          imagens: JSON.stringify([{ type: 'banner_promo', briefing_json: d }]),
+          copies: JSON.stringify([{ headline: d.titulo, body: `${d.kit} placas · ${d.kwh} kWh · R$ ${d.preco.toFixed(2)}`, cta: 'Faça já o seu orçamento GRÁTIS' }]),
+          cta_primario: 'Faça já o seu orçamento GRÁTIS',
+          created_by_model: 'satori-banner-renderer',
+          approved_by_phone: from,
+        });
+        console.log(`[banner] persistido em marketing_creatives pra ${from}`);
+      } catch (err) {
+        console.warn('[banner] persistencia falhou (banner ja enviado, ok):', (err as Error).message);
+      }
+    } catch (err) {
+      console.error('[banner] geracao falhou:', err);
+      await sendText(from, `❌ Falhou ao gerar: ${(err as Error).message}`);
+    }
+  }
+
+  // Handler conversacional do /banner: processa respostas durante modo ativo.
+  // Roda ANTES do tryHandleBannerCommand pra capturar mensagens sem trigger.
+  async function tryHandleBannerModeStep(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    clearStaleBannerModes();
+    const state = bannerModes.get(from);
+    if (!state) return false;
+
+    const t = text.trim();
+    if (/^cancelar$/i.test(t)) {
+      bannerModes.delete(from);
+      await sendText(from, '❌ Banner cancelado. Manda "menu" pra recomecar.');
+      return true;
+    }
+    if (/^\/?banner\b/i.test(t)) {
+      // Reinicia se digitar /banner de novo no meio
+      bannerModes.set(from, { step: 'titulo', data: {}, started_at: Date.now() });
+      await sendText(from, `🔄 Reiniciando.\n\n*1/8 — Qual o título?*\nExemplo: "OFERTA DE MAIO"`);
+      return true;
+    }
+
+    const pular = /^(pular|skip|nao|não|-|x)$/i.test(t);
+
+    switch (state.step) {
+      case 'titulo':
+        state.data.titulo = t || 'OFERTA ESPECIAL';
+        state.step = 'kit';
+        await sendText(from, `*2/8 — Quantas placas no kit?*\nDigite só o número (ex: 8)`);
+        return true;
+
+      case 'kit': {
+        const n = parseInt(t.replace(/\D/g, ''), 10);
+        if (!n || n < 1 || n > 200) {
+          await sendText(from, `❌ Quantidade invalida. Manda so o numero (ex: 8).`);
+          return true;
+        }
+        state.data.kit = n;
+        state.step = 'kwh';
+        await sendText(from, `*3/8 — Quanto gera por mês (kWh)?*\nEx: 700`);
+        return true;
+      }
+
+      case 'kwh': {
+        const n = parseInt(t.replace(/\D/g, ''), 10);
+        if (!n || n < 1) {
+          await sendText(from, `❌ Valor invalido. Manda so o numero (ex: 700).`);
+          return true;
+        }
+        state.data.kwh = n;
+        state.step = 'preco';
+        await sendText(from, `*4/8 — Qual o preço final?*\nEx: 15443.17 (use ponto ou vírgula pros centavos)`);
+        return true;
+      }
+
+      case 'preco': {
+        const cleaned = t.replace(/[^\d.,]/g, '').replace(',', '.');
+        const n = parseFloat(cleaned);
+        if (!n || n < 100) {
+          await sendText(from, `❌ Preço invalido. Ex: 15443.17 ou 15443,17`);
+          return true;
+        }
+        state.data.preco = n;
+        state.step = 'modulo';
+        await sendText(from, `*5/8 — Marca/modelo do módulo* (ou "pular")\nEx: "Risen 700W HJT" ou "LONGi Hi-MO X10"`);
+        return true;
+      }
+
+      case 'modulo':
+        if (!pular) state.data.marca_modulo = t;
+        state.step = 'inversor';
+        await sendText(from, `*6/8 — Marca/modelo do inversor* (ou "pular")\nEx: "Hoymiles 2.25 kW" ou "Sungrow SG10RT"`);
+        return true;
+
+      case 'inversor':
+        if (!pular) state.data.marca_inversor = t;
+        state.step = 'tipo';
+        await sendText(from, `*7/8 — Tipo de inversor?*\nResponde: *micro*, *string* ou *otimizado* (ou "pular")`);
+        return true;
+
+      case 'tipo': {
+        if (!pular) {
+          const tipo = t.toLowerCase();
+          if (tipo === 'micro' || tipo === 'string' || tipo === 'otimizado') {
+            state.data.tipo_inversor = tipo;
+          } else {
+            await sendText(from, `❌ Use *micro*, *string* ou *otimizado* (ou "pular")`);
+            return true;
+          }
+        }
+        state.step = 'estrutura';
+        await sendText(from, `*8/8 — Tipo de estrutura/telhado* (ou "pular")\nEx: "Telhado cerâmico", "Solo", "Laje", "Carport"`);
+        return true;
+      }
+
+      case 'estrutura': {
+        if (!pular) state.data.tipo_estrutura = t;
+        state.step = 'confirm';
+        const d = state.data;
+        const resumo = `📋 *Resumo do banner:*\n\n` +
+          `• Título: ${d.titulo}\n` +
+          `• Kit: ${d.kit} placas\n` +
+          `• Geração: ${d.kwh} kWh/mês\n` +
+          `• Preço: R$ ${(d.preco ?? 0).toFixed(2).replace('.', ',')}\n` +
+          (d.marca_modulo ? `• Módulo: ${d.marca_modulo}\n` : '') +
+          (d.marca_inversor ? `• Inversor: ${d.marca_inversor}${d.tipo_inversor ? ` (${d.tipo_inversor})` : ''}\n` : '') +
+          (d.tipo_estrutura ? `• Estrutura: ${d.tipo_estrutura}\n` : '') +
+          `\nResponde *gerar* pra criar o banner, *cancelar* pra abortar.`;
+        await sendText(from, resumo);
+        return true;
+      }
+
+      case 'confirm':
+        if (/^gerar|sim|ok|confirmar$/i.test(t)) {
+          bannerModes.delete(from);
+          await sendText(from, `🎨 Gerando banner...`);
+          await generateAndSendBanner(from, state);
+        } else {
+          await sendText(from, `Responde *gerar* pra criar ou *cancelar* pra abortar.`);
+        }
+        return true;
+    }
+    return false;
+  }
+
   // /banner: gera banner promocional Mega Oferta com satori + envia via WABA.
   // Sintaxe: /banner titulo="..." kit=12 kwh=900 preco=17354.32
   // Opcionais: subtitulo, descricao, cta. Obrigatorio: preco.
@@ -844,7 +1042,12 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // Parser de params (regex)
     const args = t.replace(/^\/?banner\s*/i, '');
     if (!args.trim()) {
-      await sendText(from, helpMsg);
+      // MODO CONVERSACIONAL: sem args = inicia perguntas passo a passo
+      clearStaleBannerModes();
+      bannerModes.set(from, { step: 'titulo', data: {}, started_at: Date.now() });
+      await sendText(from,
+        `🎨 *Eva Banner Maker*\n\nVou te perguntar o que tem no banner. Pode mandar "cancelar" a qualquer momento.\n\n` +
+        `*1/8 — Qual o título?*\nExemplo: "OFERTA DE MAIO", "MEGA OFERTA", "ÚLTIMAS UNIDADES"`);
       return true;
     }
 
@@ -1333,7 +1536,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // /sync-marketing — forca sync Meta -> DB + collect insights. One-shot.
     if (await tryHandleSyncMarketingCommand(from, text)) return;
 
-    // /banner — gera banner promocional Mega Oferta e envia via WhatsApp.
+    // /banner — modo conversacional (captura respostas durante fluxo) + comando inicial
+    if (await tryHandleBannerModeStep(from, text)) return;
     if (await tryHandleBannerCommand(from, text)) return;
 
     // Eva /criativo — Junior gera pacote criativo (3 copies + 3 imagens) por
