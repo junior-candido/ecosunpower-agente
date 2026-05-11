@@ -23,6 +23,19 @@ export class CreativeStorage {
     return data.publicUrl;
   }
 
+  // Upload de banner promocional (Buffer direto). Retorna URL publica + path no bucket.
+  // Usado pelo handler /banner pra dar link de qualidade total (sem compressao WhatsApp).
+  async uploadBanner(buf: Buffer, slug: string): Promise<{ publicUrl: string; path: string }> {
+    const path = `banners/${slug}.png`;
+    const { error } = await this.supabase.storage.from(this.bucket).upload(path, buf, {
+      contentType: 'image/png',
+      upsert: true,
+    });
+    if (error) throw error;
+    const { data } = this.supabase.storage.from(this.bucket).getPublicUrl(path);
+    return { publicUrl: data.publicUrl, path };
+  }
+
   async persistDraft(pkg: CreativePackage, modelUsed: string): Promise<number> {
     const { data, error } = await this.supabase
       .from('marketing_creatives')

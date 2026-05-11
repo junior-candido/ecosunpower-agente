@@ -868,8 +868,26 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         await sendText(from, '❌ metaWaba nao configurado.');
         return;
       }
-      const { mediaId } = await metaWaba.uploadMedia(png, 'image/png', `banner-${Date.now()}.png`);
-      const caption = `🎨 *${d.titulo}*\nKit ${d.kit} placas · ${d.kwh} kWh/mês · R$ ${d.preco.toFixed(2).replace('.', ',')}`;
+      const ts = Date.now();
+      const slug = `${ts}-${d.titulo?.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) ?? 'banner'}`;
+
+      // Upload pro Supabase Storage (bucket ad-creatives) pra dar link em
+      // qualidade TOTAL (WhatsApp comprime imagem enviada). Junior usa o link
+      // pra baixar/subir no Meta Ads Manager sem perda.
+      let publicUrl: string | null = null;
+      try {
+        const { CreativeStorage } = await import('./modules/marketing/creative-storage.js');
+        const storage = new CreativeStorage(supabase.getClient());
+        const uploaded = await storage.uploadBanner(png, slug);
+        publicUrl = uploaded.publicUrl;
+        console.log(`[banner] uploaded to Storage: ${publicUrl}`);
+      } catch (err) {
+        console.warn(`[banner] Storage upload falhou (bucket ad-creatives existe e e publico?):`, (err as Error).message);
+      }
+
+      const { mediaId } = await metaWaba.uploadMedia(png, 'image/png', `banner-${ts}.png`);
+      const caption = `🎨 *${d.titulo}*\nKit ${d.kit} placas · ${d.kwh} kWh/mês · R$ ${d.preco.toFixed(2).replace('.', ',')}` +
+        (publicUrl ? `\n\n🔗 *Qualidade total (use no Meta Ads):*\n${publicUrl}` : '');
       await metaWaba.sendImageById(from, mediaId, caption);
 
       // Persiste briefing pra reaproveitar (regenerar variacoes depois)
