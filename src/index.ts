@@ -1815,6 +1815,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         rows: [
           { id: 'menu_criativo', title: '🎨 Gerar Criativo', description: 'Anúncio com 3 imagens + 3 copies' },
           { id: 'menu_banner', title: '🖼️ Banner Promo', description: 'Mega Oferta com kit + preço + foto inversor' },
+          { id: 'menu_reativar', title: '🔄 Reativar Base', description: 'Dispara template pros leads terceirizada (10 por vez)' },
           { id: 'menu_preco', title: '💰 Calcular Preço', description: 'Simulação rápida de sistema solar' },
           { id: 'menu_proposta', title: '📋 Gerar Proposta', description: 'PDF + link público propostas.ecosunpower' },
           { id: 'menu_agenda', title: '📅 Agendar Reunião', description: 'Visita técnica ou Meet com cliente' },
@@ -1860,6 +1861,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       const reroute: Record<string, { trigger: string; handler: (from: string, text: string) => Promise<boolean> }> = {
         criativo:   { trigger: 'criativo',           handler: tryHandleCreativeCommand },
         banner:     { trigger: '/banner',            handler: tryHandleBannerCommand },
+        reativar:   { trigger: '/reativar-base 10',  handler: tryHandleReativarBaseCommand },
         preco:      { trigger: '/preco',             handler: tryHandlePricingCommand },
         proposta:   { trigger: '/proposta',          handler: tryHandleProposalCommand },
         agenda:     { trigger: '/agenda',            handler: tryHandleSchedulingCommand },
