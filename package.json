@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
+    "@resvg/resvg-js": "^2.6.2",
     "@supabase/supabase-js": "^2.103.3",
     "bullmq": "^5.74.1",
     "cheerio": "^1.2.0",
@@ -28,6 +29,7 @@
     "ioredis": "^5.10.1",
     "puppeteer": "^24.42.0",
     "qrcode": "^1.5.4",
+    "satori": "^0.26.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

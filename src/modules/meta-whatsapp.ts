@@ -225,6 +225,21 @@ export class MetaWhatsAppService {
     return this.postMessage(body);
   }
 
+  // Envia imagem usando media_id (apos uploadMedia com mimeType image/png ou image/jpeg).
+  async sendImageById(
+    to: string,
+    mediaId: string,
+    caption?: string,
+  ): Promise<{ messageId: string }> {
+    const body = {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'image',
+      image: { id: mediaId, ...(caption ? { caption } : {}) },
+    };
+    return this.postMessage(body);
+  }
+
   async sendAudio(to: string, mediaUrl: string): Promise<{ messageId: string }> {
     const body = {
       messaging_product: 'whatsapp',

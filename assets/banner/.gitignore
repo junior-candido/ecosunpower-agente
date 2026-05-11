@@ -1,0 +1,7 @@
+# Ignora tudo nesta pasta exceto os 2 PNGs que o renderer usa + README.
+# Junior pode jogar logos/fotos de trabalho aqui sem inflar o repo.
+*
+!.gitignore
+!README.md
+!inversor.png
+!logo-ecosunpower.png

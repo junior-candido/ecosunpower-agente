@@ -820,6 +820,94 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     }
   }, 5 * 60 * 1000).unref();
 
+  // /banner: gera banner promocional Mega Oferta com satori + envia via WABA.
+  // Sintaxe: /banner titulo="..." kit=12 kwh=900 preco=17354.32
+  // Opcionais: subtitulo, descricao, cta. Obrigatorio: preco.
+  async function tryHandleBannerCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const t = text.trim();
+    if (!/^\/banner\b/i.test(t) && !/^banner\b/i.test(t)) return false;
+
+    const helpMsg = `🎨 *Eva Banner Maker*\n\n` +
+      `Exemplo completo:\n` +
+      `/banner titulo="MEGA OFERTA DE MAIO" kit=12 kwh=900 preco=17354 modulo="LONGi Hi-MO X10" inversor="Sungrow SG10RT" tipo=string estrutura="Telhado cerâmico"\n\n` +
+      `*Obrigatorio:* preco\n\n` +
+      `*Comerciais (com default):*\n` +
+      `• titulo (default: "OFERTA ESPECIAL")\n` +
+      `• kit, kwh, subtitulo, descricao, cta\n\n` +
+      `*Técnicos (opcionais):*\n` +
+      `• modulo="LONGi Hi-MO X10"\n` +
+      `• inversor="Sungrow SG10RT"\n` +
+      `• tipo=micro | string | otimizado\n` +
+      `• estrutura="Telhado cerâmico" | "Solo" | "Laje" | "Carport"`;
+
+    // Parser de params (regex)
+    const args = t.replace(/^\/?banner\s*/i, '');
+    if (!args.trim()) {
+      await sendText(from, helpMsg);
+      return true;
+    }
+
+    function pick(key: string): string | undefined {
+      const re = new RegExp(`${key}\\s*=\\s*(?:"([^"]+)"|'([^']+)'|([^\\s]+))`, 'i');
+      const m = args.match(re);
+      return m ? (m[1] ?? m[2] ?? m[3]) : undefined;
+    }
+    const titulo = pick('titulo') ?? 'OFERTA ESPECIAL';
+    const subtitulo = pick('subtitulo') ?? pick('sub');
+    const descricao = pick('descricao') ?? pick('desc');
+    const cta_text = pick('cta');
+    const kit = parseInt(pick('kit') ?? '12', 10);
+    const kwh = parseInt(pick('kwh') ?? '900', 10);
+    const precoStr = pick('preco') ?? pick('preço');
+    const marca_modulo = pick('modulo') ?? pick('modulos') ?? pick('marca_modulo');
+    const marca_inversor = pick('inversor') ?? pick('marca_inversor');
+    const tipo_inversor = pick('tipo_inversor') ?? pick('tipo'); // micro | string | otimizado
+    const tipo_estrutura = pick('estrutura') ?? pick('telhado');
+
+    if (!precoStr) {
+      await sendText(from, `❌ Faltou o *preço*. Exemplo: /banner preco=17354.32\n\n${helpMsg}`);
+      return true;
+    }
+    const preco = parseFloat(precoStr.replace(',', '.'));
+    if (!Number.isFinite(preco) || preco <= 0) {
+      await sendText(from, `❌ Preço inválido: "${precoStr}". Use formato numérico, ex: preco=17354.32`);
+      return true;
+    }
+
+    await sendText(from, `🎨 Gerando banner "${titulo}"...`);
+    try {
+      const { renderBannerMegaOferta } = await import('./modules/marketing/banner-renderer.js');
+      const png = await renderBannerMegaOferta({
+        titulo,
+        ...(subtitulo ? { subtitulo } : {}),
+        ...(descricao ? { descricao } : {}),
+        ...(cta_text ? { cta_text } : {}),
+        ...(marca_modulo ? { marca_modulo } : {}),
+        ...(marca_inversor ? { marca_inversor } : {}),
+        ...(tipo_inversor ? { tipo_inversor } : {}),
+        ...(tipo_estrutura ? { tipo_estrutura } : {}),
+        kit_placas: kit,
+        kwh_mes: kwh,
+        preco_brl: preco,
+      });
+
+      if (!metaWaba) {
+        await sendText(from, '❌ metaWaba nao configurado, nao consigo enviar imagem.');
+        return true;
+      }
+
+      const { mediaId } = await metaWaba.uploadMedia(png, 'image/png', `banner-${Date.now()}.png`);
+      const caption = `🎨 *${titulo}*\nKit ${kit} placas · ${kwh} kWh/mês · R$ ${preco.toFixed(2).replace('.', ',')}\n\nMande /banner com outros parâmetros pra gerar variações.`;
+      await metaWaba.sendImageById(from, mediaId, caption);
+      console.log(`[banner] gerado e enviado pra ${from}: ${titulo}`);
+    } catch (err) {
+      console.error('[banner] falhou:', err);
+      await sendText(from, `❌ Falhou ao gerar banner: ${(err as Error).message}`);
+    }
+    return true;
+  }
+
   // /sync-marketing: forca sync imediato Meta -> DB + collect insights.
   // Util pra ver mudancas no dashboard sem esperar o cron de 2h.
   async function tryHandleSyncMarketingCommand(from: string, text: string): Promise<boolean> {
@@ -1136,6 +1224,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         title: 'Modos disponíveis',
         rows: [
           { id: 'menu_criativo', title: '🎨 Gerar Criativo', description: 'Anúncio com 3 imagens + 3 copies' },
+          { id: 'menu_banner', title: '🖼️ Banner Promo', description: 'Mega Oferta com kit + preço + foto inversor' },
           { id: 'menu_preco', title: '💰 Calcular Preço', description: 'Simulação rápida de sistema solar' },
           { id: 'menu_proposta', title: '📋 Gerar Proposta', description: 'PDF + link público propostas.ecosunpower' },
           { id: 'menu_agenda', title: '📅 Agendar Reunião', description: 'Visita técnica ou Meet com cliente' },
@@ -1180,6 +1269,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       // blog aceita "blog status".
       const reroute: Record<string, { trigger: string; handler: (from: string, text: string) => Promise<boolean> }> = {
         criativo:   { trigger: 'criativo',           handler: tryHandleCreativeCommand },
+        banner:     { trigger: '/banner',            handler: tryHandleBannerCommand },
         preco:      { trigger: '/preco',             handler: tryHandlePricingCommand },
         proposta:   { trigger: '/proposta',          handler: tryHandleProposalCommand },
         agenda:     { trigger: '/agenda',            handler: tryHandleSchedulingCommand },
@@ -1242,6 +1332,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /sync-marketing — forca sync Meta -> DB + collect insights. One-shot.
     if (await tryHandleSyncMarketingCommand(from, text)) return;
+
+    // /banner — gera banner promocional Mega Oferta e envia via WhatsApp.
+    if (await tryHandleBannerCommand(from, text)) return;
 
     // Eva /criativo — Junior gera pacote criativo (3 copies + 3 imagens) por
     // persona/briefing. Tambem captura cliques nos botoes Aprovar/Regenerar/Descartar.
