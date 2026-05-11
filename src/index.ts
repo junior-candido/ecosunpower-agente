@@ -1323,6 +1323,48 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // Detecta opt-out do CLIENTE (qualquer pessoa, nao só admin).
+  // Aceita quick reply "Sair" do template reativacao_lead_v1 + palavras-chave
+  // universais de unsubscribe. Marca opt_out=true + eva_active=false.
+  async function tryHandleClienteOptOut(from: string, text: string): Promise<boolean> {
+    const raw = text.trim();
+    const t = raw.toLowerCase();
+    // Quick reply do template tem title "Sair" (case-sensitive WABA encaminha como texto).
+    // Aceita variacoes comuns de unsubscribe pt-BR.
+    const isOptOut =
+      raw === 'Sair' ||
+      /^(sair|parar|stop|unsubscribe|cancelar|cancela|nao quero (mais|receber)|n[ãa]o quero mais)$/i.test(t) ||
+      /^(remov[ea]\s*me|sai\s+da(qui)?|para\s+de\s+mandar|nao perturbe)$/i.test(t);
+    if (!isOptOut) return false;
+
+    // Busca lead pelo phone
+    const { data: lead } = await supabase.getClient()
+      .from('leads')
+      .select('id, name, opt_out')
+      .eq('phone', from)
+      .maybeSingle();
+    if (!lead) {
+      // Nao tem lead cadastrado — ainda assim responde respeitoso
+      await sendText(from, '✅ Tudo bem, vamos parar por aqui. Se mudar de ideia, é só mandar "oi". Obrigado!');
+      return true;
+    }
+    if (lead.opt_out) {
+      // Ja estava opt-out — so confirma
+      await sendText(from, '✅ Já estava registrado. Não vou mais te mandar mensagens. Pra voltar, manda "oi".');
+      return true;
+    }
+    await supabase.getClient()
+      .from('leads')
+      .update({ opt_out: true, eva_active: false, status: 'inativo', updated_at: new Date().toISOString() })
+      .eq('id', lead.id);
+    console.log(`[opt-out] cliente ${from} (${lead.name}) optou por sair via "${raw}"`);
+    await sendText(
+      from,
+      `✅ Tudo certo, ${(lead.name ?? '').split(' ')[0] || 'amigo(a)'}. Não vou mais te mandar mensagens.\n\nSe um dia mudar de ideia sobre energia solar, é só mandar "oi" pra cá. Obrigado pela atenção e sucesso! ☀️`,
+    );
+    return true;
+  }
+
   // /fechei <nome ou telefone>: marca lead como cliente fechado.
   // status=transferido + opt_out=true => removido da cadencia automaticamente.
   async function tryHandleFecheiCommand(from: string, text: string): Promise<boolean> {
@@ -1952,6 +1994,10 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       else if (acao === 'esperar') proposalFollowup.postergarFollowup(slug);
       return;
     }
+
+    // Opt-out do CLIENTE — detecta "sair"/"parar"/"stop"/etc antes de qualquer
+    // outro handler pra parar de mandar mensagens imediatamente.
+    if (await tryHandleClienteOptOut(from, text)) return;
 
     // /menu (Junior) — lista interativa com TODOS os modos admin. Vem ANTES de
     // tudo pra Junior conseguir abrir o menu mesmo dentro de outro modo (escapa).
