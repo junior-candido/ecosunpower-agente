@@ -820,6 +820,35 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     }
   }, 5 * 60 * 1000).unref();
 
+  // /sync-marketing: forca sync imediato Meta -> DB + collect insights.
+  // Util pra ver mudancas no dashboard sem esperar o cron de 2h.
+  async function tryHandleSyncMarketingCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const t = text.trim().toLowerCase();
+    if (t !== '/sync-marketing' && t !== '/sync-mkt') return false;
+    if (!config.metaWabaAccessToken) {
+      await sendText(from, '❌ META_WABA_ACCESS_TOKEN nao configurado no Easypanel.');
+      return true;
+    }
+    await sendText(from, '🔄 Sincronizando campanhas com Meta...');
+    try {
+      const { syncCampaignStatuses, collectInsights } = await import('./modules/marketing/insights-collector.js');
+      const sync = await syncCampaignStatuses(supabase.getClient(), config.metaWabaAccessToken);
+      const ins = await collectInsights(supabase.getClient(), config.metaWabaAccessToken);
+      await sendText(
+        from,
+        `✅ Sync concluido.\n\n` +
+        `📊 *Status Meta -> DB:* ${sync.synced} sincronizadas, ${sync.changed} mudaram.\n` +
+        `📈 *Insights coletados:* ${ins.ok} ok, ${ins.failed} falharam.\n\n` +
+        `Veja: /dashboard/marketing`,
+      );
+    } catch (err) {
+      console.error('[sync-marketing] failed:', err);
+      await sendText(from, `❌ Falhou: ${(err as Error).message}`);
+    }
+    return true;
+  }
+
   async function tryHandleCreativeCommand(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
     const trimmed = text.trim();
@@ -1210,6 +1239,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // Comandos admin de depoimento — alta prioridade pra Junior poder aprovar
     // mesmo no meio de outro modo (precificacao/proposta/agenda).
     if (await tryHandleTestimonialAdminCommand(from, text)) return;
+
+    // /sync-marketing — forca sync Meta -> DB + collect insights. One-shot.
+    if (await tryHandleSyncMarketingCommand(from, text)) return;
 
     // Eva /criativo — Junior gera pacote criativo (3 copies + 3 imagens) por
     // persona/briefing. Tambem captura cliques nos botoes Aprovar/Regenerar/Descartar.
