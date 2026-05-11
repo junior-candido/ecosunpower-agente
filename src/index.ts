@@ -4742,7 +4742,10 @@ Slug: ${draft.slug}`;
   if (!isSandbox && !passiveMode && config.metaWabaAccessToken) {
     const runInsightsCollector = async () => {
       try {
-        const { collectInsights } = await import('./modules/marketing/insights-collector.js');
+        const { syncCampaignStatuses, collectInsights } = await import('./modules/marketing/insights-collector.js');
+        // 1) sync status/name/budget Meta -> DB (toda campanha cadastrada)
+        await syncCampaignStatuses(supabase.getClient(), config.metaWabaAccessToken!);
+        // 2) collect insights so das active
         await collectInsights(supabase.getClient(), config.metaWabaAccessToken!);
       } catch (err) {
         console.error('[insights] collector failed:', (err as Error).message);
