@@ -120,6 +120,21 @@ export function createDashboardRouter(
     }
   });
 
+  // Cadência: acompanhamento da reativação de leads da base terceirizada.
+  router.get('/cadencia', async (req: Request, res: Response) => {
+    try {
+      const { listCadenciaLeads, calcKpis } = await import('./cadencia-queries.js');
+      const { renderCadenciaPage } = await import('./cadencia-views.js');
+      const rows = await listCadenciaLeads(supabase);
+      const kpis = calcKpis(rows);
+      const filterStatus = typeof req.query.status === 'string' ? req.query.status : undefined;
+      res.send(renderCadenciaPage({ rows, kpis, filterStatus }));
+    } catch (err) {
+      console.error('[dashboard/cadencia]', err);
+      res.status(500).send(`<h2>Erro ao carregar cadência</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
   // Marketing: KPIs 7d + campanhas ativas + criativos + alertas.
   router.get('/marketing', async (_req: Request, res: Response) => {
     try {
