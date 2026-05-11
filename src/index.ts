@@ -1443,7 +1443,50 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           };
           const label = sourceLabel[detectedOrigin.source] ?? detectedOrigin.source;
           leadContext += `\n### Origem detectada do lead\n`;
-          leadContext += `Este contato chegou via ${label}. A mensagem inicial dele inclui uma tag de rastreamento — IGNORE a tag no seu retorno mas leve em conta a origem pra contextualizar o atendimento (ex: se veio do Instagram, pode dizer "vi que voce chegou pelo instagram" naturalmente).\n`;
+          leadContext += `Este contato chegou via ${label}. A mensagem inicial dele inclui uma tag de rastreamento — IGNORE a tag no seu retorno mas leve em conta a origem pra contextualizar o atendimento.\n`;
+
+          // LEAD QUENTE DE CAMPANHA PAGA: postura comercial ativa
+          if (detectedOrigin.source === 'ad_ig_cta_wa' || detectedOrigin.source === 'ad_fb_cta_wa') {
+            // Tenta achar campanha real no DB pra mencionar oferta especifica
+            let ofertaInfo = '';
+            try {
+              const { data: camp } = await supabase.getClient()
+                .from('marketing_campaigns')
+                .select('name, objective, daily_budget_cents')
+                .ilike('name', `%${detectedOrigin.campaign}%`)
+                .limit(1)
+                .maybeSingle();
+              if (camp?.name) {
+                ofertaInfo = `\nA campanha que ele clicou e: **${camp.name}** (objetivo: ${camp.objective ?? 'N/D'}).`;
+              }
+            } catch { /* fail silently */ }
+
+            leadContext += `
+### 🔥 LEAD QUENTE DE CAMPANHA PAGA — POSTURA COMERCIAL ATIVA
+Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo "quero saber/comprar".${ofertaInfo}
+
+**ABORDAGEM (importantissimo — leia antes de responder):**
+
+1. **Saudacao curta + LGPD direto** (1 paragrafo so). Nao gaste turno em small talk.
+
+2. **Confirme rapidamente o interesse na oferta especifica** que ele viu. Ex: "Vi que voce chegou pela nossa oferta de [tipo]. Pra confirmar o melhor kit pra voce, posso te perguntar 2 coisas rapidas?"
+
+3. **Qualifique em 1-2 perguntas, NAO em 5.** Pergunta-chave: valor da conta de luz OU consumo kWh/mes. Se ele disser o valor, voce JA pode estimar o kit ideal.
+
+4. **Se conta >= R$700 OU consumo >= 700 kWh:** lead qualificado. Pivota IMEDIATAMENTE pra:
+   - Agendar visita tecnica (use /agenda no admin) OU
+   - Enviar proposta personalizada (use /proposta no admin)
+   Nao fica em loop de "deixa eu te explicar como funciona".
+
+5. **Se conta < R$700:** explica polidamente que o investimento nao retorna bem com conta abaixo desse patamar, oferece kit menor de demonstracao ou agradece e fecha.
+
+6. **Senso de urgencia respeitoso:** pode mencionar "essa condicao da campanha vai ate o final do mes" ou "esses kits sao limitados pelo estoque do mes" — SEM mentir, SEM forcar.
+
+7. **Fechamento direto:** sempre termine o turno com uma pergunta acionavel ou um CTA claro. NUNCA termine com "qualquer duvida estou aqui" — termine com "posso te mandar a proposta agora?" ou "que dia voce esta livre pra eu visitar?".
+
+8. **Tom:** mais firme que de costume. Cliente quer COMPRAR — voce e a vendedora consultiva que ajuda ele a escolher rapido, nao a tecnica que explica fisica solar por 20 minutos.
+`;
+          }
         }
       }
 
