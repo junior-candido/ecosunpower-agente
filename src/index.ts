@@ -1262,6 +1262,86 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // /reativar-base [N]: dispara template MARKETING 'reativacao_lead_v1' pra
+  // ate N leads com acquisition_source='terceirizada_recovered' que ainda
+  // nao foram reativados. Delay 30-90s entre cada pra nao acender alerta
+  // spam Meta. Marca opportunities.last_reactivation_sent_at quando OK.
+  // Default N=10 (1a onda pequena pra medir taxa de bloqueio).
+  async function tryHandleReativarBaseCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const t = text.trim().toLowerCase();
+    const m = t.match(/^\/reativar-base(?:\s+(\d+))?$/);
+    if (!m) return false;
+    const N = m[1] ? parseInt(m[1], 10) : 10;
+    if (!metaWaba) {
+      await sendText(from, '❌ metaWaba nao configurado.');
+      return true;
+    }
+    await sendText(from, `🔄 Iniciando reativação de até ${N} leads da base terceirizada...\n\nDelay 30-90s entre cada disparo. Vou te avisar no fim.`);
+
+    // Busca leads pra reativar: terceirizada_recovered + sem last_reactivation_sent_at + tem nome
+    const { data: leads, error } = await supabase.getClient()
+      .from('leads')
+      .select('id, phone, name, opportunities')
+      .eq('acquisition_source', 'terceirizada_recovered')
+      .eq('eva_active', true)
+      .order('created_at', { ascending: true })
+      .limit(N * 2); // pega o dobro pra filtrar os ja reativados em memoria
+    if (error) {
+      await sendText(from, `❌ Erro ao buscar leads: ${error.message}`);
+      return true;
+    }
+
+    const naoReativados = (leads ?? []).filter((l) => {
+      const opps = (l.opportunities ?? {}) as Record<string, unknown>;
+      return !opps.last_reactivation_sent_at;
+    }).slice(0, N);
+
+    if (naoReativados.length === 0) {
+      await sendText(from, '✅ Todos os leads terceirizada ja foram reativados. Nada a fazer.');
+      return true;
+    }
+
+    let ok = 0;
+    let fail = 0;
+    for (let i = 0; i < naoReativados.length; i++) {
+      const lead = naoReativados[i];
+      const firstName = (lead.name ?? '').split(' ')[0] || 'tudo bem';
+      try {
+        await metaWaba.sendTemplate(lead.phone, 'reativacao_lead_v1', 'pt_BR', [
+          {
+            type: 'body',
+            parameters: [{ type: 'text', text: firstName }],
+          },
+        ]);
+        // Marca como reativado
+        const opps = { ...(lead.opportunities ?? {}), last_reactivation_sent_at: new Date().toISOString() };
+        await supabase.getClient().from('leads').update({ opportunities: opps }).eq('id', lead.id);
+        ok++;
+        console.log(`[reativar-base] template enviado pra ${lead.phone} (${firstName})`);
+      } catch (err) {
+        fail++;
+        console.error(`[reativar-base] falhou ${lead.phone}:`, (err as Error).message);
+      }
+      // Delay 30-90s aleatorio (exceto no ultimo)
+      if (i < naoReativados.length - 1) {
+        const delay = 30000 + Math.floor(Math.random() * 60000);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+
+    await sendText(
+      from,
+      `✅ *Reativação concluida*\n\n` +
+      `📤 ${ok} templates enviados\n` +
+      `❌ ${fail} falharam\n\n` +
+      `Aguarde 2-4h pra medir taxa de resposta+bloqueio.\n` +
+      `Quando clientes responderem (quick reply ou texto), Eva atende automatico com contexto rico do banco.\n\n` +
+      `Pra mais ondas: /reativar-base ${N}`,
+    );
+    return true;
+  }
+
   // /banner: gera banner promocional Mega Oferta com satori + envia via WABA.
   // Sintaxe: /banner titulo="..." kit=12 kwh=900 preco=17354.32
   // Opcionais: subtitulo, descricao, cta. Obrigatorio: preco.
@@ -1779,6 +1859,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /sync-marketing — forca sync Meta -> DB + collect insights. One-shot.
     if (await tryHandleSyncMarketingCommand(from, text)) return;
+
+    // /reativar-base — dispara template MARKETING pra leads frios da base terceirizada
+    if (await tryHandleReativarBaseCommand(from, text)) return;
 
     // /banner — modo conversacional (captura respostas durante fluxo) + comando inicial
     if (await tryHandleBannerModeStep(from, text)) return;
