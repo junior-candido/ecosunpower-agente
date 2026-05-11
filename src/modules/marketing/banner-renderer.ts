@@ -7,6 +7,7 @@
 
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
+import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
 
@@ -53,24 +54,54 @@ async function loadFonts(): Promise<{ name: string; data: ArrayBuffer; weight: 4
 // =========================================================================
 
 const ASSETS_DIR = path.resolve(process.cwd(), 'assets/banner');
-const assetCache = new Map<string, string | null>(); // filename -> data URL ou null se nao existe
+const assetCache = new Map<string, string | null>(); // basename (sem ext) -> data URL ou null
 
-function loadAssetAsDataUrl(filename: string): string | null {
-  if (assetCache.has(filename)) return assetCache.get(filename) ?? null;
-  const full = path.join(ASSETS_DIR, filename);
-  try {
-    const buf = fs.readFileSync(full);
-    const ext = path.extname(filename).slice(1).toLowerCase();
-    const mime = ext === 'png' ? 'image/png' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'application/octet-stream';
-    const dataUrl = `data:${mime};base64,${buf.toString('base64')}`;
-    assetCache.set(filename, dataUrl);
-    console.log(`[banner-renderer] asset carregado: ${filename} (${Math.round(buf.length / 1024)}KB)`);
-    return dataUrl;
-  } catch (err) {
-    assetCache.set(filename, null);
-    console.log(`[banner-renderer] asset NAO encontrado (fallback gracioso): ${filename}`);
-    return null;
+// Detecta o mime real do arquivo pelos magic bytes do header (nao confia na extensao).
+function detectMime(buf: Buffer): { mime: string; ext: string } | null {
+  if (buf.length < 12) return null;
+  // PNG: 89 50 4E 47
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return { mime: 'image/png', ext: 'png' };
+  // JPEG: FF D8 FF
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return { mime: 'image/jpeg', ext: 'jpg' };
+  // WebP: RIFF????WEBP
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+      buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return { mime: 'image/webp', ext: 'webp' };
+  // GIF: GIF8
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return { mime: 'image/gif', ext: 'gif' };
+  return null;
+}
+
+// Carrega asset por basename (sem extensao). Tenta .png, .jpg, .jpeg, .webp na pasta.
+// Detecta mime real pelos magic bytes. Converte WebP/GIF -> PNG via sharp pq
+// satori nao suporta WebP. Cacheia resultado convertido em memoria.
+async function loadAssetAsDataUrl(basenameOrFile: string): Promise<string | null> {
+  const baseKey = basenameOrFile.replace(/\.(png|jpg|jpeg|webp|gif)$/i, '');
+  if (assetCache.has(baseKey)) return assetCache.get(baseKey) ?? null;
+
+  const candidates = [basenameOrFile, `${baseKey}.png`, `${baseKey}.jpg`, `${baseKey}.jpeg`, `${baseKey}.webp`];
+  for (const filename of candidates) {
+    const full = path.join(ASSETS_DIR, filename);
+    try {
+      let buf = fs.readFileSync(full);
+      let detected = detectMime(buf);
+      if (!detected) continue;
+      // Satori suporta PNG e JPEG. WebP/GIF nao — converte pra PNG via sharp.
+      if (detected.mime === 'image/webp' || detected.mime === 'image/gif') {
+        buf = await sharp(buf).png().toBuffer();
+        detected = { mime: 'image/png', ext: 'png' };
+        console.log(`[banner-renderer] convertido WebP/GIF -> PNG: ${filename}`);
+      }
+      const dataUrl = `data:${detected.mime};base64,${buf.toString('base64')}`;
+      assetCache.set(baseKey, dataUrl);
+      console.log(`[banner-renderer] asset carregado: ${filename} -> ${detected.mime} (${Math.round(buf.length / 1024)}KB)`);
+      return dataUrl;
+    } catch {
+      // tenta proxima candidata
+    }
   }
+  assetCache.set(baseKey, null);
+  console.log(`[banner-renderer] asset NAO encontrado (fallback gracioso): ${baseKey}`);
+  return null;
 }
 
 // =========================================================================
@@ -135,9 +166,12 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
   if (tipo_estrutura) techParts.push(tipo_estrutura);
   const techLine = techParts.join(' · ');
 
-  const fonts = await loadFonts();
-  const inversorPng = loadAssetAsDataUrl('inversor.png');
-  const logoPng = loadAssetAsDataUrl('logo-ecosunpower.png');
+  const [fonts, inversorPng, moduloPng, logoPng] = await Promise.all([
+    loadFonts(),
+    loadAssetAsDataUrl('inversor.png'),
+    loadAssetAsDataUrl('modulo.png'),
+    loadAssetAsDataUrl('logo-ecosunpower.png'),
+  ]);
 
   // Bolinhas amarelas decorativas (estilo "moedas/sol" do banner original).
   // 10 bolinhas em tamanhos variados pra dar mais profundidade visual.
@@ -295,25 +329,97 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                 zIndex: 2,
               },
               children: [
-                // Foto do inversor (protagonista) — topo do card, centralizada
-                ...(inversorPng ? [{
+                // Fotos: placa + inversor lado a lado no topo do card
+                ...((moduloPng || inversorPng) ? [{
                   type: 'div',
                   props: {
                     style: {
                       display: 'flex',
-                      justifyContent: 'center',
+                      flexDirection: 'row',
+                      justifyContent: 'space-around',
                       alignItems: 'center',
                       width: '100%',
-                      height: 260,
+                      height: 320,
+                      gap: 20,
                     },
-                    children: {
-                      type: 'img',
-                      props: {
-                        src: inversorPng,
-                        height: 260,
-                        style: { objectFit: 'contain', display: 'flex' },
-                      },
-                    },
+                    children: [
+                      ...(moduloPng ? [{
+                        type: 'div',
+                        props: {
+                          style: {
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 8,
+                            flex: 1,
+                          },
+                          children: [
+                            {
+                              type: 'img',
+                              props: {
+                                src: moduloPng,
+                                height: 260,
+                                style: { objectFit: 'contain', display: 'flex' },
+                              },
+                            },
+                            {
+                              type: 'div',
+                              props: {
+                                style: {
+                                  fontFamily: 'Montserrat',
+                                  fontWeight: 700,
+                                  fontSize: 18,
+                                  color: '#0a1f3d',
+                                  letterSpacing: '0.5px',
+                                  display: 'flex',
+                                  textAlign: 'center',
+                                },
+                                children: marca_modulo ?? 'Módulo',
+                              },
+                            },
+                          ],
+                        },
+                      }] : []),
+                      ...(inversorPng ? [{
+                        type: 'div',
+                        props: {
+                          style: {
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 8,
+                            flex: 1,
+                          },
+                          children: [
+                            {
+                              type: 'img',
+                              props: {
+                                src: inversorPng,
+                                height: 260,
+                                style: { objectFit: 'contain', display: 'flex' },
+                              },
+                            },
+                            {
+                              type: 'div',
+                              props: {
+                                style: {
+                                  fontFamily: 'Montserrat',
+                                  fontWeight: 700,
+                                  fontSize: 18,
+                                  color: '#0a1f3d',
+                                  letterSpacing: '0.5px',
+                                  display: 'flex',
+                                  textAlign: 'center',
+                                },
+                                children: marca_inversor ?? 'Inversor',
+                              },
+                            },
+                          ],
+                        },
+                      }] : []),
+                    ],
                   },
                 }] : []),
                 {
@@ -397,7 +503,7 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                     style: {
                       fontFamily: 'Montserrat',
                       fontWeight: 900,
-                      fontSize: 72,
+                      fontSize: 88,
                       color: '#0a1f3d',
                       textAlign: 'center',
                       lineHeight: 1,
@@ -433,7 +539,7 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                       type: 'img',
                       props: {
                         src: logoPng,
-                        height: 80,
+                        height: 140,
                         style: { objectFit: 'contain', display: 'flex' },
                       },
                     }
@@ -476,10 +582,10 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
             props: {
               style: {
                 position: 'absolute',
-                top: 30,
-                left: 30,
-                width: 130,
-                height: 130,
+                top: 25,
+                left: 25,
+                width: 160,
+                height: 160,
                 borderRadius: '50%',
                 background: 'radial-gradient(circle, #ffd23f 0%, #f59e0b 100%)',
                 display: 'flex',
@@ -493,7 +599,7 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                   style: {
                     fontFamily: 'Montserrat',
                     fontWeight: 900,
-                    fontSize: 90,
+                    fontSize: 110,
                     color: '#0a1f3d',
                     lineHeight: 1,
                     display: 'flex',
