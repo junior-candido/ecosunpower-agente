@@ -7,9 +7,29 @@
 
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
-import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
+
+// Sharp eh opcional — usado so pra converter WebP/GIF -> PNG no banner.
+// Se nao disponivel (binario Linux ausente em alguns Dockers), banner ainda
+// funciona desde que assets sejam PNG/JPEG reais.
+type SharpFn = (input: Buffer) => { png(): { toBuffer(): Promise<Buffer> } };
+let sharpFn: SharpFn | null = null;
+let sharpAttempted = false;
+
+async function getSharp(): Promise<SharpFn | null> {
+  if (sharpAttempted) return sharpFn;
+  sharpAttempted = true;
+  try {
+    const mod = await import('sharp');
+    sharpFn = (mod.default ?? mod) as unknown as SharpFn;
+    console.log('[banner-renderer] sharp disponivel — converte WebP/GIF -> PNG');
+  } catch (err) {
+    console.warn('[banner-renderer] sharp NAO disponivel — WebP/GIF nao serao convertidos:', (err as Error).message);
+    sharpFn = null;
+  }
+  return sharpFn;
+}
 
 // =========================================================================
 // FONTES — cache em memoria (fetch 1x do Google Fonts CDN)
@@ -82,12 +102,22 @@ async function loadAssetAsDataUrl(basenameOrFile: string): Promise<string | null
   for (const filename of candidates) {
     const full = path.join(ASSETS_DIR, filename);
     try {
-      let buf = fs.readFileSync(full);
+      let buf: Buffer = fs.readFileSync(full);
       let detected = detectMime(buf);
       if (!detected) continue;
       // Satori suporta PNG e JPEG. WebP/GIF nao — converte pra PNG via sharp.
+      // Sharp e opcional (optionalDependencies). Se ausente, retorna o WebP sem
+      // converter e satori vai falhar — fallback: pular asset.
       if (detected.mime === 'image/webp' || detected.mime === 'image/gif') {
-        buf = await sharp(buf).png().toBuffer();
+        const s = await getSharp();
+        if (!s) {
+          console.warn(`[banner-renderer] sharp indisponivel, pulando ${filename} (WebP/GIF nao convertido)`);
+          continue;
+        }
+        // Buffer.from normaliza Buffer<NonSharedBufferLike> de sharp pra Buffer
+        // generico (evita erro TS de SharedArrayBuffer vs ArrayBuffer).
+        const converted = await s(buf).png().toBuffer();
+        buf = Buffer.from(converted);
         detected = { mime: 'image/png', ext: 'png' };
         console.log(`[banner-renderer] convertido WebP/GIF -> PNG: ${filename}`);
       }

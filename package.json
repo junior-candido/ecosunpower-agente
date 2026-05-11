@@ -30,8 +30,10 @@
     "puppeteer": "^24.43.1",
     "qrcode": "^1.5.4",
     "satori": "^0.26.0",
-    "sharp": "^0.34.5",
     "zod": "^4.3.6"
+  },
+  "optionalDependencies": {
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
