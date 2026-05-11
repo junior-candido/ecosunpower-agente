@@ -176,8 +176,9 @@ export interface BannerMegaOfertaInput {
   marca_inversor?: string;     // ex: "Sungrow SG10RT"
   tipo_inversor?: 'micro' | 'string' | 'otimizado' | string;  // microinversor / string / otimizado (SolarEdge)
   tipo_estrutura?: string;     // ex: "Telhado cerâmico", "Solo", "Laje", "Carport"
-  financiamento?: string;      // default "Financiamento BV ou Santander". String vazia esconde.
-  parcelamento?: string;       // default "Ou em até 24x no cartão". String vazia esconde.
+  financiamento?: string;      // default "BV ou Santander · 24x no cartao". String vazia esconde.
+  parcelamento?: string;       // default "Fale com a gente pra melhor taxa". String vazia esconde.
+  inclui_projeto?: string;     // default "Projeto + homologação na concessionária". String vazia esconde.
   width?: number;              // default 1080 (feed Instagram/Facebook)
   height?: number;             // default 1350 (4:5 vertical)
 }
@@ -207,8 +208,9 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
     marca_inversor,
     tipo_inversor,
     tipo_estrutura,
-    financiamento = 'BV ou Santander · 24x no cartão',
+    financiamento = 'BV · Santander · Solfácil · 24x no cartão',
     parcelamento = 'Fale com a gente pra melhor taxa',
+    inclui_projeto = 'Projeto + homologação na concessionária',
     width = 1080,
     height = 1350,
   } = input;
@@ -399,7 +401,7 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                       justifyContent: 'space-around',
                       alignItems: 'center',
                       width: '100%',
-                      height: 320,
+                      height: 240,
                       gap: 20,
                     },
                     children: [
@@ -419,7 +421,7 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                               type: 'img',
                               props: {
                                 src: moduloPng,
-                                height: 260,
+                                height: 200,
                                 style: { objectFit: 'contain', display: 'flex' },
                               },
                             },
@@ -457,7 +459,7 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                               type: 'img',
                               props: {
                                 src: inversorPng,
-                                height: 260,
+                                height: 200,
                                 style: { objectFit: 'contain', display: 'flex' },
                               },
                             },
@@ -578,31 +580,60 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                   type: 'div',
                   props: {
                     style: {
-                      fontFamily: 'Montserrat',
-                      fontWeight: 700,
-                      fontSize: 22,
-                      color: '#0a1f3d',
-                      textAlign: 'center',
                       display: 'flex',
                       justifyContent: 'center',
-                      marginTop: 8,
+                      marginTop: 10,
                     },
-                    children: `💳 ${financiamento}`,
+                    children: {
+                      type: 'div',
+                      props: {
+                        style: {
+                          fontFamily: 'Montserrat',
+                          fontWeight: 800,
+                          fontSize: 22,
+                          color: '#ffffff',
+                          background: 'linear-gradient(180deg, #0c4a6e 0%, #075985 100%)',
+                          padding: '12px 24px',
+                          borderRadius: 999,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          boxShadow: '0 4px 12px rgba(12, 74, 110, 0.4)',
+                        },
+                        children: `💳 ${financiamento}`,
+                      },
+                    },
                   },
                 }] : []),
                 ...(parcelamento ? [{
                   type: 'div',
                   props: {
                     style: {
-                      fontFamily: 'Montserrat',
-                      fontWeight: 600,
-                      fontSize: 22,
-                      color: '#fbbf24',
-                      textAlign: 'center',
                       display: 'flex',
                       justifyContent: 'center',
+                      marginTop: 8,
                     },
-                    children: `📞 ${parcelamento}`,
+                    children: {
+                      type: 'div',
+                      props: {
+                        style: {
+                          fontFamily: 'Montserrat',
+                          fontWeight: 900,
+                          fontSize: 24,
+                          color: '#0a1f3d',
+                          background: 'linear-gradient(180deg, #ffd23f 0%, #f59e0b 100%)',
+                          padding: '14px 28px',
+                          borderRadius: 999,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          boxShadow: '0 6px 18px rgba(245, 158, 11, 0.5)',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.3px',
+                        },
+                        children: `📞 ${parcelamento}`,
+                      },
+                    },
                   },
                 }] : []),
               ],
