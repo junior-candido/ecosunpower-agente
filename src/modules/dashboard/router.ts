@@ -14,6 +14,8 @@
 
 import express, { Router, type Request, type Response } from 'express';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // Helper local pra mensagens de erro inline (sem importar das views pra
 // evitar dependencia circular).
 function escapeHtmlSimple(s: string): string {
@@ -118,6 +120,31 @@ export function createDashboardRouter(
       console.error('[dashboard/home]', err);
       res.status(500).send(`<h2>Erro ao carregar dashboard</h2><pre>${(err as Error).message}</pre>`);
     }
+  });
+
+  // POST /cadencia/fechou — marca lead como cliente (status=transferido + opt_out=true).
+  // Remove da cadência automaticamente.
+  router.post('/cadencia/fechou', async (req: Request, res: Response) => {
+    const id = String(req.body?.id ?? '').trim();
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const { error } = await supabase
+      .from('leads')
+      .update({ status: 'transferido', opt_out: true, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    res.redirect('/dashboard/cadencia');
+  });
+
+  // POST /cadencia/optout — marca lead como opt_out (não atende mais).
+  router.post('/cadencia/optout', async (req: Request, res: Response) => {
+    const id = String(req.body?.id ?? '').trim();
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const { error } = await supabase
+      .from('leads')
+      .update({ opt_out: true, eva_active: false, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    res.redirect('/dashboard/cadencia');
   });
 
   // Cadência: acompanhamento da reativação de leads da base terceirizada.

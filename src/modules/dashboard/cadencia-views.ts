@@ -98,6 +98,18 @@ export function renderCadenciaPage(input: CadenciaPageInput): string {
           <td class="px-4 py-3 text-xs text-slate-500">
             ${r.motivo_perda_anterior ? escapeHtml(r.motivo_perda_anterior).slice(0, 60) : '—'}
           </td>
+          <td class="px-4 py-3">
+            ${r.cadencia_status === 'cliente' || r.cadencia_status === 'opt_out'
+              ? '<span class="text-xs text-slate-400">—</span>'
+              : `<form method="POST" action="/dashboard/cadencia/fechou" class="inline" onsubmit="return confirm('Marcar ${escapeHtml(r.name).replace(/'/g, "\\'")}  como cliente fechado? Remove da cadência.')">
+                  <input type="hidden" name="id" value="${escapeHtml(r.id)}">
+                  <button type="submit" class="text-xs px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition font-medium">✅ Fechou</button>
+                </form>
+                <form method="POST" action="/dashboard/cadencia/optout" class="inline ml-1" onsubmit="return confirm('Marcar ${escapeHtml(r.name).replace(/'/g, "\\'")}  como opt-out? Para de receber mensagens.')">
+                  <input type="hidden" name="id" value="${escapeHtml(r.id)}">
+                  <button type="submit" class="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition font-medium">🚪 Opt-out</button>
+                </form>`}
+          </td>
         </tr>`).join('');
 
   const statusFilter = (status: string, label: string, count: number) => {
@@ -156,6 +168,7 @@ export function renderCadenciaPage(input: CadenciaPageInput): string {
             <th class="px-4 py-3">Consumo</th>
             <th class="px-4 py-3">Histórico</th>
             <th class="px-4 py-3">Motivo perda anterior</th>
+            <th class="px-4 py-3">Ações</th>
           </tr>
         </thead>
         <tbody>${tableRows}</tbody>

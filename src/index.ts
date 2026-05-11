@@ -1323,6 +1323,53 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // /fechei <nome ou telefone>: marca lead como cliente fechado.
+  // status=transferido + opt_out=true => removido da cadencia automaticamente.
+  async function tryHandleFecheiCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const t = text.trim();
+    const m = t.match(/^\/fechei\s+(.+)$/i);
+    if (!m) return false;
+    const query = m[1].trim();
+
+    // Busca por telefone (digitos) ou nome (ilike)
+    const digitsOnly = query.replace(/\D/g, '');
+    let leads: Array<{ id: string; name: string; phone: string; status: string }> = [];
+    if (digitsOnly.length >= 8) {
+      // Busca por telefone — tolera 1-2 digitos a mais ou menos (normalizado)
+      const r = await supabase.getClient()
+        .from('leads')
+        .select('id, name, phone, status')
+        .ilike('phone', `%${digitsOnly.slice(-9)}`); // ultimos 9 digitos pra tolerar prefix
+      leads = r.data ?? [];
+    } else {
+      const r = await supabase.getClient()
+        .from('leads')
+        .select('id, name, phone, status')
+        .ilike('name', `%${query}%`)
+        .limit(5);
+      leads = r.data ?? [];
+    }
+
+    if (leads.length === 0) {
+      await sendText(from, `❌ Nenhum lead encontrado pra "${query}".\nUsa: /fechei NOME ou /fechei 5561999999999`);
+      return true;
+    }
+    if (leads.length > 1) {
+      const lista = leads.slice(0, 5).map((l, i) => `${i + 1}. ${l.name} (${l.phone}) — status: ${l.status}`).join('\n');
+      await sendText(from, `Achei ${leads.length} leads:\n\n${lista}\n\nUsa o telefone exato pra precisar: /fechei 5561999999999`);
+      return true;
+    }
+
+    const lead = leads[0];
+    await supabase.getClient()
+      .from('leads')
+      .update({ status: 'transferido', opt_out: true, updated_at: new Date().toISOString() })
+      .eq('id', lead.id);
+    await sendText(from, `✅ *${lead.name}* (${lead.phone}) marcado como cliente fechado.\nRemovido da cadência automaticamente. Eva não vai disparar mais template pra ele.`);
+    return true;
+  }
+
   // /reativar-base [N]: dispara template MARKETING 'reativacao_lead_v1' pra
   // ate N leads com acquisition_source='terceirizada_recovered' que ainda
   // nao foram reativados. Delay 30-90s entre cada pra nao acender alerta
@@ -1927,6 +1974,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /reativar-base — dispara template MARKETING pra leads frios da base terceirizada
     if (await tryHandleReativarBaseCommand(from, text)) return;
+
+    // /fechei — marca lead como cliente fechado (remove da cadência)
+    if (await tryHandleFecheiCommand(from, text)) return;
 
     // /banner — modo conversacional (captura respostas durante fluxo) + comando inicial
     if (await tryHandleBannerModeStep(from, text)) return;
