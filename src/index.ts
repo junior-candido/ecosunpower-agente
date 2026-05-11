@@ -949,10 +949,37 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       }
 
       case 'preco': {
-        const cleaned = t.replace(/[^\d.,]/g, '').replace(',', '.');
-        const n = parseFloat(cleaned);
-        if (!n || n < 100) {
-          await sendText(from, `❌ Preço invalido. Ex: 15443.17 ou 15443,17`);
+        const cleaned = t.replace(/[^\d.,]/g, '');
+        let n: number;
+        if (cleaned.includes(',')) {
+          // Formato BR: pontos = milhares, virgula = decimal
+          // Ex: 15.443,00 -> remove pontos -> 15443,00 -> troca virgula -> 15443.00
+          n = parseFloat(cleaned.replace(/\./g, '').replace(',', '.'));
+        } else {
+          // So pontos: heuristica
+          const parts = cleaned.split('.');
+          if (parts.length === 1) {
+            // Sem ponto: int puro
+            n = parseFloat(cleaned);
+          } else if (parts.length === 2 && parts[1].length === 3) {
+            // 1 ponto, 3 digitos depois: milhar (ex: 15.443 = 15443)
+            n = parseFloat(parts.join(''));
+          } else if (parts.length === 2) {
+            // 1 ponto, 1-2 digitos depois: decimal (ex: 15443.17, 17.5)
+            n = parseFloat(cleaned);
+          } else {
+            // 2+ pontos: ultimo eh decimal se tem 1-2 digitos, resto eh milhar
+            const last = parts[parts.length - 1];
+            if (last.length <= 2) {
+              n = parseFloat(parts.slice(0, -1).join('') + '.' + last);
+            } else {
+              // Todos pontos sao milhares
+              n = parseFloat(parts.join(''));
+            }
+          }
+        }
+        if (!Number.isFinite(n) || n < 100) {
+          await sendText(from, `❌ Preço invalido. Tenta formatos: 15443.17, 15443,17, 15.443,17, 15443`);
           return true;
         }
         state.data.preco = n;
