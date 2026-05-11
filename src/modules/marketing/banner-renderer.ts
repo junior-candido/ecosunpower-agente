@@ -91,23 +91,29 @@ function detectMime(buf: Buffer): { mime: string; ext: string } | null {
   return null;
 }
 
-// Extrai primeira palavra alfabetica com 3+ letras da marca (ex: "Risen 700W HJT" -> "risen").
-// Usado pra fazer lookup de arquivo por marca: marca_modulo "LONGi Hi-MO X10" -> modulo-longi.png.
-function extractMarcaKey(marca: string | undefined): string | null {
-  if (!marca) return null;
-  const m = marca.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').match(/[a-z]{3,}/);
-  return m?.[0] ?? null;
+// Extrai TODAS palavras alfabeticas com 2+ letras da marca, em ordem.
+// Ex: "JA Solar 590W" -> ["ja", "solar"]; "Risen 700W HJT" -> ["risen", "hjt"].
+function extractMarcaKeys(marca: string | undefined): string[] {
+  if (!marca) return [];
+  const normalized = marca.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  return normalized.match(/[a-z]{2,}/g) ?? [];
 }
 
 // Resolve qual arquivo carregar baseado em (categoria, marca).
-// Ex: ('modulo', 'Risen 700W HJT') -> tenta 'modulo-risen', fallback 'modulo'.
+// Tenta cada "palavra" da marca como key, com separador hifen OU ponto:
+//   "Hoymiles 2,25 kW" -> tenta inversor-hoymiles.png, inversor.hoymiles.png
+//   "JA Solar 590W" -> tenta inversor-ja.png, inversor.ja.png, depois solar...
+// Fallback pro arquivo generico (modulo.png ou inversor.png).
 async function findAssetByMarca(categoria: 'modulo' | 'inversor' | 'logo', marca?: string): Promise<string | null> {
-  const key = extractMarcaKey(marca);
-  if (key) {
-    const specific = await loadAssetAsDataUrl(`${categoria}-${key}.png`);
-    if (specific) return specific;
+  const keys = extractMarcaKeys(marca);
+  for (const key of keys) {
+    // Tenta separador hifen (recomendado) primeiro, depois ponto (tolerancia)
+    const hyphen = await loadAssetAsDataUrl(`${categoria}-${key}.png`);
+    if (hyphen) return hyphen;
+    const dot = await loadAssetAsDataUrl(`${categoria}.${key}.png`);
+    if (dot) return dot;
   }
-  // Fallback pro arquivo generico (modulo.png, inversor.png)
+  // Fallback pro arquivo generico
   return await loadAssetAsDataUrl(`${categoria}.png`);
 }
 
