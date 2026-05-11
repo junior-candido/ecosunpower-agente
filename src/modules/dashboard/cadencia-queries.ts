@@ -76,24 +76,27 @@ export async function listCadenciaLeads(supabase: SupabaseClient): Promise<LeadC
     const messages = conv?.messages ?? [];
     const has_proposal = false; // TODO: cruzar com tabela proposals quando relationship existir
 
-    // Inbound messages = client respondeu (role='user')
+    // Inbound messages APENAS APÓS o template ter sido enviado. Mensagens
+    // antigas da terceirizada nao contam como "resposta ao template".
     const inbounds = messages.filter((m) => m.role === 'user');
     const has_inbound_after_template = sent_at
       ? inbounds.some((m) => m.created_at && new Date(m.created_at).getTime() > new Date(sent_at).getTime())
-      : inbounds.length > 0;
+      : false;
 
-    // Calcula cadencia_status
+    // Calcula cadencia_status — opt_out e cliente sao terminais e ignoram template.
+    // Caso contrario, sem template = sempre 'aguardando'.
     let cadencia_status: CadenciaStatus = 'aguardando';
     if (l.opt_out) cadencia_status = 'opt_out';
-    else if (has_proposal) cadencia_status = 'proposta_enviada';
     else if (l.status === 'transferido') cadencia_status = 'cliente';
-    else if (l.status === 'qualificado') cadencia_status = 'qualificando';
+    else if (!sent_at) cadencia_status = 'aguardando';
+    else if (has_proposal) cadencia_status = 'proposta_enviada';
     else if (has_inbound_after_template) {
-      const lastInbound = inbounds[inbounds.length - 1];
+      const inboundsAfter = inbounds.filter((m) => m.created_at && new Date(m.created_at).getTime() > new Date(sent_at!).getTime());
+      const lastInbound = inboundsAfter[inboundsAfter.length - 1];
       const lastTime = lastInbound?.created_at ? new Date(lastInbound.created_at).getTime() : 0;
-      const isQualifying = l.status === 'qualificando' && (now - lastTime) < 7 * 24 * 60 * 60 * 1000;
+      const isQualifying = (l.status === 'qualificando' || l.status === 'qualificado') && (now - lastTime) < 7 * 24 * 60 * 60 * 1000;
       cadencia_status = isQualifying ? 'qualificando' : 'respondeu';
-    } else if (sent_at) {
+    } else {
       const daysSince = (now - new Date(sent_at).getTime()) / (1000 * 60 * 60 * 24);
       cadencia_status = daysSince > 7 ? 'sem_resposta_7d' : 'enviado_sem_resposta';
     }
