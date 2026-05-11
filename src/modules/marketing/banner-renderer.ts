@@ -176,6 +176,8 @@ export interface BannerMegaOfertaInput {
   marca_inversor?: string;     // ex: "Sungrow SG10RT"
   tipo_inversor?: 'micro' | 'string' | 'otimizado' | string;  // microinversor / string / otimizado (SolarEdge)
   tipo_estrutura?: string;     // ex: "Telhado cerâmico", "Solo", "Laje", "Carport"
+  financiamento?: string;      // default "Financiamento BV ou Santander". String vazia esconde.
+  parcelamento?: string;       // default "Ou em até 24x no cartão". String vazia esconde.
   width?: number;              // default 1080 (feed Instagram/Facebook)
   height?: number;             // default 1350 (4:5 vertical)
 }
@@ -205,6 +207,8 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
     marca_inversor,
     tipo_inversor,
     tipo_estrutura,
+    financiamento = 'BV ou Santander · 24x no cartão',
+    parcelamento = 'Fale com a gente pra melhor taxa',
     width = 1080,
     height = 1350,
   } = input;
@@ -570,6 +574,37 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                     children: `R$ ${formatBRL(preco_brl)}`,
                   },
                 },
+                ...(financiamento ? [{
+                  type: 'div',
+                  props: {
+                    style: {
+                      fontFamily: 'Montserrat',
+                      fontWeight: 700,
+                      fontSize: 22,
+                      color: '#0a1f3d',
+                      textAlign: 'center',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      marginTop: 8,
+                    },
+                    children: `💳 ${financiamento}`,
+                  },
+                }] : []),
+                ...(parcelamento ? [{
+                  type: 'div',
+                  props: {
+                    style: {
+                      fontFamily: 'Montserrat',
+                      fontWeight: 600,
+                      fontSize: 22,
+                      color: '#fbbf24',
+                      textAlign: 'center',
+                      display: 'flex',
+                      justifyContent: 'center',
+                    },
+                    children: `📞 ${parcelamento}`,
+                  },
+                }] : []),
               ],
             },
           },
