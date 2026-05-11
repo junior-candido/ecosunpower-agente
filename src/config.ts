@@ -44,6 +44,7 @@ const configSchema = z.object({
   metaWabaBusinessAccountId: z.string().optional(),   // WABA account ID (pra listar templates)
   metaWabaVerifyToken: z.string().optional(),         // challenge do subscribe do webhook WABA
   useWabaCloudApi: z.coerce.boolean().default(false), // flag: quando true, usa WABA; quando false, usa Evolution
+  igUserId: z.string().optional(),                    // IG-Scoped Business User ID (qualificador IG DM)
   replicateApiToken: z.string().optional(),
   tavusApiKey: z.string().optional(),
   tavusApiUrl: z.string().url().default('https://tavusapi.com'),
@@ -100,6 +101,7 @@ export function loadConfig(): Config {
     metaWabaBusinessAccountId: process.env.META_WABA_BUSINESS_ACCOUNT_ID || undefined,
     metaWabaVerifyToken: process.env.META_WABA_VERIFY_TOKEN || undefined,
     useWabaCloudApi: process.env.USE_WABA_CLOUD_API,
+    igUserId: process.env.IG_USER_ID || undefined,
     replicateApiToken: process.env.REPLICATE_API_TOKEN || undefined,
     tavusApiKey: process.env.TAVUS_API_KEY || undefined,
     tavusApiUrl: process.env.TAVUS_API_URL,

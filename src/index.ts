@@ -160,6 +160,23 @@ async function main() {
   // Ambos implementam a mesma interface (sendText, parseWebhook, etc).
   const messaging = metaWaba ?? evolution;
 
+  // Instagram Direct Messaging (qualificador IG DM).
+  // Reusa META_WABA_ACCESS_TOKEN + META_APP_SECRET (mesma App Meta).
+  // IG_USER_ID = IG-Scoped Business User ID (ex: 17841...). Diferente do
+  // META_INSTAGRAM_BUSINESS_ID (que eh o ID da conta business pra Graph API).
+  let igDirect: import('./modules/messaging/instagram-direct.js').InstagramDirectService | null = null;
+  if (config.metaWabaAccessToken && config.metaAppSecret && config.igUserId) {
+    const { InstagramDirectService } = await import('./modules/messaging/instagram-direct.js');
+    igDirect = new InstagramDirectService(
+      config.igUserId,
+      config.metaWabaAccessToken,
+      config.metaAppSecret,
+    );
+    console.log(`[ig] Service initialized for IG user: ${config.igUserId}`);
+  } else {
+    console.warn('[ig] Disabled: faltam IG_USER_ID, META_WABA_ACCESS_TOKEN ou META_APP_SECRET');
+  }
+
   const supabase = new SupabaseService(config);
   const brain = new Brain(config.anthropicApiKey, process.env.GOOGLE_REVIEW_URL ?? '');
   const vision = new VisionAnalyzer(config.anthropicApiKey);
@@ -2529,6 +2546,79 @@ Responda CURTO, maximo 2 paragrafos.`,
     });
 
     console.log('[waba] Webhook endpoints registered: GET/POST /webhook-waba');
+  }
+
+  // ==========================================================================
+  // INSTAGRAM DIRECT MESSAGING — qualificador IG DM
+  // ==========================================================================
+  // Configurar no Meta Developers app -> Instagram -> Messaging -> Webhook:
+  //   Callback URL: https://aula-aprendendo-agente-whatsapp.oigz6g.easypanel.host/webhook-ig
+  //   Verify token: o mesmo do META_WABA_VERIFY_TOKEN
+  //   Subscribe to: messages
+  if (igDirect) {
+    // GET: challenge de verificacao (Meta chama 1x quando voce configura o webhook).
+    app.get('/webhook-ig', (req, res) => {
+      const mode = req.query['hub.mode'] as string;
+      const token = req.query['hub.verify_token'] as string;
+      const challenge = req.query['hub.challenge'] as string;
+      if (mode === 'subscribe' && token === config.metaWabaVerifyToken) {
+        console.log('[ig] Webhook verified');
+        res.status(200).send(challenge);
+      } else {
+        console.warn(`[ig] Challenge failed: mode=${mode}, token_match=${token === config.metaWabaVerifyToken}`);
+        res.status(403).send('Forbidden');
+      }
+    });
+
+    // POST: recebe eventos de mensagens IG DM.
+    app.post('/webhook-ig', async (req, res) => {
+      const signature = req.headers['x-hub-signature-256'] as string | undefined;
+      const rawBody = (req as unknown as { rawBody?: string }).rawBody ?? '';
+
+      if (!igDirect!.validateSignature(rawBody, signature)) {
+        console.warn('[ig] Invalid HMAC signature, rejecting webhook');
+        res.status(403).json({ error: 'Invalid signature' });
+        return;
+      }
+
+      // Ack imediato pra Meta nao retentar.
+      res.status(200).send('OK');
+
+      const body = req.body as {
+        entry?: Array<{
+          messaging?: Array<{
+            sender: { id: string };
+            message?: {
+              text?: string;
+              quick_reply?: { payload: string };
+            };
+          }>;
+        }>;
+      };
+
+      for (const entry of body.entry ?? []) {
+        for (const evt of entry.messaging ?? []) {
+          const senderId = evt.sender.id;
+          const text = evt.message?.quick_reply?.payload ?? evt.message?.text ?? '';
+          if (!text) continue;
+
+          try {
+            const { handleIgMessage } = await import('./modules/marketing/ig-qualifier-handler.js');
+            await handleIgMessage({
+              supabase: supabase.getClient(),
+              igDirect: igDirect!,
+              senderId,
+              text,
+              sendZapAlert: (msg: string) => sendText(config.engineerPhone, msg),
+            });
+          } catch (err) {
+            console.error('[ig] handler error:', (err as Error).message);
+          }
+        }
+      }
+    });
+
+    console.log('[ig] Webhook endpoints registered: GET/POST /webhook-ig');
   }
 
   app.post('/webhook', async (req, res) => {
