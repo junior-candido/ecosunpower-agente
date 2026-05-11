@@ -822,7 +822,12 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
   // Estado conversacional do /banner — in-memory, limpa apos 30min de inatividade.
   interface BannerModeState {
-    step: 'titulo' | 'kit' | 'kwh' | 'preco' | 'modulo' | 'inversor' | 'tipo' | 'estrutura' | 'confirm';
+    step: 'titulo' | 'kit' | 'kwh' | 'preco'
+        | 'modulo' | 'modulo_livre'
+        | 'inversor' | 'inversor_livre'
+        | 'tipo'
+        | 'estrutura' | 'estrutura_livre'
+        | 'confirm';
     data: {
       titulo?: string;
       kit?: number;
@@ -1001,66 +1006,260 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           return true;
         }
         state.data.preco = n;
-        state.step = 'modulo';
-        await sendText(from, `*5/8 — Marca/modelo do módulo* (ou "pular")\nEx: "Risen 700W HJT" ou "LONGi Hi-MO X10"`);
-        return true;
+        return await askModulo(from, state);
       }
 
-      case 'modulo':
-        if (!pular) state.data.marca_modulo = t;
-        state.step = 'inversor';
-        await sendText(from, `*6/8 — Marca/modelo do inversor* (ou "pular")\nEx: "Hoymiles 2.25 kW" ou "Sungrow SG10RT"`);
-        return true;
+      case 'modulo': {
+        // Mapeia id de lista clicada
+        const modulosMap: Record<string, string> = {
+          bm_risen: 'Risen 700W HJT',
+          bm_longi: 'LONGi Hi-MO X10',
+          bm_ja: 'JA Solar 590W',
+          bm_trina: 'Trina Solar',
+        };
+        if (modulosMap[t]) {
+          state.data.marca_modulo = modulosMap[t];
+          return await askInversor(from, state);
+        }
+        if (t === 'bm_outra') {
+          state.step = 'modulo_livre';
+          await sendText(from, `Digita a marca/modelo do módulo:\nEx: "Canadian Solar 555W"`);
+          return true;
+        }
+        if (t === 'bm_pular') {
+          return await askInversor(from, state);
+        }
+        // Se digitou texto sem clicar botão, aceita
+        if (!pular && t.length > 1) state.data.marca_modulo = t;
+        return await askInversor(from, state);
+      }
 
-      case 'inversor':
+      case 'modulo_livre':
+        if (!pular) state.data.marca_modulo = t;
+        return await askInversor(from, state);
+
+      case 'inversor': {
+        const inversorMap: Record<string, string> = {
+          bi_hoymiles: 'Hoymiles 2,25 kW',
+          bi_sungrow: 'Sungrow SG10RT',
+          bi_deye: 'Deye SUN-10K-SG04LP3',
+          bi_solis: 'Solis S6-GR1P',
+          bi_huawei: 'Huawei SUN2000',
+          bi_solaredge: 'SolarEdge SE7600H',
+          bi_foxess: 'FoxESS T10-G3',
+        };
+        if (inversorMap[t]) {
+          state.data.marca_inversor = inversorMap[t];
+          return await askTipo(from, state);
+        }
+        if (t === 'bi_outra') {
+          state.step = 'inversor_livre';
+          await sendText(from, `Digita a marca/modelo do inversor:\nEx: "Growatt MIN 5000TL-X"`);
+          return true;
+        }
+        if (t === 'bi_pular') {
+          return await askTipo(from, state);
+        }
+        if (!pular && t.length > 1) state.data.marca_inversor = t;
+        return await askTipo(from, state);
+      }
+
+      case 'inversor_livre':
         if (!pular) state.data.marca_inversor = t;
-        state.step = 'tipo';
-        await sendText(from, `*7/8 — Tipo de inversor?*\nResponde: *micro*, *string* ou *otimizado* (ou "pular")`);
-        return true;
+        return await askTipo(from, state);
 
       case 'tipo': {
-        if (!pular) {
+        const tipoMap: Record<string, 'micro' | 'string' | 'otimizado'> = {
+          bt_micro: 'micro',
+          bt_string: 'string',
+          bt_otim: 'otimizado',
+        };
+        if (tipoMap[t]) {
+          state.data.tipo_inversor = tipoMap[t];
+        } else if (!pular) {
           const tipo = t.toLowerCase();
           if (tipo === 'micro' || tipo === 'string' || tipo === 'otimizado') {
             state.data.tipo_inversor = tipo;
-          } else {
-            await sendText(from, `❌ Use *micro*, *string* ou *otimizado* (ou "pular")`);
-            return true;
           }
         }
-        state.step = 'estrutura';
-        await sendText(from, `*8/8 — Tipo de estrutura/telhado* (ou "pular")\nEx: "Telhado cerâmico", "Solo", "Laje", "Carport"`);
-        return true;
+        return await askEstrutura(from, state);
       }
 
       case 'estrutura': {
-        if (!pular) state.data.tipo_estrutura = t;
-        state.step = 'confirm';
-        const d = state.data;
-        const resumo = `📋 *Resumo do banner:*\n\n` +
-          `• Título: ${d.titulo}\n` +
-          `• Kit: ${d.kit} placas\n` +
-          `• Geração: ${d.kwh} kWh/mês\n` +
-          `• Preço: R$ ${(d.preco ?? 0).toFixed(2).replace('.', ',')}\n` +
-          (d.marca_modulo ? `• Módulo: ${d.marca_modulo}\n` : '') +
-          (d.marca_inversor ? `• Inversor: ${d.marca_inversor}${d.tipo_inversor ? ` (${d.tipo_inversor})` : ''}\n` : '') +
-          (d.tipo_estrutura ? `• Estrutura: ${d.tipo_estrutura}\n` : '') +
-          `\nResponde *gerar* pra criar o banner, *cancelar* pra abortar.`;
-        await sendText(from, resumo);
-        return true;
+        const estruturaMap: Record<string, string> = {
+          be_ceramico: 'Telhado cerâmico',
+          be_fibrocimento: 'Telhado fibrocimento',
+          be_solo: 'Solo',
+          be_laje: 'Laje',
+          be_carport: 'Carport',
+        };
+        if (estruturaMap[t]) {
+          state.data.tipo_estrutura = estruturaMap[t];
+        } else if (t === 'be_outra') {
+          state.step = 'estrutura_livre';
+          await sendText(from, `Digita o tipo de estrutura/telhado:`);
+          return true;
+        } else if (t === 'be_pular') {
+          // skip
+        } else if (!pular && t.length > 1) {
+          state.data.tipo_estrutura = t;
+        }
+        return await askConfirm(from, state);
       }
 
+      case 'estrutura_livre':
+        if (!pular) state.data.tipo_estrutura = t;
+        return await askConfirm(from, state);
+
       case 'confirm':
-        if (/^gerar|sim|ok|confirmar$/i.test(t)) {
+        if (t === 'bnr_gerar' || /^gerar|sim|ok|confirmar$/i.test(t)) {
           bannerModes.delete(from);
           await sendText(from, `🎨 Gerando banner...`);
           await generateAndSendBanner(from, state);
+        } else if (t === 'bnr_cancelar') {
+          bannerModes.delete(from);
+          await sendText(from, `❌ Banner cancelado.`);
         } else {
-          await sendText(from, `Responde *gerar* pra criar ou *cancelar* pra abortar.`);
+          await askConfirm(from, state);
         }
         return true;
     }
     return false;
+  }
+
+  // Helpers pra avançar steps com botões/listas interativas
+  async function askModulo(from: string, state: BannerModeState): Promise<boolean> {
+    state.step = 'modulo';
+    if (metaWaba) {
+      try {
+        await metaWaba.sendInteractiveList(from, {
+          header: '5/8 Módulo',
+          body: 'Qual a marca do módulo?',
+          buttonText: 'Escolher',
+          sections: [{
+            title: 'Marcas',
+            rows: [
+              { id: 'bm_risen', title: 'Risen 700W HJT', description: 'Heterojunção bifacial' },
+              { id: 'bm_longi', title: 'LONGi Hi-MO X10', description: 'Premium' },
+              { id: 'bm_ja', title: 'JA Solar 590W' },
+              { id: 'bm_trina', title: 'Trina Solar' },
+              { id: 'bm_outra', title: '✏️ Outra', description: 'Digitar marca/modelo livre' },
+              { id: 'bm_pular', title: '⏭️ Pular' },
+            ],
+          }],
+        });
+        return true;
+      } catch { /* fallback */ }
+    }
+    await sendText(from, `*5/8 — Marca do módulo* (ou "pular")\nEx: "Risen 700W HJT"`);
+    return true;
+  }
+
+  async function askInversor(from: string, state: BannerModeState): Promise<boolean> {
+    state.step = 'inversor';
+    if (metaWaba) {
+      try {
+        await metaWaba.sendInteractiveList(from, {
+          header: '6/8 Inversor',
+          body: 'Qual a marca do inversor?',
+          buttonText: 'Escolher',
+          sections: [{
+            title: 'Marcas',
+            rows: [
+              { id: 'bi_hoymiles', title: 'Hoymiles', description: 'Microinversor 2,25 kW' },
+              { id: 'bi_sungrow', title: 'Sungrow', description: 'Inversor string' },
+              { id: 'bi_deye', title: 'Deye', description: 'Híbrido SUN-10K' },
+              { id: 'bi_solis', title: 'Solis', description: 'S6-GR1P' },
+              { id: 'bi_huawei', title: 'Huawei', description: 'SUN2000' },
+              { id: 'bi_solaredge', title: 'SolarEdge', description: 'Otimizado SE7600H' },
+              { id: 'bi_foxess', title: 'FoxESS', description: 'T10-G3' },
+              { id: 'bi_outra', title: '✏️ Outra', description: 'Digitar marca/modelo livre' },
+              { id: 'bi_pular', title: '⏭️ Pular', description: 'Sem inversor especificado' },
+            ],
+          }],
+        });
+        return true;
+      } catch { /* fallback texto */ }
+    }
+    await sendText(from, `*6/8 — Inversor* (ou "pular")\nEx: "Hoymiles 2,25 kW"`);
+    return true;
+  }
+
+  async function askTipo(from: string, state: BannerModeState): Promise<boolean> {
+    state.step = 'tipo';
+    if (metaWaba) {
+      try {
+        await metaWaba.sendInteractiveButtons(
+          from,
+          '7/8 — Tipo de inversor?',
+          [
+            { id: 'bt_micro', title: 'Micro' },
+            { id: 'bt_string', title: 'String' },
+            { id: 'bt_otim', title: 'Otimizado' },
+          ],
+          'micro = Hoymiles / string = Sungrow / otimizado = SolarEdge',
+        );
+        return true;
+      } catch { /* fallback */ }
+    }
+    await sendText(from, `*7/8 — Tipo de inversor?*\nResponde: micro, string ou otimizado`);
+    return true;
+  }
+
+  async function askEstrutura(from: string, state: BannerModeState): Promise<boolean> {
+    state.step = 'estrutura';
+    if (metaWaba) {
+      try {
+        await metaWaba.sendInteractiveList(from, {
+          header: '8/8 Estrutura',
+          body: 'Qual tipo de estrutura/telhado?',
+          buttonText: 'Escolher',
+          sections: [{
+            title: 'Tipos',
+            rows: [
+              { id: 'be_ceramico', title: 'Telhado cerâmico' },
+              { id: 'be_fibrocimento', title: 'Telhado fibrocimento' },
+              { id: 'be_solo', title: 'Solo' },
+              { id: 'be_laje', title: 'Laje' },
+              { id: 'be_carport', title: 'Carport' },
+              { id: 'be_outra', title: '✏️ Outra', description: 'Digitar tipo livre' },
+              { id: 'be_pular', title: '⏭️ Pular' },
+            ],
+          }],
+        });
+        return true;
+      } catch { /* fallback */ }
+    }
+    await sendText(from, `*8/8 — Estrutura/telhado* (ou "pular")`);
+    return true;
+  }
+
+  async function askConfirm(from: string, state: BannerModeState): Promise<boolean> {
+    state.step = 'confirm';
+    const d = state.data;
+    const resumo = `📋 *Resumo:*\n\n` +
+      `• Título: ${d.titulo}\n` +
+      `• Kit: ${d.kit} placas\n` +
+      `• Geração: ${d.kwh} kWh/mês\n` +
+      `• Preço: R$ ${(d.preco ?? 0).toFixed(2).replace('.', ',')}\n` +
+      (d.marca_modulo ? `• Módulo: ${d.marca_modulo}\n` : '') +
+      (d.marca_inversor ? `• Inversor: ${d.marca_inversor}${d.tipo_inversor ? ` (${d.tipo_inversor})` : ''}\n` : '') +
+      (d.tipo_estrutura ? `• Estrutura: ${d.tipo_estrutura}\n` : '');
+    if (metaWaba) {
+      try {
+        await metaWaba.sendInteractiveButtons(
+          from,
+          resumo + '\nGerar agora?',
+          [
+            { id: 'bnr_gerar', title: '✅ Gerar' },
+            { id: 'bnr_cancelar', title: '❌ Cancelar' },
+          ],
+        );
+        return true;
+      } catch { /* fallback */ }
+    }
+    await sendText(from, resumo + `\nResponde *gerar* pra criar ou *cancelar* pra abortar.`);
+    return true;
   }
 
   // /banner: gera banner promocional Mega Oferta com satori + envia via WABA.
