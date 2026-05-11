@@ -826,6 +826,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         | 'modulo' | 'modulo_livre'
         | 'inversor' | 'inversor_livre'
         | 'tipo'
+        | 'bateria' | 'bateria_livre'
         | 'estrutura' | 'estrutura_livre'
         | 'confirm';
     data: {
@@ -835,7 +836,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       preco?: number;
       marca_modulo?: string;
       marca_inversor?: string;
-      tipo_inversor?: 'micro' | 'string' | 'otimizado';
+      marca_bateria?: string;
+      tipo_inversor?: 'micro' | 'string' | 'otimizado' | 'hibrido';
       tipo_estrutura?: string;
     };
     started_at: number;
@@ -934,7 +936,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     if (/^\/?banner\b/i.test(t)) {
       // Reinicia se digitar /banner de novo no meio
       bannerModes.set(from, { step: 'titulo', data: {}, started_at: Date.now() });
-      await sendText(from, `🔄 Reiniciando.\n\n*1/8 — Qual o título?*\nExemplo: "OFERTA DE MAIO"`);
+      await sendText(from, `🔄 Reiniciando.\n\n*1/9 — Qual o título?*\nExemplo: "OFERTA DE MAIO"`);
       return true;
     }
 
@@ -1069,21 +1071,49 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         return await askTipo(from, state);
 
       case 'tipo': {
-        const tipoMap: Record<string, 'micro' | 'string' | 'otimizado'> = {
+        const tipoMap: Record<string, 'micro' | 'string' | 'otimizado' | 'hibrido'> = {
           bt_micro: 'micro',
           bt_string: 'string',
           bt_otim: 'otimizado',
+          bt_hibrido: 'hibrido',
         };
         if (tipoMap[t]) {
           state.data.tipo_inversor = tipoMap[t];
         } else if (!pular) {
           const tipo = t.toLowerCase();
-          if (tipo === 'micro' || tipo === 'string' || tipo === 'otimizado') {
-            state.data.tipo_inversor = tipo;
+          if (tipo === 'micro' || tipo === 'string' || tipo === 'otimizado' || tipo === 'hibrido' || tipo === 'híbrido') {
+            state.data.tipo_inversor = tipo === 'híbrido' ? 'hibrido' : tipo as 'micro' | 'string' | 'otimizado' | 'hibrido';
           }
         }
+        return await askBateria(from, state);
+      }
+
+      case 'bateria': {
+        const bateriaMap: Record<string, string> = {
+          bb_deye: 'Deye 5,1 kWh',
+          bb_byd: 'BYD HVS 5.1',
+          bb_pylontech: 'Pylontech US3000',
+          bb_growatt: 'Growatt ARK 2.5L',
+        };
+        if (bateriaMap[t]) {
+          state.data.marca_bateria = bateriaMap[t];
+          return await askEstrutura(from, state);
+        }
+        if (t === 'bb_outra') {
+          state.step = 'bateria_livre';
+          await sendText(from, `Digita a marca/modelo da bateria:\nEx: "Deye BATDE-51V-5.1kWh"`);
+          return true;
+        }
+        if (t === 'bb_pular') {
+          return await askEstrutura(from, state);
+        }
+        if (!pular && t.length > 1) state.data.marca_bateria = t;
         return await askEstrutura(from, state);
       }
+
+      case 'bateria_livre':
+        if (!pular) state.data.marca_bateria = t;
+        return await askEstrutura(from, state);
 
       case 'estrutura': {
         const estruturaMap: Record<string, string> = {
@@ -1189,20 +1219,51 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     state.step = 'tipo';
     if (metaWaba) {
       try {
-        await metaWaba.sendInteractiveButtons(
-          from,
-          '7/8 — Tipo de inversor?',
-          [
-            { id: 'bt_micro', title: 'Micro' },
-            { id: 'bt_string', title: 'String' },
-            { id: 'bt_otim', title: 'Otimizado' },
-          ],
-          'micro = Hoymiles / string = Sungrow / otimizado = SolarEdge',
-        );
+        await metaWaba.sendInteractiveList(from, {
+          header: '7/9 Tipo Inversor',
+          body: 'Qual o tipo de inversor?',
+          buttonText: 'Escolher',
+          sections: [{
+            title: 'Tipos',
+            rows: [
+              { id: 'bt_micro', title: 'Micro', description: 'Microinversor (Hoymiles)' },
+              { id: 'bt_string', title: 'String', description: 'On-grid tradicional (Sungrow, FoxESS)' },
+              { id: 'bt_otim', title: 'Otimizado', description: 'Com otimizadores (SolarEdge)' },
+              { id: 'bt_hibrido', title: 'Híbrido', description: 'Suporta bateria (Deye, Huawei)' },
+            ],
+          }],
+        });
         return true;
       } catch { /* fallback */ }
     }
-    await sendText(from, `*7/8 — Tipo de inversor?*\nResponde: micro, string ou otimizado`);
+    await sendText(from, `*7/9 — Tipo de inversor?*\nResponde: micro, string, otimizado ou hibrido`);
+    return true;
+  }
+
+  async function askBateria(from: string, state: BannerModeState): Promise<boolean> {
+    state.step = 'bateria';
+    if (metaWaba) {
+      try {
+        await metaWaba.sendInteractiveList(from, {
+          header: '8/9 Bateria (opcional)',
+          body: 'Tem bateria no kit? (Kit Anti Apagão / Híbrido)',
+          buttonText: 'Escolher',
+          sections: [{
+            title: 'Baterias',
+            rows: [
+              { id: 'bb_deye', title: 'Deye 5,1 kWh', description: 'BATDE-51V-5.1kWh BT' },
+              { id: 'bb_byd', title: 'BYD HVS 5.1', description: 'Battery-Box Premium' },
+              { id: 'bb_pylontech', title: 'Pylontech US3000', description: 'Lítio 3.5 kWh' },
+              { id: 'bb_growatt', title: 'Growatt ARK 2.5L', description: 'Modular' },
+              { id: 'bb_outra', title: '✏️ Outra', description: 'Digitar marca/modelo livre' },
+              { id: 'bb_pular', title: '⏭️ Pular', description: 'Sem bateria (on-grid puro)' },
+            ],
+          }],
+        });
+        return true;
+      } catch { /* fallback */ }
+    }
+    await sendText(from, `*8/9 — Bateria* (ou "pular")\nEx: "Deye 5,1 kWh", "BYD HVS"`);
     return true;
   }
 
@@ -1211,7 +1272,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     if (metaWaba) {
       try {
         await metaWaba.sendInteractiveList(from, {
-          header: '8/8 Estrutura',
+          header: '9/9 Estrutura',
           body: 'Qual tipo de estrutura/telhado?',
           buttonText: 'Escolher',
           sections: [{
@@ -1230,7 +1291,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         return true;
       } catch { /* fallback */ }
     }
-    await sendText(from, `*8/8 — Estrutura/telhado* (ou "pular")`);
+    await sendText(from, `*9/9 — Estrutura/telhado* (ou "pular")`);
     return true;
   }
 
@@ -1371,7 +1432,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       bannerModes.set(from, { step: 'titulo', data: {}, started_at: Date.now() });
       await sendText(from,
         `🎨 *Eva Banner Maker*\n\nVou te perguntar o que tem no banner. Pode mandar "cancelar" a qualquer momento.\n\n` +
-        `*1/8 — Qual o título?*\nExemplo: "OFERTA DE MAIO", "MEGA OFERTA", "ÚLTIMAS UNIDADES"`);
+        `*1/9 — Qual o título?*\nExemplo: "OFERTA DE MAIO", "MEGA OFERTA", "ÚLTIMAS UNIDADES"`);
       return true;
     }
 
@@ -1389,7 +1450,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     const precoStr = pick('preco') ?? pick('preço');
     const marca_modulo = pick('modulo') ?? pick('modulos') ?? pick('marca_modulo');
     const marca_inversor = pick('inversor') ?? pick('marca_inversor');
-    const tipo_inversor = pick('tipo_inversor') ?? pick('tipo'); // micro | string | otimizado
+    const marca_bateria = pick('bateria') ?? pick('marca_bateria');
+    const tipo_inversor = pick('tipo_inversor') ?? pick('tipo'); // micro | string | otimizado | hibrido
     const tipo_estrutura = pick('estrutura') ?? pick('telhado');
 
     if (!precoStr) {
@@ -1412,6 +1474,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         ...(cta_text ? { cta_text } : {}),
         ...(marca_modulo ? { marca_modulo } : {}),
         ...(marca_inversor ? { marca_inversor } : {}),
+        ...(marca_bateria ? { marca_bateria } : {}),
         ...(tipo_inversor ? { tipo_inversor } : {}),
         ...(tipo_estrutura ? { tipo_estrutura } : {}),
         kit_placas: kit,

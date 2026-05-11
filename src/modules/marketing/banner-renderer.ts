@@ -100,20 +100,32 @@ function extractMarcaKeys(marca: string | undefined): string[] {
 }
 
 // Resolve qual arquivo carregar baseado em (categoria, marca).
-// Tenta cada "palavra" da marca como key, com separador hifen OU ponto:
-//   "Hoymiles 2,25 kW" -> tenta inversor-hoymiles.png, inversor.hoymiles.png
-//   "JA Solar 590W" -> tenta inversor-ja.png, inversor.ja.png, depois solar...
-// Fallback pro arquivo generico (modulo.png ou inversor.png).
-async function findAssetByMarca(categoria: 'modulo' | 'inversor' | 'logo', marca?: string): Promise<string | null> {
+// Tenta COMBINACOES de 2 palavras primeiro (mais especifico), depois cada palavra:
+//   "Deye Hibrido 6kW" -> tenta inversor.deye-hibrido.png, inversor-deye-hibrido.png,
+//     inversor.deye.png, inversor.hibrido.png
+//   "JA Solar 590W" -> tenta inversor.ja-solar.png, inversor.ja.png, inversor.solar.png
+// Fallback pro arquivo generico (modulo.png / inversor.png / bateria.png).
+async function findAssetByMarca(categoria: 'modulo' | 'inversor' | 'bateria' | 'logo', marca?: string): Promise<string | null> {
   const keys = extractMarcaKeys(marca);
+
+  // 1. Tenta combinacoes de 2 palavras consecutivas (mais especifico)
+  for (let i = 0; i < keys.length - 1; i++) {
+    const combo = `${keys[i]}-${keys[i + 1]}`;
+    const hyphen = await loadAssetAsDataUrl(`${categoria}-${combo}.png`);
+    if (hyphen) return hyphen;
+    const dot = await loadAssetAsDataUrl(`${categoria}.${combo}.png`);
+    if (dot) return dot;
+  }
+
+  // 2. Tenta cada palavra individual
   for (const key of keys) {
-    // Tenta separador hifen (recomendado) primeiro, depois ponto (tolerancia)
     const hyphen = await loadAssetAsDataUrl(`${categoria}-${key}.png`);
     if (hyphen) return hyphen;
     const dot = await loadAssetAsDataUrl(`${categoria}.${key}.png`);
     if (dot) return dot;
   }
-  // Fallback pro arquivo generico
+
+  // 3. Fallback pro arquivo generico
   return await loadAssetAsDataUrl(`${categoria}.png`);
 }
 
@@ -173,12 +185,14 @@ export interface BannerMegaOfertaInput {
   preco_brl: number;           // ex: 17354.32
   cta_text?: string;           // ex: "Faça já o seu orçamento GRÁTIS"
   marca_modulo?: string;       // ex: "LONGi Hi-MO X10"
-  marca_inversor?: string;     // ex: "Sungrow SG10RT"
-  tipo_inversor?: 'micro' | 'string' | 'otimizado' | string;  // microinversor / string / otimizado (SolarEdge)
+  marca_inversor?: string;     // ex: "Sungrow SG10RT" ou "Deye Hibrido 6kW"
+  marca_bateria?: string;      // ex: "Deye 5kWh" ou "BYD HVS 5.1" — opcional, ativa modo kit apagao com 3 fotos
+  tipo_inversor?: 'micro' | 'string' | 'otimizado' | 'hibrido' | string;
   tipo_estrutura?: string;     // ex: "Telhado cerâmico", "Solo", "Laje", "Carport"
   financiamento?: string;      // default "BV ou Santander · 24x no cartao". String vazia esconde.
   parcelamento?: string;       // default "Fale com a gente pra melhor taxa". String vazia esconde.
   inclui_projeto?: string;     // default "Projeto + homologação na concessionária". String vazia esconde.
+  nota_rodape?: string;        // disclaimer sutil abaixo do preco (ex: "* Valor estimado, visita tecnica define").
   width?: number;              // default 1080 (feed Instagram/Facebook)
   height?: number;             // default 1350 (4:5 vertical)
 }
@@ -206,11 +220,13 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
     cta_text = 'Faça já o seu orçamento GRÁTIS',
     marca_modulo,
     marca_inversor,
+    marca_bateria,
     tipo_inversor,
     tipo_estrutura,
     financiamento = 'BV · Santander · Solfácil · 24x no cartão',
     parcelamento = 'Fale com a gente pra melhor taxa',
     inclui_projeto = 'Projeto + homologação na concessionária',
+    nota_rodape,
     width = 1080,
     height = 1350,
   } = input;
@@ -225,13 +241,15 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                        tipo_inversor ?? '';
     techParts.push(tipoLabel ? `${marca_inversor} ${tipoLabel}` : marca_inversor);
   }
+  if (marca_bateria) techParts.push(`🔋 ${marca_bateria}`);
   if (tipo_estrutura) techParts.push(tipo_estrutura);
   const techLine = techParts.join(' · ');
 
-  const [fonts, inversorPng, moduloPng, logoPng] = await Promise.all([
+  const [fonts, inversorPng, moduloPng, bateriaPng, logoPng] = await Promise.all([
     loadFonts(),
     findAssetByMarca('inversor', marca_inversor),
     findAssetByMarca('modulo', marca_modulo),
+    marca_bateria ? findAssetByMarca('bateria', marca_bateria) : Promise.resolve(null),
     loadAssetAsDataUrl('logo-ecosunpower.png'),
   ]);
 
@@ -391,8 +409,8 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                 zIndex: 2,
               },
               children: [
-                // Fotos: placa + inversor lado a lado no topo do card
-                ...((moduloPng || inversorPng) ? [{
+                // Fotos: placa + inversor (+ bateria opcional) lado a lado no topo do card
+                ...((moduloPng || inversorPng || bateriaPng) ? [{
                   type: 'div',
                   props: {
                     style: {
@@ -402,7 +420,7 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                       alignItems: 'center',
                       width: '100%',
                       height: 240,
-                      gap: 20,
+                      gap: bateriaPng ? 12 : 20,
                     },
                     children: [
                       ...(moduloPng ? [{
@@ -421,7 +439,7 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                               type: 'img',
                               props: {
                                 src: moduloPng,
-                                height: 200,
+                                height: bateriaPng ? 170 : 200,
                                 style: { objectFit: 'contain', display: 'flex' },
                               },
                             },
@@ -431,7 +449,7 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                                 style: {
                                   fontFamily: 'Montserrat',
                                   fontWeight: 700,
-                                  fontSize: 18,
+                                  fontSize: bateriaPng ? 15 : 18,
                                   color: '#0a1f3d',
                                   letterSpacing: '0.5px',
                                   display: 'flex',
@@ -459,7 +477,7 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                               type: 'img',
                               props: {
                                 src: inversorPng,
-                                height: 200,
+                                height: bateriaPng ? 170 : 200,
                                 style: { objectFit: 'contain', display: 'flex' },
                               },
                             },
@@ -469,13 +487,51 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                                 style: {
                                   fontFamily: 'Montserrat',
                                   fontWeight: 700,
-                                  fontSize: 18,
+                                  fontSize: bateriaPng ? 15 : 18,
                                   color: '#0a1f3d',
                                   letterSpacing: '0.5px',
                                   display: 'flex',
                                   textAlign: 'center',
                                 },
                                 children: marca_inversor ?? 'Inversor',
+                              },
+                            },
+                          ],
+                        },
+                      }] : []),
+                      ...(bateriaPng ? [{
+                        type: 'div',
+                        props: {
+                          style: {
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 8,
+                            flex: 1,
+                          },
+                          children: [
+                            {
+                              type: 'img',
+                              props: {
+                                src: bateriaPng,
+                                height: 170,
+                                style: { objectFit: 'contain', display: 'flex' },
+                              },
+                            },
+                            {
+                              type: 'div',
+                              props: {
+                                style: {
+                                  fontFamily: 'Montserrat',
+                                  fontWeight: 700,
+                                  fontSize: 15,
+                                  color: '#0a1f3d',
+                                  letterSpacing: '0.5px',
+                                  display: 'flex',
+                                  textAlign: 'center',
+                                },
+                                children: `🔋 ${marca_bateria ?? 'Bateria'}`,
                               },
                             },
                           ],
@@ -576,6 +632,24 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
                     children: `R$ ${formatBRL(preco_brl)}`,
                   },
                 },
+                ...(nota_rodape ? [{
+                  type: 'div',
+                  props: {
+                    style: {
+                      fontFamily: 'Montserrat',
+                      fontWeight: 400,
+                      fontStyle: 'italic',
+                      fontSize: 16,
+                      color: '#94a3b8',
+                      textAlign: 'center',
+                      lineHeight: 1.2,
+                      display: 'flex',
+                      justifyContent: 'center',
+                      marginTop: 2,
+                    },
+                    children: nota_rodape,
+                  },
+                }] : []),
                 ...(financiamento ? [{
                   type: 'div',
                   props: {
