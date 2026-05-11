@@ -4,11 +4,45 @@ Arquivos usados pelo `src/modules/marketing/banner-renderer.ts` pra compor banne
 
 ## Arquivos esperados
 
-| Arquivo | Uso | Recomendado |
-|---|---|---|
-| `inversor.png` | Foto do inversor que aparece no card central do banner | PNG transparente, 600-800px altura, ~100-150KB |
-| `logo-ecosunpower.png` | Logo EcoSunPower no rodapé do banner | PNG transparente, 400-600px largura, ~50-100KB |
-| `placa-solar.png` *(opcional)* | Placa solar pra variações futuras | PNG transparente, 600-800px |
+## Naming convention (multiplas marcas)
+
+O renderer detecta a marca **automaticamente** a partir do que tu digitar
+no briefing (`marca_modulo`, `marca_inversor`) e procura um arquivo
+**`<categoria>-<primeira-palavra-da-marca>.png`** na pasta. Se nao achar,
+faz fallback pro arquivo generico `<categoria>.png`.
+
+### Exemplo
+
+Se tu digitar `marca_modulo = "Risen 700W HJT"`, o renderer tenta
+carregar `modulo-risen.png`. Se nao tiver, usa `modulo.png` (generico).
+
+| Marca digitada | Arquivo procurado |
+|---|---|
+| "Risen 700W HJT" | `modulo-risen.png` |
+| "LONGi Hi-MO X10" | `modulo-longi.png` |
+| "Canadian Solar 555W" | `modulo-canadian.png` |
+| "Astro 590W" | `modulo-astro.png` |
+| "Hoymiles 2,25 kW" | `inversor-hoymiles.png` |
+| "Sungrow SG10RT" | `inversor-sungrow.png` |
+| "SolarEdge SE5000H" | `inversor-solaredge.png` |
+
+### Arquivos esperados (cria conforme tu trabalhar com cada marca)
+
+| Arquivo | Uso |
+|---|---|
+| `modulo.png` | Placa solar generica (fallback) |
+| `modulo-risen.png` | Risen Energy |
+| `modulo-longi.png` | LONGi |
+| `modulo-canadian.png` | Canadian Solar |
+| `modulo-astro.png` | Astro Solar |
+| ... | (adiciona conforme precisar) |
+| `inversor.png` | Inversor generico (fallback) |
+| `inversor-hoymiles.png` | Hoymiles micro |
+| `inversor-sungrow.png` | Sungrow string |
+| `inversor-solaredge.png` | SolarEdge otimizado |
+| `inversor-growatt.png` | Growatt |
+| ... | (adiciona conforme precisar) |
+| `logo-ecosunpower.png` | Logo EcoSunPower (rodape do banner) |
 
 ## Regras pra não travar o renderer
 

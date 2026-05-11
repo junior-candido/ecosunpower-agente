@@ -91,6 +91,26 @@ function detectMime(buf: Buffer): { mime: string; ext: string } | null {
   return null;
 }
 
+// Extrai primeira palavra alfabetica com 3+ letras da marca (ex: "Risen 700W HJT" -> "risen").
+// Usado pra fazer lookup de arquivo por marca: marca_modulo "LONGi Hi-MO X10" -> modulo-longi.png.
+function extractMarcaKey(marca: string | undefined): string | null {
+  if (!marca) return null;
+  const m = marca.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').match(/[a-z]{3,}/);
+  return m?.[0] ?? null;
+}
+
+// Resolve qual arquivo carregar baseado em (categoria, marca).
+// Ex: ('modulo', 'Risen 700W HJT') -> tenta 'modulo-risen', fallback 'modulo'.
+async function findAssetByMarca(categoria: 'modulo' | 'inversor' | 'logo', marca?: string): Promise<string | null> {
+  const key = extractMarcaKey(marca);
+  if (key) {
+    const specific = await loadAssetAsDataUrl(`${categoria}-${key}.png`);
+    if (specific) return specific;
+  }
+  // Fallback pro arquivo generico (modulo.png, inversor.png)
+  return await loadAssetAsDataUrl(`${categoria}.png`);
+}
+
 // Carrega asset por basename (sem extensao). Tenta .png, .jpg, .jpeg, .webp na pasta.
 // Detecta mime real pelos magic bytes. Converte WebP/GIF -> PNG via sharp pq
 // satori nao suporta WebP. Cacheia resultado convertido em memoria.
@@ -198,8 +218,8 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
 
   const [fonts, inversorPng, moduloPng, logoPng] = await Promise.all([
     loadFonts(),
-    loadAssetAsDataUrl('inversor.png'),
-    loadAssetAsDataUrl('modulo.png'),
+    findAssetByMarca('inversor', marca_inversor),
+    findAssetByMarca('modulo', marca_modulo),
     loadAssetAsDataUrl('logo-ecosunpower.png'),
   ]);
 
