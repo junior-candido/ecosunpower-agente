@@ -48,21 +48,23 @@ interface LeadJoined {
   opportunities: Record<string, unknown> | null;
   energy_data: Record<string, unknown> | null;
   conversations?: { last_message_at: string | null; messages: Array<{ role: string; created_at?: string }> | null }[] | null;
-  proposals?: { id: string }[] | null;
   opt_out: boolean | null;
 }
 
 export async function listCadenciaLeads(supabase: SupabaseClient): Promise<LeadCadenciaRow[]> {
-  const { data: leads } = await supabase
+  const { data: leads, error } = await supabase
     .from('leads')
     .select(`
       id, name, phone, status, opportunities, energy_data, opt_out,
-      conversations:conversations(last_message_at, messages),
-      proposals:proposals(id)
+      conversations:conversations(last_message_at, messages)
     `)
     .eq('acquisition_source', 'terceirizada_recovered')
     .order('updated_at', { ascending: false });
 
+  if (error) {
+    console.error('[cadencia-queries] erro list:', error.message);
+    return [];
+  }
   if (!leads) return [];
 
   const now = Date.now();
@@ -72,7 +74,7 @@ export async function listCadenciaLeads(supabase: SupabaseClient): Promise<LeadC
     const conv = l.conversations?.[0];
     const last_msg = conv?.last_message_at ?? null;
     const messages = conv?.messages ?? [];
-    const has_proposal = (l.proposals?.length ?? 0) > 0;
+    const has_proposal = false; // TODO: cruzar com tabela proposals quando relationship existir
 
     // Inbound messages = client respondeu (role='user')
     const inbounds = messages.filter((m) => m.role === 'user');
