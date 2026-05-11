@@ -14,6 +14,7 @@ export interface LeadCadenciaRow {
   id: string;
   name: string;
   phone: string;
+  email: string | null;
   status_db: string;
   cadencia_status: CadenciaStatus;
   last_reactivation_sent_at: string | null;
@@ -44,6 +45,7 @@ interface LeadJoined {
   id: string;
   name: string;
   phone: string;
+  email: string | null;
   status: string;
   opportunities: Record<string, unknown> | null;
   energy_data: Record<string, unknown> | null;
@@ -55,7 +57,7 @@ export async function listCadenciaLeads(supabase: SupabaseClient): Promise<LeadC
   const { data: leads, error } = await supabase
     .from('leads')
     .select(`
-      id, name, phone, status, opportunities, energy_data, opt_out,
+      id, name, phone, email, status, opportunities, energy_data, opt_out,
       conversations:conversations(last_message_at, messages)
     `)
     .eq('acquisition_source', 'terceirizada_recovered')
@@ -105,6 +107,7 @@ export async function listCadenciaLeads(supabase: SupabaseClient): Promise<LeadC
       id: l.id,
       name: l.name ?? '(sem nome)',
       phone: l.phone,
+      email: l.email,
       status_db: l.status,
       cadencia_status,
       last_reactivation_sent_at: sent_at,

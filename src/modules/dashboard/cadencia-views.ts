@@ -81,6 +81,7 @@ export function renderCadenciaPage(input: CadenciaPageInput): string {
           <td class="px-4 py-3">
             <div class="font-medium text-slate-900">${escapeHtml(r.name)}</div>
             <div class="text-xs text-slate-500">${escapeHtml(maskPhone(r.phone))}</div>
+            ${r.email ? `<div class="text-xs text-sky-700 mt-0.5">✉️ ${escapeHtml(r.email)}</div>` : '<div class="text-xs text-slate-300 mt-0.5">✉️ sem email</div>'}
           </td>
           <td class="px-4 py-3">${statusBadge(r.cadencia_status)}</td>
           <td class="px-4 py-3">${tempBadge(r.temperatura_anterior)}</td>

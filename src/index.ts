@@ -1365,6 +1365,62 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // /email <fone-ou-nome> <email>: adiciona/atualiza email de um lead.
+  async function tryHandleEmailCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const t = text.trim();
+    const m = t.match(/^\/email\s+(\S+)\s+(\S+@\S+\.\S+)$/i);
+    if (!m) {
+      // Help message se parecer comando email mas formato errado
+      if (/^\/email\b/i.test(t)) {
+        await sendText(from, `📧 *Comando /email*\n\nUso: /email <fone ou nome> <email>\n\nExemplos:\n/email 5561992169105 tania@gmail.com\n/email Jucelda jucelda.pontes@hotmail.com`);
+        return true;
+      }
+      return false;
+    }
+    const queryRaw = m[1];
+    const email = m[2].toLowerCase();
+    const digitsOnly = queryRaw.replace(/\D/g, '');
+
+    let leads: Array<{ id: string; name: string; phone: string; email: string | null }> = [];
+    if (digitsOnly.length >= 8) {
+      const r = await supabase.getClient()
+        .from('leads')
+        .select('id, name, phone, email')
+        .ilike('phone', `%${digitsOnly.slice(-9)}`);
+      leads = r.data ?? [];
+    } else {
+      const r = await supabase.getClient()
+        .from('leads')
+        .select('id, name, phone, email')
+        .ilike('name', `%${queryRaw}%`)
+        .limit(5);
+      leads = r.data ?? [];
+    }
+
+    if (leads.length === 0) {
+      await sendText(from, `❌ Nenhum lead encontrado pra "${queryRaw}".`);
+      return true;
+    }
+    if (leads.length > 1) {
+      const lista = leads.slice(0, 5).map((l, i) => `${i + 1}. ${l.name} (${l.phone})`).join('\n');
+      await sendText(from, `Achei ${leads.length} leads:\n\n${lista}\n\nUsa fone exato pra precisar: /email 5561999999999 email@dom.com`);
+      return true;
+    }
+
+    const lead = leads[0];
+    const { error } = await supabase.getClient()
+      .from('leads')
+      .update({ email, updated_at: new Date().toISOString() })
+      .eq('id', lead.id);
+    if (error) {
+      await sendText(from, `❌ Erro: ${error.message}`);
+      return true;
+    }
+    await sendText(from, `✅ Email atualizado:\n\n*${lead.name}*\n📞 ${lead.phone}\n✉️ ${email}${lead.email ? `\n\n(antes era: ${lead.email})` : ''}`);
+    return true;
+  }
+
   // /fechei <nome ou telefone>: marca lead como cliente fechado.
   // status=transferido + opt_out=true => removido da cadencia automaticamente.
   async function tryHandleFecheiCommand(from: string, text: string): Promise<boolean> {
@@ -2023,6 +2079,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /fechei — marca lead como cliente fechado (remove da cadência)
     if (await tryHandleFecheiCommand(from, text)) return;
+
+    // /email — adiciona/atualiza email de um lead
+    if (await tryHandleEmailCommand(from, text)) return;
 
     // /banner — modo conversacional (captura respostas durante fluxo) + comando inicial
     if (await tryHandleBannerModeStep(from, text)) return;
