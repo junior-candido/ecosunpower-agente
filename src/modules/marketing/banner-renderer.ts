@@ -226,10 +226,19 @@ export async function renderBannerMegaOferta(input: BannerMegaOfertaInput): Prom
     financiamento = 'BV · Santander · Solfácil · 24x no cartão',
     parcelamento = 'Fale com a gente pra melhor taxa',
     inclui_projeto = 'Projeto + homologação na concessionária',
-    nota_rodape,
+    nota_rodape: notaRodapeInput,
     width = 1080,
     height = 1350,
   } = input;
+
+  // Hardcoded: quando tem bateria (Kit Anti Apagao / Hibrido), MOSTRA disclaimer
+  // sobre visita tecnica obrigatoria automaticamente. Junior pode override
+  // passando nota_rodape explicito (ex: nota_rodape='' pra esconder).
+  const nota_rodape = notaRodapeInput !== undefined
+    ? notaRodapeInput
+    : (marca_bateria
+        ? '* Valor estimado. Visita técnica grátis define o kit ideal pro seu cenário'
+        : undefined);
 
   // Linha tecnica abaixo do kit (ex: "LONGi · Sungrow string · Telhado cerâmico")
   const techParts: string[] = [];
