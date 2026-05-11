@@ -5,7 +5,7 @@ import type { DashboardKpi, PropostaRow, ManutencaoRow, GraficoMensal, SistemaMo
 import type { DetalheSistema } from '../monitoring/service.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.js';
 
-function escapeHtml(s: string | null | undefined): string {
+export function escapeHtml(s: string | null | undefined): string {
   if (s === null || s === undefined) return '';
   return String(s)
     .replace(/&/g, '&amp;')
@@ -15,7 +15,7 @@ function escapeHtml(s: string | null | undefined): string {
     .replace(/'/g, '&#039;');
 }
 
-function brl(v: number | null | undefined): string {
+export function brl(v: number | null | undefined): string {
   if (typeof v !== 'number' || !Number.isFinite(v)) return '—';
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 }
@@ -77,7 +77,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'home' | 'propostas' | 'manutencao' | 'monitoramento';
+  active: 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'marketing';
   title: string;
   body: string;
   scripts?: string;
@@ -143,6 +143,7 @@ export function renderLayout(input: LayoutInput): string {
         <a href="/dashboard/home" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('home')}">🏠 <span class="hidden sm:inline">Home</span></a>
         <a href="/dashboard/propostas" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('propostas')}">📊 <span class="hidden sm:inline">Propostas</span></a>
         <a href="/dashboard/monitoramento" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('monitoramento')}">⚡ <span class="hidden sm:inline">Monitoramento</span></a>
+        <a href="/dashboard/marketing" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('marketing')}">📣 <span class="hidden sm:inline">Marketing</span></a>
         <a href="/dashboard/manutencao" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('manutencao')}">🔧 <span class="hidden sm:inline">Manutenção</span></a>
         <form action="/dashboard/logout" method="post" class="inline">
           <button type="submit" class="px-3 py-2 rounded-lg text-sky-200 hover:bg-white/10 hover:text-white transition text-xs" title="Sair">🚪 <span class="hidden sm:inline">Sair</span></button>

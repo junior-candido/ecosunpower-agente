@@ -4736,6 +4736,73 @@ Slug: ${draft.slug}`;
     console.log('[ads-report] Weekly scheduler started (Sundays 09:00 BRT)');
   }
 
+  // meta_ads_insights collector: roda a cada 2h pra todas as campanhas active.
+  // Usa metaWabaAccessToken — apesar do nome WhatsApp, e o mesmo System User
+  // token com perm ads_read (15 perms granted, ver project_eva_28_04_token_pendencia memoria).
+  if (!isSandbox && !passiveMode && config.metaWabaAccessToken) {
+    const runInsightsCollector = async () => {
+      try {
+        const { collectInsights } = await import('./modules/marketing/insights-collector.js');
+        await collectInsights(supabase.getClient(), config.metaWabaAccessToken!);
+      } catch (err) {
+        console.error('[insights] collector failed:', (err as Error).message);
+      }
+    };
+    setInterval(runInsightsCollector, 2 * 60 * 60 * 1000);
+    setTimeout(runInsightsCollector, 5 * 60 * 1000); // first run 5 min after boot
+    console.log('[insights] meta_ads_insights collector scheduled (every 2h)');
+  }
+
+  // Agente Analista: daily 9h BRT + weekly segunda 8h BRT
+  if (!isSandbox && !passiveMode) {
+    const checkAnalystSchedule = async () => {
+      const brt = getBrtParts();
+      const today = brt.dateISO;
+
+      // Daily 9h
+      if (brt.hour === 9 && brt.minute < 15) {
+        const flagKey = 'last_analyst_daily_report';
+        const { data: flag } = await supabase.getClient()
+          .from('app_flags').select('value').eq('key', flagKey).maybeSingle();
+        if (flag?.value !== today) {
+          await supabase.getClient()
+            .from('app_flags')
+            .upsert({ key: flagKey, value: today, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+          try {
+            const { buildDailyReport } = await import('./modules/marketing/analyst-agent.js');
+            const msg = await buildDailyReport(supabase.getClient());
+            await sendText(config.engineerPhone, msg);
+            console.log(`[analyst] daily report sent to ${config.engineerPhone}`);
+          } catch (err) {
+            console.error('[analyst] daily report failed:', (err as Error).message);
+          }
+        }
+      }
+
+      // Weekly segunda 8h
+      if (brt.weekday === 1 && brt.hour === 8 && brt.minute < 15) {
+        const flagKey = 'last_analyst_weekly_report';
+        const { data: flag } = await supabase.getClient()
+          .from('app_flags').select('value').eq('key', flagKey).maybeSingle();
+        if (flag?.value !== today) {
+          await supabase.getClient()
+            .from('app_flags')
+            .upsert({ key: flagKey, value: today, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+          try {
+            const { buildWeeklyReport } = await import('./modules/marketing/analyst-agent.js');
+            const { message } = await buildWeeklyReport(supabase.getClient());
+            await sendText(config.engineerPhone, message);
+            console.log(`[analyst] weekly report sent to ${config.engineerPhone}`);
+          } catch (err) {
+            console.error('[analyst] weekly report failed:', (err as Error).message);
+          }
+        }
+      }
+    };
+    setInterval(checkAnalystSchedule, 10 * 60 * 1000);
+    console.log('[analyst] scheduler started (daily 9h BRT, weekly Mon 8h BRT)');
+  }
+
   // On-demand: GET /reports/ads-weekly?token=X&format=json|text
   app.get('/reports/ads-weekly', async (req, res) => {
     const token = (req.query.token as string) ?? '';

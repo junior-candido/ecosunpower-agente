@@ -120,6 +120,25 @@ export function createDashboardRouter(
     }
   });
 
+  // Marketing: KPIs 7d + campanhas ativas + criativos + alertas.
+  router.get('/marketing', async (_req: Request, res: Response) => {
+    try {
+      const { fetchMarketingKpis, listActiveCampaigns, listRecentCreatives, listPendingAlerts } =
+        await import('./marketing-queries.js');
+      const { renderMarketingPage } = await import('./marketing-views.js');
+      const [kpis, campaigns, creatives, alerts] = await Promise.all([
+        fetchMarketingKpis(supabase),
+        listActiveCampaigns(supabase),
+        listRecentCreatives(supabase, 8),
+        listPendingAlerts(supabase),
+      ]);
+      res.send(renderMarketingPage({ kpis, campaigns, creatives, alerts }));
+    } catch (err) {
+      console.error('[dashboard/marketing]', err);
+      res.status(500).send(`<h2>Erro ao carregar marketing</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
   // Propostas: lista + paginacao + busca.
   router.get('/propostas', async (req: Request, res: Response) => {
     try {
