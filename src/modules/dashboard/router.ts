@@ -116,19 +116,23 @@ export function createDashboardRouter(
       const { getCockpitData } = await import('./cockpit-queries.js');
       const { renderCockpitPage } = await import('./cockpit-views.js');
       const data = await getCockpitData(supabase);
-      // Sintese IA dos leads aguardando: so se temos anthropic
+      // IA: sintese leads aguardando + insights gerais da plataforma.
       let leadsAguardando: Awaited<ReturnType<typeof import('./lead-synthesis.js').getLeadsAguardandoAcao>> = [];
+      let platformInsights: Awaited<ReturnType<typeof import('./lead-synthesis.js').getPlatformInsights>> = [];
       if (options.anthropicApiKey) {
         try {
           const { default: Anthropic } = await import('@anthropic-ai/sdk');
-          const { getLeadsAguardandoAcao } = await import('./lead-synthesis.js');
+          const { getLeadsAguardandoAcao, getPlatformInsights } = await import('./lead-synthesis.js');
           const anthropic = new Anthropic({ apiKey: options.anthropicApiKey });
-          leadsAguardando = await getLeadsAguardandoAcao(supabase, anthropic, 8);
+          [leadsAguardando, platformInsights] = await Promise.all([
+            getLeadsAguardandoAcao(supabase, anthropic, 6),
+            getPlatformInsights(supabase, anthropic),
+          ]);
         } catch (err) {
           console.warn('[cockpit] sintese IA falhou (segue sem):', (err as Error).message);
         }
       }
-      res.type('text/html').send(renderCockpitPage(data, leadsAguardando));
+      res.type('text/html').send(renderCockpitPage(data, leadsAguardando, platformInsights));
     } catch (err) {
       console.error('[dashboard/cockpit]', err);
       res.status(500).type('text/html').send(

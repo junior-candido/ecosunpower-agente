@@ -5,7 +5,7 @@
 // reload da pagina (fetch JSON + re-render).
 
 import type { CockpitData } from './cockpit-queries.js';
-import type { LeadSynthesis } from './lead-synthesis.js';
+import type { LeadSynthesis, PlatformInsight } from './lead-synthesis.js';
 
 interface LeadAguardando {
   id: string;
@@ -47,7 +47,11 @@ const STATUS_COLOR: Record<string, string> = {
   perdido: '#64748b',
 };
 
-export function renderCockpitPage(data: CockpitData, leadsAguardando: LeadAguardando[] = []): string {
+export function renderCockpitPage(
+  data: CockpitData,
+  leadsAguardando: LeadAguardando[] = [],
+  platformInsights: PlatformInsight[] = [],
+): string {
   // Serializa dados pro JS do cliente. Usa <script type="application/json">
   // (template element data) em vez de string-em-JS pra eliminar vetores XSS
   // como U+2028/U+2029 e </script>. JSON.parse via textContent eh seguro.
@@ -125,15 +129,7 @@ export function renderCockpitPage(data: CockpitData, leadsAguardando: LeadAguard
     box-shadow: 0 0 6px rgba(34,211,238,0.6), inset -1px -1px 0 rgba(34,211,238,0.3);
   }
 
-  /* Pulse glow nas KPI values */
-  .kpi-value {
-    text-shadow: 0 0 12px currentColor;
-    animation: kpi-pulse 4s ease-in-out infinite;
-  }
-  @keyframes kpi-pulse {
-    0%, 100% { text-shadow: 0 0 12px currentColor; }
-    50% { text-shadow: 0 0 20px currentColor, 0 0 6px currentColor; }
-  }
+  /* KPI values: estaticos, sem animacao (preferencia Junior). */
   a.lead-link:hover { background: rgba(6,182,212,0.12); }
   /* Esconde scrollbar nativa pra manter look limpo */
   ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -177,14 +173,42 @@ export function renderCockpitPage(data: CockpitData, leadsAguardando: LeadAguard
     }).join('')}
   </div>
 
-  ${leadsAguardando.length > 0 ? `
-  <!-- 🔔 LEADS AGUARDANDO AÇÃO (síntese IA) -->
-  <div class="panel hud-corners glow-rose" style="flex: 0 0 auto; max-height: 26vh; overflow-y: auto;">
+  ${(platformInsights.length > 0 || leadsAguardando.length > 0) ? `
+  <!-- 🤖 EVA OLHANDO POR VOCÊ — Insights gerais + leads aguardando -->
+  <div class="panel hud-corners glow-rose" style="flex: 0 0 auto; max-height: 32vh; overflow-y: auto;">
     <div class="panel-title flex justify-between items-center">
-      <span>🤖 EVA OLHANDO POR VOCÊ · ${leadsAguardando.length} LEADS AGUARDANDO AÇÃO</span>
-      <a href="/dashboard/leads?status=qualificado" class="text-rose-300 hover:text-rose-200">VER TODOS →</a>
+      <span>🤖 EVA OLHANDO POR VOCÊ</span>
+      <span class="text-rose-300 text-[10px]">${platformInsights.length} INSIGHTS · ${leadsAguardando.length} LEADS</span>
     </div>
-    <div class="p-2 space-y-2">
+
+    ${platformInsights.length > 0 ? `
+    <!-- Insights gerais da plataforma -->
+    <div class="p-2 grid grid-cols-1 md:grid-cols-2 gap-1.5">
+      ${platformInsights.map((ins) => {
+        const priColor = ins.prioridade === 'alta' ? '#f43f5e'
+          : ins.prioridade === 'media' ? '#fbbf24' : '#64748b';
+        const priBg = ins.prioridade === 'alta' ? 'rgba(244,63,94,0.08)'
+          : ins.prioridade === 'media' ? 'rgba(251,191,36,0.06)' : 'rgba(100,116,139,0.04)';
+        return `
+        <div class="flex items-start gap-2 px-2 py-1.5 rounded" style="background:${priBg}; border-left:2px solid ${priColor};">
+          <span class="text-lg shrink-0">${escapeHtml(ins.icone)}</span>
+          <div class="flex-1 min-w-0">
+            <div class="text-xs font-bold text-cyan-100">${escapeHtml(ins.titulo)}</div>
+            <div class="text-[11px] text-slate-300 leading-tight mt-0.5">${escapeHtml(ins.mensagem)}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    ` : ''}
+
+    ${leadsAguardando.length > 0 ? `
+    <!-- Leads aguardando ação (síntese individual) -->
+    <div class="border-t border-slate-800 mx-2 mt-1"></div>
+    <div class="px-3 pt-2 pb-1 text-[10px] uppercase tracking-widest text-slate-500 flex justify-between items-center">
+      <span>👤 Leads aguardando ação</span>
+      <a href="/dashboard/leads?status=qualificado" class="text-rose-300 hover:text-rose-200">Ver todos →</a>
+    </div>
+    <div class="p-2 space-y-1.5">
       ${leadsAguardando.map((l) => {
         const tempColor = l.synthesis.temperatura === '🔥' ? '#f43f5e'
           : l.synthesis.temperatura === '⚠️' ? '#fbbf24' : '#64748b';
@@ -192,7 +216,7 @@ export function renderCockpitPage(data: CockpitData, leadsAguardando: LeadAguard
         <div class="border-l-2 pl-3 py-1" style="border-color:${tempColor};">
           <div class="flex justify-between items-start gap-3">
             <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 text-sm">
+              <div class="flex items-center gap-2 text-sm flex-wrap">
                 <span class="text-lg">${l.synthesis.temperatura}</span>
                 <span class="font-bold text-cyan-100">${escapeHtml(l.name ?? '— sem nome —')}</span>
                 <span class="text-slate-500">·</span>
@@ -208,41 +232,38 @@ export function renderCockpitPage(data: CockpitData, leadsAguardando: LeadAguard
               </div>
             </div>
             <div class="flex flex-col gap-1 shrink-0">
-              <a href="/dashboard/leads/${escapeHtml(l.id)}" class="px-2 py-1 text-[10px] rounded bg-cyan-600 hover:bg-cyan-500 text-white whitespace-nowrap">👤 Ver</a>
+              <a href="/dashboard/leads/${escapeHtml(l.id)}" class="px-2 py-1 text-[10px] rounded bg-cyan-600 hover:bg-cyan-500 text-white whitespace-nowrap">Ver</a>
             </div>
           </div>
         </div>`;
       }).join('')}
     </div>
+    ` : ''}
   </div>
   ` : ''}
 
   <!-- LINHA 2 — Anéis Concêntricos + Sankey Pipeline + Atividade 24h -->
   <div class="grid grid-cols-12 gap-3" style="flex: 1 1 auto; min-height: 0;">
 
-    <!-- Anéis Concêntricos: Eva + Sistema + Cadência em 1 visualização -->
+    <!-- Anéis Concêntricos: Eva (externo) + Sistema (interno). Numero da Eva no centro. -->
     <div class="panel hud-corners col-span-4 flex flex-col">
       <div class="panel-title flex justify-between">
-        <span>VITALS · ECOSUN CORE</span>
-        <span class="text-cyan-300 text-[10px]">3 SINAIS</span>
+        <span>SINAIS VITAIS</span>
+        <span class="text-cyan-300 text-[10px]">EVA + SISTEMA</span>
       </div>
       <div id="chart-rings" class="flex-1 min-h-0"></div>
-      <!-- Legenda dos 3 anéis -->
-      <div class="grid grid-cols-3 gap-1 text-[10px] px-2 pb-2">
+      <!-- Legenda dos 2 anéis -->
+      <div class="grid grid-cols-2 gap-1 text-[10px] px-2 pb-2">
         <div class="text-center border-r border-slate-800">
-          <div class="text-cyan-400 font-bold">EVA · 30D</div>
-          <div class="text-slate-400 leading-tight">${data.gauges.evaConversao.numerator}/${data.gauges.evaConversao.denominator} convert.</div>
-        </div>
-        <div class="text-center border-r border-slate-800">
-          <div class="text-amber-400 font-bold">SISTEMA</div>
-          <div class="text-slate-400 leading-tight">${data.gauges.sistemaSaude.subitens.filter(s => s.ok).length}/${data.gauges.sistemaSaude.subitens.length} ON</div>
+          <div class="text-cyan-400 font-bold">● EVA · CONVERSÃO 30D</div>
+          <div class="text-slate-400 leading-tight">${data.gauges.evaConversao.numerator} de ${data.gauges.evaConversao.denominator} leads</div>
         </div>
         <div class="text-center">
-          <div class="text-emerald-400 font-bold">CADÊNCIA</div>
-          <div class="text-slate-400 leading-tight">${data.kpis[3]?.value ?? 0} toques hoje</div>
+          <div class="text-amber-400 font-bold">● SISTEMA · SAÚDE</div>
+          <div class="text-slate-400 leading-tight">${data.gauges.sistemaSaude.subitens.filter(s => s.ok).length} de ${data.gauges.sistemaSaude.subitens.length} serviços</div>
         </div>
       </div>
-      <!-- Status do sistema (compacto) -->
+      <!-- Status dos serviços (compacto) -->
       <div class="text-[9px] text-slate-500 px-3 pb-2 grid grid-cols-2 gap-x-2 gap-y-0">
         ${data.gauges.sistemaSaude.subitens.map((s) => `
           <div class="flex justify-between">
@@ -252,18 +273,18 @@ export function renderCockpitPage(data: CockpitData, leadsAguardando: LeadAguard
       </div>
     </div>
 
-    <!-- Sankey Pipeline: fluxo de leads pelo funil -->
+    <!-- Funil de Leads -->
     <div class="panel hud-corners col-span-5 flex flex-col">
       <div class="panel-title flex justify-between">
-        <span>PIPELINE · FLUXO DE LEADS</span>
-        <span class="text-cyan-300 text-[10px]">SANKEY</span>
+        <span>FUNIL DE LEADS</span>
+        <span class="text-cyan-300 text-[10px]">DO CONTATO AO FECHAMENTO</span>
       </div>
-      <div id="chart-sankey" class="flex-1 min-h-0"></div>
+      <div id="chart-funnel" class="flex-1 min-h-0"></div>
     </div>
 
     <!-- Atividade 24h -->
     <div class="panel hud-corners col-span-3 flex flex-col">
-      <div class="panel-title">ATIVIDADE 24H</div>
+      <div class="panel-title">ATIVIDADE NAS ÚLTIMAS 24H</div>
       <div id="chart-activity" class="flex-1 min-h-0"></div>
       <div class="text-[10px] text-slate-400 px-3 pb-2 flex justify-around">
         <span><span class="inline-block w-2 h-2 bg-cyan-400 mr-1"></span>Mensagens</span>
@@ -368,103 +389,85 @@ const NEON = {
   green: '#22c55e', rose: '#f43f5e', bg: 'transparent',
 };
 
-// Aneis concentricos estilo Apple Watch — 3 metricas em 1 visualizacao.
-// Anel externo = Eva conversao, meio = Sistema saude, interno = Cadencia hoje vs meta.
-function renderRings(el, evaPct, sistemaPct, cadenciaPct, existing) {
+// Aneis concentricos limpos — APENAS 2 aneis (Eva externo + Sistema interno).
+// O numero da Eva fica grande e LIVRE no centro, sem obstrucao.
+function renderRings(el, evaPct, sistemaPct, existing) {
   const chart = existing ?? echarts.init(el, null, { renderer: 'canvas' });
-  // Cores de cada anel
   const ringColor = (pct, baseColor) => pct >= 70 ? baseColor : pct >= 40 ? '#fbbf24' : '#f43f5e';
   const evaColor = ringColor(evaPct, '#22d3ee');
   const sistemaColor = ringColor(sistemaPct, '#fbbf24');
-  const cadenciaColor = ringColor(cadenciaPct, '#22c55e');
 
   chart.setOption({
     series: [
-      // EVA (externo)
+      // EVA (anel externo)
       {
-        type: 'gauge', center: ['50%', '55%'], radius: '92%',
+        type: 'gauge', center: ['50%', '55%'], radius: '88%',
         startAngle: 90, endAngle: -270, min: 0, max: 100,
-        progress: { show: true, width: 14, roundCap: true, itemStyle: { color: evaColor, shadowColor: evaColor, shadowBlur: 12 } },
-        axisLine: { lineStyle: { width: 14, color: [[1, 'rgba(34,211,238,0.08)']] } },
+        progress: { show: true, width: 18, roundCap: true, itemStyle: { color: evaColor, shadowColor: evaColor, shadowBlur: 14 } },
+        axisLine: { lineStyle: { width: 18, color: [[1, 'rgba(34,211,238,0.08)']] } },
         axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
         pointer: { show: false }, anchor: { show: false }, title: { show: false },
         detail: { show: false },
         data: [{ value: evaPct }],
       },
-      // SISTEMA (meio)
+      // SISTEMA (anel interno)
       {
-        type: 'gauge', center: ['50%', '55%'], radius: '70%',
+        type: 'gauge', center: ['50%', '55%'], radius: '62%',
         startAngle: 90, endAngle: -270, min: 0, max: 100,
-        progress: { show: true, width: 14, roundCap: true, itemStyle: { color: sistemaColor, shadowColor: sistemaColor, shadowBlur: 12 } },
-        axisLine: { lineStyle: { width: 14, color: [[1, 'rgba(251,191,36,0.08)']] } },
-        axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
-        pointer: { show: false }, anchor: { show: false }, title: { show: false },
-        detail: { show: false },
-        data: [{ value: sistemaPct }],
-      },
-      // CADENCIA (interno)
-      {
-        type: 'gauge', center: ['50%', '55%'], radius: '48%',
-        startAngle: 90, endAngle: -270, min: 0, max: 100,
-        progress: { show: true, width: 14, roundCap: true, itemStyle: { color: cadenciaColor, shadowColor: cadenciaColor, shadowBlur: 12 } },
-        axisLine: { lineStyle: { width: 14, color: [[1, 'rgba(34,197,94,0.08)']] } },
+        progress: { show: true, width: 18, roundCap: true, itemStyle: { color: sistemaColor, shadowColor: sistemaColor, shadowBlur: 14 } },
+        axisLine: { lineStyle: { width: 18, color: [[1, 'rgba(251,191,36,0.08)']] } },
         axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
         pointer: { show: false }, anchor: { show: false }, title: { show: false },
         detail: {
           valueAnimation: true,
           formatter: () => evaPct + '%',
-          color: '#22d3ee', fontSize: 32, fontWeight: 'bold', offsetCenter: [0, 0],
+          color: '#e2e8f0', fontSize: 38, fontWeight: 'bold', offsetCenter: [0, '-2%'],
         },
-        data: [{ value: cadenciaPct }],
+        data: [{ value: sistemaPct }],
       },
     ],
   });
   return chart;
 }
 
-// Sankey horizontal: fluxo de leads pelo funil. Largura das linhas = volume.
-// Mostra TRANSICAO entre etapas, nao so contagem.
-function renderSankey(el, funilData, existing) {
+// Funil grande e visual estilo cockpit — cores neon vibrantes + sombra + labels grossos.
+// Largura proporcional ao volume, mas labels SEMPRE visiveis com cores fortes.
+function renderFunnel(el, funilData, existing) {
   const chart = existing ?? echarts.init(el, null, { renderer: 'canvas' });
-  // Nodes: cada etapa do funil
-  const nodes = funilData.map((f) => ({
-    name: f.stage + ' · ' + f.count,
-    itemStyle: { color: f.color, borderColor: f.color, shadowColor: f.color, shadowBlur: 10 },
-    label: { color: '#e2e8f0', fontWeight: 'bold' },
-  }));
-  // Links: fluxo entre etapas (heuristica: min entre etapa atual e anterior)
-  const links = [];
-  for (let i = 0; i < funilData.length - 1; i++) {
-    const flow = Math.min(funilData[i].count, funilData[i + 1].count);
-    if (flow > 0) {
-      links.push({
-        source: funilData[i].stage + ' · ' + funilData[i].count,
-        target: funilData[i + 1].stage + ' · ' + funilData[i + 1].count,
-        value: flow,
-        lineStyle: { color: 'gradient', opacity: 0.4 },
-      });
-    } else {
-      // Mantem link com value 0.5 pra mostrar a etapa mesmo sem fluxo
-      links.push({
-        source: funilData[i].stage + ' · ' + funilData[i].count,
-        target: funilData[i + 1].stage + ' · ' + funilData[i + 1].count,
-        value: 0.5,
-        lineStyle: { color: '#1e293b', opacity: 0.6 },
-      });
-    }
-  }
+  // Computa max pra normalizar (etapa com mais leads = 100% width)
+  const maxCount = Math.max(...funilData.map((f) => f.count), 1);
+
   chart.setOption({
     tooltip: { trigger: 'item', backgroundColor: 'rgba(2,6,23,0.95)', borderColor: NEON.cyan, textStyle: { color: '#cbd5e1' } },
     series: [{
-      type: 'sankey',
-      left: 10, right: 10, top: 14, bottom: 14,
-      nodeWidth: 14, nodeGap: 8,
-      orient: 'horizontal',
-      data: nodes,
-      links: links,
-      label: { fontSize: 11, color: '#e2e8f0' },
-      emphasis: { focus: 'adjacency' },
-      lineStyle: { curveness: 0.5 },
+      type: 'funnel',
+      left: 8, right: 8, top: 14, bottom: 14,
+      width: 'auto', height: 'auto',
+      minSize: '15%', maxSize: '100%',
+      sort: 'descending', gap: 5,
+      label: {
+        show: true, position: 'inside', color: '#ffffff',
+        fontSize: 13, fontWeight: 'bold',
+        formatter: (p) => p.name,
+        textShadowColor: 'rgba(0,0,0,0.6)', textShadowBlur: 4,
+      },
+      labelLine: { show: false },
+      itemStyle: {
+        borderColor: '#020617', borderWidth: 2,
+        shadowBlur: 12, shadowColor: 'rgba(34,211,238,0.4)',
+      },
+      emphasis: {
+        itemStyle: { shadowBlur: 20 },
+        label: { fontSize: 15 },
+      },
+      data: funilData.map((f) => ({
+        value: Math.max(f.count, maxCount * 0.05),  // min 5% pra etapa zerada aparecer
+        name: f.stage.toUpperCase() + ' · ' + f.count,
+        itemStyle: {
+          color: f.color,
+          shadowColor: f.color,
+        },
+      })),
     }],
   });
   return chart;
@@ -496,20 +499,16 @@ function renderActivity(el, atividade, existing) {
   return chart;
 }
 
-let chartRings, chartSankey, chartActivity;
+let chartRings, chartFunnel, chartActivity;
 
 function renderAll(data) {
-  // Reaproveita instancias entre refreshes pra animar valores sem piscar.
-  // Cadencia: pct vs meta de 50 toques/dia (50 = 100%). Cap em 100%.
-  const cadenciaPct = Math.min(100, Math.round(((data.kpis[3]?.value ?? 0) / 50) * 100));
   chartRings = renderRings(
     document.getElementById('chart-rings'),
     data.gauges.evaConversao.pct,
     data.gauges.sistemaSaude.pct,
-    cadenciaPct,
     chartRings,
   );
-  chartSankey = renderSankey(document.getElementById('chart-sankey'), data.funil, chartSankey);
+  chartFunnel = renderFunnel(document.getElementById('chart-funnel'), data.funil, chartFunnel);
   chartActivity = renderActivity(document.getElementById('chart-activity'), data.atividade24h, chartActivity);
 }
 
@@ -542,7 +541,7 @@ setInterval(refresh, 30000); // 30s
 // Resize charts no window resize
 window.addEventListener('resize', () => {
   chartRings && chartRings.resize();
-  chartSankey && chartSankey.resize();
+  chartFunnel && chartFunnel.resize();
   chartActivity && chartActivity.resize();
 });
 

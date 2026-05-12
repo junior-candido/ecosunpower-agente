@@ -116,6 +116,155 @@ Gere o JSON da sintese.`;
 }
 
 /**
+ * Insights gerais da plataforma — Eva narra o estado da operacao toda
+ * pro Junior. Gera 3-5 cards de insight (campanha, leads, sistema,
+ * proxima acao). Cache memoria 15min (atualiza mais frequente que
+ * sintese de lead individual).
+ */
+export interface PlatformInsight {
+  icone: string;        // emoji: 🔥 🚀 ⚠️ 💡 📊 ✅ 📉 etc
+  titulo: string;       // 1-3 palavras
+  mensagem: string;     // 1 frase explicativa (max 160 chars)
+  prioridade: 'alta' | 'media' | 'baixa';
+}
+
+const PLATFORM_CACHE_TTL_MS = 15 * 60_000;
+let platformCache: { data: PlatformInsight[]; expiresAt: number } | null = null;
+
+export async function getPlatformInsights(
+  supabase: SupabaseClient,
+  anthropic: Anthropic,
+): Promise<PlatformInsight[]> {
+  if (platformCache && platformCache.expiresAt > Date.now()) return platformCache.data;
+
+  try {
+    // === Coleta de dados pra dar contexto pra IA
+    const hoje0h = new Date();
+    hoje0h.setUTCHours(3, 0, 0, 0);
+    const since24h = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+    const since48h = new Date(Date.now() - 48 * 60 * 60_000).toISOString();
+    const since7d = new Date(); since7d.setUTCDate(since7d.getUTCDate() - 7);
+
+    const [
+      qLeadsHoje, qLeadsOntem,
+      qQualificadosHoje, qAgendadosHoje,
+      qCadenciaHoje, qCadenciaOntem,
+      qInsights7d,
+      qStatusCount,
+      qSilentes,
+    ] = await Promise.all([
+      supabase.from('leads').select('id', { count: 'exact', head: true }).gte('created_at', hoje0h.toISOString()),
+      supabase.from('leads').select('id', { count: 'exact', head: true })
+        .gte('created_at', since48h).lt('created_at', hoje0h.toISOString()),
+      supabase.from('leads').select('id', { count: 'exact', head: true })
+        .eq('status', 'qualificado').gte('updated_at', hoje0h.toISOString()),
+      supabase.from('leads').select('id', { count: 'exact', head: true })
+        .eq('status', 'agendado').gte('updated_at', hoje0h.toISOString()),
+      supabase.from('eva_cadence').select('id', { count: 'exact', head: true })
+        .eq('status', 'sent').gte('sent_at', hoje0h.toISOString()),
+      supabase.from('eva_cadence').select('id', { count: 'exact', head: true })
+        .eq('status', 'sent').gte('sent_at', since48h).lt('sent_at', hoje0h.toISOString()),
+      supabase.from('meta_ads_insights')
+        .select('spend_cents, leads, impressions, clicks')
+        .gte('date_start', since7d.toISOString().slice(0, 10)),
+      supabase.from('leads').select('status').limit(5000),
+      supabase.from('leads').select('id', { count: 'exact', head: true })
+        .eq('eva_active', true).eq('opt_out', false)
+        .in('status', ['novo', 'qualificando', 'qualificado'])
+        .lt('updated_at', since24h),
+    ]);
+
+    const insights = (qInsights7d.data ?? []) as Array<{ spend_cents: number; leads: number | null; impressions: number; clicks: number }>;
+    const spend7d = insights.reduce((s, i) => s + (i.spend_cents ?? 0), 0) / 100;
+    const leads7d = insights.reduce((s, i) => s + (i.leads ?? 0), 0);
+    const cpl7d = leads7d > 0 ? spend7d / leads7d : null;
+    const ctr7d = (() => {
+      const imps = insights.reduce((s, i) => s + (i.impressions ?? 0), 0);
+      const clx = insights.reduce((s, i) => s + (i.clicks ?? 0), 0);
+      return imps > 0 ? (clx / imps) * 100 : null;
+    })();
+
+    const statusCount: Record<string, number> = {};
+    for (const r of (qStatusCount.data ?? []) as Array<{ status: string }>) {
+      statusCount[r.status] = (statusCount[r.status] ?? 0) + 1;
+    }
+
+    const dados = {
+      hoje: {
+        leads_novos: qLeadsHoje.count ?? 0,
+        qualificados: qQualificadosHoje.count ?? 0,
+        agendados: qAgendadosHoje.count ?? 0,
+        cadencia_disparada: qCadenciaHoje.count ?? 0,
+      },
+      ontem: {
+        leads_novos: qLeadsOntem.count ?? 0,
+        cadencia_disparada: qCadenciaOntem.count ?? 0,
+      },
+      campanha_7d: {
+        gasto_brl: spend7d,
+        leads: leads7d,
+        cpl_brl: cpl7d,
+        ctr_pct: ctr7d,
+      },
+      base_leads: statusCount,
+      silentes_24h_sem_acao: qSilentes.count ?? 0,
+    };
+
+    // === Pede pra Claude gerar insights executivos
+    const systemPrompt = `Vc eh Eva, engenheira virtual da Ecosunpower. Analisa o estado da plataforma hoje e gera 3 a 5 insights executivos pro Junior (Responsavel Tecnico) saber em 30 segundos o que esta acontecendo e o que priorizar.
+
+Cada insight deve ter:
+- icone (1 emoji que represente o tema: 🔥 alerta, 🚀 conquista, ⚠️ atencao, 💡 sugestao, 📊 metrica, ✅ ok, 📉 queda, 📈 alta, 🎯 oportunidade)
+- titulo (2-3 palavras em PT-BR, ex: "Campanha quente", "Silentes acumulando", "Boas vendas")
+- mensagem (1 frase em PT-BR, max 160 chars, com numero concreto. Tom direto, sem rodeios. Pode chamar Junior pela acao)
+- prioridade (alta | media | baixa)
+
+REGRAS:
+- Sempre PT-BR com acentuacao correta
+- Sempre numero concreto (nao "alguns" — diga "12")
+- Tom de relatorio executivo: direto, util, sem floreio
+- Ordene por prioridade desc (alta primeiro)
+- Inclua pelo menos 1 acao concreta sugerida quando relevante
+
+Retorne JSON valido sem outros caracteres:
+[{"icone":"🔥","titulo":"X","mensagem":"Y","prioridade":"alta"}, ...]`;
+
+    const userPrompt = `Estado atual da plataforma EcoSunPower (${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}):
+
+${JSON.stringify(dados, null, 2)}
+
+Gere 3-5 insights executivos em JSON.`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 800,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+
+    const textBlock = response.content.find((b) => b.type === 'text');
+    if (!textBlock || textBlock.type !== 'text') return [];
+    const clean = textBlock.text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+    const parsed = JSON.parse(clean) as PlatformInsight[];
+
+    // Validacao + clamp
+    const result = parsed.slice(0, 5).map((p) => ({
+      icone: (p.icone ?? '📊').slice(0, 4),
+      titulo: (p.titulo ?? 'Insight').slice(0, 30),
+      mensagem: (p.mensagem ?? '').slice(0, 200),
+      prioridade: ['alta', 'media', 'baixa'].includes(p.prioridade as string)
+        ? p.prioridade : 'media' as PlatformInsight['prioridade'],
+    }));
+
+    platformCache = { data: result, expiresAt: Date.now() + PLATFORM_CACHE_TTL_MS };
+    return result;
+  } catch (err) {
+    console.warn('[platform-insights] falha:', (err as Error).message);
+    return [];
+  }
+}
+
+/**
  * Busca leads que precisam de atencao (qualificado/qualificando > 24h sem
  * agendamento) e gera sintese pra cada um. Limite N=10 pra nao estourar
  * Claude. Roda em paralelo (Promise.all).
