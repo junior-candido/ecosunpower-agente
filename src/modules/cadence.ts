@@ -3,6 +3,7 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { SupabaseService } from './supabase.js';
+import type { TemplateComponent } from './meta-whatsapp.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -117,15 +118,35 @@ function pickGuidanceForStep(step: number): string {
   return STEP_GUIDANCE[rotation];
 }
 
+/**
+ * Adapter minimo do WABA pra cadencia poder mandar template quando janela 24h
+ * estiver fechada. Recebe so o que precisa — facilita teste e desacopla do
+ * cliente concreto.
+ */
+export interface CadenceTemplateSender {
+  sendTemplate(
+    to: string,
+    templateName: string,
+    languageCode: string,
+    components?: TemplateComponent[],
+  ): Promise<{ messageId: string }>;
+}
+
 export class CadenceService {
   private articles: ParsedArticle[] = [];
   private articlesLoadedAt: number = 0;
   private static readonly ARTICLES_TTL_MS = 30 * 60 * 1000; // recarrega a cada 30min
 
+  // Template aprovado pro fallback quando janela 24h fecha.
+  // Aprovado pelo Meta em 13/05/2026. Body: {{1}} = primeiro nome.
+  private static readonly REACTIVATION_TEMPLATE_NAME = 'reativacao_lead_v1';
+  private static readonly REACTIVATION_TEMPLATE_LANG = 'pt_BR';
+
   constructor(
     private supabase: SupabaseService,
     private anthropic: Anthropic,
     private sendText: (to: string, text: string) => Promise<void>,
+    private metaWaba: CadenceTemplateSender | null = null,
   ) {}
 
   /**
@@ -232,17 +253,61 @@ export class CadenceService {
           continue;
         }
 
-        const article = row.step >= 2 ? this.pickArticle(row.lead_id, row.step) : undefined;
-        const text = await this.generateMessage({
-          clientName: row.name,
-          step: row.step,
-          article,
-        });
+        // Janela WABA 24h: se cliente NAO respondeu nas ultimas 24h, texto
+        // livre vai falhar. So template aprovado chega. Toque 1 normalmente
+        // tem janela aberta (lead acabou de qualificar); toques 2+ quase
+        // sempre estao fora — template e a unica forma.
+        //
+        // `isWithin24hWindow` retorna:
+        //   true  -> janela aberta (msg do user < 24h)
+        //   false -> janela fechada (msg do user >= 24h)
+        //   null  -> nao sabe (sem conversa, sem msg de user, erro)
+        //
+        // Tratamento de `null`:
+        //  - Toque 1 (D+0): lead acabou de qualificar, presume aberta. Texto Claude.
+        //  - Toques 2+: presume fechada (default seguro), usa template.
+        const windowOpen = await this.supabase.isWithin24hWindow(row.lead_id);
+        const shouldUseTemplate =
+          windowOpen === false || (windowOpen === null && row.step > 1);
 
-        await this.sendBubbles(row.phone, text);
-        await this.supabase.markCadenceSent(row.id, text);
+        let messageLog: string;
+        let modo: 'texto' | 'template' = 'texto';
+
+        if (shouldUseTemplate) {
+          // Fora da janela: tem que ser template. Se nao temos metaWaba (Evolution
+          // puro), nao da pra mandar template — skipa o toque sem marcar enviado
+          // pra nao quebrar a continuacao. Cliente nao recebe nada hoje, proxima
+          // janela tenta de novo. Eh melhor que mandar texto que vai falhar
+          // silencioso e ainda agendar o proximo (perdendo o toque).
+          if (!this.metaWaba) {
+            console.warn(`[cadence] toque ${row.step} pra ${row.phone}: janela fechada e sem WABA — skip`);
+            await this.supabase.unlockCadence(row.id).catch(() => {});
+            continue;
+          }
+          const firstName = (row.name ?? '').split(' ')[0] || 'tudo bem';
+          await this.metaWaba.sendTemplate(
+            row.phone,
+            CadenceService.REACTIVATION_TEMPLATE_NAME,
+            CadenceService.REACTIVATION_TEMPLATE_LANG,
+            [{ type: 'body', parameters: [{ type: 'text', text: firstName }] }],
+          );
+          messageLog = `[template:${CadenceService.REACTIVATION_TEMPLATE_NAME} {{1}}=${firstName}]`;
+          modo = 'template';
+        } else {
+          // Janela aberta (cliente respondeu < 24h, OU toque 1 sem registro): texto Claude.
+          const article = row.step >= 2 ? this.pickArticle(row.lead_id, row.step) : undefined;
+          const text = await this.generateMessage({
+            clientName: row.name,
+            step: row.step,
+            article,
+          });
+          await this.sendBubbles(row.phone, text);
+          messageLog = text;
+        }
+
+        await this.supabase.markCadenceSent(row.id, messageLog);
         sent++;
-        console.log(`[cadence] Toque ${row.step} enviado pra ${row.phone} (${row.name ?? 'sem nome'})${article ? ` — base: "${article.title.slice(0, 50)}..."` : ''}`);
+        console.log(`[cadence] Toque ${row.step} enviado pra ${row.phone} (${row.name ?? 'sem nome'}) modo=${modo} janela24h=${windowOpen}`);
 
         // Cadencia infinita: apos enviar com sucesso, se nao houver mais
         // toques pendentes pra este lead, agenda o proximo (+1 ano). Continua

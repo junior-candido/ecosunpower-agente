@@ -327,6 +327,7 @@ async function main() {
     supabase,
     new Anthropic({ apiKey: config.anthropicApiKey }),
     sendText,
+    metaWaba ?? null,
   );
 
   // Eva Precificadora: modo /preco conversacional pra Junior calcular projetos

@@ -496,6 +496,44 @@ export class SupabaseService {
     return this.cancelCadence(lead.id, reason);
   }
 
+  /**
+   * Checa se a janela WABA de 24h esta ABERTA pro lead. WABA so deixa enviar
+   * texto livre quando o cliente respondeu nas ultimas 24h — fora disso, so
+   * via template aprovado.
+   *
+   * Heuristica: olha as mensagens da conversa mais recente do lead, procura
+   * a ultima com role='user' e ve se foi < 24h atras.
+   *
+   * Retorna `null` se nao conseguir determinar (sem conversa, erro). Caller
+   * decide: por seguranca, tratar `null` como FECHADA (fallback pra template).
+   */
+  async isWithin24hWindow(leadId: string): Promise<boolean | null> {
+    const { data: conv, error } = await this.client
+      .from('conversations')
+      .select('messages')
+      .eq('lead_id', leadId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      console.warn(`[supabase] isWithin24hWindow error pra lead ${leadId}: ${error.message}`);
+      return null;
+    }
+    if (!conv || !Array.isArray(conv.messages)) return null;
+
+    const msgs = conv.messages as Array<{ role?: string; timestamp?: string }>;
+    // De tras pra frente, acha ultima do user
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m?.role === 'user' && m.timestamp) {
+        const tMs = new Date(m.timestamp).getTime();
+        if (!isFinite(tMs)) return null;
+        return (Date.now() - tMs) < 24 * 60 * 60_000;
+      }
+    }
+    return null; // sem msg do user na conversa
+  }
+
   async getDueCadenceSteps(): Promise<Array<{
     id: string;
     lead_id: string;
