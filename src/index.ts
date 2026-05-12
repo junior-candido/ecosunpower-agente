@@ -4761,6 +4761,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // /dashboard/manutencao. Mais paginas serao adicionadas em fases.
   app.use('/dashboard', createDashboardRouter(supabase, monitoringService, {
     metaWabaAccessToken: config.metaWabaAccessToken,
+    anthropicApiKey: config.anthropicApiKey,
   }));
 
   // que abre HTML como codigo fonte.

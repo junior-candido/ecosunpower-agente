@@ -5,6 +5,17 @@
 // reload da pagina (fetch JSON + re-render).
 
 import type { CockpitData } from './cockpit-queries.js';
+import type { LeadSynthesis } from './lead-synthesis.js';
+
+interface LeadAguardando {
+  id: string;
+  name: string | null;
+  phone: string;
+  status: string;
+  cidade: string | null;
+  dias_aguardando: number;
+  synthesis: LeadSynthesis;
+}
 
 function escapeHtml(s: string | null | undefined): string {
   if (s === null || s === undefined) return '';
@@ -36,7 +47,7 @@ const STATUS_COLOR: Record<string, string> = {
   perdido: '#64748b',
 };
 
-export function renderCockpitPage(data: CockpitData): string {
+export function renderCockpitPage(data: CockpitData, leadsAguardando: LeadAguardando[] = []): string {
   // Serializa dados pro JS do cliente. Usa <script type="application/json">
   // (template element data) em vez de string-em-JS pra eliminar vetores XSS
   // como U+2028/U+2029 e </script>. JSON.parse via textContent eh seguro.
@@ -130,6 +141,46 @@ export function renderCockpitPage(data: CockpitData): string {
       </div>`;
     }).join('')}
   </div>
+
+  ${leadsAguardando.length > 0 ? `
+  <!-- 🔔 LEADS AGUARDANDO AÇÃO (síntese IA) -->
+  <div class="panel glow-rose" style="flex: 0 0 auto; max-height: 26vh; overflow-y: auto;">
+    <div class="panel-title flex justify-between items-center">
+      <span>🤖 EVA OLHANDO POR VOCÊ · ${leadsAguardando.length} LEADS AGUARDANDO AÇÃO</span>
+      <a href="/dashboard/leads?status=qualificado" class="text-rose-300 hover:text-rose-200">VER TODOS →</a>
+    </div>
+    <div class="p-2 space-y-2">
+      ${leadsAguardando.map((l) => {
+        const tempColor = l.synthesis.temperatura === '🔥' ? '#f43f5e'
+          : l.synthesis.temperatura === '⚠️' ? '#fbbf24' : '#64748b';
+        return `
+        <div class="border-l-2 pl-3 py-1" style="border-color:${tempColor};">
+          <div class="flex justify-between items-start gap-3">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 text-sm">
+                <span class="text-lg">${l.synthesis.temperatura}</span>
+                <span class="font-bold text-cyan-100">${escapeHtml(l.name ?? '— sem nome —')}</span>
+                <span class="text-slate-500">·</span>
+                <span class="text-slate-400 text-xs">${escapeHtml(formatPhoneShort(l.phone))}</span>
+                ${l.cidade ? `<span class="text-slate-500">·</span><span class="text-slate-400 text-xs">${escapeHtml(l.cidade)}</span>` : ''}
+                <span class="text-amber-300 text-xs">· ${l.dias_aguardando}d aguardando</span>
+              </div>
+              <div class="text-xs text-slate-300 mt-1 leading-tight">
+                💭 ${escapeHtml(l.synthesis.summary)}
+              </div>
+              <div class="text-xs text-emerald-300 mt-0.5 leading-tight">
+                📋 ${escapeHtml(l.synthesis.suggested_action)}
+              </div>
+            </div>
+            <div class="flex flex-col gap-1 shrink-0">
+              <a href="/dashboard/leads/${escapeHtml(l.id)}" class="px-2 py-1 text-[10px] rounded bg-cyan-600 hover:bg-cyan-500 text-white whitespace-nowrap">👤 Ver</a>
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>
+  ` : ''}
 
   <!-- LINHA 2 — Gauges + Funil + Atividade 24h -->
   <div class="grid grid-cols-12 gap-3" style="flex: 1 1 auto; min-height: 0;">
