@@ -534,7 +534,7 @@ export class SupabaseService {
     return null; // sem msg do user na conversa
   }
 
-  async getDueCadenceSteps(): Promise<Array<{
+  async getDueCadenceSteps(batchLimit: number = 50): Promise<Array<{
     id: string;
     lead_id: string;
     step: number;
@@ -542,13 +542,14 @@ export class SupabaseService {
     phone: string;
     name: string | null;
   }>> {
+    const safeLimit = Math.max(1, Math.min(200, batchLimit));
     const { data, error } = await this.client
       .from('eva_cadence')
       .select('id, lead_id, step, scheduled_for, leads!inner(phone, name)')
       .eq('status', 'pending')
       .lte('scheduled_for', new Date().toISOString())
       .order('scheduled_for', { ascending: true })
-      .limit(50);
+      .limit(safeLimit);
 
     if (error) {
       console.error(`[supabase] getDueCadenceSteps error: ${error.message}`);

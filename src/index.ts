@@ -5258,10 +5258,20 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     // automaticamente. Garante que NENHUM lead da campanha seja esquecido
     // (incidente Marcio Vianas 12-13/05/2026: lead da campanha Mai01 ficou
     // 30h+ sem cadencia agendada porque agendamento era manual via /eva on).
+    // Cap de quantos leads silentes recebem auto-agendamento por ciclo.
+    // Mesma logica do CADENCE_BATCH_LIMIT — se voce tem 209 silentes nao
+    // queremos criar 209 toques tudo no mesmo segundo. AUTO_CADENCE_BATCH_LIMIT
+    // controla isso. Default 50.
     const autoCadenceScheduler = async () => {
       try {
-        const silent = await supabase.getSilentLeadsWithoutCadence(24);
+        const envAutoLimit = parseInt(process.env.AUTO_CADENCE_BATCH_LIMIT ?? '', 10);
+        const autoBatchLimit = Number.isFinite(envAutoLimit) && envAutoLimit > 0 ? envAutoLimit : 50;
+        const silentAll = await supabase.getSilentLeadsWithoutCadence(24);
+        const silent = silentAll.slice(0, autoBatchLimit);
         if (silent.length === 0) return;
+        if (silentAll.length > silent.length) {
+          console.log(`[cadence] auto-scheduler: ${silentAll.length} silentes detectados, processando ${silent.length} este ciclo (limit=${autoBatchLimit})`);
+        }
         for (const lead of silent) {
           try {
             await supabase.scheduleCadence(lead.id);

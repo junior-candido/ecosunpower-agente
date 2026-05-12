@@ -241,8 +241,15 @@ export class CadenceService {
       return 0; // fora do horario comercial, espera proxima janela
     }
 
-    const due = await this.supabase.getDueCadenceSteps();
+    // CADENCE_BATCH_LIMIT controla quantos toques disparam por ciclo (15min).
+    // Default 50 (mantem volume normal). Em primeira ativacao com backlog
+    // grande, setar 10-15 no Easypanel pra escoar devagar e medir resposta.
+    // Limites: 1..200.
+    const envLimit = parseInt(process.env.CADENCE_BATCH_LIMIT ?? '', 10);
+    const batchLimit = Number.isFinite(envLimit) && envLimit > 0 ? envLimit : 50;
+    const due = await this.supabase.getDueCadenceSteps(batchLimit);
     if (due.length === 0) return 0;
+    console.log(`[cadence] processando ${due.length} toques (batch limit=${batchLimit})`);
 
     let sent = 0;
     for (const row of due) {
