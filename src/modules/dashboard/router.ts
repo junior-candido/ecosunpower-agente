@@ -103,9 +103,38 @@ export function createDashboardRouter(
 
   router.use(dashboardSessionAuth);
 
-  // Raiz redireciona pro home.
+  // Raiz redireciona pro cockpit (visao geral 1-tela). Era /home antes.
   router.get('/', (_req, res) => {
-    res.redirect('/dashboard/home');
+    res.redirect('/dashboard/cockpit');
+  });
+
+  // Cockpit: 1 tela dark neon com KPIs + gauges + funil + atividade + top leads.
+  // Auto-refresh 30s (gauges) + 5min (page completa). ECharts via CDN.
+  router.get('/cockpit', async (_req: Request, res: Response) => {
+    try {
+      const { getCockpitData } = await import('./cockpit-queries.js');
+      const { renderCockpitPage } = await import('./cockpit-views.js');
+      const data = await getCockpitData(supabase);
+      res.type('text/html').send(renderCockpitPage(data));
+    } catch (err) {
+      console.error('[dashboard/cockpit]', err);
+      res.status(500).type('text/html').send(
+        `<h2 style="color:#f43f5e;background:#020617;font-family:monospace;padding:20px;">Erro Cockpit</h2>` +
+        `<pre style="color:#cbd5e1;background:#020617;font-family:monospace;padding:20px;">${escapeHtmlSimple((err as Error).message)}</pre>`
+      );
+    }
+  });
+
+  // Endpoint JSON pro auto-refresh do cockpit (so dados, sem HTML).
+  router.get('/cockpit/data', async (_req: Request, res: Response) => {
+    try {
+      const { getCockpitData } = await import('./cockpit-queries.js');
+      const data = await getCockpitData(supabase);
+      res.json(data);
+    } catch (err) {
+      console.error('[dashboard/cockpit/data]', err);
+      res.status(500).json({ error: (err as Error).message });
+    }
   });
 
   // Home: KPIs + grafico mensal.

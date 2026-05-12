@@ -77,7 +77,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'marketing' | 'leads';
+  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'marketing' | 'leads';
   title: string;
   body: string;
   scripts?: string;
@@ -140,6 +140,7 @@ export function renderLayout(input: LayoutInput): string {
         </div>
       </div>
       <nav class="flex flex-wrap gap-1 text-sm w-full sm:w-auto justify-end">
+        <a href="/dashboard/cockpit" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('cockpit')}">⚡ <span class="hidden sm:inline">Cockpit</span></a>
         <a href="/dashboard/home" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('home')}">🏠 <span class="hidden sm:inline">Home</span></a>
         <a href="/dashboard/leads" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('leads')}">👥 <span class="hidden sm:inline">Leads</span></a>
         <a href="/dashboard/propostas" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('propostas')}">📊 <span class="hidden sm:inline">Propostas</span></a>
