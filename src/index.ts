@@ -5209,6 +5209,34 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     // Primeira passada 2min apos start (captura backlog de toques vencidos durante restart)
     setTimeout(() => cadence.processCadence().catch(() => {}), 2 * 60 * 1000);
     console.log('[cadence] Cadence scheduler started (checks every 15 min, 9h-20h BRT)');
+
+    // Auto-agendamento de cadencia: a cada 1h, busca leads novos silentes
+    // ha mais de 24h sem cadencia agendada e dispara scheduleCadence
+    // automaticamente. Garante que NENHUM lead da campanha seja esquecido
+    // (incidente Marcio Vianas 12-13/05/2026: lead da campanha Mai01 ficou
+    // 30h+ sem cadencia agendada porque agendamento era manual via /eva on).
+    const autoCadenceScheduler = async () => {
+      try {
+        const silent = await supabase.getSilentLeadsWithoutCadence(24);
+        if (silent.length === 0) return;
+        for (const lead of silent) {
+          try {
+            await supabase.scheduleCadence(lead.id);
+            console.log(
+              `[cadence] auto-agendado pra lead ${lead.id} (${lead.name ?? 'sem nome'} / ${lead.phone}) — silente ha > 24h`,
+            );
+          } catch (err) {
+            console.error(`[cadence] auto-agendamento falhou pra lead ${lead.id}:`, (err as Error).message);
+          }
+        }
+        console.log(`[cadence] auto-agendou cadencia pra ${silent.length} lead(s) silente(s)`);
+      } catch (err) {
+        console.error('[cadence] autoCadenceScheduler error:', (err as Error).message);
+      }
+    };
+    setInterval(autoCadenceScheduler, 60 * 60 * 1000); // a cada 1h
+    setTimeout(autoCadenceScheduler, 3 * 60 * 1000); // primeira passada 3min apos start
+    console.log('[cadence] Auto-scheduler started (checks every 1h for silent leads > 24h)');
   }
 
   // Notificacao de review novo do /avaliar (form publico do site).

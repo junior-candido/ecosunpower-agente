@@ -402,6 +402,50 @@ export class SupabaseService {
   }
 
   /**
+   * Busca leads "silentes" — criados ha mais de N horas e que nunca
+   * tiveram cadencia agendada. Excluir opt_out, eva_active=false e
+   * status terminal (transferido, fechado, perdido).
+   *
+   * Usado pelo cron de auto-agendamento de cadencia: garante que NENHUM
+   * lead novo seja esquecido. Apos 24h sem responder, Eva comeca a
+   * arrochar via cadencia infinita.
+   */
+  async getSilentLeadsWithoutCadence(hoursSilent: number = 24): Promise<Array<{
+    id: string;
+    phone: string;
+    name: string | null;
+    created_at: string;
+  }>> {
+    // Primeiro pega leads candidatos (criados ha > N horas, ativos, sem opt-out, status nao-terminal).
+    const cutoff = new Date(Date.now() - hoursSilent * 60 * 60_000).toISOString();
+    const { data: candidates, error } = await this.client
+      .from('leads')
+      .select('id, phone, name, created_at')
+      .eq('eva_active', true)
+      .eq('opt_out', false)
+      .in('status', ['novo', 'qualificando'])
+      .lt('created_at', cutoff)
+      .limit(200);
+
+    if (error) {
+      console.error('[supabase] getSilentLeadsWithoutCadence list error:', error.message);
+      return [];
+    }
+    if (!candidates || candidates.length === 0) return [];
+
+    // Filtra fora os que ja tem QUALQUER registro de cadencia (pending OU sent).
+    // Idempotencia: scheduleCadence ja chamado uma vez nao deve disparar de novo.
+    const ids = candidates.map((c) => c.id);
+    const { data: withCadence } = await this.client
+      .from('eva_cadence')
+      .select('lead_id')
+      .in('lead_id', ids);
+    const withCadenceSet = new Set((withCadence ?? []).map((r: any) => r.lead_id));
+
+    return candidates.filter((c) => !withCadenceSet.has(c.id));
+  }
+
+  /**
    * Apos enviar o ultimo toque pendente, gera o proximo toque +1 ano a
    * frente. Mantem cadencia rodando indefinidamente ate cliente responder
    * ou pedir opt-out. Idempotente: se ja existe step > lastStep pendente,
