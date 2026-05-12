@@ -5658,7 +5658,14 @@ Slug: ${draft.slug}`;
   // meta_ads_insights collector: roda a cada 2h pra todas as campanhas active.
   // Usa metaWabaAccessToken — apesar do nome WhatsApp, e o mesmo System User
   // token com perm ads_read (15 perms granted, ver project_eva_28_04_token_pendencia memoria).
-  if (!isSandbox && !passiveMode && config.metaWabaAccessToken) {
+  //
+  // IMPORTANTE: NAO depende de passiveMode. EVA_PASSIVE_MODE foi feito pra
+  // desligar SCHEDULERS DE OUTBOUND (followup, cadence, manutencao) — coisas
+  // que Eva manda. O cron de insights eh INBOUND (so consulta API Meta e
+  // grava no DB). Sem ele, dashboard de marketing fica congelado mesmo com
+  // campanhas reais rodando — incidente em 11-13/05/2026 (passiveMode esteve
+  // true durante campanha Mai01 LIVE, 22 plantas Deye + marketing pararam).
+  if (!isSandbox && config.metaWabaAccessToken) {
     const runInsightsCollector = async () => {
       try {
         const { syncCampaignStatuses, collectInsights } = await import('./modules/marketing/insights-collector.js');
@@ -5673,6 +5680,13 @@ Slug: ${draft.slug}`;
     setInterval(runInsightsCollector, 2 * 60 * 60 * 1000);
     setTimeout(runInsightsCollector, 5 * 60 * 1000); // first run 5 min after boot
     console.log('[insights] meta_ads_insights collector scheduled (every 2h)');
+  } else if (!isSandbox) {
+    // Diagnostico explicito quando NAO registra — pra nao ficar dashboard
+    // congelado em silencio (causa do incidente acima).
+    console.warn(
+      `[insights] ⚠️ collector NAO registrado. ` +
+      `isSandbox=${isSandbox} metaWabaAccessToken=${config.metaWabaAccessToken ? 'set' : 'MISSING'}`,
+    );
   }
 
   // Agente Analista: daily 9h BRT + weekly segunda 8h BRT
