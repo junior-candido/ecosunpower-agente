@@ -162,6 +162,89 @@ export function createDashboardRouter(
     }
   });
 
+  // ----- LEADS -----
+  // Lista de leads com filtros (alertas, status) + acoes rapidas (pausar Eva,
+  // retomar, iniciar cadencia manual). Detalhe mostra conversa Eva ↔ cliente.
+
+  router.get('/leads', async (req: Request, res: Response) => {
+    try {
+      const { listLeads } = await import('./leads-queries.js');
+      const { renderLeadsListPage } = await import('./leads-views.js');
+      const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+      const only_alerts = req.query.only_alerts === '1' || req.query.only_alerts === 'true';
+      const rows = await listLeads(supabase, { status, only_alerts });
+      res.send(renderLeadsListPage(rows, { status, only_alerts }));
+    } catch (err) {
+      console.error('[dashboard/leads]', err);
+      res.status(500).send(`<h2>Erro ao carregar leads</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  router.get('/leads/:id', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    try {
+      const { getLeadDetail } = await import('./leads-queries.js');
+      const { renderLeadDetailPage } = await import('./leads-views.js');
+      const lead = await getLeadDetail(supabase, id);
+      if (!lead) return res.status(404).send('lead não encontrado');
+      res.send(renderLeadDetailPage(lead));
+    } catch (err) {
+      console.error('[dashboard/leads/:id]', err);
+      res.status(500).send(`<h2>Erro ao carregar lead</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  // Pausa Eva pra este lead (equivalente a /eva off no zap).
+  router.post('/leads/:id/pause-eva', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const { error } = await supabase
+      .from('leads')
+      .update({ eva_active: false, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    res.redirect(`/dashboard/leads/${id}`);
+  });
+
+  // Reativa Eva (equivalente a /eva on no zap).
+  router.post('/leads/:id/resume-eva', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const { error } = await supabase
+      .from('leads')
+      .update({ eva_active: true, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    res.redirect(`/dashboard/leads/${id}`);
+  });
+
+  // Agenda cadencia manual (10 toques + auto-renovacao).
+  router.post('/leads/:id/start-cadence', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    try {
+      // supabase aqui e o SupabaseClient cru; precisamos do service.
+      // Workaround: chama scheduleCadence via SQL direto seguindo mesmo padrao.
+      const now = Date.now();
+      const intervals = [0, 1, 3, 7, 14, 30, 60, 90, 180, 365];
+      const rows = intervals.map((days, idx) => ({
+        lead_id: id,
+        step: idx + 1,
+        scheduled_for: new Date(now + days * 24 * 60 * 60_000).toISOString(),
+        status: 'pending',
+      }));
+      // Cancela toques pendentes antigos primeiro (idempotencia)
+      await supabase.from('eva_cadence').update({ status: 'cancelled', cancelled_reason: 'superseded' })
+        .eq('lead_id', id).eq('status', 'pending');
+      const { error } = await supabase.from('eva_cadence').upsert(rows, { onConflict: 'lead_id,step', ignoreDuplicates: false });
+      if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+      res.redirect(`/dashboard/leads/${id}`);
+    } catch (err) {
+      res.status(500).send(`erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+  });
+
   // Marketing: KPIs 7d + campanhas ativas + criativos + alertas.
   router.get('/marketing', async (_req: Request, res: Response) => {
     try {
