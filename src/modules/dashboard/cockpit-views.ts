@@ -70,7 +70,15 @@ export function renderCockpitPage(
     background: #050610;
     color: #d1d5db;
     font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-    overflow: hidden;
+    overflow-x: hidden;
+  }
+  /* Desktop: 1 tela sem scroll. Mobile: scroll natural. */
+  @media (min-width: 768px) {
+    body { overflow: hidden; }
+    .cockpit-root { height: 100vh; }
+  }
+  @media (max-width: 767px) {
+    .cockpit-root { min-height: 100vh; }
   }
   .glow-cyan   { box-shadow: 0 0 0 1px #06b6d4, 0 0 18px -2px rgba(6,182,212,0.55); }
   .glow-amber  { box-shadow: 0 0 0 1px #fbbf24, 0 0 18px -2px rgba(251,191,36,0.55); }
@@ -136,17 +144,17 @@ export function renderCockpitPage(
   ::-webkit-scrollbar-thumb { background: rgba(6,182,212,0.4); border-radius: 4px; }
 </style>
 </head>
-<body class="h-screen">
-<div class="h-screen flex flex-col p-3 gap-3 scan relative">
+<body>
+<div class="cockpit-root flex flex-col p-2 md:p-3 gap-2 md:gap-3 scan relative">
 
   <!-- HEADER -->
-  <div class="flex items-center justify-between px-2">
+  <div class="flex items-center justify-between px-2 flex-wrap gap-2">
     <div class="flex items-center gap-3">
       <span class="text-cyan-400 text-xl">⚡</span>
       <span class="text-cyan-100 text-sm tracking-[0.3em] font-bold">ECOSUN · COCKPIT</span>
       <span class="text-xs text-emerald-400"><span class="blink">●</span> LIVE</span>
     </div>
-    <div class="flex items-center gap-4 text-xs">
+    <div class="flex items-center gap-2 md:gap-4 text-xs flex-wrap">
       <span class="text-cyan-300" id="hud-time">--:--:--</span>
       <span class="text-amber-300">ALERTAS: <span id="hud-alerts">${data.meta.alertasPendentes}</span></span>
       <span class="text-rose-300">SILENTES s/ CAD: <span id="hud-silent">${data.meta.silentesSemCadencia}</span></span>
@@ -161,7 +169,7 @@ export function renderCockpitPage(
   </div>
 
   <!-- LINHA 1 — 4 KPIs grandes -->
-  <div class="grid grid-cols-4 gap-3" style="flex: 0 0 auto;">
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3" style="flex: 0 0 auto;">
     ${data.kpis.map((k, i) => {
       const colors = ['glow-cyan', 'glow-rose', 'glow-amber', 'glow-green'];
       const valueColors = ['text-cyan-300', 'text-rose-300', 'text-amber-300', 'text-emerald-300'];
@@ -176,9 +184,16 @@ export function renderCockpitPage(
   ${(platformInsights.length > 0 || leadsAguardando.length > 0) ? `
   <!-- 🤖 EVA OLHANDO POR VOCÊ — Insights gerais + leads aguardando -->
   <div class="panel hud-corners glow-rose" style="flex: 0 0 auto; max-height: 32vh; overflow-y: auto;">
-    <div class="panel-title flex justify-between items-center">
+    <div class="panel-title flex justify-between items-center gap-2">
       <span>🤖 EVA OLHANDO POR VOCÊ</span>
-      <span class="text-rose-300 text-[10px]">${platformInsights.length} INSIGHTS · ${leadsAguardando.length} LEADS</span>
+      <div class="flex items-center gap-2">
+        <span class="text-rose-300 text-[10px]">${platformInsights.length} INSIGHTS · ${leadsAguardando.length} LEADS</span>
+        <button id="btn-recalc-insights" type="button"
+          class="px-2 py-0.5 rounded border border-rose-400 text-rose-200 text-[10px] hover:bg-rose-400 hover:text-slate-900 font-bold transition"
+          title="Recalcula insights da IA (consome Claude)">
+          🔄 <span id="btn-recalc-label">RECALCULAR</span>
+        </button>
+      </div>
     </div>
 
     ${platformInsights.length > 0 ? `
@@ -242,11 +257,11 @@ export function renderCockpitPage(
   </div>
   ` : ''}
 
-  <!-- LINHA 2 — Anéis Concêntricos + Sankey Pipeline + Atividade 24h -->
-  <div class="grid grid-cols-12 gap-3" style="flex: 1 1 auto; min-height: 0;">
+  <!-- LINHA 2 — Anéis Concêntricos + Funil + Atividade 24h -->
+  <div class="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-3" style="flex: 1 1 auto; min-height: 0;">
 
     <!-- Anéis Concêntricos: Eva (externo) + Sistema (interno). Numero da Eva no centro. -->
-    <div class="panel hud-corners col-span-4 flex flex-col">
+    <div class="panel hud-corners md:col-span-4 flex flex-col" style="min-height: 240px;">
       <div class="panel-title flex justify-between">
         <span>SINAIS VITAIS</span>
         <span class="text-cyan-300 text-[10px]">EVA + SISTEMA</span>
@@ -274,7 +289,7 @@ export function renderCockpitPage(
     </div>
 
     <!-- Funil de Leads -->
-    <div class="panel hud-corners col-span-5 flex flex-col">
+    <div class="panel hud-corners md:col-span-5 flex flex-col" style="min-height: 240px;">
       <div class="panel-title flex justify-between">
         <span>FUNIL DE LEADS</span>
         <span class="text-cyan-300 text-[10px]">DO CONTATO AO FECHAMENTO</span>
@@ -283,7 +298,7 @@ export function renderCockpitPage(
     </div>
 
     <!-- Atividade 24h -->
-    <div class="panel hud-corners col-span-3 flex flex-col">
+    <div class="panel hud-corners md:col-span-3 flex flex-col" style="min-height: 220px;">
       <div class="panel-title">ATIVIDADE NAS ÚLTIMAS 24H</div>
       <div id="chart-activity" class="flex-1 min-h-0"></div>
       <div class="text-[10px] text-slate-400 px-3 pb-2 flex justify-around">
@@ -295,10 +310,10 @@ export function renderCockpitPage(
   </div>
 
   <!-- LINHA 3 — Top leads quentes + Campanha LIVE -->
-  <div class="grid grid-cols-12 gap-3" style="flex: 1 1 auto; min-height: 0;">
+  <div class="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-3" style="flex: 1 1 auto; min-height: 0;">
 
     <!-- Top leads -->
-    <div class="panel hud-corners col-span-8 flex flex-col">
+    <div class="panel hud-corners md:col-span-8 flex flex-col">
       <div class="panel-title flex justify-between">
         <span>LEADS QUENTES · TOP 5</span>
         <a href="/dashboard/leads" class="text-amber-300 hover:text-amber-200">VER TODOS →</a>
@@ -308,10 +323,10 @@ export function renderCockpitPage(
           <thead class="text-slate-500 uppercase text-[10px] tracking-wider">
             <tr class="border-b border-slate-800">
               <th class="text-left px-3 py-1">Lead</th>
-              <th class="text-left px-3 py-1">Telefone</th>
-              <th class="text-left px-3 py-1">Cidade</th>
+              <th class="text-left px-3 py-1 hidden md:table-cell">Telefone</th>
+              <th class="text-left px-3 py-1 hidden md:table-cell">Cidade</th>
               <th class="text-left px-3 py-1">Status</th>
-              <th class="text-right px-3 py-1">Ult. atual.</th>
+              <th class="text-right px-3 py-1">Atual.</th>
               <th class="text-right px-3 py-1 pr-3">→</th>
             </tr>
           </thead>
@@ -327,8 +342,8 @@ export function renderCockpitPage(
                     : `${Math.floor(l.minutosDesdeAtualizacao / 1440)}d`;
                 return `<tr class="border-b border-slate-900 lead-link">
                   <td class="px-3 py-1.5"><a href="/dashboard/leads/${escapeHtml(l.id)}" class="text-cyan-100 hover:text-cyan-300">${escapeHtml(l.name ?? '— sem nome —')}</a></td>
-                  <td class="px-3 py-1.5 text-slate-400">${escapeHtml(formatPhoneShort(l.phone))}</td>
-                  <td class="px-3 py-1.5 text-slate-400">${escapeHtml(l.cidade ?? '—')}</td>
+                  <td class="px-3 py-1.5 text-slate-400 hidden md:table-cell">${escapeHtml(formatPhoneShort(l.phone))}</td>
+                  <td class="px-3 py-1.5 text-slate-400 hidden md:table-cell">${escapeHtml(l.cidade ?? '—')}</td>
                   <td class="px-3 py-1.5">
                     <span class="px-2 py-0.5 rounded text-[10px] font-bold" style="background:${color}25; color:${color}; border:1px solid ${color}66;">
                       ${escapeHtml(l.status.toUpperCase())}
@@ -344,7 +359,7 @@ export function renderCockpitPage(
     </div>
 
     <!-- Campanha LIVE -->
-    <div class="panel hud-corners col-span-4 flex flex-col glow-amber">
+    <div class="panel hud-corners md:col-span-4 flex flex-col glow-amber">
       <div class="panel-title flex justify-between">
         <span>CAMPANHA · META ADS · 7D</span>
         <a href="/dashboard/marketing" class="text-amber-300 hover:text-amber-200">→</a>
@@ -389,8 +404,8 @@ const NEON = {
   green: '#22c55e', rose: '#f43f5e', bg: 'transparent',
 };
 
-// Aneis concentricos limpos — APENAS 2 aneis (Eva externo + Sistema interno).
-// O numero da Eva fica grande e LIVRE no centro, sem obstrucao.
+// Aneis concentricos limpos — 2 aneis bem separados com numero LIVRE no centro.
+// Raio interno reduzido pra 48% (deixa MUITO espaco pro numero respirar).
 function renderRings(el, evaPct, sistemaPct, existing) {
   const chart = existing ?? echarts.init(el, null, { renderer: 'canvas' });
   const ringColor = (pct, baseColor) => pct >= 70 ? baseColor : pct >= 40 ? '#fbbf24' : '#f43f5e';
@@ -401,27 +416,27 @@ function renderRings(el, evaPct, sistemaPct, existing) {
     series: [
       // EVA (anel externo)
       {
-        type: 'gauge', center: ['50%', '55%'], radius: '88%',
+        type: 'gauge', center: ['50%', '52%'], radius: '88%',
         startAngle: 90, endAngle: -270, min: 0, max: 100,
-        progress: { show: true, width: 18, roundCap: true, itemStyle: { color: evaColor, shadowColor: evaColor, shadowBlur: 14 } },
-        axisLine: { lineStyle: { width: 18, color: [[1, 'rgba(34,211,238,0.08)']] } },
+        progress: { show: true, width: 12, roundCap: true, itemStyle: { color: evaColor, shadowColor: evaColor, shadowBlur: 14 } },
+        axisLine: { lineStyle: { width: 12, color: [[1, 'rgba(34,211,238,0.08)']] } },
         axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
         pointer: { show: false }, anchor: { show: false }, title: { show: false },
         detail: { show: false },
         data: [{ value: evaPct }],
       },
-      // SISTEMA (anel interno)
+      // SISTEMA (anel interno) — raio reduzido + width fino pra abrir centro
       {
-        type: 'gauge', center: ['50%', '55%'], radius: '62%',
+        type: 'gauge', center: ['50%', '52%'], radius: '70%',
         startAngle: 90, endAngle: -270, min: 0, max: 100,
-        progress: { show: true, width: 18, roundCap: true, itemStyle: { color: sistemaColor, shadowColor: sistemaColor, shadowBlur: 14 } },
-        axisLine: { lineStyle: { width: 18, color: [[1, 'rgba(251,191,36,0.08)']] } },
+        progress: { show: true, width: 12, roundCap: true, itemStyle: { color: sistemaColor, shadowColor: sistemaColor, shadowBlur: 14 } },
+        axisLine: { lineStyle: { width: 12, color: [[1, 'rgba(251,191,36,0.08)']] } },
         axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
         pointer: { show: false }, anchor: { show: false }, title: { show: false },
         detail: {
           valueAnimation: true,
           formatter: () => evaPct + '%',
-          color: '#e2e8f0', fontSize: 38, fontWeight: 'bold', offsetCenter: [0, '-2%'],
+          color: '#e2e8f0', fontSize: 36, fontWeight: 'bold', offsetCenter: [0, 0],
         },
         data: [{ value: sistemaPct }],
       },
@@ -546,7 +561,35 @@ window.addEventListener('resize', () => {
 });
 
 // Full page reload a cada 5min pra refrescar KPIs+tabela
+// (gauges atualizam a cada 30s via JSON. "Eva olhando" so renova no reload OU
+// no botao "Recalcular" do card — preferencia Junior pra economizar Claude)
 setTimeout(() => window.location.reload(), 5 * 60 * 1000);
+
+// Botao "Recalcular" do card Eva olhando: invalida cache + reload pra mostrar
+// insights novos. Junior clica quando quer dado fresco (custa Claude tokens).
+const btnRecalc = document.getElementById('btn-recalc-insights');
+const btnRecalcLabel = document.getElementById('btn-recalc-label');
+if (btnRecalc && btnRecalcLabel) {
+  btnRecalc.addEventListener('click', async () => {
+    btnRecalc.disabled = true;
+    btnRecalcLabel.textContent = 'RECALCULANDO...';
+    btnRecalc.style.opacity = '0.6';
+    try {
+      const r = await fetch('/dashboard/cockpit/insights/refresh', { method: 'POST' });
+      const j = await r.json();
+      if (j.ok) {
+        btnRecalcLabel.textContent = '✅ OK — RECARREGANDO';
+        setTimeout(() => window.location.reload(), 600);
+      } else {
+        btnRecalcLabel.textContent = '⚠️ ERRO';
+        setTimeout(() => { btnRecalcLabel.textContent = 'RECALCULAR'; btnRecalc.style.opacity = '1'; btnRecalc.disabled = false; }, 2500);
+      }
+    } catch (err) {
+      btnRecalcLabel.textContent = '⚠️ ERRO';
+      setTimeout(() => { btnRecalcLabel.textContent = 'RECALCULAR'; btnRecalc.style.opacity = '1'; btnRecalc.disabled = false; }, 2500);
+    }
+  });
+}
 
 // SYNC AGORA: forca refresh dos collectors no backend (Meta Ads + monitoring).
 // Sem cron pra esperar — Junior aperta e ve novo dado em poucos segundos.

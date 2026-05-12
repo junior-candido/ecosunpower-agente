@@ -142,6 +142,20 @@ export function createDashboardRouter(
     }
   });
 
+  // Forca recalculo dos insights IA do card "Eva olhando" (invalida cache).
+  // Caller faz POST /cockpit/insights/refresh, depois GET /cockpit pra ver
+  // os novos insights. Throttle natural pelo proprio TTL de 15min.
+  router.post('/cockpit/insights/refresh', async (_req: Request, res: Response) => {
+    try {
+      const { invalidateInsightsCache } = await import('./lead-synthesis.js');
+      invalidateInsightsCache();
+      res.json({ ok: true, message: 'Cache de insights invalidado. Recarregue a página.' });
+    } catch (err) {
+      console.error('[dashboard/cockpit/insights/refresh]', err);
+      res.status(500).json({ ok: false, error: (err as Error).message });
+    }
+  });
+
   // Endpoint JSON pro auto-refresh do cockpit (so dados, sem HTML).
   router.get('/cockpit/data', async (_req: Request, res: Response) => {
     try {

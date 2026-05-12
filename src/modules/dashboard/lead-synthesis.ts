@@ -131,6 +131,15 @@ export interface PlatformInsight {
 const PLATFORM_CACHE_TTL_MS = 15 * 60_000;
 let platformCache: { data: PlatformInsight[]; expiresAt: number } | null = null;
 
+/**
+ * Invalida cache de insights gerais + cache individual de leads.
+ * Usado quando Junior clica "Recalcular" no cockpit pra forcar regeneracao.
+ */
+export function invalidateInsightsCache(): void {
+  platformCache = null;
+  cache.clear();
+}
+
 export async function getPlatformInsights(
   supabase: SupabaseClient,
   anthropic: Anthropic,
@@ -213,10 +222,26 @@ export async function getPlatformInsights(
     // === Pede pra Claude gerar insights executivos
     const systemPrompt = `Vc eh Eva, engenheira virtual da Ecosunpower. Analisa o estado da plataforma hoje e gera 3 a 5 insights executivos pro Junior (Responsavel Tecnico) saber em 30 segundos o que esta acontecendo e o que priorizar.
 
+⚠️ CONTEXTO CRITICO sobre o que JA EH AUTOMATICO (nao sugira essas acoes pro Junior, ele NAO precisa disparar nada manualmente):
+- Cadencia de reengajamento: cron roda a cada 15min, dispara toques automaticamente
+- Auto-cadence: cron a cada 1h, agenda toques pra silentes 24h+ automaticamente
+- Template "reativacao_lead_v1" (aprovado Meta): disparado automaticamente quando janela 24h fecha
+- Digest 3x/dia (7h/12h40/21h BRT): notificacao ja agendada
+- Sync Meta Ads insights: a cada 30min automatico
+- Monitoramento usinas: a cada 15min automatico
+
+➡️ So sugira acoes que EXIGEM o Junior agir manualmente:
+- "Assumir conversa de cliente X (sinal quente)"
+- "Confirmar logistica da visita agendada de Y"
+- "Ligar pessoalmente pro lead Z (lead grande)"
+- "Aprovar review pendente no site"
+- "Revisar campanha que tem CPL alto"
+- "Decidir se mantem ou pausa lead que parou de responder"
+
 Cada insight deve ter:
 - icone (1 emoji que represente o tema: 🔥 alerta, 🚀 conquista, ⚠️ atencao, 💡 sugestao, 📊 metrica, ✅ ok, 📉 queda, 📈 alta, 🎯 oportunidade)
 - titulo (2-3 palavras em PT-BR, ex: "Campanha quente", "Silentes acumulando", "Boas vendas")
-- mensagem (1 frase em PT-BR, max 160 chars, com numero concreto. Tom direto, sem rodeios. Pode chamar Junior pela acao)
+- mensagem (1 frase em PT-BR, max 160 chars, com numero concreto. Tom direto, sem rodeios. Pode chamar Junior pela acao MAS so se ela exige acao humana — NUNCA sugira "dispare cadencia" ou "agende toque" porque isso eh automatico)
 - prioridade (alta | media | baixa)
 
 REGRAS:
@@ -224,7 +249,6 @@ REGRAS:
 - Sempre numero concreto (nao "alguns" — diga "12")
 - Tom de relatorio executivo: direto, util, sem floreio
 - Ordene por prioridade desc (alta primeiro)
-- Inclua pelo menos 1 acao concreta sugerida quando relevante
 
 Retorne JSON valido sem outros caracteres:
 [{"icone":"🔥","titulo":"X","mensagem":"Y","prioridade":"alta"}, ...]`;
