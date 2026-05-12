@@ -2560,7 +2560,11 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       case 'schedule_visit': {
         const d = action.data as Record<string, unknown>;
         const startISO = d.datetime_iso as string | undefined;
-        const durationMinutes = (d.duration_minutes as number | undefined) ?? 60;
+        // visit_type: 'meet' (Google Meet 30min) ou 'on_site' (visita presencial 60min).
+        // Default 'on_site' pra compat retroativa com prompts antigos.
+        const visitType = (d.visit_type as string | undefined) === 'meet' ? 'meet' : 'on_site';
+        const isMeet = visitType === 'meet';
+        const durationMinutes = (d.duration_minutes as number | undefined) ?? (isMeet ? 30 : 60);
         const clientEmail = (d.client_email as string | undefined)?.trim();
         const clientAddress = (d.client_address as string | undefined)?.trim();
         let clientCoordinates = (d.client_coordinates as string | undefined)?.trim();
@@ -2625,8 +2629,11 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           }
 
           const lead = await supabase.getLeadByPhone(from);
-          const summary = `Visita tecnica - ${lead?.name ?? from} - ${lead?.city ?? ''}`.trim();
+          const summary = isMeet
+            ? `Meet - ${lead?.name ?? from} - apresentacao estudo`
+            : `Visita tecnica - ${lead?.name ?? from} - ${lead?.city ?? ''}`.trim();
           const description = [
+            `Tipo: ${isMeet ? 'Google Meet (online)' : 'Visita tecnica presencial'}`,
             `Cliente: ${lead?.name ?? 'Nao informado'}`,
             `WhatsApp: ${from}`,
             `Cidade: ${lead?.city ?? 'Nao informada'}`,
@@ -2635,25 +2642,33 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
               ? `Conta: R$ ${(lead.energy_data as Record<string, unknown>).monthly_bill ?? '-'}/mes`
               : '',
             clientEmail ? `Email cliente: ${clientEmail}` : '',
-            clientAddress ? `Endereco: ${clientAddress}` : '',
-            clientCoordinates ? `Coordenadas: ${clientCoordinates}` : '',
-            clientCoordinates ? `Maps: https://www.google.com/maps?q=${clientCoordinates}` : '',
+            !isMeet && clientAddress ? `Endereco: ${clientAddress}` : '',
+            !isMeet && clientCoordinates ? `Coordenadas: ${clientCoordinates}` : '',
+            !isMeet && clientCoordinates ? `Maps: https://www.google.com/maps?q=${clientCoordinates}` : '',
             d.notes ? `\nObservacoes: ${d.notes}` : '',
           ].filter(Boolean).join('\n');
 
-          // Single internal event (Ecosunpower side only — full details + map, no attendees)
-          // Prefer coordinates in location field (more precise for Maps); fallback to address
-          const eventLocation = clientCoordinates
-            ? (clientAddress ? `${clientAddress} (${clientCoordinates})` : clientCoordinates)
-            : (clientAddress || undefined);
+          // Meet: cria evento COM Google Meet (link gerado automatico), sem location.
+          // Visita: cria evento com location (endereco + maps), sem Meet.
+          const eventLocation = isMeet
+            ? undefined
+            : (clientCoordinates
+              ? (clientAddress ? `${clientAddress} (${clientCoordinates})` : clientCoordinates)
+              : (clientAddress || undefined));
           const event = await calendar.createEvent({
             summary,
             description,
             startISO,
             endISO,
             location: eventLocation,
+            withMeet: isMeet,
           });
-          console.log(`[calendar] Event created for ${from}: ${event.htmlLink} (location=${eventLocation ?? 'none'})`);
+          console.log(`[calendar] Event created for ${from}: type=${visitType} ${event.htmlLink} meet=${event.meetLink ?? 'none'} location=${eventLocation ?? 'none'}`);
+
+          // Se Meet: manda link pro cliente no zap imediatamente.
+          if (isMeet && event.meetLink && !isSandbox) {
+            await sendText(from, `Pronto! 🎥\n\nLink do Meet: ${event.meetLink}\n\nÉ só clicar no horário marcado. Se precisar reagendar é só me chamar.`);
+          }
 
           await supabase.logEvent('info', 'calendar', `Visit scheduled for ${from}`, {
             event_id: event.eventId,
@@ -2676,11 +2691,14 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
               day: '2-digit', month: '2-digit', weekday: 'short',
               hour: '2-digit', minute: '2-digit',
             });
+            const tipoLabel = isMeet ? '🎥 Google Meet (30min)' : '🚗 Visita presencial (60min)';
             const alertBody = [
-              `📅 *Visita agendada — ${lead.name ?? 'cliente'}*`,
+              `📅 *${isMeet ? 'Meet agendado' : 'Visita agendada'} — ${lead.name ?? 'cliente'}*`,
               ``,
+              `${tipoLabel}`,
               `🕒 ${dataFmt}`,
-              clientAddress ? `📍 ${clientAddress}` : '',
+              isMeet && event.meetLink ? `🔗 ${event.meetLink}` : '',
+              !isMeet && clientAddress ? `📍 ${clientAddress}` : '',
               `📞 ${from}`,
               lead.city ? `🏙️ ${lead.city}` : '',
               ``,
