@@ -97,7 +97,7 @@ export async function getCockpitData(client: SupabaseClient): Promise<CockpitDat
     client.from('leads')
       .select('id', { count: 'exact', head: true })
       .eq('eva_active', true).eq('opt_out', false)
-      .in('status', ['novo', 'qualificando'])
+      .in('status', ['novo', 'qualificando', 'qualificado'])
       .lt('updated_at', since24h),
     client.from('leads').select('id', { count: 'exact', head: true })
       .eq('status', 'agendado').gte('updated_at', today0h),
@@ -122,7 +122,7 @@ export async function getCockpitData(client: SupabaseClient): Promise<CockpitDat
     client.from('leads')
       .select('id', { count: 'exact', head: true })
       .eq('eva_active', true).eq('opt_out', false)
-      .in('status', ['novo', 'qualificando'])
+      .in('status', ['novo', 'qualificando', 'qualificado'])
       .lt('updated_at', since24h),
     client.from('marketing_alerts').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
   ]);

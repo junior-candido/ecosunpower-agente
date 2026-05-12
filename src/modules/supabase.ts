@@ -423,7 +423,7 @@ export class SupabaseService {
       .select('id, phone, name, created_at')
       .eq('eva_active', true)
       .eq('opt_out', false)
-      .in('status', ['novo', 'qualificando'])
+      .in('status', ['novo', 'qualificando', 'qualificado'])
       .lt('created_at', cutoff)
       .limit(200);
 

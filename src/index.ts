@@ -2475,6 +2475,16 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         // Status fica 'qualificado' como sinal de que dossier esta pronto, mas
         // Eva CONTINUA conversando (sessao ativa) ate cliente agendar visita
         // ou recusar explicitamente.
+        //
+        // Dedup: se o lead JA esta 'agendado' (cliente fechou rapido e
+        // qualification_complete chega depois do schedule_visit), nao
+        // re-marca pra qualificado nem manda alerta — agendamento ja
+        // gerou o alerta certo.
+        const existingLead = await supabase.getLeadByPhone(from);
+        if (existingLead?.status === 'agendado') {
+          console.log(`[qualification_complete] lead ${from} ja agendado — pula alerta duplicado`);
+          break;
+        }
         await supabase.upsertLead({ phone: from, status: 'qualificado' });
         await supabase.updateConversation(conversationId, {
           qualification_step: 'qualificacao_completa',
@@ -2683,9 +2693,12 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           await supabase.upsertLead({ phone: from, status: 'agendado' });
           await supabase.cancelCadence(leadId, 'visita_agendada').catch(() => {});
 
-          // Alerta WABA pro Junior com botoes — agendamento eh sinal QUENTE,
-          // ele precisa ver na hora pra confirmar logistica e equipamento.
-          if (!isSandbox && lead) {
+          // Alerta WABA pro Junior — agendamento eh sinal QUENTE, ele precisa
+          // ver na hora pra confirmar logistica e equipamento. NUNCA silencia,
+          // mesmo se lead for null (Calendar foi criado, Junior tem que saber).
+          if (!isSandbox) {
+            const leadName = lead?.name ?? 'cliente';
+            const leadCity = lead?.city ?? null;
             const dataFmt = new Date(startISO).toLocaleString('pt-BR', {
               timeZone: 'America/Sao_Paulo',
               day: '2-digit', month: '2-digit', weekday: 'short',
@@ -2693,19 +2706,22 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             });
             const tipoLabel = isMeet ? '🎥 Google Meet (30min)' : '🚗 Visita presencial (60min)';
             const alertBody = [
-              `📅 *${isMeet ? 'Meet agendado' : 'Visita agendada'} — ${lead.name ?? 'cliente'}*`,
+              `📅 *${isMeet ? 'Meet agendado' : 'Visita agendada'} — ${leadName}*`,
               ``,
               `${tipoLabel}`,
               `🕒 ${dataFmt}`,
               isMeet && event.meetLink ? `🔗 ${event.meetLink}` : '',
               !isMeet && clientAddress ? `📍 ${clientAddress}` : '',
               `📞 ${from}`,
-              lead.city ? `🏙️ ${lead.city}` : '',
+              leadCity ? `🏙️ ${leadCity}` : '',
               ``,
               `Eva fechou o agendamento. Calendar criado.`,
             ].filter(Boolean).join('\n');
 
-            if (metaWaba) {
+            // So usa botoes WABA se temos lead.id (botoes precisam do uuid).
+            // Sem lead, fallback texto puro pra nao silenciar — Junior vai
+            // abrir dashboard manualmente se precisar agir.
+            if (metaWaba && lead?.id) {
               try {
                 await metaWaba.sendInteractiveButtons(
                   config.engineerPhone,

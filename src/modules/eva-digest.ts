@@ -63,7 +63,7 @@ async function collectDigestData(
     .select('id, name, phone, updated_at')
     .eq('eva_active', true)
     .eq('opt_out', false)
-    .in('status', ['novo', 'qualificando'])
+    .in('status', ['novo', 'qualificando', 'qualificado'])
     .lt('updated_at', silenceCutoff)
     .order('updated_at', { ascending: false })
     .limit(20);

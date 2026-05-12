@@ -79,7 +79,7 @@ export class FollowupModule {
     const { data: leads } = await this.client
       .from('leads')
       .select('id, phone, name, city, status, energy_data, updated_at, opt_out')
-      .in('status', ['novo', 'qualificando'])
+      .in('status', ['novo', 'qualificando', 'qualificado'])
       .eq('opt_out', false)
       .lt('updated_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
       .limit(50);
