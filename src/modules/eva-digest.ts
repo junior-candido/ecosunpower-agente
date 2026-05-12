@@ -10,6 +10,7 @@
 // Idempotente: usa app_flags pra garantir 1 disparo por janela.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { sendAdminWithButtons, type AdminButtonCtx } from './eva-admin-buttons.js';
 
 const DIGEST_WINDOWS = [
   { hour: 7, minute: 0, label: 'manha' },
@@ -204,6 +205,7 @@ export async function maybeRunDigest(
   client: SupabaseClient,
   engineerPhone: string,
   sendText: (to: string, text: string) => Promise<void>,
+  metaWaba: AdminButtonCtx['metaWaba'] = null,
 ): Promise<{ sent: boolean; window?: string }> {
   const now = new Date();
   const brtHour = (now.getUTCHours() - 3 + 24) % 24;
@@ -233,7 +235,21 @@ export async function maybeRunDigest(
   try {
     const data = await collectDigestData(client, hoursBack);
     const text = buildDigestMessage(window.label, data);
-    await sendText(engineerPhone, text);
+
+    // Monta botoes (max 3). "Ver leads" sempre; "Cadenciar silentes" so quando
+    // ha silentes; "Ver alertas" como atalho pra filtro do dashboard.
+    const buttons: Array<{ id: string; title: string }> = [
+      { id: 'evabt:dash-leads', title: '📊 Ver leads' },
+    ];
+    if (data.leadsSilentes.length > 0) {
+      buttons.push({ id: 'evabt:cad-force', title: '📤 Cadenciar' });
+    }
+    if (data.leadsSilentes.length > 0 || data.cadenciaRespondidaHoje.length > 0) {
+      buttons.push({ id: 'evabt:dash-alerts', title: '🚨 Só alertas' });
+    }
+
+    await sendAdminWithButtons({ metaWaba, sendText }, engineerPhone, text, buttons.slice(0, 3));
+
     // Grava flag pra nao reenviar
     await client.from('app_flags').upsert({ key: flagKey, value: 'sent' }, { onConflict: 'key' });
     console.log(`[digest] enviado: window=${window.label} novos=${data.leadsNovos.length} silentes=${data.leadsSilentes.length}`);

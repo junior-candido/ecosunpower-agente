@@ -11,6 +11,7 @@
 // dispara so 1x).
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { sendAdminWithButtons, type MetaWabaLike } from './eva-admin-buttons.js';
 
 type AlertKind =
   | 'cadence_replied'
@@ -22,6 +23,7 @@ interface AlertContext {
   client: SupabaseClient;
   engineerPhone: string;
   sendText: (to: string, text: string) => Promise<void>;
+  metaWaba?: MetaWabaLike | null;
 }
 
 function formatPhoneShort(phone: string): string {
@@ -78,7 +80,15 @@ export async function alertCadenceReplied(
   ].join('\n');
 
   try {
-    await ctx.sendText(ctx.engineerPhone, text);
+    await sendAdminWithButtons(
+      { metaWaba: ctx.metaWaba ?? null, sendText: ctx.sendText },
+      ctx.engineerPhone,
+      text,
+      [
+        { id: `evabt:lead-view:${leadId}`, title: '👤 Ver perfil' },
+        { id: `evabt:lead-pause:${leadId}`, title: '✋ Assumir' },
+      ],
+    );
     console.log(`[alerts] cadence_replied disparado pra lead ${leadId}`);
   } catch (err) {
     console.warn(`[alerts] falha ao enviar cadence_replied:`, (err as Error).message);
@@ -119,7 +129,16 @@ export async function alertNewLeadFromCampaign(
   ].join('\n');
 
   try {
-    await ctx.sendText(ctx.engineerPhone, text);
+    await sendAdminWithButtons(
+      { metaWaba: ctx.metaWaba ?? null, sendText: ctx.sendText },
+      ctx.engineerPhone,
+      text,
+      [
+        { id: `evabt:lead-view:${leadId}`, title: '👤 Ver perfil' },
+        { id: `evabt:lead-pause:${leadId}`, title: '✋ Pausar Eva' },
+        { id: `evabt:lead-optout:${leadId}`, title: '🚫 Marcar lixo' },
+      ],
+    );
     console.log(`[alerts] new_lead_campaign disparado pra lead ${leadId} (${source})`);
   } catch (err) {
     console.warn(`[alerts] falha ao enviar new_lead_campaign:`, (err as Error).message);
@@ -147,7 +166,15 @@ export async function alertStatusAgendado(
   ].join('\n');
 
   try {
-    await ctx.sendText(ctx.engineerPhone, text);
+    await sendAdminWithButtons(
+      { metaWaba: ctx.metaWaba ?? null, sendText: ctx.sendText },
+      ctx.engineerPhone,
+      text,
+      [
+        { id: `evabt:lead-view:${leadId}`, title: '👤 Ver perfil' },
+        { id: `evabt:lead-cad-cancel:${leadId}`, title: '✋ Cancelar cadência' },
+      ],
+    );
     console.log(`[alerts] status_agendado disparado pra lead ${leadId}`);
   } catch (err) {
     console.warn(`[alerts] falha ao enviar status_agendado:`, (err as Error).message);

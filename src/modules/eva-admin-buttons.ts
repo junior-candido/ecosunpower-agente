@@ -1,0 +1,185 @@
+// eva-admin-buttons.ts
+// Botoes interativos WABA pros alertas/digest da Eva pro Junior.
+//
+// Padrao do id: "evabt:<acao>" ou "evabt:<acao>:<leadId>".
+// Acoes suportadas:
+//   - dash-leads             -> responde com URL /dashboard/leads
+//   - dash-alerts            -> URL /dashboard/leads?only_alerts=1
+//   - cad-force              -> dispara cadencia pros silentes agora (force=true)
+//   - lead-view:<id>         -> URL /dashboard/leads/<id>
+//   - lead-pause:<id>        -> seta eva_active=false (Junior assume)
+//   - lead-resume:<id>       -> seta eva_active=true
+//   - lead-optout:<id>       -> opt_out=true + eva_active=false + cancela cadencia
+//   - lead-cad-cancel:<id>   -> cancela cadencia pendente
+//
+// Fallback: se metaWaba=null (Evolution), envia somente texto sem botoes.
+
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+export interface MetaWabaLike {
+  sendInteractiveButtons(
+    to: string,
+    body: string,
+    buttons: Array<{ id: string; title: string }>,
+    footer?: string,
+  ): Promise<{ messageId: string }>;
+}
+
+export interface AdminButtonCtx {
+  metaWaba: MetaWabaLike | null;
+  sendText: (to: string, text: string) => Promise<void>;
+}
+
+/**
+ * Envia mensagem com botoes interativos se WABA disponivel. Senao envia
+ * texto puro (sem os IDs como instrucao — botao nao ajuda no Evolution).
+ */
+export async function sendAdminWithButtons(
+  ctx: AdminButtonCtx,
+  to: string,
+  body: string,
+  buttons: Array<{ id: string; title: string }>,
+  footer?: string,
+): Promise<void> {
+  if (ctx.metaWaba && buttons.length > 0 && buttons.length <= 3) {
+    try {
+      await ctx.metaWaba.sendInteractiveButtons(to, body, buttons, footer);
+      return;
+    } catch (err) {
+      console.warn('[admin-buttons] WABA falhou, fallback texto:', (err as Error).message);
+    }
+  }
+  await ctx.sendText(to, body);
+}
+
+const DASHBOARD_BASE = 'https://dashboard.ecosunpower.eng.br';
+
+/**
+ * Handler de botoes admin. Retorna true se o text foi um botao reconhecido
+ * (e ja foi processado). Caller deve return depois pra nao re-rotear.
+ *
+ * Pre-condicao: caller deve ter verificado que `from` eh admin.
+ */
+export async function tryHandleEvaAdminButton(args: {
+  client: SupabaseClient;
+  sendText: (to: string, text: string) => Promise<void>;
+  from: string;
+  text: string;
+  forceCadenceForSilentes: () => Promise<{ acionados: number }>;
+}): Promise<boolean> {
+  const m = args.text.trim().match(/^evabt:([a-z-]+)(?::([0-9a-f-]{36}))?$/i);
+  if (!m) return false;
+
+  const action = m[1];
+  const leadId = m[2];
+
+  try {
+    switch (action) {
+      case 'dash-leads':
+        await args.sendText(args.from, `📊 Dashboard de leads:\n${DASHBOARD_BASE}/leads`);
+        return true;
+
+      case 'dash-alerts':
+        await args.sendText(args.from, `🚨 Leads com alerta:\n${DASHBOARD_BASE}/leads?only_alerts=1`);
+        return true;
+
+      case 'cad-force': {
+        const r = await args.forceCadenceForSilentes();
+        await args.sendText(
+          args.from,
+          `📤 Cadência disparada pra ${r.acionados} lead(s) silente(s). Próximos toques chegam em até 1h.`,
+        );
+        return true;
+      }
+
+      case 'lead-view': {
+        if (!leadId) {
+          await args.sendText(args.from, '⚠️ Botão sem lead id.');
+          return true;
+        }
+        await args.sendText(args.from, `👤 Perfil do lead:\n${DASHBOARD_BASE}/leads/${leadId}`);
+        return true;
+      }
+
+      case 'lead-pause': {
+        if (!leadId) {
+          await args.sendText(args.from, '⚠️ Botão sem lead id.');
+          return true;
+        }
+        const { error } = await args.client
+          .from('leads')
+          .update({ eva_active: false, updated_at: new Date().toISOString() })
+          .eq('id', leadId);
+        if (error) throw new Error(error.message);
+        // Tambem cancela cadencia pendente pra Eva nao mandar toque por cima.
+        await args.client
+          .from('eva_cadence')
+          .update({ status: 'cancelled', cancelled_reason: 'admin_assumed' })
+          .eq('lead_id', leadId)
+          .eq('status', 'pending');
+        await args.sendText(
+          args.from,
+          `✋ Eva pausada pra este lead e cadência cancelada. Você assume daqui. Pra retomar: /eva on neste número OU clique em retomar no dashboard.`,
+        );
+        return true;
+      }
+
+      case 'lead-resume': {
+        if (!leadId) {
+          await args.sendText(args.from, '⚠️ Botão sem lead id.');
+          return true;
+        }
+        const { error } = await args.client
+          .from('leads')
+          .update({ eva_active: true, updated_at: new Date().toISOString() })
+          .eq('id', leadId);
+        if (error) throw new Error(error.message);
+        await args.sendText(args.from, `▶️ Eva retomou esse lead.`);
+        return true;
+      }
+
+      case 'lead-optout': {
+        if (!leadId) {
+          await args.sendText(args.from, '⚠️ Botão sem lead id.');
+          return true;
+        }
+        const now = new Date().toISOString();
+        const { error: e1 } = await args.client
+          .from('leads')
+          .update({ opt_out: true, eva_active: false, updated_at: now })
+          .eq('id', leadId);
+        if (e1) throw new Error(e1.message);
+        await args.client
+          .from('eva_cadence')
+          .update({ status: 'cancelled', cancelled_reason: 'opt_out' })
+          .eq('lead_id', leadId)
+          .eq('status', 'pending');
+        await args.sendText(args.from, `🚫 Lead marcado como opt-out. Eva não fala mais com ele.`);
+        return true;
+      }
+
+      case 'lead-cad-cancel': {
+        if (!leadId) {
+          await args.sendText(args.from, '⚠️ Botão sem lead id.');
+          return true;
+        }
+        const { error } = await args.client
+          .from('eva_cadence')
+          .update({ status: 'cancelled', cancelled_reason: 'manual_admin_button' })
+          .eq('lead_id', leadId)
+          .eq('status', 'pending');
+        if (error) throw new Error(error.message);
+        await args.sendText(args.from, `✋ Cadência cancelada pra este lead.`);
+        return true;
+      }
+
+      default:
+        await args.sendText(args.from, `⚠️ Botão não reconhecido: ${action}`);
+        return true;
+    }
+  } catch (err) {
+    console.error('[admin-buttons] erro processando botão:', (err as Error).message);
+    await args.sendText(args.from, `⚠️ Erro: ${(err as Error).message}`);
+    return true;
+  }
+}

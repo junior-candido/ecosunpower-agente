@@ -2071,6 +2071,33 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // mesmo no meio de outro modo (precificacao/proposta/agenda).
     if (await tryHandleTestimonialAdminCommand(from, text)) return;
 
+    // Botoes interativos enviados pelos alertas/digest da Eva. Id no formato
+    // "evabt:<acao>[:<leadId>]". Quando Junior toca, vem como text aqui.
+    // So processa pra admin — clientes nunca recebem esses botoes.
+    if (isAdminPhone(from)) {
+      const { tryHandleEvaAdminButton } = await import('./modules/eva-admin-buttons.js');
+      const forceCadenceForSilentes = async (): Promise<{ acionados: number }> => {
+        const silentes = await supabase.getSilentLeadsWithoutCadence(24);
+        let acionados = 0;
+        for (const l of silentes) {
+          try {
+            await supabase.scheduleCadenceContinuation(l.id, 0);
+            acionados++;
+          } catch (err) {
+            console.warn(`[admin-buttons] falha pra agendar lead ${l.id}:`, (err as Error).message);
+          }
+        }
+        return { acionados };
+      };
+      if (await tryHandleEvaAdminButton({
+        client: supabase.getClient(),
+        sendText,
+        from,
+        text,
+        forceCadenceForSilentes,
+      })) return;
+    }
+
     // /sync-marketing — forca sync Meta -> DB + collect insights. One-shot.
     if (await tryHandleSyncMarketingCommand(from, text)) return;
 
@@ -2749,7 +2776,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       try {
         const { alertCadenceReplied } = await import('./modules/eva-alerts.js');
         await alertCadenceReplied(
-          { client: supabase.getClient(), engineerPhone: config.engineerPhone, sendText },
+          { client: supabase.getClient(), engineerPhone: config.engineerPhone, sendText, metaWaba: metaWaba ?? null },
           lead.id,
           lead.name ?? null,
           from,
@@ -5258,7 +5285,7 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     const evaDigestScheduler = async () => {
       try {
         const { maybeRunDigest } = await import('./modules/eva-digest.js');
-        await maybeRunDigest(supabase.getClient(), config.engineerPhone, sendText);
+        await maybeRunDigest(supabase.getClient(), config.engineerPhone, sendText, metaWaba ?? null);
       } catch (err) {
         console.error('[digest] scheduler error:', (err as Error).message);
       }
