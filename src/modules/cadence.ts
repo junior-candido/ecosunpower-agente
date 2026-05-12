@@ -74,12 +74,48 @@ const STEP_GUIDANCE: Record<number, string> = {
   Deye, Sungrow). Sem pressao, deixar claro que estamos disponiveis pra
   estudo sem compromisso. Termine com soft CTA.`,
 
-  5: `Toque 5 — Ultimo toque (60 dias depois). Use o ARTIGO do Canal Solar
-  pra dar uma reflexao final factual sobre o setor. Tom de despedida
-  gentil: "olha, fica comigo registrado que nao te chamo mais ate voce
-  me chamar. Qualquer coisa — duvida, projeto, simulacao — e so chamar
-  direto aqui." Curto, sincero, deixa a porta aberta sem pressao.`,
+  5: `Toque 5 — Tom de "olha, ainda da tempo" (60 dias depois). Use o ARTIGO do
+  Canal Solar como base. Reforce que estamos disponiveis pra estudo sem
+  compromisso e que a regulamentacao e os precos atuais ainda fazem o
+  investimento valer. Mensagem curta, sem pressao.`,
+
+  // Toques 6 em diante (cadencia infinita ate cliente responder ou opt-out)
+  // Espacamento: 90d, 180d, 365d, depois +1 ano cada.
+  6: `Toque 6 — Tom de "ola, lembra de mim?" (90 dias depois). Reapresente-se
+  rapidinho (Eva, engenheira virtual da Ecosunpower) caso o cliente tenha
+  esquecido. Use o ARTIGO do Canal Solar pra trazer uma novidade do mercado.
+  Mensagem curta, leve, sem pressao. Termine deixando a porta aberta.`,
+
+  7: `Toque 7 — Tom factual e atualizado (180 dias / 6 meses depois). Use o
+  ARTIGO do Canal Solar pra dar uma atualizacao do setor (tarifa, regulacao,
+  tecnologia). Posicione Ecosunpower como autoridade tecnica. Sem pressao,
+  apenas mantendo o contato vivo.`,
+
+  8: `Toque 8 — Tom de "passou 1 ano, vamos ver de novo?" (365 dias / 1 ano).
+  Use o ARTIGO do Canal Solar pra mostrar como o setor evoluiu nesse tempo.
+  Tom: "passou um tempo desde nossa ultima conversa, queria te mostrar
+  como o cenario mudou". Aberto, sem cobranca.`,
+
+  9: `Toque 9 — Tom de novidade pontual (1+ ano depois). Use o ARTIGO do Canal
+  Solar pra trazer um update relevante do mercado solar (nova tecnologia,
+  mudanca regulatoria, etc). Mensagem curta, util, sem pressao.`,
+
+  10: `Toque 10 — Tom de "soft check-in anual" (1+ ano depois). Use o ARTIGO
+  do Canal Solar pra reflexao final do periodo. Tom: "olha, fica comigo
+  registrado que estou aqui — quando precisar de qualquer coisa sobre solar,
+  e so me chamar". Curto, sincero, sem cobranca.`,
 };
+
+/**
+ * Resolve a guidance pra um step. Pra steps > 10 (cadencia infinita continua),
+ * rotaciona entre as guidances 6-10 (variando o tom de check-in anual).
+ */
+function pickGuidanceForStep(step: number): string {
+  if (step <= 10) return STEP_GUIDANCE[step];
+  // Cadencia infinita pos-10: rotaciona entre guidances de check-in anual (6-10).
+  const rotation = ((step - 11) % 5) + 6;
+  return STEP_GUIDANCE[rotation];
+}
 
 export class CadenceService {
   private articles: ParsedArticle[] = [];
@@ -208,6 +244,13 @@ export class CadenceService {
         sent++;
         console.log(`[cadence] Toque ${row.step} enviado pra ${row.phone} (${row.name ?? 'sem nome'})${article ? ` — base: "${article.title.slice(0, 50)}..."` : ''}`);
 
+        // Cadencia infinita: apos enviar com sucesso, se nao houver mais
+        // toques pendentes pra este lead, agenda o proximo (+1 ano). Continua
+        // ate cliente responder (que cancela cadencia) ou opt_out.
+        await this.supabase.scheduleCadenceContinuation(row.lead_id, row.step).catch((err) => {
+          console.warn(`[cadence] scheduleCadenceContinuation falhou pra lead ${row.lead_id}:`, (err as Error).message);
+        });
+
         await new Promise((r) => setTimeout(r, 1500 + Math.random() * 2500));
       } catch (err) {
         console.error(`[cadence] Falha ao enviar toque ${row.step} pra ${row.phone}:`, (err as Error).message);
@@ -262,7 +305,7 @@ REGRAS OBRIGATORIAS:
 ${nameHint}
 ${articleContext}
 
-${STEP_GUIDANCE[ctx.step]}`;
+${pickGuidanceForStep(ctx.step)}`;
 
     const response = await this.anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',

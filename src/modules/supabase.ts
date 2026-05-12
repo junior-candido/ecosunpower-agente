@@ -361,8 +361,20 @@ export class SupabaseService {
   }
 
   // ==========================================================================
-  // Cadencia de reengajamento (5 toques: 0h, 15d, 30d, 45d, 60d)
+  // Cadencia de reengajamento INFINITA — Eva insiste ate cliente responder
+  // ou pedir pra parar (opt_out=true).
+  //
+  // Intervalos progressivos no primeiro ano: 0h, 1d, 3d, 7d, 14d, 30d, 60d,
+  // 90d, 180d, 365d (10 toques). Depois disso, scheduleCadenceContinuation
+  // gera mais toques espacados de 1 ano cada, indefinidamente, ate cliente
+  // responder ou opt-out.
   // ==========================================================================
+
+  /** Intervalos em dias do toque inicial (toque 1 = 0h). */
+  static readonly CADENCE_INTERVALS_DAYS = [0, 1, 3, 7, 14, 30, 60, 90, 180, 365];
+
+  /** Apos o ultimo toque da serie inicial, espacamento entre toques (1 ano cada). */
+  static readonly CADENCE_LOOP_INTERVAL_DAYS = 365;
 
   async scheduleCadence(leadId: string, startOffsetMinutes: number = 0): Promise<void> {
     await this.client
@@ -372,18 +384,13 @@ export class SupabaseService {
       .eq('status', 'pending');
 
     const now = Date.now();
-    const steps = [
-      { step: 1, offsetDays: 0 },
-      { step: 2, offsetDays: 15 },
-      { step: 3, offsetDays: 30 },
-      { step: 4, offsetDays: 45 },
-      { step: 5, offsetDays: 60 },
-    ];
-
-    const rows = steps.map((s) => ({
+    const intervals = SupabaseService.CADENCE_INTERVALS_DAYS;
+    const rows = intervals.map((days, idx) => ({
       lead_id: leadId,
-      step: s.step,
-      scheduled_for: new Date(now + startOffsetMinutes * 60_000 + s.offsetDays * 24 * 60 * 60_000).toISOString(),
+      step: idx + 1,
+      scheduled_for: new Date(
+        now + startOffsetMinutes * 60_000 + days * 24 * 60 * 60_000,
+      ).toISOString(),
       status: 'pending',
     }));
 
@@ -392,6 +399,36 @@ export class SupabaseService {
       .upsert(rows, { onConflict: 'lead_id,step', ignoreDuplicates: false });
 
     if (error) throw new Error(`Failed to schedule cadence: ${error.message}`);
+  }
+
+  /**
+   * Apos enviar o ultimo toque pendente, gera o proximo toque +1 ano a
+   * frente. Mantem cadencia rodando indefinidamente ate cliente responder
+   * ou pedir opt-out. Idempotente: se ja existe step > lastStep pendente,
+   * nao faz nada.
+   */
+  async scheduleCadenceContinuation(leadId: string, lastStep: number): Promise<void> {
+    const { data: existing } = await this.client
+      .from('eva_cadence')
+      .select('step')
+      .eq('lead_id', leadId)
+      .gt('step', lastStep)
+      .eq('status', 'pending')
+      .limit(1);
+
+    if (existing && existing.length > 0) return; // ja tem toque futuro agendado
+
+    const nextStep = lastStep + 1;
+    const scheduledFor = new Date(
+      Date.now() + SupabaseService.CADENCE_LOOP_INTERVAL_DAYS * 24 * 60 * 60_000,
+    ).toISOString();
+
+    const { error } = await this.client.from('eva_cadence').upsert(
+      [{ lead_id: leadId, step: nextStep, scheduled_for: scheduledFor, status: 'pending' }],
+      { onConflict: 'lead_id,step', ignoreDuplicates: true },
+    );
+
+    if (error) throw new Error(`Failed to schedule cadence continuation: ${error.message}`);
   }
 
   async cancelCadence(leadId: string, reason: string): Promise<number> {
