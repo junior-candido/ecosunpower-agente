@@ -2470,10 +2470,15 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       }
 
       case 'qualification_complete': {
+        // IMPORTANTE: NAO fechar a sessao. Top vendedora consultiva NUNCA para
+        // depois de coletar dados — ela usa o que coletou pra fechar agendamento.
+        // Status fica 'qualificado' como sinal de que dossier esta pronto, mas
+        // Eva CONTINUA conversando (sessao ativa) ate cliente agendar visita
+        // ou recusar explicitamente.
         await supabase.upsertLead({ phone: from, status: 'qualificado' });
         await supabase.updateConversation(conversationId, {
           qualification_step: 'qualificacao_completa',
-          session_status: 'completed',
+          // session_status removido — Eva fica ativa pra continuar buscando agendamento.
         });
 
         const lead = await supabase.getLeadByPhone(from);
@@ -2500,12 +2505,33 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           });
 
           if (!isSandbox) {
-            await sendText(config.engineerPhone, dossierText);
+            // Manda dossier com BOTOES WABA: Junior bate o olho, decide em 1 toque
+            // se assume, ve perfil ou deixa Eva continuar tentando fechamento.
+            // Antes era texto puro que se perdia no chat. Agora alerta visual.
+            const dossierHeader = `📋 *Eva qualificou — ${lead.name ?? 'lead sem nome'}*\n\n${dossierText}\n\n_Eva esta tentando fechar agendamento agora. Voce pode assumir se preferir._`;
+            if (metaWaba) {
+              try {
+                await metaWaba.sendInteractiveButtons(
+                  config.engineerPhone,
+                  dossierHeader.slice(0, 1024),
+                  [
+                    { id: `evabt:lead-view:${lead.id}`, title: '👤 Ver perfil' },
+                    { id: `evabt:lead-pause:${lead.id}`, title: '✋ Assumir' },
+                  ],
+                  'Toque pra agir',
+                );
+              } catch (err) {
+                console.warn('[qualification_complete] botoes WABA falharam, fallback texto:', (err as Error).message);
+                await sendText(config.engineerPhone, dossierText);
+              }
+            } else {
+              await sendText(config.engineerPhone, dossierText);
+            }
           } else {
             console.log(`[sandbox] Dossier for engineer:\n${dossierText}`);
           }
         }
-        console.log(`[action] Qualification complete for ${from}`);
+        console.log(`[action] Qualification complete for ${from} — Eva continua buscando agendamento`);
         break;
       }
 
