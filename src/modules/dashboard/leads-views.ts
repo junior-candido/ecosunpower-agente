@@ -43,6 +43,7 @@ function statusBadge(s: string): string {
   const map: Record<string, string> = {
     novo:         'bg-sky-100 text-sky-800',
     qualificando: 'bg-violet-100 text-violet-800',
+    qualificado:  'bg-fuchsia-100 text-fuchsia-800',
     agendado:     'bg-amber-100 text-amber-800',
     transferido:  'bg-emerald-100 text-emerald-800',
     fechado:      'bg-emerald-200 text-emerald-900',
@@ -67,6 +68,7 @@ export function renderLeadsListPage(rows: LeadRow[], filters: { status?: string;
       <a href="/dashboard/leads?only_alerts=1" class="px-3 py-1.5 rounded-lg text-sm ${filters.only_alerts ? 'bg-rose-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">🚨 Alertas (${alertasCount})</a>
       <a href="/dashboard/leads?status=novo" class="px-3 py-1.5 rounded-lg text-sm ${filters.status === 'novo' ? 'bg-sky-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">🆕 Novos</a>
       <a href="/dashboard/leads?status=qualificando" class="px-3 py-1.5 rounded-lg text-sm ${filters.status === 'qualificando' ? 'bg-violet-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">🎯 Qualificando</a>
+      <a href="/dashboard/leads?status=qualificado" class="px-3 py-1.5 rounded-lg text-sm ${filters.status === 'qualificado' ? 'bg-fuchsia-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">⭐ Qualificados</a>
       <a href="/dashboard/leads?status=agendado" class="px-3 py-1.5 rounded-lg text-sm ${filters.status === 'agendado' ? 'bg-amber-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">📅 Agendados</a>
       <a href="/dashboard/leads?status=transferido" class="px-3 py-1.5 rounded-lg text-sm ${filters.status === 'transferido' ? 'bg-emerald-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">✅ Transferidos</a>
     </div>

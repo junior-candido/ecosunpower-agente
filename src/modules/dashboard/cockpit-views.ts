@@ -30,6 +30,7 @@ function formatPhoneShort(phone: string): string {
 const STATUS_COLOR: Record<string, string> = {
   novo: '#06b6d4',
   qualificando: '#22d3ee',
+  qualificado: '#d946ef',
   agendado: '#fbbf24',
   cliente_fechado: '#22c55e',
   perdido: '#64748b',

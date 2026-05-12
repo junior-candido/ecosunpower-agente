@@ -111,7 +111,7 @@ export async function getCockpitData(client: SupabaseClient): Promise<CockpitDat
     client.from('eva_cadence').select('sent_at').eq('status', 'sent').gte('sent_at', since24h).limit(2000),
     client.from('leads')
       .select('id, name, phone, status, city, updated_at')
-      .in('status', ['qualificando', 'agendado'])
+      .in('status', ['qualificando', 'qualificado', 'agendado'])
       .eq('eva_active', true)
       .order('updated_at', { ascending: false })
       .limit(5),
@@ -128,7 +128,7 @@ export async function getCockpitData(client: SupabaseClient): Promise<CockpitDat
   ]);
 
   // === Monta funil
-  const funilCounts: Record<string, number> = { novo: 0, qualificando: 0, agendado: 0, cliente_fechado: 0 };
+  const funilCounts: Record<string, number> = { novo: 0, qualificando: 0, qualificado: 0, agendado: 0, cliente_fechado: 0 };
   for (const r of (qFunil.data ?? []) as Array<{ status: string }>) {
     if (funilCounts[r.status] !== undefined) funilCounts[r.status]++;
   }
@@ -206,6 +206,7 @@ export async function getCockpitData(client: SupabaseClient): Promise<CockpitDat
     funil: [
       { stage: 'Novos', count: funilCounts['novo'], color: '#06b6d4' },
       { stage: 'Qualificando', count: funilCounts['qualificando'], color: '#22d3ee' },
+      { stage: 'Qualificado', count: funilCounts['qualificado'], color: '#d946ef' },
       { stage: 'Agendado', count: funilCounts['agendado'], color: '#fbbf24' },
       { stage: 'Fechado', count: funilCounts['cliente_fechado'], color: '#22c55e' },
     ],
