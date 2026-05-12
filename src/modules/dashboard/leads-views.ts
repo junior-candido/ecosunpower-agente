@@ -172,19 +172,67 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
         .join('')}</ul>`;
 
   const acoes = `
-    <div class="flex flex-wrap gap-2 mt-4">
-      ${lead.eva_active
-        ? `<form method="POST" action="/dashboard/leads/${lead.id}/pause-eva">
-            <button class="px-3 py-1.5 rounded-lg text-sm bg-slate-200 text-slate-800 hover:bg-slate-300">🚫 Pausar Eva</button>
-          </form>`
-        : `<form method="POST" action="/dashboard/leads/${lead.id}/resume-eva">
-            <button class="px-3 py-1.5 rounded-lg text-sm bg-emerald-600 text-white hover:bg-emerald-700">▶️ Reativar Eva</button>
-          </form>`}
-      ${!lead.has_cadence_pending && !lead.opt_out
-        ? `<form method="POST" action="/dashboard/leads/${lead.id}/start-cadence">
-            <button class="px-3 py-1.5 rounded-lg text-sm bg-amber-600 text-white hover:bg-amber-700">📅 Iniciar cadência manual</button>
-          </form>`
-        : ''}
+    <div class="mt-4 space-y-3">
+      <!-- Bloco 1: Eva on/off + cadência -->
+      <div class="flex flex-wrap gap-2">
+        ${lead.eva_active
+          ? `<form method="POST" action="/dashboard/leads/${lead.id}/pause-eva">
+              <button class="px-3 py-1.5 rounded-lg text-sm bg-slate-200 text-slate-800 hover:bg-slate-300">🚫 Pausar Eva</button>
+            </form>`
+          : `<form method="POST" action="/dashboard/leads/${lead.id}/resume-eva">
+              <button class="px-3 py-1.5 rounded-lg text-sm bg-emerald-600 text-white hover:bg-emerald-700">▶️ Reativar Eva</button>
+            </form>`}
+        ${!lead.has_cadence_pending && !lead.opt_out
+          ? `<form method="POST" action="/dashboard/leads/${lead.id}/start-cadence">
+              <button class="px-3 py-1.5 rounded-lg text-sm bg-amber-600 text-white hover:bg-amber-700">📅 Iniciar cadência</button>
+            </form>`
+          : ''}
+        ${lead.has_cadence_pending
+          ? `<form method="POST" action="/dashboard/leads/${lead.id}/cancel-cadence" onsubmit="return confirm('Cancelar todos os toques pendentes?')">
+              <button class="px-3 py-1.5 rounded-lg text-sm bg-rose-100 text-rose-800 hover:bg-rose-200">❌ Cancelar cadência</button>
+            </form>`
+          : ''}
+        ${!lead.opt_out
+          ? `<form method="POST" action="/dashboard/leads/${lead.id}/opt-out" onsubmit="return confirm('Marcar como opt-out? Eva nunca mais conversa com esse contato.')">
+              <button class="px-3 py-1.5 rounded-lg text-sm bg-slate-100 text-slate-700 hover:bg-slate-200">🚪 Opt-out</button>
+            </form>`
+          : `<form method="POST" action="/dashboard/leads/${lead.id}/opt-in">
+              <button class="px-3 py-1.5 rounded-lg text-sm bg-emerald-100 text-emerald-800 hover:bg-emerald-200">↩️ Remover opt-out</button>
+            </form>`}
+        <a href="/dashboard/leads/${lead.id}" class="px-3 py-1.5 rounded-lg text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50">🔄 Atualizar</a>
+      </div>
+
+      <!-- Bloco 2: Mudar status -->
+      <div class="flex flex-wrap gap-2 items-center">
+        <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">Status:</span>
+        ${['novo', 'qualificando', 'agendado', 'transferido', 'perdido']
+          .map((s) => {
+            const isCurrent = lead.status === s;
+            const cls = isCurrent
+              ? 'bg-indigo-600 text-white'
+              : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50';
+            return `<form method="POST" action="/dashboard/leads/${lead.id}/set-status" class="inline">
+                <input type="hidden" name="status" value="${s}" />
+                <button class="px-2.5 py-1 rounded-md text-xs ${cls}" ${isCurrent ? 'disabled' : ''}>${escapeHtml(s)}</button>
+              </form>`;
+          })
+          .join('')}
+      </div>
+
+      <!-- Bloco 3: Editar nome -->
+      <form method="POST" action="/dashboard/leads/${lead.id}/edit-name" class="flex flex-wrap gap-2 items-center">
+        <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">Nome:</span>
+        <input type="text" name="name" value="${escapeHtml(lead.name ?? '')}" placeholder="Nome do cliente"
+          class="px-2.5 py-1 rounded-md text-sm border border-slate-300 w-64" />
+        <button class="px-3 py-1 rounded-md text-xs bg-slate-700 text-white hover:bg-slate-800">✏️ Salvar</button>
+      </form>
+
+      <!-- Bloco 4: Remover (destrutivo) -->
+      <div class="pt-2 border-t border-slate-100">
+        <form method="POST" action="/dashboard/leads/${lead.id}/delete" onsubmit="return confirm('REMOVER PERMANENTEMENTE este lead? Esta acao nao pode ser desfeita.')">
+          <button class="px-3 py-1.5 rounded-lg text-xs bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100">🗑️ Remover lead permanentemente</button>
+        </form>
+      </div>
     </div>
   `;
 

@@ -219,6 +219,88 @@ export function createDashboardRouter(
     res.redirect(`/dashboard/leads/${id}`);
   });
 
+  // Cancela TODOS os toques pendentes de cadencia deste lead.
+  router.post('/leads/:id/cancel-cadence', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const { error } = await supabase
+      .from('eva_cadence')
+      .update({ status: 'cancelled', cancelled_reason: 'manual_dashboard' })
+      .eq('lead_id', id)
+      .eq('status', 'pending');
+    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    res.redirect(`/dashboard/leads/${id}`);
+  });
+
+  // Marca opt-out: cliente nao quer ser contatado. Pausa Eva tambem.
+  router.post('/leads/:id/opt-out', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const now = new Date().toISOString();
+    const { error: e1 } = await supabase
+      .from('leads')
+      .update({ opt_out: true, eva_active: false, updated_at: now })
+      .eq('id', id);
+    if (e1) return res.status(500).send(`erro: ${escapeHtmlSimple(e1.message)}`);
+    // Cancela cadencia pendente tambem
+    await supabase
+      .from('eva_cadence')
+      .update({ status: 'cancelled', cancelled_reason: 'opt_out' })
+      .eq('lead_id', id)
+      .eq('status', 'pending');
+    res.redirect(`/dashboard/leads/${id}`);
+  });
+
+  // Remove opt-out (lead volta a poder ser contatado).
+  router.post('/leads/:id/opt-in', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const { error } = await supabase
+      .from('leads')
+      .update({ opt_out: false, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    res.redirect(`/dashboard/leads/${id}`);
+  });
+
+  // Muda status do lead (novo, qualificando, agendado, transferido, perdido).
+  router.post('/leads/:id/set-status', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const status = String(req.body?.status ?? '').trim();
+    const allowed = ['novo', 'qualificando', 'agendado', 'transferido', 'perdido'];
+    if (!allowed.includes(status)) return res.status(400).send('status inválido');
+    const { error } = await supabase
+      .from('leads')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    res.redirect(`/dashboard/leads/${id}`);
+  });
+
+  // Edita o nome do lead (campo simples).
+  router.post('/leads/:id/edit-name', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const name = String(req.body?.name ?? '').trim().slice(0, 100);
+    const { error } = await supabase
+      .from('leads')
+      .update({ name: name || null, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    res.redirect(`/dashboard/leads/${id}`);
+  });
+
+  // REMOVE LEAD PERMANENTEMENTE (acao destrutiva; cascata exclui cadencia,
+  // conversas e demais FKs por ON DELETE CASCADE no schema).
+  router.post('/leads/:id/delete', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const { error } = await supabase.from('leads').delete().eq('id', id);
+    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    res.redirect('/dashboard/leads');
+  });
+
   // Agenda cadencia manual (10 toques + auto-renovacao).
   router.post('/leads/:id/start-cadence', async (req: Request, res: Response) => {
     const id = String(req.params.id);
