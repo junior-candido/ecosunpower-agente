@@ -102,9 +102,13 @@ NAO precisa mudar padrao quando:
 - Certificados INMETRO dos equipamentos (inversores e modulos)
 - Medidor bidirecional (Neoenergia fornece apos aprovacao)
 
-### Limites de potencia
+### Limites de potencia (Lei 14.300/2022 — vigente para projetos novos)
 - Microgeracao: ate 75 kW — conexao em baixa tensao
-- Minigeracao: 75 kW a 5 MW — pode exigir media tensao + transformador
+- Minigeracao solar fotovoltaica: 75 kW a **3 MW** (3.000 kWp) — pode exigir
+  media tensao + transformador
+- Minigeracao despachavel (biomassa, cogeracao qualificada): ate 5 MW
+- Sistemas do grupo GD1 (acesso protocolado ate 07/01/2023): mantem direito
+  adquirido ao limite antigo de 5 MW ate 31/12/2045
 - Acima de 75 kW: pode necessitar estudo de impacto na rede
 
 ### Prazos da Neoenergia
@@ -141,7 +145,9 @@ Norma especifica para microgeradores conectados em baixa tensao.
 - Desconexao automatica em falta de rede
 
 ## DIS-NOR-033 - Conexao de Minigeracao em Paralelo
-Para sistemas de 75 kW a 5 MW em media tensao.
+Para sistemas de mini-GD em media tensao: 75 kW a 3 MW para solar fotovoltaica
+(novos projetos, Lei 14.300/2022); ate 5 MW para fontes despachaveis ou GD1
+com direito adquirido.
 - Exige estudo de impacto na rede
 - Pode necessitar transformador proprio
 - Protecao mais complexa (reles, seccionadoras)

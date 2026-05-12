@@ -88,9 +88,12 @@ Util quando: o cliente quer instalar solar com inversor trifasico.
 - Comprovante de titularidade da UC (conta de luz)
 - Medidor bidirecional (Equatorial fornece apos aprovacao)
 
-### Classificacao
+### Classificacao (Lei 14.300/2022 — vigente para projetos novos)
 - Microgeracao: ate 75 kW
-- Minigeracao: 75 kW a 5 MW
+- Minigeracao solar fotovoltaica: 75 kW a **3 MW** (3.000 kWp)
+- Minigeracao despachavel (biomassa, cogeracao qualificada): ate 5 MW
+- Sistemas GD1 (acesso ate 07/01/2023): direito adquirido ao limite antigo de
+  5 MW ate 31/12/2045
 
 ### Prazos da Equatorial Goias
 | Etapa | Prazo |

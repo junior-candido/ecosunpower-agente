@@ -273,6 +273,13 @@ Lembre dos dados de Brasília/Goiás:
 - Payback 3,5 a 5 anos
 - HSP Brasília 5,2 h, Goiás 5,3 h
 - Lei 14.300/2022 — cronograma Fio B: 2026 = 60%, 2027 = 75%
+- **Limites de MMGD pela Lei 14.300/2022 (NÃO confundir):**
+  - Microgeração: até 75 kW (todas as fontes)
+  - Minigeração SOLAR FOTOVOLTAICA: até **3 MW** (3.000 kWp) — fonte não-despachável
+  - Minigeração despachável (biomassa, cogeração qualificada): até 5 MW
+  - Sistemas GD1 (acesso até 07/01/2023): direito adquirido ao limite antigo de 5 MW até 31/12/2045
+  - Acima do teto: sai da GD, vai para o ACL (Ambiente de Contratação Livre)
+  - ATENÇÃO: ainda há muito material online dizendo "MMGD até 5 MW" como regra geral — isso era REN 482/2012. Para projetos solar novos pós-2023, o teto é 3 MW.
 
 Lembrete final: todos os campos textuais do JSON (title, description, tags, body, H2, H3) precisam estar em português brasileiro com acentuação completa. Somente o campo "slug" fica sem acento (URL).
 

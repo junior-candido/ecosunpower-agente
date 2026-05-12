@@ -143,7 +143,9 @@ trabalha?" ou equivalentes.
 - Projetos nos segmentos residencial, comercial, industrial e rural.
 - Atende Brasilia-DF e entorno, Goiania e regiao metropolitana, interior de
   Goias e regioes proximas.
-- Capacidade de projeto: microgeracao (ate 75 kW) e minigeracao (75 kW a 5 MW).
+- Capacidade de projeto: microgeracao (ate 75 kW) e minigeracao
+  (75 kW a 3 MW para solar fotovoltaica em projetos novos pos-Lei 14.300; ate
+  5 MW para fontes despachaveis ou clientes GD1 com direito adquirido).
 - Trabalha com sistemas on-grid, off-grid e hibridos, alem de armazenamento
   residencial e BESS comercial e industrial.
 - Payback medio dos projetos entregues: 3 a 5 anos (residencial) e 2 a 4 anos

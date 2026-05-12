@@ -87,11 +87,14 @@ SIM! Mesmo com o Fio B a 60% em 2026:
 
 ### GD1 - Quem se conectou ate 06/01/2023
 - Compensacao integral (sem Fio B) ate 2045
-- Microgeracao (ate 75 kW) e minigeracao (75 kW a 5 MW)
+- Microgeracao (ate 75 kW) e minigeracao com direito adquirido ao limite antigo
+  de 75 kW a 5 MW ate 31/12/2045 (art. 26 da Lei 14.300)
 - Direito adquirido garantido por lei
 
 ### GD2 - Quem se conectou a partir de 07/01/2023
 - Microgeracao ate 75 kW
+- Minigeracao solar fotovoltaica ate 3 MW (Lei 14.300, art. 1o IX)
+- Minigeracao despachavel (biomassa, cogeracao qualificada) ate 5 MW
 - Paga Fio B gradualmente (cronograma acima)
 - Demais componentes tarifarios sao compensados integralmente
 

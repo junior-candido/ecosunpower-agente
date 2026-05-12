@@ -17,6 +17,30 @@ o Programa de Energia Renovavel Social (PERS).
 - Proibiu cobranca de ICMS sobre a energia compensada em varios estados
 - Estabeleceu prazo de ate 120 dias para conexao do sistema pela distribuidora
 
+### Limites de potencia da MMGD (art. 1o, IX da Lei 14.300)
+
+**Microgeracao distribuida (todas as fontes):** ate 75 kW de potencia instalada.
+
+**Minigeracao distribuida — diferenciada por fonte:**
+- **Solar fotovoltaica (nao-despachavel):** ate **3 MW** (3.000 kWp)
+- **Eolica (nao-despachavel):** ate 3 MW
+- **Hidraulica:** ate 3 MW
+- **Biomassa, biogas, cogeracao qualificada (fontes despachaveis):** ate **5 MW**
+- **Solar PV com bateria** (20%+ da geracao mensal armazenada — despachavel
+  pela definicao da lei): ainda assim, teto de 3 MW pra solar fotovoltaica
+
+**Importante:** sistemas do grupo **GD1** (com solicitacao de acesso protocolada
+ate 07/01/2023) mantem direito adquirido ao **limite antigo de 5 MW ate
+31/12/2045** (art. 26 da Lei 14.300), mesmo se forem solar fotovoltaica.
+
+**Acima do teto da mini-GD:** o projeto sai do regime de geracao distribuida e
+entra no **Ambiente de Contratacao Livre (ACL)** ou autoprodução, com lógica
+tarifaria, regulatoria e contratual completamente diferente.
+
+**ATENCAO** — muito material desatualizado online ainda repete "MMGD ate 5 MW"
+como regra geral. Isso refletia a regra antiga da REN 482/2012. Hoje, pra solar
+fotovoltaica em projeto novo, o limite e 3 MW.
+
 ### Direito adquirido (muito importante!)
 Quem instalou sistema solar ate 06/01/2023:
 - Mantem compensacao INTEGRAL ate 2045
