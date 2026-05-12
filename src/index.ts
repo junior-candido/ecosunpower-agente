@@ -2662,6 +2662,50 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             client_email: clientEmail ?? null,
             has_location: Boolean(clientAddress),
           });
+
+          // Lead -> status agendado (sai do limbo). Cadencia automatica pra
+          // este lead deve parar — Eva ja fechou o objetivo principal.
+          await supabase.upsertLead({ phone: from, status: 'agendado' });
+          await supabase.cancelCadence(leadId, 'visita_agendada').catch(() => {});
+
+          // Alerta WABA pro Junior com botoes — agendamento eh sinal QUENTE,
+          // ele precisa ver na hora pra confirmar logistica e equipamento.
+          if (!isSandbox && lead) {
+            const dataFmt = new Date(startISO).toLocaleString('pt-BR', {
+              timeZone: 'America/Sao_Paulo',
+              day: '2-digit', month: '2-digit', weekday: 'short',
+              hour: '2-digit', minute: '2-digit',
+            });
+            const alertBody = [
+              `📅 *Visita agendada — ${lead.name ?? 'cliente'}*`,
+              ``,
+              `🕒 ${dataFmt}`,
+              clientAddress ? `📍 ${clientAddress}` : '',
+              `📞 ${from}`,
+              lead.city ? `🏙️ ${lead.city}` : '',
+              ``,
+              `Eva fechou o agendamento. Calendar criado.`,
+            ].filter(Boolean).join('\n');
+
+            if (metaWaba) {
+              try {
+                await metaWaba.sendInteractiveButtons(
+                  config.engineerPhone,
+                  alertBody.slice(0, 1024),
+                  [
+                    { id: `evabt:lead-view:${lead.id}`, title: '👤 Ver perfil' },
+                    { id: `evabt:lead-pause:${lead.id}`, title: '✋ Assumir' },
+                  ],
+                  'Toque pra agir',
+                );
+              } catch (err) {
+                console.warn('[schedule_visit] botoes WABA falharam, fallback texto:', (err as Error).message);
+                await sendText(config.engineerPhone, alertBody);
+              }
+            } else {
+              await sendText(config.engineerPhone, alertBody);
+            }
+          }
         } catch (err) {
           console.error(`[calendar] Failed to schedule visit for ${from}:`, err);
           const msg = 'tive uma dificuldade pra agendar aqui, mas ja anotei. o junior confirma com voce.';
