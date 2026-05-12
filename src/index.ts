@@ -5237,6 +5237,22 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setInterval(autoCadenceScheduler, 60 * 60 * 1000); // a cada 1h
     setTimeout(autoCadenceScheduler, 3 * 60 * 1000); // primeira passada 3min apos start
     console.log('[cadence] Auto-scheduler started (checks every 1h for silent leads > 24h)');
+
+    // Digest periodico de atividade da Eva pro WhatsApp do Junior.
+    // Dispara 3x/dia em horarios definidos: 7h, 12h40 e 21h BRT. Cobre
+    // novos leads, silentes 24h+, qualificados/agendados do dia, cadencia
+    // respondida (sinal quente) e metricas curtas. Idempotente via app_flags.
+    const evaDigestScheduler = async () => {
+      try {
+        const { maybeRunDigest } = await import('./modules/eva-digest.js');
+        await maybeRunDigest(supabase.getClient(), config.engineerPhone, sendText);
+      } catch (err) {
+        console.error('[digest] scheduler error:', (err as Error).message);
+      }
+    };
+    setInterval(evaDigestScheduler, 5 * 60 * 1000); // checa a cada 5 min se eh hora
+    setTimeout(evaDigestScheduler, 2 * 60 * 1000); // primeira passada 2min apos start
+    console.log('[digest] Eva digest scheduler started (checks every 5min, dispara 7h/12h40/21h BRT)');
   }
 
   // Notificacao de review novo do /avaliar (form publico do site).
