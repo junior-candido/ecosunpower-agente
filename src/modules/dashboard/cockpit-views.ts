@@ -99,6 +99,41 @@ export function renderCockpitPage(data: CockpitData, leadsAguardando: LeadAguard
   }
   .blink { animation: blink 1.4s infinite; }
   @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0.25; } }
+
+  /* HUD corner brackets — estilo painel militar/cockpit avião.
+     Usa box-shadow inset multi-layer pra desenhar L em cada canto. */
+  .hud-corners {
+    position: relative;
+  }
+  .hud-corners::before, .hud-corners::after {
+    content: '';
+    position: absolute;
+    width: 14px; height: 14px;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .hud-corners::before {
+    top: -2px; left: -2px;
+    border-top: 2px solid #22d3ee;
+    border-left: 2px solid #22d3ee;
+    box-shadow: 0 0 6px rgba(34,211,238,0.6), inset 1px 1px 0 rgba(34,211,238,0.3);
+  }
+  .hud-corners::after {
+    bottom: -2px; right: -2px;
+    border-bottom: 2px solid #22d3ee;
+    border-right: 2px solid #22d3ee;
+    box-shadow: 0 0 6px rgba(34,211,238,0.6), inset -1px -1px 0 rgba(34,211,238,0.3);
+  }
+
+  /* Pulse glow nas KPI values */
+  .kpi-value {
+    text-shadow: 0 0 12px currentColor;
+    animation: kpi-pulse 4s ease-in-out infinite;
+  }
+  @keyframes kpi-pulse {
+    0%, 100% { text-shadow: 0 0 12px currentColor; }
+    50% { text-shadow: 0 0 20px currentColor, 0 0 6px currentColor; }
+  }
   a.lead-link:hover { background: rgba(6,182,212,0.12); }
   /* Esconde scrollbar nativa pra manter look limpo */
   ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -134,7 +169,7 @@ export function renderCockpitPage(data: CockpitData, leadsAguardando: LeadAguard
     ${data.kpis.map((k, i) => {
       const colors = ['glow-cyan', 'glow-rose', 'glow-amber', 'glow-green'];
       const valueColors = ['text-cyan-300', 'text-rose-300', 'text-amber-300', 'text-emerald-300'];
-      return `<div class="panel ${colors[i] ?? 'glow-cyan'} p-3">
+      return `<div class="panel hud-corners ${colors[i] ?? 'glow-cyan'} p-3">
         <div class="text-[10px] uppercase tracking-widest text-slate-400">${escapeHtml(k.label)}</div>
         <div class="kpi-value text-5xl mt-1 ${valueColors[i] ?? 'text-cyan-300'}">${k.value}</div>
         <div class="text-[10px] text-slate-500 mt-1">${escapeHtml(k.hint ?? '')}</div>
@@ -144,7 +179,7 @@ export function renderCockpitPage(data: CockpitData, leadsAguardando: LeadAguard
 
   ${leadsAguardando.length > 0 ? `
   <!-- 🔔 LEADS AGUARDANDO AÇÃO (síntese IA) -->
-  <div class="panel glow-rose" style="flex: 0 0 auto; max-height: 26vh; overflow-y: auto;">
+  <div class="panel hud-corners glow-rose" style="flex: 0 0 auto; max-height: 26vh; overflow-y: auto;">
     <div class="panel-title flex justify-between items-center">
       <span>🤖 EVA OLHANDO POR VOCÊ · ${leadsAguardando.length} LEADS AGUARDANDO AÇÃO</span>
       <a href="/dashboard/leads?status=qualificado" class="text-rose-300 hover:text-rose-200">VER TODOS →</a>
@@ -182,44 +217,54 @@ export function renderCockpitPage(data: CockpitData, leadsAguardando: LeadAguard
   </div>
   ` : ''}
 
-  <!-- LINHA 2 — Gauges + Funil + Atividade 24h -->
+  <!-- LINHA 2 — Anéis Concêntricos + Sankey Pipeline + Atividade 24h -->
   <div class="grid grid-cols-12 gap-3" style="flex: 1 1 auto; min-height: 0;">
 
-    <!-- Gauge Eva -->
-    <div class="panel col-span-3 flex flex-col">
-      <div class="panel-title">EVA · CONVERSÃO 30D</div>
-      <div id="chart-eva" class="flex-1"></div>
-      <div class="text-center text-xs text-slate-400 pb-2">
-        <span class="text-cyan-300 font-bold">${data.gauges.evaConversao.numerator}</span>
-        de
-        <span class="text-cyan-300 font-bold">${data.gauges.evaConversao.denominator}</span>
-        leads (últimos 30d)
+    <!-- Anéis Concêntricos: Eva + Sistema + Cadência em 1 visualização -->
+    <div class="panel hud-corners col-span-4 flex flex-col">
+      <div class="panel-title flex justify-between">
+        <span>VITALS · ECOSUN CORE</span>
+        <span class="text-cyan-300 text-[10px]">3 SINAIS</span>
       </div>
-    </div>
-
-    <!-- Gauge Sistema -->
-    <div class="panel col-span-3 flex flex-col">
-      <div class="panel-title">SISTEMA · SAÚDE</div>
-      <div id="chart-system" class="flex-1"></div>
-      <div class="text-[10px] text-slate-400 px-3 pb-2 grid grid-cols-1 gap-0.5">
+      <div id="chart-rings" class="flex-1 min-h-0"></div>
+      <!-- Legenda dos 3 anéis -->
+      <div class="grid grid-cols-3 gap-1 text-[10px] px-2 pb-2">
+        <div class="text-center border-r border-slate-800">
+          <div class="text-cyan-400 font-bold">EVA · 30D</div>
+          <div class="text-slate-400 leading-tight">${data.gauges.evaConversao.numerator}/${data.gauges.evaConversao.denominator} convert.</div>
+        </div>
+        <div class="text-center border-r border-slate-800">
+          <div class="text-amber-400 font-bold">SISTEMA</div>
+          <div class="text-slate-400 leading-tight">${data.gauges.sistemaSaude.subitens.filter(s => s.ok).length}/${data.gauges.sistemaSaude.subitens.length} ON</div>
+        </div>
+        <div class="text-center">
+          <div class="text-emerald-400 font-bold">CADÊNCIA</div>
+          <div class="text-slate-400 leading-tight">${data.kpis[3]?.value ?? 0} toques hoje</div>
+        </div>
+      </div>
+      <!-- Status do sistema (compacto) -->
+      <div class="text-[9px] text-slate-500 px-3 pb-2 grid grid-cols-2 gap-x-2 gap-y-0">
         ${data.gauges.sistemaSaude.subitens.map((s) => `
           <div class="flex justify-between">
-            <span>${escapeHtml(s.name)}</span>
-            <span class="${s.ok ? 'text-emerald-400' : 'text-rose-400'}">${s.ok ? '● ON' : '○ OFF'}</span>
+            <span class="truncate">${escapeHtml(s.name)}</span>
+            <span class="${s.ok ? 'text-emerald-400' : 'text-rose-400'} shrink-0">${s.ok ? '●' : '○'}</span>
           </div>`).join('')}
       </div>
     </div>
 
-    <!-- Funil leads -->
-    <div class="panel col-span-3 flex flex-col">
-      <div class="panel-title">FUNIL · LEADS</div>
-      <div id="chart-funnel" class="flex-1"></div>
+    <!-- Sankey Pipeline: fluxo de leads pelo funil -->
+    <div class="panel hud-corners col-span-5 flex flex-col">
+      <div class="panel-title flex justify-between">
+        <span>PIPELINE · FLUXO DE LEADS</span>
+        <span class="text-cyan-300 text-[10px]">SANKEY</span>
+      </div>
+      <div id="chart-sankey" class="flex-1 min-h-0"></div>
     </div>
 
     <!-- Atividade 24h -->
-    <div class="panel col-span-3 flex flex-col">
+    <div class="panel hud-corners col-span-3 flex flex-col">
       <div class="panel-title">ATIVIDADE 24H</div>
-      <div id="chart-activity" class="flex-1"></div>
+      <div id="chart-activity" class="flex-1 min-h-0"></div>
       <div class="text-[10px] text-slate-400 px-3 pb-2 flex justify-around">
         <span><span class="inline-block w-2 h-2 bg-cyan-400 mr-1"></span>Mensagens</span>
         <span><span class="inline-block w-2 h-2 bg-amber-400 mr-1"></span>Cadência</span>
@@ -232,7 +277,7 @@ export function renderCockpitPage(data: CockpitData, leadsAguardando: LeadAguard
   <div class="grid grid-cols-12 gap-3" style="flex: 1 1 auto; min-height: 0;">
 
     <!-- Top leads -->
-    <div class="panel col-span-8 flex flex-col">
+    <div class="panel hud-corners col-span-8 flex flex-col">
       <div class="panel-title flex justify-between">
         <span>LEADS QUENTES · TOP 5</span>
         <a href="/dashboard/leads" class="text-amber-300 hover:text-amber-200">VER TODOS →</a>
@@ -278,7 +323,7 @@ export function renderCockpitPage(data: CockpitData, leadsAguardando: LeadAguard
     </div>
 
     <!-- Campanha LIVE -->
-    <div class="panel col-span-4 flex flex-col glow-amber">
+    <div class="panel hud-corners col-span-4 flex flex-col glow-amber">
       <div class="panel-title flex justify-between">
         <span>CAMPANHA · META ADS · 7D</span>
         <a href="/dashboard/marketing" class="text-amber-300 hover:text-amber-200">→</a>
@@ -323,46 +368,103 @@ const NEON = {
   green: '#22c55e', rose: '#f43f5e', bg: 'transparent',
 };
 
-function renderGauge(el, pct, color, existing) {
+// Aneis concentricos estilo Apple Watch — 3 metricas em 1 visualizacao.
+// Anel externo = Eva conversao, meio = Sistema saude, interno = Cadencia hoje vs meta.
+function renderRings(el, evaPct, sistemaPct, cadenciaPct, existing) {
   const chart = existing ?? echarts.init(el, null, { renderer: 'canvas' });
+  // Cores de cada anel
+  const ringColor = (pct, baseColor) => pct >= 70 ? baseColor : pct >= 40 ? '#fbbf24' : '#f43f5e';
+  const evaColor = ringColor(evaPct, '#22d3ee');
+  const sistemaColor = ringColor(sistemaPct, '#fbbf24');
+  const cadenciaColor = ringColor(cadenciaPct, '#22c55e');
+
   chart.setOption({
-    series: [{
-      type: 'gauge',
-      startAngle: 200, endAngle: -20,
-      min: 0, max: 100,
-      progress: { show: true, width: 14, itemStyle: { color } },
-      axisLine: { lineStyle: { width: 14, color: [[1, '#1e293b']] } },
-      axisTick: { show: false },
-      splitLine: { length: 8, lineStyle: { color: '#334155', width: 2 } },
-      axisLabel: { color: NEON.muted, fontSize: 9, distance: 4 },
-      pointer: { length: '60%', width: 4, itemStyle: { color } },
-      anchor: { show: true, size: 12, itemStyle: { color, borderColor: '#020617', borderWidth: 3 } },
-      title: { show: false },
-      detail: {
-        valueAnimation: true,
-        formatter: (v) => Math.round(v) + '%',
-        color, fontSize: 26, fontWeight: 'bold', offsetCenter: [0, '40%'],
+    series: [
+      // EVA (externo)
+      {
+        type: 'gauge', center: ['50%', '55%'], radius: '92%',
+        startAngle: 90, endAngle: -270, min: 0, max: 100,
+        progress: { show: true, width: 14, roundCap: true, itemStyle: { color: evaColor, shadowColor: evaColor, shadowBlur: 12 } },
+        axisLine: { lineStyle: { width: 14, color: [[1, 'rgba(34,211,238,0.08)']] } },
+        axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
+        pointer: { show: false }, anchor: { show: false }, title: { show: false },
+        detail: { show: false },
+        data: [{ value: evaPct }],
       },
-      data: [{ value: pct }],
-    }],
+      // SISTEMA (meio)
+      {
+        type: 'gauge', center: ['50%', '55%'], radius: '70%',
+        startAngle: 90, endAngle: -270, min: 0, max: 100,
+        progress: { show: true, width: 14, roundCap: true, itemStyle: { color: sistemaColor, shadowColor: sistemaColor, shadowBlur: 12 } },
+        axisLine: { lineStyle: { width: 14, color: [[1, 'rgba(251,191,36,0.08)']] } },
+        axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
+        pointer: { show: false }, anchor: { show: false }, title: { show: false },
+        detail: { show: false },
+        data: [{ value: sistemaPct }],
+      },
+      // CADENCIA (interno)
+      {
+        type: 'gauge', center: ['50%', '55%'], radius: '48%',
+        startAngle: 90, endAngle: -270, min: 0, max: 100,
+        progress: { show: true, width: 14, roundCap: true, itemStyle: { color: cadenciaColor, shadowColor: cadenciaColor, shadowBlur: 12 } },
+        axisLine: { lineStyle: { width: 14, color: [[1, 'rgba(34,197,94,0.08)']] } },
+        axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
+        pointer: { show: false }, anchor: { show: false }, title: { show: false },
+        detail: {
+          valueAnimation: true,
+          formatter: () => evaPct + '%',
+          color: '#22d3ee', fontSize: 32, fontWeight: 'bold', offsetCenter: [0, 0],
+        },
+        data: [{ value: cadenciaPct }],
+      },
+    ],
   });
   return chart;
 }
 
-function renderFunnel(el, funilData, existing) {
+// Sankey horizontal: fluxo de leads pelo funil. Largura das linhas = volume.
+// Mostra TRANSICAO entre etapas, nao so contagem.
+function renderSankey(el, funilData, existing) {
   const chart = existing ?? echarts.init(el, null, { renderer: 'canvas' });
+  // Nodes: cada etapa do funil
+  const nodes = funilData.map((f) => ({
+    name: f.stage + ' · ' + f.count,
+    itemStyle: { color: f.color, borderColor: f.color, shadowColor: f.color, shadowBlur: 10 },
+    label: { color: '#e2e8f0', fontWeight: 'bold' },
+  }));
+  // Links: fluxo entre etapas (heuristica: min entre etapa atual e anterior)
+  const links = [];
+  for (let i = 0; i < funilData.length - 1; i++) {
+    const flow = Math.min(funilData[i].count, funilData[i + 1].count);
+    if (flow > 0) {
+      links.push({
+        source: funilData[i].stage + ' · ' + funilData[i].count,
+        target: funilData[i + 1].stage + ' · ' + funilData[i + 1].count,
+        value: flow,
+        lineStyle: { color: 'gradient', opacity: 0.4 },
+      });
+    } else {
+      // Mantem link com value 0.5 pra mostrar a etapa mesmo sem fluxo
+      links.push({
+        source: funilData[i].stage + ' · ' + funilData[i].count,
+        target: funilData[i + 1].stage + ' · ' + funilData[i + 1].count,
+        value: 0.5,
+        lineStyle: { color: '#1e293b', opacity: 0.6 },
+      });
+    }
+  }
   chart.setOption({
-    grid: { left: 8, right: 8, top: 8, bottom: 8, containLabel: false },
+    tooltip: { trigger: 'item', backgroundColor: 'rgba(2,6,23,0.95)', borderColor: NEON.cyan, textStyle: { color: '#cbd5e1' } },
     series: [{
-      type: 'funnel',
-      left: '5%', right: '5%', top: 12, bottom: 12,
-      width: '90%', minSize: '20%', maxSize: '100%',
-      sort: 'descending', gap: 4,
-      label: { show: true, position: 'inside', color: '#fff', fontWeight: 'bold' },
-      labelLine: { show: false },
-      itemStyle: { borderColor: '#020617', borderWidth: 2 },
-      emphasis: { label: { fontSize: 16 } },
-      data: funilData.map((f) => ({ value: f.count, name: f.stage + ' · ' + f.count, itemStyle: { color: f.color } })),
+      type: 'sankey',
+      left: 10, right: 10, top: 14, bottom: 14,
+      nodeWidth: 14, nodeGap: 8,
+      orient: 'horizontal',
+      data: nodes,
+      links: links,
+      label: { fontSize: 11, color: '#e2e8f0' },
+      emphasis: { focus: 'adjacency' },
+      lineStyle: { curveness: 0.5 },
     }],
   });
   return chart;
@@ -394,17 +496,20 @@ function renderActivity(el, atividade, existing) {
   return chart;
 }
 
-let chartEva, chartSystem, chartFunnel, chartActivity;
+let chartRings, chartSankey, chartActivity;
 
 function renderAll(data) {
   // Reaproveita instancias entre refreshes pra animar valores sem piscar.
-  chartEva = renderGauge(document.getElementById('chart-eva'),
-    data.gauges.evaConversao.pct, NEON.cyan, chartEva);
-  chartSystem = renderGauge(document.getElementById('chart-system'),
+  // Cadencia: pct vs meta de 50 toques/dia (50 = 100%). Cap em 100%.
+  const cadenciaPct = Math.min(100, Math.round(((data.kpis[3]?.value ?? 0) / 50) * 100));
+  chartRings = renderRings(
+    document.getElementById('chart-rings'),
+    data.gauges.evaConversao.pct,
     data.gauges.sistemaSaude.pct,
-    data.gauges.sistemaSaude.pct >= 80 ? NEON.green : data.gauges.sistemaSaude.pct >= 50 ? NEON.amber : NEON.rose,
-    chartSystem);
-  chartFunnel = renderFunnel(document.getElementById('chart-funnel'), data.funil, chartFunnel);
+    cadenciaPct,
+    chartRings,
+  );
+  chartSankey = renderSankey(document.getElementById('chart-sankey'), data.funil, chartSankey);
   chartActivity = renderActivity(document.getElementById('chart-activity'), data.atividade24h, chartActivity);
 }
 
@@ -434,11 +539,10 @@ async function refresh() {
 }
 setInterval(refresh, 30000); // 30s
 
-// Resize gauges/charts no window resize
+// Resize charts no window resize
 window.addEventListener('resize', () => {
-  chartEva && chartEva.resize();
-  chartSystem && chartSystem.resize();
-  chartFunnel && chartFunnel.resize();
+  chartRings && chartRings.resize();
+  chartSankey && chartSankey.resize();
   chartActivity && chartActivity.resize();
 });
 
