@@ -2745,6 +2745,19 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     const cancelled = await supabase.cancelCadence(lead.id, 'client_replied').catch(() => 0);
     if (cancelled > 0) {
       console.log(`[cadence] ${cancelled} toques cancelados pra ${from} (cliente respondeu)`);
+      // 🔥 Sinal quente — notifica Junior imediatamente (nao espera digest 3x/dia)
+      try {
+        const { alertCadenceReplied } = await import('./modules/eva-alerts.js');
+        await alertCadenceReplied(
+          { client: supabase.getClient(), engineerPhone: config.engineerPhone, sendText },
+          lead.id,
+          lead.name ?? null,
+          from,
+          cancelled,
+        );
+      } catch (err) {
+        console.warn('[alerts] alertCadenceReplied import/run falhou:', (err as Error).message);
+      }
     }
   }
 
