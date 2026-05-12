@@ -107,6 +107,11 @@ export function renderCockpitPage(data: CockpitData): string {
       <span class="text-cyan-300" id="hud-time">--:--:--</span>
       <span class="text-amber-300">ALERTAS: <span id="hud-alerts">${data.meta.alertasPendentes}</span></span>
       <span class="text-rose-300">SILENTES s/ CAD: <span id="hud-silent">${data.meta.silentesSemCadencia}</span></span>
+      <button id="btn-sync" type="button"
+        class="px-3 py-1 rounded border border-cyan-400 text-cyan-200 hover:bg-cyan-400 hover:text-slate-900 font-bold transition"
+        title="Força sync Meta Ads + monitoramento agora">
+        🔄 <span id="btn-sync-label">SYNC AGORA</span>
+      </button>
       <a href="/dashboard/leads" class="text-cyan-300 hover:text-cyan-100">[LEADS]</a>
       <a href="/dashboard/home" class="text-cyan-300 hover:text-cyan-100">[HOME]</a>
     </div>
@@ -387,6 +392,32 @@ window.addEventListener('resize', () => {
 
 // Full page reload a cada 5min pra refrescar KPIs+tabela
 setTimeout(() => window.location.reload(), 5 * 60 * 1000);
+
+// SYNC AGORA: forca refresh dos collectors no backend (Meta Ads + monitoring).
+// Sem cron pra esperar — Junior aperta e ve novo dado em poucos segundos.
+const btnSync = document.getElementById('btn-sync');
+const btnSyncLabel = document.getElementById('btn-sync-label');
+btnSync.addEventListener('click', async () => {
+  btnSync.disabled = true;
+  btnSyncLabel.textContent = 'SINCRONIZANDO...';
+  btnSync.style.opacity = '0.6';
+  try {
+    const r = await fetch('/dashboard/cockpit/sync', { method: 'POST' });
+    const j = await r.json();
+    if (j.ok) {
+      btnSyncLabel.textContent = '✅ ATUALIZADO';
+      // Re-fetch dados pra refletir o sync
+      await refresh();
+      setTimeout(() => { btnSyncLabel.textContent = 'SYNC AGORA'; btnSync.style.opacity = '1'; btnSync.disabled = false; }, 2500);
+    } else {
+      btnSyncLabel.textContent = j.error?.includes('aguarde') ? '⏳ AGUARDE' : '⚠️ ERRO';
+      setTimeout(() => { btnSyncLabel.textContent = 'SYNC AGORA'; btnSync.style.opacity = '1'; btnSync.disabled = false; }, 3000);
+    }
+  } catch (err) {
+    btnSyncLabel.textContent = '⚠️ ERRO';
+    setTimeout(() => { btnSyncLabel.textContent = 'SYNC AGORA'; btnSync.style.opacity = '1'; btnSync.disabled = false; }, 3000);
+  }
+});
 </script>
 </body>
 </html>`;

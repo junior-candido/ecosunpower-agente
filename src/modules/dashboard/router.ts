@@ -55,6 +55,7 @@ import type { MarcaInversor } from '../monitoring/types.js';
 export function createDashboardRouter(
   supabaseService: SupabaseService,
   monitoringService: MonitoringService,
+  options: { metaWabaAccessToken?: string } = {},
 ): Router {
   const router = Router();
   const supabase = supabaseService.getClient();
@@ -134,6 +135,57 @@ export function createDashboardRouter(
     } catch (err) {
       console.error('[dashboard/cockpit/data]', err);
       res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // SYNC AGORA: forca refresh de tudo que poderia estar defasado (Meta Ads
+  // insights, monitoring SolarEdge, descoberta de plantas novas). Botao no
+  // cockpit chama isso. Throttle 1x por minuto via app_flags lock.
+  router.post('/cockpit/sync', async (_req: Request, res: Response) => {
+    try {
+      const lockKey = 'cockpit_sync_lock';
+      const lockUntil = new Date(Date.now() + 60_000).toISOString();
+      const { data: existing } = await supabase
+        .from('app_flags').select('value').eq('key', lockKey).maybeSingle();
+      if (existing?.value && existing.value > new Date().toISOString()) {
+        return res.status(429).json({ ok: false, error: 'aguarde, sync recente em andamento' });
+      }
+      await supabase.from('app_flags').upsert({ key: lockKey, value: lockUntil }, { onConflict: 'key' });
+
+      const tasks: Array<Promise<unknown>> = [];
+      const summary: Record<string, string> = {};
+
+      // Meta Ads insights (so se temos token)
+      if (options.metaWabaAccessToken) {
+        tasks.push((async () => {
+          try {
+            const { syncCampaignStatuses, collectInsights } = await import('../marketing/insights-collector.js');
+            const sync = await syncCampaignStatuses(supabase, options.metaWabaAccessToken!);
+            const ins = await collectInsights(supabase, options.metaWabaAccessToken!);
+            summary.marketing = `${sync.synced} sync (${sync.changed} mudaram), ${ins.ok} insights ok / ${ins.failed} falha`;
+          } catch (err) {
+            summary.marketing = `erro: ${(err as Error).message.slice(0, 80)}`;
+          }
+        })());
+      } else {
+        summary.marketing = 'sem token Meta';
+      }
+
+      // Monitoring SolarEdge sync
+      tasks.push((async () => {
+        try {
+          const r = await monitoringService.syncAll();
+          summary.monitoring = `${r.sucessos}/${r.totalSistemas} ok, ${r.falhas} falhas`;
+        } catch (err) {
+          summary.monitoring = `erro: ${(err as Error).message.slice(0, 80)}`;
+        }
+      })());
+
+      await Promise.all(tasks);
+      res.json({ ok: true, summary, syncedAt: new Date().toISOString() });
+    } catch (err) {
+      console.error('[dashboard/cockpit/sync]', err);
+      res.status(500).json({ ok: false, error: (err as Error).message });
     }
   });
 

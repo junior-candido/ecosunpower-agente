@@ -4670,7 +4670,9 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // Dashboard interno EcoSun (Modulo 3 da plataforma). Auth basica via senha
   // env DASHBOARD_PASSWORD. Rotas: /dashboard/home, /dashboard/propostas,
   // /dashboard/manutencao. Mais paginas serao adicionadas em fases.
-  app.use('/dashboard', createDashboardRouter(supabase, monitoringService));
+  app.use('/dashboard', createDashboardRouter(supabase, monitoringService, {
+    metaWabaAccessToken: config.metaWabaAccessToken,
+  }));
 
   // que abre HTML como codigo fonte.
   app.get('/p/:slug', async (req, res) => {
@@ -5761,9 +5763,11 @@ Slug: ${draft.slug}`;
         console.error('[insights] collector failed:', (err as Error).message);
       }
     };
-    setInterval(runInsightsCollector, 2 * 60 * 60 * 1000);
+    // 30min: Meta API insights "today" rate-limited mas com folga pra 1 conta.
+    // Aprox 48 calls/dia (vs 12 antes) — cockpit fica fresco e sem risk.
+    setInterval(runInsightsCollector, 30 * 60 * 1000);
     setTimeout(runInsightsCollector, 5 * 60 * 1000); // first run 5 min after boot
-    console.log('[insights] meta_ads_insights collector scheduled (every 2h)');
+    console.log('[insights] meta_ads_insights collector scheduled (every 30min)');
   } else if (!isSandbox) {
     // Diagnostico explicito quando NAO registra — pra nao ficar dashboard
     // congelado em silencio (causa do incidente acima).
