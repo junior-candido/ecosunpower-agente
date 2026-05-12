@@ -5871,6 +5871,9 @@ Slug: ${draft.slug}`;
     const runInsightsCollector = async () => {
       try {
         const { syncCampaignStatuses, collectInsights } = await import('./modules/marketing/insights-collector.js');
+        const { runMetaPermissionsHeartbeat } = await import('./modules/marketing/meta-permissions-heartbeat.js');
+        // 0) heartbeat permissions Meta (public_profile + pages_list) pra destravar checks App Review
+        await runMetaPermissionsHeartbeat(config.metaWabaAccessToken!);
         // 1) sync status/name/budget Meta -> DB (toda campanha cadastrada)
         await syncCampaignStatuses(supabase.getClient(), config.metaWabaAccessToken!);
         // 2) collect insights so das active
@@ -5884,6 +5887,18 @@ Slug: ${draft.slug}`;
     setInterval(runInsightsCollector, 30 * 60 * 1000);
     setTimeout(runInsightsCollector, 5 * 60 * 1000); // first run 5 min after boot
     console.log('[insights] meta_ads_insights collector scheduled (every 30min)');
+
+    // Heartbeat imediato pra ja contar 1 chamada de public_profile (destrava
+    // check App Review pra IG messaging). Roda 10s apos boot. Em paralelo
+    // com proximas execucoes pelo cron (a cada 30min).
+    setTimeout(async () => {
+      try {
+        const { runMetaPermissionsHeartbeat } = await import('./modules/marketing/meta-permissions-heartbeat.js');
+        await runMetaPermissionsHeartbeat(config.metaWabaAccessToken!);
+      } catch (err) {
+        console.warn('[meta-heartbeat] boot heartbeat falhou:', (err as Error).message);
+      }
+    }, 10_000);
   } else if (!isSandbox) {
     // Diagnostico explicito quando NAO registra — pra nao ficar dashboard
     // congelado em silencio (causa do incidente acima).
