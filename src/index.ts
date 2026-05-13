@@ -1739,11 +1739,28 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
   async function tryHandleBannerKitsCommand(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
     const t = text.trim().toLowerCase();
-    if (t !== '/banner-kits' && t !== '/banner-tabela') return false;
+    const m = t.match(/^\/banner-(kits|tabela)(?:\s+(\S+))?$/);
+    if (!m) return false;
 
-    await sendText(from, '🎨 Gerando banner premium com 6 kits OnGrid...');
+    // Variant aprovada padrao: white-corporate (gradiente fim de tarde).
+    // Sintaxe: /banner-kits           -> white-corporate (default)
+    //          /banner-kits azul      -> azul-degrade
+    //          /banner-kits dark      -> dark-premium
+    //          /banner-kits yellow    -> bold-yellow
+    //          /banner-kits forest    -> forest-green
+    const v = (m[2] ?? 'white').toLowerCase();
+    const variantMap: Record<string, 'white-corporate' | 'azul-degrade' | 'dark-premium' | 'bold-yellow' | 'forest-green'> = {
+      white: 'white-corporate', 'white-corporate': 'white-corporate', tarde: 'white-corporate',
+      azul: 'azul-degrade', 'azul-degrade': 'azul-degrade', blue: 'azul-degrade',
+      dark: 'dark-premium', 'dark-premium': 'dark-premium', premium: 'dark-premium',
+      yellow: 'bold-yellow', amarelo: 'bold-yellow', 'bold-yellow': 'bold-yellow',
+      forest: 'forest-green', verde: 'forest-green', 'forest-green': 'forest-green',
+    };
+    const variant = variantMap[v] ?? 'white-corporate';
+
+    await sendText(from, `🎨 Gerando banner premium (${variant}) com 6 kits OnGrid...`);
     try {
-      const { renderBannerTabelaKits } = await import('./modules/marketing/banner-tabela-kits.js');
+      const { renderBannerTabelaKitsHtml } = await import('./modules/marketing/banner-tabela-kits-html.js');
       const KITS_CANONICOS = [
         { kwp: 5.67,  modulos: 9,  microinversores: 3, geracao_kwh_mes: 700,  preco_brl: 15800.61 },
         { kwp: 7.56,  modulos: 12, microinversores: 3, geracao_kwh_mes: 900,  preco_brl: 18476.35 },
@@ -1752,19 +1769,18 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         { kwp: 16.38, modulos: 26, microinversores: 7, geracao_kwh_mes: 2000, preco_brl: 33766.60 },
         { kwp: 20.79, modulos: 33, microinversores: 9, geracao_kwh_mes: 2500, preco_brl: 42039.77 },
       ];
-      const buf = await renderBannerTabelaKits({ kits: KITS_CANONICOS });
+      const buf = await renderBannerTabelaKitsHtml({ kits: KITS_CANONICOS, variant });
 
-      // Upload pro Supabase Storage com slug datado
-      const slug = `tabela-kits-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now() % 10000}`;
+      // Upload pro Supabase Storage com slug datado + variant
+      const slug = `tabela-kits-${variant}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now() % 10000}`;
       const { CreativeStorage } = await import('./modules/marketing/creative-storage.js');
       const storage = new CreativeStorage(supabase.getClient());
       const { publicUrl } = await storage.uploadBanner(buf, slug);
 
-      // Manda a imagem direto pro Junior no zap via WABA (sendImage com upload)
       if (metaWaba) {
         try {
           const { mediaId } = await metaWaba.uploadMedia(buf, 'image/png', `${slug}.png`);
-          await metaWaba.sendImageById(from, mediaId, `🎨 *Banner Tabela Kits 2026*\n\n6 kits OnGrid LONGi + Solax em ordem crescente.\n\n📎 ${publicUrl}\n\nPra Meta Ads, salvar essa URL e usar como criativo.`);
+          await metaWaba.sendImageById(from, mediaId, `🎨 *Banner ${variant}*\n\n6 kits OnGrid LONGi + Solax · Oferta de Maio\n\n📎 URL alta qualidade (sem compressão WhatsApp):\n${publicUrl}\n\nPra Meta Ads, salvar essa URL e usar como criativo.`);
         } catch (err) {
           console.warn('[banner-kits] sendImage falhou, fallback texto:', (err as Error).message);
           await sendText(from, `🎨 Banner gerado!\n\n${publicUrl}`);
@@ -1772,7 +1788,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       } else {
         await sendText(from, `🎨 Banner gerado!\n\n${publicUrl}`);
       }
-      console.log(`[banner-kits] gerado e enviado: ${publicUrl}`);
+      console.log(`[banner-kits] variant=${variant} gerado: ${publicUrl}`);
     } catch (err) {
       console.error('[banner-kits] erro:', err);
       await sendText(from, `❌ Erro ao gerar banner: ${(err as Error).message}`);

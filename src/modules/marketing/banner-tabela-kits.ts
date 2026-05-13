@@ -35,11 +35,18 @@ function loadAssetAsDataUrl(basename: string): string | null {
   for (const ext of ['png', 'jpeg', 'jpg']) {
     const p = path.join(ASSETS_DIR, `${basename}.${ext}`);
     if (fs.existsSync(p)) {
-      const buf = fs.readFileSync(p);
-      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
-      return `data:${mime};base64,${buf.toString('base64')}`;
+      try {
+        const buf = fs.readFileSync(p);
+        const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
+        const dataUrl = `data:${mime};base64,${buf.toString('base64')}`;
+        console.log(`[banner-tabela] asset ${basename} carregado (${(buf.length / 1024).toFixed(0)} KB ${ext})`);
+        return dataUrl;
+      } catch (err) {
+        console.warn(`[banner-tabela] falha lendo ${p}:`, (err as Error).message);
+      }
     }
   }
+  console.warn(`[banner-tabela] asset NAO encontrado: ${basename} (tentou .png, .jpeg, .jpg)`);
   return null;
 }
 
@@ -82,7 +89,8 @@ export async function renderBannerTabelaKits(input: BannerTabelaKitsInput): Prom
   const fonts = await loadFonts();
   const moduloPng = loadAssetAsDataUrl('modulo.longi');
   const solaxPng = loadAssetAsDataUrl('inversor.solax');
-  const logoPng = loadAssetAsDataUrl('ecosun png');
+  const logoPng = loadAssetAsDataUrl('logo-ecosunpower-1024-transparente')
+    ?? loadAssetAsDataUrl('logo-ecosunpower');
 
   // Cores premium
   const COR_BG_TOP = '#0a1929';        // deep navy
@@ -129,7 +137,7 @@ export async function renderBannerTabelaKits(input: BannerTabelaKitsInput): Prom
                       type: 'img',
                       props: {
                         src: logoPng,
-                        style: { width: 180, height: 'auto', objectFit: 'contain' },
+                        style: { width: 200, height: 70 },
                       },
                     }
                   : {
@@ -240,19 +248,36 @@ export async function renderBannerTabelaKits(input: BannerTabelaKitsInput): Prom
                   ? {
                       type: 'div',
                       props: {
-                        style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 },
+                        style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 },
                         children: [
                           {
-                            type: 'img',
+                            type: 'div',
                             props: {
-                              src: moduloPng,
-                              style: { width: 110, height: 110, objectFit: 'contain' },
+                              style: {
+                                width: 140, height: 140,
+                                background: '#ffffff',
+                                borderRadius: 16,
+                                padding: 14,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                border: '2px solid #fbbf24',
+                              },
+                              children: [
+                                {
+                                  type: 'img',
+                                  props: {
+                                    src: moduloPng,
+                                    style: { width: 112, height: 112 },
+                                  },
+                                },
+                              ],
                             },
                           },
                           {
                             type: 'div',
                             props: {
-                              style: { fontFamily: 'Montserrat', fontWeight: 700, fontSize: 14, color: COR_OURO_FRACO, display: 'flex' },
+                              style: { fontFamily: 'Montserrat', fontWeight: 700, fontSize: 15, color: COR_OURO_FRACO, display: 'flex' },
                               children: 'LONGi Hi-MO X10 630W',
                             },
                           },
@@ -283,7 +308,7 @@ export async function renderBannerTabelaKits(input: BannerTabelaKitsInput): Prom
                             type: 'img',
                             props: {
                               src: solaxPng,
-                              style: { width: 110, height: 110, objectFit: 'contain' },
+                              style: { width: 110, height: 110 },
                             },
                           },
                           {
