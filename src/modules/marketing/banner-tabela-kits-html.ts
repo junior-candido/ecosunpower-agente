@@ -180,7 +180,7 @@ async function getPuppeteer(): Promise<any> {
   return _puppeteer;
 }
 
-export function buildBannerHtml(kits: KitItem[], variant: BannerVariant = 'dark-premium', width = 1152, height = 2048): string {
+export function buildBannerHtml(kits: KitItem[], variant: BannerVariant = 'dark-premium', width = 1080, height = 1350): string {
   const sortedKits = [...kits].sort((a, b) => a.kwp - b.kwp);
   const T = THEMES[variant];
   const logoDataUrl = loadAssetAsDataUrl('logo-ecosunpower-1024-transparente')
@@ -224,9 +224,12 @@ export function buildBannerHtml(kits: KitItem[], variant: BannerVariant = 'dark-
     background: ${T.bgGradient};
     color: ${T.textPrimary};
     font-family: 'Montserrat', sans-serif;
-    padding: 40px 60px;
+    padding: 50px 70px;
     position: relative;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
   }
   body::before, body::after {
     content: '';
@@ -238,8 +241,8 @@ export function buildBannerHtml(kits: KitItem[], variant: BannerVariant = 'dark-
   body::before { top: 24px; left: 24px; border-right: none; border-bottom: none; }
   body::after { bottom: 24px; right: 24px; border-left: none; border-top: none; }
 
-  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-  .logo { height: 280px; width: auto; }
+  .header { display: flex; justify-content: space-between; align-items: center; }
+  .logo { height: 110px; width: auto; }
 
   /* Hero da OFERTA — destaque principal */
   .oferta-hero {
@@ -247,7 +250,7 @@ export function buildBannerHtml(kits: KitItem[], variant: BannerVariant = 'dark-
     color: #ffffff;
     padding: 22px 30px;
     text-align: center;
-    margin: 0 -30px 22px -30px;
+    margin: 0 -60px 22px -60px;
     box-shadow: 0 8px 24px rgba(220,38,38,0.4);
   }
   .oferta-hero-title {
@@ -256,11 +259,8 @@ export function buildBannerHtml(kits: KitItem[], variant: BannerVariant = 'dark-
     color: #ffffff;
     line-height: 1;
     letter-spacing: -1px;
-    text-shadow: 0 4px 16px rgba(0,0,0,0.25);
   }
-  .oferta-hero-title span {
-    color: #fef3c7;
-  }
+  .oferta-hero-title span { color: #fef3c7; }
   .oferta-hero-sub {
     font-weight: 700;
     font-size: 22px;
@@ -563,7 +563,7 @@ export function buildBannerHtml(kits: KitItem[], variant: BannerVariant = 'dark-
 }
 
 export async function renderBannerTabelaKitsHtml(input: BannerTabelaKitsHtmlInput): Promise<Buffer> {
-  const { kits, variant = 'dark-premium', width = 1152, height = 2048 } = input;
+  const { kits, variant = 'dark-premium', width = 1080, height = 1350 } = input;
   if (kits.length === 0 || kits.length > 8) {
     throw new Error(`renderBannerTabelaKitsHtml: precisa de 1 a 8 kits (recebido ${kits.length})`);
   }
@@ -581,7 +581,7 @@ export async function renderBannerTabelaKitsHtml(input: BannerTabelaKitsHtmlInpu
   const browser = await puppeteer.launch(launchOptions);
   try {
     const page = await browser.newPage();
-    await page.setViewport({ width, height, deviceScaleFactor: 2 });
+    await page.setViewport({ width, height, deviceScaleFactor: 1 });
     await page.setContent(html, { waitUntil: 'load', timeout: 30000 });
     try { await page.evaluate(() => (document as any).fonts?.ready); } catch { /* ignora */ }
     await new Promise((r) => setTimeout(r, 600));
