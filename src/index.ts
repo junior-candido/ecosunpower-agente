@@ -1733,6 +1733,53 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // /banner-kits — gera banner premium tabela com 6 kits OnGrid LONGi+Solax.
+  // Tabela canonica 2026 (preços oficiais Ecosunpower). Junior pode usar
+  // direto como criativo Meta Ads ou pra mandar pra clientes prospects.
+  async function tryHandleBannerKitsCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const t = text.trim().toLowerCase();
+    if (t !== '/banner-kits' && t !== '/banner-tabela') return false;
+
+    await sendText(from, '🎨 Gerando banner premium com 6 kits OnGrid...');
+    try {
+      const { renderBannerTabelaKits } = await import('./modules/marketing/banner-tabela-kits.js');
+      const KITS_CANONICOS = [
+        { kwp: 5.67,  modulos: 9,  microinversores: 3, geracao_kwh_mes: 700,  preco_brl: 15800.61 },
+        { kwp: 7.56,  modulos: 12, microinversores: 3, geracao_kwh_mes: 900,  preco_brl: 18476.35 },
+        { kwp: 10.08, modulos: 16, microinversores: 4, geracao_kwh_mes: 1200, preco_brl: 22985.00 },
+        { kwp: 12.60, modulos: 20, microinversores: 5, geracao_kwh_mes: 1500, preco_brl: 28038.54 },
+        { kwp: 16.38, modulos: 26, microinversores: 7, geracao_kwh_mes: 2000, preco_brl: 33766.60 },
+        { kwp: 20.79, modulos: 33, microinversores: 9, geracao_kwh_mes: 2500, preco_brl: 42039.77 },
+      ];
+      const buf = await renderBannerTabelaKits({ kits: KITS_CANONICOS });
+
+      // Upload pro Supabase Storage com slug datado
+      const slug = `tabela-kits-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now() % 10000}`;
+      const { CreativeStorage } = await import('./modules/marketing/creative-storage.js');
+      const storage = new CreativeStorage(supabase.getClient());
+      const { publicUrl } = await storage.uploadBanner(buf, slug);
+
+      // Manda a imagem direto pro Junior no zap via WABA (sendImage com upload)
+      if (metaWaba) {
+        try {
+          const { mediaId } = await metaWaba.uploadMedia(buf, 'image/png', `${slug}.png`);
+          await metaWaba.sendImageById(from, mediaId, `🎨 *Banner Tabela Kits 2026*\n\n6 kits OnGrid LONGi + Solax em ordem crescente.\n\n📎 ${publicUrl}\n\nPra Meta Ads, salvar essa URL e usar como criativo.`);
+        } catch (err) {
+          console.warn('[banner-kits] sendImage falhou, fallback texto:', (err as Error).message);
+          await sendText(from, `🎨 Banner gerado!\n\n${publicUrl}`);
+        }
+      } else {
+        await sendText(from, `🎨 Banner gerado!\n\n${publicUrl}`);
+      }
+      console.log(`[banner-kits] gerado e enviado: ${publicUrl}`);
+    } catch (err) {
+      console.error('[banner-kits] erro:', err);
+      await sendText(from, `❌ Erro ao gerar banner: ${(err as Error).message}`);
+    }
+    return true;
+  }
+
   async function tryHandleCreativeCommand(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
     const trimmed = text.trim();
@@ -2164,6 +2211,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /post-fb <texto> — posta no FB Ecosunpower (exercita pages_manage_posts)
     if (await tryHandlePostFbCommand(from, text)) return;
+
+    // /banner-kits — gera banner tabela 6 kits OnGrid (criativo Meta Ads)
+    if (await tryHandleBannerKitsCommand(from, text)) return;
 
     // /reativar-base — dispara template MARKETING pra leads frios da base terceirizada
     if (await tryHandleReativarBaseCommand(from, text)) return;

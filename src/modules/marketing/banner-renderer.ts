@@ -48,7 +48,7 @@ async function fetchFont(url: string): Promise<ArrayBuffer> {
   return await r.arrayBuffer();
 }
 
-async function loadFonts(): Promise<{ name: string; data: ArrayBuffer; weight: 400 | 700 | 900; style: 'normal' }[]> {
+export async function loadFonts(): Promise<{ name: string; data: ArrayBuffer; weight: 400 | 700 | 900; style: 'normal' }[]> {
   if (!fontCache.regular || !fontCache.bold || !fontCache.black) {
     // Montserrat via jsdelivr @fontsource — CDN estavel, sem 404
     const BASE = 'https://cdn.jsdelivr.net/npm/@fontsource/montserrat@5.0.18/files';
