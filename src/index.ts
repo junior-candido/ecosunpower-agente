@@ -1771,8 +1771,16 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       ];
       const buf = await renderBannerTabelaKitsHtml({ kits: KITS_CANONICOS, variant });
 
-      // Upload pro Supabase Storage com slug datado + variant
-      const slug = `tabela-kits-${variant}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now() % 10000}`;
+      // Upload pro Supabase Storage com nome profissional pro Meta Ads
+      // Formato: OnGrid_Tabela_Mai_v<seq>_<variant>
+      const variantLabel = variant === 'white-corporate' ? 'fim-de-tarde'
+        : variant === 'azul-degrade' ? 'azul'
+        : variant === 'dark-premium' ? 'premium'
+        : variant === 'bold-yellow' ? 'amarelo'
+        : variant === 'forest-green' ? 'verde'
+        : variant;
+      const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const slug = `OnGrid_Tabela_Mai_${variantLabel}_${dateStr}_${Date.now() % 1000}`;
       const { CreativeStorage } = await import('./modules/marketing/creative-storage.js');
       const storage = new CreativeStorage(supabase.getClient());
       const { publicUrl } = await storage.uploadBanner(buf, slug);

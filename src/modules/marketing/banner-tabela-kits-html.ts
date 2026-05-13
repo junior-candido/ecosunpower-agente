@@ -180,7 +180,7 @@ async function getPuppeteer(): Promise<any> {
   return _puppeteer;
 }
 
-export function buildBannerHtml(kits: KitItem[], variant: BannerVariant = 'dark-premium', width = 1080, height = 1920): string {
+export function buildBannerHtml(kits: KitItem[], variant: BannerVariant = 'dark-premium', width = 1152, height = 2048): string {
   const sortedKits = [...kits].sort((a, b) => a.kwp - b.kwp);
   const T = THEMES[variant];
   const logoDataUrl = loadAssetAsDataUrl('logo-ecosunpower-1024-transparente')
@@ -563,7 +563,7 @@ export function buildBannerHtml(kits: KitItem[], variant: BannerVariant = 'dark-
 }
 
 export async function renderBannerTabelaKitsHtml(input: BannerTabelaKitsHtmlInput): Promise<Buffer> {
-  const { kits, variant = 'dark-premium', width = 1080, height = 1920 } = input;
+  const { kits, variant = 'dark-premium', width = 1152, height = 2048 } = input;
   if (kits.length === 0 || kits.length > 8) {
     throw new Error(`renderBannerTabelaKitsHtml: precisa de 1 a 8 kits (recebido ${kits.length})`);
   }
