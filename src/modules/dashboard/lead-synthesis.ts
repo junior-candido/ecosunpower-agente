@@ -174,7 +174,7 @@ export async function getPlatformInsights(
       supabase.from('eva_cadence').select('id', { count: 'exact', head: true })
         .eq('status', 'sent').gte('sent_at', since48h).lt('sent_at', hoje0h.toISOString()),
       supabase.from('meta_ads_insights')
-        .select('spend_cents, leads, impressions, clicks')
+        .select('spend_cents, leads, impressions, clicks, date_start, campaign_id')
         .gte('date_start', since7d.toISOString().slice(0, 10)),
       supabase.from('leads').select('status').limit(5000),
       supabase.from('leads').select('id', { count: 'exact', head: true })
@@ -183,7 +183,7 @@ export async function getPlatformInsights(
         .lt('updated_at', since24h),
     ]);
 
-    const insights = (qInsights7d.data ?? []) as Array<{ spend_cents: number; leads: number | null; impressions: number; clicks: number }>;
+    const insights = (qInsights7d.data ?? []) as Array<{ spend_cents: number; leads: number | null; impressions: number; clicks: number; date_start?: string; campaign_id?: number }>;
     const spend7d = insights.reduce((s, i) => s + (i.spend_cents ?? 0), 0) / 100;
     const leads7d = insights.reduce((s, i) => s + (i.leads ?? 0), 0);
     const cpl7d = leads7d > 0 ? spend7d / leads7d : null;
@@ -192,6 +192,16 @@ export async function getPlatformInsights(
       const clx = insights.reduce((s, i) => s + (i.clicks ?? 0), 0);
       return imps > 0 ? (clx / imps) * 100 : null;
     })();
+
+    // Idade real da campanha (dias desde 1a coleta de insight). Importante:
+    // sem isso a IA generaliza "7 dias" mesmo quando a campanha tem 1 dia.
+    const datasInsights = insights.map((i) => i.date_start).filter(Boolean) as string[];
+    const primeiroInsight = datasInsights.length > 0
+      ? datasInsights.sort()[0]
+      : null;
+    const diasCampanha = primeiroInsight
+      ? Math.max(1, Math.ceil((Date.now() - new Date(primeiroInsight + 'T00:00:00-03:00').getTime()) / (24 * 60 * 60_000)))
+      : 0;
 
     const statusCount: Record<string, number> = {};
     for (const r of (qStatusCount.data ?? []) as Array<{ status: string }>) {
@@ -209,11 +219,17 @@ export async function getPlatformInsights(
         leads_novos: qLeadsOntem.count ?? 0,
         cadencia_disparada: qCadenciaOntem.count ?? 0,
       },
-      campanha_7d: {
-        gasto_brl: spend7d,
-        leads: leads7d,
+      campanha: {
+        dias_ativa: diasCampanha,        // IDADE REAL — pode ser 1, nao 7
+        gasto_total_brl: spend7d,         // gasto no periodo coberto pelos insights
+        leads_total: leads7d,
         cpl_brl: cpl7d,
         ctr_pct: ctr7d,
+        observacao: diasCampanha < 3
+          ? 'CAMPANHA RECEM-ATIVADA — dados ainda imaturos pra conclusao, esperar pelo menos 3-5 dias antes de julgar performance'
+          : diasCampanha < 7
+            ? 'Campanha com poucos dias — tendencia indicativa mas nao definitiva'
+            : 'Campanha com volume suficiente pra analise',
       },
       base_leads: statusCount,
       silentes_24h_sem_acao: qSilentes.count ?? 0,
@@ -229,6 +245,15 @@ export async function getPlatformInsights(
 - Digest 3x/dia (7h/12h40/21h BRT): notificacao ja agendada
 - Sync Meta Ads insights: a cada 30min automatico
 - Monitoramento usinas: a cada 15min automatico
+
+⚠️ CONTEXTO SOBRE CAMPANHA META — RESPEITE A IDADE:
+O campo "campanha.dias_ativa" indica HA QUANTOS DIAS a campanha esta ativa.
+- Se dias_ativa < 3: NAO tire conclusoes de performance. Dados imaturos. Diga
+  algo como "Campanha tem X dia(s) — cedo pra avaliar criativo, observar mais"
+- Se dias_ativa < 7: tendencia indicativa apenas. Pode comentar mas com cautela.
+- Se dias_ativa >= 7: dados maduros. Pode sugerir acao se metricas ruins.
+NUNCA diga "7 dias" se a campanha tem 1 dia. Use SEMPRE o numero real de dias_ativa.
+NUNCA conclua "sem conversao" pra campanha com < 3 dias — eh muito cedo.
 
 ➡️ So sugira acoes que EXIGEM o Junior agir manualmente:
 - "Assumir conversa de cliente X (sinal quente)"
