@@ -1673,6 +1673,66 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // /post-fb <texto> — posta um conteudo curto no FB Ecosunpower (Junior dispara
+  // quando quer exercitar a permission pages_manage_posts pro App Review do Meta).
+  // Cada execucao = 1 chamada de pages_manage_posts no painel "Analisar > Teste".
+  // Texto fica como mensagem direta no feed da page (publico).
+  async function tryHandlePostFbCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const t = text.trim();
+    const m = t.match(/^\/post-fb\s+(.+)$/is);
+    if (!m) return false;
+    const message = m[1].trim();
+    if (message.length < 5) {
+      await sendText(from, '❌ Texto muito curto. Manda algo com pelo menos 5 caracteres.');
+      return true;
+    }
+    if (!config.metaWabaAccessToken) {
+      await sendText(from, '❌ META_WABA_ACCESS_TOKEN nao configurado.');
+      return true;
+    }
+
+    await sendText(from, '📝 Postando no FB Ecosunpower...');
+    try {
+      // 1) Pega a page do user com page_access_token
+      const pagesUrl = `https://graph.facebook.com/v22.0/me/accounts?fields=id,name,access_token&limit=1&access_token=${config.metaWabaAccessToken}`;
+      const r1 = await fetch(pagesUrl);
+      if (!r1.ok) {
+        await sendText(from, `❌ Falha listar pages: HTTP ${r1.status}`);
+        return true;
+      }
+      const d1 = await r1.json() as { data?: Array<{ id: string; name: string; access_token?: string }> };
+      const page = d1.data?.[0];
+      if (!page?.id || !page.access_token) {
+        await sendText(from, '❌ Nenhuma page com access_token disponivel.');
+        return true;
+      }
+
+      // 2) Faz o post no feed da page com page_access_token
+      const postUrl = `https://graph.facebook.com/v22.0/${page.id}/feed`;
+      const r2 = await fetch(postUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, access_token: page.access_token }),
+      });
+      if (!r2.ok) {
+        const body = await r2.text();
+        await sendText(from, `❌ Post falhou HTTP ${r2.status}: ${body.slice(0, 200)}`);
+        return true;
+      }
+      const d2 = await r2.json() as { id?: string };
+      const postId = d2.id ?? '?';
+      const pageNum = page.id;
+      const fbUrl = postId.includes('_') ? `https://www.facebook.com/${postId.split('_')[0]}/posts/${postId.split('_')[1]}` : `https://www.facebook.com/${pageNum}`;
+      await sendText(from, `✅ Postado!\n\n📄 Post ID: ${postId}\n🔗 ${fbUrl}\n\n+1 chamada de pages_manage_posts no painel Meta.`);
+      console.log(`[post-fb] sucesso: page=${pageNum} post=${postId}`);
+    } catch (err) {
+      console.error('[post-fb] erro:', err);
+      await sendText(from, `❌ Erro: ${(err as Error).message}`);
+    }
+    return true;
+  }
+
   async function tryHandleCreativeCommand(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
     const trimmed = text.trim();
@@ -2101,6 +2161,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /sync-marketing — forca sync Meta -> DB + collect insights. One-shot.
     if (await tryHandleSyncMarketingCommand(from, text)) return;
+
+    // /post-fb <texto> — posta no FB Ecosunpower (exercita pages_manage_posts)
+    if (await tryHandlePostFbCommand(from, text)) return;
 
     // /reativar-base — dispara template MARKETING pra leads frios da base terceirizada
     if (await tryHandleReativarBaseCommand(from, text)) return;
