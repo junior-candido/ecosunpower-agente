@@ -2667,7 +2667,14 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             // Manda dossier com BOTOES WABA: Junior bate o olho, decide em 1 toque
             // se assume, ve perfil ou deixa Eva continuar tentando fechamento.
             // Antes era texto puro que se perdia no chat. Agora alerta visual.
-            const dossierHeader = `📋 *Eva qualificou — ${lead.name ?? 'lead sem nome'}*\n\n${dossierText}\n\n_Eva esta tentando fechar agendamento agora. Voce pode assumir se preferir._`;
+            // Heuristica de prontidao baseada em conta de luz (proxy mais
+            // confiavel hoje pra ticket potencial — bill alta + qualificacao
+            // completa = lead quente).
+            const bill = (lead.energy_data as { monthly_bill?: number } | null)?.monthly_bill;
+            const prontidao = bill && bill >= 1500 ? '🔥 QUENTE'
+              : bill && bill >= 700 ? '🟠 MORNO'
+              : '🔵 FRIO';
+            const dossierHeader = `📋 *Eva qualificou — ${lead.name ?? 'lead sem nome'}* ${prontidao}\n\n${dossierText}\n\n_Eva esta tentando fechar agendamento agora. Voce pode assumir se preferir._`;
             if (metaWaba) {
               try {
                 await metaWaba.sendInteractiveButtons(
