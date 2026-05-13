@@ -55,6 +55,10 @@ const configSchema = z.object({
   githubSiteBranch: z.string().default('main'),
   // Base URL pra propostas web publicas (Eva Proposta /p/:slug). CNAME aponta pro Easypanel.
   publicProposalBaseUrl: z.string().url().default('https://propostas.ecosunpower.eng.br'),
+  // Token secreto pra preview admin de proposta. Quando /p/:slug?eu=<token> bate,
+  // o endpoint nao incrementa acesso e nao dispara followup — Junior pode revisar
+  // sem virar "primeira visualizacao do cliente". Se nao setado, modo preview off.
+  proposalPreviewToken: z.string().optional(),
   // Cases social proof: site publico que serve /cases.json
   siteUrl: z.string().url().default('https://ecosunpower.eng.br'),
   // Selo Google na proposta (manual — Junior atualiza periodicamente)
@@ -110,6 +114,7 @@ export function loadConfig(): Config {
     githubSiteRepo: process.env.GITHUB_SITE_REPO || 'junior-candido/ecosunpower-site',
     githubSiteBranch: process.env.GITHUB_SITE_BRANCH || 'main',
     publicProposalBaseUrl: process.env.PUBLIC_PROPOSAL_BASE_URL,
+    proposalPreviewToken: process.env.PROPOSAL_PREVIEW_TOKEN || undefined,
     siteUrl: process.env.SITE_URL,
     googleNota: process.env.GOOGLE_NOTA,
     googleQtdAvaliacoes: process.env.GOOGLE_QTD_AVALIACOES,

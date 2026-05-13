@@ -208,6 +208,7 @@ export class ProposalAssistant {
   private casesFetcher: CasesFetcher;
   private googleNota: string;
   private googleQtdAvaliacoes: number;
+  private proposalPreviewToken: string | null;
 
   constructor(opts: {
     apiKey: string;
@@ -224,6 +225,10 @@ export class ProposalAssistant {
     siteUrl?: string;
     googleNota?: string;
     googleQtdAvaliacoes?: number;
+    // Token que destrava preview admin. Quando setado, Eva inclui um link
+    // /p/:slug?eu=<token> na resposta — Junior usa esse pra revisar sem
+    // virar "primeira visualizacao do cliente".
+    proposalPreviewToken?: string;
   }) {
     this.client = new Anthropic({ apiKey: opts.apiKey });
     this.redis = new IORedis({
@@ -262,6 +267,7 @@ export class ProposalAssistant {
     });
     this.googleNota = opts.googleNota ?? '4.9';
     this.googleQtdAvaliacoes = opts.googleQtdAvaliacoes ?? 0;
+    this.proposalPreviewToken = opts.proposalPreviewToken ?? null;
   }
 
   // Mapeia o tipoCliente da proposta (string livre que pode vir variada do
@@ -843,6 +849,12 @@ export class ProposalAssistant {
       const linkLines: string[] = [];
       if (publicUrl) {
         linkLines.push(`🌐 Web (manda pro cliente): ${publicUrl}`);
+        // Link de preview admin: Junior abre por aqui pra revisar sem disparar
+        // "cliente abriu a proposta" pra ele mesmo. So mostra se token configurado.
+        if (this.proposalPreviewToken) {
+          const previewUrl = `${publicUrl}?eu=${encodeURIComponent(this.proposalPreviewToken)}`;
+          linkLines.push(`👁️ Preview (so pra voce revisar): ${previewUrl}`);
+        }
       }
       if (upload) {
         linkLines.push(`📄 PDF (Drive): ${upload.pdfWebViewLink}`);

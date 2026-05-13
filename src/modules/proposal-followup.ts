@@ -1,9 +1,16 @@
 // Follow-up automatico de proposta:
-// quando cliente abre o link publico /p/:slug pela PRIMEIRA vez, dispara:
-//   1. Notifica Junior no zap dele ("📣 Antonio Carlos abriu agora!")
-//   2. Aguarda 60s (deixa cliente terminar de ler)
-//   3. Manda mensagem pro CLIENTE perguntando se ficou alguma duvida
-//   4. Marca followup_sent_at no banco (nao manda 2x)
+// Quando cliente abre o link publico /p/:slug:
+//   - PRIMEIRA visualizacao (acessosAntes === 0):
+//       1. Notifica Junior no zap ("📣 Antonio abriu agora!")
+//       2. Aguarda 60s (deixa cliente ler)
+//       3. Manda mensagem pro CLIENTE perguntando se ficou alguma duvida
+//       4. Marca followup_sent_at no banco (nao manda 2x)
+//   - RE-ABERTURAS (acessosAntes > 0):
+//       1. Notifica Junior ("📣 Antonio abriu de novo — Xª vez")
+//       2. NAO manda mensagem pro cliente (idempotencia via followup_sent_at)
+//       3. Throttle 5min por slug — recarregar 3x em 1min = 1 notificacao
+//
+// Preview admin (?eu=<token>) NAO chega aqui — endpoint nao incrementa acesso.
 //
 // Depois disso, qualquer resposta do cliente entra no fluxo NORMAL da Eva
 // (Brain ja tem dossier, conhecimento, etc — V1 nao precisa de modo especial).
@@ -11,14 +18,21 @@
 // Quando cliente responder, marcar cliente_respondeu_at via outro hook
 // (handler de mensagem do brain).
 
+import type { Redis } from 'ioredis';
 import type { SupabaseService } from './supabase.js';
 import type { MetaWhatsAppService } from './meta-whatsapp.js';
+
+// Throttle entre notificacoes de re-abertura pro mesmo slug. 5min suficiente
+// pra evitar spam quando cliente recarrega/volta varias vezes seguidas.
+const REOPEN_THROTTLE_SECONDS = 5 * 60;
 
 interface FollowupDeps {
   supabase: SupabaseService;
   metaService: MetaWhatsAppService | null;
   sendText: (to: string, text: string) => Promise<void>;
   engineerPhone: string;
+  // Redis pra throttle de notificacao em re-aberturas. Se null, throttle desligado.
+  redis?: Redis | null;
   // Atraso entre 1ª visualizacao e mensagem pro cliente. Default 60s — tempo
   // suficiente pro cliente ler o resumo da proposta sem ficar invasivo.
   delayMs?: number;
@@ -29,6 +43,7 @@ export class ProposalFollowupService {
   private metaService: MetaWhatsAppService | null;
   private sendText: (to: string, text: string) => Promise<void>;
   private engineerPhone: string;
+  private redis: Redis | null;
   private delayMs: number;
 
   constructor(deps: FollowupDeps) {
@@ -36,15 +51,65 @@ export class ProposalFollowupService {
     this.metaService = deps.metaService;
     this.sendText = deps.sendText;
     this.engineerPhone = deps.engineerPhone;
+    this.redis = deps.redis ?? null;
     this.delayMs = deps.delayMs ?? 60_000;
   }
 
-  // Chamado pelo endpoint /p/:slug quando detecta acessosAntes === 0.
+  // Chamado pelo endpoint /p/:slug a cada visualizacao do cliente
+  // (preview admin nao chega aqui — endpoint filtra).
   // NAO bloqueia a resposta HTTP — fire-and-forget.
-  triggerOnFirstView(slug: string): void {
-    this.runFollowupAsync(slug).catch((err) => {
-      console.error('[proposal-followup] erro:', (err as Error).message);
-    });
+  triggerOnView(slug: string, acessosAntes: number): void {
+    if (acessosAntes === 0) {
+      this.runFollowupAsync(slug).catch((err) => {
+        console.error('[proposal-followup] erro:', (err as Error).message);
+      });
+    } else {
+      this.runReaberturaAsync(slug, acessosAntes).catch((err) => {
+        console.error('[proposal-followup] reabertura erro:', (err as Error).message);
+      });
+    }
+  }
+
+  // Notifica Junior sobre re-abertura, com throttle Redis 5min por slug.
+  // Nao manda mensagem pro cliente (idempotencia: followup_sent_at ja existe).
+  private async runReaberturaAsync(slug: string, acessosAntes: number): Promise<void> {
+    if (this.redis) {
+      // SET key NX EX 300 — se ja existe, devolve null (estamos no throttle).
+      const throttleKey = `proposal:notify-throttle:${slug}`;
+      try {
+        const acquired = await this.redis.set(
+          throttleKey,
+          '1',
+          'EX',
+          REOPEN_THROTTLE_SECONDS,
+          'NX',
+        );
+        if (acquired === null) {
+          console.log(`[proposal-followup] reabertura slug=${slug} em throttle, skip`);
+          return;
+        }
+      } catch (err) {
+        console.warn('[proposal-followup] throttle redis falhou, segue:', (err as Error).message);
+      }
+    }
+
+    const proposta = await this.loadPropostaParaFollowup(slug);
+    if (!proposta) return;
+
+    const totalAcessos = acessosAntes + 1;
+    const ordinal = `${totalAcessos}ª`;
+    const linhaTelefone = proposta.cliente_telefone
+      ? `📞 ${this.normalizarTelefone(proposta.cliente_telefone) ?? proposta.cliente_telefone}`
+      : '📞 (sem telefone cadastrado)';
+    const msg = [
+      `📣 *${proposta.cliente_nome}* voltou na proposta agora — ${ordinal} vez!`,
+      linhaTelefone,
+      ``,
+      `🔗 https://propostas.ecosunpower.eng.br/p/${slug}`,
+    ].join('\n');
+    await this.sendText(this.engineerPhone, msg).catch((err) =>
+      console.warn('[proposal-followup] notify reabertura falhou:', err.message),
+    );
   }
 
   private async runFollowupAsync(slug: string): Promise<void> {

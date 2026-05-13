@@ -38,6 +38,9 @@ import { PricingAssistant } from './modules/pricing-assistant.js';
 import { SchedulingAssistant } from './modules/scheduling-assistant.js';
 import { ProposalAssistant } from './modules/proposal-assistant.js';
 import { ProposalFollowupService } from './modules/proposal-followup.js';
+import RedisModule from 'ioredis';
+// ESM/CJS interop: ioredis as vezes vem como { default: class }, as vezes direto.
+const IORedis = (RedisModule as any).default ?? RedisModule;
 import { NewsScraperService } from './modules/news-scraper.js';
 import { DriveUploader } from './modules/proposal/drive-uploader.js';
 import { MonitoringService } from './modules/monitoring/service.js';
@@ -383,21 +386,30 @@ async function main() {
     siteUrl: config.siteUrl,
     googleNota: config.googleNota,
     googleQtdAvaliacoes: config.googleQtdAvaliacoes,
+    proposalPreviewToken: config.proposalPreviewToken,
   });
 
   const driveOk = !!driveUploader;
   console.log(`[proposal] Eva Proposta ATIVA — Drive: ${driveOk ? 'on' : 'off'}, Web publica: on (${config.publicProposalBaseUrl})`);
 
-  // Follow-up automatico de proposta: quando cliente abre o link publico
-  // pela 1a vez, Eva notifica Junior e (apos 60s) manda mensagem pro cliente
-  // perguntando se ficou alguma duvida. Trigger fire-and-forget.
+  // Follow-up automatico de proposta: notifica Junior toda vez que cliente
+  // abre o link publico (throttle 5min), e na primeira abertura manda
+  // mensagem pro cliente perguntando se ficou alguma duvida. Preview admin
+  // (?eu=<token>) bypassa tracking. Trigger fire-and-forget.
+  const followupRedis = new IORedis({
+    host: config.redisHost,
+    port: config.redisPort,
+    password: config.redisPassword,
+    maxRetriesPerRequest: null,
+  });
   const proposalFollowup = new ProposalFollowupService({
     supabase,
     metaService: metaWaba,
     sendText,
     engineerPhone: config.engineerPhone,
+    redis: followupRedis,
   });
-  console.log('[proposal-followup] Servico ativo (dispara no primeiro acesso a /p/:slug)');
+  console.log('[proposal-followup] Servico ativo (notifica toda abertura, throttle 5min)');
 
   // Modulo 5 — Monitoramento de sistemas FV via API dos inversores.
   // Adapter SolarEdge ja implementado; demais marcas adicionadas conforme
@@ -5047,16 +5059,39 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         }
       }
 
+      // Preview admin: Junior abre /p/:slug?eu=<token> pra revisar sem
+      // contar como visualizacao do cliente. Bypassa increment + followup.
+      // Injeta banner amarelo no topo pra evitar Junior mandar essa URL pro
+      // cliente por engano (URL com ?eu= teria que ser raspada antes).
+      const previewToken = config.proposalPreviewToken;
+      const queryEu = typeof req.query.eu === 'string' ? req.query.eu : '';
+      const isPreview = !!previewToken && queryEu === previewToken;
+      if (isPreview) {
+        res.setHeader('X-Preview-Mode', 'admin');
+        const previewBanner =
+          '<div style="position:fixed;top:0;left:0;right:0;background:#ffc107;color:#000;padding:10px;text-align:center;z-index:99999;font:bold 13px sans-serif;box-shadow:0 2px 8px rgba(0,0,0,0.2)">👁️ MODO PREVIEW — esta URL NAO conta como visualizacao. NUNCA mande pro cliente.</div>';
+        if (html.includes('</body>')) {
+          html = html.replace('</body>', `${previewBanner}</body>`);
+        } else {
+          html = previewBanner + html;
+        }
+      }
+
       res.type('text/html').send(html);
 
-      // Tracking fire-and-forget (nao bloqueia resposta). Detecta primeira
-      // visualizacao (acessosAntes === 0) e dispara followup automatico:
-      // notifica Junior + manda mensagem pro cliente apos 60s.
+      if (isPreview) {
+        console.log(`[proposta-publica] preview admin slug=${slug} — sem tracking`);
+        return;
+      }
+
+      // Tracking fire-and-forget (nao bloqueia resposta).
+      // - 1a visualizacao: dispara followup automatico (notifica Junior +
+      //   mensagem pro cliente apos 60s).
+      // - Re-aberturas: so notifica Junior, com throttle 5min.
       supabase.incrementPropostaPublicaAcesso(slug)
         .then((result) => {
-          if (result && result.acessosAntes === 0) {
-            console.log(`[proposta-publica] PRIMEIRA visualizacao slug=${slug} — disparando followup`);
-            proposalFollowup.triggerOnFirstView(slug);
+          if (result) {
+            proposalFollowup.triggerOnView(slug, result.acessosAntes);
           }
         })
         .catch((err) => {
