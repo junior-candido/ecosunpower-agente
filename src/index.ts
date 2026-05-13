@@ -2829,6 +2829,53 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         break;
       }
 
+      case 'mark_off_topic': {
+        // Eva detectou que o cliente pergunta sobre tema completamente fora do
+        // escopo Ecosunpower (faca, comida, eletrodomestico, lavagem, etc).
+        // Marca opt_out + eva_active=false + cancela tudo + notifica Junior
+        // com botoes pra ele confirmar/desfazer manualmente.
+        const reason = (action.data as Record<string, unknown> | undefined)?.reason as string | undefined ?? 'tema fora do escopo';
+        const now = new Date().toISOString();
+        await supabase.getClient()
+          .from('leads')
+          .update({ opt_out: true, eva_active: false, status: 'perdido', updated_at: now })
+          .eq('phone', from);
+        // Cancela cadencia/reengagement/postinstall pendente
+        await supabase.cancelCadence(leadId, 'off_topic').catch(() => {});
+        await reengagement.cancelAllTouches(leadId).catch(() => 0);
+        if (postInstall) await postInstall.cancelAll(leadId).catch(() => 0);
+        // Notifica Junior com botoes pra desfazer se foi falso positivo
+        if (!isSandbox) {
+          const lead = await supabase.getLeadByPhone(from);
+          const alertBody = [
+            `🚫 *Eva marcou contato fora de escopo*`,
+            ``,
+            `${lead?.name ?? 'Sem nome'} — ${from}`,
+            `Motivo: ${reason}`,
+            ``,
+            `Eva nao fala mais com ele. Se foi engano, clica em Desfazer.`,
+          ].join('\n');
+          if (metaWaba && lead?.id) {
+            try {
+              await metaWaba.sendInteractiveButtons(
+                config.engineerPhone,
+                alertBody.slice(0, 1024),
+                [
+                  { id: `evabt:lead-view:${lead.id}`, title: '👤 Ver perfil' },
+                  { id: `evabt:lead-resume:${lead.id}`, title: '↩️ Desfazer' },
+                ],
+              );
+            } catch {
+              await sendText(config.engineerPhone, alertBody);
+            }
+          } else {
+            await sendText(config.engineerPhone, alertBody);
+          }
+        }
+        console.log(`[action] mark_off_topic registrado pra ${from}: ${reason}`);
+        break;
+      }
+
       case 'mark_review_confirmed': {
         // Eva detectou que o cliente ja avaliou no Google. Cancela toques
         // pendentes de review e marca timestamp no lead.
