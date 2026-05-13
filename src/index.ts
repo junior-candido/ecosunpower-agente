@@ -2381,20 +2381,31 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       }
       const conversation = await supabase.getOrCreateConversation(leadId);
 
-      // Auto-ack template: dispara `eva_resposta_inicial` (Utility) em primeira sessao
-      // ou pausa >1h pra UX — cliente nao fica esperando 5-30s no vacuo enquanto Eva
-      // processa via Claude. So roda no canal WABA (Evolution nao tem template formal).
+      // Auto-ack template: dispara template Utility em primeira sessao ou pausa
+      // >1h pra UX (cliente nao fica esperando 5-30s no vacuo enquanto Eva processa
+      // via Claude). So roda no canal WABA (Evolution nao tem template formal).
       // Fire-and-forget; nao bloqueia processamento principal.
+      //
+      // Mapping campanha->template (A/B test): se o lead veio de uma campanha
+      // Meta com `template_inicial` configurado em marketing_campaigns, usa esse.
+      // Senao, fallback pro default global `eva_resposta_inicial`. Quando
+      // Roberto aprovar eva_qualificacao_v1 trocar o default aqui pra ele.
       if (metaWaba) {
         const isNewSession = conversation.message_count === 0;
         const elapsedMs = Date.now() - new Date(conversation.last_message_at).getTime();
         const isLongPause = elapsedMs > 60 * 60 * 1000; // 1h
         if (isNewSession || isLongPause) {
           const reason = isNewSession ? 'new-session' : 'long-pause';
+          // Reusa o `lead` ja carregado no inicio do handler (linha 2290) pra
+          // economizar roundtrip de DB. Lead pode ser null pra primeira msg
+          // de lead totalmente novo — nesse caso ad_campaign_id eh null mesmo.
+          const adCampaignId = lead?.ad_campaign_id ?? null;
+          const mappedTemplate = await supabase.getTemplateInicialPorCampanha(adCampaignId);
+          const templateName = mappedTemplate ?? 'eva_resposta_inicial';
           metaWaba
-            .sendTemplate(from, 'eva_resposta_inicial', 'pt_BR')
-            .then(() => console.log(`[auto-ack] Template eva_resposta_inicial enviado pra ${from} lead=${leadId} (${reason})`))
-            .catch((err: Error) => console.warn(`[auto-ack] Template send falhou pra ${from} lead=${leadId}: ${err.message}`));
+            .sendTemplate(from, templateName, 'pt_BR')
+            .then(() => console.log(`[auto-ack] Template ${templateName} enviado pra ${from} lead=${leadId} (${reason}, campaign=${adCampaignId ?? 'none'})`))
+            .catch((err: Error) => console.warn(`[auto-ack] Template send falhou pra ${from} lead=${leadId} template=${templateName}: ${err.message}`));
         }
       }
 

@@ -32,6 +32,9 @@ interface LeadData {
   future_demand?: string;
   consent_given?: boolean;
   consent_date?: string;
+  // ID Meta da campanha de aquisicao (do anuncio que trouxe o lead). Usado
+  // pra resolver template A/B no auto-ack via marketing_campaigns.template_inicial.
+  ad_campaign_id?: string | null;
 }
 
 interface DossierData {
@@ -360,18 +363,47 @@ export class SupabaseService {
       .eq('id', id);
   }
 
+  /**
+   * Resolve template inicial customizado pra uma campanha Meta (A/B test).
+   * Usado pelo auto-ack: lead vindo de campanha X usa o template mapeado
+   * em marketing_campaigns.template_inicial. NULL -> caller usa default.
+   *
+   * Migration 028 adiciona a coluna. Antes dela aplicada, retorna sempre null
+   * (graceful: query falha por coluna nao existir, capturamos e devolvemos null).
+   */
+  async getTemplateInicialPorCampanha(adCampaignId: string | null): Promise<string | null> {
+    if (!adCampaignId) return null;
+    try {
+      const { data, error } = await this.client
+        .from('marketing_campaigns')
+        .select('template_inicial')
+        .eq('meta_campaign_id', adCampaignId)
+        .maybeSingle();
+      if (error) {
+        // Coluna ainda nao migrada OU campanha desconhecida — fallback silencioso.
+        return null;
+      }
+      return (data?.template_inicial as string | undefined) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   // ==========================================================================
   // Cadencia de reengajamento INFINITA — Eva insiste ate cliente responder
   // ou pedir pra parar (opt_out=true).
   //
-  // Intervalos progressivos no primeiro ano: 0h, 1d, 3d, 7d, 14d, 30d, 60d,
+  // Intervalos progressivos no primeiro ano: 0h, 1d, 3d, 7d, 15d, 30d, 60d,
   // 90d, 180d, 365d (10 toques). Depois disso, scheduleCadenceContinuation
   // gera mais toques espacados de 1 ano cada, indefinidamente, ate cliente
   // responder ou opt-out.
+  //
+  // Ajuste 13/05/2026: 14d -> 15d no toque 5 pra alinhar com o template
+  // eva_provocativa_v1 (Marketing) que dispara nessa data como ultima cartada.
   // ==========================================================================
 
   /** Intervalos em dias do toque inicial (toque 1 = 0h). */
-  static readonly CADENCE_INTERVALS_DAYS = [0, 1, 3, 7, 14, 30, 60, 90, 180, 365];
+  static readonly CADENCE_INTERVALS_DAYS = [0, 1, 3, 7, 15, 30, 60, 90, 180, 365];
 
   /** Apos o ultimo toque da serie inicial, espacamento entre toques (1 ano cada). */
   static readonly CADENCE_LOOP_INTERVAL_DAYS = 365;
@@ -541,11 +573,12 @@ export class SupabaseService {
     scheduled_for: string;
     phone: string;
     name: string | null;
+    ad_campaign_id: string | null;
   }>> {
     const safeLimit = Math.max(1, Math.min(200, batchLimit));
     const { data, error } = await this.client
       .from('eva_cadence')
-      .select('id, lead_id, step, scheduled_for, leads!inner(phone, name)')
+      .select('id, lead_id, step, scheduled_for, leads!inner(phone, name, ad_campaign_id)')
       .eq('status', 'pending')
       .lte('scheduled_for', new Date().toISOString())
       .order('scheduled_for', { ascending: true })
@@ -563,6 +596,7 @@ export class SupabaseService {
       scheduled_for: row.scheduled_for,
       phone: row.leads.phone,
       name: row.leads.name,
+      ad_campaign_id: row.leads.ad_campaign_id ?? null,
     }));
   }
 

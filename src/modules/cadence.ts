@@ -137,10 +137,25 @@ export class CadenceService {
   private articlesLoadedAt: number = 0;
   private static readonly ARTICLES_TTL_MS = 30 * 60 * 1000; // recarrega a cada 30min
 
-  // Template aprovado pro fallback quando janela 24h fecha.
-  // Aprovado pelo Meta em 13/05/2026. Body: {{1}} = primeiro nome.
+  // Templates aprovados pro fallback quando janela 24h fecha.
+  // Body: {{1}} = primeiro nome.
+  //
+  // Default = `reativacao_lead_v1` (aprovado 13/05).
+  // Toque 5 (D+15) usa `eva_provocativa_v1` como ultima cartada provocativa
+  // antes do D+30 marcar perdido — aprovacao Meta em andamento, fallback
+  // pro default ate aprovar.
   private static readonly REACTIVATION_TEMPLATE_NAME = 'reativacao_lead_v1';
-  private static readonly REACTIVATION_TEMPLATE_LANG = 'pt_BR';
+  private static readonly PROVOCATIVA_TEMPLATE_NAME = 'eva_provocativa_v1';
+  private static readonly TEMPLATE_LANG = 'pt_BR';
+
+  /**
+   * Resolve qual template usar pra um toque especifico. Permite cadencia ter
+   * tons diferentes em momentos chave (ex: D+15 provocativo vs D+7 educativo).
+   */
+  private templateForStep(step: number): string {
+    if (step === 5) return CadenceService.PROVOCATIVA_TEMPLATE_NAME;
+    return CadenceService.REACTIVATION_TEMPLATE_NAME;
+  }
 
   constructor(
     private supabase: SupabaseService,
@@ -292,13 +307,38 @@ export class CadenceService {
             continue;
           }
           const firstName = (row.name ?? '').split(' ')[0] || 'tudo bem';
-          await this.metaWaba.sendTemplate(
-            row.phone,
-            CadenceService.REACTIVATION_TEMPLATE_NAME,
-            CadenceService.REACTIVATION_TEMPLATE_LANG,
-            [{ type: 'body', parameters: [{ type: 'text', text: firstName }] }],
-          );
-          messageLog = `[template:${CadenceService.REACTIVATION_TEMPLATE_NAME} {{1}}=${firstName}]`;
+          const templateName = this.templateForStep(row.step);
+          let templateUsado = templateName;
+          try {
+            await this.metaWaba.sendTemplate(
+              row.phone,
+              templateName,
+              CadenceService.TEMPLATE_LANG,
+              [{ type: 'body', parameters: [{ type: 'text', text: firstName }] }],
+            );
+          } catch (err) {
+            // Fallback automatico: template especifico nao aprovado ainda
+            // (eva_provocativa_v1 em revisao Meta) -> tenta o default reativacao_lead_v1.
+            // Meta erro 132001 = "template name does not exist in the translation"
+            // (template nao aprovado/criado no idioma solicitado). Match estreito
+            // pra evitar falso positivo de outros erros que mencionem "template".
+            const isUnknownTemplate = /\b132001\b|does not exist/i.test(
+              (err as Error).message,
+            );
+            if (templateName !== CadenceService.REACTIVATION_TEMPLATE_NAME && isUnknownTemplate) {
+              console.warn(`[cadence] template ${templateName} indisponivel, fallback pra ${CadenceService.REACTIVATION_TEMPLATE_NAME}`);
+              await this.metaWaba.sendTemplate(
+                row.phone,
+                CadenceService.REACTIVATION_TEMPLATE_NAME,
+                CadenceService.TEMPLATE_LANG,
+                [{ type: 'body', parameters: [{ type: 'text', text: firstName }] }],
+              );
+              templateUsado = `${CadenceService.REACTIVATION_TEMPLATE_NAME}(fallback de ${templateName})`;
+            } else {
+              throw err;
+            }
+          }
+          messageLog = `[template:${templateUsado} {{1}}=${firstName}]`;
           modo = 'template';
         } else {
           // Janela aberta (cliente respondeu < 24h, OU toque 1 sem registro): texto Claude.
@@ -316,12 +356,30 @@ export class CadenceService {
         sent++;
         console.log(`[cadence] Toque ${row.step} enviado pra ${row.phone} (${row.name ?? 'sem nome'}) modo=${modo} janela24h=${windowOpen}`);
 
-        // Cadencia infinita: apos enviar com sucesso, se nao houver mais
-        // toques pendentes pra este lead, agenda o proximo (+1 ano). Continua
-        // ate cliente responder (que cancela cadencia) ou opt_out.
-        await this.supabase.scheduleCadenceContinuation(row.lead_id, row.step).catch((err) => {
-          console.warn(`[cadence] scheduleCadenceContinuation falhou pra lead ${row.lead_id}:`, (err as Error).message);
-        });
+        // Regra D+30 (toque 6) pra lead de CAMPANHA META: marca lead como
+        // inativo (perdido) e cancela cadencia futura. Decisao Junior 13/05:
+        // ciclo de fechamento mediano = 0 dias e media 12d; D+30 sem responder
+        // = lead pago morto, escoa pra fora pra nao gastar mais Marketing.
+        //
+        // Leads ORGANICOS (sem ad_campaign_id — conhecimentos do Junior tipo
+        // Neemias) continuam cadencia infinita (D+60, D+90, D+180, D+365...)
+        // porque tem valor de relacionamento de longo prazo.
+        if (row.step === 6 && row.ad_campaign_id) {
+          try {
+            await this.supabase.upsertLead({ phone: row.phone, status: 'inativo' });
+            const cancelled = await this.supabase.cancelCadence(row.lead_id, 'd30_perdido_campanha');
+            console.log(`[cadence] D+30 lead campanha ${row.phone} (camp=${row.ad_campaign_id}) marcado perdido + ${cancelled} toques futuros cancelados`);
+          } catch (err) {
+            console.warn(`[cadence] marca perdido D+30 falhou pra ${row.phone}:`, (err as Error).message);
+          }
+        } else {
+          // Cadencia infinita: apos enviar com sucesso, se nao houver mais
+          // toques pendentes pra este lead, agenda o proximo (+1 ano). Continua
+          // ate cliente responder (que cancela cadencia) ou opt_out.
+          await this.supabase.scheduleCadenceContinuation(row.lead_id, row.step).catch((err) => {
+            console.warn(`[cadence] scheduleCadenceContinuation falhou pra lead ${row.lead_id}:`, (err as Error).message);
+          });
+        }
 
         await new Promise((r) => setTimeout(r, 1500 + Math.random() * 2500));
       } catch (err) {
