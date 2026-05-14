@@ -11,6 +11,17 @@ export interface QueueMessage {
   pushName?: string;
   caption?: string;
   mimeType?: string;
+  // CTWA referral (Click-to-WhatsApp Ad) — preenchido apenas na 1a msg do
+  // lead que veio clicando num anuncio Meta. Permite mapping ad_id->template.
+  referral?: {
+    sourceId?: string;
+    sourceUrl?: string;
+    sourceType?: string;
+    headline?: string;
+    body?: string;
+    mediaType?: string;
+    ctwaClid?: string;
+  };
 }
 
 type MessageHandler = (message: QueueMessage) => Promise<void>;

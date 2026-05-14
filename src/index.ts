@@ -38,6 +38,7 @@ import { PricingAssistant } from './modules/pricing-assistant.js';
 import { SchedulingAssistant } from './modules/scheduling-assistant.js';
 import { ProposalAssistant } from './modules/proposal-assistant.js';
 import { ProposalFollowupService } from './modules/proposal-followup.js';
+import { templateParaAdMeta } from './modules/ctwa-template-mapping.js';
 import RedisModule from 'ioredis';
 // ESM/CJS interop: ioredis as vezes vem como { default: class }, as vezes direto.
 const IORedis = (RedisModule as any).default ?? RedisModule;
@@ -2177,7 +2178,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
   }
 
   // Message handler
-  async function handleTextMessage(from: string, text: string) {
+  async function handleTextMessage(
+    from: string,
+    text: string,
+    ctwaReferral?: import('./modules/evolution.js').IncomingMessage['referral'],
+  ) {
     // Hook: se essa mensagem eh de cliente que recebeu followup automatico
     // de proposta, marca como "cliente respondeu" no banco. Fire-and-forget,
     // nao bloqueia o handler. No-op se nao houver proposta correspondente.
@@ -2386,25 +2391,32 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       // via Claude). So roda no canal WABA (Evolution nao tem template formal).
       // Fire-and-forget; nao bloqueia processamento principal.
       //
-      // Mapping campanha->template (A/B test): se o lead veio de uma campanha
-      // Meta com `template_inicial` configurado em marketing_campaigns, usa esse.
-      // Senao, fallback pro default global `eva_resposta_inicial`. Quando
-      // Roberto aprovar eva_qualificacao_v1 trocar o default aqui pra ele.
+      // Ordem de prioridade pra escolher o template:
+      //  1. CTWA referral (`ctwaReferral.sourceId` = ad_id Meta) — mapping
+      //     hardcoded em ctwa-template-mapping.ts. Permite A/B por anuncio.
+      //  2. DB mapping por campaign_id (marketing_campaigns.template_inicial)
+      //     — usado quando lead nao veio de anuncio mas tem campaign_id legado.
+      //  3. Default global `eva_resposta_inicial` — fallback transparente
+      //     enquanto Roberto nao aprova templates novos na Meta.
       if (metaWaba) {
         const isNewSession = conversation.message_count === 0;
         const elapsedMs = Date.now() - new Date(conversation.last_message_at).getTime();
         const isLongPause = elapsedMs > 60 * 60 * 1000; // 1h
         if (isNewSession || isLongPause) {
           const reason = isNewSession ? 'new-session' : 'long-pause';
-          // Reusa o `lead` ja carregado no inicio do handler (linha 2290) pra
-          // economizar roundtrip de DB. Lead pode ser null pra primeira msg
-          // de lead totalmente novo — nesse caso ad_campaign_id eh null mesmo.
-          const adCampaignId = lead?.ad_campaign_id ?? null;
-          const mappedTemplate = await supabase.getTemplateInicialPorCampanha(adCampaignId);
+          // 1. CTWA referral (ad_id Meta -> template hardcoded)
+          const adId = ctwaReferral?.sourceId ?? null;
+          let mappedTemplate = templateParaAdMeta(adId);
+          // 2. Fallback DB mapping por campaign_id (legado/manual)
+          if (!mappedTemplate) {
+            const adCampaignId = lead?.ad_campaign_id ?? null;
+            mappedTemplate = await supabase.getTemplateInicialPorCampanha(adCampaignId);
+          }
+          // 3. Default global
           const templateName = mappedTemplate ?? 'eva_resposta_inicial';
           metaWaba
             .sendTemplate(from, templateName, 'pt_BR')
-            .then(() => console.log(`[auto-ack] Template ${templateName} enviado pra ${from} lead=${leadId} (${reason}, campaign=${adCampaignId ?? 'none'})`))
+            .then(() => console.log(`[auto-ack] Template ${templateName} enviado pra ${from} lead=${leadId} (${reason}, ad_id=${adId ?? 'none'})`))
             .catch((err: Error) => console.warn(`[auto-ack] Template send falhou pra ${from} lead=${leadId} template=${templateName}: ${err.message}`));
         }
       }
@@ -3463,7 +3475,7 @@ Responda CURTO, maximo 2 paragrafos.`,
 
     switch (msg.type) {
       case 'text':
-        await handleTextMessage(msg.from, msg.content);
+        await handleTextMessage(msg.from, msg.content, msg.referral);
         break;
       case 'audio':
         await handleAudioMessage(msg.from, mediaRef(msg.content, msg.messageId));
@@ -3817,6 +3829,7 @@ Responda CURTO, maximo 2 paragrafos.`,
           pushName: parsed.pushName,
           caption: parsed.caption,
           mimeType: parsed.mimeType,
+          referral: parsed.referral,
         });
       } catch (err) {
         console.error('[waba] Webhook processing error:', (err as Error).message);

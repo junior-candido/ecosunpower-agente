@@ -10,6 +10,19 @@ export interface IncomingMessage {
   pushName?: string;
   caption?: string; // legenda em imagem/video
   mimeType?: string; // mime do anexo (preenchido em document; tambem populado em image/video se vier no payload)
+  // Click-to-WhatsApp Ad (CTWA) referral. Presente APENAS na 1a msg do lead
+  // que veio clicando num anuncio Meta. Permite mapping ad_id -> template
+  // pra A/B test sem precisar de tag no body do anuncio.
+  // So o canal WABA preenche (Evolution nao expoe esse campo).
+  referral?: {
+    sourceId?: string;       // ad_id Meta (ex: '120249029179580385')
+    sourceUrl?: string;
+    sourceType?: string;     // 'ad' | 'post' etc
+    headline?: string;
+    body?: string;
+    mediaType?: string;
+    ctwaClid?: string;
+  };
 }
 
 export class EvolutionService {

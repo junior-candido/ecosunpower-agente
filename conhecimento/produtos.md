@@ -98,6 +98,12 @@ entregar projeto que vai dar problema em 2-3 anos.
 - Excelente custo-benefício
 - Boa rede de suporte BR
 
+#### SolaX
+- Linha de microinversores X1-IES (15 anos de garantia — top do segmento)
+- Linha híbrida X1/X3 (10 anos de garantia, padrão da indústria) com armazenamento integrado
+- Premium intermediário com qualidade europeia
+- Promovida pra dia-a-dia em 13/05/2026
+
 ### Inversores adicionais disponíveis (sob demanda)
 
 - **Huawei** — hoje o mais forte em híbrido + bateria no Brasil
@@ -105,7 +111,6 @@ entregar projeto que vai dar problema em 2-3 anos.
 - **SMA** — referência alemã
 - **GoodWe** — top 3 ranking BR
 - **APsystems** — líder mundial em microinversor
-- **SolaX** — premium intermediário
 
 ### NÃO trabalhamos com
 

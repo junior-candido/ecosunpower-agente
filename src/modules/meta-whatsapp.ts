@@ -344,7 +344,24 @@ export class MetaWhatsAppService {
     const timestamp = new Date(timestampSec * 1000);
     const type = (msg.type as string) ?? '';
 
-    const base = { from, timestamp, messageId, fromMe: false, pushName };
+    // Extrai referral CTWA (Click-to-WhatsApp Ad). Presente na 1a msg do lead
+    // que clicou no botao "Send Message" de um anuncio Meta. Permite mapping
+    // ad_id -> template pra A/B test sem precisar de tag no body.
+    let referral: IncomingMessage['referral'];
+    const rawReferral = msg.referral as Record<string, unknown> | undefined;
+    if (rawReferral && typeof rawReferral === 'object') {
+      referral = {
+        sourceId: rawReferral.source_id as string | undefined,
+        sourceUrl: rawReferral.source_url as string | undefined,
+        sourceType: rawReferral.source_type as string | undefined,
+        headline: rawReferral.headline as string | undefined,
+        body: rawReferral.body as string | undefined,
+        mediaType: rawReferral.media_type as string | undefined,
+        ctwaClid: rawReferral.ctwa_clid as string | undefined,
+      };
+    }
+
+    const base = { from, timestamp, messageId, fromMe: false, pushName, referral };
 
     switch (type) {
       case 'text': {
