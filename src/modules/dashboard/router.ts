@@ -50,6 +50,14 @@ import {
   renderDetalheSistemaPage,
   renderEditarSistemaPage,
 } from './views.js';
+import {
+  listVisualizacoesPorSlug,
+  resumoVisualizacoesPorSlug,
+} from './proposta-views-queries.js';
+import {
+  renderVisualizacoesPage,
+  renderVisualizacoesCsv,
+} from './proposta-views-view.js';
 import type { MarcaInversor } from '../monitoring/types.js';
 
 export function createDashboardRouter(
@@ -469,6 +477,52 @@ export function createDashboardRouter(
     } catch (err) {
       console.error('[dashboard/propostas]', err);
       res.status(500).send(`<h2>Erro ao listar propostas</h2><pre>${(err as Error).message}</pre>`);
+    }
+  });
+
+  // Visualizacoes detalhadas de UMA proposta (timeline + KPIs).
+  // ?preview=1 inclui aberturas preview admin no timeline (default: exclui).
+  router.get('/propostas/:slug/visualizacoes', async (req: Request, res: Response) => {
+    try {
+      const slug = String(req.params.slug ?? '');
+      if (!/^[A-Za-z0-9_-]{8,64}$/.test(slug)) {
+        return res.status(400).send('<h2>Slug inválido</h2>');
+      }
+      const incluirPreview = req.query.preview === '1';
+
+      const [resumo, visualizacoes] = await Promise.all([
+        resumoVisualizacoesPorSlug(supabase, slug),
+        listVisualizacoesPorSlug(supabase, slug, { incluir_preview: incluirPreview }),
+      ]);
+
+      if (!resumo) {
+        return res.status(404).send('<h2>Proposta não encontrada</h2>');
+      }
+
+      res.send(renderVisualizacoesPage({ resumo, visualizacoes, incluirPreview }));
+    } catch (err) {
+      console.error('[dashboard/visualizacoes]', err);
+      res.status(500).send(`<h2>Erro ao listar visualizações</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  // Export CSV das visualizacoes (mesmo filtro do HTML acima).
+  router.get('/propostas/:slug/visualizacoes.csv', async (req: Request, res: Response) => {
+    try {
+      const slug = String(req.params.slug ?? '');
+      if (!/^[A-Za-z0-9_-]{8,64}$/.test(slug)) {
+        return res.status(400).type('text/plain').send('slug inválido');
+      }
+      const incluirPreview = req.query.preview === '1';
+      const visualizacoes = await listVisualizacoesPorSlug(supabase, slug, {
+        incluir_preview: incluirPreview,
+      });
+      const csv = renderVisualizacoesCsv(visualizacoes);
+      res.setHeader('Content-Disposition', `attachment; filename="visualizacoes-${slug}.csv"`);
+      res.type('text/csv').send(csv);
+    } catch (err) {
+      console.error('[dashboard/visualizacoes.csv]', err);
+      res.status(500).type('text/plain').send(`Erro: ${(err as Error).message}`);
     }
   });
 

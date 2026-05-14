@@ -5110,8 +5110,26 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
 
       res.type('text/html').send(html);
 
+      // Captura metadados pra historico (visualizacoes) — vale tanto pra
+      // preview admin (logado como is_preview=true, separado nos KPIs)
+      // quanto pra cliente real.
+      const reqIp = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim()
+        ?? req.socket.remoteAddress
+        ?? null;
+      const userAgent = (req.headers['user-agent'] as string | undefined) ?? null;
+      const referer = (req.headers['referer'] as string | undefined) ?? null;
+
+      // Registra visualizacao individual (tabela proposta_visualizacoes, fire-and-forget)
+      supabase.registrarVisualizacaoProposta({
+        slug,
+        ipAddress: reqIp,
+        userAgent,
+        isPreview,
+        referer,
+      });
+
       if (isPreview) {
-        console.log(`[proposta-publica] preview admin slug=${slug} — sem tracking`);
+        console.log(`[proposta-publica] preview admin slug=${slug} — registrado, sem followup`);
         return;
       }
 

@@ -738,4 +738,35 @@ export class SupabaseService {
       return null;
     }
   }
+
+  /**
+   * Insere 1 linha em proposta_visualizacoes pra cada acesso (Junior preview
+   * OU cliente real). Permite timeline + KPIs no dashboard. Fire-and-forget:
+   * falha aqui nunca quebra a renderizacao da proposta.
+   *
+   * Migration 029 cria a tabela. Antes dela aplicada, retorna silenciosamente.
+   */
+  async registrarVisualizacaoProposta(params: {
+    slug: string;
+    ipAddress?: string | null;
+    userAgent?: string | null;
+    isPreview: boolean;
+    referer?: string | null;
+  }): Promise<void> {
+    try {
+      await this.client.from('proposta_visualizacoes').insert({
+        proposta_slug: params.slug,
+        ip_address: params.ipAddress ?? null,
+        user_agent: params.userAgent ?? null,
+        is_preview: params.isPreview,
+        referer: params.referer ?? null,
+      });
+    } catch (err) {
+      // Migration 029 ainda nao aplicada? Outras falhas? Nao critico.
+      console.warn(
+        '[supabase] registrarVisualizacaoProposta (non-blocking):',
+        (err as Error).message,
+      );
+    }
+  }
 }

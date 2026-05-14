@@ -401,7 +401,12 @@ export function renderPropostasPage(input: PropostasPageInput): string {
         <td class="px-4 py-3 text-sm text-slate-700 font-medium">${brl(p.valorTotal)}</td>
         <td class="px-4 py-3 text-sm text-slate-600">${formatDate(p.created_at)}</td>
         <td class="px-4 py-3 text-sm">${status}</td>
-        <td class="px-4 py-3 text-sm text-slate-600">${p.acessos}x ${p.ultimo_acesso_at ? `· ${relativeTime(p.ultimo_acesso_at)}` : ''}</td>
+        <td class="px-4 py-3 text-sm text-slate-600">
+          ${p.acessos > 0
+            ? `<a href="/dashboard/propostas/${escapeHtml(p.slug)}/visualizacoes" class="text-sky-700 hover:underline">${p.acessos}x</a>`
+            : '<span class="text-slate-400">0x</span>'}
+          ${p.ultimo_acesso_at ? `<div class="text-xs text-slate-500">${relativeTime(p.ultimo_acesso_at)}</div>` : ''}
+        </td>
         <td class="px-4 py-3 text-sm text-right">
           ${p.revoked
             ? '<span class="text-xs text-red-600">revogada</span>'
