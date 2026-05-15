@@ -2638,6 +2638,27 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
         await supabase.upsertLead(leadUpdate as unknown as Parameters<typeof supabase.upsertLead>[0]);
         console.log(`[action] Updated lead ${from}:`, Object.keys(leadUpdate).join(', '));
+
+        // Rede de proteção: se o lead acabou de cruzar o criterio minimo
+        // (conta>=R$700 ou >=700 kWh), avisa o Junior NA HORA — independente
+        // da Eva emitir qualification_complete depois (ela as vezes trava, ex
+        // pedindo CPF, e nunca fecha). Idempotente 1x/lead (lock compartilhado
+        // com a varredura). Best-effort: nunca quebra o fluxo da action.
+        if (leadUpdate.energy_data) {
+          try {
+            const fresh = await supabase.getLeadByPhone(from);
+            if (fresh) {
+              const { alertHotLeadBackstop } = await import('./modules/eva-alerts.js');
+              await alertHotLeadBackstop(
+                { client: supabase.getClient(), engineerPhone: config.engineerPhone, sendText, metaWaba: metaWaba ?? null },
+                { id: fresh.id, name: fresh.name ?? null, phone: from, energy_data: fresh.energy_data },
+                'fresh',
+              );
+            }
+          } catch (err) {
+            console.warn('[hotlead] alerta imediato falhou:', (err as Error).message);
+          }
+        }
         break;
       }
 
@@ -5663,6 +5684,27 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setInterval(autoCadenceScheduler, 60 * 60 * 1000); // a cada 1h
     setTimeout(autoCadenceScheduler, 3 * 60 * 1000); // primeira passada 3min apos start
     console.log('[cadence] Auto-scheduler started (checks every 1h for silent leads > 24h)');
+
+    // Rede de proteção: varredura 1x/h pega o BACKLOG de leads quentes pelos
+    // dados (conta>=R$700 ou >=700 kWh) presos em 'qualificando' que a Eva
+    // nao fechou e estao parados ha >45min. Idempotente (lock compartilhado)
+    // — roda quantas vezes quiser sem spammar. Primeira passada 4min apos
+    // boot pra resgatar o backlog logo depois do deploy.
+    const hotLeadSweep = async () => {
+      try {
+        const { sweepStuckHotLeads } = await import('./modules/eva-alerts.js');
+        const n = await sweepStuckHotLeads(
+          { client: supabase.getClient(), engineerPhone: config.engineerPhone, sendText, metaWaba: metaWaba ?? null },
+          { staleMinutes: 45 },
+        );
+        if (n > 0) console.log(`[hotlead] varredura alertou ${n} lead(s) quente(s) parado(s)`);
+      } catch (err) {
+        console.error('[hotlead] sweep error:', (err as Error).message);
+      }
+    };
+    setInterval(hotLeadSweep, 60 * 60 * 1000);  // a cada 1h
+    setTimeout(hotLeadSweep, 4 * 60 * 1000);    // 4min apos boot (resgata backlog)
+    console.log('[hotlead] Hot-lead backstop sweep started (1x/h, parado > 45min)');
 
     // Digest periodico de atividade da Eva pro WhatsApp do Junior.
     // Dispara 3x/dia em horarios definidos: 7h, 12h40 e 21h BRT. Cobre

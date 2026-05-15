@@ -210,4 +210,158 @@ export async function alertEvaError(
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Rede de proteção: lead quente pelos DADOS, independente da Eva fechar.
+// Criterio minimo oficial Ecosunpower: conta >= R$700 OU consumo >= 700 kWh.
+// Resolve o caso em que a Eva coleta tudo mas nunca emite
+// qualification_complete (ex: travou pedindo CPF) e Junior fica cego.
+// ──────────────────────────────────────────────────────────────────────────
+const HOT_BILL_BRL = 700;
+const HOT_KWH = 700;
+
+function toNum(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(String(v ?? '').replace(',', '.'));
+  return Number.isFinite(n) ? n : NaN;
+}
+
+export function isHotLeadByEnergy(energyData: unknown): boolean {
+  if (!energyData || typeof energyData !== 'object') return false;
+  const e = energyData as Record<string, unknown>;
+  const bill = toNum(e.monthly_bill);
+  const kwh = toNum(e.consumption_kwh);
+  return (Number.isFinite(bill) && bill >= HOT_BILL_BRL)
+    || (Number.isFinite(kwh) && kwh >= HOT_KWH);
+}
+
+// Espelha a heuristica de prontidao ja usada no qualification_complete.
+export function hotLeadTier(bill: number | null | undefined): string {
+  if (bill != null && bill >= 1500) return '🔥 QUENTE';
+  if (bill != null && bill >= 700) return '🟠 MORNO';
+  return '🔵 FRIO';
+}
+
+interface HotLead {
+  id: string;
+  name: string | null;
+  phone: string;
+  energy_data?: unknown;
+}
+
+/**
+ * 🔥 ALERTA (rede de proteção): lead qualificado pelos DADOS mas que a Eva
+ * ainda nao fechou (nao emitiu qualification_complete). Idempotente 1x/lead
+ * via lock COMPARTILHADO entre o gatilho imediato (update_lead) e a varredura
+ * — Junior nunca recebe o mesmo lead 2x. Retorna true se realmente alertou.
+ */
+export async function alertHotLeadBackstop(
+  ctx: AlertContext,
+  lead: HotLead,
+  mode: 'fresh' | 'stalled',
+  stalledMinutes?: number,
+): Promise<boolean> {
+  if (!isHotLeadByEnergy(lead.energy_data)) return false;
+
+  const lockKey = `alert_hotlead_${lead.id}`;
+  if (!(await acquireAlertLock(ctx.client, lockKey))) return false;
+
+  const e = (lead.energy_data ?? {}) as Record<string, unknown>;
+  const bill = toNum(e.monthly_bill);
+  const kwh = toNum(e.consumption_kwh);
+  const tier = hotLeadTier(Number.isFinite(bill) ? bill : null);
+  const dados = [
+    Number.isFinite(bill) ? `conta ~R$ ${Math.round(bill)}` : null,
+    Number.isFinite(kwh) ? `${Math.round(kwh)} kWh/mes` : null,
+  ].filter(Boolean).join(' · ') || 'consumo informado';
+
+  const nome = lead.name ?? 'Lead sem nome';
+  const tel = formatPhoneShort(lead.phone);
+  const text = mode === 'stalled'
+    ? [
+        `🟠 *Lead quente PARADO* ${tier}`,
+        ``,
+        `${nome} (${tel}) — ${dados}`,
+        ``,
+        `Passou do criterio minimo mas a Eva nao fechou e parou ha ${stalledMinutes ?? '?'}+ min. Vale resgatar voce mesmo.`,
+      ].join('\n')
+    : [
+        `🔥 *Lead quente — Eva ainda nao fechou* ${tier}`,
+        ``,
+        `${nome} (${tel}) — ${dados}`,
+        ``,
+        `Ja passou do criterio minimo. Eva esta conversando — voce pode assumir se quiser.`,
+      ].join('\n');
+
+  try {
+    await sendAdminWithButtons(
+      { metaWaba: ctx.metaWaba ?? null, sendText: ctx.sendText },
+      ctx.engineerPhone,
+      text,
+      [
+        { id: `evabt:lead-view:${lead.id}`, title: '👤 Ver perfil' },
+        { id: `evabt:lead-pause:${lead.id}`, title: '✋ Assumir' },
+      ],
+    );
+    console.log(`[alerts] hot_lead_backstop (${mode}) disparado pra lead ${lead.id}`);
+    return true;
+  } catch (err) {
+    console.warn(`[alerts] falha ao enviar hot_lead_backstop:`, (err as Error).message);
+    return false;
+  }
+}
+
+/**
+ * Varredura periodica (1x/h): pega o BACKLOG de leads quentes pelos dados,
+ * presos em status 'qualificando', que a Eva nao fechou e estao parados ha
+ * > staleMinutes. Idempotente pelo mesmo lock de alertHotLeadBackstop, entao
+ * roda quantas vezes quiser sem spammar. Independente da Eva.
+ */
+export async function sweepStuckHotLeads(
+  ctx: AlertContext,
+  opts?: { staleMinutes?: number },
+): Promise<number> {
+  const staleMinutes = opts?.staleMinutes ?? 45;
+  const cutoff = new Date(Date.now() - staleMinutes * 60 * 1000).toISOString();
+
+  const LIMIT = 200;
+  const { data, error } = await ctx.client
+    .from('leads')
+    .select('id, name, phone, energy_data, opt_out, updated_at')
+    .eq('status', 'qualificando')
+    .not('opt_out', 'is', true) // exclui opt_out=true (mantem null/false)
+    .lt('updated_at', cutoff)
+    .limit(LIMIT);
+
+  if (error) {
+    console.warn('[alerts] sweepStuckHotLeads query erro:', error.message);
+    return 0;
+  }
+  if (!data || data.length === 0) return 0;
+  if (data.length === LIMIT) {
+    console.warn(`[alerts] sweepStuckHotLeads: teto de ${LIMIT} atingido — backlog grande, surplus pega na proxima rodada (1h)`);
+  }
+
+  let fired = 0;
+  for (const row of data) {
+    const r = row as Record<string, unknown>;
+    if (r.opt_out === true) continue;
+    if (!isHotLeadByEnergy(r.energy_data)) continue;
+    const ok = await alertHotLeadBackstop(
+      ctx,
+      {
+        id: String(r.id),
+        name: (r.name as string | null) ?? null,
+        phone: String(r.phone ?? ''),
+        energy_data: r.energy_data,
+      },
+      'stalled',
+      staleMinutes,
+    );
+    if (ok) fired++;
+  }
+  if (fired > 0) {
+    console.log(`[alerts] sweepStuckHotLeads: ${fired} lead(s) quente(s) parado(s) alertado(s)`);
+  }
+  return fired;
+}
+
 export type { AlertKind, AlertContext };
