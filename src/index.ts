@@ -2396,8 +2396,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       //     hardcoded em ctwa-template-mapping.ts. Permite A/B por anuncio.
       //  2. DB mapping por campaign_id (marketing_campaigns.template_inicial)
       //     — usado quando lead nao veio de anuncio mas tem campaign_id legado.
-      //  3. Default global `eva_resposta_inicial` — fallback transparente
-      //     enquanto Roberto nao aprova templates novos na Meta.
+      //  3. Default global `eva_qualificacao_v1` (UTILITY, aprovado Meta
+      //     15/05) — lead sem anuncio nem campanha. TODOS os templates
+      //     roteados aqui usam 1 var de body {{1}}=primeiro nome.
       if (metaWaba) {
         const isNewSession = conversation.message_count === 0;
         const elapsedMs = Date.now() - new Date(conversation.last_message_at).getTime();
@@ -2412,10 +2413,17 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
             const adCampaignId = lead?.ad_campaign_id ?? null;
             mappedTemplate = await supabase.getTemplateInicialPorCampanha(adCampaignId);
           }
-          // 3. Default global
-          const templateName = mappedTemplate ?? 'eva_resposta_inicial';
+          // 3. Default global (templates Meta aprovados 15/05)
+          const templateName = mappedTemplate ?? 'eva_qualificacao_v1';
+          // Todos os templates aqui (CTWA/campanha/default) tem {{1}}=primeiro
+          // nome. Sem o componente a Meta REJEITA o envio (era bug silencioso:
+          // lead de anuncio ficava sem auto-ack). Fallback "tudo bem" igual
+          // ao reativacao_lead_v1.
+          const ackFirstName = (lead?.name ?? '').split(' ')[0] || 'tudo bem';
           metaWaba
-            .sendTemplate(from, templateName, 'pt_BR')
+            .sendTemplate(from, templateName, 'pt_BR', [
+              { type: 'body', parameters: [{ type: 'text', text: ackFirstName }] },
+            ])
             .then(() => console.log(`[auto-ack] Template ${templateName} enviado pra ${from} lead=${leadId} (${reason}, ad_id=${adId ?? 'none'})`))
             .catch((err: Error) => console.warn(`[auto-ack] Template send falhou pra ${from} lead=${leadId} template=${templateName}: ${err.message}`));
         }
