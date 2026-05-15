@@ -233,10 +233,16 @@ export function isHotLeadByEnergy(energyData: unknown): boolean {
     || (Number.isFinite(kwh) && kwh >= HOT_KWH);
 }
 
-// Espelha a heuristica de prontidao ja usada no qualification_complete.
-export function hotLeadTier(bill: number | null | undefined): string {
-  if (bill != null && bill >= 1500) return '🔥 QUENTE';
-  if (bill != null && bill >= 700) return '🟠 MORNO';
+// Temperatura por R$ OU kWh. NAO pode olhar so bill: lead de 6000 kWh sem
+// conta em R$ informada e uma baleia, nao 🔵 FRIO (bug real visto em prod).
+export function hotLeadTier(
+  bill: number | null | undefined,
+  kwh?: number | null | undefined,
+): string {
+  const b = typeof bill === 'number' && Number.isFinite(bill) ? bill : 0;
+  const k = typeof kwh === 'number' && Number.isFinite(kwh) ? kwh : 0;
+  if (b >= 1500 || k >= 1500) return '🔥 QUENTE';
+  if (b >= 700 || k >= 700) return '🟠 MORNO';
   return '🔵 FRIO';
 }
 
@@ -267,10 +273,14 @@ export async function alertHotLeadBackstop(
   const e = (lead.energy_data ?? {}) as Record<string, unknown>;
   const bill = toNum(e.monthly_bill);
   const kwh = toNum(e.consumption_kwh);
-  const tier = hotLeadTier(Number.isFinite(bill) ? bill : null);
+  const tier = hotLeadTier(
+    Number.isFinite(bill) ? bill : null,
+    Number.isFinite(kwh) ? kwh : null,
+  );
   const dados = [
-    Number.isFinite(bill) ? `conta ~R$ ${Math.round(bill)}` : null,
-    Number.isFinite(kwh) ? `${Math.round(kwh)} kWh/mes` : null,
+    // So mostra R$ se houver valor real (>0) — evita "conta ~R$ 0" feio.
+    Number.isFinite(bill) && bill > 0 ? `conta ~R$ ${Math.round(bill)}` : null,
+    Number.isFinite(kwh) && kwh > 0 ? `${Math.round(kwh)} kWh/mes` : null,
   ].filter(Boolean).join(' · ') || 'consumo informado';
 
   const nome = lead.name ?? 'Lead sem nome';
@@ -279,14 +289,14 @@ export async function alertHotLeadBackstop(
     ? [
         `🟠 *Lead quente PARADO* ${tier}`,
         ``,
-        `${nome} (${tel}) — ${dados}`,
+        `${nome} — ${tel} — ${dados}`,
         ``,
         `Passou do criterio minimo mas a Eva nao fechou e parou ha ${stalledMinutes ?? '?'}+ min. Vale resgatar voce mesmo.`,
       ].join('\n')
     : [
         `🔥 *Lead quente — Eva ainda nao fechou* ${tier}`,
         ``,
-        `${nome} (${tel}) — ${dados}`,
+        `${nome} — ${tel} — ${dados}`,
         ``,
         `Ja passou do criterio minimo. Eva esta conversando — voce pode assumir se quiser.`,
       ].join('\n');

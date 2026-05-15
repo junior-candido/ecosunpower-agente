@@ -48,4 +48,16 @@ describe('hotLeadTier (espelha heuristica do qualification_complete)', () => {
     expect(hotLeadTier(null)).toBe('🔵 FRIO');
     expect(hotLeadTier(undefined)).toBe('🔵 FRIO');
   });
+
+  // BUG real em prod: lead de 6000 kWh sem conta em R$ aparecia 🔵 FRIO
+  // porque o tier so olhava monthly_bill. Tem que olhar kWh tambem.
+  it('considera kWh tambem (nao so R$)', () => {
+    expect(hotLeadTier(0, 6000)).toBe('🔥 QUENTE');   // baleia: 6000 kWh, sem bill
+    expect(hotLeadTier(null, 1500)).toBe('🔥 QUENTE');
+    expect(hotLeadTier(0, 1100)).toBe('🟠 MORNO');
+    expect(hotLeadTier(0, 700)).toBe('🟠 MORNO');
+    expect(hotLeadTier(0, 699)).toBe('🔵 FRIO');
+    expect(hotLeadTier(2000, 100)).toBe('🔥 QUENTE'); // R$ manda quando alto
+    expect(hotLeadTier(undefined, undefined)).toBe('🔵 FRIO');
+  });
 });
