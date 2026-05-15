@@ -17,6 +17,8 @@ const configSchema = z.object({
   redisPort: z.coerce.number().default(6379),
   redisPassword: z.string().optional(),
   openaiApiKey: z.string().optional(),
+  ragTopK: z.coerce.number().int().positive().default(5),
+  ragMinSimilarity: z.coerce.number().min(0).max(1).default(0.35),
   engineerPhone: z.string().min(1),
   engineerName: z.string().min(1),
   // Numeros adicionais que tambem podem usar comandos admin (/preco, /agenda, blog).
@@ -85,6 +87,8 @@ export function loadConfig(): Config {
     redisPort: process.env.REDIS_PORT,
     redisPassword: process.env.REDIS_PASSWORD || undefined,
     openaiApiKey: process.env.OPENAI_API_KEY || undefined,
+    ragTopK: process.env.RAG_TOP_K,
+    ragMinSimilarity: process.env.RAG_MIN_SIMILARITY,
     engineerPhone: process.env.ENGINEER_PHONE,
     engineerName: process.env.ENGINEER_NAME,
     adminExtraPhones: (process.env.ADMIN_EXTRA_PHONES ?? '')
