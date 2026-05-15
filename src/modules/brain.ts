@@ -21,6 +21,31 @@ export interface BrainResponse {
   actions: ActionPayload[];
 }
 
+// Converte markdown -> formatação que o WhatsApp realmente renderiza.
+// WhatsApp NÃO tem #/##/headers, --- régua, ** (negrito é *1 asterisco*),
+// > blockquote. O modelo espelha o estilo do prompt (md) e vazava tudo
+// literal pro cliente (ex conversa Alessandro). Defesa em profundidade —
+// roda em todo retorno do brain via getDisplayText.
+export function toWhatsAppText(text: string): string {
+  if (!text) return '';
+  let t = text;
+  // 1. **negrito** -> *negrito* (par fechado, sem * nem \n no meio)
+  t = t.replace(/\*\*([^\n*]+?)\*\*/g, '*$1*');
+  // 2. Header markdown (# … ######) -> linha em *negrito*. Tira TODOS os *
+  // do texto (header com **preço** dentro nao pode virar * aninhado); se
+  // sobrar vazio (header so de simbolos), nao emite nada.
+  t = t.replace(/^[ \t]*#{1,6}[ \t]+(.+?)[ \t]*$/gm, (_m, h: string) => {
+    const clean = h.replace(/\*+/g, ' ').replace(/\s+/g, ' ').trim();
+    return clean ? `*${clean}*` : '';
+  });
+  // 3. Régua horizontal (--- *** ___ ===) some (linha + quebra)
+  t = t.replace(/^[ \t]*([-*_=])\1{2,}[ \t]*\n?/gm, '');
+  // 4. Blockquote "> " no início da linha some
+  t = t.replace(/^[ \t]*>[ \t]?/gm, '');
+  // 5. Colapsa excesso de linha em branco e apara
+  return t.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 export class Brain {
   private client: Anthropic;
   private systemPrompt: string;
@@ -137,10 +162,11 @@ export class Brain {
   }
 
   getDisplayText(responseText: string): string {
-    return responseText
-      .replace(/```json\s*[\s\S]*?\s*```/g, '')
-      .replace(/\n{3,}/g, '\n')
-      .trim();
+    // Tira o bloco de action, depois converte markdown -> WhatsApp-safe
+    // (sem #/##/**/---/> vazando pro cliente). toWhatsAppText ja apara.
+    return toWhatsAppText(
+      responseText.replace(/```json\s*[\s\S]*?\s*```/g, ''),
+    );
   }
 
   // Splits a response into WhatsApp-sized messages. If Eva used the
