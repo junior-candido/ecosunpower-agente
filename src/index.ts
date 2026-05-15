@@ -3218,11 +3218,16 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       const analysisText = await vision.analyzeImage(imageDataUrl, context);
       const displayText = brain.getDisplayText(analysisText);
       const action = brain.parseAction(analysisText);
+      // Guard: se o sanitizer/getDisplayText zerou tudo (modelo so mandou
+      // scaffolding), nunca manda mensagem vazia pro cliente que enviou foto.
+      const safeDisplay = displayText.trim()
+        ? displayText
+        : 'Recebi sua imagem! 📸 Pra eu te ajudar certinho — é energia solar pra você? Se puder, me manda também o valor médio da sua conta de luz.';
 
       if (!isSandbox) {
-        await sendText(from, displayText);
+        await sendText(from, safeDisplay);
       } else {
-        console.log(`[sandbox] Image analysis for ${from}: ${displayText}`);
+        console.log(`[sandbox] Image analysis for ${from}: ${safeDisplay}`);
       }
 
       // Save to conversation
@@ -3231,7 +3236,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         const updatedMessages = [
           ...conversation.messages,
           { role: 'user' as const, content: '[Enviou uma foto]', timestamp: new Date().toISOString() },
-          { role: 'assistant' as const, content: analysisText, timestamp: new Date().toISOString() },
+          { role: 'assistant' as const, content: safeDisplay, timestamp: new Date().toISOString() },
         ];
         await supabase.updateConversation(conversation.id, {
           messages: updatedMessages.slice(-20),
