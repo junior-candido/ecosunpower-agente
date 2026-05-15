@@ -3,14 +3,11 @@
 
 import { renderLayout, escapeHtml } from './views.js';
 import type { LeadRow, LeadDetail } from './leads-queries.js';
+import { formatPhoneBR } from '../meta-leadgen.js';
 
 function formatPhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length < 11) return phone;
-  const ddd = digits.slice(-11, -9);
-  const meio = digits.slice(-9, -4);
-  const fim = digits.slice(-4);
-  return `(${ddd}) ${meio}-${fim}`;
+  // Normaliza (wa_id BR vem sem o 9o digito) antes de formatar. Ver formatPhoneBR.
+  return formatPhoneBR(phone);
 }
 
 function timeAgo(iso: string | null): string {

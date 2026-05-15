@@ -315,3 +315,26 @@ export function normalizeBrazilianPhone(raw: string): string | null {
 
   return normalized;
 }
+
+// Formata telefone BR pra EXIBICAO ao Junior (digest, dashboard, alertas).
+// Normaliza ANTES de formatar — o wa_id do WhatsApp Brasil vem sem o 9o
+// digito (12 digitos: 556193302673) e fatiar os ultimos 11 sem normalizar
+// produzia "(56) 19330-2673" (DDD invalido, nao discavel). Aqui passa pelo
+// normalizeBrazilianPhone (que insere o 9) e so entao formata.
+// Celular -> "(61) 99330-2673" | Fixo -> "(61) 3321-4567".
+// Degrada com graca: lixo/curto retorna a entrada (nunca lanca, nunca vazio).
+export function formatPhoneBR(raw: string): string {
+  const input = raw ?? '';
+  const norm = normalizeBrazilianPhone(input);
+  if (!norm) {
+    const digits = input.replace(/\D/g, '');
+    if (digits.length < 11) return input;
+    return `(${digits.slice(-11, -9)}) ${digits.slice(-9, -4)}-${digits.slice(-4)}`;
+  }
+  // normalizeBrazilianPhone garante saida de 12 (fixo) ou 13 (celular) digitos.
+  const ddd = norm.slice(2, 4);
+  const rest = norm.slice(4); // 9 digitos (celular) ou 8 (fixo)
+  return rest.length === 9
+    ? `(${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`
+    : `(${ddd}) ${rest.slice(0, 4)}-${rest.slice(4)}`;
+}

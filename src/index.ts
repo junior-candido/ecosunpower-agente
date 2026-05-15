@@ -4764,7 +4764,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     const items = pending.map((l, i) => {
       const firstName = (l.name ?? '').split(' ')[0] || 'tudo bem';
       const msg = (messages[i] && messages[i].trim().length > 20) ? messages[i] : fallback(firstName);
-      const waLink = `https://wa.me/${l.phone}?text=${encodeURIComponent(msg)}`;
+      const waLink = `https://wa.me/${normalizeBrazilianPhone(l.phone) ?? l.phone}?text=${encodeURIComponent(msg)}`;
       return {
         id: l.id,
         phone: l.phone,

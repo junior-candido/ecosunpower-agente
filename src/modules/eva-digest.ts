@@ -10,6 +10,7 @@
 // Idempotente: usa app_flags pra garantir 1 disparo por janela.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { formatPhoneBR } from './meta-leadgen.js';
 import { sendAdminWithButtons, type AdminButtonCtx } from './eva-admin-buttons.js';
 
 const DIGEST_WINDOWS = [
@@ -122,13 +123,8 @@ async function collectDigestData(
 }
 
 function formatPhoneShort(phone: string): string {
-  // Formato: 5561992891958 -> (61) 99289-1958
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length < 11) return phone;
-  const ddd = digits.slice(-11, -9);
-  const meio = digits.slice(-9, -4);
-  const fim = digits.slice(-4);
-  return `(${ddd}) ${meio}-${fim}`;
+  // Normaliza (wa_id BR vem sem o 9o digito) antes de formatar. Ver formatPhoneBR.
+  return formatPhoneBR(phone);
 }
 
 /**

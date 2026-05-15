@@ -1,5 +1,6 @@
 import { renderLayout, escapeHtml, brl } from './views.js';
 import type { LeadCadenciaRow, CadenciaKpis, CadenciaStatus } from './cadencia-queries.js';
+import { normalizeBrazilianPhone } from '../meta-leadgen.js';
 
 const STATUS_LABELS: Record<CadenciaStatus, { label: string; color: string; bg: string }> = {
   aguardando:           { label: '⏳ Aguardando disparo', color: 'text-slate-700', bg: 'bg-slate-100' },
@@ -51,14 +52,11 @@ function tempBadge(temp: string | null): string {
   return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${t.class}">${t.icon} ${escapeHtml(temp)}</span>`;
 }
 
-function maskPhone(phone: string): string {
-  // 5561998805002 -> +55 61 99880-5002
-  if (phone.length < 10) return phone;
-  const country = phone.slice(0, 2);
-  const ddd = phone.slice(2, 4);
-  const part1 = phone.slice(4, -4);
-  const part2 = phone.slice(-4);
-  return `+${country} ${ddd} ${part1}-${part2}`;
+export function maskPhone(phone: string): string {
+  // Normaliza ANTES (wa_id BR vem sem o 9o digito) -> +55 61 99880-5002
+  const n = normalizeBrazilianPhone(phone) ?? (phone ?? '').replace(/\D/g, '');
+  if (n.length < 10) return phone;
+  return `+${n.slice(0, 2)} ${n.slice(2, 4)} ${n.slice(4, -4)}-${n.slice(-4)}`;
 }
 
 export interface CadenciaPageInput {

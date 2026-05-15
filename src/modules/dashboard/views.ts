@@ -4,6 +4,7 @@
 import type { DashboardKpi, PropostaRow, ManutencaoRow, GraficoMensal, SistemaMonitorRow } from './queries.js';
 import type { DetalheSistema } from '../monitoring/service.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.js';
+import { formatPhoneBR, normalizeBrazilianPhone } from '../meta-leadgen.js';
 
 export function escapeHtml(s: string | null | undefined): string {
   if (s === null || s === undefined) return '';
@@ -1294,14 +1295,14 @@ export function renderManutencaoPage(rows: ManutencaoRow[]): string {
         : escapeHtml(r.topic);
 
     const whatsappLink = r.telefone
-      ? `https://wa.me/${r.telefone.replace(/\D/g, '')}`
+      ? `https://wa.me/${normalizeBrazilianPhone(r.telefone) ?? r.telefone.replace(/\D/g, '')}`
       : null;
 
     return `
       <tr class="hover:bg-slate-50">
         <td class="px-4 py-3 text-sm">
           <div class="font-medium text-slate-900">${escapeHtml(r.cliente_nome)}</div>
-          <div class="text-xs text-slate-500">${escapeHtml(r.telefone) || '—'}</div>
+          <div class="text-xs text-slate-500">${escapeHtml(formatPhoneBR(r.telefone ?? '')) || '—'}</div>
         </td>
         <td class="px-4 py-3 text-sm">${topicLabel}</td>
         <td class="px-4 py-3 text-sm text-slate-700">${formatDate(r.scheduled_date)}</td>

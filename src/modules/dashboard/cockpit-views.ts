@@ -6,6 +6,7 @@
 
 import type { CockpitData } from './cockpit-queries.js';
 import type { LeadSynthesis, PlatformInsight } from './lead-synthesis.js';
+import { formatPhoneBR } from '../meta-leadgen.js';
 
 interface LeadAguardando {
   id: string;
@@ -30,12 +31,8 @@ function brl(v: number | null | undefined): string {
 }
 
 function formatPhoneShort(phone: string): string {
-  const digits = (phone ?? '').replace(/\D/g, '');
-  if (digits.length < 11) return phone;
-  const ddd = digits.slice(-11, -9);
-  const meio = digits.slice(-9, -4);
-  const fim = digits.slice(-4);
-  return `(${ddd}) ${meio}-${fim}`;
+  // Normaliza (wa_id BR vem sem o 9o digito) antes de formatar. Ver formatPhoneBR.
+  return formatPhoneBR(phone ?? '');
 }
 
 const STATUS_COLOR: Record<string, string> = {
