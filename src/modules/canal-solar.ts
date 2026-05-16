@@ -204,5 +204,23 @@ export async function ingestCanalSolar(knowledgeDir: string, force = false): Pro
   const markdown = buildMarkdown(articles, new Date());
   writeFileSync(outputPath, markdown, 'utf-8');
 
+  // RAG: re-embeda só esse arquivo (mudou em runtime, sem deploy)
+  try {
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    if (openaiApiKey) {
+      const { makeClient, embedTexts } = await import('./rag/embeddings.js');
+      const { syncFile } = await import('./rag/ingest.js');
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(
+        process.env.SUPABASE_URL ?? '',
+        process.env.SUPABASE_SERVICE_KEY ?? '',
+      );
+      const cli = makeClient(openaiApiKey);
+      await syncFile(knowledgeDir, 'especializado/canal-solar.md',
+        supabase, (t) => embedTexts(t, cli));
+      console.log('[rag] canal-solar.md re-embedado pós-scraper');
+    }
+  } catch (e) { console.warn('[rag] re-embed canal-solar falhou:', e); }
+
   return { articlesFetched: articles.length, outputPath, skipped: false };
 }
