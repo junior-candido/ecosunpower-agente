@@ -32,9 +32,9 @@ async function existingHashes(supabase: any, tenant: string): Promise<Map<string
       .from('eva_knowledge_chunks')
       .select('source_file, file_hash');
 
-    // Real client: narrow by tenant before awaiting. Mock has no `.eq` here.
+    // Real client: narrow by tenant and chunk_index before awaiting. Mock has no `.eq` here.
     if (res && typeof res.eq === 'function') {
-      res = res.eq('tenant_id', tenant);
+      res = res.eq('tenant_id', tenant).eq('chunk_index', 0); // 1 row/arquivo (cost-control: cabe sob o cap de 1000)
     }
 
     // Real client: builder is awaitable. Mock: plain object -> used as-is.
@@ -65,12 +65,14 @@ export async function syncFile(
   const chunks = chunkMarkdown(content, CHUNK);
   if (chunks.length === 0) return 0;
   const vectors = await embed(chunks.map(c => c.content));
-  await supabase.from('eva_knowledge_chunks').delete().eq('tenant_id', tenant).eq('source_file', relPath);
-  await supabase.from('eva_knowledge_chunks').upsert(chunks.map((c, i) => ({
+  const del = await supabase.from('eva_knowledge_chunks').delete().eq('tenant_id', tenant).eq('source_file', relPath);
+  if (del && del.error) throw new Error(`[rag] delete falhou ${relPath}: ${del.error.message ?? del.error}`);
+  const up = await supabase.from('eva_knowledge_chunks').upsert(chunks.map((c, i) => ({
     tenant_id: tenant, source_file: relPath, chunk_index: c.index,
     content: c.content, token_count: c.tokenCount, file_hash: fhash,
     embedding: vectors[i],
   })));
+  if (up && up.error) throw new Error(`[rag] upsert falhou ${relPath}: ${up.error.message ?? up.error}`);
   return chunks.length;
 }
 
