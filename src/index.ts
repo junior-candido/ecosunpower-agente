@@ -2542,18 +2542,26 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         }
       }
 
-      // Topic detection: injeta core sempre + especializados detectados no texto
-      const detectedTopics = detectTopics(text);
-      const specializedKnowledge = knowledgeBase.getSpecialized(detectedTopics);
-      const injectedKnowledge = knowledgeBase.getCore() + specializedKnowledge + leadContext;
-      if (detectedTopics.length > 0) {
-        console.log(`[knowledge] Topics detected: ${detectedTopics.join(', ')} (+${Math.ceil(specializedKnowledge.length / 4)} tokens)`);
+      // Brain híbrido: 6 core files sempre injetados + chunks RAG quando disponível.
+      // retrieveChunks nunca lança — retorna [] em qualquer falha (fallback core-only).
+      const { loadCoreContent } = await import('./modules/rag/core-files.js');
+      const { retrieveChunks } = await import('./modules/rag/retrieve.js');
+      const { makeClient, embedTexts } = await import('./modules/rag/embeddings.js');
+      const { buildHybridKnowledge } = await import('./modules/rag/hybrid.js');
+      const coreContent = loadCoreContent(join(__dirname, '..', 'conhecimento'));
+      const chunks = config.openaiApiKey
+        ? await retrieveChunks(text, supabase.getClient(), config,
+            (q) => embedTexts(q, makeClient(config.openaiApiKey!)))
+        : [];
+      const knowledge = buildHybridKnowledge(coreContent, chunks) + leadContext;
+      if (chunks.length > 0) {
+        console.log(`[rag] ${chunks.length} chunk(s) recuperados para o brain`);
       }
 
       const response = await brain.processMessage(
         text,
         history,
-        injectedKnowledge,
+        knowledge,
         conversation.summary,
         conversation.qualification_step
       );
@@ -6359,7 +6367,7 @@ Slug: ${draft.slug}`;
         const dir = join(__dirname, '..', 'conhecimento');
         const n = await ingestAll(dir, supabase.getClient(), (t) => embedTexts(t, cli));
         console.log(`[rag] startup sync: ${n} chunks (re)embedados`);
-      } catch (e) { console.error('[rag] startup sync falhou:', (e as Error).message); }
+      } catch (e) { console.error('[rag] startup sync falhou:', e); }
     }, 90 * 1000); // 90s apos boot
   } else {
     console.log('[rag] OPENAI_API_KEY ausente — RAG desligado, brain usa so core');
