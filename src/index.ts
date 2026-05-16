@@ -6349,6 +6349,22 @@ Slug: ${draft.slug}`;
     console.log('[post-install] Scheduler started (every 2h)');
   }
 
+  // RAG smart-sync: nao-bloqueante, apos boot. Idempotente por hash.
+  if (config.openaiApiKey) {
+    setTimeout(async () => {
+      try {
+        const { makeClient, embedTexts } = await import('./modules/rag/embeddings.js');
+        const { ingestAll } = await import('./modules/rag/ingest.js');
+        const cli = makeClient(config.openaiApiKey!);
+        const dir = join(__dirname, '..', 'conhecimento');
+        const n = await ingestAll(dir, supabase.getClient(), (t) => embedTexts(t, cli));
+        console.log(`[rag] startup sync: ${n} chunks (re)embedados`);
+      } catch (e) { console.error('[rag] startup sync falhou:', (e as Error).message); }
+    }, 90 * 1000); // 90s apos boot
+  } else {
+    console.log('[rag] OPENAI_API_KEY ausente — RAG desligado, brain usa so core');
+  }
+
   app.listen(config.port, () => {
     console.log(`[server] Listening on port ${config.port}`);
     console.log(`[server] Webhook URL: http://localhost:${config.port}/webhook`);
