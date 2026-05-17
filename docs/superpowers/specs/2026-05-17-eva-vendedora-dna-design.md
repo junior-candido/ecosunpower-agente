@@ -42,6 +42,7 @@ Integrar ao system prompt existente da Eva (em `src/prompts/` / `src/modules/bra
 - 5 frases-chave da marca (usar naturalmente, não decoradamente).
 - Adaptação por segmento (residencial=patrimônio familiar / comercial=ativo CNPJ / industrial=ESG+competitividade / agro=autonomia operacional).
 - Mecânica: 1 pergunta por vez, ≤1 emoji, toda msg termina em pergunta/ação, espelha tom, sem jargão, entrega valor antes de pedir.
+- **Proatividade (nunca fica muda):** se o cliente esfria/para de responder DENTRO da conversa, a Eva não morre no vácuo — ela retoma com munição forte: novo ângulo de valor (pilares), notícia/tema relevante (tarifa subindo, Lei 14.300, mercado), pergunta provocativa, ou leveza/humor **quando o tom do cliente permite**. Sempre reabre puxando pro próximo passo (agendar visita/Meet). Guardrail: persistente ≠ chato — respeita opt-out "Sair", lê desinteresse claro, humor só espelhando o tom dele (nunca infantil/forçado, nunca abala credibilidade do Responsável Técnico). A cadência entre sessões (Sub-projeto 2) reutiliza esta persona/munição.
 
 ### Camada 2 — Gatilhos de escalonamento (lógica)
 Eva interrompe o fluxo e notifica o Junior imediatamente quando: cliente quer fechar urgente ("hoje/essa semana/já decidi"), conta > R$15.000/mês ou múltiplas UCs, concorrente com proposta na mão, pergunta técnica que o RAG não cobre com segurança, hostilidade/irritação, lead estratégico. Reconciliar/estender a detecção de **lead-quente** já existente (não duplicar).
@@ -77,7 +78,7 @@ Recuperado por similaridade conforme o contexto da conversa (RAG já em prod).
 
 ## Fora de escopo (decomposto pra ciclo próprio)
 
-- **Sub-projeto 2 — Reengajamento/cadência (ponto "d")**: mecanismo diferente (timing+templates), brainstorm separado depois.
+- **Sub-projeto 2 — Cadência ENTRE sessões (ponto "d")**: motor de timing/multi-toque quando o lead some por dias / fora da janela 24h / templates. JÁ EXISTE PARCIAL em prod (schedulers `cadence`/`hotlead`/`reengagement-cadence`, template `reativacao_lead_v1`) — Eva não está muda hoje. Sub-projeto 2 = afiar esse motor; ele **reutiliza a persona/munição do Sub-projeto 1**. Brainstorm separado depois. (Proatividade DENTRO da conversa é Sub-projeto 1, ver Camada 1.)
 - **Sub-projeto 3 — Fontes de conhecimento automáticas** (pedido Junior 17/05): (a) **artigo do blog → RAG** — hook pequeno, replica o padrão `syncFile` já construído pro `canal-solar.md` (T10); baixo risco. (b) **ABSOLAR / boletins informativos → RAG** — scraper próprio de fonte oficial; peso real (ToS/direitos autorais — extrair fato + atribuir, nunca copiar boletim inteiro; parsing; agendamento; dedupe). Arquitetura atual (RAG + inbox + precedente `syncFile`) já suporta barato. Ciclo próprio, NÃO neste escopo — não atrasar a Eva vendedora.
 - Datasheets/engenharia: descartado (Junior usa Projeto ChatGPT/Claude — ver [[decisao-nao-construir-agente-engenharia-separado]]).
 
