@@ -3050,6 +3050,51 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         break;
       }
 
+      case 'disqualify_lead': {
+        // Lead ON-TOPIC (energia/conta) mas inviavel/vulneravel: baixa renda,
+        // tarifa social, conta << criterio R$700/700kWh. NAO e troll — por
+        // isso status/contact_type/notificacao distintos do mark_off_topic.
+        // Mesmo efeito funcional: eva_active=false (gate 2299 para a Eva) +
+        // opt_out + cancela toques. Eva manda 1 msg digna e cala.
+        const { buildDisqualifyPlan } = await import('./modules/lead-disqualify.js');
+        const dqReason = (action.data as Record<string, unknown> | undefined)?.reason as string | undefined ?? 'lead fora do criterio (R$700/700kWh) ou vulneravel';
+        // Fetch UMA vez (id imutavel) e reusa pra nome + botoes — parity com
+        // mark_off_topic, sem round-trip extra de DB nesse path terminal.
+        const dqLead = await supabase.getLeadByPhone(from);
+        const { leadPatch, notifyBody } = buildDisqualifyPlan({
+          reason: dqReason,
+          leadName: dqLead?.name,
+          phone: from,
+        });
+        await supabase.getClient()
+          .from('leads')
+          .update(leadPatch)
+          .eq('phone', from);
+        await supabase.cancelCadence(leadId, 'disqualify_lead').catch(() => {});
+        await reengagement.cancelAllTouches(leadId).catch(() => 0);
+        if (postInstall) await postInstall.cancelAll(leadId).catch(() => 0);
+        if (!isSandbox) {
+          if (metaWaba && dqLead?.id) {
+            try {
+              await metaWaba.sendInteractiveButtons(
+                config.engineerPhone,
+                notifyBody.slice(0, 1024),
+                [
+                  { id: `evabt:lead-view:${dqLead.id}`, title: '👤 Ver perfil' },
+                  { id: `evabt:lead-resume:${dqLead.id}`, title: '↩️ Desfazer' },
+                ],
+              );
+            } catch {
+              await sendText(config.engineerPhone, notifyBody);
+            }
+          } else {
+            await sendText(config.engineerPhone, notifyBody);
+          }
+        }
+        console.log(`[action] disqualify_lead registrado pra ${from}: ${dqReason}`);
+        break;
+      }
+
       case 'mark_review_confirmed': {
         // Eva detectou que o cliente ja avaliou no Google. Cancela toques
         // pendentes de review e marca timestamp no lead.
