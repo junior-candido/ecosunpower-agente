@@ -78,6 +78,7 @@ Recuperado por similaridade conforme o contexto da conversa (RAG já em prod).
 ## Fora de escopo (decomposto pra ciclo próprio)
 
 - **Sub-projeto 2 — Reengajamento/cadência (ponto "d")**: mecanismo diferente (timing+templates), brainstorm separado depois.
+- **Sub-projeto 3 — Fontes de conhecimento automáticas** (pedido Junior 17/05): (a) **artigo do blog → RAG** — hook pequeno, replica o padrão `syncFile` já construído pro `canal-solar.md` (T10); baixo risco. (b) **ABSOLAR / boletins informativos → RAG** — scraper próprio de fonte oficial; peso real (ToS/direitos autorais — extrair fato + atribuir, nunca copiar boletim inteiro; parsing; agendamento; dedupe). Arquitetura atual (RAG + inbox + precedente `syncFile`) já suporta barato. Ciclo próprio, NÃO neste escopo — não atrasar a Eva vendedora.
 - Datasheets/engenharia: descartado (Junior usa Projeto ChatGPT/Claude — ver [[decisao-nao-construir-agente-engenharia-separado]]).
 
 ## Critério de sucesso
