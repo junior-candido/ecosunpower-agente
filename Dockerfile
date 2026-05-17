@@ -24,7 +24,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
 
 # Copia package files e instala TODAS deps (incluindo dev pra ter tsc + @types).
 COPY package*.json ./
-RUN npm install --include=dev && chown -R pptruser:pptruser /app
+# --legacy-peer-deps: openai@4 declara peerOptional zod@^3 (helpers zod, nao usados),
+# conflita com zod@4 do projeto. npm strict falha; o peer eh OPCIONAL e nao usado.
+RUN npm install --include=dev --legacy-peer-deps && chown -R pptruser:pptruser /app
 
 # Garante que o Chrome compativel com a versao EXATA do puppeteer instalado
 # esta presente no cache do pptruser. Sem isso, a imagem base pode trazer um
