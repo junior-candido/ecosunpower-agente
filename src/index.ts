@@ -2396,8 +2396,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       //     hardcoded em ctwa-template-mapping.ts. Permite A/B por anuncio.
       //  2. DB mapping por campaign_id (marketing_campaigns.template_inicial)
       //     — usado quando lead nao veio de anuncio mas tem campaign_id legado.
-      //  3. Default global `eva_qualificacao_v1` (UTILITY, aprovado Meta
-      //     15/05) — lead sem anuncio nem campanha. TODOS os templates
+      //  3. Default global `eva_qualificacao_v1` — lead sem anuncio nem
+      //     campanha. Se nao estiver aprovado na Meta (erro 132001), cai
+      //     no fallback `reativacao_lead_v1` (aprovado). TODOS os templates
       //     roteados aqui usam 1 var de body {{1}}=primeiro nome.
       if (metaWaba) {
         const isNewSession = conversation.message_count === 0;
@@ -2420,12 +2421,32 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           // lead de anuncio ficava sem auto-ack). Fallback "tudo bem" igual
           // ao reativacao_lead_v1.
           const ackFirstName = (lead?.name ?? '').split(' ')[0] || 'tudo bem';
-          metaWaba
-            .sendTemplate(from, templateName, 'pt_BR', [
-              { type: 'body', parameters: [{ type: 'text', text: ackFirstName }] },
-            ])
-            .then(() => console.log(`[auto-ack] Template ${templateName} enviado pra ${from} lead=${leadId} (${reason}, ad_id=${adId ?? 'none'})`))
-            .catch((err: Error) => console.warn(`[auto-ack] Template send falhou pra ${from} lead=${leadId} template=${templateName}: ${err.message}`));
+          // Fallback: se o template (default/CTWA/campanha) nao estiver
+          // aprovado na Meta (erro 132001 "does not exist"), usa o
+          // `reativacao_lead_v1` (aprovado). Mesmo padrao da cadencia
+          // (cadence.ts). Fire-and-forget — nunca bloqueia o processamento.
+          void (async () => {
+            try {
+              await metaWaba.sendTemplate(from, templateName, 'pt_BR', [
+                { type: 'body', parameters: [{ type: 'text', text: ackFirstName }] },
+              ]);
+              console.log(`[auto-ack] Template ${templateName} enviado pra ${from} lead=${leadId} (${reason}, ad_id=${adId ?? 'none'})`);
+            } catch (err) {
+              const isUnknownTemplate = /\b132001\b|does not exist/i.test((err as Error).message);
+              if (templateName !== 'reativacao_lead_v1' && isUnknownTemplate) {
+                try {
+                  await metaWaba.sendTemplate(from, 'reativacao_lead_v1', 'pt_BR', [
+                    { type: 'body', parameters: [{ type: 'text', text: ackFirstName }] },
+                  ]);
+                  console.log(`[auto-ack] ${templateName} indisponivel, fallback reativacao_lead_v1 enviado pra ${from} lead=${leadId} (${reason})`);
+                } catch (err2) {
+                  console.warn(`[auto-ack] fallback reativacao_lead_v1 tambem falhou pra ${from} lead=${leadId}: ${(err2 as Error).message}`);
+                }
+              } else {
+                console.warn(`[auto-ack] Template send falhou pra ${from} lead=${leadId} template=${templateName}: ${(err as Error).message}`);
+              }
+            }
+          })();
         }
       }
 
