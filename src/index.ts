@@ -2631,8 +2631,13 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       // 1x/lead/motivo/dia. Fire-and-forget: nunca bloqueia nem quebra o fluxo.
       void (async () => {
         try {
-          const { motivoEscalonamento, alertEscalonamento } = await import('./modules/eva-alerts.js');
+          const { motivoEscalonamento, alertEscalonamento, leadEncerrado } = await import('./modules/eva-alerts.js');
           const freshEscal = await supabase.getLeadByPhone(from);
+          // Lead desqualificado/encerrado NESTE turno (disqualify_lead seta
+          // eva_active=false/descartado/inviavel) -> NAO escalar: senao o Junior
+          // recebe "Eva pediu reforco" contradizendo "Eva encerrou lead inviavel
+          // com dignidade". Espelha o gate eva_active do handler.
+          if (leadEncerrado(freshEscal)) return;
           const ed = (freshEscal?.energy_data ?? {}) as Record<string, unknown>;
           const contaMensal = typeof ed.monthly_bill === 'number'
             ? ed.monthly_bill

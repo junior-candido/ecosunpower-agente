@@ -271,6 +271,22 @@ export function motivoEscalonamento(args: { text: string; contaMensal?: number }
   return null;
 }
 
+/**
+ * Guard cross-layer: lead já desqualificado/encerrado (disqualify_lead seta
+ * eva_active=false / status='descartado' / contact_type='inviavel') NÃO deve
+ * gerar alerta de escalonamento — senão o Junior recebe "Eva pediu reforço"
+ * contraditório logo após "Eva encerrou lead inviável com dignidade".
+ * Espelha o gate eva_active do index.ts. lead ausente => não bloqueia.
+ */
+export function leadEncerrado(
+  lead: { eva_active?: boolean | null; status?: string | null; contact_type?: string | null } | null | undefined,
+): boolean {
+  if (!lead) return false;
+  return lead.eva_active === false
+    || lead.status === 'descartado'
+    || lead.contact_type === 'inviavel';
+}
+
 interface HotLead {
   id: string;
   name: string | null;
