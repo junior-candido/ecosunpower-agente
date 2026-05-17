@@ -246,6 +246,26 @@ export function hotLeadTier(
   return '🔵 FRIO';
 }
 
+export type MotivoEscalonamento =
+  | 'urgencia' | 'conta_alta' | 'concorrente' | 'hostilidade' | 'estrategico';
+
+/**
+ * Gatilhos do Sub-projeto 1 (spec 2026-05-17): a Eva deve interromper o fluxo
+ * e notificar o Junior imediatamente. Complementa a rede de hot-lead por dados
+ * (não substitui). Retorna o motivo ou null.
+ */
+export function motivoEscalonamento(args: { text: string; contaMensal?: number }): MotivoEscalonamento | null {
+  const t = (args.text ?? '').toLowerCase();
+  // NB: o stem `decidid` (decidido/decidida) NAO pode ter \b no fim — `decidido`
+  // continua com `o` (word char), entao \b apos `decidid` nunca casaria. Por isso
+  // o grupo nao usa \b final (o leading \b basta pra evitar match no meio de palavra).
+  if (/\b(quero fechar|fechar hoje|fechar agora|j[áa] (t[ôo]|estou) decidid|decidir essa semana|bora fechar)/.test(t)) return 'urgencia';
+  if ((args.contaMensal ?? 0) >= 15000 || /\bm[úu]ltiplas? (unidades|ucs|filiais|lojas)\b/.test(t)) return 'conta_alta';
+  if (/\b(proposta|or[çc]amento) (da|de) (outra|concorrente|empresa)\b|j[áa] tenho (uma )?proposta\b/.test(t)) return 'concorrente';
+  if (/\b(golpe|enganaç|enrola[çr]|para de me encher|n[ãa]o me perturb|absurdo|palha[çc]ada)\b/.test(t)) return 'hostilidade';
+  return null;
+}
+
 interface HotLead {
   id: string;
   name: string | null;
@@ -372,6 +392,62 @@ export async function sweepStuckHotLeads(
     console.log(`[alerts] sweepStuckHotLeads: ${fired} lead(s) quente(s) parado(s) alertado(s)`);
   }
   return fired;
+}
+
+const MOTIVO_LABEL: Record<MotivoEscalonamento, string> = {
+  urgencia: '⏰ Cliente com URGÊNCIA — quer fechar agora',
+  conta_alta: '🐋 Conta ALTA / múltiplas unidades — baleia',
+  concorrente: '⚔️ Cliente cotou com CONCORRENTE',
+  hostilidade: '🛑 Cliente HOSTIL / desconfiado',
+  estrategico: '🎯 Lead ESTRATÉGICO',
+};
+
+/**
+ * 🚨 ALERTA imediato de ESCALONAMENTO (Sub-projeto 1 — Eva Vendedora DNA).
+ * Reusa o MESMO canal de notificação do hot-lead backstop (sendAdminWithButtons
+ * pro engineerPhone, mesmos botões Ver perfil / Assumir). Idempotente 1x por
+ * lead+motivo+dia pra nao spammar. Best-effort: nunca quebra o fluxo.
+ */
+export async function alertEscalonamento(
+  ctx: AlertContext,
+  lead: { id: string; name: string | null; phone: string },
+  motivo: MotivoEscalonamento,
+  trechoMensagem?: string,
+): Promise<boolean> {
+  const dia = new Date().toISOString().slice(0, 10);
+  const lockKey = `alert_escal_${lead.id}_${motivo}_${dia}`;
+  if (!(await acquireAlertLock(ctx.client, lockKey))) return false;
+
+  const nome = lead.name ?? 'Lead sem nome';
+  const tel = formatPhoneShort(lead.phone);
+  const trecho = (trechoMensagem ?? '').trim();
+  const text = [
+    `🚨 *Escalonamento — Eva pediu reforço*`,
+    ``,
+    MOTIVO_LABEL[motivo],
+    ``,
+    `${nome} — ${tel}`,
+    trecho ? `\n_"${trecho.slice(0, 200)}"_` : ``,
+    ``,
+    `Eva continua atendendo, mas esse caso pede sua atenção agora.`,
+  ].filter(l => l !== ``).join('\n');
+
+  try {
+    await sendAdminWithButtons(
+      { metaWaba: ctx.metaWaba ?? null, sendText: ctx.sendText },
+      ctx.engineerPhone,
+      text,
+      [
+        { id: `evabt:lead-view:${lead.id}`, title: '👤 Ver perfil' },
+        { id: `evabt:lead-pause:${lead.id}`, title: '✋ Assumir' },
+      ],
+    );
+    console.log(`[escal] escalonamento (${motivo}) disparado pra lead ${lead.id}`);
+    return true;
+  } catch (err) {
+    console.warn(`[escal] falha ao enviar escalonamento:`, (err as Error).message);
+    return false;
+  }
 }
 
 export type { AlertKind, AlertContext };

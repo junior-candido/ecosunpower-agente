@@ -2623,6 +2623,34 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         }
       }
 
+      // Gatilhos de ESCALONAMENTO (Sub-projeto 1 — Eva Vendedora DNA).
+      // Roda DEPOIS da rede de hot-lead por dados (que dispara no update_lead
+      // acima) e a COMPLEMENTA: detecta urgencia/conta-alta/concorrente/
+      // hostilidade no texto do cliente e avisa o Junior NA HORA pelo MESMO
+      // canal do hot-lead (sendAdminWithButtons -> engineerPhone). Idempotente
+      // 1x/lead/motivo/dia. Fire-and-forget: nunca bloqueia nem quebra o fluxo.
+      void (async () => {
+        try {
+          const { motivoEscalonamento, alertEscalonamento } = await import('./modules/eva-alerts.js');
+          const freshEscal = await supabase.getLeadByPhone(from);
+          const ed = (freshEscal?.energy_data ?? {}) as Record<string, unknown>;
+          const contaMensal = typeof ed.monthly_bill === 'number'
+            ? ed.monthly_bill
+            : Number(String(ed.monthly_bill ?? '').replace(',', '.')) || undefined;
+          const motivo = motivoEscalonamento({ text, contaMensal });
+          if (motivo && freshEscal) {
+            await alertEscalonamento(
+              { client: supabase.getClient(), engineerPhone: config.engineerPhone, sendText, metaWaba: metaWaba ?? null },
+              { id: freshEscal.id, name: freshEscal.name ?? null, phone: from },
+              motivo,
+              text,
+            );
+          }
+        } catch (err) {
+          console.warn('[escal] gatilho de escalonamento falhou:', (err as Error).message);
+        }
+      })().catch(() => {});
+
       await supabase.logEvent('info', 'brain', `Processed message from ${from}`, {
         lead_id: leadId,
         is_new: isNewLead,
