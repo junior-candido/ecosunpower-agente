@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { buildSystemBlocks } from './system-blocks.js';
 
 interface MessageEntry {
   role: 'user' | 'assistant';
@@ -68,7 +69,16 @@ export class Brain {
     summary: string | null,
     qualificationStep: string
   ): Promise<BrainResponse> {
-    const systemContent = this.buildSystemContent(knowledgeBase, summary, qualificationStep);
+    // review_link substituido aqui (estavel por processo) -> prefixo cacheavel.
+    const stableSystem = this.systemPrompt.replaceAll('{{review_link}}', this.reviewLink);
+    const system = buildSystemBlocks({
+      systemPrompt: stableSystem,
+      knowledgeBase,
+      residencialPrompt: this.residencialPrompt,
+      qualificationStep,
+      summary,
+      now: new Date(),
+    });
 
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
       ...history,
@@ -78,7 +88,7 @@ export class Brain {
     const response = await this.client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
-      system: systemContent,
+      system,
       messages,
     });
 
@@ -96,44 +106,6 @@ export class Brain {
       action: actions[0] ?? null,
       actions,
     };
-  }
-
-  private buildSystemContent(
-    knowledgeBase: string,
-    summary: string | null,
-    qualificationStep: string
-  ): string {
-    // Substitui placeholder do link de avaliacao no Google. Se nao tiver
-    // configurado (env GOOGLE_REVIEW_URL), substitui por string vazia — Eva
-    // aprende pelo prompt que nao tem link disponivel.
-    let content = this.systemPrompt.replaceAll('{{review_link}}', this.reviewLink);
-
-    content += '\n\n## Base de Conhecimento da Ecosunpower\n\n' + knowledgeBase;
-
-    if (qualificationStep.includes('residencial') || qualificationStep === 'inicio') {
-      content += '\n\n' + this.residencialPrompt;
-    }
-
-    if (summary) {
-      content += '\n\n## Resumo da conversa anterior\n' + summary;
-    }
-
-    content += `\n\n## Estado atual da qualificacao: ${qualificationStep}`;
-
-    const now = new Date();
-    const brtFormatter = new Intl.DateTimeFormat('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      weekday: 'long',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-    content += `\n\n## Data e hora atual (Brasilia)\n${brtFormatter.format(now)}`;
-    content += `\nData ISO: ${now.toISOString()}`;
-
-    return content;
   }
 
   parseAction(responseText: string): ActionPayload | null {
