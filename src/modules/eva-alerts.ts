@@ -246,6 +246,8 @@ export function hotLeadTier(
   return '🔵 FRIO';
 }
 
+// 'estrategico' reservado p/ marcacao manual do caller (lead estrategico) —
+// motivoEscalonamento NAO o emite (nao ha heuristica de texto confiavel).
 export type MotivoEscalonamento =
   | 'urgencia' | 'conta_alta' | 'concorrente' | 'hostilidade' | 'estrategico';
 
@@ -256,6 +258,9 @@ export type MotivoEscalonamento =
  */
 export function motivoEscalonamento(args: { text: string; contaMensal?: number }): MotivoEscalonamento | null {
   const t = (args.text ?? '').toLowerCase();
+  // Heuristica PROPOSITALMENTE larga: falso-positivo custa so 1 ping extra
+  // contextualizado pro Junior (com o trecho do cliente) — preferimos isso a
+  // PERDER sinal de venda. Nao apertar pra "precisao" sem dado real.
   // NB: o stem `decidid` (decidido/decidida) NAO pode ter \b no fim — `decidido`
   // continua com `o` (word char), entao \b apos `decidid` nunca casaria. Por isso
   // o grupo nao usa \b final (o leading \b basta pra evitar match no meio de palavra).

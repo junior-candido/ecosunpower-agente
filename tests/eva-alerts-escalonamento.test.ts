@@ -18,4 +18,8 @@ describe('motivoEscalonamento', () => {
   it('conversa normal NÃO escala', () => {
     expect(motivoEscalonamento({ text: 'quanto economizo por mês?', contaMensal: 900 })).toBeNull();
   });
+  it('first-match-wins: urgência tem prioridade sobre hostilidade', () => {
+    // mensagem casa urgencia E hostilidade; ordem dos ifs decide -> urgencia
+    expect(motivoEscalonamento({ text: 'isso é golpe mas quero fechar agora' })).toBe('urgencia');
+  });
 });
