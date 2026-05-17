@@ -206,21 +206,19 @@ export async function ingestCanalSolar(knowledgeDir: string, force = false): Pro
 
   // RAG: re-embeda só esse arquivo (mudou em runtime, sem deploy)
   try {
-    const openaiApiKey = process.env.OPENAI_API_KEY;
-    if (openaiApiKey) {
+    const { loadConfig } = await import('../config.js');
+    const { SupabaseService } = await import('./supabase.js');
+    const cfg = loadConfig();
+    if (cfg.openaiApiKey) {
       const { makeClient, embedTexts } = await import('./rag/embeddings.js');
       const { syncFile } = await import('./rag/ingest.js');
-      const { createClient } = await import('@supabase/supabase-js');
-      const supabase = createClient(
-        process.env.SUPABASE_URL ?? '',
-        process.env.SUPABASE_SERVICE_KEY ?? '',
-      );
-      const cli = makeClient(openaiApiKey);
+      const supabase = new SupabaseService(cfg).getClient();
+      const cli = makeClient(cfg.openaiApiKey!);
       await syncFile(knowledgeDir, 'especializado/canal-solar.md',
         supabase, (t) => embedTexts(t, cli));
       console.log('[rag] canal-solar.md re-embedado pós-scraper');
     }
-  } catch (e) { console.warn('[rag] re-embed canal-solar falhou:', e); }
+  } catch (e) { console.warn('[rag] re-embed canal-solar falhou:', (e as Error).message); }
 
   return { articlesFetched: articles.length, outputPath, skipped: false };
 }
