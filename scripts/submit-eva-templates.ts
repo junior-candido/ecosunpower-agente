@@ -28,15 +28,15 @@ if (!BUSINESS_ACCOUNT_ID || !TOKEN) {
   process.exit(1);
 }
 
+type TemplateComponent =
+  | { type: 'BODY' | 'FOOTER'; text: string; example?: { body_text: string[][] } }
+  | { type: 'BUTTONS'; buttons: Array<{ type: 'QUICK_REPLY'; text: string }> };
+
 interface TemplatePayload {
   name: string;
   language: string;
   category: 'UTILITY' | 'MARKETING';
-  components: Array<{
-    type: 'BODY' | 'FOOTER';
-    text: string;
-    example?: { body_text: string[][] };
-  }>;
+  components: TemplateComponent[];
 }
 
 const templates: TemplatePayload[] = [
@@ -62,7 +62,7 @@ const templates: TemplatePayload[] = [
       {
         type: 'BODY',
         text:
-          '{{1}}, sabia que dá pra trocar a conta de luz por uma parcela MENOR e ficar com o sistema seu pra sempre? Eva aqui, da EcoSunPower ☀️\n\n' +
+          'Oi {{1}}, sabia que dá pra trocar a conta de luz por uma parcela MENOR e ficar com o sistema seu pra sempre? Eva aqui, da EcoSunPower ☀️\n\n' +
           'Pra te mostrar quanto fica no seu caso, me responde só uma coisa: sua conta de luz hoje fica em torno de quanto?',
         example: { body_text: [['Junior']] },
       },
@@ -76,10 +76,16 @@ const templates: TemplatePayload[] = [
       {
         type: 'BODY',
         text:
-          '{{1}}, Eva da EcoSunPower 👋\n\n' +
+          'Oi {{1}}, Eva da EcoSunPower 👋\n\n' +
           'Vou ser honesta: você é o tipo de cliente com perfil pra fechar e ainda não fechou. Algo te travou?\n\n' +
-          'Me responde aqui o que falta pra você decidir. Se não tiver mais interesse, manda "Sair" que eu paro de te chamar.',
+          'Me responde aqui o que falta pra você decidir — ou toca em "Sair" se não quiser mais que eu te chame.',
         example: { body_text: [['Junior']] },
+      },
+      // Quick reply "Sair": opt-out automatico — handler tryHandleClienteOptOut
+      // (index.ts) reconhece o texto "Sair" do botao e marca opt_out.
+      {
+        type: 'BUTTONS',
+        buttons: [{ type: 'QUICK_REPLY', text: 'Sair' }],
       },
     ],
   },
@@ -89,7 +95,12 @@ async function submitTemplate(t: TemplatePayload): Promise<void> {
   const url = `${GRAPH}/${BUSINESS_ACCOUNT_ID}/message_templates`;
 
   console.log(`\n=== ${t.name} (${t.category}) ===`);
-  console.log(t.components[0].text);
+  const bodyComp = t.components.find((c) => c.type === 'BODY');
+  if (bodyComp && 'text' in bodyComp) console.log(bodyComp.text);
+  const btnComp = t.components.find((c) => c.type === 'BUTTONS');
+  if (btnComp && 'buttons' in btnComp) {
+    console.log(`[botoes] ${btnComp.buttons.map((b) => `${b.type}:"${b.text}"`).join(', ')}`);
+  }
 
   if (DRY) {
     console.log('[dry-run] payload completo:');
