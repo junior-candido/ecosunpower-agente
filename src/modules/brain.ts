@@ -3,6 +3,7 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { buildSystemBlocks } from './system-blocks.js';
+import { formatCacheUsage } from './cache-log.js';
 
 interface MessageEntry {
   role: 'user' | 'assistant';
@@ -91,6 +92,9 @@ export class Brain {
       system,
       messages,
     });
+
+    // Prova do prompt caching em prod (commit 71c8583).
+    console.log(formatCacheUsage(response.usage));
 
     const text = response.content
       .filter((block): block is Anthropic.TextBlock => block.type === 'text')
