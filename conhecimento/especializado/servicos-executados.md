@@ -124,7 +124,7 @@ trabalha?" ou equivalentes.
   SolarEdge).
 - Preferencia por micro inversores na maioria dos projetos, trazendo maior
   seguranca, monitoramento individual por painel e facilidade de expansao.
-- Garantia de 5 anos no servico de instalacao Ecosunpower (alem das garantias
+- Garantia de 12 meses no servico de instalacao Ecosunpower (alem das garantias
   de fabrica dos equipamentos).
 - Estrutura de fixacao em aluminio anodizado com garantia de 25 anos contra
   corrosao.

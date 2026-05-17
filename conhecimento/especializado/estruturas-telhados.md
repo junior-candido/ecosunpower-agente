@@ -64,7 +64,7 @@ Quando o cliente perguntar sobre o telhado:
 - Se ceramica/fibrocimento: "A gente usa parafuso estrutural fixado direto na madeira do telhado, com vedacao. Fica firme e seguro!"
 - Se metalica/sanduiche: "Otimo! Pra telha sanduiche a gente usa o sistema L com trilho — e o mais seguro e o que da menos vazamento! 👌"
 - Se laje: "Laje e otimo! A gente instala uma base com inclinacao ideal pra pegar mais sol"
-- Se preocupado com vazamento: "Fique tranquilo! A Ecosunpower usa as melhores tecnicas de fixacao e vedacao. Temos garantia de 5 anos no servico de instalacao!"
+- Se preocupado com vazamento: "Fique tranquilo! A Ecosunpower usa as melhores tecnicas de fixacao e vedacao. Temos garantia de 12 meses no servico de instalacao!"
 
 ## Cuidados importantes
 - Verificar estado da madeira/estrutura antes de instalar

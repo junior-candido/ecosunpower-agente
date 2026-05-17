@@ -44,7 +44,7 @@ Resposta: sem problema, mas adiar custa — a cada mês sem sistema, você paga 
 Conduz: "quer ver o impacto de adiar 6 meses?"
 
 ## "Medo de dar problema e ficar sem suporte"
-Resposta: cuidado válido. Ecosunpower monitora remoto, 5 anos de garantia de instalação, atende via WhatsApp.
+Resposta: cuidado válido. Ecosunpower monitora remoto, garantia de 12 meses na instalação (equipamentos seguem garantia do fabricante), atende via WhatsApp.
 Conduz: "posso te mostrar nosso pós-venda em detalhe."
 
 ## "Não entendo nada disso"

@@ -9,7 +9,7 @@
 - Painéis solares: 25 anos de garantia de performance (mínimo 80% da potência)
 - Inversores: 10 a 15 anos de garantia (dependendo da marca)
 - Estrutura de fixação: 25 anos contra corrosão
-- Serviço de instalação: 5 anos de garantia Ecosunpower
+- Serviço de instalação: 12 meses de garantia Ecosunpower
 
 ## Manutenção
 - Limpeza dos painéis: recomendada 2-3 vezes por ano
