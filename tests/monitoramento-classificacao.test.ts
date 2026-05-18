@@ -59,4 +59,23 @@ describe('classificarSistema', () => {
     const r = classificarSistema({ ...base, potenciaKwp: null, diasSemGeracao: 0, realUltimos7: 0 });
     expect(r.nivel).toBe('ok');
   });
+
+  it('boundary: exatamente 70% do esperado NÃO dispara aviso (limiar é < 0.70)', () => {
+    const r = classificarSistema({ ...base, diasSemGeracao: 0, realUltimos7: 291.2 * 0.70 });
+    expect(r.nivel).toBe('ok');
+    expect(r.alerta).toBeNull();
+  });
+
+  it('boundary: exatamente 110% do esperado NÃO dispara info (limiar é > 1.10)', () => {
+    const r = classificarSistema({ ...base, diasSemGeracao: 0, realUltimos7: 291.2 * 1.10 });
+    expect(r.nivel).toBe('ok');
+    expect(r.alerta).toBeNull();
+  });
+
+  it('erro_integracao: texto completo do alerta (zero-regressão de texto)', () => {
+    const r = classificarSistema({ ...base, ultimoErro: 'Deye 403', diasSemGeracao: 0, realUltimos7: 50 });
+    expect(r.alerta).toEqual({
+      tipo: 'erro_integracao', severidade: 'urgente', texto: 'Erro de integração: Deye 403',
+    });
+  });
 });
