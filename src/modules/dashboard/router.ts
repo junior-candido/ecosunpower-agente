@@ -801,6 +801,38 @@ export function createDashboardRouter(
     }
   });
 
+  // Gera o Relatorio da Usina sob demanda (gancho do botao da tela S1).
+  // Cria slug novo (link compartilhavel) + QR. NAO envia a ninguem (envio
+  // ao cliente = S4). Modo 'acompanhamento' (uso do Junior).
+  router.post('/monitoramento/:id/relatorio', async (req: Request, res: Response) => {
+    try {
+      const { gerarRelatorio } = await import('../monitoring/relatorio/gerar.js');
+      const { htmlToPdf, gerarQrCodeDataUrl } = await import('../proposal/pdf-generator.js');
+      const id = String(req.params.id ?? '');
+      const r = await gerarRelatorio({
+        getDetalhe: (sid: string) => monitoringService.getDetalheSistema(sid),
+        criarSlug: (sid: string) => supabaseService.criarRelatorioSlug(sid),
+        htmlToPdf,
+        gerarQr: gerarQrCodeDataUrl,
+        baseUrl: process.env.PUBLIC_BASE_URL ?? 'https://propostas.ecosunpower.eng.br',
+      }, id, 'acompanhamento');
+      if (!r.ok) {
+        return res.status(500).send(`<h2>Erro ao gerar relatório</h2><pre>${r.reason}</pre><a href="/dashboard/monitoramento">← voltar</a>`);
+      }
+      res.type('text/html').send(`<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;max-width:520px;margin:40px auto;text-align:center">
+        <h2>Relatório gerado ✅</h2>
+        <p>Link público (TTL 60 dias):</p>
+        <p><a href="${r.publicUrl}">${r.publicUrl}</a></p>
+        <img src="${r.qrDataUrl}" alt="QR" style="width:180px;height:180px">
+        <p><a href="${r.publicUrl}?pdf=1">Baixar PDF</a></p>
+        <p style="color:#64748b;font-size:13px">Este relatório NÃO foi enviado a ninguém — é só pra você. (Envio ao cliente = S4)</p>
+        <p><a href="/dashboard/monitoramento">← voltar ao monitoramento</a></p></body>`);
+    } catch (err) {
+      console.error('[dashboard/relatorio]', err);
+      res.status(500).send(`<h2>Erro</h2><pre>${(err as Error).message}</pre>`);
+    }
+  });
+
   // Manutencao: lembretes pendentes nos proximos 30 dias.
   router.get('/manutencao', async (_req: Request, res: Response) => {
     try {

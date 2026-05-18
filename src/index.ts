@@ -5293,6 +5293,36 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     }
   });
 
+  // Pagina publica do Relatorio da Usina (S3). Slug nao-enumeravel, TTL 60d.
+  // Regenera HTML fresco a cada acesso (relatorio sempre atualizado).
+  // ?pdf=1 -> baixa o PDF. NAO cria slug novo (so consome o existente).
+  app.get('/r/:slug', async (req, res) => {
+    try {
+      const slug = String(req.params.slug ?? '');
+      const { resolverRelatorioSlug } = await import('./modules/monitoring/relatorio/resolver.js');
+      const r = await resolverRelatorioSlug({ getSlug: (s) => supabase.getRelatorioSlug(s) }, slug);
+      if (r.status !== 'ok') {
+        return res.status(r.status === 'expirado' ? 410 : 404).type('text/html')
+          .send(propostaErrorHtml(r.status === 'expirado' ? 'expired' : 'not_found'));
+      }
+      const { montarDadosRelatorio } = await import('./modules/monitoring/relatorio/dados.js');
+      const { renderRelatorioHtml } = await import('./modules/monitoring/relatorio/template.js');
+      const d = await montarDadosRelatorio(
+        { getDetalhe: (id) => monitoringService.getDetalheSistema(id) }, r.sistemaId, 'acompanhamento');
+      if ('erro' in d) return res.status(500).type('text/html').send(propostaErrorHtml('error'));
+      if (req.query.pdf === '1') {
+        const { htmlToPdf } = await import('./modules/proposal/pdf-generator.js');
+        const pdf = await htmlToPdf(renderRelatorioHtml(d, 'acompanhamento'));
+        res.type('application/pdf').set('Content-Disposition', 'inline; filename="relatorio.pdf"').send(pdf);
+        return;
+      }
+      res.type('text/html').send(renderRelatorioHtml(d, 'acompanhamento'));
+    } catch (err) {
+      console.error('[relatorio-publico]', err);
+      res.status(500).type('text/html').send(propostaErrorHtml('error'));
+    }
+  });
+
   // Pagina publica de Politica de Privacidade pra uso nos Lead Ads da Meta.
   // LGPD (Lei 13.709/2018) exige transparencia sobre coleta/uso de dados.
   // URL publica: /privacidade (usar no campo do Meta Lead Form)
