@@ -1,6 +1,6 @@
 // tests/monitoramento-render.test.ts
 import { describe, it, expect } from 'vitest';
-import { renderMonitoramentoPage } from '../src/modules/dashboard/views.js';
+import { renderMonitoramentoPage, renderLayout } from '../src/modules/dashboard/views.js';
 
 const rows = [
   { id: '1', apelido: 'Casa Silva', cidade: 'Brasília', uf: 'DF', marca_inversor: 'deye',
@@ -43,5 +43,14 @@ describe('renderMonitoramentoPage (smoke)', () => {
     }
     // Double-confirm (D1a) preservado, agora genérico.
     expect(html).toContain('Confirma de novo: excluir esta usina permanentemente?');
+  });
+});
+
+describe('renderLayout tema escuro', () => {
+  it('aplica fundo escuro no body (não branco) e preserva o conteúdo', () => {
+    const html = renderLayout({ active: 'home', title: 'X', body: '<p>oi</p>' } as any);
+    expect(html).toMatch(/bg-slate-9\d0|bg-\[#0|from-slate-900|#020617/);
+    expect(html).toContain('<p>oi</p>');
+    expect(html).not.toContain('#f8fafc');
   });
 });

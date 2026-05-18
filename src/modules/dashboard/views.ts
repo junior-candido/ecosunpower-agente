@@ -117,9 +117,10 @@ export function renderLayout(input: LayoutInput): string {
   }
   .ecosun-body {
     background:
-      radial-gradient(ellipse at top left, rgba(14, 165, 233, 0.08), transparent 50%),
-      radial-gradient(ellipse at bottom right, rgba(245, 158, 11, 0.05), transparent 50%),
-      #f8fafc;
+      radial-gradient(1200px 600px at 50% -10%, rgba(56, 189, 248, 0.10), transparent 60%),
+      radial-gradient(ellipse at bottom right, rgba(245, 158, 11, 0.06), transparent 50%),
+      #020617;
+    color: #e2e8f0;
     min-height: 100vh;
   }
   .accent-amber { border-left: 4px solid #f59e0b; }
@@ -130,7 +131,7 @@ export function renderLayout(input: LayoutInput): string {
   .accent-indigo { border-left: 4px solid #6366f1; }
 </style>
 </head>
-<body class="ecosun-body">
+<body class="ecosun-body bg-slate-950 text-slate-100">
   <header class="ecosun-header text-white shadow-lg relative z-10">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
       <div class="flex items-center gap-3">
