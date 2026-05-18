@@ -804,7 +804,7 @@ export function createDashboardRouter(
   // Gera o Relatorio da Usina sob demanda (gancho do botao da tela S1).
   // Cria slug novo (link compartilhavel) + QR. NAO envia a ninguem (envio
   // ao cliente = S4). Modo 'acompanhamento' (uso do Junior).
-  router.post('/monitoramento/:id/relatorio', async (req: Request, res: Response) => {
+  router.get('/monitoramento/:id/relatorio', async (req: Request, res: Response) => {
     try {
       const { gerarRelatorio } = await import('../monitoring/relatorio/gerar.js');
       const { htmlToPdf, gerarQrCodeDataUrl } = await import('../proposal/pdf-generator.js');
