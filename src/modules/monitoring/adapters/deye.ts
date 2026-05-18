@@ -91,28 +91,51 @@ function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: string }
   return { appId, appSecret, email, password, dataCenter, countryCode, companyId };
 }
 
-async function obterToken(creds: ParsedCreds): Promise<{ ok: true; token: string } | { ok: false; reason: string; invalidCredentials?: boolean }> {
+type TokenResult = { ok: true; token: string } | { ok: false; reason: string; invalidCredentials?: boolean };
+
+// Cache de token POR CONTA (não por planta): o token org-scoped vale pra conta
+// inteira, então as 22 plantas Ecosunpower compartilham 1 token. Sem isto, cada
+// syncAll faria 22×(token pessoal + /account/info + token org) = 66 chamadas de
+// auth. Token Deye dura ~60d; janela conservadora de 6h limita staleness sem
+// re-logar a cada planta. Module-level (zera ao reiniciar o processo).
+const tokenCache = new Map<string, { token: string; exp: number }>();
+const TOKEN_TTL_MS = 6 * 60 * 60 * 1000;
+// Chave inclui hash de appSecret+password: se Junior rotacionar o secret/senha
+// (importarSitesEmMassa reescreve api_credentials), a chave muda e o token
+// velho não é mais servido — sem esperar o TTL nem depender de restart.
+function tokenCacheKey(c: ParsedCreds): string {
+  const credHash = crypto.createHash('sha256').update(`${c.appSecret}:${c.password}`).digest('hex').slice(0, 12);
+  return `${c.dataCenter}|${c.appId}|${c.email}|${credHash}`;
+}
+
+// Detecta falha de AUTENTICAÇÃO numa resposta da Deye (token inválido/revogado).
+// 2101023 = "access Denied" — exatamente o erro que este fix existe pra matar.
+function isAuthFailure(r: { status?: number; reason: string }): boolean {
+  return (
+    r.status === 401 ||
+    r.status === 403 ||
+    /\b401\b|\b403\b|2101023|access denied|invalid token|token expired|unauthor/i.test(r.reason)
+  );
+}
+
+// POST /v1.0/account/token. Sem companyId = token PESSOAL (organizationId:0,
+// só lê plantas pessoais). Com companyId = token ORG-SCOPED (lê as plantas da
+// organização — ex: as 22 da Ecosunpower).
+async function postToken(creds: ParsedCreds, companyId?: number): Promise<TokenResult> {
   const base = baseUrl(creds);
   const url = `${base}/v1.0/account/token?appId=${encodeURIComponent(creds.appId)}`;
 
   // Deye exige password como hash SHA-256 (descoberto via doc oficial).
-  // Body minimo: appSecret + email + password. Outros campos (countryCode,
-  // companyId, mobile, username) sao opcionais — adicionar so causou erros.
-  // identity_type tambem nao funciona como number — eh inferido pelo campo
-  // de identidade enviado (email).
   const passwordHash = crypto.createHash('sha256').update(creds.password).digest('hex');
-  // companyId, quando fornecido, faz o token autenticar contra uma empresa
-  // especifica em vez do perfil pessoal — necessario pra contas integrador
-  // que tem multiplas organizacoes (ex: Ecosunpower super admin).
   const body: Record<string, unknown> = {
     appSecret: creds.appSecret,
     email: creds.email,
     password: passwordHash,
   };
-  if (creds.companyId) body.companyId = Number(creds.companyId);
+  if (companyId !== undefined) body.companyId = companyId;
 
   // Log debug — sem expor password (mostra hash truncado)
-  console.log(`[deye] POST /account/token body={appSecret:'${creds.appSecret.slice(0,4)}...',email:'${creds.email}',companyId:${body.companyId ?? 'none'},password:'${passwordHash.slice(0,8)}...'}`);
+  console.log(`[deye] POST /account/token body={appSecret:'${creds.appSecret.slice(0,4)}...',email:'${creds.email}',companyId:${companyId ?? 'none'},password:'${passwordHash.slice(0,8)}...'}`);
 
   let resp: Response;
   try {
@@ -139,8 +162,8 @@ async function obterToken(creds: ParsedCreds): Promise<{ ok: true; token: string
   }
 
   if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    return { ok: false, reason: `Deye token ${resp.status}: ${body.slice(0, 200)}` };
+    const text = await resp.text().catch(() => '');
+    return { ok: false, reason: `Deye token ${resp.status}: ${text.slice(0, 200)}` };
   }
 
   let json: { accessToken?: string; access_token?: string; Bearer?: string; success?: boolean; msg?: string; code?: string };
@@ -173,6 +196,85 @@ async function obterToken(creds: ParsedCreds): Promise<{ ok: true; token: string
   // Remove prefixo "Bearer " se vier (algumas APIs mandam ja com prefixo).
   token = token.replace(/^Bearer\s+/i, '').trim();
   return { ok: true, token };
+}
+
+// Descobre o companyId da organização via /v1.0/account/info (passo 2 do fluxo
+// Business Member documentado). Retorna undefined quando a conta NÃO tem
+// vínculo de org (perfil só pessoal — ex: planta 11206 Personal do Gabriel),
+// caso em que o token pessoal é o correto.
+async function obterCompanyId(creds: ParsedCreds, token: string): Promise<number | undefined> {
+  const result = await deyePost(baseUrl(creds), '/v1.0/account/info', token, {});
+  if (!result.ok) {
+    console.warn(`[deye] /account/info falhou (segue com token pessoal): ${result.reason}`);
+    return undefined;
+  }
+  // Primeira org com id não-zero vence. Conta da Ecosunpower tem 1 só (2912).
+  // Conta multi-org (futuro cliente integrador) deve setar companyId explícito
+  // nas credenciais (override) — listarEmpresasDeye() ajuda a descobrir qual.
+  const orgList = (result.data?.orgInfoList as Array<{ companyId?: number | string }>) ?? [];
+  for (const o of orgList) {
+    const id = Number(o?.companyId);
+    if (Number.isFinite(id) && id !== 0) return id;
+  }
+  return undefined;
+}
+
+// Fluxo Business Member completo (root cause do 403 nas 22 plantas Ecosunpower):
+//   1. token PESSOAL (organizationId:0)
+//   2. /account/info -> companyId da org (provado em prod: 2912 = Ecosunpower)
+//   3. re-emite token COM companyId -> token ORG-SCOPED, lê /station/history
+// Fallback: conta sem org usa o token pessoal (zero-regressão p/ planta Personal).
+// Override: companyId explícito nas credenciais pula a descoberta.
+// forceRefresh=true: descarta o token cacheado e re-emite do zero. Usado quando
+// o /history responde auth-failure (token revogado/expirado dentro da janela
+// de cache) — auto-cura sem esperar o TTL de 6h.
+async function obterToken(creds: ParsedCreds, forceRefresh = false): Promise<TokenResult> {
+  const ck = tokenCacheKey(creds);
+  if (forceRefresh) {
+    tokenCache.delete(ck);
+  } else {
+    const cached = tokenCache.get(ck);
+    if (cached && cached.exp > Date.now()) {
+      return { ok: true, token: cached.token };
+    }
+  }
+
+  const resolved = await resolverToken(creds);
+  if (resolved.ok) {
+    tokenCache.set(ck, { token: resolved.token, exp: Date.now() + TOKEN_TTL_MS });
+  }
+  return resolved;
+}
+
+async function resolverToken(creds: ParsedCreds): Promise<TokenResult> {
+  // Override explícito: companyId já gravado nas credenciais. Valida (string
+  // do JSONB pode vir lixo); se inválido, cai pro fluxo de descoberta em vez
+  // de mandar companyId:null pra Deye.
+  if (creds.companyId) {
+    const cid = Number(creds.companyId);
+    if (Number.isFinite(cid) && cid !== 0) {
+      return postToken(creds, cid);
+    }
+    console.warn(`[deye] companyId inválido nas credenciais ('${creds.companyId}'); descobrindo via /account/info`);
+  }
+
+  const pessoal = await postToken(creds);
+  if (!pessoal.ok) return pessoal;
+
+  const companyId = await obterCompanyId(creds, pessoal.token);
+  if (companyId === undefined) {
+    // Conta sem organização — token pessoal é o correto.
+    return pessoal;
+  }
+
+  const org = await postToken(creds, companyId);
+  if (org.ok) {
+    console.log(`[deye] token org-scoped OK (companyId=${companyId})`);
+    return org;
+  }
+  // Re-emissão org falhou: devolve o pessoal (não fica pior que antes).
+  console.warn(`[deye] re-emissão org falhou (${org.reason}); usando token pessoal`);
+  return pessoal;
 }
 
 // ============================================================================
@@ -283,6 +385,8 @@ export const deyeAdapter: MonitoringAdapter = {
     // claramente abaixo do limite, usamos 29 (intervalo enviado = 30 dias).
     const CHUNK_DAYS = 29;
 
+    let token = tokenResp.token;
+    let jaRetentou = false;
     let chunkStart = new Date(startDate);
     while (chunkStart <= endDate) {
       // chunkEnd = min(chunkStart + 30d, endDate)
@@ -308,9 +412,23 @@ export const deyeAdapter: MonitoringAdapter = {
         granularity: 2, // 1=frame, 2=day, 3=month, 4=year
       };
       if (parsed.companyId) historyBody.companyId = Number(parsed.companyId);
-      const result = await deyePost(baseUrl(parsed), '/v1.0/station/history', tokenResp.token, historyBody);
+      const result = await deyePost(baseUrl(parsed), '/v1.0/station/history', token, historyBody);
 
       if (!result.ok) {
+        // Token cacheado pode ter sido revogado/expirado dentro da janela de
+        // cache. Auto-cura UMA vez: invalida o cache, re-emite token do zero e
+        // retenta ESTE mesmo chunk. Mata o cenário "1 token ruim trava as 22
+        // plantas por até 6h" (code 2101023 = o erro que este fix existe pra matar).
+        if (todasGeracoes.length === 0 && !jaRetentou && isAuthFailure(result)) {
+          jaRetentou = true;
+          console.warn(`[deye] auth-failure no /history (${result.reason}); invalidando cache + re-emitindo token`);
+          const fresh = await obterToken(parsed, true);
+          if (!fresh.ok) {
+            return { ok: false, reason: fresh.reason, invalidCredentials: fresh.invalidCredentials };
+          }
+          token = fresh.token;
+          continue; // retenta o MESMO chunk com token novo (não avança o cursor)
+        }
         // Se ja pegou alguma coisa, retorna o que tem; senao falha
         if (todasGeracoes.length === 0) return { ok: false, reason: result.reason };
         console.warn(`[deye] history chunk ${startAt}..${endAt} falhou, retornando ${todasGeracoes.length} pontos`);
