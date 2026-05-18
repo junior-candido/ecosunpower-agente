@@ -28,4 +28,20 @@ describe('renderMonitoramentoPage (smoke)', () => {
   it('lista vazia -> estado vazio', () => {
     expect(renderMonitoramentoPage([], {})).toContain('Nenhum sistema');
   });
+
+  it('SEGURANÇA: nome com apóstrofo não quebra o confirm de exclusão (sem &#039; em onsubmit)', () => {
+    const perigosa = [{
+      ...rows[0], id: '9', apelido: "Bar do Z'é D'Ávila", nivel: 'urgente',
+    }] as any[];
+    const html = renderMonitoramentoPage(perigosa, {});
+    // Nenhum atributo onsubmit pode conter &#039; (decodificaria pra ' e
+    // terminaria a string JS do confirm -> exclusão destrutiva sem confirmação).
+    const onsubmits = html.match(/onsubmit="[^"]*"/g) ?? [];
+    expect(onsubmits.length).toBeGreaterThan(0);
+    for (const os of onsubmits) {
+      expect(os).not.toContain('&#039;');
+    }
+    // Double-confirm (D1a) preservado, agora genérico.
+    expect(html).toContain('Confirma de novo: excluir esta usina permanentemente?');
+  });
 });
