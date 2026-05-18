@@ -79,3 +79,15 @@ describe('classificarSistema', () => {
     });
   });
 });
+
+describe('zero-regressão: textos batem com os literais antigos de getDetalheSistema', () => {
+  it('offline 4 dias', () => {
+    expect(classificarSistema({ ativo: true, ultimoErro: null, potenciaKwp: 5, uf: 'DF', diasSemGeracao: 4, realUltimos7: 0 }).alerta?.texto)
+      .toBe('Sem geração há 4 dias. Verificar inversor / conexão WiFi.');
+  });
+  it('queda 35%', () => {
+    const esperado7 = 5 * 5.2 * 0.8 * 7;
+    expect(classificarSistema({ ativo: true, ultimoErro: null, potenciaKwp: 5, uf: 'DF', diasSemGeracao: 0, realUltimos7: esperado7 * 0.65 }).alerta?.texto)
+      .toBe('Geração últimos 7 dias 35% ABAIXO do esperado. Pode ser sujeira/sombreamento — agendar limpeza.');
+  });
+});

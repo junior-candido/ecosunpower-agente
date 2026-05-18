@@ -13,6 +13,7 @@
 import type { SupabaseService } from '../supabase.js';
 import { getAdapter, marcasSuportadas } from './adapter-registry.js';
 import type { MarcaInversor, SistemaCliente, SiteResumo } from './types.js';
+import { classificarSistema, esperadoDiaKwh } from './classificacao.js';
 
 interface SyncResult {
   totalSistemas: number;
@@ -512,10 +513,8 @@ export class MonitoringService {
       .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
     const geracaoTotal = geracoesArr.reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
 
-    const hsp = s.uf === 'GO' ? 5.3 : 5.2;
-    const fator = 0.80;
     const kWp = Number(s.potencia_kwp ?? 0);
-    const esperadoDia = kWp * hsp * fator;
+    const esperadoDia = esperadoDiaKwh(s.potencia_kwp, s.uf);
 
     // Serie do periodo selecionado
     const diasRange = Math.ceil((new Date(fim).getTime() - new Date(inicio).getTime()) / (24 * 60 * 60 * 1000)) + 1;
@@ -602,27 +601,15 @@ export class MonitoringService {
     }
 
     const alertas: Array<{ tipo: string; severidade: 'aviso' | 'urgente' | 'info'; texto: string }> = [];
-    if (offlineHa >= 3) {
-      alertas.push({
-        tipo: 'sistema_offline',
-        severidade: 'urgente',
-        texto: `Sem geração há ${offlineHa} dias. Verificar inversor / conexão WiFi.`,
-      });
-    } else if (kWp > 0 && ratioUltimos7 < 0.70 && realUltimos7 > 0) {
-      const pct = Math.round((1 - ratioUltimos7) * 100);
-      alertas.push({
-        tipo: 'queda_geracao',
-        severidade: 'aviso',
-        texto: `Geração últimos 7 dias ${pct}% ABAIXO do esperado. Pode ser sujeira/sombreamento — agendar limpeza.`,
-      });
-    } else if (kWp > 0 && ratioUltimos7 > 1.10) {
-      const pct = Math.round((ratioUltimos7 - 1) * 100);
-      alertas.push({
-        tipo: 'milestone_economia',
-        severidade: 'info',
-        texto: `Geração últimos 7 dias ${pct}% ACIMA do esperado. Sistema operando excelente!`,
-      });
-    }
+    const cls = classificarSistema({
+      ativo: s.ativo,
+      ultimoErro: s.ultimo_erro ?? null,
+      potenciaKwp: s.potencia_kwp,
+      uf: s.uf,
+      diasSemGeracao: offlineHa,
+      realUltimos7: realUltimos7,
+    });
+    if (cls.alerta) alertas.push(cls.alerta);
 
     return {
       sistema: s,
