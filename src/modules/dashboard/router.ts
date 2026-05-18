@@ -766,6 +766,19 @@ export function createDashboardRouter(
     }
   });
 
+  router.post('/monitoramento/:id/excluir', async (req: Request, res: Response) => {
+    try {
+      const r = await monitoringService.excluirSistema(String(req.params.id ?? ''));
+      if (!r.ok) {
+        return res.status(500).send(`<h2>Erro ao excluir</h2><pre>${r.reason ?? ''}</pre><a href="/dashboard/monitoramento">← voltar</a>`);
+      }
+      return res.redirect('/dashboard/monitoramento');
+    } catch (err) {
+      console.error('[dashboard/monitoramento/excluir]', err);
+      return res.status(500).send(`<h2>Erro ao excluir</h2><pre>${(err as Error).message}</pre>`);
+    }
+  });
+
   // Manutencao: lembretes pendentes nos proximos 30 dias.
   router.get('/manutencao', async (_req: Request, res: Response) => {
     try {

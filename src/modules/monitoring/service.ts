@@ -423,6 +423,18 @@ export class MonitoringService {
     return (data as SistemaCliente) ?? null;
   }
 
+  // EXCLUIR de vez (D1a): apaga geração + a linha do sistema. Operação
+  // destrutiva — o front exige confirmação dupla. "Pausar" (ativo=false)
+  // continua sendo a opção branda/reversível via atualizarSistema.
+  async excluirSistema(id: string): Promise<{ ok: boolean; reason?: string }> {
+    const c = this.supabase.getClient();
+    const delGer = await c.from('geracao_diaria').delete().eq('sistema_id', id);
+    if (delGer.error) return { ok: false, reason: `geracao_diaria: ${delGer.error.message}` };
+    const delSis = await c.from('sistemas_clientes').delete().eq('id', id);
+    if (delSis.error) return { ok: false, reason: `sistemas_clientes: ${delSis.error.message}` };
+    return { ok: true };
+  }
+
   // Atualiza dados detalhados de um sistema (form edit no dashboard).
   // Sanitiza inputs e ignora campos nao-permitidos pra evitar mass-assignment.
   async atualizarSistema(
