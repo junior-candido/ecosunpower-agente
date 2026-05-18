@@ -350,14 +350,127 @@ Sistema de armazenamento residencial de alta tensão.
 - **Garantia:** 10 anos
 - **Compatibilidade:** Home Hub (mono) ou Inverters of Short String (trifásico — disponibilidade ainda Polônia/Holanda)
 
-### 7.6 Carregador VE Integrado
+### 7.6 Inversor Monofásico com Carregador de Veículo Elétrico Integrado (2-em-1)
 
-Linha monofásica residencial com **carregador de veículo elétrico embutido no inversor**. Solução 2 em 1.
+**O PRIMEIRO inversor solar + carregador de carro elétrico 2-em-1 do MUNDO.** A SolarEdge é pioneira nessa categoria, e o produto **JÁ ESTÁ OFICIALMENTE DISPONÍVEL NO BRASIL** desde 2020 (confirmado pelo Canal Solar — divulgação oficial).
 
-- Combina energia solar e da rede para carregamento mais rápido
+#### Modelos disponíveis no Brasil
+
+| Modelo | Potência | Aplicação |
+|--------|----------|-----------|
+| **SE3680H-EV** | 3,68 kW | Residencial pequeno |
+| **SE6000H-EV** | 6 kW | Residencial médio |
+| **SE9200H-EV** | 9,2 kW | Residencial premium |
+
+#### O que torna esse produto único
+
+**1. Único inversor + carregador VE 2-em-1 do mundo**
+
+A SolarEdge é a **pioneira mundial** nessa categoria de produto. Combina dois equipamentos em um único hardware:
+- Inversor solar residencial
+- Carregador de veículo elétrico (Modo 3 CA)
+
+**Resultado:** **uma única instalação** ao invés de duas.
+
+**2. Modo SolarBoost — carrega até 2,5× mais rápido**
+
+Tecnologia proprietária SolarEdge que **combina energia solar fotovoltaica + energia da rede simultaneamente** durante o carregamento do veículo elétrico. Resultado:
+- **2,5× mais rápido** que carregador tradicional (que usa só a rede)
+- Pode também carregar **100% com energia solar** (modo limpo, sem tirar da rede)
 - Maximiza autoconsumo
-- Cabo e suporte flexíveis (vários comprimentos disponíveis)
-- Comissionamento via app
+
+**3. Economia significativa em custos de instalação**
+
+Como o carregador já é parte do inversor, **elimina:**
+- Necessidade de eletricista pra instalar carregador separado
+- Visita técnica adicional
+- Instalação de fiação separada do quadro
+- Disjuntor dedicado pra carregador
+- Inspeção elétrica adicional
+
+**A instalação é a mesma de um inversor SolarEdge padrão.**
+
+**4. Tecnologia HD-Wave com 99% de eficiência**
+
+Mesma tecnologia premiada da linha Home Wave. Pequeno, leve, fácil de instalar interna ou externamente.
+
+**5. Configuração e monitoramento via celular**
+
+Tudo pelo app SolarEdge:
+- Programar horário de carregamento
+- Monitorar quanta energia foi solar e quanta da rede
+- Acompanhar custos e economias
+- Controlar remotamente
+- Detectar desconexão do carregador (conformidade IEC 62196)
+
+#### Especificações técnicas (datasheet oficial Brasil)
+
+- **Conector VE:** IEC 62196 Tipo 2 (padrão europeu — usado pela maioria dos carros elétricos no Brasil)
+- **Tipo 1 também disponível** sob consulta
+- **Comprimento do cabo:** 7,6 m (opção 4,5 m disponível)
+- **Peso do cabo:** 5,7 kg (7,6m) ou 3,5 kg (4,5m)
+- **Temperatura operacional do cabo:** -30°C a +50°C
+- **Proteção IP:** IP54 (conectado ao VE ou com proteção contra poeira)
+- **RCD integrado:** 6mA DC, conformidade IEC 62752:2016 (segurança elétrica avançada)
+- **AFCI integrado** (proteção contra arco elétrico, conforme NBR 17193)
+- **Otimizadores DC obrigatórios** (1 por painel) — mesma tecnologia da linha Home Wave
+- **Sobredimensionamento DC:** até 200%
+- **Conectividade:** Wi-Fi nativo (com antena externa) ou Ethernet
+- **Comissionamento:** via SetApp
+- **Compatibilidade:** maioria dos carros elétricos do mercado brasileiro
+
+#### Garantia
+
+- **Inversor + Carregador integrado:** 12 anos padrão, **extensível até 25 anos**
+- **Otimizadores DC:** 25 anos
+- **Cabo carregador:** garantia padrão SolarEdge
+
+#### Pré-requisitos da instalação
+
+- **Medidor de importação/exportação:** necessário pra função de limitação de exportação e carregamento solar excessivo controlado
+- **Conexão à internet:** obrigatória para primeiro carregamento (configuração via plataforma SolarEdge)
+- **Antena Wi-Fi externa:** necessária para conexão sem fio (item à parte conforme datasheet)
+- **Cabo carregador:** vendido separadamente em alguns canais (verificar com distribuidor)
+
+#### Por que isso é importante no mercado de DF e Goiás
+
+**Brasília está entre os maiores mercados de carro elétrico do Brasil:**
+- Crescimento de **mais de 150% ao ano** no DF de venda de carros elétricos
+- Frota de elétricos e híbridos em rápida expansão (Lago Sul, Lago Norte, Park Way, Setor de Mansões)
+- **Goiânia** seguindo a mesma tendência
+
+**Perfil de cliente alvo:**
+- Já tem carro elétrico e quer otimizar custo de carregamento
+- Vai comprar carro elétrico em breve e quer sistema futuro-proof
+- Tem mais de um carro e pretende migrar pra elétrico
+- Cliente premium consciente de sustentabilidade
+- Profissional liberal informado (médico, advogado, executivo, empresário)
+
+#### Argumento de venda — frases prontas pra Eva
+
+> "Você sabia que a SolarEdge tem o **primeiro inversor solar do mundo com carregador de carro elétrico embutido**? Já está disponível no Brasil. Em vez de você instalar inversor solar + carregador VE separados (dois equipamentos, duas instalações, mais mão de obra, mais cabeamento, mais disjuntores), você instala **um único equipamento que faz as duas coisas**."
+
+> "Tem um diferencial técnico chamado **SolarBoost** — o sistema combina energia solar e da rede ao mesmo tempo durante o carregamento. Resultado: seu carro carrega **até 2,5× mais rápido** que num carregador comum, e você pode escolher entre carregar 100% com energia solar (gratuita) ou turbo com solar + rede."
+
+> "Pra você que está pensando em comprar carro elétrico ou já tem, é o sistema **futuro-proof**. Instala uma vez, fica resolvido. Eficiência 99%, garantia 12 anos extensível pra 25, e configuração 100% pelo celular pelo app SolarEdge."
+
+> "A economia não é só na conta de luz, é também na instalação: você **elimina a necessidade de eletricista separado, disjuntor adicional, fiação extra e visita de inspeção**. Tudo já vem integrado."
+
+#### Quando recomendar essa solução
+
+✅ **Cliente que já tem carro elétrico**
+✅ **Cliente que pretende comprar carro elétrico em até 2 anos**
+✅ **Família com mais de um carro** considerando migração
+✅ **Cliente premium informado** (sustentabilidade + tecnologia)
+✅ **Imóvel novo ou reforma** onde a instalação está sendo planejada
+✅ **Cliente que valoriza estética** (um equipamento, não dois)
+
+#### Quando NÃO recomendar
+
+❌ Cliente que **não tem perspectiva** de comprar carro elétrico
+❌ Cliente muito sensível a preço inicial (SolarEdge é premium)
+❌ Sistema **trifásico** (a linha EV é monofásica)
+❌ Cliente que quer carregador rápido DC (esse é Modo 3 AC, não DC fast charger)
 
 ### 7.7 Plataforma SolarEdge ONE
 
@@ -850,9 +963,13 @@ A Eva escalona quando o cliente:
 - **Linha Monofásica Home Wave:** https://www.solaredge.com/br/products/pv-inverter/single-phase
 - **SetApp Trifásico:** https://www.solaredge.com/br/products/pv-inverters/three-phase-commercial-inverters
 - **Synergy Trifásico:** https://www.solaredge.com/br/produtos/comercial/fv-inversor/trifasico-com-synergy
+- **Inversor com Carregador VE (página oficial):** https://www.solaredge.com/br/products/ev-charger
+- **Datasheet oficial Inversor + Carregador VE (PT-BR):** https://www.solaredge.com/sites/default/files/se_single_phase_inverter_integrated_ev_charger_datasheet_prt.pdf
+- **Brochure Carregador VE Brasil:** https://knowledge-center.solaredge.com/sites/kc/files/ev_charging_inverter_brochure_prt_bra.pdf
 - **Bateria 400V:** https://www.solaredge.com/br/produtos/residencial/bateria-residencial-400v
 - **Smart Energy Devices:** https://solaredge.com/br/products/smart-energy/smart-energy-devices
 - **Knowledge Center:** https://knowledge-center.solaredge.com/br
+- **Canal Solar — anúncio oficial lançamento Brasil do inversor com carregador VE:** https://canalsolar.com.br/inversor-solar-com-carregamento-de-veiculo-eletrico-chega-ao-brasil/
 
 ### Cibersegurança
 - **Cyber Security Solutions:** https://corporate.solaredge.com/en/cyber-security-solutions
@@ -894,6 +1011,7 @@ A Eva escalona quando o cliente:
 
 ### Reconhecimentos
 - Pioneira mundial em MLPE com otimizador DC (desde 2006)
+- **Primeiro inversor solar + carregador de veículo elétrico 2-em-1 do mundo** (linha SE-EV)
 - Primeira bateria residencial do mundo a passar no UL9540A (Bateria SolarEdge Home 400V)
 - Primeira marca de inversor a obter certificação RED Article 3.3 EU
 - Validada pela VDE Renewables em segurança, cibersegurança e performance
