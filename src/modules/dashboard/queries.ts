@@ -62,6 +62,11 @@ export interface SistemaMonitorRow {
   ultimo_erro: string | null;
   geracao_hoje_kwh: number | null;
   geracao_mes_kwh: number;
+  geracao_7d_kwh: number;
+  nivel: 'urgente' | 'aviso' | 'info' | 'ok';
+  alertaTexto: string | null;
+  garantiaIdade: string;
+  garantiaEcosun: string;
 }
 
 export interface ManutencaoRow {

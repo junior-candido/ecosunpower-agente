@@ -59,6 +59,9 @@ import {
   renderVisualizacoesCsv,
 } from './proposta-views-view.js';
 import type { MarcaInversor } from '../monitoring/types.js';
+import { classificarSistema } from '../monitoring/classificacao.js';
+import { garantiaInfo } from '../monitoring/garantia.js';
+import { filtrarOrdenarSistemas } from '../monitoring/filtro.js';
 
 export function createDashboardRouter(
   supabaseService: SupabaseService,
@@ -527,23 +530,42 @@ export function createDashboardRouter(
   });
 
   // Monitoramento: lista de sistemas FV instalados com geracao do dia/mes.
-  router.get('/monitoramento', async (_req: Request, res: Response) => {
+  router.get('/monitoramento', async (req: Request, res: Response) => {
     try {
       const sistemas = await monitoringService.listarParaDashboard();
-      const rows = sistemas.map((s) => ({
-        id: s.id,
-        apelido: s.apelido,
-        marca_inversor: s.marca_inversor,
-        potencia_kwp: s.potencia_kwp,
-        cidade: s.cidade,
-        uf: s.uf,
-        ativo: s.ativo,
-        ultima_sincronizacao: s.ultima_sincronizacao,
-        ultimo_erro: s.ultimo_erro,
-        geracao_hoje_kwh: s.geracao_hoje_kwh,
-        geracao_mes_kwh: s.geracao_mes_kwh,
-      }));
-      res.send(renderMonitoramentoPage(rows));
+      const hoje = new Date();
+      const enriched = sistemas.map((s) => {
+        const cls = classificarSistema({
+          ativo: s.ativo,
+          ultimoErro: s.ultimo_erro ?? null,
+          potenciaKwp: s.potencia_kwp,
+          uf: s.uf,
+          diasSemGeracao: (s.geracao_7d_kwh ?? 0) === 0 && s.ativo ? 7 : 0,
+          realUltimos7: s.geracao_7d_kwh ?? 0,
+        });
+        const g = garantiaInfo(
+          { data_instalacao: s.data_instalacao, marca_inversor: s.marca_inversor, painel_marca: (s as { painel_marca?: string | null }).painel_marca ?? null },
+          hoje,
+        );
+        const ecosunTxt = g.ecosun.status === 'vigente' ? `vigente (${g.ecosun.mesesRestantes} meses)`
+          : g.ecosun.status === 'encerrada' ? `encerrada há ${g.ecosun.mesesDesdeFim} meses` : 'indefinida';
+        return {
+          ...s,
+          nivel: cls.nivel,
+          alertaTexto: cls.alerta?.texto ?? null,
+          garantiaIdade: g.idadeTexto,
+          garantiaEcosun: ecosunTxt,
+        };
+      });
+      const qf = {
+        q: typeof req.query.q === 'string' ? req.query.q : undefined,
+        marca: typeof req.query.marca === 'string' ? req.query.marca : undefined,
+        cidade: typeof req.query.cidade === 'string' ? req.query.cidade : undefined,
+        status: typeof req.query.status === 'string' ? req.query.status : undefined,
+        ord: typeof req.query.ord === 'string' ? req.query.ord : undefined,
+      };
+      const filtered = filtrarOrdenarSistemas(enriched as any, qf);
+      res.send(renderMonitoramentoPage(filtered as any, qf));
     } catch (err) {
       console.error('[dashboard/monitoramento]', err);
       res.status(500).send(`<h2>Erro ao listar monitoramento</h2><pre>${(err as Error).message}</pre>`);

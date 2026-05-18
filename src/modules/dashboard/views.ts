@@ -514,123 +514,143 @@ function marcaBadge(marca: string, options: { compact?: boolean; size?: number }
   return `<span class="inline-flex items-center gap-2 px-2 py-1 rounded-md bg-white border border-slate-200">${img}<span class="text-xs font-medium text-slate-800">${escapeHtml(label)}</span></span>`;
 }
 
-export function renderMonitoramentoPage(rows: SistemaMonitorRow[]): string {
-  const totalSistemas = rows.length;
-  const totalGeracaoHoje = rows.reduce((s, r) => s + (r.geracao_hoje_kwh ?? 0), 0);
-  const totalGeracaoMes = rows.reduce((s, r) => s + r.geracao_mes_kwh, 0);
-  const totalKwp = rows.reduce((s, r) => s + (r.potencia_kwp ?? 0), 0);
+export function renderMonitoramentoPage(
+  rows: SistemaMonitorRow[],
+  q: { q?: string; marca?: string; cidade?: string; status?: string; ord?: string },
+): string {
+  const ativos = rows.filter((r) => r.ativo);
+  const totalKwp = ativos.reduce((s, r) => s + (r.potencia_kwp ?? 0), 0);
+  const totalHoje = rows.reduce((s, r) => s + (r.geracao_hoje_kwh ?? 0), 0);
+  const totalMes = rows.reduce((s, r) => s + r.geracao_mes_kwh, 0);
+  const okCount = ativos.filter((r) => r.nivel === 'ok' || r.nivel === 'info').length;
+  const marcas = new Set(rows.map((r) => r.marca_inversor)).size;
+  const problemas = rows.filter((r) => r.nivel === 'urgente' || r.nivel === 'aviso');
 
-  const kpiCard = (titulo: string, valor: string, sub: string, accent: string, valorCor: string) => `
-    <div class="bg-white rounded-xl shadow-md hover:shadow-lg transition border border-slate-200 ${accent} p-5">
-      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">${escapeHtml(titulo)}</div>
-      <div class="text-3xl font-bold ${valorCor} mt-2">${escapeHtml(valor)}</div>
+  const kpi = (t: string, v: string, sub: string, cor: string) => `
+    <div class="bg-slate-800/60 backdrop-blur rounded-xl border border-slate-700 p-5 shadow-lg">
+      <div class="text-xs uppercase tracking-wider text-slate-400 font-semibold">${escapeHtml(t)}</div>
+      <div class="text-3xl font-bold ${cor} mt-2">${escapeHtml(v)}</div>
       <div class="text-xs text-slate-500 mt-1">${escapeHtml(sub)}</div>
     </div>`;
 
-  const linhas = rows.map((r) => {
-    const local = [r.cidade, r.uf].filter(Boolean).join('/') || '—';
-    const sincOk = r.ultima_sincronizacao
-      && (Date.now() - new Date(r.ultima_sincronizacao).getTime() < 36 * 60 * 60 * 1000);
-    const status = !r.ativo
-      ? '<span class="px-2 py-1 rounded text-xs bg-slate-100 text-slate-500">⏸ Pausado</span>'
-      : r.ultimo_erro
-        ? `<span class="px-2 py-1 rounded text-xs bg-rose-100 text-rose-700" title="${escapeHtml(r.ultimo_erro)}">⚠️ Erro</span>`
-        : sincOk
-          ? '<span class="px-2 py-1 rounded text-xs bg-emerald-100 text-emerald-800">✅ OK</span>'
-          : '<span class="px-2 py-1 rounded text-xs bg-amber-100 text-amber-800">⏳ Aguardando</span>';
+  const saudeCor = okCount === ativos.length ? 'text-emerald-400'
+    : problemas.some((p) => p.nivel === 'urgente') ? 'text-rose-400' : 'text-amber-400';
 
-    const hojeNum = r.geracao_hoje_kwh ?? null;
-    const hojeStr = hojeNum !== null ? `${hojeNum.toFixed(1)} kWh` : '—';
-    const mesStr = r.geracao_mes_kwh > 0 ? `${r.geracao_mes_kwh.toFixed(0)} kWh` : '—';
-
+  const cardProblema = (r: SistemaMonitorRow) => {
+    const cor = r.nivel === 'urgente' ? 'border-rose-500/60 bg-rose-500/10' : 'border-amber-500/60 bg-amber-500/10';
     return `
-      <tr class="hover:bg-slate-50 cursor-pointer" onclick="window.location='/dashboard/monitoramento/${escapeHtml(r.id)}'">
-        <td class="px-4 py-3 text-sm">
-          <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="font-medium text-sky-700 hover:underline">${escapeHtml(r.apelido)}</a>
-          <div class="text-xs text-slate-500">${escapeHtml(local)}</div>
-        </td>
-        <td class="px-4 py-3 text-sm">${marcaBadge(r.marca_inversor)}</td>
-        <td class="px-4 py-3 text-sm text-slate-700">${r.potencia_kwp ? `${r.potencia_kwp.toFixed(2)} kWp` : '—'}</td>
-        <td class="px-4 py-3 text-sm text-amber-700 font-bold">${hojeStr}</td>
-        <td class="px-4 py-3 text-sm text-emerald-700 font-medium">${mesStr}</td>
-        <td class="px-4 py-3 text-sm">${status}</td>
-        <td class="px-4 py-3 text-sm text-slate-500">${r.ultima_sincronizacao ? relativeTime(r.ultima_sincronizacao) : 'nunca'}</td>
-        <td class="px-4 py-3 text-right whitespace-nowrap" onclick="event.stopPropagation()">
-          <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/sync" method="post" class="inline">
-            <button class="px-3 py-1.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold shadow-sm" title="Sincronizar agora com a API do inversor">🔄 Sincronizar</button>
-          </form>
-        </td>
-      </tr>`;
-  }).join('');
+    <div class="rounded-xl border ${cor} p-4 flex flex-col gap-2">
+      <div class="flex items-center justify-between gap-2">
+        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="font-semibold text-sky-300 hover:underline">${escapeHtml(r.apelido)}</a>
+        ${marcaBadge(r.marca_inversor)}
+      </div>
+      <div class="text-xs text-slate-400">${escapeHtml([r.cidade, r.uf].filter(Boolean).join('/') || '—')}</div>
+      <div class="text-sm ${r.nivel === 'urgente' ? 'text-rose-300' : 'text-amber-300'}">${escapeHtml(r.alertaTexto ?? '')}</div>
+      <div class="text-xs text-slate-500">⏱ ${escapeHtml(r.garantiaIdade)} · garantia EcoSun: ${escapeHtml(r.garantiaEcosun)}</div>
+      <div class="flex flex-wrap gap-2 mt-1">
+        <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/sync" method="post"><button class="px-3 py-1.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold">🔄 Sincronizar</button></form>
+        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 text-slate-100 text-xs font-semibold">🔎 Detalhe</a>
+        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}/relatorio" class="px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold">📄 Gerar relatório</a>
+        <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/excluir" method="post" onsubmit="return confirm('EXCLUIR a usina ${escapeHtml(r.apelido)} de vez? Isso apaga todo o histórico de geração. Esta ação não tem volta.') && confirm('Confirma de novo: excluir ${escapeHtml(r.apelido)} permanentemente?')"><button class="px-3 py-1.5 rounded-md bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold">🗑 Excluir</button></form>
+      </div>
+    </div>`;
+  };
+
+  const sincOk = (r: SistemaMonitorRow) => r.ultima_sincronizacao
+    && (Date.now() - new Date(r.ultima_sincronizacao).getTime() < 36 * 60 * 60 * 1000);
+  const statusPill = (r: SistemaMonitorRow) => !r.ativo
+    ? '<span class="px-2 py-1 rounded text-xs bg-slate-700 text-slate-400">⏸ Pausado</span>'
+    : r.nivel === 'urgente'
+      ? '<span class="px-2 py-1 rounded text-xs bg-rose-500/20 text-rose-300">⚠️ Urgente</span>'
+      : r.nivel === 'aviso'
+        ? '<span class="px-2 py-1 rounded text-xs bg-amber-500/20 text-amber-300">⚠️ Atenção</span>'
+        : r.nivel === 'info'
+          ? '<span class="px-2 py-1 rounded text-xs bg-sky-500/20 text-sky-300">🌟 Acima</span>'
+          : sincOk(r)
+            ? '<span class="px-2 py-1 rounded text-xs bg-emerald-500/20 text-emerald-300">✅ OK</span>'
+            : '<span class="px-2 py-1 rounded text-xs bg-amber-500/20 text-amber-300">⏳ Aguardando</span>';
+
+  const linha = (r: SistemaMonitorRow) => `
+    <tr class="hover:bg-slate-800/50 cursor-pointer" onclick="window.location='/dashboard/monitoramento/${escapeHtml(r.id)}'">
+      <td class="px-4 py-3 text-sm">
+        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="font-medium text-sky-300 hover:underline">${escapeHtml(r.apelido)}</a>
+        <div class="text-xs text-slate-500">${escapeHtml([r.cidade, r.uf].filter(Boolean).join('/') || '—')}</div>
+      </td>
+      <td class="px-4 py-3 text-sm">${marcaBadge(r.marca_inversor)}</td>
+      <td class="px-4 py-3 text-sm text-slate-300">${r.potencia_kwp ? `${r.potencia_kwp.toFixed(2)} kWp` : '—'}</td>
+      <td class="px-4 py-3 text-sm text-amber-300 font-bold">${r.geracao_hoje_kwh !== null ? `${r.geracao_hoje_kwh.toFixed(1)} kWh` : '—'}</td>
+      <td class="px-4 py-3 text-sm text-emerald-300">${r.geracao_mes_kwh > 0 ? `${r.geracao_mes_kwh.toFixed(0)} kWh` : '—'}</td>
+      <td class="px-4 py-3 text-sm">${statusPill(r)}</td>
+      <td class="px-4 py-3 text-xs text-slate-400">⏱ ${escapeHtml(r.garantiaIdade)}</td>
+      <td class="px-4 py-3 text-right whitespace-nowrap" onclick="event.stopPropagation()">
+        <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/excluir" method="post" class="inline" onsubmit="return confirm('EXCLUIR ${escapeHtml(r.apelido)} de vez? Apaga todo o histórico. Sem volta.') && confirm('Confirma de novo: excluir ${escapeHtml(r.apelido)} permanentemente?')">
+          <button class="px-2.5 py-1.5 rounded-md bg-rose-700 hover:bg-rose-800 text-white text-xs">🗑</button>
+        </form>
+      </td>
+    </tr>`;
+
+  const opt = (v: string, label: string, sel?: string) =>
+    `<option value="${escapeHtml(v)}" ${sel === v ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+  const marcasUnicas = [...new Set(rows.map((r) => r.marca_inversor))].sort();
+  const cidadesUnicas = [...new Set(rows.map((r) => r.cidade).filter(Boolean) as string[])].sort();
 
   const body = `
     <div class="mb-6">
-      <h1 class="text-2xl font-bold text-slate-900">⚡ Monitoramento</h1>
-      <p class="text-slate-600 text-sm">Geração em tempo real dos sistemas FV instalados nos clientes (via API dos inversores).</p>
+      <h1 class="text-2xl font-bold text-slate-100">⚡ Painel de Triagem — Usinas</h1>
+      <p class="text-slate-400 text-sm">Primeiro o que precisa de ação. Depois a carteira inteira, filtrável.</p>
     </div>
 
-    <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-      ${kpiCard('Sistemas ativos', String(totalSistemas), `${totalKwp.toFixed(1)} kWp total`, 'accent-amber', 'text-amber-600')}
-      ${kpiCard('Geração hoje', `${totalGeracaoHoje.toFixed(1)} kWh`, 'somatório de todos', 'accent-sky', 'text-sky-700')}
-      ${kpiCard('Geração mês', `${totalGeracaoMes.toFixed(0)} kWh`, 'mês corrente', 'accent-emerald', 'text-emerald-700')}
-      ${kpiCard('Marcas', String(new Set(rows.map(r => r.marca_inversor)).size), 'integradas', 'accent-violet', 'text-violet-700')}
+    <section class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+      ${kpi('Usinas ativas', String(ativos.length), `${totalKwp.toFixed(1)} kWp total`, 'text-amber-400')}
+      ${kpi('Geração hoje', `${totalHoje.toFixed(1)} kWh`, 'somatório', 'text-sky-300')}
+      ${kpi('Geração mês', `${totalMes.toFixed(0)} kWh`, 'mês corrente', 'text-emerald-300')}
+      ${kpi('Saúde da frota', `${okCount}/${ativos.length}`, 'usinas OK', saudeCor)}
+      ${kpi('Marcas', String(marcas), 'integradas', 'text-violet-300')}
     </section>
 
-    <div class="mb-4 flex flex-wrap gap-2">
-      <a href="/dashboard/monitoramento/importar" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold shadow-md transition">
-        📥 Importar sites
-      </a>
-      ${rows.length > 0 ? `
-      <form action="/dashboard/monitoramento/sync-todos" method="post" class="inline">
-        <button class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold shadow-md transition">
-          🔄 Atualizar todas agora
-        </button>
-      </form>` : ''}
-    </div>
+    <section class="mb-8">
+      <h2 class="text-lg font-bold text-slate-200 mb-3">⚠️ Precisa de ação ${problemas.length ? `<span class="text-rose-400">(${problemas.length})</span>` : ''}</h2>
+      ${problemas.length === 0
+        ? '<div class="rounded-xl border border-emerald-600/40 bg-emerald-500/10 p-6 text-emerald-300 text-center font-medium">✅ Tudo certo — nenhuma usina precisando de ação agora.</div>'
+        : `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">${problemas.map(cardProblema).join('')}</div>`}
+    </section>
+
+    <form method="get" action="/dashboard/monitoramento" class="mb-4 flex flex-wrap gap-2 items-center">
+      <input name="q" value="${escapeHtml(q.q ?? '')}" placeholder="🔎 cliente ou cidade" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm">
+      <select name="marca" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm">${opt('', 'Todas as marcas', q.marca)}${marcasUnicas.map((m) => opt(m, m, q.marca)).join('')}</select>
+      <select name="cidade" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm">${opt('', 'Todas as cidades', q.cidade)}${cidadesUnicas.map((c) => opt(c, c, q.cidade)).join('')}</select>
+      <select name="status" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm">${opt('', 'Todos os status', q.status)}${['urgente', 'aviso', 'info', 'ok'].map((s) => opt(s, s, q.status)).join('')}</select>
+      <select name="ord" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm">${opt('severidade', 'Ordenar: severidade', q.ord)}${opt('geracao_desc', 'Ordenar: geração ↓', q.ord)}${opt('nome', 'Ordenar: nome', q.ord)}</select>
+      <button class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold">Filtrar</button>
+      <a href="/dashboard/monitoramento" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm">Limpar</a>
+      <span class="ml-auto flex gap-2">
+        <a href="/dashboard/monitoramento/importar" class="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold">📥 Importar</a>
+        ${rows.length ? `<form action="/dashboard/monitoramento/sync-todos" method="post"><button class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold">🔄 Atualizar todas</button></form>` : ''}
+      </span>
+    </form>
 
     ${rows.length === 0 ? `
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center">
+    <section class="bg-slate-800/60 rounded-xl border border-slate-700 p-8 text-center">
       <div class="text-5xl mb-3">⚡</div>
-      <div class="text-slate-700 font-medium mb-2">Nenhum sistema cadastrado ainda.</div>
-      <div class="text-slate-500 text-sm max-w-md mx-auto mb-4">
-        Maneira mais rápida: clica no botão amarelo acima <strong>"Importar todos do SolarEdge"</strong>,
-        cola tua API key da conta SolarEdge, e o sistema cadastra todos os sites automaticamente.
-      </div>
-      <a href="/dashboard/monitoramento/importar" class="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold shadow-lg transition">
-        📥 Importar agora
-      </a>
+      <div class="text-slate-200 font-medium mb-2">Nenhum sistema cadastrado ainda.</div>
+      <a href="/dashboard/monitoramento/importar" class="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 text-white font-semibold">📥 Importar agora</a>
     </section>` : `
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
-      <table class="w-full min-w-[800px]">
-        <thead class="bg-slate-100 border-b border-slate-200">
-          <tr class="text-left text-xs uppercase tracking-wider text-slate-500">
-            <th class="px-4 py-3 font-semibold">Sistema</th>
-            <th class="px-4 py-3 font-semibold">Marca</th>
-            <th class="px-4 py-3 font-semibold">Potência</th>
-            <th class="px-4 py-3 font-semibold">Hoje</th>
-            <th class="px-4 py-3 font-semibold">Mês</th>
-            <th class="px-4 py-3 font-semibold">Status</th>
-            <th class="px-4 py-3 font-semibold">Última sinc</th>
-            <th class="px-4 py-3 font-semibold text-right">Ação</th>
+    <section class="bg-slate-800/60 rounded-xl border border-slate-700 overflow-x-auto">
+      <table class="w-full min-w-[820px]">
+        <thead class="bg-slate-900/80 border-b border-slate-700">
+          <tr class="text-left text-xs uppercase tracking-wider text-slate-400">
+            <th class="px-4 py-3 font-semibold">Sistema</th><th class="px-4 py-3 font-semibold">Marca</th>
+            <th class="px-4 py-3 font-semibold">Potência</th><th class="px-4 py-3 font-semibold">Hoje</th>
+            <th class="px-4 py-3 font-semibold">Mês</th><th class="px-4 py-3 font-semibold">Status</th>
+            <th class="px-4 py-3 font-semibold">Idade</th><th class="px-4 py-3 font-semibold text-right">Excluir</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-slate-100">${linhas}</tbody>
+        <tbody class="divide-y divide-slate-800">${rows.map(linha).join('')}</tbody>
       </table>
     </section>
-
-    <div class="mt-4 text-xs text-slate-500 text-center">
-      💡 Sincronização automática a cada <strong>15 min</strong> (alinhado com taxa do SolarEdge).
-      Esta página atualiza sozinha a cada <strong>30s</strong> mostrando o dado mais fresco do nosso banco.
-    </div>`}
+    <div class="mt-4 text-xs text-slate-500 text-center">💡 Sincronização automática a cada <strong>15 min</strong>. Página atualiza sozinha a cada <strong>30s</strong>.</div>`}
   `;
-
-  // Auto-refresh 30s: pega dados frescos do nosso banco (que vem do cron 15min).
-  // Sem chamadas extras a SolarEdge — apenas reload local.
-  const scripts = `
-<script>
-  setTimeout(() => location.reload(), 30000);
-</script>`;
-
+  const scripts = `<script>setTimeout(() => location.reload(), 30000);</script>`;
   return renderLayout({ active: 'monitoramento', title: 'Monitoramento', body, scripts });
 }
 
