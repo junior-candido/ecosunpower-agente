@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { Config } from '../config.js';
 
@@ -768,5 +769,29 @@ export class SupabaseService {
         (err as Error).message,
       );
     }
+  }
+
+  // ==========================================================================
+  // Relatório de geração de usina (link público /r/:slug, TTL 60 dias)
+  // ==========================================================================
+
+  async criarRelatorioSlug(sistemaId: string): Promise<string> {
+    const slug = crypto.randomBytes(18).toString('base64url').slice(0, 24);
+    const expira = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+    await this.getClient().from('relatorio_slugs').insert({
+      slug, sistema_id: sistemaId, expira_em: expira,
+    });
+    return slug;
+  }
+
+  async getRelatorioSlug(slug: string): Promise<{ sistema_id: string; expira_em: string } | null> {
+    const { data } = await this.getClient()
+      .from('relatorio_slugs')
+      .select('sistema_id, expira_em')
+      .eq('slug', slug)
+      .maybeSingle();
+    if (!data) return null;
+    if (new Date((data as any).expira_em).getTime() < Date.now()) return null;
+    return data as { sistema_id: string; expira_em: string };
   }
 }
