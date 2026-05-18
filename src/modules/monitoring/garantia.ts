@@ -71,8 +71,8 @@ export function garantiaInfo(i: GarantiaInput, hoje: Date = new Date()): Garanti
       : 'consultar fabricante';
 
   const mesesIdade = Math.max(0, diffMeses(di, hoje));
-  const ecosun = mesesIdade < ECOSUN_GARANTIA_MESES
-    ? { status: 'vigente' as const, mesesRestantes: ECOSUN_GARANTIA_MESES - mesesIdade }
+  const ecosun = mesesIdade <= ECOSUN_GARANTIA_MESES
+    ? { status: 'vigente' as const, mesesRestantes: Math.max(0, ECOSUN_GARANTIA_MESES - mesesIdade) }
     : { status: 'encerrada' as const, mesesDesdeFim: mesesIdade - ECOSUN_GARANTIA_MESES };
 
   return { idadeTexto: idadeTextoDe(mesesIdade), ecosun, fabricanteInversor, fabricantePainel };
