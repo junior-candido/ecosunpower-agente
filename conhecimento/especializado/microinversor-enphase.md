@@ -19,7 +19,7 @@ A política global da Enphase para o IQ8P no Brasil, conforme press release ofic
 
 **Recomendação:** vale conferir com seu distribuidor autorizado Enphase qual é o prazo real coberto pela cadeia de revenda para os seus equipamentos. Em alguns canais o prazo varia. Esta verificação evita conflito com o cliente caso ele compare com materiais oficiais Enphase.
 
-**Para o uso operacional do RAG, este documento usa 15 anos (sua confirmação).** Atualize esta seção quando confirmar com a distribuição.
+**DECISÃO JUNIOR (17/05/2026 — reconfirmada): usar 15 anos com o cliente. NUNCA citar os 25 anos globais ao cliente.** Seção interna; só Junior altera se a distribuição mudar o prazo.
 
 ---
 
