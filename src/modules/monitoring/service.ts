@@ -682,29 +682,31 @@ export class MonitoringService {
   async listarParaDashboard(): Promise<Array<SistemaCliente & {
     geracao_hoje_kwh: number | null;
     geracao_mes_kwh: number;
+    geracao_7d_kwh: number;
   }>> {
     const sistemas = await this.listarSistemasAtivos();
     if (sistemas.length === 0) return [];
 
     const hoje = isoDate(new Date());
     const inicioMes = isoDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-
-    // Busca geracoes de todos os sistemas no mes atual em 1 query
+    const ha7 = isoDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+    const desde = inicioMes < ha7 ? inicioMes : ha7;
     const ids = sistemas.map((s) => s.id);
     const { data: geracoes } = await this.supabase.getClient()
       .from('geracao_diaria')
       .select('sistema_id, data, geracao_kwh')
       .in('sistema_id', ids)
-      .gte('data', inicioMes);
+      .gte('data', desde);
 
-    const porSistema = new Map<string, { hoje: number | null; mes: number }>();
-    for (const sid of ids) porSistema.set(sid, { hoje: null, mes: 0 });
+    const porSistema = new Map<string, { hoje: number | null; mes: number; ult7: number }>();
+    for (const sid of ids) porSistema.set(sid, { hoje: null, mes: 0, ult7: 0 });
 
     for (const g of geracoes ?? []) {
       const acc = porSistema.get(g.sistema_id);
       if (!acc) continue;
       const kwh = Number(g.geracao_kwh) || 0;
-      acc.mes += kwh;
+      if (g.data >= inicioMes) acc.mes += kwh;
+      if (g.data >= ha7) acc.ult7 += kwh;
       if (g.data === hoje) acc.hoje = kwh;
     }
 
@@ -712,6 +714,7 @@ export class MonitoringService {
       ...s,
       geracao_hoje_kwh: porSistema.get(s.id)?.hoje ?? null,
       geracao_mes_kwh: porSistema.get(s.id)?.mes ?? 0,
+      geracao_7d_kwh: porSistema.get(s.id)?.ult7 ?? 0,
     }));
   }
 }
