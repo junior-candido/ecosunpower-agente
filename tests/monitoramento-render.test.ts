@@ -46,11 +46,23 @@ describe('renderMonitoramentoPage (smoke)', () => {
   });
 });
 
-describe('renderLayout tema escuro', () => {
-  it('aplica fundo escuro no body (não branco) e preserva o conteúdo', () => {
-    const html = renderLayout({ active: 'home', title: 'X', body: '<p>oi</p>' } as any);
-    expect(html).toMatch(/bg-slate-9\d0|bg-\[#0|from-slate-900|#020617/);
+describe('renderLayout tema escuro ESCOPADO (regressão fix)', () => {
+  it('SEM dark: <body> CLARO (classe só ecosun-body) — não quebra Leads/Propostas/etc', () => {
+    const html = renderLayout({ active: 'leads', title: 'Leads', body: '<p>oi</p>' } as any);
+    const bodyClass = (html.match(/<body class="([^"]*)"/) ?? [])[1] ?? '';
+    expect(bodyClass).toBe('ecosun-body'); // sem dark, sem bg-slate-950
+    expect(html).toContain('#f8fafc'); // CSS claro presente
     expect(html).toContain('<p>oi</p>');
-    expect(html).not.toContain('#f8fafc');
+  });
+
+  it('COM dark:true: fundo escuro (ecosun-body-dark + bg-slate-950)', () => {
+    const html = renderLayout({ active: 'monitoramento', title: 'X', body: '<p>oi</p>', dark: true } as any);
+    expect(html).toContain('ecosun-body-dark');
+    expect(html).toContain('bg-slate-950');
+    expect(html).toContain('<p>oi</p>');
+  });
+
+  it('a tela Painel de Triagem (renderMonitoramentoPage) sai escura por padrão', () => {
+    expect(renderMonitoramentoPage([], {})).toContain('ecosun-body-dark');
   });
 });

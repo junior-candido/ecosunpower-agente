@@ -82,10 +82,13 @@ interface LayoutInput {
   title: string;
   body: string;
   scripts?: string;
+  // Tema escuro escopado: só quem foi desenhado pra dark liga (hoje só o
+  // Painel de Triagem). Default claro = não quebra as telas não adaptadas.
+  dark?: boolean;
 }
 
 export function renderLayout(input: LayoutInput): string {
-  const { active, title, body, scripts } = input;
+  const { active, title, body, scripts, dark } = input;
   const navClass = (key: string) =>
     active === key
       ? 'bg-amber-400 text-slate-900 font-semibold shadow-md'
@@ -117,11 +120,20 @@ export function renderLayout(input: LayoutInput): string {
   }
   .ecosun-body {
     background:
+      radial-gradient(ellipse at top left, rgba(14, 165, 233, 0.08), transparent 50%),
+      radial-gradient(ellipse at bottom right, rgba(245, 158, 11, 0.05), transparent 50%),
+      #f8fafc;
+    min-height: 100vh;
+  }
+  /* Tema escuro ESCOPADO: aplicado só quando o caller pede (input.dark),
+     hoje só a tela Painel de Triagem. Demais telas seguem claras até serem
+     adaptadas (follow-up). Evita texto escuro sumindo em fundo escuro. */
+  .ecosun-body-dark {
+    background:
       radial-gradient(1200px 600px at 50% -10%, rgba(56, 189, 248, 0.10), transparent 60%),
       radial-gradient(ellipse at bottom right, rgba(245, 158, 11, 0.06), transparent 50%),
       #020617;
     color: #e2e8f0;
-    min-height: 100vh;
   }
   .accent-amber { border-left: 4px solid #f59e0b; }
   .accent-sky { border-left: 4px solid #0ea5e9; }
@@ -131,7 +143,7 @@ export function renderLayout(input: LayoutInput): string {
   .accent-indigo { border-left: 4px solid #6366f1; }
 </style>
 </head>
-<body class="ecosun-body bg-slate-950 text-slate-100">
+<body class="ecosun-body${dark ? ' ecosun-body-dark bg-slate-950 text-slate-100' : ''}">
   <header class="ecosun-header text-white shadow-lg relative z-10">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
       <div class="flex items-center gap-3">
@@ -652,7 +664,7 @@ export function renderMonitoramentoPage(
     <div class="mt-4 text-xs text-slate-500 text-center">💡 Sincronização automática a cada <strong>15 min</strong>. Página atualiza sozinha a cada <strong>30s</strong>.</div>`}
   `;
   const scripts = `<script>setTimeout(() => location.reload(), 30000);</script>`;
-  return renderLayout({ active: 'monitoramento', title: 'Monitoramento', body, scripts });
+  return renderLayout({ active: 'monitoramento', title: 'Monitoramento', body, scripts, dark: true });
 }
 
 // =========================================================================
