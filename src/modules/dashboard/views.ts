@@ -78,7 +78,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'marketing' | 'leads';
+  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'marketing' | 'leads' | 'clientes';
   title: string;
   body: string;
   scripts?: string;
