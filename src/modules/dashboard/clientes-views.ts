@@ -175,6 +175,206 @@ function renderInsightsRow(insights: InsightCard[]): string {
     </div>`;
 }
 
+// ============================================================
+// Conteúdo das abas (T11)
+// ============================================================
+
+function renderAbaDados(d: ClienteDetail): string {
+  const TIPOS = [
+    { id: 'residencial', label: 'Residencial' },
+    { id: 'comercial', label: 'Comercial' },
+    { id: 'rural', label: 'Rural' },
+  ];
+  const FORMAS_PG = [
+    { id: 'cartao', label: 'Cartão' },
+    { id: 'boleto', label: 'Boleto' },
+    { id: 'a_vista', label: 'À vista' },
+    { id: 'financiamento', label: 'Financiamento' },
+  ];
+  const BANCOS = ['bv', 'solfacil', 'solagora', 'santander', 'btg', 'outro'];
+
+  const opt = (v: string, label: string, sel?: string | null) =>
+    `<option value="${escapeHtml(v)}" ${sel === v ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+
+  return `
+    <form id="form-dados" action="/dashboard/clientes/${escapeHtml(d.id)}/edit" method="post" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <fieldset class="bg-slate-800/40 border border-slate-700 rounded-xl p-3">
+        <legend class="text-[10px] text-slate-400 uppercase tracking-wider px-1">👤 Identificação</legend>
+        <div class="grid grid-cols-2 gap-2 mt-2">
+          <input name="name" value="${escapeHtml(d.name ?? '')}" placeholder="Nome completo" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm col-span-2">
+          <input name="cpf_cnpj" value="${escapeHtml(d.cpf_cnpj ?? '')}" placeholder="CPF/CNPJ" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input type="date" name="data_nascimento" value="${escapeHtml(d.data_nascimento ?? '')}" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <select name="profile" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+            ${opt('', '— Tipo —', d.profile)}${TIPOS.map(t => opt(t.id, t.label, d.profile)).join('')}
+          </select>
+          <input name="estado_civil" value="${escapeHtml(d.estado_civil ?? '')}" placeholder="Estado civil" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+        </div>
+      </fieldset>
+
+      <fieldset class="bg-slate-800/40 border border-slate-700 rounded-xl p-3">
+        <legend class="text-[10px] text-slate-400 uppercase tracking-wider px-1">📞 Contato</legend>
+        <div class="grid grid-cols-2 gap-2 mt-2">
+          <input name="phone" value="${escapeHtml(d.phone)}" placeholder="WhatsApp" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input name="email" type="email" value="${escapeHtml(d.email ?? '')}" placeholder="Email" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+        </div>
+      </fieldset>
+
+      <fieldset class="bg-slate-800/40 border border-slate-700 rounded-xl p-3 md:col-span-2">
+        <legend class="text-[10px] text-slate-400 uppercase tracking-wider px-1">🏠 Endereço</legend>
+        <div class="grid grid-cols-6 gap-2 mt-2">
+          <input name="cep" value="${escapeHtml(d.cep ?? '')}" placeholder="CEP" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input name="endereco_rua" value="${escapeHtml(d.endereco_rua ?? '')}" placeholder="Rua" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm col-span-3">
+          <input name="endereco_numero" value="${escapeHtml(d.endereco_numero ?? '')}" placeholder="Nº" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input name="endereco_complemento" value="${escapeHtml(d.endereco_complemento ?? '')}" placeholder="Compl." class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input name="neighborhood" value="${escapeHtml(d.neighborhood ?? '')}" placeholder="Bairro" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm col-span-2">
+          <input name="city" value="${escapeHtml(d.city ?? '')}" placeholder="Cidade" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm col-span-2">
+          <input name="uf" value="${escapeHtml(d.uf ?? '')}" placeholder="UF" maxlength="2" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+        </div>
+      </fieldset>
+
+      <fieldset class="bg-slate-800/40 border border-slate-700 rounded-xl p-3">
+        <legend class="text-[10px] text-slate-400 uppercase tracking-wider px-1">⚡ Concessionária + UC</legend>
+        <div class="grid grid-cols-2 gap-2 mt-2">
+          <select name="concessionaria" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm col-span-2">
+            ${opt('', '— Concessionária —', d.concessionaria)}${CONCESSIONARIAS_BR.map(c => opt(c.id, c.nome, d.concessionaria)).join('')}
+          </select>
+          <input name="uc_numero" value="${escapeHtml(d.uc_numero ?? '')}" placeholder="UC" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input name="tarifa_classe" value="${escapeHtml(d.tarifa_classe ?? '')}" placeholder="Classe (B1, B3...)" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input name="tarifa_modalidade" value="${escapeHtml(d.tarifa_modalidade ?? '')}" placeholder="Modalidade" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm col-span-2">
+        </div>
+      </fieldset>
+
+      <fieldset class="bg-slate-800/40 border border-slate-700 rounded-xl p-3">
+        <legend class="text-[10px] text-slate-400 uppercase tracking-wider px-1">💰 Consumo + Pagamento</legend>
+        <div class="grid grid-cols-2 gap-2 mt-2">
+          <input type="number" name="consumo_medio_kwh" value="${d.consumo_medio_kwh ?? ''}" placeholder="kWh/mês" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input type="number" step="0.01" name="conta_media_brl" value="${d.conta_media_brl ?? ''}" placeholder="R$/mês" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <select name="forma_pagamento" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+            ${opt('', '— Pagamento —', d.forma_pagamento)}${FORMAS_PG.map(f => opt(f.id, f.label, d.forma_pagamento)).join('')}
+          </select>
+          <select name="banco_financiamento" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+            ${opt('', '— Banco —', d.banco_financiamento)}${BANCOS.map(b => opt(b, b.toUpperCase(), d.banco_financiamento)).join('')}
+          </select>
+        </div>
+      </fieldset>
+
+      <fieldset class="bg-slate-800/40 border border-slate-700 rounded-xl p-3 md:col-span-2">
+        <legend class="text-[10px] text-slate-400 uppercase tracking-wider px-1">🔀 Rateio MMGD (consumidor)</legend>
+        <label class="flex items-center gap-2 mt-2 text-sm text-slate-300">
+          <input type="checkbox" name="eh_consumidor_rateio" value="true" ${d.eh_consumidor_rateio ? 'checked' : ''}>
+          Este cliente recebe créditos de uma UC geradora MMGD
+        </label>
+        <div class="grid grid-cols-3 gap-2 mt-2">
+          <input name="uc_geradora_lead_id" value="${escapeHtml(d.uc_geradora_lead_id ?? '')}" placeholder="UC geradora (lead_id)" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input type="number" step="0.01" name="percentual_rateio" value="${d.percentual_rateio ?? ''}" placeholder="% rateio (0-100)" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input type="number" name="credito_esperado_kwh" value="${d.credito_esperado_kwh ?? ''}" placeholder="Crédito esperado kWh" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+        </div>
+      </fieldset>
+
+      <fieldset class="bg-slate-800/40 border border-slate-700 rounded-xl p-3 md:col-span-2">
+        <legend class="text-[10px] text-slate-400 uppercase tracking-wider px-1">💼 Comercial + Observações</legend>
+        <div class="grid grid-cols-3 gap-2 mt-2">
+          <input name="vendedor_responsavel" value="${escapeHtml(d.vendedor_responsavel ?? '')}" placeholder="Vendedor" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input name="lead_source" value="${escapeHtml(d.lead_source ?? '')}" placeholder="Origem (CTWA, etc)" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input name="installation_status" value="${escapeHtml(d.installation_status ?? '')}" placeholder="Status" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+        </div>
+        <textarea name="observacoes_perfil" placeholder="Observações livres" class="w-full mt-2 px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm" rows="3">${escapeHtml(d.observacoes_perfil ?? '')}</textarea>
+      </fieldset>
+
+      <div class="md:col-span-2 flex gap-2">
+        <button class="px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-semibold">💾 Salvar dados</button>
+      </div>
+    </form>`;
+}
+
+function renderAbaAnexos(d: ClienteDetail): string {
+  const TIPOS = [
+    { id: 'parecer_acesso', label: '📋 Parecer de acesso' },
+    { id: 'foto_telhado', label: '📷 Foto telhado' },
+    { id: 'foto_instalacao', label: '📷 Foto instalação' },
+    { id: 'foto_inversor', label: '📷 Foto inversor' },
+    { id: 'foto_visita_tecnica', label: '📷 Visita técnica' },
+    { id: 'contrato', label: '📄 Contrato' },
+    { id: 'outros', label: '📁 Outros' },
+  ];
+  const items = d.anexos.map(a => `
+    <div class="relative bg-slate-800/40 border border-slate-700 rounded-lg p-2 group">
+      <a href="${escapeHtml(a.signed_url ?? '#')}" target="_blank" class="block aspect-square flex flex-col items-center justify-center text-slate-400 hover:text-cyan-300">
+        <div class="text-2xl">${a.mime_type?.startsWith('image/') ? '🖼' : a.mime_type === 'application/pdf' ? '📄' : '📁'}</div>
+        <div class="text-[10px] mt-1 truncate w-full text-center">${escapeHtml(a.tipo)}</div>
+      </a>
+      <form action="/dashboard/clientes/${escapeHtml(d.id)}/anexos/${escapeHtml(a.id)}" method="post" onsubmit="return confirm('Remover este anexo?')" class="absolute top-1 right-1 opacity-0 group-hover:opacity-100">
+        <input type="hidden" name="_method" value="delete">
+        <button class="bg-rose-600 hover:bg-rose-700 text-white rounded-full w-5 h-5 text-[10px]">×</button>
+      </form>
+    </div>`).join('');
+
+  const upload = `
+    <form action="/dashboard/clientes/${escapeHtml(d.id)}/anexos" method="post" enctype="multipart/form-data" class="bg-cyan-500/5 border border-dashed border-cyan-500/40 rounded-lg p-3 flex flex-col items-center justify-center aspect-square">
+      <input type="file" name="file" required class="text-[10px] text-slate-300 mb-1" accept="image/*,application/pdf">
+      <select name="tipo" required class="text-[10px] bg-slate-900 border border-slate-700 text-slate-100 rounded mb-1 w-full">
+        ${TIPOS.map(t => `<option value="${t.id}">${t.label}</option>`).join('')}
+      </select>
+      <input name="descricao" placeholder="Descrição (opcional)" class="text-[10px] bg-slate-900 border border-slate-700 text-slate-100 rounded mb-1 w-full px-1 py-0.5">
+      <button class="bg-cyan-600 hover:bg-cyan-700 text-white text-[10px] rounded px-2 py-1 w-full">＋ Adicionar</button>
+    </form>`;
+
+  return `
+    <div class="grid grid-cols-3 md:grid-cols-6 gap-2">
+      ${items}
+      ${upload}
+    </div>`;
+}
+
+function renderAbaPropostas(d: ClienteDetail): string {
+  if (d.propostas.length === 0) {
+    return `<div class="text-slate-500 text-sm italic p-4">Nenhuma proposta gerada ainda. <a class="text-purple-300 underline" href="/dashboard/propostas/novo?lead_id=${escapeHtml(d.id)}">Criar agora</a>.</div>`;
+  }
+  const rows = d.propostas.map(p => `
+    <tr class="hover:bg-slate-800/50">
+      <td class="px-3 py-2 text-sm"><a href="/dashboard/propostas/${escapeHtml(p.id)}" class="text-cyan-300 hover:underline">${escapeHtml(p.numero_proposta)}</a></td>
+      <td class="px-3 py-2 text-xs text-slate-400">${escapeHtml(p.created_at.slice(0,10))}</td>
+      <td class="px-3 py-2 text-sm text-slate-300">${p.valor_total_brl ? 'R$ ' + p.valor_total_brl.toFixed(0) : '—'}</td>
+      <td class="px-3 py-2 text-xs">${p.acessos} acessos</td>
+      <td class="px-3 py-2 text-xs">${p.cliente_respondeu_at ? '✉️ Respondeu' : '—'}</td>
+    </tr>`).join('');
+  return `
+    <table class="w-full">
+      <thead><tr class="text-[10px] uppercase text-slate-500 border-b border-slate-700"><th class="px-3 py-2 text-left">Nº</th><th class="px-3 py-2 text-left">Data</th><th class="px-3 py-2 text-left">Valor</th><th class="px-3 py-2 text-left">Acessos</th><th class="px-3 py-2 text-left">Status</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <a href="/dashboard/propostas/novo?lead_id=${escapeHtml(d.id)}" class="inline-block mt-3 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm">📄 Nova proposta</a>
+  `;
+}
+
+function renderAbaTimeline(d: ClienteDetail): string {
+  type Ev = { data: string; tipo: string; texto: string; cor: string };
+  const evs: Ev[] = [];
+  evs.push({ data: d.created_at, tipo: 'lead', texto: `Lead via ${d.acquisition_source ?? d.lead_source ?? 'orgânico'}`, cor: 'text-slate-400' });
+  for (const p of d.propostas) evs.push({ data: p.created_at, tipo: 'proposta', texto: `Proposta ${p.numero_proposta}${p.valor_total_brl ? ' · R$ ' + p.valor_total_brl.toFixed(0) : ''}`, cor: 'text-purple-300' });
+  if (d.installed_at) evs.push({ data: d.installed_at + 'T00:00:00Z', tipo: 'instalado', texto: `Instalação concluída${d.sistema ? ' · ' + d.sistema.apelido : ''}`, cor: 'text-cyan-300' });
+  for (const a of d.alertas_ativos) evs.push({ data: a.primeiro_visto_em, tipo: 'alerta', texto: a.texto, cor: a.severidade === 'urgente' ? 'text-rose-400' : a.severidade === 'aviso' ? 'text-amber-400' : 'text-green-400' });
+
+  evs.sort((a, b) => b.data.localeCompare(a.data));
+  const items = evs.slice(0, 20).map(e => `
+    <div class="flex gap-2 text-xs"><span class="${e.cor}">●</span><span class="text-slate-500 w-20 shrink-0">${escapeHtml(e.data.slice(0,10))}</span><span class="text-slate-300">${escapeHtml(e.texto)}</span></div>
+  `).join('');
+  return `<div class="space-y-1.5">${items || '<div class="text-slate-500 italic text-sm">Sem eventos.</div>'}</div>`;
+}
+
+function renderAbaConversa(d: ClienteDetail): string {
+  if (d.conversas_recentes.length === 0) {
+    return `<div class="text-slate-500 italic text-sm p-4">Sem mensagens recentes.</div>`;
+  }
+  const items = d.conversas_recentes.map(m => `
+    <div class="${m.role === 'user' ? 'text-cyan-200' : 'text-slate-300'} text-xs p-2 rounded ${m.role === 'user' ? 'bg-cyan-500/10' : 'bg-slate-800/40'}">
+      <div class="text-[9px] uppercase tracking-wider text-slate-500 mb-1">${escapeHtml(m.role)} · ${escapeHtml((m.timestamp ?? '').slice(0,16))}</div>
+      <div>${escapeHtml(m.content)}</div>
+    </div>
+  `).join('');
+  return `<div class="space-y-2">${items}</div><a href="/dashboard/leads/${escapeHtml(d.id)}" class="inline-block mt-3 text-xs text-cyan-300 underline">Ver conversa completa em /leads</a>`;
+}
+
 export function renderClienteDetailPage(d: ClienteDetail, insights: InsightCard[]): string {
   const concNome = d.concessionaria ? getConcessionariaById(d.concessionaria)?.nome ?? d.concessionaria : '—';
   const phoneClean = d.phone.replace(/\D/g, '');
@@ -204,16 +404,28 @@ export function renderClienteDetailPage(d: ClienteDetail, insights: InsightCard[
       <a href="#relatorios" class="px-4 py-2 text-xs text-slate-400 hover:text-slate-200 whitespace-nowrap">📋 Relatórios</a>
     </div>`;
 
-  // Conteúdos (T11 preenche os placeholders <!-- T11: ... -->)
+  // Conteúdos das abas (T11)
   const abasConteudo = `
-    <div id="dados-content" class="space-y-3"><!-- T11: aba Dados --></div>
+    <div id="dados-content" class="space-y-3">${renderAbaDados(d)}</div>
     <div id="sistema-content" class="hidden text-slate-500 italic text-sm p-6">Aba "Sistema + Kit" vem na próxima fatia (A2 — calculadora).</div>
-    <div id="propostas-content" class="hidden"><!-- T11: aba Propostas --></div>
-    <div id="anexos-content" class="hidden"><!-- T11: aba Anexos --></div>
-    <div id="timeline-content" class="hidden"><!-- T11: timeline --></div>
-    <div id="conversa-content" class="hidden"><!-- T11: conversa --></div>
+    <div id="propostas-content" class="hidden">${renderAbaPropostas(d)}</div>
+    <div id="anexos-content" class="hidden">${renderAbaAnexos(d)}</div>
+    <div id="timeline-content" class="hidden">${renderAbaTimeline(d)}</div>
+    <div id="conversa-content" class="hidden">${renderAbaConversa(d)}</div>
     <div id="relatorios-content" class="hidden text-slate-500 italic text-sm p-6">Aba "Relatórios" vem na próxima fatia (A5).</div>
   `;
+
+  const scripts = `<script>
+    document.querySelectorAll('#abas a').forEach(t => t.addEventListener('click', e => {
+      e.preventDefault();
+      const target = e.currentTarget.getAttribute('href').slice(1);
+      document.querySelectorAll('#abas a').forEach(x => { x.classList.remove('text-sky-300','border-b-2','border-sky-400'); x.classList.add('text-slate-400'); });
+      e.currentTarget.classList.add('text-sky-300','border-b-2','border-sky-400');
+      e.currentTarget.classList.remove('text-slate-400');
+      document.querySelectorAll('[id$="-content"]').forEach(c => c.classList.add('hidden'));
+      document.getElementById(target + '-content').classList.remove('hidden');
+    }));
+  </script>`;
 
   const insightsComLeadId = insights.map(i => ({
     ...i,
@@ -232,5 +444,5 @@ export function renderClienteDetailPage(d: ClienteDetail, insights: InsightCard[
     ${abasConteudo}
   `;
 
-  return renderLayout({ active: 'clientes', title: `Cliente — ${d.name ?? '?'}`, body, dark: true });
+  return renderLayout({ active: 'clientes', title: `Cliente — ${d.name ?? '?'}`, body, scripts, dark: true });
 }
