@@ -530,6 +530,8 @@ function marcaBadge(marca: string, options: { compact?: boolean; size?: number }
 export function renderMonitoramentoPage(
   rows: SistemaMonitorRow[],
   q: { q?: string; marca?: string; cidade?: string; status?: string; ord?: string },
+  alertasResumo?: { urgente: number; aviso: number; info: number; total: number },
+  sparkline7d?: Array<{ dia: string; enviados: number }>,
 ): string {
   const ativos = rows.filter((r) => r.ativo);
   const totalKwp = ativos.reduce((s, r) => s + (r.potencia_kwp ?? 0), 0);
@@ -620,6 +622,30 @@ export function renderMonitoramentoPage(
       ${kpi('Saúde da frota', `${okCount}/${ativos.length}`, 'usinas OK', saudeCor)}
       ${kpi('Marcas', String(marcas), 'integradas', 'text-violet-300')}
     </section>
+
+    ${alertasResumo ? `
+    <section class="mb-8">
+      <h2 class="text-sm uppercase tracking-wider text-slate-400 font-semibold mb-3">🔔 Alertas proativos</h2>
+      <div class="grid grid-cols-3 gap-4">
+        <div class="rounded-xl border border-rose-600/40 bg-rose-500/10 p-4">
+          <div class="text-xs text-rose-300/70 font-semibold uppercase">Urgente</div>
+          <div class="text-3xl font-bold text-rose-300 mt-1">${alertasResumo.urgente}</div>
+        </div>
+        <div class="rounded-xl border border-amber-600/40 bg-amber-500/10 p-4">
+          <div class="text-xs text-amber-300/70 font-semibold uppercase">Aviso</div>
+          <div class="text-3xl font-bold text-amber-300 mt-1">${alertasResumo.aviso}</div>
+        </div>
+        <div class="rounded-xl border border-emerald-600/40 bg-emerald-500/10 p-4">
+          <div class="text-xs text-emerald-300/70 font-semibold uppercase">Bombando</div>
+          <div class="text-3xl font-bold text-emerald-300 mt-1">${alertasResumo.info}</div>
+        </div>
+      </div>
+      ${sparkline7d && sparkline7d.length ? `
+      <div class="mt-3 text-xs text-slate-500">
+        Enviados nos últimos 7d: <span class="text-slate-300 font-mono">${sparkline7d.map((d) => d.enviados).join(' · ')}</span>
+        <span class="text-slate-600 ml-2">(${sparkline7d.map((d) => d.dia.slice(5)).join(' · ')})</span>
+      </div>` : ''}
+    </section>` : ''}
 
     <section class="mb-8">
       <h2 class="text-lg font-bold text-slate-200 mb-3">⚠️ Precisa de ação ${problemas.length ? `<span class="text-rose-400">(${problemas.length})</span>` : ''}</h2>
