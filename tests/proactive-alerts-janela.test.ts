@@ -37,4 +37,13 @@ describe('dentroDaJanela (America/Sao_Paulo)', () => {
     expect(dentroDaJanela(spDate('2026-05-18T03:00'))).toBe(false);
     expect(dentroDaJanela(spDate('2026-05-16T03:00'))).toBe(false);
   });
+
+  it('Date construído em UTC (caso real do cron new Date()) é convertido pro fuso SP', () => {
+    // 2026-05-18T11:00:00Z = segunda 08:00 BRT -> dentro da janela
+    expect(dentroDaJanela(new Date('2026-05-18T11:00:00Z'))).toBe(true);
+    // 2026-05-18T23:00:00Z = segunda 20:00 BRT -> FORA (limite superior exclusive)
+    expect(dentroDaJanela(new Date('2026-05-18T23:00:00Z'))).toBe(false);
+    // 2026-05-17T15:00:00Z = domingo 12:00 BRT -> FORA
+    expect(dentroDaJanela(new Date('2026-05-17T15:00:00Z'))).toBe(false);
+  });
 });
