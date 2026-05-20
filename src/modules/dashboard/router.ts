@@ -894,6 +894,10 @@ export function createDashboardRouter(
     const id = String(req.params.id ?? '');
     if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
     const body = req.body ?? {};
+    const ALLOWED_INSTALLATION_STATUSES = new Set([
+      'novo','qualificando','qualificado','proposta_aceita','contrato_assinado',
+      'instalado','medidor_trocado','operando','pos_venda_concluido',
+    ]);
     const allowedFields = [
       'name', 'phone', 'email', 'cpf_cnpj', 'data_nascimento', 'estado_civil', 'profile',
       'cep', 'endereco_rua', 'endereco_numero', 'endereco_complemento', 'neighborhood', 'city', 'uf',
@@ -909,8 +913,17 @@ export function createDashboardRouter(
       let v: any = body[k];
       if (v === '') v = null;
       if (k === 'eh_consumidor_rateio') v = v === 'true' || v === true;
-      if (['consumo_medio_kwh', 'credito_esperado_kwh'].includes(k) && v != null) v = Number(v) || null;
-      if (['conta_media_brl', 'percentual_rateio'].includes(k) && v != null) v = Number(v) || null;
+      if (['consumo_medio_kwh', 'credito_esperado_kwh'].includes(k) && v != null) {
+        const n = Number(v);
+        v = Number.isFinite(n) ? n : null;
+      }
+      if (['conta_media_brl', 'percentual_rateio'].includes(k) && v != null) {
+        const n = Number(v);
+        v = Number.isFinite(n) ? n : null;
+      }
+      if (k === 'installation_status' && v != null && !ALLOWED_INSTALLATION_STATUSES.has(String(v))) {
+        return res.status(400).send(`installation_status inválido: ${escapeHtmlSimple(String(v))}`);
+      }
       fields[k] = v;
     }
     if (!fields.name) return res.status(400).send('Nome obrigatório');
@@ -926,7 +939,12 @@ export function createDashboardRouter(
     if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
     const file = (req as any).file as Express.Multer.File | undefined;
     if (!file) return res.status(400).send('Arquivo obrigatório');
-    const tipo = String(req.body?.tipo ?? 'outros');
+    const ALLOWED_ANEXO_TIPOS = new Set([
+      'parecer_acesso','foto_telhado','foto_instalacao','foto_inversor',
+      'foto_visita_tecnica','contrato','outros',
+    ]);
+    const tipoRaw = String(req.body?.tipo ?? 'outros');
+    const tipo = ALLOWED_ANEXO_TIPOS.has(tipoRaw) ? tipoRaw : 'outros';
     const descricao = req.body?.descricao ? String(req.body.descricao) : null;
 
     const mimeOk = file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf';
