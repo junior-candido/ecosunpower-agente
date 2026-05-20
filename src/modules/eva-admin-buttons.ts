@@ -15,6 +15,7 @@
 // Fallback: se metaWaba=null (Evolution), envia somente texto sem botoes.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseService } from './supabase.js';
 
 export interface MetaWabaLike {
   sendInteractiveButtons(
@@ -66,8 +67,9 @@ export async function tryHandleEvaAdminButton(args: {
   from: string;
   text: string;
   forceCadenceForSilentes: () => Promise<{ acionados: number }>;
+  supabase?: SupabaseService;
 }): Promise<boolean> {
-  const m = args.text.trim().match(/^evabt:([a-z-]+)(?::([0-9a-f-]{36}))?$/i);
+  const m = args.text.trim().match(/^evabt:([a-z0-9-]+)(?::([0-9a-f-]{36}))?$/i);
   if (!m) return false;
 
   const action = m[1];
@@ -170,6 +172,74 @@ export async function tryHandleEvaAdminButton(args: {
           .eq('status', 'pending');
         if (error) throw new Error(error.message);
         await args.sendText(args.from, `✋ Cadência cancelada pra este lead.`);
+        return true;
+      }
+
+      case 'alert-eva-offline':
+      case 'alert-eva-limpeza':
+      case 'alert-eva-depoimento': {
+        if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem id de sistema.'); return true; }
+        if (!args.supabase) { await args.sendText(args.from, '⚠️ Supabase service não disponível.'); return true; }
+        const topic = action === 'alert-eva-offline' ? 'alerta_offline'
+                    : action === 'alert-eva-limpeza' ? 'alerta_limpeza'
+                    : 'pedido_depoimento';
+        const sistema = await args.supabase.getSistemaById(leadId);
+        if (!sistema) { await args.sendText(args.from, '⚠️ Sistema não encontrado.'); return true; }
+        if (!sistema.lead_id) { await args.sendText(args.from, '⚠️ Sistema sem cliente vinculado — vincule o lead antes.'); return true; }
+        const lead = await args.supabase.getLeadById(sistema.lead_id);
+        if (lead?.opt_out) { await args.sendText(args.from, '⚠️ Lead em opt-out, Eva não pode falar.'); return true; }
+
+        const hojeIso = new Date().toISOString().slice(0, 10);
+        await args.supabase.upsertMaintenanceReminderPublic({
+          lead_id: sistema.lead_id,
+          scheduled_date: hojeIso,
+          topic,
+        });
+        await args.supabase.marcarAlertaAcaoDisparada(sistema.id, `eva_${topic}`, new Date().toISOString());
+        const nomeAcao = topic === 'alerta_offline' ? 'avisar sobre offline'
+                       : topic === 'alerta_limpeza' ? 'agendar limpeza'
+                       : 'pedir depoimento';
+        await args.sendText(args.from, `✅ Eva vai ${nomeAcao} com ${lead?.name ?? sistema.apelido} no próximo ciclo (até 1h).`);
+        return true;
+      }
+
+      case 'alert-ligar': {
+        if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem id de sistema.'); return true; }
+        if (!args.supabase) { await args.sendText(args.from, '⚠️ Supabase service não disponível.'); return true; }
+        const sistema = await args.supabase.getSistemaById(leadId);
+        if (!sistema) { await args.sendText(args.from, '⚠️ Sistema não encontrado.'); return true; }
+        const lead = sistema.lead_id ? await args.supabase.getLeadById(sistema.lead_id) : null;
+        const phone = lead?.phone;
+        if (!phone) { await args.sendText(args.from, '⚠️ Sem telefone cadastrado pro cliente.'); return true; }
+        await args.sendText(args.from, `📞 ${lead?.name ?? sistema.apelido} — wa.me/${phone}`);
+        await args.supabase.marcarAlertaAcaoDisparada(sistema.id, 'junior_ligar', new Date().toISOString());
+        return true;
+      }
+
+      case 'alert-snooze3d':
+      case 'alert-snooze7d': {
+        if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem id de sistema.'); return true; }
+        if (!args.supabase) { await args.sendText(args.from, '⚠️ Supabase service não disponível.'); return true; }
+        const dias = action === 'alert-snooze3d' ? 3 : 7;
+        const until = new Date(Date.now() + dias * 24 * 60 * 60 * 1000).toISOString();
+        await args.supabase.snoozeAlerta(leadId, until);
+        await args.sendText(args.from, `💤 Alerta adiado ${dias} dias.`);
+        return true;
+      }
+
+      case 'alert-resolvido':
+      case 'alert-ignorar': {
+        if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem id de sistema.'); return true; }
+        if (!args.supabase) { await args.sendText(args.from, '⚠️ Supabase service não disponível.'); return true; }
+        const reason = action === 'alert-ignorar' ? 'ignorada' : 'manual';
+        await args.supabase.resolverAlertaManual(leadId, reason);
+        await args.sendText(args.from, '✅ Alerta encerrado.');
+        return true;
+      }
+
+      case 'alert-ver': {
+        if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem id de sistema.'); return true; }
+        await args.sendText(args.from, `📊 ${DASHBOARD_BASE}/monitoramento/${leadId}`);
         return true;
       }
 

@@ -2244,6 +2244,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         from,
         text,
         forceCadenceForSilentes,
+        supabase,
       })) return;
     }
 
