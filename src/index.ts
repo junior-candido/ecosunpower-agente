@@ -46,6 +46,10 @@ import { NewsScraperService } from './modules/news-scraper.js';
 import { DriveUploader } from './modules/proposal/drive-uploader.js';
 import { MonitoringService } from './modules/monitoring/service.js';
 import { createDashboardRouter } from './modules/dashboard/router.js';
+import { ProactiveAlertService } from './modules/monitoring/proactive-alerts/service.js';
+import { runDispatchCycle, type DispatchCtx } from './modules/monitoring/proactive-alerts/dispatcher.js';
+import { runAnniversaryEnqueue } from './modules/monitoring/proactive-alerts/anniversary.js';
+import { sendAdminWithButtons } from './modules/eva-admin-buttons.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -5970,6 +5974,56 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setInterval(checkMonitoringDiscovery, 60 * 60 * 1000);  // 1x por hora
     setTimeout(checkMonitoringDiscovery, 10 * 60 * 1000);   // 10min apos start
     console.log('[monitoring] Cron de descoberta started (1x/hora)');
+
+    // ============================================
+    // Modulo 6 — alerta proativo da carteira
+    // ============================================
+    const proactiveAlertService = new ProactiveAlertService(supabase, monitoringService);
+    const proactiveDryRun = process.env.PROACTIVE_ALERTS_DRY_RUN === '1';
+    const proactiveDispatchCtx: DispatchCtx = {
+      supabase,
+      sendAdminWithButtons: (to, body, buttons, footer) =>
+        sendAdminWithButtons({ metaWaba, sendText }, to, body, buttons, footer),
+      adminPhone: config.engineerPhone,
+      dryRun: proactiveDryRun,
+    };
+
+    const runProactiveDetect = async () => {
+      try {
+        await proactiveAlertService.runDetectionCycle(new Date());
+      } catch (err) {
+        console.error('[proactive-alerts] detect cron falhou:', (err as Error).message);
+      }
+    };
+    setInterval(runProactiveDetect, 60 * 60 * 1000); // 60min
+    setTimeout(runProactiveDetect, 5 * 60 * 1000);   // 5min apos start
+
+    const runProactiveDispatch = async () => {
+      try {
+        await runDispatchCycle(new Date(), proactiveDispatchCtx);
+      } catch (err) {
+        console.error('[proactive-alerts] dispatch cron falhou:', (err as Error).message);
+      }
+    };
+    setInterval(runProactiveDispatch, 15 * 60 * 1000); // 15min
+    setTimeout(runProactiveDispatch, 7 * 60 * 1000);   // 7min apos start
+
+    const runAnniversaryCron = async () => {
+      try {
+        await runAnniversaryEnqueue(new Date(), supabase);
+      } catch (err) {
+        console.error('[proactive-alerts] anniversary cron falhou:', (err as Error).message);
+      }
+    };
+    // 1x/dia 6h BRT — checa a cada hora e dispara se hora local = 6
+    setInterval(() => {
+      const h = new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false });
+      if (Number(h) === 6) runAnniversaryCron();
+    }, 60 * 60 * 1000);
+
+    console.log(
+      `[proactive-alerts] crons started (detect 60min, dispatch 15min, anniversary 06h BRT). DRY_RUN=${proactiveDryRun}`,
+    );
   }
 
   // Canal Solar ingestion (every 3 days)
