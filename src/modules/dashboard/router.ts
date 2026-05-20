@@ -565,7 +565,12 @@ export function createDashboardRouter(
         ord: typeof req.query.ord === 'string' ? req.query.ord : undefined,
       };
       const filtered = filtrarOrdenarSistemas(enriched as any, qf);
-      res.send(renderMonitoramentoPage(filtered as any, qf));
+      const { getAlertasAtivosResumo, getAlertasEnviadosUltimos7d } = await import('./queries.js');
+      const [alertasResumo, sparkline7d] = await Promise.all([
+        getAlertasAtivosResumo(supabase),
+        getAlertasEnviadosUltimos7d(supabase),
+      ]);
+      res.send(renderMonitoramentoPage(filtered as any, qf, alertasResumo, sparkline7d));
     } catch (err) {
       console.error('[dashboard/monitoramento]', err);
       res.status(500).send(`<h2>Erro ao listar monitoramento</h2><pre>${(err as Error).message}</pre>`);

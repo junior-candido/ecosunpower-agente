@@ -1,0 +1,100 @@
+// tests/proactive-alerts-dispatcher.test.ts
+import { describe, it, expect, vi } from 'vitest';
+import { runDispatchCycle } from '../src/modules/monitoring/proactive-alerts/dispatcher.js';
+
+// Sexta 2026-05-22 às 10h BRT = 13h UTC — dentro da janela.
+const horaJanela = new Date('2026-05-22T13:00:00Z');
+// Domingo 2026-05-17 mesma hora — fora.
+const horaForaJanela = new Date('2026-05-17T13:00:00Z');
+
+function alerta(o: any = {}) {
+  return {
+    id: 'aid-1', sistema_id: 'sid-1', tipo: 'sistema_offline', severidade: 'urgente',
+    texto: 'Sem geração há 5 dias.', next_send_at: '2026-05-22T12:00:00Z',
+    primeiro_visto_em: '2026-05-15T00:00:00Z', snoozed_until: null, resolved_at: null,
+    last_sent_at: null, acao_disparada: null, acao_disparada_em: null,
+    resolved_reason: null, created_at: '2026-05-15T00:00:00Z', ...o,
+  };
+}
+
+function fakeCtx(overrides: any = {}) {
+  return {
+    supabase: {
+      getAlertasParaDespachar: vi.fn().mockResolvedValue([]),
+      lockAlertaParaEnvio: vi.fn().mockResolvedValue(true),
+      unlockAlerta: vi.fn().mockResolvedValue(undefined),
+      marcarAlertaEnviado: vi.fn().mockResolvedValue(undefined),
+      getSistemaById: vi.fn().mockResolvedValue({
+        id: 'sid-1', apelido: 'Casa', potencia_kwp: 5, marca_inversor: 'deye', lead_id: 'lid-1',
+      }),
+      getLeadById: vi.fn().mockResolvedValue({ id: 'lid-1', name: 'João', phone: '5561...' }),
+      ...overrides.supabase,
+    },
+    sendAdminWithButtons: vi.fn().mockResolvedValue(undefined),
+    adminPhone: '5561987654321',
+    dryRun: false,
+    ...(({ supabase: _s, ...rest }) => rest)(overrides),
+  };
+}
+
+describe('runDispatchCycle', () => {
+  it('fora da janela: não faz nada', async () => {
+    const ctx = fakeCtx({ supabase: { getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta()]) } });
+    const r = await runDispatchCycle(horaForaJanela, ctx as any);
+    expect(r.enviados).toBe(0);
+    expect(ctx.sendAdminWithButtons).not.toHaveBeenCalled();
+  });
+
+  it('fila vazia dentro da janela: 0 enviados', async () => {
+    const ctx = fakeCtx();
+    const r = await runDispatchCycle(horaJanela, ctx as any);
+    expect(r.enviados).toBe(0);
+  });
+
+  it('lock falha -> pula sem enviar', async () => {
+    const ctx = fakeCtx({
+      supabase: {
+        getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta()]),
+        lockAlertaParaEnvio: vi.fn().mockResolvedValue(false),
+      },
+    });
+    const r = await runDispatchCycle(horaJanela, ctx as any);
+    expect(r.enviados).toBe(0);
+    expect(ctx.sendAdminWithButtons).not.toHaveBeenCalled();
+  });
+
+  it('sucesso: envia, marca last_sent_at + next_send_at = +3d', async () => {
+    const ctx = fakeCtx({
+      supabase: { getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta()]) },
+    });
+    const r = await runDispatchCycle(horaJanela, ctx as any);
+    expect(r.enviados).toBe(1);
+    expect(ctx.sendAdminWithButtons).toHaveBeenCalledOnce();
+    expect(ctx.supabase.marcarAlertaEnviado).toHaveBeenCalledOnce();
+    const [, sentAt, nextSendAt] = ctx.supabase.marcarAlertaEnviado.mock.calls[0];
+    const dt = new Date(nextSendAt).getTime() - new Date(sentAt).getTime();
+    expect(dt).toBe(3 * 24 * 60 * 60 * 1000); // 3 dias
+  });
+
+  it('WABA falha: unlock e last_sent_at não muda', async () => {
+    const ctx = fakeCtx({
+      supabase: { getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta()]) },
+      sendAdminWithButtons: vi.fn().mockRejectedValue(new Error('rate limit')),
+    });
+    const r = await runDispatchCycle(horaJanela, ctx as any);
+    expect(r.enviados).toBe(0);
+    expect(ctx.supabase.marcarAlertaEnviado).not.toHaveBeenCalled();
+    expect(ctx.supabase.unlockAlerta).toHaveBeenCalledOnce();
+  });
+
+  it('dry-run: não envia mas marca last_sent_at pra simular ciclo', async () => {
+    const ctx = fakeCtx({
+      supabase: { getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta()]) },
+      dryRun: true,
+    });
+    const r = await runDispatchCycle(horaJanela, ctx as any);
+    expect(r.enviados).toBe(0);
+    expect(r.dryRunSimulados).toBe(1);
+    expect(ctx.sendAdminWithButtons).not.toHaveBeenCalled();
+  });
+});

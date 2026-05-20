@@ -794,4 +794,191 @@ export class SupabaseService {
     if (new Date((data as any).expira_em).getTime() < Date.now()) return null;
     return data as { sistema_id: string; expira_em: string };
   }
+
+  // ====================================================================
+  // Módulo 6: alerta proativo
+  // ====================================================================
+
+  async getAlertasAbertosBySistemas(sistemaIds: string[]): Promise<any[]> {
+    if (sistemaIds.length === 0) return [];
+    const { data, error } = await this.client
+      .from('monitoring_alerts')
+      .select('*')
+      .in('sistema_id', sistemaIds)
+      .is('resolved_at', null);
+    if (error) {
+      console.error('[supabase] getAlertasAbertosBySistemas:', error.message);
+      return [];
+    }
+    return data ?? [];
+  }
+
+  async criarAlertaPendente(input: {
+    sistema_id: string;
+    tipo: string;
+    severidade: string;
+    texto: string;
+    primeiro_visto_em: string;
+    next_send_at: string;
+  }): Promise<void> {
+    const { error } = await this.client.from('monitoring_alerts').insert({
+      ...input,
+      last_sent_at: null,
+      snoozed_until: null,
+      resolved_at: null,
+    });
+    if (error) {
+      // Pode bater no unique partial index (corrida) — log e segue
+      console.warn('[supabase] criarAlertaPendente:', error.message);
+    }
+  }
+
+  async lockAlertaParaEnvio(id: string): Promise<boolean> {
+    // CAS: zera next_send_at se ainda não está zerado (alguém pegou).
+    // Retorna a linha afetada — se vazio, perdemos a corrida.
+    // Concurrência: sob READ COMMITTED (default Supabase/Postgres), 2 instâncias
+    // concorrentes serializam no row-lock — a segunda re-avalia o WHERE pós-commit
+    // da primeira, vê next_send_at=null, atualiza 0 rows, retorna false. Easypanel
+    // hoje roda single-instance então o cenário concorrente é teórico, mas o
+    // mecanismo está correto se algum dia escalar.
+    const { data, error } = await this.client
+      .from('monitoring_alerts')
+      .update({ next_send_at: null })
+      .eq('id', id)
+      .not('next_send_at', 'is', null)
+      .select('id');
+    if (error) {
+      console.error('[supabase] lockAlertaParaEnvio:', error.message);
+      return false;
+    }
+    return (data?.length ?? 0) > 0;
+  }
+
+  async unlockAlerta(id: string, retornarPara: string): Promise<void> {
+    await this.client
+      .from('monitoring_alerts')
+      .update({ next_send_at: retornarPara })
+      .eq('id', id);
+  }
+
+  async marcarAlertaEnviado(id: string, sentAt: string, nextSendAt: string): Promise<void> {
+    const { error } = await this.client
+      .from('monitoring_alerts')
+      .update({ last_sent_at: sentAt, next_send_at: nextSendAt })
+      .eq('id', id);
+    if (error) console.error('[supabase] marcarAlertaEnviado:', error.message);
+  }
+
+  async snoozeAlerta(sistemaId: string, snoozedUntil: string): Promise<void> {
+    await this.client
+      .from('monitoring_alerts')
+      .update({ snoozed_until: snoozedUntil })
+      .eq('sistema_id', sistemaId)
+      .is('resolved_at', null);
+  }
+
+  async resolverAlerta(id: string, hoje: string, reason: string = 'auto'): Promise<void> {
+    await this.client
+      .from('monitoring_alerts')
+      .update({ resolved_at: hoje, resolved_reason: reason })
+      .eq('id', id)
+      .is('resolved_at', null);
+  }
+
+  async resolverAlertaManual(sistemaId: string, reason: 'manual' | 'ignorada'): Promise<void> {
+    await this.client
+      .from('monitoring_alerts')
+      .update({ resolved_at: new Date().toISOString(), resolved_reason: reason })
+      .eq('sistema_id', sistemaId)
+      .is('resolved_at', null);
+  }
+
+  async getAlertasParaDespachar(hojeIso: string, limit: number = 8): Promise<any[]> {
+    const { data, error } = await this.client
+      .from('monitoring_alerts')
+      .select('*')
+      .is('resolved_at', null)
+      .not('next_send_at', 'is', null)
+      .lte('next_send_at', hojeIso)
+      .or(`snoozed_until.is.null,snoozed_until.lte.${hojeIso}`)
+      .order('primeiro_visto_em', { ascending: true })
+      .limit(limit * 2);  // pega 2x pra reordenar por severidade no JS
+    if (error) {
+      console.error('[supabase] getAlertasParaDespachar:', error.message);
+      return [];
+    }
+    // ordem por severidade no JS porque 'aviso'/'info'/'urgente' não alfabeta certo
+    const peso: Record<string, number> = { urgente: 0, aviso: 1, info: 2 };
+    return [...(data ?? [])].sort((a, b) => {
+      const dp = (peso[a.severidade] ?? 9) - (peso[b.severidade] ?? 9);
+      if (dp !== 0) return dp;
+      return a.primeiro_visto_em.localeCompare(b.primeiro_visto_em);
+    }).slice(0, limit);
+  }
+
+  async marcarAlertaAcaoDisparada(sistemaId: string, acao: string, hoje: string): Promise<void> {
+    await this.client
+      .from('monitoring_alerts')
+      .update({ acao_disparada: acao, acao_disparada_em: hoje })
+      .eq('sistema_id', sistemaId)
+      .is('resolved_at', null);
+  }
+
+  async getSistemasNoAniversarioHoje(hoje: Date): Promise<Array<{
+    id: string; lead_id: string | null; apelido: string; data_instalacao: string | null; anos: number;
+  }>> {
+    const m = hoje.getMonth() + 1;
+    const d = hoje.getDate();
+    const hojeYear = hoje.getFullYear();
+    const { data, error } = await this.client
+      .from('sistemas')
+      .select('id, lead_id, apelido, data_instalacao')
+      .not('data_instalacao', 'is', null)
+      .eq('ativo', true);
+    if (error) {
+      console.error('[supabase] getSistemasNoAniversarioHoje:', error.message);
+      return [];
+    }
+    const mm = String(m).padStart(2, '0');
+    const dd = String(d).padStart(2, '0');
+    const out: Array<{ id: string; lead_id: string | null; apelido: string; data_instalacao: string | null; anos: number }> = [];
+    for (const s of data ?? []) {
+      if (!s.data_instalacao) continue;
+      const [y, mes, dia] = s.data_instalacao.split('-');
+      if (mes === mm && dia === dd) {
+        const anos = hojeYear - Number(y);
+        if (anos >= 1 && anos <= 5) {
+          out.push({ id: s.id, lead_id: s.lead_id, apelido: s.apelido, data_instalacao: s.data_instalacao, anos });
+        }
+      }
+    }
+    return out;
+  }
+
+  async getSistemaById(id: string): Promise<any | null> {
+    const { data, error } = await this.client.from('sistemas').select('*').eq('id', id).single();
+    if (error) {
+      console.warn('[supabase] getSistemaById:', error.message);
+      return null;
+    }
+    return data;
+  }
+
+  async getLeadById(id: string): Promise<any | null> {
+    const { data, error } = await this.client.from('leads').select('*').eq('id', id).single();
+    if (error) {
+      console.warn('[supabase] getLeadById:', error.message);
+      return null;
+    }
+    return data;
+  }
+
+  async upsertMaintenanceReminderPublic(input: { lead_id: string; scheduled_date: string; topic: string }): Promise<void> {
+    const { error } = await this.client
+      .from('maintenance_reminders')
+      .upsert(input, { onConflict: 'lead_id,scheduled_date,topic', ignoreDuplicates: true });
+    if (error) {
+      console.warn('[supabase] upsertMaintenanceReminderPublic:', error.message);
+    }
+  }
 }

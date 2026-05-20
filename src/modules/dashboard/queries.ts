@@ -340,3 +340,49 @@ export async function fetchPropostasPorMes(supabase: SupabaseClient): Promise<Gr
 
   return Array.from(buckets.entries()).map(([mes, total]) => ({ mes, total }));
 }
+
+// ====================================================================
+// Módulo 6: alerta proativo — KPIs no painel de monitoramento
+// ====================================================================
+
+export interface AlertasResumo { urgente: number; aviso: number; info: number; total: number }
+
+export async function getAlertasAtivosResumo(client: SupabaseClient): Promise<AlertasResumo> {
+  const { data, error } = await client
+    .from('monitoring_alerts')
+    .select('severidade')
+    .is('resolved_at', null);
+  if (error) return { urgente: 0, aviso: 0, info: 0, total: 0 };
+  const c: AlertasResumo = { urgente: 0, aviso: 0, info: 0, total: 0 };
+  for (const r of data ?? []) {
+    if (r.severidade === 'urgente') c.urgente++;
+    else if (r.severidade === 'aviso') c.aviso++;
+    else if (r.severidade === 'info') c.info++;
+    c.total++;
+  }
+  return c;
+}
+
+export async function getAlertasEnviadosUltimos7d(
+  client: SupabaseClient,
+): Promise<Array<{ dia: string; enviados: number }>> {
+  const ini = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await client
+    .from('monitoring_alerts')
+    .select('last_sent_at')
+    .gte('last_sent_at', ini);
+  const por: Record<string, number> = {};
+  if (!error) {
+    for (const r of data ?? []) {
+      if (!r.last_sent_at) continue;
+      const dia = r.last_sent_at.slice(0, 10);
+      por[dia] = (por[dia] ?? 0) + 1;
+    }
+  }
+  const out: Array<{ dia: string; enviados: number }> = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    out.push({ dia: d, enviados: por[d] ?? 0 });
+  }
+  return out;
+}
