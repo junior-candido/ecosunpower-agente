@@ -62,6 +62,11 @@ import type { MarcaInversor } from '../monitoring/types.js';
 import { classificarSistema } from '../monitoring/classificacao.js';
 import { garantiaInfo } from '../monitoring/garantia.js';
 import { filtrarOrdenarSistemas } from '../monitoring/filtro.js';
+import multer from 'multer';
+import { listClientes, getClienteDetail } from './clientes-queries.js';
+import { renderClientesListPage, renderClienteDetailPage } from './clientes-views.js';
+import { getEvaInsights } from '../clientes/insights.js';
+import { uploadAnexo, deleteAnexoFile } from '../anexos/storage.js';
 
 export function createDashboardRouter(
   supabaseService: SupabaseService,
@@ -847,6 +852,152 @@ export function createDashboardRouter(
       console.error('[dashboard/manutencao]', err);
       res.status(500).send(`<h2>Erro ao listar manutencao</h2><pre>${(err as Error).message}</pre>`);
     }
+  });
+
+  // ===== Perfil do Cliente A1 =====
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024 },
+  });
+
+  router.get('/clientes', async (req: Request, res: Response) => {
+    try {
+      const filters = {
+        q: typeof req.query.q === 'string' ? req.query.q : undefined,
+        concessionaria: typeof req.query.concessionaria === 'string' ? req.query.concessionaria : undefined,
+        cidade: typeof req.query.cidade === 'string' ? req.query.cidade : undefined,
+        ord: typeof req.query.ord === 'string' ? req.query.ord : undefined,
+      };
+      const rows = await listClientes(supabaseService, filters);
+      res.type('text/html').send(renderClientesListPage(rows as any, filters));
+    } catch (err) {
+      console.error('[dashboard/clientes]', err);
+      res.status(500).send(`<h2>Erro ao listar clientes</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  router.get('/clientes/:id', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    try {
+      const detail = await getClienteDetail(supabaseService, monitoringService, id);
+      if (!detail) return res.status(404).send('<h2>Cliente não encontrado</h2><a href="/dashboard/clientes">← voltar</a>');
+      const insights = getEvaInsights(detail as any, new Date());
+      res.type('text/html').send(renderClienteDetailPage(detail, insights));
+    } catch (err) {
+      console.error('[dashboard/clientes/detail]', err);
+      res.status(500).send(`<h2>Erro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  router.post('/clientes/:id/edit', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const body = req.body ?? {};
+    const ALLOWED_INSTALLATION_STATUSES = new Set([
+      'novo','qualificando','qualificado','proposta_aceita','contrato_assinado',
+      'instalado','medidor_trocado','operando','pos_venda_concluido',
+    ]);
+    const allowedFields = [
+      'name', 'phone', 'email', 'cpf_cnpj', 'data_nascimento', 'estado_civil', 'profile',
+      'cep', 'endereco_rua', 'endereco_numero', 'endereco_complemento', 'neighborhood', 'city', 'uf',
+      'concessionaria', 'uc_numero', 'tarifa_classe', 'tarifa_modalidade',
+      'consumo_medio_kwh', 'conta_media_brl',
+      'forma_pagamento', 'banco_financiamento',
+      'eh_consumidor_rateio', 'uc_geradora_lead_id', 'percentual_rateio', 'credito_esperado_kwh',
+      'vendedor_responsavel', 'lead_source', 'installation_status', 'observacoes_perfil',
+    ];
+    const fields: Record<string, any> = {};
+    for (const k of allowedFields) {
+      if (body[k] === undefined) continue;
+      let v: any = body[k];
+      if (v === '') v = null;
+      if (k === 'eh_consumidor_rateio') v = v === 'true' || v === true;
+      if (['consumo_medio_kwh', 'credito_esperado_kwh'].includes(k) && v != null) {
+        const n = Number(v);
+        v = Number.isFinite(n) ? n : null;
+      }
+      if (['conta_media_brl', 'percentual_rateio'].includes(k) && v != null) {
+        const n = Number(v);
+        v = Number.isFinite(n) ? n : null;
+      }
+      if (k === 'installation_status' && v != null && !ALLOWED_INSTALLATION_STATUSES.has(String(v))) {
+        return res.status(400).send(`installation_status inválido: ${escapeHtmlSimple(String(v))}`);
+      }
+      fields[k] = v;
+    }
+    if (!fields.name) return res.status(400).send('Nome obrigatório');
+    if (!fields.phone) return res.status(400).send('Telefone obrigatório');
+
+    const r = await supabaseService.updateClienteFields(id, fields);
+    if (!r.ok) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2>`);
+    res.redirect(303, `/dashboard/clientes/${id}#dados`);
+  });
+
+  router.post('/clientes/:id/anexos', upload.single('file'), async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const file = (req as any).file as Express.Multer.File | undefined;
+    if (!file) return res.status(400).send('Arquivo obrigatório');
+    const ALLOWED_ANEXO_TIPOS = new Set([
+      'parecer_acesso','foto_telhado','foto_instalacao','foto_inversor',
+      'foto_visita_tecnica','contrato','outros',
+    ]);
+    const tipoRaw = String(req.body?.tipo ?? 'outros');
+    const tipo = ALLOWED_ANEXO_TIPOS.has(tipoRaw) ? tipoRaw : 'outros';
+    const descricao = req.body?.descricao ? String(req.body.descricao) : null;
+
+    const mimeOk = file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf';
+    if (!mimeOk) return res.status(415).send('Tipo de arquivo não suportado');
+
+    const ext = (file.originalname.split('.').pop() ?? 'bin').toLowerCase().slice(0, 8);
+    const up = await uploadAnexo(supabaseService.getClient(), id, tipo, file.buffer, file.mimetype, ext);
+    if (!up.ok || !up.storage_path) return res.status(500).send(`Upload falhou: ${escapeHtmlSimple(up.error ?? '')}`);
+
+    const ins = await supabaseService.insertAnexo({
+      lead_id: id, tipo, descricao,
+      storage_path: up.storage_path, mime_type: file.mimetype, size_bytes: file.size,
+      created_by: 'junior',
+    });
+    if (!ins.ok) {
+      await deleteAnexoFile(supabaseService.getClient(), up.storage_path).catch(() => {});
+      return res.status(500).send(`Erro DB: ${escapeHtmlSimple(ins.error ?? '')}`);
+    }
+    res.redirect(303, `/dashboard/clientes/${id}#anexos`);
+  });
+
+  router.post('/clientes/:id/anexos/:anexoId', async (req: Request, res: Response) => {
+    if (req.body?._method !== 'delete') return res.status(400).send('Bad method');
+    const id = String(req.params.id ?? '');
+    const anexoId = String(req.params.anexoId ?? '');
+    if (!UUID_RE.test(id) || !UUID_RE.test(anexoId)) return res.status(400).send('UUID inválido');
+    const r = await supabaseService.deleteAnexo(anexoId);
+    if (r.ok && r.storage_path) {
+      await deleteAnexoFile(supabaseService.getClient(), r.storage_path).catch((e) => console.warn('[clientes/anexos] storage cleanup falhou:', e));
+    }
+    res.redirect(303, `/dashboard/clientes/${id}#anexos`);
+  });
+
+  router.post('/clientes/eva-action', async (req: Request, res: Response) => {
+    const action = String(req.body?.action ?? '');
+    const leadId = String(req.body?.lead_id ?? '');
+    if (!UUID_RE.test(leadId)) return res.status(400).send('lead_id inválido');
+
+    let topic: string | null = null;
+    if (action === 'eva_pedir_depoimento') topic = 'pedido_depoimento';
+    else if (action === 'agendar_revisao_aniversario') {
+      let anos = 1;
+      try { anos = JSON.parse(req.body?.extra ?? '{}').anos ?? 1; } catch {}
+      topic = `aniversario_${anos}a`;
+    }
+    if (!topic) return res.status(400).send('Ação desconhecida');
+
+    await supabaseService.upsertMaintenanceReminderPublic({
+      lead_id: leadId,
+      scheduled_date: new Date().toISOString().slice(0, 10),
+      topic,
+    });
+    res.redirect(303, `/dashboard/clientes/${leadId}`);
   });
 
   return router;

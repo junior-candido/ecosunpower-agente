@@ -981,4 +981,128 @@ export class SupabaseService {
       console.warn('[supabase] upsertMaintenanceReminderPublic:', error.message);
     }
   }
+
+  // ====================================================================
+  // Perfil do Cliente A1
+  // ====================================================================
+
+  async listClientesByStatus(statuses: string[], filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string } = {}, limit: number = 50, offset: number = 0): Promise<any[]> {
+    let q = this.client
+      .from('leads')
+      .select('id, name, phone, email, profile, installation_status, installed_at, city, uf, concessionaria, consumo_medio_kwh, conta_media_brl, opt_out, eva_active')
+      .in('installation_status', statuses)
+      .limit(limit);
+
+    if (filters.q) q = q.or(`name.ilike.%${filters.q}%,phone.ilike.%${filters.q}%,email.ilike.%${filters.q}%,cpf_cnpj.ilike.%${filters.q}%`);
+    if (filters.concessionaria) q = q.eq('concessionaria', filters.concessionaria);
+    if (filters.cidade) q = q.eq('city', filters.cidade);
+
+    if (filters.ord === 'nome') q = q.order('name', { ascending: true });
+    else q = q.order('updated_at', { ascending: false });
+
+    const { data, error } = await q.range(offset, offset + limit - 1);
+    if (error) {
+      console.error('[supabase] listClientesByStatus:', error.message);
+      return [];
+    }
+    return data ?? [];
+  }
+
+  async getClienteByLeadId(leadId: string): Promise<any | null> {
+    const { data, error } = await this.client.from('leads').select('*').eq('id', leadId).single();
+    if (error) {
+      console.warn('[supabase] getClienteByLeadId:', error.message);
+      return null;
+    }
+    return data;
+  }
+
+  async updateClienteFields(leadId: string, fields: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+    const cleaned: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === undefined) continue;
+      cleaned[k] = v;
+    }
+    if (Object.keys(cleaned).length === 0) return { ok: true };
+    cleaned.updated_at = new Date().toISOString();
+
+    const { error } = await this.client.from('leads').update(cleaned).eq('id', leadId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }
+
+  async listAnexos(leadId: string): Promise<any[]> {
+    const { data, error } = await this.client
+      .from('lead_anexos')
+      .select('*')
+      .eq('lead_id', leadId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('[supabase] listAnexos:', error.message);
+      return [];
+    }
+    return data ?? [];
+  }
+
+  async insertAnexo(input: {
+    lead_id: string; tipo: string; descricao: string | null;
+    storage_path: string; mime_type: string | null; size_bytes: number | null;
+    created_by: string;
+  }): Promise<{ ok: boolean; id?: string; error?: string }> {
+    const { data, error } = await this.client
+      .from('lead_anexos')
+      .insert(input)
+      .select('id')
+      .single();
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, id: data.id };
+  }
+
+  async deleteAnexo(anexoId: string): Promise<{ ok: boolean; storage_path?: string; error?: string }> {
+    const { data: row, error: rdErr } = await this.client.from('lead_anexos').select('storage_path').eq('id', anexoId).single();
+    if (rdErr) return { ok: false, error: rdErr.message };
+    const storage_path = row?.storage_path;
+
+    const { error: delErr } = await this.client.from('lead_anexos').delete().eq('id', anexoId);
+    if (delErr) return { ok: false, error: delErr.message };
+
+    return { ok: true, storage_path };
+  }
+
+  async listPropostasByLeadId(leadId: string): Promise<any[]> {
+    const { data, error } = await this.client
+      .from('propostas_publicas')
+      .select('id, slug, numero_proposta, created_at, acessos, cliente_respondeu_at, dados_input')
+      .eq('lead_id', leadId)
+      .order('created_at', { ascending: false });
+    if (error) return [];
+    return data ?? [];
+  }
+
+  async listAlertasAtivosByLeadId(leadId: string): Promise<any[]> {
+    const { data: sistemas } = await this.client.from('sistemas_clientes').select('id').eq('lead_id', leadId);
+    const sistemaIds = (sistemas ?? []).map((s: any) => s.id);
+    if (sistemaIds.length === 0) return [];
+    const { data, error } = await this.client
+      .from('monitoring_alerts')
+      .select('id, tipo, severidade, texto, primeiro_visto_em, sistema_id')
+      .in('sistema_id', sistemaIds)
+      .is('resolved_at', null)
+      .order('primeiro_visto_em', { ascending: false });
+    if (error) return [];
+    return data ?? [];
+  }
+
+  async listManutencoesFuturasByLeadId(leadId: string): Promise<any[]> {
+    const hoje = new Date().toISOString().slice(0, 10);
+    const { data, error } = await this.client
+      .from('maintenance_reminders')
+      .select('scheduled_date, topic, status')
+      .eq('lead_id', leadId)
+      .eq('status', 'pending')
+      .gte('scheduled_date', hoje)
+      .order('scheduled_date', { ascending: true });
+    if (error) return [];
+    return data ?? [];
+  }
 }
