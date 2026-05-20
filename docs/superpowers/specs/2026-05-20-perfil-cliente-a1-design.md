@@ -28,7 +28,7 @@ A1 entrega: estrutura completa do perfil + 5 abas ativas (**Dados**, **Anexos**,
 | Consumo | Médio mensal (campo único) + opção expandir pra mês a mês (12 valores) |
 | Forma de pagamento | Cartão / Boleto / À vista / Financiamento. Se financiamento: banco da lista (BV, Sol Fácil, Sol Agora, Santander, BTG Pactual + "outro") |
 | Rateio MMGD | Schema entra na A1 (campos: é_consumidor_rateio, uc_geradora_id ref leads, percentual_rateio, credito_esperado_kwh). Implementação da lógica de cálculo fica pra Frente B |
-| Anexos | Upload via Drive (já existe DriveUploader) → grid no perfil. Tipos: parecer_acesso, foto_telhado, foto_instalacao, foto_inversor, foto_visita_tecnica, contrato, outros |
+| Anexos | Upload via Supabase Storage (bucket `client-attachments`) → grid no perfil. Tipos: parecer_acesso, foto_telhado, foto_instalacao, foto_inversor, foto_visita_tecnica, contrato, outros |
 | Visual | Cockpit dark neon (mesma estética `/cockpit`) com timeline narrativa em prosa |
 | Eva Insights V1 | 3 cards: upgrade (conta subiu), depoimento (geração acima), aniversário (revisão) — leem de tabelas existentes, sem novo motor |
 
@@ -54,8 +54,8 @@ A1 entrega: estrutura completa do perfil + 5 abas ativas (**Dados**, **Anexos**,
 
 - `src/modules/dashboard/clientes-queries.ts` — `listClientes`, `getClienteDetail`, `listAnexosCliente`, `getEvaInsights` (3 insights V1)
 - `src/modules/dashboard/clientes-views.ts` — `renderClientesListPage`, `renderClienteDetailPage`, `renderClienteEditFormInline`
-- `src/modules/anexos/upload.ts` — `uploadAnexoToDrive(file, leadId, tipo)`, reusa `DriveUploader` existente (do proposal-assistant)
-- `src/modules/anexos/service.ts` — `AnexoService.list(leadId)`, `.delete(id)`, `.classify(tipo)`
+- `src/modules/anexos/storage.ts` — `uploadAnexoToStorage(buffer, leadId, tipo, mimeType, ext)` usando `supabase.storage.from('client-attachments').upload(...)`. Retorna `{ storage_path, public_url }`. Path padrão: `<leadId>/<tipo>/<uuid>.<ext>`
+- `src/modules/anexos/service.ts` — `AnexoService.list(leadId)`, `.delete(id)` (remove DB + storage), `.classify(tipo)`
 
 ### Modificações em arquivos existentes
 
@@ -104,14 +104,13 @@ alter table leads add column if not exists vendedor_responsavel text;
 -- observações livres
 alter table leads add column if not exists observacoes_perfil text;
 
--- 2. Tabela de anexos (Drive)
+-- 2. Tabela de anexos (Supabase Storage)
 create table lead_anexos (
   id uuid primary key default gen_random_uuid(),
   lead_id uuid not null references leads(id) on delete cascade,
   tipo text not null,                     -- 'parecer_acesso','foto_telhado','foto_instalacao','foto_inversor','foto_visita_tecnica','contrato','outros'
   descricao text,                          -- texto livre
-  drive_file_id text not null,             -- ID do arquivo no Google Drive
-  drive_url text not null,                 -- link público pra visualização
+  storage_path text not null,              -- path no bucket client-attachments, ex '<leadId>/<tipo>/<uuid>.jpg'
   mime_type text,
   size_bytes integer,
   created_at timestamptz not null default now(),
@@ -123,6 +122,13 @@ create index lead_anexos_by_tipo on lead_anexos (lead_id, tipo);
 ```
 
 **Junior aplica manual no SQL Editor** (projeto `kupnsoyymulbdzakqlqc`) — MCP aponta pro projeto errado.
+
+**Junior também cria o bucket `client-attachments`** no Supabase Storage (Studio → Storage → New bucket):
+- Nome: `client-attachments`
+- Public: **OFF** (privado por padrão; URLs assinadas com expiração quando precisar mostrar)
+- Permitir upload pelos roles `service_role` (que o backend usa)
+- File size limit: 20 MB
+- Allowed MIME types: `image/*, application/pdf`
 
 ## Rotas
 
@@ -161,13 +167,22 @@ Retorna 303 redirect pra `/dashboard/clientes/:id` (PRG pattern, já usado em ou
 
 ### `POST /dashboard/clientes/:id/anexos`
 
-Multipart upload. `enctype=multipart/form-data`. Campos: `tipo`, `descricao`, `file`. Upload via `DriveUploader.upload(buffer, filename, leadId)`, grava em `lead_anexos`, redirect pra `/dashboard/clientes/:id#anexos`.
-
-Limite: 20 MB por arquivo. MIME aceito: `image/*`, `application/pdf`. Rejeita resto com 415.
+Multipart upload. `enctype=multipart/form-data`. Campos: `tipo`, `descricao`, `file`. Fluxo:
+1. Valida MIME (`image/*` ou `application/pdf`) e size (≤ 20 MB) → 415/413 se falhar
+2. Gera UUID + extensão → path `<leadId>/<tipo>/<uuid>.<ext>`
+3. `supabase.storage.from('client-attachments').upload(path, buffer, { contentType: mime, upsert: false })`
+4. Se upload OK → `INSERT INTO lead_anexos (...) VALUES (...)` com `storage_path` populado
+5. Se INSERT falhar após upload → remove do storage (`supabase.storage.from(...).remove([path])`) pra não deixar lixo
+6. Redirect 303 pra `/dashboard/clientes/:id#anexos`
 
 ### `DELETE /dashboard/clientes/:id/anexos/:anexoId` (via POST com `_method=delete`)
 
-Remove do `lead_anexos`. NÃO remove do Drive (preserva — pode ser usado em proposta). Confirmação JS antes de submeter.
+Fluxo:
+1. Lê `storage_path` do `lead_anexos` antes de deletar
+2. `DELETE FROM lead_anexos WHERE id = :anexoId`
+3. `supabase.storage.from('client-attachments').remove([storage_path])` (best-effort; se falhar, log warning — DB já tá limpo)
+
+Confirmação JS antes de submeter.
 
 ## Componentes da tela
 
@@ -241,14 +256,16 @@ Campos por bloco:
 ### Aba Anexos — upload + grid
 
 Grid 6 colunas (responsive 4 em tablet, 2 em mobile). Cada item:
-- Thumbnail (imagem direto / ícone PDF / ícone genérico)
+- Thumbnail (imagem direto via URL assinada / ícone PDF / ícone genérico)
 - Tipo (label tipo cadastrado)
 - Data
 - Hover: descrição
-- Click: abre `drive_url` em nova aba
+- Click: abre URL assinada (TTL 1h via `supabase.storage.from('client-attachments').createSignedUrl(path, 3600)`) em nova aba
 - Botão `×` no canto (delete com confirm)
 
 Botão `+ Adicionar` (card tracejado no grid). Abre modal upload com: tipo (select), descrição (input), arquivo (file). Submete via `POST /clientes/:id/anexos`.
+
+**Performance:** o render do grid pode pré-gerar URLs assinadas server-side em batch (1 chamada `.createSignedUrls(paths, 3600)`) e embuti-las no HTML — evita N+1 fetch no cliente.
 
 ### Timeline narrativa (sempre visível, abaixo das abas)
 
@@ -285,7 +302,7 @@ Action types em A1: `eva_pedir_depoimento`, `agendar_revisao_aniversario`. POST 
 | `conversations.messages` | Aba Conversa, eventos Timeline (resumo) |
 | `eva_cadence` | Timeline (toques enviados) |
 | `maintenance_reminders` | Eva Insights → cria reminders, eventos Timeline (lembretes enviados) |
-| `DriveUploader` (proposal-assistant.ts) | Upload de anexos |
+| `supabase.storage` (bucket `client-attachments`) | Upload + URLs assinadas + delete de anexos |
 
 ## Lista de concessionárias do Brasil (V1)
 
@@ -334,8 +351,9 @@ Quando user seleciona `outra`, libera input texto livre que grava em `leads.conc
 |---|---|
 | Cliente sem sistema vinculado | KPIs 1/3/5 mostram "—" + link "vincular sistema" |
 | Cliente sem `installed_at` | KPI Economia mostra "—". Aniversário insight não dispara |
-| Upload Drive falha | Retorna 500 com mensagem clara, anexo NÃO entra na tabela |
-| Lead_anexo cuja `drive_file_id` foi removido externamente | Link 404 — anexo ainda aparece no grid, mas click leva a erro Drive. Fast-follow: cron de verificação de integridade |
+| Upload Storage falha | Retorna 500 com mensagem clara, anexo NÃO entra na tabela |
+| INSERT em `lead_anexos` falha após upload OK | Backend remove o objeto do bucket pra não deixar lixo, retorna 500 |
+| `storage_path` órfão (arquivo deletado externamente do bucket) | URL assinada gera 404 ao acessar — anexo ainda aparece no grid. Fast-follow: cron de verificação de integridade |
 | Cliente em opt_out | Header mostra chip "🚫 OPT-OUT" + Eva Insights `cta` desabilitados ("Eva não pode falar com esse lead") |
 | Concessionária = "outra" sem texto custom | Aceita `null` no banco (sem validação extra) |
 | `eh_consumidor_rateio = true` sem `uc_geradora_lead_id` | Validação 400 no POST edit; UI mostra erro inline |
@@ -391,10 +409,11 @@ Dashboard `/cockpit`: adicionar tile "Clientes operando" — count de `installat
 ## Deploy
 
 1. Junior aplica `033_clientes_perfil.sql` no SQL Editor (`kupnsoyymulbdzakqlqc`)
-2. Implementação task-por-task com TDD (plano detalhado via `writing-plans`)
-3. Push, Easypanel auto-pull SSH, Junior Implanta
-4. Smoke conforme checklist acima
-5. Monitora 1 dia. Próxima sessão = A2 (calculadora)
+2. Junior cria bucket `client-attachments` no Supabase Storage (privado, 20MB limit, MIME `image/*` + `application/pdf`)
+3. Implementação task-por-task com TDD (plano detalhado via `writing-plans`)
+4. Push, Easypanel auto-pull SSH, Junior Implanta
+5. Smoke conforme checklist acima
+6. Monitora 1 dia. Próxima sessão = A2 (calculadora)
 
 ## Fast-follows (fora de A1)
 
@@ -404,7 +423,7 @@ Dashboard `/cockpit`: adicionar tile "Clientes operando" — count de `installat
 - **A5** — Aba Relatórios: pós-instalação automático (reusa template S3)
 - **Frente B (B1-B4)** — Coleta automática de contas + parser + rateio MMGD cálculo
 - Marcar lead como "geradora MMGD" (`is_geradora_mmgd` flag + tela própria gestão de UCs beneficiárias) — pré-requisito pra B4
-- Cron de integridade Drive (verifica `drive_file_id` ainda existe)
+- Cron de integridade Storage (verifica `storage_path` ainda existe no bucket)
 - Tile "Clientes operando" no /cockpit
 - Comando `/cliente buscar João` no WhatsApp pra Junior achar cliente direto (memória contextual prevista pra Fatia C anterior — mantida na fila)
 
