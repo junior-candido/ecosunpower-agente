@@ -4,7 +4,7 @@
 
 create table monitoring_alerts (
   id uuid primary key default gen_random_uuid(),
-  sistema_id uuid not null references sistemas(id) on delete cascade,
+  sistema_id uuid not null references sistemas_clientes(id) on delete cascade,
   tipo text not null,
   severidade text not null,
   texto text not null,

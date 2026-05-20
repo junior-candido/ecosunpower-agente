@@ -931,7 +931,7 @@ export class SupabaseService {
     const d = hoje.getDate();
     const hojeYear = hoje.getFullYear();
     const { data, error } = await this.client
-      .from('sistemas')
+      .from('sistemas_clientes')
       .select('id, lead_id, apelido, data_instalacao')
       .not('data_instalacao', 'is', null)
       .eq('ativo', true);
@@ -956,7 +956,7 @@ export class SupabaseService {
   }
 
   async getSistemaById(id: string): Promise<any | null> {
-    const { data, error } = await this.client.from('sistemas').select('*').eq('id', id).single();
+    const { data, error } = await this.client.from('sistemas_clientes').select('*').eq('id', id).single();
     if (error) {
       console.warn('[supabase] getSistemaById:', error.message);
       return null;
