@@ -15,8 +15,8 @@ interface LeadResumo {
 
 function nomeCliente(lead: LeadResumo | null, sistema: SistemaResumo): string {
   if (lead?.name) return lead.name;
-  if (lead && !lead.name) return 'Cliente sem nome cadastrado';
-  return sistema.apelido;
+  if (lead) return 'Cliente sem nome cadastrado';
+  return sistema.apelido ?? 'Cliente sem nome cadastrado';
 }
 
 function header(tipo: MonitoringAlertRow['tipo']): string {
@@ -64,10 +64,11 @@ export function formatAlertMessage(
 ): FormattedAlert {
   const nome = nomeCliente(lead, sistema);
   const kwp = sistema.potencia_kwp != null ? `${sistema.potencia_kwp} kWp` : '— kWp';
+  const marca = sistema.marca_inversor ?? 'inversor';
   const linha1 = `${header(alerta.tipo)}`;
   const linha2 = alerta.tipo === 'erro_integracao'
-    ? `${nome} — ${sistema.marca_inversor}`
-    : `${nome} — ${kwp} (${sistema.marca_inversor})`;
+    ? `${nome} — ${marca}`
+    : `${nome} — ${kwp} (${marca})`;
   const texto = `${linha1}\n${linha2}\n${alerta.texto}`;
   return {
     texto,

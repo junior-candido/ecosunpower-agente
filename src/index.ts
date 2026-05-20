@@ -6016,10 +6016,14 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
       }
     };
     // 1x/dia 6h BRT — checa a cada hora e dispara se hora local = 6
-    setInterval(() => {
+    const checkAnniversaryHour = () => {
       const h = new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false });
       if (Number(h) === 6) runAnniversaryCron();
-    }, 60 * 60 * 1000);
+    };
+    setInterval(checkAnniversaryHour, 60 * 60 * 1000);
+    // Também checa no startup (8min após boot) — protege contra reinício no
+    // intervalo entre 06:00 e 06:59 BRT, onde o setInterval só pegaria às 07:xx.
+    setTimeout(checkAnniversaryHour, 8 * 60 * 1000);
 
     console.log(
       `[proactive-alerts] crons started (detect 60min, dispatch 15min, anniversary 06h BRT). DRY_RUN=${proactiveDryRun}`,

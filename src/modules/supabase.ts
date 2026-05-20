@@ -836,6 +836,11 @@ export class SupabaseService {
   async lockAlertaParaEnvio(id: string): Promise<boolean> {
     // CAS: zera next_send_at se ainda não está zerado (alguém pegou).
     // Retorna a linha afetada — se vazio, perdemos a corrida.
+    // Concurrência: sob READ COMMITTED (default Supabase/Postgres), 2 instâncias
+    // concorrentes serializam no row-lock — a segunda re-avalia o WHERE pós-commit
+    // da primeira, vê next_send_at=null, atualiza 0 rows, retorna false. Easypanel
+    // hoje roda single-instance então o cenário concorrente é teórico, mas o
+    // mecanismo está correto se algum dia escalar.
     const { data, error } = await this.client
       .from('monitoring_alerts')
       .update({ next_send_at: null })
