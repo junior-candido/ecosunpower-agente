@@ -914,11 +914,13 @@ export function createDashboardRouter(
       if (v === '') v = null;
       if (k === 'eh_consumidor_rateio') v = v === 'true' || v === true;
       if (['consumo_medio_kwh', 'credito_esperado_kwh'].includes(k) && v != null) {
-        const n = Number(v);
+        const s = String(v).replace(',', '.');
+        const n = Number(s);
         v = Number.isFinite(n) ? n : null;
       }
       if (['conta_media_brl', 'percentual_rateio'].includes(k) && v != null) {
-        const n = Number(v);
+        const s = String(v).replace(',', '.');
+        const n = Number(s);
         v = Number.isFinite(n) ? n : null;
       }
       if (k === 'installation_status' && v != null && !ALLOWED_INSTALLATION_STATUSES.has(String(v))) {

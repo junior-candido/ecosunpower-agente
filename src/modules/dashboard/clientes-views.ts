@@ -2,7 +2,49 @@
 import { renderLayout } from './views.js';
 import { statusLabel, statusCorChip } from '../clientes/mappers.js';
 import { CONCESSIONARIAS_BR, getConcessionariaById } from '../concessionarias.js';
+import { CIDADES_DF_GO } from '../cidades-df-go.js';
 import type { ClienteRow, ClienteDetail, InsightCard, SistemaOrfaoCard } from '../clientes/types.js';
+
+// Datalist comum de cidades DF+GO (renderizado uma vez por página, referenciado por list="cidades-df-go")
+const CIDADES_DATALIST_HTML = `<datalist id="cidades-df-go">${CIDADES_DF_GO.map((c) => `<option value="${c}">`).join('')}</datalist>`;
+
+// JS de auto-preenchimento por CEP via ViaCEP. Reutilizado no modal e no form.
+const CEP_LOOKUP_SCRIPT = `
+<script>
+  async function puxarCep(cepInput, formEl) {
+    const raw = (cepInput.value || '').replace(/\\D/g, '');
+    if (raw.length !== 8) return;
+    try {
+      const r = await fetch('https://viacep.com.br/ws/' + raw + '/json/');
+      if (!r.ok) return;
+      const d = await r.json();
+      if (d.erro) return;
+      const setIfEmpty = (selector, value) => {
+        if (!value) return;
+        const el = formEl.querySelector(selector);
+        if (el && !el.value) el.value = value;
+      };
+      setIfEmpty('[name="endereco_rua"]', d.logradouro);
+      setIfEmpty('[name="neighborhood"]', d.bairro);
+      // cidade e UF sempre sobrescrevem (CEP é fonte da verdade)
+      const elCity = formEl.querySelector('[name="city"]'); if (elCity && d.localidade) elCity.value = d.localidade;
+      const elUf = formEl.querySelector('[name="uf"]'); if (elUf && d.uf) elUf.value = d.uf;
+    } catch (e) { /* falha silenciosa */ }
+  }
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('input[name="cep"]').forEach((el) => {
+      el.addEventListener('blur', () => puxarCep(el, el.closest('form')));
+    });
+    document.querySelectorAll('.js-num').forEach((el) => {
+      el.addEventListener('blur', () => { el.value = (el.value || '').replace(',', '.'); });
+    });
+    document.querySelectorAll('form').forEach((f) => {
+      f.addEventListener('submit', () => {
+        f.querySelectorAll('.js-num').forEach((el) => { el.value = (el.value || '').replace(',', '.'); });
+      });
+    });
+  });
+</script>`;
 
 function escapeHtml(s: string | null | undefined): string {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -252,13 +294,53 @@ function renderAbaDados(d: ClienteDetail): string {
     { id: 'comercial', label: 'Comercial' },
     { id: 'rural', label: 'Rural' },
   ];
+  const ESTADOS_CIVIS = [
+    { id: 'solteiro', label: 'Solteiro(a)' },
+    { id: 'casado', label: 'Casado(a)' },
+    { id: 'uniao_estavel', label: 'União estável' },
+    { id: 'divorciado', label: 'Divorciado(a)' },
+    { id: 'separado', label: 'Separado(a)' },
+    { id: 'viuvo', label: 'Viúvo(a)' },
+  ];
+  const TARIFA_CLASSES = [
+    { id: 'B1', label: 'B1 — Residencial' },
+    { id: 'B2', label: 'B2 — Rural' },
+    { id: 'B3', label: 'B3 — Demais (Comercial BT)' },
+    { id: 'B4', label: 'B4 — Iluminação pública' },
+    { id: 'A4', label: 'A4 — Comercial/Industrial AT' },
+    { id: 'A3', label: 'A3 — Industrial AT' },
+  ];
+  const TARIFA_MODALIDADES = [
+    { id: 'convencional', label: 'Convencional' },
+    { id: 'branca', label: 'Branca' },
+    { id: 'verde', label: 'Verde (Horosazonal)' },
+    { id: 'azul', label: 'Azul (Horosazonal)' },
+  ];
+  const INSTALLATION_STATUSES = [
+    { id: 'novo', label: 'Novo lead' },
+    { id: 'qualificando', label: 'Qualificando' },
+    { id: 'qualificado', label: 'Qualificado' },
+    { id: 'proposta_aceita', label: 'Proposta aceita' },
+    { id: 'contrato_assinado', label: 'Contrato assinado' },
+    { id: 'instalado', label: 'Instalado' },
+    { id: 'medidor_trocado', label: 'Medidor trocado' },
+    { id: 'operando', label: 'Operando' },
+    { id: 'pos_venda_concluido', label: 'Pós-venda concluído' },
+  ];
   const FORMAS_PG = [
     { id: 'cartao', label: 'Cartão' },
     { id: 'boleto', label: 'Boleto' },
     { id: 'a_vista', label: 'À vista' },
     { id: 'financiamento', label: 'Financiamento' },
   ];
-  const BANCOS = ['bv', 'solfacil', 'solagora', 'santander', 'btg', 'outro'];
+  const BANCOS = [
+    { id: 'bv', label: 'BV' },
+    { id: 'solfacil', label: 'Sol Fácil' },
+    { id: 'solagora', label: 'Sol Agora' },
+    { id: 'santander', label: 'Santander' },
+    { id: 'btg', label: 'BTG Pactual' },
+    { id: 'outro', label: 'Outro' },
+  ];
 
   const opt = (v: string, label: string, sel?: string | null) =>
     `<option value="${escapeHtml(v)}" ${sel === v ? 'selected' : ''}>${escapeHtml(label)}</option>`;
@@ -269,12 +351,14 @@ function renderAbaDados(d: ClienteDetail): string {
         <legend class="text-[10px] text-slate-400 uppercase tracking-wider px-1">👤 Identificação</legend>
         <div class="grid grid-cols-2 gap-2 mt-2">
           <input name="name" value="${escapeHtml(d.name ?? '')}" placeholder="Nome completo" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm col-span-2">
-          <input name="cpf_cnpj" value="${escapeHtml(d.cpf_cnpj ?? '')}" placeholder="CPF/CNPJ" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input name="cpf_cnpj" value="${escapeHtml(d.cpf_cnpj ?? '')}" placeholder="CPF/CNPJ (só números)" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
           <input type="date" name="data_nascimento" value="${escapeHtml(d.data_nascimento ?? '')}" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
           <select name="profile" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             ${opt('', '— Tipo —', d.profile)}${TIPOS.map(t => opt(t.id, t.label, d.profile)).join('')}
           </select>
-          <input name="estado_civil" value="${escapeHtml(d.estado_civil ?? '')}" placeholder="Estado civil" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <select name="estado_civil" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+            ${opt('', '— Estado civil —', d.estado_civil)}${ESTADOS_CIVIS.map(e => opt(e.id, e.label, d.estado_civil)).join('')}
+          </select>
         </div>
       </fieldset>
 
@@ -294,7 +378,7 @@ function renderAbaDados(d: ClienteDetail): string {
           <input name="endereco_numero" value="${escapeHtml(d.endereco_numero ?? '')}" placeholder="Nº" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
           <input name="endereco_complemento" value="${escapeHtml(d.endereco_complemento ?? '')}" placeholder="Compl." class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
           <input name="neighborhood" value="${escapeHtml(d.neighborhood ?? '')}" placeholder="Bairro" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm col-span-2">
-          <input name="city" value="${escapeHtml(d.city ?? '')}" placeholder="Cidade" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm col-span-2">
+          <input name="city" list="cidades-df-go" value="${escapeHtml(d.city ?? '')}" placeholder="Cidade" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm col-span-2">
           <input name="uf" value="${escapeHtml(d.uf ?? '')}" placeholder="UF" maxlength="2" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
         </div>
       </fieldset>
@@ -305,22 +389,26 @@ function renderAbaDados(d: ClienteDetail): string {
           <select name="concessionaria" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm col-span-2">
             ${opt('', '— Concessionária —', d.concessionaria)}${CONCESSIONARIAS_BR.map(c => opt(c.id, c.nome, d.concessionaria)).join('')}
           </select>
-          <input name="uc_numero" value="${escapeHtml(d.uc_numero ?? '')}" placeholder="UC" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
-          <input name="tarifa_classe" value="${escapeHtml(d.tarifa_classe ?? '')}" placeholder="Classe (B1, B3...)" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
-          <input name="tarifa_modalidade" value="${escapeHtml(d.tarifa_modalidade ?? '')}" placeholder="Modalidade" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm col-span-2">
+          <input name="uc_numero" value="${escapeHtml(d.uc_numero ?? '')}" placeholder="UC (nº instalação)" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <select name="tarifa_classe" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+            ${opt('', '— Classe tarifária —', d.tarifa_classe)}${TARIFA_CLASSES.map(t => opt(t.id, t.label, d.tarifa_classe)).join('')}
+          </select>
+          <select name="tarifa_modalidade" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm col-span-2">
+            ${opt('', '— Modalidade tarifária —', d.tarifa_modalidade)}${TARIFA_MODALIDADES.map(t => opt(t.id, t.label, d.tarifa_modalidade)).join('')}
+          </select>
         </div>
       </fieldset>
 
       <fieldset class="bg-slate-800/40 border border-slate-700 rounded-xl p-3">
         <legend class="text-[10px] text-slate-400 uppercase tracking-wider px-1">💰 Consumo + Pagamento</legend>
         <div class="grid grid-cols-2 gap-2 mt-2">
-          <input type="number" name="consumo_medio_kwh" value="${d.consumo_medio_kwh ?? ''}" placeholder="kWh/mês" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
-          <input type="number" step="0.01" name="conta_media_brl" value="${d.conta_media_brl ?? ''}" placeholder="R$/mês" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input type="text" inputmode="decimal" name="consumo_medio_kwh" value="${d.consumo_medio_kwh ?? ''}" placeholder="Consumo médio (kWh/mês, ex: 1300)" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm js-num">
+          <input type="text" inputmode="decimal" name="conta_media_brl" value="${d.conta_media_brl ?? ''}" placeholder="Conta média (R$/mês, ex: 1560)" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm js-num">
           <select name="forma_pagamento" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
-            ${opt('', '— Pagamento —', d.forma_pagamento)}${FORMAS_PG.map(f => opt(f.id, f.label, d.forma_pagamento)).join('')}
+            ${opt('', '— Forma de pagamento —', d.forma_pagamento)}${FORMAS_PG.map(f => opt(f.id, f.label, d.forma_pagamento)).join('')}
           </select>
           <select name="banco_financiamento" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
-            ${opt('', '— Banco —', d.banco_financiamento)}${BANCOS.map(b => opt(b, b.toUpperCase(), d.banco_financiamento)).join('')}
+            ${opt('', '— Banco do financiamento —', d.banco_financiamento)}${BANCOS.map(b => opt(b.id, b.label, d.banco_financiamento)).join('')}
           </select>
         </div>
       </fieldset>
@@ -333,17 +421,19 @@ function renderAbaDados(d: ClienteDetail): string {
         </label>
         <div class="grid grid-cols-3 gap-2 mt-2">
           <input name="uc_geradora_lead_id" value="${escapeHtml(d.uc_geradora_lead_id ?? '')}" placeholder="UC geradora (lead_id)" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
-          <input type="number" step="0.01" name="percentual_rateio" value="${d.percentual_rateio ?? ''}" placeholder="% rateio (0-100)" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
-          <input type="number" name="credito_esperado_kwh" value="${d.credito_esperado_kwh ?? ''}" placeholder="Crédito esperado kWh" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input type="text" inputmode="decimal" name="percentual_rateio" value="${d.percentual_rateio ?? ''}" placeholder="% rateio (0-100, vírgula ok)" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm js-num">
+          <input type="text" inputmode="decimal" name="credito_esperado_kwh" value="${d.credito_esperado_kwh ?? ''}" placeholder="Crédito esperado kWh" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm js-num">
         </div>
       </fieldset>
 
       <fieldset class="bg-slate-800/40 border border-slate-700 rounded-xl p-3 md:col-span-2">
         <legend class="text-[10px] text-slate-400 uppercase tracking-wider px-1">💼 Comercial + Observações</legend>
         <div class="grid grid-cols-3 gap-2 mt-2">
-          <input name="vendedor_responsavel" value="${escapeHtml(d.vendedor_responsavel ?? '')}" placeholder="Vendedor" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
-          <input name="lead_source" value="${escapeHtml(d.lead_source ?? '')}" placeholder="Origem (CTWA, etc)" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
-          <input name="installation_status" value="${escapeHtml(d.installation_status ?? '')}" placeholder="Status" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input name="vendedor_responsavel" value="${escapeHtml(d.vendedor_responsavel ?? '')}" placeholder="Vendedor responsável" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <input name="lead_source" value="${escapeHtml(d.lead_source ?? '')}" placeholder="Origem (CTWA, indicação, orgânico...)" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          <select name="installation_status" class="px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+            ${opt('', '— Status —', d.installation_status)}${INSTALLATION_STATUSES.map(s => opt(s.id, s.label, d.installation_status)).join('')}
+          </select>
         </div>
         <textarea name="observacoes_perfil" placeholder="Observações livres" class="w-full mt-2 px-2 py-1.5 rounded bg-slate-900 border border-slate-700 text-slate-100 text-sm" rows="3">${escapeHtml(d.observacoes_perfil ?? '')}</textarea>
       </fieldset>
@@ -492,7 +582,7 @@ export function renderClienteDetailPage(d: ClienteDetail, insights: InsightCard[
       document.querySelectorAll('[id$="-content"]').forEach(c => c.classList.add('hidden'));
       document.getElementById(target + '-content').classList.remove('hidden');
     }));
-  </script>`;
+  </script>${CEP_LOOKUP_SCRIPT}`;
 
   const insightsComLeadId = insights.map(i => ({
     ...i,
@@ -509,6 +599,7 @@ export function renderClienteDetailPage(d: ClienteDetail, insights: InsightCard[
     ${renderInsightsRow(insightsComLeadId)}
     ${tabs}
     ${abasConteudo}
+    ${CIDADES_DATALIST_HTML}
   `;
 
   return renderLayout({ active: 'clientes', title: `Cliente — ${d.name ?? '?'}`, body, scripts, dark: true });
