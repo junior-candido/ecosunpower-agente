@@ -127,7 +127,7 @@ export function renderClientesListPage(
     </form>
 
     ${rows.length === 0 && sistemasOrfaos.length === 0
-      ? `<div class="bg-slate-800/60 rounded-xl border border-slate-700 p-12 text-center text-slate-400">Nenhum cliente cadastrado ainda. Quando um lead chega em installation_status >= contrato_assinado, ou um sistema for importado, aparece aqui.</div>`
+      ? `<div class="bg-slate-800/60 rounded-xl border border-slate-700 p-12 text-center text-slate-400">Nenhum cadastrado ainda. Use <strong>➕ Novo cliente</strong> pra começar.</div>`
       : ''}
 
     ${rows.length > 0

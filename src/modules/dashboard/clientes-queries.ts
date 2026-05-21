@@ -5,17 +5,15 @@ import { esperadoDiaKwh } from '../monitoring/classificacao.js';
 import { getSignedUrls } from '../anexos/storage.js';
 import type { ClienteRow, ClienteDetail, AnexoListItem, SistemaOrfaoCard } from '../clientes/types.js';
 
-const CLIENTE_STATUSES = [
-  'contrato_assinado', 'instalado', 'medidor_trocado',
-  'operando', 'pos_venda_concluido',
-];
-
+// Lista unificada: mostra todos os cadastrados (lead + cliente fechado + operando).
+// Junior pediu "lista única" — quem cadastra fica visível, com badge de status.
+// Filtro por status agora vai ser via query param (futuro), nao mais por construção.
 export async function listClientes(
   supabase: SupabaseService,
   filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string },
 ): Promise<{ clientes: ClienteRow[]; sistemasOrfaos: SistemaOrfaoCard[] }> {
   const [clientes, orfaosRaw] = await Promise.all([
-    supabase.listClientesByStatus(CLIENTE_STATUSES, filters),
+    supabase.listClientesByStatus([], filters),
     supabase.listSistemasOrfaos(),
   ]);
   const sistemasOrfaos: SistemaOrfaoCard[] = (orfaosRaw ?? []).map((s: any) => ({

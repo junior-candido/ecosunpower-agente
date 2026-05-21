@@ -1030,9 +1030,14 @@ export class SupabaseService {
   async listClientesByStatus(statuses: string[], filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string } = {}, limit: number = 50, offset: number = 0): Promise<any[]> {
     let q = this.client
       .from('leads')
-      .select('id, name, phone, email, profile, installation_status, installed_at, city, uf, concessionaria, consumo_medio_kwh, conta_media_brl, opt_out, eva_active')
-      .in('installation_status', statuses)
+      .select('id, name, phone, email, profile, installation_status, installed_at, city, uf, concessionaria, consumo_medio_kwh, conta_media_brl, opt_out, eva_active, created_at')
       .limit(limit);
+
+    // Lista [] significa "todos" — Junior pediu lista unificada de pessoas.
+    // Mantém o parâmetro pra outros callers que queiram filtrar.
+    if (statuses.length > 0) {
+      q = q.in('installation_status', statuses);
+    }
 
     if (filters.q) q = q.or(`name.ilike.%${filters.q}%,phone.ilike.%${filters.q}%,email.ilike.%${filters.q}%,cpf_cnpj.ilike.%${filters.q}%`);
     if (filters.concessionaria) q = q.eq('concessionaria', filters.concessionaria);
