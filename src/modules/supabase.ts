@@ -744,6 +744,14 @@ export class SupabaseService {
     };
   }
 
+  async marcarPropostaPublicaEnviada(slug: string): Promise<void> {
+    const { error } = await this.client
+      .from('propostas_publicas')
+      .update({ sent_to_client_at: new Date().toISOString() } as any)
+      .eq('slug', slug);
+    if (error) throw new Error(`Failed to mark proposta sent: ${error.message}`);
+  }
+
   // Fire-and-forget. Race condition em counter de view e tolerada (~best effort).
   // Nao bloqueia a resposta HTTP da proposta.
   // Retorna { acessosAntes } pra caller detectar primeira visualizacao

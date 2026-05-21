@@ -1409,5 +1409,45 @@ export function createDashboardRouter(
     }));
   });
 
+  router.post('/propostas/:slug/enviar', async (req: Request, res: Response) => {
+    const slug = String(req.params.slug ?? '');
+    if (!/^[A-Za-z0-9_-]{16,32}$/.test(slug)) return res.status(400).send('Slug inválido');
+    if (!options.metaService) return res.status(500).send('MetaWhatsApp não configurado');
+
+    const result = await supabaseService.getPropostaPublicaBySlug(slug);
+    if (result.status !== 'ok' || !result.html) return res.status(404).send('Proposta não encontrada');
+
+    const extras = await supabaseService.getPropostaPublicaExtras(slug);
+    if (!extras.cliente_telefone) return res.status(400).send('Cliente sem telefone');
+    if (extras.opt_out) return res.status(400).send('Cliente em opt-out');
+
+    // Re-gera PDF do html salvo (não armazenamos pdf buffer pra economizar storage)
+    const { htmlToPdf } = await import('../proposal/pdf-generator.js');
+    const pdfBuffer = await htmlToPdf(result.html, { waitForChartMs: 2000 });
+
+    const { enviarPropostaParaCliente } = await import('../eva-sender.js');
+    const publicBase = process.env.PROPOSAL_PUBLIC_BASE_URL ?? 'https://propostas.ecosunpower.eng.br';
+    const publicUrl = `${publicBase}/p/${slug}`;
+    const nomeCliente = result.clienteNome ?? 'Cliente';
+    const safeName = nomeCliente.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '-');
+
+    const send = await enviarPropostaParaCliente(options.metaService, {
+      telefoneCliente: extras.cliente_telefone,
+      nomeCliente,
+      linkWebPublico: publicUrl,
+      pdfBuffer,
+      pdfFilename: `Proposta-EcoSunPower-${safeName}.pdf`,
+    });
+
+    if (!send.ok) {
+      return res.status(500).send(`Erro ao enviar: ${escapeHtmlSimple(send.reason).slice(0, 200)}`);
+    }
+
+    await supabaseService.marcarPropostaPublicaEnviada(slug);
+
+    const lead_id = String(req.body.lead_id ?? '');
+    res.redirect(303, `/dashboard/propostas/${slug}/preview${lead_id ? `?lead_id=${lead_id}` : ''}`);
+  });
+
   return router;
 }
