@@ -67,11 +67,14 @@ import { listClientes, getClienteDetail } from './clientes-queries.js';
 import { renderClientesListPage, renderClienteDetailPage } from './clientes-views.js';
 import { getEvaInsights } from '../clientes/insights.js';
 import { uploadAnexo, deleteAnexoFile } from '../anexos/storage.js';
+import { PosInstalacaoService } from '../relatorios/pos-instalacao/service.js';
+import { renderPosInstalacaoHtml } from '../relatorios/pos-instalacao/template.js';
+import { renderFormNovoRelatorio, renderPreviewRelatorio } from './relatorio-pi-views.js';
 
 export function createDashboardRouter(
   supabaseService: SupabaseService,
   monitoringService: MonitoringService,
-  options: { metaWabaAccessToken?: string; anthropicApiKey?: string } = {},
+  options: { metaWabaAccessToken?: string; anthropicApiKey?: string; sendText?: (to: string, text: string) => Promise<void> } = {},
 ): Router {
   const router = Router();
   const supabase = supabaseService.getClient();
@@ -1016,6 +1019,115 @@ export function createDashboardRouter(
     const r = await supabaseService.vincularNovoLeadAoSistema({ sistema_id: sistemaId, name, phone, email });
     if (!r.ok) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/clientes">← voltar</a>`);
     res.redirect(303, `/dashboard/clientes/${r.lead_id}`);
+  });
+
+  // ===== A5 — Relatório Pós-Instalação =====
+
+  // Helper pra criar instância (resolve sistema injection)
+  const posInstService = new PosInstalacaoService(supabaseService, async (leadId) => {
+    const sistemas = await monitoringService.listarParaDashboard() as any[];
+    const s = sistemas.find((x: any) => x.lead_id === leadId);
+    if (!s) return null;
+    return {
+      id: s.id,
+      apelido: s.apelido,
+      marca_inversor: s.marca_inversor,
+      potencia_kwp: s.potencia_kwp,
+      qtd_paineis: s.qtd_paineis ?? null,
+      painel_marca: s.painel_marca ?? null,
+      painel_modelo: s.painel_modelo ?? null,
+      inversor_modelo: s.inversor_modelo ?? null,
+    };
+  });
+
+  // GET form de novo relatório
+  router.get('/clientes/:id/relatorio-pos-instalacao/novo', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const lead = await supabaseService.getClienteByLeadId(id);
+    if (!lead) return res.status(404).send('Cliente não encontrado');
+    res.type('text/html').send(renderFormNovoRelatorio({
+      lead_id: id,
+      cliente_nome: lead.name,
+      data_instalacao_pre: lead.installed_at ? String(lead.installed_at).slice(0, 10) : null,
+    }));
+  });
+
+  // POST submit do form
+  router.post('/clientes/:id/relatorio-pos-instalacao',
+    upload.array('fotos', 10),
+    async (req: Request, res: Response) => {
+      const id = String(req.params.id ?? '');
+      if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+
+      const files = ((req as any).files ?? []) as Express.Multer.File[];
+      // Validação MIME
+      for (const f of files) {
+        if (!f.mimetype.startsWith('image/')) {
+          return res.status(415).send(`Tipo inválido: ${escapeHtmlSimple(f.mimetype)}. Só imagens.`);
+        }
+      }
+
+      const fotos = files.map((f) => ({
+        buffer: f.buffer,
+        mimeType: f.mimetype,
+        ext: (f.originalname.split('.').pop() ?? 'jpg').toLowerCase().slice(0, 8),
+        caption: null,
+      }));
+
+      const mensagem = req.body?.mensagem_personalizada ? String(req.body.mensagem_personalizada).trim() : null;
+      const dataInstRaw = req.body?.data_instalacao ? String(req.body.data_instalacao) : null;
+      if (dataInstRaw && !/^\d{4}-\d{2}-\d{2}$/.test(dataInstRaw)) {
+        return res.status(400).send('Data de instalação inválida — use formato YYYY-MM-DD');
+      }
+      const dataInst = dataInstRaw;
+
+      const r = await posInstService.criarDraft({
+        lead_id: id,
+        mensagem_personalizada: mensagem || null,
+        data_instalacao: dataInst,
+        fotos,
+      });
+      if (!r.ok) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2>`);
+      res.redirect(303, `/dashboard/clientes/${id}/relatorio-pos-instalacao/${r.id}/preview`);
+    },
+  );
+
+  // GET preview de um relatório específico
+  router.get('/clientes/:id/relatorio-pos-instalacao/:rid/preview', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    const rid = String(req.params.rid ?? '');
+    if (!UUID_RE.test(id) || !UUID_RE.test(rid)) return res.status(400).send('UUID inválido');
+
+    const rel = await supabaseService.getRelatorioPosInstalacaoById(rid);
+    if (!rel || rel.lead_id !== id) return res.status(404).send('Relatório não encontrado');
+
+    const view = await posInstService.resolverView(rel, false);
+    if (!view) return res.status(500).send('Erro resolvendo relatório');
+    const htmlPreview = renderPosInstalacaoHtml(view);
+
+    res.type('text/html').send(renderPreviewRelatorio({
+      lead_id: id,
+      relatorio_id: rid,
+      slug: rel.slug,
+      html_preview: htmlPreview,
+      ja_enviado: !!rel.enviado_em,
+      enviado_em: rel.enviado_em,
+    }));
+  });
+
+  // POST enviar pelo WhatsApp
+  router.post('/clientes/:id/relatorio-pos-instalacao/:rid/enviar', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    const rid = String(req.params.rid ?? '');
+    if (!UUID_RE.test(id) || !UUID_RE.test(rid)) return res.status(400).send('UUID inválido');
+
+    const sendText = options.sendText;
+    if (!sendText) return res.status(500).send('sendText não configurado neste ambiente.');
+
+    const r = await posInstService.enviarPorWhatsApp(rid, sendText);
+    if (!r.ok) return res.status(400).send(`<h2>Não foi possível enviar: ${escapeHtmlSimple(r.reason ?? '')}</h2><a href="/dashboard/clientes/${id}">← voltar</a>`);
+    res.redirect(303, `/dashboard/clientes/${id}/relatorio-pos-instalacao/${rid}/preview`);
   });
 
   return router;
