@@ -14,7 +14,6 @@ import { htmlToPdf, gerarQrCodeDataUrl } from './proposal/pdf-generator.js';
 import type { DriveUploader } from './proposal/drive-uploader.js';
 import type { SupabaseService } from './supabase.js';
 import type { ModoEnvio, TipoProposta, AttachmentInput } from './proposal/attachments/types.js';
-import { processAttachment } from './proposal/attachments/index.js';
 import { getSignedUrlFromPath } from './proposal/attachments/storage-uploader.js';
 import type { MetaWhatsAppService } from './meta-whatsapp.js';
 import { enviarPropostaParaCliente } from './eva-sender.js';
@@ -56,6 +55,28 @@ interface ClaudeResponse {
     tarifaRsKwh?: number;
     custoDisponibilidadeMensal?: number;
   };
+}
+
+// Input pra gerar proposta direto (sem passar pelo Claude/zap).
+// Usado pela tela admin A4 e — internamente — pelo wrapper privado generateProposal.
+export interface GenerateProposalCoreInput {
+  data: any;
+  modoEnvio: ModoEnvio;
+  tipo: TipoProposta;
+  attachments?: Array<{
+    buffer: Buffer;
+    mimeType: string;
+    legenda: string;
+  }>;
+}
+
+export interface GenerateProposalCoreResult {
+  slug: string;
+  publicUrl: string | null;
+  pdfBuffer: Buffer;
+  driveResult: { pdfWebViewLink: string; htmlWebViewLink: string } | null;
+  proposalData: ProposalData;
+  calculations: ReturnType<typeof calcular>;
 }
 
 function buildSystemPrompt(propostasKnowledge: string, marcasKnowledge: string): string {
@@ -640,39 +661,153 @@ export class ProposalAssistant {
     }
   }
 
-  // Processa attachments pendentes (foram salvos no Redis com mediaIdWaba + legenda).
-  // Para cada um: download WABA -> validate -> upload Supabase Storage -> persist DB.
-  // Retorna estrutura pronta pra o template renderizar (URLs assinadas + QR Code).
-  private async processarAnexosPendentes(
+  // Gera proposta a partir de input estruturado, sem dependencia de phone/Redis.
+  // Usado pela tela admin A4 e pelo shim privado generateProposal (zap).
+  // Faz: validate -> calc -> render -> PDF -> upload Drive (paralelo) + Supabase (paralelo).
+  // NAO toca Redis, NAO retorna string formatada — quem chama formata.
+  async generateProposalCore(input: GenerateProposalCoreInput): Promise<GenerateProposalCoreResult> {
+    if (!this.driveUploader && !this.supabaseService) {
+      throw new Error('Nenhum destino configurado (Drive ou Supabase)');
+    }
+
+    const { data, modoEnvio, tipo, attachments } = input;
+
+    const calcInput = this.dataToCalculatorInput(data);
+
+    const ensureNum = (name: string, v: number) => {
+      if (!isFinite(v) || v <= 0) throw new Error(`Campo "${name}" inválido: ${v}`);
+    };
+    ensureNum('potenciaKwp', calcInput.potenciaKwp);
+    ensureNum('fatorPerda', calcInput.fatorPerda);
+    ensureNum('consumoMensalKwh', calcInput.consumoMensalKwh);
+    ensureNum('tarifaRsKwh', calcInput.tarifaRsKwh);
+    ensureNum('valorTotalRs', calcInput.valorTotalRs);
+
+    const calculations = calcular(calcInput);
+    const proposalData = this.dataToProposalData(data, calculations);
+
+    const slug = randomBytes(12).toString('base64url');
+    proposalData.tipo = tipo;
+
+    const temAnexos = tipo === 'personalizada'
+      && (attachments?.length ?? 0) > 0
+      && !!this.supabaseService;
+
+    if (temAnexos) {
+      await this.supabaseService!.savePropostaPublica({
+        slug,
+        numeroProposta: proposalData.numeroProposta,
+        clienteNome: data.nomeCliente,
+        clienteTelefone: data.telefoneCliente,
+        htmlContent: '<!doctype html><html><body>Generating...</body></html>',
+        dadosInput: undefined,
+        tipo,
+        modoEnvio,
+      });
+
+      try {
+        proposalData.estudoPersonalizado = await this.processarAnexosFromBuffer(slug, attachments!);
+      } catch (err) {
+        console.warn('[proposal] Falha ao processar anexos (admin):', (err as Error).message);
+      }
+    }
+
+    const socialProofHtml = await this.buildSocialProofHtml(proposalData.tipoCliente);
+    const html = renderProposalHTML(proposalData, calculations, socialProofHtml);
+    const pdfBuffer = await htmlToPdf(html, { waitForChartMs: 2000 });
+
+    const drivePromise = this.driveUploader
+      ? this.driveUploader.uploadProposal({
+          nomeCliente: data.nomeCliente,
+          numeroProposta: proposalData.numeroProposta,
+          pdfBuffer,
+          htmlContent: html,
+          inputDataJson: JSON.stringify({ data, calcInput }, null, 2),
+          shareWithEmail: data.emailCliente,
+        })
+      : Promise.reject(new Error('Drive uploader nao configurado'));
+
+    const dadosInputMinimo: Record<string, unknown> = {
+      calcInput,
+      sistema: {
+        potenciaKwp: data.potenciaKwp,
+        tipoCliente: data.tipoCliente,
+        modalidade: data.modalidade,
+        concessionaria: data.concessionaria,
+        modulo: data.modulo,
+        inversor: data.inversor,
+        estruturaFixacao: data.estruturaFixacao,
+      },
+      comercial: { valorTotalRs: data.valorTotalRs },
+    };
+
+    const supabasePromise = this.supabaseService
+      ? (temAnexos
+          ? this.supabaseService.updatePropostaPublicaHtml(slug, html).then(() => ({ id: slug, expiresAt: '' }))
+          : this.supabaseService.savePropostaPublica({
+              slug,
+              numeroProposta: proposalData.numeroProposta,
+              clienteNome: data.nomeCliente,
+              clienteTelefone: data.telefoneCliente,
+              htmlContent: html,
+              dadosInput: dadosInputMinimo,
+              tipo,
+              modoEnvio,
+            }))
+      : Promise.reject(new Error('Supabase service nao configurado'));
+
+    const [uploadResult, publicResult] = await Promise.allSettled([drivePromise, supabasePromise]);
+
+    const upload = uploadResult.status === 'fulfilled' ? uploadResult.value : null;
+    const publicSaved = publicResult.status === 'fulfilled';
+    const publicUrl = publicSaved ? `${this.publicProposalBaseUrl}/p/${slug}` : null;
+
+    if (!upload && !publicSaved) {
+      const driveErr = uploadResult.status === 'rejected' ? (uploadResult.reason as Error).message : 'ok';
+      const pubErr = publicResult.status === 'rejected' ? (publicResult.reason as Error).message : 'ok';
+      throw new Error(`Drive: ${driveErr} | Web: ${pubErr}`);
+    }
+    if (!upload) console.warn('[proposal] Drive upload falhou:', (uploadResult as PromiseRejectedResult).reason);
+    if (!publicSaved) console.warn('[proposal] Save Supabase falhou:', (publicResult as PromiseRejectedResult).reason);
+
+    return {
+      slug,
+      publicUrl,
+      pdfBuffer,
+      driveResult: upload ? { pdfWebViewLink: upload.pdfWebViewLink, htmlWebViewLink: upload.htmlWebViewLink } : null,
+      proposalData,
+      calculations,
+    };
+  }
+
+  // Variante de processarAnexosPendentes que aceita buffers ja em maos (tela admin).
+  // O fluxo zap baixa WABA media -> buffer no shim generateProposal antes de chamar core.
+  private async processarAnexosFromBuffer(
     slug: string,
-    attachments: AttachmentInput[],
+    attachments: Array<{ buffer: Buffer; mimeType: string; legenda: string }>,
   ): Promise<NonNullable<ProposalData['estudoPersonalizado']>> {
     if (!this.supabaseService) throw new Error('SupabaseService nao configurado');
+    const { processAttachmentFromBuffer } = await import('./proposal/attachments/index.js');
     const supabase = this.supabaseService.getClient();
-    const accessToken = process.env.META_WABA_ACCESS_TOKEN;
-    if (!accessToken) throw new Error('META_WABA_ACCESS_TOKEN nao configurado');
 
     const fotos: Array<{ url: string; legenda: string; ordem: number }> = [];
     let video: NonNullable<ProposalData['estudoPersonalizado']>['video'] | undefined;
-
     let fotoCount = 0;
     let videoCount = 0;
 
     for (const att of attachments) {
-      const result = await processAttachment(supabase, {
-        mediaIdWaba: att.mediaIdWaba,
-        accessToken,
+      const result = await processAttachmentFromBuffer(supabase, {
+        buffer: att.buffer,
+        mimeType: att.mimeType,
         proposalSlug: slug,
         legenda: att.legenda,
         fotoCount,
         videoCount,
       });
-
       if (!result.ok) {
-        console.warn('[proposal] processAttachment falhou:', result.reason);
+        console.warn('[proposal] processAttachmentFromBuffer falhou:', result.reason);
         continue;
       }
-
       const r = result.record;
       if (r.tipo === 'foto') {
         fotoCount++;
@@ -702,185 +837,72 @@ export class ProposalAssistant {
     return { fotos, video, qrCodeDataUrl };
   }
 
-  // Gera o PDF + HTML, faz upload no Drive, retorna links pro Junior.
-  // Salva tambem em Redis pra "enviar" depois disparar pro cliente.
-  private async generateProposal(
-    phone: string,
-    data: any,
-    confirmMsg: string,
-  ): Promise<string> {
-    if (!this.driveUploader && !this.supabaseService) {
-      return '⚠️ Nenhum destino configurado. Configure GOOGLE_REFRESH_TOKEN (Drive) ou SUPABASE_URL (web publica).';
-    }
-
+  // Wrapper pro fluxo zap: carrega state Redis + baixa anexos WABA + chama core +
+  // salva proposal:last:${phone} + formata string pra mandar pelo zap.
+  private async generateProposal(phone: string, data: any, _confirmMsg: string): Promise<string> {
     try {
-      const calcInput = this.dataToCalculatorInput(data);
-
-      // Validacao defense-in-depth: campos numericos precisam ser finitos e > 0.
-      // REGRA DE OURO ja cobre no Claude, mas se vier NaN aqui evita propagar lixo.
-      const ensureNum = (name: string, v: number) => {
-        if (!isFinite(v) || v <= 0) throw new Error(`Campo "${name}" inválido: ${v}`);
-      };
-      ensureNum('potenciaKwp', calcInput.potenciaKwp);
-      ensureNum('fatorPerda', calcInput.fatorPerda);
-      ensureNum('consumoMensalKwh', calcInput.consumoMensalKwh);
-      ensureNum('tarifaRsKwh', calcInput.tarifaRsKwh);
-      ensureNum('valorTotalRs', calcInput.valorTotalRs);
-
-      const calculations = calcular(calcInput);
-
-      const proposalData = this.dataToProposalData(data, calculations);
-
-      // Slug urlsafe 96 bits de entropia (16 chars base64url) — luxo, mas zero custo.
-      // Gerado ANTES do render pra que attachments referenciem este slug.
-      const slug = randomBytes(12).toString('base64url');
-
       const sessionState = await this.loadState(phone);
-      proposalData.tipo = sessionState.tipo ?? 'basica';
-      const temAnexos = sessionState.tipo === 'personalizada'
-        && sessionState.attachments.length > 0
-        && !!this.supabaseService;
+      const modoEnvio: ModoEnvio = sessionState.modoEnvio ?? 'junior_envia';
+      const tipo: TipoProposta = sessionState.tipo ?? 'basica';
 
-      // Pre-flight: se tem anexos, INSERT propostas_publicas STUB primeiro pra satisfazer FK.
-      // O html_content sera atualizado no fim com o conteudo real (com fotos embutidas).
-      // Sem essa pre-insercao, processAttachment falha com FK violation.
-      if (temAnexos) {
-        await this.supabaseService!.savePropostaPublica({
-          slug,
-          numeroProposta: proposalData.numeroProposta,
-          clienteNome: data.nomeCliente,
-          clienteTelefone: data.telefoneCliente,
-          htmlContent: '<!doctype html><html><body>Generating...</body></html>',
-          dadosInput: undefined,
-          tipo: sessionState.tipo,
-          modoEnvio: sessionState.modoEnvio ?? 'junior_envia',
-        });
-
-        try {
-          proposalData.estudoPersonalizado = await this.processarAnexosPendentes(
-            slug,
-            sessionState.attachments,
-          );
-        } catch (err) {
-          console.warn('[proposal] Falha ao processar anexos:', (err as Error).message);
-          // Segue sem anexos — proposta sai sem a secao "Estudamos seu Telhado"
+      let attachments: GenerateProposalCoreInput['attachments'];
+      if (tipo === 'personalizada' && sessionState.attachments.length > 0) {
+        const { downloadWabaMedia } = await import('./proposal/attachments/whatsapp-media-downloader.js');
+        const accessToken = process.env.META_WABA_ACCESS_TOKEN;
+        if (!accessToken) throw new Error('META_WABA_ACCESS_TOKEN nao configurado');
+        attachments = [];
+        for (const att of sessionState.attachments) {
+          const dl = await downloadWabaMedia({ mediaId: att.mediaIdWaba, accessToken });
+          attachments.push({ buffer: dl.buffer, mimeType: dl.mimeType, legenda: att.legenda });
         }
       }
 
-      const socialProofHtml = await this.buildSocialProofHtml(proposalData.tipoCliente);
-      const html = renderProposalHTML(proposalData, calculations, socialProofHtml);
+      const result = await this.generateProposalCore({ data, modoEnvio, tipo, attachments });
 
-      const pdfBuffer = await htmlToPdf(html, { waitForChartMs: 2000 });
-
-      // Drive (PDF + HTML interno) e Supabase (HTML publico) em paralelo.
-      // Supabase eh prioridade — se Drive falhar, Junior ainda tem o link web pro cliente.
-      const drivePromise = this.driveUploader
-        ? this.driveUploader.uploadProposal({
-            nomeCliente: data.nomeCliente,
-            numeroProposta: proposalData.numeroProposta,
-            pdfBuffer,
-            htmlContent: html,
-            inputDataJson: JSON.stringify({ data, calcInput }, null, 2),
-            shareWithEmail: data.emailCliente,
-          })
-        : Promise.reject(new Error('Drive uploader nao configurado'));
-
-      // dados_input NAO inclui PII completa do cliente — html_content ja tem
-      // os dados visiveis ao cliente. Dump completo (com CPF/RG) fica so no Drive
-      // _internal/dados-*.json, que e auditado e tem retencao maior.
-      // Salva apenas calcInput (numeros) + meta minima pra debugging.
-      const dadosInputMinimo: Record<string, unknown> = {
-        calcInput,
-        sistema: {
-          potenciaKwp: data.potenciaKwp,
-          tipoCliente: data.tipoCliente,
-          modalidade: data.modalidade,
-          concessionaria: data.concessionaria,
-          modulo: data.modulo,
-          inversor: data.inversor,
-          estruturaFixacao: data.estruturaFixacao,
-        },
-        comercial: { valorTotalRs: data.valorTotalRs },
-      };
-
-      const supabasePromise = this.supabaseService
-        ? (temAnexos
-            // Stub ja foi inserido antes; aqui so atualiza o html_content com o real.
-            ? this.supabaseService.updatePropostaPublicaHtml(slug, html).then(() => ({ id: slug, expiresAt: '' }))
-            : this.supabaseService.savePropostaPublica({
-                slug,
-                numeroProposta: proposalData.numeroProposta,
-                clienteNome: data.nomeCliente,
-                clienteTelefone: data.telefoneCliente,
-                htmlContent: html,
-                dadosInput: dadosInputMinimo,
-                tipo: sessionState.tipo ?? 'basica',
-                modoEnvio: sessionState.modoEnvio ?? 'junior_envia',
-              }))
-        : Promise.reject(new Error('Supabase service nao configurado'));
-
-      const [uploadResult, publicResult] = await Promise.allSettled([drivePromise, supabasePromise]);
-
-      const upload = uploadResult.status === 'fulfilled' ? uploadResult.value : null;
-      const publicSaved = publicResult.status === 'fulfilled';
-      const publicUrl = publicSaved ? `${this.publicProposalBaseUrl}/p/${slug}` : null;
-
-      if (!upload && !publicSaved) {
-        const driveErr = uploadResult.status === 'rejected' ? (uploadResult.reason as Error).message : 'ok';
-        const pubErr = publicResult.status === 'rejected' ? (publicResult.reason as Error).message : 'ok';
-        throw new Error(`Drive: ${driveErr} | Web: ${pubErr}`);
-      }
-      if (!upload) {
-        console.warn('[proposal] Drive upload falhou:', (uploadResult as PromiseRejectedResult).reason);
-      }
-      if (!publicSaved) {
-        console.warn('[proposal] Save Supabase falhou:', (publicResult as PromiseRejectedResult).reason);
-      }
-
-      // Salva o estado pra Junior depois falar "enviar"
       await this.redis.setex(
         `proposal:last:${phone}`,
         PROPOSAL_MODE_TTL_SECONDS * 24,
-        JSON.stringify({ data, upload, proposalData, publicUrl, slug }),
+        JSON.stringify({
+          data,
+          upload: result.driveResult,
+          proposalData: result.proposalData,
+          publicUrl: result.publicUrl,
+          slug: result.slug,
+        }),
       );
 
-      const greener = compararGreener(calcInput.potenciaKwp, calculations.rsPorWp);
+      const greener = compararGreener(Number(data.potenciaKwp), result.calculations.rsPorWp);
 
       const linkLines: string[] = [];
-      if (publicUrl) {
-        linkLines.push(`🌐 Web (manda pro cliente): ${publicUrl}`);
-        // Link de preview admin: Junior abre por aqui pra revisar sem disparar
-        // "cliente abriu a proposta" pra ele mesmo. So mostra se token configurado.
+      if (result.publicUrl) {
+        linkLines.push(`🌐 Web (manda pro cliente): ${result.publicUrl}`);
         if (this.proposalPreviewToken) {
-          const previewUrl = `${publicUrl}?eu=${encodeURIComponent(this.proposalPreviewToken)}`;
+          const previewUrl = `${result.publicUrl}?eu=${encodeURIComponent(this.proposalPreviewToken)}`;
           linkLines.push(`👁️ Preview (so pra voce revisar): ${previewUrl}`);
         }
       }
-      if (upload) {
-        linkLines.push(`📄 PDF (Drive): ${upload.pdfWebViewLink}`);
-        if (!publicUrl) linkLines.push(`🌐 Web (Drive fallback): ${upload.htmlWebViewLink}`);
+      if (result.driveResult) {
+        linkLines.push(`📄 PDF (Drive): ${result.driveResult.pdfWebViewLink}`);
+        if (!result.publicUrl) linkLines.push(`🌐 Web (Drive fallback): ${result.driveResult.htmlWebViewLink}`);
       }
-      if (linkLines.length === 0) {
-        linkLines.push('⚠️ Nenhum link disponivel — checar logs.');
-      }
+      if (linkLines.length === 0) linkLines.push('⚠️ Nenhum link disponivel — checar logs.');
 
       return [
         '✅ Proposta gerada!',
         '',
         ...linkLines,
         '',
-        `💰 R$/Wp: R$ ${calculations.rsPorWp.toFixed(2)}/Wp`,
+        `💰 R$/Wp: R$ ${result.calculations.rsPorWp.toFixed(2)}/Wp`,
         `🎯 Greener: R$ ${greener.rsPorWpReferencia.toFixed(2)}/Wp`,
         `${greener.rotulo} (${greener.diferencaPct >= 0 ? '+' : ''}${greener.diferencaPct.toFixed(1)}%)`,
         '',
-        `📊 Payback: ${calculations.paybackAnos}a ${calculations.paybackMeses}m`,
-        `📈 TIR: ${calculations.tirPercentual.toFixed(1)}%`,
+        `📊 Payback: ${result.calculations.paybackAnos}a ${result.calculations.paybackMeses}m`,
+        `📈 TIR: ${result.calculations.tirPercentual.toFixed(1)}%`,
         '',
         '_Manda "enviar" pra mandar pro cliente, ou "ajusta X" pra refazer._',
       ].join('\n');
     } catch (err) {
       console.error('[proposal] Generation error:', err);
-      // Sanitiza mensagem pra nao vazar tokens/URLs/stack pro WhatsApp
       const raw = (err as Error).message ?? 'erro desconhecido';
       const safe = raw.length > 120 ? raw.slice(0, 120) + '...' : raw;
       const friendly = /timeout|ECONN|chromium|puppeteer/i.test(raw)
