@@ -5152,6 +5152,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   app.use('/dashboard', createDashboardRouter(supabase, monitoringService, {
     metaWabaAccessToken: config.metaWabaAccessToken,
     anthropicApiKey: config.anthropicApiKey,
+    sendText,
   }));
 
   // que abre HTML como codigo fonte.
