@@ -868,8 +868,8 @@ export function createDashboardRouter(
         cidade: typeof req.query.cidade === 'string' ? req.query.cidade : undefined,
         ord: typeof req.query.ord === 'string' ? req.query.ord : undefined,
       };
-      const rows = await listClientes(supabaseService, filters);
-      res.type('text/html').send(renderClientesListPage(rows as any, filters));
+      const { clientes, sistemasOrfaos } = await listClientes(supabaseService, filters);
+      res.type('text/html').send(renderClientesListPage(clientes as any, filters, sistemasOrfaos));
     } catch (err) {
       console.error('[dashboard/clientes]', err);
       res.status(500).send(`<h2>Erro ao listar clientes</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -998,6 +998,22 @@ export function createDashboardRouter(
       topic,
     });
     res.redirect(303, `/dashboard/clientes/${leadId}`);
+  });
+
+  // Vincular sistema órfão a um cliente novo (cria lead + linka)
+  router.post('/clientes/vincular-sistema', async (req: Request, res: Response) => {
+    const sistemaId = String(req.body?.sistema_id ?? '');
+    const name = String(req.body?.name ?? '').trim();
+    const phone = String(req.body?.phone ?? '').replace(/\D/g, '');
+    const email = req.body?.email ? String(req.body.email).trim() : null;
+
+    if (!UUID_RE.test(sistemaId)) return res.status(400).send('sistema_id inválido');
+    if (name.length < 2) return res.status(400).send('Nome obrigatório (mín 2 chars)');
+    if (phone.length < 10) return res.status(400).send('Telefone inválido — use formato 5561999990000');
+
+    const r = await supabaseService.vincularNovoLeadAoSistema({ sistema_id: sistemaId, name, phone, email });
+    if (!r.ok) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/clientes">← voltar</a>`);
+    res.redirect(303, `/dashboard/clientes/${r.lead_id}`);
   });
 
   return router;

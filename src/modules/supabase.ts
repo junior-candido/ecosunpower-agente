@@ -1105,4 +1105,67 @@ export class SupabaseService {
     if (error) return [];
     return data ?? [];
   }
+
+  // Sistemas ativos sem lead vinculado — aparecem em /clientes como "vincular"
+  async listSistemasOrfaos(): Promise<any[]> {
+    const { data, error } = await this.client
+      .from('sistemas_clientes')
+      .select('id, apelido, marca_inversor, potencia_kwp, cidade, uf, data_instalacao')
+      .is('lead_id', null)
+      .eq('ativo', true)
+      .order('apelido', { ascending: true });
+    if (error) {
+      console.error('[supabase] listSistemasOrfaos:', error.message);
+      return [];
+    }
+    return data ?? [];
+  }
+
+  // Cria um novo lead já marcado como cliente operando e vincula ao sistema órfão.
+  // Tudo numa transação lógica: se falhar criar lead, não toca no sistema; se falhar
+  // vincular, deleta o lead recém-criado pra não deixar fantasma.
+  async vincularNovoLeadAoSistema(input: {
+    sistema_id: string;
+    name: string;
+    phone: string;
+    email?: string | null;
+  }): Promise<{ ok: boolean; lead_id?: string; error?: string }> {
+    // 1. Confirma que o sistema existe e ainda não tem lead vinculado
+    const { data: sistema, error: sErr } = await this.client
+      .from('sistemas_clientes')
+      .select('id, lead_id, data_instalacao')
+      .eq('id', input.sistema_id)
+      .single();
+    if (sErr || !sistema) return { ok: false, error: 'Sistema não encontrado' };
+    if (sistema.lead_id) return { ok: false, error: 'Sistema já tem cliente vinculado' };
+
+    // 2. Cria o lead
+    const { data: novoLead, error: lErr } = await this.client
+      .from('leads')
+      .insert({
+        name: input.name,
+        phone: input.phone,
+        email: input.email ?? null,
+        installation_status: 'operando',
+        installed_at: sistema.data_instalacao,
+        eva_active: false,                    // Junior precisa ativar depois
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single();
+    if (lErr || !novoLead) return { ok: false, error: lErr?.message ?? 'Falha ao criar lead' };
+
+    // 3. Vincula
+    const { error: vErr } = await this.client
+      .from('sistemas_clientes')
+      .update({ lead_id: novoLead.id })
+      .eq('id', input.sistema_id);
+    if (vErr) {
+      // rollback do lead (best-effort)
+      try { await this.client.from('leads').delete().eq('id', novoLead.id); } catch {}
+      return { ok: false, error: vErr.message };
+    }
+    return { ok: true, lead_id: novoLead.id };
+  }
 }

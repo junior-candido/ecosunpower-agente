@@ -119,3 +119,14 @@ export interface InsightCard {
   texto: string;
   cta: { label: string; action: string; params: Record<string, unknown> } | null;
 }
+
+// Sistema sem lead vinculado — aparece em /clientes como card "vincular cliente"
+export interface SistemaOrfaoCard {
+  sistema_id: string;
+  apelido: string;
+  marca_inversor: string;
+  potencia_kwp: number | null;
+  cidade: string | null;
+  uf: string | null;
+  data_instalacao: string | null;
+}

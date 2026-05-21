@@ -5,6 +5,7 @@ import { listClientes, getClienteDetail } from '../src/modules/dashboard/cliente
 function fakeSupabase(o: any = {}) {
   return {
     listClientesByStatus: vi.fn().mockResolvedValue([]),
+    listSistemasOrfaos: vi.fn().mockResolvedValue([]),
     getClienteByLeadId: vi.fn().mockResolvedValue(null),
     listAnexos: vi.fn().mockResolvedValue([]),
     listPropostasByLeadId: vi.fn().mockResolvedValue([]),
@@ -33,15 +34,31 @@ function fakeMonitoring(sistemas: any[] = []) {
 }
 
 describe('listClientes', () => {
-  it('filtra apenas statuses de cliente', async () => {
+  it('filtra apenas statuses de cliente e retorna { clientes, sistemasOrfaos }', async () => {
     const sb = fakeSupabase();
-    await listClientes(sb as any, {});
+    const r = await listClientes(sb as any, {});
     expect(sb.listClientesByStatus).toHaveBeenCalled();
     const [statuses] = sb.listClientesByStatus.mock.calls[0];
     expect(statuses).toContain('operando');
     expect(statuses).toContain('instalado');
     expect(statuses).not.toContain('novo');
     expect(statuses).not.toContain('qualificando');
+    expect(r).toHaveProperty('clientes');
+    expect(r).toHaveProperty('sistemasOrfaos');
+    expect(Array.isArray(r.clientes)).toBe(true);
+    expect(Array.isArray(r.sistemasOrfaos)).toBe(true);
+  });
+
+  it('mapeia sistemas órfãos do supabase para o card shape', async () => {
+    const sb = fakeSupabase({
+      listSistemasOrfaos: vi.fn().mockResolvedValue([
+        { id: 's1', apelido: 'Casa X', marca_inversor: 'deye', potencia_kwp: 5, cidade: 'BSB', uf: 'DF', data_instalacao: '2025-01-01' },
+      ]),
+    });
+    const r = await listClientes(sb as any, {});
+    expect(r.sistemasOrfaos).toHaveLength(1);
+    expect(r.sistemasOrfaos[0].sistema_id).toBe('s1');
+    expect(r.sistemasOrfaos[0].apelido).toBe('Casa X');
   });
 });
 

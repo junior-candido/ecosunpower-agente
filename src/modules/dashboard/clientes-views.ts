@@ -2,7 +2,7 @@
 import { renderLayout } from './views.js';
 import { statusLabel, statusCorChip } from '../clientes/mappers.js';
 import { CONCESSIONARIAS_BR, getConcessionariaById } from '../concessionarias.js';
-import type { ClienteRow, ClienteDetail, InsightCard } from '../clientes/types.js';
+import type { ClienteRow, ClienteDetail, InsightCard, SistemaOrfaoCard } from '../clientes/types.js';
 
 function escapeHtml(s: string | null | undefined): string {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -17,6 +17,7 @@ function avatarInitials(name: string | null): string {
 export function renderClientesListPage(
   rows: ClienteRow[],
   filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string },
+  sistemasOrfaos: SistemaOrfaoCard[] = [],
 ): string {
   const opt = (v: string, label: string, sel?: string) =>
     `<option value="${escapeHtml(v)}" ${sel === v ? 'selected' : ''}>${escapeHtml(label)}</option>`;
@@ -80,9 +81,75 @@ export function renderClientesListPage(
       <a href="/dashboard/clientes" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm">Limpar</a>
     </form>
 
-    ${rows.length === 0
-      ? `<div class="bg-slate-800/60 rounded-xl border border-slate-700 p-12 text-center text-slate-400">Nenhum cliente cadastrado ainda. Quando um lead chega em installation_status >= contrato_assinado, aparece aqui.</div>`
-      : `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">${rows.map(card).join('')}</div>`}
+    ${rows.length === 0 && sistemasOrfaos.length === 0
+      ? `<div class="bg-slate-800/60 rounded-xl border border-slate-700 p-12 text-center text-slate-400">Nenhum cliente cadastrado ainda. Quando um lead chega em installation_status >= contrato_assinado, ou um sistema for importado, aparece aqui.</div>`
+      : ''}
+
+    ${rows.length > 0
+      ? `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">${rows.map(card).join('')}</div>`
+      : ''}
+
+    ${sistemasOrfaos.length > 0 ? `
+    <div class="mt-8 mb-4">
+      <h2 class="text-lg font-semibold text-slate-100">🔌 Sistemas sem cliente vinculado <span class="text-amber-400">— ${sistemasOrfaos.length}</span></h2>
+      <p class="text-slate-400 text-xs mt-1">Importados via Deye/SolarEdge sem associação a lead. Clica em "Vincular cliente" pra cadastrar os dados reais e ativar o cockpit.</p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      ${sistemasOrfaos.map((s) => `
+        <div class="bg-amber-500/5 border border-amber-500/30 rounded-xl p-4">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-12 h-12 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 text-xl">?</div>
+            <div class="flex-1 min-w-0">
+              <div class="font-semibold text-slate-100 truncate">${escapeHtml(s.apelido)}</div>
+              <div class="text-xs text-amber-300">Sistema sem cliente</div>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs mb-3">
+            <div><div class="text-slate-500 uppercase tracking-wider text-[9px]">Marca</div><div class="text-slate-200 truncate">${escapeHtml(s.marca_inversor)}</div></div>
+            <div><div class="text-slate-500 uppercase tracking-wider text-[9px]">Potência</div><div class="text-slate-200">${s.potencia_kwp ? s.potencia_kwp + ' kWp' : '—'}</div></div>
+            <div><div class="text-slate-500 uppercase tracking-wider text-[9px]">Cidade</div><div class="text-slate-200">${escapeHtml([s.cidade, s.uf].filter(Boolean).join('/') || '—')}</div></div>
+            <div><div class="text-slate-500 uppercase tracking-wider text-[9px]">Instalado em</div><div class="text-slate-200">${escapeHtml(s.data_instalacao ?? '—')}</div></div>
+          </div>
+          <button onclick="abrirVinculo('${escapeHtml(s.sistema_id)}','${escapeHtml(s.apelido).replace(/'/g, "\\\\'")}')" class="w-full px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold">🔗 Vincular cliente</button>
+        </div>`).join('')}
+    </div>
+
+    <div id="modal-vinculo" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50" onclick="if(event.target===this)fecharVinculo()">
+      <div class="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-md mx-4">
+        <h3 class="text-lg font-semibold text-slate-100 mb-1">Vincular cliente ao sistema</h3>
+        <p class="text-xs text-slate-400 mb-4">Sistema: <span id="modal-sistema-apelido" class="text-amber-300"></span></p>
+        <form id="form-vincular" method="post" action="/dashboard/clientes/vincular-sistema" class="space-y-3">
+          <input type="hidden" name="sistema_id" id="modal-sistema-id">
+          <div>
+            <label class="text-[10px] text-slate-400 uppercase tracking-wider">Nome completo *</label>
+            <input name="name" required class="w-full mt-1 px-3 py-2 rounded bg-slate-800 border border-slate-700 text-slate-100 text-sm" placeholder="Ex: João Silva">
+          </div>
+          <div>
+            <label class="text-[10px] text-slate-400 uppercase tracking-wider">WhatsApp *</label>
+            <input name="phone" required class="w-full mt-1 px-3 py-2 rounded bg-slate-800 border border-slate-700 text-slate-100 text-sm" placeholder="Ex: 5561999990000">
+            <p class="text-[10px] text-slate-500 mt-1">Formato internacional sem +, com DDI 55.</p>
+          </div>
+          <div>
+            <label class="text-[10px] text-slate-400 uppercase tracking-wider">Email (opcional)</label>
+            <input name="email" type="email" class="w-full mt-1 px-3 py-2 rounded bg-slate-800 border border-slate-700 text-slate-100 text-sm" placeholder="cliente@email.com">
+          </div>
+          <div class="flex gap-2 pt-2">
+            <button type="button" onclick="fecharVinculo()" class="flex-1 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm">Cancelar</button>
+            <button type="submit" class="flex-1 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold">Criar e vincular</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <script>
+      function abrirVinculo(sistemaId, apelido) {
+        document.getElementById('modal-sistema-id').value = sistemaId;
+        document.getElementById('modal-sistema-apelido').textContent = apelido;
+        document.getElementById('modal-vinculo').classList.remove('hidden');
+      }
+      function fecharVinculo() {
+        document.getElementById('modal-vinculo').classList.add('hidden');
+      }
+    </script>` : ''}
   `;
 
   return renderLayout({ active: 'clientes', title: 'Clientes', body, dark: true });

@@ -3,7 +3,7 @@ import type { SupabaseService } from '../supabase.js';
 import type { MonitoringService } from '../monitoring/service.js';
 import { esperadoDiaKwh } from '../monitoring/classificacao.js';
 import { getSignedUrls } from '../anexos/storage.js';
-import type { ClienteRow, ClienteDetail, AnexoListItem } from '../clientes/types.js';
+import type { ClienteRow, ClienteDetail, AnexoListItem, SistemaOrfaoCard } from '../clientes/types.js';
 
 const CLIENTE_STATUSES = [
   'contrato_assinado', 'instalado', 'medidor_trocado',
@@ -13,9 +13,21 @@ const CLIENTE_STATUSES = [
 export async function listClientes(
   supabase: SupabaseService,
   filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string },
-): Promise<ClienteRow[]> {
-  const rows = await supabase.listClientesByStatus(CLIENTE_STATUSES, filters);
-  return rows as ClienteRow[];
+): Promise<{ clientes: ClienteRow[]; sistemasOrfaos: SistemaOrfaoCard[] }> {
+  const [clientes, orfaosRaw] = await Promise.all([
+    supabase.listClientesByStatus(CLIENTE_STATUSES, filters),
+    supabase.listSistemasOrfaos(),
+  ]);
+  const sistemasOrfaos: SistemaOrfaoCard[] = (orfaosRaw ?? []).map((s: any) => ({
+    sistema_id: s.id,
+    apelido: s.apelido,
+    marca_inversor: s.marca_inversor,
+    potencia_kwp: s.potencia_kwp,
+    cidade: s.cidade,
+    uf: s.uf,
+    data_instalacao: s.data_instalacao,
+  }));
+  return { clientes: clientes as ClienteRow[], sistemasOrfaos };
 }
 
 export async function getClienteDetail(
