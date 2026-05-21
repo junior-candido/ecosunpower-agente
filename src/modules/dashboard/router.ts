@@ -28,6 +28,8 @@ function escapeHtmlSimple(s: string): string {
 }
 import type { SupabaseService } from '../supabase.js';
 import type { MonitoringService } from '../monitoring/service.js';
+import type { ProposalAssistant } from '../proposal-assistant.js';
+import type { MetaWhatsAppService } from '../meta-whatsapp.js';
 import {
   dashboardSessionAuth,
   setSessionCookie,
@@ -74,7 +76,13 @@ import { renderFormNovoRelatorio, renderPreviewRelatorio } from './relatorio-pi-
 export function createDashboardRouter(
   supabaseService: SupabaseService,
   monitoringService: MonitoringService,
-  options: { metaWabaAccessToken?: string; anthropicApiKey?: string; sendText?: (to: string, text: string) => Promise<void> } = {},
+  options: {
+    metaWabaAccessToken?: string;
+    anthropicApiKey?: string;
+    sendText?: (to: string, text: string) => Promise<void>;
+    proposalAssistant?: ProposalAssistant;
+    metaService?: MetaWhatsAppService;
+  } = {},
 ): Router {
   const router = Router();
   const supabase = supabaseService.getClient();

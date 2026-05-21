@@ -5155,6 +5155,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     metaWabaAccessToken: config.metaWabaAccessToken,
     anthropicApiKey: config.anthropicApiKey,
     sendText,
+    proposalAssistant,
+    metaService: metaWaba ?? undefined,
   }));
 
   // que abre HTML como codigo fonte.
