@@ -15,6 +15,8 @@ import type { DriveUploader } from './proposal/drive-uploader.js';
 import type { SupabaseService } from './supabase.js';
 import type { ModoEnvio, TipoProposta, AttachmentInput } from './proposal/attachments/types.js';
 import { getSignedUrlFromPath } from './proposal/attachments/storage-uploader.js';
+import { processAttachmentFromBuffer } from './proposal/attachments/index.js';
+import { downloadWabaMedia } from './proposal/attachments/whatsapp-media-downloader.js';
 import type { MetaWhatsAppService } from './meta-whatsapp.js';
 import { enviarPropostaParaCliente } from './eva-sender.js';
 import { CasesFetcher, type Case } from './cases-fetcher.js';
@@ -787,7 +789,6 @@ export class ProposalAssistant {
     attachments: Array<{ buffer: Buffer; mimeType: string; legenda: string }>,
   ): Promise<NonNullable<ProposalData['estudoPersonalizado']>> {
     if (!this.supabaseService) throw new Error('SupabaseService nao configurado');
-    const { processAttachmentFromBuffer } = await import('./proposal/attachments/index.js');
     const supabase = this.supabaseService.getClient();
 
     const fotos: Array<{ url: string; legenda: string; ordem: number }> = [];
@@ -847,7 +848,6 @@ export class ProposalAssistant {
 
       let attachments: GenerateProposalCoreInput['attachments'];
       if (tipo === 'personalizada' && sessionState.attachments.length > 0) {
-        const { downloadWabaMedia } = await import('./proposal/attachments/whatsapp-media-downloader.js');
         const accessToken = process.env.META_WABA_ACCESS_TOKEN;
         if (!accessToken) throw new Error('META_WABA_ACCESS_TOKEN nao configurado');
         attachments = [];
