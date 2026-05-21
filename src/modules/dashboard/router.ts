@@ -1368,5 +1368,46 @@ export function createDashboardRouter(
     },
   );
 
+  router.get('/propostas/:slug/preview', async (req: Request, res: Response) => {
+    const slug = String(req.params.slug ?? '');
+    if (!/^[A-Za-z0-9_-]{16,32}$/.test(slug)) return res.status(400).send('Slug inválido');
+
+    const result = await supabaseService.getPropostaPublicaBySlug(slug);
+    if (result.status !== 'ok') return res.status(404).send('Proposta não encontrada');
+
+    const lead_id = String(req.query.lead_id ?? '');
+    const clienteNome = result.clienteNome ?? 'Cliente';
+
+    const extras = await supabaseService.getPropostaPublicaExtras(slug);
+
+    let canEnviar = true;
+    let reasonNaoEnviar: string | null = null;
+    if (!options.metaService) {
+      canEnviar = false;
+      reasonNaoEnviar = 'MetaWhatsApp não configurado';
+    } else if (!extras.cliente_telefone) {
+      canEnviar = false;
+      reasonNaoEnviar = 'Sem telefone cadastrado';
+    } else if (extras.opt_out) {
+      canEnviar = false;
+      reasonNaoEnviar = 'Cliente em opt-out';
+    }
+
+    const publicBase = process.env.PROPOSAL_PUBLIC_BASE_URL ?? 'https://propostas.ecosunpower.eng.br';
+    const publicUrl = `${publicBase}/p/${slug}`;
+
+    res.type('text/html').send(renderPreviewProposta({
+      slug,
+      htmlPreview: result.html ?? '',
+      publicUrl,
+      clienteNome,
+      clienteTelefone: extras.cliente_telefone ?? '',
+      lead_id,
+      jaEnviado: !!extras.sent_to_client_at,
+      canEnviar,
+      reasonNaoEnviar,
+    }));
+  });
+
   return router;
 }

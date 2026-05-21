@@ -711,6 +711,39 @@ export class SupabaseService {
     };
   }
 
+  async getPropostaPublicaExtras(slug: string): Promise<{
+    cliente_telefone: string | null;
+    sent_to_client_at: string | null;
+    opt_out: boolean;
+  }> {
+    const { data, error } = await this.client
+      .from('propostas_publicas')
+      .select('cliente_telefone, sent_to_client_at')
+      .eq('slug', slug)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to get proposta extras: ${error.message}`);
+    if (!data) return { cliente_telefone: null, sent_to_client_at: null, opt_out: false };
+
+    // Cruza telefone com leads pra detectar opt_out
+    let opt_out = false;
+    const clienteTelefone = (data as any).cliente_telefone as string | null;
+    if (clienteTelefone) {
+      const { data: leadRow } = await this.client
+        .from('leads')
+        .select('opt_out')
+        .eq('phone', clienteTelefone)
+        .maybeSingle();
+      opt_out = !!leadRow?.opt_out;
+    }
+
+    return {
+      cliente_telefone: clienteTelefone,
+      sent_to_client_at: ((data as any).sent_to_client_at as string | null) ?? null,
+      opt_out,
+    };
+  }
+
   // Fire-and-forget. Race condition em counter de view e tolerada (~best effort).
   // Nao bloqueia a resposta HTTP da proposta.
   // Retorna { acessosAntes } pra caller detectar primeira visualizacao
