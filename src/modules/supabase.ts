@@ -1248,7 +1248,7 @@ export class SupabaseService {
         concessionaria: input.concessionaria ?? null,
         consumo_medio_kwh: input.consumo_medio_kwh ?? null,
         profile: input.profile ?? 'indefinido',
-        installation_status: 'novo',
+        installation_status: null,
         eva_active: false,
         opt_out: false,
         created_at: new Date().toISOString(),
