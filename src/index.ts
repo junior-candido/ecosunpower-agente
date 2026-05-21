@@ -51,6 +51,8 @@ import { runDispatchCycle, type DispatchCtx } from './modules/monitoring/proacti
 import { runAnniversaryEnqueue } from './modules/monitoring/proactive-alerts/anniversary.js';
 import { sendAdminWithButtons } from './modules/eva-admin-buttons.js';
 import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/cron.js';
+import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
+import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -5328,6 +5330,47 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
       console.error('[relatorio-publico]', err);
       res.status(500).type('text/html').send(propostaErrorHtml('error'));
     }
+  });
+
+  // ===== A5 — Relatório Pós-Instalação (rota pública) =====
+  // Sem auth — cliente abre via link enviado no WhatsApp.
+  // URL pública: https://propostas.ecosunpower.eng.br/r-pi/<slug>
+  app.get('/r-pi/:slug', async (req, res) => {
+    const slug = String(req.params.slug ?? '');
+    if (!/^[a-z0-9]{6,20}$/.test(slug)) return res.status(400).send('Slug inválido');
+
+    const rel = await supabase.getRelatorioPosInstalacaoBySlug(slug);
+    if (!rel) return res.status(404).type('text/html').send(`
+      <!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Não encontrado</title>
+      <style>body{font-family:sans-serif;text-align:center;padding:60px 20px;color:#444}</style></head>
+      <body><h1>📋 Relatório não encontrado</h1><p>O link que você acessou pode estar errado ou ter sido removido.</p></body></html>
+    `);
+
+    // Resolve view com fotos signed URLs
+    const posInstService = new PosInstalacaoService(supabase, async (leadId) => {
+      const sistemas = await monitoringService.listarParaDashboard() as any[];
+      const s = sistemas.find((x) => x.lead_id === leadId);
+      if (!s) return null;
+      return {
+        id: s.id,
+        apelido: s.apelido,
+        marca_inversor: s.marca_inversor,
+        potencia_kwp: s.potencia_kwp,
+        qtd_paineis: s.qtd_paineis ?? null,
+        painel_marca: s.painel_marca ?? null,
+        painel_modelo: s.painel_modelo ?? null,
+        inversor_modelo: s.inversor_modelo ?? null,
+      };
+    });
+    const view = await posInstService.resolverView(rel, true);
+    if (!view) return res.status(500).send('Erro ao renderizar relatório');
+
+    // Incrementa contador de acesso (best-effort, async sem await)
+    supabase.incrementarAcessoRelatorioPI(slug).catch((e) =>
+      console.warn('[r-pi] increment failed:', (e as Error).message),
+    );
+
+    res.type('text/html').send(renderPosInstalacaoHtml(view));
   });
 
   // Pagina publica de Politica de Privacidade pra uso nos Lead Ads da Meta.
