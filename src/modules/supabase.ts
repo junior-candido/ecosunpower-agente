@@ -1168,4 +1168,105 @@ export class SupabaseService {
     }
     return { ok: true, lead_id: novoLead.id };
   }
+
+  // ====================================================================
+  // A5 — Relatório Pós-Instalação
+  // ====================================================================
+
+  async criarRelatorioPosInstalacao(input: {
+    lead_id: string;
+    slug: string;
+    mensagem_personalizada: string | null;
+    data_instalacao: string | null;
+    fotos: Array<{ storage_path: string; caption?: string | null }>;
+  }): Promise<{ ok: boolean; id?: string; error?: string }> {
+    const { data, error } = await this.client
+      .from('relatorios_pos_instalacao')
+      .insert({
+        lead_id: input.lead_id,
+        slug: input.slug,
+        mensagem_personalizada: input.mensagem_personalizada,
+        data_instalacao: input.data_instalacao,
+        fotos: input.fotos,
+        created_by: 'junior',
+      })
+      .select('id')
+      .single();
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, id: data.id };
+  }
+
+  async getRelatorioPosInstalacaoBySlug(slug: string): Promise<any | null> {
+    const { data, error } = await this.client
+      .from('relatorios_pos_instalacao')
+      .select('*')
+      .eq('slug', slug)
+      .single();
+    if (error) {
+      console.warn('[supabase] getRelatorioPosInstalacaoBySlug:', error.message);
+      return null;
+    }
+    return data;
+  }
+
+  async getRelatorioPosInstalacaoById(id: string): Promise<any | null> {
+    const { data, error } = await this.client
+      .from('relatorios_pos_instalacao')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error) return null;
+    return data;
+  }
+
+  async listRelatoriosPosInstalacaoByLead(lead_id: string, limit: number = 10): Promise<any[]> {
+    const { data, error } = await this.client
+      .from('relatorios_pos_instalacao')
+      .select('id, slug, created_at, enviado_em, acessos, mensagem_personalizada')
+      .eq('lead_id', lead_id)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) return [];
+    return data ?? [];
+  }
+
+  async marcarRelatorioPosInstalacaoEnviado(id: string, phone: string): Promise<void> {
+    await this.client
+      .from('relatorios_pos_instalacao')
+      .update({ enviado_em: new Date().toISOString(), enviado_para_phone: phone })
+      .eq('id', id);
+  }
+
+  async marcarLeadPostInstallReportSent(leadId: string): Promise<void> {
+    await this.client
+      .from('leads')
+      .update({ post_install_report_sent_at: new Date().toISOString() })
+      .eq('id', leadId);
+  }
+
+  async incrementarAcessoRelatorioPI(slug: string): Promise<void> {
+    // Lê + incrementa atomicamente seria ideal via RPC; pra v1 fazemos read+update
+    const { data } = await this.client
+      .from('relatorios_pos_instalacao')
+      .select('acessos')
+      .eq('slug', slug)
+      .single();
+    const novo = (data?.acessos ?? 0) + 1;
+    await this.client
+      .from('relatorios_pos_instalacao')
+      .update({ acessos: novo, ultimo_acesso_em: new Date().toISOString() })
+      .eq('slug', slug);
+  }
+
+  async getLeadsMedidorTrocadoSemRelatorio(): Promise<any[]> {
+    const { data, error } = await this.client
+      .from('leads')
+      .select('id, name, phone, installation_status, meter_swapped_at')
+      .eq('installation_status', 'medidor_trocado')
+      .is('post_install_report_sent_at', null)
+      .order('updated_at', { ascending: false })
+      .limit(20);
+    if (error) return [];
+    return data ?? [];
+  }
 }
