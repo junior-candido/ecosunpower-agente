@@ -29,6 +29,13 @@ export interface LeadDetail extends LeadRow {
   cadence_steps: Array<{ step: number; scheduled_for: string; status: string; sent_at: string | null }>;
 }
 
+// Statuses que indicam "já virou cliente" — esses NÃO aparecem em /leads.
+// Aparecem em /clientes via mesmo filtro inverso (CLIENTE_STATUSES em clientes-queries.ts).
+const CLIENTE_STATUSES = [
+  'contrato_assinado', 'instalado', 'medidor_trocado',
+  'operando', 'pos_venda_concluido',
+];
+
 export async function listLeads(
   client: SupabaseClient,
   filters: { status?: string; eva_active?: boolean; only_alerts?: boolean } = {},
@@ -36,8 +43,9 @@ export async function listLeads(
   let q = client
     .from('leads')
     .select(
-      'id, phone, name, status, acquisition_source, eva_active, opt_out, maintenance_client, created_at, updated_at',
+      'id, phone, name, status, acquisition_source, eva_active, opt_out, maintenance_client, created_at, updated_at, installation_status',
     )
+    .or(`installation_status.is.null,installation_status.not.in.(${CLIENTE_STATUSES.join(',')})`)
     .order('updated_at', { ascending: false })
     .limit(200);
 
