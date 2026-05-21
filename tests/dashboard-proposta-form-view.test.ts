@@ -100,4 +100,23 @@ describe('renderPreviewProposta', () => {
     });
     expect(html).toContain('Enviado');
   });
+
+  it('não vaza apóstrofo no nome cliente pra dentro do handler JS', () => {
+    const html = renderPreviewProposta({
+      slug: 'abcdef0123456789',
+      htmlPreview: '<html><body>x</body></html>',
+      publicUrl: 'https://propostas.test/p/abcdef0123456789',
+      clienteNome: "Marcos D'Ávila",
+      clienteTelefone: '5561999999999',
+      lead_id: 'aaa',
+      jaEnviado: false,
+      canEnviar: true,
+      reasonNaoEnviar: null,
+    });
+    // confirm() recebe string vinda de this.dataset.nome, não interpolada no atributo onsubmit
+    expect(html).toMatch(/data-nome="Marcos D&#39;Ávila"/);
+    expect(html).not.toMatch(/confirm\('Enviar proposta pra Marcos D'Ávila/);
+    // garante que o handler usa dataset, não interpolação direta
+    expect(html).toMatch(/this\.dataset\.nome/);
+  });
 });

@@ -12,15 +12,18 @@ function escapeHtml(s: string | number | null | undefined): string {
   }[c]!));
 }
 
-const MARCAS_MODULO = ['Trina', 'JA Solar', 'LONGi', 'Jinko', 'DAH', 'Risen'];
-const MARCAS_INVERSOR = ['Sungrow', 'Solis', 'Deye', 'FoxESS', 'SolarEdge', 'Huawei', 'GoodWe', 'Hoymiles', 'Enphase', 'NEP'];
-const TIPOS_ESTRUTURA = ['Telha cerâmica', 'Telha metálica', 'Telha fibrocimento', 'Laje', 'Solo', 'Carport'];
-const FATORES_PERDA = ['0.75', '0.80', '0.85'];
+export const MARCAS_MODULO = ['Trina', 'JA Solar', 'LONGi', 'Jinko', 'DAH', 'Risen'] as const;
+export const MARCAS_INVERSOR = ['Sungrow', 'Solis', 'Deye', 'FoxESS', 'SolarEdge', 'Huawei', 'GoodWe', 'Hoymiles', 'Enphase', 'NEP'] as const;
+export const TIPOS_ESTRUTURA = ['Telha cerâmica', 'Telha metálica', 'Telha fibrocimento', 'Laje', 'Solo', 'Carport'] as const;
+export const FATORES_PERDA = ['0.75', '0.80', '0.85'] as const;
 
-const CONCESSIONARIA_VALUES: Array<{ value: string; label: string }> = [
+export const CONCESSIONARIA_VALUES: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'neoenergia-df', label: 'Neoenergia DF' },
   { value: 'equatorial-go', label: 'Equatorial GO' },
 ];
+
+export type ConcessionariaValue = typeof CONCESSIONARIA_VALUES[number]['value'];
+export type FatorPerdaValue = typeof FATORES_PERDA[number];
 
 function enderecoCompleto(c: Partial<ClienteDetail> | null | undefined): string {
   if (!c) return '';
@@ -271,7 +274,7 @@ export function renderPreviewProposta(input: {
   reasonNaoEnviar: string | null;
 }): string {
   const enviarBtn = input.canEnviar && !input.jaEnviado
-    ? `<form action="/dashboard/propostas/${escapeHtml(input.slug)}/enviar" method="post" onsubmit="return confirm('Enviar proposta pra ${escapeHtml(input.clienteNome)} no WhatsApp agora?')">
+    ? `<form action="/dashboard/propostas/${escapeHtml(input.slug)}/enviar" method="post" data-nome="${escapeHtml(input.clienteNome)}" onsubmit="return confirm('Enviar proposta pra ' + this.dataset.nome + ' no WhatsApp agora?')">
          <input type="hidden" name="lead_id" value="${escapeHtml(input.lead_id)}">
          <button class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">📤 Enviar pelo WhatsApp</button>
        </form>`
@@ -300,7 +303,7 @@ export function renderPreviewProposta(input: {
         </div>
         <div class="flex gap-2 flex-shrink-0">
           <a href="${refazerHref}" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm">↻ Refazer</a>
-          <button onclick="navigator.clipboard.writeText('${escapeHtml(input.publicUrl)}').then(()=>alert('Link copiado!'))" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm">📋 Copiar link</button>
+          <button data-url="${escapeHtml(input.publicUrl)}" onclick="navigator.clipboard.writeText(this.dataset.url).then(()=>alert('Link copiado!'))" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm">📋 Copiar link</button>
           ${enviarBtn}
         </div>
       </div>

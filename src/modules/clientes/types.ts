@@ -11,7 +11,7 @@ export type JornadaFase =
   | 'lead' | 'proposta' | 'contrato'
   | 'instalado' | 'operando' | 'pos_venda';
 
-export type ClienteProfile = 'residencial' | 'comercial' | 'rural' | 'indefinido';
+export type ClienteProfile = 'residencial' | 'comercial' | 'rural' | 'industrial' | 'indefinido';
 
 export type FormaPagamento = 'cartao' | 'boleto' | 'a_vista' | 'financiamento';
 export type BancoFinanciamento = 'bv' | 'solfacil' | 'solagora' | 'santander' | 'btg' | 'outro';
