@@ -896,6 +896,77 @@ export function createDashboardRouter(
     }
   });
 
+  // ========================================================================
+  // Criar cliente novo (A4-V2.1) — desbloqueia cadastro avulso pra qualquer
+  // integrador. Antes só havia criação via vinculação de sistema órfão.
+  // DEVE vir ANTES de /clientes/:id pra Express não tentar casar "novo" como UUID.
+  // ========================================================================
+
+  router.get('/clientes/novo', async (_req: Request, res: Response) => {
+    res.type('text/html').send(renderFormNovoCliente({}));
+  });
+
+  router.post('/clientes/novo', async (req: Request, res: Response) => {
+    const b = req.body ?? {};
+    const erros: string[] = [];
+
+    const name = String(b.name ?? '').trim();
+    const phone = String(b.phone ?? '').trim();
+
+    if (!name) erros.push('Campo "Nome" obrigatório');
+    if (!phone) erros.push('Campo "Telefone" obrigatório');
+
+    const consumoRaw = String(b.consumo_medio_kwh ?? '').trim();
+    let consumo: number | null = null;
+    if (consumoRaw) {
+      const n = Number(consumoRaw);
+      if (!isFinite(n) || n < 0) erros.push('Consumo médio inválido');
+      else consumo = n;
+    }
+
+    if (erros.length > 0) {
+      return res.status(400).type('text/html').send(renderFormNovoCliente({
+        erros,
+        values: {
+          name, phone,
+          email: b.email, cpf_cnpj: b.cpf_cnpj,
+          city: b.city, uf: b.uf,
+          concessionaria: b.concessionaria,
+          consumo_medio_kwh: consumoRaw,
+          profile: b.profile,
+        },
+      }));
+    }
+
+    const r = await supabaseService.criarLeadAvulso({
+      name,
+      phone,
+      email: b.email || null,
+      cpf_cnpj: b.cpf_cnpj || null,
+      city: b.city || null,
+      uf: b.uf || null,
+      concessionaria: b.concessionaria || null,
+      consumo_medio_kwh: consumo,
+      profile: (b.profile as any) || 'indefinido',
+    });
+
+    if (!r.ok) {
+      return res.status(400).type('text/html').send(renderFormNovoCliente({
+        erros: [r.error ?? 'Falha ao criar cliente'],
+        values: {
+          name, phone,
+          email: b.email, cpf_cnpj: b.cpf_cnpj,
+          city: b.city, uf: b.uf,
+          concessionaria: b.concessionaria,
+          consumo_medio_kwh: consumoRaw,
+          profile: b.profile,
+        },
+      }));
+    }
+
+    res.redirect(303, `/dashboard/clientes/${r.lead_id}`);
+  });
+
   router.get('/clientes/:id', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
     if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
@@ -1020,76 +1091,6 @@ export function createDashboardRouter(
       topic,
     });
     res.redirect(303, `/dashboard/clientes/${leadId}`);
-  });
-
-  // ========================================================================
-  // Criar cliente novo (A4-V2.1) — desbloqueia cadastro avulso pra qualquer
-  // integrador. Antes só havia criação via vinculação de sistema órfão.
-  // ========================================================================
-
-  router.get('/clientes/novo', async (_req: Request, res: Response) => {
-    res.type('text/html').send(renderFormNovoCliente({}));
-  });
-
-  router.post('/clientes/novo', async (req: Request, res: Response) => {
-    const b = req.body ?? {};
-    const erros: string[] = [];
-
-    const name = String(b.name ?? '').trim();
-    const phone = String(b.phone ?? '').trim();
-
-    if (!name) erros.push('Campo "Nome" obrigatório');
-    if (!phone) erros.push('Campo "Telefone" obrigatório');
-
-    const consumoRaw = String(b.consumo_medio_kwh ?? '').trim();
-    let consumo: number | null = null;
-    if (consumoRaw) {
-      const n = Number(consumoRaw);
-      if (!isFinite(n) || n < 0) erros.push('Consumo médio inválido');
-      else consumo = n;
-    }
-
-    if (erros.length > 0) {
-      return res.status(400).type('text/html').send(renderFormNovoCliente({
-        erros,
-        values: {
-          name, phone,
-          email: b.email, cpf_cnpj: b.cpf_cnpj,
-          city: b.city, uf: b.uf,
-          concessionaria: b.concessionaria,
-          consumo_medio_kwh: consumoRaw,
-          profile: b.profile,
-        },
-      }));
-    }
-
-    const r = await supabaseService.criarLeadAvulso({
-      name,
-      phone,
-      email: b.email || null,
-      cpf_cnpj: b.cpf_cnpj || null,
-      city: b.city || null,
-      uf: b.uf || null,
-      concessionaria: b.concessionaria || null,
-      consumo_medio_kwh: consumo,
-      profile: (b.profile as any) || 'indefinido',
-    });
-
-    if (!r.ok) {
-      return res.status(400).type('text/html').send(renderFormNovoCliente({
-        erros: [r.error ?? 'Falha ao criar cliente'],
-        values: {
-          name, phone,
-          email: b.email, cpf_cnpj: b.cpf_cnpj,
-          city: b.city, uf: b.uf,
-          concessionaria: b.concessionaria,
-          consumo_medio_kwh: consumoRaw,
-          profile: b.profile,
-        },
-      }));
-    }
-
-    res.redirect(303, `/dashboard/clientes/${r.lead_id}`);
   });
 
   // Vincular sistema órfão a um cliente novo (cria lead + linka)
