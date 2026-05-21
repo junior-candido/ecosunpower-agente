@@ -551,6 +551,9 @@ export function renderClienteDetailPage(d: ClienteDetail, insights: InsightCard[
       <a href="https://wa.me/${escapeHtml(phoneClean)}" target="_blank" class="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-semibold">📞 Conversar</a>
       <a href="/dashboard/propostas/novo?lead_id=${escapeHtml(d.id)}" class="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold">📄 Nova proposta</a>
       <a href="/dashboard/clientes/${escapeHtml(d.id)}/relatorio-pos-instalacao/novo" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold">📋 Relatório pós-obra</a>
+      <form action="/dashboard/clientes/${escapeHtml(d.id)}/excluir" method="post" data-nome="${escapeHtml(d.name ?? 'esse cadastro')}" onsubmit="return confirm('Excluir ' + this.dataset.nome + ' PERMANENTEMENTE? Isso apaga propostas, conversas e anexos vinculados. Não dá pra desfazer.')" class="inline">
+        <button class="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold">🗑 Excluir</button>
+      </form>
     </div>`;
 
   // Abas (estrutura — conteúdo virá em T11)

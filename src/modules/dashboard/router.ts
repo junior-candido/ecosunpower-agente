@@ -1027,6 +1027,19 @@ export function createDashboardRouter(
     res.redirect(303, `/dashboard/clientes/${id}#dados`);
   });
 
+  router.post('/clientes/:id/excluir', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+
+    const r = await supabaseService.excluirLead(id);
+    if (!r.ok) {
+      return res.status(400).send(
+        `<h2>Não foi possível excluir</h2><p>${escapeHtmlSimple(r.error ?? '')}</p><a href="/dashboard/clientes/${id}">← voltar</a>`
+      );
+    }
+    res.redirect(303, '/dashboard/clientes');
+  });
+
   router.post('/clientes/:id/anexos', upload.single('file'), async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
     if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
