@@ -50,6 +50,7 @@ import { ProactiveAlertService } from './modules/monitoring/proactive-alerts/ser
 import { runDispatchCycle, type DispatchCtx } from './modules/monitoring/proactive-alerts/dispatcher.js';
 import { runAnniversaryEnqueue } from './modules/monitoring/proactive-alerts/anniversary.js';
 import { sendAdminWithButtons } from './modules/eva-admin-buttons.js';
+import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/cron.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -6028,6 +6029,26 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     console.log(
       `[proactive-alerts] crons started (detect 60min, dispatch 15min, anniversary 06h BRT). DRY_RUN=${proactiveDryRun}`,
     );
+
+    // ============================================
+    // A5 — Notificação pós-instalação (Junior)
+    // ============================================
+    const runPosInstalacaoNotif = async () => {
+      try {
+        await runPosInstalacaoNotifCycle(new Date(), {
+          supabase,
+          sendText,
+          adminPhone: config.engineerPhone,
+          dashboardBaseUrl: 'https://dashboard.ecosunpower.eng.br',
+        });
+      } catch (err) {
+        console.error('[pos-instalacao] cron falhou:', (err as Error).message);
+      }
+    };
+    setInterval(runPosInstalacaoNotif, 60 * 60 * 1000);  // 1x/hora
+    setTimeout(runPosInstalacaoNotif, 10 * 60 * 1000);   // 10min após boot
+
+    console.log('[pos-instalacao] cron started (1x/hora dentro da janela)');
   }
 
   // Canal Solar ingestion (every 3 days)
