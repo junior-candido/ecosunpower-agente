@@ -244,6 +244,9 @@ export function renderLoginPage(input: LoginPageInput = {}): string {
       <form action="/dashboard/login" method="post" class="space-y-5">
         ${next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : ''}
 
+        <!-- Username oculto pro Chrome/Firefox oferecerem "salvar senha" -->
+        <input type="text" name="username" value="junior@ecosunpower.eng.br" autocomplete="username" style="display:none" readonly tabindex="-1">
+
         <div>
           <label for="senha" class="block text-sm font-semibold text-slate-700 mb-2">
             🔐 Senha de acesso

@@ -10,7 +10,7 @@ import crypto from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
 
 const COOKIE_NAME = 'ecosun_dash_token';
-const COOKIE_TTL_DAYS = 7;
+const COOKIE_TTL_DAYS = 60;
 
 function getSecret(): string {
   // Preferimos META_APP_SECRET pq ja existe no env e eh longo/aleatorio.
