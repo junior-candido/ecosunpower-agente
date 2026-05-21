@@ -72,7 +72,15 @@ import { uploadAnexo, deleteAnexoFile } from '../anexos/storage.js';
 import { PosInstalacaoService } from '../relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from '../relatorios/pos-instalacao/template.js';
 import { renderFormNovoRelatorio, renderPreviewRelatorio } from './relatorio-pi-views.js';
-import { renderFormNovaProposta, renderPreviewProposta } from './proposta-form-view.js';
+import {
+  renderFormNovaProposta,
+  renderPreviewProposta,
+  CONCESSIONARIA_VALUES,
+  FATORES_PERDA,
+  MARCAS_MODULO,
+  MARCAS_INVERSOR,
+  TIPOS_ESTRUTURA,
+} from './proposta-form-view.js';
 
 export function createDashboardRouter(
   supabaseService: SupabaseService,
@@ -1189,18 +1197,42 @@ export function createDashboardRouter(
       const b = req.body;
       const erros: string[] = [];
 
+      // Campos básicos
       const nomeCliente = String(b.nomeCliente ?? '').trim();
       const valorTotalRs = Number(b.valorTotalRs);
       const potenciaKwp = Number(b.potenciaKwp);
       const fatorPerda = Number(b.fatorPerda);
       const consumoMensalKwh = Number(b.consumoMensalKwh);
       const concessionariaRaw = String(b.concessionaria ?? '');
+      // Fix 1: resolve label pela lista exportada (fonte única da verdade)
+      const concessionariaOpt = CONCESSIONARIA_VALUES.find((c) => c.value === concessionariaRaw);
 
+      // Fix 2: parse numérico de módulo/inversor antes das validações
+      const moduloPotenciaW = Number(b.moduloPotenciaW);
+      const moduloQuantidade = Number(b.moduloQuantidade);
+      const inversorPotenciaW = Number(b.inversorPotenciaW);
+      const inversorQuantidade = Number(b.inversorQuantidade);
+
+      // Validações — campos obrigatórios
       if (!nomeCliente) erros.push('Campo "Nome" obrigatório');
       if (!isFinite(valorTotalRs) || valorTotalRs <= 0) erros.push('Campo "Valor total" inválido');
       if (!isFinite(potenciaKwp) || potenciaKwp <= 0) erros.push('Campo "Potência kWp" inválido');
       if (!isFinite(consumoMensalKwh) || consumoMensalKwh <= 0) erros.push('Campo "Consumo médio" inválido');
       if (!concessionariaRaw) erros.push('Campo "Concessionária" obrigatório');
+
+      // Fix 1: validações de selects contra constantes exportadas
+      if (concessionariaRaw && !concessionariaOpt) erros.push('Concessionária inválida');
+      const fatorPerdaStr = String(b.fatorPerda ?? '');
+      if (fatorPerdaStr && !(FATORES_PERDA as ReadonlyArray<string>).includes(fatorPerdaStr)) erros.push('Fator de perda inválido');
+      if (b.moduloFabricante && !(MARCAS_MODULO as ReadonlyArray<string>).includes(String(b.moduloFabricante))) erros.push('Marca do módulo inválida');
+      if (b.inversorFabricante && !(MARCAS_INVERSOR as ReadonlyArray<string>).includes(String(b.inversorFabricante))) erros.push('Marca do inversor inválida');
+      if (b.estruturaTipo && !(TIPOS_ESTRUTURA as ReadonlyArray<string>).includes(String(b.estruturaTipo))) erros.push('Tipo de estrutura inválido');
+
+      // Fix 2: validações NaN/zero módulo e inversor
+      if (!isFinite(moduloPotenciaW) || moduloPotenciaW <= 0) erros.push('Potência do módulo inválida');
+      if (!isFinite(moduloQuantidade) || moduloQuantidade <= 0) erros.push('Quantidade de módulos inválida');
+      if (!isFinite(inversorPotenciaW) || inversorPotenciaW <= 0) erros.push('Potência do inversor inválida');
+      if (!isFinite(inversorQuantidade) || inversorQuantidade <= 0) erros.push('Quantidade de inversores inválida');
 
       if (erros.length > 0) {
         return res.status(400).type('text/html').send(renderFormNovaProposta({
@@ -1210,12 +1242,8 @@ export function createDashboardRouter(
         }));
       }
 
-      // Mapeia value do select pra label que o calculator entende.
-      const concessionariaLabel = concessionariaRaw === 'neoenergia-df'
-        ? 'Neoenergia DF'
-        : concessionariaRaw === 'equatorial-go'
-          ? 'Equatorial GO'
-          : concessionariaRaw;
+      // Fix 1: label via lista exportada (fonte única da verdade)
+      const concessionariaLabel = concessionariaOpt?.label ?? concessionariaRaw;
 
       // Parse opcional do array 12 meses
       let consumoMensalKwhDistribuido: number[] | undefined;
@@ -1257,8 +1285,8 @@ export function createDashboardRouter(
         modulo: {
           fabricante: b.moduloFabricante,
           modelo: b.moduloModelo,
-          potenciaW: Number(b.moduloPotenciaW),
-          quantidade: Number(b.moduloQuantidade),
+          potenciaW: moduloPotenciaW,
+          quantidade: moduloQuantidade,
           garantiaDefeito: 12,
           garantiaEficiencia: 30,
           tecnologia: 'TOPCon N-Type Bifacial',
@@ -1266,8 +1294,8 @@ export function createDashboardRouter(
         inversor: {
           fabricante: b.inversorFabricante,
           modelo: b.inversorModelo,
-          potenciaW: Number(b.inversorPotenciaW),
-          quantidade: Number(b.inversorQuantidade),
+          potenciaW: inversorPotenciaW,
+          quantidade: inversorQuantidade,
           garantia: garantiaInversor,
           eficiencia: 0.985,
           tipoInversor,
@@ -1306,6 +1334,18 @@ export function createDashboardRouter(
 
       const tipo: 'basica' | 'personalizada' = attachments.length > 0 ? 'personalizada' : 'basica';
 
+      // Fix 3: sanitiza mensagem de erro pra não vazar paths, tokens, schema names.
+      // Mesma lógica do shim zap em proposal-assistant.ts.
+      function sanitizeProposalError(raw: string): string {
+        if (/timeout|ECONN|chromium|puppeteer/i.test(raw)) {
+          return 'PDF demorou demais ou Chromium falhou. Tenta de novo em 30s.';
+        }
+        if (/refresh|token|auth/i.test(raw)) {
+          return 'Token Google expirou — regerar GOOGLE_REFRESH_TOKEN com scope drive.file.';
+        }
+        return raw.length > 120 ? raw.slice(0, 120) + '...' : raw;
+      }
+
       try {
         const result = await options.proposalAssistant.generateProposalCore({
           data,
@@ -1315,10 +1355,14 @@ export function createDashboardRouter(
         });
         return res.redirect(303, `/dashboard/propostas/${result.slug}/preview?lead_id=${lead_id}`);
       } catch (err) {
-        return res.status(500).type('text/html').send(renderFormNovaProposta({
+        // Fix 4: status 400 pra erros de validação, 500 pra falhas de infraestrutura
+        const rawMsg = (err as Error).message ?? 'erro desconhecido';
+        const friendly = sanitizeProposalError(rawMsg);
+        const isValidation = /Campo .* inválido/.test(rawMsg);
+        return res.status(isValidation ? 400 : 500).type('text/html').send(renderFormNovaProposta({
           lead_id,
           lead: lead as any,
-          erros: [`Erro ao gerar proposta: ${(err as Error).message.slice(0, 200)}`],
+          erros: [`Erro ao gerar proposta: ${friendly}`],
         }));
       }
     },
