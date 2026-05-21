@@ -21,3 +21,11 @@ create table relatorios_pos_instalacao (
 
 create index relatorios_pi_by_lead on relatorios_pos_instalacao (lead_id, created_at desc);
 create index relatorios_pi_slug on relatorios_pos_instalacao (slug);
+
+-- Increment atômico de acessos (evita race condition em concurrent reads)
+create or replace function increment_pi_access(p_slug text)
+returns void language sql security definer as $$
+  update relatorios_pos_instalacao
+  set acessos = acessos + 1, ultimo_acesso_em = now()
+  where slug = p_slug;
+$$;

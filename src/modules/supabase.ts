@@ -1245,17 +1245,9 @@ export class SupabaseService {
   }
 
   async incrementarAcessoRelatorioPI(slug: string): Promise<void> {
-    // Lê + incrementa atomicamente seria ideal via RPC; pra v1 fazemos read+update
-    const { data } = await this.client
-      .from('relatorios_pos_instalacao')
-      .select('acessos')
-      .eq('slug', slug)
-      .single();
-    const novo = (data?.acessos ?? 0) + 1;
-    await this.client
-      .from('relatorios_pos_instalacao')
-      .update({ acessos: novo, ultimo_acesso_em: new Date().toISOString() })
-      .eq('slug', slug);
+    // RPC atômico (definido na migration 034) — evita race em concurrent reads.
+    const { error } = await this.client.rpc('increment_pi_access', { p_slug: slug });
+    if (error) console.warn('[supabase] increment_pi_access:', error.message);
   }
 
   async getLeadsMedidorTrocadoSemRelatorio(): Promise<any[]> {

@@ -27,7 +27,7 @@ export function renderFormNovoRelatorio(input: {
         <div>
           <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">📸 Fotos da obra <span class="text-slate-500 font-normal">(pode selecionar várias de uma vez)</span></label>
           <input type="file" name="fotos" multiple accept="image/*" class="block w-full text-sm text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-cyan-600 file:text-white hover:file:bg-cyan-700 cursor-pointer">
-          <p class="text-xs text-slate-500 mt-1">Máx 10 fotos · até 10MB cada · JPG/PNG/WebP/HEIC.</p>
+          <p class="text-xs text-slate-500 mt-1">Máx 10 fotos · até 20MB cada · JPG/PNG/WebP/HEIC.</p>
         </div>
 
         <div>

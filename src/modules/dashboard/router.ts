@@ -1076,7 +1076,11 @@ export function createDashboardRouter(
       }));
 
       const mensagem = req.body?.mensagem_personalizada ? String(req.body.mensagem_personalizada).trim() : null;
-      const dataInst = req.body?.data_instalacao ? String(req.body.data_instalacao) : null;
+      const dataInstRaw = req.body?.data_instalacao ? String(req.body.data_instalacao) : null;
+      if (dataInstRaw && !/^\d{4}-\d{2}-\d{2}$/.test(dataInstRaw)) {
+        return res.status(400).send('Data de instalação inválida — use formato YYYY-MM-DD');
+      }
+      const dataInst = dataInstRaw;
 
       const r = await posInstService.criarDraft({
         lead_id: id,
