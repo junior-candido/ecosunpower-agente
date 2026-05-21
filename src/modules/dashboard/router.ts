@@ -72,6 +72,7 @@ import { uploadAnexo, deleteAnexoFile } from '../anexos/storage.js';
 import { PosInstalacaoService } from '../relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from '../relatorios/pos-instalacao/template.js';
 import { renderFormNovoRelatorio, renderPreviewRelatorio } from './relatorio-pi-views.js';
+import { renderFormNovaProposta, renderPreviewProposta } from './proposta-form-view.js';
 
 export function createDashboardRouter(
   supabaseService: SupabaseService,
@@ -1136,6 +1137,30 @@ export function createDashboardRouter(
     const r = await posInstService.enviarPorWhatsApp(rid, sendText);
     if (!r.ok) return res.status(400).send(`<h2>Não foi possível enviar: ${escapeHtmlSimple(r.reason ?? '')}</h2><a href="/dashboard/clientes/${id}">← voltar</a>`);
     res.redirect(303, `/dashboard/clientes/${id}/relatorio-pos-instalacao/${rid}/preview`);
+  });
+
+  // ========================================================================
+  // A4 — Tela admin "Nova proposta"
+  // GET form pré-preenchido, POST gera proposta, GET preview, POST envia
+  // ========================================================================
+
+  router.get('/propostas/novo', async (req: Request, res: Response) => {
+    const lead_id = String(req.query.lead_id ?? '');
+    if (!lead_id) {
+      return res.status(400).send('Parâmetro <code>lead_id</code> obrigatório. Abra esta tela pelo botão "Nova proposta" no perfil de um cliente.');
+    }
+    if (!UUID_RE.test(lead_id)) {
+      return res.status(400).send('UUID inválido');
+    }
+
+    const lead = await supabaseService.getClienteByLeadId(lead_id);
+    if (!lead) return res.status(404).send('Cliente não encontrado');
+
+    res.type('text/html').send(renderFormNovaProposta({
+      lead_id,
+      lead: lead as any,
+      erros: [],
+    }));
   });
 
   return router;
