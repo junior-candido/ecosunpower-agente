@@ -1027,17 +1027,23 @@ export class SupabaseService {
   // Perfil do Cliente A1
   // ====================================================================
 
-  async listClientesByStatus(statuses: string[], filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string } = {}, limit: number = 50, offset: number = 0): Promise<any[]> {
+  async listClientesByStatus(statuses: string[], filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string } = {}, limit: number = 50, offset: number = 0, incluirManuaisDashboard: boolean = false): Promise<any[]> {
     let q = this.client
       .from('leads')
       .select('id, name, phone, email, profile, installation_status, installed_at, city, uf, concessionaria, consumo_medio_kwh, conta_media_brl, opt_out, eva_active, created_at')
       .limit(limit);
 
-    // Lista [] significa "todos" — Junior pediu lista unificada de pessoas.
-    // Mantém o parâmetro pra outros callers que queiram filtrar.
-    if (statuses.length > 0) {
+    // /clientes mostra: fechados (status em CLIENTE_STATUSES) OR cadastros manuais
+    // do Junior (acquisition_source='manual_dashboard'). Leads vindos da Eva ficam
+    // em /leads. Junior pediu separação 21/05 — ver project_a4_tela_admin_proposta.
+    if (statuses.length > 0 && incluirManuaisDashboard) {
+      q = q.or(`installation_status.in.(${statuses.join(',')}),acquisition_source.eq.manual_dashboard`);
+    } else if (statuses.length > 0) {
       q = q.in('installation_status', statuses);
+    } else if (incluirManuaisDashboard) {
+      q = q.eq('acquisition_source', 'manual_dashboard');
     }
+    // statuses vazio + incluirManuais=false: mostra TUDO (uso por chamadores que querem lista geral).
 
     if (filters.q) q = q.or(`name.ilike.%${filters.q}%,phone.ilike.%${filters.q}%,email.ilike.%${filters.q}%,cpf_cnpj.ilike.%${filters.q}%`);
     if (filters.concessionaria) q = q.eq('concessionaria', filters.concessionaria);
@@ -1256,6 +1262,7 @@ export class SupabaseService {
         installation_status: null,
         eva_active: false,
         opt_out: false,
+        acquisition_source: 'manual_dashboard',
         created_at: new Date().toISOString(),
       } as any)
       .select('id')
@@ -1263,6 +1270,12 @@ export class SupabaseService {
 
     if (error || !novoLead) return { ok: false, error: error?.message ?? 'Falha ao criar lead' };
     return { ok: true, lead_id: novoLead.id };
+  }
+
+  async excluirLead(leadId: string): Promise<{ ok: boolean; error?: string }> {
+    const { error } = await this.client.from('leads').delete().eq('id', leadId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
   }
 
   // ====================================================================
