@@ -1163,5 +1163,166 @@ export function createDashboardRouter(
     }));
   });
 
+  // Multer instance para A4 (até 100MB por arquivo pra acomodar vídeo)
+  const uploadProposta = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 100 * 1024 * 1024 },
+  });
+
+  router.post('/propostas/novo',
+    uploadProposta.fields([
+      { name: 'foto1', maxCount: 1 },
+      { name: 'foto2', maxCount: 1 },
+      { name: 'foto3', maxCount: 1 },
+      { name: 'video', maxCount: 1 },
+    ]),
+    async (req: Request, res: Response) => {
+      const lead_id = String(req.body.lead_id ?? '');
+      if (!UUID_RE.test(lead_id)) return res.status(400).send('UUID inválido');
+      if (!options.proposalAssistant) {
+        return res.status(500).send('ProposalAssistant não injetado');
+      }
+
+      const lead = await supabaseService.getClienteByLeadId(lead_id);
+      if (!lead) return res.status(404).send('Cliente não encontrado');
+
+      const b = req.body;
+      const erros: string[] = [];
+
+      const nomeCliente = String(b.nomeCliente ?? '').trim();
+      const valorTotalRs = Number(b.valorTotalRs);
+      const potenciaKwp = Number(b.potenciaKwp);
+      const fatorPerda = Number(b.fatorPerda);
+      const consumoMensalKwh = Number(b.consumoMensalKwh);
+      const concessionariaRaw = String(b.concessionaria ?? '');
+
+      if (!nomeCliente) erros.push('Campo "Nome" obrigatório');
+      if (!isFinite(valorTotalRs) || valorTotalRs <= 0) erros.push('Campo "Valor total" inválido');
+      if (!isFinite(potenciaKwp) || potenciaKwp <= 0) erros.push('Campo "Potência kWp" inválido');
+      if (!isFinite(consumoMensalKwh) || consumoMensalKwh <= 0) erros.push('Campo "Consumo médio" inválido');
+      if (!concessionariaRaw) erros.push('Campo "Concessionária" obrigatório');
+
+      if (erros.length > 0) {
+        return res.status(400).type('text/html').send(renderFormNovaProposta({
+          lead_id,
+          lead: lead as any,
+          erros,
+        }));
+      }
+
+      // Mapeia value do select pra label que o calculator entende.
+      const concessionariaLabel = concessionariaRaw === 'neoenergia-df'
+        ? 'Neoenergia DF'
+        : concessionariaRaw === 'equatorial-go'
+          ? 'Equatorial GO'
+          : concessionariaRaw;
+
+      // Parse opcional do array 12 meses
+      let consumoMensalKwhDistribuido: number[] | undefined;
+      if (b.consumoMensalKwhDistribuido) {
+        try {
+          const arr = JSON.parse(String(b.consumoMensalKwhDistribuido));
+          if (Array.isArray(arr) && arr.length === 12 && arr.every((v) => typeof v === 'number' && isFinite(v) && v >= 0)) {
+            consumoMensalKwhDistribuido = arr;
+          }
+        } catch {}
+      }
+
+      // Detecta tipo do inversor pelo fabricante (mesma regra do prompt do Claude)
+      const inversorFab = String(b.inversorFabricante ?? '').toLowerCase();
+      const tipoInversor: string =
+        ['hoymiles', 'enphase', 'nep', 'apsystems'].includes(inversorFab) ? 'microinversor'
+        : inversorFab === 'solaredge' ? 'solaredge'
+        : 'string';
+      const garantiaInversor =
+        tipoInversor === 'microinversor' ? 12
+        : tipoInversor === 'solaredge' ? 12
+        : 10;
+
+      const data: any = {
+        nomeCliente,
+        documentoCliente: b.documentoCliente || undefined,
+        enderecoCliente: b.enderecoCliente || undefined,
+        telefoneCliente: b.telefoneCliente || undefined,
+        emailCliente: b.emailCliente || undefined,
+        tipoCliente: b.tipoCliente || 'residencial',
+        modalidade: b.modalidade || 'autoconsumo local',
+        concessionaria: concessionariaLabel,
+        potenciaKwp,
+        fatorPerda,
+        consumoMensalKwh,
+        consumoMensalKwhDistribuido,
+        tarifaRsKwh: b.tarifaRsKwh ? Number(b.tarifaRsKwh) : undefined,
+        custoDisponibilidadeMensal: b.custoDisponibilidadeMensal ? Number(b.custoDisponibilidadeMensal) : undefined,
+        modulo: {
+          fabricante: b.moduloFabricante,
+          modelo: b.moduloModelo,
+          potenciaW: Number(b.moduloPotenciaW),
+          quantidade: Number(b.moduloQuantidade),
+          garantiaDefeito: 12,
+          garantiaEficiencia: 30,
+          tecnologia: 'TOPCon N-Type Bifacial',
+        },
+        inversor: {
+          fabricante: b.inversorFabricante,
+          modelo: b.inversorModelo,
+          potenciaW: Number(b.inversorPotenciaW),
+          quantidade: Number(b.inversorQuantidade),
+          garantia: garantiaInversor,
+          eficiencia: 0.985,
+          tipoInversor,
+        },
+        estruturaFixacao: {
+          tipo: b.estruturaTipo || 'Telha cerâmica',
+          material: b.estruturaMaterial || 'Alumínio anodizado + parafusos inox',
+          descricao: '',
+        },
+        valorTotalRs,
+      };
+
+      // Coleta anexos do multer
+      const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+      const attachments: Array<{ buffer: Buffer; mimeType: string; legenda: string }> = [];
+      if (files) {
+        for (const i of [1, 2, 3]) {
+          const f = files[`foto${i}`]?.[0];
+          if (f) {
+            attachments.push({
+              buffer: f.buffer,
+              mimeType: f.mimetype,
+              legenda: String((b as any)[`fotoLegenda${i}`] ?? `Foto ${i}`).slice(0, 100),
+            });
+          }
+        }
+        const v = files.video?.[0];
+        if (v) {
+          attachments.push({
+            buffer: v.buffer,
+            mimeType: v.mimetype,
+            legenda: String(b.videoLegenda ?? 'Simulação').slice(0, 100),
+          });
+        }
+      }
+
+      const tipo: 'basica' | 'personalizada' = attachments.length > 0 ? 'personalizada' : 'basica';
+
+      try {
+        const result = await options.proposalAssistant.generateProposalCore({
+          data,
+          modoEnvio: 'junior_envia',
+          tipo,
+          attachments: attachments.length > 0 ? attachments : undefined,
+        });
+        return res.redirect(303, `/dashboard/propostas/${result.slug}/preview?lead_id=${lead_id}`);
+      } catch (err) {
+        return res.status(500).type('text/html').send(renderFormNovaProposta({
+          lead_id,
+          lead: lead as any,
+          erros: [`Erro ao gerar proposta: ${(err as Error).message.slice(0, 200)}`],
+        }));
+      }
+    },
+  );
+
   return router;
 }
