@@ -1,5 +1,6 @@
 // Orquestra: download WABA -> validacao -> upload Supabase -> thumbnail (se video) -> persistencia.
-// Chamado quando uma proposta personalizada vai ser gerada e ha attachments pendentes no Redis.
+// processAttachment (com WABA media_id): usado pelo /proposta zap.
+// processAttachmentFromBuffer (com buffer ja em maos): usado pela tela admin A4.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { downloadWabaMedia } from './whatsapp-media-downloader.js';
@@ -16,7 +17,16 @@ export interface ProcessAttachmentInput {
   accessToken: string;
   proposalSlug: string;
   legenda: string;
-  fotoCount: number;   // ja persistidos (pra contar limite)
+  fotoCount: number;
+  videoCount: number;
+}
+
+export interface ProcessAttachmentFromBufferInput {
+  buffer: Buffer;
+  mimeType: string;
+  proposalSlug: string;
+  legenda: string;
+  fotoCount: number;
   videoCount: number;
 }
 
@@ -39,13 +49,25 @@ export async function processAttachment(
   supabase: SupabaseClient,
   input: ProcessAttachmentInput,
 ): Promise<ProcessAttachmentResult> {
-  // 1. Download
   const dl = await downloadWabaMedia({ mediaId: input.mediaIdWaba, accessToken: input.accessToken });
+  return processAttachmentFromBuffer(supabase, {
+    buffer: dl.buffer,
+    mimeType: dl.mimeType,
+    proposalSlug: input.proposalSlug,
+    legenda: input.legenda,
+    fotoCount: input.fotoCount,
+    videoCount: input.videoCount,
+  });
+}
 
-  const isVideo = dl.mimeType.startsWith('video/');
+export async function processAttachmentFromBuffer(
+  supabase: SupabaseClient,
+  input: ProcessAttachmentFromBufferInput,
+): Promise<ProcessAttachmentResult> {
+  const sizeBytes = input.buffer.length;
+  const isVideo = input.mimeType.startsWith('video/');
   const tipo: 'foto' | 'video' = isVideo ? 'video' : 'foto';
 
-  // 2. Conta limite
   const countCheck = validateAttachmentCount({
     fotoCount: input.fotoCount,
     videoCount: input.videoCount,
@@ -53,45 +75,34 @@ export async function processAttachment(
   });
   if (!countCheck.ok) return { ok: false, reason: countCheck.reason! };
 
-  // 3. Valida tipo/tamanho
   if (tipo === 'foto') {
-    const v = validateFotoUpload({ mimeType: dl.mimeType, sizeBytes: dl.sizeBytes });
+    const v = validateFotoUpload({ mimeType: input.mimeType, sizeBytes });
     if (!v.ok) return { ok: false, reason: v.reason! };
   } else {
-    const duration = await getVideoDuration(dl.buffer);
-    const v = validateVideoUpload({
-      mimeType: dl.mimeType,
-      sizeBytes: dl.sizeBytes,
-      durationSeconds: duration,
-    });
+    const duration = await getVideoDuration(input.buffer);
+    const v = validateVideoUpload({ mimeType: input.mimeType, sizeBytes, durationSeconds: duration });
     if (!v.ok) return { ok: false, reason: v.reason! };
   }
 
-  // 4. Decide nome do arquivo
   const ordem = tipo === 'foto' ? input.fotoCount + 1 : 1;
   const ext =
-    dl.mimeType === 'image/png'
-      ? 'png'
-      : dl.mimeType === 'image/webp'
-        ? 'webp'
-        : tipo === 'video'
-          ? 'mp4'
-          : 'jpg';
+    input.mimeType === 'image/png' ? 'png'
+    : input.mimeType === 'image/webp' ? 'webp'
+    : tipo === 'video' ? 'mp4'
+    : 'jpg';
   const filename = tipo === 'foto' ? `foto-${ordem}.${ext}` : 'video.mp4';
 
-  // 5. Upload principal
   const upload = await uploadToStorage(supabase, {
-    buffer: dl.buffer,
+    buffer: input.buffer,
     propostaSlug: input.proposalSlug,
     filename,
-    mimeType: dl.mimeType,
+    mimeType: input.mimeType,
   });
 
-  // 6. Thumbnail se video
   let thumbnailPath: string | null = null;
   if (tipo === 'video') {
     try {
-      const { thumbnailBuffer } = await extractFirstFrame(dl.buffer);
+      const { thumbnailBuffer } = await extractFirstFrame(input.buffer);
       const thumbUpload = await uploadToStorage(supabase, {
         buffer: thumbnailBuffer,
         propostaSlug: input.proposalSlug,
@@ -101,11 +112,9 @@ export async function processAttachment(
       thumbnailPath = thumbUpload.storagePath;
     } catch (err) {
       console.warn('[attachments] Thumbnail falhou:', (err as Error).message);
-      // segue sem thumbnail — PDF vai usar placeholder
     }
   }
 
-  // 7. Persiste no banco
   const { error: insertErr } = await supabase
     .from('proposta_attachments')
     .insert({
@@ -114,8 +123,8 @@ export async function processAttachment(
       ordem,
       legenda: input.legenda,
       storage_path: upload.storagePath,
-      mime_type: dl.mimeType,
-      size_bytes: dl.sizeBytes,
+      mime_type: input.mimeType,
+      size_bytes: sizeBytes,
       thumbnail_path: thumbnailPath,
     });
 
@@ -129,8 +138,8 @@ export async function processAttachment(
       legenda: input.legenda,
       storagePath: upload.storagePath,
       thumbnailPath,
-      mimeType: dl.mimeType,
-      sizeBytes: dl.sizeBytes,
+      mimeType: input.mimeType,
+      sizeBytes,
     },
   };
 }
