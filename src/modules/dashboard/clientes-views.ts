@@ -100,9 +100,12 @@ export function renderClientesListPage(
   };
 
   const body = `
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold text-slate-100">👥 Clientes — ${rows.length}</h1>
-      <p class="text-slate-400 text-sm">Quem comprou. Lista de clientes instalados / operando / pós-venda.</p>
+    <div class="mb-6 flex items-start justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-bold text-slate-100">👥 Clientes — ${rows.length}</h1>
+        <p class="text-slate-400 text-sm">Quem comprou. Lista de clientes instalados / operando / pós-venda.</p>
+      </div>
+      <a href="/dashboard/clientes/novo" class="shrink-0 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">➕ Novo cliente</a>
     </div>
 
     <form method="get" action="/dashboard/clientes" class="mb-6 flex flex-wrap gap-2 items-center">
@@ -604,4 +607,102 @@ export function renderClienteDetailPage(d: ClienteDetail, insights: InsightCard[
   `;
 
   return renderLayout({ active: 'clientes', title: `Cliente — ${d.name ?? '?'}`, body, scripts, dark: true });
+}
+
+// ============================================================
+// A4-V2.1 — Form "Novo cliente" avulso
+// ============================================================
+
+export function renderFormNovoCliente(input: {
+  erros?: string[];
+  values?: {
+    name?: string;
+    phone?: string;
+    email?: string;
+    cpf_cnpj?: string;
+    city?: string;
+    uf?: string;
+    concessionaria?: string;
+    consumo_medio_kwh?: string;
+    profile?: string;
+  };
+}): string {
+  const v = input.values ?? {};
+  const errosHtml = (input.erros ?? []).length > 0
+    ? `<div class="rounded-lg bg-rose-900/30 border border-rose-700 p-4 mb-5">
+         <p class="text-rose-200 font-semibold mb-2">⚠ Corrija antes de criar:</p>
+         <ul class="list-disc ml-5 text-rose-100 text-sm">
+           ${input.erros!.map((e) => `<li>${escapeHtml(e)}</li>`).join('')}
+         </ul>
+       </div>`
+    : '';
+
+  const body = `
+    <div class="max-w-2xl mx-auto">
+      <div class="mb-6">
+        <a href="/dashboard/clientes" class="text-sky-300 text-sm hover:underline">← Voltar à lista</a>
+        <h1 class="text-2xl font-bold text-slate-100 mt-3">➕ Novo cliente</h1>
+        <p class="text-slate-400 text-sm mt-1">Cadastro rápido. Depois você completa no perfil.</p>
+      </div>
+
+      ${errosHtml}
+
+      <form action="/dashboard/clientes/novo" method="post" class="bg-slate-800/60 border border-slate-700 rounded-xl p-6 space-y-5">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label class="block">
+            <span class="text-xs text-slate-300">Nome completo *</span>
+            <input name="name" required value="${escapeHtml(v.name)}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-300">Telefone (com DDD) *</span>
+            <input name="phone" required value="${escapeHtml(v.phone)}" placeholder="(61) 99999-9999" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-300">E-mail</span>
+            <input name="email" type="email" value="${escapeHtml(v.email)}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-300">CPF/CNPJ</span>
+            <input name="cpf_cnpj" value="${escapeHtml(v.cpf_cnpj)}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-300">Cidade</span>
+            <input name="city" value="${escapeHtml(v.city)}" placeholder="Brasília" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-300">UF</span>
+            <select name="uf" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <option value="">—</option>
+              <option value="DF" ${v.uf === 'DF' ? 'selected' : ''}>DF</option>
+              <option value="GO" ${v.uf === 'GO' ? 'selected' : ''}>GO</option>
+            </select>
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-300">Concessionária</span>
+            <select name="concessionaria" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <option value="">—</option>
+              <option value="neoenergia-df" ${v.concessionaria === 'neoenergia-df' ? 'selected' : ''}>Neoenergia DF</option>
+              <option value="equatorial-go" ${v.concessionaria === 'equatorial-go' ? 'selected' : ''}>Equatorial GO</option>
+            </select>
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-300">Consumo médio (kWh/mês)</span>
+            <input name="consumo_medio_kwh" type="number" step="1" value="${escapeHtml(v.consumo_medio_kwh)}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+          </label>
+          <label class="block">
+            <span class="text-xs text-slate-300">Tipo</span>
+            <select name="profile" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              ${['indefinido', 'residencial', 'comercial', 'rural', 'industrial'].map((t) => `<option value="${t}" ${(v.profile ?? 'indefinido') === t ? 'selected' : ''}>${t}</option>`).join('')}
+            </select>
+          </label>
+        </div>
+
+        <div class="flex gap-3 pt-2 border-t border-slate-700">
+          <a href="/dashboard/clientes" class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm">Cancelar</a>
+          <button class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">➕ Criar cliente</button>
+        </div>
+      </form>
+    </div>
+  `;
+  return renderLayout({ active: 'clientes', title: 'Novo cliente', body, dark: true });
 }

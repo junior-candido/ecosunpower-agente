@@ -1210,6 +1210,56 @@ export class SupabaseService {
     return { ok: true, lead_id: novoLead.id };
   }
 
+  // Cria um lead avulso sem sistema vinculado. Usado pelo dashboard quando o
+  // Junior cadastra um cliente diretamente (A4-V2.1 — Novo cliente avulso).
+  async criarLeadAvulso(input: {
+    name: string;
+    phone: string;
+    email?: string | null;
+    cpf_cnpj?: string | null;
+    city?: string | null;
+    uf?: string | null;
+    concessionaria?: string | null;
+    consumo_medio_kwh?: number | null;
+    profile?: 'residencial' | 'comercial' | 'rural' | 'industrial' | 'indefinido' | null;
+  }): Promise<{ ok: boolean; lead_id?: string; error?: string }> {
+    // Confere se já existe lead com mesmo telefone (evita duplicata)
+    const phoneClean = String(input.phone).replace(/\D/g, '');
+    if (!phoneClean) return { ok: false, error: 'Telefone obrigatório' };
+
+    const { data: existente } = await this.client
+      .from('leads')
+      .select('id, name')
+      .eq('phone', phoneClean)
+      .maybeSingle();
+    if (existente) {
+      return { ok: false, error: `Já existe cliente com esse telefone: ${existente.name ?? 'sem nome'}` };
+    }
+
+    const { data: novoLead, error } = await this.client
+      .from('leads')
+      .insert({
+        name: input.name,
+        phone: phoneClean,
+        email: input.email ?? null,
+        cpf_cnpj: input.cpf_cnpj ?? null,
+        city: input.city ?? null,
+        uf: input.uf ?? null,
+        concessionaria: input.concessionaria ?? null,
+        consumo_medio_kwh: input.consumo_medio_kwh ?? null,
+        profile: input.profile ?? 'indefinido',
+        installation_status: 'novo',
+        eva_active: false,
+        opt_out: false,
+        created_at: new Date().toISOString(),
+      } as any)
+      .select('id')
+      .single();
+
+    if (error || !novoLead) return { ok: false, error: error?.message ?? 'Falha ao criar lead' };
+    return { ok: true, lead_id: novoLead.id };
+  }
+
   // ====================================================================
   // A5 — Relatório Pós-Instalação
   // ====================================================================
