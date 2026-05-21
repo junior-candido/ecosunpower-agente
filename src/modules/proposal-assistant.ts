@@ -991,7 +991,7 @@ export class ProposalAssistant {
     return {
       numeroProposta: numero,
       dataProposta: new Date().toLocaleDateString('pt-BR'),
-      validadeDias: 5,
+      validadeDias: Number.isFinite(Number(data.validadeDias)) && Number(data.validadeDias) > 0 ? Number(data.validadeDias) : 5,
       nomeCliente: data.nomeCliente,
       documentoCliente: data.documentoCliente,
       enderecoCliente: data.enderecoCliente,

@@ -216,10 +216,16 @@ export function renderFormNovaProposta(input: {
 
         <fieldset class="space-y-4">
           <legend class="text-xs font-semibold text-cyan-300 uppercase tracking-wider">💰 Comercial</legend>
-          <label class="block max-w-xs">
-            <span class="text-xs text-slate-300">Valor total (R$) *</span>
-            <input name="valorTotalRs" type="number" step="0.01" required placeholder="38500" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
-          </label>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label class="block">
+              <span class="text-xs text-slate-300">Valor total (R$) *</span>
+              <input name="valorTotalRs" type="number" step="0.01" required placeholder="38500" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+            </label>
+            <label class="block">
+              <span class="text-xs text-slate-300">Validade da proposta (dias)</span>
+              <input name="validadeDias" type="number" step="1" min="1" max="60" value="5" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+            </label>
+          </div>
         </fieldset>
 
         <fieldset class="space-y-4">

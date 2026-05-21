@@ -1390,6 +1390,7 @@ export function createDashboardRouter(
           descricao: '',
         },
         valorTotalRs,
+        validadeDias: b.validadeDias ? Number(b.validadeDias) : undefined,
       };
 
       // Coleta anexos do multer
