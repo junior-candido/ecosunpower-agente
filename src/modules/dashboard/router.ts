@@ -495,19 +495,25 @@ export function createDashboardRouter(
     }
   });
 
-  // Marketing: KPIs 7d + campanhas ativas + criativos + alertas.
+  // Marketing: KPIs 7d + campanhas ativas + criativos + alertas + funil por canal.
   router.get('/marketing', async (_req: Request, res: Response) => {
     try {
-      const { fetchMarketingKpis, listActiveCampaigns, listRecentCreatives, listPendingAlerts } =
+      const { fetchMarketingKpis, listActiveCampaigns, listRecentCreatives, listPendingAlerts, fetchChannelFunnel } =
         await import('./marketing-queries.js');
       const { renderMarketingPage } = await import('./marketing-views.js');
-      const [kpis, campaigns, creatives, alerts] = await Promise.all([
+      // Período padrão: últimos 7 dias (alinhado com os KPIs da página)
+      const hoje = new Date();
+      const endDate = hoje.toISOString().slice(0, 10);
+      const startDate = new Date(hoje.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const periodo = { start: startDate, end: endDate };
+      const [kpis, campaigns, creatives, alerts, channels] = await Promise.all([
         fetchMarketingKpis(supabase),
         listActiveCampaigns(supabase),
         listRecentCreatives(supabase, 8),
         listPendingAlerts(supabase),
+        fetchChannelFunnel(supabase, periodo),
       ]);
-      res.send(renderMarketingPage({ kpis, campaigns, creatives, alerts }));
+      res.send(renderMarketingPage({ kpis, campaigns, creatives, alerts, channels }));
     } catch (err) {
       console.error('[dashboard/marketing]', err);
       res.status(500).send(`<h2>Erro ao carregar marketing</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);

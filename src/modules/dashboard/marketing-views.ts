@@ -1,6 +1,6 @@
 import { renderLayout, escapeHtml, brl } from './views.js';
 import type {
-  MarketingKpis, CampaignRow, CreativeRow, AlertRow,
+  MarketingKpis, CampaignRow, CreativeRow, AlertRow, ChannelFunnelRow,
 } from './marketing-queries.js';
 
 function card(
@@ -45,10 +45,81 @@ export interface MarketingPageInput {
   campaigns: CampaignRow[];
   creatives: CreativeRow[];
   alerts: AlertRow[];
+  channels: ChannelFunnelRow[];
+}
+
+const CHANNEL_LABELS: Record<string, string> = {
+  meta: 'Meta',
+  google: 'Google',
+  blog: 'Blog',
+  direto: 'Direto',
+  indicacao: 'Indicação',
+  outro: 'Outro',
+};
+
+function renderChannelsSection(channels: ChannelFunnelRow[]): string {
+  const dash = '—';
+
+  const rows = channels.map((ch) => {
+    const empty = ch.total === 0;
+    const label = CHANNEL_LABELS[ch.channel] ?? ch.channel;
+    const total = empty ? dash : String(ch.total);
+    const qualificado = empty ? dash : String(ch.qualificado);
+    const agendado = empty ? dash : String(ch.agendado);
+    const gasto = empty ? dash : brl(ch.spend_cents / 100);
+    const cpl = ch.cpl != null ? brl(ch.cpl / 100) : dash;
+    const custoAgend = ch.custo_por_agendamento != null ? brl(ch.custo_por_agendamento / 100) : dash;
+
+    // Barra de funil simples: qualificado/total %
+    const pct = ch.total > 0 ? Math.round((ch.qualificado / ch.total) * 100) : 0;
+    const barColor = pct >= 50 ? 'bg-emerald-500' : pct >= 25 ? 'bg-amber-500' : 'bg-slate-300';
+    const funnelBar = empty
+      ? `<div class="w-full h-1.5 bg-slate-100 rounded-full"></div>`
+      : `<div class="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+           <div class="${barColor} h-1.5 rounded-full" style="width:${pct}%"></div>
+         </div>`;
+
+    return `
+      <tr class="border-t border-slate-100 hover:bg-slate-50">
+        <td class="px-4 py-3 text-sm font-medium text-slate-900">${escapeHtml(label)}</td>
+        <td class="px-4 py-3 text-sm text-slate-700">
+          <div>${escapeHtml(total)}</div>
+          ${empty ? '' : funnelBar}
+        </td>
+        <td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(qualificado)}</td>
+        <td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(agendado)}</td>
+        <td class="px-4 py-3 text-sm text-slate-700">${gasto}</td>
+        <td class="px-4 py-3 text-sm text-slate-700">${cpl}</td>
+        <td class="px-4 py-3 text-sm text-slate-700">${custoAgend}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8 overflow-x-auto">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-slate-900">📡 Canais — funil por origem</h2>
+        <span class="text-xs text-slate-400">Mesmo período dos KPIs acima</span>
+      </div>
+      <table class="w-full text-left">
+        <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-4 py-2">Canal</th>
+            <th class="px-4 py-2">Leads</th>
+            <th class="px-4 py-2">Qualificados</th>
+            <th class="px-4 py-2">Agendados</th>
+            <th class="px-4 py-2">Gasto</th>
+            <th class="px-4 py-2">CPL</th>
+            <th class="px-4 py-2">Custo/Agend.</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="text-xs text-slate-400 mt-3">CPL = custo por lead · Custo/Agend. = custo por agendamento · "—" = sem dado no período</p>
+    </section>`;
 }
 
 export function renderMarketingPage(input: MarketingPageInput): string {
-  const { kpis, campaigns, creatives, alerts } = input;
+  const { kpis, campaigns, creatives, alerts, channels } = input;
 
   const cplStr = kpis.cpl7d_brl != null ? brl(kpis.cpl7d_brl) : '—';
   const ctrStr = kpis.ctr7d_pct != null ? `${kpis.ctr7d_pct.toFixed(2)}%` : '—';
@@ -150,6 +221,8 @@ export function renderMarketingPage(input: MarketingPageInput): string {
         ${alertsBlock}
       </div>
     </section>
+
+    ${renderChannelsSection(channels)}
   `;
 
   return renderLayout({ active: 'marketing', title: 'Marketing', body });
