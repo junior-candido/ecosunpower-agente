@@ -100,7 +100,6 @@ export function renderLeadsListPage(
       ${tab('qualificado', '⭐ Qualificados', counts.qualificado ?? null, 'bg-fuchsia-600')}
       ${tab('agendado', '📅 Agendados', counts.agendado ?? null, 'bg-amber-600')}
       ${tab('transferido', '✅ Transferidos', counts.transferido ?? null, 'bg-emerald-600')}
-      ${tab('perdido', '❌ Perdidos', counts.perdido ?? null, 'bg-slate-600')}
     </div>
   `;
 
@@ -123,7 +122,7 @@ export function renderLeadsListPage(
     </form>
   `;
 
-  const paginationBlock = total > limit && !filters.only_alerts ? `
+  const paginationBlock = total > limit ? `
     <div class="flex items-center justify-between mt-4 px-4 py-3 text-sm text-slate-600 border-t border-slate-200">
       <div>Mostrando ${offset + 1}–${Math.min(offset + limit, total)} de ${total} · Página ${pagina} de ${totalPaginas}</div>
       <div class="flex gap-2">

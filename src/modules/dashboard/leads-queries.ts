@@ -52,7 +52,10 @@ export interface LeadsResult {
   countByStatus: Record<string, number>;
 }
 
-const STATUS_OPTIONS = ['novo', 'qualificando', 'qualificado', 'agendado', 'transferido', 'perdido'];
+// Valores que existem no enum `lead_status` em Postgres. NAO incluir 'perdido' —
+// nao existe no enum (erro 22P02 ao filtrar). Descarte de lead hoje usa
+// `contact_type='inviavel'` ou archived_at, nao status='perdido'.
+const STATUS_OPTIONS = ['novo', 'qualificando', 'qualificado', 'agendado', 'transferido'];
 
 export async function listLeads(
   client: SupabaseClient,
@@ -93,12 +96,13 @@ export async function listLeads(
   if (filters.eva_active !== undefined) q = q.eq('eva_active', filters.eva_active);
   if (search) q = q.or(`name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`);
 
-  // Quando only_alerts, precisa pegar TODOS (até 200) pra filtrar em JS — não dá range.
-  // Sem only_alerts, faz paginação real.
+  // Quando only_alerts, precisa pegar até 500 pra filtrar em JS depois (alerta calculado
+  // baseado em updated_at + cadence). Paginacao final acontece em JS no fim da funcao.
+  // Sem only_alerts: paginacao SQL nativa via range.
   if (!filters.only_alerts) {
     q = q.range(offset, offset + limit - 1);
   } else {
-    q = q.limit(200);
+    q = q.limit(500);
   }
 
   const { data: leads, error, count: total } = await q;
@@ -143,11 +147,19 @@ export async function listLeads(
     };
   });
 
-  const finalRows = filters.only_alerts
-    ? rows.filter((r) => r.alerta !== 'normal' && r.alerta !== 'novo')
-    : rows;
+  let finalRows: LeadRow[];
+  let finalTotal: number;
+  if (filters.only_alerts) {
+    // Filtra alertas em JS (precisa do calculo de updated_at + cadence) e pagina em JS
+    const filtered = rows.filter((r) => r.alerta !== 'normal' && r.alerta !== 'novo');
+    finalTotal = filtered.length;
+    finalRows = filtered.slice(offset, offset + limit);
+  } else {
+    finalRows = rows;
+    finalTotal = total ?? rows.length;
+  }
 
-  return { rows: finalRows, total: total ?? finalRows.length, countByStatus };
+  return { rows: finalRows, total: finalTotal, countByStatus };
 }
 
 export async function getLeadDetail(client: SupabaseClient, id: string): Promise<LeadDetail | null> {
