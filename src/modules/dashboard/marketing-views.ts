@@ -131,7 +131,7 @@ export function renderMarketingPage(input: MarketingPageInput): string {
   const cplColor = kpis.cpl7d_brl != null && kpis.cpl7d_brl > 80 ? 'text-rose-600' : 'text-emerald-700';
 
   const campaignsRows = campaigns.length === 0
-    ? `<tr><td colspan="6" class="text-center text-slate-500 py-8">Nenhuma campanha ativa.</td></tr>`
+    ? `<tr><td colspan="7" class="text-center text-slate-500 py-8">Nenhuma campanha cadastrada.</td></tr>`
     : campaigns.map((c) => {
         const cpl = c.cpl7d_brl;
         const cplColor = cpl == null
@@ -142,12 +142,18 @@ export function renderMarketingPage(input: MarketingPageInput): string {
               ? 'text-amber-600'
               : 'text-emerald-700';
         const budget = c.daily_budget_cents != null ? brl(c.daily_budget_cents / 100) : '—';
+        const isPaused = c.status === 'paused';
+        const statusBadge = isPaused
+          ? `<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-200 text-slate-700">⏸ Pausada</span>`
+          : `<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800">● Ativa</span>`;
+        const rowOpacity = isPaused ? 'opacity-60' : '';
         return `
-          <tr class="border-t border-slate-100 hover:bg-slate-50">
+          <tr class="border-t border-slate-100 hover:bg-slate-50 ${rowOpacity}">
             <td class="px-4 py-3 text-sm">
               <div class="font-medium text-slate-900">${escapeHtml(c.name)}</div>
               <div class="text-xs text-slate-500">${escapeHtml(c.codigo_portfolio)}</div>
             </td>
+            <td class="px-4 py-3 text-sm">${statusBadge}</td>
             <td class="px-4 py-3 text-sm text-slate-700">${budget}</td>
             <td class="px-4 py-3 text-sm text-slate-700">${brl(c.spend7d_brl)}</td>
             <td class="px-4 py-3 text-sm text-slate-700">${c.leads7d}</td>
@@ -200,11 +206,12 @@ export function renderMarketingPage(input: MarketingPageInput): string {
     </section>
 
     <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8 overflow-x-auto">
-      <h2 class="text-lg font-semibold text-slate-900 mb-4">📊 Campanhas ativas — performance 7d</h2>
+      <h2 class="text-lg font-semibold text-slate-900 mb-4">📊 Campanhas — performance 7d</h2>
       <table class="w-full text-left">
         <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
           <tr>
             <th class="px-4 py-2">Campanha</th>
+            <th class="px-4 py-2">Status</th>
             <th class="px-4 py-2">Budget diário</th>
             <th class="px-4 py-2">Gasto 7d</th>
             <th class="px-4 py-2">Leads 7d</th>

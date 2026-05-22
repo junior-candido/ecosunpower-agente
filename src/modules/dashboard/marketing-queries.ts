@@ -97,10 +97,14 @@ export async function fetchMarketingKpis(supabase: SupabaseClient): Promise<Mark
 
 export async function listActiveCampaigns(supabase: SupabaseClient): Promise<CampaignRow[]> {
   const since = isoNDaysAgo(7);
+  // Lista TODAS (ativas + pausadas) excluindo archived/deleted. Junior quer ver
+  // tudo no cockpit, distinguindo via badge visual. Antes filtrava 'active' e
+  // pausadas sumiam da tela (causa do bug 22/05 com CTWA_Solar_Mai_v1).
   const { data: camps } = await supabase
     .from('marketing_campaigns')
     .select('id, codigo_portfolio, name, status, daily_budget_cents, cpl_alerta_brl, cpl_critico_brl, last_synced_at')
-    .eq('status', 'active')
+    .in('status', ['active', 'paused'])
+    .order('status', { ascending: true }) // 'active' antes de 'paused' (alfabético funciona)
     .order('id', { ascending: true });
 
   if (!camps || camps.length === 0) return [];
