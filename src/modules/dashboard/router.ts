@@ -320,7 +320,7 @@ export function createDashboardRouter(
       const status = typeof req.query.status === 'string' ? req.query.status : undefined;
       const only_alerts = req.query.only_alerts === '1' || req.query.only_alerts === 'true';
       const search = typeof req.query.q === 'string' ? req.query.q : '';
-      const limit = Math.max(1, Math.min(200, parseInt(String(req.query.limit ?? '50')) || 50));
+      const limit = Math.max(1, Math.min(200, parseInt(String(req.query.limit ?? '10')) || 10));
       const offset = Math.max(0, parseInt(String(req.query.offset ?? '0')) || 0);
       const { buildLeadsInsights } = await import('./ai-summary.js');
       const [result, insights] = await Promise.all([
