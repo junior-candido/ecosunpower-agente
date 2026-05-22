@@ -453,6 +453,22 @@ export function createDashboardRouter(
     res.redirect('/dashboard/leads');
   });
 
+  router.post('/leads/:id/arquivar', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const r = await supabaseService.arquivarLead(id);
+    if (!r.ok) return res.status(500).send(`erro: ${escapeHtmlSimple(r.error ?? '')}`);
+    res.redirect('/dashboard/leads');
+  });
+
+  router.post('/leads/:id/desarquivar', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const r = await supabaseService.desarquivarLead(id);
+    if (!r.ok) return res.status(500).send(`erro: ${escapeHtmlSimple(r.error ?? '')}`);
+    res.redirect(`/dashboard/leads/${id}`);
+  });
+
   // Agenda cadencia manual (10 toques + auto-renovacao).
   router.post('/leads/:id/start-cadence', async (req: Request, res: Response) => {
     const id = String(req.params.id);
@@ -889,6 +905,7 @@ export function createDashboardRouter(
     try {
       const limit = Math.max(1, Math.min(200, parseInt((req.query.limit as string) ?? '50') || 50));
       const offset = Math.max(0, parseInt((req.query.offset as string) ?? '0') || 0);
+      const mostrarArquivados = req.query.show === 'arquivados';
       const filters = {
         q: typeof req.query.q === 'string' ? req.query.q : undefined,
         concessionaria: typeof req.query.concessionaria === 'string' ? req.query.concessionaria : undefined,
@@ -896,13 +913,34 @@ export function createDashboardRouter(
         ord: typeof req.query.ord === 'string' ? req.query.ord : undefined,
         limit,
         offset,
+        mostrarArquivados,
       };
       const { clientes, sistemasOrfaos, total } = await listClientes(supabaseService, filters);
-      res.type('text/html').send(renderClientesListPage(clientes as any, filters, sistemasOrfaos, { total, limit, offset }));
+      res.type('text/html').send(renderClientesListPage(clientes as any, filters, sistemasOrfaos, { total, limit, offset, mostrarArquivados }));
     } catch (err) {
       console.error('[dashboard/clientes]', err);
       res.status(500).send(`<h2>Erro ao listar clientes</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
     }
+  });
+
+  router.post('/clientes/:id/arquivar', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const r = await supabaseService.arquivarLead(id);
+    if (!r.ok) {
+      return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/clientes/${id}">← voltar</a>`);
+    }
+    res.redirect(303, '/dashboard/clientes');
+  });
+
+  router.post('/clientes/:id/desarquivar', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const r = await supabaseService.desarquivarLead(id);
+    if (!r.ok) {
+      return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/clientes?show=arquivados">← voltar</a>`);
+    }
+    res.redirect(303, `/dashboard/clientes/${id}`);
   });
 
   // ========================================================================

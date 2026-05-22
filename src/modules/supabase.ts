@@ -1027,10 +1027,10 @@ export class SupabaseService {
   // Perfil do Cliente A1
   // ====================================================================
 
-  async listClientesByStatus(statuses: string[], filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string } = {}, limit: number = 50, offset: number = 0, incluirManuaisDashboard: boolean = false): Promise<any[]> {
+  async listClientesByStatus(statuses: string[], filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string; mostrarArquivados?: boolean } = {}, limit: number = 50, offset: number = 0, incluirManuaisDashboard: boolean = false): Promise<any[]> {
     let q = this.client
       .from('leads')
-      .select('id, name, phone, email, profile, installation_status, installed_at, city, uf, concessionaria, consumo_medio_kwh, conta_media_brl, opt_out, eva_active, created_at')
+      .select('id, name, phone, email, profile, installation_status, installed_at, city, uf, concessionaria, consumo_medio_kwh, conta_media_brl, opt_out, eva_active, created_at, archived_at')
       .limit(limit);
 
     // /clientes mostra: fechados (status em CLIENTE_STATUSES) OR cadastros manuais
@@ -1044,6 +1044,9 @@ export class SupabaseService {
       q = q.eq('acquisition_source', 'manual_dashboard');
     }
     // statuses vazio + incluirManuais=false: mostra TUDO (uso por chamadores que querem lista geral).
+
+    if (filters.mostrarArquivados) q = q.not('archived_at', 'is', null);
+    else q = q.is('archived_at', null);
 
     if (filters.q) q = q.or(`name.ilike.%${filters.q}%,phone.ilike.%${filters.q}%,email.ilike.%${filters.q}%,cpf_cnpj.ilike.%${filters.q}%`);
     if (filters.concessionaria) q = q.eq('concessionaria', filters.concessionaria);
@@ -1060,7 +1063,7 @@ export class SupabaseService {
     return data ?? [];
   }
 
-  async countClientesByStatus(statuses: string[], filters: { q?: string; concessionaria?: string; cidade?: string } = {}, incluirManuaisDashboard: boolean = false): Promise<number> {
+  async countClientesByStatus(statuses: string[], filters: { q?: string; concessionaria?: string; cidade?: string; mostrarArquivados?: boolean } = {}, incluirManuaisDashboard: boolean = false): Promise<number> {
     let q = this.client.from('leads').select('id', { count: 'exact', head: true });
 
     if (statuses.length > 0 && incluirManuaisDashboard) {
@@ -1070,6 +1073,9 @@ export class SupabaseService {
     } else if (incluirManuaisDashboard) {
       q = q.eq('acquisition_source', 'manual_dashboard');
     }
+
+    if (filters.mostrarArquivados) q = q.not('archived_at', 'is', null);
+    else q = q.is('archived_at', null);
 
     if (filters.q) q = q.or(`name.ilike.%${filters.q}%,phone.ilike.%${filters.q}%,email.ilike.%${filters.q}%,cpf_cnpj.ilike.%${filters.q}%`);
     if (filters.concessionaria) q = q.eq('concessionaria', filters.concessionaria);
@@ -1081,6 +1087,18 @@ export class SupabaseService {
       return 0;
     }
     return count ?? 0;
+  }
+
+  async arquivarLead(leadId: string): Promise<{ ok: boolean; error?: string }> {
+    const { error } = await this.client.from('leads').update({ archived_at: new Date().toISOString() }).eq('id', leadId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }
+
+  async desarquivarLead(leadId: string): Promise<{ ok: boolean; error?: string }> {
+    const { error } = await this.client.from('leads').update({ archived_at: null }).eq('id', leadId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
   }
 
   async getClienteByLeadId(leadId: string): Promise<any | null> {

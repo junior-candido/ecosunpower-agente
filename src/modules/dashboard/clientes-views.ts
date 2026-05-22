@@ -60,9 +60,10 @@ export function renderClientesListPage(
   rows: ClienteRow[],
   filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string },
   sistemasOrfaos: SistemaOrfaoCard[] = [],
-  pagination: { total: number; limit: number; offset: number } = { total: rows.length, limit: 50, offset: 0 },
+  pagination: { total: number; limit: number; offset: number; mostrarArquivados?: boolean } = { total: rows.length, limit: 50, offset: 0 },
 ): string {
   const { total, limit, offset } = pagination;
+  const mostrarArquivados = pagination.mostrarArquivados === true;
   const pagina = Math.floor(offset / limit) + 1;
   const totalPaginas = Math.max(1, Math.ceil(total / limit));
   const queryStringSemOffset = (() => {
@@ -71,6 +72,7 @@ export function renderClientesListPage(
     if (filters.concessionaria) parts.push(`concessionaria=${encodeURIComponent(filters.concessionaria)}`);
     if (filters.cidade) parts.push(`cidade=${encodeURIComponent(filters.cidade)}`);
     if (filters.ord) parts.push(`ord=${encodeURIComponent(filters.ord)}`);
+    if (mostrarArquivados) parts.push('show=arquivados');
     return parts.length > 0 ? '&' + parts.join('&') : '';
   })();
 
@@ -115,10 +117,15 @@ export function renderClientesListPage(
   const body = `
     <div class="mb-6 flex items-start justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold text-slate-100">👥 Clientes — ${total}</h1>
-        <p class="text-slate-400 text-sm">Quem comprou. Lista de clientes instalados / operando / pós-venda.${totalPaginas > 1 ? ` <span class="text-slate-500">· Página ${pagina} de ${totalPaginas}</span>` : ''}</p>
+        <h1 class="text-2xl font-bold text-slate-100">${mostrarArquivados ? '📦 Clientes arquivados' : '👥 Clientes'} — ${total}</h1>
+        <p class="text-slate-400 text-sm">${mostrarArquivados ? 'Fora da lista ativa, mas com histórico intacto. Clica em qualquer um pra restaurar.' : 'Quem comprou. Lista de clientes instalados / operando / pós-venda.'}${totalPaginas > 1 ? ` <span class="text-slate-500">· Página ${pagina} de ${totalPaginas}</span>` : ''}</p>
       </div>
-      <a href="/dashboard/clientes/novo" class="shrink-0 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">➕ Novo cliente</a>
+      <div class="flex gap-2 shrink-0">
+        ${mostrarArquivados
+          ? `<a href="/dashboard/clientes" class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-semibold">← Voltar pra ativos</a>`
+          : `<a href="/dashboard/clientes?show=arquivados" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm">📦 Arquivados</a>
+             <a href="/dashboard/clientes/novo" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">➕ Novo cliente</a>`}
+      </div>
     </div>
 
     <form method="get" action="/dashboard/clientes" class="mb-6 flex flex-wrap gap-2 items-center">
@@ -577,6 +584,13 @@ export function renderClienteDetailPage(d: ClienteDetail, insights: InsightCard[
       <a href="https://wa.me/${escapeHtml(phoneClean)}" target="_blank" class="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-semibold">📞 Conversar</a>
       <a href="/dashboard/propostas/novo?lead_id=${escapeHtml(d.id)}" class="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold">📄 Nova proposta</a>
       <a href="/dashboard/clientes/${escapeHtml(d.id)}/relatorio-pos-instalacao/novo" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold">📋 Relatório pós-obra</a>
+      ${d.archived_at
+        ? `<form action="/dashboard/clientes/${escapeHtml(d.id)}/desarquivar" method="post" class="inline">
+            <button class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold">↩️ Restaurar</button>
+          </form>`
+        : `<form action="/dashboard/clientes/${escapeHtml(d.id)}/arquivar" method="post" data-nome="${escapeHtml(d.name ?? 'esse cadastro')}" onsubmit="return confirm('Arquivar ' + this.dataset.nome + '? Sai da lista ativa, mas historico fica intacto e da pra restaurar a qualquer hora.')" class="inline">
+            <button class="px-3 py-1.5 rounded-lg bg-slate-600 hover:bg-slate-500 text-white text-xs font-semibold">📦 Arquivar</button>
+          </form>`}
       <form action="/dashboard/clientes/${escapeHtml(d.id)}/excluir" method="post" data-nome="${escapeHtml(d.name ?? 'esse cadastro')}" onsubmit="return confirm('Excluir ' + this.dataset.nome + ' PERMANENTEMENTE? Isso apaga propostas, conversas e anexos vinculados. Não dá pra desfazer.')" class="inline">
         <button class="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold">🗑 Excluir</button>
       </form>

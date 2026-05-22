@@ -226,8 +226,15 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
         <button class="px-3 py-1 rounded-md text-xs bg-slate-700 text-white hover:bg-slate-800">✏️ Salvar</button>
       </form>
 
-      <!-- Bloco 4: Remover (destrutivo) -->
-      <div class="pt-2 border-t border-slate-100">
+      <!-- Bloco 4: Arquivar (reversivel) ou Remover (destrutivo) -->
+      <div class="pt-2 border-t border-slate-100 flex flex-wrap gap-2">
+        ${lead.archived_at
+          ? `<form method="POST" action="/dashboard/leads/${lead.id}/desarquivar">
+              <button class="px-3 py-1.5 rounded-lg text-xs bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200">↩️ Restaurar lead</button>
+            </form>`
+          : `<form method="POST" action="/dashboard/leads/${lead.id}/arquivar" onsubmit="return confirm('Arquivar este lead? Sai da lista ativa, mas o historico fica intacto e da pra restaurar a qualquer hora.')">
+              <button class="px-3 py-1.5 rounded-lg text-xs bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200">📦 Arquivar</button>
+            </form>`}
         <form method="POST" action="/dashboard/leads/${lead.id}/delete" onsubmit="return confirm('REMOVER PERMANENTEMENTE este lead? Esta acao nao pode ser desfeita.')">
           <button class="px-3 py-1.5 rounded-lg text-xs bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100">🗑️ Remover lead permanentemente</button>
         </form>

@@ -35,6 +35,7 @@ export interface ClienteRow {
   conta_media_brl: number | null;
   opt_out: boolean;
   eva_active: boolean;
+  archived_at: string | null;
 }
 
 export interface ClienteDetail extends ClienteRow {

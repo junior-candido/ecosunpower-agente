@@ -16,6 +16,7 @@ export interface LeadRow {
   updated_at: string;
   has_cadence_pending: boolean;
   alerta: 'silente_sem_cadencia' | 'silente_com_cadencia' | 'cliente_respondeu' | 'novo' | 'normal';
+  archived_at: string | null;
 }
 
 export interface LeadDetail extends LeadRow {
@@ -43,9 +44,10 @@ export async function listLeads(
   let q = client
     .from('leads')
     .select(
-      'id, phone, name, status, acquisition_source, eva_active, opt_out, maintenance_client, created_at, updated_at, installation_status',
+      'id, phone, name, status, acquisition_source, eva_active, opt_out, maintenance_client, created_at, updated_at, installation_status, archived_at',
     )
     .or(`installation_status.is.null,installation_status.not.in.(${CLIENTE_STATUSES.join(',')})`)
+    .is('archived_at', null)
     .order('updated_at', { ascending: false })
     .limit(200);
 
@@ -90,6 +92,7 @@ export async function listLeads(
       updated_at: l.updated_at,
       has_cadence_pending,
       alerta,
+      archived_at: l.archived_at ?? null,
     };
   });
 
@@ -144,6 +147,7 @@ export async function getLeadDetail(client: SupabaseClient, id: string): Promise
     updated_at: lead.updated_at,
     has_cadence_pending,
     alerta,
+    archived_at: lead.archived_at ?? null,
     city: lead.city,
     neighborhood: lead.neighborhood,
     profile: lead.profile,

@@ -5,6 +5,7 @@ import { listClientes, getClienteDetail } from '../src/modules/dashboard/cliente
 function fakeSupabase(o: any = {}) {
   return {
     listClientesByStatus: vi.fn().mockResolvedValue([]),
+    countClientesByStatus: vi.fn().mockResolvedValue(0),
     listSistemasOrfaos: vi.fn().mockResolvedValue([]),
     getClienteByLeadId: vi.fn().mockResolvedValue(null),
     listAnexos: vi.fn().mockResolvedValue([]),
