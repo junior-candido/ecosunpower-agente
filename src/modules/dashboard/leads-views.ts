@@ -253,6 +253,11 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
 
         ${lead.acquisition_source ? `<p class="text-sm mt-3"><span class="text-slate-500">Origem:</span> ${escapeHtml(lead.acquisition_source)}</p>` : ''}
 
+        <div class="mt-4 flex flex-wrap gap-2">
+          <a href="/dashboard/clientes/${lead.id}" class="px-3 py-1.5 rounded-lg text-sm bg-cyan-600 text-white hover:bg-cyan-700">🔍 Abrir cockpit completo</a>
+          <a href="/dashboard/propostas/novo?lead_id=${lead.id}" class="px-3 py-1.5 rounded-lg text-sm bg-purple-600 text-white hover:bg-purple-700">📄 Nova proposta</a>
+        </div>
+
         ${acoes}
       </div>
 
