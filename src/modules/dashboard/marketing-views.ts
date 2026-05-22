@@ -40,6 +40,9 @@ function timeAgo(iso: string | null): string {
   return `${days}d atrás`;
 }
 
+import type { Insight } from './ai-summary.js';
+import { renderInsightsBanner } from './ai-summary.js';
+
 export interface MarketingPageInput {
   kpis: MarketingKpis;
   campaigns: CampaignRow[];
@@ -49,6 +52,7 @@ export interface MarketingPageInput {
   campaignsFilters?: { status: 'active' | 'paused' | 'all'; search: string; limit: number; offset: number };
   campaignsCounts?: { active: number; paused: number; total: number };
   campaignsTotal?: number;
+  insights?: Insight[];
 }
 
 const CHANNEL_LABELS: Record<string, string> = {
@@ -207,11 +211,15 @@ export function renderMarketingPage(input: MarketingPageInput): string {
           ${a.action_required ? `<div class="text-xs text-slate-500 mt-2">Ação: ${escapeHtml(a.action_required)}</div>` : ''}
         </li>`).join('')}</ul>`;
 
+  const insightsBanner = renderInsightsBanner(input.insights ?? []);
+
   const body = `
     <div class="mb-6">
       <h1 class="text-2xl font-bold text-slate-900">📣 Marketing</h1>
       <p class="text-slate-600 text-sm">Desempenho dos últimos 7 dias, campanhas ativas, criativos gerados e alertas pendentes.</p>
     </div>
+
+    ${insightsBanner}
 
     <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
       ${card('Gasto 7d', brl(kpis.spend7d_brl), 'investimento Meta Ads', 'amber')}

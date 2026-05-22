@@ -4,6 +4,7 @@
 import { renderLayout, escapeHtml } from './views.js';
 import type { LeadRow, LeadDetail } from './leads-queries.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
+import { renderInsightsBanner } from './ai-summary.js';
 
 function formatPhone(phone: string): string {
   // Normaliza (wa_id BR vem sem o 9o digito) antes de formatar. Ver formatPhoneBR.
@@ -66,6 +67,7 @@ export function renderLeadsListPage(
     offset?: number;
     total?: number;
     countByStatus?: Record<string, number>;
+    insights?: import('./ai-summary.js').Insight[];
   },
 ): string {
   const alertasCount = rows.filter((r) => r.alerta === 'silente_sem_cadencia').length;
@@ -165,6 +167,8 @@ export function renderLeadsListPage(
           <p class="text-sm text-slate-500 mt-1">${total} lead(s) no total · mostrando ${rows.length} · ordenado por última atividade</p>
         </div>
       </div>
+
+      ${renderInsightsBanner(filters.insights ?? [])}
 
       ${alertasCount > 0 && !filters.only_alerts ? `
         <div class="bg-rose-50 border border-rose-200 rounded-lg p-4 mb-4">

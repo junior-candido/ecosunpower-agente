@@ -322,7 +322,11 @@ export function createDashboardRouter(
       const search = typeof req.query.q === 'string' ? req.query.q : '';
       const limit = Math.max(1, Math.min(200, parseInt(String(req.query.limit ?? '50')) || 50));
       const offset = Math.max(0, parseInt(String(req.query.offset ?? '0')) || 0);
-      const result = await listLeads(supabase, { status, only_alerts, search, limit, offset });
+      const { buildLeadsInsights } = await import('./ai-summary.js');
+      const [result, insights] = await Promise.all([
+        listLeads(supabase, { status, only_alerts, search, limit, offset }),
+        buildLeadsInsights(supabase),
+      ]);
       res.send(renderLeadsListPage(result.rows, {
         status,
         only_alerts,
@@ -331,6 +335,7 @@ export function createDashboardRouter(
         offset,
         total: result.total,
         countByStatus: result.countByStatus,
+        insights,
       }));
     } catch (err) {
       console.error('[dashboard/leads]', err);
@@ -522,12 +527,14 @@ export function createDashboardRouter(
       const search = typeof req.query.q === 'string' ? req.query.q : '';
       const limit = Math.max(1, Math.min(200, parseInt(String(req.query.limit ?? '20')) || 20));
       const offset = Math.max(0, parseInt(String(req.query.offset ?? '0')) || 0);
-      const [kpis, campaignsResult, creatives, alerts, channels] = await Promise.all([
+      const { buildMarketingInsights } = await import('./ai-summary.js');
+      const [kpis, campaignsResult, creatives, alerts, channels, insights] = await Promise.all([
         fetchMarketingKpis(supabase),
         listActiveCampaigns(supabase, { status, search, limit, offset }),
         listRecentCreatives(supabase, 8),
         listPendingAlerts(supabase),
         fetchChannelFunnel(supabase, periodo),
+        buildMarketingInsights(supabase),
       ]);
       res.send(renderMarketingPage({
         kpis,
@@ -538,6 +545,7 @@ export function createDashboardRouter(
         campaignsFilters: { status, search, limit, offset },
         campaignsCounts: campaignsResult.countByStatus,
         campaignsTotal: campaignsResult.total,
+        insights,
       }));
     } catch (err) {
       console.error('[dashboard/marketing]', err);
