@@ -46,6 +46,9 @@ export interface MarketingPageInput {
   creatives: CreativeRow[];
   alerts: AlertRow[];
   channels: ChannelFunnelRow[];
+  campaignsFilters?: { status: 'active' | 'paused' | 'all'; search: string; limit: number; offset: number };
+  campaignsCounts?: { active: number; paused: number; total: number };
+  campaignsTotal?: number;
 }
 
 const CHANNEL_LABELS: Record<string, string> = {
@@ -125,6 +128,24 @@ function renderChannelsSection(channels: ChannelFunnelRow[]): string {
 
 export function renderMarketingPage(input: MarketingPageInput): string {
   const { kpis, campaigns, creatives, alerts, channels } = input;
+  const filters = input.campaignsFilters ?? { status: 'active' as const, search: '', limit: 20, offset: 0 };
+  const counts = input.campaignsCounts ?? { active: 0, paused: 0, total: 0 };
+  const total = input.campaignsTotal ?? campaigns.length;
+  const pagina = Math.floor(filters.offset / filters.limit) + 1;
+  const totalPaginas = Math.max(1, Math.ceil(total / filters.limit));
+  const qsSemOffset = (extras: Record<string, string | number> = {}): string => {
+    const base: Record<string, string> = { status: filters.status };
+    if (filters.search) base.q = filters.search;
+    for (const [k, v] of Object.entries(extras)) base[k] = String(v);
+    return new URLSearchParams(base).toString();
+  };
+  const tabBtn = (id: 'active' | 'paused' | 'all', label: string, count: number) => {
+    const isActive = filters.status === id;
+    const cls = isActive
+      ? 'bg-slate-900 text-white'
+      : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-300';
+    return `<a href="/dashboard/marketing?status=${id}${filters.search ? `&q=${encodeURIComponent(filters.search)}` : ''}" class="px-3 py-1.5 rounded-md text-xs font-semibold inline-flex items-center gap-2 ${cls}">${label} <span class="px-1.5 py-0.5 rounded-full text-[10px] ${isActive ? 'bg-white/20' : 'bg-slate-200'}">${count}</span></a>`;
+  };
 
   const cplStr = kpis.cpl7d_brl != null ? brl(kpis.cpl7d_brl) : '—';
   const ctrStr = kpis.ctr7d_pct != null ? `${kpis.ctr7d_pct.toFixed(2)}%` : '—';
@@ -206,7 +227,22 @@ export function renderMarketingPage(input: MarketingPageInput): string {
     </section>
 
     <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8 overflow-x-auto">
-      <h2 class="text-lg font-semibold text-slate-900 mb-4">📊 Campanhas — performance 7d</h2>
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+        <h2 class="text-lg font-semibold text-slate-900">📊 Campanhas — performance 7d</h2>
+        <form action="/dashboard/marketing" method="get" class="flex gap-2 items-center">
+          <input type="hidden" name="status" value="${filters.status}">
+          <input type="text" name="q" value="${escapeHtml(filters.search)}" placeholder="🔎 Buscar campanha..." class="px-3 py-1.5 border border-slate-300 rounded-md text-sm w-64">
+          <button class="px-3 py-1.5 bg-sky-700 text-white rounded-md text-xs font-semibold hover:bg-sky-800">Buscar</button>
+          ${filters.search ? `<a href="/dashboard/marketing?status=${filters.status}" class="text-xs text-slate-500 hover:underline">limpar</a>` : ''}
+        </form>
+      </div>
+
+      <div class="flex flex-wrap gap-2 mb-4">
+        ${tabBtn('active', '● Ativas', counts.active)}
+        ${tabBtn('paused', '⏸ Pausadas', counts.paused)}
+        ${tabBtn('all', 'Todas', counts.total)}
+      </div>
+
       <table class="w-full text-left">
         <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
           <tr>
@@ -221,6 +257,19 @@ export function renderMarketingPage(input: MarketingPageInput): string {
         </thead>
         <tbody>${campaignsRows}</tbody>
       </table>
+
+      ${total > filters.limit ? `
+      <div class="flex items-center justify-between mt-4 text-sm text-slate-600">
+        <div>Mostrando ${filters.offset + 1}–${Math.min(filters.offset + filters.limit, total)} de ${total} · Página ${pagina} de ${totalPaginas}</div>
+        <div class="flex gap-2">
+          ${filters.offset > 0
+            ? `<a href="/dashboard/marketing?${qsSemOffset({ offset: Math.max(0, filters.offset - filters.limit) })}" class="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 rounded text-xs">← Anterior</a>`
+            : `<span class="px-3 py-1.5 text-slate-300 text-xs">← Anterior</span>`}
+          ${filters.offset + filters.limit < total
+            ? `<a href="/dashboard/marketing?${qsSemOffset({ offset: filters.offset + filters.limit })}" class="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 rounded text-xs">Próxima →</a>`
+            : `<span class="px-3 py-1.5 text-slate-300 text-xs">Próxima →</span>`}
+        </div>
+      </div>` : ''}
     </section>
 
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">

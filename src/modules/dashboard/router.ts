@@ -495,8 +495,8 @@ export function createDashboardRouter(
     }
   });
 
-  // Marketing: KPIs 7d + campanhas ativas + criativos + alertas + funil por canal.
-  router.get('/marketing', async (_req: Request, res: Response) => {
+  // Marketing: KPIs 7d + campanhas (tabs+busca+pag) + criativos + alertas + funil por canal.
+  router.get('/marketing', async (req: Request, res: Response) => {
     try {
       const { fetchMarketingKpis, listActiveCampaigns, listRecentCreatives, listPendingAlerts, fetchChannelFunnel } =
         await import('./marketing-queries.js');
@@ -506,14 +506,28 @@ export function createDashboardRouter(
       const endDate = hoje.toISOString().slice(0, 10);
       const startDate = new Date(hoje.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const periodo = { start: startDate, end: endDate };
-      const [kpis, campaigns, creatives, alerts, channels] = await Promise.all([
+      const statusParam = String(req.query.status ?? 'active');
+      const status: 'active' | 'paused' | 'all' = (statusParam === 'paused' || statusParam === 'all') ? statusParam : 'active';
+      const search = typeof req.query.q === 'string' ? req.query.q : '';
+      const limit = Math.max(1, Math.min(200, parseInt(String(req.query.limit ?? '20')) || 20));
+      const offset = Math.max(0, parseInt(String(req.query.offset ?? '0')) || 0);
+      const [kpis, campaignsResult, creatives, alerts, channels] = await Promise.all([
         fetchMarketingKpis(supabase),
-        listActiveCampaigns(supabase),
+        listActiveCampaigns(supabase, { status, search, limit, offset }),
         listRecentCreatives(supabase, 8),
         listPendingAlerts(supabase),
         fetchChannelFunnel(supabase, periodo),
       ]);
-      res.send(renderMarketingPage({ kpis, campaigns, creatives, alerts, channels }));
+      res.send(renderMarketingPage({
+        kpis,
+        campaigns: campaignsResult.rows,
+        creatives,
+        alerts,
+        channels,
+        campaignsFilters: { status, search, limit, offset },
+        campaignsCounts: campaignsResult.countByStatus,
+        campaignsTotal: campaignsResult.total,
+      }));
     } catch (err) {
       console.error('[dashboard/marketing]', err);
       res.status(500).send(`<h2>Erro ao carregar marketing</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);

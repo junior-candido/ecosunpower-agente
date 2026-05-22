@@ -95,19 +95,61 @@ export async function fetchMarketingKpis(supabase: SupabaseClient): Promise<Mark
   };
 }
 
-export async function listActiveCampaigns(supabase: SupabaseClient): Promise<CampaignRow[]> {
-  const since = isoNDaysAgo(7);
-  // Lista TODAS (ativas + pausadas) excluindo archived/deleted. Junior quer ver
-  // tudo no cockpit, distinguindo via badge visual. Antes filtrava 'active' e
-  // pausadas sumiam da tela (causa do bug 22/05 com CTWA_Solar_Mai_v1).
-  const { data: camps } = await supabase
-    .from('marketing_campaigns')
-    .select('id, codigo_portfolio, name, status, daily_budget_cents, cpl_alerta_brl, cpl_critico_brl, last_synced_at')
-    .in('status', ['active', 'paused'])
-    .order('status', { ascending: true }) // 'active' antes de 'paused' (alfabético funciona)
-    .order('id', { ascending: true });
+export interface ListCampaignsOptions {
+  status?: 'active' | 'paused' | 'all';
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
 
-  if (!camps || camps.length === 0) return [];
+export interface CampaignsResult {
+  rows: CampaignRow[];
+  total: number;
+  countByStatus: { active: number; paused: number; total: number };
+}
+
+export async function listActiveCampaigns(
+  supabase: SupabaseClient,
+  options: ListCampaignsOptions = {},
+): Promise<CampaignsResult> {
+  const status = options.status ?? 'active';
+  const search = options.search?.trim() ?? '';
+  const limit = Math.max(1, Math.min(200, options.limit ?? 20));
+  const offset = Math.max(0, options.offset ?? 0);
+  const since = isoNDaysAgo(7);
+
+  // 1) Contagens por status (sempre todas, pra mostrar badges das tabs)
+  const [activeCount, pausedCount] = await Promise.all([
+    supabase.from('marketing_campaigns').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+    supabase.from('marketing_campaigns').select('id', { count: 'exact', head: true }).eq('status', 'paused'),
+  ]);
+  const countByStatus = {
+    active: activeCount.count ?? 0,
+    paused: pausedCount.count ?? 0,
+    total: (activeCount.count ?? 0) + (pausedCount.count ?? 0),
+  };
+
+  // 2) Lista filtrada
+  let query = supabase
+    .from('marketing_campaigns')
+    .select('id, codigo_portfolio, name, status, daily_budget_cents, cpl_alerta_brl, cpl_critico_brl, last_synced_at', { count: 'exact' });
+
+  if (status === 'active') query = query.eq('status', 'active');
+  else if (status === 'paused') query = query.eq('status', 'paused');
+  else query = query.in('status', ['active', 'paused']);
+
+  if (search) query = query.ilike('name', `%${search}%`);
+
+  query = query
+    .order('status', { ascending: true })
+    .order('id', { ascending: true })
+    .range(offset, offset + limit - 1);
+
+  const { data: camps, count: total } = await query;
+
+  if (!camps || camps.length === 0) {
+    return { rows: [], total: total ?? 0, countByStatus };
+  }
 
   const ids = camps.map((c) => c.id);
   const { data: ins } = await supabase
@@ -124,7 +166,7 @@ export async function listActiveCampaigns(supabase: SupabaseClient): Promise<Cam
     agg.set(i.campaign_id, a);
   }
 
-  return camps.map((c) => {
+  const rows = camps.map((c) => {
     const a = agg.get(c.id) ?? { spend: 0, leads: 0 };
     const spend7d_brl = a.spend / 100;
     return {
@@ -141,6 +183,8 @@ export async function listActiveCampaigns(supabase: SupabaseClient): Promise<Cam
       cpl7d_brl: a.leads > 0 ? spend7d_brl / a.leads : null,
     };
   });
+
+  return { rows, total: total ?? 0, countByStatus };
 }
 
 export async function listRecentCreatives(supabase: SupabaseClient, limit = 8): Promise<CreativeRow[]> {
