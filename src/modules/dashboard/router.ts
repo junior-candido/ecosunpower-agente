@@ -520,6 +520,32 @@ export function createDashboardRouter(
     }
   });
 
+  // Backfill manual de leads.channel — alternativa ao CLI quando Easypanel não
+  // expoe shell. Botao chamando esta rota fica na secao Canais.
+  router.post('/admin/backfill-channels', async (req: Request, res: Response) => {
+    try {
+      const { runBackfillChannels } = await import('./backfill-channel-runner.js');
+      const recomputaTodos = req.query.all === '1';
+      const { processados, breakdown } = await runBackfillChannels(supabaseService, { recomputaTodos });
+      const breakdownStr = Object.entries(breakdown)
+        .map(([c, n]) => `<li><strong>${c}</strong>: ${n}</li>`)
+        .join('');
+      res.type('text/html').send(`
+        <div style="font-family: system-ui; max-width: 600px; margin: 40px auto; padding: 24px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+          <h2 style="color: #059669; margin: 0 0 8px;">✅ Backfill concluído</h2>
+          <p style="color: #475569; margin: 0 0 16px;">Modo: ${recomputaTodos ? 'recomputou TODOS os leads' : 'apenas leads sem channel'}.</p>
+          <p style="margin: 0 0 8px;"><strong>Processados:</strong> ${processados} leads</p>
+          <p style="margin: 0 0 8px;"><strong>Breakdown por canal:</strong></p>
+          <ul style="margin: 0 0 20px;">${breakdownStr}</ul>
+          <a href="/dashboard/marketing" style="display: inline-block; padding: 8px 16px; background: #0284c7; color: white; text-decoration: none; border-radius: 6px;">← Voltar para Marketing</a>
+        </div>
+      `);
+    } catch (err) {
+      console.error('[admin/backfill-channels]', err);
+      res.status(500).send(`<h2>Erro no backfill</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre><a href="/dashboard/marketing">← voltar</a>`);
+    }
+  });
+
   // Propostas: lista + paginacao + busca.
   router.get('/propostas', async (req: Request, res: Response) => {
     try {

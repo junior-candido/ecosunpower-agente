@@ -98,7 +98,12 @@ function renderChannelsSection(channels: ChannelFunnelRow[]): string {
     <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8 overflow-x-auto">
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-lg font-semibold text-slate-900">📡 Canais — funil por origem</h2>
-        <span class="text-xs text-slate-400">Mesmo período dos KPIs acima</span>
+        <div class="flex items-center gap-3">
+          <form method="POST" action="/dashboard/admin/backfill-channels" onsubmit="return confirm('Recalcular canais de TODOS os leads sem channel preenchido? Idempotente, pode rodar varias vezes.')" class="inline">
+            <button class="px-3 py-1.5 text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-medium">🔄 Recalcular canais</button>
+          </form>
+          <span class="text-xs text-slate-400">Mesmo período dos KPIs</span>
+        </div>
       </div>
       <table class="w-full text-left">
         <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
