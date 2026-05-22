@@ -882,14 +882,18 @@ export function createDashboardRouter(
 
   router.get('/clientes', async (req: Request, res: Response) => {
     try {
+      const limit = Math.max(1, Math.min(200, parseInt((req.query.limit as string) ?? '50') || 50));
+      const offset = Math.max(0, parseInt((req.query.offset as string) ?? '0') || 0);
       const filters = {
         q: typeof req.query.q === 'string' ? req.query.q : undefined,
         concessionaria: typeof req.query.concessionaria === 'string' ? req.query.concessionaria : undefined,
         cidade: typeof req.query.cidade === 'string' ? req.query.cidade : undefined,
         ord: typeof req.query.ord === 'string' ? req.query.ord : undefined,
+        limit,
+        offset,
       };
-      const { clientes, sistemasOrfaos } = await listClientes(supabaseService, filters);
-      res.type('text/html').send(renderClientesListPage(clientes as any, filters, sistemasOrfaos));
+      const { clientes, sistemasOrfaos, total } = await listClientes(supabaseService, filters);
+      res.type('text/html').send(renderClientesListPage(clientes as any, filters, sistemasOrfaos, { total, limit, offset }));
     } catch (err) {
       console.error('[dashboard/clientes]', err);
       res.status(500).send(`<h2>Erro ao listar clientes</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);

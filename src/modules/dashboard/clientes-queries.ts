@@ -15,11 +15,14 @@ const CLIENTE_STATUSES = [
 // Leads vindos da Eva ficam em /leads (na mesma tabela, acessíveis pra qualquer ação).
 export async function listClientes(
   supabase: SupabaseService,
-  filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string },
-): Promise<{ clientes: ClienteRow[]; sistemasOrfaos: SistemaOrfaoCard[] }> {
-  const [clientes, orfaosRaw] = await Promise.all([
-    supabase.listClientesByStatus(CLIENTE_STATUSES, filters, 50, 0, true),
-    supabase.listSistemasOrfaos(),
+  filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string; limit?: number; offset?: number },
+): Promise<{ clientes: ClienteRow[]; sistemasOrfaos: SistemaOrfaoCard[]; total: number; limit: number; offset: number }> {
+  const limit = filters.limit ?? 50;
+  const offset = filters.offset ?? 0;
+  const [clientes, total, orfaosRaw] = await Promise.all([
+    supabase.listClientesByStatus(CLIENTE_STATUSES, filters, limit, offset, true),
+    supabase.countClientesByStatus(CLIENTE_STATUSES, filters, true),
+    offset === 0 ? supabase.listSistemasOrfaos() : Promise.resolve([]),
   ]);
   const sistemasOrfaos: SistemaOrfaoCard[] = (orfaosRaw ?? []).map((s: any) => ({
     sistema_id: s.id,
@@ -30,7 +33,7 @@ export async function listClientes(
     uf: s.uf,
     data_instalacao: s.data_instalacao,
   }));
-  return { clientes: clientes as ClienteRow[], sistemasOrfaos };
+  return { clientes: clientes as ClienteRow[], sistemasOrfaos, total, limit, offset };
 }
 
 export async function getClienteDetail(

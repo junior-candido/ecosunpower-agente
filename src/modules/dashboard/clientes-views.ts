@@ -60,7 +60,20 @@ export function renderClientesListPage(
   rows: ClienteRow[],
   filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string },
   sistemasOrfaos: SistemaOrfaoCard[] = [],
+  pagination: { total: number; limit: number; offset: number } = { total: rows.length, limit: 50, offset: 0 },
 ): string {
+  const { total, limit, offset } = pagination;
+  const pagina = Math.floor(offset / limit) + 1;
+  const totalPaginas = Math.max(1, Math.ceil(total / limit));
+  const queryStringSemOffset = (() => {
+    const parts: string[] = [];
+    if (filters.q) parts.push(`q=${encodeURIComponent(filters.q)}`);
+    if (filters.concessionaria) parts.push(`concessionaria=${encodeURIComponent(filters.concessionaria)}`);
+    if (filters.cidade) parts.push(`cidade=${encodeURIComponent(filters.cidade)}`);
+    if (filters.ord) parts.push(`ord=${encodeURIComponent(filters.ord)}`);
+    return parts.length > 0 ? '&' + parts.join('&') : '';
+  })();
+
   const opt = (v: string, label: string, sel?: string) =>
     `<option value="${escapeHtml(v)}" ${sel === v ? 'selected' : ''}>${escapeHtml(label)}</option>`;
 
@@ -102,8 +115,8 @@ export function renderClientesListPage(
   const body = `
     <div class="mb-6 flex items-start justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold text-slate-100">👥 Clientes — ${rows.length}</h1>
-        <p class="text-slate-400 text-sm">Quem comprou. Lista de clientes instalados / operando / pós-venda.</p>
+        <h1 class="text-2xl font-bold text-slate-100">👥 Clientes — ${total}</h1>
+        <p class="text-slate-400 text-sm">Quem comprou. Lista de clientes instalados / operando / pós-venda.${totalPaginas > 1 ? ` <span class="text-slate-500">· Página ${pagina} de ${totalPaginas}</span>` : ''}</p>
       </div>
       <a href="/dashboard/clientes/novo" class="shrink-0 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">➕ Novo cliente</a>
     </div>
@@ -133,6 +146,19 @@ export function renderClientesListPage(
     ${rows.length > 0
       ? `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">${rows.map(card).join('')}</div>`
       : ''}
+
+    ${total > limit ? `
+    <div class="flex items-center justify-between mt-6 text-sm text-slate-400">
+      <div>Mostrando ${offset + 1}–${Math.min(offset + limit, total)} de ${total}</div>
+      <div class="flex gap-2">
+        ${offset > 0
+          ? `<a href="/dashboard/clientes?offset=${Math.max(0, offset - limit)}${queryStringSemOffset}" class="px-3 py-2 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-200 rounded">← Anterior</a>`
+          : `<span class="px-3 py-2 text-slate-600">← Anterior</span>`}
+        ${offset + limit < total
+          ? `<a href="/dashboard/clientes?offset=${offset + limit}${queryStringSemOffset}" class="px-3 py-2 bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-200 rounded">Próxima →</a>`
+          : `<span class="px-3 py-2 text-slate-600">Próxima →</span>`}
+      </div>
+    </div>` : ''}
 
     ${sistemasOrfaos.length > 0 ? `
     <div class="mt-8 mb-4">

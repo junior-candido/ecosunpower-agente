@@ -1060,6 +1060,29 @@ export class SupabaseService {
     return data ?? [];
   }
 
+  async countClientesByStatus(statuses: string[], filters: { q?: string; concessionaria?: string; cidade?: string } = {}, incluirManuaisDashboard: boolean = false): Promise<number> {
+    let q = this.client.from('leads').select('id', { count: 'exact', head: true });
+
+    if (statuses.length > 0 && incluirManuaisDashboard) {
+      q = q.or(`installation_status.in.(${statuses.join(',')}),acquisition_source.eq.manual_dashboard`);
+    } else if (statuses.length > 0) {
+      q = q.in('installation_status', statuses);
+    } else if (incluirManuaisDashboard) {
+      q = q.eq('acquisition_source', 'manual_dashboard');
+    }
+
+    if (filters.q) q = q.or(`name.ilike.%${filters.q}%,phone.ilike.%${filters.q}%,email.ilike.%${filters.q}%,cpf_cnpj.ilike.%${filters.q}%`);
+    if (filters.concessionaria) q = q.eq('concessionaria', filters.concessionaria);
+    if (filters.cidade) q = q.eq('city', filters.cidade);
+
+    const { count, error } = await q;
+    if (error) {
+      console.error('[supabase] countClientesByStatus:', error.message);
+      return 0;
+    }
+    return count ?? 0;
+  }
+
   async getClienteByLeadId(leadId: string): Promise<any | null> {
     const { data, error } = await this.client.from('leads').select('*').eq('id', leadId).single();
     if (error) {
