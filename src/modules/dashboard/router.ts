@@ -319,8 +319,19 @@ export function createDashboardRouter(
       const { renderLeadsListPage } = await import('./leads-views.js');
       const status = typeof req.query.status === 'string' ? req.query.status : undefined;
       const only_alerts = req.query.only_alerts === '1' || req.query.only_alerts === 'true';
-      const rows = await listLeads(supabase, { status, only_alerts });
-      res.send(renderLeadsListPage(rows, { status, only_alerts }));
+      const search = typeof req.query.q === 'string' ? req.query.q : '';
+      const limit = Math.max(1, Math.min(200, parseInt(String(req.query.limit ?? '50')) || 50));
+      const offset = Math.max(0, parseInt(String(req.query.offset ?? '0')) || 0);
+      const result = await listLeads(supabase, { status, only_alerts, search, limit, offset });
+      res.send(renderLeadsListPage(result.rows, {
+        status,
+        only_alerts,
+        search,
+        limit,
+        offset,
+        total: result.total,
+        countByStatus: result.countByStatus,
+      }));
     } catch (err) {
       console.error('[dashboard/leads]', err);
       res.status(500).send(`<h2>Erro ao carregar leads</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);

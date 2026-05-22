@@ -56,20 +56,83 @@ function evaBadge(active: boolean, optOut: boolean): string {
   return '<span class="inline-flex px-2 py-0.5 rounded-full text-xs bg-slate-200 text-slate-700">⏸️ pausada</span>';
 }
 
-export function renderLeadsListPage(rows: LeadRow[], filters: { status?: string; only_alerts?: boolean }): string {
+export function renderLeadsListPage(
+  rows: LeadRow[],
+  filters: {
+    status?: string;
+    only_alerts?: boolean;
+    search?: string;
+    limit?: number;
+    offset?: number;
+    total?: number;
+    countByStatus?: Record<string, number>;
+  },
+): string {
   const alertasCount = rows.filter((r) => r.alerta === 'silente_sem_cadencia').length;
+  const search = filters.search ?? '';
+  const limit = filters.limit ?? 50;
+  const offset = filters.offset ?? 0;
+  const total = filters.total ?? rows.length;
+  const counts = filters.countByStatus ?? {};
+  const pagina = Math.floor(offset / limit) + 1;
+  const totalPaginas = Math.max(1, Math.ceil(total / limit));
+
+  const tab = (statusId: string | null, label: string, count: number | null, activeClass: string) => {
+    const isActive = (statusId === null && !filters.status && !filters.only_alerts)
+      || (statusId !== null && filters.status === statusId);
+    const cls = isActive
+      ? activeClass + ' text-white'
+      : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50';
+    const href = statusId === null ? '/dashboard/leads' : `/dashboard/leads?status=${statusId}`;
+    const finalHref = search ? `${href}${href.includes('?') ? '&' : '?'}q=${encodeURIComponent(search)}` : href;
+    const badge = count != null ? `<span class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] ${isActive ? 'bg-white/20' : 'bg-slate-200'}">${count}</span>` : '';
+    return `<a href="${finalHref}" class="px-3 py-1.5 rounded-lg text-sm inline-flex items-center ${cls}">${label}${badge}</a>`;
+  };
 
   const filterBar = `
     <div class="flex flex-wrap gap-2 mb-4">
-      <a href="/dashboard/leads" class="px-3 py-1.5 rounded-lg text-sm ${!filters.status && !filters.only_alerts ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">Todos</a>
-      <a href="/dashboard/leads?only_alerts=1" class="px-3 py-1.5 rounded-lg text-sm ${filters.only_alerts ? 'bg-rose-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">🚨 Alertas (${alertasCount})</a>
-      <a href="/dashboard/leads?status=novo" class="px-3 py-1.5 rounded-lg text-sm ${filters.status === 'novo' ? 'bg-sky-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">🆕 Novos</a>
-      <a href="/dashboard/leads?status=qualificando" class="px-3 py-1.5 rounded-lg text-sm ${filters.status === 'qualificando' ? 'bg-violet-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">🎯 Qualificando</a>
-      <a href="/dashboard/leads?status=qualificado" class="px-3 py-1.5 rounded-lg text-sm ${filters.status === 'qualificado' ? 'bg-fuchsia-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">⭐ Qualificados</a>
-      <a href="/dashboard/leads?status=agendado" class="px-3 py-1.5 rounded-lg text-sm ${filters.status === 'agendado' ? 'bg-amber-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">📅 Agendados</a>
-      <a href="/dashboard/leads?status=transferido" class="px-3 py-1.5 rounded-lg text-sm ${filters.status === 'transferido' ? 'bg-emerald-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">✅ Transferidos</a>
+      ${tab(null, 'Todos', counts.todos ?? null, 'bg-indigo-600')}
+      <a href="/dashboard/leads?only_alerts=1${search ? `&q=${encodeURIComponent(search)}` : ''}" class="px-3 py-1.5 rounded-lg text-sm inline-flex items-center ${filters.only_alerts ? 'bg-rose-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">🚨 Alertas <span class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] ${filters.only_alerts ? 'bg-white/20' : 'bg-slate-200'}">${alertasCount}</span></a>
+      ${tab('novo', '🆕 Novos', counts.novo ?? null, 'bg-sky-600')}
+      ${tab('qualificando', '🎯 Qualificando', counts.qualificando ?? null, 'bg-violet-600')}
+      ${tab('qualificado', '⭐ Qualificados', counts.qualificado ?? null, 'bg-fuchsia-600')}
+      ${tab('agendado', '📅 Agendados', counts.agendado ?? null, 'bg-amber-600')}
+      ${tab('transferido', '✅ Transferidos', counts.transferido ?? null, 'bg-emerald-600')}
+      ${tab('perdido', '❌ Perdidos', counts.perdido ?? null, 'bg-slate-600')}
     </div>
   `;
+
+  const qsSemOffset = (extras: Record<string, string | number> = {}): string => {
+    const params = new URLSearchParams();
+    if (filters.status) params.set('status', filters.status);
+    if (filters.only_alerts) params.set('only_alerts', '1');
+    if (search) params.set('q', search);
+    for (const [k, v] of Object.entries(extras)) params.set(k, String(v));
+    return params.toString();
+  };
+
+  const searchForm = `
+    <form action="/dashboard/leads" method="get" class="flex gap-2 items-center mb-4">
+      ${filters.status ? `<input type="hidden" name="status" value="${escapeHtml(filters.status)}">` : ''}
+      ${filters.only_alerts ? `<input type="hidden" name="only_alerts" value="1">` : ''}
+      <input type="text" name="q" value="${escapeHtml(search)}" placeholder="🔎 Nome, telefone ou email..." class="px-3 py-1.5 border border-slate-300 rounded-md text-sm flex-1 max-w-md">
+      <button class="px-3 py-1.5 bg-sky-700 text-white rounded-md text-xs font-semibold hover:bg-sky-800">Buscar</button>
+      ${search ? `<a href="/dashboard/leads${filters.status ? `?status=${filters.status}` : ''}" class="text-xs text-slate-500 hover:underline">limpar</a>` : ''}
+    </form>
+  `;
+
+  const paginationBlock = total > limit && !filters.only_alerts ? `
+    <div class="flex items-center justify-between mt-4 px-4 py-3 text-sm text-slate-600 border-t border-slate-200">
+      <div>Mostrando ${offset + 1}–${Math.min(offset + limit, total)} de ${total} · Página ${pagina} de ${totalPaginas}</div>
+      <div class="flex gap-2">
+        ${offset > 0
+          ? `<a href="/dashboard/leads?${qsSemOffset({ offset: Math.max(0, offset - limit) })}" class="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 rounded text-xs">← Anterior</a>`
+          : `<span class="px-3 py-1.5 text-slate-300 text-xs">← Anterior</span>`}
+        ${offset + limit < total
+          ? `<a href="/dashboard/leads?${qsSemOffset({ offset: offset + limit })}" class="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 rounded text-xs">Próxima →</a>`
+          : `<span class="px-3 py-1.5 text-slate-300 text-xs">Próxima →</span>`}
+      </div>
+    </div>` : '';
 
   const tableRows = rows
     .map((l) => {
@@ -99,7 +162,7 @@ export function renderLeadsListPage(rows: LeadRow[], filters: { status?: string;
       <div class="flex items-center justify-between mb-6">
         <div>
           <h1 class="text-2xl font-bold text-slate-900">Leads</h1>
-          <p class="text-sm text-slate-500 mt-1">${rows.length} lead(s) listado(s) · ordenado por última atividade</p>
+          <p class="text-sm text-slate-500 mt-1">${total} lead(s) no total · mostrando ${rows.length} · ordenado por última atividade</p>
         </div>
       </div>
 
@@ -111,6 +174,7 @@ export function renderLeadsListPage(rows: LeadRow[], filters: { status?: string;
           </p>
         </div>` : ''}
 
+      ${searchForm}
       ${filterBar}
 
       <div class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
@@ -130,6 +194,7 @@ export function renderLeadsListPage(rows: LeadRow[], filters: { status?: string;
             ${tableRows || '<tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">Nenhum lead encontrado</td></tr>'}
           </tbody>
         </table>
+        ${paginationBlock}
       </div>
     </div>
   `;
