@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Channel } from './resolve-channel.js';
 
 export interface MarketingKpis {
   spend7d_brl: number;
@@ -155,4 +156,130 @@ export async function listPendingAlerts(supabase: SupabaseClient): Promise<Alert
     .order('created_at', { ascending: false })
     .limit(20);
   return (data ?? []) as AlertRow[];
+}
+
+// ─── Channel Funnel (S1 Dashboard Unificado) ────────────────────────────────
+
+/** Janela de período para consultas do funil por canal. */
+export interface ChannelFunnelPeriodo {
+  /** Data de início inclusive, formato YYYY-MM-DD */
+  start: string;
+  /** Data de fim inclusive, formato YYYY-MM-DD */
+  end: string;
+}
+
+/** Uma linha do funil por canal, retornada por aggregateChannelFunnel / fetchChannelFunnel. */
+export interface ChannelFunnelRow {
+  channel: Channel;
+  /** Total de leads no período */
+  total: number;
+  /** Leads com status 'qualificado' (espelha funil existente) */
+  qualificado: number;
+  /** Leads com status 'agendado' (espelha funil existente) */
+  agendado: number;
+  /** Gasto total em centavos somado do channel_daily_metrics no período */
+  spend_cents: number;
+  /** Custo por lead (spend_cents / total). null quando total = 0 */
+  cpl: number | null;
+  /** Custo por agendamento (spend_cents / agendado). null quando agendado = 0 */
+  custo_por_agendamento: number | null;
+}
+
+const ALL_CHANNELS: Channel[] = ['meta', 'google', 'blog', 'direto', 'indicacao', 'outro'];
+
+interface LeadSlim {
+  channel: string | null | undefined;
+  status: string;
+}
+
+interface MetricSlim {
+  channel: string;
+  spend_cents: number;
+}
+
+/**
+ * Função PURA (sem I/O): agrega funil por canal e junta gasto do channel_daily_metrics.
+ *
+ * Regras de contagem espelham o funil existente no cockpit:
+ *  - qualificado = status === 'qualificado'
+ *  - agendado    = status === 'agendado'
+ * channel null/'' → 'direto'.
+ * Garante slot para todos os 6 canais canônicos.
+ */
+export function aggregateChannelFunnel(
+  leads: LeadSlim[],
+  metrics: MetricSlim[],
+): ChannelFunnelRow[] {
+  // Inicializa mapa com zeros para todos os 6 canais
+  const map = new Map<Channel, { total: number; qualificado: number; agendado: number }>();
+  for (const ch of ALL_CHANNELS) {
+    map.set(ch, { total: 0, qualificado: 0, agendado: 0 });
+  }
+
+  // Agrega leads
+  for (const lead of leads) {
+    const raw = lead.channel;
+    const ch: Channel = (raw && ALL_CHANNELS.includes(raw as Channel))
+      ? (raw as Channel)
+      : 'direto';
+    const slot = map.get(ch)!;
+    slot.total++;
+    if (lead.status === 'qualificado') slot.qualificado++;
+    if (lead.status === 'agendado') slot.agendado++;
+  }
+
+  // Agrega spend por canal
+  const spendMap = new Map<string, number>();
+  for (const m of metrics) {
+    spendMap.set(m.channel, (spendMap.get(m.channel) ?? 0) + (m.spend_cents ?? 0));
+  }
+
+  // Monta resultado mantendo ordem canônica
+  return ALL_CHANNELS.map((ch) => {
+    const slot = map.get(ch)!;
+    const spend_cents = spendMap.get(ch) ?? 0;
+    const cpl = slot.total > 0 ? spend_cents / slot.total : null;
+    const custo_por_agendamento = slot.agendado > 0 ? spend_cents / slot.agendado : null;
+    return {
+      channel: ch,
+      total: slot.total,
+      qualificado: slot.qualificado,
+      agendado: slot.agendado,
+      spend_cents,
+      cpl,
+      custo_por_agendamento,
+    };
+  });
+}
+
+/**
+ * I/O fino: busca leads do período + channel_daily_metrics do período,
+ * chama aggregateChannelFunnel (pura) e retorna as linhas.
+ *
+ * Janela: leads.created_at >= start AND <= end (dia completo, mesmo critério
+ * do funil existente que usa gte/lte em datas YYYY-MM-DD).
+ * channel_daily_metrics.date >= start AND <= end.
+ */
+export async function fetchChannelFunnel(
+  supabase: SupabaseClient,
+  periodo: ChannelFunnelPeriodo,
+): Promise<ChannelFunnelRow[]> {
+  const [leadsRes, metricsRes] = await Promise.all([
+    supabase
+      .from('leads')
+      .select('channel, status')
+      .gte('created_at', periodo.start)
+      .lte('created_at', periodo.end + 'T23:59:59.999Z')
+      .limit(10000),
+    supabase
+      .from('channel_daily_metrics')
+      .select('channel, spend_cents')
+      .gte('date', periodo.start)
+      .lte('date', periodo.end),
+  ]);
+
+  const leads = (leadsRes.data ?? []) as LeadSlim[];
+  const metrics = (metricsRes.data ?? []) as MetricSlim[];
+
+  return aggregateChannelFunnel(leads, metrics);
 }

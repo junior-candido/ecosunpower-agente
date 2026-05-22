@@ -1,10 +1,11 @@
 // tests/channel-funnel.test.ts
 //
 // Parte 1 — aggregateMetaDaily (helper puro, sem I/O)
-// Parte 2 (aggregateChannelFunnel) vira na T5.
+// Parte 2 — aggregateChannelFunnel (helper puro, sem I/O) — T5
 
 import { describe, it, expect } from 'vitest';
 import { aggregateMetaDaily } from '../src/modules/marketing/insights-collector.js';
+import { aggregateChannelFunnel } from '../src/modules/dashboard/marketing-queries.js';
 
 describe('aggregateMetaDaily', () => {
   it('soma spend/clicks/impressions por dia', () => {
@@ -38,5 +39,20 @@ describe('aggregateMetaDaily', () => {
       { date_start: '2026-05-18', spend_cents: 300, clicks: 3, impressions: 30 },
     ]);
     expect(out).toEqual([{ date: '2026-05-18', spend_cents: 600, clicks: 6, impressions: 60 }]);
+  });
+});
+
+describe('aggregateChannelFunnel', () => {
+  it('agrupa funil por channel + custo do channel_daily_metrics', () => {
+    const leads = [
+      { channel: 'meta', status: 'agendado' }, { channel: 'meta', status: 'qualificado' },
+      { channel: 'google', status: 'novo' }, { channel: null, status: 'novo' },
+    ];
+    const metrics = [{ channel: 'meta', spend_cents: 30000 }];
+    const out = aggregateChannelFunnel(leads, metrics);
+    const meta = out.find(r => r.channel === 'meta')!;
+    expect(meta.total).toBe(2); expect(meta.agendado).toBe(1); expect(meta.spend_cents).toBe(30000);
+    expect(out.find(r => r.channel === 'google')!.spend_cents).toBe(0); // slot vazio
+    expect(out.find(r => r.channel === 'direto')).toBeTruthy(); // channel null -> direto
   });
 });
