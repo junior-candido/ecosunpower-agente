@@ -107,6 +107,9 @@ export async function collectInsights(
   let failed = 0;
   const fields = 'spend,impressions,reach,clicks,ctr,cpc,cpm,actions,cost_per_action_type,date_start,date_stop';
 
+  // Acumulador para agregação diária cross-campaign (alimenta channel_daily_metrics)
+  const dailyRows: { date_start: string; spend_cents: number; clicks: number; impressions: number }[] = [];
+
   for (const camp of campaigns) {
     if (!camp.meta_campaign_id) {
       console.warn(`[insights] camp=${camp.id} sem meta_campaign_id, pulando`);
@@ -128,6 +131,16 @@ export async function collectInsights(
         const leads = parseInt(i.actions?.find((a) => a.action_type === 'lead')?.value ?? '0', 10);
         const spend_cents = Math.round(parseFloat(i.spend ?? '0') * 100);
         const cpl_cents = leads > 0 ? Math.round(spend_cents / leads) : null;
+
+        // Acumula para agregação diária cross-campaign (channel_daily_metrics)
+        if (i.date_start) {
+          dailyRows.push({
+            date_start: i.date_start,
+            spend_cents,
+            clicks: parseInt(i.clicks ?? '0', 10),
+            impressions: parseInt(i.impressions ?? '0', 10),
+          });
+        }
 
         // Dedup: cada run de 2h reescreve o snapshot daquele (campaign_id, date_start).
         // Sem isso, KPIs do dashboard somariam o mesmo dia 12x. Schema nao tem UNIQUE,
@@ -172,6 +185,64 @@ export async function collectInsights(
     }
   }
 
+  // Aditivo: agrega por dia e grava em channel_daily_metrics (best-effort, nao bloqueia cron)
+  try {
+    const aggregated = aggregateMetaDaily(dailyRows);
+    if (aggregated.length > 0) {
+      const { error: chErr } = await supabase
+        .from('channel_daily_metrics')
+        .upsert(
+          aggregated.map((row) => ({
+            channel: 'meta',
+            date: row.date,
+            spend_cents: row.spend_cents,
+            clicks: row.clicks,
+            impressions: row.impressions,
+            source: 'meta_insights',
+            updated_at: new Date().toISOString(),
+          })),
+          { onConflict: 'channel,date' },
+        );
+      if (chErr) {
+        console.warn(`[channel-metrics] upsert channel_daily_metrics failed: ${chErr.message}`);
+      } else {
+        console.log(`[channel-metrics] ${aggregated.length} dia(s) gravados em channel_daily_metrics`);
+      }
+    }
+  } catch (err) {
+    console.warn(`[channel-metrics] erro inesperado ao gravar channel_daily_metrics: ${(err as Error).message}`);
+  }
+
   console.log(`[insights] collector done: ${ok} ok, ${failed} failed (${campaigns.length} campaigns)`);
   return { ok, failed };
+}
+
+// ---------- helper puro exportado (usado por collectInsights + testes) ----------
+
+/**
+ * Agrega rows Meta por dia, somando spend_cents, clicks e impressions.
+ * Funcao pura: sem I/O, sem efeitos colaterais.
+ */
+export function aggregateMetaDaily(
+  rows: { date_start: string; spend_cents: number; clicks: number; impressions: number }[],
+): { date: string; spend_cents: number; clicks: number; impressions: number }[] {
+  if (rows.length === 0) return [];
+
+  const map = new Map<string, { spend_cents: number; clicks: number; impressions: number }>();
+  for (const row of rows) {
+    const existing = map.get(row.date_start);
+    if (existing) {
+      existing.spend_cents += row.spend_cents;
+      existing.clicks += row.clicks;
+      existing.impressions += row.impressions;
+    } else {
+      map.set(row.date_start, {
+        spend_cents: row.spend_cents,
+        clicks: row.clicks,
+        impressions: row.impressions,
+      });
+    }
+  }
+
+  return Array.from(map.entries()).map(([date, totals]) => ({ date, ...totals }));
 }
