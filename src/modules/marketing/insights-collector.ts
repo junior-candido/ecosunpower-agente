@@ -12,6 +12,62 @@ interface MetaCampaignMeta {
 }
 
 /**
+ * Lista todas as campanhas do ad_account no Meta e cadastra automaticamente as
+ * que ainda nao existem em `marketing_campaigns`. Roda ANTES do sync de status,
+ * pra garantir que campanhas novas criadas no Ads Manager aparecam no dashboard
+ * sem cadastro manual. Idempotente — campanhas ja existentes sao ignoradas.
+ */
+export async function discoverNewCampaigns(
+  supabase: SupabaseClient,
+  accessToken: string,
+  adAccountId: string,
+): Promise<{ discovered: number; inserted: number; novos: string[] }> {
+  const cleanAccount = adAccountId.replace(/^act_/, '');
+  const url = `${GRAPH}/act_${cleanAccount}/campaigns?fields=id,name,status,objective,daily_budget&limit=200&access_token=${accessToken}`;
+  const r = await fetch(url);
+  if (!r.ok) {
+    console.warn(`[discover-campaigns] HTTP ${r.status} act=${cleanAccount}`);
+    return { discovered: 0, inserted: 0, novos: [] };
+  }
+  const json = await r.json() as { data?: MetaCampaignMeta[] };
+  const metaCampaigns = json.data ?? [];
+  if (metaCampaigns.length === 0) {
+    return { discovered: 0, inserted: 0, novos: [] };
+  }
+
+  const { data: existing } = await supabase
+    .from('marketing_campaigns')
+    .select('meta_campaign_id');
+  const existingIds = new Set(((existing ?? []) as Array<{ meta_campaign_id: string | null }>)
+    .map((e) => e.meta_campaign_id)
+    .filter((id): id is string => !!id));
+
+  const novos = metaCampaigns.filter((c) => !existingIds.has(c.id));
+  if (novos.length === 0) {
+    return { discovered: metaCampaigns.length, inserted: 0, novos: [] };
+  }
+
+  const inserts = novos.map((c) => ({
+    meta_campaign_id: c.id,
+    name: c.name ?? `Campanha ${c.id}`,
+    status: (c.status ?? 'paused').toLowerCase(),
+    objective: c.objective ?? null,
+    daily_budget_cents: c.daily_budget ? parseInt(c.daily_budget, 10) : null,
+    codigo_portfolio: 'A', // default — Junior pode ajustar depois se quiser segmentar
+  }));
+
+  const { error } = await supabase.from('marketing_campaigns').insert(inserts);
+  if (error) {
+    console.error('[discover-campaigns] insert falhou:', error.message);
+    return { discovered: metaCampaigns.length, inserted: 0, novos: [] };
+  }
+
+  const nomes = novos.map((c) => c.name ?? c.id);
+  console.log(`[discover-campaigns] ${novos.length} cadastradas: ${nomes.join(', ')}`);
+  return { discovered: metaCampaigns.length, inserted: novos.length, novos: nomes };
+}
+
+/**
  * Sincroniza status/name/objective/budget de cada campanha do DB com o estado
  * real no Meta. Roda antes do collectInsights pra garantir que campanhas
  * pausadas no Meta nao recebam chamada de /insights (e que dashboard reflita

@@ -36,6 +36,7 @@ const configSchema = z.object({
   googleCalendarId: z.string().optional(),
   timezone: z.string().default('America/Sao_Paulo'),
   metaAccessToken: z.string().optional(),
+  metaAdAccountId: z.string().optional(), // Conta de anuncios Meta (sem 'act_'). Usado pra discovery de campanhas novas no dashboard.
   metaFacebookPageId: z.string().optional(),
   metaInstagramBusinessId: z.string().optional(),
   metaAppSecret: z.string().optional(),     // pra HMAC do webhook Lead Ads
@@ -100,6 +101,7 @@ export function loadConfig(): Config {
     googleCalendarId: process.env.GOOGLE_CALENDAR_ID || undefined,
     timezone: process.env.TIMEZONE,
     metaAccessToken: process.env.META_ACCESS_TOKEN || undefined,
+    metaAdAccountId: process.env.META_AD_ACCOUNT_ID || undefined,
     metaFacebookPageId: process.env.META_FACEBOOK_PAGE_ID || undefined,
     metaInstagramBusinessId: process.env.META_INSTAGRAM_BUSINESS_ID || undefined,
     metaAppSecret: process.env.META_APP_SECRET || undefined,

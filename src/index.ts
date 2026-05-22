@@ -6466,13 +6466,17 @@ Slug: ${draft.slug}`;
   if (!isSandbox && config.metaWabaAccessToken) {
     const runInsightsCollector = async () => {
       try {
-        const { syncCampaignStatuses, collectInsights } = await import('./modules/marketing/insights-collector.js');
+        const { syncCampaignStatuses, collectInsights, discoverNewCampaigns } = await import('./modules/marketing/insights-collector.js');
         const { runMetaPermissionsHeartbeat } = await import('./modules/marketing/meta-permissions-heartbeat.js');
         // 0) heartbeat permissions Meta (public_profile + pages_list) pra destravar checks App Review
         await runMetaPermissionsHeartbeat(config.metaWabaAccessToken!);
-        // 1) sync status/name/budget Meta -> DB (toda campanha cadastrada)
+        // 1) descoberta: cadastra automaticamente campanhas novas criadas no Ads Manager
+        if (config.metaAdAccountId) {
+          await discoverNewCampaigns(supabase.getClient(), config.metaWabaAccessToken!, config.metaAdAccountId);
+        }
+        // 2) sync status/name/budget Meta -> DB (toda campanha cadastrada)
         await syncCampaignStatuses(supabase.getClient(), config.metaWabaAccessToken!);
-        // 2) collect insights so das active
+        // 3) collect insights so das active
         await collectInsights(supabase.getClient(), config.metaWabaAccessToken!);
       } catch (err) {
         console.error('[insights] collector failed:', (err as Error).message);
