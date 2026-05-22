@@ -46,6 +46,8 @@ import { NewsScraperService } from './modules/news-scraper.js';
 import { DriveUploader } from './modules/proposal/drive-uploader.js';
 import { MonitoringService } from './modules/monitoring/service.js';
 import { createDashboardRouter } from './modules/dashboard/router.js';
+import { resolveChannel } from './modules/dashboard/resolve-channel.js';
+import { leadRowToChannelInput } from './modules/dashboard/channel-mapper.js';
 import { ProactiveAlertService } from './modules/monitoring/proactive-alerts/service.js';
 import { runDispatchCycle, type DispatchCtx } from './modules/monitoring/proactive-alerts/dispatcher.js';
 import { runAnniversaryEnqueue } from './modules/monitoring/proactive-alerts/anniversary.js';
@@ -2374,14 +2376,18 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           }
 
           try {
+            const trackingRow = {
+              lead_source: source,
+              utm_source: source,
+              utm_campaign: parsed.campaign,
+              origin: source,
+            };
             await supabase.getClient()
               .from('leads')
               .update({
-                lead_source: source,
-                utm_source: source,
-                utm_campaign: parsed.campaign,
+                ...trackingRow,
                 utm_content: parsed.content ?? null,
-                origin: source,
+                channel: resolveChannel(leadRowToChannelInput(trackingRow)),
                 updated_at: new Date().toISOString(),
               })
               .eq('id', leadId);
@@ -3831,6 +3837,10 @@ Responda CURTO, maximo 2 paragrafos.`,
           if (!isHot) {
             updatePayload.lead_source = normalized.source;
           }
+          // Computa canal canônico a partir dos campos de atribuição desta
+          // atualização. ad_campaign_id tem prioridade máxima em resolveChannel
+          // (qualquer campaign_id = meta). lead_source entra se for lead novo.
+          updatePayload.channel = resolveChannel(leadRowToChannelInput(updatePayload));
           await supabase.getClient()
             .from('leads')
             .update(updatePayload)
