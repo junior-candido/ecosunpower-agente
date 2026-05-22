@@ -1296,6 +1296,25 @@ export class SupabaseService {
   }
 
   async excluirLead(leadId: string): Promise<{ ok: boolean; error?: string }> {
+    // GUARD: bloqueia delete se cliente tem proposta ou sistema vinculado.
+    // Propostas envolvem valor financeiro; sistemas FV são dado físico real.
+    // Demais tabelas (cadencia, conversas, anexos, relatorios, alertas) somem
+    // por ON DELETE CASCADE no schema — ok perder porque sao recriaveis.
+    const [propostasResp, sistemasResp] = await Promise.all([
+      this.client.from('propostas_publicas').select('id', { count: 'exact', head: true }).eq('lead_id', leadId),
+      this.client.from('sistemas_clientes').select('id', { count: 'exact', head: true }).eq('lead_id', leadId),
+    ]);
+    const propostas = propostasResp.count ?? 0;
+    const sistemas = sistemasResp.count ?? 0;
+    if (propostas > 0 || sistemas > 0) {
+      const partes: string[] = [];
+      if (propostas > 0) partes.push(`${propostas} proposta${propostas > 1 ? 's' : ''}`);
+      if (sistemas > 0) partes.push(`${sistemas} sistema${sistemas > 1 ? 's' : ''} FV`);
+      return {
+        ok: false,
+        error: `Este cliente tem ${partes.join(' e ')} vinculado(s). Revogue/arquive antes de excluir, ou peça pra mim adicionar 'Arquivar' como alternativa.`,
+      };
+    }
     const { error } = await this.client.from('leads').delete().eq('id', leadId);
     if (error) return { ok: false, error: error.message };
     return { ok: true };

@@ -438,13 +438,18 @@ export function createDashboardRouter(
     res.redirect(`/dashboard/leads/${id}`);
   });
 
-  // REMOVE LEAD PERMANENTEMENTE (acao destrutiva; cascata exclui cadencia,
-  // conversas e demais FKs por ON DELETE CASCADE no schema).
+  // REMOVE LEAD PERMANENTEMENTE — usa excluirLead pra ganhar o guard:
+  // bloqueia se houver proposta ou sistema FV vinculado, caso contrario
+  // deleta e CASCADE limpa cadencia, conversas, anexos, relatorios, etc.
   router.post('/leads/:id/delete', async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const { error } = await supabase.from('leads').delete().eq('id', id);
-    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    const r = await supabaseService.excluirLead(id);
+    if (!r.ok) {
+      return res.status(400).send(
+        `<h2>Não foi possível excluir</h2><p>${escapeHtmlSimple(r.error ?? '')}</p><a href="/dashboard/leads/${id}">← voltar</a>`,
+      );
+    }
     res.redirect('/dashboard/leads');
   });
 
