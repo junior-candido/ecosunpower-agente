@@ -6472,7 +6472,11 @@ Slug: ${draft.slug}`;
         await runMetaPermissionsHeartbeat(config.metaWabaAccessToken!);
         // 1) descoberta: cadastra automaticamente campanhas novas criadas no Ads Manager
         if (config.metaAdAccountId) {
-          await discoverNewCampaigns(supabase.getClient(), config.metaWabaAccessToken!, config.metaAdAccountId);
+          console.log(`[discover-campaigns] iniciando descoberta act=${config.metaAdAccountId}`);
+          const discResult = await discoverNewCampaigns(supabase.getClient(), config.metaWabaAccessToken!, config.metaAdAccountId);
+          console.log(`[discover-campaigns] resultado: ${discResult.discovered} campanhas no Meta, ${discResult.inserted} novas cadastradas`);
+        } else {
+          console.warn('[discover-campaigns] META_AD_ACCOUNT_ID nao setado, pulando descoberta automatica');
         }
         // 2) sync status/name/budget Meta -> DB (toda campanha cadastrada)
         await syncCampaignStatuses(supabase.getClient(), config.metaWabaAccessToken!);
