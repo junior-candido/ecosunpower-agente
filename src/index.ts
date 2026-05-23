@@ -2398,6 +2398,31 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           }
         }
       }
+
+      // 🎯 Alerta proativo Eva → Junior: lead novo Google Ads (Search).
+      // Dispara so na PRIMEIRA mensagem do lead com tag #gad-*, idempotente
+      // via app_flags (lock_key=alert_new_gads_<leadId>). Texto rico parseando
+      // cidade/conta da mensagem pre-preenchida da landing /cotacao.
+      // Fire-and-forget: nunca bloqueia processamento normal.
+      if (isNewLead && detectedOrigin && detectedOrigin.source === 'ad_google_cta_wa') {
+        void (async () => {
+          try {
+            const { alertNewLeadGoogleAds } = await import('./modules/eva-alerts.js');
+            const freshLead = await supabase.getLeadByPhone(from);
+            await alertNewLeadGoogleAds(
+              { client: supabase.getClient(), engineerPhone: config.engineerPhone, sendText, metaWaba: metaWaba ?? null },
+              leadId,
+              freshLead?.name ?? null,
+              from,
+              text,
+              detectedOrigin.campaign,
+            );
+          } catch (err) {
+            console.warn('[alerts] alertNewLeadGoogleAds falhou:', (err as Error).message);
+          }
+        })();
+      }
+
       const conversation = await supabase.getOrCreateConversation(leadId);
 
       // Auto-ack template: dispara template Utility em primeira sessao ou pausa

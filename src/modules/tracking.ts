@@ -15,6 +15,7 @@ export type TrackingSource =
   | 'organico_fb'
   | 'ad_ig_cta_wa'
   | 'ad_fb_cta_wa'
+  | 'ad_google_cta_wa'
   | 'reengajamento_link'
   | 'direto';
 
@@ -27,8 +28,8 @@ export interface TrackingParsed {
 
 // Aceita tipos: ig (organic Instagram), fb (organic Facebook), post (generic
 // organic post — quando nao sabemos plataforma, detecta cruzando com marketing_drafts),
-// ad (paid ad CTA), rem (reengajamento)
-const TAG_RE = /#(ig|fb|post|ad|rem)-([a-z0-9]{4,20})\b/i;
+// ad (paid ad CTA Meta), gad (paid ad Google Search), rem (reengajamento)
+const TAG_RE = /#(ig|fb|post|ad|gad|rem)-([a-z0-9]{4,20})\b/i;
 // post-hoc: tag tipo "post" e gerada por randomBytes(3) em hex, entao exige
 // EXATAMENTE 6 chars hex pra reduzir falso-positivo com palavras comuns
 // (ex: "#post-hoje" nao bate, "#ig-brasilia" nao bate).
@@ -52,6 +53,7 @@ export function parseTrackingTag(text: string): TrackingParsed | null {
     fb: 'organico_fb',
     post: 'organico_ig', // generic organic post — default IG (primary channel)
     ad: 'ad_ig_cta_wa', // fallback pra ad_*, pode ser refinado se tivermos meta
+    gad: 'ad_google_cta_wa', // Google Ads Search — landing /cotacao com gclid
     rem: 'reengajamento_link',
   };
 
@@ -67,7 +69,7 @@ export function parseTrackingTag(text: string): TrackingParsed | null {
 export function buildTrackedWaLink(
   phone: string,
   prefilledIntro: string,
-  type: 'ig' | 'fb' | 'post' | 'ad' | 'rem',
+  type: 'ig' | 'fb' | 'post' | 'ad' | 'gad' | 'rem',
   id: string,
 ): string {
   // Sanitiza phone (so digitos)

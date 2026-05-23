@@ -17,6 +17,7 @@ import { formatPhoneBR } from './meta-leadgen.js';
 type AlertKind =
   | 'cadence_replied'
   | 'new_lead_campaign'
+  | 'new_lead_google_ads'
   | 'status_agendado'
   | 'eva_error';
 
@@ -139,6 +140,60 @@ export async function alertNewLeadFromCampaign(
     console.log(`[alerts] new_lead_campaign disparado pra lead ${leadId} (${source})`);
   } catch (err) {
     console.warn(`[alerts] falha ao enviar new_lead_campaign:`, (err as Error).message);
+  }
+}
+
+/**
+ * 🎯 ALERTA: Lead novo vindo do GOOGLE ADS Search (canal=google).
+ * Texto rico parseando cidade/conta da mensagem inicial (landing /cotacao
+ * pré-preenche `📍 Cidade:` e `⚡ Conta de luz:` no wa.me). Inclui botões
+ * pra Junior assumir conversa rapidinho se for lead quente.
+ *
+ * Dispara só na PRIMEIRA mensagem do lead, idempotente via app_flags.
+ */
+export async function alertNewLeadGoogleAds(
+  ctx: AlertContext,
+  leadId: string,
+  leadName: string | null,
+  leadPhone: string,
+  firstMessageText: string,
+  utmCampaign: string | null,
+): Promise<void> {
+  const lockKey = `alert_new_gads_${leadId}`;
+  if (!(await acquireAlertLock(ctx.client, lockKey))) return;
+
+  // Parseia cidade e conta do texto pré-preenchido da landing /cotacao
+  const cidadeMatch = firstMessageText.match(/📍\s*Cidade:\s*([^\n]+)/i);
+  const contaMatch = firstMessageText.match(/⚡\s*Conta de luz:\s*([^\n]+)/i);
+  const cidade = cidadeMatch ? cidadeMatch[1].trim() : null;
+  const conta = contaMatch ? contaMatch[1].trim() : null;
+
+  const lines: string[] = [
+    `🎯 *LEAD GOOGLE ADS*`,
+    ``,
+    `${leadName ?? 'Sem nome ainda'} — ${formatPhoneShort(leadPhone)}`,
+  ];
+  if (cidade) lines.push(`📍 ${cidade}`);
+  if (conta) lines.push(`⚡ Conta: ${conta}`);
+  if (utmCampaign) lines.push(`📣 Campanha: ${utmCampaign}`);
+  lines.push(``);
+  lines.push(`Eva ja respondeu. Assumir agora se for quente.`);
+  const text = lines.join('\n');
+
+  try {
+    await sendAdminWithButtons(
+      { metaWaba: ctx.metaWaba ?? null, sendText: ctx.sendText },
+      ctx.engineerPhone,
+      text,
+      [
+        { id: `evabt:lead-view:${leadId}`, title: '👤 Ver perfil' },
+        { id: `evabt:lead-pause:${leadId}`, title: '✋ Assumir' },
+        { id: `evabt:lead-optout:${leadId}`, title: '🚫 Marcar lixo' },
+      ],
+    );
+    console.log(`[alerts] new_lead_google_ads disparado pra lead ${leadId} (cidade=${cidade ?? 'n/a'}, conta=${conta ?? 'n/a'})`);
+  } catch (err) {
+    console.warn(`[alerts] falha ao enviar new_lead_google_ads:`, (err as Error).message);
   }
 }
 
