@@ -17,6 +17,10 @@ export interface LeadRow {
   has_cadence_pending: boolean;
   alerta: 'silente_sem_cadencia' | 'silente_com_cadencia' | 'cliente_respondeu' | 'novo' | 'normal';
   archived_at: string | null;
+  installation_status: string | null;
+  loss_reason: string | null;
+  loss_notes: string | null;
+  lost_at: string | null;
 }
 
 export interface LeadDetail extends LeadRow {
@@ -52,10 +56,13 @@ export interface LeadsResult {
   countByStatus: Record<string, number>;
 }
 
-// Valores que existem no enum `lead_status` em Postgres. NAO incluir 'perdido' —
-// nao existe no enum (erro 22P02 ao filtrar). Descarte de lead hoje usa
-// `contact_type='inviavel'` ou archived_at, nao status='perdido'.
-const STATUS_OPTIONS = ['novo', 'qualificando', 'qualificado', 'agendado', 'transferido'];
+// Valores que existem no enum `lead_status` em Postgres. Migration 039 adiciona 'perdido'.
+const STATUS_OPTIONS = ['novo', 'qualificando', 'qualificado', 'agendado', 'transferido', 'perdido'];
+
+// Tabs especiais (nao sao status do enum — sao filtros derivados):
+// - 'ganhos'   = installation_status IN CLIENTE_STATUSES (virou cliente)
+// - 'perdidos' = status='perdido'
+// - 'todos'    = todos os leads no funil (nao-clientes, nao-arquivados, nao-perdidos)
 
 export async function listLeads(
   client: SupabaseClient,
@@ -65,34 +72,60 @@ export async function listLeads(
   const limit = Math.max(1, Math.min(200, filters.limit ?? 50));
   const offset = Math.max(0, filters.offset ?? 0);
 
-  // Contagens por status (sempre todas, pra mostrar nas tabs)
+  // baseFilter exclui clientes fechados. Usado em 'todos' e nos filtros por status normal.
   const baseFilter = `installation_status.is.null,installation_status.not.in.(${CLIENTE_STATUSES.join(',')})`;
+
+  // Contagens — 6 status normais + ganhos + perdidos. Todas em paralelo.
   const countByStatus: Record<string, number> = {};
-  const countQueries = await Promise.all(
-    STATUS_OPTIONS.map((s) =>
+  const countQueries = await Promise.all([
+    // Por status normal (5 valores do enum exceto perdido)
+    ...STATUS_OPTIONS.filter((s) => s !== 'perdido').map((s) =>
       client.from('leads')
         .select('id', { count: 'exact', head: true })
         .or(baseFilter)
         .is('archived_at', null)
         .eq('status', s),
     ),
-  );
-  STATUS_OPTIONS.forEach((s, i) => {
+    // Perdidos (status='perdido', ignora installation_status)
+    client.from('leads')
+      .select('id', { count: 'exact', head: true })
+      .is('archived_at', null)
+      .eq('status', 'perdido'),
+    // Ganhos (installation_status em CLIENTE_STATUSES)
+    client.from('leads')
+      .select('id', { count: 'exact', head: true })
+      .is('archived_at', null)
+      .in('installation_status', CLIENTE_STATUSES),
+  ]);
+  const statusNormais = STATUS_OPTIONS.filter((s) => s !== 'perdido');
+  statusNormais.forEach((s, i) => {
     countByStatus[s] = countQueries[i].count ?? 0;
   });
-  countByStatus.todos = Object.values(countByStatus).reduce((a, b) => a + b, 0);
+  countByStatus.perdido = countQueries[statusNormais.length].count ?? 0;
+  countByStatus.ganhos = countQueries[statusNormais.length + 1].count ?? 0;
+  countByStatus.todos = statusNormais.reduce((sum, s) => sum + (countByStatus[s] ?? 0), 0);
 
+  // Query principal — depende da tab selecionada
   let q = client
     .from('leads')
     .select(
-      'id, phone, name, status, acquisition_source, eva_active, opt_out, maintenance_client, created_at, updated_at, installation_status, archived_at',
+      'id, phone, name, status, acquisition_source, eva_active, opt_out, maintenance_client, created_at, updated_at, installation_status, archived_at, loss_reason, loss_notes, lost_at',
       { count: 'exact' },
     )
-    .or(baseFilter)
     .is('archived_at', null)
     .order('updated_at', { ascending: false });
 
-  if (filters.status && filters.status !== 'todos') q = q.eq('status', filters.status);
+  // Tabs especiais: ganhos e perdidos
+  if (filters.status === 'ganhos') {
+    q = q.in('installation_status', CLIENTE_STATUSES);
+  } else if (filters.status === 'perdidos' || filters.status === 'perdido') {
+    q = q.eq('status', 'perdido');
+  } else {
+    // Tab normal: aplica baseFilter (exclui clientes) E filtra por status se especificado
+    q = q.or(baseFilter);
+    if (filters.status && filters.status !== 'todos') q = q.eq('status', filters.status);
+  }
+
   if (filters.eva_active !== undefined) q = q.eq('eva_active', filters.eva_active);
   if (search) q = q.or(`name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`);
 
@@ -144,6 +177,10 @@ export async function listLeads(
       has_cadence_pending,
       alerta,
       archived_at: l.archived_at ?? null,
+      installation_status: l.installation_status ?? null,
+      loss_reason: l.loss_reason ?? null,
+      loss_notes: l.loss_notes ?? null,
+      lost_at: l.lost_at ?? null,
     };
   });
 
@@ -207,6 +244,10 @@ export async function getLeadDetail(client: SupabaseClient, id: string): Promise
     has_cadence_pending,
     alerta,
     archived_at: lead.archived_at ?? null,
+    installation_status: lead.installation_status ?? null,
+    loss_reason: lead.loss_reason ?? null,
+    loss_notes: lead.loss_notes ?? null,
+    lost_at: lead.lost_at ?? null,
     city: lead.city,
     neighborhood: lead.neighborhood,
     profile: lead.profile,

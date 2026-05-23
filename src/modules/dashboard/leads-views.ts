@@ -99,7 +99,10 @@ export function renderLeadsListPage(
       ${tab('qualificando', '🎯 Qualificando', counts.qualificando ?? null, 'bg-violet-600')}
       ${tab('qualificado', '⭐ Qualificados', counts.qualificado ?? null, 'bg-fuchsia-600')}
       ${tab('agendado', '📅 Agendados', counts.agendado ?? null, 'bg-amber-600')}
-      ${tab('transferido', '✅ Transferidos', counts.transferido ?? null, 'bg-emerald-600')}
+      ${tab('transferido', '➡️ Transferidos', counts.transferido ?? null, 'bg-emerald-600')}
+      <span class="text-slate-300 px-1 self-center">·</span>
+      ${tab('ganhos', '🏆 Ganhos', counts.ganhos ?? null, 'bg-green-700')}
+      ${tab('perdidos', '❌ Perdidos', counts.perdido ?? null, 'bg-slate-600')}
     </div>
   `;
 
@@ -135,6 +138,16 @@ export function renderLeadsListPage(
       </div>
     </div>` : '';
 
+  const CLIENTE_STATUSES_SET = new Set(['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido']);
+  const LOSS_REASON_LABELS: Record<string, string> = {
+    nao_atende: 'Não atende',
+    concorrente: 'Concorrente',
+    sem_orcamento: 'Sem orçamento',
+    fora_area: 'Fora da área',
+    sem_interesse: 'Sem interesse',
+    outro: 'Outro',
+  };
+
   const tableRows = rows
     .map((l) => {
       const nome = escapeHtml(l.name ?? 'Sem nome');
@@ -142,11 +155,20 @@ export function renderLeadsListPage(
       const origem = l.acquisition_source
         ? escapeHtml(l.acquisition_source).replace('campanha_1_meta_lead_ads', 'Campanha Meta')
         : '—';
+      // Ganho: linka pra cockpit completo (/clientes/:id) — onde tem todo histórico
+      const isGanho = l.installation_status && CLIENTE_STATUSES_SET.has(l.installation_status);
+      const perfilUrl = isGanho ? `/dashboard/clientes/${l.id}` : `/dashboard/leads/${l.id}`;
+      const isPerdido = l.status === 'perdido';
+      const rowOpacity = isPerdido ? 'opacity-70' : '';
+      // Coluna info contextual: motivo de perda se perdido; senão alerta normal
+      const colInfo = isPerdido && l.loss_reason
+        ? `<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-100 text-rose-800" title="${escapeHtml(l.loss_notes ?? '')}">${escapeHtml(LOSS_REASON_LABELS[l.loss_reason] ?? l.loss_reason)}</span>`
+        : alertaBadge(l.alerta);
       return `
-        <tr class="border-t border-slate-200 hover:bg-slate-50">
-          <td class="px-4 py-3">${alertaBadge(l.alerta)}</td>
+        <tr class="border-t border-slate-200 hover:bg-slate-50 ${rowOpacity}">
+          <td class="px-4 py-3">${colInfo}</td>
           <td class="px-4 py-3">
-            <a href="/dashboard/leads/${l.id}" class="font-medium text-slate-900 hover:text-indigo-600">${nome}</a>
+            <a href="${perfilUrl}" class="font-medium text-slate-900 hover:text-indigo-600">${nome}${isGanho ? ' 🏆' : ''}</a>
             <div class="text-xs text-slate-500">${phoneFmt}</div>
           </td>
           <td class="px-4 py-3">${statusBadge(l.status)}</td>
