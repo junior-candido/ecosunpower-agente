@@ -12,6 +12,26 @@ function brl(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+/**
+ * CTA proeminente pra cliente solicitar visita técnica pós-venda.
+ * NÃO mostrar valor aqui — Eva conversa primeiro, qualifica, e só fala
+ * R$ 350 se cliente perguntar ou na hora de fechar agendamento.
+ * Tag `#visita-tecnica` na mensagem pra Eva detectar contexto pós-venda
+ * (diferenciado de visita de prospect que é grátis).
+ */
+function renderCtaVisita(apelido: string): string {
+  const evaPhone = '5561996978781';
+  const msg = `Olá! Acabei de ver o relatório da minha usina (${apelido}) e gostaria de agendar uma visita técnica pra análise do sistema. #visita-tecnica`;
+  const wa = `https://wa.me/${evaPhone}?text=${encodeURIComponent(msg)}`;
+  return `<div style="margin:16px 24px;padding:18px;background:linear-gradient(135deg,#FFC72C 0%,#F5A623 100%);border-radius:14px;text-align:center">
+    <div style="font-size:13px;color:#5a3e00;font-weight:600;letter-spacing:.02em">QUER UM DIAGNÓSTICO PRESENCIAL?</div>
+    <a href="${wa}" style="display:inline-block;margin-top:10px;padding:13px 22px;background:#0F172A;color:#FFC72C;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px">
+      🔧 Agendar visita técnica
+    </a>
+    <div style="font-size:12px;color:#5a3e00;margin-top:8px;opacity:.85">Responsável Técnico (CFT/CREA) vai ao local · análise + medições + laudo</div>
+  </div>`;
+}
+
 export function renderRelatorioHtml(data: RelatorioData, modo: ModoRelatorio): string {
   const C = `--primary-600:#0E7CB8;--primary-700:#0B5A87;--accent-500:#FFC72C;--dark:#0F172A;--muted:#64748B`;
   const local = [data.cidade, data.uf].filter(Boolean).join('/') || '—';
@@ -58,6 +78,7 @@ img.logo{height:34px;width:auto;background:#fff;border-radius:8px;padding:5px}</
     <div style="opacity:.85;font-size:13px">${esc(local)} · ${esc(data.marcaInversor)} · ${data.potenciaKwp ?? '—'} kWp · idade ${esc(data.garantia.idadeTexto)}</div>
   </div>
   ${saudacao}${semDados}
+  ${renderCtaVisita(data.apelido)}
   <div class="kpis">
     <div class="kpi"><div>Geração no mês</div><b>${data.kpis.mesKwh.toFixed(0)} kWh</b></div>
     <div class="kpi"><div>Geração no ano</div><b>${data.kpis.anoKwh.toFixed(0)} kWh</b></div>
