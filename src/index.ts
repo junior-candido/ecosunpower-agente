@@ -1491,6 +1491,79 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // /google [dias]: snapshot Google Ads no zap pra admin. Sem dias = 7d default.
+  // /google 30 = ultimos 30 dias. Reusa fetchGoogleAdsSummary do dashboard.
+  // Resposta inclui comparativo 7d vs 30d quando dias=7 (default) e dashboard
+  // link pra detalhes.
+  async function tryHandleGoogleAdsCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const t = text.trim().toLowerCase();
+    const m = t.match(/^\/(google|ads|adwords)(?:\s+(\d+))?$/);
+    if (!m) return false;
+    const dias = m[2] ? parseInt(m[2], 10) : 7;
+    if (dias < 1 || dias > 90) {
+      await sendText(from, '❌ Período inválido. Use entre 1 e 90 dias. Ex: /google 30');
+      return true;
+    }
+
+    try {
+      const { fetchGoogleAdsSummary } = await import('./modules/dashboard/marketing-queries.js');
+      const client = supabase.getClient();
+      const periodo = await fetchGoogleAdsSummary(client, dias);
+
+      const fmtBRL = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
+      const fmtN = (n: number) => n.toLocaleString('pt-BR');
+      const fmtCPC = (v: number | null) => v != null ? `R$ ${v.toFixed(2).replace('.', ',')}` : '--';
+      const fmtCTR = (v: number | null) => v != null ? `${v.toFixed(1).replace('.', ',')}%` : '--';
+
+      // Se ainda nao tem dado nenhum, mostra estado amigavel
+      if (periodo.dias_com_dado === 0) {
+        const ultimaSync = periodo.ultima_sync_at
+          ? new Date(periodo.ultima_sync_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+          : 'nunca';
+        await sendText(from,
+          `📊 *Google Ads — sem dado ainda*\n\n` +
+          `🚦 Aguardando primeira veiculação.\n` +
+          `Última sync do cron: ${ultimaSync}\n\n` +
+          `Quando campanha aprovar e gastar primeiro real, retorna em até 30min.`,
+        );
+        return true;
+      }
+
+      const linhas = [
+        `📊 *Google Ads — últimos ${dias}d*`,
+        ``,
+        `💰 ${fmtBRL(periodo.spend_cents)} gastos`,
+        `👆 ${fmtN(periodo.clicks)} cliques | CPC ${fmtCPC(periodo.cpc_brl)}`,
+        `👁️ ${fmtN(periodo.impressions)} impressões | CTR ${fmtCTR(periodo.ctr_pct)}`,
+      ];
+
+      // Comparativo 30d quando default 7d pedido
+      if (dias === 7) {
+        const m30 = await fetchGoogleAdsSummary(client, 30);
+        if (m30.dias_com_dado > 0) {
+          linhas.push(``);
+          linhas.push(`*30 dias:* ${fmtBRL(m30.spend_cents)} | ${fmtN(m30.clicks)} cliques | CPC ${fmtCPC(m30.cpc_brl)} | CTR ${fmtCTR(m30.ctr_pct)}`);
+        }
+      }
+
+      if (periodo.ultima_sync_at) {
+        const sync = new Date(periodo.ultima_sync_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+        linhas.push(``);
+        linhas.push(`_Sync: ${sync}_`);
+      }
+
+      linhas.push(`🔗 dashboard.ecosunpower.eng.br/dashboard/marketing`);
+
+      await sendText(from, linhas.join('\n'));
+      return true;
+    } catch (err) {
+      console.warn('[google-cmd] falhou:', (err as Error).message);
+      await sendText(from, `❌ Erro ao buscar Google Ads: ${(err as Error).message}`);
+      return true;
+    }
+  }
+
   // /reativar-base [N]: dispara template MARKETING 'reativacao_lead_v1' pra
   // ate N leads com acquisition_source='terceirizada_recovered' que ainda
   // nao foram reativados. Delay 30-90s entre cada pra nao acender alerta
@@ -2265,6 +2338,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /banner-kits — gera banner tabela 6 kits OnGrid (criativo Meta Ads)
     if (await tryHandleBannerKitsCommand(from, text)) return;
+
+    // /google [dias] — snapshot Google Ads (gasto, cliques, CPC, CTR) via WhatsApp
+    if (await tryHandleGoogleAdsCommand(from, text)) return;
 
     // /reativar-base — dispara template MARKETING pra leads frios da base terceirizada
     if (await tryHandleReativarBaseCommand(from, text)) return;
