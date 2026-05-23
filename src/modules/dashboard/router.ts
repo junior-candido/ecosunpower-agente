@@ -553,7 +553,8 @@ export function createDashboardRouter(
       const limit = Math.max(1, Math.min(200, parseInt(String(req.query.limit ?? '20')) || 20));
       const offset = Math.max(0, parseInt(String(req.query.offset ?? '0')) || 0);
       const { buildMarketingInsights } = await import('./ai-summary.js');
-      const [kpis, campaignsResult, creatives, alerts, channels, insights, googleAds7d, googleAds30d] = await Promise.all([
+      const { fetchGoogleAnalyticsSummary } = await import('../marketing/google-analytics/index.js');
+      const [kpis, campaignsResult, creatives, alerts, channels, insights, googleAds7d, googleAds30d, ga4_30d] = await Promise.all([
         fetchMarketingKpis(supabase),
         listActiveCampaigns(supabase, { status, search, limit, offset }),
         listRecentCreatives(supabase, 8),
@@ -562,6 +563,10 @@ export function createDashboardRouter(
         buildMarketingInsights(supabase),
         fetchGoogleAdsSummary(supabase, 7),
         fetchGoogleAdsSummary(supabase, 30),
+        fetchGoogleAnalyticsSummary(30).catch((err) => ({
+          sessions: 0, users: 0, pageviews: 0, dias_com_dado: 0, channels: [], top_pages: [],
+          error: (err as Error).message,
+        })),
       ]);
       res.send(renderMarketingPage({
         kpis,
@@ -575,6 +580,7 @@ export function createDashboardRouter(
         insights,
         googleAds7d,
         googleAds30d,
+        ga4_30d,
       }));
     } catch (err) {
       console.error('[dashboard/marketing]', err);

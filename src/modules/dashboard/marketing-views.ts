@@ -44,6 +44,7 @@ import type { Insight } from './ai-summary.js';
 import { renderInsightsBanner } from './ai-summary.js';
 
 import type { GoogleAdsSummary } from './marketing-queries.js';
+import type { GoogleAnalyticsSummary } from '../marketing/google-analytics/index.js';
 
 export interface MarketingPageInput {
   kpis: MarketingKpis;
@@ -57,6 +58,101 @@ export interface MarketingPageInput {
   insights?: Insight[];
   googleAds7d?: GoogleAdsSummary;
   googleAds30d?: GoogleAdsSummary;
+  ga4_30d?: GoogleAnalyticsSummary;
+}
+
+function renderGoogleAnalyticsSection(s?: GoogleAnalyticsSummary): string {
+  const card = (label: string, valor: string, sub: string, cor: string) => `
+    <div class="bg-white border border-slate-200 rounded-lg p-4">
+      <div class="text-[10px] text-slate-500 uppercase tracking-wider">${label}</div>
+      <div class="text-2xl font-bold ${cor} mt-1">${valor}</div>
+      <div class="text-[10px] text-slate-500 mt-1">${sub}</div>
+    </div>`;
+
+  if (!s || s.error) {
+    return `
+      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-lg font-semibold text-slate-900">🌐 Site & Tráfego (Google Analytics)</h2>
+        </div>
+        <div class="bg-slate-50 border border-dashed border-slate-300 rounded-lg p-6 text-center text-sm text-slate-600">
+          ${s?.error ? `⚠️ ${escapeHtml(s.error)}` : '🚦 Aguardando dado (GA4 acabou de subir tag, pode levar até 24h pra primeiros dados aparecerem na API).'}
+        </div>
+      </section>
+    `;
+  }
+
+  const semSessao = s.sessions === 0;
+
+  // Top 3 canais por sessions
+  const topChannels = s.channels.slice().sort((a, b) => b.sessions - a.sessions).slice(0, 5);
+  const channelRows = topChannels.length === 0
+    ? `<tr><td colspan="4" class="text-center text-slate-500 py-4">Sem dado de canal ainda.</td></tr>`
+    : topChannels.map((c) => `
+        <tr class="border-t border-slate-100">
+          <td class="px-3 py-2 text-sm text-slate-900">${escapeHtml(c.channel)}</td>
+          <td class="px-3 py-2 text-sm text-slate-700">${c.sessions.toLocaleString('pt-BR')}</td>
+          <td class="px-3 py-2 text-sm text-slate-700">${c.users.toLocaleString('pt-BR')}</td>
+          <td class="px-3 py-2 text-sm text-slate-700">${c.pageviews.toLocaleString('pt-BR')}</td>
+        </tr>`).join('');
+
+  const topPagesRows = s.top_pages.length === 0
+    ? `<tr><td colspan="2" class="text-center text-slate-500 py-4">Sem dado de página.</td></tr>`
+    : s.top_pages.map((p) => `
+        <tr class="border-t border-slate-100">
+          <td class="px-3 py-2 text-sm text-slate-900 font-mono text-xs">${escapeHtml(p.path)}</td>
+          <td class="px-3 py-2 text-sm text-slate-700">${p.pageviews.toLocaleString('pt-BR')}</td>
+        </tr>`).join('');
+
+  return `
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8 overflow-x-auto">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-lg font-semibold text-slate-900">🌐 Site & Tráfego (Google Analytics)</h2>
+          <p class="text-xs text-slate-500">Últimos 30 dias · GA4 propriedade ${escapeHtml(String(process.env.GOOGLE_ANALYTICS_PROPERTY_ID ?? '—'))}</p>
+        </div>
+      </div>
+
+      ${semSessao
+        ? `<div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4 text-sm text-amber-800">
+            🚦 GA4 está conectado mas ainda não recebeu sessão. Pode levar 24-48h pra primeiros dados aparecerem. Cloudflare Analytics já está coletando em paralelo.
+          </div>`
+        : `<div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
+            ${card('Sessões', s.sessions.toLocaleString('pt-BR'), 'visitas totais', 'text-slate-900')}
+            ${card('Usuários', s.users.toLocaleString('pt-BR'), 'únicos', 'text-sky-700')}
+            ${card('Pageviews', s.pageviews.toLocaleString('pt-BR'), 'páginas vistas', 'text-emerald-700')}
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+              <h3 class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">Tráfego por canal</h3>
+              <table class="w-full text-left">
+                <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th class="px-3 py-2">Canal</th>
+                    <th class="px-3 py-2">Sessões</th>
+                    <th class="px-3 py-2">Usuários</th>
+                    <th class="px-3 py-2">Pageviews</th>
+                  </tr>
+                </thead>
+                <tbody>${channelRows}</tbody>
+              </table>
+            </div>
+            <div>
+              <h3 class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">Top 5 páginas</h3>
+              <table class="w-full text-left">
+                <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th class="px-3 py-2">Path</th>
+                    <th class="px-3 py-2">Pageviews</th>
+                  </tr>
+                </thead>
+                <tbody>${topPagesRows}</tbody>
+              </table>
+            </div>
+          </div>`}
+    </section>
+  `;
 }
 
 function renderGoogleAdsSection(s7d?: GoogleAdsSummary, s30d?: GoogleAdsSummary): string {
@@ -354,6 +450,8 @@ export function renderMarketingPage(input: MarketingPageInput): string {
     </section>
 
     ${renderGoogleAdsSection(input.googleAds7d, input.googleAds30d)}
+
+    ${renderGoogleAnalyticsSection(input.ga4_30d)}
 
     ${renderChannelsSection(channels)}
   `;
