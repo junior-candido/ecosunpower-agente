@@ -1101,6 +1101,44 @@ export class SupabaseService {
     return { ok: true };
   }
 
+  async marcarLeadPerdido(
+    leadId: string,
+    reason: string,
+    notes?: string | null,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const validReasons = ['nao_atende', 'concorrente', 'sem_orcamento', 'fora_area', 'sem_interesse', 'outro'];
+    if (!validReasons.includes(reason)) {
+      return { ok: false, error: `Motivo invalido: ${reason}` };
+    }
+    const { error } = await this.client
+      .from('leads')
+      .update({
+        status: 'perdido',
+        loss_reason: reason,
+        loss_notes: notes?.trim() || null,
+        lost_at: new Date().toISOString(),
+        eva_active: false, // pausa Eva automaticamente
+      })
+      .eq('id', leadId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }
+
+  async desmarcarLeadPerdido(leadId: string): Promise<{ ok: boolean; error?: string }> {
+    // Volta pra 'qualificando' (estado neutro) — Junior pode reclassificar manualmente
+    const { error } = await this.client
+      .from('leads')
+      .update({
+        status: 'qualificando',
+        loss_reason: null,
+        loss_notes: null,
+        lost_at: null,
+      })
+      .eq('id', leadId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }
+
   async getClienteByLeadId(leadId: string): Promise<any | null> {
     const { data, error } = await this.client.from('leads').select('*').eq('id', leadId).single();
     if (error) {

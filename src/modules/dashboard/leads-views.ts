@@ -316,8 +316,13 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
         <button class="px-3 py-1 rounded-md text-xs bg-slate-700 text-white hover:bg-slate-800">✏️ Salvar</button>
       </form>
 
-      <!-- Bloco 4: Arquivar (reversivel) ou Remover (destrutivo) -->
+      <!-- Bloco 4: Marcar perdido / Arquivar / Remover -->
       <div class="pt-2 border-t border-slate-100 flex flex-wrap gap-2">
+        ${(lead as any).status === 'perdido'
+          ? `<form method="POST" action="/dashboard/leads/${lead.id}/unmark-lost" onsubmit="return confirm('Reverter status de Perdido para Qualificando?')">
+              <button class="px-3 py-1.5 rounded-lg text-xs bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200">↩️ Reabrir lead</button>
+            </form>`
+          : `<button type="button" onclick="document.getElementById('modal-marcar-perdido').classList.remove('hidden')" class="px-3 py-1.5 rounded-lg text-xs bg-rose-100 text-rose-700 border border-rose-300 hover:bg-rose-200">❌ Marcar perdido</button>`}
         ${lead.archived_at
           ? `<form method="POST" action="/dashboard/leads/${lead.id}/desarquivar">
               <button class="px-3 py-1.5 rounded-lg text-xs bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200">↩️ Restaurar lead</button>
@@ -332,9 +337,71 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
     </div>
   `;
 
+  // Modal de marcar perdido (escondido por padrão)
+  const modalMarcarPerdido = (lead as any).status === 'perdido' ? '' : `
+    <div id="modal-marcar-perdido" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-4" onclick="if(event.target===this)this.classList.add('hidden')">
+      <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+        <div class="flex items-start justify-between mb-4">
+          <div>
+            <h3 class="text-lg font-bold text-slate-900">❌ Marcar lead como perdido</h3>
+            <p class="text-xs text-slate-500 mt-1">Lead sai do funil ativo. Eva é pausada. Reversível.</p>
+          </div>
+          <button type="button" onclick="document.getElementById('modal-marcar-perdido').classList.add('hidden')" class="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
+        </div>
+        <form method="POST" action="/dashboard/leads/${lead.id}/mark-lost" class="space-y-3">
+          <div>
+            <label class="text-xs font-semibold text-slate-700 uppercase tracking-wider">Motivo *</label>
+            <select name="reason" required class="w-full mt-1 px-3 py-2 rounded border border-slate-300 text-sm">
+              <option value="">Selecione...</option>
+              <option value="nao_atende">Não atende mais (sumiu)</option>
+              <option value="concorrente">Fechou com concorrente</option>
+              <option value="sem_orcamento">Sem orçamento / momento</option>
+              <option value="fora_area">Fora da área de atuação</option>
+              <option value="sem_interesse">Sem interesse no produto</option>
+              <option value="outro">Outro (descreva abaixo)</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs font-semibold text-slate-700 uppercase tracking-wider">Observação (opcional)</label>
+            <textarea name="notes" rows="3" placeholder="Ex: cliente recebeu proposta da Solfácil 15% mais barata" class="w-full mt-1 px-3 py-2 rounded border border-slate-300 text-sm resize-none"></textarea>
+          </div>
+          <div class="flex gap-2 pt-2 justify-end">
+            <button type="button" onclick="document.getElementById('modal-marcar-perdido').classList.add('hidden')" class="px-4 py-2 rounded text-sm bg-slate-100 text-slate-700 hover:bg-slate-200">Cancelar</button>
+            <button type="submit" class="px-4 py-2 rounded text-sm bg-rose-600 text-white hover:bg-rose-700 font-semibold">Confirmar perda</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+
+  const perdidoBanner = (lead as any).status === 'perdido' && (lead as any).loss_reason ? `
+    <div class="bg-rose-50 border-l-4 border-rose-500 px-4 py-3 mb-4 rounded-r-lg">
+      <div class="flex items-start gap-3">
+        <div class="text-rose-600 text-lg">❌</div>
+        <div class="flex-1">
+          <div class="font-semibold text-rose-900 text-sm">Lead marcado como perdido</div>
+          <div class="text-sm text-rose-800 mt-1">
+            <strong>Motivo:</strong> ${escapeHtml(({
+              nao_atende: 'Não atende mais (sumiu)',
+              concorrente: 'Fechou com concorrente',
+              sem_orcamento: 'Sem orçamento / momento',
+              fora_area: 'Fora da área de atuação',
+              sem_interesse: 'Sem interesse no produto',
+              outro: 'Outro',
+            } as Record<string, string>)[(lead as any).loss_reason] ?? (lead as any).loss_reason)}
+          </div>
+          ${(lead as any).loss_notes ? `<div class="text-xs text-rose-700 mt-1 italic">"${escapeHtml((lead as any).loss_notes)}"</div>` : ''}
+          ${(lead as any).lost_at ? `<div class="text-[10px] text-rose-600 mt-1">${new Date((lead as any).lost_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</div>` : ''}
+        </div>
+      </div>
+    </div>
+  ` : '';
+
   const body = `
     <div class="max-w-5xl mx-auto px-4 py-6">
       <a href="/dashboard/leads" class="text-sm text-indigo-600 hover:underline mb-4 inline-block">← Voltar pra lista</a>
+
+      ${perdidoBanner}
 
       <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-4">
         <div class="flex justify-between items-start">
@@ -357,6 +424,8 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
 
         ${acoes}
       </div>
+
+      ${modalMarcarPerdido}
 
       <div class="grid md:grid-cols-2 gap-4">
         <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6">

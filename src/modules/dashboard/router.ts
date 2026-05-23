@@ -477,6 +477,31 @@ export function createDashboardRouter(
     res.redirect('/dashboard/leads');
   });
 
+  router.post('/leads/:id/mark-lost', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const reason = String((req.body as any)?.reason ?? '').trim();
+    const notes = String((req.body as any)?.notes ?? '').trim();
+    if (!reason) {
+      return res.status(400).send('Motivo obrigatório. <a href="/dashboard/leads/' + id + '">← voltar</a>');
+    }
+    const r = await supabaseService.marcarLeadPerdido(id, reason, notes || null);
+    if (!r.ok) {
+      return res.status(400).send(
+        `<h2>Erro ao marcar perdido</h2><p>${escapeHtmlSimple(r.error ?? '')}</p><a href="/dashboard/leads/${id}">← voltar</a>`,
+      );
+    }
+    res.redirect(`/dashboard/leads/${id}`);
+  });
+
+  router.post('/leads/:id/unmark-lost', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const r = await supabaseService.desmarcarLeadPerdido(id);
+    if (!r.ok) return res.status(500).send(`erro: ${escapeHtmlSimple(r.error ?? '')}`);
+    res.redirect(`/dashboard/leads/${id}`);
+  });
+
   router.post('/leads/:id/desarquivar', async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
