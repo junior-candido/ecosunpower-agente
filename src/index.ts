@@ -6482,6 +6482,21 @@ Slug: ${draft.slug}`;
         await syncCampaignStatuses(supabase.getClient(), config.metaWabaAccessToken!);
         // 3) collect insights so das active
         await collectInsights(supabase.getClient(), config.metaWabaAccessToken!);
+
+        // 4) Google Ads → channel_daily_metrics (best-effort)
+        if (process.env.GOOGLE_ADS_DEVELOPER_TOKEN && process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID) {
+          try {
+            const { syncGoogleAdsToChannelMetrics } = await import('./modules/marketing/google-ads/sync.js');
+            const result = await syncGoogleAdsToChannelMetrics(supabase.getClient());
+            if (result.ok) {
+              console.log(`[google-ads-sync] OK: ${result.dias_processados} dias, ${result.total_spend_cents} centavos, ${result.total_clicks} clicks, ${result.total_impressions} impressions`);
+            } else {
+              console.warn(`[google-ads-sync] FALHOU: ${result.error}`);
+            }
+          } catch (err) {
+            console.warn(`[google-ads-sync] erro inesperado:`, (err as Error).message);
+          }
+        }
       } catch (err) {
         console.error('[insights] collector failed:', (err as Error).message);
       }
