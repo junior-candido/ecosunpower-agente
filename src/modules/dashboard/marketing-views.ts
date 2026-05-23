@@ -43,6 +43,8 @@ function timeAgo(iso: string | null): string {
 import type { Insight } from './ai-summary.js';
 import { renderInsightsBanner } from './ai-summary.js';
 
+import type { GoogleAdsSummary } from './marketing-queries.js';
+
 export interface MarketingPageInput {
   kpis: MarketingKpis;
   campaigns: CampaignRow[];
@@ -53,6 +55,65 @@ export interface MarketingPageInput {
   campaignsCounts?: { active: number; paused: number; total: number };
   campaignsTotal?: number;
   insights?: Insight[];
+  googleAds7d?: GoogleAdsSummary;
+  googleAds30d?: GoogleAdsSummary;
+}
+
+function renderGoogleAdsSection(s7d?: GoogleAdsSummary, s30d?: GoogleAdsSummary): string {
+  const has7d = s7d && s7d.dias_com_dado > 0;
+  const has30d = s30d && s30d.dias_com_dado > 0;
+  const semDado = !has7d && !has30d;
+
+  const card = (label: string, valor: string, sub: string, cor: string) => `
+    <div class="bg-white border border-slate-200 rounded-lg p-4">
+      <div class="text-[10px] text-slate-500 uppercase tracking-wider">${label}</div>
+      <div class="text-2xl font-bold ${cor} mt-1">${valor}</div>
+      <div class="text-[10px] text-slate-500 mt-1">${sub}</div>
+    </div>`;
+
+  const periodBlock = (label: string, s?: GoogleAdsSummary) => {
+    if (!s || s.dias_com_dado === 0) {
+      return `<div class="text-sm text-slate-400 italic">Sem dado em ${label}.</div>`;
+    }
+    const spendBrl = (s.spend_cents / 100).toFixed(2);
+    const cpcStr = s.cpc_brl != null ? `R$ ${s.cpc_brl.toFixed(2)}` : '—';
+    const ctrStr = s.ctr_pct != null ? `${s.ctr_pct.toFixed(2)}%` : '—';
+    return `
+      <div>
+        <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">${label} · ${s.dias_com_dado} dia(s) com dado</div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          ${card('Gasto', `R$ ${spendBrl}`, 'em anúncios', 'text-slate-900')}
+          ${card('Cliques', String(s.clicks), 'cliques nos anúncios', 'text-sky-700')}
+          ${card('Impressões', s.impressions.toLocaleString('pt-BR'), 'vezes exibido', 'text-slate-700')}
+          ${card('CPC', cpcStr, `CTR ${ctrStr}`, 'text-emerald-700')}
+        </div>
+      </div>`;
+  };
+
+  const ultimaSync = (s7d?.ultima_sync_at ?? s30d?.ultima_sync_at)
+    ? new Date(s7d?.ultima_sync_at ?? s30d!.ultima_sync_at!).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+    : 'nunca';
+
+  return `
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8 overflow-x-auto">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-lg font-semibold text-slate-900">📊 Google Ads</h2>
+          <p class="text-xs text-slate-500">Cron sync a cada 30 min. Última: ${ultimaSync}.</p>
+        </div>
+      </div>
+
+      ${semDado
+        ? `<div class="bg-slate-50 border border-dashed border-slate-300 rounded-lg p-6 text-center text-sm text-slate-600">
+            <div class="text-lg mb-2">🚦 Aguardando primeira campanha rodar</div>
+            <div>Credenciais OK, cron ativo. Quando você criar uma campanha no Google Ads (MCC 8617425872), o dado começa a aparecer aqui em até 30 min.</div>
+          </div>`
+        : `<div class="space-y-6">
+            ${periodBlock('Últimos 7 dias', s7d)}
+            ${periodBlock('Últimos 30 dias', s30d)}
+          </div>`}
+    </section>
+  `;
 }
 
 const CHANNEL_LABELS: Record<string, string> = {
@@ -290,6 +351,8 @@ export function renderMarketingPage(input: MarketingPageInput): string {
         ${alertsBlock}
       </div>
     </section>
+
+    ${renderGoogleAdsSection(input.googleAds7d, input.googleAds30d)}
 
     ${renderChannelsSection(channels)}
   `;

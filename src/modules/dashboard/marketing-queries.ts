@@ -95,6 +95,56 @@ export async function fetchMarketingKpis(supabase: SupabaseClient): Promise<Mark
   };
 }
 
+export interface GoogleAdsSummary {
+  /** Soma de spend em centavos no periodo */
+  spend_cents: number;
+  /** Soma de clicks no periodo */
+  clicks: number;
+  /** Soma de impressions no periodo */
+  impressions: number;
+  /** CPC medio (spend/clicks) em BRL */
+  cpc_brl: number | null;
+  /** CTR (clicks/impressions) em pct */
+  ctr_pct: number | null;
+  /** Quantos dias do periodo tem dado registrado */
+  dias_com_dado: number;
+  /** Ultima sync registrada na coluna updated_at */
+  ultima_sync_at: string | null;
+}
+
+/**
+ * Sumariza canal=google no channel_daily_metrics pros ultimos N dias.
+ * Usado pra renderizar seçao "Google Ads" no /dashboard/marketing.
+ */
+export async function fetchGoogleAdsSummary(
+  supabase: SupabaseClient,
+  dias: number = 7,
+): Promise<GoogleAdsSummary> {
+  const since = new Date(Date.now() - (dias - 1) * 24 * 60 * 60_000).toISOString().slice(0, 10);
+  const { data } = await supabase
+    .from('channel_daily_metrics')
+    .select('date, spend_cents, clicks, impressions, updated_at')
+    .eq('channel', 'google')
+    .gte('date', since)
+    .order('date', { ascending: false });
+
+  const rows = (data ?? []) as Array<{ date: string; spend_cents: number; clicks: number; impressions: number; updated_at: string }>;
+  const spend = rows.reduce((s, r) => s + (r.spend_cents ?? 0), 0);
+  const clicks = rows.reduce((s, r) => s + (r.clicks ?? 0), 0);
+  const impressions = rows.reduce((s, r) => s + (r.impressions ?? 0), 0);
+  const ultima_sync_at = rows[0]?.updated_at ?? null;
+
+  return {
+    spend_cents: spend,
+    clicks,
+    impressions,
+    cpc_brl: clicks > 0 ? (spend / 100) / clicks : null,
+    ctr_pct: impressions > 0 ? (clicks / impressions) * 100 : null,
+    dias_com_dado: rows.length,
+    ultima_sync_at,
+  };
+}
+
 export interface ListCampaignsOptions {
   status?: 'active' | 'paused' | 'all';
   search?: string;

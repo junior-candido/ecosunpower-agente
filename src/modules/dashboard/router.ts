@@ -539,7 +539,7 @@ export function createDashboardRouter(
   // Marketing: KPIs 7d + campanhas (tabs+busca+pag) + criativos + alertas + funil por canal.
   router.get('/marketing', async (req: Request, res: Response) => {
     try {
-      const { fetchMarketingKpis, listActiveCampaigns, listRecentCreatives, listPendingAlerts, fetchChannelFunnel } =
+      const { fetchMarketingKpis, listActiveCampaigns, listRecentCreatives, listPendingAlerts, fetchChannelFunnel, fetchGoogleAdsSummary } =
         await import('./marketing-queries.js');
       const { renderMarketingPage } = await import('./marketing-views.js');
       // Período padrão: últimos 7 dias (alinhado com os KPIs da página)
@@ -553,13 +553,15 @@ export function createDashboardRouter(
       const limit = Math.max(1, Math.min(200, parseInt(String(req.query.limit ?? '20')) || 20));
       const offset = Math.max(0, parseInt(String(req.query.offset ?? '0')) || 0);
       const { buildMarketingInsights } = await import('./ai-summary.js');
-      const [kpis, campaignsResult, creatives, alerts, channels, insights] = await Promise.all([
+      const [kpis, campaignsResult, creatives, alerts, channels, insights, googleAds7d, googleAds30d] = await Promise.all([
         fetchMarketingKpis(supabase),
         listActiveCampaigns(supabase, { status, search, limit, offset }),
         listRecentCreatives(supabase, 8),
         listPendingAlerts(supabase),
         fetchChannelFunnel(supabase, periodo),
         buildMarketingInsights(supabase),
+        fetchGoogleAdsSummary(supabase, 7),
+        fetchGoogleAdsSummary(supabase, 30),
       ]);
       res.send(renderMarketingPage({
         kpis,
@@ -571,6 +573,8 @@ export function createDashboardRouter(
         campaignsCounts: campaignsResult.countByStatus,
         campaignsTotal: campaignsResult.total,
         insights,
+        googleAds7d,
+        googleAds30d,
       }));
     } catch (err) {
       console.error('[dashboard/marketing]', err);
