@@ -102,6 +102,17 @@ export async function buildMarketingInsights(supabase: SupabaseClient): Promise<
   return insights;
 }
 
+const CLIENTE_STATUSES_AI = ['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido'];
+
+const LOSS_REASON_LABELS_AI: Record<string, string> = {
+  nao_atende: 'não atender',
+  concorrente: 'concorrente',
+  sem_orcamento: 'sem orçamento',
+  fora_area: 'fora da área',
+  sem_interesse: 'sem interesse',
+  outro: 'outro motivo',
+};
+
 export async function buildLeadsInsights(supabase: SupabaseClient): Promise<Insight[]> {
   const insights: Insight[] = [];
 
@@ -119,6 +130,57 @@ export async function buildLeadsInsights(supabase: SupabaseClient): Promise<Insi
       text: `${novos24h} lead(s) novo(s) nas últimas 24h.`,
       severity: 'info',
     });
+  }
+
+  // 1.5) Conversion rate últimos 30d (ganhos / total criado)
+  const trintaDiasAtras = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
+  const [criados30d, ganhos30d] = await Promise.all([
+    supabase.from('leads')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', trintaDiasAtras)
+      .is('archived_at', null),
+    supabase.from('leads')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', trintaDiasAtras)
+      .in('installation_status', CLIENTE_STATUSES_AI)
+      .is('archived_at', null),
+  ]);
+  const totalCriados = criados30d.count ?? 0;
+  const totalGanhos = ganhos30d.count ?? 0;
+  if (totalCriados >= 10) {
+    const rate = ((totalGanhos / totalCriados) * 100).toFixed(1);
+    insights.push({
+      emoji: '📈',
+      text: `Conversion rate últimos 30d: ${rate}% (${totalGanhos} ganhos de ${totalCriados} leads).`,
+      severity: totalGanhos === 0 ? 'warning' : 'info',
+    });
+  }
+
+  // 1.6) Top motivo de perda nos ultimos 30d
+  const { data: perdas30d } = await supabase
+    .from('leads')
+    .select('loss_reason')
+    .eq('status', 'perdido')
+    .gte('lost_at', trintaDiasAtras)
+    .not('loss_reason', 'is', null);
+
+  if (perdas30d && perdas30d.length >= 3) {
+    const contagem: Record<string, number> = {};
+    for (const p of perdas30d as Array<{ loss_reason: string | null }>) {
+      if (!p.loss_reason) continue;
+      contagem[p.loss_reason] = (contagem[p.loss_reason] ?? 0) + 1;
+    }
+    const sorted = Object.entries(contagem).sort((a, b) => b[1] - a[1]);
+    if (sorted.length > 0) {
+      const [topReason, topCount] = sorted[0];
+      const totalPerdas = perdas30d.length;
+      const pct = Math.round((topCount / totalPerdas) * 100);
+      insights.push({
+        emoji: '🎯',
+        text: `Top motivo de perda 30d: ${LOSS_REASON_LABELS_AI[topReason] ?? topReason} (${pct}% de ${totalPerdas} perdas). Investigue se for sintoma de gap no processo.`,
+        severity: topReason === 'concorrente' || topReason === 'nao_atende' ? 'warning' : 'info',
+      });
+    }
   }
 
   // 2) Leads silentes (mais de 24h sem atividade) em status novo/qualificando, SEM cadencia pendente
