@@ -122,6 +122,7 @@ const CHANNEL_LABELS: Record<string, string> = {
   blog: 'Blog',
   direto: 'Direto',
   indicacao: 'Indicação',
+  base_propria: 'Base própria',
   outro: 'Outro',
 };
 

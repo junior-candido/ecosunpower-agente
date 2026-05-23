@@ -283,7 +283,7 @@ export interface ChannelFunnelRow {
   custo_por_agendamento: number | null;
 }
 
-const ALL_CHANNELS: Channel[] = ['meta', 'google', 'blog', 'direto', 'indicacao', 'outro'];
+const ALL_CHANNELS: Channel[] = ['meta', 'google', 'blog', 'direto', 'indicacao', 'base_propria', 'outro'];
 
 interface LeadSlim {
   channel: string | null | undefined;

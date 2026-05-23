@@ -33,7 +33,7 @@ export async function runBackfillChannels(
 
   const leadList = (data ?? []) as Record<string, unknown>[];
   const breakdown: Record<Channel, number> = {
-    meta: 0, google: 0, blog: 0, direto: 0, indicacao: 0, outro: 0,
+    meta: 0, google: 0, blog: 0, direto: 0, indicacao: 0, base_propria: 0, outro: 0,
   };
 
   if (leadList.length === 0) {
