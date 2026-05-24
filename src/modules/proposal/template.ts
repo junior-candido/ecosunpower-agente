@@ -491,7 +491,7 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
 
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
         <div style="width:48px;height:48px;border-radius:12px;background:#FFF8E1;color:var(--accent-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">🌐</div>
-        <h3 style="font-size:20px;margin-bottom:12px">Eva, sua engenheira virtual</h3>
+        <h3 style="font-size:20px;margin-bottom:12px">Eva, sua consultora EcoSunPower</h3>
         <p style="color:var(--muted);font-size:15px;line-height:1.6">Atendimento 24/7 via WhatsApp pra dúvidas, agendamento, status do projeto, garantia. Eva responde rápido — Junior entra em casos complexos.</p>
       </div>
     </div>
@@ -602,7 +602,7 @@ ${socialProofHtml}
     </div>
     <div style="text-align:right">
       <strong>${escapeHtml(data.empresa.telefone)}</strong><br>
-      <span style="opacity:0.7">${escapeHtml(data.empresa.site)} · Eva, sua engenheira virtual</span>
+      <span style="opacity:0.7">${escapeHtml(data.empresa.site)} · Eva, sua consultora</span>
     </div>
   </div>
   <div class="footer-meta">

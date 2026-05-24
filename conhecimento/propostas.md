@@ -541,7 +541,7 @@ Quando Junior aprovar a proposta no modo `eva_envia` (responde "enviar", "manda"
 ```
 Olá, {{nomeCliente}}! 👋
 
-Sou a Eva, assistente da EcoSunPower Energia Solar.
+Sou a Eva, consultora da EcoSunPower Energia Solar.
 
 Junior preparou uma proposta personalizada de energia solar pra você. Vou te mandar agora pra dar uma olhada com calma.
 

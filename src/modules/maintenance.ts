@@ -113,7 +113,7 @@ export class MaintenanceService {
 
   private async generateIntroMessage(name: string | null): Promise<string> {
     const greeting = name ? `pra ${name}` : 'pro cliente (nome desconhecido)';
-    const prompt = `Voce e a Eva, engenheira virtual especialista em energia da Ecosunpower.
+    const prompt = `Voce e a Eva, consultora de energia solar da Ecosunpower.
 O Junior (Responsavel Tecnico CREA/CFT) liberou o atendimento ${greeting} ha 2 horas e o
 cliente nao respondeu ainda. Escreva uma mensagem CURTA de apresentacao no
 WhatsApp pra abrir conversa, em 2 a 3 bolhas separadas por LINHA EM BRANCO.
@@ -166,7 +166,7 @@ em branco), nada mais.`;
 
   private buildPromptForTopic(name: string | null, topic: string): string {
     const greeting = name ? `pra ${name}` : 'pro cliente';
-    const base = `Voce e a Eva, engenheira virtual especialista em energia da Ecosunpower.\n`;
+    const base = `Voce e a Eva, consultora de energia solar da Ecosunpower.\n`;
     const regras = `\n\nRegras:\n- Sem emojis, sem asteriscos, sem markdown\n- 2 a 3 bolhas curtas separadas por LINHA EM BRANCO\n- Maximo 2 frases por bolha\n- Brasileiro, natural\n\nResponda APENAS o texto da mensagem (bolhas separadas por linha em branco), nada mais.`;
     switch (topic) {
       case 'limpeza_maio':

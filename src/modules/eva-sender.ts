@@ -13,7 +13,7 @@ export interface EnviarPropostaInput {
 
 const SAUDACAO = (nomeCliente: string) =>
   `Olá, ${nomeCliente}! 👋\n\n` +
-  `Sou a Eva, assistente da EcoSunPower Energia Solar.\n\n` +
+  `Sou a Eva, consultora da EcoSunPower Energia Solar.\n\n` +
   `Junior preparou uma proposta personalizada de energia solar pra você. Vou te mandar agora pra dar uma olhada com calma.\n\n` +
   `Qualquer dúvida, é só me perguntar aqui mesmo. 😊`;
 

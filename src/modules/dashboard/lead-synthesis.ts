@@ -236,7 +236,7 @@ export async function getPlatformInsights(
     };
 
     // === Pede pra Claude gerar insights executivos
-    const systemPrompt = `Vc eh Eva, engenheira virtual da Ecosunpower. Analisa o estado da plataforma hoje e gera 3 a 5 insights executivos pro Junior (Responsavel Tecnico) saber em 30 segundos o que esta acontecendo e o que priorizar.
+    const systemPrompt = `Vc eh Eva, consultora da Ecosunpower. Analisa o estado da plataforma hoje e gera 3 a 5 insights executivos pro Junior (Responsavel Tecnico) saber em 30 segundos o que esta acontecendo e o que priorizar.
 
 ⚠️ CONTEXTO CRITICO sobre o que JA EH AUTOMATICO (nao sugira essas acoes pro Junior, ele NAO precisa disparar nada manualmente):
 - Cadencia de reengajamento: cron roda a cada 15min, dispara toques automaticamente

@@ -43,7 +43,7 @@ const STEP_GUIDANCE: Record<number, string> = {
   neste toque (e so apresentacao pessoal). Tom leve e proximo, como quem
   se coloca a disposicao. Lembre: o cliente JA conhece o Junior pessoalmente,
   entao nao e um "novo lead" — e uma "ampliacao de atendimento". Mencione
-  que voce (Eva) e a engenheira virtual da Ecosunpower e tambem ficou de apoiar o
+  que voce (Eva) e a consultora da Ecosunpower e tambem ficou de apoiar o
   Junior no dia-a-dia. Mensagem curta (2-3 frases), sem pergunta obrigatoria,
   deixando a porta aberta.`,
 
@@ -83,7 +83,7 @@ const STEP_GUIDANCE: Record<number, string> = {
   // Toques 6 em diante (cadencia infinita ate cliente responder ou opt-out)
   // Espacamento: 90d, 180d, 365d, depois +1 ano cada.
   6: `Toque 6 — Tom de "ola, lembra de mim?" (90 dias depois). Reapresente-se
-  rapidinho (Eva, engenheira virtual da Ecosunpower) caso o cliente tenha
+  rapidinho (Eva, consultora da Ecosunpower) caso o cliente tenha
   esquecido. Use o ARTIGO do Canal Solar pra trazer uma novidade do mercado.
   Mensagem curta, leve, sem pressao. Termine deixando a porta aberta.`,
 
@@ -414,7 +414,7 @@ INSTRUCOES SOBRE O ARTIGO:
   use a temantica geral mas sem forcar — pode ser uma referencia de canto.`
       : '';
 
-    const systemPrompt = `Voce eh a Eva, engenheira virtual especialista em energia da Ecosunpower (Brasilia/DF e entorno).
+    const systemPrompt = `Voce eh a Eva, consultora de energia solar da Ecosunpower (Brasilia/DF e entorno).
 Seu papel: enviar UMA mensagem curta de reengajamento em WhatsApp pra um cliente que ja conhece o Junior pessoalmente
 mas AINDA NAO COMPROU sistema solar com a Ecosunpower. Objetivo: ajuda-lo a tomar a decisao de adquirir.
 

@@ -5766,7 +5766,7 @@ Esta pagina explica como exercer esse direito.</p>
 <h2>1. Quais dados podemos manter sobre voce</h2>
 <ul>
   <li>Nome, telefone e email fornecidos em formularios de leads (anuncios Meta, site, WhatsApp)</li>
-  <li>Historico de conversas com nossa assistente Eva via WhatsApp</li>
+  <li>Historico de conversas com nossa consultora Eva via WhatsApp</li>
   <li>Endereco e dados de consumo eletrico (kWh, valor da conta) para dimensionamento de propostas</li>
   <li>Fotos do local enviadas voluntariamente para estudo personalizado</li>
   <li>Propostas comerciais geradas e historico de interacoes</li>
