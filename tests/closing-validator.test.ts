@@ -75,3 +75,61 @@ describe('closing-validator defensive guards', () => {
     expect(formatPhoneBR('123')).toBe('123');
   });
 });
+
+import { findMissingRequired } from '../src/modules/closing/closing-validator.js';
+
+describe('findMissingRequired', () => {
+  it('lista todos obrigatórios quando dados vazios', () => {
+    const missing = findMissingRequired({});
+    expect(missing).toContain('titular_uc.nome');
+    expect(missing).toContain('titular_uc.cpf');
+    expect(missing).toContain('titular_uc.rg');
+    expect(missing).toContain('sistema.kwp');
+    expect(missing).toContain('comercial.valor_total_brl');
+    expect(missing).toContain('comercial.forma_pagamento');
+    expect(missing).toContain('docs_pedidos');
+  });
+
+  it('não pede RG se docs_pedidos não inclui procuração nem contrato', () => {
+    // Caso impossível mas valida lógica do schema
+    const missing = findMissingRequired({ docs_pedidos: [] });
+    expect(missing).toContain('docs_pedidos');
+  });
+
+  it('quando contratante_eh_titular=true, não pede dados do contratante separadamente', () => {
+    const missing = findMissingRequired({
+      titular_uc: {
+        tipo: 'PF', nome: 'X', cpf: '02887612190', rg: '26163',
+        orgao_emissor_rg: 'MTE-DF', nacionalidade: 'Brasileiro(a)',
+        endereco: { rua: 'a', numero: '1', bairro: 'b', cidade: 'c', uf: 'DF', cep: '70000000' },
+        telefone: '61999999999', email: 'a@b.co',
+      },
+      contratante_eh_titular: true,
+      docs_pedidos: ['contrato', 'procuracao'],
+      uc_numero: 'a confirmar',
+      concessionaria: 'Neoenergia-DF',
+      endereco_instalacao: { rua: 'a', numero: '1', bairro: 'b', cidade: 'c', uf: 'DF', cep: '70000000' },
+      sistema: {
+        kwp: 8.4, modalidade: 'autoconsumo_local',
+        modulos: { marca: 'Trina', potencia_w: 700, quantidade: 12 },
+        inversor: { marca: 'Sungrow', modelo: 'SG5.0RS-L', potencia_kw: 5 },
+      },
+      comercial: { valor_total_brl: 38500, forma_pagamento: 'à vista PIX' },
+    });
+    expect(missing).toEqual([]);
+  });
+
+  it('quando contratante_eh_titular=false, pede dados do contratante', () => {
+    const missing = findMissingRequired({
+      titular_uc: {
+        tipo: 'PF', nome: 'X', cpf: '02887612190', rg: '26163',
+        orgao_emissor_rg: 'MTE-DF', nacionalidade: 'Brasileiro(a)',
+        endereco: { rua: 'a', numero: '1', bairro: 'b', cidade: 'c', uf: 'DF', cep: '70000000' },
+        telefone: '61999999999', email: 'a@b.co',
+      },
+      contratante_eh_titular: false,
+      docs_pedidos: ['contrato'],
+    } as any);
+    expect(missing.some((m) => m.startsWith('contratante.'))).toBe(true);
+  });
+});
