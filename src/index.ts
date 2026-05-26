@@ -669,7 +669,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       const initialData = buildInitialData(lead, proposta);
       initialData.docs_pedidos = ['contrato', 'procuracao'];
       const missing = findMissingRequired(initialData);
-      const nome = lead.nome;
+      const nome = lead.name;
       if (missing.length === 0) {
         await setClosingState(adminPhone, { stage: 'awaiting_confirm', data: initialData as DadosFechamento });
         await sendText(adminPhone, `Bora fechar ${nome}. Já tenho tudo. Confirma "gerar" pra emitir contrato + procuração.`);
@@ -854,10 +854,10 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       }
       // múltiplos — botões
       if (metaWaba && matches.length <= 3) {
-        const btns = matches.slice(0, 3).map((mlead) => ({ id: `evabt:fechar-pick:${mlead.id}`, title: mlead.nome.slice(0, 20) }));
+        const btns = matches.slice(0, 3).map((mlead) => ({ id: `evabt:fechar-pick:${mlead.id}`, title: mlead.name.slice(0, 20) }));
         await metaWaba.sendInteractiveButtons(from, `Achei ${matches.length} leads "${arg}". Qual?`, btns);
       } else {
-        const lista = matches.slice(0, 10).map((mlead, i) => `${i + 1}. ${mlead.nome} (${mlead.telefone ?? 's/ tel'})`).join('\n');
+        const lista = matches.slice(0, 10).map((mlead, i) => `${i + 1}. ${mlead.name} (${mlead.phone ?? 's/ tel'})`).join('\n');
         await sendText(from, `Achei ${matches.length} leads:\n${lista}\n\nManda /fechar <nome completo> pra escolher.`);
       }
       return true;

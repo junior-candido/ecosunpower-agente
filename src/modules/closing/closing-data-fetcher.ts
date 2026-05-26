@@ -4,8 +4,8 @@ import type { DadosFechamento, Concessionaria, UF, PessoaFisica, Endereco } from
 
 export interface LeadRow {
   id: string;
-  nome: string;
-  telefone: string | null;
+  name: string;
+  phone: string | null;
   email: string | null;
   cpf_cnpj: string | null;
   data_nascimento: string | null;
@@ -48,7 +48,7 @@ export async function fetchByLeadId(sb: SupabaseClient, leadId: string): Promise
   const propRes = await sb
     .from('propostas_publicas')
     .select('*')
-    .or(`cliente_telefone.eq.${lead.telefone},cliente_nome.ilike.%${lead.nome}%`)
+    .or(`cliente_telefone.eq.${lead.phone},cliente_nome.ilike.%${lead.name}%`)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -60,7 +60,7 @@ export async function searchLeadByName(sb: SupabaseClient, term: string): Promis
   const res = await sb
     .from('leads')
     .select('*')
-    .ilike('nome', `%${term}%`)
+    .ilike('name', `%${term}%`)
     .order('created_at', { ascending: false })
     .limit(10);
   if (res.error) throw res.error;
@@ -91,13 +91,13 @@ export function buildInitialData(
 
   const titular_uc: Partial<PessoaFisica> = {
     tipo: 'PF',
-    nome: lead.nome,
+    nome: lead.name,
     cpf: lead.cpf_cnpj ?? undefined,
     estado_civil: lead.estado_civil ?? undefined,
     data_nascimento: lead.data_nascimento ?? undefined,
     nacionalidade: 'Brasileiro(a)',
     endereco: endereco as Endereco,
-    telefone: lead.telefone ?? undefined,
+    telefone: lead.phone ?? undefined,
     email: lead.email ?? undefined,
   };
 

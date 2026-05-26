@@ -66,7 +66,7 @@ describe('closing-data-fetcher', () => {
 
   it('searchLeadByName retorna múltiplos quando ambíguo', async () => {
     const sb = mockSupabase({
-      leadsByName: [leadCamilaRow, { ...leadCamilaRow, id: '99', nome: 'Camila Outra' }],
+      leadsByName: [leadCamilaRow, { ...leadCamilaRow, id: '99', name: 'Camila Outra' }],
     });
     const res = await searchLeadByName(sb, 'Camila');
     expect(res).toHaveLength(2);
@@ -75,7 +75,7 @@ describe('closing-data-fetcher', () => {
   it('buildInitialData mapeia lead + proposta pra Partial<DadosFechamento>', () => {
     const partial = buildInitialData(leadCamilaRow as any, propostaPublicaCamilaRow as any);
     expect(partial.titular_uc?.tipo).toBe('PF');
-    expect((partial.titular_uc as any)?.nome).toBe(leadCamilaRow.nome);
+    expect((partial.titular_uc as any)?.nome).toBe(leadCamilaRow.name);
     expect((partial.titular_uc as any)?.cpf).toBe(leadCamilaRow.cpf_cnpj);
     expect(partial.concessionaria).toBe('Equatorial-GO');
     expect(partial.uc_numero).toBe('10005936703');

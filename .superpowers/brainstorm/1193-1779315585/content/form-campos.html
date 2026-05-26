@@ -1,0 +1,96 @@
+<h2>Campos do cadastro de cliente</h2>
+<p class="subtitle">Layout proposto pro form (não-obrigatório, você preenche o que souber). Clica nos campos extras se quiser remover, ou avisa no chat se faltar algo.</p>
+
+<div class="mockup" style="max-width:760px;margin:0 auto">
+  <div class="mockup-header">📋 Novo cliente / Editar — Fernanda Silva</div>
+  <div class="mockup-body" style="padding:24px">
+
+    <div class="section">
+      <div class="label">👤 Identificação</div>
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-top:8px">
+        <input class="mock-input" placeholder="Nome completo *">
+        <input class="mock-input" placeholder="CPF ou CNPJ">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:8px">
+        <input class="mock-input" placeholder="Data nascimento">
+        <select class="mock-input"><option>Tipo: Residencial</option></select>
+        <select class="mock-input"><option>Estado civil</option></select>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="label">📞 Contato</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px">
+        <input class="mock-input" placeholder="WhatsApp principal *">
+        <input class="mock-input" placeholder="WhatsApp alternativo">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px">
+        <input class="mock-input" placeholder="E-mail">
+        <input class="mock-input" placeholder="E-mail alternativo">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="label">🏠 Endereço</div>
+      <div style="display:grid;grid-template-columns:1fr 3fr 1fr;gap:12px;margin-top:8px">
+        <input class="mock-input" placeholder="CEP">
+        <input class="mock-input" placeholder="Rua">
+        <input class="mock-input" placeholder="Número">
+      </div>
+      <div style="display:grid;grid-template-columns:2fr 2fr 2fr 1fr;gap:12px;margin-top:8px">
+        <input class="mock-input" placeholder="Complemento">
+        <input class="mock-input" placeholder="Bairro">
+        <input class="mock-input" placeholder="Cidade">
+        <select class="mock-input"><option>UF</option></select>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="label">⚡ Concessionária + Conta de luz</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:8px">
+        <select class="mock-input"><option>Concessionária (Neoenergia-DF / Equatorial-GO / ...)</option></select>
+        <input class="mock-input" placeholder="UC (nº instalação)">
+        <select class="mock-input"><option>Classe (B1, B3...)</option></select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:8px">
+        <select class="mock-input"><option>Modalidade (Convencional)</option></select>
+        <input class="mock-input" placeholder="Consumo médio kWh">
+        <input class="mock-input" placeholder="Conta média R$">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="label">☀ Sistema FV instalado</div>
+      <p style="color:#888;font-size:13px;margin:4px 0 8px">Auto-vinculado se já existir em /monitoramento, ou cria novo aqui.</p>
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px">
+        <select class="mock-input"><option>Sistema vinculado (auto-busca)</option></select>
+        <input class="mock-input" placeholder="kWp">
+        <input class="mock-input" placeholder="Data instalação">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="label">💼 Comercial</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:8px">
+        <select class="mock-input"><option>Origem (CTWA / orgânico / indicação)</option></select>
+        <select class="mock-input"><option>Status: Cliente instalado</option></select>
+        <input class="mock-input" placeholder="Vendedor / Responsável">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="label">📝 Observações</div>
+      <textarea class="mock-input" placeholder="Notas livres sobre o cliente" style="min-height:60px"></textarea>
+    </div>
+
+    <div style="display:flex;gap:12px;margin-top:24px">
+      <button class="mock-button" style="background:#22c55e;color:#fff;border:none;padding:12px 28px;border-radius:8px">💾 Salvar</button>
+      <button class="mock-button" style="background:#e5e7eb;padding:12px 28px;border-radius:8px;border:none">Cancelar</button>
+    </div>
+
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px">
+  Esse form é só pra <strong>cadastro/edição</strong> dos dados. A tela de <strong>detalhe</strong> (timeline, sistemas, propostas, alertas, conversas) é separada — vai ser a próxima pergunta.
+</p>
