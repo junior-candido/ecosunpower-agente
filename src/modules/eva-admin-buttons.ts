@@ -68,6 +68,11 @@ export async function tryHandleEvaAdminButton(args: {
   text: string;
   forceCadenceForSilentes: () => Promise<{ acionados: number }>;
   supabase?: SupabaseService;
+  onFecharStart?: (leadId: string) => Promise<void>;
+  onFecharPick?: (leadId: string) => Promise<void>;
+  onFecharApprove?: (fechamentoId: string) => Promise<void>;
+  onFecharRefazer?: (fechamentoId: string) => Promise<void>;
+  onFecharCancel?: (fechamentoId: string) => Promise<void>;
 }): Promise<boolean> {
   const m = args.text.trim().match(/^evabt:([a-z0-9-]+)(?::([0-9a-f-]{36}))?$/i);
   if (!m) return false;
@@ -172,6 +177,41 @@ export async function tryHandleEvaAdminButton(args: {
           .eq('status', 'pending');
         if (error) throw new Error(error.message);
         await args.sendText(args.from, `✋ Cadência cancelada pra este lead.`);
+        return true;
+      }
+
+      case 'fechar': {
+        if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem lead id.'); return true; }
+        if (args.onFecharStart) await args.onFecharStart(leadId);
+        else await args.sendText(args.from, '⚠️ Handler de fechar não configurado.');
+        return true;
+      }
+
+      case 'fechar-pick': {
+        if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem lead id.'); return true; }
+        if (args.onFecharPick) await args.onFecharPick(leadId);
+        else await args.sendText(args.from, '⚠️ Handler de fechar-pick não configurado.');
+        return true;
+      }
+
+      case 'fechar-aprovar': {
+        if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem fechamento id.'); return true; }
+        if (args.onFecharApprove) await args.onFecharApprove(leadId);
+        else await args.sendText(args.from, '⚠️ Handler de fechar-aprovar não configurado.');
+        return true;
+      }
+
+      case 'fechar-refazer': {
+        if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem fechamento id.'); return true; }
+        if (args.onFecharRefazer) await args.onFecharRefazer(leadId);
+        else await args.sendText(args.from, '⚠️ Handler de fechar-refazer não configurado.');
+        return true;
+      }
+
+      case 'fechar-cancelar': {
+        if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem fechamento id.'); return true; }
+        if (args.onFecharCancel) await args.onFecharCancel(leadId);
+        else await args.sendText(args.from, '⚠️ Handler de fechar-cancelar não configurado.');
         return true;
       }
 
