@@ -38,6 +38,22 @@ import { PricingAssistant } from './modules/pricing-assistant.js';
 import { SchedulingAssistant } from './modules/scheduling-assistant.js';
 import { ProposalAssistant } from './modules/proposal-assistant.js';
 import { ProposalFollowupService } from './modules/proposal-followup.js';
+import {
+  ClosingAssistant,
+  ClosingDriveUploader,
+  ClosingPersist,
+  createAnthropicLlmCaller,
+  fetchByLeadId,
+  searchLeadByName,
+  buildInitialData,
+  renderContrato,
+  renderProcuracao,
+  renderHtmlToPdf,
+  findMissingRequired,
+  type DadosFechamento,
+  type ClosingState,
+} from './modules/closing/index.js';
+import { google } from 'googleapis';
 import { templateParaAdMeta } from './modules/ctwa-template-mapping.js';
 import RedisModule from 'ioredis';
 // ESM/CJS interop: ioredis as vezes vem como { default: class }, as vezes direto.
@@ -421,6 +437,45 @@ async function main() {
   });
   console.log('[proposal-followup] Servico ativo (notifica toda abertura, throttle 5min)');
 
+  // Eva Fechamento: modo /fechar conversacional pra Junior fechar venda
+  // (gera contrato + procuração no Drive). Reusa OAuth do Drive proposal.
+  const closingAssistant = new ClosingAssistant({
+    llm: createAnthropicLlmCaller(config.anthropicApiKey),
+  });
+  const closingPersist = new ClosingPersist(supabase.getClient());
+  let closingDriveUploader: ClosingDriveUploader | null = null;
+  if (config.googleClientId && config.googleClientSecret && config.googleRefreshToken) {
+    const oauth = new google.auth.OAuth2(config.googleClientId, config.googleClientSecret);
+    oauth.setCredentials({ refresh_token: config.googleRefreshToken });
+    const driveApi = google.drive({ version: 'v3', auth: oauth });
+    closingDriveUploader = new ClosingDriveUploader(driveApi);
+    console.log('[closing] Eva Fechamento ATIVA — Drive: on');
+  } else {
+    console.log('[closing] Eva Fechamento PARCIAL — Drive: off (faltando config Google)');
+  }
+
+  // Redis state pro modo closing (key: closing:<phone>, TTL 1h)
+  const closingRedis = new IORedis({
+    host: config.redisHost,
+    port: config.redisPort,
+    password: config.redisPassword,
+    maxRetriesPerRequest: null,
+  });
+  async function getClosingState(phone: string): Promise<ClosingState | null> {
+    const raw = await closingRedis.get(`closing:${phone}`);
+    return raw ? (JSON.parse(raw) as ClosingState) : null;
+  }
+  async function setClosingState(phone: string, state: ClosingState | { stage: 'cancelled' }): Promise<void> {
+    if (state.stage === 'cancelled') {
+      await closingRedis.del(`closing:${phone}`);
+      return;
+    }
+    await closingRedis.set(`closing:${phone}`, JSON.stringify(state), 'EX', 3600);
+  }
+  async function clearClosingState(phone: string): Promise<void> {
+    await closingRedis.del(`closing:${phone}`);
+  }
+
   // Modulo 5 — Monitoramento de sistemas FV via API dos inversores.
   // Adapter SolarEdge ja implementado; demais marcas adicionadas conforme
   // Junior cadastrar credenciais.
@@ -602,6 +657,213 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return false;
   }
 
+  // Eva Fechamento: handler do botão evabt:fechar:<leadId>. Busca lead +
+  // última proposta, monta dados iniciais, entra em modo collecting.
+  async function handleFecharStart(leadId: string, adminPhone: string): Promise<void> {
+    try {
+      const { lead, proposta } = await fetchByLeadId(supabase.getClient(), leadId);
+      if (!lead) {
+        await sendText(adminPhone, '⚠️ Lead não encontrado.');
+        return;
+      }
+      const initialData = buildInitialData(lead, proposta);
+      initialData.docs_pedidos = ['contrato', 'procuracao'];
+      const missing = findMissingRequired(initialData);
+      const nome = lead.nome;
+      if (missing.length === 0) {
+        await setClosingState(adminPhone, { stage: 'awaiting_confirm', data: initialData as DadosFechamento });
+        await sendText(adminPhone, `Bora fechar ${nome}. Já tenho tudo. Confirma "gerar" pra emitir contrato + procuração.`);
+      } else {
+        await setClosingState(adminPhone, { stage: 'collecting', data: initialData, pending_questions: missing });
+        const lista = missing.slice(0, 8).join(', ');
+        await sendText(adminPhone, `Bora fechar ${nome}. Achei os dados, falta:\n${lista}\n\nPode mandar tudo junto.`);
+      }
+    } catch (err) {
+      console.error('[closing] handleFecharStart erro:', (err as Error).message);
+      await sendText(adminPhone, `⚠️ Erro: ${(err as Error).message.slice(0, 200)}`);
+    }
+  }
+
+  // Gera os PDFs, sobe no Drive e responde ao Junior com botões.
+  async function handleFecharGenerate(adminPhone: string): Promise<void> {
+    const state = await getClosingState(adminPhone);
+    if (!state || state.stage !== 'awaiting_confirm') {
+      await sendText(adminPhone, '⚠️ Modo fechamento não está em fase de geração.');
+      return;
+    }
+    if (!closingDriveUploader) {
+      await sendText(adminPhone, '⚠️ Drive não configurado — não consigo subir os PDFs.');
+      return;
+    }
+    const dados = state.data;
+    try {
+      const titularNome = dados.titular_uc.tipo === 'PF' ? dados.titular_uc.nome : dados.titular_uc.razao_social;
+      const titularCpf = dados.titular_uc.tipo === 'PF' ? dados.titular_uc.cpf : dados.titular_uc.cnpj;
+      // descobrir leadId do estado se houver — buscar por telefone
+      const leadByPhone = await supabase.getLeadByPhone(adminPhone).catch(() => null);
+      const leadId = leadByPhone?.id ?? null;
+
+      const fechamentoId = await closingPersist.createFechamento({
+        leadId,
+        propostaPublicaId: null,
+        dados,
+        createdBy: adminPhone,
+      });
+
+      const version = leadId ? await closingPersist.nextVersionForLead(leadId) : 1;
+
+      const contratoPdf = dados.docs_pedidos.includes('contrato')
+        ? await renderHtmlToPdf(renderContrato(dados))
+        : undefined;
+      const procuracaoPdf = dados.docs_pedidos.includes('procuracao')
+        ? await renderHtmlToPdf(renderProcuracao(dados))
+        : undefined;
+
+      const links = await closingDriveUploader.uploadFechamento({
+        nomeTitular: titularNome,
+        cpfTitular: titularCpf,
+        ano: new Date().getFullYear().toString(),
+        version,
+        contratoPdf,
+        procuracaoPdf,
+        dadosInputJson: JSON.stringify(dados, null, 2),
+      });
+
+      await closingPersist.updateDriveLinks(fechamentoId, {
+        contratoDriveId: links.contratoDriveId,
+        contratoDriveLink: links.contratoDriveLink,
+        procuracaoDriveId: links.procuracaoDriveId,
+        procuracaoDriveLink: links.procuracaoDriveLink,
+        driveFolderId: links.folderId,
+      });
+
+      await clearClosingState(adminPhone);
+
+      const body = [
+        `✅ Pronto pra ${titularNome}.`,
+        links.contratoDriveLink ? `📄 Contrato: ${links.contratoDriveLink}` : null,
+        links.procuracaoDriveLink ? `📄 Procuração: ${links.procuracaoDriveLink}` : null,
+        `📁 Pasta: ${links.folderWebViewLink}`,
+      ].filter(Boolean).join('\n');
+
+      if (metaWaba) {
+        try {
+          await metaWaba.sendInteractiveButtons(adminPhone, body, [
+            { id: `evabt:fechar-aprovar:${fechamentoId}`, title: 'Aprovar' },
+            { id: `evabt:fechar-refazer:${fechamentoId}`, title: 'Refazer' },
+            { id: `evabt:fechar-cancelar:${fechamentoId}`, title: 'Cancelar' },
+          ]);
+          return;
+        } catch (err) {
+          console.warn('[closing] WABA botões falhou, fallback texto:', (err as Error).message);
+        }
+      }
+      await sendText(adminPhone, body + `\n\nResponde "/aprovar ${fechamentoId}", "/refazer ${fechamentoId}" ou "/cancelar ${fechamentoId}".`);
+    } catch (err) {
+      console.error('[closing] handleFecharGenerate erro:', (err as Error).message);
+      await sendText(adminPhone, `⚠️ Erro ao gerar: ${(err as Error).message.slice(0, 200)}`);
+    }
+  }
+
+  async function handleFecharApprove(fechamentoId: string, adminPhone: string): Promise<void> {
+    try {
+      await closingPersist.updateStatus(fechamentoId, 'aprovado_junior');
+      // marca lead como 'cliente' (transferido) se houver lead vinculado
+      const { data: fec } = await supabase.getClient()
+        .from('fechamentos').select('lead_id').eq('id', fechamentoId).maybeSingle();
+      const leadId = (fec as any)?.lead_id as string | null | undefined;
+      if (leadId) {
+        await supabase.getClient()
+          .from('leads').update({ status: 'transferido', updated_at: new Date().toISOString() }).eq('id', leadId);
+      }
+      await sendText(adminPhone, '✅ Marcado como fechado. Lead virou cliente. Pode mandar pro cliente quando quiser.');
+    } catch (err) {
+      await sendText(adminPhone, `⚠️ Erro: ${(err as Error).message.slice(0, 200)}`);
+    }
+  }
+
+  async function handleFecharRefazer(_fechamentoId: string, adminPhone: string): Promise<void> {
+    await sendText(adminPhone, '🔄 Refazer ainda não implementado. Manda /fechar de novo pra recomeçar.');
+  }
+
+  async function handleFecharCancel(fechamentoId: string, adminPhone: string): Promise<void> {
+    try {
+      await closingPersist.updateStatus(fechamentoId, 'cancelado');
+      await sendText(adminPhone, '❌ Fechamento cancelado.');
+    } catch (err) {
+      await sendText(adminPhone, `⚠️ Erro: ${(err as Error).message.slice(0, 200)}`);
+    }
+  }
+
+  // Comando /fechar [nome do cliente]
+  async function tryHandleClosingCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+
+    const t = text.trim();
+    // Se Junior já está em modo closing, processa via ClosingAssistant
+    const state = await getClosingState(from);
+    if (state) {
+      try {
+        const result = await closingAssistant.processMessage(t, state);
+        if (result.newState.stage === 'cancelled') {
+          await clearClosingState(from);
+          await sendText(from, result.replyText);
+          return true;
+        }
+        if (result.newState.stage === 'awaiting_confirm' && /^(gera|gerar|ok|sim|manda)$/i.test(t)) {
+          await setClosingState(from, result.newState);
+          await sendText(from, '⏳ Gerando PDFs...');
+          await handleFecharGenerate(from);
+          return true;
+        }
+        await setClosingState(from, result.newState);
+        await sendText(from, result.replyText);
+        return true;
+      } catch (err) {
+        console.error('[closing] processMessage erro:', (err as Error).message);
+        await sendText(from, `⚠️ Erro: ${(err as Error).message.slice(0, 200)}`);
+        return true;
+      }
+    }
+
+    // Sem estado: precisa ser comando /fechar pra entrar
+    const m = t.match(/^\/fechar(?:\s+(.+))?$/i);
+    if (!m) return false;
+    const arg = m[1]?.trim() ?? '';
+
+    if (!arg) {
+      await setClosingState(from, { stage: 'collecting', data: {}, pending_questions: [] });
+      await sendText(from, 'Pra qual cliente? Manda nome (ex: /fechar Camila) ou os dados completos.');
+      return true;
+    }
+
+    try {
+      const matches = await searchLeadByName(supabase.getClient(), arg.split(/[,;]/)[0].trim());
+      if (matches.length === 1) {
+        await handleFecharStart(matches[0].id, from);
+        return true;
+      }
+      if (matches.length === 0) {
+        await setClosingState(from, { stage: 'collecting', data: {}, pending_questions: [] });
+        await sendText(from, `Não achei "${arg}" no cadastro. Cliente novo? Manda os dados completos (nome, CPF, RG, endereço, sistema, valor).`);
+        return true;
+      }
+      // múltiplos — botões
+      if (metaWaba && matches.length <= 3) {
+        const btns = matches.slice(0, 3).map((mlead) => ({ id: `evabt:fechar-pick:${mlead.id}`, title: mlead.nome.slice(0, 20) }));
+        await metaWaba.sendInteractiveButtons(from, `Achei ${matches.length} leads "${arg}". Qual?`, btns);
+      } else {
+        const lista = matches.slice(0, 10).map((mlead, i) => `${i + 1}. ${mlead.nome} (${mlead.telefone ?? 's/ tel'})`).join('\n');
+        await sendText(from, `Achei ${matches.length} leads:\n${lista}\n\nManda /fechar <nome completo> pra escolher.`);
+      }
+      return true;
+    } catch (err) {
+      console.error('[closing] /fechar erro:', (err as Error).message);
+      await sendText(from, `⚠️ Erro buscando lead: ${(err as Error).message.slice(0, 200)}`);
+      return true;
+    }
+  }
+
   // Eva Precificadora: prioridade ABSOLUTA quando Junior está em modo precificação,
   // ou quando ele dispara /preco. So responde pro engineerPhone (numero do Junior),
   // pra cliente comum nem entra nesse caminho. Helper de phone tolera variação de formato
@@ -650,7 +912,21 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       } else {
         reply = await proposalAssistant.processProposalMessage(from, text);
       }
-      await sendText(from, reply);
+      // Se proposta foi gerada com sucesso (mensagem contém "Proposta gerada"),
+      // adiciona botão "Fechou venda" pra Junior fechar venda direto.
+      // NOTA: botão usa placeholder lead_id (proposalAssistant retorna só string).
+      // Junior usa /fechar <nome> pra resolver o lead real — limitação conhecida MVP.
+      if (/Proposta gerada/i.test(reply) && metaWaba) {
+        try {
+          await metaWaba.sendInteractiveButtons(from, reply + '\n\nFechou essa venda?', [
+            { id: `evabt:fechar:${'00000000-0000-0000-0000-000000000000'}`, title: 'Fechou venda' },
+          ]);
+        } catch {
+          await sendText(from, reply + '\n\nFechou? Digita: /fechar <nome do cliente>');
+        }
+      } else {
+        await sendText(from, reply);
+      }
     } catch (err) {
       console.error('[proposal] Error:', (err as Error).message);
       await sendText(from, '⚠️ Erro na proposta. Tenta de novo ou /sair pra fechar.');
@@ -2236,6 +2512,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         reativar:   { trigger: '/reativar-base 10',  handler: tryHandleReativarBaseCommand },
         preco:      { trigger: '/preco',             handler: tryHandlePricingCommand },
         proposta:   { trigger: '/proposta',          handler: tryHandleProposalCommand },
+        fechar:     { trigger: '/fechar',            handler: tryHandleClosingCommand },
         agenda:     { trigger: '/agenda',            handler: tryHandleSchedulingCommand },
         novo_case:  { trigger: '/novo-case',         handler: tryHandleCaseCreatorCommand },
         reviews:    { trigger: '/reviews-pendentes', handler: tryHandleTestimonialAdminCommand },
@@ -2327,6 +2604,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         text,
         forceCadenceForSilentes,
         supabase,
+        onFecharStart: (leadId) => handleFecharStart(leadId, from),
+        onFecharPick: (leadId) => handleFecharStart(leadId, from),
+        onFecharApprove: (fechamentoId) => handleFecharApprove(fechamentoId, from),
+        onFecharRefazer: (fechamentoId) => handleFecharRefazer(fechamentoId, from),
+        onFecharCancel: (fechamentoId) => handleFecharCancel(fechamentoId, from),
       })) return;
     }
 
@@ -2369,6 +2651,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // Eva Proposta — Junior gera proposta comercial completa (PDF + web)
     if (await tryHandleProposalCommand(from, text)) return;
+
+    // Eva Fechamento — Junior gera contrato + procuração via /fechar
+    if (await tryHandleClosingCommand(from, text)) return;
 
     // Eva Agendadora — prioridade depois do pricing
     if (await tryHandleSchedulingCommand(from, text)) return;
