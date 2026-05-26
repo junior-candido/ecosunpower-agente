@@ -1,0 +1,106 @@
+// src/modules/closing/types.ts
+// Tipos centrais do modo /fechar. Veja docs/superpowers/specs/2026-05-26-eva-fechar-mvp-design.md
+//
+// Modelo de 2 sujeitos:
+//  - titular_uc: SEMPRE quem é titular da conta de luz, vai na PROCURAÇÃO.
+//  - contratante: quem assina o CONTRATO. Pode ser igual ao titular_uc OU outra pessoa
+//    (caso clássico: cônjuge negociou pela titular).
+
+export type UF = 'DF' | 'GO';
+
+export interface Endereco {
+  rua: string;
+  numero: string;
+  complemento?: string;
+  bairro: string;
+  cidade: string;
+  uf: UF;
+  cep: string;
+}
+
+export interface PessoaFisica {
+  tipo: 'PF';
+  nome: string;
+  cpf: string;
+  rg: string;
+  orgao_emissor_rg: string;
+  nacionalidade: string; // default 'Brasileiro(a)'
+  estado_civil?: string;
+  profissao?: string;
+  data_nascimento?: string; // ISO yyyy-mm-dd
+  endereco: Endereco;
+  telefone: string;
+  email: string;
+}
+
+export interface PessoaJuridica {
+  tipo: 'PJ';
+  razao_social: string;
+  cnpj: string;
+  endereco: Endereco;
+  representante: PessoaFisica;
+  telefone: string;
+  email: string;
+}
+
+export type Pessoa = PessoaFisica | PessoaJuridica;
+
+export type Modalidade = 'autoconsumo_local' | 'autoconsumo_remoto' | 'geracao_compartilhada';
+
+export interface Sistema {
+  kwp: number;
+  modalidade: Modalidade;
+  modulos: { marca: string; potencia_w: number; quantidade: number };
+  inversor: { marca: string; modelo: string; potencia_kw: number };
+}
+
+export interface Comercial {
+  valor_total_brl: number;
+  forma_pagamento: string; // texto livre, ex: 'à vista PIX'
+}
+
+export type RelacaoContratante = 'conjuge' | 'socio' | 'familiar' | 'financiador' | 'outro';
+
+export type Concessionaria = 'Neoenergia-DF' | 'Equatorial-GO';
+
+export type DocPedido = 'contrato' | 'procuracao';
+
+export interface DadosFechamento {
+  titular_uc: Pessoa;
+  uc_numero?: string; // 'a confirmar' se vazio
+  concessionaria: Concessionaria;
+  endereco_instalacao: Endereco;
+
+  contratante: Pessoa;
+  contratante_eh_titular: boolean;
+  relacao_contratante?: RelacaoContratante;
+  observacao_partes?: string;
+
+  sistema: Sistema;
+  comercial: Comercial;
+  disposicoes_especiais?: string;
+
+  docs_pedidos: DocPedido[];
+}
+
+export type ClosingState =
+  | { stage: 'collecting'; data: Partial<DadosFechamento>; pending_questions: string[] }
+  | { stage: 'awaiting_confirm'; data: DadosFechamento }
+  | { stage: 'rendering'; data: DadosFechamento; fechamento_id: string };
+
+export interface FechamentoRow {
+  id: string;
+  lead_id: string | null;
+  proposta_publica_id: string | null;
+  docs_pedidos: DocPedido[];
+  dados_snapshot: DadosFechamento;
+  contrato_drive_id: string | null;
+  contrato_drive_link: string | null;
+  procuracao_drive_id: string | null;
+  procuracao_drive_link: string | null;
+  drive_folder_id: string | null;
+  status: 'gerado' | 'aprovado_junior' | 'enviado_cliente' | 'cancelado';
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+}
