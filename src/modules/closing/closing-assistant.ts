@@ -75,3 +75,53 @@ export class ClosingAssistant {
     };
   }
 }
+
+import Anthropic from '@anthropic-ai/sdk';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const __dirname_closing = dirname(fileURLToPath(import.meta.url));
+const SYSTEM_PROMPT_PATH = join(__dirname_closing, '..', '..', 'prompts', 'closing-system.md');
+
+let cachedSystemPrompt: string | null = null;
+function getSystemPrompt(): string {
+  if (cachedSystemPrompt) return cachedSystemPrompt;
+  cachedSystemPrompt = readFileSync(SYSTEM_PROMPT_PATH, 'utf-8');
+  return cachedSystemPrompt;
+}
+
+export function createAnthropicLlmCaller(apiKey: string): LlmCaller {
+  const client = new Anthropic({ apiKey });
+
+  return async (userMessage, currentData) => {
+    const systemPrompt = getSystemPrompt();
+    const stateBlock = `Estado atual coletado (Partial<DadosFechamento>):\n${JSON.stringify(currentData, null, 2)}`;
+
+    const res = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      system: [
+        { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
+      ],
+      messages: [
+        { role: 'user', content: `${stateBlock}\n\n---\nMensagem do Junior:\n${userMessage}` },
+      ],
+    });
+
+    const text = res.content.filter((b) => b.type === 'text').map((b: any) => b.text).join('\n');
+    // LLM responde JSON puro ou JSON em bloco ```json...```
+    const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+    try {
+      const parsed = JSON.parse(cleaned);
+      if (parsed.action && typeof parsed.message === 'string') {
+        return parsed as LlmResponse;
+      }
+    } catch {/* parse fail abaixo */}
+    return {
+      action: 'ask_missing',
+      updates: {},
+      message: `Não entendi totalmente, manda de novo? (Debug: ${text.slice(0, 200)})`,
+    };
+  };
+}
