@@ -860,12 +860,20 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     const isAdmin = isAdminPhone(from);
     const t = text.trim();
     const isTrigger = /^\/fechar(\s|$)/i.test(t) || /^fechar(\s|$)/i.test(t);
-    const state = isAdmin ? await getClosingState(from) : null;
+    let state = isAdmin ? await getClosingState(from) : null;
     const inMode = !!state;
     console.log(`[closing] gate from=${from}(${normalizeBrazilianPhone(from)}) admin=${isAdmin} inMode=${inMode} isTrigger=${isTrigger} text="${t.slice(0,40)}"`);
     if (!isAdmin) return false;
     if (!inMode && !isTrigger) return false;
-    // Normaliza: aceita "fechar" sem barra também
+
+    // Comando /fechar (com ou sem barra) sempre RESETA o modo, mesmo que já
+    // exista estado leftover de tentativa anterior. Evita que o LLM trate o
+    // novo /fechar como continuação do fluxo antigo.
+    if (isTrigger && state) {
+      console.log(`[closing] reset state leftover for ${from}`);
+      await clearClosingState(from);
+      state = null;
+    }
     if (state) {
       try {
         const result = await closingAssistant.processMessage(t, state);
