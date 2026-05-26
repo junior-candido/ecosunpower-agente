@@ -93,6 +93,46 @@ function getSystemPrompt(): string {
   return cachedSystemPrompt;
 }
 
+/**
+ * Tenta parsear JSON da resposta do LLM. Aceita 4 formatos:
+ *   1. JSON puro
+ *   2. JSON em bloco ```json...```
+ *   3. JSON em bloco ```...```
+ *   4. JSON cercado de texto livre (extrai do primeiro { até o último })
+ * Retorna null se nada bater.
+ */
+function tryParseLlmJson(text: string): LlmResponse | null {
+  if (!text) return null;
+  const candidates: string[] = [];
+
+  // Formato 2/3: bloco markdown
+  const blockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (blockMatch) candidates.push(blockMatch[1].trim());
+
+  // Formato 4: primeiro { até o último } (greedy)
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(text.slice(firstBrace, lastBrace + 1));
+  }
+
+  // Formato 1: o texto inteiro pode ser JSON puro
+  candidates.push(text.trim());
+
+  for (const c of candidates) {
+    try {
+      const parsed = JSON.parse(c);
+      if (parsed && typeof parsed === 'object' && parsed.action && typeof parsed.message === 'string') {
+        if (!parsed.updates) parsed.updates = {};
+        return parsed as LlmResponse;
+      }
+    } catch {
+      // tenta próximo candidato
+    }
+  }
+  return null;
+}
+
 export function createAnthropicLlmCaller(apiKey: string): LlmCaller {
   const client = new Anthropic({ apiKey });
 
@@ -102,7 +142,7 @@ export function createAnthropicLlmCaller(apiKey: string): LlmCaller {
 
     const res = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
+      max_tokens: 2048,
       system: [
         { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
       ],
@@ -112,18 +152,16 @@ export function createAnthropicLlmCaller(apiKey: string): LlmCaller {
     });
 
     const text = res.content.filter((b) => b.type === 'text').map((b: any) => b.text).join('\n');
-    // LLM responde JSON puro ou JSON em bloco ```json...```
-    const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
-    try {
-      const parsed = JSON.parse(cleaned);
-      if (parsed.action && typeof parsed.message === 'string') {
-        return parsed as LlmResponse;
-      }
-    } catch {/* parse fail abaixo */}
+    // LLM responde JSON puro OU JSON em bloco ```json...``` OU JSON cercado de
+    // texto explicativo. Tentamos achar o JSON pelo primeiro { até o último }.
+    const parsed = tryParseLlmJson(text);
+    if (parsed) return parsed;
+
+    console.warn('[closing] LLM JSON parse falhou. Texto bruto:', text.slice(0, 500));
     return {
       action: 'ask_missing',
       updates: {},
-      message: `Não entendi totalmente, manda de novo? (Debug: ${text.slice(0, 200)})`,
+      message: 'Hmm, perdi o fio. Manda os dados de novo, ou /fechar pra recomeçar.',
     };
   };
 }
