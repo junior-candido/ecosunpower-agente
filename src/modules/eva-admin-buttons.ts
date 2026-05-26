@@ -73,6 +73,10 @@ export async function tryHandleEvaAdminButton(args: {
   onFecharApprove?: (fechamentoId: string) => Promise<void>;
   onFecharRefazer?: (fechamentoId: string) => Promise<void>;
   onFecharCancel?: (fechamentoId: string) => Promise<void>;
+  // Botões sem id, agem sobre o estado Redis do `from` (admin atual):
+  onFecharGerarConfirm?: () => Promise<void>;
+  onFecharAjustar?: () => Promise<void>;
+  onFecharSair?: () => Promise<void>;
 }): Promise<boolean> {
   const m = args.text.trim().match(/^evabt:([a-z0-9-]+)(?::([0-9a-f-]{36}))?$/i);
   if (!m) return false;
@@ -212,6 +216,25 @@ export async function tryHandleEvaAdminButton(args: {
         if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem fechamento id.'); return true; }
         if (args.onFecharCancel) await args.onFecharCancel(leadId);
         else await args.sendText(args.from, '⚠️ Handler de fechar-cancelar não configurado.');
+        return true;
+      }
+
+      // Botões sem id (agem sobre estado Redis do admin atual):
+      case 'fechar-gerar': {
+        if (args.onFecharGerarConfirm) await args.onFecharGerarConfirm();
+        else await args.sendText(args.from, '⚠️ Handler de fechar-gerar não configurado.');
+        return true;
+      }
+
+      case 'fechar-ajustar': {
+        if (args.onFecharAjustar) await args.onFecharAjustar();
+        else await args.sendText(args.from, '⚠️ Handler de fechar-ajustar não configurado.');
+        return true;
+      }
+
+      case 'fechar-sair': {
+        if (args.onFecharSair) await args.onFecharSair();
+        else await args.sendText(args.from, '⚠️ Handler de fechar-sair não configurado.');
         return true;
       }
 

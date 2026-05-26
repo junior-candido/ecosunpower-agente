@@ -107,9 +107,35 @@ export class ProposalFollowupService {
       ``,
       `🔗 https://propostas.ecosunpower.eng.br/p/${slug}`,
     ].join('\n');
-    await this.sendText(this.engineerPhone, msg).catch((err) =>
-      console.warn('[proposal-followup] notify reabertura falhou:', err.message),
-    );
+    await this.notifyJuniorComBotaoFechar(msg, proposta.cliente_telefone);
+  }
+
+  // Manda alerta pro Junior com botão "Fechou venda" quando dá pra resolver o
+  // lead pelo telefone do cliente. Se não der (sem WABA, sem lead match), cai
+  // pro sendText puro.
+  private async notifyJuniorComBotaoFechar(body: string, clienteTelefone: string | null): Promise<void> {
+    if (!this.metaService || !clienteTelefone) {
+      await this.sendText(this.engineerPhone, body).catch((err) =>
+        console.warn('[proposal-followup] notify falhou:', err.message),
+      );
+      return;
+    }
+    try {
+      const lead = await this.supabase.getLeadByPhone(clienteTelefone).catch(() => null);
+      const leadId = (lead as { id?: string } | null)?.id;
+      if (!leadId) {
+        await this.sendText(this.engineerPhone, body);
+        return;
+      }
+      await this.metaService.sendInteractiveButtons(
+        this.engineerPhone,
+        body,
+        [{ id: `evabt:fechar:${leadId}`, title: 'Fechou venda' }],
+      );
+    } catch (err) {
+      console.warn('[proposal-followup] botão fechar falhou, fallback texto:', (err as Error).message);
+      await this.sendText(this.engineerPhone, body).catch(() => {});
+    }
   }
 
   private async runFollowupAsync(slug: string): Promise<void> {
@@ -333,7 +359,7 @@ export class ProposalFollowupService {
       ``,
       `🔗 https://propostas.ecosunpower.eng.br/p/${slug}`,
     ].join('\n');
-    await this.sendText(this.engineerPhone, msg);
+    await this.notifyJuniorComBotaoFechar(msg, clienteTelefone);
   }
 
   // Caso junior_envia: cliente NAO conhece o numero da Eva. Pergunta a Junior

@@ -17,6 +17,11 @@ function mockSupabase(opts: {
               maybeSingle: async () => ({ data: opts.leadById ?? null, error: null }),
             }),
             ilike: (_col: string, _val: string) => ({
+              not: (_c: string, _o: string, _v: string) => ({
+                order: () => ({
+                  limit: () => ({ data: opts.leadsByName ?? [], error: null }),
+                }),
+              }),
               order: () => ({
                 limit: () => ({ data: opts.leadsByName ?? [], error: null }),
               }),

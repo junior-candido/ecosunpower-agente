@@ -57,10 +57,13 @@ export async function fetchByLeadId(sb: SupabaseClient, leadId: string): Promise
 }
 
 export async function searchLeadByName(sb: SupabaseClient, term: string): Promise<LeadRow[]> {
+  // Exclui leads em status terminal (já fechados ou perdidos) — não faz sentido
+  // /fechar quem já virou cliente.
   const res = await sb
     .from('leads')
     .select('*')
     .ilike('name', `%${term}%`)
+    .not('status', 'in', '(transferido,inativo)')
     .order('created_at', { ascending: false })
     .limit(10);
   if (res.error) throw res.error;

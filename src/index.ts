@@ -673,11 +673,40 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       const nome = lead.name;
       if (missing.length === 0) {
         await setClosingState(adminPhone, { stage: 'awaiting_confirm', data: initialData as DadosFechamento });
+        if (metaWaba) {
+          try {
+            await metaWaba.sendInteractiveButtons(
+              adminPhone,
+              `Bora fechar ${nome}. Já tenho tudo. Confirma pra emitir contrato + procuração.`,
+              [
+                { id: 'evabt:fechar-gerar', title: 'Gerar' },
+                { id: 'evabt:fechar-ajustar', title: 'Ajustar' },
+                { id: 'evabt:fechar-sair', title: 'Cancelar' },
+              ],
+            );
+            return;
+          } catch (err) {
+            console.warn('[closing] sendInteractiveButtons fechar-gerar falhou:', (err as Error).message);
+          }
+        }
         await sendText(adminPhone, `Bora fechar ${nome}. Já tenho tudo. Confirma "gerar" pra emitir contrato + procuração.`);
       } else {
         await setClosingState(adminPhone, { stage: 'collecting', data: initialData, pending_questions: missing });
         const bullets = humanizeMissing(missing);
-        await sendText(adminPhone, `Bora fechar ${nome}. Achei os dados, falta:\n${bullets}\n\nPode mandar tudo junto.`);
+        const corpo = `Bora fechar ${nome}. Achei os dados, falta:\n${bullets}\n\nPode mandar tudo junto.`;
+        if (metaWaba) {
+          try {
+            await metaWaba.sendInteractiveButtons(
+              adminPhone,
+              corpo,
+              [{ id: 'evabt:fechar-sair', title: 'Cancelar' }],
+            );
+            return;
+          } catch (err) {
+            console.warn('[closing] sendInteractiveButtons fechar-sair falhou:', (err as Error).message);
+          }
+        }
+        await sendText(adminPhone, corpo);
       }
     } catch (err) {
       console.error('[closing] handleFecharStart erro:', (err as Error).message);
@@ -787,6 +816,36 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     await sendText(adminPhone, '🔄 Refazer ainda não implementado. Manda /fechar de novo pra recomeçar.');
   }
 
+  // Handler do botão "Gerar" — chamado quando Junior tá em awaiting_confirm e
+  // clica Gerar (em vez de digitar "gera").
+  async function handleFecharGerarConfirm(adminPhone: string): Promise<void> {
+    const state = await getClosingState(adminPhone);
+    if (!state || state.stage !== 'awaiting_confirm') {
+      await sendText(adminPhone, '⚠️ Nenhum fechamento pendente. Manda /fechar pra começar.');
+      return;
+    }
+    await sendText(adminPhone, '⏳ Gerando PDFs...');
+    await handleFecharGenerate(adminPhone);
+  }
+
+  // Handler do botão "Ajustar" — volta pra collecting mantendo dados.
+  async function handleFecharAjustar(adminPhone: string): Promise<void> {
+    const state = await getClosingState(adminPhone);
+    if (!state) {
+      await sendText(adminPhone, '⚠️ Nenhum fechamento pendente.');
+      return;
+    }
+    const data = (state as any).data ?? {};
+    await setClosingState(adminPhone, { stage: 'collecting', data, pending_questions: [] });
+    await sendText(adminPhone, '✏️ Beleza. Manda o que quer mudar (ex: "valor 42 mil", "RG 1234567 SSP-DF", "contrato no nome do marido").');
+  }
+
+  // Handler do botão "Cancelar" — limpa o estado e sai do modo.
+  async function handleFecharSair(adminPhone: string): Promise<void> {
+    await clearClosingState(adminPhone);
+    await sendText(adminPhone, '❌ Fechamento cancelado. Pra começar de novo manda /fechar.');
+  }
+
   async function handleFecharCancel(fechamentoId: string, adminPhone: string): Promise<void> {
     try {
       await closingPersist.updateStatus(fechamentoId, 'cancelado');
@@ -843,23 +902,42 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     }
 
     try {
-      const matches = await searchLeadByName(supabase.getClient(), arg.split(/[,;]/)[0].trim());
-      if (matches.length === 1) {
+      const termoBusca = arg.split(/[,;]/)[0].trim();
+      const matches = await searchLeadByName(supabase.getClient(), termoBusca);
+      const termoEhUmaPalavra = termoBusca.split(/\s+/).length === 1;
+
+      if (matches.length === 0) {
+        await setClosingState(from, { stage: 'collecting', data: {}, pending_questions: [] });
+        await sendText(from, `Não achei "${arg}" no cadastro (ativos). Cliente novo? Manda os dados completos.`);
+        return true;
+      }
+
+      // Match único só quando Junior passa termo específico (2+ palavras).
+      // Termo genérico (1 palavra) SEMPRE mostra lista pra evitar fechar no
+      // lead errado quando o nome se repete (ex: 2 Fernandas no banco).
+      if (matches.length === 1 && !termoEhUmaPalavra) {
         await handleFecharStart(matches[0].id, from);
         return true;
       }
-      if (matches.length === 0) {
-        await setClosingState(from, { stage: 'collecting', data: {}, pending_questions: [] });
-        await sendText(from, `Não achei "${arg}" no cadastro. Cliente novo? Manda os dados completos (nome, CPF, RG, endereço, sistema, valor).`);
-        return true;
-      }
-      // múltiplos — botões
+
+      // Lista de opções (1 match com termo genérico OU múltiplos)
+      const linhaInfo = (mlead: typeof matches[0]) => {
+        const tel = mlead.phone ? mlead.phone.slice(-11) : 's/ tel';
+        return `${mlead.name} — ${tel}`;
+      };
+
       if (metaWaba && matches.length <= 3) {
-        const btns = matches.slice(0, 3).map((mlead) => ({ id: `evabt:fechar-pick:${mlead.id}`, title: mlead.name.slice(0, 20) }));
-        await metaWaba.sendInteractiveButtons(from, `Achei ${matches.length} leads "${arg}". Qual?`, btns);
+        const btns = matches.slice(0, 3).map((mlead) => ({
+          id: `evabt:fechar-pick:${mlead.id}`,
+          title: mlead.name.slice(0, 20),
+        }));
+        const corpo = matches.length === 1
+          ? `Achei 1 lead "${termoBusca}":\n${linhaInfo(matches[0])}\n\nÉ esse?`
+          : `Achei ${matches.length} leads com "${termoBusca}". Qual?`;
+        await metaWaba.sendInteractiveButtons(from, corpo, btns);
       } else {
-        const lista = matches.slice(0, 10).map((mlead, i) => `${i + 1}. ${mlead.name} (${mlead.phone ?? 's/ tel'})`).join('\n');
-        await sendText(from, `Achei ${matches.length} leads:\n${lista}\n\nManda /fechar <nome completo> pra escolher.`);
+        const lista = matches.slice(0, 10).map((mlead, i) => `${i + 1}. ${linhaInfo(mlead)}`).join('\n');
+        await sendText(from, `Achei ${matches.length} leads "${termoBusca}":\n${lista}\n\nManda /fechar <nome completo> pra escolher.`);
       }
       return true;
     } catch (err) {
@@ -918,16 +996,35 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         reply = await proposalAssistant.processProposalMessage(from, text);
       }
       // Se proposta foi gerada com sucesso (mensagem contém "Proposta gerada"),
-      // adiciona botão "Fechou venda" pra Junior fechar venda direto.
-      // NOTA: botão usa placeholder lead_id (proposalAssistant retorna só string).
-      // Junior usa /fechar <nome> pra resolver o lead real — limitação conhecida MVP.
+      // adiciona botão "Fechou venda" pra Junior fechar venda direto. Busca o
+      // lead_id real pela proposta_publica mais recente (cliente_telefone).
       if (/Proposta gerada/i.test(reply) && metaWaba) {
+        let leadId: string | null = null;
         try {
-          await metaWaba.sendInteractiveButtons(from, reply + '\n\nFechou essa venda?', [
-            { id: `evabt:fechar:${'00000000-0000-0000-0000-000000000000'}`, title: 'Fechou venda' },
-          ]);
-        } catch {
-          await sendText(from, reply + '\n\nFechou? Digita: /fechar <nome do cliente>');
+          const { data: ultimaProp } = await supabase.getClient()
+            .from('propostas_publicas')
+            .select('cliente_telefone')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const clienteTel = (ultimaProp as { cliente_telefone?: string } | null)?.cliente_telefone;
+          if (clienteTel) {
+            const leadCliente = await supabase.getLeadByPhone(clienteTel).catch(() => null);
+            leadId = (leadCliente as { id?: string } | null)?.id ?? null;
+          }
+        } catch (err) {
+          console.warn('[proposal] busca lead pra botão fechar falhou:', (err as Error).message);
+        }
+        if (leadId) {
+          try {
+            await metaWaba.sendInteractiveButtons(from, reply, [
+              { id: `evabt:fechar:${leadId}`, title: 'Fechou venda' },
+            ]);
+          } catch {
+            await sendText(from, reply);
+          }
+        } else {
+          await sendText(from, reply);
         }
       } else {
         await sendText(from, reply);
@@ -2614,6 +2711,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         onFecharApprove: (fechamentoId) => handleFecharApprove(fechamentoId, from),
         onFecharRefazer: (fechamentoId) => handleFecharRefazer(fechamentoId, from),
         onFecharCancel: (fechamentoId) => handleFecharCancel(fechamentoId, from),
+        onFecharGerarConfirm: () => handleFecharGerarConfirm(from),
+        onFecharAjustar: () => handleFecharAjustar(from),
+        onFecharSair: () => handleFecharSair(from),
       })) return;
     }
 
