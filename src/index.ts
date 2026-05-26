@@ -797,11 +797,15 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
   // Comando /fechar [nome do cliente]
   async function tryHandleClosingCommand(from: string, text: string): Promise<boolean> {
-    if (!isAdminPhone(from)) return false;
-
+    const isAdmin = isAdminPhone(from);
     const t = text.trim();
-    // Se Junior já está em modo closing, processa via ClosingAssistant
-    const state = await getClosingState(from);
+    const isTrigger = /^\/fechar(\s|$)/i.test(t) || /^fechar(\s|$)/i.test(t);
+    const state = isAdmin ? await getClosingState(from) : null;
+    const inMode = !!state;
+    console.log(`[closing] gate from=${from}(${normalizeBrazilianPhone(from)}) admin=${isAdmin} inMode=${inMode} isTrigger=${isTrigger} text="${t.slice(0,40)}"`);
+    if (!isAdmin) return false;
+    if (!inMode && !isTrigger) return false;
+    // Normaliza: aceita "fechar" sem barra também
     if (state) {
       try {
         const result = await closingAssistant.processMessage(t, state);
@@ -826,8 +830,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       }
     }
 
-    // Sem estado: precisa ser comando /fechar pra entrar
-    const m = t.match(/^\/fechar(?:\s+(.+))?$/i);
+    // Sem estado: precisa ser comando /fechar ou fechar pra entrar
+    const m = t.match(/^\/?fechar(?:\s+(.+))?$/i);
     if (!m) return false;
     const arg = m[1]?.trim() ?? '';
 
