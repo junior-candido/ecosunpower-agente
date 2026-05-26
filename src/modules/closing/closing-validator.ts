@@ -110,3 +110,81 @@ export function findMissingRequired(d: Partial<DadosFechamento>): string[] {
   if (!d.comercial?.forma_pagamento) miss.push('comercial.forma_pagamento');
   return miss;
 }
+
+// Mapeia campo técnico (titular_uc.cpf etc) pra label amigável em PT-BR
+// usada nas mensagens "falta X" mandadas pro Junior no zap.
+const FIELD_LABELS: Record<string, string> = {
+  'docs_pedidos': 'Quais docs (contrato, procuração ou ambos)',
+  'concessionaria': 'Concessionária',
+  'endereco_instalacao': 'Endereço da instalação',
+  'titular_uc.nome': 'Nome completo do titular',
+  'titular_uc.cpf': 'CPF do titular',
+  'titular_uc.cnpj': 'CNPJ do titular',
+  'titular_uc.rg': 'RG do titular',
+  'titular_uc.orgao_emissor_rg': 'Órgão emissor do RG',
+  'titular_uc.razao_social': 'Razão social',
+  'titular_uc.telefone': 'Telefone do titular',
+  'titular_uc.email': 'E-mail do titular',
+  'titular_uc.endereco': 'Endereço completo do titular',
+  'contratante.nome': 'Nome do contratante',
+  'contratante.cpf': 'CPF do contratante',
+  'contratante.cnpj': 'CNPJ do contratante',
+  'contratante.rg': 'RG do contratante',
+  'contratante.orgao_emissor_rg': 'Órgão emissor RG contratante',
+  'contratante.razao_social': 'Razão social do contratante',
+  'contratante.telefone': 'Telefone do contratante',
+  'contratante.email': 'E-mail do contratante',
+  'contratante.endereco': 'Endereço do contratante',
+  'sistema.kwp': 'Potência total (kWp)',
+  'sistema.modalidade': 'Modalidade (autoconsumo local, remoto ou compartilhada)',
+  'sistema.modulos': 'Módulos (marca + potência por painel + qtd)',
+  'sistema.inversor': 'Inversor (marca + modelo)',
+  'comercial.valor_total_brl': 'Valor total (R$)',
+  'comercial.forma_pagamento': 'Forma de pagamento (à vista, parcelado, financiado)',
+};
+
+const ENDERECO_LABELS: Record<string, string> = {
+  rua: 'rua', numero: 'nº', bairro: 'bairro',
+  cidade: 'cidade', uf: 'UF', cep: 'CEP', complemento: 'complemento',
+};
+
+/**
+ * Converte lista de campos técnicos faltantes em bullets PT-BR.
+ * Agrupa sub-campos de endereço em uma linha só ("Endereço (rua, nº, ...)").
+ */
+export function humanizeMissing(missing: string[]): string {
+  // Agrupar endereço por prefixo (titular_uc.endereco.* / contratante.endereco.* / endereco_instalacao.*)
+  const grupos = new Map<string, string[]>();
+  const naoAgrupados: string[] = [];
+
+  for (const m of missing) {
+    const enderecoMatch = m.match(/^(titular_uc|contratante|endereco_instalacao)\.endereco\.(\w+)$/);
+    const instalacaoMatch = m.match(/^endereco_instalacao\.(\w+)$/);
+    if (enderecoMatch) {
+      const prefix = enderecoMatch[1];
+      const subcampo = enderecoMatch[2];
+      const arr = grupos.get(prefix) ?? [];
+      arr.push(ENDERECO_LABELS[subcampo] ?? subcampo);
+      grupos.set(prefix, arr);
+    } else if (instalacaoMatch) {
+      const arr = grupos.get('endereco_instalacao') ?? [];
+      arr.push(ENDERECO_LABELS[instalacaoMatch[1]] ?? instalacaoMatch[1]);
+      grupos.set('endereco_instalacao', arr);
+    } else {
+      naoAgrupados.push(m);
+    }
+  }
+
+  const bullets: string[] = [];
+  for (const m of naoAgrupados) {
+    bullets.push(`• ${FIELD_LABELS[m] ?? m}`);
+  }
+  for (const [prefix, subs] of grupos) {
+    const label = prefix === 'titular_uc' ? 'Endereço do titular'
+                : prefix === 'contratante' ? 'Endereço do contratante'
+                : 'Endereço da instalação';
+    bullets.push(`• ${label} (${subs.join(', ')})`);
+  }
+
+  return bullets.join('\n');
+}

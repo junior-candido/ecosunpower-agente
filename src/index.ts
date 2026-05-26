@@ -50,6 +50,7 @@ import {
   renderProcuracao,
   renderHtmlToPdf,
   findMissingRequired,
+  humanizeMissing,
   type DadosFechamento,
   type ClosingState,
 } from './modules/closing/index.js';
@@ -675,8 +676,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         await sendText(adminPhone, `Bora fechar ${nome}. Já tenho tudo. Confirma "gerar" pra emitir contrato + procuração.`);
       } else {
         await setClosingState(adminPhone, { stage: 'collecting', data: initialData, pending_questions: missing });
-        const lista = missing.slice(0, 8).join(', ');
-        await sendText(adminPhone, `Bora fechar ${nome}. Achei os dados, falta:\n${lista}\n\nPode mandar tudo junto.`);
+        const bullets = humanizeMissing(missing);
+        await sendText(adminPhone, `Bora fechar ${nome}. Achei os dados, falta:\n${bullets}\n\nPode mandar tudo junto.`);
       }
     } catch (err) {
       console.error('[closing] handleFecharStart erro:', (err as Error).message);

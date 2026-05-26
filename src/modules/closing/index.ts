@@ -2,6 +2,7 @@
 export * from './types.js';
 export {
   findMissingRequired,
+  humanizeMissing,
   isValidCPF,
   isValidCNPJ,
   isValidCEP,

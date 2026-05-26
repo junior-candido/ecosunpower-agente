@@ -3,7 +3,7 @@
 // LLM extrai updates do texto livre, validator é o gate final antes de transitar pra awaiting_confirm.
 
 import type { DadosFechamento, ClosingState } from './types.js';
-import { findMissingRequired } from './closing-validator.js';
+import { findMissingRequired, humanizeMissing } from './closing-validator.js';
 import { buildObservacaoPartes } from './templates/contrato.html.js';
 
 export interface LlmResponse {
@@ -64,9 +64,11 @@ export class ClosingAssistant {
       };
     }
 
-    // Se LLM disse ready_to_generate mas validador discorda, força volta pra collecting
-    const replyText = missing.length > 0
-      ? `${llm.message}\n\nAinda falta: ${missing.slice(0, 8).join(', ')}${missing.length > 8 ? ` e mais ${missing.length - 8}` : ''}.`
+    // Safety net: SÓ adiciona aviso "ainda falta X" quando o LLM disse
+    // ready_to_generate mas o validador discorda. Quando LLM já listou (ask_missing),
+    // a mensagem dele já é suficiente — não duplica com nomes técnicos.
+    const replyText = (llm.action === 'ready_to_generate' && missing.length > 0)
+      ? `${llm.message}\n\nNa verdade ainda falta:\n${humanizeMissing(missing)}`
       : llm.message;
 
     return {
