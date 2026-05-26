@@ -7,6 +7,7 @@ import {
   isValidEmail,
   isValidPhoneBR,
   formatCPF,
+  formatCNPJ,
   formatCEP,
   formatPhoneBR,
 } from '../src/modules/closing/closing-validator.js';
@@ -50,5 +51,27 @@ describe('closing-validator primitives', () => {
     expect(formatCPF('02887612190')).toBe('028.876.121-90');
     expect(formatCEP('72910000')).toBe('72910-000');
     expect(formatPhoneBR('61992891958')).toBe('(61) 99289-1958');
+  });
+});
+
+describe('closing-validator defensive guards', () => {
+  it('isValid* retornam false para undefined/null/number', () => {
+    expect(isValidCPF(undefined as any)).toBe(false);
+    expect(isValidCPF(null as any)).toBe(false);
+    expect(isValidEmail(undefined as any)).toBe(false);
+    expect(isValidPhoneBR(123 as any)).toBe(false);
+  });
+
+  it('formatCPF retorna o input original se inválido', () => {
+    expect(formatCPF('123')).toBe('123');
+    expect(formatCPF('abc')).toBe('abc');
+  });
+
+  it('formatCEP retorna o input original se inválido', () => {
+    expect(formatCEP('123')).toBe('123');
+  });
+
+  it('formatPhoneBR retorna o input original se inválido', () => {
+    expect(formatPhoneBR('123')).toBe('123');
   });
 });
