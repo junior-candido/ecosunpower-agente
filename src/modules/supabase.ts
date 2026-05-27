@@ -684,6 +684,17 @@ export class SupabaseService {
     tipo?: 'basica' | 'personalizada';
     modoEnvio?: 'junior_envia' | 'eva_envia';
   }): Promise<{ id: string; expiresAt: string }> {
+    // Vincula lead se telefone vier preenchido. Resolve bug Fase 1 (proposta orfa).
+    let leadId: string | null = null;
+    if (input.clienteTelefone && input.clienteTelefone.trim()) {
+      try {
+        leadId = await this.getOrCreateLeadByPhone(input.clienteTelefone, input.clienteNome);
+      } catch (err) {
+        // Falha no get-or-create NAO bloqueia salvar a proposta — loga e segue.
+        console.warn('[supabase] savePropostaPublica getOrCreateLeadByPhone falhou:', (err as Error).message);
+      }
+    }
+
     const { data, error } = await this.client
       .from('propostas_publicas')
       .insert({
@@ -695,6 +706,7 @@ export class SupabaseService {
         dados_input: input.dadosInput ?? null,
         tipo: input.tipo ?? 'basica',
         modo_envio: input.modoEnvio ?? 'junior_envia',
+        lead_id: leadId,
       })
       .select('id, expires_at')
       .single();
