@@ -65,3 +65,46 @@ describe('ClosingPersist', () => {
     expect(v).toBe(1);
   });
 });
+
+describe('ClosingPersist.createFechamento — parent_id', () => {
+  it('passa parent_id no insert quando informado', async () => {
+    const inserted: any[] = [];
+    const sb: any = {
+      from: () => ({
+        insert: (row: any) => {
+          inserted.push(row);
+          return { select: () => ({ single: async () => ({ data: { id: 'fech-id-1' }, error: null }) }) };
+        },
+      }),
+    };
+    const p = new ClosingPersist(sb);
+    await p.createFechamento({
+      leadId: 'l1',
+      propostaPublicaId: null,
+      dados: { docs_pedidos: ['procuracao'] } as any,
+      createdBy: '5561900000000',
+      parentId: 'fech-id-anterior',
+    });
+    expect(inserted[0].parent_id).toBe('fech-id-anterior');
+  });
+
+  it('parent_id null quando nao informado', async () => {
+    const inserted: any[] = [];
+    const sb: any = {
+      from: () => ({
+        insert: (row: any) => {
+          inserted.push(row);
+          return { select: () => ({ single: async () => ({ data: { id: 'fech-id-2' }, error: null }) }) };
+        },
+      }),
+    };
+    const p = new ClosingPersist(sb);
+    await p.createFechamento({
+      leadId: 'l1',
+      propostaPublicaId: null,
+      dados: { docs_pedidos: ['procuracao'] } as any,
+      createdBy: '5561900000000',
+    });
+    expect(inserted[0].parent_id ?? null).toBeNull();
+  });
+});

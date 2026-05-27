@@ -7,6 +7,7 @@ export interface CreateFechamentoInput {
   propostaPublicaId: string | null;
   dados: DadosFechamento;
   createdBy: string;
+  parentId?: string | null;
 }
 
 export interface UpdateDriveLinksInput {
@@ -30,6 +31,7 @@ export class ClosingPersist {
         dados_snapshot: input.dados,
         status: 'gerado',
         created_by: input.createdBy,
+        parent_id: input.parentId ?? null,
       })
       .select('id')
       .single();

@@ -94,6 +94,7 @@ export interface FechamentoRow {
   proposta_publica_id: string | null;
   docs_pedidos: DocPedido[];
   dados_snapshot: DadosFechamento;
+  parent_id: string | null;
   contrato_drive_id: string | null;
   contrato_drive_link: string | null;
   procuracao_drive_id: string | null;
