@@ -1,36 +1,55 @@
 // src/modules/closing/templates/procuracao.html.ts
-// Renderiza HTML da procuração específica pra concessionária.
-// Outorgante = SEMPRE titular_uc (quem é titular da conta de luz).
-// Outorgado = EcoSunPower Energia Solar LTDA (Junior CREA/CFT).
+// Modelo simples 1 pagina A4 validado em 27/05/2026 (caso Fernanda).
+// Veja docs/superpowers/specs/2026-05-27-eva-procuracao-contrato-rapidos-design.md
 //
-// Base: tmp/procuracao-camila.pdf + spec contratos.md.
+// Outorgante = SEMPRE titular_uc (quem e titular da conta de luz).
+// Outorgado = ANTONIO CANDIDO RODRIGUES JUNIOR (PF, Responsavel Tecnico CREA/CFT)
+//             atuando em nome da ECOSUNPOWER ENERGIA SOLAR LTDA (PJ).
 
 import type { DadosFechamento, PessoaFisica, PessoaJuridica } from '../types.js';
 
 const OUTORGADO = {
-  razao_social: 'ECOSUNPOWER ENERGIA SOLAR LTDA',
-  cnpj: '33.020.459/0001-06',
-  endereco: 'SHA Conjunto 01 Chácara 44C Lote 6, Arniqueira, Brasília-DF, CEP 71993-150',
-  representante_nome: 'ANTONIO CANDIDO RODRIGUES JUNIOR',
-  representante_cpf: '989.404.571-53',
-  representante_rg: '2.202.520 SSP-DF',
-  representante_crea: '98940457153',
-  representante_titulo: 'Responsável Técnico',
+  nome: 'ANTONIO CANDIDO RODRIGUES JUNIOR',
+  cpf: '989.404.571-53',
+  rg: '2.202.520 SSP-DF',
+  crea: '98940457153',
+  titulo: 'Responsável Técnico CREA/CFT',
+  empresa_razao_social: 'ECOSUNPOWER ENERGIA SOLAR LTDA',
+  empresa_cnpj: '33.020.459/0001-06',
+  empresa_endereco: 'Brasilia-DF',
 };
 
-function fmtPF(p: PessoaFisica): string {
-  const estadoCivil = p.estado_civil ? `${p.estado_civil}, ` : '';
-  const profissao = p.profissao ? `${p.profissao}, ` : '';
-  const enderecoStr = `${p.endereco.rua}, ${p.endereco.numero}${p.endereco.complemento ? ', ' + p.endereco.complemento : ''}, ${p.endereco.bairro}, ${p.endereco.cidade}-${p.endereco.uf}, CEP ${p.endereco.cep}`;
-  return `${p.nome}, ${p.nacionalidade}, ${estadoCivil}${profissao}inscrito(a) no CPF/MF sob o nº ${p.cpf}, RG nº ${p.rg} ${p.orgao_emissor_rg}, residente e domiciliado(a) no endereço ${enderecoStr}`;
+const RODAPE_EMAIL = 'junior@ecosunpower.eng.br';
+
+function enderecoStr(e: { rua: string; numero: string; complemento?: string; bairro: string; cidade: string; uf: string; cep: string }): string {
+  const comp = e.complemento ? `, ${e.complemento}` : '';
+  return `${e.rua}, ${e.numero}${comp}, ${e.bairro}, ${e.cidade}-${e.uf}, CEP ${e.cep}`;
 }
 
-function fmtPJ(p: PessoaJuridica): string {
-  return `${p.razao_social}, pessoa jurídica inscrita no CNPJ sob o nº ${p.cnpj}, com sede em ${p.endereco.rua}, ${p.endereco.numero}, ${p.endereco.bairro}, ${p.endereco.cidade}-${p.endereco.uf}, CEP ${p.endereco.cep}, neste ato representada por ${fmtPF(p.representante)}`;
-}
-
-function fmtPessoa(p: PessoaFisica | PessoaJuridica): string {
-  return p.tipo === 'PJ' ? fmtPJ(p) : fmtPF(p);
+function descreveTitular(p: PessoaFisica | PessoaJuridica): { nomeMaiusculo: string; descricaoCompleta: string; cpfCnpj: string; rgInfo: string } {
+  if (p.tipo === 'PJ') {
+    const r = p.representante;
+    return {
+      nomeMaiusculo: p.razao_social.toUpperCase(),
+      descricaoCompleta: `<b>${p.razao_social.toUpperCase()}</b>, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº ${p.cnpj}, com sede na ${enderecoStr(p.endereco)}, neste ato representada por <b>${r.nome.toUpperCase()}</b>, ${r.nacionalidade ?? 'brasileiro(a)'}, portador do RG nº ${r.rg} ${r.orgao_emissor_rg}, inscrito no CPF/MF sob o nº ${r.cpf}`,
+      cpfCnpj: p.cnpj,
+      rgInfo: `${r.rg} ${r.orgao_emissor_rg}`,
+    };
+  }
+  const partes: string[] = [];
+  partes.push(`<b>${p.nome.toUpperCase()}</b>`);
+  partes.push(p.nacionalidade ?? 'brasileiro(a)');
+  if (p.estado_civil) partes.push(p.estado_civil);
+  if (p.profissao) partes.push(p.profissao);
+  partes.push(`portador(a) do RG nº ${p.rg} ${p.orgao_emissor_rg}`);
+  partes.push(`inscrito(a) no CPF/MF sob o nº ${p.cpf}`);
+  partes.push(`residente e domiciliado(a) na ${enderecoStr(p.endereco)}`);
+  return {
+    nomeMaiusculo: p.nome.toUpperCase(),
+    descricaoCompleta: partes.join(', '),
+    cpfCnpj: p.cpf,
+    rgInfo: `${p.rg} ${p.orgao_emissor_rg}`,
+  };
 }
 
 function hojeFormatado(): string {
@@ -40,64 +59,77 @@ function hojeFormatado(): string {
 }
 
 export function renderProcuracao(dados: DadosFechamento): string {
-  const outorgante = fmtPessoa(dados.titular_uc);
+  const titular = descreveTitular(dados.titular_uc);
+  const uc = (dados.uc_numero && dados.uc_numero.trim()) ? dados.uc_numero : '(a confirmar)';
+  const concessionariaNome = dados.concessionaria === 'Neoenergia-DF'
+    ? 'NEOENERGIA DISTRIBUIÇÃO BRASÍLIA S.A.'
+    : 'EQUATORIAL ENERGIA GOIÁS S.A.';
   const cidade = dados.titular_uc.endereco.cidade;
   const uf = dados.titular_uc.endereco.uf;
   const data = hojeFormatado();
-  const uc = dados.uc_numero ?? '(a confirmar)';
-  const concessionaria = dados.concessionaria;
-  const enderecoInstalacao = `${dados.endereco_instalacao.rua}, ${dados.endereco_instalacao.numero}, ${dados.endereco_instalacao.bairro}, ${dados.endereco_instalacao.cidade}-${dados.endereco_instalacao.uf}`;
-  const tituloNomeTitular = dados.titular_uc.tipo === 'PF' ? dados.titular_uc.nome : dados.titular_uc.razao_social;
-  const cpfCnpjTitular = dados.titular_uc.tipo === 'PF' ? dados.titular_uc.cpf : dados.titular_uc.cnpj;
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="utf-8">
-<title>Procuração ${tituloNomeTitular} - EcoSunPower</title>
+<meta charset="UTF-8">
+<title>Procuração ${titular.nomeMaiusculo}</title>
 <style>
-  @page { size: A4; margin: 2cm 2.2cm; }
-  body { font-family: 'Calibri', 'Arial', sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.6; }
-  h1 { text-align: center; font-size: 14pt; color: #0c4a6e; margin-bottom: 24pt; }
-  h2 { font-size: 12pt; color: #0c4a6e; margin-top: 16pt; margin-bottom: 8pt; }
-  p { text-align: justify; margin: 10pt 0; }
-  strong { color: #0c4a6e; }
-  .assinatura { margin-top: 48pt; }
-  .assinatura .linha { border-bottom: 1px solid #1a1a1a; width: 60%; margin: 36pt 0 6pt; }
-  .local-data { margin-top: 36pt; text-align: right; }
+  @page { size: A4; margin: 18mm 20mm; }
+  body { font-family: 'Times New Roman', Georgia, serif; font-size: 11.5pt; line-height: 1.45; color: #111; }
+  .page { max-width: 170mm; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 14pt; border-bottom: 1.5pt solid #1b3a52; padding-bottom: 8pt; }
+  header .marca { font-family: Arial, sans-serif; font-size: 13pt; font-weight: 700; color: #1b3a52; letter-spacing: 0.5pt; }
+  header .sub { font-family: Arial, sans-serif; font-size: 8.5pt; color: #555; margin-top: 2pt; }
+  h1 { text-align: center; font-size: 14pt; margin: 10pt 0 14pt; letter-spacing: 2pt; }
+  p { margin: 0 0 8pt; text-align: justify; }
+  ul.poderes { margin: 4pt 0 10pt 18pt; }
+  ul.poderes li { margin-bottom: 3pt; text-align: justify; }
+  .data { margin-top: 22pt; text-align: right; }
+  .assinatura { margin-top: 34pt; text-align: center; }
+  .assinatura .linha { width: 70%; margin: 0 auto; border-top: 1pt solid #111; padding-top: 4pt; font-size: 10pt; }
+  .assinatura .nome { font-weight: 700; text-transform: uppercase; font-size: 10.5pt; }
+  footer { margin-top: 18pt; text-align: center; font-family: Arial, sans-serif; font-size: 8pt; color: #888; border-top: 0.5pt solid #ddd; padding-top: 6pt; }
 </style>
 </head>
 <body>
+<div class="page">
+  <header>
+    <div class="marca">${OUTORGADO.empresa_razao_social.replace(/ LTDA$/, '')}</div>
+    <div class="sub">CNPJ ${OUTORGADO.empresa_cnpj} &middot; ${OUTORGADO.empresa_endereco} &middot; ecosunpower.eng.br</div>
+  </header>
 
-<h1>INSTRUMENTO PARTICULAR DE PROCURAÇÃO</h1>
+  <h1>PROCURAÇÃO PARTICULAR</h1>
 
-<h2>OUTORGANTE</h2>
-<p>${outorgante}, doravante denominado(a) <strong>OUTORGANTE</strong>.</p>
+  <p><b>OUTORGANTE:</b> ${titular.descricaoCompleta}.</p>
 
-<h2>OUTORGADA</h2>
-<p><strong>${OUTORGADO.razao_social}</strong>, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº ${OUTORGADO.cnpj}, com sede na ${OUTORGADO.endereco}, neste ato representada por <strong>${OUTORGADO.representante_nome}</strong>, brasileiro, ${OUTORGADO.representante_titulo}, portador do CPF nº ${OUTORGADO.representante_cpf}, RG nº ${OUTORGADO.representante_rg}, registrado no CREA/CFT sob o nº ${OUTORGADO.representante_crea}, doravante denominada <strong>OUTORGADA</strong>.</p>
+  <p><b>OUTORGADO:</b> <b>${OUTORGADO.nome}</b>, brasileiro, ${OUTORGADO.titulo} nº ${OUTORGADO.crea}, portador do RG nº ${OUTORGADO.rg}, inscrito no CPF/MF sob o nº ${OUTORGADO.cpf}, atuando em nome da empresa <b>${OUTORGADO.empresa_razao_social}</b>, CNPJ ${OUTORGADO.empresa_cnpj}, com sede em ${OUTORGADO.empresa_endereco}.</p>
 
-<h2>DOS PODERES</h2>
-<p>Pelo presente instrumento, a OUTORGANTE nomeia e constitui sua bastante procuradora a OUTORGADA, conferindo-lhe os mais amplos poderes para representá-la perante a concessionária <strong>${concessionaria}</strong>, junto à Unidade Consumidora nº <strong>${uc}</strong>, instalada no endereço ${enderecoInstalacao}, podendo praticar todos os atos necessários à:</p>
-<p>a) Solicitação de acesso, parecer técnico e aprovação de projeto de microgeração/minigeração distribuída fotovoltaica;</p>
-<p>b) Protocolização e acompanhamento dos pedidos de vistoria, troca de medidor e ativação do sistema de geração distribuída;</p>
-<p>c) Assinatura de Contrato de Adesão / Termo de Conexão / Termo de Compromisso e demais documentos exigidos pela concessionária;</p>
-<p>d) Apresentação e retirada de documentos, requerimentos, declarações e demais instrumentos relacionados ao processo de homologação;</p>
-<p>e) Representação junto a órgãos reguladores (ANEEL) quando necessário, no que se refere ao processo em questão.</p>
+  <p><b>PODERES:</b> Pelo presente instrumento particular de mandato, a OUTORGANTE nomeia e constitui o OUTORGADO seu bastante procurador, conferindo-lhe poderes especiais para representá-la perante a <b>${concessionariaNome}</b>, referente à Unidade Consumidora nº <b>${uc}</b>, com a finalidade de tratar do projeto de microgeração distribuída de energia solar fotovoltaica, podendo:</p>
 
-<h2>DA VALIDADE</h2>
-<p>A presente procuração é outorgada com prazo de validade de <strong>180 (cento e oitenta) dias</strong>, contados da data de sua assinatura, podendo ser revogada a qualquer tempo mediante comunicação por escrito.</p>
+  <ul class="poderes">
+    <li>protocolar, acompanhar e retirar o pedido de acesso à microgeração distribuída, bem como solicitar parecer de acesso e contrato de adesão;</li>
+    <li>assinar formulários, declarações, ART/TRT, projeto elétrico, memorial descritivo e demais documentos técnicos exigidos pela concessionária;</li>
+    <li>solicitar vistoria técnica, inspeção, troca/adequação do medidor bidirecional e ligação do sistema;</li>
+    <li>requerer 2ª via de faturas, histórico de consumo, dados cadastrais e demais informações relativas à UC;</li>
+    <li>receber notificações, comunicados, intimações e correspondências relacionados ao processo de homologação;</li>
+    <li>praticar todos os demais atos necessários ao bom e fiel cumprimento do presente mandato.</li>
+  </ul>
 
-<div class="local-data">
-<p>${cidade}-${uf}, ${data}.</p>
+  <p><b>PRAZO:</b> A presente procuração tem validade de <b>12 (doze) meses</b> contados da data de sua assinatura, podendo ser revogada a qualquer tempo mediante comunicação por escrito ao OUTORGADO.</p>
+
+  <div class="data">${cidade}-${uf}, ${data}.</div>
+
+  <div class="assinatura">
+    <div class="linha">
+      <div class="nome">${titular.nomeMaiusculo}</div>
+      <div>CPF ${titular.cpfCnpj} &middot; RG ${titular.rgInfo}</div>
+    </div>
+  </div>
+
+  <footer>
+    ${OUTORGADO.empresa_razao_social} &middot; CNPJ ${OUTORGADO.empresa_cnpj} &middot; ${RODAPE_EMAIL}
+  </footer>
 </div>
-
-<div class="assinatura">
-<div class="linha"></div>
-<p><strong>${tituloNomeTitular}</strong><br/>
-OUTORGANTE — CPF/CNPJ ${cpfCnpjTitular}</p>
-</div>
-
 </body>
 </html>`;
 }

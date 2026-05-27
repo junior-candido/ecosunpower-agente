@@ -56,7 +56,9 @@ describe('closing e2e (sem rede)', () => {
     const htmlContrato = renderContrato(dataCompleta);
     const htmlProcuracao = renderProcuracao(dataCompleta);
     expect(htmlContrato).toContain('Camila Barbosa Costa Cardoso');
-    expect(htmlProcuracao).toContain('INSTRUMENTO PARTICULAR DE PROCURAÇÃO');
+    // modelo atualizado 27/05/2026 (caso Fernanda): titulo simplificado
+    expect(htmlProcuracao).toContain('PROCURAÇÃO PARTICULAR');
+    expect(htmlProcuracao).toContain('CAMILA BARBOSA COSTA CARDOSO');
 
     // 5. drive upload (PDFs stub — não invoca Puppeteer aqui)
     const drive = fakeDrive();
