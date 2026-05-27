@@ -80,14 +80,21 @@ import { findMissingRequired } from '../src/modules/closing/closing-validator.js
 
 describe('findMissingRequired', () => {
   it('lista todos obrigatórios quando dados vazios', () => {
-    const missing = findMissingRequired({});
+    // docs_pedidos: ['contrato'] pra exercitar os campos de sistema/comercial
+    const missing = findMissingRequired({ docs_pedidos: ['contrato'] });
     expect(missing).toContain('titular_uc.nome');
     expect(missing).toContain('titular_uc.cpf');
     expect(missing).toContain('titular_uc.rg');
     expect(missing).toContain('sistema.kwp');
     expect(missing).toContain('comercial.valor_total_brl');
     expect(missing).toContain('comercial.forma_pagamento');
-    expect(missing).toContain('docs_pedidos');
+  });
+
+  it('pede docs_pedidos quando array vazio ou ausente', () => {
+    const missingVazio = findMissingRequired({ docs_pedidos: [] });
+    expect(missingVazio).toContain('docs_pedidos');
+    const missingSemCampo = findMissingRequired({});
+    expect(missingSemCampo).toContain('docs_pedidos');
   });
 
   it('não pede RG se docs_pedidos não inclui procuração nem contrato', () => {
@@ -131,5 +138,73 @@ describe('findMissingRequired', () => {
       docs_pedidos: ['contrato'],
     } as any);
     expect(missing.some((m) => m.startsWith('contratante.'))).toBe(true);
+  });
+});
+
+describe('findMissingRequired — filtro por docs_pedidos', () => {
+  const baseTitular: any = {
+    tipo: 'PF',
+    nome: 'Fulano', cpf: '12345678901', rg: '1234567', orgao_emissor_rg: 'SSP-DF',
+    endereco: { rua: 'R', numero: '1', bairro: 'B', cidade: 'Brasilia', uf: 'DF', cep: '70000000' },
+    telefone: '5561900000000', email: 'a@b.com', nacionalidade: 'brasileiro',
+  };
+  const baseEndereco = baseTitular.endereco;
+
+  it('procuracao NAO pede sistema/comercial/email/telefone', () => {
+    const miss = findMissingRequired({
+      docs_pedidos: ['procuracao'],
+      titular_uc: baseTitular,
+      concessionaria: 'Neoenergia-DF',
+      endereco_instalacao: baseEndereco,
+      contratante_eh_titular: true,
+      contratante: baseTitular,
+      uc_numero: '1234567',
+    });
+    expect(miss).toEqual([]);
+  });
+
+  it('procuracao pede UC quando faltando', () => {
+    const miss = findMissingRequired({
+      docs_pedidos: ['procuracao'],
+      titular_uc: baseTitular,
+      concessionaria: 'Neoenergia-DF',
+      endereco_instalacao: baseEndereco,
+      contratante_eh_titular: true,
+      contratante: baseTitular,
+      // uc_numero ausente
+    });
+    expect(miss).toContain('uc_numero');
+  });
+
+  it('contrato pede sistema + comercial + email/telefone', () => {
+    const miss = findMissingRequired({
+      docs_pedidos: ['contrato'],
+      titular_uc: baseTitular,
+      concessionaria: 'Neoenergia-DF',
+      endereco_instalacao: baseEndereco,
+      contratante_eh_titular: true,
+      contratante: baseTitular,
+    });
+    expect(miss).toEqual(expect.arrayContaining([
+      'sistema.kwp', 'sistema.modalidade', 'sistema.modulos', 'sistema.inversor',
+      'comercial.valor_total_brl', 'comercial.forma_pagamento',
+    ]));
+  });
+
+  it('ambos = uniao dos dois (sem duplicar)', () => {
+    const miss = findMissingRequired({
+      docs_pedidos: ['procuracao', 'contrato'],
+      titular_uc: baseTitular,
+      concessionaria: 'Neoenergia-DF',
+      endereco_instalacao: baseEndereco,
+      contratante_eh_titular: true,
+      contratante: baseTitular,
+      // uc_numero e sistema/comercial ausentes
+    });
+    const unique = [...new Set(miss)];
+    expect(miss.length).toBe(unique.length);
+    expect(miss).toEqual(expect.arrayContaining([
+      'uc_numero', 'sistema.kwp', 'comercial.valor_total_brl',
+    ]));
   });
 });

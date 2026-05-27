@@ -91,30 +91,56 @@ function missingPessoa(prefix: string, p: Partial<PessoaFisica | PessoaJuridica>
 
 export function findMissingRequired(d: Partial<DadosFechamento>): string[] {
   const miss: string[] = [];
-  if (!d.docs_pedidos || d.docs_pedidos.length === 0) miss.push('docs_pedidos');
-  miss.push(...missingPessoa('titular_uc', d.titular_uc));
+  const docs = d.docs_pedidos ?? [];
+  if (docs.length === 0) miss.push('docs_pedidos');
+
+  const wantsContrato = docs.includes('contrato');
+  const wantsProcuracao = docs.includes('procuracao');
+
+  // Pessoa titular UC: sempre obrigatorio (nome/cpf/rg/endereco/UF/CEP)
+  // — pega de missingPessoa mas filtra email/telefone se SO procuracao
+  const titularMiss = missingPessoa('titular_uc', d.titular_uc);
+  if (!wantsContrato && wantsProcuracao) {
+    miss.push(...titularMiss.filter(m => m !== 'titular_uc.email' && m !== 'titular_uc.telefone'));
+  } else {
+    miss.push(...titularMiss);
+  }
+
   if (!d.concessionaria) miss.push('concessionaria');
   if (!d.endereco_instalacao) miss.push('endereco_instalacao');
-  if (d.contratante_eh_titular === false) {
+
+  // UC: obrigatorio pra procuracao (e ambos)
+  if (wantsProcuracao && (!d.uc_numero || !d.uc_numero.trim())) {
+    miss.push('uc_numero');
+  }
+
+  // Contratante (distinto): so importa pra contrato
+  if (wantsContrato && d.contratante_eh_titular === false) {
     miss.push(...missingPessoa('contratante', d.contratante));
   }
-  if (!d.sistema) {
-    miss.push('sistema.kwp', 'sistema.modalidade', 'sistema.modulos', 'sistema.inversor');
-  } else {
-    if (!d.sistema.kwp) miss.push('sistema.kwp');
-    if (!d.sistema.modalidade) miss.push('sistema.modalidade');
-    if (!d.sistema.modulos?.marca) miss.push('sistema.modulos');
-    if (!d.sistema.inversor?.modelo) miss.push('sistema.inversor');
+
+  // Sistema + comercial: SO contrato
+  if (wantsContrato) {
+    if (!d.sistema) {
+      miss.push('sistema.kwp', 'sistema.modalidade', 'sistema.modulos', 'sistema.inversor');
+    } else {
+      if (!d.sistema.kwp) miss.push('sistema.kwp');
+      if (!d.sistema.modalidade) miss.push('sistema.modalidade');
+      if (!d.sistema.modulos?.marca) miss.push('sistema.modulos');
+      if (!d.sistema.inversor?.modelo) miss.push('sistema.inversor');
+    }
+    if (!d.comercial?.valor_total_brl) miss.push('comercial.valor_total_brl');
+    if (!d.comercial?.forma_pagamento) miss.push('comercial.forma_pagamento');
   }
-  if (!d.comercial?.valor_total_brl) miss.push('comercial.valor_total_brl');
-  if (!d.comercial?.forma_pagamento) miss.push('comercial.forma_pagamento');
-  return miss;
+
+  return [...new Set(miss)]; // dedup
 }
 
 // Mapeia campo técnico (titular_uc.cpf etc) pra label amigável em PT-BR
 // usada nas mensagens "falta X" mandadas pro Junior no zap.
 const FIELD_LABELS: Record<string, string> = {
   'docs_pedidos': 'Quais docs (contrato, procuração ou ambos)',
+  'uc_numero': 'Número da UC (na conta de luz)',
   'concessionaria': 'Concessionária',
   'endereco_instalacao': 'Endereço da instalação',
   'titular_uc.nome': 'Nome completo do titular',
