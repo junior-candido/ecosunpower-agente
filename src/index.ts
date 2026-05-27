@@ -51,6 +51,8 @@ import {
   renderHtmlToPdf,
   findMissingRequired,
   humanizeMissing,
+  parseClosingCommand,
+  type ClosingCommand,
   type DadosFechamento,
   type ClosingState,
 } from './modules/closing/index.js';
@@ -660,7 +662,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
   // Eva Fechamento: handler do botão evabt:fechar:<leadId>. Busca lead +
   // última proposta, monta dados iniciais, entra em modo collecting.
-  async function handleFecharStart(leadId: string, adminPhone: string): Promise<void> {
+  async function handleFecharStart(
+    leadId: string,
+    adminPhone: string,
+    docsPedidos: ('procuracao' | 'contrato')[] = ['procuracao', 'contrato'],
+  ): Promise<void> {
     try {
       const { lead, proposta } = await fetchByLeadId(supabase.getClient(), leadId);
       if (!lead) {
@@ -668,16 +674,20 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         return;
       }
       const initialData = buildInitialData(lead, proposta);
-      initialData.docs_pedidos = ['contrato', 'procuracao'];
+      initialData.docs_pedidos = docsPedidos;
       const missing = findMissingRequired(initialData);
       const nome = lead.name;
+      // Label amigavel do(s) doc(s) pedido(s)
+      const docsLabel = docsPedidos.length === 1
+        ? (docsPedidos[0] === 'procuracao' ? 'procuração' : 'contrato')
+        : 'contrato + procuração';
       if (missing.length === 0) {
         await setClosingState(adminPhone, { stage: 'awaiting_confirm', data: initialData as DadosFechamento });
         if (metaWaba) {
           try {
             await metaWaba.sendInteractiveButtons(
               adminPhone,
-              `Bora fechar ${nome}. Já tenho tudo. Confirma pra emitir contrato + procuração.`,
+              `Bora fechar ${nome}. Já tenho tudo. Confirma pra emitir ${docsLabel}.`,
               [
                 { id: 'evabt:fechar-gerar', title: 'Gerar' },
                 { id: 'evabt:fechar-ajustar', title: 'Ajustar' },
@@ -689,7 +699,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
             console.warn('[closing] sendInteractiveButtons fechar-gerar falhou:', (err as Error).message);
           }
         }
-        await sendText(adminPhone, `Bora fechar ${nome}. Já tenho tudo. Confirma "gerar" pra emitir contrato + procuração.`);
+        await sendText(adminPhone, `Bora fechar ${nome}. Já tenho tudo. Confirma "gerar" pra emitir ${docsLabel}.`);
       } else {
         await setClosingState(adminPhone, { stage: 'collecting', data: initialData, pending_questions: missing });
         const bullets = humanizeMissing(missing);
@@ -898,14 +908,25 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       }
     }
 
-    // Sem estado: precisa ser comando /fechar ou fechar pra entrar
-    const m = t.match(/^\/?fechar(?:\s+(.+))?$/i);
-    if (!m) return false;
-    const arg = m[1]?.trim() ?? '';
+    // Sem estado: precisa ser comando reconhecido (procuracao/contrato/fechar)
+    const parsed = parseClosingCommand(t);
+    if (!parsed) return false;
+    const arg = parsed.name;
+    const cmd = parsed.command;
+    // Mapeia comando -> docs_pedidos (null = mostra botoes pra escolher quando match unico)
+    const docsByCmd: Record<ClosingCommand, ('procuracao' | 'contrato')[] | null> = {
+      procuracao: ['procuracao'],
+      contrato: ['contrato'],
+      fechar: null,
+    };
+    const docs = docsByCmd[cmd];
 
     if (!arg) {
-      await setClosingState(from, { stage: 'collecting', data: {}, pending_questions: [] });
-      await sendText(from, 'Pra qual cliente? Manda nome (ex: /fechar Camila) ou os dados completos.');
+      await setClosingState(from, { stage: 'collecting', data: { docs_pedidos: docs ?? undefined } as any, pending_questions: [] });
+      const exemplo = cmd === 'procuracao' ? '/procuracao Camila'
+                    : cmd === 'contrato' ? '/contrato Camila'
+                    : '/fechar Camila';
+      await sendText(from, `Pra qual cliente? Manda nome (ex: ${exemplo}) ou os dados completos.`);
       return true;
     }
 
@@ -915,7 +936,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       const termoEhUmaPalavra = termoBusca.split(/\s+/).length === 1;
 
       if (matches.length === 0) {
-        await setClosingState(from, { stage: 'collecting', data: {}, pending_questions: [] });
+        await setClosingState(from, { stage: 'collecting', data: { docs_pedidos: docs ?? undefined } as any, pending_questions: [] });
         await sendText(from, `Não achei "${arg}" no cadastro (ativos). Cliente novo? Manda os dados completos.`);
         return true;
       }
@@ -924,7 +945,23 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       // Termo genérico (1 palavra) SEMPRE mostra lista pra evitar fechar no
       // lead errado quando o nome se repete (ex: 2 Fernandas no banco).
       if (matches.length === 1 && !termoEhUmaPalavra) {
-        await handleFecharStart(matches[0].id, from);
+        if (docs) {
+          await handleFecharStart(matches[0].id, from, docs);
+        } else {
+          // /fechar SEM doc especifico: mostra botoes [Procuracao] [Contrato] [Ambos]
+          if (metaWaba) {
+            await metaWaba.sendInteractiveButtons(from,
+              `Achei: ${matches[0].name}. O que você quer gerar?`,
+              [
+                { id: `evabt:fechar-doc:procuracao:${matches[0].id}`, title: 'Procuração' },
+                { id: `evabt:fechar-doc:contrato:${matches[0].id}`, title: 'Contrato' },
+                { id: `evabt:fechar-doc:ambos:${matches[0].id}`, title: 'Ambos' },
+              ],
+            );
+          } else {
+            await sendText(from, `Achei: ${matches[0].name}. Manda "procuracao ${matches[0].name}", "contrato ${matches[0].name}" ou "fechar ${matches[0].name} ambos".`);
+          }
+        }
         return true;
       }
 
@@ -945,11 +982,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         await metaWaba.sendInteractiveButtons(from, corpo, btns);
       } else {
         const lista = matches.slice(0, 10).map((mlead, i) => `${i + 1}. ${linhaInfo(mlead)}`).join('\n');
-        await sendText(from, `Achei ${matches.length} leads "${termoBusca}":\n${lista}\n\nManda /fechar <nome completo> pra escolher.`);
+        await sendText(from, `Achei ${matches.length} leads "${termoBusca}":\n${lista}\n\nManda /${cmd} <nome completo> pra escolher.`);
       }
       return true;
     } catch (err) {
-      console.error('[closing] /fechar erro:', (err as Error).message);
+      console.error(`[closing] /${cmd} erro:`, (err as Error).message);
       await sendText(from, `⚠️ Erro buscando lead: ${(err as Error).message.slice(0, 200)}`);
       return true;
     }
@@ -2722,6 +2759,13 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         onFecharGerarConfirm: () => handleFecharGerarConfirm(from),
         onFecharAjustar: () => handleFecharAjustar(from),
         onFecharSair: () => handleFecharSair(from),
+        onFecharDocPick: (cmd, leadId) => {
+          const docs: ('procuracao' | 'contrato')[] =
+            cmd === 'procuracao' ? ['procuracao'] :
+            cmd === 'contrato' ? ['contrato'] :
+            ['procuracao', 'contrato'];
+          return handleFecharStart(leadId, from, docs);
+        },
       })) return;
     }
 

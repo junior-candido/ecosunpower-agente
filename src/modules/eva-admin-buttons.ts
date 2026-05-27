@@ -77,11 +77,16 @@ export async function tryHandleEvaAdminButton(args: {
   onFecharGerarConfirm?: () => Promise<void>;
   onFecharAjustar?: () => Promise<void>;
   onFecharSair?: () => Promise<void>;
+  onFecharDocPick?: (cmd: 'procuracao' | 'contrato' | 'ambos', leadId: string) => Promise<void>;
 }): Promise<boolean> {
-  const m = args.text.trim().match(/^evabt:([a-z0-9-]+)(?::([0-9a-f-]{36}))?$/i);
+  // Regex relaxado: aceita qualquer sufixo apos a action (ex: fechar-doc:procuracao:<uuid>)
+  const m = args.text.trim().match(/^evabt:([a-z0-9-]+)(?::(.+))?$/i);
   if (!m) return false;
 
   const action = m[1];
+  // Para actions simples, leadId é o sufixo direto (UUID). Para fechar-doc, o case
+  // faz o parse completo via split(':') lendo do buttonId original.
+  const buttonId = args.text.trim();
   const leadId = m[2];
 
   try {
@@ -235,6 +240,24 @@ export async function tryHandleEvaAdminButton(args: {
       case 'fechar-sair': {
         if (args.onFecharSair) await args.onFecharSair();
         else await args.sendText(args.from, '⚠️ Handler de fechar-sair não configurado.');
+        return true;
+      }
+
+      case 'fechar-doc': {
+        // ID vem como evabt:fechar-doc:<modo>:<leadId>
+        // O parser comum do switch ja capturou action="fechar-doc" do segmento [1].
+        // Os segmentos [2] e [3] (modo, leadId) precisam ser lidos diretamente do buttonId.
+        const allParts = buttonId.split(':');
+        // allParts = ['evabt', 'fechar-doc', '<modo>', '<leadId>']
+        const modo = allParts[2] as 'procuracao' | 'contrato' | 'ambos' | undefined;
+        const ldId = allParts.slice(3).join(':'); // defensivo se leadId tem ':'
+        if (!modo || !['procuracao', 'contrato', 'ambos'].includes(modo)) {
+          await args.sendText(args.from, '⚠️ Modo invalido no botao fechar-doc.');
+          return true;
+        }
+        if (!ldId) { await args.sendText(args.from, '⚠️ Botao sem lead id.'); return true; }
+        if (args.onFecharDocPick) await args.onFecharDocPick(modo, ldId);
+        else await args.sendText(args.from, '⚠️ Handler de fechar-doc nao configurado.');
         return true;
       }
 
