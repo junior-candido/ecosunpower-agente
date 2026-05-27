@@ -74,3 +74,24 @@ describe('renderContrato', () => {
     });
   });
 });
+
+describe('renderContrato — clausula 23 literal', () => {
+  it('NAO inclui clausula 23 quando disposicoes_especiais vazio', () => {
+    const html = renderContrato({ ...dadosFechamentoCamilaMesmaPessoa, disposicoes_especiais: undefined });
+    expect(html).not.toMatch(/CL[ÁA]USULA 23/);
+  });
+
+  it('inclui clausula 23 com texto LITERAL quando preenchido', () => {
+    const texto = '30% na assinatura e 70% na conexao pela concessionaria.';
+    const html = renderContrato({ ...dadosFechamentoCamilaMesmaPessoa, disposicoes_especiais: texto });
+    expect(html).toMatch(/CL[ÁA]USULA 23/);
+    expect(html).toContain(texto);
+  });
+
+  it('preserva caracteres especiais (% e parenteses) na clausula 23', () => {
+    const texto = 'Garantia adicional de 5 (cinco) anos e 100% mao-de-obra.';
+    const html = renderContrato({ ...dadosFechamentoCamilaMesmaPessoa, disposicoes_especiais: texto });
+    expect(html).toContain('5 (cinco) anos');
+    expect(html).toMatch(/100\s*%\s*mao-de-obra/);
+  });
+});
