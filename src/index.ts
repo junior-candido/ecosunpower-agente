@@ -752,19 +752,31 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
       const version = leadId ? await closingPersist.nextVersionForLead(leadId) : 1;
 
-      const contratoPdf = dados.docs_pedidos.includes('contrato')
-        ? await renderHtmlToPdf(renderContrato(dados))
-        : undefined;
-      const procuracaoPdf = dados.docs_pedidos.includes('procuracao')
-        ? await renderHtmlToPdf(renderProcuracao(dados))
-        : undefined;
+      const wantsContrato = dados.docs_pedidos.includes('contrato');
+      const wantsProcuracao = dados.docs_pedidos.includes('procuracao');
+
+      let contratoHtml: string | undefined;
+      let contratoPdf: Buffer | undefined;
+      let procuracaoHtml: string | undefined;
+      let procuracaoPdf: Buffer | undefined;
+
+      if (wantsContrato) {
+        contratoHtml = renderContrato(dados);
+        contratoPdf = await renderHtmlToPdf(contratoHtml);
+      }
+      if (wantsProcuracao) {
+        procuracaoHtml = renderProcuracao(dados);
+        procuracaoPdf = await renderHtmlToPdf(procuracaoHtml);
+      }
 
       const links = await closingDriveUploader.uploadFechamento({
         nomeTitular: titularNome,
         cpfTitular: titularCpf,
         ano: new Date().getFullYear().toString(),
         version,
+        contratoHtml,
         contratoPdf,
+        procuracaoHtml,
         procuracaoPdf,
         dadosInputJson: JSON.stringify(dados, null, 2),
       });
