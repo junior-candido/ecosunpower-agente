@@ -5,13 +5,16 @@
 
 import type { drive_v3 } from 'googleapis';
 import { Readable } from 'stream';
+import { uploadHtmlAsGoogleDoc } from './closing-html-uploader.js';
 
 export interface UploadFechamentoInput {
   nomeTitular: string;
   cpfTitular: string;
   ano: string;
   version: number; // 1, 2, 3... incrementa se refazer
+  contratoHtml?: string;
   contratoPdf?: Buffer;
+  procuracaoHtml?: string;
   procuracaoPdf?: Buffer;
   dadosInputJson: string;
 }
@@ -85,16 +88,37 @@ export class ClosingDriveUploader {
       folderWebViewLink: folderLink,
     };
 
-    if (input.contratoPdf) {
-      const { id, link } = await this.uploadPdf(`contrato-v${input.version}.pdf`, input.contratoPdf, clienteId);
-      result.contratoDriveId = id;
-      result.contratoDriveLink = link;
-    }
-    if (input.procuracaoPdf) {
-      const { id, link } = await this.uploadPdf(`procuracao-v${input.version}.pdf`, input.procuracaoPdf, clienteId);
+    // Procuracao: Doc (eSignature) + PDF backup
+    if (input.procuracaoHtml) {
+      const { id, link } = await uploadHtmlAsGoogleDoc({
+        html: input.procuracaoHtml,
+        name: `procuracao-v${input.version}`,
+        parentId: clienteId,
+        drive: this.drive,
+      });
       result.procuracaoDriveId = id;
       result.procuracaoDriveLink = link;
     }
+    if (input.procuracaoPdf) {
+      // PDF backup; link Doc e o que volta no zap, mas mantemos PDF como historico imutavel
+      await this.uploadPdf(`procuracao-v${input.version}.pdf`, input.procuracaoPdf, clienteId);
+    }
+
+    // Contrato: idem
+    if (input.contratoHtml) {
+      const { id, link } = await uploadHtmlAsGoogleDoc({
+        html: input.contratoHtml,
+        name: `contrato-v${input.version}`,
+        parentId: clienteId,
+        drive: this.drive,
+      });
+      result.contratoDriveId = id;
+      result.contratoDriveLink = link;
+    }
+    if (input.contratoPdf) {
+      await this.uploadPdf(`contrato-v${input.version}.pdf`, input.contratoPdf, clienteId);
+    }
+
     await this.uploadJson(`dados-input-v${input.version}.json`, input.dadosInputJson, clienteId);
 
     return result;
