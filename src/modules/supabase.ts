@@ -639,6 +639,36 @@ export class SupabaseService {
       .eq('id', id);
   }
 
+  /**
+   * Retorna o id do lead existente pelo telefone, ou cria um novo (status='qualificado').
+   * Usado por savePropostaPublica e pelo modo /fechar pra garantir que
+   * proposta sempre fica linkada a um lead. Resolve bug Fase 1 (proposta orfa).
+   *
+   * Lanca se phone vazio (leads.phone e NOT NULL UNIQUE).
+   */
+  async getOrCreateLeadByPhone(phone: string, nameIfNew: string): Promise<string> {
+    if (!phone || !phone.trim()) {
+      throw new Error('getOrCreateLeadByPhone: telefone obrigatorio');
+    }
+    const phoneClean = phone.replace(/\D+/g, '');
+
+    const { data: existing, error: selectErr } = await this.client
+      .from('leads')
+      .select('id, phone')
+      .eq('phone', phoneClean)
+      .maybeSingle();
+    if (selectErr) throw new Error(`getOrCreateLeadByPhone select: ${selectErr.message}`);
+    if (existing?.id) return existing.id as string;
+
+    const { data: created, error: insertErr } = await this.client
+      .from('leads')
+      .insert({ name: nameIfNew, phone: phoneClean, status: 'qualificado' })
+      .select('id')
+      .single();
+    if (insertErr) throw new Error(`getOrCreateLeadByPhone insert: ${insertErr.message}`);
+    return (created as { id: string }).id;
+  }
+
   // ==========================================================================
   // Propostas publicas (HTML hospedado em /p/:slug, TTL 60d)
   // Resolve a limitacao do Drive desktop que abre HTML como codigo fonte.
