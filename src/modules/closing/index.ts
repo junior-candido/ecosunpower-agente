@@ -42,3 +42,8 @@ export {
   type ClosingAssistantOpts,
   type ProcessResult,
 } from './closing-assistant.js';
+export {
+  uploadHtmlAsGoogleDoc,
+  type UploadHtmlAsGoogleDocInput,
+  type UploadHtmlAsGoogleDocResult,
+} from './closing-html-uploader.js';
