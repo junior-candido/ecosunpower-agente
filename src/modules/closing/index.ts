@@ -47,3 +47,4 @@ export {
   type UploadHtmlAsGoogleDocInput,
   type UploadHtmlAsGoogleDocResult,
 } from './closing-html-uploader.js';
+export { parseClosingCommand, type ClosingCommand, type ParsedClosingCommand } from './closing-command-parser.js';
