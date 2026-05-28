@@ -8,16 +8,17 @@
 import type { MarcaInversor, MonitoringAdapter } from './types.js';
 import { solarEdgeAdapter } from './adapters/solaredge.js';
 import { deyeAdapter } from './adapters/deye.js';
+import { nepAdapter } from './adapters/nep.js';
 
 const adapters: Partial<Record<MarcaInversor, MonitoringAdapter>> = {
   solaredge: solarEdgeAdapter,
   deye: deyeAdapter,
+  nep: nepAdapter,
   // sungrow: sungrowAdapter,    // futuro
   // hoymiles: hoymilesAdapter,  // futuro
   // goodwe: goodweAdapter,      // futuro
   // huawei: huaweiAdapter,      // futuro
   // foxess: foxessAdapter,      // futuro
-  // nep: nepAdapter,            // futuro (limitada)
 };
 
 export function getAdapter(marca: MarcaInversor): MonitoringAdapter | null {
