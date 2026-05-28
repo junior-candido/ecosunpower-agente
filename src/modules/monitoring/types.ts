@@ -9,7 +9,8 @@ export type MarcaInversor =
   | 'goodwe'
   | 'huawei'
   | 'foxess'
-  | 'nep';
+  | 'nep'
+  | 'abb';
 
 export type TelhadoTipo = 'ceramica' | 'fibrocimento' | 'laje' | 'metalico' | 'solo' | 'outro';
 export type Orientacao = 'N' | 'NE' | 'L' | 'SE' | 'S' | 'SO' | 'O' | 'NO';
@@ -74,6 +75,16 @@ export interface MonitoringAdapter {
   // Opcional: listar sites/plantas associadas a uma chave de conta.
   // Permite import em massa pelo dashboard. Adapter sem suporte retorna null.
   listSites?(credenciaisConta: Record<string, unknown>): Promise<ListSitesResult>;
+  // Opcional: extrai as credenciais da CONTA (instalador) a partir das
+  // credenciais de uma planta cadastrada. Usado pelo cron de descoberta pra
+  // deduplicar contas e re-chamar listSites detectando plantas novas.
+  // - SolarEdge: { api_key } (mesma key na conta e na planta)
+  // - Deye:      { appId, appSecret, email, password, dataCenter, companyId? }
+  // - NEP:       { jwt } (sem o sid)
+  // - ABB:       { userId, password, apiKey } (sem o plantEntityID)
+  // Retorna null se as credenciais por planta nao carregam info suficiente da
+  // conta (adapter nao suporta discovery).
+  extractAccountCreds?(credsPlanta: Record<string, unknown>): Record<string, unknown> | null;
 }
 
 // Site/planta retornado por listSites — schema unificado pra qualquer marca.

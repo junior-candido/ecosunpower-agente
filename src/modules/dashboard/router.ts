@@ -786,6 +786,18 @@ export function createDashboardRouter(
         }));
       }
       credenciais = { jwt };
+    } else if (marca === 'abb') {
+      // Campo password renomeado pra abb_password no form pra nao colidir com
+      // o password do Deye quando o usuario alterna entre branches do select.
+      const userId = String(req.body?.userId ?? '').trim();
+      const password = String(req.body?.abb_password ?? '').trim();
+      const apiKey = String(req.body?.apiKey ?? '').trim();
+      if (!userId || !password || !apiKey) {
+        return res.status(400).send(renderImportarSitesPage({
+          errorMsg: 'ABB precisa de e-mail, senha e API Key (vide instrucoes no form).',
+        }));
+      }
+      credenciais = { userId, password, apiKey };
     } else {
       return res.status(400).send(renderImportarSitesPage({
         errorMsg: `Marca ${marca} ainda nao tem adapter implementado.`,

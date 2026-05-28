@@ -172,4 +172,11 @@ export const solarEdgeAdapter: MonitoringAdapter = {
 
     return { ok: true, sites };
   },
+
+  // SolarEdge: a mesma api_key da conta vai em cada planta. Devolve só a key.
+  extractAccountCreds(credsPlanta) {
+    const apiKey = String(credsPlanta?.api_key ?? '').trim();
+    if (!apiKey) return null;
+    return { api_key: apiKey };
+  },
 };

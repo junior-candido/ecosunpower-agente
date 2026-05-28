@@ -9,11 +9,13 @@ import type { MarcaInversor, MonitoringAdapter } from './types.js';
 import { solarEdgeAdapter } from './adapters/solaredge.js';
 import { deyeAdapter } from './adapters/deye.js';
 import { nepAdapter } from './adapters/nep.js';
+import { abbAdapter } from './adapters/abb.js';
 
 const adapters: Partial<Record<MarcaInversor, MonitoringAdapter>> = {
   solaredge: solarEdgeAdapter,
   deye: deyeAdapter,
   nep: nepAdapter,
+  abb: abbAdapter,
   // sungrow: sungrowAdapter,    // futuro
   // hoymiles: hoymilesAdapter,  // futuro
   // goodwe: goodweAdapter,      // futuro

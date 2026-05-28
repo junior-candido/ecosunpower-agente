@@ -380,6 +380,14 @@ export const nepAdapter: MonitoringAdapter = {
 
     return { ok: true, sites };
   },
+
+  // NEP: credenciais da conta = jwt sem o sid (sid e por planta).
+  extractAccountCreds(credsPlanta) {
+    const cc = credsPlanta as Record<string, unknown>;
+    const jwt = String(cc.jwt ?? '').trim();
+    if (!jwt) return null;
+    return { jwt };
+  },
 };
 
 // Agrega geração diária da planta a partir das series do echarts.

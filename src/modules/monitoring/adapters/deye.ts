@@ -553,6 +553,21 @@ export const deyeAdapter: MonitoringAdapter = {
 
     return { ok: true, sites };
   },
+
+  // Deye: credenciais da conta = tudo menos site_id (que e por planta).
+  // Inclui companyId se a planta foi cadastrada com fluxo Business Member.
+  extractAccountCreds(credsPlanta) {
+    const cc = credsPlanta as Record<string, unknown>;
+    const appId = String(cc.appId ?? '').trim();
+    const appSecret = String(cc.appSecret ?? '').trim();
+    const email = String(cc.email ?? '').trim();
+    const password = String(cc.password ?? '').trim();
+    if (!appId || !appSecret || !email || !password) return null;
+    const out: Record<string, unknown> = { appId, appSecret, email, password };
+    if (cc.dataCenter) out.dataCenter = cc.dataCenter;
+    if (cc.companyId) out.companyId = cc.companyId;
+    return out;
+  },
 };
 
 // ============================================================================

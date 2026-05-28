@@ -376,18 +376,27 @@ export class MonitoringService {
         continue;
       }
 
-      const apiKeys = new Set<string>();
+      // Dedup contas por marca. Cada adapter expoe extractAccountCreds que
+      // sabe extrair a "chave da conta" do JSONB da planta (ex: api_key pra
+      // SolarEdge, jwt pra NEP, {userId,password,apiKey} pra ABB). Adapter
+      // sem extractAccountCreds = sem discovery automatico (skip).
+      if (!adapter.extractAccountCreds) continue;
+      const contas = new Map<string, Record<string, unknown>>();
       for (const row of data ?? []) {
-        const k = (row.api_credentials as Record<string, unknown>)?.api_key;
-        if (typeof k === 'string' && k.trim()) apiKeys.add(k.trim());
+        const accountCreds = adapter.extractAccountCreds(row.api_credentials as Record<string, unknown>);
+        if (!accountCreds) continue;
+        // Chave de dedup: JSON canonico das credenciais da conta (mesmo
+        // objeto = mesma string).
+        const key = JSON.stringify(accountCreds, Object.keys(accountCreds).sort());
+        contas.set(key, accountCreds);
       }
-      if (apiKeys.size === 0) continue; // marca nao tem nenhum sistema cadastrado ainda
+      if (contas.size === 0) continue; // marca nao tem nenhum sistema cadastrado ainda
 
       let novos = 0;
       let atualizados = 0;
       let erros = 0;
-      for (const apiKey of apiKeys) {
-        const r = await this.importarSitesEmMassa(marca, { api_key: apiKey });
+      for (const accountCreds of contas.values()) {
+        const r = await this.importarSitesEmMassa(marca, accountCreds);
         if (r.ok) {
           novos += r.novos;
           atualizados += r.atualizados;

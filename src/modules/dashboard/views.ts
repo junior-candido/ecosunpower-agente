@@ -496,6 +496,7 @@ const MARCAS_LABEL: Record<string, string> = {
   huawei: 'Huawei',
   foxess: 'FoxESS',
   nep: 'NEP',
+  abb: 'ABB / FIMER',
 };
 
 // Logos oficiais hospedadas no site EcoSunPower (public/logos/).
@@ -509,6 +510,7 @@ const MARCAS_LOGO_URL: Record<string, string> = {
   huawei:    'https://ecosunpower.eng.br/logos/huawei.png',
   foxess:    'https://ecosunpower.eng.br/logos/foxess.png',
   nep:       'https://ecosunpower.eng.br/logos/nep.png',
+  abb:       'https://ecosunpower.eng.br/logos/abb.png',
 };
 
 // Gera badge visual da marca usando as logos oficiais do site.
@@ -1185,11 +1187,12 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
         <div>
           <label for="marca" class="block text-sm font-semibold text-slate-700 mb-2">Marca do inversor</label>
           <select name="marca" id="marca" required
-                  onchange="['solaredge','deye','nep'].forEach(function(m){var el=document.getElementById('campos-'+m);if(el)el.style.display=document.getElementById('marca').value===m?'block':'none';});"
+                  onchange="['solaredge','deye','nep','abb'].forEach(function(m){var el=document.getElementById('campos-'+m);if(!el)return;var ativo=document.getElementById('marca').value===m;el.style.display=ativo?'block':'none';el.disabled=!ativo;});"
                   class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition">
             <option value="solaredge">SolarEdge</option>
             <option value="deye">Deye Cloud</option>
             <option value="nep">NEP (microinversores BDM)</option>
+            <option value="abb">ABB / FIMER Aurora Vision</option>
             <option value="sungrow" disabled>Sungrow (em breve)</option>
             <option value="hoymiles" disabled>Hoymiles (em breve)</option>
             <option value="goodwe" disabled>GoodWe (em breve)</option>
@@ -1198,7 +1201,7 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
           </select>
         </div>
 
-        <div id="campos-solaredge">
+        <fieldset id="campos-solaredge" class="border-0 p-0 m-0">
           <label for="api_key" class="block text-sm font-semibold text-slate-700 mb-2">API Key da conta SolarEdge</label>
           <input
             id="api_key"
@@ -1209,9 +1212,9 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
           <p class="text-xs text-slate-500 mt-2">
             Pega em: monitoring.solaredge.com → Admin → Site Access → API Access.
           </p>
-        </div>
+        </fieldset>
 
-        <div id="campos-deye" style="display:none">
+        <fieldset id="campos-deye" style="display:none" disabled class="border-0 p-0 m-0">
           <div class="space-y-3">
             <div>
               <label class="block text-sm font-semibold text-slate-700 mb-1">Data Center</label>
@@ -1262,9 +1265,9 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
             Deye master que vê todas as plantas. Company ID aparece no app/portal Deye
             ao trocar entre Personal e empresas (super admin).
           </div>
-        </div>
+        </fieldset>
 
-        <div id="campos-nep" style="display:none">
+        <fieldset id="campos-nep" style="display:none" disabled class="border-0 p-0 m-0">
           <div>
             <label for="nep_jwt" class="block text-sm font-semibold text-slate-700 mb-2">Token de acesso (JWT) da conta NEPViewer</label>
             <textarea
@@ -1292,7 +1295,40 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
             avisar com alerta de "credencial inválida" — basta repetir os 4 passos e cadastrar
             o novo token. (Renovação automática via login será liberada em breve.)
           </div>
-        </div>
+        </fieldset>
+
+        <fieldset id="campos-abb" style="display:none" disabled class="border-0 p-0 m-0">
+          <div class="space-y-3">
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">E-mail (UserID Aurora Vision)</label>
+              <input name="userId" type="email" placeholder="email da conta instalador"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">Senha Aurora Vision</label>
+              <input name="abb_password" type="password" placeholder="senha"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">API Key</label>
+              <input name="apiKey" type="text" placeholder="X-AuroraVision-ApiKey"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:border-amber-500">
+            </div>
+          </div>
+          <div class="mt-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+            <strong>📋 Como pegar a API Key:</strong>
+            <ol class="list-decimal ml-5 mt-2 space-y-1">
+              <li>Loga em <a href="https://www.auroravision.net/" target="_blank" rel="noopener" class="underline font-semibold">auroravision.net</a> com a conta de instalador</li>
+              <li>Menu superior → <strong>Account</strong> → <strong>API Access</strong> (ou Settings → Developer)</li>
+              <li>Gera/copia a <strong>API Key</strong> (campo "X-AuroraVision-ApiKey")</li>
+              <li>Cola aqui junto com seu e-mail e senha de login do portal</li>
+            </ol>
+          </div>
+          <div class="mt-3 px-4 py-3 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-xs">
+            🔑 <strong>Renovação automática:</strong> diferente do NEP, o adapter ABB faz o login
+            sozinho usando o e-mail e senha. Token interno renova a cada 50 minutos sem você fazer nada.
+          </div>
+        </fieldset>
 
         <button type="submit"
                 class="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-0.5">
