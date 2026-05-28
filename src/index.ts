@@ -984,10 +984,15 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       };
 
       if (metaWaba && matches.length <= 3) {
-        const btns = matches.slice(0, 3).map((mlead) => ({
-          id: `evabt:fechar-pick:${mlead.id}`,
-          title: mlead.name.slice(0, 20),
-        }));
+        // Quando cmd e procuracao/contrato, ja embute o doc no botao pra nao perder
+        // contexto entre pick e handleFecharStart. Quando cmd=fechar, mantem o
+        // pick generico (onFecharPick depois pergunta o modo).
+        const btns = matches.slice(0, 3).map((mlead) => {
+          const buttonId = cmd === 'fechar'
+            ? `evabt:fechar-pick:${mlead.id}`
+            : `evabt:fechar-doc:${cmd}:${mlead.id}`;
+          return { id: buttonId, title: mlead.name.slice(0, 20) };
+        });
         const corpo = matches.length === 1
           ? `Achei 1 lead "${termoBusca}":\n${linhaInfo(matches[0])}\n\nÉ esse?`
           : `Achei ${matches.length} leads com "${termoBusca}". Qual?`;
@@ -2763,8 +2768,37 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         text,
         forceCadenceForSilentes,
         supabase,
-        onFecharStart: (leadId) => handleFecharStart(leadId, from),
-        onFecharPick: (leadId) => handleFecharStart(leadId, from),
+        // Botoes que vem SEM modo embutido (alertas antigos, pick generico)
+        // perguntam o modo antes de entrar no fluxo. Evita default ambos
+        // sempre que o admin escolheu o lead sem ter dito qual doc quer.
+        onFecharStart: async (leadId) => {
+          if (metaWaba) {
+            await metaWaba.sendInteractiveButtons(from,
+              'O que você quer gerar?',
+              [
+                { id: `evabt:fechar-doc:procuracao:${leadId}`, title: 'Procuração' },
+                { id: `evabt:fechar-doc:contrato:${leadId}`, title: 'Contrato' },
+                { id: `evabt:fechar-doc:ambos:${leadId}`, title: 'Ambos' },
+              ],
+            );
+          } else {
+            await sendText(from, 'Manda: procuracao <nome>, contrato <nome>, ou fechar <nome> + Ambos.');
+          }
+        },
+        onFecharPick: async (leadId) => {
+          if (metaWaba) {
+            await metaWaba.sendInteractiveButtons(from,
+              'O que você quer gerar?',
+              [
+                { id: `evabt:fechar-doc:procuracao:${leadId}`, title: 'Procuração' },
+                { id: `evabt:fechar-doc:contrato:${leadId}`, title: 'Contrato' },
+                { id: `evabt:fechar-doc:ambos:${leadId}`, title: 'Ambos' },
+              ],
+            );
+          } else {
+            await sendText(from, 'Manda: procuracao <nome>, contrato <nome>, ou fechar <nome> + Ambos.');
+          }
+        },
         onFecharApprove: (fechamentoId) => handleFecharApprove(fechamentoId, from),
         onFecharRefazer: (fechamentoId) => handleFecharRefazer(fechamentoId, from),
         onFecharCancel: (fechamentoId) => handleFecharCancel(fechamentoId, from),
