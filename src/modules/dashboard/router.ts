@@ -778,6 +778,14 @@ export function createDashboardRouter(
       }
       credenciais = { appId, appSecret, email, password, dataCenter };
       if (companyId) credenciais.companyId = companyId;
+    } else if (marca === 'nep') {
+      const jwt = String(req.body?.jwt ?? '').trim();
+      if (!jwt) {
+        return res.status(400).send(renderImportarSitesPage({
+          errorMsg: 'JWT obrigatorio pra NEP. Siga as 4 instrucoes do form pra capturar.',
+        }));
+      }
+      credenciais = { jwt };
     } else {
       return res.status(400).send(renderImportarSitesPage({
         errorMsg: `Marca ${marca} ainda nao tem adapter implementado.`,

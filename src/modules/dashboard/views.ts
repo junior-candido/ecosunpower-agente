@@ -1185,10 +1185,11 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
         <div>
           <label for="marca" class="block text-sm font-semibold text-slate-700 mb-2">Marca do inversor</label>
           <select name="marca" id="marca" required
-                  onchange="document.getElementById('campos-solaredge').style.display=this.value==='solaredge'?'block':'none';document.getElementById('campos-deye').style.display=this.value==='deye'?'block':'none';"
+                  onchange="['solaredge','deye','nep'].forEach(function(m){var el=document.getElementById('campos-'+m);if(el)el.style.display=document.getElementById('marca').value===m?'block':'none';});"
                   class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition">
             <option value="solaredge">SolarEdge</option>
             <option value="deye">Deye Cloud</option>
+            <option value="nep">NEP (microinversores BDM)</option>
             <option value="sungrow" disabled>Sungrow (em breve)</option>
             <option value="hoymiles" disabled>Hoymiles (em breve)</option>
             <option value="goodwe" disabled>GoodWe (em breve)</option>
@@ -1263,6 +1264,36 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
           </div>
         </div>
 
+        <div id="campos-nep" style="display:none">
+          <div>
+            <label for="nep_jwt" class="block text-sm font-semibold text-slate-700 mb-2">Token de acesso (JWT) da conta NEPViewer</label>
+            <textarea
+              id="nep_jwt"
+              name="jwt"
+              rows="3"
+              placeholder="cola aqui o JWT capturado no localStorage do NEPViewer"
+              class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition font-mono text-xs"></textarea>
+          </div>
+
+          <div class="mt-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+            <strong>📋 Como pegar o JWT (1 minuto):</strong>
+            <ol class="list-decimal ml-5 mt-2 space-y-1">
+              <li>Acessa <a href="https://user.nepviewer.com" target="_blank" rel="noopener" class="underline font-semibold">user.nepviewer.com</a> e faz login (conta de instalador)</li>
+              <li>Aperta <kbd class="px-1.5 py-0.5 bg-white border border-amber-300 rounded font-mono text-[10px]">F12</kbd> → aba <strong>Console</strong></li>
+              <li>Cola e executa:
+                <pre class="mt-1 px-2 py-1.5 bg-white border border-amber-300 rounded text-[11px] overflow-x-auto"><code>copy(JSON.parse(localStorage.getItem('userInfo')).token)</code></pre>
+              </li>
+              <li>Volta aqui, <kbd class="px-1.5 py-0.5 bg-white border border-amber-300 rounded font-mono text-[10px]">Ctrl+V</kbd> no campo acima</li>
+            </ol>
+          </div>
+
+          <div class="mt-3 px-4 py-3 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-xs">
+            ⏱ <strong>Validade:</strong> o JWT dura ~30 dias. Quando expirar, o sistema vai
+            avisar com alerta de "credencial inválida" — basta repetir os 4 passos e cadastrar
+            o novo token. (Renovação automática via login será liberada em breve.)
+          </div>
+        </div>
+
         <button type="submit"
                 class="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-0.5">
           📥 Importar agora
@@ -1270,11 +1301,11 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
       </form>
 
       <div class="mt-6 pt-6 border-t border-slate-100 text-xs text-slate-500 space-y-2">
-        <p>💡 <strong>Como funciona:</strong> a gente chama <code class="bg-slate-100 px-1 rounded">/sites/list</code>
-        da SolarEdge com tua API key, recebe todos os sites associados, e cadastra cada um em
+        <p>💡 <strong>Como funciona:</strong> chamamos a API da marca selecionada com as suas credenciais,
+        recebemos todos os sites associados, e cadastramos cada um em
         <code class="bg-slate-100 px-1 rounded">sistemas_clientes</code>.</p>
-        <p>🔄 <strong>Atualização automática:</strong> de hora em hora, o sistema usa essa API key pra
-        verificar se você criou plantas novas no painel SolarEdge — se criou, aparecem aqui sem você fazer nada.</p>
+        <p>🔄 <strong>Atualização automática:</strong> de hora em hora o sistema re-consulta a API e
+        cadastra plantas novas que apareceram no painel da marca — sem você fazer nada.</p>
         <p>🔁 <strong>Re-importar:</strong> rodar de novo é seguro — sites que já existem só são atualizados (apelido, potência, etc).</p>
       </div>
     </section>
