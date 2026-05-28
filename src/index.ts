@@ -881,7 +881,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
   async function tryHandleClosingCommand(from: string, text: string): Promise<boolean> {
     const isAdmin = isAdminPhone(from);
     const t = text.trim();
-    const isTrigger = /^\/fechar(\s|$)/i.test(t) || /^fechar(\s|$)/i.test(t);
+    const isTrigger = parseClosingCommand(t) !== null;
     let state = isAdmin ? await getClosingState(from) : null;
     const inMode = !!state;
     console.log(`[closing] gate from=${from}(${normalizeBrazilianPhone(from)}) admin=${isAdmin} inMode=${inMode} isTrigger=${isTrigger} text="${t.slice(0,40)}"`);
