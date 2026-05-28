@@ -34,6 +34,8 @@
 
 import crypto from 'crypto';
 import type { AdapterResult, ListSitesResult, MonitoringAdapter } from '../types.js';
+import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
+import { getOrFetch } from '../util/token-cache.js';
 
 function baseUrl(creds: ParsedCreds): string {
   return `https://${creds.dataCenter}-developer.deyecloud.com`;
@@ -98,14 +100,16 @@ type TokenResult = { ok: true; token: string } | { ok: false; reason: string; in
 // syncAll faria 22×(token pessoal + /account/info + token org) = 66 chamadas de
 // auth. Token Deye dura ~60d; janela conservadora de 6h limita staleness sem
 // re-logar a cada planta. Module-level (zera ao reiniciar o processo).
-const tokenCache = new Map<string, { token: string; exp: number }>();
-const TOKEN_TTL_MS = 6 * 60 * 60 * 1000;
+//
+// Storage subjacente: src/modules/monitoring/util/token-cache.ts (compartilhado
+// com NEP e futuros adapters).
+//
 // Chave inclui hash de appSecret+password: se Junior rotacionar o secret/senha
 // (importarSitesEmMassa reescreve api_credentials), a chave muda e o token
 // velho não é mais servido — sem esperar o TTL nem depender de restart.
 function tokenCacheKey(c: ParsedCreds): string {
   const credHash = crypto.createHash('sha256').update(`${c.appSecret}:${c.password}`).digest('hex').slice(0, 12);
-  return `${c.dataCenter}|${c.appId}|${c.email}|${credHash}`;
+  return `deye|${c.dataCenter}|${c.appId}|${c.email}|${credHash}`;
 }
 
 // Detecta falha de AUTENTICAÇÃO numa resposta da Deye (token inválido/revogado).
@@ -139,24 +143,17 @@ async function postToken(creds: ParsedCreds, companyId?: number): Promise<TokenR
 
   let resp: Response;
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
-    try {
-      resp = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // Deye doc lista 'host' como header obrigatorio. fetch ja seta
-          // 'Host' automaticamente baseado na URL, mas garantimos explicito
-          // pra cobrir validacao em minusculas.
-          'host': new URL(base).host,
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
+    resp = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // Deye doc lista 'host' como header obrigatorio. fetch ja seta
+        // 'Host' automaticamente baseado na URL, mas garantimos explicito
+        // pra cobrir validacao em minusculas.
+        'host': new URL(base).host,
+      },
+      body: JSON.stringify(body),
+    });
   } catch (err) {
     return { ok: false, reason: `network: ${(err as Error).message}` };
   }
@@ -229,21 +226,12 @@ async function obterCompanyId(creds: ParsedCreds, token: string): Promise<number
 // o /history responde auth-failure (token revogado/expirado dentro da janela
 // de cache) — auto-cura sem esperar o TTL de 6h.
 async function obterToken(creds: ParsedCreds, forceRefresh = false): Promise<TokenResult> {
-  const ck = tokenCacheKey(creds);
-  if (forceRefresh) {
-    tokenCache.delete(ck);
-  } else {
-    const cached = tokenCache.get(ck);
-    if (cached && cached.exp > Date.now()) {
-      return { ok: true, token: cached.token };
-    }
-  }
-
-  const resolved = await resolverToken(creds);
-  if (resolved.ok) {
-    tokenCache.set(ck, { token: resolved.token, exp: Date.now() + TOKEN_TTL_MS });
-  }
-  return resolved;
+  return getOrFetch(
+    tokenCacheKey(creds),
+    () => resolverToken(creds),
+    undefined, // default 6h
+    forceRefresh,
+  );
 }
 
 async function resolverToken(creds: ParsedCreds): Promise<TokenResult> {
@@ -293,21 +281,14 @@ async function deyePost(
   console.log(`[deye] POST ${endpoint} body=${JSON.stringify(body)}`);
   let resp: Response;
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
-    try {
-      resp = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
+    resp = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
   } catch (err) {
     return { ok: false, reason: `network: ${(err as Error).message}` };
   }

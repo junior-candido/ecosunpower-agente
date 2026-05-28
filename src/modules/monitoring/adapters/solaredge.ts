@@ -12,6 +12,7 @@
 // Conversao: value vem em Wh, dividimos por 1000 pra obter kWh.
 
 import type { AdapterResult, ListSitesResult, MonitoringAdapter } from '../types.js';
+import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
 
 const BASE_URL = 'https://monitoringapi.solaredge.com';
 
@@ -43,13 +44,7 @@ export const solarEdgeAdapter: MonitoringAdapter = {
     let resp: Response;
     try {
       // 30s timeout pra nao travar o cron se SolarEdge estiver lento.
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 30_000);
-      try {
-        resp = await fetch(url, { signal: controller.signal });
-      } finally {
-        clearTimeout(timer);
-      }
+      resp = await fetchWithTimeout(url);
     } catch (err) {
       const msg = (err as Error).message;
       return { ok: false, reason: `network: ${msg}` };
@@ -120,13 +115,7 @@ export const solarEdgeAdapter: MonitoringAdapter = {
 
     let resp: Response;
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 30_000);
-      try {
-        resp = await fetch(url, { signal: controller.signal });
-      } finally {
-        clearTimeout(timer);
-      }
+      resp = await fetchWithTimeout(url);
     } catch (err) {
       return { ok: false, reason: `network: ${(err as Error).message}` };
     }
