@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildClienteSearchFilter } from '../src/modules/dashboard/proprietario.js';
 import { parseProprietarioInput } from '../src/modules/dashboard/proprietario.js';
+import { renderClienteSelector } from '../src/modules/dashboard/proprietario.js';
 
 describe('buildClienteSearchFilter', () => {
   it('retorna inválido para termo com menos de 2 chars', () => {
@@ -51,5 +52,28 @@ describe('parseProprietarioInput', () => {
 
   it('desvincular tem prioridade sobre lead_id preenchido', () => {
     expect(parseProprietarioInput({ desvincular: '1', lead_id: uuid })).toEqual({ acao: 'desvincular' });
+  });
+});
+
+describe('renderClienteSelector', () => {
+  it('inclui input de busca apontando pra API de search', () => {
+    const html = renderClienteSelector({ idPrefix: 'sel', dark: false });
+    expect(html).toContain('/dashboard/api/clientes/search');
+    expect(html).toContain('id="sel-busca"');
+    expect(html).toContain('name="lead_id"');
+  });
+
+  it('inclui bloco de criar novo (nome + telefone)', () => {
+    const html = renderClienteSelector({ idPrefix: 'sel', dark: false });
+    expect(html).toContain('name="novo_name"');
+    expect(html).toContain('name="novo_phone"');
+  });
+
+  it('idPrefix isola os ids entre instâncias', () => {
+    const a = renderClienteSelector({ idPrefix: 'aaa', dark: true });
+    const b = renderClienteSelector({ idPrefix: 'bbb', dark: true });
+    expect(a).toContain('id="aaa-busca"');
+    expect(b).toContain('id="bbb-busca"');
+    expect(a).not.toContain('bbb-busca');
   });
 });
