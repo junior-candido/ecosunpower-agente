@@ -17,7 +17,11 @@ export function buildClienteSearchFilter(raw: string): ClienteSearchFilter {
   const termo = String(raw ?? '').trim();
   if (termo.length < 2) return { valid: false, termo, or: '' };
   const digits = termo.replace(/\D/g, '');
-  const clauses = [`name.ilike.%${termo}%`];
+  // Sanitiza para o PostgREST: escapa % e _ (wildcards LIKE) e remove
+  // caracteres que malformam a string do .or() — vírgula e parênteses.
+  const escapeLike = (s: string) => s.replace(/%/g, '\\%').replace(/_/g, '\\_');
+  const termoSafe = escapeLike(termo.replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim());
+  const clauses = [`name.ilike.%${termoSafe}%`];
   if (digits.length >= 3) clauses.push(`phone.ilike.%${digits}%`);
   return { valid: true, termo, or: clauses.join(',') };
 }
@@ -96,6 +100,7 @@ export function renderClienteSelector(opts: ClienteSelectorOpts): string {
 
     <script>
     (function(){
+      function esc(s){ var d=document.createElement('div'); d.appendChild(document.createTextNode(s==null?'':String(s))); return d.innerHTML; }
       var busca = document.getElementById('${p}-busca');
       var drop = document.getElementById('${p}-drop');
       var hidden = document.getElementById('${p}-lead-id');
@@ -114,9 +119,9 @@ export function renderClienteSelector(opts: ClienteSelectorOpts): string {
               if (!rows || !rows.length){ drop.innerHTML='<div class="${itemCls}">Nenhum cliente encontrado</div>'; drop.classList.remove('hidden'); return; }
               drop.innerHTML = rows.map(function(c){
                 var sub = [c.phone, c.city].filter(Boolean).join(' · ');
-                return '<div class="${itemCls}" data-id="'+c.id+'" data-label="'+(c.name||'')+'">'+
-                  '<div class="font-semibold">'+(c.name||'(sem nome)')+'</div>'+
-                  '<div class="opacity-70">'+sub+'</div></div>';
+                return '<div class="${itemCls}" data-id="'+esc(c.id)+'" data-label="'+esc(c.name||'')+'">'+
+                  '<div class="font-semibold">'+esc(c.name||'(sem nome)')+'</div>'+
+                  '<div class="opacity-70">'+esc(sub)+'</div></div>';
               }).join('');
               drop.classList.remove('hidden');
               Array.prototype.forEach.call(drop.querySelectorAll('[data-id]'), function(el){
