@@ -1,5 +1,5 @@
 // tests/proprietario-service.test.ts
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { MonitoringService } from '../src/modules/monitoring/service.js';
 
 function fakeSupabaseClient(captura: { update?: any }) {

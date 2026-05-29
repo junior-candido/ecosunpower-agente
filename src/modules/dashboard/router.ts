@@ -913,9 +913,14 @@ export function createDashboardRouter(
 
   // Busca de clientes pra vínculo de proprietário (autocomplete).
   router.get('/api/clientes/search', async (req: Request, res: Response) => {
-    const q = String(req.query.q ?? '');
-    const rows = await supabaseService.searchClientesParaVinculo(q, 10);
-    res.json(rows);
+    try {
+      const q = String(req.query.q ?? '');
+      const rows = await supabaseService.searchClientesParaVinculo(q, 10);
+      res.json(rows);
+    } catch (err) {
+      console.error('[dashboard/clientes/search]', err);
+      res.status(500).json([]);
+    }
   });
 
   // Backfill: puxa historico completo (ate 24 meses) via API.
