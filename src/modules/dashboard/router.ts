@@ -911,6 +911,13 @@ export function createDashboardRouter(
     res.redirect(`/dashboard/monitoramento/${id}`);
   });
 
+  // Busca de clientes pra vínculo de proprietário (autocomplete).
+  router.get('/api/clientes/search', async (req: Request, res: Response) => {
+    const q = String(req.query.q ?? '');
+    const rows = await supabaseService.searchClientesParaVinculo(q, 10);
+    res.json(rows);
+  });
+
   // Backfill: puxa historico completo (ate 24 meses) via API.
   // Usado pra preencher gaps de sistemas recem-cadastrados.
   router.post('/monitoramento/:id/backfill', async (req: Request, res: Response) => {
