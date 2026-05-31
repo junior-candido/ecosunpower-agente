@@ -1322,15 +1322,22 @@ export function createDashboardRouter(
   // Vincular sistema órfão a um cliente novo (cria lead + linka)
   router.post('/clientes/vincular-sistema', async (req: Request, res: Response) => {
     const sistemaId = String(req.body?.sistema_id ?? '');
-    const name = String(req.body?.name ?? '').trim();
-    const phone = String(req.body?.phone ?? '').replace(/\D/g, '');
-    const email = req.body?.email ? String(req.body.email).trim() : null;
+    if (!UUID_RE.test(sistemaId)) return res.status(400).send('Sistema inválido');
 
-    if (!UUID_RE.test(sistemaId)) return res.status(400).send('sistema_id inválido');
-    if (name.length < 2) return res.status(400).send('Nome obrigatório (mín 2 chars)');
+    const leadId = String(req.body?.lead_id ?? '').trim();
+    // Caminho 1: cliente existente escolhido no seletor
+    if (UUID_RE.test(leadId)) {
+      const r = await supabaseService.vincularClienteExistente({ sistema_id: sistemaId, lead_id: leadId });
+      if (!r.ok) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/clientes">← voltar</a>`);
+      return res.redirect(303, `/dashboard/clientes/${leadId}`);
+    }
+
+    // Caminho 2: criar cliente novo
+    const name = String(req.body?.novo_name ?? '').trim();
+    const phone = String(req.body?.novo_phone ?? '').replace(/\D/g, '');
+    if (name.length < 2) return res.status(400).send('Escolha um cliente existente ou preencha nome (mín 2 chars)');
     if (phone.length < 10) return res.status(400).send('Telefone inválido — use formato 5561999990000');
-
-    const r = await supabaseService.vincularNovoLeadAoSistema({ sistema_id: sistemaId, name, phone, email });
+    const r = await supabaseService.vincularNovoLeadAoSistema({ sistema_id: sistemaId, name, phone });
     if (!r.ok) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/clientes">← voltar</a>`);
     res.redirect(303, `/dashboard/clientes/${r.lead_id}`);
   });
