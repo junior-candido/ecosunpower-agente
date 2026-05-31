@@ -854,7 +854,9 @@ export function createDashboardRouter(
       if (!detalhe) {
         return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
       }
-      res.send(renderDetalheSistemaPage(detalhe));
+      const donoLeadId = detalhe.sistema.lead_id;
+      const donoRow = donoLeadId ? await supabaseService.getClienteByLeadId(donoLeadId) : null;
+      res.send(renderDetalheSistemaPage(detalhe, donoRow ? { id: donoRow.id, name: donoRow.name } : null));
     } catch (err) {
       console.error('[dashboard/monitoramento/detalhe]', err);
       res.status(500).send(`<h2>Erro ao carregar detalhe</h2><pre>${(err as Error).message}</pre>`);

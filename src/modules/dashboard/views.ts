@@ -704,7 +704,10 @@ export function renderMonitoramentoPage(
 // DETALHE DE 1 SISTEMA — analise completa de uma usina
 // =========================================================================
 
-export function renderDetalheSistemaPage(d: DetalheSistema): string {
+export function renderDetalheSistemaPage(
+  d: DetalheSistema,
+  dono?: { id: string; name: string | null } | null,
+): string {
   const s = d.sistema;
   const localizacao = [s.cidade, s.uf].filter(Boolean).join('/') || '—';
 
@@ -773,6 +776,11 @@ export function renderDetalheSistemaPage(d: DetalheSistema): string {
           ${marcaBadge(s.marca_inversor, { compact: true, size: 48 })}
           <div>
             <h1 class="text-2xl font-bold text-slate-900">${escapeHtml(s.apelido)}</h1>
+            <div class="text-sm mt-1">
+              ${dono
+                ? `<a href="/dashboard/clientes/${escapeHtml(dono.id)}" class="text-sky-600 hover:underline">👤 ${escapeHtml(dono.name ?? 'cliente')}</a>`
+                : `<a href="/dashboard/monitoramento/${escapeHtml(s.id)}/editar" class="text-amber-600 hover:underline">⚠️ Sem proprietário — definir</a>`}
+            </div>
             <div class="text-slate-600 text-sm mt-1 flex flex-wrap gap-3 items-center">
               <span><span class="text-slate-400">📍</span> ${escapeHtml(localizacao)}</span>
               <span><span class="text-slate-400">⚡</span> ${s.potencia_kwp ? `${Number(s.potencia_kwp).toFixed(2)} kWp` : 'sem potência'}</span>
