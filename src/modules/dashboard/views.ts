@@ -5,6 +5,7 @@ import type { DashboardKpi, PropostaRow, ManutencaoRow, GraficoMensal, SistemaMo
 import type { DetalheSistema } from '../monitoring/service.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.js';
 import { formatPhoneBR, normalizeBrazilianPhone } from '../meta-leadgen.js';
+import { renderClienteSelector } from './proprietario.js';
 
 export function escapeHtml(s: string | null | undefined): string {
   if (s === null || s === undefined) return '';
@@ -994,7 +995,10 @@ const INVERSORES_MODELOS_SUGESTOES = [
   'Huawei SUN2000-5KTL-L1',
 ];
 
-export function renderEditarSistemaPage(s: import('../monitoring/types.js').SistemaCliente): string {
+export function renderEditarSistemaPage(
+  s: import('../monitoring/types.js').SistemaCliente,
+  dono?: { id: string; name: string | null; phone: string | null } | null,
+): string {
   const dl = (id: string, items: string[]) =>
     `<datalist id="${id}">${items.map(i => `<option value="${escapeHtml(i)}"></option>`).join('')}</datalist>`;
 
@@ -1065,6 +1069,24 @@ export function renderEditarSistemaPage(s: import('../monitoring/types.js').Sist
             </select>
           </div>
         </div>
+      </section>
+
+      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <h2 class="font-semibold text-slate-900 mb-4">👤 Proprietário</h2>
+        ${dono ? `
+          <div class="flex items-center justify-between gap-3 mb-4 p-3 rounded-lg bg-slate-50 border border-slate-200">
+            <div>
+              <div class="font-semibold text-slate-800">${escapeHtml(dono.name ?? '(sem nome)')}</div>
+              <div class="text-xs text-slate-500">${escapeHtml(dono.phone ?? '')}</div>
+              <a href="/dashboard/clientes/${escapeHtml(dono.id)}" class="text-xs text-sky-600 hover:underline">ver cliente →</a>
+            </div>
+            <button type="submit" name="desvincular" value="1" class="px-3 py-1.5 rounded-lg border-2 border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold">Desvincular</button>
+          </div>
+          <p class="text-sm text-slate-600 mb-2">Trocar de proprietário? Busque outro cliente abaixo.</p>
+        ` : `
+          <p class="text-sm text-slate-600 mb-2">Esta usina ainda não tem proprietário. Vincule um cliente:</p>
+        `}
+        ${renderClienteSelector({ idPrefix: 'prop', dark: false })}
       </section>
 
       <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
