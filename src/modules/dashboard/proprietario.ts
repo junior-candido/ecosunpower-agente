@@ -26,7 +26,7 @@ export function buildClienteSearchFilter(raw: string): ClienteSearchFilter {
   return { valid: true, termo, or: clauses.join(',') };
 }
 
-const UUID_RE = /^[0-9a-f-]{36}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type ProprietarioAcao =
   | { acao: 'manter' }

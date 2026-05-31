@@ -82,6 +82,11 @@ describe('parseProprietarioInput', () => {
   it('desvincular tem prioridade sobre lead_id preenchido', () => {
     expect(parseProprietarioInput({ desvincular: '1', lead_id: uuid })).toEqual({ acao: 'desvincular' });
   });
+
+  it('rejeita string de 36 chars que não é UUID canônico', () => {
+    expect(parseProprietarioInput({ lead_id: '------------------------------------' }).acao).toBe('erro');
+    expect(parseProprietarioInput({ lead_id: 'abcdef-abcdef-abcdef-abcdef-abcdefab' }).acao).toBe('erro');
+  });
 });
 
 describe('renderClienteSelector', () => {
