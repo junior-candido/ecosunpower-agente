@@ -93,9 +93,12 @@ export async function exercisePageInsights(accessToken: string): Promise<void> {
  * Failsafe: se uma falhar, as outras continuam.
  */
 export async function runMetaPermissionsHeartbeat(accessToken: string): Promise<void> {
+  // NOTA: exercisePageInsights foi REMOVIDA daqui — usava a métrica `page_impressions`,
+  // deprecada na Graph API v22 (gerava "page_insights HTTP 400" repetido no log). Era
+  // redundante: exercisePagesList (fan_count/followers_count) já consome
+  // pages_read_engagement, e o App Review já está aprovado. Sem perda de função.
   await Promise.allSettled([
     exercisePublicProfile(accessToken),
     exercisePagesList(accessToken),
-    exercisePageInsights(accessToken),
   ]);
 }
