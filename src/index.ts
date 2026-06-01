@@ -667,7 +667,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     if (norm === 'blog status' || norm === 'status blog') {
       const pending = await blogGenerator.getPendingDrafts();
       if (pending.length === 0) {
-        await sendText(from, 'Nenhum draft pendente. Proximo gera no proximo ciclo de 3 dias.');
+        await sendText(from, 'Nenhum draft pendente. O proximo gera no proximo ciclo (todo dia).');
       } else {
         const lines = pending.slice(0, 5).map((d, i) => `${i + 1}. ${d.title}\n   slug: ${d.slug}`).join('\n\n');
         await sendText(from, `📋 Drafts pendentes (${pending.length}):\n\n${lines}\n\nResponde "publicar" pra publicar o primeiro, ou "publicar <slug>" pra escolher.`);
@@ -6747,8 +6747,8 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     }
   };
   setTimeout(() => runCanalSolarIngestion(false), 2 * 60 * 1000);
-  setInterval(() => runCanalSolarIngestion(true), 3 * 24 * 60 * 60 * 1000);
-  console.log('[canal-solar] Scheduler started (every 3 days)');
+  setInterval(() => runCanalSolarIngestion(true), 24 * 60 * 60 * 1000);
+  console.log('[canal-solar] Scheduler started (todo dia)');
 
   // Auto-blog generator: a cada 3 dias gera 1 draft e manda no WhatsApp do
   // Junior pra aprovacao. NAO gated por passive mode pq so envia pro proprio
@@ -6815,8 +6815,10 @@ Slug: ${draft.slug}`;
       .eq('key', flagKey)
       .maybeSingle();
     const last = flag?.value ? new Date(flag.value).getTime() : 0;
-    const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
-    if (Date.now() - last < threeDaysMs) return;
+    // Todo dia: 1 artigo por dia. Usa ~20h (nao 24h cravadas) pra nao "pular" um
+    // dia por causa do jitter do check (que roda de 6h em 6h).
+    const umDiaMs = 20 * 60 * 60 * 1000;
+    if (Date.now() - last < umDiaMs) return;
 
     // Lock de short-circuit: se outra instancia comecou ha menos de 10min, skipa
     // pra evitar duplo-disparo. Lock expira por timestamp, nao trava 3 dias se falhar.
@@ -6849,7 +6851,7 @@ Slug: ${draft.slug}`;
   setTimeout(checkBlogSchedule, 30 * 60 * 1000);
   // Checa a cada 6h (idempotente via app_flags)
   setInterval(checkBlogSchedule, 6 * 60 * 60 * 1000);
-  console.log('[blog] Auto-blog scheduler started (drafts a cada 3 dias)');
+  console.log('[blog] Auto-blog scheduler started (drafts todo dia)');
 
   // News scraper diario: ANEEL 03:00 BRT. Idempotente via app_flags
   // + guard em memoria (newsScraperRunning) pra evitar double-run no
