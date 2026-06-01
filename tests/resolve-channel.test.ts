@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolveChannel } from '../src/modules/dashboard/resolve-channel.js';
 
+
 describe('resolveChannel — prioridade determinística', () => {
   it('1) ad_campaign_id presente -> meta (CTWA/anúncio Meta)', () => {
     expect(resolveChannel({ adCampaignId: '120xyz' })).toBe('meta');
@@ -34,5 +35,32 @@ describe('resolveChannel — prioridade determinística', () => {
     expect(resolveChannel(undefined as never)).toBe('direto');
     expect(resolveChannel({ leadSource: 'xyz-desconhecido' })).toBe('outro');
     expect(() => resolveChannel({ leadSource: 123 as never })).not.toThrow();
+  });
+});
+
+describe('resolveChannel — classificação de canal', () => {
+  it('organico_ig é orgânico (blog), NÃO paid meta', () => {
+    expect(resolveChannel({ leadSource: 'organico_ig' })).toBe('blog');
+  });
+  it('organico_fb é orgânico (blog)', () => {
+    expect(resolveChannel({ leadSource: 'organico_fb' })).toBe('blog');
+  });
+  it('ad_ctwa classifica como meta', () => {
+    expect(resolveChannel({ leadSource: 'ad_ctwa' })).toBe('meta');
+  });
+  it('ctwa classifica como meta', () => {
+    expect(resolveChannel({ leadSource: 'ctwa' })).toBe('meta');
+  });
+  it('ig puro (paid) continua meta', () => {
+    expect(resolveChannel({ leadSource: 'ad_ig_cta_wa' })).toBe('meta');
+  });
+  it('adCampaignId presente = meta (prioridade máxima)', () => {
+    expect(resolveChannel({ adCampaignId: '123' })).toBe('meta');
+  });
+  it('reativacao continua base_propria', () => {
+    expect(resolveChannel({ leadSource: 'reativacao_lead_v1' })).toBe('base_propria');
+  });
+  it('sem sinal = direto', () => {
+    expect(resolveChannel({})).toBe('direto');
   });
 });

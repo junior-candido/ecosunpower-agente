@@ -15,16 +15,20 @@ function norm(v: unknown): string {
 
 // Mapeia um token textual -> canal conhecido, ou '' se não reconhecer.
 // IMPORTANTE: ordem das regexs codifica prioridade. Primeiro casa vence.
-// Mantenha meta > google > base_propria > indicacao > blog.
+// Orgânico ANTES de meta: 'organico_ig'/'organico_fb' não pode cair em paid
+// meta (a regex meta casa 'ig'/'fb'). 'blog' é o bucket orgânico/SEO.
 function tokenToChannel(s: string): Channel | '' {
   if (!s) return '';
-  if (/(^|[^a-z])(meta|facebook|instagram|fb|ig)([^a-z]|$)/.test(s)) return 'meta';
+  // Orgânico ANTES de meta: 'organico_ig'/'organico_fb' não pode cair em paid
+  // meta (a regex meta casa 'ig'/'fb'). 'blog' é o bucket orgânico/SEO.
+  if (/(^|[^a-z])(blog|org[aâ]nico|organico|seo)([^a-z]|$)/.test(s)) return 'blog';
+  // Paid Meta: inclui 'ctwa'/'ad_ctwa' (Click-to-WhatsApp Ad).
+  if (/(^|[^a-z])(meta|facebook|instagram|fb|ig|ctwa)([^a-z]|$)/.test(s)) return 'meta';
   if (/(^|[^a-z])(google|gads|adwords|google[_-]?ads)([^a-z]|$)/.test(s)) return 'google';
   // Base propria: leads de bases terceirizadas que sao reativadas + reengagement manual + neemias (base velha do Junior)
   if (/(^|[^a-z])(terceirizada|terceirizado|reengagement|reativacao|reativado|recovered|recuperado|neemias|base[_-]?propria)([^a-z]|$)/.test(s)) return 'base_propria';
   // Venda direta presencial entra como indicacao (origem nao-digital, contato proximo)
   if (/(^|[^a-z])(indica[cç][aã]o|indicacao|referral|indica|venda[_-]?direta|presencial|amigo|familiar)([^a-z]|$)/.test(s)) return 'indicacao';
-  if (/(^|[^a-z])(blog|org[aâ]nico|organico|seo)([^a-z]|$)/.test(s)) return 'blog';
   return '';
 }
 
