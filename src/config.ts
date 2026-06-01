@@ -49,6 +49,9 @@ const configSchema = z.object({
   useWabaCloudApi: z.coerce.boolean().default(false), // flag: quando true, usa WABA; quando false, usa Evolution
   igUserId: z.string().optional(),                    // IG-Scoped Business User ID (qualificador IG DM)
   replicateApiToken: z.string().optional(),
+  // Higgsfield Cloud API (geração de imagem top pros posts de marketing).
+  // Formato: "KEY_ID:KEY_SECRET". Se ausente, marketing usa FLUX (Replicate) como antes.
+  higgsfieldCredentials: z.string().optional(),
   tavusApiKey: z.string().optional(),
   tavusApiUrl: z.string().url().default('https://tavusapi.com'),
   tavusReplicaId: z.string().optional(),
@@ -113,6 +116,7 @@ export function loadConfig(): Config {
     useWabaCloudApi: process.env.USE_WABA_CLOUD_API,
     igUserId: process.env.IG_USER_ID || undefined,
     replicateApiToken: process.env.REPLICATE_API_TOKEN || undefined,
+    higgsfieldCredentials: process.env.HIGGSFIELD_CREDENTIALS || undefined,
     tavusApiKey: process.env.TAVUS_API_KEY || undefined,
     tavusApiUrl: process.env.TAVUS_API_URL,
     tavusReplicaId: process.env.TAVUS_REPLICA_ID || undefined,

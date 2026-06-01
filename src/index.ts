@@ -24,6 +24,7 @@ import { MetaService } from './modules/meta.js';
 import { ImageGenerator } from './modules/image-gen.js';
 import { VideoGenerator } from './modules/video-gen.js';
 import { MarketingService } from './modules/marketing.js';
+import { HiggsfieldImageGenerator } from './modules/marketing/higgsfield-gen.js';
 import { CreativeAgent } from './modules/marketing/creative-agent.js';
 import { ReengagementCadence } from './modules/reengagement-cadence.js';
 import { PostInstallService, INSTALLATION_STATUSES } from './modules/post-install.js';
@@ -296,8 +297,15 @@ async function main() {
       // Se nao setado, fallback pra engineerPhone por compat (mas com warn).
       config.businessPhone ?? config.engineerPhone,
       new VideoGenerator(config.replicateApiToken),
+      // Higgsfield (imagem top + logo) pros posts de imagem. Se ausente, usa FLUX.
+      config.higgsfieldCredentials
+        ? new HiggsfieldImageGenerator(config.higgsfieldCredentials)
+        : undefined,
     )
     : null;
+  if (config.higgsfieldCredentials) {
+    console.log('[marketing] Higgsfield habilitado (imagem premium + logo)');
+  }
   if (marketing && !config.businessPhone) {
     console.warn('[marketing] WARNING: BUSINESS_PHONE nao setado. wa.me links no caption apontam pro engineerPhone (pessoal). Defina BUSINESS_PHONE=55XXXXXXXXXX (numero do Evolution onde Eva opera).');
   }
@@ -6951,12 +6959,12 @@ Slug: ${draft.slug}`;
     }
   });
 
-  // Marketing weekly scheduler: every Monday 08:00 BRT generates 1 video Reel
-  // and 1 still image draft, sending both to Junior's WhatsApp for approval.
+  // Marketing scheduler: segunda E quinta 08:00 BRT gera UM post pra aprovação no
+  // WhatsApp. Maioria imagem (Higgsfield + logo); a cada 4º run sai vídeo (~2x/mês).
   if (!isSandbox && marketing) {
     const checkMarketingSchedule = async () => {
       const brt = getBrtParts();
-      if (brt.weekday !== 1) return; // segunda
+      if (brt.weekday !== 1 && brt.weekday !== 4) return; // segunda e quinta
       if (brt.hour !== 8 || brt.minute >= 15) return; // 08:00-08:14 BRT
 
       const lastRunKey = 'last_weekly_marketing_run';
@@ -6977,21 +6985,30 @@ Slug: ${draft.slug}`;
           { onConflict: 'key' },
         );
 
-      console.log('[marketing] Weekly run: generating 1 video + 1 image...');
+      // UM post por run (seg/qui). Maioria imagem (Higgsfield+logo); a cada 4º run
+      // sai VÍDEO no lugar (~2x/mês, já que seg+qui dá ~8-9 posts/mês). Contador
+      // persistido em app_flags pra alternar de forma estável entre runs.
+      const VIDEO_EVERY = 4;
+      const countKey = 'marketing_post_count';
+      const { data: cflag } = await supabase.getClient()
+        .from('app_flags').select('value').eq('key', countKey).maybeSingle();
+      const count = Number(cflag?.value ?? '0') + 1;
+      await supabase.getClient().from('app_flags').upsert(
+        { key: countKey, value: String(count), updated_at: new Date().toISOString() },
+        { onConflict: 'key' },
+      );
+      const asVideo = count % VIDEO_EVERY === 0;
+      console.log(`[marketing] Weekly run #${count}: gerando ${asVideo ? 'VÍDEO' : 'imagem'}...`);
       try {
-        for (let i = 0; i < 2; i++) {
-          const asVideo = i === 0;
-          const draft = await marketing.generateDraft(undefined, asVideo);
-          await sendDraftToJunior(draft.id);
-          await new Promise((r) => setTimeout(r, 30000));
-        }
+        const draft = await marketing.generateDraft(undefined, asVideo);
+        await sendDraftToJunior(draft.id);
         console.log('[marketing] Weekly run complete');
       } catch (err) {
         console.error('[marketing] Weekly run failed:', err);
       }
     };
     setInterval(checkMarketingSchedule, 10 * 60 * 1000); // check every 10 min
-    console.log('[marketing] Weekly scheduler started (Mondays 08:00 BRT)');
+    console.log('[marketing] Weekly scheduler started (Segunda e Quinta 08:00 BRT)');
 
     // Also auto-discard stale drafts daily
     setInterval(async () => {

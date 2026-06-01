@@ -4,6 +4,9 @@ import { randomBytes } from 'crypto';
 import { ImageGenerator } from './image-gen.js';
 import { VideoGenerator } from './video-gen.js';
 import { buildTrackedWaLink } from './tracking.js';
+import { HiggsfieldImageGenerator } from './marketing/higgsfield-gen.js';
+import { applyBrandLogo } from './marketing/branded-frame.js';
+import { pickScene } from './marketing/solar-scenes.js';
 
 export type PostTopicType =
   | 'objecao_desmistificada'
@@ -64,6 +67,8 @@ export class MarketingService {
   private imageGen: ImageGenerator;
   private videoGen: VideoGenerator | null;
   private businessPhone: string;
+  private higgsfield: HiggsfieldImageGenerator | null;
+  private lastSceneKey?: string; // última cena gerada (anti-repetição entre posts)
 
   constructor(
     anthropicApiKey: string,
@@ -71,12 +76,38 @@ export class MarketingService {
     imageGen: ImageGenerator,
     businessPhone: string,
     videoGen?: VideoGenerator,
+    higgsfield?: HiggsfieldImageGenerator,
   ) {
     this.anthropic = new Anthropic({ apiKey: anthropicApiKey });
     this.supabase = supabase;
     this.imageGen = imageGen;
     this.videoGen = videoGen ?? null;
     this.businessPhone = businessPhone;
+    this.higgsfield = higgsfield ?? null;
+  }
+
+  // Gera a imagem do post: Higgsfield (cena solar variada, anti-repetição) + logo
+  // EcoSunPower no canto. Fallback pro FLUX (ainda com logo) se o Higgsfield falhar
+  // ou não estiver configurado. Usado tanto na geração quanto no "Gerar outra imagem".
+  private async generateSolarImage(fallbackPrompt: string): Promise<{ bytes: Buffer; contentType: string }> {
+    if (this.higgsfield) {
+      // Passa a última cena pra não repetir seguido (ex: seg→qui, ou cliques no "Outra").
+      const { scene, prompt, seed } = pickScene(this.lastSceneKey);
+      this.lastSceneKey = scene.key;
+      try {
+        console.log(`[marketing] Higgsfield gerando cena="${scene.key}" (seed ${seed})`);
+        const { url } = await this.higgsfield.generate({ prompt, aspectRatio: '4:5', seed });
+        const dl = await this.higgsfield.downloadImage(url);
+        return { bytes: applyBrandLogo(dl.bytes), contentType: 'image/png' };
+      } catch (err) {
+        console.warn(`[marketing] Higgsfield falhou (${(err as Error).message}); fallback FLUX`);
+      }
+    }
+    const { url } = await this.imageGen.generate({
+      prompt: fallbackPrompt, aspectRatio: '4:5', outputFormat: 'jpg', outputQuality: 95,
+    });
+    const dl = await this.imageGen.downloadImage(url);
+    return { bytes: applyBrandLogo(dl.bytes), contentType: 'image/png' };
   }
 
   async generateDraft(preferredType?: PostTopicType, asVideo = true): Promise<GeneratedDraft & { video_url?: string; content_type: string }> {
@@ -116,17 +147,29 @@ export class MarketingService {
 
     const useVideo = asVideo && this.videoGen !== null;
 
-    // 2) Generate image via FLUX. Use 9:16 if we're making a Reel, 1:1 otherwise.
-    const { url: tempUrl } = await this.imageGen.generate({
-      prompt: parsed.image_prompt,
-      aspectRatio: useVideo ? '9:16' : '1:1',
-      outputFormat: 'jpg',
-      outputQuality: 95,
-    });
+    // 2) Gera a imagem.
+    // Caminho premium (post de IMAGEM): Higgsfield com cena solar variada (anti-repetição)
+    // + logo EcoSunPower no canto. Se falhar (sem crédito/timeout/erro), cai pro FLUX —
+    // ainda aplicando a logo. Assim a mensagem seg/qui nunca deixa de chegar.
+    let imgBytes: Buffer;
+    let imgContentType: string;
 
-    // 3) Download and upload image to Supabase Storage
-    const { bytes: imgBytes, contentType: imgContentType } = await this.imageGen.downloadImage(tempUrl);
-    const imageFilename = `${Date.now()}-${randomBytes(4).toString('hex')}.jpg`;
+    if (useVideo) {
+      // Vídeo: imagem-base 9:16 via FLUX (sem logo) pra animar no Luma. Comportamento atual.
+      const { url: tempUrl } = await this.imageGen.generate({
+        prompt: parsed.image_prompt, aspectRatio: '9:16', outputFormat: 'jpg', outputQuality: 95,
+      });
+      const dl = await this.imageGen.downloadImage(tempUrl);
+      imgBytes = dl.bytes;
+      imgContentType = dl.contentType;
+    } else {
+      // Post de imagem: Higgsfield + cena solar + logo (com fallback FLUX+logo).
+      ({ bytes: imgBytes, contentType: imgContentType } = await this.generateSolarImage(parsed.image_prompt));
+    }
+
+    // 3) Upload image to Supabase Storage
+    const ext = imgContentType === 'image/png' ? 'png' : 'jpg';
+    const imageFilename = `${Date.now()}-${randomBytes(4).toString('hex')}.${ext}`;
     const { error: imgUploadErr } = await this.supabase.storage
       .from('marketing-images')
       .upload(imageFilename, imgBytes, { contentType: imgContentType, upsert: false });
@@ -258,14 +301,12 @@ export class MarketingService {
     if (draft.status !== 'pending_approval') {
       throw new Error(`Cannot regenerate: draft status is "${draft.status}"`);
     }
-    const { url: tempUrl } = await this.imageGen.generate({
-      prompt: draft.image_prompt ?? 'Fotografia profissional realista sobre energia solar',
-      aspectRatio: '1:1',
-      outputFormat: 'jpg',
-      outputQuality: 95,
-    });
-    const { bytes, contentType } = await this.imageGen.downloadImage(tempUrl);
-    const filename = `${Date.now()}-${randomBytes(4).toString('hex')}.jpg`;
+    // "Gerar outra imagem": nova cena Higgsfield + logo (fallback FLUX+logo).
+    const { bytes, contentType } = await this.generateSolarImage(
+      draft.image_prompt ?? 'Fotografia profissional realista sobre energia solar',
+    );
+    const ext = contentType === 'image/png' ? 'png' : 'jpg';
+    const filename = `${Date.now()}-${randomBytes(4).toString('hex')}.${ext}`;
     const { error: uploadErr } = await this.supabase.storage
       .from('marketing-images')
       .upload(filename, bytes, { contentType, upsert: false });
