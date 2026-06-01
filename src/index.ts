@@ -288,6 +288,22 @@ async function main() {
     console.log(`[meta-leadgen] Webhook disabled. Missing: ${missing}`);
   }
 
+  // Higgsfield (imagem top + logo) pros posts de imagem. Construção TOLERANTE:
+  // credencial ausente OU mal formatada apenas DESABILITA o Higgsfield (cai pro
+  // FLUX) — NUNCA derruba o app no boot. O SDK valida o formato KEY_ID:KEY_SECRET
+  // no construtor e lança; aqui a gente captura e segue sem Higgsfield.
+  let higgsfieldGen: HiggsfieldImageGenerator | undefined;
+  if (config.higgsfieldCredentials) {
+    try {
+      higgsfieldGen = new HiggsfieldImageGenerator(config.higgsfieldCredentials);
+      console.log('[marketing] Higgsfield habilitado (imagem premium + logo)');
+    } catch (err) {
+      console.error(
+        `[marketing] Higgsfield DESABILITADO — credencial inválida (use KEY_ID:KEY_SECRET): ${(err as Error).message}. Seguindo com FLUX.`,
+      );
+    }
+  }
+
   const marketing = (config.replicateApiToken && meta)
     ? new MarketingService(
       config.anthropicApiKey,
@@ -297,15 +313,9 @@ async function main() {
       // Se nao setado, fallback pra engineerPhone por compat (mas com warn).
       config.businessPhone ?? config.engineerPhone,
       new VideoGenerator(config.replicateApiToken),
-      // Higgsfield (imagem top + logo) pros posts de imagem. Se ausente, usa FLUX.
-      config.higgsfieldCredentials
-        ? new HiggsfieldImageGenerator(config.higgsfieldCredentials)
-        : undefined,
+      higgsfieldGen,
     )
     : null;
-  if (config.higgsfieldCredentials) {
-    console.log('[marketing] Higgsfield habilitado (imagem premium + logo)');
-  }
   if (marketing && !config.businessPhone) {
     console.warn('[marketing] WARNING: BUSINESS_PHONE nao setado. wa.me links no caption apontam pro engineerPhone (pessoal). Defina BUSINESS_PHONE=55XXXXXXXXXX (numero do Evolution onde Eva opera).');
   }
