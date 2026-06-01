@@ -47,12 +47,20 @@ export async function syncGoogleAdsToChannelMetrics(
 ): Promise<GoogleAdsSyncResult> {
   const devToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
   const mcc = process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID;
+  // Conta OPERACIONAL (a que veicula anúncio) — NÃO a MCC. A MCC (gerenciadora) não
+  // tem métricas próprias; pedir métricas nela retorna INVALID_ARGUMENT. A campanha
+  // roda na conta-filho (ex: 9869796921 "Ecosunpower Energia Solar").
+  const customerId = process.env.GOOGLE_ADS_CUSTOMER_ID;
 
   if (!devToken || !mcc) {
-    return { ok: false, dias_processados: 0, total_spend_cents: 0, total_clicks: 0, total_impressions: 0, error: 'env missing' };
+    return { ok: false, dias_processados: 0, total_spend_cents: 0, total_clicks: 0, total_impressions: 0, error: 'env missing (DEVELOPER_TOKEN / LOGIN_CUSTOMER_ID)' };
+  }
+  if (!customerId) {
+    console.warn('[google-ads-sync] GOOGLE_ADS_CUSTOMER_ID não definida (conta operacional) — sync ignorado');
+    return { ok: false, dias_processados: 0, total_spend_cents: 0, total_clicks: 0, total_impressions: 0, error: 'GOOGLE_ADS_CUSTOMER_ID missing' };
   }
 
-  console.log(`[google-ads-sync] iniciando MCC=${mcc}`);
+  console.log(`[google-ads-sync] iniciando customer=${customerId} (login-customer-id=MCC ${mcc})`);
 
   let accessToken: string;
   try {
@@ -63,7 +71,8 @@ export async function syncGoogleAdsToChannelMetrics(
     return { ok: false, dias_processados: 0, total_spend_cents: 0, total_clicks: 0, total_impressions: 0, error: msg };
   }
 
-  const url = `https://googleads.googleapis.com/v21/customers/${mcc}/googleAds:searchStream`;
+  // URL aponta pra conta OPERACIONAL; o header login-customer-id continua a MCC.
+  const url = `https://googleads.googleapis.com/v21/customers/${customerId}/googleAds:searchStream`;
   const query = 'SELECT segments.date, metrics.cost_micros, metrics.clicks, metrics.impressions FROM customer WHERE segments.date DURING LAST_30_DAYS';
 
   let rawText: string;
@@ -81,8 +90,9 @@ export async function syncGoogleAdsToChannelMetrics(
 
     if (!response.ok) {
       const body = await response.text();
-      console.warn(`[google-ads-sync] HTTP ${response.status}: ${body.slice(0, 300)}`);
-      return { ok: false, dias_processados: 0, total_spend_cents: 0, total_clicks: 0, total_impressions: 0, error: `HTTP ${response.status}` };
+      // Log do erro COMPLETO (antes cortava em 300 e escondia o errorCode real).
+      console.warn(`[google-ads-sync] HTTP ${response.status}: ${body.slice(0, 1500)}`);
+      return { ok: false, dias_processados: 0, total_spend_cents: 0, total_clicks: 0, total_impressions: 0, error: `HTTP ${response.status}: ${body.slice(0, 400)}` };
     }
 
     rawText = await response.text();
