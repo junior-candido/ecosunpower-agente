@@ -2,7 +2,7 @@
 
 **Data:** 2026-05-31
 **Branch:** `fix/atribuicao-canal-leads`
-**Status:** Em revisão (2 decisões pendentes do Junior)
+**Status:** Aprovado (Junior 31/05: orgânico→reusar `blog`; backfill→sim)
 
 ## Problema (diagnóstico confirmado em prod)
 
@@ -44,17 +44,13 @@ A lógica de montar o patch de atribuição será extraída num **helper puro te
 
 No `tokenToChannel`, tratar `organico`/`organic`/`organico_ig`/`organico_fb` **ANTES** da regex de `meta` (pra `ig`/`fb` não capturar orgânico como pago), retornando o bucket de orgânico.
 
-**🔸 DECISÃO 1 (taxonomia):** o bucket orgânico deve ser:
-- **(a)** Reusar o canal **`blog`** existente (já é o bucket "orgânico/SEO" no enum). Mais simples, zero migração. *(recomendo)*
-- **(b)** Adicionar um canal novo **`organico_social`** ao enum `Channel` (separa IG/FB orgânico de blog/SEO). Mais granular, mas exige tocar enum + lugares que listam canais.
+**✅ DECISÃO 1 (taxonomia) — Junior escolheu (a):** orgânico (IG/FB) **reusa o canal `blog`** existente. No `tokenToChannel`, mover a checagem de orgânico/blog pra **ANTES** da de `meta` (pra `ig`/`fb` dentro de `organico_ig` não cair em paid meta).
 
 ### Backfill (opcional)
 
 Os leads "direto" do CTVA passado **não dá pra recuperar** (o `ad_id` nunca foi salvo — dado inexistente). Mas os **82 `organico_ig` + demais "outro" que TÊM `lead_source`** podem ser reclassificados recomputando o `channel`.
 
-**🔸 DECISÃO 2 (backfill):** rodar um UPDATE único que recalcula `channel` pra todos os leads que têm `lead_source`/`utm`/`origin` preenchidos, recuperando os ~82 orgânicos + outros?
-- **(a)** Sim — script `scripts/backfill-channel-reclassify.ts` (idempotente, só recomputa, não inventa dado). *(recomendo — recupera 82+ leads de graça)*
-- **(b)** Não — só corrigir daqui pra frente.
+**✅ DECISÃO 2 (backfill) — Junior escolheu (a):** rodar script `scripts/backfill-channel-reclassify.ts` (idempotente) que recomputa `channel` pra leads com `lead_source`/`utm`/`origin` preenchidos — recupera os ~82 `organico_ig` + outros em "outro". Os 168 "direto" do CTWA ficam de fora (dado inexistente).
 
 ## Fora de escopo (YAGNI)
 
