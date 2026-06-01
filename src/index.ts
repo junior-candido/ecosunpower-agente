@@ -2212,12 +2212,29 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       const { syncCampaignStatuses, collectInsights } = await import('./modules/marketing/insights-collector.js');
       const sync = await syncCampaignStatuses(supabase.getClient(), config.metaWabaAccessToken);
       const ins = await collectInsights(supabase.getClient(), config.metaWabaAccessToken);
+
+      // Google Ads (best-effort) — mesma sync do cron, agora on-demand. Mostra o
+      // resultado (ou o erro completo) direto na resposta pra Junior ver na hora.
+      let googleLine = '';
+      if (process.env.GOOGLE_ADS_DEVELOPER_TOKEN && process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID) {
+        try {
+          const { syncGoogleAdsToChannelMetrics } = await import('./modules/marketing/google-ads/sync.js');
+          const g = await syncGoogleAdsToChannelMetrics(supabase.getClient());
+          googleLine = g.ok
+            ? `🟢 *Google Ads:* ${g.dias_processados} dias, R$ ${(g.total_spend_cents / 100).toFixed(2)} gasto, ${g.total_clicks} clicks.\n`
+            : `🔴 *Google Ads falhou:* ${g.error}\n`;
+        } catch (err) {
+          googleLine = `🔴 *Google Ads erro:* ${(err as Error).message}\n`;
+        }
+      }
+
       await sendText(
         from,
         `✅ Sync concluido.\n\n` +
         `📊 *Status Meta -> DB:* ${sync.synced} sincronizadas, ${sync.changed} mudaram.\n` +
-        `📈 *Insights coletados:* ${ins.ok} ok, ${ins.failed} falharam.\n\n` +
-        `Veja: /dashboard/marketing`,
+        `📈 *Insights coletados:* ${ins.ok} ok, ${ins.failed} falharam.\n` +
+        googleLine +
+        `\nVeja: /dashboard/marketing`,
       );
     } catch (err) {
       console.error('[sync-marketing] failed:', err);
