@@ -12,6 +12,14 @@ const sampleCase: Case = {
   featured: true,
 };
 
+// getAll() absolutiza URLs relativas usando siteUrl (ver absolutizarUrls em
+// cases-fetcher.ts, commit b72a8a5). Logo, o retorno de getAll tem o
+// fotoPrincipal ja prefixado com o siteUrl usado nos testes ('https://exemplo.com').
+const sampleCaseAbsoluto: Case = {
+  ...sampleCase,
+  fotoPrincipal: 'https://exemplo.com/cases/caso1/cover.jpg',
+};
+
 describe('CasesFetcher', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -23,8 +31,8 @@ describe('CasesFetcher', () => {
     const r2 = await fetcher.getAll();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(r1).toEqual([sampleCase]);
-    expect(r2).toEqual([sampleCase]);
+    expect(r1).toEqual([sampleCaseAbsoluto]);
+    expect(r2).toEqual([sampleCaseAbsoluto]);
   });
 
   it('expira cache apos TTL', async () => {
@@ -92,7 +100,7 @@ describe('CasesFetcher', () => {
     const r1 = await fetcher.getAll();
     await new Promise(r => setTimeout(r, 10));
     const r2 = await fetcher.getAll();
-    expect(r1).toEqual([sampleCase]);
-    expect(r2).toEqual([sampleCase]);
+    expect(r1).toEqual([sampleCaseAbsoluto]);
+    expect(r2).toEqual([sampleCaseAbsoluto]);
   });
 });
