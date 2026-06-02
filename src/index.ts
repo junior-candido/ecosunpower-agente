@@ -6198,7 +6198,7 @@ Atualizado em: 22 de abril de 2026</p>
 </ul>
 
 <h2>5. Atendimento por inteligencia artificial</h2>
-<p>Para agilizar o primeiro atendimento e qualificacao de leads, utilizamos um agente conversacional baseado em inteligencia artificial chamado "Eva", que opera atraves de WhatsApp. Eva eh treinada com nossa base de conhecimento tecnico e atua como engenheira especialista virtual da empresa.</p>
+<p>Para agilizar o primeiro atendimento e qualificacao de leads, utilizamos um agente conversacional baseado em inteligencia artificial chamado "Eva", que opera atraves de WhatsApp. Eva eh treinada com nossa base de conhecimento tecnico e atua como consultora especialista virtual da empresa.</p>
 <p>Voce sera sempre informado quando estiver conversando com Eva. Caso prefira atendimento exclusivamente humano, basta solicitar a qualquer momento e o Responsavel Tecnico da EcoSunPower assumira a conversa.</p>
 <p>As respostas geradas pela Eva tem carater consultivo inicial e devem ser sempre validadas com nossa equipe tecnica para projetos definitivos. A Ecosunpower nao se responsabiliza por decisoes tomadas exclusivamente com base em respostas automatizadas sem confirmacao posterior.</p>
 
