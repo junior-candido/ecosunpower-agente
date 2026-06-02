@@ -3465,11 +3465,37 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         const contactTypeLabel = contactType ? ` (${contactType})` : '';
         const leadName = lead?.name as string | undefined;
         const nameLabel = leadName ? ` - ${leadName}` : '';
-        const transferMsg = `🔔 TRANSFERENCIA DE ATENDIMENTO${contactTypeLabel}\n\nContato: ${from}${nameLabel}\n\nMotivo:\n${(action.data as Record<string, string>).reason ?? 'Solicitado pelo cliente'}\n\nVoce pode responder direto por aqui. A Eva fica em pausa nesse chat.`;
-        if (!isSandbox) {
-          await sendText(config.engineerPhone, transferMsg);
+        const reason = (action.data as Record<string, string>).reason ?? 'Solicitado pelo cliente';
+
+        // Fornecedor/parceiro/spam = contato que oferece algo PRA Ecosunpower.
+        // Junior decide num toque: Responder (assume e fala direto pelo wa.me)
+        // ou Ignorar (Eva para de vez). Os demais transfers (cliente, amigo,
+        // cliente antigo, cliente que pediu humano) NAO ganham "Ignorar" — sao
+        // contatos pra engajar, nao pra descartar; viram "Assumir / Ver perfil".
+        const isContatoComercial = contactType === 'fornecedor'
+          || contactType === 'parceiro'
+          || contactType === 'spam';
+
+        let transferMsg: string;
+        let buttons: Array<{ id: string; title: string }>;
+        if (isContatoComercial) {
+          transferMsg = `🔔 CONTATO COMERCIAL${contactTypeLabel}\n\nContato: ${from}${nameLabel}\nFalar direto: wa.me/${from}\n\nMotivo:\n${reason}\n\nA Eva deu uma resposta curta e está em pausa nesse chat. O que você quer fazer?`;
+          buttons = [
+            { id: `evabt:lead-pause:${leadId}`, title: 'Responder' },
+            { id: `evabt:lead-optout:${leadId}`, title: 'Ignorar' },
+          ];
         } else {
-          console.log(`[sandbox] Transfer to engineer:\n${transferMsg}`);
+          transferMsg = `🔔 TRANSFERENCIA DE ATENDIMENTO${contactTypeLabel}\n\nContato: ${from}${nameLabel}\nFalar direto: wa.me/${from}\n\nMotivo:\n${reason}\n\nVocê pode assumir esse atendimento. A Eva fica em pausa nesse chat.`;
+          buttons = [
+            { id: `evabt:lead-pause:${leadId}`, title: 'Assumir' },
+            { id: `evabt:lead-view:${leadId}`, title: 'Ver perfil' },
+          ];
+        }
+
+        if (!isSandbox) {
+          await sendAdminWithButtons({ metaWaba: metaWaba ?? null, sendText }, config.engineerPhone, transferMsg, buttons);
+        } else {
+          console.log(`[sandbox] Transfer to engineer:\n${transferMsg}\n[buttons] ${buttons.map(b => b.title).join(' | ')}`);
         }
         console.log(`[action] Transfer to human for ${from}`);
         break;
