@@ -26,9 +26,17 @@ Projeto "marketing autônomo" = 4 peças encaixadas:
 2. **Caminho do formulário na CAPI** — conversão de lead de formulário (matching por `leadgen_id`, `action_source=system_generated`) também alimentar a Meta. Complementa o CTWA já entregue. (peça futura, paralela)
 3. **O cérebro** — calcular custo por lead qualificado por campanha + recomendar. ← **ESTA PEÇA** (junto com a 1)
 4. **A mão (autonomia com trava)** — pausar/escalar via `ads_management`, com limites e botão de aprovação pro movimento grande. (peça seguinte)
+5. **Eva cria campanhas** (peça futura, depois de 1 e 4) — Eva monta campanha completa
+   (público/verba/objetivo = otimizar por lead qualificado via CAPI) E gera criativo
+   (imagem + copy, que já sabe fazer), com **Advantage+** da Meta refinando em cima.
+   Junior abastece uma **pasta** (ex: Drive / inbox tipo `_INBOX-EVA`) com vídeos e
+   criativos próprios; a Eva busca lá e usa/mistura nos anúncios. Guardrail: Eva **monta
+   e mostra pra Junior aprovar com botão** antes de publicar (não publica sozinha de
+   cara). Decisão de produto: criativo = Eva cria + assets do Junior da pasta (opção "a"+).
 
 Ordem aprovada: **1 + 3 agora** (Eva enxerga e recomenda, risco zero), depois **4**
-(liga a autonomia), e **2** em paralelo quando quiser.
+(liga a autonomia), e **2** em paralelo quando quiser. **5** por último (precisa do
+cérebro da 1 e da mão da 4 antes).
 
 Decisão de produto: métrica = **custo por lead qualificado**, com lógica **relativa**
 (compara campanhas entre si e contra a média; sem teto fixo no começo). Teto absoluto
