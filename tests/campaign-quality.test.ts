@@ -66,6 +66,12 @@ describe('analyzeCampaignQuality', () => {
       [{ campaignId: 'A', qualified: 3, totalLeads: 8 }],
     );
     expect(r.rows[0].spendBrl).toBe(0);
-    expect(r.rows[0].costPerQualified).toBe(0);
+    expect(r.rows[0].costPerQualified).toBeNull();
+    expect(r.rows[0].status).toBe('sem_dados');
+  });
+
+  it('ordena por custo por qualificado ascendente (mais barata primeiro)', () => {
+    const r = analyzeCampaignQuality(spends, leads, { minLeadsParaJulgar: 5, desvioPct: 0.4 });
+    expect(r.rows[0].campaignId).toBe('A'); // A=28, B=96 → A vem primeiro
   });
 });

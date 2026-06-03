@@ -6,6 +6,7 @@
 
 export interface CampaignSpend { campaignId: string; name: string; spendBrl: number; }
 export interface CampaignLeads { campaignId: string; qualified: number; totalLeads: number; }
+/** Defaults: minLeadsParaJulgar=5, desvioPct=0.4 (±40% da média ponderada). */
 export interface CampaignQualityConfig { minLeadsParaJulgar?: number; desvioPct?: number; }
 
 export type CampaignStatus = 'campea' | 'ok' | 'cara' | 'sem_dados';
@@ -44,11 +45,12 @@ export function analyzeCampaignQuality(
     const qualified = l?.qualified ?? 0;
     const totalLeads = l?.totalLeads ?? 0;
     const name = s?.name ?? id;
-    const costPerQualified = qualified > 0 ? spendBrl / qualified : qualified === 0 && spendBrl === 0 ? 0 : null;
+    const costPerQualified = spendBrl > 0 && qualified > 0 ? spendBrl / qualified : null;
     return { campaignId: id, name, spendBrl, qualified, totalLeads, costPerQualified };
   });
 
-  const comDados = base.filter((b) => b.totalLeads >= minLeads && b.qualified > 0);
+  // Campanhas sem_dados e sem gasto registrado são excluídas do benchmark intencionalmente.
+  const comDados = base.filter((b) => b.totalLeads >= minLeads && b.spendBrl > 0 && b.qualified > 0);
   const totalSpend = comDados.reduce((acc, b) => acc + b.spendBrl, 0);
   const totalQualified = comDados.reduce((acc, b) => acc + b.qualified, 0);
   const media = totalQualified > 0 ? totalSpend / totalQualified : null;
@@ -57,18 +59,27 @@ export function analyzeCampaignQuality(
     let status: CampaignStatus;
     if (b.totalLeads < minLeads) {
       status = 'sem_dados';
+    } else if (b.spendBrl === 0) {
+      status = 'sem_dados';
     } else if (b.qualified === 0) {
       status = 'cara';
     } else if (media == null) {
       status = 'ok';
-    } else if (b.costPerQualified! <= media * (1 - desvio)) {
+    } else if (b.costPerQualified != null && b.costPerQualified <= media * (1 - desvio)) {
       status = 'campea';
-    } else if (b.costPerQualified! >= media * (1 + desvio)) {
+    } else if (b.costPerQualified != null && b.costPerQualified >= media * (1 + desvio)) {
       status = 'cara';
     } else {
       status = 'ok';
     }
     return { ...b, status };
+  });
+
+  rows.sort((a, b) => {
+    if (a.costPerQualified == null && b.costPerQualified == null) return 0;
+    if (a.costPerQualified == null) return 1;
+    if (b.costPerQualified == null) return -1;
+    return a.costPerQualified - b.costPerQualified;
   });
 
   return { rows, mediaCostPerQualified: media };
