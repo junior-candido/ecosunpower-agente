@@ -7,7 +7,7 @@
 // (compat com plantas já cadastradas).
 
 import { describe, it, expect } from 'vitest';
-import { parseCreds, buildSiteCredenciais } from '../src/modules/monitoring/adapters/nep.js';
+import { parseCreds, buildSiteCredenciais, normalizeUf } from '../src/modules/monitoring/adapters/nep.js';
 
 describe('parseCreds — id da planta', () => {
   it('lê o id da planta de site_id (convenção nova)', () => {
@@ -44,5 +44,25 @@ describe('buildSiteCredenciais — formato padrão do registry', () => {
     const creds = buildSiteCredenciais({ mode: 'login', email: 'a@b.com', password: 'p' }, 'SID-9');
     expect(creds.site_id).toBe('SID-9');
     expect('sid' in creds).toBe(false);
+  });
+});
+
+describe('normalizeUf — respeita o CHECK (uf null ou 2 letras)', () => {
+  it('nome completo de estado vira null (NEP manda "Acre" pra plantas DF/GO)', () => {
+    expect(normalizeUf('Acre')).toBeNull();
+    expect(normalizeUf('Distrito Federal')).toBeNull();
+    expect(normalizeUf('Goiás')).toBeNull();
+  });
+
+  it('sigla de 2 letras passa (em maiúscula)', () => {
+    expect(normalizeUf('DF')).toBe('DF');
+    expect(normalizeUf('go')).toBe('GO');
+    expect(normalizeUf('  ac  ')).toBe('AC');
+  });
+
+  it('vazio/undefined/null → null', () => {
+    expect(normalizeUf('')).toBeNull();
+    expect(normalizeUf(undefined)).toBeNull();
+    expect(normalizeUf(null)).toBeNull();
   });
 });

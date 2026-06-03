@@ -305,12 +305,13 @@ export class MonitoringService {
     let atualizados = 0;
     const nomes: string[] = [];
 
+    let erros = 0;
     for (const site of result.sites) {
       const ja = await this.buscarSistemaPorMarcaESiteId(marca, site.externalId);
       if (ja) {
         // Atualiza dados que podem ter mudado (apelido renomeado, potencia
         // ajustada, cidade) E renova api_key (caso Junior tenha rotacionado).
-        await this.supabase.getClient()
+        const { error } = await this.supabase.getClient()
           .from('sistemas_clientes')
           .update({
             apelido: site.apelido,
@@ -323,10 +324,13 @@ export class MonitoringService {
             updated_at: new Date().toISOString(),
           })
           .eq('id', ja.id);
-        atualizados++;
+        // NÃO engolir o erro: antes a gente contava "atualizado" mesmo quando
+        // falhava, mascarando bugs (ex: uf_check rejeitando "Acre").
+        if (error) { erros++; console.warn(`[monitoring/import] update ${marca} ${site.apelido} falhou: ${error.message}`); }
+        else atualizados++;
       } else {
         // Cria novo
-        await this.supabase.getClient()
+        const { error } = await this.supabase.getClient()
           .from('sistemas_clientes')
           .insert({
             apelido: site.apelido,
@@ -338,10 +342,12 @@ export class MonitoringService {
             data_instalacao: site.data_instalacao,
             ativo: true,
           });
-        novos++;
+        if (error) { erros++; console.warn(`[monitoring/import] insert ${marca} ${site.apelido} falhou: ${error.message}`); }
+        else novos++;
       }
       nomes.push(site.apelido);
     }
+    if (erros > 0) console.warn(`[monitoring/import] ${marca}: ${erros} site(s) falharam (ver linhas acima)`);
 
     return {
       ok: true,

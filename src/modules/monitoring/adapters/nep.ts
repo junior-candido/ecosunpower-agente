@@ -115,6 +115,17 @@ export function buildSiteCredenciais(parsed: ParsedCreds, plantaSiteId: string):
     : { email: parsed.email, password: parsed.password, site_id: plantaSiteId };
 }
 
+// Normaliza UF pro formato do banco: a coluna `uf` exige NULL ou 2 letras
+// (CHECK uf IS NULL OR length(uf)=2). A NEP manda o estado como NOME completo
+// ("Acre") e quase sempre ERRADO (plantas de DF/GO vêm como "Acre") — então
+// só aceitamos se já vier como sigla de 2 letras; caso contrário null (a UF
+// real é preenchida depois pelo cliente/proprietário). Sem isso, o insert das
+// plantas batia no uf_check e falhava silenciosamente.
+export function normalizeUf(stateName: string | undefined | null): string | null {
+  const s = (stateName ?? '').trim();
+  return s.length === 2 ? s.toUpperCase() : null;
+}
+
 // ============================================================================
 // AUTH
 // ============================================================================
@@ -383,7 +394,7 @@ export const nepAdapter: MonitoringAdapter = {
           apelido: p.siteName.trim(),
           potencia_kwp: estimarKwpPorSNs(p.sn),
           cidade: p.city?.trim() || null,
-          uf: p.stateName?.trim() || null,
+          uf: normalizeUf(p.stateName),
           data_instalacao: parseDataInstalacao(p.registerDate),
           // Credenciais pra usar depois em fetchGeneration: reaproveita
           // o modo (jwt ou login) + injeta o sid específico desta planta.
