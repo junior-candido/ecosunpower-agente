@@ -80,6 +80,7 @@ import { sendAdminWithButtons } from './modules/eva-admin-buttons.js';
 import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/cron.js';
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
+import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -3024,6 +3025,26 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           } catch (err) {
             console.error(`[tracking] Failed to classify lead:`, (err as Error).message);
           }
+        }
+      }
+
+      // ATRIBUIÇÃO CTWA: persiste o ad_id do anúncio Meta no lead. Antes o
+      // referral era usado só pro template de auto-ack — por isso lead de
+      // anúncio CTWA virava 'direto'. Espelha o guard do fluxo Lead Form.
+      if (ctwaReferral?.sourceId && (isNewLead || shouldAttributeCtwa(lead as any))) {
+        try {
+          const adId = ctwaReferral.sourceId;
+          const campaignId = config.metaWabaAccessToken
+            ? await resolveCampaignIdFromAd(adId, config.metaWabaAccessToken)
+            : null;
+          const patch = buildCtwaPatch(adId, campaignId);
+          await supabase.getClient()
+            .from('leads')
+            .update({ ...patch, updated_at: new Date().toISOString() })
+            .eq('id', leadId);
+          console.log(`[ctwa-attrib] lead ${leadId} atribuído: ad_id=${adId} campaign=${campaignId ?? 'n/a'} channel=meta`);
+        } catch (err) {
+          console.error('[ctwa-attrib] falha ao gravar atribuição:', (err as Error).message);
         }
       }
 
