@@ -67,11 +67,21 @@ type ParsedCreds =
   | { mode: 'jwt'; jwt: string; sid?: string }
   | { mode: 'login'; email: string; password: string; sid?: string };
 
-function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: string } {
+export function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: string } {
   const jwt = typeof c.jwt === 'string' ? c.jwt.trim() : '';
   const email = typeof c.email === 'string' ? c.email.trim() : '';
   const password = typeof c.password === 'string' ? c.password.trim() : '';
-  const sid = typeof c.sid === 'string' ? c.sid.trim() : undefined;
+  // ID da planta. Convenção do adapter-registry é `site_id` (igual SolarEdge/
+  // Deye) — o service.ts deduplica por `api_credentials->>site_id`. Versões
+  // antigas do NEP gravavam `sid`; aceitamos os dois (site_id tem prioridade)
+  // pra não quebrar plantas já cadastradas. BUG corrigido: gravar `sid` fazia
+  // a descoberta nunca achar a planta → duplicava a cada hora.
+  const sid =
+    typeof c.site_id === 'string' && c.site_id.trim()
+      ? c.site_id.trim()
+      : typeof c.sid === 'string' && c.sid.trim()
+        ? c.sid.trim()
+        : undefined;
 
   if (jwt) {
     return { mode: 'jwt', jwt, sid };
@@ -91,8 +101,18 @@ function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: string }
   return {
     error:
       'Credenciais NEP precisam de { jwt }. ' +
-      'Para fetchGeneration tambem precisa de { sid } (id da planta).',
+      'Para fetchGeneration tambem precisa de { site_id } (id da planta).',
   };
+}
+
+// Monta as credenciais POR PLANTA no formato PADRÃO do adapter-registry:
+// chave `site_id` (NÃO `sid`) — é por ela que o service.ts deduplica
+// (`api_credentials->>site_id`). Gravar `sid` furava o dedup e duplicava as
+// plantas a cada rodada de descoberta.
+export function buildSiteCredenciais(parsed: ParsedCreds, plantaSiteId: string): Record<string, unknown> {
+  return parsed.mode === 'jwt'
+    ? { jwt: parsed.jwt, site_id: plantaSiteId }
+    : { email: parsed.email, password: parsed.password, site_id: plantaSiteId };
 }
 
 // ============================================================================
@@ -367,10 +387,7 @@ export const nepAdapter: MonitoringAdapter = {
           data_instalacao: parseDataInstalacao(p.registerDate),
           // Credenciais pra usar depois em fetchGeneration: reaproveita
           // o modo (jwt ou login) + injeta o sid específico desta planta.
-          credenciais:
-            parsed.mode === 'jwt'
-              ? { jwt: parsed.jwt, sid: p.sid }
-              : { email: parsed.email, password: parsed.password, sid: p.sid },
+          credenciais: buildSiteCredenciais(parsed, p.sid),
         });
       }
 

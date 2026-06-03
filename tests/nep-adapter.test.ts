@@ -143,13 +143,15 @@ describe('nepAdapter.listSites', () => {
     });
   });
 
-  it('credenciais geradas reaproveitam o jwt + injetam sid pra fetchGeneration', async () => {
+  it('credenciais geradas reaproveitam o jwt + injetam site_id pra fetchGeneration', async () => {
     vi.stubGlobal('fetch', vi.fn(async () =>
       res(200, { code: 200, msg: 'ok', data: { list: [plantaFake({ sid: 'BR_x' })] } })));
 
     const r = await nepAdapter.listSites!({ jwt: 'eyJfake' });
     if (!r.ok) throw new Error('listSites falhou');
-    expect(r.sites[0].credenciais).toEqual({ jwt: 'eyJfake', sid: 'BR_x' });
+    // Padrão do registry: chave `site_id` (NÃO `sid`) — é por ela que o
+    // service.ts deduplica. Gravar `sid` era o bug que duplicava as plantas.
+    expect(r.sites[0].credenciais).toEqual({ jwt: 'eyJfake', site_id: 'BR_x' });
   });
 
   it('rejeita credenciais sem jwt nem email/password com invalidCredentials', async () => {
