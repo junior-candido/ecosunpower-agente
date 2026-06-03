@@ -1,0 +1,68 @@
+// src/modules/capi-reporter.ts
+//
+// "Maestro" do CAPI: dado um leadId + nome do estagio, decide se devolve o
+// evento pra Meta. Centraliza a regra pra que o index.ts (gigante) so precise
+// chamar uma funcao de uma linha em cada ponto de transicao de funil.
+//
+// REGRAS:
+//  1. Lead sem ctwa_clid (organico/antigo) -> nao manda. Sem clique nao da
+//     pra casar a conversao com o anuncio.
+//  2. Estagio ja reportado (capi_stages_sent) -> nao manda de novo.
+//  3. So marca como enviado APOS a Meta confirmar (ok), pra nao perder evento
+//     numa falha transitoria de rede.
+//  4. NUNCA lanca. Tudo aqui e fire-and-forget; o atendimento da Eva nao pode
+//     quebrar porque a Meta caiu.
+
+import { buildCtwaEvent, MetaCapi } from './meta-capi.js';
+
+export interface LeadCapiInfo {
+  phone?: string | null;
+  ctwa_clid?: string | null;
+  capi_stages_sent?: string[] | null;
+}
+
+export interface CapiReporterDeps {
+  capi: MetaCapi;
+  wabaId: string;
+  getLeadForCapi: (leadId: string) => Promise<LeadCapiInfo | null>;
+  recordCapiStage: (leadId: string, stage: string) => Promise<boolean>;
+  /** Injetavel pra teste. Default: Date.now. */
+  now?: () => number;
+}
+
+export type CapiReporter = (
+  leadId: string,
+  eventName: string,
+  opts?: { value?: number },
+) => Promise<void>;
+
+export function makeCapiReporter(deps: CapiReporterDeps): CapiReporter {
+  const now = deps.now ?? (() => Date.now());
+
+  return async (leadId, eventName, opts) => {
+    try {
+      const lead = await deps.getLeadForCapi(leadId);
+      if (!lead?.ctwa_clid) return;
+      if (lead.capi_stages_sent?.includes(eventName)) return;
+
+      const event = buildCtwaEvent({
+        eventName,
+        eventTimeMs: now(),
+        ctwaClid: lead.ctwa_clid,
+        wabaId: deps.wabaId,
+        phone: lead.phone ?? undefined,
+        value: opts?.value,
+      });
+
+      const res = await deps.capi.sendEvents([event]);
+      if (res.ok) {
+        await deps.recordCapiStage(leadId, eventName);
+        console.log(`[capi] ${eventName} enviado pra Meta — lead=${leadId}`);
+      } else {
+        console.warn(`[capi] ${eventName} falhou pra lead=${leadId}: ${res.error}`);
+      }
+    } catch (err) {
+      console.warn(`[capi] erro inesperado em ${eventName} lead=${leadId}:`, (err as Error).message);
+    }
+  };
+}

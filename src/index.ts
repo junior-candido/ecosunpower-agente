@@ -38,6 +38,8 @@ import { generateWeeklyReport, formatReportForWhatsApp } from './modules/ads-rep
 import { PricingAssistant } from './modules/pricing-assistant.js';
 import { SchedulingAssistant } from './modules/scheduling-assistant.js';
 import { ProposalAssistant } from './modules/proposal-assistant.js';
+import { MetaCapi } from './modules/meta-capi.js';
+import { makeCapiReporter, type CapiReporter } from './modules/capi-reporter.js';
 import { ProposalFollowupService } from './modules/proposal-followup.js';
 import {
   ClosingAssistant,
@@ -438,6 +440,20 @@ async function main() {
 
   const driveOk = !!driveUploader;
   console.log(`[proposal] Eva Proposta ATIVA — Drive: ${driveOk ? 'on' : 'off'}, Web publica: on (${config.publicProposalBaseUrl})`);
+
+  // Meta Conversions API (CAPI): devolve eventos de funil CTWA pra Meta otimizar
+  // a veiculacao (buscar mais gente parecida com quem qualifica/fecha). So liga
+  // se tiver token + WABA id; senao vira no-op silencioso. NUNCA quebra o handler.
+  const capiOn = !!(config.metaCapiToken && config.metaWabaBusinessAccountId);
+  const capiReporter: CapiReporter = capiOn
+    ? makeCapiReporter({
+        capi: new MetaCapi({ datasetId: config.metaCapiDatasetId, token: config.metaCapiToken! }),
+        wabaId: config.metaWabaBusinessAccountId!,
+        getLeadForCapi: (id) => supabase.getLeadForCapi(id),
+        recordCapiStage: (id, stage) => supabase.recordCapiStage(id, stage),
+      })
+    : async () => { /* CAPI off: falta META_CAPI_TOKEN ou META_WABA_BUSINESS_ACCOUNT_ID */ };
+  console.log(`[capi] Conversions API ${capiOn ? 'ATIVA' : 'off (falta token/WABA id)'} — dataset ${config.metaCapiDatasetId}`);
 
   // Follow-up automatico de proposta: notifica Junior toda vez que cliente
   // abre o link publico (throttle 5min), e na primeira abertura manda
@@ -2938,6 +2954,16 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
       const leadId = lead.id;
 
+      // CAPI estagio 1 (Lead): se o lead chegou por anuncio Click-to-WhatsApp,
+      // o referral traz o ctwa_clid. Guarda no lead (pra usar nos estagios
+      // seguintes) e devolve o evento "Lead" pra Meta. Fire-and-forget.
+      if (ctwaReferral?.ctwaClid) {
+        await supabase
+          .upsertLead({ phone: from, ctwa_clid: ctwaReferral.ctwaClid })
+          .catch((err) => console.warn('[capi] falha ao salvar ctwa_clid:', (err as Error).message));
+        void capiReporter(leadId, 'Lead');
+      }
+
       // TRACKING DE ORIGEM: se e a primeira mensagem e contem tag tipo
       // #ig-abc123 / #fb-xyz / #ad-ca1 / #rem-x, extrai e classifica lead_source.
       // So atualiza pra leads NOVOS (preserva atribuicao de leads que ja engajaram
@@ -3387,6 +3413,9 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           break;
         }
         await supabase.upsertLead({ phone: from, status: 'qualificado' });
+        // CAPI estagio 2: lead passou no criterio (R$700/700kWh). Carimbo
+        // 'lead_qualificado' pra Meta — alvo de otimizacao. Fire-and-forget.
+        void capiReporter(leadId, 'lead_qualificado');
         await supabase.updateConversation(conversationId, {
           qualification_step: 'qualificacao_completa',
           // session_status removido — Eva fica ativa pra continuar buscando agendamento.

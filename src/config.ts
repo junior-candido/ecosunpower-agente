@@ -46,6 +46,9 @@ const configSchema = z.object({
   metaWabaAccessToken: z.string().optional(),         // token de longa duracao (system user)
   metaWabaBusinessAccountId: z.string().optional(),   // WABA account ID (pra listar templates)
   metaWabaVerifyToken: z.string().optional(),         // challenge do subscribe do webhook WABA
+  // Conversions API (CAPI) — devolve eventos de funil pra Meta otimizar CTWA.
+  metaCapiToken: z.string().optional(),               // token de acesso do conjunto de dados (CAPI)
+  metaCapiDatasetId: z.string().default('1053629086258723'), // conjunto de dados (antigo pixel)
   useWabaCloudApi: z.coerce.boolean().default(false), // flag: quando true, usa WABA; quando false, usa Evolution
   igUserId: z.string().optional(),                    // IG-Scoped Business User ID (qualificador IG DM)
   replicateApiToken: z.string().optional(),
@@ -112,6 +115,8 @@ export function loadConfig(): Config {
     metaWabaPhoneNumberId: process.env.META_WABA_PHONE_NUMBER_ID || undefined,
     metaWabaAccessToken: process.env.META_WABA_ACCESS_TOKEN || undefined,
     metaWabaBusinessAccountId: process.env.META_WABA_BUSINESS_ACCOUNT_ID || undefined,
+    metaCapiToken: process.env.META_CAPI_TOKEN || undefined,
+    metaCapiDatasetId: process.env.META_CAPI_DATASET_ID || undefined,
     metaWabaVerifyToken: process.env.META_WABA_VERIFY_TOKEN || undefined,
     useWabaCloudApi: process.env.USE_WABA_CLOUD_API,
     igUserId: process.env.IG_USER_ID || undefined,

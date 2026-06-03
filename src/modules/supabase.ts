@@ -36,6 +36,9 @@ interface LeadData {
   // ID Meta da campanha de aquisicao (do anuncio que trouxe o lead). Usado
   // pra resolver template A/B no auto-ack via marketing_campaigns.template_inicial.
   ad_campaign_id?: string | null;
+  // Click id CTWA (referral.ctwa_clid). Chave pra casar conversao com anuncio
+  // via Conversions API. Leads organicos/antigos ficam null. (migration 044)
+  ctwa_clid?: string | null;
 }
 
 interface DossierData {
@@ -76,6 +79,50 @@ export class SupabaseService {
 
     if (error && error.code !== 'PGRST116') throw new Error(`Failed to get lead: ${error.message}`);
     return data;
+  }
+
+  // ---- Meta Conversions API (CAPI) ----
+
+  /** Dados minimos pra montar/decidir um evento CAPI de um lead. */
+  async getLeadForCapi(
+    leadId: string,
+  ): Promise<{ phone: string | null; ctwa_clid: string | null; capi_stages_sent: string[] } | null> {
+    const { data, error } = await this.client
+      .from('leads')
+      .select('phone, ctwa_clid, capi_stages_sent')
+      .eq('id', leadId)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to get lead for capi: ${error.message}`);
+    if (!data) return null;
+    return {
+      phone: (data.phone as string) ?? null,
+      ctwa_clid: (data.ctwa_clid as string) ?? null,
+      capi_stages_sent: (data.capi_stages_sent as string[]) ?? [],
+    };
+  }
+
+  /**
+   * Marca um estagio de funil como ja reportado pra Meta (idempotencia).
+   * Le o array atual, appenda se ausente. Retorna true se foi adicionado agora.
+   */
+  async recordCapiStage(leadId: string, stage: string): Promise<boolean> {
+    const { data, error } = await this.client
+      .from('leads')
+      .select('capi_stages_sent')
+      .eq('id', leadId)
+      .maybeSingle();
+    if (error) throw new Error(`Failed to read capi_stages_sent: ${error.message}`);
+
+    const current = ((data?.capi_stages_sent as string[]) ?? []);
+    if (current.includes(stage)) return false;
+
+    const { error: updErr } = await this.client
+      .from('leads')
+      .update({ capi_stages_sent: [...current, stage] })
+      .eq('id', leadId);
+    if (updErr) throw new Error(`Failed to record capi stage: ${updErr.message}`);
+    return true;
   }
 
   async getOrCreateConversation(leadId: string): Promise<ConversationData> {
