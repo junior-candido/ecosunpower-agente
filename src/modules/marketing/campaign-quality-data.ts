@@ -40,6 +40,9 @@ export async function fetchCampaignQualityInputs(
     .not('ad_campaign_id', 'is', null);
   const leadAgg = new Map<string, { qualified: number; totalLeads: number }>();
   for (const l of (leadsRows ?? []) as any[]) {
+    // leads.ad_campaign_id guarda o ID Meta (string) da campanha — MESMO espaço
+    // de chave que marketing_campaigns.meta_campaign_id usado em `spends`. Por
+    // isso o join na calculadora (campaignId == campaignId) alinha. Não converter.
     const id = l.ad_campaign_id as string;
     const isQualified = l.status === 'qualificado';
     const isFresh = l.created_at > corte48h;

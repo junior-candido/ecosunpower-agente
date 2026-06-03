@@ -6797,6 +6797,9 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
       if (parseInt(h, 10) === 8) void runCampaignDigest();
     };
     setInterval(checkCampaignDigestHour, 60 * 60 * 1000);
+    // Boot-time check: se o app reiniciar entre 8h-8h59 BRT, o setInterval só
+    // pegaria no próximo ciclo; isso garante o disparo do dia mesmo após deploy.
+    setTimeout(checkCampaignDigestHour, 5 * 60 * 1000);
     console.log('[campaign-digest] cron started (1x/dia às 8h BRT)');
 
     // ============================================
