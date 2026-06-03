@@ -568,6 +568,16 @@ export function createDashboardRouter(
           error: (err as Error).message,
         })),
       ]);
+      // Qualidade por campanha: janela 14 dias. Falha silenciosa — não quebra a página.
+      let campaignQuality: import('../marketing/campaign-quality.js').CampaignQualityReport | undefined;
+      try {
+        const { fetchCampaignQualityInputs } = await import('../marketing/campaign-quality-data.js');
+        const { analyzeCampaignQuality } = await import('../marketing/campaign-quality.js');
+        const inputs = await fetchCampaignQualityInputs(supabase, 14);
+        campaignQuality = analyzeCampaignQuality(inputs.spends, inputs.leads);
+      } catch (err) {
+        console.warn('[dashboard/marketing] campaignQuality falhou (segue sem):', (err as Error).message);
+      }
       res.send(renderMarketingPage({
         kpis,
         campaigns: campaignsResult.rows,
@@ -581,6 +591,7 @@ export function createDashboardRouter(
         googleAds7d,
         googleAds30d,
         ga4_30d,
+        campaignQuality,
       }));
     } catch (err) {
       console.error('[dashboard/marketing]', err);

@@ -45,6 +45,7 @@ import { renderInsightsBanner } from './ai-summary.js';
 
 import type { GoogleAdsSummary } from './marketing-queries.js';
 import type { GoogleAnalyticsSummary } from '../marketing/google-analytics/index.js';
+import type { CampaignQualityReport } from '../marketing/campaign-quality.js';
 
 export interface MarketingPageInput {
   kpis: MarketingKpis;
@@ -59,6 +60,76 @@ export interface MarketingPageInput {
   googleAds7d?: GoogleAdsSummary;
   googleAds30d?: GoogleAdsSummary;
   ga4_30d?: GoogleAnalyticsSummary;
+  campaignQuality?: CampaignQualityReport;
+}
+
+const CAMPAIGN_STATUS_EMOJI: Record<string, string> = {
+  campea: '🟢',
+  ok: '⚪',
+  cara: '🔴',
+  sem_dados: '🟡',
+};
+
+const CAMPAIGN_STATUS_LABEL: Record<string, string> = {
+  campea: 'Campeã',
+  ok: 'OK',
+  cara: 'Cara',
+  sem_dados: 'Juntando dados',
+};
+
+export function renderCampaignQualitySection(report: CampaignQualityReport): string {
+  const mediaStr = report.mediaCostPerQualified != null
+    ? `Média geral: ${brl(report.mediaCostPerQualified)}/lead qualificado`
+    : 'Média geral: dados insuficientes';
+
+  const rows = report.rows.length === 0
+    ? `<tr><td colspan="4" class="text-center text-slate-500 py-8">Nenhuma campanha com dado no período.</td></tr>`
+    : report.rows.map((r) => {
+        const emoji = CAMPAIGN_STATUS_EMOJI[r.status] ?? '⚪';
+        const statusLabel = CAMPAIGN_STATUS_LABEL[r.status] ?? r.status;
+        const custoStr = r.status === 'sem_dados'
+          ? '<span class="text-slate-400 italic">juntando dados</span>'
+          : r.costPerQualified != null
+            ? escapeHtml(brl(r.costPerQualified))
+            : '—';
+        const custoColor = r.status === 'campea'
+          ? 'text-emerald-700 font-semibold'
+          : r.status === 'cara'
+            ? 'text-rose-600 font-semibold'
+            : 'text-slate-700';
+
+        return `
+          <tr class="border-t border-slate-100 hover:bg-slate-50">
+            <td class="px-4 py-3 text-sm text-slate-900">
+              <span class="mr-1">${emoji}</span>
+              ${escapeHtml(r.name)}
+              <span class="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">${escapeHtml(statusLabel)}</span>
+            </td>
+            <td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(brl(r.spendBrl))}</td>
+            <td class="px-4 py-3 text-sm text-slate-700">${r.qualified} / ${r.totalLeads}</td>
+            <td class="px-4 py-3 text-sm ${custoColor}">${custoStr}</td>
+          </tr>`;
+      }).join('');
+
+  return `
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8 overflow-x-auto">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="text-lg font-semibold text-slate-900">🏆 Qualidade por Campanha</h2>
+      </div>
+      <p class="text-xs text-slate-500 mb-4">${escapeHtml(mediaStr)} · Últimos 14 dias · 🟢 Campeã · ⚪ OK · 🔴 Cara · 🟡 Juntando dados</p>
+      <table class="w-full text-left">
+        <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-4 py-2">Campanha</th>
+            <th class="px-4 py-2">Gasto (R$)</th>
+            <th class="px-4 py-2">Qualificados / Total</th>
+            <th class="px-4 py-2">Custo/lead bom (R$)</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <p class="text-xs text-slate-400 mt-3">Ordenado do mais barato pro mais caro · "Juntando dados" = menos de 5 leads no período</p>
+    </section>`;
 }
 
 function renderGoogleAnalyticsSection(s?: GoogleAnalyticsSummary): string {
@@ -454,6 +525,8 @@ export function renderMarketingPage(input: MarketingPageInput): string {
     ${renderGoogleAnalyticsSection(input.ga4_30d)}
 
     ${renderChannelsSection(channels)}
+
+    ${input.campaignQuality ? renderCampaignQualitySection(input.campaignQuality) : ''}
   `;
 
   return renderLayout({ active: 'marketing', title: 'Marketing', body });
