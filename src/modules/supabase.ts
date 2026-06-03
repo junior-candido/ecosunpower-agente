@@ -958,7 +958,12 @@ export class SupabaseService {
       resolved_at: null,
     });
     if (error) {
-      // Pode bater no unique partial index (corrida) — log e segue
+      // 23505 = unique_violation no índice parcial monitoring_alerts_dedupe
+      // (sistema_id, tipo) WHERE resolved_at IS NULL. Significa que JÁ existe
+      // um alerta aberto desse tipo pra essa usina — que é exatamente o estado
+      // desejado. Operação idempotente: não há nada a fazer, segue em silêncio.
+      // (Antes isso virava warn e spammava o log toda detecção horária.)
+      if (error.code === '23505') return;
       console.warn('[supabase] criarAlertaPendente:', error.message);
     }
   }
