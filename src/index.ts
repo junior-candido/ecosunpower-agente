@@ -38,6 +38,9 @@ import { generateWeeklyReport, formatReportForWhatsApp } from './modules/ads-rep
 import { PricingAssistant } from './modules/pricing-assistant.js';
 import { SchedulingAssistant } from './modules/scheduling-assistant.js';
 import { ProposalAssistant } from './modules/proposal-assistant.js';
+import { analyzeCampaignQuality } from './modules/marketing/campaign-quality.js';
+import { buildCampaignDigest } from './modules/marketing/campaign-recommender.js';
+import { fetchCampaignQualityInputs } from './modules/marketing/campaign-quality-data.js';
 import { MetaCapi } from './modules/meta-capi.js';
 import { makeCapiReporter, type CapiReporter } from './modules/capi-reporter.js';
 import { ProposalFollowupService } from './modules/proposal-followup.js';
@@ -6764,6 +6767,37 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     console.log(
       `[proactive-alerts] crons started (detect 60min, dispatch 15min, anniversary 06h BRT). DRY_RUN=${proactiveDryRun}`,
     );
+
+    // ============================================
+    // Módulo 7 — Eva Analista de Campanhas (Peça 1)
+    // ============================================
+    // 1x/dia de manhã: calcula custo por lead qualificado por campanha e manda
+    // resumo + recomendação no WhatsApp. SÓ LEITURA — não mexe em verba.
+    const JANELA_DIAS_CAMPANHA = 14;
+    const runCampaignDigest = async () => {
+      try {
+        const { spends, leads } = await fetchCampaignQualityInputs(supabase.getClient(), JANELA_DIAS_CAMPANHA);
+        const report = analyzeCampaignQuality(spends, leads);
+        const texto = buildCampaignDigest(report, JANELA_DIAS_CAMPANHA);
+        await sendAdminWithButtons(
+          { metaWaba, sendText },
+          config.engineerPhone,
+          texto,
+          [{ id: 'capi_dash', title: '📊 Ver painel' }],
+          'Eva Analista — só leitura por enquanto',
+        );
+        console.log('[campaign-digest] resumo diário enviado');
+      } catch (err) {
+        console.error('[campaign-digest] cron falhou:', (err as Error).message);
+      }
+    };
+    // Checa de hora em hora; dispara quando a hora local (BRT) = 8h.
+    const checkCampaignDigestHour = () => {
+      const h = new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false });
+      if (parseInt(h, 10) === 8) void runCampaignDigest();
+    };
+    setInterval(checkCampaignDigestHour, 60 * 60 * 1000);
+    console.log('[campaign-digest] cron started (1x/dia às 8h BRT)');
 
     // ============================================
     // A5 — Notificação pós-instalação (Junior)
