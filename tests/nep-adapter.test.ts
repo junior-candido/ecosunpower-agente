@@ -250,12 +250,19 @@ describe('nepAdapter.fetchGeneration', () => {
     expect(r.geracoes).toEqual([{ data: '2026-05-28', geracao_kwh: 12.5 }]);
   });
 
-  it('exige sid nas credenciais (sem sid, qual planta consultar?)', async () => {
+  it('exige site_id nas credenciais (sem ele, qual planta consultar?)', async () => {
     const r = await nepAdapter.fetchGeneration({ jwt: 'x' }, '2026-05-01', '2026-05-31');
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.invalidCredentials).toBe(true);
-    expect(r.reason).toMatch(/sid/i);
+    expect(r.reason).toMatch(/site_id/i);
+  });
+
+  it('aceita planta antiga que ainda tem sid (compat)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      res(200, { code: 200, msg: 'ok', data: { xAxisData: ['28/05'], series: [{ data: [12.5] }] } })));
+    const r = await nepAdapter.fetchGeneration({ jwt: 'x', sid: 'BR_old' }, '2026-05-28', '2026-05-28');
+    expect(r.ok).toBe(true);
   });
 });
 
