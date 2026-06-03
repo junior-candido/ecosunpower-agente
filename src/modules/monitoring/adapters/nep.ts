@@ -310,7 +310,7 @@ export const nepAdapter: MonitoringAdapter = {
     if (!parsed.sid) {
       return {
         ok: false,
-        reason: 'NEP fetchGeneration precisa de credenciais.sid (id da planta)',
+        reason: 'NEP fetchGeneration precisa de credenciais.site_id (id da planta)',
         invalidCredentials: true,
       };
     }
