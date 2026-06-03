@@ -29,4 +29,42 @@ describe('buildCampaignDigest', () => {
     const txt = buildCampaignDigest(semDados, 14);
     expect(txt.toLowerCase()).toContain('juntando dados');
   });
+
+  it('campanha única com dados → recomenda manter (não escalar/cortar a mesma)', () => {
+    const r: CampaignQualityReport = {
+      mediaCostPerQualified: 28,
+      rows: [
+        { campaignId: 'A', name: 'Form GO', spendBrl: 280, qualified: 10, totalLeads: 20, costPerQualified: 28, status: 'campea' as const },
+      ],
+    };
+    const txt = buildCampaignDigest(r, 14);
+    expect(txt).toContain('manter');
+    expect(txt).not.toContain('Sugiro');
+  });
+
+  it('mistura: campanha com dados + campanha sem_dados aparecem ambas', () => {
+    const r: CampaignQualityReport = {
+      mediaCostPerQualified: 28,
+      rows: [
+        { campaignId: 'A', name: 'Form GO', spendBrl: 280, qualified: 10, totalLeads: 20, costPerQualified: 28, status: 'campea' as const },
+        { campaignId: 'B', name: 'Form Novo', spendBrl: 0, qualified: 0, totalLeads: 2, costPerQualified: null, status: 'sem_dados' as const },
+      ],
+    };
+    const txt = buildCampaignDigest(r, 14);
+    expect(txt).toContain('Form GO');
+    expect(txt).toContain('Form Novo');
+    expect(txt).toContain('juntando dados');
+  });
+
+  it('status ok aparece com o ícone ⚪', () => {
+    const r: CampaignQualityReport = {
+      mediaCostPerQualified: 50,
+      rows: [
+        { campaignId: 'A', name: 'C1', spendBrl: 250, qualified: 5, totalLeads: 12, costPerQualified: 50, status: 'ok' as const },
+        { campaignId: 'B', name: 'C2', spendBrl: 250, qualified: 5, totalLeads: 12, costPerQualified: 50, status: 'ok' as const },
+      ],
+    };
+    const txt = buildCampaignDigest(r, 14);
+    expect(txt).toContain('⚪');
+  });
 });

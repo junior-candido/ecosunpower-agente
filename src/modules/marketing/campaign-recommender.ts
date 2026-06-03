@@ -12,6 +12,7 @@ const ICON: Record<CampaignQualityRow['status'], string> = {
   sem_dados: '🟡',
 };
 
+// Arredonda pra real cheio — leitura rápida no WhatsApp (R$28, não R$28,50).
 function brl(v: number | null): string {
   return v == null ? '—' : `R$${Math.round(v)}`;
 }
