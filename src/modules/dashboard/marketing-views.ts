@@ -106,7 +106,7 @@ export function renderCampaignQualitySection(report: CampaignQualityReport): str
               <span class="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">${escapeHtml(statusLabel)}</span>
             </td>
             <td class="px-4 py-3 text-sm text-slate-700">${escapeHtml(brl(r.spendBrl))}</td>
-            <td class="px-4 py-3 text-sm text-slate-700">${r.qualified} / ${r.totalLeads}</td>
+            <td class="px-4 py-3 text-sm text-slate-700">${String(r.qualified)} / ${String(r.totalLeads)}</td>
             <td class="px-4 py-3 text-sm ${custoColor}">${custoStr}</td>
           </tr>`;
       }).join('');
