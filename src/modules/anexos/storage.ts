@@ -35,7 +35,10 @@ export async function getSignedUrls(
 ): Promise<Record<string, string>> {
   if (storagePaths.length === 0) return {};
   const { data, error } = await client.storage.from(BUCKET).createSignedUrls(storagePaths, ttlSeconds);
-  if (error || !data) return {};
+  if (error || !data) {
+    if (error) console.warn('[anexos] createSignedUrls falhou:', error.message);
+    return {};
+  }
   const out: Record<string, string> = {};
   for (const r of data) if (r.signedUrl && r.path) out[r.path] = r.signedUrl;
   return out;

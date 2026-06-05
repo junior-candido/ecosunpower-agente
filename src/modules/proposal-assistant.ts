@@ -9,6 +9,17 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { calcular, compararGreener, type ProposalInput } from './proposal/calculator.js';
+import {
+  FATOR_PERDA_CONSERVADOR,
+  hspPorConcessionaria,
+  tarifaPorConcessionaria,
+  tusdFioBPorConcessionaria,
+  percentualFioBVigente,
+  REAJUSTE_ANUAL_ENERGIA,
+  PERCENTUAL_GERACAO_INJETADA,
+  CUSTO_ILUMINACAO_PUBLICA,
+  VIDA_UTIL_ANOS,
+} from './solar-params.js';
 import { renderProposalHTML, type ProposalData } from './proposal/template.js';
 import { htmlToPdf, gerarQrCodeDataUrl } from './proposal/pdf-generator.js';
 import type { DriveUploader } from './proposal/drive-uploader.js';
@@ -97,10 +108,10 @@ ${marcasKnowledge}
 # REGRAS CRÍTICAS
 
 1. **REGRA DE OURO**: NUNCA prossiga pra geração com campos obrigatórios faltando. Sempre liste o que falta.
-2. **Fator de perda SEMPRE pergunta** — Junior decide caso a caso (típicos: 0.75 / 0.80 / 0.85). NUNCA assume default.
+2. **Fator de perda SEMPRE pergunta** — Junior decide caso a caso (típicos: 0.75 / 0.78 / 0.80; recomendado 0.78, calibrado pra surpresa boa sem ficar abaixo da concorrência). NUNCA assume default.
 3. Use APENAS marcas oficiais da lista. NUNCA Growatt.
 4. Concessionária inferida do endereço: Brasília=Neoenergia-DF, Goiás=Equatorial-GO. Confirme com Junior.
-5. Tarifa default: Neoenergia-DF R$ 1,05/kWh, Equatorial-GO R$ 0,98/kWh. Junior pode sobrescrever.
+5. Tarifa default: Neoenergia-DF R$ 1,05/kWh, Equatorial-GO R$ 1,00/kWh. Junior pode sobrescrever.
 6. Custo disponibilidade default: monofásico R$ 50/mês, trifásico R$ 100/mês.
 7. Reajuste anual energia: 10%.
 8. Vida útil: 25 anos.
@@ -124,7 +135,7 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
     "telefoneCliente": "string",
     "emailCliente": "string",
     "potenciaKwp": 8.4,
-    "fatorPerda": 0.80,
+    "fatorPerda": 0.78,
     "consumoMensalKwh": 1000,
     "consumoMensalKwhDistribuido": [1100, 1080, 1020, 950, 880, 850, 870, 920, 980, 1050, 1120, 1180],
     "geracaoMensalKwh": 1080,
@@ -172,7 +183,7 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
 
 ## DEFAULTS QUE VOCÊ APLICA
 
-- tarifaRsKwh: Neoenergia DF 1.05, Equatorial GO 0.98
+- tarifaRsKwh: Neoenergia DF 1.05, Equatorial GO 1.00
 - custoDisponibilidadeMensal: monofásico 50, trifásico 100
 - modulo.garantiaDefeito: Trina/JA/Jinko = 12, Risen = 12
 - modulo.garantiaEficiencia: TOPCon N-Type = 30, mono normal = 25
@@ -209,7 +220,7 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
 
 Junior: "/proposta Marcos Silva CPF 111.222.333-44, 8.4kWp Trina 700W, valor 38500"
 
-Você: \`{"action":"ask_more","missing":["RG","Endereço completo","Telefone","E-mail","Modelo do inversor","Modalidade","Concessionária","Fator de perda","Consumo médio (kWh/mês)"],"message":"Beleza, Marcos Silva 8,4 kWp por R$ 38.500. Falta:\\n• RG\\n• Endereço completo\\n• Telefone e e-mail\\n• Modelo do inversor (qual?)\\n• Modalidade: autoconsumo local, remoto ou compartilhado?\\n• Concessionária: Neoenergia DF ou Equatorial GO?\\n• Fator de perda (0,75 / 0,80 / 0,85?)\\n• Consumo médio mensal em kWh\\nPode mandar tudo junto."}\`
+Você: \`{"action":"ask_more","missing":["RG","Endereço completo","Telefone","E-mail","Modelo do inversor","Modalidade","Concessionária","Fator de perda","Consumo médio (kWh/mês)"],"message":"Beleza, Marcos Silva 8,4 kWp por R$ 38.500. Falta:\\n• RG\\n• Endereço completo\\n• Telefone e e-mail\\n• Modelo do inversor (qual?)\\n• Modalidade: autoconsumo local, remoto ou compartilhado?\\n• Concessionária: Neoenergia DF ou Equatorial GO?\\n• Fator de perda (0,75 / 0,78 / 0,80? recomendado 0,78)\\n• Consumo médio mensal em kWh\\nPode mandar tudo junto."}\`
 
 ## SAÍDA E COMANDOS
 
@@ -917,26 +928,25 @@ export class ProposalAssistant {
   // Mapeia o JSON do Claude pro formato do calculator.ts.
   // Tarifas reais 2026 + Fio B (Lei 14.300/2022).
   private dataToCalculatorInput(data: any): ProposalInput {
-    const concessionaria = (data.concessionaria || '').toLowerCase();
-    const isEquatorial = concessionaria.includes('equatorial');
-    const tarifaDefault = isEquatorial ? 0.98 : 1.05;
-    const tusdFioBDefault = isEquatorial ? 0.28 : 0.30; // R$/kWh
-    const hsp = isEquatorial ? 5.3 : 5.2;
+    // UNIFICADO com o chat da Eva via solar-params.ts (fonte unica): mesmos HSP
+    // (CRESESB), tarifa, Fio B e fator de perda. Chat e proposta NUNCA divergem.
+    // concessionaria vazia => trata como DF (comportamento historico da proposta).
+    const concessionariaStr = data.concessionaria || 'Neoenergia Brasília';
+    const tarifaDefault = tarifaPorConcessionaria(concessionariaStr);
+    const tusdFioBDefault = tusdFioBPorConcessionaria(concessionariaStr);
+    const hspDefault = hspPorConcessionaria(concessionariaStr);
+    // Permite override de HSP por proposta (PVSol/medicao real); senao usa CRESESB.
+    const hsp = Number(data.hsp) > 0 ? Number(data.hsp) : hspDefault;
 
-    // Cronograma Lei 14.300/2022:
-    // 2024=30%, 2025=45%, 2026=60%, 2027=75%, 2028=90%, 2029+=100%
     const ano = new Date().getFullYear();
-    const fioBPercentMap: Record<number, number> = {
-      2024: 0.30, 2025: 0.45, 2026: 0.60, 2027: 0.75, 2028: 0.90,
-    };
-    const percentualFioB = fioBPercentMap[ano] ?? 1.00;
+    const percentualFioB = percentualFioBVigente(ano);
 
     // Fallback de consumoMensalKwh: campo critico do calculator (define payback/ROI).
     // Quando Junior passa override de geracao mas esquece consumo, derivamos:
     // 1. Se ele deu geracaoMensalKwh explicito, assume consumo == geracao (autoconsumo 100%)
     // 2. Se nao, calcula geracao a partir de potenciaKwp/HSP/fator e usa como consumo
     // 3. So depois cai em zero (quando nem kWp tem)
-    const fatorPerda = Number(data.fatorPerda) || 0.80;
+    const fatorPerda = Number(data.fatorPerda) || FATOR_PERDA_CONSERVADOR;
     const potenciaKwp = Number(data.potenciaKwp);
     let consumoMensalKwh = Number(data.consumoMensalKwh);
     if (!isFinite(consumoMensalKwh) || consumoMensalKwh <= 0) {
@@ -972,11 +982,11 @@ export class ProposalAssistant {
       tarifaRsKwh: Number(data.tarifaRsKwh ?? tarifaDefault),
       tusdFioBRsKwh: Number(data.tusdFioBRsKwh ?? tusdFioBDefault),
       percentualFioBVigente: Number(data.percentualFioBVigente ?? percentualFioB),
-      percentualGeracaoInjetada: Number(data.percentualGeracaoInjetada ?? 0.70),
-      custoIluminacaoPublica: Number(data.custoIluminacaoPublica ?? 35),
-      reajusteAnualEnergia: 0.10,
+      percentualGeracaoInjetada: Number(data.percentualGeracaoInjetada ?? PERCENTUAL_GERACAO_INJETADA),
+      custoIluminacaoPublica: Number(data.custoIluminacaoPublica ?? CUSTO_ILUMINACAO_PUBLICA),
+      reajusteAnualEnergia: REAJUSTE_ANUAL_ENERGIA,
       valorTotalRs: Number(data.valorTotalRs),
-      vidaUtilAnos: 25,
+      vidaUtilAnos: VIDA_UTIL_ANOS,
       geracaoMensalKwhOverride,
       consumoMensalKwhDistribuidoOverride,
     };

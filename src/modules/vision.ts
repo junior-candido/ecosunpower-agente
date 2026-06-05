@@ -73,10 +73,7 @@ export class VisionAnalyzer {
         mediaType = 'image/jpeg';
       }
 
-      const response = await this.client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        messages: [
+      const messages: Anthropic.Messages.MessageParam[] = [
           {
             role: 'user',
             content: [
@@ -91,7 +88,7 @@ export class VisionAnalyzer {
 Sua tarefa: responder a pessoa de forma natural, curta e humana — do jeito que a Eva fala no zap. ESCREVA SÓ A MENSAGEM QUE VAI DIRETO PRA PESSOA. NUNCA escreva laudo, título, "# Análise da Imagem", "Análise:", "Ação necessária:", "Resposta para o cliente:" nem nenhum texto ou raciocínio interno.
 
 Conforme a imagem:
-- CONTA DE LUZ: leia a distribuidora (Neoenergia-DF / Equatorial-GO), consumo em kWh, valor em R$, grupo. Confirme os números de forma natural ("vi aqui que sua conta tá vindo uns R$X, ~Y kWh/mês, confere?") e, SÓ NESSE CASO, no FINAL da mensagem anexe apenas: \`\`\`json\n{"action":"update_lead","data":{"energy_data":{"monthly_bill":VALOR,"consumption_kwh":CONSUMO,"group":"B"}}}\n\`\`\`
+- CONTA DE LUZ: leia a distribuidora (Neoenergia-DF / Equatorial-GO), o consumo em kWh REAL impresso, o valor em R$, o grupo. CONFIRA A COERÊNCIA antes: a tarifa é ~R$1,00/kWh, então o R$ deve ser próximo do kWh (conta de R$500 ≈ 450-500 kWh). Se o que você leu NÃO bater (ex: 85 kWh numa conta de R$490), você leu errado — NÃO invente: peça pra pessoa confirmar o consumo em kWh e NÃO anexe o json. Se bater, confirme natural ("vi aqui que sua conta tá vindo uns R$X, ~Y kWh/mês, confere?") e SÓ NESSE CASO no FINAL anexe apenas: \`\`\`json\n{"action":"update_lead","data":{"energy_data":{"monthly_bill":VALOR,"consumption_kwh":CONSUMO,"group":"B"}}}\n\`\`\`
 - TELHADO/LOCAL: comente leve a área/inclinação e puxe a conversa (sem json).
 - OUTRA COISA (cartão de visita, material de fornecedor, print, foto pessoal): NÃO repita pedido de conta de luz de forma robótica. Responde curto e natural, reconhece o que é, e pergunta com leveza o que a pessoa precisa / se é energia solar pra ela mesma. Se parecer outro profissional/empresa do ramo oferecendo serviço ou parceria, seja acolhedora e diga que vai passar pro Junior — NÃO trate como cliente a qualificar (sem json).
 
@@ -100,8 +97,18 @@ Máximo 2 parágrafos curtos, tom de WhatsApp, no máximo 1-2 emojis. Só a mens
               },
             ],
           },
-        ],
-      });
+      ];
+      // Opus (modelo forte) pra ler conta sem erro grosseiro — dinheiro em jogo. Se
+      // Opus estiver indisponivel (429/overloaded/5xx), cai pro Haiku: melhor ler com
+      // modelo menor do que rejeitar uma conta legivel no momento de maior intencao.
+      // A trava de coerencia (prompt + solar.ts) ainda protege contra leitura ruim.
+      let response;
+      try {
+        response = await this.client.messages.create({ model: 'claude-opus-4-7', max_tokens: 1024, messages });
+      } catch (apiErr) {
+        console.warn('[vision] Opus indisponivel, fallback Haiku:', (apiErr as Error).message);
+        response = await this.client.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 1024, messages });
+      }
 
       const raw = response.content
         .filter((block): block is Anthropic.TextBlock => block.type === 'text')

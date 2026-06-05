@@ -1,205 +1,173 @@
-// Solar irradiation data from NASA POWER API
-// and solar system calculations
+// Estimativa solar pra CONVERSA da Eva (qualificacao no WhatsApp).
+//
+// IMPORTANTE: usa o MESMO motor da proposta formal (proposal/calculator.ts) e os
+// MESMOS parametros (solar-params.ts) — chat e proposta NUNCA divergem (regra do
+// Junior, 04/06/2026). Geracao propositalmente CONSERVADORA (cliente recebe mais
+// do que foi prometido). Economia NUNCA passa do valor da conta (vem de
+// contaSem - contaCom, com Fio B da Lei 14.300). E aplica a TRAVA DE COERENCIA:
+// se R$ da conta nao bate com o kWh lido, NAO apresenta numero — manda confirmar.
 
-interface CityCoordinates {
-  lat: number;
-  lng: number;
-  name: string;
-}
-
-// Main cities in Brasilia/Goias region
-const CITY_COORDS: Record<string, CityCoordinates> = {
-  'brasilia': { lat: -15.78, lng: -47.93, name: 'Brasilia-DF' },
-  'taguatinga': { lat: -15.84, lng: -48.05, name: 'Taguatinga-DF' },
-  'ceilandia': { lat: -15.82, lng: -48.11, name: 'Ceilandia-DF' },
-  'samambaia': { lat: -15.88, lng: -48.09, name: 'Samambaia-DF' },
-  'gama': { lat: -15.96, lng: -48.06, name: 'Gama-DF' },
-  'planaltina': { lat: -15.45, lng: -47.61, name: 'Planaltina-DF' },
-  'sobradinho': { lat: -15.65, lng: -47.79, name: 'Sobradinho-DF' },
-  'aguas claras': { lat: -15.84, lng: -48.02, name: 'Aguas Claras-DF' },
-  'guara': { lat: -15.83, lng: -47.98, name: 'Guara-DF' },
-  'lago sul': { lat: -15.84, lng: -47.87, name: 'Lago Sul-DF' },
-  'lago norte': { lat: -15.73, lng: -47.86, name: 'Lago Norte-DF' },
-  'asa sul': { lat: -15.81, lng: -47.91, name: 'Asa Sul-DF' },
-  'asa norte': { lat: -15.76, lng: -47.88, name: 'Asa Norte-DF' },
-  'vicente pires': { lat: -15.80, lng: -48.03, name: 'Vicente Pires-DF' },
-  'goiania': { lat: -16.68, lng: -49.25, name: 'Goiania-GO' },
-  'aparecida de goiania': { lat: -16.82, lng: -49.24, name: 'Aparecida de Goiania-GO' },
-  'anapolis': { lat: -16.33, lng: -48.95, name: 'Anapolis-GO' },
-  'rio verde': { lat: -17.80, lng: -50.92, name: 'Rio Verde-GO' },
-  'luziania': { lat: -16.25, lng: -47.95, name: 'Luziania-GO' },
-  'valparaiso': { lat: -16.07, lng: -47.98, name: 'Valparaiso de Goias-GO' },
-  'novo gama': { lat: -16.06, lng: -48.04, name: 'Novo Gama-GO' },
-  'formosa': { lat: -15.54, lng: -47.33, name: 'Formosa-GO' },
-  'itumbiara': { lat: -18.42, lng: -49.22, name: 'Itumbiara-GO' },
-  'catalao': { lat: -18.17, lng: -47.94, name: 'Catalao-GO' },
-  'jatai': { lat: -17.88, lng: -51.72, name: 'Jatai-GO' },
-  'caldas novas': { lat: -17.74, lng: -48.63, name: 'Caldas Novas-GO' },
-  'trindade': { lat: -16.65, lng: -49.49, name: 'Trindade-GO' },
-  'senador canedo': { lat: -16.70, lng: -49.09, name: 'Senador Canedo-GO' },
-  'goianesia': { lat: -15.31, lng: -49.12, name: 'Goianesia-GO' },
-  'cristalina': { lat: -16.77, lng: -47.61, name: 'Cristalina-GO' },
-  'mineiros': { lat: -17.57, lng: -52.55, name: 'Mineiros-GO' },
-  'uruacu': { lat: -14.52, lng: -49.14, name: 'Uruacu-GO' },
-  'porangatu': { lat: -13.44, lng: -49.15, name: 'Porangatu-GO' },
-  'padre bernardo': { lat: -15.16, lng: -48.28, name: 'Padre Bernardo-GO' },
-  'aguas lindas': { lat: -15.77, lng: -48.28, name: 'Aguas Lindas de Goias-GO' },
-  'cidade ocidental': { lat: -16.08, lng: -47.93, name: 'Cidade Ocidental-GO' },
-};
-
-// Cache for NASA POWER API responses
-const irradiationCache: Map<string, { value: number; timestamp: number }> = new Map();
-const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
-
-function findCity(cityName: string): CityCoordinates | null {
-  const normalized = cityName.toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[-_]/g, ' ')
-    .trim();
-
-  // Direct match
-  if (CITY_COORDS[normalized]) return CITY_COORDS[normalized];
-
-  // Partial match
-  for (const [key, coords] of Object.entries(CITY_COORDS)) {
-    if (normalized.includes(key) || key.includes(normalized)) {
-      return coords;
-    }
-  }
-
-  return null;
-}
-
-async function getIrradiationFromNASA(lat: number, lng: number): Promise<number> {
-  const cacheKey = `${lat},${lng}`;
-  const cached = irradiationCache.get(cacheKey);
-
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.value;
-  }
-
-  try {
-    const url = `https://power.larc.nasa.gov/api/temporal/monthly/point?parameters=ALLSKY_SFC_SW_DWN&community=RE&longitude=${lng}&latitude=${lat}&start=2022&end=2022&format=JSON`;
-
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`NASA API error: ${response.status}`);
-
-    const data = await response.json() as {
-      properties: {
-        parameter: {
-          ALLSKY_SFC_SW_DWN: Record<string, number>;
-        };
-      };
-    };
-
-    const monthlyValues = data.properties.parameter.ALLSKY_SFC_SW_DWN;
-    const values = Object.values(monthlyValues).filter(v => v > 0);
-    const annualAvg = values.reduce((sum, v) => sum + v, 0) / values.length;
-
-    irradiationCache.set(cacheKey, { value: annualAvg, timestamp: Date.now() });
-
-    return annualAvg;
-  } catch (error) {
-    console.error('[solar] NASA API error, using default:', error);
-    // Fallback: average for Brasilia/Goias region
-    return 5.3;
-  }
-}
+import {
+  PAINEL_PADRAO_W,
+  FATOR_PERDA_CONSERVADOR,
+  hspPorConcessionaria,
+  tarifaPorConcessionaria,
+  tusdFioBPorConcessionaria,
+  percentualFioBVigente,
+  estimarConsumoDeConta,
+  checarCoerenciaContaConsumo,
+  REAJUSTE_ANUAL_ENERGIA,
+  PERCENTUAL_GERACAO_INJETADA,
+  CUSTO_ILUMINACAO_PUBLICA,
+  VIDA_UTIL_ANOS,
+} from './solar-params.js';
+import {
+  dimensionarSistema,
+  calcular,
+  precoMercadoEstimado,
+} from './proposal/calculator.js';
 
 export interface SolarEstimate {
   cityName: string;
-  irradiation: number; // kWh/m2/dia
   consumptionKwh: number;
   panelCount: number;
-  systemPowerKwp: number;
-  monthlyEconomyBrl: number;
-  annualEconomyBrl: number;
-  paybackYears: string;
-  economy25Years: number;
-  generationKwhMonth: number;
   panelWatts: number;
-  irradiationSource: string;
+  systemPowerKwp: number;
+  generationKwhMonth: number;   // conservadora
+  monthlyEconomyBrl: number;    // limitada pela conta (nunca maior)
+  annualEconomyBrl: number;
+  paybackYears: string;         // faixa, ex "3 a 4"
+  hsp: number;
+  // Coerencia da leitura da conta:
+  coerente: boolean;
+  consumoEsperadoDaConta?: number;
+  avisoCoerencia?: string;
 }
 
+function faixaPayback(anos: number): string {
+  if (anos <= 0 || !isFinite(anos)) return 'a calcular';
+  if (anos < 3) return '2 a 3';
+  if (anos < 4) return '3 a 4';
+  if (anos < 5) return '4 a 5';
+  if (anos < 6) return '5 a 6';
+  if (anos < 8) return '6 a 8';
+  return 'acima de 8';
+}
+
+// Estima sistema solar pra usar na conversa. Recebe cidade + (conta OU consumo).
+// Quando vierem OS DOIS, confere coerencia: se nao baterem, marca coerente=false
+// e devolve aviso pra Eva confirmar o consumo antes de apresentar qualquer numero.
 export async function calculateSolarEstimate(
   cityName: string,
   monthlyBill?: number,
-  consumptionKwh?: number
+  consumptionKwh?: number,
 ): Promise<SolarEstimate | null> {
-  // Need at least one: bill or consumption
   if (!monthlyBill && !consumptionKwh) return null;
 
-  // Estimate consumption from bill if not provided
-  // Average tariff in Brasilia/Goias: ~R$ 0.85/kWh (with taxes)
-  const avgTariff = 0.85;
-  const consumption = consumptionKwh ?? Math.round((monthlyBill! - 50) / avgTariff); // subtract minimum charge
-  const bill = monthlyBill ?? Math.round(consumption * avgTariff + 50);
+  const tarifa = tarifaPorConcessionaria(cityName);
+  const hsp = hspPorConcessionaria(cityName);
 
-  // Find city coordinates
-  const city = findCity(cityName);
-  let irradiation: number;
-  let source: string;
+  let coerente = true;
+  let avisoCoerencia: string | undefined;
+  let consumoEsperadoDaConta: number | undefined;
+  let consumo: number;
 
-  if (city) {
-    irradiation = await getIrradiationFromNASA(city.lat, city.lng);
-    source = `NASA POWER para ${city.name}`;
+  if (monthlyBill && consumptionKwh) {
+    const chk = checarCoerenciaContaConsumo(monthlyBill, consumptionKwh, tarifa);
+    consumoEsperadoDaConta = chk.consumoEsperado;
+    if (!chk.coerente) {
+      coerente = false;
+      avisoCoerencia =
+        `INCOERENCIA: uma conta de R$ ${monthlyBill} corresponde a ~${chk.consumoEsperado} kWh/mes ` +
+        `pela tarifa local, mas o consumo lido foi ${consumptionKwh} kWh. NAO apresente sistema, ` +
+        `geracao nem economia ainda — confirme com o cliente o consumo real em kWh (ou peca a conta ` +
+        `de novo) ANTES de calcular. Nunca invente numero.`;
+    }
+    // Para dimensionar (se coerente) usa o consumo lido; se incoerente, o estimado
+    // pela conta e mais confiavel que o kWh suspeito.
+    consumo = chk.coerente ? consumptionKwh : chk.consumoEsperado;
+  } else if (consumptionKwh) {
+    consumo = consumptionKwh;
   } else {
-    irradiation = 5.3; // Default for region
-    source = 'media regional Brasilia/Goias';
+    consumo = estimarConsumoDeConta(monthlyBill as number, tarifa);
   }
 
-  // Calculations
-  const panelWatts = 670; // Average panel wattage (mix of our brands)
-  const panelKwp = panelWatts / 1000;
-  const performanceRatio = 0.82; // System losses (inverter, cables, temperature, dust)
+  if (consumo <= 0) return null;
 
-  // Monthly generation per panel = panel_kwp * irradiation * 30 * performance_ratio
-  const generationPerPanel = panelKwp * irradiation * 30 * performanceRatio;
-  const panelCount = Math.ceil(consumption / generationPerPanel);
-  const systemPowerKwp = Math.round(panelCount * panelKwp * 100) / 100;
-  const totalGeneration = Math.round(panelCount * generationPerPanel);
+  const dim = dimensionarSistema({
+    consumoMensalKwh: consumo,
+    painelPotenciaW: PAINEL_PADRAO_W,
+    hsp,
+    fatorPerda: FATOR_PERDA_CONSERVADOR,
+  });
 
-  // Economy (93% of bill - minimum charge stays)
-  const monthlyEconomy = Math.round(bill * 0.93);
-  const annualEconomy = monthlyEconomy * 12;
-  const economy25Years = annualEconomy * 25;
+  const valorTotal = precoMercadoEstimado(dim.kWpReal);
+  const calc = calcular({
+    potenciaKwp: dim.kWpReal,
+    fatorPerda: FATOR_PERDA_CONSERVADOR,
+    hsp,
+    consumoMensalKwh: consumo,
+    tarifaRsKwh: tarifa,
+    reajusteAnualEnergia: REAJUSTE_ANUAL_ENERGIA,
+    tusdFioBRsKwh: tusdFioBPorConcessionaria(cityName),
+    percentualFioBVigente: percentualFioBVigente(new Date().getFullYear()),
+    percentualGeracaoInjetada: PERCENTUAL_GERACAO_INJETADA,
+    custoIluminacaoPublica: CUSTO_ILUMINACAO_PUBLICA,
+    valorTotalRs: valorTotal,
+    vidaUtilAnos: VIDA_UTIL_ANOS,
+  });
 
-  // Payback (rough estimate based on R$/Wp installed cost)
-  const costPerWp = 4.5; // R$/Wp average installed cost
-  const totalCost = systemPowerKwp * 1000 * costPerWp;
-  const paybackMonths = Math.round(totalCost / monthlyEconomy);
-  const paybackYears = paybackMonths < 36 ? '2 a 3' :
-                       paybackMonths < 48 ? '3 a 4' :
-                       paybackMonths < 60 ? '4 a 5' : '5 a 6';
+  // Garantia DURA: a economia apresentada NUNCA pode passar do valor da conta que
+  // o cliente declarou. (O motor ja limita por contaSem-contaCom, mas quando o
+  // cliente informa o R$ da conta, travamos pelo valor real declarado — fecha o
+  // furo do caminho conta+kWh com kWh no lado alto. Caso Marcelo, direcao oposta.)
+  const economiaBruta = Math.max(0, Math.round(calc.economiaMensal));
+  const economiaMensal = monthlyBill && monthlyBill > 0
+    ? Math.min(economiaBruta, Math.round(monthlyBill))
+    : economiaBruta;
 
   return {
-    cityName: city?.name ?? cityName,
-    irradiation: Math.round(irradiation * 100) / 100,
-    consumptionKwh: consumption,
-    panelCount,
-    systemPowerKwp,
-    monthlyEconomyBrl: monthlyEconomy,
-    annualEconomyBrl: annualEconomy,
-    paybackYears,
-    economy25Years,
-    generationKwhMonth: totalGeneration,
-    panelWatts,
-    irradiationSource: source,
+    cityName,
+    consumptionKwh: consumo,
+    panelCount: dim.quantidadePaineis,
+    panelWatts: PAINEL_PADRAO_W,
+    systemPowerKwp: dim.kWpReal,
+    generationKwhMonth: Math.round(calc.geracaoMensalKwh),
+    monthlyEconomyBrl: economiaMensal,
+    annualEconomyBrl: economiaMensal * 12,
+    paybackYears: faixaPayback(calc.paybackAnos + calc.paybackMeses / 12),
+    hsp,
+    coerente,
+    consumoEsperadoDaConta,
+    avisoCoerencia,
   };
 }
 
 export function formatEstimateForPrompt(estimate: SolarEstimate): string {
+  // Quando a leitura da conta esta incoerente, NAO entrega numeros pra Eva —
+  // entrega a instrucao de confirmar com o cliente.
+  if (!estimate.coerente) {
+    return `
+## ATENCAO — dados da conta inconsistentes (NAO calcule ainda)
+${estimate.avisoCoerencia}
+Peca o consumo certo de forma leve, ex: "deixa eu confirmar uma coisa rapidinho:
+quantos kWh vem escrito na sua conta? quero te passar um numero certo, nao um chute."
+`;
+  }
+
   return `
-## Calculo Solar para ${estimate.cityName}
-- Irradiacao solar: ${estimate.irradiation} kWh/m2/dia (fonte: ${estimate.irradiationSource})
-- Consumo estimado: ${estimate.consumptionKwh} kWh/mes
-- Paineis necessarios: ${estimate.panelCount} paineis de ~${estimate.panelWatts}W
-- Potencia do sistema: ${estimate.systemPowerKwp} kWp
-- Geracao estimada: ${estimate.generationKwhMonth} kWh/mes
-- Economia mensal: R$ ${estimate.monthlyEconomyBrl}
-- Economia anual: R$ ${estimate.annualEconomyBrl}
-- Payback estimado: ${estimate.paybackYears} anos
-- Economia em 25 anos: R$ ${estimate.economy25Years.toLocaleString('pt-BR')}
-USE estes dados para responder ao cliente de forma empolgante e natural!
+## Estimativa de sistema para ${estimate.cityName} (CONSERVADORA — use como base, nao valor fechado)
+- Consumo considerado: ${estimate.consumptionKwh} kWh/mes
+- Sistema estimado: ${estimate.systemPowerKwp} kWp (~${estimate.panelCount} paineis de ${estimate.panelWatts}W)
+- Geracao estimada: ~${estimate.generationKwhMonth} kWh/mes (calculo conservador — tende a gerar mais na pratica)
+- Economia estimada: ~R$ ${estimate.monthlyEconomyBrl}/mes (R$ ${estimate.annualEconomyBrl}/ano)
+- Payback aproximado: ${estimate.paybackYears} anos
+
+REGRAS ao usar esses numeros:
+- Apresente como ESTIMATIVA/base de mercado, nunca como valor fechado. O dimensionamento
+  e o preco exatos quem fecha e o Junior (Responsavel Tecnico), vendo telhado e padrao de entrada.
+- Fale geracao "em torno de" / economia "por volta de" — nunca cravado.
+- NUNCA prometa economia maior que a conta atual do cliente.
+- Use pra gerar desejo e conduzir pra visita tecnica ou Meet, nao pra despejar tabela.
 `;
 }

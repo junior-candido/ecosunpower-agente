@@ -226,6 +226,47 @@ export function renderLeadsListPage(
   return renderLayout({ active: 'leads', title: 'Leads', body });
 }
 
+function renderAnexoCard(a: {
+  tipo: string; descricao: string | null; url: string;
+  mime_type: string | null; created_by: string; created_at: string;
+}): string {
+  const mime = (a.mime_type ?? '').toLowerCase();
+  const tipoLabel = a.tipo === 'conta_luz' ? 'Conta de luz'
+    : a.tipo === 'recebido_cliente' ? 'Enviado pelo cliente'
+    : a.tipo;
+  const quando = a.created_at
+    ? new Date(a.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+    : '';
+  const origem = a.created_by === 'cliente'
+    ? '<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">cliente</span>'
+    : `<span class="text-[10px] text-slate-400">${escapeHtml(a.created_by)}</span>`;
+
+  const url = escapeHtml(a.url);
+  let preview: string;
+  if (!a.url) {
+    preview = '<div class="aspect-square bg-slate-100 rounded-md flex items-center justify-center text-xs text-slate-400">indisponível</div>';
+  } else if (mime.startsWith('image/')) {
+    preview = `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${escapeHtml(tipoLabel)}" class="aspect-square w-full object-cover rounded-md border border-slate-200"></a>`;
+  } else if (mime.includes('pdf')) {
+    preview = `<a href="${url}" target="_blank" rel="noopener" class="aspect-square bg-rose-50 border border-rose-200 rounded-md flex flex-col items-center justify-center gap-1 text-rose-700"><span class="text-3xl">📄</span><span class="text-xs font-semibold">Abrir PDF</span></a>`;
+  } else if (mime.startsWith('video/')) {
+    preview = `<a href="${url}" target="_blank" rel="noopener" class="aspect-square bg-slate-800 rounded-md flex flex-col items-center justify-center gap-1 text-white"><span class="text-3xl">🎬</span><span class="text-xs">Ver vídeo</span></a>`;
+  } else if (mime.startsWith('audio/')) {
+    preview = `<div class="aspect-square bg-slate-50 border border-slate-200 rounded-md flex items-center justify-center p-2"><audio controls src="${url}" class="w-full"></audio></div>`;
+  } else {
+    preview = `<a href="${url}" target="_blank" rel="noopener" class="aspect-square bg-slate-100 rounded-md flex items-center justify-center text-xs text-slate-600">Abrir arquivo</a>`;
+  }
+
+  return `<div>
+    ${preview}
+    <div class="mt-1 flex items-center justify-between gap-1">
+      <span class="text-xs font-medium text-slate-700 truncate" title="${escapeHtml(a.descricao ?? '')}">${escapeHtml(tipoLabel)}</span>
+      ${origem}
+    </div>
+    <div class="text-[10px] text-slate-400">${escapeHtml(quando)}</div>
+  </div>`;
+}
+
 export function renderLeadDetailPage(lead: LeadDetail): string {
   const phoneFmt = formatPhone(lead.phone);
   const nome = escapeHtml(lead.name ?? 'Sem nome');
@@ -449,6 +490,14 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
             <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6">
               <h2 class="text-lg font-semibold text-slate-900 mb-3">Oportunidades</h2>
               <pre class="text-xs bg-slate-50 p-3 rounded overflow-x-auto">${escapeHtml(JSON.stringify(lead.opportunities, null, 2))}</pre>
+            </div>` : ''}
+
+          ${(lead.anexos ?? []).length > 0 ? `
+            <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6">
+              <h2 class="text-lg font-semibold text-slate-900 mb-3">📎 Arquivos do cliente (${lead.anexos.length})</h2>
+              <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                ${lead.anexos.map(a => renderAnexoCard(a)).join('')}
+              </div>
             </div>` : ''}
         </div>
       </div>

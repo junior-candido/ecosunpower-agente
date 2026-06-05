@@ -6,7 +6,7 @@ export interface ProposalInput {
   // Sistema
   potenciaKwp: number;
   fatorPerda: number; // 0.75 - 0.85, Junior decide caso a caso
-  hsp: number; // h/dia, default Brasilia 5.2
+  hsp: number; // h/dia, default Brasilia 5.40 (CRESESB, via solar-params.ts)
 
   // Consumo & tarifa
   consumoMensalKwh: number;
@@ -322,6 +322,16 @@ const GREENER_2026: Array<{ minKwp: number; maxKwp: number; rsPorWp: number }> =
   { minKwp: 500,  maxKwp: 1000, rsPorWp: 2.27 },
   { minKwp: 1000, maxKwp: Infinity, rsPorWp: 2.85 },
 ];
+
+// Preco de mercado estimado (R$) pra um sistema de dado kWp, base Greener 2026.
+// Usado em ESTIMATIVAS de conversa (payback aproximado) — NUNCA e o preco fechado,
+// que o Responsavel Tecnico define vendo padrao de entrada e telhado.
+export function precoMercadoEstimado(potenciaKwp: number): number {
+  if (potenciaKwp <= 0) return 0;
+  const faixa = GREENER_2026.find(f => potenciaKwp >= f.minKwp && potenciaKwp < f.maxKwp)
+    ?? GREENER_2026[GREENER_2026.length - 1];
+  return Math.round(potenciaKwp * 1000 * faixa.rsPorWp);
+}
 
 export interface GreenerComparison {
   rsPorWpReferencia: number;

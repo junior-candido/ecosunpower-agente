@@ -15,7 +15,7 @@ function escapeHtml(s: string | number | null | undefined): string {
 export const MARCAS_MODULO = ['Trina', 'JA Solar', 'LONGi', 'Jinko', 'DAH', 'Risen'] as const;
 export const MARCAS_INVERSOR = ['Sungrow', 'Solis', 'Deye', 'FoxESS', 'SolarEdge', 'Huawei', 'GoodWe', 'Hoymiles', 'Enphase', 'NEP'] as const;
 export const TIPOS_ESTRUTURA = ['Telha cerâmica', 'Telha metálica', 'Telha fibrocimento', 'Laje', 'Solo', 'Carport'] as const;
-export const FATORES_PERDA = ['0.75', '0.80', '0.85'] as const;
+export const FATORES_PERDA = ['0.75', '0.78', '0.80'] as const;
 
 export const CONCESSIONARIA_VALUES: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'neoenergia-df', label: 'Neoenergia DF' },
@@ -128,7 +128,7 @@ export function renderFormNovaProposta(input: {
             <label class="block">
               <span class="text-xs text-slate-300">Fator de perda *</span>
               <select name="fatorPerda" required class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
-                ${FATORES_PERDA.map((f) => `<option value="${f}" ${f === '0.80' ? 'selected' : ''}>${f}</option>`).join('')}
+                ${FATORES_PERDA.map((f) => `<option value="${f}" ${f === '0.78' ? 'selected' : ''}>${f}</option>`).join('')}
               </select>
             </label>
             <label class="block">

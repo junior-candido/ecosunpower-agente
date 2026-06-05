@@ -2,6 +2,7 @@
 // Queries para a pagina /dashboard/leads (lista + detalhe).
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { getSignedUrls } from '../anexos/storage.js';
 
 export interface LeadRow {
   id: string;
@@ -32,6 +33,7 @@ export interface LeadDetail extends LeadRow {
   opportunities: any;
   conversation_messages: Array<{ role: string; content: string; timestamp: string }>;
   cadence_steps: Array<{ step: number; scheduled_for: string; status: string; sent_at: string | null }>;
+  anexos: Array<{ id: string; tipo: string; descricao: string | null; url: string; mime_type: string | null; created_by: string; created_at: string }>;
 }
 
 // Statuses que indicam "já virou cliente" — esses NÃO aparecem em /leads.
@@ -230,6 +232,20 @@ export async function getLeadDetail(client: SupabaseClient, id: string): Promise
   else if (isSilent && has_cadence_pending) alerta = 'silente_com_cadencia';
   else if (isNew) alerta = 'novo';
 
+  // Anexos do lead (inclui midia que o cliente enviou pela Eva: conta, foto, etc.)
+  const { data: anexosRaw } = await client
+    .from('lead_anexos')
+    .select('id, tipo, descricao, storage_path, mime_type, created_by, created_at')
+    .eq('lead_id', id)
+    .order('created_at', { ascending: false });
+  const anexoPaths = (anexosRaw ?? []).map((a: any) => a.storage_path).filter(Boolean);
+  const anexoUrls = anexoPaths.length > 0 ? await getSignedUrls(client, anexoPaths, 3600) : {};
+  const anexos = (anexosRaw ?? []).map((a: any) => ({
+    id: a.id, tipo: a.tipo, descricao: a.descricao,
+    url: anexoUrls[a.storage_path] ?? '',
+    mime_type: a.mime_type, created_by: a.created_by, created_at: a.created_at,
+  }));
+
   return {
     id: lead.id,
     phone: lead.phone,
@@ -256,5 +272,6 @@ export async function getLeadDetail(client: SupabaseClient, id: string): Promise
     opportunities: lead.opportunities ?? {},
     conversation_messages,
     cadence_steps: cads ?? [],
+    anexos,
   };
 }

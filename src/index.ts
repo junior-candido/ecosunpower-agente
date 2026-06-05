@@ -10,6 +10,7 @@ import { MetaWhatsAppService } from './modules/meta-whatsapp.js';
 import { Brain } from './modules/brain.js';
 import { DossierBuilder } from './modules/dossier.js';
 import { calculateSolarEstimate, formatEstimateForPrompt } from './modules/solar.js';
+import { archiveInboundMedia } from './modules/inbound-media.js';
 import { Transcriber } from './modules/transcriber.js';
 import { VisionAnalyzer } from './modules/vision.js';
 import Anthropic from '@anthropic-ai/sdk';
@@ -3178,8 +3179,13 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           const ed = lead.energy_data as Record<string, unknown>;
           if (ed.monthly_bill || ed.consumption_kwh) {
             try {
+              // Dica de local pro resolver de solar-params (le neoenergia/equatorial/DF/GO).
+              // concessionaria + UF sao os sinais confiaveis; cidade entra so como reforco.
+              const l = lead as any;
+              const localHint = [l.concessionaria, ed.distributor, lead.city, l.uf]
+                .filter(Boolean).join(' ') || lead.city;
               const estimate = await calculateSolarEstimate(
-                lead.city,
+                localHint,
                 ed.monthly_bill as number | undefined,
                 ed.consumption_kwh as number | undefined
               );
@@ -4000,6 +4006,10 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         return;
       }
 
+      // Arquiva o audio original no cofre do lead (Junior quer TUDO em maos)
+      const audioLead = await supabase.getLeadByPhone(from).catch(() => null);
+      if (audioLead) await archiveInboundMedia(supabase, audioLead.id, 'audio', media.base64, media.mimetype, messageId);
+
       const text = await transcriber.transcribeFromBase64(media.base64, media.mimetype);
       if (!text) {
         const msg = 'O audio ficou um pouco dificil de entender. Pode mandar de novo ou escrever por texto? 😊';
@@ -4045,6 +4055,9 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         if (!isSandbox) await sendText(from, msg);
         return;
       }
+
+      // Arquiva a foto original no cofre do lead (conta de luz, telhado, etc.)
+      if (lead) await archiveInboundMedia(supabase, lead.id, 'imagem', media.base64, media.mimetype, messageId);
 
       const imageDataUrl = `data:${media.mimetype};base64,${media.base64}`;
       const analysisText = await vision.analyzeImage(imageDataUrl, context);
@@ -4112,6 +4125,9 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         if (!isSandbox) await sendText(from, 'nao consegui baixar o video aqui, pode tentar enviar de novo?');
         return;
       }
+
+      // Arquiva no cofre do lead (alem do bucket testimonials) — Junior quer TUDO em maos
+      if (lead) await archiveInboundMedia(supabase, lead.id, 'video', media.base64, media.mimetype, messageId);
 
       // Upload to Supabase Storage pra preservar o original
       const videoBuffer = Buffer.from(media.base64, 'base64');
@@ -4234,11 +4250,12 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         return;
       }
 
-      // Use Claude to analyze the PDF
-      const analysisResponse = await new Anthropic({ apiKey: config.anthropicApiKey }).messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        messages: [
+      // Arquiva o original no cofre do lead (Junior precisa ter a conta em maos)
+      if (lead) await archiveInboundMedia(supabase, lead.id, 'pdf', media.base64, media.mimetype, messageId);
+
+      // Use Claude to analyze the PDF (Opus; fallback Haiku se Opus indisponivel)
+      const pdfClient = new Anthropic({ apiKey: config.anthropicApiKey });
+      const pdfMessages: Anthropic.Messages.MessageParam[] = [
           {
             role: 'user',
             content: [
@@ -4251,24 +4268,40 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
                 text: `Voce e a Eva, consultora de energia solar da Ecosunpower.
 O cliente enviou este PDF. Provavelmente e uma conta de luz.
 
-Extraia e apresente de forma curta:
+Leia com ATENCAO e extraia EXATAMENTE o que esta impresso (nao arredonde, nao chute):
 - Distribuidora (Neoenergia/CEB ou Equatorial/CELG)
-- Consumo em kWh
-- Valor em R$
+- Consumo em kWh do mes (o numero REAL impresso na fatura)
+- Valor total em R$
 - Grupo (A ou B)
-- Demanda contratada (se Grupo A)
+- Demanda contratada em kW (se Grupo A)
 
-Confirme os dados com o cliente.
-Inclua JSON: \`\`\`json\n{"action":"update_lead","data":{"energy_data":{"monthly_bill":VALOR,"consumption_kwh":CONSUMO,"group":"B"}}}\n\`\`\`
+CONFERENCIA DE COERENCIA (obrigatoria antes de responder):
+A tarifa cheia na regiao e ~R$ 1,00/kWh. Entao o valor em R$ deve ser proximo do
+consumo em kWh (ex.: conta de R$ 500 => ~450-500 kWh). Se o consumo que voce leu
+NAO bater com o valor (ex.: leu 85 kWh numa conta de R$ 490), VOCE LEU ERRADO ou a
+conta tem varias unidades — NAO invente: releia, e se ainda nao bater, diga ao cliente
+de forma leve que quer confirmar e pergunte o consumo em kWh. NAO emita o JSON nesse caso.
 
-Se NAO for conta de luz, descreva o que e e responda naturalmente.
+Se os numeros baterem, confirme de forma natural e curta com o cliente e inclua no FINAL:
+\`\`\`json\n{"action":"update_lead","data":{"energy_data":{"monthly_bill":VALOR,"consumption_kwh":CONSUMO,"group":"B"}}}\n\`\`\`
+
+Se NAO for conta de luz, descreva o que e e responda naturalmente (sem JSON).
 Contexto: ${context}
-Responda CURTO, maximo 2 paragrafos.`,
+Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/titulo interno.`,
               },
             ],
           },
-        ],
-      });
+      ];
+      // Opus pra ler conta sem erro grosseiro (dinheiro em jogo). Fallback Haiku em
+      // erro de API (429/overloaded/5xx) — melhor ler com modelo menor do que rejeitar
+      // conta legivel. A trava de coerencia (prompt + solar.ts) ainda protege.
+      let analysisResponse;
+      try {
+        analysisResponse = await pdfClient.messages.create({ model: 'claude-opus-4-7', max_tokens: 1500, messages: pdfMessages });
+      } catch (apiErr) {
+        console.warn('[document] Opus indisponivel, fallback Haiku:', (apiErr as Error).message);
+        analysisResponse = await pdfClient.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 1500, messages: pdfMessages });
+      }
 
       const analysisText = analysisResponse.content
         .filter((block): block is Anthropic.TextBlock => block.type === 'text')
