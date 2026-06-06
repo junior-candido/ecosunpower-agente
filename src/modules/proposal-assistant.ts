@@ -21,7 +21,7 @@ import {
   VIDA_UTIL_ANOS,
 } from './solar-params.js';
 import { renderProposalHTML, type ProposalData } from './proposal/template.js';
-import type { ServicoItem } from './proposal/service-render.js';
+import { somaServicosExtras, type ServicoItem } from './proposal/service-render.js';
 import { htmlToPdf, gerarQrCodeDataUrl } from './proposal/pdf-generator.js';
 import type { DriveUploader } from './proposal/drive-uploader.js';
 import type { SupabaseService } from './supabase.js';
@@ -46,10 +46,34 @@ export function mapServicosFromClaude(raw: unknown): ServicoItem[] | undefined {
       titulo: String(s?.titulo ?? '').trim(),
       descricao: String(s?.descricao ?? '').trim(),
       valorRs: Number(s?.valorRs),
+      // Eva classifica a intenção; aqui só normalizamos pra boolean.
+      // true = já está dentro do valor do solar (não soma de novo).
+      jaIncluso: s?.jaIncluso === true,
     }))
     .filter(s => s.titulo.length > 0 && isFinite(s.valorRs) && s.valorRs > 0);
   return itens.length > 0 ? itens : undefined;
 }
+
+// Monta as linhas de resumo dos serviços pro WhatsApp do Junior depois de gerar
+// a proposta. Serviços "a mais" somam ao total geral; "já incluso" aparecem à
+// parte (sem custo extra, não mudam o total). Sem serviços => nenhuma linha.
+export function resumoServicosParaJunior(servicos: ServicoItem[] | undefined, valorSolarRs: number): string[] {
+  const lista = (servicos ?? []).filter(Boolean);
+  if (lista.length === 0) return [];
+  const fmtBr = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+  const somaExtras = somaServicosExtras(lista);
+  const inclusos = lista.filter(s => s.jaIncluso);
+  const linhas: string[] = [];
+  if (somaExtras > 0) {
+    linhas.push(`🔧 Serviços (a mais): + R$ ${fmtBr(somaExtras)}`);
+    linhas.push(`💵 Total geral (solar + serviços): R$ ${fmtBr((Number(valorSolarRs) || 0) + somaExtras)}`);
+  }
+  for (const s of inclusos) {
+    linhas.push(`✓ Já incluso (sem custo extra): ${s.titulo} — R$ ${fmtBr(Number(s.valorRs) || 0)}`);
+  }
+  return linhas.length > 0 ? ['', ...linhas] : [];
+}
+
 const PROPOSAL_MODE_TTL_SECONDS = 60 * 60;
 
 interface ProposalMessage {
@@ -132,7 +156,14 @@ ${marcasKnowledge}
 7. Reajuste anual energia: 10%.
 8. Vida útil: 25 anos.
 9. Validade da proposta: 5 dias.
-10. **SERVIÇOS (multi-item):** a EcoSunPower vende energia, não só solar. Se o Junior incluir serviços avulsos (carregador EV, adequação de padrão, criação de circuito, projeto elétrico, etc.) junto com o solar, coloque-os em \`servicos[]\` com \`titulo\`, \`descricao\` (REPLIQUE FIEL o que o Junior escreveu — não reescreva por conta própria) e \`valorRs\`. Eles SOMAM ao valor do solar. O \`valorTotalRs\` continua sendo só o solar; o template soma os serviços e mostra o total geral.
+10. **SERVIÇOS (multi-item):** a EcoSunPower vende energia, não só solar. Quando o Junior cita serviços avulsos (carregador EV, adequação de padrão, criação de circuito, projeto elétrico, SPDA, aterramento, etc.) junto com o solar, coloque CADA um em \`servicos[]\` com:
+    - \`titulo\`: nome curto e claro do serviço.
+    - \`descricao\`: o que está incluso. REPLIQUE FIEL o que o Junior escreveu — não invente nem reescreva mudando o sentido. Deixe claro pro cliente, mas sem distorcer.
+    - \`valorRs\`: o preço do serviço (só o número).
+    - \`jaIncluso\`: você CLASSIFICA a intenção do Junior (não faz conta nenhuma, só entende as palavras dele):
+        • \`false\` (padrão) → serviço "A MAIS": SOMA ao valor do solar. Use quando o Junior diz "a mais", "à parte", "fora do orçamento", "extra", "adiciona X por R$Y", "além do solar".
+        • \`true\` → serviço "JÁ INCLUSO": já está DENTRO do valor que o Junior passou, então NÃO soma de novo (na proposta aparece com selo "já incluso"). Use quando o Junior diz "já incluso", "já está no valor", "dentro do total", "sem custo adicional", "já contemplado", "incluso no preço".
+    REGRA DE OURO da conta: \`valorTotalRs\` é SEMPRE só o valor do solar. Se um serviço é \`jaIncluso: true\`, o \`valorTotalRs\` que o Junior passou JÁ contém esse serviço — não desconte nem some nada, o sistema faz a conta certa. Você só entende e classifica; quem soma/subtrai é SEMPRE o sistema, NUNCA você de cabeça.
 
 # FORMATO DE RESPOSTA
 
@@ -169,7 +200,8 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
       { "tipo": "À Vista", "titulo": "PIX ou TED", "valorPrincipal": "R$ 38.500", "valorSecundario": "pagamento único", "recomendado": true, "bullets": ["Sem juros", "Início imediato", "Maior economia"] }
     ],
     "servicos": [
-      { "titulo": "Carregador EV", "descricao": "Wallbox 7,4 kW instalado com circuito dedicado", "valorRs": 4500 }
+      { "titulo": "Carregador EV", "descricao": "Wallbox 7,4 kW instalado com circuito dedicado", "valorRs": 4500, "jaIncluso": false },
+      { "titulo": "Adequação de padrão", "descricao": "Troca do padrão de entrada para trifásico", "valorRs": 1000, "jaIncluso": true }
     ]
   }
 }
@@ -918,9 +950,6 @@ export class ProposalAssistant {
       }
       if (linkLines.length === 0) linkLines.push('⚠️ Nenhum link disponivel — checar logs.');
 
-      const somaServicos = (result.proposalData.servicos ?? []).reduce((a, s) => a + s.valorRs, 0);
-      const fmtBr = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
-
       return [
         '✅ Proposta gerada!',
         '',
@@ -932,11 +961,7 @@ export class ProposalAssistant {
         '',
         `📊 Payback: ${result.calculations.paybackAnos}a ${result.calculations.paybackMeses}m`,
         `📈 TIR: ${result.calculations.tirPercentual.toFixed(1)}%`,
-        ...(somaServicos > 0 ? [
-          '',
-          `🔧 Serviços: + R$ ${fmtBr(somaServicos)}`,
-          `💵 Total geral (solar + serviços): R$ ${fmtBr(Number(data.valorTotalRs) + somaServicos)}`,
-        ] : []),
+        ...resumoServicosParaJunior(result.proposalData.servicos, Number(data.valorTotalRs)),
         '',
         '_Manda "enviar" pra mandar pro cliente, ou "ajusta X" pra refazer._',
       ].join('\n');
@@ -1046,7 +1071,7 @@ export class ProposalAssistant {
       estruturaFixacao: data.estruturaFixacao,
       valorTotalRs: Number(data.valorTotalRs),
       formasPagamento: data.formasPagamento ?? this.defaultPaymentOptions(
-        Number(data.valorTotalRs) + (servicos ?? []).reduce((a, s) => a + s.valorRs, 0)),
+        Number(data.valorTotalRs) + somaServicosExtras(servicos)),
       servicos,
       empresa: this.companyDefaults,
     };
