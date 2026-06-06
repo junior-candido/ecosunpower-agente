@@ -17,4 +17,13 @@ describe('proposal/format', () => {
   it('escapeHtml neutraliza caracteres perigosos', () => {
     expect(escapeHtml('<b>"x"&\'y\'</b>')).toBe('&lt;b&gt;&quot;x&quot;&amp;&#39;y&#39;&lt;/b&gt;');
   });
+  it('fmtNum formata inteiro sem casas e respeita frac', () => {
+    expect(fmtNum(1234)).toBe('1.234');
+    expect(fmtNum(1234.5, 1)).toBe('1.234,5');
+  });
+  it('fmtCurto respeita as fronteiras 1.000 e 1.000.000', () => {
+    expect(fmtCurto(999)).toBe('R$ 999');
+    expect(fmtCurto(1000)).toBe('R$ 1k');
+    expect(fmtCurto(1_000_000)).toBe('R$ 1M');
+  });
 });
