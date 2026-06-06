@@ -51,8 +51,8 @@ const FICHAS: MarcaFicha[] = [
     tier1: true, garantia: '10 anos',
     resumo: 'FoxESS — híbrido custo-benefício premium intermediário, no Brasil desde ~2019. Garantia 10 anos.' },
   { marca: 'SolarEdge', tipo: 'inversor', desdeBR: 2017, tecnologia: 'Otimizadores por módulo + inversor central',
-    tier1: true, garantia: '12 anos (inversor, ext. 25) / 25 anos (otimizadores)',
-    resumo: 'SolarEdge — premium israelense, no Brasil desde ~2017. Otimizadores por painel com monitoramento individual, máxima eficiência em telhado com sombra. Garantia inversor 12 anos (extensível a 25), otimizadores 25 anos.' },
+    tier1: true, garantia: '12 anos (inversor, extensível sob demanda) / 25 anos (otimizadores)',
+    resumo: 'SolarEdge — premium israelense, no Brasil desde ~2017. Otimizadores por painel com monitoramento individual, máxima eficiência em telhado com sombra. Garantia inversor 12 anos (extensível sob demanda), otimizadores 25 anos.' },
   { marca: 'Huawei', tipo: 'inversor', desdeBR: 2014, tecnologia: 'Inversor string / híbrido',
     tier1: true, garantia: '10 anos',
     resumo: 'Huawei — o mais forte em híbrido + bateria no Brasil, desde ~2014. Garantia 10 anos.' },
@@ -76,10 +76,20 @@ export function getBrandFicha(fabricante: string, tipo: 'modulo' | 'inversor'): 
   const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
   const alvo = norm(fabricante ?? '');
   if (!alvo) return null;
-  // Casa quando o nome da marca aparece como começo do fabricante informado.
+  // Casa quando: nome exato; OU o fabricante COMEÇA com a marca ("JA Solar JAM66" -> "JA Solar");
+  // OU o fabricante é um prefixo de PALAVRA INTEIRA da marca ("JA" -> "JA Solar", mas NÃO "Sol" -> "Solis").
   const achada = FICHAS
     .filter(f => f.tipo === tipo)
-    .find(f => alvo === norm(f.marca) || alvo.startsWith(norm(f.marca)) || norm(f.marca).startsWith(alvo));
+    .find(f => {
+      const m = norm(f.marca);
+      if (alvo === m || alvo.startsWith(m)) return true;
+      // prefixo de palavra inteira: o caractere seguinte na marca deve ser espaço ou fim
+      if (m.startsWith(alvo)) {
+        const next = m[alvo.length];
+        return next === undefined || next === ' ';
+      }
+      return false;
+    });
   return achada ?? null;
 }
 

@@ -24,6 +24,13 @@ describe('getBrandFicha', () => {
   it('não confunde tipos (Trina não é inversor)', () => {
     expect(getBrandFicha('Trina', 'inversor')).toBeNull();
   });
+  it('NÃO casa prefixo parcial que não é palavra inteira (Sol não vira Solis)', () => {
+    expect(getBrandFicha('Sol', 'inversor')).toBeNull();
+    expect(getBrandFicha('Sola', 'inversor')).toBeNull();
+  });
+  it('casa abreviação de palavra inteira (JA -> JA Solar)', () => {
+    expect(getBrandFicha('JA', 'modulo')).not.toBeNull();
+  });
 });
 
 function baseCalc(): ProposalCalculations {
@@ -63,5 +70,20 @@ describe('ficha de marca na proposta renderizada', () => {
     data.modulo.fichaOverride = 'MINHA FICHA CUSTOMIZADA DO MODULO';
     const html = renderProposalHTML(data, baseCalc());
     expect(html).toContain('MINHA FICHA CUSTOMIZADA DO MODULO');
+  });
+  it('NÃO renderiza ficha pra marca fora da lista', () => {
+    const data = baseData();
+    data.modulo.fabricante = 'MarcaDesconhecida';
+    data.inversor.fabricante = 'OutraMarcaX';
+    const html = renderProposalHTML(data, baseCalc());
+    // nenhum resumo de ficha conhecida deve aparecer
+    expect(html).not.toContain('Top 3 mundial');
+    expect(html).not.toContain('eficiência acima de 99%');
+  });
+  it('respeita o fichaOverride do inversor', () => {
+    const data = baseData();
+    data.inversor.fichaOverride = 'FICHA CUSTOM DO INVERSOR XYZ';
+    const html = renderProposalHTML(data, baseCalc());
+    expect(html).toContain('FICHA CUSTOM DO INVERSOR XYZ');
   });
 });
