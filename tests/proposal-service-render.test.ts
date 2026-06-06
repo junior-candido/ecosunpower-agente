@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { renderServicosAdicionaisSection, type ServicoItem } from '../src/modules/proposal/service-render.js';
+import { renderServiceOnlyHTML, type ServiceOnlyData } from '../src/modules/proposal/service-render.js';
 
 const servicos: ServicoItem[] = [
   { titulo: 'Carregador EV', descricao: 'Wallbox 7,4 kW instalado com circuito dedicado', valorRs: 4500 },
@@ -39,5 +40,47 @@ describe('renderServicosAdicionaisSection', () => {
       [{ titulo: 'X', descricao: 'y', valorRs: ('abc' as unknown as number) }], 38500);
     expect(html).not.toContain('NaN');
     expect(html).toContain('R$ 38.500'); // total = 38500 + 0
+  });
+});
+
+describe('renderServiceOnlyHTML', () => {
+  const base: ServiceOnlyData = {
+    numeroProposta: '2026-0150',
+    dataProposta: '06/06/2026',
+    validadeDias: 5,
+    nomeCliente: 'Edmilson',
+    servicos: [{ titulo: 'Adequação de padrão', descricao: 'Troca pra padrão trifásico', valorRs: 2800 }],
+    formasPagamento: [{ tipo: 'À Vista', titulo: 'PIX', valorPrincipal: 'R$ 2.800', valorSecundario: 'único', bullets: ['Sem juros'] }],
+    empresa: { nome: 'EcoSunPower', cnpj: '00', cidade: 'Brasília-DF', telefone: '(61) 99697-8781', site: 'ecosunpower.eng.br' },
+  };
+  it('renderiza nome, serviço, descrição e total — sem gráfico/payback', () => {
+    const html = renderServiceOnlyHTML(base);
+    expect(html).toContain('Edmilson');
+    expect(html).toContain('Adequação de padrão');
+    expect(html).toContain('R$ 2.800');
+    expect(html).not.toContain('Payback');
+    expect(html).not.toContain('barGeracaoGrad'); // sem o gráfico solar
+  });
+  it('inclui a imagem do serviço quando há imagemUrl', () => {
+    const html = renderServiceOnlyHTML({ ...base, servicos: [{ ...base.servicos[0], imagemUrl: 'https://x/img.jpg' }] });
+    expect(html).toContain('https://x/img.jpg');
+  });
+  it('soma vários serviços no total', () => {
+    const html = renderServiceOnlyHTML({ ...base, servicos: [
+      { titulo: 'A', descricao: 'a', valorRs: 1000 },
+      { titulo: 'B', descricao: 'b', valorRs: 500 },
+    ]});
+    expect(html).toContain('R$ 1.500');
+  });
+  it('escapa HTML na descrição e título livres', () => {
+    const html = renderServiceOnlyHTML({ ...base, servicos: [
+      { titulo: '<x>', descricao: '<script>alert(1)</script>', valorRs: 100 },
+    ]});
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+  it('lança erro sem nome ou sem serviço', () => {
+    expect(() => renderServiceOnlyHTML({ ...base, servicos: [] })).toThrow();
+    expect(() => renderServiceOnlyHTML({ ...base, nomeCliente: '' })).toThrow();
   });
 });

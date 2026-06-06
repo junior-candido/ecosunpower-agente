@@ -1,9 +1,10 @@
 // src/modules/proposal/service-render.ts
 // Tipo de item de serviço (texto livre do Junior) + renderizações:
 //  - renderServicosAdicionaisSection: seção que soma serviços numa proposta solar.
-//  - renderServiceOnlyHTML (Task 5, ainda não): proposta só-serviço elegante.
+//  - renderServiceOnlyHTML: proposta só-serviço elegante (sem solar, sem gráfico/payback).
 
 import { fmtRs, escapeHtml } from './format.js';
+import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './assets/logo-base64.js';
 
 export interface ServicoItem {
   titulo: string;
@@ -44,4 +45,113 @@ export function renderServicosAdicionaisSection(servicos: ServicoItem[], valorSo
     </div>
   </div>
 </section>`;
+}
+
+export interface ServiceOnlyData {
+  numeroProposta: string;
+  dataProposta: string;
+  validadeDias: number;
+  nomeCliente: string;
+  servicos: ServicoItem[];
+  formasPagamento: Array<{ tipo: string; titulo: string; valorPrincipal: string; valorSecundario: string; recomendado?: boolean; bullets: string[] }>;
+  empresa: { nome: string; cnpj: string; cidade: string; telefone: string; site: string };
+}
+
+// Proposta SÓ-SERVIÇO (sem solar): elegante, com logo + imagem do serviço +
+// descrição livre + preço + formas de pagamento + confiança. Sem gráfico/payback.
+export function renderServiceOnlyHTML(data: ServiceOnlyData): string {
+  if (!data.nomeCliente || !data.servicos?.length) {
+    throw new Error('renderServiceOnlyHTML: precisa de nomeCliente e ao menos 1 serviço');
+  }
+  const total = data.servicos.reduce((a, s) => a + (Number(s.valorRs) || 0), 0);
+  const tituloPrincipal = data.servicos.length === 1 ? data.servicos[0].titulo : 'Serviços de engenharia elétrica';
+
+  const blocosServico = data.servicos.map(s => `
+    <section style="padding:48px 24px;max-width:900px;margin:0 auto">
+      <h2 style="font-family:'Space Grotesk',sans-serif;font-size:26px;color:#0F172A;margin-bottom:16px">${escapeHtml(s.titulo)}</h2>
+      ${s.imagemUrl ? `<img src="${escapeHtml(s.imagemUrl)}" alt="${escapeHtml(s.titulo)}" style="width:100%;border-radius:16px;margin-bottom:20px;display:block">` : ''}
+      <div style="font-size:16px;color:#334155;line-height:1.7;white-space:pre-line">${escapeHtml(s.descricao)}</div>
+      <div style="margin-top:20px;font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;color:#0E7CB8">R$ ${fmtRs(s.valorRs, 0)}</div>
+    </section>`).join('');
+
+  const formasPagamento = data.formasPagamento.map(p => `
+    <div style="border:1px solid #E2E8F0;border-radius:16px;padding:24px;background:#fff${p.recomendado ? ';border:2px solid #FFC72C' : ''}">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#0E7CB8;margin-bottom:8px">${escapeHtml(p.tipo)}</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;margin-bottom:8px">${escapeHtml(p.titulo)}</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;color:#0E7CB8">${escapeHtml(p.valorPrincipal)}</div>
+      <div style="font-size:13px;color:#64748B;margin-bottom:12px">${escapeHtml(p.valorSecundario)}</div>
+      <ul style="list-style:none;padding:0;margin:0;font-size:13px;color:#64748B">${p.bullets.map(b => `<li style="padding:4px 0">✓ ${escapeHtml(b)}</li>`).join('')}</ul>
+    </div>`).join('');
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proposta EcoSunPower — ${escapeHtml(data.nomeCliente)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',system-ui,sans-serif;color:#0F172A;background:#F8FAFC;line-height:1.6}
+@media print{.no-print{display:none}}
+</style>
+</head>
+<body>
+<header style="background:linear-gradient(135deg,#1FB8E8 0%,#0E7CB8 60%,#0F172A 100%);color:#fff;padding:48px 24px">
+  <div style="max-width:900px;margin:0 auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:40px">
+      <img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" style="height:40px;width:auto">
+      <div style="font-size:12px;opacity:0.85;text-align:right">Proposta #${escapeHtml(data.numeroProposta)}<br>${escapeHtml(data.dataProposta)} · Válida ${data.validadeDias} dias</div>
+    </div>
+    <div style="display:inline-block;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);padding:6px 16px;border-radius:100px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:16px">⚡ Proposta de Serviço</div>
+    <h1 style="font-family:'Space Grotesk',sans-serif;font-size:40px;line-height:1.1;font-weight:700">${escapeHtml(tituloPrincipal)}<br><span style="color:#FFC72C">para ${escapeHtml(data.nomeCliente)}</span></h1>
+  </div>
+</header>
+
+${blocosServico}
+
+<section style="background:#fff;padding:48px 24px">
+  <div style="max-width:900px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;gap:24px;padding:28px;border-radius:16px;background:linear-gradient(135deg,#0E7CB8 0%,#073E5C 100%);color:#fff">
+    <div style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600">Total da proposta</div>
+    <div style="font-family:'Space Grotesk',sans-serif;font-size:32px;font-weight:700">R$ ${fmtRs(total, 0)}</div>
+  </div>
+</section>
+
+<section style="padding:48px 24px;max-width:900px;margin:0 auto">
+  <h2 style="font-family:'Space Grotesk',sans-serif;font-size:22px;margin-bottom:24px">Como você prefere pagar?</h2>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">${formasPagamento}</div>
+</section>
+
+<section style="padding:48px 24px;max-width:900px;margin:0 auto">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">
+    <div style="background:#fff;border:1px solid #E2E8F0;border-radius:16px;padding:24px">
+      <div style="font-size:24px;margin-bottom:8px">📋</div>
+      <h3 style="font-size:17px;margin-bottom:8px">ART/TRT + Normas ABNT</h3>
+      <p style="font-size:14px;color:#64748B">Anotação de Responsabilidade Técnica assinada pelo nosso Responsável Técnico CREA/CFT. Serviço dentro das normas, sem improviso.</p>
+    </div>
+    <div style="background:#fff;border:1px solid #E2E8F0;border-radius:16px;padding:24px">
+      <div style="font-size:24px;margin-bottom:8px">🛡️</div>
+      <h3 style="font-size:17px;margin-bottom:8px">Garantia EcoSunPower 12 meses</h3>
+      <p style="font-size:14px;color:#64748B">Cobrimos a mão de obra e a execução do serviço por 12 meses. Acionamento direto pelo WhatsApp.</p>
+    </div>
+    <div style="background:#fff;border:1px solid #E2E8F0;border-radius:16px;padding:24px">
+      <div style="font-size:24px;margin-bottom:8px">🤝</div>
+      <h3 style="font-size:17px;margin-bottom:8px">Responsável Técnico que atende direto</h3>
+      <p style="font-size:14px;color:#64748B">Você fala direto com o Responsável Técnico CREA/CFT da EcoSunPower, do orçamento ao pós-serviço.</p>
+    </div>
+  </div>
+</section>
+
+<section class="no-print" style="background:linear-gradient(135deg,#0F172A 0%,#073E5C 100%);color:#fff;text-align:center;padding:64px 24px">
+  <h2 style="font-family:'Space Grotesk',sans-serif;font-size:32px;margin-bottom:16px">Pronto pra começar?</h2>
+  <a href="https://wa.me/55${data.empresa.telefone.replace(/\D/g, '')}?text=${encodeURIComponent('Aceito a proposta ' + data.numeroProposta)}" style="display:inline-block;background:#FFC72C;color:#0F172A;padding:16px 32px;border-radius:100px;font-weight:700;text-decoration:none">✓ Aceitar proposta</a>
+</section>
+
+<footer style="background:#0F172A;color:rgba(255,255,255,0.7);padding:32px 24px;text-align:center;font-size:13px">
+  <strong style="color:#fff">${escapeHtml(data.empresa.nome)}</strong><br>
+  CNPJ ${escapeHtml(data.empresa.cnpj)} · ${escapeHtml(data.empresa.cidade)} · ${escapeHtml(data.empresa.telefone)}<br>
+  <span style="opacity:0.6;font-size:11px">Proposta #${escapeHtml(data.numeroProposta)} · ${escapeHtml(data.empresa.site)}</span>
+</footer>
+</body>
+</html>`;
 }
