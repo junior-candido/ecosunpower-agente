@@ -6,6 +6,7 @@ import type { ProposalCalculations } from './calculator.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './assets/logo-base64.js';
 import { fmtRs, fmtNum, fmtPct, fmtCurto, escapeHtml } from './format.js';
 import { renderServicosAdicionaisSection, type ServicoItem } from './service-render.js';
+import { getBrandFicha } from './brand-fichas.js';
 
 export interface ProposalData {
   // Identificacao
@@ -28,8 +29,8 @@ export interface ProposalData {
   concessionaria: string;       // Neoenergia DF / Equatorial GO
 
   // Equipamentos
-  modulo: { fabricante: string; modelo: string; potenciaW: number; quantidade: number; garantiaDefeito: number; garantiaEficiencia: number; tecnologia?: string };
-  inversor: { fabricante: string; modelo: string; potenciaW: number; quantidade: number; garantia: number; eficiencia?: number; tipoInversor?: 'string' | 'microinversor' | 'solaredge' };
+  modulo: { fabricante: string; modelo: string; potenciaW: number; quantidade: number; garantiaDefeito: number; garantiaEficiencia: number; tecnologia?: string; fichaOverride?: string };
+  inversor: { fabricante: string; modelo: string; potenciaW: number; quantidade: number; garantia: number; eficiencia?: number; tipoInversor?: 'string' | 'microinversor' | 'solaredge'; fichaOverride?: string };
   // Tipo de estrutura de fixacao - ex: "Telha cerâmica", "Telha metálica",
   // "Telha fibrocimento", "Laje", "Solo", "Carport". Pode incluir marca/material.
   estruturaFixacao?: { tipo: string; material?: string; descricao?: string };
@@ -420,6 +421,10 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
           <div><div class="spec-label">Garantia Defeito</div><div class="spec-value">${data.modulo.garantiaDefeito} anos</div></div>
           <div><div class="spec-label">Garantia Eficiência</div><div class="spec-value">${data.modulo.garantiaEficiencia} anos</div></div>
         </div>
+        ${(() => {
+          const resumo = data.modulo.fichaOverride ?? getBrandFicha(data.modulo.fabricante, 'modulo')?.resumo;
+          return resumo ? `<p style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--muted);line-height:1.55">${escapeHtml(resumo)}</p>` : '';
+        })()}
       </div>
       <div class="equipment-card">
         <div class="equipment-cat">Inversor</div>
@@ -431,6 +436,10 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
           <div><div class="spec-label">Garantia</div><div class="spec-value">${data.inversor.garantia} anos${data.inversor.tipoInversor === 'solaredge' ? ' · extensível até 20 anos' : ''}</div></div>
           <div><div class="spec-label">Monitoramento</div><div class="spec-value">Wi-Fi nativo</div></div>
         </div>
+        ${(() => {
+          const resumo = data.inversor.fichaOverride ?? getBrandFicha(data.inversor.fabricante, 'inversor')?.resumo;
+          return resumo ? `<p style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--muted);line-height:1.55">${escapeHtml(resumo)}</p>` : '';
+        })()}
       </div>
     </div>
 
