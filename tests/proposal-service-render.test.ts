@@ -28,4 +28,16 @@ describe('renderServicosAdicionaisSection', () => {
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).toContain('&lt;script&gt;');
   });
+  it('escapa HTML também no título', () => {
+    const html = renderServicosAdicionaisSection(
+      [{ titulo: '<img src=x onerror=alert(1)>', descricao: 'ok', valorRs: 100 }], 1000);
+    expect(html).not.toContain('<img src=x');
+    expect(html).toContain('&lt;img');
+  });
+  it('não renderiza NaN quando um valor é inválido', () => {
+    const html = renderServicosAdicionaisSection(
+      [{ titulo: 'X', descricao: 'y', valorRs: ('abc' as unknown as number) }], 38500);
+    expect(html).not.toContain('NaN');
+    expect(html).toContain('R$ 38.500'); // total = 38500 + 0
+  });
 });

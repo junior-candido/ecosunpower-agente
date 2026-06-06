@@ -319,7 +319,7 @@ footer strong{color:#fff;font-weight:600}
       <div>
         <div class="hero-stat-label">Investimento</div>
         <div class="hero-stat-value">${fmtCurto(data.valorTotalRs)}</div>
-        <div class="hero-stat-unit">à vista</div>
+        <div class="hero-stat-unit">${(data.servicos && data.servicos.length > 0) ? 'no sistema solar · veja o total abaixo' : 'à vista'}</div>
       </div>
     </div>
   </div>
@@ -570,6 +570,7 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
   </div>
 </section>
 
+${/* Serviços somam ao total exibido na própria seção; payback/ROI seguem solar-only de propósito (serviço não gera economia de energia). */''}
 ${renderServicosAdicionaisSection(data.servicos ?? [], data.valorTotalRs)}
 
 ${socialProofHtml}

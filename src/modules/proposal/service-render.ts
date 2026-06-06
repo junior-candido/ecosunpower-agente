@@ -17,16 +17,18 @@ export interface ServicoItem {
 // (valor do solar + soma dos serviços). Vazio => string vazia (seção some).
 export function renderServicosAdicionaisSection(servicos: ServicoItem[], valorSolarRs: number): string {
   if (!servicos || servicos.length === 0) return '';
-  const somaServicos = servicos.reduce((acc, s) => acc + (Number(s.valorRs) || 0), 0);
-  const totalGeral = valorSolarRs + somaServicos;
+  const validos = servicos.filter((s): s is ServicoItem => !!s && typeof s.titulo === 'string');
+  if (validos.length === 0) return '';
+  const somaServicos = validos.reduce((acc, s) => acc + (Number(s.valorRs) || 0), 0);
+  const totalGeral = (Number(valorSolarRs) || 0) + somaServicos;
 
-  const linhas = servicos.map(s => `
+  const linhas = validos.map(s => `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:24px;padding:24px;border:1px solid var(--border);border-radius:16px;background:#fff;margin-bottom:16px">
       <div style="flex:1">
         <div style="font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;color:var(--dark);margin-bottom:6px">${escapeHtml(s.titulo)}</div>
         <div style="font-size:14px;color:var(--muted);line-height:1.55;white-space:pre-line">${escapeHtml(s.descricao)}</div>
       </div>
-      <div style="font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700;color:var(--primary-600);white-space:nowrap">R$ ${fmtRs(s.valorRs, 0)}</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700;color:var(--primary-600);white-space:nowrap">R$ ${fmtRs(Number(s.valorRs) || 0, 0)}</div>
     </div>`).join('');
 
   return `
