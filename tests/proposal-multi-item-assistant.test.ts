@@ -20,4 +20,8 @@ describe('mapServicosFromClaude', () => {
     expect(mapServicosFromClaude(undefined)).toBeUndefined();
     expect(mapServicosFromClaude([])).toBeUndefined();
   });
+  it('aceita valorRs como string (a Eva pode mandar string)', () => {
+    const out = mapServicosFromClaude([{ titulo: 'Projeto elétrico', descricao: 'SPDA + laudo', valorRs: ('3200' as unknown as number) }]);
+    expect(out).toEqual([{ titulo: 'Projeto elétrico', descricao: 'SPDA + laudo', valorRs: 3200 }]);
+  });
 });

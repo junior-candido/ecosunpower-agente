@@ -771,7 +771,7 @@ export class ProposalAssistant {
         inversor: data.inversor,
         estruturaFixacao: data.estruturaFixacao,
       },
-      comercial: { valorTotalRs: data.valorTotalRs },
+      comercial: { valorTotalRs: data.valorTotalRs, servicos: data.servicos ?? null },
     };
 
     const supabasePromise = this.supabaseService
@@ -918,6 +918,9 @@ export class ProposalAssistant {
       }
       if (linkLines.length === 0) linkLines.push('⚠️ Nenhum link disponivel — checar logs.');
 
+      const somaServicos = (result.proposalData.servicos ?? []).reduce((a, s) => a + s.valorRs, 0);
+      const fmtBr = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+
       return [
         '✅ Proposta gerada!',
         '',
@@ -929,6 +932,11 @@ export class ProposalAssistant {
         '',
         `📊 Payback: ${result.calculations.paybackAnos}a ${result.calculations.paybackMeses}m`,
         `📈 TIR: ${result.calculations.tirPercentual.toFixed(1)}%`,
+        ...(somaServicos > 0 ? [
+          '',
+          `🔧 Serviços: + R$ ${fmtBr(somaServicos)}`,
+          `💵 Total geral (solar + serviços): R$ ${fmtBr(Number(data.valorTotalRs) + somaServicos)}`,
+        ] : []),
         '',
         '_Manda "enviar" pra mandar pro cliente, ou "ajusta X" pra refazer._',
       ].join('\n');
@@ -1018,6 +1026,7 @@ export class ProposalAssistant {
     const ano = new Date().getFullYear();
     const sufixo = Date.now().toString(36).toUpperCase().slice(-5);
     const numero = `${ano}-${sufixo}`;
+    const servicos = mapServicosFromClaude(data.servicos);
     return {
       numeroProposta: numero,
       dataProposta: new Date().toLocaleDateString('pt-BR'),
@@ -1036,8 +1045,9 @@ export class ProposalAssistant {
       inversor: data.inversor,
       estruturaFixacao: data.estruturaFixacao,
       valorTotalRs: Number(data.valorTotalRs),
-      formasPagamento: data.formasPagamento ?? this.defaultPaymentOptions(Number(data.valorTotalRs)),
-      servicos: mapServicosFromClaude(data.servicos),
+      formasPagamento: data.formasPagamento ?? this.defaultPaymentOptions(
+        Number(data.valorTotalRs) + (servicos ?? []).reduce((a, s) => a + s.valorRs, 0)),
+      servicos,
       empresa: this.companyDefaults,
     };
   }
