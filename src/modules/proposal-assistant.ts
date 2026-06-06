@@ -21,6 +21,7 @@ import {
   VIDA_UTIL_ANOS,
 } from './solar-params.js';
 import { renderProposalHTML, type ProposalData } from './proposal/template.js';
+import type { ServicoItem } from './proposal/service-render.js';
 import { htmlToPdf, gerarQrCodeDataUrl } from './proposal/pdf-generator.js';
 import type { DriveUploader } from './proposal/drive-uploader.js';
 import type { SupabaseService } from './supabase.js';
@@ -34,6 +35,21 @@ import { CasesFetcher, type Case } from './cases-fetcher.js';
 import { renderSocialProofPage } from './proposal/social-proof-page.js';
 
 const IORedis = (Redis as any).default ?? Redis;
+
+// Normaliza a lista de serviços que a Eva devolve no JSON pro tipo ServicoItem.
+// Descarta itens incompletos (sem título ou sem valor > 0). Vazio => undefined,
+// pra que dataToProposalData NÃO setar o campo e a proposta siga solar-only.
+export function mapServicosFromClaude(raw: unknown): ServicoItem[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const itens = raw
+    .map((s: any) => ({
+      titulo: String(s?.titulo ?? '').trim(),
+      descricao: String(s?.descricao ?? '').trim(),
+      valorRs: Number(s?.valorRs),
+    }))
+    .filter(s => s.titulo.length > 0 && isFinite(s.valorRs) && s.valorRs > 0);
+  return itens.length > 0 ? itens : undefined;
+}
 const PROPOSAL_MODE_TTL_SECONDS = 60 * 60;
 
 interface ProposalMessage {
@@ -116,6 +132,7 @@ ${marcasKnowledge}
 7. Reajuste anual energia: 10%.
 8. Vida útil: 25 anos.
 9. Validade da proposta: 5 dias.
+10. **SERVIÇOS (multi-item):** a EcoSunPower vende energia, não só solar. Se o Junior incluir serviços avulsos (carregador EV, adequação de padrão, criação de circuito, projeto elétrico, etc.) junto com o solar, coloque-os em \`servicos[]\` com \`titulo\`, \`descricao\` (REPLIQUE FIEL o que o Junior escreveu — não reescreva por conta própria) e \`valorRs\`. Eles SOMAM ao valor do solar. O \`valorTotalRs\` continua sendo só o solar; o template soma os serviços e mostra o total geral.
 
 # FORMATO DE RESPOSTA
 
@@ -150,6 +167,9 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
     "valorTotalRs": 38500,
     "formasPagamento": [
       { "tipo": "À Vista", "titulo": "PIX ou TED", "valorPrincipal": "R$ 38.500", "valorSecundario": "pagamento único", "recomendado": true, "bullets": ["Sem juros", "Início imediato", "Maior economia"] }
+    ],
+    "servicos": [
+      { "titulo": "Carregador EV", "descricao": "Wallbox 7,4 kW instalado com circuito dedicado", "valorRs": 4500 }
     ]
   }
 }
@@ -1017,6 +1037,7 @@ export class ProposalAssistant {
       estruturaFixacao: data.estruturaFixacao,
       valorTotalRs: Number(data.valorTotalRs),
       formasPagamento: data.formasPagamento ?? this.defaultPaymentOptions(Number(data.valorTotalRs)),
+      servicos: mapServicosFromClaude(data.servicos),
       empresa: this.companyDefaults,
     };
   }
