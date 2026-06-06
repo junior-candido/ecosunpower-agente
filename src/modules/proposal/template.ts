@@ -5,6 +5,7 @@
 import type { ProposalCalculations } from './calculator.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './assets/logo-base64.js';
 import { fmtRs, fmtNum, fmtPct, fmtCurto, escapeHtml } from './format.js';
+import { renderServicosAdicionaisSection, type ServicoItem } from './service-render.js';
 
 export interface ProposalData {
   // Identificacao
@@ -44,6 +45,10 @@ export interface ProposalData {
     video?: { thumbnailUrl: string; legenda: string; webVideoUrl: string };
     qrCodeDataUrl?: string;
   };
+
+  // Serviços adicionais (item livre que SOMA ao valor solar). Opcional —
+  // ausência mantém a proposta solar-only idêntica à de antes.
+  servicos?: ServicoItem[];
 
   // Empresa (defaults)
   empresa: {
@@ -564,6 +569,8 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
     </div>
   </div>
 </section>
+
+${renderServicosAdicionaisSection(data.servicos ?? [], data.valorTotalRs)}
 
 ${socialProofHtml}
 
