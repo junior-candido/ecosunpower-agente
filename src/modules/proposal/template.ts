@@ -4,6 +4,7 @@
 
 import type { ProposalCalculations } from './calculator.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './assets/logo-base64.js';
+import { fmtRs, fmtNum, fmtPct, fmtCurto, escapeHtml } from './format.js';
 
 export interface ProposalData {
   // Identificacao
@@ -52,17 +53,6 @@ export interface ProposalData {
     telefone: string;   // "(61) 99697-8781"
     site: string;       // "ecosunpower.eng.br"
   };
-}
-
-const fmtRs = (n: number, frac = 2) => n.toLocaleString('pt-BR', { minimumFractionDigits: frac, maximumFractionDigits: frac });
-const fmtNum = (n: number, frac = 0) => n.toLocaleString('pt-BR', { minimumFractionDigits: frac, maximumFractionDigits: frac });
-const fmtPct = (n: number, frac = 1) => n.toLocaleString('pt-BR', { minimumFractionDigits: frac, maximumFractionDigits: frac }) + '%';
-
-// Formata valor grande pra notacao curta (R$ 38,5k / R$ 1,2M).
-function fmtCurto(n: number): string {
-  if (n >= 1_000_000) return 'R$ ' + (n / 1_000_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'M';
-  if (n >= 1_000) return 'R$ ' + (n / 1_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + 'k';
-  return 'R$ ' + fmtRs(n, 0);
 }
 
 function fmtPaybackTexto(anos: number, meses: number): string {
@@ -612,12 +602,6 @@ ${socialProofHtml}
 
 </body>
 </html>`;
-}
-
-function escapeHtml(s: string): string {
-  return String(s).replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  })[c]!);
 }
 
 // Concatena "Fabricante Modelo" sem duplicar quando modelo ja comeca com palavras
