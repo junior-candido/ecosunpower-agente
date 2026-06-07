@@ -77,6 +77,9 @@ import { leadRowToChannelInput } from './modules/dashboard/channel-mapper.js';
 import { ProactiveAlertService } from './modules/monitoring/proactive-alerts/service.js';
 import { runDispatchCycle, type DispatchCtx } from './modules/monitoring/proactive-alerts/dispatcher.js';
 import { runAnniversaryEnqueue } from './modules/monitoring/proactive-alerts/anniversary.js';
+import type { DonoCadState } from './modules/monitoring/dono-cad/types.js';
+import { camposVaziosUsina, proximoCampoNovo, campoObrigatorioNovo, perguntaNovo, perguntaUsina, ehPular } from './modules/monitoring/dono-cad/machine.js';
+import { CAMPOS_USINA } from './modules/monitoring/dono-cad/types.js';
 import { sendAdminWithButtons } from './modules/eva-admin-buttons.js';
 import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/cron.js';
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
@@ -517,6 +520,18 @@ async function main() {
   }
   async function clearClosingState(phone: string): Promise<void> {
     await closingRedis.del(`closing:${phone}`);
+  }
+
+  // Estado do fluxo de cadastro de dono de usina (key: dono-cad:<phone>, TTL 10min)
+  async function getDonoCadState(phone: string): Promise<DonoCadState | null> {
+    const raw = await closingRedis.get(`dono-cad:${phone}`);
+    return raw ? (JSON.parse(raw) as DonoCadState) : null;
+  }
+  async function setDonoCadState(phone: string, state: DonoCadState): Promise<void> {
+    await closingRedis.set(`dono-cad:${phone}`, JSON.stringify(state), 'EX', 600);
+  }
+  async function clearDonoCadState(phone: string): Promise<void> {
+    await closingRedis.del(`dono-cad:${phone}`);
   }
 
   // Modulo 5 — Monitoramento de sistemas FV via API dos inversores.
@@ -1047,6 +1062,143 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       await sendText(from, `⚠️ Erro buscando lead: ${(err as Error).message.slice(0, 200)}`);
       return true;
     }
+  }
+
+  // ===== Fluxo dono-cad (cadastro de dono de usina órfã via WhatsApp) =====
+
+  async function donoEnviarEscolha(from: string): Promise<void> {
+    if (metaWaba) {
+      await metaWaba.sendInteractiveButtons(from, 'Esse cliente já existe ou é novo?', [
+        { id: 'evabt:dono-existe', title: 'Já existe' },
+        { id: 'evabt:dono-novo', title: 'Criar novo' },
+        { id: 'evabt:dono-cancelar', title: 'Cancelar' },
+      ]);
+    } else {
+      await sendText(from, 'Esse cliente já existe ou é novo? Responda: existe / novo / cancelar');
+    }
+  }
+
+  async function donoIniciarEtapaUsina(from: string, sistemaId: string): Promise<void> {
+    const sistema = await supabase.getSistemaById(sistemaId);
+    const pendentes = sistema ? camposVaziosUsina(sistema) : [...CAMPOS_USINA];
+    if (pendentes.length === 0) { await donoFinalizar(from, sistemaId); return; }
+    await setDonoCadState(from, { etapa: 'usina', sistemaId, pendentes, idx: 0 });
+    await donoPerguntarUsina(from, pendentes[0]);
+  }
+
+  async function donoPerguntarUsina(from: string, campo: typeof CAMPOS_USINA[number]): Promise<void> {
+    if (metaWaba) {
+      await metaWaba.sendInteractiveButtons(from, perguntaUsina(campo), [
+        { id: 'evabt:dono-pular', title: 'Pular' },
+        { id: 'evabt:dono-pular-tudo', title: 'Pular tudo' },
+        { id: 'evabt:dono-cancelar', title: 'Cancelar' },
+      ]);
+    } else {
+      await sendText(from, `${perguntaUsina(campo)} (ou: pular / pular tudo / cancelar)`);
+    }
+  }
+
+  async function donoFinalizar(from: string, sistemaId: string): Promise<void> {
+    await clearDonoCadState(from);
+    const sistema = await supabase.getSistemaById(sistemaId);
+    const lead = sistema?.lead_id ? await supabase.getLeadById(sistema.lead_id) : null;
+    await sendText(from, `✅ Tudo cadastrado! A usina ${sistema?.apelido ?? ''} agora é de ${lead?.name ?? 'cliente'}. Próximos alertas já vêm certinhos.`);
+  }
+
+  async function donoAvancarNovo(
+    from: string,
+    st: Extract<DonoCadState, { etapa: 'novo' }>,
+    valor: string | undefined,
+  ): Promise<void> {
+    const dados = { ...st.dados };
+    if (valor !== undefined) {
+      if (st.campo === 'phone') dados.phone = valor.replace(/\D/g, '');
+      else if (st.campo === 'uf') dados.uf = valor.trim().toUpperCase().slice(0, 2);
+      else (dados as Record<string, unknown>)[st.campo] = valor.trim();
+    }
+    const prox = proximoCampoNovo(st.campo);
+    if (prox === 'fim') {
+      if (!dados.name || !dados.phone || dados.phone.length < 10) {
+        await sendText(from, '⚠️ Nome e telefone válidos são obrigatórios. Recomeça pelo botão Cadastrar dono.');
+        await clearDonoCadState(from);
+        return;
+      }
+      const r = await supabase.vincularNovoLeadAoSistema({
+        sistema_id: st.sistemaId,
+        name: dados.name, phone: dados.phone,
+        email: dados.email ?? null, city: dados.city ?? null, uf: dados.uf ?? null, cep: dados.cep ?? null,
+      });
+      if (!r.ok) { await sendText(from, `⚠️ ${r.error ?? 'Falha ao criar cliente'}`); await clearDonoCadState(from); return; }
+      await sendText(from, `✅ Cliente ${dados.name} criado e ligado à usina. Agora os dados da usina.`);
+      await donoIniciarEtapaUsina(from, st.sistemaId);
+      return;
+    }
+    await setDonoCadState(from, { ...st, campo: prox, dados });
+    if (campoObrigatorioNovo(prox)) await sendText(from, perguntaNovo(prox));
+    else if (metaWaba) await metaWaba.sendInteractiveButtons(from, perguntaNovo(prox), [
+      { id: 'evabt:dono-pular', title: 'Pular' }, { id: 'evabt:dono-cancelar', title: 'Cancelar' },
+    ]);
+    else await sendText(from, `${perguntaNovo(prox)} (ou: pular / cancelar)`);
+  }
+
+  async function donoAvancarUsina(
+    from: string,
+    st: Extract<DonoCadState, { etapa: 'usina' }>,
+    valor: string | undefined,
+  ): Promise<void> {
+    const campo = st.pendentes[st.idx];
+    if (valor !== undefined && campo) {
+      const patch: Record<string, unknown> = {};
+      if (campo === 'potencia_kwp') { const n = Number(valor.replace(',', '.')); if (Number.isFinite(n)) patch.potencia_kwp = n; }
+      else if (campo === 'uf') patch.uf = valor.trim().toUpperCase().slice(0, 2);
+      else patch[campo] = valor.trim();
+      if (Object.keys(patch).length > 0) await monitoringService.atualizarSistema(st.sistemaId, patch);
+    }
+    const proxIdx = st.idx + 1;
+    if (proxIdx >= st.pendentes.length) { await donoFinalizar(from, st.sistemaId); return; }
+    await setDonoCadState(from, { ...st, idx: proxIdx });
+    await donoPerguntarUsina(from, st.pendentes[proxIdx]);
+  }
+
+  async function tryHandleDonoCadCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const st = await getDonoCadState(from);
+    if (!st) return false;
+    const t = text.trim();
+    if (/^cancelar$/i.test(t)) { await clearDonoCadState(from); await sendText(from, 'Cadastro cancelado.'); return true; }
+
+    if (st.etapa === 'busca') {
+      const achados = await supabase.searchClientesParaVinculo(t, 3);
+      if (achados.length === 0) {
+        if (metaWaba) await metaWaba.sendInteractiveButtons(from, 'Não achei ninguém com esse nome. Quer criar novo?', [
+          { id: 'evabt:dono-novo', title: 'Criar novo' }, { id: 'evabt:dono-cancelar', title: 'Cancelar' },
+        ]);
+        else await sendText(from, 'Não achei. Responda: novo / cancelar');
+        return true;
+      }
+      const botoes = achados.map((c) => ({ id: `evabt:dono-pick:${c.id}`, title: (c.name ?? 'sem nome').slice(0, 20) }));
+      botoes.push({ id: 'evabt:dono-novo', title: 'Criar novo' });
+      const corpo = 'Achei estes — escolha:\n' + achados.map((c) => `• ${c.name ?? '(sem nome)'} — ${[c.phone, c.city].filter(Boolean).join(' · ')}`).join('\n');
+      if (metaWaba) await metaWaba.sendInteractiveButtons(from, corpo, botoes.slice(0, 3));
+      else await sendText(from, corpo + '\n(responda o nome exato ou: novo)');
+      return true;
+    }
+
+    if (st.etapa === 'novo') {
+      if (ehPular(t) && !campoObrigatorioNovo(st.campo)) { await donoAvancarNovo(from, st, undefined); return true; }
+      await donoAvancarNovo(from, st, t);
+      return true;
+    }
+
+    if (st.etapa === 'usina') {
+      if (ehPular(t)) { await donoAvancarUsina(from, st, undefined); return true; }
+      await donoAvancarUsina(from, st, t);
+      return true;
+    }
+
+    if (/^existe$/i.test(t)) { await setDonoCadState(from, { etapa: 'busca', sistemaId: st.sistemaId }); await sendText(from, 'Qual o nome do cliente?'); return true; }
+    if (/^novo$/i.test(t)) { await setDonoCadState(from, { etapa: 'novo', sistemaId: st.sistemaId, campo: 'name', dados: {} }); await sendText(from, perguntaNovo('name')); return true; }
+    return true;
   }
 
   // Eva Precificadora: prioridade ABSOLUTA quando Junior está em modo precificação,
@@ -2869,6 +3021,52 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
             ['procuracao', 'contrato'];
           return handleFecharStart(leadId, from, docs);
         },
+        onDonoCadStart: async (sistemaId) => {
+          const sistema = await supabase.getSistemaById(sistemaId);
+          if (!sistema) { await sendText(from, '⚠️ Usina não encontrada.'); return; }
+          if (sistema.lead_id) {
+            const lead = await supabase.getLeadById(sistema.lead_id);
+            await sendText(from, `Essa usina já está vinculada a ${lead?.name ?? 'um cliente'}.`);
+            return;
+          }
+          await setDonoCadState(from, { etapa: 'escolha', sistemaId });
+          await donoEnviarEscolha(from);
+        },
+        onDonoExiste: async () => {
+          const st = await getDonoCadState(from);
+          if (!st) return;
+          await setDonoCadState(from, { etapa: 'busca', sistemaId: st.sistemaId });
+          await sendText(from, 'Qual o nome do cliente? (digite parte do nome)');
+        },
+        onDonoNovo: async () => {
+          const st = await getDonoCadState(from);
+          if (!st) return;
+          await setDonoCadState(from, { etapa: 'novo', sistemaId: st.sistemaId, campo: 'name', dados: {} });
+          await sendText(from, perguntaNovo('name'));
+        },
+        onDonoPick: async (leadId) => {
+          const st = await getDonoCadState(from);
+          if (!st) return;
+          const r = await supabase.vincularClienteExistente({ sistema_id: st.sistemaId, lead_id: leadId });
+          if (!r.ok) { await sendText(from, `⚠️ ${r.error ?? 'Falha ao vincular'}`); return; }
+          const lead = await supabase.getLeadById(leadId);
+          await sendText(from, `✅ Usina vinculada a ${lead?.name ?? 'cliente'}. Agora vou completar os dados da usina.`);
+          await donoIniciarEtapaUsina(from, st.sistemaId);
+        },
+        onDonoPular: async () => {
+          const st = await getDonoCadState(from);
+          if (!st) return;
+          if (st.etapa === 'novo') { await donoAvancarNovo(from, st, undefined); return; }
+          if (st.etapa === 'usina') { await donoAvancarUsina(from, st, undefined); return; }
+        },
+        onDonoPularTudo: async () => {
+          const st = await getDonoCadState(from);
+          if (st?.etapa === 'usina') { await donoFinalizar(from, st.sistemaId); }
+        },
+        onDonoCancelar: async () => {
+          await clearDonoCadState(from);
+          await sendText(from, 'Cadastro cancelado. O alerta volta na próxima rodada.');
+        },
       })) return;
     }
 
@@ -2914,6 +3112,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // Eva Fechamento — Junior gera contrato + procuração via /fechar
     if (await tryHandleClosingCommand(from, text)) return;
+
+    // Eva dono-cad — Junior cadastra dono de usina órfã (só age se em modo)
+    if (await tryHandleDonoCadCommand(from, text)) return;
 
     // Eva Agendadora — prioridade depois do pricing
     if (await tryHandleSchedulingCommand(from, text)) return;
