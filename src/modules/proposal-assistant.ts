@@ -1008,11 +1008,11 @@ export class ProposalAssistant {
     const numeroProposta = `${ano}-${Date.now().toString(36).toUpperCase().slice(-5)}`;
     const slug = randomBytes(12).toString('base64url');
 
-    // Imagem do primeiro serviço: usa a do Junior se ele mandou (data.servicoImagemUrl);
-    // senão gera por IA (Higgsfield). Best-effort — falha NÃO bloqueia a proposta.
-    if (servicos[0] && !servicos[0].imagemUrl) {
-      const override = typeof data.servicoImagemUrl === 'string' ? data.servicoImagemUrl : undefined;
-      servicos[0].imagemUrl = override ?? await this.gerarImagemServico(slug, servicos[0]);
+    // Imagem do serviço: SÓ a foto REAL que o Junior anexar (data.servicoImagemUrl).
+    // Geração por IA desligada — ficava "cara de IA", desproporcional e não-brasileira
+    // (feedback Junior 06/06). Sem foto real => proposta sai limpa, sem imagem.
+    if (servicos[0] && !servicos[0].imagemUrl && typeof data.servicoImagemUrl === 'string') {
+      servicos[0].imagemUrl = data.servicoImagemUrl;
     }
 
     const serviceData = buildServiceOnlyData({
