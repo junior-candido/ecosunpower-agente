@@ -52,8 +52,9 @@ describe('servicePaymentOptions (3 formas, SEM financiamento bancário)', () => 
   });
   it('cartão mostra o 12x calculado pela taxa da maquininha', () => {
     const cartao = opts[2];
-    // 12x de 1231,38/12 = 102,61
+    // 12x de R$ 102,61; total exibido = 102,61 × 12 = 1.231,32 (bate na multiplicação)
     expect(cartao.valorPrincipal).toContain('12x');
     expect(JSON.stringify(cartao)).toContain('102,61');
+    expect(JSON.stringify(cartao)).toContain('1.231,32');
   });
 });

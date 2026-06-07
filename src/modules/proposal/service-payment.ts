@@ -38,8 +38,10 @@ export function servicePaymentOptions(totalRs: number): Array<{
 }> {
   const total = Number(totalRs) || 0;
   const metade = total / 2;
-  const parcela12 = valorParcelaCartao(total, 12);
-  const total12 = totalCartaoComTaxa(total, 12);
+  // Arredonda a parcela exibida ANTES de multiplicar, pra o total bater quando o
+  // cliente multiplicar (parcela × 12). A maquininha acerta os centavos finais.
+  const parcela12 = Math.round(valorParcelaCartao(total, 12) * 100) / 100;
+  const total12 = parcela12 * 12;
 
   // Todas as parcelas, pro cliente ver com transparência.
   const tabelaParcelas = Object.keys(JUROS_CARTAO_SERVICO)
