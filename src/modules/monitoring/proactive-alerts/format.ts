@@ -57,22 +57,32 @@ function botoesFor(tipo: MonitoringAlertRow['tipo'], sId: string): AlertButton[]
   }
 }
 
+function botoesOrfa(sId: string): AlertButton[] {
+  return [
+    { id: `evabt:dono-cad:${sId}`, title: '📇 Cadastrar dono' },
+    { id: `evabt:alert-ver:${sId}`, title: '🔍 Ver no painel' },
+  ];
+}
+
 export function formatAlertMessage(
   alerta: MonitoringAlertRow,
   sistema: SistemaResumo,
   lead: LeadResumo | null,
 ): FormattedAlert {
+  const orfa = lead === null;
   const nome = nomeCliente(lead, sistema);
   const kwp = sistema.potencia_kwp != null ? `${sistema.potencia_kwp} kWp` : '— kWp';
   const marca = sistema.marca_inversor ?? 'inversor';
   const linha1 = `${header(alerta.tipo)}`;
-  const linha2 = alerta.tipo === 'erro_integracao'
-    ? `${nome} — ${marca}`
-    : `${nome} — ${kwp} (${marca})`;
+  const linha2 = orfa
+    ? `⚠️ Usina SEM dono vinculado — ${nome} — ${kwp} (${marca})`
+    : alerta.tipo === 'erro_integracao'
+      ? `${nome} — ${marca}`
+      : `${nome} — ${kwp} (${marca})`;
   const texto = `${linha1}\n${linha2}\n${alerta.texto}`;
   return {
     texto,
-    botoes: botoesFor(alerta.tipo, sistema.id),
+    botoes: orfa ? botoesOrfa(sistema.id) : botoesFor(alerta.tipo, sistema.id),
     footer: `sistema ${sistema.id.slice(0, 8)}`,
   };
 }
