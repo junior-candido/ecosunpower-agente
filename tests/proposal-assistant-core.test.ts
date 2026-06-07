@@ -98,6 +98,10 @@ describe('ProposalAssistant.generateProposalCore', () => {
     expect(saved.htmlContent).toContain('Adequação de padrão');
     expect(saved.htmlContent).toContain('Proposta de Serviço');
     expect(saved.htmlContent).not.toContain('Payback');
+    // pagamento de serviço: PIX + cartão 12x, e NUNCA financiamento bancário (solar-only)
+    expect(saved.htmlContent).toContain('PIX');
+    expect(saved.htmlContent).toContain('12x');
+    expect(saved.htmlContent).not.toContain('Financiamento');
   });
 
   it('comparação 2 sistemas: mostra o quadro lado a lado e esconde gráfico/financeiro', async () => {

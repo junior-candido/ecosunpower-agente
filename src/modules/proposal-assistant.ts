@@ -23,6 +23,7 @@ import {
 import { renderProposalHTML, type ProposalData } from './proposal/template.js';
 import { somaServicosExtras, renderServiceOnlyHTML, type ServicoItem, type ServiceOnlyData } from './proposal/service-render.js';
 import { renderComparacaoSolar, type ComparacaoOpcao } from './proposal/comparison-render.js';
+import { servicePaymentOptions } from './proposal/service-payment.js';
 import { htmlToPdf, gerarQrCodeDataUrl } from './proposal/pdf-generator.js';
 import type { DriveUploader } from './proposal/drive-uploader.js';
 import type { SupabaseService } from './supabase.js';
@@ -794,7 +795,7 @@ export class ProposalAssistant {
           data: last.data,
           servicos,
           empresa: this.companyDefaults,
-          criarPagamentoPadrao: (t) => this.defaultPaymentOptions(t),
+          criarPagamentoPadrao: (t) => servicePaymentOptions(t),
         });
         pdfBuffer = await htmlToPdf(renderServiceOnlyHTML(serviceData), { waitForChartMs: 0 });
       } else {
@@ -1020,7 +1021,9 @@ export class ProposalAssistant {
       data,
       servicos,
       empresa: this.companyDefaults,
-      criarPagamentoPadrao: (total) => this.defaultPaymentOptions(total),
+      // Serviço usa as formas PRÓPRIAS (PIX à vista, 50/50, cartão 12x maquininha) —
+      // NUNCA o pagamento solar (financiamento bancário é só no solar).
+      criarPagamentoPadrao: (total) => servicePaymentOptions(total),
     });
 
     const html = renderServiceOnlyHTML(serviceData);
