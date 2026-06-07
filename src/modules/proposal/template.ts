@@ -7,6 +7,7 @@ import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './assets/logo-base64.js';
 import { fmtRs, fmtNum, fmtPct, fmtCurto, escapeHtml } from './format.js';
 import { renderServicosAdicionaisSection, type ServicoItem } from './service-render.js';
 import { getBrandFicha } from './brand-fichas.js';
+import { logoMeioPagamento } from './payment-logos.js';
 
 export interface ProposalData {
   // Identificacao
@@ -37,7 +38,7 @@ export interface ProposalData {
 
   // Comercial
   valorTotalRs: number;
-  formasPagamento: Array<{ tipo: string; titulo: string; descricao?: string; valorPrincipal: string; valorSecundario: string; recomendado?: boolean; bullets: string[] }>;
+  formasPagamento: Array<{ tipo: string; titulo: string; descricao?: string; valorPrincipal: string; valorSecundario: string; recomendado?: boolean; bullets: string[]; meioPagamento?: 'pix' | 'cartao' | 'financiamento' }>;
 
   // Tipo da proposta (basica/personalizada) e estudo personalizado opcional
   tipo?: 'basica' | 'personalizada';
@@ -580,6 +581,7 @@ ${data.ocultarAnalisePesada ? '' : `<section class="financial-section">
           <div class="payment-amount">${escapeHtml(p.valorPrincipal)}</div>
           <div class="payment-amount-sub">${escapeHtml(p.valorSecundario)}</div>
           <ul class="payment-features">${p.bullets.map(b => `<li>${escapeHtml(b)}</li>`).join('')}</ul>
+          ${logoMeioPagamento(p.meioPagamento)}
         </div>
       `).join('')}
     </div>

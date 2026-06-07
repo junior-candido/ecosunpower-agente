@@ -5,6 +5,7 @@
 
 import { fmtRs, escapeHtml } from './format.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './assets/logo-base64.js';
+import { logoMeioPagamento } from './payment-logos.js';
 
 export interface ServicoItem {
   titulo: string;
@@ -79,7 +80,7 @@ export interface ServiceOnlyData {
   validadeDias: number;
   nomeCliente: string;
   servicos: ServicoItem[];
-  formasPagamento: Array<{ tipo: string; titulo: string; valorPrincipal: string; valorSecundario: string; recomendado?: boolean; bullets: string[] }>;
+  formasPagamento: Array<{ tipo: string; titulo: string; valorPrincipal: string; valorSecundario: string; recomendado?: boolean; bullets: string[]; meioPagamento?: 'pix' | 'cartao' | 'financiamento' }>;
   empresa: { nome: string; cnpj: string; cidade: string; telefone: string; site: string };
 }
 
@@ -111,6 +112,7 @@ export function renderServiceOnlyHTML(data: ServiceOnlyData): string {
       <div style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;color:#0E7CB8">${escapeHtml(p.valorPrincipal)}</div>
       <div style="font-size:13px;color:#64748B;margin-bottom:12px">${escapeHtml(p.valorSecundario)}</div>
       <ul style="list-style:none;padding:0;margin:0;font-size:13px;color:#64748B">${p.bullets.map(b => `<li style="padding:4px 0">✓ ${escapeHtml(b)}</li>`).join('')}</ul>
+      ${logoMeioPagamento(p.meioPagamento)}
     </div>`).join('');
 
   return `<!DOCTYPE html>

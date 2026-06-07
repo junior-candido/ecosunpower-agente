@@ -74,6 +74,10 @@ describe('ProposalAssistant.generateProposalCore', () => {
     expect(r.proposalData.nomeCliente).toBe('Marcos Teste');
     expect(r.calculations.rsPorWp).toBeGreaterThan(0);
     expect(supabase.savePropostaPublica).toHaveBeenCalledOnce();
+    // logos dos meios de pagamento também no solar ("replicar para tudo")
+    const savedSolar = supabase.savePropostaPublica.mock.calls[0][0];
+    expect(savedSolar.htmlContent).toContain('VISA'); // bandeira no cartão
+    expect(savedSolar.htmlContent).toContain('Pix');   // selo PIX no à vista
   });
 
   it('só-serviço (sem solar): gera layout de serviço, calculations=null, salva tipo basica', async () => {
@@ -102,6 +106,7 @@ describe('ProposalAssistant.generateProposalCore', () => {
     expect(saved.htmlContent).toContain('PIX');
     expect(saved.htmlContent).toContain('12x');
     expect(saved.htmlContent).not.toContain('Financiamento');
+    expect(saved.htmlContent).toContain('VISA'); // bandeiras embaixo do cartão
   });
 
   it('comparação 2 sistemas: mostra o quadro lado a lado e esconde gráfico/financeiro', async () => {

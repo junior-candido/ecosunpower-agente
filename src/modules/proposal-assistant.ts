@@ -1369,6 +1369,7 @@ export class ProposalAssistant {
         valorSecundario: 'pagamento único',
         recomendado: true,
         bullets: ['Sem juros, sem entrada', 'Início imediato do projeto', 'Maior economia no longo prazo'],
+        meioPagamento: 'pix',
       },
       {
         tipo: 'Cartão Belenus',
@@ -1381,6 +1382,7 @@ export class ProposalAssistant {
           'Aprovação imediata, sem análise formal',
           'Comece sem espera',
         ],
+        meioPagamento: 'cartao',
       },
       {
         tipo: 'Financiamento Solar',
@@ -1393,6 +1395,7 @@ export class ProposalAssistant {
           'Sua geração já paga a parcela',
           'Aprovação 24-48h conforme CPF',
         ],
+        meioPagamento: 'financiamento',
       },
     ];
   }
