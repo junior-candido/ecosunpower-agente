@@ -73,6 +73,30 @@ describe('ProposalAssistant.generateProposalCore', () => {
     expect(supabase.savePropostaPublica).toHaveBeenCalledOnce();
   });
 
+  it('só-serviço (sem solar): gera layout de serviço, calculations=null, salva tipo basica', async () => {
+    const inputSoServico = {
+      data: {
+        nomeCliente: 'Edmilson Teste',
+        telefoneCliente: '5561988887777',
+        servicos: [{ titulo: 'Adequação de padrão', descricao: 'Troca pra trifásico', valorRs: 2800 }],
+      },
+      modoEnvio: 'eva_envia' as const,
+      tipo: 'basica' as const,
+    };
+    const r = await pa.generateProposalCore(inputSoServico);
+    expect(r.slug).toMatch(/^[A-Za-z0-9_-]{16,32}$/);
+    expect(r.publicUrl).toBe(`https://propostas.test/p/${r.slug}`);
+    expect(r.calculations).toBeNull(); // sem solar = sem payback/TIR
+    expect(r.proposalData.nomeCliente).toBe('Edmilson Teste');
+
+    // O HTML salvo é o layout de SERVIÇO, não o solar (sem "Payback").
+    const saved = supabase.savePropostaPublica.mock.calls[0][0];
+    expect(saved.tipo).toBe('basica');
+    expect(saved.htmlContent).toContain('Adequação de padrão');
+    expect(saved.htmlContent).toContain('Proposta de Serviço');
+    expect(saved.htmlContent).not.toContain('Payback');
+  });
+
   it('personalizada sem attachments (lista vazia) cai no fluxo básico', async () => {
     const r = await pa.generateProposalCore({ ...inputBasico, tipo: 'personalizada', attachments: [] });
     expect(r.slug).toBeTruthy();

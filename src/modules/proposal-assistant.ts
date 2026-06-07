@@ -21,7 +21,7 @@ import {
   VIDA_UTIL_ANOS,
 } from './solar-params.js';
 import { renderProposalHTML, type ProposalData } from './proposal/template.js';
-import { somaServicosExtras, type ServicoItem } from './proposal/service-render.js';
+import { somaServicosExtras, renderServiceOnlyHTML, type ServicoItem, type ServiceOnlyData } from './proposal/service-render.js';
 import { htmlToPdf, gerarQrCodeDataUrl } from './proposal/pdf-generator.js';
 import type { DriveUploader } from './proposal/drive-uploader.js';
 import type { SupabaseService } from './supabase.js';
@@ -72,6 +72,39 @@ export function resumoServicosParaJunior(servicos: ServicoItem[] | undefined, va
     linhas.push(`✓ Já incluso (sem custo extra): ${s.titulo} — R$ ${fmtBr(Number(s.valorRs) || 0)}`);
   }
   return linhas.length > 0 ? ['', ...linhas] : [];
+}
+
+// Decide se a proposta é SÓ-SERVIÇO (sem solar): não tem potência mas tem ao
+// menos um serviço válido. Resolve o caso Edmilson (proposta de adequação de
+// padrão sem kit solar). Proposta com solar SEMPRE vai pelo fluxo solar normal.
+export function isPropostaSoServico(data: any): boolean {
+  const semSolar = !(Number(data?.potenciaKwp) > 0);
+  const servicos = mapServicosFromClaude(data?.servicos);
+  return semSolar && !!servicos && servicos.length > 0;
+}
+
+// Monta o ServiceOnlyData (entrada do layout só-serviço) a partir dos dados crus.
+// No só-serviço NÃO há solar, então o total = soma de TODOS os serviços. Respeita
+// formasPagamento/validadeDias do Junior; senão usa o pagamento padrão sobre o total.
+export function buildServiceOnlyData(params: {
+  numeroProposta: string;
+  dataProposta: string;
+  data: any;
+  servicos: ServicoItem[];
+  empresa: ServiceOnlyData['empresa'];
+  criarPagamentoPadrao: (totalRs: number) => ServiceOnlyData['formasPagamento'];
+}): ServiceOnlyData {
+  const { numeroProposta, dataProposta, data, servicos, empresa, criarPagamentoPadrao } = params;
+  const totalServicos = servicos.reduce((acc, s) => acc + (Number(s.valorRs) || 0), 0);
+  return {
+    numeroProposta,
+    dataProposta,
+    validadeDias: Number(data.validadeDias) > 0 ? Number(data.validadeDias) : 5,
+    nomeCliente: data.nomeCliente,
+    servicos,
+    formasPagamento: data.formasPagamento ?? criarPagamentoPadrao(totalServicos),
+    empresa,
+  };
 }
 
 const PROPOSAL_MODE_TTL_SECONDS = 60 * 60;
@@ -129,7 +162,8 @@ export interface GenerateProposalCoreResult {
   pdfBuffer: Buffer;
   driveResult: { pdfWebViewLink: string; htmlWebViewLink: string } | null;
   proposalData: ProposalData;
-  calculations: ReturnType<typeof calcular>;
+  // null em proposta SÓ-SERVIÇO (sem solar não há payback/TIR pra calcular).
+  calculations: ReturnType<typeof calcular> | null;
 }
 
 function buildSystemPrompt(propostasKnowledge: string, marcasKnowledge: string): string {
@@ -164,6 +198,7 @@ ${marcasKnowledge}
         • \`false\` (padrão) → serviço "A MAIS": SOMA ao valor do solar. Use quando o Junior diz "a mais", "à parte", "fora do orçamento", "extra", "adiciona X por R$Y", "além do solar".
         • \`true\` → serviço "JÁ INCLUSO": já está DENTRO do valor que o Junior passou, então NÃO soma de novo (na proposta aparece com selo "já incluso"). Use quando o Junior diz "já incluso", "já está no valor", "dentro do total", "sem custo adicional", "já contemplado", "incluso no preço".
     REGRA DE OURO da conta: \`valorTotalRs\` é SEMPRE só o valor do solar. Se um serviço é \`jaIncluso: true\`, o \`valorTotalRs\` que o Junior passou JÁ contém esse serviço — não desconte nem some nada, o sistema faz a conta certa. Você só entende e classifica; quem soma/subtrai é SEMPRE o sistema, NUNCA você de cabeça.
+    **PROPOSTA SÓ DE SERVIÇO (sem solar):** se o Junior pedir uma proposta só de serviço (ex: só adequação de padrão, só projeto elétrico, sem kit solar), preencha APENAS \`servicos[]\` + \`nomeCliente\` (+ telefone se modo eva_envia). NÃO invente \`potenciaKwp\`, módulo, inversor nem consumo — deixe ausentes/0. O sistema detecta que não há solar e gera um layout de serviço elegante (sem gráfico/payback). Nesse caso NÃO liste os campos solares em \`missing\`.
 
 # FORMATO DE RESPOSTA
 
@@ -700,11 +735,28 @@ export class ProposalAssistant {
 
     // Re-gera o PDF buffer (nao salvamos buffer no Redis pra economizar memoria).
     try {
-      const calcInput = this.dataToCalculatorInput(last.data);
-      const calculations = calcular(calcInput);
-      const socialProofHtml = await this.buildSocialProofHtml(last.proposalData.tipoCliente);
-      const html = renderProposalHTML(last.proposalData, calculations, socialProofHtml);
-      const pdfBuffer = await htmlToPdf(html, { waitForChartMs: 2000 });
+      let pdfBuffer: Buffer;
+      if (isPropostaSoServico(last.data)) {
+        // Proposta SÓ-SERVIÇO: re-renderiza pelo layout de serviço — NUNCA o solar,
+        // que sairia cheio de "R$ NaN" (sem potência/equipamentos). Reusa o
+        // numeroProposta/dataProposta salvos pra o PDF bater com o link web já hospedado.
+        const servicos = mapServicosFromClaude(last.data.servicos)!;
+        const serviceData = buildServiceOnlyData({
+          numeroProposta: last.proposalData.numeroProposta,
+          dataProposta: (last.proposalData as any).dataProposta ?? new Date().toLocaleDateString('pt-BR'),
+          data: last.data,
+          servicos,
+          empresa: this.companyDefaults,
+          criarPagamentoPadrao: (t) => this.defaultPaymentOptions(t),
+        });
+        pdfBuffer = await htmlToPdf(renderServiceOnlyHTML(serviceData), { waitForChartMs: 0 });
+      } else {
+        const calcInput = this.dataToCalculatorInput(last.data);
+        const calculations = calcular(calcInput);
+        const socialProofHtml = await this.buildSocialProofHtml(last.proposalData.tipoCliente);
+        const html = renderProposalHTML(last.proposalData, calculations, socialProofHtml);
+        pdfBuffer = await htmlToPdf(html, { waitForChartMs: 2000 });
+      }
 
       const result = await enviarPropostaParaCliente(this.metaService, {
         telefoneCliente: telefone,
@@ -736,6 +788,13 @@ export class ProposalAssistant {
     }
 
     const { data, modoEnvio, tipo, attachments } = input;
+
+    // Proposta SÓ-SERVIÇO (sem solar): desvia pro layout de serviço e pula todo
+    // o cálculo solar (que não se aplica). Resolve o caso Edmilson.
+    if (isPropostaSoServico(data)) {
+      const servicos = mapServicosFromClaude(data.servicos)!;
+      return await this.generateServiceOnlyCore({ data, servicos, modoEnvio });
+    }
 
     const calcInput = this.dataToCalculatorInput(data);
 
@@ -845,6 +904,78 @@ export class ProposalAssistant {
     };
   }
 
+  // Gera uma proposta SÓ-SERVIÇO (sem solar): layout elegante de serviço, PDF e
+  // hospedagem (Drive + web pública). Espelha o fim de generateProposalCore, mas
+  // sem cálculo solar — devolve calculations=null. Resolve o caso Edmilson.
+  private async generateServiceOnlyCore(input: {
+    data: any; servicos: ServicoItem[]; modoEnvio: ModoEnvio;
+  }): Promise<GenerateProposalCoreResult> {
+    const { data, servicos, modoEnvio } = input;
+    const ano = new Date().getFullYear();
+    const numeroProposta = `${ano}-${Date.now().toString(36).toUpperCase().slice(-5)}`;
+    const slug = randomBytes(12).toString('base64url');
+
+    const serviceData = buildServiceOnlyData({
+      numeroProposta,
+      dataProposta: new Date().toLocaleDateString('pt-BR'),
+      data,
+      servicos,
+      empresa: this.companyDefaults,
+      criarPagamentoPadrao: (total) => this.defaultPaymentOptions(total),
+    });
+
+    const html = renderServiceOnlyHTML(serviceData);
+    const pdfBuffer = await htmlToPdf(html, { waitForChartMs: 0 });
+
+    const drivePromise = this.driveUploader
+      ? this.driveUploader.uploadProposal({
+          nomeCliente: data.nomeCliente,
+          numeroProposta,
+          pdfBuffer,
+          htmlContent: html,
+          inputDataJson: JSON.stringify({ servicos }, null, 2),
+          shareWithEmail: data.emailCliente,
+        })
+      : Promise.reject(new Error('Drive uploader nao configurado'));
+
+    const supabasePromise = this.supabaseService
+      ? this.supabaseService.savePropostaPublica({
+          slug,
+          numeroProposta,
+          clienteNome: data.nomeCliente,
+          clienteTelefone: data.telefoneCliente,
+          htmlContent: html,
+          dadosInput: { comercial: { servicos, soServico: true } },
+          tipo: 'basica',
+          modoEnvio,
+        })
+      : Promise.reject(new Error('Supabase service nao configurado'));
+
+    const [uploadResult, publicResult] = await Promise.allSettled([drivePromise, supabasePromise]);
+    const upload = uploadResult.status === 'fulfilled' ? uploadResult.value : null;
+    const publicSaved = publicResult.status === 'fulfilled';
+    const publicUrl = publicSaved ? `${this.publicProposalBaseUrl}/p/${slug}` : null;
+
+    if (!upload && !publicSaved) {
+      const driveErr = uploadResult.status === 'rejected' ? (uploadResult.reason as Error).message : 'ok';
+      const pubErr = publicResult.status === 'rejected' ? (publicResult.reason as Error).message : 'ok';
+      throw new Error(`Drive: ${driveErr} | Web: ${pubErr}`);
+    }
+    if (!upload) console.warn('[proposal] (servico) Drive upload falhou:', (uploadResult as PromiseRejectedResult).reason);
+    if (!publicSaved) console.warn('[proposal] (servico) Save Supabase falhou:', (publicResult as PromiseRejectedResult).reason);
+
+    // proposalData/calculations são do mundo solar; no só-serviço devolvemos um
+    // proposalData mínimo (não usado pelo caller neste caminho) e calculations=null.
+    return {
+      slug,
+      publicUrl,
+      pdfBuffer,
+      driveResult: upload ? { pdfWebViewLink: upload.pdfWebViewLink, htmlWebViewLink: upload.htmlWebViewLink } : null,
+      proposalData: { ...serviceData, potenciaKwp: 0 } as unknown as ProposalData,
+      calculations: null,
+    };
+  }
+
   // Variante de processarAnexosPendentes que aceita buffers ja em maos (tela admin).
   // O fluxo zap baixa WABA media -> buffer no shim generateProposal antes de chamar core.
   private async processarAnexosFromBuffer(
@@ -934,8 +1065,6 @@ export class ProposalAssistant {
         }),
       );
 
-      const greener = compararGreener(Number(data.potenciaKwp), result.calculations.rsPorWp);
-
       const linkLines: string[] = [];
       if (result.publicUrl) {
         linkLines.push(`🌐 Web (manda pro cliente): ${result.publicUrl}`);
@@ -949,6 +1078,25 @@ export class ProposalAssistant {
         if (!result.publicUrl) linkLines.push(`🌐 Web (Drive fallback): ${result.driveResult.htmlWebViewLink}`);
       }
       if (linkLines.length === 0) linkLines.push('⚠️ Nenhum link disponivel — checar logs.');
+
+      // Proposta SÓ-SERVIÇO: sem cálculo solar (calculations=null). Resumo enxuto,
+      // sem R$/Wp, Greener, payback ou TIR (não se aplicam).
+      if (!result.calculations) {
+        const servicos = result.proposalData.servicos ?? [];
+        const totalServicos = servicos.reduce((a, s) => a + (Number(s.valorRs) || 0), 0);
+        const fmtBr = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+        return [
+          '✅ Proposta de serviço gerada!',
+          '',
+          ...linkLines,
+          '',
+          `💵 Total da proposta: R$ ${fmtBr(totalServicos)}`,
+          '',
+          '_Manda "enviar" pra mandar pro cliente, ou "ajusta X" pra refazer._',
+        ].join('\n');
+      }
+
+      const greener = compararGreener(Number(data.potenciaKwp), result.calculations.rsPorWp);
 
       return [
         '✅ Proposta gerada!',

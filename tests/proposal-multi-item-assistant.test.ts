@@ -1,5 +1,51 @@
 import { describe, it, expect } from 'vitest';
-import { mapServicosFromClaude, resumoServicosParaJunior } from '../src/modules/proposal-assistant.js';
+import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData } from '../src/modules/proposal-assistant.js';
+
+describe('buildServiceOnlyData', () => {
+  const empresa = { nome: 'EcoSunPower', cnpj: '00', cidade: 'Brasília-DF', telefone: '(61) 99697-8781', site: 'ecosunpower.eng.br' };
+  it('soma TODOS os serviços pro pagamento padrão e aplica validade default 5', () => {
+    let totalRecebido = -1;
+    const out = buildServiceOnlyData({
+      numeroProposta: '2026-ABC', dataProposta: '06/06/2026',
+      data: { nomeCliente: 'Edmilson' },
+      servicos: [{ titulo: 'A', descricao: '', valorRs: 2800 }, { titulo: 'B', descricao: '', valorRs: 1000 }],
+      empresa,
+      criarPagamentoPadrao: (t) => { totalRecebido = t; return [{ tipo: 'À Vista', titulo: 'PIX', valorPrincipal: `R$ ${t}`, valorSecundario: 'único', bullets: [] }]; },
+    });
+    expect(out.nomeCliente).toBe('Edmilson');
+    expect(out.validadeDias).toBe(5);
+    expect(out.servicos).toHaveLength(2);
+    expect(totalRecebido).toBe(3800); // só-serviço: TODOS contam (não tem solar pra estar "incluso dentro")
+    expect(out.empresa).toBe(empresa);
+  });
+  it('respeita formasPagamento e validadeDias mandados pelo Junior', () => {
+    const fp = [{ tipo: 'À Vista', titulo: 'PIX', valorPrincipal: 'R$ 2.800', valorSecundario: 'único', bullets: [] }];
+    const out = buildServiceOnlyData({
+      numeroProposta: '2026-XYZ', dataProposta: '06/06/2026',
+      data: { nomeCliente: 'X', validadeDias: 10, formasPagamento: fp },
+      servicos: [{ titulo: 'A', descricao: '', valorRs: 2800 }],
+      empresa, criarPagamentoPadrao: () => { throw new Error('não deveria chamar'); },
+    });
+    expect(out.validadeDias).toBe(10);
+    expect(out.formasPagamento).toBe(fp);
+  });
+});
+
+describe('isPropostaSoServico', () => {
+  it('true: sem potência solar mas com serviço (caso Edmilson)', () => {
+    expect(isPropostaSoServico({ nomeCliente: 'Edmilson', servicos: [{ titulo: 'Adequação', descricao: 'x', valorRs: 2800 }] })).toBe(true);
+  });
+  it('false: tem potência solar (proposta solar normal, serviço só soma)', () => {
+    expect(isPropostaSoServico({ potenciaKwp: 8.4, servicos: [{ titulo: 'Carregador', descricao: 'x', valorRs: 1000 }] })).toBe(false);
+  });
+  it('false: sem solar E sem serviço (não dá pra montar proposta)', () => {
+    expect(isPropostaSoServico({ nomeCliente: 'X' })).toBe(false);
+    expect(isPropostaSoServico({ nomeCliente: 'X', servicos: [] })).toBe(false);
+  });
+  it('true: potenciaKwp 0 conta como sem solar, desde que haja serviço', () => {
+    expect(isPropostaSoServico({ potenciaKwp: 0, servicos: [{ titulo: 'A', descricao: '', valorRs: 500 }] })).toBe(true);
+  });
+});
 
 describe('resumoServicosParaJunior', () => {
   it('serviço "a mais": mostra + R$ e o total geral somado', () => {
