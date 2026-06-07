@@ -1116,6 +1116,10 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       else if (st.campo === 'uf') dados.uf = valor.trim().toUpperCase().slice(0, 2);
       else (dados as Record<string, unknown>)[st.campo] = valor.trim();
     }
+    if (valor !== undefined && st.campo === 'phone' && (dados.phone ?? '').length < 10) {
+      await sendText(from, '⚠️ Telefone inválido. Manda com DDD, ex: 61 99999-8888.');
+      return; // não avança, mantém o estado em phone
+    }
     const prox = proximoCampoNovo(st.campo);
     if (prox === 'fim') {
       if (!dados.name || !dados.phone || dados.phone.length < 10) {
@@ -1176,10 +1180,10 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         else await sendText(from, 'Não achei. Responda: novo / cancelar');
         return true;
       }
-      const botoes = achados.map((c) => ({ id: `evabt:dono-pick:${c.id}`, title: (c.name ?? 'sem nome').slice(0, 20) }));
+      const botoes = achados.slice(0, 2).map((c) => ({ id: `evabt:dono-pick:${c.id}`, title: (c.name ?? 'sem nome').slice(0, 20) }));
       botoes.push({ id: 'evabt:dono-novo', title: 'Criar novo' });
       const corpo = 'Achei estes — escolha:\n' + achados.map((c) => `• ${c.name ?? '(sem nome)'} — ${[c.phone, c.city].filter(Boolean).join(' · ')}`).join('\n');
-      if (metaWaba) await metaWaba.sendInteractiveButtons(from, corpo, botoes.slice(0, 3));
+      if (metaWaba) await metaWaba.sendInteractiveButtons(from, corpo, botoes);
       else await sendText(from, corpo + '\n(responda o nome exato ou: novo)');
       return true;
     }
@@ -3104,6 +3108,12 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // entao precisa vir antes dos outros assistants pra eles nao "roubarem" a msg.
     if (await tryHandleCaseCreatorCommand(from, text)) return;
 
+    // Eva dono-cad — Junior cadastra dono de usina órfã (só age se em modo).
+    // Sobe ANTES dos handlers de modo (pricing/proposal/closing): quando Junior está no
+    // meio do fluxo dono-cad, o texto dele tem prioridade e não colide com outro gatilho.
+    // Só retorna true se há estado dono-cad ativo (guard if (!st) return false).
+    if (await tryHandleDonoCadCommand(from, text)) return;
+
     // Eva Precificadora tem prioridade total quando Junior usa /preco ou esta em modo
     if (await tryHandlePricingCommand(from, text)) return;
 
@@ -3112,9 +3122,6 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // Eva Fechamento — Junior gera contrato + procuração via /fechar
     if (await tryHandleClosingCommand(from, text)) return;
-
-    // Eva dono-cad — Junior cadastra dono de usina órfã (só age se em modo)
-    if (await tryHandleDonoCadCommand(from, text)) return;
 
     // Eva Agendadora — prioridade depois do pricing
     if (await tryHandleSchedulingCommand(from, text)) return;
