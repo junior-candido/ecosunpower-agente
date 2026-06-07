@@ -1354,6 +1354,9 @@ export class SupabaseService {
     name: string;
     phone: string;
     email?: string | null;
+    city?: string | null;
+    uf?: string | null;
+    cep?: string | null;
   }): Promise<{ ok: boolean; lead_id?: string; error?: string }> {
     // 1. Confirma que o sistema existe e ainda não tem lead vinculado
     const { data: sistema, error: sErr } = await this.client
@@ -1371,6 +1374,9 @@ export class SupabaseService {
         name: input.name,
         phone: input.phone,
         email: input.email ?? null,
+        city: input.city ?? null,
+        uf: input.uf ?? null,
+        cep: input.cep ?? null,
         installation_status: 'operando',
         installed_at: sistema.data_instalacao,
         eva_active: false,                    // Junior precisa ativar depois
