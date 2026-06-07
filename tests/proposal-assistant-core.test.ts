@@ -122,6 +122,24 @@ describe('ProposalAssistant.generateProposalCore', () => {
     expect(saved).not.toContain('Indicadores de viabilidade');
   });
 
+  it('só-serviço: imagem (override do Junior) entra no HTML e fica em proposalData pro envio', async () => {
+    const r = await pa.generateProposalCore({
+      data: {
+        nomeCliente: 'Edmilson Teste',
+        telefoneCliente: '5561988887777',
+        servicoImagemUrl: 'https://x.test/foto-servico.jpg',
+        servicos: [{ titulo: 'Adequação de padrão', descricao: 'Troca pra trifásico', valorRs: 2800 }],
+      },
+      modoEnvio: 'eva_envia' as const,
+      tipo: 'basica' as const,
+    });
+    // a imagem fica no HTML salvo (página web) ...
+    const saved = supabase.savePropostaPublica.mock.calls[0][0].htmlContent;
+    expect(saved).toContain('https://x.test/foto-servico.jpg');
+    // ... e em proposalData.servicos, que o "enviar" reusa pro PDF bater com a web.
+    expect((r.proposalData.servicos ?? [])[0]?.imagemUrl).toBe('https://x.test/foto-servico.jpg');
+  });
+
   it('comparação com opção malformada (sem potência) cai na solar normal — nunca NaN', async () => {
     const r = await pa.generateProposalCore({
       ...inputBasico,

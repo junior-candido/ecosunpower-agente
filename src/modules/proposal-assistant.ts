@@ -782,7 +782,12 @@ export class ProposalAssistant {
         // Proposta SÓ-SERVIÇO: re-renderiza pelo layout de serviço — NUNCA o solar,
         // que sairia cheio de "R$ NaN" (sem potência/equipamentos). Reusa o
         // numeroProposta/dataProposta salvos pra o PDF bater com o link web já hospedado.
-        const servicos = mapServicosFromClaude(last.data.servicos)!;
+        // Reusa os serviços JÁ resolvidos (com a imagem IA) salvos em proposalData —
+        // re-mapear de last.data perderia o imagemUrl e o PDF sairia sem a imagem que
+        // a página web tem. Fallback re-mapeia só se proposalData vier sem serviços.
+        const servicos = (last.proposalData.servicos?.length
+          ? last.proposalData.servicos
+          : mapServicosFromClaude(last.data.servicos) ?? []) as ServicoItem[];
         const serviceData = buildServiceOnlyData({
           numeroProposta: last.proposalData.numeroProposta,
           dataProposta: (last.proposalData as any).dataProposta ?? new Date().toLocaleDateString('pt-BR'),
