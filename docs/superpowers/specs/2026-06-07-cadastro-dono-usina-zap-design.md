@@ -35,12 +35,23 @@ que o fluxo do WhatsApp vai reusar.
 
 - Trocar/desvincular dono **pelo zap** de uma usina que já tem dono → isso fica
   no dashboard. O botão do zap aparece **só na usina órfã**.
-- Cadastro completo do cliente (e-mail, endereço, CEP) pelo zap → o "Criar novo"
-  pelo WhatsApp coleta **nome + telefone** (igual ao dashboard hoje). O resto do
-  cadastro é completável pelo dashboard. (O dashboard atual também só pede
-  nome+telefone ao criar cliente pra vínculo — não há mismatch.)
 - Sugestão automática/IA de qual lead é o dono provável da usina → possível
   evolução futura, não entra agora.
+
+## Princípio: paridade de cadastro com "pular"
+
+O cadastro pelo zap coleta **os mesmos campos do dashboard** — tanto do cliente
+quanto da usina — mas com uma regra que tira a chatice de digitar tudo no
+celular:
+
+- **"Pular":** em qualquer campo opcional, o Junior pode responder `pular` (ou
+  clicar um botão `Pular`) e a Eva segue pro próximo. Só nome e telefone do
+  cliente são obrigatórios.
+- **Eva pergunta só o que falta:** nos dados da usina (que já está monitorada,
+  então parte já vem preenchida), a Eva **só pergunta os campos vazios** — não
+  re-pergunta o que já existe. É o lado "inteligente" do fluxo.
+- O cliente que **já existe** (caso comum) não passa por nada disso: busca, clica,
+  e todos os dados que vieram da conversa já estão no cadastro.
 
 ## Modelo de dados (já existente)
 
@@ -48,9 +59,18 @@ que o fluxo do WhatsApp vai reusar.
   o dono. `lead_id` nulo ⇒ **usina órfã**.
 - **`leads`** = o cliente/dono. Já é populado pelas conversas da Eva no WhatsApp.
   Vincular = setar `sistemas_clientes.lead_id`. Criar novo = inserir em `leads`
-  (nome + telefone) e setar `lead_id`.
+  e setar `lead_id`.
 
-Nenhuma migration nova é necessária.
+**Campos do cliente (`leads`)** que o cadastro completo do dashboard coleta —
+e que o zap passa a coletar também: `name`*, `phone`*, `email`, `city`, `uf`,
+`cep` (* = obrigatório).
+
+**Campos da usina (`sistemas_clientes`)** que o cadastro do dashboard coleta:
+`apelido`, `potencia_kwp`, `cidade`, `uf`, `data_instalacao`, `inversor_modelo`,
+`observacoes` (a `marca` e as credenciais de API já vêm da integração de
+monitoramento). O zap completa **os que estiverem vazios**.
+
+Nenhuma migration nova é necessária — todas as colunas já existem.
 
 ## Componentes
 
@@ -111,23 +131,40 @@ injetados a partir do `index.ts`).
      desambiguar, já que o título do botão é curto).
    - Se a busca não achar nada: Eva avisa e oferece `[Criar novo]` / `[Cancelar]`.
 4. Junior clica num resultado → `vincularClienteExistente({ sistema_id, lead_id })`
-   → limpa estado → Eva: *"✅ Pronto, a usina agora é do Henrique Souza. Próximos
-   alertas já vêm com ele."*
+   → vai pra **etapa "dados da usina"** (ver abaixo). (No "Já existe" o cadastro
+   do cliente não é tocado — só a usina é completada.)
 
-**Caminho B — "Criar novo".**
-1. Estado → `{ etapa: 'novo_nome', sistemaId }`. Eva: *"Nome completo do cliente?"*
-2. Junior digita o nome → estado `{ etapa: 'novo_telefone', sistemaId, nome }`.
-   Eva: *"Telefone com DDD? (ex: 61 99999-8888)"*
-3. Junior digita o telefone (normaliza só dígitos, mesmo tratamento do dashboard:
-   `String(...).replace(/\D/g, '')`). Cria lead + vincula via uma função de
-   backend nova `criarClienteEVincular({ sistema_id, nome, telefone })` (extrai a
-   lógica que hoje vive no router do dashboard pra um lugar reusável no
-   `supabase.ts`, pra os dois lados — web e zap — chamarem o mesmo código).
-4. Limpa estado → Eva: *"✅ Cliente Marcelo Dias criado e ligado à usina. Próximos
-   alertas já vêm com ele. (Pra completar e-mail/endereço, use o painel.)"*
+**Caminho B — "Criar novo" (cliente completo, com pular).**
+A Eva pergunta um campo por vez, guardando cada resposta no estado Redis. Em
+qualquer campo **opcional** o Junior pode mandar `pular` (ou clicar `[Pular]`):
 
-**Cancelar / timeout.** `[Cancelar]` limpa o estado e confirma. O TTL do Redis
-garante que um fluxo abandonado expira sozinho (não trava o Junior).
+1. *"Nome completo do cliente?"* → **obrigatório**.
+2. *"Telefone com DDD? (ex: 61 99999-8888)"* → **obrigatório**. Normaliza só
+   dígitos (`replace(/\D/g, '')`, igual ao dashboard).
+3. *"E-mail? (ou pule)"* → opcional.
+4. *"Cidade? (ou pule)"* → opcional.
+5. *"UF? (ou pule)"* → opcional, 2 letras.
+6. *"CEP? (ou pule)"* → opcional.
+7. Cria lead + vincula via `criarClienteEVincular({ sistema_id, name, phone,
+   email?, city?, uf?, cep? })` → segue pra **etapa "dados da usina"**.
+
+**Etapa final (comum aos dois caminhos) — "dados da usina".**
+Depois que o dono está vinculado, a Eva completa os dados da usina que estiverem
+**vazios** (pré-carrega o que já existe e pula esses campos sozinha):
+
+1. Para cada campo vazio em `apelido`, `potencia_kwp`, `cidade`, `uf`,
+   `data_instalacao`, `inversor_modelo`, `observacoes` → Eva pergunta um por vez,
+   com `pular` disponível. (Se a usina já tem cidade/uf pelo cliente recém-criado,
+   Eva oferece reaproveitar.)
+2. Se **todos** já estiverem preenchidos, pula a etapa inteira direto pro fim.
+3. Salva via `atualizarDadosUsina({ sistema_id, ...campos })` (só os respondidos).
+4. Limpa estado → Eva: *"✅ Tudo cadastrado! A usina [apelido] agora é do
+   [cliente] e os dados estão completos. Próximos alertas já vêm certinhos."*
+
+**Cancelar / pular tudo / timeout.** `[Cancelar]` a qualquer momento limpa o
+estado e confirma. Na etapa da usina, um `[Pular tudo]` encerra mantendo só o
+vínculo do dono já feito (o vínculo nunca se perde por desistência na etapa da
+usina). O TTL do Redis garante que um fluxo abandonado expira sozinho.
 
 ### 3. Backend reusável (`src/modules/supabase.ts`)
 
@@ -135,9 +172,16 @@ garante que um fluxo abandonado expira sozinho (não trava o Junior).
   `leads` por nome/telefone, ignora inativos).
 - `vincularClienteExistente({ sistema_id, lead_id })` — **já existe na branch**
   (seta `sistemas_clientes.lead_id`, valida sistema e lead).
-- `criarClienteEVincular({ sistema_id, nome, telefone })` — **novo**. Extrai a
-  criação de lead (nome+telefone) que hoje está inline no router do dashboard,
-  insere em `leads` e seta `lead_id`. Usado pelo zap **e** pelo dashboard (DRY).
+- `criarClienteEVincular({ sistema_id, name, phone, email?, city?, uf?, cep? })`
+  — **novo**. Extrai a criação de lead que hoje está inline no router do
+  dashboard, insere em `leads` (com os campos opcionais quando vierem) e seta
+  `lead_id`. Usado pelo zap **e** pelo dashboard (DRY).
+- `atualizarDadosUsina({ sistema_id, apelido?, potencia_kwp?, cidade?, uf?,
+  data_instalacao?, inversor_modelo?, observacoes? })` — **novo**. Atualiza só os
+  campos informados em `sistemas_clientes` (não sobrescreve com vazio). Pode
+  reusar o handler de update de usina que o dashboard já tem (extrair pra função
+  compartilhada). Valida tipos (ex: `potencia_kwp` numérico, `uf` 2 letras,
+  `data_instalacao` data ISO).
 
 ### 4. Dashboard — merge da branch `feat/proprietario-usinas`
 
@@ -160,8 +204,9 @@ cron detect → alerta órfão gravado (lead_id nulo)
    → Junior clica Cadastrar dono
       → estado Redis dono-cad → Eva pergunta existe/novo
          → existe: busca leads → pick → vincularClienteExistente
-         → novo:   nome+telefone → criarClienteEVincular
-   → sistemas_clientes.lead_id setado → usina NÃO é mais órfã
+         → novo:   nome → telefone → email/cidade/uf/cep (pular) → criarClienteEVincular
+      → etapa "dados da usina": pergunta só os campos vazios (pular) → atualizarDadosUsina
+   → sistemas_clientes.lead_id setado (+ dados completados) → usina NÃO é mais órfã
    → próximo alerta dela: nome do dono + botões normais (Eva avisar/Eu ligar)
 ```
 
@@ -172,6 +217,11 @@ cron detect → alerta órfão gravado (lead_id nulo)
   encerra com mensagem amigável.
 - **Busca sem resultado:** oferece criar novo / cancelar.
 - **Telefone inválido / vazio no "Criar novo":** Eva repete a pergunta uma vez.
+- **Usina já tem todos os dados:** a etapa "dados da usina" é pulada por inteiro —
+  a Eva NUNCA re-pergunta um campo já preenchido pela integração de monitoramento.
+  Lê o estado atual da usina antes de perguntar e só aborda os vazios.
+- **Resposta "pular" num campo opcional:** segue pro próximo sem gravar nada
+  naquele campo (não grava string "pular" nem vazio por cima de dado existente).
 - **Estado Redis expirado** no meio do fluxo: se chegar texto/botão sem estado,
   ignora silenciosamente (não loga erro, não confunde com mensagem normal).
 - **Fallback Evolution (sem WABA):** `sendAdminWithButtons` já cai pra texto puro
@@ -185,11 +235,18 @@ cron detect → alerta órfão gravado (lead_id nulo)
 - `format.ts`: alerta de usina **com** dono mantém saída atual; alerta **órfão**
   mostra "SEM dono vinculado" e o conjunto de botões `[Cadastrar dono | Ver painel]`
   (sem Adiar). Cobre todos os tipos de alerta (offline/queda/integração).
-- Máquina de estado `dono-cad`: transições escolha → busca → pick → vínculo;
-  escolha → novo_nome → novo_telefone → criação; cancelar em cada etapa; estado
-  expirado.
-- `criarClienteEVincular`: cria lead com nome+telefone normalizado e seta o
-  `lead_id`; erro se sistema não existe.
+- Máquina de estado `dono-cad`: transições escolha → busca → pick → dados-usina →
+  fim; escolha → novo (nome→telefone→email→cidade→uf→cep) → dados-usina → fim;
+  `pular` em cada campo opcional; cancelar em cada etapa; estado expirado.
+- **"Pular":** responder `pular` num campo opcional não grava nada ali; nome e
+  telefone NÃO aceitam pular (repete a pergunta).
+- **Só completa o que falta:** dada uma usina com `apelido` e `cidade`
+  preenchidos e o resto vazio, a Eva pergunta só os vazios; usina 100% preenchida
+  pula a etapa inteira; `pular` num campo da usina não sobrescreve com vazio.
+- `criarClienteEVincular`: cria lead com os campos informados (nome+telefone
+  obrigatórios, resto opcional) e seta o `lead_id`; erro se sistema não existe.
+- `atualizarDadosUsina`: grava só os campos passados; não zera os existentes;
+  valida tipos (potência numérica, uf 2 letras, data ISO).
 - Idempotência/corrida: clicar "Cadastrar dono" numa usina já vinculada não
   cria nada e responde "já vinculada".
 - Regressão: alertas de usinas COM dono continuam com os botões e o
@@ -199,8 +256,10 @@ cron detect → alerta órfão gravado (lead_id nulo)
 
 1. Merge da branch `feat/proprietario-usinas` na main (dashboard + funções de
    backend), com a suíte verde. *(componente 4)*
-2. `criarClienteEVincular` reusável + refatorar o router do dashboard pra usá-la. *(3)*
+2. `criarClienteEVincular` (campos completos) + `atualizarDadosUsina` reusáveis +
+   refatorar o router do dashboard pra usá-las. *(3)*
 3. Status do dono + botões da órfã no `format.ts`. *(1)*
-4. Máquina de estado `dono-cad` + handlers de botão + roteamento de texto. *(2)*
+4. Máquina de estado `dono-cad` (cliente completo c/ pular + etapa dados da usina
+   só-completa-vazios) + handlers de botão + roteamento de texto. *(2)*
 
 Cada etapa: TDD, e code review antes de cada commit (regra do Junior).
