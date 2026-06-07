@@ -78,6 +78,14 @@ export async function tryHandleEvaAdminButton(args: {
   onFecharAjustar?: () => Promise<void>;
   onFecharSair?: () => Promise<void>;
   onFecharDocPick?: (cmd: 'procuracao' | 'contrato' | 'ambos', leadId: string) => Promise<void>;
+  // Cadastro de dono de usina órfã (fluxo dono-cad)
+  onDonoCadStart?: (sistemaId: string) => Promise<void>;
+  onDonoExiste?: () => Promise<void>;
+  onDonoNovo?: () => Promise<void>;
+  onDonoPick?: (leadId: string) => Promise<void>;
+  onDonoPular?: () => Promise<void>;
+  onDonoPularTudo?: () => Promise<void>;
+  onDonoCancelar?: () => Promise<void>;
 }): Promise<boolean> {
   // Regex relaxado: aceita qualquer sufixo apos a action (ex: fechar-doc:procuracao:<uuid>)
   const m = args.text.trim().match(/^evabt:([a-z0-9-]+)(?::(.+))?$/i);
@@ -326,6 +334,38 @@ export async function tryHandleEvaAdminButton(args: {
       case 'alert-ver': {
         if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem id de sistema.'); return true; }
         await args.sendText(args.from, `📊 ${DASHBOARD_BASE}/monitoramento/${leadId}`);
+        return true;
+      }
+
+      case 'dono-cad': {
+        if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem id de sistema.'); return true; }
+        if (args.onDonoCadStart) await args.onDonoCadStart(leadId);
+        else await args.sendText(args.from, '⚠️ Handler dono-cad não configurado.');
+        return true;
+      }
+      case 'dono-existe': {
+        if (args.onDonoExiste) await args.onDonoExiste();
+        return true;
+      }
+      case 'dono-novo': {
+        if (args.onDonoNovo) await args.onDonoNovo();
+        return true;
+      }
+      case 'dono-pick': {
+        if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem lead id.'); return true; }
+        if (args.onDonoPick) await args.onDonoPick(leadId);
+        return true;
+      }
+      case 'dono-pular': {
+        if (args.onDonoPular) await args.onDonoPular();
+        return true;
+      }
+      case 'dono-pular-tudo': {
+        if (args.onDonoPularTudo) await args.onDonoPularTudo();
+        return true;
+      }
+      case 'dono-cancelar': {
+        if (args.onDonoCancelar) await args.onDonoCancelar();
         return true;
       }
 
