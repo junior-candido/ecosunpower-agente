@@ -1,5 +1,6 @@
 // src/modules/dashboard/clientes-views.ts
 import { renderLayout } from './views.js';
+import { renderClienteSelector } from './proprietario.js';
 import { statusLabel, statusCorChip } from '../clientes/mappers.js';
 import { CONCESSIONARIAS_BR, getConcessionariaById } from '../concessionarias.js';
 import { CIDADES_DF_GO } from '../cidades-df-go.js';
@@ -198,22 +199,10 @@ export function renderClientesListPage(
         <p class="text-xs text-slate-400 mb-4">Sistema: <span id="modal-sistema-apelido" class="text-amber-300"></span></p>
         <form id="form-vincular" method="post" action="/dashboard/clientes/vincular-sistema" class="space-y-3">
           <input type="hidden" name="sistema_id" id="modal-sistema-id">
-          <div>
-            <label class="text-[10px] text-slate-400 uppercase tracking-wider">Nome completo *</label>
-            <input name="name" required class="w-full mt-1 px-3 py-2 rounded bg-slate-800 border border-slate-700 text-slate-100 text-sm" placeholder="Ex: João Silva">
-          </div>
-          <div>
-            <label class="text-[10px] text-slate-400 uppercase tracking-wider">WhatsApp *</label>
-            <input name="phone" required class="w-full mt-1 px-3 py-2 rounded bg-slate-800 border border-slate-700 text-slate-100 text-sm" placeholder="Ex: 5561999990000">
-            <p class="text-[10px] text-slate-500 mt-1">Formato internacional sem +, com DDI 55.</p>
-          </div>
-          <div>
-            <label class="text-[10px] text-slate-400 uppercase tracking-wider">Email (opcional)</label>
-            <input name="email" type="email" class="w-full mt-1 px-3 py-2 rounded bg-slate-800 border border-slate-700 text-slate-100 text-sm" placeholder="cliente@email.com">
-          </div>
+          ${renderClienteSelector({ idPrefix: 'orf', dark: true })}
           <div class="flex gap-2 pt-2">
             <button type="button" onclick="fecharVinculo()" class="flex-1 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm">Cancelar</button>
-            <button type="submit" class="flex-1 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold">Criar e vincular</button>
+            <button type="submit" class="flex-1 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold">Vincular</button>
           </div>
         </form>
       </div>

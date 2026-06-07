@@ -470,6 +470,7 @@ export class MonitoringService {
       telhado_inclinacao_graus: number | null;
       sombreamento_pct: number | null;
       observacoes: string | null;
+      lead_id: string | null;
     }>,
   ): Promise<{ ok: boolean; reason?: string }> {
     // Filtra apenas campos suportados (nao deixa cliente passar marca_inversor,
@@ -478,7 +479,7 @@ export class MonitoringService {
       'apelido', 'potencia_kwp', 'cidade', 'uf', 'data_instalacao', 'ativo',
       'painel_marca', 'painel_modelo', 'qtd_paineis', 'inversor_modelo',
       'telhado_tipo', 'telhado_orientacao', 'telhado_inclinacao_graus',
-      'sombreamento_pct', 'observacoes',
+      'sombreamento_pct', 'observacoes', 'lead_id',
     ];
     const update: Record<string, unknown> = {};
     for (const k of allowed) {

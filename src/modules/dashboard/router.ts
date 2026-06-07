@@ -67,6 +67,7 @@ import { filtrarOrdenarSistemas } from '../monitoring/filtro.js';
 import multer from 'multer';
 import { listClientes, getClienteDetail } from './clientes-queries.js';
 import { renderClientesListPage, renderClienteDetailPage, renderFormNovoCliente } from './clientes-views.js';
+import { parseProprietarioInput } from './proprietario.js';
 import { getEvaInsights } from '../clientes/insights.js';
 import { uploadAnexo, deleteAnexoFile } from '../anexos/storage.js';
 import { PosInstalacaoService } from '../relatorios/pos-instalacao/service.js';
@@ -864,7 +865,9 @@ export function createDashboardRouter(
       if (!detalhe) {
         return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
       }
-      res.send(renderDetalheSistemaPage(detalhe));
+      const donoLeadId = detalhe.sistema.lead_id;
+      const donoRow = donoLeadId ? await supabaseService.getClienteByLeadId(donoLeadId) : null;
+      res.send(renderDetalheSistemaPage(detalhe, donoRow ? { id: donoRow.id, name: donoRow.name } : null));
     } catch (err) {
       console.error('[dashboard/monitoramento/detalhe]', err);
       res.status(500).send(`<h2>Erro ao carregar detalhe</h2><pre>${(err as Error).message}</pre>`);
@@ -877,7 +880,10 @@ export function createDashboardRouter(
     if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).send('UUID invalido');
     const detalhe = await monitoringService.getDetalheSistema(id);
     if (!detalhe) return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
-    res.send(renderEditarSistemaPage(detalhe.sistema));
+    const leadId = detalhe.sistema.lead_id;
+    const donoRow = leadId ? await supabaseService.getClienteByLeadId(leadId) : null;
+    const dono = donoRow ? { id: donoRow.id, name: donoRow.name, phone: donoRow.phone } : null;
+    res.send(renderEditarSistemaPage(detalhe.sistema, dono));
   });
 
   router.post('/monitoramento/:id/editar', async (req: Request, res: Response) => {
@@ -895,6 +901,32 @@ export function createDashboardRouter(
       const s = String(v).trim();
       return s === '' ? null : s;
     };
+    // Proprietário (vincular / trocar / desvincular). Pode vir do botão
+    // "Desvincular" (name=desvincular value=1) ou do seletor (lead_id UUID
+    // de cliente existente, OU novo_name+novo_phone pra criar na hora).
+    const prop = parseProprietarioInput(body);
+    if (prop.acao === 'erro') {
+      return res.status(400).send('<h2>Proprietário inválido</h2><a href="javascript:history.back()">← voltar</a>');
+    }
+    // undefined = não mexe no lead_id; null = desvincular; string UUID = vincular
+    let leadIdParaVincular: string | null | undefined = undefined;
+    if (prop.acao === 'desvincular') {
+      leadIdParaVincular = null;
+    } else if (prop.acao === 'vincular') {
+      leadIdParaVincular = prop.lead_id;
+    } else {
+      // 'manter' — mas pode ser criação de novo cliente
+      const novoName = String(body.novo_name ?? '').trim();
+      const novoPhone = String(body.novo_phone ?? '').replace(/\D/g, '');
+      if (novoName.length >= 2 && novoPhone.length >= 10) {
+        const novo = await supabaseService.vincularNovoLeadAoSistema({ sistema_id: id, name: novoName, phone: novoPhone });
+        if (!novo.ok) {
+          return res.status(500).send(`<h2>Erro ao criar cliente: ${escapeHtmlSimple(novo.error ?? '')}</h2><a href="javascript:history.back()">← voltar</a>`);
+        }
+        // vincularNovoLeadAoSistema já setou o lead_id; não repetir no fields
+      }
+    }
+
     const fields = {
       apelido: strOuNull(body.apelido) ?? '',
       potencia_kwp: numOuNull(body.potencia_kwp),
@@ -915,11 +947,25 @@ export function createDashboardRouter(
     if (!fields.apelido) {
       return res.status(400).send('<h2>Apelido eh obrigatorio</h2><a href="javascript:history.back()">← voltar</a>');
     }
-    const r = await monitoringService.atualizarSistema(id, fields);
+    const fieldsComProp: Record<string, unknown> = { ...fields };
+    if (leadIdParaVincular !== undefined) fieldsComProp.lead_id = leadIdParaVincular;
+    const r = await monitoringService.atualizarSistema(id, fieldsComProp);
     if (!r.ok) {
       return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.reason ?? 'desconhecido')}</h2><a href="javascript:history.back()">← voltar</a>`);
     }
     res.redirect(`/dashboard/monitoramento/${id}`);
+  });
+
+  // Busca de clientes pra vínculo de proprietário (autocomplete).
+  router.get('/api/clientes/search', async (req: Request, res: Response) => {
+    try {
+      const q = String(req.query.q ?? '');
+      const rows = await supabaseService.searchClientesParaVinculo(q, 10);
+      res.json(rows);
+    } catch (err) {
+      console.error('[dashboard/clientes/search]', err);
+      res.status(500).json([]);
+    }
   });
 
   // Backfill: puxa historico completo (ate 24 meses) via API.
@@ -1287,15 +1333,22 @@ export function createDashboardRouter(
   // Vincular sistema órfão a um cliente novo (cria lead + linka)
   router.post('/clientes/vincular-sistema', async (req: Request, res: Response) => {
     const sistemaId = String(req.body?.sistema_id ?? '');
-    const name = String(req.body?.name ?? '').trim();
-    const phone = String(req.body?.phone ?? '').replace(/\D/g, '');
-    const email = req.body?.email ? String(req.body.email).trim() : null;
+    if (!UUID_RE.test(sistemaId)) return res.status(400).send('Sistema inválido');
 
-    if (!UUID_RE.test(sistemaId)) return res.status(400).send('sistema_id inválido');
-    if (name.length < 2) return res.status(400).send('Nome obrigatório (mín 2 chars)');
+    const leadId = String(req.body?.lead_id ?? '').trim();
+    // Caminho 1: cliente existente escolhido no seletor
+    if (UUID_RE.test(leadId)) {
+      const r = await supabaseService.vincularClienteExistente({ sistema_id: sistemaId, lead_id: leadId });
+      if (!r.ok) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/clientes">← voltar</a>`);
+      return res.redirect(303, `/dashboard/clientes/${leadId}`);
+    }
+
+    // Caminho 2: criar cliente novo
+    const name = String(req.body?.novo_name ?? '').trim();
+    const phone = String(req.body?.novo_phone ?? '').replace(/\D/g, '');
+    if (name.length < 2) return res.status(400).send('Escolha um cliente existente ou preencha nome (mín 2 chars)');
     if (phone.length < 10) return res.status(400).send('Telefone inválido — use formato 5561999990000');
-
-    const r = await supabaseService.vincularNovoLeadAoSistema({ sistema_id: sistemaId, name, phone, email });
+    const r = await supabaseService.vincularNovoLeadAoSistema({ sistema_id: sistemaId, name, phone });
     if (!r.ok) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/clientes">← voltar</a>`);
     res.redirect(303, `/dashboard/clientes/${r.lead_id}`);
   });

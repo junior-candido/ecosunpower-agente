@@ -1394,6 +1394,58 @@ export class SupabaseService {
     return { ok: true, lead_id: novoLead.id };
   }
 
+  // Busca clientes (leads) por nome OU telefone pra vincular como proprietário.
+  // Exclui inativos (arquivados). Retorna no máximo `limit` resultados.
+  async searchClientesParaVinculo(
+    rawTerm: string,
+    limit = 10,
+  ): Promise<Array<{ id: string; name: string | null; phone: string | null; city: string | null }>> {
+    const { buildClienteSearchFilter } = await import('./dashboard/proprietario.js');
+    const f = buildClienteSearchFilter(rawTerm);
+    if (!f.valid) return [];
+    const { data, error } = await this.client
+      .from('leads')
+      .select('id, name, phone, city')
+      .or(f.or)
+      .neq('status', 'inativo')
+      .order('name', { ascending: true })
+      .limit(limit);
+    if (error) {
+      console.error('[supabase] searchClientesParaVinculo:', error.message);
+      return [];
+    }
+    return data ?? [];
+  }
+
+  // Vincula um sistema a um cliente JÁ EXISTENTE. Não altera nenhum dado do
+  // cliente (status, installed_at, etc.) — só seta sistemas_clientes.lead_id.
+  async vincularClienteExistente(input: {
+    sistema_id: string;
+    lead_id: string;
+  }): Promise<{ ok: boolean; error?: string }> {
+    // valida sistema
+    const { data: sistema, error: sErr } = await this.client
+      .from('sistemas_clientes')
+      .select('id')
+      .eq('id', input.sistema_id)
+      .single();
+    if (sErr || !sistema) return { ok: false, error: 'Sistema não encontrado' };
+    // valida lead
+    const { data: lead, error: lErr } = await this.client
+      .from('leads')
+      .select('id')
+      .eq('id', input.lead_id)
+      .single();
+    if (lErr || !lead) return { ok: false, error: 'Cliente não encontrado' };
+    // vincula
+    const { error: vErr } = await this.client
+      .from('sistemas_clientes')
+      .update({ lead_id: input.lead_id, updated_at: new Date().toISOString() })
+      .eq('id', input.sistema_id);
+    if (vErr) return { ok: false, error: vErr.message };
+    return { ok: true };
+  }
+
   // Cria um lead avulso sem sistema vinculado. Usado pelo dashboard quando o
   // Junior cadastra um cliente diretamente (A4-V2.1 — Novo cliente avulso).
   async criarLeadAvulso(input: {
