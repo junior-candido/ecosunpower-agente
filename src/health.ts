@@ -1,3 +1,5 @@
+import { BUILD_VERSION } from './build-info.js';
+
 interface HealthCheckers {
   redis: () => Promise<boolean>;
   supabase: () => Promise<boolean>;
@@ -7,6 +9,7 @@ interface HealthCheckers {
 interface HealthStatus {
   status: 'healthy' | 'degraded' | 'unhealthy';
   timestamp: string;
+  build: string;
   services: {
     redis: 'up' | 'down';
     supabase: 'up' | 'down';
@@ -37,5 +40,5 @@ export async function buildHealthStatus(checkers: HealthCheckers): Promise<Healt
     status = 'healthy';
   }
 
-  return { status, timestamp: new Date().toISOString(), services };
+  return { status, timestamp: new Date().toISOString(), build: BUILD_VERSION, services };
 }

@@ -2,7 +2,7 @@
 # pre-instaladas e configuradas. Resolve "libglib-2.0.so.0 missing" sem
 # precisar gerenciar deps Chromium na mao.
 # https://pptr.dev/guides/docker
-# Cache bust: 2026-05-08-1400 (mude essa string pra forcar rebuild Docker)
+# Cache bust: 2026-06-07-1300 (mude essa string pra forcar rebuild Docker)
 FROM ghcr.io/puppeteer/puppeteer:24
 
 # A imagem oficial puppeteer ja tras UM Chromium em ~pptruser/.cache/puppeteer.
