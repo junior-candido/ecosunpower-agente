@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData } from '../src/modules/proposal-assistant.js';
+import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData, buildServiceImagePrompt } from '../src/modules/proposal-assistant.js';
+
+describe('buildServiceImagePrompt', () => {
+  it('monta prompt fotorrealista a partir do título e descrição do serviço', () => {
+    const p = buildServiceImagePrompt({ titulo: 'Carregador EV', descricao: 'Wallbox 7,4 kW em garagem residencial', valorRs: 4500 });
+    expect(p.toLowerCase()).toContain('carregador ev');
+    expect(p.toLowerCase()).toContain('wallbox 7,4 kw em garagem residencial');
+    expect(p.toLowerCase()).toMatch(/photoreal|realistic|professional/);
+  });
+  it('pede sem texto e sem marca dágua (imagem limpa)', () => {
+    const p = buildServiceImagePrompt({ titulo: 'Projeto elétrico', descricao: '', valorRs: 3200 });
+    expect(p.toLowerCase()).toContain('no text');
+    expect(p.toLowerCase()).toContain('no watermark');
+  });
+});
 
 describe('buildServiceOnlyData', () => {
   const empresa = { nome: 'EcoSunPower', cnpj: '00', cidade: 'Brasília-DF', telefone: '(61) 99697-8781', site: 'ecosunpower.eng.br' };

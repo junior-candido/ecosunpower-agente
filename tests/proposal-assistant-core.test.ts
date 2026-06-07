@@ -51,6 +51,9 @@ describe('ProposalAssistant.generateProposalCore', () => {
   let supabase: any;
 
   beforeEach(() => {
+    // Sem credencial Higgsfield: a geração de imagem do serviço é best-effort e
+    // fica desativada nos testes (determinístico, sem chamada de rede).
+    vi.stubEnv('HIGGSFIELD_CREDENTIALS', '');
     supabase = fakeSupabase();
     pa = new ProposalAssistant({
       apiKey: 'fake',

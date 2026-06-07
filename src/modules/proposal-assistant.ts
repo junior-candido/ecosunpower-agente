@@ -26,7 +26,8 @@ import { htmlToPdf, gerarQrCodeDataUrl } from './proposal/pdf-generator.js';
 import type { DriveUploader } from './proposal/drive-uploader.js';
 import type { SupabaseService } from './supabase.js';
 import type { ModoEnvio, TipoProposta, AttachmentInput } from './proposal/attachments/types.js';
-import { getSignedUrlFromPath } from './proposal/attachments/storage-uploader.js';
+import { getSignedUrlFromPath, uploadToStorage } from './proposal/attachments/storage-uploader.js';
+import { HiggsfieldImageGenerator } from './marketing/higgsfield-gen.js';
 import { processAttachmentFromBuffer } from './proposal/attachments/index.js';
 import { downloadWabaMedia } from './proposal/attachments/whatsapp-media-downloader.js';
 import type { MetaWhatsAppService } from './meta-whatsapp.js';
@@ -105,6 +106,16 @@ export function buildServiceOnlyData(params: {
     formasPagamento: data.formasPagamento ?? criarPagamentoPadrao(totalServicos),
     empresa,
   };
+}
+
+// Monta o prompt da imagem do serviço (fotorrealista, contexto BR, sem texto).
+// Usado quando o Junior NÃO anexa uma imagem própria do serviço.
+export function buildServiceImagePrompt(servico: ServicoItem): string {
+  return [
+    `Professional photorealistic image illustrating an electrical engineering service: "${servico.titulo}".`,
+    servico.descricao ? `Context: ${servico.descricao}.` : '',
+    'Brazilian residential or commercial setting, clean modern look, natural lighting, high quality, no text, no watermark.',
+  ].filter(Boolean).join(' ');
 }
 
 const PROPOSAL_MODE_TTL_SECONDS = 60 * 60;
@@ -904,6 +915,27 @@ export class ProposalAssistant {
     };
   }
 
+  // Gera a imagem do serviço por IA (Higgsfield) e sobe no Storage. Best-effort:
+  // sem credencial/supabase ou qualquer falha => undefined (proposta sai sem imagem,
+  // não quebra). Eva só descreve; a geração é opcional e nunca trava o fluxo.
+  private async gerarImagemServico(slug: string, servico: ServicoItem): Promise<string | undefined> {
+    const creds = process.env.HIGGSFIELD_CREDENTIALS;
+    if (!creds || !this.supabaseService) return undefined;
+    try {
+      const gen = new HiggsfieldImageGenerator(creds);
+      const { url } = await gen.generate({ prompt: buildServiceImagePrompt(servico), aspectRatio: '3:2' });
+      const { bytes, contentType } = await gen.downloadImage(url);
+      const filename = `servico-0.${contentType.includes('png') ? 'png' : 'jpg'}`;
+      const { signedUrl } = await uploadToStorage(this.supabaseService.getClient(), {
+        buffer: bytes, propostaSlug: slug, filename, mimeType: contentType,
+      });
+      return signedUrl;
+    } catch (err) {
+      console.warn('[proposal] (servico) geração de imagem falhou:', (err as Error).message);
+      return undefined;
+    }
+  }
+
   // Gera uma proposta SÓ-SERVIÇO (sem solar): layout elegante de serviço, PDF e
   // hospedagem (Drive + web pública). Espelha o fim de generateProposalCore, mas
   // sem cálculo solar — devolve calculations=null. Resolve o caso Edmilson.
@@ -914,6 +946,13 @@ export class ProposalAssistant {
     const ano = new Date().getFullYear();
     const numeroProposta = `${ano}-${Date.now().toString(36).toUpperCase().slice(-5)}`;
     const slug = randomBytes(12).toString('base64url');
+
+    // Imagem do primeiro serviço: usa a do Junior se ele mandou (data.servicoImagemUrl);
+    // senão gera por IA (Higgsfield). Best-effort — falha NÃO bloqueia a proposta.
+    if (servicos[0] && !servicos[0].imagemUrl) {
+      const override = typeof data.servicoImagemUrl === 'string' ? data.servicoImagemUrl : undefined;
+      servicos[0].imagemUrl = override ?? await this.gerarImagemServico(slug, servicos[0]);
+    }
 
     const serviceData = buildServiceOnlyData({
       numeroProposta,
