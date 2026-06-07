@@ -5,4 +5,4 @@
 //   curl https://propostas.ecosunpower.eng.br/health  -> campo "build"
 // Se o "build" bater com este valor, o deploy pegou. Se mostrar valor antigo,
 // o Easypanel NAO reconstruiu (cache de camada Docker ou deploy nao disparado).
-export const BUILD_VERSION = 'DONO-CAD-2026-06-07';
+export const BUILD_VERSION = 'CARTAO-BELENUS-2026-06-07';
