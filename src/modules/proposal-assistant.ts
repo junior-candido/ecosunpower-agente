@@ -342,9 +342,11 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
 
 - formasPagamento: SEMPRE incluir 3 opções padrão:
   1. À vista PIX/TED (recomendado, sem juros)
-  2. Cartão de crédito até 24× com juros (~2.5%a.m., fator total ~1.65)
+  2. Cartão de crédito (Belenus) em 24× — NÃO calcule a parcela do cartão: o
+     sistema preenche o valor exato (tabela Belenus). Só inclua a opção com
+     meioPagamento "cartao"; pode deixar valorPrincipal vazio que o sistema corrige.
   3. Financiamento até 90× com carência até 120 dias (Solfácil/Sol Agora/BV/Santander, ~1.7%a.m., fator ~2.10)
-  Calcule parcelas baseadas em valorTotalRs. Se Junior pedir customização ("só à vista", "12x sem juros"), respeitar.
+  Calcule as parcelas do financiamento baseadas em valorTotalRs (o cartão é do sistema). Se Junior pedir customização ("só à vista", "12x sem juros"), respeitar.
 
 ## EXEMPLO DE FLUXO
 
@@ -1302,6 +1304,7 @@ export class ProposalAssistant {
     const sufixo = Date.now().toString(36).toUpperCase().slice(-5);
     const numero = `${ano}-${sufixo}`;
     const servicos = mapServicosFromClaude(data.servicos);
+    const valorComServicos = Number(data.valorTotalRs) + somaServicosExtras(servicos);
     return {
       numeroProposta: numero,
       dataProposta: new Date().toLocaleDateString('pt-BR'),
@@ -1320,21 +1323,20 @@ export class ProposalAssistant {
       inversor: data.inversor,
       estruturaFixacao: data.estruturaFixacao,
       valorTotalRs: Number(data.valorTotalRs),
-      formasPagamento: data.formasPagamento ?? this.defaultPaymentOptions(
-        Number(data.valorTotalRs) + somaServicosExtras(servicos)),
+      formasPagamento: this.enforceCartaoBelenus(
+        data.formasPagamento ?? this.defaultPaymentOptions(valorComServicos),
+        valorComServicos,
+      ),
       servicos,
       empresa: this.companyDefaults,
     };
   }
 
   // Taxas reais abril/2026.
-  // CARTAO BELENUS (parceria EcoSunPower): muito menor que cartao normal de mercado.
-  // Calibrado pelo Junior: kit ~R$ 13k em 24x tem acrescimo R$ 1.838 sobre a vista.
-  // Taxa equivalente: ~0,42% a.m. (vs 6,5% cartao comum).
-  // Acrescimo a vista R$ 250 = taxa administrativa fixa Belenus.
+  // CARTAO BELENUS (parceria EcoSunPower): ver tabela exata BELENUS_ACRESCIMO abaixo
+  // (substituiu a calibracao antiga de ~0,42% a.m., que subestimava o acrescimo real).
   // FINANCIAMENTO SOLAR 2026: Santander 1,11-1,25%, BV 1,17%, Solfacil CET 1,32-1,57%.
   // Media realista 1,40% a.m. CET (cobre Solfacil/BV/Santander/Sol Agora).
-  private static readonly TAXA_CARTAO_AM = 0.0042; // Belenus
   private static readonly TAXA_FINANC_AM = 0.014; // 1,4% a.m. CET medio
   private static readonly MESES_CARENCIA_FINANC = 4; // 120 dias padrao
 
@@ -1346,11 +1348,47 @@ export class ProposalAssistant {
     return valorPosCarencia * fator;
   }
 
+  // Tabela Belenus (parceria EcoSunPower) — acréscimo TOTAL sobre o valor à vista
+  // por nº de parcelas no cartão. Coletada/calibrada pelo Junior em 07/06/2026
+  // (kit R$ 10.000: 1x +287 ... 12x +1149 ... 24x +2105). É taxa POR FAIXA (degraus
+  // a cada ~6 parcelas), NÃO um juros composto de taxa única — por isso guardamos
+  // a tabela exata em vez de uma fórmula. O acréscimo é % do valor (proporcional),
+  // então vale pra qualquer valor de venda. Hoje a proposta solar mostra só 24x.
+  private static readonly BELENUS_ACRESCIMO: Record<number, number> = {
+    1: 0.0287, 2: 0.0450, 3: 0.0515, 4: 0.0580, 5: 0.0645, 6: 0.0710,
+    7: 0.0813, 8: 0.0879, 9: 0.0947, 10: 0.1014, 11: 0.1081, 12: 0.1149,
+    13: 0.1273, 14: 0.1341, 15: 0.1410, 16: 0.1480, 17: 0.1549, 18: 0.1620,
+    19: 0.1745, 20: 0.1816, 21: 0.1888, 22: 0.1959, 23: 0.2032, 24: 0.2105,
+  };
+
+  // Parcela no cartão Belenus: total = valor × (1 + acréscimo), parcela = total / n.
+  private static parcelaCartaoBelenus(valor: number, parcelas: number): number {
+    const acr = ProposalAssistant.BELENUS_ACRESCIMO[parcelas] ?? ProposalAssistant.BELENUS_ACRESCIMO[24];
+    return (valor * (1 + acr)) / parcelas;
+  }
+
+  // O cartão do solar SEMPRE usa a tabela Belenus exata em 24x — a Eva nunca
+  // calcula cartão de cabeça. Mesmo quando a Eva monta formasPagamento, este
+  // passo força o valor do cartão e garante a mensagem das bandeiras.
+  private enforceCartaoBelenus(
+    formas: ProposalData['formasPagamento'],
+    valorBase: number,
+  ): ProposalData['formasPagamento'] {
+    const fmtRs = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+    const parcela = Math.round(ProposalAssistant.parcelaCartaoBelenus(valorBase, 24));
+    const bandeiras = 'Parcelamento: Visa/Amex até 24× · Master/Elo até 21× · demais até 12×';
+    return formas.map((f) => {
+      if (f.meioPagamento !== 'cartao') return f;
+      const bullets = f.bullets.some((b) => b.includes('Visa/Amex')) ? f.bullets : [...f.bullets, bandeiras];
+      return { ...f, valorPrincipal: fmtRs(parcela), bullets };
+    });
+  }
+
   private defaultPaymentOptions(valorRs: number): ProposalData['formasPagamento'] {
     const fmtRs = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 
     const cartaoParcela = Math.round(
-      ProposalAssistant.parcelaTabelaPrice(valorRs, ProposalAssistant.TAXA_CARTAO_AM, 24),
+      ProposalAssistant.parcelaCartaoBelenus(valorRs, 24),
     );
     const financiamentoParcela = Math.round(
       ProposalAssistant.parcelaTabelaPrice(
@@ -1375,7 +1413,7 @@ export class ProposalAssistant {
         tipo: 'Cartão Belenus',
         titulo: 'Em até 24× com juros baixos',
         valorPrincipal: fmtRs(cartaoParcela),
-        valorSecundario: '24× no cartão · aprovação imediata',
+        valorSecundario: 'a partir de 24× · aprovação imediata',
         bullets: [
           'Parceria EcoSunPower x Belenus — taxa especial pra solar',
           'Muito menor que cartão tradicional',
