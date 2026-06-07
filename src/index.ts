@@ -525,7 +525,7 @@ async function main() {
   // Lista marcas dinamicamente do registry pra confirmar deploy/registry.
   const { marcasSuportadas } = await import('./modules/monitoring/adapter-registry.js');
   console.log(`[monitoring] Servico ativo. Marcas suportadas: ${marcasSuportadas().join(', ')}`);
-  console.log(`[monitoring] BUILD_MARKER deye-history-fix-2026-05-08T${new Date().toISOString()}`);
+  console.log(`[monitoring] BUILD_MARKER PAGAMENTO-SERVICO-2026-06-06T${new Date().toISOString()}`);
 
   const googleReviewUrl = process.env.GOOGLE_REVIEW_URL ?? '';
   const postInstall = googleReviewUrl
