@@ -68,12 +68,12 @@ const data: ProposalData = {
     {
       tipo: 'Cartão',
       titulo: 'Belenus em até 24×',
-      valorPrincipal: 'R$ 1.265',
-      valorSecundario: 'por mês · 24 parcelas',
+      valorPrincipal: 'R$ 1.513',
+      valorSecundario: 'a partir de 24× · aprovação imediata',
       bullets: [
         'Aprovação imediata, sem análise de crédito',
-        'Taxa muito menor que cartão comum (~0,42% a.m.)',
-        'Acréscimo total ~R$ 4.000 sobre à vista',
+        'Parceria EcoSunPower x Belenus — taxa especial pra solar',
+        'Parcelamento: Visa/Amex até 24× · Master/Elo até 21× · demais até 12×',
       ],
     },
     {
