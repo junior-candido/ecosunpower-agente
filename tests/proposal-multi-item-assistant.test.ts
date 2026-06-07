@@ -1,5 +1,39 @@
 import { describe, it, expect } from 'vitest';
-import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData, buildServiceImagePrompt } from '../src/modules/proposal-assistant.js';
+import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData, buildServiceImagePrompt, buildComparacaoOpcao } from '../src/modules/proposal-assistant.js';
+
+describe('buildComparacaoOpcao', () => {
+  const dados = { potenciaKwp: 8.4, moduloFabricante: 'Trina', inversorFabricante: 'Sungrow', valorTotalRs: 38500 };
+  it('monta a opção com payback formatado, geração e economia arredondadas', () => {
+    const o = buildComparacaoOpcao('Opção A', dados,
+      { geracaoMensalKwh: 1080.6, paybackAnos: 4, paybackMeses: 2, paybackInviavel: false, economiaVidaUtil: 320000.4 } as any);
+    expect(o.rotulo).toBe('Opção A');
+    expect(o.geracaoMensalKwh).toBe(1081);
+    expect(o.paybackTexto).toBe('4 anos e 2 meses');
+    expect(o.economia25AnosRs).toBe(320000);
+    expect(o.moduloFabricante).toBe('Trina');
+    expect(o.inversorFabricante).toBe('Sungrow');
+  });
+  it('payback inviável vira "> 25 anos"', () => {
+    const o = buildComparacaoOpcao('B', dados,
+      { geracaoMensalKwh: 500, paybackAnos: 25, paybackMeses: 0, paybackInviavel: true, economiaVidaUtil: 10000 } as any);
+    expect(o.paybackTexto).toMatch(/25 anos/);
+  });
+  it('usa singular em "1 ano e 1 mês"', () => {
+    const o = buildComparacaoOpcao('C', dados,
+      { geracaoMensalKwh: 200, paybackAnos: 1, paybackMeses: 1, paybackInviavel: false, economiaVidaUtil: 5000 } as any);
+    expect(o.paybackTexto).toBe('1 ano e 1 mês');
+  });
+  it('payback abaixo de 1 ano não mostra "0 anos" — só os meses', () => {
+    const o = buildComparacaoOpcao('D', dados,
+      { geracaoMensalKwh: 300, paybackAnos: 0, paybackMeses: 5, paybackInviavel: false, economiaVidaUtil: 8000 } as any);
+    expect(o.paybackTexto).toBe('5 meses');
+  });
+  it('payback exato em anos não mostra meses', () => {
+    const o = buildComparacaoOpcao('E', dados,
+      { geracaoMensalKwh: 300, paybackAnos: 4, paybackMeses: 0, paybackInviavel: false, economiaVidaUtil: 8000 } as any);
+    expect(o.paybackTexto).toBe('4 anos');
+  });
+});
 
 describe('buildServiceImagePrompt', () => {
   it('monta prompt fotorrealista a partir do título e descrição do serviço', () => {

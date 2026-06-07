@@ -50,6 +50,11 @@ export interface ProposalData {
   // Serviços adicionais (item livre que SOMA ao valor solar). Opcional —
   // ausência mantém a proposta solar-only idêntica à de antes.
   servicos?: ServicoItem[];
+  // Comparação de 2 sistemas: HTML do quadro lado a lado + flag pra ocultar a
+  // análise pesada (gráfico e financeiro), que refletem só UM sistema e
+  // confundiriam quando o cliente está comparando duas opções.
+  comparacaoHtml?: string;
+  ocultarAnalisePesada?: boolean;
 
   // Empresa (defaults)
   empresa: {
@@ -381,7 +386,7 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
   </div>
 </section>
 
-<section class="system-section">
+${data.ocultarAnalisePesada ? '' : `<section class="system-section">
   <div class="container">
     <span class="section-tag">Análise Técnica</span>
     <h2 class="section-title">Consumo × Geração mensal</h2>
@@ -402,7 +407,9 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
       ${renderNotaSazonalidade(calc.geracaoMensalDistribuida, calc.consumoMensalDistribuido, calc.geracaoAnualKwh)}
     </div>
   </div>
-</section>
+</section>`}
+
+${data.comparacaoHtml ?? ''}
 
 <section class="equipment-section">
   <div class="container">
@@ -502,7 +509,7 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
   </div>
 </section>
 
-<section class="financial-section">
+${data.ocultarAnalisePesada ? '' : `<section class="financial-section">
   <div class="container">
     <span class="section-tag">Análise Financeira</span>
     <h2 class="section-title">Sua conta de luz, antes e depois</h2>
@@ -557,7 +564,7 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
       </div>
     </div>
   </div>
-</section>
+</section>`}
 
 <section class="payment-section">
   <div class="container">

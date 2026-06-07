@@ -100,6 +100,46 @@ describe('ProposalAssistant.generateProposalCore', () => {
     expect(saved.htmlContent).not.toContain('Payback');
   });
 
+  it('comparação 2 sistemas: mostra o quadro lado a lado e esconde gráfico/financeiro', async () => {
+    const r = await pa.generateProposalCore({
+      ...inputBasico,
+      data: {
+        ...inputBasico.data,
+        comparacao: [
+          { rotulo: 'Opção A', potenciaKwp: 8.4, valorTotalRs: 38500, modulo: { fabricante: 'Trina' }, inversor: { fabricante: 'Sungrow' } },
+          { rotulo: 'Opção B', potenciaKwp: 8.0, valorTotalRs: 44000, modulo: { fabricante: 'LONGi' }, inversor: { fabricante: 'SolarEdge' } },
+        ],
+      },
+    });
+    expect(r.calculations).not.toBeNull(); // comparação ainda é proposta solar
+    const saved = supabase.savePropostaPublica.mock.calls[0][0].htmlContent;
+    expect(saved).toContain('Compare as opções');
+    expect(saved).toContain('Opção A');
+    expect(saved).toContain('Opção B');
+    expect(saved).toContain('LONGi');
+    // a análise pesada (de uma opção só) some na comparação
+    expect(saved).not.toContain('Consumo × Geração mensal');
+    expect(saved).not.toContain('Indicadores de viabilidade');
+  });
+
+  it('comparação com opção malformada (sem potência) cai na solar normal — nunca NaN', async () => {
+    const r = await pa.generateProposalCore({
+      ...inputBasico,
+      data: {
+        ...inputBasico.data,
+        comparacao: [
+          { rotulo: 'Opção A', potenciaKwp: 8.4, valorTotalRs: 38500, modulo: { fabricante: 'Trina' }, inversor: { fabricante: 'Sungrow' } },
+          { rotulo: 'Opção B', valorTotalRs: 44000, modulo: { fabricante: 'LONGi' }, inversor: { fabricante: 'SolarEdge' } }, // sem potenciaKwp
+        ],
+      },
+    });
+    const saved = supabase.savePropostaPublica.mock.calls[0][0].htmlContent;
+    expect(saved).not.toContain('Compare as opções'); // não monta quadro quebrado
+    expect(saved).not.toContain('NaN');                // nunca NaN
+    expect(saved).toContain('Consumo × Geração mensal'); // proposta solar normal volta
+    expect(r.slug).toBeTruthy();
+  });
+
   it('personalizada sem attachments (lista vazia) cai no fluxo básico', async () => {
     const r = await pa.generateProposalCore({ ...inputBasico, tipo: 'personalizada', attachments: [] });
     expect(r.slug).toBeTruthy();

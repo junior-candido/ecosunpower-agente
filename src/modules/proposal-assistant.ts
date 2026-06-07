@@ -22,6 +22,7 @@ import {
 } from './solar-params.js';
 import { renderProposalHTML, type ProposalData } from './proposal/template.js';
 import { somaServicosExtras, renderServiceOnlyHTML, type ServicoItem, type ServiceOnlyData } from './proposal/service-render.js';
+import { renderComparacaoSolar, type ComparacaoOpcao } from './proposal/comparison-render.js';
 import { htmlToPdf, gerarQrCodeDataUrl } from './proposal/pdf-generator.js';
 import type { DriveUploader } from './proposal/drive-uploader.js';
 import type { SupabaseService } from './supabase.js';
@@ -105,6 +106,31 @@ export function buildServiceOnlyData(params: {
     servicos,
     formasPagamento: data.formasPagamento ?? criarPagamentoPadrao(totalServicos),
     empresa,
+  };
+}
+
+// Monta uma ComparacaoOpcao a partir dos dados crus + o resultado de calcular().
+// O payback vem já formatado em PT-BR; geração e economia arredondadas. Eva não
+// calcula — quem roda calcular() é o sistema; aqui só formatamos o resultado.
+export function buildComparacaoOpcao(
+  rotulo: string,
+  dados: { potenciaKwp: number; moduloFabricante: string; inversorFabricante: string; valorTotalRs: number },
+  calc: { geracaoMensalKwh: number; paybackAnos: number; paybackMeses: number; paybackInviavel: boolean; economiaVidaUtil: number },
+): ComparacaoOpcao {
+  const anosTxt = calc.paybackAnos > 0 ? `${calc.paybackAnos} ${calc.paybackAnos === 1 ? 'ano' : 'anos'}` : '';
+  const mesesTxt = calc.paybackMeses > 0 ? `${calc.paybackMeses} ${calc.paybackMeses === 1 ? 'mês' : 'meses'}` : '';
+  const paybackTexto = calc.paybackInviavel
+    ? '> 25 anos'
+    : ([anosTxt, mesesTxt].filter(Boolean).join(' e ') || '0 meses');
+  return {
+    rotulo,
+    potenciaKwp: dados.potenciaKwp,
+    geracaoMensalKwh: Math.round(calc.geracaoMensalKwh),
+    valorTotalRs: dados.valorTotalRs,
+    paybackTexto,
+    economia25AnosRs: Math.round(calc.economiaVidaUtil),
+    moduloFabricante: dados.moduloFabricante,
+    inversorFabricante: dados.inversorFabricante,
   };
 }
 
@@ -210,6 +236,7 @@ ${marcasKnowledge}
         • \`true\` → serviço "JÁ INCLUSO": já está DENTRO do valor que o Junior passou, então NÃO soma de novo (na proposta aparece com selo "já incluso"). Use quando o Junior diz "já incluso", "já está no valor", "dentro do total", "sem custo adicional", "já contemplado", "incluso no preço".
     REGRA DE OURO da conta: \`valorTotalRs\` é SEMPRE só o valor do solar. Se um serviço é \`jaIncluso: true\`, o \`valorTotalRs\` que o Junior passou JÁ contém esse serviço — não desconte nem some nada, o sistema faz a conta certa. Você só entende e classifica; quem soma/subtrai é SEMPRE o sistema, NUNCA você de cabeça.
     **PROPOSTA SÓ DE SERVIÇO (sem solar):** se o Junior pedir uma proposta só de serviço (ex: só adequação de padrão, só projeto elétrico, sem kit solar), preencha APENAS \`servicos[]\` + \`nomeCliente\` (+ telefone se modo eva_envia). NÃO invente \`potenciaKwp\`, módulo, inversor nem consumo — deixe ausentes/0. O sistema detecta que não há solar e gera um layout de serviço elegante (sem gráfico/payback). Nesse caso NÃO liste os campos solares em \`missing\`.
+11. **COMPARAÇÃO (2 sistemas solares):** se o Junior quiser que o cliente compare duas opções de sistema, preencha a proposta normalmente com a **Opção A** (potência, módulo, inversor, valorTotalRs no nível principal do \`data\`) E devolva \`comparacao: [opcaoA, opcaoB]\`, cada uma com seu \`rotulo\`, \`potenciaKwp\`, \`modulo\`, \`inversor\` e \`valorTotalRs\`. NÃO marque recomendação — as duas são neutras. O sistema calcula geração/payback de cada uma, monta o quadro comparativo e esconde o gráfico/financeiro (que refletiriam só uma opção). Você NÃO calcula nada.
 
 # FORMATO DE RESPOSTA
 
@@ -248,6 +275,10 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
     "servicos": [
       { "titulo": "Carregador EV", "descricao": "Wallbox 7,4 kW instalado com circuito dedicado", "valorRs": 4500, "jaIncluso": false },
       { "titulo": "Adequação de padrão", "descricao": "Troca do padrão de entrada para trifásico", "valorRs": 1000, "jaIncluso": true }
+    ],
+    "comparacao": [
+      { "rotulo": "Opção A", "potenciaKwp": 8.4, "valorTotalRs": 38500, "modulo": { "fabricante": "Trina" }, "inversor": { "fabricante": "Sungrow" } },
+      { "rotulo": "Opção B", "potenciaKwp": 8.0, "valorTotalRs": 44000, "modulo": { "fabricante": "LONGi" }, "inversor": { "fabricante": "SolarEdge" } }
     ]
   }
 }
@@ -820,6 +851,30 @@ export class ProposalAssistant {
 
     const calculations = calcular(calcInput);
     const proposalData = this.dataToProposalData(data, calculations);
+
+    // Comparação de 2 sistemas: o sistema calcula geração/payback de cada opção e
+    // monta o quadro lado a lado, escondendo a análise pesada (que reflete só a
+    // opção principal). data.* é a Opção A; data.comparacao traz as 2 opções.
+    const opcaoComparacaoValida = (op: any) => Number(op?.potenciaKwp) > 0 && Number(op?.valorTotalRs) > 0;
+    if (Array.isArray(data.comparacao) && data.comparacao.length >= 2
+        && data.comparacao.slice(0, 2).every(opcaoComparacaoValida)) {
+      const opcoes = data.comparacao.slice(0, 2).map((op: any, i: number) => {
+        const ci = this.dataToCalculatorInput({ ...data, ...op });
+        const c = calcular(ci);
+        return buildComparacaoOpcao(
+          op.rotulo ?? `Opção ${String.fromCharCode(65 + i)}`,
+          {
+            potenciaKwp: Number(op.potenciaKwp),
+            moduloFabricante: op.modulo?.fabricante ?? data.modulo?.fabricante,
+            inversorFabricante: op.inversor?.fabricante ?? data.inversor?.fabricante,
+            valorTotalRs: Number(op.valorTotalRs),
+          },
+          c,
+        );
+      });
+      proposalData.comparacaoHtml = renderComparacaoSolar(opcoes);
+      proposalData.ocultarAnalisePesada = true;
+    }
 
     const slug = randomBytes(12).toString('base64url');
     proposalData.tipo = tipo;
