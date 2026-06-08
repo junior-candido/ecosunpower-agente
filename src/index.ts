@@ -522,13 +522,17 @@ async function main() {
     await closingRedis.del(`closing:${phone}`);
   }
 
-  // Estado do fluxo de cadastro de dono de usina (key: dono-cad:<phone>, TTL 10min)
+  // Estado do fluxo de cadastro de dono de usina (key: dono-cad:<phone>).
+  // TTL de 1h (igual ao /fechar): o passo do modelo do inversor costuma obrigar o
+  // Junior a ir consultar o equipamento/datasheet — com 10min o estado expirava no
+  // meio e a resposta dele caía no vazio (a Eva ficava muda).
+  const DONO_CAD_TTL_SECONDS = 3600;
   async function getDonoCadState(phone: string): Promise<DonoCadState | null> {
     const raw = await closingRedis.get(`dono-cad:${phone}`);
     return raw ? (JSON.parse(raw) as DonoCadState) : null;
   }
   async function setDonoCadState(phone: string, state: DonoCadState): Promise<void> {
-    await closingRedis.set(`dono-cad:${phone}`, JSON.stringify(state), 'EX', 600);
+    await closingRedis.set(`dono-cad:${phone}`, JSON.stringify(state), 'EX', DONO_CAD_TTL_SECONDS);
   }
   async function clearDonoCadState(phone: string): Promise<void> {
     await closingRedis.del(`dono-cad:${phone}`);
