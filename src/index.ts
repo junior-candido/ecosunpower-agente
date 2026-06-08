@@ -1137,7 +1137,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         email: dados.email ?? null, city: dados.city ?? null, uf: dados.uf ?? null, cep: dados.cep ?? null,
       });
       if (!r.ok) { await sendText(from, `⚠️ ${r.error ?? 'Falha ao criar cliente'}`); await clearDonoCadState(from); return; }
-      await sendText(from, `✅ Cliente ${dados.name} criado e ligado à usina. Agora os dados da usina.`);
+      if (r.reused) {
+        await sendText(from, `ℹ️ Esse telefone já era do cliente *${r.reusedName ?? dados.name}* — liguei ele na usina (não dupliquei). Agora os dados da usina.`);
+      } else {
+        await sendText(from, `✅ Cliente ${dados.name} criado e ligado à usina. Agora os dados da usina.`);
+      }
       await donoIniciarEtapaUsina(from, st.sistemaId);
       return;
     }

@@ -1357,7 +1357,7 @@ export class SupabaseService {
     city?: string | null;
     uf?: string | null;
     cep?: string | null;
-  }): Promise<{ ok: boolean; lead_id?: string; error?: string }> {
+  }): Promise<{ ok: boolean; lead_id?: string; error?: string; reused?: boolean; reusedName?: string | null }> {
     // 1. Confirma que o sistema existe e ainda não tem lead vinculado
     const { data: sistema, error: sErr } = await this.client
       .from('sistemas_clientes')
@@ -1367,7 +1367,31 @@ export class SupabaseService {
     if (sErr || !sistema) return { ok: false, error: 'Sistema não encontrado' };
     if (sistema.lead_id) return { ok: false, error: 'Sistema já tem cliente vinculado' };
 
-    // 2. Cria o lead
+    // Vincula um lead (novo ou já existente) ao sistema. Centraliza o passo 3 pra
+    // reusar tanto no fluxo normal quanto no fallback de telefone duplicado.
+    const vincular = async (leadId: string): Promise<{ ok: boolean; error?: string }> => {
+      const { error: vErr } = await this.client
+        .from('sistemas_clientes')
+        .update({ lead_id: leadId, updated_at: new Date().toISOString() })
+        .eq('id', input.sistema_id);
+      return vErr ? { ok: false, error: vErr.message } : { ok: true };
+    };
+
+    // 2. O telefone tem trava de unicidade (leads_phone_key). Se já existe um lead
+    // com esse telefone, é a mesma pessoa: reusa o cadastro em vez de duplicar
+    // (não sobrescreve dados do lead existente — só liga na usina).
+    const { data: existente } = await this.client
+      .from('leads')
+      .select('id, name')
+      .eq('phone', input.phone)
+      .maybeSingle();
+    if (existente) {
+      const v = await vincular(existente.id);
+      if (!v.ok) return { ok: false, error: v.error };
+      return { ok: true, lead_id: existente.id, reused: true, reusedName: existente.name };
+    }
+
+    // 3. Cria o lead novo
     const { data: novoLead, error: lErr } = await this.client
       .from('leads')
       .insert({
@@ -1385,17 +1409,30 @@ export class SupabaseService {
       })
       .select('id')
       .single();
-    if (lErr || !novoLead) return { ok: false, error: lErr?.message ?? 'Falha ao criar lead' };
+    if (lErr || !novoLead) {
+      // Corrida: alguém com esse telefone foi inserido entre a checagem e o insert.
+      // Cai no mesmo tratamento de reuso em vez de devolver erro cru do banco.
+      if (lErr?.code === '23505') {
+        const { data: agora } = await this.client
+          .from('leads').select('id, name').eq('phone', input.phone).maybeSingle();
+        if (agora) {
+          const v = await vincular(agora.id);
+          if (!v.ok) return { ok: false, error: v.error };
+          return { ok: true, lead_id: agora.id, reused: true, reusedName: agora.name };
+        }
+        // Bateu na trava de telefone mas o re-lookup não achou (falha transitória):
+        // mensagem amigável em vez do erro cru do banco.
+        return { ok: false, error: 'Esse telefone já está cadastrado. Tente buscar o cliente pelo nome.' };
+      }
+      return { ok: false, error: lErr?.message ?? 'Falha ao criar lead' };
+    }
 
-    // 3. Vincula
-    const { error: vErr } = await this.client
-      .from('sistemas_clientes')
-      .update({ lead_id: novoLead.id })
-      .eq('id', input.sistema_id);
-    if (vErr) {
+    // 4. Vincula o lead recém-criado
+    const v = await vincular(novoLead.id);
+    if (!v.ok) {
       // rollback do lead (best-effort)
       try { await this.client.from('leads').delete().eq('id', novoLead.id); } catch {}
-      return { ok: false, error: vErr.message };
+      return { ok: false, error: v.error };
     }
     return { ok: true, lead_id: novoLead.id };
   }
