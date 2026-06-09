@@ -55,7 +55,11 @@ export interface ProposalData {
   // análise pesada (gráfico e financeiro), que refletem só UM sistema e
   // confundiriam quando o cliente está comparando duas opções.
   comparacaoHtml?: string;
-  ocultarAnalisePesada?: boolean;
+  // Modo comparação de 2+ sistemas: a proposta inteira vira comparativa — esconde as
+  // seções de "1 sistema só" (topo com kWp/geração, resumo executivo, equipamento,
+  // pagamento de 1 valor) pra não confundir o cliente. O quadro comparativo (comparacaoHtml)
+  // carrega geração/economia/payback/equipamento/parcela de CADA opção.
+  modoComparacao?: boolean;
 
   // Empresa (defaults)
   empresa: {
@@ -305,9 +309,11 @@ footer strong{color:#fff;font-weight:600}
 
     <span class="hero-tag">⚡ Proposta Comercial Personalizada</span>
     <h1>Energia solar premium<br>para <span>${escapeHtml(data.nomeCliente)}</span></h1>
-    <p class="hero-lead">Sistema dimensionado, equipamentos Tier 1 e instalação certificada — projetado pra você economizar até ${fmtPct(economiaPercent, 0)} na conta de luz e valorizar seu imóvel.</p>
+    <p class="hero-lead">${data.modoComparacao
+      ? 'Duas opções de sistema premium, lado a lado. Compare os números e a tecnologia de cada uma e escolha a que faz mais sentido pra você.'
+      : `Sistema dimensionado, equipamentos Tier 1 e instalação certificada — projetado pra você economizar até ${fmtPct(economiaPercent, 0)} na conta de luz e valorizar seu imóvel.`}</p>
 
-    <div class="hero-stats">
+    ${data.modoComparacao ? '' : `<div class="hero-stats">
       <div>
         <div class="hero-stat-label">Sistema</div>
         <div class="hero-stat-value">${fmtNum(data.potenciaKwp, 1)}</div>
@@ -328,7 +334,7 @@ footer strong{color:#fff;font-weight:600}
         <div class="hero-stat-value">${fmtCurto(data.valorTotalRs)}</div>
         <div class="hero-stat-unit">${(data.servicos && data.servicos.length > 0) ? 'no sistema solar · veja o total abaixo' : 'à vista'}</div>
       </div>
-    </div>
+    </div>`}
   </div>
 </header>
 
@@ -353,7 +359,7 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
   </div>
 </div>
 
-<section class="executive-summary">
+${data.modoComparacao ? '' : `<section class="executive-summary">
   <div class="container">
     <span class="section-tag">Resumo Executivo</span>
     <h2 class="section-title">O que esse sistema faz pra você</h2>
@@ -385,9 +391,9 @@ ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado)
       </div>
     </div>
   </div>
-</section>
+</section>`}
 
-${data.ocultarAnalisePesada ? '' : `<section class="system-section">
+${data.modoComparacao ? '' : `<section class="system-section">
   <div class="container">
     <span class="section-tag">Análise Técnica</span>
     <h2 class="section-title">Consumo × Geração mensal</h2>
@@ -412,7 +418,7 @@ ${data.ocultarAnalisePesada ? '' : `<section class="system-section">
 
 ${data.comparacaoHtml ?? ''}
 
-<section class="equipment-section">
+${data.modoComparacao ? '' : `<section class="equipment-section">
   <div class="container">
     <span class="section-tag">Equipamentos Premium</span>
     <h2 class="section-title">O que vai no seu telhado</h2>
@@ -462,7 +468,7 @@ ${data.comparacaoHtml ?? ''}
     </div>
     ` : ''}
   </div>
-</section>
+</section>`}
 
 <section style="background:#fff;padding:80px 0">
   <div class="container">
@@ -510,7 +516,7 @@ ${data.comparacaoHtml ?? ''}
   </div>
 </section>
 
-${data.ocultarAnalisePesada ? '' : `<section class="financial-section">
+${data.modoComparacao ? '' : `<section class="financial-section">
   <div class="container">
     <span class="section-tag">Análise Financeira</span>
     <h2 class="section-title">Sua conta de luz, antes e depois</h2>
@@ -573,7 +579,7 @@ ${data.ocultarAnalisePesada ? '' : `<section class="financial-section">
   </div>
 </section>`}
 
-<section class="payment-section">
+${data.modoComparacao ? '' : `<section class="payment-section">
   <div class="container">
     <span class="section-tag">Formas de Pagamento</span>
     <h2 class="section-title">Como você prefere investir?</h2>
@@ -592,10 +598,11 @@ ${data.ocultarAnalisePesada ? '' : `<section class="financial-section">
       `).join('')}
     </div>
   </div>
-</section>
+</section>`}
 
 ${/* Serviços somam ao total exibido na própria seção; payback/ROI seguem solar-only de propósito (serviço não gera economia de energia). */''}
-${renderServicosAdicionaisSection(data.servicos ?? [], data.valorTotalRs)}
+${/* No modo comparação o "total (solar + serviços)" travaria no valor da Opção A e confundiria o cliente — então a seção de serviços não entra na comparação. */''}
+${data.modoComparacao ? '' : renderServicosAdicionaisSection(data.servicos ?? [], data.valorTotalRs)}
 
 ${socialProofHtml}
 

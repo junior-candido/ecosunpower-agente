@@ -125,6 +125,8 @@ export function buildComparacaoOpcao(
     inversorModelo?: string;
     inversorQuantidade?: number;
     valorTotalRs: number;
+    cartaoParcelaRs?: number;
+    financiamentoParcelaRs?: number;
   },
   calc: { geracaoMensalKwh: number; paybackAnos: number; paybackMeses: number; paybackInviavel: boolean; economiaVidaUtil: number; economiaMensal?: number },
 ): ComparacaoOpcao {
@@ -141,6 +143,8 @@ export function buildComparacaoOpcao(
     paybackTexto,
     economia25AnosRs: Math.round(calc.economiaVidaUtil),
     economiaMensalRs: Math.round(calc.economiaMensal ?? 0),
+    cartaoParcelaRs: dados.cartaoParcelaRs,
+    financiamentoParcelaRs: dados.financiamentoParcelaRs,
     moduloFabricante: dados.moduloFabricante,
     moduloModelo: dados.moduloModelo,
     moduloPotenciaW: dados.moduloPotenciaW,
@@ -945,12 +949,19 @@ export class ProposalAssistant {
             inversorModelo: op.inversor?.modelo ?? data.inversor?.modelo,
             inversorQuantidade: numOuUndef(op.inversor?.quantidade ?? data.inversor?.quantidade),
             valorTotalRs: Number(op.valorTotalRs),
+            // Pagamento da PRÓPRIA opção (cartão 24× + financiamento até 90×) fica dentro
+            // do quadro, já que no modo comparação a seção de pagamento de 1 valor some —
+            // assim o cliente não perde nenhuma forma de pagamento ao comparar.
+            cartaoParcelaRs: Math.round(ProposalAssistant.parcelaCartaoBelenus(Number(op.valorTotalRs), 24)),
+            financiamentoParcelaRs: Math.round(ProposalAssistant.parcelaTabelaPrice(
+              Number(op.valorTotalRs), ProposalAssistant.TAXA_FINANC_AM, 90, ProposalAssistant.MESES_CARENCIA_FINANC,
+            )),
           },
           c,
         );
       });
       proposalData.comparacaoHtml = renderComparacaoSolar(opcoes);
-      proposalData.ocultarAnalisePesada = true;
+      proposalData.modoComparacao = true;
     }
 
     const slug = randomBytes(12).toString('base64url');

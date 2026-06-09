@@ -45,6 +45,30 @@ describe('renderComparacaoSolar', () => {
     expect(html).toContain('1× SE5K');
   });
 
+  it('mostra a parcela do cartão (24×) de cada opção quando informada', () => {
+    const completas: ComparacaoOpcao[] = [
+      { ...opcoes[0], cartaoParcelaRs: 1940 },
+      { ...opcoes[1], cartaoParcelaRs: 2220 },
+    ];
+    const html = renderComparacaoSolar(completas);
+    expect(html).toContain('24×');
+    expect(html.toLowerCase()).toContain('cartão');
+    expect(html).toContain('R$ 1.940');
+    expect(html).toContain('R$ 2.220');
+  });
+
+  it('mostra a parcela do financiamento (até 90×) de cada opção quando informada', () => {
+    const completas: ComparacaoOpcao[] = [
+      { ...opcoes[0], financiamentoParcelaRs: 720 },
+      { ...opcoes[1], financiamentoParcelaRs: 830 },
+    ];
+    const html = renderComparacaoSolar(completas);
+    expect(html).toContain('90×');
+    expect(html.toLowerCase()).toContain('financiado');
+    expect(html).toContain('R$ 720');
+    expect(html).toContain('R$ 830');
+  });
+
   it('mostra a economia mensal em R$ de cada opção quando informada', () => {
     const completas: ComparacaoOpcao[] = [
       { ...opcoes[0], economiaMensalRs: 850 },

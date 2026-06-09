@@ -13,6 +13,8 @@ export interface ComparacaoOpcao {
   paybackTexto: string;       // já formatado (ex: "4 anos e 2 meses")
   economia25AnosRs: number;
   economiaMensalRs?: number;  // economia por mês em R$ (destaque); opcional
+  cartaoParcelaRs?: number;         // parcela do cartão em 24× (pagamento por opção); opcional
+  financiamentoParcelaRs?: number;  // parcela do financiamento (até 90×) por opção; opcional
   moduloFabricante: string;
   moduloModelo?: string;
   moduloPotenciaW?: number;
@@ -62,6 +64,12 @@ export function renderComparacaoSolar(opcoes: ComparacaoOpcao[]): string {
         ${inversorTxt ? linha('Inversor', escapeHtml(inversorTxt)) : ''}
         ${linha('Geração', fmtNum(o.geracaoMensalKwh) + ' kWh/mês')}
         ${linha('Investimento', 'R$ ' + fmtRs(o.valorTotalRs, 0))}
+        ${(o.cartaoParcelaRs && o.cartaoParcelaRs > 0)
+          ? `<div style="padding:8px 0 0;text-align:right;color:#64748B;font-size:13px">ou 24× de <strong style="color:#0F172A">R$ ${fmtRs(o.cartaoParcelaRs, 0)}</strong> no cartão</div>`
+          : ''}
+        ${(o.financiamentoParcelaRs && o.financiamentoParcelaRs > 0)
+          ? `<div style="padding:4px 0 12px;text-align:right;color:#64748B;font-size:13px">ou até 90× de <strong style="color:#0F172A">R$ ${fmtRs(o.financiamentoParcelaRs, 0)}</strong> financiado</div>`
+          : ''}
         ${economiaMensal}
         ${linha('Payback', escapeHtml(o.paybackTexto))}
         ${linha('Economia 25 anos', 'R$ ' + fmtRs(o.economia25AnosRs, 0))}
