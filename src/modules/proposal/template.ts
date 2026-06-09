@@ -320,8 +320,8 @@ footer strong{color:#fff;font-weight:600}
       </div>
       <div>
         <div class="hero-stat-label">Economia</div>
-        <div class="hero-stat-value">${fmtPct(economiaPercent, 0)}</div>
-        <div class="hero-stat-unit">na conta de luz</div>
+        <div class="hero-stat-value">${calc.economiaMensal > 0 ? `R$ ${fmtRs(calc.economiaMensal, 0)}` : fmtPct(economiaPercent, 0)}</div>
+        <div class="hero-stat-unit">${calc.economiaMensal > 0 ? `por mês · ~${fmtPct(economiaPercent, 0)} da conta` : 'na conta de luz'}</div>
       </div>
       <div>
         <div class="hero-stat-label">Investimento</div>
@@ -532,11 +532,17 @@ ${data.ocultarAnalisePesada ? '' : `<section class="financial-section">
         <div class="compare-period">por mês · Fio B + iluminação pública</div>
         <ul class="compare-list">
           <li><span>Custo anual</span> <strong>R$ ${fmtRs(calc.contaComSistemaMensal * 12, 0)}</strong></li>
-          <li><span>Economia mensal</span> <strong>R$ ${fmtRs(calc.economiaMensal, 0)}</strong></li>
           <li><span>Economia em 25 anos</span> <strong>R$ ${fmtRs(calc.economiaVidaUtil, 0)}</strong></li>
         </ul>
       </div>
     </div>
+    ${calc.economiaMensal > 0 ? `<div style="margin:8px 0 40px;padding:32px 24px;background:linear-gradient(135deg,#ECFDF5,#D1FAE5);border-radius:24px;text-align:center;border:1px solid #A7F3D0">
+      <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#047857;margin-bottom:10px">Você deixa de pagar todo mês</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:48px;font-weight:800;color:#047857;line-height:1">R$ ${fmtRs(calc.economiaMensal, 0)}<span style="font-size:22px;font-weight:600;color:#059669"> /mês</span></div>
+      <div style="font-size:15px;color:#065F46;margin-top:10px;max-width:520px;margin-left:auto;margin-right:auto">${(data.servicos && data.servicos.length > 0)
+        ? `Economia gerada pelo sistema solar — cerca de ${fmtPct(economiaPercent, 0)} da conta de luz, ou <strong>R$ ${fmtRs(calc.economiaAnual, 0)}/ano</strong>. Os serviços adicionais abaixo são contratados à parte.`
+        : `É o que hoje sai do seu bolso pra concessionária e passa a ficar com você — cerca de ${fmtPct(economiaPercent, 0)} da conta. São <strong>R$ ${fmtRs(calc.economiaAnual, 0)}/ano</strong> que voltam pro seu orçamento.`}</div>
+    </div>` : ''}
     <h3 style="font-size:24px;margin-bottom:24px">Indicadores de viabilidade</h3>
     <div class="indicators-grid">
       <div class="indicator-card">
