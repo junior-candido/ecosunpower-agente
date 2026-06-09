@@ -135,6 +135,29 @@ export function buildComparacaoOpcao(
   };
 }
 
+// Comparação de 2 sistemas: o extrator (LLM) deve repetir a Opção A no topo do `data`
+// E em comparacao[0]. Quando ele preenche só comparacao[] e esquece o topo, a validação
+// estourava `Campo "potenciaKwp" inválido: NaN` (Number(undefined) = NaN) antes mesmo de
+// chegar no código que monta a comparação. comparacao[0] É a Opção A por contrato, então
+// hidratamos o topo a partir dela — a geração vira determinística e não depende do LLM
+// lembrar de duplicar. Idempotente: se o topo já tem os números, não mexe (topo manda).
+export function hydrarOpcaoPrincipalDaComparacao<T extends Record<string, any>>(data: T): T {
+  const comp = (data as any)?.comparacao;
+  if (!Array.isArray(comp) || comp.length === 0) return data;
+  const opcaoA = comp[0];
+  if (!opcaoA || typeof opcaoA !== 'object') return data;
+
+  const numeroVazio = (v: unknown) => !Number.isFinite(Number(v)) || Number(v) <= 0;
+  const out: any = { ...data };
+
+  if (numeroVazio(out.potenciaKwp) && !numeroVazio(opcaoA.potenciaKwp)) out.potenciaKwp = Number(opcaoA.potenciaKwp);
+  if (numeroVazio(out.valorTotalRs) && !numeroVazio(opcaoA.valorTotalRs)) out.valorTotalRs = Number(opcaoA.valorTotalRs);
+  if (!out.modulo && opcaoA.modulo) out.modulo = opcaoA.modulo;
+  if (!out.inversor && opcaoA.inversor) out.inversor = opcaoA.inversor;
+
+  return out as T;
+}
+
 // Monta o prompt da imagem do serviço (fotorrealista, contexto BR, sem texto).
 // Usado quando o Junior NÃO anexa uma imagem própria do serviço.
 export function buildServiceImagePrompt(servico: ServicoItem): string {
@@ -837,7 +860,11 @@ export class ProposalAssistant {
       throw new Error('Nenhum destino configurado (Drive ou Supabase)');
     }
 
-    const { data, modoEnvio, tipo, attachments } = input;
+    const { modoEnvio, tipo, attachments } = input;
+    // Comparação de 2 sistemas: garante que a Opção A esteja no topo do `data`
+    // (o extrator às vezes só preenche comparacao[]). Sem isso a validação abaixo
+    // estourava "potenciaKwp inválido: NaN". Idempotente quando o topo já vem cheio.
+    const data = hydrarOpcaoPrincipalDaComparacao(input.data);
 
     // Proposta SÓ-SERVIÇO (sem solar): desvia pro layout de serviço e pula todo
     // o cálculo solar (que não se aplica). Resolve o caso Edmilson.
@@ -1140,6 +1167,9 @@ export class ProposalAssistant {
   // salva proposal:last:${phone} + formata string pra mandar pelo zap.
   private async generateProposal(phone: string, data: any, _confirmMsg: string): Promise<string> {
     try {
+      // Hidrata a Opção A no topo a partir de comparacao[0] ANTES de salvar no Redis,
+      // pra que o caminho de envio (re-render de proposal:last) também tenha a potência.
+      data = hydrarOpcaoPrincipalDaComparacao(data);
       const sessionState = await this.loadState(phone);
       const modoEnvio: ModoEnvio = sessionState.modoEnvio ?? 'junior_envia';
       const tipo: TipoProposta = sessionState.tipo ?? 'basica';

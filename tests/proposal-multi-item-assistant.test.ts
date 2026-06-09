@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData, buildServiceImagePrompt, buildComparacaoOpcao } from '../src/modules/proposal-assistant.js';
+import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData, buildServiceImagePrompt, buildComparacaoOpcao, hydrarOpcaoPrincipalDaComparacao } from '../src/modules/proposal-assistant.js';
 
 describe('buildComparacaoOpcao', () => {
   const dados = { potenciaKwp: 8.4, moduloFabricante: 'Trina', inversorFabricante: 'Sungrow', valorTotalRs: 38500 };
@@ -32,6 +32,41 @@ describe('buildComparacaoOpcao', () => {
     const o = buildComparacaoOpcao('E', dados,
       { geracaoMensalKwh: 300, paybackAnos: 4, paybackMeses: 0, paybackInviavel: false, economiaVidaUtil: 8000 } as any);
     expect(o.paybackTexto).toBe('4 anos');
+  });
+});
+
+describe('hydrarOpcaoPrincipalDaComparacao', () => {
+  const opcaoA = { rotulo: 'Opção A', potenciaKwp: 8.4, valorTotalRs: 38500, modulo: { fabricante: 'Trina' }, inversor: { fabricante: 'Sungrow' } };
+  const opcaoB = { rotulo: 'Opção B', potenciaKwp: 8.0, valorTotalRs: 44000, modulo: { fabricante: 'LONGi' }, inversor: { fabricante: 'SolarEdge' } };
+
+  it('hidrata potência e valor do topo a partir de comparacao[0] quando o extrator esquece (causa do NaN)', () => {
+    // O LLM preencheu só comparacao[] e deixou o topo vazio → antes estourava "potenciaKwp inválido: NaN"
+    const data = { nomeCliente: 'X', comparacao: [opcaoA, opcaoB] };
+    const out = hydrarOpcaoPrincipalDaComparacao(data);
+    expect(out.potenciaKwp).toBe(8.4);
+    expect(out.valorTotalRs).toBe(38500);
+    expect(out.modulo).toEqual({ fabricante: 'Trina' });
+    expect(out.inversor).toEqual({ fabricante: 'Sungrow' });
+  });
+
+  it('NÃO sobrescreve o topo quando já veio preenchido (idempotente / topo manda)', () => {
+    const data = { nomeCliente: 'X', potenciaKwp: 10, valorTotalRs: 50000, modulo: { fabricante: 'JA' }, inversor: { fabricante: 'Deye' }, comparacao: [opcaoA, opcaoB] };
+    const out = hydrarOpcaoPrincipalDaComparacao(data);
+    expect(out.potenciaKwp).toBe(10);
+    expect(out.valorTotalRs).toBe(50000);
+    expect(out.modulo).toEqual({ fabricante: 'JA' });
+  });
+
+  it('sem comparacao: devolve os dados sem mexer', () => {
+    const data = { nomeCliente: 'X', potenciaKwp: 8.4 };
+    expect(hydrarOpcaoPrincipalDaComparacao(data)).toEqual(data);
+  });
+
+  it('hidrata só o que falta (topo tem valor mas não potência)', () => {
+    const data = { nomeCliente: 'X', valorTotalRs: 99000, comparacao: [opcaoA, opcaoB] };
+    const out = hydrarOpcaoPrincipalDaComparacao(data);
+    expect(out.potenciaKwp).toBe(8.4); // veio do A
+    expect(out.valorTotalRs).toBe(99000); // topo manda, não sobrescreve
   });
 });
 
