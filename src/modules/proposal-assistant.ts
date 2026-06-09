@@ -220,6 +220,7 @@ interface ProposalSessionState {
   pendingMediaId?: string;     // media_id WABA aguardando legenda
   pendingMediaType?: 'foto' | 'video';
   reopenedSlug?: string;        // se setado, regenera proposta existente em vez de criar nova
+  geracaoConcluida?: boolean;   // proposta JÁ gerada nesta sessão; próxima foto/cliente novo zera o rascunho
 }
 
 // Estrutura JSON que o Claude retorna pra Eva entender o estado.
@@ -364,6 +365,9 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
 - Sistema: potenciaKwp, fatorPerda, consumoMensalKwh, tipoCliente, modalidade, concessionaria
 - Equipamentos: modulo (todos), inversor (todos), estruturaFixacao (tipo)
 - Comercial: valorTotalRs
+
+**Tipo \`personalizada\` (tem ESTUDO PVSol/PVsyst) — adicionalmente OBRIGATÓRIO:**
+- \`geracaoMensalKwh\`: a geração do ESTUDO (PVSol/PVsyst). Na personalizada a proposta DEVE usar a geração do estudo, NUNCA o cálculo padrão. Se o Junior não informar, PEÇA ("Qual a geração média mensal do estudo PVSol? (kWh/mês)") e liste \`geracaoMensalKwh\` em \`missing\`. NÃO gere proposta personalizada sem esse número.
 
 **Modo \`junior_envia\` — adicionalmente OPCIONAIS (NÃO listar em missing):**
 - enderecoCliente, telefoneCliente, emailCliente, documentoCliente
@@ -600,6 +604,14 @@ export class ProposalAssistant {
       return null; // nao esta em modo personalizada — nao processa
     }
 
+    // Se uma proposta JÁ foi gerada nesta sessao, esta nova foto inicia o estudo de
+    // uma proposta NOVA — zera os anexos antigos pra eles nao vazarem (bug do "6/3",
+    // fotos de um cliente contando na proposta do outro).
+    if (state.geracaoConcluida) {
+      state.attachments = [];
+      state.geracaoConcluida = false;
+    }
+
     // Detecta categoria. Image e video sao obvios. Document pode ser foto ou video
     // dependendo do mimeType — mas a essa altura nao temos o mimeType ainda.
     // Trata document como "video se mediaType==='video' else foto" — vai validar depois quando baixar.
@@ -627,6 +639,7 @@ export class ProposalAssistant {
   async startProposalMode(phone: string, initialMessage?: string): Promise<string> {
     await this.redis.setex(`proposal:${phone}`, PROPOSAL_MODE_TTL_SECONDS, '1');
     await this.redis.del(`proposal:history:${phone}`);
+    await this.redis.del(`proposal:last:${phone}`); // não deixa "Enviar" disparar proposta de outro cliente
     await this.saveState(phone, { attachments: [] });
 
     // Se Junior ja descreveu junto com o trigger, vai direto pro Claude.
@@ -669,20 +682,57 @@ export class ProposalAssistant {
   async exitProposalMode(phone: string): Promise<void> {
     await this.redis.del(`proposal:${phone}`);
     await this.redis.del(`proposal:history:${phone}`);
+    await this.redis.del(`proposal:last:${phone}`);
     await this.redis.del(this.stateKey(phone));
+  }
+
+  // "Nova proposta" (pós-geração): começa LIMPO mas PRESERVA modo de envio e tipo da
+  // sessão anterior — Junior costuma bater várias propostas seguidas no mesmo modo,
+  // não faz sentido reperguntar a cada cliente. Zera fotos, histórico e proposta gerada.
+  async novaPropostaPreservandoModo(phone: string): Promise<string> {
+    const anterior = await this.loadState(phone);
+    if (!anterior.modoEnvio) return await this.startProposalMode(phone); // sem modo salvo: fluxo normal
+    await this.redis.setex(`proposal:${phone}`, PROPOSAL_MODE_TTL_SECONDS, '1');
+    await this.redis.del(`proposal:last:${phone}`);
+    await this.saveState(phone, { attachments: [], modoEnvio: anterior.modoEnvio, tipo: anterior.tipo });
+
+    const modoTxt = anterior.modoEnvio === 'eva_envia' ? 'eu envio pro cliente' : 'você envia';
+    const message = [
+      '🆕 *Nova proposta* — comecei do zero (fotos e dados limpos).',
+      `_Mantive: ${modoTxt}${anterior.tipo ? ` · ${anterior.tipo}` : ''}._`,
+      '',
+      'Manda os dados do novo cliente.',
+    ].join('\n');
+
+    // Semeia o histórico com o modo/tipo JÁ definidos, pra Eva não reperguntar o modo
+    // (ela monta a resposta a partir do histórico, não do estado) e já ir pros dados.
+    const seed = JSON.stringify({ action: 'ask_more', modoEnvio: anterior.modoEnvio, tipo: anterior.tipo ?? 'basica', message });
+    await this.redis.setex(`proposal:history:${phone}`, PROPOSAL_MODE_TTL_SECONDS, JSON.stringify([{ role: 'assistant', content: seed }]));
+    return message;
   }
 
   async processProposalMessage(phone: string, message: string): Promise<string> {
     // Botoes interativos WABA chegam como text com id "prop:gerar" / "prop:ajustar"
     // / "prop:cancelar". Normaliza pra texto natural ANTES de qualquer outro
     // intercept — assim o resto do fluxo funciona igual ao Junior digitar a palavra.
-    const btnMatch = message.trim().toLowerCase().match(/^prop:(gerar|ajustar|cancelar)$/);
+    const btnMatch = message.trim().toLowerCase().match(/^prop:(gerar|ajustar|cancelar|enviar|nova)$/);
     if (btnMatch) {
       const acao = btnMatch[1];
       if (acao === 'gerar') {
         message = 'gerar';
       } else if (acao === 'ajustar') {
+        // Ajustando a proposta atual: tira o flag de "gerada" pra que anexar uma foto
+        // agora conte como ajuste DESTA proposta (nao zere o rascunho).
+        const st = await this.loadState(phone);
+        if (st.geracaoConcluida) { st.geracaoConcluida = false; await this.saveState(phone, st); }
         return 'Beleza, me fala o que ajustar (ex: "tarifa pra 1.10", "troca pro inversor X", "muda pra 10 kWp").';
+      } else if (acao === 'enviar') {
+        const sendResult = await this.tryDispatchToClient(phone);
+        return sendResult ?? '⚠️ Nao consegui enviar agora — confere se a proposta foi gerada no modo "Eva envia".';
+      } else if (acao === 'nova') {
+        // Caminho LIMPO entre clientes: zera fotos, historico e proposta gerada, mas
+        // preserva o modo/tipo (Junior bate varias seguidas no mesmo modo).
+        return await this.novaPropostaPreservandoModo(phone);
       } else if (acao === 'cancelar') {
         await this.exitProposalMode(phone);
         return '🗑️ Proposta cancelada. Manda /proposta quando quiser comecar outra.';
@@ -923,6 +973,17 @@ export class ProposalAssistant {
     ensureNum('consumoMensalKwh', calcInput.consumoMensalKwh);
     ensureNum('tarifaRsKwh', calcInput.tarifaRsKwh);
     ensureNum('valorTotalRs', calcInput.valorTotalRs);
+
+    // Quando a proposta TEM estudo (anexos PVSol/PVsyst), a geração TEM de ser a do estudo,
+    // nunca o cálculo padrão HSP×potência (que enganaria o cliente). Se não veio o número
+    // do estudo, falha claro em vez de gerar com a estimativa. (Item: geração sempre do estudo.)
+    const temEstudo = tipo === 'personalizada' && (attachments?.length ?? 0) > 0;
+    if (temEstudo) {
+      const geracaoEstudo = Number(data.geracaoMensalKwh ?? data.geracaoKwh ?? data.geracao);
+      if (!isFinite(geracaoEstudo) || geracaoEstudo <= 0) {
+        throw new Error('Proposta com estudo precisa da geração do estudo (PVSol) — informe a geração média mensal (geracaoMensalKwh).');
+      }
+    }
 
     const calculations = calcular(calcInput);
     const proposalData = this.dataToProposalData(data, calculations);
@@ -1251,6 +1312,16 @@ export class ProposalAssistant {
           slug: result.slug,
         }),
       );
+
+      // Proposta gerada: marca a sessao como "gerada" pra que a PRÓXIMA foto ou cliente
+      // novo zere o rascunho sozinho (mata o vazamento de foto/dado entre propostas).
+      // Os botoes pos-geracao (Enviar/Ajustar/Nova) sao mandados pelo index.ts junto do
+      // texto da resposta (1 balao so, na ordem certa).
+      {
+        const st = await this.loadState(phone);
+        st.geracaoConcluida = true;
+        await this.saveState(phone, st);
+      }
 
       const linkLines: string[] = [];
       if (result.publicUrl) {

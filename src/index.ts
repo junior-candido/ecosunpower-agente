@@ -1264,7 +1264,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       // Se proposta foi gerada com sucesso (mensagem contém "Proposta gerada"),
       // adiciona botão "Fechou venda" pra Junior fechar venda direto. Busca o
       // lead_id real pela proposta_publica mais recente (cliente_telefone).
-      if (/Proposta gerada/i.test(reply) && metaWaba) {
+      if (/Proposta (de serviço )?gerada/i.test(reply) && metaWaba) {
         let leadId: string | null = null;
         try {
           const { data: ultimaProp } = await supabase.getClient()
@@ -1281,15 +1281,25 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         } catch (err) {
           console.warn('[proposal] busca lead pra botão fechar falhou:', (err as Error).message);
         }
-        if (leadId) {
-          try {
-            await metaWaba.sendInteractiveButtons(from, reply, [
-              { id: `evabt:fechar:${leadId}`, title: 'Fechou venda' },
-            ]);
-          } catch {
-            await sendText(from, reply);
-          }
-        } else {
+        // Botões pós-geração (sem /), 1 balão só: caminho limpo entre clientes.
+        // eva_envia: Enviar · Ajustar · Nova proposta. junior_envia: Ajustar · Nova
+        // proposta · Fechou venda (quando achou o lead). "Nova proposta" zera o rascunho.
+        let modoEnvioPos: string | undefined;
+        try { modoEnvioPos = (await proposalAssistant.getSessionState(from))?.modoEnvio; } catch { /* noop */ }
+        const botoesPos = modoEnvioPos === 'eva_envia'
+          ? [
+              { id: 'prop:enviar', title: '✅ Enviar' },
+              { id: 'prop:ajustar', title: '✏️ Ajustar' },
+              { id: 'prop:nova', title: '🆕 Nova proposta' },
+            ]
+          : [
+              { id: 'prop:ajustar', title: '✏️ Ajustar' },
+              { id: 'prop:nova', title: '🆕 Nova proposta' },
+              ...(leadId ? [{ id: `evabt:fechar:${leadId}`, title: '💰 Fechou venda' }] : []),
+            ];
+        try {
+          await metaWaba.sendInteractiveButtons(from, reply, botoesPos);
+        } catch {
           await sendText(from, reply);
         }
       } else {

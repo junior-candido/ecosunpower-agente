@@ -255,6 +255,12 @@ export function renderFormNovaProposta(input: {
             </label>
           </div>
 
+          <label class="block">
+            <span class="text-xs text-slate-300">Geração do estudo (kWh/mês) <span class="text-amber-400">— obrigatório quando anexa fotos</span></span>
+            <input name="geracaoMensalKwh" type="number" step="0.01" min="0" placeholder="Ex: 1080 (do PVSol/PVsyst)" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+            <span class="text-xs text-slate-500">Com estudo, a proposta usa ESTA geração — nunca o cálculo padrão.</span>
+          </label>
+
           <p class="text-xs text-slate-500">Máx 3 fotos (até 20MB cada) + 1 vídeo (até 100MB, 60s).</p>
         </fieldset>
 

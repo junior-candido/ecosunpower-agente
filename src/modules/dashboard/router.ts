@@ -1595,6 +1595,7 @@ export function createDashboardRouter(
         fatorPerda,
         consumoMensalKwh,
         consumoMensalKwhDistribuido,
+        geracaoMensalKwh: b.geracaoMensalKwh ? Number(b.geracaoMensalKwh) : undefined, // geração do estudo (PVSol)
         tarifaRsKwh: b.tarifaRsKwh ? Number(b.tarifaRsKwh) : undefined,
         custoDisponibilidadeMensal: b.custoDisponibilidadeMensal ? Number(b.custoDisponibilidadeMensal) : undefined,
         modulo: {
@@ -1650,6 +1651,16 @@ export function createDashboardRouter(
 
       const tipo: 'basica' | 'personalizada' = attachments.length > 0 ? 'personalizada' : 'basica';
 
+      // Com estudo (anexos): a geração TEM de ser a do estudo, nunca o cálculo HSP.
+      // Valida aqui com erro claro (400) em vez de deixar o core estourar.
+      if (tipo === 'personalizada' && !(Number(b.geracaoMensalKwh) > 0)) {
+        return res.status(400).type('text/html').send(renderFormNovaProposta({
+          lead_id,
+          lead: lead as any,
+          erros: ['Proposta com estudo (fotos) precisa da "Geração do estudo (kWh/mês)" — preenche esse campo.'],
+        }));
+      }
+
       // Fix 3: sanitiza mensagem de erro pra não vazar paths, tokens, schema names.
       // Mesma lógica do shim zap em proposal-assistant.ts.
       function sanitizeProposalError(raw: string): string {
@@ -1674,7 +1685,7 @@ export function createDashboardRouter(
         // Fix 4: status 400 pra erros de validação, 500 pra falhas de infraestrutura
         const rawMsg = (err as Error).message ?? 'erro desconhecido';
         const friendly = sanitizeProposalError(rawMsg);
-        const isValidation = /Campo .* inválido/.test(rawMsg);
+        const isValidation = /Campo .* inválido|precisa da geração do estudo/.test(rawMsg);
         return res.status(isValidation ? 400 : 500).type('text/html').send(renderFormNovaProposta({
           lead_id,
           lead: lead as any,
