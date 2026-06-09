@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData, buildServiceImagePrompt, buildComparacaoOpcao, hydrarOpcaoPrincipalDaComparacao } from '../src/modules/proposal-assistant.js';
+import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData, buildServiceImagePrompt, buildComparacaoOpcao, hydrarOpcaoPrincipalDaComparacao, montarInputOpcaoComparacao } from '../src/modules/proposal-assistant.js';
 
 describe('buildComparacaoOpcao', () => {
   const dados = { potenciaKwp: 8.4, moduloFabricante: 'Trina', inversorFabricante: 'Sungrow', valorTotalRs: 38500 };
@@ -32,6 +32,55 @@ describe('buildComparacaoOpcao', () => {
     const o = buildComparacaoOpcao('E', dados,
       { geracaoMensalKwh: 300, paybackAnos: 4, paybackMeses: 0, paybackInviavel: false, economiaVidaUtil: 8000 } as any);
     expect(o.paybackTexto).toBe('4 anos');
+  });
+  it('carrega quantidade/modelo dos equipamentos e a economia mensal arredondada', () => {
+    const dadosCompletos = {
+      potenciaKwp: 8.4, valorTotalRs: 38500,
+      moduloFabricante: 'Trina', moduloModelo: 'Vertex', moduloPotenciaW: 700, moduloQuantidade: 12,
+      inversorFabricante: 'Sungrow', inversorModelo: 'SG5.0RS-L', inversorQuantidade: 1,
+    };
+    const o = buildComparacaoOpcao('Opção A', dadosCompletos,
+      { geracaoMensalKwh: 1080, paybackAnos: 4, paybackMeses: 2, paybackInviavel: false, economiaVidaUtil: 320000, economiaMensal: 849.6 } as any);
+    expect(o.moduloQuantidade).toBe(12);
+    expect(o.moduloModelo).toBe('Vertex');
+    expect(o.moduloPotenciaW).toBe(700);
+    expect(o.inversorQuantidade).toBe(1);
+    expect(o.inversorModelo).toBe('SG5.0RS-L');
+    expect(o.economiaMensalRs).toBe(850);
+  });
+});
+
+describe('montarInputOpcaoComparacao', () => {
+  // data.* É a Opção A. O override de geração do topo é da Opção A — não pode vazar
+  // pras outras opções, senão as duas saíam com a MESMA geração (bug reportado).
+  const data = { potenciaKwp: 8.4, consumoMensalKwh: 1000, geracaoMensalKwh: 1080, concessionaria: 'Neoenergia DF' };
+
+  it('Opção A (índice 0) mantém o override de geração do topo', () => {
+    const op = { potenciaKwp: 8.4, valorTotalRs: 38500 };
+    const out = montarInputOpcaoComparacao(data, op, 0);
+    expect(out.geracaoMensalKwh).toBe(1080);
+  });
+
+  it('Opção B (índice 1) NÃO herda a geração do topo — calcula pela própria potência', () => {
+    const op = { potenciaKwp: 10.5, valorTotalRs: 48000 };
+    const out = montarInputOpcaoComparacao(data, op, 1);
+    expect(out.geracaoMensalKwh).toBeUndefined();
+    expect(out.geracaoKwh).toBeUndefined();
+    expect(out.geracao).toBeUndefined();
+    expect(out.potenciaKwp).toBe(10.5); // veio da opção
+    expect(out.consumoMensalKwh).toBe(1000); // consumo do cliente é o mesmo nas duas
+  });
+
+  it('se a própria Opção B trouxer geração (PVSol dela), essa manda', () => {
+    const op = { potenciaKwp: 10.5, valorTotalRs: 48000, geracaoMensalKwh: 1350 };
+    const out = montarInputOpcaoComparacao(data, op, 1);
+    expect(out.geracaoMensalKwh).toBe(1350);
+  });
+
+  it('não muta o data original', () => {
+    const snapshot = { ...data };
+    montarInputOpcaoComparacao(data, { potenciaKwp: 9 }, 1);
+    expect(data).toEqual(snapshot);
   });
 });
 

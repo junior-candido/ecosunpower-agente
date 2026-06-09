@@ -12,8 +12,24 @@ export interface ComparacaoOpcao {
   valorTotalRs: number;
   paybackTexto: string;       // já formatado (ex: "4 anos e 2 meses")
   economia25AnosRs: number;
+  economiaMensalRs?: number;  // economia por mês em R$ (destaque); opcional
   moduloFabricante: string;
+  moduloModelo?: string;
+  moduloPotenciaW?: number;
+  moduloQuantidade?: number;
   inversorFabricante: string;
+  inversorModelo?: string;
+  inversorQuantidade?: number;
+}
+
+// Monta "12× Vertex 700W" (módulo) ou "1× SG5.0RS-L" (inversor). Sem quantidade,
+// não dá pra montar a linha — devolve '' e o caller esconde (cai na ficha da marca).
+function linhaEquipamento(qtd?: number, modelo?: string, fabricante?: string, potenciaW?: number): string {
+  if (!qtd || qtd <= 0) return '';
+  const nome = (modelo || fabricante || '').trim();
+  if (!nome) return '';
+  const wp = potenciaW && potenciaW > 0 ? ` ${fmtNum(potenciaW)}W` : '';
+  return `${qtd}× ${nome}${wp}`;
 }
 
 export function renderComparacaoSolar(opcoes: ComparacaoOpcao[]): string {
@@ -29,12 +45,24 @@ export function renderComparacaoSolar(opcoes: ComparacaoOpcao[]): string {
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#0E7CB8;margin-bottom:6px">${escapeHtml(titulo)}: ${escapeHtml(f.marca)} ${f.tier1 ? '· Tier 1' : ''}</div>
         <div style="font-size:13px;color:#475569;line-height:1.5">${escapeHtml(f.resumo)}</div>
       </div>` : '';
+    const modulosTxt = linhaEquipamento(o.moduloQuantidade, o.moduloModelo, o.moduloFabricante, o.moduloPotenciaW);
+    const inversorTxt = linhaEquipamento(o.inversorQuantidade, o.inversorModelo, o.inversorFabricante);
+    // Economia mensal em destaque — é o número que o cliente mais entende ("quanto sobra por mês").
+    const economiaMensal = (o.economiaMensalRs && o.economiaMensalRs > 0)
+      ? `<div style="margin:16px 0;padding:14px 16px;background:#ECFDF5;border-radius:12px;text-align:center">
+           <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#059669">Economia mensal</div>
+           <div style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;color:#047857">R$ ${fmtRs(o.economiaMensalRs, 0)}<span style="font-size:14px;font-weight:500;color:#059669">/mês</span></div>
+         </div>`
+      : '';
     return `
       <div style="flex:1;min-width:280px;border:1px solid #E2E8F0;border-radius:20px;padding:28px;background:#fff">
         <div style="font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;color:#0F172A;margin-bottom:16px">${escapeHtml(o.rotulo)}</div>
         ${linha('Potência', fmtNum(o.potenciaKwp, 1) + ' kWp')}
+        ${modulosTxt ? linha('Módulos', escapeHtml(modulosTxt)) : ''}
+        ${inversorTxt ? linha('Inversor', escapeHtml(inversorTxt)) : ''}
         ${linha('Geração', fmtNum(o.geracaoMensalKwh) + ' kWh/mês')}
         ${linha('Investimento', 'R$ ' + fmtRs(o.valorTotalRs, 0))}
+        ${economiaMensal}
         ${linha('Payback', escapeHtml(o.paybackTexto))}
         ${linha('Economia 25 anos', 'R$ ' + fmtRs(o.economia25AnosRs, 0))}
         ${ficha('Módulo', fModulo)}

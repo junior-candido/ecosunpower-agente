@@ -115,8 +115,18 @@ export function buildServiceOnlyData(params: {
 // calcula — quem roda calcular() é o sistema; aqui só formatamos o resultado.
 export function buildComparacaoOpcao(
   rotulo: string,
-  dados: { potenciaKwp: number; moduloFabricante: string; inversorFabricante: string; valorTotalRs: number },
-  calc: { geracaoMensalKwh: number; paybackAnos: number; paybackMeses: number; paybackInviavel: boolean; economiaVidaUtil: number },
+  dados: {
+    potenciaKwp: number;
+    moduloFabricante: string;
+    moduloModelo?: string;
+    moduloPotenciaW?: number;
+    moduloQuantidade?: number;
+    inversorFabricante: string;
+    inversorModelo?: string;
+    inversorQuantidade?: number;
+    valorTotalRs: number;
+  },
+  calc: { geracaoMensalKwh: number; paybackAnos: number; paybackMeses: number; paybackInviavel: boolean; economiaVidaUtil: number; economiaMensal?: number },
 ): ComparacaoOpcao {
   const anosTxt = calc.paybackAnos > 0 ? `${calc.paybackAnos} ${calc.paybackAnos === 1 ? 'ano' : 'anos'}` : '';
   const mesesTxt = calc.paybackMeses > 0 ? `${calc.paybackMeses} ${calc.paybackMeses === 1 ? 'mês' : 'meses'}` : '';
@@ -130,9 +140,31 @@ export function buildComparacaoOpcao(
     valorTotalRs: dados.valorTotalRs,
     paybackTexto,
     economia25AnosRs: Math.round(calc.economiaVidaUtil),
+    economiaMensalRs: Math.round(calc.economiaMensal ?? 0),
     moduloFabricante: dados.moduloFabricante,
+    moduloModelo: dados.moduloModelo,
+    moduloPotenciaW: dados.moduloPotenciaW,
+    moduloQuantidade: dados.moduloQuantidade,
     inversorFabricante: dados.inversorFabricante,
+    inversorModelo: dados.inversorModelo,
+    inversorQuantidade: dados.inversorQuantidade,
   };
+}
+
+// Monta o input de cálculo de UMA opção da comparação. data.* É a Opção A, então o
+// override de geração do topo pertence À Opção A — não pode vazar pras demais opções
+// (senão todas saíam com a MESMA geração). Da Opção B em diante, removemos o override
+// do topo e deixamos cada uma calcular pela própria potência; se a própria opção trouxer
+// geração (PVSol dela), o spread de `op` por último faz ela mandar. Consumo do cliente é
+// o mesmo nas duas, então fica. NÃO muta o `data` original.
+export function montarInputOpcaoComparacao(data: any, op: any, indice: number): any {
+  const base = { ...data };
+  if (indice > 0) {
+    delete base.geracaoMensalKwh;
+    delete base.geracaoKwh;
+    delete base.geracao;
+  }
+  return { ...base, ...op };
 }
 
 // Comparação de 2 sistemas: o extrator (LLM) deve repetir a Opção A no topo do `data`
@@ -260,7 +292,8 @@ ${marcasKnowledge}
         • \`true\` → serviço "JÁ INCLUSO": já está DENTRO do valor que o Junior passou, então NÃO soma de novo (na proposta aparece com selo "já incluso"). Use quando o Junior diz "já incluso", "já está no valor", "dentro do total", "sem custo adicional", "já contemplado", "incluso no preço".
     REGRA DE OURO da conta: \`valorTotalRs\` é SEMPRE só o valor do solar. Se um serviço é \`jaIncluso: true\`, o \`valorTotalRs\` que o Junior passou JÁ contém esse serviço — não desconte nem some nada, o sistema faz a conta certa. Você só entende e classifica; quem soma/subtrai é SEMPRE o sistema, NUNCA você de cabeça.
     **PROPOSTA SÓ DE SERVIÇO (sem solar):** se o Junior pedir uma proposta só de serviço (ex: só adequação de padrão, só projeto elétrico, sem kit solar), preencha APENAS \`servicos[]\` + \`nomeCliente\` (+ telefone se modo eva_envia). NÃO invente \`potenciaKwp\`, módulo, inversor nem consumo — deixe ausentes/0. O sistema detecta que não há solar e gera um layout de serviço elegante (sem gráfico/payback). Nesse caso NÃO liste os campos solares em \`missing\`.
-11. **COMPARAÇÃO (2 sistemas solares):** se o Junior quiser que o cliente compare duas opções de sistema, preencha a proposta normalmente com a **Opção A** (potência, módulo, inversor, valorTotalRs no nível principal do \`data\`) E devolva \`comparacao: [opcaoA, opcaoB]\`, cada uma com seu \`rotulo\`, \`potenciaKwp\`, \`modulo\`, \`inversor\` e \`valorTotalRs\`. NÃO marque recomendação — as duas são neutras. O sistema calcula geração/payback de cada uma, monta o quadro comparativo e esconde o gráfico/financeiro (que refletiriam só uma opção). Você NÃO calcula nada.
+11. **COMPARAÇÃO (2 sistemas solares):** se o Junior quiser que o cliente compare duas opções de sistema, preencha a proposta normalmente com a **Opção A** (potência, módulo, inversor, valorTotalRs no nível principal do \`data\`) E devolva \`comparacao: [opcaoA, opcaoB]\`. **CADA opção precisa vir COMPLETA** — não só a marca: \`rotulo\`, \`potenciaKwp\`, \`valorTotalRs\`, \`modulo\` (com \`fabricante\`, \`modelo\`, \`potenciaW\` e \`quantidade\`) e \`inversor\` (com \`fabricante\`, \`modelo\` e \`quantidade\`). As duas opções têm de ser **DIFERENTES de verdade** (potência/equipamento/valor distintos) — se o Junior só descreveu UM sistema, NÃO invente o outro: peça os dados do segundo sistema (\`action: ask_more\`, listando o que falta da Opção B). NÃO marque recomendação — as duas são neutras. O sistema calcula a geração/payback de CADA uma pela potência dela (você NÃO calcula nada) e monta o quadro comparativo lado a lado.
+12. **ECONOMIA MENSAL EM R$:** a proposta mostra pro cliente quanto ele economiza POR MÊS em reais (o número que ele mais entende). Pra esse valor sair certo, peça ao Junior — quando ele não informar — a **tarifa real do kWh da conta** (\`tarifaRsKwh\`) e o **valor da iluminação pública** da conta (\`custoIluminacaoPublica\`). São RECOMENDADOS, não bloqueiam: se o Junior não tiver, use os defaults do sistema e siga. Quando ele informar, respeite o número dele.
 
 # FORMATO DE RESPOSTA
 
@@ -285,6 +318,7 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
     "consumoMensalKwhDistribuido": [1100, 1080, 1020, 950, 880, 850, 870, 920, 980, 1050, 1120, 1180],
     "geracaoMensalKwh": 1080,
     "tarifaRsKwh": 1.05,
+    "custoIluminacaoPublica": 35,
     "custoDisponibilidadeMensal": 50,
     "tipoCliente": "residencial",
     "modalidade": "autoconsumo local",
@@ -301,8 +335,8 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
       { "titulo": "Adequação de padrão", "descricao": "Troca do padrão de entrada para trifásico", "valorRs": 1000, "jaIncluso": true }
     ],
     "comparacao": [
-      { "rotulo": "Opção A", "potenciaKwp": 8.4, "valorTotalRs": 38500, "modulo": { "fabricante": "Trina" }, "inversor": { "fabricante": "Sungrow" } },
-      { "rotulo": "Opção B", "potenciaKwp": 8.0, "valorTotalRs": 44000, "modulo": { "fabricante": "LONGi" }, "inversor": { "fabricante": "SolarEdge" } }
+      { "rotulo": "Opção A", "potenciaKwp": 8.4, "valorTotalRs": 38500, "modulo": { "fabricante": "Trina", "modelo": "Vertex 700W", "potenciaW": 700, "quantidade": 12 }, "inversor": { "fabricante": "Sungrow", "modelo": "SG5.0RS-L", "quantidade": 1 } },
+      { "rotulo": "Opção B", "potenciaKwp": 10.5, "valorTotalRs": 48000, "modulo": { "fabricante": "LONGi", "modelo": "Hi-MO X10 580W", "potenciaW": 580, "quantidade": 18 }, "inversor": { "fabricante": "SolarEdge", "modelo": "SE7K", "quantidade": 1 } }
     ]
   }
 }
@@ -365,9 +399,11 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
 
 - formasPagamento: SEMPRE incluir 3 opções padrão:
   1. À vista PIX/TED (recomendado, sem juros)
-  2. Cartão de crédito (Belenus) em 24× — NÃO calcule a parcela do cartão: o
-     sistema preenche o valor exato (tabela Belenus). Só inclua a opção com
-     meioPagamento "cartao"; pode deixar valorPrincipal vazio que o sistema corrige.
+  2. Cartão de crédito em 24× — NÃO calcule a parcela do cartão: o sistema preenche
+     o valor exato. Só inclua a opção com meioPagamento "cartao"; pode deixar
+     valorPrincipal vazio que o sistema corrige. NUNCA escreva o nome do parceiro/
+     fornecedor do cartão (ex: "Belenus") no texto que vai pro cliente — use só
+     "Cartão de crédito".
   3. Financiamento até 90× com carência até 120 dias (Solfácil/Sol Agora/BV/Santander, ~1.7%a.m., fator ~2.10)
   Calcule as parcelas do financiamento baseadas em valorTotalRs (o cartão é do sistema). Se Junior pedir customização ("só à vista", "12x sem juros"), respeitar.
 
@@ -894,14 +930,20 @@ export class ProposalAssistant {
     if (Array.isArray(data.comparacao) && data.comparacao.length >= 2
         && data.comparacao.slice(0, 2).every(opcaoComparacaoValida)) {
       const opcoes = data.comparacao.slice(0, 2).map((op: any, i: number) => {
-        const ci = this.dataToCalculatorInput({ ...data, ...op });
+        const ci = this.dataToCalculatorInput(montarInputOpcaoComparacao(data, op, i));
         const c = calcular(ci);
+        const numOuUndef = (v: unknown) => (Number(v) > 0 ? Number(v) : undefined);
         return buildComparacaoOpcao(
           op.rotulo ?? `Opção ${String.fromCharCode(65 + i)}`,
           {
             potenciaKwp: Number(op.potenciaKwp),
             moduloFabricante: op.modulo?.fabricante ?? data.modulo?.fabricante,
+            moduloModelo: op.modulo?.modelo ?? data.modulo?.modelo,
+            moduloPotenciaW: numOuUndef(op.modulo?.potenciaW ?? data.modulo?.potenciaW),
+            moduloQuantidade: numOuUndef(op.modulo?.quantidade ?? data.modulo?.quantidade),
             inversorFabricante: op.inversor?.fabricante ?? data.inversor?.fabricante,
+            inversorModelo: op.inversor?.modelo ?? data.inversor?.modelo,
+            inversorQuantidade: numOuUndef(op.inversor?.quantidade ?? data.inversor?.quantidade),
             valorTotalRs: Number(op.valorTotalRs),
           },
           c,
@@ -1407,10 +1449,34 @@ export class ProposalAssistant {
     const fmtRs = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
     const parcela = Math.round(ProposalAssistant.parcelaCartaoBelenus(valorBase, 24));
     const bandeiras = 'Parcelamento: Visa/Amex até 24× · Master/Elo até 21× · demais até 12×';
+    // O nome "Belenus" é do parceiro/fornecedor e NÃO deve aparecer pro cliente
+    // (pode mudar de fornecedor). Limpa qualquer menção no texto cliente-facing,
+    // mesmo que a Eva tenha escrito. A tabela de preço interna não muda.
+    const semBelenus = (s: string) =>
+      (s ?? '')
+        .replace(/\s*[·\-—]?\s*(parceria\s+ecosunpower\s*x\s*belenus|cart[ãa]o\s+belenus|belenus)\b/gi, '')
+        .replace(/\(\s*\)/g, '')          // parênteses que ficaram vazios ("(Belenus)" → "()")
+        .replace(/\s+([,.;:])/g, '$1')    // espaço solto antes de pontuação
+        .replace(/\s{2,}/g, ' ')
+        .replace(/^[·\-—,\s]+|[·\-—,\s]+$/g, '')
+        .trim();
     return formas.map((f) => {
-      if (f.meioPagamento !== 'cartao') return f;
-      const bullets = f.bullets.some((b) => b.includes('Visa/Amex')) ? f.bullets : [...f.bullets, bandeiras];
-      return { ...f, valorPrincipal: fmtRs(parcela), bullets };
+      // valorSecundario TAMBÉM vai pro cliente (template) e pode ter sido escrito pela
+      // Eva — então sanitiza nas duas pontas. Aplica em todas as formas (PIX/financiamento
+      // não têm Belenus, então é inócuo) pra cobrir qualquer menção solta.
+      if (f.meioPagamento !== 'cartao') {
+        return {
+          ...f,
+          tipo: semBelenus(f.tipo),
+          titulo: semBelenus(f.titulo),
+          valorSecundario: semBelenus(f.valorSecundario),
+          bullets: f.bullets.map(semBelenus).filter(Boolean),
+        };
+      }
+      const tipo = semBelenus(f.tipo) || 'Cartão de crédito';
+      const bulletsLimpos = f.bullets.map(semBelenus).filter(Boolean);
+      const bullets = bulletsLimpos.some((b) => b.includes('Visa/Amex')) ? bulletsLimpos : [...bulletsLimpos, bandeiras];
+      return { ...f, tipo, titulo: semBelenus(f.titulo), valorSecundario: semBelenus(f.valorSecundario), valorPrincipal: fmtRs(parcela), bullets };
     });
   }
 
@@ -1440,13 +1506,12 @@ export class ProposalAssistant {
         meioPagamento: 'pix',
       },
       {
-        tipo: 'Cartão Belenus',
+        tipo: 'Cartão de crédito',
         titulo: 'Em até 24× com juros baixos',
         valorPrincipal: fmtRs(cartaoParcela),
         valorSecundario: 'a partir de 24× · aprovação imediata',
         bullets: [
-          'Parceria EcoSunPower x Belenus — taxa especial pra solar',
-          'Muito menor que cartão tradicional',
+          'Taxa especial pra solar — bem menor que cartão tradicional',
           'Aprovação imediata, sem análise formal',
           'Comece sem espera',
         ],

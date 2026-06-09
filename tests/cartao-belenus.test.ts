@@ -76,4 +76,25 @@ describe('Cartão Belenus no solar', () => {
     const cartao = r.proposalData.formasPagamento.find((f: any) => f.meioPagamento === 'cartao');
     expect(cartao.valorPrincipal).toBe('R$ 504');
   });
+
+  it('o nome "Belenus" NUNCA vai pro cliente — sanitiza tipo, titulo, valorSecundario e bullets', async () => {
+    const formasPagamento = [
+      { tipo: 'Cartão Belenus', titulo: 'Belenus em 24×', valorPrincipal: 'R$ 999',
+        valorSecundario: 'aprovação Belenus imediata',
+        bullets: ['Parceria EcoSunPower x Belenus — taxa especial', 'Aprovação imediata'], meioPagamento: 'cartao' },
+    ];
+    const r = await pa.generateProposalCore({ data: baseData({ formasPagamento }), modoEnvio: 'junior_envia', tipo: 'basica' });
+    const cartao = r.proposalData.formasPagamento.find((f: any) => f.meioPagamento === 'cartao');
+    const tudo = [cartao.tipo, cartao.titulo, cartao.valorSecundario, ...cartao.bullets].join(' | ');
+    expect(tudo.toLowerCase()).not.toContain('belenus');
+    expect(cartao.tipo).toBe('Cartão de crédito'); // tipo virou vazio após remover "Cartão Belenus" → fallback
+    expect(tudo).not.toContain('()'); // sem parênteses órfãos
+    expect(cartao.bullets.some((b: string) => b.includes('Aprovação imediata'))).toBe(true); // bullet legítimo preservado
+  });
+
+  it('o HTML renderizado da proposta não contém "Belenus" no caminho default', async () => {
+    const r = await pa.generateProposalCore({ data: baseData(), modoEnvio: 'junior_envia', tipo: 'basica' });
+    const formasStr = JSON.stringify(r.proposalData.formasPagamento);
+    expect(formasStr.toLowerCase()).not.toContain('belenus');
+  });
 });

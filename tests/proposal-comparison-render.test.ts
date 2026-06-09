@@ -31,6 +31,38 @@ describe('renderComparacaoSolar', () => {
     expect(html).toContain('4 anos e 9 meses');
     expect(html).toContain('R$ 320.000');
   });
+  it('mostra a quantidade e o modelo dos módulos e do inversor de cada opção', () => {
+    const completas: ComparacaoOpcao[] = [
+      { ...opcoes[0], moduloQuantidade: 12, moduloModelo: 'Vertex', moduloPotenciaW: 700,
+        inversorQuantidade: 1, inversorModelo: 'SG5.0RS-L' },
+      { ...opcoes[1], moduloQuantidade: 14, moduloModelo: 'Hi-MO X10', moduloPotenciaW: 580,
+        inversorQuantidade: 1, inversorModelo: 'SE5K' },
+    ];
+    const html = renderComparacaoSolar(completas);
+    expect(html).toContain('12× Vertex 700W');
+    expect(html).toContain('14× Hi-MO X10 580W');
+    expect(html).toContain('1× SG5.0RS-L');
+    expect(html).toContain('1× SE5K');
+  });
+
+  it('mostra a economia mensal em R$ de cada opção quando informada', () => {
+    const completas: ComparacaoOpcao[] = [
+      { ...opcoes[0], economiaMensalRs: 850 },
+      { ...opcoes[1], economiaMensalRs: 910 },
+    ];
+    const html = renderComparacaoSolar(completas);
+    expect(html).toContain('R$ 850');
+    expect(html).toContain('R$ 910');
+    expect(html.toLowerCase()).toMatch(/economia mensal|por mês|\/mês/);
+  });
+
+  it('omite linhas de equipamento/economia quando não informadas (não quebra nem mostra NaN/undefined)', () => {
+    const html = renderComparacaoSolar(opcoes); // sem qtd/modelo/economiaMensal
+    expect(html).not.toContain('undefined');
+    expect(html).not.toContain('NaN');
+    expect(html).not.toContain('×  '); // não monta "qtd× " vazio
+  });
+
   it('retorna string vazia com menos de 2 opções', () => {
     expect(renderComparacaoSolar([opcoes[0]])).toBe('');
     expect(renderComparacaoSolar([])).toBe('');
