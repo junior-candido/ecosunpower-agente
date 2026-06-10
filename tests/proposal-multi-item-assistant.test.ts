@@ -1,5 +1,37 @@
 import { describe, it, expect } from 'vitest';
-import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData, buildServiceImagePrompt, buildComparacaoOpcao, hydrarOpcaoPrincipalDaComparacao, montarInputOpcaoComparacao } from '../src/modules/proposal-assistant.js';
+import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData, buildServiceImagePrompt, buildComparacaoOpcao, hydrarOpcaoPrincipalDaComparacao, montarInputOpcaoComparacao, buildMensagemClienteProposta } from '../src/modules/proposal-assistant.js';
+
+describe('buildMensagemClienteProposta', () => {
+  it('mensagem limpa pro cliente: saudação (1º nome) + link, SEM nada interno', () => {
+    const m = buildMensagemClienteProposta('Marcelo Ferraz', 'https://propostas.test/p/abc', false);
+    expect(m).toContain('Marcelo');
+    expect(m).not.toContain('Ferraz'); // só o primeiro nome
+    expect(m).toContain('https://propostas.test/p/abc');
+    expect(m.toLowerCase()).toContain('energia solar');
+    // NADA interno pode vazar pro cliente:
+    expect(m).not.toContain('R$/Wp');
+    expect(m.toLowerCase()).not.toContain('greener');
+    expect(m.toLowerCase()).not.toContain('drive');
+    expect(m.toLowerCase()).not.toContain('preview');
+    expect(m.toLowerCase()).not.toContain('payback');
+    expect(m).not.toContain('?eu='); // nunca o link rastreado de revisão
+    // balão 100% limpo: a instrução "copia e manda" NÃO pode estar aqui (vazaria pro cliente)
+    expect(m.toLowerCase()).not.toContain('copia');
+    expect(m.toLowerCase()).not.toContain('revisão');
+    expect(m).not.toContain('───');
+  });
+  it('serviço: texto adapta (não fala "energia solar")', () => {
+    const m = buildMensagemClienteProposta('Edmilson', 'https://x/p/y', true);
+    expect(m).toContain('Edmilson');
+    expect(m).toContain('proposta da EcoSunPower');
+    expect(m.toLowerCase()).not.toContain('energia solar');
+  });
+  it('sem nome: saudação genérica + link', () => {
+    const m = buildMensagemClienteProposta(undefined, 'https://x/p/y', false);
+    expect(m).toContain('Olá!');
+    expect(m).toContain('https://x/p/y');
+  });
+});
 
 describe('buildComparacaoOpcao', () => {
   const dados = { potenciaKwp: 8.4, moduloFabricante: 'Trina', inversorFabricante: 'Sungrow', valorTotalRs: 38500 };

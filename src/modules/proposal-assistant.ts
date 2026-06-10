@@ -194,6 +194,28 @@ export function hydrarOpcaoPrincipalDaComparacao<T extends Record<string, any>>(
   return out as T;
 }
 
+// Mensagem PRONTA PRO CLIENTE (limpa, copiável): saudação + link público + texto
+// caloroso. SEM nada interno (R$/Wp, Greener, Drive, preview rastreado, botões) — o
+// Junior copia e manda pro cliente direto. A versão de revisão (números) vai separada.
+export function buildMensagemClienteProposta(nome: string | undefined, publicUrl: string, ehServico: boolean): string {
+  // Balão 100% LIMPO — o Junior copia o balão inteiro e manda pro cliente sem editar.
+  // A instrução "copia e manda" fica na mensagem de REVISÃO (separada), não aqui.
+  const primeiro = typeof nome === 'string' ? nome.trim().split(/\s+/)[0] : '';
+  const saudacao = primeiro ? `Olá, ${primeiro}! 😊` : 'Olá! 😊';
+  const oque = ehServico
+    ? 'a sua proposta da EcoSunPower'
+    : 'a sua proposta de energia solar da EcoSunPower, feita sob medida pra você';
+  return [
+    saudacao,
+    '',
+    `Segue ${oque}:`,
+    '',
+    `👉 ${publicUrl}`,
+    '',
+    'Dá uma olhada com calma — qualquer dúvida, é só me chamar! 🌞',
+  ].join('\n');
+}
+
 // Monta o prompt da imagem do serviço (fotorrealista, contexto BR, sem texto).
 // Usado quando o Junior NÃO anexa uma imagem própria do serviço.
 export function buildServiceImagePrompt(servico: ServicoItem): string {
@@ -1323,53 +1345,62 @@ export class ProposalAssistant {
         await this.saveState(phone, st);
       }
 
-      const linkLines: string[] = [];
-      if (result.publicUrl) {
-        linkLines.push(`🌐 Web (manda pro cliente): ${result.publicUrl}`);
-        if (this.proposalPreviewToken) {
-          const previewUrl = `${result.publicUrl}?eu=${encodeURIComponent(this.proposalPreviewToken)}`;
-          linkLines.push(`👁️ Preview (so pra voce revisar): ${previewUrl}`);
+      // Mensagem do CLIENTE vai SEPARADA (limpa, copiável) — sem Drive/Greener/botões.
+      // A revisão (números + preview rastreado + Drive + botões) é o return abaixo.
+      const ehServico = !result.calculations;
+      let clienteEnviada = false;
+      // Só no modo junior_envia (Junior copia e manda). No eva_envia a própria Eva
+      // dispara pro cliente ao tocar "Enviar", então a msg "copia e manda" não cabe —
+      // nesse caso o link do cliente cai na revisão (fallback abaixo).
+      if (this.metaService && result.publicUrl && modoEnvio === 'junior_envia') {
+        try {
+          await this.metaService.sendText(phone, buildMensagemClienteProposta(data.nomeCliente, result.publicUrl, ehServico));
+          clienteEnviada = true;
+        } catch (err) {
+          console.warn('[proposal] msg do cliente falhou:', (err as Error).message);
         }
       }
-      if (result.driveResult) {
-        linkLines.push(`📄 PDF (Drive): ${result.driveResult.pdfWebViewLink}`);
-        if (!result.publicUrl) linkLines.push(`🌐 Web (Drive fallback): ${result.driveResult.htmlWebViewLink}`);
-      }
-      if (linkLines.length === 0) linkLines.push('⚠️ Nenhum link disponivel — checar logs.');
 
-      // Proposta SÓ-SERVIÇO: sem cálculo solar (calculations=null). Resumo enxuto,
-      // sem R$/Wp, Greener, payback ou TIR (não se aplicam).
+      // Nota apontando pro balão do cliente (que foi mandado logo acima) — só quando
+      // ele realmente saiu separado (junior_envia com metaService).
+      const notaCliente = clienteEnviada ? ['_↑ a mensagem acima é a do cliente — copia e manda_'] : [];
+
+      // Links da REVISÃO (só Junior): link do cliente (fallback se não saiu separado) +
+      // preview rastreado + Drive. Se não tem publicUrl mas o Drive subiu, usa o link web
+      // do Drive como o compartilhável do cliente (cobre queda transitória do Supabase).
+      const linksRevisao: string[] = [];
+      if (!clienteEnviada) {
+        if (result.publicUrl) linksRevisao.push(`🌐 Cliente: ${result.publicUrl}`);
+        else if (result.driveResult) linksRevisao.push(`🌐 Cliente (Drive): ${result.driveResult.htmlWebViewLink}`);
+      }
+      if (result.publicUrl && this.proposalPreviewToken) {
+        linksRevisao.push(`👁️ Preview (só você): ${result.publicUrl}?eu=${encodeURIComponent(this.proposalPreviewToken)}`);
+      }
+      if (result.driveResult) linksRevisao.push(`📄 PDF: ${result.driveResult.pdfWebViewLink}`);
+      if (!result.publicUrl && !result.driveResult) linksRevisao.push('⚠️ Nenhum link disponível — checar logs.');
+
+      // Proposta SÓ-SERVIÇO: sem cálculo solar (calculations=null).
       if (!result.calculations) {
         const servicos = result.proposalData.servicos ?? [];
         const totalServicos = servicos.reduce((a, s) => a + (Number(s.valorRs) || 0), 0);
         const fmtBr = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
         return [
-          '✅ Proposta de serviço gerada!',
-          '',
-          ...linkLines,
-          '',
-          `💵 Total da proposta: R$ ${fmtBr(totalServicos)}`,
-          '',
-          '_Manda "enviar" pra mandar pro cliente, ou "ajusta X" pra refazer._',
+          '✅ *Proposta de serviço gerada — sua revisão*',
+          ...notaCliente,
+          `💵 Total: R$ ${fmtBr(totalServicos)}`,
+          ...linksRevisao,
         ].join('\n');
       }
 
       const greener = compararGreener(Number(data.potenciaKwp), result.calculations.rsPorWp);
-
       return [
-        '✅ Proposta gerada!',
-        '',
-        ...linkLines,
-        '',
-        `💰 R$/Wp: R$ ${result.calculations.rsPorWp.toFixed(2)}/Wp`,
-        `🎯 Greener: R$ ${greener.rsPorWpReferencia.toFixed(2)}/Wp`,
+        '✅ *Proposta gerada — sua revisão*',
+        ...notaCliente,
+        `💰 R$/Wp: R$ ${result.calculations.rsPorWp.toFixed(2)}/Wp · 🎯 Greener: R$ ${greener.rsPorWpReferencia.toFixed(2)}/Wp`,
         `${greener.rotulo} (${greener.diferencaPct >= 0 ? '+' : ''}${greener.diferencaPct.toFixed(1)}%)`,
-        '',
-        `📊 Payback: ${result.calculations.paybackAnos}a ${result.calculations.paybackMeses}m`,
-        `📈 TIR: ${result.calculations.tirPercentual.toFixed(1)}%`,
+        `📊 Payback: ${result.calculations.paybackAnos}a ${result.calculations.paybackMeses}m · 📈 TIR: ${result.calculations.tirPercentual.toFixed(1)}%`,
         ...resumoServicosParaJunior(result.proposalData.servicos, Number(data.valorTotalRs)),
-        '',
-        '_Manda "enviar" pra mandar pro cliente, ou "ajusta X" pra refazer._',
+        ...linksRevisao,
       ].join('\n');
     } catch (err) {
       console.error('[proposal] Generation error:', err);
