@@ -277,9 +277,12 @@ export interface GenerateProposalCoreInput {
     legenda: string;
   }>;
   // Quando setado, regenera a proposta NO MESMO slug (reabrir/ajustar) em vez de
-  // criar um registro novo. Reusa numeroProposta/dataProposta e faz UPDATE no
-  // Supabase (não duplica). No modo reopen pulamos o upload pro Drive.
+  // criar um registro novo. Faz UPDATE no Supabase (não duplica). No modo reopen
+  // pulamos o upload pro Drive.
   reopenSlug?: string;
+  // No reopen, preserva o número da proposta original (senão o cliente veria um
+  // número diferente a cada reabertura). Passado pela rota de reabrir.
+  numeroProposta?: string;
 }
 
 export interface GenerateProposalCoreResult {
@@ -1060,6 +1063,8 @@ export class ProposalAssistant {
 
     const calculations = calcular(calcInput);
     const proposalData = this.dataToProposalData(data, calculations);
+    // Reabrir: mantém o número da proposta original (não gera um novo a cada ajuste).
+    if (reopenSlug && input.numeroProposta) proposalData.numeroProposta = input.numeroProposta;
 
     // Comparação de 2 sistemas: o sistema calcula geração/payback de cada opção e
     // monta o quadro lado a lado, escondendo a análise pesada (que reflete só a

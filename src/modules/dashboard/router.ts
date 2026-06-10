@@ -1871,14 +1871,18 @@ export function createDashboardRouter(
       const parsed = parseFormProposta(req);
       if (parsed.erros.length) {
         const { prefillFormFromDadosInput } = await import('./proposta-prefill.js');
-        return res.status(400).type('text/html').send(renderFormNovaProposta({ lead_id: '', lead: null, erros: parsed.erros, reabrirSlug: slug, valoresIniciais: prefillFormFromDadosInput(req.body) }));
+        // parsed.data tem o shape aninhado (modulo/inversor/estruturaFixacao) que o
+        // prefill espera — req.body é achatado e perderia os equipamentos.
+        return res.status(400).type('text/html').send(renderFormNovaProposta({ lead_id: '', lead: null, erros: parsed.erros, reabrirSlug: slug, valoresIniciais: prefillFormFromDadosInput(parsed.data) }));
       }
       const attachments = parsed.attachments.length ? parsed.attachments : undefined;
       if (modo === 'nova') {
         const result = await options.proposalAssistant.generateProposalCore({ data: parsed.data, modoEnvio: 'junior_envia', tipo: parsed.tipo, attachments });
         return res.redirect(303, `/dashboard/propostas/${result.slug}/preview?lead_id=`);
       }
-      await options.proposalAssistant.generateProposalCore({ data: parsed.data, modoEnvio: 'junior_envia', tipo: parsed.tipo, attachments, reopenSlug: slug });
+      // Reabrir "atualizar essa": preserva o número da proposta original.
+      const orig = await supabaseService.getPropostaInputBySlug(slug);
+      await options.proposalAssistant.generateProposalCore({ data: parsed.data, modoEnvio: 'junior_envia', tipo: parsed.tipo, attachments, reopenSlug: slug, numeroProposta: orig?.numeroProposta });
       return res.redirect(303, `/dashboard/propostas/${slug}/preview?lead_id=`);
     } catch (err) {
       res.status(500).type('text/html').send(`<p>Erro ao reabrir: ${escapeHtmlSimple((err as Error).message)}</p>`);
