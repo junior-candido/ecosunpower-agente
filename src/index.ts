@@ -82,6 +82,7 @@ import type { DonoCadState } from './modules/monitoring/dono-cad/types.js';
 import { camposVaziosUsina, proximoCampoNovo, campoObrigatorioNovo, perguntaNovo, perguntaUsina, ehPular } from './modules/monitoring/dono-cad/machine.js';
 import { CAMPOS_USINA } from './modules/monitoring/dono-cad/types.js';
 import { sendAdminWithButtons } from './modules/eva-admin-buttons.js';
+import { makeImpostoHandler } from './modules/financeiro/comando-imposto.js';
 import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/cron.js';
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
@@ -649,6 +650,9 @@ async function main() {
     if (!fromNorm) return false;
     return adminPhonesNormalized.includes(fromNorm);
   }
+
+  // /imposto <valor> — Núcleo Financeiro: imposto por anexo + Fator R + salto de faixa
+  const tryHandleImpostoCommand = makeImpostoHandler(supabase.getClient(), isAdminPhone, sendText);
 
   // Helper pra detectar e processar comandos de blog vindos do Junior.
   // Junior recebe notificacao de novo draft no WhatsApp dele e responde
@@ -3257,6 +3261,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /reativar-base — dispara template MARKETING pra leads frios da base terceirizada
     if (await tryHandleReativarBaseCommand(from, text)) return;
+
+    // /imposto <valor> — imposto por anexo + Fator R + salto de faixa (Núcleo Financeiro)
+    if (await tryHandleImpostoCommand(from, text)) return;
 
     // /resgatar-forms — dispara template inicial pra leads de formulário Meta sem 1ª mensagem
     if (await tryHandleResgatarFormsCommand(from, text)) return;
