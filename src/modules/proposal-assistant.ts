@@ -37,6 +37,7 @@ import type { MetaWhatsAppService } from './meta-whatsapp.js';
 import { enviarPropostaParaCliente } from './eva-sender.js';
 import { CasesFetcher, type Case } from './cases-fetcher.js';
 import { renderSocialProofPage } from './proposal/social-proof-page.js';
+import { resumirRascunho } from './proposal/rascunho.js';
 
 const IORedis = (Redis as any).default ?? Redis;
 
@@ -618,6 +619,47 @@ export class ProposalAssistant {
     return await this.loadState(phone);
   }
 
+  // Comando "rascunho": resume a proposta em andamento (cliente + o que falta) pro
+  // Junior, quando ele saiu pra atender um alerta e quer voltar pra onde parou.
+  // Manda botões Continuar/Descartar quando houver metaService.
+  async handleRascunho(phone: string): Promise<string | null> {
+    const state = await this.loadState(phone);
+    const histRaw = await this.redis.get(`proposal:history:${phone}`);
+    let history: Array<{ role: string; content: string }> = [];
+    try {
+      history = histRaw ? JSON.parse(histRaw) : [];
+    } catch {
+      history = [];
+    }
+
+    const resumo = resumirRascunho(state, history);
+    if (!resumo.emAndamento) {
+      return '📭 Você não tem nenhuma proposta em andamento. Manda *menu* ou /proposta pra começar uma.';
+    }
+
+    const texto =
+      `📝 Você estava montando a proposta${resumo.nomeCliente ? ' do *' + resumo.nomeCliente + '*' : ''}.` +
+      (resumo.faltando.length ? `\nFalta: ${resumo.faltando.join(', ')}` : '') +
+      '\n\nContinuar de onde parou?';
+
+    // Quando há metaService, manda o resumo JÁ com os botões num balão só (evita
+    // mandar texto duplicado: o handler em index.ts checa o retorno null pra não
+    // reenviar). Sem metaService, retorna o texto pro caminho de sendText normal.
+    if (this.metaService) {
+      try {
+        await this.metaService.sendInteractiveButtons(phone, texto, [
+          { id: 'prop:continuar', title: '▶️ Continuar' },
+          { id: 'prop:cancelar', title: '🗑️ Descartar' },
+        ]);
+        return null;
+      } catch (err) {
+        console.warn('[proposal] botoes rascunho falharam:', (err as Error).message);
+      }
+    }
+
+    return texto;
+  }
+
   // Detecta se Junior esta em modo proposta personalizada e envia midia.
   // Salva o media_id como pendente, pede legenda. Quando legenda chegar (proxima msg de texto),
   // o processProposalMessage adiciona ao state.attachments e responde confirmacao.
@@ -742,10 +784,14 @@ export class ProposalAssistant {
     // Botoes interativos WABA chegam como text com id "prop:gerar" / "prop:ajustar"
     // / "prop:cancelar". Normaliza pra texto natural ANTES de qualquer outro
     // intercept — assim o resto do fluxo funciona igual ao Junior digitar a palavra.
-    const btnMatch = message.trim().toLowerCase().match(/^prop:(gerar|ajustar|cancelar|enviar|nova)$/);
+    const btnMatch = message.trim().toLowerCase().match(/^prop:(gerar|ajustar|cancelar|enviar|nova|continuar)$/);
     if (btnMatch) {
       const acao = btnMatch[1];
-      if (acao === 'gerar') {
+      if (acao === 'continuar') {
+        // Junior clicou "Continuar" no resumo do rascunho: a sessão segue viva,
+        // não muda estado. Só pede os dados que faltam pra fechar.
+        return 'Beleza — manda os dados que faltam pra eu fechar a proposta.';
+      } else if (acao === 'gerar') {
         message = 'gerar';
       } else if (acao === 'ajustar') {
         // Ajustando a proposta atual: tira o flag de "gerada" pra que anexar uma foto

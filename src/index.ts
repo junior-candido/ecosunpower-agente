@@ -2964,6 +2964,20 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // tryHandle* correspondente. Gateado em isAdminPhone — cliente nem entra.
     if (await tryHandleMenuCommand(from, text)) return;
 
+    // "rascunho" (Junior) — resume a proposta em andamento (cliente + o que falta).
+    // Vem ANTES do modo proposta normal pra funcionar mesmo dentro da sessão: o
+    // Junior saiu pra atender um alerta e quer voltar de onde parou.
+    {
+      const rascunhoTxt = text.trim().toLowerCase();
+      if (isAdminPhone(from) && (rascunhoTxt === 'rascunho' || rascunhoTxt === '/rascunho')) {
+        // handleRascunho retorna null quando já mandou o resumo + botões via
+        // metaService (balão único) — nesse caso não reenviamos texto.
+        const reply = await proposalAssistant.handleRascunho(from);
+        if (reply) await sendText(from, reply);
+        return;
+      }
+    }
+
     // Comandos admin de blog (publicar/descartar/blog status) PRECISAM vir primeiro,
     // antes dos modos /preco /proposta /agenda — porque Junior pode estar em qualquer
     // modo e ainda assim querer publicar/descartar um draft. tryHandleJuniorBlogCommand
