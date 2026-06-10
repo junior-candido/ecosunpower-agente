@@ -61,6 +61,7 @@ import {
   renderVisualizacoesCsv,
 } from './proposta-views-view.js';
 import type { MarcaInversor } from '../monitoring/types.js';
+import type { ResultadoImport } from '../leads-import-meta-junho.js';
 import { classificarSistema } from '../monitoring/classificacao.js';
 import { garantiaInfo } from '../monitoring/garantia.js';
 import { filtrarOrdenarSistemas } from '../monitoring/filtro.js';
@@ -82,6 +83,41 @@ import {
   MARCAS_INVERSOR,
   TIPOS_ESTRUTURA,
 } from './proposta-form-view.js';
+
+// Página do botão de importação dos leads da campanha Meta junho/2026.
+// didApply=false: prévia + botão pra gravar. didApply=true: resultado da gravação.
+function renderImportLeadsJunhoPage(r: ResultadoImport, didApply: boolean): string {
+  const cor = (s: string) => s === 'ok' ? '#34d399' : s === 'pulado' ? '#fbbf24' : '#f87171';
+  const rows = r.linhas.map((l) => `
+    <tr style="border-bottom:1px solid #1e293b">
+      <td style="padding:8px 12px">${escapeHtmlSimple(l.nome)}</td>
+      <td style="padding:8px 12px;color:#94a3b8">${escapeHtmlSimple(l.phone)}</td>
+      <td style="padding:8px 12px;color:#94a3b8">${escapeHtmlSimple(l.faixa)}</td>
+      <td style="padding:8px 12px;color:${cor(l.status)}">${escapeHtmlSimple(l.destino)}${l.erro ? ` — ${escapeHtmlSimple(l.erro)}` : ''}</td>
+    </tr>`).join('');
+  const banner = didApply
+    ? `<div style="background:#064e3b;border:1px solid #34d399;border-radius:12px;padding:16px;margin-bottom:20px">
+         ✅ <strong>Importado!</strong> ${r.gravados} gravados · ${r.pulados} pulados · ${r.erros} erros.
+         Os "cadência Eva" entram na fila no próximo ciclo do cron. <a href="/dashboard/cockpit" style="color:#34d399">Ver dashboard →</a>
+       </div>`
+    : `<div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;margin-bottom:20px">
+         🔍 <strong>Prévia</strong> — ${r.gravados} prontos · ${r.pulados} pulados · ${r.erros} erros. Nada gravado ainda.
+         <form method="POST" action="/dashboard/import-leads-junho" style="margin-top:12px">
+           <button type="submit" style="background:#22c55e;color:#052e16;border:0;border-radius:10px;padding:12px 20px;font-weight:700;font-size:15px;cursor:pointer">✅ Importar agora (grava no banco)</button>
+         </form>
+       </div>`;
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Importar leads — Campanha Meta Junho/2026</title></head>
+<body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#0f172a;color:#e2e8f0;max-width:900px;margin:0 auto;padding:24px">
+<h1 style="font-size:22px">📥 Importar leads — Campanha Meta Junho/2026</h1>
+<p style="color:#94a3b8;margin-bottom:20px">Campanha <code>META_Leads_Solar_DF-Entorno_2026-06</code> · upsert por telefone (rodar de novo não duplica).</p>
+${banner}
+<table style="width:100%;border-collapse:collapse;font-size:14px;background:#0b1220;border-radius:12px;overflow:hidden">
+  <thead><tr style="background:#1e293b;text-align:left"><th style="padding:10px 12px">Nome</th><th style="padding:10px 12px">Telefone</th><th style="padding:10px 12px">Conta</th><th style="padding:10px 12px">Destino</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+</body></html>`;
+}
 
 export function createDashboardRouter(
   supabaseService: SupabaseService,
@@ -144,6 +180,27 @@ export function createDashboardRouter(
   // Raiz redireciona pro cockpit (visao geral 1-tela). Era /home antes.
   router.get('/', (_req, res) => {
     res.redirect('/dashboard/cockpit');
+  });
+
+  // Botão one-off pra importar os leads da campanha de formulário Meta junho/2026
+  // (sem mexer em terminal de prod). GET = prévia + botão; POST = grava. Idempotente.
+  router.get('/import-leads-junho', async (_req: Request, res: Response) => {
+    try {
+      const { importarLeadsMetaJunho } = await import('../leads-import-meta-junho.js');
+      const r = await importarLeadsMetaJunho(supabaseService, false);
+      res.type('text/html').send(renderImportLeadsJunhoPage(r, false));
+    } catch (err) {
+      res.status(500).type('text/html').send(`<p>Erro: ${escapeHtmlSimple((err as Error).message)}</p>`);
+    }
+  });
+  router.post('/import-leads-junho', async (_req: Request, res: Response) => {
+    try {
+      const { importarLeadsMetaJunho } = await import('../leads-import-meta-junho.js');
+      const r = await importarLeadsMetaJunho(supabaseService, true);
+      res.type('text/html').send(renderImportLeadsJunhoPage(r, true));
+    } catch (err) {
+      res.status(500).type('text/html').send(`<p>Erro ao importar: ${escapeHtmlSimple((err as Error).message)}</p>`);
+    }
   });
 
   // Cockpit: 1 tela dark neon com KPIs + gauges + funil + atividade + top leads.
