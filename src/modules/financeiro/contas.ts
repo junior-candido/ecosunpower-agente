@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   competenciaAtual, getBuckets, getParametros, getAtividade,
   criarContaReceber, getContaReceber, somarReceitaNoMes, atualizarContaRecebida,
+  criarLancamentoRecebimento,
 } from './repo.js';
 import { calcularRBT12 } from './rbt12.js';
 
@@ -87,14 +88,17 @@ export async function criarContaDeFechamento(client: SupabaseClient, args: {
   return { contaId, calc };
 }
 
-// Marca recebido (total ou parcial); recalcula imposto CONFIRMADO e soma no bucket.
-// Ordem: 1º marca a conta (guard otimista barra re-clique); 2º soma no bucket.
-// Crash entre os dois deixa receita FALTANDO (detectável), nunca duplicada.
+// Marca recebido (total ou parcial); recalcula imposto CONFIRMADO, grava lançamento e soma no bucket.
+// Ordem: 1º marca a conta com CAS (compare-and-swap: dois cliques simultâneos leram o mesmo estado,
+//        só o 1º update casa pelo .eq('valor_recebido', anterior)); 2º grava o lançamento por parcela
+//        (rastro por competência — KPIs do mês e DAS partem daqui); 3º soma no bucket.
+// Crash entre os passos deixa registro FALTANDO (detectável), nunca duplicado.
 export async function registrarRecebimento(client: SupabaseClient, contaId: string, valorRecebido?: number)
 : Promise<{ calc: ResultadoCalculoConta; total: boolean; parcela: number; acumulado: number; saldoRestante: number }> {
   const conta = await getContaReceber(client, contaId);
+  const valorRecebidoAnterior = Number(conta.valor_recebido);
   const { parcela, acumulado, total } = calcularParcelaRecebimento({
-    valor: Number(conta.valor), valorRecebido: Number(conta.valor_recebido),
+    valor: Number(conta.valor), valorRecebido: valorRecebidoAnterior,
     impostoConfirmado: Number(conta.imposto_confirmado ?? 0), status: conta.status,
   }, valorRecebido);
   const comp = competenciaAtual();
@@ -108,13 +112,20 @@ export async function registrarRecebimento(client: SupabaseClient, contaId: stri
     atividade: { anexo_padrao: atividade.anexo_padrao, sujeito_fator_r: atividade.sujeito_fator_r },
     proLabore12: params.pro_labore_mensal * 12, outrasFolhas12: params.outras_folhas_mensal * 12,
   });
-  // 1º marca a conta (guard otimista barra re-clique); só então soma no bucket
+  // 1º marca a conta (CAS: .eq('valor_recebido', anterior) barra re-clique simultâneo)
   await atualizarContaRecebida(client, contaId, {
-    status: total ? 'recebido' : 'recebido_parcial', valorRecebido: acumulado, competencia: comp,
+    status: total ? 'recebido' : 'recebido_parcial', valorRecebido: acumulado,
+    valorRecebidoAnterior, competencia: comp,
     impostoConfirmado: Number(conta.imposto_confirmado ?? 0) + calc.imposto,
     anexoAplicado: calc.anexo, aliquotaEfetiva: calc.efetiva,
     faixa: calc.faixa, rbt12, fatorR: calc.fatorR,
   });
+  // 2º grava lançamento desta parcela (rastro por competência — KPIs e DAS partem daqui)
+  await criarLancamentoRecebimento(client, {
+    contaId, valor: parcela, imposto: calc.imposto,
+    anexoAplicado: calc.anexo, aliquotaEfetiva: calc.efetiva, competencia: comp,
+  });
+  // 3º soma no bucket RBT12
   await somarReceitaNoMes(client, comp, conta.atividade_id, parcela);
   const saldoRestante = Math.round((Number(conta.valor) - acumulado) * 100) / 100;
   return { calc, total, parcela, acumulado, saldoRestante };

@@ -156,12 +156,24 @@ export async function somarReceitaNoMes(
   if (error) throw new Error(`somarReceitaNoMes: ${error.message}`);
 }
 
+export async function criarLancamentoRecebimento(client: SupabaseClient, l: {
+  contaId: string; valor: number; imposto: number;
+  anexoAplicado: Anexo; aliquotaEfetiva: number; competencia: string;
+}): Promise<void> {
+  const { error } = await client.from('financeiro_recebimentos').insert({
+    conta_id: l.contaId, valor: l.valor, imposto: l.imposto,
+    anexo_aplicado: l.anexoAplicado, aliquota_efetiva: l.aliquotaEfetiva, competencia: l.competencia,
+  });
+  if (error) throw new Error(`criarLancamentoRecebimento: ${error.message}`);
+}
+
 export async function atualizarContaRecebida(
   client: SupabaseClient,
   id: string,
   patch: {
     status: 'recebido' | 'recebido_parcial';
     valorRecebido: number;
+    valorRecebidoAnterior: number;
     competencia: string;
     impostoConfirmado: number;
     anexoAplicado: Anexo;
@@ -188,6 +200,7 @@ export async function atualizarContaRecebida(
     })
     .eq('id', id)
     .in('status', ['pendente', 'recebido_parcial'])
+    .eq('valor_recebido', patch.valorRecebidoAnterior)
     .select('id');
   if (error) throw new Error(`atualizarContaRecebida: ${error.message}`);
   if (!updated || updated.length === 0) throw new Error('conta já processada (recebida ou cancelada)');

@@ -7429,7 +7429,7 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
       try {
         if (!metaWaba) return;
         const { getBuckets, getParametros, competenciaAtual } = await import('./modules/financeiro/repo.js');
-        const { calcularRBT12 } = await import('./modules/financeiro/rbt12.js');
+        const { calcularRBT12, mesesAnteriores } = await import('./modules/financeiro/rbt12.js');
         const { detectarAlertasFinanceiros } = await import('./modules/financeiro/alertas.js');
         const { fatorR, proLaboreMinimoParaAnexoIII } = await import('./modules/financeiro/imposto.js');
         const client = supabase.getClient();
@@ -7439,10 +7439,13 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
         const receita12 = rbt12;
         const folha12 = params.pro_labore_mensal * 12 + params.outras_folhas_mensal * 12;
         const fr = fatorR(folha12, receita12);
-        const { data, error } = await client.from('financeiro_contas_a_receber')
-          .select('imposto_confirmado').in('status', ['recebido', 'recebido_parcial']).eq('competencia_recebimento', comp);
+        // DAS que vence dia 20 do mês M é o imposto da competência M-1 (mês anterior).
+        // Usa lançamentos por parcela para atribuir cada valor ao mês em que de fato caiu.
+        const compDas = mesesAnteriores(comp, 1)[0]; // mês anterior
+        const { data, error } = await client.from('financeiro_recebimentos')
+          .select('imposto').eq('competencia', compDas);
         if (error) throw new Error(error.message);
-        const impostoDoMes = (data ?? []).reduce((s: number, r: { imposto_confirmado: number | null }) => s + Number(r.imposto_confirmado ?? 0), 0);
+        const impostoDoMes = (data ?? []).reduce((s: number, r: { imposto: number }) => s + Number(r.imposto), 0);
         const agoraBrt = new Date(Date.now() - 3 * 60 * 60 * 1000);
         const hoje = agoraBrt.toISOString().slice(0, 10);
         const alertas = detectarAlertasFinanceiros({

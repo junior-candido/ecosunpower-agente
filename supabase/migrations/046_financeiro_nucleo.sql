@@ -118,7 +118,23 @@ INSERT INTO financeiro_parametros (id, razao_social, cnpj)
   VALUES (1, 'ECOSUNPOWER ENERGIA SOLAR LTDA', '33.020.459/0001-06')
 ON CONFLICT (id) DO NOTHING;
 
--- 6) Soma atômica de receita no bucket do mês (elimina corrida read-then-write
+-- 6) Lançamentos de recebimento (rastro por parcela — KPIs e DAS por competência;
+-- o 50/50 pode atravessar meses, a conta guarda só o acumulado)
+CREATE TABLE IF NOT EXISTS financeiro_recebimentos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  conta_id uuid NOT NULL REFERENCES financeiro_contas_a_receber(id) ON DELETE CASCADE,
+  valor numeric(14,2) NOT NULL,
+  imposto numeric(14,2) NOT NULL,
+  anexo_aplicado text,
+  aliquota_efetiva numeric(7,4),
+  competencia text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT fin_receb_competencia_check CHECK (competencia ~ '^\d{4}-(0[1-9]|1[0-2])$')
+);
+CREATE INDEX IF NOT EXISTS idx_fin_receb_comp ON financeiro_recebimentos(competencia);
+CREATE INDEX IF NOT EXISTS idx_fin_receb_conta ON financeiro_recebimentos(conta_id);
+
+-- 7) Soma atômica de receita no bucket do mês (elimina corrida read-then-write
 -- e erro silencioso; chamada via client.rpc('fin_somar_receita_mes', ...)).
 CREATE OR REPLACE FUNCTION fin_somar_receita_mes(p_competencia text, p_atividade_id uuid, p_valor numeric)
 RETURNS void LANGUAGE sql AS $$

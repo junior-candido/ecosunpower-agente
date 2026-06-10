@@ -36,11 +36,17 @@ export async function getFinanceiroData(client: SupabaseClient): Promise<Finance
     competencia_recebimento: string | null; valor_recebido: number;
   }>;
 
-  // Recebido no mês = soma do valor_recebido das contas com recebimento na competência atual
-  const recebidasNoMes = contas.filter((c) =>
-    (c.status === 'recebido' || c.status === 'recebido_parcial') && c.competencia_recebimento === comp);
-  const faturamentoMes = recebidasNoMes.reduce((s, c) => s + Number(c.valor_recebido), 0);
-  const impostoASeparar = recebidasNoMes.reduce((s, c) => s + Number(c.imposto_confirmado ?? 0), 0);
+  // Recebido no mês = soma dos LANÇAMENTOS da competência (rastro por parcela).
+  // Um recebimento 50/50 que atravessa meses grava 2 lançamentos em competências distintas,
+  // garantindo que cada mês receba apenas o que de fato caiu nele.
+  const { data: lancRaw, error: lancErr } = await client
+    .from('financeiro_recebimentos')
+    .select('valor, imposto')
+    .eq('competencia', comp);
+  if (lancErr) throw new Error(`getFinanceiroData: ${lancErr.message}`);
+  const lanc = (lancRaw ?? []) as Array<{ valor: number; imposto: number }>;
+  const faturamentoMes = lanc.reduce((s, l) => s + Number(l.valor), 0);
+  const impostoASeparar = lanc.reduce((s, l) => s + Number(l.imposto), 0);
   // aReceber usa o SALDO — valor menos já recebido — pra conta parcial não inflar
   const aReceber = contas
     .filter((c) => c.status === 'pendente' || c.status === 'recebido_parcial')
