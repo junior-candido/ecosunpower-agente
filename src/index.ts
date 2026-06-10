@@ -34,6 +34,7 @@ import { SiteDeployService } from './modules/site-deploy.js';
 import { PublicReviewsService } from './modules/public-reviews.js';
 import { CaseCreatorAssistant } from './modules/case-creator-assistant.js';
 import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone } from './modules/meta-leadgen.js';
+import { enviarTemplateInicial } from './modules/template-inicial.js';
 import { parseTrackingTag } from './modules/tracking.js';
 import { generateWeeklyReport, formatReportForWhatsApp } from './modules/ads-report.js';
 import { PricingAssistant } from './modules/pricing-assistant.js';
@@ -365,6 +366,27 @@ async function main() {
     const delay = typingDelay(text);
     const { messageId } = await messaging.sendText(to, text, delay);
     if (messageId) await takeover.markBotSent(messageId);
+  };
+
+  // Registra na conversa que a 1ª mensagem ao lead foi um template aprovado
+  // (WABA). Sem esse registro o message_count fica 0 e o auto-ack re-dispara
+  // o MESMO template quando o lead responde ("sessão nova" falsa => cliente
+  // recebe abertura duplicada). O marcador também dá contexto pra Eva sobre
+  // o que o lead está respondendo. Falha aqui não pode derrubar o envio —
+  // chamadores usam .catch().
+  const registrarTemplateNaConversa = async (leadId: string, templateUsado: string): Promise<void> => {
+    const conversation = await supabase.getOrCreateConversation(leadId);
+    await supabase.updateConversation(conversation.id, {
+      messages: [
+        ...conversation.messages,
+        {
+          role: 'assistant' as const,
+          content: `[abertura automática enviada via template aprovado "${templateUsado}", saudação com o primeiro nome do lead]`,
+          timestamp: new Date().toISOString(),
+        },
+      ],
+      message_count: conversation.message_count + 1,
+    });
   };
 
   const learning = new LearningModule(supabase.getClient());
@@ -2298,6 +2320,121 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // /resgatar-forms [N]: dispara template inicial aprovado pra leads de
+  // FORMULARIO Meta (ad_ig_leadform/ad_fb_leadform) parados em 'novo' que
+  // nunca receberam a 1a mensagem (welcome_sent_at null) — leads pagos que o
+  // webhook perdeu ou cuja boas-vindas por texto livre a Meta rejeitou (regra
+  // 24h WABA). Delay 30-90s entre disparos pra nao acender alerta spam.
+  // Marca welcome_sent_at quando OK. Default N=10.
+  let resgateFormsEmAndamento = false;
+  async function tryHandleResgatarFormsCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const m = text.trim().toLowerCase().match(/^\/resgatar-forms(?:\s+(\d+))?$/);
+    if (!m) return false;
+    const N = m[1] ? parseInt(m[1], 10) : 10;
+    if (!metaWaba) {
+      await sendText(from, '❌ metaWaba nao configurado.');
+      return true;
+    }
+    // Guarda anti-duplo-disparo: o loop roda em background, entao um segundo
+    // /resgatar-forms antes do primeiro acabar pegaria os MESMOS leads ainda
+    // nao marcados e mandaria template duplicado.
+    if (resgateFormsEmAndamento) {
+      await sendText(from, '⏳ Já tem um resgate rodando. Aguarda o relatório final antes de disparar outro.');
+      return true;
+    }
+
+    const { data: leads, error } = await supabase.getClient()
+      .from('leads')
+      .select('id, phone, name, ad_campaign_id')
+      .in('lead_source', ['ad_ig_leadform', 'ad_fb_leadform'])
+      .eq('status', 'novo')
+      .is('welcome_sent_at', null)
+      .eq('eva_active', true)
+      .order('created_at', { ascending: false })
+      .limit(N);
+    if (error) {
+      await sendText(from, `❌ Erro ao buscar leads: ${error.message}`);
+      return true;
+    }
+    if (!leads || leads.length === 0) {
+      await sendText(from, '✅ Nenhum lead de formulario esperando 1ª mensagem. Nada a fazer.');
+      return true;
+    }
+
+    await sendText(
+      from,
+      `🛟 Resgatando ${leads.length} leads de formulário (template aprovado, delay 30-90s entre cada).\n\nVou te avisar no fim.`,
+    );
+
+    // Loop roda em BACKGROUND: a fila de mensagens tem concurrency=1, entao
+    // aguardar N×90s aqui deixaria a Eva surda pra TODO MUNDO durante o
+    // resgate (lead quente chegando ficaria sem resposta por ~15 min).
+    // welcome_sent_at marca o progresso — se o app reiniciar no meio, rodar
+    // o comando de novo continua de onde parou sem duplicar.
+    const waba = metaWaba;
+    resgateFormsEmAndamento = true;
+    void (async () => {
+      let ok = 0;
+      let fail = 0;
+      // Cache por execucao: todos os leads da mesma campanha compartilham o
+      // mesmo template — evita N consultas identicas.
+      const templatePorCampanha = new Map<string, string | null>();
+      try {
+        for (let i = 0; i < leads.length; i++) {
+          const lead = leads[i];
+          try {
+            const campKey = lead.ad_campaign_id ?? '';
+            let mapped = templatePorCampanha.get(campKey);
+            if (mapped === undefined) {
+              mapped = await supabase.getTemplateInicialPorCampanha(lead.ad_campaign_id ?? null);
+              templatePorCampanha.set(campKey, mapped);
+            }
+            const { templateUsado } = await enviarTemplateInicial(
+              waba,
+              lead.phone,
+              lead.name,
+              mapped || 'eva_qualificacao_v1', // || (nao ??): string vazia do DB tambem cai no default
+            );
+            await supabase.getClient()
+              .from('leads')
+              .update({ welcome_sent_at: new Date().toISOString() })
+              .eq('id', lead.id);
+            await registrarTemplateNaConversa(lead.id, templateUsado).catch((err) => {
+              console.warn(`[resgatar-forms] marcador de conversa falhou pra ${lead.phone}:`, (err as Error).message);
+            });
+            ok++;
+            console.log(`[resgatar-forms] ${templateUsado} enviado pra ${lead.phone} (${lead.name ?? 'sem nome'})`);
+          } catch (err) {
+            fail++;
+            console.error(`[resgatar-forms] falhou ${lead.phone}:`, (err as Error).message);
+          }
+          // Delay 30-90s aleatorio (exceto no ultimo)
+          if (i < leads.length - 1) {
+            const delay = 30000 + Math.floor(Math.random() * 60000);
+            await new Promise((r) => setTimeout(r, delay));
+          }
+        }
+
+        await sendText(
+          from,
+          `🛟 *Resgate de leads de formulário concluído*\n\n` +
+          `📤 ${ok} templates enviados\n` +
+          `❌ ${fail} falharam\n\n` +
+          `Quando responderem, a Eva qualifica automático com os dados do form.\n` +
+          `Próxima onda: /resgatar-forms ${N}`,
+        );
+      } catch (err) {
+        console.error('[resgatar-forms] loop de resgate morreu:', (err as Error).message);
+        await sendText(from, `❌ Resgate interrompido por erro: ${(err as Error).message}\n\nEnviados até aqui: ${ok}. Rode /resgatar-forms de novo pra continuar.`).catch(() => {});
+      } finally {
+        resgateFormsEmAndamento = false;
+      }
+    })();
+
+    return true;
+  }
+
   // /banner: gera banner promocional Mega Oferta com satori + envia via WABA.
   // Sintaxe: /banner titulo="..." kit=12 kwh=900 preco=17354.32
   // Opcionais: subtitulo, descricao, cta. Obrigatorio: preco.
@@ -3120,6 +3257,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /reativar-base — dispara template MARKETING pra leads frios da base terceirizada
     if (await tryHandleReativarBaseCommand(from, text)) return;
+
+    // /resgatar-forms — dispara template inicial pra leads de formulário Meta sem 1ª mensagem
+    if (await tryHandleResgatarFormsCommand(from, text)) return;
 
     // /fechei — marca lead como cliente fechado (remove da cadência)
     if (await tryHandleFecheiCommand(from, text)) return;
@@ -4785,6 +4925,22 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           if (!normalized.phone) {
             console.warn(`[meta-leadgen] Lead ${leadgenId} sem telefone, salvando so evento`);
             await metaLeadgen.markEventFailed(leadgenId, 'phone missing');
+            // Avisa o Junior MESMO ASSIM: a Eva nao consegue atender (sem
+            // telefone valido), entao ele precisa resgatar manual na central
+            // de leads do Meta. Sem este aviso o lead pago morre invisivel
+            // (caso Adriana 03/06).
+            try {
+              await sendText(
+                config.engineerPhone,
+                `⚠️ *Lead Meta chegou SEM telefone válido — Eva não consegue atender*\n` +
+                `👤 ${normalized.name ?? 'sem nome'}${normalized.city ? ` · ${normalized.city}` : ''}\n` +
+                (normalized.email ? `📧 ${normalized.email}\n` : '') +
+                (details.campaign_name ? `📣 ${details.campaign_name}\n` : '') +
+                `_Resgata manual na central de leads do Meta._`,
+              );
+            } catch (err) {
+              console.warn('[meta-leadgen] aviso de lead sem telefone falhou:', (err as Error).message);
+            }
             continue;
           }
 
@@ -4852,28 +5008,49 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
                 return;
               }
 
-              const welcome = await metaLeadgen.generateWelcome(
-                normalized,
-                details,
-                knowledgeBase.getCore(),
-              );
-              await sendText(normalized.phone as string, welcome);
+              if (metaWaba) {
+                // Lead de formulario NUNCA mandou mensagem => janela 24h
+                // fechada => a Cloud API rejeita texto livre (131047). A 1a
+                // mensagem TEM que ser template aprovado. Mesma rota do
+                // auto-ack: ad_id (CTWA mapping) -> campanha (DB) -> default.
+                const mapped = templateParaAdMeta(details.ad_id ?? null)
+                  ?? await supabase.getTemplateInicialPorCampanha(details.campaign_id ?? null);
+                const { templateUsado } = await enviarTemplateInicial(
+                  metaWaba,
+                  normalized.phone as string,
+                  normalized.name,
+                  mapped || 'eva_qualificacao_v1', // || (nao ??): string vazia do DB tambem cai no default
+                );
+                await registrarTemplateNaConversa(leadId, templateUsado).catch((err) => {
+                  console.warn(`[meta-leadgen] marcador de conversa falhou pra ${normalized.phone}:`, (err as Error).message);
+                });
+                console.log(`[meta-leadgen] Template ${templateUsado} enviado pra ${normalized.phone} (lead ${leadId}) after ${(delayMs / 1000).toFixed(0)}s`);
+              } else {
+                // Evolution (nao-oficial) nao tem regra de janela 24h — mantem
+                // o welcome personalizado gerado.
+                const welcome = await metaLeadgen.generateWelcome(
+                  normalized,
+                  details,
+                  knowledgeBase.getCore(),
+                );
+                await sendText(normalized.phone as string, welcome);
+
+                const conversation = await supabase.getOrCreateConversation(leadId);
+                await supabase.updateConversation(conversation.id, {
+                  messages: [
+                    ...conversation.messages,
+                    { role: 'assistant' as const, content: welcome, timestamp: new Date().toISOString() },
+                  ],
+                  message_count: conversation.message_count + 1,
+                });
+                console.log(`[meta-leadgen] Welcome sent to ${normalized.phone} (lead ${leadId}) after ${(delayMs / 1000).toFixed(0)}s`);
+              }
 
               // Marca welcome_sent_at pra bloquear futuros re-welcomes
               await supabase.getClient()
                 .from('leads')
                 .update({ welcome_sent_at: new Date().toISOString() })
                 .eq('id', leadId);
-
-              const conversation = await supabase.getOrCreateConversation(leadId);
-              await supabase.updateConversation(conversation.id, {
-                messages: [
-                  ...conversation.messages,
-                  { role: 'assistant' as const, content: welcome, timestamp: new Date().toISOString() },
-                ],
-                message_count: conversation.message_count + 1,
-              });
-              console.log(`[meta-leadgen] Welcome sent to ${normalized.phone} (lead ${leadId}) after ${(delayMs / 1000).toFixed(0)}s`);
             } catch (err) {
               console.error(`[meta-leadgen] Welcome failed for ${leadId}:`, (err as Error).message);
             }
@@ -4911,6 +5088,20 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           await metaLeadgen.markEventFailed(leadgenId, (err as Error).message).catch((e) => {
             console.error(`[meta-leadgen] markEventFailed also failed:`, (e as Error).message);
           });
+          // Avisa o Junior MESMO no erro: lead pago chegou e a Eva NAO vai
+          // atender — sem este aviso o lead morre invisivel ate alguem olhar
+          // a central do Meta ou o banco.
+          try {
+            await sendText(
+              config.engineerPhone,
+              `⚠️ *Lead Meta chegou mas deu ERRO no processamento — Eva não vai atender*\n` +
+              `🆔 ${leadgenId}\n` +
+              `💥 ${(err as Error).message.slice(0, 200)}\n` +
+              `_Olha a central de leads do Meta e me chama pra investigar._`,
+            );
+          } catch (e2) {
+            console.warn('[meta-leadgen] aviso de erro pro Junior falhou:', (e2 as Error).message);
+          }
         }
       }
     }
@@ -5725,17 +5916,31 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       const delayMs = 10000 + Math.floor(Math.random() * 20000);
       setTimeout(async () => {
         try {
-          const welcome = await metaLeadgen.generateWelcome(
-            normalized,
-            fakeDetails,
-            knowledgeBase.getCore(),
-          );
-          await sendText(normalized.phone as string, welcome);
+          if (metaWaba) {
+            // Mesmo caminho do fluxo real: fora da janela 24h => template aprovado
+            const { templateUsado } = await enviarTemplateInicial(
+              metaWaba,
+              normalized.phone as string,
+              normalized.name,
+              'eva_qualificacao_v1',
+            );
+            await registrarTemplateNaConversa(leadId, templateUsado).catch((err) => {
+              console.warn(`[meta-leadgen-test] marcador de conversa falhou:`, (err as Error).message);
+            });
+            console.log(`[meta-leadgen-test] Template ${templateUsado} enviado pra ${normalized.phone}`);
+          } else {
+            const welcome = await metaLeadgen.generateWelcome(
+              normalized,
+              fakeDetails,
+              knowledgeBase.getCore(),
+            );
+            await sendText(normalized.phone as string, welcome);
+            console.log(`[meta-leadgen-test] Welcome sent to ${normalized.phone}: "${welcome.slice(0, 80)}..."`);
+          }
           await supabase.getClient()
             .from('leads')
             .update({ welcome_sent_at: new Date().toISOString() })
             .eq('id', leadId);
-          console.log(`[meta-leadgen-test] Welcome sent to ${normalized.phone}: "${welcome.slice(0, 80)}..."`);
         } catch (err) {
           console.error(`[meta-leadgen-test] Welcome failed:`, (err as Error).message);
         }
