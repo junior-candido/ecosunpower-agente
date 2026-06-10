@@ -30,7 +30,7 @@ export interface ResultadoImposto {
 
 export function impostoDaVenda(valor: number, rbt12: number, anexo: Anexo): ResultadoImposto {
   const a = aliquotaEfetiva(rbt12, anexo);
-  return { imposto: valor * a.efetiva, efetiva: a.efetiva, faixa: a.faixa };
+  return { imposto: Math.round(valor * a.efetiva * 100) / 100, efetiva: a.efetiva, faixa: a.faixa };
 }
 
 export function proximoSalto(rbt12: number): { limite: number; distancia: number } | null {
@@ -38,7 +38,7 @@ export function proximoSalto(rbt12: number): { limite: number; distancia: number
   // Na faixa 6 (última do Simples) não há próxima faixa interna a escalar.
   const limitesSemUltimo = LIMITES_FAIXA.slice(0, -1); // exclui 4.800.000
   for (const limite of limitesSemUltimo) {
-    if (rbt12 < limite) return { limite, distancia: limite - rbt12 };
+    if (rbt12 <= limite) return { limite, distancia: limite - rbt12 };
   }
   return null;
 }
@@ -64,5 +64,5 @@ export function resolverAnexo(
 export function proLaboreMinimoParaAnexoIII(receita12: number, outrasFolhas12: number): number {
   const folha12Min = FATOR_R_MINIMO * receita12;
   const proLabore12 = Math.max(0, folha12Min - outrasFolhas12);
-  return proLabore12 / 12;
+  return Math.ceil((proLabore12 / 12) * 100) / 100;
 }

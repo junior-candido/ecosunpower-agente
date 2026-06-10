@@ -5,6 +5,9 @@ export interface BucketReceita {
 
 // Os n meses ANTERIORES à competência (não inclui o próprio mês de apuração).
 export function mesesAnteriores(competencia: string, n: number): string[] {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(competencia)) {
+    throw new Error(`Competência inválida: ${competencia} (esperado YYYY-MM)`);
+  }
   const [y, m] = competencia.split('-').map(Number);
   const out: string[] = [];
   for (let i = 1; i <= n; i++) {

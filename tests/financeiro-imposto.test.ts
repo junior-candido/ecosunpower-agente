@@ -58,6 +58,9 @@ describe('financeiro/imposto: imposto de uma venda de R$ 30.000', () => {
     expect(round2(impostoDaVenda(30000, 150000, 'III').imposto)).toBe(1800);
     expect(round2(impostoDaVenda(30000, 700000, 'III').imposto)).toBe(3294);
   });
+  it('imposto já sai arredondado em centavos (sem round2 extra)', () => {
+    expect(impostoDaVenda(30000, 355000, 'III').imposto).toBe(2569.01);
+  });
 });
 
 describe('financeiro/imposto: próximo salto de faixa', () => {
@@ -67,6 +70,10 @@ describe('financeiro/imposto: próximo salto de faixa', () => {
   });
   it('null quando já na última faixa', () => {
     expect(proximoSalto(4000000)).toBeNull();
+  });
+  it('distância zero quando exatamente no limite (fronteira inclusiva)', () => {
+    expect(proximoSalto(180000)).toEqual({ limite: 180000, distancia: 0 });
+    expect(proximoSalto(3600000)).toEqual({ limite: 3600000, distancia: 0 });
   });
 });
 
@@ -103,5 +110,9 @@ describe('financeiro/imposto: pró-labore mínimo pra manter Anexo III', () => {
   });
   it('nunca negativo', () => {
     expect(proLaboreMinimoParaAnexoIII(10000, 100000)).toBe(0);
+  });
+  it('arredonda pra CIMA no centavo pra não derrubar Fator R por epsilon', () => {
+    // 99400/12 = 8283,3333... → ceil no centavo = 8283,34
+    expect(proLaboreMinimoParaAnexoIII(355000, 0)).toBe(8283.34);
   });
 });

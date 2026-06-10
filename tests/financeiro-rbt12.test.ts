@@ -11,6 +11,14 @@ describe('financeiro/rbt12: meses anteriores', () => {
   });
 });
 
+describe('financeiro/rbt12: validação de competência', () => {
+  it('rejeita competência malformada', () => {
+    expect(() => mesesAnteriores('abc', 12)).toThrow('Competência inválida');
+    expect(() => mesesAnteriores('2026-13', 12)).toThrow('Competência inválida');
+    expect(() => calcularRBT12([], '2026-00')).toThrow('Competência inválida');
+  });
+});
+
 describe('financeiro/rbt12: soma rolante', () => {
   const buckets: BucketReceita[] = [
     { competencia: '2025-05', receita: 99999 }, // fora da janela de jun/2026
