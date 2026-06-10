@@ -341,6 +341,7 @@ export function renderPreviewProposta(input: {
         </div>
         <div class="flex gap-2 flex-shrink-0">
           <a href="${refazerHref}" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm">↻ Refazer</a>
+          <a href="/dashboard/propostas/${escapeHtml(input.slug)}/reabrir" class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm">✏️ Reabrir / Ajustar</a>
           <button data-url="${escapeHtml(input.publicUrl)}" onclick="navigator.clipboard.writeText(this.dataset.url).then(()=>alert('Link copiado!'))" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm">📋 Copiar link</button>
           ${enviarBtn}
         </div>

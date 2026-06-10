@@ -275,6 +275,10 @@ export interface GenerateProposalCoreInput {
     mimeType: string;
     legenda: string;
   }>;
+  // Quando setado, regenera a proposta NO MESMO slug (reabrir/ajustar) em vez de
+  // criar um registro novo. Reusa numeroProposta/dataProposta e faz UPDATE no
+  // Supabase (não duplica). No modo reopen pulamos o upload pro Drive.
+  reopenSlug?: string;
 }
 
 export interface GenerateProposalCoreResult {
@@ -973,7 +977,7 @@ export class ProposalAssistant {
       throw new Error('Nenhum destino configurado (Drive ou Supabase)');
     }
 
-    const { modoEnvio, tipo, attachments } = input;
+    const { modoEnvio, tipo, attachments, reopenSlug } = input;
     // Comparação de 2 sistemas: garante que a Opção A esteja no topo do `data`
     // (o extrator às vezes só preenche comparacao[]). Sem isso a validação abaixo
     // estourava "potenciaKwp inválido: NaN". Idempotente quando o topo já vem cheio.
@@ -1048,24 +1052,31 @@ export class ProposalAssistant {
       proposalData.modoComparacao = true;
     }
 
-    const slug = randomBytes(12).toString('base64url');
+    // Reabrir/ajustar: regenera NO MESMO slug (UPDATE), não cria registro novo.
+    const isReopen = !!reopenSlug;
+    const slug = reopenSlug ?? randomBytes(12).toString('base64url');
     proposalData.tipo = tipo;
 
     const temAnexos = tipo === 'personalizada'
       && (attachments?.length ?? 0) > 0
       && !!this.supabaseService;
 
+    // No reopen NÃO fazemos o INSERT prévio (o registro já existe) — processamos
+    // os anexos novos direto sobre o slug existente. Sem anexos novos no reopen, o
+    // estudo sai sem fotos (esperado nesta fatia; o form avisa).
     if (temAnexos) {
-      await this.supabaseService!.savePropostaPublica({
-        slug,
-        numeroProposta: proposalData.numeroProposta,
-        clienteNome: data.nomeCliente,
-        clienteTelefone: data.telefoneCliente,
-        htmlContent: '<!doctype html><html><body>Generating...</body></html>',
-        dadosInput: undefined,
-        tipo,
-        modoEnvio,
-      });
+      if (!isReopen) {
+        await this.supabaseService!.savePropostaPublica({
+          slug,
+          numeroProposta: proposalData.numeroProposta,
+          clienteNome: data.nomeCliente,
+          clienteTelefone: data.telefoneCliente,
+          htmlContent: '<!doctype html><html><body>Generating...</body></html>',
+          dadosInput: undefined,
+          tipo,
+          modoEnvio,
+        });
+      }
 
       try {
         proposalData.estudoPersonalizado = await this.processarAnexosFromBuffer(slug, attachments!);
@@ -1078,7 +1089,9 @@ export class ProposalAssistant {
     const html = renderProposalHTML(proposalData, calculations, socialProofHtml);
     const pdfBuffer = await htmlToPdf(html, { waitForChartMs: 2000 });
 
-    const drivePromise = this.driveUploader
+    // No reopen pulamos o Drive (foco é atualizar a web no mesmo slug); fora dele
+    // o upload roda igual.
+    const drivePromise = (this.driveUploader && !isReopen)
       ? this.driveUploader.uploadProposal({
           nomeCliente: data.nomeCliente,
           numeroProposta: proposalData.numeroProposta,
@@ -1087,7 +1100,7 @@ export class ProposalAssistant {
           inputDataJson: JSON.stringify({ data, calcInput }, null, 2),
           shareWithEmail: data.emailCliente,
         })
-      : Promise.reject(new Error('Drive uploader nao configurado'));
+      : Promise.reject(new Error(isReopen ? 'Drive pulado no reopen' : 'Drive uploader nao configurado'));
 
     // Salva o `data` COMPLETO (pra reabrir) + investimento.total derivado (KPIs do dashboard).
     const dadosInputMinimo: Record<string, unknown> = montarDadosInputCompleto(
@@ -1096,18 +1109,21 @@ export class ProposalAssistant {
     );
 
     const supabasePromise = this.supabaseService
-      ? (temAnexos
-          ? this.supabaseService.updatePropostaPublicaHtml(slug, html).then(() => ({ id: slug, expiresAt: '' }))
-          : this.supabaseService.savePropostaPublica({
-              slug,
-              numeroProposta: proposalData.numeroProposta,
-              clienteNome: data.nomeCliente,
-              clienteTelefone: data.telefoneCliente,
-              htmlContent: html,
-              dadosInput: dadosInputMinimo,
-              tipo,
-              modoEnvio,
-            }))
+      ? (isReopen
+          // Reabrir: UPDATE no mesmo registro (html + dados_input). Não cria novo.
+          ? this.supabaseService.updatePropostaPublica(slug, { htmlContent: html, dadosInput: dadosInputMinimo }).then(() => ({ id: slug, expiresAt: '' }))
+          : (temAnexos
+              ? this.supabaseService.updatePropostaPublicaHtml(slug, html).then(() => ({ id: slug, expiresAt: '' }))
+              : this.supabaseService.savePropostaPublica({
+                  slug,
+                  numeroProposta: proposalData.numeroProposta,
+                  clienteNome: data.nomeCliente,
+                  clienteTelefone: data.telefoneCliente,
+                  htmlContent: html,
+                  dadosInput: dadosInputMinimo,
+                  tipo,
+                  modoEnvio,
+                })))
       : Promise.reject(new Error('Supabase service nao configurado'));
 
     const [uploadResult, publicResult] = await Promise.allSettled([drivePromise, supabasePromise]);

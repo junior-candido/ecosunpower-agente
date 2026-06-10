@@ -1524,6 +1524,159 @@ export function createDashboardRouter(
   // GET form pré-preenchido, POST gera proposta, GET preview, POST envia
   // ========================================================================
 
+  // Faz o parsing+validação do form A4 de proposta a partir do request (body+files).
+  // Compartilhado por POST /propostas/novo e POST /propostas/:slug/reabrir, pra os
+  // dois fluxos montarem `data`/`attachments`/`tipo` exatamente do mesmo jeito.
+  // Comportamento idêntico ao miolo que estava inline no handler `novo`.
+  function parseFormProposta(req: Request): {
+    data: any;
+    attachments: Array<{ buffer: Buffer; mimeType: string; legenda: string }>;
+    tipo: 'basica' | 'personalizada';
+    erros: string[];
+  } {
+    const b = req.body;
+    const erros: string[] = [];
+
+    // Campos básicos
+    const nomeCliente = String(b.nomeCliente ?? '').trim();
+    const valorTotalRs = Number(b.valorTotalRs);
+    const potenciaKwp = Number(b.potenciaKwp);
+    const fatorPerda = Number(b.fatorPerda);
+    const consumoMensalKwh = Number(b.consumoMensalKwh);
+    const concessionariaRaw = String(b.concessionaria ?? '');
+    // Fix 1: resolve label pela lista exportada (fonte única da verdade)
+    const concessionariaOpt = CONCESSIONARIA_VALUES.find((c) => c.value === concessionariaRaw);
+
+    // Fix 2: parse numérico de módulo/inversor antes das validações
+    const moduloPotenciaW = Number(b.moduloPotenciaW);
+    const moduloQuantidade = Number(b.moduloQuantidade);
+    const inversorPotenciaW = Number(b.inversorPotenciaW);
+    const inversorQuantidade = Number(b.inversorQuantidade);
+
+    // Validações — campos obrigatórios
+    if (!nomeCliente) erros.push('Campo "Nome" obrigatório');
+    if (!isFinite(valorTotalRs) || valorTotalRs <= 0) erros.push('Campo "Valor total" inválido');
+    if (!isFinite(potenciaKwp) || potenciaKwp <= 0) erros.push('Campo "Potência kWp" inválido');
+    if (!isFinite(consumoMensalKwh) || consumoMensalKwh <= 0) erros.push('Campo "Consumo médio" inválido');
+    if (!concessionariaRaw) erros.push('Campo "Concessionária" obrigatório');
+
+    // Fix 1: validações de selects contra constantes exportadas
+    if (concessionariaRaw && !concessionariaOpt) erros.push('Concessionária inválida');
+    const fatorPerdaStr = String(b.fatorPerda ?? '');
+    if (fatorPerdaStr && !(FATORES_PERDA as ReadonlyArray<string>).includes(fatorPerdaStr)) erros.push('Fator de perda inválido');
+    if (b.moduloFabricante && !(MARCAS_MODULO as ReadonlyArray<string>).includes(String(b.moduloFabricante))) erros.push('Marca do módulo inválida');
+    if (b.inversorFabricante && !(MARCAS_INVERSOR as ReadonlyArray<string>).includes(String(b.inversorFabricante))) erros.push('Marca do inversor inválida');
+    if (b.estruturaTipo && !(TIPOS_ESTRUTURA as ReadonlyArray<string>).includes(String(b.estruturaTipo))) erros.push('Tipo de estrutura inválido');
+
+    // Fix 2: validações NaN/zero módulo e inversor
+    if (!isFinite(moduloPotenciaW) || moduloPotenciaW <= 0) erros.push('Potência do módulo inválida');
+    if (!isFinite(moduloQuantidade) || moduloQuantidade <= 0) erros.push('Quantidade de módulos inválida');
+    if (!isFinite(inversorPotenciaW) || inversorPotenciaW <= 0) erros.push('Potência do inversor inválida');
+    if (!isFinite(inversorQuantidade) || inversorQuantidade <= 0) erros.push('Quantidade de inversores inválida');
+
+    // Fix 1: label via lista exportada (fonte única da verdade)
+    const concessionariaLabel = concessionariaOpt?.label ?? concessionariaRaw;
+
+    // Parse opcional do array 12 meses
+    let consumoMensalKwhDistribuido: number[] | undefined;
+    if (b.consumoMensalKwhDistribuido) {
+      try {
+        const arr = JSON.parse(String(b.consumoMensalKwhDistribuido));
+        if (Array.isArray(arr) && arr.length === 12 && arr.every((v) => typeof v === 'number' && isFinite(v) && v >= 0)) {
+          consumoMensalKwhDistribuido = arr;
+        }
+      } catch {}
+    }
+
+    // Detecta tipo do inversor pelo fabricante (mesma regra do prompt do Claude)
+    const inversorFab = String(b.inversorFabricante ?? '').toLowerCase();
+    const tipoInversor: string =
+      ['hoymiles', 'enphase', 'nep', 'apsystems'].includes(inversorFab) ? 'microinversor'
+      : inversorFab === 'solaredge' ? 'solaredge'
+      : 'string';
+    const garantiaInversor =
+      tipoInversor === 'microinversor' ? 12
+      : tipoInversor === 'solaredge' ? 12
+      : 10;
+
+    const data: any = {
+      nomeCliente,
+      documentoCliente: b.documentoCliente || undefined,
+      enderecoCliente: b.enderecoCliente || undefined,
+      telefoneCliente: b.telefoneCliente || undefined,
+      emailCliente: b.emailCliente || undefined,
+      tipoCliente: b.tipoCliente || 'residencial',
+      modalidade: b.modalidade || 'autoconsumo local',
+      concessionaria: concessionariaLabel,
+      potenciaKwp,
+      fatorPerda,
+      consumoMensalKwh,
+      consumoMensalKwhDistribuido,
+      geracaoMensalKwh: b.geracaoMensalKwh ? Number(b.geracaoMensalKwh) : undefined, // geração do estudo (PVSol)
+      tarifaRsKwh: b.tarifaRsKwh ? Number(b.tarifaRsKwh) : undefined,
+      custoDisponibilidadeMensal: b.custoDisponibilidadeMensal ? Number(b.custoDisponibilidadeMensal) : undefined,
+      modulo: {
+        fabricante: b.moduloFabricante,
+        modelo: b.moduloModelo,
+        potenciaW: moduloPotenciaW,
+        quantidade: moduloQuantidade,
+        garantiaDefeito: 12,
+        garantiaEficiencia: 30,
+        tecnologia: 'TOPCon N-Type Bifacial',
+      },
+      inversor: {
+        fabricante: b.inversorFabricante,
+        modelo: b.inversorModelo,
+        potenciaW: inversorPotenciaW,
+        quantidade: inversorQuantidade,
+        garantia: garantiaInversor,
+        eficiencia: 0.985,
+        tipoInversor,
+      },
+      estruturaFixacao: {
+        tipo: b.estruturaTipo || 'Telha cerâmica',
+        material: b.estruturaMaterial || 'Alumínio anodizado + parafusos inox',
+        descricao: '',
+      },
+      valorTotalRs,
+      validadeDias: b.validadeDias ? Number(b.validadeDias) : undefined,
+    };
+
+    // Coleta anexos do multer
+    const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+    const attachments: Array<{ buffer: Buffer; mimeType: string; legenda: string }> = [];
+    if (files) {
+      for (const i of [1, 2, 3]) {
+        const f = files[`foto${i}`]?.[0];
+        if (f) {
+          attachments.push({
+            buffer: f.buffer,
+            mimeType: f.mimetype,
+            legenda: String((b as any)[`fotoLegenda${i}`] ?? `Foto ${i}`).slice(0, 100),
+          });
+        }
+      }
+      const v = files.video?.[0];
+      if (v) {
+        attachments.push({
+          buffer: v.buffer,
+          mimeType: v.mimetype,
+          legenda: String(b.videoLegenda ?? 'Simulação').slice(0, 100),
+        });
+      }
+    }
+
+    const tipo: 'basica' | 'personalizada' = attachments.length > 0 ? 'personalizada' : 'basica';
+
+    // Com estudo (anexos): a geração TEM de ser a do estudo, nunca o cálculo HSP.
+    // Valida aqui com erro claro em vez de deixar o core estourar.
+    if (tipo === 'personalizada' && !(Number(b.geracaoMensalKwh) > 0)) {
+      erros.push('Proposta com estudo (fotos) precisa da "Geração do estudo (kWh/mês)" — preenche esse campo.');
+    }
+
+    return { data, attachments, tipo, erros };
+  }
+
   router.get('/propostas/novo', async (req: Request, res: Response) => {
     const lead_id = String(req.query.lead_id ?? '');
     if (!lead_id) {
@@ -1566,155 +1719,15 @@ export function createDashboardRouter(
       const lead = await supabaseService.getClienteByLeadId(lead_id);
       if (!lead) return res.status(404).send('Cliente não encontrado');
 
-      const b = req.body;
-      const erros: string[] = [];
+      // Parsing+validação compartilhado com o fluxo de reabrir (DRY).
+      const parsed = parseFormProposta(req);
+      const { data, attachments, tipo } = parsed;
 
-      // Campos básicos
-      const nomeCliente = String(b.nomeCliente ?? '').trim();
-      const valorTotalRs = Number(b.valorTotalRs);
-      const potenciaKwp = Number(b.potenciaKwp);
-      const fatorPerda = Number(b.fatorPerda);
-      const consumoMensalKwh = Number(b.consumoMensalKwh);
-      const concessionariaRaw = String(b.concessionaria ?? '');
-      // Fix 1: resolve label pela lista exportada (fonte única da verdade)
-      const concessionariaOpt = CONCESSIONARIA_VALUES.find((c) => c.value === concessionariaRaw);
-
-      // Fix 2: parse numérico de módulo/inversor antes das validações
-      const moduloPotenciaW = Number(b.moduloPotenciaW);
-      const moduloQuantidade = Number(b.moduloQuantidade);
-      const inversorPotenciaW = Number(b.inversorPotenciaW);
-      const inversorQuantidade = Number(b.inversorQuantidade);
-
-      // Validações — campos obrigatórios
-      if (!nomeCliente) erros.push('Campo "Nome" obrigatório');
-      if (!isFinite(valorTotalRs) || valorTotalRs <= 0) erros.push('Campo "Valor total" inválido');
-      if (!isFinite(potenciaKwp) || potenciaKwp <= 0) erros.push('Campo "Potência kWp" inválido');
-      if (!isFinite(consumoMensalKwh) || consumoMensalKwh <= 0) erros.push('Campo "Consumo médio" inválido');
-      if (!concessionariaRaw) erros.push('Campo "Concessionária" obrigatório');
-
-      // Fix 1: validações de selects contra constantes exportadas
-      if (concessionariaRaw && !concessionariaOpt) erros.push('Concessionária inválida');
-      const fatorPerdaStr = String(b.fatorPerda ?? '');
-      if (fatorPerdaStr && !(FATORES_PERDA as ReadonlyArray<string>).includes(fatorPerdaStr)) erros.push('Fator de perda inválido');
-      if (b.moduloFabricante && !(MARCAS_MODULO as ReadonlyArray<string>).includes(String(b.moduloFabricante))) erros.push('Marca do módulo inválida');
-      if (b.inversorFabricante && !(MARCAS_INVERSOR as ReadonlyArray<string>).includes(String(b.inversorFabricante))) erros.push('Marca do inversor inválida');
-      if (b.estruturaTipo && !(TIPOS_ESTRUTURA as ReadonlyArray<string>).includes(String(b.estruturaTipo))) erros.push('Tipo de estrutura inválido');
-
-      // Fix 2: validações NaN/zero módulo e inversor
-      if (!isFinite(moduloPotenciaW) || moduloPotenciaW <= 0) erros.push('Potência do módulo inválida');
-      if (!isFinite(moduloQuantidade) || moduloQuantidade <= 0) erros.push('Quantidade de módulos inválida');
-      if (!isFinite(inversorPotenciaW) || inversorPotenciaW <= 0) erros.push('Potência do inversor inválida');
-      if (!isFinite(inversorQuantidade) || inversorQuantidade <= 0) erros.push('Quantidade de inversores inválida');
-
-      if (erros.length > 0) {
+      if (parsed.erros.length > 0) {
         return res.status(400).type('text/html').send(renderFormNovaProposta({
           lead_id,
           lead: lead as any,
-          erros,
-        }));
-      }
-
-      // Fix 1: label via lista exportada (fonte única da verdade)
-      const concessionariaLabel = concessionariaOpt?.label ?? concessionariaRaw;
-
-      // Parse opcional do array 12 meses
-      let consumoMensalKwhDistribuido: number[] | undefined;
-      if (b.consumoMensalKwhDistribuido) {
-        try {
-          const arr = JSON.parse(String(b.consumoMensalKwhDistribuido));
-          if (Array.isArray(arr) && arr.length === 12 && arr.every((v) => typeof v === 'number' && isFinite(v) && v >= 0)) {
-            consumoMensalKwhDistribuido = arr;
-          }
-        } catch {}
-      }
-
-      // Detecta tipo do inversor pelo fabricante (mesma regra do prompt do Claude)
-      const inversorFab = String(b.inversorFabricante ?? '').toLowerCase();
-      const tipoInversor: string =
-        ['hoymiles', 'enphase', 'nep', 'apsystems'].includes(inversorFab) ? 'microinversor'
-        : inversorFab === 'solaredge' ? 'solaredge'
-        : 'string';
-      const garantiaInversor =
-        tipoInversor === 'microinversor' ? 12
-        : tipoInversor === 'solaredge' ? 12
-        : 10;
-
-      const data: any = {
-        nomeCliente,
-        documentoCliente: b.documentoCliente || undefined,
-        enderecoCliente: b.enderecoCliente || undefined,
-        telefoneCliente: b.telefoneCliente || undefined,
-        emailCliente: b.emailCliente || undefined,
-        tipoCliente: b.tipoCliente || 'residencial',
-        modalidade: b.modalidade || 'autoconsumo local',
-        concessionaria: concessionariaLabel,
-        potenciaKwp,
-        fatorPerda,
-        consumoMensalKwh,
-        consumoMensalKwhDistribuido,
-        geracaoMensalKwh: b.geracaoMensalKwh ? Number(b.geracaoMensalKwh) : undefined, // geração do estudo (PVSol)
-        tarifaRsKwh: b.tarifaRsKwh ? Number(b.tarifaRsKwh) : undefined,
-        custoDisponibilidadeMensal: b.custoDisponibilidadeMensal ? Number(b.custoDisponibilidadeMensal) : undefined,
-        modulo: {
-          fabricante: b.moduloFabricante,
-          modelo: b.moduloModelo,
-          potenciaW: moduloPotenciaW,
-          quantidade: moduloQuantidade,
-          garantiaDefeito: 12,
-          garantiaEficiencia: 30,
-          tecnologia: 'TOPCon N-Type Bifacial',
-        },
-        inversor: {
-          fabricante: b.inversorFabricante,
-          modelo: b.inversorModelo,
-          potenciaW: inversorPotenciaW,
-          quantidade: inversorQuantidade,
-          garantia: garantiaInversor,
-          eficiencia: 0.985,
-          tipoInversor,
-        },
-        estruturaFixacao: {
-          tipo: b.estruturaTipo || 'Telha cerâmica',
-          material: b.estruturaMaterial || 'Alumínio anodizado + parafusos inox',
-          descricao: '',
-        },
-        valorTotalRs,
-        validadeDias: b.validadeDias ? Number(b.validadeDias) : undefined,
-      };
-
-      // Coleta anexos do multer
-      const files = req.files as Record<string, Express.Multer.File[]> | undefined;
-      const attachments: Array<{ buffer: Buffer; mimeType: string; legenda: string }> = [];
-      if (files) {
-        for (const i of [1, 2, 3]) {
-          const f = files[`foto${i}`]?.[0];
-          if (f) {
-            attachments.push({
-              buffer: f.buffer,
-              mimeType: f.mimetype,
-              legenda: String((b as any)[`fotoLegenda${i}`] ?? `Foto ${i}`).slice(0, 100),
-            });
-          }
-        }
-        const v = files.video?.[0];
-        if (v) {
-          attachments.push({
-            buffer: v.buffer,
-            mimeType: v.mimetype,
-            legenda: String(b.videoLegenda ?? 'Simulação').slice(0, 100),
-          });
-        }
-      }
-
-      const tipo: 'basica' | 'personalizada' = attachments.length > 0 ? 'personalizada' : 'basica';
-
-      // Com estudo (anexos): a geração TEM de ser a do estudo, nunca o cálculo HSP.
-      // Valida aqui com erro claro (400) em vez de deixar o core estourar.
-      if (tipo === 'personalizada' && !(Number(b.geracaoMensalKwh) > 0)) {
-        return res.status(400).type('text/html').send(renderFormNovaProposta({
-          lead_id,
-          lead: lead as any,
-          erros: ['Proposta com estudo (fotos) precisa da "Geração do estudo (kWh/mês)" — preenche esse campo.'],
+          erros: parsed.erros,
         }));
       }
 
@@ -1831,6 +1844,45 @@ export function createDashboardRouter(
 
     const lead_id = String(req.body.lead_id ?? '');
     res.redirect(303, `/dashboard/propostas/${slug}/preview${lead_id ? `?lead_id=${lead_id}` : ''}`);
+  });
+
+  // ========================================================================
+  // Reabrir / ajustar uma proposta — recarrega o form pré-preenchido com os
+  // dados_input salvos e permite (a) atualizar o MESMO slug ou (b) gerar nova versão.
+  // ========================================================================
+  router.get('/propostas/:slug/reabrir', async (req: Request, res: Response) => {
+    try {
+      const slug = String(req.params.slug);
+      const { prefillFormFromDadosInput } = await import('./proposta-prefill.js');
+      const prop = await supabaseService.getPropostaInputBySlug(slug);
+      if (!prop || !prop.dadosInput) return res.status(404).type('text/html').send('<p>Proposta não encontrada ou sem dados pra reabrir.</p>');
+      const valoresIniciais = prefillFormFromDadosInput(prop.dadosInput as Record<string, any>);
+      res.type('text/html').send(renderFormNovaProposta({ lead_id: '', lead: null, valoresIniciais, reabrirSlug: slug }));
+    } catch (err) {
+      res.status(500).type('text/html').send(`<p>Erro: ${escapeHtmlSimple((err as Error).message)}</p>`);
+    }
+  });
+
+  router.post('/propostas/:slug/reabrir', uploadProposta.fields([{ name: 'foto1', maxCount: 1 }, { name: 'foto2', maxCount: 1 }, { name: 'foto3', maxCount: 1 }, { name: 'video', maxCount: 1 }]), async (req: Request, res: Response) => {
+    try {
+      if (!options.proposalAssistant) return res.status(503).type('text/html').send('<p>ProposalAssistant não disponível neste ambiente.</p>');
+      const slug = String(req.params.slug);
+      const modo = String(req.body?.modo ?? 'atualizar');
+      const parsed = parseFormProposta(req);
+      if (parsed.erros.length) {
+        const { prefillFormFromDadosInput } = await import('./proposta-prefill.js');
+        return res.status(400).type('text/html').send(renderFormNovaProposta({ lead_id: '', lead: null, erros: parsed.erros, reabrirSlug: slug, valoresIniciais: prefillFormFromDadosInput(req.body) }));
+      }
+      const attachments = parsed.attachments.length ? parsed.attachments : undefined;
+      if (modo === 'nova') {
+        const result = await options.proposalAssistant.generateProposalCore({ data: parsed.data, modoEnvio: 'junior_envia', tipo: parsed.tipo, attachments });
+        return res.redirect(303, `/dashboard/propostas/${result.slug}/preview?lead_id=`);
+      }
+      await options.proposalAssistant.generateProposalCore({ data: parsed.data, modoEnvio: 'junior_envia', tipo: parsed.tipo, attachments, reopenSlug: slug });
+      return res.redirect(303, `/dashboard/propostas/${slug}/preview?lead_id=`);
+    } catch (err) {
+      res.status(500).type('text/html').send(`<p>Erro ao reabrir: ${escapeHtmlSimple((err as Error).message)}</p>`);
+    }
   });
 
   return router;
