@@ -7417,6 +7417,58 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setTimeout(runPosInstalacaoNotif, 10 * 60 * 1000);   // 10min após boot
 
     console.log('[pos-instalacao] cron started (1x/hora dentro da janela)');
+
+    // ============================================
+    // Módulo 8 — Alertas financeiros (DAS, faixa, Fator R)
+    // ============================================
+    // Dedupe diário por tipo: só manda 1 alerta de cada tipo por dia,
+    // independente de quantas vezes o cron rodar no mesmo dia.
+    const finAlertaUltimoDia = new Map<string, string>(); // tipo → 'YYYY-MM-DD'
+
+    const runFinanceiroAlertas = async () => {
+      try {
+        if (!metaWaba) return;
+        const { getBuckets, getParametros, competenciaAtual } = await import('./modules/financeiro/repo.js');
+        const { calcularRBT12 } = await import('./modules/financeiro/rbt12.js');
+        const { detectarAlertasFinanceiros } = await import('./modules/financeiro/alertas.js');
+        const { fatorR, proLaboreMinimoParaAnexoIII } = await import('./modules/financeiro/imposto.js');
+        const client = supabase.getClient();
+        const comp = competenciaAtual();
+        const [buckets, params] = await Promise.all([getBuckets(client), getParametros(client)]);
+        const rbt12 = calcularRBT12(buckets, comp);
+        const receita12 = rbt12;
+        const folha12 = params.pro_labore_mensal * 12 + params.outras_folhas_mensal * 12;
+        const fr = fatorR(folha12, receita12);
+        const { data, error } = await client.from('financeiro_contas_a_receber')
+          .select('imposto_confirmado').in('status', ['recebido', 'recebido_parcial']).eq('competencia_recebimento', comp);
+        if (error) throw new Error(error.message);
+        const impostoDoMes = (data ?? []).reduce((s: number, r: { imposto_confirmado: number | null }) => s + Number(r.imposto_confirmado ?? 0), 0);
+        const agoraBrt = new Date(Date.now() - 3 * 60 * 60 * 1000);
+        const hoje = agoraBrt.toISOString().slice(0, 10);
+        const alertas = detectarAlertasFinanceiros({
+          diaDoMes: agoraBrt.getUTCDate(), diaAlertaDas: params.dia_alerta_das,
+          rbt12, margemFaixa: params.margem_alerta_faixa,
+          fatorRatio: fr.ratio, fatorRAlerta: params.fator_r_alerta, // ratio direto, sem /100
+          impostoDoMes, proLaboreMin: proLaboreMinimoParaAnexoIII(receita12, params.outras_folhas_mensal * 12),
+        });
+        const proactiveDryRun = process.env.PROACTIVE_ALERTS_DRY_RUN === '1';
+        for (const a of alertas) {
+          const chave = a.tipo;
+          if (finAlertaUltimoDia.get(chave) === hoje) continue; // dedupe diário
+          finAlertaUltimoDia.set(chave, hoje);
+          if (proactiveDryRun) {
+            console.log(`[financeiro-alertas] DRY_RUN — ${a.tipo}: ${a.texto.slice(0, 80)}`);
+          } else {
+            await sendText(config.engineerPhone, a.texto);
+          }
+        }
+      } catch (err) {
+        console.error('[financeiro-alertas] cron falhou:', (err as Error).message);
+      }
+    };
+    setInterval(runFinanceiroAlertas, 6 * 60 * 60 * 1000); // 4x/dia
+    setTimeout(runFinanceiroAlertas, 9 * 60 * 1000); // primeira rodada 9min após boot
+    console.log('[financeiro-alertas] cron started (4x/dia, dedupe diário por tipo)');
   }
 
   // Canal Solar ingestion (every 3 days)
