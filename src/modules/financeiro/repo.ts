@@ -118,37 +118,42 @@ export async function criarContaReceber(client: SupabaseClient, c: NovaContaRece
   return (data as { id: string }).id;
 }
 
-export async function getContaReceber(client: SupabaseClient, id: string) {
+export interface ContaReceber {
+  id: string;
+  fechamento_id: string | null;
+  lead_id: string | null;
+  atividade_id: string;
+  descricao: string | null;
+  valor: number;
+  status: 'pendente' | 'recebido_parcial' | 'recebido' | 'cancelado';
+  valor_recebido: number;
+  imposto_provisorio: number | null;
+  imposto_confirmado: number | null;
+}
+
+export async function getContaReceber(client: SupabaseClient, id: string): Promise<ContaReceber> {
   const { data, error } = await client
     .from('financeiro_contas_a_receber')
     .select('*')
     .eq('id', id)
     .single();
   if (error) throw new Error(`getContaReceber: ${error.message}`);
-  return data;
+  return data as ContaReceber;
 }
 
-// soma receita no bucket do mês (upsert incremental por competência+atividade)
+// soma receita no bucket do mês — atômica via função SQL (corrida e erro silencioso eliminados)
 export async function somarReceitaNoMes(
   client: SupabaseClient,
   competencia: string,
-  atividadeId: string,
+  atividadeId: string | null,
   valor: number,
 ): Promise<void> {
-  const { data } = await client
-    .from('financeiro_receita_mensal')
-    .select('id, receita')
-    .eq('competencia', competencia)
-    .eq('atividade_id', atividadeId)
-    .maybeSingle();
-  if (data) {
-    await client.from('financeiro_receita_mensal')
-      .update({ receita: Number((data as { receita: number }).receita) + valor, updated_at: new Date().toISOString() })
-      .eq('id', (data as { id: string }).id);
-  } else {
-    await client.from('financeiro_receita_mensal')
-      .insert({ competencia, atividade_id: atividadeId, receita: valor, origem: 'sistema' });
-  }
+  const { error } = await client.rpc('fin_somar_receita_mes', {
+    p_competencia: competencia,
+    p_atividade_id: atividadeId,
+    p_valor: valor,
+  });
+  if (error) throw new Error(`somarReceitaNoMes: ${error.message}`);
 }
 
 export async function atualizarContaRecebida(
@@ -166,7 +171,7 @@ export async function atualizarContaRecebida(
     fatorR: number;
   },
 ): Promise<void> {
-  const { error } = await client
+  const { data: updated, error } = await client
     .from('financeiro_contas_a_receber')
     .update({
       status: patch.status,
@@ -181,8 +186,11 @@ export async function atualizarContaRecebida(
       fator_r_no_calculo: patch.fatorR,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', id);
+    .eq('id', id)
+    .in('status', ['pendente', 'recebido_parcial'])
+    .select('id');
   if (error) throw new Error(`atualizarContaRecebida: ${error.message}`);
+  if (!updated || updated.length === 0) throw new Error('conta já processada (recebida ou cancelada)');
 }
 
 export async function cancelarConta(client: SupabaseClient, id: string): Promise<void> {

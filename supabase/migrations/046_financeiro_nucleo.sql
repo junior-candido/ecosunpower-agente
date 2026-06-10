@@ -44,11 +44,13 @@ CREATE TABLE IF NOT EXISTS financeiro_atividades (
   CONSTRAINT financeiro_atividades_anexo_check CHECK (anexo_padrao IN ('I','II','III','IV','V'))
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_atividades_cnae ON financeiro_atividades(cnae);
+
 INSERT INTO financeiro_atividades (nome, cnae, anexo_padrao, sujeito_fator_r) VALUES
   ('Instalação / serviço',            '4321-5/00', 'III', false),
   ('Equipamento / material (loja)',   '4742-3/00', 'I',   false),
   ('Comissão / repasse distribuidor', '7490-1/04', 'V',   true)
-ON CONFLICT DO NOTHING;
+ON CONFLICT (cnae) DO NOTHING;
 
 -- 3) Receita realizada por mês (buckets pro RBT12 rolante)
 CREATE TABLE IF NOT EXISTS financeiro_receita_mensal (
@@ -58,7 +60,8 @@ CREATE TABLE IF NOT EXISTS financeiro_receita_mensal (
   receita numeric(14,2) NOT NULL DEFAULT 0,
   origem text NOT NULL DEFAULT 'sistema',    -- 'seed' | 'sistema'
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT fin_receita_competencia_check CHECK (competencia ~ '^\d{4}-(0[1-9]|1[0-2])$')
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_receita_comp_ativ
   ON financeiro_receita_mensal(competencia, COALESCE(atividade_id, '00000000-0000-0000-0000-000000000000'::uuid));
@@ -81,12 +84,14 @@ CREATE TABLE IF NOT EXISTS financeiro_contas_a_receber (
   aliquota_efetiva numeric(7,4),
   faixa int,
   rbt12_no_calculo numeric(14,2),
-  fator_r_no_calculo numeric(5,2),
+  fator_r_no_calculo numeric(7,4),           -- ratio decimal (0.28 = 28%)
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   created_by text,
   CONSTRAINT fin_contas_status_check
-    CHECK (status IN ('pendente','recebido_parcial','recebido','cancelado'))
+    CHECK (status IN ('pendente','recebido_parcial','recebido','cancelado')),
+  CONSTRAINT fin_contas_competencia_check
+    CHECK (competencia_recebimento IS NULL OR competencia_recebimento ~ '^\d{4}-(0[1-9]|1[0-2])$')
 );
 CREATE INDEX IF NOT EXISTS idx_fin_contas_status ON financeiro_contas_a_receber(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_fin_contas_comp ON financeiro_contas_a_receber(competencia_recebimento);
@@ -101,10 +106,21 @@ CREATE TABLE IF NOT EXISTS financeiro_parametros (
   dia_alerta_das int NOT NULL DEFAULT 15,
   dia_vencimento_das int NOT NULL DEFAULT 20,
   margem_alerta_faixa numeric(14,2) NOT NULL DEFAULT 20000,
-  fator_r_alerta numeric(5,2) NOT NULL DEFAULT 30.0,
+  fator_r_alerta numeric(7,4) NOT NULL DEFAULT 0.30, -- ratio decimal (0.30 = 30%)
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT financeiro_parametros_singleton CHECK (id = 1)
 );
 INSERT INTO financeiro_parametros (id, razao_social, cnpj)
   VALUES (1, 'ECOSUNPOWER ENERGIA SOLAR LTDA', '33.020.459/0001-06')
 ON CONFLICT (id) DO NOTHING;
+
+-- 6) Soma atômica de receita no bucket do mês (elimina corrida read-then-write
+-- e erro silencioso; chamada via client.rpc('fin_somar_receita_mes', ...)).
+CREATE OR REPLACE FUNCTION fin_somar_receita_mes(p_competencia text, p_atividade_id uuid, p_valor numeric)
+RETURNS void LANGUAGE sql AS $$
+  INSERT INTO financeiro_receita_mensal (competencia, atividade_id, receita, origem)
+  VALUES (p_competencia, p_atividade_id, p_valor, 'sistema')
+  ON CONFLICT (competencia, COALESCE(atividade_id, '00000000-0000-0000-0000-000000000000'::uuid))
+  DO UPDATE SET receita = financeiro_receita_mensal.receita + EXCLUDED.receita,
+                updated_at = now();
+$$;
