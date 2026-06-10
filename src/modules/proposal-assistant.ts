@@ -22,6 +22,7 @@ import {
 } from './solar-params.js';
 import { renderProposalHTML, type ProposalData } from './proposal/template.js';
 import { somaServicosExtras, renderServiceOnlyHTML, type ServicoItem, type ServiceOnlyData } from './proposal/service-render.js';
+import { montarDadosInputCompleto } from './proposal/dados-input.js';
 import { renderComparacaoSolar, type ComparacaoOpcao } from './proposal/comparison-render.js';
 import { servicePaymentOptions } from './proposal/service-payment.js';
 import { htmlToPdf, gerarQrCodeDataUrl } from './proposal/pdf-generator.js';
@@ -1088,19 +1089,11 @@ export class ProposalAssistant {
         })
       : Promise.reject(new Error('Drive uploader nao configurado'));
 
-    const dadosInputMinimo: Record<string, unknown> = {
-      calcInput,
-      sistema: {
-        potenciaKwp: data.potenciaKwp,
-        tipoCliente: data.tipoCliente,
-        modalidade: data.modalidade,
-        concessionaria: data.concessionaria,
-        modulo: data.modulo,
-        inversor: data.inversor,
-        estruturaFixacao: data.estruturaFixacao,
-      },
-      comercial: { valorTotalRs: data.valorTotalRs, servicos: data.servicos ?? null },
-    };
+    // Salva o `data` COMPLETO (pra reabrir) + investimento.total derivado (KPIs do dashboard).
+    const dadosInputMinimo: Record<string, unknown> = montarDadosInputCompleto(
+      data as Record<string, unknown>,
+      Number(data.valorTotalRs) + somaServicosExtras(mapServicosFromClaude(data.servicos)),
+    );
 
     const supabasePromise = this.supabaseService
       ? (temAnexos
