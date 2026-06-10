@@ -21,3 +21,24 @@ export function aliquotaEfetiva(rbt12: number, anexo: Anexo): ResultadoAliquota 
     rbt12 <= 0 ? ANEXOS[anexo][0].nominal : (rbt12 * linha.nominal - linha.deduzir) / rbt12;
   return { faixa, nominal: linha.nominal, deduzir: linha.deduzir, efetiva };
 }
+
+export interface ResultadoImposto {
+  imposto: number;
+  efetiva: number;
+  faixa: number;
+}
+
+export function impostoDaVenda(valor: number, rbt12: number, anexo: Anexo): ResultadoImposto {
+  const a = aliquotaEfetiva(rbt12, anexo);
+  return { imposto: valor * a.efetiva, efetiva: a.efetiva, faixa: a.faixa };
+}
+
+export function proximoSalto(rbt12: number): { limite: number; distancia: number } | null {
+  // Só faz sentido mostrar próximo salto até a penúltima faixa.
+  // Na faixa 6 (última do Simples) não há próxima faixa interna a escalar.
+  const limitesSemUltimo = LIMITES_FAIXA.slice(0, -1); // exclui 4.800.000
+  for (const limite of limitesSemUltimo) {
+    if (rbt12 < limite) return { limite, distancia: limite - rbt12 };
+  }
+  return null;
+}
