@@ -4866,6 +4866,32 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           }, delayMs);
 
           console.log(`[meta-leadgen] Lead ${leadgenId} -> ${leadId} (${normalized.phone}, ${platform}, hot=${isHot}), welcome em ${(delayMs / 1000).toFixed(0)}s`);
+
+          // Avisa o Junior NA HORA que entrou lead novo e a Eva vai atender. So pra
+          // lead NOVO (isHot=false) pra nao re-notificar quem ja estava no funil.
+          if (!isHot) {
+            try {
+              const respostas = details.field_data ?? [];
+              // Acha a resposta por fragmentos do nome do campo (slug do form Meta).
+              // Form atual: "qual_o_valor_médio_da_sua_conta..." e "qual_o_tipo_de_imóvel?".
+              const achaResposta = (...frags: string[]) =>
+                respostas.find((f) => frags.some((fr) => (f.name ?? '').toLowerCase().includes(fr)))?.values?.[0];
+              const contaLuz = achaResposta('valor', 'conta', 'fatura');
+              const tipoImovel = achaResposta('tipo', 'imóv', 'imov');
+              const canalTxt = platform === 'instagram' ? 'Instagram' : 'Facebook';
+              const aviso = [
+                '🔔 *Novo lead Meta — Eva vai atender*',
+                `👤 ${normalized.name ?? 'sem nome'}`,
+                `📱 ${normalized.phone}`,
+                contaLuz ? `💡 Conta: ${contaLuz}${tipoImovel ? ` · ${tipoImovel}` : ''}` : '',
+                details.campaign_name ? `📣 ${details.campaign_name} (${canalTxt})` : `📣 ${canalTxt}`,
+                `_1ª mensagem em ~${(delayMs / 1000).toFixed(0)}s, aí a Eva qualifica._`,
+              ].filter(Boolean).join('\n');
+              await sendText(config.engineerPhone, aviso);
+            } catch (err) {
+              console.warn('[meta-leadgen] aviso pro Junior falhou:', (err as Error).message);
+            }
+          }
         } catch (err) {
           console.error(`[meta-leadgen] Processing ${leadgenId} failed:`, (err as Error).message);
           await metaLeadgen.markEventFailed(leadgenId, (err as Error).message).catch((e) => {
