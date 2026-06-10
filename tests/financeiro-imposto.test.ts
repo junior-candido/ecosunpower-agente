@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { faixaPorRBT12, aliquotaEfetiva, impostoDaVenda, proximoSalto } from '../src/modules/financeiro/imposto.js';
+import {
+  faixaPorRBT12,
+  aliquotaEfetiva,
+  impostoDaVenda,
+  proximoSalto,
+  fatorR,
+  resolverAnexo,
+  proLaboreMinimoParaAnexoIII,
+} from '../src/modules/financeiro/imposto.js';
 
 describe('financeiro/imposto: faixa por RBT12', () => {
   it('faixas pelos limites do Anexo (LC 123/2006)', () => {
@@ -59,5 +67,41 @@ describe('financeiro/imposto: próximo salto de faixa', () => {
   });
   it('null quando já na última faixa', () => {
     expect(proximoSalto(4000000)).toBeNull();
+  });
+});
+
+describe('financeiro/imposto: Fator R', () => {
+  const round4 = (n: number) => Math.round(n * 1e4) / 1e4;
+  it('>= 28% vai pro Anexo III; < 28% vai pro V', () => {
+    expect(fatorR(100000, 355000).anexo).toBe('III'); // 28,17%
+    expect(round4(fatorR(100000, 355000).ratio)).toBe(0.2817);
+    expect(fatorR(90000, 355000).anexo).toBe('V');    // 25,35%
+  });
+  it('receita zero não divide por zero', () => {
+    expect(fatorR(0, 0).ratio).toBe(0);
+    expect(fatorR(0, 0).anexo).toBe('V');
+  });
+});
+
+describe('financeiro/imposto: resolverAnexo aplica Fator R só em quem é sujeito', () => {
+  it('atividade não sujeita usa o anexo padrão', () => {
+    expect(resolverAnexo('I', false, 0, 355000)).toBe('I');   // comércio sempre I
+    expect(resolverAnexo('III', false, 0, 355000)).toBe('III'); // instalação sempre III
+  });
+  it('atividade sujeita (agenciamento) vira III ou V pelo Fator R', () => {
+    expect(resolverAnexo('V', true, 100000, 355000)).toBe('III'); // FR 28,17%
+    expect(resolverAnexo('V', true, 90000, 355000)).toBe('V');    // FR 25,35%
+  });
+});
+
+describe('financeiro/imposto: pró-labore mínimo pra manter Anexo III', () => {
+  it('28% da receita, descontando outras folhas, dividido por 12', () => {
+    // 0,28 * 355000 = 99400; sem outras folhas → 99400/12 = 8283,33/mês
+    expect(Math.round(proLaboreMinimoParaAnexoIII(355000, 0))).toBe(8283);
+    // com 12k de outras folhas no ano → (99400-12000)/12 = 7283,33
+    expect(Math.round(proLaboreMinimoParaAnexoIII(355000, 12000))).toBe(7283);
+  });
+  it('nunca negativo', () => {
+    expect(proLaboreMinimoParaAnexoIII(10000, 100000)).toBe(0);
   });
 });

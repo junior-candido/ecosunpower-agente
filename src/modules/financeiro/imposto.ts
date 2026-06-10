@@ -42,3 +42,27 @@ export function proximoSalto(rbt12: number): { limite: number; distancia: number
   }
   return null;
 }
+
+export const FATOR_R_MINIMO = 0.28;
+
+export function fatorR(folha12: number, receita12: number): { ratio: number; anexo: 'III' | 'V' } {
+  const ratio = receita12 <= 0 ? 0 : folha12 / receita12;
+  return { ratio, anexo: ratio >= FATOR_R_MINIMO ? 'III' : 'V' };
+}
+
+export function resolverAnexo(
+  anexoPadrao: Anexo,
+  sujeitoFatorR: boolean,
+  folha12: number,
+  receita12: number,
+): Anexo {
+  if (!sujeitoFatorR) return anexoPadrao;
+  return fatorR(folha12, receita12).anexo;
+}
+
+// Pró-labore mensal mínimo pra manter Fator R >= 28% (folha = proLabore12 + outras).
+export function proLaboreMinimoParaAnexoIII(receita12: number, outrasFolhas12: number): number {
+  const folha12Min = FATOR_R_MINIMO * receita12;
+  const proLabore12 = Math.max(0, folha12Min - outrasFolhas12);
+  return proLabore12 / 12;
+}
