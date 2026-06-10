@@ -8,6 +8,7 @@ import {
   resolverAnexo,
   proLaboreMinimoParaAnexoIII,
 } from '../src/modules/financeiro/imposto.js';
+import { parseImpostoCommand } from '../src/modules/financeiro/comando-imposto.js';
 
 describe('financeiro/imposto: faixa por RBT12', () => {
   it('faixas pelos limites do Anexo (LC 123/2006)', () => {
@@ -114,5 +115,22 @@ describe('financeiro/imposto: pró-labore mínimo pra manter Anexo III', () => {
   it('arredonda pra CIMA no centavo pra não derrubar Fator R por epsilon', () => {
     // 99400/12 = 8283,3333... → ceil no centavo = 8283,34
     expect(proLaboreMinimoParaAnexoIII(355000, 0)).toBe(8283.34);
+  });
+});
+
+describe('financeiro/comando-imposto: parse de valor', () => {
+  it('formatos BR', () => {
+    expect(parseImpostoCommand('/imposto 30000')).toBe(30000);
+    expect(parseImpostoCommand('/imposto 30.000,50')).toBe(30000.5);
+    expect(parseImpostoCommand('/imposto 1.500')).toBe(1500); // milhar BR
+  });
+  it('decimal americano de planilha', () => {
+    expect(parseImpostoCommand('/imposto 30000.50')).toBe(30000.5);
+    expect(parseImpostoCommand('/imposto 100.00')).toBe(100);
+  });
+  it('rejeita lixo', () => {
+    expect(parseImpostoCommand('/imposto abc')).toBeNull();
+    expect(parseImpostoCommand('/imposto')).toBeNull();
+    expect(parseImpostoCommand('/imposto 0')).toBeNull();
   });
 });

@@ -898,6 +898,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
             if (valorVenda > 0) {
               const { getAtividades } = await import('./modules/financeiro/repo.js');
               const ativs = await getAtividades(supabase.getClient());
+              // WhatsApp permite no máx 3 botões — 4ª atividade futura fica de fora daqui
               const botoes = ativs.slice(0, 3).map(a => ({
                 id: `finrec:${fechamentoId}:${a.id}`,
                 title: a.nome.slice(0, 20),

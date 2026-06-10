@@ -47,9 +47,9 @@ CREATE TABLE IF NOT EXISTS financeiro_atividades (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_atividades_cnae ON financeiro_atividades(cnae);
 
 INSERT INTO financeiro_atividades (nome, cnae, anexo_padrao, sujeito_fator_r) VALUES
-  ('Instalação / serviço',            '4321-5/00', 'III', false),
-  ('Equipamento / material (loja)',   '4742-3/00', 'I',   false),
-  ('Comissão / repasse distribuidor', '7490-1/04', 'V',   true)
+  ('Instalação',  '4321-5/00', 'III', false),
+  ('Equipamento', '4742-3/00', 'I',   false),
+  ('Comissão',    '7490-1/04', 'V',   true)
 ON CONFLICT (cnae) DO NOTHING;
 
 -- 3) Receita realizada por mês (buckets pro RBT12 rolante)
@@ -95,6 +95,10 @@ CREATE TABLE IF NOT EXISTS financeiro_contas_a_receber (
 );
 CREATE INDEX IF NOT EXISTS idx_fin_contas_status ON financeiro_contas_a_receber(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_fin_contas_comp ON financeiro_contas_a_receber(competencia_recebimento);
+-- Uma conta ativa por fechamento (duplo clique no botão de atividade não duplica)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_contas_fechamento_unq
+  ON financeiro_contas_a_receber(fechamento_id)
+  WHERE fechamento_id IS NOT NULL AND status <> 'cancelado';
 
 -- 5) Parâmetros da empresa (singleton; vira por-empresa na revenda)
 CREATE TABLE IF NOT EXISTS financeiro_parametros (

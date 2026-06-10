@@ -91,7 +91,7 @@ export async function criarContaDeFechamento(client: SupabaseClient, args: {
 // Ordem: 1º marca a conta (guard otimista barra re-clique); 2º soma no bucket.
 // Crash entre os dois deixa receita FALTANDO (detectável), nunca duplicada.
 export async function registrarRecebimento(client: SupabaseClient, contaId: string, valorRecebido?: number)
-: Promise<{ calc: ResultadoCalculoConta; total: boolean }> {
+: Promise<{ calc: ResultadoCalculoConta; total: boolean; parcela: number; acumulado: number; saldoRestante: number }> {
   const conta = await getContaReceber(client, contaId);
   const { parcela, acumulado, total } = calcularParcelaRecebimento({
     valor: Number(conta.valor), valorRecebido: Number(conta.valor_recebido),
@@ -116,5 +116,6 @@ export async function registrarRecebimento(client: SupabaseClient, contaId: stri
     faixa: calc.faixa, rbt12, fatorR: calc.fatorR,
   });
   await somarReceitaNoMes(client, comp, conta.atividade_id, parcela);
-  return { calc, total };
+  const saldoRestante = Math.round((Number(conta.valor) - acumulado) * 100) / 100;
+  return { calc, total, parcela, acumulado, saldoRestante };
 }

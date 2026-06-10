@@ -10,7 +10,11 @@ const pct = (n: number) => `${(n * 100).toLocaleString('pt-BR', { minimumFractio
 export function parseImpostoCommand(text: string): number | null {
   const m = text.trim().match(/^\/imposto\s+([\d.,]+)/i);
   if (!m) return null;
-  const valor = Number(m[1].replace(/\./g, '').replace(',', '.'));
+  const raw = m[1];
+  // único ponto com exatamente 2 dígitos no fim = decimal americano (copiado de planilha)
+  const valor = !raw.includes(',') && /^\d+\.\d{2}$/.test(raw)
+    ? Number(raw)
+    : Number(raw.replace(/\./g, '').replace(',', '.'));
   return Number.isFinite(valor) && valor > 0 ? valor : null;
 }
 

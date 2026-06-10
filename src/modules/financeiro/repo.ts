@@ -194,9 +194,14 @@ export async function atualizarContaRecebida(
 }
 
 export async function cancelarConta(client: SupabaseClient, id: string): Promise<void> {
-  const { error } = await client
+  const { data, error } = await client
     .from('financeiro_contas_a_receber')
     .update({ status: 'cancelado', updated_at: new Date().toISOString() })
-    .eq('id', id);
+    .eq('id', id)
+    .eq('status', 'pendente')
+    .select('id');
   if (error) throw new Error(`cancelarConta: ${error.message}`);
+  if (!data || data.length === 0) {
+    throw new Error('conta já tem recebimento lançado — estorno é manual por enquanto');
+  }
 }
