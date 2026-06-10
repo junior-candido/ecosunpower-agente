@@ -770,6 +770,40 @@ export class SupabaseService {
     if (error) throw new Error(`Failed to update proposta html: ${error.message}`);
   }
 
+  async getPropostaInputBySlug(slug: string): Promise<{
+    dadosInput: Record<string, unknown> | null;
+    numeroProposta: string;
+    clienteNome: string;
+    clienteTelefone: string | null;
+    tipo: 'basica' | 'personalizada';
+    modoEnvio: 'junior_envia' | 'eva_envia';
+  } | null> {
+    const { data, error } = await this.client
+      .from('propostas_publicas')
+      .select('dados_input, numero_proposta, cliente_nome, cliente_telefone, tipo, modo_envio, revoked')
+      .eq('slug', slug)
+      .maybeSingle();
+    if (error) throw new Error(`getPropostaInputBySlug: ${error.message}`);
+    if (!data || data.revoked) return null;
+    return {
+      dadosInput: (data.dados_input as Record<string, unknown> | null) ?? null,
+      numeroProposta: data.numero_proposta,
+      clienteNome: data.cliente_nome,
+      clienteTelefone: data.cliente_telefone ?? null,
+      tipo: data.tipo ?? 'basica',
+      modoEnvio: data.modo_envio ?? 'junior_envia',
+    };
+  }
+
+  async updatePropostaPublica(slug: string, fields: { htmlContent?: string; dadosInput?: Record<string, unknown> }): Promise<void> {
+    const update: Record<string, unknown> = {};
+    if (fields.htmlContent !== undefined) update.html_content = fields.htmlContent;
+    if (fields.dadosInput !== undefined) update.dados_input = fields.dadosInput;
+    if (Object.keys(update).length === 0) return;
+    const { error } = await this.client.from('propostas_publicas').update(update).eq('slug', slug);
+    if (error) throw new Error(`updatePropostaPublica: ${error.message}`);
+  }
+
   async getPropostaPublicaBySlug(slug: string): Promise<{
     status: 'ok' | 'not_found' | 'expired' | 'revoked';
     html?: string;
