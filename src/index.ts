@@ -890,6 +890,30 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
             { id: `evabt:fechar-refazer:${fechamentoId}`, title: 'Refazer' },
             { id: `evabt:fechar-cancelar:${fechamentoId}`, title: 'Cancelar' },
           ]);
+          // Engate Núcleo Financeiro: oferece lançar a venda como conta a
+          // receber (escolha da atividade por botão). try/catch próprio —
+          // falha aqui NÃO pode quebrar o /fechar.
+          try {
+            const valorVenda = Number(dados.comercial?.valor_total_brl ?? 0);
+            if (valorVenda > 0) {
+              const { getAtividades } = await import('./modules/financeiro/repo.js');
+              const ativs = await getAtividades(supabase.getClient());
+              const botoes = ativs.slice(0, 3).map(a => ({
+                id: `finrec:${fechamentoId}:${a.id}`,
+                title: a.nome.slice(0, 20),
+              }));
+              if (botoes.length > 0) {
+                await metaWaba.sendInteractiveButtons(
+                  adminPhone,
+                  `💰 Lançar ${valorVenda.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} no financeiro. Qual tipo de receita?`,
+                  botoes,
+                  'Núcleo Financeiro',
+                );
+              }
+            }
+          } catch (err) {
+            console.warn('[financeiro] convite de lançamento falhou:', (err as Error).message);
+          }
           return;
         } catch (err) {
           console.warn('[closing] WABA botões falhou, fallback texto:', (err as Error).message);
@@ -3092,6 +3116,22 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       if (acao === 'eva') proposalFollowup.triggerEnvioPorBotao(slug);
       else if (acao === 'junior') proposalFollowup.marcarJuniorVaiContatar(slug);
       else if (acao === 'esperar') proposalFollowup.postergarFollowup(slug);
+      return;
+    }
+
+    // Botões do Núcleo Financeiro (só admin recebe esses botões).
+    // finrec:<fechamentoId>:<atividadeId> — cria a conta a receber da venda.
+    if (isAdminPhone(from) && text.trim().startsWith('finrec:')) {
+      const [, finFechamentoId, finAtividadeId] = text.trim().split(':');
+      try {
+        if (!metaWaba) throw new Error('WABA indisponível pros botões do financeiro');
+        if (!finFechamentoId || !finAtividadeId) throw new Error('botão finrec sem fechamento/atividade');
+        const { createFechamentoConta } = await import('./modules/financeiro/engate-fechar.js');
+        await createFechamentoConta(supabase.getClient(), metaWaba, from, finFechamentoId, finAtividadeId);
+      } catch (err) {
+        console.error('[financeiro] finrec falhou:', (err as Error).message);
+        await sendText(from, `❌ Erro ao lançar no financeiro: ${(err as Error).message}`);
+      }
       return;
     }
 
