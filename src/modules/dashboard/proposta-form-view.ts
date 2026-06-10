@@ -51,8 +51,21 @@ export function renderFormNovaProposta(input: {
   lead_id: string;
   lead: Partial<ClienteDetail> | null;
   erros?: string[];
+  valoresIniciais?: Record<string, string | number>; // do dados_input ao reabrir
+  reabrirSlug?: string; // quando setado, é reabertura (muda action + botões)
 }): string {
   const c = input.lead;
+  const vi = input.valoresIniciais ?? {};
+  // Helper: valor do dados_input quando não-vazio, senão fallback do lead/default
+  const v = (campo: string, fallback: string | number | null | undefined): string | number => {
+    const x = vi[campo];
+    return (x === undefined || x === null || x === '') ? (fallback ?? '') : x;
+  };
+  // Concessionária no dados_input é gravada como LABEL ("Neoenergia DF") — resolve pro value do select
+  const concViLabel = String(vi.concessionaria ?? '');
+  const concViValue = concViLabel
+    ? (CONCESSIONARIA_VALUES.find((o) => o.label === concViLabel || o.value === concViLabel)?.value ?? '')
+    : '';
   const errosHtml = (input.erros ?? []).length > 0
     ? `<div class="rounded-lg bg-rose-900/30 border border-rose-700 p-4 mb-5">
          <p class="text-rose-200 font-semibold mb-2">⚠ Corrija antes de gerar:</p>
@@ -63,20 +76,29 @@ export function renderFormNovaProposta(input: {
     : '';
 
   const consumoArrayHidden = consumoArrayPreview(c?.consumo_mensal_json ?? null);
-  const concessionariaSel = c?.concessionaria ?? '';
-  const tipoClienteSel = c?.profile ?? 'residencial';
+  const concessionariaSel = concViValue || (c?.concessionaria ?? '');
+  const tipoClienteSel = String(vi.tipoCliente ?? '') || (c?.profile ?? 'residencial');
+  const fatorPerdaSel = String(vi.fatorPerda ?? '') || '0.78';
+  const estruturaTipoSel = String(vi.estruturaTipo ?? '') || 'Telha cerâmica';
+  const moduloFabSel = String(vi.moduloFabricante ?? '');
+  const inversorFabSel = String(vi.inversorFabricante ?? '');
+  const formAction = input.reabrirSlug
+    ? `/dashboard/propostas/${escapeHtml(input.reabrirSlug)}/reabrir`
+    : '/dashboard/propostas/novo';
+  const tituloPagina = input.reabrirSlug ? 'Reabrir proposta' : 'Nova proposta';
+  const tituloH1 = input.reabrirSlug ? '🔁 Reabrir proposta' : '📄 Nova proposta';
 
   const body = `
     <div class="max-w-4xl mx-auto">
       <div class="mb-6">
         <a href="/dashboard/clientes/${escapeHtml(input.lead_id)}" class="text-sky-300 text-sm hover:underline">← Voltar ao perfil</a>
-        <h1 class="text-2xl font-bold text-slate-100 mt-3">📄 Nova proposta</h1>
+        <h1 class="text-2xl font-bold text-slate-100 mt-3">${tituloH1}</h1>
         <p class="text-slate-400 text-sm mt-1">Cliente: <strong>${escapeHtml(c?.name ?? 'sem cadastro')}</strong></p>
       </div>
 
       ${errosHtml}
 
-      <form action="/dashboard/propostas/novo" method="post" enctype="multipart/form-data" class="bg-slate-800/60 border border-slate-700 rounded-xl p-6 space-y-6">
+      <form action="${formAction}" method="post" enctype="multipart/form-data" class="bg-slate-800/60 border border-slate-700 rounded-xl p-6 space-y-6">
         <input type="hidden" name="lead_id" value="${escapeHtml(input.lead_id)}">
         ${consumoArrayHidden ? `<input type="hidden" name="consumoMensalKwhDistribuido" value="${escapeHtml(consumoArrayHidden)}">` : ''}
 
@@ -85,23 +107,23 @@ export function renderFormNovaProposta(input: {
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label class="block">
               <span class="text-xs text-slate-300">Nome</span>
-              <input name="nomeCliente" required value="${escapeHtml(c?.name)}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="nomeCliente" required value="${escapeHtml(v('nomeCliente', c?.name))}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">CPF/CNPJ</span>
-              <input name="documentoCliente" value="${escapeHtml(c?.cpf_cnpj)}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="documentoCliente" value="${escapeHtml(v('documentoCliente', c?.cpf_cnpj))}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Telefone</span>
-              <input name="telefoneCliente" value="${escapeHtml(c?.phone)}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="telefoneCliente" value="${escapeHtml(v('telefoneCliente', c?.phone))}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">E-mail</span>
-              <input name="emailCliente" type="email" value="${escapeHtml(c?.email)}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="emailCliente" type="email" value="${escapeHtml(v('emailCliente', c?.email))}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
             <label class="block md:col-span-2">
               <span class="text-xs text-slate-300">Endereço completo</span>
-              <input name="enderecoCliente" value="${escapeHtml(enderecoCompleto(c))}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="enderecoCliente" value="${escapeHtml(v('enderecoCliente', enderecoCompleto(c)))}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Tipo</span>
@@ -123,29 +145,29 @@ export function renderFormNovaProposta(input: {
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <label class="block">
               <span class="text-xs text-slate-300">Potência (kWp) *</span>
-              <input name="potenciaKwp" type="number" step="0.01" required class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="potenciaKwp" type="number" step="0.01" required value="${escapeHtml(v('potenciaKwp', ''))}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Fator de perda *</span>
               <select name="fatorPerda" required class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
-                ${FATORES_PERDA.map((f) => `<option value="${f}" ${f === '0.78' ? 'selected' : ''}>${f}</option>`).join('')}
+                ${FATORES_PERDA.map((f) => `<option value="${f}" ${f === fatorPerdaSel ? 'selected' : ''}>${f}</option>`).join('')}
               </select>
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Consumo médio (kWh/mês) *</span>
-              <input name="consumoMensalKwh" type="number" step="1" required value="${escapeHtml(c?.consumo_medio_kwh)}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="consumoMensalKwh" type="number" step="1" required value="${escapeHtml(v('consumoMensalKwh', c?.consumo_medio_kwh))}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Modalidade</span>
-              <input name="modalidade" value="${escapeHtml(c?.tarifa_modalidade ?? 'autoconsumo local')}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="modalidade" value="${escapeHtml(v('modalidade', c?.tarifa_modalidade ?? 'autoconsumo local'))}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Tarifa R$/kWh (override opcional)</span>
-              <input name="tarifaRsKwh" type="number" step="0.01" placeholder="default por concessionária" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="tarifaRsKwh" type="number" step="0.01" value="${escapeHtml(v('tarifaRsKwh', ''))}" placeholder="default por concessionária" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Custo disponibilidade (R$/mês)</span>
-              <input name="custoDisponibilidadeMensal" type="number" step="1" placeholder="mono 50 / tri 100" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="custoDisponibilidadeMensal" type="number" step="1" value="${escapeHtml(v('custoDisponibilidadeMensal', ''))}" placeholder="mono 50 / tri 100" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
           </div>
         </fieldset>
@@ -156,20 +178,20 @@ export function renderFormNovaProposta(input: {
             <label class="block">
               <span class="text-xs text-slate-300">Fabricante *</span>
               <select name="moduloFabricante" required class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
-                ${MARCAS_MODULO.map((m) => `<option value="${m}">${m}</option>`).join('')}
+                ${MARCAS_MODULO.map((m) => `<option value="${m}" ${m === moduloFabSel ? 'selected' : ''}>${m}</option>`).join('')}
               </select>
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Modelo *</span>
-              <input name="moduloModelo" required placeholder="Vertex 700W" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="moduloModelo" required value="${escapeHtml(v('moduloModelo', ''))}" placeholder="Vertex 700W" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Potência (W) *</span>
-              <input name="moduloPotenciaW" type="number" step="1" required placeholder="700" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="moduloPotenciaW" type="number" step="1" required value="${escapeHtml(v('moduloPotenciaW', ''))}" placeholder="700" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Qtd *</span>
-              <input name="moduloQuantidade" type="number" step="1" required placeholder="12" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="moduloQuantidade" type="number" step="1" required value="${escapeHtml(v('moduloQuantidade', ''))}" placeholder="12" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
           </div>
         </fieldset>
@@ -180,20 +202,20 @@ export function renderFormNovaProposta(input: {
             <label class="block">
               <span class="text-xs text-slate-300">Fabricante *</span>
               <select name="inversorFabricante" required class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
-                ${MARCAS_INVERSOR.map((m) => `<option value="${m}">${m}</option>`).join('')}
+                ${MARCAS_INVERSOR.map((m) => `<option value="${m}" ${m === inversorFabSel ? 'selected' : ''}>${m}</option>`).join('')}
               </select>
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Modelo *</span>
-              <input name="inversorModelo" required placeholder="SG5.0RS-L" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="inversorModelo" required value="${escapeHtml(v('inversorModelo', ''))}" placeholder="SG5.0RS-L" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Potência (W) *</span>
-              <input name="inversorPotenciaW" type="number" step="1" required placeholder="5000" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="inversorPotenciaW" type="number" step="1" required value="${escapeHtml(v('inversorPotenciaW', ''))}" placeholder="5000" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Qtd *</span>
-              <input name="inversorQuantidade" type="number" step="1" required placeholder="1" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="inversorQuantidade" type="number" step="1" required value="${escapeHtml(v('inversorQuantidade', ''))}" placeholder="1" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
           </div>
         </fieldset>
@@ -204,12 +226,12 @@ export function renderFormNovaProposta(input: {
             <label class="block">
               <span class="text-xs text-slate-300">Tipo *</span>
               <select name="estruturaTipo" required class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
-                ${TIPOS_ESTRUTURA.map((t) => `<option value="${t}" ${t === 'Telha cerâmica' ? 'selected' : ''}>${t}</option>`).join('')}
+                ${TIPOS_ESTRUTURA.map((t) => `<option value="${t}" ${t === estruturaTipoSel ? 'selected' : ''}>${t}</option>`).join('')}
               </select>
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Material</span>
-              <input name="estruturaMaterial" value="Alumínio anodizado + parafusos inox" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="estruturaMaterial" value="${escapeHtml(v('estruturaMaterial', 'Alumínio anodizado + parafusos inox'))}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
           </div>
         </fieldset>
@@ -219,17 +241,18 @@ export function renderFormNovaProposta(input: {
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label class="block">
               <span class="text-xs text-slate-300">Valor total (R$) *</span>
-              <input name="valorTotalRs" type="number" step="0.01" required placeholder="38500" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="valorTotalRs" type="number" step="0.01" required value="${escapeHtml(v('valorTotalRs', ''))}" placeholder="38500" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Validade da proposta (dias)</span>
-              <input name="validadeDias" type="number" step="1" min="1" max="60" value="5" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input name="validadeDias" type="number" step="1" min="1" max="60" value="${escapeHtml(v('validadeDias', 5))}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
           </div>
         </fieldset>
 
         <fieldset class="space-y-4">
           <legend class="text-xs font-semibold text-cyan-300 uppercase tracking-wider">📎 Estudo personalizado <span class="text-slate-500 font-normal">(opcional — só inclui se tiver anexos)</span></legend>
+          ${input.reabrirSlug ? `<p class="text-xs text-amber-300">📎 Estudo já anexado — mantém se você não subir fotos novas.</p>` : ''}
 
           ${[1, 2, 3].map((i) => `
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
@@ -257,7 +280,7 @@ export function renderFormNovaProposta(input: {
 
           <label class="block">
             <span class="text-xs text-slate-300">Geração do estudo (kWh/mês) <span class="text-amber-400">— obrigatório quando anexa fotos</span></span>
-            <input name="geracaoMensalKwh" type="number" step="0.01" min="0" placeholder="Ex: 1080 (do PVSol/PVsyst)" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+            <input name="geracaoMensalKwh" type="number" step="0.01" min="0" value="${escapeHtml(v('geracaoMensalKwh', ''))}" placeholder="Ex: 1080 (do PVSol/PVsyst)" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             <span class="text-xs text-slate-500">Com estudo, a proposta usa ESTA geração — nunca o cálculo padrão.</span>
           </label>
 
@@ -266,12 +289,15 @@ export function renderFormNovaProposta(input: {
 
         <div class="flex gap-3 pt-2 border-t border-slate-700">
           <a href="/dashboard/clientes/${escapeHtml(input.lead_id)}" class="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm">Cancelar</a>
-          <button class="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold">📄 Gerar proposta</button>
+          ${input.reabrirSlug
+            ? `<button name="modo" value="atualizar" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">✅ Atualizar essa</button>
+               <button name="modo" value="nova" class="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm">🆕 Gerar nova versão</button>`
+            : `<button class="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold">📄 Gerar proposta</button>`}
         </div>
       </form>
     </div>
   `;
-  return renderLayout({ active: 'clientes', title: 'Nova proposta', body, dark: true });
+  return renderLayout({ active: 'clientes', title: tituloPagina, body, dark: true });
 }
 
 export function renderPreviewProposta(input: {
