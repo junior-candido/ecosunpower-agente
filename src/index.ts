@@ -3135,6 +3135,28 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       return;
     }
 
+    // finrcv:<acao>:<contaId> — recebido total/parcial/cancelar; atualiza
+    // RBT12 + imposto confirmado. 'noop' é o botão "OK" das confirmações:
+    // só fecha o balão, sem resposta (id solto cairia no fluxo da Eva).
+    if (isAdminPhone(from) && text.trim().startsWith('finrcv:')) {
+      const [, finAcao, finContaId] = text.trim().split(':');
+      if (finAcao === 'noop') return;
+      if (finAcao !== 'total' && finAcao !== 'parcial' && finAcao !== 'cancelar') {
+        console.warn(`[financeiro] finrcv ação desconhecida: ${finAcao}`);
+        return;
+      }
+      try {
+        if (!metaWaba) throw new Error('WABA indisponível pros botões do financeiro');
+        if (!finContaId) throw new Error('botão finrcv sem conta');
+        const { handleRecebimento } = await import('./modules/financeiro/engate-fechar.js');
+        await handleRecebimento(supabase.getClient(), metaWaba, from, finAcao, finContaId);
+      } catch (err) {
+        console.error('[financeiro] finrcv falhou:', (err as Error).message);
+        await sendText(from, `❌ ${(err as Error).message}`);
+      }
+      return;
+    }
+
     // Opt-out do CLIENTE — detecta "sair"/"parar"/"stop"/etc antes de qualquer
     // outro handler pra parar de mandar mensagens imediatamente.
     if (await tryHandleClienteOptOut(from, text)) return;
