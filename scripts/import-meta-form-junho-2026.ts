@@ -22,7 +22,14 @@ import { createClient } from '@supabase/supabase-js';
 import { normalizeBrazilianPhone } from '../src/modules/meta-leadgen.js';
 
 const APPLY = process.argv.includes('--apply');
-const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!);
+// Só conecta no banco quando for gravar (--apply). Assim o dry-run roda em qualquer
+// lugar, mesmo sem as credenciais de produção.
+function getSupabase() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !key) throw new Error('Faltam SUPABASE_URL e/ou SUPABASE_SERVICE_KEY no ambiente — rode onde tem as credenciais de produção.');
+  return createClient(url, key);
+}
 
 const CAMPANHA = 'META_Leads_Solar_DF-Entorno_2026-06';
 const AD_CAMPAIGN_ID = '120250142535910385';
@@ -84,6 +91,7 @@ async function main() {
   console.log(`\n=== Import Meta Form — ${CAMPANHA} ===`);
   console.log(APPLY ? '⚠️  MODO APPLY — vai ESCREVER no banco\n' : '🔍 DRY-RUN — só mostra (use --apply pra escrever)\n');
 
+  const supabase = APPLY ? getSupabase() : null;
   let ok = 0, pulados = 0, erros = 0;
 
   for (const l of LEADS) {
@@ -127,7 +135,7 @@ async function main() {
     console.log(`${l.especial ? '⭐' : '  '} ${l.nome.padEnd(32)} ${phone.padEnd(14)} ${FAIXA_LABEL[l.faixa].padEnd(18)} ${row.profile.padEnd(12)} ${cad}`);
 
     if (APPLY) {
-      const { error } = await supabase.from('leads').upsert(row, { onConflict: 'phone' });
+      const { error } = await supabase!.from('leads').upsert(row, { onConflict: 'phone' });
       if (error) { erros++; console.log(`   ❌ erro: ${error.message}`); }
       else ok++;
     } else {
