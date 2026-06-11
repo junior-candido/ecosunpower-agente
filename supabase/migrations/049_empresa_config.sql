@@ -30,20 +30,20 @@ CREATE TABLE IF NOT EXISTS empresa_config (
   rt_registro text,
   -- comercial
   pix_chave text,
-  criterio_lead_valor numeric(10,2) NOT NULL DEFAULT 700,
-  criterio_lead_kwh numeric(10,2) NOT NULL DEFAULT 700,
+  criterio_lead_valor numeric(10,2) NOT NULL DEFAULT 700 CHECK (criterio_lead_valor >= 0),
+  criterio_lead_kwh numeric(10,2) NOT NULL DEFAULT 700 CHECK (criterio_lead_kwh >= 0),
   marcas_permitidas text[] NOT NULL DEFAULT '{}',
   marcas_bloqueadas text[] NOT NULL DEFAULT '{}',
   garantia_instalacao_meses int NOT NULL DEFAULT 12,
-  fator_perda_padrao numeric(4,2) NOT NULL DEFAULT 0.78,
+  fator_perda_padrao numeric(4,2) NOT NULL DEFAULT 0.78 CHECK (fator_perda_padrao > 0 AND fator_perda_padrao <= 1),
   belenus_ativo boolean NOT NULL DEFAULT false,  -- tabela de cartão específica da EcoSun
   -- região técnica (fallback quando a UF do cliente NÃO está no solar-params)
-  hsp_padrao numeric(4,2),                   -- ex.: 5.40; null = usa o resolver atual por UF
-  tarifa_kwh_padrao numeric(6,3),            -- ex.: 1.050; null = resolver atual
-  concessionaria_padrao text,                -- ex.: 'CEMIG-MG'; null = resolver atual
+  hsp_padrao numeric(4,2) CHECK (hsp_padrao > 0),                   -- ex.: 5.40; null = usa o resolver atual por UF
+  tarifa_kwh_padrao numeric(6,3) CHECK (tarifa_kwh_padrao > 0),     -- ex.: 1.050; null = resolver atual
+  concessionaria_padrao text,                                        -- ex.: 'CEMIG-MG'; null = resolver atual
   -- branding
   logo_storage_path text,                    -- bucket 'branding'; null = logo embutida (fallback)
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now() -- sem trigger: editou via SQL Editor, atualize na mão (ou ignore o campo)
 );
 
 INSERT INTO empresa_config (
@@ -80,15 +80,19 @@ INSERT INTO empresa_config (
 CREATE TABLE IF NOT EXISTS empresa_kits (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   ordem int NOT NULL,
-  kwp numeric(6,2) NOT NULL,
-  modulos int NOT NULL,
+  kwp numeric(6,2) NOT NULL CHECK (kwp > 0),
+  modulos int NOT NULL CHECK (modulos > 0),
   microinversores int,
-  geracao_kwh_mes numeric(8,1) NOT NULL,
-  preco_brl numeric(12,2) NOT NULL,
+  geracao_kwh_mes numeric(8,1) NOT NULL CHECK (geracao_kwh_mes > 0),
+  preco_brl numeric(12,2) NOT NULL CHECK (preco_brl > 0),
   descricao text,
   ativo boolean NOT NULL DEFAULT true,
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now() -- sem trigger: editou via SQL Editor, atualize na mão (ou ignore o campo)
 );
+
+-- Índice único parcial: dentro dos kits ativos, a ordem é única.
+-- Kits inativos podem reusar números de ordem sem conflito.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_empresa_kits_ordem_ativo ON empresa_kits (ordem) WHERE ativo;
 
 -- Seed = os 6 kits OnGrid (valores EXATOS de src/index.ts:2754-2760)
 INSERT INTO empresa_kits (ordem, kwp, modulos, microinversores, geracao_kwh_mes, preco_brl)

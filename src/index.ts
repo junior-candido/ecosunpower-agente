@@ -228,6 +228,7 @@ async function main() {
 
   // EcoSof Kit Clone: carrega empresa_config no boot (fallback = defaults EcoSun
   // hardcoded — banco sem a tabela continua funcionando com comportamento idêntico).
+  // Ignora o retorno { ok, config } — falha no boot com defaults é aceitável.
   await carregarEmpresaConfig(supabase.getClient());
 
   const brain = new Brain(config.anthropicApiKey, process.env.GOOGLE_REVIEW_URL ?? '');
@@ -666,12 +667,12 @@ async function main() {
     if (!isAdminPhone(from)) return false;
     const trimmed = text.trim().toLowerCase().replace(/^\//, '');
     if (trimmed !== 'recarregar-config') return false;
-    try {
-      await carregarEmpresaConfig(supabase.getClient());
+    const result = await carregarEmpresaConfig(supabase.getClient());
+    if (result.ok) {
+      await sendText(from, `⚙️ Config recarregada: ${result.config.nomeFantasia} (atendente: ${result.config.nomeAtendente})`);
+    } else {
       const e = empresa();
-      await sendText(from, `⚙️ Config recarregada: ${e.nomeFantasia} (atendente: ${e.nomeAtendente})`);
-    } catch (err) {
-      await sendText(from, `❌ Erro ao recarregar config: ${(err as Error).message}`);
+      await sendText(from, `⚠️ Erro ao recarregar — mantida a config anterior: ${e.nomeFantasia} (atendente: ${e.nomeAtendente})`);
     }
     return true;
   }

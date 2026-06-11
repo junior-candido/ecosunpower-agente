@@ -47,23 +47,29 @@ export const EMPRESA_DEFAULTS: EmpresaConfig = {
   logoStoragePath: null,
   hspPadrao: null, tarifaPadrao: null, concessionariaPadrao: null,
 };
+// Congelado: dezenas de call sites vão ler isto — mutação acidental corromperia a config global.
+Object.freeze(EMPRESA_DEFAULTS);
+Object.freeze(EMPRESA_DEFAULTS.marcasPermitidas);
+Object.freeze(EMPRESA_DEFAULTS.marcasBloqueadas);
 
 // Row snake_case do banco → EmpresaConfig; null/ausente cai no default (nunca
 // undefined chegando em template/prompt).
-export function normalizarEmpresaRow(row: Record<string, unknown>): EmpresaConfig {
+export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<EmpresaConfig> {
   const s = (v: unknown, d: string): string => (typeof v === 'string' && v.trim() ? v : d);
   const sn = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null);
-  const n = (v: unknown, d: number): number => (typeof v === 'number' && isFinite(v) ? v : typeof v === 'string' && isFinite(Number(v)) ? Number(v) : d);
+  // M3: string vazia não vira 0 — exige v.trim() !== '' antes de converter.
+  const n = (v: unknown, d: number): number => (typeof v === 'number' && isFinite(v) ? v : typeof v === 'string' && v.trim() !== '' && isFinite(Number(v)) ? Number(v) : d);
   const nn = (v: unknown): number | null => {
     if (v == null) return null;
     if (typeof v === 'number' && isFinite(v)) return v;
-    if (typeof v === 'string' && isFinite(Number(v))) return Number(v);
+    // M3: string vazia não vira 0
+    if (typeof v === 'string' && v.trim() !== '' && isFinite(Number(v))) return Number(v);
     return null;
   };
   const arr = (v: unknown, d: string[]): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : d);
   const b = (v: unknown, d: boolean): boolean => (typeof v === 'boolean' ? v : d);
   const D = EMPRESA_DEFAULTS;
-  return {
+  const result: EmpresaConfig = {
     razaoSocial: s(row.razao_social, D.razaoSocial),
     nomeFantasia: s(row.nome_fantasia, D.nomeFantasia),
     cnpj: s(row.cnpj, D.cnpj),
@@ -91,6 +97,9 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): EmpresaConfi
     tarifaPadrao: nn(row.tarifa_kwh_padrao),
     concessionariaPadrao: sn(row.concessionaria_padrao),
   };
+  Object.freeze(result.marcasPermitidas);
+  Object.freeze(result.marcasBloqueadas);
+  return Object.freeze(result);
 }
 
 // Placeholders de empresa pra prompts/textos. Mantém desconhecidos intactos.
@@ -114,7 +123,12 @@ export function interpolarEmpresa(texto: string, e: EmpresaConfig): string {
     garantia_meses: String(e.garantiaInstalacaoMeses),
   };
   let out = texto;
-  for (const [k, v] of Object.entries(mapa)) out = out.replaceAll(`{{${k}}}`, v);
+  for (const [k, v] of Object.entries(mapa)) {
+    // () => v: valor com "$&"/"$'" do banco não pode virar padrão de substituição.
+    // Encadeamento ({{x}} dentro de valor) NÃO é suportado de propósito — dado é
+    // admin-controlled e 1 passada é previsível.
+    out = out.replaceAll(`{{${k}}}`, () => v);
+  }
   return out;
 }
 
@@ -127,25 +141,36 @@ export function listaMarcasTexto(e: EmpresaConfig): string {
 // ---------------------------------------------------------------------------
 // Cache + loader (I/O fino). init no boot; getter síncrono pro resto do app.
 // ---------------------------------------------------------------------------
-let cache: EmpresaConfig = EMPRESA_DEFAULTS;
+let cache: Readonly<EmpresaConfig> = EMPRESA_DEFAULTS;
+// Flag: true após o primeiro carregamento bem-sucedido do banco.
+let carregadaDoBanco = false;
 
-export function empresa(): EmpresaConfig { return cache; }
+export function empresa(): Readonly<EmpresaConfig> { return cache; }
 
-export async function carregarEmpresaConfig(client: SupabaseClient): Promise<EmpresaConfig> {
+/** Apenas para testes — reseta estado interno do módulo entre casos. */
+export function _resetEstadoParaTeste(): void {
+  cache = EMPRESA_DEFAULTS;
+  carregadaDoBanco = false;
+}
+
+export async function carregarEmpresaConfig(client: SupabaseClient): Promise<{ ok: boolean; config: Readonly<EmpresaConfig> }> {
   try {
     const { data, error } = await client.from('empresa_config').select('*').eq('id', 1).maybeSingle();
     if (error || !data) {
       console.warn('[empresa-config] tabela ausente/vazia — usando defaults EcoSun:', error?.message ?? 'sem linha');
-      cache = EMPRESA_DEFAULTS;
-      return cache;
+      // Erro em RELOAD mantém a config anterior — num clone, rebaixar pra defaults EcoSun seria vazar a marca de outro tenant.
+      if (!carregadaDoBanco) cache = EMPRESA_DEFAULTS;
+      return { ok: false, config: cache };
     }
     cache = normalizarEmpresaRow(data as Record<string, unknown>);
+    carregadaDoBanco = true;
     console.log(`[empresa-config] carregada: ${cache.nomeFantasia} (atendente: ${cache.nomeAtendente})`);
-    return cache;
+    return { ok: true, config: cache };
   } catch (err) {
     console.warn('[empresa-config] falha ao carregar — defaults EcoSun:', (err as Error).message);
-    cache = EMPRESA_DEFAULTS;
-    return cache;
+    // Erro em RELOAD mantém a config anterior — num clone, rebaixar pra defaults EcoSun seria vazar a marca de outro tenant.
+    if (!carregadaDoBanco) cache = EMPRESA_DEFAULTS;
+    return { ok: false, config: cache };
   }
 }
 
@@ -159,14 +184,19 @@ export async function carregarKits(client: SupabaseClient): Promise<KitComercial
     const { data, error } = await client.from('empresa_kits')
       .select('ordem, kwp, modulos, microinversores, geracao_kwh_mes, preco_brl, descricao')
       .eq('ativo', true).order('ordem');
-    if (error || !data || data.length === 0) return [];
+    if (error) {
+      console.warn('[empresa-config] carregarKits falhou:', error.message);
+      return [];
+    }
+    if (!data || data.length === 0) return [];
     return (data as Array<Record<string, unknown>>).map((k) => ({
       ordem: Number(k.ordem), kwp: Number(k.kwp), modulos: Number(k.modulos),
       microinversores: k.microinversores == null ? null : Number(k.microinversores),
       geracaoKwhMes: Number(k.geracao_kwh_mes), precoBrl: Number(k.preco_brl),
       descricao: typeof k.descricao === 'string' ? k.descricao : null,
     }));
-  } catch {
+  } catch (err) {
+    console.warn('[empresa-config] carregarKits falhou:', (err as Error).message);
     return [];
   }
 }
