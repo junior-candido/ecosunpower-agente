@@ -2,8 +2,8 @@
 import { describe, it, expect } from 'vitest';
 import { calcularKpisCaixa } from '../src/modules/dashboard/caixa-kpis.js';
 
-const lanc = (tipo: 'despesa' | 'entrada', valor: number, pf_pj: 'PF' | 'PJ', categoriaNome = 'Outros') =>
-  ({ tipo, valor, pf_pj, categoriaNome });
+const lanc = (tipo: 'despesa' | 'entrada', valor: number, pf_pj: 'PF' | 'PJ', categoriaNome = 'Outros', categoriaSlug = 'outros') =>
+  ({ tipo, valor, pf_pj, categoriaNome, categoriaSlug });
 
 describe('dashboard/caixa-kpis', () => {
   it('lucro do mês = recebido PJ − saiu PJ − imposto', () => {
@@ -44,5 +44,16 @@ describe('dashboard/caixa-kpis', () => {
       lancamentosMes: [lanc('entrada', 5000, 'PJ')],
     });
     expect(k.lucroMes).toBe(5000); // não vira 10000
+  });
+  it('DAS pago (categoria imposto_das) aparece no saiu mas não desconta 2x no lucro', () => {
+    const k = calcularKpisCaixa({
+      recebidoMesPj: 10000, impostoMes: 850,
+      lancamentosMes: [
+        { tipo: 'despesa', valor: 850, pf_pj: 'PJ', categoriaNome: 'Imposto/DAS', categoriaSlug: 'imposto_das' },
+        { tipo: 'despesa', valor: 2000, pf_pj: 'PJ', categoriaNome: 'Combustível', categoriaSlug: 'combustivel' },
+      ],
+    });
+    expect(k.saiuMesPj).toBe(2850);  // exibição mostra tudo
+    expect(k.lucroMes).toBe(7150);   // 10000 - 2000 - 850 (DAS não desconta de novo)
   });
 });

@@ -82,12 +82,12 @@ export async function getFinanceiroData(client: SupabaseClient, filtros: Filtros
   // ---- Caixa de Entrada (Fatia 3) ----
   const { data: lancMesRaw, error: lancMesErr } = await client
     .from('financeiro_lancamentos')
-    .select('tipo, valor, pf_pj, financeiro_categorias(nome)')
+    .select('tipo, valor, pf_pj, financeiro_categorias(nome, slug)')
     .eq('status', 'confirmado').eq('competencia', comp);
   if (lancMesErr) throw new Error(`getFinanceiroData lancamentos: ${lancMesErr.message}`);
   const lancMes = (lancMesRaw ?? []).map((l) => {
-    const x = l as unknown as { tipo: 'despesa' | 'entrada'; valor: number; pf_pj: 'PF' | 'PJ' | null; financeiro_categorias: { nome: string } | null };
-    return { tipo: x.tipo, valor: Number(x.valor), pf_pj: x.pf_pj, categoriaNome: x.financeiro_categorias?.nome ?? null };
+    const x = l as unknown as { tipo: 'despesa' | 'entrada'; valor: number; pf_pj: 'PF' | 'PJ' | null; financeiro_categorias: { nome: string; slug: string } | null };
+    return { tipo: x.tipo, valor: Number(x.valor), pf_pj: x.pf_pj, categoriaNome: x.financeiro_categorias?.nome ?? null, categoriaSlug: x.financeiro_categorias?.slug ?? null };
   });
   const caixa = calcularKpisCaixa({ recebidoMesPj: faturamentoMes, impostoMes: impostoASeparar, lancamentosMes: lancMes });
 

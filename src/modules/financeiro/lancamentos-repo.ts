@@ -69,6 +69,25 @@ export async function gravarContaNoLancamento(client: SupabaseClient, id: string
   if (error) console.warn('[caixa-entrada] gravarContaNoLancamento falhou:', error.message);
 }
 
+// Reverte um lançamento confirmado de volta pra pendente (compensação quando
+// o passo de dinheiro falha DEPOIS do CAS porteiro — vinc/atv).
+export async function reverterParaPendente(client: SupabaseClient, id: string): Promise<void> {
+  const { error } = await client.from('financeiro_lancamentos')
+    .update({ status: 'pendente', conta_id: null, updated_at: new Date().toISOString() })
+    .eq('id', id).eq('status', 'confirmado');
+  if (error) console.warn('[caixa-entrada] reverterParaPendente falhou:', error.message);
+}
+
+// Saldo em aberto de uma conta a receber (null = conta inexistente ou já fechada).
+export async function getSaldoConta(client: SupabaseClient, contaId: string): Promise<number | null> {
+  const { data, error } = await client.from('financeiro_contas_a_receber')
+    .select('valor, valor_recebido, status').eq('id', contaId).maybeSingle();
+  if (error || !data) return null;
+  const c = data as { valor: number; valor_recebido: number; status: string };
+  if (c.status !== 'pendente' && c.status !== 'recebido_parcial') return null;
+  return Math.round((Number(c.valor) - Number(c.valor_recebido)) * 100) / 100;
+}
+
 export async function atualizarPendente(client: SupabaseClient, id: string, patch: Record<string, unknown>): Promise<void> {
   const { error } = await client.from('financeiro_lancamentos')
     .update({ ...patch, updated_at: new Date().toISOString() })
@@ -108,9 +127,10 @@ export async function getUltimoConfirmado(client: SupabaseClient): Promise<Lanca
 // Busca por contraparte nos últimos 30 dias (correção "o do posto era 350").
 export async function buscarConfirmadoPorContraparte(client: SupabaseClient, termo: string): Promise<LancamentoRow | null> {
   const desde = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const t = termo.replace(/[%_]/g, '\\$&'); // escapa curinga do ilike (nome com % ou _ não vira wildcard)
   const { data, error } = await client.from('financeiro_lancamentos').select(COLS)
     .eq('status', 'confirmado').gte('created_at', desde)
-    .ilike('contraparte', `%${termo}%`)
+    .ilike('contraparte', `%${t}%`)
     .order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (error) throw new Error(`buscarConfirmadoPorContraparte: ${error.message}`);
   return (data as LancamentoRow) ?? null;
@@ -135,10 +155,11 @@ export async function getCategorias(client: SupabaseClient): Promise<Array<{ id:
 // Conta a receber em aberto cujo lead casa com o nome citado (entrada → venda).
 export async function buscarContaAbertaPorNome(client: SupabaseClient, nome: string):
   Promise<{ id: string; clienteNome: string; saldo: number } | null> {
+  const t = nome.replace(/[%_]/g, '\\$&'); // escapa curinga do ilike
   const { data, error } = await client.from('financeiro_contas_a_receber')
     .select('id, valor, valor_recebido, leads!inner(name)')
     .in('status', ['pendente', 'recebido_parcial'])
-    .ilike('leads.name', `%${nome}%`)
+    .ilike('leads.name', `%${t}%`)
     .order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (error) {
     console.warn('[caixa-entrada] buscarContaAbertaPorNome falhou:', error.message);
