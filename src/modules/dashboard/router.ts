@@ -41,6 +41,8 @@ import {
   listPropostas,
   listManutencaoPendente,
   fetchPropostasPorMes,
+  getTimelineAbordagens,
+  getKPIsAbordagemMes,
 } from './queries.js';
 import {
   renderHomePage,
@@ -781,11 +783,12 @@ export function createDashboardRouter(
       };
       const filtered = filtrarOrdenarSistemas(enriched as any, qf);
       const { getAlertasAtivosResumo, getAlertasEnviadosUltimos7d } = await import('./queries.js');
-      const [alertasResumo, sparkline7d] = await Promise.all([
+      const [alertasResumo, sparkline7d, kpisEva] = await Promise.all([
         getAlertasAtivosResumo(supabase),
         getAlertasEnviadosUltimos7d(supabase),
+        getKPIsAbordagemMes(supabase).catch(() => undefined),
       ]);
-      res.send(renderMonitoramentoPage(filtered as any, qf, alertasResumo, sparkline7d));
+      res.send(renderMonitoramentoPage(filtered as any, qf, alertasResumo, sparkline7d, kpisEva));
     } catch (err) {
       console.error('[dashboard/monitoramento]', err);
       res.status(500).send(`<h2>Erro ao listar monitoramento</h2><pre>${(err as Error).message}</pre>`);
@@ -923,8 +926,11 @@ export function createDashboardRouter(
         return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
       }
       const donoLeadId = detalhe.sistema.lead_id;
-      const donoRow = donoLeadId ? await supabaseService.getClienteByLeadId(donoLeadId) : null;
-      res.send(renderDetalheSistemaPage(detalhe, donoRow ? { id: donoRow.id, name: donoRow.name } : null));
+      const [donoRow, timelineAbordagens] = await Promise.all([
+        donoLeadId ? supabaseService.getClienteByLeadId(donoLeadId) : Promise.resolve(null),
+        getTimelineAbordagens(supabase, id).catch(() => [] as import('./queries.js').AbordagemTimelineRow[]),
+      ]);
+      res.send(renderDetalheSistemaPage(detalhe, donoRow ? { id: donoRow.id, name: donoRow.name } : null, timelineAbordagens));
     } catch (err) {
       console.error('[dashboard/monitoramento/detalhe]', err);
       res.status(500).send(`<h2>Erro ao carregar detalhe</h2><pre>${(err as Error).message}</pre>`);

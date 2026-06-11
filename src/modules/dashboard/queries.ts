@@ -386,3 +386,74 @@ export async function getAlertasEnviadosUltimos7d(
   }
   return out;
 }
+
+// ====================================================================
+// Módulo 7: Eva Monitoramento Evolutivo — timeline + KPIs de abordagens
+// ====================================================================
+
+export interface AbordagemTimelineRow {
+  created_at: string;
+  tipo: string;
+  status: string;
+  desfecho: string | null;
+  mensagem_enviada: string | null;
+  resposta_resumo: string | null;
+  nota_junior: string | null;
+}
+
+export async function getTimelineAbordagens(
+  client: SupabaseClient,
+  sistemaId: string,
+): Promise<AbordagemTimelineRow[]> {
+  const { data, error } = await client
+    .from('monitoring_abordagens')
+    .select('created_at, tipo, status, desfecho, mensagem_enviada, resposta_resumo, nota_junior')
+    .eq('sistema_id', sistemaId)
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (error) throw new Error(`getTimelineAbordagens: ${error.message}`);
+  return (data ?? []) as AbordagemTimelineRow[];
+}
+
+export interface KPIsAbordagemMes {
+  enviadas: number;
+  resolvidoSozinhoCount: number;
+  limpezasFechadasCount: number;
+  semRespostaCount: number;
+  resolvidoSozinhoPct: number; // 0-100
+}
+
+export async function getKPIsAbordagemMes(
+  client: SupabaseClient,
+): Promise<KPIsAbordagemMes> {
+  // Mês atual em BRT (UTC-3): primeiro dia = 03:00 UTC do dia 1
+  const agora = new Date();
+  const anoMes = `${agora.getUTCFullYear()}-${String(agora.getUTCMonth() + 1).padStart(2, '0')}`;
+  // Início do mês corrente às 03:00 UTC (= meia-noite BRT)
+  const inicioMes = `${anoMes}-01T03:00:00.000Z`;
+
+  const { data, error } = await client
+    .from('monitoring_abordagens')
+    .select('desfecho')
+    .not('enviada_em', 'is', null)
+    .gte('enviada_em', inicioMes);
+
+  if (error || !data) {
+    return { enviadas: 0, resolvidoSozinhoCount: 0, limpezasFechadasCount: 0, semRespostaCount: 0, resolvidoSozinhoPct: 0 };
+  }
+
+  const enviadas = data.length;
+  let resolvidoSozinhoCount = 0;
+  let limpezasFechadasCount = 0;
+  let semRespostaCount = 0;
+
+  for (const row of data) {
+    if (row.desfecho === 'resolvido_sozinho') resolvidoSozinhoCount++;
+    else if (row.desfecho === 'limpeza_fechada') limpezasFechadasCount++;
+    else if (row.desfecho === 'sem_resposta') semRespostaCount++;
+  }
+
+  const resolvidoSozinhoPct = enviadas > 0 ? Math.round((resolvidoSozinhoCount / enviadas) * 100) : 0;
+
+  return { enviadas, resolvidoSozinhoCount, limpezasFechadasCount, semRespostaCount, resolvidoSozinhoPct };
+}

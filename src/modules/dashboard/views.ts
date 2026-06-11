@@ -535,11 +535,20 @@ function marcaBadge(marca: string, options: { compact?: boolean; size?: number }
   return `<span class="inline-flex items-center gap-2 px-2 py-1 rounded-md bg-white border border-slate-200">${img}<span class="text-xs font-medium text-slate-800">${escapeHtml(label)}</span></span>`;
 }
 
+export interface KPIsAbordagemMes {
+  enviadas: number;
+  resolvidoSozinhoCount: number;
+  limpezasFechadasCount: number;
+  semRespostaCount: number;
+  resolvidoSozinhoPct: number;
+}
+
 export function renderMonitoramentoPage(
   rows: SistemaMonitorRow[],
   q: { q?: string; marca?: string; cidade?: string; status?: string; ord?: string },
   alertasResumo?: { urgente: number; aviso: number; info: number; total: number },
   sparkline7d?: Array<{ dia: string; enviados: number }>,
+  kpisEva?: KPIsAbordagemMes,
 ): string {
   const ativos = rows.filter((r) => r.ativo);
   const totalKwp = ativos.reduce((s, r) => s + (r.potencia_kwp ?? 0), 0);
@@ -655,6 +664,30 @@ export function renderMonitoramentoPage(
       </div>` : ''}
     </section>` : ''}
 
+    ${kpisEva ? `
+    <section class="mb-8">
+      <h2 class="text-sm uppercase tracking-wider text-slate-400 font-semibold mb-3">🤖 Eva no mês</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="rounded-xl border border-sky-600/40 bg-sky-500/10 p-4">
+          <div class="text-xs text-sky-300/70 font-semibold uppercase">Abordagens enviadas</div>
+          <div class="text-3xl font-bold text-sky-300 mt-1">${escapeHtml(String(kpisEva.enviadas))}</div>
+        </div>
+        <div class="rounded-xl border border-emerald-600/40 bg-emerald-500/10 p-4">
+          <div class="text-xs text-emerald-300/70 font-semibold uppercase">Resolvido sozinho</div>
+          <div class="text-3xl font-bold text-emerald-300 mt-1">${escapeHtml(String(kpisEva.resolvidoSozinhoPct))}%</div>
+          <div class="text-xs text-emerald-400/60 mt-1">${escapeHtml(String(kpisEva.resolvidoSozinhoCount))} ocorrências</div>
+        </div>
+        <div class="rounded-xl border border-violet-600/40 bg-violet-500/10 p-4">
+          <div class="text-xs text-violet-300/70 font-semibold uppercase">Limpezas fechadas</div>
+          <div class="text-3xl font-bold text-violet-300 mt-1">${escapeHtml(String(kpisEva.limpezasFechadasCount))}</div>
+        </div>
+        <div class="rounded-xl border border-slate-600/40 bg-slate-700/40 p-4">
+          <div class="text-xs text-slate-400/70 font-semibold uppercase">Sem resposta</div>
+          <div class="text-3xl font-bold text-slate-300 mt-1">${escapeHtml(String(kpisEva.semRespostaCount))}</div>
+        </div>
+      </div>
+    </section>` : ''}
+
     <section class="mb-8">
       <h2 class="text-lg font-bold text-slate-200 mb-3">⚠️ Precisa de ação ${problemas.length ? `<span class="text-rose-400">(${problemas.length})</span>` : ''}</h2>
       ${problemas.length === 0
@@ -705,9 +738,20 @@ export function renderMonitoramentoPage(
 // DETALHE DE 1 SISTEMA — analise completa de uma usina
 // =========================================================================
 
+export interface AbordagemTimelineRow {
+  created_at: string;
+  tipo: string;
+  status: string;
+  desfecho: string | null;
+  mensagem_enviada: string | null;
+  resposta_resumo: string | null;
+  nota_junior: string | null;
+}
+
 export function renderDetalheSistemaPage(
   d: DetalheSistema,
   dono?: { id: string; name: string | null } | null,
+  timelineAbordagens?: AbordagemTimelineRow[],
 ): string {
   const s = d.sistema;
   const localizacao = [s.cidade, s.uf].filter(Boolean).join('/') || '—';
@@ -865,6 +909,70 @@ export function renderDetalheSistemaPage(
       </div>
       <p class="text-xs text-slate-500 mt-2">Todos os meses desde o início do tracking. Use pra ver sazonalidade e degradação ano sobre ano.</p>
     </section>` : ''}
+
+    ${(() => {
+      const TIPO_EMOJI: Record<string, string> = {
+        parabens: '☀️',
+        depoimento: '⭐',
+        queda: '📉',
+        offline: '🔌',
+      };
+      const DESFECHO_LABEL: Record<string, string> = {
+        resolvido_sozinho: 'resolvido sozinho ✅',
+        limpeza_fechada: 'limpeza fechada 🧽',
+        visita_agendada: 'visita agendada 🚗',
+        transferido_junior: 'transferido 📞',
+        sem_resposta: 'sem resposta 😶',
+        descartada_junior: 'descartada —',
+        em_andamento: 'em andamento 🔄',
+      };
+      const NOTA_LABEL: Record<string, string> = { boa: '👍', errou: '👎' };
+
+      if (!timelineAbordagens || timelineAbordagens.length === 0) {
+        return `
+    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
+      <h2 class="text-base font-semibold text-slate-900 mb-3">🤖 Abordagens da Eva</h2>
+      <div class="text-sm text-slate-500">Nenhuma abordagem ainda.</div>
+    </section>`;
+      }
+
+      const linhas = timelineAbordagens.map((a) => {
+        const [, mm, dd] = a.created_at.slice(0, 10).split('-');
+        const data = `${dd}/${mm}`;
+        const emoji = TIPO_EMOJI[a.tipo] ?? '🤖';
+        const primeiraLinha = a.mensagem_enviada
+          ? escapeHtml(a.mensagem_enviada.split('\n')[0].slice(0, 80) + (a.mensagem_enviada.length > 80 ? '…' : ''))
+          : '<span class="text-slate-400">—</span>';
+        const desfecho = a.desfecho ? escapeHtml(DESFECHO_LABEL[a.desfecho] ?? a.desfecho) : '<span class="text-slate-400">—</span>';
+        const nota = a.nota_junior ? escapeHtml(NOTA_LABEL[a.nota_junior] ?? '') : '';
+        return `<tr class="border-t border-slate-100">
+          <td class="px-3 py-2 text-xs text-slate-500 whitespace-nowrap">${escapeHtml(data)}</td>
+          <td class="px-3 py-2 text-sm">${emoji}</td>
+          <td class="px-3 py-2 text-sm text-slate-700">${primeiraLinha}</td>
+          <td class="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">${desfecho}</td>
+          <td class="px-3 py-2 text-xs whitespace-nowrap">${nota}</td>
+        </tr>`;
+      }).join('');
+
+      return `
+    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
+      <h2 class="text-base font-semibold text-slate-900 mb-3">🤖 Abordagens da Eva</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-xs uppercase tracking-wider text-slate-400">
+              <th class="px-3 py-2 font-semibold">Data</th>
+              <th class="px-3 py-2 font-semibold">Tipo</th>
+              <th class="px-3 py-2 font-semibold">Mensagem</th>
+              <th class="px-3 py-2 font-semibold">Desfecho</th>
+              <th class="px-3 py-2 font-semibold">Nota</th>
+            </tr>
+          </thead>
+          <tbody>${linhas}</tbody>
+        </table>
+      </div>
+    </section>`;
+    })()}
 
     ${s.ultimo_erro ? `
     <section class="bg-rose-50 border border-rose-200 rounded-xl p-4 mb-6 text-sm">
