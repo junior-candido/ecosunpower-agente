@@ -4,7 +4,10 @@
 //  - PIX à vista e PIX 50/50 (sem juros);
 //  - SEM financiamento bancário (esse é exclusivo do solar, via distribuidor).
 
-const PIX_CNPJ = '33.020.459/0001-06';
+import { empresa } from '../empresa-config.js';
+
+// [ECOSOF] Chave PIX e nome do beneficiário vêm da empresa_config (lidos em
+// RUNTIME dentro de servicePaymentOptions). PIX da EcoSun = CNPJ (seed).
 
 // Taxa da maquininha por nº de parcelas (%). Repassada ao cliente:
 // valor cobrado = valor líquido ÷ (1 − taxa). Confirmado pelo Junior na maquininha
@@ -36,6 +39,8 @@ export function servicePaymentOptions(totalRs: number): Array<{
   tipo: string; titulo: string; valorPrincipal: string; valorSecundario: string;
   recomendado?: boolean; bullets: string[]; meioPagamento?: 'pix' | 'cartao';
 }> {
+  const e = empresa();
+  const pixChave = e.pixChave ?? e.cnpj;
   const total = Number(totalRs) || 0;
   const metade = total / 2;
   // Arredonda a parcela exibida ANTES de multiplicar, pra o total bater quando o
@@ -56,7 +61,7 @@ export function servicePaymentOptions(totalRs: number): Array<{
       valorPrincipal: `R$ ${fmtRs(total)}`,
       valorSecundario: 'pagamento único · sem juros',
       recomendado: true,
-      bullets: [`PIX CNPJ ${PIX_CNPJ}`, 'EcoSunPower Energia Solar', 'Sem juros · início imediato'],
+      bullets: [`PIX CNPJ ${pixChave}`, `${e.nomeFantasia} Energia Solar`, 'Sem juros · início imediato'],
       meioPagamento: 'pix',
     },
     {
@@ -67,7 +72,7 @@ export function servicePaymentOptions(totalRs: number): Array<{
       bullets: [
         `R$ ${fmtRs(metade)} no início (PIX)`,
         `R$ ${fmtRs(metade)} no término (PIX)`,
-        `PIX CNPJ ${PIX_CNPJ}`,
+        `PIX CNPJ ${pixChave}`,
       ],
       meioPagamento: 'pix',
     },

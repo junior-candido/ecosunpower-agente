@@ -36,6 +36,7 @@ import { downloadWabaMedia } from './proposal/attachments/whatsapp-media-downloa
 import type { MetaWhatsAppService } from './meta-whatsapp.js';
 import { enviarPropostaParaCliente } from './eva-sender.js';
 import { CasesFetcher, type Case } from './cases-fetcher.js';
+import { empresa, interpolarEmpresa } from './empresa-config.js';
 import { renderSocialProofPage } from './proposal/social-proof-page.js';
 import { resumirRascunho } from './proposal/rascunho.js';
 
@@ -205,8 +206,8 @@ export function buildMensagemClienteProposta(nome: string | undefined, publicUrl
   const primeiro = typeof nome === 'string' ? nome.trim().split(/\s+/)[0] : '';
   const saudacao = primeiro ? `Olá, ${primeiro}! 😊` : 'Olá! 😊';
   const oque = ehServico
-    ? 'a sua proposta da EcoSunPower'
-    : 'a sua proposta de energia solar da EcoSunPower, feita sob medida pra você';
+    ? `a sua proposta da ${empresa().nomeFantasia}`
+    : `a sua proposta de energia solar da ${empresa().nomeFantasia}, feita sob medida pra você`;
   return [
     saudacao,
     '',
@@ -226,6 +227,16 @@ export function buildServiceImagePrompt(servico: ServicoItem): string {
     servico.descricao ? `Context: ${servico.descricao}.` : '',
     'Brazilian residential or commercial setting, clean modern look, natural lighting, high quality, no text, no watermark.',
   ].filter(Boolean).join(' ');
+}
+
+// [ECOSOF] Formata telefone E.164 BR ("5561996978781") como "(61) 99697-8781"
+// pro rodapé da proposta. Fallback: devolve o que veio se não reconhecer.
+function formatFoneBR(t: string | null): string {
+  if (!t) return '';
+  const d = t.replace(/\D/g, '').replace(/^55/, '');
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return t;
 }
 
 const PROPOSAL_MODE_TTL_SECONDS = 60 * 60;
@@ -295,8 +306,11 @@ export interface GenerateProposalCoreResult {
   calculations: ReturnType<typeof calcular> | null;
 }
 
+// [ECOSOF] Identidade via placeholders {{...}} — resolvidos POR CHAMADA no
+// askClaude (interpolarEmpresa + empresa()), pra /recarregar-config valer sem
+// restart. O texto cru fica cacheado no construtor (knowledge não muda).
 function buildSystemPrompt(propostasKnowledge: string, marcasKnowledge: string): string {
-  return `Você é a Eva, assistente de geração de propostas comerciais da EcoSunPower. Está conversando com Junior (Responsável Técnico CREA/CFT, 10+ anos de experiência) pra coletar dados de um cliente e gerar uma proposta profissional em PDF e versão web.
+  return `Você é a {{nome_atendente}}, assistente de geração de propostas comerciais da {{empresa_nome}}. Está conversando com o dono da empresa ({{rt_titulo}}, experiente — aqui chamado de Junior) pra coletar dados de um cliente e gerar uma proposta profissional em PDF e versão web.
 
 TOM: direto, técnico, sem ladainha. Junior conhece tudo. Vá pros números.
 
@@ -304,7 +318,7 @@ TOM: direto, técnico, sem ladainha. Junior conhece tudo. Vá pros números.
 
 ${propostasKnowledge}
 
-# KNOWLEDGE: MARCAS OFICIAIS ECOSUNPOWER
+# KNOWLEDGE: MARCAS OFICIAIS DA EMPRESA ({{empresa_nome}})
 
 ${marcasKnowledge}
 
@@ -319,7 +333,7 @@ ${marcasKnowledge}
 7. Reajuste anual energia: 10%.
 8. Vida útil: 25 anos.
 9. Validade da proposta: 5 dias.
-10. **SERVIÇOS (multi-item):** a EcoSunPower vende energia, não só solar. Quando o Junior cita serviços avulsos (carregador EV, adequação de padrão, criação de circuito, projeto elétrico, SPDA, aterramento, etc.) junto com o solar, coloque CADA um em \`servicos[]\` com:
+10. **SERVIÇOS (multi-item):** a {{empresa_nome}} vende energia, não só solar. Quando o Junior cita serviços avulsos (carregador EV, adequação de padrão, criação de circuito, projeto elétrico, SPDA, aterramento, etc.) junto com o solar, coloque CADA um em \`servicos[]\` com:
     - \`titulo\`: nome curto e claro do serviço.
     - \`descricao\`: o que está incluso. REPLIQUE FIEL o que o Junior escreveu — não invente nem reescreva mudando o sentido. Deixe claro pro cliente, mas sem distorcer.
     - \`valorRs\`: o preço do serviço (só o número).
@@ -465,7 +479,7 @@ export class ProposalAssistant {
   private systemPrompt: string;
   private driveUploader: DriveUploader | null;
   private engineerPhone: string;
-  private companyDefaults: ProposalData['empresa'];
+  private companyOverrides: Partial<ProposalData['empresa']>;
   private supabaseService: SupabaseService | null;
   private publicProposalBaseUrl: string;
   private metaService: MetaWhatsAppService | null;
@@ -517,14 +531,7 @@ export class ProposalAssistant {
     this.publicProposalBaseUrl = (opts.publicProposalBaseUrl ?? 'https://propostas.ecosunpower.eng.br').replace(/\/$/, '');
     this.metaService = opts.metaService ?? null;
 
-    this.companyDefaults = {
-      nome: 'EcoSunPower Energia Solar LTDA',
-      cnpj: '33.020.459/0001-06',
-      cidade: 'Brasília-DF',
-      telefone: '(61) 99697-8781',
-      site: 'ecosunpower.eng.br',
-      ...opts.companyDefaults,
-    };
+    this.companyOverrides = opts.companyDefaults ?? {};
 
     this.casesFetcher = new CasesFetcher({
       siteUrl: opts.siteUrl ?? 'https://ecosunpower.eng.br',
@@ -532,6 +539,23 @@ export class ProposalAssistant {
     this.googleNota = opts.googleNota ?? '4.9';
     this.googleQtdAvaliacoes = opts.googleQtdAvaliacoes ?? 0;
     this.proposalPreviewToken = opts.proposalPreviewToken ?? null;
+  }
+
+  // [ECOSOF] Bloco "empresa" da proposta lido de empresa_config em RUNTIME
+  // (getter, não snapshot no construtor) — /recarregar-config vale sem restart.
+  // Com o seed EcoSun produz exatamente os valores hardcoded antigos
+  // (telefone formatado "(61) 99697-8781", site sem https://). Único delta:
+  // nome usa a razão social oficial ("ECOSUNPOWER ENERGIA SOLAR LTDA").
+  private get companyDefaults(): ProposalData['empresa'] {
+    const e = empresa();
+    return {
+      nome: e.razaoSocial,
+      cnpj: e.cnpj,
+      cidade: `${e.cidade}-${e.uf}`,
+      telefone: formatFoneBR(e.telefoneAtendente),
+      site: e.siteUrl.replace(/^https?:\/\//, ''),
+      ...this.companyOverrides,
+    };
   }
 
   // Mapeia o tipoCliente da proposta (string livre que pode vir variada do
@@ -875,7 +899,9 @@ export class ProposalAssistant {
     const response = await this.client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2500,
-      system: [{ type: 'text', text: this.systemPrompt, cache_control: { type: 'ephemeral' } }],
+      // [ECOSOF] empresa() lida POR CHAMADA; string estável entre chamadas
+      // mantém o cache ephemeral válido enquanto a config não muda.
+      system: [{ type: 'text', text: interpolarEmpresa(this.systemPrompt, empresa()), cache_control: { type: 'ephemeral' } }],
       messages: history,
     }, { timeout: 30_000 });
 
@@ -1002,7 +1028,7 @@ export class ProposalAssistant {
         nomeCliente: nome,
         linkWebPublico: last.publicUrl,
         pdfBuffer,
-        pdfFilename: `Proposta-EcoSunPower-${nome.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '-')}.pdf`,
+        pdfFilename: `Proposta-${empresa().nomeFantasia.replace(/[^a-zA-Z0-9]/g, '')}-${nome.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '-')}.pdf`,
       });
 
       if (!result.ok) {

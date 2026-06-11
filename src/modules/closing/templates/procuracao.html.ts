@@ -3,23 +3,29 @@
 // Veja docs/superpowers/specs/2026-05-27-eva-procuracao-contrato-rapidos-design.md
 //
 // Outorgante = SEMPRE titular_uc (quem e titular da conta de luz).
-// Outorgado = ANTONIO CANDIDO RODRIGUES JUNIOR (PF, Responsavel Tecnico CREA/CFT)
-//             atuando em nome da ECOSUNPOWER ENERGIA SOLAR LTDA (PJ).
+// Outorgado = o Responsavel Tecnico (PF) atuando em nome da empresa (PJ).
 
 import type { DadosFechamento, PessoaFisica, PessoaJuridica } from '../types.js';
+import { empresa } from '../../empresa-config.js';
 
-const OUTORGADO = {
-  nome: 'ANTONIO CANDIDO RODRIGUES JUNIOR',
-  cpf: '989.404.571-53',
-  rg: '2.202.520 SSP-DF',
-  crea: '98940457153',
-  titulo: 'Responsável Técnico CREA/CFT',
-  empresa_razao_social: 'ECOSUNPOWER ENERGIA SOLAR LTDA',
-  empresa_cnpj: '33.020.459/0001-06',
-  empresa_endereco: 'Brasilia-DF',
-};
-
-const RODAPE_EMAIL = 'junior@ecosunpower.eng.br';
+// [ECOSOF] Dados do OUTORGADO vêm da empresa_config. Função (não const de
+// módulo) pra ler empresa() em RUNTIME — /recarregar-config vale sem restart.
+// Com o seed EcoSun, a procuração sai igual ao hardcode antigo.
+function outorgado() {
+  const e = empresa();
+  return {
+    nome: e.rtNome,
+    cpf: e.rtCpf ?? '',
+    rg: e.rtRg ?? '',
+    crea: e.rtRegistro ?? '',
+    titulo: e.rtTitulo,
+    empresa_razao_social: e.razaoSocial,
+    empresa_cnpj: e.cnpj,
+    empresa_endereco: `${e.cidade}-${e.uf}`,
+    rodape_email: e.email,
+    site_curto: e.siteUrl.replace(/^https?:\/\//, ''),
+  };
+}
 
 function enderecoStr(e: { rua: string; numero: string; complemento?: string; bairro: string; cidade: string; uf: string; cep: string }): string {
   const comp = e.complemento ? `, ${e.complemento}` : '';
@@ -59,6 +65,7 @@ function hojeFormatado(): string {
 }
 
 export function renderProcuracao(dados: DadosFechamento): string {
+  const OUTORGADO = outorgado();
   const titular = descreveTitular(dados.titular_uc);
   const uc = (dados.uc_numero && dados.uc_numero.trim()) ? dados.uc_numero : '(a confirmar)';
   const concessionariaNome = dados.concessionaria === 'Neoenergia-DF'
@@ -95,7 +102,7 @@ export function renderProcuracao(dados: DadosFechamento): string {
 <div class="page">
   <header>
     <div class="marca">${OUTORGADO.empresa_razao_social.replace(/ LTDA$/, '')}</div>
-    <div class="sub">CNPJ ${OUTORGADO.empresa_cnpj} &middot; ${OUTORGADO.empresa_endereco} &middot; ecosunpower.eng.br</div>
+    <div class="sub">CNPJ ${OUTORGADO.empresa_cnpj} &middot; ${OUTORGADO.empresa_endereco} &middot; ${OUTORGADO.site_curto}</div>
   </header>
 
   <h1>PROCURAÇÃO PARTICULAR</h1>
@@ -127,7 +134,7 @@ export function renderProcuracao(dados: DadosFechamento): string {
   </div>
 
   <footer>
-    ${OUTORGADO.empresa_razao_social} &middot; CNPJ ${OUTORGADO.empresa_cnpj} &middot; ${RODAPE_EMAIL}
+    ${OUTORGADO.empresa_razao_social} &middot; CNPJ ${OUTORGADO.empresa_cnpj} &middot; ${OUTORGADO.rodape_email}
   </footer>
 </div>
 </body>

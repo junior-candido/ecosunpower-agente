@@ -1,5 +1,7 @@
 // src/modules/relatorios/pos-instalacao/template.ts
 import type { RelatorioPosInstalacaoView } from './types.js';
+// [ECOSOF] empresa() lida DENTRO do render (runtime).
+import { empresa } from '../../empresa-config.js';
 
 function escapeHtml(s: string | null | undefined): string {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({
@@ -92,7 +94,7 @@ export function renderPosInstalacaoHtml(v: RelatorioPosInstalacaoView): string {
 ${previewBanner}
 <div class="container">
   <header class="hero">
-    <div class="logo">EcoSunPower</div>
+    <div class="logo">${escapeHtml(empresa().nomeFantasia)}</div>
     <h1>🎉 Seu sistema solar está ativo</h1>
     <div class="sub">${escapeHtml(v.cliente_nome)} · ${escapeHtml([v.cliente_cidade, v.cliente_uf].filter(Boolean).join('-') || '—')}</div>
   </header>
@@ -108,14 +110,14 @@ ${previewBanner}
   ${sistemaHtml}
 
   <section class="garantia">
-    <h2>🛡 Garantia EcoSunPower</h2>
-    <div class="item"><strong>Instalação e serviço:</strong> 12 meses pelo Responsável Técnico CREA/CFT da EcoSunPower</div>
+    <h2>🛡 Garantia ${escapeHtml(empresa().nomeFantasia)}</h2>
+    <div class="item"><strong>Instalação e serviço:</strong> ${empresa().garantiaInstalacaoMeses} meses pelo ${escapeHtml(empresa().rtTitulo)} da ${escapeHtml(empresa().nomeFantasia)}</div>
     <div class="item"><strong>Equipamentos (painéis e inversor):</strong> conforme garantia do fabricante</div>
     <div class="item" style="font-size:13px;margin-top:14px;color:#3f6212">Qualquer dúvida ou problema, fale com a gente diretamente pelo WhatsApp.</div>
   </section>
 
   <footer>
-    <div class="marca">EcoSunPower</div>
+    <div class="marca">${escapeHtml(empresa().nomeFantasia)}</div>
     <div>Energia solar com responsabilidade técnica</div>
     <div style="margin-top:8px;font-size:11px;color:#a8a29e">Gerado em ${escapeHtml(formatDateBR(v.gerado_em))}</div>
   </footer>

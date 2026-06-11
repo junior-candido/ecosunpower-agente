@@ -4,6 +4,8 @@
 // "Responsável Técnico CREA/CFT", NUNCA "engenheiro".
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../../proposal/assets/logo-base64.js';
 import type { RelatorioData, ModoRelatorio } from './dados.js';
+// [ECOSOF] empresa() lida DENTRO das funções de render (runtime).
+import { empresa } from '../../empresa-config.js';
 
 function esc(s: unknown): string {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -20,7 +22,7 @@ function brl(v: number): string {
  * (diferenciado de visita de prospect que é grátis).
  */
 function renderCtaVisita(apelido: string): string {
-  const evaPhone = '5561996978781';
+  const evaPhone = empresa().telefoneAtendente ?? '';
   const msg = `Olá! Acabei de ver o relatório da minha usina (${apelido}) e gostaria de agendar uma visita técnica pra análise do sistema. #visita-tecnica`;
   const wa = `https://wa.me/${evaPhone}?text=${encodeURIComponent(msg)}`;
   return `<div style="margin:16px 24px;padding:18px;background:linear-gradient(135deg,#FFC72C 0%,#F5A623 100%);border-radius:14px;text-align:center">
@@ -61,7 +63,7 @@ export function renderRelatorioHtml(data: RelatorioData, modo: ModoRelatorio): s
 
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Relatório da Usina · ${esc(data.apelido)} · EcoSunPower</title>
+<title>Relatório da Usina · ${esc(data.apelido)} · ${esc(empresa().nomeFantasia)}</title>
 <style>:root{${C}} body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#F8FAFC;color:var(--dark)}
 .wrap{max-width:760px;margin:0 auto;background:#fff}
 .hero{background:linear-gradient(135deg,#1FB8E8 0%,#0E7CB8 60%,#0F172A 100%);color:#fff;padding:28px 24px;position:relative}
@@ -72,8 +74,8 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 img.logo{height:34px;width:auto;background:#fff;border-radius:8px;padding:5px}</style></head>
 <body><div class="wrap">
   <div class="hero">
-    <img class="logo" src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower">
-    <div style="font-weight:700;letter-spacing:.04em;margin-top:10px">ECOSUNPOWER · RELATÓRIO DA USINA</div>
+    <img class="logo" src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="${esc(empresa().nomeFantasia)}">
+    <div style="font-weight:700;letter-spacing:.04em;margin-top:10px">${esc(empresa().nomeFantasia.toUpperCase())} · RELATÓRIO DA USINA</div>
     <div style="font-size:20px;font-weight:700;margin-top:6px">${esc(data.apelido)}</div>
     <div style="opacity:.85;font-size:13px">${esc(local)} · ${esc(data.marcaInversor)} · ${data.potenciaKwp ?? '—'} kWp · idade ${esc(data.garantia.idadeTexto)}</div>
   </div>
@@ -89,11 +91,11 @@ img.logo{height:34px;width:auto;background:#fff;border-radius:8px;padding:5px}</
   <div style="padding:0 24px 8px"><b>Histórico mês a mês</b></div>
   <div style="padding:0 24px 16px"><table><tbody>${linhasMensais}</tbody></table></div>
   <div style="padding:0 24px 16px;font-size:13px;color:var(--muted)">
-    <b>Garantias:</b> Instalação/mão de obra EcoSunPower: ${data.garantia.ecosun.status === 'vigente' ? `vigente (${(data.garantia.ecosun as any).mesesRestantes} meses restantes)` : data.garantia.ecosun.status === 'encerrada' ? `encerrada` : 'a confirmar'}.
+    <b>Garantias:</b> Instalação/mão de obra ${esc(empresa().nomeFantasia)}: ${data.garantia.ecosun.status === 'vigente' ? `vigente (${(data.garantia.ecosun as any).mesesRestantes} meses restantes)` : data.garantia.ecosun.status === 'encerrada' ? `encerrada` : 'a confirmar'}.
     Inversor (fabricante): ${esc(data.garantia.fabricanteInversor)}. Painel: ${esc(data.garantia.fabricantePainel)}.
   </div>
   <div class="foot">
-    EcoSunPower Energia Solar · CNPJ 33.020.459/0001-06 · Brasília-DF<br>
+    ${esc(empresa().nomeFantasia)} Energia Solar · CNPJ ${esc(empresa().cnpj)} · ${esc(`${empresa().cidade}-${empresa().uf}`)}<br>
     Projeto e instalação sob responsabilidade do nosso <b>Responsável Técnico (ART CREA / TRT CFT)</b>. Conforme ABNT NBR 5410, NBR 16690, NBR 16149/16150 e NR-10.
   </div>
 </div></body></html>`;

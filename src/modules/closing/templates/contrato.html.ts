@@ -7,17 +7,26 @@
 // Base: tmp/contrato-camila.html
 
 import type { DadosFechamento, PessoaFisica, PessoaJuridica } from '../types.js';
+import { empresa } from '../../empresa-config.js';
 
-const CONTRATADA = {
-  razao_social: 'ECOSUNPOWER ENERGIA SOLAR LTDA',
-  cnpj: '33.020.459/0001-06',
-  endereco: 'SHA Conjunto 01 Chácara 44C Lote 6, Arniqueira, Brasília-DF, CEP 71993-150',
-  representante_nome: 'ANTONIO CANDIDO RODRIGUES JUNIOR',
-  representante_titulo: 'Responsável Técnico',
-  representante_cpf: '989.404.571-53',
-  representante_rg: '2.202.520 SSP-DF',
-  representante_crea: '98940457153',
-};
+// [ECOSOF] Dados da CONTRATADA vêm da empresa_config. Função (não const de
+// módulo) pra ler empresa() em RUNTIME — /recarregar-config vale sem restart.
+// Com o seed EcoSun, o contrato sai idêntico ao hardcode antigo.
+function contratada() {
+  const e = empresa();
+  return {
+    razao_social: e.razaoSocial,
+    cnpj: e.cnpj,
+    endereco: `${e.endereco}, ${e.cidade}-${e.uf}${e.cep ? `, CEP ${e.cep}` : ''}`,
+    representante_nome: e.rtNome,
+    // rtTitulo já inclui o registro ("Responsável Técnico CREA/CFT") — por isso
+    // a assinatura abaixo NÃO repete "CREA/CFT" como o template antigo fazia.
+    representante_titulo: e.rtTitulo,
+    representante_cpf: e.rtCpf ?? '',
+    representante_rg: e.rtRg ?? '',
+    representante_crea: e.rtRegistro ?? '',
+  };
+}
 
 const OBS_TEMPLATES: Record<string, (titular: string) => string> = {
   conjuge: (titular) => `A negociação comercial foi conduzida com o cônjuge da titular da UC, Sr(a). ${titular}, sem responsabilidade contratual direta do(a) titular.`,
@@ -72,8 +81,9 @@ function modalidadeLabel(m: DadosFechamento['sistema']['modalidade']): string {
 }
 
 export function renderContrato(dados: DadosFechamento): string {
+  const CONTRATADA = contratada();
   const contratante = fmtPessoa(dados.contratante);
-  const contratada = `${CONTRATADA.razao_social}, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº ${CONTRATADA.cnpj}, com sede na ${CONTRATADA.endereco}, neste ato representada por ${CONTRATADA.representante_nome}, brasileiro, ${CONTRATADA.representante_titulo}, portador do CPF nº ${CONTRATADA.representante_cpf}, RG nº ${CONTRATADA.representante_rg}, registrado no CREA/CFT sob o nº ${CONTRATADA.representante_crea}`;
+  const contratadaStr = `${CONTRATADA.razao_social}, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº ${CONTRATADA.cnpj}, com sede na ${CONTRATADA.endereco}, neste ato representada por ${CONTRATADA.representante_nome}, brasileiro, ${CONTRATADA.representante_titulo}, portador do CPF nº ${CONTRATADA.representante_cpf}, RG nº ${CONTRATADA.representante_rg}, registrado no CREA/CFT sob o nº ${CONTRATADA.representante_crea}`;
 
   const observacao = buildObservacaoPartes(dados);
   const observacaoHtml = observacao
@@ -101,7 +111,7 @@ export function renderContrato(dados: DadosFechamento): string {
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<title>Contrato ${nomeContratante} - EcoSunPower</title>
+<title>Contrato ${nomeContratante} - ${empresa().nomeFantasia}</title>
 <style>
   @page { size: A4; margin: 2cm 2.2cm; }
   body { font-family: 'Calibri', 'Arial', sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.5; }
@@ -128,7 +138,7 @@ export function renderContrato(dados: DadosFechamento): string {
 
 ${observacaoHtml}
 
-<p><strong>CONTRATADA:</strong> ${contratada}.</p>
+<p><strong>CONTRATADA:</strong> ${contratadaStr}.</p>
 
 <p>As partes têm entre si justo e contratado o presente <strong>CONTRATO DE PRESTAÇÃO DE SERVIÇOS</strong>, que se regerá pelas cláusulas e condições a seguir, em conformidade com o Código Civil, o Código de Defesa do Consumidor (Lei 8.078/90), a Lei Geral de Proteção de Dados (Lei 13.709/18), a Resolução Normativa ANEEL nº 1.000/2021 e nº 1.059/2023 e a Lei 14.300/2022 (Marco Legal da Geração Distribuída).</p>
 
@@ -359,7 +369,7 @@ CPF/CNPJ: ${cpfContratante}<br/>
 
 <div class="linha"></div>
 <p><strong>${CONTRATADA.razao_social}</strong><br/>
-${CONTRATADA.representante_nome} — ${CONTRATADA.representante_titulo} CREA/CFT ${CONTRATADA.representante_crea}<br/>
+${CONTRATADA.representante_nome} — ${CONTRATADA.representante_titulo} ${CONTRATADA.representante_crea}<br/>
 CPF: ${CONTRATADA.representante_cpf}<br/>
 CNPJ: ${CONTRATADA.cnpj}<br/>
 <em>CONTRATADA</em></p>

@@ -8,6 +8,9 @@ import { fmtRs, fmtNum, fmtPct, fmtCurto, escapeHtml } from './format.js';
 import { renderServicosAdicionaisSection, type ServicoItem } from './service-render.js';
 import { getBrandFicha } from './brand-fichas.js';
 import { logoMeioPagamento } from './payment-logos.js';
+// [ECOSOF] empresa() é lida DENTRO das funções de render (runtime) — nunca
+// capturada em const de módulo. Com o seed EcoSun a saída é idêntica.
+import { empresa } from '../empresa-config.js';
 
 export interface ProposalData {
   // Identificacao
@@ -161,7 +164,7 @@ export function renderProposalHTML(data: ProposalData, calc: ProposalCalculation
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Proposta EcoSunPower — ${escapeHtml(data.nomeCliente)}</title>
+<title>Proposta ${escapeHtml(empresa().nomeFantasia)} — ${escapeHtml(data.nomeCliente)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
@@ -300,7 +303,7 @@ footer strong{color:#fff;font-weight:600}
 <header class="hero">
   <div class="container hero-inner">
     <div class="hero-nav">
-      <div class="hero-logo"><span class="hero-logo-dot"></span> ECOSUNPOWER</div>
+      <div class="hero-logo"><span class="hero-logo-dot"></span> ${escapeHtml(empresa().nomeFantasia.toUpperCase())}</div>
       <div class="hero-meta">
         <strong>Proposta #${escapeHtml(data.numeroProposta)}</strong>
         ${escapeHtml(data.dataProposta)} · Válida ${data.validadeDias} dias
@@ -472,14 +475,14 @@ ${data.modoComparacao ? '' : `<section class="equipment-section">
 
 <section style="background:#fff;padding:80px 0">
   <div class="container">
-    <span class="section-tag">Por que EcoSunPower</span>
+    <span class="section-tag">Por que ${escapeHtml(empresa().nomeFantasia)}</span>
     <h2 class="section-title">Não é só painel no telhado</h2>
     <p class="section-subtitle">Engenharia, segurança e responsabilidade técnica que vão muito além do equipamento.</p>
 
     <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:24px">
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
         <div style="width:48px;height:48px;border-radius:12px;background:var(--primary-50);color:var(--primary-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">🛡️</div>
-        <h3 style="font-size:20px;margin-bottom:12px">Garantia EcoSunPower 12 meses</h3>
+        <h3 style="font-size:20px;margin-bottom:12px">Garantia ${escapeHtml(empresa().nomeFantasia)} ${empresa().garantiaInstalacaoMeses} meses</h3>
         <p style="color:var(--muted);font-size:15px;line-height:1.6">Cobrimos <strong>tudo</strong> que decorrer da nossa instalação: curtos elétricos, fiação CC e CA, fixação, disjuntores, quadros elétricos e até vazamentos no telhado por nossa fixação. Acionamento direto pelo WhatsApp.</p>
       </div>
 
@@ -504,13 +507,13 @@ ${data.modoComparacao ? '' : `<section class="equipment-section">
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
         <div style="width:48px;height:48px;border-radius:12px;background:var(--primary-50);color:var(--primary-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">🤝</div>
         <h3 style="font-size:20px;margin-bottom:12px">Responsável Técnico que atende direto</h3>
-        <p style="color:var(--muted);font-size:15px;line-height:1.6">Junior Candido — <strong>Responsável Técnico CREA/CFT da EcoSunPower</strong> — assina a ART/TRT do seu projeto e fica como ponto único de contato pelo WhatsApp. Do orçamento ao pós-venda, você fala com quem entende e decide. Instalação executada por equipe certificada sob supervisão técnica EcoSunPower.</p>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">Junior Candido — <strong>Responsável Técnico CREA/CFT da ${escapeHtml(empresa().nomeFantasia)}</strong> — assina a ART/TRT do seu projeto e fica como ponto único de contato pelo WhatsApp. Do orçamento ao pós-venda, você fala com quem entende e decide. Instalação executada por equipe certificada sob supervisão técnica ${escapeHtml(empresa().nomeFantasia)}.</p>
       </div>
 
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
         <div style="width:48px;height:48px;border-radius:12px;background:#FFF8E1;color:var(--accent-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">🌐</div>
-        <h3 style="font-size:20px;margin-bottom:12px">Eva, sua consultora EcoSunPower</h3>
-        <p style="color:var(--muted);font-size:15px;line-height:1.6">Atendimento 24/7 via WhatsApp pra dúvidas, agendamento, status do projeto, garantia. Eva responde rápido — Junior entra em casos complexos.</p>
+        <h3 style="font-size:20px;margin-bottom:12px">${escapeHtml(empresa().nomeAtendente)}, sua consultora ${escapeHtml(empresa().nomeFantasia)}</h3>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">Atendimento 24/7 via WhatsApp pra dúvidas, agendamento, status do projeto, garantia. ${escapeHtml(empresa().nomeAtendente)} responde rápido — Junior entra em casos complexos.</p>
       </div>
     </div>
   </div>
@@ -533,7 +536,7 @@ ${data.modoComparacao ? '' : `<section class="financial-section">
         </ul>
       </div>
       <div class="compare-card after">
-        <span class="compare-tag">Com EcoSunPower</span>
+        <span class="compare-tag">Com ${escapeHtml(empresa().nomeFantasia)}</span>
         <div class="compare-amount">R$ ${fmtRs(calc.contaComSistemaMensal, 0)}</div>
         <div class="compare-period">por mês · Fio B + iluminação pública</div>
         <ul class="compare-list">
@@ -631,11 +634,11 @@ ${socialProofHtml}
     </div>
     <div style="text-align:right">
       <strong>${escapeHtml(data.empresa.telefone)}</strong><br>
-      <span style="opacity:0.7">${escapeHtml(data.empresa.site)} · Eva, sua consultora</span>
+      <span style="opacity:0.7">${escapeHtml(data.empresa.site)} · ${escapeHtml(empresa().nomeAtendente)}, sua consultora</span>
     </div>
   </div>
   <div class="footer-meta">
-    Proposta #${escapeHtml(data.numeroProposta)} gerada por Eva em ${escapeHtml(data.dataProposta)} · Engine de cálculo EcoSunPower v1 · Tarifas ${escapeHtml(data.concessionaria)} 2026
+    Proposta #${escapeHtml(data.numeroProposta)} gerada por ${escapeHtml(empresa().nomeAtendente)} em ${escapeHtml(data.dataProposta)} · Engine de cálculo ${escapeHtml(empresa().nomeFantasia)} v1 · Tarifas ${escapeHtml(data.concessionaria)} 2026
   </div>
 </footer>
 
