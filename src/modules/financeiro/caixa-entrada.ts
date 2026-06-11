@@ -22,7 +22,7 @@ import {
   montarOfertaVinculoConta, montarEscolhaAtividade, type LancamentoResumo,
 } from './resumo-lancamento.js';
 import { criarContaDeFechamento, registrarRecebimento } from './contas.js';
-import { getAtividades } from './repo.js';
+import { getAtividades, cancelarConta } from './repo.js';
 
 interface Waba {
   sendInteractiveButtons(to: string, body: string, buttons: Array<{ id: string; title: string }>, footer?: string): Promise<unknown>;
@@ -362,17 +362,20 @@ export async function handleFinlanButton(deps: CaixaDeps, from: string, buttonId
         // detectável, nunca duplicado (mesmo invariante da Fatia 2, contas.ts).
         const ok = await mudarStatus(deps.supabase, id, 'pendente', 'confirmado', { conta_id: extra });
         if (!ok) { await deps.sendText(from, 'Esse lançamento já tinha sido processado.'); return true; }
+        // Só o passo de DINHEIRO reverte — falha de envio de mensagem não desfaz recebimento já entrado.
+        let r: Awaited<ReturnType<typeof registrarRecebimento>>;
         try {
-          const r = await registrarRecebimento(deps.supabase, extra, Number(row.valor));
-          const aviso = r.total
-            ? `💵 Recebimento total na venda: ${brl(r.acumulado)}.`
-            : `💵 Parcela na venda: ${brl(r.parcela)} (falta ${brl(r.saldoRestante)}).`;
-          await deps.sendText(from, `${aviso}\nImposto desta parcela (Anexo ${r.calc.anexo}): *${brl(r.calc.imposto)}* — separe pro DAS.`);
+          r = await registrarRecebimento(deps.supabase, extra, Number(row.valor));
         } catch (err) {
           // Compensação: falha no passo de dinheiro desfaz o CAS porteiro — nunca fica entrada confirmada fantasma.
           await reverterParaPendente(deps.supabase, id);
           await deps.sendText(from, `❌ Não consegui registrar na venda (${(err as Error).message}). O lançamento voltou pra pendente.`);
+          return true;
         }
+        const aviso = r.total
+          ? `💵 Recebimento total na venda: ${brl(r.acumulado)}.`
+          : `💵 Parcela na venda: ${brl(r.parcela)} (falta ${brl(r.saldoRestante)}).`;
+        await deps.sendText(from, `${aviso}\nImposto desta parcela (Anexo ${r.calc.anexo}): *${brl(r.calc.imposto)}* — separe pro DAS.`);
         return true;
       }
       case 'avul': {
@@ -390,20 +393,29 @@ export async function handleFinlanButton(deps: CaixaDeps, from: string, buttonId
         // CAS porteiro ANTES de criar a conta: clique duplo não cria 2ª conta avulsa.
         const ok = await mudarStatus(deps.supabase, id, 'pendente', 'confirmado');
         if (!ok) { await deps.sendText(from, 'Esse lançamento já tinha sido processado.'); return true; }
+        // Só o passo de DINHEIRO reverte — falha de envio de mensagem não desfaz recebimento já entrado.
+        let contaId: string | undefined;
+        let r: Awaited<ReturnType<typeof registrarRecebimento>>;
         try {
-          const { contaId } = await criarContaDeFechamento(deps.supabase, {
+          ({ contaId } = await criarContaDeFechamento(deps.supabase, {
             fechamentoId: null, leadId: row.lead_id, atividadeId: extra,
             descricao: `Entrada avulsa — ${row.contraparte ?? row.descricao ?? 'sem descrição'}`,
             valor: Number(row.valor), createdBy: from,
-          });
-          const r = await registrarRecebimento(deps.supabase, contaId);
+          }));
+          r = await registrarRecebimento(deps.supabase, contaId);
           await gravarContaNoLancamento(deps.supabase, id, contaId);
-          await deps.sendText(from, `💰 Entrada avulsa lançada: ${brl(Number(row.valor))}.\nImposto (Anexo ${r.calc.anexo}): *${brl(r.calc.imposto)}* — separe pro DAS.`);
         } catch (err) {
+          if (contaId) {
+            // Conta avulsa órfã não pode ficar inflando o "A receber" — cancela
+            // best-effort (o guard do cancelarConta protege se o dinheiro entrou).
+            try { await cancelarConta(deps.supabase, contaId); } catch { /* manual */ }
+          }
           // Compensação: falha no passo de dinheiro desfaz o CAS porteiro — nunca fica entrada confirmada fantasma.
           await reverterParaPendente(deps.supabase, id);
           await deps.sendText(from, `❌ Não consegui registrar na venda (${(err as Error).message}). O lançamento voltou pra pendente.`);
+          return true;
         }
+        await deps.sendText(from, `💰 Entrada avulsa lançada: ${brl(Number(row.valor))}.\nImposto (Anexo ${r.calc.anexo}): *${brl(r.calc.imposto)}* — separe pro DAS.`);
         return true;
       }
       default:
