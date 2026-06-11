@@ -198,8 +198,11 @@ export async function getAbordagensParaLembrete(
 // 24h o lembrete por texto é impossível — sem isso a usina deadlocka
 // (o estado 'enviada' ficaria eterno e o unique parcial travaria a usina).
 // Corte da 'enviada' = limiteDias*2 (6 dias): dá tempo do lembrete tentar.
-// Spec: lembrete/escalada de silêncio é só pra PROBLEMA (queda/offline) —
-// parabéns não cobra resposta.
+// SEM filtro de tipo: parabéns/depoimento 'enviada' sem resposta também
+// precisa encerrar (senão fica eterna e o unique parcial trava a usina PRA
+// SEMPRE — inclusive pra futuras quedas/offline). Quem ramifica por tipo é o
+// loop do orquestrador: milestone encerra sem cobrar (só resumo 👍/👎),
+// queda/offline ganham os botões de escalada [Eu ligo]/[Visita]/[Deixar].
 export async function getAbordagensParaEncerrar(
   client: SupabaseClient, agoraIso_: string, limiteDias: number,
 ): Promise<AbordagemRow[]> {
@@ -207,7 +210,6 @@ export async function getAbordagensParaEncerrar(
   const corteEnviada = cutoffIso(agoraIso_, limiteDias * 2);
   const { data, error } = await client.from('monitoring_abordagens')
     .select(COLS)
-    .in('tipo', ['queda', 'offline'])
     .or(`and(status.eq.lembrete_enviado,lembrete_em.lte.${corteLembrete}),`
       + `and(status.eq.enviada,enviada_em.lte.${corteEnviada},ultima_resposta_cliente_em.is.null)`)
     .order('enviada_em', { ascending: true })
