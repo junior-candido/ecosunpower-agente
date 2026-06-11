@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { readFileSync } from 'fs';
 import {
   EMPRESA_DEFAULTS, normalizarEmpresaRow, interpolarEmpresa, listaMarcasTexto,
   carregarEmpresaConfig, empresa, _resetEstadoParaTeste,
@@ -77,6 +78,25 @@ describe('empresa-config: lista de marcas pro prompt', () => {
   });
   it('sem bloqueadas, sem frase de bloqueio', () => {
     expect(listaMarcasTexto({ ...EMPRESA_DEFAULTS, marcasBloqueadas: [] })).not.toContain('Não trabalhamos');
+  });
+});
+
+describe('system-prompt: placeholders resolvem com o seed EcoSun (paridade)', () => {
+  it('nenhum {{placeholder de empresa}} fica sem resolver', () => {
+    const prompt = readFileSync('src/prompts/system-prompt.md', 'utf-8');
+    const out = interpolarEmpresa(prompt, EMPRESA_DEFAULTS);
+    const sobras = out.match(/\{\{(?!review_link)[a-z_]+\}\}/g) ?? [];
+    expect(sobras).toEqual([]);
+  });
+  it('com defaults, o prompt volta a falar Eva/EcoSunPower/700', () => {
+    const prompt = readFileSync('src/prompts/system-prompt.md', 'utf-8');
+    const out = interpolarEmpresa(prompt, EMPRESA_DEFAULTS);
+    expect(out).toContain('Eva');
+    expect(out).toContain('EcoSunPower'); // grafia do nomeFantasia do seed
+    expect(out).toContain('700');
+    // identidade central resolvida
+    expect(out).toContain('Voce e a Eva, **consultora de energia solar** da EcoSunPower');
+    expect(out).toContain('ANTONIO CANDIDO RODRIGUES JUNIOR');
   });
 });
 

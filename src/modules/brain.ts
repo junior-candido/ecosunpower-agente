@@ -4,6 +4,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { buildSystemBlocks } from './system-blocks.js';
 import { formatCacheUsage } from './cache-log.js';
+import { empresa, interpolarEmpresa } from './empresa-config.js';
 
 interface MessageEntry {
   role: 'user' | 'assistant';
@@ -71,7 +72,16 @@ export class Brain {
     qualificationStep: string
   ): Promise<BrainResponse> {
     // review_link substituido aqui (estavel por processo) -> prefixo cacheavel.
-    const stableSystem = this.systemPrompt.replaceAll('{{review_link}}', this.reviewLink);
+    // [ECOSOF] Placeholders de empresa ({{nome_atendente}}, {{empresa_nome}}, ...)
+    // interpolados POR CHAMADA: o systemPrompt cru fica cacheado no construtor
+    // (o ARQUIVO nao muda), mas empresa() e lida aqui na hora — assim o
+    // /recarregar-config surte efeito sem restart. Enquanto a config nao muda,
+    // a string resultante e byte-identica entre chamadas, entao o prompt
+    // caching da Anthropic continua valendo.
+    const stableSystem = interpolarEmpresa(
+      this.systemPrompt.replaceAll('{{review_link}}', this.reviewLink),
+      empresa(),
+    );
     const system = buildSystemBlocks({
       systemPrompt: stableSystem,
       knowledgeBase,
