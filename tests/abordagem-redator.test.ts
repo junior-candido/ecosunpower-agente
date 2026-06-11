@@ -1,6 +1,6 @@
 // tests/abordagem-redator.test.ts
 import { describe, it, expect } from 'vitest';
-import { montarPromptAbordagem, limparMensagem } from '../src/modules/monitoring/abordagem/redator.js';
+import { montarPromptAbordagem, limparMensagem, clampMensagem } from '../src/modules/monitoring/abordagem/redator.js';
 
 const ctx = {
   tipo: 'queda' as const, etapa: 1,
@@ -35,5 +35,20 @@ describe('abordagem/redator: limpeza da saída', () => {
   });
   it('vazio → null (nunca manda mensagem vazia)', () => {
     expect(limparMensagem('   ')).toBeNull();
+  });
+});
+
+describe('abordagem/redator: clamp do tamanho (corpo WABA)', () => {
+  it('mensagem curta passa intacta', () => {
+    const curta = 'Oi João! Sua usina está ótima ☀️';
+    expect(clampMensagem(curta)).toBe(curta);
+  });
+  it('mensagem longa corta no último espaço antes do limite e termina com …', () => {
+    const palavra = 'solar ';
+    const longa = palavra.repeat(200); // 1200 chars
+    const out = clampMensagem(longa, 700);
+    expect(out.length).toBeLessThanOrEqual(700 + 1); // corte + '…'
+    expect(out.endsWith('…')).toBe(true);
+    expect(out.includes('sol…')).toBe(false); // não pica palavra no meio
   });
 });

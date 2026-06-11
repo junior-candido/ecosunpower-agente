@@ -227,6 +227,78 @@ export async function limparReagendamento(client: SupabaseClient, id: string): P
   return Boolean(data && data.length > 0);
 }
 
+// Vassoura: abordagens presas em estados intermediários (falha transitória,
+// Junior não clicou, conversa esfriou). Sem isso, o unique parcial bloqueia a
+// usina pra sempre em silêncio.
+// status IN ('proposta','aguardando_aprovacao') AND updated_at < antesDe
+export async function getPresasEmProposta(
+  client: SupabaseClient, antesDeIso: string,
+): Promise<AbordagemRow[]> {
+  const { data, error } = await client.from('monitoring_abordagens')
+    .select(COLS)
+    .in('status', ['proposta', 'aguardando_aprovacao'])
+    .lt('updated_at', antesDeIso)
+    .order('updated_at', { ascending: true })
+    .limit(20);
+  if (error) throw new Error(`getPresasEmProposta: ${error.message}`);
+  return (data ?? []) as unknown as AbordagemRow[];
+}
+
+// Conversa que esfriou: cliente RESPONDEU (por isso o lembrete nunca pega —
+// ele exige ultima_resposta_cliente_em NULL) e ninguém encerrou. Reagendadas
+// pro futuro ficam de fora (o cliente pediu pra esperar).
+export async function getConversasEsfriadas(
+  client: SupabaseClient, antesDeIso: string,
+): Promise<AbordagemRow[]> {
+  const { data, error } = await client.from('monitoring_abordagens')
+    .select(COLS)
+    .eq('status', 'em_conversa')
+    .not('ultima_resposta_cliente_em', 'is', null)
+    .lt('ultima_resposta_cliente_em', antesDeIso)
+    .or(`reagendada_para.is.null,reagendada_para.lt.${antesDeIso}`)
+    .order('ultima_resposta_cliente_em', { ascending: true })
+    .limit(20);
+  if (error) throw new Error(`getConversasEsfriadas: ${error.message}`);
+  return (data ?? []) as unknown as AbordagemRow[];
+}
+
+// CAS do lembrete: além do status, exige que o cliente NÃO tenha respondido
+// (a janela entre o fetch e o envio inclui uma chamada de LLM — segundos).
+export async function marcarLembreteSeSemResposta(
+  client: SupabaseClient, id: string, lembreteEmIso: string, etapa: number,
+): Promise<boolean> {
+  const { data, error } = await client.from('monitoring_abordagens')
+    .update({ status: 'lembrete_enviado', lembrete_em: lembreteEmIso, etapa, updated_at: agoraIso() })
+    .eq('id', id)
+    .in('status', ['enviada', 'em_conversa'])
+    .is('ultima_resposta_cliente_em', null)
+    .select('id');
+  if (error) throw new Error(`marcarLembreteSeSemResposta: ${error.message}`);
+  return Boolean(data && data.length > 0);
+}
+
+// Porteiro da escada pós-template: troca o marcador '[template enviado]' pela
+// mensagem real com CAS no próprio marcador — 2 webhooks rápidos do mesmo
+// cliente → só 1 casa o WHERE e manda a escada. null = não era pós-template
+// (ou outro webhook já consumiu).
+export async function consumirMarcadorTemplate(
+  client: SupabaseClient, id: string,
+): Promise<string | null> {
+  // PostgREST não faz UPDATE coluna-a-coluna: lê a proposta primeiro; o CAS no
+  // marcador (WHERE mensagem_enviada = '[template enviado]') é quem garante 1×.
+  const { data: row, error: e1 } = await client.from('monitoring_abordagens')
+    .select('mensagem_proposta').eq('id', id).maybeSingle();
+  if (e1) throw new Error(`consumirMarcadorTemplate: ${e1.message}`);
+  const msg = (row as { mensagem_proposta: string | null } | null)?.mensagem_proposta ?? null;
+  if (!msg) return null;
+  const { data, error } = await client.from('monitoring_abordagens')
+    .update({ mensagem_enviada: msg, updated_at: agoraIso() })
+    .eq('id', id).eq('mensagem_enviada', '[template enviado]')
+    .select('mensagem_proposta');
+  if (error) throw new Error(`consumirMarcadorTemplate: ${error.message}`);
+  return data && data.length > 0 ? msg : null;
+}
+
 // Quedas encerradas por limpeza na janela [de..ate] (10-20 dias atrás) —
 // follow-up pós-limpeza. O chamador filtra as já marcadas '[followup feito]'.
 export async function getQuedasEncerradasPorLimpeza(
@@ -279,12 +351,16 @@ export async function getAbordagemErrouPendente(client: SupabaseClient): Promise
 }
 
 // Últimas N encerradas de um tipo (sugestão de autonomia: 5 seguidas limpas).
+// Família milestone: parabéns/depoimento dividem a MESMA flag de autonomia
+// (parabens_auto), então a contagem das "5 limpas" olha a família inteira.
 export async function getUltimasEncerradasDoTipo(
   client: SupabaseClient, tipo: AbordagemTipo, n: number,
 ): Promise<AbordagemRow[]> {
+  const tipos = (tipo === 'parabens' || tipo === 'depoimento')
+    ? ['parabens', 'depoimento'] : [tipo];
   const { data, error } = await client.from('monitoring_abordagens')
     .select(COLS)
-    .eq('tipo', tipo).eq('status', 'encerrada')
+    .in('tipo', tipos).eq('status', 'encerrada')
     .order('encerrada_em', { ascending: false, nullsFirst: false })
     .limit(n);
   if (error) throw new Error(`getUltimasEncerradasDoTipo: ${error.message}`);
@@ -311,6 +387,25 @@ export async function gravarRegraTreino(
   const { error } = await client.from('monitoring_treino')
     .insert({ tipo, instrucao, ativo: true });
   if (error) throw new Error(`gravarRegraTreino: ${error.message}`);
+}
+
+// "apaga essa regra": desfaz a ÚLTIMA regra ativa criada há menos de 10min
+// (janela curta de arrependimento — regra velha não some por engano).
+const TTL_DESFAZER_REGRA_MS = 10 * 60 * 1000;
+
+export async function desativarUltimaRegraRecente(client: SupabaseClient): Promise<boolean> {
+  const desde = new Date(Date.now() - TTL_DESFAZER_REGRA_MS).toISOString();
+  const { data, error } = await client.from('monitoring_treino')
+    .select('id')
+    .eq('ativo', true).gte('created_at', desde)
+    .order('created_at', { ascending: false })
+    .limit(1).maybeSingle();
+  if (error) throw new Error(`desativarUltimaRegraRecente: ${error.message}`);
+  if (!data) return false;
+  const { error: e2 } = await client.from('monitoring_treino')
+    .update({ ativo: false }).eq('id', (data as { id: string }).id);
+  if (e2) throw new Error(`desativarUltimaRegraRecente: ${e2.message}`);
+  return true;
 }
 
 export async function getConfig(client: SupabaseClient): Promise<ConfigAutonomia> {

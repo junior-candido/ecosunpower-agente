@@ -17,6 +17,8 @@ import {
   getQuedasEncerradasPorLimpeza, getAbordagemAjustando, getAbordagemErrouPendente,
   getUltimasEncerradasDoTipo, getRegrasTreino, gravarRegraTreino,
   getConfig, setAutonomia, marcarBloqueioTemplateAvisado,
+  getPresasEmProposta, getConversasEsfriadas, marcarLembreteSeSemResposta,
+  consumirMarcadorTemplate, desativarUltimaRegraRecente,
 } from './abordagens-repo.js';
 import type { AbordagemRow, AbordagemTipo, AbordagemDesfecho } from './tipos.js';
 import { tarifaPorConcessionaria } from '../../solar-params.js';
@@ -39,6 +41,12 @@ export interface OrqDeps {
 }
 
 const FOOTER = 'Monitoramento · Eva';
+
+// Vassoura de estados presos (sub-passo e do cron): re-oferta pro Junior,
+// expiração de proposta órfã e encerramento de conversa que esfriou.
+const VASSOURA_REOFERTA_DIAS = 3;
+const VASSOURA_EXPIRA_DIAS = 7;
+const VASSOURA_ESFRIA_DIAS = 5;
 
 const ROTULO_TIPO: Record<AbordagemTipo, string> = {
   parabens: '☀️ parabéns trimestral',
@@ -142,6 +150,14 @@ async function recomputarDados(
     dados.trimestre = await getTrimestre(client, sistema, hoje);
   }
   return dados;
+}
+
+// I4: sem o número obrigatório do tipo (integração fora do ar?) a redação sai
+// vazia ou inventada — quem chama decide pular ou avisar o Junior.
+function faltaDadoChave(tipo: AbordagemTipo, dados: ContextoRedacao['dados']): boolean {
+  if (tipo === 'offline') return dados.diasOffline == null;
+  if (tipo === 'queda') return dados.percentualQueda == null;
+  return dados.trimestre == null; // parabens/depoimento
 }
 
 // ---------------------------------------------------------------------------
@@ -444,17 +460,45 @@ export async function handleTextoAdminAjuste(deps: OrqDeps, texto: string): Prom
   const client = deps.supabase;
   const t = texto.trim();
   if (!t) return false;
+  // Comando ou clique de botão NUNCA é ajuste/feedback — deixa passar pro
+  // fluxo normal do admin em vez de virar regra de treino sem querer.
+  if (t.startsWith('/') || /^(finrec|finrcv|finlan|mab|evabt|prop|menu_):/.test(t)) return false;
+  // "cancela"/"deixa" sozinhos = desistência do marcador pendente (palavra
+  // EXATA: "deixa mais informal" continua sendo ajuste legítimo).
+  const ehDesistencia = /^(cancela|deixa)[\s.!…]*$/i.test(t);
   try {
+    // 0) "apaga essa regra" — arrependimento da última regra gravada (< 10min)
+    if (/^apaga essa regra[\s.!…]*$/i.test(t)) {
+      const apagou = await desativarUltimaRegraRecente(client);
+      if (apagou) {
+        await deps.sendText(deps.adminPhone, 'Apagada — essa regra não vale mais.');
+        return true;
+      }
+      return false; // sem regra recente: não engole a conversa
+    }
+
     // 1) [Ajustar] pendente → reescreve com o pedido como ordem prioritária
     const ajustando = await getAbordagemAjustando(client);
     if (ajustando) {
+      if (ehDesistencia) {
+        await atualizarAbordagem(client, ajustando.id, { nota_observacao: null });
+        await deps.sendText(deps.adminPhone, 'Ok, deixei como estava.');
+        return true;
+      }
       const lead = await getLeadBasico(client, ajustando.lead_id);
       const sistema = await getSistemaBasico(client, ajustando.sistema_id);
+      const dados = await recomputarDados(client, ajustando, new Date());
+      // I4: sem o número obrigatório do tipo, reescrever seria inventar dado.
+      if (faltaDadoChave(ajustando.tipo, dados)) {
+        await deps.sendText(deps.adminPhone,
+          'Os números da usina sumiram (integração?) — não dá pra reescrever agora.');
+        return true;
+      }
       const msg = await redigirMensagem(deps.anthropic, {
         tipo: ajustando.tipo, etapa: ajustando.etapa,
         objetivo: objetivoDoDegrau(ajustando.tipo, ajustando.etapa),
         clienteNome: lead?.name ?? 'cliente',
-        dados: await recomputarDados(client, ajustando, new Date()),
+        dados,
         regrasTreino: await getRegrasTreino(client, ajustando.tipo),
         ajusteDoJunior: t, mensagemAnterior: ajustando.mensagem_proposta,
       });
@@ -470,15 +514,25 @@ export async function handleTextoAdminAjuste(deps: OrqDeps, texto: string): Prom
       await deps.waba.sendInteractiveButtons(deps.adminPhone,
         `🟡 Reescrevi — ${sistema?.apelido ?? 'usina'} (${ROTULO_TIPO[ajustando.tipo]}):\n\n"${msg}"`,
         BOTOES_APROVACAO(ajustando.id), FOOTER);
+      // Eco da regra: o Junior confere o que virou treino permanente.
+      await deps.sendText(deps.adminPhone,
+        `Anotei como regra: "${t}". Se não era isso, manda "apaga essa regra".`);
       return true;
     }
 
     // 2) [👎 Errou] esperando o "o que errou" (janela 1h no repo)
     const errou = await getAbordagemErrouPendente(client);
     if (errou) {
+      if (ehDesistencia) {
+        // fecha a vaga sem regra ('[sem detalhe]' tira do getAbordagemErrouPendente)
+        await atualizarAbordagem(client, errou.id, { nota_observacao: '[sem detalhe]' });
+        await deps.sendText(deps.adminPhone, 'Ok, deixei como estava.');
+        return true;
+      }
       await atualizarAbordagem(client, errou.id, { nota_observacao: t.slice(0, 500) });
       await gravarRegraTreino(client, errou.tipo, t);
-      await deps.sendText(deps.adminPhone, 'Anotei — virou regra de treino pras próximas. 🙏');
+      await deps.sendText(deps.adminPhone,
+        `Anotei como regra: "${t}". Se não era isso, manda "apaga essa regra".`);
       return true;
     }
 
@@ -503,9 +557,12 @@ export async function handleRespostaCliente(
     const lead = await getLeadBasico(client, abordagem.lead_id);
 
     // registra a resposta + status em_conversa (CAS a partir dos status vivos)
-    await mudarStatusAbordagem(client, abordagem.id,
+    const ok = await mudarStatusAbordagem(client, abordagem.id,
       ['enviada', 'em_conversa', 'lembrete_enviado'], 'em_conversa',
       { ultima_resposta_cliente_em: agora });
+    // CAS falhou = o cron encerrou no MESMO instante (corrida): já fechada,
+    // não reabre nem responde pela abordagem — a Eva normal cuida da mensagem.
+    if (!ok) return;
 
     if (!lead?.phone) return;
 
@@ -526,11 +583,11 @@ export async function handleRespostaCliente(
 
     if (ehPodeContar || posTemplate) {
       // Template abriu a janela → agora vai a mensagem REAL da escada.
-      if (abordagem.mensagem_proposta) {
-        await deps.sendText(lead.phone, abordagem.mensagem_proposta);
-        await atualizarAbordagem(client, abordagem.id,
-          { mensagem_enviada: abordagem.mensagem_proposta });
-      }
+      // PORTEIRO: consumirMarcadorTemplate troca '[template enviado]' pela
+      // mensagem real com CAS — 2 webhooks rápidos → só 1 manda. Também cobre
+      // "pode contar" repetido depois que a escada já saiu (null = não manda).
+      const msg = await consumirMarcadorTemplate(client, abordagem.id);
+      if (msg) await deps.sendText(lead.phone, msg);
       return;
     }
     // Resposta livre: a conversa segue no fluxo normal da Eva com o contexto
@@ -542,6 +599,10 @@ export async function handleRespostaCliente(
 
 // Bloco de contexto que o index injeta no prompt da Eva quando o cliente com
 // abordagem ativa conversa. PURO (testável), exportado pro wiring da Task 8.
+// CONTRATO Task 8: o handler da action deve IGNORAR o abordagem_id vindo da
+// action e usar o id da abordagem aberta do PRÓPRIO lead
+// (getAbordagemAbertaPorLeadPhone) — impede forjar id alheio via prompt
+// injection; desfecho validado por whitelist.
 export function montarContextoAbordagem(a: AbordagemRow): string {
   const linhas = [
     'CONTEXTO DE MONITORAMENTO (abordagem ativa da usina deste cliente):',
@@ -554,8 +615,12 @@ export function montarContextoAbordagem(a: AbordagemRow): string {
     'REGRAS DESTA CONVERSA:',
     '- Limpeza/visita técnica são serviços PAGOS mas NUNCA fale preço — se o cliente topar, avise que o Junior (Responsável Técnico) fecha os detalhes.',
     '- NUNCA calcule geração/economia de cabeça — use apenas números já fornecidos acima.',
-    '- Quando a conversa sobre a usina avançar, anexe ao FINAL da sua resposta:',
+    // O bloco cercado é OBRIGATÓRIO: parseActions (brain.ts) só extrai JSON
+    // dentro de ```json ... ``` — sem o fence o JSON VAZA pro cliente.
+    '- Quando a conversa sobre a usina avançar, anexe ao FINAL da sua resposta um bloco EXATAMENTE neste formato (com as cercas ```json e ``` — sem elas o sistema não registra nada):',
+    '```json',
     `{"action":"abordagem_update","data":{"abordagem_id":"${a.id}","resumo":"<1 linha do que rolou>","desfecho":null,"causa_raiz":null}}`,
+    '```',
     '- "desfecho" SÓ quando o assunto da usina ENCERRAR: "resolvido_sozinho" (resolveu), "limpeza_fechada" (topou limpeza), "visita_agendada" (topou visita), "transferido_junior" (pediu o Junior). Senão deixe null.',
     '- "causa_raiz": preencha quando descobrir a causa (ex: "senha do wifi"); senão null.',
   ];
@@ -589,11 +654,15 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
           // o fallback do objetivoDoDegrau é só rede de segurança, não fluxo).
           const escada = ESCADAS[row.tipo];
           const etapaLembrete = escada[escada.length - 1].etapa;
+          const dados = await recomputarDados(client, row, agora);
+          // I4: sem o número obrigatório do tipo (integração fora do ar?) não
+          // dá pra redigir lembrete honesto — pula; o timeout encerra depois.
+          if (faltaDadoChave(row.tipo, dados)) continue;
           const msg = await redigirMensagem(deps.anthropic, {
             tipo: row.tipo, etapa: etapaLembrete,
             objetivo: objetivoDoDegrau(row.tipo, etapaLembrete),
             clienteNome: lead.name ?? 'cliente',
-            dados: await recomputarDados(client, row, agora),
+            dados,
             regrasTreino: await getRegrasTreino(client, row.tipo),
             ajusteDoJunior: null, mensagemAnterior: null,
           });
@@ -605,17 +674,18 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
             console.log(`[abordagem] DRY lembrete ${row.id}: ${msg}`);
             continue;
           }
-          // CAS porteiro ANTES do envio (mesma lição do enviarParaCliente).
-          const ok = await mudarStatusAbordagem(client, row.id,
-            ['enviada', 'em_conversa'], 'lembrete_enviado',
-            { lembrete_em: agoraIso, etapa: etapaLembrete });
-          if (!ok) continue;
+          // CAS porteiro ANTES do envio (mesma lição do enviarParaCliente),
+          // e DEDICADO: além do status, exige que o cliente NÃO tenha
+          // respondido — a janela desde o fetch incluiu uma chamada de LLM
+          // (segundos); lembrete não pode atropelar resposta do cliente.
+          const ok = await marcarLembreteSeSemResposta(client, row.id, agoraIso, etapaLembrete);
+          if (!ok) continue; // cliente respondeu no meio (ou já tratada)
           try {
             await deps.sendText(lead.phone, msg);
           } catch (err) {
-            // Falha de envio não desfaz o estado: lembrete é melhor-esforço e
-            // perder UM lembrete é mais barato que arriscar mandar 2 (spam).
-            console.error('[abordagem] envio de lembrete falhou:', (err as Error).message);
+            // Falha de envio não desfaz o estado: lembrete perdido é aceitável
+            // (o encerramento por timeout cobre) — pior seria arriscar 2 (spam).
+            console.warn('[abordagem] envio de lembrete falhou:', (err as Error).message);
           }
         } catch (err) {
           console.error('[abordagem] lembrete falhou:', (err as Error).message);
@@ -631,13 +701,15 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
     const fila = await getAbordagensParaEncerrar(client, agoraIso, RITMO.ENCERRA_DIAS);
     for (const row of fila) {
       try {
+        // I5: dry-run ANTES do CAS — homologação loga e NÃO muta (igual ao
+        // lembrete); o encerramento real ainda precisa rodar sem dry-run.
+        if (deps.dryRun) {
+          console.log(`[abordagem] DRY encerraria sem resposta: ${row.id}`);
+          continue;
+        }
         const ok = await mudarStatusAbordagem(client, row.id, ['lembrete_enviado'], 'encerrada',
           { desfecho: 'sem_resposta', encerrada_em: agoraIso });
         if (!ok) continue;
-        if (deps.dryRun) {
-          console.log(`[abordagem] DRY encerrada sem resposta: ${row.id}`);
-          continue;
-        }
         const lead = await getLeadBasico(client, row.lead_id);
         const sistema = await getSistemaBasico(client, row.sistema_id);
         await deps.waba.sendInteractiveButtons(deps.adminPhone,
@@ -729,21 +801,27 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
           console.log(`[abordagem] DRY pós-limpeza ${row.id}: recuperação ${pct}%`);
           continue;
         }
-        // Porteiro: marca '[followup feito]' ANTES de mandar (roda 1× só;
-        // preserva observação anterior se existir).
+        // M2: '[followup feito]' marca SÓ depois do envio OK (preserva
+        // observação anterior). Marcar antes perdia a comemoração em falha de
+        // envio; fora da janela 24h NÃO marca — re-tenta no próximo ciclo (a
+        // janela pode abrir; a faixa de 20 dias expira sozinha).
         const marca = row.nota_observacao
           ? `${row.nota_observacao} [followup feito]` : '[followup feito]';
-        await atualizarAbordagem(client, row.id, { nota_observacao: marca });
 
         if (pct >= 10) {
           const lead = await getLeadBasico(client, row.lead_id);
-          if (!lead?.phone) continue;
+          if (!lead?.phone) {
+            // sem telefone NUNCA vai dar — marca pra não re-tentar pra sempre
+            await atualizarAbordagem(client, row.id, { nota_observacao: marca });
+            continue;
+          }
           let aberta = false;
           try { aberta = await deps.janela24hAberta(lead.phone); } catch { aberta = false; }
-          if (!aberta) continue; // fora da janela: comemorar não vale template
+          if (!aberta) continue; // fora da janela: comemorar não vale template (sem marcar)
           // Número PRONTO em texto fixo (determinístico > IA pra 1 frase).
           const msg = `Boa notícia, ${primeiroNome(lead.name)}! Depois da limpeza a sua usina está gerando ${pct}% a mais ☀️👏 Valeu a pena o cuidado — qualquer coisa, é só me chamar!`;
           await deps.sendText(lead.phone, msg);
+          await atualizarAbordagem(client, row.id, { nota_observacao: marca });
           // Diário: follow-up registrado como abordagem já encerrada (etapa 9 =
           // marcador de follow-up, fora da escada de redação de propósito).
           const { error } = await client.from('monitoring_abordagens').insert({
@@ -759,14 +837,98 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
           const sistema = await getSistemaBasico(client, row.sistema_id);
           await deps.sendText(deps.adminPhone,
             `⚠️ ${lead?.name ?? sistema?.apelido ?? 'Cliente'} limpou as placas mas a geração CAIU ${Math.abs(pct)}% — pode ser problema técnico, vale olhar.`);
+          await atualizarAbordagem(client, row.id, { nota_observacao: marca });
+        } else {
+          // 0 <= pct < 10: melhora tímida — nada a comemorar; marca e segue.
+          await atualizarAbordagem(client, row.id, { nota_observacao: marca });
         }
-        // 0 <= pct < 10: melhora tímida — nada a comemorar, segue marcado.
       } catch (err) {
         console.error('[abordagem] pós-limpeza falhou:', (err as Error).message);
       }
     }
   } catch (err) {
     console.error('[abordagem] ciclo pós-limpeza falhou:', (err as Error).message);
+  }
+
+  // e. VASSOURA — estados presos pra sempre (falha de rede no template, botões
+  //    que falharam, Junior que nunca clicou, conversa que esfriou). Com o
+  //    unique parcial, cada um deles bloqueia a usina em silêncio.
+  try {
+    const presas = await getPresasEmProposta(client,
+      addDias(agora, -VASSOURA_REOFERTA_DIAS).toISOString());
+    const corteExpira = addDias(agora, -VASSOURA_EXPIRA_DIAS).toISOString();
+    for (const row of presas) {
+      try {
+        if (row.status === 'proposta') {
+          // 'proposta' presa = falha silenciosa (nunca chegou a existir pro
+          // Junior). > 7 dias: expira SEM aviso, libera a usina.
+          if (row.updated_at >= corteExpira) continue;
+          if (deps.dryRun) {
+            console.log(`[abordagem] DRY vassoura expiraria proposta presa: ${row.id}`);
+            continue;
+          }
+          await mudarStatusAbordagem(client, row.id, ['proposta'], 'encerrada',
+            { desfecho: 'descartada_junior', encerrada_em: agoraIso, nota_observacao: '[expirada pela vassoura]' });
+          continue;
+        }
+        // 'aguardando_aprovacao' presa há > 3 dias: re-manda os botões 1× —
+        // marcador '[reofertada]' impede repetir; o bump do updated_at
+        // (atualizarAbordagem) tira da fila da vassoura por mais 3 dias.
+        if ((row.nota_observacao ?? '').includes('[reofertada]')) continue;
+        if (deps.dryRun) {
+          console.log(`[abordagem] DRY vassoura re-ofertaria: ${row.id}`);
+          continue;
+        }
+        const sistema = await getSistemaBasico(client, row.sistema_id);
+        await atualizarAbordagem(client, row.id, {
+          nota_observacao: row.nota_observacao
+            ? `${row.nota_observacao} [reofertada]` : '[reofertada]',
+        });
+        await deps.waba.sendInteractiveButtons(deps.adminPhone,
+          `🟡 Essa abordagem está parada há ${VASSOURA_REOFERTA_DIAS}+ dias esperando você — ${sistema?.apelido ?? 'usina'} (${ROTULO_TIPO[row.tipo]}):\n\n"${row.mensagem_proposta ?? ''}"`,
+          BOTOES_APROVACAO(row.id), FOOTER);
+      } catch (err) {
+        console.error('[abordagem] vassoura (presa) falhou:', (err as Error).message);
+      }
+    }
+  } catch (err) {
+    console.error('[abordagem] ciclo da vassoura (presas) falhou:', (err as Error).message);
+  }
+
+  try {
+    const esfriadas = await getConversasEsfriadas(client,
+      addDias(agora, -VASSOURA_ESFRIA_DIAS).toISOString());
+    for (const row of esfriadas) {
+      try {
+        if (deps.dryRun) {
+          console.log(`[abordagem] DRY vassoura encerraria esfriada: ${row.id}`);
+          continue;
+        }
+        // Teve resposta, então 'sem_resposta' seria mentira e nenhum outro
+        // desfecho do enum é verdade — encerra com desfecho NULL (a coluna
+        // aceita) e marca '[conversa esfriou]' (preservando observação).
+        const ok = await mudarStatusAbordagem(client, row.id, ['em_conversa'], 'encerrada', {
+          encerrada_em: agoraIso,
+          nota_observacao: row.nota_observacao
+            ? `${row.nota_observacao} [conversa esfriou]` : '[conversa esfriou]',
+        });
+        if (!ok) continue;
+        const lead = await getLeadBasico(client, row.lead_id);
+        const sistema = await getSistemaBasico(client, row.sistema_id);
+        const nome = lead?.name ?? sistema?.apelido ?? 'Cliente';
+        // Resumo de feedback normal (👍/👎) — o Junior fica sabendo e treina.
+        await deps.waba.sendInteractiveButtons(deps.adminPhone,
+          `📋 ${nome}: ${row.resposta_resumo ?? 'conversa com a Eva'} (conversa esfriou sem desfecho)`,
+          [
+            { id: `mab:fb-boa:${row.id}`, title: '👍 Boa' },
+            { id: `mab:fb-errou:${row.id}`, title: '👎 Errou' },
+          ], FOOTER);
+      } catch (err) {
+        console.error('[abordagem] vassoura (esfriada) falhou:', (err as Error).message);
+      }
+    }
+  } catch (err) {
+    console.error('[abordagem] ciclo da vassoura (esfriadas) falhou:', (err as Error).message);
   }
 }
 

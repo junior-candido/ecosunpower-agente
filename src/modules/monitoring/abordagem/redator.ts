@@ -24,7 +24,7 @@ export function montarPromptAbordagem(c: ContextoRedacao): string {
   const dados: string[] = [];
   if (c.dados.percentualQueda != null) dados.push(`queda de geração: ${c.dados.percentualQueda}% abaixo do esperado`);
   if (c.dados.diasOffline != null) dados.push(`dias sem enviar dados: ${c.dados.diasOffline}`);
-  if (c.dados.trimestre) dados.push(`gerou no trimestre: ${c.dados.trimestre.kwh} kWh (~R$ ${c.dados.trimestre.reais.toFixed(2)} de economia)`);
+  if (c.dados.trimestre) dados.push(`gerou no trimestre: ${c.dados.trimestre.kwh} kWh (~R$ ${c.dados.trimestre.reais.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} de economia)`);
   if (c.dados.causaRaizAnterior) {
     // Sanitize: vem de conversa com cliente — não pode virar comando de prompt.
     const causaSafe = c.dados.causaRaizAnterior.replace(/\s+/g, ' ').slice(0, 200);
@@ -63,6 +63,16 @@ export function limparMensagem(raw: string): string | null {
   return t.length > 0 ? t : null;
 }
 
+// Clamp de segurança: o corpo do interactive WABA estoura em 1024 chars com o
+// wrapper (rótulo + aspas) — 700 deixa folga. Corta no último espaço pra não
+// picar palavra no meio.
+export function clampMensagem(s: string, max = 700): string {
+  if (s.length <= max) return s;
+  const corte = s.slice(0, max);
+  const ultimoEspaco = corte.lastIndexOf(' ');
+  return (ultimoEspaco > 0 ? corte.slice(0, ultimoEspaco) : corte).trimEnd() + '…';
+}
+
 // ---------------------------------------------------------------------------
 // Chamada de IA (fina, sem teste unitário) — Opus escreve, Haiku é fallback.
 // ---------------------------------------------------------------------------
@@ -79,5 +89,6 @@ export async function redigirMensagem(client: Anthropic, ctx: ContextoRedacao): 
     response = await client.messages.create({ model: MODELO_RAPIDO, max_tokens: 512, messages: [{ role: 'user', content: prompt }] });
   }
   const raw = response.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('');
-  return limparMensagem(raw);
+  const limpa = limparMensagem(raw);
+  return limpa === null ? null : clampMensagem(limpa);
 }
