@@ -22,8 +22,13 @@ export interface ExtracaoLancamento {
 function numeroOuNull(v: unknown): number | null {
   if (typeof v === 'number' && isFinite(v) && v > 0) return v;
   if (typeof v === 'string') {
-    const n = parseFloat(v.replace(/\./g, '').replace(',', '.'));
-    if (isFinite(n) && n > 0) return n;
+    const s = v.trim().replace(/^R\$\s*/, '');
+    // Só formato BR inequívoco: "380", "380,50", "1.234,56". Formato ambíguo
+    // (ex. "380.50" americano) → null e a Eva pergunta — dinheiro não se chuta.
+    if (/^\d{1,3}(\.\d{3})*(,\d{1,2})?$/.test(s) || /^\d+(,\d{1,2})?$/.test(s)) {
+      const n = parseFloat(s.replace(/\./g, '').replace(',', '.'));
+      if (isFinite(n) && n > 0) return n;
+    }
   }
   return null;
 }
@@ -140,11 +145,13 @@ export async function gateTextoFinanceiro(client: Anthropic, texto: string): Pro
   }
 }
 
+// hoje = data em America/Sao_Paulo (BRT). NUNCA new Date().toISOString() direto — das 21h às 0h o servidor UTC já virou o dia.
 export async function extrairDeTexto(client: Anthropic, texto: string, hoje: string): Promise<ExtracaoLancamento | null> {
   const raw = await chamarComFallback(client, [{ role: 'user', content: montarPromptExtracaoTexto(texto, hoje) }], 1024);
   return parseRespostaExtrator(raw);
 }
 
+// hoje = data em America/Sao_Paulo (BRT). NUNCA new Date().toISOString() direto — das 21h às 0h o servidor UTC já virou o dia.
 export async function extrairDeImagem(client: Anthropic, base64: string, mediaType: string, hoje: string): Promise<ExtracaoLancamento | null> {
   const mt = (['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mediaType) ? mediaType : 'image/jpeg') as
     'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
@@ -158,6 +165,7 @@ export async function extrairDeImagem(client: Anthropic, base64: string, mediaTy
   return parseRespostaExtrator(raw);
 }
 
+// hoje = data em America/Sao_Paulo (BRT). NUNCA new Date().toISOString() direto — das 21h às 0h o servidor UTC já virou o dia.
 export async function extrairDePdf(client: Anthropic, base64: string, hoje: string): Promise<ExtracaoLancamento | null> {
   const raw = await chamarComFallback(client, [{
     role: 'user',

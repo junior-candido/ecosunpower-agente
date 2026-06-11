@@ -36,6 +36,15 @@ describe('financeiro/extrator: parse da resposta da IA', () => {
     const e = parseRespostaExtrator('{"financeiro":true,"intencao":"explodir","tipo":"despesa","valor":10}');
     expect(e?.intencao).toBe('lancar');
   });
+  it('valor "1.234,56" (milhar BR) vira 1234.56', () => {
+    const e = parseRespostaExtrator('{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":"1.234,56"}');
+    expect(e?.valor).toBe(1234.56);
+  });
+  it('valor "380.50" (formato americano ambíguo) vira null — nunca 38050', () => {
+    const e = parseRespostaExtrator('{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":"380.50"}');
+    expect(e?.valor).toBeNull();
+    expect(e?.campos_faltando).toContain('valor');
+  });
 });
 
 describe('financeiro/extrator: prompts', () => {

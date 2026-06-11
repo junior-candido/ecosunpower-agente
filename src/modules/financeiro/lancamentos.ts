@@ -35,7 +35,7 @@ export function validarParaConfirmar(c: CamposLancamento): { ok: boolean; faltan
 
 export function normalizarContraparte(s: string | null | undefined): string {
   if (!s) return '';
-  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
 export interface ChaveDuplicado { valor: number; contraparte: string | null; data_evento: string }
@@ -46,7 +46,7 @@ export function ehDuplicado(novo: ChaveDuplicado, existentes: ChaveDuplicado[]):
   const c = normalizarContraparte(novo.contraparte);
   if (!c) return false; // sem contraparte não dá pra afirmar nada
   return existentes.some((e) =>
-    Math.abs(e.valor - novo.valor) < 0.01 &&
+    Math.round(e.valor * 100) === Math.round(novo.valor * 100) &&
     normalizarContraparte(e.contraparte) === c &&
     e.data_evento === novo.data_evento);
 }
