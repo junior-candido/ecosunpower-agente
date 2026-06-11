@@ -20,20 +20,22 @@ pelo `instalador-banco-ecosof.sql`. Os demais precisam ser criados manualmente.
 | `estudos-personalizados` | **Privado** | Manual | Fotos e vídeos de proposta personalizada (3 fotos + 1 vídeo por proposta) |
 | `cases-videos` | **Público** | Manual | Vídeos dos cases de sucesso (depoimentos em vídeo do site) |
 | `financeiro-comprovantes` | **Privado** | Manual | Comprovantes fiscais/financeiros enviados via WhatsApp |
+| `testimonials` | **Público** | Manual | Vídeos de depoimento recebidos pelo WhatsApp (index.ts valida no boot e avisa se faltar) |
+| `branding` | **Privado** | Manual | Logo da empresa do clone (proposta/PDF) — parametrização EcoSof; sem ele, usa a logo embutida (fallback) |
 
 ---
 
 ## Passos de criação manual (Storage Dashboard)
 
 ### Buckets Públicos
-`ad-creatives`, `cases-videos`
+`ad-creatives`, `cases-videos`, `testimonials`
 
 1. New bucket → nome conforme tabela
 2. Marcar **Public bucket** ✓
 3. Salvar
 
 ### Buckets Privados
-`client-attachments`, `estudos-personalizados`, `financeiro-comprovantes`
+`client-attachments`, `estudos-personalizados`, `financeiro-comprovantes`, `branding`
 
 1. New bucket → nome conforme tabela
 2. **NÃO** marcar Public bucket
