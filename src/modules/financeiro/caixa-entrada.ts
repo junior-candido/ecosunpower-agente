@@ -13,7 +13,7 @@ import {
   criarPendente, getLancamento, mudarStatus, atualizarPendente,
   getPendenteAguardando, getConfirmadosDoDia, getUltimoConfirmado,
   buscarConfirmadoPorContraparte, expirarPendentesAntigos, getCategorias,
-  buscarContaAbertaPorNome, type LancamentoRow,
+  buscarContaAbertaPorNome, gravarContaNoLancamento, type LancamentoRow,
 } from './lancamentos-repo.js';
 import { uploadComprovante } from './comprovantes.js';
 import {
@@ -113,6 +113,8 @@ async function mandarResumo(deps: CaixaDeps, from: string, lancamentoId: string)
   if (!row || row.status !== 'pendente') return;
 
   // Entrada que cita cliente com venda em aberto → oferece vincular (motor Fatia 2).
+  // Escolha: a oferta de vínculo pula o aviso de duplicado — 2 PIX iguais do mesmo
+  // cliente no dia são plausíveis e o admin vê o valor no botão.
   if (row.tipo === 'entrada' && row.pf_pj === 'PJ') {
     const nomeBusca = (row.extracao?.obra_ref as string | undefined) ?? row.contraparte ?? '';
     if (nomeBusca) {
@@ -161,12 +163,20 @@ export async function tryHandleFinanceiroMedia(
 export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, texto: string): Promise<boolean> {
   try {
     // 1) Tem pendente esperando resposta (PF/PJ por texto, valor, correção)?
-    const aguardando = await getPendenteAguardando(deps.supabase);
+    const aguardando = await getPendenteAguardando(deps.supabase, from);
     if (aguardando) {
       const hoje = hojeBRT();
       const contexto = `O lançamento pendente atual é: ${JSON.stringify(aguardando.extracao)}. ` +
-        `A resposta do dono abaixo CORRIGE/COMPLETA esse lançamento — devolva o JSON completo já mesclado.\n\nResposta: "${texto}"`;
+        `Se a resposta do dono abaixo CORRIGE/COMPLETA esse lançamento, devolva o JSON completo já mesclado com "relacionado": true. ` +
+        `Se for um lançamento NOVO (outro gasto/entrada, sem relação com o pendente), devolva o JSON do novo com "relacionado": false.\n\nResposta: "${texto}"`;
       const e = await extrairDeTexto(deps.anthropic, contexto, hoje);
+      if (e && e.financeiro && e.relacionado === false) {
+        // Lançamento NOVO no meio da conversa: solta o pendente atual (fica
+        // confirmável por clique) e cria o novo — os DOIS sobrevivem.
+        await atualizarPendente(deps.supabase, aguardando.id, { extracao: { ...aguardando.extracao, aguardando: false } });
+        await criarPendenteEFalar(deps, from, e, null);
+        return true;
+      }
       if (e && e.financeiro) {
         const cats = await getCategorias(deps.supabase);
         const cat = cats.find((c) => c.slug === resolverCategoria(e.categoria_slug)) ?? null;
@@ -241,9 +251,11 @@ export async function handleFinlanButton(deps: CaixaDeps, from: string, buttonId
   try {
     switch (acao) {
       case 'pf': case 'pj': {
-        await atualizarPendente(deps.supabase, id, { pf_pj: acao.toUpperCase() });
         const row = await getLancamento(deps.supabase, id);
-        if (row) await atualizarPendente(deps.supabase, id, { extracao: { ...row.extracao, aguardando: false } });
+        if (!row || row.status !== 'pendente') { await deps.sendText(from, 'Esse lançamento não está mais pendente.'); return true; }
+        await atualizarPendente(deps.supabase, id, {
+          pf_pj: acao.toUpperCase(), extracao: { ...row.extracao, aguardando: false },
+        });
         await mandarResumo(deps, from, id);
         return true;
       }
@@ -256,6 +268,7 @@ export async function handleFinlanButton(deps: CaixaDeps, from: string, buttonId
         const v = validarParaConfirmar({ tipo: row.tipo, valor: Number(row.valor), data_evento: row.data_evento, pf_pj: row.pf_pj });
         if (!v.ok) {
           if (v.faltando.includes('pf_pj')) {
+            await atualizarPendente(deps.supabase, id, { extracao: { ...row.extracao, aguardando: true } });
             const msg = montarPedidoPfPj(id);
             await deps.waba.sendInteractiveButtons(from, msg.body, msg.buttons, FOOTER);
           } else {
@@ -294,10 +307,15 @@ export async function handleFinlanButton(deps: CaixaDeps, from: string, buttonId
       }
       case 'vinc': {
         // finlan:vinc:<lancamentoId>:<contaId> — entrada casa com venda aberta.
+        if (!extra) { console.warn('[caixa-entrada] vinc sem contaId'); return true; }
         const row = await getLancamento(deps.supabase, id);
         if (!row || row.status !== 'pendente') { await deps.sendText(from, 'Esse lançamento não está mais pendente.'); return true; }
-        const r = await registrarRecebimento(deps.supabase, extra, Number(row.valor) > 0 ? Number(row.valor) : undefined);
-        await mudarStatus(deps.supabase, id, 'pendente', 'confirmado', { conta_id: extra });
+        // CAS no lançamento ANTES do dinheiro: clique duplo para aqui (1 recebimento só).
+        // Crash depois do CAS deixa lançamento confirmado SEM recebimento — faltando e
+        // detectável, nunca duplicado (mesmo invariante da Fatia 2, contas.ts).
+        const ok = await mudarStatus(deps.supabase, id, 'pendente', 'confirmado', { conta_id: extra });
+        if (!ok) { await deps.sendText(from, 'Esse lançamento já tinha sido processado.'); return true; }
+        const r = await registrarRecebimento(deps.supabase, extra, Number(row.valor));
         const aviso = r.total
           ? `💵 Recebimento total na venda: ${brl(r.acumulado)}.`
           : `💵 Parcela na venda: ${brl(r.parcela)} (falta ${brl(r.saldoRestante)}).`;
@@ -313,15 +331,19 @@ export async function handleFinlanButton(deps: CaixaDeps, from: string, buttonId
       case 'atv': {
         // finlan:atv:<lancamentoId>:<atividadeId> — entrada avulsa PJ: cria conta
         // avulsa + recebimento total imediato (motor Fatia 2 → imposto/RBT12 certos).
+        if (!extra) { console.warn('[caixa-entrada] atv sem atividadeId'); return true; }
         const row = await getLancamento(deps.supabase, id);
         if (!row || row.status !== 'pendente') { await deps.sendText(from, 'Esse lançamento não está mais pendente.'); return true; }
+        // CAS porteiro ANTES de criar a conta: clique duplo não cria 2ª conta avulsa.
+        const ok = await mudarStatus(deps.supabase, id, 'pendente', 'confirmado');
+        if (!ok) { await deps.sendText(from, 'Esse lançamento já tinha sido processado.'); return true; }
         const { contaId } = await criarContaDeFechamento(deps.supabase, {
           fechamentoId: null, leadId: row.lead_id, atividadeId: extra,
           descricao: `Entrada avulsa — ${row.contraparte ?? row.descricao ?? 'sem descrição'}`,
           valor: Number(row.valor), createdBy: from,
         });
         const r = await registrarRecebimento(deps.supabase, contaId);
-        await mudarStatus(deps.supabase, id, 'pendente', 'confirmado', { conta_id: contaId });
+        await gravarContaNoLancamento(deps.supabase, id, contaId);
         await deps.sendText(from, `💰 Entrada avulsa lançada: ${brl(Number(row.valor))}.\nImposto (Anexo ${r.calc.anexo}): *${brl(r.calc.imposto)}* — separe pro DAS.`);
         return true;
       }

@@ -1,7 +1,7 @@
 // src/modules/financeiro/lancamentos-repo.ts
 // I/O fino da Caixa de Entrada. Regras puras ficam em lancamentos.ts.
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { competenciaDe, type ChaveDuplicado } from './lancamentos.js';
+import { competenciaDe, TTL_PENDENTE_MS, type ChaveDuplicado } from './lancamentos.js';
 
 export interface LancamentoRow {
   id: string;
@@ -60,6 +60,15 @@ export async function mudarStatus(
   return Boolean(data && data.length > 0);
 }
 
+// Grava o vínculo da conta num lançamento JÁ confirmado (caso atv: o CAS
+// porteiro confirma antes de criar a conta — o id só existe depois).
+export async function gravarContaNoLancamento(client: SupabaseClient, id: string, contaId: string): Promise<void> {
+  const { error } = await client.from('financeiro_lancamentos')
+    .update({ conta_id: contaId, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) console.warn('[caixa-entrada] gravarContaNoLancamento falhou:', error.message);
+}
+
 export async function atualizarPendente(client: SupabaseClient, id: string, patch: Record<string, unknown>): Promise<void> {
   const { error } = await client.from('financeiro_lancamentos')
     .update({ ...patch, updated_at: new Date().toISOString() })
@@ -68,11 +77,13 @@ export async function atualizarPendente(client: SupabaseClient, id: string, patc
 }
 
 // Pendente mais recente "esperando" resposta do admin (campo faltando/correção).
-// Janela de 1h: mais velho que isso não engole resposta de texto.
-export async function getPendenteAguardando(client: SupabaseClient): Promise<LancamentoRow | null> {
+// Janela 1h = só pra ENGOLIR resposta de texto; o GC de 24h (expirarPendentesAntigos)
+// é outra coisa — pendente velho ainda confirma por clique explícito.
+export async function getPendenteAguardando(client: SupabaseClient, createdBy: string): Promise<LancamentoRow | null> {
   const desde = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const { data, error } = await client.from('financeiro_lancamentos').select(COLS)
     .eq('status', 'pendente').gte('created_at', desde)
+    .eq('created_by', createdBy)
     .contains('extracao', { aguardando: true })
     .order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (error) throw new Error(`getPendenteAguardando: ${error.message}`);
@@ -107,7 +118,7 @@ export async function buscarConfirmadoPorContraparte(client: SupabaseClient, ter
 
 // Varredura preguiçosa: roda ao criar pendente novo (sem cron). >24h expira.
 export async function expirarPendentesAntigos(client: SupabaseClient): Promise<void> {
-  const limite = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const limite = new Date(Date.now() - TTL_PENDENTE_MS).toISOString();
   const { error } = await client.from('financeiro_lancamentos')
     .update({ status: 'apagado', updated_at: new Date().toISOString() })
     .eq('status', 'pendente').lt('created_at', limite);

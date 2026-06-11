@@ -17,6 +17,7 @@ export interface ExtracaoLancamento {
   obra_ref: string | null;        // nome do cliente/obra citado, se houver
   descricao: string | null;
   campos_faltando: string[];
+  relacionado: boolean;           // false = lançamento NOVO (não mescla com pendente)
 }
 
 function numeroOuNull(v: unknown): number | null {
@@ -65,6 +66,7 @@ export function parseRespostaExtrator(raw: string): ExtracaoLancamento | null {
     obra_ref: strOuNull(obj.obra_ref),
     descricao: strOuNull(obj.descricao),
     campos_faltando: [...faltando],
+    relacionado: obj.relacionado !== false,
   };
 }
 

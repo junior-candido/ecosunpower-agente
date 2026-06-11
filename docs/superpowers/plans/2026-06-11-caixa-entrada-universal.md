@@ -1779,3 +1779,10 @@ git commit -m "chore(financeiro): build marker CAIXA-ENTRADA-2026-06-11"
 - **Imagem de admin baixada 2×** quando não é comprovante (interceptor + fluxo normal). Leve, raro.
 - **Correção de confirmado = apaga + recria** (auditável; mantém os dois no histórico).
 - **Entrada PJ avulsa** exige escolher atividade (botões) — é o que garante imposto certo via motor Fatia 2.
+
+## Erratas pós-review (11/06, Fase B)
+
+- **C1/C2 (clique duplo duplicava dinheiro):** nos cases `vinc`/`atv`, o CAS do lançamento (`mudarStatus pendente→confirmado`) virou PORTEIRO antes de `registrarRecebimento`/`criarContaDeFechamento`; retorno checado; `gravarContaNoLancamento` grava o vínculo depois. Crash deixa faltando (detectável), nunca duplicado.
+- **I1:** `getPendenteAguardando` filtra por `created_by` (multi-admin não mistura pendentes).
+- **I2:** merge de pendente pergunta `relacionado` à IA; lançamento novo durante pendente cria outro pendente (nada é engolido).
+- **M1-M4:** pf/pj em 1 update; `conf` faltando pf_pj seta aguardando; TTL_PENDENTE_MS exportado e único; comentários de escolha.

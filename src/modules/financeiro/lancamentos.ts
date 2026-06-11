@@ -51,7 +51,7 @@ export function ehDuplicado(novo: ChaveDuplicado, existentes: ChaveDuplicado[]):
     e.data_evento === novo.data_evento);
 }
 
-const TTL_PENDENTE_MS = 24 * 60 * 60 * 1000;
+export const TTL_PENDENTE_MS = 24 * 60 * 60 * 1000;
 
 export function pendenteExpirado(createdAt: string, agora: Date): boolean {
   return agora.getTime() - new Date(createdAt).getTime() > TTL_PENDENTE_MS;

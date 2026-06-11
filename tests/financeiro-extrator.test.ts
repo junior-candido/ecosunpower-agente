@@ -45,6 +45,10 @@ describe('financeiro/extrator: parse da resposta da IA', () => {
     expect(e?.valor).toBeNull();
     expect(e?.campos_faltando).toContain('valor');
   });
+  it('relacionado default true; false só quando explícito', () => {
+    expect(parseRespostaExtrator('{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":10}')?.relacionado).toBe(true);
+    expect(parseRespostaExtrator('{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":10,"relacionado":false}')?.relacionado).toBe(false);
+  });
 });
 
 describe('financeiro/extrator: prompts', () => {
