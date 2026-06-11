@@ -1893,21 +1893,33 @@ export function createDashboardRouter(
   // Financeiro: tela + endpoint JSON
   // ============================================
 
-  router.get('/financeiro', async (_req, res) => {
+  router.get('/financeiro', async (req, res) => {
     try {
       const { getFinanceiroData } = await import('./financeiro-queries.js');
       const { renderFinanceiroPage } = await import('./financeiro-views.js');
-      const data = await getFinanceiroData(supabase);
+      const filtros = {
+        competencia: typeof req.query.mes === 'string' ? req.query.mes : undefined,
+        categoria: typeof req.query.categoria === 'string' ? req.query.categoria : undefined,
+        pfpj: req.query.pfpj === 'PF' || req.query.pfpj === 'PJ' ? req.query.pfpj as 'PF' | 'PJ' : undefined,
+        tipo: req.query.tipo === 'despesa' || req.query.tipo === 'entrada' ? req.query.tipo as 'despesa' | 'entrada' : undefined,
+      };
+      const data = await getFinanceiroData(supabase, filtros);
       res.type('text/html').send(renderFinanceiroPage(data));
     } catch (err) {
       res.status(500).type('text/html').send(`<h2>Erro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
     }
   });
 
-  router.get('/financeiro/data', async (_req, res) => {
+  router.get('/financeiro/data', async (req, res) => {
     try {
       const { getFinanceiroData } = await import('./financeiro-queries.js');
-      res.json(await getFinanceiroData(supabase));
+      const filtros = {
+        competencia: typeof req.query.mes === 'string' ? req.query.mes : undefined,
+        categoria: typeof req.query.categoria === 'string' ? req.query.categoria : undefined,
+        pfpj: req.query.pfpj === 'PF' || req.query.pfpj === 'PJ' ? req.query.pfpj as 'PF' | 'PJ' : undefined,
+        tipo: req.query.tipo === 'despesa' || req.query.tipo === 'entrada' ? req.query.tipo as 'despesa' | 'entrada' : undefined,
+      };
+      res.json(await getFinanceiroData(supabase, filtros));
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
     }

@@ -3,6 +3,26 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getBuckets, getParametros, competenciaAtual } from '../financeiro/repo.js';
 import { calcularRBT12 } from '../financeiro/rbt12.js';
 import { fatorR, proximoSalto, proLaboreMinimoParaAnexoIII, faixaPorRBT12 } from '../financeiro/imposto.js';
+import { calcularKpisCaixa, type KpisCaixa } from './caixa-kpis.js';
+import { getComprovanteUrls } from '../financeiro/comprovantes.js';
+
+export interface LancamentoLista {
+  id: string;
+  tipo: 'despesa' | 'entrada';
+  valor: number;
+  data_evento: string;
+  contraparte: string | null;
+  categoriaNome: string | null;
+  pf_pj: 'PF' | 'PJ' | null;
+  comprovanteUrl: string | null;
+}
+
+export interface FiltrosLancamentos {
+  competencia?: string;       // YYYY-MM
+  categoria?: string;         // slug
+  pfpj?: 'PF' | 'PJ';
+  tipo?: 'despesa' | 'entrada';
+}
 
 export interface FinanceiroData {
   geradoEm: string;
@@ -16,9 +36,13 @@ export interface FinanceiroData {
   salto: { limite: number; distancia: number } | null;
   faturamentoMensal: Array<{ competencia: string; receita: number }>;
   contas: Array<{ descricao: string | null; valor: number; status: string; imposto: number | null }>;
+  caixa: KpisCaixa;
+  despesasMensal: Array<{ competencia: string; total: number }>;
+  lancamentos: LancamentoLista[];
+  filtros: FiltrosLancamentos;
 }
 
-export async function getFinanceiroData(client: SupabaseClient): Promise<FinanceiroData> {
+export async function getFinanceiroData(client: SupabaseClient, filtros: FiltrosLancamentos = {}): Promise<FinanceiroData> {
   const comp = competenciaAtual();
   const [buckets, params] = await Promise.all([getBuckets(client), getParametros(client)]);
   const rbt12 = calcularRBT12(buckets, comp);
@@ -55,6 +79,52 @@ export async function getFinanceiroData(client: SupabaseClient): Promise<Finance
   const folha12 = params.pro_labore_mensal * 12 + params.outras_folhas_mensal * 12;
   const fr = fatorR(folha12, receita12);
 
+  // ---- Caixa de Entrada (Fatia 3) ----
+  const { data: lancMesRaw, error: lancMesErr } = await client
+    .from('financeiro_lancamentos')
+    .select('tipo, valor, pf_pj, financeiro_categorias(nome)')
+    .eq('status', 'confirmado').eq('competencia', comp);
+  if (lancMesErr) throw new Error(`getFinanceiroData lancamentos: ${lancMesErr.message}`);
+  const lancMes = (lancMesRaw ?? []).map((l) => {
+    const x = l as unknown as { tipo: 'despesa' | 'entrada'; valor: number; pf_pj: 'PF' | 'PJ' | null; financeiro_categorias: { nome: string } | null };
+    return { tipo: x.tipo, valor: Number(x.valor), pf_pj: x.pf_pj, categoriaNome: x.financeiro_categorias?.nome ?? null };
+  });
+  const caixa = calcularKpisCaixa({ recebidoMesPj: faturamentoMes, impostoMes: impostoASeparar, lancamentosMes: lancMes });
+
+  // série mensal de despesas PJ (gráfico entrou × saiu)
+  const { data: despSerieRaw } = await client
+    .from('financeiro_lancamentos')
+    .select('competencia, valor')
+    .eq('status', 'confirmado').eq('tipo', 'despesa').eq('pf_pj', 'PJ');
+  const porMesDesp = new Map<string, number>();
+  for (const r of (despSerieRaw ?? []) as Array<{ competencia: string; valor: number }>) {
+    porMesDesp.set(r.competencia, (porMesDesp.get(r.competencia) ?? 0) + Number(r.valor));
+  }
+  const despesasMensal = [...porMesDesp].map(([competencia, total]) => ({ competencia, total }))
+    .sort((a, b) => a.competencia.localeCompare(b.competencia));
+
+  // lista de lançamentos (últimos 50, com filtros via querystring)
+  let q = client.from('financeiro_lancamentos')
+    .select('id, tipo, valor, data_evento, contraparte, pf_pj, storage_path, financeiro_categorias(nome, slug)')
+    .in('status', ['confirmado'])
+    .order('data_evento', { ascending: false }).limit(50);
+  if (filtros.competencia) q = q.eq('competencia', filtros.competencia);
+  if (filtros.pfpj) q = q.eq('pf_pj', filtros.pfpj);
+  if (filtros.tipo) q = q.eq('tipo', filtros.tipo);
+  const { data: listaRaw, error: listaErr } = await q;
+  if (listaErr) throw new Error(`getFinanceiroData lista: ${listaErr.message}`);
+  let lista = (listaRaw ?? []).map((l) => {
+    const x = l as unknown as { id: string; tipo: 'despesa' | 'entrada'; valor: number; data_evento: string; contraparte: string | null; pf_pj: 'PF' | 'PJ' | null; storage_path: string | null; financeiro_categorias: { nome: string; slug: string } | null };
+    return { ...x, categoriaNome: x.financeiro_categorias?.nome ?? null, categoriaSlug: x.financeiro_categorias?.slug ?? null };
+  });
+  if (filtros.categoria) lista = lista.filter((l) => l.categoriaSlug === filtros.categoria);
+  const urls = await getComprovanteUrls(client, lista.map((l) => l.storage_path).filter((p): p is string => Boolean(p)));
+  const lancamentos: LancamentoLista[] = lista.map((l) => ({
+    id: l.id, tipo: l.tipo, valor: Number(l.valor), data_evento: l.data_evento,
+    contraparte: l.contraparte, categoriaNome: l.categoriaNome, pf_pj: l.pf_pj,
+    comprovanteUrl: l.storage_path ? (urls[l.storage_path] ?? null) : null,
+  }));
+
   return {
     geradoEm: new Date().toISOString(),
     competencia: comp,
@@ -74,5 +144,6 @@ export async function getFinanceiroData(client: SupabaseClient): Promise<Finance
       descricao: c.descricao, valor: Number(c.valor), status: c.status,
       imposto: c.imposto_confirmado ?? c.imposto_provisorio,
     })),
+    caixa, despesasMensal, lancamentos, filtros,
   };
 }
