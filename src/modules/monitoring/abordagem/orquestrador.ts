@@ -380,6 +380,13 @@ export async function handleMabButton(deps: OrqDeps, buttonId: string): Promise<
       case 'ok': {
         const ok = await enviarParaCliente(deps, ref);
         if (ok) {
+          // Cinto extra do dry-run: enviarParaCliente em dry só loga, sem
+          // mandar — a confirmação pro Junior não pode mentir que saiu.
+          if (deps.dryRun) {
+            await deps.sendText(deps.adminPhone,
+              '🟡 DRY-RUN: simulei o envio — o cliente NÃO recebeu (PROACTIVE_ALERTS_DRY_RUN=1).');
+            return true;
+          }
           const row = await getAbordagem(client, ref);
           const lead = row ? await getLeadBasico(client, row.lead_id) : null;
           await deps.sendText(deps.adminPhone, `✅ Mandada pra ${primeiroNome(lead?.name)}.`);
@@ -547,9 +554,12 @@ export async function handleTextoAdminAjuste(deps: OrqDeps, texto: string): Prom
 // 5) RESPOSTA do cliente (index chama ao receber msg de lead com abordagem ativa)
 // ---------------------------------------------------------------------------
 
+// 'respondi' = index DEVE retornar (senão a Eva manda 2ª mensagem redundante
+// com contexto stale). 'segue_eva' = só registrou a resposta — a Eva normal
+// segue com o contexto da abordagem injetado.
 export async function handleRespostaCliente(
   deps: OrqDeps, abordagem: AbordagemRow, texto: string,
-): Promise<void> {
+): Promise<'respondi' | 'segue_eva'> {
   const client = deps.supabase;
   const agora = new Date().toISOString();
   try {
@@ -562,11 +572,14 @@ export async function handleRespostaCliente(
       { ultima_resposta_cliente_em: agora });
     // CAS falhou = o cron encerrou no MESMO instante (corrida): já fechada,
     // não reabre nem responde pela abordagem — a Eva normal cuida da mensagem.
-    if (!ok) return;
+    if (!ok) return 'segue_eva';
 
-    if (!lead?.phone) return;
+    if (!lead?.phone) return 'segue_eva';
 
     const posTemplate = abordagem.mensagem_enviada === '[template enviado]';
+    // ACOPLAMENTO: o index depende do RETORNO desta função ('respondi' →
+    // ele para; 'segue_eva' → injeta contexto e a Eva segue). Mexer nesses
+    // regex de quick reply muda quem responde o cliente — manter o contrato.
     const ehAgoraNao = /^agora n[aã]o\.?$/i.test(t);
     const ehPodeContar = /^pode contar\.?$/i.test(t);
 
@@ -578,7 +591,7 @@ export async function handleRespostaCliente(
       });
       await deps.sendText(lead.phone,
         'Tranquilo! Me diz quando é um bom momento que eu te chamo — é coisa rápida, mas importante sobre a sua usina 😊');
-      return;
+      return 'respondi';
     }
 
     if (ehPodeContar || posTemplate) {
@@ -587,13 +600,23 @@ export async function handleRespostaCliente(
       // mensagem real com CAS — 2 webhooks rápidos → só 1 manda. Também cobre
       // "pode contar" repetido depois que a escada já saiu (null = não manda).
       const msg = await consumirMarcadorTemplate(client, abordagem.id);
-      if (msg) await deps.sendText(lead.phone, msg);
-      return;
+      if (msg) {
+        await deps.sendText(lead.phone, msg);
+        return 'respondi';
+      }
+      // Quick reply sem marcador (repetido/corrida): não manda nada nem
+      // deixa a Eva responder "pode contar" com contexto stale.
+      if (ehPodeContar) return 'respondi';
+      // posTemplate + texto livre + marcador já consumido por outro webhook:
+      // é resposta normal do cliente — a Eva segue com o contexto.
+      return 'segue_eva';
     }
     // Resposta livre: a conversa segue no fluxo normal da Eva com o contexto
     // injetado (montarContextoAbordagem) — o index cuida do roteamento.
+    return 'segue_eva';
   } catch (err) {
     console.error('[abordagem] resposta do cliente falhou:', (err as Error).message);
+    return 'segue_eva';
   }
 }
 

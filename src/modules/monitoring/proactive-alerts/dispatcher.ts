@@ -59,6 +59,15 @@ export async function runDispatchCycle(hoje: Date, ctx: DispatchCtx): Promise<{
       // aqui muda o caminho de alertas erro_integracao/órfãs.
       if (ctx.proporAbordagem && lead && lead.phone &&
           (alerta.tipo === 'sistema_offline' || alerta.tipo === 'queda_geracao' || alerta.tipo === 'milestone_economia')) {
+        // Dry-run fiel à spec ("simula e loga, NÃO envia — igual alertas
+        // atuais"): NADA de abordagem é criado/mandado — nem pro admin.
+        // Mesmo padrão do dry-run de alerta admin logo abaixo.
+        if (ctx.dryRun) {
+          console.log(`[proactive-alerts] dispatch DRY: abordaria cliente — alerta=${alerta.id} sistema=${alerta.sistema_id} tipo=${alerta.tipo}`);
+          await ctx.supabase.unlockAlerta(alerta.id, addDays(hoje, 3).toISOString()); // simula throttle 3d
+          dryRunSimulados++;
+          continue;
+        }
         const resultado = await ctx.proporAbordagem(alerta, sistema, lead);
         if (resultado !== 'inelegivel') {
           // O alerta foi absorvido pelo motor de abordagem — não compete por 30d.

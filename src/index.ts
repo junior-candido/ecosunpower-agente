@@ -3662,12 +3662,12 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           try {
             const { handleRespostaCliente, montarContextoAbordagem } =
               await import('./modules/monitoring/abordagem/orquestrador.js');
-            await handleRespostaCliente(getOrqDeps(), abordagemAtiva, text);
-            // MESMO padrão do orquestrador (handleRespostaCliente): se mudar
-            // lá, mudar aqui — regex mais largo aqui engoliria mensagem sem
-            // resposta; mais estreito mandaria quick reply pra Eva (inócuo).
-            const ehQuickReply = /^(pode contar|agora n[aã]o)\.?$/i.test(text.trim());
-            if (ehQuickReply) return; // o orquestrador já respondeu
+            // O retorno é o contrato: 'respondi' = o orquestrador JÁ respondeu
+            // o cliente (quick reply ou mensagem real da escada pós-template) —
+            // seguir pra Eva mandaria uma 2ª mensagem redundante com contexto
+            // stale. 'segue_eva' = só registrou; injeta o contexto e segue.
+            const resultado = await handleRespostaCliente(getOrqDeps(), abordagemAtiva, text);
+            if (resultado === 'respondi') return;
             contextoAbordagem = montarContextoAbordagem(abordagemAtiva);
           } catch (err) {
             console.warn('[abordagem] resposta do cliente falhou:', (err as Error).message);
@@ -4556,7 +4556,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           console.warn(`[abordagem] abordagem_update sem abordagem aberta (lead=${leadId}) — ignorada`);
           break;
         }
-        const d = action.data as Record<string, unknown>;
+        const d = (action.data ?? {}) as Record<string, unknown>;
         const DESFECHOS_VALIDOS = [
           'resolvido_sozinho', 'limpeza_fechada', 'visita_agendada',
           'transferido_junior', 'sem_resposta', 'descartada_junior',
@@ -7547,8 +7547,15 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
         proporAbordagem: async (
           alerta: { id: string; tipo: string },
           sistema: { id: string; potencia_kwp: number | null; uf: string | null },
-          lead: { id: string },
+          lead: { id: string; phone: string },
         ): Promise<'proposta' | 'enviada' | 'inelegivel'> => {
+          // Caso-limite da spec: takeover ativo (Junior assumiu a conversa) →
+          // a abordagem espera. Alerta admin sai normal ('inelegivel') e o
+          // ciclo seguinte re-tenta quando o takeover acabar.
+          if (await takeover.isPaused(lead.phone)) {
+            console.log('[abordagem] takeover ativo pra', lead.phone, '— espera');
+            return 'inelegivel';
+          }
           const { proporAbordagem } = await import('./modules/monitoring/abordagem/orquestrador.js');
           const { esperadoDiaKwh } = await import('./modules/monitoring/classificacao.js');
           const client = supabase.getClient();
