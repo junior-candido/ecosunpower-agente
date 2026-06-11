@@ -87,6 +87,7 @@ import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
+import { carregarEmpresaConfig, empresa } from './modules/empresa-config.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -224,6 +225,11 @@ async function main() {
   }
 
   const supabase = new SupabaseService(config);
+
+  // EcoSof Kit Clone: carrega empresa_config no boot (fallback = defaults EcoSun
+  // hardcoded — banco sem a tabela continua funcionando com comportamento idêntico).
+  await carregarEmpresaConfig(supabase.getClient());
+
   const brain = new Brain(config.anthropicApiKey, process.env.GOOGLE_REVIEW_URL ?? '');
   const vision = new VisionAnalyzer(config.anthropicApiKey);
   const transcriber = config.openaiApiKey ? new Transcriber(config.openaiApiKey) : null;
@@ -653,6 +659,22 @@ async function main() {
 
   // /imposto <valor> — Núcleo Financeiro: imposto por anexo + Fator R + salto de faixa
   const tryHandleImpostoCommand = makeImpostoHandler(supabase.getClient(), isAdminPhone, sendText);
+
+  // /recarregar-config — recarrega empresa_config do banco sem redeploy. Útil
+  // depois de editar a tabela no SQL Editor do Supabase.
+  async function tryHandleRecarregarConfigCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const trimmed = text.trim().toLowerCase().replace(/^\//, '');
+    if (trimmed !== 'recarregar-config') return false;
+    try {
+      await carregarEmpresaConfig(supabase.getClient());
+      const e = empresa();
+      await sendText(from, `⚙️ Config recarregada: ${e.nomeFantasia} (atendente: ${e.nomeAtendente})`);
+    } catch (err) {
+      await sendText(from, `❌ Erro ao recarregar config: ${(err as Error).message}`);
+    }
+    return true;
+  }
 
   // Caixa de Entrada Universal (Fatia 3): deps montadas sob demanda
   const getCaixaDeps = () => ({
@@ -3414,6 +3436,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /imposto <valor> — imposto por anexo + Fator R + salto de faixa (Núcleo Financeiro)
     if (await tryHandleImpostoCommand(from, text)) return;
+
+    // /recarregar-config — recarrega empresa_config do banco sem redeploy
+    if (await tryHandleRecarregarConfigCommand(from, text)) return;
 
     // /resgatar-forms — dispara template inicial pra leads de formulário Meta sem 1ª mensagem
     if (await tryHandleResgatarFormsCommand(from, text)) return;
