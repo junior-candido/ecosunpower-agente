@@ -4,11 +4,12 @@
 // Sem --apply: só mostra o que faria (dry-run) e confere o total.
 import { createClient } from '@supabase/supabase-js';
 
-// PREENCHER com os valores reais mês a mês (R$). Total esperado: 355091.99
+// Valores reais da Relação de Faturamento assinada (contador, 14/01/2026).
+// Fonte: Documents/EcoSunPower/Financeiro/Faturamento-Declarado/Faturamento-2025-relacao-12-meses-assinado.pdf
 const FATURAMENTO_2025: Record<string, number> = {
-  '2025-01': 0, '2025-02': 0, '2025-03': 0, '2025-04': 0,
-  '2025-05': 0, '2025-06': 0, '2025-07': 0, '2025-08': 0,
-  '2025-09': 0, '2025-10': 0, '2025-11': 0, '2025-12': 0,
+  '2025-01': 26885.06, '2025-02': 1536.00, '2025-03': 23885.06, '2025-04': 68134.03,
+  '2025-05': 32549.74, '2025-06': 11566.84, '2025-07': 63000.00, '2025-08': 34000.00,
+  '2025-09': 59350.00, '2025-10': 4706.21, '2025-11': 11800.00, '2025-12': 17679.05,
 };
 
 async function main() {
