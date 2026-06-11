@@ -112,10 +112,13 @@ export async function getDiarioUsina(
         .eq('sistema_id', sistemaId).in('tipo', ['parabens', 'depoimento'])
         .not('enviada_em', 'is', null)
         .order('enviada_em', { ascending: false }).limit(1).maybeSingle(),
-      // última oferta de limpeza (queda que chegou no degrau 2+)
-      client.from('monitoring_abordagens').select('updated_at')
-        .eq('sistema_id', sistemaId).eq('tipo', 'queda').gte('etapa', 2)
-        .order('updated_at', { ascending: false }).limit(1).maybeSingle(),
+      // última abordagem de queda ENVIADA (qualquer etapa): a oferta de
+      // limpeza vai já na 1ª mensagem — etapa>=2 nunca acontece no fluxo
+      // normal e deixava o invariante "não re-abordar queda <30d" morto.
+      client.from('monitoring_abordagens').select('enviada_em')
+        .eq('sistema_id', sistemaId).eq('tipo', 'queda')
+        .not('enviada_em', 'is', null)
+        .order('enviada_em', { ascending: false }).limit(1).maybeSingle(),
       // último descarte do Junior DO MESMO TIPO (família, pro milestone)
       client.from('monitoring_abordagens').select('encerrada_em')
         .eq('sistema_id', sistemaId).eq('desfecho', 'descartada_junior')
@@ -153,7 +156,7 @@ export async function getDiarioUsina(
   return {
     abordagemAbertaId: (aberta.data as { id: string } | null)?.id ?? null,
     ultimoParabensEnviadoEm: (parabens.data as { enviada_em: string } | null)?.enviada_em ?? null,
-    ultimaOfertaLimpezaEm: (ofertaLimpeza.data as { updated_at: string } | null)?.updated_at ?? null,
+    ultimaOfertaLimpezaEm: (ofertaLimpeza.data as { enviada_em: string } | null)?.enviada_em ?? null,
     descartadaMesmoTipoEm: (descarte.data as { encerrada_em: string } | null)?.encerrada_em ?? null,
     causaRaizAnterior: (causa.data as { causa_raiz: string } | null)?.causa_raiz ?? null,
     jaTeveDepoimento: Boolean(depoimento.data),
@@ -171,6 +174,8 @@ function cutoffIso(agoraIso_: string, dias: number): string {
 
 // Enviadas há >= limiteDias sem NENHUMA resposta do cliente → lembrete.
 // Reagendadas pro futuro ficam de fora (o cliente pediu pra esperar).
+// Spec: lembrete/escalada de silêncio é só pra PROBLEMA (queda/offline) —
+// parabéns não cobra resposta.
 export async function getAbordagensParaLembrete(
   client: SupabaseClient, agoraIso_: string, limiteDias: number,
 ): Promise<AbordagemRow[]> {
@@ -178,6 +183,7 @@ export async function getAbordagensParaLembrete(
   const { data, error } = await client.from('monitoring_abordagens')
     .select(COLS)
     .in('status', ['enviada', 'em_conversa'])
+    .in('tipo', ['queda', 'offline'])
     .is('ultima_resposta_cliente_em', null)
     .lte('enviada_em', corte)
     .or(`reagendada_para.is.null,reagendada_para.lte.${agoraIso_}`)
@@ -188,27 +194,38 @@ export async function getAbordagensParaLembrete(
 }
 
 // Lembrete enviado há >= limiteDias e o cliente seguiu calado → encerrar.
+// 'enviada' sem resposta também encerra direto (sem lembrete): fora da janela
+// 24h o lembrete por texto é impossível — sem isso a usina deadlocka
+// (o estado 'enviada' ficaria eterno e o unique parcial travaria a usina).
+// Corte da 'enviada' = limiteDias*2 (6 dias): dá tempo do lembrete tentar.
+// Spec: lembrete/escalada de silêncio é só pra PROBLEMA (queda/offline) —
+// parabéns não cobra resposta.
 export async function getAbordagensParaEncerrar(
   client: SupabaseClient, agoraIso_: string, limiteDias: number,
 ): Promise<AbordagemRow[]> {
-  const corte = cutoffIso(agoraIso_, limiteDias);
+  const corteLembrete = cutoffIso(agoraIso_, limiteDias);
+  const corteEnviada = cutoffIso(agoraIso_, limiteDias * 2);
   const { data, error } = await client.from('monitoring_abordagens')
     .select(COLS)
-    .eq('status', 'lembrete_enviado')
-    .lte('lembrete_em', corte)
-    .order('lembrete_em', { ascending: true })
+    .in('tipo', ['queda', 'offline'])
+    .or(`and(status.eq.lembrete_enviado,lembrete_em.lte.${corteLembrete}),`
+      + `and(status.eq.enviada,enviada_em.lte.${corteEnviada},ultima_resposta_cliente_em.is.null)`)
+    .order('enviada_em', { ascending: true })
     .limit(20);
   if (error) throw new Error(`getAbordagensParaEncerrar: ${error.message}`);
   return (data ?? []) as unknown as AbordagemRow[];
 }
 
 // Cliente pediu "agora não" → na hora devida o cron manda a mensagem combinada.
+// Também pega 'proposta'/'aguardando_aprovacao' com reagendada_para vencido:
+// é a abordagem SEGURADA pelo ritmo (1 proativa/dia por lead) na hora do envio —
+// o cron re-tenta via enviarParaCliente (que re-checa tudo).
 export async function getAbordagensReagendadasDevidas(
   client: SupabaseClient, agoraIso_: string,
 ): Promise<AbordagemRow[]> {
   const { data, error } = await client.from('monitoring_abordagens')
     .select(COLS)
-    .eq('status', 'em_conversa')
+    .in('status', ['em_conversa', 'proposta', 'aguardando_aprovacao'])
     .not('reagendada_para', 'is', null)
     .lte('reagendada_para', agoraIso_)
     .order('reagendada_para', { ascending: true })
@@ -301,12 +318,15 @@ export async function consumirMarcadorTemplate(
 
 // Quedas encerradas por limpeza na janela [de..ate] (10-20 dias atrás) —
 // follow-up pós-limpeza. O chamador filtra as já marcadas '[followup feito]'.
+// Desfecho restrito a limpeza real: 'sem_resposta'/'descartada_junior' com
+// causa_raiz mencionando limpeza NÃO significa que limparam as placas.
 export async function getQuedasEncerradasPorLimpeza(
   client: SupabaseClient, deIso: string, ateIso: string,
 ): Promise<AbordagemRow[]> {
   const { data, error } = await client.from('monitoring_abordagens')
     .select(COLS)
     .eq('tipo', 'queda').eq('status', 'encerrada')
+    .in('desfecho', ['limpeza_fechada', 'resolvido_sozinho'])
     .ilike('causa_raiz', '%limp%')
     .gte('encerrada_em', deIso).lte('encerrada_em', ateIso)
     .order('encerrada_em', { ascending: true })
@@ -376,7 +396,10 @@ export async function getRegrasTreino(client: SupabaseClient, tipo: AbordagemTip
     .select('instrucao')
     .eq('ativo', true)
     .or(`tipo.is.null,tipo.eq.${tipo}`)
-    .order('created_at', { ascending: true });
+    // Limite no prompt: 20 regras, mais antigas primeiro — elas são a BASE do
+    // treino (as novas refinam; sem limite o prompt cresceria sem teto).
+    .order('created_at', { ascending: true })
+    .limit(20);
   if (error) throw new Error(`getRegrasTreino: ${error.message}`);
   return ((data ?? []) as Array<{ instrucao: string }>).map((r) => r.instrucao);
 }
@@ -384,8 +407,9 @@ export async function getRegrasTreino(client: SupabaseClient, tipo: AbordagemTip
 export async function gravarRegraTreino(
   client: SupabaseClient, tipo: AbordagemTipo | null, instrucao: string,
 ): Promise<void> {
+  // Teto de 300 chars: regra é instrução curta, não redação — protege o prompt.
   const { error } = await client.from('monitoring_treino')
-    .insert({ tipo, instrucao, ativo: true });
+    .insert({ tipo, instrucao: instrucao.slice(0, 300), ativo: true });
   if (error) throw new Error(`gravarRegraTreino: ${error.message}`);
 }
 

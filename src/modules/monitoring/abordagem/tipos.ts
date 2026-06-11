@@ -35,7 +35,7 @@ export interface AbordagemRow {
 export interface DiarioUsina {
   abordagemAbertaId: string | null;          // status <> encerrada
   ultimoParabensEnviadoEm: string | null;    // tipo parabens|depoimento, enviada_em
-  ultimaOfertaLimpezaEm: string | null;      // tipo queda com etapa >= 2 (ofereceu)
+  ultimaOfertaLimpezaEm: string | null;      // última queda ENVIADA (qualquer etapa) — não re-abordar queda do mesmo lead <30d
   // preencher já filtrado pelo MESMO tipo da abordagem candidata (repo Task 6)
   descartadaMesmoTipoEm: string | null;      // desfecho descartada_junior (mesmo tipo)
   causaRaizAnterior: string | null;          // última causa_raiz de offline resolvido

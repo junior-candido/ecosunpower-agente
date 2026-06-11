@@ -707,6 +707,9 @@ async function main() {
     adminPhone: config.engineerPhone,
     dryRun: process.env.PROACTIVE_ALERTS_DRY_RUN === '1',
     janela24hAberta,
+    // I7: takeover também vale pros envios do cron (lembrete/reagendada/
+    // pós-limpeza) — Junior na conversa, a Eva espera o próximo ciclo.
+    estaEmTakeover: (p: string) => takeover.isPaused(p),
   });
 
   // Helper pra detectar e processar comandos de blog vindos do Junior.
@@ -7553,7 +7556,8 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
           // a abordagem espera. Alerta admin sai normal ('inelegivel') e o
           // ciclo seguinte re-tenta quando o takeover acabar.
           if (await takeover.isPaused(lead.phone)) {
-            console.log('[abordagem] takeover ativo pra', lead.phone, '— espera');
+            // SEC: log com lead.id (telefone é dado pessoal — não vai pro log)
+            console.log('[abordagem] takeover ativo pro lead', lead.id, '— espera');
             return 'inelegivel';
           }
           const { proporAbordagem } = await import('./modules/monitoring/abordagem/orquestrador.js');

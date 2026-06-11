@@ -421,7 +421,16 @@ export class MetaWhatsAppService {
         if (!id) return null;
         return { ...base, type: 'text', content: id };
       }
-      // Tipos nao suportados (button quote, contacts, sticker, system...)
+      // Quick reply de TEMPLATE (ex. eva_monitoramento_v1) chega como type
+      // 'button', não 'interactive'. Sem este case o clique do cliente em
+      // [Pode contar] era descartado e a Eva o ignorava.
+      case 'button': {
+        const btn = msg.button as { text?: string; payload?: string } | undefined;
+        const content = btn?.text ?? btn?.payload ?? '';
+        if (!content) return null;
+        return { ...base, type: 'text', content };
+      }
+      // Tipos nao suportados (contacts, sticker, system...)
       default:
         return null;
     }

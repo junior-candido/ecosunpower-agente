@@ -438,16 +438,16 @@ export async function getKPIsAbordagemMes(
     .not('enviada_em', 'is', null)
     .gte('enviada_em', inicioMes);
 
-  if (error || !data) {
-    return { enviadas: 0, resolvidoSozinhoCount: 0, limpezasFechadasCount: 0, semRespostaCount: 0, resolvidoSozinhoPct: 0 };
-  }
+  // M6: erro NÃO vira zeros falsos — o .catch(() => undefined) do router
+  // esconde a seção inteira; melhor sumir que mostrar KPI mentiroso.
+  if (error) throw new Error(`getKPIsAbordagemMes: ${error.message}`);
 
-  const enviadas = data.length;
+  const enviadas = (data ?? []).length;
   let resolvidoSozinhoCount = 0;
   let limpezasFechadasCount = 0;
   let semRespostaCount = 0;
 
-  for (const row of data) {
+  for (const row of data ?? []) {
     if (row.desfecho === 'resolvido_sozinho') resolvidoSozinhoCount++;
     else if (row.desfecho === 'limpeza_fechada') limpezasFechadasCount++;
     else if (row.desfecho === 'sem_resposta') semRespostaCount++;

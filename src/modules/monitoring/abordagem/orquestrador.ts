@@ -5,7 +5,7 @@
 // Erros: try/catch com log — falha de uma peça NUNCA derruba o ciclo das outras.
 import type Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { podeAbordar, decidirTipoMilestone, RITMO } from './regras.js';
+import { podeAbordar, decidirTipoMilestone, RITMO, diasDesde } from './regras.js';
 import { ESCADAS, objetivoDoDegrau } from './escada.js';
 import { numerosTrimestre, recuperacaoPosLimpeza, type GeracaoDia } from './numeros-usina.js';
 import { redigirMensagem, type ContextoRedacao } from './redator.js';
@@ -38,6 +38,9 @@ export interface OrqDeps {
   // janela 24h: o index sabe a última msg INBOUND do cliente.
   // Convenção conservadora: na dúvida, FECHADA (template é o caminho seguro).
   janela24hAberta: (phone: string) => Promise<boolean>;
+  // I7: takeover (Junior assumiu a conversa) — os envios do cron pulam o
+  // cliente e re-tentam no próximo ciclo. Opcional: sem o campo, segue normal.
+  estaEmTakeover?: (phone: string) => Promise<boolean>;
 }
 
 const FOOTER = 'Monitoramento · Eva';
@@ -160,6 +163,33 @@ function faltaDadoChave(tipo: AbordagemTipo, dados: ContextoRedacao['dados']): b
   return dados.trimestre == null; // parabens/depoimento
 }
 
+// I1: FRESCOR compartilhado (envio, lembrete e reagendada) — alerta de problema
+// já resolvido (geração voltou) → encerra a abordagem sem mandar nada. Nunca
+// "tá offline" pra usina viva. true = encerrou (chamador pula o envio).
+async function encerrarSeAlertaResolvido(deps: OrqDeps, row: AbordagemRow): Promise<boolean> {
+  if (!row.alerta_id || (row.tipo !== 'offline' && row.tipo !== 'queda')) return false;
+  const client = deps.supabase;
+  const { data, error } = await client.from('monitoring_alerts')
+    .select('resolved_at').eq('id', row.alerta_id).maybeSingle();
+  if (error) {
+    console.warn('[abordagem] frescor: leitura do alerta falhou:', error.message);
+    return false;
+  }
+  if (!(data as { resolved_at: string | null } | null)?.resolved_at) return false;
+  await mudarStatusAbordagem(client, row.id,
+    ['proposta', 'aguardando_aprovacao', 'enviada', 'em_conversa', 'lembrete_enviado'], 'encerrada',
+    { desfecho: 'resolvido_sozinho', encerrada_em: new Date().toISOString() });
+  console.log(`[abordagem] ${row.id}: alerta resolveu sozinho — encerrada sem mandar`);
+  return true;
+}
+
+// I7: best-effort — erro na consulta de takeover NÃO segura o envio (na dúvida
+// o cliente não está em takeover; o caso raro de colisão é aceitável).
+async function emTakeover(deps: OrqDeps, phone: string): Promise<boolean> {
+  if (!deps.estaEmTakeover) return false;
+  try { return await deps.estaEmTakeover(phone); } catch { return false; }
+}
+
 // ---------------------------------------------------------------------------
 // 1) PROPOR — chamado pelo dispatcher quando alerta elegível chega
 // ---------------------------------------------------------------------------
@@ -246,6 +276,17 @@ export async function proporAbordagem(deps: OrqDeps, args: {
       return 'proposta';
     }
     const enviada = await enviarParaCliente(deps, id);
+    // I5: modo auto avisa o Junior do que saiu (best-effort — o envio ao
+    // cliente JÁ aconteceu; falha aqui não pode desfazer nada). Em dry-run
+    // nada saiu de verdade, então não mente pro admin.
+    if (enviada && !deps.dryRun) {
+      try {
+        await deps.sendText(deps.adminPhone,
+          `🤖 Mandei pra ${primeiroNome(lead.name)} (${ROTULO_TIPO[tipo]}): "${msg}"`);
+      } catch (err) {
+        console.warn('[abordagem] aviso de envio auto falhou:', (err as Error).message);
+      }
+    }
     // Template bloqueado/corrida: a abordagem fica registrada como proposta —
     // o alerta original ainda assim foi absorvido pelo motor de abordagem.
     return enviada ? 'enviada' : 'proposta';
@@ -266,18 +307,37 @@ export async function enviarParaCliente(deps: OrqDeps, abordagemId: string): Pro
   const row = await getAbordagem(client, abordagemId);
   if (!row || !row.mensagem_proposta) return false;
 
+  // M1: dry-run ANTES de qualquer mutação (CAS/frescor/ritmo) — linha falsa
+  // não pode contar pro ritmo nem deadlockar a usina em homologação.
+  if (deps.dryRun) {
+    console.log(`[abordagem] DRY: enviaria (${row.tipo}) pra lead=${row.lead_id}: ${row.mensagem_proposta}`);
+    return true;
+  }
+
   // a0. FRESCOR (spec caso-limite): alerta já resolvido (geração voltou antes
-  //     do envio) → encerra sem mandar nada. Nunca "tá offline" pra usina viva.
-  if (row.alerta_id && (row.tipo === 'offline' || row.tipo === 'queda')) {
-    const { data, error } = await client.from('monitoring_alerts')
-      .select('resolved_at').eq('id', row.alerta_id).maybeSingle();
-    if (error) console.warn('[abordagem] frescor: leitura do alerta falhou:', error.message);
-    if ((data as { resolved_at: string | null } | null)?.resolved_at) {
-      await mudarStatusAbordagem(client, abordagemId, ['proposta', 'aguardando_aprovacao'], 'encerrada',
-        { desfecho: 'resolvido_sozinho', encerrada_em: agora });
-      console.log(`[abordagem] ${abordagemId}: alerta resolveu sozinho antes do envio — encerrada sem mandar`);
-      return false;
+  //     do envio) → encerra sem mandar nada. Helper compartilhado com o cron.
+  if (await encerrarSeAlertaResolvido(deps, row)) return false;
+
+  // a1. I3: RITMO re-checado na hora do envio — entre a proposta e o clique do
+  //     Junior pode ter saído outra proativa pro MESMO lead (outra usina).
+  //     Invariante: NUNCA 2 proativas no mesmo dia pro mesmo lead. Segura sem
+  //     perder: reagendada_para = +1 dia e o cron de reagendadas re-tenta
+  //     (ele pega 'proposta'/'aguardando_aprovacao' com agendamento vencido).
+  const diario = await getDiarioUsina(client, row.sistema_id, row.lead_id, row.tipo);
+  const msgHaDias = diasDesde(diario.ultimaMsgProativaAoLeadEm, new Date());
+  if (msgHaDias !== null && msgHaDias < 1) {
+    await atualizarAbordagem(client, abordagemId,
+      { reagendada_para: addDias(new Date(), 1).toISOString() });
+    if (row.status === 'aguardando_aprovacao') {
+      try {
+        await deps.sendText(deps.adminPhone,
+          '⏸️ Segurada pra amanhã — o cliente já recebeu mensagem hoje (1 proativa por dia).');
+      } catch (err) {
+        console.warn('[abordagem] aviso de ritmo falhou:', (err as Error).message);
+      }
     }
+    console.log(`[abordagem] ${abordagemId}: segurada pelo ritmo (lead já recebeu proativa hoje)`);
+    return false;
   }
 
   // a. CAS ANTES do envio (lição da Fatia 3): o porteiro de status é o que
@@ -289,13 +349,6 @@ export async function enviarParaCliente(deps: OrqDeps, abordagemId: string): Pro
     ['proposta', 'aguardando_aprovacao'], 'enviada',
     { enviada_em: agora, mensagem_enviada: row.mensagem_proposta });
   if (!casOk) return false; // clique duplo / já tratada
-
-  // b. dry-run de homologação: loga e não envia (status já marcado — aceitável
-  //    em dry-run: o objetivo é ver o funil nos logs sem tocar cliente).
-  if (deps.dryRun) {
-    console.log(`[abordagem] DRY: enviaria (${row.tipo}) pra lead=${row.lead_id}: ${row.mensagem_proposta}`);
-    return true;
-  }
 
   const lead = await getLeadBasico(client, row.lead_id);
   if (!lead?.phone) {
@@ -329,13 +382,22 @@ export async function enviarParaCliente(deps: OrqDeps, abordagemId: string): Pro
       const msg = (err as Error).message ?? String(err);
       // 132001 = template não existe / 132000 = parâmetros — template não
       // aprovado no Meta. Aviso ÚNICO ao admin (flag persistida no config).
-      if (/13200[01]/.test(msg) && !config.template_bloqueio_avisado) {
+      if (/13200[01]/.test(msg)) {
+        // I4: marcador pra vassoura NÃO expirar essa proposta — ela re-tenta o
+        // envio; quando o template for aprovado, a abordagem sai sozinha.
         try {
-          await deps.sendText(deps.adminPhone,
-            `⚠️ Template ${config.template_nome} ainda não aprovado no Meta — as abordagens de monitoramento ficam seguradas até aprovar.`);
-          await marcarBloqueioTemplateAvisado(client);
-        } catch (e2) {
-          console.warn('[abordagem] aviso de bloqueio falhou:', (e2 as Error).message);
+          await atualizarAbordagem(client, abordagemId, { nota_observacao: '[template bloqueado]' });
+        } catch (e3) {
+          console.warn('[abordagem] marcar [template bloqueado] falhou:', (e3 as Error).message);
+        }
+        if (!config.template_bloqueio_avisado) {
+          try {
+            await deps.sendText(deps.adminPhone,
+              `⚠️ Template ${config.template_nome} ainda não aprovado no Meta — as abordagens de monitoramento ficam seguradas até aprovar.`);
+            await marcarBloqueioTemplateAvisado(client);
+          } catch (e2) {
+            console.warn('[abordagem] aviso de bloqueio falhou:', (e2 as Error).message);
+          }
         }
       }
       console.error('[abordagem] template falhou:', msg);
@@ -584,6 +646,11 @@ export async function handleRespostaCliente(
     const ehPodeContar = /^pode contar\.?$/i.test(t);
 
     if (ehAgoraNao) {
+      // C3: consome o marcador '[template enviado]' ANTES de reagendar (retorno
+      // descartado — a mensagem real vai pela reagendada). Sem isso o marcador
+      // ficava vivo e a próxima resposta do cliente disparava a escada JUNTO
+      // com a combinada (mensagem dupla).
+      await consumirMarcadorTemplate(client, abordagem.id);
       // Reagenda +2 dias fixos (parse de "amanhã/à noite" = fast-follow
       // registrado na spec como simplificação aceita). UMA tentativa só.
       await atualizarAbordagem(client, abordagem.id, {
@@ -604,11 +671,10 @@ export async function handleRespostaCliente(
         await deps.sendText(lead.phone, msg);
         return 'respondi';
       }
-      // Quick reply sem marcador (repetido/corrida): não manda nada nem
-      // deixa a Eva responder "pode contar" com contexto stale.
-      if (ehPodeContar) return 'respondi';
-      // posTemplate + texto livre + marcador já consumido por outro webhook:
-      // é resposta normal do cliente — a Eva segue com o contexto.
+      // M4: "pode contar" com marcador já consumido (repetido/corrida) →
+      // 'segue_eva': a Eva responde com o contexto da abordagem injetado.
+      // 'respondi' silencioso deixava o cliente no vácuo.
+      // posTemplate + texto livre idem: resposta normal do cliente.
       return 'segue_eva';
     }
     // Resposta livre: a conversa segue no fluxo normal da Eva com o contexto
@@ -664,8 +730,14 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
       const fila = await getAbordagensParaLembrete(client, agoraIso, RITMO.LEMBRETE_DIAS);
       for (const row of fila) {
         try {
+          // I1: FRESCOR — alerta resolvido entre o envio e o lembrete →
+          // encerra sem cobrar (em dry-run não muta; o encerramento real fica
+          // pro ciclo sem dry). Mesmo helper do enviarParaCliente.
+          if (!deps.dryRun && await encerrarSeAlertaResolvido(deps, row)) continue;
           const lead = await getLeadBasico(client, row.lead_id);
           if (!lead?.phone) continue;
+          // I7: Junior assumiu a conversa — o lembrete espera o próximo ciclo.
+          if (await emTakeover(deps, lead.phone)) continue;
           let aberta = false;
           try { aberta = await deps.janela24hAberta(lead.phone); } catch { aberta = false; }
           // Lembrete fora da janela 24h não usa template (decisão registrada no
@@ -730,7 +802,32 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
           console.log(`[abordagem] DRY encerraria sem resposta: ${row.id}`);
           continue;
         }
-        const ok = await mudarStatusAbordagem(client, row.id, ['lembrete_enviado'], 'encerrada',
+        // I1: alerta resolvido enquanto o cliente ficou calado → desfecho
+        // verdadeiro é 'resolvido_sozinho', não 'sem_resposta' (sem botões).
+        if (await encerrarSeAlertaResolvido(deps, row)) continue;
+        // Spec: lembrete/escalada de silêncio é só pra PROBLEMA (queda/offline)
+        // — parabéns não cobra resposta. O repo já filtra por tipo; se chegar
+        // aqui por outra via, encerra com desfecho null e aviso SÓ de resumo
+        // (👍/👎), sem [Eu ligo]/[Agendar visita].
+        if (row.tipo === 'parabens' || row.tipo === 'depoimento') {
+          const okMilestone = await mudarStatusAbordagem(client, row.id,
+            ['enviada', 'lembrete_enviado'], 'encerrada', { encerrada_em: agoraIso });
+          if (!okMilestone) continue;
+          const leadM = await getLeadBasico(client, row.lead_id);
+          const sistemaM = await getSistemaBasico(client, row.sistema_id);
+          await deps.waba.sendInteractiveButtons(deps.adminPhone,
+            `📋 ${leadM?.name ?? sistemaM?.apelido ?? 'Cliente'}: não respondeu o ${ROTULO_TIPO[row.tipo]} — encerrei sem cobrar.`,
+            [
+              { id: `mab:fb-boa:${row.id}`, title: '👍 Boa' },
+              { id: `mab:fb-errou:${row.id}`, title: '👎 Errou' },
+            ], FOOTER);
+          continue;
+        }
+        // C2: 'enviada' sem resposta também encerra direto (sem lembrete):
+        // fora da janela 24h o lembrete por texto é impossível — sem isso a
+        // usina deadlocka ('enviada' eterna + unique parcial travando).
+        const ok = await mudarStatusAbordagem(client, row.id,
+          ['enviada', 'lembrete_enviado'], 'encerrada',
           { desfecho: 'sem_resposta', encerrada_em: agoraIso });
         if (!ok) continue;
         const lead = await getLeadBasico(client, row.lead_id);
@@ -756,11 +853,30 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
       const fila = await getAbordagensReagendadasDevidas(client, agoraIso);
       for (const row of fila) {
         try {
+          // I3: abordagem que o ritmo segurou na hora do envio ('proposta' /
+          // 'aguardando_aprovacao' com reagendada_para vencido) → re-tenta o
+          // envio COMPLETO (frescor + ritmo + CAS estão no enviarParaCliente;
+          // se o ritmo segurar de novo, ele re-agenda +1 dia sozinho).
+          if (row.status === 'proposta' || row.status === 'aguardando_aprovacao') {
+            if (deps.dryRun) {
+              console.log(`[abordagem] DRY reagendada (segurada pelo ritmo) re-tentaria envio: ${row.id}`);
+              continue;
+            }
+            const okRitmo = await limparReagendamento(client, row.id);
+            if (!okRitmo) continue;
+            await enviarParaCliente(deps, row.id);
+            continue;
+          }
+          // I1: FRESCOR — alerta resolvido durante o "agora não" → encerra
+          // sem voltar a falar de problema que não existe mais.
+          if (!deps.dryRun && await encerrarSeAlertaResolvido(deps, row)) continue;
           const lead = await getLeadBasico(client, row.lead_id);
           if (!lead?.phone || !row.mensagem_proposta) {
             await atualizarAbordagem(client, row.id, { reagendada_para: null });
             continue;
           }
+          // I7: Junior assumiu a conversa — a combinada espera o próximo ciclo.
+          if (await emTakeover(deps, lead.phone)) continue;
           if (deps.dryRun) {
             console.log(`[abordagem] DRY reagendada ${row.id}: ${row.mensagem_proposta}`);
             continue;
@@ -781,6 +897,10 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
               const config = await getConfig(client);
               await deps.waba.sendTemplate(lead.phone, config.template_nome, 'pt_BR',
                 [{ type: 'body', parameters: [{ type: 'text', text: primeiroNome(lead.name) }] }]);
+              // C3 (ciclo do marcador): o "agora não" CONSUMIU o marcador
+              // original; este 2º template RE-MARCA '[template enviado]' pra
+              // resposta do cliente disparar a escada de novo (sem re-marcar,
+              // ela cairia em 'segue_eva' sem a mensagem combinada).
               await atualizarAbordagem(client, row.id, { mensagem_enviada: '[template enviado]' });
             }
           } catch (err) {
@@ -801,72 +921,78 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
   // d. PÓS-LIMPEZA (spec queda item 4): quedas encerradas por limpeza há 10-20
   //    dias → compara média 7d antes × 7d recentes e comemora/escala 1×.
   try {
-    const de = addDias(agora, -20).toISOString();
-    const ate = addDias(agora, -10).toISOString();
-    const fila = (await getQuedasEncerradasPorLimpeza(client, de, ate))
-      .filter((r) => !(r.nota_observacao ?? '').includes('[followup feito]'));
-    for (const row of fila) {
-      try {
-        if (!row.encerrada_em) continue;
-        const limpeza = new Date(row.encerrada_em);
-        const gerAntes = await getGeracaoEntre(client, row.sistema_id,
-          isoDia(addDias(limpeza, -7)), isoDia(addDias(limpeza, -1)));
-        const gerDepois = await getGeracaoEntre(client, row.sistema_id,
-          isoDia(addDias(agora, -7)), isoDia(agora));
-        const pct = recuperacaoPosLimpeza(
-          gerAntes.map((g) => Number(g.geracao_kwh)),
-          gerDepois.map((g) => Number(g.geracao_kwh)));
-        // Sem dado suficiente: NÃO marca — re-tenta nos próximos ciclos até a
-        // janela de 20 dias expirar sozinha.
-        if (pct === null) continue;
+    // M3: pós-limpeza respeita o MESMO horário comercial dos outros envios —
+    // comemorar às 3h da manhã queima a confiança igual a qualquer proativa.
+    if (dentroDaJanela(agora)) {
+      const de = addDias(agora, -20).toISOString();
+      const ate = addDias(agora, -10).toISOString();
+      const fila = (await getQuedasEncerradasPorLimpeza(client, de, ate))
+        .filter((r) => !(r.nota_observacao ?? '').includes('[followup feito]'));
+      for (const row of fila) {
+        try {
+          if (!row.encerrada_em) continue;
+          const limpeza = new Date(row.encerrada_em);
+          const gerAntes = await getGeracaoEntre(client, row.sistema_id,
+            isoDia(addDias(limpeza, -7)), isoDia(addDias(limpeza, -1)));
+          const gerDepois = await getGeracaoEntre(client, row.sistema_id,
+            isoDia(addDias(agora, -7)), isoDia(agora));
+          const pct = recuperacaoPosLimpeza(
+            gerAntes.map((g) => Number(g.geracao_kwh)),
+            gerDepois.map((g) => Number(g.geracao_kwh)));
+          // Sem dado suficiente: NÃO marca — re-tenta nos próximos ciclos até a
+          // janela de 20 dias expirar sozinha.
+          if (pct === null) continue;
 
-        if (deps.dryRun) {
-          console.log(`[abordagem] DRY pós-limpeza ${row.id}: recuperação ${pct}%`);
-          continue;
-        }
-        // M2: '[followup feito]' marca SÓ depois do envio OK (preserva
-        // observação anterior). Marcar antes perdia a comemoração em falha de
-        // envio; fora da janela 24h NÃO marca — re-tenta no próximo ciclo (a
-        // janela pode abrir; a faixa de 20 dias expira sozinha).
-        const marca = row.nota_observacao
-          ? `${row.nota_observacao} [followup feito]` : '[followup feito]';
-
-        if (pct >= 10) {
-          const lead = await getLeadBasico(client, row.lead_id);
-          if (!lead?.phone) {
-            // sem telefone NUNCA vai dar — marca pra não re-tentar pra sempre
-            await atualizarAbordagem(client, row.id, { nota_observacao: marca });
+          if (deps.dryRun) {
+            console.log(`[abordagem] DRY pós-limpeza ${row.id}: recuperação ${pct}%`);
             continue;
           }
-          let aberta = false;
-          try { aberta = await deps.janela24hAberta(lead.phone); } catch { aberta = false; }
-          if (!aberta) continue; // fora da janela: comemorar não vale template (sem marcar)
-          // Número PRONTO em texto fixo (determinístico > IA pra 1 frase).
-          const msg = `Boa notícia, ${primeiroNome(lead.name)}! Depois da limpeza a sua usina está gerando ${pct}% a mais ☀️👏 Valeu a pena o cuidado — qualquer coisa, é só me chamar!`;
-          await deps.sendText(lead.phone, msg);
-          await atualizarAbordagem(client, row.id, { nota_observacao: marca });
-          // Diário: follow-up registrado como abordagem já encerrada (etapa 9 =
-          // marcador de follow-up, fora da escada de redação de propósito).
-          const { error } = await client.from('monitoring_abordagens').insert({
-            sistema_id: row.sistema_id, lead_id: row.lead_id, alerta_id: null,
-            tipo: 'queda', etapa: 9, status: 'encerrada', desfecho: 'resolvido_sozinho',
-            mensagem_proposta: msg, mensagem_enviada: msg,
-            resposta_resumo: `follow-up pós-limpeza: geração +${pct}%`,
-            enviada_em: agoraIso, encerrada_em: agoraIso,
-          });
-          if (error) console.warn('[abordagem] registro do follow-up falhou:', error.message);
-        } else if (pct < 0) {
-          const lead = await getLeadBasico(client, row.lead_id);
-          const sistema = await getSistemaBasico(client, row.sistema_id);
-          await deps.sendText(deps.adminPhone,
-            `⚠️ ${lead?.name ?? sistema?.apelido ?? 'Cliente'} limpou as placas mas a geração CAIU ${Math.abs(pct)}% — pode ser problema técnico, vale olhar.`);
-          await atualizarAbordagem(client, row.id, { nota_observacao: marca });
-        } else {
-          // 0 <= pct < 10: melhora tímida — nada a comemorar; marca e segue.
-          await atualizarAbordagem(client, row.id, { nota_observacao: marca });
+          // M2: '[followup feito]' marca SÓ depois do envio OK (preserva
+          // observação anterior). Marcar antes perdia a comemoração em falha de
+          // envio; fora da janela 24h NÃO marca — re-tenta no próximo ciclo (a
+          // janela pode abrir; a faixa de 20 dias expira sozinha).
+          const marca = row.nota_observacao
+            ? `${row.nota_observacao} [followup feito]` : '[followup feito]';
+
+          if (pct >= 10) {
+            const lead = await getLeadBasico(client, row.lead_id);
+            if (!lead?.phone) {
+              // sem telefone NUNCA vai dar — marca pra não re-tentar pra sempre
+              await atualizarAbordagem(client, row.id, { nota_observacao: marca });
+              continue;
+            }
+            // I7: Junior na conversa — espera o próximo ciclo (sem marcar).
+            if (await emTakeover(deps, lead.phone)) continue;
+            let aberta = false;
+            try { aberta = await deps.janela24hAberta(lead.phone); } catch { aberta = false; }
+            if (!aberta) continue; // fora da janela: comemorar não vale template (sem marcar)
+            // Número PRONTO em texto fixo (determinístico > IA pra 1 frase).
+            const msg = `Boa notícia, ${primeiroNome(lead.name)}! Depois da limpeza a sua usina está gerando ${pct}% a mais ☀️👏 Valeu a pena o cuidado — qualquer coisa, é só me chamar!`;
+            await deps.sendText(lead.phone, msg);
+            await atualizarAbordagem(client, row.id, { nota_observacao: marca });
+            // Diário: follow-up registrado como abordagem já encerrada (etapa 9 =
+            // marcador de follow-up, fora da escada de redação de propósito).
+            const { error } = await client.from('monitoring_abordagens').insert({
+              sistema_id: row.sistema_id, lead_id: row.lead_id, alerta_id: null,
+              tipo: 'queda', etapa: 9, status: 'encerrada', desfecho: 'resolvido_sozinho',
+              mensagem_proposta: msg, mensagem_enviada: msg,
+              resposta_resumo: `follow-up pós-limpeza: geração +${pct}%`,
+              enviada_em: agoraIso, encerrada_em: agoraIso,
+            });
+            if (error) console.warn('[abordagem] registro do follow-up falhou:', error.message);
+          } else if (pct < 0) {
+            const lead = await getLeadBasico(client, row.lead_id);
+            const sistema = await getSistemaBasico(client, row.sistema_id);
+            await deps.sendText(deps.adminPhone,
+              `⚠️ ${lead?.name ?? sistema?.apelido ?? 'Cliente'} limpou as placas mas a geração CAIU ${Math.abs(pct)}% — pode ser problema técnico, vale olhar.`);
+            await atualizarAbordagem(client, row.id, { nota_observacao: marca });
+          } else {
+            // 0 <= pct < 10: melhora tímida — nada a comemorar; marca e segue.
+            await atualizarAbordagem(client, row.id, { nota_observacao: marca });
+          }
+        } catch (err) {
+          console.error('[abordagem] pós-limpeza falhou:', (err as Error).message);
         }
-      } catch (err) {
-        console.error('[abordagem] pós-limpeza falhou:', (err as Error).message);
       }
     }
   } catch (err) {
@@ -886,6 +1012,18 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
           // 'proposta' presa = falha silenciosa (nunca chegou a existir pro
           // Junior). > 7 dias: expira SEM aviso, libera a usina.
           if (row.updated_at >= corteExpira) continue;
+          // I4: template não aprovado NÃO expira em silêncio — re-tenta o
+          // envio: se o Meta aprovou nesse meio tempo, sai agora; senão o
+          // erro re-marca '[template bloqueado]' e volta a segurar.
+          // Propostas presas SEM esse marcador seguem expirando como sempre.
+          if ((row.nota_observacao ?? '').includes('[template bloqueado]')) {
+            if (deps.dryRun) {
+              console.log(`[abordagem] DRY vassoura re-tentaria template bloqueado: ${row.id}`);
+              continue;
+            }
+            await enviarParaCliente(deps, row.id);
+            continue;
+          }
           if (deps.dryRun) {
             console.log(`[abordagem] DRY vassoura expiraria proposta presa: ${row.id}`);
             continue;
