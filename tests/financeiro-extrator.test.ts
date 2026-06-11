@@ -45,8 +45,9 @@ describe('financeiro/extrator: parse da resposta da IA', () => {
     expect(e?.valor).toBeNull();
     expect(e?.campos_faltando).toContain('valor');
   });
-  it('relacionado default true; false só quando explícito', () => {
-    expect(parseRespostaExtrator('{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":10}')?.relacionado).toBe(true);
+  it('relacionado: true/false explícitos respeitados; omissão vira null (nunca mescla por padrão)', () => {
+    expect(parseRespostaExtrator('{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":10}')?.relacionado).toBeNull();
+    expect(parseRespostaExtrator('{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":10,"relacionado":true}')?.relacionado).toBe(true);
     expect(parseRespostaExtrator('{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":10,"relacionado":false}')?.relacionado).toBe(false);
   });
 });
@@ -62,5 +63,9 @@ describe('financeiro/extrator: prompts', () => {
     const p = montarPromptGate('bom dia Eva');
     expect(p).toContain('SIM');
     expect(p).toContain('NAO');
+  });
+  it('pergunta/consulta sobre números não vira lançamento (regra nos prompts)', () => {
+    expect(montarPromptExtracaoTexto('x', '2026-06-11')).toContain('PERGUNTA/consulta');
+    expect(montarPromptGate('x')).toContain('consulta');
   });
 });

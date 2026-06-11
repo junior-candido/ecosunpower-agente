@@ -170,7 +170,8 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
         `Se a resposta do dono abaixo CORRIGE/COMPLETA esse lançamento, devolva o JSON completo já mesclado com "relacionado": true. ` +
         `Se for um lançamento NOVO (outro gasto/entrada, sem relação com o pendente), devolva o JSON do novo com "relacionado": false.\n\nResposta: "${texto}"`;
       const e = await extrairDeTexto(deps.anthropic, contexto, hoje);
-      if (e && e.financeiro && e.relacionado === false) {
+      // Mescla SÓ com afirmação explícita do modelo — omissão tratada como lançamento novo (pior perder a mescla rara do que engolir dinheiro novo em silêncio).
+      if (e && e.financeiro && e.relacionado !== true) {
         // Lançamento NOVO no meio da conversa: solta o pendente atual (fica
         // confirmável por clique) e cria o novo — os DOIS sobrevivem.
         await atualizarPendente(deps.supabase, aguardando.id, { extracao: { ...aguardando.extracao, aguardando: false } });

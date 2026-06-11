@@ -3168,7 +3168,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // finlan:<acao>:<id>[:<extra>] — botões da Caixa de Entrada (Fatia 3).
     if (isAdminPhone(from) && text.trim().startsWith('finlan:')) {
-      if (!metaWaba) { console.warn('[caixa-entrada] WABA indisponível'); return; }
+      if (!metaWaba) {
+        console.warn('[caixa-entrada] WABA indisponível');
+        await sendText(from, '❌ WABA indisponível pros botões do financeiro');
+        return;
+      }
       const { handleFinlanButton } = await import('./modules/financeiro/caixa-entrada.js');
       await handleFinlanButton(getCaixaDeps(), from, text.trim());
       return;

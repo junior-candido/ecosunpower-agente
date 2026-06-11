@@ -17,7 +17,7 @@ export interface ExtracaoLancamento {
   obra_ref: string | null;        // nome do cliente/obra citado, se houver
   descricao: string | null;
   campos_faltando: string[];
-  relacionado: boolean;           // false = lançamento NOVO (não mescla com pendente)
+  relacionado: boolean | null;    // true = corrige pendente; false = lançamento NOVO; null = modelo não informou (NUNCA mescla)
 }
 
 function numeroOuNull(v: unknown): number | null {
@@ -66,7 +66,7 @@ export function parseRespostaExtrator(raw: string): ExtracaoLancamento | null {
     obra_ref: strOuNull(obj.obra_ref),
     descricao: strOuNull(obj.descricao),
     campos_faltando: [...faltando],
-    relacionado: obj.relacionado !== false,
+    relacionado: obj.relacionado === true ? true : obj.relacionado === false ? false : null,
   };
 }
 
@@ -89,7 +89,8 @@ REGRAS (dinheiro em jogo — leia como contador):
   intencao "apagar": quer remover ("apaga o último gasto"). Senão → "lancar".
 - financeiro false quando NÃO for assunto de dinheiro da empresa/pessoal: conta de luz de
   CLIENTE, foto de telhado/obra, documento de proposta, conversa comum. Na dúvida sobre ser
-  financeiro → false (o fluxo normal trata).`;
+  financeiro → false (o fluxo normal trata).
+- PERGUNTA/consulta sobre números ("quanto gastei esse mês?", "qual o imposto?", "como tá o caixa?") NÃO é lançamento → financeiro: false (a Eva responde no fluxo normal).`;
 
 export function montarPromptExtracaoTexto(texto: string, hoje: string): string {
   return `Você lê mensagens do DONO de uma empresa de energia solar e extrai lançamentos financeiros (gasto ou entrada de dinheiro).
@@ -110,6 +111,7 @@ ${REGRAS_COMUNS(hoje)}`;
 export function montarPromptGate(texto: string): string {
   return `O dono de uma empresa manda mensagens variadas. Responda APENAS "SIM" ou "NAO":
 a mensagem abaixo fala de DINHEIRO entrando ou saindo (gasto, pagamento, compra, recebimento, correção ou exclusão de um lançamento financeiro)?
+Pergunta/consulta sobre números ("quanto gastei?") NÃO conta — responda NAO.
 
 Mensagem: "${texto}"`;
 }
