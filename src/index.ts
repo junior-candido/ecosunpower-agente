@@ -129,7 +129,7 @@ a.btn:hover { transform: translateY(-2px); }
 <div class="icon">${kind === 'expired' ? '⏰' : kind === 'error' ? '⚠️' : '🔍'}</div>
 <h1>${titles[kind]}</h1>
 <p>${messages[kind]}</p>
-<a class="btn" href="https://wa.me/${empresa().telefoneAtendente ?? ''}">Falar no WhatsApp</a>
+${empresa().telefoneAtendente ? `<a class="btn" href="https://wa.me/${empresa().telefoneAtendente}">Falar no WhatsApp</a>` : ''}
 <div class="brand">${empresa().nomeFantasia} Energia Solar · ${empresa().siteUrl.replace(/^https?:\/\//, '')}</div>
 </div>
 </body>

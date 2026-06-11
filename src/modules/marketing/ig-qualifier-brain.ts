@@ -43,7 +43,8 @@ function shouldEscalate(text: string): boolean {
 
 // [ECOSOF] Telefone do WhatsApp do negócio vem da empresa_config (lido em
 // runtime no handoff — função, não const capturada no load).
-const waPhone = () => empresa().telefoneAtendente ?? '';
+// Retorna null quando telefone não configurado (clone sem chip) — caller deve omitir o link.
+const waPhone = () => empresa().telefoneAtendente;
 
 export function nextStep(state: QualifyState, input: string): NextStepResult {
   if (shouldEscalate(input) && state.step !== 'start') {
@@ -127,10 +128,13 @@ export function nextStep(state: QualifyState, input: string): NextStepResult {
     case 'await_handoff': {
       if (input.toLowerCase().includes('sim') || input === 'sim') {
         const ctxText = `Vim do Instagram. Tipo: ${state.data.tipo}, Cidade: ${state.data.cidade}, Faixa: ${state.data.faixa_conta}`;
-        const link = `https://wa.me/${waPhone()}?text=${encodeURIComponent(ctxText)}`;
+        const phone = waPhone();
+        const linkMsg = phone
+          ? `Clica aqui pra continuar no WhatsApp:\nhttps://wa.me/${phone}?text=${encodeURIComponent(ctxText)}\n\nVou te aguardar lá.`
+          : 'Vou pedir pro nosso time te chamar no WhatsApp em breve!';
         return {
           next: { ...state, step: 'handed_off' },
-          message: `Perfeito! Clica aqui pra continuar no WhatsApp:\n${link}\n\nVou te aguardar lá.`,
+          message: `Perfeito! ${linkMsg}`,
         };
       }
       return {

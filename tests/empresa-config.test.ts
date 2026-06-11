@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'fs';
 import {
   EMPRESA_DEFAULTS, normalizarEmpresaRow, interpolarEmpresa, listaMarcasTexto,
-  carregarEmpresaConfig, empresa, _resetEstadoParaTeste,
+  carregarEmpresaConfig, empresa, _resetEstadoParaTeste, nomeTituloCase,
 } from '../src/modules/empresa-config.js';
 
 describe('empresa-config: defaults EcoSun (fallback sem banco)', () => {
@@ -61,6 +61,10 @@ describe('empresa-config: interpolação de placeholders', () => {
   it('placeholder desconhecido fica intacto (não explode)', () => {
     expect(interpolarEmpresa('{{nao_existe}}', EMPRESA_DEFAULTS)).toBe('{{nao_existe}}');
   });
+  it('rt_nome interpola em Title Case (Eva não grita o nome do RT)', () => {
+    const out = interpolarEmpresa('RT: {{rt_nome}}', EMPRESA_DEFAULTS);
+    expect(out).toBe('RT: Antonio Candido Rodrigues Junior');
+  });
   it('I2: valor com "$&" é interpolado literalmente sem expand de regex', () => {
     // Se replaceAll usasse string em vez de função, "$&" viraria o padrão encontrado.
     const config = { ...EMPRESA_DEFAULTS, descricaoCurta: 'US$ 100 $&' };
@@ -96,7 +100,9 @@ describe('system-prompt: placeholders resolvem com o seed EcoSun (paridade)', ()
     expect(out).toContain('700');
     // identidade central resolvida
     expect(out).toContain('Voce e a Eva, **consultora de energia solar** da EcoSunPower');
-    expect(out).toContain('ANTONIO CANDIDO RODRIGUES JUNIOR');
+    // rt_nome interpola em Title Case no prompt (Eva não grita o nome pro cliente)
+    expect(out).toContain('Antonio Candido Rodrigues Junior');
+    expect(out).not.toContain('ANTONIO CANDIDO RODRIGUES JUNIOR');
   });
 });
 

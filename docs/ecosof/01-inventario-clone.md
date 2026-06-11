@@ -103,6 +103,17 @@ Infra do clone: `SUPABASE_URL/SERVICE_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY
 - Banner maker com kits/marca EcoSun — flag off no início.
 - Importadores de campanha específicos (scripts/) — não rodam no clone.
 
+## Deltas de paridade aceitos na Fase B (11/06, review A/B de contrato/procuração)
+
+- Contrato: preâmbulo agora "Responsável Técnico CREA/CFT" (regra do título; assinatura byte-idêntica).
+- Rodapé proposta: razão social oficial em caixa alta. Procuração: acento em "Brasília-DF".
+- "É robô?": sem nome próprio (clonabilidade). Pendência futura: campo `rt_apelido` pra falas
+  client-facing ("Junior" hoje segue hardcoded em ~4 falas, listadas no review).
+- Prompt: linha nova de marcas oficiais ({{marcas_texto}}); frase antiga "Usamos Trina, JA Solar
+  e Longi" segue hardcoded — pendência de clone. Termos/privacidade reescritos com placeholders
+  (região com lista de cidades). Prompts internos com região por extenso.
+- Endereço do contrato: vírgula RESTAURADA (era o único delta não-intencional — consertado).
+
 ## F) Próximos passos do Kit (ordem)
 
 1. ✅ Este inventário.

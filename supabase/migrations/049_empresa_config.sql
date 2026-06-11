@@ -57,7 +57,7 @@ INSERT INTO empresa_config (
   'ECOSUNPOWER ENERGIA SOLAR LTDA',
   'EcoSunPower',
   '33.020.459/0001-06',
-  'SHA Conjunto 01 Chácara 44C Lote 6 - Arniqueira',
+  'SHA Conjunto 01 Chácara 44C Lote 6, Arniqueira',
   'Brasília', 'DF', '71993-150',
   'junior@ecosunpower.eng.br',
   'https://ecosunpower.eng.br',
