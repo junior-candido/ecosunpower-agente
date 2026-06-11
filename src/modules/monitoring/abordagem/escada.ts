@@ -19,7 +19,7 @@ export const ESCADAS: Record<AbordagemTipo, Degrau[]> = {
     { etapa: 3, objetivo: 'Lembrete educado e curto: retomar a conversa sobre a queda de geração sem repetir tudo, perguntando se pode ajudar. Uma vez só.' },
   ],
   offline: [
-    { etapa: 1, objetivo: 'Avisar que a usina está sem enviar dados há X dias (número real fornecido) e guiar pelas causas comuns, UMA pergunta por vez: mudou a internet? Trocou a senha do wifi? O aparelhinho perto do inversor está com luz acesa? Se houver causa raiz de outra vez, começar por ela.' },
+    { etapa: 1, objetivo: 'Avisar que a usina está sem enviar dados há X dias (número real fornecido) e guiar pelas causas comuns (internet nova, senha do wifi trocada, luz do aparelhinho perto do inversor apagada), fazendo UMA pergunta por mensagem, começando pela mais provável. Se houver causa raiz de outra vez, começar por ela.' },
     { etapa: 2, objetivo: 'Os passos simples não resolveram: oferecer visita técnica da EcoSunPower (SEM falar valor), explicando com simplicidade por que o monitoramento ligado protege a geração e o investimento do cliente.' },
     { etapa: 3, objetivo: 'Lembrete educado e curto: a usina segue sem monitorar, perguntar se conseguiu olhar os passos ou se quer ajuda. Uma vez só.' },
   ],

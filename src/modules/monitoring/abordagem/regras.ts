@@ -32,7 +32,7 @@ export function podeAbordar(
   const msgHoje = diasDesde(diario.ultimaMsgProativaAoLeadEm, hoje);
   if (msgHoje !== null && msgHoje < 1) return { ok: false, motivo: 'cliente já recebeu proativa hoje' };
 
-  const descarte = diasDesde(diario.descartadaPeloJuniorEm, hoje);
+  const descarte = diasDesde(diario.descartadaMesmoTipoEm, hoje);
   if (descarte !== null && descarte < RITMO.DESCARTE_DIAS) {
     return { ok: false, motivo: `Junior descartou há ${descarte}d (<${RITMO.DESCARTE_DIAS}d)` };
   }

@@ -6,7 +6,7 @@ import {
 
 const diario = {
   abordagemAbertaId: null, ultimoParabensEnviadoEm: null,
-  ultimaOfertaLimpezaEm: null, descartadaPeloJuniorEm: null,
+  ultimaOfertaLimpezaEm: null, descartadaMesmoTipoEm: null,
   causaRaizAnterior: null, jaTeveDepoimento: false,
   ultimaMsgProativaAoLeadEm: null,
 };
@@ -30,8 +30,8 @@ describe('abordagem/regras: elegibilidade básica', () => {
     expect(podeAbordar('queda', lead, { ...diario, ultimaMsgProativaAoLeadEm: '2026-06-10T09:00:00Z' }, hoje).ok).toBe(true);
   });
   it('Junior descartou esse tipo há <30d → não re-propõe', () => {
-    expect(podeAbordar('queda', lead, { ...diario, descartadaPeloJuniorEm: '2026-06-01T00:00:00Z' }, hoje).ok).toBe(false);
-    expect(podeAbordar('queda', lead, { ...diario, descartadaPeloJuniorEm: '2026-05-01T00:00:00Z' }, hoje).ok).toBe(true);
+    expect(podeAbordar('queda', lead, { ...diario, descartadaMesmoTipoEm: '2026-06-01T00:00:00Z' }, hoje).ok).toBe(false);
+    expect(podeAbordar('queda', lead, { ...diario, descartadaMesmoTipoEm: '2026-05-01T00:00:00Z' }, hoje).ok).toBe(true);
   });
 });
 

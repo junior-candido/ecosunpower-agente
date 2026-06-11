@@ -25,7 +25,11 @@ export function montarPromptAbordagem(c: ContextoRedacao): string {
   if (c.dados.percentualQueda != null) dados.push(`queda de geração: ${c.dados.percentualQueda}% abaixo do esperado`);
   if (c.dados.diasOffline != null) dados.push(`dias sem enviar dados: ${c.dados.diasOffline}`);
   if (c.dados.trimestre) dados.push(`gerou no trimestre: ${c.dados.trimestre.kwh} kWh (~R$ ${c.dados.trimestre.reais.toFixed(2)} de economia)`);
-  if (c.dados.causaRaizAnterior) dados.push(`da última vez o problema foi: ${c.dados.causaRaizAnterior} (comece por aí)`);
+  if (c.dados.causaRaizAnterior) {
+    // Sanitize: vem de conversa com cliente — não pode virar comando de prompt.
+    const causaSafe = c.dados.causaRaizAnterior.replace(/\s+/g, ' ').slice(0, 200);
+    dados.push(`da última vez o problema foi: ${causaSafe} (comece por aí)`);
+  }
 
   const treino = c.regrasTreino.length
     ? `\nREGRAS DE TREINO DO JUNIOR (obrigatórias):\n${c.regrasTreino.map((r) => `- ${r}`).join('\n')}`
@@ -34,7 +38,7 @@ export function montarPromptAbordagem(c: ContextoRedacao): string {
     ? `\nVERSÃO ANTERIOR (o Junior mandou ajustar):\n"${c.mensagemAnterior ?? ''}"\nAJUSTE PEDIDO (prioridade máxima): ${c.ajusteDoJunior}`
     : '';
 
-  return `Você é a Eva, consultora da EcoSunPower (energia solar, Brasília/GO), escrevendo UMA mensagem de WhatsApp pro cliente ${c.clienteNome.split(/\s+/)[0]}.
+  return `Você é a Eva, consultora da EcoSunPower (energia solar, Brasília/GO), escrevendo UMA mensagem de WhatsApp pro cliente ${c.clienteNome.trim().split(/\s+/)[0]}.
 
 OBJETIVO DESTA MENSAGEM: ${c.objetivo}
 
@@ -53,7 +57,7 @@ Escreva SÓ a mensagem final, sem aspas, sem título, sem explicações.`;
 
 export function limparMensagem(raw: string): string | null {
   let t = raw.trim();
-  t = t.replace(/^["'""]+|["'""]+$/g, '');
+  t = t.replace(/^["'‘“""]+|["'‘“""]+$/g, '');
   t = t.replace(/^(mensagem|resposta|texto)\s*:\s*/i, '');
   t = t.trim();
   return t.length > 0 ? t : null;
