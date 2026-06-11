@@ -1087,6 +1087,13 @@ git commit -m "chore(monitoramento): build marker MONITORAMENTO-EVOLUTIVO-2026-0
    - Implantar → `curl /health` = `MONITORAMENTO-EVOLUTIVO-2026-06-12`.
    - Smoke (fase treino — nada chega no cliente sem o Junior): aguardar 1 alerta real (ou forçar com usina de teste) → conferir mensagem proposta + botões mab → [Ajustar] → conferir reescrita → [Pode mandar] → conferir template/mensagem no cliente → responder como cliente → conferir contexto + resumo de feedback 👍/👎 → conferir timeline no dashboard.
 
+## Erratas pós-review
+
+- **Fase A:** os degraus de oferta (queda 2, offline 2) usam "SEM falar valor" em vez de
+  "SEM falar preço" — resolução correta de uma contradição do plano (o teste da escada exige
+  ausência da palavra "preço" no objetivo). A proibição dura continua no prompt do redator
+  ("NUNCA fale preço ou valores de serviço").
+
 ## Riscos conhecidos / decisões registradas
 
 - **Reagendamento do "Agora não" = +2 dias fixo nesta versão** (parse de "amanhã/à noite" ficou como fast-follow — YAGNI; registrado na spec como simplificação aceita).
