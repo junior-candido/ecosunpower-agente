@@ -96,6 +96,8 @@ Tabela nova **`monitoring_abordagens`** (migration 048):
 - `causa_raiz` (text — ex.: "senha do wifi"; alimenta a próxima abordagem),
 - `mensagem_enviada` (text), `resposta_resumo` (text),
 - `nota_junior` (null | 'boa' | 'errou'), `nota_observacao` (text — o que errou, vira treino),
+- `reagendada_para` (timestamptz null — cliente pediu "agora não, me chama X"; o dispatcher só
+  retoma a partir daí),
 - `created_at`, `updated_at`, `encerrada_em`.
 
 **Regras de ritmo/não-repetição (puras, testáveis) que o motor consulta ANTES de propor:**
@@ -133,6 +135,12 @@ Tabela nova **`monitoring_abordagens`** (migration 048):
   entregue pro Junior cadastrar no Meta (passo a passo guiado).
 - Cliente responde ao template → janela abre → a conversa real acontece (a mensagem da escada
   vai aí). Dentro da janela 24h → mensagem direta.
+- Template tem 2 botões de resposta rápida: **"Pode contar"** (segue a escada) e **"Agora não"**.
+- **"Agora não" (decisão Junior 11/06):** a resposta abre a janela → Eva responde na hora:
+  agradece, pergunta QUANDO é um bom momento ("é coisa rápida, mas importante sobre a sua
+  usina") e REAGENDA a abordagem pro momento que o cliente indicar (parse simples:
+  hoje à noite/amanhã/dia da semana; sem resposta clara → +2 dias, UMA tentativa só).
+  Registrado no diário (`etapa` adiada + `reagendada_para`). Nunca insistir além disso.
 - **Sem template aprovado configurado → a abordagem NÃO tenta sair** (fica `proposta` e o
   Junior é avisado UMA vez do bloqueio). Nada de falha silenciosa 131047 (lição do leadgen).
 - Reusa `template-inicial.ts` (enviarTemplateInicial) com o template novo; fallback
