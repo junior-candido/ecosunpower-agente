@@ -12,6 +12,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { formatPhoneBR } from './meta-leadgen.js';
 import { sendAdminWithButtons, type AdminButtonCtx } from './eva-admin-buttons.js';
+import { empresa } from './empresa-config.js';
 
 const DIGEST_WINDOWS = [
   { hour: 7, minute: 0, label: 'manha' },
@@ -133,7 +134,7 @@ function formatPhoneShort(phone: string): string {
 function buildDigestMessage(label: string, data: DigestData): string {
   const lines: string[] = [];
   const hora = label === 'manha' ? '7h' : label === 'almoco' ? '12h40' : '21h';
-  lines.push(`📊 *Eva — Digest ${hora}*`);
+  lines.push(`📊 *${empresa().nomeAtendente} — Digest ${hora}*`);
   lines.push('');
 
   // Novos
@@ -156,7 +157,7 @@ function buildDigestMessage(label: string, data: DigestData): string {
       lines.push(`• ${l.name ?? 'Sem nome'} — ${formatPhoneShort(l.phone)}`);
     }
     if (data.leadsSilentes.length > 5) lines.push(`  ...+${data.leadsSilentes.length - 5} outros`);
-    lines.push('Eva já agendou cadência. Você pode acelerar com /eva on.');
+    lines.push(`${empresa().nomeAtendente} já agendou cadência. Você pode acelerar com /eva on.`);
     lines.push('');
   }
 

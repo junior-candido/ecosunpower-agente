@@ -13,6 +13,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { sendAdminWithButtons, type MetaWabaLike } from './eva-admin-buttons.js';
 import { formatPhoneBR } from './meta-leadgen.js';
+import { empresa } from './empresa-config.js';
 
 type AlertKind =
   | 'cadence_replied'
@@ -267,12 +268,12 @@ export async function alertEvaError(
 
 // ──────────────────────────────────────────────────────────────────────────
 // Rede de proteção: lead quente pelos DADOS, independente da Eva fechar.
-// Criterio minimo oficial Ecosunpower: conta >= R$700 OU consumo >= 700 kWh.
+// Criterio minimo oficial da empresa (empresa_config: criterio_lead_valor /
+// criterio_lead_kwh — seed EcoSun: R$700 / 700 kWh), lido em RUNTIME dentro
+// das funções (nunca em const de módulo, senão /recarregar-config não pega).
 // Resolve o caso em que a Eva coleta tudo mas nunca emite
 // qualification_complete (ex: travou pedindo CPF) e Junior fica cego.
 // ──────────────────────────────────────────────────────────────────────────
-const HOT_BILL_BRL = 700;
-const HOT_KWH = 700;
 
 function toNum(v: unknown): number {
   const n = typeof v === 'number' ? v : Number(String(v ?? '').replace(',', '.'));
@@ -284,8 +285,8 @@ export function isHotLeadByEnergy(energyData: unknown): boolean {
   const e = energyData as Record<string, unknown>;
   const bill = toNum(e.monthly_bill);
   const kwh = toNum(e.consumption_kwh);
-  return (Number.isFinite(bill) && bill >= HOT_BILL_BRL)
-    || (Number.isFinite(kwh) && kwh >= HOT_KWH);
+  return (Number.isFinite(bill) && bill >= empresa().criterioLeadValor)
+    || (Number.isFinite(kwh) && kwh >= empresa().criterioLeadKwh);
 }
 
 // Temperatura por R$ OU kWh. NAO pode olhar so bill: lead de 6000 kWh sem
@@ -297,7 +298,7 @@ export function hotLeadTier(
   const b = typeof bill === 'number' && Number.isFinite(bill) ? bill : 0;
   const k = typeof kwh === 'number' && Number.isFinite(kwh) ? kwh : 0;
   if (b >= 1500 || k >= 1500) return '🔥 QUENTE';
-  if (b >= 700 || k >= 700) return '🟠 MORNO';
+  if (b >= empresa().criterioLeadValor || k >= empresa().criterioLeadKwh) return '🟠 MORNO';
   return '🔵 FRIO';
 }
 

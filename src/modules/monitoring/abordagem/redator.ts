@@ -3,6 +3,7 @@
 // Prompts e limpeza são PUROS (testáveis); a chamada Opus/Haiku é injetada.
 import type Anthropic from '@anthropic-ai/sdk';
 import type { AbordagemTipo } from './tipos.js';
+import { empresa } from '../../empresa-config.js';
 
 export interface ContextoRedacao {
   tipo: AbordagemTipo;
@@ -38,7 +39,7 @@ export function montarPromptAbordagem(c: ContextoRedacao): string {
     ? `\nVERSÃO ANTERIOR (o Junior mandou ajustar):\n"${c.mensagemAnterior ?? ''}"\nAJUSTE PEDIDO (prioridade máxima): ${c.ajusteDoJunior}`
     : '';
 
-  return `Você é a Eva, consultora da EcoSunPower (energia solar, Brasília/GO), escrevendo UMA mensagem de WhatsApp pro cliente ${c.clienteNome.trim().split(/\s+/)[0]}.
+  return `Você é a ${empresa().nomeAtendente}, consultora da ${empresa().nomeFantasia} (energia solar, ${empresa().cidade}/${empresa().uf} e região), escrevendo UMA mensagem de WhatsApp pro cliente ${c.clienteNome.trim().split(/\s+/)[0]}.
 
 OBJETIVO DESTA MENSAGEM: ${c.objetivo}
 
@@ -49,7 +50,7 @@ REGRAS FIXAS:
 - NUNCA fale preço ou valores de serviço (limpeza/visita) — quem fecha valor é o Junior.
 - NUNCA invente dado, promessa ou prazo.
 - Curta: no máximo 4 linhas, tom WhatsApp, 1-2 emojis no máximo.
-- Quem assina é "Eva, da EcoSunPower". Junior é o Responsável Técnico (nunca "engenheiro").
+- Quem assina é "${empresa().nomeAtendente}, da ${empresa().nomeFantasia}". Junior é o Responsável Técnico (nunca "engenheiro").
 - Termine puxando resposta do cliente (pergunta ou convite a responder).${treino}${ajuste}
 
 Escreva SÓ a mensagem final, sem aspas, sem título, sem explicações.`;

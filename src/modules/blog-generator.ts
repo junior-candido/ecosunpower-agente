@@ -3,6 +3,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import type { NewsScraperService } from './news-scraper.js';
+import { empresa, nomeTituloCase } from './empresa-config.js';
 
 /**
  * Blog Generator — gera drafts de posts pro blog ecosunpower.eng.br baseados
@@ -161,6 +162,8 @@ export class BlogGenerator {
     return TOPIC_ROTATION[idx];
   }
 
+  // [ECOSOF] Persona do autor vem da empresa_config (lida aqui, em runtime —
+  // o método roda a cada geração de post).
   private buildSystemPrompt(category: BlogDraft['category']): string {
     // IMPORTANTE: descrições humanas escritas com acentuação completa. Claude
     // espelha o estilo do prompt nos campos estruturados (title, description,
@@ -177,7 +180,7 @@ export class BlogGenerator {
       tutorial: 'tutorial — passo a passo (ler conta de luz, escolher equipamento, etc.)',
     };
 
-    return `Você é Junior Candido Rodrigues, Responsável Técnico CREA/CFT da EcoSunPower Energia Solar (Brasília-DF e Goiás). Escreve um post de blog técnico e profissional para o site ecosunpower.eng.br.
+    return `Você é ${nomeTituloCase(empresa().rtNome)}, ${empresa().rtTitulo} da ${empresa().nomeFantasia} Energia Solar (${empresa().cidade}-${empresa().uf} e região). Escreve um post de blog técnico e profissional para o site ${empresa().siteUrl.replace(/^https?:\/\//, '')}.
 
 CATEGORIA DESTE POST: ${categoryDesc[category]}
 
@@ -190,12 +193,12 @@ REGRAS DE ESCRITA:
    - ❌ ERRADO: H2 "## Erro 2: subdimensionar a acao do vento"
    - ✅ CERTO: H2 "## Erro 2: subdimensionar a ação do vento"
    - Única exceção: o campo "slug" usa hífens e SEM acentos (é URL).
-2. **Original**, nunca copia o artigo fonte. Reescreve com perspectiva EcoSunPower e dados do mercado de Brasília/Goiás.
+2. **Original**, nunca copia o artigo fonte. Reescreve com perspectiva ${empresa().nomeFantasia} e dados do mercado regional.
 3. **1500-1800 palavras**, denso, útil. Sem fluff ou repetição.
 4. **Estrutura SEO:** H1 (título, fica nos metadados), H2 (5 a 7 seções principais), H3 quando precisar. Listas e tabelas quando ajudar.
 5. **Dados específicos** sempre que possível: preço R$/kWp Greener jan/2026, tarifa Neoenergia-DF (R$ 1,05/kWh médio), HSP Brasília 5,2h, payback 3,5 a 5 anos.
 6. **Internal links** para outros conceitos: "veja nosso outro post sobre X" (use links relativos hipotéticos /blog/slug).
-7. **CTA suave** ao final mencionando WhatsApp da EcoSunPower e atendimento em Brasília + Entorno (até 100 km em Goiás).
+7. **CTA suave** ao final mencionando WhatsApp da ${empresa().nomeFantasia} e atendimento em ${empresa().regiaoAtuacao}.
 8. **Não use emojis no body.** Apenas linguagem profissional.
 9. **Não se apresenta** ("eu sou Junior..."). O autor já aparece nos metadados.
 10. **Cite a fonte** com link no final ("Inspirado em artigo do Canal Solar: [link]").

@@ -100,6 +100,55 @@ describe('system-prompt: placeholders resolvem com o seed EcoSun (paridade)', ()
   });
 });
 
+describe('solar-params: fallback regional pela empresa_config (Step 1c)', () => {
+  beforeEach(() => { _resetEstadoParaTeste(); });
+
+  it('sem hsp/tarifa padrão na config (EcoSun), UF desconhecida usa o DEFAULT conservador de sempre', async () => {
+    const { hspPorConcessionaria, tarifaPorConcessionaria } = await import('../src/modules/solar-params.js');
+    expect(hspPorConcessionaria('Cuiabá-MT')).toBe(5.40);
+    expect(tarifaPorConcessionaria('Cuiabá-MT')).toBe(1.03);
+    // DF continua resolvendo pelo mapa
+    expect(tarifaPorConcessionaria('Brasília')).toBe(1.05);
+  });
+
+  it('com hsp/tarifa padrão setados no banco, UF desconhecida usa o fallback do clone (mapa DF/GO intacto)', async () => {
+    const client = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: {
+                razao_social: 'SOLARCORP', nome_fantasia: 'SolarCorp', cnpj: '1',
+                endereco: 'x', cidade: 'Uberlândia', uf: 'MG', cep: null,
+                email: 'a@b.com', site_url: 'https://x', atuacao_desde: 2021,
+                descricao_curta: 'd', regiao_atuacao: 'r',
+                nome_atendente: 'Marina', telefone_atendente: null,
+                rt_nome: 'F', rt_titulo: 'RT', rt_cpf: null, rt_rg: null, rt_registro: null,
+                pix_chave: null, criterio_lead_valor: 400, criterio_lead_kwh: 350,
+                marcas_permitidas: [], marcas_bloqueadas: [],
+                garantia_instalacao_meses: 12, fator_perda_padrao: 0.78, belenus_ativo: false,
+                logo_storage_path: null,
+                hsp_padrao: 4.8, tarifa_kwh_padrao: 0.95, concessionaria_padrao: 'CEMIG-MG',
+              },
+              error: null,
+            }),
+          }),
+        }),
+      }),
+    } as unknown as Parameters<typeof carregarEmpresaConfig>[0];
+    await carregarEmpresaConfig(client);
+
+    const { hspPorConcessionaria, tarifaPorConcessionaria, concessionariaPadraoEmpresa } = await import('../src/modules/solar-params.js');
+    expect(hspPorConcessionaria('Uberlândia-MG')).toBe(4.8);
+    expect(tarifaPorConcessionaria('Uberlândia-MG')).toBe(0.95);
+    expect(concessionariaPadraoEmpresa()).toBe('CEMIG-MG');
+    // mapa DF/GO continua tendo prioridade sobre o fallback do clone
+    expect(tarifaPorConcessionaria('Brasília')).toBe(1.05);
+
+    _resetEstadoParaTeste();
+  });
+});
+
 describe('empresa-config: I1 — reload com erro mantém config anterior', () => {
   beforeEach(() => {
     // Reseta estado interno do módulo (cache + carregadaDoBanco) entre testes.

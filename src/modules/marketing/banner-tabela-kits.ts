@@ -8,6 +8,7 @@ import { Resvg } from '@resvg/resvg-js';
 import fs from 'fs';
 import path from 'path';
 import { loadFonts } from './banner-renderer.js';
+import { empresa, nomeTituloCase } from '../empresa-config.js';
 
 export interface KitItem {
   kwp: number;          // 5.67
@@ -22,7 +23,7 @@ export interface BannerTabelaKitsInput {
   titulo?: string;        // default "TABELA OFICIAL 2026"
   subtitulo?: string;     // default "Sistema solar premium · LONGi + Solax"
   cta_text?: string;      // default "QUERO MEU ORÇAMENTO"
-  responsavel_tecnico?: string; // default "Antonio Candido Rodrigues Junior"
+  responsavel_tecnico?: string; // default: rtNome da empresa_config em Title Case
   wa_link?: string;       // default wa.me/+556196978781
   width?: number;
   height?: number;
@@ -72,7 +73,9 @@ export async function renderBannerTabelaKits(input: BannerTabelaKitsInput): Prom
     titulo = 'TABELA OFICIAL 2026',
     subtitulo = 'Sistema solar premium · LONGi + Solax',
     cta_text = 'QUERO MEU ORÇAMENTO',
-    responsavel_tecnico = 'Antonio Candido Rodrigues Junior',
+    // [ECOSOF] default avaliado na CHAMADA (runtime): rtNome da config em
+    // Title Case — com o seed EcoSun rende "Antonio Candido Rodrigues Junior".
+    responsavel_tecnico = nomeTituloCase(empresa().rtNome),
     wa_link = 'wa.me/+556196978781',
     width = 1080,
     height = 1620,

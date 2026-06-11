@@ -9,6 +9,8 @@
 // Base de irradiacao: Atlas Brasileiro de Energia Solar (LABREN/INPE), a mesma
 // fonte do CRESESB. Valores mantidos no lado conservador de proposito.
 
+import { empresa } from './empresa-config.js';
+
 // Potencia da placa padrao usada nas estimativas (Watts por modulo).
 // Junior trabalha hoje com 620W a 725W; a MAIORIA das vendas e 700-725W, sendo
 // o 700W Risen o mais usado. Placas de ~540W estao ultrapassadas — ficam so como
@@ -67,9 +69,30 @@ const POR_CONCESSIONARIA: Array<{ match: RegExp; params: ParamsConcessionaria }>
 ];
 
 function resolver(concessionariaOuCidade?: string | null): ParamsConcessionaria {
-  if (!concessionariaOuCidade) return DEFAULT_PARAMS;
-  const hit = POR_CONCESSIONARIA.find(p => p.match.test(concessionariaOuCidade));
-  return hit ? hit.params : DEFAULT_PARAMS;
+  if (concessionariaOuCidade) {
+    const hit = POR_CONCESSIONARIA.find(p => p.match.test(concessionariaOuCidade));
+    if (hit) return hit.params;
+  }
+  // [ECOSOF] Cidade/UF fora do mapa DF/GO: um clone de outra região pode
+  // definir hsp_padrao/tarifa_kwh_padrao na empresa_config (lidos em RUNTIME).
+  // EcoSun deixa os 2 como null no seed -> cai no DEFAULT_PARAMS de sempre
+  // (comportamento idêntico ao antigo).
+  const e = empresa();
+  if (e.hspPadrao != null || e.tarifaPadrao != null) {
+    return {
+      hsp: e.hspPadrao ?? DEFAULT_PARAMS.hsp,
+      tarifa: e.tarifaPadrao ?? DEFAULT_PARAMS.tarifa,
+      tusdFioB: DEFAULT_PARAMS.tusdFioB,
+    };
+  }
+  return DEFAULT_PARAMS;
+}
+
+// [ECOSOF] Nome da concessionária default quando a cidade/UF não resolve pelo
+// mapa acima: clone pode setar concessionaria_padrao na empresa_config.
+// Retorna null quando não há default configurado (comportamento atual).
+export function concessionariaPadraoEmpresa(): string | null {
+  return empresa().concessionariaPadrao;
 }
 
 export function hspPorConcessionaria(concessionariaOuCidade?: string | null): number {

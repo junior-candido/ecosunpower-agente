@@ -6,6 +6,7 @@ import type { DetalheSistema } from '../monitoring/service.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.js';
 import { formatPhoneBR, normalizeBrazilianPhone } from '../meta-leadgen.js';
 import { renderClienteSelector } from './proprietario.js';
+import { empresa } from '../empresa-config.js';
 
 export function escapeHtml(s: string | null | undefined): string {
   if (s === null || s === undefined) return '';
@@ -237,7 +238,7 @@ export function renderLoginPage(input: LoginPageInput = {}): string {
       <div class="inline-block bg-white rounded-2xl p-4 shadow-2xl sun-pulse mb-4">
         <img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" class="h-16 w-auto">
       </div>
-      <h1 class="text-3xl font-bold text-white tracking-tight">EcoSunPower</h1>
+      <h1 class="text-3xl font-bold text-white tracking-tight">${escapeHtml(empresa().nomeFantasia)}</h1>
       <p class="text-sky-200 text-sm mt-2">Dashboard interno · Acesso restrito</p>
     </div>
 
@@ -247,7 +248,7 @@ export function renderLoginPage(input: LoginPageInput = {}): string {
         ${next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : ''}
 
         <!-- Username oculto pro Chrome/Firefox oferecerem "salvar senha" -->
-        <input type="text" name="username" value="junior@ecosunpower.eng.br" autocomplete="username" style="display:none" readonly tabindex="-1">
+        <input type="text" name="username" value="${escapeHtml(empresa().email)}" autocomplete="username" style="display:none" readonly tabindex="-1">
 
         <div>
           <label for="senha" class="block text-sm font-semibold text-slate-700 mb-2">
@@ -320,7 +321,7 @@ export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[]): st
       ${card('Propostas mês', String(kpis.propostasMesAtual), `${kpis.propostasAnoAtual} no ano · ${kpis.totalPropostas} total`, 'amber', 'text-amber-600')}
       ${card('Ticket médio', brl(kpis.ticketMedio), 'baseado nas últimas 50 propostas', 'emerald', 'text-emerald-700')}
       ${card('Leads mês', String(kpis.leadsMesAtual), `${kpis.totalLeads} total`, 'sky', 'text-sky-700')}
-      ${card('Em qualificação', String(kpis.leadsQualificando), 'Eva ativa neles', 'violet', 'text-violet-700')}
+      ${card('Em qualificação', String(kpis.leadsQualificando), `${escapeHtml(empresa().nomeAtendente)} ativa neles`, 'violet', 'text-violet-700')}
     </section>
 
     <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">

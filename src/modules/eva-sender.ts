@@ -2,6 +2,7 @@
 // Manda 3 mensagens em sequencia: saudacao -> link web -> PDF.
 
 import type { MetaWhatsAppService } from './meta-whatsapp.js';
+import { empresa } from './empresa-config.js';
 
 export interface EnviarPropostaInput {
   telefoneCliente: string;       // E.164 sem + ou formato BR (sera normalizado)
@@ -11,9 +12,10 @@ export interface EnviarPropostaInput {
   pdfFilename: string;
 }
 
+// [ECOSOF] empresa() avaliada na CHAMADA (arrow function) — runtime, não load.
 const SAUDACAO = (nomeCliente: string) =>
   `Olá, ${nomeCliente}! 👋\n\n` +
-  `Sou a Eva, consultora da EcoSunPower Energia Solar.\n\n` +
+  `Sou a ${empresa().nomeAtendente}, consultora da ${empresa().nomeFantasia} Energia Solar.\n\n` +
   `Junior preparou uma proposta personalizada de energia solar pra você. Vou te mandar agora pra dar uma olhada com calma.\n\n` +
   `Qualquer dúvida, é só me perguntar aqui mesmo. 😊`;
 

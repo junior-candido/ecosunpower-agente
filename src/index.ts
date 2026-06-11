@@ -87,7 +87,7 @@ import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
-import { carregarEmpresaConfig, empresa } from './modules/empresa-config.js';
+import { carregarEmpresaConfig, empresa, listaMarcasTexto } from './modules/empresa-config.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -101,7 +101,7 @@ function propostaErrorHtml(kind: 'not_found' | 'expired' | 'error'): string {
     error: 'Erro ao carregar proposta',
   };
   const messages = {
-    not_found: 'O link que você acessou não existe ou foi removido. Se você recebeu esse link da EcoSunPower e ele deveria estar ativo, fale com a gente no WhatsApp.',
+    not_found: `O link que você acessou não existe ou foi removido. Se você recebeu esse link da ${empresa().nomeFantasia} e ele deveria estar ativo, fale com a gente no WhatsApp.`,
     expired: 'Essa proposta passou da data de validade (60 dias após geração). Pra receber uma proposta atualizada, fale com a gente no WhatsApp.',
     error: 'Tivemos um problema temporário ao carregar essa proposta. Tente de novo em alguns minutos ou fale com a gente no WhatsApp.',
   };
@@ -111,7 +111,7 @@ function propostaErrorHtml(kind: 'not_found' | 'expired' | 'error'): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>${titles[kind]} — EcoSunPower</title>
+<title>${titles[kind]} — ${empresa().nomeFantasia}</title>
 <style>
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #0a1f3d 0%, #1a3a5c 100%); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #fff; padding: 20px; }
@@ -129,8 +129,8 @@ a.btn:hover { transform: translateY(-2px); }
 <div class="icon">${kind === 'expired' ? '⏰' : kind === 'error' ? '⚠️' : '🔍'}</div>
 <h1>${titles[kind]}</h1>
 <p>${messages[kind]}</p>
-<a class="btn" href="https://wa.me/5561996978781">Falar no WhatsApp</a>
-<div class="brand">EcoSunPower Energia Solar · ecosunpower.eng.br</div>
+<a class="btn" href="https://wa.me/${empresa().telefoneAtendente ?? ''}">Falar no WhatsApp</a>
+<div class="brand">${empresa().nomeFantasia} Energia Solar · ${empresa().siteUrl.replace(/^https?:\/\//, '')}</div>
 </div>
 </body>
 </html>`;
@@ -3875,12 +3875,12 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
 3. **Qualifique em 1-2 perguntas, NAO em 5.** Pergunta-chave: valor da conta de luz OU consumo kWh/mes. Se ele disser o valor, voce JA pode estimar o kit ideal.
 
-4. **Se conta >= R$700 OU consumo >= 700 kWh:** lead qualificado. Pivota IMEDIATAMENTE pra:
+4. **Se conta >= R$${empresa().criterioLeadValor} OU consumo >= ${empresa().criterioLeadKwh} kWh:** lead qualificado. Pivota IMEDIATAMENTE pra:
    - Agendar visita tecnica (use /agenda no admin) OU
    - Enviar proposta personalizada (use /proposta no admin)
    Nao fica em loop de "deixa eu te explicar como funciona".
 
-5. **Se conta < R$700:** explica polidamente que o investimento nao retorna bem com conta abaixo desse patamar, oferece kit menor de demonstracao ou agradece e fecha.
+5. **Se conta < R$${empresa().criterioLeadValor}:** explica polidamente que o investimento nao retorna bem com conta abaixo desse patamar, oferece kit menor de demonstracao ou agradece e fecha.
 
 6. **Senso de urgencia respeitoso:** pode mencionar "essa condicao da campanha vai ate o final do mes" ou "esses kits sao limitados pelo estoque do mes" — SEM mentir, SEM forcar.
 
@@ -4121,7 +4121,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             // completa = lead quente).
             const bill = (lead.energy_data as { monthly_bill?: number } | null)?.monthly_bill;
             const prontidao = bill && bill >= 1500 ? '🔥 QUENTE'
-              : bill && bill >= 700 ? '🟠 MORNO'
+              : bill && bill >= empresa().criterioLeadValor ? '🟠 MORNO'
               : '🔵 FRIO';
             const dossierHeader = `📋 *Eva qualificou — ${lead.name ?? 'lead sem nome'}* ${prontidao}\n\n${dossierText}\n\n_Eva esta tentando fechar agendamento agora. Voce pode assumir se preferir._`;
             if (metaWaba) {
@@ -4451,7 +4451,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         // Mesmo efeito funcional: eva_active=false (gate 2299 para a Eva) +
         // opt_out + cancela toques. Eva manda 1 msg digna e cala.
         const { buildDisqualifyPlan } = await import('./modules/lead-disqualify.js');
-        const dqReason = (action.data as Record<string, unknown> | undefined)?.reason as string | undefined ?? 'lead fora do criterio (R$700/700kWh) ou vulneravel';
+        const dqReason = (action.data as Record<string, unknown> | undefined)?.reason as string | undefined ?? `lead fora do criterio (R$${empresa().criterioLeadValor}/${empresa().criterioLeadKwh}kWh) ou vulneravel`;
         // Fetch UMA vez (id imutavel) e reusa pra nome + botoes — parity com
         // mark_off_topic, sem round-trip extra de DB nesse path terminal.
         const dqLead = await supabase.getLeadByPhone(from);
@@ -4962,7 +4962,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
               },
               {
                 type: 'text',
-                text: `Voce e a Eva, consultora de energia solar da Ecosunpower.
+                text: `Voce e a ${empresa().nomeAtendente}, consultora de energia solar da ${empresa().nomeFantasia}.
 O cliente enviou este PDF. Provavelmente e uma conta de luz.
 
 Leia com ATENCAO e extraia EXATAMENTE o que esta impresso (nao arredonde, nao chute):
@@ -6013,14 +6013,14 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
 
     const body = `
 <div style="max-width:560px;margin:0 auto">
-  <div style="color:#888;font-size:13px;margin-bottom:4px">rascunho de post — ecosunpower</div>
+  <div style="color:#888;font-size:13px;margin-bottom:4px">rascunho de post — ${empresa().nomeFantasia.toLowerCase()}</div>
   <h1 style="margin:0 0 16px 0;font-size:22px">${esc(draft.topic)}</h1>
   ${previewHtml}
   <div style="background:#f5f5f5;padding:14px 16px;border-radius:10px;white-space:pre-wrap;font-size:15px;line-height:1.5;margin-bottom:20px;word-break:break-word">${esc(draft.caption)}</div>
   <a href="${approveUrl}" style="display:block;background:#16a34a;color:#fff;text-decoration:none;text-align:center;padding:18px;border-radius:10px;font-size:17px;font-weight:600;margin-bottom:10px">✅ Aprovar e publicar</a>
   <a href="${regenUrl}" style="display:block;background:#eab308;color:#fff;text-decoration:none;text-align:center;padding:18px;border-radius:10px;font-size:17px;font-weight:600;margin-bottom:10px">🔄 Gerar outra imagem</a>
   <a href="${discardUrl}" style="display:block;background:#dc2626;color:#fff;text-decoration:none;text-align:center;padding:18px;border-radius:10px;font-size:17px;font-weight:600">❌ Descartar</a>
-  <p style="color:#999;font-size:12px;text-align:center;margin-top:20px">ecosunpower energia solar — painel de aprovacao de conteudo</p>
+  <p style="color:#999;font-size:12px;text-align:center;margin-top:20px">${empresa().nomeFantasia.toLowerCase()} energia solar — painel de aprovacao de conteudo</p>
 </div>`;
     res.send(htmlPage(`Revisar: ${draft.topic}`, body));
   });
@@ -6400,7 +6400,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
 
     // Ask Claude to generate a personalized message per contact
     const anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
-    const systemPrompt = `Voce gera mensagens de reengajamento no WhatsApp em nome do Junior (dono da Ecosunpower Energia Solar, Brasilia/DF e Goias). Publico: pessoas que ja conversaram com ele sobre solar mas nao fecharam.
+    const systemPrompt = `Voce gera mensagens de reengajamento no WhatsApp em nome do Junior (dono da ${empresa().nomeFantasia} Energia Solar, Brasilia/DF e Goias). Publico: pessoas que ja conversaram com ele sobre solar mas nao fecharam.
 
 Regras:
 - Tom: amigo reencontrando um amigo. Curto, natural, humano, NUNCA comercial agressivo.
@@ -6442,7 +6442,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
 
     // Fallback template if Claude failed
     const fallback = (name: string) =>
-      `Oi ${name}, tudo bem? Aqui e o Junior da Ecosunpower. Faz um tempinho que a gente nao se fala, dei uma olhada nos contatos e lembrei de voce. Queria saber como ta a situacao da conta de luz ai e se tem interesse em dar uma atualizada. Sem compromisso.`;
+      `Oi ${name}, tudo bem? Aqui e o Junior da ${empresa().nomeFantasia}. Faz um tempinho que a gente nao se fala, dei uma olhada nos contatos e lembrei de voce. Queria saber como ta a situacao da conta de luz ai e se tem interesse em dar uma atualizada. Sem compromisso.`;
 
     const items = pending.map((l, i) => {
       const firstName = (l.name ?? '').split(' ')[0] || 'tudo bem';
@@ -6918,7 +6918,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Politica de Privacidade — Ecosunpower Energia Solar</title>
+<title>Politica de Privacidade — ${empresa().nomeFantasia} Energia Solar</title>
 <style>
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 760px; margin: 0 auto; padding: clamp(20px,5vw,40px); line-height: 1.6; color: #222; }
 h1 { font-size: clamp(24px,5vw,32px); margin-top: 0; }
@@ -6933,19 +6933,19 @@ footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e5e5; fon
 </head>
 <body>
 <h1>Politica de Privacidade</h1>
-<p class="meta"><strong>ECOSUNPOWER ENERGIA SOLAR LTDA</strong><br>
-CNPJ: 33.020.459/0001-06<br>
-SHA Conjunto 01 Chacara 44C Lote 6, Arniqueira, Brasilia - DF, CEP 71993-150<br>
+<p class="meta"><strong>${empresa().razaoSocial}</strong><br>
+CNPJ: ${empresa().cnpj}<br>
+${empresa().endereco}, ${empresa().cidade} - ${empresa().uf}${empresa().cep ? `, CEP ${empresa().cep}` : ''}<br>
 Ultima atualizacao: 26 de abril de 2026</p>
 
 <h2>1. Quem somos</h2>
-<p>A ECOSUNPOWER ENERGIA SOLAR LTDA (CNPJ 33.020.459/0001-06) e empresa de engenharia em energia, com foco principal em solar fotovoltaica e atuacao em Brasilia-DF e Goias desde 2019. Nos comprometemos com a protecao dos seus dados pessoais, em conformidade com a Lei Geral de Protecao de Dados (Lei 13.709/2018 - LGPD).</p>
+<p>A ${empresa().razaoSocial} (CNPJ ${empresa().cnpj}) e ${empresa().descricaoCurta}, com foco principal em solar fotovoltaica. Nos comprometemos com a protecao dos seus dados pessoais, em conformidade com a Lei Geral de Protecao de Dados (Lei 13.709/2018 - LGPD).</p>
 
 <h2>1.1 Encarregado de Protecao de Dados (DPO)</h2>
 <p>Conforme art. 41 da LGPD, indicamos como Encarregado:</p>
 <ul>
   <li><strong>Nome:</strong> Junior Candido Rodrigues</li>
-  <li><strong>Email:</strong> <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a></li>
+  <li><strong>Email:</strong> <a href="mailto:${empresa().email}">${empresa().email}</a></li>
   <li><strong>WhatsApp:</strong> +55 61 99880-5002</li>
 </ul>
 <p>Use os contatos acima pra exercer seus direitos como titular dos dados, tirar duvidas ou comunicar incidentes.</p>
@@ -7016,7 +7016,7 @@ Ultima atualizacao: 26 de abril de 2026</p>
 <h2>9. Como exercer seus direitos</h2>
 <p>Para qualquer solicitacao relacionada aos seus dados, entre em contato:</p>
 <ul>
-  <li><strong>E-mail:</strong> <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a></li>
+  <li><strong>E-mail:</strong> <a href="mailto:${empresa().email}">${empresa().email}</a></li>
   <li><strong>WhatsApp:</strong> nos envie uma mensagem pedindo a acao desejada ("quero apagar meus dados", "quero sair da lista")</li>
 </ul>
 <p>Respondemos em ate 15 dias uteis.</p>
@@ -7031,8 +7031,8 @@ Ultima atualizacao: 26 de abril de 2026</p>
 <p>Esta politica pode ser atualizada periodicamente. A data da ultima atualizacao sempre estara no topo. Alteracoes relevantes serao comunicadas pelos canais que voce ja interage conosco.</p>
 
 <footer>
-<p>Ecosunpower Energia Solar — Brasilia/DF<br>
-Contato: <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a></p>
+<p>${empresa().nomeFantasia} Energia Solar — ${empresa().cidade}/${empresa().uf}<br>
+Contato: <a href="mailto:${empresa().email}">${empresa().email}</a></p>
 </footer>
 </body>
 </html>`;
@@ -7050,7 +7050,7 @@ Contato: <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Termos de Uso — Ecosunpower Energia Solar</title>
+<title>Termos de Uso — ${empresa().nomeFantasia} Energia Solar</title>
 <style>
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 760px; margin: 0 auto; padding: clamp(20px,5vw,40px); line-height: 1.6; color: #222; }
 h1 { font-size: clamp(24px,5vw,32px); margin-top: 0; }
@@ -7064,16 +7064,16 @@ footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e5e5; fon
 </head>
 <body>
 <h1>Termos de Uso</h1>
-<p class="meta"><strong>Ecosunpower Energia Solar</strong><br>
-SHA Conjunto 01 Chacara 44C Lote 6, Arniqueira, Brasilia - DF, CEP 71993-150<br>
-CNPJ: 33.020.459/0001-06 | Email: <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a><br>
+<p class="meta"><strong>${empresa().nomeFantasia} Energia Solar</strong><br>
+${empresa().endereco}, ${empresa().cidade} - ${empresa().uf}${empresa().cep ? `, CEP ${empresa().cep}` : ''}<br>
+CNPJ: ${empresa().cnpj} | Email: <a href="mailto:${empresa().email}">${empresa().email}</a><br>
 Atualizado em: 22 de abril de 2026</p>
 
 <h2>1. Aceitacao dos Termos</h2>
-<p>Ao interagir com a Ecosunpower Energia Solar atraves de qualquer um de nossos canais digitais (formularios de anuncios Meta, WhatsApp, Instagram, Facebook ou nosso site), voce concorda integralmente com estes Termos de Uso e com nossa <a href="/privacidade">Politica de Privacidade</a>. Caso nao concorde, por favor nao utilize nossos canais.</p>
+<p>Ao interagir com a ${empresa().nomeFantasia} Energia Solar atraves de qualquer um de nossos canais digitais (formularios de anuncios Meta, WhatsApp, Instagram, Facebook ou nosso site), voce concorda integralmente com estes Termos de Uso e com nossa <a href="/privacidade">Politica de Privacidade</a>. Caso nao concorde, por favor nao utilize nossos canais.</p>
 
 <h2>2. Sobre nos</h2>
-<p>A Ecosunpower Energia Solar e uma empresa de engenharia de geracao de energia solar fotovoltaica, atuante em Brasilia-DF e em todo o Distrito Federal e entorno de Goias. Atuamos no projeto, dimensionamento, fornecimento e instalacao de sistemas de energia solar conectados a rede e em sistemas com armazenamento (baterias), bem como em servicos de manutencao, consultoria em eficiencia energetica e migracao para o mercado livre de energia.</p>
+<p>A ${empresa().nomeFantasia} Energia Solar e uma empresa de engenharia de geracao de energia solar fotovoltaica, atuante em ${empresa().regiaoAtuacao}. Atuamos no projeto, dimensionamento, fornecimento e instalacao de sistemas de energia solar conectados a rede e em sistemas com armazenamento (baterias), bem como em servicos de manutencao, consultoria em eficiencia energetica e migracao para o mercado livre de energia.</p>
 
 <h2>3. Servicos oferecidos</h2>
 <p>Atraves de nossos canais digitais, oferecemos:</p>
@@ -7098,9 +7098,9 @@ Atualizado em: 22 de abril de 2026</p>
 </ul>
 
 <h2>5. Atendimento por inteligencia artificial</h2>
-<p>Para agilizar o primeiro atendimento e qualificacao de leads, utilizamos um agente conversacional baseado em inteligencia artificial chamado "Eva", que opera atraves de WhatsApp. Eva eh treinada com nossa base de conhecimento tecnico e atua como consultora especialista virtual da empresa.</p>
-<p>Voce sera sempre informado quando estiver conversando com Eva. Caso prefira atendimento exclusivamente humano, basta solicitar a qualquer momento e o Responsavel Tecnico da EcoSunPower assumira a conversa.</p>
-<p>As respostas geradas pela Eva tem carater consultivo inicial e devem ser sempre validadas com nossa equipe tecnica para projetos definitivos. A Ecosunpower nao se responsabiliza por decisoes tomadas exclusivamente com base em respostas automatizadas sem confirmacao posterior.</p>
+<p>Para agilizar o primeiro atendimento e qualificacao de leads, utilizamos um agente conversacional baseado em inteligencia artificial chamado "${empresa().nomeAtendente}", que opera atraves de WhatsApp. ${empresa().nomeAtendente} eh treinada com nossa base de conhecimento tecnico e atua como consultora especialista virtual da empresa.</p>
+<p>Voce sera sempre informado quando estiver conversando com ${empresa().nomeAtendente}. Caso prefira atendimento exclusivamente humano, basta solicitar a qualquer momento e o Responsavel Tecnico da ${empresa().nomeFantasia} assumira a conversa.</p>
+<p>As respostas geradas pela ${empresa().nomeAtendente} tem carater consultivo inicial e devem ser sempre validadas com nossa equipe tecnica para projetos definitivos. A ${empresa().nomeFantasia} nao se responsabiliza por decisoes tomadas exclusivamente com base em respostas automatizadas sem confirmacao posterior.</p>
 
 <h2>6. Anuncios e captura de leads</h2>
 <p>Veiculamos anuncios em plataformas Meta (Facebook e Instagram) com formularios de geracao de leads. Ao preencher um formulario, voce autoriza:</p>
@@ -7109,19 +7109,19 @@ Atualizado em: 22 de abril de 2026</p>
   <li>O contato comercial via WhatsApp, telefone ou email para apresentar nossas solucoes e dar continuidade ao seu interesse</li>
   <li>O processamento desses dados conforme nossa <a href="/privacidade">Politica de Privacidade</a> e a Lei Geral de Protecao de Dados (LGPD - Lei 13.709/2018)</li>
 </ul>
-<p>Voce pode solicitar o cancelamento do contato e a exclusao dos seus dados a qualquer momento pelo email <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a>.</p>
+<p>Voce pode solicitar o cancelamento do contato e a exclusao dos seus dados a qualquer momento pelo email <a href="mailto:${empresa().email}">${empresa().email}</a>.</p>
 
 <h2>7. Propostas e orcamentos</h2>
 <p>Propostas e orcamentos enviados sao informacoes preliminares baseadas nas informacoes que voce nos forneceu. O orcamento final, valor da instalacao e prazo de execucao dependem de visita tecnica presencial, condicoes do imovel e disponibilidade de equipamentos no momento do fechamento. Propostas tem validade conforme indicado no proprio documento (geralmente 15 a 30 dias).</p>
 
 <h2>8. Garantias</h2>
-<p>Os equipamentos e servicos fornecidos pela Ecosunpower seguem as garantias dos fabricantes (geralmente 12 a 30 anos para modulos fotovoltaicos e 5 a 12 anos para inversores) e a garantia legal aplicavel a servicos no Brasil (90 dias conforme Codigo de Defesa do Consumidor). Detalhes especificos de garantia sao informados no contrato de cada projeto.</p>
+<p>Os equipamentos e servicos fornecidos pela ${empresa().nomeFantasia} seguem as garantias dos fabricantes (geralmente 12 a 30 anos para modulos fotovoltaicos e 5 a 12 anos para inversores) e a garantia legal aplicavel a servicos no Brasil (90 dias conforme Codigo de Defesa do Consumidor). Detalhes especificos de garantia sao informados no contrato de cada projeto.</p>
 
 <h2>9. Marcas premium e proibicoes internas</h2>
-<p>Trabalhamos exclusivamente com marcas premium homologadas pela INMETRO/ANEEL: Trina Solar, JA Solar, Risen, Jinko Solar, Honor (modulos), SolarEdge, Deye, Sungrow, Huawei, Hoymiles, Enphase, FoxESS e NEP (inversores e microinversores). Nao trabalhamos com a marca Growatt. Pedidos de cotacao com marcas nao homologadas serao redirecionados para opcoes equivalentes da nossa linha.</p>
+<p>Trabalhamos exclusivamente com marcas premium homologadas pela INMETRO/ANEEL. ${listaMarcasTexto(empresa())} Pedidos de cotacao com marcas nao homologadas serao redirecionados para opcoes equivalentes da nossa linha.</p>
 
 <h2>10. Limitacao de responsabilidade</h2>
-<p>A Ecosunpower trabalha com diligencia para fornecer informacoes corretas e atualizadas, porem nao se responsabiliza por:</p>
+<p>A ${empresa().nomeFantasia} trabalha com diligencia para fornecer informacoes corretas e atualizadas, porem nao se responsabiliza por:</p>
 <ul>
   <li>Variacoes na tarifa de energia eletrica que afetem o calculo de payback estimado</li>
   <li>Condicoes climaticas atipicas que impactem a geracao real do sistema</li>
@@ -7139,14 +7139,14 @@ Atualizado em: 22 de abril de 2026</p>
 <h2>13. Contato</h2>
 <p>Duvidas sobre estes Termos ou sobre nossos servicos:</p>
 <ul>
-  <li>Email: <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a></li>
-  <li>WhatsApp: vide canais oficiais nas redes sociais Ecosunpower</li>
-  <li>Endereco: SHA Conjunto 01 Chacara 44C Lote 6, Arniqueira, Brasilia - DF</li>
+  <li>Email: <a href="mailto:${empresa().email}">${empresa().email}</a></li>
+  <li>WhatsApp: vide canais oficiais nas redes sociais ${empresa().nomeFantasia}</li>
+  <li>Endereco: ${empresa().endereco}, ${empresa().cidade} - ${empresa().uf}</li>
 </ul>
 
 <footer>
-<p>Ecosunpower Energia Solar — Brasilia/DF<br>
-Contato: <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a><br>
+<p>${empresa().nomeFantasia} Energia Solar — ${empresa().cidade}/${empresa().uf}<br>
+Contato: <a href="mailto:${empresa().email}">${empresa().email}</a><br>
 Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
 </footer>
 </body>
@@ -7165,7 +7165,7 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Exclusao de Dados — Ecosunpower Energia Solar</title>
+<title>Exclusao de Dados — ${empresa().nomeFantasia} Energia Solar</title>
 <style>
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 760px; margin: 0 auto; padding: clamp(20px,5vw,40px); line-height: 1.6; color: #222; }
 h1 { font-size: clamp(24px,5vw,32px); margin-top: 0; }
@@ -7181,7 +7181,7 @@ li { margin-bottom: 8px; }
 <h1>Instrucoes para Exclusao dos Seus Dados</h1>
 <p><strong>Ultima atualizacao:</strong> 10 de maio de 2026</p>
 
-<p>A Ecosunpower Energia Solar Ltda (CNPJ 33.020.459/0001-06) respeita seu direito
+<p>A ${empresa().razaoSocial} (CNPJ ${empresa().cnpj}) respeita seu direito
 de solicitar a exclusao dos dados pessoais que mantemos sobre voce, conforme
 garantido pela <strong>Lei Geral de Protecao de Dados (LGPD, Lei 13.709/2018, art. 18, VI)</strong>.
 Esta pagina explica como exercer esse direito.</p>
@@ -7201,7 +7201,7 @@ dos canais abaixo. Nao cobramos pela solicitacao.</p>
 
 <div class="box">
   <strong>Canal preferencial — Email:</strong><br>
-  Envie email para <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a>
+  Envie email para <a href="mailto:${empresa().email}">${empresa().email}</a>
   com o assunto <strong>"Exclusao de Dados LGPD"</strong> e informe:
   <ol>
     <li>Nome completo</li>
@@ -7257,11 +7257,11 @@ com a data e o escopo do que foi excluido.</p>
 
 <h2>8. Encarregado pela Protecao de Dados</h2>
 <p>Junior Rodrigues — Responsavel Tecnico CREA/CFT<br>
-Email: <a href="mailto:junior@ecosunpower.eng.br">junior@ecosunpower.eng.br</a></p>
+Email: <a href="mailto:${empresa().email}">${empresa().email}</a></p>
 
 <footer>
-<p>Ecosunpower Energia Solar Ltda — CNPJ 33.020.459/0001-06<br>
-SHA Conjunto 01 Chacara 44C Lote 6, Arniqueira, Brasilia - DF<br>
+<p>${empresa().razaoSocial} — CNPJ ${empresa().cnpj}<br>
+${empresa().endereco}, ${empresa().cidade} - ${empresa().uf}<br>
 Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/termos">Termos de Uso</a></p>
 </footer>
 </body>

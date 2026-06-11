@@ -5,6 +5,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { empresa, nomeTituloCase } from '../empresa-config.js';
 
 export interface KitItem {
   kwp: number;
@@ -555,8 +556,8 @@ export function buildBannerHtml(kits: KitItem[], variant: BannerVariant = 'dark-
   </div>
 
   <div class="footer">
-    <div class="footer-rt">RESPONSÁVEL TÉCNICO CREA/CFT</div>
-    <div class="footer-name">Antonio Candido Rodrigues Junior</div>
+    <div class="footer-rt">${empresa().rtTitulo.toUpperCase()}</div>
+    <div class="footer-name">${nomeTituloCase(empresa().rtNome)}</div>
   </div>
 </body>
 </html>`;

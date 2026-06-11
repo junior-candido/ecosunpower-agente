@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { empresa } from './empresa-config.js';
 
 // Cadencia de auto-followup pra leads que engajaram e depois ficaram silenciosos.
 // Dispara SO SE a ultima mensagem na conversa foi da Eva (cliente nao respondeu).
@@ -237,7 +238,7 @@ export class FollowupModule {
       .map((m) => `${m.role === 'user' ? 'CLIENTE' : 'EVA'}: ${m.content}`)
       .join('\n');
 
-    const prompt = `Voce e a Eva, consultora da Ecosunpower Energia Solar (Brasilia/DF e Goias).
+    const prompt = `Voce e a ${empresa().nomeAtendente}, consultora da ${empresa().nomeFantasia} Energia Solar (${empresa().regiaoAtuacao}).
 Esta mandando uma mensagem de followup pra um cliente que ficou em silencio.
 
 Dados do lead:
@@ -252,7 +253,7 @@ ${histSnippet ? `Ultimas mensagens da conversa (pra voce referenciar algo especi
 
 REGRAS ESTRITAS:
 - Maximo 3 linhas curtas, tom WhatsApp natural (minusculas, pontuacao leve)
-- Primeira pessoa (Eva falando)
+- Primeira pessoa (${empresa().nomeAtendente} falando)
 - SEM emoji, SEM asterisco, SEM markdown
 - Use o primeiro nome UMA vez no inicio, se tiver ("oi ${firstName || 'amigo'}")
 - Referencia algo ESPECIFICO que foi falado (conta, bairro, duvida, etc) — faz parecer que lembrou dele, nao msg automatica

@@ -7,6 +7,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { podeAbordar, decidirTipoMilestone, RITMO, diasDesde } from './regras.js';
 import { ESCADAS, objetivoDoDegrau } from './escada.js';
+import { empresa } from '../../empresa-config.js';
 import { numerosTrimestre, recuperacaoPosLimpeza, type GeracaoDia } from './numeros-usina.js';
 import { redigirMensagem, type ContextoRedacao } from './redator.js';
 import {
@@ -43,7 +44,9 @@ export interface OrqDeps {
   estaEmTakeover?: (phone: string) => Promise<boolean>;
 }
 
-const FOOTER = 'Monitoramento · Eva';
+// [ECOSOF] Footer dos interactive WABA do monitoramento — vai pro dono do
+// clone também, então o nome da atendente vem da config (lido em runtime).
+const FOOTER = () => `Monitoramento · ${empresa().nomeAtendente}`;
 
 // Vassoura de estados presos (sub-passo e do cron): re-oferta pro Junior,
 // expiração de proposta órfã e encerramento de conversa que esfriou.
@@ -272,7 +275,7 @@ export async function proporAbordagem(deps: OrqDeps, args: {
       await mudarStatusAbordagem(client, id, ['proposta'], 'aguardando_aprovacao');
       await deps.waba.sendInteractiveButtons(deps.adminPhone,
         `🟡 Abordagem pronta — ${sistema.apelido} (${ROTULO_TIPO[tipo]}):\n\n"${msg}"`,
-        BOTOES_APROVACAO(id), FOOTER);
+        BOTOES_APROVACAO(id), FOOTER());
       return 'proposta';
     }
     const enviada = await enviarParaCliente(deps, id);
@@ -582,7 +585,7 @@ export async function handleTextoAdminAjuste(deps: OrqDeps, texto: string): Prom
       await gravarRegraTreino(client, ajustando.tipo, t); // ajuste vira regra permanente
       await deps.waba.sendInteractiveButtons(deps.adminPhone,
         `🟡 Reescrevi — ${sistema?.apelido ?? 'usina'} (${ROTULO_TIPO[ajustando.tipo]}):\n\n"${msg}"`,
-        BOTOES_APROVACAO(ajustando.id), FOOTER);
+        BOTOES_APROVACAO(ajustando.id), FOOTER());
       // Eco da regra: o Junior confere o que virou treino permanente.
       await deps.sendText(deps.adminPhone,
         `Anotei como regra: "${t}". Se não era isso, manda "apaga essa regra".`);
@@ -820,7 +823,7 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
             [
               { id: `mab:fb-boa:${row.id}`, title: '👍 Boa' },
               { id: `mab:fb-errou:${row.id}`, title: '👎 Errou' },
-            ], FOOTER);
+            ], FOOTER());
           continue;
         }
         // C2: 'enviada' sem resposta também encerra direto (sem lembrete):
@@ -838,7 +841,7 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
             { id: `mab:ligo:${row.id}`, title: '📞 Eu ligo' },
             { id: `mab:visita:${row.id}`, title: '🚗 Agendar visita' },
             { id: `mab:deixa:${row.id}`, title: '🤷 Deixar pra lá' },
-          ], FOOTER);
+          ], FOOTER());
       } catch (err) {
         console.error('[abordagem] encerramento falhou:', (err as Error).message);
       }
@@ -1047,7 +1050,7 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
         });
         await deps.waba.sendInteractiveButtons(deps.adminPhone,
           `🟡 Essa abordagem está parada há ${VASSOURA_REOFERTA_DIAS}+ dias esperando você — ${sistema?.apelido ?? 'usina'} (${ROTULO_TIPO[row.tipo]}):\n\n"${row.mensagem_proposta ?? ''}"`,
-          BOTOES_APROVACAO(row.id), FOOTER);
+          BOTOES_APROVACAO(row.id), FOOTER());
       } catch (err) {
         console.error('[abordagem] vassoura (presa) falhou:', (err as Error).message);
       }
@@ -1083,7 +1086,7 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
           [
             { id: `mab:fb-boa:${row.id}`, title: '👍 Boa' },
             { id: `mab:fb-errou:${row.id}`, title: '👎 Errou' },
-          ], FOOTER);
+          ], FOOTER());
       } catch (err) {
         console.error('[abordagem] vassoura (esfriada) falhou:', (err as Error).message);
       }
@@ -1153,7 +1156,7 @@ export async function atualizarPorConversa(deps: OrqDeps, abordagemId: string, u
 
     await deps.waba.sendInteractiveButtons(deps.adminPhone,
       `📋 ${nome}: ${upd.resumo ?? 'conversa encerrada'} (${ROTULO_DESFECHO[upd.desfecho]})`,
-      botoes, FOOTER);
+      botoes, FOOTER());
 
     // Cliente topou serviço → o Junior precisa fechar o VALOR (Eva nunca fala preço).
     if (upd.desfecho === 'limpeza_fechada' || upd.desfecho === 'visita_agendada'

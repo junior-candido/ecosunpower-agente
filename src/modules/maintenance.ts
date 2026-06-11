@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseService } from './supabase.js';
+import { empresa } from './empresa-config.js';
 
 /**
  * Modulo de manutencao da Eva:
@@ -113,7 +114,7 @@ export class MaintenanceService {
 
   private async generateIntroMessage(name: string | null): Promise<string> {
     const greeting = name ? `pra ${name}` : 'pro cliente (nome desconhecido)';
-    const prompt = `Voce e a Eva, consultora de energia solar da Ecosunpower.
+    const prompt = `Voce e a ${empresa().nomeAtendente}, consultora de energia solar da ${empresa().nomeFantasia}.
 O Junior (Responsavel Tecnico CREA/CFT) liberou o atendimento ${greeting} ha 2 horas e o
 cliente nao respondeu ainda. Escreva uma mensagem CURTA de apresentacao no
 WhatsApp pra abrir conversa, em 2 a 3 bolhas separadas por LINHA EM BRANCO.
@@ -122,13 +123,13 @@ Regras:
 - Tom suave, brasileiro, sem formalidade exagerada
 - Sem emojis, sem asteriscos, sem markdown
 - Maximo 3 frases por bolha
-- Identifique-se como Eva da Ecosunpower
+- Identifique-se como ${empresa().nomeAtendente} da ${empresa().nomeFantasia}
 - Pergunta aberta no final: "como posso te ajudar?"
 
 Exemplo de estrutura (use como inspiracao, nao copie):
 oi${name ? ', ' + name : ''}, tudo bem?
 
-aqui e a eva da ecosunpower
+aqui e a ${empresa().nomeAtendente.toLowerCase()} da ${empresa().nomeFantasia.toLowerCase()}
 
 vi que voce conversou com o junior. fiquei a disposicao se voce tiver
 alguma duvida sobre seu sistema ou conta de luz
@@ -145,7 +146,7 @@ em branco), nada mais.`;
     });
 
     const block = response.content[0];
-    return block.type === 'text' ? block.text.trim() : 'oi, aqui e a eva da ecosunpower. posso te ajudar?';
+    return block.type === 'text' ? block.text.trim() : `oi, aqui e a ${empresa().nomeAtendente.toLowerCase()} da ${empresa().nomeFantasia.toLowerCase()}. posso te ajudar?`;
   }
 
   private async generateMaintenanceMessage(
@@ -166,7 +167,7 @@ em branco), nada mais.`;
 
   private buildPromptForTopic(name: string | null, topic: string): string {
     const greeting = name ? `pra ${name}` : 'pro cliente';
-    const base = `Voce e a Eva, consultora de energia solar da Ecosunpower.\n`;
+    const base = `Voce e a ${empresa().nomeAtendente}, consultora de energia solar da ${empresa().nomeFantasia}.\n`;
     const regras = `\n\nRegras:\n- Sem emojis, sem asteriscos, sem markdown\n- 2 a 3 bolhas curtas separadas por LINHA EM BRANCO\n- Maximo 2 frases por bolha\n- Brasileiro, natural\n\nResponda APENAS o texto da mensagem (bolhas separadas por linha em branco), nada mais.`;
     switch (topic) {
       case 'limpeza_maio':

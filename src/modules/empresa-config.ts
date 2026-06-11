@@ -132,6 +132,13 @@ export function interpolarEmpresa(texto: string, e: EmpresaConfig): string {
   return out;
 }
 
+// Nome em Title Case pra contextos visuais (banner, persona de blog) — o
+// rt_nome é armazenado em CAIXA ALTA (padrão jurídico) e ficaria gritado.
+// Ex.: "ANTONIO CANDIDO RODRIGUES JUNIOR" -> "Antonio Candido Rodrigues Junior".
+export function nomeTituloCase(nome: string): string {
+  return nome.toLowerCase().replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1));
+}
+
 export function listaMarcasTexto(e: EmpresaConfig): string {
   const base = `Trabalhamos com: ${e.marcasPermitidas.join(', ')}.`;
   if (e.marcasBloqueadas.length === 0) return base;
