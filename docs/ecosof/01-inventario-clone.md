@@ -22,11 +22,16 @@ A plataforma está MELHOR preparada pro clone do que o esperado:
 | Logo/assets | upload no Storage do clone + path em config (matar base64 fixo) |
 | Eva (nome) | **MANTER como marca do produto** ("EcoSof, com Eva") — ver decisão abaixo |
 
-## Decisão recomendada: Eva é a marca, não o nome configurável
+## Decisões do Junior (11/06/2026)
 
-O nome "Eva" aparece em 60 arquivos e o esforço de parametrizar (config + placeholders + testes)
-é 10-15× o benefício. Recomendação: **Eva é o produto** — todo clone atende como "Eva" (vira ativo
-de marca da EcoSof, tipo "Alexa"). Cliente que exigir nome próprio = recusa educada (ou fase 2).
+1. **Nome da atendente é CONFIGURÁVEL por cliente** (`empresa_config.nome_atendente`, default
+   'Eva') — personalização é diferencial de venda do EcoSof. A Eva VITRINE (vendedora do produto
+   no funil da EcoSof) continua sendo Eva. Custo aceito: parametrizar o nome nos prompts,
+   mensagens e templates (o grosso mora em system-prompt, eva-sender, proposal/template).
+2. **Configuração mora no BANCO do clone**: tabela `empresa_config` (singleton, 1 linha) +
+   tabela de kits/preços. Editável sem redeploy; futuro: tela de configuração no dashboard.
+   A instância da EcoSunPower recebe a MESMA estrutura com seed dos dados dela (zero mudança
+   de comportamento — é o teste de que a parametrização ficou completa).
 
 ## A) Já configurável por env (só preencher no clone)
 
@@ -102,7 +107,8 @@ Infra do clone: `SUPABASE_URL/SERVICE_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY
 
 1. ✅ Este inventário.
 2. ⏳ Instalador de banco único (em produção — `setup/instalador-banco-ecosof.sql`).
-3. Decidir com Junior a mecânica de configuração (env bloco "CLIENTE_*" vs `cliente.json` vs tabela `empresa_config`) e EXECUTAR a troca dos hardcodes da seção B + regras da C.
+3. ✅ Mecânica decidida (tabela `empresa_config` + kits no banco; nome da atendente configurável).
+   Próximo: plano de implementação da parametrização (troca dos hardcodes B + regras C + nome).
 4. Roteiro de implantação nível leigo (filho executa).
 5. Eva vitrine da EcoSof + página ecosof.com.br.
 6. Checklist de saúde dos clones.
