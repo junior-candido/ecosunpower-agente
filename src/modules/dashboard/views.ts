@@ -160,6 +160,7 @@ export function renderLayout(input: LayoutInput): string {
         <a href="/dashboard/leads" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('leads')}">👥 <span class="hidden sm:inline">Leads</span></a>
         <a href="/dashboard/clientes" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('clientes')}">🏠 <span class="hidden sm:inline">Clientes</span></a>
         <a href="/dashboard/propostas" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('propostas')}">📊 <span class="hidden sm:inline">Propostas</span></a>
+        <a href="/dashboard/financeiro" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('financeiro')}">💰 <span class="hidden sm:inline">Financeiro</span></a>
         <a href="/dashboard/monitoramento" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('monitoramento')}">⚡ <span class="hidden sm:inline">Monitoramento</span></a>
         <a href="/dashboard/marketing" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('marketing')}">📣 <span class="hidden sm:inline">Marketing</span></a>
         <a href="/dashboard/cadencia" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('marketing')}">🔄 <span class="hidden sm:inline">Cadência</span></a>

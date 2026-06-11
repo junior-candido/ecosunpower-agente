@@ -19,7 +19,15 @@ export function renderFinanceiroPage(d: FinanceiroData): string {
 .card{background:#0b0e1f;border:1px solid #1b2040;border-radius:14px;padding:18px}
 .big{font-size:2rem;font-weight:700;color:#e5e7eb}</style></head>
 <body class="p-4">
-<h1 class="text-xl font-bold mb-4 text-cyan-300">💰 Financeiro · EcoSunPower</h1>
+<div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+  <h1 class="text-xl font-bold text-cyan-300">💰 Financeiro · EcoSunPower</h1>
+  <nav class="text-xs flex gap-3">
+    <a href="/dashboard/cockpit" class="text-cyan-300 hover:text-cyan-100">[COCKPIT]</a>
+    <a href="/dashboard/home" class="text-cyan-300 hover:text-cyan-100">[HOME]</a>
+    <a href="/dashboard/leads" class="text-cyan-300 hover:text-cyan-100">[LEADS]</a>
+    <a href="/dashboard/propostas" class="text-cyan-300 hover:text-cyan-100">[PROPOSTAS]</a>
+  </nav>
+</div>
 <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
   <div class="card"><div class="text-xs text-gray-400">Recebido no mês</div><div class="big">${brl(d.faturamentoMes)}</div></div>
   <div class="card"><div class="text-xs text-gray-400">RBT12 (faixa ${d.faixa})</div><div class="big">${brl(d.rbt12)}</div>
