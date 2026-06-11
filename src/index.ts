@@ -662,6 +662,53 @@ async function main() {
     sendText: async (to: string, t: string) => { await sendText(to, t); },
   });
 
+  // Eva Monitoramento Evolutivo (Task 8): janela 24h CONSERVADORA.
+  // Só considera ABERTA quando a ÚLTIMA mensagem 'user' registrada na conversa
+  // do lead tem menos de 23h (1h de margem de segurança). QUALQUER dúvida
+  // (sem lead, sem conversa, sem timestamp, erro de leitura) → FECHADA:
+  // template é o caminho seguro — nunca arriscar um 131047 silencioso.
+  const janela24hAberta = async (phone: string): Promise<boolean> => {
+    try {
+      const lead = await supabase.getLeadByPhone(phone);
+      if (!lead?.id) return false;
+      const { data, error } = await supabase.getClient()
+        .from('conversations')
+        .select('messages')
+        .eq('lead_id', lead.id)
+        .order('last_message_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error || !data) return false;
+      const msgs = (data.messages ?? []) as Array<{ role?: string; timestamp?: string }>;
+      const lastUser = [...msgs].reverse().find((m) => m.role === 'user' && m.timestamp);
+      if (!lastUser?.timestamp) return false;
+      const idadeMs = Date.now() - new Date(lastUser.timestamp).getTime();
+      return Number.isFinite(idadeMs) && idadeMs >= 0 && idadeMs < 23 * 60 * 60 * 1000;
+    } catch {
+      return false;
+    }
+  };
+
+  // Deps do orquestrador de abordagens (mesmo padrão da getCaixaDeps: sob
+  // demanda, dynamic import nos handlers). dryRun acompanha o mesmo env dos
+  // alertas proativos — em DRY nada chega no cliente. O waba é um adaptador
+  // fino: OrqDeps declara components como unknown[] (não conhece o tipo do
+  // MetaWhatsAppService) — o cast é só ponte de tipo, o valor passa intacto.
+  const getOrqDeps = () => ({
+    supabase: supabase.getClient(),
+    anthropic: new Anthropic({ apiKey: config.anthropicApiKey }),
+    waba: {
+      sendInteractiveButtons: (to: string, body: string, buttons: Array<{ id: string; title: string }>, footer?: string) =>
+        metaWaba!.sendInteractiveButtons(to, body, buttons, footer),
+      sendTemplate: (to: string, name: string, lang: string, components: unknown[]) =>
+        metaWaba!.sendTemplate(to, name, lang, components as Parameters<NonNullable<typeof metaWaba>['sendTemplate']>[3]),
+    },
+    sendText: async (to: string, t: string) => { await sendText(to, t); },
+    adminPhone: config.engineerPhone,
+    dryRun: process.env.PROACTIVE_ALERTS_DRY_RUN === '1',
+    janela24hAberta,
+  });
+
   // Helper pra detectar e processar comandos de blog vindos do Junior.
   // Junior recebe notificacao de novo draft no WhatsApp dele e responde
   // "publicar" ou "descartar" — OU clica nos botoes interativos
@@ -3178,6 +3225,23 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       return;
     }
 
+    // mab:<acao>:<id|tipo> — botões do Monitoramento Evolutivo (aprovar/ajustar/
+    // descartar abordagem, feedback 👍/👎, autonomia, pós-sem-resposta).
+    // ORDEM DOS BLOCOS ADMIN (decisão Task 8): finrec → finrcv → finlan → mab →
+    // ...comandos/modos... → pré-checagem de ajuste do monitoramento (ANTES do
+    // gate financeiro, pra "tira o emoji" não pagar Haiku à toa) → gate
+    // financeiro → takeover. Gateado em isAdminPhone — cliente nem entra.
+    if (isAdminPhone(from) && text.trim().startsWith('mab:')) {
+      if (!metaWaba) {
+        console.warn('[abordagem] WABA indisponível pros botões mab');
+        await sendText(from, '❌ WABA indisponível pros botões do monitoramento');
+        return;
+      }
+      const { handleMabButton } = await import('./modules/monitoring/abordagem/orquestrador.js');
+      await handleMabButton(getOrqDeps(), text.trim());
+      return;
+    }
+
     // Opt-out do CLIENTE — detecta "sair"/"parar"/"stop"/etc antes de qualquer
     // outro handler pra parar de mandar mensagens imediatamente.
     if (await tryHandleClienteOptOut(from, text)) return;
@@ -3388,6 +3452,29 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // Eva Agendadora — prioridade depois do pricing
     if (await tryHandleSchedulingCommand(from, text)) return;
 
+    // Monitoramento Evolutivo: resposta do Junior a um [Ajustar]/[👎 Errou]
+    // (ou "apaga essa regra"). Vem ANTES do gate financeiro da Fatia 3 de
+    // propósito: a pré-checagem custa 1-2 queries baratas e só quando há
+    // pendência REAL é que o handler roda — um ajuste tipo "tira o emoji"
+    // não paga Haiku do gate financeiro à toa.
+    if (isAdminPhone(from) && metaWaba) {
+      try {
+        const ehApagaRegra = /^apaga essa regra[\s.!…]*$/i.test(text.trim());
+        const { getAbordagemAjustando, getAbordagemErrouPendente } =
+          await import('./modules/monitoring/abordagem/abordagens-repo.js');
+        const temPendencia = ehApagaRegra
+          || Boolean(await getAbordagemAjustando(supabase.getClient()))
+          || Boolean(await getAbordagemErrouPendente(supabase.getClient()));
+        if (temPendencia) {
+          const { handleTextoAdminAjuste } = await import('./modules/monitoring/abordagem/orquestrador.js');
+          if (await handleTextoAdminAjuste(getOrqDeps(), text)) return;
+        }
+      } catch (err) {
+        // Falha aqui NUNCA derruba o fluxo do admin — segue pro gate financeiro.
+        console.warn('[abordagem] pré-checagem de ajuste falhou:', (err as Error).message);
+      }
+    }
+
     // Caixa de Entrada (Fatia 3): texto do Junior fora de modo pode ser gasto/
     // entrada ("gastei 380 no posto"). Gate Haiku barato decide; se não for
     // financeiro, segue o fluxo normal da Eva. Inclui transcrições de áudio.
@@ -3552,6 +3639,42 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         })();
       }
 
+      // Eva Monitoramento Evolutivo: cliente com abordagem ATIVA (Eva abordou
+      // proativamente sobre a usina dele). Registra a resposta no diário e:
+      // - quick reply do template ("Pode contar"/"Agora não") → o orquestrador
+      //   já responde (manda a mensagem da escada / reagenda) e RETORNA aqui —
+      //   não vai pra Eva;
+      // - qualquer outra mensagem → contexto da abordagem entra no prompt da
+      //   Eva (injetado no knowledge mais abaixo) e a conversa segue normal.
+      // Cliente SEM abordagem ativa: abordagemAtiva=null e o caminho é
+      // bit a bit o de sempre (só a query barata de lookup roda).
+      let abordagemAtiva: import('./modules/monitoring/abordagem/tipos.js').AbordagemRow | null = null;
+      let contextoAbordagem = '';
+      if (!isNewLead && !isAdminPhone(from) && metaWaba) {
+        try {
+          const { getAbordagemAbertaPorLeadPhone } =
+            await import('./modules/monitoring/abordagem/abordagens-repo.js');
+          abordagemAtiva = await getAbordagemAbertaPorLeadPhone(supabase.getClient(), leadId);
+        } catch (err) {
+          console.warn('[abordagem] lookup de abordagem ativa falhou:', (err as Error).message);
+        }
+        if (abordagemAtiva) {
+          try {
+            const { handleRespostaCliente, montarContextoAbordagem } =
+              await import('./modules/monitoring/abordagem/orquestrador.js');
+            await handleRespostaCliente(getOrqDeps(), abordagemAtiva, text);
+            // MESMO padrão do orquestrador (handleRespostaCliente): se mudar
+            // lá, mudar aqui — regex mais largo aqui engoliria mensagem sem
+            // resposta; mais estreito mandaria quick reply pra Eva (inócuo).
+            const ehQuickReply = /^(pode contar|agora n[aã]o)\.?$/i.test(text.trim());
+            if (ehQuickReply) return; // o orquestrador já respondeu
+            contextoAbordagem = montarContextoAbordagem(abordagemAtiva);
+          } catch (err) {
+            console.warn('[abordagem] resposta do cliente falhou:', (err as Error).message);
+          }
+        }
+      }
+
       const conversation = await supabase.getOrCreateConversation(leadId);
 
       // Auto-ack template: dispara template Utility em primeira sessao ou pausa
@@ -3568,7 +3691,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       //     campanha. Se nao estiver aprovado na Meta (erro 132001), cai
       //     no fallback `reativacao_lead_v1` (aprovado). TODOS os templates
       //     roteados aqui usam 1 var de body {{1}}=primeiro nome.
-      if (metaWaba) {
+      //
+      // Cliente com abordagem de monitoramento ATIVA fica FORA do auto-ack:
+      // ele está respondendo a Eva sobre a usina dele — mandar template de
+      // qualificação no meio seria ruído (cliente sem abordagem: intacto).
+      if (metaWaba && !abordagemAtiva) {
         const isNewSession = conversation.message_count === 0;
         const elapsedMs = Date.now() - new Date(conversation.last_message_at).getTime();
         const isLongPause = elapsedMs > 60 * 60 * 1000; // 1h
@@ -3747,7 +3874,10 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         ? await retrieveChunks(text, supabase.getClient(), config,
             (q) => embedTexts(q, makeClient(config.openaiApiKey!)))
         : [];
-      const knowledge = buildHybridKnowledge(coreContent, chunks) + leadContext;
+      // contextoAbordagem: bloco do Monitoramento Evolutivo (vazio pra todo
+      // mundo, exceto cliente com abordagem ativa) — mesmo canal do leadContext.
+      const knowledge = buildHybridKnowledge(coreContent, chunks) + leadContext
+        + (contextoAbordagem ? `\n\n${contextoAbordagem}` : '');
       if (chunks.length > 0) {
         console.log(`[rag] ${chunks.length} chunk(s) recuperados para o brain`);
       }
@@ -4409,6 +4539,36 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         } catch (err) {
           console.error(`[action] save_testimonial failed:`, (err as Error).message);
         }
+        break;
+      }
+
+      case 'abordagem_update': {
+        // Monitoramento Evolutivo: a Eva registra o andamento/desfecho da
+        // conversa sobre a usina. CONTRATO (C1 do review): IGNORA o
+        // abordagem_id vindo da action — prompt injection na conversa não
+        // pode apontar pra abordagem alheia; usa a abordagem aberta do
+        // PRÓPRIO lead. Desfecho validado por whitelist; textos truncados.
+        if (!metaWaba) break;
+        const { getAbordagemAbertaPorLeadPhone } =
+          await import('./modules/monitoring/abordagem/abordagens-repo.js');
+        const aberta = await getAbordagemAbertaPorLeadPhone(supabase.getClient(), leadId);
+        if (!aberta) {
+          console.warn(`[abordagem] abordagem_update sem abordagem aberta (lead=${leadId}) — ignorada`);
+          break;
+        }
+        const d = action.data as Record<string, unknown>;
+        const DESFECHOS_VALIDOS = [
+          'resolvido_sozinho', 'limpeza_fechada', 'visita_agendada',
+          'transferido_junior', 'sem_resposta', 'descartada_junior',
+        ] as const;
+        const desfecho = DESFECHOS_VALIDOS.find((x) => x === d.desfecho) ?? null;
+        const resumo = typeof d.resumo === 'string' && d.resumo.trim()
+          ? d.resumo.trim().slice(0, 300) : null;
+        const causaRaiz = typeof d.causa_raiz === 'string' && d.causa_raiz.trim()
+          ? d.causa_raiz.trim().slice(0, 300) : null;
+        const { atualizarPorConversa } = await import('./modules/monitoring/abordagem/orquestrador.js');
+        await atualizarPorConversa(getOrqDeps(), aberta.id, { resumo, desfecho, causaRaiz });
+        console.log(`[action] abordagem_update lead=${leadId} abordagem=${aberta.id} desfecho=${desfecho ?? 'null'}`);
         break;
       }
     }
@@ -7378,6 +7538,67 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
         sendAdminWithButtons({ metaWaba, sendText }, to, body, buttons, footer),
       adminPhone: config.engineerPhone,
       dryRun: proactiveDryRun,
+      // Eva Monitoramento Evolutivo: alerta de tipo "cliente" com dono vira
+      // abordagem da Eva. O wrapper recalcula diasOffline/percentualQueda
+      // REAIS da MESMA fonte do radar (geracao_diaria + esperadoDiaKwh,
+      // classificacao.ts) — o texto do alerta nunca é fonte de número.
+      // Sem WABA o campo fica ausente e o dispatcher segue 100% no fluxo atual.
+      ...(metaWaba ? {
+        proporAbordagem: async (
+          alerta: { id: string; tipo: string },
+          sistema: { id: string; potencia_kwp: number | null; uf: string | null },
+          lead: { id: string },
+        ): Promise<'proposta' | 'enviada' | 'inelegivel'> => {
+          const { proporAbordagem } = await import('./modules/monitoring/abordagem/orquestrador.js');
+          const { esperadoDiaKwh } = await import('./modules/monitoring/classificacao.js');
+          const client = supabase.getClient();
+          const hoje = new Date();
+          const dia = (d: Date) => d.toISOString().slice(0, 10);
+          const atras = (n: number) => new Date(hoje.getTime() - n * 24 * 60 * 60 * 1000);
+          let diasOffline: number | null = null;
+          let percentualQueda: number | null = null;
+          try {
+            if (alerta.tipo === 'sistema_offline') {
+              // dias desde o último dia com geração > 0 (mesma semântica do detect)
+              const { data, error } = await client.from('geracao_diaria')
+                .select('data, geracao_kwh')
+                .eq('sistema_id', sistema.id)
+                .gte('data', dia(atras(60))).lte('data', dia(hoje))
+                .order('data', { ascending: false });
+              if (error) throw new Error(error.message);
+              const ultima = (data ?? []).find((g) => Number(g.geracao_kwh) > 0);
+              if (ultima) {
+                diasOffline = Math.max(Math.floor(
+                  (hoje.getTime() - new Date(`${ultima.data}T12:00:00Z`).getTime()) / (24 * 60 * 60 * 1000)), 1);
+              }
+            } else if (alerta.tipo === 'queda_geracao') {
+              // mesmo cálculo do radar: real 7d ÷ esperado 7d
+              const { data, error } = await client.from('geracao_diaria')
+                .select('geracao_kwh')
+                .eq('sistema_id', sistema.id)
+                .gte('data', dia(atras(7))).lte('data', dia(hoje));
+              if (error) throw new Error(error.message);
+              const real7 = (data ?? []).reduce((s, g) => s + Number(g.geracao_kwh), 0);
+              const esperado7 = esperadoDiaKwh(sistema.potencia_kwp, sistema.uf) * 7;
+              if (esperado7 > 0 && real7 > 0) {
+                const pct = Math.round((1 - real7 / esperado7) * 100);
+                if (pct > 0 && pct < 100) percentualQueda = pct;
+              }
+            }
+          } catch (err) {
+            console.warn('[abordagem] recomputar dados do alerta falhou:', (err as Error).message);
+          }
+          // Sem o número obrigatório do tipo, abordar seria inventar dado
+          // (mesma regra I4 do orquestrador) → inelegível, alerta admin sai normal.
+          if (alerta.tipo === 'sistema_offline' && diasOffline === null) return 'inelegivel';
+          if (alerta.tipo === 'queda_geracao' && percentualQueda === null) return 'inelegivel';
+          return proporAbordagem(getOrqDeps(), {
+            alertaId: alerta.id, sistemaId: sistema.id, leadId: lead.id,
+            tipoAlerta: alerta.tipo as 'sistema_offline' | 'queda_geracao' | 'milestone_economia',
+            diasOffline, percentualQueda,
+          });
+        },
+      } : {}),
     };
 
     const runProactiveDetect = async () => {
@@ -7395,6 +7616,18 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
         await runDispatchCycle(new Date(), proactiveDispatchCtx);
       } catch (err) {
         console.error('[proactive-alerts] dispatch cron falhou:', (err as Error).message);
+      }
+      // Monitoramento Evolutivo: pendências das abordagens (lembrete, encerrar
+      // por silêncio, reagendadas, pós-limpeza, vassoura) rodam no MESMO ciclo
+      // de 15min, DEPOIS do dispatch, com try/catch próprio — uma falha nunca
+      // derruba a outra. DRY_RUN propagado via getOrqDeps.
+      if (metaWaba) {
+        try {
+          const { processarPendencias } = await import('./modules/monitoring/abordagem/orquestrador.js');
+          await processarPendencias(getOrqDeps(), new Date());
+        } catch (err) {
+          console.error('[abordagem] cron de pendências falhou:', (err as Error).message);
+        }
       }
     };
     setInterval(runProactiveDispatch, 15 * 60 * 1000); // 15min
