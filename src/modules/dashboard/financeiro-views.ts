@@ -68,6 +68,7 @@ export function renderFinanceiroPage(d: FinanceiroData): string {
     <a href="?pfpj=PJ" class="text-cyan-300">[PJ]</a>
     <a href="?pfpj=PF" class="text-cyan-300">[PF]</a>
   </span></div>
+  <div class="overflow-x-auto">
   <table class="w-full text-sm"><thead><tr class="text-gray-500 text-left">
   <th>Data</th><th></th><th>Valor</th><th>Quem</th><th>Categoria</th><th>PF/PJ</th><th>Doc</th></tr></thead><tbody>
   ${d.lancamentos.map((l) => `<tr class="border-t border-gray-800">
@@ -79,7 +80,8 @@ export function renderFinanceiroPage(d: FinanceiroData): string {
     <td><span class="px-1 rounded text-xs" style="background:${l.pf_pj === 'PJ' ? '#0e7490' : '#7c3aed'}">${l.pf_pj ?? '-'}</span></td>
     <td>${l.comprovanteUrl ? `<a href="${escapeHtml(l.comprovanteUrl)}" target="_blank" class="text-cyan-300">📎</a>` : '-'}</td>
   </tr>`).join('')}
-  </tbody></table></div>
+  </tbody></table>
+  </div></div>
 <script type="application/json" id="fin-data">${dataJson}</script>
 <script>
   const d = JSON.parse(document.getElementById('fin-data').textContent);
@@ -96,7 +98,7 @@ export function renderFinanceiroPage(d: FinanceiroData): string {
   const p = echarts.init(document.getElementById('pizza'), 'dark');
   p.setOption({ backgroundColor:'transparent', tooltip:{trigger:'item'},
     series:[{type:'pie', radius:['40%','70%'],
-      data:${JSON.stringify(d.caixa.pizzaCategorias.map((x: {categoria: string; total: number}) => ({name: x.categoria, value: x.total})))},
+      data:d.caixa.pizzaCategorias.map(x=>({name:x.categoria, value:x.total})),
       label:{color:'#d1d5db'}}] });
   window.addEventListener('resize', ()=>p.resize());
   ` : ''}

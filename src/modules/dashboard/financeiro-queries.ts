@@ -92,10 +92,12 @@ export async function getFinanceiroData(client: SupabaseClient, filtros: Filtros
   const caixa = calcularKpisCaixa({ recebidoMesPj: faturamentoMes, impostoMes: impostoASeparar, lancamentosMes: lancMes });
 
   // série mensal de despesas PJ (gráfico entrou × saiu)
-  const { data: despSerieRaw } = await client
+  // TODO: agregar no banco quando passar de ~1000 linhas (teto default do PostgREST)
+  const { data: despSerieRaw, error: despSerieErr } = await client
     .from('financeiro_lancamentos')
     .select('competencia, valor')
     .eq('status', 'confirmado').eq('tipo', 'despesa').eq('pf_pj', 'PJ');
+  if (despSerieErr) throw new Error(`getFinanceiroData despesas: ${despSerieErr.message}`);
   const porMesDesp = new Map<string, number>();
   for (const r of (despSerieRaw ?? []) as Array<{ competencia: string; valor: number }>) {
     porMesDesp.set(r.competencia, (porMesDesp.get(r.competencia) ?? 0) + Number(r.valor));
@@ -105,19 +107,21 @@ export async function getFinanceiroData(client: SupabaseClient, filtros: Filtros
 
   // lista de lançamentos (últimos 50, com filtros via querystring)
   let q = client.from('financeiro_lancamentos')
-    .select('id, tipo, valor, data_evento, contraparte, pf_pj, storage_path, financeiro_categorias(nome, slug)')
-    .in('status', ['confirmado'])
+    .select(filtros.categoria
+      ? 'id, tipo, valor, data_evento, contraparte, pf_pj, storage_path, financeiro_categorias!inner(nome, slug)'
+      : 'id, tipo, valor, data_evento, contraparte, pf_pj, storage_path, financeiro_categorias(nome, slug)')
+    .eq('status', 'confirmado')
     .order('data_evento', { ascending: false }).limit(50);
   if (filtros.competencia) q = q.eq('competencia', filtros.competencia);
   if (filtros.pfpj) q = q.eq('pf_pj', filtros.pfpj);
   if (filtros.tipo) q = q.eq('tipo', filtros.tipo);
+  if (filtros.categoria) q = q.eq('financeiro_categorias.slug', filtros.categoria);
   const { data: listaRaw, error: listaErr } = await q;
   if (listaErr) throw new Error(`getFinanceiroData lista: ${listaErr.message}`);
-  let lista = (listaRaw ?? []).map((l) => {
+  const lista = (listaRaw ?? []).map((l) => {
     const x = l as unknown as { id: string; tipo: 'despesa' | 'entrada'; valor: number; data_evento: string; contraparte: string | null; pf_pj: 'PF' | 'PJ' | null; storage_path: string | null; financeiro_categorias: { nome: string; slug: string } | null };
     return { ...x, categoriaNome: x.financeiro_categorias?.nome ?? null, categoriaSlug: x.financeiro_categorias?.slug ?? null };
   });
-  if (filtros.categoria) lista = lista.filter((l) => l.categoriaSlug === filtros.categoria);
   const urls = await getComprovanteUrls(client, lista.map((l) => l.storage_path).filter((p): p is string => Boolean(p)));
   const lancamentos: LancamentoLista[] = lista.map((l) => ({
     id: l.id, tipo: l.tipo, valor: Number(l.valor), data_evento: l.data_evento,
