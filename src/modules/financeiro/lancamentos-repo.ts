@@ -1,0 +1,143 @@
+// src/modules/financeiro/lancamentos-repo.ts
+// I/O fino da Caixa de Entrada. Regras puras ficam em lancamentos.ts.
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { competenciaDe, type ChaveDuplicado } from './lancamentos.js';
+
+export interface LancamentoRow {
+  id: string;
+  tipo: 'despesa' | 'entrada';
+  status: 'pendente' | 'confirmado' | 'apagado';
+  valor: number;
+  data_evento: string;
+  competencia: string;
+  contraparte: string | null;
+  descricao: string | null;
+  categoria_id: string | null;
+  pf_pj: 'PF' | 'PJ' | null;
+  lead_id: string | null;
+  conta_id: string | null;
+  storage_path: string | null;
+  extracao: Record<string, unknown> | null;
+  created_at: string;
+}
+
+const COLS = 'id, tipo, status, valor, data_evento, competencia, contraparte, descricao, categoria_id, pf_pj, lead_id, conta_id, storage_path, extracao, created_at';
+
+export async function criarPendente(client: SupabaseClient, l: {
+  tipo: 'despesa' | 'entrada'; valor: number; dataEvento: string;
+  contraparte: string | null; descricao: string | null; categoriaId: string | null;
+  pfPj: 'PF' | 'PJ' | null; leadId: string | null; storagePath: string | null;
+  mimeType: string | null; origem: 'zap_midia' | 'zap_texto'; messageId: string | null;
+  extracao: Record<string, unknown>; createdBy: string;
+}): Promise<string> {
+  const { data, error } = await client.from('financeiro_lancamentos').insert({
+    tipo: l.tipo, status: 'pendente', valor: l.valor, data_evento: l.dataEvento,
+    competencia: competenciaDe(l.dataEvento), contraparte: l.contraparte,
+    descricao: l.descricao, categoria_id: l.categoriaId, pf_pj: l.pfPj,
+    lead_id: l.leadId, storage_path: l.storagePath, mime_type: l.mimeType,
+    origem: l.origem, message_id: l.messageId, extracao: l.extracao, created_by: l.createdBy,
+  }).select('id').single();
+  if (error) throw new Error(`criarPendente: ${error.message}`);
+  return (data as { id: string }).id;
+}
+
+export async function getLancamento(client: SupabaseClient, id: string): Promise<LancamentoRow | null> {
+  const { data, error } = await client.from('financeiro_lancamentos').select(COLS).eq('id', id).maybeSingle();
+  if (error) throw new Error(`getLancamento: ${error.message}`);
+  return (data as LancamentoRow) ?? null;
+}
+
+// Transição de status com CAS no status atual (clique duplo: só o 1º casa).
+export async function mudarStatus(
+  client: SupabaseClient, id: string,
+  de: 'pendente' | 'confirmado', para: 'confirmado' | 'apagado',
+  patch: Record<string, unknown> = {},
+): Promise<boolean> {
+  const { data, error } = await client.from('financeiro_lancamentos')
+    .update({ ...patch, status: para, updated_at: new Date().toISOString() })
+    .eq('id', id).eq('status', de).select('id');
+  if (error) throw new Error(`mudarStatus: ${error.message}`);
+  return Boolean(data && data.length > 0);
+}
+
+export async function atualizarPendente(client: SupabaseClient, id: string, patch: Record<string, unknown>): Promise<void> {
+  const { error } = await client.from('financeiro_lancamentos')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id).eq('status', 'pendente');
+  if (error) throw new Error(`atualizarPendente: ${error.message}`);
+}
+
+// Pendente mais recente "esperando" resposta do admin (campo faltando/correção).
+// Janela de 1h: mais velho que isso não engole resposta de texto.
+export async function getPendenteAguardando(client: SupabaseClient): Promise<LancamentoRow | null> {
+  const desde = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { data, error } = await client.from('financeiro_lancamentos').select(COLS)
+    .eq('status', 'pendente').gte('created_at', desde)
+    .contains('extracao', { aguardando: true })
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (error) throw new Error(`getPendenteAguardando: ${error.message}`);
+  return (data as LancamentoRow) ?? null;
+}
+
+export async function getConfirmadosDoDia(client: SupabaseClient, dataEvento: string): Promise<ChaveDuplicado[]> {
+  const { data, error } = await client.from('financeiro_lancamentos')
+    .select('valor, contraparte, data_evento')
+    .eq('status', 'confirmado').eq('data_evento', dataEvento);
+  if (error) throw new Error(`getConfirmadosDoDia: ${error.message}`);
+  return (data ?? []) as ChaveDuplicado[];
+}
+
+export async function getUltimoConfirmado(client: SupabaseClient): Promise<LancamentoRow | null> {
+  const { data, error } = await client.from('financeiro_lancamentos').select(COLS)
+    .eq('status', 'confirmado').order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (error) throw new Error(`getUltimoConfirmado: ${error.message}`);
+  return (data as LancamentoRow) ?? null;
+}
+
+// Busca por contraparte nos últimos 30 dias (correção "o do posto era 350").
+export async function buscarConfirmadoPorContraparte(client: SupabaseClient, termo: string): Promise<LancamentoRow | null> {
+  const desde = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await client.from('financeiro_lancamentos').select(COLS)
+    .eq('status', 'confirmado').gte('created_at', desde)
+    .ilike('contraparte', `%${termo}%`)
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (error) throw new Error(`buscarConfirmadoPorContraparte: ${error.message}`);
+  return (data as LancamentoRow) ?? null;
+}
+
+// Varredura preguiçosa: roda ao criar pendente novo (sem cron). >24h expira.
+export async function expirarPendentesAntigos(client: SupabaseClient): Promise<void> {
+  const limite = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { error } = await client.from('financeiro_lancamentos')
+    .update({ status: 'apagado', updated_at: new Date().toISOString() })
+    .eq('status', 'pendente').lt('created_at', limite);
+  if (error) console.warn('[caixa-entrada] expirarPendentes falhou:', error.message);
+}
+
+export async function getCategorias(client: SupabaseClient): Promise<Array<{ id: string; slug: string; nome: string }>> {
+  const { data, error } = await client.from('financeiro_categorias')
+    .select('id, slug, nome').eq('ativo', true);
+  if (error) throw new Error(`getCategorias: ${error.message}`);
+  return (data ?? []) as Array<{ id: string; slug: string; nome: string }>;
+}
+
+// Conta a receber em aberto cujo lead casa com o nome citado (entrada → venda).
+export async function buscarContaAbertaPorNome(client: SupabaseClient, nome: string):
+  Promise<{ id: string; clienteNome: string; saldo: number } | null> {
+  const { data, error } = await client.from('financeiro_contas_a_receber')
+    .select('id, valor, valor_recebido, leads!inner(name)')
+    .in('status', ['pendente', 'recebido_parcial'])
+    .ilike('leads.name', `%${nome}%`)
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (error) {
+    console.warn('[caixa-entrada] buscarContaAbertaPorNome falhou:', error.message);
+    return null;
+  }
+  if (!data) return null;
+  const d = data as unknown as { id: string; valor: number; valor_recebido: number; leads: { name: string | null } };
+  return {
+    id: d.id,
+    clienteNome: d.leads?.name ?? nome,
+    saldo: Math.round((Number(d.valor) - Number(d.valor_recebido)) * 100) / 100,
+  };
+}
