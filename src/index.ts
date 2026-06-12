@@ -87,7 +87,7 @@ import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
-import { carregarEmpresaConfig, empresa, listaMarcasTexto } from './modules/empresa-config.js';
+import { carregarEmpresaConfig, carregarKits, empresa, listaMarcasTexto } from './modules/empresa-config.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -2746,9 +2746,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
-  // /banner-kits — gera banner premium tabela com 6 kits OnGrid LONGi+Solax.
-  // Tabela canonica 2026 (preços oficiais Ecosunpower). Junior pode usar
-  // direto como criativo Meta Ads ou pra mandar pra clientes prospects.
+  // /banner-kits — gera banner premium tabela com os kits OnGrid da empresa.
+  // [ECOSOF] Kits vêm da tabela empresa_kits (seed = tabela canonica 2026 da
+  // EcoSunPower). Admin pode usar direto como criativo Meta Ads ou pra mandar
+  // pra clientes prospects. Sem kit cadastrado = avisa e aborta (preço é do
+  // cliente — NUNCA inventa fallback hardcoded).
   async function tryHandleBannerKitsCommand(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
     const t = text.trim().toLowerCase();
@@ -2771,18 +2773,28 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     };
     const variant = variantMap[v] ?? 'white-corporate';
 
-    await sendText(from, `🎨 Gerando banner premium (${variant}) com 6 kits OnGrid...`);
+    // [ECOSOF] Kits do banco (empresa_kits, só ativos, em ordem). Lista vazia
+    // aborta com instrução — sem fallback hardcoded, preço é dado do cliente.
+    const kitsDb = await carregarKits(supabase.getClient());
+    if (kitsDb.length === 0) {
+      await sendText(from, '⚠️ Nenhum kit cadastrado em empresa_kits — cadastre no banco e rode /recarregar-config.');
+      return true;
+    }
+
+    await sendText(from, `🎨 Gerando banner premium (${variant}) com ${kitsDb.length} kits OnGrid...`);
     try {
       const { renderBannerTabelaKitsHtml } = await import('./modules/marketing/banner-tabela-kits-html.js');
-      const KITS_CANONICOS = [
-        { kwp: 5.67,  modulos: 9,  microinversores: 3, geracao_kwh_mes: 700,  preco_brl: 15800.61 },
-        { kwp: 7.56,  modulos: 12, microinversores: 3, geracao_kwh_mes: 900,  preco_brl: 18476.35 },
-        { kwp: 10.08, modulos: 16, microinversores: 4, geracao_kwh_mes: 1200, preco_brl: 22985.00 },
-        { kwp: 12.60, modulos: 20, microinversores: 5, geracao_kwh_mes: 1500, preco_brl: 28038.54 },
-        { kwp: 16.38, modulos: 26, microinversores: 7, geracao_kwh_mes: 2000, preco_brl: 33766.60 },
-        { kwp: 20.79, modulos: 33, microinversores: 9, geracao_kwh_mes: 2500, preco_brl: 42039.77 },
-      ];
-      const buf = await renderBannerTabelaKitsHtml({ kits: KITS_CANONICOS, variant });
+      // Shape snake_case que o renderer espera (KitItem). microinversores é
+      // opcional no banco; null vira 0 (o seed EcoSun preenche todos — kit sem
+      // micro mostraria "0" na coluna de equipamento do banner).
+      const kits = kitsDb.map((k) => ({
+        kwp: k.kwp,
+        modulos: k.modulos,
+        microinversores: k.microinversores ?? 0,
+        geracao_kwh_mes: k.geracaoKwhMes,
+        preco_brl: k.precoBrl,
+      }));
+      const buf = await renderBannerTabelaKitsHtml({ kits, variant });
 
       // Upload pro Supabase Storage com nome profissional pro Meta Ads
       // Formato: OnGrid_Tabela_Mai_v<seq>_<variant>
@@ -2801,7 +2813,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       if (metaWaba) {
         try {
           const { mediaId } = await metaWaba.uploadMedia(buf, 'image/png', `${slug}.png`);
-          await metaWaba.sendImageById(from, mediaId, `🎨 *Banner ${variant}*\n\n6 kits OnGrid LONGi + Solax · Oferta de Maio\n\n📎 URL alta qualidade (sem compressão WhatsApp):\n${publicUrl}\n\nPra Meta Ads, salvar essa URL e usar como criativo.`);
+          await metaWaba.sendImageById(from, mediaId, `🎨 *Banner ${variant}*\n\n${kits.length} kits OnGrid (tabela empresa_kits)\n\n📎 URL alta qualidade (sem compressão WhatsApp):\n${publicUrl}\n\nPra Meta Ads, salvar essa URL e usar como criativo.`);
         } catch (err) {
           console.warn('[banner-kits] sendImage falhou, fallback texto:', (err as Error).message);
           await sendText(from, `🎨 Banner gerado!\n\n${publicUrl}`);
