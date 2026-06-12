@@ -48,7 +48,10 @@ const configSchema = z.object({
   metaWabaVerifyToken: z.string().optional(),         // challenge do subscribe do webhook WABA
   // Conversions API (CAPI) — devolve eventos de funil pra Meta otimizar CTWA.
   metaCapiToken: z.string().optional(),               // token de acesso do conjunto de dados (CAPI)
-  metaCapiDatasetId: z.string().default('1053629086258723'), // conjunto de dados (antigo pixel)
+  // [ECOSOF] SEM default: o dataset é identidade da EcoSun e não pode vazar pra
+  // um clone. EcoSun: setar META_CAPI_DATASET_ID=1053629086258723 no Easypanel
+  // ANTES de implantar (sem a env o CAPI desliga com aviso, não quebra).
+  metaCapiDatasetId: z.string().optional(), // conjunto de dados (antigo pixel)
   useWabaCloudApi: z.coerce.boolean().default(false), // flag: quando true, usa WABA; quando false, usa Evolution
   igUserId: z.string().optional(),                    // IG-Scoped Business User ID (qualificador IG DM)
   replicateApiToken: z.string().optional(),
@@ -60,15 +63,20 @@ const configSchema = z.object({
   tavusReplicaId: z.string().optional(),
   // Blog auto-publisher: GitHub PAT pra commitar drafts aprovados no repo do site
   githubPat: z.string().optional(),
-  githubSiteRepo: z.string().default('junior-candido/ecosunpower-site'),
+  // [ECOSOF] SEM default: repo do site é identidade da EcoSun. EcoSun: setar
+  // GITHUB_SITE_REPO=junior-candido/ecosunpower-site no Easypanel ANTES de
+  // implantar (sem a env a publicação do blog/case desliga com aviso).
+  githubSiteRepo: z.string().optional(),
   githubSiteBranch: z.string().default('main'),
   // Base URL pra propostas web publicas (Eva Proposta /p/:slug). CNAME aponta pro Easypanel.
+  // [CLONE] obrigatório no .env do clone (default = EcoSun, cliente nº 0).
   publicProposalBaseUrl: z.string().url().default('https://propostas.ecosunpower.eng.br'),
   // Token secreto pra preview admin de proposta. Quando /p/:slug?eu=<token> bate,
   // o endpoint nao incrementa acesso e nao dispara followup — Junior pode revisar
   // sem virar "primeira visualizacao do cliente". Se nao setado, modo preview off.
   proposalPreviewToken: z.string().optional(),
   // Cases social proof: site publico que serve /cases.json
+  // [CLONE] obrigatório no .env do clone (default = EcoSun, cliente nº 0).
   siteUrl: z.string().url().default('https://ecosunpower.eng.br'),
   // Selo Google na proposta (manual — Junior atualiza periodicamente)
   googleNota: z.string().default('4.9'),
@@ -126,7 +134,7 @@ export function loadConfig(): Config {
     tavusApiUrl: process.env.TAVUS_API_URL,
     tavusReplicaId: process.env.TAVUS_REPLICA_ID || undefined,
     githubPat: process.env.GITHUB_PAT || undefined,
-    githubSiteRepo: process.env.GITHUB_SITE_REPO || 'junior-candido/ecosunpower-site',
+    githubSiteRepo: process.env.GITHUB_SITE_REPO || undefined,
     githubSiteBranch: process.env.GITHUB_SITE_BRANCH || 'main',
     publicProposalBaseUrl: process.env.PUBLIC_PROPOSAL_BASE_URL,
     proposalPreviewToken: process.env.PROPOSAL_PREVIEW_TOKEN || undefined,

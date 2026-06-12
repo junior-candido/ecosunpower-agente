@@ -242,10 +242,12 @@ async function main() {
     join(__dirname, '..', 'conhecimento'),
     newsScraper,
   );
-  if (config.githubPat) {
+  // [ECOSOF] GITHUB_SITE_REPO perdeu o default (identidade EcoSun): sem PAT OU
+  // sem repo, a publicação no site fica off (drafts continuam no Supabase).
+  if (config.githubPat && config.githubSiteRepo) {
     console.log(`[blog] Auto-blog enabled (GitHub repo: ${config.githubSiteRepo}@${config.githubSiteBranch})`);
   } else {
-    console.log('[blog] Auto-blog: drafts vao salvar no Supabase mas publicacao no site precisa GITHUB_PAT setado.');
+    console.log('[blog] Auto-blog: drafts vao salvar no Supabase mas publicacao no site precisa GITHUB_PAT e GITHUB_SITE_REPO setados.');
   }
   const takeover = new TakeoverService(config.redisHost, config.redisPort, config.redisPassword);
   const calendar = (config.googleClientId && config.googleClientSecret
@@ -483,16 +485,18 @@ async function main() {
   // Meta Conversions API (CAPI): devolve eventos de funil CTWA pra Meta otimizar
   // a veiculacao (buscar mais gente parecida com quem qualifica/fecha). So liga
   // se tiver token + WABA id; senao vira no-op silencioso. NUNCA quebra o handler.
-  const capiOn = !!(config.metaCapiToken && config.metaWabaBusinessAccountId);
+  // [ECOSOF] META_CAPI_DATASET_ID perdeu o default (identidade EcoSun) e agora
+  // faz parte do gate: sem a env o CAPI fica off com aviso (nunca quebra boot).
+  const capiOn = !!(config.metaCapiToken && config.metaWabaBusinessAccountId && config.metaCapiDatasetId);
   const capiReporter: CapiReporter = capiOn
     ? makeCapiReporter({
-        capi: new MetaCapi({ datasetId: config.metaCapiDatasetId, token: config.metaCapiToken! }),
+        capi: new MetaCapi({ datasetId: config.metaCapiDatasetId!, token: config.metaCapiToken! }),
         wabaId: config.metaWabaBusinessAccountId!,
         getLeadForCapi: (id) => supabase.getLeadForCapi(id),
         recordCapiStage: (id, stage) => supabase.recordCapiStage(id, stage),
       })
-    : async () => { /* CAPI off: falta META_CAPI_TOKEN ou META_WABA_BUSINESS_ACCOUNT_ID */ };
-  console.log(`[capi] Conversions API ${capiOn ? 'ATIVA' : 'off (falta token/WABA id)'} — dataset ${config.metaCapiDatasetId}`);
+    : async () => { /* CAPI off: falta META_CAPI_TOKEN, META_WABA_BUSINESS_ACCOUNT_ID ou META_CAPI_DATASET_ID */ };
+  console.log(`[capi] Conversions API ${capiOn ? 'ATIVA' : 'off (falta token/WABA id/dataset)'} — dataset ${config.metaCapiDatasetId ?? 'NAO SETADO'}`);
 
   // Follow-up automatico de proposta: notifica Junior toda vez que cliente
   // abre o link publico (throttle 5min), e na primeira abertura manda
@@ -594,7 +598,7 @@ async function main() {
   const siteDeploy = new SiteDeployService({ hookUrl: config.cloudflareDeployHookUrl });
   const publicReviews = new PublicReviewsService(supabase.getClient());
 
-  const caseCreator = (config.githubPat && metaWaba)
+  const caseCreator = (config.githubPat && config.githubSiteRepo && metaWaba)
     ? new CaseCreatorAssistant({
         redisHost: config.redisHost,
         redisPort: config.redisPort,
@@ -608,7 +612,7 @@ async function main() {
       })
     : null;
   if (!caseCreator) {
-    console.warn('[case-creator] /novo-case desabilitado (faltando GITHUB_PAT ou WABA service)');
+    console.warn('[case-creator] /novo-case desabilitado (faltando GITHUB_PAT, GITHUB_SITE_REPO ou WABA service)');
   }
 
   // Valida que o bucket 'testimonials' existe. Se nao existir, videos de
@@ -764,11 +768,11 @@ async function main() {
         return true;
       }
 
-      if (!config.githubPat) {
+      if (!config.githubPat || !config.githubSiteRepo) {
         // NAO marca como aprovado: deixa em pending pra Junior retentar quando configurar
-        // o PAT. Marcar como aprovado fazia o draft sumir de getPendingDrafts e quebrava
+        // o PAT/repo. Marcar como aprovado fazia o draft sumir de getPendingDrafts e quebrava
         // o retry sem intervencao manual no banco.
-        await sendText(from, `⚠️ GitHub PAT nao configurado no Easypanel (env GITHUB_PAT). Draft "${draft.title}" segue como pendente — configure o GITHUB_PAT e responda "publicar" de novo.`);
+        await sendText(from, `⚠️ GitHub nao configurado no Easypanel (env GITHUB_PAT e/ou GITHUB_SITE_REPO). Draft "${draft.title}" segue como pendente — configure e responda "publicar" de novo.`);
         return true;
       }
 
@@ -8045,8 +8049,8 @@ Slug: ${draft.slug}`;
       res.status(401).json({ error: 'Invalid token' });
       return;
     }
-    if (!config.githubPat) {
-      res.status(500).json({ error: 'GITHUB_PAT nao configurado no env' });
+    if (!config.githubPat || !config.githubSiteRepo) {
+      res.status(500).json({ error: 'GITHUB_PAT/GITHUB_SITE_REPO nao configurado no env' });
       return;
     }
     try {

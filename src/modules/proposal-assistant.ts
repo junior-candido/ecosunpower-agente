@@ -25,7 +25,7 @@ import { obterLogoBase64, LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './proposal/asse
 import { somaServicosExtras, renderServiceOnlyHTML, type ServicoItem, type ServiceOnlyData } from './proposal/service-render.js';
 import { montarDadosInputCompleto } from './proposal/dados-input.js';
 import { renderComparacaoSolar, type ComparacaoOpcao } from './proposal/comparison-render.js';
-import { servicePaymentOptions } from './proposal/service-payment.js';
+import { servicePaymentOptions, valorParcelaCartao } from './proposal/service-payment.js';
 import { htmlToPdf, gerarQrCodeDataUrl } from './proposal/pdf-generator.js';
 import type { DriveUploader } from './proposal/drive-uploader.js';
 import type { SupabaseService } from './supabase.js';
@@ -130,6 +130,8 @@ export function buildComparacaoOpcao(
     inversorQuantidade?: number;
     valorTotalRs: number;
     cartaoParcelaRs?: number;
+    // [ECOSOF] nº de parcelas do cartão exibido no quadro (24 Belenus / 12 genérico).
+    cartaoParcelas?: number;
     financiamentoParcelaRs?: number;
   },
   calc: { geracaoMensalKwh: number; paybackAnos: number; paybackMeses: number; paybackInviavel: boolean; economiaVidaUtil: number; economiaMensal?: number },
@@ -148,6 +150,7 @@ export function buildComparacaoOpcao(
     economia25AnosRs: Math.round(calc.economiaVidaUtil),
     economiaMensalRs: Math.round(calc.economiaMensal ?? 0),
     cartaoParcelaRs: dados.cartaoParcelaRs,
+    cartaoParcelas: dados.cartaoParcelas,
     financiamentoParcelaRs: dados.financiamentoParcelaRs,
     moduloFabricante: dados.moduloFabricante,
     moduloModelo: dados.moduloModelo,
@@ -311,6 +314,19 @@ export interface GenerateProposalCoreResult {
 // askClaude (interpolarEmpresa + empresa()), pra /recarregar-config valer sem
 // restart. O texto cru fica cacheado no construtor (knowledge não muda).
 function buildSystemPrompt(propostasKnowledge: string, marcasKnowledge: string): string {
+  // [ECOSOF] O item de cartão é condicional na MONTAGEM (não placeholder):
+  // belenus_ativo (EcoSun, seed) = tabela do parceiro em 24×; flag desligada =
+  // cartão genérico de até 12× na maquininha (service-payment). O texto do
+  // ramo "true" é byte-idêntico ao prompt antigo.
+  const itemCartaoPrompt = empresa().belenusAtivo
+    ? `2. Cartão de crédito em 24× — NÃO calcule a parcela do cartão: o sistema preenche
+     o valor exato. Só inclua a opção com meioPagamento "cartao"; pode deixar
+     valorPrincipal vazio que o sistema corrige. NUNCA escreva o nome do parceiro/
+     fornecedor do cartão (ex: "Belenus") no texto que vai pro cliente — use só
+     "Cartão de crédito".`
+    : `2. Cartão de crédito em até 12× na maquininha — NÃO calcule a parcela do cartão:
+     o sistema preenche o valor exato. Só inclua a opção com meioPagamento "cartao";
+     pode deixar valorPrincipal vazio que o sistema corrige.`;
   return `Você é a {{nome_atendente}}, assistente de geração de propostas comerciais da {{empresa_nome}}. Está conversando com o dono da empresa ({{rt_titulo}}, experiente — aqui chamado de Junior) pra coletar dados de um cliente e gerar uma proposta profissional em PDF e versão web.
 
 TOM: direto, técnico, sem ladainha. Junior conhece tudo. Vá pros números.
@@ -453,11 +469,7 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
 
 - formasPagamento: SEMPRE incluir 3 opções padrão:
   1. À vista PIX/TED (recomendado, sem juros)
-  2. Cartão de crédito em 24× — NÃO calcule a parcela do cartão: o sistema preenche
-     o valor exato. Só inclua a opção com meioPagamento "cartao"; pode deixar
-     valorPrincipal vazio que o sistema corrige. NUNCA escreva o nome do parceiro/
-     fornecedor do cartão (ex: "Belenus") no texto que vai pro cliente — use só
-     "Cartão de crédito".
+  ${itemCartaoPrompt}
   3. Financiamento até 90× com carência até 120 dias (Solfácil/Sol Agora/BV/Santander, ~1.7%a.m., fator ~2.10)
   Calcule as parcelas do financiamento baseadas em valorTotalRs (o cartão é do sistema). Se Junior pedir customização ("só à vista", "12x sem juros"), respeitar.
 
@@ -477,7 +489,12 @@ Se Junior digitar "ajuda" ou "/proposta ajuda", explique o fluxo curto.`;
 export class ProposalAssistant {
   private client: Anthropic;
   private redis: any;
-  private systemPrompt: string;
+  // [ECOSOF] Knowledge cru cacheado no construtor; o prompt em si é remontado
+  // por getSystemPrompt() quando a flag belenus muda (/recarregar-config) —
+  // fora isso a MESMA string é reusada (cache ephemeral da API continua válido).
+  private kbPropostas: string;
+  private kbMarcas: string;
+  private systemPromptCache: { belenusAtivo: boolean; text: string } | null = null;
   private driveUploader: DriveUploader | null;
   private engineerPhone: string;
   private companyOverrides: Partial<ProposalData['empresa']>;
@@ -525,7 +542,8 @@ export class ProposalAssistant {
       marcas = 'Marcas oficiais: Trina, JA Solar, LONGi, Jinko, DAH, Risen (placas); Sungrow, Solis, Deye, FoxESS, SolarEdge, Huawei, GoodWe, Hoymiles, NEP (inversores). NUNCA Growatt.';
     }
 
-    this.systemPrompt = buildSystemPrompt(propostas, marcas);
+    this.kbPropostas = propostas;
+    this.kbMarcas = marcas;
     this.driveUploader = opts.driveUploader;
     this.engineerPhone = opts.engineerPhone;
     this.supabaseService = opts.supabaseService ?? null;
@@ -557,6 +575,17 @@ export class ProposalAssistant {
       site: e.siteUrl.replace(/^https?:\/\//, ''),
       ...this.companyOverrides,
     };
+  }
+
+  // [ECOSOF] Prompt montado sob demanda: o item de cartão depende da flag
+  // belenus_ativo (lida em runtime), então o texto é remontado QUANDO a flag
+  // muda e cacheado enquanto ela não mudar.
+  private getSystemPrompt(): string {
+    const belenusAtivo = empresa().belenusAtivo;
+    if (!this.systemPromptCache || this.systemPromptCache.belenusAtivo !== belenusAtivo) {
+      this.systemPromptCache = { belenusAtivo, text: buildSystemPrompt(this.kbPropostas, this.kbMarcas) };
+    }
+    return this.systemPromptCache.text;
   }
 
   // [ECOSOF] Logo da proposta resolvida em RUNTIME (Storage com fallback
@@ -910,7 +939,7 @@ export class ProposalAssistant {
       max_tokens: 2500,
       // [ECOSOF] empresa() lida POR CHAMADA; string estável entre chamadas
       // mantém o cache ephemeral válido enquanto a config não muda.
-      system: [{ type: 'text', text: interpolarEmpresa(this.systemPrompt, empresa()), cache_control: { type: 'ephemeral' } }],
+      system: [{ type: 'text', text: interpolarEmpresa(this.getSystemPrompt(), empresa()), cache_control: { type: 'ephemeral' } }],
       messages: history,
     }, { timeout: 30_000 });
 
@@ -1126,7 +1155,8 @@ export class ProposalAssistant {
             // Pagamento da PRÓPRIA opção (cartão 24× + financiamento até 90×) fica dentro
             // do quadro, já que no modo comparação a seção de pagamento de 1 valor some —
             // assim o cliente não perde nenhuma forma de pagamento ao comparar.
-            cartaoParcelaRs: Math.round(ProposalAssistant.parcelaCartaoBelenus(Number(op.valorTotalRs), 24)),
+            cartaoParcelaRs: Math.round(ProposalAssistant.parcelaCartaoSolar(Number(op.valorTotalRs))),
+            cartaoParcelas: ProposalAssistant.parcelasCartaoSolar(),
             financiamentoParcelaRs: Math.round(ProposalAssistant.parcelaTabelaPrice(
               Number(op.valorTotalRs), ProposalAssistant.TAXA_FINANC_AM, 90, ProposalAssistant.MESES_CARENCIA_FINANC,
             )),
@@ -1647,15 +1677,31 @@ export class ProposalAssistant {
     return (valor * (1 + acr)) / parcelas;
   }
 
-  // O cartão do solar SEMPRE usa a tabela Belenus exata em 24x — a Eva nunca
+  // [ECOSOF] Cartão do solar atrás da flag empresa_config.belenus_ativo:
+  // ligada (EcoSun, seed) = tabela Belenus exata em 24×; desligada = cartão
+  // genérico de até 12× na maquininha (mesma tabela do service-payment) —
+  // um clone sem a parceria nunca herda taxa de terceiro.
+  private static parcelasCartaoSolar(): number {
+    return empresa().belenusAtivo ? 24 : 12;
+  }
+  private static parcelaCartaoSolar(valor: number): number {
+    return empresa().belenusAtivo
+      ? ProposalAssistant.parcelaCartaoBelenus(valor, 24)
+      : valorParcelaCartao(valor, 12);
+  }
+
+  // O cartão do solar SEMPRE usa a parcela calculada pelo sistema — a Eva nunca
   // calcula cartão de cabeça. Mesmo quando a Eva monta formasPagamento, este
-  // passo força o valor do cartão e garante a mensagem das bandeiras.
+  // passo força o valor do cartão. [ECOSOF] Com belenus_ativo (EcoSun) é a
+  // tabela Belenus exata em 24× + mensagem das bandeiras; sem a flag é o cartão
+  // genérico 12× da maquininha (sem bandeiras do parceiro). A sanitização do
+  // nome "Belenus" roda sempre (inócua quando a Eva nem citou).
   private enforceCartaoBelenus(
     formas: ProposalData['formasPagamento'],
     valorBase: number,
   ): ProposalData['formasPagamento'] {
     const fmtRs = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
-    const parcela = Math.round(ProposalAssistant.parcelaCartaoBelenus(valorBase, 24));
+    const parcela = Math.round(ProposalAssistant.parcelaCartaoSolar(valorBase));
     const bandeiras = 'Parcelamento: Visa/Amex até 24× · Master/Elo até 21× · demais até 12×';
     // O nome "Belenus" é do parceiro/fornecedor e NÃO deve aparecer pro cliente
     // (pode mudar de fornecedor). Limpa qualquer menção no texto cliente-facing,
@@ -1683,7 +1729,11 @@ export class ProposalAssistant {
       }
       const tipo = semBelenus(f.tipo) || 'Cartão de crédito';
       const bulletsLimpos = f.bullets.map(semBelenus).filter(Boolean);
-      const bullets = bulletsLimpos.some((b) => b.includes('Visa/Amex')) ? bulletsLimpos : [...bulletsLimpos, bandeiras];
+      // Bandeiras/limites (Visa/Amex 24× etc.) são condição da parceria Belenus —
+      // só entram com a flag ligada.
+      const bullets = !empresa().belenusAtivo || bulletsLimpos.some((b) => b.includes('Visa/Amex'))
+        ? bulletsLimpos
+        : [...bulletsLimpos, bandeiras];
       return { ...f, tipo, titulo: semBelenus(f.titulo), valorSecundario: semBelenus(f.valorSecundario), valorPrincipal: fmtRs(parcela), bullets };
     });
   }
@@ -1692,7 +1742,7 @@ export class ProposalAssistant {
     const fmtRs = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 
     const cartaoParcela = Math.round(
-      ProposalAssistant.parcelaCartaoBelenus(valorRs, 24),
+      ProposalAssistant.parcelaCartaoSolar(valorRs),
     );
     const financiamentoParcela = Math.round(
       ProposalAssistant.parcelaTabelaPrice(
@@ -1713,18 +1763,33 @@ export class ProposalAssistant {
         bullets: ['Sem juros, sem entrada', 'Início imediato do projeto', 'Maior economia no longo prazo'],
         meioPagamento: 'pix',
       },
-      {
-        tipo: 'Cartão de crédito',
-        titulo: 'Em até 24× com juros baixos',
-        valorPrincipal: fmtRs(cartaoParcela),
-        valorSecundario: 'a partir de 24× · aprovação imediata',
-        bullets: [
-          'Taxa especial pra solar — bem menor que cartão tradicional',
-          'Aprovação imediata, sem análise formal',
-          'Comece sem espera',
-        ],
-        meioPagamento: 'cartao',
-      },
+      // [ECOSOF] Texto do cartão acompanha a flag: 24× (Belenus/EcoSun, idêntico
+      // ao antigo) ou genérico 12× na maquininha.
+      empresa().belenusAtivo
+        ? {
+          tipo: 'Cartão de crédito',
+          titulo: 'Em até 24× com juros baixos',
+          valorPrincipal: fmtRs(cartaoParcela),
+          valorSecundario: 'a partir de 24× · aprovação imediata',
+          bullets: [
+            'Taxa especial pra solar — bem menor que cartão tradicional',
+            'Aprovação imediata, sem análise formal',
+            'Comece sem espera',
+          ],
+          meioPagamento: 'cartao' as const,
+        }
+        : {
+          tipo: 'Cartão de crédito',
+          titulo: 'Em até 12× na maquininha',
+          valorPrincipal: fmtRs(cartaoParcela),
+          valorSecundario: 'em até 12× · aprovação imediata',
+          bullets: [
+            'Parcele no cartão em até 12×',
+            'Aprovação imediata, sem análise formal',
+            'Comece sem espera',
+          ],
+          meioPagamento: 'cartao' as const,
+        },
       {
         tipo: 'Financiamento Solar',
         titulo: 'Até 90× · carência 120 dias',

@@ -13,7 +13,10 @@ export interface ComparacaoOpcao {
   paybackTexto: string;       // já formatado (ex: "4 anos e 2 meses")
   economia25AnosRs: number;
   economiaMensalRs?: number;  // economia por mês em R$ (destaque); opcional
-  cartaoParcelaRs?: number;         // parcela do cartão em 24× (pagamento por opção); opcional
+  cartaoParcelaRs?: number;         // parcela do cartão (pagamento por opção); opcional
+  // [ECOSOF] nº de parcelas do cartão exibido (24 = Belenus/EcoSun, 12 = genérico).
+  // Default 24 preserva o output antigo quando o caller não informa.
+  cartaoParcelas?: number;
   financiamentoParcelaRs?: number;  // parcela do financiamento (até 90×) por opção; opcional
   moduloFabricante: string;
   moduloModelo?: string;
@@ -65,7 +68,7 @@ export function renderComparacaoSolar(opcoes: ComparacaoOpcao[]): string {
         ${linha('Geração', fmtNum(o.geracaoMensalKwh) + ' kWh/mês')}
         ${linha('Investimento', 'R$ ' + fmtRs(o.valorTotalRs, 0))}
         ${(o.cartaoParcelaRs && o.cartaoParcelaRs > 0)
-          ? `<div style="padding:8px 0 0;text-align:right;color:#64748B;font-size:13px">ou 24× de <strong style="color:#0F172A">R$ ${fmtRs(o.cartaoParcelaRs, 0)}</strong> no cartão</div>`
+          ? `<div style="padding:8px 0 0;text-align:right;color:#64748B;font-size:13px">ou ${o.cartaoParcelas ?? 24}× de <strong style="color:#0F172A">R$ ${fmtRs(o.cartaoParcelaRs, 0)}</strong> no cartão</div>`
           : ''}
         ${(o.financiamentoParcelaRs && o.financiamentoParcelaRs > 0)
           ? `<div style="padding:4px 0 12px;text-align:right;color:#64748B;font-size:13px">ou até 90× de <strong style="color:#0F172A">R$ ${fmtRs(o.financiamentoParcelaRs, 0)}</strong> financiado</div>`
