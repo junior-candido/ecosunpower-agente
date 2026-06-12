@@ -24,7 +24,7 @@ export interface BannerTabelaKitsInput {
   subtitulo?: string;     // default "Sistema solar premium · LONGi + Solax"
   cta_text?: string;      // default "QUERO MEU ORÇAMENTO"
   responsavel_tecnico?: string; // default: rtNome da empresa_config em Title Case
-  wa_link?: string;       // default wa.me/+556196978781
+  wa_link?: string;       // default wa.me/+<telefoneAtendente da empresa-config>
   width?: number;
   height?: number;
 }
@@ -76,7 +76,8 @@ export async function renderBannerTabelaKits(input: BannerTabelaKitsInput): Prom
     // [ECOSOF] default avaliado na CHAMADA (runtime): rtNome da config em
     // Title Case — com o seed EcoSun rende "Antonio Candido Rodrigues Junior".
     responsavel_tecnico = nomeTituloCase(empresa().rtNome),
-    wa_link = 'wa.me/+556196978781',
+    // [ECOSOF] default avaliado na CHAMADA (runtime): telefone da empresa-config.
+    wa_link = `wa.me/+${empresa().telefoneAtendente ?? ''}`,
     width = 1080,
     height = 1620,
   } = input;
@@ -147,7 +148,7 @@ export async function renderBannerTabelaKits(input: BannerTabelaKitsInput): Prom
                       type: 'div',
                       props: {
                         style: { fontFamily: 'Montserrat', fontWeight: 900, fontSize: 36, color: COR_OURO, display: 'flex' },
-                        children: 'ECOSUNPOWER',
+                        children: empresa().nomeFantasia.toUpperCase(),
                       },
                     },
                 // Direita: badge tier 1

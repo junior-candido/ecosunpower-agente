@@ -490,7 +490,7 @@ export function buildBannerHtml(kits: KitItem[], variant: BannerVariant = 'dark-
   <div class="header">
     ${logoDataUrl
       ? `<img src="${logoDataUrl}" class="logo" alt="Ecosunpower">`
-      : `<div style="font-weight:900;font-size:42px;color:#fbbf24;letter-spacing:2px;">ECOSUNPOWER</div>`}
+      : `<div style="font-weight:900;font-size:42px;color:#fbbf24;letter-spacing:2px;">${empresa().nomeFantasia.toUpperCase()}</div>`}
     <div class="badge">
       <div class="badge-tier">★ TIER 1 PREMIUM</div>
       <div class="badge-region">Brasília · Goiás</div>
