@@ -21,6 +21,7 @@
 import type { Redis } from 'ioredis';
 import type { SupabaseService } from './supabase.js';
 import type { MetaWhatsAppService } from './meta-whatsapp.js';
+import { empresa } from './empresa-config.js';
 
 // Throttle entre notificacoes de re-abertura pro mesmo slug. 5min suficiente
 // pra evitar spam quando cliente recarrega/volta varias vezes seguidas.
@@ -331,7 +332,7 @@ export class ProposalFollowupService {
   private montarMensagemCliente(nome: string): string {
     const primeiroNome = nome.trim().split(/\s+/)[0] ?? nome;
     return [
-      `Oi ${primeiroNome}, aqui é a Eva da EcoSunPower 👋`,
+      `Oi ${primeiroNome}, aqui é a ${empresa().nomeAtendente} da ${empresa().nomeFantasia} 👋`,
       ``,
       `Vi que você acabou de abrir a proposta de energia solar que o Junior te enviou.`,
       ``,
