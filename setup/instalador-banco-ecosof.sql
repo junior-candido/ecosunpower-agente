@@ -3,7 +3,7 @@
 -- =============================================================================
 -- O QUE É:
 --   Script único que reconstrói TODA a estrutura do banco do zero em um projeto
---   Supabase novo e vazio. Equivale a rodar as 48 migrations em sequência, mas
+--   Supabase novo e vazio. Equivale a rodar as 49 migrations em sequência, mas
 --   em um único paste no SQL Editor.
 --
 -- COMO USAR:
@@ -14,7 +14,7 @@
 --   5. Confira o bloco de verificação no final — as contagens devem bater.
 --
 -- GERADO EM: 2026-06-11
--- MIGRATION RANGE: 001 a 048
+-- MIGRATION RANGE: 001 a 049
 --
 -- ⚠️  REGERAR quando nascer migration nova:
 --   Acrescente o conteúdo da nova migration antes do bloco de verificação
@@ -67,6 +67,14 @@
 --     Razão: categorias de despesa genéricas (combustível, material elétrico, etc).
 --     São reutilizáveis, mas o cliente pode querer adicionar/remover categorias.
 --     Linhas marcadas com -- [CLONE] AJUSTAR PARA O CLIENTE abaixo.
+--
+--   [CLONE-009] migration 049 — seed de empresa_config + empresa_kits
+--     Razão: na migration original o seed são os dados REAIS da EcoSunPower
+--     (CNPJ, endereço, RT, PIX) e os 6 kits com preços dela. NADA disso pode
+--     ir pro clone. Aqui o seed usa PLACEHOLDERS [CONFIGURAR] e NENHUM kit.
+--     AÇÃO OBRIGATÓRIA: editar a linha de empresa_config com os dados do
+--     cliente E cadastrar os kits dele em empresa_kits ANTES de ativar o clone.
+--     Linhas marcadas com -- [CLONE] OBRIGATÓRIO editar antes de usar.
 --
 -- =============================================================================
 -- BUCKETS DE STORAGE (criar manualmente após rodar este script)
@@ -1756,6 +1764,114 @@ CREATE TABLE IF NOT EXISTS monitoring_config (
 INSERT INTO monitoring_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
 
+-- ============ migration 049: empresa_config ============
+
+-- [CLONE-009] ⚠️ SEED ADAPTADO: a migration original semeia os dados REAIS da
+-- EcoSunPower (cliente nº 0). Aqui o seed usa PLACEHOLDERS — edite TODOS os
+-- campos [CONFIGURAR] com os dados do cliente ANTES de ativar o clone.
+-- Enquanto razao_social mostrar [CONFIGURAR], o clone NÃO está pronto.
+
+CREATE TABLE IF NOT EXISTS empresa_config (
+  id int PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  -- identidade
+  razao_social text NOT NULL,
+  nome_fantasia text NOT NULL,
+  cnpj text NOT NULL,
+  endereco text NOT NULL,
+  cidade text NOT NULL,
+  uf text NOT NULL,
+  cep text,
+  email text NOT NULL,
+  site_url text NOT NULL,
+  atuacao_desde int NOT NULL DEFAULT 2019,
+  -- Campos que entram em prompt da Eva — limite de tamanho evita injeção de
+  -- texto gigante via SQL Editor degradando/poluindo o prompt.
+  descricao_curta text NOT NULL CHECK (char_length(descricao_curta) <= 500),
+  regiao_atuacao text NOT NULL CHECK (char_length(regiao_atuacao) <= 500),
+  -- atendente IA
+  nome_atendente text NOT NULL DEFAULT 'Eva' CHECK (char_length(nome_atendente) <= 40),
+  telefone_atendente text,                  -- chip do WhatsApp do negócio (wa.me)
+  -- responsável técnico
+  rt_nome text NOT NULL,
+  rt_titulo text NOT NULL DEFAULT 'Responsável Técnico CREA/CFT' CHECK (char_length(rt_titulo) <= 80),
+  rt_cpf text,
+  rt_rg text,
+  rt_registro text,
+  -- comercial
+  pix_chave text,
+  criterio_lead_valor numeric(10,2) NOT NULL DEFAULT 700 CHECK (criterio_lead_valor >= 0),
+  criterio_lead_kwh numeric(10,2) NOT NULL DEFAULT 700 CHECK (criterio_lead_kwh >= 0),
+  marcas_permitidas text[] NOT NULL DEFAULT '{}',
+  marcas_bloqueadas text[] NOT NULL DEFAULT '{}',
+  garantia_instalacao_meses int NOT NULL DEFAULT 12,
+  fator_perda_padrao numeric(4,2) NOT NULL DEFAULT 0.78 CHECK (fator_perda_padrao > 0 AND fator_perda_padrao <= 1),
+  belenus_ativo boolean NOT NULL DEFAULT false,  -- tabela de cartão específica da EcoSun (clone: deixar FALSE)
+  -- região técnica (fallback quando a UF do cliente NÃO está no solar-params)
+  hsp_padrao numeric(4,2) CHECK (hsp_padrao > 0),                   -- ex.: 5.40; null = usa o resolver atual por UF
+  tarifa_kwh_padrao numeric(6,3) CHECK (tarifa_kwh_padrao > 0),     -- ex.: 1.050; null = resolver atual
+  concessionaria_padrao text,                                        -- ex.: 'CEMIG-MG'; null = resolver atual
+  -- branding
+  logo_storage_path text,                    -- bucket 'branding'; null = logo embutida (fallback)
+  updated_at timestamptz NOT NULL DEFAULT now() -- sem trigger: editou via SQL Editor, atualize na mão (ou ignore o campo)
+);
+
+-- [CLONE-009] Seed com PLACEHOLDERS (a migration original usa os dados da EcoSunPower).
+INSERT INTO empresa_config (
+  id, razao_social, nome_fantasia, cnpj, endereco, cidade, uf, cep, email, site_url,
+  atuacao_desde, descricao_curta, regiao_atuacao, nome_atendente, telefone_atendente,
+  rt_nome, rt_titulo, rt_cpf, rt_rg, rt_registro, pix_chave,
+  criterio_lead_valor, criterio_lead_kwh, marcas_permitidas, marcas_bloqueadas,
+  garantia_instalacao_meses, fator_perda_padrao, belenus_ativo,
+  hsp_padrao, tarifa_kwh_padrao, concessionaria_padrao
+) VALUES (
+  1,
+  '[CONFIGURAR] RAZAO SOCIAL DO CLIENTE LTDA',          -- [CLONE] OBRIGATÓRIO editar antes de usar
+  '[CONFIGURAR] Nome Fantasia',                          -- [CLONE] OBRIGATÓRIO editar antes de usar
+  '00.000.000/0000-00',                                  -- [CLONE] OBRIGATÓRIO editar antes de usar (CNPJ do cliente)
+  '[CONFIGURAR] Endereço completo',                      -- [CLONE] OBRIGATÓRIO editar antes de usar
+  '[CONFIGURAR] Cidade',                                 -- [CLONE] OBRIGATÓRIO editar antes de usar
+  'XX',                                                  -- [CLONE] OBRIGATÓRIO editar antes de usar (UF, 2 letras)
+  NULL,                                                  -- [CLONE] cep (opcional)
+  'configurar@cliente.com.br',                           -- [CLONE] OBRIGATÓRIO editar antes de usar
+  'https://configurar.cliente.com.br',                   -- [CLONE] OBRIGATÓRIO editar antes de usar
+  2019,                                                  -- [CLONE] OBRIGATÓRIO editar antes de usar (ano de início do cliente)
+  '[CONFIGURAR] descreva a empresa',                     -- [CLONE] OBRIGATÓRIO editar antes de usar
+  '[CONFIGURAR] região de atuação',                      -- [CLONE] OBRIGATÓRIO editar antes de usar
+  'Eva',                                                 -- [CLONE] nome da atendente IA (personalizável)
+  NULL,                                                  -- [CLONE] OBRIGATÓRIO editar antes de usar (chip WhatsApp do negócio)
+  '[CONFIGURAR] NOME DO RESPONSAVEL TECNICO',            -- [CLONE] OBRIGATÓRIO editar antes de usar
+  'Responsável Técnico CREA/CFT',                        -- [CLONE] título do RT (ajustar se necessário)
+  NULL, NULL, NULL,                                      -- [CLONE] OBRIGATÓRIO editar antes de usar (rt_cpf, rt_rg, rt_registro)
+  NULL,                                                  -- [CLONE] OBRIGATÓRIO editar antes de usar (pix_chave)
+  700, 700,                                              -- [CLONE] critério mínimo de lead (R$ / kWh) — ajustar pro cliente
+  '{}',                                                  -- [CLONE] OBRIGATÓRIO editar antes de usar (marcas_permitidas do cliente)
+  '{}',                                                  -- [CLONE] marcas_bloqueadas (opcional)
+  12, 0.78, FALSE,                                       -- [CLONE] garantia/fator de perda/belenus (belenus SEMPRE false no clone)
+  NULL, NULL, NULL                                       -- [CLONE] OBRIGATÓRIO revisar (hsp_padrao, tarifa_kwh_padrao, concessionaria_padrao da região do cliente)
+) ON CONFLICT (id) DO NOTHING;
+
+-- Kits comerciais (preço é DO CLIENTE)
+CREATE TABLE IF NOT EXISTS empresa_kits (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  ordem int NOT NULL,
+  kwp numeric(6,2) NOT NULL CHECK (kwp > 0),
+  modulos int NOT NULL CHECK (modulos > 0),
+  microinversores int,
+  geracao_kwh_mes numeric(8,1) NOT NULL CHECK (geracao_kwh_mes > 0),
+  preco_brl numeric(12,2) NOT NULL CHECK (preco_brl > 0),
+  descricao text,
+  ativo boolean NOT NULL DEFAULT true,
+  updated_at timestamptz NOT NULL DEFAULT now() -- sem trigger: editou via SQL Editor, atualize na mão (ou ignore o campo)
+);
+
+-- Índice único parcial: dentro dos kits ativos, a ordem é única.
+-- Kits inativos podem reusar números de ordem sem conflito.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_empresa_kits_ordem_ativo ON empresa_kits (ordem) WHERE ativo;
+
+-- [CLONE-009] SEM seed de kits — os preços da migration original são da EcoSunPower.
+-- [CLONE] cadastre os kits do cliente em empresa_kits
+
+
 -- =============================================================================
 -- BLOCO DE VERIFICAÇÃO
 -- =============================================================================
@@ -1763,13 +1879,13 @@ INSERT INTO monitoring_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 -- =============================================================================
 
 -- Contagem de tabelas criadas no schema public
--- Esperado: 46 tabelas (número exato depende do Supabase — inclui tabelas internas)
+-- Esperado: 48 tabelas (número exato depende do Supabase — inclui tabelas internas)
 SELECT count(*) AS total_tabelas
 FROM information_schema.tables
 WHERE table_schema = 'public'
   AND table_type = 'BASE TABLE';
 
--- Tabelas esperadas (41 tabelas de negócio):
+-- Tabelas esperadas (43 tabelas de negócio):
 -- leads, conversations, dossiers, engineers, logs
 -- learning_insights, conversation_patterns
 -- followups, marketing_drafts, app_flags
@@ -1787,6 +1903,7 @@ WHERE table_schema = 'public'
 -- financeiro_anexos, financeiro_atividades, financeiro_receita_mensal
 -- financeiro_contas_a_receber, financeiro_parametros, financeiro_recebimentos
 -- financeiro_categorias, financeiro_lancamentos
+-- empresa_config, empresa_kits
 
 -- Sanity checks de seeds obrigatórios
 SELECT count(*) AS financeiro_anexos_count FROM financeiro_anexos;
@@ -1803,6 +1920,10 @@ SELECT * FROM financeiro_parametros;
 
 SELECT id FROM monitoring_config;
 -- Esperado: 1 linha com id=1
+
+SELECT razao_social FROM empresa_config WHERE id = 1;
+-- Esperado: 1 linha. Se mostrar [CONFIGURAR], EDITE os dados do cliente em
+-- empresa_config (e cadastre os kits em empresa_kits) ANTES de ativar o clone.
 
 -- Verificar extensões instaladas
 SELECT extname FROM pg_extension WHERE extname IN ('pgcrypto', 'vector');

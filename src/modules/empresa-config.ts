@@ -77,11 +77,13 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
     cidade: s(row.cidade, D.cidade), uf: s(row.uf, D.uf), cep: sn(row.cep) ?? D.cep,
     email: s(row.email, D.email), siteUrl: s(row.site_url, D.siteUrl),
     atuacaoDesde: n(row.atuacao_desde, D.atuacaoDesde),
-    descricaoCurta: s(row.descricao_curta, D.descricaoCurta),
-    regiaoAtuacao: s(row.regiao_atuacao, D.regiaoAtuacao),
-    nomeAtendente: s(row.nome_atendente, D.nomeAtendente),
+    // Campos que entram em prompt — cap defensivo (espelha os CHECKs da
+    // migration 049; protege mesmo se a coluna for alterada via SQL Editor).
+    descricaoCurta: s(row.descricao_curta, D.descricaoCurta).slice(0, 500),
+    regiaoAtuacao: s(row.regiao_atuacao, D.regiaoAtuacao).slice(0, 500),
+    nomeAtendente: s(row.nome_atendente, D.nomeAtendente).slice(0, 40),
     telefoneAtendente: sn(row.telefone_atendente) ?? D.telefoneAtendente,
-    rtNome: s(row.rt_nome, D.rtNome), rtTitulo: s(row.rt_titulo, D.rtTitulo),
+    rtNome: s(row.rt_nome, D.rtNome), rtTitulo: s(row.rt_titulo, D.rtTitulo).slice(0, 80),
     rtCpf: sn(row.rt_cpf) ?? D.rtCpf, rtRg: sn(row.rt_rg) ?? D.rtRg,
     rtRegistro: sn(row.rt_registro) ?? D.rtRegistro,
     pixChave: sn(row.pix_chave) ?? D.pixChave,

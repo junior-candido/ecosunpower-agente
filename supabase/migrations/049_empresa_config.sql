@@ -17,14 +17,16 @@ CREATE TABLE IF NOT EXISTS empresa_config (
   email text NOT NULL,
   site_url text NOT NULL,
   atuacao_desde int NOT NULL DEFAULT 2019,
-  descricao_curta text NOT NULL,            -- "empresa de engenharia em energia..."
-  regiao_atuacao text NOT NULL,             -- texto pro prompt ("Brasília e Entorno (DF) + GO até 100km...")
+  -- Campos que entram em prompt da Eva — limite de tamanho evita injeção de
+  -- texto gigante via SQL Editor degradando/poluindo o prompt.
+  descricao_curta text NOT NULL CHECK (char_length(descricao_curta) <= 500),   -- "empresa de engenharia em energia..."
+  regiao_atuacao text NOT NULL CHECK (char_length(regiao_atuacao) <= 500),     -- texto pro prompt ("Brasília e Entorno (DF) + GO até 100km...")
   -- atendente IA
-  nome_atendente text NOT NULL DEFAULT 'Eva',
+  nome_atendente text NOT NULL DEFAULT 'Eva' CHECK (char_length(nome_atendente) <= 40),
   telefone_atendente text,                  -- chip do WhatsApp do negócio (wa.me)
   -- responsável técnico
   rt_nome text NOT NULL,
-  rt_titulo text NOT NULL DEFAULT 'Responsável Técnico CREA/CFT',
+  rt_titulo text NOT NULL DEFAULT 'Responsável Técnico CREA/CFT' CHECK (char_length(rt_titulo) <= 80),
   rt_cpf text,
   rt_rg text,
   rt_registro text,

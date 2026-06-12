@@ -15,6 +15,11 @@ export const LOGO_ECOSUNPOWER_BRANCO_BASE64 = "data:image/png;base64,iVBORw0KGgo
 // de propósito (YAGNI — só os pontos de geração de PDF chamam esta função).
 const logoCachePorPath = new Map<string, string>();
 
+// Whitelist de MIME pra logo embutida em data URI nos PDFs/HTML.
+// SVG fica FORA por princípio (pode carregar script); sem content-type
+// assume PNG (comportamento antigo — Storage nem sempre devolve type).
+const LOGO_MIMES_PERMITIDOS = new Set(['image/png', 'image/jpeg', 'image/webp']);
+
 export async function obterLogoBase64(client: SupabaseClient): Promise<string> {
   const path = empresa().logoStoragePath;
   if (!path) return LOGO_ECOSUNPOWER_BRANCO_BASE64;
@@ -25,7 +30,11 @@ export async function obterLogoBase64(client: SupabaseClient): Promise<string> {
     if (error || !data) throw new Error(error?.message ?? 'download vazio');
     const buf = Buffer.from(await data.arrayBuffer());
     if (buf.length === 0) throw new Error('arquivo vazio');
-    const mime = data.type && data.type.startsWith('image/') ? data.type : 'image/png';
+    if (data.type && !LOGO_MIMES_PERMITIDOS.has(data.type)) {
+      console.warn(`[logo] branding/${path} recusada — MIME nao permitido (${data.type}); aceitos: png/jpeg/webp. Usando logo embutida.`);
+      return LOGO_ECOSUNPOWER_BRANCO_BASE64;
+    }
+    const mime = data.type || 'image/png';
     const dataUri = `data:${mime};base64,${buf.toString('base64')}`;
     logoCachePorPath.set(path, dataUri);
     return dataUri;

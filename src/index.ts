@@ -88,6 +88,9 @@ import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/servic
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
 import { carregarEmpresaConfig, carregarKits, empresa, listaMarcasTexto } from './modules/empresa-config.js';
+// Escape pra páginas públicas que interpolam campos da empresa_config em HTML
+// (config é admin-controlled, mas vem do banco — defesa em profundidade).
+import { escapeHtml } from './modules/dashboard/views.js';
 
 // RFC 4122 UUID regex. Usado pra validar :id na URL antes de consultar o DB.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -101,7 +104,7 @@ function propostaErrorHtml(kind: 'not_found' | 'expired' | 'error'): string {
     error: 'Erro ao carregar proposta',
   };
   const messages = {
-    not_found: `O link que você acessou não existe ou foi removido. Se você recebeu esse link da ${empresa().nomeFantasia} e ele deveria estar ativo, fale com a gente no WhatsApp.`,
+    not_found: `O link que você acessou não existe ou foi removido. Se você recebeu esse link da ${escapeHtml(empresa().nomeFantasia)} e ele deveria estar ativo, fale com a gente no WhatsApp.`,
     expired: 'Essa proposta passou da data de validade (60 dias após geração). Pra receber uma proposta atualizada, fale com a gente no WhatsApp.',
     error: 'Tivemos um problema temporário ao carregar essa proposta. Tente de novo em alguns minutos ou fale com a gente no WhatsApp.',
   };
@@ -111,7 +114,7 @@ function propostaErrorHtml(kind: 'not_found' | 'expired' | 'error'): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>${titles[kind]} — ${empresa().nomeFantasia}</title>
+<title>${titles[kind]} — ${escapeHtml(empresa().nomeFantasia)}</title>
 <style>
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #0a1f3d 0%, #1a3a5c 100%); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #fff; padding: 20px; }
@@ -129,8 +132,8 @@ a.btn:hover { transform: translateY(-2px); }
 <div class="icon">${kind === 'expired' ? '⏰' : kind === 'error' ? '⚠️' : '🔍'}</div>
 <h1>${titles[kind]}</h1>
 <p>${messages[kind]}</p>
-${empresa().telefoneAtendente ? `<a class="btn" href="https://wa.me/${empresa().telefoneAtendente}">Falar no WhatsApp</a>` : ''}
-<div class="brand">${empresa().nomeFantasia} Energia Solar · ${empresa().siteUrl.replace(/^https?:\/\//, '')}</div>
+${empresa().telefoneAtendente ? `<a class="btn" href="https://wa.me/${(empresa().telefoneAtendente ?? '').replace(/\D/g, '')}">Falar no WhatsApp</a>` : ''}
+<div class="brand">${escapeHtml(empresa().nomeFantasia)} Energia Solar · ${escapeHtml(empresa().siteUrl.replace(/^https?:\/\//, ''))}</div>
 </div>
 </body>
 </html>`;
@@ -513,6 +516,7 @@ async function main() {
     metaService: metaWaba,
     sendText,
     engineerPhone: config.engineerPhone,
+    proposalBaseUrl: config.publicProposalBaseUrl,
     redis: followupRedis,
   });
   console.log('[proposal-followup] Servico ativo (notifica toda abertura, throttle 5min)');
@@ -6777,7 +6781,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     <source src="${signed.signedUrl}" type="video/mp4">
     Seu navegador não suporta vídeo HTML5.
   </video>
-  <img src="${logoWatermark}" alt="${empresa().nomeFantasia}" style="position:absolute;bottom:50px;right:8px;max-width:14%;max-height:32px;opacity:0.85;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.4));pointer-events:none">
+  <img src="${logoWatermark}" alt="${escapeHtml(empresa().nomeFantasia)}" style="position:absolute;bottom:50px;right:8px;max-width:14%;max-height:32px;opacity:0.85;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.4));pointer-events:none">
 </div>
 <p style="text-align:center;font-size:13px;color:#555;font-style:italic;margin-top:10px">🎥 ${escLegenda}</p>`;
 
@@ -6939,7 +6943,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Politica de Privacidade — ${empresa().nomeFantasia} Energia Solar</title>
+<title>Politica de Privacidade — ${escapeHtml(empresa().nomeFantasia)} Energia Solar</title>
 <style>
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 760px; margin: 0 auto; padding: clamp(20px,5vw,40px); line-height: 1.6; color: #222; }
 h1 { font-size: clamp(24px,5vw,32px); margin-top: 0; }
@@ -6954,19 +6958,19 @@ footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e5e5; fon
 </head>
 <body>
 <h1>Politica de Privacidade</h1>
-<p class="meta"><strong>${empresa().razaoSocial}</strong><br>
-CNPJ: ${empresa().cnpj}<br>
-${empresa().endereco}, ${empresa().cidade} - ${empresa().uf}${empresa().cep ? `, CEP ${empresa().cep}` : ''}<br>
+<p class="meta"><strong>${escapeHtml(empresa().razaoSocial)}</strong><br>
+CNPJ: ${escapeHtml(empresa().cnpj)}<br>
+${escapeHtml(empresa().endereco)}, ${escapeHtml(empresa().cidade)} - ${escapeHtml(empresa().uf)}${empresa().cep ? `, CEP ${escapeHtml(empresa().cep)}` : ''}<br>
 Ultima atualizacao: 26 de abril de 2026</p>
 
 <h2>1. Quem somos</h2>
-<p>A ${empresa().razaoSocial} (CNPJ ${empresa().cnpj}) e ${empresa().descricaoCurta}, com foco principal em solar fotovoltaica. Nos comprometemos com a protecao dos seus dados pessoais, em conformidade com a Lei Geral de Protecao de Dados (Lei 13.709/2018 - LGPD).</p>
+<p>A ${escapeHtml(empresa().razaoSocial)} (CNPJ ${escapeHtml(empresa().cnpj)}) e ${escapeHtml(empresa().descricaoCurta)}, com foco principal em solar fotovoltaica. Nos comprometemos com a protecao dos seus dados pessoais, em conformidade com a Lei Geral de Protecao de Dados (Lei 13.709/2018 - LGPD).</p>
 
 <h2>1.1 Encarregado de Protecao de Dados (DPO)</h2>
 <p>Conforme art. 41 da LGPD, indicamos como Encarregado:</p>
 <ul>
   <li><strong>Nome:</strong> Junior Candido Rodrigues</li>
-  <li><strong>Email:</strong> <a href="mailto:${empresa().email}">${empresa().email}</a></li>
+  <li><strong>Email:</strong> <a href="mailto:${escapeHtml(empresa().email)}">${escapeHtml(empresa().email)}</a></li>
   <li><strong>WhatsApp:</strong> +55 61 99880-5002</li>
 </ul>
 <p>Use os contatos acima pra exercer seus direitos como titular dos dados, tirar duvidas ou comunicar incidentes.</p>
@@ -7037,7 +7041,7 @@ Ultima atualizacao: 26 de abril de 2026</p>
 <h2>9. Como exercer seus direitos</h2>
 <p>Para qualquer solicitacao relacionada aos seus dados, entre em contato:</p>
 <ul>
-  <li><strong>E-mail:</strong> <a href="mailto:${empresa().email}">${empresa().email}</a></li>
+  <li><strong>E-mail:</strong> <a href="mailto:${escapeHtml(empresa().email)}">${escapeHtml(empresa().email)}</a></li>
   <li><strong>WhatsApp:</strong> nos envie uma mensagem pedindo a acao desejada ("quero apagar meus dados", "quero sair da lista")</li>
 </ul>
 <p>Respondemos em ate 15 dias uteis.</p>
@@ -7052,8 +7056,8 @@ Ultima atualizacao: 26 de abril de 2026</p>
 <p>Esta politica pode ser atualizada periodicamente. A data da ultima atualizacao sempre estara no topo. Alteracoes relevantes serao comunicadas pelos canais que voce ja interage conosco.</p>
 
 <footer>
-<p>${empresa().nomeFantasia} Energia Solar — ${empresa().cidade}/${empresa().uf}<br>
-Contato: <a href="mailto:${empresa().email}">${empresa().email}</a></p>
+<p>${escapeHtml(empresa().nomeFantasia)} Energia Solar — ${escapeHtml(empresa().cidade)}/${escapeHtml(empresa().uf)}<br>
+Contato: <a href="mailto:${escapeHtml(empresa().email)}">${escapeHtml(empresa().email)}</a></p>
 </footer>
 </body>
 </html>`;
@@ -7071,7 +7075,7 @@ Contato: <a href="mailto:${empresa().email}">${empresa().email}</a></p>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Termos de Uso — ${empresa().nomeFantasia} Energia Solar</title>
+<title>Termos de Uso — ${escapeHtml(empresa().nomeFantasia)} Energia Solar</title>
 <style>
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 760px; margin: 0 auto; padding: clamp(20px,5vw,40px); line-height: 1.6; color: #222; }
 h1 { font-size: clamp(24px,5vw,32px); margin-top: 0; }
@@ -7085,16 +7089,16 @@ footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e5e5; fon
 </head>
 <body>
 <h1>Termos de Uso</h1>
-<p class="meta"><strong>${empresa().nomeFantasia} Energia Solar</strong><br>
-${empresa().endereco}, ${empresa().cidade} - ${empresa().uf}${empresa().cep ? `, CEP ${empresa().cep}` : ''}<br>
-CNPJ: ${empresa().cnpj} | Email: <a href="mailto:${empresa().email}">${empresa().email}</a><br>
+<p class="meta"><strong>${escapeHtml(empresa().nomeFantasia)} Energia Solar</strong><br>
+${escapeHtml(empresa().endereco)}, ${escapeHtml(empresa().cidade)} - ${escapeHtml(empresa().uf)}${empresa().cep ? `, CEP ${escapeHtml(empresa().cep)}` : ''}<br>
+CNPJ: ${escapeHtml(empresa().cnpj)} | Email: <a href="mailto:${escapeHtml(empresa().email)}">${escapeHtml(empresa().email)}</a><br>
 Atualizado em: 22 de abril de 2026</p>
 
 <h2>1. Aceitacao dos Termos</h2>
-<p>Ao interagir com a ${empresa().nomeFantasia} Energia Solar atraves de qualquer um de nossos canais digitais (formularios de anuncios Meta, WhatsApp, Instagram, Facebook ou nosso site), voce concorda integralmente com estes Termos de Uso e com nossa <a href="/privacidade">Politica de Privacidade</a>. Caso nao concorde, por favor nao utilize nossos canais.</p>
+<p>Ao interagir com a ${escapeHtml(empresa().nomeFantasia)} Energia Solar atraves de qualquer um de nossos canais digitais (formularios de anuncios Meta, WhatsApp, Instagram, Facebook ou nosso site), voce concorda integralmente com estes Termos de Uso e com nossa <a href="/privacidade">Politica de Privacidade</a>. Caso nao concorde, por favor nao utilize nossos canais.</p>
 
 <h2>2. Sobre nos</h2>
-<p>A ${empresa().nomeFantasia} Energia Solar e uma empresa de engenharia de geracao de energia solar fotovoltaica, atuante em ${empresa().regiaoAtuacao}. Atuamos no projeto, dimensionamento, fornecimento e instalacao de sistemas de energia solar conectados a rede e em sistemas com armazenamento (baterias), bem como em servicos de manutencao, consultoria em eficiencia energetica e migracao para o mercado livre de energia.</p>
+<p>A ${escapeHtml(empresa().nomeFantasia)} Energia Solar e uma empresa de engenharia de geracao de energia solar fotovoltaica, atuante em ${escapeHtml(empresa().regiaoAtuacao)}. Atuamos no projeto, dimensionamento, fornecimento e instalacao de sistemas de energia solar conectados a rede e em sistemas com armazenamento (baterias), bem como em servicos de manutencao, consultoria em eficiencia energetica e migracao para o mercado livre de energia.</p>
 
 <h2>3. Servicos oferecidos</h2>
 <p>Atraves de nossos canais digitais, oferecemos:</p>
@@ -7119,9 +7123,9 @@ Atualizado em: 22 de abril de 2026</p>
 </ul>
 
 <h2>5. Atendimento por inteligencia artificial</h2>
-<p>Para agilizar o primeiro atendimento e qualificacao de leads, utilizamos um agente conversacional baseado em inteligencia artificial chamado "${empresa().nomeAtendente}", que opera atraves de WhatsApp. ${empresa().nomeAtendente} eh treinada com nossa base de conhecimento tecnico e atua como consultora especialista virtual da empresa.</p>
-<p>Voce sera sempre informado quando estiver conversando com ${empresa().nomeAtendente}. Caso prefira atendimento exclusivamente humano, basta solicitar a qualquer momento e o Responsavel Tecnico da ${empresa().nomeFantasia} assumira a conversa.</p>
-<p>As respostas geradas pela ${empresa().nomeAtendente} tem carater consultivo inicial e devem ser sempre validadas com nossa equipe tecnica para projetos definitivos. A ${empresa().nomeFantasia} nao se responsabiliza por decisoes tomadas exclusivamente com base em respostas automatizadas sem confirmacao posterior.</p>
+<p>Para agilizar o primeiro atendimento e qualificacao de leads, utilizamos um agente conversacional baseado em inteligencia artificial chamado "${escapeHtml(empresa().nomeAtendente)}", que opera atraves de WhatsApp. ${escapeHtml(empresa().nomeAtendente)} eh treinada com nossa base de conhecimento tecnico e atua como consultora especialista virtual da empresa.</p>
+<p>Voce sera sempre informado quando estiver conversando com ${escapeHtml(empresa().nomeAtendente)}. Caso prefira atendimento exclusivamente humano, basta solicitar a qualquer momento e o Responsavel Tecnico da ${escapeHtml(empresa().nomeFantasia)} assumira a conversa.</p>
+<p>As respostas geradas pela ${escapeHtml(empresa().nomeAtendente)} tem carater consultivo inicial e devem ser sempre validadas com nossa equipe tecnica para projetos definitivos. A ${escapeHtml(empresa().nomeFantasia)} nao se responsabiliza por decisoes tomadas exclusivamente com base em respostas automatizadas sem confirmacao posterior.</p>
 
 <h2>6. Anuncios e captura de leads</h2>
 <p>Veiculamos anuncios em plataformas Meta (Facebook e Instagram) com formularios de geracao de leads. Ao preencher um formulario, voce autoriza:</p>
@@ -7130,19 +7134,19 @@ Atualizado em: 22 de abril de 2026</p>
   <li>O contato comercial via WhatsApp, telefone ou email para apresentar nossas solucoes e dar continuidade ao seu interesse</li>
   <li>O processamento desses dados conforme nossa <a href="/privacidade">Politica de Privacidade</a> e a Lei Geral de Protecao de Dados (LGPD - Lei 13.709/2018)</li>
 </ul>
-<p>Voce pode solicitar o cancelamento do contato e a exclusao dos seus dados a qualquer momento pelo email <a href="mailto:${empresa().email}">${empresa().email}</a>.</p>
+<p>Voce pode solicitar o cancelamento do contato e a exclusao dos seus dados a qualquer momento pelo email <a href="mailto:${escapeHtml(empresa().email)}">${escapeHtml(empresa().email)}</a>.</p>
 
 <h2>7. Propostas e orcamentos</h2>
 <p>Propostas e orcamentos enviados sao informacoes preliminares baseadas nas informacoes que voce nos forneceu. O orcamento final, valor da instalacao e prazo de execucao dependem de visita tecnica presencial, condicoes do imovel e disponibilidade de equipamentos no momento do fechamento. Propostas tem validade conforme indicado no proprio documento (geralmente 15 a 30 dias).</p>
 
 <h2>8. Garantias</h2>
-<p>Os equipamentos e servicos fornecidos pela ${empresa().nomeFantasia} seguem as garantias dos fabricantes (geralmente 12 a 30 anos para modulos fotovoltaicos e 5 a 12 anos para inversores) e a garantia legal aplicavel a servicos no Brasil (90 dias conforme Codigo de Defesa do Consumidor). Detalhes especificos de garantia sao informados no contrato de cada projeto.</p>
+<p>Os equipamentos e servicos fornecidos pela ${escapeHtml(empresa().nomeFantasia)} seguem as garantias dos fabricantes (geralmente 12 a 30 anos para modulos fotovoltaicos e 5 a 12 anos para inversores) e a garantia legal aplicavel a servicos no Brasil (90 dias conforme Codigo de Defesa do Consumidor). Detalhes especificos de garantia sao informados no contrato de cada projeto.</p>
 
 <h2>9. Marcas premium e proibicoes internas</h2>
-<p>Trabalhamos exclusivamente com marcas premium homologadas pela INMETRO/ANEEL. ${listaMarcasTexto(empresa())} Pedidos de cotacao com marcas nao homologadas serao redirecionados para opcoes equivalentes da nossa linha.</p>
+<p>Trabalhamos exclusivamente com marcas premium homologadas pela INMETRO/ANEEL. ${escapeHtml(listaMarcasTexto(empresa()))} Pedidos de cotacao com marcas nao homologadas serao redirecionados para opcoes equivalentes da nossa linha.</p>
 
 <h2>10. Limitacao de responsabilidade</h2>
-<p>A ${empresa().nomeFantasia} trabalha com diligencia para fornecer informacoes corretas e atualizadas, porem nao se responsabiliza por:</p>
+<p>A ${escapeHtml(empresa().nomeFantasia)} trabalha com diligencia para fornecer informacoes corretas e atualizadas, porem nao se responsabiliza por:</p>
 <ul>
   <li>Variacoes na tarifa de energia eletrica que afetem o calculo de payback estimado</li>
   <li>Condicoes climaticas atipicas que impactem a geracao real do sistema</li>
@@ -7160,14 +7164,14 @@ Atualizado em: 22 de abril de 2026</p>
 <h2>13. Contato</h2>
 <p>Duvidas sobre estes Termos ou sobre nossos servicos:</p>
 <ul>
-  <li>Email: <a href="mailto:${empresa().email}">${empresa().email}</a></li>
-  <li>WhatsApp: vide canais oficiais nas redes sociais ${empresa().nomeFantasia}</li>
-  <li>Endereco: ${empresa().endereco}, ${empresa().cidade} - ${empresa().uf}</li>
+  <li>Email: <a href="mailto:${escapeHtml(empresa().email)}">${escapeHtml(empresa().email)}</a></li>
+  <li>WhatsApp: vide canais oficiais nas redes sociais ${escapeHtml(empresa().nomeFantasia)}</li>
+  <li>Endereco: ${escapeHtml(empresa().endereco)}, ${escapeHtml(empresa().cidade)} - ${escapeHtml(empresa().uf)}</li>
 </ul>
 
 <footer>
-<p>${empresa().nomeFantasia} Energia Solar — ${empresa().cidade}/${empresa().uf}<br>
-Contato: <a href="mailto:${empresa().email}">${empresa().email}</a><br>
+<p>${escapeHtml(empresa().nomeFantasia)} Energia Solar — ${escapeHtml(empresa().cidade)}/${escapeHtml(empresa().uf)}<br>
+Contato: <a href="mailto:${escapeHtml(empresa().email)}">${escapeHtml(empresa().email)}</a><br>
 Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
 </footer>
 </body>
@@ -7186,7 +7190,7 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a></p>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Exclusao de Dados — ${empresa().nomeFantasia} Energia Solar</title>
+<title>Exclusao de Dados — ${escapeHtml(empresa().nomeFantasia)} Energia Solar</title>
 <style>
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 760px; margin: 0 auto; padding: clamp(20px,5vw,40px); line-height: 1.6; color: #222; }
 h1 { font-size: clamp(24px,5vw,32px); margin-top: 0; }
@@ -7202,7 +7206,7 @@ li { margin-bottom: 8px; }
 <h1>Instrucoes para Exclusao dos Seus Dados</h1>
 <p><strong>Ultima atualizacao:</strong> 10 de maio de 2026</p>
 
-<p>A ${empresa().razaoSocial} (CNPJ ${empresa().cnpj}) respeita seu direito
+<p>A ${escapeHtml(empresa().razaoSocial)} (CNPJ ${escapeHtml(empresa().cnpj)}) respeita seu direito
 de solicitar a exclusao dos dados pessoais que mantemos sobre voce, conforme
 garantido pela <strong>Lei Geral de Protecao de Dados (LGPD, Lei 13.709/2018, art. 18, VI)</strong>.
 Esta pagina explica como exercer esse direito.</p>
@@ -7222,7 +7226,7 @@ dos canais abaixo. Nao cobramos pela solicitacao.</p>
 
 <div class="box">
   <strong>Canal preferencial — Email:</strong><br>
-  Envie email para <a href="mailto:${empresa().email}">${empresa().email}</a>
+  Envie email para <a href="mailto:${escapeHtml(empresa().email)}">${escapeHtml(empresa().email)}</a>
   com o assunto <strong>"Exclusao de Dados LGPD"</strong> e informe:
   <ol>
     <li>Nome completo</li>
@@ -7278,11 +7282,11 @@ com a data e o escopo do que foi excluido.</p>
 
 <h2>8. Encarregado pela Protecao de Dados</h2>
 <p>Junior Rodrigues — Responsavel Tecnico CREA/CFT<br>
-Email: <a href="mailto:${empresa().email}">${empresa().email}</a></p>
+Email: <a href="mailto:${escapeHtml(empresa().email)}">${escapeHtml(empresa().email)}</a></p>
 
 <footer>
-<p>${empresa().razaoSocial} — CNPJ ${empresa().cnpj}<br>
-${empresa().endereco}, ${empresa().cidade} - ${empresa().uf}<br>
+<p>${escapeHtml(empresa().razaoSocial)} — CNPJ ${escapeHtml(empresa().cnpj)}<br>
+${escapeHtml(empresa().endereco)}, ${escapeHtml(empresa().cidade)} - ${escapeHtml(empresa().uf)}<br>
 Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/termos">Termos de Uso</a></p>
 </footer>
 </body>

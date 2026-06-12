@@ -27,6 +27,7 @@ function escapeHtmlSimple(s: string): string {
     .replace(/'/g, '&#039;');
 }
 import type { SupabaseService } from '../supabase.js';
+import { empresa } from '../empresa-config.js';
 import type { MonitoringService } from '../monitoring/service.js';
 import type { ProposalAssistant } from '../proposal-assistant.js';
 import type { MetaWhatsAppService } from '../meta-whatsapp.js';
@@ -1842,7 +1843,7 @@ export function createDashboardRouter(
       nomeCliente,
       linkWebPublico: publicUrl,
       pdfBuffer,
-      pdfFilename: `Proposta-EcoSunPower-${safeName}.pdf`,
+      pdfFilename: `Proposta-${empresa().nomeFantasia}-${safeName}.pdf`,
     });
 
     if (!send.ok) {

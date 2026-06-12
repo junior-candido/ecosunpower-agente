@@ -32,6 +32,9 @@ interface FollowupDeps {
   metaService: MetaWhatsAppService | null;
   sendText: (to: string, text: string) => Promise<void>;
   engineerPhone: string;
+  // Base das URLs publicas de proposta (config.publicProposalBaseUrl).
+  // [ECOSOF] paridade: com o env da EcoSun o valor é o mesmo do hardcode antigo.
+  proposalBaseUrl: string;
   // Redis pra throttle de notificacao em re-aberturas. Se null, throttle desligado.
   redis?: Redis | null;
   // Atraso entre 1ª visualizacao e mensagem pro cliente. Default 60s — tempo
@@ -44,6 +47,7 @@ export class ProposalFollowupService {
   private metaService: MetaWhatsAppService | null;
   private sendText: (to: string, text: string) => Promise<void>;
   private engineerPhone: string;
+  private proposalBaseUrl: string;
   private redis: Redis | null;
   private delayMs: number;
 
@@ -52,6 +56,7 @@ export class ProposalFollowupService {
     this.metaService = deps.metaService;
     this.sendText = deps.sendText;
     this.engineerPhone = deps.engineerPhone;
+    this.proposalBaseUrl = deps.proposalBaseUrl.replace(/\/$/, '');
     this.redis = deps.redis ?? null;
     this.delayMs = deps.delayMs ?? 60_000;
   }
@@ -106,7 +111,7 @@ export class ProposalFollowupService {
       `📣 *${proposta.cliente_nome}* voltou na proposta agora — ${ordinal} vez!`,
       linhaTelefone,
       ``,
-      `🔗 https://propostas.ecosunpower.eng.br/p/${slug}`,
+      `🔗 ${this.proposalBaseUrl}/p/${slug}`,
     ].join('\n');
     await this.notifyJuniorComBotaoFechar(msg, proposta.cliente_telefone);
   }
@@ -358,7 +363,7 @@ export class ProposalFollowupService {
         ? `Vou aguardar 1 minuto e mandar follow-up pra ele perguntando se ficou alguma dúvida.`
         : `Sem telefone do cliente, follow-up automático nao acontece. Contata manualmente.`,
       ``,
-      `🔗 https://propostas.ecosunpower.eng.br/p/${slug}`,
+      `🔗 ${this.proposalBaseUrl}/p/${slug}`,
     ].join('\n');
     await this.notifyJuniorComBotaoFechar(msg, clienteTelefone);
   }
@@ -377,7 +382,7 @@ export class ProposalFollowupService {
       `Voce mandou a proposta pelo seu numero comercial — cliente NAO conhece o numero da Eva.`,
       ``,
       `Como prossigo?`,
-      `🔗 https://propostas.ecosunpower.eng.br/p/${slug}`,
+      `🔗 ${this.proposalBaseUrl}/p/${slug}`,
     ].join('\n');
 
     if (this.metaService) {

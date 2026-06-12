@@ -123,3 +123,18 @@ Infra do clone: `SUPABASE_URL/SERVICE_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY
 4. Roteiro de implantação nível leigo (filho executa).
 5. Eva vitrine da EcoSof + página ecosof.com.br.
 6. Checklist de saúde dos clones.
+
+## Débitos conhecidos ANTES do 1º clone real (reviews finais 11/06)
+
+Client-facing que ainda rende EcoSun num clone (consertar antes de vender):
+- meta-leadgen.ts:216-243 — 1ª mensagem do lead de formulário ("Junior da Ecosunpower").
+- post-install.ts + followup.ts + system-prompt — programa de indicação R$300 PIX hardcoded.
+- closing-system.md — "da EcoSunPower" + inferência de concessionária DF/GO no contrato.
+- marketing.ts — gerador de posts IG/FB com marca EcoSun (desativar por flag no clone).
+- vision.ts — prompt de conta de luz com Neoenergia/Equatorial e tarifa ~R$1 (usar concessionariaPadraoEmpresa/tarifaPadrao).
+- logo-base64: falha de download com path setado cai na logo EcoSun em silêncio (alertar admin).
+- system-prompt: exemplos com R$700 fixos contradizem critério custom; faixas do ig-qualifier (payloads ate_700) idem.
+- dashboard views/admin: CNPJ, logos e URLs ecosunpower (admin-facing, menor prioridade).
+- rag/*: tenant 'ecosunpower' hardcoded; eva-admin-buttons: dashboard URL hardcoded (virar env).
+- RLS USING(true) das migrations antigas vai propagado pelo instalador — revisar postura antes de vender (M3 do review de segurança).
+- Campo futuro `rt_apelido` pras falas com "Junior".
