@@ -6764,14 +6764,16 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
             if (signed?.signedUrl) {
               const escLegenda = String(videoAttach.legenda).replace(/[<>&"]/g, (c) =>
                 ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c] ?? c));
-              // Importa logo base64 dinamicamente pra adicionar watermark sobre o video
-              const { LOGO_ECOSUNPOWER_BRANCO_BASE64 } = await import('./modules/proposal/assets/logo-base64.js');
+              // [ECOSOF] Logo do watermark resolvida em runtime (Storage com
+              // fallback embutido EcoSun) pra adicionar sobre o video.
+              const { obterLogoBase64 } = await import('./modules/proposal/assets/logo-base64.js');
+              const logoWatermark = await obterLogoBase64(supabase.getClient());
               const videoTag = `<div style="position:relative">
   <video controls autoplay muted loop playsinline style="width:100%;border-radius:12px;display:block;background:#000">
     <source src="${signed.signedUrl}" type="video/mp4">
     Seu navegador não suporta vídeo HTML5.
   </video>
-  <img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" style="position:absolute;bottom:50px;right:8px;max-width:14%;max-height:32px;opacity:0.85;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.4));pointer-events:none">
+  <img src="${logoWatermark}" alt="${empresa().nomeFantasia}" style="position:absolute;bottom:50px;right:8px;max-width:14%;max-height:32px;opacity:0.85;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.4));pointer-events:none">
 </div>
 <p style="text-align:center;font-size:13px;color:#555;font-style:italic;margin-top:10px">🎥 ${escLegenda}</p>`;
 
@@ -6864,16 +6866,19 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
       }
       const { montarDadosRelatorio } = await import('./modules/monitoring/relatorio/dados.js');
       const { renderRelatorioHtml } = await import('./modules/monitoring/relatorio/template.js');
+      // [ECOSOF] Logo resolvida em runtime (Storage com fallback embutido).
+      const { obterLogoBase64 } = await import('./modules/proposal/assets/logo-base64.js');
+      const logoRelatorio = await obterLogoBase64(supabase.getClient());
       const d = await montarDadosRelatorio(
         { getDetalhe: (id) => monitoringService.getDetalheSistema(id) }, r.sistemaId, 'acompanhamento');
       if ('erro' in d) return res.status(500).type('text/html').send(propostaErrorHtml('error'));
       if (req.query.pdf === '1') {
         const { htmlToPdf } = await import('./modules/proposal/pdf-generator.js');
-        const pdf = await htmlToPdf(renderRelatorioHtml(d, 'acompanhamento'));
+        const pdf = await htmlToPdf(renderRelatorioHtml(d, 'acompanhamento', logoRelatorio));
         res.type('application/pdf').set('Content-Disposition', 'inline; filename="relatorio.pdf"').send(pdf);
         return;
       }
-      res.type('text/html').send(renderRelatorioHtml(d, 'acompanhamento'));
+      res.type('text/html').send(renderRelatorioHtml(d, 'acompanhamento', logoRelatorio));
     } catch (err) {
       console.error('[relatorio-publico]', err);
       res.status(500).type('text/html').send(propostaErrorHtml('error'));

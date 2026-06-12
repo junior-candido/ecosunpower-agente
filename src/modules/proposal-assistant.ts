@@ -21,6 +21,7 @@ import {
   VIDA_UTIL_ANOS,
 } from './solar-params.js';
 import { renderProposalHTML, type ProposalData } from './proposal/template.js';
+import { obterLogoBase64, LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './proposal/assets/logo-base64.js';
 import { somaServicosExtras, renderServiceOnlyHTML, type ServicoItem, type ServiceOnlyData } from './proposal/service-render.js';
 import { montarDadosInputCompleto } from './proposal/dados-input.js';
 import { renderComparacaoSolar, type ComparacaoOpcao } from './proposal/comparison-render.js';
@@ -558,6 +559,14 @@ export class ProposalAssistant {
     };
   }
 
+  // [ECOSOF] Logo da proposta resolvida em RUNTIME (Storage com fallback
+  // embutido, cache por path dentro de obterLogoBase64). Sem supabaseService
+  // (modo offline/teste) usa direto a logo EcoSun embutida.
+  private async logoProposta(): Promise<string> {
+    if (!this.supabaseService) return LOGO_ECOSUNPOWER_BRANCO_BASE64;
+    return obterLogoBase64(this.supabaseService.getClient());
+  }
+
   // Mapeia o tipoCliente da proposta (string livre que pode vir variada do
   // Claude) pro enum Case.tipo. Fallback pra 'residencial' se nao bater.
   private tipoToCaseTipo(tipoCliente: string | undefined): Case['tipo'] {
@@ -1014,12 +1023,12 @@ export class ProposalAssistant {
           empresa: this.companyDefaults,
           criarPagamentoPadrao: (t) => servicePaymentOptions(t),
         });
-        pdfBuffer = await htmlToPdf(renderServiceOnlyHTML(serviceData), { waitForChartMs: 0 });
+        pdfBuffer = await htmlToPdf(renderServiceOnlyHTML(serviceData, await this.logoProposta()), { waitForChartMs: 0 });
       } else {
         const calcInput = this.dataToCalculatorInput(last.data);
         const calculations = calcular(calcInput);
         const socialProofHtml = await this.buildSocialProofHtml(last.proposalData.tipoCliente);
-        const html = renderProposalHTML(last.proposalData, calculations, socialProofHtml);
+        const html = renderProposalHTML(last.proposalData, calculations, socialProofHtml, await this.logoProposta());
         pdfBuffer = await htmlToPdf(html, { waitForChartMs: 2000 });
       }
 
@@ -1163,7 +1172,7 @@ export class ProposalAssistant {
     }
 
     const socialProofHtml = await this.buildSocialProofHtml(proposalData.tipoCliente);
-    const html = renderProposalHTML(proposalData, calculations, socialProofHtml);
+    const html = renderProposalHTML(proposalData, calculations, socialProofHtml, await this.logoProposta());
     const pdfBuffer = await htmlToPdf(html, { waitForChartMs: 2000 });
 
     // No reopen pulamos o Drive (foco é atualizar a web no mesmo slug); fora dele
@@ -1277,7 +1286,7 @@ export class ProposalAssistant {
       criarPagamentoPadrao: (total) => servicePaymentOptions(total),
     });
 
-    const html = renderServiceOnlyHTML(serviceData);
+    const html = renderServiceOnlyHTML(serviceData, await this.logoProposta());
     const pdfBuffer = await htmlToPdf(html, { waitForChartMs: 0 });
 
     const drivePromise = this.driveUploader

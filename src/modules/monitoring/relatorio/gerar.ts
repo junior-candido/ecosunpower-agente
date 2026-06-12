@@ -9,6 +9,9 @@ export interface GerarDeps {
   htmlToPdf: (html: string) => Promise<Buffer>;
   gerarQr: (url: string) => Promise<string>;
   baseUrl: string; // ex: https://propostas.ecosunpower.eng.br
+  // [ECOSOF] logo já resolvida pelo caller (obterLogoBase64: Storage com
+  // fallback). Ausente = logo EcoSun embutida (default do template).
+  logoBase64?: string;
 }
 
 export type GerarResult =
@@ -23,7 +26,7 @@ export async function gerarRelatorio(
   const dados = await montarDadosRelatorio({ getDetalhe: deps.getDetalhe }, sistemaId, modo);
   if ('erro' in dados) return { ok: false, reason: dados.erro };
 
-  const html = renderRelatorioHtml(dados, modo);
+  const html = renderRelatorioHtml(dados, modo, deps.logoBase64);
   let pdfBuffer: Buffer;
   try {
     pdfBuffer = await deps.htmlToPdf(html);

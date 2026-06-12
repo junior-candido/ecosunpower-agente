@@ -5,6 +5,8 @@
 
 import { fmtRs, escapeHtml } from './format.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './assets/logo-base64.js';
+// [ECOSOF] empresa() lida em runtime (alt da logo = nome fantasia).
+import { empresa } from '../empresa-config.js';
 import { logoMeioPagamento } from './payment-logos.js';
 
 export interface ServicoItem {
@@ -86,7 +88,9 @@ export interface ServiceOnlyData {
 
 // Proposta SÓ-SERVIÇO (sem solar): elegante, com logo + imagem do serviço +
 // descrição livre + preço + formas de pagamento + confiança. Sem gráfico/payback.
-export function renderServiceOnlyHTML(data: ServiceOnlyData): string {
+// [ECOSOF] logoBase64 opcional: caller resolve via obterLogoBase64 (Storage com
+// fallback); default = logo EcoSun embutida (call sites/testes antigos idênticos).
+export function renderServiceOnlyHTML(data: ServiceOnlyData, logoBase64: string = LOGO_ECOSUNPOWER_BRANCO_BASE64): string {
   if (!data.nomeCliente || !data.servicos?.length) {
     throw new Error('renderServiceOnlyHTML: precisa de nomeCliente e ao menos 1 serviço');
   }
@@ -132,7 +136,7 @@ body{font-family:'Inter',system-ui,sans-serif;color:#0F172A;background:#F8FAFC;l
 <header style="background:linear-gradient(135deg,#1FB8E8 0%,#0E7CB8 60%,#0F172A 100%);color:#fff;padding:48px 24px">
   <div style="max-width:900px;margin:0 auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:40px">
-      <img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" style="height:40px;width:auto">
+      <img src="${logoBase64}" alt="${escapeHtml(empresa().nomeFantasia)}" style="height:40px;width:auto">
       <div style="font-size:12px;opacity:0.85;text-align:right">Proposta #${escapeHtml(data.numeroProposta)}<br>${escapeHtml(data.dataProposta)} · Válida ${data.validadeDias} dias</div>
     </div>
     <div style="display:inline-block;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);padding:6px 16px;border-radius:100px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:16px">⚡ Proposta de Serviço</div>

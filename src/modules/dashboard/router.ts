@@ -1099,6 +1099,8 @@ export function createDashboardRouter(
     try {
       const { gerarRelatorio } = await import('../monitoring/relatorio/gerar.js');
       const { htmlToPdf, gerarQrCodeDataUrl } = await import('../proposal/pdf-generator.js');
+      // [ECOSOF] Logo resolvida em runtime (Storage com fallback embutido).
+      const { obterLogoBase64 } = await import('../proposal/assets/logo-base64.js');
       const id = String(req.params.id ?? '');
       const r = await gerarRelatorio({
         getDetalhe: (sid: string) => monitoringService.getDetalheSistema(sid),
@@ -1106,6 +1108,7 @@ export function createDashboardRouter(
         htmlToPdf,
         gerarQr: gerarQrCodeDataUrl,
         baseUrl: process.env.PUBLIC_BASE_URL ?? 'https://propostas.ecosunpower.eng.br',
+        logoBase64: await obterLogoBase64(supabaseService.getClient()),
       }, id, 'acompanhamento');
       if (!r.ok) {
         return res.status(500).send(`<h2>Erro ao gerar relatório</h2><pre>${r.reason}</pre><a href="/dashboard/monitoramento">← voltar</a>`);

@@ -83,14 +83,15 @@ function fmtPaybackTexto(anos: number, meses: number): string {
 // Renderiza secao "Estudamos seu Telhado" — fotos com layout 1/2/3 + bloco video com QR Code.
 // O bloco do video tem o atributo data-video-block + data-video-url pra que a versao web
 // (src/index.ts /p/:slug) possa substituir o thumbnail por um <video> nativo na hora.
-function renderEstudoPersonalizado(estudo: NonNullable<ProposalData['estudoPersonalizado']>): string {
+function renderEstudoPersonalizado(estudo: NonNullable<ProposalData['estudoPersonalizado']>, logoBase64: string): string {
   const { fotos, video, qrCodeDataUrl } = estudo;
   const fotoCount = fotos.length;
 
-  // Marca d'agua EcoSunPower com logo oficial (PNG transparente, cores originais).
+  // Marca d'agua com a logo oficial da empresa (PNG transparente, cores originais).
+  // [ECOSOF] logoBase64 vem do caller (Storage com fallback embutido EcoSun).
   // Tamanho usa max-width responsivo (10% da imagem) pra nao dominar em mobile.
   // Sombra suave + opacidade pra leitura em qualquer fundo sem chamar atencao demais.
-  const watermark = `<img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" style="position:absolute;bottom:8px;right:8px;width:auto;height:auto;max-width:14%;max-height:32px;opacity:0.85;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.4));pointer-events:none">`;
+  const watermark = `<img src="${logoBase64}" alt="${escapeHtml(empresa().nomeFantasia)}" style="position:absolute;bottom:8px;right:8px;width:auto;height:auto;max-width:14%;max-height:32px;opacity:0.85;filter:drop-shadow(0 1px 4px rgba(0,0,0,0.4));pointer-events:none">`;
 
   const renderFoto = (f: { url: string; legenda: string }, extra = '') => `
     <figure style="margin:0;${extra}">
@@ -143,7 +144,10 @@ function renderEstudoPersonalizado(estudo: NonNullable<ProposalData['estudoPerso
 `;
 }
 
-export function renderProposalHTML(data: ProposalData, calc: ProposalCalculations, socialProofHtml = ''): string {
+// [ECOSOF] logoBase64 opcional: caller (geração de PDF) resolve via
+// obterLogoBase64 (Storage com fallback); default = logo EcoSun embutida,
+// mantendo todos os call sites/testes antigos byte-idênticos.
+export function renderProposalHTML(data: ProposalData, calc: ProposalCalculations, socialProofHtml = '', logoBase64: string = LOGO_ECOSUNPOWER_BRANCO_BASE64): string {
   // Guards contra dados invalidos que estouram o render
   if (!data.nomeCliente || !data.potenciaKwp || data.potenciaKwp <= 0) {
     throw new Error('renderProposalHTML: dados incompletos (nomeCliente ou potenciaKwp)');
@@ -349,7 +353,7 @@ ${data.tipo === 'personalizada' ? `
 </div>
 ` : ''}
 
-${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado) : ''}
+${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado, logoBase64) : ''}
 
 <div class="container">
   <div class="client-card">

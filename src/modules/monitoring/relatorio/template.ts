@@ -34,7 +34,9 @@ function renderCtaVisita(apelido: string): string {
   </div>`;
 }
 
-export function renderRelatorioHtml(data: RelatorioData, modo: ModoRelatorio): string {
+// [ECOSOF] logoBase64 opcional: caller (PDF/rota pública) resolve via
+// obterLogoBase64 (Storage com fallback); default = logo EcoSun embutida.
+export function renderRelatorioHtml(data: RelatorioData, modo: ModoRelatorio, logoBase64: string = LOGO_ECOSUNPOWER_BRANCO_BASE64): string {
   const C = `--primary-600:#0E7CB8;--primary-700:#0B5A87;--accent-500:#FFC72C;--dark:#0F172A;--muted:#64748B`;
   const local = [data.cidade, data.uf].filter(Boolean).join('/') || '—';
 
@@ -74,7 +76,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 img.logo{height:34px;width:auto;background:#fff;border-radius:8px;padding:5px}</style></head>
 <body><div class="wrap">
   <div class="hero">
-    <img class="logo" src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="${esc(empresa().nomeFantasia)}">
+    <img class="logo" src="${logoBase64}" alt="${esc(empresa().nomeFantasia)}">
     <div style="font-weight:700;letter-spacing:.04em;margin-top:10px">${esc(empresa().nomeFantasia.toUpperCase())} · RELATÓRIO DA USINA</div>
     <div style="font-size:20px;font-weight:700;margin-top:6px">${esc(data.apelido)}</div>
     <div style="opacity:.85;font-size:13px">${esc(local)} · ${esc(data.marcaInversor)} · ${data.potenciaKwp ?? '—'} kWp · idade ${esc(data.garantia.idadeTexto)}</div>
