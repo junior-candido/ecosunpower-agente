@@ -38,6 +38,7 @@ Se o Junior disser "contrato no nome do marido/sócio/pai/filho", você marca `c
 ### Operacional
 - concessionária (Neoenergia-DF ou Equatorial-GO — infere pela UF se faltar)
 - UC nº (se faltar, grava 'a confirmar' e segue)
+- **ligação nova:** se o Junior disser "ligação nova", "nova ligação", "vou pedir ligação", "não tem UC ainda", "imóvel novo/sem energia", grave `ligacao_nova: true`. NESSE CASO **NÃO peça o nº da UC** (ela ainda não existe) — a procuração já pede a ligação nova. Se ele informar a UC normalmente, NÃO marque ligacao_nova.
 - docs_pedidos (default ['contrato', 'procuracao'])
 
 ## Defaults inteligentes (não pergunta)

@@ -6834,6 +6834,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     sendText,
     proposalAssistant,
     metaService: metaWaba ?? undefined,
+    engineerPhone: config.engineerPhone,
   }));
 
   // que abre HTML como codigo fonte.

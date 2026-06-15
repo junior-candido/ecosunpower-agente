@@ -68,6 +68,7 @@ export type DocPedido = 'contrato' | 'procuracao';
 export interface DadosFechamento {
   titular_uc: Pessoa;
   uc_numero?: string; // 'a confirmar' se vazio
+  ligacao_nova?: boolean; // pedido de ligação nova (UC ainda não existe) — UC deixa de ser obrigatória e a procuração ganha o poder de ligação nova
   concessionaria: Concessionaria;
   endereco_instalacao: Endereco;
 

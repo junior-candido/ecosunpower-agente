@@ -101,4 +101,15 @@ describe('renderProcuracao — modelo Fernanda', () => {
     const html = renderProcuracao(sem);
     expect(html).toMatch(/a confirmar/i);
   });
+
+  it('ligação nova → inclui o poder de LIGAÇÃO NOVA (senão Neoenergia rejeita)', () => {
+    const html = renderProcuracao({ ...dadosFernanda, ligacao_nova: true, uc_numero: '' });
+    expect(html).toContain('LIGAÇÃO NOVA');
+    expect(html).toMatch(/ligação nova de unidade consumidora/i);
+  });
+
+  it('SEM ligação nova → NÃO inclui o poder de ligação nova (procuração normal)', () => {
+    const html = renderProcuracao(dadosFernanda);
+    expect(html).not.toContain('LIGAÇÃO NOVA');
+  });
 });

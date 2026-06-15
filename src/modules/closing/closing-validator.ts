@@ -109,8 +109,9 @@ export function findMissingRequired(d: Partial<DadosFechamento>): string[] {
   if (!d.concessionaria) miss.push('concessionaria');
   if (!d.endereco_instalacao) miss.push('endereco_instalacao');
 
-  // UC: obrigatorio pra procuracao (e ambos)
-  if (wantsProcuracao && (!d.uc_numero || !d.uc_numero.trim())) {
+  // UC: obrigatorio pra procuracao (e ambos) — EXCETO quando é ligação nova
+  // (a UC ainda não existe; a procuração pede a ligação nova/cadastro da UC).
+  if (wantsProcuracao && !d.ligacao_nova && (!d.uc_numero || !d.uc_numero.trim())) {
     miss.push('uc_numero');
   }
 

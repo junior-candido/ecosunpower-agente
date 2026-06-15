@@ -131,6 +131,7 @@ export function createDashboardRouter(
     sendText?: (to: string, text: string) => Promise<void>;
     proposalAssistant?: ProposalAssistant;
     metaService?: MetaWhatsAppService;
+    engineerPhone?: string; // telefone do Junior — recebe o aviso "cliente fechou"
   } = {},
 ): Router {
   const router = Router();
@@ -335,11 +336,33 @@ export function createDashboardRouter(
   router.post('/cadencia/fechou', async (req: Request, res: Response) => {
     const id = String(req.body?.id ?? '').trim();
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const { error } = await supabase
+    const { data: leadRow, error } = await supabase
       .from('leads')
       .update({ status: 'transferido', opt_out: true, updated_at: new Date().toISOString() })
-      .eq('id', id);
+      .eq('id', id)
+      .select('name')
+      .maybeSingle();
     if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+
+    // Avisa o Junior no zap e já oferece gerar os documentos (botões disparam o
+    // fluxo /fechar existente via evabt:fechar-doc:<cmd>:<leadId>). Best-effort:
+    // falha no WhatsApp NÃO quebra o "Fechou" do dashboard.
+    if (leadRow && options.metaService && options.engineerPhone) {
+      const nome = leadRow?.name ?? 'Cliente';
+      try {
+        await options.metaService.sendInteractiveButtons(
+          options.engineerPhone,
+          `✅ *${nome}* fechou a venda! Quer gerar os documentos?`,
+          [
+            { id: `evabt:fechar-doc:contrato:${id}`, title: 'Contrato' },
+            { id: `evabt:fechar-doc:procuracao:${id}`, title: 'Procuração' },
+            { id: `evabt:fechar-doc:ambos:${id}`, title: 'Ambos' },
+          ],
+        );
+      } catch (err) {
+        console.warn('[cadencia/fechou] aviso WhatsApp falhou:', (err as Error).message);
+      }
+    }
     res.redirect('/dashboard/cadencia');
   });
 

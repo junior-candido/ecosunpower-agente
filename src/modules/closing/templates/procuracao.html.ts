@@ -75,6 +75,19 @@ export function renderProcuracao(dados: DadosFechamento): string {
   const uf = dados.titular_uc.endereco.uf;
   const data = hojeFormatado();
 
+  // Ligação nova: a UC ainda não existe. A procuração precisa do poder explícito de
+  // pedir a ligação nova / nova UC, senão a concessionária rejeita por incompleta.
+  const ligacaoNova = !!dados.ligacao_nova;
+  const ucRef = ligacaoNova
+    ? 'referente ao pedido de ligação nova / criação de nova Unidade Consumidora'
+    : `referente à Unidade Consumidora nº <b>${uc}</b>`;
+  const finalidade = ligacaoNova
+    ? 'tratar do pedido de <b>ligação nova de unidade consumidora</b> e do projeto de microgeração distribuída de energia solar fotovoltaica'
+    : 'tratar do projeto de microgeração distribuída de energia solar fotovoltaica';
+  const poderLigacaoNova = ligacaoNova
+    ? '<li>requerer, protocolar e acompanhar pedido de <b>LIGAÇÃO NOVA</b> / cadastro de nova Unidade Consumidora (UC) junto à concessionária, incluindo solicitação de vistoria, energização e ativação inicial da unidade;</li>\n    '
+    : '';
+
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -111,10 +124,10 @@ export function renderProcuracao(dados: DadosFechamento): string {
 
   <p><b>OUTORGADO:</b> <b>${OUTORGADO.nome}</b>, brasileiro, ${OUTORGADO.titulo} nº ${OUTORGADO.crea}, portador do RG nº ${OUTORGADO.rg}, inscrito no CPF/MF sob o nº ${OUTORGADO.cpf}, atuando em nome da empresa <b>${OUTORGADO.empresa_razao_social}</b>, CNPJ ${OUTORGADO.empresa_cnpj}, com sede em ${OUTORGADO.empresa_endereco}.</p>
 
-  <p><b>PODERES:</b> Pelo presente instrumento particular de mandato, a OUTORGANTE nomeia e constitui o OUTORGADO seu bastante procurador, conferindo-lhe poderes especiais para representá-la perante a <b>${concessionariaNome}</b>, referente à Unidade Consumidora nº <b>${uc}</b>, com a finalidade de tratar do projeto de microgeração distribuída de energia solar fotovoltaica, podendo:</p>
+  <p><b>PODERES:</b> Pelo presente instrumento particular de mandato, a OUTORGANTE nomeia e constitui o OUTORGADO seu bastante procurador, conferindo-lhe poderes especiais para representá-la perante a <b>${concessionariaNome}</b>, ${ucRef}, com a finalidade de ${finalidade}, podendo:</p>
 
   <ul class="poderes">
-    <li>protocolar, acompanhar e retirar o pedido de acesso à microgeração distribuída, bem como solicitar parecer de acesso e contrato de adesão;</li>
+    ${poderLigacaoNova}<li>protocolar, acompanhar e retirar o pedido de acesso à microgeração distribuída, bem como solicitar parecer de acesso e contrato de adesão;</li>
     <li>assinar formulários, declarações, ART/TRT, projeto elétrico, memorial descritivo e demais documentos técnicos exigidos pela concessionária;</li>
     <li>solicitar vistoria técnica, inspeção, troca/adequação do medidor bidirecional e ligação do sistema;</li>
     <li>requerer 2ª via de faturas, histórico de consumo, dados cadastrais e demais informações relativas à UC;</li>

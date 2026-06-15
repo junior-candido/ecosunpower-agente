@@ -176,6 +176,21 @@ describe('findMissingRequired — filtro por docs_pedidos', () => {
     expect(miss).toContain('uc_numero');
   });
 
+  it('ligação nova → NÃO pede UC (a UC ainda não existe)', () => {
+    const miss = findMissingRequired({
+      docs_pedidos: ['procuracao'],
+      titular_uc: baseTitular,
+      concessionaria: 'Neoenergia-DF',
+      endereco_instalacao: baseEndereco,
+      contratante_eh_titular: true,
+      contratante: baseTitular,
+      ligacao_nova: true,
+      // uc_numero ausente DE PROPÓSITO
+    });
+    expect(miss).not.toContain('uc_numero');
+    expect(miss).toEqual([]);
+  });
+
   it('contrato pede sistema + comercial + email/telefone', () => {
     const miss = findMissingRequired({
       docs_pedidos: ['contrato'],
