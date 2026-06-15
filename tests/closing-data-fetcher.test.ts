@@ -1,11 +1,12 @@
 // tests/closing-data-fetcher.test.ts
 import { describe, it, expect, vi } from 'vitest';
-import { fetchByLeadId, searchLeadByName, buildInitialData } from '../src/modules/closing/closing-data-fetcher.js';
+import { fetchByLeadId, searchLeadByName, buildInitialData, normalizarNomeBusca } from '../src/modules/closing/closing-data-fetcher.js';
 import { leadCamilaRow, propostaPublicaCamilaRow } from './fixtures/closing-camila.js';
 
 function mockSupabase(opts: {
   leadById?: any;
-  leadsByName?: any[];
+  leadsByName?: any[];  // resultado do ilike direto
+  leadsRecent?: any[];  // lote recente do fallback (sem ilike)
   propostas?: any[];
 }) {
   return {
@@ -24,6 +25,12 @@ function mockSupabase(opts: {
               }),
               order: () => ({
                 limit: () => ({ data: opts.leadsByName ?? [], error: null }),
+              }),
+            }),
+            // Fallback do searchLeadByName (sem ilike): select().not().order().limit()
+            not: (_c: string, _o: string, _v: string) => ({
+              order: () => ({
+                limit: () => ({ data: opts.leadsRecent ?? [], error: null }),
               }),
             }),
           }),
@@ -75,6 +82,29 @@ describe('closing-data-fetcher', () => {
     });
     const res = await searchLeadByName(sb, 'Camila');
     expect(res).toHaveLength(2);
+  });
+
+  it('normalizarNomeBusca tira acento e maiúscula', () => {
+    expect(normalizarNomeBusca('Márcio')).toBe('marcio');
+    expect(normalizarNomeBusca('JOÃO  ')).toBe('joao');
+    expect(normalizarNomeBusca('Conceição')).toBe('conceicao');
+  });
+
+  it('searchLeadByName: fallback acha IGNORANDO acento (Marcio → Márcio)', async () => {
+    // ilike direto vazio; o fallback pega o lote recente e filtra normalizado
+    const sb = mockSupabase({
+      leadsByName: [],
+      leadsRecent: [{ ...leadCamilaRow, id: '7', name: 'Márcio Ferraz' }, { ...leadCamilaRow, id: '8', name: 'Outro' }],
+    });
+    const res = await searchLeadByName(sb, 'Marcio'); // sem acento
+    expect(res).toHaveLength(1);
+    expect(res[0].name).toBe('Márcio Ferraz');
+  });
+
+  it('searchLeadByName: ilike direto acha → não usa fallback', async () => {
+    const sb = mockSupabase({ leadsByName: [leadCamilaRow], leadsRecent: [] });
+    const res = await searchLeadByName(sb, 'Camila');
+    expect(res).toHaveLength(1);
   });
 
   it('buildInitialData mapeia lead + proposta pra Partial<DadosFechamento>', () => {

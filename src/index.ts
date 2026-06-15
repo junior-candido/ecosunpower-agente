@@ -1150,7 +1150,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
       if (matches.length === 0) {
         await setClosingState(from, { stage: 'collecting', data: { docs_pedidos: docs ?? undefined } as any, pending_questions: [] });
-        await sendText(from, `Não achei "${arg}" no cadastro (ativos). Cliente novo? Manda os dados completos.`);
+        await sendText(from, `Não achei "${arg}" no cadastro. Cliente novo? Manda os dados completos.`);
         return true;
       }
 
@@ -3113,87 +3113,116 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     if (!isAdminPhone(from)) return false;
     const trimmedLower = text.trim().toLowerCase();
 
-    // Trigger inicial
+    // Triggers: "menu" abre as categorias; "menucat_<cat>" abre o submenu da
+    // categoria; "menu_<modo>" executa o comando (ou manda a dica de uso).
     const isMenuTrigger = trimmedLower === 'menu' || trimmedLower === '/menu';
+    const catClick = text.trim().match(/^menucat_([a-z_]+)$/);
+    const itemClick = text.trim().match(/^menu_([a-z_]+)$/);
+    if (!isMenuTrigger && !catClick && !itemClick) return false;
 
-    // Clique numa row do menu — id "menu_<modo>"
-    const menuClick = text.trim().match(/^menu_([a-z_]+)$/);
-
-    if (!isMenuTrigger && !menuClick) return false;
-
-    if (isMenuTrigger) {
-      const sections = [{
-        title: 'Modos disponíveis',
-        rows: [
-          { id: 'menu_criativo', title: '🎨 Gerar Criativo', description: 'Anúncio com 3 imagens + 3 copies' },
-          { id: 'menu_banner', title: '🖼️ Banner Promo', description: 'Mega Oferta com kit + preço + foto inversor' },
-          { id: 'menu_reativar', title: '🔄 Reativar Base', description: 'Dispara template pros leads terceirizada (10 por vez)' },
-          { id: 'menu_preco', title: '💰 Calcular Preço', description: 'Simulação rápida de sistema solar' },
-          { id: 'menu_proposta', title: '📋 Gerar Proposta', description: 'PDF + link público propostas.ecosunpower' },
-          { id: 'menu_agenda', title: '📅 Agendar Reunião', description: 'Visita técnica ou Meet com cliente' },
-          { id: 'menu_novo_case', title: '👤 Cadastrar Case', description: 'Obra concluída pra prova social' },
-          { id: 'menu_reviews', title: '✅ Aprovar Reviews', description: 'Reviews públicos pendentes' },
-          { id: 'menu_blog', title: '📝 Status Blog', description: 'Drafts pendentes de aprovação' },
+    // Estrutura em 2 níveis. Cada item: ou reroteia pro handler do modo (trigger +
+    // handler já existentes), ou manda uma DICA de texto (hint) — pros comandos que
+    // precisam de um nome (ajustar/contrato) ou não têm handler de comando próprio.
+    type MenuItem = { id: string; title: string; description: string; trigger?: string; handler?: (from: string, text: string) => Promise<boolean>; hint?: string };
+    const MENU_CATEGORIES: Array<{ id: string; title: string; description: string; items: MenuItem[] }> = [
+      {
+        id: 'propostas', title: '💼 Propostas', description: 'Preço, gerar, ajustar, resgatar',
+        items: [
+          { id: 'menu_preco', title: '💰 Calcular preço', description: 'Simulação rápida de sistema', trigger: '/preco', handler: tryHandlePricingCommand },
+          { id: 'menu_proposta', title: '📋 Gerar proposta', description: 'PDF + link público', trigger: '/proposta', handler: tryHandleProposalCommand },
+          { id: 'menu_ajustar', title: '✏️ Ajustar proposta', description: 'Reabrir uma já enviada', hint: '✏️ Pra ajustar uma proposta enviada, manda:\n*ajustar nome do cliente*\n(ex: ajustar Olavo)' },
+          { id: 'menu_resgatar', title: '♻️ Resgatar antigas', description: 'Recuperar dados do Drive', hint: '♻️ Manda */resgatar-propostas* pra recuperar os dados das propostas antigas (do Drive).' },
+          { id: 'menu_rascunho', title: '📝 Rascunho', description: 'Retomar a não terminada', hint: '📝 Manda *rascunho* pra voltar pra proposta que você não terminou.' },
         ],
-      }];
+      },
+      {
+        id: 'fechamento', title: '📝 Fechamento', description: 'Contrato e procuração',
+        items: [
+          { id: 'menu_fechar', title: '🤝 Fechar venda', description: 'Contrato + procuração', trigger: '/fechar', handler: tryHandleClosingCommand },
+          { id: 'menu_contrato', title: '📄 Só contrato', description: 'Gera só o contrato', hint: '📄 Manda *contrato nome do cliente* (ex: contrato Marcio).' },
+          { id: 'menu_procuracao', title: '🖊️ Só procuração', description: 'Gera só a procuração', hint: '🖊️ Manda *procuracao nome do cliente* (ex: procuracao Marcio).' },
+        ],
+      },
+      {
+        id: 'marketing', title: '📣 Marketing', description: 'Criativo, banner, base, blog',
+        items: [
+          { id: 'menu_criativo', title: '🎨 Gerar criativo', description: 'Anúncio 3 imagens + 3 copies', trigger: 'criativo', handler: tryHandleCreativeCommand },
+          { id: 'menu_banner', title: '🖼️ Banner promo', description: 'Kit + preço + foto inversor', trigger: '/banner', handler: tryHandleBannerCommand },
+          { id: 'menu_reativar', title: '🔄 Reativar base', description: 'Template pros leads (10 por vez)', trigger: '/reativar-base 10', handler: tryHandleReativarBaseCommand },
+          { id: 'menu_blog', title: '📝 Status blog', description: 'Drafts pendentes de aprovação', trigger: 'blog status', handler: tryHandleJuniorBlogCommand },
+        ],
+      },
+      {
+        id: 'atendimento', title: '📅 Atendimento', description: 'Agenda, cases, reviews',
+        items: [
+          { id: 'menu_agenda', title: '📅 Agendar reunião', description: 'Visita técnica ou Meet', trigger: '/agenda', handler: tryHandleSchedulingCommand },
+          { id: 'menu_novo_case', title: '👤 Cadastrar case', description: 'Obra concluída (prova social)', trigger: '/novo-case', handler: tryHandleCaseCreatorCommand },
+          { id: 'menu_reviews', title: '✅ Aprovar reviews', description: 'Reviews públicos pendentes', trigger: '/reviews-pendentes', handler: tryHandleTestimonialAdminCommand },
+        ],
+      },
+      {
+        id: 'operacao', title: '🔧 Operação', description: 'Usinas, monitoramento, financeiro',
+        items: [
+          { id: 'menu_monitoramento', title: '⚡ Monitoramento', description: 'Geração das usinas', hint: '⚡ Acompanhe a geração das usinas em dashboard.ecosunpower.eng.br/dashboard/monitoramento' },
+          { id: 'menu_dono', title: '🏭 Dono de usina', description: 'Vincular dono à usina órfã', hint: '🏭 Cadastra o dono pelo alerta de usina órfã no zap (botão "Cadastrar dono") ou no editar usina do dashboard.' },
+          { id: 'menu_manutencao', title: '🔧 Manutenção', description: 'Abrir/ver manutenção', hint: '🔧 Manda */manutencao* pra registrar/ver manutenção.' },
+          { id: 'menu_financeiro', title: '💰 Financeiro', description: 'Lançar gasto / caixa de entrada', hint: '💰 Manda o gasto direto (ex: "gastei 380 no posto") ou veja em dashboard.ecosunpower.eng.br/dashboard/financeiro' },
+        ],
+      },
+    ];
 
-      let listSent = false;
+    const enviarLista = async (header: string, body: string, rows: Array<{ id: string; title: string; description: string }>, secTitle: string): Promise<void> => {
       if (metaWaba) {
         try {
-          await metaWaba.sendInteractiveList(from, {
-            header: '⚙️ Menu Admin',
-            body: 'O que você quer fazer agora?',
-            buttonText: 'Escolher modo',
-            sections,
-            footer: 'Toque pra abrir',
-          });
-          listSent = true;
+          await metaWaba.sendInteractiveList(from, { header, body, buttonText: 'Escolher', sections: [{ title: secTitle, rows }], footer: 'Toque pra abrir' });
+          return;
         } catch (err) {
           console.warn('[menu-admin] lista interativa falhou, fallback texto:', (err as Error).message);
         }
       }
+      const linhas = rows.map(r => `${r.title}\n   _${r.description}_`).join('\n\n');
+      await sendText(from, `*${header}*\n\n${body}\n\n${linhas}`);
+    };
 
-      if (!listSent) {
-        const lines = sections[0].rows.map(r => `${r.title}\n   _${r.description}_`).join('\n\n');
-        await sendText(from,
-          `⚙️ *Menu Admin*\n\nO que você quer fazer?\n\n${lines}\n\n` +
-          `Responde com o nome (ex: "criativo", "/preco", "/agenda")`);
-      }
+    // Nível 1: "menu" → categorias
+    if (isMenuTrigger) {
+      const rows = MENU_CATEGORIES.map(c => ({ id: `menucat_${c.id}`, title: c.title, description: c.description }));
+      await enviarLista('⚙️ Menu', 'Escolha uma categoria:', rows, 'Categorias');
       return true;
     }
 
-    // Clique numa row → re-roteia chamando o tryHandle* correspondente
-    if (menuClick) {
-      const modo = menuClick[1];
-      // Mapa modo → string-trigger natural (a mesma que cada handler aceita).
-      // Cuidado pra usar a forma que cada isXxxTrigger entende: pricing/proposal/scheduling
-      // aceitam "/preco" "/proposta" "/agenda"; case-creator aceita "/novo-case";
-      // criativo (refatorado) aceita "criativo"; testimonial-admin aceita "/reviews-pendentes";
-      // blog aceita "blog status".
-      const reroute: Record<string, { trigger: string; handler: (from: string, text: string) => Promise<boolean> }> = {
-        criativo:   { trigger: 'criativo',           handler: tryHandleCreativeCommand },
-        banner:     { trigger: '/banner',            handler: tryHandleBannerCommand },
-        reativar:   { trigger: '/reativar-base 10',  handler: tryHandleReativarBaseCommand },
-        preco:      { trigger: '/preco',             handler: tryHandlePricingCommand },
-        proposta:   { trigger: '/proposta',          handler: tryHandleProposalCommand },
-        fechar:     { trigger: '/fechar',            handler: tryHandleClosingCommand },
-        agenda:     { trigger: '/agenda',            handler: tryHandleSchedulingCommand },
-        novo_case:  { trigger: '/novo-case',         handler: tryHandleCaseCreatorCommand },
-        reviews:    { trigger: '/reviews-pendentes', handler: tryHandleTestimonialAdminCommand },
-        blog:       { trigger: 'blog status',        handler: tryHandleJuniorBlogCommand },
-      };
-      const target = reroute[modo];
-      if (!target) {
-        await sendText(from, `⚠️ Modo "${modo}" não reconhecido. Manda "menu" pra ver a lista de novo.`);
+    // Nível 2: "menucat_<cat>" → comandos da categoria
+    if (catClick) {
+      const cat = MENU_CATEGORIES.find(c => c.id === catClick[1]);
+      if (!cat) {
+        await sendText(from, '⚠️ Categoria não encontrada. Manda *menu* de novo.');
         return true;
       }
-      // Re-roteia. Cada handler ja gateia em isAdminPhone e nao chama menu de volta,
-      // entao nao tem risco de loop. Se o handler retornar false (caso edge: modo
-      // desabilitado por env var faltando), avisamos.
-      const handled = await target.handler(from, target.trigger);
-      if (!handled) {
-        await sendText(from, `⚠️ Modo "${modo}" indisponível agora (provavelmente env var faltando). Olha os logs do Easypanel.`);
+      const rows = cat.items.map(i => ({ id: i.id, title: i.title, description: i.description }));
+      await enviarLista(cat.title, 'O que você quer fazer?', rows, cat.title.replace(/^\S+\s/, ''));
+      return true;
+    }
+
+    // Nível 3: "menu_<modo>" → executa o comando ou manda a dica
+    if (itemClick) {
+      const item = MENU_CATEGORIES.flatMap(c => c.items).find(i => i.id === `menu_${itemClick[1]}`);
+      if (!item) {
+        await sendText(from, `⚠️ Opção não reconhecida. Manda *menu* pra ver de novo.`);
+        return true;
       }
+      if (item.hint) {
+        await sendText(from, item.hint);
+        return true;
+      }
+      if (item.handler && item.trigger) {
+        // Cada handler já gateia em isAdminPhone e não chama o menu de volta (sem loop).
+        const handled = await item.handler(from, item.trigger);
+        if (!handled) {
+          await sendText(from, `⚠️ "${item.title}" indisponível agora (provável env var faltando). Olha os logs do Easypanel.`);
+        }
+        return true;
+      }
+      await sendText(from, `⚠️ Opção sem ação configurada. Manda *menu* de novo.`);
       return true;
     }
 

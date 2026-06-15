@@ -56,18 +56,39 @@ export async function fetchByLeadId(sb: SupabaseClient, leadId: string): Promise
   return { lead, proposta: (propRes.data as PropostaPublicaRow | null) ?? null };
 }
 
+// Normaliza nome pra comparar SEM acento/maiúscula ("Márcio" ~ "marcio").
+export function normalizarNomeBusca(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+}
+
 export async function searchLeadByName(sb: SupabaseClient, term: string): Promise<LeadRow[]> {
-  // Exclui leads em status terminal (já fechados ou perdidos) — não faz sentido
-  // /fechar quem já virou cliente.
-  const res = await sb
+  // 1) ilike direto (rápido). NÃO exclui mais 'transferido': /fechar/contrato é
+  // justamente pra quem virou cliente. Só exclui 'inativo' (lixo).
+  const direct = await sb
     .from('leads')
     .select('*')
     .ilike('name', `%${term}%`)
-    .not('status', 'in', '(transferido,inativo)')
+    .not('status', 'in', '(inativo)')
     .order('created_at', { ascending: false })
     .limit(10);
-  if (res.error) throw res.error;
-  return (res.data as LeadRow[]) ?? [];
+  if (direct.error) throw direct.error;
+  const rows = (direct.data as LeadRow[]) ?? [];
+  if (rows.length > 0) return rows;
+
+  // 2) fallback IGNORANDO ACENTO: o ilike é sensível a acento ("Marcio" não acha
+  // "Márcio"). Busca um lote recente e filtra no JS por nome normalizado.
+  const termN = normalizarNomeBusca(term);
+  if (!termN) return [];
+  const recent = await sb
+    .from('leads')
+    .select('*')
+    .not('status', 'in', '(inativo)')
+    .order('created_at', { ascending: false })
+    .limit(400);
+  if (recent.error) throw recent.error;
+  return ((recent.data as LeadRow[]) ?? [])
+    .filter((l) => l.name && normalizarNomeBusca(l.name).includes(termN))
+    .slice(0, 10);
 }
 
 function inferConcessionaria(uf: string | null): Concessionaria | undefined {
