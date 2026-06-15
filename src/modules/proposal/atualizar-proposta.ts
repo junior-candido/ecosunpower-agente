@@ -1,7 +1,8 @@
 // src/modules/proposal/atualizar-proposta.ts
-// Comando "atualizar <nome>" no zap: acha proposta(s) já enviada(s) pelo nome do
-// cliente e devolve o link do dashboard pra reabrir/ajustar. Lógica de montagem da
-// resposta isolada aqui pra ser testável sem banco nem WhatsApp.
+// Monta a resposta com link(s) do dashboard pras propostas achadas pelo nome.
+// HOJE é só FALLBACK do comando ajustar/atualizar quando NÃO há botões interativos
+// (sem metaWaba) e há 2+ resultados — o fluxo principal abre o reopen conversacional
+// no zap. Isolada aqui pra ser testável sem banco nem WhatsApp.
 export interface PropostaMatch {
   slug: string;
   clienteNome: string;

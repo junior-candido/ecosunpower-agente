@@ -3560,26 +3560,64 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // Eva Agendadora — prioridade depois do pricing
     if (await tryHandleSchedulingCommand(from, text)) return;
 
-    // "atualizar <nome>" (Junior) — acha proposta(s) JÁ ENVIADA(S) pelo nome do
-    // cliente e devolve o link do dashboard pra reabrir/ajustar. Diferente de
-    // "rascunho" (retoma proposta não terminada). DEPOIS dos handlers de modo de
-    // propósito: se Junior está no meio de /proposta-/preco-/agenda e digita algo
-    // como "atualizar o consumo", o modo pega primeiro — aqui só chega texto livre
-    // FORA de modo. Antes do gate financeiro pra não virar "gasto".
+    // "ajustar <nome>" / "atualizar <nome>" (Junior) — reabre uma proposta JÁ
+    // ENVIADA DENTRO do zap: a Eva carrega os dados e o Junior ajusta conversando,
+    // regerando no MESMO link. DEPOIS dos handlers de modo de propósito: se Junior
+    // já está numa proposta e digita "ajusta o valor", o modo pega primeiro — aqui
+    // só chega texto FORA de modo. Antes do gate financeiro pra não virar "gasto".
     {
-      const mAtualizar = /^\/?atualizar\b\s*(.*)$/i.exec(text.trim());
-      if (isAdminPhone(from) && mAtualizar) {
-        const nome = mAtualizar[1].trim();
-        if (!nome) {
-          await sendText(from, 'Manda assim: *atualizar nome do cliente*.\nEx: _atualizar Marcelo_');
+      const tRaw = text.trim();
+      const mBotaoAjustar = /^ajustar:([A-Za-z0-9_-]{16,32})$/.exec(tRaw);
+      const mCmdAjustar = /^\/?(ajustar|atualizar)\b\s*(.*)$/i.exec(tRaw);
+      if (isAdminPhone(from) && (mBotaoAjustar || mCmdAjustar)) {
+        const dashboardBaseUrl = (process.env.DASHBOARD_BASE_URL ?? 'https://dashboard.ecosunpower.eng.br').replace(/\/$/, '');
+        const abrirReopen = async (slug: string): Promise<void> => {
+          const prop = await supabase.getPropostaInputBySlug(slug);
+          if (!prop) {
+            await sendText(from, 'Não achei essa proposta (pode ter sido revogada).');
+            return;
+          }
+          if (!prop.dadosInput) {
+            await sendText(from, `A proposta *${prop.numeroProposta}* é antiga e não tem os dados salvos pra ajustar. Manda */resgatar-propostas* primeiro que eu recupero do Drive.`);
+            return;
+          }
+          const reply = await proposalAssistant.startReopenMode(from, {
+            slug,
+            numeroProposta: prop.numeroProposta,
+            clienteNome: prop.clienteNome,
+            modoEnvio: prop.modoEnvio,
+            tipo: prop.tipo,
+            dadosInput: prop.dadosInput as Record<string, unknown>,
+            dashboardUrl: `${dashboardBaseUrl}/propostas/${slug}/preview`,
+          });
+          await sendText(from, reply);
+        };
+
+        if (mBotaoAjustar) {
+          await abrirReopen(mBotaoAjustar[1]);
           return;
         }
-        const dashboardBaseUrl = (process.env.DASHBOARD_BASE_URL ?? 'https://dashboard.ecosunpower.eng.br').replace(/\/$/, '');
+
+        const nome = (mCmdAjustar![2] ?? '').trim();
+        if (!nome) {
+          await sendText(from, 'Manda assim: *ajustar nome do cliente*.\nEx: _ajustar Olavo_');
+          return;
+        }
         try {
           const matches = await supabase.buscarPropostasPorNome(nome, 5);
-          await sendText(from, montarRespostaAtualizar(nome, matches, dashboardBaseUrl));
+          if (matches.length === 0) {
+            await sendText(from, `🔍 Não achei proposta pra *${nome}*. Confere o nome ou veja em ${dashboardBaseUrl}/propostas`);
+          } else if (matches.length === 1) {
+            await abrirReopen(matches[0].slug);
+          } else if (metaWaba) {
+            const corpo = `Achei ${matches.length} propostas pra *${nome}*. Qual você quer ajustar?`;
+            const botoes = matches.slice(0, 3).map((m) => ({ id: `ajustar:${m.slug}`, title: (m.numeroProposta || m.clienteNome).slice(0, 20) }));
+            await metaWaba.sendInteractiveButtons(from, corpo, botoes);
+          } else {
+            await sendText(from, montarRespostaAtualizar(nome, matches, dashboardBaseUrl));
+          }
         } catch (err) {
-          console.error('[atualizar] busca falhou:', (err as Error).message);
+          console.error('[ajustar] busca falhou:', (err as Error).message);
           await sendText(from, '⚠️ Deu erro buscando a proposta. Tenta de novo daqui a pouco.');
         }
         return;

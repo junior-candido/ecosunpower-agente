@@ -24,6 +24,7 @@ import { renderProposalHTML, type ProposalData } from './proposal/template.js';
 import { obterLogoBase64, LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './proposal/assets/logo-base64.js';
 import { somaServicosExtras, renderServiceOnlyHTML, type ServicoItem, type ServiceOnlyData } from './proposal/service-render.js';
 import { montarDadosInputCompleto } from './proposal/dados-input.js';
+import { construirSeedReopen } from './proposal/reopen-seed.js';
 import { renderComparacaoSolar, type ComparacaoOpcao } from './proposal/comparison-render.js';
 import { servicePaymentOptions, valorParcelaCartao } from './proposal/service-payment.js';
 import { htmlToPdf, gerarQrCodeDataUrl } from './proposal/pdf-generator.js';
@@ -259,6 +260,7 @@ interface ProposalSessionState {
   pendingMediaId?: string;     // media_id WABA aguardando legenda
   pendingMediaType?: 'foto' | 'video';
   reopenedSlug?: string;        // se setado, regenera proposta existente em vez de criar nova
+  reopenedNumero?: string;      // número original da proposta reaberta (preserva no UPDATE)
   geracaoConcluida?: boolean;   // proposta JÁ gerada nesta sessão; próxima foto/cliente novo zera o rascunho
 }
 
@@ -811,6 +813,49 @@ export class ProposalAssistant {
     );
 
     return welcomeMessage;
+  }
+
+  // Reabrir/ajustar uma proposta JÁ ENVIADA pelo zap: semeia a sessão com os dados
+  // salvos + reopenedSlug e deixa o Junior ajustar conversando. A geração regenera
+  // NO MESMO slug (mesmo link do cliente). Espelha o "Reabrir" do dashboard.
+  async startReopenMode(phone: string, opts: {
+    slug: string;
+    numeroProposta: string;
+    clienteNome: string;
+    modoEnvio: ModoEnvio;
+    tipo: TipoProposta;
+    dadosInput: Record<string, unknown>;
+    dashboardUrl?: string;
+  }): Promise<string> {
+    await this.redis.setex(`proposal:${phone}`, PROPOSAL_MODE_TTL_SECONDS, '1');
+    await this.redis.del(`proposal:last:${phone}`);
+    await this.saveState(phone, {
+      attachments: [],
+      modoEnvio: opts.modoEnvio,
+      tipo: opts.tipo,
+      reopenedSlug: opts.slug,
+      reopenedNumero: opts.numeroProposta,
+    });
+
+    // Semeia o histórico: turno do usuário (contexto) + da assistente já com o
+    // `data` completo no shape do Claude (ask_more), pra ele aplicar só o delta.
+    const { intro, seededUser, seededAssistant } = construirSeedReopen({
+      numeroProposta: opts.numeroProposta,
+      clienteNome: opts.clienteNome,
+      modoEnvio: opts.modoEnvio,
+      tipo: opts.tipo,
+      dadosInput: opts.dadosInput,
+    });
+    await this.redis.setex(
+      `proposal:history:${phone}`,
+      PROPOSAL_MODE_TTL_SECONDS,
+      JSON.stringify([
+        { role: 'user', content: seededUser },
+        { role: 'assistant', content: seededAssistant },
+      ]),
+    );
+
+    return opts.dashboardUrl ? `${intro}\n\nPrefere no painel? ${opts.dashboardUrl}` : intro;
   }
 
   async exitProposalMode(phone: string): Promise<void> {
@@ -1449,7 +1494,13 @@ export class ProposalAssistant {
         }
       }
 
-      const result = await this.generateProposalCore({ data, modoEnvio, tipo, attachments });
+      // Reabrir/ajustar pelo zap: se a sessão foi semeada com reopenedSlug, regenera
+      // NO MESMO slug (UPDATE) preservando o número — espelha a rota de reabrir do dashboard.
+      const result = await this.generateProposalCore({
+        data, modoEnvio, tipo, attachments,
+        reopenSlug: sessionState.reopenedSlug,
+        numeroProposta: sessionState.reopenedNumero,
+      });
 
       await this.redis.setex(
         `proposal:last:${phone}`,
