@@ -35,6 +35,54 @@ export class DriveUploader {
     this.drive = google.drive({ version: 'v3', auth: this.oauth });
   }
 
+  // Procura (SEM criar) o id de uma pasta por nome dentro de um pai. null se não acha.
+  private async findFolder(name: string, parentId?: string): Promise<string | null> {
+    const q = [
+      `name = '${name.replace(/'/g, "\\'")}'`,
+      `mimeType = 'application/vnd.google-apps.folder'`,
+      `trashed = false`,
+      parentId ? `'${parentId}' in parents` : `'root' in parents`,
+    ].join(' and ');
+    const list = await this.drive.files.list({ q, fields: 'files(id)', pageSize: 1 });
+    return list.data.files?.[0]?.id ?? null;
+  }
+
+  // Resgata o conteúdo do JSON de dados de input de uma proposta já gerada.
+  // Caminho: <root>/Propostas/<ano>/<nomeCliente>/_internal/dados-<numero>.json
+  // Retorna o texto do JSON, ou null se a pasta/arquivo não existir.
+  async fetchInputDataJson(opts: {
+    nomeCliente: string;
+    numeroProposta: string;
+    ano: string;
+    rootFolderName?: string;
+  }): Promise<string | null> {
+    const root = opts.rootFolderName ?? 'EcoSunPower';
+    const rootId = await this.findFolder(root);
+    if (!rootId) return null;
+    const propostasId = await this.findFolder('Propostas', rootId);
+    if (!propostasId) return null;
+    const anoId = await this.findFolder(opts.ano, propostasId);
+    if (!anoId) return null;
+    const clienteId = await this.findFolder(opts.nomeCliente, anoId);
+    if (!clienteId) return null;
+    const internalId = await this.findFolder('_internal', clienteId);
+    if (!internalId) return null;
+
+    const fileName = `dados-${opts.numeroProposta}.json`;
+    const q = [
+      `name = '${fileName.replace(/'/g, "\\'")}'`,
+      `trashed = false`,
+      `'${internalId}' in parents`,
+    ].join(' and ');
+    const list = await this.drive.files.list({ q, fields: 'files(id)', pageSize: 1 });
+    const fileId = list.data.files?.[0]?.id;
+    if (!fileId) return null;
+
+    const res = await this.drive.files.get({ fileId, alt: 'media' }, { responseType: 'text' });
+    const body = res.data as unknown;
+    return typeof body === 'string' ? body : JSON.stringify(body);
+  }
+
   // Encontra ou cria pasta com nome dado. Retorna ID.
   private async getOrCreateFolder(name: string, parentId?: string): Promise<string> {
     // Procura primeiro

@@ -72,6 +72,7 @@ const IORedis = (RedisModule as any).default ?? RedisModule;
 import { NewsScraperService } from './modules/news-scraper.js';
 import { DriveUploader } from './modules/proposal/drive-uploader.js';
 import { montarRespostaAtualizar } from './modules/proposal/atualizar-proposta.js';
+import { contarPropostasSemDados, resgatarDadosInput } from './modules/proposal/resgatar-dados-input.js';
 import { MonitoringService } from './modules/monitoring/service.js';
 import { createDashboardRouter } from './modules/dashboard/router.js';
 import { resolveChannel } from './modules/dashboard/resolve-channel.js';
@@ -3309,6 +3310,63 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         // metaService (balão único) — nesse caso não reenviamos texto.
         const reply = await proposalAssistant.handleRascunho(from);
         if (reply) await sendText(from, reply);
+        return;
+      }
+    }
+
+    // "/resgatar-propostas" (Junior) — resgata o dados_input das propostas antigas
+    // (que ficaram sem dados e não reabrem) a partir do JSON salvo no Drive. Passo 1:
+    // conta + pede confirmação por botão. Passo 2 (tap no botão, id chega como texto):
+    // executa e reporta. SEGURO: só toca proposta com dados_input nulo, não refaz nada.
+    {
+      const tr = text.trim().toLowerCase();
+      const ehBotaoResgatar = tr.startsWith('resgatar:');
+      const ehConfirmarResgate = tr === 'resgatar:confirmar';
+      const ehCancelarResgate = tr === 'resgatar:cancelar';
+      const ehPedidoResgate = !ehBotaoResgatar && /^\/?resgatar(-propostas|\s+propostas)?$/.test(tr);
+      if (isAdminPhone(from) && (ehPedidoResgate || ehConfirmarResgate || ehCancelarResgate)) {
+        if (ehCancelarResgate) {
+          await sendText(from, '👍 Beleza, não resgatei nada.');
+          return;
+        }
+        if (!driveUploader) {
+          await sendText(from, '⚠️ O Drive não está configurado aqui — não dá pra resgatar.');
+          return;
+        }
+        if (ehPedidoResgate) {
+          try {
+            const n = await contarPropostasSemDados(supabase);
+            if (n === 0) {
+              await sendText(from, '✅ Nenhuma proposta antiga sem dados. Tá tudo certo!');
+              return;
+            }
+            const corpo = `Tem *${n}* proposta(s) antiga(s) sem os dados salvos (não reabrem). Posso resgatar do Drive agora?`;
+            if (metaWaba) {
+              await metaWaba.sendInteractiveButtons(from, corpo, [
+                { id: 'resgatar:confirmar', title: `✅ Resgatar (${n})`.slice(0, 20) },
+                { id: 'resgatar:cancelar', title: 'Cancelar' },
+              ]);
+            } else {
+              await sendText(from, `${corpo}\nResponda *resgatar:confirmar* pra prosseguir.`);
+            }
+          } catch (err) {
+            console.error('[resgatar] contagem falhou:', (err as Error).message);
+            await sendText(from, '⚠️ Deu erro contando as propostas. Tenta de novo.');
+          }
+          return;
+        }
+        // ehConfirmarResgate
+        await sendText(from, '🔄 Resgatando do Drive, aguarde (pode levar alguns segundos)...');
+        try {
+          const res = await resgatarDadosInput({ supabase, drive: driveUploader, apply: true });
+          await sendText(
+            from,
+            `✅ Resgate concluído:\n• ${res.resgatadas} recuperada(s)\n• ${res.semJson} sem backup no Drive\n• ${res.falhas} falha(s)\n\nAs recuperadas já reabrem normal no dashboard.`,
+          );
+        } catch (err) {
+          console.error('[resgatar] execução falhou:', (err as Error).message);
+          await sendText(from, '⚠️ Deu erro no resgate. Me chama que a gente vê o log.');
+        }
         return;
       }
     }
