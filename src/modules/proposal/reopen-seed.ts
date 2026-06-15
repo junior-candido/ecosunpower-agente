@@ -47,3 +47,53 @@ export function construirSeedReopen(opts: ReopenSeedInput): ReopenSeed {
 
   return { data, intro, seededUser, seededAssistant };
 }
+
+export interface CloneSeedInput {
+  numeroPropostaBase: string;
+  clienteNomeBase: string;
+  modoEnvio: string;
+  tipo: string;
+  dadosInput: Record<string, unknown>;
+}
+
+// Seed pra CLONAR uma proposta pra um NOVO cliente: mantém o kit/sistema/valores
+// da base, mas LIMPA os campos de identidade do cliente (vêm do novo). Gera uma
+// proposta NOVA (sem reopenedSlug). Parte pura, testável.
+export function construirSeedClone(opts: CloneSeedInput): ReopenSeed {
+  const { investimento: _omit, ...base } = opts.dadosInput;
+  // Zera só a IDENTIDADE do cliente — o resto (sistema/equipamento/valores) é da base.
+  const data: Record<string, unknown> = {
+    ...base,
+    nomeCliente: '',
+    telefoneCliente: '',
+    documentoCliente: '',
+    enderecoCliente: '',
+    emailCliente: '',
+  };
+
+  const intro = [
+    `📋 Clonando a proposta *${opts.numeroPropostaBase}* (base: ${opts.clienteNomeBase}).`,
+    'Me passa só o *novo cliente* — eu mantenho o kit/equipamento/valor igual:',
+    '• Nome • Telefone (se for enviar) • Consumo (se mudar) • Valor (se mudar)',
+    'Quando terminar, manda *gerar* — vai sair uma proposta NOVA (link novo).',
+  ].join('\n');
+
+  const seededUser =
+    `Clonar a proposta ${opts.numeroPropostaBase} (cliente base: ${opts.clienteNomeBase}) pra um NOVO cliente. ` +
+    `Use os MESMOS dados de sistema/equipamento/valores abaixo, apenas TROQUE a identidade do cliente ` +
+    `(nomeCliente, telefoneCliente, documentoCliente, enderecoCliente, emailCliente) pelos dados novos que eu mandar. ` +
+    `Ajuste consumo/valor só se eu pedir explicitamente. É uma proposta NOVA (NÃO é reabertura). ` +
+    `Quando eu mandar "gerar"/"ok"/"manda", use action "confirm_generate" com o data completo.\n` +
+    `DADOS BASE: ${JSON.stringify(data)}`;
+
+  const seededAssistant = JSON.stringify({
+    action: 'ask_more',
+    modoEnvio: opts.modoEnvio,
+    tipo: opts.tipo,
+    message: intro,
+    missing: ['nomeCliente'],
+    data,
+  });
+
+  return { data, intro, seededUser, seededAssistant };
+}

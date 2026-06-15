@@ -83,6 +83,12 @@ describe('Geração sempre do estudo', () => {
     expect(r.calculations).toBeTruthy();
   });
 
+  it('SEM nome do cliente → falha claro (protege clone/reabrir de gerar sem cliente)', async () => {
+    await expect(pa.generateProposalCore({
+      data: baseData({ nomeCliente: '' }), modoEnvio: 'junior_envia', tipo: 'basica',
+    })).rejects.toThrow(/nome do cliente/i);
+  });
+
   // Regressão: proposta COM estudo precisa salvar dados_input (senão o
   // "Reabrir / Ajustar" falha com "sem dados pra reabrir"). Bug 15/06/2026:
   // o caminho com anexos só atualizava o HTML.

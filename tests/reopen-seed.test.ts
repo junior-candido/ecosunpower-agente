@@ -1,6 +1,6 @@
 // tests/reopen-seed.test.ts
 import { describe, it, expect } from 'vitest';
-import { construirSeedReopen } from '../src/modules/proposal/reopen-seed.js';
+import { construirSeedReopen, construirSeedClone } from '../src/modules/proposal/reopen-seed.js';
 
 const baseOpts = {
   numeroProposta: 'P-2026-042',
@@ -48,5 +48,48 @@ describe('construirSeedReopen', () => {
     expect(seed.seededUser).toContain('Olavo Drumond');
     expect(seed.seededUser).toContain('ready_to_generate');
     expect(seed.seededUser).toContain('confirm_generate'); // "gerar" gera de verdade
+  });
+});
+
+describe('construirSeedClone', () => {
+  const cloneOpts = {
+    numeroPropostaBase: 'P-2026-042',
+    clienteNomeBase: 'Marcio Ferraz',
+    modoEnvio: 'junior_envia',
+    tipo: 'basica',
+    dadosInput: {
+      nomeCliente: 'Marcio Ferraz',
+      telefoneCliente: '5561999999999',
+      potenciaKwp: 8.4,
+      valorTotalRs: 38500,
+      modulo: { fabricante: 'Trina' },
+      investimento: { total: 38500 },
+    },
+  };
+
+  it('LIMPA a identidade do cliente (vem do novo) mas mantém o kit/valores', () => {
+    const seed = construirSeedClone(cloneOpts);
+    expect(seed.data.nomeCliente).toBe('');
+    expect(seed.data.telefoneCliente).toBe('');
+    expect(seed.data.potenciaKwp).toBe(8.4); // kit mantido
+    expect(seed.data.valorTotalRs).toBe(38500); // valor mantido
+    expect(seed.data.modulo).toEqual({ fabricante: 'Trina' });
+    expect(seed.data).not.toHaveProperty('investimento');
+  });
+
+  it('intro deixa claro que é CLONE (proposta nova) com a base citada', () => {
+    const seed = construirSeedClone(cloneOpts);
+    expect(seed.intro).toContain('Clonando');
+    expect(seed.intro).toContain('P-2026-042');
+    expect(seed.intro).toContain('Marcio Ferraz');
+  });
+
+  it('seededAssistant: ask_more, pede nomeCliente, e instrui confirm_generate / NÃO reabertura', () => {
+    const seed = construirSeedClone(cloneOpts);
+    const parsed = JSON.parse(seed.seededAssistant);
+    expect(parsed.action).toBe('ask_more');
+    expect(parsed.missing).toContain('nomeCliente');
+    expect(seed.seededUser).toContain('confirm_generate');
+    expect(seed.seededUser).toMatch(/NÃO é reabertura/i);
   });
 });

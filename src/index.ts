@@ -3131,6 +3131,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           { id: 'menu_preco', title: '💰 Calcular preço', description: 'Simulação rápida de sistema', trigger: '/preco', handler: tryHandlePricingCommand },
           { id: 'menu_proposta', title: '📋 Gerar proposta', description: 'PDF + link público', trigger: '/proposta', handler: tryHandleProposalCommand },
           { id: 'menu_ajustar', title: '✏️ Ajustar proposta', description: 'Reabrir uma já enviada', hint: '✏️ Pra ajustar uma proposta enviada, manda:\n*ajustar nome do cliente*\n(ex: ajustar Olavo)' },
+          { id: 'menu_clonar', title: '👥 Clonar p/ outro', description: 'Mesma proposta, novo cliente', hint: '👥 Pra clonar uma proposta pra outro cliente (mesmo kit), manda:\n*clonar nome do cliente base*\n(ex: clonar Marcio)' },
           { id: 'menu_resgatar', title: '♻️ Resgatar antigas', description: 'Recuperar dados do Drive', hint: '♻️ Manda */resgatar-propostas* pra recuperar os dados das propostas antigas (do Drive).' },
           { id: 'menu_rascunho', title: '📝 Rascunho', description: 'Retomar a não terminada', hint: '📝 Manda *rascunho* pra voltar pra proposta que você não terminou.' },
         ],
@@ -3647,6 +3648,66 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           }
         } catch (err) {
           console.error('[ajustar] busca falhou:', (err as Error).message);
+          await sendText(from, '⚠️ Deu erro buscando a proposta. Tenta de novo daqui a pouco.');
+        }
+        return;
+      }
+    }
+
+    // "clonar <nome>" (Junior) — clona uma proposta pra um NOVO cliente: carrega o
+    // kit/sistema/valores da base e gera uma proposta NOVA (link novo) só trocando o
+    // cliente. Ágil pra rodar vários parecidos. DEPOIS dos modos (igual ajustar).
+    {
+      const tRawC = text.trim();
+      const mBotaoClonar = /^clonar:([A-Za-z0-9_-]{16,32})$/.exec(tRawC);
+      const mCmdClonar = /^\/?clonar\b\s*(.*)$/i.exec(tRawC);
+      if (isAdminPhone(from) && (mBotaoClonar || mCmdClonar)) {
+        const dashboardBaseUrlC = (process.env.DASHBOARD_BASE_URL ?? 'https://dashboard.ecosunpower.eng.br').replace(/\/$/, '');
+        const abrirClone = async (slug: string): Promise<void> => {
+          const prop = await supabase.getPropostaInputBySlug(slug);
+          if (!prop) {
+            await sendText(from, 'Não achei essa proposta (pode ter sido revogada).');
+            return;
+          }
+          if (!prop.dadosInput) {
+            await sendText(from, `A proposta *${prop.numeroProposta}* é antiga e não tem os dados salvos pra clonar. Manda */resgatar-propostas* primeiro.`);
+            return;
+          }
+          const reply = await proposalAssistant.startCloneMode(from, {
+            numeroPropostaBase: prop.numeroProposta,
+            clienteNomeBase: prop.clienteNome,
+            modoEnvio: prop.modoEnvio,
+            tipo: prop.tipo,
+            dadosInput: prop.dadosInput as Record<string, unknown>,
+          });
+          await sendText(from, reply);
+        };
+
+        if (mBotaoClonar) {
+          await abrirClone(mBotaoClonar[1]);
+          return;
+        }
+
+        const nomeBase = (mCmdClonar![2] ?? '').trim();
+        if (!nomeBase) {
+          await sendText(from, 'Manda assim: *clonar nome do cliente base*.\nEx: _clonar Marcio_ (gera uma proposta igual pra outro cliente)');
+          return;
+        }
+        try {
+          const matches = await supabase.buscarPropostasPorNome(nomeBase, 5);
+          if (matches.length === 0) {
+            await sendText(from, `🔍 Não achei proposta pra *${nomeBase}* pra usar de base.`);
+          } else if (matches.length === 1) {
+            await abrirClone(matches[0].slug);
+          } else if (metaWaba) {
+            const corpo = `Achei ${matches.length} propostas pra *${nomeBase}*. Qual você quer clonar?`;
+            const botoes = matches.slice(0, 3).map((m) => ({ id: `clonar:${m.slug}`, title: (m.numeroProposta || m.clienteNome).slice(0, 20) }));
+            await metaWaba.sendInteractiveButtons(from, corpo, botoes);
+          } else {
+            await sendText(from, montarRespostaAtualizar(nomeBase, matches, dashboardBaseUrlC));
+          }
+        } catch (err) {
+          console.error('[clonar] busca falhou:', (err as Error).message);
           await sendText(from, '⚠️ Deu erro buscando a proposta. Tenta de novo daqui a pouco.');
         }
         return;

@@ -24,7 +24,7 @@ import { renderProposalHTML, type ProposalData } from './proposal/template.js';
 import { obterLogoBase64, LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './proposal/assets/logo-base64.js';
 import { somaServicosExtras, renderServiceOnlyHTML, type ServicoItem, type ServiceOnlyData } from './proposal/service-render.js';
 import { montarDadosInputCompleto } from './proposal/dados-input.js';
-import { construirSeedReopen } from './proposal/reopen-seed.js';
+import { construirSeedReopen, construirSeedClone } from './proposal/reopen-seed.js';
 import { renderComparacaoSolar, type ComparacaoOpcao } from './proposal/comparison-render.js';
 import { servicePaymentOptions, valorParcelaCartao } from './proposal/service-payment.js';
 import { htmlToPdf, gerarQrCodeDataUrl } from './proposal/pdf-generator.js';
@@ -868,6 +868,39 @@ export class ProposalAssistant {
     return opts.dashboardUrl ? `${intro}\n\nPrefere no painel? ${opts.dashboardUrl}` : intro;
   }
 
+  // Clonar uma proposta pra um NOVO cliente: carrega o kit/sistema/valores da base,
+  // limpa a identidade do cliente, e gera uma proposta NOVA (SEM reopenedSlug → slug
+  // e número novos). Junior só passa o cliente novo. Ágil pra rodar vários parecidos.
+  async startCloneMode(phone: string, opts: {
+    numeroPropostaBase: string;
+    clienteNomeBase: string;
+    modoEnvio: ModoEnvio;
+    tipo: TipoProposta;
+    dadosInput: Record<string, unknown>;
+  }): Promise<string> {
+    await this.redis.setex(`proposal:${phone}`, PROPOSAL_MODE_TTL_SECONDS, '1');
+    await this.redis.del(`proposal:last:${phone}`);
+    // SEM reopenedSlug/reopenedNumero → a geração cria proposta nova.
+    await this.saveState(phone, { attachments: [], modoEnvio: opts.modoEnvio, tipo: opts.tipo });
+
+    const { intro, seededUser, seededAssistant } = construirSeedClone({
+      numeroPropostaBase: opts.numeroPropostaBase,
+      clienteNomeBase: opts.clienteNomeBase,
+      modoEnvio: opts.modoEnvio,
+      tipo: opts.tipo,
+      dadosInput: opts.dadosInput,
+    });
+    await this.redis.setex(
+      `proposal:history:${phone}`,
+      PROPOSAL_MODE_TTL_SECONDS,
+      JSON.stringify([
+        { role: 'user', content: seededUser },
+        { role: 'assistant', content: seededAssistant },
+      ]),
+    );
+    return intro;
+  }
+
   async exitProposalMode(phone: string): Promise<void> {
     await this.redis.del(`proposal:${phone}`);
     await this.redis.del(`proposal:history:${phone}`);
@@ -1159,6 +1192,12 @@ export class ProposalAssistant {
     }
 
     const calcInput = this.dataToCalculatorInput(data);
+
+    // Guard: nunca gerar proposta sem nome do cliente (protege os 3 fluxos —
+    // proposta normal, reabrir e clonar; no clone a identidade começa vazia).
+    if (!data.nomeCliente || !String(data.nomeCliente).trim()) {
+      throw new Error('Falta o nome do cliente pra gerar a proposta.');
+    }
 
     const ensureNum = (name: string, v: number) => {
       if (!isFinite(v) || v <= 0) throw new Error(`Campo "${name}" inválido: ${v}`);
