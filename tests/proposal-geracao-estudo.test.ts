@@ -65,6 +65,17 @@ describe('Geração sempre do estudo', () => {
     expect(Math.round(r.calculations!.geracaoMensalKwh)).toBe(1350); // do estudo, não HSP
   });
 
+  it('com estudo + geração MÊS A MÊS (12 valores) → gera, não trava, e usa a média', async () => {
+    const geracao12 = [1300, 1280, 1250, 1200, 1150, 1120, 1180, 1320, 1360, 1380, 1340, 1390];
+    const media = geracao12.reduce((a, b) => a + b, 0) / 12;
+    const r = await pa.generateProposalCore({
+      data: baseData({ geracaoMensalKwhDistribuido: geracao12 }), modoEnvio: 'junior_envia', tipo: 'personalizada', attachments: estudoAttach,
+    });
+    expect(r.calculations).toBeTruthy();
+    expect(r.calculations!.geracaoMensalKwh).toBeCloseTo(media, 5);
+    expect(r.calculations!.geracaoMensalDistribuida).toEqual(geracao12); // curva = estudo
+  });
+
   it('SEM estudo (sem anexos) NÃO exige geração — gera normal', async () => {
     const r = await pa.generateProposalCore({
       data: baseData(), modoEnvio: 'junior_envia', tipo: 'personalizada',

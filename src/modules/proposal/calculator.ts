@@ -38,6 +38,12 @@ export interface ProposalInput {
   // (ar-condicionado verao, ferias dezembro, etc) no grafico Consumo x Geracao.
   // Quando ausente, distribuicao usa Array(12).fill(consumoMensalKwh).
   consumoMensalKwhDistribuidoOverride?: number[];
+
+  // Override opcional de GERACAO mes a mes (12 valores em kWh do estudo PVSol/PVsyst).
+  // Quando o estudo dá a geracao mes a mes, usar esses valores no grafico em vez da
+  // curva de sazonalidade padrao — assim o cliente ve exatamente o que o estudo
+  // mostrou. A media dos 12 vira a geracao mensal usada nos indicadores (payback/ROI).
+  geracaoMensalKwhDistribuidoOverride?: number[];
 }
 
 export interface ProposalCalculations {
@@ -225,16 +231,26 @@ export function calcular(input: ProposalInput): ProposalCalculations {
     geracaoMensalKwhOverride,
   } = input;
 
-  // Geracao: usa override do PVSol/PVsyst se fornecido (estudo real do telhado),
-  // caso contrario calcula pela formula simples.
-  const geracaoMensalKwh = (geracaoMensalKwhOverride && geracaoMensalKwhOverride > 0)
-    ? geracaoMensalKwhOverride
-    : calcularGeracaoMensal(potenciaKwp, hsp, fatorPerda);
+  // Geracao mes-a-mes do estudo: quando o estudo trouxe os 12 valores, eles viram a
+  // curva do grafico e a media vira a geracao mensal dos indicadores.
+  const geracaoDistribuidaEstudo = (input.geracaoMensalKwhDistribuidoOverride
+    && input.geracaoMensalKwhDistribuidoOverride.length === 12
+    && input.geracaoMensalKwhDistribuidoOverride.every(v => isFinite(v) && v >= 0))
+    ? input.geracaoMensalKwhDistribuidoOverride
+    : null;
+
+  // Geracao: usa (1) media do estudo mes-a-mes, (2) override unico do PVSol, (3) formula.
+  const geracaoMensalKwh = geracaoDistribuidaEstudo
+    ? geracaoDistribuidaEstudo.reduce((a, b) => a + b, 0) / 12
+    : (geracaoMensalKwhOverride && geracaoMensalKwhOverride > 0)
+      ? geracaoMensalKwhOverride
+      : calcularGeracaoMensal(potenciaKwp, hsp, fatorPerda);
   const geracaoAnualKwh = geracaoMensalKwh * 12;
   const geracaoVidaUtilKwh = geracaoAnualKwh * vidaUtilAnos;
 
-  // Distribuicao mensal (sazonalidade)
-  const geracaoMensalDistribuida = calcularGeracaoMensalDistribuida(geracaoMensalKwh);
+  // Distribuicao mensal: a do estudo (se veio), senao a curva de sazonalidade padrao.
+  const geracaoMensalDistribuida = geracaoDistribuidaEstudo
+    ?? calcularGeracaoMensalDistribuida(geracaoMensalKwh);
   // Consumo: usa override mes-a-mes se cliente trouxe historico real, senao plano
   const consumoMensalDistribuido = (input.consumoMensalKwhDistribuidoOverride
     && input.consumoMensalKwhDistribuidoOverride.length === 12)

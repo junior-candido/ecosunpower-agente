@@ -276,6 +276,7 @@ interface ClaudeResponse {
     consumoMensalKwh?: number;
     consumoMensalKwhDistribuido?: number[];  // OPCIONAL: historico 12 meses do cliente
     geracaoMensalKwh?: number;     // override do PVSol/PVsyst, se Junior fornecer
+    geracaoMensalKwhDistribuido?: number[];  // OPCIONAL: geração 12 meses do estudo (curva do gráfico)
     fatorPerda?: number;
     tarifaRsKwh?: number;
     custoDisponibilidadeMensal?: number;
@@ -386,6 +387,7 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
     "consumoMensalKwh": 1000,
     "consumoMensalKwhDistribuido": [1100, 1080, 1020, 950, 880, 850, 870, 920, 980, 1050, 1120, 1180],
     "geracaoMensalKwh": 1080,
+    "geracaoMensalKwhDistribuido": [1180, 1150, 1100, 1040, 980, 950, 1000, 1060, 1120, 1160, 1170, 1190],
     "tarifaRsKwh": 1.05,
     "custoIluminacaoPublica": 35,
     "custoDisponibilidadeMensal": 50,
@@ -426,12 +428,18 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
 
 **Sempre obrigatórios (independente do modo):**
 - nomeCliente
-- Sistema: potenciaKwp, fatorPerda, consumoMensalKwh, tipoCliente, modalidade, concessionaria
+- Sistema: potenciaKwp, consumoMensalKwh, tipoCliente, modalidade, concessionaria
 - Equipamentos: modulo (todos), inversor (todos), estruturaFixacao (tipo)
 - Comercial: valorTotalRs
 
+\`fatorPerda\`: só importa na BÁSICA (cálculo padrão kWp×HSP×fator). Na **personalizada NÃO peça fator de perda** — a geração vem do estudo, o fator nem é usado; o sistema assume um default (~0,78). Se o Junior já mandou um valor (ex: 0,75/0,78/0,80), respeite; mas NUNCA bloqueie/peça na personalizada.
+
 **Tipo \`personalizada\` (tem ESTUDO PVSol/PVsyst) — adicionalmente OBRIGATÓRIO:**
-- \`geracaoMensalKwh\`: a geração do ESTUDO (PVSol/PVsyst). Na personalizada a proposta DEVE usar a geração do estudo, NUNCA o cálculo padrão. Se o Junior não informar, PEÇA ("Qual a geração média mensal do estudo PVSol? (kWh/mês)") e liste \`geracaoMensalKwh\` em \`missing\`. NÃO gere proposta personalizada sem esse número.
+- A geração do ESTUDO (PVSol/PVsyst). Na personalizada a proposta DEVE usar a geração do estudo, NUNCA o cálculo padrão. Duas formas de receber:
+   • \`geracaoMensalKwh\`: um número (geração MÉDIA mensal). OU
+   • \`geracaoMensalKwhDistribuido\`: os 12 valores mês a mês do estudo (jan→dez). **Prefira este quando o Junior mandar a geração mês a mês** — assim o gráfico segue exatamente o estudo (o cliente não estranha). O sistema usa a média dos 12 nos indicadores.
+   Se o Junior não informar NENHUM dos dois, PEÇA ("Qual a geração do estudo PVSol? média mensal ou os 12 meses") e liste \`geracaoMensalKwh\` em \`missing\`. NÃO gere personalizada sem a geração.
+- ⚠️ **DESAMBIGUAÇÃO — consumo x geração:** se o Junior colar uma lista de ~12 números SEM dizer o que é, NÃO assuma que é consumo. PERGUNTE ("Esses 12 valores são o CONSUMO da conta ou a GERAÇÃO do estudo?") com \`action: ask_more\` antes de preencher. Só depois mapeie pra \`consumoMensalKwhDistribuido\` (consumo) ou \`geracaoMensalKwhDistribuido\` (geração).
 
 **Modo \`junior_envia\` — adicionalmente OPCIONAIS (NÃO listar em missing):**
 - enderecoCliente, telefoneCliente, emailCliente, documentoCliente
@@ -480,6 +488,8 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
 Junior: "/proposta Marcos Silva CPF 111.222.333-44, 8.4kWp Trina 700W, valor 38500"
 
 Você: \`{"action":"ask_more","missing":["RG","Endereço completo","Telefone","E-mail","Modelo do inversor","Modalidade","Concessionária","Fator de perda","Consumo médio (kWh/mês)"],"message":"Beleza, Marcos Silva 8,4 kWp por R$ 38.500. Falta:\\n• RG\\n• Endereço completo\\n• Telefone e e-mail\\n• Modelo do inversor (qual?)\\n• Modalidade: autoconsumo local, remoto ou compartilhado?\\n• Concessionária: Neoenergia DF ou Equatorial GO?\\n• Fator de perda (0,75 / 0,78 / 0,80? recomendado 0,78)\\n• Consumo médio mensal em kWh\\nPode mandar tudo junto."}\`
+
+⚠️ ATENÇÃO: o exemplo acima é do fluxo **BÁSICA**. Na **PERSONALIZADA** NÃO peça "Fator de perda" — em vez dele, peça a **geração do estudo** (média mensal OU os 12 meses).
 
 ## SAÍDA E COMANDOS
 
@@ -1164,9 +1174,14 @@ export class ProposalAssistant {
     // do estudo, falha claro em vez de gerar com a estimativa. (Item: geração sempre do estudo.)
     const temEstudo = tipo === 'personalizada' && (attachments?.length ?? 0) > 0;
     if (temEstudo) {
-      const geracaoEstudo = Number(data.geracaoMensalKwh ?? data.geracaoKwh ?? data.geracao);
-      if (!isFinite(geracaoEstudo) || geracaoEstudo <= 0) {
-        throw new Error('Proposta com estudo precisa da geração do estudo (PVSol) — informe a geração média mensal (geracaoMensalKwh).');
+      // Aceita a geração do estudo como número único (geracaoMensalKwhOverride) OU
+      // como os 12 meses (geracaoMensalKwhDistribuidoOverride). calcInput já resolveu
+      // os dois — inclusive a média do mês-a-mês vira o override único.
+      const temGeracaoEstudo =
+        (!!calcInput.geracaoMensalKwhOverride && calcInput.geracaoMensalKwhOverride > 0)
+        || Array.isArray(calcInput.geracaoMensalKwhDistribuidoOverride);
+      if (!temGeracaoEstudo) {
+        throw new Error('Proposta com estudo precisa da geração do estudo (PVSol) — informe a geração média mensal OU os 12 meses.');
       }
     }
 
@@ -1617,21 +1632,35 @@ export class ProposalAssistant {
     // 3. So depois cai em zero (quando nem kWp tem)
     const fatorPerda = Number(data.fatorPerda) || FATOR_PERDA_CONSERVADOR;
     const potenciaKwp = Number(data.potenciaKwp);
+
+    // Override de GERACAO mes-a-mes do estudo (12 valores): vira a curva do grafico.
+    // Aceita data.geracaoMensalKwhDistribuido ou data.geracaoMensal12Meses (alias).
+    const geracaoArray = data.geracaoMensalKwhDistribuido ?? data.geracaoMensal12Meses;
+    const geracaoMensalKwhDistribuidoOverride = (Array.isArray(geracaoArray)
+      && geracaoArray.length === 12
+      && geracaoArray.every((v: unknown) => typeof v === 'number' && isFinite(v) && v >= 0))
+      ? (geracaoArray as number[])
+      : undefined;
+    const geracaoMediaEstudo = geracaoMensalKwhDistribuidoOverride
+      ? geracaoMensalKwhDistribuidoOverride.reduce((a, b) => a + b, 0) / 12
+      : undefined;
+
+    // Override de geracao unico (PVSol/PVsyst). Se so veio mes-a-mes, usa a media dos 12.
+    const geracaoOverrideRaw = Number(data.geracaoMensalKwh ?? data.geracaoKwh ?? data.geracao);
+    const geracaoMensalKwhOverride = (isFinite(geracaoOverrideRaw) && geracaoOverrideRaw > 0)
+      ? geracaoOverrideRaw
+      : geracaoMediaEstudo;
+
+    // Fallback de consumoMensalKwh (campo critico do calculator). Usa a geracao
+    // resolvida (override unico OU media do estudo) e, em ultimo caso, kWp×HSP×fator.
     let consumoMensalKwh = Number(data.consumoMensalKwh);
     if (!isFinite(consumoMensalKwh) || consumoMensalKwh <= 0) {
-      const geracaoExplicita = Number(data.geracaoMensalKwh ?? data.geracaoKwh ?? data.geracao);
-      if (isFinite(geracaoExplicita) && geracaoExplicita > 0) {
-        consumoMensalKwh = geracaoExplicita;
+      if (geracaoMensalKwhOverride && geracaoMensalKwhOverride > 0) {
+        consumoMensalKwh = geracaoMensalKwhOverride;
       } else if (isFinite(potenciaKwp) && potenciaKwp > 0) {
         consumoMensalKwh = potenciaKwp * hsp * 30 * fatorPerda;
       }
     }
-
-    // Override de geracao: quando Junior passa o numero do PVSol/PVsyst, respeita.
-    const geracaoOverrideRaw = Number(data.geracaoMensalKwh ?? data.geracaoKwh ?? data.geracao);
-    const geracaoMensalKwhOverride = (isFinite(geracaoOverrideRaw) && geracaoOverrideRaw > 0)
-      ? geracaoOverrideRaw
-      : undefined;
 
     // Override de consumo mes-a-mes: quando Junior tem historico real da conta de luz
     // dos 12 meses do cliente, passa array. Senao, usa consumoMensalKwh fixo (default).
@@ -1657,6 +1686,7 @@ export class ProposalAssistant {
       valorTotalRs: Number(data.valorTotalRs),
       vidaUtilAnos: VIDA_UTIL_ANOS,
       geracaoMensalKwhOverride,
+      geracaoMensalKwhDistribuidoOverride,
       consumoMensalKwhDistribuidoOverride,
     };
   }
