@@ -431,7 +431,10 @@ export function renderPropostasPage(input: PropostasPageInput): string {
         <td class="px-4 py-3 text-sm text-right">
           ${p.revoked
             ? '<span class="text-xs text-red-600">revogada</span>'
-            : `<a href="${url}" target="_blank" class="inline-flex items-center px-3 py-1 rounded-md bg-sky-100 text-sky-700 hover:bg-sky-200 text-xs font-medium">Abrir →</a>`
+            : `<div class="flex items-center justify-end gap-2">
+                 <a href="/dashboard/propostas/${escapeHtml(p.slug)}/preview" class="inline-flex items-center px-3 py-1 rounded-md bg-amber-100 text-amber-700 hover:bg-amber-200 text-xs font-medium">✏️ Reabrir</a>
+                 <a href="${url}" target="_blank" class="inline-flex items-center px-3 py-1 rounded-md bg-sky-100 text-sky-700 hover:bg-sky-200 text-xs font-medium">Abrir →</a>
+               </div>`
           }
         </td>
       </tr>`;

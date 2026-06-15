@@ -514,15 +514,16 @@ function renderAbaPropostas(d: ClienteDetail): string {
   }
   const rows = d.propostas.map(p => `
     <tr class="hover:bg-slate-800/50">
-      <td class="px-3 py-2 text-sm"><a href="/dashboard/propostas/${escapeHtml(p.id)}" class="text-cyan-300 hover:underline">${escapeHtml(p.numero_proposta)}</a></td>
+      <td class="px-3 py-2 text-sm"><a href="/dashboard/propostas/${escapeHtml(p.slug)}/preview" class="text-cyan-300 hover:underline">${escapeHtml(p.numero_proposta)}</a></td>
       <td class="px-3 py-2 text-xs text-slate-400">${escapeHtml(p.created_at.slice(0,10))}</td>
       <td class="px-3 py-2 text-sm text-slate-300">${p.valor_total_brl ? 'R$ ' + p.valor_total_brl.toFixed(0) : '—'}</td>
       <td class="px-3 py-2 text-xs">${p.acessos} acessos</td>
       <td class="px-3 py-2 text-xs">${p.cliente_respondeu_at ? '✉️ Respondeu' : '—'}</td>
+      <td class="px-3 py-2 text-right"><a href="/dashboard/propostas/${escapeHtml(p.slug)}/preview" class="inline-flex items-center px-2.5 py-1 rounded-md bg-amber-600/20 text-amber-300 hover:bg-amber-600/40 text-xs font-semibold">✏️ Reabrir</a></td>
     </tr>`).join('');
   return `
     <table class="w-full">
-      <thead><tr class="text-[10px] uppercase text-slate-500 border-b border-slate-700"><th class="px-3 py-2 text-left">Nº</th><th class="px-3 py-2 text-left">Data</th><th class="px-3 py-2 text-left">Valor</th><th class="px-3 py-2 text-left">Acessos</th><th class="px-3 py-2 text-left">Status</th></tr></thead>
+      <thead><tr class="text-[10px] uppercase text-slate-500 border-b border-slate-700"><th class="px-3 py-2 text-left">Nº</th><th class="px-3 py-2 text-left">Data</th><th class="px-3 py-2 text-left">Valor</th><th class="px-3 py-2 text-left">Acessos</th><th class="px-3 py-2 text-left">Status</th><th class="px-3 py-2 text-right">Ação</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <a href="/dashboard/propostas/novo?lead_id=${escapeHtml(d.id)}" class="inline-block mt-3 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm">📄 Nova proposta</a>

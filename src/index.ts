@@ -71,6 +71,7 @@ import RedisModule from 'ioredis';
 const IORedis = (RedisModule as any).default ?? RedisModule;
 import { NewsScraperService } from './modules/news-scraper.js';
 import { DriveUploader } from './modules/proposal/drive-uploader.js';
+import { montarRespostaAtualizar } from './modules/proposal/atualizar-proposta.js';
 import { MonitoringService } from './modules/monitoring/service.js';
 import { createDashboardRouter } from './modules/dashboard/router.js';
 import { resolveChannel } from './modules/dashboard/resolve-channel.js';
@@ -3500,6 +3501,32 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // Eva Agendadora — prioridade depois do pricing
     if (await tryHandleSchedulingCommand(from, text)) return;
+
+    // "atualizar <nome>" (Junior) — acha proposta(s) JÁ ENVIADA(S) pelo nome do
+    // cliente e devolve o link do dashboard pra reabrir/ajustar. Diferente de
+    // "rascunho" (retoma proposta não terminada). DEPOIS dos handlers de modo de
+    // propósito: se Junior está no meio de /proposta-/preco-/agenda e digita algo
+    // como "atualizar o consumo", o modo pega primeiro — aqui só chega texto livre
+    // FORA de modo. Antes do gate financeiro pra não virar "gasto".
+    {
+      const mAtualizar = /^\/?atualizar\b\s*(.*)$/i.exec(text.trim());
+      if (isAdminPhone(from) && mAtualizar) {
+        const nome = mAtualizar[1].trim();
+        if (!nome) {
+          await sendText(from, 'Manda assim: *atualizar nome do cliente*.\nEx: _atualizar Marcelo_');
+          return;
+        }
+        const dashboardBaseUrl = (process.env.DASHBOARD_BASE_URL ?? 'https://dashboard.ecosunpower.eng.br').replace(/\/$/, '');
+        try {
+          const matches = await supabase.buscarPropostasPorNome(nome, 5);
+          await sendText(from, montarRespostaAtualizar(nome, matches, dashboardBaseUrl));
+        } catch (err) {
+          console.error('[atualizar] busca falhou:', (err as Error).message);
+          await sendText(from, '⚠️ Deu erro buscando a proposta. Tenta de novo daqui a pouco.');
+        }
+        return;
+      }
+    }
 
     // Monitoramento Evolutivo: resposta do Junior a um [Ajustar]/[👎 Errou]
     // (ou "apaga essa regra"). Vem ANTES do gate financeiro da Fatia 3 de

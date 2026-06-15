@@ -1229,7 +1229,10 @@ export class ProposalAssistant {
           // Reabrir: UPDATE no mesmo registro (html + dados_input). Não cria novo.
           ? this.supabaseService.updatePropostaPublica(slug, { htmlContent: html, dadosInput: dadosInputMinimo }).then(() => ({ id: slug, expiresAt: '' }))
           : (temAnexos
-              ? this.supabaseService.updatePropostaPublicaHtml(slug, html).then(() => ({ id: slug, expiresAt: '' }))
+              // Com estudo: o registro já foi criado (placeholder). Atualiza HTML
+              // E dados_input — senão a proposta personalizada fica sem dados e o
+              // "Reabrir / Ajustar" falha com "sem dados pra reabrir".
+              ? this.supabaseService.updatePropostaPublica(slug, { htmlContent: html, dadosInput: dadosInputMinimo }).then(() => ({ id: slug, expiresAt: '' }))
               : this.supabaseService.savePropostaPublica({
                   slug,
                   numeroProposta: proposalData.numeroProposta,

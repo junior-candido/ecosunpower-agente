@@ -1863,9 +1863,11 @@ export function createDashboardRouter(
   router.get('/propostas/:slug/reabrir', async (req: Request, res: Response) => {
     try {
       const slug = String(req.params.slug);
+      if (!/^[A-Za-z0-9_-]{16,32}$/.test(slug)) return res.status(400).type('text/html').send('<p>Link inválido.</p>');
       const { prefillFormFromDadosInput } = await import('./proposta-prefill.js');
       const prop = await supabaseService.getPropostaInputBySlug(slug);
-      if (!prop || !prop.dadosInput) return res.status(404).type('text/html').send('<p>Proposta não encontrada ou sem dados pra reabrir.</p>');
+      if (!prop) return res.status(404).type('text/html').send('<p>Proposta não encontrada (ou revogada).</p>');
+      if (!prop.dadosInput) return res.status(404).type('text/html').send('<p>Essa proposta é antiga e não tem os dados salvos pra reabrir. Gere uma proposta nova pra esse cliente.</p>');
       const valoresIniciais = prefillFormFromDadosInput(prop.dadosInput as Record<string, any>);
       res.type('text/html').send(renderFormNovaProposta({ lead_id: '', lead: null, valoresIniciais, reabrirSlug: slug }));
     } catch (err) {

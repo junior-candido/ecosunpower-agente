@@ -17,7 +17,7 @@ vi.mock('../src/modules/cases-fetcher.js', () => ({
 
 const fakeSupabase = (): any => ({
   savePropostaPublica: vi.fn().mockResolvedValue({ id: 'fake-id', expiresAt: '2026-12-31' }),
-  updatePropostaPublicaHtml: vi.fn().mockResolvedValue(undefined),
+  updatePropostaPublica: vi.fn().mockResolvedValue(undefined),
   getClient: vi.fn().mockReturnValue({}),
 });
 
@@ -39,13 +39,15 @@ const estudoAttach = [{ buffer: Buffer.from('fake-foto'), mimeType: 'image/jpeg'
 
 describe('Geração sempre do estudo', () => {
   let pa: ProposalAssistant;
+  let sb: any;
 
   beforeEach(() => {
     vi.stubEnv('HIGGSFIELD_CREDENTIALS', '');
+    sb = fakeSupabase();
     pa = new ProposalAssistant({
       apiKey: 'fake', redisHost: 'localhost', redisPort: 6379, redisPassword: undefined,
       knowledgeBaseDir: './conhecimento', driveUploader: null, engineerPhone: '5561111',
-      supabaseService: fakeSupabase(), publicProposalBaseUrl: 'https://propostas.test',
+      supabaseService: sb, publicProposalBaseUrl: 'https://propostas.test',
     });
   });
 
@@ -68,5 +70,20 @@ describe('Geração sempre do estudo', () => {
       data: baseData(), modoEnvio: 'junior_envia', tipo: 'personalizada',
     });
     expect(r.calculations).toBeTruthy();
+  });
+
+  // Regressão: proposta COM estudo precisa salvar dados_input (senão o
+  // "Reabrir / Ajustar" falha com "sem dados pra reabrir"). Bug 15/06/2026:
+  // o caminho com anexos só atualizava o HTML.
+  it('com estudo → salva dados_input (pra poder reabrir depois)', async () => {
+    await pa.generateProposalCore({
+      data: baseData({ geracaoMensalKwh: 1350 }), modoEnvio: 'junior_envia', tipo: 'personalizada', attachments: estudoAttach,
+    });
+    expect(sb.updatePropostaPublica).toHaveBeenCalledTimes(1);
+    const [slugArg, fields] = sb.updatePropostaPublica.mock.calls[0];
+    expect(typeof slugArg).toBe('string');
+    expect(fields.dadosInput).toBeTruthy();
+    expect(fields.dadosInput.nomeCliente).toBe('Teste');
+    expect(fields.htmlContent).toContain('<');
   });
 });

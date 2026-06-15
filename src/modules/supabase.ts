@@ -762,14 +762,6 @@ export class SupabaseService {
     return { id: data.id, expiresAt: data.expires_at };
   }
 
-  async updatePropostaPublicaHtml(slug: string, htmlContent: string): Promise<void> {
-    const { error } = await this.client
-      .from('propostas_publicas')
-      .update({ html_content: htmlContent })
-      .eq('slug', slug);
-    if (error) throw new Error(`Failed to update proposta html: ${error.message}`);
-  }
-
   async getPropostaInputBySlug(slug: string): Promise<{
     dadosInput: Record<string, unknown> | null;
     numeroProposta: string;
@@ -1336,6 +1328,34 @@ export class SupabaseService {
       .order('created_at', { ascending: false });
     if (error) return [];
     return data ?? [];
+  }
+
+  // Busca propostas (não revogadas) pelo nome do cliente — pro comando "atualizar
+  // <nome>" no zap. Mais recentes primeiro. valorTotal lido do dados_input (KPI).
+  async buscarPropostasPorNome(nome: string, limit = 5): Promise<Array<{
+    slug: string;
+    clienteNome: string;
+    numeroProposta: string;
+    createdAt: string;
+    valorTotal: number | null;
+  }>> {
+    const termo = nome.trim();
+    if (!termo) return [];
+    const { data, error } = await this.client
+      .from('propostas_publicas')
+      .select('slug, cliente_nome, numero_proposta, created_at, dados_input')
+      .ilike('cliente_nome', `%${termo}%`)
+      .eq('revoked', false)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(`buscarPropostasPorNome: ${error.message}`);
+    return (data ?? []).map((p: any) => ({
+      slug: p.slug,
+      clienteNome: p.cliente_nome,
+      numeroProposta: p.numero_proposta,
+      createdAt: p.created_at,
+      valorTotal: (p.dados_input?.investimento?.total as number | undefined) ?? null,
+    }));
   }
 
   async listAlertasAtivosByLeadId(leadId: string): Promise<any[]> {

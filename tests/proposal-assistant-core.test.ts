@@ -42,7 +42,7 @@ const inputBasico = {
 
 const fakeSupabase = (): any => ({
   savePropostaPublica: vi.fn().mockResolvedValue({ id: 'fake-id', expiresAt: '2026-12-31' }),
-  updatePropostaPublicaHtml: vi.fn().mockResolvedValue(undefined),
+  updatePropostaPublica: vi.fn().mockResolvedValue(undefined),
   getClient: vi.fn().mockReturnValue({}),
 });
 
