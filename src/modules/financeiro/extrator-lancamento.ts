@@ -37,15 +37,8 @@ function numeroOuNull(v: unknown): number | null {
 const strOuNull = (v: unknown): string | null =>
   typeof v === 'string' && v.trim() ? v.trim() : null;
 
-// Parse defensivo: a IA pode mandar texto em volta, valor como string BR,
-// campos faltando. NUNCA explode — null = "não entendi, não lança nada".
-export function parseRespostaExtrator(raw: string): ExtracaoLancamento | null {
-  const m = raw.match(/```json\s*([\s\S]*?)```/) ?? raw.match(/(\{[\s\S]*\})/);
-  if (!m) return null;
-  let obj: Record<string, unknown>;
-  try { obj = JSON.parse(m[1]); } catch { return null; }
-  if (typeof obj !== 'object' || obj === null) return null;
-
+// Normaliza UM objeto cru da IA em ExtracaoLancamento (mesma lógica de validação de antes).
+function normalizarItem(obj: Record<string, unknown>): ExtracaoLancamento {
   const valor = numeroOuNull(obj.valor);
   const faltando = new Set<string>(
     Array.isArray(obj.campos_faltando) ? obj.campos_faltando.filter((x): x is string => typeof x === 'string') : [],
@@ -68,6 +61,60 @@ export function parseRespostaExtrator(raw: string): ExtracaoLancamento | null {
     campos_faltando: [...faltando],
     relacionado: obj.relacionado === true ? true : obj.relacionado === false ? false : null,
   };
+}
+
+function tentarJson(s: string): unknown {
+  try { return JSON.parse(s); } catch { return undefined; }
+}
+
+// Quebra um texto em objetos {...} de TOPO usando contagem balanceada de chaves,
+// ignorando chaves dentro de strings. Substitui a regex gulosa que juntava 2 objetos.
+function splitObjetosJson(s: string): string[] {
+  const objs: string[] = [];
+  let depth = 0, start = -1, inStr = false, esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === '{') { if (depth === 0) start = i; depth++; }
+    else if (c === '}') { if (depth > 0 && --depth === 0 && start >= 0) { objs.push(s.slice(start, i + 1)); start = -1; } }
+  }
+  return objs;
+}
+
+// Parse defensivo em LISTA: aceita array, {lancamentos:[...]}, objeto único, ou
+// vários objetos soltos. NUNCA explode — pior caso devolve [].
+export function parseLancamentos(raw: string): ExtracaoLancamento[] {
+  const fence = raw.match(/```json\s*([\s\S]*?)```/);
+  const corpo = fence ? fence[1] : raw;
+
+  const brutos: unknown[] = [];
+  const inteiro = tentarJson(corpo);
+  if (inteiro !== undefined) {
+    if (Array.isArray(inteiro)) brutos.push(...inteiro);
+    else if (inteiro && typeof inteiro === 'object' && Array.isArray((inteiro as Record<string, unknown>).lancamentos))
+      brutos.push(...((inteiro as Record<string, unknown>).lancamentos as unknown[]));
+    else brutos.push(inteiro);
+  } else {
+    for (const bloco of splitObjetosJson(corpo)) {
+      const o = tentarJson(bloco);
+      if (o !== undefined) brutos.push(o);
+    }
+  }
+
+  return brutos
+    .filter((b): b is Record<string, unknown> => typeof b === 'object' && b !== null && !Array.isArray(b))
+    .map(normalizarItem);
+}
+
+// Compatibilidade: primeiro lançamento ou null (usado por testes antigos / chamadas simples).
+export function parseRespostaExtrator(raw: string): ExtracaoLancamento | null {
+  return parseLancamentos(raw)[0] ?? null;
 }
 
 const REGRAS_COMUNS = (hoje: string) => `Devolva APENAS um bloco \`\`\`json\`\`\` com:

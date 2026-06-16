@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseRespostaExtrator, montarPromptExtracaoTexto, montarPromptGate,
 } from '../src/modules/financeiro/extrator-lancamento.js';
+import { parseLancamentos } from '../src/modules/financeiro/extrator-lancamento.js';
 
 describe('financeiro/extrator: parse da resposta da IA', () => {
   it('lê JSON dentro de bloco ```json```', () => {
@@ -49,6 +50,51 @@ describe('financeiro/extrator: parse da resposta da IA', () => {
     expect(parseRespostaExtrator('{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":10}')?.relacionado).toBeNull();
     expect(parseRespostaExtrator('{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":10,"relacionado":true}')?.relacionado).toBe(true);
     expect(parseRespostaExtrator('{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":10,"relacionado":false}')?.relacionado).toBe(false);
+  });
+});
+
+describe('financeiro/extrator: parseLancamentos (lista, multi-evento)', () => {
+  it('objeto único vira lista de 1', () => {
+    const r = parseLancamentos('{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":380}');
+    expect(r).toHaveLength(1);
+    expect(r[0].valor).toBe(380);
+  });
+  it('array de 2 vira lista de 2 (caso João Paulo)', () => {
+    const raw = '```json\n[{"financeiro":true,"intencao":"lancar","tipo":"entrada","valor":9000,"contraparte":"João Paulo","obra_ref":"João Paulo"},{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":1500,"descricao":"instalação"}]\n```';
+    const r = parseLancamentos(raw);
+    expect(r).toHaveLength(2);
+    expect(r[0].tipo).toBe('entrada');
+    expect(r[0].valor).toBe(9000);
+    expect(r[1].tipo).toBe('despesa');
+    expect(r[1].valor).toBe(1500);
+  });
+  it('dois objetos SOLTOS sem array (o bug de hoje) vira lista de 2 — NÃO null', () => {
+    const raw = '{"financeiro":true,"intencao":"lancar","tipo":"entrada","valor":9000}\n{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":1500}';
+    const r = parseLancamentos(raw);
+    expect(r).toHaveLength(2);
+    expect(r[1].valor).toBe(1500);
+  });
+  it('chaves dentro de string não confundem o separador', () => {
+    const raw = '{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":10,"descricao":"chave } solta"}';
+    const r = parseLancamentos(raw);
+    expect(r).toHaveLength(1);
+    expect(r[0].descricao).toBe('chave } solta');
+  });
+  it('lixo sem JSON vira lista vazia (nunca explode)', () => {
+    expect(parseLancamentos('não consegui ler nada')).toEqual([]);
+  });
+  it('item sem valor entra com valor null e campos_faltando', () => {
+    const raw = '[{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":"abc"}]';
+    const r = parseLancamentos(raw);
+    expect(r).toHaveLength(1);
+    expect(r[0].valor).toBeNull();
+    expect(r[0].campos_faltando).toContain('valor');
+  });
+  it('formato {lancamentos:[...]} também é aceito', () => {
+    const raw = '{"financeiro":true,"lancamentos":[{"financeiro":true,"intencao":"lancar","tipo":"despesa","valor":50}]}';
+    const r = parseLancamentos(raw);
+    expect(r).toHaveLength(1);
+    expect(r[0].valor).toBe(50);
   });
 });
 
