@@ -5,6 +5,7 @@ import { MessageQueue } from './modules/queue.js';
 import { SupabaseService } from './modules/supabase.js';
 import { KnowledgeBase } from './modules/knowledge.js';
 import { detectTopics } from './modules/knowledge-topics.js';
+import { conhecimentoDirDoModo } from './modules/eva-modo.js';
 import { BlogGenerator, publishDraftToGitHub } from './modules/blog-generator.js';
 import { MetaWhatsAppService } from './modules/meta-whatsapp.js';
 import { Brain } from './modules/brain.js';
@@ -239,7 +240,10 @@ async function main() {
   const brain = new Brain(config.anthropicApiKey, process.env.GOOGLE_REVIEW_URL ?? '');
   const vision = new VisionAnalyzer(config.anthropicApiKey);
   const transcriber = config.openaiApiKey ? new Transcriber(config.openaiApiKey) : null;
-  const knowledgeBase = new KnowledgeBase(join(__dirname, '..', 'conhecimento'));
+  // Modo solar → pasta 'conhecimento'; vitrine_ecosof → 'conhecimento-ecosof'. As
+  // outras refs a 'conhecimento' no boot são dos modos solares (proposta/preço),
+  // não usados pela vitrine — ficam como estão.
+  const knowledgeBase = new KnowledgeBase(join(__dirname, '..', conhecimentoDirDoModo()));
   const newsScraper = new NewsScraperService(supabase.getClient());
   const blogGenerator = new BlogGenerator(
     new Anthropic({ apiKey: config.anthropicApiKey }),
