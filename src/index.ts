@@ -5,7 +5,7 @@ import { MessageQueue } from './modules/queue.js';
 import { SupabaseService } from './modules/supabase.js';
 import { KnowledgeBase } from './modules/knowledge.js';
 import { detectTopics } from './modules/knowledge-topics.js';
-import { conhecimentoDirDoModo } from './modules/eva-modo.js';
+import { conhecimentoDirDoModo, isVitrineEcosof } from './modules/eva-modo.js';
 import { BlogGenerator, publishDraftToGitHub } from './modules/blog-generator.js';
 import { MetaWhatsAppService } from './modules/meta-whatsapp.js';
 import { Brain } from './modules/brain.js';
@@ -240,9 +240,10 @@ async function main() {
   const brain = new Brain(config.anthropicApiKey, process.env.GOOGLE_REVIEW_URL ?? '');
   const vision = new VisionAnalyzer(config.anthropicApiKey);
   const transcriber = config.openaiApiKey ? new Transcriber(config.openaiApiKey) : null;
-  // Modo solar → pasta 'conhecimento'; vitrine_ecosof → 'conhecimento-ecosof'. As
-  // outras refs a 'conhecimento' no boot são dos modos solares (proposta/preço),
-  // não usados pela vitrine — ficam como estão.
+  // Modo solar → pasta 'conhecimento'; vitrine_ecosof → 'conhecimento-ecosof'. No
+  // modo vitrine, o atendimento usa knowledgeBase.getContent() (toda a pasta do EcoSof)
+  // — ver a montagem do `knowledge` no loop de resposta. As refs a 'conhecimento' dos
+  // modos solares (proposta/preço) não se aplicam à vitrine.
   const knowledgeBase = new KnowledgeBase(join(__dirname, '..', conhecimentoDirDoModo()));
   const newsScraper = new NewsScraperService(supabase.getClient());
   const blogGenerator = new BlogGenerator(
@@ -4129,24 +4130,33 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         }
       }
 
-      // Brain híbrido: 6 core files sempre injetados + chunks RAG quando disponível.
-      // retrieveChunks nunca lança — retorna [] em qualquer falha (fallback core-only).
-      const { loadCoreContent } = await import('./modules/rag/core-files.js');
-      const { retrieveChunks } = await import('./modules/rag/retrieve.js');
-      const { makeClient, embedTexts } = await import('./modules/rag/embeddings.js');
-      const { buildHybridKnowledge } = await import('./modules/rag/hybrid.js');
-      const coreContent = loadCoreContent(join(__dirname, '..', 'conhecimento'));
-      const chunks = config.openaiApiKey
-        ? await retrieveChunks(text, supabase.getClient(), config,
-            (q) => embedTexts(q, makeClient(config.openaiApiKey!)))
-        : [];
+      // Conhecimento injetado no brain. Modo VITRINE (EcoSof): injeta a base de
+      // produto inteira (conhecimento-ecosof/, via knowledgeBase mode-aware), SEM o
+      // RAG do tenant solar — senão a vendedora responderia com conhecimento de solar.
+      // Modo SOLAR: híbrido (6 core files + chunks RAG), como sempre.
+      let baseKnowledge: string;
+      if (isVitrineEcosof()) {
+        baseKnowledge = knowledgeBase.getContent();
+      } else {
+        // retrieveChunks nunca lança — retorna [] em qualquer falha (fallback core-only).
+        const { loadCoreContent } = await import('./modules/rag/core-files.js');
+        const { retrieveChunks } = await import('./modules/rag/retrieve.js');
+        const { makeClient, embedTexts } = await import('./modules/rag/embeddings.js');
+        const { buildHybridKnowledge } = await import('./modules/rag/hybrid.js');
+        const coreContent = loadCoreContent(join(__dirname, '..', conhecimentoDirDoModo()));
+        const chunks = config.openaiApiKey
+          ? await retrieveChunks(text, supabase.getClient(), config,
+              (q) => embedTexts(q, makeClient(config.openaiApiKey!)))
+          : [];
+        if (chunks.length > 0) {
+          console.log(`[rag] ${chunks.length} chunk(s) recuperados para o brain`);
+        }
+        baseKnowledge = buildHybridKnowledge(coreContent, chunks);
+      }
       // contextoAbordagem: bloco do Monitoramento Evolutivo (vazio pra todo
       // mundo, exceto cliente com abordagem ativa) — mesmo canal do leadContext.
-      const knowledge = buildHybridKnowledge(coreContent, chunks) + leadContext
+      const knowledge = baseKnowledge + leadContext
         + (contextoAbordagem ? `\n\n${contextoAbordagem}` : '');
-      if (chunks.length > 0) {
-        console.log(`[rag] ${chunks.length} chunk(s) recuperados para o brain`);
-      }
 
       const response = await brain.processMessage(
         text,
