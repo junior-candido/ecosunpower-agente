@@ -80,3 +80,12 @@ export function montarEscolhaAtividade(lancamentoId: string, atividades: Array<{
     buttons: atividades.slice(0, 3).map((a) => ({ id: `finlan:atv:${lancamentoId}:${a.id}`, title: a.nome.slice(0, 20) })),
   };
 }
+
+export function montarPedidoEsclarecimento(): string {
+  return 'Entendi que é dinheiro, mas não consegui separar os valores 🤔\n' +
+    'Me manda um por linha? (ex: "recebi 9000 do João Paulo" / "paguei 1500 de instalação")';
+}
+
+export function montarAberturaMultipla(n: number): string {
+  return `Li ${n} lançamentos aqui 👇`;
+}

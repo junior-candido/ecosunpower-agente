@@ -1,6 +1,7 @@
 // tests/financeiro-resumo-lancamento.test.ts
 import { describe, it, expect } from 'vitest';
 import { montarResumoPendente, montarPedidoPfPj, montarConfirmacaoApagar } from '../src/modules/financeiro/resumo-lancamento.js';
+import { montarPedidoEsclarecimento, montarAberturaMultipla } from '../src/modules/financeiro/resumo-lancamento.js';
 
 const base = {
   id: 'abc-123', tipo: 'despesa' as const, valor: 380, data_evento: '2026-06-11',
@@ -48,5 +49,16 @@ describe('financeiro/resumo: apagar', () => {
     expect(r.body).toContain('380,00');
     expect(r.buttons[0]).toEqual({ id: 'finlan:apg:abc-123', title: 'Apagar mesmo' });
     expect(r.buttons[1]).toEqual({ id: 'finlan:noop:0', title: 'Deixa como está' });
+  });
+});
+
+describe('financeiro/resumo: textos multi-evento', () => {
+  it('pedido de esclarecimento nunca fica mudo e dá exemplo', () => {
+    const t = montarPedidoEsclarecimento();
+    expect(t.toLowerCase()).toContain('não consegui');
+    expect(t).toContain('por linha');
+  });
+  it('abertura múltipla diz quantas coisas leu', () => {
+    expect(montarAberturaMultipla(3)).toContain('3');
   });
 });
