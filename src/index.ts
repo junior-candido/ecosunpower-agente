@@ -4137,6 +4137,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       let baseKnowledge: string;
       if (isVitrineEcosof()) {
         baseKnowledge = knowledgeBase.getContent();
+        console.log(`[vitrine] conhecimento EcoSof injetado (${baseKnowledge.length} chars)`);
       } else {
         // retrieveChunks nunca lança — retorna [] em qualquer falha (fallback core-only).
         const { loadCoreContent } = await import('./modules/rag/core-files.js');
