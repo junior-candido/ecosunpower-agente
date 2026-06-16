@@ -9,6 +9,7 @@ export interface EmpresaConfig {
   razaoSocial: string; nomeFantasia: string; cnpj: string;
   endereco: string; cidade: string; uf: string; cep: string | null;
   email: string; siteUrl: string; atuacaoDesde: number;
+  linkPagamento: string | null; // EcoSof: link de pagamento recorrente ({{link_pagamento}})
   descricaoCurta: string; regiaoAtuacao: string;
   nomeAtendente: string; telefoneAtendente: string | null;
   rtNome: string; rtTitulo: string; rtCpf: string | null; rtRg: string | null; rtRegistro: string | null;
@@ -31,6 +32,7 @@ export const EMPRESA_DEFAULTS: EmpresaConfig = {
   cidade: 'Brasília', uf: 'DF', cep: '71993-150',
   email: 'junior@ecosunpower.eng.br',
   siteUrl: 'https://ecosunpower.eng.br',
+  linkPagamento: null,
   atuacaoDesde: 2019,
   descricaoCurta: 'empresa de engenharia em energia com atuação em Brasília-DF e Goiás desde 2019',
   regiaoAtuacao: 'Brasília e Entorno (DF) e cidades de Goiás até ~100 km (Águas Lindas, Valparaíso, Luziânia, Anápolis, Goiânia)',
@@ -76,6 +78,7 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
     endereco: s(row.endereco, D.endereco),
     cidade: s(row.cidade, D.cidade), uf: s(row.uf, D.uf), cep: sn(row.cep) ?? D.cep,
     email: s(row.email, D.email), siteUrl: s(row.site_url, D.siteUrl),
+    linkPagamento: sn(row.link_pagamento) ?? D.linkPagamento,
     atuacaoDesde: n(row.atuacao_desde, D.atuacaoDesde),
     // Campos que entram em prompt — cap defensivo (espelha os CHECKs da
     // migration 049; protege mesmo se a coluna for alterada via SQL Editor).
@@ -117,6 +120,7 @@ export function interpolarEmpresa(texto: string, e: EmpresaConfig): string {
     empresa_site: e.siteUrl,
     empresa_email: e.email,
     empresa_desde: String(e.atuacaoDesde),
+    link_pagamento: e.linkPagamento ?? '',
     rt_nome: nomeTituloCase(e.rtNome),
     rt_titulo: e.rtTitulo,
     criterio_lead_valor: String(e.criterioLeadValor),
