@@ -1,9 +1,8 @@
 // tests/financeiro-extrator.test.ts
 import { describe, it, expect } from 'vitest';
 import {
-  parseRespostaExtrator, montarPromptExtracaoTexto, montarPromptGate,
+  parseRespostaExtrator, montarPromptExtracaoTexto, montarPromptGate, parseLancamentos,
 } from '../src/modules/financeiro/extrator-lancamento.js';
-import { parseLancamentos } from '../src/modules/financeiro/extrator-lancamento.js';
 
 describe('financeiro/extrator: parse da resposta da IA', () => {
   it('lê JSON dentro de bloco ```json```', () => {
@@ -113,5 +112,10 @@ describe('financeiro/extrator: prompts', () => {
   it('pergunta/consulta sobre números não vira lançamento (regra nos prompts)', () => {
     expect(montarPromptExtracaoTexto('x', '2026-06-11')).toContain('PERGUNTA/consulta');
     expect(montarPromptGate('x')).toContain('consulta');
+  });
+  it('prompt manda devolver UMA LISTA com um objeto por evento', () => {
+    const p = montarPromptExtracaoTexto('recebi 9000 do João, paguei 1500', '2026-06-16');
+    expect(p.toLowerCase()).toContain('lista');
+    expect(p).toContain('um objeto por');
   });
 });

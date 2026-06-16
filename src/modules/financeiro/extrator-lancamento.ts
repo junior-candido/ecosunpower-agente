@@ -90,6 +90,7 @@ function splitObjetosJson(s: string): string[] {
 // Parse defensivo em LISTA: aceita array, {lancamentos:[...]}, objeto único, ou
 // vários objetos soltos. NUNCA explode — pior caso devolve [].
 export function parseLancamentos(raw: string): ExtracaoLancamento[] {
+  // Só o PRIMEIRO bloco ```json é lido; se o modelo emitir dois blocos separados o resto é ignorado (raro).
   const fence = raw.match(/```json\s*([\s\S]*?)```/);
   const corpo = fence ? fence[1] : raw;
 
@@ -98,6 +99,7 @@ export function parseLancamentos(raw: string): ExtracaoLancamento[] {
   if (inteiro !== undefined) {
     if (Array.isArray(inteiro)) brutos.push(...inteiro);
     else if (inteiro && typeof inteiro === 'object' && Array.isArray((inteiro as Record<string, unknown>).lancamentos))
+      // Cada item interno deve carregar seu próprio financeiro:true — o campo do wrapper externo é ignorado.
       brutos.push(...((inteiro as Record<string, unknown>).lancamentos as unknown[]));
     else brutos.push(inteiro);
   } else {
@@ -117,14 +119,14 @@ export function parseRespostaExtrator(raw: string): ExtracaoLancamento | null {
   return parseLancamentos(raw)[0] ?? null;
 }
 
-const REGRAS_COMUNS = (hoje: string) => `Devolva APENAS um bloco \`\`\`json\`\`\` com:
+const REGRAS_COMUNS = (hoje: string) => `Devolva APENAS um bloco \`\`\`json\`\`\` contendo uma LISTA (array), com um objeto por evento financeiro distinto na mensagem (a pessoa pode citar vários numa frase só — ex.: recebimento E pagamento). Cada objeto tem:
 {"financeiro": true/false, "intencao": "lancar"|"corrigir"|"apagar", "tipo": "despesa"|"entrada"|null,
  "valor": número ou null, "data": "YYYY-MM-DD" ou null, "contraparte": "quem (posto/fornecedor/cliente)" ou null,
  "categoria_slug": uma de [${CATEGORIA_SLUGS.join(', ')}] ou null, "pf_pj": "PF"|"PJ"|null,
  "obra_ref": "nome do cliente/obra citado" ou null, "descricao": "resumo curto" ou null,
  "campos_faltando": ["valor", "pf_pj", ...]}
-
-REGRAS (dinheiro em jogo — leia como contador):
+Sem nenhum evento de dinheiro → devolva [] (lista vazia).
+` + `REGRAS (dinheiro em jogo — leia como contador):
 - NUNCA invente valor. Não deu pra ler com certeza → valor null + "valor" em campos_faltando.
 - Comprovante sem data legível → use a data de hoje: ${hoje}. "ontem"/"anteontem" → calcule a partir de hoje.
 - pf_pj: PJ = gasto/receita da EMPRESA (obra, material, anúncio, kit, conta PJ). PF = pessoal
