@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { buildSystemBlocks } from './system-blocks.js';
 import { formatCacheUsage } from './cache-log.js';
 import { empresa, interpolarEmpresa } from './empresa-config.js';
+import { promptFileDoModo } from './eva-modo.js';
 
 interface MessageEntry {
   role: 'user' | 'assistant';
@@ -59,7 +60,8 @@ export class Brain {
     this.client = new Anthropic({ apiKey });
 
     const promptsDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'prompts');
-    this.systemPrompt = readFileSync(join(promptsDir, 'system-prompt.md'), 'utf-8');
+    // Modo solar → system-prompt.md; modo vitrine_ecosof → system-prompt-vitrine.md.
+    this.systemPrompt = readFileSync(join(promptsDir, promptFileDoModo()), 'utf-8');
     this.residencialPrompt = readFileSync(join(promptsDir, 'residencial.md'), 'utf-8');
     this.reviewLink = reviewLink;
   }
