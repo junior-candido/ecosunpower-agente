@@ -35,7 +35,7 @@ import { SiteDeployService } from './modules/site-deploy.js';
 import { PublicReviewsService } from './modules/public-reviews.js';
 import { CaseCreatorAssistant } from './modules/case-creator-assistant.js';
 import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone } from './modules/meta-leadgen.js';
-import { enviarTemplateInicial } from './modules/template-inicial.js';
+import { enviarTemplateInicial, TEMPLATE_FALLBACK } from './modules/template-inicial.js';
 import { parseTrackingTag } from './modules/tracking.js';
 import { generateWeeklyReport, formatReportForWhatsApp } from './modules/ads-report.js';
 import { PricingAssistant } from './modules/pricing-assistant.js';
@@ -396,6 +396,13 @@ async function main() {
   // recebe abertura duplicada). O marcador também dá contexto pra Eva sobre
   // o que o lead está respondendo. Falha aqui não pode derrubar o envio —
   // chamadores usam .catch().
+  // Rótulo amigável (PT) de qual abertura a Eva mandou — pro aviso no zap e a
+  // conversa no painel. Distingue a abertura NOVA (certa) da de reativação (fallback).
+  const rotuloAbertura = (templateUsado: string): string =>
+    templateUsado === TEMPLATE_FALLBACK
+      ? '⚠️ Abertura de *reativação* enviada (a abertura nova não tava disponível)'
+      : '✅ Abertura nova enviada (a certa)';
+
   const registrarTemplateNaConversa = async (leadId: string, templateUsado: string): Promise<void> => {
     const conversation = await supabase.getOrCreateConversation(leadId);
     await supabase.updateConversation(conversation.id, {
@@ -403,7 +410,7 @@ async function main() {
         ...conversation.messages,
         {
           role: 'assistant' as const,
-          content: `📨 Eva enviou a 1ª mensagem automática de abertura (com o nome do cliente). Aguardando ele responder.`,
+          content: `📨 ${rotuloAbertura(templateUsado)} (com o nome do cliente). Aguardando ele responder.`,
           timestamp: new Date().toISOString(),
         },
       ],
@@ -5661,6 +5668,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
 
           // Manda a abertura NA HORA que o lead chega (speed-to-lead). Sem timer na
           // memória → um restart/deploy nunca mais perde o welcome de um lead.
+          let aberturaEnviada: string | null = null; // qual template foi (pro aviso no zap)
           await (async () => {
             try {
               // Recheck (mais uma camada contra race de webhooks concorrentes)
@@ -5684,6 +5692,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
                   normalized.name,
                   mapped || '_eva_qualificacao_v1', // || (nao ??): string vazia do DB tambem cai no default
                 );
+                aberturaEnviada = templateUsado;
                 await registrarTemplateNaConversa(leadId, templateUsado).catch((err) => {
                   console.warn(`[meta-leadgen] marcador de conversa falhou pra ${normalized.phone}:`, (err as Error).message);
                 });
@@ -5739,7 +5748,8 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
                 `📱 ${normalized.phone}`,
                 contaLuz ? `💡 Conta: ${contaLuz}${tipoImovel ? ` · ${tipoImovel}` : ''}` : '',
                 details.campaign_name ? `📣 ${details.campaign_name} (${canalTxt})` : `📣 ${canalTxt}`,
-                `_1ª mensagem enviada na hora, aí a Eva qualifica._`,
+                aberturaEnviada ? rotuloAbertura(aberturaEnviada) : '',
+                `_Enviada na hora — aí a Eva assume a qualificação._`,
               ].filter(Boolean).join('\n');
               await sendText(config.engineerPhone, aviso);
             } catch (err) {
