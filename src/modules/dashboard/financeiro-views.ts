@@ -37,6 +37,10 @@ export function renderFinanceiroPage(d: FinanceiroData): string {
   <div class="card"><div class="text-xs text-gray-400">💸 Saiu no mês (PJ)</div><div class="big text-rose-300">${brl(d.caixa.saiuMesPj)}</div></div>
   <div class="card"><div class="text-xs text-gray-400">💰 Lucro do mês</div><div class="big" style="color:${d.caixa.lucroMes >= 0 ? '#34d399' : '#f87171'}">${brl(d.caixa.lucroMes)}</div>
     <div class="text-xs text-gray-500">recebido − saiu − imposto (DAS pago não desconta 2×)</div></div>
+  <div class="card"><div class="text-xs text-gray-400">💰 Entrou (caixa real)</div><div class="big text-emerald-300">${brl(d.caixa.entrouMesPjCaixa)}</div>
+    ${d.caixa.entrouSemNotaPj > 0 ? `<div class="text-xs text-amber-400">Por fora (sem nota): ${brl(d.caixa.entrouSemNotaPj)}</div>` : ''}
+  </div>
+  <div class="card"><div class="text-xs text-gray-400">🧾 Faturado (base imposto)</div><div class="big">${brl(d.caixa.faturadoMesPj)}</div></div>
 </div>
 <div class="card mb-4"><div class="text-sm mb-1">👤 Mundo PF (pessoal — fora do lucro da empresa)</div>
   <div class="text-sm">Entrou: <b class="text-emerald-300">${brl(d.caixa.entrouMesPf)}</b> · Saiu: <b class="text-rose-300">${brl(d.caixa.saiuMesPf)}</b></div></div>

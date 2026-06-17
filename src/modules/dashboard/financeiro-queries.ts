@@ -37,6 +37,9 @@ export interface FinanceiroData {
   faturamentoMensal: Array<{ competencia: string; receita: number }>;
   contas: Array<{ descricao: string | null; valor: number; status: string; imposto: number | null }>;
   caixa: KpisCaixa;
+  faturadoMesPj: number;
+  entrouMesPjCaixa: number;
+  entrouSemNotaPj: number;
   despesasMensal: Array<{ competencia: string; total: number }>;
   lancamentos: LancamentoLista[];
   filtros: FiltrosLancamentos;
@@ -82,12 +85,12 @@ export async function getFinanceiroData(client: SupabaseClient, filtros: Filtros
   // ---- Caixa de Entrada (Fatia 3) ----
   const { data: lancMesRaw, error: lancMesErr } = await client
     .from('financeiro_lancamentos')
-    .select('tipo, valor, pf_pj, financeiro_categorias(nome, slug)')
+    .select('tipo, valor, pf_pj, tem_nota, financeiro_categorias(nome, slug)')
     .eq('status', 'confirmado').eq('competencia', comp);
   if (lancMesErr) throw new Error(`getFinanceiroData lancamentos: ${lancMesErr.message}`);
   const lancMes = (lancMesRaw ?? []).map((l) => {
-    const x = l as unknown as { tipo: 'despesa' | 'entrada'; valor: number; pf_pj: 'PF' | 'PJ' | null; financeiro_categorias: { nome: string; slug: string } | null };
-    return { tipo: x.tipo, valor: Number(x.valor), pf_pj: x.pf_pj, categoriaNome: x.financeiro_categorias?.nome ?? null, categoriaSlug: x.financeiro_categorias?.slug ?? null };
+    const x = l as unknown as { tipo: 'despesa' | 'entrada'; valor: number; pf_pj: 'PF' | 'PJ' | null; tem_nota: boolean; financeiro_categorias: { nome: string; slug: string } | null };
+    return { tipo: x.tipo, valor: Number(x.valor), pf_pj: x.pf_pj, tem_nota: Boolean((l as any).tem_nota), categoriaNome: x.financeiro_categorias?.nome ?? null, categoriaSlug: x.financeiro_categorias?.slug ?? null };
   });
   const caixa = calcularKpisCaixa({ recebidoMesPj: faturamentoMes, impostoMes: impostoASeparar, lancamentosMes: lancMes });
 
@@ -148,6 +151,10 @@ export async function getFinanceiroData(client: SupabaseClient, filtros: Filtros
       descricao: c.descricao, valor: Number(c.valor), status: c.status,
       imposto: c.imposto_confirmado ?? c.imposto_provisorio,
     })),
-    caixa, despesasMensal, lancamentos, filtros,
+    caixa,
+    faturadoMesPj: caixa.faturadoMesPj,
+    entrouMesPjCaixa: caixa.entrouMesPjCaixa,
+    entrouSemNotaPj: caixa.entrouSemNotaPj,
+    despesasMensal, lancamentos, filtros,
   };
 }

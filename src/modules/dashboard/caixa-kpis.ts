@@ -8,6 +8,7 @@ export interface LancamentoKpi {
   tipo: 'despesa' | 'entrada';
   valor: number;
   pf_pj: 'PF' | 'PJ' | null;
+  tem_nota: boolean;
   categoriaNome: string | null;
   categoriaSlug: string | null;
 }
@@ -18,6 +19,9 @@ export interface KpisCaixa {
   entrouMesPf: number;
   saiuMesPf: number;
   pizzaCategorias: Array<{ categoria: string; total: number }>;
+  faturadoMesPj: number;
+  entrouMesPjCaixa: number;
+  entrouSemNotaPj: number;
 }
 
 export function calcularKpisCaixa(args: {
@@ -31,6 +35,10 @@ export function calcularKpisCaixa(args: {
   // DAS pago entra no "saiu" exibido, mas NÃO desconta de novo no lucro — o imposto do mês já está na fórmula (senão contaria 2×).
   const saiuParaLucro = r2(despesasPj.filter((l) => l.categoriaSlug !== 'imposto_das')
     .reduce((s, l) => s + Number(l.valor), 0));
+  const entrouSemNotaPj = r2(args.lancamentosMes
+    .filter((l) => l.tipo === 'entrada' && l.pf_pj === 'PJ' && l.tem_nota === false)
+    .reduce((s, l) => s + Number(l.valor), 0));
+  const entrouMesPjCaixa = r2(args.recebidoMesPj + entrouSemNotaPj);
   const entrouMesPf = r2(args.lancamentosMes.filter((l) => l.tipo === 'entrada' && l.pf_pj === 'PF')
     .reduce((s, l) => s + Number(l.valor), 0));
   const saiuMesPf = r2(args.lancamentosMes.filter((l) => l.tipo === 'despesa' && l.pf_pj === 'PF')
@@ -47,7 +55,10 @@ export function calcularKpisCaixa(args: {
 
   return {
     saiuMesPj,
-    lucroMes: r2(args.recebidoMesPj - saiuParaLucro - args.impostoMes),
+    lucroMes: r2(entrouMesPjCaixa - saiuParaLucro - args.impostoMes),
     entrouMesPf, saiuMesPf, pizzaCategorias,
+    faturadoMesPj: r2(args.recebidoMesPj),
+    entrouMesPjCaixa,
+    entrouSemNotaPj,
   };
 }

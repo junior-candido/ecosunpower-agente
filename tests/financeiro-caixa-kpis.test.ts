@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { calcularKpisCaixa } from '../src/modules/dashboard/caixa-kpis.js';
 
 const lanc = (tipo: 'despesa' | 'entrada', valor: number, pf_pj: 'PF' | 'PJ', categoriaNome = 'Outros', categoriaSlug = 'outros') =>
-  ({ tipo, valor, pf_pj, categoriaNome, categoriaSlug });
+  ({ tipo, valor, pf_pj, categoriaNome, categoriaSlug, tem_nota: true as boolean });
 
 describe('dashboard/caixa-kpis', () => {
   it('lucro do mês = recebido PJ − saiu PJ − imposto', () => {
@@ -49,11 +49,32 @@ describe('dashboard/caixa-kpis', () => {
     const k = calcularKpisCaixa({
       recebidoMesPj: 10000, impostoMes: 850,
       lancamentosMes: [
-        { tipo: 'despesa', valor: 850, pf_pj: 'PJ', categoriaNome: 'Imposto/DAS', categoriaSlug: 'imposto_das' },
-        { tipo: 'despesa', valor: 2000, pf_pj: 'PJ', categoriaNome: 'Combustível', categoriaSlug: 'combustivel' },
+        { tipo: 'despesa', valor: 850, pf_pj: 'PJ', categoriaNome: 'Imposto/DAS', categoriaSlug: 'imposto_das', tem_nota: true },
+        { tipo: 'despesa', valor: 2000, pf_pj: 'PJ', categoriaNome: 'Combustível', categoriaSlug: 'combustivel', tem_nota: true },
       ],
     });
     expect(k.saiuMesPj).toBe(2850);  // exibição mostra tudo
     expect(k.lucroMes).toBe(7150);   // 10000 - 2000 - 850 (DAS não desconta de novo)
+  });
+  it('entrada PJ sem nota soma no caixa real e no lucro, mas não no faturado', () => {
+    const k = calcularKpisCaixa({
+      recebidoMesPj: 10000, impostoMes: 850,
+      lancamentosMes: [
+        { tipo: 'entrada', valor: 3000, pf_pj: 'PJ', tem_nota: false, categoriaNome: null, categoriaSlug: null },
+        { tipo: 'despesa', valor: 1000, pf_pj: 'PJ', tem_nota: true, categoriaNome: 'Material', categoriaSlug: 'material' },
+      ],
+    });
+    expect(k.faturadoMesPj).toBe(10000);
+    expect(k.entrouMesPjCaixa).toBe(13000);
+    expect(k.entrouSemNotaPj).toBe(3000);
+    expect(k.lucroMes).toBe(11150); // 13000 - 1000 - 850
+  });
+  it('entrada PJ COM nota não soma de novo no caixa (já está em recebidoMesPj)', () => {
+    const k = calcularKpisCaixa({
+      recebidoMesPj: 5000, impostoMes: 0,
+      lancamentosMes: [{ tipo: 'entrada', valor: 5000, pf_pj: 'PJ', tem_nota: true, categoriaNome: null, categoriaSlug: null }],
+    });
+    expect(k.entrouMesPjCaixa).toBe(5000);
+    expect(k.entrouSemNotaPj).toBe(0);
   });
 });
