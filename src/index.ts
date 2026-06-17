@@ -3146,7 +3146,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // Estrutura em 2 níveis. Cada item: ou reroteia pro handler do modo (trigger +
     // handler já existentes), ou manda uma DICA de texto (hint) — pros comandos que
     // precisam de um nome (ajustar/contrato) ou não têm handler de comando próprio.
-    type MenuItem = { id: string; title: string; description: string; trigger?: string; handler?: (from: string, text: string) => Promise<boolean>; hint?: string };
+    type MenuItem = { id: string; title: string; description: string; trigger?: string; handler?: (from: string, text: string) => Promise<boolean>; hint?: string; action?: (from: string) => Promise<void> };
     const MENU_CATEGORIES: Array<{ id: string; title: string; description: string; items: MenuItem[] }> = [
       {
         id: 'propostas', title: '💼 Propostas', description: 'Preço, gerar, ajustar, resgatar',
@@ -3185,12 +3185,23 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         ],
       },
       {
-        id: 'operacao', title: '🔧 Operação', description: 'Usinas, monitoramento, financeiro',
+        id: 'financeiro', title: '💰 Financeiro', description: 'Relatório, imposto, gastos, painel',
+        items: [
+          { id: 'menu_fin_relatorio', title: '📊 Relatório do mês', description: 'Resumo do mês na hora', trigger: 'relatório', handler: tryHandleRelatorioCommand },
+          { id: 'menu_fin_imposto', title: '🧾 Calcular imposto', description: 'Quanto separar de uma venda', action: async (to) => {
+            await setImpostoAwait(to);
+            await sendText(to, '🧾 Qual o valor da venda? Me manda em reais (ex: *30.000* ou *R$ 30 mil*).');
+          } },
+          { id: 'menu_fin_lancar', title: '💸 Lançar gasto/entrada', description: 'Foto, áudio ou texto', hint: '💸 Manda a foto/áudio do comprovante, ou escreve direto: *gastei 380 no posto* / *recebi 5000 do João*. Eu lanço e classifico sozinha.' },
+          { id: 'menu_fin_painel', title: '📈 Abrir painel', description: 'Tela do financeiro', hint: '📈 Painel do financeiro: dashboard.ecosunpower.eng.br/dashboard/financeiro' },
+        ],
+      },
+      {
+        id: 'operacao', title: '🔧 Operação', description: 'Usinas, monitoramento, manutenção',
         items: [
           { id: 'menu_monitoramento', title: '⚡ Monitoramento', description: 'Geração das usinas', hint: '⚡ Acompanhe a geração das usinas em dashboard.ecosunpower.eng.br/dashboard/monitoramento' },
           { id: 'menu_dono', title: '🏭 Dono de usina', description: 'Vincular dono à usina órfã', hint: '🏭 Cadastra o dono pelo alerta de usina órfã no zap (botão "Cadastrar dono") ou no editar usina do dashboard.' },
           { id: 'menu_manutencao', title: '🔧 Manutenção', description: 'Abrir/ver manutenção', hint: '🔧 Manda */manutencao* pra registrar/ver manutenção.' },
-          { id: 'menu_financeiro', title: '💰 Financeiro', description: 'Lançar gasto / caixa de entrada', hint: '💰 Manda o gasto direto (ex: "gastei 380 no posto") ou veja em dashboard.ecosunpower.eng.br/dashboard/financeiro' },
         ],
       },
     ];
@@ -3232,6 +3243,10 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       const item = MENU_CATEGORIES.flatMap(c => c.items).find(i => i.id === `menu_${itemClick[1]}`);
       if (!item) {
         await sendText(from, `⚠️ Opção não reconhecida. Manda *menu* pra ver de novo.`);
+        return true;
+      }
+      if (item.action) {
+        await item.action(from);
         return true;
       }
       if (item.hint) {
