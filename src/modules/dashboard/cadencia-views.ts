@@ -4,13 +4,13 @@ import { normalizeBrazilianPhone } from '../meta-leadgen.js';
 
 const STATUS_LABELS: Record<CadenciaStatus, { label: string; color: string; bg: string }> = {
   aguardando:           { label: '⏳ Aguardando disparo', color: 'text-slate-700', bg: 'bg-slate-100' },
-  enviado_sem_resposta: { label: '📤 Template enviado',  color: 'text-sky-800',   bg: 'bg-sky-100' },
+  enviado_sem_resposta: { label: '📤 Enviado, sem resposta', color: 'text-sky-800',   bg: 'bg-sky-100' },
   respondeu:            { label: '💬 Respondeu',         color: 'text-emerald-800', bg: 'bg-emerald-100' },
   qualificando:         { label: '🎯 Qualificando',      color: 'text-violet-800', bg: 'bg-violet-100' },
   proposta_enviada:     { label: '📋 Proposta enviada',  color: 'text-amber-800', bg: 'bg-amber-100' },
   cliente:              { label: '✅ Cliente',           color: 'text-emerald-900', bg: 'bg-emerald-200' },
   sem_resposta_7d:      { label: '⚠️ Sem resposta 7d+',  color: 'text-rose-800',  bg: 'bg-rose-100' },
-  opt_out:              { label: '🚪 Opt-out',           color: 'text-slate-500', bg: 'bg-slate-50' },
+  opt_out:              { label: '🚪 Pediu pra parar',           color: 'text-slate-500', bg: 'bg-slate-50' },
 };
 
 function card(titulo: string, valor: string, sub: string, accent: 'amber' | 'sky' | 'emerald' | 'violet' | 'rose' | 'indigo', valorCor = 'text-slate-900'): string {
@@ -91,7 +91,7 @@ export function renderCadenciaPage(input: CadenciaPageInput): string {
             ${r.consumo_kwh ? `${r.consumo_kwh.toLocaleString('pt-BR')} kWh/mês` : '—'}
           </td>
           <td class="px-4 py-3 text-xs text-slate-600">
-            <div>Template: ${timeAgo(r.last_reactivation_sent_at)}</div>
+            <div>Última abertura: ${timeAgo(r.last_reactivation_sent_at)}</div>
             <div>Última msg: ${timeAgo(r.last_message_at)}</div>
           </td>
           <td class="px-4 py-3 text-xs text-slate-500">
@@ -104,9 +104,9 @@ export function renderCadenciaPage(input: CadenciaPageInput): string {
                   <input type="hidden" name="id" value="${escapeHtml(r.id)}">
                   <button type="submit" class="text-xs px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition font-medium">✅ Fechou</button>
                 </form>
-                <form method="POST" action="/dashboard/cadencia/optout" class="inline ml-1" onsubmit="return confirm('Marcar ${escapeHtml(r.name).replace(/'/g, "\\'")}  como opt-out? Para de receber mensagens.')">
+                <form method="POST" action="/dashboard/cadencia/optout" class="inline ml-1" onsubmit="return confirm('Marcar que ${escapeHtml(r.name).replace(/'/g, "\\'")}  pediu pra parar? Para de receber mensagens.')">
                   <input type="hidden" name="id" value="${escapeHtml(r.id)}">
-                  <button type="submit" class="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition font-medium">🚪 Opt-out</button>
+                  <button type="submit" class="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition font-medium">🚪 Pediu pra parar</button>
                 </form>`}
           </td>
         </tr>`).join('');
@@ -152,7 +152,7 @@ export function renderCadenciaPage(input: CadenciaPageInput): string {
         ${statusFilter('proposta_enviada', '📋 Proposta', counts.proposta_enviada)}
         ${statusFilter('cliente', '✅ Cliente', counts.cliente)}
         ${statusFilter('sem_resposta_7d', '⚠️ Sem resposta 7d+', counts.sem_resposta_7d)}
-        ${statusFilter('opt_out', '🚪 Opt-out', counts.opt_out)}
+        ${statusFilter('opt_out', '🚪 Pediu pra parar', counts.opt_out)}
       </div>
     </section>
 

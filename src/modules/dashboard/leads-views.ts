@@ -291,13 +291,20 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
         })
         .join('');
 
+  // Status do toque em português claro (a tabela vem do banco em inglês).
+  const LABEL_TOQUE: Record<string, string> = {
+    sent: 'Enviado ✅', pending: 'Agendado ⏳', failed: 'Falhou ⚠️',
+    cancelled: 'Cancelado', canceled: 'Cancelado', skipped: 'Pulado',
+  };
   const cadenceHtml = lead.cadence_steps.length === 0
     ? '<p class="text-slate-400 text-sm">Nenhuma cadência agendada.</p>'
-    : `<ul class="space-y-1 text-sm">${lead.cadence_steps
+    : `<p class="text-[11px] text-slate-400 mb-1">Lembretes automáticos, espaçados, até o cliente responder.</p>
+      <ul class="space-y-1 text-sm">${lead.cadence_steps
         .map((c) => {
           const when = new Date(c.scheduled_for).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
           const statusClass = c.status === 'sent' ? 'text-emerald-700' : c.status === 'pending' ? 'text-amber-700' : 'text-slate-500';
-          return `<li>Toque ${c.step}: <span class="${statusClass} font-medium">${escapeHtml(c.status)}</span> — ${escapeHtml(when)}</li>`;
+          const rotulo = LABEL_TOQUE[c.status] ?? escapeHtml(c.status);
+          return `<li>Toque ${c.step}: <span class="${statusClass} font-medium">${rotulo}</span> — ${escapeHtml(when)}</li>`;
         })
         .join('')}</ul>`;
 
@@ -323,8 +330,8 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
             </form>`
           : ''}
         ${!lead.opt_out
-          ? `<form method="POST" action="/dashboard/leads/${lead.id}/opt-out" onsubmit="return confirm('Marcar como opt-out? Eva nunca mais conversa com esse contato.')">
-              <button class="px-3 py-1.5 rounded-lg text-sm bg-slate-100 text-slate-700 hover:bg-slate-200">🚪 Opt-out</button>
+          ? `<form method="POST" action="/dashboard/leads/${lead.id}/opt-out" onsubmit="return confirm('Marcar que esse contato pediu pra parar? A Eva nunca mais conversa com ele.')">
+              <button class="px-3 py-1.5 rounded-lg text-sm bg-slate-100 text-slate-700 hover:bg-slate-200">🚪 Pediu pra parar</button>
             </form>`
           : `<form method="POST" action="/dashboard/leads/${lead.id}/opt-in">
               <button class="px-3 py-1.5 rounded-lg text-sm bg-emerald-100 text-emerald-800 hover:bg-emerald-200">↩️ Remover opt-out</button>

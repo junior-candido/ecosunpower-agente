@@ -403,7 +403,7 @@ async function main() {
         ...conversation.messages,
         {
           role: 'assistant' as const,
-          content: `[abertura automática enviada via template aprovado "${templateUsado}", saudação com o primeiro nome do lead]`,
+          content: `📨 Eva enviou a 1ª mensagem automática de abertura (com o nome do cliente). Aguardando ele responder.`,
           timestamp: new Date().toISOString(),
         },
       ],
