@@ -46,3 +46,62 @@ export function formatarRanking(termo: string, ranking: Array<{ loja: string; pr
   const linhas = ranking.map((r, i) => `${i + 1}º  ${r.loja} — ${brl(r.preco_unitario)} (${dm(r.data_evento)})`);
   return `💰 *${termo}* — onde tá mais barato:\n${linhas.join('\n')}`;
 }
+
+// --- I/O ---
+export async function inserirCompraMaterial(client: SupabaseClient, c: {
+  lancamento_id: string; material: string; material_norm: string; loja: string | null;
+  quantidade: number; unidade: string; valor_total: number; preco_unitario: number; data_evento: string;
+}): Promise<void> {
+  const { error } = await client.from('financeiro_materiais_compras').insert(c);
+  if (error) throw new Error(`inserirCompraMaterial: ${error.message}`);
+}
+
+export async function getComprasPorMaterialNorm(client: SupabaseClient, termoNorm: string): Promise<CompraRow[]> {
+  const t = termoNorm.replace(/[%_]/g, '\\$&');
+  const { data, error } = await client.from('financeiro_materiais_compras')
+    .select('loja, preco_unitario, data_evento')
+    .ilike('material_norm', `%${t}%`)
+    .order('data_evento', { ascending: false }).limit(200);
+  if (error) throw new Error(`getComprasPorMaterialNorm: ${error.message}`);
+  return (data ?? []) as CompraRow[];
+}
+
+// --- Orquestração ---
+// Grava a compra de material a partir de um lançamento JÁ confirmado. Retorna true se gravou.
+export async function gravarCompraMaterialSeHouver(client: SupabaseClient, lancamentoId: string): Promise<boolean> {
+  const row = await getLancamento(client, lancamentoId);
+  if (!row || row.status !== 'confirmado' || row.tipo !== 'despesa') return false;
+  const ex = (row.extracao ?? {}) as Record<string, unknown>;
+  const material = typeof ex.material === 'string' && ex.material.trim() ? ex.material.trim() : null;
+  if (!material) return false;
+  const quantidade = typeof ex.quantidade === 'number' && ex.quantidade > 0 ? ex.quantidade : 1;
+  const unidade = typeof ex.unidade === 'string' && ex.unidade.trim() ? ex.unidade.trim() : 'un';
+  const valorTotal = Number(row.valor);
+  await inserirCompraMaterial(client, {
+    lancamento_id: lancamentoId, material, material_norm: normalizarMaterial(material),
+    loja: row.contraparte ?? null, quantidade, unidade,
+    valor_total: valorTotal, preco_unitario: precoUnitario(valorTotal, quantidade),
+    data_evento: row.data_evento,
+  });
+  return true;
+}
+
+export async function montarRankingMaterial(client: SupabaseClient, termo: string): Promise<string> {
+  const rows = await getComprasPorMaterialNorm(client, normalizarMaterial(termo));
+  return formatarRanking(termo, rankearLojas(rows));
+}
+
+// Handler no formato dos comandos do index: (from, text) => Promise<boolean>.
+export function makeMaterialQueryHandler(
+  client: SupabaseClient,
+  isAdminPhone: (p: string) => boolean,
+  sendText: (to: string, body: string) => Promise<unknown>,
+) {
+  return async function tryHandleConsultaMaterial(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const termo = parseConsultaMaterial(text);
+    if (!termo) return false;
+    await sendText(from, await montarRankingMaterial(client, termo));
+    return true;
+  };
+}

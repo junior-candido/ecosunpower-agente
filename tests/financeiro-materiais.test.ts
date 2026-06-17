@@ -1,9 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { parseLancamentos } from '../src/modules/financeiro/extrator-lancamento.js';
 import {
   normalizarMaterial, parseConsultaMaterial, precoUnitario,
-  rankearLojas, formatarRanking,
+  rankearLojas, formatarRanking, gravarCompraMaterialSeHouver,
 } from '../src/modules/financeiro/materiais.js';
+
+vi.mock('../src/modules/financeiro/lancamentos-repo.js', async (orig) => ({
+  ...(await orig() as object),
+  getLancamento: vi.fn(),
+}));
+import * as repo from '../src/modules/financeiro/lancamentos-repo.js';
 
 describe('extrator: campos de material', () => {
   it('extrai material, quantidade e unidade', () => {
@@ -73,5 +79,32 @@ describe('materiais: formatarRanking', () => {
     expect(s).toContain('1º');
     expect(s).toContain('Eletro X');
     expect(s).toContain('10/06');
+  });
+});
+
+describe('materiais: gravarCompraMaterialSeHouver', () => {
+  const lancRow = (over: Record<string, unknown> = {}) => ({
+    id: 'l1', tipo: 'despesa', status: 'confirmado', valor: 400, data_evento: '2026-06-17',
+    contraparte: 'Loja Y', extracao: { material: 'cabo 6mm', quantidade: 100, unidade: 'm' }, ...over,
+  });
+  it('grava com preço unitário certo', async () => {
+    (repo.getLancamento as any).mockResolvedValue(lancRow());
+    const inserts: any[] = [];
+    const client = { from: () => ({ insert: (v: any) => { inserts.push(v); return { error: null }; } }) } as any;
+    const ok = await gravarCompraMaterialSeHouver(client, 'l1');
+    expect(ok).toBe(true);
+    expect(inserts[0].preco_unitario).toBe(4);
+    expect(inserts[0].material_norm).toBe('cabo 6mm');
+    expect(inserts[0].loja).toBe('Loja Y');
+  });
+  it('sem material → no-op (false)', async () => {
+    (repo.getLancamento as any).mockResolvedValue(lancRow({ extracao: { material: null } }));
+    const client = { from: () => ({ insert: () => ({ error: null }) }) } as any;
+    expect(await gravarCompraMaterialSeHouver(client, 'l1')).toBe(false);
+  });
+  it('não confirmado → no-op', async () => {
+    (repo.getLancamento as any).mockResolvedValue(lancRow({ status: 'pendente' }));
+    const client = { from: () => ({ insert: () => ({ error: null }) }) } as any;
+    expect(await gravarCompraMaterialSeHouver(client, 'l1')).toBe(false);
   });
 });
