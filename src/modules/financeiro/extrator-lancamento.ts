@@ -16,6 +16,9 @@ export interface ExtracaoLancamento {
   pf_pj: 'PF' | 'PJ' | null;
   obra_ref: string | null;        // nome do cliente/obra citado, se houver
   descricao: string | null;
+  material: string | null;        // nome do material comprado (DPS, cabo 6mm) — só compra de material
+  quantidade: number | null;      // quantos (100) — default 1 no consumo
+  unidade: string | null;         // un, m, rolo...
   campos_faltando: string[];
   relacionado: boolean | null;    // true = corrige pendente; false = lançamento NOVO; null = modelo não informou (NUNCA mescla)
   tem_nota: boolean;
@@ -59,6 +62,9 @@ function normalizarItem(obj: Record<string, unknown>): ExtracaoLancamento {
     pf_pj: pf,
     obra_ref: strOuNull(obj.obra_ref),
     descricao: strOuNull(obj.descricao),
+    material: strOuNull(obj.material),
+    quantidade: numeroOuNull(obj.quantidade),
+    unidade: strOuNull(obj.unidade),
     campos_faltando: [...faltando],
     relacionado: obj.relacionado === true ? true : obj.relacionado === false ? false : null,
     tem_nota: obj.tem_nota === false ? false : true,
@@ -126,6 +132,7 @@ const REGRAS_COMUNS = (hoje: string) => `Devolva APENAS um bloco \`\`\`json\`\`\
  "valor": número ou null, "data": "YYYY-MM-DD" ou null, "contraparte": "quem (posto/fornecedor/cliente)" ou null,
  "categoria_slug": uma de [${CATEGORIA_SLUGS.join(', ')}] ou null, "pf_pj": "PF"|"PJ"|null,
  "obra_ref": "nome do cliente/obra citado" ou null, "descricao": "resumo curto" ou null,
+ "material": "nome do material/produto comprado (DPS, cabo 6mm, disjuntor) ou null", "quantidade": número ou null, "unidade": "un"|"m"|"rolo"|... ou null,
  "tem_nota": true/false (só entradas; false quando a pessoa disser SEM NOTA / por fora / sem comprovante / não vou dar nota; senão true),
  "campos_faltando": ["valor", "pf_pj", ...]}
 Sem nenhum evento de dinheiro → devolva [] (lista vazia).
@@ -135,6 +142,7 @@ Sem nenhum evento de dinheiro → devolva [] (lista vazia).
 - pf_pj: PJ = gasto/receita da EMPRESA (obra, material, anúncio, kit, conta PJ). PF = pessoal
   (mercado da casa, lazer). Na DÚVIDA → null + "pf_pj" em campos_faltando. NÃO assuma.
 - categoria_slug: escolha a MAIS parecida da lista; nada encaixa → "outros".
+- material/quantidade/unidade: SÓ quando for COMPRA DE MATERIAL/produto (despesa). material = o item ("DPS", "cabo 6mm"); quantidade/unidade quando a pessoa disser ("100m de cabo" → quantidade 100, unidade "m"; "5 disjuntores" → 5, "un"). Não disse quantidade → quantidade null (conta como 1). Não é compra de material → os três null.
 - "entrou"/"recebi"/"caiu"/"cliente pagou" → tipo "entrada". "gastei"/"paguei"/"comprei" e
   comprovante de compra/PIX enviado → tipo "despesa".
 - intencao "corrigir": a pessoa quer ARRUMAR um lançamento já feito ("o do posto era 350").
