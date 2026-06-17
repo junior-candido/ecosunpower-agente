@@ -125,12 +125,12 @@ export function renderCadenciaPage(input: CadenciaPageInput): string {
   const body = `
     <div class="mb-6">
       <h1 class="text-2xl font-bold text-slate-900">🔄 Cadência de Reativação</h1>
-      <p class="text-slate-600 text-sm">Leads da base recuperada (comercial terceirizado) — acompanhe template disparado, respostas e funil até proposta.</p>
+      <p class="text-slate-600 text-sm">Leads da base recuperada (comercial terceirizado) — acompanhe a abertura enviada, respostas e funil até proposta.</p>
     </div>
 
     <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
       ${card('Total leads', String(kpis.total_leads), 'base terceirizada', 'indigo')}
-      ${card('Templates disparados', String(kpis.templates_disparados), kpis.total_leads > 0 ? `${((kpis.templates_disparados / kpis.total_leads) * 100).toFixed(0)}% da base` : '', 'sky', 'text-sky-700')}
+      ${card('Aberturas enviadas', String(kpis.templates_disparados), kpis.total_leads > 0 ? `${((kpis.templates_disparados / kpis.total_leads) * 100).toFixed(0)}% da base` : '', 'sky', 'text-sky-700')}
       ${card('Responderam', String(kpis.responderam), kpis.taxa_resposta_pct != null ? `${kpis.taxa_resposta_pct.toFixed(1)}% taxa resposta` : '', 'emerald', 'text-emerald-700')}
       ${card('Clientes novos', String(kpis.clientes), 'fechados via reativação', 'amber', 'text-amber-700')}
     </section>

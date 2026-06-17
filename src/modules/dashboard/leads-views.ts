@@ -52,7 +52,7 @@ function statusBadge(s: string): string {
 }
 
 function evaBadge(active: boolean, optOut: boolean): string {
-  if (optOut) return '<span class="inline-flex px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-500">🚪 opt-out</span>';
+  if (optOut) return '<span class="inline-flex px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-500">🚪 Parou</span>';
   if (active) return '<span class="inline-flex px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-800">✅ ativa</span>';
   return '<span class="inline-flex px-2 py-0.5 rounded-full text-xs bg-slate-200 text-slate-700">⏸️ pausada</span>';
 }
@@ -334,7 +334,7 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
               <button class="px-3 py-1.5 rounded-lg text-sm bg-slate-100 text-slate-700 hover:bg-slate-200">🚪 Pediu pra parar</button>
             </form>`
           : `<form method="POST" action="/dashboard/leads/${lead.id}/opt-in">
-              <button class="px-3 py-1.5 rounded-lg text-sm bg-emerald-100 text-emerald-800 hover:bg-emerald-200">↩️ Remover opt-out</button>
+              <button class="px-3 py-1.5 rounded-lg text-sm bg-emerald-100 text-emerald-800 hover:bg-emerald-200">↩️ Voltar a receber</button>
             </form>`}
         <a href="/dashboard/leads/${lead.id}" class="px-3 py-1.5 rounded-lg text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50">🔄 Atualizar</a>
       </div>
