@@ -21,7 +21,7 @@
 import type { Redis } from 'ioredis';
 import type { SupabaseService } from './supabase.js';
 import type { MetaWhatsAppService } from './meta-whatsapp.js';
-import { empresa } from './empresa-config.js';
+import { enviarTemplateInicial } from './template-inicial.js';
 
 // Throttle entre notificacoes de re-abertura pro mesmo slug. 5min suficiente
 // pra evitar spam quando cliente recarrega/volta varias vezes seguidas.
@@ -40,6 +40,10 @@ interface FollowupDeps {
   // Atraso entre 1ª visualizacao e mensagem pro cliente. Default 60s — tempo
   // suficiente pro cliente ler o resumo da proposta sem ficar invasivo.
   delayMs?: number;
+  // Nome do template aprovado de abordagem de proposta (porta de entrada fria —
+  // cliente recebeu a proposta do outro numero do Junior, nunca falou com a Eva).
+  // Confirmado pelo Junior ao criar na Meta. Fallback reativacao_lead_v1 se 132001.
+  templateAbordagem: string;
 }
 
 export class ProposalFollowupService {
@@ -50,6 +54,7 @@ export class ProposalFollowupService {
   private proposalBaseUrl: string;
   private redis: Redis | null;
   private delayMs: number;
+  private templateAbordagem: string;
 
   constructor(deps: FollowupDeps) {
     this.supabase = deps.supabase;
@@ -59,6 +64,7 @@ export class ProposalFollowupService {
     this.proposalBaseUrl = deps.proposalBaseUrl.replace(/\/$/, '');
     this.redis = deps.redis ?? null;
     this.delayMs = deps.delayMs ?? 60_000;
+    this.templateAbordagem = deps.templateAbordagem;
   }
 
   // Chamado pelo endpoint /p/:slug a cada visualizacao do cliente
@@ -201,30 +207,34 @@ export class ProposalFollowupService {
       await this.markSkipped(slug, 'waba_indisponivel');
       return;
     }
-    const mensagem = this.montarMensagemCliente(clienteNome);
+    // Abordagem por TEMPLATE: o cliente recebeu a proposta do outro numero do
+    // Junior, entao nunca falou com a Eva => janela 24h fechada => texto livre
+    // falha (131047). Template eh a porta de entrada (funciona frio ou quente).
     try {
-      await this.metaService.sendText(clienteTelefone, mensagem);
+      const { templateUsado } = await enviarTemplateInicial(
+        this.metaService,
+        clienteTelefone,
+        clienteNome,
+        this.templateAbordagem,
+      );
       await this.markFollowupSent(slug);
       console.log(
-        `[proposal-followup] enviado pra ${clienteNome} (${clienteTelefone}) slug=${slug}`,
+        `[proposal-followup] abordagem (${templateUsado}) enviada pra ${clienteNome} (${clienteTelefone}) slug=${slug}`,
       );
       await this.sendText(
         this.engineerPhone,
-        `✅ Eva mandou follow-up pra ${clienteNome}.`,
+        `✅ Eva abordou ${clienteNome} sobre a proposta.`,
       ).catch(() => {});
     } catch (err) {
       const msg = (err as Error).message;
       console.warn(
-        `[proposal-followup] falha ao enviar pra cliente ${clienteTelefone}:`,
+        `[proposal-followup] falha ao abordar cliente ${clienteTelefone}:`,
         msg,
       );
-      const reason = /131047|24.?hour|re-engagement/i.test(msg)
-        ? 'fora_janela_24h'
-        : 'envio_falhou';
-      await this.markSkipped(slug, reason);
+      await this.markSkipped(slug, 'envio_falhou');
       await this.sendText(
         this.engineerPhone,
-        `⚠️ Nao consegui mandar follow-up pra ${clienteNome} (${reason}). Contata manualmente: ${clienteTelefone}`,
+        `⚠️ Nao consegui abordar ${clienteNome} sobre a proposta. Contata manualmente: ${clienteTelefone}`,
       ).catch(() => {});
     }
   }
@@ -334,17 +344,6 @@ export class ProposalFollowupService {
   }
 
   // Mensagem inicial pro cliente. Curta, humana, sem pressao de venda.
-  private montarMensagemCliente(nome: string): string {
-    const primeiroNome = nome.trim().split(/\s+/)[0] ?? nome;
-    return [
-      `Oi ${primeiroNome}, aqui é a ${empresa().nomeAtendente} da ${empresa().nomeFantasia} 👋`,
-      ``,
-      `Vi que você acabou de abrir a proposta de energia solar que o Junior te enviou.`,
-      ``,
-      `Ficou alguma dúvida sobre o sistema, equipamentos ou financiamento? Posso te explicar tudo por aqui mesmo, sem compromisso 😊`,
-    ].join('\n');
-  }
-
   // Caso eva_envia ou cliente sem telefone/sem WABA: so notifica Junior por
   // texto, sem perguntar nada (Eva ja vai mandar / nao consegue mandar).
   private async notifyJunior(

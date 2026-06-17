@@ -534,6 +534,9 @@ async function main() {
     engineerPhone: config.engineerPhone,
     proposalBaseUrl: config.publicProposalBaseUrl,
     redis: followupRedis,
+    // Template de abordagem da proposta. ⚠️ TROCAR pelo nome FINAL que o Junior
+    // confirmar ao aprovar na Meta (o de lead virou '_eva_qualificacao_v1').
+    templateAbordagem: 'eva_proposta_aberta_v1',
   });
   console.log('[proposal-followup] Servico ativo (notifica toda abertura, throttle 5min)');
 

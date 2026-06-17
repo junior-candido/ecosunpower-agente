@@ -1,0 +1,36 @@
+import { describe, it, expect, vi } from 'vitest';
+import { ProposalFollowupService } from '../src/modules/proposal-followup.js';
+
+// Instancia o serviço com deps mockadas e expõe executarEnvio (private) via any.
+function makeService(over: Record<string, any> = {}) {
+  const sendTemplate = vi.fn().mockResolvedValue({ messageId: 'm1' });
+  const supabase = {
+    getClient: () => ({ from: () => ({ update: () => ({ eq: () => ({ error: null }) }) }) }),
+    getLeadByPhone: vi.fn().mockResolvedValue(null),
+  };
+  const svc = new ProposalFollowupService({
+    supabase: supabase as any,
+    metaService: { sendTemplate, sendText: vi.fn(), sendInteractiveButtons: vi.fn() } as any,
+    sendText: vi.fn().mockResolvedValue(undefined),
+    engineerPhone: '5561999999999',
+    proposalBaseUrl: 'https://x',
+    redis: null,
+    delayMs: 0,
+    templateAbordagem: 'eva_proposta_aberta_v1',
+    ...over,
+  });
+  return { svc, sendTemplate };
+}
+
+describe('proposal-followup: abordagem via template', () => {
+  it('executarEnvio manda TEMPLATE (não texto livre) com o 1º nome', async () => {
+    const { svc, sendTemplate } = makeService();
+    await (svc as any).executarEnvio('slug1', 'João Silva', '5561988887777');
+    expect(sendTemplate).toHaveBeenCalledTimes(1);
+    const [to, name, lang, components] = sendTemplate.mock.calls[0];
+    expect(to).toBe('5561988887777');
+    expect(name).toBe('eva_proposta_aberta_v1');
+    expect(lang).toBe('pt_BR');
+    expect(components[0].parameters[0].text).toBe('João');
+  });
+});
