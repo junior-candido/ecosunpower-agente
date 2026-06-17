@@ -3381,12 +3381,17 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       const t = text.trim();
       const { montarConfirmacaoApagarLancamento, executarApagarLancamento } = await import('./modules/financeiro/apagar-menu.js');
       if (t === 'findel-no') { await sendText(from, 'Ok, não apaguei nada. 👍'); return; }
+      const idValido = (id: string) => /^[0-9a-f-]{30,40}$/i.test(id); // uuid (evita erro técnico com id quebrado)
       if (t.startsWith('findel-go:')) {
-        await sendText(from, await executarApagarLancamento(supabase.getClient(), t.slice('findel-go:'.length)));
+        const id = t.slice('findel-go:'.length);
+        if (!idValido(id)) { await sendText(from, 'Lançamento inválido 🤔'); return; }
+        await sendText(from, await executarApagarLancamento(supabase.getClient(), id));
         return;
       }
       if (t.startsWith('findel:')) {
-        const conf = await montarConfirmacaoApagarLancamento(supabase.getClient(), t.slice('findel:'.length));
+        const id = t.slice('findel:'.length);
+        if (!idValido(id)) { await sendText(from, 'Lançamento inválido 🤔'); return; }
+        const conf = await montarConfirmacaoApagarLancamento(supabase.getClient(), id);
         if (!conf) { await sendText(from, 'Não achei esse lançamento (talvez já apagado) 🤔'); return; }
         if ('erro' in conf) { await sendText(from, conf.erro); return; }
         if (metaWaba) await metaWaba.sendInteractiveButtons(from, conf.body, conf.buttons);
