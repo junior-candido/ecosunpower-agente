@@ -80,7 +80,14 @@ export function makeImpostoHandler(
   return async function tryHandleImpostoCommand(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
     const valor = parseImpostoCommand(text);
-    if (valor === null) return false;
+    if (valor === null) {
+      // Mensagem que COMEÇA com "imposto"/"/imposto" é intenção de calcular —
+      // consome SEMPRE (mesmo com valor inválido) pra nunca vazar pro gate do
+      // caixa de entrada e virar um lançamento sem querer. Senão, segue o fluxo.
+      if (!/^\/?imposto\b/i.test(text.trim())) return false;
+      await sendText(from, '🧾 Não entendi o valor. Manda assim:\n*imposto 30000*\n(o valor da venda, em reais).');
+      return true;
+    }
     const resposta = await montarRespostaImposto(client, valor);
     await sendText(from, resposta);
     return true;
