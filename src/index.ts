@@ -85,7 +85,7 @@ import type { DonoCadState } from './modules/monitoring/dono-cad/types.js';
 import { camposVaziosUsina, proximoCampoNovo, campoObrigatorioNovo, perguntaNovo, perguntaUsina, ehPular } from './modules/monitoring/dono-cad/machine.js';
 import { CAMPOS_USINA } from './modules/monitoring/dono-cad/types.js';
 import { sendAdminWithButtons } from './modules/eva-admin-buttons.js';
-import { makeImpostoHandler } from './modules/financeiro/comando-imposto.js';
+import { makeImpostoHandler, montarRespostaImposto, parseValorReais } from './modules/financeiro/comando-imposto.js';
 import { makeRelatorioHandler } from './modules/financeiro/comando-relatorio.js';
 import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/cron.js';
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
@@ -582,6 +582,20 @@ async function main() {
   }
   async function clearDonoCadState(phone: string): Promise<void> {
     await closingRedis.del(`dono-cad:${phone}`);
+  }
+
+  // Estado efêmero do submenu Financeiro: quando o Junior toca "Calcular imposto",
+  // marca que a PRÓXIMA mensagem dele é o valor da venda. TTL curto (5min) — se ele
+  // sumir, o estado morre sozinho e não sequestra mensagens futuras.
+  const IMPOSTO_AWAIT_TTL = 300;
+  async function impostoAwaitActive(phone: string): Promise<boolean> {
+    return (await closingRedis.get(`fin-imposto-await:${phone}`)) === '1';
+  }
+  async function setImpostoAwait(phone: string): Promise<void> {
+    await closingRedis.set(`fin-imposto-await:${phone}`, '1', 'EX', IMPOSTO_AWAIT_TTL);
+  }
+  async function clearImpostoAwait(phone: string): Promise<void> {
+    await closingRedis.del(`fin-imposto-await:${phone}`);
   }
 
   // Modulo 5 — Monitoramento de sistemas FV via API dos inversores.
@@ -3332,6 +3346,20 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // Opt-out do CLIENTE — detecta "sair"/"parar"/"stop"/etc antes de qualquer
     // outro handler pra parar de mandar mensagens imediatamente.
     if (await tryHandleClienteOptOut(from, text)) return;
+
+    // Submenu Financeiro: se o Junior tocou "Calcular imposto" e estamos esperando
+    // o valor, a PRÓXIMA mensagem que parecer um valor em reais é calculada aqui.
+    // Se não parecer valor (ex: ele digitou "menu" ou outra coisa), abandona o modo
+    // e deixa a mensagem seguir o fluxo normal — nunca engole comando do Junior.
+    if (isAdminPhone(from) && (await impostoAwaitActive(from))) {
+      const valorImposto = parseValorReais(text);
+      if (valorImposto !== null) {
+        await clearImpostoAwait(from);
+        await sendText(from, await montarRespostaImposto(supabase.getClient(), valorImposto));
+        return;
+      }
+      await clearImpostoAwait(from); // não era valor → sai do modo e segue o roteamento
+    }
 
     // /menu (Junior) — lista interativa com TODOS os modos admin. Vem ANTES de
     // tudo pra Junior conseguir abrir o menu mesmo dentro de outro modo (escapa).
