@@ -5659,13 +5659,11 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
             continue;
           }
 
-          // Agenda mensagem proativa com delay humano (1-3 min) pra nao parecer bot.
-          // TODO futuro: persistir a fila em DB pra recover no restart (hoje um restart
-          // entre o recebimento e o disparo perde o welcome).
-          const delayMs = 60000 + Math.floor(Math.random() * 120000); // 60-180s
-          setTimeout(async () => {
+          // Manda a abertura NA HORA que o lead chega (speed-to-lead). Sem timer na
+          // memória → um restart/deploy nunca mais perde o welcome de um lead.
+          await (async () => {
             try {
-              // Recheck dentro do timeout (mais uma camada de protecao contra race)
+              // Recheck (mais uma camada contra race de webhooks concorrentes)
               const beforeSend = await supabase.getLeadByPhone(normalized.phone as string);
               const beforeWelcome = (beforeSend as Record<string, unknown> | null)?.welcome_sent_at;
               if (beforeWelcome) {
@@ -5689,7 +5687,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
                 await registrarTemplateNaConversa(leadId, templateUsado).catch((err) => {
                   console.warn(`[meta-leadgen] marcador de conversa falhou pra ${normalized.phone}:`, (err as Error).message);
                 });
-                console.log(`[meta-leadgen] Template ${templateUsado} enviado pra ${normalized.phone} (lead ${leadId}) after ${(delayMs / 1000).toFixed(0)}s`);
+                console.log(`[meta-leadgen] Template ${templateUsado} enviado pra ${normalized.phone} (lead ${leadId}) na hora`);
               } else {
                 // Evolution (nao-oficial) nao tem regra de janela 24h — mantem
                 // o welcome personalizado gerado.
@@ -5708,7 +5706,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
                   ],
                   message_count: conversation.message_count + 1,
                 });
-                console.log(`[meta-leadgen] Welcome sent to ${normalized.phone} (lead ${leadId}) after ${(delayMs / 1000).toFixed(0)}s`);
+                console.log(`[meta-leadgen] Welcome sent to ${normalized.phone} (lead ${leadId}) na hora`);
               }
 
               // Marca welcome_sent_at pra bloquear futuros re-welcomes
@@ -5719,9 +5717,9 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
             } catch (err) {
               console.error(`[meta-leadgen] Welcome failed for ${leadId}:`, (err as Error).message);
             }
-          }, delayMs);
+          })();
 
-          console.log(`[meta-leadgen] Lead ${leadgenId} -> ${leadId} (${normalized.phone}, ${platform}, hot=${isHot}), welcome em ${(delayMs / 1000).toFixed(0)}s`);
+          console.log(`[meta-leadgen] Lead ${leadgenId} -> ${leadId} (${normalized.phone}, ${platform}, hot=${isHot}), welcome enviado na hora`);
 
           // Avisa o Junior NA HORA que entrou lead novo e a Eva vai atender. So pra
           // lead NOVO (isHot=false) pra nao re-notificar quem ja estava no funil.
@@ -5741,7 +5739,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
                 `📱 ${normalized.phone}`,
                 contaLuz ? `💡 Conta: ${contaLuz}${tipoImovel ? ` · ${tipoImovel}` : ''}` : '',
                 details.campaign_name ? `📣 ${details.campaign_name} (${canalTxt})` : `📣 ${canalTxt}`,
-                `_1ª mensagem em ~${(delayMs / 1000).toFixed(0)}s, aí a Eva qualifica._`,
+                `_1ª mensagem enviada na hora, aí a Eva qualifica._`,
               ].filter(Boolean).join('\n');
               await sendText(config.engineerPhone, aviso);
             } catch (err) {
