@@ -133,7 +133,7 @@ export async function registrarRecebimento(client: SupabaseClient, contaId: stri
 
 // Inverso de registrarRecebimento. V1: só estorna conta com 1 recebimento (caso
 // comum "recebi X de instalação"). Parcial (vários recebimentos) → { ok:false }.
-// Desfaz na ordem inversa: bucket RBT12 → recebimento → conta.
+// Ordem: CAS na conta (porteiro contra estorno duplo) → apaga recebimento → subtrai bucket.
 export async function estornarRecebimento(
   client: SupabaseClient, contaId: string,
 ): Promise<{ ok: true; valorEstornado: number; impostoEstornado: number } | { ok: false; motivo: 'parcial' }> {
@@ -141,7 +141,7 @@ export async function estornarRecebimento(
   const recs = await getRecebimentosDaConta(client, contaId);
   if (recs.length > 1) return { ok: false, motivo: 'parcial' };
   // 1º CAS porteiro: reverte a conta (avulsa cancela; venda real volta pra "a receber").
-  // Só a 1ª execução ganha; clique-duplo/retro NÃO entra de novo no estorno do bucket
+  // Só a 1ª execução ganha; clique-duplo/retry NÃO entra de novo no estorno do bucket
   // (senão o RBT12 era subtraído em dobro). Se já foi estornada → no-op.
   const ganhou = await reverterConta(client, contaId, { avulsa: conta.fechamento_id == null });
   if (!ganhou) return { ok: true, valorEstornado: 0, impostoEstornado: 0 };
