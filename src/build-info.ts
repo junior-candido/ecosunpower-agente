@@ -5,4 +5,4 @@
 //   curl https://propostas.ecosunpower.eng.br/health  -> campo "build"
 // Se o "build" bater com este valor, o deploy pegou. Se mostrar valor antigo,
 // o Easypanel NAO reconstruiu (cache de camada Docker ou deploy nao disparado).
-export const BUILD_VERSION = 'IMPOSTO-SONUM-E-APAGAR-2026-06-17';
+export const BUILD_VERSION = 'MATERIAIS-PRECO-2026-06-17';
