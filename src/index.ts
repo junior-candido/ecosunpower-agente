@@ -2541,7 +2541,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
               waba,
               lead.phone,
               lead.name,
-              mapped || 'eva_qualificacao_v1', // || (nao ??): string vazia do DB tambem cai no default
+              mapped || '_eva_qualificacao_v1', // || (nao ??): string vazia do DB tambem cai no default
             );
             await supabase.getClient()
               .from('leads')
@@ -4055,7 +4055,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       //     hardcoded em ctwa-template-mapping.ts. Permite A/B por anuncio.
       //  2. DB mapping por campaign_id (marketing_campaigns.template_inicial)
       //     — usado quando lead nao veio de anuncio mas tem campaign_id legado.
-      //  3. Default global `eva_qualificacao_v1` — lead sem anuncio nem
+      //  3. Default global `_eva_qualificacao_v1` — lead sem anuncio nem
       //     campanha. Se nao estiver aprovado na Meta (erro 132001), cai
       //     no fallback `reativacao_lead_v1` (aprovado). TODOS os templates
       //     roteados aqui usam 1 var de body {{1}}=primeiro nome.
@@ -4078,7 +4078,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
             mappedTemplate = await supabase.getTemplateInicialPorCampanha(adCampaignId);
           }
           // 3. Default global (templates Meta aprovados 15/05)
-          const templateName = mappedTemplate ?? 'eva_qualificacao_v1';
+          const templateName = mappedTemplate ?? '_eva_qualificacao_v1';
           // Todos os templates aqui (CTWA/campanha/default) tem {{1}}=primeiro
           // nome. Sem o componente a Meta REJEITA o envio (era bug silencioso:
           // lead de anuncio ficava sem auto-ack). Fallback "tudo bem" igual
@@ -5682,7 +5682,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
                   metaWaba,
                   normalized.phone as string,
                   normalized.name,
-                  mapped || 'eva_qualificacao_v1', // || (nao ??): string vazia do DB tambem cai no default
+                  mapped || '_eva_qualificacao_v1', // || (nao ??): string vazia do DB tambem cai no default
                 );
                 await registrarTemplateNaConversa(leadId, templateUsado).catch((err) => {
                   console.warn(`[meta-leadgen] marcador de conversa falhou pra ${normalized.phone}:`, (err as Error).message);
@@ -6585,7 +6585,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
               metaWaba,
               normalized.phone as string,
               normalized.name,
-              'eva_qualificacao_v1',
+              '_eva_qualificacao_v1',
             );
             await registrarTemplateNaConversa(leadId, templateUsado).catch((err) => {
               console.warn(`[meta-leadgen-test] marcador de conversa falhou:`, (err as Error).message);

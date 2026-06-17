@@ -13,14 +13,14 @@
 //
 // HISTÓRICO:
 // - 13/05/2026: Campanha CTWA_Solar_Mai_v1 publicada
-//   - Ad Conjunto A (Interesse manual)   -> eva_qualificacao_v1
+//   - Ad Conjunto A (Interesse manual)   -> _eva_qualificacao_v1 (aprovado 17/06, com underline no nome)
 //   - Ad Conjunto B (Advantage+ IA)      -> eva_curiosidade_v1
 //   Templates ainda em revisao Meta — fallback eva_resposta_inicial
 //   transparente no auto-ack quando template nao aprovado retorna erro.
 
 const CTWA_AD_TO_TEMPLATE: Readonly<Record<string, string>> = Object.freeze({
   // CTWA_Solar_Mai_v1 (campaign 120249029179560385) — 13/05/2026
-  '120249029179580385': 'eva_qualificacao_v1',  // Ad set A — Interesse manual
+  '120249029179580385': '_eva_qualificacao_v1',  // Ad set A — Interesse manual
   '120249030622080385': 'eva_curiosidade_v1',   // Ad set B — Advantage+
 });
 
