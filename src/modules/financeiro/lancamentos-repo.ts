@@ -119,6 +119,19 @@ export async function getConfirmadosDoDia(client: SupabaseClient, dataEvento: st
   return (data ?? []) as ChaveDuplicado[];
 }
 
+// Lançamentos vivos (pendente/confirmado) dos últimos N dias, mais recentes
+// primeiro — pro submenu "Apagar lançamento" listar e o admin escolher qual.
+export async function getLancamentosRecentes(
+  client: SupabaseClient, dias = 30, limite = 10,
+): Promise<LancamentoRow[]> {
+  const desde = new Date(Date.now() - dias * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await client.from('financeiro_lancamentos').select(COLS)
+    .in('status', ['pendente', 'confirmado']).gte('created_at', desde)
+    .order('created_at', { ascending: false }).limit(limite);
+  if (error) throw new Error(`getLancamentosRecentes: ${error.message}`);
+  return (data ?? []) as LancamentoRow[];
+}
+
 export async function getUltimoConfirmado(client: SupabaseClient): Promise<LancamentoRow | null> {
   const { data, error } = await client.from('financeiro_lancamentos').select(COLS)
     .eq('status', 'confirmado').order('created_at', { ascending: false }).limit(1).maybeSingle();

@@ -85,7 +85,7 @@ import type { DonoCadState } from './modules/monitoring/dono-cad/types.js';
 import { camposVaziosUsina, proximoCampoNovo, campoObrigatorioNovo, perguntaNovo, perguntaUsina, ehPular } from './modules/monitoring/dono-cad/machine.js';
 import { CAMPOS_USINA } from './modules/monitoring/dono-cad/types.js';
 import { sendAdminWithButtons } from './modules/eva-admin-buttons.js';
-import { makeImpostoHandler } from './modules/financeiro/comando-imposto.js';
+import { makeImpostoHandler, montarRespostaImposto, parseValorReais } from './modules/financeiro/comando-imposto.js';
 import { makeRelatorioHandler } from './modules/financeiro/comando-relatorio.js';
 import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/cron.js';
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
@@ -582,6 +582,22 @@ async function main() {
   }
   async function clearDonoCadState(phone: string): Promise<void> {
     await closingRedis.del(`dono-cad:${phone}`);
+  }
+
+  // Modo "Calcular imposto" do submenu Financeiro: ao tocar, marca que a PRÓXIMA
+  // mensagem do admin é o valor da venda (pra ele digitar SÓ o número). Janela de
+  // 1h (igual closing/dono-cad — 5min era curto demais). Logado pra diagnosticar.
+  // Rede de segurança extra: número solto nunca vira lançamento (guard no caixa-entrada).
+  const IMPOSTO_AWAIT_TTL = 3600;
+  async function impostoAwaitActive(phone: string): Promise<boolean> {
+    return (await closingRedis.get(`fin-imposto-await:${phone}`)) === '1';
+  }
+  async function setImpostoAwait(phone: string): Promise<void> {
+    await closingRedis.set(`fin-imposto-await:${phone}`, '1', 'EX', IMPOSTO_AWAIT_TTL);
+    console.log(`[imposto-await] SET ${phone}`);
+  }
+  async function clearImpostoAwait(phone: string): Promise<void> {
+    await closingRedis.del(`fin-imposto-await:${phone}`);
   }
 
   // Modulo 5 — Monitoramento de sistemas FV via API dos inversores.
@@ -3132,7 +3148,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // Estrutura em 2 níveis. Cada item: ou reroteia pro handler do modo (trigger +
     // handler já existentes), ou manda uma DICA de texto (hint) — pros comandos que
     // precisam de um nome (ajustar/contrato) ou não têm handler de comando próprio.
-    type MenuItem = { id: string; title: string; description: string; trigger?: string; handler?: (from: string, text: string) => Promise<boolean>; hint?: string };
+    type MenuItem = { id: string; title: string; description: string; trigger?: string; handler?: (from: string, text: string) => Promise<boolean>; hint?: string; action?: (from: string) => Promise<void> };
     const MENU_CATEGORIES: Array<{ id: string; title: string; description: string; items: MenuItem[] }> = [
       {
         id: 'propostas', title: '💼 Propostas', description: 'Preço, gerar, ajustar, resgatar',
@@ -3174,9 +3190,23 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         id: 'financeiro', title: '💰 Financeiro', description: 'Relatório, imposto, gastos, painel',
         items: [
           { id: 'menu_fin_relatorio', title: '📊 Relatório do mês', description: 'Resumo do mês na hora', trigger: 'relatório', handler: tryHandleRelatorioCommand },
-          { id: 'menu_fin_imposto', title: '🧾 Calcular imposto', description: 'Quanto separar de uma venda', hint: '🧾 Pra calcular o imposto de uma venda, me manda:\n*imposto 30000*\n(pode ser em reais: *imposto 30 mil* ou *imposto R$ 30.000*).' },
+          { id: 'menu_fin_imposto', title: '🧾 Calcular imposto', description: 'Quanto separar de uma venda', action: async (to) => {
+            await setImpostoAwait(to);
+            await sendText(to, '🧾 Qual o valor da venda? Manda só o número (ex: *30000* ou *30 mil*).');
+          } },
           { id: 'menu_fin_lancar', title: '💸 Lançar gasto/entrada', description: 'Foto, áudio ou texto', hint: '💸 Manda a foto/áudio do comprovante, ou escreve direto: *gastei 380 no posto* / *recebi 5000 do João*. Eu lanço e classifico sozinha.' },
           { id: 'menu_fin_painel', title: '📈 Abrir painel', description: 'Tela do financeiro', hint: '📈 Painel do financeiro: dashboard.ecosunpower.eng.br/dashboard/financeiro' },
+          { id: 'menu_fin_apagar', title: '🗑️ Apagar lançamento', description: 'Apagar um gasto/entrada errado', action: async (to) => {
+            const { montarListaApagar } = await import('./modules/financeiro/apagar-menu.js');
+            const lista = await montarListaApagar(supabase.getClient());
+            if (!lista) { await sendText(to, 'Nenhum lançamento nos últimos 30 dias. 👍'); return; }
+            if (metaWaba) {
+              const footer = lista.total >= 10 ? 'Os 10 mais recentes' : 'Toque pra escolher';
+              await metaWaba.sendInteractiveList(to, { header: '🗑️ Apagar', body: 'Qual lançamento você quer apagar?', buttonText: 'Escolher', sections: [{ title: 'Últimos 30 dias', rows: lista.rows }], footer });
+            } else {
+              await sendText(to, 'Apaga pelo painel: dashboard.ecosunpower.eng.br/dashboard/financeiro');
+            }
+          } },
         ],
       },
       {
@@ -3226,6 +3256,10 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       const item = MENU_CATEGORIES.flatMap(c => c.items).find(i => i.id === `menu_${itemClick[1]}`);
       if (!item) {
         await sendText(from, `⚠️ Opção não reconhecida. Manda *menu* pra ver de novo.`);
+        return true;
+      }
+      if (item.action) {
+        await item.action(from);
         return true;
       }
       if (item.hint) {
@@ -3340,6 +3374,48 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // Opt-out do CLIENTE — detecta "sair"/"parar"/"stop"/etc antes de qualquer
     // outro handler pra parar de mandar mensagens imediatamente.
     if (await tryHandleClienteOptOut(from, text)) return;
+
+    // Submenu Financeiro — "Apagar lançamento": clique na row da lista (findel:<id>),
+    // confirmar (findel-go:<id>) ou cancelar (findel-no). Admin-only.
+    if (isAdminPhone(from) && text.trim().startsWith('findel')) {
+      const t = text.trim();
+      const { montarConfirmacaoApagarLancamento, executarApagarLancamento } = await import('./modules/financeiro/apagar-menu.js');
+      if (t === 'findel-no') { await sendText(from, 'Ok, não apaguei nada. 👍'); return; }
+      if (t.startsWith('findel-go:')) {
+        await sendText(from, await executarApagarLancamento(supabase.getClient(), t.slice('findel-go:'.length)));
+        return;
+      }
+      if (t.startsWith('findel:')) {
+        const conf = await montarConfirmacaoApagarLancamento(supabase.getClient(), t.slice('findel:'.length));
+        if (!conf) { await sendText(from, 'Não achei esse lançamento (talvez já apagado) 🤔'); return; }
+        if ('erro' in conf) { await sendText(from, conf.erro); return; }
+        if (metaWaba) await metaWaba.sendInteractiveButtons(from, conf.body, conf.buttons);
+        else await sendText(from, conf.body);
+        return;
+      }
+    }
+
+    // Submenu Financeiro — "Calcular imposto": o admin tocou e está digitando o
+    // valor. Calcula aqui (ANTES do caixa) e nunca deixa virar lançamento. Se o
+    // texto não parece valor (ex: "menu"), sai do modo e segue o roteamento normal.
+    if (isAdminPhone(from) && (await impostoAwaitActive(from))) {
+      const valorImposto = parseValorReais(text);
+      console.log(`[imposto-await] CHECK ${from} parsed=${valorImposto}`);
+      if (valorImposto !== null) {
+        if (valorImposto < 100) {
+          // Venda real nunca é < R$100 (ex: "85.50" lido como R$85,50). Repergunta
+          // e mantém o modo aberto em vez de calcular 100× menor calado.
+          await setImpostoAwait(from);
+          const fmt = valorImposto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+          await sendText(from, `🤔 ${fmt}? Parece baixo pra uma venda. Manda o valor de novo (ex: *30000* ou *30 mil*).`);
+          return;
+        }
+        await clearImpostoAwait(from);
+        await sendText(from, await montarRespostaImposto(supabase.getClient(), valorImposto));
+        return;
+      }
+      await clearImpostoAwait(from); // não era valor → sai do modo e segue
+    }
 
     // /menu (Junior) — lista interativa com TODOS os modos admin. Vem ANTES de
     // tudo pra Junior conseguir abrir o menu mesmo dentro de outro modo (escapa).

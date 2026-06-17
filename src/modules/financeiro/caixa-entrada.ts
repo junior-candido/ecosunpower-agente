@@ -23,6 +23,7 @@ import {
   montarPedidoEsclarecimento, montarAberturaMultipla, type LancamentoResumo,
 } from './resumo-lancamento.js';
 import { criarContaDeFechamento, registrarRecebimento } from './contas.js';
+import { parseValorReais } from './comando-imposto.js';
 import { getAtividades, cancelarConta } from './repo.js';
 
 interface Waba {
@@ -227,6 +228,13 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
       await atualizarPendente(deps.supabase, aguardando.id, { extracao: { ...aguardando.extracao, aguardando: false } });
       return false;
     }
+
+    // 1.5) Número solto (ex: "16mil", "30000", "R$ 30 mil") NÃO é lançamento.
+    // Sem contexto (verbo/quem/categoria) é ambíguo — costuma ser cálculo de
+    // imposto ou outra coisa. Nunca vira gasto/entrada sem o admin dizer mais.
+    // Protege o dinheiro: impede valor escorregar pro caixa (ex.: Calcular imposto).
+    // OBS: respostas a um pendente já foram tratadas no bloco "aguardando" acima.
+    if (parseValorReais(texto) !== null) return false;
 
     // 2) Gate barato: é assunto financeiro?
     if (!(await gateTextoFinanceiro(deps.anthropic, texto))) return false;
