@@ -32,6 +32,12 @@ interface Waba {
 const FOOTER = 'Caixa de Entrada · Financeiro';
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+// PURO: uma entrada PJ com nota, ainda sem conta, precisa passar pelo motor de imposto (atividade).
+// Sem nota / despesa / PF / já vinculada → não passa (vira só caixa, ou já tratada).
+export function entradaPrecisaImposto(row: { tipo: 'despesa' | 'entrada'; pf_pj: 'PF' | 'PJ' | null; conta_id: string | null; tem_nota: boolean }): boolean {
+  return row.tipo === 'entrada' && row.pf_pj === 'PJ' && !row.conta_id && row.tem_nota !== false;
+}
+
 // PURO: decide o que fazer com a lista extraída.
 // lancar = itens financeiros a virar pendente; esclarecer = deu dinheiro mas nada extraído (nunca calar).
 export function planejarCaptura(itens: ExtracaoLancamento[]): { lancar: ExtracaoLancamento[]; esclarecer: boolean } {
@@ -117,7 +123,7 @@ async function criarPendenteEFalar(
     pfPj: faltaPfPj ? null : e.pf_pj, leadId, storagePath,
     mimeType: midia?.mimeType ?? herdado?.mimeType ?? null, origem: midia ? 'zap_midia' : 'zap_texto',
     messageId: midia?.messageId ?? null,
-    extracao: { ...e, aguardando: faltaPfPj }, createdBy: from,
+    extracao: { ...e, aguardando: faltaPfPj }, createdBy: from, temNota: e.tem_nota,
   });
 
   if (faltaPfPj) {
@@ -135,7 +141,7 @@ async function mandarResumo(deps: CaixaDeps, from: string, lancamentoId: string)
   // Entrada que cita cliente com venda em aberto → oferece vincular (motor Fatia 2).
   // Escolha: a oferta de vínculo pula o aviso de duplicado — 2 PIX iguais do mesmo
   // cliente no dia são plausíveis e o admin vê o valor no botão.
-  if (row.tipo === 'entrada' && row.pf_pj === 'PJ') {
+  if (row.tipo === 'entrada' && row.pf_pj === 'PJ' && row.tem_nota !== false) {
     const nomeBusca = (row.extracao?.obra_ref as string | undefined) ?? row.contraparte ?? '';
     if (nomeBusca) {
       const conta = await buscarContaAbertaPorNome(deps.supabase, nomeBusca);
@@ -325,16 +331,20 @@ export async function handleFinlanButton(deps: CaixaDeps, from: string, buttonId
           }
           return true;
         }
-        // Entrada PJ sem conta vinculada precisa de atividade (imposto) antes.
-        if (row.tipo === 'entrada' && row.pf_pj === 'PJ' && !row.conta_id) {
+        // Entrada PJ com nota e sem conta vinculada precisa de atividade (imposto) antes.
+        if (entradaPrecisaImposto(row)) {
           const atividades = await getAtividades(deps.supabase);
           const msg = montarEscolhaAtividade(id, atividades);
           await deps.waba.sendInteractiveButtons(from, msg.body, msg.buttons, FOOTER);
           return true;
         }
         const ok = await mudarStatus(deps.supabase, id, 'pendente', 'confirmado');
-        if (ok) await deps.sendText(from, row.tipo === 'despesa' ? `💸 Lançado: ${brl(Number(row.valor))}. Tá no caixa.` : `💰 Entrada lançada: ${brl(Number(row.valor))}.`);
-        else await deps.sendText(from, 'Esse lançamento já tinha sido processado.');
+        if (ok) {
+          const msgEntrada = row.tem_nota === false
+            ? `💰 Entrada lançada: ${brl(Number(row.valor))} (sem nota — fora do imposto).`
+            : `💰 Entrada lançada: ${brl(Number(row.valor))}.`;
+          await deps.sendText(from, row.tipo === 'despesa' ? `💸 Lançado: ${brl(Number(row.valor))}. Tá no caixa.` : msgEntrada);
+        } else await deps.sendText(from, 'Esse lançamento já tinha sido processado.');
         return true;
       }
       case 'corr': {

@@ -16,19 +16,20 @@ export interface LancamentoRow {
   pf_pj: 'PF' | 'PJ' | null;
   lead_id: string | null;
   conta_id: string | null;
+  tem_nota: boolean;
   storage_path: string | null;
   extracao: Record<string, unknown> | null;
   created_at: string;
 }
 
-const COLS = 'id, tipo, status, valor, data_evento, competencia, contraparte, descricao, categoria_id, pf_pj, lead_id, conta_id, storage_path, extracao, created_at';
+const COLS = 'id, tipo, status, valor, data_evento, competencia, contraparte, descricao, categoria_id, pf_pj, lead_id, conta_id, tem_nota, storage_path, extracao, created_at';
 
 export async function criarPendente(client: SupabaseClient, l: {
   tipo: 'despesa' | 'entrada'; valor: number; dataEvento: string;
   contraparte: string | null; descricao: string | null; categoriaId: string | null;
   pfPj: 'PF' | 'PJ' | null; leadId: string | null; storagePath: string | null;
   mimeType: string | null; origem: 'zap_midia' | 'zap_texto'; messageId: string | null;
-  extracao: Record<string, unknown>; createdBy: string;
+  extracao: Record<string, unknown>; createdBy: string; temNota: boolean;
 }): Promise<string> {
   const { data, error } = await client.from('financeiro_lancamentos').insert({
     tipo: l.tipo, status: 'pendente', valor: l.valor, data_evento: l.dataEvento,
@@ -36,6 +37,7 @@ export async function criarPendente(client: SupabaseClient, l: {
     descricao: l.descricao, categoria_id: l.categoriaId, pf_pj: l.pfPj,
     lead_id: l.leadId, storage_path: l.storagePath, mime_type: l.mimeType,
     origem: l.origem, message_id: l.messageId, extracao: l.extracao, created_by: l.createdBy,
+    tem_nota: l.temNota,
   }).select('id').single();
   if (error) throw new Error(`criarPendente: ${error.message}`);
   return (data as { id: string }).id;
