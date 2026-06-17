@@ -5667,7 +5667,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
               const beforeSend = await supabase.getLeadByPhone(normalized.phone as string);
               const beforeWelcome = (beforeSend as Record<string, unknown> | null)?.welcome_sent_at;
               if (beforeWelcome) {
-                console.log(`[meta-leadgen] Welcome already sent during delay, skipping`);
+                console.log(`[meta-leadgen] Welcome already sent (race de webhooks concorrentes), skipping`);
                 return;
               }
 
