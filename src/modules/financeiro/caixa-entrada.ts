@@ -31,6 +31,13 @@ interface Waba {
 const FOOTER = 'Caixa de Entrada · Financeiro';
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+// PURO: decide o que fazer com a lista extraída.
+// lancar = itens financeiros a virar pendente; esclarecer = deu dinheiro mas nada extraído (nunca calar).
+export function planejarCaptura(itens: ExtracaoLancamento[]): { lancar: ExtracaoLancamento[]; esclarecer: boolean } {
+  const lancar = itens.filter((i) => i.financeiro);
+  return { lancar, esclarecer: lancar.length === 0 };
+}
+
 const hojeBRT = (): string => {
   const brt = new Date(Date.now() - 3 * 60 * 60 * 1000);
   return brt.toISOString().slice(0, 10);
