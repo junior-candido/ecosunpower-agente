@@ -78,7 +78,7 @@ export function renderFinanceiroPage(d: FinanceiroData): string {
   ${d.lancamentos.map((l) => `<tr class="border-t border-gray-800">
     <td>${l.data_evento.slice(8,10)}/${l.data_evento.slice(5,7)}</td>
     <td>${l.tipo === 'entrada' ? '💰' : '💸'}</td>
-    <td>${brl(l.valor)}</td>
+    <td>${brl(l.valor)}${l.tipo === 'entrada' && !l.tem_nota ? ' <span class="text-amber-400 text-xs">sem nota</span>' : ''}</td>
     <td>${escapeHtml(l.contraparte ?? '-')}</td>
     <td>${escapeHtml(l.categoriaNome ?? '-')}</td>
     <td><span class="px-1 rounded text-xs" style="background:${l.pf_pj === 'PJ' ? '#0e7490' : '#7c3aed'}">${l.pf_pj ?? '-'}</span></td>

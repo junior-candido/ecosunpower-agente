@@ -15,6 +15,7 @@ export interface LancamentoLista {
   categoriaNome: string | null;
   pf_pj: 'PF' | 'PJ' | null;
   comprovanteUrl: string | null;
+  tem_nota: boolean;
 }
 
 export interface FiltrosLancamentos {
@@ -90,7 +91,7 @@ export async function getFinanceiroData(client: SupabaseClient, filtros: Filtros
   if (lancMesErr) throw new Error(`getFinanceiroData lancamentos: ${lancMesErr.message}`);
   const lancMes = (lancMesRaw ?? []).map((l) => {
     const x = l as unknown as { tipo: 'despesa' | 'entrada'; valor: number; pf_pj: 'PF' | 'PJ' | null; tem_nota: boolean; financeiro_categorias: { nome: string; slug: string } | null };
-    return { tipo: x.tipo, valor: Number(x.valor), pf_pj: x.pf_pj, tem_nota: Boolean((l as any).tem_nota), categoriaNome: x.financeiro_categorias?.nome ?? null, categoriaSlug: x.financeiro_categorias?.slug ?? null };
+    return { tipo: x.tipo, valor: Number(x.valor), pf_pj: x.pf_pj, tem_nota: x.tem_nota, categoriaNome: x.financeiro_categorias?.nome ?? null, categoriaSlug: x.financeiro_categorias?.slug ?? null };
   });
   const caixa = calcularKpisCaixa({ recebidoMesPj: faturamentoMes, impostoMes: impostoASeparar, lancamentosMes: lancMes });
 
@@ -111,8 +112,8 @@ export async function getFinanceiroData(client: SupabaseClient, filtros: Filtros
   // lista de lançamentos (últimos 50, com filtros via querystring)
   let q = client.from('financeiro_lancamentos')
     .select(filtros.categoria
-      ? 'id, tipo, valor, data_evento, contraparte, pf_pj, storage_path, financeiro_categorias!inner(nome, slug)'
-      : 'id, tipo, valor, data_evento, contraparte, pf_pj, storage_path, financeiro_categorias(nome, slug)')
+      ? 'id, tipo, valor, data_evento, contraparte, pf_pj, storage_path, tem_nota, financeiro_categorias!inner(nome, slug)'
+      : 'id, tipo, valor, data_evento, contraparte, pf_pj, storage_path, tem_nota, financeiro_categorias(nome, slug)')
     .eq('status', 'confirmado')
     .order('data_evento', { ascending: false }).limit(50);
   if (filtros.competencia) q = q.eq('competencia', filtros.competencia);
@@ -122,7 +123,7 @@ export async function getFinanceiroData(client: SupabaseClient, filtros: Filtros
   const { data: listaRaw, error: listaErr } = await q;
   if (listaErr) throw new Error(`getFinanceiroData lista: ${listaErr.message}`);
   const lista = (listaRaw ?? []).map((l) => {
-    const x = l as unknown as { id: string; tipo: 'despesa' | 'entrada'; valor: number; data_evento: string; contraparte: string | null; pf_pj: 'PF' | 'PJ' | null; storage_path: string | null; financeiro_categorias: { nome: string; slug: string } | null };
+    const x = l as unknown as { id: string; tipo: 'despesa' | 'entrada'; valor: number; data_evento: string; contraparte: string | null; pf_pj: 'PF' | 'PJ' | null; storage_path: string | null; tem_nota: boolean; financeiro_categorias: { nome: string; slug: string } | null };
     return { ...x, categoriaNome: x.financeiro_categorias?.nome ?? null, categoriaSlug: x.financeiro_categorias?.slug ?? null };
   });
   const urls = await getComprovanteUrls(client, lista.map((l) => l.storage_path).filter((p): p is string => Boolean(p)));
@@ -130,6 +131,7 @@ export async function getFinanceiroData(client: SupabaseClient, filtros: Filtros
     id: l.id, tipo: l.tipo, valor: Number(l.valor), data_evento: l.data_evento,
     contraparte: l.contraparte, categoriaNome: l.categoriaNome, pf_pj: l.pf_pj,
     comprovanteUrl: l.storage_path ? (urls[l.storage_path] ?? null) : null,
+    tem_nota: l.tem_nota,
   }));
 
   return {

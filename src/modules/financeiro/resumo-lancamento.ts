@@ -13,6 +13,7 @@ export interface LancamentoResumo {
   contraparte: string | null;
   categoriaNome: string | null;
   pf_pj: 'PF' | 'PJ' | null;
+  tem_nota?: boolean;
 }
 
 const dataBR = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
@@ -25,6 +26,7 @@ function linhaResumo(l: LancamentoResumo): string {
     l.categoriaNome ?? null,
     l.pf_pj ?? null,
     dataBR(l.data_evento),
+    l.tem_nota === false ? '*sem nota*' : null,
   ].filter(Boolean);
   return partes.join(' · ');
 }

@@ -67,7 +67,7 @@ async function rowParaResumo(deps: CaixaDeps, row: LancamentoRow): Promise<Lanca
   return {
     id: row.id, tipo: row.tipo, valor: Number(row.valor), data_evento: row.data_evento,
     contraparte: row.contraparte, categoriaNome: await nomeCategoria(deps, row.categoria_id),
-    pf_pj: row.pf_pj,
+    pf_pj: row.pf_pj, tem_nota: row.tem_nota,
   };
 }
 
