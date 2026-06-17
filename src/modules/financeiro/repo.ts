@@ -218,3 +218,36 @@ export async function cancelarConta(client: SupabaseClient, id: string): Promise
     throw new Error('conta já tem recebimento lançado — estorno é manual por enquanto');
   }
 }
+
+// Recebimentos de uma conta (pro estorno saber o que reverter).
+export async function getRecebimentosDaConta(
+  client: SupabaseClient, contaId: string,
+): Promise<Array<{ id: string; valor: number; imposto: number; competencia: string }>> {
+  const { data, error } = await client.from('financeiro_recebimentos')
+    .select('id, valor, imposto, competencia').eq('conta_id', contaId);
+  if (error) throw new Error(`getRecebimentosDaConta: ${error.message}`);
+  return (data ?? []) as Array<{ id: string; valor: number; imposto: number; competencia: string }>;
+}
+
+export async function apagarRecebimento(client: SupabaseClient, id: string): Promise<void> {
+  const { error } = await client.from('financeiro_recebimentos').delete().eq('id', id);
+  if (error) throw new Error(`apagarRecebimento: ${error.message}`);
+}
+
+// Reverte a conta no estorno: avulsa → 'cancelado'; venda real → 'pendente'
+// (volta a "a receber"). Zera recebido + imposto + datas do recebimento.
+export async function reverterConta(
+  client: SupabaseClient, id: string, opts: { avulsa: boolean },
+): Promise<void> {
+  const { error } = await client.from('financeiro_contas_a_receber')
+    .update({
+      status: opts.avulsa ? 'cancelado' : 'pendente',
+      valor_recebido: 0,
+      imposto_confirmado: 0,
+      data_recebimento: null,
+      competencia_recebimento: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+  if (error) throw new Error(`reverterConta: ${error.message}`);
+}

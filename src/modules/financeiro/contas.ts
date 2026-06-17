@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   competenciaAtual, getBuckets, getParametros, getAtividade,
   criarContaReceber, getContaReceber, somarReceitaNoMes, atualizarContaRecebida,
-  criarLancamentoRecebimento,
+  criarLancamentoRecebimento, getRecebimentosDaConta, apagarRecebimento, reverterConta,
 } from './repo.js';
 import { calcularRBT12 } from './rbt12.js';
 
@@ -129,4 +129,28 @@ export async function registrarRecebimento(client: SupabaseClient, contaId: stri
   await somarReceitaNoMes(client, comp, conta.atividade_id, parcela);
   const saldoRestante = Math.round((Number(conta.valor) - acumulado) * 100) / 100;
   return { calc, total, parcela, acumulado, saldoRestante };
+}
+
+// Inverso de registrarRecebimento. V1: só estorna conta com 1 recebimento (caso
+// comum "recebi X de instalação"). Parcial (vários recebimentos) → { ok:false }.
+// Desfaz na ordem inversa: bucket RBT12 → recebimento → conta.
+export async function estornarRecebimento(
+  client: SupabaseClient, contaId: string,
+): Promise<{ ok: true; valorEstornado: number; impostoEstornado: number } | { ok: false; motivo: 'parcial' }> {
+  const conta = await getContaReceber(client, contaId);
+  const recs = await getRecebimentosDaConta(client, contaId);
+  if (recs.length > 1) return { ok: false, motivo: 'parcial' };
+  let valorEstornado = 0;
+  let impostoEstornado = 0;
+  for (const r of recs) {
+    // 1º tira do bucket RBT12 (valor negativo = subtrai)
+    await somarReceitaNoMes(client, r.competencia, conta.atividade_id, -Number(r.valor));
+    // 2º apaga o recebimento
+    await apagarRecebimento(client, r.id);
+    valorEstornado += Number(r.valor);
+    impostoEstornado += Number(r.imposto);
+  }
+  // 3º reverte a conta (avulsa cancela; venda real volta pra a receber)
+  await reverterConta(client, contaId, { avulsa: conta.fechamento_id == null });
+  return { ok: true, valorEstornado, impostoEstornado };
 }
