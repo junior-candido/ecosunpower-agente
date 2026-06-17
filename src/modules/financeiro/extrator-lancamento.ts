@@ -18,6 +18,7 @@ export interface ExtracaoLancamento {
   descricao: string | null;
   campos_faltando: string[];
   relacionado: boolean | null;    // true = corrige pendente; false = lançamento NOVO; null = modelo não informou (NUNCA mescla)
+  tem_nota: boolean;
 }
 
 function numeroOuNull(v: unknown): number | null {
@@ -60,6 +61,7 @@ function normalizarItem(obj: Record<string, unknown>): ExtracaoLancamento {
     descricao: strOuNull(obj.descricao),
     campos_faltando: [...faltando],
     relacionado: obj.relacionado === true ? true : obj.relacionado === false ? false : null,
+    tem_nota: obj.tem_nota === false ? false : true,
   };
 }
 
@@ -124,6 +126,7 @@ const REGRAS_COMUNS = (hoje: string) => `Devolva APENAS um bloco \`\`\`json\`\`\
  "valor": número ou null, "data": "YYYY-MM-DD" ou null, "contraparte": "quem (posto/fornecedor/cliente)" ou null,
  "categoria_slug": uma de [${CATEGORIA_SLUGS.join(', ')}] ou null, "pf_pj": "PF"|"PJ"|null,
  "obra_ref": "nome do cliente/obra citado" ou null, "descricao": "resumo curto" ou null,
+ "tem_nota": true/false (só entradas; false quando a pessoa disser SEM NOTA / por fora / sem comprovante / não vou dar nota; senão true),
  "campos_faltando": ["valor", "pf_pj", ...]}
 Sem nenhum evento de dinheiro → devolva [] (lista vazia).
 ` + `REGRAS (dinheiro em jogo — leia como contador):
@@ -139,7 +142,8 @@ Sem nenhum evento de dinheiro → devolva [] (lista vazia).
 - financeiro false quando NÃO for assunto de dinheiro da empresa/pessoal: conta de luz de
   CLIENTE, foto de telhado/obra, documento de proposta, conversa comum. Na dúvida sobre ser
   financeiro → false (o fluxo normal trata).
-- PERGUNTA/consulta sobre números ("quanto gastei esse mês?", "qual o imposto?", "como tá o caixa?") NÃO é lançamento → financeiro: false (a Eva responde no fluxo normal).`;
+- PERGUNTA/consulta sobre números ("quanto gastei esse mês?", "qual o imposto?", "como tá o caixa?") NÃO é lançamento → financeiro: false (a Eva responde no fluxo normal).
+- tem_nota: padrão TRUE. Só marque FALSE numa ENTRADA quando a pessoa deixar claro que é "sem nota"/"por fora"/"sem comprovante"/"não vou dar nota". Despesa: ignore (deixe true).`;
 
 export function montarPromptExtracaoTexto(texto: string, hoje: string): string {
   return `Você lê mensagens do DONO de uma empresa de energia solar e extrai lançamentos financeiros (gasto ou entrada de dinheiro).

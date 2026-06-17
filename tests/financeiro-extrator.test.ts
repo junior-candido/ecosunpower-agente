@@ -95,6 +95,18 @@ describe('financeiro/extrator: parseLancamentos (lista, multi-evento)', () => {
     expect(r).toHaveLength(1);
     expect(r[0].valor).toBe(50);
   });
+  it('entrada "sem nota" → tem_nota false', () => {
+    const r = parseLancamentos('{"financeiro":true,"intencao":"lancar","tipo":"entrada","valor":5000,"tem_nota":false}');
+    expect(r[0].tem_nota).toBe(false);
+  });
+  it('entrada normal → tem_nota true (default)', () => {
+    const r = parseLancamentos('{"financeiro":true,"intencao":"lancar","tipo":"entrada","valor":5000}');
+    expect(r[0].tem_nota).toBe(true);
+  });
+  it('tem_nota só é false com false explícito (qualquer outra coisa = true)', () => {
+    const r = parseLancamentos('{"financeiro":true,"intencao":"lancar","tipo":"entrada","valor":1,"tem_nota":"sei la"}');
+    expect(r[0].tem_nota).toBe(true);
+  });
 });
 
 describe('financeiro/extrator: prompts', () => {
@@ -117,5 +129,8 @@ describe('financeiro/extrator: prompts', () => {
     const p = montarPromptExtracaoTexto('recebi 9000 do João, paguei 1500', '2026-06-16');
     expect(p.toLowerCase()).toContain('lista');
     expect(p).toContain('um objeto por');
+  });
+  it('prompt explica a regra de sem nota', () => {
+    expect(montarPromptExtracaoTexto('x', '2026-06-16').toLowerCase()).toContain('sem nota');
   });
 });
