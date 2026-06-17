@@ -3369,6 +3369,15 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     if (isAdminPhone(from) && (await impostoAwaitActive(from))) {
       const valorImposto = parseValorReais(text);
       if (valorImposto !== null) {
+        // Trava de segurança: venda real nunca é < R$100. Valor baixo costuma ser
+        // erro de digitação (ex: "85.50" lido como R$85,50 em vez de 85.500). Em vez
+        // de calcular 100× menor calado, pergunta de novo e mantém o modo aberto.
+        if (valorImposto < 100) {
+          await setImpostoAwait(from);
+          const fmt = valorImposto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+          await sendText(from, `🤔 ${fmt}? Parece baixo pra uma venda. Confere e me manda de novo (ex: *30.000* ou *30 mil*). Se for isso mesmo, manda */imposto ${valorImposto}*.`);
+          return;
+        }
         await clearImpostoAwait(from);
         await sendText(from, await montarRespostaImposto(supabase.getClient(), valorImposto));
         return;
