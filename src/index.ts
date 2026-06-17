@@ -86,6 +86,7 @@ import { camposVaziosUsina, proximoCampoNovo, campoObrigatorioNovo, perguntaNovo
 import { CAMPOS_USINA } from './modules/monitoring/dono-cad/types.js';
 import { sendAdminWithButtons } from './modules/eva-admin-buttons.js';
 import { makeImpostoHandler } from './modules/financeiro/comando-imposto.js';
+import { makeRelatorioHandler } from './modules/financeiro/comando-relatorio.js';
 import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/cron.js';
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
@@ -675,6 +676,9 @@ async function main() {
 
   // /imposto <valor> — Núcleo Financeiro: imposto por anexo + Fator R + salto de faixa
   const tryHandleImpostoCommand = makeImpostoHandler(supabase.getClient(), isAdminPhone, sendText);
+
+  // "relatório [mês]" — resumo financeiro do mês no zap (Peça 3)
+  const tryHandleRelatorioCommand = makeRelatorioHandler(supabase.getClient(), isAdminPhone, sendText);
 
   // /recarregar-config — recarrega empresa_config do banco sem redeploy. Útil
   // depois de editar a tabela no SQL Editor do Supabase.
@@ -3551,6 +3555,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /imposto <valor> — imposto por anexo + Fator R + salto de faixa (Núcleo Financeiro)
     if (await tryHandleImpostoCommand(from, text)) return;
+
+    // "relatório [mês]" — resumo financeiro do mês (Peça 3); antes do gate da Caixa de Entrada
+    if (await tryHandleRelatorioCommand(from, text)) return;
 
     // /recarregar-config — recarrega empresa_config do banco sem redeploy
     if (await tryHandleRecarregarConfigCommand(from, text)) return;
