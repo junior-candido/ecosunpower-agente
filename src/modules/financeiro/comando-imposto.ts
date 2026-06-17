@@ -18,6 +18,32 @@ export function parseImpostoCommand(text: string): number | null {
   return Number.isFinite(valor) && valor > 0 ? valor : null;
 }
 
+// Lê um valor em reais escrito do jeito que o Junior digita: "30000", "30.000",
+// "30.000,50", "R$ 30 mil", "30k", "1,5 mi". Retorna número > 0 ou null.
+// Usado pelo "modo esperando valor" do submenu Financeiro (Calcular imposto).
+export function parseValorReais(text: string): number | null {
+  let s = text.trim().toLowerCase();
+  s = s.replace(/r\$\s*/g, '').replace(/reais?/g, '').trim();
+  const m = s.match(/^([\d.,]+)\s*(mil|k|mi|milh(?:ã|a)o|milh(?:õ|o)es)?$/);
+  if (!m) return null;
+  const numRaw = m[1];
+  const unit = m[2];
+  let mult = 1;
+  if (unit === 'mil' || unit === 'k') mult = 1000;
+  else if (unit) mult = 1_000_000; // mi, milhão, milhões
+
+  // Com unidade (mil/k/mi): ponto e vírgula são decimal (ex: "1,5 mi" → 1.5).
+  // Sem unidade: ponto = milhar, vírgula = decimal — exceto ponto-com-2-dígitos
+  // no fim, que é decimal americano copiado de planilha (ex: "1500.50").
+  const num = unit
+    ? Number(numRaw.replace(',', '.'))
+    : (!numRaw.includes(',') && /^\d+\.\d{2}$/.test(numRaw)
+        ? Number(numRaw)
+        : Number(numRaw.replace(/\./g, '').replace(',', '.')));
+
+  return Number.isFinite(num) && num * mult > 0 ? num * mult : null;
+}
+
 export async function montarRespostaImposto(client: SupabaseClient, valor: number): Promise<string> {
   const comp = competenciaAtual();
   const [buckets, params] = await Promise.all([getBuckets(client), getParametros(client)]);
