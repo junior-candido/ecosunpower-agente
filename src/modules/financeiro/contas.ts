@@ -140,17 +140,20 @@ export async function estornarRecebimento(
   const conta = await getContaReceber(client, contaId);
   const recs = await getRecebimentosDaConta(client, contaId);
   if (recs.length > 1) return { ok: false, motivo: 'parcial' };
+  // 1º CAS porteiro: reverte a conta (avulsa cancela; venda real volta pra "a receber").
+  // Só a 1ª execução ganha; clique-duplo/retro NÃO entra de novo no estorno do bucket
+  // (senão o RBT12 era subtraído em dobro). Se já foi estornada → no-op.
+  const ganhou = await reverterConta(client, contaId, { avulsa: conta.fechamento_id == null });
+  if (!ganhou) return { ok: true, valorEstornado: 0, impostoEstornado: 0 };
   let valorEstornado = 0;
   let impostoEstornado = 0;
   for (const r of recs) {
-    // 1º tira do bucket RBT12 (valor negativo = subtrai)
-    await somarReceitaNoMes(client, r.competencia, conta.atividade_id, -Number(r.valor));
-    // 2º apaga o recebimento
+    // apaga o recebimento ANTES do bucket: se cair no meio, o retry acha 0 recebimentos
+    // e não subtrai o bucket de novo (idempotente).
     await apagarRecebimento(client, r.id);
+    await somarReceitaNoMes(client, r.competencia, conta.atividade_id, -Number(r.valor));
     valorEstornado += Number(r.valor);
     impostoEstornado += Number(r.imposto);
   }
-  // 3º reverte a conta (avulsa cancela; venda real volta pra a receber)
-  await reverterConta(client, contaId, { avulsa: conta.fechamento_id == null });
   return { ok: true, valorEstornado, impostoEstornado };
 }

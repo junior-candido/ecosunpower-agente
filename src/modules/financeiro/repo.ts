@@ -236,10 +236,13 @@ export async function apagarRecebimento(client: SupabaseClient, id: string): Pro
 
 // Reverte a conta no estorno: avulsa → 'cancelado'; venda real → 'pendente'
 // (volta a "a receber"). Zera recebido + imposto + datas do recebimento.
+// CAS porteiro: só casa se a conta AINDA está recebida — retorna true se ESTA
+// execução reverteu (ganhou). Em clique-duplo/retry, a 2ª não casa (false) e o
+// chamador não estorna o bucket de novo. Evita subtrair o RBT12 em dobro.
 export async function reverterConta(
   client: SupabaseClient, id: string, opts: { avulsa: boolean },
-): Promise<void> {
-  const { error } = await client.from('financeiro_contas_a_receber')
+): Promise<boolean> {
+  const { data, error } = await client.from('financeiro_contas_a_receber')
     .update({
       status: opts.avulsa ? 'cancelado' : 'pendente',
       valor_recebido: 0,
@@ -248,6 +251,9 @@ export async function reverterConta(
       competencia_recebimento: null,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', id);
+    .eq('id', id)
+    .in('status', ['recebido', 'recebido_parcial'])
+    .select('id');
   if (error) throw new Error(`reverterConta: ${error.message}`);
+  return Boolean(data && data.length > 0);
 }
