@@ -87,6 +87,7 @@ import { CAMPOS_USINA } from './modules/monitoring/dono-cad/types.js';
 import { sendAdminWithButtons } from './modules/eva-admin-buttons.js';
 import { makeImpostoHandler, montarRespostaImposto, parseValorReais } from './modules/financeiro/comando-imposto.js';
 import { makeRelatorioHandler } from './modules/financeiro/comando-relatorio.js';
+import { makeMaterialQueryHandler } from './modules/financeiro/materiais.js';
 import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/cron.js';
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
@@ -695,6 +696,7 @@ async function main() {
 
   // "relatório [mês]" — resumo financeiro do mês no zap (Peça 3)
   const tryHandleRelatorioCommand = makeRelatorioHandler(supabase.getClient(), isAdminPhone, sendText);
+  const tryHandleConsultaMaterial = makeMaterialQueryHandler(supabase.getClient(), isAdminPhone, sendText);
 
   // /recarregar-config — recarrega empresa_config do banco sem redeploy. Útil
   // depois de editar a tabela no SQL Editor do Supabase.
@@ -3644,6 +3646,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /imposto <valor> — imposto por anexo + Fator R + salto de faixa (Núcleo Financeiro)
     if (await tryHandleImpostoCommand(from, text)) return;
+
+    // Consulta de preço de material ("preço do DPS") — antes do gate do caixa.
+    if (await tryHandleConsultaMaterial(from, text)) return;
 
     // "relatório [mês]" — resumo financeiro do mês (Peça 3); antes do gate da Caixa de Entrada
     if (await tryHandleRelatorioCommand(from, text)) return;

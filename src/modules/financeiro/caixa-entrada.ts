@@ -24,6 +24,7 @@ import {
 } from './resumo-lancamento.js';
 import { criarContaDeFechamento, registrarRecebimento } from './contas.js';
 import { parseValorReais } from './comando-imposto.js';
+import { gravarCompraMaterialSeHouver } from './materiais.js';
 import { getAtividades, cancelarConta } from './repo.js';
 
 interface Waba {
@@ -348,10 +349,12 @@ export async function handleFinlanButton(deps: CaixaDeps, from: string, buttonId
         }
         const ok = await mudarStatus(deps.supabase, id, 'pendente', 'confirmado');
         if (ok) {
+          const salvouMaterial = await gravarCompraMaterialSeHouver(deps.supabase, id).catch(() => false);
+          const sufMat = salvouMaterial ? '\n📦 Preço guardado pra comparar (manda "preço do <material>").' : '';
           const msgEntrada = row.tem_nota === false
             ? `💰 Entrada lançada: ${brl(Number(row.valor))} (sem nota — fora do imposto).`
             : `💰 Entrada lançada: ${brl(Number(row.valor))}.`;
-          await deps.sendText(from, row.tipo === 'despesa' ? `💸 Lançado: ${brl(Number(row.valor))}. Tá no caixa.` : msgEntrada);
+          await deps.sendText(from, (row.tipo === 'despesa' ? `💸 Lançado: ${brl(Number(row.valor))}. Tá no caixa.` : msgEntrada) + sufMat);
         } else await deps.sendText(from, 'Esse lançamento já tinha sido processado.');
         return true;
       }
