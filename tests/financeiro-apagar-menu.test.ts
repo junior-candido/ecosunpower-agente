@@ -5,6 +5,7 @@ vi.mock('../src/modules/financeiro/lancamentos-repo.js', () => ({
   getLancamento: vi.fn(),
   mudarStatus: vi.fn(),
 }));
+vi.mock('../src/modules/financeiro/contas.js', () => ({ estornarRecebimento: vi.fn() }));
 
 import {
   montarListaApagar,
@@ -12,6 +13,7 @@ import {
   executarApagarLancamento,
 } from '../src/modules/financeiro/apagar-menu.js';
 import * as repo from '../src/modules/financeiro/lancamentos-repo.js';
+import * as contas from '../src/modules/financeiro/contas.js';
 
 const client = {} as never;
 const row = (over: Record<string, unknown> = {}) => ({
@@ -53,11 +55,6 @@ describe('apagar-menu: confirmação', () => {
     (repo.getLancamento as any).mockResolvedValue(row({ status: 'apagado' }));
     expect(await montarConfirmacaoApagarLancamento(client, 'x')).toBeNull();
   });
-  it('entrada ligada a venda → erro (estorno manual)', async () => {
-    (repo.getLancamento as any).mockResolvedValue(row({ tipo: 'entrada', conta_id: 'conta-9' }));
-    const r = await montarConfirmacaoApagarLancamento(client, 'x');
-    expect(r && 'erro' in r).toBe(true);
-  });
   it('normal → botões apagar/cancelar', async () => {
     (repo.getLancamento as any).mockResolvedValue(row());
     const r = await montarConfirmacaoApagarLancamento(client, 'abc-123');
@@ -74,12 +71,6 @@ describe('apagar-menu: executar', () => {
     (repo.getLancamento as any).mockResolvedValue(null);
     expect(await executarApagarLancamento(client, 'x')).toContain('Não achei');
   });
-  it('entrada ligada a venda não apaga (guard)', async () => {
-    (repo.getLancamento as any).mockResolvedValue(row({ tipo: 'entrada', conta_id: 'conta-9' }));
-    const msg = await executarApagarLancamento(client, 'x');
-    expect(msg).toContain('manual');
-    expect(repo.mudarStatus).not.toHaveBeenCalled();
-  });
   it('sucesso → soft-delete', async () => {
     (repo.getLancamento as any).mockResolvedValue(row({ status: 'confirmado' }));
     (repo.mudarStatus as any).mockResolvedValue(true);
@@ -91,5 +82,30 @@ describe('apagar-menu: executar', () => {
     (repo.getLancamento as any).mockResolvedValue(row({ status: 'confirmado' }));
     (repo.mudarStatus as any).mockResolvedValue(false);
     expect(await executarApagarLancamento(client, 'abc-123')).toContain('já tinha sido apagado');
+  });
+});
+
+describe('apagar-menu: estorno de entrada de venda', () => {
+  it('entrada de venda 1-recebimento → estorna + apaga + msg com valor', async () => {
+    (repo.getLancamento as any).mockResolvedValue(row({ tipo: 'entrada', conta_id: 'c1', status: 'confirmado' }));
+    (contas.estornarRecebimento as any).mockResolvedValue({ ok: true, valorEstornado: 2500, impostoEstornado: 200 });
+    (repo.mudarStatus as any).mockResolvedValue(true);
+    const msg = await executarApagarLancamento(client, 'abc-123');
+    expect(contas.estornarRecebimento).toHaveBeenCalledWith(client, 'c1');
+    expect(msg).toContain('estornado');
+    expect(msg).toContain('2.500');
+  });
+  it('entrada de venda parcial → mensagem "me chama" (não apaga)', async () => {
+    (repo.getLancamento as any).mockResolvedValue(row({ tipo: 'entrada', conta_id: 'c1', status: 'confirmado' }));
+    (contas.estornarRecebimento as any).mockResolvedValue({ ok: false, motivo: 'parcial' });
+    const msg = await executarApagarLancamento(client, 'abc-123');
+    expect(msg).toContain('parciais');
+    expect(repo.mudarStatus).not.toHaveBeenCalled();
+  });
+  it('confirmação de entrada de venda avisa que vai estornar (não bloqueia)', async () => {
+    (repo.getLancamento as any).mockResolvedValue(row({ tipo: 'entrada', conta_id: 'c1' }));
+    const conf = await montarConfirmacaoApagarLancamento(client, 'abc-123');
+    expect(conf && 'buttons' in conf).toBe(true);
+    if (conf && 'buttons' in conf) expect(conf.body).toContain('estornar');
   });
 });

@@ -3405,7 +3405,6 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         if (!idValido(id)) { await sendText(from, 'Lançamento inválido 🤔'); return; }
         const conf = await montarConfirmacaoApagarLancamento(supabase.getClient(), id);
         if (!conf) { await sendText(from, 'Não achei esse lançamento (talvez já apagado) 🤔'); return; }
-        if ('erro' in conf) { await sendText(from, conf.erro); return; }
         if (metaWaba) await metaWaba.sendInteractiveButtons(from, conf.body, conf.buttons);
         else await sendText(from, conf.body);
         return;
