@@ -7,15 +7,13 @@ import { calcularRBT12 } from './rbt12.js';
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const pct = (n: number) => `${(n * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 
+// Aceita "/imposto 30000", "imposto 30000" (sem barra, como o menu manda) e
+// valor em reais ("imposto 30 mil", "imposto R$ 30.000", "imposto 16mil").
+// Roda ANTES do gate do caixa de entrada no index.ts → nunca vira lançamento.
 export function parseImpostoCommand(text: string): number | null {
-  const m = text.trim().match(/^\/imposto\s+([\d.,]+)/i);
+  const m = text.trim().match(/^\/?imposto\s+(.+)$/i);
   if (!m) return null;
-  const raw = m[1];
-  // único ponto com exatamente 2 dígitos no fim = decimal americano (copiado de planilha)
-  const valor = !raw.includes(',') && /^\d+\.\d{2}$/.test(raw)
-    ? Number(raw)
-    : Number(raw.replace(/\./g, '').replace(',', '.'));
-  return Number.isFinite(valor) && valor > 0 ? valor : null;
+  return parseValorReais(m[1]);
 }
 
 // Lê um valor em reais escrito do jeito que o Junior digita: "30000", "30.000",

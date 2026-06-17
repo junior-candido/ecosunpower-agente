@@ -133,4 +133,14 @@ describe('financeiro/comando-imposto: parse de valor', () => {
     expect(parseImpostoCommand('/imposto')).toBeNull();
     expect(parseImpostoCommand('/imposto 0')).toBeNull();
   });
+  it('aceita sem barra (menu manda "imposto 30000")', () => {
+    expect(parseImpostoCommand('imposto 30000')).toBe(30000);
+    expect(parseImpostoCommand('IMPOSTO 30000')).toBe(30000);
+  });
+  it('aceita valor em reais (mil/k/R$)', () => {
+    expect(parseImpostoCommand('imposto 30 mil')).toBe(30000);
+    expect(parseImpostoCommand('imposto 30k')).toBe(30000);
+    expect(parseImpostoCommand('imposto R$ 30.000')).toBe(30000);
+    expect(parseImpostoCommand('/imposto 16mil')).toBe(16000);
+  });
 });
