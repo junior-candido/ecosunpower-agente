@@ -82,20 +82,14 @@ export class ProposalFollowupService {
     }
   }
 
-  // Notifica Junior sobre re-abertura, com throttle Redis 5min por slug.
-  // Nao manda mensagem pro cliente (idempotencia: followup_sent_at ja existe).
+  // Reabertura: a Eva já abordou na 1ª abertura, então aqui só re-avisa o Junior
+  // que o cliente voltou (sinal de interesse), com throttle 5min por slug.
+  // [Fatia 2 — futuro: aqui entram as abordagens inteligentes/variadas na conversa.]
   private async runReaberturaAsync(slug: string, acessosAntes: number): Promise<void> {
     if (this.redis) {
-      // SET key NX EX 300 — se ja existe, devolve null (estamos no throttle).
       const throttleKey = `proposal:notify-throttle:${slug}`;
       try {
-        const acquired = await this.redis.set(
-          throttleKey,
-          '1',
-          'EX',
-          REOPEN_THROTTLE_SECONDS,
-          'NX',
-        );
+        const acquired = await this.redis.set(throttleKey, '1', 'EX', REOPEN_THROTTLE_SECONDS, 'NX');
         if (acquired === null) {
           console.log(`[proposal-followup] reabertura slug=${slug} em throttle, skip`);
           return;
@@ -108,8 +102,7 @@ export class ProposalFollowupService {
     const proposta = await this.loadPropostaParaFollowup(slug);
     if (!proposta) return;
 
-    const totalAcessos = acessosAntes + 1;
-    const ordinal = `${totalAcessos}ª`;
+    const ordinal = `${acessosAntes + 1}ª`;
     const linhaTelefone = proposta.cliente_telefone
       ? `📞 ${this.normalizarTelefone(proposta.cliente_telefone) ?? proposta.cliente_telefone}`
       : '📞 (sem telefone cadastrado)';
@@ -150,22 +143,18 @@ export class ProposalFollowupService {
     }
   }
 
+  // 1ª abertura: a Eva ABORDA o cliente na hora (template aprovado — assim o
+  // cliente já sabe que a Eva é a consultora do Junior). executarEnvio manda,
+  // marca followup_sent_at, grava a conversa no dashboard e avisa o Junior.
   private async runFollowupAsync(slug: string): Promise<void> {
-    // 1. Carrega proposta com tudo que precisamos
     const proposta = await this.loadPropostaParaFollowup(slug);
     if (!proposta) return;
-
-    // 2. Idempotencia: ja mandou?
     if (proposta.followup_sent_at) {
-      console.log(`[proposal-followup] slug=${slug} ja teve followup, skip`);
+      console.log(`[proposal-followup] slug=${slug} ja teve abordagem, skip`);
       return;
     }
-
     const clienteNome = proposta.cliente_nome;
     const clienteTelefone = this.normalizarTelefone(proposta.cliente_telefone);
-    const modoEnvio = proposta.modo_envio ?? 'junior_envia';
-
-    // 3. Se cliente nao tem telefone valido, so notifica Junior
     if (!clienteTelefone) {
       await this.notifyJunior(clienteNome, null, slug)
         .catch((err) => console.warn('[proposal-followup] notify junior:', err.message));
@@ -178,21 +167,6 @@ export class ProposalFollowupService {
       await this.markSkipped(slug, 'waba_indisponivel');
       return;
     }
-
-    // 4. CAMINHO A — junior_envia: cliente NAO conhece o numero da Eva.
-    //    Pergunta a Junior antes de mandar (botoes interativos).
-    if (modoEnvio === 'junior_envia') {
-      await this.notifyJuniorComBotoes(clienteNome, clienteTelefone, slug);
-      console.log(`[proposal-followup] junior_envia: aguardando decisao do Junior slug=${slug}`);
-      return;
-    }
-
-    // 5. CAMINHO B — eva_envia: cliente JA conhece o numero da Eva (recebeu
-    //    proposta dele). Mandar follow-up direto sem perguntar.
-    await this.notifyJunior(clienteNome, clienteTelefone, slug)
-      .catch((err) => console.warn('[proposal-followup] notify junior:', err.message));
-    // Aguarda delay (deixa cliente ler a proposta antes de incomodar)
-    await new Promise((resolve) => setTimeout(resolve, this.delayMs));
     await this.executarEnvio(slug, clienteNome, clienteTelefone);
   }
 
@@ -218,12 +192,17 @@ export class ProposalFollowupService {
         this.templateAbordagem,
       );
       await this.markFollowupSent(slug);
+      // Grava a abordagem na conversa do cliente → aparece no dashboard (igual o
+      // lead), pro Junior acompanhar como a Eva tá se portando. Best-effort.
+      await this.registrarAbordagemNaConversa(clienteTelefone, clienteNome).catch((err) =>
+        console.warn('[proposal-followup] gravar conversa falhou:', (err as Error).message),
+      );
       console.log(
         `[proposal-followup] abordagem (${templateUsado}) enviada pra ${clienteNome} (${clienteTelefone}) slug=${slug}`,
       );
       await this.sendText(
         this.engineerPhone,
-        `✅ Eva abordou ${clienteNome} sobre a proposta.`,
+        `📣 *${clienteNome}* abriu sua proposta — a Eva já abordou! 🤝`,
       ).catch(() => {});
     } catch (err) {
       const msg = (err as Error).message;
@@ -237,6 +216,25 @@ export class ProposalFollowupService {
         `⚠️ Nao consegui abordar ${clienteNome} sobre a proposta. Contata manualmente: ${clienteTelefone}`,
       ).catch(() => {});
     }
+  }
+
+  // Grava a abordagem na conversa do cliente (acha/cria o lead pelo telefone) pra
+  // a conversa aparecer no /dashboard/leads igual o lead. Quando o cliente
+  // responder, o Brain continua escrevendo na MESMA conversa.
+  private async registrarAbordagemNaConversa(telefone: string, nome: string): Promise<void> {
+    const leadId = await this.supabase.getOrCreateLeadByPhone(telefone, nome);
+    const conv = await this.supabase.getOrCreateConversation(leadId);
+    await this.supabase.updateConversation(conv.id, {
+      messages: [
+        ...conv.messages,
+        {
+          role: 'assistant' as const,
+          content: '📨 Eva abordou o cliente sobre a proposta (1ª mensagem automática de abertura, com o nome). Aguardando ele responder.',
+          timestamp: new Date().toISOString(),
+        },
+      ],
+      message_count: conv.message_count + 1,
+    });
   }
 
   // Hook chamado quando Junior toca o botao [✅ Eva manda]. Re-busca proposta
