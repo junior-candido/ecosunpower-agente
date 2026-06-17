@@ -234,30 +234,32 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
 
     // apagar/corrigir = intenção de alvo único → trata o 1º item pelo caminho de hoje.
     const primeiro = lancar[0];
+    const extras = lancar.slice(1); // itens além do 1º (ex.: "apaga o do posto, paguei 380")
+    const lancarExtras = async () => { for (const x of extras) await criarPendenteEFalar(deps, from, x, null); };
     if (primeiro.intencao === 'apagar') {
       const alvo = primeiro.contraparte
         ? await buscarConfirmadoPorContraparte(deps.supabase, primeiro.contraparte)
         : await getUltimoConfirmado(deps.supabase);
-      if (!alvo) { await deps.sendText(from, 'Não achei lançamento pra apagar 🤔'); return true; }
+      if (!alvo) { await deps.sendText(from, 'Não achei lançamento pra apagar 🤔'); await lancarExtras(); return true; }
       // Invariante Fatia 2: recebimento lançado não se desfaz por botão — estorno é manual (cancelarConta tem o mesmo guard).
       if (alvo.tipo === 'entrada' && alvo.conta_id) {
         await deps.sendText(from, '⚠️ Essa entrada está ligada a uma venda (recebimento e imposto já contados). Estorno é manual por enquanto — me chama que a gente ajusta no banco.');
-        return true;
+        await lancarExtras(); return true;
       }
       const msg = montarConfirmacaoApagar(await rowParaResumo(deps, alvo));
       await deps.waba.sendInteractiveButtons(from, msg.body, msg.buttons, FOOTER);
-      return true;
+      await lancarExtras(); return true;
     }
 
     if (primeiro.intencao === 'corrigir') {
       const alvo = primeiro.contraparte
         ? await buscarConfirmadoPorContraparte(deps.supabase, primeiro.contraparte)
         : await getUltimoConfirmado(deps.supabase);
-      if (!alvo) { await deps.sendText(from, 'Não achei o lançamento pra corrigir 🤔 Me fala qual (ex: "o do posto").'); return true; }
+      if (!alvo) { await deps.sendText(from, 'Não achei o lançamento pra corrigir 🤔 Me fala qual (ex: "o do posto").'); await lancarExtras(); return true; }
       // Invariante Fatia 2: recebimento lançado não se desfaz por botão — estorno é manual (cancelarConta tem o mesmo guard).
       if (alvo.tipo === 'entrada' && alvo.conta_id) {
         await deps.sendText(from, '⚠️ Essa entrada está ligada a uma venda (recebimento e imposto já contados). Estorno é manual por enquanto — me chama que a gente ajusta no banco.');
-        return true;
+        await lancarExtras(); return true;
       }
       // Correção = apaga o antigo (soft) + cria pendente novo já corrigido.
       // Simples e auditável: o histórico guarda os dois.
@@ -274,7 +276,7 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
       // mime_type não está no row — o storage_path basta (extensão implícita no path).
       await criarPendenteEFalar(deps, from, corrigido, null,
         { storagePath: alvo.storage_path, mimeType: undefined, leadId: alvo.lead_id, categoriaId: alvo.categoria_id });
-      return true;
+      await lancarExtras(); return true;
     }
 
     // lançamento(s) novo(s): se for mais de um, abre avisando quantos.
