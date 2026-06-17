@@ -199,13 +199,13 @@ export async function gateTextoFinanceiro(client: Anthropic, texto: string): Pro
 }
 
 // hoje = data em America/Sao_Paulo (BRT). NUNCA new Date().toISOString() direto — das 21h às 0h o servidor UTC já virou o dia.
-export async function extrairDeTexto(client: Anthropic, texto: string, hoje: string): Promise<ExtracaoLancamento | null> {
+export async function extrairDeTexto(client: Anthropic, texto: string, hoje: string): Promise<ExtracaoLancamento[]> {
   const raw = await chamarComFallback(client, [{ role: 'user', content: montarPromptExtracaoTexto(texto, hoje) }], 1024);
-  return parseRespostaExtrator(raw);
+  return parseLancamentos(raw);
 }
 
 // hoje = data em America/Sao_Paulo (BRT). NUNCA new Date().toISOString() direto — das 21h às 0h o servidor UTC já virou o dia.
-export async function extrairDeImagem(client: Anthropic, base64: string, mediaType: string, hoje: string): Promise<ExtracaoLancamento | null> {
+export async function extrairDeImagem(client: Anthropic, base64: string, mediaType: string, hoje: string): Promise<ExtracaoLancamento[]> {
   const mt = (['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mediaType) ? mediaType : 'image/jpeg') as
     'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
   const raw = await chamarComFallback(client, [{
@@ -215,11 +215,11 @@ export async function extrairDeImagem(client: Anthropic, base64: string, mediaTy
       { type: 'text', text: montarPromptExtracaoMidia(hoje) },
     ],
   }], 1024);
-  return parseRespostaExtrator(raw);
+  return parseLancamentos(raw);
 }
 
 // hoje = data em America/Sao_Paulo (BRT). NUNCA new Date().toISOString() direto — das 21h às 0h o servidor UTC já virou o dia.
-export async function extrairDePdf(client: Anthropic, base64: string, hoje: string): Promise<ExtracaoLancamento | null> {
+export async function extrairDePdf(client: Anthropic, base64: string, hoje: string): Promise<ExtracaoLancamento[]> {
   const raw = await chamarComFallback(client, [{
     role: 'user',
     content: [
@@ -227,5 +227,5 @@ export async function extrairDePdf(client: Anthropic, base64: string, hoje: stri
       { type: 'text', text: montarPromptExtracaoMidia(hoje) },
     ],
   }], 1024);
-  return parseRespostaExtrator(raw);
+  return parseLancamentos(raw);
 }

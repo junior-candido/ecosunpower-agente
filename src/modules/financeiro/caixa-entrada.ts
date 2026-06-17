@@ -19,7 +19,8 @@ import {
 import { uploadComprovante } from './comprovantes.js';
 import {
   montarResumoPendente, montarPedidoPfPj, montarConfirmacaoApagar,
-  montarOfertaVinculoConta, montarEscolhaAtividade, type LancamentoResumo,
+  montarOfertaVinculoConta, montarEscolhaAtividade,
+  montarPedidoEsclarecimento, montarAberturaMultipla, type LancamentoResumo,
 } from './resumo-lancamento.js';
 import { criarContaDeFechamento, registrarRecebimento } from './contas.js';
 import { getAtividades, cancelarConta } from './repo.js';
@@ -166,11 +167,14 @@ export async function tryHandleFinanceiroMedia(
 ): Promise<boolean> {
   try {
     const hoje = hojeBRT();
-    const e = kind === 'pdf'
+    const lista = kind === 'pdf'
       ? await extrairDePdf(deps.anthropic, midia.base64, hoje)
       : await extrairDeImagem(deps.anthropic, midia.base64, midia.mimeType, hoje);
-    if (!e || !e.financeiro) return false; // não é assunto financeiro → fluxo normal
-    await criarPendenteEFalar(deps, from, e, midia);
+    const { lancar } = planejarCaptura(lista);
+    if (lancar.length === 0) return false; // comprovante não-financeiro → fluxo normal
+    for (let i = 0; i < lancar.length; i++) {
+      await criarPendenteEFalar(deps, from, lancar[i], i === 0 ? midia : null);
+    }
     return true;
   } catch (err) {
     console.error('[caixa-entrada] midia falhou:', (err as Error).message);
@@ -188,16 +192,17 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
       const contexto = `O lançamento pendente atual é: ${JSON.stringify(aguardando.extracao)}. ` +
         `Se a resposta do dono abaixo CORRIGE/COMPLETA esse lançamento, devolva o JSON completo já mesclado com "relacionado": true. ` +
         `Se for um lançamento NOVO (outro gasto/entrada, sem relação com o pendente), devolva o JSON do novo com "relacionado": false.\n\nResposta: "${texto}"`;
-      const e = await extrairDeTexto(deps.anthropic, contexto, hoje);
-      // Mescla SÓ com afirmação explícita do modelo — omissão tratada como lançamento novo (pior perder a mescla rara do que engolir dinheiro novo em silêncio).
-      if (e && e.financeiro && e.relacionado !== true) {
-        // Lançamento NOVO no meio da conversa: solta o pendente atual (fica
-        // confirmável por clique) e cria o novo — os DOIS sobrevivem.
+      const listaCtx = await extrairDeTexto(deps.anthropic, contexto, hoje);
+      const e = listaCtx.find((x) => x.financeiro) ?? null;
+      const extras = listaCtx.filter((x) => x.financeiro && x !== e);
+      // Mescla SÓ com afirmação explícita do modelo; senão é lançamento novo.
+      if (e && e.relacionado !== true) {
         await atualizarPendente(deps.supabase, aguardando.id, { extracao: { ...aguardando.extracao, aguardando: false } });
         await criarPendenteEFalar(deps, from, e, null);
+        for (const x of extras) await criarPendenteEFalar(deps, from, x, null);
         return true;
       }
-      if (e && e.financeiro) {
+      if (e) {
         const cats = await getCategorias(deps.supabase);
         const cat = cats.find((c) => c.slug === resolverCategoria(e.categoria_slug)) ?? null;
         await atualizarPendente(deps.supabase, aguardando.id, {
@@ -210,9 +215,9 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
           extracao: { ...e, aguardando: false },
         });
         await mandarResumo(deps, from, aguardando.id);
+        for (const x of extras) await criarPendenteEFalar(deps, from, x, null);
         return true;
       }
-      // resposta não relacionada → solta o pendente e segue fluxo normal
       await atualizarPendente(deps.supabase, aguardando.id, { extracao: { ...aguardando.extracao, aguardando: false } });
       return false;
     }
@@ -220,13 +225,18 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
     // 2) Gate barato: é assunto financeiro?
     if (!(await gateTextoFinanceiro(deps.anthropic, texto))) return false;
 
-    // 3) Extração completa
-    const e = await extrairDeTexto(deps.anthropic, texto, hojeBRT());
-    if (!e || !e.financeiro) return false;
+    // 3) Extração completa (lista de eventos)
+    const lista = await extrairDeTexto(deps.anthropic, texto, hojeBRT());
+    const { lancar, esclarecer } = planejarCaptura(lista);
 
-    if (e.intencao === 'apagar') {
-      const alvo = e.contraparte
-        ? await buscarConfirmadoPorContraparte(deps.supabase, e.contraparte)
+    // Rede de segurança: gate disse dinheiro mas não saiu nada → pergunta (nunca cala).
+    if (esclarecer) { await deps.sendText(from, montarPedidoEsclarecimento()); return true; }
+
+    // apagar/corrigir = intenção de alvo único → trata o 1º item pelo caminho de hoje.
+    const primeiro = lancar[0];
+    if (primeiro.intencao === 'apagar') {
+      const alvo = primeiro.contraparte
+        ? await buscarConfirmadoPorContraparte(deps.supabase, primeiro.contraparte)
         : await getUltimoConfirmado(deps.supabase);
       if (!alvo) { await deps.sendText(from, 'Não achei lançamento pra apagar 🤔'); return true; }
       // Invariante Fatia 2: recebimento lançado não se desfaz por botão — estorno é manual (cancelarConta tem o mesmo guard).
@@ -239,9 +249,9 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
       return true;
     }
 
-    if (e.intencao === 'corrigir') {
-      const alvo = e.contraparte
-        ? await buscarConfirmadoPorContraparte(deps.supabase, e.contraparte)
+    if (primeiro.intencao === 'corrigir') {
+      const alvo = primeiro.contraparte
+        ? await buscarConfirmadoPorContraparte(deps.supabase, primeiro.contraparte)
         : await getUltimoConfirmado(deps.supabase);
       if (!alvo) { await deps.sendText(from, 'Não achei o lançamento pra corrigir 🤔 Me fala qual (ex: "o do posto").'); return true; }
       // Invariante Fatia 2: recebimento lançado não se desfaz por botão — estorno é manual (cancelarConta tem o mesmo guard).
@@ -252,12 +262,12 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
       // Correção = apaga o antigo (soft) + cria pendente novo já corrigido.
       // Simples e auditável: o histórico guarda os dois.
       const corrigido: ExtracaoLancamento = {
-        ...e, intencao: 'lancar',
-        tipo: e.tipo ?? alvo.tipo,
-        valor: e.valor ?? Number(alvo.valor),
-        data: e.data ?? alvo.data_evento,
-        contraparte: e.contraparte ?? alvo.contraparte,
-        pf_pj: e.pf_pj ?? alvo.pf_pj,
+        ...primeiro, intencao: 'lancar',
+        tipo: primeiro.tipo ?? alvo.tipo,
+        valor: primeiro.valor ?? Number(alvo.valor),
+        data: primeiro.data ?? alvo.data_evento,
+        contraparte: primeiro.contraparte ?? alvo.contraparte,
+        pf_pj: primeiro.pf_pj ?? alvo.pf_pj,
       };
       await mudarStatus(deps.supabase, alvo.id, 'confirmado', 'apagado',
         { descricao: `${alvo.descricao ?? ''} [substituído por correção]`.trim() });
@@ -267,7 +277,11 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
       return true;
     }
 
-    await criarPendenteEFalar(deps, from, e, null);
+    // lançamento(s) novo(s): se for mais de um, abre avisando quantos.
+    if (lancar.length > 1) await deps.sendText(from, montarAberturaMultipla(lancar.length));
+    for (const e of lancar) {
+      await criarPendenteEFalar(deps, from, e, null);
+    }
     return true;
   } catch (err) {
     console.error('[caixa-entrada] texto falhou:', (err as Error).message);
