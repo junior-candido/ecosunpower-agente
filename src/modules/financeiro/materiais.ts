@@ -3,7 +3,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getLancamento } from './lancamentos-repo.js';
 
-export interface CompraRow { loja: string | null; preco_unitario: number; data_evento: string; }
+export interface CompraRow { loja: string | null; preco_unitario: number; data_evento: string; created_at?: string }
 
 // Normaliza o nome do material pra agrupar (lowercase, sem acento, espaços colapsados).
 export function normalizarMaterial(s: string): string {
@@ -11,14 +11,17 @@ export function normalizarMaterial(s: string): string {
 }
 
 // Detecta uma CONSULTA de preço de material e devolve o termo (ou null).
+// Gatilho FORTE: "preço/valor" só conta quando seguido de preposição (de/do/da),
+// pra não engolir frase comum do dia a dia ("valor combinado foi 30 mil", "preço
+// fechado com o cliente"). Mesmo assim, o handler só RESPONDE quando há registro
+// (montarRankingMaterial devolve null se vazio) — então nunca engole mensagem.
 export function parseConsultaMaterial(text: string): string | null {
-  let t = text.trim().replace(/\?+\s*$/, '').trim();
-  const gatilho = /^(onde\s+(?:t[aá]|est[aá])\s+mais\s+barat[oa]|qual\s+(?:o\s+)?pre[cç]o|pre[cç]o|quanto\s+custa|valor)\b/i;
-  if (!gatilho.test(t)) return null;
-  t = t.replace(gatilho, '').trim();
-  t = t.replace(/^d[eo]s?\s+/i, '').replace(/^d[ao]s?\s+/i, '').trim(); // de/do/das/da
-  t = t.replace(/^(?:o|a|os|as)\s+/i, '').trim();                       // artigo
-  return t.length >= 2 ? t : null;
+  const t = text.trim().replace(/\?+\s*$/, '').trim();
+  const gatilho = /^(?:onde\s+(?:t[aá]|est[aá])\s+mais\s+barat[oa]\s+|quanto\s+custa\s+|qual\s+(?:o\s+)?(?:pre[cç]o|valor)\s+d[eoa]s?\s+|(?:pre[cç]o|valor)\s+d[eoa]s?\s+)/i;
+  const m = t.match(gatilho);
+  if (!m) return null;
+  const termo = t.slice(m[0].length).replace(/^(?:o|a|os|as)\s+/i, '').trim();
+  return termo.length >= 2 ? termo : null;
 }
 
 export function precoUnitario(valorTotal: number, quantidade: number | null): number {
@@ -27,16 +30,23 @@ export function precoUnitario(valorTotal: number, quantidade: number | null): nu
 }
 
 // Por loja: pega a compra MAIS RECENTE (preço que vale hoje); ordena por preço asc.
+// Desempate no mesmo dia pela hora (created_at) — senão re-compra corrigida no mesmo
+// dia podia mostrar o preço velho de forma não-determinística.
 export function rankearLojas(rows: CompraRow[]): Array<{ loja: string; preco_unitario: number; data_evento: string }> {
-  const porLoja = new Map<string, { loja: string; preco_unitario: number; data_evento: string }>();
+  const recencia = (r: CompraRow) => `${r.data_evento}T${r.created_at ?? ''}`;
+  const porLoja = new Map<string, { loja: string; preco_unitario: number; data_evento: string; _r: string }>();
   for (const r of rows) {
     const loja = r.loja ?? '—';
-    const atual = porLoja.get(loja.toLowerCase());
-    if (!atual || r.data_evento > atual.data_evento) {
-      porLoja.set(loja.toLowerCase(), { loja, preco_unitario: Number(r.preco_unitario), data_evento: r.data_evento });
+    const k = loja.toLowerCase();
+    const atual = porLoja.get(k);
+    const rec = recencia(r);
+    if (!atual || rec > atual._r) {
+      porLoja.set(k, { loja, preco_unitario: Number(r.preco_unitario), data_evento: r.data_evento, _r: rec });
     }
   }
-  return [...porLoja.values()].sort((a, b) => a.preco_unitario - b.preco_unitario);
+  return [...porLoja.values()]
+    .map(({ _r, ...rest }) => rest)
+    .sort((a, b) => a.preco_unitario - b.preco_unitario);
 }
 
 export function formatarRanking(termo: string, ranking: Array<{ loja: string; preco_unitario: number; data_evento: string }>): string {
@@ -59,9 +69,9 @@ export async function inserirCompraMaterial(client: SupabaseClient, c: {
 export async function getComprasPorMaterialNorm(client: SupabaseClient, termoNorm: string): Promise<CompraRow[]> {
   const t = termoNorm.replace(/[%_]/g, '\\$&');
   const { data, error } = await client.from('financeiro_materiais_compras')
-    .select('loja, preco_unitario, data_evento')
+    .select('loja, preco_unitario, data_evento, created_at')
     .ilike('material_norm', `%${t}%`)
-    .order('data_evento', { ascending: false }).limit(200);
+    .order('data_evento', { ascending: false }).order('created_at', { ascending: false }).limit(200);
   if (error) throw new Error(`getComprasPorMaterialNorm: ${error.message}`);
   return (data ?? []) as CompraRow[];
 }
@@ -86,9 +96,13 @@ export async function gravarCompraMaterialSeHouver(client: SupabaseClient, lanca
   return true;
 }
 
-export async function montarRankingMaterial(client: SupabaseClient, termo: string): Promise<string> {
+// Devolve o ranking formatado, OU null quando não há NENHUM registro daquele material
+// (aí o handler deixa a mensagem seguir o fluxo normal — nunca engole).
+export async function montarRankingMaterial(client: SupabaseClient, termo: string): Promise<string | null> {
   const rows = await getComprasPorMaterialNorm(client, normalizarMaterial(termo));
-  return formatarRanking(termo, rankearLojas(rows));
+  const ranking = rankearLojas(rows);
+  if (ranking.length === 0) return null;
+  return formatarRanking(termo, ranking);
 }
 
 // Handler no formato dos comandos do index: (from, text) => Promise<boolean>.
@@ -101,7 +115,9 @@ export function makeMaterialQueryHandler(
     if (!isAdminPhone(from)) return false;
     const termo = parseConsultaMaterial(text);
     if (!termo) return false;
-    await sendText(from, await montarRankingMaterial(client, termo));
+    const resp = await montarRankingMaterial(client, termo);
+    if (!resp) return false; // sem registro → não engole, deixa seguir o fluxo normal
+    await sendText(from, resp);
     return true;
   };
 }

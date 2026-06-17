@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { parseLancamentos } from '../src/modules/financeiro/extrator-lancamento.js';
 import {
   normalizarMaterial, parseConsultaMaterial, precoUnitario,
-  rankearLojas, formatarRanking, gravarCompraMaterialSeHouver,
+  rankearLojas, formatarRanking, gravarCompraMaterialSeHouver, montarRankingMaterial,
 } from '../src/modules/financeiro/materiais.js';
 
 vi.mock('../src/modules/financeiro/lancamentos-repo.js', async (orig) => ({
@@ -49,6 +49,11 @@ describe('materiais: parseConsultaMaterial', () => {
     expect(parseConsultaMaterial('comprei DPS por 80')).toBeNull();
     expect(parseConsultaMaterial('preço')).toBeNull();
   });
+  it('frases comuns que começam com preço/valor SEM preposição → null (não engole)', () => {
+    expect(parseConsultaMaterial('valor combinado foi 30 mil')).toBeNull();
+    expect(parseConsultaMaterial('preço fechado com o cliente')).toBeNull();
+    expect(parseConsultaMaterial('valor alto demais nesse fornecedor')).toBeNull();
+  });
 });
 
 describe('materiais: precoUnitario', () => {
@@ -67,6 +72,26 @@ describe('materiais: rankearLojas', () => {
     const r = rankearLojas(rows);
     expect(r.map(x => x.loja)).toEqual(['Eletro X', 'Loja Y']);
     expect(r[0].preco_unitario).toBe(75);
+  });
+  it('desempata no mesmo dia pela hora (created_at)', () => {
+    const rows = [
+      { loja: 'Eletro X', preco_unitario: 90, data_evento: '2026-06-10', created_at: '2026-06-10T09:00:00Z' },
+      { loja: 'Eletro X', preco_unitario: 75, data_evento: '2026-06-10', created_at: '2026-06-10T15:00:00Z' },
+    ];
+    expect(rankearLojas(rows)[0].preco_unitario).toBe(75); // a mais recente do dia
+  });
+});
+
+describe('materiais: montarRankingMaterial', () => {
+  const clientCom = (rows: any[]) => ({
+    from: () => ({ select: () => ({ ilike: () => ({ order: () => ({ order: () => ({ limit: () => ({ data: rows, error: null }) }) }) }) }) }),
+  } as any);
+  it('vazio → null (handler não engole)', async () => {
+    expect(await montarRankingMaterial(clientCom([]), 'DPS')).toBeNull();
+  });
+  it('com registro → string com a loja', async () => {
+    const s = await montarRankingMaterial(clientCom([{ loja: 'Eletro X', preco_unitario: 75, data_evento: '2026-06-10', created_at: '2026-06-10T10:00:00Z' }]), 'DPS');
+    expect(s).toContain('Eletro X');
   });
 });
 
