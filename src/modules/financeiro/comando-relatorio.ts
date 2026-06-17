@@ -37,8 +37,13 @@ export function makeRelatorioHandler(
     if (!isAdminPhone(from)) return false;
     const parsed = parseRelatorioComando(text, hojeBRT());
     if (!parsed) return false;
-    const data = await getRelatorioMensal(client, parsed.competencia);
-    await sendText(from, montarRelatorioMensal(data));
+    try {
+      const data = await getRelatorioMensal(client, parsed.competencia);
+      await sendText(from, montarRelatorioMensal(data));
+    } catch (err) {
+      console.error('[relatorio] falhou:', (err as Error).message);
+      await sendText(from, '⚠️ Não consegui gerar o relatório agora. Tenta de novo daqui a pouco.');
+    }
     return true;
   };
 }
