@@ -343,7 +343,6 @@ export class ProposalFollowupService {
     return digits;
   }
 
-  // Mensagem inicial pro cliente. Curta, humana, sem pressao de venda.
   // Caso eva_envia ou cliente sem telefone/sem WABA: so notifica Junior por
   // texto, sem perguntar nada (Eva ja vai mandar / nao consegue mandar).
   private async notifyJunior(
@@ -409,20 +408,24 @@ export class ProposalFollowupService {
   }
 
   private async markFollowupSent(slug: string): Promise<void> {
-    await this.supabase.getClient()
+    // Loga se a marca de idempotência falhar — senão um reenvio (botão/reschedule)
+    // poderia mandar o template 2x pro cliente sem rastro.
+    const { error } = await this.supabase.getClient()
       .from('propostas_publicas')
       .update({ followup_sent_at: new Date().toISOString() })
       .eq('slug', slug);
+    if (error) console.warn(`[proposal-followup] markFollowupSent falhou slug=${slug}:`, error.message);
   }
 
   private async markSkipped(slug: string, reason: string): Promise<void> {
-    await this.supabase.getClient()
+    const { error } = await this.supabase.getClient()
       .from('propostas_publicas')
       .update({
         followup_sent_at: new Date().toISOString(),
         followup_skipped_reason: reason,
       })
       .eq('slug', slug);
+    if (error) console.warn(`[proposal-followup] markSkipped falhou slug=${slug}:`, error.message);
   }
 
   // Hook chamado pelo brain quando recebe mensagem de cliente que tem
