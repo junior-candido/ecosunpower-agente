@@ -4415,13 +4415,27 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         conversation.qualification_step
       );
 
+      // TRAVA-NÚMERO: no fluxo novo a Eva NÃO crava preço/dimensionamento (faz handoff).
+      // Se QUALQUER balão vazou um número desses, troca a resposta inteira por um único
+      // balão de handoff e loga o original pra revisão. Rede de segurança caso o prompt falhe.
+      const { detectarNumeroProibido } = await import('./modules/eva-trava-numero.js');
+      const motivosTrava = response.displayMessages
+        .flatMap(p => detectarNumeroProibido(p).motivos);
+      let baloesParaEnviar = response.displayMessages;
+      if (motivosTrava.length > 0) {
+        console.warn(`[trava-numero] resposta da Eva barrada (${motivosTrava.join(',')}) — substituída por handoff. Original: ${response.displayMessages.join(' | ').slice(0, 300)}`);
+        baloesParaEnviar = [
+          'Pra te passar o número certo, o Junior (nosso Responsável Técnico) vê seu caso direitinho. Ele pode te atender agora — posso já chamar ele aqui? 😊',
+        ];
+      }
+
       // Send response (possibly split across multiple WhatsApp messages)
       if (!isSandbox) {
-        for (const part of response.displayMessages) {
+        for (const part of baloesParaEnviar) {
           await sendText(from, part);
         }
       } else {
-        for (const part of response.displayMessages) {
+        for (const part of baloesParaEnviar) {
           console.log(`[sandbox] Would send to ${from}: ${part}`);
         }
       }
