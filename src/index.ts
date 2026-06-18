@@ -7253,7 +7253,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     }
   });
 
-  // que abre HTML como codigo fonte.
+  // Pagina publica da proposta (HTML hospedado). Resolve a limitacao do Drive
+  // desktop que abre HTML como codigo fonte.
   app.get('/p/:slug', async (req, res) => {
     const slug = String(req.params.slug ?? '');
     // Slug valido = base64url 16-32 chars (gerados sao sempre 16 = 12 bytes/96 bits).
