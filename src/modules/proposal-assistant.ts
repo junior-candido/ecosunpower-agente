@@ -9,6 +9,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
 import { calcular, compararGreener, type ProposalInput } from './proposal/calculator.js';
+import { corrigirOrtografia } from './corretor-ortografico.js';
 import {
   FATOR_PERDA_CONSERVADOR,
   hspPorConcessionaria,
@@ -1184,6 +1185,13 @@ export class ProposalAssistant {
     // estourava "potenciaKwp inválido: NaN". Idempotente quando o topo já vem cheio.
     const data = hydrarOpcaoPrincipalDaComparacao(input.data);
 
+    // [Corretor] Conserta o português dos textos livres que o Junior ditou e o
+    // cliente vê (descrições de serviço/estrutura, observações, pagamento) — SEM
+    // mudar número/valor/nome/sentido (rede de segurança no corretor). Forward-only:
+    // só na geração NOVA — pula no reopen/clone (reopenSlug) pra não re-mexer em
+    // texto já salvo (e não gastar IA à toa). Nunca quebra (degrada pro original).
+    if (!reopenSlug) await this.corrigirTextosDaProposta(data);
+
     // Proposta SÓ-SERVIÇO (sem solar): desvia pro layout de serviço e pula todo
     // o cálculo solar (que não se aplica). Resolve o caso Edmilson.
     if (isPropostaSoServico(data)) {
@@ -1650,6 +1658,35 @@ export class ProposalAssistant {
 
   // Mapeia o JSON do Claude pro formato do calculator.ts.
   // Tarifas reais 2026 + Fio B (Lei 14.300/2022).
+  // [Corretor] Corrige o português dos textos livres da proposta que o cliente vê
+  // (títulos/descrições de serviço, descrição da estrutura, observações). Corrige
+  // em paralelo (campos independentes). corrigirOrtografia nunca lança e protege
+  // números/nomes, então isto é seguro mesmo com texto torto do Junior.
+  private async corrigirTextosDaProposta(data: any): Promise<void> {
+    if (!data || typeof data !== 'object') return;
+    const alvos: Array<{ obj: any; campo: string }> = [];
+    const add = (obj: any, campo: string) => {
+      if (obj && typeof obj[campo] === 'string' && obj[campo].trim().length >= 3) {
+        alvos.push({ obj, campo });
+      }
+    };
+    if (Array.isArray(data.servicos)) {
+      for (const s of data.servicos) {
+        add(s, 'titulo');
+        add(s, 'descricao');
+      }
+    }
+    add(data.estruturaFixacao, 'descricao');
+    add(data, 'observacoes');
+    add(data, 'observacao'); // o extrator pode emitir no singular
+    add(data, 'formasPagamento'); // só corrige se for string livre (add checa o tipo)
+    await Promise.all(
+      alvos.map(async ({ obj, campo }) => {
+        obj[campo] = await corrigirOrtografia(this.client, obj[campo]);
+      }),
+    );
+  }
+
   private dataToCalculatorInput(data: any): ProposalInput {
     // UNIFICADO com o chat da Eva via solar-params.ts (fonte unica): mesmos HSP
     // (CRESESB), tarifa, Fio B e fator de perda. Chat e proposta NUNCA divergem.
