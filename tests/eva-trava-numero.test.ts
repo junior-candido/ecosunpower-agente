@@ -40,4 +40,10 @@ describe('detectarNumeroProibido — barra número de preço/dimensionamento na 
     expect(detectarNumeroProibido('o sistema fica em R$ 13.550').bloqueado).toBe(true);
     expect(detectarNumeroProibido('sua conta de R$ 1.200 dá pra resolver bem').bloqueado).toBe(false);
   });
+  it('BARRA preço SEM separador de milhar (R$ 28000, R$ 9600)', () => {
+    expect(detectarNumeroProibido('o sistema sai R$ 28000').bloqueado).toBe(true);
+    expect(detectarNumeroProibido('fica em torno de R$ 9600').bloqueado).toBe(true);
+    // conta sem separador continua liberada
+    expect(detectarNumeroProibido('sua conta veio R$ 600').bloqueado).toBe(false);
+  });
 });

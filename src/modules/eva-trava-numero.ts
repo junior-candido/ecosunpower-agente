@@ -26,7 +26,9 @@ const LIMIAR_PRECO_SISTEMA = 6000;
 // Extrai o MAIOR valor em R$ do texto. "R$ 25 mil" = 25000, "R$ 28.000" = 28000, "R$600" = 600.
 function maiorValorReais(texto: string): number {
   let maior = 0;
-  const re = /r\$\s?(\d{1,3}(?:[.\s]?\d{3})*(?:,\d{2})?)(\s?mil)?/gi;
+  // Grupo A: milhares com separador ("28.000", "1.200"); Grupo B (fallback): dígitos
+  // contíguos sem separador ("28000", "9600") — senão um preço sem ponto escaparia.
+  const re = /r\$\s?(\d{1,3}(?:[.\s]\d{3})+(?:,\d{2})?|\d+(?:,\d{2})?)(\s?mil)?/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(texto)) !== null) {
     let n = parseFloat(m[1].replace(/[.\s]/g, '').replace(',', '.'));
