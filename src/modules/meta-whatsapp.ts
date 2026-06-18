@@ -184,6 +184,31 @@ export class MetaWhatsAppService {
     return this.postMessage(payload);
   }
 
+  // Botão de URL (Call-To-Action). Mostra um botão que ABRE o link no navegador —
+  // diferente de sendInteractiveButtons (reply, que só devolve um id). A WABA
+  // permite 1 botão cta_url por mensagem. Limites: display_text 20, body 1024.
+  async sendCtaUrlButton(
+    to: string,
+    body: string,
+    buttonText: string,
+    url: string,
+  ): Promise<{ messageId: string }> {
+    const payload = {
+      messaging_product: 'whatsapp',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'cta_url',
+        body: { text: body.slice(0, 1024) },
+        action: {
+          name: 'cta_url',
+          parameters: { display_text: buttonText.slice(0, 20), url },
+        },
+      },
+    };
+    return this.postMessage(payload);
+  }
+
   // Upload media buffer to Meta Cloud API and return media_id.
   // Useful when we have a Buffer (e.g. PDF gerado in-memory) instead of a public URL.
   async uploadMedia(buffer: Buffer, mimeType: string, filename: string): Promise<{ mediaId: string }> {
