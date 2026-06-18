@@ -7202,9 +7202,10 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // PDF público da proposta — gera na hora a partir do HTML salvo (sem Drive).
   // URL bonita usada nas mensagens do cliente: /p/<slug>.pdf
   // Compartilha o contador de acessos com a rota web → abordagem dispara 1x só.
-  // Registrada ANTES de /p/:slug: o Express captura :slug greedily (inclui o
-  // ".pdf"), e ".pdf" tem ponto → falha a regex base64url; registrar primeiro
-  // garante que /p/<slug>.pdf bata aqui.
+  // Registrada ANTES de /p/:slug: nesta rota o ".pdf" é literal e :slug captura
+  // só o código (sem o ".pdf"). Mas se /p/:slug viesse primeiro, ela casaria
+  // /p/<slug>.pdf capturando "<slug>.pdf" (com ponto) → reprovaria na regex
+  // base64url e devolveria 404. Registrar esta primeiro garante o match correto.
   app.get('/p/:slug.pdf', async (req, res) => {
     const slug = String(req.params.slug ?? '');
     if (!/^[A-Za-z0-9_-]{16,32}$/.test(slug)) {
@@ -7235,6 +7236,12 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
       res.type('application/pdf')
         .set('Content-Disposition', `inline; filename="${filename}"`)
         .send(pdf);
+
+      // Preview admin (?eu=<token>): Junior abre o PDF pra conferir sem contar
+      // como visualização do cliente nem disparar a abordagem. Igual à rota web.
+      const previewToken = config.proposalPreviewToken;
+      const queryEu = typeof req.query.eu === 'string' ? req.query.eu : '';
+      if (previewToken && queryEu === previewToken) return;
 
       // Rastreio: mesma trilha da rota web, canal='pdf'. Fire-and-forget.
       const reqIp = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim()

@@ -16,21 +16,24 @@ export interface EnviarPropostaInput {
 const fmtRs = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 
 // [ECOSOF] empresa() avaliada na CHAMADA (arrow function) — runtime, não load.
-const SAUDACAO = (nomeCliente: string, economiaMensal?: number | null) => {
-  const primeiro = nomeCliente.trim().split(/\s+/)[0] || nomeCliente;
+const SAUDACAO = (nomeCliente: string | undefined, economiaMensal?: number | null) => {
+  const primeiro = (nomeCliente ?? '').trim().split(/\s+/)[0] || '';
+  const ola = primeiro ? `Olá, ${primeiro}! 👋` : 'Olá! 👋';
   const linhaEconomia =
     typeof economiaMensal === 'number' && economiaMensal > 0
       ? `Sua conta de luz fica cerca de ${fmtRs(economiaMensal)} mais barata por mês ☀️\n\n`
       : '';
   return (
-    `Olá, ${primeiro}! 👋\n\n` +
+    `${ola}\n\n` +
     `Sou a ${empresa().nomeAtendente}, consultora da ${empresa().nomeFantasia} Energia Solar.\n\n` +
     `Junior preparou uma proposta personalizada de energia solar pra você. ${linhaEconomia}` +
     `Vou te mandar agora — é só tocar no botão pra ver. Qualquer dúvida, é só me perguntar aqui mesmo. 😊`
   );
 };
 
-const BOTAO_VER = '🌐 Ver minha proposta';
+// "🌐 Ver proposta" = 15 unidades UTF-16 (🌐 = 2) → cabe no limite de 20 do display_text
+// do cta_url (sem cortar no meio da palavra, como cortaria "🌐 Ver minha proposta").
+const BOTAO_VER = '🌐 Ver proposta';
 const PDF_CAPTION = `📄 Sua proposta em PDF — toque pra baixar, guardar ou imprimir.`;
 
 // Normaliza telefone pra E.164 sem +. Aceita "(61) 99697-8781", "+5561996978781", "5561996978781", "61996978781".
