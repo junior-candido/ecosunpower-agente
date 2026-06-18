@@ -11,13 +11,18 @@ const PADROES: Array<{ nome: string; re: RegExp }> = [
   { nome: 'kwp',     re: /\b\d{1,3}([.,]\d+)?\s?kwp\b/i },
   { nome: 'paineis', re: /\b\d{1,3}\s?pain[eé]is\b/i },
   { nome: 'kwh',     re: /\b\d{2,5}\s?kwh\b/i },
-  { nome: 'payback', re: /payback[^.]{0,20}\d+\s?anos|\bem\s\d+\s?anos\b/i },
+  // Payback só com contexto de retorno/pagamento — evita barrar "garantia em 2 anos" etc.
+  { nome: 'payback', re: /(payback|se paga|paga sozinho|retorno)[^.]{0,25}\d+\s?anos/i },
 ];
 
+// Frases liberadas: falam da CONTA do cliente (não preço de sistema) ou o bônus FIXO
+// de indicação (R$300 no PIX) — nenhum é número que a Eva calcula de cabeça.
 const LIBERADAS: RegExp[] = [
   /sua conta (veio|fica|é|foi|tá|esta|está)/i,
   /quanto (veio|vem|você paga|custa sua conta)/i,
   /conta de luz/i,
+  /pix/i,
+  /indica(ç|c)[aã]o|indicar|indicou/i,
 ];
 
 export function detectarNumeroProibido(texto: string): ResultadoTrava {

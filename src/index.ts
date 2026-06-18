@@ -4690,6 +4690,26 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           || contactType === 'parceiro'
           || contactType === 'spam';
 
+        // Estimativa DETERMINÍSTICA (calculadora) pro Junior já entrar com o número CERTO
+        // ao assumir — nunca o chute da Eva. Só quando a conta foi capturada e é lead (não comercial).
+        let estimativaMsg = '';
+        {
+          const ed = (lead?.energy_data ?? {}) as Record<string, unknown>;
+          const contaMensal = typeof ed.monthly_bill === 'number'
+            ? ed.monthly_bill
+            : Number(String(ed.monthly_bill ?? '').replace(',', '.')) || 0;
+          if (!isContatoComercial && contaMensal > 0) {
+            try {
+              const { estimarPorConta } = await import('./modules/proposal/lead-estimativa.js');
+              const e = estimarPorConta(contaMensal);
+              const fmt = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+              estimativaMsg = `\n\n📐 Estimativa (calculadora · conta ${fmt(contaMensal)}): ~${e.paineis} painéis · ${e.kWp.toFixed(1)} kWp · ${fmt(e.precoRs)} · economia ~${fmt(e.economiaMensalRs)}/mês\n_(base sua pra fechar o valor exato)_`;
+            } catch (err) {
+              console.warn('[transfer] estimativa falhou:', (err as Error).message);
+            }
+          }
+        }
+
         let transferMsg: string;
         let buttons: Array<{ id: string; title: string }>;
         if (isContatoComercial) {
@@ -4699,7 +4719,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             { id: `evabt:lead-optout:${leadId}`, title: 'Ignorar' },
           ];
         } else {
-          transferMsg = `🔔 TRANSFERENCIA DE ATENDIMENTO${contactTypeLabel}\n\nContato: ${from}${nameLabel}\nFalar direto: wa.me/${from}\n\nMotivo:\n${reason}\n\nVocê pode assumir esse atendimento. A Eva fica em pausa nesse chat (se foi engano, é só Reativar).`;
+          transferMsg = `🔔 TRANSFERENCIA DE ATENDIMENTO${contactTypeLabel}\n\nContato: ${from}${nameLabel}\nFalar direto: wa.me/${from}\n\nMotivo:\n${reason}${estimativaMsg}\n\nVocê pode assumir esse atendimento. A Eva fica em pausa nesse chat (se foi engano, é só Reativar).`;
           buttons = [
             { id: `evabt:lead-pause:${leadId}`, title: 'Assumir' },
             { id: `evabt:lead-view:${leadId}`, title: 'Ver perfil' },

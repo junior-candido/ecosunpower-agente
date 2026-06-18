@@ -19,4 +19,15 @@ describe('detectarNumeroProibido — barra número de preço/dimensionamento na 
     expect(detectarNumeroProibido('o Junior pode te atender agora?').bloqueado).toBe(false);
     expect(detectarNumeroProibido('amanhã qual horário fica melhor?').bloqueado).toBe(false);
   });
+  it('NÃO barra o bônus de indicação (R$300 no PIX) — não é preço de sistema', () => {
+    expect(detectarNumeroProibido('se você indicar e a venda fechar, ganha R$300 no PIX!').bloqueado).toBe(false);
+  });
+  it('NÃO barra "em N anos" genérico (garantia/experiência)', () => {
+    expect(detectarNumeroProibido('a garantia da instalação é de 1 ano, e do painel 25 anos').bloqueado).toBe(false);
+    expect(detectarNumeroProibido('a gente está no mercado há vários anos').bloqueado).toBe(false);
+  });
+  it('NÃO barra a pergunta de qualificação do valor exato da conta (script do prompt)', () => {
+    const linha = 'você marcou que a conta fica entre R$301 e R$700 — quanto veio na última conta, certinho? É com esse número que eu calculo sua economia.';
+    expect(detectarNumeroProibido(linha).bloqueado).toBe(false);
+  });
 });
