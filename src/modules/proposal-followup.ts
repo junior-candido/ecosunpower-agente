@@ -99,13 +99,13 @@ export class ProposalFollowupService {
   // Chamado pelo endpoint /p/:slug a cada visualizacao do cliente
   // (preview admin nao chega aqui — endpoint filtra).
   // NAO bloqueia a resposta HTTP — fire-and-forget.
-  triggerOnView(slug: string, acessosAntes: number): void {
+  triggerOnView(slug: string, acessosAntes: number, canal: 'web' | 'pdf' = 'web'): void {
     if (acessosAntes === 0) {
-      this.runFollowupAsync(slug).catch((err) => {
+      this.runFollowupAsync(slug, canal).catch((err) => {
         console.error('[proposal-followup] erro:', (err as Error).message);
       });
     } else {
-      this.runReaberturaAsync(slug, acessosAntes).catch((err) => {
+      this.runReaberturaAsync(slug, acessosAntes, canal).catch((err) => {
         console.error('[proposal-followup] reabertura erro:', (err as Error).message);
       });
     }
@@ -120,7 +120,7 @@ export class ProposalFollowupService {
   //     não) pra não ser repetitiva.
   // (c) Já abordado, janela fechada OU vez "não" da alternância → só re-avisa o
   //     Junior que o cliente voltou (throttle 5min por slug).
-  private async runReaberturaAsync(slug: string, acessosAntes: number): Promise<void> {
+  private async runReaberturaAsync(slug: string, acessosAntes: number, canal: 'web' | 'pdf' = 'web'): Promise<void> {
     const proposta = await this.loadPropostaParaFollowup(slug);
     if (!proposta) return;
 
@@ -162,7 +162,9 @@ export class ProposalFollowupService {
           );
           await this.sendText(
             this.engineerPhone,
-            `💬 *${proposta.cliente_nome}* reabriu a proposta — a Eva reabordou! 🤝`,
+            canal === 'pdf'
+              ? `💬 *${proposta.cliente_nome}* baixou o PDF da proposta de novo — a Eva reabordou! 🤝`
+              : `💬 *${proposta.cliente_nome}* reabriu a proposta — a Eva reabordou! 🤝`,
           ).catch(() => {});
           try {
             await this.redis.incr(`proposal:reabordada-count:${slug}`);
@@ -233,7 +235,7 @@ export class ProposalFollowupService {
   // 1ª abertura: a Eva ABORDA o cliente na hora (template aprovado — assim o
   // cliente já sabe que a Eva é a consultora do Junior). executarEnvio manda,
   // marca followup_sent_at, grava a conversa no dashboard e avisa o Junior.
-  private async runFollowupAsync(slug: string): Promise<void> {
+  private async runFollowupAsync(slug: string, canal: 'web' | 'pdf' = 'web'): Promise<void> {
     // Trava NX contra abertura CONCORRENTE: o increment de acessos não é atômico,
     // então 2 aberturas no mesmo instante poderiam ler followup_sent_at=null e
     // abordar 2x. Só o 1º adquire o lock; o resto sai. (WhatsApp abre o link
@@ -270,7 +272,7 @@ export class ProposalFollowupService {
       await this.markSkipped(slug, 'waba_indisponivel');
       return;
     }
-    await this.executarEnvio(slug, clienteNome, clienteTelefone);
+    await this.executarEnvio(slug, clienteNome, clienteTelefone, canal);
   }
 
   // Executa o envio da abordagem (auto, na 1ª abertura) e avisa o Junior.
@@ -278,12 +280,14 @@ export class ProposalFollowupService {
     slug: string,
     clienteNome: string,
     clienteTelefone: string,
+    canal: 'web' | 'pdf' = 'web',
   ): Promise<void> {
     const ok = await this.enviarAbordagem(slug, clienteNome, clienteTelefone);
+    const acao = canal === 'pdf' ? 'baixou o PDF da sua proposta' : 'abriu sua proposta';
     await this.sendText(
       this.engineerPhone,
       ok
-        ? `📣 *${clienteNome}* abriu sua proposta — a Eva já abordou! 🤝`
+        ? `📣 *${clienteNome}* ${acao} — a Eva já abordou! 🤝`
         : `⚠️ Nao consegui abordar ${clienteNome} sobre a proposta. Contata manualmente: ${clienteTelefone}`,
     ).catch(() => {});
   }
