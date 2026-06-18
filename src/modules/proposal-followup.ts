@@ -185,20 +185,36 @@ export class ProposalFollowupService {
     await this.executarEnvio(slug, clienteNome, clienteTelefone);
   }
 
-  // Executa o envio da mensagem de followup pro cliente.
-  // Chamado em 2 lugares: (a) auto, modo eva_envia; (b) Junior tocou [Eva manda].
+  // Executa o envio da abordagem (auto, na 1ª abertura) e avisa o Junior.
   private async executarEnvio(
     slug: string,
     clienteNome: string,
     clienteTelefone: string,
   ): Promise<void> {
+    const ok = await this.enviarAbordagem(slug, clienteNome, clienteTelefone);
+    await this.sendText(
+      this.engineerPhone,
+      ok
+        ? `📣 *${clienteNome}* abriu sua proposta — a Eva já abordou! 🤝`
+        : `⚠️ Nao consegui abordar ${clienteNome} sobre a proposta. Contata manualmente: ${clienteTelefone}`,
+    ).catch(() => {});
+  }
+
+  // Núcleo da abordagem: manda o template + marca enviado + grava no dashboard.
+  // Retorna true se mandou. NÃO avisa o Junior (quem chama decide o aviso) — assim
+  // serve tanto pro auto (executarEnvio) quanto pro manual (abordarManual).
+  // Abordagem por TEMPLATE: o cliente recebeu a proposta do outro número do Junior,
+  // então nunca falou com a Eva => janela 24h fechada => texto livre falha (131047).
+  // Template é a porta de entrada (funciona frio ou quente).
+  private async enviarAbordagem(
+    slug: string,
+    clienteNome: string,
+    clienteTelefone: string,
+  ): Promise<boolean> {
     if (!this.metaService) {
       await this.markSkipped(slug, 'waba_indisponivel');
-      return;
+      return false;
     }
-    // Abordagem por TEMPLATE: o cliente recebeu a proposta do outro numero do
-    // Junior, entao nunca falou com a Eva => janela 24h fechada => texto livre
-    // falha (131047). Template eh a porta de entrada (funciona frio ou quente).
     try {
       const { templateUsado } = await enviarTemplateInicial(
         this.metaService,
@@ -215,21 +231,67 @@ export class ProposalFollowupService {
       console.log(
         `[proposal-followup] abordagem (${templateUsado}) enviada pra ${clienteNome} (${clienteTelefone}) slug=${slug}`,
       );
-      await this.sendText(
-        this.engineerPhone,
-        `📣 *${clienteNome}* abriu sua proposta — a Eva já abordou! 🤝`,
-      ).catch(() => {});
+      return true;
     } catch (err) {
-      const msg = (err as Error).message;
       console.warn(
         `[proposal-followup] falha ao abordar cliente ${clienteTelefone}:`,
-        msg,
+        (err as Error).message,
       );
       await this.markSkipped(slug, 'envio_falhou');
-      await this.sendText(
-        this.engineerPhone,
-        `⚠️ Nao consegui abordar ${clienteNome} sobre a proposta. Contata manualmente: ${clienteTelefone}`,
-      ).catch(() => {});
+      return false;
+    }
+  }
+
+  // Comando manual "abordar <nome>": acha a proposta MAIS RECENTE do cliente pelo
+  // nome e dispara a abordagem na hora — independente de o cliente ter aberto ou
+  // não. Serve pros clientes que abriram a proposta ANTES do automático existir
+  // (a 1ª abertura deles já passou, então o auto não dispara mais). Retorna a
+  // mensagem de resposta pro Junior. NÃO checa followup_sent_at de propósito:
+  // Junior pode querer re-abordar (ex: cliente sumiu) — ele decidiu mandar.
+  async abordarManual(nomeBusca: string): Promise<string> {
+    const termo = (nomeBusca ?? '').trim();
+    if (termo.length < 2) return '🤔 Me diz o nome do cliente. Ex: *abordar João*';
+    const proposta = await this.buscarPropostaPorNome(termo);
+    if (!proposta) {
+      return `🤔 Não achei proposta pra *${termo}*. Confere o nome (ou parte dele).`;
+    }
+    const telefone = this.normalizarTelefone(proposta.cliente_telefone);
+    if (!telefone) {
+      return `⚠️ A proposta de *${proposta.cliente_nome}* não tem telefone cadastrado, não dá pra abordar.`;
+    }
+    const ok = await this.enviarAbordagem(proposta.slug, proposta.cliente_nome, telefone);
+    return ok
+      ? `✅ Mandei a abordagem pra *${proposta.cliente_nome}* (${telefone})! A conversa já tá no painel — se ele sumir, é só pedir cadência. 🤝`
+      : `⚠️ Tentei abordar *${proposta.cliente_nome}* mas não rolou (template/WABA). Olha os logs.`;
+  }
+
+  // Busca a proposta MAIS RECENTE cujo nome do cliente casa (parcial, sem ligar
+  // pra maiúscula). Devolve slug + nome + telefone (com fallback no dados_input).
+  private async buscarPropostaPorNome(
+    nome: string,
+  ): Promise<{ slug: string; cliente_nome: string; cliente_telefone: string | null } | null> {
+    try {
+      const termo = nome.replace(/[%_\\]/g, '\\$&'); // escapa curingas do ilike
+      const { data, error } = await this.supabase.getClient()
+        .from('propostas_publicas')
+        .select('slug, cliente_nome, cliente_telefone, dados_input')
+        .ilike('cliente_nome', `%${termo}%`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error || !data) {
+        if (error) console.warn('[proposal-followup] buscarPropostaPorNome erro:', error.message);
+        return null;
+      }
+      const telefone =
+        data.cliente_telefone ??
+        data.dados_input?.telefoneCliente ??
+        data.dados_input?.telefone ??
+        null;
+      return { slug: data.slug, cliente_nome: data.cliente_nome, cliente_telefone: telefone };
+    } catch (err) {
+      console.warn('[proposal-followup] buscarPropostaPorNome:', (err as Error).message);
+      return null;
     }
   }
 

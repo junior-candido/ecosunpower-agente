@@ -708,6 +708,17 @@ async function main() {
   const tryHandleRelatorioCommand = makeRelatorioHandler(supabase.getClient(), isAdminPhone, sendText);
   const tryHandleConsultaMaterial = makeMaterialQueryHandler(supabase.getClient(), isAdminPhone, sendText);
 
+  // "abordar <nome>" — dispara a abordagem da Eva na hora pro cliente, mesmo que
+  // ele já tenha aberto a proposta antes (o automático só pega a 1ª abertura).
+  const tryHandleAbordarCommand = async (from: string, text: string): Promise<boolean> => {
+    if (!isAdminPhone(from)) return false;
+    const m = text.trim().match(/^abordar\s+(.+)$/i);
+    if (!m) return false;
+    const resposta = await proposalFollowup.abordarManual(m[1]);
+    await sendText(from, resposta);
+    return true;
+  };
+
   // /recarregar-config — recarrega empresa_config do banco sem redeploy. Útil
   // depois de editar a tabela no SQL Editor do Supabase.
   async function tryHandleRecarregarConfigCommand(from: string, text: string): Promise<boolean> {
@@ -3704,6 +3715,12 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // Eva Agendadora — prioridade depois do pricing
     if (await tryHandleSchedulingCommand(from, text)) return;
+
+    // "abordar <nome>" — Eva aborda o cliente na hora (proposta aberta antes do
+    // automático). DEPOIS dos gates de modo: se Junior tá no meio de um fluxo
+    // (proposta/preço/agenda) e a frase começar com "abordar", o modo trata —
+    // o comando não sequestra a conversa. Fora de modo, dispara normal.
+    if (await tryHandleAbordarCommand(from, text)) return;
 
     // "ajustar <nome>" / "atualizar <nome>" (Junior) — reabre uma proposta JÁ
     // ENVIADA DENTRO do zap: a Eva carrega os dados e o Junior ajusta conversando,
