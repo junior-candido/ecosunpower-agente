@@ -1617,13 +1617,23 @@ export class ProposalAssistant {
       // Mensagem do CLIENTE vai SEPARADA (limpa, copiável) — sem Drive/Greener/botões.
       // A revisão (números + preview rastreado + Drive + botões) é o return abaixo.
       const ehServico = !result.calculations;
+      const economiaMensalCliente = result.calculations?.economiaMensal ?? null;
       let clienteEnviada = false;
       // Só no modo junior_envia (Junior copia e manda). No eva_envia a própria Eva
       // dispara pro cliente ao tocar "Enviar", então a msg "copia e manda" não cabe —
       // nesse caso o link do cliente cai na revisão (fallback abaixo).
       if (this.metaService && result.publicUrl && modoEnvio === 'junior_envia') {
         try {
-          await this.metaService.sendText(phone, buildMensagemClienteProposta(data.nomeCliente, result.publicUrl, ehServico));
+          await this.metaService.sendText(
+            phone,
+            buildMensagemClienteProposta(
+              data.nomeCliente,
+              result.publicUrl,
+              ehServico,
+              `${result.publicUrl}.pdf`,
+              economiaMensalCliente,
+            ),
+          );
           clienteEnviada = true;
         } catch (err) {
           console.warn('[proposal] msg do cliente falhou:', (err as Error).message);
