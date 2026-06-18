@@ -7199,6 +7199,60 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     engineerPhone: config.engineerPhone,
   }));
 
+  // PDF público da proposta — gera na hora a partir do HTML salvo (sem Drive).
+  // URL bonita usada nas mensagens do cliente: /p/<slug>.pdf
+  // Compartilha o contador de acessos com a rota web → abordagem dispara 1x só.
+  // Registrada ANTES de /p/:slug: o Express captura :slug greedily (inclui o
+  // ".pdf"), e ".pdf" tem ponto → falha a regex base64url; registrar primeiro
+  // garante que /p/<slug>.pdf bata aqui.
+  app.get('/p/:slug.pdf', async (req, res) => {
+    const slug = String(req.params.slug ?? '');
+    if (!/^[A-Za-z0-9_-]{16,32}$/.test(slug)) {
+      return res.status(404).type('text/html').send(propostaErrorHtml('not_found'));
+    }
+    try {
+      const result = await supabase.getPropostaPublicaBySlug(slug);
+      if (result.status === 'expired') {
+        return res.status(410).type('text/html').send(propostaErrorHtml('expired'));
+      }
+      if (result.status === 'revoked' || result.status === 'not_found') {
+        return res.status(404).type('text/html').send(propostaErrorHtml('not_found'));
+      }
+
+      const { htmlToPdf } = await import('./modules/proposal/pdf-generator.js');
+      const pdf = await htmlToPdf(result.html!, { waitForChartMs: 2000 });
+
+      // Nome de arquivo amigável pro cliente (sanitiza o nome).
+      const nomeArq = (result.clienteNome ?? 'Proposta')
+        .replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '-') || 'Proposta';
+      const filename = `Proposta-EcoSunPower-${nomeArq}.pdf`;
+
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      res.setHeader('Vary', '*');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.type('application/pdf')
+        .set('Content-Disposition', `inline; filename="${filename}"`)
+        .send(pdf);
+
+      // Rastreio: mesma trilha da rota web, canal='pdf'. Fire-and-forget.
+      const reqIp = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim()
+        ?? req.socket.remoteAddress ?? null;
+      const userAgent = (req.headers['user-agent'] as string | undefined) ?? null;
+      const referer = (req.headers['referer'] as string | undefined) ?? null;
+      supabase.registrarVisualizacaoProposta({
+        slug, ipAddress: reqIp, userAgent, isPreview: false, referer, canal: 'pdf',
+      });
+      supabase.incrementPropostaPublicaAcesso(slug)
+        .then((r) => { if (r) proposalFollowup.triggerOnView(slug, r.acessosAntes, 'pdf'); })
+        .catch((err) => console.warn('[proposta-pdf] track acesso falhou:', err));
+    } catch (err) {
+      console.error('[proposta-pdf] erro:', err);
+      res.status(500).type('text/html').send(propostaErrorHtml('error'));
+    }
+  });
+
   // que abre HTML como codigo fonte.
   app.get('/p/:slug', async (req, res) => {
     const slug = String(req.params.slug ?? '');
@@ -7334,7 +7388,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
       supabase.incrementPropostaPublicaAcesso(slug)
         .then((result) => {
           if (result) {
-            proposalFollowup.triggerOnView(slug, result.acessosAntes);
+            proposalFollowup.triggerOnView(slug, result.acessosAntes, 'web');
           }
         })
         .catch((err) => {
