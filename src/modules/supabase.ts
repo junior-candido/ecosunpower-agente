@@ -909,6 +909,7 @@ export class SupabaseService {
     userAgent?: string | null;
     isPreview: boolean;
     referer?: string | null;
+    canal?: 'web' | 'pdf';
   }): Promise<void> {
     try {
       await this.client.from('proposta_visualizacoes').insert({
@@ -917,6 +918,7 @@ export class SupabaseService {
         user_agent: params.userAgent ?? null,
         is_preview: params.isPreview,
         referer: params.referer ?? null,
+        canal: params.canal ?? 'web',
       });
     } catch (err) {
       // Migration 029 ainda nao aplicada? Outras falhas? Nao critico.
