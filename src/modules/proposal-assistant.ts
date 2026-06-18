@@ -206,23 +206,51 @@ export function hydrarOpcaoPrincipalDaComparacao<T extends Record<string, any>>(
 // Mensagem PRONTA PRO CLIENTE (limpa, copiável): saudação + link público + texto
 // caloroso. SEM nada interno (R$/Wp, Greener, Drive, preview rastreado, botões) — o
 // Junior copia e manda pro cliente direto. A versão de revisão (números) vai separada.
-export function buildMensagemClienteProposta(nome: string | undefined, publicUrl: string, ehServico: boolean): string {
+export function buildMensagemClienteProposta(
+  nome: string | undefined,
+  publicUrl: string,
+  ehServico: boolean,
+  pdfUrl: string,
+  economiaMensal: number | null,
+): string {
   // Balão 100% LIMPO — o Junior copia o balão inteiro e manda pro cliente sem editar.
-  // A instrução "copia e manda" fica na mensagem de REVISÃO (separada), não aqui.
+  // Copy "a" (foco no bolso): puxa a economia mensal REAL da proposta. WhatsApp mostra
+  // a URL no texto (não dá pra esconder em copia-e-cola) — a "camuflagem" é a frase
+  // amigável + o domínio próprio (nunca Drive).
   const primeiro = typeof nome === 'string' ? nome.trim().split(/\s+/)[0] : '';
   const saudacao = primeiro ? `Olá, ${primeiro}! 😊` : 'Olá! 😊';
-  const oque = ehServico
-    ? `a sua proposta da ${empresa().nomeFantasia}`
-    : `a sua proposta de energia solar da ${empresa().nomeFantasia}, feita sob medida pra você`;
-  return [
+  const fmtRs = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+
+  // Abertura: com economia válida (>0 e proposta solar) usa o número; senão, genérica.
+  const temEconomia = !ehServico && typeof economiaMensal === 'number' && economiaMensal > 0;
+  const abertura = temEconomia
+    ? `Sua proposta de energia solar da ${empresa().nomeFantasia} está pronta — e sua conta de luz fica cerca de ${fmtRs(economiaMensal as number)} mais barata por mês ☀️`
+    : ehServico
+      ? `Sua proposta da ${empresa().nomeFantasia} está pronta — feita sob medida pra você ☀️`
+      : `Sua proposta de energia solar da ${empresa().nomeFantasia} está pronta — feita sob medida pra você ☀️`;
+
+  const linhas = [
     saudacao,
     '',
-    `Segue ${oque}:`,
+    abertura,
+  ];
+  if (!ehServico) {
+    linhas.push(
+      '',
+      'Em vez de pagar uma conta que só aumenta, você passa a investir em algo que se paga sozinho e ainda valoriza seu imóvel.',
+    );
+  }
+  linhas.push(
     '',
-    `👉 ${publicUrl}`,
+    '🌐 Veja sua proposta completa (abre direto no celular):',
+    publicUrl,
     '',
-    'Dá uma olhada com calma — qualquer dúvida, é só me chamar! 🌞',
-  ].join('\n');
+    '📄 Prefere em PDF pra guardar?',
+    pdfUrl,
+    '',
+    'Dá uma olhada — e me chama que eu te explico cada número! 💚',
+  );
+  return linhas.join('\n');
 }
 
 // Monta o prompt da imagem do serviço (fotorrealista, contexto BR, sem texto).

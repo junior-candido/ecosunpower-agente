@@ -2,7 +2,7 @@
 // Testa que generateProposalCore aceita input estruturado e retorna slug+publicUrl+pdfBuffer.
 // Mocka pdf-generator + Supabase pra rodar sem rede.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ProposalAssistant } from '../src/modules/proposal-assistant.js';
+import { ProposalAssistant, buildMensagemClienteProposta } from '../src/modules/proposal-assistant.js';
 
 vi.mock('../src/modules/proposal/pdf-generator.js', () => ({
   htmlToPdf: vi.fn().mockResolvedValue(Buffer.from('fake-pdf')),
@@ -184,5 +184,30 @@ describe('ProposalAssistant.generateProposalCore', () => {
       publicProposalBaseUrl: 'https://propostas.test',
     });
     await expect(paSemDestinos.generateProposalCore(inputBasico)).rejects.toThrow(/destino/);
+  });
+});
+
+describe('buildMensagemClienteProposta — links web+pdf e economia', () => {
+  const URL = 'https://propostas.ecosunpower.eng.br/p/zA17dxYrKR_6WnSe';
+
+  it('inclui link web, link .pdf e a linha de economia formatada', () => {
+    const msg = buildMensagemClienteProposta('Maria Silva', URL, false, `${URL}.pdf`, 10493);
+    expect(msg).toContain('Maria'); // só primeiro nome
+    expect(msg).not.toContain('Silva');
+    expect(msg).toContain(URL);
+    expect(msg).toContain(`${URL}.pdf`);
+    expect(msg).toContain('R$ 10.493 mais barata por mês');
+    expect(msg).not.toMatch(/drive/i);
+  });
+
+  it('sem economia (só-serviço) não imprime a linha do número', () => {
+    const msg = buildMensagemClienteProposta('João', URL, true, `${URL}.pdf`, null);
+    expect(msg).not.toMatch(/mais barata por mês/);
+    expect(msg).toContain(`${URL}.pdf`);
+  });
+
+  it('economia zero ou negativa cai no fallback sem número', () => {
+    const msg = buildMensagemClienteProposta('Ana', URL, false, `${URL}.pdf`, 0);
+    expect(msg).not.toMatch(/mais barata por mês/);
   });
 });
