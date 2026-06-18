@@ -1,5 +1,5 @@
 // Envia proposta gerada direto pro cliente (modo eva_envia).
-// Manda 3 mensagens em sequencia: saudacao -> link web -> PDF.
+// Manda 2 mensagens: botão pra ver a proposta web -> PDF anexado.
 
 import type { MetaWhatsAppService } from './meta-whatsapp.js';
 import { empresa } from './empresa-config.js';
@@ -10,19 +10,28 @@ export interface EnviarPropostaInput {
   linkWebPublico: string;
   pdfBuffer: Buffer;
   pdfFilename: string;
+  economiaMensal?: number | null; // pra linha persuasiva; null em só-serviço
 }
 
+const fmtRs = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+
 // [ECOSOF] empresa() avaliada na CHAMADA (arrow function) — runtime, não load.
-const SAUDACAO = (nomeCliente: string) =>
-  `Olá, ${nomeCliente}! 👋\n\n` +
-  `Sou a ${empresa().nomeAtendente}, consultora da ${empresa().nomeFantasia} Energia Solar.\n\n` +
-  `Junior preparou uma proposta personalizada de energia solar pra você. Vou te mandar agora pra dar uma olhada com calma.\n\n` +
-  `Qualquer dúvida, é só me perguntar aqui mesmo. 😊`;
+const SAUDACAO = (nomeCliente: string, economiaMensal?: number | null) => {
+  const primeiro = nomeCliente.trim().split(/\s+/)[0] || nomeCliente;
+  const linhaEconomia =
+    typeof economiaMensal === 'number' && economiaMensal > 0
+      ? `Sua conta de luz fica cerca de ${fmtRs(economiaMensal)} mais barata por mês ☀️\n\n`
+      : '';
+  return (
+    `Olá, ${primeiro}! 👋\n\n` +
+    `Sou a ${empresa().nomeAtendente}, consultora da ${empresa().nomeFantasia} Energia Solar.\n\n` +
+    `Junior preparou uma proposta personalizada de energia solar pra você. ${linhaEconomia}` +
+    `Vou te mandar agora — é só tocar no botão pra ver. Qualquer dúvida, é só me perguntar aqui mesmo. 😊`
+  );
+};
 
-const LINK_WEB = (link: string) =>
-  `🔗 Versão online (recomendada — abre no celular):\n${link}\n\n_(Link válido por 60 dias)_`;
-
-const PDF_CAPTION = `📎 Versão em PDF pra arquivar ou imprimir.`;
+const BOTAO_VER = '🌐 Ver minha proposta';
+const PDF_CAPTION = `📄 Sua proposta em PDF — toque pra baixar, guardar ou imprimir.`;
 
 // Normaliza telefone pra E.164 sem +. Aceita "(61) 99697-8781", "+5561996978781", "5561996978781", "61996978781".
 function normalizePhone(raw: string): string {
@@ -48,12 +57,16 @@ export async function enviarPropostaParaCliente(
   const to = normalizePhone(input.telefoneCliente);
 
   try {
-    await meta.sendText(to, SAUDACAO(input.nomeCliente));
+    // 1) Saudação + botão clicável que ABRE a proposta web (URL escondida atrás do botão).
+    await meta.sendCtaUrlButton(
+      to,
+      SAUDACAO(input.nomeCliente, input.economiaMensal),
+      BOTAO_VER,
+      input.linkWebPublico,
+    );
     await new Promise((r) => setTimeout(r, 800));
 
-    await meta.sendText(to, LINK_WEB(input.linkWebPublico));
-    await new Promise((r) => setTimeout(r, 800));
-
+    // 2) PDF como documento nativo (sem link, sem Drive) — é o "baixe o PDF".
     const upload = await meta.uploadMedia(input.pdfBuffer, 'application/pdf', input.pdfFilename);
     await meta.sendDocumentById(to, upload.mediaId, input.pdfFilename, PDF_CAPTION);
 

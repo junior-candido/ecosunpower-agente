@@ -1151,6 +1151,7 @@ export class ProposalAssistant {
     // Re-gera o PDF buffer (nao salvamos buffer no Redis pra economizar memoria).
     try {
       let pdfBuffer: Buffer;
+      let economiaMensalEnvio: number | null = null;
       if (isPropostaSoServico(last.data)) {
         // Proposta SÓ-SERVIÇO: re-renderiza pelo layout de serviço — NUNCA o solar,
         // que sairia cheio de "R$ NaN" (sem potência/equipamentos). Reusa o
@@ -1173,6 +1174,7 @@ export class ProposalAssistant {
       } else {
         const calcInput = this.dataToCalculatorInput(last.data);
         const calculations = calcular(calcInput);
+        economiaMensalEnvio = calculations.economiaMensal;
         const socialProofHtml = await this.buildSocialProofHtml(last.proposalData.tipoCliente);
         const html = renderProposalHTML(last.proposalData, calculations, socialProofHtml, await this.logoProposta());
         pdfBuffer = await htmlToPdf(html, { waitForChartMs: 2000 });
@@ -1184,6 +1186,7 @@ export class ProposalAssistant {
         linkWebPublico: last.publicUrl,
         pdfBuffer,
         pdfFilename: `Proposta-${empresa().nomeFantasia.replace(/[^a-zA-Z0-9]/g, '')}-${nome.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '-')}.pdf`,
+        economiaMensal: economiaMensalEnvio,
       });
 
       if (!result.ok) {
