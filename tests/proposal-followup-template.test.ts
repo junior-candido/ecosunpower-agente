@@ -90,6 +90,108 @@ function makeServiceReabertura(followupSentAt: string | null, telefone = '556198
   return { svc, sendTemplate, sendText };
 }
 
+// Service pra testar a Parte B (reabordagem inteligente alternada): cliente JÁ
+// abordado (followup_sent_at setado), com redis (incr/expire/set), janela e gerador.
+function makeServiceReaberturaB(opts: { janelaAberta?: boolean; contador?: number; msgGerada?: string | null; jaReabordou?: number; cooldownLivre?: boolean } = {}) {
+  const { janelaAberta = true, contador = 1, msgGerada = 'Opa, vi que você voltou na proposta! 👀', jaReabordou = 0, cooldownLivre = true } = opts;
+  const sendTemplate = vi.fn().mockResolvedValue({ messageId: 'm1' });
+  const sendText = vi.fn().mockResolvedValue(undefined);
+  const gerarAbordagemInteligente = vi.fn().mockResolvedValue(msgGerada);
+  const janela24hAberta = vi.fn().mockResolvedValue(janelaAberta);
+  const updateConversation = vi.fn().mockResolvedValue(undefined);
+  const proposta = {
+    cliente_nome: 'João Silva',
+    cliente_telefone: '5561988887777',
+    followup_sent_at: '2026-06-17T00:00:00Z',
+    modo_envio: null,
+    dados_input: {},
+  };
+  const eqSelect = { maybeSingle: () => Promise.resolve({ data: proposta, error: null }) };
+  const from = () => ({
+    select: () => ({ eq: () => eqSelect }),
+    update: () => ({ eq: () => ({ error: null }) }),
+  });
+  const supabase = {
+    getClient: () => ({ from }),
+    getLeadByPhone: vi.fn().mockResolvedValue(null),
+    getOrCreateLeadByPhone: vi.fn().mockResolvedValue('lead-1'),
+    getOrCreateConversation: vi.fn().mockResolvedValue({ id: 'conv-1', messages: [], message_count: 0 }),
+    updateConversation,
+  };
+  const redis = {
+    incr: vi.fn().mockResolvedValue(contador),
+    expire: vi.fn().mockResolvedValue(1),
+    // reopen-throttle (ramo c) → 'OK'; reabordada-cooldown (NX) → null se ocupado.
+    set: vi.fn().mockImplementation((key: string) =>
+      Promise.resolve(key.includes('reabordada-cooldown') ? (cooldownLivre ? 'OK' : null) : 'OK'),
+    ),
+    get: vi.fn().mockResolvedValue(String(jaReabordou)),
+  };
+  const svc = new ProposalFollowupService({
+    supabase: supabase as any,
+    metaService: { sendTemplate, sendText: vi.fn(), sendInteractiveButtons: vi.fn() } as any,
+    sendText,
+    engineerPhone: '5561999999999',
+    proposalBaseUrl: 'https://x',
+    redis: redis as any,
+    delayMs: 0,
+    templateAbordagem: 'eva_proposta_aberta_v1',
+    janela24hAberta,
+    gerarAbordagemInteligente,
+  });
+  return { svc, sendText, gerarAbordagemInteligente, janela24hAberta, updateConversation };
+}
+
+const mandouPraCliente = (sendText: any) =>
+  sendText.mock.calls.some((c: any[]) => c[0] === '5561988887777');
+
+describe('proposal-followup: reabordagem inteligente alternada (Parte B)', () => {
+  it('janela aberta + contador ÍMPAR → Eva reaborda (gera + manda pro cliente + grava)', async () => {
+    const { svc, sendText, gerarAbordagemInteligente, updateConversation } = makeServiceReaberturaB({ contador: 1 });
+    await (svc as any).runReaberturaAsync('slug1', 1);
+    expect(gerarAbordagemInteligente).toHaveBeenCalledTimes(1);
+    expect(mandouPraCliente(sendText)).toBe(true);
+    expect(updateConversation).toHaveBeenCalledTimes(1); // gravou no dashboard
+  });
+
+  it('janela aberta + contador PAR → NÃO reaborda, só notifica', async () => {
+    const { svc, sendText, gerarAbordagemInteligente } = makeServiceReaberturaB({ contador: 2 });
+    await (svc as any).runReaberturaAsync('slug1', 1);
+    expect(gerarAbordagemInteligente).not.toHaveBeenCalled();
+    expect(mandouPraCliente(sendText)).toBe(false);
+    expect(sendText).toHaveBeenCalled(); // notificou o Junior
+  });
+
+  it('janela FECHADA → não gera nem manda pro cliente (texto livre proibido)', async () => {
+    const { svc, sendText, gerarAbordagemInteligente } = makeServiceReaberturaB({ janelaAberta: false, contador: 1 });
+    await (svc as any).runReaberturaAsync('slug1', 1);
+    expect(gerarAbordagemInteligente).not.toHaveBeenCalled();
+    expect(mandouPraCliente(sendText)).toBe(false);
+  });
+
+  it('gerador retorna null → cai no só-notifica (não manda vazio pro cliente)', async () => {
+    const { svc, sendText, gerarAbordagemInteligente } = makeServiceReaberturaB({ contador: 1, msgGerada: null });
+    await (svc as any).runReaberturaAsync('slug1', 1);
+    expect(gerarAbordagemInteligente).toHaveBeenCalledTimes(1);
+    expect(mandouPraCliente(sendText)).toBe(false);
+    expect(sendText).toHaveBeenCalled(); // notificou o Junior
+  });
+
+  it('teto batido (já reabordou 3x) → não reaborda mesmo na vez ímpar', async () => {
+    const { svc, sendText, gerarAbordagemInteligente } = makeServiceReaberturaB({ contador: 5, jaReabordou: 3 });
+    await (svc as any).runReaberturaAsync('slug1', 1);
+    expect(gerarAbordagemInteligente).not.toHaveBeenCalled();
+    expect(mandouPraCliente(sendText)).toBe(false);
+  });
+
+  it('cooldown ativo (reabordou faz pouco) → não reaborda mesmo na vez ímpar', async () => {
+    const { svc, sendText, gerarAbordagemInteligente } = makeServiceReaberturaB({ contador: 3, cooldownLivre: false });
+    await (svc as any).runReaberturaAsync('slug1', 1);
+    expect(gerarAbordagemInteligente).not.toHaveBeenCalled();
+    expect(mandouPraCliente(sendText)).toBe(false);
+  });
+});
+
 describe('proposal-followup: reabertura aborda cliente antigo (opção a)', () => {
   it('reabertura de cliente NUNCA abordado → Eva aborda (manda template)', async () => {
     const { svc, sendTemplate } = makeServiceReabertura(null);

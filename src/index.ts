@@ -546,6 +546,11 @@ async function main() {
     // Template de abordagem da proposta. ⚠️ TROCAR pelo nome FINAL que o Junior
     // confirmar ao aprovar na Meta (o de lead virou '_eva_qualificacao_v1').
     templateAbordagem: 'eva_proposta_aberta_v1',
+    // [Fatia 2 — Parte B] closures lazy: os helpers são definidos mais abaixo no
+    // main(); estas funções só são CHAMADAS em runtime (reabertura), quando os
+    // consts já estão inicializados.
+    janela24hAberta: (p: string) => janela24hAberta(p),
+    gerarAbordagemInteligente: (slug: string, tel: string) => gerarAbordagemInteligente(slug, tel),
   });
   console.log('[proposal-followup] Servico ativo (notifica toda abertura, throttle 5min)');
 
@@ -813,6 +818,60 @@ async function main() {
     } catch (err) {
       console.warn('[consultora-proposta] montarContextoProposta falhou:', (err as Error).message);
       return '';
+    }
+  };
+
+  // [Fatia 2 — Parte B] Gera UMA mensagem inteligente e variada de reabordagem,
+  // usada quando o cliente reabre a proposta E já respondeu (janela 24h aberta).
+  // Busca a proposta pelo SLUG (exato, sem ambiguidade de telefone) + histórico
+  // recente, e pede ao Haiku uma mensagem humana, consultiva e não-repetitiva.
+  // Nunca lança → null (cai no "só notifica" do proposal-followup).
+  const anthropicReabordagem = new Anthropic({ apiKey: config.anthropicApiKey });
+  const gerarAbordagemInteligente = async (slug: string, telefone: string): Promise<string | null> => {
+    try {
+      const { data } = await supabase.getClient()
+        .from('propostas_publicas')
+        .select('cliente_nome, dados_input')
+        .eq('slug', slug)
+        .maybeSingle();
+      if (!data) return null;
+      const bloco = montarBlocoProposta((data as any).dados_input, (data as any).cliente_nome);
+      if (!bloco) return null;
+      let historico = '';
+      try {
+        const lead = await supabase.getLeadByPhone(telefone);
+        if (lead?.id) {
+          const { data: conv } = await supabase.getClient()
+            .from('conversations')
+            .select('messages')
+            .eq('lead_id', lead.id)
+            .order('last_message_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const msgs = ((conv as any)?.messages ?? []) as Array<{ role?: string; content?: string }>;
+          const ult = msgs
+            .slice(-6)
+            .map((m) => `${m.role === 'user' ? 'Cliente' : 'Eva'}: ${m.content ?? ''}`)
+            .join('\n');
+          if (ult.trim()) historico = `\n\n## Conversa recente\n${ult}`;
+        }
+      } catch { /* segue sem histórico */ }
+      const sys = `Você é a Eva, CONSULTORA de energia solar da EcoSunPower (NÃO é engenheira; o Responsável Técnico CREA/CFT é o Junior). O cliente acabou de REABRIR a proposta dele agora — sinal de interesse. Escreva UMA mensagem curta (no máximo 2 frases), humana, calorosa e VARIADA (varie a abertura, nada de template engessado). Note de leve que ele voltou a olhar e ofereça ajuda ESPECÍFICA usando os números REAIS da proposta dele (comparar opções, tirar dúvida, explicar equipamento/garantia/payback). Seja consultiva, NUNCA insistente. Não invente nada fora da proposta nem prometa preço/condição. Responda só a mensagem (sem aspas, sem assinatura).\n\n${bloco}${historico}`;
+      const resp = await anthropicReabordagem.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 220,
+        system: sys,
+        messages: [{ role: 'user', content: 'Gere agora a mensagem de reabordagem.' }],
+      });
+      const out = resp.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('')
+        .trim();
+      return out || null;
+    } catch (err) {
+      console.warn('[reabordagem] gerar falhou:', (err as Error).message);
+      return null;
     }
   };
 
@@ -4582,6 +4641,13 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           qualification_step: 'transferido',
           session_status: 'completed',
         });
+        // Eva se cala NA HORA (não só quando o Junior toca "Assumir"): a própria
+        // mensagem ao Junior promete "a Eva fica em pausa nesse chat". Pausa 24h;
+        // o Junior assume / a Eva volta sozinha depois. Handoff da proposta
+        // (cliente pediu o Junior) cai aqui via consultora-proposta.md.
+        await takeover.pauseFor(from).catch((err) =>
+          console.warn('[transfer] pauseFor falhou:', (err as Error).message),
+        );
 
         const lead = await supabase.getLeadByPhone(from) as (Record<string, unknown> | null);
         const contactType = lead?.contact_type as string | undefined;
@@ -4608,10 +4674,11 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             { id: `evabt:lead-optout:${leadId}`, title: 'Ignorar' },
           ];
         } else {
-          transferMsg = `🔔 TRANSFERENCIA DE ATENDIMENTO${contactTypeLabel}\n\nContato: ${from}${nameLabel}\nFalar direto: wa.me/${from}\n\nMotivo:\n${reason}\n\nVocê pode assumir esse atendimento. A Eva fica em pausa nesse chat.`;
+          transferMsg = `🔔 TRANSFERENCIA DE ATENDIMENTO${contactTypeLabel}\n\nContato: ${from}${nameLabel}\nFalar direto: wa.me/${from}\n\nMotivo:\n${reason}\n\nVocê pode assumir esse atendimento. A Eva fica em pausa nesse chat (se foi engano, é só Reativar).`;
           buttons = [
             { id: `evabt:lead-pause:${leadId}`, title: 'Assumir' },
             { id: `evabt:lead-view:${leadId}`, title: 'Ver perfil' },
+            { id: `evabt:lead-resume:${leadId}`, title: '↩️ Reativar Eva' },
           ];
         }
 

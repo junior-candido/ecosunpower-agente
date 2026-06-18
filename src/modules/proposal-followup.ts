@@ -39,6 +39,13 @@ function textoAbordagemProposta(nome: string): string {
 // pra evitar spam quando cliente recarrega/volta varias vezes seguidas.
 const REOPEN_THROTTLE_SECONDS = 5 * 60;
 
+// [Fatia 2 — Parte B] Limites da reabordagem inteligente, pra NUNCA martelar o
+// cliente (que pode reabrir o link em rajada): no máximo 1 a cada 12h e no máximo
+// 3 por proposta no total. As chaves de contador vivem 30 dias.
+const REABORDA_COOLDOWN_SECONDS = 12 * 60 * 60;
+const MAX_REABORDAGENS = 3;
+const REABORDA_KEY_TTL_SECONDS = 60 * 60 * 24 * 30;
+
 interface FollowupDeps {
   supabase: SupabaseService;
   metaService: MetaWhatsAppService | null;
@@ -56,6 +63,12 @@ interface FollowupDeps {
   // cliente recebeu a proposta do outro numero do Junior, nunca falou com a Eva).
   // Confirmado pelo Junior ao criar na Meta. Fallback reativacao_lead_v1 se 132001.
   templateAbordagem: string;
+  // [Fatia 2 — Parte B] Checa se a janela 24h WABA está aberta (cliente respondeu
+  // nas últimas ~23h). Free text pro cliente só é permitido com a janela aberta.
+  janela24hAberta?: (phone: string) => Promise<boolean>;
+  // [Fatia 2 — Parte B] Gera UMA mensagem inteligente/variada de reabordagem (IA,
+  // com os números da proposta). Retorna null em falha → cai no "só notifica".
+  gerarAbordagemInteligente?: (slug: string, telefone: string) => Promise<string | null>;
 }
 
 export class ProposalFollowupService {
@@ -67,6 +80,8 @@ export class ProposalFollowupService {
   private redis: Redis | null;
   private delayMs: number;
   private templateAbordagem: string;
+  private janela24hAberta?: (phone: string) => Promise<boolean>;
+  private gerarAbordagemInteligente?: (slug: string, telefone: string) => Promise<string | null>;
 
   constructor(deps: FollowupDeps) {
     this.supabase = deps.supabase;
@@ -77,6 +92,8 @@ export class ProposalFollowupService {
     this.redis = deps.redis ?? null;
     this.delayMs = deps.delayMs ?? 60_000;
     this.templateAbordagem = deps.templateAbordagem;
+    this.janela24hAberta = deps.janela24hAberta;
+    this.gerarAbordagemInteligente = deps.gerarAbordagemInteligente;
   }
 
   // Chamado pelo endpoint /p/:slug a cada visualizacao do cliente
@@ -94,13 +111,15 @@ export class ProposalFollowupService {
     }
   }
 
-  // Reabertura. Dois casos:
+  // Reabertura. Casos:
   // (a) Cliente que NUNCA foi abordado (abriu antes do recurso existir → a 1ª
   //     abertura dele já passou sem abordagem): aborda agora, no momento de
   //     interesse (ele voltou). Reusa runFollowupAsync (trava + idempotência).
-  // (b) Já abordado: só re-avisa o Junior que o cliente voltou (sinal de
-  //     interesse), com throttle 5min por slug.
-  // [Fatia 2 — futuro: abordagens inteligentes/variadas na conversa entram aqui.]
+  // (b) Já abordado + JÁ respondeu (janela 24h aberta) → [Fatia 2 Parte B] a Eva
+  //     pode REABORDAR com mensagem inteligente/variada, ALTERNANDO (uma sim, outra
+  //     não) pra não ser repetitiva.
+  // (c) Já abordado, janela fechada OU vez "não" da alternância → só re-avisa o
+  //     Junior que o cliente voltou (throttle 5min por slug).
   private async runReaberturaAsync(slug: string, acessosAntes: number): Promise<void> {
     const proposta = await this.loadPropostaParaFollowup(slug);
     if (!proposta) return;
@@ -112,7 +131,51 @@ export class ProposalFollowupService {
       return;
     }
 
-    // (b) Já abordado → só notifica (throttle 5min pra não encher o saco do Junior).
+    // (b) Reabordagem inteligente alternada. Só roda se: tem telefone + janela 24h
+    // ABERTA (cliente respondeu → free text permitido) + gerador disponível. A
+    // alternância é um contador Redis por slug: vez ÍMPAR reaborda, PAR só notifica.
+    const telefone = this.normalizarTelefone(proposta.cliente_telefone);
+    if (
+      telefone &&
+      this.redis &&
+      this.janela24hAberta &&
+      this.gerarAbordagemInteligente &&
+      (await this.janela24hAberta(telefone).catch(() => false))
+    ) {
+      let contador = 0;
+      try {
+        contador = await this.redis.incr(`proposal:reopen-count:${slug}`);
+        await this.redis.expire(`proposal:reopen-count:${slug}`, REABORDA_KEY_TTL_SECONDS);
+      } catch (err) {
+        console.warn('[proposal-followup] contador reabertura falhou:', (err as Error).message);
+      }
+      // Reaborda só na vez ÍMPAR (uma sim, outra não) E dentro do teto + cooldown
+      // (podeReabordar) — senão a Eva martelaria quem reabre o link em rajada.
+      if (contador % 2 === 1 && (await this.podeReabordar(slug))) {
+        const msg = await this.gerarAbordagemInteligente(slug, telefone).catch(() => null);
+        if (msg && msg.trim()) {
+          await this.sendText(telefone, msg.trim()).catch((err) =>
+            console.warn('[proposal-followup] envio reabordagem falhou:', (err as Error).message),
+          );
+          await this.registrarMensagemEvaNaConversa(telefone, proposta.cliente_nome, msg.trim()).catch(
+            (err) => console.warn('[proposal-followup] gravar reabordagem falhou:', (err as Error).message),
+          );
+          await this.sendText(
+            this.engineerPhone,
+            `💬 *${proposta.cliente_nome}* reabriu a proposta — a Eva reabordou! 🤝`,
+          ).catch(() => {});
+          try {
+            await this.redis.incr(`proposal:reabordada-count:${slug}`);
+            await this.redis.expire(`proposal:reabordada-count:${slug}`, REABORDA_KEY_TTL_SECONDS);
+          } catch { /* contador best-effort */ }
+          return; // reabordou → não cai no notify padrão
+        }
+        // gerador falhou/vazio → segue pro notify padrão abaixo (degrada).
+      }
+      // vez PAR / teto batido / cooldown ativo → segue pro notify padrão.
+    }
+
+    // (c) Só notifica (throttle 5min pra não encher o saco do Junior).
     if (this.redis) {
       const throttleKey = `proposal:notify-throttle:${slug}`;
       try {
@@ -335,6 +398,41 @@ export class ProposalFollowupService {
       templateUsado === this.templateAbordagem
         ? textoAbordagemProposta(primeiroNome(nome))
         : `📨 Eva enviou a mensagem de abertura pro cliente (template "${templateUsado}").`;
+    await this.registrarMensagemEvaNaConversa(telefone, nome, conteudo);
+  }
+
+  // [Fatia 2 — Parte B] Teto + cooldown da reabordagem inteligente: no máximo
+  // MAX_REABORDAGENS por proposta E 1 a cada REABORDA_COOLDOWN_SECONDS. Consome o
+  // cooldown (SET NX) só se liberar — isso TAMBÉM serializa reaberturas concorrentes
+  // (só a 1ª pega o NX). Prioriza anti-spam: o cooldown é consumido ANTES de gerar,
+  // então uma falha rara do gerador "gasta" a janela de 12h (silêncio conservador,
+  // o Junior ainda é notificado). Qualquer erro de Redis → false (não reaborda).
+  private async podeReabordar(slug: string): Promise<boolean> {
+    if (!this.redis) return false;
+    try {
+      const ja = Number(await this.redis.get(`proposal:reabordada-count:${slug}`)) || 0;
+      if (ja >= MAX_REABORDAGENS) return false;
+      const cooldownLivre = await this.redis.set(
+        `proposal:reabordada-cooldown:${slug}`,
+        '1',
+        'EX',
+        REABORDA_COOLDOWN_SECONDS,
+        'NX',
+      );
+      return cooldownLivre !== null;
+    } catch {
+      return false;
+    }
+  }
+
+  // Grava uma mensagem da Eva (assistant) na conversa do cliente → aparece no
+  // dashboard. Usado pela abordagem (texto do template) e pela reabordagem
+  // inteligente (Parte B). Acha/cria o lead+conversa pelo telefone.
+  private async registrarMensagemEvaNaConversa(
+    telefone: string,
+    nome: string,
+    texto: string,
+  ): Promise<void> {
     const leadId = await this.supabase.getOrCreateLeadByPhone(telefone, nome);
     const conv = await this.supabase.getOrCreateConversation(leadId);
     await this.supabase.updateConversation(conv.id, {
@@ -342,7 +440,7 @@ export class ProposalFollowupService {
         ...conv.messages,
         {
           role: 'assistant' as const,
-          content: conteudo,
+          content: texto,
           timestamp: new Date().toISOString(),
         },
       ],
