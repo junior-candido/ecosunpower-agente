@@ -125,9 +125,10 @@ export class ProposalFollowupService {
     if (!proposta) return;
 
     // (a) Nunca abordado → aborda agora. runFollowupAsync trava contra concorrência
-    // e re-checa followup_sent_at, então é seguro chamar daqui.
+    // e re-checa followup_sent_at, então é seguro chamar daqui. Repassa o canal pra
+    // o aviso do Junior sair certo ("abriu a web" vs "baixou o PDF").
     if (!proposta.followup_sent_at) {
-      await this.runFollowupAsync(slug);
+      await this.runFollowupAsync(slug, canal);
       return;
     }
 
