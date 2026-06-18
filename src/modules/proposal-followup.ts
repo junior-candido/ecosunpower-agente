@@ -20,7 +20,20 @@
 import type { Redis } from 'ioredis';
 import type { SupabaseService } from './supabase.js';
 import type { MetaWhatsAppService } from './meta-whatsapp.js';
-import { enviarTemplateInicial } from './template-inicial.js';
+import { enviarTemplateInicial, primeiroNome } from './template-inicial.js';
+
+// Cópia do corpo do template aprovado `eva_proposta_aberta_v1` — o texto real fica
+// na Meta (mandamos só pelo NOME), então guardamos aqui pra GRAVAR no dashboard
+// exatamente o que o cliente recebeu (com o 1º nome preenchido). Se editar o
+// template na Meta, atualizar este texto também pra continuar batendo.
+function textoAbordagemProposta(nome: string): string {
+  return (
+    `Oi, ${nome}! 😊 Aqui é a Eva, consultora da EcoSunPower (trabalho com o Junior). ` +
+    `Vi que você abriu a proposta de energia solar que recebeu — posso te ajudar a entender ` +
+    `os números e tirar suas dúvidas? Se quiser, comparo as opções com você por aqui. ` +
+    `👉 Salva meu contato que eu fico à disposição pra te ajudar!`
+  );
+}
 
 // Throttle entre notificacoes de re-abertura pro mesmo slug. 5min suficiente
 // pra evitar spam quando cliente recarrega/volta varias vezes seguidas.
@@ -81,10 +94,25 @@ export class ProposalFollowupService {
     }
   }
 
-  // Reabertura: a Eva já abordou na 1ª abertura, então aqui só re-avisa o Junior
-  // que o cliente voltou (sinal de interesse), com throttle 5min por slug.
-  // [Fatia 2 — futuro: aqui entram as abordagens inteligentes/variadas na conversa.]
+  // Reabertura. Dois casos:
+  // (a) Cliente que NUNCA foi abordado (abriu antes do recurso existir → a 1ª
+  //     abertura dele já passou sem abordagem): aborda agora, no momento de
+  //     interesse (ele voltou). Reusa runFollowupAsync (trava + idempotência).
+  // (b) Já abordado: só re-avisa o Junior que o cliente voltou (sinal de
+  //     interesse), com throttle 5min por slug.
+  // [Fatia 2 — futuro: abordagens inteligentes/variadas na conversa entram aqui.]
   private async runReaberturaAsync(slug: string, acessosAntes: number): Promise<void> {
+    const proposta = await this.loadPropostaParaFollowup(slug);
+    if (!proposta) return;
+
+    // (a) Nunca abordado → aborda agora. runFollowupAsync trava contra concorrência
+    // e re-checa followup_sent_at, então é seguro chamar daqui.
+    if (!proposta.followup_sent_at) {
+      await this.runFollowupAsync(slug);
+      return;
+    }
+
+    // (b) Já abordado → só notifica (throttle 5min pra não encher o saco do Junior).
     if (this.redis) {
       const throttleKey = `proposal:notify-throttle:${slug}`;
       try {
@@ -97,9 +125,6 @@ export class ProposalFollowupService {
         console.warn('[proposal-followup] throttle redis falhou, segue:', (err as Error).message);
       }
     }
-
-    const proposta = await this.loadPropostaParaFollowup(slug);
-    if (!proposta) return;
 
     const ordinal = `${acessosAntes + 1}ª`;
     const linhaTelefone = proposta.cliente_telefone
@@ -225,7 +250,7 @@ export class ProposalFollowupService {
       await this.markFollowupSent(slug);
       // Grava a abordagem na conversa do cliente → aparece no dashboard (igual o
       // lead), pro Junior acompanhar como a Eva tá se portando. Best-effort.
-      await this.registrarAbordagemNaConversa(clienteTelefone, clienteNome).catch((err) =>
+      await this.registrarAbordagemNaConversa(clienteTelefone, clienteNome, templateUsado).catch((err) =>
         console.warn('[proposal-followup] gravar conversa falhou:', (err as Error).message),
       );
       console.log(
@@ -298,7 +323,18 @@ export class ProposalFollowupService {
   // Grava a abordagem na conversa do cliente (acha/cria o lead pelo telefone) pra
   // a conversa aparecer no /dashboard/leads igual o lead. Quando o cliente
   // responder, o Brain continua escrevendo na MESMA conversa.
-  private async registrarAbordagemNaConversa(telefone: string, nome: string): Promise<void> {
+  private async registrarAbordagemNaConversa(
+    telefone: string,
+    nome: string,
+    templateUsado: string,
+  ): Promise<void> {
+    // Grava o TEXTO REAL que o cliente recebeu (com o 1º nome), pro Junior ver no
+    // dashboard a mensagem de verdade — não um rótulo. Se caiu no fallback (template
+    // de abordagem indisponível), registra qual foi, sem mentir o conteúdo.
+    const conteudo =
+      templateUsado === this.templateAbordagem
+        ? textoAbordagemProposta(primeiroNome(nome))
+        : `📨 Eva enviou a mensagem de abertura pro cliente (template "${templateUsado}").`;
     const leadId = await this.supabase.getOrCreateLeadByPhone(telefone, nome);
     const conv = await this.supabase.getOrCreateConversation(leadId);
     await this.supabase.updateConversation(conv.id, {
@@ -306,7 +342,7 @@ export class ProposalFollowupService {
         ...conv.messages,
         {
           role: 'assistant' as const,
-          content: '📨 Eva abordou o cliente sobre a proposta (1ª mensagem automática de abertura, com o nome). Aguardando ele responder.',
+          content: conteudo,
           timestamp: new Date().toISOString(),
         },
       ],

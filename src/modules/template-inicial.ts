@@ -26,7 +26,7 @@ export interface TemplateSender {
   ): Promise<{ messageId: string }>;
 }
 
-function primeiroNome(fullName: string | null | undefined): string {
+export function primeiroNome(fullName: string | null | undefined): string {
   return (fullName ?? '').trim().split(/\s+/)[0] || 'tudo bem';
 }
 

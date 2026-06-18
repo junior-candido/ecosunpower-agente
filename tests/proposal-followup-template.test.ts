@@ -37,14 +37,71 @@ describe('proposal-followup: abordagem via template', () => {
     expect(lang).toBe('pt_BR');
     expect(components[0].parameters[0].text).toBe('João');
   });
-  it('grava a abordagem na conversa (aparece no dashboard)', async () => {
+  it('grava o TEXTO REAL da abordagem na conversa (não um rótulo)', async () => {
     const { svc, updateConversation } = makeService();
     await (svc as any).executarEnvio('slug1', 'João Silva', '5561988887777');
     expect(updateConversation).toHaveBeenCalledTimes(1);
     const [convId, updates] = updateConversation.mock.calls[0];
     expect(convId).toBe('conv-1');
-    expect(updates.messages[0].content).toContain('Eva abordou');
+    // Texto real que o cliente recebeu, com o 1º nome preenchido.
+    expect(updates.messages[0].content).toContain('Oi, João!');
+    expect(updates.messages[0].content).toContain('consultora da EcoSunPower');
+    expect(updates.messages[0].content).toContain('Salva meu contato');
+    expect(updates.messages[0].role).toBe('assistant');
     expect(updates.message_count).toBe(1);
+  });
+});
+
+// Monta um service cujo getClient resolve loadPropostaParaFollowup (select→eq→
+// maybeSingle) na proposta dada + suporta markFollowupSent (update→eq), pros
+// testes de reabertura (opção a).
+function makeServiceReabertura(followupSentAt: string | null, telefone = '5561988887777') {
+  const sendTemplate = vi.fn().mockResolvedValue({ messageId: 'm1' });
+  const sendText = vi.fn().mockResolvedValue(undefined);
+  const proposta = {
+    cliente_nome: 'João Silva',
+    cliente_telefone: telefone,
+    followup_sent_at: followupSentAt,
+    modo_envio: null,
+    dados_input: {},
+  };
+  const eqSelect = { maybeSingle: () => Promise.resolve({ data: proposta, error: null }) };
+  const from = () => ({
+    select: () => ({ eq: () => eqSelect }),
+    update: () => ({ eq: () => ({ error: null }) }),
+  });
+  const supabase = {
+    getClient: () => ({ from }),
+    getLeadByPhone: vi.fn().mockResolvedValue(null),
+    getOrCreateLeadByPhone: vi.fn().mockResolvedValue('lead-1'),
+    getOrCreateConversation: vi.fn().mockResolvedValue({ id: 'conv-1', messages: [], message_count: 0 }),
+    updateConversation: vi.fn().mockResolvedValue(undefined),
+  };
+  const svc = new ProposalFollowupService({
+    supabase: supabase as any,
+    metaService: { sendTemplate, sendText: vi.fn(), sendInteractiveButtons: vi.fn() } as any,
+    sendText,
+    engineerPhone: '5561999999999',
+    proposalBaseUrl: 'https://x',
+    redis: null,
+    delayMs: 0,
+    templateAbordagem: 'eva_proposta_aberta_v1',
+  });
+  return { svc, sendTemplate, sendText };
+}
+
+describe('proposal-followup: reabertura aborda cliente antigo (opção a)', () => {
+  it('reabertura de cliente NUNCA abordado → Eva aborda (manda template)', async () => {
+    const { svc, sendTemplate } = makeServiceReabertura(null);
+    await (svc as any).runReaberturaAsync('slug1', 1);
+    expect(sendTemplate).toHaveBeenCalledTimes(1);
+  });
+
+  it('reabertura de cliente JÁ abordado → só notifica, NÃO manda template de novo', async () => {
+    const { svc, sendTemplate, sendText } = makeServiceReabertura('2026-06-17T00:00:00Z');
+    await (svc as any).runReaberturaAsync('slug1', 1);
+    expect(sendTemplate).not.toHaveBeenCalled();
+    expect(sendText).toHaveBeenCalled(); // re-avisa o Junior
   });
 });
 
