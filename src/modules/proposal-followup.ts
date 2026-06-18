@@ -1,22 +1,21 @@
 // Follow-up automatico de proposta:
 // Quando cliente abre o link publico /p/:slug:
-//   - PRIMEIRA visualizacao (acessosAntes === 0):
-//       1. Notifica Junior no zap ("📣 Antonio abriu agora!")
-//       2. Aguarda 60s (deixa cliente ler)
-//       3. Manda mensagem pro CLIENTE perguntando se ficou alguma duvida
-//       4. Marca followup_sent_at no banco (nao manda 2x)
+//   - PRIMEIRA abertura (acessosAntes === 0):
+//       1. Lock NX por slug — evita abertura CONCORRENTE mandar 2x (o increment de
+//          acessos nao eh atomico, e o WhatsApp pre-carrega o link + clique = abre
+//          a URL varias vezes; nao eh raro).
+//       2. A Eva ABORDA o cliente na hora (template aprovado eva_proposta_aberta_v1
+//          — se apresenta como consultora do Junior). Sem delay/timer na memoria.
+//       3. Marca followup_sent_at (idempotencia) + grava a abordagem na conversa do
+//          cliente (aparece no dashboard, igual o lead — quando ele responder, o
+//          Brain continua na MESMA conversa) + avisa o Junior ("abriu e ja abordei").
 //   - RE-ABERTURAS (acessosAntes > 0):
-//       1. Notifica Junior ("📣 Antonio abriu de novo — Xª vez")
-//       2. NAO manda mensagem pro cliente (idempotencia via followup_sent_at)
-//       3. Throttle 5min por slug — recarregar 3x em 1min = 1 notificacao
+//       1. Throttle 5min por slug — so RE-AVISA o Junior que voltou (NAO re-aborda).
+//          [Fatia 2 futura: abordagens inteligentes/variadas na conversa entram aqui.]
 //
 // Preview admin (?eu=<token>) NAO chega aqui — endpoint nao incrementa acesso.
-//
-// Depois disso, qualquer resposta do cliente entra no fluxo NORMAL da Eva
-// (Brain ja tem dossier, conhecimento, etc — V1 nao precisa de modo especial).
-//
-// Quando cliente responder, marcar cliente_respondeu_at via outro hook
-// (handler de mensagem do brain).
+// O cliente vira lead (getOrCreateLeadByPhone), entao tem conversa no dash e pode
+// entrar em cadencia se ficar em silencio.
 
 import type { Redis } from 'ioredis';
 import type { SupabaseService } from './supabase.js';
@@ -147,6 +146,22 @@ export class ProposalFollowupService {
   // cliente já sabe que a Eva é a consultora do Junior). executarEnvio manda,
   // marca followup_sent_at, grava a conversa no dashboard e avisa o Junior.
   private async runFollowupAsync(slug: string): Promise<void> {
+    // Trava NX contra abertura CONCORRENTE: o increment de acessos não é atômico,
+    // então 2 aberturas no mesmo instante poderiam ler followup_sent_at=null e
+    // abordar 2x. Só o 1º adquire o lock; o resto sai. (WhatsApp abre o link
+    // várias vezes — pré-carregamento + clique — então isso acontece de verdade.)
+    if (this.redis) {
+      try {
+        const lock = await this.redis.set(`proposal:abordagem-lock:${slug}`, '1', 'EX', 120, 'NX');
+        if (lock === null) {
+          console.log(`[proposal-followup] abordagem slug=${slug} em lock concorrente, skip`);
+          return;
+        }
+      } catch (err) {
+        console.warn('[proposal-followup] lock redis falhou, segue:', (err as Error).message);
+      }
+    }
+
     const proposta = await this.loadPropostaParaFollowup(slug);
     if (!proposta) return;
     if (proposta.followup_sent_at) {
