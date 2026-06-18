@@ -61,6 +61,8 @@ interface AssistantOpts {
   githubPat: string;
   githubRepo: string;        // ex: junior-candido/ecosunpower-site
   githubBranch: string;      // main
+  // [Corretor] corrige o português da descrição do case (vai pro site). Opcional.
+  corrigirTexto?: (texto: string | null | undefined) => Promise<string>;
 }
 
 export class CaseCreatorAssistant {
@@ -71,6 +73,7 @@ export class CaseCreatorAssistant {
   private githubPat: string;
   private githubRepo: string;
   private githubBranch: string;
+  private corrigirTexto?: (texto: string | null | undefined) => Promise<string>;
 
   constructor(opts: AssistantOpts) {
     this.redis = new IORedis({
@@ -85,6 +88,7 @@ export class CaseCreatorAssistant {
     this.githubPat = opts.githubPat;
     this.githubRepo = opts.githubRepo;
     this.githubBranch = opts.githubBranch;
+    this.corrigirTexto = opts.corrigirTexto;
   }
 
   static isCaseCreatorTrigger(text: string): boolean {
@@ -350,6 +354,12 @@ export class CaseCreatorAssistant {
         return '⚠️ Nenhuma das mídias pôde ser processada. Tenta de novo com /novo-case.';
       }
 
+      // [Corretor] conserta o português da descrição (vai pro site) sem mudar
+      // número/nome/sentido. Degrada seguro → mantém o original se algo der errado.
+      const descCurtaCorrigida = this.corrigirTexto
+        ? await this.corrigirTexto(state.descCurta!)
+        : state.descCurta!;
+
       // 3) Monta JSON do case
       const caseJson = {
         slug,
@@ -360,7 +370,7 @@ export class CaseCreatorAssistant {
         tipo: state.tipo!,
         kwp: state.kwp!,
         ...(state.economiaMensalBrl ? { economiaMensalBrl: state.economiaMensalBrl } : {}),
-        descCurta: state.descCurta!,
+        descCurta: descCurtaCorrigida,
         fotoPrincipal: coverPath,
         fotos,
         ...(videoUrl ? { videoUrl } : {}),

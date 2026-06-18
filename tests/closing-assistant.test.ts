@@ -1,5 +1,5 @@
 // tests/closing-assistant.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ClosingAssistant, type LlmCaller } from '../src/modules/closing/closing-assistant.js';
 import { dadosFechamentoCamilaMesmaPessoa } from './fixtures/closing-camila.js';
 
@@ -32,6 +32,30 @@ describe('ClosingAssistant', () => {
       data: dadosFechamentoCamilaMesmaPessoa as any,
       pending_questions: [],
     });
+    expect(res.newState.stage).toBe('awaiting_confirm');
+  });
+
+  it('[corretor] SUGERE ajuste das disposicoes mas MANTÉM o texto literal do Junior (jurídico)', async () => {
+    const corrigirTexto = vi.fn().mockResolvedValue('Garantia estendida de 5 anos.');
+    const assistant = new ClosingAssistant({ llm: okLlm, corrigirTexto });
+    const original = 'garantia estendida de 5 anos';
+    const dados = { ...dadosFechamentoCamilaMesmaPessoa, disposicoes_especiais: original } as any;
+    const res = await assistant.processMessage('gera', { stage: 'collecting', data: dados, pending_questions: [] });
+    expect(corrigirTexto).toHaveBeenCalledWith(original, { conservador: true });
+    expect(res.newState.stage).toBe('awaiting_confirm');
+    // texto LITERAL preservado (não aplica a correção automático no contrato)
+    expect((res.newState as any).data.disposicoes_especiais).toBe(original);
+    // mas mostra a sugestão pro Junior
+    expect(res.replyText).toContain('possível ajuste');
+    expect(res.replyText).toContain('Garantia estendida de 5 anos.');
+  });
+
+  it('[corretor] não sugere nada se a correção for igual ao original', async () => {
+    const corrigirTexto = vi.fn().mockImplementation(async (t: string) => t);
+    const assistant = new ClosingAssistant({ llm: okLlm, corrigirTexto });
+    const dados = { ...dadosFechamentoCamilaMesmaPessoa, disposicoes_especiais: 'Texto já correto.' } as any;
+    const res = await assistant.processMessage('gera', { stage: 'collecting', data: dados, pending_questions: [] });
+    expect(res.replyText).not.toContain('possível ajuste');
     expect(res.newState.stage).toBe('awaiting_confirm');
   });
 

@@ -182,6 +182,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { readFileSync } from 'fs';
 import { montarBlocoProposta } from './modules/proposal-context.js';
+import { corrigirOrtografia } from './modules/corretor-ortografico.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -242,6 +243,13 @@ async function main() {
   }
 
   const supabase = new SupabaseService(config);
+
+  // [Corretor] Corretor de português compartilhado (1 cliente Anthropic) injetado
+  // nos assistants que recebem texto livre do Junior (cases, fechamento). Corrige
+  // só ortografia, protege número/nome, degrada seguro. Forward-only.
+  const anthropicCorretor = new Anthropic({ apiKey: config.anthropicApiKey });
+  const corrigirTexto = (texto: string | null | undefined, opts?: { conservador?: boolean }) =>
+    corrigirOrtografia(anthropicCorretor, texto, opts);
 
   // EcoSof Kit Clone: carrega empresa_config no boot (fallback = defaults EcoSun
   // hardcoded — banco sem a tabela continua funcionando com comportamento idêntico).
@@ -558,6 +566,7 @@ async function main() {
   // (gera contrato + procuração no Drive). Reusa OAuth do Drive proposal.
   const closingAssistant = new ClosingAssistant({
     llm: createAnthropicLlmCaller(config.anthropicApiKey),
+    corrigirTexto,
   });
   const closingPersist = new ClosingPersist(supabase.getClient());
   let closingDriveUploader: ClosingDriveUploader | null = null;
@@ -662,6 +671,7 @@ async function main() {
         githubPat: config.githubPat,
         githubRepo: config.githubSiteRepo,
         githubBranch: config.githubSiteBranch,
+        corrigirTexto,
       })
     : null;
   if (!caseCreator) {

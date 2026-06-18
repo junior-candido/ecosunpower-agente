@@ -38,6 +38,9 @@ function deepMerge<T extends Record<string, any>>(a: T, b: Partial<T>): T {
 
 export interface ClosingAssistantOpts {
   llm: LlmCaller;
+  // [Corretor] corrige a ortografia das disposições especiais (texto jurídico) em
+  // modo conservador. Opcional. Mostra a correção pro Junior confirmar antes de gerar.
+  corrigirTexto?: (texto: string | null | undefined, opts?: { conservador?: boolean }) => Promise<string>;
 }
 
 export class ClosingAssistant {
@@ -58,9 +61,25 @@ export class ClosingAssistant {
 
     const missing = findMissingRequired(merged);
     if (llm.action === 'ready_to_generate' && missing.length === 0) {
+      let replyText = llm.message;
+      // [Corretor] As disposições especiais são TEXTO JURÍDICO e a regra do Junior é
+      // que vão LITERAIS. Então aqui o corretor NÃO aplica automático — só SUGERE
+      // (modo conservador) e MANTÉM o texto exato do Junior por padrão. Se ele quiser
+      // a versão corrigida, redita ela. Assim zero risco no documento. Degrada seguro.
+      const disp = merged.disposicoes_especiais;
+      if (this.opts.corrigirTexto && typeof disp === 'string' && disp.trim().length >= 3) {
+        const corrigida = await this.opts.corrigirTexto(disp, { conservador: true });
+        if (corrigida !== disp) {
+          replyText +=
+            `\n\n📝 Vi um possível ajuste de ortografia nas disposições especiais:\n` +
+            `• Você escreveu: "${disp}"\n` +
+            `• Ficaria: "${corrigida}"\n` +
+            `Vou manter o SEU texto literal. Se quiser usar a versão corrigida, é só me mandar ela.`;
+        }
+      }
       return {
         newState: { stage: 'awaiting_confirm', data: merged as DadosFechamento },
-        replyText: llm.message,
+        replyText,
       };
     }
 
