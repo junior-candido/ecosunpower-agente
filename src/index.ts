@@ -180,8 +180,17 @@ import { buildHealthStatus } from './health.js';
 import { BUILD_VERSION } from './build-info.js';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { readFileSync } from 'fs';
+import { montarBlocoProposta } from './modules/proposal-context.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Postura de consultora/fechamento — injetada no cérebro da Eva quando o cliente
+// que está falando JÁ tem proposta pública (Fatia 2). Lida 1x no boot.
+const consultoraPropostaPrompt = readFileSync(
+  join(__dirname, 'prompts', 'consultora-proposta.md'),
+  'utf-8',
+);
 
 async function main() {
   const config = loadConfig();
@@ -767,6 +776,43 @@ async function main() {
       return Number.isFinite(idadeMs) && idadeMs >= 0 && idadeMs < 23 * 60 * 60 * 1000;
     } catch {
       return false;
+    }
+  };
+
+  // Fatia 2 — Eva consultora: se o cliente que está falando JÁ tem proposta
+  // pública, monta um bloco com os números reais dela + a postura de consultora,
+  // pra injetar no cérebro. Busca pela última proposta cujo telefone bate (match
+  // pelos últimos 8 dígitos — robusto a formatos/DDI). Nunca lança → '' degrada
+  // pro fluxo normal da Eva.
+  const montarContextoProposta = async (from: string): Promise<string> => {
+    try {
+      const alvo = normalizeBrazilianPhone(from);
+      const digits = (from || '').replace(/\D/g, '');
+      if (!alvo || digits.length < 10) return ''; // normalize já exige >= 10
+      const ultimos8 = digits.slice(-8);
+      // O ilike é só um PRÉ-FILTRO grosseiro (cliente_telefone é texto livre, sem
+      // normalização). A checagem AUTORITATIVA é igualdade do telefone normalizado
+      // no código — senão um substring poderia trazer a proposta de OUTRO cliente
+      // (mesmos 8 dígitos finais em DDD diferente) e a Eva falaria nome/números
+      // errados (vazamento). Sem match EXATO → '' (degrada pro fluxo normal).
+      const { data, error } = await supabase.getClient()
+        .from('propostas_publicas')
+        .select('cliente_nome, cliente_telefone, dados_input')
+        .ilike('cliente_telefone', `%${ultimos8}%`)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      if (error || !Array.isArray(data) || data.length === 0) return '';
+      const match = data.find((p) => {
+        const tel = normalizeBrazilianPhone(String((p as any).cliente_telefone ?? '').replace(/\D/g, ''));
+        return tel !== null && tel === alvo;
+      });
+      if (!match) return '';
+      const bloco = montarBlocoProposta((match as any).dados_input, (match as any).cliente_nome);
+      if (!bloco) return '';
+      return `\n\n${consultoraPropostaPrompt}\n\n${bloco}`;
+    } catch (err) {
+      console.warn('[consultora-proposta] montarContextoProposta falhou:', (err as Error).message);
+      return '';
     }
   };
 
@@ -4283,8 +4329,13 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       }
       // contextoAbordagem: bloco do Monitoramento Evolutivo (vazio pra todo
       // mundo, exceto cliente com abordagem ativa) — mesmo canal do leadContext.
+      // contextoProposta (Fatia 2): números reais da proposta do cliente + postura
+      // de consultora — vazio pra quem não tem proposta. SOMADO ao conhecimento
+      // técnico (não substitui): a Eva mantém toda a base (normas, rateio, etc.).
+      const contextoProposta = await montarContextoProposta(from);
       const knowledge = baseKnowledge + leadContext
-        + (contextoAbordagem ? `\n\n${contextoAbordagem}` : '');
+        + (contextoAbordagem ? `\n\n${contextoAbordagem}` : '')
+        + contextoProposta;
 
       const response = await brain.processMessage(
         text,
