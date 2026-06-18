@@ -97,6 +97,10 @@ final continua sendo dele.
 
 ## Decisões / não-escopo (YAGNI)
 
+- **Só DAQUI PRA FRENTE (forward-only):** o corretor age no momento em que o Junior digita o
+  texto novo. **Não** corrige retroativamente nada já salvo — propostas, contratos e cases
+  existentes ficam como estão. Sem batch/migração de dados antigos. (Confirmado Junior 18/06:
+  "o que está para trás está ok".)
 - **Modelo:** Haiku (barato, rápido) — tarefa simples, `temperature: 0`.
 - **Não** corrige texto do CLIENTE (só o do Junior) — o cliente pode escrever como quiser; a
   Eva entende.
