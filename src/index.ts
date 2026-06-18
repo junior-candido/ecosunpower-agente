@@ -4418,15 +4418,13 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       // TRAVA-NÚMERO: no fluxo novo a Eva NÃO crava preço/dimensionamento (faz handoff).
       // Se QUALQUER balão vazou um número desses, troca a resposta inteira por um único
       // balão de handoff e loga o original pra revisão. Rede de segurança caso o prompt falhe.
-      const { detectarNumeroProibido } = await import('./modules/eva-trava-numero.js');
+      const { detectarNumeroProibido, MENSAGEM_HANDOFF_NUMERO } = await import('./modules/eva-trava-numero.js');
       const motivosTrava = response.displayMessages
         .flatMap(p => detectarNumeroProibido(p).motivos);
       let baloesParaEnviar = response.displayMessages;
       if (motivosTrava.length > 0) {
         console.warn(`[trava-numero] resposta da Eva barrada (${motivosTrava.join(',')}) — substituída por handoff. Original: ${response.displayMessages.join(' | ').slice(0, 300)}`);
-        baloesParaEnviar = [
-          'Pra te passar o número certo, o Junior (nosso Responsável Técnico) vê seu caso direitinho. Ele pode te atender agora — posso já chamar ele aqui? 😊',
-        ];
+        baloesParaEnviar = [MENSAGEM_HANDOFF_NUMERO];
       }
 
       // Send response (possibly split across multiple WhatsApp messages)
@@ -5290,10 +5288,15 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         ? displayText
         : 'Recebi sua imagem! 📸 Pra eu te ajudar certinho — é energia solar pra você? Se puder, me manda também o valor médio da sua conta de luz.';
 
+      // TRAVA-NÚMERO também no caminho da FOTO da conta (onde a Eva lê valores) —
+      // leitura da conta do cliente passa; preço/dimensionamento calculado vira handoff.
+      const { travarTexto: travarFoto } = await import('./modules/eva-trava-numero.js');
+      const safeDisplayTravado = travarFoto(safeDisplay, 'foto');
+
       if (!isSandbox) {
-        await sendText(from, safeDisplay);
+        await sendText(from, safeDisplayTravado);
       } else {
-        console.log(`[sandbox] Image analysis for ${from}: ${safeDisplay}`);
+        console.log(`[sandbox] Image analysis for ${from}: ${safeDisplayTravado}`);
       }
 
       // Save to conversation
@@ -5546,10 +5549,14 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       const displayText = brain.getDisplayText(analysisText);
       const action = brain.parseAction(analysisText);
 
+      // TRAVA-NÚMERO também no caminho do PDF da conta (leitura passa; cálculo vira handoff).
+      const { travarTexto: travarPdf } = await import('./modules/eva-trava-numero.js');
+      const displayTextTravado = travarPdf(displayText, 'pdf');
+
       if (!isSandbox) {
-        await sendText(from, displayText);
+        await sendText(from, displayTextTravado);
       } else {
-        console.log(`[sandbox] PDF analysis for ${from}: ${displayText}`);
+        console.log(`[sandbox] PDF analysis for ${from}: ${displayTextTravado}`);
       }
 
       // Save to conversation

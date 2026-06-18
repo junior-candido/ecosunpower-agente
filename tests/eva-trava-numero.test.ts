@@ -30,4 +30,14 @@ describe('detectarNumeroProibido — barra número de preço/dimensionamento na 
     const linha = 'você marcou que a conta fica entre R$301 e R$700 — quanto veio na última conta, certinho? É com esse número que eu calculo sua economia.';
     expect(detectarNumeroProibido(linha).bloqueado).toBe(false);
   });
+  it('BARRA preço de sistema mesmo com "indicação" na mesma mensagem (sem suppression global)', () => {
+    expect(detectarNumeroProibido('na indicação seu sistema sai R$25 mil').bloqueado).toBe(true);
+  });
+  it('NÃO barra leitura da conta do cliente que menciona kWh (caminho da foto/PDF)', () => {
+    expect(detectarNumeroProibido('li sua conta: deu R$600, uns 850 kWh/mês, confere?').bloqueado).toBe(false);
+  });
+  it('BARRA preço de sistema (≥ R$6.000) mas libera conta/indicação (< R$6.000)', () => {
+    expect(detectarNumeroProibido('o sistema fica em R$ 13.550').bloqueado).toBe(true);
+    expect(detectarNumeroProibido('sua conta de R$ 1.200 dá pra resolver bem').bloqueado).toBe(false);
+  });
 });
