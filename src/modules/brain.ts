@@ -99,7 +99,10 @@ export class Brain {
     ];
 
     const response = await this.client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      // Sonnet (não Haiku): conversa mais esperta e natural, segue a regra de não
+      // ecoar/cravar preço que o Haiku ignorava. Cálculo certo já é garantido pela
+      // calculadora + trava-número, independente do modelo.
+      model: 'claude-sonnet-4-6',
       max_tokens: 1024,
       system,
       messages,
