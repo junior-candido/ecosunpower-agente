@@ -47,6 +47,7 @@ import { fetchCampaignQualityInputs } from './modules/marketing/campaign-quality
 import { MetaCapi } from './modules/meta-capi.js';
 import { makeCapiReporter, type CapiReporter } from './modules/capi-reporter.js';
 import { ProposalFollowupService } from './modules/proposal-followup.js';
+import { construirMenu, rowsCategorias, rowsSubmenu } from './modules/menu/menu.js';
 import {
   ClosingAssistant,
   ClosingDriveUploader,
@@ -2372,10 +2373,10 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
   async function tryHandleEmailCommand(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
     const t = text.trim();
-    const m = t.match(/^\/email\s+(\S+)\s+(\S+@\S+\.\S+)$/i);
+    const m = t.match(/^\/?email\s+(\S+)\s+(\S+@\S+\.\S+)$/i);
     if (!m) {
       // Help message se parecer comando email mas formato errado
-      if (/^\/email\b/i.test(t)) {
+      if (/^\/?email\b/i.test(t)) {
         await sendText(from, `📧 *Comando /email*\n\nUso: /email <fone ou nome> <email>\n\nExemplos:\n/email 5561992169105 tania@gmail.com\n/email Jucelda jucelda.pontes@hotmail.com`);
         return true;
       }
@@ -2429,7 +2430,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
   async function tryHandleFecheiCommand(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
     const t = text.trim();
-    const m = t.match(/^\/fechei\s+(.+)$/i);
+    const m = t.match(/^\/?fechei\s+(.+)$/i);
     if (!m) return false;
     const query = m[1].trim();
 
@@ -3307,78 +3308,37 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // Estrutura em 2 níveis. Cada item: ou reroteia pro handler do modo (trigger +
     // handler já existentes), ou manda uma DICA de texto (hint) — pros comandos que
     // precisam de um nome (ajustar/contrato) ou não têm handler de comando próprio.
-    type MenuItem = { id: string; title: string; description: string; trigger?: string; handler?: (from: string, text: string) => Promise<boolean>; hint?: string; action?: (from: string) => Promise<void> };
-    const MENU_CATEGORIES: Array<{ id: string; title: string; description: string; items: MenuItem[] }> = [
-      {
-        id: 'propostas', title: '💼 Propostas', description: 'Preço, gerar, ajustar, resgatar',
-        items: [
-          { id: 'menu_preco', title: '💰 Calcular preço', description: 'Simulação rápida de sistema', trigger: '/preco', handler: tryHandlePricingCommand },
-          { id: 'menu_proposta', title: '📋 Gerar proposta', description: 'PDF + link público', trigger: '/proposta', handler: tryHandleProposalCommand },
-          { id: 'menu_proposta_servico', title: '🔧 Proposta de serviço', description: 'Sem solar — valor único', hint: '🔧 *Proposta só de serviço* (sem painel solar): manda */proposta* e descreve as tarefas + um *valor total único*.\nEx: "proposta de serviço pro Thiago — desmontagem, transporte e reinstalação, total R$ 7.800"' },
-          { id: 'menu_ajustar', title: '✏️ Ajustar proposta', description: 'Reabrir uma já enviada', hint: '✏️ Pra ajustar uma proposta enviada, manda:\n*ajustar nome do cliente*\n(ex: ajustar Olavo)' },
-          { id: 'menu_clonar', title: '👥 Clonar p/ outro', description: 'Mesma proposta, novo cliente', hint: '👥 Pra clonar uma proposta pra outro cliente (mesmo kit), manda:\n*clonar nome do cliente base*\n(ex: clonar Marcio)' },
-          { id: 'menu_abordar', title: '💬 Abordar cliente', description: 'Eva fala com quem já abriu a proposta', hint: '💬 Pra Eva abordar um cliente na hora (mesmo que ele já tenha aberto a proposta), manda:\n*abordar nome do cliente*\n(ex: abordar Jonnata)' },
-          { id: 'menu_resgatar', title: '♻️ Resgatar antigas', description: 'Recuperar dados do Drive', hint: '♻️ Manda */resgatar-propostas* pra recuperar os dados das propostas antigas (do Drive).' },
-          { id: 'menu_rascunho', title: '📝 Rascunho', description: 'Retomar a não terminada', hint: '📝 Manda *rascunho* pra voltar pra proposta que você não terminou.' },
-        ],
+    const MENU_CATEGORIES = construirMenu({
+      pricing: tryHandlePricingCommand,
+      proposal: tryHandleProposalCommand,
+      closing: tryHandleClosingCommand,
+      creative: tryHandleCreativeCommand,
+      banner: tryHandleBannerCommand,
+      bannerKits: tryHandleBannerKitsCommand,
+      reativarBase: tryHandleReativarBaseCommand,
+      juniorBlog: tryHandleJuniorBlogCommand,
+      scheduling: tryHandleSchedulingCommand,
+      caseCreator: tryHandleCaseCreatorCommand,
+      testimonialAdmin: tryHandleTestimonialAdminCommand,
+      relatorio: tryHandleRelatorioCommand,
+      resgatarForms: tryHandleResgatarFormsCommand,
+      googleAds: tryHandleGoogleAdsCommand,
+      acaoImposto: async (to: string) => {
+        await setImpostoAwait(to);
+        await sendText(to, '🧾 Qual o valor da venda? Manda só o número (ex: *30000* ou *30 mil*).');
       },
-      {
-        id: 'fechamento', title: '📝 Fechamento', description: 'Contrato e procuração',
-        items: [
-          { id: 'menu_fechar', title: '🤝 Fechar venda', description: 'Contrato + procuração', trigger: '/fechar', handler: tryHandleClosingCommand },
-          { id: 'menu_contrato', title: '📄 Só contrato', description: 'Gera só o contrato', hint: '📄 Manda *contrato nome do cliente* (ex: contrato Marcio).' },
-          { id: 'menu_procuracao', title: '🖊️ Só procuração', description: 'Gera só a procuração', hint: '🖊️ Manda *procuracao nome do cliente* (ex: procuracao Marcio).' },
-        ],
+      acaoApagar: async (to: string) => {
+        const { montarListaApagar } = await import('./modules/financeiro/apagar-menu.js');
+        const lista = await montarListaApagar(supabase.getClient());
+        if (!lista) { await sendText(to, 'Nenhum lançamento nos últimos 30 dias. 👍'); return; }
+        if (metaWaba) {
+          const footer = lista.total >= 10 ? 'Os 10 mais recentes' : 'Toque pra escolher';
+          await metaWaba.sendInteractiveList(to, { header: '🗑️ Apagar', body: 'Qual lançamento você quer apagar?', buttonText: 'Escolher', sections: [{ title: 'Últimos 30 dias', rows: lista.rows }], footer });
+        } else {
+          await sendText(to, 'Apaga pelo painel: dashboard.ecosunpower.eng.br/dashboard/financeiro');
+        }
       },
-      {
-        id: 'marketing', title: '📣 Marketing', description: 'Criativo, banner, base, blog',
-        items: [
-          { id: 'menu_criativo', title: '🎨 Gerar criativo', description: 'Anúncio 3 imagens + 3 copies', trigger: 'criativo', handler: tryHandleCreativeCommand },
-          { id: 'menu_banner', title: '🖼️ Banner promo', description: 'Kit + preço + foto inversor', trigger: '/banner', handler: tryHandleBannerCommand },
-          { id: 'menu_reativar', title: '🔄 Reativar base', description: 'Template pros leads (10 por vez)', trigger: '/reativar-base 10', handler: tryHandleReativarBaseCommand },
-          { id: 'menu_blog', title: '📝 Status blog', description: 'Drafts pendentes de aprovação', trigger: 'blog status', handler: tryHandleJuniorBlogCommand },
-        ],
-      },
-      {
-        id: 'atendimento', title: '📅 Atendimento', description: 'Agenda, cases, reviews',
-        items: [
-          { id: 'menu_agenda', title: '📅 Agendar reunião', description: 'Visita técnica ou Meet', trigger: '/agenda', handler: tryHandleSchedulingCommand },
-          { id: 'menu_novo_case', title: '👤 Cadastrar case', description: 'Obra concluída (prova social)', trigger: '/novo-case', handler: tryHandleCaseCreatorCommand },
-          { id: 'menu_reviews', title: '✅ Aprovar reviews', description: 'Reviews públicos pendentes', trigger: '/reviews-pendentes', handler: tryHandleTestimonialAdminCommand },
-        ],
-      },
-      {
-        id: 'financeiro', title: '💰 Financeiro', description: 'Relatório, imposto, gastos, painel',
-        items: [
-          { id: 'menu_fin_relatorio', title: '📊 Relatório do mês', description: 'Resumo do mês na hora', trigger: 'relatório', handler: tryHandleRelatorioCommand },
-          { id: 'menu_fin_imposto', title: '🧾 Calcular imposto', description: 'Quanto separar de uma venda', action: async (to) => {
-            await setImpostoAwait(to);
-            await sendText(to, '🧾 Qual o valor da venda? Manda só o número (ex: *30000* ou *30 mil*).');
-          } },
-          { id: 'menu_fin_lancar', title: '💸 Lançar gasto/entrada', description: 'Foto, áudio ou texto', hint: '💸 Manda a foto/áudio do comprovante, ou escreve direto: *gastei 380 no posto* / *recebi 5000 do João*. Eu lanço e classifico sozinha.' },
-          { id: 'menu_fin_painel', title: '📈 Abrir painel', description: 'Tela do financeiro', hint: '📈 Painel do financeiro: dashboard.ecosunpower.eng.br/dashboard/financeiro' },
-          { id: 'menu_fin_apagar', title: '🗑️ Apagar lançamento', description: 'Apagar um gasto/entrada errado', action: async (to) => {
-            const { montarListaApagar } = await import('./modules/financeiro/apagar-menu.js');
-            const lista = await montarListaApagar(supabase.getClient());
-            if (!lista) { await sendText(to, 'Nenhum lançamento nos últimos 30 dias. 👍'); return; }
-            if (metaWaba) {
-              const footer = lista.total >= 10 ? 'Os 10 mais recentes' : 'Toque pra escolher';
-              await metaWaba.sendInteractiveList(to, { header: '🗑️ Apagar', body: 'Qual lançamento você quer apagar?', buttonText: 'Escolher', sections: [{ title: 'Últimos 30 dias', rows: lista.rows }], footer });
-            } else {
-              await sendText(to, 'Apaga pelo painel: dashboard.ecosunpower.eng.br/dashboard/financeiro');
-            }
-          } },
-        ],
-      },
-      {
-        id: 'operacao', title: '🔧 Operação', description: 'Usinas, monitoramento, manutenção',
-        items: [
-          { id: 'menu_monitoramento', title: '⚡ Monitoramento', description: 'Geração das usinas', hint: '⚡ Acompanhe a geração das usinas em dashboard.ecosunpower.eng.br/dashboard/monitoramento' },
-          { id: 'menu_dono', title: '🏭 Dono de usina', description: 'Vincular dono à usina órfã', hint: '🏭 Cadastra o dono pelo alerta de usina órfã no zap (botão "Cadastrar dono") ou no editar usina do dashboard.' },
-          { id: 'menu_manutencao', title: '🔧 Manutenção', description: 'Abrir/ver manutenção', hint: '🔧 Manda */manutencao* pra registrar/ver manutenção.' },
-        ],
-      },
-    ];
+    });
 
     const enviarLista = async (header: string, body: string, rows: Array<{ id: string; title: string; description: string }>, secTitle: string): Promise<void> => {
       if (metaWaba) {
@@ -3395,7 +3355,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // Nível 1: "menu" → categorias
     if (isMenuTrigger) {
-      const rows = MENU_CATEGORIES.map(c => ({ id: `menucat_${c.id}`, title: c.title, description: c.description }));
+      const rows = rowsCategorias(MENU_CATEGORIES);
       await enviarLista('⚙️ Menu', 'Escolha uma categoria:', rows, 'Categorias');
       return true;
     }
@@ -3407,7 +3367,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         await sendText(from, '⚠️ Categoria não encontrada. Manda *menu* de novo.');
         return true;
       }
-      const rows = cat.items.map(i => ({ id: i.id, title: i.title, description: i.description }));
+      const rows = rowsSubmenu(cat);
       await enviarLista(cat.title, 'O que você quer fazer?', rows, cat.title.replace(/^\S+\s/, ''));
       return true;
     }
