@@ -479,7 +479,7 @@ ${data.modoComparacao ? '' : `<section class="equipment-section">
         <span class="equipment-badge">Híbrido</span>
         <div class="equipment-cat">Bateria · Armazenamento</div>
         <div class="equipment-name">${escapeHtml(formataNomeEquipamento(data.bateria!.fabricante, data.bateria!.modelo))}</div>
-        <div class="equipment-brand">${fmtNum(capacidadeTotalKwh(data.bateria!), 1)} kWh de capacidade${data.bateria!.quantidade > 1 ? ` · ${data.bateria!.quantidade}× ${fmtNum(data.bateria!.capacidadeKwh, 1)} kWh` : ''}</div>
+        <div class="equipment-brand">Armazenamento de energia${data.bateria!.quantidade > 1 ? ` · ${data.bateria!.quantidade}× ${fmtNum(data.bateria!.capacidadeKwh, 1)} kWh` : ''}</div>
         <div class="equipment-specs">
           <div><div class="spec-label">Capacidade Total</div><div class="spec-value">${fmtNum(capacidadeTotalKwh(data.bateria!), 1)} kWh</div></div>
           <div><div class="spec-label">Quantidade</div><div class="spec-value">${data.bateria!.quantidade} unidade${data.bateria!.quantidade > 1 ? 's' : ''}</div></div>

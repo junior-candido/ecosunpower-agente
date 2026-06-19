@@ -27,11 +27,13 @@ export function capacidadeTotalKwh(b: BateriaMin): number {
   return Math.round(b.capacidadeKwh * b.quantidade * 100) / 100;
 }
 
-// Horas de autonomia no consumo médio do cliente. null se não dá pra estimar.
+// Horas de autonomia no consumo médio do cliente. null se não dá pra estimar
+// ou se daria menos de 1h (aí "~0h" só atrapalharia — melhor omitir a linha).
 export function autonomiaBackupHoras(b: BateriaMin, consumoMensalKwh: number): number | null {
   if (consumoMensalKwh <= 0) return null;
   const energiaUtilKwh = capacidadeTotalKwh(b) * DOD_UTIL;
   const consumoMedioKw = consumoMensalKwh / 30 / 24;
   if (consumoMedioKw <= 0) return null;
-  return Math.round(energiaUtilKwh / consumoMedioKw);
+  const horas = Math.round(energiaUtilKwh / consumoMedioKw);
+  return horas >= 1 ? horas : null;
 }

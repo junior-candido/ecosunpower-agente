@@ -28,6 +28,10 @@ describe('bateria — autonomiaBackupHoras', () => {
   it('null quando consumo <= 0', () => {
     expect(autonomiaBackupHoras({ capacidadeKwh: 10, quantidade: 1 }, 0)).toBeNull();
   });
+  it('null quando daria menos de 1h (consumo extremo)', () => {
+    // 10 kWh * 0.9 = 9 kWh úteis; consumo 20000 kWh/mês -> ~27,8 kW -> 0,3h -> round 0 -> null
+    expect(autonomiaBackupHoras({ capacidadeKwh: 10, quantidade: 1 }, 20000)).toBeNull();
+  });
   it('DOD_UTIL é 0.9', () => {
     expect(DOD_UTIL).toBe(0.9);
   });
