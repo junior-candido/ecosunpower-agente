@@ -54,7 +54,8 @@ export function montarResumoPendente(l: LancamentoResumo, opts: { duplicado: boo
     ? '\n⚠️ Parece igual a um lançamento que você já fez nesse dia.'
     : '';
   const blocoItens = montarBlocoItens(opts.itens ?? []);
-  const dica = blocoItens && (opts.itens ?? []).some((i) => i.problema) ? ' (me corrige os ⚠️ se precisar)' : '';
+  const temDuvida = (opts.itens ?? []).some((i) => i.problema);
+  const dica = temDuvida ? ' (me corrige os ⚠️ se precisar)' : '';
   return {
     body: `Li aqui:\n${linhaResumo(l)}${blocoItens}${aviso}\nConfere?${dica}`,
     buttons: [

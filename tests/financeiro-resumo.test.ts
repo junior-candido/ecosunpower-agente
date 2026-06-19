@@ -22,6 +22,15 @@ describe('resumo: montarBlocoItens', () => {
   it('lista vazia → string vazia', () => {
     expect(montarBlocoItens([])).toBe('');
   });
+  it('todos com problema → sem linha "os outros ok"', () => {
+    const txt = montarBlocoItens([{ material: 'curva', preco_unitario: null, problema: 'não li o preço' }]);
+    expect(txt).not.toContain('os outros');
+  });
+  it('mostra o preço lido no item grifado', () => {
+    const txt = montarBlocoItens([{ material: 'eletroduto', preco_unitario: 12, problema: 'quantidade ilegível' }]);
+    expect(txt).toContain('R$');
+    expect(txt).toContain('12');
+  });
 });
 
 describe('resumo: montarResumoPendente com itens', () => {
