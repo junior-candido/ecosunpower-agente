@@ -176,6 +176,7 @@ const REGRAS_COMUNS = (hoje: string) => `Devolva APENAS um bloco \`\`\`json\`\`\
  "categoria_slug": uma de [${CATEGORIA_SLUGS.join(', ')}] ou null, "pf_pj": "PF"|"PJ"|null,
  "obra_ref": "nome do cliente/obra citado" ou null, "descricao": "resumo curto" ou null,
  "material": "nome do material/produto comprado (DPS, cabo 6mm, disjuntor) ou null", "quantidade": número ou null, "unidade": "un"|"m"|"rolo"|... ou null,
+ "itens": [{"material": "nome do item", "quantidade": número ou null, "unidade": "un"|"m"|..., "preco_unitario": número ou null, "problema": "motivo curto se NÃO tiver certeza do item, senão null"}] (lista; só numa NOTA com VÁRIOS itens, senão []),
  "tem_nota": true/false (só entradas; false quando a pessoa disser SEM NOTA / por fora / sem comprovante / não vou dar nota; senão true),
  "campos_faltando": ["valor", "pf_pj", ...]}
 Sem nenhum evento de dinheiro → devolva [] (lista vazia).
@@ -186,6 +187,7 @@ Sem nenhum evento de dinheiro → devolva [] (lista vazia).
   (mercado da casa, lazer). Na DÚVIDA → null + "pf_pj" em campos_faltando. NÃO assuma.
 - categoria_slug: escolha a MAIS parecida da lista; nada encaixa → "outros".
 - material/quantidade/unidade: SÓ quando for COMPRA DE MATERIAL/produto (despesa). material = o item ("DPS", "cabo 6mm"); quantidade/unidade quando a pessoa disser ("100m de cabo" → quantidade 100, unidade "m"; "5 disjuntores" → 5, "un"). Não disse quantidade → quantidade null (conta como 1). Não é compra de material → os três null.
+- itens: SÓ quando o documento for uma NOTA FISCAL/cupom com VÁRIOS itens listados. Uma linha por item, com o preço UNITÁRIO de cada (NÃO o total da linha nem da nota). Não conseguiu ler o preço ou o nome de um item com certeza → preencha o que deu e descreva em "problema" (ex.: "não li o preço", "nome rasurado", "preço suspeito"). O "valor" do lançamento continua sendo o TOTAL da nota. Mensagem de texto comum ou compra de 1 item só → itens: [].
 - "entrou"/"recebi"/"caiu"/"cliente pagou" → tipo "entrada". "gastei"/"paguei"/"comprei" e
   comprovante de compra/PIX enviado → tipo "despesa".
 - intencao "corrigir": a pessoa quer ARRUMAR um lançamento já feito ("o do posto era 350").

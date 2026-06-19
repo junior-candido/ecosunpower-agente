@@ -134,6 +134,15 @@ describe('materiais: gravarCompraMaterialSeHouver', () => {
   });
 });
 
+describe('extrator: texto comum não vira lista de itens', () => {
+  it('1 compra por texto → itens []', () => {
+    const raw = '```json\n[{"financeiro":true,"tipo":"despesa","valor":80,"material":"DPS","itens":[]}]\n```';
+    const e = parseLancamentos(raw)[0];
+    expect(e.itens).toEqual([]);
+    expect(e.material).toBe('DPS');
+  });
+});
+
 describe('extrator: itens de nota', () => {
   it('parseLancamentos lê o array itens com preço unitário e problema', () => {
     const raw = '```json\n[{"financeiro":true,"tipo":"despesa","valor":2111.80,"contraparte":"Itaiaia",' +
