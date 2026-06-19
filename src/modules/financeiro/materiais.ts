@@ -102,15 +102,23 @@ export function montarItensParaGravar(ex: Record<string, unknown>, valorTotal: n
 export async function gravarComprasDaNota(client: SupabaseClient, lancamentoId: string): Promise<ResultadoGravacao> {
   const row = await getLancamento(client, lancamentoId);
   if (!row || row.status !== 'confirmado' || row.tipo !== 'despesa') return { gravados: 0, pulados: 0 };
-  const itens = montarItensParaGravar((row.extracao ?? {}) as Record<string, unknown>, Number(row.valor));
+  const ex = (row.extracao ?? {}) as Record<string, unknown>;
+  const temItens = Array.isArray(ex.itens) && ex.itens.length > 0;
+  const itens = montarItensParaGravar(ex, Number(row.valor));
   let gravados = 0, pulados = 0;
   for (const it of itens) {
     if (it.problema || !it.material || it.preco_unitario === null || it.preco_unitario <= 0) { pulados++; continue; }
     const quantidade = it.quantidade && it.quantidade > 0 ? it.quantidade : 1;
+    // Caminho legado (1 material por texto): guarda o total EXATO do lançamento — o
+    // preço unitário foi derivado do total, então reconstruí-lo pode derrapar 1 centavo.
+    // Caminho nota: preço unitário vem da própria nota, então o total da linha é confiável.
+    const valorTotalLinha = temItens
+      ? Math.round(it.preco_unitario * quantidade * 100) / 100
+      : Number(row.valor);
     await inserirCompraMaterial(client, {
       lancamento_id: lancamentoId, material: it.material, material_norm: normalizarMaterial(it.material),
       loja: row.contraparte ?? null, quantidade, unidade: it.unidade ?? 'un',
-      valor_total: Math.round(it.preco_unitario * quantidade * 100) / 100,
+      valor_total: valorTotalLinha,
       preco_unitario: it.preco_unitario, data_evento: row.data_evento,
     });
     gravados++;

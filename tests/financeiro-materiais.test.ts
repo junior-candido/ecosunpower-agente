@@ -161,6 +161,16 @@ describe('materiais: gravarComprasDaNota', () => {
     const client = { from: () => ({ insert: () => ({ error: null }) }) } as any;
     expect(await gravarComprasDaNota(client, 'l1')).toEqual({ gravados: 0, pulados: 0 });
   });
+  it('legado guarda o valor_total EXATO (não derrapa centavo quando não divide redondo)', async () => {
+    (repo.getLancamento as any).mockResolvedValue(lancRow({
+      valor: 10, contraparte: 'Loja Y', extracao: { material: 'eletroduto', quantidade: 3, unidade: 'un' },
+    }));
+    const inserts: any[] = [];
+    const client = { from: () => ({ insert: (v: any) => { inserts.push(v); return { error: null }; } }) } as any;
+    await gravarComprasDaNota(client, 'l1');
+    expect(inserts[0].valor_total).toBe(10);       // total exato do lançamento
+    expect(inserts[0].preco_unitario).toBe(3.33);  // 10/3 arredondado
+  });
 });
 
 describe('extrator: texto comum não vira lista de itens', () => {
