@@ -70,7 +70,7 @@ export function construirMenu(deps: MenuDeps): MenuCategoria[] {
         { id: 'menu_agenda', title: '📅 Agendar reunião', description: 'Visita técnica ou Meet', trigger: '/agenda', handler: deps.scheduling },
         { id: 'menu_novo_case', title: '👤 Cadastrar case', description: 'Obra concluída (prova social)', trigger: '/novo-case', handler: deps.caseCreator },
         { id: 'menu_reviews', title: '✅ Aprovar reviews', description: 'Reviews públicos pendentes', trigger: '/reviews-pendentes', handler: deps.testimonialAdmin },
-        { id: 'menu_email', title: '📧 Cadastrar email do lead', description: 'Adiciona/atualiza email', hint: '📧 Pra cadastrar o email de um lead, manda:\n*email telefone email*\n(ex: email 61999998888 cliente@gmail.com)' },
+        { id: 'menu_email', title: '📧 Cadastrar email', description: 'Adiciona/atualiza email do lead', hint: '📧 Pra cadastrar o email de um lead, manda:\n*email telefone email*\n(ex: email 61999998888 cliente@gmail.com)' },
       ],
     },
     {
@@ -79,7 +79,7 @@ export function construirMenu(deps: MenuDeps): MenuCategoria[] {
         { id: 'menu_fin_relatorio', title: '📊 Relatório do mês', description: 'Resumo do mês na hora', trigger: 'relatório', handler: deps.relatorio },
         { id: 'menu_fin_imposto', title: '🧾 Calcular imposto', description: 'Quanto separar de uma venda', action: deps.acaoImposto },
         { id: 'menu_fin_lancar', title: '💸 Lançar gasto/entrada', description: 'Foto, áudio ou texto', hint: '💸 Manda a foto/áudio do comprovante, ou escreve direto: *gastei 380 no posto* / *recebi 5000 do João*. Eu lanço e classifico sozinha.' },
-        { id: 'menu_fin_material', title: '💰 Comparar preço de material', description: 'Onde está mais barato', hint: '💰 Pra comparar onde um material está mais barato, pergunta o preço dele:\n*preço do cabo 6mm*\n(eu já te mostro o ranking das lojas)' },
+        { id: 'menu_fin_material', title: '💰 Preço de material', description: 'Comparar onde está mais barato', hint: '💰 Pra comparar onde um material está mais barato, pergunta o preço dele:\n*preço do cabo 6mm*\n(eu já te mostro o ranking das lojas)' },
         { id: 'menu_fin_painel', title: '📈 Abrir painel', description: 'Tela do financeiro', hint: '📈 Painel do financeiro: dashboard.ecosunpower.eng.br/dashboard/financeiro' },
         { id: 'menu_fin_apagar', title: '🗑️ Apagar lançamento', description: 'Apagar um gasto/entrada errado', action: deps.acaoApagar },
       ],
