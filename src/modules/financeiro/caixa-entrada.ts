@@ -199,6 +199,9 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
     if (aguardando) {
       // Pendente de NOTA (tem itens): o texto corrige os itens e o pendente segue
       // aberto até o admin clicar Confirmar. NUNCA escorrega pro cérebro de conversa.
+      // Trade-off (igual à janela de 1h do aguardando): um gasto NOVO digitado enquanto
+      // a nota está aberta é tratado como correção (a correção devolve os itens iguais).
+      // Aceitável — o admin está no meio de conferir a nota; ele Confirma e depois lança.
       const itensAtuais = Array.isArray(aguardando.extracao?.itens)
         ? (aguardando.extracao!.itens as ItemNota[]) : [];
       if (itensAtuais.length > 0) {
