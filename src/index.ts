@@ -732,6 +732,20 @@ async function main() {
   const tryHandleRelatorioCommand = makeRelatorioHandler(supabase.getClient(), isAdminPhone, sendText);
   const tryHandleConsultaMaterial = makeMaterialQueryHandler(supabase.getClient(), isAdminPhone, sendText);
 
+  // Correção tardia de preço de material ("a curva da Itaiaia era 8") — antes do gate da Caixa.
+  const tryHandleCorrecaoPreco = async (from: string, text: string): Promise<boolean> => {
+    if (!isAdminPhone(from)) return false;
+    const { parseCorrecaoPrecoMaterial, buscarComprasPorMaterial, maisRecentePorLoja, montarConfirmacaoCorrecao } =
+      await import('./modules/financeiro/correcao-preco.js');
+    const c = parseCorrecaoPrecoMaterial(text);
+    if (!c) return false;
+    const rows = await buscarComprasPorMaterial(supabase.getClient(), c);
+    const msg = montarConfirmacaoCorrecao(maisRecentePorLoja(rows), c.valorNovo);
+    if (!msg) return false; // não achou material → deixa seguir o fluxo normal (não engole)
+    await metaWaba!.sendInteractiveButtons(from, msg.body, msg.buttons, 'Comparador de preços · Financeiro');
+    return true;
+  };
+
   // "abordar <nome>" — dispara a abordagem da Eva na hora pro cliente, mesmo que
   // ele já tenha aberto a proposta antes (o automático só pega a 1ª abertura).
   const tryHandleAbordarCommand = async (from: string, text: string): Promise<boolean> => {
@@ -3482,6 +3496,21 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       return;
     }
 
+    // matcorr:<acao>:<compraId>:<centavos> — confirmação da correção tardia de preço.
+    if (isAdminPhone(from) && metaWaba && text.trim().startsWith('matcorr:')) {
+      const [, acao, compraId, centavos] = text.trim().split(':');
+      if (acao === 'no') { await sendText(from, 'Beleza, deixei como tava. 👍'); return; }
+      if (acao === 'ok') {
+        const { atualizarPrecoCompra } = await import('./modules/financeiro/correcao-preco.js');
+        const novo = Number(centavos) / 100;
+        const ok = await atualizarPrecoCompra(supabase.getClient(), compraId, novo).catch(() => false);
+        await sendText(from, ok
+          ? `✅ Atualizei pra ${novo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.`
+          : 'Não achei mais esse registro pra atualizar. 🤔');
+      }
+      return;
+    }
+
     // finlan:<acao>:<id>[:<extra>] — botões da Caixa de Entrada (Fatia 3).
     if (isAdminPhone(from) && text.trim().startsWith('finlan:')) {
       if (!metaWaba) {
@@ -3786,6 +3815,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // Consulta de preço de material ("preço do DPS") — antes do gate do caixa.
     if (await tryHandleConsultaMaterial(from, text)) return;
+
+    // Correção tardia de preço de material (precisa vir antes do gate do caixa).
+    if (metaWaba && await tryHandleCorrecaoPreco(from, text)) return;
 
     // "relatório [mês]" — resumo financeiro do mês (Peça 3); antes do gate da Caixa de Entrada
     if (await tryHandleRelatorioCommand(from, text)) return;
