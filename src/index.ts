@@ -734,16 +734,23 @@ async function main() {
 
   // Correção tardia de preço de material ("a curva da Itaiaia era 8") — antes do gate da Caixa.
   const tryHandleCorrecaoPreco = async (from: string, text: string): Promise<boolean> => {
-    if (!isAdminPhone(from)) return false;
+    if (!isAdminPhone(from) || !metaWaba) return false;
     const { parseCorrecaoPrecoMaterial, buscarComprasPorMaterial, maisRecentePorLoja, montarConfirmacaoCorrecao } =
       await import('./modules/financeiro/correcao-preco.js');
     const c = parseCorrecaoPrecoMaterial(text);
     if (!c) return false;
-    const rows = await buscarComprasPorMaterial(supabase.getClient(), c);
-    const msg = montarConfirmacaoCorrecao(maisRecentePorLoja(rows), c.valorNovo);
-    if (!msg) return false; // não achou material → deixa seguir o fluxo normal (não engole)
-    await metaWaba!.sendInteractiveButtons(from, msg.body, msg.buttons, 'Comparador de preços · Financeiro');
-    return true;
+    try {
+      const rows = await buscarComprasPorMaterial(supabase.getClient(), c);
+      const msg = montarConfirmacaoCorrecao(maisRecentePorLoja(rows), c.valorNovo);
+      if (!msg) return false; // não achou material → deixa seguir o fluxo normal (não engole)
+      await metaWaba.sendInteractiveButtons(from, msg.body, msg.buttons, 'Comparador de preços · Financeiro');
+      return true;
+    } catch (err) {
+      // Já reconhecemos como correção (parseou) — NÃO deixar cair no caixa como gasto novo.
+      console.error('[correcao-preco] busca/envio falhou:', (err as Error).message);
+      await sendText(from, '❌ Deu erro pra buscar esse material no banco. Tenta de novo daqui a pouco.');
+      return true;
+    }
   };
 
   // "abordar <nome>" — dispara a abordagem da Eva na hora pro cliente, mesmo que
@@ -3507,6 +3514,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         await sendText(from, ok
           ? `✅ Atualizei pra ${novo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.`
           : 'Não achei mais esse registro pra atualizar. 🤔');
+      } else {
+        console.warn(`[correcao-preco] matcorr ação desconhecida: ${acao}`);
       }
       return;
     }
@@ -3817,7 +3826,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     if (await tryHandleConsultaMaterial(from, text)) return;
 
     // Correção tardia de preço de material (precisa vir antes do gate do caixa).
-    if (metaWaba && await tryHandleCorrecaoPreco(from, text)) return;
+    if (await tryHandleCorrecaoPreco(from, text)) return;
 
     // "relatório [mês]" — resumo financeiro do mês (Peça 3); antes do gate da Caixa de Entrada
     if (await tryHandleRelatorioCommand(from, text)) return;
