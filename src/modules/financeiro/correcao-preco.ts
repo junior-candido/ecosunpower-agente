@@ -3,6 +3,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { parseValorReais } from './comando-imposto.js';
 import { normalizarMaterial } from './materiais.js';
+import type { BotaoZap, MsgComBotoes } from './resumo-lancamento.js';
 
 export interface CorrecaoPreco { material: string; loja: string | null; valorNovo: number }
 
@@ -52,16 +53,20 @@ export function maisRecentePorLoja(rows: CompraDetalhe[]): CompraDetalhe[] {
   return out;
 }
 
+// Corrige o preço unitário e recalcula o valor_total (preço × quantidade da linha),
+// pra não deixar o total inconsistente caso algum relatório futuro o leia.
 export async function atualizarPrecoCompra(client: SupabaseClient, id: string, novoPreco: number): Promise<boolean> {
+  const { data: atual } = await client.from('financeiro_materiais_compras')
+    .select('quantidade').eq('id', id).maybeSingle();
+  const quantidade = Number((atual as { quantidade?: number } | null)?.quantidade) || 1;
+  const valorTotal = Math.round(novoPreco * quantidade * 100) / 100;
   const { data, error } = await client.from('financeiro_materiais_compras')
-    .update({ preco_unitario: novoPreco, valor_total: novoPreco }) // 1 un de referência; comparação usa preco_unitario
+    .update({ preco_unitario: novoPreco, valor_total: valorTotal })
     .eq('id', id).select('id');
   if (error) throw new Error(`atualizarPrecoCompra: ${error.message}`);
   return Boolean(data && data.length > 0);
 }
 
-export interface BotaoZap { id: string; title: string }
-export interface MsgComBotoes { body: string; buttons: BotaoZap[] }
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const dm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 const cents = (n: number) => Math.round(n * 100);

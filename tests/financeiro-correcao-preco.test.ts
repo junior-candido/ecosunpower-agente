@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCorrecaoPrecoMaterial, maisRecentePorLoja } from '../src/modules/financeiro/correcao-preco.js';
+import { parseCorrecaoPrecoMaterial, maisRecentePorLoja, montarConfirmacaoCorrecao } from '../src/modules/financeiro/correcao-preco.js';
 
 describe('parseCorrecaoPrecoMaterial', () => {
   it('material + loja + valor', () => {
@@ -31,7 +31,6 @@ describe('maisRecentePorLoja', () => {
   });
 });
 
-import { montarConfirmacaoCorrecao } from '../src/modules/financeiro/correcao-preco.js';
 describe('montarConfirmacaoCorrecao', () => {
   const alvo = { id: 'a', material: 'curva 90', loja: 'Itaiaia', preco_unitario: 7, data_evento: '2026-06-19' };
   it('1 alvo → pergunta direta com botão ok', () => {
