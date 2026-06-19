@@ -8,6 +8,7 @@ import { fmtRs, fmtNum, fmtPct, fmtCurto, escapeHtml } from './format.js';
 import { renderServicosAdicionaisSection, type ServicoItem } from './service-render.js';
 import { getBrandFicha } from './brand-fichas.js';
 import { logoMeioPagamento } from './payment-logos.js';
+import { temBateria, capacidadeTotalKwh, autonomiaBackupHoras, type Bateria } from './bateria.js';
 // [ECOSOF] empresa() é lida DENTRO das funções de render (runtime) — nunca
 // capturada em const de módulo. Com o seed EcoSun a saída é idêntica.
 import { empresa } from '../empresa-config.js';
@@ -35,6 +36,7 @@ export interface ProposalData {
   // Equipamentos
   modulo: { fabricante: string; modelo: string; potenciaW: number; quantidade: number; garantiaDefeito: number; garantiaEficiencia: number; tecnologia?: string; fichaOverride?: string };
   inversor: { fabricante: string; modelo: string; potenciaW: number; quantidade: number; garantia: number; eficiencia?: number; tipoInversor?: 'string' | 'microinversor' | 'solaredge'; fichaOverride?: string };
+  bateria?: Bateria;
   // Tipo de estrutura de fixacao - ex: "Telha cerâmica", "Telha metálica",
   // "Telha fibrocimento", "Laje", "Solo", "Carport". Pode incluir marca/material.
   estruturaFixacao?: { tipo: string; material?: string; descricao?: string };
@@ -161,6 +163,8 @@ export function renderProposalHTML(data: ProposalData, calc: ProposalCalculation
 
   const economiaPercent = Math.min(100, (calc.economiaMensal / calc.contaSemSistemaMensal) * 100);
   const geracaoMensal = Math.round(calc.geracaoMensalKwh);
+  const consumoMedioMensalKwh = calc.consumoMensalDistribuido.reduce((a, b) => a + b, 0) / 12;
+  const autonomiaHoras = temBateria(data.bateria) ? autonomiaBackupHoras(data.bateria!, consumoMedioMensalKwh) : null;
   const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
   return `<!DOCTYPE html>
@@ -353,6 +357,14 @@ ${data.tipo === 'personalizada' ? `
 </div>
 ` : ''}
 
+${temBateria(data.bateria) ? `
+<div class="container" style="padding-top:16px">
+  <div style="background:linear-gradient(135deg,#0E7CB8 0%,#1FB8E8 100%);color:#fff;padding:14px 24px;text-align:center;font-weight:700;font-size:13px;letter-spacing:1px;border-radius:12px;text-transform:uppercase">
+    🔋 Sistema Híbrido — Solar + Bateria
+  </div>
+</div>
+` : ''}
+
 ${data.estudoPersonalizado ? renderEstudoPersonalizado(data.estudoPersonalizado, logoBase64) : ''}
 
 <div class="container">
@@ -462,6 +474,21 @@ ${data.modoComparacao ? '' : `<section class="equipment-section">
           return resumo ? `<p style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--muted);line-height:1.55">${escapeHtml(resumo)}</p>` : '';
         })()}
       </div>
+      ${temBateria(data.bateria) ? `
+      <div class="equipment-card">
+        <span class="equipment-badge">Híbrido</span>
+        <div class="equipment-cat">Bateria · Armazenamento</div>
+        <div class="equipment-name">${escapeHtml(formataNomeEquipamento(data.bateria!.fabricante, data.bateria!.modelo))}</div>
+        <div class="equipment-brand">${fmtNum(capacidadeTotalKwh(data.bateria!), 1)} kWh de capacidade${data.bateria!.quantidade > 1 ? ` · ${data.bateria!.quantidade}× ${fmtNum(data.bateria!.capacidadeKwh, 1)} kWh` : ''}</div>
+        <div class="equipment-specs">
+          <div><div class="spec-label">Capacidade Total</div><div class="spec-value">${fmtNum(capacidadeTotalKwh(data.bateria!), 1)} kWh</div></div>
+          <div><div class="spec-label">Quantidade</div><div class="spec-value">${data.bateria!.quantidade} unidade${data.bateria!.quantidade > 1 ? 's' : ''}</div></div>
+          <div><div class="spec-label">Garantia</div><div class="spec-value">${data.bateria!.garantia} anos</div></div>
+          <div><div class="spec-label">Função</div><div class="spec-value">Backup + uso noturno</div></div>
+        </div>
+        ${data.bateria!.fichaOverride ? `<p style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);font-size:13px;color:var(--muted);line-height:1.55">${escapeHtml(data.bateria!.fichaOverride)}</p>` : ''}
+      </div>
+      ` : ''}
     </div>
 
     ${data.estruturaFixacao ? `
@@ -476,6 +503,38 @@ ${data.modoComparacao ? '' : `<section class="equipment-section">
     ` : ''}
   </div>
 </section>`}
+
+${(!data.modoComparacao && temBateria(data.bateria)) ? `
+<section style="background:var(--surface-alt);padding:80px 0">
+  <div class="container">
+    <span class="section-tag">Por que Híbrido</span>
+    <h2 class="section-title">Sua energia continua quando a rede cai</h2>
+    <p class="section-subtitle">Com a bateria, você não depende só da concessionária.</p>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:24px;margin-top:8px">
+      <div style="background:#fff;border:1px solid var(--border);border-radius:20px;padding:32px">
+        <div style="font-size:28px;margin-bottom:12px">🔋</div>
+        <h3 style="font-size:18px;margin-bottom:8px">Backup na falta de luz</h3>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">Faltou energia? A bateria assume na hora e mantém a casa funcionando.${autonomiaHoras != null ? ` <strong>~${autonomiaHoras}h de autonomia</strong> no seu consumo médio — com só os essenciais, dura bem mais.` : ''}</p>
+      </div>
+      <div style="background:#fff;border:1px solid var(--border);border-radius:20px;padding:32px">
+        <div style="font-size:28px;margin-bottom:12px">🌙</div>
+        <h3 style="font-size:18px;margin-bottom:8px">Usa o solar à noite</h3>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">A energia que sobra de dia fica guardada e você usa de noite, em vez de mandar tudo pra rede.</p>
+      </div>
+      <div style="background:#fff;border:1px solid var(--border);border-radius:20px;padding:32px">
+        <div style="font-size:28px;margin-bottom:12px">🔌</div>
+        <h3 style="font-size:18px;margin-bottom:8px">Mais independência</h3>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">Menos dependência da concessionária e proteção contra apagões e quedas de energia.</p>
+      </div>
+      <div style="background:#fff;border:1px solid var(--border);border-radius:20px;padding:32px">
+        <div style="font-size:28px;margin-bottom:12px">⚡</div>
+        <h3 style="font-size:18px;margin-bottom:8px">Pronto pro futuro</h3>
+        <p style="color:var(--muted);font-size:15px;line-height:1.6">Com armazenamento, você aproveita melhor sua geração e fica preparado pra novas regras de tarifa.</p>
+      </div>
+    </div>
+  </div>
+</section>
+` : ''}
 
 <section style="background:#fff;padding:80px 0">
   <div class="container">
