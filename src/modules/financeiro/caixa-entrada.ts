@@ -47,6 +47,13 @@ export function planejarCaptura(itens: ExtracaoLancamento[]): { lancar: Extracao
   return { lancar, esclarecer: lancar.length === 0 };
 }
 
+// PURO: um pendente fica "aguardando" texto quando falta PF/PJ OU quando é nota com
+// itens — aí a correção de item por texto ("a curva é 7,00") é capturada até o admin
+// clicar Confirmar, em vez de escorregar pro cérebro de conversa (e travar).
+export function pendenteAguardaTexto(faltaPfPj: boolean, itens: unknown): boolean {
+  return faltaPfPj || (Array.isArray(itens) && itens.length > 0);
+}
+
 const hojeBRT = (): string => {
   const brt = new Date(Date.now() - 3 * 60 * 60 * 1000);
   return brt.toISOString().slice(0, 10);
@@ -125,7 +132,7 @@ async function criarPendenteEFalar(
     pfPj: faltaPfPj ? null : e.pf_pj, leadId, storagePath,
     mimeType: midia?.mimeType ?? herdado?.mimeType ?? null, origem: midia ? 'zap_midia' : 'zap_texto',
     messageId: midia?.messageId ?? null,
-    extracao: { ...e, aguardando: faltaPfPj }, createdBy: from, temNota: e.tem_nota,
+    extracao: { ...e, aguardando: pendenteAguardaTexto(faltaPfPj, e.itens) }, createdBy: from, temNota: e.tem_nota,
   });
 
   if (faltaPfPj) {
@@ -334,7 +341,8 @@ export async function handleFinlanButton(deps: CaixaDeps, from: string, buttonId
         const row = await getLancamento(deps.supabase, id);
         if (!row || row.status !== 'pendente') { await deps.sendText(from, 'Esse lançamento não está mais pendente.'); return true; }
         await atualizarPendente(deps.supabase, id, {
-          pf_pj: acao.toUpperCase(), extracao: { ...row.extracao, aguardando: false },
+          // Nota com itens segue aberta pra correção por texto mesmo após resolver PF/PJ.
+          pf_pj: acao.toUpperCase(), extracao: { ...row.extracao, aguardando: pendenteAguardaTexto(false, row.extracao?.itens) },
         });
         await mandarResumo(deps, from, id);
         return true;

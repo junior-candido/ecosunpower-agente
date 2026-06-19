@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planejarCaptura } from '../src/modules/financeiro/caixa-entrada.js';
+import { planejarCaptura, pendenteAguardaTexto } from '../src/modules/financeiro/caixa-entrada.js';
 import type { ExtracaoLancamento } from '../src/modules/financeiro/extrator-lancamento.js';
 
 const item = (p: Partial<ExtracaoLancamento>): ExtracaoLancamento => ({
@@ -22,5 +22,19 @@ describe('financeiro/caixa: planejarCaptura', () => {
     const r = planejarCaptura([item({ valor: 50 }), item({ financeiro: false })]);
     expect(r.lancar).toHaveLength(1);
     expect(r.esclarecer).toBe(false);
+  });
+});
+
+describe('financeiro/caixa: pendenteAguardaTexto', () => {
+  it('falta PF/PJ → aguarda (comportamento antigo)', () => {
+    expect(pendenteAguardaTexto(true, [])).toBe(true);
+    expect(pendenteAguardaTexto(true, undefined)).toBe(true);
+  });
+  it('NOTA com itens aguarda mesmo com PF/PJ resolvido (conserta o travamento da nota PJ)', () => {
+    expect(pendenteAguardaTexto(false, [{ material: 'curva' }])).toBe(true);
+  });
+  it('gasto comum sem itens e com PF/PJ → não aguarda', () => {
+    expect(pendenteAguardaTexto(false, [])).toBe(false);
+    expect(pendenteAguardaTexto(false, undefined)).toBe(false);
   });
 });

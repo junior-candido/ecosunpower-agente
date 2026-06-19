@@ -3,7 +3,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { parseValorReais } from './comando-imposto.js';
 import { normalizarMaterial } from './materiais.js';
-import type { BotaoZap, MsgComBotoes } from './resumo-lancamento.js';
+import type { MsgComBotoes } from './resumo-lancamento.js';
 
 export interface CorrecaoPreco { material: string; loja: string | null; valorNovo: number }
 
