@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { parseLancamentos, parseItensNota } from '../src/modules/financeiro/extrator-lancamento.js';
 import {
   normalizarMaterial, parseConsultaMaterial, precoUnitario,
-  rankearLojas, formatarRanking, gravarCompraMaterialSeHouver, montarRankingMaterial,
+  rankearLojas, formatarRanking, gravarComprasDaNota, montarItensParaGravar, montarRankingMaterial,
 } from '../src/modules/financeiro/materiais.js';
 
 vi.mock('../src/modules/financeiro/lancamentos-repo.js', async (orig) => ({
@@ -107,30 +107,59 @@ describe('materiais: formatarRanking', () => {
   });
 });
 
-describe('materiais: gravarCompraMaterialSeHouver', () => {
-  const lancRow = (over: Record<string, unknown> = {}) => ({
-    id: 'l1', tipo: 'despesa', status: 'confirmado', valor: 400, data_evento: '2026-06-17',
-    contraparte: 'Loja Y', extracao: { material: 'cabo 6mm', quantidade: 100, unidade: 'm' }, ...over,
+describe('materiais: montarItensParaGravar (puro)', () => {
+  it('usa o array itens quando existe', () => {
+    const ex = { itens: [{ material: 'curva 90', quantidade: 2, unidade: 'un', preco_unitario: 7, problema: null }] };
+    const r = montarItensParaGravar(ex, 2111.8);
+    expect(r).toHaveLength(1);
+    expect(r[0].preco_unitario).toBe(7);
   });
-  it('grava com preço unitário certo', async () => {
+  it('cai no material único (texto) quando não há itens', () => {
+    const r = montarItensParaGravar({ material: 'cabo 6mm', quantidade: 100, unidade: 'm' }, 400);
+    expect(r).toHaveLength(1);
+    expect(r[0].material).toBe('cabo 6mm');
+    expect(r[0].preco_unitario).toBe(4); // 400/100
+  });
+  it('sem itens e sem material → []', () => {
+    expect(montarItensParaGravar({}, 50)).toEqual([]);
+  });
+});
+
+describe('materiais: gravarComprasDaNota', () => {
+  const lancRow = (over: Record<string, unknown> = {}) => ({
+    id: 'l1', tipo: 'despesa', status: 'confirmado', valor: 2111.8, data_evento: '2026-06-19',
+    contraparte: 'Itaiaia',
+    extracao: { itens: [
+      { material: 'curva 90 1 1/4', quantidade: 2, unidade: 'un', preco_unitario: 7, problema: null },
+      { material: 'cabo 6mm', quantidade: 100, unidade: 'm', preco_unitario: null, problema: 'não li o preço' },
+      { material: 'disjuntor 40A', quantidade: 1, unidade: 'un', preco_unitario: 22, problema: null },
+    ] }, ...over,
+  });
+  it('grava só os itens OK e conta os pulados', async () => {
     (repo.getLancamento as any).mockResolvedValue(lancRow());
     const inserts: any[] = [];
     const client = { from: () => ({ insert: (v: any) => { inserts.push(v); return { error: null }; } }) } as any;
-    const ok = await gravarCompraMaterialSeHouver(client, 'l1');
-    expect(ok).toBe(true);
+    const r = await gravarComprasDaNota(client, 'l1');
+    expect(r).toEqual({ gravados: 2, pulados: 1 });
+    expect(inserts.map(i => i.material)).toEqual(['curva 90 1 1/4', 'disjuntor 40A']);
+    expect(inserts[0].preco_unitario).toBe(7);
+    expect(inserts[0].valor_total).toBe(14); // 7 * 2
+    expect(inserts[0].loja).toBe('Itaiaia');
+  });
+  it('material único (texto legado) grava 1', async () => {
+    (repo.getLancamento as any).mockResolvedValue(lancRow({
+      valor: 400, contraparte: 'Loja Y', extracao: { material: 'cabo 6mm', quantidade: 100, unidade: 'm' },
+    }));
+    const inserts: any[] = [];
+    const client = { from: () => ({ insert: (v: any) => { inserts.push(v); return { error: null }; } }) } as any;
+    const r = await gravarComprasDaNota(client, 'l1');
+    expect(r).toEqual({ gravados: 1, pulados: 0 });
     expect(inserts[0].preco_unitario).toBe(4);
-    expect(inserts[0].material_norm).toBe('cabo 6mm');
-    expect(inserts[0].loja).toBe('Loja Y');
   });
-  it('sem material → no-op (false)', async () => {
-    (repo.getLancamento as any).mockResolvedValue(lancRow({ extracao: { material: null } }));
-    const client = { from: () => ({ insert: () => ({ error: null }) }) } as any;
-    expect(await gravarCompraMaterialSeHouver(client, 'l1')).toBe(false);
-  });
-  it('não confirmado → no-op', async () => {
+  it('não confirmado → {0,0}', async () => {
     (repo.getLancamento as any).mockResolvedValue(lancRow({ status: 'pendente' }));
     const client = { from: () => ({ insert: () => ({ error: null }) }) } as any;
-    expect(await gravarCompraMaterialSeHouver(client, 'l1')).toBe(false);
+    expect(await gravarComprasDaNota(client, 'l1')).toEqual({ gravados: 0, pulados: 0 });
   });
 });
 

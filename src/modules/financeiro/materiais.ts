@@ -2,6 +2,7 @@
 // Peça 4: comparar preço de material entre lojas. Roda em cima da Caixa de Entrada.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getLancamento } from './lancamentos-repo.js';
+import { normalizarItemNota, type ItemNota } from './extrator-lancamento.js';
 
 export interface CompraRow { loja: string | null; preco_unitario: number; data_evento: string; created_at?: string }
 
@@ -77,23 +78,44 @@ export async function getComprasPorMaterialNorm(client: SupabaseClient, termoNor
 }
 
 // --- Orquestração ---
-// Grava a compra de material a partir de um lançamento JÁ confirmado. Retorna true se gravou.
-export async function gravarCompraMaterialSeHouver(client: SupabaseClient, lancamentoId: string): Promise<boolean> {
-  const row = await getLancamento(client, lancamentoId);
-  if (!row || row.status !== 'confirmado' || row.tipo !== 'despesa') return false;
-  const ex = (row.extracao ?? {}) as Record<string, unknown>;
+
+export interface ResultadoGravacao { gravados: number; pulados: number }
+
+// PURO: decide a lista de itens a gravar a partir da extração de um lançamento.
+// Array `itens` (nota) tem prioridade; senão cai no `material` único (texto legado),
+// cujo preço unitário é o total / quantidade.
+export function montarItensParaGravar(ex: Record<string, unknown>, valorTotal: number): ItemNota[] {
+  if (Array.isArray(ex.itens) && ex.itens.length > 0) {
+    return (ex.itens as unknown[])
+      .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x))
+      .map(normalizarItemNota);
+  }
   const material = typeof ex.material === 'string' && ex.material.trim() ? ex.material.trim() : null;
-  if (!material) return false;
+  if (!material) return [];
   const quantidade = typeof ex.quantidade === 'number' && ex.quantidade > 0 ? ex.quantidade : 1;
   const unidade = typeof ex.unidade === 'string' && ex.unidade.trim() ? ex.unidade.trim() : 'un';
-  const valorTotal = Number(row.valor);
-  await inserirCompraMaterial(client, {
-    lancamento_id: lancamentoId, material, material_norm: normalizarMaterial(material),
-    loja: row.contraparte ?? null, quantidade, unidade,
-    valor_total: valorTotal, preco_unitario: precoUnitario(valorTotal, quantidade),
-    data_evento: row.data_evento,
-  });
-  return true;
+  return [{ material, quantidade, unidade, preco_unitario: precoUnitario(valorTotal, quantidade), problema: null }];
+}
+
+// Grava as compras de material de um lançamento JÁ confirmado. Pula itens com
+// problema não resolvido ou sem preço/nome (nunca entra lixo no comparador).
+export async function gravarComprasDaNota(client: SupabaseClient, lancamentoId: string): Promise<ResultadoGravacao> {
+  const row = await getLancamento(client, lancamentoId);
+  if (!row || row.status !== 'confirmado' || row.tipo !== 'despesa') return { gravados: 0, pulados: 0 };
+  const itens = montarItensParaGravar((row.extracao ?? {}) as Record<string, unknown>, Number(row.valor));
+  let gravados = 0, pulados = 0;
+  for (const it of itens) {
+    if (it.problema || !it.material || it.preco_unitario === null || it.preco_unitario <= 0) { pulados++; continue; }
+    const quantidade = it.quantidade && it.quantidade > 0 ? it.quantidade : 1;
+    await inserirCompraMaterial(client, {
+      lancamento_id: lancamentoId, material: it.material, material_norm: normalizarMaterial(it.material),
+      loja: row.contraparte ?? null, quantidade, unidade: it.unidade ?? 'un',
+      valor_total: Math.round(it.preco_unitario * quantidade * 100) / 100,
+      preco_unitario: it.preco_unitario, data_evento: row.data_evento,
+    });
+    gravados++;
+  }
+  return { gravados, pulados };
 }
 
 // Devolve o ranking formatado, OU null quando não há NENHUM registro daquele material
