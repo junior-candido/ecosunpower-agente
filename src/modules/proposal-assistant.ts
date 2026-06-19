@@ -86,10 +86,36 @@ export function resumoServicosParaJunior(servicos: ServicoItem[] | undefined, va
 // Decide se a proposta é SÓ-SERVIÇO (sem solar): não tem potência mas tem ao
 // menos um serviço válido. Resolve o caso Edmilson (proposta de adequação de
 // padrão sem kit solar). Proposta com solar SEMPRE vai pelo fluxo solar normal.
+// Como mapServicosFromClaude, mas MANTÉM serviços sem preço (basta o título).
+// Usado na proposta SÓ-SERVIÇO, onde o Junior dá UM valor total (lump sum) em vez
+// de preço por tarefa — local e valor variam a cada job, não dá pra precificar item.
+export function mapServicosTitulos(raw: unknown): ServicoItem[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const itens = raw
+    .map((s: any) => ({
+      titulo: String(s?.titulo ?? '').trim(),
+      descricao: String(s?.descricao ?? '').trim(),
+      valorRs: Number.isFinite(Number(s?.valorRs)) && Number(s?.valorRs) > 0 ? Number(s?.valorRs) : 0,
+      jaIncluso: s?.jaIncluso === true,
+    }))
+    .filter(s => s.titulo.length > 0);
+  return itens.length > 0 ? itens : undefined;
+}
+
+// Total da proposta de serviço: soma dos itens SE eles têm preço; senão, o valor
+// único (valorTotalRs) que o Junior digitou. Fonte única dessa regra.
+export function totalServicoData(data: any, servicos: ServicoItem[]): number {
+  const soma = (servicos ?? []).reduce((acc, s) => acc + (Number(s?.valorRs) || 0), 0);
+  return soma > 0 ? soma : (Number(data?.valorTotalRs) || 0);
+}
+
 export function isPropostaSoServico(data: any): boolean {
   const semSolar = !(Number(data?.potenciaKwp) > 0);
-  const servicos = mapServicosFromClaude(data?.servicos);
-  return semSolar && !!servicos && servicos.length > 0;
+  if (!semSolar) return false;
+  const servicos = mapServicosTitulos(data?.servicos);
+  if (!servicos || servicos.length === 0) return false;
+  // É só-serviço quando há tarefas E um total pra cobrar (itens OU valor único).
+  return totalServicoData(data, servicos) > 0;
 }
 
 // Monta o ServiceOnlyData (entrada do layout só-serviço) a partir dos dados crus.
@@ -104,13 +130,15 @@ export function buildServiceOnlyData(params: {
   criarPagamentoPadrao: (totalRs: number) => ServiceOnlyData['formasPagamento'];
 }): ServiceOnlyData {
   const { numeroProposta, dataProposta, data, servicos, empresa, criarPagamentoPadrao } = params;
-  const totalServicos = servicos.reduce((acc, s) => acc + (Number(s.valorRs) || 0), 0);
+  // Total: soma dos itens se eles têm preço; senão o valor único (valorTotalRs).
+  const totalServicos = totalServicoData(data, servicos);
   return {
     numeroProposta,
     dataProposta,
     validadeDias: Number(data.validadeDias) > 0 ? Number(data.validadeDias) : 5,
     nomeCliente: data.nomeCliente,
     servicos,
+    totalRs: totalServicos,
     formasPagamento: data.formasPagamento ?? criarPagamentoPadrao(totalServicos),
     empresa,
   };
@@ -390,7 +418,7 @@ ${marcasKnowledge}
         • \`false\` (padrão) → serviço "A MAIS": SOMA ao valor do solar. Use quando o Junior diz "a mais", "à parte", "fora do orçamento", "extra", "adiciona X por R$Y", "além do solar".
         • \`true\` → serviço "JÁ INCLUSO": já está DENTRO do valor que o Junior passou, então NÃO soma de novo (na proposta aparece com selo "já incluso"). Use quando o Junior diz "já incluso", "já está no valor", "dentro do total", "sem custo adicional", "já contemplado", "incluso no preço".
     REGRA DE OURO da conta: \`valorTotalRs\` é SEMPRE só o valor do solar. Se um serviço é \`jaIncluso: true\`, o \`valorTotalRs\` que o Junior passou JÁ contém esse serviço — não desconte nem some nada, o sistema faz a conta certa. Você só entende e classifica; quem soma/subtrai é SEMPRE o sistema, NUNCA você de cabeça.
-    **PROPOSTA SÓ DE SERVIÇO (sem solar):** se o Junior pedir uma proposta só de serviço (ex: só adequação de padrão, só projeto elétrico, sem kit solar), preencha APENAS \`servicos[]\` + \`nomeCliente\` (+ telefone se modo eva_envia). NÃO invente \`potenciaKwp\`, módulo, inversor nem consumo — deixe ausentes/0. O sistema detecta que não há solar e gera um layout de serviço elegante (sem gráfico/payback). Nesse caso NÃO liste os campos solares em \`missing\`.
+    **PROPOSTA SÓ DE SERVIÇO (sem solar):** se o Junior pedir uma proposta só de serviço (ex: desmontagem/reinstalação, adequação de padrão, projeto elétrico, sem kit solar), preencha \`servicos[]\` (as tarefas) + \`nomeCliente\` (+ telefone se modo eva_envia). NÃO invente \`potenciaKwp\`, módulo, inversor nem consumo — deixe ausentes/0. **VALOR:** serviço quase sempre é orçado por UM VALOR ÚNICO (o Junior fala "total R$ X") — nesse caso ponha esse total em \`valorTotalRs\` e deixe as tarefas em \`servicos[]\` SEM preço por item (\`valorRs\` ausente/0). Só preencha \`valorRs\` por item quando o Junior der preço tarefa por tarefa. O sistema usa o valor único quando os itens não têm preço. NÃO liste os campos solares em \`missing\`.
 11. **COMPARAÇÃO (2 sistemas solares):** se o Junior quiser que o cliente compare duas opções de sistema, preencha a proposta normalmente com a **Opção A** (potência, módulo, inversor, valorTotalRs no nível principal do \`data\`) E devolva \`comparacao: [opcaoA, opcaoB]\`. **CADA opção precisa vir COMPLETA** — não só a marca: \`rotulo\`, \`potenciaKwp\`, \`valorTotalRs\`, \`modulo\` (com \`fabricante\`, \`modelo\`, \`potenciaW\` e \`quantidade\`) e \`inversor\` (com \`fabricante\`, \`modelo\` e \`quantidade\`). As duas opções têm de ser **DIFERENTES de verdade** (potência/equipamento/valor distintos) — se o Junior só descreveu UM sistema, NÃO invente o outro: peça os dados do segundo sistema (\`action: ask_more\`, listando o que falta da Opção B). NÃO marque recomendação — as duas são neutras. O sistema calcula a geração/payback de CADA uma pela potência dela (você NÃO calcula nada) e monta o quadro comparativo lado a lado.
 12. **ECONOMIA MENSAL EM R$:** a proposta mostra pro cliente quanto ele economiza POR MÊS em reais (o número que ele mais entende). Pra esse valor sair certo, peça ao Junior — quando ele não informar — a **tarifa real do kWh da conta** (\`tarifaRsKwh\`) e o **valor da iluminação pública** da conta (\`custoIluminacaoPublica\`). São RECOMENDADOS, não bloqueiam: se o Junior não tiver, use os defaults do sistema e siga. Quando ele informar, respeite o número dele.
 
@@ -1161,7 +1189,7 @@ export class ProposalAssistant {
         // a página web tem. Fallback re-mapeia só se proposalData vier sem serviços.
         const servicos = (last.proposalData.servicos?.length
           ? last.proposalData.servicos
-          : mapServicosFromClaude(last.data.servicos) ?? []) as ServicoItem[];
+          : mapServicosTitulos(last.data.servicos) ?? []) as ServicoItem[];
         const serviceData = buildServiceOnlyData({
           numeroProposta: last.proposalData.numeroProposta,
           dataProposta: (last.proposalData as any).dataProposta ?? new Date().toLocaleDateString('pt-BR'),
@@ -1226,7 +1254,7 @@ export class ProposalAssistant {
     // Proposta SÓ-SERVIÇO (sem solar): desvia pro layout de serviço e pula todo
     // o cálculo solar (que não se aplica). Resolve o caso Edmilson.
     if (isPropostaSoServico(data)) {
-      const servicos = mapServicosFromClaude(data.servicos)!;
+      const servicos = mapServicosTitulos(data.servicos)!;
       return await this.generateServiceOnlyCore({ data, servicos, modoEnvio });
     }
 
@@ -1664,7 +1692,8 @@ export class ProposalAssistant {
       // Proposta SÓ-SERVIÇO: sem cálculo solar (calculations=null).
       if (!result.calculations) {
         const servicos = result.proposalData.servicos ?? [];
-        const totalServicos = servicos.reduce((a, s) => a + (Number(s.valorRs) || 0), 0);
+        // Total: soma dos itens se têm preço; senão o valor único (valorTotalRs).
+        const totalServicos = totalServicoData(data, servicos);
         const fmtBr = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
         return [
           '✅ *Proposta de serviço gerada — sua revisão*',

@@ -3293,6 +3293,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         items: [
           { id: 'menu_preco', title: '💰 Calcular preço', description: 'Simulação rápida de sistema', trigger: '/preco', handler: tryHandlePricingCommand },
           { id: 'menu_proposta', title: '📋 Gerar proposta', description: 'PDF + link público', trigger: '/proposta', handler: tryHandleProposalCommand },
+          { id: 'menu_proposta_servico', title: '🔧 Proposta de serviço', description: 'Sem solar — valor único', hint: '🔧 *Proposta só de serviço* (sem painel solar): manda */proposta* e descreve as tarefas + um *valor total único*.\nEx: "proposta de serviço pro Thiago — desmontagem, transporte e reinstalação, total R$ 7.800"' },
           { id: 'menu_ajustar', title: '✏️ Ajustar proposta', description: 'Reabrir uma já enviada', hint: '✏️ Pra ajustar uma proposta enviada, manda:\n*ajustar nome do cliente*\n(ex: ajustar Olavo)' },
           { id: 'menu_clonar', title: '👥 Clonar p/ outro', description: 'Mesma proposta, novo cliente', hint: '👥 Pra clonar uma proposta pra outro cliente (mesmo kit), manda:\n*clonar nome do cliente base*\n(ex: clonar Marcio)' },
           { id: 'menu_abordar', title: '💬 Abordar cliente', description: 'Eva fala com quem já abriu a proposta', hint: '💬 Pra Eva abordar um cliente na hora (mesmo que ele já tenha aberto a proposta), manda:\n*abordar nome do cliente*\n(ex: abordar Jonnata)' },

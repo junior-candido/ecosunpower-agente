@@ -82,6 +82,9 @@ export interface ServiceOnlyData {
   validadeDias: number;
   nomeCliente: string;
   servicos: ServicoItem[];
+  // Total da proposta. Quando o serviço é orçado por VALOR ÚNICO (sem preço por
+  // item), vem daqui. Se ausente, cai na soma dos itens (compatível com o legado).
+  totalRs?: number;
   formasPagamento: Array<{ tipo: string; titulo: string; valorPrincipal: string; valorSecundario: string; recomendado?: boolean; bullets: string[]; meioPagamento?: 'pix' | 'cartao' | 'financiamento' }>;
   empresa: { nome: string; cnpj: string; cidade: string; telefone: string; site: string };
 }
@@ -98,7 +101,9 @@ export function renderServiceOnlyHTML(data: ServiceOnlyData, logoBase64: string 
   // solar pra um serviço estar "já incluso dentro", então `jaIncluso` é ignorado
   // de propósito (diferente de renderServicosAdicionaisSection). Ao ligar a Task 5,
   // decidir explicitamente se algum caso de bundle precisa de somaServicosExtras.
-  const total = data.servicos.reduce((a, s) => a + (Number(s.valorRs) || 0), 0);
+  // Total: o valor único (totalRs) quando informado; senão a soma dos itens (legado).
+  const somaItens = data.servicos.reduce((a, s) => a + (Number(s.valorRs) || 0), 0);
+  const total = (typeof data.totalRs === 'number' && data.totalRs > 0) ? data.totalRs : somaItens;
   const tituloPrincipal = data.servicos.length === 1 ? data.servicos[0].titulo : 'Serviços de engenharia elétrica';
 
   const blocosServico = data.servicos.map(s => `
@@ -106,7 +111,7 @@ export function renderServiceOnlyHTML(data: ServiceOnlyData, logoBase64: string 
       <h2 style="font-family:'Space Grotesk',sans-serif;font-size:26px;color:#0F172A;margin-bottom:16px">${escapeHtml(s.titulo)}</h2>
       ${s.imagemUrl ? `<img src="${escapeHtml(s.imagemUrl)}" alt="${escapeHtml(s.titulo)}" style="width:100%;border-radius:16px;margin-bottom:20px;display:block">` : ''}
       <div style="font-size:16px;color:#334155;line-height:1.7;white-space:pre-line">${escapeHtml(s.descricao)}</div>
-      <div style="margin-top:20px;font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;color:#0E7CB8">R$ ${fmtRs(s.valorRs, 0)}</div>
+      ${Number(s.valorRs) > 0 ? `<div style="margin-top:20px;font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;color:#0E7CB8">R$ ${fmtRs(s.valorRs, 0)}</div>` : ''}
     </section>`).join('');
 
   const formasPagamento = data.formasPagamento.map(p => `
