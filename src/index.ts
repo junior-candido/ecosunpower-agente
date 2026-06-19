@@ -2373,10 +2373,10 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
   async function tryHandleEmailCommand(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
     const t = text.trim();
-    const m = t.match(/^\/email\s+(\S+)\s+(\S+@\S+\.\S+)$/i);
+    const m = t.match(/^\/?email\s+(\S+)\s+(\S+@\S+\.\S+)$/i);
     if (!m) {
       // Help message se parecer comando email mas formato errado
-      if (/^\/email\b/i.test(t)) {
+      if (/^\/?email\b/i.test(t)) {
         await sendText(from, `📧 *Comando /email*\n\nUso: /email <fone ou nome> <email>\n\nExemplos:\n/email 5561992169105 tania@gmail.com\n/email Jucelda jucelda.pontes@hotmail.com`);
         return true;
       }
@@ -2430,7 +2430,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
   async function tryHandleFecheiCommand(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
     const t = text.trim();
-    const m = t.match(/^\/fechei\s+(.+)$/i);
+    const m = t.match(/^\/?fechei\s+(.+)$/i);
     if (!m) return false;
     const query = m[1].trim();
 

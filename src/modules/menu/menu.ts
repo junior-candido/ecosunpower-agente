@@ -59,7 +59,7 @@ export function construirMenu(deps: MenuDeps): MenuCategoria[] {
         { id: 'menu_banner', title: '🖼️ Banner promo', description: 'Kit + preço + foto inversor', trigger: '/banner', handler: deps.banner },
         { id: 'menu_reativar', title: '🔄 Reativar base', description: 'Template pros leads (10 por vez)', trigger: '/reativar-base 10', handler: deps.reativarBase },
         { id: 'menu_blog', title: '📝 Status blog', description: 'Drafts pendentes de aprovação', trigger: 'blog status', handler: deps.juniorBlog },
-        { id: 'menu_resgatar_forms', title: '♻️ Resgatar leads de form', description: 'Dispara template pros leads do Meta', trigger: '/resgatar-forms', handler: deps.resgatarForms },
+        { id: 'menu_resgatar_forms', title: '♻️ Resgatar leads', description: 'Template pros leads do Meta', trigger: '/resgatar-forms', handler: deps.resgatarForms },
         { id: 'menu_google', title: '📊 Resumo Google Ads', description: 'Gasto, cliques, CPC, CTR', trigger: '/google', handler: deps.googleAds },
         { id: 'menu_banner_kits', title: '🖼️ Banner tabela (kits)', description: 'Tabela premium com kits OnGrid', trigger: '/banner-kits', handler: deps.bannerKits },
       ],

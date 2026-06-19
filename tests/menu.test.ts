@@ -51,6 +51,18 @@ describe('menu — limite do WhatsApp', () => {
     expect(categoriasAcimaDoLimite(cats)).toEqual([]);
     expect(MAX_ROWS_LISTA).toBe(10);
   });
+
+  // WhatsApp corta o título da row em 24 unidades UTF-16 (emoji conta 2). Acima
+  // disso aparece cortado na lista. Cobre TODA row que de fato é enviada.
+  it('nenhum título de row passa de 24 caracteres', () => {
+    const cats = construirMenu(depsStub());
+    const titulos = [
+      ...rowsCategorias(cats).map(r => r.title),
+      ...cats.flatMap(c => rowsSubmenu(c).map(r => r.title)),
+    ];
+    const longos = titulos.filter(t => t.length > 24);
+    expect(longos).toEqual([]);
+  });
 });
 
 describe('menu — comandos novos', () => {
