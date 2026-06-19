@@ -52,3 +52,42 @@ describe('menu — limite do WhatsApp', () => {
     expect(MAX_ROWS_LISTA).toBe(10);
   });
 });
+
+describe('menu — comandos novos', () => {
+  const cats = construirMenu(depsStub());
+  const item = (id: string) => cats.flatMap(c => c.items).find(i => i.id === id);
+  const catDoItem = (id: string) => cats.find(c => c.items.some(i => i.id === id))?.id;
+
+  it('comparador de material está no Financeiro como dica', () => {
+    expect(catDoItem('menu_fin_material')).toBe('financeiro');
+    expect(item('menu_fin_material')?.hint).toContain('preço do');
+  });
+
+  it('marcar como fechado está em Propostas como dica', () => {
+    expect(catDoItem('menu_fechei')).toBe('propostas');
+    expect(item('menu_fechei')?.hint).toContain('fechei');
+  });
+
+  it('resgatar leads de formulário está em Marketing com trigger /resgatar-forms', () => {
+    expect(catDoItem('menu_resgatar_forms')).toBe('marketing');
+    expect(item('menu_resgatar_forms')?.trigger).toBe('/resgatar-forms');
+    expect(item('menu_resgatar_forms')?.handler).toBeTypeOf('function');
+  });
+
+  it('resumo Google Ads está em Marketing com trigger /google', () => {
+    expect(catDoItem('menu_google')).toBe('marketing');
+    expect(item('menu_google')?.trigger).toBe('/google');
+    expect(item('menu_google')?.handler).toBeTypeOf('function');
+  });
+
+  it('banner tabela kits está em Marketing com trigger /banner-kits', () => {
+    expect(catDoItem('menu_banner_kits')).toBe('marketing');
+    expect(item('menu_banner_kits')?.trigger).toBe('/banner-kits');
+    expect(item('menu_banner_kits')?.handler).toBeTypeOf('function');
+  });
+
+  it('cadastrar email do lead está em Atendimento como dica', () => {
+    expect(catDoItem('menu_email')).toBe('atendimento');
+    expect(item('menu_email')?.hint).toContain('email');
+  });
+});

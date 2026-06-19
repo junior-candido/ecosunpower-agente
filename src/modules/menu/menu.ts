@@ -41,6 +41,7 @@ export function construirMenu(deps: MenuDeps): MenuCategoria[] {
         { id: 'menu_abordar', title: '💬 Abordar cliente', description: 'Eva fala com quem já abriu a proposta', hint: '💬 Pra Eva abordar um cliente na hora (mesmo que ele já tenha aberto a proposta), manda:\n*abordar nome do cliente*\n(ex: abordar Jonnata)' },
         { id: 'menu_resgatar', title: '♻️ Resgatar antigas', description: 'Recuperar dados do Drive', hint: '♻️ Manda */resgatar-propostas* pra recuperar os dados das propostas antigas (do Drive).' },
         { id: 'menu_rascunho', title: '📝 Rascunho', description: 'Retomar a não terminada', hint: '📝 Manda *rascunho* pra voltar pra proposta que você não terminou.' },
+        { id: 'menu_fechei', title: '✅ Marcar como fechado', description: 'Tira o lead da cadência', hint: '✅ Pra marcar um lead como fechado (sai da cadência), manda:\n*fechei nome ou telefone*\n(ex: fechei Edimilson)' },
       ],
     },
     {
@@ -58,6 +59,9 @@ export function construirMenu(deps: MenuDeps): MenuCategoria[] {
         { id: 'menu_banner', title: '🖼️ Banner promo', description: 'Kit + preço + foto inversor', trigger: '/banner', handler: deps.banner },
         { id: 'menu_reativar', title: '🔄 Reativar base', description: 'Template pros leads (10 por vez)', trigger: '/reativar-base 10', handler: deps.reativarBase },
         { id: 'menu_blog', title: '📝 Status blog', description: 'Drafts pendentes de aprovação', trigger: 'blog status', handler: deps.juniorBlog },
+        { id: 'menu_resgatar_forms', title: '♻️ Resgatar leads de form', description: 'Dispara template pros leads do Meta', trigger: '/resgatar-forms', handler: deps.resgatarForms },
+        { id: 'menu_google', title: '📊 Resumo Google Ads', description: 'Gasto, cliques, CPC, CTR', trigger: '/google', handler: deps.googleAds },
+        { id: 'menu_banner_kits', title: '🖼️ Banner tabela (kits)', description: 'Tabela premium com kits OnGrid', trigger: '/banner-kits', handler: deps.bannerKits },
       ],
     },
     {
@@ -66,6 +70,7 @@ export function construirMenu(deps: MenuDeps): MenuCategoria[] {
         { id: 'menu_agenda', title: '📅 Agendar reunião', description: 'Visita técnica ou Meet', trigger: '/agenda', handler: deps.scheduling },
         { id: 'menu_novo_case', title: '👤 Cadastrar case', description: 'Obra concluída (prova social)', trigger: '/novo-case', handler: deps.caseCreator },
         { id: 'menu_reviews', title: '✅ Aprovar reviews', description: 'Reviews públicos pendentes', trigger: '/reviews-pendentes', handler: deps.testimonialAdmin },
+        { id: 'menu_email', title: '📧 Cadastrar email do lead', description: 'Adiciona/atualiza email', hint: '📧 Pra cadastrar o email de um lead, manda:\n*email telefone email*\n(ex: email 61999998888 cliente@gmail.com)' },
       ],
     },
     {
@@ -74,6 +79,7 @@ export function construirMenu(deps: MenuDeps): MenuCategoria[] {
         { id: 'menu_fin_relatorio', title: '📊 Relatório do mês', description: 'Resumo do mês na hora', trigger: 'relatório', handler: deps.relatorio },
         { id: 'menu_fin_imposto', title: '🧾 Calcular imposto', description: 'Quanto separar de uma venda', action: deps.acaoImposto },
         { id: 'menu_fin_lancar', title: '💸 Lançar gasto/entrada', description: 'Foto, áudio ou texto', hint: '💸 Manda a foto/áudio do comprovante, ou escreve direto: *gastei 380 no posto* / *recebi 5000 do João*. Eu lanço e classifico sozinha.' },
+        { id: 'menu_fin_material', title: '💰 Comparar preço de material', description: 'Onde está mais barato', hint: '💰 Pra comparar onde um material está mais barato, pergunta o preço dele:\n*preço do cabo 6mm*\n(eu já te mostro o ranking das lojas)' },
         { id: 'menu_fin_painel', title: '📈 Abrir painel', description: 'Tela do financeiro', hint: '📈 Painel do financeiro: dashboard.ecosunpower.eng.br/dashboard/financeiro' },
         { id: 'menu_fin_apagar', title: '🗑️ Apagar lançamento', description: 'Apagar um gasto/entrada errado', action: deps.acaoApagar },
       ],
