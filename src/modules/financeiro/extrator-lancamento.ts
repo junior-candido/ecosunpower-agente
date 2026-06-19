@@ -19,9 +19,18 @@ export interface ExtracaoLancamento {
   material: string | null;        // nome do material comprado (DPS, cabo 6mm) — só compra de material
   quantidade: number | null;      // quantos (100) — default 1 no consumo
   unidade: string | null;         // un, m, rolo...
+  itens: ItemNota[];
   campos_faltando: string[];
   relacionado: boolean | null;    // true = corrige pendente; false = lançamento NOVO; null = modelo não informou (NUNCA mescla)
   tem_nota: boolean;
+}
+
+export interface ItemNota {
+  material: string | null;
+  quantidade: number | null;
+  unidade: string | null;
+  preco_unitario: number | null;
+  problema: string | null;   // motivo curto quando a Eva não tem certeza; null = ok
 }
 
 function numeroOuNull(v: unknown): number | null {
@@ -41,6 +50,18 @@ function numeroOuNull(v: unknown): number | null {
 const strOuNull = (v: unknown): string | null =>
   typeof v === 'string' && v.trim() ? v.trim() : null;
 
+export function normalizarItemNota(obj: Record<string, unknown>): ItemNota {
+  const material = strOuNull(obj.material);
+  const preco_unitario = numeroOuNull(obj.preco_unitario);
+  const quantidade = numeroOuNull(obj.quantidade);
+  const unidade = strOuNull(obj.unidade);
+  let problema = strOuNull(obj.problema);
+  // Rede de segurança: sem nome OU sem preço NUNCA entra calado — vira problema.
+  if (!problema && !material) problema = 'não li o nome';
+  else if (!problema && preco_unitario === null) problema = 'não li o preço';
+  return { material, quantidade, unidade, preco_unitario, problema };
+}
+
 // Normaliza UM objeto cru da IA em ExtracaoLancamento (mesma lógica de validação de antes).
 function normalizarItem(obj: Record<string, unknown>): ExtracaoLancamento {
   const valor = numeroOuNull(obj.valor);
@@ -54,6 +75,12 @@ function normalizarItem(obj: Record<string, unknown>): ExtracaoLancamento {
   const pf = obj.pf_pj === 'PF' || obj.pf_pj === 'PJ' ? obj.pf_pj : null;
   const data = typeof obj.data === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(obj.data) ? obj.data : null;
 
+  const itens = Array.isArray(obj.itens)
+    ? obj.itens
+        .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x))
+        .map(normalizarItemNota)
+    : [];
+
   return {
     financeiro: obj.financeiro === true,
     intencao, tipo, valor, data,
@@ -65,6 +92,7 @@ function normalizarItem(obj: Record<string, unknown>): ExtracaoLancamento {
     material: strOuNull(obj.material),
     quantidade: numeroOuNull(obj.quantidade),
     unidade: strOuNull(obj.unidade),
+    itens,
     campos_faltando: [...faltando],
     relacionado: obj.relacionado === true ? true : obj.relacionado === false ? false : null,
     tem_nota: obj.tem_nota === false ? false : true,
@@ -125,6 +153,21 @@ export function parseLancamentos(raw: string): ExtracaoLancamento[] {
 // Compatibilidade: primeiro lançamento ou null (usado por testes antigos / chamadas simples).
 export function parseRespostaExtrator(raw: string): ExtracaoLancamento | null {
   return parseLancamentos(raw)[0] ?? null;
+}
+
+// Lê uma LISTA de itens de nota de uma resposta crua (array direto ou {itens:[...]}).
+export function parseItensNota(raw: string): ItemNota[] {
+  const fence = raw.match(/```json\s*([\s\S]*?)```/);
+  const corpo = fence ? fence[1] : raw;
+  const j = tentarJson(corpo);
+  const arr = Array.isArray(j)
+    ? j
+    : (j && typeof j === 'object' && Array.isArray((j as Record<string, unknown>).itens)
+        ? (j as Record<string, unknown>).itens as unknown[]
+        : []);
+  return arr
+    .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x))
+    .map(normalizarItemNota);
 }
 
 const REGRAS_COMUNS = (hoje: string) => `Devolva APENAS um bloco \`\`\`json\`\`\` contendo uma LISTA (array), com um objeto por evento financeiro distinto na mensagem (a pessoa pode citar vários numa frase só — ex.: recebimento E pagamento). Cada objeto tem:

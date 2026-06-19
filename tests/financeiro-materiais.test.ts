@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { parseLancamentos } from '../src/modules/financeiro/extrator-lancamento.js';
+import { parseLancamentos, parseItensNota } from '../src/modules/financeiro/extrator-lancamento.js';
 import {
   normalizarMaterial, parseConsultaMaterial, precoUnitario,
   rankearLojas, formatarRanking, gravarCompraMaterialSeHouver, montarRankingMaterial,
@@ -131,5 +131,28 @@ describe('materiais: gravarCompraMaterialSeHouver', () => {
     (repo.getLancamento as any).mockResolvedValue(lancRow({ status: 'pendente' }));
     const client = { from: () => ({ insert: () => ({ error: null }) }) } as any;
     expect(await gravarCompraMaterialSeHouver(client, 'l1')).toBe(false);
+  });
+});
+
+describe('extrator: itens de nota', () => {
+  it('parseLancamentos lê o array itens com preço unitário e problema', () => {
+    const raw = '```json\n[{"financeiro":true,"tipo":"despesa","valor":2111.80,"contraparte":"Itaiaia",' +
+      '"itens":[{"material":"curva 90 1 1/4","quantidade":2,"unidade":"un","preco_unitario":7,"problema":null},' +
+      '{"material":"cabo 6mm","quantidade":100,"unidade":"m","preco_unitario":null,"problema":"não li o preço"}]}]\n```';
+    const e = parseLancamentos(raw)[0];
+    expect(e.valor).toBe(2111.8);
+    expect(e.itens).toHaveLength(2);
+    expect(e.itens[0].material).toBe('curva 90 1 1/4');
+    expect(e.itens[0].preco_unitario).toBe(7);
+    expect(e.itens[1].problema).toBe('não li o preço');
+  });
+  it('item sem preço OU sem nome ganha "problema" mesmo que o modelo não marque', () => {
+    const itens = parseItensNota('```json\n[{"material":"cabo 6mm"},{"preco_unitario":7}]\n```');
+    expect(itens[0].problema).toBe('não li o preço'); // tem nome, falta preço
+    expect(itens[1].problema).toBe('não li o nome');  // tem preço, falta nome
+  });
+  it('sem itens → array vazio', () => {
+    const e = parseLancamentos('```json\n[{"financeiro":true,"tipo":"despesa","valor":50}]\n```')[0];
+    expect(e.itens).toEqual([]);
   });
 });
