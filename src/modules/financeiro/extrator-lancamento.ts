@@ -19,7 +19,7 @@ export interface ExtracaoLancamento {
   material: string | null;        // nome do material comprado (DPS, cabo 6mm) — só compra de material
   quantidade: number | null;      // quantos (100) — default 1 no consumo
   unidade: string | null;         // un, m, rolo...
-  itens: ItemNota[];
+  itens: ItemNota[];              // linhas de uma nota com vários itens (senão [])
   campos_faltando: string[];
   relacionado: boolean | null;    // true = corrige pendente; false = lançamento NOVO; null = modelo não informou (NUNCA mescla)
   tem_nota: boolean;
