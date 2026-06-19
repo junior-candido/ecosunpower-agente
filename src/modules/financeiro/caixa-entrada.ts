@@ -5,8 +5,8 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  gateTextoFinanceiro, extrairDeTexto, extrairDeImagem, extrairDePdf,
-  type ExtracaoLancamento,
+  gateTextoFinanceiro, extrairDeTexto, extrairDeImagem, extrairDePdf, corrigirItensComTexto,
+  type ExtracaoLancamento, type ItemNota,
 } from './extrator-lancamento.js';
 import { validarParaConfirmar, ehDuplicado, resolverCategoria, competenciaDe } from './lancamentos.js';
 import {
@@ -197,6 +197,19 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
     // 1) Tem pendente esperando resposta (PF/PJ por texto, valor, correção)?
     const aguardando = await getPendenteAguardando(deps.supabase, from);
     if (aguardando) {
+      // Pendente de NOTA (tem itens): o texto corrige os itens e o pendente segue
+      // aberto até o admin clicar Confirmar. NUNCA escorrega pro cérebro de conversa.
+      const itensAtuais = Array.isArray(aguardando.extracao?.itens)
+        ? (aguardando.extracao!.itens as ItemNota[]) : [];
+      if (itensAtuais.length > 0) {
+        const itensCorrigidos = await corrigirItensComTexto(deps.anthropic, itensAtuais, texto, hojeBRT());
+        await atualizarPendente(deps.supabase, aguardando.id, {
+          extracao: { ...aguardando.extracao, itens: itensCorrigidos, aguardando: true },
+        });
+        await mandarResumo(deps, from, aguardando.id);
+        return true;
+      }
+
       const hoje = hojeBRT();
       const contexto = `O lançamento pendente atual é: ${JSON.stringify(aguardando.extracao)}. ` +
         `Se a resposta do dono abaixo CORRIGE/COMPLETA esse lançamento, devolva o JSON completo já mesclado com "relacionado": true. ` +

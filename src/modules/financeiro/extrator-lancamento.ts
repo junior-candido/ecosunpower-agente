@@ -286,3 +286,19 @@ export async function extrairDePdf(client: Anthropic, base64: string, hoje: stri
   }], 1024);
   return parseLancamentos(raw);
 }
+
+// Aplica uma correção em linguagem natural sobre uma lista de itens de nota.
+// Devolve a lista atualizada; em qualquer falha devolve os itens originais (degrada).
+export async function corrigirItensComTexto(client: Anthropic, itens: ItemNota[], texto: string, hoje: string): Promise<ItemNota[]> {
+  try {
+    const prompt = `Esses são os itens que li de uma nota fiscal (JSON):\n${JSON.stringify(itens)}\n\n` +
+      `O dono da empresa mandou esta correção: "${texto}"\n\n` +
+      `Aplique a correção nos itens certos (case pelo nome do material ou pela posição que ele citar) e devolva a LISTA COMPLETA de itens já atualizada, no MESMO formato (array de objetos com material, quantidade, unidade, preco_unitario, problema), dentro de um bloco \`\`\`json\`\`\`. Quando um item for corrigido e ficar ok, ponha "problema": null. NÃO invente itens novos. Data de hoje: ${hoje}.`;
+    const raw = await chamarComFallback(client, [{ role: 'user', content: prompt }], 1024);
+    const corrigidos = parseItensNota(raw);
+    return corrigidos.length > 0 ? corrigidos : itens;
+  } catch (err) {
+    console.warn('[caixa-entrada] corrigirItensComTexto falhou:', (err as Error).message);
+    return itens;
+  }
+}
