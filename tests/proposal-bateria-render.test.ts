@@ -57,3 +57,13 @@ describe('render — on-grid (sem bateria) fica intacto', () => {
     expect(html).not.toMatch(/autonomia/i);
   });
 });
+
+describe('render — modo comparação não mostra o selo híbrido global', () => {
+  it('com bateria + modoComparacao, não pinta o selo (evita "as 2 são híbridas")', () => {
+    const data = baseData();
+    data.modoComparacao = true;
+    data.bateria = { fabricante: 'BYD', modelo: 'B-Box 10', capacidadeKwh: 10, quantidade: 1, garantia: 10 };
+    const html = renderProposalHTML(data, baseCalc());
+    expect(html).not.toMatch(/Sistema Híbrido/i);
+  });
+});

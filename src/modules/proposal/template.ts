@@ -357,7 +357,7 @@ ${data.tipo === 'personalizada' ? `
 </div>
 ` : ''}
 
-${temBateria(data.bateria) ? `
+${(!data.modoComparacao && temBateria(data.bateria)) ? `
 <div class="container" style="padding-top:16px">
   <div style="background:linear-gradient(135deg,#0E7CB8 0%,#1FB8E8 100%);color:#fff;padding:14px 24px;text-align:center;font-weight:700;font-size:13px;letter-spacing:1px;border-radius:12px;text-transform:uppercase">
     🔋 Sistema Híbrido — Solar + Bateria
