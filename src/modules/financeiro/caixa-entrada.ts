@@ -159,7 +159,8 @@ async function mandarResumo(deps: CaixaDeps, from: string, lancamentoId: string)
     { valor: Number(row.valor), contraparte: row.contraparte, data_evento: row.data_evento },
     await getConfirmadosDoDia(deps.supabase, row.data_evento),
   );
-  const msg = montarResumoPendente(await rowParaResumo(deps, row), { duplicado });
+  const itens = Array.isArray(row.extracao?.itens) ? (row.extracao!.itens as Array<{ material: string | null; preco_unitario: number | null; problema: string | null }>) : [];
+  const msg = montarResumoPendente(await rowParaResumo(deps, row), { duplicado, itens });
   await deps.waba.sendInteractiveButtons(from, msg.body, msg.buttons, FOOTER);
 }
 
