@@ -453,6 +453,7 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
     "concessionaria": "Neoenergia DF",
     "modulo": { "fabricante": "Trina", "modelo": "Vertex 700W", "potenciaW": 700, "quantidade": 12, "garantiaDefeito": 12, "garantiaEficiencia": 30, "tecnologia": "TOPCon N-Type Bifacial" },
     "inversor": { "fabricante": "Sungrow", "modelo": "SG5.0RS-L", "potenciaW": 5000, "quantidade": 1, "garantia": 10, "eficiencia": 0.985, "tipoInversor": "string" },
+    "bateria": { "fabricante": "BYD", "modelo": "B-Box Premium HVS 10.2", "capacidadeKwh": 10.2, "quantidade": 1, "garantia": 10 },
     "estruturaFixacao": { "tipo": "Telha cerâmica", "material": "Alumínio anodizado + parafusos inox", "descricao": "Ganchos com regulagem de altura" },
     "valorTotalRs": 38500,
     "formasPagamento": [
@@ -488,6 +489,12 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
 - Sistema: potenciaKwp, consumoMensalKwh, tipoCliente, modalidade, concessionaria
 - Equipamentos: modulo (todos), inversor (todos), estruturaFixacao (tipo)
 - Comercial: valorTotalRs
+
+**Bateria (OPCIONAL — só preencha se o Junior mencionar bateria/armazenamento/híbrido):**
+- Capte: fabricante, modelo, capacidadeKwh (por unidade), quantidade, garantia (anos).
+- A presença de bateria JÁ marca a proposta como sistema HÍBRIDO — não mude tipoCliente por causa disso.
+- NÃO some o preço da bateria separado: já entra no valorTotalRs do kit.
+- NUNCA invente bateria quando o Junior não mencionar (sem bateria = on-grid).
 
 \`fatorPerda\`: só importa na BÁSICA (cálculo padrão kWp×HSP×fator). Na **personalizada NÃO peça fator de perda** — a geração vem do estudo, o fator nem é usado; o sistema assume um default (~0,78). Se o Junior já mandou um valor (ex: 0,75/0,78/0,80), respeite; mas NUNCA bloqueie/peça na personalizada.
 
@@ -1861,6 +1868,7 @@ export class ProposalAssistant {
       concessionaria: data.concessionaria,
       modulo: data.modulo,
       inversor: data.inversor,
+      bateria: data.bateria,
       estruturaFixacao: data.estruturaFixacao,
       valorTotalRs: Number(data.valorTotalRs),
       formasPagamento: this.enforceCartaoBelenus(
