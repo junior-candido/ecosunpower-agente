@@ -31,12 +31,32 @@ function linhaResumo(l: LancamentoResumo): string {
   return partes.join(' · ');
 }
 
-export function montarResumoPendente(l: LancamentoResumo, opts: { duplicado: boolean }): MsgComBotoes {
+export interface ItemResumo { material: string | null; preco_unitario: number | null; problema: string | null }
+
+export function montarBlocoItens(itens: ItemResumo[]): string {
+  if (itens.length === 0) return '';
+  const comProblema = itens.filter((i) => i.problema);
+  const ok = itens.length - comProblema.length;
+  let txt = `\n📦 ${itens.length} itens lidos.`;
+  if (comProblema.length === 0) return txt + ' ✅ todos certos.';
+  const linhas = comProblema.map((i) => {
+    const nome = i.material ?? '???';
+    const preco = i.preco_unitario !== null ? ` (${brl(i.preco_unitario)})` : '';
+    return `⚠️ ${nome}${preco} — ${i.problema}`;
+  });
+  txt += ` ${comProblema.length} que eu não tenho certeza:\n${linhas.join('\n')}`;
+  if (ok > 0) txt += `\n✅ os outros ${ok} ok.`;
+  return txt;
+}
+
+export function montarResumoPendente(l: LancamentoResumo, opts: { duplicado: boolean; itens?: ItemResumo[] }): MsgComBotoes {
   const aviso = opts.duplicado
     ? '\n⚠️ Parece igual a um lançamento que você já fez nesse dia.'
     : '';
+  const blocoItens = montarBlocoItens(opts.itens ?? []);
+  const dica = blocoItens && (opts.itens ?? []).some((i) => i.problema) ? ' (me corrige os ⚠️ se precisar)' : '';
   return {
-    body: `Li aqui:\n${linhaResumo(l)}${aviso}\nConfere?`,
+    body: `Li aqui:\n${linhaResumo(l)}${blocoItens}${aviso}\nConfere?${dica}`,
     buttons: [
       { id: `finlan:conf:${l.id}`, title: opts.duplicado ? 'Lançar mesmo assim' : 'Confirmar' },
       { id: `finlan:corr:${l.id}`, title: 'Corrigir' },
