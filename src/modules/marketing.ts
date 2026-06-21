@@ -7,6 +7,7 @@ import { buildTrackedWaLink } from './tracking.js';
 import { HiggsfieldImageGenerator } from './marketing/higgsfield-gen.js';
 import { applyBrandLogo } from './marketing/branded-frame.js';
 import { pickScene } from './marketing/solar-scenes.js';
+import { pickTopicType } from './marketing/post-rotation.js';
 
 export type PostTopicType =
   | 'objecao_desmistificada'
@@ -24,6 +25,13 @@ export interface GeneratedDraft {
   image_prompt: string;
   image_url: string;
   approval_token: string;
+}
+
+export interface RecentDraft {
+  topic: string;
+  topic_type: PostTopicType | null;
+  scene_key: string | null;
+  caption: string;
 }
 
 const SYSTEM_PROMPT = `Voce e o gerador de conteudo de marketing da Ecosunpower Energia Solar — empresa de energia fotovoltaica em Brasilia/DF e Goias desde 2019. Seu trabalho e criar posts para Instagram e Facebook que educam, geram conexao e atraem leads.
@@ -68,7 +76,6 @@ export class MarketingService {
   private videoGen: VideoGenerator | null;
   private businessPhone: string;
   private higgsfield: HiggsfieldImageGenerator | null;
-  private lastSceneKey?: string; // última cena gerada (anti-repetição entre posts)
 
   constructor(
     anthropicApiKey: string,
@@ -86,19 +93,20 @@ export class MarketingService {
     this.higgsfield = higgsfield ?? null;
   }
 
-  // Gera a imagem do post: Higgsfield (cena solar variada, anti-repetição) + logo
-  // EcoSunPower no canto. Fallback pro FLUX (ainda com logo) se o Higgsfield falhar
-  // ou não estiver configurado. Usado tanto na geração quanto no "Gerar outra imagem".
-  private async generateSolarImage(fallbackPrompt: string): Promise<{ bytes: Buffer; contentType: string }> {
+  // Gera a imagem do post: Higgsfield (cena solar variada, anti-repetição via banco)
+  // + logo EcoSunPower no canto. Fallback pro FLUX (ainda com logo) se o Higgsfield
+  // falhar ou não estiver configurado. Devolve a scene_key usada pra gravar no banco.
+  private async generateSolarImage(
+    fallbackPrompt: string,
+    excludeSceneKeys: string[] = [],
+  ): Promise<{ bytes: Buffer; contentType: string; sceneKey?: string }> {
     if (this.higgsfield) {
-      // Passa a última cena pra não repetir seguido (ex: seg→qui, ou cliques no "Outra").
-      const { scene, prompt, seed } = pickScene(this.lastSceneKey);
-      this.lastSceneKey = scene.key;
+      const { scene, prompt, seed } = pickScene(excludeSceneKeys);
       try {
         console.log(`[marketing] Higgsfield gerando cena="${scene.key}" (seed ${seed})`);
         const { url } = await this.higgsfield.generate({ prompt, aspectRatio: '4:5', seed });
         const dl = await this.higgsfield.downloadImage(url);
-        return { bytes: applyBrandLogo(dl.bytes), contentType: 'image/png' };
+        return { bytes: applyBrandLogo(dl.bytes), contentType: 'image/png', sceneKey: scene.key };
       } catch (err) {
         console.warn(`[marketing] Higgsfield falhou (${(err as Error).message}); fallback FLUX`);
       }
@@ -111,14 +119,37 @@ export class MarketingService {
   }
 
   async generateDraft(preferredType?: PostTopicType, asVideo = true): Promise<GeneratedDraft & { video_url?: string; content_type: string }> {
+    // Histórico do banco pra anti-repetição (sobrevive a restart). Não bloqueia geração.
+    const recent = await this.getRecentDrafts(15).catch(() => []);
+    const recentSceneKeys = recent
+      .map((r) => r.scene_key)
+      .filter((k): k is string => !!k)
+      .slice(0, 3);
+    const recentTopicTypes = recent
+      .map((r) => r.topic_type)
+      .filter((t): t is PostTopicType => !!t)
+      .slice(0, 3);
+
+    // Tipo do post: respeita o pedido explícito; senão escolhe evitando os 3 últimos.
+    const chosenType: PostTopicType = preferredType ?? pickTopicType(recentTopicTypes);
+
+    // Bloco de "posts recentes" pro Claude variar tema E ângulo (igual o blog faz).
+    const recentList = recent
+      .slice(0, 15)
+      .map((r, i) => `${i + 1}. "${r.topic}" (${r.topic_type ?? 'tipo?'})`)
+      .join('\n') || '(nenhum)';
+
     // 1) Ask Claude for caption + image prompt
-    const userPrompt = preferredType
-      ? `Crie um post do tipo "${preferredType}". Retorne apenas o JSON, sem explicacoes.`
-      : `Crie um post escolhendo um dos tipos disponiveis. Retorne apenas o JSON, sem explicacoes.`;
+    const userPrompt = `Crie um post do tipo "${chosenType}".
+
+POSTS RECENTES (NÃO repita tema nem ângulo destes — varie de verdade, traga ângulo/exemplo/abertura diferente):
+${recentList}
+
+Retorne apenas o JSON, sem explicacoes.`;
 
     const response = await this.anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
+      model: 'claude-opus-4-7',
+      max_tokens: 2048,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userPrompt }],
     });
@@ -153,6 +184,7 @@ export class MarketingService {
     // ainda aplicando a logo. Assim a mensagem seg/qui nunca deixa de chegar.
     let imgBytes: Buffer;
     let imgContentType: string;
+    let sceneKey: string | null = null;
 
     if (useVideo) {
       // Vídeo: imagem-base 9:16 via FLUX (sem logo) pra animar no Luma. Comportamento atual.
@@ -163,8 +195,11 @@ export class MarketingService {
       imgBytes = dl.bytes;
       imgContentType = dl.contentType;
     } else {
-      // Post de imagem: Higgsfield + cena solar + logo (com fallback FLUX+logo).
-      ({ bytes: imgBytes, contentType: imgContentType } = await this.generateSolarImage(parsed.image_prompt));
+      // Post de imagem: Higgsfield + cena solar (excluindo as 3 recentes) + logo.
+      const img = await this.generateSolarImage(parsed.image_prompt, recentSceneKeys);
+      imgBytes = img.bytes;
+      imgContentType = img.contentType;
+      sceneKey = img.sceneKey ?? null;
     }
 
     // 3) Upload image to Supabase Storage
@@ -204,6 +239,8 @@ export class MarketingService {
       .from('marketing_drafts')
       .insert({
         topic: parsed.topic,
+        topic_type: chosenType,
+        scene_key: sceneKey,
         caption: parsed.caption, // vai ser atualizado logo abaixo com o link rastreado
         image_prompt: parsed.image_prompt,
         image_url: imageUrl,
@@ -242,7 +279,7 @@ export class MarketingService {
     return {
       id: draft.id,
       topic: parsed.topic,
-      topic_type: parsed.topic_type,
+      topic_type: chosenType, // mesmo valor persistido e usado na anti-repetição
       caption: parsed.caption,
       image_prompt: parsed.image_prompt,
       image_url: imageUrl,
@@ -250,6 +287,21 @@ export class MarketingService {
       content_type: videoUrl ? 'video' : 'image',
       approval_token: approvalToken,
     };
+  }
+
+  // Últimos N posts gerados (qualquer status). Usado pra anti-repetição de cena/tipo
+  // e pra mostrar ao Claude o que já foi postado. Erro/silêncio não bloqueia geração.
+  async getRecentDrafts(limit = 15): Promise<RecentDraft[]> {
+    const { data, error } = await this.supabase
+      .from('marketing_drafts')
+      .select('topic, topic_type, scene_key, caption')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) {
+      console.warn('[marketing] getRecentDrafts falhou:', error.message);
+      return [];
+    }
+    return (data ?? []) as RecentDraft[];
   }
 
   async getDraft(id: string) {
@@ -302,8 +354,14 @@ export class MarketingService {
       throw new Error(`Cannot regenerate: draft status is "${draft.status}"`);
     }
     // "Gerar outra imagem": nova cena Higgsfield + logo (fallback FLUX+logo).
-    const { bytes, contentType } = await this.generateSolarImage(
+    // Exclui a cena atual do draft + as recentes pra "outra" sempre vir diferente.
+    const recent = await this.getRecentDrafts(15).catch(() => []);
+    const exclude = [draft.scene_key as string | null, ...recent.map((r) => r.scene_key)]
+      .filter((k): k is string => !!k)
+      .slice(0, 3);
+    const { bytes, contentType, sceneKey } = await this.generateSolarImage(
       draft.image_prompt ?? 'Fotografia profissional realista sobre energia solar',
+      exclude,
     );
     const ext = contentType === 'image/png' ? 'png' : 'jpg';
     const filename = `${Date.now()}-${randomBytes(4).toString('hex')}.${ext}`;
@@ -318,7 +376,7 @@ export class MarketingService {
 
     const { error: updateErr } = await this.supabase
       .from('marketing_drafts')
-      .update({ image_url: newImageUrl })
+      .update({ image_url: newImageUrl, scene_key: sceneKey ?? draft.scene_key })
       .eq('id', id);
     if (updateErr) throw new Error(`Failed to update image: ${updateErr.message}`);
     return { ...draft, image_url: newImageUrl };
