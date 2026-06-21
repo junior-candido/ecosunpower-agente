@@ -3338,6 +3338,20 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           await sendText(to, 'Apaga pelo painel: dashboard.ecosunpower.eng.br/dashboard/financeiro');
         }
       },
+      acaoGerarPost: async (to: string) => {
+        if (!marketing) { await sendText(to, '❌ Geração de posts está desativada.'); return; }
+        await sendText(to, '✨ Gerando um post de teste (imagem)... chega aqui em ~1 min.');
+        // Em segundo plano: a geração leva ~1 min, não pode travar o toque do menu.
+        void (async () => {
+          try {
+            const draft = await marketing.generateDraft(undefined, false); // false = imagem (não vídeo)
+            await sendDraftToJunior(draft.id);
+          } catch (err) {
+            console.error('[marketing] gerar-post teste falhou:', err);
+            await sendText(to, `❌ Não consegui gerar o post agora: ${(err as Error).message}`);
+          }
+        })();
+      },
     });
 
     const enviarLista = async (header: string, body: string, rows: Array<{ id: string; title: string; description: string }>, secTitle: string): Promise<void> => {
