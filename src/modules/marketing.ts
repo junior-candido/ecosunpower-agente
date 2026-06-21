@@ -26,6 +26,13 @@ export interface GeneratedDraft {
   approval_token: string;
 }
 
+export interface RecentDraft {
+  topic: string;
+  topic_type: PostTopicType | null;
+  scene_key: string | null;
+  caption: string;
+}
+
 const SYSTEM_PROMPT = `Voce e o gerador de conteudo de marketing da Ecosunpower Energia Solar — empresa de energia fotovoltaica em Brasilia/DF e Goias desde 2019. Seu trabalho e criar posts para Instagram e Facebook que educam, geram conexao e atraem leads.
 
 Diretrizes de estilo:
@@ -250,6 +257,21 @@ export class MarketingService {
       content_type: videoUrl ? 'video' : 'image',
       approval_token: approvalToken,
     };
+  }
+
+  // Últimos N posts gerados (qualquer status). Usado pra anti-repetição de cena/tipo
+  // e pra mostrar ao Claude o que já foi postado. Erro/silêncio não bloqueia geração.
+  async getRecentDrafts(limit = 15): Promise<RecentDraft[]> {
+    const { data, error } = await this.supabase
+      .from('marketing_drafts')
+      .select('topic, topic_type, scene_key, caption')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) {
+      console.warn('[marketing] getRecentDrafts falhou:', error.message);
+      return [];
+    }
+    return (data ?? []) as RecentDraft[];
   }
 
   async getDraft(id: string) {
