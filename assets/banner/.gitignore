@@ -1,4 +1,4 @@
-# Ignora tudo nesta pasta exceto os 2 PNGs que o renderer usa + README.
+# Ignora tudo nesta pasta exceto os PNGs que o renderer usa + README.
 # Junior pode jogar logos/fotos de trabalho aqui sem inflar o repo.
 *
 !.gitignore
@@ -25,3 +25,4 @@
 !bateria.*.jpg
 !bateria.*.jpeg
 !logo-ecosunpower.png
+!logo-ecosunpower-1024-transparente.png
