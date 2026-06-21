@@ -11,7 +11,7 @@ function depsStub(): MenuDeps {
     pricing: h(), proposal: h(), closing: h(), creative: h(), banner: h(),
     bannerKits: h(), reativarBase: h(), juniorBlog: h(), scheduling: h(),
     caseCreator: h(), testimonialAdmin: h(), relatorio: h(), resgatarForms: h(),
-    googleAds: h(), acaoImposto: a(), acaoApagar: a(),
+    googleAds: h(), acaoImposto: a(), acaoApagar: a(), acaoGerarPost: a(),
   };
 }
 
@@ -101,5 +101,15 @@ describe('menu — comandos novos', () => {
   it('cadastrar email do lead está em Atendimento como dica', () => {
     expect(catDoItem('menu_email')).toBe('atendimento');
     expect(item('menu_email')?.hint).toContain('email');
+  });
+
+  it('gerar post de teste está em Marketing com action (botão direto)', () => {
+    expect(catDoItem('menu_gerar_post')).toBe('marketing');
+    expect(item('menu_gerar_post')?.action).toBeTypeOf('function');
+  });
+
+  it('submenu de marketing continua dentro do limite de 10 linhas', () => {
+    const mkt = cats.find(c => c.id === 'marketing')!;
+    expect(rowsSubmenu(mkt).length).toBeLessThanOrEqual(MAX_ROWS_LISTA);
   });
 });
