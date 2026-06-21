@@ -7,6 +7,7 @@ import { buildTrackedWaLink } from './tracking.js';
 import { HiggsfieldImageGenerator } from './marketing/higgsfield-gen.js';
 import { applyBrandLogo } from './marketing/branded-frame.js';
 import { pickScene } from './marketing/solar-scenes.js';
+import { pickTopicType } from './marketing/post-rotation.js';
 
 export type PostTopicType =
   | 'objecao_desmistificada'
@@ -120,13 +121,36 @@ export class MarketingService {
   }
 
   async generateDraft(preferredType?: PostTopicType, asVideo = true): Promise<GeneratedDraft & { video_url?: string; content_type: string }> {
+    // Histórico do banco pra anti-repetição (sobrevive a restart). Não bloqueia geração.
+    const recent = await this.getRecentDrafts(15).catch(() => []);
+    const recentSceneKeys = recent
+      .map((r) => r.scene_key)
+      .filter((k): k is string => !!k)
+      .slice(0, 3);
+    const recentTopicTypes = recent
+      .map((r) => r.topic_type)
+      .filter((t): t is PostTopicType => !!t)
+      .slice(0, 3);
+
+    // Tipo do post: respeita o pedido explícito; senão escolhe evitando os 3 últimos.
+    const chosenType: PostTopicType = preferredType ?? pickTopicType(recentTopicTypes);
+
+    // Bloco de "posts recentes" pro Claude variar tema E ângulo (igual o blog faz).
+    const recentList = recent
+      .slice(0, 15)
+      .map((r, i) => `${i + 1}. "${r.topic}" (${r.topic_type ?? 'tipo?'})`)
+      .join('\n') || '(nenhum)';
+
     // 1) Ask Claude for caption + image prompt
-    const userPrompt = preferredType
-      ? `Crie um post do tipo "${preferredType}". Retorne apenas o JSON, sem explicacoes.`
-      : `Crie um post escolhendo um dos tipos disponiveis. Retorne apenas o JSON, sem explicacoes.`;
+    const userPrompt = `Crie um post do tipo "${chosenType}".
+
+POSTS RECENTES (NÃO repita tema nem ângulo destes — varie de verdade, traga ângulo/exemplo/abertura diferente):
+${recentList}
+
+Retorne apenas o JSON, sem explicacoes.`;
 
     const response = await this.anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-opus-4-7',
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userPrompt }],
@@ -162,6 +186,7 @@ export class MarketingService {
     // ainda aplicando a logo. Assim a mensagem seg/qui nunca deixa de chegar.
     let imgBytes: Buffer;
     let imgContentType: string;
+    let sceneKey: string | null = null;
 
     if (useVideo) {
       // Vídeo: imagem-base 9:16 via FLUX (sem logo) pra animar no Luma. Comportamento atual.
@@ -172,8 +197,11 @@ export class MarketingService {
       imgBytes = dl.bytes;
       imgContentType = dl.contentType;
     } else {
-      // Post de imagem: Higgsfield + cena solar + logo (com fallback FLUX+logo).
-      ({ bytes: imgBytes, contentType: imgContentType } = await this.generateSolarImage(parsed.image_prompt));
+      // Post de imagem: Higgsfield + cena solar (excluindo as 3 recentes) + logo.
+      const img = await this.generateSolarImage(parsed.image_prompt, recentSceneKeys);
+      imgBytes = img.bytes;
+      imgContentType = img.contentType;
+      sceneKey = img.sceneKey ?? null;
     }
 
     // 3) Upload image to Supabase Storage
@@ -213,6 +241,8 @@ export class MarketingService {
       .from('marketing_drafts')
       .insert({
         topic: parsed.topic,
+        topic_type: chosenType,
+        scene_key: sceneKey,
         caption: parsed.caption, // vai ser atualizado logo abaixo com o link rastreado
         image_prompt: parsed.image_prompt,
         image_url: imageUrl,
