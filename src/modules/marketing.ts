@@ -76,7 +76,6 @@ export class MarketingService {
   private videoGen: VideoGenerator | null;
   private businessPhone: string;
   private higgsfield: HiggsfieldImageGenerator | null;
-  private lastSceneKey?: string; // última cena gerada (anti-repetição entre posts)
 
   constructor(
     anthropicApiKey: string,
@@ -102,8 +101,7 @@ export class MarketingService {
     excludeSceneKeys: string[] = [],
   ): Promise<{ bytes: Buffer; contentType: string; sceneKey?: string }> {
     if (this.higgsfield) {
-      const { scene, prompt, seed } = pickScene(excludeSceneKeys, undefined);
-      this.lastSceneKey = scene.key;
+      const { scene, prompt, seed } = pickScene(excludeSceneKeys);
       try {
         console.log(`[marketing] Higgsfield gerando cena="${scene.key}" (seed ${seed})`);
         const { url } = await this.higgsfield.generate({ prompt, aspectRatio: '4:5', seed });
@@ -151,7 +149,7 @@ Retorne apenas o JSON, sem explicacoes.`;
 
     const response = await this.anthropic.messages.create({
       model: 'claude-opus-4-7',
-      max_tokens: 1024,
+      max_tokens: 2048,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userPrompt }],
     });
@@ -281,7 +279,7 @@ Retorne apenas o JSON, sem explicacoes.`;
     return {
       id: draft.id,
       topic: parsed.topic,
-      topic_type: parsed.topic_type,
+      topic_type: chosenType, // mesmo valor persistido e usado na anti-repetição
       caption: parsed.caption,
       image_prompt: parsed.image_prompt,
       image_url: imageUrl,
@@ -356,8 +354,14 @@ Retorne apenas o JSON, sem explicacoes.`;
       throw new Error(`Cannot regenerate: draft status is "${draft.status}"`);
     }
     // "Gerar outra imagem": nova cena Higgsfield + logo (fallback FLUX+logo).
-    const { bytes, contentType } = await this.generateSolarImage(
+    // Exclui a cena atual do draft + as recentes pra "outra" sempre vir diferente.
+    const recent = await this.getRecentDrafts(15).catch(() => []);
+    const exclude = [draft.scene_key as string | null, ...recent.map((r) => r.scene_key)]
+      .filter((k): k is string => !!k)
+      .slice(0, 3);
+    const { bytes, contentType, sceneKey } = await this.generateSolarImage(
       draft.image_prompt ?? 'Fotografia profissional realista sobre energia solar',
+      exclude,
     );
     const ext = contentType === 'image/png' ? 'png' : 'jpg';
     const filename = `${Date.now()}-${randomBytes(4).toString('hex')}.${ext}`;
@@ -372,7 +376,7 @@ Retorne apenas o JSON, sem explicacoes.`;
 
     const { error: updateErr } = await this.supabase
       .from('marketing_drafts')
-      .update({ image_url: newImageUrl })
+      .update({ image_url: newImageUrl, scene_key: sceneKey ?? draft.scene_key })
       .eq('id', id);
     if (updateErr) throw new Error(`Failed to update image: ${updateErr.message}`);
     return { ...draft, image_url: newImageUrl };
