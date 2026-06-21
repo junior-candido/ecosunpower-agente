@@ -93,19 +93,21 @@ export class MarketingService {
     this.higgsfield = higgsfield ?? null;
   }
 
-  // Gera a imagem do post: Higgsfield (cena solar variada, anti-repetição) + logo
-  // EcoSunPower no canto. Fallback pro FLUX (ainda com logo) se o Higgsfield falhar
-  // ou não estiver configurado. Usado tanto na geração quanto no "Gerar outra imagem".
-  private async generateSolarImage(fallbackPrompt: string): Promise<{ bytes: Buffer; contentType: string }> {
+  // Gera a imagem do post: Higgsfield (cena solar variada, anti-repetição via banco)
+  // + logo EcoSunPower no canto. Fallback pro FLUX (ainda com logo) se o Higgsfield
+  // falhar ou não estiver configurado. Devolve a scene_key usada pra gravar no banco.
+  private async generateSolarImage(
+    fallbackPrompt: string,
+    excludeSceneKeys: string[] = [],
+  ): Promise<{ bytes: Buffer; contentType: string; sceneKey?: string }> {
     if (this.higgsfield) {
-      // Passa a última cena pra não repetir seguido (ex: seg→qui, ou cliques no "Outra").
-      const { scene, prompt, seed } = pickScene(this.lastSceneKey);
+      const { scene, prompt, seed } = pickScene(excludeSceneKeys, undefined);
       this.lastSceneKey = scene.key;
       try {
         console.log(`[marketing] Higgsfield gerando cena="${scene.key}" (seed ${seed})`);
         const { url } = await this.higgsfield.generate({ prompt, aspectRatio: '4:5', seed });
         const dl = await this.higgsfield.downloadImage(url);
-        return { bytes: applyBrandLogo(dl.bytes), contentType: 'image/png' };
+        return { bytes: applyBrandLogo(dl.bytes), contentType: 'image/png', sceneKey: scene.key };
       } catch (err) {
         console.warn(`[marketing] Higgsfield falhou (${(err as Error).message}); fallback FLUX`);
       }
