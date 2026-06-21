@@ -18,7 +18,7 @@ export interface MenuDeps {
   banner: Handler; bannerKits: Handler; reativarBase: Handler; juniorBlog: Handler;
   scheduling: Handler; caseCreator: Handler; testimonialAdmin: Handler; relatorio: Handler;
   resgatarForms: Handler; googleAds: Handler;
-  acaoImposto: Acao; acaoApagar: Acao;
+  acaoImposto: Acao; acaoApagar: Acao; acaoGerarPost: Acao;
 }
 
 // Limite de linhas de uma lista interativa do WhatsApp.
@@ -62,6 +62,7 @@ export function construirMenu(deps: MenuDeps): MenuCategoria[] {
         { id: 'menu_resgatar_forms', title: '♻️ Resgatar leads', description: 'Template pros leads do Meta', trigger: '/resgatar-forms', handler: deps.resgatarForms },
         { id: 'menu_google', title: '📊 Resumo Google Ads', description: 'Gasto, cliques, CPC, CTR', trigger: '/google', handler: deps.googleAds },
         { id: 'menu_banner_kits', title: '🖼️ Banner tabela (kits)', description: 'Tabela premium com kits OnGrid', trigger: '/banner-kits', handler: deps.bannerKits },
+        { id: 'menu_gerar_post', title: '✨ Gerar post (teste)', description: 'Cria um post agora e te manda', action: deps.acaoGerarPost },
       ],
     },
     {
