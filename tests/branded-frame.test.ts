@@ -37,4 +37,14 @@ describe('branded-frame', () => {
     expect(isPng(out)).toBe(true);
     expect(pngSize(out)).toEqual({ width: 1080, height: 1350 });
   });
+
+  // Blindagem: se o asset da logo faltar (ex: não shippado no container), a geração
+  // do post NÃO pode quebrar — sai a imagem normalizada SEM logo, em vez de lançar.
+  it('logo ausente: devolve a imagem 4:5 sem logo, sem lançar', () => {
+    const foto = solidPng(800, 1000, '#3366cc');
+    expect(() => applyBrandLogo(foto, { logoPath: '/nao/existe/logo-x.png' })).not.toThrow();
+    const out = applyBrandLogo(foto, { logoPath: '/nao/existe/logo-x.png' });
+    expect(isPng(out)).toBe(true);
+    expect(pngSize(out)).toEqual({ width: 1080, height: 1350 });
+  });
 });
