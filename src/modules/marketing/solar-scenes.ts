@@ -10,8 +10,9 @@ export interface SolarScene {
 
 // Sufixo de qualidade/realismo aplicado a todas (lições do teste 01/06).
 const Q =
-  'hyper photorealistic, ultra sharp focus, fine realistic detail, ' +
-  'high resolution professional photography, 8k';
+  'shot on a professional full-frame camera, realistic natural textures, ' +
+  'true-to-life natural lighting, subtle film grain, photojournalistic realism, ' +
+  'sharp where it matters, no CGI look, no plastic skin';
 
 // Cuidado técnico recorrente com painéis (olho de engenheiro): alinhados, dentro
 // da borda, sobre trilhos, nítidos — nunca "flutuando" ou borrados.
@@ -81,19 +82,35 @@ const VARIACOES = [
   'vivid blue sky with scattered clouds',
 ];
 
+// Eixo de composição/estética, ortogonal à cena (seguro mesmo em cenas com
+// enquadramento embutido como "vista aérea" ou "close").
+const COMPOSICOES = [
+  'documentary photography style, candid natural framing',
+  'architectural photography, balanced composition',
+  'editorial magazine look, shallow depth of field',
+  'strong foreground with natural depth',
+  'intimate detail-focused composition',
+];
+
 export interface PickedScene {
   scene: SolarScene;
   prompt: string;
   seed: number;
 }
 
-// Escolhe uma cena diferente da última (lastKey) + variação + seed.
-// rng injetável pra teste determinístico (default Math.random).
-export function pickScene(lastKey?: string, rng: () => number = Math.random): PickedScene {
-  const candidatas = SOLAR_SCENES.filter((s) => s.key !== lastKey);
+// Escolhe uma cena diferente das recentes (excludeKeys) + variação de luz +
+// variação de composição + seed. rng injetável pra teste determinístico.
+// Aceita string única por defesa (normaliza pra array).
+export function pickScene(
+  excludeKeys: string[] | string = [],
+  rng: () => number = Math.random,
+): PickedScene {
+  const exclude = Array.isArray(excludeKeys) ? excludeKeys : [excludeKeys];
+  const candidatas = SOLAR_SCENES.filter((s) => !exclude.includes(s.key));
   const pool = candidatas.length > 0 ? candidatas : SOLAR_SCENES;
-  const scene = pool[Math.floor(rng() * pool.length)] ?? pool[0];
+  const scene = pool[Math.floor(rng() * pool.length)] ?? pool[0]!;
   const variacao = VARIACOES[Math.floor(rng() * VARIACOES.length)] ?? VARIACOES[0];
+  const composicao = COMPOSICOES[Math.floor(rng() * COMPOSICOES.length)] ?? COMPOSICOES[0];
   const seed = Math.floor(rng() * 1_000_000);
-  return { scene, prompt: `${scene.prompt}, ${variacao}`, seed };
+  return { scene, prompt: `${scene.prompt}, ${variacao}, ${composicao}`, seed };
 }
