@@ -19,6 +19,15 @@ describe('buildFecharPickButtons', () => {
     for (const t of titles) expect(t.length).toBeLessThanOrEqual(20);
   });
 
+  it('nome MUITO longo → prefixo numérico sobrevive ao corte de 20 chars', () => {
+    const longo = 'Joao Pedro Albuquerque de Vasconcelos Filho';
+    const btns = buildFecharPickButtons([{ id: 'a', name: longo }, { id: 'b', name: longo }], 'fechar');
+    expect(btns[0].title.startsWith('1. ')).toBe(true);
+    expect(btns[1].title.startsWith('2. ')).toBe(true);
+    expect(btns[0].title).not.toBe(btns[1].title);
+    btns.forEach((b) => expect(b.title.length).toBeLessThanOrEqual(20));
+  });
+
   it('ids do botão certos por comando', () => {
     expect(buildFecharPickButtons([{ id: 'x', name: 'Ana' }], 'fechar')[0].id).toBe('evabt:fechar-pick:x');
     expect(buildFecharPickButtons([{ id: 'x', name: 'Ana' }], 'contrato')[0].id).toBe('evabt:fechar-doc:contrato:x');
