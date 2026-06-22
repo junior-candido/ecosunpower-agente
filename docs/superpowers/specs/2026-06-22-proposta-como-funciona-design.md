@@ -1,4 +1,6 @@
-# Proposta — Seção "Como funciona" (jornada do aceite à usina ligada)
+# Proposta — Seção "Como funciona" + Logo PNG em destaque
+
+> Dois ajustes na proposta: **Parte 1** — nova seção da jornada (aceite → usina ligada). **Parte 2** — logo PNG em destaque com troca por fundo.
 
 **Data:** 2026-06-22
 **Repo:** `ecosunpower-agente`
@@ -65,6 +67,33 @@ Seguir o padrão já existente de `service-render.ts` (módulo puro que devolve 
   - HTML escapado/sem tags quebradas (smoke do output).
 - Teste de fumaça no `template.ts`: o HTML gerado inclui a nova seção (em modo normal e comparação).
 
+## Parte 2 — Marca / Logo PNG em destaque
+
+### Problema
+Hoje o topo (hero) e o rodapé mostram o **nome da empresa como texto** (`escapeHtml(empresa().nomeFantasia)`), não a logo PNG. O cliente não vê a marca de verdade.
+
+### Decisões (aprovadas pelo Junior)
+- Usar **sempre a logo PNG**, nunca só o nome em texto.
+- **Regra de variação por fundo:** fundo **escuro → logo nome BRANCO**; fundo **claro → logo nome PRETO**. (Confirmado visualmente: a variação errada faz "ECOSUN" sumir no fundo.)
+- A logo deve **se destacar** (não miniatura). No topo: **~54px de altura** (médio).
+- **Onde aparece:** Topo (hero), Seção final (CTA) e Rodapé. A marca d'água das fotos do estudo personalizado permanece como está (já usa a branca).
+
+### Assets
+- **Logo nome BRANCO** (fundo escuro): já embutida — `LOGO_ECOSUNPOWER_BRANCO_BASE64` em `src/modules/proposal/assets/logo-base64.ts`. Arquivo-fonte: `EcoSunPower/Marketing/logos/Logo nova/logo-ecosunpower-1024-branco.png` (hash `9bd553…`).
+- **Logo nome PRETO** (fundo claro): gerar constante base64 `LOGO_ECOSUNPOWER_PRETO_BASE64` a partir de `EcoSunPower/Marketing/logos/Logo nova/logo-ecosunpower-1024-transparente.png` (hash `2848fe…`). Necessária pra que a geração de **PDF** renderize a logo (o renderer precisa do asset embutido, não de caminho externo).
+
+### Implementação
+- Helper puro `logoVariante(fundo: 'escuro' | 'claro'): string` (no módulo de assets ou util) devolvendo o base64 certo. Mantém a regra num só lugar e testável.
+- **Hero** (`template.ts` ~linha 314): trocar `<div class="hero-logo">…texto…</div>` por `<img src="${logoVariante('escuro')}" alt="${nomeFantasia}" class="hero-logo-img">` com `height:54px;width:auto`. CSS `.hero-logo-img` substitui `.hero-logo`/`.hero-logo-dot`.
+- **CTA** (`template.ts` ~linha 676): adicionar a logo branca acima do título "Pronto pra economizar?", tamanho de destaque (~48–56px).
+- **Rodapé** (`template.ts` ~linha 693): adicionar a logo branca antes/junto do bloco `<strong>${empresa.nome}</strong>`.
+- Todas as 3 posições têm fundo escuro → todas usam `logoVariante('escuro')` (branca). A variante preta fica disponível para qualquer placement de fundo claro futuro (ex: cabeçalho da seção "Como funciona", se decidirmos depois).
+
+### Testes (Parte 2)
+- `logoVariante('escuro')` devolve o base64 branco; `logoVariante('claro')` devolve o preto; ambos começam com `data:image/png;base64,`.
+- O HTML do hero contém `<img` com a logo e NÃO contém mais o texto do nome no `.hero-logo`.
+- CTA e rodapé contêm a `<img>` da logo.
+
 ## Fora de escopo (tratado separadamente)
 
 - 🐛 **Bug "Eva re-pergunta tudo ao reabrir/fechar a proposta e refaz do zero".** Será investigado e corrigido em trabalho próprio, via debugging sistemático — não faz parte deste spec.
@@ -72,5 +101,6 @@ Seguir o padrão já existente de `service-render.ts` (módulo puro que devolve 
 ## Critério de pronto
 
 - Proposta (web + PDF) mostra a seção "Como funciona" no visual A, coerente em ~45 dias.
+- Logo PNG (branca) em destaque no topo (~54px), CTA e rodapé — sem mais o nome só em texto.
 - Testes passam; code review 3×.
-- Sem alteração de banco (migration) — é só template/render.
+- Sem alteração de banco (migration) — é só template/render/assets.
