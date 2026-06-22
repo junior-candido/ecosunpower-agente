@@ -1205,7 +1205,8 @@ export class ProposalAssistant {
           empresa: this.companyDefaults,
           criarPagamentoPadrao: (t) => servicePaymentOptions(t),
         });
-        pdfBuffer = await htmlToPdf(renderServiceOnlyHTML(serviceData, await this.logoProposta()), { waitForChartMs: 0 });
+        // hero/rodapé da proposta só-serviço usam a logo DARK fixa; não busca logo no Storage à toa.
+        pdfBuffer = await htmlToPdf(renderServiceOnlyHTML(serviceData), { waitForChartMs: 0 });
       } else {
         const calcInput = this.dataToCalculatorInput(last.data);
         const calculations = calcular(calcInput);
@@ -1492,7 +1493,8 @@ export class ProposalAssistant {
       criarPagamentoPadrao: (total) => servicePaymentOptions(total),
     });
 
-    const html = renderServiceOnlyHTML(serviceData, await this.logoProposta());
+    // hero/rodapé da proposta só-serviço usam a logo DARK fixa; não busca logo no Storage à toa.
+    const html = renderServiceOnlyHTML(serviceData);
     const pdfBuffer = await htmlToPdf(html, { waitForChartMs: 0 });
 
     const drivePromise = this.driveUploader
