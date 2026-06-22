@@ -51,7 +51,7 @@ export interface Sistema {
   kwp: number;
   modalidade: Modalidade;
   modulos: { marca: string; potencia_w: number; quantidade: number };
-  inversor: { marca: string; modelo: string; potencia_kw: number };
+  inversor: { marca: string; modelo: string; potencia_kw: number; quantidade?: number };
 }
 
 export interface Comercial {

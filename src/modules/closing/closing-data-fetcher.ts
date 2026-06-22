@@ -47,7 +47,7 @@ export interface PropostaPublicaRow {
     modalidade?: string;
     potencia_kwp?: number;
     modulos?: { marca?: string; potencia_w?: number; quantidade?: number };
-    inversor?: { marca?: string; fabricante?: string; modelo?: string; potencia_kw?: number; potenciaW?: number };
+    inversor?: { marca?: string; fabricante?: string; modelo?: string; potencia_kw?: number; potenciaW?: number; quantidade?: number };
     valor_total?: number;
   } | null;
   created_at: string;
@@ -175,6 +175,7 @@ export function buildInitialData(
           marca: inv?.fabricante ?? inv?.marca ?? '',
           modelo: inv?.modelo ?? '',
           potencia_kw: invPotenciaKw,
+          quantidade: inv?.quantidade,
         },
       };
     }

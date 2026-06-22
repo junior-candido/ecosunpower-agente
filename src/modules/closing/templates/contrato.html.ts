@@ -72,6 +72,11 @@ function formatBRL(n: number): string {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2 });
 }
 
+// Formata potência em kW no padrão pt-BR (2.25 -> "2,25"), sem casas inúteis (5 -> "5").
+function fmtKw(n: number): string {
+  return Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+}
+
 function modalidadeLabel(m: DadosFechamento['sistema']['modalidade']): string {
   switch (m) {
     case 'autoconsumo_local': return 'autoconsumo local';
@@ -124,8 +129,9 @@ export function renderContrato(dados: DadosFechamento): string {
   li { margin: 3pt 0; text-align: justify; }
   strong { color: #0c4a6e; }
   hr { border: none; border-top: 1px solid #cbd5e1; margin: 14pt 0; }
-  .assinatura { margin-top: 24pt; }
-  .assinatura .linha { border-bottom: 1px solid #1a1a1a; width: 60%; margin: 36pt 0 6pt; }
+  .assinatura { margin-top: 40pt; }
+  .bloco-assinatura { margin-top: 64pt; break-inside: avoid; page-break-inside: avoid; }
+  .assinatura .linha { border-bottom: 1px solid #1a1a1a; width: 55%; margin: 0 0 6pt; }
   .obs-marido { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 8pt 12pt; margin: 10pt 0; font-size: 10pt; }
 </style>
 </head>
@@ -266,7 +272,9 @@ e) Vistoria, troca do medidor e religação: depende exclusivamente da concessio
 <ul>
 <li><strong>Fabricante:</strong> ${sistema.inversor.marca}</li>
 <li><strong>Modelo:</strong> ${sistema.inversor.modelo}</li>
-<li><strong>Potência:</strong> ${sistema.inversor.potencia_kw} kW</li>
+<li><strong>Potência:</strong> ${fmtKw(sistema.inversor.potencia_kw)} kW${sistema.inversor.quantidade ? ' por unidade' : ''}</li>
+${sistema.inversor.quantidade ? `<li><strong>Quantidade:</strong> ${sistema.inversor.quantidade} unidades</li>
+<li><strong>Potência total dos inversores:</strong> ${fmtKw(sistema.inversor.potencia_kw * sistema.inversor.quantidade)} kW</li>` : ''}
 <li><strong>Garantia:</strong> conforme fabricante</li>
 </ul>
 
@@ -364,17 +372,21 @@ ${disposicoes}
 <p>${data}</p>
 
 <div class="assinatura">
+<div class="bloco-assinatura">
 <div class="linha"></div>
 <p><strong>${nomeContratante}</strong><br/>
 CPF/CNPJ: ${cpfContratante}<br/>
 <em>CONTRATANTE</em></p>
+</div>
 
+<div class="bloco-assinatura">
 <div class="linha"></div>
 <p><strong>${CONTRATADA.razao_social}</strong><br/>
 ${CONTRATADA.representante_nome} — ${CONTRATADA.representante_titulo} ${CONTRATADA.representante_crea}<br/>
 CPF: ${CONTRATADA.representante_cpf}<br/>
 CNPJ: ${CONTRATADA.cnpj}<br/>
 <em>CONTRATADA</em></p>
+</div>
 </div>
 
 </body>

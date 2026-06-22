@@ -36,6 +36,26 @@ describe('renderContrato', () => {
       expect(html).toContain('vistoria da concessionária Equatorial-GO');
     });
 
+    it('inversor com quantidade: mostra "X unidades", potência por unidade e total (caso micro)', () => {
+      const micro = JSON.parse(JSON.stringify(dadosFechamentoCamilaMesmaPessoa));
+      micro.sistema.inversor = { marca: 'Hoymiles', modelo: 'HMS-2250', potencia_kw: 2.25, quantidade: 2 };
+      const h = renderContrato(micro);
+      expect(h).toContain('2,25 kW por unidade');
+      expect(h).toContain('Quantidade:</strong> 2 unidades');
+      expect(h).toContain('Potência total dos inversores:</strong> 4,5 kW');
+    });
+
+    it('inversor SEM quantidade: não quebra (sistema com inversor string)', () => {
+      // fixture padrão tem inversor sem quantidade → não renderiza a linha de quantidade
+      expect(html).not.toContain('por unidade');
+      expect(html).not.toContain('Potência total dos inversores');
+    });
+
+    it('assinaturas em blocos separados com espaço (não quebram entre páginas)', () => {
+      expect(html.match(/bloco-assinatura/g)?.length).toBeGreaterThanOrEqual(2);
+      expect(html).toContain('break-inside: avoid');
+    });
+
     it('cláusula 11 cita módulos e inversor', () => {
       expect(html).toContain('Módulos Fotovoltaicos');
       expect(html).toContain('Trina Vertex');
