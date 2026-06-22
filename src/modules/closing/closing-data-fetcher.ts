@@ -1,6 +1,16 @@
 // src/modules/closing/closing-data-fetcher.ts
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { DadosFechamento, Concessionaria, UF, PessoaFisica, Endereco } from './types.js';
+import type { DadosFechamento, Concessionaria, UF, PessoaFisica, Endereco, Modalidade } from './types.js';
+
+// A proposta salva modalidade como texto humano ("Autoconsumo local", "remoto",
+// "compartilhada") — não o enum. Normaliza pro enum do fechamento (cobre também
+// o formato legado que já vinha como enum). Default seguro = autoconsumo_local.
+export function normalizarModalidade(raw: unknown): Modalidade {
+  const s = String(raw ?? '').toLowerCase();
+  if (s.includes('remoto')) return 'autoconsumo_remoto';
+  if (s.includes('compartilhad')) return 'geracao_compartilhada';
+  return 'autoconsumo_local';
+}
 
 export interface LeadRow {
   id: string;
@@ -155,7 +165,7 @@ export function buildInitialData(
       const invPotenciaKw = inv?.potencia_kw ?? (inv?.potenciaW != null ? inv.potenciaW / 1000 : 0);
       partial.sistema = {
         kwp,
-        modalidade: (d.modalidade as any) ?? 'autoconsumo_local',
+        modalidade: normalizarModalidade(d.modalidade),
         modulos: {
           marca: mod?.fabricante ?? mod?.marca ?? '',
           potencia_w: mod?.potenciaW ?? mod?.potencia_w ?? 0,

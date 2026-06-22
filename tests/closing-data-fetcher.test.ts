@@ -1,6 +1,6 @@
 // tests/closing-data-fetcher.test.ts
 import { describe, it, expect, vi } from 'vitest';
-import { fetchByLeadId, searchLeadByName, buildInitialData, normalizarNomeBusca } from '../src/modules/closing/closing-data-fetcher.js';
+import { fetchByLeadId, searchLeadByName, buildInitialData, normalizarNomeBusca, normalizarModalidade } from '../src/modules/closing/closing-data-fetcher.js';
 import { leadCamilaRow, propostaPublicaCamilaRow } from './fixtures/closing-camila.js';
 
 function mockSupabase(opts: {
@@ -153,8 +153,18 @@ describe('closing-data-fetcher', () => {
     expect(partial.sistema?.inversor.marca).toBe('Sungrow');
     expect(partial.sistema?.inversor.modelo).toBe('SG5.0RS');
     expect(partial.sistema?.inversor.potencia_kw).toBe(5); // 5000 W → 5 kW
+    // modalidade: texto humano da proposta normalizado pro enum do contrato
+    expect(partial.sistema?.modalidade).toBe('autoconsumo_local');
     // comercial
     expect(partial.comercial?.valor_total_brl).toBe(38500);
+  });
+
+  it('normalizarModalidade: texto humano e enum → enum do contrato', () => {
+    expect(normalizarModalidade('Autoconsumo local')).toBe('autoconsumo_local');
+    expect(normalizarModalidade('Autoconsumo remoto')).toBe('autoconsumo_remoto');
+    expect(normalizarModalidade('Geração compartilhada')).toBe('geracao_compartilhada');
+    expect(normalizarModalidade('autoconsumo_remoto')).toBe('autoconsumo_remoto'); // legado já-enum
+    expect(normalizarModalidade(undefined)).toBe('autoconsumo_local'); // default seguro
   });
 
   it('buildInitialData ainda aceita o formato legado snake_case (compat)', () => {
