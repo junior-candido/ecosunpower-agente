@@ -62,6 +62,7 @@ import {
   findMissingRequired,
   humanizeMissing,
   parseClosingCommand,
+  buildFecharPickButtons,
   type ClosingCommand,
   type DadosFechamento,
   type ClosingState,
@@ -1373,15 +1374,12 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         // Quando cmd e procuracao/contrato, ja embute o doc no botao pra nao perder
         // contexto entre pick e handleFecharStart. Quando cmd=fechar, mantem o
         // pick generico (onFecharPick depois pergunta o modo).
-        const btns = matches.slice(0, 3).map((mlead) => {
-          const buttonId = cmd === 'fechar'
-            ? `evabt:fechar-pick:${mlead.id}`
-            : `evabt:fechar-doc:${cmd}:${mlead.id}`;
-          return { id: buttonId, title: mlead.name.slice(0, 20) };
-        });
+        // Título do botão tem de ser único e ≤20 chars (nomes iguais → WABA "Duplicate
+        // button title"). buildFecharPickButtons numera (1./2./3.) e deduplica por id.
+        const btns = buildFecharPickButtons(matches, cmd);
         const corpo = matches.length === 1
           ? `Achei 1 lead "${termoBusca}":\n${linhaInfo(matches[0])}\n\nÉ esse?`
-          : `Achei ${matches.length} leads com "${termoBusca}". Qual?`;
+          : `Achei ${matches.length} leads com "${termoBusca}":\n${matches.slice(0, 3).map((m, i) => `${i + 1}. ${linhaInfo(m)}`).join('\n')}\n\nToca no número certo:`;
         await metaWaba.sendInteractiveButtons(from, corpo, btns);
       } else {
         const lista = matches.slice(0, 10).map((mlead, i) => `${i + 1}. ${linhaInfo(mlead)}`).join('\n');
