@@ -1,6 +1,6 @@
 // tests/closing-data-fetcher.test.ts
 import { describe, it, expect, vi } from 'vitest';
-import { fetchByLeadId, searchLeadByName, buildInitialData, normalizarNomeBusca } from '../src/modules/closing/closing-data-fetcher.js';
+import { fetchByLeadId, searchLeadByName, buildInitialData, normalizarNomeBusca, normalizarModalidade } from '../src/modules/closing/closing-data-fetcher.js';
 import { leadCamilaRow, propostaPublicaCamilaRow } from './fixtures/closing-camila.js';
 
 function mockSupabase(opts: {
@@ -122,5 +122,54 @@ describe('closing-data-fetcher', () => {
   it('buildInitialData infere concessionária pela UF se faltar', () => {
     const partial = buildInitialData({ ...leadCamilaRow, concessionaria: null, uf: 'DF' } as any, null);
     expect(partial.concessionaria).toBe('Neoenergia-DF');
+  });
+
+  // REGRESSÃO (bug "fechar pede tudo de novo"): a proposta salva dados_input em
+  // camelCase (potenciaKwp/valorTotalRs/modulo.fabricante/potenciaW + investimento.total),
+  // exatamente como montarDadosInputCompleto produz — NÃO em snake_case. O fechar
+  // precisa ler esse formato real, senão sistema/comercial vêm vazios e a Eva re-pergunta tudo.
+  it('buildInitialData lê o formato REAL da proposta (camelCase) pra sistema + comercial', () => {
+    const propostaReal = {
+      id: 'p-real',
+      cliente_nome: leadCamilaRow.name,
+      cliente_telefone: leadCamilaRow.phone,
+      created_at: '2026-06-22T00:00:00Z',
+      dados_input: {
+        nomeCliente: leadCamilaRow.name,
+        potenciaKwp: 8.4,
+        modalidade: 'Autoconsumo local',
+        modulo: { fabricante: 'Risen Energy', modelo: 'RSM 700W', potenciaW: 700, quantidade: 12 },
+        inversor: { fabricante: 'Sungrow', modelo: 'SG5.0RS', potenciaW: 5000, quantidade: 1 },
+        valorTotalRs: 38500,
+        investimento: { total: 38500 },
+      },
+    };
+    const partial = buildInitialData(leadCamilaRow as any, propostaReal as any);
+    // sistema
+    expect(partial.sistema?.kwp).toBe(8.4);
+    expect(partial.sistema?.modulos.marca).toBe('Risen Energy');
+    expect(partial.sistema?.modulos.potencia_w).toBe(700);
+    expect(partial.sistema?.modulos.quantidade).toBe(12);
+    expect(partial.sistema?.inversor.marca).toBe('Sungrow');
+    expect(partial.sistema?.inversor.modelo).toBe('SG5.0RS');
+    expect(partial.sistema?.inversor.potencia_kw).toBe(5); // 5000 W → 5 kW
+    // modalidade: texto humano da proposta normalizado pro enum do contrato
+    expect(partial.sistema?.modalidade).toBe('autoconsumo_local');
+    // comercial
+    expect(partial.comercial?.valor_total_brl).toBe(38500);
+  });
+
+  it('normalizarModalidade: texto humano e enum → enum do contrato', () => {
+    expect(normalizarModalidade('Autoconsumo local')).toBe('autoconsumo_local');
+    expect(normalizarModalidade('Autoconsumo remoto')).toBe('autoconsumo_remoto');
+    expect(normalizarModalidade('Geração compartilhada')).toBe('geracao_compartilhada');
+    expect(normalizarModalidade('autoconsumo_remoto')).toBe('autoconsumo_remoto'); // legado já-enum
+    expect(normalizarModalidade(undefined)).toBe('autoconsumo_local'); // default seguro
+  });
+
+  it('buildInitialData ainda aceita o formato legado snake_case (compat)', () => {
+    const partial = buildInitialData(leadCamilaRow as any, propostaPublicaCamilaRow as any);
+    expect(partial.sistema?.kwp).toBe(8.4);
+    expect(partial.comercial?.valor_total_brl).toBe(38500);
   });
 });

@@ -1,6 +1,16 @@
 // src/modules/closing/closing-data-fetcher.ts
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { DadosFechamento, Concessionaria, UF, PessoaFisica, Endereco } from './types.js';
+import type { DadosFechamento, Concessionaria, UF, PessoaFisica, Endereco, Modalidade } from './types.js';
+
+// A proposta salva modalidade como texto humano ("Autoconsumo local", "remoto",
+// "compartilhada") — não o enum. Normaliza pro enum do fechamento (cobre também
+// o formato legado que já vinha como enum). Default seguro = autoconsumo_local.
+export function normalizarModalidade(raw: unknown): Modalidade {
+  const s = String(raw ?? '').toLowerCase();
+  if (s.includes('remoto')) return 'autoconsumo_remoto';
+  if (s.includes('compartilhad')) return 'geracao_compartilhada';
+  return 'autoconsumo_local';
+}
 
 export interface LeadRow {
   id: string;
@@ -24,11 +34,20 @@ export interface PropostaPublicaRow {
   id: string;
   cliente_nome: string;
   cliente_telefone: string | null;
+  // A proposta salva em camelCase (ver montarDadosInputCompleto / ProposalData):
+  // potenciaKwp, valorTotalRs, investimento.total, modulo.fabricante/potenciaW, inversor.*.
+  // As chaves snake_case ficam como fallback de compatibilidade (formato legado).
   dados_input: {
-    potencia_kwp?: number;
+    // formato REAL (camelCase)
+    potenciaKwp?: number;
+    valorTotalRs?: number;
+    investimento?: { total?: number };
+    modulo?: { fabricante?: string; modelo?: string; potenciaW?: number; quantidade?: number };
+    // formato legado (snake_case) + campos compartilhados
     modalidade?: string;
+    potencia_kwp?: number;
     modulos?: { marca?: string; potencia_w?: number; quantidade?: number };
-    inversor?: { marca?: string; modelo?: string; potencia_kw?: number };
+    inversor?: { marca?: string; fabricante?: string; modelo?: string; potencia_kw?: number; potenciaW?: number };
     valor_total?: number;
   } | null;
   created_at: string;
@@ -136,25 +155,33 @@ export function buildInitialData(
 
   if (proposta?.dados_input) {
     const d = proposta.dados_input;
-    if (d.potencia_kwp != null) {
+    // Lê o formato REAL salvo pela proposta (camelCase) com fallback pro legado (snake_case).
+    const kwp = d.potenciaKwp ?? d.potencia_kwp;
+    if (kwp != null) {
+      const mod = (d.modulo ?? d.modulos) as
+        { fabricante?: string; marca?: string; potenciaW?: number; potencia_w?: number; quantidade?: number } | undefined;
+      const inv = d.inversor;
+      // inversor: a proposta guarda potenciaW (W); o fechamento usa potencia_kw (kW).
+      const invPotenciaKw = inv?.potencia_kw ?? (inv?.potenciaW != null ? inv.potenciaW / 1000 : 0);
       partial.sistema = {
-        kwp: d.potencia_kwp,
-        modalidade: (d.modalidade as any) ?? 'autoconsumo_local',
+        kwp,
+        modalidade: normalizarModalidade(d.modalidade),
         modulos: {
-          marca: d.modulos?.marca ?? '',
-          potencia_w: d.modulos?.potencia_w ?? 0,
-          quantidade: d.modulos?.quantidade ?? 0,
+          marca: mod?.fabricante ?? mod?.marca ?? '',
+          potencia_w: mod?.potenciaW ?? mod?.potencia_w ?? 0,
+          quantidade: mod?.quantidade ?? 0,
         },
         inversor: {
-          marca: d.inversor?.marca ?? '',
-          modelo: d.inversor?.modelo ?? '',
-          potencia_kw: d.inversor?.potencia_kw ?? 0,
+          marca: inv?.fabricante ?? inv?.marca ?? '',
+          modelo: inv?.modelo ?? '',
+          potencia_kw: invPotenciaKw,
         },
       };
     }
-    if (d.valor_total != null) {
+    const valorTotal = d.valorTotalRs ?? d.investimento?.total ?? d.valor_total;
+    if (valorTotal != null) {
       partial.comercial = {
-        valor_total_brl: d.valor_total,
+        valor_total_brl: valorTotal,
         forma_pagamento: lead.forma_pagamento ?? '',
       };
     }

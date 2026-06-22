@@ -77,6 +77,7 @@ function modalidadeLabel(m: DadosFechamento['sistema']['modalidade']): string {
     case 'autoconsumo_local': return 'autoconsumo local';
     case 'autoconsumo_remoto': return 'autoconsumo remoto';
     case 'geracao_compartilhada': return 'geração compartilhada';
+    default: return 'autoconsumo local';
   }
 }
 
