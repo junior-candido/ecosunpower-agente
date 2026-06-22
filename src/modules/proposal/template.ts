@@ -3,6 +3,10 @@
 // Standalone (CSS inline). Usado tanto pra publicacao web quanto pra geracao de PDF.
 
 import type { ProposalCalculations } from './calculator.js';
+// LOGO_ECOSUNPOWER_DARK_BASE64 = logo de letra prateada p/ FUNDO ESCURO (hero/CTA/rodapé).
+// [ECOSOF] TODO: hero/CTA/rodapé usam essa constante fixa (não o logoBase64 injetável);
+// quando houver logo "dark" por tenant, trocar pra usar logoBase64 nesses 3 pontos.
+// A marca d'água do estudo (renderEstudoPersonalizado) JÁ usa o logoBase64 injetável.
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64, LOGO_ECOSUNPOWER_DARK_BASE64 } from './assets/logo-base64.js';
 import { fmtRs, fmtNum, fmtPct, fmtCurto, escapeHtml } from './format.js';
 import { renderServicosAdicionaisSection, type ServicoItem } from './service-render.js';
@@ -192,8 +196,6 @@ section{padding:80px 0}
 .hero::before{content:'';position:absolute;top:-30%;right:-15%;width:60%;height:120%;background:radial-gradient(circle,rgba(255,199,44,0.15) 0%,transparent 60%);pointer-events:none}
 .hero-inner{padding:80px 24px 100px;position:relative;z-index:2}
 .hero-nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:80px}
-.hero-logo{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:20px;letter-spacing:-0.02em;display:flex;align-items:center;gap:10px}
-.hero-logo-dot{width:10px;height:10px;border-radius:50%;background:var(--accent-500);box-shadow:0 0 16px rgba(255,199,44,0.6)}
 .brand-logo{display:block;height:88px;width:auto;max-width:100%}
 .hero .brand-logo{filter:drop-shadow(0 0 9px rgba(102,207,243,.75)) drop-shadow(0 0 20px rgba(31,184,232,.5))}
 .brand-logo.cta{height:58px;margin:0 auto 26px}

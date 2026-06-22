@@ -91,8 +91,11 @@ export interface ServiceOnlyData {
 
 // Proposta SÓ-SERVIÇO (sem solar): elegante, com logo + imagem do serviço +
 // descrição livre + preço + formas de pagamento + confiança. Sem gráfico/payback.
-// [ECOSOF] logoBase64 opcional: caller resolve via obterLogoBase64 (Storage com
-// fallback); default = logo EcoSun embutida (call sites/testes antigos idênticos).
+// NOTA: hero e rodapé agora usam a logo DARK fixa (LOGO_ECOSUNPOWER_DARK_BASE64,
+// letra prateada p/ fundo escuro). O param `logoBase64` é mantido só por compat. de
+// assinatura (call sites passam posicionalmente) — hoje fica sem uso aqui.
+// [ECOSOF] TODO: quando houver logo "dark" por tenant, usar `logoBase64` no lugar
+// da constante fixa no hero/rodapé (mesma pendência do template principal).
 export function renderServiceOnlyHTML(data: ServiceOnlyData, logoBase64: string = LOGO_ECOSUNPOWER_BRANCO_BASE64): string {
   if (!data.nomeCliente || !data.servicos?.length) {
     throw new Error('renderServiceOnlyHTML: precisa de nomeCliente e ao menos 1 serviço');
