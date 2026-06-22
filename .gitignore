@@ -3,3 +3,6 @@ dist/
 .env
 *.log
 tmp/
+
+# brainstorming visual companion (local, nao versionar)
+.superpowers/
