@@ -38,7 +38,7 @@ export function renderComoFuncionaSection(): string {
       <div class="jr-col">
         <div class="jr-bolt">🔧</div>
         <div class="jr-lbl">Instalação</div>
-        <div class="jr-pz">1–3 dias</div>
+        <div class="jr-pz">conforme o porte</div>
       </div>
       <div class="jr-col">
         <div class="jr-bolt">🔎</div>
