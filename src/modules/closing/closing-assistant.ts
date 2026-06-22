@@ -21,12 +21,18 @@ export interface ProcessResult {
   replyText: string;
 }
 
-function deepMerge<T extends Record<string, any>>(a: T, b: Partial<T>): T {
+// Mescla `b` (updates do LLM) sobre `a` (dados já coletados). NÃO sobrescreve um
+// valor já coletado com vazio (null/undefined/string em branco): o LLM às vezes
+// reenvia campos vazios e isso APAGAVA dados já coletados (ex: a UC "sumindo"
+// depois de aceita, gerando o loop de "ainda falta").
+export function deepMerge<T extends Record<string, any>>(a: T, b: Partial<T>): T {
   if (!b) return a;
   const out: any = { ...(a as any) };
   for (const k of Object.keys(b) as (keyof T)[]) {
     const av: any = (a as any)[k];
     const bv: any = (b as any)[k];
+    if (bv === null || bv === undefined) continue;
+    if (typeof bv === 'string' && bv.trim() === '' && av != null && String(av).trim() !== '') continue;
     if (bv && typeof bv === 'object' && !Array.isArray(bv) && av && typeof av === 'object') {
       out[k] = deepMerge(av, bv);
     } else {
