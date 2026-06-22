@@ -6,6 +6,7 @@ import type { ProposalCalculations } from './calculator.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './assets/logo-base64.js';
 import { fmtRs, fmtNum, fmtPct, fmtCurto, escapeHtml } from './format.js';
 import { renderServicosAdicionaisSection, type ServicoItem } from './service-render.js';
+import { renderComoFuncionaSection } from './como-funciona-render.js';
 import { getBrandFicha } from './brand-fichas.js';
 import { logoMeioPagamento } from './payment-logos.js';
 import { temBateria, capacidadeTotalKwh, autonomiaBackupHoras, type Bateria } from './bateria.js';
@@ -272,6 +273,30 @@ section{padding:80px 0}
 .payment-features{list-style:none;font-size:14px;padding-top:20px;border-top:1px solid var(--border)}
 .payment-features li{padding:8px 0;display:flex;align-items:start;gap:8px;color:var(--muted)}
 .payment-features li::before{content:"✓";color:var(--success);font-weight:700;flex-shrink:0}
+.journey-section{background:#fff}
+.jr-trail{display:flex;align-items:stretch;gap:10px;margin-top:8px}
+.jr-col{flex:1;display:flex;flex-direction:column;align-items:center;text-align:center;position:relative}
+.jr-col:not(:last-child)::after{content:'⚡';position:absolute;top:18px;right:-13px;color:var(--accent-500);font-size:13px}
+.jr-bolt{width:54px;height:54px;border-radius:50%;background:#fff;border:3px solid var(--primary-500);display:flex;align-items:center;justify-content:center;font-size:23px;box-shadow:0 6px 16px rgba(31,184,232,.25);margin-bottom:10px}
+.jr-col.jr-fin .jr-bolt{border-color:var(--accent-500);background:var(--accent-500)}
+.jr-lbl{font-weight:700;font-size:12.5px;line-height:1.25;color:var(--dark)}
+.jr-pz{font-size:11px;color:var(--muted);margin-top:3px}
+.jr-par{flex:2.1;border:2px dashed var(--primary-500);border-radius:16px;background:var(--primary-50);padding:12px 14px 14px}
+.jr-phd{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--primary-600);text-align:center;margin-bottom:10px}
+.jr-prow{display:flex;align-items:center;gap:10px;background:#fff;border-radius:10px;padding:8px 10px;margin-bottom:8px;border-left:4px solid var(--primary-500)}
+.jr-prow:last-child{margin-bottom:0;border-left-color:var(--accent-600)}
+.jr-ic{font-size:20px}
+.jr-pt{font-weight:700;font-size:12.5px;line-height:1.2;color:var(--dark)}
+.jr-pd{font-size:11.5px;color:var(--muted);line-height:1.35}
+.jr-total{margin-top:28px;text-align:center;font-size:14.5px;color:var(--dark)}
+.jr-total b{color:var(--primary-600)}
+@media(max-width:768px){
+  .jr-trail{flex-direction:column;gap:16px}
+  .jr-col:not(:last-child)::after{display:none}
+  .jr-col{flex-direction:row;text-align:left;gap:14px;align-items:center}
+  .jr-bolt{margin:0;flex:none}
+}
+@media print{.journey-section{break-inside:avoid}}
 .cta-section{background:linear-gradient(135deg,var(--dark) 0%,var(--primary-800) 100%);color:#fff;text-align:center;position:relative;overflow:hidden}
 .cta-section::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,rgba(255,199,44,0.15) 0%,transparent 50%),radial-gradient(circle at 70% 80%,rgba(31,184,232,0.2) 0%,transparent 50%);pointer-events:none}
 .cta-section .container{position:relative;z-index:2}
@@ -671,6 +696,8 @@ ${/* No modo comparação o "total (solar + serviços)" travaria no valor da Op�
 ${data.modoComparacao ? '' : renderServicosAdicionaisSection(data.servicos ?? [], data.valorTotalRs)}
 
 ${socialProofHtml}
+
+${renderComoFuncionaSection()}
 
 <section class="cta-section">
   <div class="container">
