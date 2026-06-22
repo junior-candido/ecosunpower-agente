@@ -4,7 +4,7 @@
 //  - renderServiceOnlyHTML: proposta só-serviço elegante (sem solar, sem gráfico/payback).
 
 import { fmtRs, escapeHtml } from './format.js';
-import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './assets/logo-base64.js';
+import { LOGO_ECOSUNPOWER_BRANCO_BASE64, LOGO_ECOSUNPOWER_DARK_BASE64 } from './assets/logo-base64.js';
 // [ECOSOF] empresa() lida em runtime (alt da logo = nome fantasia).
 import { empresa } from '../empresa-config.js';
 import { logoMeioPagamento } from './payment-logos.js';
@@ -134,15 +134,25 @@ export function renderServiceOnlyHTML(data: ServiceOnlyData, logoBase64: string 
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',system-ui,sans-serif;color:#0F172A;background:#F8FAFC;line-height:1.6}
+img{max-width:100%}
+/* logo de marca — espelha o template principal (manter os dois em sincronia) */
+.brand-logo{display:block;height:64px;width:auto;filter:drop-shadow(0 0 9px rgba(102,207,243,.75)) drop-shadow(0 0 20px rgba(31,184,232,.5))}
+.brand-logo.foot{height:40px;filter:none;margin:0 auto 10px}
+.svc-nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:40px;gap:16px}
+@media(max-width:768px){
+  .brand-logo{height:54px}
+  .svc-nav{flex-direction:column;align-items:flex-start}
+  .svc-nav .meta{text-align:left}
+}
 @media print{.no-print{display:none}}
 </style>
 </head>
 <body>
-<header style="background:linear-gradient(135deg,#1FB8E8 0%,#0E7CB8 60%,#0F172A 100%);color:#fff;padding:48px 24px">
+<header style="background:linear-gradient(160deg,#0B2A45 0%,#0B5A87 55%,#0E7CB8 100%);color:#fff;padding:48px 24px">
   <div style="max-width:900px;margin:0 auto">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:40px">
-      <img src="${logoBase64}" alt="${escapeHtml(empresa().nomeFantasia)}" style="height:40px;width:auto">
-      <div style="font-size:12px;opacity:0.85;text-align:right">Proposta #${escapeHtml(data.numeroProposta)}<br>${escapeHtml(data.dataProposta)} · Válida ${data.validadeDias} dias</div>
+    <div class="svc-nav">
+      <img class="brand-logo" src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="${escapeHtml(empresa().nomeFantasia)}">
+      <div class="meta" style="font-size:12px;opacity:0.85;text-align:right">Proposta #${escapeHtml(data.numeroProposta)}<br>${escapeHtml(data.dataProposta)} · Válida ${data.validadeDias} dias</div>
     </div>
     <div style="display:inline-block;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);padding:6px 16px;border-radius:100px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:16px">⚡ Proposta de Serviço</div>
     <h1 style="font-family:'Space Grotesk',sans-serif;font-size:40px;line-height:1.1;font-weight:700">${escapeHtml(tituloPrincipal)}<br><span style="color:#FFC72C">para ${escapeHtml(data.nomeCliente)}</span></h1>
@@ -189,6 +199,7 @@ ${blocosServico}
 </section>
 
 <footer style="background:#0F172A;color:rgba(255,255,255,0.7);padding:32px 24px;text-align:center;font-size:13px">
+  <img class="brand-logo foot" src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="${escapeHtml(data.empresa.nome)}">
   <strong style="color:#fff">${escapeHtml(data.empresa.nome)}</strong><br>
   CNPJ ${escapeHtml(data.empresa.cnpj)} · ${escapeHtml(data.empresa.cidade)} · ${escapeHtml(data.empresa.telefone)}<br>
   <span style="opacity:0.6;font-size:11px">Proposta #${escapeHtml(data.numeroProposta)} · ${escapeHtml(data.empresa.site)}</span>
