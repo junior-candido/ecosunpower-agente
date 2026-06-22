@@ -72,27 +72,27 @@ Seguir o padrão já existente de `service-render.ts` (módulo puro que devolve 
 ### Problema
 Hoje o topo (hero) e o rodapé mostram o **nome da empresa como texto** (`escapeHtml(empresa().nomeFantasia)`), não a logo PNG. O cliente não vê a marca de verdade.
 
-### Decisões (aprovadas pelo Junior)
+### Decisões (aprovadas pelo Junior) — REVISADO após inspeção dos assets
 - Usar **sempre a logo PNG**, nunca só o nome em texto.
-- **Regra de variação por fundo:** fundo **escuro → logo nome BRANCO**; fundo **claro → logo nome PRETO**. (Confirmado visualmente: a variação errada faz "ECOSUN" sumir no fundo.)
-- A logo deve **se destacar** (não miniatura). No topo: **~54px de altura** (médio).
-- **Onde aparece:** Topo (hero), Seção final (CTA) e Rodapé. A marca d'água das fotos do estudo personalizado permanece como está (já usa a branca).
+- **Descoberta importante:** NÃO existe logo de "letra branca colorida" nos arquivos. As variantes são: `logo-ecosunpower-1024-transparente.png` (hash `2848fe`, **letra preta**, fundo transparente — some no escuro) e `logo-ecosunpower-1024-branco.png` (hash `9bd553`, logo num **bloco de fundo branco**). A constante existente `LOGO_ECOSUNPOWER_BRANCO_BASE64` contém, apesar do nome, a versão **colorida transparente** (`2848fe`).
+- **Tratamento escolhido (Opção A):** todos os 3 lugares são fundo escuro → exibir a **logo colorida** dentro de um **card branco arredondado** (`.brand-chip`). Mantém as cores da marca (E azul, POWER amarelo), lê perfeitamente e **destaca** no escuro. Não precisa de logo nova, nem de troca de variante.
+- A logo deve **se destacar** (não miniatura): ~48px no topo/CTA, ~38px no rodapé.
+- **Onde aparece:** Topo (hero), Seção final (CTA) e Rodapé. A marca d'água das fotos permanece como está.
+- **Descartado:** helper `logoVariante` e constante `LOGO_ECOSUNPOWER_PRETO_BASE64` — desnecessários (não há fundo claro com logo; a regra de troca não se aplica). Não criar.
 
 ### Assets
-- **Logo nome BRANCO** (fundo escuro): já embutida — `LOGO_ECOSUNPOWER_BRANCO_BASE64` em `src/modules/proposal/assets/logo-base64.ts`. Arquivo-fonte: `EcoSunPower/Marketing/logos/Logo nova/logo-ecosunpower-1024-branco.png` (hash `9bd553…`).
-- **Logo nome PRETO** (fundo claro): gerar constante base64 `LOGO_ECOSUNPOWER_PRETO_BASE64` a partir de `EcoSunPower/Marketing/logos/Logo nova/logo-ecosunpower-1024-transparente.png` (hash `2848fe…`). Necessária pra que a geração de **PDF** renderize a logo (o renderer precisa do asset embutido, não de caminho externo).
+- Usar a constante já existente `LOGO_ECOSUNPOWER_BRANCO_BASE64` (= logo colorida transparente, `2848fe`) em `src/modules/proposal/assets/logo-base64.ts`. Já está importada no `template.ts`. Adicionar um comentário esclarecendo que o conteúdo é a logo colorida (nome legado).
 
 ### Implementação
-- Helper puro `logoVariante(fundo: 'escuro' | 'claro'): string` (no módulo de assets ou util) devolvendo o base64 certo. Mantém a regra num só lugar e testável.
-- **Hero** (`template.ts` ~linha 314): trocar `<div class="hero-logo">…texto…</div>` por `<img src="${logoVariante('escuro')}" alt="${nomeFantasia}" class="hero-logo-img">` com `height:54px;width:auto`. CSS `.hero-logo-img` substitui `.hero-logo`/`.hero-logo-dot`.
-- **CTA** (`template.ts` ~linha 676): adicionar a logo branca acima do título "Pronto pra economizar?", tamanho de destaque (~48–56px).
-- **Rodapé** (`template.ts` ~linha 693): adicionar a logo branca antes/junto do bloco `<strong>${empresa.nome}</strong>`.
-- Todas as 3 posições têm fundo escuro → todas usam `logoVariante('escuro')` (branca). A variante preta fica disponível para qualquer placement de fundo claro futuro (ex: cabeçalho da seção "Como funciona", se decidirmos depois).
+- CSS `.brand-chip` (cartão branco arredondado com sombra) + `.brand-chip img` (altura da logo). Variante `.brand-chip.sm` pro rodapé.
+- **Hero** (`template.ts` ~linha 314): trocar `<div class="hero-logo">…texto…</div>` por `<span class="brand-chip"><img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="${nomeFantasia}"></span>`.
+- **CTA** (`template.ts` ~linha 676): adicionar `<span class="brand-chip">…</span>` centralizado acima do título "Pronto pra economizar?".
+- **Rodapé** (`template.ts` ~linha 694): adicionar `<span class="brand-chip sm">…</span>` antes do `<strong>${empresa.nome}</strong>`.
 
 ### Testes (Parte 2)
-- `logoVariante('escuro')` devolve o base64 branco; `logoVariante('claro')` devolve o preto; ambos começam com `data:image/png;base64,`.
-- O HTML do hero contém `<img` com a logo e NÃO contém mais o texto do nome no `.hero-logo`.
-- CTA e rodapé contêm a `<img>` da logo.
+- O HTML do hero contém `brand-chip` com `<img` da logo e NÃO contém mais o texto do nome no `.hero-logo`.
+- CTA e rodapé contêm `brand-chip` com `<img>`.
+- (Verificação visual via `scripts/preview-proposta.ts`.)
 
 ## Fora de escopo (tratado separadamente)
 
@@ -101,6 +101,6 @@ Hoje o topo (hero) e o rodapé mostram o **nome da empresa como texto** (`escape
 ## Critério de pronto
 
 - Proposta (web + PDF) mostra a seção "Como funciona" no visual A, coerente em ~45 dias.
-- Logo PNG (branca) em destaque no topo (~54px), CTA e rodapé — sem mais o nome só em texto.
+- Logo PNG colorida em card branco (`.brand-chip`) em destaque no topo, CTA e rodapé — sem mais o nome só em texto.
 - Testes passam; code review 3×.
 - Sem alteração de banco (migration) — é só template/render/assets.

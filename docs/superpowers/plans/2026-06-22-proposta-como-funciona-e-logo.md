@@ -14,112 +14,13 @@
 
 ## File Structure
 
-- **Create** `src/modules/proposal/logo-variante.ts` — helper `logoVariante('escuro'|'claro')` (regra única de variação por fundo).
 - **Create** `src/modules/proposal/como-funciona-render.ts` — `renderComoFuncionaSection()` devolve a seção HTML.
-- **Modify** `src/modules/proposal/assets/logo-base64.ts` — adiciona `LOGO_ECOSUNPOWER_PRETO_BASE64`.
-- **Modify** `src/modules/proposal/template.ts` — import + insere a seção; CSS da trilha; logo PNG no hero/CTA/rodapé; CTA prazo 30→45.
-- **Create** `tests/logo-variante.test.ts`
+- **Modify** `src/modules/proposal/template.ts` — import + insere a seção; CSS da trilha; logo colorida em card branco (`.brand-chip`) no hero/CTA/rodapé; CTA prazo 30→45.
 - **Create** `tests/como-funciona-render.test.ts`
 
 Verificação de integração do `template.ts`: via `scripts/preview-proposta.ts` (gera `tmp/preview-proposta.html`) + grep dos marcadores.
 
----
-
-### Task 1: Logo nome PRETO (base64) + helper `logoVariante`
-
-**Files:**
-- Modify: `src/modules/proposal/assets/logo-base64.ts` (append no final)
-- Create: `src/modules/proposal/logo-variante.ts`
-- Test: `tests/logo-variante.test.ts`
-
-- [ ] **Step 1: Gerar a constante da logo preta a partir do PNG**
-
-Roda no Git Bash (gera ~118KB de base64 numa linha e anexa ao arquivo):
-
-```bash
-cd "/c/Users/Meu Computador/Documents/ecosunpower-agente"
-{
-  printf '\n// Logo com o nome PRETO (para fundo CLARO). Fonte: Marketing/logos/Logo nova/logo-ecosunpower-1024-transparente.png\n'
-  printf 'export const LOGO_ECOSUNPOWER_PRETO_BASE64 = "data:image/png;base64,'
-  base64 -w0 "/c/Users/Meu Computador/Documents/EcoSunPower/Marketing/logos/Logo nova/logo-ecosunpower-1024-transparente.png"
-  printf '";\n'
-} >> src/modules/proposal/assets/logo-base64.ts
-```
-
-Verifica que entrou:
-```bash
-grep -c "LOGO_ECOSUNPOWER_PRETO_BASE64" src/modules/proposal/assets/logo-base64.ts
-```
-Expected: `1`
-
-- [ ] **Step 2: Escrever o teste que falha** — `tests/logo-variante.test.ts`
-
-```ts
-import { describe, it, expect } from 'vitest';
-import { logoVariante } from '../src/modules/proposal/logo-variante.js';
-import {
-  LOGO_ECOSUNPOWER_BRANCO_BASE64,
-  LOGO_ECOSUNPOWER_PRETO_BASE64,
-} from '../src/modules/proposal/assets/logo-base64.js';
-
-describe('logoVariante', () => {
-  it('fundo escuro usa a logo de nome branco', () => {
-    expect(logoVariante('escuro')).toBe(LOGO_ECOSUNPOWER_BRANCO_BASE64);
-  });
-
-  it('fundo claro usa a logo de nome preto', () => {
-    expect(logoVariante('claro')).toBe(LOGO_ECOSUNPOWER_PRETO_BASE64);
-  });
-
-  it('ambas as variantes são data-URI PNG base64', () => {
-    expect(logoVariante('escuro')).toMatch(/^data:image\/png;base64,/);
-    expect(logoVariante('claro')).toMatch(/^data:image\/png;base64,/);
-  });
-
-  it('as duas variantes são diferentes', () => {
-    expect(logoVariante('escuro')).not.toBe(logoVariante('claro'));
-  });
-});
-```
-
-- [ ] **Step 3: Rodar o teste e ver falhar**
-
-Run: `npx vitest run tests/logo-variante.test.ts`
-Expected: FAIL — `Failed to resolve import '../src/modules/proposal/logo-variante.js'` (módulo ainda não existe).
-
-- [ ] **Step 4: Implementar o helper** — `src/modules/proposal/logo-variante.ts`
-
-```ts
-// src/modules/proposal/logo-variante.ts
-// Regra ÚNICA da variação de logo por fundo:
-//   fundo escuro -> logo com o nome BRANCO (lê no escuro)
-//   fundo claro  -> logo com o nome PRETO  (lê no claro)
-// Devolve o data-URI base64 embutido (funciona na web e na geração de PDF).
-import {
-  LOGO_ECOSUNPOWER_BRANCO_BASE64,
-  LOGO_ECOSUNPOWER_PRETO_BASE64,
-} from './assets/logo-base64.js';
-
-export type FundoLogo = 'escuro' | 'claro';
-
-export function logoVariante(fundo: FundoLogo): string {
-  return fundo === 'claro'
-    ? LOGO_ECOSUNPOWER_PRETO_BASE64
-    : LOGO_ECOSUNPOWER_BRANCO_BASE64;
-}
-```
-
-- [ ] **Step 5: Rodar o teste e ver passar**
-
-Run: `npx vitest run tests/logo-variante.test.ts`
-Expected: PASS (4 testes).
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add src/modules/proposal/assets/logo-base64.ts src/modules/proposal/logo-variante.ts tests/logo-variante.test.ts
-git commit -m "feat(proposta): logo PRETO base64 + helper logoVariante(escuro|claro)"
-```
+> **REVISÃO (decisão do Junior):** a Task 1 original (logo PRETO base64 + helper `logoVariante`) foi **descartada**. Inspeção dos assets mostrou que NÃO existe logo de letra branca colorida; a constante `LOGO_ECOSUNPOWER_BRANCO_BASE64` já é a logo **colorida transparente**. Em fundo escuro ela vai dentro de um **card branco** (`.brand-chip`), sem troca de variante. Numeração das tasks abaixo já reflete isso (Task 1 = seção; Task 2 = CSS+inserção; Task 3 = logo+prazo).
 
 ---
 
@@ -337,20 +238,14 @@ git commit -m "feat(proposta): pluga a secao 'Como funciona' + CSS da trilha de 
 
 ---
 
-### Task 4: Logo PNG em destaque (hero + CTA + rodapé) e prazo 30→45
+### Task 4: Logo colorida em CARD BRANCO (hero + CTA + rodapé) e prazo 30→45
 
 **Files:**
-- Modify: `src/modules/proposal/template.ts` (import, hero, CTA, rodapé, CSS, textos de prazo)
+- Modify: `src/modules/proposal/template.ts` (hero, CTA, rodapé, CSS, textos de prazo)
 
-- [ ] **Step 1: Importar o helper** no topo do `template.ts`
+> A constante `LOGO_ECOSUNPOWER_BRANCO_BASE64` (apesar do nome legado) JÁ contém a logo **colorida transparente** e JÁ está importada no `template.ts` (linha 6). Não há import novo. Em fundo escuro a logo vai dentro de um **card branco** (`.brand-chip`) pra ler e destacar.
 
-Logo após o import adicionado na Task 3, adicionar:
-
-```ts
-import { logoVariante } from './logo-variante.js';
-```
-
-- [ ] **Step 2: Trocar o texto do hero pela logo PNG**
+- [ ] **Step 1: Trocar o texto do hero pela logo em card branco**
 
 Localizar (linha ≈ 314):
 
@@ -361,10 +256,10 @@ Localizar (linha ≈ 314):
 Substituir por:
 
 ```
-      <img class="hero-logo-img" src="${logoVariante('escuro')}" alt="${escapeHtml(empresa().nomeFantasia)}">
+      <span class="brand-chip"><img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="${escapeHtml(empresa().nomeFantasia)}"></span>
 ```
 
-- [ ] **Step 3: Adicionar a logo no CTA**
+- [ ] **Step 2: Adicionar a logo no CTA**
 
 Localizar (linha ≈ 676-677):
 
@@ -377,11 +272,11 @@ Substituir por:
 
 ```
   <div class="container">
-    <img class="cta-logo" src="${logoVariante('escuro')}" alt="${escapeHtml(empresa().nomeFantasia)}">
+    <span class="brand-chip cta"><img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="${escapeHtml(empresa().nomeFantasia)}"></span>
     <h2>Pronto pra economizar?</h2>
 ```
 
-- [ ] **Step 4: Adicionar a logo no rodapé**
+- [ ] **Step 3: Adicionar a logo no rodapé**
 
 Localizar (linha ≈ 694-695):
 
@@ -394,11 +289,11 @@ Substituir por:
 
 ```
     <div>
-      <img class="footer-logo" src="${logoVariante('escuro')}" alt="${escapeHtml(data.empresa.nome)}">
+      <span class="brand-chip sm"><img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="${escapeHtml(data.empresa.nome)}"></span>
       <strong>${escapeHtml(data.empresa.nome)}</strong>
 ```
 
-- [ ] **Step 5: Padronizar o prazo do CTA para ~45 dias**
+- [ ] **Step 4: Padronizar o prazo do CTA para ~45 dias**
 
 Localizar (linha ≈ 678):
 
@@ -420,34 +315,36 @@ Substituir por:
       <div>⚡ Ativação em ~45 dias</div>
 ```
 
-- [ ] **Step 6: Adicionar o CSS das logos**
+- [ ] **Step 5: Adicionar o CSS do card branco**
 
 No bloco `<style>`, logo APÓS a regra `.hero-logo-dot{...}` (linha ≈ 195), inserir:
 
 ```css
-.hero-logo-img{height:54px;width:auto;display:block}
-.cta-logo{height:50px;width:auto;display:block;margin:0 auto 24px;filter:drop-shadow(0 4px 14px rgba(0,0,0,.35))}
-.footer-logo{height:40px;width:auto;display:block;margin-bottom:12px}
+.brand-chip{display:inline-block;background:#fff;border-radius:14px;padding:9px 18px;line-height:0;box-shadow:0 8px 24px rgba(0,0,0,.22)}
+.brand-chip img{height:46px;width:auto;display:block}
+.brand-chip.cta{margin:0 auto 24px}
+.brand-chip.sm{padding:7px 14px;margin-bottom:12px}
+.brand-chip.sm img{height:34px}
 ```
 
-- [ ] **Step 7: Verificar typecheck**
+(As regras antigas `.hero-logo`/`.hero-logo-dot` podem ficar — não atrapalham — ou ser removidas; não é obrigatório mexer nelas.)
+
+- [ ] **Step 6: Verificar typecheck**
 
 Run: `npx tsc --noEmit`
 Expected: sem erros novos.
 
-- [ ] **Step 8: Gerar o preview e conferir logo + prazo**
+- [ ] **Step 7: Gerar o preview e conferir logo + prazo**
 
 Run: `npx tsx scripts/preview-proposta.ts`
 Depois:
 
 ```bash
-grep -c 'hero-logo-img' tmp/preview-proposta.html
-grep -c 'cta-logo' tmp/preview-proposta.html
-grep -c 'footer-logo' tmp/preview-proposta.html
+grep -c 'brand-chip' tmp/preview-proposta.html
 grep -c 'Ativação em ~45 dias' tmp/preview-proposta.html
 grep -c 'Em 30 dias' tmp/preview-proposta.html
 ```
-Expected: os 4 primeiros retornam `1`; o último (`Em 30 dias`) retorna `0`. No navegador, conferir a logo grande no topo, no CTA e no rodapé (fundo escuro → logo branca lê bem).
+Expected: `brand-chip` retorna `3` (hero + CTA + rodapé); `Ativação em ~45 dias` retorna `1`; `Em 30 dias` retorna `0`. No navegador, conferir a logo colorida no cartão branco destacando no topo, CTA e rodapé escuros.
 
 - [ ] **Step 9: Rodar a suíte inteira**
 
@@ -465,7 +362,7 @@ git commit -m "feat(proposta): logo PNG em destaque no topo/CTA/rodape + prazo ~
 
 ## Code Review
 
-Após as 4 tasks, rodar o code review **3×** (padrão do Junior), corrigindo achados entre as passadas, antes de pedir push:
+Após as 3 tasks, rodar o code review **3×** (padrão do Junior), corrigindo achados entre as passadas, antes de pedir push:
 
 - [ ] Review passada 1 — corrigir achados
 - [ ] Review passada 2 — corrigir achados
@@ -474,12 +371,12 @@ Após as 4 tasks, rodar o code review **3×** (padrão do Junior), corrigindo ac
 ## Critério de pronto
 
 - `npx vitest run` verde.
-- `tmp/preview-proposta.html` mostra: seção "Do aceite à usina ligada" (trilha + bloco paralelo), logo PNG branca em destaque no topo (~54px), CTA e rodapé; prazo coerente em ~45 dias (sem "30 dias").
+- `tmp/preview-proposta.html` mostra: seção "Do aceite à usina ligada" (trilha + bloco paralelo), logo colorida em card branco (`.brand-chip`) destacando no topo, CTA e rodapé; prazo coerente em ~45 dias (sem "30 dias").
 - Sem migration. Code review 3× limpo.
 - Push só após autorização explícita do Junior; depois Implantar no Easypanel + smoke.
 
 ## Self-Review (preenchido)
 
-- **Cobertura do spec:** Parte 1 (seção jornada) → Tasks 2-3. Parte 2 (logo) → Tasks 1, 4. Prazo 30→45 → Task 4 steps 5/8. Tudo coberto.
+- **Cobertura do spec:** Parte 1 (seção jornada) → Tasks 2-3. Parte 2 (logo em card branco) → Task 4. Prazo 30→45 → Task 4 step 4. Tudo coberto.
 - **Placeholders:** nenhum — todo código está escrito por extenso.
-- **Consistência de tipos/nomes:** `logoVariante(FundoLogo)`, `renderComoFuncionaSection()`, classes `jr-*`/`journey-section`/`hero-logo-img`/`cta-logo`/`footer-logo` usadas de forma idêntica entre tasks e CSS.
+- **Consistência de tipos/nomes:** `renderComoFuncionaSection()`, classes `jr-*`/`journey-section` (Tasks 2-3) e `brand-chip`/`.brand-chip.cta`/`.brand-chip.sm` (Task 4) usadas de forma idêntica entre steps e CSS. Logo via constante já importada `LOGO_ECOSUNPOWER_BRANCO_BASE64` (conteúdo = logo colorida transparente).
