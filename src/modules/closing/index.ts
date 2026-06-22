@@ -47,4 +47,4 @@ export {
   type UploadHtmlAsGoogleDocInput,
   type UploadHtmlAsGoogleDocResult,
 } from './closing-html-uploader.js';
-export { parseClosingCommand, type ClosingCommand, type ParsedClosingCommand } from './closing-command-parser.js';
+export { parseClosingCommand, buildFecharPickButtons, type ClosingCommand, type ParsedClosingCommand, type LeadPick, type PickButton } from './closing-command-parser.js';

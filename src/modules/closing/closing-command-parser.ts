@@ -44,3 +44,25 @@ export function parseClosingCommand(input: string): ParsedClosingCommand | null 
   }
   return { command, name: '' };
 }
+
+// Monta os botões interativos pra ESCOLHER entre leads que casaram com o nome.
+// REGRA WABA: título do botão precisa ser ÚNICO e ≤20 chars — nomes repetidos (ou
+// leads duplicados no banco) geravam "(#131009) Duplicate button title" e derrubavam
+// o /fechar. Solução: prefixo numérico (1./2./3.) garante título único + dedupe por id.
+export interface LeadPick { id: string; name: string }
+export interface PickButton { id: string; title: string }
+
+export function buildFecharPickButtons(matches: LeadPick[], cmd: ClosingCommand): PickButton[] {
+  const vistos = new Set<string>();
+  const unicos: LeadPick[] = [];
+  for (const m of matches) {
+    if (m && m.id && !vistos.has(m.id)) {
+      vistos.add(m.id);
+      unicos.push(m);
+    }
+  }
+  return unicos.slice(0, 3).map((m, i) => ({
+    id: cmd === 'fechar' ? `evabt:fechar-pick:${m.id}` : `evabt:fechar-doc:${cmd}:${m.id}`,
+    title: `${i + 1}. ${m.name ?? ''}`.slice(0, 20),
+  }));
+}
