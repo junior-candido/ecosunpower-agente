@@ -3,9 +3,14 @@
 // Standalone (CSS inline). Usado tanto pra publicacao web quanto pra geracao de PDF.
 
 import type { ProposalCalculations } from './calculator.js';
-import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './assets/logo-base64.js';
+// LOGO_ECOSUNPOWER_DARK_BASE64 = logo de letra prateada p/ FUNDO ESCURO (hero/CTA/rodapé).
+// [ECOSOF] TODO: hero/CTA/rodapé usam essa constante fixa (não o logoBase64 injetável);
+// quando houver logo "dark" por tenant, trocar pra usar logoBase64 nesses 3 pontos.
+// A marca d'água do estudo (renderEstudoPersonalizado) JÁ usa o logoBase64 injetável.
+import { LOGO_ECOSUNPOWER_BRANCO_BASE64, LOGO_ECOSUNPOWER_DARK_BASE64 } from './assets/logo-base64.js';
 import { fmtRs, fmtNum, fmtPct, fmtCurto, escapeHtml } from './format.js';
 import { renderServicosAdicionaisSection, type ServicoItem } from './service-render.js';
+import { renderComoFuncionaSection } from './como-funciona-render.js';
 import { getBrandFicha } from './brand-fichas.js';
 import { logoMeioPagamento } from './payment-logos.js';
 import { temBateria, capacidadeTotalKwh, autonomiaBackupHoras, type Bateria } from './bateria.js';
@@ -187,12 +192,17 @@ section{padding:80px 0}
 .section-tag{display:inline-block;font-size:12px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:var(--primary-600);margin-bottom:12px}
 .section-title{font-size:40px;line-height:1.15;margin-bottom:16px}
 .section-subtitle{font-size:18px;color:var(--muted);max-width:640px;margin-bottom:40px}
-.hero{background:linear-gradient(135deg,#1FB8E8 0%,#0E7CB8 60%,#0F172A 100%);color:#fff;padding:0;position:relative;overflow:hidden}
+.hero{background:linear-gradient(160deg,#0B2A45 0%,#0B5A87 55%,#0E7CB8 100%);color:#fff;padding:0;position:relative;overflow:hidden}
 .hero::before{content:'';position:absolute;top:-30%;right:-15%;width:60%;height:120%;background:radial-gradient(circle,rgba(255,199,44,0.15) 0%,transparent 60%);pointer-events:none}
 .hero-inner{padding:80px 24px 100px;position:relative;z-index:2}
 .hero-nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:80px}
-.hero-logo{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:20px;letter-spacing:-0.02em;display:flex;align-items:center;gap:10px}
-.hero-logo-dot{width:10px;height:10px;border-radius:50%;background:var(--accent-500);box-shadow:0 0 16px rgba(255,199,44,0.6)}
+.brand-logo{display:block;height:88px;width:auto;max-width:100%}
+.hero .brand-logo{filter:drop-shadow(0 0 9px rgba(102,207,243,.75)) drop-shadow(0 0 20px rgba(31,184,232,.5))}
+.brand-logo.cta{height:58px;margin:0 auto 26px}
+.brand-logo.foot{height:44px;margin-bottom:12px}
+@media(max-width:768px){.brand-logo{height:80px}.brand-logo.cta{height:46px}.brand-logo.foot{height:38px}
+  .hero-nav{flex-direction:column;align-items:flex-start;gap:14px;margin-bottom:40px}
+  .hero-meta{text-align:left}}
 .hero-meta{font-size:13px;opacity:0.85;text-align:right}
 .hero-meta strong{display:block;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;font-size:11px}
 .hero-tag{display:inline-block;background:rgba(255,255,255,0.1);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.2);padding:6px 16px;border-radius:100px;font-size:12px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:20px}
@@ -272,6 +282,33 @@ section{padding:80px 0}
 .payment-features{list-style:none;font-size:14px;padding-top:20px;border-top:1px solid var(--border)}
 .payment-features li{padding:8px 0;display:flex;align-items:start;gap:8px;color:var(--muted)}
 .payment-features li::before{content:"✓";color:var(--success);font-weight:700;flex-shrink:0}
+.journey-section{background:#fff}
+.jr-trail{display:flex;align-items:stretch;gap:10px;margin-top:8px}
+.jr-col{flex:1;display:flex;flex-direction:column;align-items:center;text-align:center;position:relative}
+.jr-col:not(:last-child)::after{content:'⚡';position:absolute;top:18px;right:-13px;color:var(--accent-500);font-size:13px}
+.jr-bolt{width:54px;height:54px;border-radius:50%;background:#fff;border:3px solid var(--primary-500);display:flex;align-items:center;justify-content:center;font-size:23px;box-shadow:0 6px 16px rgba(31,184,232,.25);margin-bottom:10px}
+.jr-col.jr-fin .jr-bolt{border-color:var(--accent-500);background:var(--accent-500)}
+.jr-lbl{font-weight:700;font-size:12.5px;line-height:1.25;color:var(--dark)}
+.jr-pz{font-size:11px;color:var(--muted);margin-top:3px}
+.jr-par{flex:2.1;border:2px dashed var(--primary-500);border-radius:16px;background:var(--primary-50);padding:12px 14px 14px}
+.jr-phd{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--primary-600);text-align:center;margin-bottom:10px}
+.jr-prow{display:flex;align-items:center;gap:10px;background:#fff;border-radius:10px;padding:8px 10px;margin-bottom:8px;border-left:4px solid var(--primary-500)}
+.jr-prow:last-child{margin-bottom:0;border-left-color:var(--accent-600)}
+.jr-ic{font-size:20px}
+.jr-pt{font-weight:700;font-size:12.5px;line-height:1.2;color:var(--dark)}
+.jr-pd{font-size:11.5px;color:var(--muted);line-height:1.35}
+.jr-total{margin-top:28px;text-align:center;font-size:14.5px;color:var(--dark)}
+.jr-total b{color:var(--primary-600)}
+@media(max-width:768px){
+  .jr-trail{flex-direction:column;gap:16px}
+  .jr-col:not(:last-child)::after{display:none}
+  .jr-col{flex-direction:row;text-align:left;gap:14px;align-items:center}
+  .jr-bolt{margin:0;flex:none}
+  .indicator-card{padding:18px}
+  .indicator-value{font-size:26px}
+  .indicator-icon{width:44px;height:44px;margin-bottom:12px}
+}
+@media print{.journey-section{break-inside:avoid}}
 .cta-section{background:linear-gradient(135deg,var(--dark) 0%,var(--primary-800) 100%);color:#fff;text-align:center;position:relative;overflow:hidden}
 .cta-section::before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 30% 20%,rgba(255,199,44,0.15) 0%,transparent 50%),radial-gradient(circle at 70% 80%,rgba(31,184,232,0.2) 0%,transparent 50%);pointer-events:none}
 .cta-section .container{position:relative;z-index:2}
@@ -311,7 +348,7 @@ footer strong{color:#fff;font-weight:600}
 <header class="hero">
   <div class="container hero-inner">
     <div class="hero-nav">
-      <div class="hero-logo"><span class="hero-logo-dot"></span> ${escapeHtml(empresa().nomeFantasia.toUpperCase())}</div>
+      <img class="brand-logo" src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="${escapeHtml(empresa().nomeFantasia)}">
       <div class="hero-meta">
         <strong>Proposta #${escapeHtml(data.numeroProposta)}</strong>
         ${escapeHtml(data.dataProposta)} · Válida ${data.validadeDias} dias
@@ -542,7 +579,7 @@ ${(!data.modoComparacao && temBateria(data.bateria)) ? `
     <h2 class="section-title">Não é só painel no telhado</h2>
     <p class="section-subtitle">Engenharia, segurança e responsabilidade técnica que vão muito além do equipamento.</p>
 
-    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:24px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:24px">
       <div style="background:linear-gradient(180deg,var(--surface-alt) 0%,#fff 100%);border:1px solid var(--border);border-radius:20px;padding:32px">
         <div style="width:48px;height:48px;border-radius:12px;background:var(--primary-50);color:var(--primary-600);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px">🛡️</div>
         <h3 style="font-size:20px;margin-bottom:12px">Garantia ${escapeHtml(empresa().nomeFantasia)} ${empresa().garantiaInstalacaoMeses} meses</h3>
@@ -672,16 +709,19 @@ ${data.modoComparacao ? '' : renderServicosAdicionaisSection(data.servicos ?? []
 
 ${socialProofHtml}
 
+${renderComoFuncionaSection()}
+
 <section class="cta-section">
   <div class="container">
+    <img class="brand-logo cta" src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="${escapeHtml(empresa().nomeFantasia)}">
     <h2>Pronto pra economizar?</h2>
-    <p>Aceite a proposta agora e a gente já dá início no projeto. Em 30 dias seu sistema está gerando.</p>
+    <p>Aceite a proposta agora e a gente já dá início no projeto. Em cerca de 45 dias seu sistema está gerando.</p>
     <div class="cta-buttons">
       <a href="https://wa.me/55${data.empresa.telefone.replace(/\D/g, '')}?text=${encodeURIComponent('Aceito a proposta ' + data.numeroProposta)}" class="btn btn-primary">✓ Aceitar proposta</a>
       <a href="https://wa.me/55${data.empresa.telefone.replace(/\D/g, '')}" class="btn btn-secondary">💬 Tirar dúvidas no WhatsApp</a>
     </div>
     <div class="cta-badges">
-      <div>⚡ Ativação em 30 dias</div>
+      <div>⚡ Ativação em ~45 dias</div>
       <div>🛡️ Garantia 12 meses instalação</div>
       <div>📈 Economia em 25 anos: ${fmtCurto(calc.economiaVidaUtil)}</div>
       <div>🌱 ${fmtNum(calc.co2EvitadoToneladas, 0)} t de CO₂ evitadas</div>
@@ -692,6 +732,7 @@ ${socialProofHtml}
 <footer>
   <div class="container">
     <div>
+      <img class="brand-logo foot" src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="${escapeHtml(data.empresa.nome)}">
       <strong>${escapeHtml(data.empresa.nome)}</strong>
       <div style="opacity:0.7;margin-top:4px">CNPJ ${escapeHtml(data.empresa.cnpj)} · ${escapeHtml(data.empresa.cidade)}</div>
     </div>
