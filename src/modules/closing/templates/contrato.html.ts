@@ -229,6 +229,7 @@ b) Despacho do material pelo distribuidor: até 15 dias corridos;<br/>
 c) Submissão e aprovação do projeto pela concessionária: 15 a 20 dias corridos (em paralelo ao item "b");<br/>
 d) Instalação: 1 a 3 dias úteis;<br/>
 e) Vistoria, troca do medidor e religação: depende exclusivamente da concessionária ${dados.concessionaria}.</p>
+<p>8.3. <strong>Variação de prazos:</strong> sem prejuízo do prazo estimado no item 8.1, os prazos previstos nesta cláusula são estimativas e podem variar. O prazo médio de <strong>entrega do material no local</strong> (despacho e transporte) é de <strong>3 (três) semanas a 30 (trinta) dias corridos</strong>, ao qual se soma o prazo de <strong>análise, aprovação e vistoria da concessionária ${dados.concessionaria}</strong>, de responsabilidade exclusiva desta e fora do controle da CONTRATADA.</p>
 
 <hr/>
 

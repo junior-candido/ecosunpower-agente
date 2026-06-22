@@ -25,6 +25,17 @@ describe('renderContrato', () => {
       expect(html).toContain('Águas Lindas de Goiás');
     });
 
+    it('cláusula 8.3 — variação de prazos (entrega material 3 sem–30 dias + concessionária)', () => {
+      expect(html).toContain('8.3.');
+      expect(html).toContain('Variação de prazos');
+      expect(html).toContain('3 (três) semanas a 30 (trinta) dias');
+      expect(html).toContain('entrega do material no local');
+      // amarra ao prazo total do 8.1 (evita leitura de contradição)
+      expect(html).toContain('sem prejuízo do prazo estimado no item 8.1');
+      // usa a concessionária real do contrato — substring única do 8.3
+      expect(html).toContain('vistoria da concessionária Equatorial-GO');
+    });
+
     it('cláusula 11 cita módulos e inversor', () => {
       expect(html).toContain('Módulos Fotovoltaicos');
       expect(html).toContain('Trina Vertex');
