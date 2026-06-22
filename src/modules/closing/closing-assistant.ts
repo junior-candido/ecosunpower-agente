@@ -61,6 +61,14 @@ export class ClosingAssistant {
     }
 
     const merged = deepMerge(data as any, llm.updates as any) as Partial<DadosFechamento>;
+    // Quando o CONTRATANTE é o próprio titular (default), ele ESPELHA o titular_uc.
+    // Os dados coletados vão todos pro titular_uc; sem isso o contratante ficava com
+    // a versão vazia inicial (só telefone do lead) e o contrato saía com "undefined"
+    // no bloco do CONTRATANTE (CPF/RG/endereço/e-mail). Só NÃO espelha quando o
+    // contratante é outra pessoa (contratante_eh_titular === false).
+    if (merged.contratante_eh_titular !== false && merged.titular_uc) {
+      (merged as any).contratante = merged.titular_uc;
+    }
     // Recalcula observacao_partes deterministicamente
     const obs = buildObservacaoPartes(merged);
     if (obs) (merged as any).observacao_partes = obs;

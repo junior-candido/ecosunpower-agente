@@ -70,6 +70,46 @@ describe('ClosingAssistant', () => {
     expect(res.replyText.toLowerCase()).toContain('falta');
   });
 
+  it('contratante ESPELHA o titular_uc quando contratante_eh_titular (sem "undefined" no contrato)', async () => {
+    // BUG real Fabio: dados iam pro titular_uc mas o contratante ficava com a versão
+    // vazia inicial → contrato com CPF/RG/endereço "undefined". Agora espelha.
+    const llm: LlmCaller = async () => ({
+      action: 'ask_missing',
+      updates: { titular_uc: { cpf: '177.752.778-31', rg: '3017539', orgao_emissor_rg: 'SSP/SP' } as any },
+      message: 'ok',
+    });
+    const assistant = new ClosingAssistant({ llm });
+    const initial = {
+      titular_uc: { tipo: 'PF', nome: 'Fabio', telefone: '5561999656622' } as any,
+      contratante: { tipo: 'PF', nome: 'Fabio', telefone: '5561999656622' } as any, // versão vazia
+      contratante_eh_titular: true,
+    };
+    const res = await assistant.processMessage('cpf e rg', { stage: 'collecting', data: initial as any, pending_questions: [] });
+    const data = (res.newState as any).data;
+    expect(data.contratante.cpf).toBe('177.752.778-31');
+    expect(data.contratante.rg).toBe('3017539');
+    expect(data.contratante.orgao_emissor_rg).toBe('SSP/SP');
+    expect(data.contratante).toEqual(data.titular_uc);
+  });
+
+  it('NÃO espelha o contratante quando é outra pessoa (contratante_eh_titular false)', async () => {
+    const llm: LlmCaller = async () => ({
+      action: 'ask_missing',
+      updates: { titular_uc: { cpf: 'TITULAR-CPF' } as any },
+      message: 'ok',
+    });
+    const assistant = new ClosingAssistant({ llm });
+    const initial = {
+      titular_uc: { tipo: 'PF', nome: 'Titular' } as any,
+      contratante: { tipo: 'PF', nome: 'Conjuge', cpf: 'CONJUGE-CPF' } as any,
+      contratante_eh_titular: false,
+    };
+    const res = await assistant.processMessage('x', { stage: 'collecting', data: initial as any, pending_questions: [] });
+    const data = (res.newState as any).data;
+    expect(data.contratante.nome).toBe('Conjuge');
+    expect(data.contratante.cpf).toBe('CONJUGE-CPF');
+  });
+
   it('processMessage retorna cancelled quando LLM disser cancel', async () => {
     const cancelLlm: LlmCaller = async () => ({ action: 'cancel', updates: {}, message: '❌ Cancelado.' });
     const assistant = new ClosingAssistant({ llm: cancelLlm });
