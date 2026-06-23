@@ -272,6 +272,7 @@ async function main() {
     supabase.getClient(),
     join(__dirname, '..', 'conhecimento'),
     newsScraper,
+    config.pexelsApiKey,
   );
   // [ECOSOF] GITHUB_SITE_REPO perdeu o default (identidade EcoSun): sem PAT OU
   // sem repo, a publicação no site fica off (drafts continuam no Supabase).
@@ -8467,6 +8468,15 @@ Tempo de leitura: ${draft.readingTime} min
 Slug: ${draft.slug}`;
       const fallbackText = `${summary}\n\nResponda *publicar* pra publicar no ar, ou *descartar* pra dispensar.`;
       if (!isSandbox) {
+        // Mostra a foto do hero (se houver) antes dos botoes, pra Junior aprovar
+        // ja vendo a imagem. Falha aqui nao bloqueia o aviso.
+        if (metaWaba && draft.heroImageUrl) {
+          try {
+            await metaWaba.sendMedia(config.engineerPhone, draft.heroImageUrl, '🖼️ Foto do post', 'image');
+          } catch (err) {
+            console.warn('[blog] envio da foto falhou (segue sem):', (err as Error).message);
+          }
+        }
         if (metaWaba) {
           try {
             await metaWaba.sendInteractiveButtons(
@@ -8500,7 +8510,7 @@ Slug: ${draft.slug}`;
     }
   };
 
-  // Scheduler 3-dias: gera 1 draft a cada 3 dias, idempotente via app_flags.
+  // Scheduler diário: gera 1 draft por dia (janela ~20h), idempotente via app_flags.
   // Roda 30min apos canal-solar pra usar artigos frescos.
   const checkBlogSchedule = async () => {
     const flagKey = 'last_blog_draft_generated_at';
@@ -8581,7 +8591,7 @@ Slug: ${draft.slug}`;
           .upsert({ key: flagKey, value: today }, { onConflict: 'key' });
 
         console.log('[news-scraper] Daily run starting...');
-        const result = await newsScraper.scrapeAneel();
+        const result = await newsScraper.scrapeAll();
         console.log(`[news-scraper] Daily done: ${JSON.stringify(result)}`);
       } catch (err) {
         console.error('[news-scraper] Daily run failed:', (err as Error).message);
@@ -8590,7 +8600,7 @@ Slug: ${draft.slug}`;
       }
     };
     setInterval(checkNewsScraperSchedule, 20 * 60 * 1000); // checa a cada 20 min
-    console.log('[news-scraper] Daily scheduler started (ANEEL @ 03:00 BRT)');
+    console.log('[news-scraper] Daily scheduler started (ANEEL + feeds RSS @ 03:00 BRT)');
 
     // Endpoint manual pra forcar scrape (debug/test). Reusa webhook token.
     app.post('/news-scraper/run', async (req, res) => {
@@ -8601,7 +8611,7 @@ Slug: ${draft.slug}`;
         return;
       }
       try {
-        const result = await newsScraper.scrapeAneel();
+        const result = await newsScraper.scrapeAll();
         res.json(result);
       } catch (err) {
         res.status(500).json({ error: (err as Error).message });

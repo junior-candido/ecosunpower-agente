@@ -28,6 +28,25 @@ const RELEVANT_KEYWORDS = [
   'energia limpa', 'renovável', 'renovavel',
 ];
 
+// Fontes RSS de notícias do setor de energia (além da ANEEL, que é raspada
+// direto do gov.br). Todas em português. O filtro de relevância (keywords solar/
+// energia) descarta o que for off-topic, então pode incluir portal generalista
+// de energia que cada um contribui só com o que interessa. Degradação graciosa:
+// se um feed cair (timeout, 5xx, formato estranho), os outros seguem normais.
+const RSS_FEEDS: Array<{ source: string; url: string }> = [
+  { source: 'absolar', url: 'https://www.absolar.org.br/feed/' },
+  { source: 'agencia-infra', url: 'https://agenciainfra.com/blog/feed/' },
+  { source: 'click-petroleo-gas', url: 'https://clickpetroleoegas.com.br/feed/' },
+  // Fontes boas mas instáveis (às vezes 5xx/redirect/vazias): entram com
+  // degradação graciosa — contribuem quando estão no ar, não quebram o resto.
+  { source: 'epbr', url: 'https://epbr.com.br/feed/' },
+  { source: 'canal-energia', url: 'https://www.canalenergia.com.br/feed' },
+];
+
+// Quantos itens (mais recentes) processar por feed RSS por rodada. Evita ingerir
+// 100 de uma vez de feeds generalistas grandes.
+const RSS_ITEMS_PER_FEED = 20;
+
 interface ListingItem {
   title: string;
   url: string;
@@ -106,17 +125,148 @@ export class NewsScraperService {
   }
 
   /**
+   * Roda TODAS as fontes: ANEEL (scrape gov.br) + todos os feeds RSS.
+   * Cada fonte é isolada em try/catch — uma falhando não derruba as outras.
+   */
+  async scrapeAll(): Promise<ScrapeResult[]> {
+    const results: ScrapeResult[] = [];
+
+    try {
+      results.push(await this.scrapeAneel());
+    } catch (err) {
+      console.error('[news-scraper] scrapeAneel falhou:', (err as Error).message);
+      results.push({ source: 'aneel', added: 0, skipped: 0, irrelevant: 0, errors: 1 });
+    }
+
+    const rss = await this.scrapeRssFeeds();
+    results.push(...rss);
+
+    const totalAdded = results.reduce((s, r) => s + r.added, 0);
+    console.log(`[news-scraper] scrapeAll done: ${totalAdded} artigos novos no total (${results.length} fontes)`);
+    return results;
+  }
+
+  /**
+   * Raspa todos os feeds RSS configurados em RSS_FEEDS. Cada feed isolado:
+   * se um cair (timeout, 5xx, XML inválido), loga e segue pros outros.
+   */
+  async scrapeRssFeeds(): Promise<ScrapeResult[]> {
+    const results: ScrapeResult[] = [];
+    for (const feed of RSS_FEEDS) {
+      try {
+        results.push(await this.scrapeRssFeed(feed.source, feed.url));
+      } catch (err) {
+        console.error(`[news-scraper] feed ${feed.source} falhou:`, (err as Error).message);
+        results.push({ source: feed.source, added: 0, skipped: 0, irrelevant: 0, errors: 1 });
+      }
+    }
+    return results;
+  }
+
+  /** Raspa um feed RSS. Salva só os relevantes ao tema solar/energia. Idempotente. */
+  async scrapeRssFeed(source: string, url: string): Promise<ScrapeResult> {
+    const result: ScrapeResult = { source, added: 0, skipped: 0, irrelevant: 0, errors: 0 };
+
+    let xml: string;
+    try {
+      xml = await this.fetchHtml(url);
+    } catch (err) {
+      console.error(`[news-scraper] ${source} feed fetch failed:`, (err as Error).message);
+      result.errors++;
+      return result;
+    }
+
+    const items = this.parseRssFeed(xml).slice(0, RSS_ITEMS_PER_FEED);
+    console.log(`[news-scraper] ${source}: ${items.length} itens no feed`);
+
+    for (const item of items) {
+      try {
+        if (!this.isRelevant(item.title, item.summary)) {
+          result.irrelevant++;
+          continue;
+        }
+        if (await this.urlExists(item.url)) {
+          result.skipped++;
+          continue;
+        }
+        await this.saveArticle({ ...item, isRelevant: true }, source);
+        result.added++;
+      } catch (err) {
+        console.error(`[news-scraper] ${source} erro processando ${item.url}:`, (err as Error).message);
+        result.errors++;
+      }
+    }
+
+    console.log(`[news-scraper] ${source} done: +${result.added} salvos, ${result.skipped} já existiam, ${result.irrelevant} off-topic, ${result.errors} erros`);
+    return result;
+  }
+
+  /**
+   * Parser genérico de RSS 2.0 (<item> com title/link/description/pubDate).
+   * Usa o resumo do <description> ou <content:encoded>, com HTML removido.
+   */
+  private parseRssFeed(xml: string): ListingItem[] {
+    const $ = cheerio.load(xml, { xmlMode: true });
+    const items: ListingItem[] = [];
+
+    $('item').each((_, el) => {
+      const $item = $(el);
+      const title = $item.find('title').first().text().trim();
+      const link = $item.find('link').first().text().trim();
+      if (!title || !link) return;
+
+      // content:encoded é mais rico; cai pro description se não houver.
+      // OBS: seletor com ':' (content\\:encoded) quebra o css-select do cheerio
+      // ("Unknown pseudo-class"), então filtramos pelo nome da tag na mão.
+      let encoded = '';
+      $item.children().each((_i, c) => {
+        const name = (c as { tagName?: string }).tagName;
+        if (name === 'content:encoded' && !encoded) encoded = $(c).text().trim();
+      });
+      const rawSummary = encoded || $item.find('description').first().text().trim();
+      const summary = this.stripHtml(rawSummary).slice(0, 800);
+
+      const pubDate = $item.find('pubDate').first().text().trim();
+      let publishedAt: string | null = null;
+      if (pubDate) {
+        const t = Date.parse(pubDate);
+        if (!Number.isNaN(t)) publishedAt = new Date(t).toISOString();
+      }
+
+      items.push({ title, url: link, summary, publishedAt });
+    });
+
+    return items;
+  }
+
+  /** Remove tags HTML e normaliza espaços/entidades de um trecho de texto. */
+  private stripHtml(html: string): string {
+    return html
+      .replace(/<[^>]*>/g, ' ')
+      // Entidades numéricas decimais (&#8211; &#8230; etc.) de uma vez só.
+      .replace(/&#(\d+);/g, (_m, n: string) => {
+        const code = Number(n);
+        return Number.isFinite(code) ? String.fromCodePoint(code) : ' ';
+      })
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /**
    * Lista artigos relevantes recentes pra alimentar o blog generator.
    * Order by published_at DESC. Default: últimos 30 dias.
    */
-  async getRecentRelevant(opts?: { days?: number; limit?: number; source?: string }): Promise<ListingItem[]> {
+  async getRecentRelevant(opts?: { days?: number; limit?: number; source?: string }): Promise<Array<ListingItem & { content?: string; source: string }>> {
     const days = opts?.days ?? 30;
     const limit = opts?.limit ?? 10;
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
     let query = this.supabase
       .from('external_articles')
-      .select('title, external_url, summary, content, published_at')
+      .select('title, external_url, summary, content, published_at, source')
       .eq('is_relevant', true)
       .gte('scraped_at', cutoff)
       .order('published_at', { ascending: false, nullsFirst: false })
@@ -129,14 +279,15 @@ export class NewsScraperService {
       console.error('[news-scraper] getRecentRelevant falhou:', error.message);
       return [];
     }
-    return (data ?? []).map((r: { title: string; external_url: string; summary: string | null; content: string | null; published_at: string | null }) => ({
+    return (data ?? []).map((r: { title: string; external_url: string; summary: string | null; content: string | null; published_at: string | null; source: string | null }) => ({
       title: r.title,
       url: r.external_url,
       summary: r.summary ?? '',
       publishedAt: r.published_at,
       // Quando precisar de corpo completo no prompt do blog, passa content
       content: r.content ?? undefined,
-    } as ListingItem & { content?: string }));
+      source: r.source ?? 'fonte',
+    }));
   }
 
   // ======================

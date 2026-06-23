@@ -58,6 +58,9 @@ const configSchema = z.object({
   // Higgsfield Cloud API (geração de imagem top pros posts de marketing).
   // Formato: "KEY_ID:KEY_SECRET". Se ausente, marketing usa FLUX (Replicate) como antes.
   higgsfieldCredentials: z.string().optional(),
+  // Pexels API key (grátis): foto real de energia solar pro hero dos posts do blog.
+  // Se ausente, o post é publicado sem foto (como antes) — degrada sem quebrar.
+  pexelsApiKey: z.string().optional(),
   tavusApiKey: z.string().optional(),
   tavusApiUrl: z.string().url().default('https://tavusapi.com'),
   tavusReplicaId: z.string().optional(),
@@ -130,6 +133,7 @@ export function loadConfig(): Config {
     igUserId: process.env.IG_USER_ID || undefined,
     replicateApiToken: process.env.REPLICATE_API_TOKEN || undefined,
     higgsfieldCredentials: process.env.HIGGSFIELD_CREDENTIALS || undefined,
+    pexelsApiKey: process.env.PEXELS_API_KEY || undefined,
     tavusApiKey: process.env.TAVUS_API_KEY || undefined,
     tavusApiUrl: process.env.TAVUS_API_URL,
     tavusReplicaId: process.env.TAVUS_REPLICA_ID || undefined,
