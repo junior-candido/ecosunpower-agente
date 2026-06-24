@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { Config } from '../config.js';
+import { proximaEtapaPorEvento, type EventoFunil } from './dashboard/pipeline.js';
+import { registrarAtividade } from './dashboard/atividades.js';
 
 export interface MessageEntry {
   role: 'user' | 'assistant';
@@ -717,6 +719,63 @@ export class SupabaseService {
   }
 
   // ==========================================================================
+  // Hooks de funil (CRM Fase 2) — ADITIVOS e BEST-EFFORT.
+  // Avancam a etapa do lead e logam na timeline. Quem chama SEMPRE envolve
+  // em try/catch que so faz console.warn — erro aqui nunca quebra proposta,
+  // registro de acesso, nem fechamento. A Eva de atendimento nao muda.
+  // ==========================================================================
+
+  // Avanca a etapa do lead conforme o evento e loga 'etapa_mudou' se mudou.
+  // Best-effort — quem chama envolve em try/catch.
+  private async avancarEtapaFunil(leadId: string, evento: EventoFunil): Promise<void> {
+    const { data: lead } = await this.client.from('leads')
+      .select('status, company_id').eq('id', leadId).maybeSingle();
+    if (!lead) return;
+    const companyId = (lead as { company_id?: string }).company_id ?? '00000000-0000-0000-0000-000000000001';
+    const atual = String((lead as { status?: string }).status ?? '');
+    const proxima = proximaEtapaPorEvento(atual, evento);
+    if (proxima !== atual) {
+      await this.client.from('leads').update({ status: proxima }).eq('id', leadId);
+      await registrarAtividade(this.client, {
+        company_id: companyId, lead_id: leadId, tipo: 'etapa_mudou',
+        titulo: `Etapa: ${atual} → ${proxima}`, automatica: true,
+        payload: { de: atual, para: proxima, evento },
+      });
+    }
+  }
+
+  async onPropostaEnviada(leadId: string, numeroProposta: string, propostaId: string): Promise<void> {
+    const { data: lead } = await this.client.from('leads').select('company_id').eq('id', leadId).maybeSingle();
+    const companyId = (lead as { company_id?: string } | null)?.company_id ?? '00000000-0000-0000-0000-000000000001';
+    await registrarAtividade(this.client, {
+      company_id: companyId, lead_id: leadId, tipo: 'proposta_enviada',
+      titulo: `Proposta ${numeroProposta} enviada`, automatica: true, payload: { propostaId },
+    });
+    await this.avancarEtapaFunil(leadId, 'proposta_gerada');
+    // TODO Task 8: criar tarefa cobrar_proposta (retorno em 3 dias) atribuída ao claimed_by do lead.
+  }
+
+  async onPropostaAberta(leadId: string): Promise<void> {
+    const { data: lead } = await this.client.from('leads').select('company_id').eq('id', leadId).maybeSingle();
+    const companyId = (lead as { company_id?: string } | null)?.company_id ?? '00000000-0000-0000-0000-000000000001';
+    await registrarAtividade(this.client, {
+      company_id: companyId, lead_id: leadId, tipo: 'proposta_aberta',
+      titulo: 'Cliente abriu a proposta', automatica: true,
+    });
+    await this.avancarEtapaFunil(leadId, 'proposta_aberta');
+  }
+
+  async onLeadGanho(leadId: string): Promise<void> {
+    const { data: lead } = await this.client.from('leads').select('company_id').eq('id', leadId).maybeSingle();
+    const companyId = (lead as { company_id?: string } | null)?.company_id ?? '00000000-0000-0000-0000-000000000001';
+    await registrarAtividade(this.client, {
+      company_id: companyId, lead_id: leadId, tipo: 'ganho',
+      titulo: 'Fechamento confirmado', automatica: true,
+    });
+    await this.avancarEtapaFunil(leadId, 'fechou');
+  }
+
+  // ==========================================================================
   // Propostas publicas (HTML hospedado em /p/:slug, TTL 60d)
   // Resolve a limitacao do Drive desktop que abre HTML como codigo fonte.
   // ==========================================================================
@@ -759,6 +818,13 @@ export class SupabaseService {
       .single();
 
     if (error) throw new Error(`Failed to save proposta publica: ${error.message}`);
+
+    // Hook de funil (Fase 2) — best-effort, nunca quebra o salvamento da proposta.
+    if (leadId) {
+      try { await this.onPropostaEnviada(leadId, input.numeroProposta, data.id); }
+      catch (e) { console.warn('[funil] onPropostaEnviada falhou:', (e as Error).message); }
+    }
+
     return { id: data.id, expiresAt: data.expires_at };
   }
 
@@ -876,7 +942,7 @@ export class SupabaseService {
     try {
       const { data } = await this.client
         .from('propostas_publicas')
-        .select('acessos')
+        .select('acessos, lead_id')
         .eq('slug', slug)
         .maybeSingle();
 
@@ -889,6 +955,14 @@ export class SupabaseService {
           ultimo_acesso_at: new Date().toISOString(),
         })
         .eq('slug', slug);
+
+      // Hook de funil (Fase 2) — cliente abriu a proposta. Best-effort.
+      const leadIdDaProposta = (data as { lead_id?: string | null }).lead_id ?? null;
+      if (leadIdDaProposta) {
+        try { await this.onPropostaAberta(leadIdDaProposta); }
+        catch (e) { console.warn('[funil] onPropostaAberta falhou:', (e as Error).message); }
+      }
+
       return { acessosAntes };
     } catch (err) {
       console.warn('[supabase] incrementPropostaPublicaAcesso (non-blocking):', err);

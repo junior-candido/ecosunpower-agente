@@ -3448,6 +3448,17 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         if (!finFechamentoId || !finAtividadeId) throw new Error('botão finrec sem fechamento/atividade');
         const { createFechamentoConta } = await import('./modules/financeiro/engate-fechar.js');
         await createFechamentoConta(supabase.getClient(), metaWaba, from, finFechamentoId, finAtividadeId);
+        // Hook de funil (Fase 2) — venda confirmada (botão finrec cria a conta a
+        // receber). Avança o lead pra 'ganho' + loga na timeline. Best-effort:
+        // erro de funil nunca quebra o lançamento financeiro.
+        try {
+          const { data: fch } = await supabase.getClient()
+            .from('fechamentos').select('lead_id').eq('id', finFechamentoId).maybeSingle();
+          const leadGanhoId = (fch as { lead_id?: string | null } | null)?.lead_id ?? null;
+          if (leadGanhoId) await supabase.onLeadGanho(leadGanhoId);
+        } catch (e) {
+          console.warn('[funil] onLeadGanho falhou:', (e as Error).message);
+        }
       } catch (err) {
         console.error('[financeiro] finrec falhou:', (err as Error).message);
         await sendText(from, `❌ Erro ao lançar no financeiro: ${(err as Error).message}`);
