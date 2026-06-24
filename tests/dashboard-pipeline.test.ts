@@ -27,6 +27,13 @@ describe('pipeline — avanço por evento (só pra frente)', () => {
     expect(ORDEM_ETAPAS).not.toContain('perdido');
     expect(ORDEM_ETAPAS.length).toBe(8);
   });
+  it('funil inclui as etapas novas (proposta_enviada/negociacao/ganho) — senão somem da contagem/tab "Todos"', () => {
+    // leads-queries usa ORDEM_ETAPAS como fonte das contagens do funil. Se uma destas sair
+    // daqui, o lead movido pelo kanban pra essa etapa sumiria da tab "Todos" e do badge.
+    expect(ORDEM_ETAPAS).toContain('proposta_enviada');
+    expect(ORDEM_ETAPAS).toContain('negociacao');
+    expect(ORDEM_ETAPAS).toContain('ganho');
+  });
   it('etapaLabel traduz', () => {
     expect(etapaLabel('proposta_enviada')).toMatch(/proposta/i);
   });

@@ -76,8 +76,16 @@ export interface LeadsResult {
   atencaoCount: number;
 }
 
-// Valores que existem no enum `lead_status` em Postgres. Migration 039 adiciona 'perdido'.
+// Valores que existem no enum `lead_status` em Postgres. Migration 039 adiciona 'perdido';
+// migration 057 adiciona proposta_enviada/negociacao/ganho (etapas do funil — ver ORDEM_ETAPAS).
 const STATUS_OPTIONS = ['novo', 'qualificando', 'qualificado', 'agendado', 'transferido', 'perdido'];
+
+// Status ATIVOS do funil (não-perdido, não-cliente). É a fonte de verdade do que entra
+// na tab "Todos" e nas contagens — reusa ORDEM_ETAPAS pra não esquecer etapa nova do kanban.
+// (proposta_enviada/negociacao/ganho entram aqui; sem isso o lead movido pelo kanban sumia
+//  da contagem/tab "Todos".) 'ganho' é terminal positivo, mas segue no funil aberto até virar
+//  cliente de fato (installation_status) — então é contado aqui pra não desaparecer.
+const STATUS_FUNIL = [...ORDEM_ETAPAS];
 
 // Tabs especiais (nao sao status do enum — sao filtros derivados):
 // - 'ganhos'   = installation_status IN CLIENTE_STATUSES (virou cliente)
@@ -100,11 +108,14 @@ export async function listLeads(
     ? `claimed_by.is.null,claimed_by.eq.${filters.viewerId}`
     : null;
 
-  // Contagens — 6 status normais + ganhos + perdidos. Todas em paralelo.
+  // Contagens — todos os status ativos do funil + ganhos (cliente) + perdidos. Em paralelo.
+  // statusNormais agora cobre TODO o funil (inclui proposta_enviada/negociacao/ganho), senão
+  // leads movidos pelo kanban pra essas etapas sumiriam da contagem e da tab "Todos".
   const countByStatus: Record<string, number> = {};
+  const statusNormais = STATUS_FUNIL;
   const countQueries = await Promise.all([
-    // Por status normal (5 valores do enum exceto perdido)
-    ...STATUS_OPTIONS.filter((s) => s !== 'perdido').map((s) => {
+    // Por status do funil (exclui clientes fechados via baseFilter)
+    ...statusNormais.map((s) => {
       let cq = client.from('leads')
         .select('id', { count: 'exact', head: true })
         .or(baseFilter)
@@ -122,7 +133,7 @@ export async function listLeads(
       if (visFilter) cq = cq.or(visFilter);
       return cq;
     })(),
-    // Ganhos (installation_status em CLIENTE_STATUSES)
+    // Ganhos (installation_status em CLIENTE_STATUSES — virou cliente de fato)
     (() => {
       let cq = client.from('leads')
         .select('id', { count: 'exact', head: true })
@@ -132,7 +143,6 @@ export async function listLeads(
       return cq;
     })(),
   ]);
-  const statusNormais = STATUS_OPTIONS.filter((s) => s !== 'perdido');
   statusNormais.forEach((s, i) => {
     countByStatus[s] = countQueries[i].count ?? 0;
   });

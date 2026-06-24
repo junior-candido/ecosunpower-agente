@@ -113,17 +113,20 @@ export async function proximaTarefa(client: SupabaseClient, leadId: string): Pro
   return (data && data.length > 0) ? (data[0] as Tarefa) : null;
 }
 
-/** Marca uma tarefa como concluída. */
+/** Marca uma tarefa como concluída. Se `leadId` vier, exige que a tarefa pertença ao lead (anti-IDOR). */
 export async function concluirTarefa(
   client: SupabaseClient,
   id: string,
   userId?: string | null,
+  leadId?: string,
 ): Promise<void> {
   const now = new Date().toISOString();
-  const { error } = await client
+  let q = client
     .from('lead_tarefas')
     .update({ status: 'concluida', completed_at: now, updated_at: now, ...(userId !== undefined ? { assigned_to: userId } : {}) })
     .eq('id', id);
+  if (leadId) q = q.eq('lead_id', leadId);
+  const { error } = await q;
   if (error) throw error;
 }
 
@@ -137,24 +140,28 @@ export async function cancelarTarefa(client: SupabaseClient, id: string): Promis
   if (error) throw error;
 }
 
-/** Adia uma tarefa somando `dias` ao due_at atual e zerando alert_sent_at. */
-export async function adiarTarefa(client: SupabaseClient, id: string, dias: number): Promise<void> {
+/** Adia uma tarefa somando `dias` ao due_at atual e zerando alert_sent_at.
+ *  Se `leadId` vier, exige que a tarefa pertença ao lead (anti-IDOR). */
+export async function adiarTarefa(client: SupabaseClient, id: string, dias: number, leadId?: string): Promise<void> {
   // Lê due_at atual
-  const { data, error: errLer } = await client
+  let leituraQ = client
     .from('lead_tarefas')
     .select('due_at')
-    .eq('id', id)
-    .single();
+    .eq('id', id);
+  if (leadId) leituraQ = leituraQ.eq('lead_id', leadId);
+  const { data, error: errLer } = await leituraQ.single();
   if (errLer) throw errLer;
 
   const base = data?.due_at ? Date.parse(data.due_at) : Date.now();
   const novoDueAt = new Date(base + dias * 24 * 3_600_000).toISOString();
   const now = new Date().toISOString();
 
-  const { error } = await client
+  let q = client
     .from('lead_tarefas')
     .update({ due_at: novoDueAt, alert_sent_at: null, updated_at: now })
     .eq('id', id);
+  if (leadId) q = q.eq('lead_id', leadId);
+  const { error } = await q;
   if (error) throw error;
 }
 

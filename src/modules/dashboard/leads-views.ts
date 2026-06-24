@@ -46,8 +46,11 @@ function statusBadge(s: string): string {
     novo:         'bg-sky-100 text-sky-800',
     qualificando: 'bg-violet-100 text-violet-800',
     qualificado:  'bg-fuchsia-100 text-fuchsia-800',
+    proposta_enviada: 'bg-blue-100 text-blue-800',
+    negociacao:   'bg-amber-100 text-amber-800',
     agendado:     'bg-amber-100 text-amber-800',
     transferido:  'bg-emerald-100 text-emerald-800',
+    ganho:        'bg-emerald-200 text-emerald-900',
     fechado:      'bg-emerald-200 text-emerald-900',
     perdido:      'bg-rose-100 text-rose-800',
   };
@@ -117,8 +120,11 @@ export function renderLeadsListPage(
       ${tab('novo', '🆕 Novos', counts.novo ?? null, 'bg-sky-600')}
       ${tab('qualificando', '🎯 Qualificando', counts.qualificando ?? null, 'bg-violet-600')}
       ${tab('qualificado', '⭐ Qualificados', counts.qualificado ?? null, 'bg-fuchsia-600')}
+      ${tab('proposta_enviada', '📄 Proposta enviada', counts.proposta_enviada ?? null, 'bg-blue-600')}
+      ${tab('negociacao', '🤝 Negociação', counts.negociacao ?? null, 'bg-amber-500')}
       ${tab('agendado', '📅 Agendados', counts.agendado ?? null, 'bg-amber-600')}
       ${tab('transferido', '➡️ Transferidos', counts.transferido ?? null, 'bg-emerald-600')}
+      ${tab('ganho', '✅ Ganho (funil)', counts.ganho ?? null, 'bg-green-600')}
       <span class="text-slate-300 px-1 self-center">·</span>
       ${tab('ganhos', '🏆 Ganhos', counts.ganhos ?? null, 'bg-green-700')}
       ${tab('perdidos', '❌ Perdidos', counts.perdido ?? null, 'bg-slate-600')}

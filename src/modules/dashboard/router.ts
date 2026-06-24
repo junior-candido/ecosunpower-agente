@@ -643,6 +643,10 @@ export function createDashboardRouter(
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     const etapa = String(req.body?.etapa ?? '').trim();
     if (!(ORDEM_ETAPAS as readonly string[]).includes(etapa)) return res.status(400).send('etapa inválida');
+    // Posse: vendedor não pode mexer em lead de OUTRO vendedor (admin passa direto).
+    const user = (req as AuthedRequest).dashUser!;
+    const { data: leadDono } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    if (!leadDono || !podeVerLead(user, leadDono)) return res.status(403).send('Lead de outro vendedor');
     const { error } = await supabase
       .from('leads')
       .update({ status: etapa, updated_at: new Date().toISOString() })
@@ -678,8 +682,10 @@ export function createDashboardRouter(
     let due_at: string | null = null;
     if (dueRaw) { const d = new Date(dueRaw); if (!isNaN(d.getTime())) due_at = d.toISOString(); }
     const viewer = (req as AuthedRequest).dashUser;
-    // Dono da tarefa = quem já está com o lead (claimed_by), se houver.
+    // Posse: vendedor não pode criar tarefa em lead de OUTRO vendedor (admin passa direto).
     const { data: leadRow } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    if (!leadRow || (viewer && !podeVerLead(viewer, leadRow))) return res.status(403).send('Lead de outro vendedor');
+    // Dono da tarefa = quem já está com o lead (claimed_by), se houver.
     const assigned_to = (leadRow?.claimed_by as string | null) ?? null;
     try {
       await criarTarefa(supabase, {
@@ -706,8 +712,12 @@ export function createDashboardRouter(
     const tid = String(req.params.tid);
     if (!UUID_RE.test(id) || !UUID_RE.test(tid)) return res.status(400).send('id inválido');
     const viewer = (req as AuthedRequest).dashUser;
+    // Posse: vendedor não pode mexer em tarefa de lead de OUTRO vendedor (admin passa direto).
+    const { data: leadRow } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    if (!leadRow || (viewer && !podeVerLead(viewer, leadRow))) return res.status(403).send('Lead de outro vendedor');
     try {
-      await concluirTarefa(supabase, tid, viewer?.id ?? null);
+      // leadId amarra a tarefa ao lead da URL (evita concluir tarefa de outro lead via :tid).
+      await concluirTarefa(supabase, tid, viewer?.id ?? null, id);
     } catch (err) {
       return res.status(500).send(`erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
@@ -727,8 +737,12 @@ export function createDashboardRouter(
     const tid = String(req.params.tid);
     if (!UUID_RE.test(id) || !UUID_RE.test(tid)) return res.status(400).send('id inválido');
     const viewer = (req as AuthedRequest).dashUser;
+    // Posse: vendedor não pode mexer em tarefa de lead de OUTRO vendedor (admin passa direto).
+    const { data: leadRow } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    if (!leadRow || (viewer && !podeVerLead(viewer, leadRow))) return res.status(403).send('Lead de outro vendedor');
     try {
-      await adiarTarefa(supabase, tid, 2);
+      // leadId amarra a tarefa ao lead da URL (evita adiar tarefa de outro lead via :tid).
+      await adiarTarefa(supabase, tid, 2, id);
     } catch (err) {
       return res.status(500).send(`erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
@@ -746,6 +760,9 @@ export function createDashboardRouter(
       || (tipo === 'ligacao' ? 'Ligação registrada' : 'Nota');
     const descricao = String(req.body?.descricao ?? '').trim().slice(0, 2000) || undefined;
     const viewer = (req as AuthedRequest).dashUser;
+    // Posse: vendedor não pode registrar atividade em lead de OUTRO vendedor (admin passa direto).
+    const { data: leadRow } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    if (!leadRow || (viewer && !podeVerLead(viewer, leadRow))) return res.status(403).send('Lead de outro vendedor');
     try {
       if (viewer) {
         await registrarAtividade(supabase, {
