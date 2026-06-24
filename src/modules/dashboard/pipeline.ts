@@ -25,11 +25,15 @@ const ALVO_POR_EVENTO: Record<EventoFunil, EtapaFunil> = {
 
 // Etapa mínima que o lead deve ter para o evento ser aplicável.
 // Se o lead ainda não chegou à origem, o evento não dispara.
+// Só 'proposta_aberta' tem pré-requisito real (não dá pra "abrir" uma proposta
+// que nunca foi enviada). Os demais são sinais fortes que avançam de qualquer
+// etapa ATIVA — gerar/enviar proposta, agendar visita e fechar movem o card
+// mesmo a partir de 'novo' (ex.: proposta enviada pra lead recém-criado).
 const ORIGEM_POR_EVENTO: Record<EventoFunil, EtapaFunil> = {
-  proposta_gerada: 'qualificado',
+  proposta_gerada: 'novo',
   proposta_aberta: 'proposta_enviada',
-  agendou: 'qualificado',
-  fechou: 'qualificado',
+  agendou: 'novo',
+  fechou: 'novo',
 };
 
 function idx(e: string): number {

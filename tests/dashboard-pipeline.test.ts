@@ -11,6 +11,13 @@ describe('pipeline — avanço por evento (só pra frente)', () => {
   it('proposta gerada move qualificado -> proposta_enviada', () => {
     expect(proximaEtapaPorEvento('qualificado', 'proposta_gerada')).toBe('proposta_enviada');
   });
+  it('proposta gerada move ATÉ de novo -> proposta_enviada (enviar proposta = sinal forte)', () => {
+    expect(proximaEtapaPorEvento('novo', 'proposta_gerada')).toBe('proposta_enviada');
+    expect(proximaEtapaPorEvento('qualificando', 'proposta_gerada')).toBe('proposta_enviada');
+  });
+  it('fechou move de qualquer etapa ativa, inclusive novo -> ganho', () => {
+    expect(proximaEtapaPorEvento('novo', 'fechou')).toBe('ganho');
+  });
   it('proposta aberta move proposta_enviada -> negociacao', () => {
     expect(proximaEtapaPorEvento('proposta_enviada', 'proposta_aberta')).toBe('negociacao');
   });
