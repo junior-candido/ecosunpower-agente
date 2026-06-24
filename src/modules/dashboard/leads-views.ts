@@ -4,6 +4,7 @@
 import { renderLayout, escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { LeadRow, LeadDetail } from './leads-queries.js';
+import type { Atividade } from './atividades.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
 import { renderInsightsBanner } from './ai-summary.js';
 
@@ -269,6 +270,54 @@ function renderAnexoCard(a: {
   </div>`;
 }
 
+const TIPO_ICONE: Record<string, string> = {
+  proposta_enviada: '📤',
+  proposta_aberta:  '👀',
+  etapa_mudou:      '➡️',
+  ganho:            '🏆',
+  perdido:          '❌',
+  cadencia:         '🔄',
+  nota:             '📝',
+  ligacao:          '📞',
+  whatsapp:         '💬',
+  visita:           '📍',
+  contato:          '🤝',
+  email:            '📧',
+  tarefa_criada:    '📋',
+  tarefa_concluida: '✅',
+};
+
+function renderTimeline(timeline: Atividade[]): string {
+  if (timeline.length === 0) {
+    return `
+      <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6">
+        <h2 class="text-lg font-semibold text-slate-900 mb-3">📅 Linha do tempo</h2>
+        <p class="text-slate-400 text-sm">Sem atividades ainda.</p>
+      </div>`;
+  }
+
+  const itens = timeline.map((a) => {
+    const icone = TIPO_ICONE[a.tipo] ?? '•';
+    const autor = a.automatica ? 'Sistema' : 'Vendedor';
+    const quando = timeAgo(a.created_at);
+    return `
+      <li class="flex gap-3 py-2 border-b border-slate-100 last:border-0">
+        <span class="text-lg leading-none mt-0.5">${icone}</span>
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-medium text-slate-800">${escapeHtml(a.titulo)}</div>
+          ${a.descricao ? `<div class="text-xs text-slate-500 mt-0.5">${escapeHtml(a.descricao)}</div>` : ''}
+          <div class="text-[10px] text-slate-400 mt-0.5">${escapeHtml(autor)} · ${escapeHtml(quando)}</div>
+        </div>
+      </li>`;
+  }).join('');
+
+  return `
+    <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6">
+      <h2 class="text-lg font-semibold text-slate-900 mb-3">📅 Linha do tempo</h2>
+      <ul class="divide-y divide-slate-100">${itens}</ul>
+    </div>`;
+}
+
 export function renderLeadDetailPage(lead: LeadDetail): string {
   const phoneFmt = formatPhone(lead.phone);
   const nome = escapeHtml(lead.name ?? 'Sem nome');
@@ -476,6 +525,8 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
       </div>
 
       ${modalMarcarPerdido}
+
+      ${renderTimeline(lead.timeline)}
 
       <div class="grid md:grid-cols-2 gap-4">
         <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6">

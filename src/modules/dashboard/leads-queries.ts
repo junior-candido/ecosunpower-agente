@@ -4,6 +4,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSignedUrls } from '../anexos/storage.js';
 import type { DashUser } from './permissions.js';
+import type { Atividade } from './atividades.js';
+import { listarTimeline } from './atividades.js';
 
 export interface LeadRow {
   id: string;
@@ -36,6 +38,7 @@ export interface LeadDetail extends LeadRow {
   conversation_messages: Array<{ role: string; content: string; timestamp: string }>;
   cadence_steps: Array<{ step: number; scheduled_for: string; status: string; sent_at: string | null }>;
   anexos: Array<{ id: string; tipo: string; descricao: string | null; url: string; mime_type: string | null; created_by: string; created_at: string }>;
+  timeline: Atividade[];
 }
 
 // Statuses que indicam "já virou cliente" — esses NÃO aparecem em /leads.
@@ -272,6 +275,14 @@ export async function getLeadDetail(client: SupabaseClient, id: string): Promise
     mime_type: a.mime_type, created_by: a.created_by, created_at: a.created_at,
   }));
 
+  // Timeline de atividades do lead (best-effort: não quebra o detalhe se falhar)
+  let timeline: Atividade[] = [];
+  try {
+    timeline = await listarTimeline(client, id);
+  } catch {
+    // silencia: falha na timeline não impede carregar o detalhe
+  }
+
   return {
     id: lead.id,
     phone: lead.phone,
@@ -300,6 +311,7 @@ export async function getLeadDetail(client: SupabaseClient, id: string): Promise
     conversation_messages,
     cadence_steps: cads ?? [],
     anexos,
+    timeline,
   };
 }
 
