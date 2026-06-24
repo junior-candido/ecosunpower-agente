@@ -3,6 +3,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSignedUrls } from '../anexos/storage.js';
+import type { DashUser } from './permissions.js';
 
 export interface LeadRow {
   id: string;
@@ -50,6 +51,9 @@ export interface ListLeadsOptions {
   search?: string;
   limit?: number;
   offset?: number;
+  // visibilidade: quando setado e não-admin, filtra pool + os do próprio usuário
+  viewerId?: string;
+  viewerIsAdmin?: boolean;
 }
 
 export interface LeadsResult {
@@ -77,27 +81,42 @@ export async function listLeads(
   // baseFilter exclui clientes fechados. Usado em 'todos' e nos filtros por status normal.
   const baseFilter = `installation_status.is.null,installation_status.not.in.(${CLIENTE_STATUSES.join(',')})`;
 
+  // Visibilidade pool+claim aplicada também nas contagens, pra os badges baterem com a lista.
+  const visFilter = filters.viewerId && !filters.viewerIsAdmin
+    ? `claimed_by.is.null,claimed_by.eq.${filters.viewerId}`
+    : null;
+
   // Contagens — 6 status normais + ganhos + perdidos. Todas em paralelo.
   const countByStatus: Record<string, number> = {};
   const countQueries = await Promise.all([
     // Por status normal (5 valores do enum exceto perdido)
-    ...STATUS_OPTIONS.filter((s) => s !== 'perdido').map((s) =>
-      client.from('leads')
+    ...STATUS_OPTIONS.filter((s) => s !== 'perdido').map((s) => {
+      let cq = client.from('leads')
         .select('id', { count: 'exact', head: true })
         .or(baseFilter)
         .is('archived_at', null)
-        .eq('status', s),
-    ),
+        .eq('status', s);
+      if (visFilter) cq = cq.or(visFilter);
+      return cq;
+    }),
     // Perdidos (status='perdido', ignora installation_status)
-    client.from('leads')
-      .select('id', { count: 'exact', head: true })
-      .is('archived_at', null)
-      .eq('status', 'perdido'),
+    (() => {
+      let cq = client.from('leads')
+        .select('id', { count: 'exact', head: true })
+        .is('archived_at', null)
+        .eq('status', 'perdido');
+      if (visFilter) cq = cq.or(visFilter);
+      return cq;
+    })(),
     // Ganhos (installation_status em CLIENTE_STATUSES)
-    client.from('leads')
-      .select('id', { count: 'exact', head: true })
-      .is('archived_at', null)
-      .in('installation_status', CLIENTE_STATUSES),
+    (() => {
+      let cq = client.from('leads')
+        .select('id', { count: 'exact', head: true })
+        .is('archived_at', null)
+        .in('installation_status', CLIENTE_STATUSES);
+      if (visFilter) cq = cq.or(visFilter);
+      return cq;
+    })(),
   ]);
   const statusNormais = STATUS_OPTIONS.filter((s) => s !== 'perdido');
   statusNormais.forEach((s, i) => {
@@ -130,6 +149,11 @@ export async function listLeads(
 
   if (filters.eva_active !== undefined) q = q.eq('eva_active', filters.eva_active);
   if (search) q = q.or(`name.ilike.%${search}%,phone.ilike.%${search}%,email.ilike.%${search}%`);
+
+  // Visibilidade pool+claim: vendedor vê só balcão (claimed_by null) ou os seus.
+  if (filters.viewerId && !filters.viewerIsAdmin) {
+    q = q.or(`claimed_by.is.null,claimed_by.eq.${filters.viewerId}`);
+  }
 
   // Quando only_alerts, precisa pegar até 500 pra filtrar em JS depois (alerta calculado
   // baseado em updated_at + cadence). Paginacao final acontece em JS no fim da funcao.
@@ -274,4 +298,26 @@ export async function getLeadDetail(client: SupabaseClient, id: string): Promise
     cadence_steps: cads ?? [],
     anexos,
   };
+}
+
+// Pode o usuário ver este lead? Admin vê tudo; vendedor vê balcão (sem dono) ou os seus.
+export function podeVerLead(user: DashUser, lead: { claimed_by: string | null }): boolean {
+  if (user.isAdmin) return true;
+  return lead.claimed_by === null || lead.claimed_by === user.id;
+}
+
+// Claim automático: marca o lead como do usuário se ainda estiver no balcão.
+// Retorna true se capturou agora (pra registrar auditoria). Idempotente.
+export async function claimLead(
+  client: SupabaseClient,
+  leadId: string,
+  userId: string,
+): Promise<boolean> {
+  const { data } = await client
+    .from('leads')
+    .update({ claimed_by: userId, claimed_at: new Date().toISOString() })
+    .eq('id', leadId)
+    .is('claimed_by', null) // só captura se ainda estiver no balcão (evita corrida)
+    .select('id');
+  return Array.isArray(data) && data.length > 0;
 }
