@@ -89,6 +89,8 @@ import { renderUsuariosListPage, renderUsuarioEditPage } from './usuarios-views.
 import { listUsers, listRoles, createUser, updateUser, getUserByLogin, touchLastLogin } from './users-store.js';
 import { hashSenha, verificarSenha } from './password.js';
 import { claimLead, podeVerLead, listLeads } from './leads-queries.js';
+import { criarTarefa, concluirTarefa, adiarTarefa } from './tarefas.js';
+import { registrarAtividade } from './atividades.js';
 import { audit } from './audit.js';
 import { can } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
@@ -465,22 +467,25 @@ export function createDashboardRouter(
       const { renderLeadsListPage } = await import('./leads-views.js');
       const status = typeof req.query.status === 'string' ? req.query.status : undefined;
       const only_alerts = req.query.only_alerts === '1' || req.query.only_alerts === 'true';
+      const atencao = req.query.atencao === '1' || req.query.atencao === 'true';
       const search = typeof req.query.q === 'string' ? req.query.q : '';
       const limit = Math.max(1, Math.min(200, parseInt(String(req.query.limit ?? '10')) || 10));
       const offset = Math.max(0, parseInt(String(req.query.offset ?? '0')) || 0);
       const { buildLeadsInsights } = await import('./ai-summary.js');
       const [result, insights] = await Promise.all([
-        listLeads(supabase, { status, only_alerts, search, limit, offset, viewerId: viewer.id, viewerIsAdmin: viewer.isAdmin }),
+        listLeads(supabase, { status, only_alerts, atencao, search, limit, offset, viewerId: viewer.id, viewerIsAdmin: viewer.isAdmin }),
         buildLeadsInsights(supabase),
       ]);
       res.send(renderLeadsListPage(result.rows, {
         status,
         only_alerts,
+        atencao,
         search,
         limit,
         offset,
         total: result.total,
         countByStatus: result.countByStatus,
+        atencaoCount: result.atencaoCount,
         insights,
       }, viewer));
     } catch (err) {
@@ -613,6 +618,107 @@ export function createDashboardRouter(
     if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
     const viewer = (req as AuthedRequest).dashUser;
     if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'etapa', valorNovo: status });
+    res.redirect(`/dashboard/leads/${id}`);
+  });
+
+  // ----- TAREFAS DO LEAD (cockpit) -----
+
+  // Cria tarefa manual no lead. Campos: titulo (obrig.), tipo, due_at, prioridade.
+  router.post('/leads/:id/tarefa', exigir('leads', 'editar'), async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const titulo = String(req.body?.titulo ?? '').trim().slice(0, 200);
+    if (!titulo) return res.status(400).send('Título obrigatório. <a href="/dashboard/leads/' + id + '">← voltar</a>');
+    const tipo = String(req.body?.tipo ?? 'custom').trim() || 'custom';
+    const prioridade = String(req.body?.prioridade ?? 'media').trim() || 'media';
+    const dueRaw = String(req.body?.due_at ?? '').trim();
+    // datetime-local vem como 'YYYY-MM-DDTHH:mm' (hora local) → ISO. Vazio = sem prazo.
+    let due_at: string | null = null;
+    if (dueRaw) { const d = new Date(dueRaw); if (!isNaN(d.getTime())) due_at = d.toISOString(); }
+    const viewer = (req as AuthedRequest).dashUser;
+    // Dono da tarefa = quem já está com o lead (claimed_by), se houver.
+    const { data: leadRow } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    const assigned_to = (leadRow?.claimed_by as string | null) ?? null;
+    try {
+      await criarTarefa(supabase, {
+        company_id: viewer?.companyId ?? ECOSUN,
+        lead_id: id, titulo, tipo, due_at, prioridade,
+        automatica: false, created_by: viewer?.id ?? null, assigned_to,
+      });
+    } catch (err) {
+      return res.status(500).send(`erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+    if (viewer) {
+      await registrarAtividade(supabase, {
+        company_id: viewer.companyId, lead_id: id, tipo: 'tarefa_criada',
+        titulo, automatica: false, user_id: viewer.id,
+      });
+      await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'tarefa_criada', valorNovo: titulo });
+    }
+    res.redirect(`/dashboard/leads/${id}`);
+  });
+
+  // Conclui uma tarefa do lead.
+  router.post('/leads/:id/tarefa/:tid/concluir', exigir('leads', 'editar'), async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    const tid = String(req.params.tid);
+    if (!UUID_RE.test(id) || !UUID_RE.test(tid)) return res.status(400).send('id inválido');
+    const viewer = (req as AuthedRequest).dashUser;
+    try {
+      await concluirTarefa(supabase, tid, viewer?.id ?? null);
+    } catch (err) {
+      return res.status(500).send(`erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+    if (viewer) {
+      await registrarAtividade(supabase, {
+        company_id: viewer.companyId, lead_id: id, tipo: 'tarefa_concluida',
+        titulo: 'Tarefa concluída', automatica: false, user_id: viewer.id,
+      });
+      await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'tarefa_concluida', valorNovo: tid });
+    }
+    res.redirect(`/dashboard/leads/${id}`);
+  });
+
+  // Adia uma tarefa do lead em 2 dias.
+  router.post('/leads/:id/tarefa/:tid/adiar', exigir('leads', 'editar'), async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    const tid = String(req.params.tid);
+    if (!UUID_RE.test(id) || !UUID_RE.test(tid)) return res.status(400).send('id inválido');
+    const viewer = (req as AuthedRequest).dashUser;
+    try {
+      await adiarTarefa(supabase, tid, 2);
+    } catch (err) {
+      return res.status(500).send(`erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+    if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'tarefa_adiada', valorNovo: tid });
+    res.redirect(`/dashboard/leads/${id}`);
+  });
+
+  // Registra nota/ligação manual no lead (conta como contato → atualiza last_contact_at).
+  router.post('/leads/:id/atividade', exigir('leads', 'editar'), async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const tipoRaw = String(req.body?.tipo ?? 'nota').trim();
+    const tipo: 'nota' | 'ligacao' = tipoRaw === 'ligacao' ? 'ligacao' : 'nota';
+    const titulo = String(req.body?.titulo ?? '').trim().slice(0, 200)
+      || (tipo === 'ligacao' ? 'Ligação registrada' : 'Nota');
+    const descricao = String(req.body?.descricao ?? '').trim().slice(0, 2000) || undefined;
+    const viewer = (req as AuthedRequest).dashUser;
+    try {
+      if (viewer) {
+        await registrarAtividade(supabase, {
+          company_id: viewer.companyId, lead_id: id, tipo,
+          titulo, descricao, automatica: false, user_id: viewer.id,
+        });
+      }
+      // Nota/ligação contam como contato com o cliente.
+      await supabase.from('leads')
+        .update({ last_contact_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', id);
+    } catch (err) {
+      return res.status(500).send(`erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+    if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: tipo === 'ligacao' ? 'ligacao' : 'nota' });
     res.redirect(`/dashboard/leads/${id}`);
   });
 

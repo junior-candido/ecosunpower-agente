@@ -5,6 +5,8 @@ import { renderLayout, escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { LeadRow, LeadDetail } from './leads-queries.js';
 import type { Atividade } from './atividades.js';
+import type { Tarefa } from './tarefas.js';
+import { seloSla } from './sla-rules.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
 import { renderInsightsBanner } from './ai-summary.js';
 
@@ -59,16 +61,28 @@ function evaBadge(active: boolean, optOut: boolean): string {
   return '<span class="inline-flex px-2 py-0.5 rounded-full text-xs bg-slate-200 text-slate-700">⏸️ pausada</span>';
 }
 
+// Pontinho de SLA: verde (em dia) / âmbar (vence em breve) / vermelho (vencida).
+function slaDot(selo: 'verde' | 'ambar' | 'vermelho'): string {
+  const map = {
+    verde:    { cls: 'bg-emerald-500', t: 'Tarefas em dia' },
+    ambar:    { cls: 'bg-amber-500',   t: 'Tarefa vence em breve' },
+    vermelho: { cls: 'bg-rose-500',    t: 'Tarefa vencida' },
+  }[selo];
+  return `<span class="inline-block w-2.5 h-2.5 rounded-full ${map.cls}" title="${map.t}"></span>`;
+}
+
 export function renderLeadsListPage(
   rows: LeadRow[],
   filters: {
     status?: string;
     only_alerts?: boolean;
+    atencao?: boolean;
     search?: string;
     limit?: number;
     offset?: number;
     total?: number;
     countByStatus?: Record<string, number>;
+    atencaoCount?: number;
     insights?: import('./ai-summary.js').Insight[];
   },
   user?: DashUser,
@@ -94,10 +108,12 @@ export function renderLeadsListPage(
     return `<a href="${finalHref}" class="px-3 py-1.5 rounded-lg text-sm inline-flex items-center ${cls}">${label}${badge}</a>`;
   };
 
+  const atencaoCount = filters.atencaoCount ?? 0;
   const filterBar = `
     <div class="flex flex-wrap gap-2 mb-4">
       ${tab(null, 'Todos', counts.todos ?? null, 'bg-indigo-600')}
       <a href="/dashboard/leads?only_alerts=1${search ? `&q=${encodeURIComponent(search)}` : ''}" class="px-3 py-1.5 rounded-lg text-sm inline-flex items-center ${filters.only_alerts ? 'bg-rose-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">🚨 Alertas <span class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] ${filters.only_alerts ? 'bg-white/20' : 'bg-slate-200'}">${alertasCount}</span></a>
+      <a href="/dashboard/leads?atencao=1${search ? `&q=${encodeURIComponent(search)}` : ''}" class="px-3 py-1.5 rounded-lg text-sm inline-flex items-center ${filters.atencao ? 'bg-rose-700 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">⚠️ Precisam de atenção <span class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] ${filters.atencao ? 'bg-white/20' : 'bg-rose-100 text-rose-800'}">${atencaoCount}</span></a>
       ${tab('novo', '🆕 Novos', counts.novo ?? null, 'bg-sky-600')}
       ${tab('qualificando', '🎯 Qualificando', counts.qualificando ?? null, 'bg-violet-600')}
       ${tab('qualificado', '⭐ Qualificados', counts.qualificado ?? null, 'bg-fuchsia-600')}
@@ -113,6 +129,7 @@ export function renderLeadsListPage(
     const params = new URLSearchParams();
     if (filters.status) params.set('status', filters.status);
     if (filters.only_alerts) params.set('only_alerts', '1');
+    if (filters.atencao) params.set('atencao', '1');
     if (search) params.set('q', search);
     for (const [k, v] of Object.entries(extras)) params.set(k, String(v));
     return params.toString();
@@ -169,6 +186,7 @@ export function renderLeadsListPage(
         : alertaBadge(l.alerta);
       return `
         <tr class="border-t border-slate-200 hover:bg-slate-50 ${rowOpacity}">
+          <td class="px-3 py-3 text-center">${slaDot(l.seloSla)}</td>
           <td class="px-4 py-3">${colInfo}</td>
           <td class="px-4 py-3">
             <a href="${perfilUrl}" class="font-medium text-slate-900 hover:text-indigo-600">${nome}${isGanho ? ' 🏆' : ''}</a>
@@ -209,6 +227,7 @@ export function renderLeadsListPage(
         <table class="w-full">
           <thead class="bg-slate-50">
             <tr>
+              <th class="px-3 py-3 text-center text-xs uppercase tracking-wider text-slate-500 font-semibold" title="SLA das tarefas">SLA</th>
               <th class="px-4 py-3 text-left text-xs uppercase tracking-wider text-slate-500 font-semibold">Alerta</th>
               <th class="px-4 py-3 text-left text-xs uppercase tracking-wider text-slate-500 font-semibold">Lead</th>
               <th class="px-4 py-3 text-left text-xs uppercase tracking-wider text-slate-500 font-semibold">Status</th>
@@ -219,7 +238,7 @@ export function renderLeadsListPage(
             </tr>
           </thead>
           <tbody>
-            ${tableRows || '<tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">Nenhum lead encontrado</td></tr>'}
+            ${tableRows || '<tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">Nenhum lead encontrado</td></tr>'}
           </tbody>
         </table>
         ${paginationBlock}
@@ -315,6 +334,105 @@ function renderTimeline(timeline: Atividade[]): string {
     <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6">
       <h2 class="text-lg font-semibold text-slate-900 mb-3">📅 Linha do tempo</h2>
       <ul class="divide-y divide-slate-100">${itens}</ul>
+    </div>`;
+}
+
+const PRIORIDADE_BADGE: Record<string, string> = {
+  alta:  'bg-rose-100 text-rose-800',
+  media: 'bg-amber-100 text-amber-800',
+  baixa: 'bg-slate-100 text-slate-600',
+};
+
+// Prazo formatado + relativo ("vence em X" / "venceu há X").
+function fmtPrazo(due_at: string | null): string {
+  if (!due_at) return 'sem prazo';
+  const data = new Date(due_at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const diff = Date.parse(due_at) - Date.now();
+  const abs = Math.abs(diff);
+  const mins = Math.floor(abs / 60000);
+  let rel: string;
+  if (mins < 60) rel = `${mins}min`;
+  else if (mins < 1440) rel = `${Math.floor(mins / 60)}h`;
+  else rel = `${Math.floor(mins / 1440)}d`;
+  return diff >= 0 ? `${data} · vence em ${rel}` : `${data} · venceu há ${rel}`;
+}
+
+const SLA_DOT_CLS: Record<'verde' | 'ambar' | 'vermelho', string> = {
+  verde: 'bg-emerald-500', ambar: 'bg-amber-500', vermelho: 'bg-rose-500',
+};
+
+function renderTarefas(leadId: string, tarefas: Tarefa[]): string {
+  const agora = Date.now();
+  const novaTarefaForm = `
+    <form method="POST" action="/dashboard/leads/${leadId}/tarefa" class="flex flex-wrap items-end gap-2 mb-4 pb-4 border-b border-slate-100">
+      <div class="flex-1 min-w-[180px]">
+        <label class="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Nova tarefa</label>
+        <input type="text" name="titulo" required placeholder="Ex: Ligar pra confirmar visita" class="w-full px-2.5 py-1.5 rounded-md text-sm border border-slate-300">
+      </div>
+      <div>
+        <label class="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Prazo</label>
+        <input type="datetime-local" name="due_at" class="px-2.5 py-1.5 rounded-md text-sm border border-slate-300">
+      </div>
+      <div>
+        <label class="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Prioridade</label>
+        <select name="prioridade" class="px-2.5 py-1.5 rounded-md text-sm border border-slate-300">
+          <option value="media">Média</option>
+          <option value="alta">Alta</option>
+          <option value="baixa">Baixa</option>
+        </select>
+      </div>
+      <button class="px-3 py-1.5 rounded-md text-sm bg-indigo-600 text-white hover:bg-indigo-700 font-semibold">➕ Criar</button>
+    </form>`;
+
+  const atividadeForm = `
+    <form method="POST" action="/dashboard/leads/${leadId}/atividade" class="flex flex-wrap items-end gap-2 mt-4 pt-4 border-t border-slate-100">
+      <div>
+        <label class="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Registrar</label>
+        <select name="tipo" class="px-2.5 py-1.5 rounded-md text-sm border border-slate-300">
+          <option value="ligacao">📞 Ligação</option>
+          <option value="nota">📝 Nota</option>
+        </select>
+      </div>
+      <div class="flex-1 min-w-[200px]">
+        <label class="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">O que rolou</label>
+        <input type="text" name="descricao" placeholder="Ex: cliente pediu pra ligar depois das 18h" class="w-full px-2.5 py-1.5 rounded-md text-sm border border-slate-300">
+      </div>
+      <button class="px-3 py-1.5 rounded-md text-sm bg-slate-700 text-white hover:bg-slate-800 font-semibold">Registrar contato</button>
+    </form>`;
+
+  const lista = tarefas.length === 0
+    ? '<p class="text-slate-400 text-sm">Nenhuma tarefa pendente.</p>'
+    : `<ul class="space-y-2">${tarefas.map((t) => {
+        const selo = seloSla([t], agora);
+        const prioCls = PRIORIDADE_BADGE[t.prioridade] ?? PRIORIDADE_BADGE.media;
+        return `
+          <li class="flex items-start gap-3 py-2 border-b border-slate-100 last:border-0">
+            <span class="inline-block w-2.5 h-2.5 rounded-full mt-1.5 ${SLA_DOT_CLS[selo]}" title="SLA"></span>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium text-slate-800">${escapeHtml(t.titulo)}</div>
+              <div class="text-[11px] text-slate-500 mt-0.5 flex flex-wrap items-center gap-2">
+                <span>${escapeHtml(fmtPrazo(t.due_at))}</span>
+                <span class="px-1.5 py-0.5 rounded-full text-[10px] font-medium ${prioCls}">${escapeHtml(t.prioridade)}</span>
+                ${t.automatica ? '<span class="text-[10px] text-slate-400">automática</span>' : ''}
+              </div>
+            </div>
+            <div class="flex gap-1 shrink-0">
+              <form method="POST" action="/dashboard/leads/${leadId}/tarefa/${t.id}/concluir" class="inline">
+                <button class="px-2.5 py-1 rounded-md text-xs bg-emerald-600 text-white hover:bg-emerald-700">✅ Concluir</button>
+              </form>
+              <form method="POST" action="/dashboard/leads/${leadId}/tarefa/${t.id}/adiar" class="inline">
+                <button class="px-2.5 py-1 rounded-md text-xs bg-white border border-slate-300 text-slate-700 hover:bg-slate-50">⏭️ Adiar 2d</button>
+              </form>
+            </div>
+          </li>`;
+      }).join('')}</ul>`;
+
+  return `
+    <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-4">
+      <h2 class="text-lg font-semibold text-slate-900 mb-3">📋 Tarefas</h2>
+      ${novaTarefaForm}
+      ${lista}
+      ${atividadeForm}
     </div>`;
 }
 
@@ -525,6 +643,8 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
       </div>
 
       ${modalMarcarPerdido}
+
+      ${renderTarefas(lead.id, lead.tarefas)}
 
       ${renderTimeline(lead.timeline)}
 

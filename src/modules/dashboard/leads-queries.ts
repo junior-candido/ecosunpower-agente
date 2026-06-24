@@ -6,6 +6,9 @@ import { getSignedUrls } from '../anexos/storage.js';
 import type { DashUser } from './permissions.js';
 import type { Atividade } from './atividades.js';
 import { listarTimeline } from './atividades.js';
+import type { Tarefa } from './tarefas.js';
+import { tarefasPendentes } from './tarefas.js';
+import { seloSla } from './sla-rules.js';
 
 export interface LeadRow {
   id: string;
@@ -26,6 +29,7 @@ export interface LeadRow {
   loss_notes: string | null;
   lost_at: string | null;
   claimed_by: string | null;
+  seloSla: 'verde' | 'ambar' | 'vermelho';
 }
 
 export interface LeadDetail extends LeadRow {
@@ -39,6 +43,7 @@ export interface LeadDetail extends LeadRow {
   cadence_steps: Array<{ step: number; scheduled_for: string; status: string; sent_at: string | null }>;
   anexos: Array<{ id: string; tipo: string; descricao: string | null; url: string; mime_type: string | null; created_by: string; created_at: string }>;
   timeline: Atividade[];
+  tarefas: Tarefa[];
 }
 
 // Statuses que indicam "já virou cliente" — esses NÃO aparecem em /leads.
@@ -58,12 +63,16 @@ export interface ListLeadsOptions {
   // visibilidade: quando setado e não-admin, filtra pool + os do próprio usuário
   viewerId?: string;
   viewerIsAdmin?: boolean;
+  // só leads com tarefa pendente vencida (due_at < agora)
+  atencao?: boolean;
 }
 
 export interface LeadsResult {
   rows: LeadRow[];
   total: number;
   countByStatus: Record<string, number>;
+  // contagem de leads (na janela buscada) com tarefa pendente vencida
+  atencaoCount: number;
 }
 
 // Valores que existem no enum `lead_status` em Postgres. Migration 039 adiciona 'perdido'.
@@ -159,10 +168,10 @@ export async function listLeads(
     q = q.or(`claimed_by.is.null,claimed_by.eq.${filters.viewerId}`);
   }
 
-  // Quando only_alerts, precisa pegar até 500 pra filtrar em JS depois (alerta calculado
-  // baseado em updated_at + cadence). Paginacao final acontece em JS no fim da funcao.
-  // Sem only_alerts: paginacao SQL nativa via range.
-  if (!filters.only_alerts) {
+  // Quando only_alerts OU atencao, precisa pegar até 500 pra filtrar em JS depois
+  // (alerta vem de updated_at+cadence; atenção vem de tarefa vencida). Paginação
+  // final acontece em JS no fim da função. Senão: paginação SQL nativa via range.
+  if (!filters.only_alerts && !filters.atencao) {
     q = q.range(offset, offset + limit - 1);
   } else {
     q = q.limit(500);
@@ -170,7 +179,7 @@ export async function listLeads(
 
   const { data: leads, error, count: total } = await q;
   if (error) throw new Error(`Failed to list leads: ${error.message}`);
-  if (!leads || leads.length === 0) return { rows: [], total: total ?? 0, countByStatus };
+  if (!leads || leads.length === 0) return { rows: [], total: total ?? 0, countByStatus, atencaoCount: 0 };
 
   // Cruza com eva_cadence pra saber quem tem toques pendentes
   const ids = leads.map((l) => l.id);
@@ -181,7 +190,26 @@ export async function listLeads(
     .eq('status', 'pending');
   const pendingSet = new Set((cads ?? []).map((c: any) => c.lead_id));
 
+  // UMA query nas tarefas pendentes dos leads da página → agrupa em memória
+  // pra calcular seloSla por lead sem N queries. Best-effort.
   const now = Date.now();
+  const tarefasPorLead = new Map<string, Array<{ due_at: string | null; status: string }>>();
+  try {
+    const { data: tars } = await client
+      .from('lead_tarefas')
+      .select('lead_id, due_at, status')
+      .in('lead_id', ids)
+      .eq('status', 'pendente');
+    for (const t of (tars ?? []) as Array<{ lead_id: string; due_at: string | null; status: string }>) {
+      const arr = tarefasPorLead.get(t.lead_id) ?? [];
+      arr.push({ due_at: t.due_at, status: t.status });
+      tarefasPorLead.set(t.lead_id, arr);
+    }
+  } catch {
+    // silencia: sem tarefas, selo verde
+  }
+  const temVencida = (leadId: string): boolean =>
+    (tarefasPorLead.get(leadId) ?? []).some((t) => t.due_at && Date.parse(t.due_at) < now);
   const rows: LeadRow[] = leads.map((l: any) => {
     const has_cadence_pending = pendingSet.has(l.id);
     const updatedAge = now - new Date(l.updated_at).getTime();
@@ -212,12 +240,21 @@ export async function listLeads(
       loss_notes: l.loss_notes ?? null,
       lost_at: l.lost_at ?? null,
       claimed_by: l.claimed_by ?? null,
+      seloSla: seloSla(tarefasPorLead.get(l.id) ?? [], now),
     };
   });
 
+  // Contagem de leads com tarefa pendente vencida (entre os trazidos nesta busca).
+  const atencaoCount = rows.filter((r) => temVencida(r.id)).length;
+
   let finalRows: LeadRow[];
   let finalTotal: number;
-  if (filters.only_alerts) {
+  if (filters.atencao) {
+    // Só leads com tarefa pendente vencida; pagina em JS.
+    const filtered = rows.filter((r) => temVencida(r.id));
+    finalTotal = filtered.length;
+    finalRows = filtered.slice(offset, offset + limit);
+  } else if (filters.only_alerts) {
     // Filtra alertas em JS (precisa do calculo de updated_at + cadence) e pagina em JS
     const filtered = rows.filter((r) => r.alerta !== 'normal' && r.alerta !== 'novo');
     finalTotal = filtered.length;
@@ -227,7 +264,7 @@ export async function listLeads(
     finalTotal = total ?? rows.length;
   }
 
-  return { rows: finalRows, total: finalTotal, countByStatus };
+  return { rows: finalRows, total: finalTotal, countByStatus, atencaoCount };
 }
 
 export async function getLeadDetail(client: SupabaseClient, id: string): Promise<LeadDetail | null> {
@@ -283,6 +320,14 @@ export async function getLeadDetail(client: SupabaseClient, id: string): Promise
     // silencia: falha na timeline não impede carregar o detalhe
   }
 
+  // Tarefas pendentes do lead (best-effort: não quebra o detalhe se falhar)
+  let tarefas: Tarefa[] = [];
+  try {
+    tarefas = await tarefasPendentes(client, id);
+  } catch {
+    // silencia: falha nas tarefas não impede carregar o detalhe
+  }
+
   return {
     id: lead.id,
     phone: lead.phone,
@@ -302,6 +347,7 @@ export async function getLeadDetail(client: SupabaseClient, id: string): Promise
     loss_notes: lead.loss_notes ?? null,
     lost_at: lead.lost_at ?? null,
     claimed_by: lead.claimed_by ?? null,
+    seloSla: seloSla(tarefas, now),
     city: lead.city,
     neighborhood: lead.neighborhood,
     profile: lead.profile,
@@ -312,6 +358,7 @@ export async function getLeadDetail(client: SupabaseClient, id: string): Promise
     cadence_steps: cads ?? [],
     anexos,
     timeline,
+    tarefas,
   };
 }
 
