@@ -1,4 +1,5 @@
 import { renderLayout, escapeHtml, brl } from './views.js';
+import type { DashUser } from './permissions.js';
 import type {
   MarketingKpis, CampaignRow, CreativeRow, AlertRow, ChannelFunnelRow,
 } from './marketing-queries.js';
@@ -359,7 +360,7 @@ function renderChannelsSection(channels: ChannelFunnelRow[]): string {
     </section>`;
 }
 
-export function renderMarketingPage(input: MarketingPageInput): string {
+export function renderMarketingPage(input: MarketingPageInput, user?: DashUser): string {
   const { kpis, campaigns, creatives, alerts, channels } = input;
   const filters = input.campaignsFilters ?? { status: 'active' as const, search: '', limit: 20, offset: 0 };
   const counts = input.campaignsCounts ?? { active: 0, paused: 0, total: 0 };
@@ -529,5 +530,5 @@ export function renderMarketingPage(input: MarketingPageInput): string {
     ${input.campaignQuality ? renderCampaignQualitySection(input.campaignQuality) : ''}
   `;
 
-  return renderLayout({ active: 'marketing', title: 'Marketing', body });
+  return renderLayout({ active: 'marketing', title: 'Marketing', body, user });
 }

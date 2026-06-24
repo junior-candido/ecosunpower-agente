@@ -1,13 +1,14 @@
 // src/modules/dashboard/usuarios-views.ts
 // Telas de /usuarios: lista + form de criar/editar. Só admin (gating no router).
 import { renderLayout } from './views.js';
+import type { DashUser } from './permissions.js';
 import type { UserListItem, RoleRow } from './users-store.js';
 
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
 
-export function renderUsuariosListPage(users: UserListItem[], roles: RoleRow[]): string {
+export function renderUsuariosListPage(users: UserListItem[], roles: RoleRow[], viewer?: DashUser): string {
   const linhas = users.map((u) => `
     <tr class="border-b border-slate-200 hover:bg-slate-50">
       <td class="px-3 py-2">${esc(u.nome)}</td>
@@ -38,12 +39,13 @@ export function renderUsuariosListPage(users: UserListItem[], roles: RoleRow[]):
     </tr></thead>
     <tbody>${linhas || '<tr><td class="px-3 py-4 text-slate-400" colspan="5">Nenhum usuário</td></tr>'}</tbody>
   </table>`;
-  return renderLayout({ active: 'home', title: 'Usuários', body });
+  return renderLayout({ active: 'home', title: 'Usuários', body, user: viewer });
 }
 
 export function renderUsuarioEditPage(
   user: { id: string; nome: string; login: string; ativo: boolean; role_id: string | null },
   roles: RoleRow[],
+  viewer?: DashUser,
 ): string {
   const opcoes = roles.map((r) => `<option value="${r.id}" ${r.id === user.role_id ? 'selected' : ''}>${esc(r.nome)}</option>`).join('');
   const body = `
@@ -64,5 +66,5 @@ export function renderUsuarioEditPage(
     </label>
     <button class="bg-sky-600 hover:bg-sky-700 text-white rounded-md px-4 py-2 w-fit">Salvar</button>
   </form>`;
-  return renderLayout({ active: 'home', title: 'Editar usuário', body });
+  return renderLayout({ active: 'home', title: 'Editar usuário', body, user: viewer });
 }

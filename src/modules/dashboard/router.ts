@@ -209,7 +209,7 @@ export function createDashboardRouter(
     if (!can(req.dashUser, 'usuarios', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
     const cid = req.dashUser!.companyId;
     const [users, roles] = await Promise.all([listUsers(supabase, cid), listRoles(supabase, cid)]);
-    res.type('html').send(renderUsuariosListPage(users, roles));
+    res.type('html').send(renderUsuariosListPage(users, roles, req.dashUser));
   });
 
   router.post('/usuarios/novo', async (req: AuthedRequest, res) => {
@@ -233,7 +233,7 @@ export function createDashboardRouter(
       .select('id, nome, login, ativo, role_id').eq('id', userId).maybeSingle();
     if (!u) { res.status(404).send('Usuário não encontrado'); return; }
     const roles = await listRoles(supabase, cid);
-    res.type('html').send(renderUsuarioEditPage(u as any, roles));
+    res.type('html').send(renderUsuarioEditPage(u as any, roles, req.dashUser));
   });
 
   router.post('/usuarios/:id', async (req: AuthedRequest, res) => {
@@ -482,7 +482,7 @@ export function createDashboardRouter(
         total: result.total,
         countByStatus: result.countByStatus,
         insights,
-      }));
+      }, viewer));
     } catch (err) {
       console.error('[dashboard/leads]', err);
       res.status(500).send(`<h2>Erro ao carregar leads</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -505,6 +505,18 @@ export function createDashboardRouter(
         if (captured) {
           await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'claim' });
           lead.claimed_by = viewer.id; // reflete na renderização atual
+        } else {
+          // Corrida: outro vendedor capturou primeiro. O claimed_by em memória
+          // ainda está nulo (lido antes do claim), então re-lê do banco pra que
+          // o podeVerLead abaixo barre o perdedor (403) em vez de deixar passar 1×.
+          const { data: atual } = await supabase
+            .from('leads')
+            .select('claimed_by')
+            .eq('id', id)
+            .maybeSingle();
+          if (atual && atual.claimed_by != null) {
+            lead.claimed_by = atual.claimed_by;
+          }
         }
       }
       // Bloqueio: vendedor não pode abrir lead de OUTRO vendedor
@@ -599,6 +611,8 @@ export function createDashboardRouter(
       .update({ status, updated_at: new Date().toISOString() })
       .eq('id', id);
     if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    const viewer = (req as AuthedRequest).dashUser;
+    if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'etapa', valorNovo: status });
     res.redirect(`/dashboard/leads/${id}`);
   });
 
@@ -627,6 +641,8 @@ export function createDashboardRouter(
         `<h2>Não foi possível excluir</h2><p>${escapeHtmlSimple(r.error ?? '')}</p><a href="/dashboard/leads/${id}">← voltar</a>`,
       );
     }
+    const viewer = (req as AuthedRequest).dashUser;
+    if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'excluiu' });
     res.redirect('/dashboard/leads');
   });
 
@@ -635,6 +651,8 @@ export function createDashboardRouter(
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     const r = await supabaseService.arquivarLead(id);
     if (!r.ok) return res.status(500).send(`erro: ${escapeHtmlSimple(r.error ?? '')}`);
+    const viewer = (req as AuthedRequest).dashUser;
+    if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'arquivou' });
     res.redirect('/dashboard/leads');
   });
 
@@ -652,6 +670,8 @@ export function createDashboardRouter(
         `<h2>Erro ao marcar perdido</h2><p>${escapeHtmlSimple(r.error ?? '')}</p><a href="/dashboard/leads/${id}">← voltar</a>`,
       );
     }
+    const viewer = (req as AuthedRequest).dashUser;
+    if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'perdeu', valorNovo: reason });
     res.redirect(`/dashboard/leads/${id}`);
   });
 
@@ -753,7 +773,7 @@ export function createDashboardRouter(
         googleAds30d,
         ga4_30d,
         campaignQuality,
-      }));
+      }, (req as AuthedRequest).dashUser));
     } catch (err) {
       console.error('[dashboard/marketing]', err);
       res.status(500).send(`<h2>Erro ao carregar marketing</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -794,7 +814,7 @@ export function createDashboardRouter(
       const search = (req.query.q as string) ?? '';
 
       const { rows, total } = await listPropostas(supabase, { limit, offset, search });
-      res.send(renderPropostasPage({ rows, total, offset, limit, search }));
+      res.send(renderPropostasPage({ rows, total, offset, limit, search }, (req as AuthedRequest).dashUser));
     } catch (err) {
       console.error('[dashboard/propostas]', err);
       res.status(500).send(`<h2>Erro ao listar propostas</h2><pre>${(err as Error).message}</pre>`);
@@ -889,7 +909,7 @@ export function createDashboardRouter(
         getAlertasEnviadosUltimos7d(supabase),
         getKPIsAbordagemMes(supabase).catch(() => undefined),
       ]);
-      res.send(renderMonitoramentoPage(filtered as any, qf, alertasResumo, sparkline7d, kpisEva));
+      res.send(renderMonitoramentoPage(filtered as any, qf, alertasResumo, sparkline7d, kpisEva, (req as AuthedRequest).dashUser));
     } catch (err) {
       console.error('[dashboard/monitoramento]', err);
       res.status(500).send(`<h2>Erro ao listar monitoramento</h2><pre>${(err as Error).message}</pre>`);

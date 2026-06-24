@@ -423,7 +423,7 @@ export interface PropostasPageInput {
   search: string;
 }
 
-export function renderPropostasPage(input: PropostasPageInput): string {
+export function renderPropostasPage(input: PropostasPageInput, user?: DashUser): string {
   const { rows, total, offset, limit, search } = input;
   const pagina = Math.floor(offset / limit) + 1;
   const totalPaginas = Math.max(1, Math.ceil(total / limit));
@@ -509,7 +509,7 @@ export function renderPropostasPage(input: PropostasPageInput): string {
     </div>` : ''}
   `;
 
-  return renderLayout({ active: 'propostas', title: 'Propostas', body });
+  return renderLayout({ active: 'propostas', title: 'Propostas', body, user });
 }
 
 // =========================================================================
@@ -576,6 +576,7 @@ export function renderMonitoramentoPage(
   alertasResumo?: { urgente: number; aviso: number; info: number; total: number },
   sparkline7d?: Array<{ dia: string; enviados: number }>,
   kpisEva?: KPIsAbordagemMes,
+  user?: DashUser,
 ): string {
   const ativos = rows.filter((r) => r.ativo);
   const totalKwp = ativos.reduce((s, r) => s + (r.potencia_kwp ?? 0), 0);
@@ -758,7 +759,7 @@ export function renderMonitoramentoPage(
     <div class="mt-4 text-xs text-slate-500 text-center">💡 Sincronização automática a cada <strong>15 min</strong>. Página atualiza sozinha a cada <strong>30s</strong>.</div>`}
   `;
   const scripts = `<script>setTimeout(() => location.reload(), 30000);</script>`;
-  return renderLayout({ active: 'monitoramento', title: 'Monitoramento', body, scripts, dark: true });
+  return renderLayout({ active: 'monitoramento', title: 'Monitoramento', body, scripts, dark: true, user });
 }
 
 // =========================================================================

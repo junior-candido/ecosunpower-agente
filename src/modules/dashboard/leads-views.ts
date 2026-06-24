@@ -2,6 +2,7 @@
 // Views HTML para /dashboard/leads (lista + detalhe).
 
 import { renderLayout, escapeHtml } from './views.js';
+import type { DashUser } from './permissions.js';
 import type { LeadRow, LeadDetail } from './leads-queries.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
 import { renderInsightsBanner } from './ai-summary.js';
@@ -69,6 +70,7 @@ export function renderLeadsListPage(
     countByStatus?: Record<string, number>;
     insights?: import('./ai-summary.js').Insight[];
   },
+  user?: DashUser,
 ): string {
   const alertasCount = rows.filter((r) => r.alerta === 'silente_sem_cadencia').length;
   const search = filters.search ?? '';
@@ -223,7 +225,7 @@ export function renderLeadsListPage(
       </div>
     </div>
   `;
-  return renderLayout({ active: 'leads', title: 'Leads', body });
+  return renderLayout({ active: 'leads', title: 'Leads', body, user });
 }
 
 function renderAnexoCard(a: {
