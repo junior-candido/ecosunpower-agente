@@ -78,6 +78,7 @@ import { montarRespostaAtualizar } from './modules/proposal/atualizar-proposta.j
 import { contarPropostasSemDados, resgatarDadosInput } from './modules/proposal/resgatar-dados-input.js';
 import { MonitoringService } from './modules/monitoring/service.js';
 import { createDashboardRouter } from './modules/dashboard/router.js';
+import { ensureSeed } from './modules/dashboard/seed.js';
 import { resolveChannel } from './modules/dashboard/resolve-channel.js';
 import { leadRowToChannelInput } from './modules/dashboard/channel-mapper.js';
 import { ProactiveAlertService } from './modules/monitoring/proactive-alerts/service.js';
@@ -7254,6 +7255,9 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     metaService: metaWaba ?? undefined,
     engineerPhone: config.engineerPhone,
   }));
+
+  // Garante (idempotente) os usuários iniciais do dashboard no boot (admin + comerciais).
+  ensureSeed(supabase.getClient()).catch((e) => console.warn('[seed] erro:', (e as Error).message));
 
   // PDF público da proposta — gera na hora a partir do HTML salvo (sem Drive).
   // URL bonita usada nas mensagens do cliente: /p/<slug>.pdf

@@ -32,10 +32,9 @@ import type { MonitoringService } from '../monitoring/service.js';
 import type { ProposalAssistant } from '../proposal-assistant.js';
 import type { MetaWhatsAppService } from '../meta-whatsapp.js';
 import {
-  dashboardSessionAuth,
+  criarSessionAuth,
   setSessionCookie,
   clearSessionCookie,
-  senhaValida,
 } from './auth.js';
 import {
   fetchDashboardKpis,
@@ -87,8 +86,9 @@ import {
   TIPOS_ESTRUTURA,
 } from './proposta-form-view.js';
 import { renderUsuariosListPage, renderUsuarioEditPage } from './usuarios-views.js';
-import { listUsers, listRoles, createUser, updateUser } from './users-store.js';
-import { hashSenha } from './password.js';
+import { listUsers, listRoles, createUser, updateUser, getUserByLogin, touchLastLogin } from './users-store.js';
+import { hashSenha, verificarSenha } from './password.js';
+import { claimLead, podeVerLead, listLeads } from './leads-queries.js';
 import { audit } from './audit.js';
 import { can } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
@@ -166,24 +166,24 @@ export function createDashboardRouter(
     res.type('text/html').send(renderLoginPage({ next }));
   });
 
-  router.post('/login', (req: Request, res: Response) => {
+  router.post('/login', async (req: Request, res: Response) => {
+    const login = String(req.body?.login ?? '').trim();
     const senha = String(req.body?.senha ?? '');
     const next = typeof req.body?.next === 'string' && req.body.next.startsWith('/dashboard')
       ? req.body.next
-      : '/dashboard/home';
+      : '/dashboard/cockpit';
 
-    if (!senha) {
-      return res.status(400).type('text/html').send(
-        renderLoginPage({ errorMsg: 'Digite a senha pra entrar.', next }),
-      );
-    }
-    if (!senhaValida(senha)) {
+    const found = login ? await getUserByLogin(supabase, ECOSUN, login) : null;
+    const ok = found ? await verificarSenha(senha, found.senhaHash) : false;
+    if (!ok || !found) {
       return res.status(401).type('text/html').send(
-        renderLoginPage({ errorMsg: 'Senha incorreta. Tenta de novo.', next }),
+        renderLoginPage({ errorMsg: 'Login ou senha inválidos. Tenta de novo.', next }),
       );
     }
-    setSessionCookie(res);
-    res.redirect(next);
+    setSessionCookie(res, found.user.id);
+    await touchLastLogin(supabase, found.user.id);
+    await audit(supabase, { companyId: found.user.companyId, userId: found.user.id, entidade: 'sessao', acao: 'login' });
+    res.redirect(next.startsWith('/dashboard') ? next : '/dashboard/cockpit');
   });
 
   router.post('/logout', (_req: Request, res: Response) => {
@@ -195,7 +195,7 @@ export function createDashboardRouter(
   // Daqui pra baixo, tudo exige auth.
   // ----------------------------------------------------------------------
 
-  router.use(dashboardSessionAuth);
+  router.use(criarSessionAuth(supabase));
 
   // Raiz redireciona pro cockpit (visao geral 1-tela). Era /home antes.
   router.get('/', (_req, res) => {
@@ -461,7 +461,7 @@ export function createDashboardRouter(
 
   router.get('/leads', exigir('leads', 'visualizar'), async (req: Request, res: Response) => {
     try {
-      const { listLeads } = await import('./leads-queries.js');
+      const viewer = (req as AuthedRequest).dashUser!;
       const { renderLeadsListPage } = await import('./leads-views.js');
       const status = typeof req.query.status === 'string' ? req.query.status : undefined;
       const only_alerts = req.query.only_alerts === '1' || req.query.only_alerts === 'true';
@@ -470,7 +470,7 @@ export function createDashboardRouter(
       const offset = Math.max(0, parseInt(String(req.query.offset ?? '0')) || 0);
       const { buildLeadsInsights } = await import('./ai-summary.js');
       const [result, insights] = await Promise.all([
-        listLeads(supabase, { status, only_alerts, search, limit, offset }),
+        listLeads(supabase, { status, only_alerts, search, limit, offset, viewerId: viewer.id, viewerIsAdmin: viewer.isAdmin }),
         buildLeadsInsights(supabase),
       ]);
       res.send(renderLeadsListPage(result.rows, {
@@ -497,6 +497,21 @@ export function createDashboardRouter(
       const { renderLeadDetailPage } = await import('./leads-views.js');
       const lead = await getLeadDetail(supabase, id);
       if (!lead) return res.status(404).send('lead não encontrado');
+
+      // Claim automático: vendedor (não-admin) que abre um lead do balcão vira dono.
+      const viewer = (req as AuthedRequest).dashUser!;
+      if (!viewer.isAdmin && lead.claimed_by == null && can(viewer, 'leads', 'editar')) {
+        const captured = await claimLead(supabase, id, viewer.id);
+        if (captured) {
+          await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'claim' });
+          lead.claimed_by = viewer.id; // reflete na renderização atual
+        }
+      }
+      // Bloqueio: vendedor não pode abrir lead de OUTRO vendedor
+      if (!podeVerLead(viewer, lead)) {
+        return res.status(403).send('<h2>Lead de outro vendedor</h2>');
+      }
+
       res.send(renderLeadDetailPage(lead));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);

@@ -23,6 +23,7 @@ export interface LeadRow {
   loss_reason: string | null;
   loss_notes: string | null;
   lost_at: string | null;
+  claimed_by: string | null;
 }
 
 export interface LeadDetail extends LeadRow {
@@ -130,7 +131,7 @@ export async function listLeads(
   let q = client
     .from('leads')
     .select(
-      'id, phone, name, status, acquisition_source, eva_active, opt_out, maintenance_client, created_at, updated_at, installation_status, archived_at, loss_reason, loss_notes, lost_at',
+      'id, phone, name, status, acquisition_source, eva_active, opt_out, maintenance_client, created_at, updated_at, installation_status, archived_at, loss_reason, loss_notes, lost_at, claimed_by',
       { count: 'exact' },
     )
     .is('archived_at', null)
@@ -207,6 +208,7 @@ export async function listLeads(
       loss_reason: l.loss_reason ?? null,
       loss_notes: l.loss_notes ?? null,
       lost_at: l.lost_at ?? null,
+      claimed_by: l.claimed_by ?? null,
     };
   });
 
@@ -288,6 +290,7 @@ export async function getLeadDetail(client: SupabaseClient, id: string): Promise
     loss_reason: lead.loss_reason ?? null,
     loss_notes: lead.loss_notes ?? null,
     lost_at: lead.lost_at ?? null,
+    claimed_by: lead.claimed_by ?? null,
     city: lead.city,
     neighborhood: lead.neighborhood,
     profile: lead.profile,

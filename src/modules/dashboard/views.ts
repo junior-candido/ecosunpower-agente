@@ -259,8 +259,20 @@ export function renderLoginPage(input: LoginPageInput = {}): string {
       <form action="/dashboard/login" method="post" class="space-y-5">
         ${next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : ''}
 
-        <!-- Username oculto pro Chrome/Firefox oferecerem "salvar senha" -->
-        <input type="text" name="username" value="${escapeHtml(empresa().email)}" autocomplete="username" style="display:none" readonly tabindex="-1">
+        <div>
+          <label for="login" class="block text-sm font-semibold text-slate-700 mb-2">
+            👤 Login
+          </label>
+          <input
+            id="login"
+            name="login"
+            type="text"
+            required
+            autocomplete="username"
+            autofocus
+            class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition"
+            placeholder="seu usuário">
+        </div>
 
         <div>
           <label for="senha" class="block text-sm font-semibold text-slate-700 mb-2">
@@ -272,7 +284,6 @@ export function renderLoginPage(input: LoginPageInput = {}): string {
             type="password"
             required
             autocomplete="current-password"
-            autofocus
             class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition"
             placeholder="Digite sua senha">
         </div>
