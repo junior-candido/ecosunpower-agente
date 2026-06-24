@@ -92,6 +92,9 @@ export interface ProposalCalculations {
   percentualGeracaoInjetadaUsado: number; // simultaneidade aplicada (override ou sugerida)
   anoInicial: number; // ano calendario do inicio da projecao
   percentualFioBInicial: number; // % do Fio B no ano inicial (ex: 2026 = 0.60)
+  // Tabelinhas da ilustracao "como sua economia funciona" (vazias em off_grid).
+  tabelaSimultaneidade: LinhaSimultaneidade[];
+  tabelaFioBAnos: LinhaFioBAno[];
 
   // Projecao mes a mes (12 meses)
   geracaoMensalDistribuida: number[];
@@ -324,6 +327,80 @@ export function calcularContaMensalDetalhada(p: {
   };
 }
 
+// ============================================================================
+// Tabelinhas da ilustracao "como sua economia funciona" (proposta)
+// ============================================================================
+
+// Parametros comuns de uma conta com solar (sem a simultaneidade e o % do Fio B,
+// que cada tabela varia).
+export interface ContaBaseParams {
+  consumoKwh: number;
+  geracaoKwh: number;
+  tarifaRsKwh: number;
+  tusdFioBRsKwh: number;
+  custoIluminacaoPublica: number;
+  tipoSistema: TipoSistema;
+}
+
+export interface LinhaSimultaneidade {
+  autoconsumoPct: number; // fracao usada na hora (nao paga Fio B)
+  injetadoPct: number;    // fracao mandada pra rede (paga Fio B)
+  fioB: number;
+  total: number;
+}
+
+// "Quanto mais usa de dia, menos paga": varia o autoconsumo (10/25/50% padrao) e
+// mostra o Fio B caindo. injetado = 1 - autoconsumo. Usa o % do Fio B do ano vigente.
+export function tabelaSimultaneidade(
+  p: ContaBaseParams & { percentualFioBVigente: number },
+  niveisAutoconsumo: number[] = [0.10, 0.25, 0.50],
+): LinhaSimultaneidade[] {
+  return niveisAutoconsumo.map(autoconsumoPct => {
+    const injetadoPct = Math.max(0, 1 - autoconsumoPct);
+    const c = calcularContaMensalDetalhada({
+      consumoKwh: p.consumoKwh,
+      geracaoKwh: p.geracaoKwh,
+      tarifaRsKwh: p.tarifaRsKwh,
+      tusdFioBRsKwh: p.tusdFioBRsKwh,
+      percentualFioBVigente: p.percentualFioBVigente,
+      percentualGeracaoInjetada: injetadoPct,
+      custoIluminacaoPublica: p.custoIluminacaoPublica,
+      tipoSistema: p.tipoSistema,
+    });
+    return { autoconsumoPct, injetadoPct, fioB: c.fioB, total: c.total };
+  });
+}
+
+export interface LinhaFioBAno {
+  ano: number;
+  percentualFioB: number;
+  fioB: number;
+  total: number;
+}
+
+// "O Fio B sobe com os anos": mantem a simultaneidade do cliente e varia so o %
+// do Fio B por ano (Lei 14.300). Tarifa/tusd ficam no valor atual (isola o efeito
+// da rampa — a projecao completa com reajuste fica no grafico de fluxo de caixa).
+export function tabelaFioBPorAno(
+  p: ContaBaseParams & { percentualGeracaoInjetada: number },
+  anos: number[],
+): LinhaFioBAno[] {
+  return anos.map(ano => {
+    const percentualFioB = percentualFioBPorAno(ano);
+    const c = calcularContaMensalDetalhada({
+      consumoKwh: p.consumoKwh,
+      geracaoKwh: p.geracaoKwh,
+      tarifaRsKwh: p.tarifaRsKwh,
+      tusdFioBRsKwh: p.tusdFioBRsKwh,
+      percentualFioBVigente: percentualFioB,
+      percentualGeracaoInjetada: p.percentualGeracaoInjetada,
+      custoIluminacaoPublica: p.custoIluminacaoPublica,
+      tipoSistema: p.tipoSistema,
+    });
+    return { ano, percentualFioB, fioB: c.fioB, total: c.total };
+  });
+}
+
 // TIR via metodo Newton-Raphson. Aproximacao iterativa do zero do VPL.
 // Boa o suficiente pra propostas (precisao ~0.01%).
 export function calcularTIR(fluxoCaixa: number[]): number {
@@ -485,6 +562,26 @@ export function calcular(input: ProposalInput): ProposalCalculations {
   // Sustentabilidade (matriz brasileira ~0.084 kg CO2/kWh)
   const co2EvitadoToneladas = (geracaoVidaUtilKwh * 0.084) / 1000;
 
+  // Tabelinhas da ilustracao. Off_grid nao tem Fio B -> vazias (template mostra
+  // "voce sai da conta de luz"). Anos do Fio B: inicial, seguinte e 2029 (100%).
+  const anosFioB = Array.from(new Set([anoInicial, Math.min(anoInicial + 1, 2029), 2029]))
+    .filter(a => a >= anoInicial)
+    .sort((a, b) => a - b);
+  const baseConta: ContaBaseParams = {
+    consumoKwh: consumoMensalKwh,
+    geracaoKwh: geracaoMensalKwh,
+    tarifaRsKwh,
+    tusdFioBRsKwh,
+    custoIluminacaoPublica,
+    tipoSistema,
+  };
+  const tabelaSim = tipoSistema === 'off_grid'
+    ? []
+    : tabelaSimultaneidade({ ...baseConta, percentualFioBVigente });
+  const tabelaFioB = tipoSistema === 'off_grid'
+    ? []
+    : tabelaFioBPorAno({ ...baseConta, percentualGeracaoInjetada }, anosFioB);
+
   return {
     geracaoMensalKwh,
     geracaoAnualKwh,
@@ -506,6 +603,8 @@ export function calcular(input: ProposalInput): ProposalCalculations {
     percentualGeracaoInjetadaUsado: percentualGeracaoInjetada,
     anoInicial,
     percentualFioBInicial: percentualFioBPorAno(anoInicial),
+    tabelaSimultaneidade: tabelaSim,
+    tabelaFioBAnos: tabelaFioB,
     geracaoMensalDistribuida,
     consumoMensalDistribuido,
     fluxoCaixaAnual,

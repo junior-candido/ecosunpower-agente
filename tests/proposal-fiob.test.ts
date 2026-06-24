@@ -7,6 +7,8 @@ import {
   tipoSistemaDeDados,
   perfilDeTipoCliente,
   temCarregadorNosServicos,
+  tabelaSimultaneidade,
+  tabelaFioBPorAno,
   type ProposalInput,
 } from '../src/modules/proposal/calculator.js';
 
@@ -156,6 +158,20 @@ describe('calcular() — breakdown detalhado exposto pro template', () => {
     expect(r.percentualGeracaoInjetadaUsado).toBeCloseTo(0.75);
     expect(r.anoInicial).toBe(2026);
   });
+
+  it('monta as 2 tabelinhas da ilustração (simultaneidade + Fio B por ano)', () => {
+    const r = calcular(baseInput());
+    expect(r.tabelaSimultaneidade).toHaveLength(3);
+    expect(r.tabelaSimultaneidade[0].fioB).toBeGreaterThan(r.tabelaSimultaneidade[2].fioB);
+    expect(r.tabelaFioBAnos.map(l => l.ano)).toContain(2029);
+    expect(r.tabelaFioBAnos[r.tabelaFioBAnos.length - 1].percentualFioB).toBeCloseTo(1.0);
+  });
+
+  it('off-grid: tabelinhas vazias (não há Fio B pra ilustrar)', () => {
+    const r = calcular(baseInput({ tipoSistema: 'off_grid' }));
+    expect(r.tabelaSimultaneidade).toEqual([]);
+    expect(r.tabelaFioBAnos).toEqual([]);
+  });
 });
 
 describe('calcular() — off-grid sai da conta de luz', () => {
@@ -212,5 +228,41 @@ describe('classificadores de dados da proposta', () => {
     expect(temCarregadorNosServicos([{ titulo: 'Adequação de padrão', descricao: 'troca' }])).toBe(false);
     expect(temCarregadorNosServicos(undefined)).toBe(false);
     expect(temCarregadorNosServicos([])).toBe(false);
+  });
+});
+
+describe('tabelaSimultaneidade — quanto mais usa de dia, menos paga Fio B', () => {
+  const p = {
+    consumoKwh: 500, geracaoKwh: 500, tarifaRsKwh: 1.0,
+    tusdFioBRsKwh: 0.30, custoIluminacaoPublica: 0,
+    tipoSistema: 'on_grid' as const, percentualFioBVigente: 0.60,
+  };
+  it('mais autoconsumo → menos Fio B (monotônico decrescente)', () => {
+    const t = tabelaSimultaneidade(p);
+    expect(t.map(r => r.autoconsumoPct)).toEqual([0.10, 0.25, 0.50]);
+    // autoconsumo 10% → injeta 90% (450) → 450×0,30×0,60 = 81
+    expect(t[0].fioB).toBeCloseTo(81, 1);
+    // autoconsumo 50% → injeta 50% (250) → 250×0,30×0,60 = 45
+    expect(t[2].fioB).toBeCloseTo(45, 1);
+    expect(t[0].fioB).toBeGreaterThan(t[1].fioB);
+    expect(t[1].fioB).toBeGreaterThan(t[2].fioB);
+  });
+});
+
+describe('tabelaFioBPorAno — o Fio B sobe com os anos', () => {
+  const p = {
+    consumoKwh: 500, geracaoKwh: 500, tarifaRsKwh: 1.0,
+    tusdFioBRsKwh: 0.30, custoIluminacaoPublica: 0,
+    tipoSistema: 'on_grid' as const, percentualGeracaoInjetada: 0.75,
+  };
+  it('mesma simultaneidade, % do Fio B crescente ano a ano', () => {
+    const t = tabelaFioBPorAno(p, [2026, 2027, 2029]);
+    expect(t.map(r => r.ano)).toEqual([2026, 2027, 2029]);
+    expect(t[0].percentualFioB).toBeCloseTo(0.60);
+    expect(t[2].percentualFioB).toBeCloseTo(1.00);
+    // 2026: 375×0,30×0,60 = 67,5 ; 2029: 375×0,30×1,0 = 112,5
+    expect(t[0].fioB).toBeCloseTo(67.5, 1);
+    expect(t[2].fioB).toBeCloseTo(112.5, 1);
+    expect(t[2].fioB).toBeGreaterThan(t[0].fioB);
   });
 });

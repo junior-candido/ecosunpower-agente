@@ -2,7 +2,7 @@
 // Renderiza com base em ProposalData + ProposalCalculations.
 // Standalone (CSS inline). Usado tanto pra publicacao web quanto pra geracao de PDF.
 
-import type { ProposalCalculations } from './calculator.js';
+import { temCarregadorNosServicos, type ProposalCalculations } from './calculator.js';
 // LOGO_ECOSUNPOWER_DARK_BASE64 = logo de letra prateada p/ FUNDO ESCURO (hero/CTA/rodapé).
 // [ECOSOF] TODO: hero/CTA/rodapé usam essa constante fixa (não o logoBase64 injetável);
 // quando houver logo "dark" por tenant, trocar pra usar logoBase64 nesses 3 pontos.
@@ -11,6 +11,7 @@ import { LOGO_ECOSUNPOWER_BRANCO_BASE64, LOGO_ECOSUNPOWER_DARK_BASE64 } from './
 import { fmtRs, fmtNum, fmtPct, fmtCurto, escapeHtml } from './format.js';
 import { renderServicosAdicionaisSection, type ServicoItem } from './service-render.js';
 import { renderComoFuncionaSection } from './como-funciona-render.js';
+import { renderEconomiaFuncionaSection } from './economia-funciona-render.js';
 import { getBrandFicha } from './brand-fichas.js';
 import { logoMeioPagamento } from './payment-logos.js';
 import { temBateria, capacidadeTotalKwh, autonomiaBackupHoras, type Bateria } from './bateria.js';
@@ -681,6 +682,8 @@ ${data.modoComparacao ? '' : `<section class="financial-section">
     </div>
   </div>
 </section>`}
+
+${data.modoComparacao ? '' : renderEconomiaFuncionaSection(calc, { temCarregador: temCarregadorNosServicos(data.servicos) })}
 
 ${data.modoComparacao ? '' : `<section class="payment-section">
   <div class="container">

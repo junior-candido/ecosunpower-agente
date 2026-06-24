@@ -43,6 +43,10 @@ function baseCalc(): ProposalCalculations {
     geracaoMensalDistribuida: Array(12).fill(1000), consumoMensalDistribuido: Array(12).fill(1000),
     fluxoCaixaAnual: [-38500, ...Array(25).fill(12000)],
     contaSemSistemaAnual: Array(25).fill(12000), contaComSistemaAnual: Array(25).fill(1200),
+    contaComDetalhada: { total: 100, fioB: 80, consumoRede: 0, cip: 20, autoconsumoKwh: 250, injetadoKwh: 750 },
+    tipoSistema: 'on_grid', percentualGeracaoInjetadaUsado: 0.75,
+    anoInicial: 2026, percentualFioBInicial: 0.60,
+    tabelaSimultaneidade: [], tabelaFioBAnos: [],
   };
 }
 function baseData(): ProposalData {
