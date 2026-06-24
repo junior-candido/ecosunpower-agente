@@ -86,6 +86,12 @@ import {
   MARCAS_INVERSOR,
   TIPOS_ESTRUTURA,
 } from './proposta-form-view.js';
+import { renderUsuariosListPage, renderUsuarioEditPage } from './usuarios-views.js';
+import { listUsers, listRoles, createUser, updateUser } from './users-store.js';
+import { hashSenha } from './password.js';
+import { audit } from './audit.js';
+import { can } from './permissions.js';
+import type { AuthedRequest } from './auth.js';
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
 // didApply=false: prévia + botão pra gravar. didApply=true: resultado da gravação.
@@ -184,6 +190,52 @@ export function createDashboardRouter(
   // Raiz redireciona pro cockpit (visao geral 1-tela). Era /home antes.
   router.get('/', (_req, res) => {
     res.redirect('/dashboard/cockpit');
+  });
+
+  // ----- USUARIOS (gestao de pessoas + papeis; so admin/gestao de usuarios) -----
+  const ECOSUN = '00000000-0000-0000-0000-000000000001';
+
+  router.get('/usuarios', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'usuarios', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
+    const cid = req.dashUser!.companyId;
+    const [users, roles] = await Promise.all([listUsers(supabase, cid), listRoles(supabase, cid)]);
+    res.type('html').send(renderUsuariosListPage(users, roles));
+  });
+
+  router.post('/usuarios/novo', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'usuarios', 'criar')) { res.status(403).send('Sem permissão'); return; }
+    const { nome, login, senha, role_id } = req.body ?? {};
+    if (!nome || !login || !senha || !role_id) { res.status(400).send('Campos obrigatórios'); return; }
+    const r = await createUser(supabase, {
+      companyId: req.dashUser!.companyId, nome, login,
+      senhaHash: await hashSenha(senha), roleId: role_id,
+    });
+    if ('error' in r) { res.status(400).send(r.error === 'login_em_uso' ? 'Login já existe' : r.error); return; }
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: r.id, acao: 'criou' });
+    res.redirect('/dashboard/usuarios');
+  });
+
+  router.get('/usuarios/:id', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'usuarios', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
+    const cid = req.dashUser!.companyId;
+    const userId = String(req.params.id);
+    const { data: u } = await supabase.from('dashboard_users')
+      .select('id, nome, login, ativo, role_id').eq('id', userId).maybeSingle();
+    if (!u) { res.status(404).send('Usuário não encontrado'); return; }
+    const roles = await listRoles(supabase, cid);
+    res.type('html').send(renderUsuarioEditPage(u as any, roles));
+  });
+
+  router.post('/usuarios/:id', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'usuarios', 'editar')) { res.status(403).send('Sem permissão'); return; }
+    const userId = String(req.params.id);
+    const { nome, role_id, senha, ativo } = req.body ?? {};
+    await updateUser(supabase, userId, {
+      nome, roleId: role_id, ativo: ativo === 'on' || ativo === true,
+      senhaHash: senha ? await hashSenha(senha) : undefined,
+    });
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: 'editar' });
+    res.redirect('/dashboard/usuarios');
   });
 
   // Botão one-off pra importar os leads da campanha de formulário Meta junho/2026
