@@ -9,6 +9,7 @@ import { listarTimeline } from './atividades.js';
 import type { Tarefa } from './tarefas.js';
 import { tarefasPendentes } from './tarefas.js';
 import { seloSla } from './sla-rules.js';
+import { ORDEM_ETAPAS } from './pipeline.js';
 
 export interface LeadRow {
   id: string;
@@ -366,6 +367,94 @@ export async function getLeadDetail(client: SupabaseClient, id: string): Promise
 export function podeVerLead(user: DashUser, lead: { claimed_by: string | null }): boolean {
   if (user.isAdmin) return true;
   return lead.claimed_by === null || lead.claimed_by === user.id;
+}
+
+// ----- KANBAN DO FUNIL -----
+
+// Card mínimo de lead pra exibir no kanban.
+export interface KanbanCard {
+  id: string;
+  name: string | null;
+  phone: string;
+  status: string;
+  claimed_by: string | null;
+  updated_at: string;
+  seloSla: 'verde' | 'ambar' | 'vermelho';
+}
+
+// Agrupa leads por etapa na ordem de ORDEM_ETAPAS. PURA. Retorna SEMPRE todas as
+// chaves de ORDEM_ETAPAS (mesmo vazias), na ordem. Leads com status fora da ordem
+// (ex.: 'perdido') são ignorados — não viram coluna do kanban.
+export function agruparLeadsPorEtapa<T extends { status: string }>(leads: T[]): Record<string, T[]> {
+  const grupos: Record<string, T[]> = {};
+  for (const etapa of ORDEM_ETAPAS) grupos[etapa] = [];
+  for (const lead of leads) {
+    const arr = grupos[lead.status];
+    if (arr) arr.push(lead); // ignora status fora de ORDEM_ETAPAS (perdido, clientes etc.)
+  }
+  return grupos;
+}
+
+// Busca os leads visíveis pro kanban (respeitando claim/permissão como em listLeads)
+// + selo SLA por lead (mesmo padrão da lista: 1 query em lead_tarefas pendentes).
+// Retorna já agrupado por etapa via agruparLeadsPorEtapa.
+export async function leadsParaKanban(
+  client: SupabaseClient,
+  user: DashUser,
+): Promise<Record<string, KanbanCard[]>> {
+  const baseFilter = `installation_status.is.null,installation_status.not.in.(${CLIENTE_STATUSES.join(',')})`;
+
+  let q = client
+    .from('leads')
+    .select('id, name, phone, status, claimed_by, updated_at')
+    .is('archived_at', null)
+    .or(baseFilter)
+    .order('updated_at', { ascending: false })
+    .limit(500);
+
+  // Visibilidade pool+claim: vendedor vê só balcão (sem dono) ou os seus; admin tudo.
+  if (!user.isAdmin) {
+    q = q.or(`claimed_by.is.null,claimed_by.eq.${user.id}`);
+  }
+
+  const { data: leads, error } = await q;
+  if (error) throw new Error(`Failed to load kanban: ${error.message}`);
+  const list = (leads ?? []) as Array<{
+    id: string; name: string | null; phone: string; status: string;
+    claimed_by: string | null; updated_at: string;
+  }>;
+  if (list.length === 0) return agruparLeadsPorEtapa<KanbanCard>([]);
+
+  // Selo SLA por lead: 1 query nas tarefas pendentes, agrupa em memória. Best-effort.
+  const now = Date.now();
+  const tarefasPorLead = new Map<string, Array<{ due_at: string | null; status: string }>>();
+  try {
+    const ids = list.map((l) => l.id);
+    const { data: tars } = await client
+      .from('lead_tarefas')
+      .select('lead_id, due_at, status')
+      .in('lead_id', ids)
+      .eq('status', 'pendente');
+    for (const t of (tars ?? []) as Array<{ lead_id: string; due_at: string | null; status: string }>) {
+      const arr = tarefasPorLead.get(t.lead_id) ?? [];
+      arr.push({ due_at: t.due_at, status: t.status });
+      tarefasPorLead.set(t.lead_id, arr);
+    }
+  } catch {
+    // silencia: sem tarefas, selo verde
+  }
+
+  const cards: KanbanCard[] = list.map((l) => ({
+    id: l.id,
+    name: l.name,
+    phone: l.phone,
+    status: l.status,
+    claimed_by: l.claimed_by ?? null,
+    updated_at: l.updated_at,
+    seloSla: seloSla(tarefasPorLead.get(l.id) ?? [], now),
+  }));
+
+  return agruparLeadsPorEtapa(cards);
 }
 
 // Claim automático: marca o lead como do usuário se ainda estiver no balcão.

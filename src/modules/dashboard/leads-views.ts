@@ -208,6 +208,10 @@ export function renderLeadsListPage(
           <h1 class="text-2xl font-bold text-slate-900">Leads</h1>
           <p class="text-sm text-slate-500 mt-1">${total} lead(s) no total · mostrando ${rows.length} · ordenado por última atividade</p>
         </div>
+        <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden">
+          <a href="/dashboard/leads" class="px-3 py-1.5 text-sm bg-indigo-600 text-white">Lista</a>
+          <a href="/dashboard/leads/kanban" class="px-3 py-1.5 text-sm bg-white text-slate-700 hover:bg-slate-50">Kanban</a>
+        </div>
       </div>
 
       ${renderInsightsBanner(filters.insights ?? [])}

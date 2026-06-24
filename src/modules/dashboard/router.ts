@@ -88,7 +88,8 @@ import {
 import { renderUsuariosListPage, renderUsuarioEditPage } from './usuarios-views.js';
 import { listUsers, listRoles, createUser, updateUser, getUserByLogin, touchLastLogin } from './users-store.js';
 import { hashSenha, verificarSenha } from './password.js';
-import { claimLead, podeVerLead, listLeads } from './leads-queries.js';
+import { claimLead, podeVerLead, listLeads, leadsParaKanban } from './leads-queries.js';
+import { ORDEM_ETAPAS } from './pipeline.js';
 import { criarTarefa, concluirTarefa, adiarTarefa } from './tarefas.js';
 import { registrarAtividade } from './atividades.js';
 import { audit } from './audit.js';
@@ -494,6 +495,20 @@ export function createDashboardRouter(
     }
   });
 
+  // Kanban do funil: colunas por etapa, cards arrastáveis. Registrado ANTES de
+  // /leads/:id pra não ser engolido pelo param (kanban não é UUID).
+  router.get('/leads/kanban', exigir('leads', 'visualizar'), async (req: Request, res: Response) => {
+    try {
+      const viewer = (req as AuthedRequest).dashUser!;
+      const { renderKanbanPage } = await import('./kanban-views.js');
+      const grupos = await leadsParaKanban(supabase, viewer);
+      res.type('text/html').send(renderKanbanPage(grupos, viewer));
+    } catch (err) {
+      console.error('[dashboard/leads/kanban]', err);
+      res.status(500).send(`<h2>Erro ao carregar kanban</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
   router.get('/leads/:id', exigir('leads', 'visualizar'), async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
@@ -619,6 +634,33 @@ export function createDashboardRouter(
     const viewer = (req as AuthedRequest).dashUser;
     if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'etapa', valorNovo: status });
     res.redirect(`/dashboard/leads/${id}`);
+  });
+
+  // Move o lead de etapa via drag-drop do kanban. Responde 200 (o front é fetch,
+  // não navega). Valida a etapa contra ORDEM_ETAPAS (não aceita 'perdido' etc.).
+  router.post('/leads/:id/set-etapa', exigir('leads', 'editar'), async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const etapa = String(req.body?.etapa ?? '').trim();
+    if (!(ORDEM_ETAPAS as readonly string[]).includes(etapa)) return res.status(400).send('etapa inválida');
+    const { error } = await supabase
+      .from('leads')
+      .update({ status: etapa, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    const viewer = (req as AuthedRequest).dashUser;
+    if (viewer) {
+      try {
+        await registrarAtividade(supabase, {
+          company_id: viewer.companyId, lead_id: id, tipo: 'etapa_mudou',
+          titulo: `Etapa movida (kanban): → ${etapa}`, automatica: false, user_id: viewer.id,
+        });
+      } catch (err) {
+        console.warn('[set-etapa] registrarAtividade falhou (segue):', (err as Error).message);
+      }
+      await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'etapa', valorNovo: etapa });
+    }
+    res.status(200).send('ok');
   });
 
   // ----- TAREFAS DO LEAD (cockpit) -----
