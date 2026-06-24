@@ -143,6 +143,16 @@ export function createDashboardRouter(
   const router = Router();
   const supabase = supabaseService.getClient();
 
+  // Middleware-fábrica de gating de permissão por área/nível. Aplicado ANTES
+  // dos handlers das rotas por área. Sem permissão → 403. Compatível com o
+  // req.dashUser carregado pelo middleware de sessão (Task 7/12).
+  function exigir(area: import('./permissions.js').Area, nivel: import('./permissions.js').Nivel) {
+    return (req: AuthedRequest, res: Response, next: import('express').NextFunction) => {
+      if (can(req.dashUser, area, nivel)) { next(); return; }
+      res.status(403).send('<h2>Sem permissão</h2><p>Fale com o administrador.</p>');
+    };
+  }
+
   // Parser pra POST /login (form-urlencoded). Apenas pra rotas internas — body
   // gerado por form HTML padrao, sem necessidade de validar HMAC.
   router.use(express.urlencoded({ extended: false, limit: '10kb' }));
@@ -449,7 +459,7 @@ export function createDashboardRouter(
   // Lista de leads com filtros (alertas, status) + acoes rapidas (pausar Eva,
   // retomar, iniciar cadencia manual). Detalhe mostra conversa Eva ↔ cliente.
 
-  router.get('/leads', async (req: Request, res: Response) => {
+  router.get('/leads', exigir('leads', 'visualizar'), async (req: Request, res: Response) => {
     try {
       const { listLeads } = await import('./leads-queries.js');
       const { renderLeadsListPage } = await import('./leads-views.js');
@@ -479,7 +489,7 @@ export function createDashboardRouter(
     }
   });
 
-  router.get('/leads/:id', async (req: Request, res: Response) => {
+  router.get('/leads/:id', exigir('leads', 'visualizar'), async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     try {
@@ -563,7 +573,7 @@ export function createDashboardRouter(
   });
 
   // Muda status do lead (novo, qualificando, agendado, transferido, perdido).
-  router.post('/leads/:id/set-status', async (req: Request, res: Response) => {
+  router.post('/leads/:id/set-status', exigir('leads', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     const status = String(req.body?.status ?? '').trim();
@@ -593,7 +603,7 @@ export function createDashboardRouter(
   // REMOVE LEAD PERMANENTEMENTE — usa excluirLead pra ganhar o guard:
   // bloqueia se houver proposta ou sistema FV vinculado, caso contrario
   // deleta e CASCADE limpa cadencia, conversas, anexos, relatorios, etc.
-  router.post('/leads/:id/delete', async (req: Request, res: Response) => {
+  router.post('/leads/:id/delete', exigir('leads', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     const r = await supabaseService.excluirLead(id);
@@ -605,7 +615,7 @@ export function createDashboardRouter(
     res.redirect('/dashboard/leads');
   });
 
-  router.post('/leads/:id/arquivar', async (req: Request, res: Response) => {
+  router.post('/leads/:id/arquivar', exigir('leads', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     const r = await supabaseService.arquivarLead(id);
@@ -613,7 +623,7 @@ export function createDashboardRouter(
     res.redirect('/dashboard/leads');
   });
 
-  router.post('/leads/:id/mark-lost', async (req: Request, res: Response) => {
+  router.post('/leads/:id/mark-lost', exigir('leads', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     const reason = String((req.body as any)?.reason ?? '').trim();
@@ -673,7 +683,7 @@ export function createDashboardRouter(
   });
 
   // Marketing: KPIs 7d + campanhas (tabs+busca+pag) + criativos + alertas + funil por canal.
-  router.get('/marketing', async (req: Request, res: Response) => {
+  router.get('/marketing', exigir('marketing', 'visualizar'), async (req: Request, res: Response) => {
     try {
       const { fetchMarketingKpis, listActiveCampaigns, listRecentCreatives, listPendingAlerts, fetchChannelFunnel, fetchGoogleAdsSummary } =
         await import('./marketing-queries.js');
@@ -762,7 +772,7 @@ export function createDashboardRouter(
   });
 
   // Propostas: lista + paginacao + busca.
-  router.get('/propostas', async (req: Request, res: Response) => {
+  router.get('/propostas', exigir('propostas', 'visualizar'), async (req: Request, res: Response) => {
     try {
       const limit = Math.max(1, Math.min(200, parseInt((req.query.limit as string) ?? '50') || 50));
       const offset = Math.max(0, parseInt((req.query.offset as string) ?? '0') || 0);
@@ -823,7 +833,7 @@ export function createDashboardRouter(
   });
 
   // Monitoramento: lista de sistemas FV instalados com geracao do dia/mes.
-  router.get('/monitoramento', async (req: Request, res: Response) => {
+  router.get('/monitoramento', exigir('usinas', 'visualizar'), async (req: Request, res: Response) => {
     try {
       const sistemas = await monitoringService.listarParaDashboard();
       const hoje = new Date();
@@ -1989,7 +1999,7 @@ export function createDashboardRouter(
     };
   }
 
-  router.get('/financeiro', async (req, res) => {
+  router.get('/financeiro', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
     try {
       const { getFinanceiroData } = await import('./financeiro-queries.js');
       const { renderFinanceiroPage } = await import('./financeiro-views.js');

@@ -7,6 +7,7 @@ import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.j
 import { formatPhoneBR, normalizeBrazilianPhone } from '../meta-leadgen.js';
 import { renderClienteSelector } from './proprietario.js';
 import { empresa } from '../empresa-config.js';
+import { can, type Area, type Nivel, type DashUser } from './permissions.js';
 
 export function escapeHtml(s: string | null | undefined): string {
   if (s === null || s === undefined) return '';
@@ -80,21 +81,31 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'marketing' | 'leads' | 'clientes';
+  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'marketing' | 'leads' | 'clientes' | 'financeiro' | 'usuarios';
   title: string;
   body: string;
   scripts?: string;
   // Tema escuro escopado: só quem foi desenhado pra dark liga (hoje só o
   // Painel de Triagem). Default claro = não quebra as telas não adaptadas.
   dark?: boolean;
+  // Usuário logado pra condicionar o menu por permissão. COMPATIBILIDADE:
+  // se undefined, mostra TUDO (não quebra telas ainda não migradas).
+  user?: DashUser;
 }
 
 export function renderLayout(input: LayoutInput): string {
-  const { active, title, body, scripts, dark } = input;
+  const { active, title, body, scripts, dark, user } = input;
   const navClass = (key: string) =>
     active === key
       ? 'bg-amber-400 text-slate-900 font-semibold shadow-md'
       : 'text-sky-100 hover:bg-white/10 hover:text-white';
+
+  // Item de menu condicionado por permissão. Sem área → sempre mostra.
+  // Sem usuário (telas não migradas) → mostra tudo. Com usuário → checa can().
+  const navItem = (href: string, key: string, label: string, area?: Area, nivel: Nivel = 'visualizar'): string => {
+    if (area && user && !can(user, area, nivel)) return '';
+    return `<a href="${href}" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass(key)}">${label}</a>`;
+  };
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -156,16 +167,17 @@ export function renderLayout(input: LayoutInput): string {
         </div>
       </div>
       <nav class="flex flex-wrap gap-1 text-sm w-full sm:w-auto justify-end">
-        <a href="/dashboard/cockpit" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('cockpit')}">⚡ <span class="hidden sm:inline">Cockpit</span></a>
-        <a href="/dashboard/home" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('home')}">🏠 <span class="hidden sm:inline">Home</span></a>
-        <a href="/dashboard/leads" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('leads')}">👥 <span class="hidden sm:inline">Leads</span></a>
-        <a href="/dashboard/clientes" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('clientes')}">🏠 <span class="hidden sm:inline">Clientes</span></a>
-        <a href="/dashboard/propostas" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('propostas')}">📊 <span class="hidden sm:inline">Propostas</span></a>
-        <a href="/dashboard/financeiro" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('financeiro')}">💰 <span class="hidden sm:inline">Financeiro</span></a>
-        <a href="/dashboard/monitoramento" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('monitoramento')}">⚡ <span class="hidden sm:inline">Monitoramento</span></a>
-        <a href="/dashboard/marketing" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('marketing')}">📣 <span class="hidden sm:inline">Marketing</span></a>
-        <a href="/dashboard/cadencia" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('marketing')}">🔄 <span class="hidden sm:inline">Cadência</span></a>
-        <a href="/dashboard/manutencao" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass('manutencao')}">🔧 <span class="hidden sm:inline">Manutenção</span></a>
+        ${navItem('/dashboard/cockpit', 'cockpit', '⚡ <span class="hidden sm:inline">Cockpit</span>')}
+        ${navItem('/dashboard/home', 'home', '🏠 <span class="hidden sm:inline">Home</span>')}
+        ${navItem('/dashboard/leads', 'leads', '👥 <span class="hidden sm:inline">Leads</span>', 'leads')}
+        ${navItem('/dashboard/clientes', 'clientes', '🏠 <span class="hidden sm:inline">Clientes</span>')}
+        ${navItem('/dashboard/propostas', 'propostas', '📊 <span class="hidden sm:inline">Propostas</span>', 'propostas')}
+        ${navItem('/dashboard/financeiro', 'financeiro', '💰 <span class="hidden sm:inline">Financeiro</span>', 'financeiro')}
+        ${navItem('/dashboard/monitoramento', 'monitoramento', '⚡ <span class="hidden sm:inline">Monitoramento</span>', 'usinas')}
+        ${navItem('/dashboard/marketing', 'marketing', '📣 <span class="hidden sm:inline">Marketing</span>', 'marketing')}
+        ${navItem('/dashboard/cadencia', 'marketing', '🔄 <span class="hidden sm:inline">Cadência</span>', 'marketing')}
+        ${navItem('/dashboard/manutencao', 'manutencao', '🔧 <span class="hidden sm:inline">Manutenção</span>')}
+        ${navItem('/dashboard/usuarios', 'usuarios', '⚙️ <span class="hidden sm:inline">Usuários</span>', 'usuarios')}
         <form action="/dashboard/logout" method="post" class="inline">
           <button type="submit" class="px-3 py-2 rounded-lg text-sky-200 hover:bg-white/10 hover:text-white transition text-xs" title="Sair">🚪 <span class="hidden sm:inline">Sair</span></button>
         </form>
