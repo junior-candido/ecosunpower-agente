@@ -3,6 +3,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { Config } from '../config.js';
 import { proximaEtapaPorEvento, type EventoFunil } from './dashboard/pipeline.js';
 import { registrarAtividade } from './dashboard/atividades.js';
+import { criarTarefa } from './dashboard/tarefas.js';
 
 export interface MessageEntry {
   role: 'user' | 'assistant';
@@ -752,7 +753,15 @@ export class SupabaseService {
       titulo: `Proposta ${numeroProposta} enviada`, automatica: true, payload: { propostaId },
     });
     await this.avancarEtapaFunil(leadId, 'proposta_gerada');
-    // TODO Task 8: criar tarefa cobrar_proposta (retorno em 3 dias) atribuída ao claimed_by do lead.
+    // Task 8: cria tarefa de cobrança de retorno da proposta (best-effort, idempotente).
+    const { data: leadInfo } = await this.client.from('leads').select('company_id, claimed_by').eq('id', leadId).maybeSingle();
+    const ci = (leadInfo as { company_id?: string } | null)?.company_id ?? '00000000-0000-0000-0000-000000000001';
+    const dono = (leadInfo as { claimed_by?: string | null } | null)?.claimed_by ?? null;
+    await criarTarefa(this.client, {
+      company_id: ci, lead_id: leadId, titulo: 'Cobrar retorno da proposta', tipo: 'cobrar_proposta',
+      due_at: new Date(Date.now() + 3 * 24 * 3600_000).toISOString(), prioridade: 'alta',
+      automatica: true, etapa_origem: 'proposta_enviada', assigned_to: dono,
+    });
   }
 
   async onPropostaAberta(leadId: string): Promise<void> {

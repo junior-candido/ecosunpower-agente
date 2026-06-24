@@ -83,6 +83,7 @@ import { resolveChannel } from './modules/dashboard/resolve-channel.js';
 import { leadRowToChannelInput } from './modules/dashboard/channel-mapper.js';
 import { ProactiveAlertService } from './modules/monitoring/proactive-alerts/service.js';
 import { runDispatchCycle, type DispatchCtx } from './modules/monitoring/proactive-alerts/dispatcher.js';
+import { runSlaCycle } from './modules/dashboard/tarefas.js';
 import { runAnniversaryEnqueue } from './modules/monitoring/proactive-alerts/anniversary.js';
 import type { DonoCadState } from './modules/monitoring/dono-cad/types.js';
 import { camposVaziosUsina, proximoCampoNovo, campoObrigatorioNovo, perguntaNovo, perguntaUsina, ehPular } from './modules/monitoring/dono-cad/machine.js';
@@ -8388,6 +8389,22 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setTimeout(runPosInstalacaoNotif, 10 * 60 * 1000);   // 10min após boot
 
     console.log('[pos-instalacao] cron started (1x/hora dentro da janela)');
+
+    // ============================================
+    // CRM Fase 2 — Motor de SLA do funil
+    // ============================================
+    // Ciclo de SLA: varre leads ativos e cria/garante tarefas de SLA (idempotente).
+    // Best-effort: falha de um lead não derruba o ciclo. Roda a cada 15min.
+    const runSlaCron = async () => {
+      // Ciclo de SLA do funil (CRM Fase 2): cria/atualiza tarefas de SLA dos leads ativos.
+      try {
+        const criadas = await runSlaCycle(supabase.getClient());
+        if (criadas > 0) console.log(`[sla] ${criadas} tarefa(s) de SLA criada(s)`);
+      } catch (e) { console.error('[sla] ciclo falhou:', (e as Error).message); }
+    };
+    setInterval(runSlaCron, 15 * 60 * 1000);   // a cada 15min
+    setTimeout(runSlaCron, 6 * 60 * 1000);     // 6min após boot
+    console.log('[sla] Motor de SLA started (a cada 15min)');
 
     // ============================================
     // Módulo 8 — Alertas financeiros (DAS, faixa, Fator R)

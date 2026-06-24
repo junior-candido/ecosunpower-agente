@@ -158,6 +158,39 @@ export async function adiarTarefa(client: SupabaseClient, id: string, dias: numb
   if (error) throw error;
 }
 
+// Etapas consideradas ativas para o ciclo de SLA (lead ainda pode comprar).
+const ETAPAS_ATIVAS = ['novo', 'qualificando', 'qualificado', 'proposta_enviada', 'negociacao', 'agendado', 'transferido'];
+
+/**
+ * Varre os leads ativos e garante (idempotente) as tarefas de SLA de cada um.
+ * Best-effort: um lead que falhar não derruba o ciclo.
+ * Retorna total de tarefas criadas.
+ * Nota: a coluna `agendado_para` não existe em `leads`; é passada como null.
+ */
+export async function runSlaCycle(client: SupabaseClient, agora: number = Date.now()): Promise<number> {
+  const { data } = await client
+    .from('leads')
+    .select('id, company_id, status, last_contact_at, claimed_by')
+    .in('status', ETAPAS_ATIVAS)
+    .limit(500);
+  const leads = (data ?? []) as Array<{
+    id: string;
+    company_id: string | null;
+    status: string;
+    last_contact_at: string | null;
+    claimed_by: string | null;
+  }>;
+  let total = 0;
+  for (const lead of leads) {
+    try {
+      total += await sincronizarTarefasSla(client, { ...lead, agendado_para: null }, agora);
+    } catch (e) {
+      console.warn('[sla] lead', lead.id, 'falhou:', (e as Error).message);
+    }
+  }
+  return total;
+}
+
 /**
  * Lê as tarefas existentes do lead, calcula quais SLA rules se aplicam agora,
  * e cria apenas as que ainda não existem como pendentes (idempotente).
