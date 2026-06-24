@@ -8,7 +8,14 @@ import Redis from 'ioredis';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
-import { calcular, compararGreener, type ProposalInput } from './proposal/calculator.js';
+import {
+  calcular,
+  compararGreener,
+  tipoSistemaDeDados,
+  perfilDeTipoCliente,
+  temCarregadorNosServicos,
+  type ProposalInput,
+} from './proposal/calculator.js';
 import { corrigirOrtografia } from './corretor-ortografico.js';
 import {
   FATOR_PERDA_CONSERVADOR,
@@ -17,7 +24,6 @@ import {
   tusdFioBPorConcessionaria,
   percentualFioBVigente,
   REAJUSTE_ANUAL_ENERGIA,
-  PERCENTUAL_GERACAO_INJETADA,
   CUSTO_ILUMINACAO_PUBLICA,
   VIDA_UTIL_ANOS,
 } from './solar-params.js';
@@ -1827,6 +1833,28 @@ export class ProposalAssistant {
       ? (consumoArray as number[])
       : undefined;
 
+    // Tipo de sistema / perfil / carregador: alimentam o motor Fio B (simultaneidade
+    // sugerida por perfil, off_grid zera a conta, carregador reduz a injecao).
+    const tipoSistema = tipoSistemaDeDados({
+      tipoCliente: data.tipoCliente,
+      modalidade: data.modalidade,
+      temBateria: !!data.bateria,
+    });
+    const perfilCliente = perfilDeTipoCliente(data.tipoCliente);
+    const temCarregador = temCarregadorNosServicos(data.servicos);
+    // modoBateria so quando o Junior informa explicitamente (backup/autoconsumo/time_of_use).
+    // Sem modo, hibrido injeta como on-grid (bateria de backup) — numeros retrocompativeis.
+    const modoStr = String(data.modoBateria ?? data.bateria?.modo ?? '').toLowerCase();
+    const modoBateria = /autoconsumo/.test(modoStr) ? 'autoconsumo' as const
+      : /time|tarifa|hor[aá]ri/.test(modoStr) ? 'time_of_use' as const
+      : /backup/.test(modoStr) ? 'backup' as const
+      : undefined;
+    // Simultaneidade SO quando o Junior edita explicitamente; senao o motor sugere por perfil.
+    const percentualGeracaoInjetada = data.percentualGeracaoInjetada != null
+      && isFinite(Number(data.percentualGeracaoInjetada))
+      ? Number(data.percentualGeracaoInjetada)
+      : undefined;
+
     return {
       potenciaKwp,
       fatorPerda,
@@ -1835,7 +1863,7 @@ export class ProposalAssistant {
       tarifaRsKwh: Number(data.tarifaRsKwh ?? tarifaDefault),
       tusdFioBRsKwh: Number(data.tusdFioBRsKwh ?? tusdFioBDefault),
       percentualFioBVigente: Number(data.percentualFioBVigente ?? percentualFioB),
-      percentualGeracaoInjetada: Number(data.percentualGeracaoInjetada ?? PERCENTUAL_GERACAO_INJETADA),
+      percentualGeracaoInjetada,
       custoIluminacaoPublica: Number(data.custoIluminacaoPublica ?? CUSTO_ILUMINACAO_PUBLICA),
       reajusteAnualEnergia: REAJUSTE_ANUAL_ENERGIA,
       valorTotalRs: Number(data.valorTotalRs),
@@ -1843,6 +1871,11 @@ export class ProposalAssistant {
       geracaoMensalKwhOverride,
       geracaoMensalKwhDistribuidoOverride,
       consumoMensalKwhDistribuidoOverride,
+      tipoSistema,
+      perfilCliente,
+      temCarregador,
+      modoBateria,
+      anoInicial: ano,
     };
   }
 

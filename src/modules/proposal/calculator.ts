@@ -18,8 +18,22 @@ export interface ProposalInput {
   // Cronograma: 2024=30%, 2025=45%, 2026=60%, 2027=75%, 2028=90%, 2029+=100%.
   tusdFioBRsKwh: number; // ex: Neoenergia DF ~0.30, Equatorial GO ~0.28
   percentualFioBVigente: number; // ex: 2026 = 0.60
-  percentualGeracaoInjetada: number; // residencial sem bateria ~0.70 (70% vai pra rede)
+  // Simultaneidade: fracao da geracao que vai pra REDE (paga Fio B). OPCIONAL —
+  // quando ausente, calcular() sugere por tipoSistema/modoBateria/perfil/carregador
+  // (percentualInjetadoSugerido). Quando o Junior edita na proposta, esse valor vence.
+  percentualGeracaoInjetada?: number; // residencial sem bateria ~0.75 (75% vai pra rede)
   custoIluminacaoPublica: number; // R$/mes, valor fixo da fatura
+
+  // Tipo de sistema (ramifica o calculo da conta com solar). Default 'on_grid'.
+  // - off_grid: sem rede -> sem Fio B/CIP/consumo -> conta com solar = 0, economia = conta inteira.
+  // - hibrido: depende do modoBateria (backup injeta como on-grid; autoconsumo injeta pouco).
+  tipoSistema?: TipoSistema;
+  modoBateria?: ModoBateria; // so usado quando tipoSistema='hibrido'
+  perfilCliente?: PerfilCliente; // residencial/comercial/rural/industrial (simultaneidade sugerida)
+  temCarregador?: boolean; // carregador EV usado de dia aumenta autoconsumo -> menos injecao/Fio B
+  // Ano inicial da projecao (calendario). O % do Fio B SOBE ano a ano a partir
+  // dele (Lei 14.300 art. 27: 2026=60% ... 2029+=100%). Default = ano corrente.
+  anoInicial?: number;
 
   // Investimento
   valorTotalRs: number;
@@ -69,6 +83,15 @@ export interface ProposalCalculations {
 
   // Sustentabilidade
   co2EvitadoToneladas: number;
+
+  // Conta com solar do mes 1, DETALHADA (Fio B / consumo da rede / CIP /
+  // autoconsumo / injetado). Alimenta o bloco visual "como sua economia funciona".
+  contaComDetalhada: ContaDetalhada;
+  // Parametros efetivamente usados (pra ilustracao + tabelinhas da proposta).
+  tipoSistema: TipoSistema;
+  percentualGeracaoInjetadaUsado: number; // simultaneidade aplicada (override ou sugerida)
+  anoInicial: number; // ano calendario do inicio da projecao
+  percentualFioBInicial: number; // % do Fio B no ano inicial (ex: 2026 = 0.60)
 
   // Projecao mes a mes (12 meses)
   geracaoMensalDistribuida: number[];
@@ -225,6 +248,38 @@ export function percentualInjetadoSugerido(opts: {
   return Math.max(0.10, Math.round(ajustado * 100) / 100);
 }
 
+// Classifica o tipo de sistema a partir dos dados crus da proposta. off_grid e
+// detectado por palavra-chave (tipoCliente/modalidade); hibrido pela presenca de
+// bateria ou palavra-chave; senao on_grid (default retrocompativel).
+export function tipoSistemaDeDados(d: {
+  tipoCliente?: string;
+  modalidade?: string;
+  temBateria?: boolean;
+}): TipoSistema {
+  const t = `${d.tipoCliente ?? ''} ${d.modalidade ?? ''}`.toLowerCase();
+  if (/off.?grid|isolad/.test(t)) return 'off_grid';
+  if (d.temBateria || /h[ií]brido|bateria/.test(t)) return 'hibrido';
+  return 'on_grid';
+}
+
+// Mapeia o tipoCliente (texto livre do Claude) pro perfil de simultaneidade.
+export function perfilDeTipoCliente(tipoCliente?: string): PerfilCliente {
+  const t = (tipoCliente ?? '').toLowerCase();
+  if (/ind[uú]str/.test(t)) return 'industrial';
+  if (/rural|agro|fazenda/.test(t)) return 'rural';
+  if (/com[eé]rc/.test(t)) return 'comercial';
+  return 'residencial';
+}
+
+// Detecta carregador veicular nos servicos avulsos (vira autoconsumo diurno ->
+// reduz a injecao/Fio B). Olha titulo + descricao de cada servico.
+export function temCarregadorNosServicos(
+  servicos?: Array<{ titulo?: string; descricao?: string }>,
+): boolean {
+  if (!Array.isArray(servicos)) return false;
+  return servicos.some(s => /carregad|wallbox|veicular|\bev\b/i.test(`${s.titulo ?? ''} ${s.descricao ?? ''}`));
+}
+
 // Conta mensal pos-solar DETALHADA (breakdown pra ilustracao da proposta).
 // Ramifica por tipo de sistema:
 // - off_grid: sem rede -> sem Fio B, sem consumo da rede, sem iluminacao -> conta 0.
@@ -322,13 +377,27 @@ export function calcular(input: ProposalInput): ProposalCalculations {
     tarifaRsKwh,
     tusdFioBRsKwh,
     percentualFioBVigente,
-    percentualGeracaoInjetada,
     custoIluminacaoPublica,
     reajusteAnualEnergia,
     valorTotalRs,
     vidaUtilAnos,
     geracaoMensalKwhOverride,
   } = input;
+
+  const tipoSistema: TipoSistema = input.tipoSistema ?? 'on_grid';
+  const anoInicial = input.anoInicial ?? new Date().getFullYear();
+  // Simultaneidade: override explicito (Junior editou) vence; senao sugere por
+  // perfil/tipo/modo/carregador. off_grid nao injeta nada.
+  const percentualGeracaoInjetada = tipoSistema === 'off_grid'
+    ? 0
+    : (typeof input.percentualGeracaoInjetada === 'number' && isFinite(input.percentualGeracaoInjetada)
+      ? input.percentualGeracaoInjetada
+      : percentualInjetadoSugerido({
+          tipoSistema,
+          modoBateria: input.modoBateria,
+          perfil: input.perfilCliente,
+          temCarregador: input.temCarregador,
+        }));
 
   // Geracao mes-a-mes do estudo: quando o estudo trouxe os 12 valores, eles viram a
   // curva do grafico e a media vira a geracao mensal dos indicadores.
@@ -356,29 +425,46 @@ export function calcular(input: ProposalInput): ProposalCalculations {
     ? input.consumoMensalKwhDistribuidoOverride
     : Array(12).fill(consumoMensalKwh);
 
-  // Conta mensal sem/com sistema (com Fio B na conta com sistema)
+  // Conta mensal sem/com sistema. A conta COM sistema sai do breakdown detalhado
+  // (ramifica por tipo: off_grid zera tudo) — o template usa esse mesmo objeto.
   const contaSemSistemaMensal = consumoMensalKwh * tarifaRsKwh + custoIluminacaoPublica;
-  const contaComSistemaMensal = calcularContaMensal(
-    consumoMensalKwh,
-    geracaoMensalKwh,
+  const contaComDetalhada = calcularContaMensalDetalhada({
+    consumoKwh: consumoMensalKwh,
+    geracaoKwh: geracaoMensalKwh,
     tarifaRsKwh,
     tusdFioBRsKwh,
     percentualFioBVigente,
     percentualGeracaoInjetada,
     custoIluminacaoPublica,
-  );
+    tipoSistema,
+  });
+  const contaComSistemaMensal = contaComDetalhada.total;
   const economiaMensal = contaSemSistemaMensal - contaComSistemaMensal;
   const economiaAnual = economiaMensal * 12;
 
-  // Projecao anual (vida util) com reajuste 10%/ano na energia
+  // Projecao anual (vida util). DOIS efeitos compostos por ano:
+  // (1) reajuste da energia (tarifa + Fio B R$/kWh + CIP sobem juntos);
+  // (2) o % do Fio B SOBE ano a ano (Lei 14.300: 2026=60% ... 2029+=100%) — sem
+  //     isso a conta futura ficaria subestimada. off_grid mantem conta com = 0.
   const fluxoCaixaAnual: number[] = [-valorTotalRs];
   const contaSemSistemaAnual: number[] = [];
   const contaComSistemaAnual: number[] = [];
   let economiaAcum = 0;
   for (let ano = 1; ano <= vidaUtilAnos; ano++) {
     const reajuste = Math.pow(1 + reajusteAnualEnergia, ano - 1);
+    const fioBpctAno = percentualFioBPorAno(anoInicial + ano - 1);
     const semSistAno = contaSemSistemaMensal * 12 * reajuste;
-    const comSistAno = contaComSistemaMensal * 12 * reajuste;
+    const comSistMensalAno = calcularContaMensalDetalhada({
+      consumoKwh: consumoMensalKwh,
+      geracaoKwh: geracaoMensalKwh,
+      tarifaRsKwh: tarifaRsKwh * reajuste,
+      tusdFioBRsKwh: tusdFioBRsKwh * reajuste,
+      percentualFioBVigente: fioBpctAno,
+      percentualGeracaoInjetada,
+      custoIluminacaoPublica: custoIluminacaoPublica * reajuste,
+      tipoSistema,
+    }).total;
+    const comSistAno = comSistMensalAno * 12;
     const econAno = semSistAno - comSistAno;
     contaSemSistemaAnual.push(semSistAno);
     contaComSistemaAnual.push(comSistAno);
@@ -415,6 +501,11 @@ export function calcular(input: ProposalInput): ProposalCalculations {
     tirPercentual,
     rsPorWp,
     co2EvitadoToneladas,
+    contaComDetalhada,
+    tipoSistema,
+    percentualGeracaoInjetadaUsado: percentualGeracaoInjetada,
+    anoInicial,
+    percentualFioBInicial: percentualFioBPorAno(anoInicial),
     geracaoMensalDistribuida,
     consumoMensalDistribuido,
     fluxoCaixaAnual,
