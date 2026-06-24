@@ -7280,6 +7280,30 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     proposalAssistant,
     metaService: metaWaba ?? undefined,
     engineerPhone: config.engineerPhone,
+    blogGenerator,
+    // Espelha EXATAMENTE o fluxo "publicar" do WhatsApp (linhas ~975-983):
+    // markApproved → publishDraftToGitHub(PAT/repo/branch da config) → markPublished.
+    // Em falha, markFailed e relança com a mensagem (o router mostra o erro pro Junior).
+    publicarDraft: async (draft) => {
+      if (!config.githubPat || !config.githubSiteRepo) {
+        throw new Error('GitHub não configurado no servidor (env GITHUB_PAT e/ou GITHUB_SITE_REPO).');
+      }
+      try {
+        await blogGenerator.markApproved(draft.id);
+        const { url } = await publishDraftToGitHub({
+          pat: config.githubPat,
+          repo: config.githubSiteRepo,
+          branch: config.githubSiteBranch,
+          draft,
+        });
+        await blogGenerator.markPublished(draft.id);
+        console.log(`[blog] Junior publicou ${draft.slug} via dashboard. Commit: ${url}`);
+        return { url };
+      } catch (err) {
+        await blogGenerator.markFailed(draft.id, (err as Error).message);
+        throw err;
+      }
+    },
   }));
 
   // Garante (idempotente) os usuários iniciais do dashboard no boot (admin + comerciais).

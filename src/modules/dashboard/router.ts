@@ -53,6 +53,7 @@ import {
   renderImportarSitesPage,
   renderDetalheSistemaPage,
   renderEditarSistemaPage,
+  renderLayout,
 } from './views.js';
 import {
   listVisualizacoesPorSlug,
@@ -95,6 +96,8 @@ import { registrarAtividade } from './atividades.js';
 import { audit } from './audit.js';
 import { can } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
+import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
+import { renderBlogDraftsPage, renderBlogIndisponivel } from './blog-views.js';
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
 // didApply=false: prévia + botão pra gravar. didApply=true: resultado da gravação.
@@ -141,6 +144,10 @@ export function createDashboardRouter(
     proposalAssistant?: ProposalAssistant;
     metaService?: MetaWhatsAppService;
     engineerPhone?: string; // telefone do Junior — recebe o aviso "cliente fechou"
+    blogGenerator?: BlogGenerator;
+    // Wrapper que publica o draft espelhando o fluxo do WhatsApp (publishDraftToGitHub
+    // com PAT/repo/branch da config + markPublished). Vem pronto do index.ts.
+    publicarDraft?: (draft: BlogDraft) => Promise<{ url: string }>;
   } = {},
 ): Router {
   const router = Router();
@@ -952,6 +959,82 @@ export function createDashboardRouter(
     } catch (err) {
       console.error('[dashboard/marketing]', err);
       res.status(500).send(`<h2>Erro ao carregar marketing</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  // ----------------------------------------------------------------------
+  // Blog (sob o setor Marketing) — aprovar/publicar/descartar drafts sem
+  // depender do WhatsApp. O fluxo do WhatsApp continua intacto em paralelo.
+  // ----------------------------------------------------------------------
+  router.get('/marketing/blog', exigir('marketing', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    const user = req.dashUser;
+    if (!options.blogGenerator) {
+      res.type('text/html').send(renderLayout({
+        active: 'blog', title: 'Blog — aprovar posts', body: renderBlogIndisponivel(), user,
+      }));
+      return;
+    }
+    // Leitura best-effort: se o Supabase falhar, mostra aviso em vez de derrubar a tela.
+    let drafts: BlogDraft[] = [];
+    let avisoLeitura: string | undefined;
+    try {
+      drafts = await options.blogGenerator.getPendingDrafts();
+    } catch (err) {
+      avisoLeitura = (err as Error).message;
+      console.warn('[dashboard/blog] falha ao ler drafts (segue com aviso):', avisoLeitura);
+    }
+    const ok = req.query.ok === '1';
+    const erro = typeof req.query.erro === 'string' ? req.query.erro : undefined;
+    res.type('text/html').send(renderLayout({
+      active: 'blog',
+      title: 'Blog — aprovar posts',
+      body: renderBlogDraftsPage(drafts, { ok, erro, avisoLeitura }),
+      user,
+    }));
+  });
+
+  router.post('/marketing/blog/:id/publicar', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+    const id = String(req.params.id);
+    if (!options.blogGenerator || !options.publicarDraft) {
+      res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Publicação não está configurada neste servidor.'));
+      return;
+    }
+    try {
+      const draft = (await options.blogGenerator.getPendingDrafts()).find((d) => d.id === id);
+      if (!draft) {
+        res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Rascunho não encontrado (talvez já tenha sido publicado ou descartado).'));
+        return;
+      }
+      await options.publicarDraft(draft);
+      await audit(supabase, {
+        companyId: req.dashUser!.companyId, userId: req.dashUser!.id,
+        entidade: 'blog', entidadeId: draft.id, acao: 'blog_publicado', valorNovo: draft.slug,
+      });
+      res.redirect('/dashboard/marketing/blog?ok=1');
+    } catch (err) {
+      const msg = (err as Error).message;
+      console.error('[dashboard/blog] publicar falhou:', msg);
+      res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent(msg));
+    }
+  });
+
+  router.post('/marketing/blog/:id/descartar', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+    const id = String(req.params.id);
+    if (!options.blogGenerator) {
+      res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Blog não está configurado neste servidor.'));
+      return;
+    }
+    try {
+      await options.blogGenerator.markFailed(id, 'descartado pelo Junior no dashboard');
+      await audit(supabase, {
+        companyId: req.dashUser!.companyId, userId: req.dashUser!.id,
+        entidade: 'blog', entidadeId: id, acao: 'blog_descartado',
+      });
+      res.redirect('/dashboard/marketing/blog?ok=1');
+    } catch (err) {
+      const msg = (err as Error).message;
+      console.error('[dashboard/blog] descartar falhou:', msg);
+      res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent(msg));
     }
   });
 
