@@ -3,7 +3,7 @@
 
 import type { DashboardKpi, PropostaRow, ManutencaoRow, GraficoMensal, SistemaMonitorRow } from './queries.js';
 import type { DetalheSistema } from '../monitoring/service.js';
-import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.js';
+import { LOGO_ECOSUNPOWER_BRANCO_BASE64, LOGO_ECOSUNPOWER_DARK_BASE64 } from '../proposal/assets/logo-base64.js';
 import { formatPhoneBR, normalizeBrazilianPhone } from '../meta-leadgen.js';
 import { renderClienteSelector } from './proprietario.js';
 import { empresa } from '../empresa-config.js';
@@ -276,12 +276,9 @@ export function renderLayout(input: LayoutInput): string {
 
     <!-- SIDEBAR: menu lateral por setores -->
     <aside class="ecosun-sidebar text-white shadow-xl flex flex-col flex-shrink-0 lg:sticky lg:top-0 lg:h-screen">
-      <div class="flex items-center gap-3 px-4 py-4 border-b border-white/10">
-        <img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" class="h-9 w-auto bg-white rounded-lg p-1.5 shadow-md">
-        <div>
-          <div class="font-bold text-base leading-none tracking-tight">EcoSunPower</div>
-          <div class="text-[11px] text-sky-200 mt-1">Dashboard interno</div>
-        </div>
+      <div class="px-4 py-5 border-b border-white/10 text-center">
+        <img src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="EcoSunPower" class="h-12 w-auto mx-auto">
+        <div class="text-[11px] text-sky-200 mt-2 tracking-[0.18em] uppercase">Dashboard interno</div>
       </div>
       <nav class="flex-1 overflow-y-auto px-2 py-3 space-y-1">
       ${sidebarHtml}
