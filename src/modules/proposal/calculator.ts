@@ -170,32 +170,6 @@ export function calcularGeracaoMensalDistribuida(geracaoMediaMensal: number): nu
   return SAZONALIDADE_DF.map(s => Math.round(geracaoMediaMensal * s));
 }
 
-// Calcula conta mensal pos-solar considerando Fio B (Lei 14.300/2022).
-// Fio B = TUSD Fio B (R$/kWh) × kWh injetado × percentual vigente do ano.
-// Quando geracao supera consumo, sobra eh injetada na rede e gera credito pra
-// abater meses futuros, mas o cliente PAGA Fio B sobre o injetado.
-// Cliente sempre paga: Fio B + custo iluminacao publica + (consumo nao-coberto × tarifa).
-export function calcularContaMensal(
-  consumoKwh: number,
-  geracaoKwh: number,
-  tarifaRsKwh: number,
-  tusdFioBRsKwh: number,
-  percentualFioBVigente: number,
-  percentualGeracaoInjetada: number,
-  custoIluminacaoPublica: number,
-): number {
-  // Estimativa do que vai pra rede (depende de quando consome — sem bateria,
-  // residencial tipico injeta 60-80% da geracao).
-  const kwhInjetado = geracaoKwh * percentualGeracaoInjetada;
-  const fioBPago = kwhInjetado * tusdFioBRsKwh * percentualFioBVigente;
-
-  // Consumo nao coberto pela geracao (compra da rede ao preco cheio)
-  const consumoLiquido = Math.max(0, consumoKwh - geracaoKwh);
-  const consumoPago = consumoLiquido * tarifaRsKwh;
-
-  return fioBPago + consumoPago + custoIluminacaoPublica;
-}
-
 // ============================================================================
 // Fio B + simultaneidade por tipo de sistema (Lei 14.300)
 // ============================================================================
@@ -421,30 +395,6 @@ export function calcularTIR(fluxoCaixa: number[]): number {
   return taxa;
 }
 
-// Calcula payback considerando reajuste anual da energia (economia cresce ano a ano).
-// Retorna fracao de anos (ex: 3.25 = 3 anos e 3 meses).
-export function calcularPayback(
-  investimento: number,
-  economiaAnualInicial: number,
-  reajusteAnual: number,
-  maxAnos = 30,
-): number {
-  let acumulado = 0;
-  let anoAtual = 0;
-  let economiaAno = economiaAnualInicial;
-  while (acumulado < investimento && anoAtual < maxAnos) {
-    if (acumulado + economiaAno >= investimento) {
-      // Frac do ano corrente
-      const restante = investimento - acumulado;
-      return anoAtual + (restante / economiaAno);
-    }
-    acumulado += economiaAno;
-    economiaAno *= (1 + reajusteAnual);
-    anoAtual += 1;
-  }
-  return maxAnos; // nao paga em maxAnos
-}
-
 // Payback a partir do fluxo de caixa anual REAL (fluxoCaixaAnual[0] = -investimento,
 // [1..] = economia de cada ano, que já reflete o Fio B subindo). Acumula até cobrir
 // o investimento e interpola a fração do ano. Coerente com ROI/TIR (mesmo vetor).
@@ -627,7 +577,9 @@ export function calcular(input: ProposalInput): ProposalCalculations {
     tipoSistema,
     percentualGeracaoInjetadaUsado: percentualGeracaoInjetada,
     anoInicial,
-    percentualFioBInicial: percentualFioBPorAno(anoInicial),
+    // Mesmo % usado no R$ do mês 1 (headline) — rótulo e valor nunca contam
+    // histórias diferentes, mesmo se o Junior sobrescrever o % do Fio B.
+    percentualFioBInicial: percentualFioBVigente,
     tabelaSimultaneidade: tabelaSim,
     tabelaFioBAnos: tabelaFioB,
     geracaoMensalDistribuida,
