@@ -3677,6 +3677,19 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // "evabt:<acao>[:<leadId>]". Quando Junior toca, vem como text aqui.
     // So processa pra admin — clientes nunca recebem esses botoes.
     if (isAdminPhone(from)) {
+      // Botões do aviso de SLA (Task 11): "sla_cobrar|eufalo|adiar:<tarefaId>".
+      // Roteia ANTES do evabt pra não cair em "botão não reconhecido".
+      if (text.trim().startsWith('sla_')) {
+        try {
+          const { handleSlaButton } = await import('./modules/dashboard/sla-notifier.js');
+          if (await handleSlaButton(supabase.getClient(), text.trim(), (t) => sendText(from, t))) return;
+        } catch (err) {
+          console.warn('[sla-buttons] falha:', (err as Error).message);
+          await sendText(from, '⚠️ Deu erro ao processar o botão de SLA.');
+          return;
+        }
+      }
+
       const { tryHandleEvaAdminButton } = await import('./modules/eva-admin-buttons.js');
       const forceCadenceForSilentes = async (): Promise<{ acionados: number }> => {
         const silentes = await supabase.getSilentLeadsWithoutCadence(24);

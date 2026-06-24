@@ -3,6 +3,10 @@
 // Anti-spam: 1 aviso por tarefa (grava alert_sent_at). Best-effort: uma tarefa
 // que falhar nunca derruba o ciclo nem o scheduler.
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { concluirTarefa, adiarTarefa } from './tarefas.js';
+import { registrarAtividade } from './atividades.js';
+
+const ECOSUN = '00000000-0000-0000-0000-000000000001';
 
 export interface AvisoBotao {
   id: string;
@@ -58,4 +62,92 @@ export async function notificarSlaVencidos(
     }
   }
   return enviados;
+}
+
+// ─── Roteamento dos cliques (Task 11) ────────────────────────────────────────
+
+export type SlaAcao = 'cobrar' | 'eufalo' | 'adiar';
+
+/**
+ * Faz o parse de um id de botão de SLA. PURA e testável.
+ * Reconhece `sla_cobrar:<tid>`, `sla_eufalo:<tid>`, `sla_adiar:<tid>`.
+ * Retorna null se o id não for de SLA (ex.: `evabt:...`).
+ */
+export function parseSlaButton(buttonId: string): { acao: SlaAcao; tid: string } | null {
+  const [prefixo, ...resto] = buttonId.trim().split(':');
+  const tid = resto.join(':'); // defensivo se o id tiver ':'
+  if (!tid) return null;
+  switch (prefixo) {
+    case 'sla_cobrar': return { acao: 'cobrar', tid };
+    case 'sla_eufalo': return { acao: 'eufalo', tid };
+    case 'sla_adiar':  return { acao: 'adiar', tid };
+    default: return null;
+  }
+}
+
+/**
+ * Trata os cliques dos botões do aviso de SLA. Best-effort: cada ação em
+ * try/catch e SEMPRE responde algo pro Junior. Retorna true se tratou o id
+ * (mesmo em erro), false se o id não é `sla_*` (caller segue roteando).
+ */
+export async function handleSlaButton(
+  client: SupabaseClient,
+  buttonId: string,
+  sendReply: (texto: string) => Promise<void>,
+): Promise<boolean> {
+  const parsed = parseSlaButton(buttonId);
+  if (!parsed) return false;
+  const { acao, tid } = parsed;
+
+  try {
+    // Busca lead_id/company_id da tarefa pra registrar a atividade na timeline.
+    const { data: tar } = await client.from('lead_tarefas')
+      .select('lead_id, company_id').eq('id', tid).maybeSingle();
+    const leadId = (tar as { lead_id?: string } | null)?.lead_id ?? null;
+    const companyId = (tar as { company_id?: string } | null)?.company_id ?? ECOSUN;
+
+    const reg = async (
+      tipo: 'nota' | 'tarefa_concluida',
+      titulo: string,
+    ): Promise<void> => {
+      if (!leadId) return;
+      await registrarAtividade(client, {
+        company_id: companyId,
+        lead_id: leadId,
+        tipo,
+        titulo,
+        automatica: true,
+      });
+    };
+
+    if (acao === 'adiar') {
+      await adiarTarefa(client, tid, 2);
+      await reg('nota', 'Tarefa adiada 2 dias (SLA)');
+      await sendReply('⏳ Adiado 2 dias.');
+      return true;
+    }
+
+    if (acao === 'eufalo') {
+      // Junior assume. Sem um mapeamento simples telefone→user, o mínimo seguro
+      // é garantir alert_sent_at preenchido pra não re-alertar dessa tarefa.
+      await client.from('lead_tarefas')
+        .update({ alert_sent_at: new Date().toISOString() })
+        .eq('id', tid).is('alert_sent_at', null);
+      await reg('nota', 'Junior vai falar (SLA)');
+      await sendReply('👍 Beleza, você assume. Não te aviso mais dessa.');
+      return true;
+    }
+
+    // acao === 'cobrar' — ação conservadora: NÃO manda mensagem automática pro
+    // cliente (sensível). Só marca a tarefa como feita.
+    // TODO Fase 2+: opção de disparar a cobrança automática pro cliente (reusar cadência)
+    await concluirTarefa(client, tid);
+    await reg('tarefa_concluida', 'Cobrança marcada como feita (SLA)');
+    await sendReply('✅ Marquei como feito. (Se quiser que eu mande a cobrança pro cliente automaticamente, a gente liga isso depois.)');
+    return true;
+  } catch (e) {
+    console.warn('[sla-notifier] botão', buttonId, 'falhou:', (e as Error).message);
+    try { await sendReply('⚠️ Deu erro ao processar. Tenta de novo ou faz pelo dashboard.'); } catch { /* noop */ }
+    return true;
+  }
 }
