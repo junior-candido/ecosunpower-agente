@@ -141,6 +141,20 @@ Pronto pra: cada pessoa entra com seu login; admin cria papéis/usuários e dele
 
 ---
 
+## 7b. Norte estratégico — extensões de longo prazo (backlog, não muda a Fase 1)
+
+Visão final: **a principal plataforma brasileira de Energia Solar, Engenharia Elétrica e Serviços Energéticos** — comercial, engenharia, operação, instalação, homologação, pós-venda, manutenção, financeiro, BI, IA, portal do cliente, apps e marketplace num só ecossistema (conecta com o EcoSof = SaaS multiempresa). Construção incremental: cada item abaixo vira spec→plano próprio quando chegar a vez. **Nenhum altera a Fase 1** — todos dependem dela.
+
+- **Receita recorrente:** CRM de relacionamento vitalício (histórico permanente por cliente; jornadas: ampliação, troca de inversor, baterias, EV, SPDA, laudos, manutenção, eficiência, novas UCs) · Central de oportunidades (detecta clientes aptos → gera lead interno) · Motor de recomendação (sugere equipamento/serviço por perfil).
+- **Crescimento:** Programa de indicações (indicador/parceiro/empresa, comissão, conversão) · Portal de parceiros (arquitetos/engenheiros/corretores: cadastrar lead, acompanhar proposta/comissão, baixar material) · Marketplace de serviços.
+- **Operação/logística:** Central de contratos (vigência/renovação/aditivo/alertas) · Gestão de frotas · Gestão de estoque (módulos/inversores/estruturas/cabos; entrada/reserva/instalação/devolução) · Compras e fornecedores (cotações/pedidos/comparação) · Gestão de múltiplas UCs (matriz/filiais/usinas/contratos).
+- **Pós-venda/monitoramento:** Monitoramento de usinas (integrações Hoymiles/FoxESS/SolarEdge/SAJ/Solis/Growatt/Sungrow/Huawei) · Alertas proativos (geração baixa/inversor offline/cliente sem acompanhamento → abre chamado) · Pesquisa de satisfação/NPS (pós venda/instalação/homologação/manutenção).
+- **Conhecimento:** Centro de treinamento (vídeos/procedimentos/normas, certificações) · Base de conhecimento corporativa (a IA consulta).
+- **Apps:** App de campo (OS/checklist/fotos/assinatura/geolocalização) · App do cliente (geração/documentos/chamados/solicitar serviço/homologação) — exigem a Open API.
+- **Inteligência:** BI executivo (receita/lucro/conversão/ticket/kWp/ROI mkt/recorrente) · IA de negócios (perguntas em linguagem natural) · Previsão de receita (faturamento/conversões/fluxo de caixa).
+- **Plataforma:** Open API (ERP/financeiro/monitoramento/WhatsApp/apps) · multi-tenant completo (SaaS).
+- **Expansão de segmento:** Módulo de Engenharia Elétrica (SPDA, subestações, projetos, laudos, eficiência, carregadores) na mesma estrutura operacional.
+
 ## 8. Decisões fechadas no brainstorm
 - Claim **automático ao abrir**. Vendedores acessam leads + usinas; admin tudo.
 - **Kanban** no pipeline (8 etapas, customizáveis depois).
