@@ -7,6 +7,7 @@
 // Os números vêm prontos do calculator (ProposalCalculations) — aqui só formata.
 import type { ProposalCalculations } from './calculator.js';
 import { fmtRs, fmtNum, fmtPct } from './format.js';
+import { renderEconomiaAnimada } from './economia-animada-render.js';
 
 const fmtKwh = (n: number) => `${fmtNum(Math.round(n), 0)} kWh`;
 const fmtPctInt = (frac: number) => fmtPct(frac * 100, 0);
@@ -119,6 +120,7 @@ export function renderEconomiaFuncionaSection(
     <span class="section-tag">Como sua economia funciona</span>
     <h2 class="section-title">Você sai da conta de luz</h2>
     <p class="section-subtitle">Sistema isolado (off-grid): sua energia não passa pela concessionária.</p>
+    ${renderEconomiaAnimada(calc, opts)}
     <div style="background:#fff;border:1px solid #E2E8F0;border-radius:20px;padding:28px;max-width:640px;margin:0 auto;text-align:center;font-size:15px;color:#334155;line-height:1.7">
       Sem rede, <b>não há Fio B, não há iluminação pública e não há fatura mensal</b>.
       A economia é a conta inteira que você deixa de pagar — hoje
@@ -133,6 +135,7 @@ export function renderEconomiaFuncionaSection(
     <span class="section-tag">Como sua economia funciona</span>
     <h2 class="section-title">Por que ainda vem uma conta — e por que ela é pequena</h2>
     <p class="section-subtitle">Depois do solar a conta cai muito, mas não zera: sobre a energia que você manda pra rede incide o <b>Fio B</b> (Lei 14.300). Veja com os seus números.</p>
+    ${renderEconomiaAnimada(calc, opts)}
     ${renderPassoAPasso(calc)}
     ${opts.temCarregador ? renderDicaCarregador() : ''}
     <div style="display:flex;flex-wrap:wrap;gap:20px;margin-top:8px">
