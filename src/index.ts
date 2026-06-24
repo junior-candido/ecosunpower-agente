@@ -84,6 +84,7 @@ import { leadRowToChannelInput } from './modules/dashboard/channel-mapper.js';
 import { ProactiveAlertService } from './modules/monitoring/proactive-alerts/service.js';
 import { runDispatchCycle, type DispatchCtx } from './modules/monitoring/proactive-alerts/dispatcher.js';
 import { runSlaCycle } from './modules/dashboard/tarefas.js';
+import { notificarSlaVencidos, type Aviso } from './modules/dashboard/sla-notifier.js';
 import { runAnniversaryEnqueue } from './modules/monitoring/proactive-alerts/anniversary.js';
 import type { DonoCadState } from './modules/monitoring/dono-cad/types.js';
 import { camposVaziosUsina, proximoCampoNovo, campoObrigatorioNovo, perguntaNovo, perguntaUsina, ehPular } from './modules/monitoring/dono-cad/machine.js';
@@ -8395,12 +8396,38 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     // ============================================
     // Ciclo de SLA: varre leads ativos e cria/garante tarefas de SLA (idempotente).
     // Best-effort: falha de um lead não derruba o ciclo. Roda a cada 15min.
+    // Aviso de SLA vencido (CRM Fase 2 — Task 10): quando uma tarefa vence,
+    // Eva avisa o Junior no zap com botões [Cobrar agora][Eu falo][Adiar 2 dias].
+    // Reusa sendAdminWithButtons (mesma função/canal dos proactive-alerts): com
+    // WABA manda botões interativos; sem WABA cai no texto puro automaticamente.
+    // Respeita PROACTIVE_ALERTS_DRY_RUN: se '1', só loga (não envia).
+    const slaNotifyDryRun = process.env.PROACTIVE_ALERTS_DRY_RUN === '1';
+    const enviarAvisoSla = async (aviso: Aviso): Promise<void> => {
+      if (slaNotifyDryRun) {
+        console.log('[sla-notifier] DRY: avisaria', aviso.botoes.map(b => b.id).join(','));
+        return;
+      }
+      await sendAdminWithButtons(
+        { metaWaba, sendText },
+        config.engineerPhone,
+        aviso.texto,
+        aviso.botoes,
+        'SLA do funil',
+      );
+    };
+
     const runSlaCron = async () => {
       // Ciclo de SLA do funil (CRM Fase 2): cria/atualiza tarefas de SLA dos leads ativos.
       try {
         const criadas = await runSlaCycle(supabase.getClient());
         if (criadas > 0) console.log(`[sla] ${criadas} tarefa(s) de SLA criada(s)`);
       } catch (e) { console.error('[sla] ciclo falhou:', (e as Error).message); }
+      // Best-effort: aviso de SLA vencido logo após o ciclo. try/catch próprio
+      // pra uma falha aqui nunca derrubar o scheduler nem o ciclo de criação.
+      try {
+        const avisados = await notificarSlaVencidos(supabase.getClient(), enviarAvisoSla);
+        if (avisados > 0) console.log(`[sla-notifier] ${avisados} aviso(s) de SLA vencido enviado(s)`);
+      } catch (e) { console.error('[sla-notifier] aviso falhou:', (e as Error).message); }
     };
     setInterval(runSlaCron, 15 * 60 * 1000);   // a cada 15min
     setTimeout(runSlaCron, 6 * 60 * 1000);     // 6min após boot
