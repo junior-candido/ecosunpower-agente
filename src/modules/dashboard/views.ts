@@ -81,7 +81,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'marketing' | 'leads' | 'clientes' | 'financeiro' | 'usuarios';
+  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'marketing' | 'blog' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios';
   title: string;
   body: string;
   scripts?: string;
@@ -93,19 +93,107 @@ interface LayoutInput {
   user?: DashUser;
 }
 
+// Estrutura de um item do sidebar.
+interface SideItem {
+  href: string;
+  key: string;
+  label: string;
+  area?: Area;
+  nivel?: Nivel;
+}
+// Estrutura de um setor (departamento) do sidebar.
+interface SideSetor {
+  titulo: string; // já inclui ícone
+  itens: SideItem[];
+}
+
+// Setores e itens do menu lateral (departamentos). Gating por permissão
+// reusa exatamente a mesma checagem do navItem antigo: item com área só
+// aparece se can(user, area, nivel). Item sem área = sempre visível. Sem
+// usuário (telas não migradas) = mostra tudo (compatibilidade).
+const SIDEBAR_SETORES: SideSetor[] = [
+  {
+    titulo: '📊 Visão geral',
+    itens: [
+      { href: '/dashboard/cockpit', key: 'cockpit', label: '⚡ Cockpit' },
+      { href: '/dashboard/home', key: 'home', label: '🏠 Home' },
+    ],
+  },
+  {
+    titulo: '💼 Comercial',
+    itens: [
+      { href: '/dashboard/leads', key: 'leads', label: '👥 Leads', area: 'leads' },
+      { href: '/dashboard/leads/kanban', key: 'kanban', label: '📋 Funil (Kanban)', area: 'leads' },
+      { href: '/dashboard/clientes', key: 'clientes', label: '🤝 Clientes' },
+      { href: '/dashboard/propostas', key: 'propostas', label: '📊 Propostas', area: 'propostas' },
+    ],
+  },
+  {
+    titulo: '📣 Marketing',
+    itens: [
+      { href: '/dashboard/marketing', key: 'marketing', label: '📣 Campanhas', area: 'marketing' },
+      { href: '/dashboard/marketing/blog', key: 'blog', label: '📝 Blog', area: 'marketing' },
+      { href: '/dashboard/cadencia', key: 'cadencia', label: '🔄 Cadência', area: 'marketing' },
+    ],
+  },
+  {
+    titulo: '⚡ Operação',
+    itens: [
+      { href: '/dashboard/monitoramento', key: 'monitoramento', label: '⚡ Monitoramento', area: 'usinas' },
+      { href: '/dashboard/manutencao', key: 'manutencao', label: '🔧 Manutenção' },
+    ],
+  },
+  {
+    titulo: '💰 Financeiro',
+    itens: [
+      { href: '/dashboard/financeiro', key: 'financeiro', label: '💰 Financeiro', area: 'financeiro' },
+    ],
+  },
+  {
+    titulo: '⚙️ Configurações',
+    itens: [
+      { href: '/dashboard/usuarios', key: 'usuarios', label: '👤 Usuários', area: 'usuarios' },
+    ],
+  },
+];
+
 export function renderLayout(input: LayoutInput): string {
   const { active, title, body, scripts, dark, user } = input;
-  const navClass = (key: string) =>
+
+  // Mesmo gate do navItem antigo: área presente + usuário presente e sem
+  // permissão → esconde. Sem área ou sem usuário → mostra.
+  const itemVisivel = (it: SideItem): boolean =>
+    !(it.area && user && !can(user, it.area, it.nivel ?? 'visualizar'));
+
+  const linkClass = (key: string) =>
     active === key
       ? 'bg-amber-400 text-slate-900 font-semibold shadow-md'
       : 'text-sky-100 hover:bg-white/10 hover:text-white';
 
-  // Item de menu condicionado por permissão. Sem área → sempre mostra.
-  // Sem usuário (telas não migradas) → mostra tudo. Com usuário → checa can().
-  const navItem = (href: string, key: string, label: string, area?: Area, nivel: Nivel = 'visualizar'): string => {
-    if (area && user && !can(user, area, nivel)) return '';
-    return `<a href="${href}" class="px-3 sm:px-4 py-2 rounded-lg transition ${navClass(key)}">${label}</a>`;
-  };
+  // Monta cada setor recolhível (<details>). Setor só aparece se tiver ao
+  // menos 1 item visível. O setor que contém o item ativo vem aberto.
+  const sidebarHtml = SIDEBAR_SETORES.map((setor) => {
+    const visiveis = setor.itens.filter(itemVisivel);
+    if (visiveis.length === 0) return '';
+    const contemAtivo = visiveis.some((it) => it.key === active);
+    const linksHtml = visiveis
+      .map(
+        (it) =>
+          `<a href="${it.href}" class="block px-3 py-2 rounded-lg text-sm transition ${linkClass(it.key)}">${it.label}</a>`,
+      )
+      .join('\n          ');
+    return `<details ${contemAtivo ? 'open' : ''} class="group">
+        <summary class="flex items-center justify-between cursor-pointer select-none px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wide text-sky-300 hover:text-white">
+          <span>${setor.titulo}</span>
+          <span class="text-sky-400 transition-transform group-open:rotate-90">▸</span>
+        </summary>
+        <div class="mt-1 mb-2 flex flex-col gap-0.5 pl-1">
+          ${linksHtml}
+        </div>
+      </details>`;
+  })
+    .filter(Boolean)
+    .join('\n      ');
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -154,51 +242,83 @@ export function renderLayout(input: LayoutInput): string {
   .accent-violet { border-left: 4px solid #8b5cf6; }
   .accent-rose { border-left: 4px solid #f43f5e; }
   .accent-indigo { border-left: 4px solid #6366f1; }
+  /* Sidebar (menu lateral por setores). Em telas grandes fica fixo à
+     esquerda; no mobile abre/fecha por um botão ☰ (alterna .sidebar-open). */
+  .ecosun-sidebar {
+    background: linear-gradient(180deg, #0c4a6e 0%, #075985 55%, #0369a1 100%);
+    width: 240px;
+  }
+  details > summary { list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  @media (max-width: 1023px) {
+    .ecosun-sidebar {
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      transform: translateX(-100%);
+      transition: transform 0.25s ease;
+      z-index: 40;
+    }
+    .sidebar-open .ecosun-sidebar { transform: translateX(0); }
+    .sidebar-backdrop { display: none; }
+    .sidebar-open .sidebar-backdrop {
+      display: block;
+      position: fixed; inset: 0;
+      background: rgba(2, 6, 23, 0.5);
+      z-index: 30;
+    }
+  }
 </style>
 </head>
-<body class="ecosun-body${dark ? ' ecosun-body-dark bg-slate-950 text-slate-100' : ''}">
-  <header class="ecosun-header text-white shadow-lg relative z-10">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
-      <div class="flex items-center gap-3">
-        <img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" class="h-10 w-auto bg-white rounded-lg p-1.5 shadow-md">
+<body class="ecosun-body${dark ? ' ecosun-body-dark bg-slate-950 text-slate-100' : ''}" id="dash-root">
+  <div class="lg:flex min-h-screen">
+    <!-- Backdrop do menu mobile (clicável pra fechar) -->
+    <div class="sidebar-backdrop" onclick="document.getElementById('dash-root').classList.remove('sidebar-open')"></div>
+
+    <!-- SIDEBAR: menu lateral por setores -->
+    <aside class="ecosun-sidebar text-white shadow-xl flex flex-col flex-shrink-0 lg:sticky lg:top-0 lg:h-screen">
+      <div class="flex items-center gap-3 px-4 py-4 border-b border-white/10">
+        <img src="${LOGO_ECOSUNPOWER_BRANCO_BASE64}" alt="EcoSunPower" class="h-9 w-auto bg-white rounded-lg p-1.5 shadow-md">
         <div>
-          <div class="font-bold text-lg leading-none tracking-tight">EcoSunPower</div>
-          <div class="text-xs text-sky-200 mt-1">Dashboard interno</div>
+          <div class="font-bold text-base leading-none tracking-tight">EcoSunPower</div>
+          <div class="text-[11px] text-sky-200 mt-1">Dashboard interno</div>
         </div>
       </div>
-      <nav class="flex flex-wrap gap-1 text-sm w-full sm:w-auto justify-end">
-        ${navItem('/dashboard/cockpit', 'cockpit', '⚡ <span class="hidden sm:inline">Cockpit</span>')}
-        ${navItem('/dashboard/home', 'home', '🏠 <span class="hidden sm:inline">Home</span>')}
-        ${navItem('/dashboard/leads', 'leads', '👥 <span class="hidden sm:inline">Leads</span>', 'leads')}
-        ${navItem('/dashboard/clientes', 'clientes', '🏠 <span class="hidden sm:inline">Clientes</span>')}
-        ${navItem('/dashboard/propostas', 'propostas', '📊 <span class="hidden sm:inline">Propostas</span>', 'propostas')}
-        ${navItem('/dashboard/financeiro', 'financeiro', '💰 <span class="hidden sm:inline">Financeiro</span>', 'financeiro')}
-        ${navItem('/dashboard/monitoramento', 'monitoramento', '⚡ <span class="hidden sm:inline">Monitoramento</span>', 'usinas')}
-        ${navItem('/dashboard/marketing', 'marketing', '📣 <span class="hidden sm:inline">Marketing</span>', 'marketing')}
-        ${navItem('/dashboard/cadencia', 'marketing', '🔄 <span class="hidden sm:inline">Cadência</span>', 'marketing')}
-        ${navItem('/dashboard/manutencao', 'manutencao', '🔧 <span class="hidden sm:inline">Manutenção</span>')}
-        ${navItem('/dashboard/usuarios', 'usuarios', '⚙️ <span class="hidden sm:inline">Usuários</span>', 'usuarios')}
-        <form action="/dashboard/logout" method="post" class="inline">
-          <button type="submit" class="px-3 py-2 rounded-lg text-sky-200 hover:bg-white/10 hover:text-white transition text-xs" title="Sair">🚪 <span class="hidden sm:inline">Sair</span></button>
-        </form>
+      <nav class="flex-1 overflow-y-auto px-2 py-3 space-y-1">
+      ${sidebarHtml}
       </nav>
-    </div>
-  </header>
+      <div class="px-3 py-3 border-t border-white/10">
+        <form action="/dashboard/logout" method="post">
+          <button type="submit" class="w-full px-3 py-2 rounded-lg text-sky-200 hover:bg-white/10 hover:text-white transition text-sm text-left" title="Sair">🚪 Sair</button>
+        </form>
+      </div>
+    </aside>
 
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-8 relative z-0">
-    ${body}
-  </main>
+    <!-- COLUNA DE CONTEÚDO -->
+    <div class="flex-1 min-w-0 flex flex-col">
+      <!-- Barra superior só no mobile: botão ☰ -->
+      <div class="lg:hidden ecosun-header text-white shadow-md flex items-center gap-3 px-4 py-3 sticky top-0 z-20">
+        <button type="button" aria-label="Abrir menu"
+          onclick="document.getElementById('dash-root').classList.toggle('sidebar-open')"
+          class="text-2xl leading-none px-2 py-1 rounded-lg hover:bg-white/10">☰</button>
+        <span class="font-semibold tracking-tight">EcoSunPower</span>
+      </div>
 
-  <footer class="max-w-7xl mx-auto px-4 sm:px-6 py-6 text-xs text-slate-500 text-center border-t border-slate-200 mt-8">
-    <div class="flex items-center justify-center gap-2 flex-wrap">
-      <span>☀</span>
-      <span>EcoSunPower Energia Solar</span>
-      <span class="text-slate-300 hidden sm:inline">·</span>
-      <span>CNPJ 33.020.459/0001-06</span>
-      <span class="text-slate-300 hidden sm:inline">·</span>
-      <span>Brasília-DF</span>
+      <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 relative z-0">
+        ${body}
+      </main>
+
+      <footer class="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 text-xs text-slate-500 text-center border-t border-slate-200 mt-8">
+        <div class="flex items-center justify-center gap-2 flex-wrap">
+          <span>☀</span>
+          <span>EcoSunPower Energia Solar</span>
+          <span class="text-slate-300 hidden sm:inline">·</span>
+          <span>CNPJ 33.020.459/0001-06</span>
+          <span class="text-slate-300 hidden sm:inline">·</span>
+          <span>Brasília-DF</span>
+        </div>
+      </footer>
     </div>
-  </footer>
+  </div>
 
   ${scripts ?? ''}
 </body>

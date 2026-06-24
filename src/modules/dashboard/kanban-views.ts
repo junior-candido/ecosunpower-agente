@@ -104,5 +104,5 @@ export function renderKanbanPage(grupos: Record<string, KanbanCard[]>, user?: Da
       })();
     </script>`;
 
-  return renderLayout({ active: 'leads', title: 'Funil (Kanban)', body, user });
+  return renderLayout({ active: 'kanban', title: 'Funil (Kanban)', body, user });
 }
