@@ -90,7 +90,7 @@ import { listUsers, listRoles, createUser, updateUser, getUserByLogin, touchLast
 import { hashSenha, verificarSenha } from './password.js';
 import { claimLead, podeVerLead, listLeads, leadsParaKanban } from './leads-queries.js';
 import { ORDEM_ETAPAS } from './pipeline.js';
-import { criarTarefa, concluirTarefa, adiarTarefa } from './tarefas.js';
+import { criarTarefa, concluirTarefa, adiarTarefa, cancelarTarefasPendentesDoLead } from './tarefas.js';
 import { registrarAtividade } from './atividades.js';
 import { audit } from './audit.js';
 import { can } from './permissions.js';
@@ -626,6 +626,10 @@ export function createDashboardRouter(
     const status = String(req.body?.status ?? '').trim();
     const allowed = ['novo', 'qualificando', 'agendado', 'transferido', 'perdido'];
     if (!allowed.includes(status)) return res.status(400).send('status inválido');
+    // Posse: vendedor não pode mexer em lead de OUTRO vendedor (mesmo gate de /set-etapa).
+    const user = (req as AuthedRequest).dashUser!;
+    const { data: lead } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    if (!lead || (user && !podeVerLead(user, lead))) return res.status(403).send('Lead de outro vendedor');
     const { error } = await supabase
       .from('leads')
       .update({ status, updated_at: new Date().toISOString() })
@@ -652,6 +656,10 @@ export function createDashboardRouter(
       .update({ status: etapa, updated_at: new Date().toISOString() })
       .eq('id', id);
     if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    // Etapa 'ganho' é terminal: cancela tarefas pendentes pra não alertar SLA-fantasma.
+    if (etapa === 'ganho') {
+      try { await cancelarTarefasPendentesDoLead(supabase, id); } catch (e) { console.warn('[set-etapa] cancelar tarefas falhou (segue):', (e as Error).message); }
+    }
     const viewer = (req as AuthedRequest).dashUser;
     if (viewer) {
       try {
@@ -837,6 +845,8 @@ export function createDashboardRouter(
     }
     const viewer = (req as AuthedRequest).dashUser;
     if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'perdeu', valorNovo: reason });
+    // Lead virou terminal (perdido): cancela tarefas pendentes pra não alertar SLA-fantasma.
+    try { await cancelarTarefasPendentesDoLead(supabase, id); } catch (e) { console.warn('[mark-lost] cancelar tarefas falhou (segue):', (e as Error).message); }
     res.redirect(`/dashboard/leads/${id}`);
   });
 

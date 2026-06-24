@@ -3,7 +3,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { Config } from '../config.js';
 import { proximaEtapaPorEvento, type EventoFunil } from './dashboard/pipeline.js';
 import { registrarAtividade } from './dashboard/atividades.js';
-import { criarTarefa } from './dashboard/tarefas.js';
+import { criarTarefa, cancelarTarefasPendentesDoLead } from './dashboard/tarefas.js';
 
 export interface MessageEntry {
   role: 'user' | 'assistant';
@@ -782,6 +782,8 @@ export class SupabaseService {
       titulo: 'Fechamento confirmado', automatica: true,
     });
     await this.avancarEtapaFunil(leadId, 'fechou');
+    // Lead virou terminal (ganho): cancela tarefas pendentes pra não alertar SLA-fantasma.
+    try { await cancelarTarefasPendentesDoLead(this.client, leadId); } catch (e) { console.warn('[onLeadGanho] cancelar tarefas falhou (segue):', (e as Error).message); }
   }
 
   // ==========================================================================

@@ -3,7 +3,7 @@
 // Anti-spam: 1 aviso por tarefa (grava alert_sent_at). Best-effort: uma tarefa
 // que falhar nunca derruba o ciclo nem o scheduler.
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { concluirTarefa, adiarTarefa } from './tarefas.js';
+import { concluirTarefa, adiarTarefa, cancelarTarefa } from './tarefas.js';
 import { registrarAtividade } from './atividades.js';
 
 const ECOSUN = '00000000-0000-0000-0000-000000000001';
@@ -52,7 +52,14 @@ export async function notificarSlaVencidos(
   let enviados = 0;
   for (const t of tarefas) {
     try {
-      const { data: lead } = await client.from('leads').select('name').eq('id', t.lead_id).maybeSingle();
+      const { data: lead } = await client.from('leads').select('name, status').eq('id', t.lead_id).maybeSingle();
+      const status = (lead as { status?: string | null } | null)?.status ?? null;
+      // Lead já terminal (ganho/perdido) não pode incomodar o Junior: não envia e
+      // cancela a tarefa pra não reprocessar. Best-effort: não conta como enviado.
+      if (status === 'ganho' || status === 'perdido') {
+        try { await cancelarTarefa(client, t.id); } catch { /* best-effort */ }
+        continue;
+      }
       const nome = (lead as { name?: string | null } | null)?.name ?? 'Lead';
       await enviar(montarAvisoSla(nome, t));
       await client.from('lead_tarefas').update({ alert_sent_at: nowIso }).eq('id', t.id);

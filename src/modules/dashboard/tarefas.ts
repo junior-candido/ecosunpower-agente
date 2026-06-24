@@ -140,6 +140,13 @@ export async function cancelarTarefa(client: SupabaseClient, id: string): Promis
   if (error) throw error;
 }
 
+/** Cancela todas as tarefas pendentes de um lead (ex.: lead virou ganho/perdido). Best-effort. */
+export async function cancelarTarefasPendentesDoLead(client: SupabaseClient, leadId: string): Promise<void> {
+  await client.from('lead_tarefas')
+    .update({ status: 'cancelada', updated_at: new Date().toISOString() })
+    .eq('lead_id', leadId).eq('status', 'pendente');
+}
+
 /** Adia uma tarefa somando `dias` ao due_at atual e zerando alert_sent_at.
  *  Se `leadId` vier, exige que a tarefa pertença ao lead (anti-IDOR). */
 export async function adiarTarefa(client: SupabaseClient, id: string, dias: number, leadId?: string): Promise<void> {
