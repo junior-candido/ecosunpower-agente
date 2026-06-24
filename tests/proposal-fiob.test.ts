@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   percentualFioBPorAno,
   percentualInjetadoSugerido,
+  calcularContaMensalDetalhada,
 } from '../src/modules/proposal/calculator.js';
 
 describe('percentualFioBPorAno — cronograma Lei 14.300 art. 27', () => {
@@ -51,5 +52,45 @@ describe('percentualInjetadoSugerido — fração da geração que vai pra rede 
     const auto = percentualInjetadoSugerido({ tipoSistema: 'hibrido', modoBateria: 'autoconsumo', perfil: 'residencial' });
     expect(auto).toBeLessThan(onGrid);
     expect(auto).toBeLessThanOrEqual(0.25);
+  });
+});
+
+describe('calcularContaMensalDetalhada — breakdown por tipo de sistema', () => {
+  const base = {
+    consumoKwh: 500,
+    geracaoKwh: 500,
+    tarifaRsKwh: 1.0,
+    tusdFioBRsKwh: 0.30,
+    percentualFioBVigente: 0.60,
+    custoIluminacaoPublica: 0,
+  };
+
+  it('on-grid: Fio B sobre o injetado (exemplo da proposta = R$ 67,50)', () => {
+    const c = calcularContaMensalDetalhada({ ...base, percentualGeracaoInjetada: 0.75, tipoSistema: 'on_grid' });
+    expect(c.injetadoKwh).toBeCloseTo(375);
+    expect(c.autoconsumoKwh).toBeCloseTo(125);
+    expect(c.fioB).toBeCloseTo(67.5);
+    expect(c.consumoRede).toBeCloseTo(0);
+    expect(c.total).toBeCloseTo(67.5);
+  });
+
+  it('off-grid: zera tudo (sem rede)', () => {
+    const c = calcularContaMensalDetalhada({ ...base, percentualGeracaoInjetada: 0, tipoSistema: 'off_grid', custoIluminacaoPublica: 50 });
+    expect(c.total).toBe(0);
+    expect(c.fioB).toBe(0);
+    expect(c.cip).toBe(0);
+  });
+
+  it('híbrido autoconsumo: injeta menos -> Fio B bem menor que on-grid', () => {
+    const onGrid = calcularContaMensalDetalhada({ ...base, percentualGeracaoInjetada: 0.75, tipoSistema: 'on_grid' });
+    const hib = calcularContaMensalDetalhada({ ...base, percentualGeracaoInjetada: 0.15, tipoSistema: 'hibrido' });
+    expect(hib.fioB).toBeLessThan(onGrid.fioB);
+    expect(hib.fioB).toBeCloseTo(500 * 0.15 * 0.30 * 0.60); // 13,5
+  });
+
+  it('inclui iluminação pública quando há (on-grid)', () => {
+    const c = calcularContaMensalDetalhada({ ...base, percentualGeracaoInjetada: 0.75, tipoSistema: 'on_grid', custoIluminacaoPublica: 30 });
+    expect(c.cip).toBe(30);
+    expect(c.total).toBeCloseTo(97.5);
   });
 });

@@ -225,6 +225,50 @@ export function percentualInjetadoSugerido(opts: {
   return Math.max(0.10, Math.round(ajustado * 100) / 100);
 }
 
+// Conta mensal pos-solar DETALHADA (breakdown pra ilustracao da proposta).
+// Ramifica por tipo de sistema:
+// - off_grid: sem rede -> sem Fio B, sem consumo da rede, sem iluminacao -> conta 0.
+// - on_grid / hibrido: Fio B (sobre injetado) + consumo nao coberto + iluminacao.
+//   (o efeito do modo da bateria entra via percentualGeracaoInjetada, que o
+//    chamador define com percentualInjetadoSugerido.)
+export interface ContaDetalhada {
+  total: number;
+  fioB: number;
+  consumoRede: number; // R$ do consumo nao coberto pela geracao
+  cip: number;         // iluminacao publica
+  autoconsumoKwh: number;
+  injetadoKwh: number;
+}
+
+export function calcularContaMensalDetalhada(p: {
+  consumoKwh: number;
+  geracaoKwh: number;
+  tarifaRsKwh: number;
+  tusdFioBRsKwh: number;
+  percentualFioBVigente: number;
+  percentualGeracaoInjetada: number;
+  custoIluminacaoPublica: number;
+  tipoSistema: TipoSistema;
+}): ContaDetalhada {
+  if (p.tipoSistema === 'off_grid') {
+    return { total: 0, fioB: 0, consumoRede: 0, cip: 0, autoconsumoKwh: 0, injetadoKwh: 0 };
+  }
+  const injetadoKwh = p.geracaoKwh * p.percentualGeracaoInjetada;
+  const autoconsumoKwh = Math.max(0, p.geracaoKwh - injetadoKwh);
+  const fioB = injetadoKwh * p.tusdFioBRsKwh * p.percentualFioBVigente;
+  const consumoLiquido = Math.max(0, p.consumoKwh - p.geracaoKwh);
+  const consumoRede = consumoLiquido * p.tarifaRsKwh;
+  const cip = p.custoIluminacaoPublica;
+  return {
+    total: fioB + consumoRede + cip,
+    fioB,
+    consumoRede,
+    cip,
+    autoconsumoKwh,
+    injetadoKwh,
+  };
+}
+
 // TIR via metodo Newton-Raphson. Aproximacao iterativa do zero do VPL.
 // Boa o suficiente pra propostas (precisao ~0.01%).
 export function calcularTIR(fluxoCaixa: number[]): number {
