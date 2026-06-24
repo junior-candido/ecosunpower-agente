@@ -170,6 +170,61 @@ export function calcularContaMensal(
   return fioBPago + consumoPago + custoIluminacaoPublica;
 }
 
+// ============================================================================
+// Fio B + simultaneidade por tipo de sistema (Lei 14.300)
+// ============================================================================
+
+export type TipoSistema = 'on_grid' | 'hibrido' | 'off_grid';
+export type ModoBateria = 'backup' | 'autoconsumo' | 'time_of_use';
+export type PerfilCliente = 'residencial' | 'comercial' | 'rural' | 'industrial';
+
+// Cronograma do Fio B pago sobre a energia injetada/compensada (art. 27, Lei 14.300).
+// Quem pediu acesso ate 06/01/2023 e isento ate 2045 (tratado fora daqui).
+export function percentualFioBPorAno(ano: number): number {
+  if (ano <= 2023) return 0.15;
+  if (ano === 2024) return 0.30;
+  if (ano === 2025) return 0.45;
+  if (ano === 2026) return 0.60;
+  if (ano === 2027) return 0.75;
+  if (ano === 2028) return 0.90;
+  return 1.00; // 2029+ (ANEEL define; usamos 100% como teto conservador)
+}
+
+// Fracao da geracao que vai pra REDE (e portanto paga Fio B). O complemento e o
+// autoconsumo simultaneo (nao paga Fio B). Quanto MENOR, melhor pro cliente.
+// Valores sugeridos por perfil/tipo/modo — sempre EDITAVEIS na proposta.
+// Base: residencial consome pouco de dia (injeta muito); comercio/industria
+// consomem mais durante a geracao (injetam menos). Bateria em autoconsumo
+// guarda o excedente do dia -> injeta pouquissimo. Carregador usado de dia
+// vira autoconsumo -> reduz a injecao.
+const INJETADO_BASE_POR_PERFIL: Record<PerfilCliente, number> = {
+  residencial: 0.75,
+  comercial: 0.45,
+  rural: 0.55,
+  industrial: 0.35,
+};
+
+export function percentualInjetadoSugerido(opts: {
+  tipoSistema: TipoSistema;
+  modoBateria?: ModoBateria;
+  perfil?: PerfilCliente;
+  temCarregador?: boolean;
+}): number {
+  if (opts.tipoSistema === 'off_grid') return 0;
+
+  // Hibrido com bateria ciclando (autoconsumo/time-of-use): injeta pouco.
+  if (opts.tipoSistema === 'hibrido') {
+    if (opts.modoBateria === 'autoconsumo') return 0.15;
+    if (opts.modoBateria === 'time_of_use') return 0.20;
+    // 'backup' (ou nao informado): bateria reservada, injeta como on-grid -> cai pro base abaixo.
+  }
+
+  const base = INJETADO_BASE_POR_PERFIL[opts.perfil ?? 'residencial'];
+  // Carregador carregado de dia aumenta o autoconsumo -> tira ~0.15 da injecao (piso 0.10).
+  const ajustado = opts.temCarregador ? base - 0.15 : base;
+  return Math.max(0.10, Math.round(ajustado * 100) / 100);
+}
+
 // TIR via metodo Newton-Raphson. Aproximacao iterativa do zero do VPL.
 // Boa o suficiente pra propostas (precisao ~0.01%).
 export function calcularTIR(fluxoCaixa: number[]): number {
