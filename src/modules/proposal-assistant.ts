@@ -28,6 +28,7 @@ import {
   VIDA_UTIL_ANOS,
 } from './solar-params.js';
 import { renderProposalHTML, type ProposalData } from './proposal/template.js';
+import { temBateria } from './proposal/bateria.js';
 import { obterLogoBase64, LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './proposal/assets/logo-base64.js';
 import { somaServicosExtras, renderServiceOnlyHTML, type ServicoItem, type ServiceOnlyData } from './proposal/service-render.js';
 import { montarDadosInputCompleto } from './proposal/dados-input.js';
@@ -1838,7 +1839,7 @@ export class ProposalAssistant {
     const tipoSistema = tipoSistemaDeDados({
       tipoCliente: data.tipoCliente,
       modalidade: data.modalidade,
-      temBateria: !!data.bateria,
+      temBateria: temBateria(data.bateria),
     });
     const perfilCliente = perfilDeTipoCliente(data.tipoCliente);
     const temCarregador = temCarregadorNosServicos(data.servicos);
