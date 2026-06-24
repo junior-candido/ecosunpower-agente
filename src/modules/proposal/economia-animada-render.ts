@@ -191,6 +191,15 @@ const JS = `<script>(function(){
     requestAnimationFrame(step);
   }
   function init(){
+    // Acessibilidade: quem pede menos movimento — pausa tambem os RAIOS (SMIL),
+    // que o CSS prefers-reduced-motion nao alcanca (so cobre animacao CSS).
+    try {
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        document.querySelectorAll('.eco-anim__svg').forEach(function(s){
+          if (typeof s.pauseAnimations === 'function') s.pauseAnimations();
+        });
+      }
+    } catch (e) { /* sem matchMedia: segue com animacao */ }
     var nums = document.querySelectorAll('.eco-anim__num');
     // Sem IntersectionObserver (ou PDF/sem rolagem): mantém o valor final já
     // renderizado no HTML — nunca mostra 0.
@@ -210,6 +219,9 @@ export function renderEconomiaAnimada(
   const offGrid = calc.tipoSistema === 'off_grid';
   const d = calc.contaComDetalhada;
   const temCarregador = !!opts.temCarregador && !offGrid;
+
+  // Sem geração não há o que ilustrar — não desenha fluxo "do nada".
+  if (!(calc.geracaoMensalKwh > 0)) return '';
 
   // Contadores: geração, o que usa de dia (autoconsumo, de graça) e a economia.
   const contadores = offGrid

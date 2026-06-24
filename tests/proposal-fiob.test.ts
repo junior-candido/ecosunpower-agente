@@ -140,6 +140,19 @@ describe('calcular() — Fio B crescente ano a ano na projeção', () => {
     const r = calcular(baseInput());
     expect(r.contaComSistemaMensal).toBeCloseTo(67.5, 1);
   });
+
+  it('payback sai do MESMO fluxo de caixa (com ramp), coerente com ROI/economia', () => {
+    // sem reajuste: a economia CAI ano a ano só por causa do Fio B subindo.
+    // consumo=geracao -> contaSem=6000/ano; fioB sobe 810→1350; econ cai 5190→4650.
+    const r = calcular(baseInput({ valorTotalRs: 15000, vidaUtilAnos: 25 }));
+    const fluxo = r.contaSemSistemaAnual.map((s, i) => s - r.contaComSistemaAnual[i]); // econ por ano
+    // GROUND TRUTH: o investimento só é coberto DENTRO do ano 4 (3 anos cheios = 14.962,50 < 15.000).
+    expect(fluxo.slice(0, 3).reduce((a, b) => a + b, 0)).toBeLessThan(15000);
+    expect(fluxo.slice(0, 4).reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(15000);
+    // O payback tem que refletir isso: 3 anos cheios + fração. O cálculo INGÊNUO
+    // (economia do ano 1 constante) daria 2 anos — subestimando.
+    expect(r.paybackAnos).toBe(3);
+  });
 });
 
 describe('calcular() — breakdown detalhado exposto pro template', () => {

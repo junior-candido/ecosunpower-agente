@@ -11,6 +11,7 @@ import { randomBytes } from 'crypto';
 import {
   calcular,
   compararGreener,
+  percentualFioBPorAno,
   tipoSistemaDeDados,
   perfilDeTipoCliente,
   temCarregadorNosServicos,
@@ -22,7 +23,6 @@ import {
   hspPorConcessionaria,
   tarifaPorConcessionaria,
   tusdFioBPorConcessionaria,
-  percentualFioBVigente,
   REAJUSTE_ANUAL_ENERGIA,
   CUSTO_ILUMINACAO_PUBLICA,
   VIDA_UTIL_ANOS,
@@ -1785,7 +1785,10 @@ export class ProposalAssistant {
     const hsp = Number(data.hsp) > 0 ? Number(data.hsp) : hspDefault;
 
     const ano = new Date().getFullYear();
-    const percentualFioB = percentualFioBVigente(ano);
+    // Cronograma único: a MESMA função usada na projeção (calculator), pra o
+    // headline nunca divergir da 1ª barra do gráfico. percentualFioBVigente do
+    // solar-params fica só pro chat/estimativa rápida (solar.ts).
+    const percentualFioB = percentualFioBPorAno(ano);
 
     // Fallback de consumoMensalKwh: campo critico do calculator (define payback/ROI).
     // Quando Junior passa override de geracao mas esquece consumo, derivamos:

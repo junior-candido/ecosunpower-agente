@@ -445,6 +445,24 @@ export function calcularPayback(
   return maxAnos; // nao paga em maxAnos
 }
 
+// Payback a partir do fluxo de caixa anual REAL (fluxoCaixaAnual[0] = -investimento,
+// [1..] = economia de cada ano, que já reflete o Fio B subindo). Acumula até cobrir
+// o investimento e interpola a fração do ano. Coerente com ROI/TIR (mesmo vetor).
+// Anos com economia <= 0 não amortizam (sistema inviável -> retorna maxAnos).
+export function paybackDeFluxo(fluxoCaixaAnual: number[], investimento: number, maxAnos: number): number {
+  if (investimento <= 0) return 0;
+  let acumulado = 0;
+  for (let ano = 1; ano < fluxoCaixaAnual.length; ano++) {
+    const econAno = fluxoCaixaAnual[ano];
+    if (econAno <= 0) continue;
+    if (acumulado + econAno >= investimento) {
+      return (ano - 1) + (investimento - acumulado) / econAno;
+    }
+    acumulado += econAno;
+  }
+  return maxAnos;
+}
+
 export function calcular(input: ProposalInput): ProposalCalculations {
   const {
     potenciaKwp,
@@ -529,7 +547,10 @@ export function calcular(input: ProposalInput): ProposalCalculations {
   let economiaAcum = 0;
   for (let ano = 1; ano <= vidaUtilAnos; ano++) {
     const reajuste = Math.pow(1 + reajusteAnualEnergia, ano - 1);
-    const fioBpctAno = percentualFioBPorAno(anoInicial + ano - 1);
+    // Ano 1 usa o % do headline (input.percentualFioBVigente — respeita override do
+    // Junior) -> a 1ª barra do gráfico SEMPRE bate com a conta com solar do topo.
+    // Anos seguintes sobem pelo cronograma da Lei 14.300.
+    const fioBpctAno = ano === 1 ? percentualFioBVigente : percentualFioBPorAno(anoInicial + ano - 1);
     const semSistAno = contaSemSistemaMensal * 12 * reajuste;
     const comSistMensalAno = calcularContaMensalDetalhada({
       consumoKwh: consumoMensalKwh,
@@ -550,7 +571,11 @@ export function calcular(input: ProposalInput): ProposalCalculations {
   }
 
   // Indicadores
-  const paybackBruto = calcularPayback(valorTotalRs, economiaAnual, reajusteAnualEnergia);
+  // Payback sai do MESMO fluxo de caixa anual (que já tem o ramp do Fio B), pra
+  // ficar coerente com ROI/TIR/economia-25-anos. Varre o fluxo acumulando a
+  // economia real de cada ano (que CAI conforme o Fio B sobe) até cobrir o
+  // investimento — em vez de re-projetar a economia do ano 1 (otimista).
+  const paybackBruto = paybackDeFluxo(fluxoCaixaAnual, valorTotalRs, vidaUtilAnos);
   // Se nao paga em vidaUtil, marca como inviavel pra template renderizar aviso.
   const paybackInviavel = paybackBruto >= vidaUtilAnos;
   const paybackAnos = paybackInviavel ? vidaUtilAnos : Math.floor(paybackBruto);
