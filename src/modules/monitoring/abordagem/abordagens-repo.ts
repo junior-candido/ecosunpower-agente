@@ -75,6 +75,28 @@ export async function reverterEnvioParaProposta(client: SupabaseClient, id: stri
   if (error) console.warn('[abordagem] reverterEnvioParaProposta falhou:', error.message);
 }
 
+// Abordagem feita NA MÃO pela plataforma (botão de pós-venda): já entra
+// encerrada/enviada pra Eva ver no diário e NÃO re-mandar. `tipo` já vem mapeado
+// pro enum da Eva (parabens|depoimento|queda). status 'encerrada' nunca colide
+// com o unique parcial (que só cobre abordagens abertas); 23505 (corrida) → null.
+export async function registrarAbordagemManual(client: SupabaseClient, a: {
+  sistemaId: string; leadId: string; tipo: AbordagemTipo; mensagem: string;
+}): Promise<string | null> {
+  const agora = agoraIso();
+  const { data, error } = await client.from('monitoring_abordagens').insert({
+    sistema_id: a.sistemaId, lead_id: a.leadId, tipo: a.tipo,
+    status: 'encerrada', desfecho: 'transferido_junior',
+    mensagem_proposta: a.mensagem, mensagem_enviada: a.mensagem,
+    enviada_em: agora, encerrada_em: agora,
+    nota_observacao: '[enviado manual pela plataforma]',
+  }).select('id').single();
+  if (error) {
+    if (error.code === '23505') return null;
+    throw new Error(`registrarAbordagemManual: ${error.message}`);
+  }
+  return (data as { id: string }).id;
+}
+
 // Abordagem "viva" do lead (pro index injetar contexto quando o cliente fala).
 export async function getAbordagemAbertaPorLeadPhone(client: SupabaseClient, leadId: string): Promise<AbordagemRow | null> {
   const { data, error } = await client.from('monitoring_abordagens')
