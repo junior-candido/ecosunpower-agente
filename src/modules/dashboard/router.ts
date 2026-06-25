@@ -39,7 +39,6 @@ import {
 import {
   fetchDashboardKpis,
   listPropostas,
-  listManutencaoPendente,
   fetchPropostasPorMes,
   getTimelineAbordagens,
   getKPIsAbordagemMes,
@@ -47,7 +46,6 @@ import {
 import {
   renderHomePage,
   renderPropostasPage,
-  renderManutencaoPage,
   renderLoginPage,
   renderMonitoramentoPage,
   renderImportarSitesPage,
@@ -103,6 +101,9 @@ import { renderPosVendaPage } from './pos-venda-views.js';
 import { objetivoManual, fallbackMensagem } from './pos-venda-mensagens.js';
 import { registrarAbordagemManual } from '../monitoring/abordagem/abordagens-repo.js';
 import { numerosTrimestre } from '../monitoring/abordagem/numeros-usina.js';
+import { listarAgenda, prontuarioUsina, listarLeiturasPendentes, criarManutencao, marcarManutencaoFeita, reagendarManutencao, registrarLeituraManual } from './manutencao-queries.js';
+import { renderManutencaoPage, renderProntuario } from './manutencao-views.js';
+import type { ManutencaoTipo } from './manutencao-motor.js';
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
 // didApply=false: prévia + botão pra gravar. didApply=true: resultado da gravação.
@@ -1407,11 +1408,12 @@ export function createDashboardRouter(
         return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
       }
       const donoLeadId = detalhe.sistema.lead_id;
-      const [donoRow, timelineAbordagens] = await Promise.all([
+      const [donoRow, timelineAbordagens, prontuario] = await Promise.all([
         donoLeadId ? supabaseService.getClienteByLeadId(donoLeadId) : Promise.resolve(null),
         getTimelineAbordagens(supabase, id).catch(() => [] as import('./queries.js').AbordagemTimelineRow[]),
+        prontuarioUsina(supabase, id).catch(() => []),
       ]);
-      res.send(renderDetalheSistemaPage(detalhe, donoRow ? { id: donoRow.id, name: donoRow.name } : null, timelineAbordagens));
+      res.send(renderDetalheSistemaPage(detalhe, donoRow ? { id: donoRow.id, name: donoRow.name } : null, timelineAbordagens, renderProntuario(prontuario)));
     } catch (err) {
       console.error('[dashboard/monitoramento/detalhe]', err);
       res.status(500).send(`<h2>Erro ao carregar detalhe</h2><pre>${(err as Error).message}</pre>`);
@@ -1608,14 +1610,88 @@ export function createDashboardRouter(
     }
   });
 
-  // Manutencao: lembretes pendentes nos proximos 30 dias.
-  router.get('/manutencao', async (_req: Request, res: Response) => {
+  // Manutencao: agenda guiada por atenção + prontuário + leitura manual.
+  router.get('/manutencao', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     try {
-      const rows = await listManutencaoPendente(supabase);
-      res.send(renderManutencaoPage(rows));
+      const [agenda, leiturasPendentes, usinasRes] = await Promise.all([
+        listarAgenda(supabase),
+        listarLeiturasPendentes(supabase),
+        supabase.from('sistemas_clientes').select('id, apelido').eq('ativo', true).order('apelido'),
+      ]);
+      const usinas = (usinasRes.data ?? []).map((u: any) => ({ id: u.id, apelido: u.apelido }));
+      res.type('text/html').send(renderManutencaoPage({ agenda, leiturasPendentes, usinas }, req.dashUser));
     } catch (err) {
-      console.error('[dashboard/manutencao]', err);
-      res.status(500).send(`<h2>Erro ao listar manutencao</h2><pre>${(err as Error).message}</pre>`);
+      console.error('[manutencao] GET falhou:', (err as Error).message);
+      res.status(500).type('text/html').send('<h2>Erro ao carregar Manutenção</h2>');
+    }
+  });
+
+  router.post('/manutencao/agendar', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const sistemaId = String(req.body.sistemaId ?? '');
+      const tipo = String(req.body.tipo ?? '') as ManutencaoTipo;
+      const dataAgendada = String(req.body.dataAgendada ?? '');
+      const TIPOS = ['limpeza', 'revisao_inversor', 'revisao_eletrica', 'corretiva', 'inspecao'];
+      if (!UUID_RE.test(sistemaId) || !TIPOS.includes(tipo) || !/^\d{4}-\d{2}-\d{2}$/.test(dataAgendada)) {
+        res.status(400).send('dados inválidos'); return;
+      }
+      const { data: s } = await supabase.from('sistemas_clientes').select('lead_id').eq('id', sistemaId).maybeSingle();
+      await criarManutencao(supabase, { sistemaId, leadId: (s as any)?.lead_id ?? null, tipo, origem: 'manual', dataAgendada });
+      res.redirect('/dashboard/manutencao');
+    } catch (err) {
+      console.error('[manutencao] agendar falhou:', (err as Error).message);
+      res.status(500).send('erro ao agendar');
+    }
+  });
+
+  router.post('/manutencao/:id/feita', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
+      const hoje = new Date().toISOString().slice(0, 10);
+      await marcarManutencaoFeita(supabase, id, {
+        feitaEm: String(req.body.feitaEm ?? hoje), feitoPor: req.dashUser!.id, notas: req.body.notas ? String(req.body.notas) : undefined,
+      });
+      const { data: m } = await supabase.from('manutencoes').select('lead_id, tipo').eq('id', id).maybeSingle();
+      if ((m as any)?.lead_id) {
+        await registrarAtividade(supabase, {
+          company_id: req.dashUser!.companyId, lead_id: (m as any).lead_id, tipo: 'visita',
+          titulo: `Manutenção feita: ${(m as any).tipo}`, automatica: false, user_id: req.dashUser!.id,
+        });
+      }
+      res.redirect('/dashboard/manutencao');
+    } catch (err) {
+      console.error('[manutencao] feita falhou:', (err as Error).message);
+      res.status(500).send('erro ao marcar feita');
+    }
+  });
+
+  router.post('/manutencao/:id/reagendar', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      const novaData = String(req.body.dataAgendada ?? '');
+      if (!UUID_RE.test(id) || !/^\d{4}-\d{2}-\d{2}$/.test(novaData)) { res.status(400).send('dados inválidos'); return; }
+      await reagendarManutencao(supabase, id, novaData);
+      res.redirect('/dashboard/manutencao');
+    } catch (err) {
+      console.error('[manutencao] reagendar falhou:', (err as Error).message);
+      res.status(500).send('erro ao reagendar');
+    }
+  });
+
+  router.post('/usinas/:sistemaId/leitura', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const sistemaId = String(req.params.sistemaId);
+      const competencia = String(req.body.competencia ?? '');
+      const kwh = Number(req.body.kwh);
+      if (!UUID_RE.test(sistemaId) || !/^\d{4}-\d{2}$/.test(competencia) || !(kwh >= 0)) {
+        res.status(400).json({ error: 'dados inválidos' }); return;
+      }
+      const fb = await registrarLeituraManual(supabase, { sistemaId, competencia, kwh });
+      res.json(fb);
+    } catch (err) {
+      console.error('[manutencao] leitura falhou:', (err as Error).message);
+      res.status(500).json({ error: 'erro ao registrar leitura' });
     }
   });
 

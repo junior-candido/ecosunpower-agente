@@ -6,6 +6,7 @@ import type { DashUser } from './permissions.js';
 import type { PosVendaLinha } from './pos-venda-queries.js';
 import type { Saude } from './pos-venda-saude.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
+import { seloSemApi } from './manutencao-views.js';
 
 const SEMAFORO: Record<Saude, { dot: string; txt: string }> = {
   verde: { dot: '🟢', txt: 'Gerando ok' },
@@ -53,6 +54,7 @@ function renderLinha(l: PosVendaLinha): string {
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
       <span class="text-lg" title="${s.txt}">${s.dot}</span>
       <a href="/dashboard/leads/${escapeHtml(l.leadId)}" class="font-semibold text-cyan-200 hover:underline">${nome}</a>
+      ${seloSemApi(l.semApi)}
       <span class="text-xs text-slate-400">${phone}</span>
       <span class="text-xs text-slate-500">${usina}</span>
       <span class="ml-auto text-xs text-slate-400">❤️ ${tempo(l.ultimoContatoEm)}</span>

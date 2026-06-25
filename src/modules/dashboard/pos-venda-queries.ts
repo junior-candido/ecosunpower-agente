@@ -19,7 +19,15 @@ export interface PosVendaLinha {
   saude: Saude;
   ultimoContatoEm: string | null;
   jaTeveDepoimento: boolean;
+  semApi: boolean;
   proximaAcao: ProximaAcao;
+}
+
+// Usina sem integração de monitoramento: acompanhamento manual ou sem credencial.
+function semApiUsina(s: { acompanhamento?: string | null; api_credentials?: any }): boolean {
+  if (s.acompanhamento === 'manual') return true;
+  const cred = s.api_credentials;
+  return !cred || (typeof cred === 'object' && Object.keys(cred).length === 0);
 }
 
 const diasAtras = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
@@ -30,7 +38,7 @@ const KWH_MES_POR_KWP = 120;
 export async function listarClientesPosVenda(client: SupabaseClient, companyId: string): Promise<PosVendaLinha[]> {
   // 1) usinas ativas com lead vinculado
   const { data: sistemas, error: e1 } = await client.from('sistemas_clientes')
-    .select('id, lead_id, apelido, marca_inversor, potencia_kwp, data_instalacao, cidade, ativo')
+    .select('id, lead_id, apelido, marca_inversor, potencia_kwp, data_instalacao, cidade, acompanhamento, api_credentials, ativo')
     .eq('ativo', true).not('lead_id', 'is', null);
   if (e1) throw new Error(`listarClientesPosVenda/sistemas: ${e1.message}`);
   const sis = (sistemas ?? []) as Array<Record<string, any>>;
@@ -103,6 +111,7 @@ export async function listarClientesPosVenda(client: SupabaseClient, companyId: 
       potenciaKwp: potencia, marcaInversor: s.marca_inversor ?? null,
       dataInstalacao: s.data_instalacao ?? null,
       saude, ultimoContatoEm: contato, jaTeveDepoimento: jaTeve,
+      semApi: semApiUsina(s),
       proximaAcao: proximaAcaoPosVenda(
         { saude, dataInstalacao: s.data_instalacao, ultimoContatoEm: contato, jaTeveDepoimento: jaTeve, elegivelUpgrade: elegivel },
         hoje,

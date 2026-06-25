@@ -898,6 +898,7 @@ export function renderDetalheSistemaPage(
   d: DetalheSistema,
   dono?: { id: string; name: string | null } | null,
   timelineAbordagens?: AbordagemTimelineRow[],
+  prontuarioHtml?: string,
 ): string {
   const s = d.sistema;
   const localizacao = [s.cidade, s.uf].filter(Boolean).join('/') || '—';
@@ -1124,6 +1125,12 @@ export function renderDetalheSistemaPage(
     <section class="bg-rose-50 border border-rose-200 rounded-xl p-4 mb-6 text-sm">
       <div class="font-semibold text-rose-800 mb-1">⚠️ Último erro de sincronização:</div>
       <div class="text-rose-700 font-mono text-xs">${escapeHtml(s.ultimo_erro)}</div>
+    </section>` : ''}
+
+    ${prontuarioHtml ? `
+    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
+      <h2 class="text-base font-semibold text-slate-900 mb-4">🔧 Prontuário de manutenção</h2>
+      ${prontuarioHtml}
     </section>` : ''}
   `;
 
