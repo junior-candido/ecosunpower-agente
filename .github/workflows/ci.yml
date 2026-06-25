@@ -1,0 +1,50 @@
+name: CI e merge automático
+
+# O que isto faz, em português:
+# - Roda em TODO Pull Request que mira a branch main.
+# - Confere os tipos (tsc) e roda TODOS os testes (vitest).
+# - Se tudo passar (verde) -> junta o PR na main SOZINHO (squash) e apaga a branch.
+# - Se algum teste quebrar (vermelho) -> NÃO junta. O autor (e o Claude dele) conserta.
+#
+# IMPORTANTE: juntar na main NÃO coloca no ar. Produção só vai pro cliente quando
+# o Junior clicar "Implantar" no EasyPanel. Esse continua sendo o portão final dele.
+
+on:
+  pull_request:
+    branches: [main]
+
+# Permissão pro robô do GitHub conseguir juntar o PR.
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  PUPPETEER_SKIP_DOWNLOAD: 'true' # nenhum teste usa navegador real -> CI mais rápido
+
+jobs:
+  testar-e-juntar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependências
+        run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+      - name: Conferir tipos (tsc)
+        run: npx tsc --noEmit
+
+      - name: Rodar os testes
+        run: npx vitest run
+
+      - name: Juntar automaticamente (só se tudo passou)
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge ${{ github.event.pull_request.number }} --squash --delete-branch
