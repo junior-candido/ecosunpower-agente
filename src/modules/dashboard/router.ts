@@ -98,6 +98,11 @@ import { can } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
 import { renderBlogDraftsPage, renderBlogIndisponivel } from './blog-views.js';
+import { listarClientesPosVenda } from './pos-venda-queries.js';
+import { renderPosVendaPage } from './pos-venda-views.js';
+import { objetivoManual, fallbackMensagem } from './pos-venda-mensagens.js';
+import { registrarAbordagemManual } from '../monitoring/abordagem/abordagens-repo.js';
+import { numerosTrimestre } from '../monitoring/abordagem/numeros-usina.js';
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
 // didApply=false: prévia + botão pra gravar. didApply=true: resultado da gravação.
@@ -1122,6 +1127,103 @@ export function createDashboardRouter(
     } catch (err) {
       console.error('[dashboard/visualizacoes.csv]', err);
       res.status(500).type('text/plain').send(`Erro: ${(err as Error).message}`);
+    }
+  });
+
+  // Pós-venda / Relacionamento: clientes com usina, guiados por atenção
+  // (saúde + tempo sem contato). Botões manuais (mesma coisa que a Eva faz no
+  // automático) mandam via wa.me e gravam na timeline + abordagem.
+  router.get('/pos-venda', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const linhas = await listarClientesPosVenda(supabase, req.dashUser!.companyId);
+      res.type('text/html').send(renderPosVendaPage(linhas, req.dashUser));
+    } catch (err) {
+      console.error('[pos-venda] GET falhou:', (err as Error).message);
+      res.status(500).type('text/html').send('<h2>Erro ao carregar Pós-venda</h2>');
+    }
+  });
+
+  // Ação manual de pós-venda em 2 fases pelo mesmo endpoint:
+  //  - PREVIEW (sem `enviado`): gera a mensagem (redator da Eva → fallback) e
+  //    devolve { mensagem, waBase }. Não grava nada.
+  //  - CONFIRMAR (`enviado=1` + `mensagem`): grava na timeline + (tipos mapeados)
+  //    abre abordagem encerrada pra Eva não re-mandar. Devolve { ok:true }.
+  router.post('/pos-venda/:leadId/acao', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    const leadId = String(req.params.leadId);
+    const tipo = String(req.body.tipo ?? '') as 'parabens' | 'relatorio' | 'limpeza' | 'depoimento' | 'upgrade' | 'contato';
+    const enviado = req.body.enviado === '1' || req.body.enviado === 'true';
+    const TIPOS_OK = ['parabens', 'relatorio', 'limpeza', 'depoimento', 'upgrade', 'contato'];
+    if (!TIPOS_OK.includes(tipo)) { res.status(400).json({ error: 'tipo inválido' }); return; }
+    const TARIFA_RS_KWH = 0.99; // média DF/GO — só pro número do relatório
+
+    try {
+      const companyId = req.dashUser!.companyId;
+      const { data: lead } = await supabase.from('leads')
+        .select('id, name, phone, company_id').eq('id', leadId).eq('company_id', companyId).maybeSingle();
+      if (!lead) { res.status(404).json({ error: 'lead não encontrado' }); return; }
+      const leadRow = lead as { id: string; name: string | null; phone: string | null };
+      const { data: sistema } = await supabase.from('sistemas_clientes')
+        .select('id, potencia_kwp').eq('lead_id', leadId).eq('ativo', true)
+        .order('created_at', { ascending: true }).limit(1).maybeSingle();
+      const sistemaRow = sistema as { id: string; potencia_kwp: number | null } | null;
+
+      // ---- Fase CONFIRMAR ----
+      if (enviado) {
+        const msg = String(req.body.mensagem ?? '').slice(0, 1000);
+        const LABEL: Record<string, string> = {
+          parabens: 'Parabéns enviado', relatorio: 'Relatório do mês enviado', limpeza: 'Oferta de limpeza enviada',
+          depoimento: 'Pedido de depoimento enviado', upgrade: 'Oferta de upgrade enviada', contato: 'Contato registrado',
+        };
+        await registrarAtividade(supabase, {
+          company_id: companyId, lead_id: leadId,
+          tipo: tipo === 'contato' ? 'contato' : 'whatsapp',
+          titulo: LABEL[tipo], descricao: msg || undefined,
+          automatica: false, user_id: req.dashUser!.id,
+        });
+        const MAP_EVA: Record<string, 'parabens' | 'depoimento' | 'queda'> = { parabens: 'parabens', depoimento: 'depoimento', limpeza: 'queda' };
+        if (sistemaRow && MAP_EVA[tipo] && msg) {
+          await registrarAbordagemManual(supabase, { sistemaId: sistemaRow.id, leadId, tipo: MAP_EVA[tipo], mensagem: msg });
+        }
+        res.json({ ok: true });
+        return;
+      }
+
+      // ---- Fase PREVIEW ----
+      if (tipo === 'contato') { res.json({ mensagem: '', waBase: '' }); return; }
+
+      let trimestre: { kwh: number; reais: number } | null = null;
+      if (sistemaRow) {
+        const { data: ger } = await supabase.from('geracao_diaria')
+          .select('data, geracao_kwh').eq('sistema_id', sistemaRow.id)
+          .gte('data', new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10));
+        trimestre = numerosTrimestre((ger ?? []).map((g: any) => ({ data: g.data, geracao_kwh: Number(g.geracao_kwh) })), TARIFA_RS_KWH, new Date());
+      }
+
+      // tenta a IA (mesmo tom da Eva); cai pro fallback se faltar chave/erro
+      let mensagem: string | null = null;
+      if (options.anthropicApiKey) {
+        try {
+          const { default: Anthropic } = await import('@anthropic-ai/sdk');
+          const { redigirMensagem } = await import('../monitoring/abordagem/redator.js');
+          const anthropic = new Anthropic({ apiKey: options.anthropicApiKey });
+          mensagem = await redigirMensagem(anthropic, {
+            tipo: tipo === 'limpeza' ? 'queda' : 'parabens',
+            etapa: 1, objetivo: objetivoManual(tipo),
+            clienteNome: leadRow.name ?? 'cliente',
+            dados: { percentualQueda: null, diasOffline: null, trimestre: tipo === 'relatorio' ? trimestre : null, causaRaizAnterior: null },
+            regrasTreino: [], ajusteDoJunior: null, mensagemAnterior: null,
+          });
+        } catch (e) {
+          console.warn('[pos-venda] redator falhou, usando fallback:', (e as Error).message);
+        }
+      }
+      if (!mensagem) mensagem = fallbackMensagem(tipo, { nome: leadRow.name ?? 'cliente', trimestre: tipo === 'relatorio' ? trimestre : null });
+
+      const fone = String(leadRow.phone ?? '').replace(/\D/g, '');
+      res.json({ mensagem, waBase: fone ? `https://wa.me/${fone}` : 'https://wa.me/' });
+    } catch (err) {
+      console.error('[pos-venda] POST acao falhou:', (err as Error).message);
+      res.status(500).json({ error: 'falha ao processar ação' });
     }
   });
 
