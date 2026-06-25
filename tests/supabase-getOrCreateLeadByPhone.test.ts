@@ -15,6 +15,15 @@ vi.mock('@supabase/supabase-js', () => ({
           maybeSingle: async () => mockMaybySingleReturn,
           single: async () => mockMaybySingleReturn,
         }),
+        // getLeadByPhone agora busca por variantes: .in('phone', [...]).order().limit()
+        in: (_col: string, _vals: string[]) => ({
+          order: () => ({
+            limit: async () => ({
+              data: mockMaybySingleReturn.data ? [mockMaybySingleReturn.data] : [],
+              error: null,
+            }),
+          }),
+        }),
       }),
       insert: (row: Record<string, unknown>) => ({
         select: (_cols: string) => ({
