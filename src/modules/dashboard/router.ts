@@ -614,7 +614,7 @@ export function createDashboardRouter(
         .maybeSingle();
       if (!lead) return res.status(404).json({ erro: 'Lead não encontrado.' });
 
-      const { gerarMensagemComercial, type: _t } = await import('../ia-comercial.js') as any;
+      const { gerarMensagemComercial } = await import('../ia-comercial.js');
       const Anthropic = (await import('@anthropic-ai/sdk')).default;
       const apiKey = process.env.ANTHROPIC_API_KEY;
       if (!apiKey) return res.json({ erro: 'Chave ANTHROPIC_API_KEY não configurada no .env.' });
