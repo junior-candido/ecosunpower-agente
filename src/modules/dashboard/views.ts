@@ -278,7 +278,9 @@ export function renderLayout(input: LayoutInput): string {
     <!-- SIDEBAR: menu lateral por setores -->
     <aside class="ecosun-sidebar text-white shadow-xl flex flex-col flex-shrink-0 lg:sticky lg:top-0 lg:h-screen">
       <div class="px-4 py-5 border-b border-white/10 text-center">
-        <img src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="EcoSunPower" class="h-12 w-auto mx-auto">
+        <a href="/dashboard/home" title="Ir para a Home" class="inline-block">
+          <img src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="EcoSunPower" class="h-12 w-auto mx-auto">
+        </a>
         <div class="text-[11px] text-sky-200 mt-2 tracking-[0.18em] uppercase">Dashboard interno</div>
       </div>
       <nav class="flex-1 overflow-y-auto px-2 py-3 space-y-1">
