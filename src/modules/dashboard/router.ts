@@ -102,7 +102,7 @@ import { objetivoManual, fallbackMensagem } from './pos-venda-mensagens.js';
 import { registrarAbordagemManual } from '../monitoring/abordagem/abordagens-repo.js';
 import { numerosTrimestre } from '../monitoring/abordagem/numeros-usina.js';
 import { listarAgenda, prontuarioUsina, listarLeiturasPendentes, criarManutencao, marcarManutencaoFeita, reagendarManutencao, registrarLeituraManual } from './manutencao-queries.js';
-import { renderManutencaoPage } from './manutencao-views.js';
+import { renderManutencaoPage, renderProntuario } from './manutencao-views.js';
 import type { ManutencaoTipo } from './manutencao-motor.js';
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
@@ -1408,11 +1408,12 @@ export function createDashboardRouter(
         return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
       }
       const donoLeadId = detalhe.sistema.lead_id;
-      const [donoRow, timelineAbordagens] = await Promise.all([
+      const [donoRow, timelineAbordagens, prontuario] = await Promise.all([
         donoLeadId ? supabaseService.getClienteByLeadId(donoLeadId) : Promise.resolve(null),
         getTimelineAbordagens(supabase, id).catch(() => [] as import('./queries.js').AbordagemTimelineRow[]),
+        prontuarioUsina(supabase, id).catch(() => []),
       ]);
-      res.send(renderDetalheSistemaPage(detalhe, donoRow ? { id: donoRow.id, name: donoRow.name } : null, timelineAbordagens));
+      res.send(renderDetalheSistemaPage(detalhe, donoRow ? { id: donoRow.id, name: donoRow.name } : null, timelineAbordagens, renderProntuario(prontuario)));
     } catch (err) {
       console.error('[dashboard/monitoramento/detalhe]', err);
       res.status(500).send(`<h2>Erro ao carregar detalhe</h2><pre>${(err as Error).message}</pre>`);
