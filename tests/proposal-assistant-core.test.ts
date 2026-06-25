@@ -16,6 +16,28 @@ vi.mock('../src/modules/cases-fetcher.js', () => {
   return { CasesFetcher };
 });
 
+// Simula o Redis pra não abrir conexão de verdade. Sem isso, no servidor (sem
+// Redis) a conexão fica reconectando e loga erro DEPOIS do teste acabar, o que
+// o vitest acusa como "unhandled error" no encerramento e derruba a esteira.
+// O código faz `(Redis as any).default ?? Redis`, então imitamos o formato do
+// ioredis real: a classe tem `.default` e `.Redis` apontando pra ela mesma.
+vi.mock('ioredis', () => {
+  function RedisMock() {
+    return {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue('OK'),
+      setex: vi.fn().mockResolvedValue('OK'),
+      del: vi.fn().mockResolvedValue(0),
+      quit: vi.fn().mockResolvedValue('OK'),
+      disconnect: vi.fn(),
+      on: vi.fn(),
+    };
+  }
+  (RedisMock as any).default = RedisMock;
+  (RedisMock as any).Redis = RedisMock;
+  return { default: RedisMock, Redis: RedisMock };
+});
+
 const inputBasico = {
   data: {
     nomeCliente: 'Marcos Teste',
