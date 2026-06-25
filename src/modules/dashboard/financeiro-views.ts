@@ -1,5 +1,7 @@
 // src/modules/dashboard/financeiro-views.ts
 import type { FinanceiroData } from './financeiro-queries.js';
+import { renderLayout } from './views.js';
+import type { DashUser } from './permissions.js';
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
@@ -7,28 +9,19 @@ const STATUS_LABEL: Record<string, string> = {
   pendente: 'Pendente', recebido_parcial: 'Parcial', recebido: 'Recebido', cancelado: 'Cancelado',
 };
 
-export function renderFinanceiroPage(d: FinanceiroData): string {
+export function renderFinanceiroPage(d: FinanceiroData, user?: DashUser): string {
   const dataJson = JSON.stringify(d).replace(/</g, '\\u003c');
   const corFatorR = d.fatorR.anexo === 'III' ? '#34d399' : '#f87171';
-  return `<!doctype html><html lang="pt-BR"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Financeiro · EcoSun</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-<style>body{background:#050610;color:#d1d5db;font-family:'JetBrains Mono',ui-monospace,monospace}
-.card{background:#0b0e1f;border:1px solid #1b2040;border-radius:14px;padding:18px}
-.big{font-size:2rem;font-weight:700;color:#e5e7eb}</style></head>
-<body class="p-4">
-<div class="flex items-center justify-between mb-4 flex-wrap gap-2">
-  <h1 class="text-xl font-bold text-cyan-300">💰 Financeiro · EcoSunPower</h1>
-  <nav class="text-xs flex gap-3">
-    <a href="/dashboard/cockpit" class="text-cyan-300 hover:text-cyan-100">[COCKPIT]</a>
-    <a href="/dashboard/home" class="text-cyan-300 hover:text-cyan-100">[HOME]</a>
-    <a href="/dashboard/leads" class="text-cyan-300 hover:text-cyan-100">[LEADS]</a>
-    <a href="/dashboard/propostas" class="text-cyan-300 hover:text-cyan-100">[PROPOSTAS]</a>
-  </nav>
-</div>
-<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+  const body = `
+<style>
+.fin-root{color:#d1d5db;font-family:'JetBrains Mono',ui-monospace,monospace}
+.fin-root .card{background:#0b0e1f;border:1px solid #1b2040;border-radius:14px;padding:12px;min-width:0}
+.fin-root .big{font-size:1.25rem;font-weight:700;color:#e5e7eb;line-height:1.15;white-space:nowrap}
+@media (min-width:1280px){ .fin-root .big{font-size:1.4rem} }
+</style>
+<div class="fin-root">
+<h1 class="text-xl font-bold text-cyan-300 mb-4">💰 Financeiro · EcoSunPower</h1>
+<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-4">
   <div class="card"><div class="text-xs text-gray-400">Recebido no mês</div><div class="big">${brl(d.faturamentoMes)}</div></div>
   <div class="card"><div class="text-xs text-gray-400">RBT12 (faixa ${d.faixa})</div><div class="big">${brl(d.rbt12)}</div>
     <div class="text-xs text-amber-400">${d.salto ? `faltam ${brl(d.salto.distancia)} pro salto` : 'última faixa'}</div></div>
@@ -86,7 +79,10 @@ export function renderFinanceiroPage(d: FinanceiroData): string {
   </tr>`).join('')}
   </tbody></table>
   </div></div>
-<script type="application/json" id="fin-data">${dataJson}</script>
+</div>
+<script type="application/json" id="fin-data">${dataJson}</script>`;
+
+  const scripts = `<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 <script>
   const d = JSON.parse(document.getElementById('fin-data').textContent);
   const g = echarts.init(document.getElementById('graf'), 'dark');
@@ -106,8 +102,9 @@ export function renderFinanceiroPage(d: FinanceiroData): string {
       label:{color:'#d1d5db'}}] });
   window.addEventListener('resize', ()=>p.resize());
   ` : ''}
-</script>
-</body></html>`;
+</script>`;
+
+  return renderLayout({ active: 'financeiro', title: 'Financeiro', dark: true, user, body, scripts });
 }
 
 function escapeHtml(s: string): string {
