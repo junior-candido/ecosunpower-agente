@@ -25,6 +25,13 @@ vi.mock('@supabase/supabase-js', () => ({
       }
       // table === 'leads'
       return {
+        // Passo 2 do código: checa telefone já cadastrado antes de inserir.
+        // Aqui devolvemos null (ninguém encontrado) pra o fluxo seguir pro insert.
+        select: (_cols: string) => ({
+          eq: (_col: string, _val: string) => ({
+            maybeSingle: async () => ({ data: null, error: null }),
+          }),
+        }),
         insert: (row: Record<string, unknown>) => {
           capturedInsertRow = row;
           return {
