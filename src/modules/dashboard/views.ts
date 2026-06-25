@@ -81,7 +81,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'marketing' | 'blog' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios';
+  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'pos_venda' | 'marketing' | 'blog' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios';
   title: string;
   body: string;
   scripts?: string;
@@ -140,6 +140,7 @@ const SIDEBAR_SETORES: SideSetor[] = [
     titulo: '⚡ Operação',
     itens: [
       { href: '/dashboard/monitoramento', key: 'monitoramento', label: '⚡ Monitoramento', area: 'usinas' },
+      { href: '/dashboard/pos-venda', key: 'pos_venda', label: '❤️ Pós-venda', area: 'usinas' },
       { href: '/dashboard/manutencao', key: 'manutencao', label: '🔧 Manutenção' },
     ],
   },
