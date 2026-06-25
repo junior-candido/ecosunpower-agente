@@ -89,6 +89,7 @@ import { listUsers, listRoles, createUser, updateUser, getUserByLogin, touchLast
 import { hashSenha, verificarSenha } from './password.js';
 import { claimLead, podeVerLead, listLeads, leadsParaKanban } from './leads-queries.js';
 import { ORDEM_ETAPAS } from './pipeline.js';
+import { ETAPAS_USINA } from '../usina-etapas.js';
 import { criarTarefa, concluirTarefa, adiarTarefa, cancelarTarefasPendentesDoLead } from './tarefas.js';
 import { registrarAtividade } from './atividades.js';
 import { audit } from './audit.js';
@@ -1816,6 +1817,43 @@ export function createDashboardRouter(
       console.error('[manutencao] reagendar falhou:', (err as Error).message);
       res.status(500).send('erro ao reagendar');
     }
+  });
+
+  // Kanban de obra: colunas por etapa_obra, cards arrastáveis. Registrado ANTES de
+  // /:sistemaId pra não ser engolido pelo param ('kanban' não é UUID).
+  router.get('/usinas/kanban', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const { data, error } = await supabase
+        .from('sistemas_clientes')
+        .select('id, apelido, cidade, potencia_kwp, etapa_obra')
+        .eq('ativo', true)
+        .order('apelido', { ascending: true });
+      if (error) throw new Error(`usinas/kanban: ${error.message}`);
+      const { renderUsinasKanbanPage } = await import('./usinas-kanban-views.js');
+      res.type('text/html').send(renderUsinasKanbanPage((data ?? []) as any, req.dashUser));
+    } catch (err) {
+      console.error('[dashboard/usinas/kanban]', err);
+      res.status(500).send(`<h2>Erro ao carregar kanban de obras</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  // Move usina de etapa via drag-drop do kanban de obras. Responde 200 (o front é
+  // fetch, não navega). Valida etapa contra ETAPAS_USINA.
+  router.post('/usinas/:id/set-etapa-obra', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    const etapa = String(req.body?.etapa ?? '').trim();
+    if (!ETAPAS_USINA.some((e) => e.slug === etapa)) return res.status(400).send('etapa inválida');
+    const { error } = await supabase
+      .from('sistemas_clientes')
+      .update({ etapa_obra: etapa })
+      .eq('id', id);
+    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    const viewer = req.dashUser;
+    if (viewer) {
+      await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'usina', entidadeId: id, acao: 'etapa_obra', valorNovo: etapa });
+    }
+    res.status(200).send('ok');
   });
 
   router.post('/usinas/:sistemaId/leitura', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
