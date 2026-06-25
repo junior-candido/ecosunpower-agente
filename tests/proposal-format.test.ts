@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { fmtRs, fmtNum, fmtPct, fmtCurto, escapeHtml } from '../src/modules/proposal/format.js';
 
 describe('proposal/format', () => {
@@ -25,5 +25,24 @@ describe('proposal/format', () => {
     expect(fmtCurto(999)).toBe('R$ 999');
     expect(fmtCurto(1000)).toBe('R$ 1k');
     expect(fmtCurto(1_000_000)).toBe('R$ 1M');
+  });
+
+  // Incidente 24/06: um campo null chegou num fmt e derrubou a proposta INTEIRA
+  // ("Cannot read properties of null (reading 'toLocaleString')"). A proposta é
+  // caminho crítico — o formatador degrada pra 0 (+ warn) em vez de explodir.
+  it('null/undefined/NaN viram 0 em vez de lançar (proposta não pode falhar)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(() => fmtRs(null as any)).not.toThrow();
+    expect(fmtRs(null as any, 0)).toBe('0');
+    expect(fmtNum(undefined as any)).toBe('0');
+    expect(fmtPct(NaN as any, 0)).toBe('0%');
+    expect(fmtCurto(null as any)).toBe('R$ 0');
+    warn.mockRestore();
+  });
+  it('loga aviso pra rastrear a origem do valor faltando', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    fmtRs(null as any);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
