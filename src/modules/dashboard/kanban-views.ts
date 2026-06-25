@@ -40,7 +40,7 @@ function renderCard(l: KanbanCard): string {
   return `
     <div class="kanban-card bg-white border border-slate-200 border-l-[3px] ${sla.border} rounded-md px-2 py-1.5 shadow-sm cursor-grab hover:shadow-md hover:border-indigo-300 transition${urgente}" data-lead-id="${escapeHtml(l.id)}" title="${nome} · ${phone}">
       <div class="flex items-center gap-1.5">
-        <a href="/dashboard/leads/${escapeHtml(l.id)}" class="font-medium text-slate-800 hover:text-indigo-600 text-xs leading-tight truncate flex-1">${nome}</a>
+        <a href="/dashboard/leads/${escapeHtml(l.id)}" draggable="false" class="font-medium text-slate-800 hover:text-indigo-600 text-xs leading-tight truncate flex-1">${nome}</a>
         <span class="text-[10px] text-slate-400 flex-shrink-0">${timeAgo(l.updated_at)}</span>
       </div>
       <div class="flex items-center justify-between gap-1 mt-0.5">
@@ -104,6 +104,7 @@ export function renderKanbanPage(grupos: Record<string, KanbanCard[]>, user?: Da
           new Sortable(col, {
             group: 'funil',
             animation: 150,
+            draggable: '.kanban-card',
             onEnd: function (evt) {
               var id = evt.item.dataset.leadId;
               var etapa = evt.to.dataset.etapa;

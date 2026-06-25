@@ -19,6 +19,15 @@ vi.mock('@supabase/supabase-js', () => ({
             eq: (_col: string, val: string) => ({
               maybeSingle: async () => ({ data: state.leadsByPhone[val] ?? null, error: null }),
             }),
+            // getLeadByPhone agora busca por variantes: .in('phone', [...]).order().limit()
+            in: (_col: string, vals: string[]) => ({
+              order: () => ({
+                limit: async () => {
+                  const found = vals.map((v) => state.leadsByPhone[v]).find(Boolean) ?? null;
+                  return { data: found ? [found] : [], error: null };
+                },
+              }),
+            }),
           }),
           insert: (row: any) => ({
             select: () => ({

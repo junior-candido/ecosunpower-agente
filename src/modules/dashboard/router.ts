@@ -95,7 +95,7 @@ import { audit } from './audit.js';
 import { can } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
-import { renderBlogDraftsPage, renderBlogIndisponivel } from './blog-views.js';
+import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } from './blog-views.js';
 import { listarClientesPosVenda } from './pos-venda-queries.js';
 import { renderPosVendaPage } from './pos-venda-views.js';
 import { objetivoManual, fallbackMensagem } from './pos-venda-mensagens.js';
@@ -172,9 +172,11 @@ export function createDashboardRouter(
     };
   }
 
-  // Parser pra POST /login (form-urlencoded). Apenas pra rotas internas — body
-  // gerado por form HTML padrao, sem necessidade de validar HMAC.
-  router.use(express.urlencoded({ extended: false, limit: '10kb' }));
+  // Parser dos forms internos (form-urlencoded). Limite maior porque a tela de
+  // revisão do blog manda o markdown INTEIRO do post (acentos incham ~3x no
+  // envio), o que estourava o antigo 10kb ("Payload Too Large"). 1mb sobra e é
+  // seguro: são rotas internas, atrás de login.
+  router.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
   // ----------------------------------------------------------------------
   // Rotas publicas (sem auth)
@@ -1044,6 +1046,72 @@ export function createDashboardRouter(
       const msg = (err as Error).message;
       console.error('[dashboard/blog] descartar falhou:', msg);
       res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent(msg));
+    }
+  });
+
+  // Tela de revisão: lê o post inteiro, edita e confere a foto antes de publicar.
+  router.get('/marketing/blog/:id/revisar', exigir('marketing', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    const id = String(req.params.id);
+    if (!options.blogGenerator) {
+      res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Blog não está configurado neste servidor.'));
+      return;
+    }
+    const draft = await options.blogGenerator.getDraftById(id);
+    if (!draft) {
+      res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Rascunho não encontrado.'));
+      return;
+    }
+    const ok = req.query.ok === '1';
+    const fotoOk = req.query.foto === '1';
+    const erro = typeof req.query.erro === 'string' ? req.query.erro : undefined;
+    res.type('text/html').send(renderLayout({
+      active: 'blog', title: 'Revisar rascunho', body: renderBlogRevisarPage(draft, { ok, erro, fotoOk }), user: req.dashUser,
+    }));
+  });
+
+  // Salva a edição (título/resumo/conteúdo) do rascunho.
+  router.post('/marketing/blog/:id/editar', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+    const id = String(req.params.id);
+    if (!options.blogGenerator) {
+      res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Blog não está configurado neste servidor.'));
+      return;
+    }
+    try {
+      await options.blogGenerator.updateDraftFields(id, {
+        title: typeof req.body?.title === 'string' ? req.body.title : undefined,
+        description: typeof req.body?.description === 'string' ? req.body.description : undefined,
+        contentMd: typeof req.body?.contentMd === 'string' ? req.body.contentMd : undefined,
+      });
+      await audit(supabase, {
+        companyId: req.dashUser!.companyId, userId: req.dashUser!.id,
+        entidade: 'blog', entidadeId: id, acao: 'blog_editado',
+      });
+      res.redirect(`/dashboard/marketing/blog/${encodeURIComponent(id)}/revisar?ok=1`);
+    } catch (err) {
+      const msg = (err as Error).message;
+      console.error('[dashboard/blog] editar falhou:', msg);
+      res.redirect(`/dashboard/marketing/blog/${encodeURIComponent(id)}/revisar?erro=` + encodeURIComponent(msg));
+    }
+  });
+
+  // Busca/troca a foto do hero (Pexels) no rascunho.
+  router.post('/marketing/blog/:id/foto', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+    const id = String(req.params.id);
+    if (!options.blogGenerator) {
+      res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Blog não está configurado neste servidor.'));
+      return;
+    }
+    try {
+      const url = await options.blogGenerator.refreshHeroPhoto(id);
+      if (!url) {
+        res.redirect(`/dashboard/marketing/blog/${encodeURIComponent(id)}/revisar?erro=` + encodeURIComponent('Não consegui buscar uma foto agora (confira a chave do Pexels).'));
+        return;
+      }
+      res.redirect(`/dashboard/marketing/blog/${encodeURIComponent(id)}/revisar?foto=1`);
+    } catch (err) {
+      const msg = (err as Error).message;
+      console.error('[dashboard/blog] foto falhou:', msg);
+      res.redirect(`/dashboard/marketing/blog/${encodeURIComponent(id)}/revisar?erro=` + encodeURIComponent(msg));
     }
   });
 
