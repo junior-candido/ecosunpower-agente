@@ -172,9 +172,11 @@ export function createDashboardRouter(
     };
   }
 
-  // Parser pra POST /login (form-urlencoded). Apenas pra rotas internas — body
-  // gerado por form HTML padrao, sem necessidade de validar HMAC.
-  router.use(express.urlencoded({ extended: false, limit: '10kb' }));
+  // Parser dos forms internos (form-urlencoded). Limite maior porque a tela de
+  // revisão do blog manda o markdown INTEIRO do post (acentos incham ~3x no
+  // envio), o que estourava o antigo 10kb ("Payload Too Large"). 1mb sobra e é
+  // seguro: são rotas internas, atrás de login.
+  router.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
   // ----------------------------------------------------------------------
   // Rotas publicas (sem auth)
