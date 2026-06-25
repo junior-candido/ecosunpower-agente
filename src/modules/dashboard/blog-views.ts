@@ -111,6 +111,10 @@ function renderDraftCard(draft: BlogDraft): string {
         <p style="color:#475569;margin:8px 0 0;line-height:1.5">${escapeHtml(draft.description)}</p>
         ${tags}
         <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+          <a href="/dashboard/marketing/blog/${id}/revisar"
+            style="background:#1e293b;color:#fff;border-radius:10px;padding:10px 18px;font-weight:700;font-size:14px;text-decoration:none;display:inline-block">
+            ✏️ Revisar / editar
+          </a>
           <form method="POST" action="/dashboard/marketing/blog/${id}/publicar" style="margin:0">
             <button type="submit"
               style="background:#16a34a;color:#fff;border:0;border-radius:10px;padding:10px 18px;font-weight:700;font-size:14px;cursor:pointer">
@@ -127,5 +131,73 @@ function renderDraftCard(draft: BlogDraft): string {
         </div>
       </div>
     </div>
+  </div>`;
+}
+
+/**
+ * Página de REVISÃO de um rascunho: lê o conteúdo inteiro, edita título/resumo/
+ * texto, vê (ou busca) a foto do hero e publica. Resolve "publicar no escuro" +
+ * "post sem foto". É o BODY; o router envolve no renderLayout({ active:'blog' }).
+ */
+export function renderBlogRevisarPage(
+  draft: BlogDraft,
+  flags: { ok?: boolean; erro?: string; fotoOk?: boolean } = {},
+): string {
+  const id = encodeURIComponent(draft.id);
+  const banner = renderBanner(flags);
+  const fotoBanner = flags.fotoOk
+    ? `<div style="background:#064e3b;border:1px solid #34d399;border-radius:12px;padding:12px 16px;margin-bottom:16px;color:#d1fae5">🖼️ Foto atualizada!</div>`
+    : '';
+
+  const hero = draft.heroImageUrl
+    ? `<img src="${escapeHtml(draft.heroImageUrl)}" alt="${escapeHtml(draft.heroImageAlt ?? draft.title)}"
+         style="width:100%;max-width:440px;height:230px;object-fit:cover;border-radius:12px;background:#e2e8f0">`
+    : `<div style="width:100%;max-width:440px;height:230px;border-radius:12px;background:#e2e8f0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#94a3b8;gap:6px">
+         <div style="font-size:34px">🖼️</div><div style="font-size:13px">Sem foto ainda — busque uma abaixo</div>
+       </div>`;
+
+  return `
+  <div style="max-width:820px;margin:0 auto">
+    <a href="/dashboard/marketing/blog" style="color:#2563eb;text-decoration:none;font-size:14px">← Voltar pros rascunhos</a>
+    <h1 style="font-size:24px;font-weight:700;color:#0f172a;margin:8px 0 4px">✏️ Revisar rascunho</h1>
+    <p style="color:#64748b;margin-bottom:18px">Leia, ajuste o que quiser e confira a foto. Só publique quando estiver do seu jeito.</p>
+    ${banner}
+    ${fotoBanner}
+
+    <!-- FOTO -->
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:18px;margin-bottom:16px">
+      <div style="font-weight:600;color:#334155;margin-bottom:10px">Foto do post</div>
+      ${hero}
+      <form method="POST" action="/dashboard/marketing/blog/${id}/foto" style="margin:12px 0 0">
+        <button type="submit" style="background:#0ea5e9;color:#fff;border:0;border-radius:10px;padding:9px 16px;font-weight:600;font-size:14px;cursor:pointer">
+          🔄 ${draft.heroImageUrl ? 'Trocar foto' : 'Buscar foto'}
+        </button>
+      </form>
+    </div>
+
+    <!-- EDITAR -->
+    <form method="POST" action="/dashboard/marketing/blog/${id}/editar"
+      style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:18px;margin-bottom:16px">
+      <label style="display:block;font-weight:600;color:#334155;margin-bottom:6px">Título</label>
+      <input name="title" value="${escapeHtml(draft.title)}"
+        style="width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:15px;margin-bottom:14px">
+      <label style="display:block;font-weight:600;color:#334155;margin-bottom:6px">Resumo</label>
+      <textarea name="description" rows="2"
+        style="width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;margin-bottom:14px">${escapeHtml(draft.description)}</textarea>
+      <label style="display:block;font-weight:600;color:#334155;margin-bottom:6px">Conteúdo (texto do post)</label>
+      <textarea name="contentMd" rows="22"
+        style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:10px;font-size:13px;font-family:ui-monospace,monospace;line-height:1.5">${escapeHtml(draft.contentMd)}</textarea>
+      <button type="submit" style="background:#475569;color:#fff;border:0;border-radius:10px;padding:10px 18px;font-weight:700;font-size:14px;cursor:pointer;margin-top:14px">
+        💾 Salvar alterações
+      </button>
+    </form>
+
+    <!-- PUBLICAR -->
+    <form method="POST" action="/dashboard/marketing/blog/${id}/publicar" style="margin:0"
+      onsubmit="return confirm('Publicar este post no site agora?')">
+      <button type="submit" style="background:#16a34a;color:#fff;border:0;border-radius:10px;padding:12px 22px;font-weight:700;font-size:15px;cursor:pointer">
+        📤 Publicar agora
+      </button>
+    </form>
   </div>`;
 }

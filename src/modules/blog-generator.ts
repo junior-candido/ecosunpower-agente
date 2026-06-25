@@ -454,6 +454,51 @@ Responda apenas o JSON.`;
     return drafts[0] ?? null;
   }
 
+  // Busca UM rascunho pelo id (qualquer status), pra tela de revisão.
+  async getDraftById(id: string): Promise<BlogDraft | null> {
+    const { data, error } = await this.supabase
+      .from('blog_drafts')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) {
+      console.error('[blog-generator] getDraftById:', error.message);
+      return null;
+    }
+    return data ? this.fromRow(data) : null;
+  }
+
+  // Salva a edição do rascunho (título/descrição/conteúdo) feita na revisão.
+  async updateDraftFields(
+    id: string,
+    fields: { title?: string; description?: string; contentMd?: string },
+  ): Promise<void> {
+    const row: Record<string, unknown> = {};
+    if (fields.title !== undefined) row.title = fields.title;
+    if (fields.description !== undefined) row.description = fields.description;
+    if (fields.contentMd !== undefined) row.content_md = fields.contentMd;
+    if (Object.keys(row).length === 0) return;
+    const { error } = await this.supabase.from('blog_drafts').update(row).eq('id', id);
+    if (error) throw new Error(`updateDraftFields: ${error.message}`);
+  }
+
+  // Busca uma foto nova no Pexels e salva no rascunho. Resolve o "post sem foto"
+  // (antigo ou que falhou na geração): dá pra atribuir/trocar na revisão.
+  async refreshHeroPhoto(id: string): Promise<string | null> {
+    if (!this.pexelsApiKey) return null;
+    const draft = await this.getDraftById(id);
+    if (!draft) return null;
+    const excludeIds = await this.getRecentHeroPhotoIds(12).catch(() => []);
+    const photo = await pickBlogHeroPhoto({ apiKey: this.pexelsApiKey, category: draft.category, excludeIds });
+    if (!photo) return null;
+    const { error } = await this.supabase
+      .from('blog_drafts')
+      .update({ hero_image_url: photo.url, hero_image_alt: photo.alt ?? draft.title })
+      .eq('id', id);
+    if (error) throw new Error(`refreshHeroPhoto: ${error.message}`);
+    return photo.url;
+  }
+
   async markApproved(draftId: string): Promise<void> {
     await this.supabase
       .from('blog_drafts')
