@@ -102,5 +102,5 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
       })();
     </script>`;
 
-  return renderLayout({ active: 'monitoramento', title: 'Kanban de Obras', body, user });
+  return renderLayout({ active: 'usinas_kanban', title: 'Kanban de Obras', body, user });
 }
