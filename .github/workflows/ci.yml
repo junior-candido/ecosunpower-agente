@@ -1,34 +1,27 @@
-name: Auto-PR + testes + merge automático
+name: CI e merge automático
 
-# Fluxo 100% sem clique:
-#   alguém empurra uma branch (que não seja a main)
-#     -> este workflow roda tipos (tsc) + testes (vitest)
-#     -> CRIA o Pull Request sozinho (se ainda não existir)
-#     -> se tudo passar (verde), JUNTA o PR na main (squash) e apaga a branch.
-#   Se algo falhar, o PR fica aberto e VERMELHO pro autor consertar.
+# Modelo confiável (testado: juntou 11 PRs): roda em TODO Pull Request pra main.
+# Confere tipos (tsc) + testes (vitest); se tudo passar (verde), junta o PR na
+# main sozinho (squash) e apaga a branch. Vermelho = não junta, autor conserta.
 #
-# Por que tudo num workflow só (no push, e não no pull_request)? Porque um PR
-# criado pelo robô (GITHUB_TOKEN) NÃO dispara outros workflows (regra anti-loop
-# do GitHub). Então criar + testar + juntar tem que acontecer na mesma rodada.
+# (O modo "push cria o PR sozinho" foi tentado mas o robô não conseguia criar o
+#  PR nesse repo — voltamos pro pull_request, que é à prova de bala. Fluxo: o
+#  autor dá push e abre o PR (1 clique "Compare & pull request"); o resto é auto.)
 #
-# IMPORTANTE: juntar na main NÃO coloca no ar. Produção só vai pro cliente
-# quando o Junior clicar "Implantar" no EasyPanel. Esse é o portão final dele.
+# Produção continua MANUAL: só vai pro cliente quando o Junior Implanta.
 
 on:
-  push:
-    branches-ignore:
-      - main
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
-  testar-criar-pr-juntar:
+  testar-e-juntar:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Baixar o código
         uses: actions/checkout@v4
@@ -50,25 +43,8 @@ jobs:
       - name: Rodar os testes
         run: npx vitest run
 
-      # Cria o PR mesmo se os testes falharem (pra ficar visível e vermelho).
-      - name: Criar o Pull Request (se ainda não existir)
-        if: always()
-        run: |
-          gh pr create --base main --head "$GITHUB_REF_NAME" --fill \
-            || echo "PR já existe pra esta branch — segue."
-
-      # Só junta se TUDO acima passou. Tenta algumas vezes porque o GitHub leva
-      # um instante pra marcar o PR como 'mergeable' depois de criado.
       - name: Juntar automaticamente (só se tudo passou)
         if: success()
-        run: |
-          for i in 1 2 3 4 5 6; do
-            if gh pr merge "$GITHUB_REF_NAME" --squash --delete-branch; then
-              echo "Juntado com sucesso."
-              exit 0
-            fi
-            echo "Ainda não dá pra juntar (tentativa $i). Esperando..."
-            sleep 5
-          done
-          echo "Não consegui juntar automaticamente."
-          exit 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge ${{ github.event.pull_request.number }} --squash --delete-branch
