@@ -543,6 +543,25 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
         <button class="px-3 py-1 rounded-md text-xs bg-slate-700 text-white hover:bg-slate-800">✏️ Salvar</button>
       </form>
 
+      <!-- Bloco IA: Assistente de engenharia e comercial -->
+      <div class="pt-2 border-t border-slate-100">
+        <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">✨ IA Assistente</div>
+        <div class="flex flex-wrap gap-2 mb-2">
+          <button type="button"
+            onclick="chamarIA('${lead.id}', 'ia-explicar-economia', 'ia-resultado-economia')"
+            class="px-3 py-1.5 rounded-lg text-sm bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100">
+            🔢 Explicar economia (IA)
+          </button>
+          <button type="button"
+            onclick="chamarIA('${lead.id}', 'ia-gerar-mensagem', 'ia-resultado-mensagem')"
+            class="px-3 py-1.5 rounded-lg text-sm bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100">
+            ✍️ Gerar mensagem (IA)
+          </button>
+        </div>
+        <div id="ia-resultado-economia" class="hidden bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-sm text-slate-800 whitespace-pre-wrap mb-2"></div>
+        <div id="ia-resultado-mensagem" class="hidden bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-slate-800 whitespace-pre-wrap mb-2"></div>
+      </div>
+
       <!-- Bloco 4: Marcar perdido / Arquivar / Remover -->
       <div class="pt-2 border-t border-slate-100 flex flex-wrap gap-2">
         ${(lead as any).status === 'perdido'
@@ -693,5 +712,22 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
       </div>
     </div>
   `;
-  return renderLayout({ active: 'leads', title: `Lead: ${nome}`, body });
+  const scriptIA = `
+    <script>
+    async function chamarIA(leadId, rota, resultadoId) {
+      const el = document.getElementById(resultadoId);
+      el.textContent = '⏳ Aguardando IA...';
+      el.classList.remove('hidden');
+      try {
+        const resp = await fetch('/dashboard/leads/' + leadId + '/' + rota, { method: 'POST' });
+        const json = await resp.json();
+        el.textContent = json.erro ? '⚠️ ' + json.erro : json.texto;
+      } catch (e) {
+        el.textContent = '⚠️ Erro ao chamar a IA. Tente novamente.';
+      }
+    }
+    </script>
+  `;
+
+  return renderLayout({ active: 'leads', title: `Lead: ${nome}`, body: body + scriptIA });
 }

@@ -567,6 +567,74 @@ export function createDashboardRouter(
     }
   });
 
+  // IA: explica economia/payback/geração pro vendedor mostrar ao cliente.
+  router.post('/leads/:id/ia-explicar-economia', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).json({ erro: 'id inválido' });
+    try {
+      const { data: lead } = await supabase
+        .from('leads')
+        .select('name, energy_data, opportunities')
+        .eq('id', id)
+        .maybeSingle();
+      if (!lead) return res.status(404).json({ erro: 'Lead não encontrado.' });
+
+      const ed = (lead.energy_data ?? {}) as Record<string, unknown>;
+      const op = (lead.opportunities ?? {}) as Record<string, unknown>;
+
+      const { explicarEconomia } = await import('../ia-engenharia.js');
+      const Anthropic = (await import('@anthropic-ai/sdk')).default;
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) return res.json({ erro: 'Chave ANTHROPIC_API_KEY não configurada no .env.' });
+
+      const texto = await explicarEconomia(new Anthropic({ apiKey }), {
+        nomeCliente: lead.name ?? undefined,
+        consumoMensalKwh: Number(ed.consumo_kwh ?? ed.consumoMensalKwh ?? 0),
+        potenciaKwp: Number(op.potencia_kwp ?? op.potenciaKwp ?? 0),
+        geracaoMensalKwh: Number(op.geracao_kwh ?? op.geracaoMensalKwh ?? 0),
+        economiaMensalRs: Number(op.economia_mensal_rs ?? op.economiaMensalRs ?? 0),
+        investimentoRs: Number(op.investimento_rs ?? op.investimentoRs ?? 0),
+        paybackAnos: op.payback_anos != null ? Number(op.payback_anos) : null,
+      });
+      res.json({ texto });
+    } catch (err) {
+      res.status(500).json({ erro: (err as Error).message });
+    }
+  });
+
+  // IA: gera rascunho de mensagem comercial para o lead.
+  router.post('/leads/:id/ia-gerar-mensagem', async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).json({ erro: 'id inválido' });
+    try {
+      const { data: lead } = await supabase
+        .from('leads')
+        .select('name, status, energy_data')
+        .eq('id', id)
+        .maybeSingle();
+      if (!lead) return res.status(404).json({ erro: 'Lead não encontrado.' });
+
+      const { gerarMensagemComercial, type: _t } = await import('../ia-comercial.js') as any;
+      const Anthropic = (await import('@anthropic-ai/sdk')).default;
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) return res.json({ erro: 'Chave ANTHROPIC_API_KEY não configurada no .env.' });
+
+      const ed = (lead.energy_data ?? {}) as Record<string, unknown>;
+      const etapasValidas = ['novo','qualificando','qualificado','agendado','proposta_enviada','negociacao'];
+      const etapa = etapasValidas.includes(lead.status) ? lead.status : 'qualificando';
+
+      const texto = await gerarMensagemComercial(new Anthropic({ apiKey }), {
+        nomeLead: lead.name ?? 'Cliente',
+        etapa,
+        tipoMensagem: 'follow_up',
+        economiaMensalRs: ed.economia_mensal_rs ? Number(ed.economia_mensal_rs) : undefined,
+      });
+      res.json({ texto });
+    } catch (err) {
+      res.status(500).json({ erro: (err as Error).message });
+    }
+  });
+
   // Pausa Eva pra este lead (equivalente a /eva off no zap).
   router.post('/leads/:id/pause-eva', async (req: Request, res: Response) => {
     const id = String(req.params.id);
