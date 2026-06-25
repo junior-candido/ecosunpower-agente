@@ -7,6 +7,8 @@
 import type { CockpitData } from './cockpit-queries.js';
 import type { LeadSynthesis, PlatformInsight } from './lead-synthesis.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
+import { renderLayout } from './views.js';
+import type { DashUser } from './permissions.js';
 
 interface LeadAguardando {
   id: string;
@@ -48,34 +50,22 @@ export function renderCockpitPage(
   data: CockpitData,
   leadsAguardando: LeadAguardando[] = [],
   platformInsights: PlatformInsight[] = [],
+  user?: DashUser,
 ): string {
   // Serializa dados pro JS do cliente. Usa <script type="application/json">
   // (template element data) em vez de string-em-JS pra eliminar vetores XSS
   // como U+2028/U+2029 e </script>. JSON.parse via textContent eh seguro.
   const dataJson = JSON.stringify(data).replace(/</g, '\\u003c');
 
-  return `<!doctype html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Cockpit · EcoSun</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-<style>
-  body {
+  // body = <style> escopado + conteudo + JSON dos dados. Vai DENTRO do
+  // renderLayout (sidebar sempre visivel). As regras globais de body{} viraram
+  // .cockpit-root pra nao vazar pro resto do dashboard.
+  const body = `<style>
+  .cockpit-root {
     background: #050610;
     color: #d1d5db;
     font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
-    overflow-x: hidden;
-  }
-  /* Desktop: 1 tela sem scroll. Mobile: scroll natural. */
-  @media (min-width: 768px) {
-    body { overflow: hidden; }
-    .cockpit-root { height: 100vh; }
-  }
-  @media (max-width: 767px) {
-    .cockpit-root { min-height: 100vh; }
+    min-height: 100%;
   }
   .glow-cyan   { box-shadow: 0 0 0 1px #06b6d4, 0 0 18px -2px rgba(6,182,212,0.55); }
   .glow-amber  { box-shadow: 0 0 0 1px #fbbf24, 0 0 18px -2px rgba(251,191,36,0.55); }
@@ -140,8 +130,6 @@ export function renderCockpitPage(
   ::-webkit-scrollbar { width: 4px; height: 4px; }
   ::-webkit-scrollbar-thumb { background: rgba(6,182,212,0.4); border-radius: 4px; }
 </style>
-</head>
-<body>
 <div class="cockpit-root flex flex-col p-2 md:p-3 gap-2 md:gap-3 scan relative">
 
   <!-- HEADER -->
@@ -160,8 +148,6 @@ export function renderCockpitPage(
         title="Força sync Meta Ads + monitoramento agora">
         🔄 <span id="btn-sync-label">SYNC AGORA</span>
       </button>
-      <a href="/dashboard/leads" class="text-cyan-300 hover:text-cyan-100">[LEADS]</a>
-      <a href="/dashboard/home" class="text-cyan-300 hover:text-cyan-100">[HOME]</a>
     </div>
   </div>
 
@@ -391,7 +377,11 @@ export function renderCockpitPage(
 
 </div>
 
-<script type="application/json" id="cockpit-data">${dataJson}</script>
+<script type="application/json" id="cockpit-data">${dataJson}</script>`;
+
+  // scripts = ECharts (o layout NAO carrega) + init dos graficos. Injetado no
+  // fim do <body> pelo renderLayout, depois do DOM montado.
+  const scripts = `<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 <script>
 const INITIAL_DATA = JSON.parse(document.getElementById('cockpit-data').textContent);
 
@@ -613,7 +603,7 @@ btnSync.addEventListener('click', async () => {
     setTimeout(() => { btnSyncLabel.textContent = 'SYNC AGORA'; btnSync.style.opacity = '1'; btnSync.disabled = false; }, 3000);
   }
 });
-</script>
-</body>
-</html>`;
+</script>`;
+
+  return renderLayout({ active: 'cockpit', title: 'Cockpit', dark: true, user, body, scripts });
 }
