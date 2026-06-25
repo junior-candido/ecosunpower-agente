@@ -4,6 +4,7 @@ import type { Config } from '../config.js';
 import { proximaEtapaPorEvento, type EventoFunil } from './dashboard/pipeline.js';
 import { registrarAtividade } from './dashboard/atividades.js';
 import { criarTarefa, cancelarTarefasPendentesDoLead } from './dashboard/tarefas.js';
+import { variantesTelefone } from './phone.js';
 
 export interface MessageEntry {
   role: 'user' | 'assistant';
@@ -63,6 +64,24 @@ export class SupabaseService {
   }
 
   async upsertLead(data: LeadData): Promise<{ id: string }> {
+    // Dedup do 9º dígito: se já existe lead numa variante do telefone, ATUALIZA
+    // ele (por id, preservando o telefone já salvo) em vez de inserir outro com
+    // formato diferente — que era justamente o que recriava a duplicata.
+    if (data.phone) {
+      const existente = await this.getLeadByPhone(data.phone);
+      if (existente) {
+        const { phone: _ignora, ...rest } = data;
+        const { data: upd, error: updErr } = await this.client
+          .from('leads')
+          .update({ ...rest, updated_at: new Date().toISOString() })
+          .eq('id', existente.id)
+          .select('id')
+          .single();
+        if (updErr) throw new Error(`Failed to update lead: ${updErr.message}`);
+        return { id: upd.id };
+      }
+    }
+
     const { data: result, error } = await this.client
       .from('leads')
       .upsert({ ...data, updated_at: new Date().toISOString() }, { onConflict: 'phone' })
@@ -74,14 +93,20 @@ export class SupabaseService {
   }
 
   async getLeadByPhone(phone: string): Promise<(LeadData & { id: string }) | null> {
+    // Dedup do 9º dígito: procura por TODAS as variantes do número (com/sem o 9,
+    // com/sem país 55). Casa o lead independente do formato em que foi salvo.
+    // Se houver mais de um (duplicata legada), devolve o MAIS ANTIGO (o original).
+    const variantes = variantesTelefone(phone);
+    if (variantes.length === 0) return null;
     const { data, error } = await this.client
       .from('leads')
       .select('*')
-      .eq('phone', phone)
-      .single();
+      .in('phone', variantes)
+      .order('created_at', { ascending: true })
+      .limit(1);
 
-    if (error && error.code !== 'PGRST116') throw new Error(`Failed to get lead: ${error.message}`);
-    return data;
+    if (error) throw new Error(`Failed to get lead: ${error.message}`);
+    return ((data?.[0] as (LeadData & { id: string }) | undefined) ?? null);
   }
 
   // ---- Meta Conversions API (CAPI) ----
@@ -702,12 +727,8 @@ export class SupabaseService {
     }
     const phoneClean = phone.replace(/\D+/g, '');
 
-    const { data: existing, error: selectErr } = await this.client
-      .from('leads')
-      .select('id, phone')
-      .eq('phone', phoneClean)
-      .maybeSingle();
-    if (selectErr) throw new Error(`getOrCreateLeadByPhone select: ${selectErr.message}`);
+    // Dedup do 9º dígito: acha por QUALQUER variante (com/sem 9) antes de criar.
+    const existing = await this.getLeadByPhone(phoneClean);
     if (existing?.id) return existing.id as string;
 
     const { data: created, error: insertErr } = await this.client
