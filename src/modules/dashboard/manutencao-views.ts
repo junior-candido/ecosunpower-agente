@@ -43,6 +43,8 @@ function renderAgendaItem(i: AgendaItem, hoje: Date): string {
     <span class="ml-auto flex gap-1">
       <form method="post" action="/dashboard/manutencao/${escapeHtml(i.id)}/feita" class="inline">
         <button class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs">✓ Feita</button></form>
+      <form method="post" action="/dashboard/manutencao/${escapeHtml(i.id)}/os/abrir" class="inline">
+        <button class="px-2 py-1 rounded bg-violet-600 hover:bg-violet-700 text-white text-xs" title="Abrir Ordem de Serviço (checklist + fotos + laudo)">📋 OS</button></form>
       <button class="pv-leitura px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs" data-sistema="${escapeHtml(i.sistemaId)}" data-apelido="${escapeHtml(i.apelido)}">📊 Leitura</button>
     </span>
   </div>`;
@@ -83,6 +85,18 @@ export function renderManutencaoPage(d: ManutencaoPageData, user?: DashUser): st
         </select>
         <input type="date" name="dataAgendada" class="border rounded px-2 py-1 text-sm" required>
         <button class="px-3 py-1 rounded bg-indigo-600 text-white text-sm">Agendar</button>
+      </form>
+    </details>
+    <details class="mt-3">
+      <summary class="cursor-pointer text-sm text-slate-600">📋 Nova OS avulsa (sem agendamento)</summary>
+      <form method="post" action="/dashboard/os/nova" class="mt-2 flex flex-wrap gap-2 items-end">
+        <select name="sistemaId" class="border rounded px-2 py-1 text-sm" required>${opcoesUsina}</select>
+        <select name="tipo" class="border rounded px-2 py-1 text-sm">
+          <option value="corretiva">🔧 Corretiva</option><option value="inspecao">🔎 Inspeção</option>
+          <option value="limpeza">🧹 Limpeza</option><option value="revisao_inversor">🔌 Revisão inversor</option>
+          <option value="revisao_eletrica">⚡ Revisão elétrica</option>
+        </select>
+        <button class="px-3 py-1 rounded bg-violet-600 text-white text-sm">Abrir OS</button>
       </form>
     </details>
   </div>
