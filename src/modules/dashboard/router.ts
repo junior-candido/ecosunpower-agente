@@ -104,6 +104,9 @@ import { numerosTrimestre } from '../monitoring/abordagem/numeros-usina.js';
 import { listarAgenda, prontuarioUsina, listarLeiturasPendentes, criarManutencao, marcarManutencaoFeita, reagendarManutencao, registrarLeituraManual } from './manutencao-queries.js';
 import { renderManutencaoPage, renderProntuario } from './manutencao-views.js';
 import type { ManutencaoTipo } from './manutencao-motor.js';
+import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, fotoCountsPorItem, concluirOS } from './os-queries.js';
+import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
+import { hidratarChecklist, resumoOS, type OSTipo } from './os-checklist.js';
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
 // didApply=false: prévia + botão pra gravar. didApply=true: resultado da gravação.
@@ -1699,6 +1702,109 @@ export function createDashboardRouter(
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 20 * 1024 * 1024 },
+  });
+
+  // ===== Ordem de Serviço (peça 2b) — "1 OS, 3 portas, 1 função que fecha" =====
+  // Portas a/b: abrir OS de uma manutenção agendada.
+  router.post('/manutencao/:id/os/abrir', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const mid = String(req.params.id);
+      if (!UUID_RE.test(mid)) { res.status(400).send('id inválido'); return; }
+      const osId = await abrirOSDeManutencao(supabase, mid);
+      res.redirect(`/dashboard/os/${osId}`);
+    } catch (err) { console.error('[os] abrir falhou:', (err as Error).message); res.status(500).send('erro ao abrir OS'); }
+  });
+
+  // Porta c: nova OS avulsa.
+  router.post('/os/nova', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const sistemaId = String(req.body.sistemaId ?? '');
+      const tipo = String(req.body.tipo ?? '') as OSTipo;
+      if (!UUID_RE.test(sistemaId) || !['limpeza', 'revisao_inversor', 'revisao_eletrica', 'corretiva', 'inspecao'].includes(tipo)) {
+        res.status(400).send('dados inválidos'); return;
+      }
+      const { data: s } = await supabase.from('sistemas_clientes').select('lead_id').eq('id', sistemaId).maybeSingle();
+      const osId = await criarOS(supabase, { sistemaId, leadId: (s as any)?.lead_id ?? null, tipo });
+      res.redirect(`/dashboard/os/${osId}`);
+    } catch (err) { console.error('[os] nova falhou:', (err as Error).message); res.status(500).send('erro ao criar OS'); }
+  });
+
+  router.get('/os/:id', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
+      const os = await getOS(supabase, id);
+      if (!os) { res.status(404).send('OS não encontrada'); return; }
+      const [fotos, counts] = await Promise.all([listFotosOS(supabase, id, true), fotoCountsPorItem(supabase, id)]);
+      const itens = hidratarChecklist(os.tipo, os.checklist ?? {}, counts);
+      res.type('text/html').send(renderOSPage(os, itens, fotos, req.dashUser));
+    } catch (err) { console.error('[os] get falhou:', (err as Error).message); res.status(500).send('erro ao carregar OS'); }
+  });
+
+  // Monta o checklist a partir do form (checkbox 'on'=true; medição=string).
+  function checklistDoForm(tipo: OSTipo, body: Record<string, any>): Record<string, any> {
+    const checklist: Record<string, any> = {};
+    for (const it of hidratarChecklist(tipo, {}, {})) {
+      if (it.kind === 'check') checklist[it.chave] = body[it.chave] === 'on';
+      else if (it.kind === 'medicao') checklist[it.chave] = String(body[it.chave] ?? '');
+    }
+    return checklist;
+  }
+
+  router.post('/os/:id/salvar', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
+      const os = await getOS(supabase, id);
+      if (!os) { res.status(404).send('OS não encontrada'); return; }
+      await salvarOS(supabase, id, { checklist: checklistDoForm(os.tipo, req.body), observacoes: String(req.body.observacoes ?? '') });
+      res.redirect(`/dashboard/os/${id}`);
+    } catch (err) { console.error('[os] salvar falhou:', (err as Error).message); res.status(500).send('erro ao salvar'); }
+  });
+
+  router.post('/os/:id/foto', exigir('usinas', 'visualizar'), upload.single('foto'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      if (!UUID_RE.test(id) || !req.file) { res.status(400).send('faltou a foto'); return; }
+      const os = await getOS(supabase, id);
+      if (!os) { res.status(404).send('OS não encontrada'); return; }
+      const ext = (req.file.originalname.split('.').pop() ?? 'jpg').toLowerCase().slice(0, 5);
+      await addFotoOS(supabase, id, {
+        leadId: os.lead_id, itemChave: String(req.body.itemChave ?? ''),
+        buffer: req.file.buffer, mimeType: req.file.mimetype, ext,
+      });
+      res.redirect(`/dashboard/os/${id}`);
+    } catch (err) { console.error('[os] foto falhou:', (err as Error).message); res.status(500).send('erro no upload'); }
+  });
+
+  router.post('/os/:id/concluir', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
+      const os = await getOS(supabase, id);
+      if (!os) { res.status(404).send('OS não encontrada'); return; }
+      await salvarOS(supabase, id, { checklist: checklistDoForm(os.tipo, req.body), observacoes: String(req.body.observacoes ?? '') });
+      await concluirOS(supabase, id, { executor: req.dashUser!.id, notas: `OS ${os.tipo} concluída` });
+      if (os.lead_id) {
+        await registrarAtividade(supabase, {
+          company_id: req.dashUser!.companyId, lead_id: os.lead_id, tipo: 'visita',
+          titulo: `OS concluída: ${os.tipo}`, automatica: false, user_id: req.dashUser!.id,
+        });
+      }
+      res.redirect(`/dashboard/os/${id}`);
+    } catch (err) { console.error('[os] concluir falhou:', (err as Error).message); res.status(500).send('erro ao concluir'); }
+  });
+
+  router.get('/os/:id/laudo', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
+      const os = await getOS(supabase, id);
+      if (!os) { res.status(404).send('OS não encontrada'); return; }
+      const [fotos, counts] = await Promise.all([listFotosOS(supabase, id, true), fotoCountsPorItem(supabase, id)]);
+      const itens = hidratarChecklist(os.tipo, os.checklist ?? {}, counts);
+      res.type('text/html').send(renderOSLaudoHtml(os, resumoOS(itens), fotos, 'Responsável Técnico CREA/CFT'));
+    } catch (err) { console.error('[os] laudo falhou:', (err as Error).message); res.status(500).send('erro no laudo'); }
   });
 
   router.get('/clientes', async (req: Request, res: Response) => {
