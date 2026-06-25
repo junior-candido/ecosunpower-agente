@@ -11,16 +11,19 @@ const TIPO_LABEL: Record<string, string> = {
   revisao_eletrica: '⚡ Revisão elétrica', corretiva: '🔧 Corretiva', inspecao: '🔎 Inspeção',
 };
 
+// Os campos de check/medição/observações usam o atributo HTML5 form="osForm"
+// pra pertencer ao form de salvar SEM ficarem aninhados — assim o form de upload
+// de cada foto fica como IRMÃO (não <form> dentro de <form>, que é inválido).
 function renderItem(osId: string, i: ItemPreenchido, fotos: FotoOS[], travado: boolean): string {
   const dis = travado ? 'disabled' : '';
   if (i.kind === 'check') {
-    return `<label class="flex items-center gap-2 py-1"><input type="checkbox" name="${escapeHtml(i.chave)}" ${i.valor === true ? 'checked' : ''} ${dis}> ${escapeHtml(i.label)}</label>`;
+    return `<label class="flex items-center gap-2 py-1"><input type="checkbox" form="osForm" name="${escapeHtml(i.chave)}" ${i.valor === true ? 'checked' : ''} ${dis}> ${escapeHtml(i.label)}</label>`;
   }
   if (i.kind === 'medicao') {
     return `<label class="flex items-center gap-2 py-1">${escapeHtml(i.label)}
-      <input type="text" name="${escapeHtml(i.chave)}" value="${escapeHtml(String(i.valor ?? ''))}" placeholder="${escapeHtml(i.unidade ?? '')}" class="border rounded px-2 py-0.5 text-sm" ${dis}></label>`;
+      <input type="text" form="osForm" name="${escapeHtml(i.chave)}" value="${escapeHtml(String(i.valor ?? ''))}" placeholder="${escapeHtml(i.unidade ?? '')}" class="border rounded px-2 py-0.5 text-sm" ${dis}></label>`;
   }
-  // foto
+  // foto: form próprio (irmão do osForm, não aninhado)
   const minis = fotos.filter((f) => f.item_chave === i.chave)
     .map((f) => `<img src="${escapeHtml(f.url ?? '#')}" class="w-16 h-16 object-cover rounded border">`).join('');
   const upload = travado ? '' : `
@@ -43,16 +46,19 @@ export function renderOSPage(os: OSRow, itens: ItemPreenchido[], fotos: FotoOS[]
     <p class="text-sm text-slate-600">${escapeHtml(os.apelido ?? 'usina')} · ${escapeHtml(os.clienteNome ?? '')}</p>
     <p class="text-xs ${travado ? 'text-emerald-600' : 'text-slate-500'} mb-3">${travado ? '✅ OS concluída' : `Progresso: ${p.feitos}/${p.total} (${p.pct}%)`}</p>
 
-    <form method="post" action="/dashboard/os/${escapeHtml(os.id)}/salvar" class="bg-white border rounded-xl p-4">
+    <!-- form de salvar/concluir: vazio aqui; os campos se ligam por form="osForm" -->
+    <form id="osForm" method="post" action="/dashboard/os/${escapeHtml(os.id)}/salvar"></form>
+
+    <div class="bg-white border rounded-xl p-4">
       ${itens.map((i) => renderItem(os.id, i, fotos, travado)).join('')}
       <label class="block text-sm mt-3">Observações
-        <textarea name="observacoes" class="w-full border rounded px-2 py-1 text-sm mt-1" rows="3" ${travado ? 'disabled' : ''}>${escapeHtml(os.observacoes ?? '')}</textarea>
+        <textarea form="osForm" name="observacoes" class="w-full border rounded px-2 py-1 text-sm mt-1" rows="3" ${travado ? 'disabled' : ''}>${escapeHtml(os.observacoes ?? '')}</textarea>
       </label>
       ${travado ? '' : `<div class="flex gap-2 mt-3">
-        <button class="px-3 py-1.5 rounded bg-slate-600 text-white text-sm">💾 Salvar</button>
-        <button formaction="/dashboard/os/${escapeHtml(os.id)}/concluir" class="px-3 py-1.5 rounded bg-emerald-600 text-white text-sm">✅ Concluir OS</button>
+        <button form="osForm" class="px-3 py-1.5 rounded bg-slate-600 text-white text-sm">💾 Salvar</button>
+        <button form="osForm" formaction="/dashboard/os/${escapeHtml(os.id)}/concluir" class="px-3 py-1.5 rounded bg-emerald-600 text-white text-sm">✅ Concluir OS</button>
       </div>`}
-    </form>
+    </div>
     <a href="/dashboard/os/${escapeHtml(os.id)}/laudo" target="_blank" class="inline-block mt-3 px-3 py-1.5 rounded bg-violet-600 text-white text-sm">📄 Gerar laudo (PDF)</a>
   </div>`;
   return renderLayout({ active: 'manutencao', title: 'Ordem de Serviço', body, user });
