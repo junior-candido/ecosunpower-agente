@@ -1881,7 +1881,7 @@ export function createDashboardRouter(
     try {
       const { data, error } = await supabase
         .from('sistemas_clientes')
-        .select('id, apelido, cidade, potencia_kwp, etapa_obra')
+        .select('id, apelido, cidade, potencia_kwp, etapa_obra, etapa_obra_updated_at')
         .eq('ativo', true)
         .order('apelido', { ascending: true });
       if (error) throw new Error(`usinas/kanban: ${error.message}`);
@@ -1902,7 +1902,7 @@ export function createDashboardRouter(
     if (!ETAPAS_USINA.some((e) => e.slug === etapa)) return res.status(400).send('etapa inválida');
     const { error } = await supabase
       .from('sistemas_clientes')
-      .update({ etapa_obra: etapa })
+      .update({ etapa_obra: etapa, etapa_obra_updated_at: new Date().toISOString() })
       .eq('id', id);
     if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
     const viewer = req.dashUser;

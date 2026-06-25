@@ -13,6 +13,7 @@ export interface UsinaKanbanCard {
   cidade: string | null;
   potencia_kwp: number | null;
   etapa_obra: string;
+  etapa_obra_updated_at: string | null;
 }
 
 const COR_ETAPA: Record<EtapaUsinaSlug, string> = {
@@ -24,15 +25,28 @@ const COR_ETAPA: Record<EtapaUsinaSlug, string> = {
   operacao:    'bg-emerald-200 text-emerald-900',
 };
 
+function diasNaEtapa(updatedAt: string | null): string {
+  if (!updatedAt) return '';
+  const dias = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86_400_000);
+  if (dias === 0) return 'hoje';
+  if (dias === 1) return 'há 1 dia';
+  return `há ${dias} dias`;
+}
+
 function renderCard(u: UsinaKanbanCard): string {
   const apelido = escapeHtml(u.apelido ?? 'Sem apelido');
   const cidade = escapeHtml(u.cidade ?? '—');
   const kwp = u.potencia_kwp != null ? `${u.potencia_kwp} kWp` : '—';
+  const dias = diasNaEtapa(u.etapa_obra_updated_at);
+  const busca = escapeHtml(`${u.apelido ?? ''} ${u.cidade ?? ''}`.toLowerCase());
   return `
     <div class="kanban-card bg-white border border-slate-200 rounded-md px-2 py-1.5 shadow-sm cursor-grab hover:shadow-md hover:border-indigo-300 transition"
-         data-usina-id="${escapeHtml(u.id)}" title="${apelido} · ${cidade}">
-      <a href="/dashboard/monitoramento/${escapeHtml(u.id)}" draggable="false"
-         class="block font-medium text-slate-800 hover:text-indigo-600 text-xs leading-tight truncate">${apelido}</a>
+         data-usina-id="${escapeHtml(u.id)}" data-busca="${busca}" title="${apelido} · ${cidade}">
+      <div class="flex items-center justify-between gap-1">
+        <a href="/dashboard/monitoramento/${escapeHtml(u.id)}" draggable="false"
+           class="font-medium text-slate-800 hover:text-indigo-600 text-xs leading-tight truncate flex-1">${apelido}</a>
+        ${dias ? `<span class="text-[9px] text-slate-400 flex-shrink-0">${dias}</span>` : ''}
+      </div>
       <div class="text-[10px] text-slate-400 mt-0.5">${cidade} · ${kwp}</div>
     </div>`;
 }
@@ -49,10 +63,10 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
       <div class="kanban-col flex-shrink-0 w-48 bg-slate-100 rounded-lg p-1.5 flex flex-col" data-etapa="${escapeHtml(etapa.slug)}">
         <div class="flex items-center justify-between mb-1.5 px-0.5 sticky top-0">
           <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${cor} truncate">${escapeHtml(etapa.label)}</span>
-          <span class="text-[10px] font-bold text-slate-500 bg-white rounded-full px-1.5 py-0.5 flex-shrink-0">${cards.length}</span>
+          <span class="kanban-count text-[10px] font-bold text-slate-500 bg-white rounded-full px-1.5 py-0.5 flex-shrink-0">${cards.length}</span>
         </div>
         <div class="kanban-list flex flex-col gap-1.5 overflow-y-auto pr-0.5 min-h-[40px]"
-             style="max-height: calc(100vh - 190px)" data-etapa="${escapeHtml(etapa.slug)}">
+             style="max-height: calc(100vh - 230px)" data-etapa="${escapeHtml(etapa.slug)}">
           ${cardsHtml}
         </div>
       </div>`;
@@ -63,11 +77,15 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
       <div class="flex items-center justify-between mb-3">
         <div>
           <h1 class="text-lg font-bold text-slate-900 leading-tight">Kanban de Obras</h1>
-          <p class="text-[11px] text-slate-500">Arraste as usinas para mover entre etapas da obra.</p>
+          <p class="text-[11px] text-slate-500">Arraste para mover entre etapas. Atualiza a cada 60s.</p>
         </div>
-        <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
-          <a href="/dashboard/monitoramento" class="px-3 py-1 bg-white text-slate-700 hover:bg-slate-50">Lista</a>
-          <a href="/dashboard/usinas/kanban" class="px-3 py-1 bg-indigo-600 text-white">Kanban</a>
+        <div class="flex items-center gap-3">
+          <input id="filtro-kanban" type="text" placeholder="Buscar nome ou cidade…"
+                 class="border border-slate-300 rounded px-2 py-1 text-xs w-44 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
+            <a href="/dashboard/monitoramento" class="px-3 py-1 bg-white text-slate-700 hover:bg-slate-50">Lista</a>
+            <a href="/dashboard/usinas/kanban" class="px-3 py-1 bg-indigo-600 text-white">Kanban</a>
+          </div>
         </div>
       </div>
 
@@ -81,6 +99,36 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
             crossorigin="anonymous"></script>
     <script>
       (function () {
+        // Auto-refresh: 60s, resetado a cada interação do usuário
+        var REFRESH_MS = 60000;
+        var refreshTimer = setTimeout(function () { location.reload(); }, REFRESH_MS);
+        function resetTimer() {
+          clearTimeout(refreshTimer);
+          refreshTimer = setTimeout(function () { location.reload(); }, REFRESH_MS);
+        }
+        document.addEventListener('mousedown', resetTimer);
+        document.addEventListener('touchstart', resetTimer);
+
+        // Filtro por nome/cidade
+        var filtroInput = document.getElementById('filtro-kanban');
+        if (filtroInput) {
+          filtroInput.addEventListener('input', function () {
+            resetTimer();
+            var q = filtroInput.value.toLowerCase().trim();
+            document.querySelectorAll('.kanban-col').forEach(function (col) {
+              var visivel = 0;
+              col.querySelectorAll('.kanban-card').forEach(function (card) {
+                var mostrar = !q || (card.dataset.busca || '').includes(q);
+                card.style.display = mostrar ? '' : 'none';
+                if (mostrar) visivel++;
+              });
+              var badge = col.querySelector('.kanban-count');
+              if (badge) badge.textContent = String(visivel);
+            });
+          });
+        }
+
+        // Drag-and-drop (SortableJS)
         if (typeof Sortable === 'undefined') return;
         document.querySelectorAll('.kanban-list').forEach(function (col) {
           new Sortable(col, {
@@ -88,6 +136,7 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
             animation: 150,
             draggable: '.kanban-card',
             onEnd: function (evt) {
+              resetTimer();
               var id = evt.item.dataset.usinaId;
               var etapa = evt.to.dataset.etapa;
               if (!id || !etapa) return;
