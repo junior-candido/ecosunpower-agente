@@ -1,6 +1,6 @@
 // Copiloto de IA conversacional do lead: system prompt com contexto + chamada.
 import { describe, it, expect, vi } from 'vitest';
-import { montarSystemPromptCopiloto, responderCopiloto } from '../src/modules/ia-copiloto.js';
+import { montarSystemPromptCopiloto, responderCopiloto, carregarConhecimentoVendas } from '../src/modules/ia-copiloto.js';
 
 describe('montarSystemPromptCopiloto', () => {
   it('coloca o papel de copiloto de vendas e os dados do lead', () => {
@@ -21,6 +21,20 @@ describe('montarSystemPromptCopiloto', () => {
     const s = montarSystemPromptCopiloto({ nome: 'João' });
     expect(s).toContain('João');
     expect(s).toMatch(/não há dados/i);
+  });
+
+  it('injeta a base de conhecimento quando fornecida (vender do jeito Ecosunpower)', () => {
+    const s = montarSystemPromptCopiloto({ nome: 'Maria' }, 'REGRAS DE VENDA: nunca chame o Junior de engenheiro.');
+    expect(s).toContain('REGRAS DE VENDA: nunca chame o Junior de engenheiro.');
+    expect(s).toContain('Maria'); // o contexto do lead continua junto
+  });
+});
+
+describe('carregarConhecimentoVendas', () => {
+  it('carrega o arquivo conhecimento/vendas-ia.md (tem a identidade da empresa)', () => {
+    const c = carregarConhecimentoVendas();
+    expect(c).toContain('Ecosunpower');
+    expect(c).toMatch(/Respons[áa]vel T[ée]cnico/); // a correção do título entrou
   });
 });
 

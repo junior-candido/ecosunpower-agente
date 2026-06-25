@@ -656,7 +656,7 @@ export function createDashboardRouter(
       const apiKey = process.env.ANTHROPIC_API_KEY;
       if (!apiKey) return res.json({ erro: 'Chave ANTHROPIC_API_KEY não configurada no .env.' });
       const Anthropic = (await import('@anthropic-ai/sdk')).default;
-      const { responderCopiloto } = await import('../ia-copiloto.js');
+      const { responderCopiloto, carregarConhecimentoVendas } = await import('../ia-copiloto.js');
 
       const ed = (lead.energy_data ?? {}) as Record<string, unknown>;
       const op = (lead.opportunities ?? {}) as Record<string, unknown>;
@@ -678,6 +678,7 @@ export function createDashboardRouter(
         },
         historico,
         pergunta,
+        conhecimento: carregarConhecimentoVendas(),
       });
 
       // Salva as 2 mensagens (best-effort — não bloqueia a resposta).
