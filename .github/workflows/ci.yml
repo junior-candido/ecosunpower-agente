@@ -18,9 +18,6 @@ permissions:
   contents: write
   pull-requests: write
 
-env:
-  PUPPETEER_SKIP_DOWNLOAD: 'true' # nenhum teste usa navegador real -> CI mais rápido
-
 jobs:
   testar-e-juntar:
     runs-on: ubuntu-latest
@@ -36,6 +33,11 @@ jobs:
 
       - name: Instalar dependências
         run: npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+      # Os testes de gerar PDF de contrato (closing-render) usam o navegador
+      # headless do Puppeteer, então o Chrome precisa estar instalado no servidor.
+      - name: Instalar o Chrome do Puppeteer
+        run: npx puppeteer browsers install chrome
 
       - name: Conferir tipos (tsc)
         run: npx tsc --noEmit
