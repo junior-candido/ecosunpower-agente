@@ -563,7 +563,8 @@ export function createDashboardRouter(
         return res.status(403).send('<h2>Lead de outro vendedor</h2>');
       }
 
-      res.send(renderLeadDetailPage(lead));
+      const conversaIA = await supabaseService.getConversaIA(id);
+      res.send(renderLeadDetailPage(lead, conversaIA));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);
       res.status(500).send(`<h2>Erro ao carregar lead</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -632,6 +633,61 @@ export function createDashboardRouter(
         tipoMensagem: 'follow_up',
         economiaMensalRs: ed.economia_mensal_rs ? Number(ed.economia_mensal_rs) : undefined,
       });
+      res.json({ texto });
+    } catch (err) {
+      res.status(500).json({ erro: (err as Error).message });
+    }
+  });
+
+  // IA: copiloto CONVERSACIONAL do lead — responde com contexto + salva histórico.
+  router.post('/leads/:id/ia-copiloto', exigir('leads', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).json({ erro: 'id inválido' });
+    const pergunta = String(req.body?.pergunta ?? '').trim();
+    if (!pergunta) return res.status(400).json({ erro: 'Pergunta vazia.' });
+    try {
+      const { data: lead } = await supabase
+        .from('leads')
+        .select('name, status, city, energy_data, opportunities')
+        .eq('id', id)
+        .maybeSingle();
+      if (!lead) return res.status(404).json({ erro: 'Lead não encontrado.' });
+
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) return res.json({ erro: 'Chave ANTHROPIC_API_KEY não configurada no .env.' });
+      const Anthropic = (await import('@anthropic-ai/sdk')).default;
+      const { responderCopiloto } = await import('../ia-copiloto.js');
+
+      const ed = (lead.energy_data ?? {}) as Record<string, unknown>;
+      const op = (lead.opportunities ?? {}) as Record<string, unknown>;
+      const num = (v: unknown): number | undefined => {
+        const n = Number(v);
+        return Number.isFinite(n) && n !== 0 ? n : undefined;
+      };
+
+      const historico = await supabaseService.getConversaIA(id);
+      const texto = await responderCopiloto(new Anthropic({ apiKey }), {
+        contextoLead: {
+          nome: lead.name ?? undefined,
+          cidade: (lead.city as string | null) ?? undefined,
+          etapa: (lead.status as string | null) ?? undefined,
+          consumoMensalKwh: num(ed.consumo_kwh ?? ed.consumoMensalKwh),
+          potenciaKwp: num(op.potencia_kwp ?? op.potenciaKwp),
+          economiaMensalRs: num(op.economia_mensal_rs ?? op.economiaMensalRs),
+          paybackAnos: op.payback_anos != null ? Number(op.payback_anos) : null,
+        },
+        historico,
+        pergunta,
+      });
+
+      // Salva as 2 mensagens (best-effort — não bloqueia a resposta).
+      const userId = req.dashUser?.id ?? null;
+      try {
+        await supabaseService.addMensagemIA(id, 'user', pergunta, userId);
+        await supabaseService.addMensagemIA(id, 'assistant', texto, null);
+      } catch (e) {
+        console.warn('[ia-copiloto] salvar conversa falhou (segue):', (e as Error).message);
+      }
       res.json({ texto });
     } catch (err) {
       res.status(500).json({ erro: (err as Error).message });

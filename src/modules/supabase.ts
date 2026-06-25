@@ -109,6 +109,38 @@ export class SupabaseService {
     return ((data?.[0] as (LeadData & { id: string }) | undefined) ?? null);
   }
 
+  // ---- Copiloto de IA do lead (histórico salvo, migration 061) ----
+
+  // Lê a conversa do copiloto de um lead, em ordem cronológica.
+  async getConversaIA(leadId: string): Promise<{ role: 'user' | 'assistant'; conteudo: string }[]> {
+    const { data, error } = await this.client
+      .from('lead_ia_conversas')
+      .select('role, conteudo')
+      .eq('lead_id', leadId)
+      .order('created_at', { ascending: true });
+    if (error) {
+      console.error('[supabase] getConversaIA:', error.message);
+      return [];
+    }
+    return (data ?? []) as { role: 'user' | 'assistant'; conteudo: string }[];
+  }
+
+  // Salva uma mensagem da conversa (user = vendedor; assistant = IA, user_id null).
+  async addMensagemIA(
+    leadId: string,
+    role: 'user' | 'assistant',
+    conteudo: string,
+    userId: string | null,
+  ): Promise<void> {
+    const { error } = await this.client.from('lead_ia_conversas').insert({
+      lead_id: leadId,
+      role,
+      conteudo,
+      user_id: userId,
+    });
+    if (error) throw new Error(`addMensagemIA: ${error.message}`);
+  }
+
   // ---- Meta Conversions API (CAPI) ----
 
   /** Dados minimos pra montar/decidir um evento CAPI de um lead. */

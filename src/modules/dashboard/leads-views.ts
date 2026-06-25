@@ -446,7 +446,18 @@ function renderTarefas(leadId: string, tarefas: Tarefa[]): string {
     </div>`;
 }
 
-export function renderLeadDetailPage(lead: LeadDetail): string {
+// Uma bolha de mensagem do copiloto IA. A resposta da IA ganha botão "Copiar".
+function renderMsgCopiloto(m: { role: 'user' | 'assistant'; conteudo: string }): string {
+  if (m.role === 'user') {
+    return `<div class="text-sm bg-slate-100 rounded-lg px-3 py-2 ml-8">${escapeHtml(m.conteudo)}</div>`;
+  }
+  return `<div class="text-sm bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 mr-8 whitespace-pre-wrap">${escapeHtml(m.conteudo)}<div class="mt-1"><button type="button" onclick="ia_copiarTexto(this)" class="text-xs text-indigo-600 hover:underline">📋 Copiar</button></div></div>`;
+}
+
+export function renderLeadDetailPage(
+  lead: LeadDetail,
+  conversa: { role: 'user' | 'assistant'; conteudo: string }[] = [],
+): string {
   const phoneFmt = formatPhone(lead.phone);
   const nome = escapeHtml(lead.name ?? 'Sem nome');
 
@@ -543,23 +554,25 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
         <button class="px-3 py-1 rounded-md text-xs bg-slate-700 text-white hover:bg-slate-800">✏️ Salvar</button>
       </form>
 
-      <!-- Bloco IA: Assistente de engenharia e comercial -->
+      <!-- Bloco IA: Copiloto de vendas CONVERSACIONAL (histórico salvo por lead) -->
       <div class="pt-2 border-t border-slate-100">
-        <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">✨ IA Assistente</div>
+        <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">✨ Copiloto IA — tire dúvidas e gere mensagens</div>
         <div class="flex flex-wrap gap-2 mb-2">
-          <button type="button"
-            onclick="chamarIA('${lead.id}', 'ia-explicar-economia', 'ia-resultado-economia')"
-            class="px-3 py-1.5 rounded-lg text-sm bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100">
-            🔢 Explicar economia (IA)
-          </button>
-          <button type="button"
-            onclick="chamarIA('${lead.id}', 'ia-gerar-mensagem', 'ia-resultado-mensagem')"
-            class="px-3 py-1.5 rounded-lg text-sm bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100">
-            ✍️ Gerar mensagem (IA)
-          </button>
+          <button type="button" onclick="mandarCopiloto('${lead.id}', 'Explique a economia desse cliente de um jeito simples que ele entenda.')"
+            class="px-3 py-1.5 rounded-lg text-sm bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100">🔢 Explicar economia</button>
+          <button type="button" onclick="mandarCopiloto('${lead.id}', 'Gere uma mensagem de follow-up curta pra esse lead, no tom do WhatsApp.')"
+            class="px-3 py-1.5 rounded-lg text-sm bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100">✍️ Gerar mensagem</button>
         </div>
-        <div id="ia-resultado-economia" class="hidden bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-sm text-slate-800 whitespace-pre-wrap mb-2"></div>
-        <div id="ia-resultado-mensagem" class="hidden bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-slate-800 whitespace-pre-wrap mb-2"></div>
+        <div id="ia-chat" class="space-y-2 mb-2 max-h-80 overflow-y-auto">
+          ${conversa.map(renderMsgCopiloto).join('')}
+        </div>
+        <div class="flex gap-2">
+          <input id="ia-pergunta" type="text" placeholder="Pergunte algo ou peça uma mensagem… (Enter envia)"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();mandarCopiloto('${lead.id}', this.value); this.value='';}"
+            class="flex-1 px-3 py-2 rounded-lg border border-slate-300 text-sm" />
+          <button type="button" onclick="var i=document.getElementById('ia-pergunta');mandarCopiloto('${lead.id}', i.value); i.value='';"
+            class="px-4 py-2 rounded-lg text-sm bg-indigo-600 text-white font-semibold hover:bg-indigo-700">Enviar</button>
+        </div>
       </div>
 
       <!-- Bloco 4: Marcar perdido / Arquivar / Remover -->
@@ -714,17 +727,43 @@ export function renderLeadDetailPage(lead: LeadDetail): string {
   `;
   const scriptIA = `
     <script>
-    async function chamarIA(leadId, rota, resultadoId) {
-      const el = document.getElementById(resultadoId);
-      el.textContent = '⏳ Aguardando IA...';
-      el.classList.remove('hidden');
+    function ia_copiarTexto(btn) {
+      var bubble = btn.closest('div').parentElement;
+      var txt = (bubble.childNodes[0] && bubble.childNodes[0].textContent) || bubble.textContent;
+      navigator.clipboard.writeText(txt.trim());
+      btn.textContent = '✅ Copiado';
+      setTimeout(function () { btn.textContent = '📋 Copiar'; }, 1500);
+    }
+    async function mandarCopiloto(leadId, pergunta) {
+      pergunta = (pergunta || '').trim();
+      if (!pergunta) return;
+      var chat = document.getElementById('ia-chat');
+      var u = document.createElement('div');
+      u.className = 'text-sm bg-slate-100 rounded-lg px-3 py-2 ml-8';
+      u.textContent = pergunta;
+      chat.appendChild(u);
+      var a = document.createElement('div');
+      a.className = 'text-sm bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 mr-8 whitespace-pre-wrap';
+      a.textContent = '⏳ Pensando...';
+      chat.appendChild(a);
+      chat.scrollTop = chat.scrollHeight;
       try {
-        const resp = await fetch('/dashboard/leads/' + leadId + '/' + rota, { method: 'POST' });
-        const json = await resp.json();
-        el.textContent = json.erro ? '⚠️ ' + json.erro : json.texto;
-      } catch (e) {
-        el.textContent = '⚠️ Erro ao chamar a IA. Tente novamente.';
-      }
+        var resp = await fetch('/dashboard/leads/' + leadId + '/ia-copiloto', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'pergunta=' + encodeURIComponent(pergunta)
+        });
+        var json = await resp.json();
+        if (json.erro) { a.textContent = '⚠️ ' + json.erro; }
+        else {
+          a.textContent = json.texto;
+          var bar = document.createElement('div');
+          bar.className = 'mt-1';
+          bar.innerHTML = '<button type="button" onclick="ia_copiarTexto(this)" class="text-xs text-indigo-600 hover:underline">📋 Copiar</button>';
+          a.appendChild(bar);
+        }
+      } catch (e) { a.textContent = '⚠️ Erro ao falar com a IA. Tente de novo.'; }
+      chat.scrollTop = chat.scrollHeight;
     }
     </script>
   `;
