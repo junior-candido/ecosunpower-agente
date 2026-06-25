@@ -96,7 +96,9 @@ export function renderKanbanPage(grupos: Record<string, KanbanCard[]>, user?: Da
       @media (prefers-reduced-motion: reduce) { .sla-urgent { animation: none; box-shadow: 0 0 0 2px rgba(244,63,94,0.4); } }
     </style>
 
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"
+            integrity="sha384-HZZ/fukV+9G8gwTNjN7zQDG0Sp7MsZy5DDN6VfY3Be7V9dvQpEpR2jF2HlyFUUjU"
+            crossorigin="anonymous"></script>
     <script>
       (function () {
         if (typeof Sortable === 'undefined') return;
