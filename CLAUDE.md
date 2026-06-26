@@ -2,6 +2,8 @@
 
 Plataforma da EcoSunPower: agente de WhatsApp (Eva) + dashboard/CRM. TypeScript (Node, ESM — imports relativos terminam em `.js`), Supabase/Postgres, Express server-rendered + Tailwind/JS leve via CDN. Testes com **vitest**. Deploy: o **EasyPanel publica a branch `main`** do GitHub.
 
+> 📖 **ANTES DE CRIAR QUALQUER COISA, leia [`docs/VISAO-GERAL-DO-SISTEMA.md`](docs/VISAO-GERAL-DO-SISTEMA.md)** — o mapa do que já existe (módulos, peças reusáveis, convenções). A regra é REUSAR, não recriar. Muita coisa já está pronta (telefone, cálculos solares, IA de lead, funil, proposta, banco) — duplicar gera bug.
+
 ## Como o time trabalha (somos 3, em máquinas diferentes)
 - **Nunca trabalhe direto na `main`.** Sempre crie uma branch:
   `git checkout main && git pull && git checkout -b feat/<sua-tarefa>`
