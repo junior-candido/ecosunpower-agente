@@ -87,16 +87,9 @@ export function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: s
     return { mode: 'jwt', jwt, sid };
   }
   if (email && password) {
-    // Cadastrar email+password promete renovação automática (signIn), mas o
-    // endpoint /v2/sign-in ainda não foi mapeado. Rejeitar agora (em vez de
-    // aceitar e falhar 30 dias depois quando o JWT-cache expira) deixa o
-    // problema visível no momento do cadastro.
-    return {
-      error:
-        'NEP modo email+password ainda nao suportado (endpoint /sign-in nao mapeado). ' +
-        'Use { jwt } direto por enquanto. Quando capturarmos o HAR do login, ' +
-        'modo email+password fica automatico.',
-    };
+    // Modo RENOVAÇÃO AUTOMÁTICA: o adapter loga sozinho (signIn) e renova o JWT
+    // quando expira — Junior nunca mais mexe. /v2/sign-in mapeado em 27/06.
+    return { mode: 'login', email, password, sid };
   }
   return {
     error:
@@ -151,19 +144,53 @@ async function obterToken(creds: ParsedCreds, forceRefresh = false): Promise<Tok
   );
 }
 
-// POST /v2/sign-in — login com email/senha → retorna JWT.
-// STUB: o endpoint exato (path + payload) ainda não foi mapeado via HAR do login.
-// Quando Junior fizer logout/login com DevTools aberto, atualizamos este corpo.
-// Por enquanto retorna erro claro pra Junior cair pro modo `jwt` direto.
+// POST /v2/sign-in — login com email/senha → retorna JWT. Renova sozinho.
+// Mapeado via Network do NEPViewer (27/06): body { account, password }, mesmos
+// headers das outras chamadas (+ sign), token em data.userInfo.token.
+// É o que torna o modo email+password automático (igual ABB/Deye): quando o
+// JWT cacheado expira/401, obterToken chama signIn e renova sem ninguem mexer.
 async function signIn(email: string, password: string): Promise<TokenResult> {
-  void email; void password;
-  return {
-    ok: false,
-    reason:
-      'Login NEP automatico ainda nao mapeado. Use modo { jwt } direto nas ' +
-      'credenciais por enquanto (proxima sessao mapeia o /sign-in).',
-    invalidCredentials: false,
-  };
+  const body = { account: email, password };
+  let resp: Response;
+  try {
+    resp = await fetchWithTimeout(`${BASE_URL}/v2/sign-in`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'app': '0',
+        'client': 'web',
+        'lan': '5',
+        'oem': 'NEP',
+        'sign': nepSign(body),
+        'Origin': 'https://user.nepviewer.com',
+        'Referer': 'https://user.nepviewer.com/',
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    return { ok: false, reason: `network: ${(err as Error).message}` };
+  }
+
+  if (!resp.ok) {
+    return { ok: false, reason: `NEP sign-in HTTP ${resp.status}` };
+  }
+
+  let json: { code?: number; msg?: string; data?: { userInfo?: { token?: string } } };
+  try {
+    json = (await resp.json()) as typeof json;
+  } catch (err) {
+    return { ok: false, reason: `NEP sign-in JSON invalido: ${(err as Error).message}` };
+  }
+
+  if (json.code !== 200) {
+    // code != 200 no login = email/senha errados → invalidCredentials (Junior corrige).
+    return { ok: false, reason: `NEP sign-in code=${json.code}: ${json.msg ?? ''}`, invalidCredentials: true };
+  }
+  const token = json.data?.userInfo?.token;
+  if (!token) {
+    return { ok: false, reason: 'NEP sign-in: token ausente em data.userInfo.token' };
+  }
+  return { ok: true, token };
 }
 
 // ============================================================================
