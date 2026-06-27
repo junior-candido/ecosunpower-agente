@@ -4,7 +4,7 @@
 // microinversor distribuído.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { nepAdapter, nepSign, parseCreds } from '../src/modules/monitoring/adapters/nep.js';
+import { nepAdapter, nepSign, parseCreds, extrairToken } from '../src/modules/monitoring/adapters/nep.js';
 import { clearAllTokens } from '../src/modules/monitoring/util/token-cache.js';
 
 afterEach(() => {
@@ -410,13 +410,29 @@ describe('parseCreds aceita email+password (renovação automática)', () => {
   });
 });
 
+describe('extrairToken (acha o JWT em qualquer caminho da resposta)', () => {
+  const JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJ1aWQiOiIxIn0.abc123-_X';
+  it('acha em data.token', () => {
+    expect(extrairToken({ token: JWT, userInfo: { uid: '1' } })).toBe(JWT);
+  });
+  it('acha em data.userInfo.token', () => {
+    expect(extrairToken({ userInfo: { uid: '1', token: JWT } })).toBe(JWT);
+  });
+  it('acha aninhado fundo (fallback recursivo)', () => {
+    expect(extrairToken({ a: { b: { c: { qualquer: JWT } } } })).toBe(JWT);
+  });
+  it('ignora strings que não são JWT e retorna undefined', () => {
+    expect(extrairToken({ userInfo: { uid: '20241217', email: 'x@y.com' } })).toBeUndefined();
+  });
+});
+
 describe('nepAdapter login automático (signIn /v2/sign-in)', () => {
   it('listSites com email+senha: loga e usa o token; planta herda email+senha', async () => {
     const urls: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       urls.push(url);
       if (url.includes('/v2/sign-in')) {
-        return res(200, { code: 200, msg: 'Sucesso', data: { userInfo: { token: 'eyJ-novo' } } });
+        return res(200, { code: 200, msg: 'Sucesso', data: { token: 'eyJhbGci.eyJ1aWQiOiIxIn0.sig-_X', userInfo: { uid: '1' } } });
       }
       return res(200, { code: 200, msg: 'ok', data: { list: [
         { sid: 'BR_1', siteName: 'Usina 1', city: 'Brasília', stateName: 'DF', registerDate: '01/01/2026 10:00', sn: [{ model: 'BDM-2250' }] },
