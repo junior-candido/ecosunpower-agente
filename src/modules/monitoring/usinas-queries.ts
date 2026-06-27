@@ -6,6 +6,7 @@ import { ETAPAS_USINA, type EtapaUsinaSlug } from '../usina-etapas.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
 
 const NAO_CADASTRADO = 'não cadastrado';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Agrupa usinas por etapa_obra na ordem de ETAPAS_USINA. PURA. Retorna SEMPRE
 // todas as 6 chaves (mesmo vazias), na ordem. Usinas com etapa_obra fora de
@@ -86,4 +87,21 @@ export function montarContatoUsina(
     detalheUrl: `/dashboard/monitoramento/${usina.id}`,
     cliente,
   };
+}
+
+// ---- Mover usinas em lote (Kanban de Obras) ----
+
+export interface MoverLoteSanitizado {
+  etapaValida: boolean;
+  ids: string[];
+}
+
+// Sanitiza a entrada do mover-em-lote: só ids em formato UUID, sem duplicados,
+// e valida a etapa destino contra ETAPAS_USINA. Blindagem contra entrada
+// inesperada (não-lista vira []). PURA.
+export function sanitizarMoverLote(ids: unknown, etapa: unknown): MoverLoteSanitizado {
+  const etapaValida = ETAPAS_USINA.some((e) => e.slug === etapa);
+  const lista = Array.isArray(ids) ? ids : [];
+  const validos = lista.map((x) => String(x)).filter((x) => UUID_RE.test(x));
+  return { etapaValida, ids: [...new Set(validos)] };
 }

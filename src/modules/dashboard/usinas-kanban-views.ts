@@ -43,6 +43,8 @@ function renderCard(u: UsinaKanbanCard): string {
     <div class="kanban-card bg-white border border-slate-200 rounded-md px-2 py-1.5 shadow-sm cursor-grab hover:shadow-md hover:border-indigo-300 transition"
          data-usina-id="${escapeHtml(u.id)}" data-apelido="${apelido}" data-busca="${busca}" title="${apelido} · ${cidade}">
       <div class="flex items-center justify-between gap-1">
+        <input type="checkbox" title="Selecionar" data-usina-id="${escapeHtml(u.id)}"
+               class="kanban-check hidden flex-shrink-0 accent-indigo-600">
         <a href="/dashboard/monitoramento/${escapeHtml(u.id)}" draggable="false"
            class="font-medium text-slate-800 hover:text-indigo-600 text-xs leading-tight truncate flex-1">${apelido}</a>
         <button type="button" draggable="false" title="Ver contato"
@@ -66,7 +68,10 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
       <div class="kanban-col flex-shrink-0 w-48 bg-slate-100 rounded-lg p-1.5 flex flex-col" data-etapa="${escapeHtml(etapa.slug)}">
         <div class="flex items-center justify-between mb-1.5 px-0.5 sticky top-0">
           <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${cor} truncate">${escapeHtml(etapa.label)}</span>
-          <span class="kanban-count text-[10px] font-bold text-slate-500 bg-white rounded-full px-1.5 py-0.5 flex-shrink-0">${cards.length}</span>
+          <span class="flex items-center gap-1 flex-shrink-0">
+            <button type="button" class="sel-todas hidden text-[9px] text-indigo-600 hover:underline" data-etapa="${escapeHtml(etapa.slug)}">todas</button>
+            <span class="kanban-count text-[10px] font-bold text-slate-500 bg-white rounded-full px-1.5 py-0.5">${cards.length}</span>
+          </span>
         </div>
         <div class="kanban-list flex flex-col gap-1.5 overflow-y-auto pr-0.5 min-h-[40px]"
              style="max-height: calc(100vh - 230px)" data-etapa="${escapeHtml(etapa.slug)}" data-ordem="${ordemEtapa(etapa.slug)}">
@@ -85,6 +90,8 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
         <div class="flex items-center gap-3">
           <input id="filtro-kanban" type="text" placeholder="Buscar nome ou cidade…"
                  class="border border-slate-300 rounded px-2 py-1 text-xs w-44 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <button id="btn-selecionar" type="button"
+                  class="border border-slate-300 rounded px-3 py-1 text-xs text-slate-700 hover:bg-slate-50">☑️ Selecionar</button>
           <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
             <a href="/dashboard/monitoramento" class="px-3 py-1 bg-white text-slate-700 hover:bg-slate-50">Lista</a>
             <a href="/dashboard/usinas/kanban" class="px-3 py-1 bg-indigo-600 text-white">Kanban</a>
@@ -108,18 +115,41 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
       <div id="contato-corpo" class="p-4 text-sm text-slate-700 overflow-y-auto flex-1"></div>
     </aside>
 
+    <!-- Modo seleção: caixinhas e "todas" só aparecem com o modo ligado -->
+    <style>
+      .modo-selecao .kanban-check { display: inline-block; }
+      .modo-selecao .sel-todas { display: inline; }
+    </style>
+
+    <!-- Barra de mover em lote (aparece no modo seleção com 1+ marcada) -->
+    <div id="lote-bar" class="hidden fixed bottom-0 left-0 right-0 bg-slate-800 text-white px-4 py-2 flex items-center gap-3 z-40 shadow-lg">
+      <span id="lote-count" class="text-sm font-medium">0 selecionadas</span>
+      <select id="lote-etapa" class="text-slate-800 rounded px-2 py-1 text-sm">
+        <option value="">Mover para…</option>
+        ${ETAPAS_USINA.map((e) => `<option value="${escapeHtml(e.slug)}">${escapeHtml(e.label)}</option>`).join('')}
+      </select>
+      <button id="lote-mover" type="button" class="bg-indigo-500 hover:bg-indigo-400 rounded px-3 py-1 text-sm font-medium">Mover</button>
+      <button id="lote-limpar" type="button" class="text-slate-300 hover:text-white text-sm">Limpar</button>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"
             integrity="sha384-HZZ/fukV+9G8gwTNjN7zQDG0Sp7MsZy5DDN6VfY3Be7V9dvQpEpR2jF2HlyFUUjU"
             crossorigin="anonymous"></script>
     <script>
       (function () {
-        // Auto-refresh: 60s, resetado a cada interação do usuário
+        // Auto-refresh: 60s, resetado a cada interação do usuário.
+        // Pausa enquanto o modo seleção está ligado (não atrapalha a seleção).
         var REFRESH_MS = 60000;
-        var refreshTimer = setTimeout(function () { location.reload(); }, REFRESH_MS);
-        function resetTimer() {
+        var refreshTimer;
+        function agendarRefresh() {
           clearTimeout(refreshTimer);
-          refreshTimer = setTimeout(function () { location.reload(); }, REFRESH_MS);
+          refreshTimer = setTimeout(function () {
+            if (document.body.classList.contains('modo-selecao')) agendarRefresh();
+            else location.reload();
+          }, REFRESH_MS);
         }
+        agendarRefresh();
+        function resetTimer() { agendarRefresh(); }
         document.addEventListener('mousedown', resetTimer);
         document.addEventListener('touchstart', resetTimer);
 
@@ -142,15 +172,17 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
           });
         }
 
-        // Drag-and-drop (SortableJS)
+        // Drag-and-drop (SortableJS). Guarda as instâncias pra poder desabilitar
+        // o arraste quando o modo seleção estiver ligado.
         if (typeof Sortable === 'undefined') return;
+        var sortables = [];
         document.querySelectorAll('.kanban-list').forEach(function (col) {
-          new Sortable(col, {
+          sortables.push(new Sortable(col, {
             group: 'obras',
             animation: 150,
             draggable: '.kanban-card',
-            filter: '.kanban-info',     // clicar no ℹ️ não inicia arraste
-            preventOnFilter: false,     // ...mas o clique ainda dispara
+            filter: '.kanban-info, .kanban-check', // clicar no ℹ️/caixinha não arrasta
+            preventOnFilter: false,                // ...mas o clique ainda dispara
             onEnd: function (evt) {
               resetTimer();
               var id = evt.item.dataset.usinaId;
@@ -191,8 +223,9 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
                 location.reload();
               });
             }
-          });
+          }));
         });
+        window.__obrasSortables = sortables;
       })();
     </script>
 
@@ -275,6 +308,82 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
         overlay.addEventListener('click', fecharPainel);
         fechar.addEventListener('click', fecharPainel);
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape') fecharPainel(); });
+      })();
+    </script>
+
+    <script>
+      (function () {
+        var btn    = document.getElementById('btn-selecionar');
+        var bar    = document.getElementById('lote-bar');
+        var conta  = document.getElementById('lote-count');
+        var selEt  = document.getElementById('lote-etapa');
+        var mover  = document.getElementById('lote-mover');
+        var limpar = document.getElementById('lote-limpar');
+        var board  = document.querySelector('.kanban-board');
+        if (!btn || !bar || !board) return;
+
+        function selecionados() {
+          return Array.prototype.slice.call(document.querySelectorAll('.kanban-check:checked'));
+        }
+        function atualizarBarra() {
+          var n = selecionados().length;
+          conta.textContent = n + (n === 1 ? ' selecionada' : ' selecionadas');
+          bar.classList.toggle('hidden', n === 0);
+        }
+        function setArrasteDesabilitado(v) {
+          (window.__obrasSortables || []).forEach(function (s) { s.option('disabled', v); });
+        }
+        function limparSelecao() {
+          document.querySelectorAll('.kanban-check:checked').forEach(function (c) { c.checked = false; });
+          atualizarBarra();
+        }
+
+        // Liga/desliga o modo seleção
+        btn.addEventListener('click', function () {
+          var ligado = document.body.classList.toggle('modo-selecao');
+          setArrasteDesabilitado(ligado);
+          btn.classList.toggle('bg-indigo-600', ligado);
+          btn.classList.toggle('text-white', ligado);
+          if (!ligado) limparSelecao();
+        });
+
+        // Marcar/desmarcar uma caixinha
+        board.addEventListener('change', function (e) {
+          if (e.target.classList.contains('kanban-check')) atualizarBarra();
+        });
+
+        // "todas" no cabeçalho da coluna: alterna marcar/desmarcar a coluna toda
+        board.addEventListener('click', function (e) {
+          var b = e.target.closest('.sel-todas');
+          if (!b) return;
+          var col = b.closest('.kanban-col');
+          if (!col) return;
+          var checks = col.querySelectorAll('.kanban-check');
+          var todas = Array.prototype.every.call(checks, function (c) { return c.checked; });
+          checks.forEach(function (c) { c.checked = !todas; });
+          atualizarBarra();
+        });
+
+        limpar.addEventListener('click', limparSelecao);
+
+        mover.addEventListener('click', function () {
+          var ids = selecionados().map(function (c) { return c.dataset.usinaId; });
+          var etapa = selEt.value;
+          if (!ids.length) return;
+          if (!etapa) { alert('Escolha a etapa de destino.'); return; }
+          var label = selEt.options[selEt.selectedIndex].text;
+          if (!confirm('Mover ' + ids.length + ' usina(s) para "' + label + '"?')) return;
+          fetch('/dashboard/usinas/set-etapa-obra-lote', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'etapa=' + encodeURIComponent(etapa) + '&ids=' + encodeURIComponent(ids.join(','))
+          }).then(function (res) {
+            if (res.ok) { location.reload(); return; }
+            alert(res.status === 403
+              ? 'Você não tem permissão para mover obras.'
+              : 'Não foi possível mover (erro ' + res.status + ').');
+          }).catch(function () { alert('Falha de conexão ao mover.'); });
+        });
       })();
     </script>`;
 
