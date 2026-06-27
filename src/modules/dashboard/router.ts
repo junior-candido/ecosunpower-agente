@@ -1955,6 +1955,28 @@ export function createDashboardRouter(
     }
   });
 
+  // Move VÁRIAS usinas de etapa de uma vez (modo seleção do kanban). Corpo
+  // urlencoded: ids=uuid1,uuid2,... & etapa=slug. Sanitiza via sanitizarMoverLote
+  // (só UUIDs, sem duplicados) e valida a etapa. Exige usinas/editar.
+  router.post('/usinas/set-etapa-obra-lote', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    const etapa = String(req.body?.etapa ?? '').trim();
+    const idsRaw = String(req.body?.ids ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    const { sanitizarMoverLote } = await import('../monitoring/usinas-queries.js');
+    const { etapaValida, ids } = sanitizarMoverLote(idsRaw, etapa);
+    if (!etapaValida) return res.status(400).json({ erro: 'etapa inválida' });
+    if (ids.length === 0) return res.status(400).json({ erro: 'nenhuma usina válida' });
+    const { error } = await supabase
+      .from('sistemas_clientes')
+      .update({ etapa_obra: etapa, etapa_obra_updated_at: new Date().toISOString() })
+      .in('id', ids);
+    if (error) return res.status(500).json({ erro: error.message });
+    const viewer = req.dashUser;
+    if (viewer) {
+      await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'usina', entidadeId: ids.join(','), acao: 'etapa_obra_lote', valorNovo: etapa });
+    }
+    res.json({ ok: true, movidas: ids.length });
+  });
+
   router.post('/usinas/:sistemaId/leitura', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     try {
       const sistemaId = String(req.params.sistemaId);
