@@ -36,10 +36,14 @@ const diasAtras = (n: number) => new Date(Date.now() - n * 86400000).toISOString
 const KWH_MES_POR_KWP = 120;
 
 export async function listarClientesPosVenda(client: SupabaseClient, companyId: string): Promise<PosVendaLinha[]> {
-  // 1) usinas ativas com lead vinculado
+  // 1) usinas NO PÓS-VENDA (etapa_obra = 'pos_venda') com lead vinculado.
+  // REGRA DURA: usina nunca em dois lugares. Quem está em etapa de obra
+  // (projeto..operacao) aparece SÓ no kanban; só quem está em 'pos_venda'
+  // aparece aqui. Filtrar só por lead_id duplicava (usina em operação com
+  // cliente aparecia no kanban E no pós-venda).
   const { data: sistemas, error: e1 } = await client.from('sistemas_clientes')
     .select('id, lead_id, apelido, marca_inversor, potencia_kwp, data_instalacao, cidade, acompanhamento, api_credentials, ativo')
-    .eq('ativo', true).not('lead_id', 'is', null);
+    .eq('ativo', true).not('lead_id', 'is', null).eq('etapa_obra', 'pos_venda');
   if (e1) throw new Error(`listarClientesPosVenda/sistemas: ${e1.message}`);
   const sis = (sistemas ?? []) as Array<Record<string, any>>;
   if (sis.length === 0) return [];
