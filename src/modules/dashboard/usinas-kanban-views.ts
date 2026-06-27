@@ -163,7 +163,17 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: 'etapa=' + encodeURIComponent(etapa)
-              }).then(function () {}).catch(function () { location.reload(); });
+              }).then(function (res) {
+                if (res.ok) return;
+                // Salvar falhou: avisa e recarrega para devolver o card ao lugar.
+                alert(res.status === 403
+                  ? 'Você não tem permissão para mover obras. Fale com o administrador.'
+                  : 'Não foi possível mover (erro ' + res.status + '). A tela será recarregada.');
+                location.reload();
+              }).catch(function () {
+                alert('Falha de conexão ao mover. A tela será recarregada.');
+                location.reload();
+              });
             }
           });
         });
