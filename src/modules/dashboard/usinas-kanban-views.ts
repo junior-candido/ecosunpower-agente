@@ -4,7 +4,7 @@
 
 import { renderLayout, escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
-import { ETAPAS_USINA, type EtapaUsinaSlug } from '../usina-etapas.js';
+import { ETAPAS_USINA, ordemEtapa, type EtapaUsinaSlug } from '../usina-etapas.js';
 import { agruparUsinasPorEtapaObra } from '../monitoring/usinas-queries.js';
 
 export interface UsinaKanbanCard {
@@ -41,7 +41,7 @@ function renderCard(u: UsinaKanbanCard): string {
   const busca = escapeHtml(`${u.apelido ?? ''} ${u.cidade ?? ''}`.toLowerCase());
   return `
     <div class="kanban-card bg-white border border-slate-200 rounded-md px-2 py-1.5 shadow-sm cursor-grab hover:shadow-md hover:border-indigo-300 transition"
-         data-usina-id="${escapeHtml(u.id)}" data-busca="${busca}" title="${apelido} · ${cidade}">
+         data-usina-id="${escapeHtml(u.id)}" data-apelido="${apelido}" data-busca="${busca}" title="${apelido} · ${cidade}">
       <div class="flex items-center justify-between gap-1">
         <a href="/dashboard/monitoramento/${escapeHtml(u.id)}" draggable="false"
            class="font-medium text-slate-800 hover:text-indigo-600 text-xs leading-tight truncate flex-1">${apelido}</a>
@@ -66,7 +66,7 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
           <span class="kanban-count text-[10px] font-bold text-slate-500 bg-white rounded-full px-1.5 py-0.5 flex-shrink-0">${cards.length}</span>
         </div>
         <div class="kanban-list flex flex-col gap-1.5 overflow-y-auto pr-0.5 min-h-[40px]"
-             style="max-height: calc(100vh - 230px)" data-etapa="${escapeHtml(etapa.slug)}">
+             style="max-height: calc(100vh - 230px)" data-etapa="${escapeHtml(etapa.slug)}" data-ordem="${ordemEtapa(etapa.slug)}">
           ${cardsHtml}
         </div>
       </div>`;
@@ -140,6 +140,25 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
               var id = evt.item.dataset.usinaId;
               var etapa = evt.to.dataset.etapa;
               if (!id || !etapa) return;
+
+              // Avanço x retrocesso: compara a ordem (data-ordem) das colunas.
+              // O servidor carimba essa ordem via ordemEtapa() — fonte única.
+              var ordemDe = Number(evt.from.dataset.ordem);
+              var ordemPara = Number(evt.to.dataset.ordem);
+
+              // Reordenar dentro da mesma coluna não muda etapa: não faz nada.
+              if (ordemPara === ordemDe) return;
+
+              // Retrocesso (voltar etapa): confirma antes de salvar. Se cancelar,
+              // recarrega para o card voltar ao lugar de origem.
+              if (ordemPara < ordemDe) {
+                var nome = evt.item.dataset.apelido || 'esta usina';
+                if (!confirm('Voltar "' + nome + '" para uma etapa anterior?')) {
+                  location.reload();
+                  return;
+                }
+              }
+
               fetch('/dashboard/usinas/' + id + '/set-etapa-obra', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
