@@ -186,11 +186,42 @@ async function signIn(email: string, password: string): Promise<TokenResult> {
     // code != 200 no login = email/senha errados → invalidCredentials (Junior corrige).
     return { ok: false, reason: `NEP sign-in code=${json.code}: ${json.msg ?? ''}`, invalidCredentials: true };
   }
-  const token = json.data?.userInfo?.token;
+  // O JWT pode vir em data.token, data.userInfo.token, etc — varia. Em vez de
+  // cravar o caminho, acha o token de forma robusta (string com cara de JWT).
+  const token = extrairToken(json.data);
   if (!token) {
-    return { ok: false, reason: 'NEP sign-in: token ausente em data.userInfo.token' };
+    return { ok: false, reason: `NEP sign-in: token (JWT) nao encontrado na resposta (msg: ${json.msg ?? ''})` };
   }
   return { ok: true, token };
+}
+
+// Acha o JWT na resposta do sign-in sem depender do caminho exato:
+// 1) tenta os campos mais comuns; 2) varre recursivamente atras de um valor
+//    com cara de JWT (eyJ....). Robusto a mudanca de estrutura da API.
+export function extrairToken(data: unknown): string | undefined {
+  const jwtRe = /^eyJ[\w-]+\.[\w-]+\.[\w-]+$/;
+  if (!data || typeof data !== 'object') {
+    return typeof data === 'string' && jwtRe.test(data) ? data : undefined;
+  }
+  const d = data as Record<string, unknown>;
+  const ui = d.userInfo as Record<string, unknown> | undefined;
+  for (const cand of [d.token, ui?.token, d.access_token, ui?.access_token, d.accessToken, ui?.accessToken]) {
+    if (typeof cand === 'string' && jwtRe.test(cand)) return cand;
+  }
+  // fallback: varredura recursiva
+  const seen = new Set<unknown>();
+  const walk = (v: unknown): string | undefined => {
+    if (typeof v === 'string') return jwtRe.test(v) ? v : undefined;
+    if (v && typeof v === 'object' && !seen.has(v)) {
+      seen.add(v);
+      for (const val of Object.values(v as Record<string, unknown>)) {
+        const found = walk(val);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  };
+  return walk(d);
 }
 
 // ============================================================================
