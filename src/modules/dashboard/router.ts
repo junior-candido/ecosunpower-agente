@@ -1929,6 +1929,32 @@ export function createDashboardRouter(
     res.status(200).send('ok');
   });
 
+  // Painel de contato (espiada rápida no kanban de obras): JSON com dados do
+  // cliente vinculado + essenciais da usina. Reusa getClienteByLeadId. Exige
+  // usinas/visualizar (mesmo nível da tela; o contato já aparece no detalhe).
+  router.get('/usinas/:id/contato', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).json({ erro: 'id inválido' });
+    try {
+      const { data: usina, error } = await supabase
+        .from('sistemas_clientes')
+        .select('id, apelido, cidade, uf, potencia_kwp, etapa_obra, etapa_obra_updated_at, lead_id')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!usina) return res.status(404).json({ erro: 'usina não encontrada' });
+      const u = usina as any;
+      const lead = u.lead_id ? await supabaseService.getClienteByLeadId(u.lead_id) : null;
+      const { montarContatoUsina } = await import('../monitoring/usinas-queries.js');
+      res.json(montarContatoUsina(u, lead
+        ? { name: lead.name ?? null, phone: lead.phone ?? null, email: lead.email ?? null }
+        : null));
+    } catch (err) {
+      console.error('[dashboard/usinas/contato]', err);
+      res.status(500).json({ erro: 'falha ao carregar contato' });
+    }
+  });
+
   router.post('/usinas/:sistemaId/leitura', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     try {
       const sistemaId = String(req.params.sistemaId);
