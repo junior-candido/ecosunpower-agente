@@ -39,6 +39,14 @@ USER root
 # Copia o resto do projeto.
 COPY --chown=pptruser:pptruser . .
 
+# Carimbo de build automatico: grava a data/hora real do build em build-info.ts,
+# que o /health expoe no campo "build". Como este RUN vem DEPOIS do "COPY . ."
+# (que invalida o cache de camada sempre que qualquer arquivo do repo muda), ele
+# re-executa a cada deploy com codigo novo — entao o "build" do /health sempre
+# reflete o ultimo deploy, sem ninguem precisar editar nada na mao.
+RUN echo "export const BUILD_VERSION = 'build-$(date -u +%Y%m%d-%H%M%SZ)';" > src/build-info.ts \
+  && cat src/build-info.ts
+
 # Build TypeScript + copia prompts.
 RUN npm run build && cp -r src/prompts dist/prompts && chown -R pptruser:pptruser /app
 

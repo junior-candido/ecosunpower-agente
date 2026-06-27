@@ -1,8 +1,17 @@
-// Marcador de build — BUMP a cada deploy pra confirmar via /health que o
-// Easypanel reconstruiu o codigo novo (e nao esta servindo container velho).
+// Carimbo de build — confirma via /health que o Easypanel reconstruiu o codigo
+// novo (e nao esta servindo um container velho).
+//
+// EM PRODUCAO este valor e SOBRESCRITO AUTOMATICAMENTE no `docker build`
+// (veja o passo "Carimbo de build automatico" no Dockerfile): a cada deploy
+// com codigo novo, o campo "build" do /health passa a mostrar a data/hora real
+// do build, no formato `build-AAAAMMDD-HHMMSSZ` (UTC). Ninguem precisa editar
+// nada na mao.
 //
 // Como verificar de fora se prod pegou o codigo:
 //   curl https://propostas.ecosunpower.eng.br/health  -> campo "build"
-// Se o "build" bater com este valor, o deploy pegou. Se mostrar valor antigo,
-// o Easypanel NAO reconstruiu (cache de camada Docker ou deploy nao disparado).
-export const BUILD_VERSION = 'PROPOSTA-HIBRIDO-2026-06-19';
+// Se a data/hora for recente (logo apos voce clicar Implantar), o deploy pegou.
+// Se continuar antiga, o Easypanel NAO reconstruiu (deploy nao disparado ou
+// cache de camada Docker).
+//
+// O valor abaixo so aparece em ambiente local/dev (onde o Dockerfile nao roda).
+export const BUILD_VERSION = 'dev-local';
