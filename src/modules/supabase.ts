@@ -1599,6 +1599,10 @@ export class SupabaseService {
         city: input.city ?? null,
         uf: input.uf ?? null,
         cep: input.cep ?? null,
+        // Empresa dona do lead. Sem isso o cliente nasce "órfão de empresa" e
+        // some das telas que filtram por company (ex: Pós-venda). Default EcoSun
+        // (single-tenant), igual ao fallback usado no resto do código.
+        company_id: '00000000-0000-0000-0000-000000000001',
         installation_status: 'operando',
         installed_at: sistema.data_instalacao,
         eva_active: false,                    // Junior precisa ativar depois
@@ -1728,6 +1732,9 @@ export class SupabaseService {
         concessionaria: input.concessionaria ?? null,
         consumo_medio_kwh: input.consumo_medio_kwh ?? null,
         profile: input.profile ?? 'indefinido',
+        // Empresa dona do lead (default EcoSun, single-tenant). Sem isso o
+        // cliente some das telas filtradas por company (Pós-venda, CRM).
+        company_id: '00000000-0000-0000-0000-000000000001',
         installation_status: null,
         eva_active: false,
         opt_out: false,
