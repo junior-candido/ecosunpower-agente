@@ -10,17 +10,18 @@ import { solarEdgeAdapter } from './adapters/solaredge.js';
 import { deyeAdapter } from './adapters/deye.js';
 import { nepAdapter } from './adapters/nep.js';
 import { abbAdapter } from './adapters/abb.js';
+import { foxessAdapter } from './adapters/foxess.js';
 
 const adapters: Partial<Record<MarcaInversor, MonitoringAdapter>> = {
   solaredge: solarEdgeAdapter,
   deye: deyeAdapter,
   nep: nepAdapter,
   abb: abbAdapter,
-  // sungrow: sungrowAdapter,    // futuro
+  foxess: foxessAdapter,         // LIVE 27/06 — validado em prod (30 inversores Q1-2500-E)
+  // sungrow: sungrowAdapter,    // app aprovado, falta plugar (cripto pronta na branch)
   // hoymiles: hoymilesAdapter,  // futuro
   // goodwe: goodweAdapter,      // futuro
   // huawei: huaweiAdapter,      // futuro
-  // foxess: foxessAdapter,      // futuro
 };
 
 export function getAdapter(marca: MarcaInversor): MonitoringAdapter | null {
