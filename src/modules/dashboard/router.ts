@@ -1941,8 +1941,16 @@ export function createDashboardRouter(
       const { sanitizarPares } = await import('./vincular-usinas.js');
       const pares = sanitizarPares((req.body ?? {}) as Record<string, unknown>);
       const viewer = req.dashUser!;
+      // Defesa multi-empresa: só aceita vincular a leads da própria company.
+      // (sistemas_clientes não tem company_id; o vínculo é o que define a dona.)
+      const leadIds = [...new Set(pares.map((p) => p.leadId))];
+      const { data: leadsValidos } = leadIds.length
+        ? await supabase.from('leads').select('id').eq('company_id', viewer.companyId).in('id', leadIds)
+        : { data: [] as Array<{ id: string }> };
+      const idsValidos = new Set((leadsValidos ?? []).map((l: any) => l.id));
+      const paresOk = pares.filter((p) => idsValidos.has(p.leadId));
       let aplicados = 0;
-      for (const { usinaId, leadId } of pares) {
+      for (const { usinaId, leadId } of paresOk) {
         const { error } = await supabase.from('sistemas_clientes')
           .update({ lead_id: leadId, etapa_obra: 'pos_venda', etapa_obra_updated_at: new Date().toISOString() })
           .eq('id', usinaId).eq('ativo', true);
@@ -1953,7 +1961,7 @@ export function createDashboardRouter(
           entidadeId: usinaId, acao: 'vincular_cliente', valorNovo: leadId,
         });
       }
-      console.log(`[usinas/vincular] ${aplicados}/${pares.length} usinas vinculadas + enviadas ao pos_venda`);
+      console.log(`[usinas/vincular] ${aplicados}/${paresOk.length} usinas vinculadas + enviadas ao pos_venda (de ${pares.length} recebidas)`);
       res.redirect('/dashboard/usinas/vincular');
     } catch (err) {
       console.error('[dashboard/usinas/vincular POST]', err);

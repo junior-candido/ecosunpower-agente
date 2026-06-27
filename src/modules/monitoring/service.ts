@@ -333,10 +333,12 @@ export class MonitoringService {
         // Tenta casar por nome (apelido <-> leads.name) pra já vincular o cliente.
         const { normalizarNome } = await import('../dashboard/vincular-usinas.js');
         let leadId: string | null = null;
-        if (site.apelido) {
+        const alvo = normalizarNome(site.apelido);
+        // Só casa com nome NÃO vazio: apelido em branco ('  '/'---') normaliza
+        // pra '' e casaria com qualquer lead de nome vazio — vínculo errado.
+        if (alvo) {
           const { data: leads } = await this.supabase.getClient()
             .from('leads').select('id, name');
-          const alvo = normalizarNome(site.apelido);
           const hit = (leads ?? []).find((l: any) => normalizarNome(l.name) === alvo);
           leadId = hit?.id ?? null;
         }
