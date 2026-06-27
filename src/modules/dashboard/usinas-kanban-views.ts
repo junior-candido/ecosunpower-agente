@@ -45,6 +45,9 @@ function renderCard(u: UsinaKanbanCard): string {
       <div class="flex items-center justify-between gap-1">
         <a href="/dashboard/monitoramento/${escapeHtml(u.id)}" draggable="false"
            class="font-medium text-slate-800 hover:text-indigo-600 text-xs leading-tight truncate flex-1">${apelido}</a>
+        <button type="button" draggable="false" title="Ver contato"
+                class="kanban-info flex-shrink-0 text-slate-400 hover:text-indigo-600 text-xs leading-none px-0.5"
+                data-usina-id="${escapeHtml(u.id)}" data-apelido="${apelido}">ℹ️</button>
         ${dias ? `<span class="text-[9px] text-slate-400 flex-shrink-0">${dias}</span>` : ''}
       </div>
       <div class="text-[10px] text-slate-400 mt-0.5">${cidade} · ${kwp}</div>
@@ -94,6 +97,17 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
       </div>
     </div>
 
+    <!-- Painel de contato (drawer): preenchido por fetch ao clicar no ℹ️ do card -->
+    <div id="contato-overlay" class="hidden fixed inset-0 bg-black/20 z-40"></div>
+    <aside id="contato-drawer" class="hidden fixed top-0 right-0 h-full w-80 max-w-[90vw] bg-white shadow-xl z-50 flex flex-col">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+        <h2 id="contato-titulo" class="font-bold text-slate-800 text-sm truncate">Usina</h2>
+        <button id="contato-fechar" type="button" title="Fechar"
+                class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
+      </div>
+      <div id="contato-corpo" class="p-4 text-sm text-slate-700 overflow-y-auto flex-1"></div>
+    </aside>
+
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"
             integrity="sha384-HZZ/fukV+9G8gwTNjN7zQDG0Sp7MsZy5DDN6VfY3Be7V9dvQpEpR2jF2HlyFUUjU"
             crossorigin="anonymous"></script>
@@ -135,6 +149,8 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
             group: 'obras',
             animation: 150,
             draggable: '.kanban-card',
+            filter: '.kanban-info',     // clicar no ℹ️ não inicia arraste
+            preventOnFilter: false,     // ...mas o clique ainda dispara
             onEnd: function (evt) {
               resetTimer();
               var id = evt.item.dataset.usinaId;
@@ -177,6 +193,88 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
             }
           });
         });
+      })();
+    </script>
+
+    <script>
+      (function () {
+        var overlay = document.getElementById('contato-overlay');
+        var drawer  = document.getElementById('contato-drawer');
+        var titulo  = document.getElementById('contato-titulo');
+        var corpo   = document.getElementById('contato-corpo');
+        var fechar  = document.getElementById('contato-fechar');
+        var board   = document.querySelector('.kanban-board');
+        if (!drawer || !board) return;
+
+        // Anti-XSS: todo dado vindo do servidor (nome/email/etc.) passa por aqui
+        // antes de ir pro innerHTML. Cobre texto e atributo com aspas duplas.
+        function esc(s) {
+          return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+          });
+        }
+
+        function campo(icone, valor) {
+          var copiavel = valor && valor !== 'não cadastrado';
+          return '<div class="flex items-center justify-between gap-2 mb-2">' +
+                   '<span class="truncate">' + icone + ' ' + esc(valor) + '</span>' +
+                   (copiavel
+                     ? '<button type="button" class="contato-copiar text-[11px] text-indigo-600 hover:underline flex-shrink-0" data-valor="' + esc(valor) + '">copiar</button>'
+                     : '') +
+                 '</div>';
+        }
+
+        function preencher(c) {
+          var h = '';
+          if (c.cliente) {
+            h += campo('👤', c.cliente.nome);
+            h += campo('📱', c.cliente.telefone);
+            h += campo('✉️', c.cliente.email);
+          } else {
+            h += '<div class="mb-2 text-slate-500 italic">Cliente não cadastrado</div>';
+          }
+          h += '<hr class="my-3 border-slate-100">';
+          h += '<div class="mb-1 text-slate-600">📍 ' + esc(c.localizacao) + ' · ' + esc(c.potencia) + '</div>';
+          h += '<div class="mb-3 text-slate-600">🏗️ ' + esc(c.etapa) + (c.diasNaEtapa ? ' · ' + esc(c.diasNaEtapa) : '') + '</div>';
+          h += '<a href="' + esc(c.detalheUrl) + '" class="inline-block text-indigo-600 hover:underline text-sm">abrir detalhe completo →</a>';
+          corpo.innerHTML = h;
+        }
+
+        function abrir(id, apelido) {
+          titulo.textContent = apelido || 'Usina';
+          corpo.innerHTML = '<div class="text-slate-400 italic">carregando…</div>';
+          overlay.classList.remove('hidden');
+          drawer.classList.remove('hidden');
+          fetch('/dashboard/usinas/' + id + '/contato')
+            .then(function (res) { if (!res.ok) throw new Error(res.status); return res.json(); })
+            .then(preencher)
+            .catch(function () {
+              corpo.innerHTML = '<div class="text-rose-600">Não foi possível carregar o contato.</div>';
+            });
+        }
+
+        function fecharPainel() {
+          overlay.classList.add('hidden');
+          drawer.classList.add('hidden');
+        }
+
+        board.addEventListener('click', function (e) {
+          var btn = e.target.closest('.kanban-info');
+          if (!btn) return;
+          e.preventDefault();
+          abrir(btn.dataset.usinaId, btn.dataset.apelido);
+        });
+        corpo.addEventListener('click', function (e) {
+          var btn = e.target.closest('.contato-copiar');
+          if (!btn) return;
+          navigator.clipboard.writeText(btn.dataset.valor).then(function () {
+            var t = btn.textContent; btn.textContent = 'copiado!';
+            setTimeout(function () { btn.textContent = t; }, 1200);
+          }).catch(function () {});
+        });
+        overlay.addEventListener('click', fecharPainel);
+        fechar.addEventListener('click', fecharPainel);
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') fecharPainel(); });
       })();
     </script>`;
 
