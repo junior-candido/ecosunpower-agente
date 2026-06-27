@@ -1910,6 +1910,65 @@ export function createDashboardRouter(
     }
   });
 
+  // Mutirão de vínculo: usinas ativas SEM cliente -> sugere por nome -> tela de revisão.
+  router.get('/usinas/vincular', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const companyId = req.dashUser!.companyId;
+      const [usinasRes, leadsRes] = await Promise.all([
+        supabase.from('sistemas_clientes')
+          .select('id, apelido').eq('ativo', true).is('lead_id', null).order('apelido'),
+        supabase.from('leads')
+          .select('id, name').eq('company_id', companyId).order('name'),
+      ]);
+      if (usinasRes.error) throw new Error(usinasRes.error.message);
+      if (leadsRes.error) throw new Error(leadsRes.error.message);
+      const { sugerirVinculos } = await import('./vincular-usinas.js');
+      const { renderVincularUsinasPage } = await import('./vincular-usinas-views.js');
+      const leads = (leadsRes.data ?? []) as Array<{ id: string; name: string | null }>;
+      const usinas = (usinasRes.data ?? []) as Array<{ id: string; apelido: string | null }>;
+      const sugestoes = sugerirVinculos(usinas, leads);
+      res.type('text/html').send(renderVincularUsinasPage({ sugestoes, leads, user: req.dashUser }));
+    } catch (err) {
+      console.error('[dashboard/usinas/vincular GET]', err);
+      res.status(500).send(`<h2>Erro ao carregar vínculo de usinas</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  // Aplica os vínculos confirmados: seta lead_id + manda a usina pro pos_venda
+  // (some do kanban) + registra auditoria. Corpo: { <usinaId>: <leadId>, ... }.
+  router.post('/usinas/vincular', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const { sanitizarPares } = await import('./vincular-usinas.js');
+      const pares = sanitizarPares((req.body ?? {}) as Record<string, unknown>);
+      const viewer = req.dashUser!;
+      // Defesa multi-empresa: só aceita vincular a leads da própria company.
+      // (sistemas_clientes não tem company_id; o vínculo é o que define a dona.)
+      const leadIds = [...new Set(pares.map((p) => p.leadId))];
+      const { data: leadsValidos } = leadIds.length
+        ? await supabase.from('leads').select('id').eq('company_id', viewer.companyId).in('id', leadIds)
+        : { data: [] as Array<{ id: string }> };
+      const idsValidos = new Set((leadsValidos ?? []).map((l: any) => l.id));
+      const paresOk = pares.filter((p) => idsValidos.has(p.leadId));
+      let aplicados = 0;
+      for (const { usinaId, leadId } of paresOk) {
+        const { error } = await supabase.from('sistemas_clientes')
+          .update({ lead_id: leadId, etapa_obra: 'pos_venda', etapa_obra_updated_at: new Date().toISOString() })
+          .eq('id', usinaId).eq('ativo', true);
+        if (error) { console.warn(`[usinas/vincular] ${usinaId} falhou: ${error.message}`); continue; }
+        aplicados++;
+        await audit(supabase, {
+          companyId: viewer.companyId, userId: viewer.id, entidade: 'usina',
+          entidadeId: usinaId, acao: 'vincular_cliente', valorNovo: leadId,
+        });
+      }
+      console.log(`[usinas/vincular] ${aplicados}/${paresOk.length} usinas vinculadas + enviadas ao pos_venda (de ${pares.length} recebidas)`);
+      res.redirect('/dashboard/usinas/vincular');
+    } catch (err) {
+      console.error('[dashboard/usinas/vincular POST]', err);
+      res.status(500).send('erro ao aplicar vínculos');
+    }
+  });
+
   // Move usina de etapa via drag-drop do kanban de obras. Responde 200 (o front é
   // fetch, não navega). Valida etapa contra ETAPAS_USINA.
   router.post('/usinas/:id/set-etapa-obra', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {

@@ -329,7 +329,19 @@ export class MonitoringService {
         if (error) { erros++; console.warn(`[monitoring/import] update ${marca} ${site.apelido} falhou: ${error.message}`); }
         else atualizados++;
       } else {
-        // Cria novo
+        // Cria novo. A usina veio do painel => já gera => nasce em pos_venda.
+        // Tenta casar por nome (apelido <-> leads.name) pra já vincular o cliente.
+        const { normalizarNome } = await import('../dashboard/vincular-usinas.js');
+        let leadId: string | null = null;
+        const alvo = normalizarNome(site.apelido);
+        // Só casa com nome NÃO vazio: apelido em branco ('  '/'---') normaliza
+        // pra '' e casaria com qualquer lead de nome vazio — vínculo errado.
+        if (alvo) {
+          const { data: leads } = await this.supabase.getClient()
+            .from('leads').select('id, name');
+          const hit = (leads ?? []).find((l: any) => normalizarNome(l.name) === alvo);
+          leadId = hit?.id ?? null;
+        }
         const { error } = await this.supabase.getClient()
           .from('sistemas_clientes')
           .insert({
@@ -341,6 +353,8 @@ export class MonitoringService {
             uf: site.uf,
             data_instalacao: site.data_instalacao,
             ativo: true,
+            lead_id: leadId,
+            etapa_obra: 'pos_venda',
           });
         if (error) { erros++; console.warn(`[monitoring/import] insert ${marca} ${site.apelido} falhou: ${error.message}`); }
         else novos++;

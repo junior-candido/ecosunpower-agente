@@ -92,6 +92,10 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
                  class="border border-slate-300 rounded px-2 py-1 text-xs w-44 focus:outline-none focus:ring-2 focus:ring-indigo-300">
           <button id="btn-selecionar" type="button"
                   class="border border-slate-300 rounded px-3 py-1 text-xs text-slate-700 hover:bg-slate-50">☑️ Selecionar</button>
+          <a href="/dashboard/usinas/vincular"
+             class="text-sm bg-amber-100 text-amber-800 px-3 py-1.5 rounded hover:bg-amber-200">
+            🔗 Vincular usinas sem cliente
+          </a>
           <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
             <a href="/dashboard/monitoramento" class="px-3 py-1 bg-white text-slate-700 hover:bg-slate-50">Lista</a>
             <a href="/dashboard/usinas/kanban" class="px-3 py-1 bg-indigo-600 text-white">Kanban</a>
