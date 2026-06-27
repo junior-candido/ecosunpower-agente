@@ -145,7 +145,7 @@ export function mesesNoIntervalo(dataInicio: string, dataFim: string): Array<{ y
   return out;
 }
 
-// Resposta do report (dimension=day) → kWh por dia daquele mês.
+// Resposta do report (dimension=month) → kWh por dia daquele mês.
 // result = [{ variable:'generation', unit:'kWh', values:[d1,d2,...,dN] }]
 // values[i] = geração do dia (i+1). Descarta null/não-numérico (dias futuros).
 export function parseReportMes(
@@ -197,8 +197,10 @@ export const foxessAdapter: MonitoringAdapter = {
     const geracoes: GeracaoDiaria[] = [];
     for (const { year, month } of mesesNoIntervalo(dataInicio, dataFim)) {
       const now = Date.now();
+      // dimension:'month' => values[] = 1 valor por DIA do mês (kWh). Validado ao
+      // vivo. ('day' seria por hora dentro de um dia — não é o que queremos.)
       const r = await foxPost<unknown>(parsed.apiKey, '/op/v0/device/report/query', {
-        sn: parsed.siteId, year, month, dimension: 'day', variables: ['generation'],
+        sn: parsed.siteId, year, month, dimension: 'month', variables: ['generation'],
       }, now);
       if (!r.ok) {
         // falha de credencial: aborta. falha pontual num mês: segue com o resto.
