@@ -4,10 +4,12 @@
 // microinversor distribuído.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { nepAdapter, nepSign } from '../src/modules/monitoring/adapters/nep.js';
+import { nepAdapter, nepSign, parseCreds } from '../src/modules/monitoring/adapters/nep.js';
+import { clearAllTokens } from '../src/modules/monitoring/util/token-cache.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
+  clearAllTokens();   // cache de token é module-level — limpa entre testes
 });
 
 function res(status: number, jsonBody: unknown) {
@@ -397,16 +399,45 @@ describe('fetchGeneration preserva 0 kWh real', () => {
 });
 
 // ============================================================================
-// CREDENCIAIS — modo email+password rejeitado até /sign-in ser mapeado
+// CREDENCIAIS — modo email+password AGORA loga sozinho (renovação automática)
 // ============================================================================
 
-describe('parseCreds rejeita modo email+password (signIn nao mapeado)', () => {
-  it('email+password explica que o modo nao esta pronto', async () => {
+describe('parseCreds aceita email+password (renovação automática)', () => {
+  it('email+password vira modo login', () => {
+    const r = parseCreds({ email: 'x@y.com', password: 'abc' });
+    expect('error' in r).toBe(false);
+    expect(r).toMatchObject({ mode: 'login', email: 'x@y.com', password: 'abc' });
+  });
+});
+
+describe('nepAdapter login automático (signIn /v2/sign-in)', () => {
+  it('listSites com email+senha: loga e usa o token; planta herda email+senha', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      urls.push(url);
+      if (url.includes('/v2/sign-in')) {
+        return res(200, { code: 200, msg: 'Sucesso', data: { userInfo: { token: 'eyJ-novo' } } });
+      }
+      return res(200, { code: 200, msg: 'ok', data: { list: [
+        { sid: 'BR_1', siteName: 'Usina 1', city: 'Brasília', stateName: 'DF', registerDate: '01/01/2026 10:00', sn: [{ model: 'BDM-2250' }] },
+      ] } });
+    }));
+
     const r = await nepAdapter.listSites!({ email: 'x@y.com', password: 'abc' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(urls.some((u) => u.includes('/v2/sign-in'))).toBe(true);
+    expect(r.sites).toHaveLength(1);
+    // planta guarda email+senha → renova sozinho quando o JWT expirar
+    expect(r.sites[0].credenciais).toMatchObject({ email: 'x@y.com', password: 'abc', site_id: 'BR_1' });
+  });
+
+  it('senha errada no sign-in (code != 200) → invalidCredentials', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => res(200, { code: 401, msg: 'senha invalida' })));
+    const r = await nepAdapter.listSites!({ email: 'x@y.com', password: 'errada' });
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.invalidCredentials).toBe(true);
-    expect(r.reason).toMatch(/sign-in|jwt/i);
   });
 });
 

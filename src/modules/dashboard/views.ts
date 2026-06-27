@@ -1563,33 +1563,36 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
         </fieldset>
 
         <fieldset id="campos-nep" style="display:none" disabled class="border-0 p-0 m-0">
-          <div>
-            <label for="nep_jwt" class="block text-sm font-semibold text-slate-700 mb-2">Token de acesso (JWT) da conta NEPViewer</label>
-            <textarea
-              id="nep_jwt"
-              name="jwt"
-              rows="3"
-              placeholder="cola aqui o JWT capturado no localStorage do NEPViewer"
-              class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition font-mono text-xs"></textarea>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">E-mail da conta NEPViewer</label>
+              <input name="nep_email" type="email" placeholder="email do instalador NEPViewer"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">Senha da conta NEPViewer</label>
+              <input name="nep_password" type="password" placeholder="senha NEPViewer"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
+            </div>
+          </div>
+          <div class="mt-3 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs">
+            ✅ <strong>Renovação automática (recomendado):</strong> com e-mail e senha, o sistema
+            <strong>loga sozinho e renova o token quando expira</strong> — você <strong>nunca mais</strong>
+            precisa mexer. Igual ABB/Deye.
           </div>
 
-          <div class="mt-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
-            <strong>📋 Como pegar o JWT (1 minuto):</strong>
-            <ol class="list-decimal ml-5 mt-2 space-y-1">
-              <li>Acessa <a href="https://user.nepviewer.com" target="_blank" rel="noopener" class="underline font-semibold">user.nepviewer.com</a> e faz login (conta de instalador)</li>
-              <li>Aperta <kbd class="px-1.5 py-0.5 bg-white border border-amber-300 rounded font-mono text-[10px]">F12</kbd> → aba <strong>Console</strong></li>
-              <li>Cola e executa:
-                <pre class="mt-1 px-2 py-1.5 bg-white border border-amber-300 rounded text-[11px] overflow-x-auto"><code>copy(JSON.parse(localStorage.getItem('userInfo')).token)</code></pre>
-              </li>
-              <li>Volta aqui, <kbd class="px-1.5 py-0.5 bg-white border border-amber-300 rounded font-mono text-[10px]">Ctrl+V</kbd> no campo acima</li>
-            </ol>
-          </div>
-
-          <div class="mt-3 px-4 py-3 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-xs">
-            ⏱ <strong>Validade:</strong> o JWT dura ~30 dias. Quando expirar, o sistema vai
-            avisar com alerta de "credencial inválida" — basta repetir os 4 passos e cadastrar
-            o novo token. (Renovação automática via login será liberada em breve.)
-          </div>
+          <details class="mt-3">
+            <summary class="text-xs text-slate-500 cursor-pointer hover:underline">Alternativa avançada: colar um token (JWT) direto</summary>
+            <div class="mt-2">
+              <textarea
+                id="nep_jwt"
+                name="jwt"
+                rows="2"
+                placeholder="opcional — cola um JWT do localStorage do NEPViewer (expira em ~30 dias, sem renovação automática)"
+                class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-amber-500 transition font-mono text-xs"></textarea>
+              <p class="text-xs text-slate-500 mt-1">Use só se preferir não guardar a senha. Captura: F12 → Console → <code>copy(JSON.parse(localStorage.getItem('userInfo')).token)</code>. ⚠️ Esse jeito expira em ~30 dias e precisa renovar na mão.</p>
+            </div>
+          </details>
         </fieldset>
 
         <fieldset id="campos-abb" style="display:none" disabled class="border-0 p-0 m-0">

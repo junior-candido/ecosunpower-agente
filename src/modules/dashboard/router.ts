@@ -1530,13 +1530,19 @@ export function createDashboardRouter(
       credenciais = { appId, appSecret, email, password, dataCenter };
       if (companyId) credenciais.companyId = companyId;
     } else if (marca === 'nep') {
+      // Preferencial: email+senha (renova sozinho). Fallback: jwt direto.
+      const email = String(req.body?.nep_email ?? '').trim();
+      const password = String(req.body?.nep_password ?? '').trim();
       const jwt = String(req.body?.jwt ?? '').trim();
-      if (!jwt) {
+      if (email && password) {
+        credenciais = { email, password };
+      } else if (jwt) {
+        credenciais = { jwt };
+      } else {
         return res.status(400).send(renderImportarSitesPage({
-          errorMsg: 'JWT obrigatorio pra NEP. Siga as 4 instrucoes do form pra capturar.',
+          errorMsg: 'NEP precisa de e-mail + senha (renova sozinho) ou um JWT direto.',
         }));
       }
-      credenciais = { jwt };
     } else if (marca === 'abb') {
       // Campo password renomeado pra abb_password no form pra nao colidir com
       // o password do Deye quando o usuario alterna entre branches do select.
