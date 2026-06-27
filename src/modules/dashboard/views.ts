@@ -1482,17 +1482,17 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
         <div>
           <label for="marca" class="block text-sm font-semibold text-slate-700 mb-2">Marca do inversor</label>
           <select name="marca" id="marca" required
-                  onchange="['solaredge','deye','nep','abb'].forEach(function(m){var el=document.getElementById('campos-'+m);if(!el)return;var ativo=document.getElementById('marca').value===m;el.style.display=ativo?'block':'none';el.disabled=!ativo;});"
+                  onchange="['solaredge','deye','nep','abb','foxess'].forEach(function(m){var el=document.getElementById('campos-'+m);if(!el)return;var ativo=document.getElementById('marca').value===m;el.style.display=ativo?'block':'none';el.disabled=!ativo;});"
                   class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition">
             <option value="solaredge">SolarEdge</option>
             <option value="deye">Deye Cloud</option>
             <option value="nep">NEP (microinversores BDM)</option>
             <option value="abb">ABB / FIMER Aurora Vision</option>
+            <option value="foxess">FoxESS (micro Q1 / inversores)</option>
             <option value="sungrow" disabled>Sungrow (em breve)</option>
             <option value="hoymiles" disabled>Hoymiles (em breve)</option>
             <option value="goodwe" disabled>GoodWe (em breve)</option>
             <option value="huawei" disabled>Huawei (em breve)</option>
-            <option value="foxess" disabled>FoxESS (em breve)</option>
           </select>
         </div>
 
@@ -1622,6 +1622,32 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
           <div class="mt-3 px-4 py-3 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-xs">
             🔑 <strong>Renovação automática:</strong> diferente do NEP, o adapter ABB faz o login
             sozinho usando o e-mail e senha. Token interno renova a cada 50 minutos sem você fazer nada.
+          </div>
+        </fieldset>
+
+        <fieldset id="campos-foxess" style="display:none" disabled class="border-0 p-0 m-0">
+          <div>
+            <label for="foxess_api_key" class="block text-sm font-semibold text-slate-700 mb-2">API Key da conta FoxESS</label>
+            <input
+              id="foxess_api_key"
+              name="foxess_api_key"
+              type="text"
+              placeholder="cola aqui a API Key gerada no FoxESS Cloud"
+              class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition font-mono text-sm">
+          </div>
+          <div class="mt-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+            <strong>📋 Como pegar a API Key (1 minuto):</strong>
+            <ol class="list-decimal ml-5 mt-2 space-y-1">
+              <li>Acessa <a href="https://www.foxesscloud.com" target="_blank" rel="noopener" class="underline font-semibold">www.foxesscloud.com</a> (com o <strong>www.</strong>) e faz login</li>
+              <li>Canto superior direito → seu perfil → <strong>API Management</strong></li>
+              <li>Clica em <strong>Generate API Key</strong> e <strong>copia na hora</strong> (só aparece uma vez)</li>
+              <li>Cola aqui. A mesma chave lista todos os inversores da conta.</li>
+            </ol>
+          </div>
+          <div class="mt-3 px-4 py-3 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-xs">
+            🔑 <strong>Sem expiração / sem login:</strong> a API Key já é o acesso — o adapter usa
+            ela direto (assinatura por chamada). Limite de ~1440 chamadas/dia por inversor, de sobra
+            pro monitoramento diário.
           </div>
         </fieldset>
 

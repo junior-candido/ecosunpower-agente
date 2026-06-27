@@ -1549,6 +1549,16 @@ export function createDashboardRouter(
         }));
       }
       credenciais = { userId, password, apiKey };
+    } else if (marca === 'foxess') {
+      // Campo renomeado pra foxess_api_key pra nao colidir com o api_key do
+      // SolarEdge / apiKey do ABB ao alternar entre branches do select.
+      const apiKey = String(req.body?.foxess_api_key ?? '').trim();
+      if (!apiKey) {
+        return res.status(400).send(renderImportarSitesPage({
+          errorMsg: 'API Key obrigatoria pra FoxESS (gere no app FoxESS Cloud → API Management).',
+        }));
+      }
+      credenciais = { apiKey };
     } else {
       return res.status(400).send(renderImportarSitesPage({
         errorMsg: `Marca ${marca} ainda nao tem adapter implementado.`,
