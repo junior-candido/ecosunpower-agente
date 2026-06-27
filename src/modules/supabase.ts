@@ -1564,9 +1564,13 @@ export class SupabaseService {
     // Vincula um lead (novo ou já existente) ao sistema. Centraliza o passo 3 pra
     // reusar tanto no fluxo normal quanto no fallback de telefone duplicado.
     const vincular = async (leadId: string): Promise<{ ok: boolean; error?: string }> => {
+      // Vincular dono a uma usina órfã = ela veio do monitoramento, já opera =>
+      // vai direto pro pós-venda (etapa_obra='pos_venda'), saindo do kanban.
+      // Regra: usina nunca em dois lugares (ver pos-venda-queries / regra XOR).
+      const now = new Date().toISOString();
       const { error: vErr } = await this.client
         .from('sistemas_clientes')
-        .update({ lead_id: leadId, updated_at: new Date().toISOString() })
+        .update({ lead_id: leadId, etapa_obra: 'pos_venda', etapa_obra_updated_at: now, updated_at: now })
         .eq('id', input.sistema_id);
       return vErr ? { ok: false, error: vErr.message } : { ok: true };
     };
@@ -1674,10 +1678,13 @@ export class SupabaseService {
       .eq('id', input.lead_id)
       .single();
     if (lErr || !lead) return { ok: false, error: 'Cliente não encontrado' };
-    // vincula
+    // vincula. Vincular dono a uma usina órfã = ela já opera => vai direto pro
+    // pós-venda (etapa_obra='pos_venda'), saindo do kanban. Regra XOR: usina
+    // nunca em dois lugares (ver pos-venda-queries).
+    const now = new Date().toISOString();
     const { error: vErr } = await this.client
       .from('sistemas_clientes')
-      .update({ lead_id: input.lead_id, updated_at: new Date().toISOString() })
+      .update({ lead_id: input.lead_id, etapa_obra: 'pos_venda', etapa_obra_updated_at: now, updated_at: now })
       .eq('id', input.sistema_id);
     if (vErr) return { ok: false, error: vErr.message };
     return { ok: true };
