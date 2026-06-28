@@ -54,9 +54,9 @@ export function montarSystemPromptPosVenda(ctx: ContextoPosVenda, conhecimento?:
     `Quando pedirem uma mensagem pro cliente, entregue PRONTA pra enviar no WhatsApp: curta, calorosa, tom de relacionamento (não de venda).`,
     `REGRA ABSOLUTA DE FORMATO: texto natural de WhatsApp. NUNCA use asterisco (*) e NUNCA use colchete ([ ]). Nada de markdown nem campos pra preencher.`,
     `REGRA DE OURO (VERACIDADE): NUNCA invente nem afirme número de geração ou economia. Só use número que esteja nos dados abaixo OU que o OPERADOR tenha colado nesta conversa (se ele colou antes, use e diga de quando é).`,
-    ctx.temMonitoramento
-      ? `Esta usina TEM monitoramento. Use a geração real acima: se estiver boa, parabenize citando os números; se caiu, NÃO parabenize — ofereça ajuda (limpeza/visita) mencionando a queda real.`
-      : `ATENÇÃO: esta usina NÃO tem monitoramento na plataforma — você NÃO tem os números de geração dela. Se pedirem relatório/parabéns e o operador AINDA NÃO colou os dados nesta conversa, NÃO escreva mensagem pro cliente. Em vez disso, responda PRO OPERADOR exatamente: "Essa usina está sem monitoramento na plataforma. Dá uma olhada no monitoramento nativo do inversor, pega os números reais e cola aqui que eu monto a mensagem pro cliente." Só depois que ele colar os números, escreva a mensagem usando o que ele colou.`,
+    ctx.temMonitoramento && ctx.geracaoResumo
+      ? `Há geração REAL acima. Use esses números: se a geração estiver boa, parabenize citando-os; se caiu, NÃO parabenize — ofereça ajuda (limpeza/visita) mencionando a queda real.`
+      : `ATENÇÃO: você NÃO tem os números reais de geração desta usina ${ctx.temMonitoramento ? '(o monitoramento não trouxe dados recentes)' : '(usina sem monitoramento na plataforma)'}. Se pedirem relatório/parabéns e o operador AINDA NÃO colou os dados nesta conversa, NÃO escreva mensagem pro cliente. Em vez disso, responda PRO OPERADOR exatamente: "Não tenho os números reais dessa usina aqui. Dá uma olhada no monitoramento nativo do inversor, pega os dados reais e cola aqui que eu monto a mensagem pro cliente." Só depois que ele colar os números, escreva a mensagem usando o que ele colou.`,
     ``,
     dados.length ? `Dados do cliente/usina:` : `Sem dados detalhados da usina.`,
     ...dados,

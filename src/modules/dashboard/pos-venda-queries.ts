@@ -24,7 +24,7 @@ export interface PosVendaLinha {
 }
 
 // Usina sem integração de monitoramento: acompanhamento manual ou sem credencial.
-function semApiUsina(s: { acompanhamento?: string | null; api_credentials?: any }): boolean {
+export function semApiUsina(s: { acompanhamento?: string | null; api_credentials?: any }): boolean {
   if (s.acompanhamento === 'manual') return true;
   const cred = s.api_credentials;
   return !cred || (typeof cred === 'object' && Object.keys(cred).length === 0);

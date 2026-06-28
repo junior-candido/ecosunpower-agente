@@ -29,6 +29,11 @@ describe('montarSystemPromptPosVenda', () => {
     const p = montarSystemPromptPosVenda({ nome: 'João', temMonitoramento: true, geracaoResumo: 'Últimos 30 dias: 450 kWh' });
     expect(p).toContain('450 kWh');
   });
+  it('COM monitoramento mas SEM dado recente: orienta o operador (não parabeniza às cegas)', () => {
+    const p = montarSystemPromptPosVenda({ nome: 'João', temMonitoramento: true });
+    expect(p).toMatch(/monitoramento nativo/i);
+    expect(p).toMatch(/NÃO tem os números reais/i);
+  });
   it('inclui os dados do cliente quando existem', () => {
     const p = montarSystemPromptPosVenda({ nome: 'João', cidade: 'Brasília', potenciaKwp: 8, temMonitoramento: true });
     expect(p).toContain('João');

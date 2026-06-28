@@ -1359,11 +1359,10 @@ export function createDashboardRouter(
         .eq('lead_id', leadId).eq('ativo', true)
         .order('created_at', { ascending: true }).limit(1).maybeSingle();
 
-      // Tem monitoramento? (credencial de API presente e não em modo manual)
-      const cred = (sis as any)?.api_credentials;
-      const temMonitoramento = !!sis
-        && (sis as any).acompanhamento !== 'manual'
-        && !!cred && typeof cred === 'object' && Object.keys(cred).length > 0;
+      // Tem monitoramento? Reusa a fonte da verdade da lista de pós-venda (semApiUsina),
+      // pra não divergir do selo "sem API" da tela.
+      const { semApiUsina } = await import('./pos-venda-queries.js');
+      const temMonitoramento = !!sis && !semApiUsina(sis as any);
 
       // Geração REAL dos últimos 30 dias (só se tiver monitoramento) — pra Eva nunca inventar.
       let geracaoResumo: string | null = null;
