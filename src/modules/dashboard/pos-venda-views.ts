@@ -96,6 +96,25 @@ function renderLinha(l: PosVendaLinha): string {
       <button type="button" class="pv-chat-copy hidden text-xs text-emerald-300 hover:text-emerald-100 mt-1">Copiar</button>
       <button type="button" class="pv-chat-send-eva hidden text-xs bg-emerald-600 text-white rounded px-2 py-1 mt-1 ml-1 hover:bg-emerald-500">Enviar pela Eva</button>
     </div>
+    <button type="button" class="pv-notas-btn text-xs text-amber-200 hover:text-amber-100 mt-1 ml-2" data-lead-id="${escapeHtml(l.leadId)}">📓 Notas / Histórico</button>
+    <button type="button" class="pv-lembrete-btn text-xs text-cyan-200 hover:text-cyan-100 mt-1 ml-2" data-lead-id="${escapeHtml(l.leadId)}">➕ Lembrete</button>
+    <div class="pv-lembrete-form hidden mt-2 bg-[#0b0e1f] border border-[#1b2040] rounded-lg p-2" data-lead-id="${escapeHtml(l.leadId)}">
+      <input type="text" class="pv-lembrete-titulo w-full text-xs bg-[#11152e] text-slate-100 border border-[#1b2040] rounded p-1.5" placeholder="Ex: ligar pro cliente sobre a revisão" maxlength="200" />
+      <div class="flex items-center gap-2 mt-1">
+        <input type="date" class="pv-lembrete-data text-xs bg-[#11152e] text-slate-100 border border-[#1b2040] rounded p-1" />
+        <button type="button" class="pv-lembrete-salvar text-xs bg-cyan-600 text-white rounded px-2 py-1 hover:bg-cyan-500">Salvar</button>
+        <span class="pv-lembrete-status text-xs"></span>
+      </div>
+    </div>
+    <div class="pv-notas hidden mt-2 bg-[#0b0e1f] border border-amber-600/30 rounded-lg p-2" data-lead-id="${escapeHtml(l.leadId)}">
+      <textarea class="pv-nota-in w-full text-xs bg-[#11152e] text-slate-100 border border-[#1b2040] rounded p-1.5" rows="2" placeholder="Nota interna (não vai pro cliente). Ex: prefere ser contactado de manhã" maxlength="1000"></textarea>
+      <div class="flex items-center gap-2 mt-1">
+        <button type="button" class="pv-nota-salvar text-xs bg-amber-600 text-white rounded px-2 py-1 hover:bg-amber-500">Salvar nota</button>
+        <span class="pv-nota-status text-xs"></span>
+      </div>
+      <div class="text-[11px] text-slate-400 mt-2 mb-1">Histórico</div>
+      <div class="pv-historico text-xs text-slate-300">Carregando…</div>
+    </div>
   </div>`;
 }
 
@@ -281,7 +300,92 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser, age
     });
   });
 })();
-</script>`;
+</script>
+  <script>
+(function () {
+  function toggle(sel, leadId) { var el = document.querySelector(sel + '[data-lead-id="' + leadId + '"]'); if (el) el.classList.toggle('hidden'); return el; }
+  document.querySelectorAll('.pv-lembrete-btn').forEach(function (b) {
+    b.addEventListener('click', function () { toggle('.pv-lembrete-form', b.dataset.leadId); });
+  });
+  document.querySelectorAll('.pv-lembrete-salvar').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var form = b.closest('.pv-lembrete-form'); var leadId = form.dataset.leadId;
+      var titulo = (form.querySelector('.pv-lembrete-titulo').value || '').trim();
+      var data = form.querySelector('.pv-lembrete-data').value || '';
+      var status = form.querySelector('.pv-lembrete-status');
+      if (!titulo) { status.textContent = 'Escreva o lembrete.'; status.className = 'pv-lembrete-status text-xs text-rose-300'; return; }
+      b.disabled = true; status.textContent = 'Salvando…'; status.className = 'pv-lembrete-status text-xs text-slate-300';
+      fetch('/dashboard/pos-venda/' + leadId + '/lembrete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titulo: titulo, dueAt: data || null })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.ok) { status.textContent = '✅ Na agenda! Recarregue pra ver.'; status.className = 'pv-lembrete-status text-xs text-emerald-300'; }
+        else { status.textContent = d.erro || 'erro'; status.className = 'pv-lembrete-status text-xs text-rose-300'; b.disabled = false; }
+      }).catch(function () { status.textContent = 'Falha de conexão.'; b.disabled = false; });
+    });
+  });
+  document.querySelectorAll('.pv-notas-btn').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var painel = toggle('.pv-notas', b.dataset.leadId);
+      if (painel && !painel.classList.contains('hidden')) carregarHistorico(b.dataset.leadId, painel);
+    });
+  });
+  function carregarHistorico(leadId, painel) {
+    var alvo = painel.querySelector('.pv-historico');
+    fetch('/dashboard/pos-venda/' + leadId + '/historico').then(function (r) { return r.json(); }).then(function (d) {
+      var itens = (d && d.itens) || [];
+      if (!itens.length) { alvo.textContent = 'Sem histórico ainda.'; return; }
+      alvo.innerHTML = '';
+      itens.forEach(function (i) {
+        var row = document.createElement('div');
+        row.className = 'py-0.5 border-b border-[#1b2040]';
+        var data = new Date(i.created_at).toLocaleDateString('pt-BR');
+        var label = (i.titulo || '') + (i.descricao ? ' — ' + i.descricao : '');
+        var dt = document.createElement('span'); dt.className = 'text-slate-500'; dt.textContent = data;
+        row.appendChild(dt); row.appendChild(document.createTextNode(' · ' + label));
+        alvo.appendChild(row);
+      });
+    }).catch(function () { alvo.textContent = 'Falha ao carregar histórico.'; });
+  }
+  document.querySelectorAll('.pv-nota-salvar').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var painel = b.closest('.pv-notas'); var leadId = painel.dataset.leadId;
+      var texto = (painel.querySelector('.pv-nota-in').value || '').trim();
+      var status = painel.querySelector('.pv-nota-status');
+      if (!texto) { status.textContent = 'Escreva a nota.'; status.className = 'pv-nota-status text-xs text-rose-300'; return; }
+      b.disabled = true; status.textContent = 'Salvando…'; status.className = 'pv-nota-status text-xs text-slate-300';
+      fetch('/dashboard/pos-venda/' + leadId + '/nota', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto: texto })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.ok) { status.textContent = '✅ Salva!'; status.className = 'pv-nota-status text-xs text-emerald-300'; painel.querySelector('.pv-nota-in').value = ''; carregarHistorico(leadId, painel); }
+        else { status.textContent = d.erro || 'erro'; status.className = 'pv-nota-status text-xs text-rose-300'; }
+      }).catch(function () { status.textContent = 'Falha de conexão.'; })
+        .finally(function () { b.disabled = false; });
+    });
+  });
+  document.querySelectorAll('.pv-tarefa-ok').forEach(function (b) {
+    b.addEventListener('click', function () {
+      b.disabled = true;
+      fetch('/dashboard/pos-venda/tarefa/' + b.dataset.tarefaId + '/concluir', { method: 'POST' })
+        .then(function (r) { return r.json(); }).then(function (d) {
+          if (d.ok) { var row = b.closest('[data-tarefa-id]'); if (row) row.remove(); } else b.disabled = false;
+        }).catch(function () { b.disabled = false; });
+    });
+  });
+  document.querySelectorAll('.pv-tarefa-adiar').forEach(function (b) {
+    b.addEventListener('click', function () {
+      b.disabled = true;
+      fetch('/dashboard/pos-venda/tarefa/' + b.dataset.tarefaId + '/adiar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dias: Number(b.dataset.dias) || 1 })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.ok) { var row = b.closest('[data-tarefa-id]'); if (row) row.remove(); } else b.disabled = false;
+      }).catch(function () { b.disabled = false; });
+    });
+  });
+})();
+  </script>`;
 
   return renderLayout({ active: 'pos_venda', title: 'Pós-venda', dark: true, user, body, scripts });
 }

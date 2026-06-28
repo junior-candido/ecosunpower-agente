@@ -64,3 +64,11 @@ describe('agenda lateral', () => {
     expect(html).toContain('Antonio Carlos');
   });
 });
+
+describe('notas/histórico e lembrete no card', () => {
+  it('card tem botão de notas e de lembrete', () => {
+    const html = renderPosVendaPage([linha()], undefined);
+    expect(html).toMatch(/Notas/i);
+    expect(html).toMatch(/Lembrete/i);
+  });
+});
