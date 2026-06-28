@@ -30,7 +30,8 @@ export interface ContextoPosVenda {
   potenciaKwp?: number;
   marcaInversor?: string;
   dataInstalacao?: string;
-  saude?: string;
+  temMonitoramento: boolean;   // false = usina sem monitoramento na plataforma
+  geracaoResumo?: string;      // ex: "Últimos 30 dias: 450 kWh". Só quando há dados reais.
   jaTeveDepoimento?: boolean;
 }
 
@@ -44,17 +45,20 @@ export function montarSystemPromptPosVenda(ctx: ContextoPosVenda, conhecimento?:
     ctx.potenciaKwp ? `- Usina: ${ctx.potenciaKwp} kWp` : null,
     ctx.marcaInversor ? `- Inversor: ${ctx.marcaInversor}` : null,
     ctx.dataInstalacao ? `- Instalada em: ${ctx.dataInstalacao}` : null,
-    ctx.saude ? `- Saúde da usina: ${ctx.saude}` : null,
+    ctx.geracaoResumo ? `- Geração REAL (do monitoramento): ${ctx.geracaoResumo}` : null,
     ctx.jaTeveDepoimento != null ? `- Já deu depoimento: ${ctx.jaTeveDepoimento ? 'sim' : 'não'}` : null,
   ].filter((l): l is string => l !== null);
 
   const linhas = [
-    `Você é a Eva, consultora de pós-venda da EcoSunPower (energia solar), ajudando a equipe a cuidar de um cliente que JÁ tem usina instalada.`,
+    `Você é a Eva, consultora de pós-venda da EcoSunPower (energia solar), ajudando a EQUIPE (o operador) a cuidar de um cliente que JÁ tem usina instalada.`,
     `Quando pedirem uma mensagem pro cliente, entregue PRONTA pra enviar no WhatsApp: curta, calorosa, tom de relacionamento (não de venda).`,
-    `REGRA ABSOLUTA DE FORMATO: texto natural de WhatsApp. NUNCA use asterisco (*) e NUNCA use colchete ([ ]). Nada de markdown nem campos pra preencher — a mensagem sai exatamente como você escrever.`,
-    `NÃO invente números (geração, economia) que não estejam nos dados abaixo. Se faltar um dado, escreva a mensagem sem ele.`,
+    `REGRA ABSOLUTA DE FORMATO: texto natural de WhatsApp. NUNCA use asterisco (*) e NUNCA use colchete ([ ]). Nada de markdown nem campos pra preencher.`,
+    `REGRA DE OURO (VERACIDADE): NUNCA invente nem afirme número de geração ou economia. Só use número que esteja nos dados abaixo OU que o OPERADOR tenha colado nesta conversa (se ele colou antes, use e diga de quando é).`,
+    ctx.temMonitoramento
+      ? `Esta usina TEM monitoramento. Use a geração real acima: se estiver boa, parabenize citando os números; se caiu, NÃO parabenize — ofereça ajuda (limpeza/visita) mencionando a queda real.`
+      : `ATENÇÃO: esta usina NÃO tem monitoramento na plataforma — você NÃO tem os números de geração dela. Se pedirem relatório/parabéns e o operador AINDA NÃO colou os dados nesta conversa, NÃO escreva mensagem pro cliente. Em vez disso, responda PRO OPERADOR exatamente: "Essa usina está sem monitoramento na plataforma. Dá uma olhada no monitoramento nativo do inversor, pega os números reais e cola aqui que eu monto a mensagem pro cliente." Só depois que ele colar os números, escreva a mensagem usando o que ele colou.`,
     ``,
-    dados.length ? `Dados do cliente/usina:` : `Sem dados detalhados da usina — escreva de forma geral, sem inventar.`,
+    dados.length ? `Dados do cliente/usina:` : `Sem dados detalhados da usina.`,
     ...dados,
   ].filter((l): l is string => l !== null);
   const base = linhas.join('\n');
@@ -105,7 +109,7 @@ export async function responderCopilotoPosVenda(
 export function montarContextoPosVenda(l: {
   nome?: string; cidade?: string | null; potenciaKwp?: number | null;
   marcaInversor?: string | null; dataInstalacao?: string | null;
-  saude?: string | null; jaTeveDepoimento?: boolean;
+  temMonitoramento: boolean; geracaoResumo?: string | null; jaTeveDepoimento?: boolean;
 }): ContextoPosVenda {
   return {
     nome: l.nome || undefined,
@@ -113,7 +117,8 @@ export function montarContextoPosVenda(l: {
     potenciaKwp: l.potenciaKwp ?? undefined,
     marcaInversor: l.marcaInversor ?? undefined,
     dataInstalacao: l.dataInstalacao ?? undefined,
-    saude: l.saude ?? undefined,
+    temMonitoramento: l.temMonitoramento,
+    geracaoResumo: l.geracaoResumo ?? undefined,
     jaTeveDepoimento: l.jaTeveDepoimento,
   };
 }
