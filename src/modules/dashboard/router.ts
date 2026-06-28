@@ -1604,7 +1604,12 @@ export function createDashboardRouter(
     const titulo = String(req.body?.titulo ?? '').trim().slice(0, 200);
     if (!titulo) return res.status(400).json({ erro: 'Título vazio.' });
     const dueRaw = req.body?.dueAt ? String(req.body.dueAt) : null;
-    const dueAt = dueRaw ? new Date(dueRaw + (dueRaw.length === 10 ? 'T12:00:00Z' : '')).toISOString() : null;
+    let dueAt: string | null = null;
+    if (dueRaw) {
+      const d = new Date(dueRaw + (dueRaw.length === 10 ? 'T12:00:00Z' : ''));
+      if (Number.isNaN(d.getTime())) return res.status(400).json({ erro: 'Data inválida.' });
+      dueAt = d.toISOString();
+    }
     try {
       const companyId = req.dashUser!.companyId;
       const { data: lead } = await supabase.from('leads').select('id')
