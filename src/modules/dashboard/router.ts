@@ -1349,11 +1349,15 @@ export function createDashboardRouter(
     const pergunta = String(req.body?.pergunta ?? '').trim();
     if (!pergunta) return res.status(400).json({ erro: 'Pergunta vazia.' });
     try {
-      const { data: lead } = await supabase.from('leads').select('name, city').eq('id', leadId).maybeSingle();
+      // Filtra por company (igual /pos-venda/:leadId/acao): não ler cliente de outra empresa.
+      const { data: lead } = await supabase.from('leads').select('name, city')
+        .eq('id', leadId).eq('company_id', req.dashUser!.companyId).maybeSingle();
       if (!lead) return res.status(404).json({ erro: 'Cliente não encontrado.' });
+      // order antes do limit: cliente com várias usinas (ex: Superbom) -> pega a 1ª de forma determinística.
       const { data: sis } = await supabase.from('sistemas_clientes')
         .select('potencia_kwp, marca_inversor, data_instalacao')
-        .eq('lead_id', leadId).eq('ativo', true).limit(1).maybeSingle();
+        .eq('lead_id', leadId).eq('ativo', true)
+        .order('created_at', { ascending: true }).limit(1).maybeSingle();
 
       const apiKey = process.env.ANTHROPIC_API_KEY;
       if (!apiKey) return res.json({ erro: 'Chave ANTHROPIC_API_KEY não configurada no .env.' });

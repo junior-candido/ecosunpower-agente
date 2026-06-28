@@ -64,6 +64,20 @@ export function montarSystemPromptPosVenda(ctx: ContextoPosVenda, conhecimento?:
   return base;
 }
 
+/**
+ * Rede de segurança da regra "mensagem limpa": tira asterisco (negrito markdown)
+ * e colchete (placeholders tipo [nome]), mantendo o conteúdo de dentro. Garante
+ * o texto natural de WhatsApp no código, não só no prompt. PURA.
+ */
+export function limparMensagem(texto: string): string {
+  return texto
+    .replace(/\*+/g, '')               // remove asteriscos
+    .replace(/\[([^\]]*)\]/g, '$1')    // [algo] -> algo
+    .replace(/[ \t]{2,}/g, ' ')        // colapsa espaços que sobraram
+    .replace(/ +\n/g, '\n')            // tira espaço antes de quebra de linha
+    .trim();
+}
+
 /** Conversa com a IA: contexto (system) + histórico + pergunta. Haiku 4.5. */
 export async function responderCopilotoPosVenda(
   anthropic: Anthropic,
@@ -80,10 +94,11 @@ export async function responderCopilotoPosVenda(
     system,
     messages: messages as Anthropic.MessageParam[],
   });
-  return resp.content
+  const texto = resp.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text)
     .join('');
+  return limparMensagem(texto);
 }
 
 /** Mapeia os campos do PosVendaLinha (ou equivalente) pro contexto, null->undefined. */

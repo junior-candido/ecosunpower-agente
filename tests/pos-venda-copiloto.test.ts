@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { montarSystemPromptPosVenda, montarContextoPosVenda } from '../src/modules/dashboard/pos-venda-copiloto.js';
+import { montarSystemPromptPosVenda, montarContextoPosVenda, limparMensagem } from '../src/modules/dashboard/pos-venda-copiloto.js';
+
+describe('limparMensagem (rede de segurança: sem asterisco/colchete)', () => {
+  it('remove asteriscos e colchetes mantendo o conteúdo', () => {
+    expect(limparMensagem('Oi *João*, tá [tudo bem]?')).toBe('Oi João, tá tudo bem?');
+  });
+  it('não estraga texto já limpo', () => {
+    expect(limparMensagem('Oi João, tudo certo com sua usina?')).toBe('Oi João, tudo certo com sua usina?');
+  });
+});
 
 describe('montarSystemPromptPosVenda', () => {
   it('proíbe asterisco e colchete (mensagem limpa)', () => {
