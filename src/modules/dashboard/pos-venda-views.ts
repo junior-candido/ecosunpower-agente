@@ -185,10 +185,12 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser, age
         var leadId = btn.dataset.leadId;
         var chat = document.querySelector('.pv-chat[data-lead-id="' + leadId + '"]');
         if (!chat) return;
-        chat.classList.remove('hidden');
         var inp = chat.querySelector('.pv-chat-in');
+        var send = chat.querySelector('.pv-chat-send');
+        if (!inp || !send) return;
+        chat.classList.remove('hidden');
         inp.value = btn.dataset.pedido || '';
-        chat.querySelector('.pv-chat-send').click();
+        send.click();
       });
     });
     document.querySelectorAll('.pv-chat').forEach(function (box) {

@@ -13,6 +13,7 @@
 //   GET  /manutencao - lembretes pendentes
 
 import express, { Router, type Request, type Response } from 'express';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -26,7 +27,6 @@ function escapeHtmlSimple(s: string): string {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SupabaseService } from '../supabase.js';
 import { empresa } from '../empresa-config.js';
 import type { MonitoringService } from '../monitoring/service.js';
@@ -92,13 +92,13 @@ import { claimLead, podeVerLead, listLeads, leadsParaKanban } from './leads-quer
 import { ORDEM_ETAPAS } from './pipeline.js';
 import { ETAPAS_USINA } from '../usina-etapas.js';
 import { criarTarefa, concluirTarefa, adiarTarefa, cancelarTarefasPendentesDoLead } from './tarefas.js';
-import { registrarAtividade } from './atividades.js';
+import { registrarAtividade, listarTimeline } from './atividades.js';
 import { audit } from './audit.js';
 import { can } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
 import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } from './blog-views.js';
-import { listarClientesPosVenda } from './pos-venda-queries.js';
+import { listarClientesPosVenda, listarAgendaPosVenda } from './pos-venda-queries.js';
 import { renderPosVendaPage } from './pos-venda-views.js';
 import { objetivoManual, fallbackMensagem } from './pos-venda-mensagens.js';
 import { registrarAbordagemManual } from '../monitoring/abordagem/abordagens-repo.js';
@@ -1343,7 +1343,6 @@ export function createDashboardRouter(
   // automático) mandam via wa.me e gravam na timeline + abordagem.
   router.get('/pos-venda', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     try {
-      const { listarAgendaPosVenda } = await import('./pos-venda-queries.js');
       const [linhas, agenda] = await Promise.all([
         listarClientesPosVenda(supabase, req.dashUser!.companyId),
         listarAgendaPosVenda(supabase, req.dashUser!.companyId),
@@ -1688,7 +1687,6 @@ export function createDashboardRouter(
       const { data: lead } = await supabase.from('leads').select('id')
         .eq('id', leadId).eq('company_id', companyId).maybeSingle();
       if (!lead) return res.status(404).json({ erro: 'Cliente não encontrado.' });
-      const { listarTimeline } = await import('./atividades.js');
       const itens = await listarTimeline(supabase, leadId, 50);
       res.json({ itens });
     } catch (err) {
