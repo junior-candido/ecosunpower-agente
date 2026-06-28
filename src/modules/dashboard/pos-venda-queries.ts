@@ -6,6 +6,7 @@ import {
   saudeUsina, elegivelUpgrade, proximaAcaoPosVenda, ordenarPorAtencao,
   type Saude, type ProximaAcao,
 } from './pos-venda-saude.js';
+import { agruparAgenda, type AgendaAgrupada, type TarefaAgenda } from './pos-venda-agenda.js';
 
 export interface PosVendaLinha {
   leadId: string;
@@ -19,6 +20,7 @@ export interface PosVendaLinha {
   saude: Saude;
   ultimoContatoEm: string | null;
   jaTeveDepoimento: boolean;
+  elegivelUpgrade: boolean;
   semApi: boolean;
   proximaAcao: ProximaAcao;
 }
@@ -115,6 +117,7 @@ export async function listarClientesPosVenda(client: SupabaseClient, companyId: 
       potenciaKwp: potencia, marcaInversor: s.marca_inversor ?? null,
       dataInstalacao: s.data_instalacao ?? null,
       saude, ultimoContatoEm: contato, jaTeveDepoimento: jaTeve,
+      elegivelUpgrade: elegivel,
       semApi: semApiUsina(s),
       proximaAcao: proximaAcaoPosVenda(
         { saude, dataInstalacao: s.data_instalacao, ultimoContatoEm: contato, jaTeveDepoimento: jaTeve, elegivelUpgrade: elegivel },
@@ -123,4 +126,31 @@ export async function listarClientesPosVenda(client: SupabaseClient, companyId: 
     });
   }
   return ordenarPorAtencao(linhas);
+}
+
+// Tarefas pendentes (lembretes) dos clientes que estão no pós-venda, agrupadas
+// pra agenda lateral. Reusa lead_tarefas. Multi-tenant: só leads da company.
+export async function listarAgendaPosVenda(client: SupabaseClient, companyId: string): Promise<AgendaAgrupada> {
+  // 1) leads no pós-venda (mesma regra dura da lista): usina ativa em etapa_obra='pos_venda'
+  const { data: sistemas } = await client.from('sistemas_clientes')
+    .select('lead_id').eq('ativo', true).not('lead_id', 'is', null).eq('etapa_obra', 'pos_venda');
+  const leadIds = [...new Set((sistemas ?? []).map((s: any) => s.lead_id))];
+  if (leadIds.length === 0) return { atrasados: [], hoje: [], semana: [] };
+
+  // 2) nomes (e filtro de company aqui)
+  const { data: leadsData } = await client.from('leads')
+    .select('id, name').in('id', leadIds).eq('company_id', companyId);
+  const nomes = new Map((leadsData ?? []).map((l: any) => [l.id, l.name as string | null]));
+  const idsDaCompany = [...nomes.keys()];
+  if (idsDaCompany.length === 0) return { atrasados: [], hoje: [], semana: [] };
+
+  // 3) tarefas pendentes desses leads
+  const { data: tarefasData } = await client.from('lead_tarefas')
+    .select('id, lead_id, titulo, due_at')
+    .in('lead_id', idsDaCompany).eq('status', 'pendente');
+  const tarefas: TarefaAgenda[] = (tarefasData ?? []).map((t: any) => ({
+    id: t.id, leadId: t.lead_id, titulo: t.titulo,
+    nomeCliente: nomes.get(t.lead_id) ?? 'Cliente', dueAt: t.due_at ?? null,
+  }));
+  return agruparAgenda(tarefas, new Date());
 }

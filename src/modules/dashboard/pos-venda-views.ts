@@ -5,14 +5,23 @@ import { renderLayout, escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { PosVendaLinha } from './pos-venda-queries.js';
 import type { Saude } from './pos-venda-saude.js';
+import type { AgendaAgrupada, TarefaAgenda } from './pos-venda-agenda.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
 import { seloSemApi } from './manutencao-views.js';
 import { TEXTOS_PREVIA } from './pos-venda-envio.js';
+import { temperatura } from './pos-venda-termometro.js';
+import { sugestaoProativa } from './pos-venda-sugestao.js';
 
 const SEMAFORO: Record<Saude, { dot: string; txt: string }> = {
   verde: { dot: '🟢', txt: 'Gerando ok' },
   amarelo: { dot: '🟡', txt: 'Atenção' },
   vermelho: { dot: '🔴', txt: 'Crítico' },
+};
+
+const TERMOMETRO: Record<'quente' | 'morno' | 'frio', { ico: string; txt: string }> = {
+  quente: { ico: '🔥', txt: 'Relacionamento quente' },
+  morno: { ico: '🌤️', txt: 'Relacionamento morno' },
+  frio: { ico: '🧊', txt: 'Relacionamento frio — atenção' },
 };
 
 // Botões disponíveis por linha. O da próxima ação vem destacado (ring).
@@ -39,6 +48,12 @@ function borda(saude: Saude): string {
 }
 
 function renderLinha(l: PosVendaLinha): string {
+  const agora = new Date();
+  const temp = TERMOMETRO[temperatura(l, agora)];
+  const sug = sugestaoProativa(l, agora);
+  const chip = sug
+    ? `<button type="button" class="pv-sugestao-btn block mt-1 text-left text-xs text-indigo-300 hover:text-indigo-100" data-lead-id="${escapeHtml(l.leadId)}" data-pedido="${escapeHtml(sug.pedidoEva)}">${escapeHtml(sug.texto)}</button>`
+    : '';
   const s = SEMAFORO[l.saude];
   const urgente = l.saude === 'vermelho' ? ' pv-urgent' : '';
   const nome = escapeHtml(l.nome);
@@ -54,6 +69,7 @@ function renderLinha(l: PosVendaLinha): string {
   <div class="pv-card bg-[#0b0e1f] border border-[#1b2040] border-l-4 ${borda(l.saude)} rounded-xl p-3 mb-2${urgente}" data-lead-id="${escapeHtml(l.leadId)}">
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
       <span class="text-lg" title="${s.txt}">${s.dot}</span>
+      <span class="text-lg" title="${temp.txt}">${temp.ico}</span>
       <a href="/dashboard/leads/${escapeHtml(l.leadId)}" class="font-semibold text-cyan-200 hover:underline">${nome}</a>
       ${seloSemApi(l.semApi)}
       <span class="text-xs text-slate-400">${phone}</span>
@@ -61,6 +77,7 @@ function renderLinha(l: PosVendaLinha): string {
       <span class="ml-auto text-xs text-slate-400">❤️ ${tempo(l.ultimoContatoEm)}</span>
     </div>
     <div class="mt-1 text-xs text-amber-300">${escapeHtml(l.proximaAcao.label)}</div>
+    ${chip}
     <div class="mt-2 flex flex-wrap gap-1.5">${botoes}</div>
     <div class="pv-previa hidden mt-2 bg-[#0b0e1f] border border-amber-600/40 rounded-lg p-2" data-lead-id="${escapeHtml(l.leadId)}">
       <div class="text-[11px] text-amber-200 mb-1">Prévia — vai enviar isto pela Eva:</div>
@@ -79,13 +96,66 @@ function renderLinha(l: PosVendaLinha): string {
       <button type="button" class="pv-chat-copy hidden text-xs text-emerald-300 hover:text-emerald-100 mt-1">Copiar</button>
       <button type="button" class="pv-chat-send-eva hidden text-xs bg-emerald-600 text-white rounded px-2 py-1 mt-1 ml-1 hover:bg-emerald-500">Enviar pela Eva</button>
     </div>
+    <button type="button" class="pv-notas-btn text-xs text-amber-200 hover:text-amber-100 mt-1 ml-2" data-lead-id="${escapeHtml(l.leadId)}">📓 Notas / Histórico</button>
+    <button type="button" class="pv-lembrete-btn text-xs text-cyan-200 hover:text-cyan-100 mt-1 ml-2" data-lead-id="${escapeHtml(l.leadId)}">➕ Lembrete</button>
+    <div class="pv-lembrete-form hidden mt-2 bg-[#0b0e1f] border border-[#1b2040] rounded-lg p-2" data-lead-id="${escapeHtml(l.leadId)}">
+      <input type="text" class="pv-lembrete-titulo w-full text-xs bg-[#11152e] text-slate-100 border border-[#1b2040] rounded p-1.5" placeholder="Ex: ligar pro cliente sobre a revisão" maxlength="200" />
+      <div class="flex items-center gap-2 mt-1">
+        <input type="date" class="pv-lembrete-data text-xs bg-[#11152e] text-slate-100 border border-[#1b2040] rounded p-1" />
+        <button type="button" class="pv-lembrete-salvar text-xs bg-cyan-600 text-white rounded px-2 py-1 hover:bg-cyan-500">Salvar</button>
+        <span class="pv-lembrete-status text-xs"></span>
+      </div>
+    </div>
+    <div class="pv-notas hidden mt-2 bg-[#0b0e1f] border border-amber-600/30 rounded-lg p-2" data-lead-id="${escapeHtml(l.leadId)}">
+      <textarea class="pv-nota-in w-full text-xs bg-[#11152e] text-slate-100 border border-[#1b2040] rounded p-1.5" rows="2" placeholder="Nota interna (não vai pro cliente). Ex: prefere ser contactado de manhã" maxlength="1000"></textarea>
+      <div class="flex items-center gap-2 mt-1">
+        <button type="button" class="pv-nota-salvar text-xs bg-amber-600 text-white rounded px-2 py-1 hover:bg-amber-500">Salvar nota</button>
+        <span class="pv-nota-status text-xs"></span>
+      </div>
+      <div class="text-[11px] text-slate-400 mt-2 mb-1">Histórico</div>
+      <div class="pv-historico text-xs text-slate-300">Carregando…</div>
+    </div>
   </div>`;
 }
 
-export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser): string {
+function renderTarefaAgenda(t: TarefaAgenda): string {
+  const data = t.dueAt ? new Date(t.dueAt).toLocaleDateString('pt-BR') : 'sem data';
+  return `
+  <div class="flex items-start gap-2 text-xs py-1 border-b border-[#1b2040]" data-tarefa-id="${escapeHtml(t.id)}">
+    <div class="flex-1">
+      <a href="/dashboard/leads/${escapeHtml(t.leadId)}" class="text-cyan-200 hover:underline">${escapeHtml(t.nomeCliente)}</a>
+      <div class="text-slate-300">${escapeHtml(t.titulo)} <span class="text-slate-500">· ${escapeHtml(data)}</span></div>
+    </div>
+    <button type="button" class="pv-tarefa-ok text-emerald-300 hover:text-emerald-100" data-tarefa-id="${escapeHtml(t.id)}" title="Concluir">✓</button>
+    <button type="button" class="pv-tarefa-adiar text-slate-400 hover:text-slate-200" data-tarefa-id="${escapeHtml(t.id)}" data-dias="1" title="Adiar 1 dia">+1d</button>
+    <button type="button" class="pv-tarefa-adiar text-slate-400 hover:text-slate-200" data-tarefa-id="${escapeHtml(t.id)}" data-dias="7" title="Adiar 7 dias">+7d</button>
+  </div>`;
+}
+
+function grupoAgenda(titulo: string, cor: string, itens: TarefaAgenda[]): string {
+  if (itens.length === 0) return '';
+  return `<div class="mb-3"><div class="text-xs font-semibold ${cor} mb-1">${titulo} (${itens.length})</div>${itens.map(renderTarefaAgenda).join('')}</div>`;
+}
+
+function renderAgenda(agenda: AgendaAgrupada): string {
+  const vazia = !agenda.atrasados.length && !agenda.hoje.length && !agenda.semana.length;
+  const corpo = vazia
+    ? `<div class="text-xs text-slate-500 py-4">Nenhum lembrete por aqui. Use ➕ Lembrete num cliente.</div>`
+    : grupoAgenda('🔴 Atrasados', 'text-rose-300', agenda.atrasados)
+      + grupoAgenda('🟡 Hoje', 'text-amber-300', agenda.hoje)
+      + grupoAgenda('🔵 Próximos 7 dias', 'text-cyan-300', agenda.semana);
+  return `
+  <aside class="pv-agenda bg-[#0b0e1f] border border-[#1b2040] rounded-xl p-3 lg:sticky lg:top-4 lg:w-80 lg:shrink-0">
+    <h2 class="text-sm font-bold text-cyan-300 mb-2">🗓️ Agenda</h2>
+    ${corpo}
+  </aside>`;
+}
+
+export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser, agenda?: AgendaAgrupada): string {
   const lista = linhas.length
     ? linhas.map(renderLinha).join('')
     : `<div class="text-slate-400 text-center py-16">Nenhum cliente com usina ainda. Quando houver usinas vinculadas, eles aparecem aqui.</div>`;
+  const agendaHtml = renderAgenda(agenda ?? { atrasados: [], hoje: [], semana: [] });
 
   const body = `
   <style>
@@ -96,7 +166,10 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser): st
   <div>
     <h1 class="text-xl font-bold text-cyan-300 mb-1">❤️ Pós-venda / Relacionamento</h1>
     <p class="text-xs text-slate-400 mb-4">Os que <b class="text-rose-400">pulsam em vermelho</b> precisam de atenção. O botão destacado é a próxima ação sugerida.</p>
-    ${lista}
+    <div class="flex flex-col lg:flex-row gap-4 items-start">
+      <div class="flex-1 min-w-0 order-2 lg:order-1">${lista}</div>
+      <div class="w-full lg:w-auto order-1 lg:order-2">${agendaHtml}</div>
+    </div>
   </div>`;
 
   const scripts = `<script>
@@ -105,6 +178,19 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser): st
       btn.addEventListener('click', function () {
         var box = document.querySelector('.pv-chat[data-lead-id="' + btn.dataset.leadId + '"]');
         if (box) box.classList.toggle('hidden');
+      });
+    });
+    document.querySelectorAll('.pv-sugestao-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var leadId = btn.dataset.leadId;
+        var chat = document.querySelector('.pv-chat[data-lead-id="' + leadId + '"]');
+        if (!chat) return;
+        var inp = chat.querySelector('.pv-chat-in');
+        var send = chat.querySelector('.pv-chat-send');
+        if (!inp || !send) return;
+        chat.classList.remove('hidden');
+        inp.value = btn.dataset.pedido || '';
+        send.click();
       });
     });
     document.querySelectorAll('.pv-chat').forEach(function (box) {
@@ -216,7 +302,92 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser): st
     });
   });
 })();
-</script>`;
+</script>
+  <script>
+(function () {
+  function toggle(sel, leadId) { var el = document.querySelector(sel + '[data-lead-id="' + leadId + '"]'); if (el) el.classList.toggle('hidden'); return el; }
+  document.querySelectorAll('.pv-lembrete-btn').forEach(function (b) {
+    b.addEventListener('click', function () { toggle('.pv-lembrete-form', b.dataset.leadId); });
+  });
+  document.querySelectorAll('.pv-lembrete-salvar').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var form = b.closest('.pv-lembrete-form'); var leadId = form.dataset.leadId;
+      var titulo = (form.querySelector('.pv-lembrete-titulo').value || '').trim();
+      var data = form.querySelector('.pv-lembrete-data').value || '';
+      var status = form.querySelector('.pv-lembrete-status');
+      if (!titulo) { status.textContent = 'Escreva o lembrete.'; status.className = 'pv-lembrete-status text-xs text-rose-300'; return; }
+      b.disabled = true; status.textContent = 'Salvando…'; status.className = 'pv-lembrete-status text-xs text-slate-300';
+      fetch('/dashboard/pos-venda/' + leadId + '/lembrete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titulo: titulo, dueAt: data || null })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.ok) { status.textContent = '✅ Na agenda! Recarregue pra ver.'; status.className = 'pv-lembrete-status text-xs text-emerald-300'; }
+        else { status.textContent = d.erro || 'erro'; status.className = 'pv-lembrete-status text-xs text-rose-300'; b.disabled = false; }
+      }).catch(function () { status.textContent = 'Falha de conexão.'; b.disabled = false; });
+    });
+  });
+  document.querySelectorAll('.pv-notas-btn').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var painel = toggle('.pv-notas', b.dataset.leadId);
+      if (painel && !painel.classList.contains('hidden')) carregarHistorico(b.dataset.leadId, painel);
+    });
+  });
+  function carregarHistorico(leadId, painel) {
+    var alvo = painel.querySelector('.pv-historico');
+    fetch('/dashboard/pos-venda/' + leadId + '/historico').then(function (r) { return r.json(); }).then(function (d) {
+      var itens = (d && d.itens) || [];
+      if (!itens.length) { alvo.textContent = 'Sem histórico ainda.'; return; }
+      alvo.innerHTML = '';
+      itens.forEach(function (i) {
+        var row = document.createElement('div');
+        row.className = 'py-0.5 border-b border-[#1b2040]';
+        var data = new Date(i.created_at).toLocaleDateString('pt-BR');
+        var label = (i.titulo || '') + (i.descricao ? ' — ' + i.descricao : '');
+        var dt = document.createElement('span'); dt.className = 'text-slate-500'; dt.textContent = data;
+        row.appendChild(dt); row.appendChild(document.createTextNode(' · ' + label));
+        alvo.appendChild(row);
+      });
+    }).catch(function () { alvo.textContent = 'Falha ao carregar histórico.'; });
+  }
+  document.querySelectorAll('.pv-nota-salvar').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var painel = b.closest('.pv-notas'); var leadId = painel.dataset.leadId;
+      var texto = (painel.querySelector('.pv-nota-in').value || '').trim();
+      var status = painel.querySelector('.pv-nota-status');
+      if (!texto) { status.textContent = 'Escreva a nota.'; status.className = 'pv-nota-status text-xs text-rose-300'; return; }
+      b.disabled = true; status.textContent = 'Salvando…'; status.className = 'pv-nota-status text-xs text-slate-300';
+      fetch('/dashboard/pos-venda/' + leadId + '/nota', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto: texto })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.ok) { status.textContent = '✅ Salva!'; status.className = 'pv-nota-status text-xs text-emerald-300'; painel.querySelector('.pv-nota-in').value = ''; carregarHistorico(leadId, painel); }
+        else { status.textContent = d.erro || 'erro'; status.className = 'pv-nota-status text-xs text-rose-300'; }
+      }).catch(function () { status.textContent = 'Falha de conexão.'; })
+        .finally(function () { b.disabled = false; });
+    });
+  });
+  document.querySelectorAll('.pv-tarefa-ok').forEach(function (b) {
+    b.addEventListener('click', function () {
+      b.disabled = true;
+      fetch('/dashboard/pos-venda/tarefa/' + b.dataset.tarefaId + '/concluir', { method: 'POST' })
+        .then(function (r) { return r.json(); }).then(function (d) {
+          if (d.ok) { var row = b.closest('[data-tarefa-id]'); if (row) row.remove(); } else b.disabled = false;
+        }).catch(function () { b.disabled = false; });
+    });
+  });
+  document.querySelectorAll('.pv-tarefa-adiar').forEach(function (b) {
+    b.addEventListener('click', function () {
+      b.disabled = true;
+      fetch('/dashboard/pos-venda/tarefa/' + b.dataset.tarefaId + '/adiar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dias: Number(b.dataset.dias) || 1 })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.ok) { var row = b.closest('[data-tarefa-id]'); if (row) row.remove(); } else b.disabled = false;
+      }).catch(function () { b.disabled = false; });
+    });
+  });
+})();
+  </script>`;
 
   return renderLayout({ active: 'pos_venda', title: 'Pós-venda', dark: true, user, body, scripts });
 }
