@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapaBotaoTemplate, componenteNome, normalizarTelefone } from '../src/modules/dashboard/pos-venda-envio.js';
+import { mapaBotaoTemplate, componenteNome, normalizarTelefone, previaTemplate } from '../src/modules/dashboard/pos-venda-envio.js';
 
 describe('mapaBotaoTemplate', () => {
   it('mapeia cada botão pro template aprovado', () => {
@@ -37,5 +37,21 @@ describe('normalizarTelefone', () => {
   });
   it('vazio vira string vazia', () => {
     expect(normalizarTelefone('')).toBe('');
+  });
+});
+
+describe('previaTemplate', () => {
+  it('substitui {nome} pelo nome do cliente', () => {
+    expect(previaTemplate('limpeza', 'João')).toContain('Oi João,');
+  });
+  it('nome vazio vira "cliente"', () => {
+    expect(previaTemplate('limpeza', '')).toContain('Oi cliente,');
+  });
+  it('parabens e relatorio usam o texto de acompanhamento de geração', () => {
+    expect(previaTemplate('parabens', 'Ana')).toContain('geração');
+    expect(previaTemplate('relatorio', 'Ana')).toContain('geração');
+  });
+  it('tipo sem texto (contato) retorna null', () => {
+    expect(previaTemplate('contato', 'João')).toBeNull();
   });
 });

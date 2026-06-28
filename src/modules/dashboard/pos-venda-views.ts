@@ -7,6 +7,7 @@ import type { PosVendaLinha } from './pos-venda-queries.js';
 import type { Saude } from './pos-venda-saude.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
 import { seloSemApi } from './manutencao-views.js';
+import { TEXTOS_PREVIA } from './pos-venda-envio.js';
 
 const SEMAFORO: Record<Saude, { dot: string; txt: string }> = {
   verde: { dot: '🟢', txt: 'Gerando ok' },
@@ -47,7 +48,7 @@ function renderLinha(l: PosVendaLinha): string {
   const botoes = BOTOES.map((b) =>
     b.tipo === 'contato'
       ? `<a href="/dashboard/leads/${escapeHtml(l.leadId)}" class="px-2 py-1 rounded bg-[#11152e] text-cyan-200 text-xs hover:bg-[#1b2040]">${b.label}</a>`
-      : `<button type="button" class="pv-tpl-btn px-2 py-1 rounded bg-[#11152e] text-cyan-200 text-xs hover:bg-[#1b2040]" data-lead-id="${escapeHtml(l.leadId)}" data-tipo="${escapeHtml(b.tipo)}">${b.label}</button>`,
+      : `<button type="button" class="pv-tpl-btn px-2 py-1 rounded bg-[#11152e] text-cyan-200 text-xs hover:bg-[#1b2040]" data-lead-id="${escapeHtml(l.leadId)}" data-tipo="${escapeHtml(b.tipo)}" data-nome="${escapeHtml(l.nome)}">${b.label}</button>`,
   ).join('');
   return `
   <div class="pv-card bg-[#0b0e1f] border border-[#1b2040] border-l-4 ${borda(l.saude)} rounded-xl p-3 mb-2${urgente}" data-lead-id="${escapeHtml(l.leadId)}">
@@ -61,6 +62,15 @@ function renderLinha(l: PosVendaLinha): string {
     </div>
     <div class="mt-1 text-xs text-amber-300">${escapeHtml(l.proximaAcao.label)}</div>
     <div class="mt-2 flex flex-wrap gap-1.5">${botoes}</div>
+    <div class="pv-previa hidden mt-2 bg-[#0b0e1f] border border-amber-600/40 rounded-lg p-2" data-lead-id="${escapeHtml(l.leadId)}">
+      <div class="text-[11px] text-amber-200 mb-1">Prévia — vai enviar isto pela Eva:</div>
+      <div class="pv-previa-texto text-xs text-slate-100 whitespace-pre-wrap"></div>
+      <div class="mt-2 flex items-center gap-2">
+        <button type="button" class="pv-previa-enviar text-xs bg-emerald-600 text-white rounded px-2 py-1 hover:bg-emerald-500">Enviar pela Eva</button>
+        <button type="button" class="pv-previa-cancelar text-xs text-slate-300 hover:text-white">Cancelar</button>
+        <span class="pv-previa-status text-xs ml-1"></span>
+      </div>
+    </div>
     <button type="button" class="pv-copiloto-btn text-xs text-indigo-300 hover:text-indigo-100 mt-1" data-lead-id="${escapeHtml(l.leadId)}">💬 Eva (copiloto)</button>
     <div class="pv-chat hidden mt-2 bg-[#0b0e1f] border border-[#1b2040] rounded-lg p-2" data-lead-id="${escapeHtml(l.leadId)}">
       <textarea class="pv-chat-in w-full text-xs bg-[#11152e] text-slate-100 border border-[#1b2040] rounded p-1.5" rows="2" placeholder="Ex: manda um lembrete da revisão"></textarea>
@@ -130,17 +140,46 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser): st
   </script>
   <script>
 (function () {
+  var PV_TEXTOS = ${JSON.stringify(TEXTOS_PREVIA)};
+  // Botão de ação -> mostra PRÉVIA (não envia direto)
   document.querySelectorAll('.pv-tpl-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      if (!confirm('Enviar "' + btn.textContent.trim() + '" pra este cliente pela Eva?')) return;
-      btn.disabled = true;
-      fetch('/dashboard/pos-venda/' + btn.dataset.leadId + '/enviar-template', {
+      var previa = document.querySelector('.pv-previa[data-lead-id="' + btn.dataset.leadId + '"]');
+      if (!previa) return;
+      var nome = btn.dataset.nome || 'cliente';
+      var texto = (PV_TEXTOS[btn.dataset.tipo] || '').replace(/\{nome\}/g, nome);
+      previa.querySelector('.pv-previa-texto').textContent = texto;
+      previa.dataset.tipo = btn.dataset.tipo;
+      previa.querySelector('.pv-previa-status').textContent = '';
+      previa.querySelector('.pv-previa-enviar').style.display = '';
+      previa.classList.remove('hidden');
+    });
+  });
+  document.querySelectorAll('.pv-previa-cancelar').forEach(function (b) {
+    b.addEventListener('click', function () { b.closest('.pv-previa').classList.add('hidden'); });
+  });
+  document.querySelectorAll('.pv-previa-enviar').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var previa = b.closest('.pv-previa');
+      var leadId = previa.dataset.leadId;
+      var tipo = previa.dataset.tipo;
+      var status = previa.querySelector('.pv-previa-status');
+      b.disabled = true; status.textContent = 'Enviando...'; status.className = 'pv-previa-status text-xs ml-1 text-slate-300';
+      fetch('/dashboard/pos-venda/' + leadId + '/enviar-template', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tipo: btn.dataset.tipo })
+        body: JSON.stringify({ tipo: tipo })
       }).then(function (r) { return r.json(); }).then(function (d) {
-        alert(d.ok ? 'Enviado pela Eva! ✅' : ('Não enviou: ' + (d.erro || 'erro')));
-      }).catch(function () { alert('Falha de conexão.'); })
-        .finally(function () { btn.disabled = false; });
+        if (d.ok) {
+          status.textContent = '✅ Enviado pela Eva!'; status.className = 'pv-previa-status text-xs ml-1 text-emerald-300';
+          b.style.display = 'none';
+        } else {
+          status.textContent = 'Não enviou: ' + (d.erro || 'erro'); status.className = 'pv-previa-status text-xs ml-1 text-rose-300';
+          b.disabled = false;
+        }
+      }).catch(function () {
+        status.textContent = 'Falha de conexão.'; status.className = 'pv-previa-status text-xs ml-1 text-rose-300';
+        b.disabled = false;
+      });
     });
   });
   document.querySelectorAll('.pv-chat').forEach(function (box) {
