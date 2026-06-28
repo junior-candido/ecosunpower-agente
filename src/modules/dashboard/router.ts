@@ -1393,6 +1393,62 @@ export function createDashboardRouter(
     }
   });
 
+  // Botão de ação do pós-venda -> dispara o TEMPLATE aprovado pela Eva (funciona
+  // dentro e fora da janela 24h). Corpo: { tipo: 'parabens'|'limpeza'|... }.
+  router.post('/pos-venda/:leadId/enviar-template', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    const leadId = String(req.params.leadId);
+    if (!UUID_RE.test(leadId)) return res.status(400).json({ erro: 'id inválido' });
+    if (!options.metaService) return res.status(500).json({ erro: 'WhatsApp não configurado.' });
+    try {
+      const { mapaBotaoTemplate, componenteNome, normalizarTelefone } = await import('./pos-venda-envio.js');
+      const tipo = String(req.body?.tipo ?? '');
+      const template = mapaBotaoTemplate(tipo);
+      if (!template) return res.status(400).json({ erro: 'Ação sem template (ex: contato não envia).' });
+
+      const { data: lead } = await supabase.from('leads').select('name, phone')
+        .eq('id', leadId).eq('company_id', req.dashUser!.companyId).maybeSingle();
+      if (!lead) return res.status(404).json({ erro: 'Cliente não encontrado.' });
+      const to = normalizarTelefone((lead.phone as string | null) ?? '');
+      if (!to) return res.status(400).json({ erro: 'Cliente sem telefone.' });
+
+      await options.metaService.sendTemplate(to, template, 'pt_BR', componenteNome((lead.name as string | null) ?? ''));
+      console.log(`[pos-venda/enviar-template] ${template} -> ${leadId} ok`);
+      res.json({ ok: true, template });
+    } catch (err) {
+      console.error('[pos-venda/enviar-template]', err);
+      res.status(500).json({ erro: (err as Error).message });
+    }
+  });
+
+  // Chat do copiloto -> envia o TEXTO LIVRE pela Eva. Só funciona dentro da
+  // janela de 24h do WhatsApp; se a Meta recusar, devolve aviso amigável.
+  router.post('/pos-venda/:leadId/enviar-texto', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    const leadId = String(req.params.leadId);
+    if (!UUID_RE.test(leadId)) return res.status(400).json({ erro: 'id inválido' });
+    if (!options.metaService) return res.status(500).json({ erro: 'WhatsApp não configurado.' });
+    const texto = String(req.body?.texto ?? '').trim();
+    if (!texto) return res.status(400).json({ erro: 'Mensagem vazia.' });
+    try {
+      const { normalizarTelefone } = await import('./pos-venda-envio.js');
+      const { data: lead } = await supabase.from('leads').select('phone')
+        .eq('id', leadId).eq('company_id', req.dashUser!.companyId).maybeSingle();
+      if (!lead) return res.status(404).json({ erro: 'Cliente não encontrado.' });
+      const to = normalizarTelefone((lead.phone as string | null) ?? '');
+      if (!to) return res.status(400).json({ erro: 'Cliente sem telefone.' });
+      try {
+        await options.metaService.sendText(to, texto);
+        console.log(`[pos-venda/enviar-texto] -> ${leadId} ok`);
+        res.json({ ok: true });
+      } catch (sendErr) {
+        console.warn('[pos-venda/enviar-texto] envio recusado:', (sendErr as Error).message);
+        res.status(409).json({ erro: 'O cliente está fora da janela de 24h. Use um botão de ação (parabéns, limpeza…) pra abrir com um modelo, ou espere ele responder.' });
+      }
+    } catch (err) {
+      console.error('[pos-venda/enviar-texto]', err);
+      res.status(500).json({ erro: (err as Error).message });
+    }
+  });
+
   // Ação manual de pós-venda em 2 fases pelo mesmo endpoint:
   //  - PREVIEW (sem `enviado`): gera a mensagem (redator da Eva → fallback) e
   //    devolve { mensagem, waBase }. Não grava nada.
