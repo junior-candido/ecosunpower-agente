@@ -5,6 +5,7 @@ import { renderLayout, escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { PosVendaLinha } from './pos-venda-queries.js';
 import type { Saude } from './pos-venda-saude.js';
+import type { AgendaAgrupada, TarefaAgenda } from './pos-venda-agenda.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
 import { seloSemApi } from './manutencao-views.js';
 import { TEXTOS_PREVIA } from './pos-venda-envio.js';
@@ -98,10 +99,44 @@ function renderLinha(l: PosVendaLinha): string {
   </div>`;
 }
 
-export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser): string {
+function renderTarefaAgenda(t: TarefaAgenda): string {
+  const data = t.dueAt ? new Date(t.dueAt).toLocaleDateString('pt-BR') : 'sem data';
+  return `
+  <div class="flex items-start gap-2 text-xs py-1 border-b border-[#1b2040]" data-tarefa-id="${escapeHtml(t.id)}">
+    <div class="flex-1">
+      <a href="/dashboard/leads/${escapeHtml(t.leadId)}" class="text-cyan-200 hover:underline">${escapeHtml(t.nomeCliente)}</a>
+      <div class="text-slate-300">${escapeHtml(t.titulo)} <span class="text-slate-500">· ${escapeHtml(data)}</span></div>
+    </div>
+    <button type="button" class="pv-tarefa-ok text-emerald-300 hover:text-emerald-100" data-tarefa-id="${escapeHtml(t.id)}" title="Concluir">✓</button>
+    <button type="button" class="pv-tarefa-adiar text-slate-400 hover:text-slate-200" data-tarefa-id="${escapeHtml(t.id)}" data-dias="1" title="Adiar 1 dia">+1d</button>
+    <button type="button" class="pv-tarefa-adiar text-slate-400 hover:text-slate-200" data-tarefa-id="${escapeHtml(t.id)}" data-dias="7" title="Adiar 7 dias">+7d</button>
+  </div>`;
+}
+
+function grupoAgenda(titulo: string, cor: string, itens: TarefaAgenda[]): string {
+  if (itens.length === 0) return '';
+  return `<div class="mb-3"><div class="text-xs font-semibold ${cor} mb-1">${titulo} (${itens.length})</div>${itens.map(renderTarefaAgenda).join('')}</div>`;
+}
+
+function renderAgenda(agenda: AgendaAgrupada): string {
+  const vazia = !agenda.atrasados.length && !agenda.hoje.length && !agenda.semana.length;
+  const corpo = vazia
+    ? `<div class="text-xs text-slate-500 py-4">Nenhum lembrete por aqui. Use ➕ Lembrete num cliente.</div>`
+    : grupoAgenda('🔴 Atrasados', 'text-rose-300', agenda.atrasados)
+      + grupoAgenda('🟡 Hoje', 'text-amber-300', agenda.hoje)
+      + grupoAgenda('🔵 Próximos 7 dias', 'text-cyan-300', agenda.semana);
+  return `
+  <aside class="pv-agenda bg-[#0b0e1f] border border-[#1b2040] rounded-xl p-3 lg:sticky lg:top-4 lg:w-80 lg:shrink-0">
+    <h2 class="text-sm font-bold text-cyan-300 mb-2">🗓️ Agenda</h2>
+    ${corpo}
+  </aside>`;
+}
+
+export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser, agenda?: AgendaAgrupada): string {
   const lista = linhas.length
     ? linhas.map(renderLinha).join('')
     : `<div class="text-slate-400 text-center py-16">Nenhum cliente com usina ainda. Quando houver usinas vinculadas, eles aparecem aqui.</div>`;
+  const agendaHtml = renderAgenda(agenda ?? { atrasados: [], hoje: [], semana: [] });
 
   const body = `
   <style>
@@ -112,7 +147,10 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser): st
   <div>
     <h1 class="text-xl font-bold text-cyan-300 mb-1">❤️ Pós-venda / Relacionamento</h1>
     <p class="text-xs text-slate-400 mb-4">Os que <b class="text-rose-400">pulsam em vermelho</b> precisam de atenção. O botão destacado é a próxima ação sugerida.</p>
-    ${lista}
+    <div class="flex flex-col lg:flex-row gap-4 items-start">
+      <div class="flex-1 min-w-0 order-2 lg:order-1">${lista}</div>
+      <div class="w-full lg:w-auto order-1 lg:order-2">${agendaHtml}</div>
+    </div>
   </div>`;
 
   const scripts = `<script>
