@@ -8,11 +8,19 @@ import type { Saude } from './pos-venda-saude.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
 import { seloSemApi } from './manutencao-views.js';
 import { TEXTOS_PREVIA } from './pos-venda-envio.js';
+import { temperatura } from './pos-venda-termometro.js';
+import { sugestaoProativa } from './pos-venda-sugestao.js';
 
 const SEMAFORO: Record<Saude, { dot: string; txt: string }> = {
   verde: { dot: '🟢', txt: 'Gerando ok' },
   amarelo: { dot: '🟡', txt: 'Atenção' },
   vermelho: { dot: '🔴', txt: 'Crítico' },
+};
+
+const TERMOMETRO: Record<'quente' | 'morno' | 'frio', { ico: string; txt: string }> = {
+  quente: { ico: '🔥', txt: 'Relacionamento quente' },
+  morno: { ico: '🌤️', txt: 'Relacionamento morno' },
+  frio: { ico: '🧊', txt: 'Relacionamento frio — atenção' },
 };
 
 // Botões disponíveis por linha. O da próxima ação vem destacado (ring).
@@ -39,6 +47,12 @@ function borda(saude: Saude): string {
 }
 
 function renderLinha(l: PosVendaLinha): string {
+  const agora = new Date();
+  const temp = TERMOMETRO[temperatura(l, agora)];
+  const sug = sugestaoProativa(l, agora);
+  const chip = sug
+    ? `<button type="button" class="pv-sugestao-btn block mt-1 text-left text-xs text-indigo-300 hover:text-indigo-100" data-lead-id="${escapeHtml(l.leadId)}" data-pedido="${escapeHtml(sug.pedidoEva)}">${escapeHtml(sug.texto)}</button>`
+    : '';
   const s = SEMAFORO[l.saude];
   const urgente = l.saude === 'vermelho' ? ' pv-urgent' : '';
   const nome = escapeHtml(l.nome);
@@ -54,6 +68,7 @@ function renderLinha(l: PosVendaLinha): string {
   <div class="pv-card bg-[#0b0e1f] border border-[#1b2040] border-l-4 ${borda(l.saude)} rounded-xl p-3 mb-2${urgente}" data-lead-id="${escapeHtml(l.leadId)}">
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
       <span class="text-lg" title="${s.txt}">${s.dot}</span>
+      <span class="text-lg" title="${temp.txt}">${temp.ico}</span>
       <a href="/dashboard/leads/${escapeHtml(l.leadId)}" class="font-semibold text-cyan-200 hover:underline">${nome}</a>
       ${seloSemApi(l.semApi)}
       <span class="text-xs text-slate-400">${phone}</span>
@@ -61,6 +76,7 @@ function renderLinha(l: PosVendaLinha): string {
       <span class="ml-auto text-xs text-slate-400">❤️ ${tempo(l.ultimoContatoEm)}</span>
     </div>
     <div class="mt-1 text-xs text-amber-300">${escapeHtml(l.proximaAcao.label)}</div>
+    ${chip}
     <div class="mt-2 flex flex-wrap gap-1.5">${botoes}</div>
     <div class="pv-previa hidden mt-2 bg-[#0b0e1f] border border-amber-600/40 rounded-lg p-2" data-lead-id="${escapeHtml(l.leadId)}">
       <div class="text-[11px] text-amber-200 mb-1">Prévia — vai enviar isto pela Eva:</div>
@@ -105,6 +121,17 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser): st
       btn.addEventListener('click', function () {
         var box = document.querySelector('.pv-chat[data-lead-id="' + btn.dataset.leadId + '"]');
         if (box) box.classList.toggle('hidden');
+      });
+    });
+    document.querySelectorAll('.pv-sugestao-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var leadId = btn.dataset.leadId;
+        var chat = document.querySelector('.pv-chat[data-lead-id="' + leadId + '"]');
+        if (!chat) return;
+        chat.classList.remove('hidden');
+        var inp = chat.querySelector('.pv-chat-in');
+        inp.value = btn.dataset.pedido || '';
+        chat.querySelector('.pv-chat-send').click();
       });
     });
     document.querySelectorAll('.pv-chat').forEach(function (box) {

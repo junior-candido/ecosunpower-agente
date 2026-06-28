@@ -31,3 +31,18 @@ describe('renderPosVendaPage', () => {
     expect(html).toContain('pv-urgent');
   });
 });
+
+describe('termômetro e sugestão no card', () => {
+  const recente = new Date(Date.now() - 5 * 86400000).toISOString();
+  const antigo = new Date(Date.now() - 200 * 86400000).toISOString();
+
+  it('mostra termômetro quente pra contato recente e saúde verde', () => {
+    const html = renderPosVendaPage([linha({ ultimoContatoEm: recente, saude: 'verde' })], undefined);
+    expect(html).toContain('🔥');
+  });
+  it('mostra chip de sugestão de reativação pra quem sumiu', () => {
+    const html = renderPosVendaPage([linha({ ultimoContatoEm: antigo, saude: 'verde' })], undefined);
+    expect(html).toContain('🧊');
+    expect(html).toMatch(/sem falar/i);
+  });
+});
