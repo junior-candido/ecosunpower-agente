@@ -26,6 +26,7 @@ function escapeHtmlSimple(s: string): string {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SupabaseService } from '../supabase.js';
 import { empresa } from '../empresa-config.js';
 import type { MonitoringService } from '../monitoring/service.js';
@@ -142,6 +143,15 @@ ${banner}
   <tbody>${rows}</tbody>
 </table>
 </body></html>`;
+}
+
+// Retorna o lead_id da tarefa SE ela pertence a um lead da company; senão null.
+async function leadDaTarefaNaCompany(supabase: SupabaseClient, tarefaId: string, companyId: string): Promise<string | null> {
+  const { data: tarefa } = await supabase.from('lead_tarefas').select('lead_id').eq('id', tarefaId).maybeSingle();
+  const leadId = (tarefa as { lead_id: string } | null)?.lead_id;
+  if (!leadId) return null;
+  const { data: lead } = await supabase.from('leads').select('id').eq('id', leadId).eq('company_id', companyId).maybeSingle();
+  return lead ? leadId : null;
 }
 
 export function createDashboardRouter(
@@ -1333,8 +1343,12 @@ export function createDashboardRouter(
   // automático) mandam via wa.me e gravam na timeline + abordagem.
   router.get('/pos-venda', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     try {
-      const linhas = await listarClientesPosVenda(supabase, req.dashUser!.companyId);
-      res.type('text/html').send(renderPosVendaPage(linhas, req.dashUser));
+      const { listarAgendaPosVenda } = await import('./pos-venda-queries.js');
+      const [linhas, agenda] = await Promise.all([
+        listarClientesPosVenda(supabase, req.dashUser!.companyId),
+        listarAgendaPosVenda(supabase, req.dashUser!.companyId),
+      ]);
+      res.type('text/html').send(renderPosVendaPage(linhas, req.dashUser, agenda));
     } catch (err) {
       console.error('[pos-venda] GET falhou:', (err as Error).message);
       res.status(500).type('text/html').send('<h2>Erro ao carregar Pós-venda</h2>');
@@ -1580,6 +1594,101 @@ export function createDashboardRouter(
     } catch (err) {
       console.error('[pos-venda] POST acao falhou:', (err as Error).message);
       res.status(500).json({ error: 'falha ao processar ação' });
+    }
+  });
+
+  // Cria um lembrete na agenda do cliente (lead_tarefas, tipo custom).
+  router.post('/pos-venda/:leadId/lembrete', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    const leadId = String(req.params.leadId);
+    if (!UUID_RE.test(leadId)) return res.status(400).json({ erro: 'id inválido' });
+    const titulo = String(req.body?.titulo ?? '').trim().slice(0, 200);
+    if (!titulo) return res.status(400).json({ erro: 'Título vazio.' });
+    const dueRaw = req.body?.dueAt ? String(req.body.dueAt) : null;
+    const dueAt = dueRaw ? new Date(dueRaw + (dueRaw.length === 10 ? 'T12:00:00Z' : '')).toISOString() : null;
+    try {
+      const companyId = req.dashUser!.companyId;
+      const { data: lead } = await supabase.from('leads').select('id')
+        .eq('id', leadId).eq('company_id', companyId).maybeSingle();
+      if (!lead) return res.status(404).json({ erro: 'Cliente não encontrado.' });
+      await criarTarefa(supabase, {
+        company_id: companyId, lead_id: leadId, titulo, tipo: 'custom',
+        due_at: dueAt, prioridade: 'media', automatica: false, created_by: req.dashUser!.id,
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[pos-venda/lembrete]', err);
+      res.status(500).json({ erro: 'Falha ao salvar lembrete.' });
+    }
+  });
+
+  // Conclui um lembrete da agenda. Anti-IDOR: a tarefa precisa ser de um lead do pós-venda da company.
+  router.post('/pos-venda/tarefa/:id/concluir', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).json({ erro: 'id inválido' });
+    try {
+      const leadId = await leadDaTarefaNaCompany(supabase, id, req.dashUser!.companyId);
+      if (!leadId) return res.status(404).json({ erro: 'Tarefa não encontrada.' });
+      await concluirTarefa(supabase, id, req.dashUser!.id, leadId);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[pos-venda/tarefa/concluir]', err);
+      res.status(500).json({ erro: 'Falha ao concluir.' });
+    }
+  });
+
+  // Adia um lembrete (+N dias). Mesmo anti-IDOR.
+  router.post('/pos-venda/tarefa/:id/adiar', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    const id = String(req.params.id);
+    if (!UUID_RE.test(id)) return res.status(400).json({ erro: 'id inválido' });
+    const dias = Math.min(Math.max(Number(req.body?.dias) || 1, 1), 30);
+    try {
+      const leadId = await leadDaTarefaNaCompany(supabase, id, req.dashUser!.companyId);
+      if (!leadId) return res.status(404).json({ erro: 'Tarefa não encontrada.' });
+      await adiarTarefa(supabase, id, dias, leadId);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[pos-venda/tarefa/adiar]', err);
+      res.status(500).json({ erro: 'Falha ao adiar.' });
+    }
+  });
+
+  // Grava uma nota interna do cliente (lead_atividades tipo nota). NÃO vai pro cliente.
+  router.post('/pos-venda/:leadId/nota', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    const leadId = String(req.params.leadId);
+    if (!UUID_RE.test(leadId)) return res.status(400).json({ erro: 'id inválido' });
+    const texto = String(req.body?.texto ?? '').trim().slice(0, 1000);
+    if (!texto) return res.status(400).json({ erro: 'Nota vazia.' });
+    try {
+      const companyId = req.dashUser!.companyId;
+      const { data: lead } = await supabase.from('leads').select('id')
+        .eq('id', leadId).eq('company_id', companyId).maybeSingle();
+      if (!lead) return res.status(404).json({ erro: 'Cliente não encontrado.' });
+      await registrarAtividade(supabase, {
+        company_id: companyId, lead_id: leadId, tipo: 'nota',
+        titulo: 'Nota interna', descricao: texto, automatica: false, user_id: req.dashUser!.id,
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[pos-venda/nota]', err);
+      res.status(500).json({ erro: 'Falha ao salvar nota.' });
+    }
+  });
+
+  // Linha do tempo (repositório) do cliente: notas + envios + contatos.
+  router.get('/pos-venda/:leadId/historico', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    const leadId = String(req.params.leadId);
+    if (!UUID_RE.test(leadId)) return res.status(400).json({ erro: 'id inválido' });
+    try {
+      const companyId = req.dashUser!.companyId;
+      const { data: lead } = await supabase.from('leads').select('id')
+        .eq('id', leadId).eq('company_id', companyId).maybeSingle();
+      if (!lead) return res.status(404).json({ erro: 'Cliente não encontrado.' });
+      const { listarTimeline } = await import('./atividades.js');
+      const itens = await listarTimeline(supabase, leadId, 50);
+      res.json({ itens });
+    } catch (err) {
+      console.error('[pos-venda/historico]', err);
+      res.status(500).json({ erro: 'Falha ao carregar histórico.' });
     }
   });
 
