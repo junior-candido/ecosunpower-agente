@@ -1341,6 +1341,58 @@ export function createDashboardRouter(
     }
   });
 
+  // Copiloto de pós-venda: chat com a IA (escreve mensagem limpa) + salva histórico.
+  // Espelha /leads/:id/ia-copiloto, mas com cérebro de pós-venda.
+  router.post('/pos-venda/:leadId/copiloto', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    const leadId = String(req.params.leadId);
+    if (!UUID_RE.test(leadId)) return res.status(400).json({ erro: 'id inválido' });
+    const pergunta = String(req.body?.pergunta ?? '').trim();
+    if (!pergunta) return res.status(400).json({ erro: 'Pergunta vazia.' });
+    try {
+      // Filtra por company (igual /pos-venda/:leadId/acao): não ler cliente de outra empresa.
+      const { data: lead } = await supabase.from('leads').select('name, city')
+        .eq('id', leadId).eq('company_id', req.dashUser!.companyId).maybeSingle();
+      if (!lead) return res.status(404).json({ erro: 'Cliente não encontrado.' });
+      // order antes do limit: cliente com várias usinas (ex: Superbom) -> pega a 1ª de forma determinística.
+      const { data: sis } = await supabase.from('sistemas_clientes')
+        .select('potencia_kwp, marca_inversor, data_instalacao')
+        .eq('lead_id', leadId).eq('ativo', true)
+        .order('created_at', { ascending: true }).limit(1).maybeSingle();
+
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) return res.json({ erro: 'Chave ANTHROPIC_API_KEY não configurada no .env.' });
+      const Anthropic = (await import('@anthropic-ai/sdk')).default;
+      const { responderCopilotoPosVenda, carregarConhecimentoPosVenda, montarContextoPosVenda } =
+        await import('./pos-venda-copiloto.js');
+
+      const contexto = montarContextoPosVenda({
+        nome: (lead.name as string | null) ?? undefined,
+        cidade: (lead.city as string | null) ?? null,
+        potenciaKwp: (sis?.potencia_kwp as number | null) ?? null,
+        marcaInversor: (sis?.marca_inversor as string | null) ?? null,
+        dataInstalacao: (sis?.data_instalacao as string | null) ?? null,
+        saude: null,
+        jaTeveDepoimento: undefined,
+      });
+
+      const historico = await supabaseService.getConversaIA(leadId);
+      const texto = await responderCopilotoPosVenda(new Anthropic({ apiKey }), {
+        contexto, historico, pergunta, conhecimento: carregarConhecimentoPosVenda(),
+      });
+
+      const userId = req.dashUser?.id ?? null;
+      try {
+        await supabaseService.addMensagemIA(leadId, 'user', pergunta, userId);
+        await supabaseService.addMensagemIA(leadId, 'assistant', texto, null);
+      } catch (e) {
+        console.warn('[pos-venda/copiloto] salvar conversa falhou (segue):', (e as Error).message);
+      }
+      res.json({ texto });
+    } catch (err) {
+      res.status(500).json({ erro: (err as Error).message });
+    }
+  });
+
   // Ação manual de pós-venda em 2 fases pelo mesmo endpoint:
   //  - PREVIEW (sem `enviado`): gera a mensagem (redator da Eva → fallback) e
   //    devolve { mensagem, waBase }. Não grava nada.

@@ -61,6 +61,13 @@ function renderLinha(l: PosVendaLinha): string {
     </div>
     <div class="mt-1 text-xs text-amber-300">${escapeHtml(l.proximaAcao.label)}</div>
     <div class="mt-2 flex flex-wrap gap-1.5">${botoes}</div>
+    <button type="button" class="pv-copiloto-btn text-xs text-indigo-300 hover:text-indigo-100 mt-1" data-lead-id="${escapeHtml(l.leadId)}">💬 Eva (copiloto)</button>
+    <div class="pv-chat hidden mt-2 bg-[#0b0e1f] border border-[#1b2040] rounded-lg p-2" data-lead-id="${escapeHtml(l.leadId)}">
+      <textarea class="pv-chat-in w-full text-xs bg-[#11152e] text-slate-100 border border-[#1b2040] rounded p-1.5" rows="2" placeholder="Ex: manda um lembrete da revisão"></textarea>
+      <button type="button" class="pv-chat-send text-xs bg-indigo-600 text-white rounded px-2 py-1 mt-1 hover:bg-indigo-500">Pedir</button>
+      <div class="pv-chat-out text-xs text-slate-100 mt-2 whitespace-pre-wrap"></div>
+      <button type="button" class="pv-chat-copy hidden text-xs text-emerald-300 hover:text-emerald-100 mt-1">Copiar</button>
+    </div>
   </div>`;
 }
 
@@ -122,6 +129,45 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser): st
     function marcar(leadId,acao,msg){
       fetch('/dashboard/pos-venda/'+leadId+'/acao',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'tipo='+encodeURIComponent(acao)+'&enviado=1&mensagem='+encodeURIComponent(msg)}).catch(function(){});
     }
+  })();
+  </script>
+  <script>
+  (function () {
+    document.querySelectorAll('.pv-copiloto-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var box = document.querySelector('.pv-chat[data-lead-id="' + btn.dataset.leadId + '"]');
+        if (box) box.classList.toggle('hidden');
+      });
+    });
+    document.querySelectorAll('.pv-chat').forEach(function (box) {
+      var leadId = box.dataset.leadId;
+      var input = box.querySelector('.pv-chat-in');
+      var send = box.querySelector('.pv-chat-send');
+      var out = box.querySelector('.pv-chat-out');
+      var copy = box.querySelector('.pv-chat-copy');
+      send.addEventListener('click', function () {
+        var pergunta = (input.value || '').trim();
+        if (!pergunta) return;
+        out.textContent = 'Escrevendo...';
+        copy.classList.add('hidden');
+        send.disabled = true;
+        fetch('/dashboard/pos-venda/' + leadId + '/copiloto', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pergunta: pergunta })
+        }).then(function (r) { return r.json(); }).then(function (d) {
+          out.textContent = d.texto || d.erro || 'Sem resposta.';
+          if (d.texto) copy.classList.remove('hidden');
+        }).catch(function () { out.textContent = 'Falha de conexão.'; })
+          .finally(function () { send.disabled = false; });
+      });
+      copy.addEventListener('click', function () {
+        navigator.clipboard.writeText(out.textContent || '').then(function () {
+          var t = copy.textContent; copy.textContent = 'Copiado!';
+          setTimeout(function () { copy.textContent = t; }, 1200);
+        }).catch(function () {});
+      });
+    });
   })();
   </script>`;
 
