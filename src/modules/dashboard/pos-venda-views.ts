@@ -1,6 +1,6 @@
 // src/modules/dashboard/pos-venda-views.ts
-// Tela de pós-venda: lista guiada por atenção + botões manuais + modal de preview
-// que manda via wa.me (fallback da janela de 24h do WhatsApp).
+// Tela de pós-venda: lista guiada por atenção. Os botões de ação disparam o
+// template aprovado pela Eva; o chat do copiloto envia texto livre pela Eva.
 import { renderLayout, escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { PosVendaLinha } from './pos-venda-queries.js';
@@ -44,11 +44,11 @@ function renderLinha(l: PosVendaLinha): string {
   const phone = escapeHtml(formatPhoneBR(l.telefone ?? ''));
   const usina = [l.potenciaKwp ? `${l.potenciaKwp} kWp` : null, escapeHtml(l.marcaInversor ?? ''), escapeHtml(l.cidade ?? '')]
     .filter(Boolean).join(' · ');
-  const botoes = BOTOES.map((b) => {
-    const destaque = b.tipo === l.proximaAcao.tipo ? ' ring-2 ring-amber-400' : '';
-    return `<button class="pv-btn px-2 py-1 rounded-md bg-slate-700 hover:bg-slate-600 text-slate-100 text-xs${destaque}"
-      data-lead-id="${escapeHtml(l.leadId)}" data-acao="${b.tipo}" data-nome="${nome}">${b.label}</button>`;
-  }).join(' ');
+  const botoes = BOTOES.map((b) =>
+    b.tipo === 'contato'
+      ? `<a href="/dashboard/leads/${escapeHtml(l.leadId)}" class="px-2 py-1 rounded bg-[#11152e] text-cyan-200 text-xs hover:bg-[#1b2040]">${b.label}</a>`
+      : `<button type="button" class="pv-tpl-btn px-2 py-1 rounded bg-[#11152e] text-cyan-200 text-xs hover:bg-[#1b2040]" data-lead-id="${escapeHtml(l.leadId)}" data-tipo="${escapeHtml(b.tipo)}">${b.label}</button>`,
+  ).join('');
   return `
   <div class="pv-card bg-[#0b0e1f] border border-[#1b2040] border-l-4 ${borda(l.saude)} rounded-xl p-3 mb-2${urgente}" data-lead-id="${escapeHtml(l.leadId)}">
     <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -67,6 +67,7 @@ function renderLinha(l: PosVendaLinha): string {
       <button type="button" class="pv-chat-send text-xs bg-indigo-600 text-white rounded px-2 py-1 mt-1 hover:bg-indigo-500">Pedir</button>
       <div class="pv-chat-out text-xs text-slate-100 mt-2 whitespace-pre-wrap"></div>
       <button type="button" class="pv-chat-copy hidden text-xs text-emerald-300 hover:text-emerald-100 mt-1">Copiar</button>
+      <button type="button" class="pv-chat-send-eva hidden text-xs bg-emerald-600 text-white rounded px-2 py-1 mt-1 ml-1 hover:bg-emerald-500">Enviar pela Eva</button>
     </div>
   </div>`;
 }
@@ -86,52 +87,9 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser): st
     <h1 class="text-xl font-bold text-cyan-300 mb-1">❤️ Pós-venda / Relacionamento</h1>
     <p class="text-xs text-slate-400 mb-4">Os que <b class="text-rose-400">pulsam em vermelho</b> precisam de atenção. O botão destacado é a próxima ação sugerida.</p>
     ${lista}
-  </div>
-
-  <div id="pv-modal" class="fixed inset-0 bg-black/60 hidden items-center justify-center z-50 p-4">
-    <div class="bg-[#0b0e1f] border border-[#1b2040] rounded-xl max-w-lg w-full p-4">
-      <div class="text-sm text-slate-300 mb-2" id="pv-modal-title">Mensagem</div>
-      <textarea id="pv-msg" class="w-full h-40 bg-[#070a18] border border-[#1b2040] rounded-md p-2 text-slate-100 text-sm"></textarea>
-      <div class="flex flex-wrap gap-2 mt-3 justify-end">
-        <button id="pv-cancel" class="px-3 py-1.5 rounded-md bg-slate-700 text-slate-200 text-sm">Cancelar</button>
-        <button id="pv-copy" class="px-3 py-1.5 rounded-md bg-slate-600 text-white text-sm">Copiar</button>
-        <a id="pv-wa" href="#" target="_blank" class="px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">Mandar no WhatsApp</a>
-      </div>
-    </div>
   </div>`;
 
   const scripts = `<script>
-  (function(){
-    var modal=document.getElementById('pv-modal'), ta=document.getElementById('pv-msg');
-    var wa=document.getElementById('pv-wa'), title=document.getElementById('pv-modal-title');
-    var atual=null;
-    function open(){ modal.classList.remove('hidden'); modal.classList.add('flex'); }
-    function close(){ modal.classList.add('hidden'); modal.classList.remove('flex'); }
-    document.getElementById('pv-cancel').onclick=close;
-    document.getElementById('pv-copy').onclick=function(){ if(navigator.clipboard) navigator.clipboard.writeText(ta.value); };
-    document.querySelectorAll('.pv-btn').forEach(function(b){
-      b.onclick=async function(){
-        var leadId=b.dataset.leadId, acao=b.dataset.acao;
-        atual={leadId:leadId, acao:acao, waBase:''};
-        title.textContent='Carregando…'; ta.value=''; open();
-        var r=await fetch('/dashboard/pos-venda/'+leadId+'/acao',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'tipo='+encodeURIComponent(acao)});
-        var j=await r.json().catch(function(){return {};});
-        title.textContent=(b.dataset.nome||'Cliente')+' · '+acao;
-        if(acao==='contato'){ ta.value=j.mensagem||'Contato registrado (sem mensagem ao cliente).'; wa.style.display='none'; marcar(leadId,acao,''); }
-        else { ta.value=j.mensagem||''; wa.style.display=''; atual.waBase=j.waBase||'https://wa.me/'; }
-      };
-    });
-    wa.onclick=function(){
-      if(!atual) return;
-      wa.href=(atual.waBase||'https://wa.me/')+'?text='+encodeURIComponent(ta.value);
-      marcar(atual.leadId, atual.acao, ta.value); // grava timeline+abordagem ao confirmar envio
-    };
-    function marcar(leadId,acao,msg){
-      fetch('/dashboard/pos-venda/'+leadId+'/acao',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'tipo='+encodeURIComponent(acao)+'&enviado=1&mensagem='+encodeURIComponent(msg)}).catch(function(){});
-    }
-  })();
-  </script>
-  <script>
   (function () {
     document.querySelectorAll('.pv-copiloto-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
@@ -157,7 +115,7 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser): st
           body: JSON.stringify({ pergunta: pergunta })
         }).then(function (r) { return r.json(); }).then(function (d) {
           out.textContent = d.texto || d.erro || 'Sem resposta.';
-          if (d.texto) copy.classList.remove('hidden');
+          if (d.texto) { copy.classList.remove('hidden'); var ev = box.querySelector('.pv-chat-send-eva'); if (ev) ev.classList.remove('hidden'); }
         }).catch(function () { out.textContent = 'Falha de conexão.'; })
           .finally(function () { send.disabled = false; });
       });
@@ -169,7 +127,43 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser): st
       });
     });
   })();
-  </script>`;
+  </script>
+  <script>
+(function () {
+  document.querySelectorAll('.pv-tpl-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (!confirm('Enviar "' + btn.textContent.trim() + '" pra este cliente pela Eva?')) return;
+      btn.disabled = true;
+      fetch('/dashboard/pos-venda/' + btn.dataset.leadId + '/enviar-template', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo: btn.dataset.tipo })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        alert(d.ok ? 'Enviado pela Eva! ✅' : ('Não enviou: ' + (d.erro || 'erro')));
+      }).catch(function () { alert('Falha de conexão.'); })
+        .finally(function () { btn.disabled = false; });
+    });
+  });
+  document.querySelectorAll('.pv-chat').forEach(function (box) {
+    var leadId = box.dataset.leadId;
+    var out = box.querySelector('.pv-chat-out');
+    var enviar = box.querySelector('.pv-chat-send-eva');
+    if (!enviar) return;
+    enviar.addEventListener('click', function () {
+      var texto = (out.textContent || '').trim();
+      if (!texto) return;
+      if (!confirm('Enviar esta mensagem pro cliente pela Eva?')) return;
+      enviar.disabled = true;
+      fetch('/dashboard/pos-venda/' + leadId + '/enviar-texto', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto: texto })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        alert(d.ok ? 'Enviado pela Eva! ✅' : ('Não enviou: ' + (d.erro || 'erro')));
+      }).catch(function () { alert('Falha de conexão.'); })
+        .finally(function () { enviar.disabled = false; });
+    });
+  });
+})();
+</script>`;
 
   return renderLayout({ active: 'pos_venda', title: 'Pós-venda', dark: true, user, body, scripts });
 }
