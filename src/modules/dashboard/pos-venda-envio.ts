@@ -4,9 +4,9 @@
 import type { TemplateComponent } from '../meta-whatsapp.js';
 
 // Botão do card -> nome do template aprovado (idioma pt_BR). 'contato' não envia.
+// parabens/relatorio NÃO entram aqui de propósito: dependem da geração real e vão
+// pelo copiloto (a Eva usa os dados reais ou orienta o operador), nunca template cego.
 const MAPA: Record<string, string> = {
-  parabens: 'acompanhamento_geracao',
-  relatorio: 'acompanhamento_geracao',
   limpeza: 'lembrete_manutencao',
   depoimento: 'pedido_depoimento',
   upgrade: 'upgrade_ampliacao',
@@ -32,8 +32,6 @@ export function normalizarTelefone(phone: string): string {
 // Cópia LOCAL dos textos aprovados na Meta, só pra PRÉVIA (o envio real usa o
 // template lá). Se editar o texto na Meta, atualize aqui também. {nome} = nome do cliente.
 export const TEXTOS_PREVIA: Record<string, string> = {
-  parabens: 'Oi {nome}, é a Eva da EcoSunPower 🌞 Sua usina teve um ótimo mês de geração! Se quiser, te mando os números. Como tá sendo a economia na conta de luz?',
-  relatorio: 'Oi {nome}, é a Eva da EcoSunPower 🌞 Sua usina teve um ótimo mês de geração! Se quiser, te mando os números. Como tá sendo a economia na conta de luz?',
   limpeza: 'Oi {nome}, é a Eva da EcoSunPower. Já faz um tempinho desde a última limpeza das suas placas — uma revisão agora mantém a geração lá em cima. Quer que eu agende uma visita?',
   depoimento: 'Oi {nome}, aqui é a Eva da EcoSunPower. Você já usa energia solar há um tempo — adoraríamos saber como tem sido sua experiência. Pode deixar um depoimento rapidinho? Significa muito pra gente 🙏',
   upgrade: 'Oi {nome}, é a Eva da EcoSunPower 🌞 Sua usina vem indo bem! Se seu consumo aumentou (ar novo, carro elétrico, obra), dá pra ampliar o sistema e manter a conta baixinha. Quer que eu veja uma simulação pra você?',

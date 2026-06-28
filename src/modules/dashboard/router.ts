@@ -1355,9 +1355,24 @@ export function createDashboardRouter(
       if (!lead) return res.status(404).json({ erro: 'Cliente não encontrado.' });
       // order antes do limit: cliente com várias usinas (ex: Superbom) -> pega a 1ª de forma determinística.
       const { data: sis } = await supabase.from('sistemas_clientes')
-        .select('potencia_kwp, marca_inversor, data_instalacao')
+        .select('id, potencia_kwp, marca_inversor, data_instalacao, acompanhamento, api_credentials')
         .eq('lead_id', leadId).eq('ativo', true)
         .order('created_at', { ascending: true }).limit(1).maybeSingle();
+
+      // Tem monitoramento? Reusa a fonte da verdade da lista de pós-venda (semApiUsina),
+      // pra não divergir do selo "sem API" da tela.
+      const { semApiUsina } = await import('./pos-venda-queries.js');
+      const temMonitoramento = !!sis && !semApiUsina(sis as any);
+
+      // Geração REAL dos últimos 30 dias (só se tiver monitoramento) — pra Eva nunca inventar.
+      let geracaoResumo: string | null = null;
+      if (temMonitoramento && (sis as any).id) {
+        const desde = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+        const { data: ger } = await supabase.from('geracao_diaria')
+          .select('geracao_kwh').eq('sistema_id', (sis as any).id).gte('data', desde);
+        const total = (ger ?? []).reduce((s: number, g: any) => s + Number(g.geracao_kwh || 0), 0);
+        if ((ger ?? []).length > 0) geracaoResumo = `Últimos 30 dias: ${Math.round(total)} kWh`;
+      }
 
       const apiKey = process.env.ANTHROPIC_API_KEY;
       if (!apiKey) return res.json({ erro: 'Chave ANTHROPIC_API_KEY não configurada no .env.' });
@@ -1371,7 +1386,8 @@ export function createDashboardRouter(
         potenciaKwp: (sis?.potencia_kwp as number | null) ?? null,
         marcaInversor: (sis?.marca_inversor as string | null) ?? null,
         dataInstalacao: (sis?.data_instalacao as string | null) ?? null,
-        saude: null,
+        temMonitoramento,
+        geracaoResumo,
         jaTeveDepoimento: undefined,
       });
 

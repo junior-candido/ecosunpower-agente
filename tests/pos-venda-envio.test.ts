@@ -2,12 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { mapaBotaoTemplate, componenteNome, normalizarTelefone, previaTemplate } from '../src/modules/dashboard/pos-venda-envio.js';
 
 describe('mapaBotaoTemplate', () => {
-  it('mapeia cada botão pro template aprovado', () => {
-    expect(mapaBotaoTemplate('parabens')).toBe('acompanhamento_geracao');
-    expect(mapaBotaoTemplate('relatorio')).toBe('acompanhamento_geracao');
+  it('mapeia os botões de template aprovado', () => {
     expect(mapaBotaoTemplate('limpeza')).toBe('lembrete_manutencao');
     expect(mapaBotaoTemplate('depoimento')).toBe('pedido_depoimento');
     expect(mapaBotaoTemplate('upgrade')).toBe('upgrade_ampliacao');
+  });
+  it('parabens/relatorio NÃO usam template (vão pelo copiloto com dados reais)', () => {
+    expect(mapaBotaoTemplate('parabens')).toBeNull();
+    expect(mapaBotaoTemplate('relatorio')).toBeNull();
   });
   it('contato não envia template (retorna null)', () => {
     expect(mapaBotaoTemplate('contato')).toBeNull();
@@ -47,9 +49,9 @@ describe('previaTemplate', () => {
   it('nome vazio vira "cliente"', () => {
     expect(previaTemplate('limpeza', '')).toContain('Oi cliente,');
   });
-  it('parabens e relatorio usam o texto de acompanhamento de geração', () => {
-    expect(previaTemplate('parabens', 'Ana')).toContain('geração');
-    expect(previaTemplate('relatorio', 'Ana')).toContain('geração');
+  it('parabens/relatorio não têm prévia de template (vão pelo copiloto)', () => {
+    expect(previaTemplate('parabens', 'Ana')).toBeNull();
+    expect(previaTemplate('relatorio', 'Ana')).toBeNull();
   });
   it('tipo sem texto (contato) retorna null', () => {
     expect(previaTemplate('contato', 'João')).toBeNull();

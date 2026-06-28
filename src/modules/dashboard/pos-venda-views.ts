@@ -144,6 +144,20 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser): st
   // Botão de ação -> mostra PRÉVIA (não envia direto)
   document.querySelectorAll('.pv-tpl-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
+      // Parabéns/Relatório dependem da geração REAL -> vão pelo copiloto (a Eva
+      // usa os dados reais ou pede pro operador conferir no nativo), nunca um
+      // template cego afirmando "ótimo mês".
+      if (btn.dataset.tipo === 'parabens' || btn.dataset.tipo === 'relatorio') {
+        var chat = document.querySelector('.pv-chat[data-lead-id="' + btn.dataset.leadId + '"]');
+        if (!chat) return;
+        chat.classList.remove('hidden');
+        var inp = chat.querySelector('.pv-chat-in');
+        inp.value = btn.dataset.tipo === 'parabens'
+          ? 'Escreve uma mensagem pro cliente sobre a geração da usina dele (use os dados reais; se não tiver, me orienta).'
+          : 'Monta um relatório do mês da usina pro cliente (use os dados reais; se não tiver, me orienta).';
+        chat.querySelector('.pv-chat-send').click();
+        return;
+      }
       var previa = document.querySelector('.pv-previa[data-lead-id="' + btn.dataset.leadId + '"]');
       if (!previa) return;
       var nome = btn.dataset.nome || 'cliente';
