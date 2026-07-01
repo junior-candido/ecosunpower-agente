@@ -1835,6 +1835,17 @@ export function createDashboardRouter(
         }));
       }
       credenciais = { apiKey };
+    } else if (marca === 'goodwe') {
+      // Campos renomeados pra goodwe_* pra nao colidir com email/password do
+      // Deye ao alternar entre branches do select.
+      const email = String(req.body?.goodwe_email ?? '').trim();
+      const password = String(req.body?.goodwe_password ?? '').trim();
+      if (!email || !password) {
+        return res.status(400).send(renderImportarSitesPage({
+          errorMsg: 'GoodWe precisa de e-mail e senha da conta SEMS Portal (login do instalador).',
+        }));
+      }
+      credenciais = { email, password };
     } else {
       return res.status(400).send(renderImportarSitesPage({
         errorMsg: `Marca ${marca} ainda nao tem adapter implementado.`,
