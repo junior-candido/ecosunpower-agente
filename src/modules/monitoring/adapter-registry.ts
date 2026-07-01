@@ -11,6 +11,7 @@ import { deyeAdapter } from './adapters/deye.js';
 import { nepAdapter } from './adapters/nep.js';
 import { abbAdapter } from './adapters/abb.js';
 import { foxessAdapter } from './adapters/foxess.js';
+import { goodweAdapter } from './adapters/goodwe.js';
 
 const adapters: Partial<Record<MarcaInversor, MonitoringAdapter>> = {
   solaredge: solarEdgeAdapter,
@@ -18,9 +19,9 @@ const adapters: Partial<Record<MarcaInversor, MonitoringAdapter>> = {
   nep: nepAdapter,
   abb: abbAdapter,
   foxess: foxessAdapter,         // LIVE 27/06 — validado em prod (30 inversores Q1-2500-E)
+  goodwe: goodweAdapter,         // SEMS Portal (API interna, e-mail+senha) — validado ao vivo 01/07
   // sungrow: sungrowAdapter,    // app aprovado, falta plugar (cripto pronta na branch)
   // hoymiles: hoymilesAdapter,  // futuro
-  // goodwe: goodweAdapter,      // futuro
   // huawei: huaweiAdapter,      // futuro
 };
 
