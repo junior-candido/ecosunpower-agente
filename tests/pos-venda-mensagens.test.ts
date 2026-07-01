@@ -10,7 +10,7 @@ describe('objetivoManual', () => {
 });
 
 describe('fallbackMensagem', () => {
-  const ctx = { nome: 'Antonio Carlos', trimestre: { kwh: 1200, reais: 980.5 } };
+  const ctx = { nome: 'Antonio Carlos', mes: { kwh: 1200, reais: 980.5, mesLabel: 'maio', parcial: false } };
 
   it('parabéns usa só o primeiro nome e não fala preço', () => {
     const m = fallbackMensagem('parabens', ctx);
@@ -23,7 +23,7 @@ describe('fallbackMensagem', () => {
     expect(m).toMatch(/980[.,]5/);
   });
   it('relatório sem números não inventa valores', () => {
-    const m = fallbackMensagem('relatorio', { nome: 'Maria', trimestre: null });
+    const m = fallbackMensagem('relatorio', { nome: 'Maria', mes: null });
     expect(m).not.toMatch(/R\$\s?\d/);
     expect(m).toContain('Maria');
   });

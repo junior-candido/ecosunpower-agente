@@ -13,7 +13,7 @@ export interface ContextoRedacao {
   dados: {
     percentualQueda: number | null;
     diasOffline: number | null;
-    trimestre: { kwh: number; reais: number } | null;
+    mes: { kwh: number; reais: number; mesLabel: string; parcial: boolean } | null;
     causaRaizAnterior: string | null;
   };
   regrasTreino: string[];           // monitoring_treino ativos (geral + do tipo)
@@ -25,7 +25,9 @@ export function montarPromptAbordagem(c: ContextoRedacao): string {
   const dados: string[] = [];
   if (c.dados.percentualQueda != null) dados.push(`queda de geração: ${c.dados.percentualQueda}% abaixo do esperado`);
   if (c.dados.diasOffline != null) dados.push(`dias sem enviar dados: ${c.dados.diasOffline}`);
-  if (c.dados.trimestre) dados.push(`gerou no trimestre: ${c.dados.trimestre.kwh} kWh (~R$ ${c.dados.trimestre.reais.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} de economia)`);
+  if (c.dados.mes) dados.push(c.dados.mes.parcial
+    ? `gerou neste mês (${c.dados.mes.mesLabel}, até agora): ${c.dados.mes.kwh} kWh (~R$ ${c.dados.mes.reais.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} de economia)`
+    : `gerou em ${c.dados.mes.mesLabel}: ${c.dados.mes.kwh} kWh (~R$ ${c.dados.mes.reais.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} de economia)`);
   if (c.dados.causaRaizAnterior) {
     // Sanitize: vem de conversa com cliente — não pode virar comando de prompt.
     const causaSafe = c.dados.causaRaizAnterior.replace(/\s+/g, ' ').slice(0, 200);

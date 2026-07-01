@@ -103,7 +103,7 @@ import { renderPosVendaPage } from './pos-venda-views.js';
 import { objetivoManual, fallbackMensagem } from './pos-venda-mensagens.js';
 import { snoozeAte } from './pos-venda-sugestao-memoria.js';
 import { registrarAbordagemManual } from '../monitoring/abordagem/abordagens-repo.js';
-import { numerosTrimestre } from '../monitoring/abordagem/numeros-usina.js';
+import { numerosMes } from '../monitoring/abordagem/numeros-usina.js';
 import { listarAgenda, prontuarioUsina, listarLeiturasPendentes, criarManutencao, marcarManutencaoFeita, reagendarManutencao, registrarLeituraManual } from './manutencao-queries.js';
 import { renderManutencaoPage, renderProntuario } from './manutencao-views.js';
 import type { ManutencaoTipo } from './manutencao-motor.js';
@@ -1592,12 +1592,12 @@ export function createDashboardRouter(
       // ---- Fase PREVIEW ----
       if (tipo === 'contato') { res.json({ mensagem: '', waBase: '' }); return; }
 
-      let trimestre: { kwh: number; reais: number } | null = null;
+      let mes: { kwh: number; reais: number; mesLabel: string; parcial: boolean } | null = null;
       if (sistemaRow) {
         const { data: ger } = await supabase.from('geracao_diaria')
           .select('data, geracao_kwh').eq('sistema_id', sistemaRow.id)
-          .gte('data', new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10));
-        trimestre = numerosTrimestre((ger ?? []).map((g: any) => ({ data: g.data, geracao_kwh: Number(g.geracao_kwh) })), TARIFA_RS_KWH, new Date());
+          .gte('data', new Date(Date.now() - 62 * 86400000).toISOString().slice(0, 10));
+        mes = numerosMes((ger ?? []).map((g: any) => ({ data: g.data, geracao_kwh: Number(g.geracao_kwh) })), TARIFA_RS_KWH, new Date());
       }
 
       // tenta a IA (mesmo tom da Eva); cai pro fallback se faltar chave/erro
@@ -1611,14 +1611,14 @@ export function createDashboardRouter(
             tipo: tipo === 'limpeza' ? 'queda' : 'parabens',
             etapa: 1, objetivo: objetivoManual(tipo),
             clienteNome: leadRow.name ?? 'cliente',
-            dados: { percentualQueda: null, diasOffline: null, trimestre: tipo === 'relatorio' ? trimestre : null, causaRaizAnterior: null },
+            dados: { percentualQueda: null, diasOffline: null, mes: tipo === 'relatorio' ? mes : null, causaRaizAnterior: null },
             regrasTreino: [], ajusteDoJunior: null, mensagemAnterior: null,
           });
         } catch (e) {
           console.warn('[pos-venda] redator falhou, usando fallback:', (e as Error).message);
         }
       }
-      if (!mensagem) mensagem = fallbackMensagem(tipo, { nome: leadRow.name ?? 'cliente', trimestre: tipo === 'relatorio' ? trimestre : null });
+      if (!mensagem) mensagem = fallbackMensagem(tipo, { nome: leadRow.name ?? 'cliente', mes: tipo === 'relatorio' ? mes : null });
 
       const fone = String(leadRow.phone ?? '').replace(/\D/g, '');
       res.json({ mensagem, waBase: fone ? `https://wa.me/${fone}` : 'https://wa.me/' });

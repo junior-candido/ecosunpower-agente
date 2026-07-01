@@ -6,7 +6,7 @@ const ctx = {
   tipo: 'queda' as const, etapa: 1,
   objetivo: 'Apresentar-se e perguntar sobre limpeza',
   clienteNome: 'João Silva',
-  dados: { percentualQueda: 35, diasOffline: null, trimestre: null, causaRaizAnterior: null },
+  dados: { percentualQueda: 35, diasOffline: null, mes: null, causaRaizAnterior: null },
   regrasTreino: ['Nunca usar a palavra "prejuízo"'],
   ajusteDoJunior: null,
   mensagemAnterior: null,

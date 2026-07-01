@@ -15,7 +15,7 @@ export const ESCADAS: Record<AbordagemTipo, Degrau[]> = {
     { etapa: 1, objetivo: 'Primeira geração acima do esperado da vida da usina: comemorar com o cliente usando os números reais e pedir, com leveza, um depoimento (áudio, texto ou vídeo) sobre a experiência com a {{empresa_nome}}.' },
   ],
   parabens: [
-    { etapa: 1, objetivo: 'Parabéns trimestral: contar quanto a usina gerou no trimestre (kWh) e quanto isso representa de economia (R$ — números fornecidos, NUNCA calcular), agradecer a confiança na {{empresa_nome}} e lembrar que a {{nome_atendente}} é o canal de suporte: qualquer dúvida, é só chamar aqui.' },
+    { etapa: 1, objetivo: 'Relatório do mês: contar quanto a usina gerou no mês (kWh) e quanto isso representa de economia (R$ — números fornecidos, NUNCA calcular), agradecer a confiança na {{empresa_nome}} e lembrar que a {{nome_atendente}} é o canal de suporte: qualquer dúvida, é só chamar aqui.' },
   ],
   queda: [
     { etapa: 1, objetivo: 'Apresentar-se como consultora da {{empresa_nome}} que acompanha o monitoramento, avisar que a geração caiu (usar o % real fornecido) e fazer perguntas de diagnóstico: faz tempo que não limpa as placas? Teve obra, sombra nova ou algum problema que saiba? Tom de cuidado, não de cobrança.' },

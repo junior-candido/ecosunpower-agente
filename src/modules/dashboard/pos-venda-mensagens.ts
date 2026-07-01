@@ -19,7 +19,7 @@ export function objetivoManual(tipo: Exclude<AcaoManual, 'contato'>): string {
 
 export interface CtxMensagem {
   nome: string;
-  trimestre: { kwh: number; reais: number } | null;
+  mes: { kwh: number; reais: number; mesLabel: string; parcial: boolean } | null;
 }
 
 const primeiroNome = (n: string) => (n.trim().split(/\s+/)[0] || 'tudo bem');
@@ -33,9 +33,9 @@ export function fallbackMensagem(tipo: Exclude<AcaoManual, 'contato'>, c: CtxMen
     case 'parabens':
       return `Oi ${nome}! 🎉 Passando só pra comemorar mais um marco da sua usina com a gente. Tá tudo certo por aí com a geração? Qualquer coisa é só chamar. — ${assinatura()}`;
     case 'relatorio':
-      return c.trimestre
-        ? `Oi ${nome}! ☀️ No período sua usina gerou ${c.trimestre.kwh} kWh, o que representou cerca de R$ ${c.trimestre.reais.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} de economia. Tô à disposição se quiser entender algum detalhe. — ${assinatura()}`
-        : `Oi ${nome}! ☀️ Passando pra te mandar um resumo de como sua usina vem rendendo. Quer que eu te explique os números do período? — ${assinatura()}`;
+      return c.mes
+        ? `Oi ${nome}! ☀️ ${c.mes.parcial ? `Neste mês de ${c.mes.mesLabel}, até agora, sua usina já gerou` : `Em ${c.mes.mesLabel}, sua usina gerou`} ${c.mes.kwh} kWh, o que representou cerca de R$ ${c.mes.reais.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} de economia. Tô à disposição se quiser entender algum detalhe. — ${assinatura()}`
+        : `Oi ${nome}! ☀️ Passando pra te mandar um resumo de como sua usina vem rendendo. Quer que eu te explique os números do mês? — ${assinatura()}`;
     case 'limpeza':
       return `Oi ${nome}! 🧹 Notei que pode ser um bom momento pra uma limpeza/manutenção preventiva das placas, pra manter a geração no talo. Posso te explicar como funciona? — ${assinatura()}`;
     case 'depoimento':
