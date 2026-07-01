@@ -1482,16 +1482,16 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
         <div>
           <label for="marca" class="block text-sm font-semibold text-slate-700 mb-2">Marca do inversor</label>
           <select name="marca" id="marca" required
-                  onchange="['solaredge','deye','nep','abb','foxess'].forEach(function(m){var el=document.getElementById('campos-'+m);if(!el)return;var ativo=document.getElementById('marca').value===m;el.style.display=ativo?'block':'none';el.disabled=!ativo;});"
+                  onchange="['solaredge','deye','nep','abb','foxess','goodwe'].forEach(function(m){var el=document.getElementById('campos-'+m);if(!el)return;var ativo=document.getElementById('marca').value===m;el.style.display=ativo?'block':'none';el.disabled=!ativo;});"
                   class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition">
             <option value="solaredge">SolarEdge</option>
             <option value="deye">Deye Cloud</option>
             <option value="nep">NEP (microinversores BDM)</option>
             <option value="abb">ABB / FIMER Aurora Vision</option>
             <option value="foxess">FoxESS (micro Q1 / inversores)</option>
+            <option value="goodwe">GoodWe (SEMS Portal)</option>
             <option value="sungrow" disabled>Sungrow (em breve)</option>
             <option value="hoymiles" disabled>Hoymiles (em breve)</option>
-            <option value="goodwe" disabled>GoodWe (em breve)</option>
             <option value="huawei" disabled>Huawei (em breve)</option>
           </select>
         </div>
@@ -1651,6 +1651,26 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
             🔑 <strong>Sem expiração / sem login:</strong> a API Key já é o acesso — o adapter usa
             ela direto (assinatura por chamada). Limite de ~1440 chamadas/dia por inversor, de sobra
             pro monitoramento diário.
+          </div>
+        </fieldset>
+
+        <fieldset id="campos-goodwe" style="display:none" disabled class="border-0 p-0 m-0">
+          <div class="space-y-3">
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">E-mail da conta SEMS Portal</label>
+              <input name="goodwe_email" type="email" placeholder="e-mail do instalador SEMS"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">Senha da conta SEMS Portal</label>
+              <input name="goodwe_password" type="password" placeholder="senha SEMS"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
+            </div>
+          </div>
+          <div class="mt-3 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs">
+            ✅ <strong>Renovação automática:</strong> com e-mail e senha do SEMS Portal, o adapter
+            <strong>loga sozinho e renova o token quando expira</strong> — você não mexe mais. A mesma
+            conta de instalador lista <strong>todas as usinas</strong> (as novas aparecem sozinhas).
           </div>
         </fieldset>
 
