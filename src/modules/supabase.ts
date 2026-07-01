@@ -141,6 +141,55 @@ export class SupabaseService {
     if (error) throw new Error(`addMensagemIA: ${error.message}`);
   }
 
+  // ---- Memória de sugestão do pós-venda (migration 065) ----
+
+  // Lê a memória de sugestão dos leads (que tipo foi sugerido/dispensado e até
+  // quando está em descanso). Best-effort: falhou → devolve vazio (a tela não pode
+  // cair por causa da memória; sem memória, apenas some o "descanso" das sugestões).
+  async getSugestaoMemoriaPorLeads(
+    leadIds: string[],
+  ): Promise<Array<{ lead_id: string; tipo: string; snoozed_until: string | null }>> {
+    if (leadIds.length === 0) return [];
+    const { data, error } = await this.client
+      .from('pos_venda_sugestao_memoria')
+      .select('lead_id, tipo, snoozed_until')
+      .in('lead_id', leadIds);
+    if (error) {
+      console.warn('[supabase] getSugestaoMemoriaPorLeads falhou:', error.message);
+      return [];
+    }
+    return data ?? [];
+  }
+
+  // Grava (ou atualiza) a memória de um tipo de sugestão pro lead: quando foi
+  // sugerida, se foi enviada ou dispensada e até quando fica em descanso (snooze).
+  // Best-effort: falhou → só loga (o envio/dispensa não pode ser bloqueado por isso).
+  async upsertSugestaoMemoria(input: {
+    leadId: string;
+    sistemaId: string | null;
+    tipo: string;
+    acao: 'enviada' | 'dispensada';
+    snoozedUntil: string;
+    agoraIso: string;
+  }): Promise<void> {
+    const { error } = await this.client
+      .from('pos_venda_sugestao_memoria')
+      .upsert(
+        {
+          lead_id: input.leadId,
+          sistema_id: input.sistemaId,
+          tipo: input.tipo,
+          ultima_sugerida_em: input.agoraIso,
+          ultima_acao: input.acao,
+          ultima_acao_em: input.agoraIso,
+          snoozed_until: input.snoozedUntil,
+          updated_at: input.agoraIso,
+        },
+        { onConflict: 'lead_id,tipo' },
+      );
+    if (error) console.warn('[supabase] upsertSugestaoMemoria falhou:', error.message);
+  }
+
   // ---- Meta Conversions API (CAPI) ----
 
   /** Dados minimos pra montar/decidir um evento CAPI de um lead. */
