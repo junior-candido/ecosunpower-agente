@@ -101,6 +101,7 @@ import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } f
 import { listarClientesPosVenda, listarAgendaPosVenda } from './pos-venda-queries.js';
 import { renderPosVendaPage } from './pos-venda-views.js';
 import { objetivoManual, fallbackMensagem } from './pos-venda-mensagens.js';
+import { snoozeAte } from './pos-venda-sugestao-memoria.js';
 import { registrarAbordagemManual } from '../monitoring/abordagem/abordagens-repo.js';
 import { numerosTrimestre } from '../monitoring/abordagem/numeros-usina.js';
 import { listarAgenda, prontuarioUsina, listarLeiturasPendentes, criarManutencao, marcarManutencaoFeita, reagendarManutencao, registrarLeituraManual } from './manutencao-queries.js';
@@ -1354,6 +1355,23 @@ export function createDashboardRouter(
     }
   });
 
+  // "Agora não": o operador dispensa uma sugestão proativa -> grava a memória com
+  // o snooze (o tipo some da tela pelo tempo de descanso). Best-effort no upsert.
+  router.post('/pos-venda/sugestao/dispensar', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    const leadId = String(req.body?.leadId ?? '').trim();
+    const tipo = String(req.body?.tipo ?? '').trim();
+    const TIPOS = ['geracao_saudavel', 'queda', 'marco', 'upgrade', 'contato'];
+    if (!leadId || !TIPOS.includes(tipo)) {
+      return res.status(400).json({ ok: false, error: 'leadId/tipo invalido' });
+    }
+    const agora = new Date();
+    await supabaseService.upsertSugestaoMemoria({
+      leadId, sistemaId: null, tipo, acao: 'dispensada',
+      snoozedUntil: snoozeAte(tipo, agora), agoraIso: agora.toISOString(),
+    });
+    res.json({ ok: true });
+  });
+
   // Copiloto de pós-venda: chat com a IA (escreve mensagem limpa) + salva histórico.
   // Espelha /leads/:id/ia-copiloto, mas com cérebro de pós-venda.
   router.post('/pos-venda/:leadId/copiloto', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
@@ -1465,6 +1483,20 @@ export function createDashboardRouter(
             mensagem: `[template ${template} enviado pela plataforma]`,
           });
         }
+      }
+      // Memória: envio de template também é "atender aquela situação" -> entra em
+      // descanso (não re-sugere logo). Depoimento fica de fora (é botão manual, não
+      // uma das situações proativas). O upsert engole erro: não bloqueia o envio.
+      const TPL_SITUACAO: Record<string, string> = {
+        relatorio: 'geracao_saudavel', parabens: 'marco', limpeza: 'queda', upgrade: 'upgrade', contato: 'contato',
+      };
+      const situacao = TPL_SITUACAO[tipo];
+      if (situacao) {
+        const agoraMem = new Date();
+        await supabaseService.upsertSugestaoMemoria({
+          leadId, sistemaId: null, tipo: situacao, acao: 'enviada',
+          snoozedUntil: snoozeAte(situacao, agoraMem), agoraIso: agoraMem.toISOString(),
+        });
       }
       console.log(`[pos-venda/enviar-template] ${template} -> ${leadId} ok`);
       res.json({ ok: true, template });
