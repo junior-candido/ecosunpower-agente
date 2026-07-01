@@ -6,7 +6,8 @@ import type { AgendaAgrupada } from '../src/modules/dashboard/pos-venda-agenda.j
 const linha = (over: Partial<PosVendaLinha> = {}): PosVendaLinha => ({
   leadId: 'l1', sistemaId: 's1', nome: 'Antonio Carlos', telefone: '5561999990000',
   cidade: 'Brasília', potenciaKwp: 5.2, marcaInversor: 'deye', dataInstalacao: '2024-06-25',
-  saude: 'verde', ultimoContatoEm: '2026-06-20T00:00:00Z', jaTeveDepoimento: false, elegivelUpgrade: false, semApi: false,
+  saude: 'verde', ultimoContatoEm: '2026-06-20T00:00:00Z', jaTeveDepoimento: false, elegivelUpgrade: false,
+  gerouBem: false, ultimoContatoPositivoEm: null, snoozedTipos: new Set<string>(), semApi: false,
   proximaAcao: { tipo: 'parabens', label: '🎉 Aniversário em 0 dia(s)', urgencia: 'media' },
   ...over,
 });

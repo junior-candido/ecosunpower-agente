@@ -3,18 +3,30 @@
 
 export interface GeracaoDia { data: string; geracao_kwh: number }
 
-export function numerosTrimestre(
+const MESES_PT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
+// Números do MÊS pro relatório. dia<=5 → mês anterior completo; senão mês
+// corrente (dia 1 → hoje, parcial). Datas comparadas como 'YYYY-MM-DD'.
+export function numerosMes(
   geracoes: GeracaoDia[],
   tarifaRsPorKwh: number,
   hoje: Date,
-): { kwh: number; reais: number } | null {
-  const corte = new Date(hoje.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const noPeriodo = geracoes.filter((g) => g.data >= corte);
+): { kwh: number; reais: number; mesLabel: string; parcial: boolean } | null {
+  const inicioDoMes = hoje.getUTCDate() <= 5;
+  let ano = hoje.getUTCFullYear();
+  let mes = hoje.getUTCMonth(); // 0-based
+  let parcial = true;
+  if (inicioDoMes) { mes -= 1; if (mes < 0) { mes = 11; ano -= 1; } parcial = false; }
+  const inicio = `${ano}-${String(mes + 1).padStart(2, '0')}-01`;
+  const fim = parcial
+    ? hoje.toISOString().slice(0, 10)
+    : new Date(Date.UTC(ano, mes + 1, 0)).toISOString().slice(0, 10); // último dia do mês
+  const noPeriodo = geracoes.filter((g) => g.data >= inicio && g.data <= fim);
   if (noPeriodo.length === 0) return null;
   const kwh = Math.round(noPeriodo.reduce((s, g) => s + Number(g.geracao_kwh), 0) * 10) / 10;
   if (!(kwh > 0)) return null;
   if (!(tarifaRsPorKwh > 0)) return null;
-  return { kwh, reais: Math.round(kwh * tarifaRsPorKwh * 100) / 100 };
+  return { kwh, reais: Math.round(kwh * tarifaRsPorKwh * 100) / 100, mesLabel: MESES_PT[mes], parcial };
 }
 
 // % de melhora da média diária: mín. 5 dias de cada lado pra não comemorar ruído.

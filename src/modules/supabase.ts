@@ -141,6 +141,39 @@ export class SupabaseService {
     if (error) throw new Error(`addMensagemIA: ${error.message}`);
   }
 
+  // ---- Memória de sugestão do pós-venda (migration 065) ----
+  // Obs.: a LEITURA da memória é feita inline em pos-venda-queries.ts (recebe o
+  // client cru), então aqui só vive a gravação (usada pelo router ao enviar/dispensar).
+
+  // Grava (ou atualiza) a memória de um tipo de sugestão pro lead: quando foi
+  // sugerida, se foi enviada ou dispensada e até quando fica em descanso (snooze).
+  // Best-effort: falhou → só loga (o envio/dispensa não pode ser bloqueado por isso).
+  async upsertSugestaoMemoria(input: {
+    leadId: string;
+    sistemaId: string | null;
+    tipo: string;
+    acao: 'enviada' | 'dispensada';
+    snoozedUntil: string;
+    agoraIso: string;
+  }): Promise<void> {
+    const { error } = await this.client
+      .from('pos_venda_sugestao_memoria')
+      .upsert(
+        {
+          lead_id: input.leadId,
+          sistema_id: input.sistemaId,
+          tipo: input.tipo,
+          ultima_sugerida_em: input.agoraIso,
+          ultima_acao: input.acao,
+          ultima_acao_em: input.agoraIso,
+          snoozed_until: input.snoozedUntil,
+          updated_at: input.agoraIso,
+        },
+        { onConflict: 'lead_id,tipo' },
+      );
+    if (error) console.warn('[supabase] upsertSugestaoMemoria falhou:', error.message);
+  }
+
   // ---- Meta Conversions API (CAPI) ----
 
   /** Dados minimos pra montar/decidir um evento CAPI de um lead. */

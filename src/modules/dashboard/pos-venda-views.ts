@@ -52,7 +52,12 @@ function renderLinha(l: PosVendaLinha): string {
   const temp = TERMOMETRO[temperatura(l, agora)];
   const sug = sugestaoProativa(l, agora);
   const chip = sug
-    ? `<button type="button" class="pv-sugestao-btn block mt-1 text-left text-xs text-indigo-300 hover:text-indigo-100" data-lead-id="${escapeHtml(l.leadId)}" data-pedido="${escapeHtml(sug.pedidoEva)}">${escapeHtml(sug.texto)}</button>`
+    ? `<div class="mt-1 flex items-center gap-2">
+         <button type="button" class="pv-sugestao-btn text-left text-xs text-indigo-300 hover:text-indigo-100"
+           data-lead-id="${escapeHtml(l.leadId)}" data-tipo="${escapeHtml(sug.tipo)}" data-pedido="${escapeHtml(sug.pedidoEva)}">${escapeHtml(sug.texto)}</button>
+         <button type="button" class="pv-sug-dispensar text-[11px] text-slate-500 hover:text-slate-300"
+           data-lead-id="${escapeHtml(l.leadId)}" data-tipo="${escapeHtml(sug.tipo)}">Agora não</button>
+       </div>`
     : '';
   const s = SEMAFORO[l.saude];
   const urgente = l.saude === 'vermelho' ? ' pv-urgent' : '';
@@ -191,6 +196,16 @@ export function renderPosVendaPage(linhas: PosVendaLinha[], user?: DashUser, age
         chat.classList.remove('hidden');
         inp.value = btn.dataset.pedido || '';
         send.click();
+      });
+    });
+    document.querySelectorAll('.pv-sug-dispensar').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var leadId = b.getAttribute('data-lead-id');
+        var tipo = b.getAttribute('data-tipo');
+        fetch('/dashboard/pos-venda/sugestao/dispensar', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ leadId: leadId, tipo: tipo }),
+        }).then(function () { var box = b.closest('div'); if (box) box.remove(); });
       });
     });
     document.querySelectorAll('.pv-chat').forEach(function (box) {

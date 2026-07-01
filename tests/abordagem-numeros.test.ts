@@ -1,25 +1,54 @@
 // tests/abordagem-numeros.test.ts
 import { describe, it, expect } from 'vitest';
-import { numerosTrimestre, recuperacaoPosLimpeza } from '../src/modules/monitoring/abordagem/numeros-usina.js';
+import { numerosMes, recuperacaoPosLimpeza } from '../src/modules/monitoring/abordagem/numeros-usina.js';
 
-describe('abordagem/numeros: trimestre', () => {
-  it('soma kWh dos últimos 90 dias e converte em R$ pela tarifa', () => {
-    const geracoes = [
-      { data: '2026-06-10', geracao_kwh: 30 },
-      { data: '2026-05-10', geracao_kwh: 40 },
-      { data: '2026-02-01', geracao_kwh: 99 }, // fora dos 90d
+describe('abordagem/numeros: mês', () => {
+  it('PARCIAL: dia 15 → mês corrente do dia 1 até hoje (ignora futuro e mês anterior)', () => {
+    const g = [
+      { data: '2026-06-05', geracao_kwh: 10 },
+      { data: '2026-06-15', geracao_kwh: 20 },
+      { data: '2026-05-30', geracao_kwh: 99 }, // mês anterior → fora
+      { data: '2026-06-20', geracao_kwh: 99 }, // depois de hoje → fora
     ];
-    const r = numerosTrimestre(geracoes, 1.05, new Date('2026-06-11T12:00:00Z'));
-    expect(r.kwh).toBe(70);
-    expect(r.reais).toBe(73.5); // 70 × 1.05
+    const r = numerosMes(g, 1.0, new Date('2026-06-15T12:00:00Z'));
+    expect(r).not.toBeNull();
+    expect(r!.kwh).toBe(30);
+    expect(r!.reais).toBe(30);
+    expect(r!.mesLabel).toBe('junho');
+    expect(r!.parcial).toBe(true);
   });
-  it('sem dados → null (nunca inventa número)', () => {
-    expect(numerosTrimestre([], 1.05, new Date())).toBeNull();
+  it('COMPLETO: dia 3 → mês ANTERIOR inteiro (dia 1 ao último dia)', () => {
+    const g = [
+      { data: '2026-05-01', geracao_kwh: 40 },
+      { data: '2026-05-31', geracao_kwh: 60 },
+      { data: '2026-06-02', geracao_kwh: 99 }, // mês corrente → fora
+      { data: '2026-04-30', geracao_kwh: 99 }, // mês anterior ao anterior → fora
+    ];
+    const r = numerosMes(g, 1.05, new Date('2026-06-03T12:00:00Z'));
+    expect(r).not.toBeNull();
+    expect(r!.kwh).toBe(100);
+    expect(r!.reais).toBe(105);
+    expect(r!.mesLabel).toBe('maio');
+    expect(r!.parcial).toBe(false);
   });
-  it('tarifa zero/negativa → null (nunca "R$ 0,00" num parabéns)', () => {
+  it('VIRADA DE ANO: janeiro dia 2 → dezembro do ano anterior, completo', () => {
+    const g = [
+      { data: '2025-12-15', geracao_kwh: 50 },
+      { data: '2026-01-01', geracao_kwh: 99 }, // já é janeiro → fora
+    ];
+    const r = numerosMes(g, 1.0, new Date('2026-01-02T12:00:00Z'));
+    expect(r).not.toBeNull();
+    expect(r!.kwh).toBe(50);
+    expect(r!.mesLabel).toBe('dezembro');
+    expect(r!.parcial).toBe(false);
+  });
+  it('sem dados no mês → null (nunca inventa número)', () => {
+    expect(numerosMes([], 1.05, new Date('2026-06-15T12:00:00Z'))).toBeNull();
+  });
+  it('tarifa zero/negativa → null (nunca "R$ 0,00" num relatório)', () => {
     const g = [{ data: '2026-06-10', geracao_kwh: 30 }];
-    expect(numerosTrimestre(g, 0, new Date('2026-06-11T12:00:00Z'))).toBeNull();
-    expect(numerosTrimestre(g, -1, new Date('2026-06-11T12:00:00Z'))).toBeNull();
+    expect(numerosMes(g, 0, new Date('2026-06-15T12:00:00Z'))).toBeNull();
+    expect(numerosMes(g, -1, new Date('2026-06-15T12:00:00Z'))).toBeNull();
   });
 });
 

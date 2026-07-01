@@ -8,7 +8,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { podeAbordar, decidirTipoMilestone, RITMO, diasDesde } from './regras.js';
 import { ESCADAS, objetivoDoDegrau } from './escada.js';
 import { empresa } from '../../empresa-config.js';
-import { numerosTrimestre, recuperacaoPosLimpeza, type GeracaoDia } from './numeros-usina.js';
+import { numerosMes, recuperacaoPosLimpeza, type GeracaoDia } from './numeros-usina.js';
 import { redigirMensagem, type ContextoRedacao } from './redator.js';
 import {
   criarProposta, getAbordagem, mudarStatusAbordagem, atualizarAbordagem,
@@ -55,7 +55,7 @@ const VASSOURA_EXPIRA_DIAS = 7;
 const VASSOURA_ESFRIA_DIAS = 5;
 
 const ROTULO_TIPO: Record<AbordagemTipo, string> = {
-  parabens: '☀️ parabéns trimestral',
+  parabens: '☀️ parabéns mensal',
   depoimento: '⭐ pedido de depoimento',
   queda: '📉 queda de geração',
   offline: '🔌 sem monitorar',
@@ -114,12 +114,14 @@ async function getGeracaoEntre(
   return (data ?? []) as GeracaoDia[];
 }
 
-async function getTrimestre(
+async function getMes(
   client: SupabaseClient, sistema: SistemaBasico, hoje: Date,
-): Promise<{ kwh: number; reais: number } | null> {
-  const ger90 = await getGeracaoEntre(client, sistema.id, isoDia(addDias(hoje, -90)), isoDia(hoje));
+): Promise<{ kwh: number; reais: number; mesLabel: string; parcial: boolean } | null> {
+  // Janela ampla o suficiente pra cobrir o mês reportado (corrente parcial ou
+  // anterior completo); numerosMes recorta o mês exato.
+  const ger = await getGeracaoEntre(client, sistema.id, isoDia(addDias(hoje, -62)), isoDia(hoje));
   // R$ = kWh × tarifa da distribuidora (solar-params) — a IA NUNCA calcula.
-  return numerosTrimestre(ger90, tarifaPorConcessionaria(sistema.uf ?? sistema.cidade), hoje);
+  return numerosMes(ger, tarifaPorConcessionaria(sistema.uf ?? sistema.cidade), hoje);
 }
 
 // Recalcula os dados reais a partir do banco (usado na REESCRITA pós-[Ajustar]
@@ -129,7 +131,7 @@ async function recomputarDados(
   client: SupabaseClient, row: AbordagemRow, hoje: Date,
 ): Promise<ContextoRedacao['dados']> {
   const dados: ContextoRedacao['dados'] = {
-    percentualQueda: null, diasOffline: null, trimestre: null,
+    percentualQueda: null, diasOffline: null, mes: null,
     causaRaizAnterior: row.causa_raiz,
   };
   const sistema = await getSistemaBasico(client, row.sistema_id);
@@ -153,7 +155,7 @@ async function recomputarDados(
       if (pct > 0 && pct < 100) dados.percentualQueda = pct;
     }
   } else {
-    dados.trimestre = await getTrimestre(client, sistema, hoje);
+    dados.mes = await getMes(client, sistema, hoje);
   }
   return dados;
 }
@@ -163,7 +165,7 @@ async function recomputarDados(
 function faltaDadoChave(tipo: AbordagemTipo, dados: ContextoRedacao['dados']): boolean {
   if (tipo === 'offline') return dados.diasOffline == null;
   if (tipo === 'queda') return dados.percentualQueda == null;
-  return dados.trimestre == null; // parabens/depoimento
+  return dados.mes == null; // parabens/depoimento
 }
 
 // I1: FRESCOR compartilhado (envio, lembrete e reagendada) — alerta de problema
@@ -233,15 +235,15 @@ export async function proporAbordagem(deps: OrqDeps, args: {
     const dados: ContextoRedacao['dados'] = {
       percentualQueda: tipo === 'queda' ? args.percentualQueda : null,
       diasOffline: tipo === 'offline' ? args.diasOffline : null,
-      trimestre: null,
+      mes: null,
       causaRaizAnterior: tipo === 'offline' ? diario.causaRaizAnterior : null,
     };
     if (tipo === 'parabens' || tipo === 'depoimento') {
-      dados.trimestre = await getTrimestre(client, sistema, hoje);
+      dados.mes = await getMes(client, sistema, hoje);
       // Parabéns sem número real é conversa vazia — nunca mandar.
-      // (Depoimento pode ir sem trimestre: o gancho é a geração acima do esperado.)
-      if (tipo === 'parabens' && !dados.trimestre) {
-        console.log(`[abordagem] parabéns sem números do trimestre (sistema=${args.sistemaId}) — inelegível`);
+      // (Depoimento pode ir sem mes: o gancho é a geração acima do esperado.)
+      if (tipo === 'parabens' && !dados.mes) {
+        console.log(`[abordagem] parabéns sem números do mês (sistema=${args.sistemaId}) — inelegível`);
         return 'inelegivel';
       }
     }
