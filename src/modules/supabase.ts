@@ -142,24 +142,8 @@ export class SupabaseService {
   }
 
   // ---- Memória de sugestão do pós-venda (migration 065) ----
-
-  // Lê a memória de sugestão dos leads (que tipo foi sugerido/dispensado e até
-  // quando está em descanso). Best-effort: falhou → devolve vazio (a tela não pode
-  // cair por causa da memória; sem memória, apenas some o "descanso" das sugestões).
-  async getSugestaoMemoriaPorLeads(
-    leadIds: string[],
-  ): Promise<Array<{ lead_id: string; tipo: string; snoozed_until: string | null }>> {
-    if (leadIds.length === 0) return [];
-    const { data, error } = await this.client
-      .from('pos_venda_sugestao_memoria')
-      .select('lead_id, tipo, snoozed_until')
-      .in('lead_id', leadIds);
-    if (error) {
-      console.warn('[supabase] getSugestaoMemoriaPorLeads falhou:', error.message);
-      return [];
-    }
-    return data ?? [];
-  }
+  // Obs.: a LEITURA da memória é feita inline em pos-venda-queries.ts (recebe o
+  // client cru), então aqui só vive a gravação (usada pelo router ao enviar/dispensar).
 
   // Grava (ou atualiza) a memória de um tipo de sugestão pro lead: quando foi
   // sugerida, se foi enviada ou dispensada e até quando fica em descanso (snooze).
