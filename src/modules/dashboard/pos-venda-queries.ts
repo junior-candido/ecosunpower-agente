@@ -40,6 +40,9 @@ const diasAtras = (n: number) => new Date(Date.now() - n * 86400000).toISOString
 // kWh/mês por kWp (média Brasil) — só pra ACENDER o sinal de upgrade, nunca
 // mostrado ao cliente. Isolado aqui: se o Junior tiver número melhor, troca-se só esta linha.
 const KWH_MES_POR_KWP = 120;
+// "Gerou bem" = atingiu ao menos 85% do esperado no mês. Não exige recorde:
+// usina saudável (inclusive no inverno, que rende menos) já dispara a boa notícia.
+const FATOR_GEROU_BEM = 0.85;
 
 export async function listarClientesPosVenda(client: SupabaseClient, companyId: string): Promise<PosVendaLinha[]> {
   // 1) usinas NO PÓS-VENDA (etapa_obra = 'pos_venda') com lead vinculado.
@@ -136,7 +139,7 @@ export async function listarClientesPosVenda(client: SupabaseClient, companyId: 
     // (saúde verde + gerou algo) — nunca cravo "foi bem" sem dado real.
     const somaRealPeriodo = geracoes.reduce((acc, g) => acc + (g.geracao_kwh || 0), 0);
     const gerouBem = (potencia && geracoes.length > 0)
-      ? somaRealPeriodo >= potencia * KWH_MES_POR_KWP
+      ? somaRealPeriodo >= potencia * KWH_MES_POR_KWP * FATOR_GEROU_BEM
       : saude === 'verde' && somaRealPeriodo > 0;
     const elegivel = elegivelUpgrade(
       { potenciaKwp: potencia, dataInstalacao: s.data_instalacao, geracaoEstimadaKwhMes: potencia ? potencia * KWH_MES_POR_KWP : null },
