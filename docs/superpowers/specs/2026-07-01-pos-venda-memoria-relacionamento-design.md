@@ -40,6 +40,25 @@ Não-objetivos: mudar o motor de atendimento de lead; criar template novo no Met
 (os templates que existem já cobrem: relatório, parabéns, limpeza, depoimento,
 upgrade, contato); auto-enviar ao cliente sem aprovação do operador.
 
+## O que NÃO muda (compatibilidade travada)
+
+O copiloto do operador está no ar e validado ("funcionou liso") — é **intocável**.
+Esta feature é uma **camada por cima** da sugestão; nada que funciona hoje é
+removido. Ficam idênticos:
+
+- **Chat da Eva no pós-venda** (escreve a mensagem, prévia, "Enviar pela Eva",
+  sinal de enviado). O botão "Enviar" de uma sugestão abre **o mesmo copiloto**.
+- **Templates** (relatório, parabéns, limpeza, depoimento, upgrade, contato) e o
+  **fluxo de envio** (registro de abordagem incluído).
+- **Agenda, notas internas, termômetro de feedbacks, saúde da usina.**
+- **Atendimento de LEAD** pela Eva — fora de escopo, nem toca.
+
+Só muda a **sugestão** (ganha memória, para de repetir), o **depoimento** (vira
+botão manual, mesmo envio) e são **adicionados** a boa notícia de geração e o
+"Agora não". Garantias: migration additiva (não altera tabela existente); TDD +
+code review 3× + suíte completa verde antes de subir; comportamento seguro por
+padrão (sem dado de memória, a dica continua elegível — nunca trava).
+
 ## Abordagem escolhida (A): memória leve + Eva escreve na hora
 
 A sugestão passa a **ler o histórico** de cada cliente (o que já foi enviado/
