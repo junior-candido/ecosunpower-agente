@@ -10,7 +10,8 @@ export type MarcaInversor =
   | 'huawei'
   | 'foxess'
   | 'nep'
-  | 'abb';
+  | 'abb'
+  | 'solis';
 
 export type TelhadoTipo = 'ceramica' | 'fibrocimento' | 'laje' | 'metalico' | 'solo' | 'outro';
 export type Orientacao = 'N' | 'NE' | 'L' | 'SE' | 'S' | 'SO' | 'O' | 'NO';

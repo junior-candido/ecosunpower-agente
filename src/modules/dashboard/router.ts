@@ -1846,6 +1846,17 @@ export function createDashboardRouter(
         }));
       }
       credenciais = { email, password };
+    } else if (marca === 'solis') {
+      const keyId = String(req.body?.solis_key_id ?? '').trim();
+      const keySecret = String(req.body?.solis_key_secret ?? '').trim();
+      const apiUrl = String(req.body?.solis_api_url ?? '').trim();
+      if (!keyId || !keySecret) {
+        return res.status(400).send(renderImportarSitesPage({
+          errorMsg: 'Solis precisa de KeyId e KeySecret (gere no app SolisCloud → Gerenciamento de API).',
+        }));
+      }
+      credenciais = { keyId, keySecret };
+      if (apiUrl) credenciais.apiUrl = apiUrl;
     } else {
       return res.status(400).send(renderImportarSitesPage({
         errorMsg: `Marca ${marca} ainda nao tem adapter implementado.`,
