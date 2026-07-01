@@ -7,6 +7,7 @@ import {
   type Saude, type ProximaAcao,
 } from './pos-venda-saude.js';
 import { agruparAgenda, type AgendaAgrupada, type TarefaAgenda } from './pos-venda-agenda.js';
+import { tiposSnoozed } from './pos-venda-sugestao-memoria.js';
 
 export interface PosVendaLinha {
   leadId: string;
@@ -21,6 +22,9 @@ export interface PosVendaLinha {
   ultimoContatoEm: string | null;
   jaTeveDepoimento: boolean;
   elegivelUpgrade: boolean;
+  gerouBem: boolean;
+  ultimoContatoPositivoEm: string | null;
+  snoozedTipos: Set<string>;
   semApi: boolean;
   proximaAcao: ProximaAcao;
 }
@@ -92,9 +96,29 @@ export async function listarClientesPosVenda(client: SupabaseClient, companyId: 
   if (e5) throw new Error(`listarClientesPosVenda/abordagens: ${e5.message}`);
   const ultimoContato = new Map<string, string>();
   const teveDepoimento = new Set<string>();
+  // Último "contato positivo" (boa notícia / celebração) por lead. No vocabulário
+  // real de monitoring_abordagens os tipos positivos são a família milestone
+  // 'parabens'/'depoimento' (não existe tipo 'relatorio' na tabela). Serve pra não
+  // mandar de novo a boa notícia "usina foi bem" logo depois de já ter celebrado.
+  const contatoPositivo = new Map<string, string>();
   for (const a of (abData ?? []) as any[]) {
     if (!ultimoContato.has(a.lead_id)) ultimoContato.set(a.lead_id, a.enviada_em);
     if (a.tipo === 'depoimento') teveDepoimento.add(a.lead_id);
+    if (a.tipo === 'parabens' || a.tipo === 'depoimento') {
+      const cur = contatoPositivo.get(a.lead_id);
+      if (!cur || a.enviada_em > cur) contatoPositivo.set(a.lead_id, a.enviada_em);
+    }
+  }
+
+  // 6) memória de sugestão: que tipos estão "em descanso" (snooze) por lead —
+  // pra não repetir uma dica que o operador acabou de mandar ou dispensou.
+  const memoriaRows = await client.from('pos_venda_sugestao_memoria')
+    .select('lead_id, tipo, snoozed_until').in('lead_id', leadIds)
+    .then((r) => (r.error ? [] : (r.data ?? [])) as Array<{ lead_id: string; tipo: string; snoozed_until: string | null }>);
+  const agoraDate = new Date();
+  const snoozadosPorLead = new Map<string, Set<string>>();
+  for (const id of leadIds) {
+    snoozadosPorLead.set(id, tiposSnoozed(memoriaRows.filter((r) => r.lead_id === id), agoraDate));
   }
 
   const hoje = new Date();
@@ -102,9 +126,18 @@ export async function listarClientesPosVenda(client: SupabaseClient, companyId: 
   for (const s of sis) {
     const lead = leads.get(s.lead_id);
     if (!lead) continue; // lead de outra company → fora (multi-tenant)
-    const saude = saudeUsina(alertasPorSistema.get(s.id) ?? [], geracaoPorSistema.get(s.id) ?? []);
+    const geracoes = geracaoPorSistema.get(s.id) ?? [];
+    const saude = saudeUsina(alertasPorSistema.get(s.id) ?? [], geracoes);
     const jaTeve = teveDepoimento.has(s.lead_id);
     const potencia = s.potencia_kwp != null ? Number(s.potencia_kwp) : null;
+    // gerouBem: comparo a geração real do período (~30d) com a estimativa do mês
+    // (potência × KWH_MES_POR_KWP), que ESTÁ acessível aqui. Só uso a comparação
+    // real quando tenho potência e ao menos um dia de geração; senão caio no proxy
+    // (saúde verde + gerou algo) — nunca cravo "foi bem" sem dado real.
+    const somaRealPeriodo = geracoes.reduce((acc, g) => acc + (g.geracao_kwh || 0), 0);
+    const gerouBem = (potencia && geracoes.length > 0)
+      ? somaRealPeriodo >= potencia * KWH_MES_POR_KWP
+      : saude === 'verde' && somaRealPeriodo > 0;
     const elegivel = elegivelUpgrade(
       { potenciaKwp: potencia, dataInstalacao: s.data_instalacao, geracaoEstimadaKwhMes: potencia ? potencia * KWH_MES_POR_KWP : null },
       { consumoMedioKwh: lead.consumo_medio_kwh != null ? Number(lead.consumo_medio_kwh) : null },
@@ -118,6 +151,9 @@ export async function listarClientesPosVenda(client: SupabaseClient, companyId: 
       dataInstalacao: s.data_instalacao ?? null,
       saude, ultimoContatoEm: contato, jaTeveDepoimento: jaTeve,
       elegivelUpgrade: elegivel,
+      gerouBem,
+      ultimoContatoPositivoEm: contatoPositivo.get(s.lead_id) ?? null,
+      snoozedTipos: snoozadosPorLead.get(s.lead_id) ?? new Set<string>(),
       semApi: semApiUsina(s),
       proximaAcao: proximaAcaoPosVenda(
         { saude, dataInstalacao: s.data_instalacao, ultimoContatoEm: contato, jaTeveDepoimento: jaTeve, elegivelUpgrade: elegivel },
