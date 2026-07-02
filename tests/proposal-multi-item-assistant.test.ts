@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData, buildServiceImagePrompt, buildComparacaoOpcao, hydrarOpcaoPrincipalDaComparacao, montarInputOpcaoComparacao, buildMensagemClienteProposta, ProposalAssistant } from '../src/modules/proposal-assistant.js';
+import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData, buildServiceImagePrompt, buildComparacaoOpcao, hydrarOpcaoPrincipalDaComparacao, montarInputOpcaoComparacao, buildMensagemClienteProposta, ProposalAssistant, buildSystemPrompt } from '../src/modules/proposal-assistant.js';
 
 describe('buildMensagemClienteProposta', () => {
   it('mensagem limpa pro cliente: saudação (1º nome) + link, SEM nada interno', () => {
@@ -303,5 +303,26 @@ describe('isProposalTrigger — proposta de serviço', () => {
     expect(t('/proposta')).toBe(true);
     expect(t('proposta')).toBe(true);
     expect(t('quero gerar proposta pro Marcio')).toBe(true);
+  });
+});
+
+describe('buildSystemPrompt — regra da proposta de serviço', () => {
+  const prompt = buildSystemPrompt('', '');
+
+  it('preço POR ITEM é caminho oficial (sistema soma, Eva não)', () => {
+    expect(prompt).toContain('POR ITEM');
+    expect(prompt).toContain('O SISTEMA SOMA');
+  });
+  it('trava: tarefa sem preço numa precificação por item → perguntar', () => {
+    expect(prompt).toContain('pergunte o preço DELA');
+  });
+  it('trava: total que não bate com a soma → perguntar qual vale', () => {
+    expect(prompt).toContain('pergunte qual vale');
+  });
+  it('resumo de conferência itemizado no só-serviço', () => {
+    expect(prompt).toContain('liste CADA serviço com o preço');
+  });
+  it('a instrução antiga de "quase sempre valor único" saiu', () => {
+    expect(prompt).not.toContain('quase sempre é orçado por UM VALOR ÚNICO');
   });
 });
