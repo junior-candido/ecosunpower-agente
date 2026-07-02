@@ -75,9 +75,12 @@ export async function runDispatchCycle(hoje: Date, ctx: DispatchCtx): Promise<{
             dryRunSimulados++;
             continue;
           }
+          // Marco absorvido fica ABERTO com trava longa: resolver faria o detect
+          // recriar o alerta toda hora (churn); aberto ele deduplica e não repinta
+          // nada na tela (saúde ignora milestone). Queda mantém +3d (pinta o amarelo).
+          const travaDias = alerta.tipo === 'milestone_economia' ? 30 : 3;
           await ctx.supabase.marcarAlertaAbsorvidoPorResumo(
-            alerta.id, hoje.toISOString(), addDays(hoje, 3).toISOString(),
-            alerta.tipo === 'milestone_economia');
+            alerta.id, hoje.toISOString(), addDays(hoje, travaDias).toISOString());
           console.log(`[proactive-alerts] dispatch: absorvido pelo resumo — alerta=${alerta.id} tipo=${alerta.tipo}`);
           continue;
         }
