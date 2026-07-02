@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData, buildServiceImagePrompt, buildComparacaoOpcao, hydrarOpcaoPrincipalDaComparacao, montarInputOpcaoComparacao, buildMensagemClienteProposta } from '../src/modules/proposal-assistant.js';
+import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData, buildServiceImagePrompt, buildComparacaoOpcao, hydrarOpcaoPrincipalDaComparacao, montarInputOpcaoComparacao, buildMensagemClienteProposta, ProposalAssistant, buildSystemPrompt } from '../src/modules/proposal-assistant.js';
 
 describe('buildMensagemClienteProposta', () => {
   it('mensagem limpa pro cliente: saudação (1º nome) + link, SEM nada interno', () => {
@@ -274,5 +274,65 @@ describe('mapServicosFromClaude', () => {
       { titulo: 'Adequação', descricao: 'troca padrão', valorRs: 2800 },
     ]);
     expect(out?.[0].jaIncluso).toBe(false);
+  });
+});
+
+describe('isProposalTrigger — proposta de serviço', () => {
+  const t = (s: string) => ProposalAssistant.isProposalTrigger(s);
+
+  it('"proposta de serviço ..." solto (sem barra) dispara', () => {
+    expect(t('proposta de serviço pro Thiago — desmontagem, transporte, total R$ 7.800')).toBe(true);
+  });
+  it('"Proposta de serviço" sozinho dispara (case/acento indiferente)', () => {
+    expect(t('Proposta de serviço')).toBe(true);
+    expect(t('proposta de servico')).toBe(true);
+  });
+  it('"/proposta de serviço" (do botão do menu) dispara', () => {
+    expect(t('/proposta de serviço')).toBe(true);
+  });
+  it('"proposta de serviços" (plural) dispara', () => {
+    expect(t('proposta de serviços pro condomínio')).toBe(true);
+  });
+  it('frase com o termo no MEIO não dispara', () => {
+    expect(t('a proposta de serviço do concorrente chegou')).toBe(false);
+  });
+  it('lançamento financeiro não dispara', () => {
+    expect(t('recebi 5000 do João')).toBe(false);
+  });
+  it('gatilhos antigos seguem valendo', () => {
+    expect(t('/proposta')).toBe(true);
+    expect(t('proposta')).toBe(true);
+    expect(t('quero gerar proposta pro Marcio')).toBe(true);
+  });
+  it('espaços duplicados não quebram o gatilho', () => {
+    expect(t('proposta  de  serviço pro João, padrão 2500')).toBe(true);
+  });
+});
+
+describe('buildSystemPrompt — regra da proposta de serviço', () => {
+  const prompt = buildSystemPrompt('', '');
+
+  it('preço POR ITEM é caminho oficial (sistema soma, Eva não)', () => {
+    expect(prompt).toContain('POR ITEM');
+    expect(prompt).toContain('O SISTEMA SOMA');
+  });
+  it('trava: tarefa sem preço numa precificação por item → perguntar', () => {
+    expect(prompt).toContain('pergunte o preço DELA');
+  });
+  it('trava: total que não bate com a soma → perguntar qual vale', () => {
+    expect(prompt).toContain('pergunte qual vale');
+  });
+  it('resumo de conferência itemizado no só-serviço', () => {
+    expect(prompt).toContain('liste CADA serviço com o preço');
+  });
+  it('a instrução antiga de "quase sempre valor único" saiu', () => {
+    expect(prompt).not.toContain('quase sempre é orçado por UM VALOR ÚNICO');
+  });
+  it('no caminho por item, valorTotalRs não é obrigatório nem entra em missing', () => {
+    expect(prompt).toContain("valorTotalRs` NÃO é obrigatório");
+    expect(prompt).toContain("NUNCA o liste em `missing`");
+  });
+  it('CAMPOS OBRIGATÓRIOS tem a exceção do só-serviço', () => {
+    expect(prompt).toContain('Exceção — proposta SÓ de serviço');
   });
 });

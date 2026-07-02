@@ -380,7 +380,7 @@ export interface GenerateProposalCoreResult {
 // [ECOSOF] Identidade via placeholders {{...}} — resolvidos POR CHAMADA no
 // askClaude (interpolarEmpresa + empresa()), pra /recarregar-config valer sem
 // restart. O texto cru fica cacheado no construtor (knowledge não muda).
-function buildSystemPrompt(propostasKnowledge: string, marcasKnowledge: string): string {
+export function buildSystemPrompt(propostasKnowledge: string, marcasKnowledge: string): string {
   // [ECOSOF] O item de cartão é condicional na MONTAGEM (não placeholder):
   // belenus_ativo (EcoSun, seed) = tabela do parceiro em 24×; flag desligada =
   // cartão genérico de até 12× na maquininha (service-payment). O texto do
@@ -425,7 +425,11 @@ ${marcasKnowledge}
         • \`false\` (padrão) → serviço "A MAIS": SOMA ao valor do solar. Use quando o Junior diz "a mais", "à parte", "fora do orçamento", "extra", "adiciona X por R$Y", "além do solar".
         • \`true\` → serviço "JÁ INCLUSO": já está DENTRO do valor que o Junior passou, então NÃO soma de novo (na proposta aparece com selo "já incluso"). Use quando o Junior diz "já incluso", "já está no valor", "dentro do total", "sem custo adicional", "já contemplado", "incluso no preço".
     REGRA DE OURO da conta: \`valorTotalRs\` é SEMPRE só o valor do solar. Se um serviço é \`jaIncluso: true\`, o \`valorTotalRs\` que o Junior passou JÁ contém esse serviço — não desconte nem some nada, o sistema faz a conta certa. Você só entende e classifica; quem soma/subtrai é SEMPRE o sistema, NUNCA você de cabeça.
-    **PROPOSTA SÓ DE SERVIÇO (sem solar):** se o Junior pedir uma proposta só de serviço (ex: desmontagem/reinstalação, adequação de padrão, projeto elétrico, sem kit solar), preencha \`servicos[]\` (as tarefas) + \`nomeCliente\` (+ telefone se modo eva_envia). NÃO invente \`potenciaKwp\`, módulo, inversor nem consumo — deixe ausentes/0. **VALOR:** serviço quase sempre é orçado por UM VALOR ÚNICO (o Junior fala "total R$ X") — nesse caso ponha esse total em \`valorTotalRs\` e deixe as tarefas em \`servicos[]\` SEM preço por item (\`valorRs\` ausente/0). Só preencha \`valorRs\` por item quando o Junior der preço tarefa por tarefa. O sistema usa o valor único quando os itens não têm preço. NÃO liste os campos solares em \`missing\`.
+    **PROPOSTA SÓ DE SERVIÇO (sem solar):** se o Junior pedir uma proposta só de serviço (ex: desmontagem/reinstalação, adequação de padrão, projeto elétrico, sem kit solar), preencha \`servicos[]\` (as tarefas) + \`nomeCliente\` (+ telefone se modo eva_envia). NÃO invente \`potenciaKwp\`, módulo, inversor nem consumo — deixe ausentes/0. **VALOR — dois jeitos, ambos oficiais:**
+        • **POR ITEM** (quando o Junior dá preço por tarefa, ex: "padrão 2500, SPDA 1800, projeto 900"): preencha o \`valorRs\` de CADA tarefa em \`servicos[]\` e deixe \`valorTotalRs\` ausente — O SISTEMA SOMA os itens, você NUNCA soma de cabeça. Se alguma tarefa ficou sem preço, pergunte o preço DELA (\`action: ask_more\`) antes de gerar — soma furada não pode. Se o Junior disser que uma tarefa "está inclusa" em outra, ponha \`valorRs: 0\` nela e registre isso na \`descricao\` (ex: "incluso na adequação de padrão"). Nesse caminho o \`valorTotalRs\` NÃO é obrigatório — NUNCA o liste em \`missing\`.
+        • **VALOR FECHADO** (quando o Junior dá um número só, ex: "total R$ 7.800"): ponha em \`valorTotalRs\` e deixe as tarefas SEM \`valorRs\`. Continua valendo como sempre.
+        • **CONFLITO:** se ele der preços por item E TAMBÉM um total que não bate com a soma, você NÃO escolhe: mostre a soma dos itens e pergunte qual vale (\`action: ask_more\`).
+    No resumo de conferência (\`ready_to_generate\`) da proposta de serviço, liste CADA serviço com o preço e o total no final (ex: "• Adequação de padrão — R$ 2.500\\n• SPDA — R$ 1.800\\n💵 Total: R$ 4.300"); no valor fechado, liste as tarefas e o total único. NÃO liste os campos solares em \`missing\`.
 11. **COMPARAÇÃO (2 sistemas solares):** se o Junior quiser que o cliente compare duas opções de sistema, preencha a proposta normalmente com a **Opção A** (potência, módulo, inversor, valorTotalRs no nível principal do \`data\`) E devolva \`comparacao: [opcaoA, opcaoB]\`. **CADA opção precisa vir COMPLETA** — não só a marca: \`rotulo\`, \`potenciaKwp\`, \`valorTotalRs\`, \`modulo\` (com \`fabricante\`, \`modelo\`, \`potenciaW\` e \`quantidade\`) e \`inversor\` (com \`fabricante\`, \`modelo\` e \`quantidade\`). As duas opções têm de ser **DIFERENTES de verdade** (potência/equipamento/valor distintos) — se o Junior só descreveu UM sistema, NÃO invente o outro: peça os dados do segundo sistema (\`action: ask_more\`, listando o que falta da Opção B). NÃO marque recomendação — as duas são neutras. O sistema calcula a geração/payback de CADA uma pela potência dela (você NÃO calcula nada) e monta o quadro comparativo lado a lado.
 12. **ECONOMIA MENSAL EM R$:** a proposta mostra pro cliente quanto ele economiza POR MÊS em reais (o número que ele mais entende). Pra esse valor sair certo, peça ao Junior — quando ele não informar — a **tarifa real do kWh da conta** (\`tarifaRsKwh\`) e o **valor da iluminação pública** da conta (\`custoIluminacaoPublica\`). São RECOMENDADOS, não bloqueiam: se o Junior não tiver, use os defaults do sistema e siga. Quando ele informar, respeite o número dele.
 
@@ -496,6 +500,7 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
 - Sistema: potenciaKwp, consumoMensalKwh, tipoCliente, modalidade, concessionaria
 - Equipamentos: modulo (todos), inversor (todos), estruturaFixacao (tipo)
 - Comercial: valorTotalRs
+- **Exceção — proposta SÓ de serviço:** vale a regra 10 (SERVIÇOS): campos solares NUNCA são obrigatórios; \`valorTotalRs\` só quando o Junior orçar por valor fechado (por item, o sistema soma).
 
 **Bateria (OPCIONAL — só preencha se o Junior mencionar bateria/armazenamento/híbrido):**
 - Capte: fabricante, modelo, capacidadeKwh (por unidade), quantidade, garantia (anos).
@@ -720,6 +725,11 @@ export class ProposalAssistant {
     norm = norm.replace(/^eva[\s,]+/, '').trim();
 
     if (/^\/(proposta|propor|gerar?\s*proposta)(\s|$)/.test(norm)) return true;
+
+    // "proposta de serviço ..." escrito solto (o jeito que o menu ensina)
+    // também abre o modo — sem isso a mensagem caía solta e a Caixa de
+    // Entrada do financeiro tratava os R$ como lançamento (botões PF/PJ).
+    if (/^\/?proposta\s+de\s+servicos?(\s|$)/.test(norm)) return true;
 
     const palavrasSoltas = ['proposta', 'propostas', 'gerar proposta', 'fazer proposta'];
     if (palavrasSoltas.includes(norm)) return true;

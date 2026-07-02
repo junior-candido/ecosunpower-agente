@@ -70,6 +70,15 @@ describe('menu — comandos novos', () => {
   const item = (id: string) => cats.flatMap(c => c.items).find(i => i.id === id);
   const catDoItem = (id: string) => cats.find(c => c.items.some(i => i.id === id))?.id;
 
+  it('proposta de serviço DISPARA o modo proposta (não é mais só dica)', () => {
+    const i = item('menu_proposta_servico');
+    expect(catDoItem('menu_proposta_servico')).toBe('propostas');
+    expect(i?.trigger).toBe('/proposta de serviço');
+    expect(i?.handler).toBeDefined();
+    expect(i?.hint).toBeUndefined();
+    expect(i?.description).toContain('por item');
+  });
+
   it('comparador de material está no Financeiro como dica', () => {
     expect(catDoItem('menu_fin_material')).toBe('financeiro');
     expect(item('menu_fin_material')?.hint).toContain('preço do');
