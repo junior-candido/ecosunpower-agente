@@ -79,6 +79,19 @@ export async function listarClientesPosVenda(client: SupabaseClient, companyId: 
     alertasPorSistema.set(a.sistema_id, arr);
   }
 
+  // 3b) alertas do MONITORAMENTO (monitoring_alerts) — a fonte viva: queda/
+  // offline detectados pelos adapters moram aqui, não em alertas_sistema.
+  // Sem isso a saúde da tela não pinta e a queda some do resumo diário.
+  const { data: monAlertas, error: e3b } = await client.from('monitoring_alerts')
+    .select('sistema_id, tipo, severidade')
+    .in('sistema_id', sistemaIds).is('resolved_at', null);
+  if (e3b) throw new Error(`listarClientesPosVenda/monitoring_alerts: ${e3b.message}`);
+  for (const a of (monAlertas ?? []) as any[]) {
+    const arr = alertasPorSistema.get(a.sistema_id) ?? [];
+    arr.push({ tipo: a.tipo, severidade: a.severidade ?? '' });
+    alertasPorSistema.set(a.sistema_id, arr);
+  }
+
   // 4) geração recente (30d) por sistema
   const { data: geracaoData, error: e4 } = await client.from('geracao_diaria')
     .select('sistema_id, data, geracao_kwh')
