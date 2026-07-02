@@ -65,3 +65,55 @@ export function montarResumoDiario(itens: ItemResumo[], linkPainel: string): str
   linhas.push(`👉 Resolver no painel: ${linkPainel}`);
   return linhas.join('\n');
 }
+
+// ---------------------------------------------------------------------------
+// Runner de I/O — chamado pelo cron de 15 min do index (junto do dispatch).
+// ---------------------------------------------------------------------------
+
+const ECOSUN = '00000000-0000-0000-0000-000000000001';
+
+export interface ResumoDeps {
+  client: SupabaseClient;
+  sendText: (to: string, text: string) => Promise<void>;
+  adminPhone: string;
+  dryRun: boolean;
+}
+
+// CAS: grava a marca SE ainda não mandou hoje (BRT). true = ganhou a vez.
+async function marcarResumoEnviadoHoje(client: SupabaseClient, agora: Date): Promise<boolean> {
+  const { data, error } = await client.from('monitoring_config')
+    .update({ resumo_diario_enviado_em: agora.toISOString(), updated_at: agora.toISOString() })
+    .eq('id', 1)
+    .or(`resumo_diario_enviado_em.is.null,resumo_diario_enviado_em.lt.${inicioDoDiaBrt(agora)}`)
+    .select('id');
+  if (error) throw new Error(`marcarResumoEnviadoHoje: ${error.message}`);
+  return (data?.length ?? 0) > 0;
+}
+
+export async function rodarResumoDiario(deps: ResumoDeps, agora: Date): Promise<void> {
+  try {
+    if (!dentroDaJanelaResumo(agora)) return;
+
+    const linhas = await listarClientesPosVenda(deps.client, ECOSUN);
+    const itens: ItemResumo[] = [];
+    for (const l of linhas) {
+      const s = sugestaoProativa(l, agora);
+      if (s) itens.push({ nome: l.nome, tipo: s.tipo });
+    }
+    const base = (process.env.DASHBOARD_BASE_URL ?? 'https://dashboard.ecosunpower.eng.br').replace(/\/$/, '');
+    const texto = montarResumoDiario(itens, `${base}/dashboard/pos-venda`);
+    if (!texto) return; // dia sem nada = silêncio (e não consome a marca)
+
+    if (deps.dryRun) {
+      console.log(`[resumo-diario] DRY: mandaria pro Junior:\n${texto}`);
+      return; // dry não marca — o resumo real sai quando o dry desligar
+    }
+    // Porteiro CAS ANTES do envio: nunca 2 resumos no mesmo dia.
+    if (!(await marcarResumoEnviadoHoje(deps.client, agora))) return;
+    await deps.sendText(deps.adminPhone, texto);
+    console.log(`[resumo-diario] enviado (${itens.length} sugestões)`);
+  } catch (err) {
+    // Falha nunca derruba o ciclo dos outros crons; tenta no próximo (15 min).
+    console.error('[resumo-diario] falhou:', (err as Error).message);
+  }
+}
