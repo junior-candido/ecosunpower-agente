@@ -47,6 +47,10 @@ const GRUPOS: Array<{ tipo: string; rotulo: string }> = [
 ];
 const MAX_NOMES = 3;
 
+// Tipos que o resumo de fato renderiza — reusado pelo runner (rodarResumoDiario)
+// pra logar/contar só o que aparece na mensagem, sem duplicar a lista dos GRUPOS.
+export const tiposDoResumo = new Set(GRUPOS.map((g) => g.tipo));
+
 const primeiroNome = (nome: string): string => nome.trim().split(/\s+/)[0] || nome;
 
 // null = nada a dizer (não manda). Texto simples, sem botões — ação no painel.
@@ -104,8 +108,9 @@ export async function rodarResumoDiario(deps: ResumoDeps, agora: Date): Promise<
       const s = sugestaoProativa(l, agora);
       if (s) itens.push({ nome: l.nome, tipo: s.tipo });
     }
+    const itensConhecidos = itens.filter((i) => tiposDoResumo.has(i.tipo));
     const base = (process.env.DASHBOARD_BASE_URL ?? 'https://dashboard.ecosunpower.eng.br').replace(/\/$/, '');
-    const texto = montarResumoDiario(itens, `${base}/dashboard/pos-venda`);
+    const texto = montarResumoDiario(itensConhecidos, `${base}/dashboard/pos-venda`);
     if (!texto) return; // dia sem nada = silêncio (e não consome a marca)
 
     if (deps.dryRun) {
@@ -118,7 +123,7 @@ export async function rodarResumoDiario(deps: ResumoDeps, agora: Date): Promise<
       return;
     }
     await deps.sendText(deps.adminPhone, texto);
-    console.log(`[resumo-diario] enviado (${itens.length} sugestões)`);
+    console.log(`[resumo-diario] enviado (${itensConhecidos.length} sugestões)`);
   } catch (err) {
     // Falha nunca derruba o ciclo dos outros crons; tenta no próximo (15 min).
     console.error('[resumo-diario] falhou:', (err as Error).message);

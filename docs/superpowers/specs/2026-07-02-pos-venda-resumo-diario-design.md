@@ -80,6 +80,8 @@ Hoje `runDispatchCycle` manda alerta individual ou vira `proporAbordagem`
 | `milestone_economia` | sim | **auto ON** | **igual hoje** |
 | `milestone_economia` | sim | auto OFF | **não manda nada individual** — absorvido pelo resumo (a boa notícia aparece como `geracao_saudavel`); coerente com "depoimento é decisão manual do Junior" |
 
+Marco absorvido é **resolvido** (`resolved_reason='resumo_diario'`) — a boa notícia nasce da saúde da tela; sem isso o alerta bateria na fila a cada 3 dias sem aparecer em lugar nenhum. A queda absorvida fica **aberta** de propósito: é ela que pinta o amarelo da tela.
+
 - Sem proposta individual em treino, o envio real passa a nascer no painel
   (copiloto do incremento 1, que já registra abordagem + memória + snooze).
 - O motor de abordagens (escada/lembrete/encerramento/vassoura) **continua

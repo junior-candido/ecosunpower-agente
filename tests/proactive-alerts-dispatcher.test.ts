@@ -110,6 +110,8 @@ describe('runDispatchCycle', () => {
     expect(ctx.sendAdminWithButtons).not.toHaveBeenCalled();
     expect(ctx.proporAbordagem).not.toHaveBeenCalled();
     expect(ctx.supabase.marcarAlertaAbsorvidoPorResumo).toHaveBeenCalledOnce();
+    expect(ctx.supabase.marcarAlertaAbsorvidoPorResumo).toHaveBeenCalledWith(
+      'aid-1', expect.any(String), expect.any(String), false);
     expect(r.enviados).toBe(0);
   });
 
@@ -122,6 +124,8 @@ describe('runDispatchCycle', () => {
     await runDispatchCycle(horaJanela, ctx as any);
     expect(ctx.proporAbordagem).not.toHaveBeenCalled();
     expect(ctx.supabase.marcarAlertaAbsorvidoPorResumo).toHaveBeenCalledOnce();
+    expect(ctx.supabase.marcarAlertaAbsorvidoPorResumo).toHaveBeenCalledWith(
+      'aid-1', expect.any(String), expect.any(String), true);
   });
 
   it('queda com autonomia ON: segue pro proporAbordagem (igual hoje)', async () => {

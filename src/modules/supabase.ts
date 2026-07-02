@@ -1205,13 +1205,23 @@ export class SupabaseService {
 
   // Resumo diário do pós-venda: alerta não-urgente em treino não vira mensagem
   // individual — fica registrado como absorvido e não compete por 3 dias.
-  async marcarAlertaAbsorvidoPorResumo(id: string, sentAt: string, nextSendAt: string): Promise<void> {
+  // resolver=true (milestone_economia): o marco absorvido é RESOLVIDO — a boa
+  // notícia nasce da saúde da tela (gerouBem), não do alerta; deixar aberto
+  // faria ele bater na fila a cada 3 dias sem aparecer em lugar nenhum.
+  // resolver=false (queda_geracao, padrão): fica ABERTO de propósito — é o
+  // alerta aberto que pinta o amarelo da tela.
+  async marcarAlertaAbsorvidoPorResumo(id: string, sentAt: string, nextSendAt: string, resolver: boolean = false): Promise<void> {
+    const update: Record<string, unknown> = {
+      acao_disparada: 'resumo_diario', acao_disparada_em: sentAt,
+      last_sent_at: sentAt, next_send_at: nextSendAt,
+    };
+    if (resolver) {
+      update.resolved_at = sentAt;
+      update.resolved_reason = 'resumo_diario';
+    }
     const { error } = await this.client
       .from('monitoring_alerts')
-      .update({
-        acao_disparada: 'resumo_diario', acao_disparada_em: sentAt,
-        last_sent_at: sentAt, next_send_at: nextSendAt,
-      })
+      .update(update)
       .eq('id', id);
     if (error) console.error('[supabase] marcarAlertaAbsorvidoPorResumo:', error.message);
   }

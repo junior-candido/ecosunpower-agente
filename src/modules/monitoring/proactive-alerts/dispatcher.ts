@@ -76,7 +76,8 @@ export async function runDispatchCycle(hoje: Date, ctx: DispatchCtx): Promise<{
             continue;
           }
           await ctx.supabase.marcarAlertaAbsorvidoPorResumo(
-            alerta.id, hoje.toISOString(), addDays(hoje, 3).toISOString());
+            alerta.id, hoje.toISOString(), addDays(hoje, 3).toISOString(),
+            alerta.tipo === 'milestone_economia');
           console.log(`[proactive-alerts] dispatch: absorvido pelo resumo — alerta=${alerta.id} tipo=${alerta.tipo}`);
           continue;
         }
