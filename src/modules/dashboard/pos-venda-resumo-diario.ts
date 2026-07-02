@@ -51,12 +51,16 @@ const primeiroNome = (nome: string): string => nome.trim().split(/\s+/)[0] || no
 
 // null = nada a dizer (não manda). Texto simples, sem botões — ação no painel.
 export function montarResumoDiario(itens: ItemResumo[], linkPainel: string): string | null {
-  if (itens.length === 0) return null;
+  // Só conta/renderiza tipos que os GRUPOS conhecem — um tipo novo/desconhecido
+  // não pode inflar o cabeçalho sem aparecer em nenhuma linha.
+  const gruposConhecidos = new Set(GRUPOS.map((g) => g.tipo));
+  const conhecidos = itens.filter((i) => gruposConhecidos.has(i.tipo));
+  if (conhecidos.length === 0) return null;
   const linhas: string[] = [];
-  const n = itens.length;
+  const n = conhecidos.length;
   linhas.push(`☀️ *Resumo das usinas — ${n} ${n === 1 ? 'pede' : 'pedem'} atenção*`);
   for (const g of GRUPOS) {
-    const doGrupo = itens.filter((i) => i.tipo === g.tipo);
+    const doGrupo = conhecidos.filter((i) => i.tipo === g.tipo);
     if (doGrupo.length === 0) continue;
     const nomes = doGrupo.slice(0, MAX_NOMES).map((i) => primeiroNome(i.nome)).join(', ');
     const resto = doGrupo.length > MAX_NOMES ? ` (+${doGrupo.length - MAX_NOMES})` : '';
@@ -109,7 +113,10 @@ export async function rodarResumoDiario(deps: ResumoDeps, agora: Date): Promise<
       return; // dry não marca — o resumo real sai quando o dry desligar
     }
     // Porteiro CAS ANTES do envio: nunca 2 resumos no mesmo dia.
-    if (!(await marcarResumoEnviadoHoje(deps.client, agora))) return;
+    if (!(await marcarResumoEnviadoHoje(deps.client, agora))) {
+      console.log('[resumo-diario] já enviado hoje — pulando');
+      return;
+    }
     await deps.sendText(deps.adminPhone, texto);
     console.log(`[resumo-diario] enviado (${itens.length} sugestões)`);
   } catch (err) {

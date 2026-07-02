@@ -81,4 +81,17 @@ describe('montarResumoDiario', () => {
     const txt = montarResumoDiario([{ nome: 'X', tipo: 'contato' }], LINK)!;
     expect(txt).toContain('📞 Sem falar há tempo: X');
   });
+
+  it('tipo desconhecido nao entra na contagem do cabecalho nem aparece', () => {
+    const txt = montarResumoDiario([
+      { nome: 'Maria', tipo: 'queda' },
+      { nome: 'Zé', tipo: 'tipo_novo_qualquer' },
+    ], LINK)!;
+    expect(txt).toContain('1 pede atenção');
+    expect(txt).not.toContain('Zé');
+  });
+
+  it('so tipo desconhecido -> null (nada renderizavel = silencio)', () => {
+    expect(montarResumoDiario([{ nome: 'Zé', tipo: 'tipo_novo_qualquer' }], LINK)).toBeNull();
+  });
 });

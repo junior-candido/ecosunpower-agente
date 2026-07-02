@@ -26,6 +26,7 @@ function fakeCtx(overrides: any = {}) {
       marcarAlertaEnviado: vi.fn().mockResolvedValue(undefined),
       getSistemaById: vi.fn().mockResolvedValue({
         id: 'sid-1', apelido: 'Casa', potencia_kwp: 5, marca_inversor: 'deye', lead_id: 'lid-1',
+        etapa_obra: 'pos_venda',
       }),
       getLeadById: vi.fn().mockResolvedValue({ id: 'lid-1', name: 'João', phone: '5561...' }),
       marcarAlertaAbsorvidoPorResumo: vi.fn().mockResolvedValue(undefined),
@@ -164,6 +165,24 @@ describe('runDispatchCycle', () => {
     const r = await runDispatchCycle(horaJanela, ctx as any);
     expect(ctx.supabase.marcarAlertaAbsorvidoPorResumo).not.toHaveBeenCalled();
     expect(r.dryRunSimulados).toBe(1);
+  });
+
+  it('queda com dono + autonomia OFF mas usina em obra: NÃO absorve, segue pro proporAbordagem', async () => {
+    const ctx = fakeCtx({
+      supabase: {
+        getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta({ tipo: 'queda_geracao', severidade: 'aviso' })]),
+        getSistemaById: vi.fn().mockResolvedValue({
+          id: 'sid-1', apelido: 'Casa', potencia_kwp: 5, marca_inversor: 'deye', lead_id: 'lid-1',
+          etapa_obra: 'operacao',
+        }),
+      },
+      autonomiaOn: vi.fn().mockResolvedValue(false),
+      proporAbordagem: vi.fn().mockResolvedValue('proposta'),
+    });
+    const r = await runDispatchCycle(horaJanela, ctx as any);
+    expect(ctx.proporAbordagem).toHaveBeenCalledOnce();
+    expect(ctx.supabase.marcarAlertaAbsorvidoPorResumo).not.toHaveBeenCalled();
+    expect(r.enviados).toBe(1);
   });
 
   it('queda SEM dono (orfa): alerta individual continua (cadastrar dono)', async () => {

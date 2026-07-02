@@ -59,7 +59,11 @@ export async function runDispatchCycle(hoje: Date, ctx: DispatchCtx): Promise<{
 
       // Resumo diário: não-urgente em treino é absorvido (sem mensagem
       // individual). Offline/erro_integracao/órfã NUNCA passam por aqui.
-      if (ctx.autonomiaOn && lead && lead.phone &&
+      // etapa_obra === 'pos_venda' é obrigatório: o resumo só lista usinas do
+      // pós-venda (listarClientesPosVenda) — em obra segue o fluxo atual
+      // (proporAbordagem / alerta individual), senão a queda ficaria absorvida
+      // pra sempre sem aparecer em lugar nenhum.
+      if (ctx.autonomiaOn && lead && lead.phone && sistema.etapa_obra === 'pos_venda' &&
           (alerta.tipo === 'queda_geracao' || alerta.tipo === 'milestone_economia')) {
         const tipoFlag = alerta.tipo === 'queda_geracao' ? 'queda' : 'parabens';
         let auto = true; // erro na leitura da config → segue o fluxo atual (seguro)
