@@ -65,6 +65,7 @@ import {
 import type { MarcaInversor } from '../monitoring/types.js';
 import type { ResultadoImport } from '../leads-import-meta-junho.js';
 import { classificarSistema } from '../monitoring/classificacao.js';
+import { getAdapter } from '../monitoring/adapter-registry.js';
 import { garantiaInfo } from '../monitoring/garantia.js';
 import { filtrarOrdenarSistemas } from '../monitoring/filtro.js';
 import multer from 'multer';
@@ -1924,33 +1925,45 @@ export function createDashboardRouter(
     if (!/^[0-9a-f-]{36}$/i.test(id)) {
       return res.status(400).send('UUID invalido');
     }
-    // Periodo: ?preset=30d|90d|6m|1a|2a|5a|tudo  OU  ?inicio=YYYY-MM-DD&fim=YYYY-MM-DD
-    const preset = typeof req.query.preset === 'string' ? req.query.preset : undefined;
-    const inicio = typeof req.query.inicio === 'string' ? req.query.inicio : undefined;
-    const fim = typeof req.query.fim === 'string' ? req.query.fim : undefined;
-    const isDate = (s?: string) => s && /^\d{4}-\d{2}-\d{2}$/.test(s);
-    const validPreset = ['30d', '90d', '6m', '1a', '2a', '5a', 'tudo'].includes(preset ?? '');
-
-    const options: Parameters<typeof monitoringService.getDetalheSistema>[1] = {};
-    if (isDate(inicio) && isDate(fim)) {
-      options.inicio = inicio;
-      options.fim = fim;
-    } else if (validPreset) {
-      options.preset = preset as '30d' | '90d' | '6m' | '1a' | '2a' | '5a' | 'tudo';
-    }
+    // Calendario: ?vista=dia|mes|ano&ref=YYYY-MM-DD (default mes, hoje).
+    const vistasOk = ['dia', 'mes', 'ano'] as const;
+    const vista = (vistasOk as readonly string[]).includes(String(req.query.vista))
+      ? String(req.query.vista) as 'dia' | 'mes' | 'ano'
+      : 'mes';
+    const refQ = typeof req.query.ref === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.ref)
+      ? req.query.ref
+      : new Date().toISOString().slice(0, 10);
 
     try {
-      const detalhe = await monitoringService.getDetalheSistema(id, options);
+      const detalhe = await monitoringService.getDetalheCalendario(id, { vista, ref: refQ });
       if (!detalhe) {
         return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
       }
+
+      // Vista Dia: curva de potencia AO VIVO (fetchIntraday). Degrada com aviso
+      // se o adapter nao suporta ou a chamada falha — nunca derruba a pagina.
+      let curvaDia: import('../monitoring/types.js').IntradayPonto[] | null = null;
+      let curvaMsg: string | null = null;
+      if (vista === 'dia') {
+        const adapter = getAdapter(detalhe.sistema.marca_inversor);
+        if (adapter?.fetchIntraday) {
+          try {
+            const r = await adapter.fetchIntraday(detalhe.sistema.api_credentials, refQ);
+            if (r.ok && r.pontos.length > 0) curvaDia = r.pontos;
+            else curvaMsg = 'Sem curva pra esse dia.';
+          } catch { curvaMsg = 'Não consegui buscar a curva agora.'; }
+        } else {
+          curvaMsg = 'Curva minuto a minuto não disponível para este inversor.';
+        }
+      }
+
       const donoLeadId = detalhe.sistema.lead_id;
       const [donoRow, timelineAbordagens, prontuario] = await Promise.all([
         donoLeadId ? supabaseService.getClienteByLeadId(donoLeadId) : Promise.resolve(null),
         getTimelineAbordagens(supabase, id).catch(() => [] as import('./queries.js').AbordagemTimelineRow[]),
         prontuarioUsina(supabase, id).catch(() => []),
       ]);
-      res.send(renderDetalheSistemaPage(detalhe, donoRow ? { id: donoRow.id, name: donoRow.name } : null, timelineAbordagens, renderProntuario(prontuario)));
+      res.send(renderDetalheSistemaPage(detalhe, curvaDia, curvaMsg, donoRow ? { id: donoRow.id, name: donoRow.name } : null, timelineAbordagens, renderProntuario(prontuario)));
     } catch (err) {
       console.error('[dashboard/monitoramento/detalhe]', err);
       res.status(500).send(`<h2>Erro ao carregar detalhe</h2><pre>${(err as Error).message}</pre>`);

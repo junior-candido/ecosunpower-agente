@@ -60,6 +60,9 @@ export interface DetalheCalendario {
   nav: { anterior: string; proximo: string | null; label: string };
   serie: { x: string; kwh: number }[];
   totalDiaKwh: number | null; // só na vista 'dia' — total do geracao_diaria do ref
+  // Overview mensal de TODA a vida do sistema — alimenta o gráfico "Histórico
+  // mensal completo", que permanece igual nas duas visões.
+  serieMensalCompleta: DetalheSistema['serieMensalCompleta'];
 }
 
 export class MonitoringService {
@@ -608,27 +611,7 @@ export class MonitoringService {
     }
 
     // Serie mensal COMPLETA (todos os meses com dados desde primeira geracao)
-    const serieMensalCompleta: { mes: string; kwh: number; esperado: number }[] = [];
-    if (geracoesArr.length > 0) {
-      const primeiroDia = new Date(geracoesArr[0].data);
-      const cursor = new Date(primeiroDia.getFullYear(), primeiroDia.getMonth(), 1);
-      const fimMensal = new Date(hojeDate.getFullYear(), hojeDate.getMonth(), 1);
-      while (cursor <= fimMensal) {
-        const ano = cursor.getFullYear();
-        const mes = cursor.getMonth() + 1;
-        const mesKey = `${ano}-${String(mes).padStart(2, '0')}`;
-        const diasNoMes = new Date(ano, mes, 0).getDate();
-        const kwhMes = geracoesArr
-          .filter((g) => g.data.startsWith(mesKey))
-          .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
-        serieMensalCompleta.push({
-          mes: mesKey,
-          kwh: kwhMes,
-          esperado: esperadoDia * diasNoMes,
-        });
-        cursor.setMonth(cursor.getMonth() + 1);
-      }
-    }
+    const serieMensalCompleta = this.montarSerieMensalCompleta(geracoesArr, esperadoDia, hojeDate);
 
     return {
       sistema: s,
@@ -638,6 +621,33 @@ export class MonitoringService {
       serieMensalCompleta,
       alertas,
     };
+  }
+
+  // Helper compartilhado: overview mensal de TODA a vida do sistema (todos os
+  // meses com dados desde a 1a geracao). Usado pelo grafico "Historico mensal
+  // completo", que continua presente nas duas visoes do detalhe.
+  private montarSerieMensalCompleta(
+    geracoesArr: { data: string; geracao_kwh: number }[],
+    esperadoDia: number,
+    hojeDate: Date,
+  ): { mes: string; kwh: number; esperado: number }[] {
+    const out: { mes: string; kwh: number; esperado: number }[] = [];
+    if (geracoesArr.length === 0) return out;
+    const primeiroDia = new Date(geracoesArr[0].data);
+    const cursor = new Date(primeiroDia.getFullYear(), primeiroDia.getMonth(), 1);
+    const fimMensal = new Date(hojeDate.getFullYear(), hojeDate.getMonth(), 1);
+    while (cursor <= fimMensal) {
+      const ano = cursor.getFullYear();
+      const mes = cursor.getMonth() + 1;
+      const mesKey = `${ano}-${String(mes).padStart(2, '0')}`;
+      const diasNoMes = new Date(ano, mes, 0).getDate();
+      const kwhMes = geracoesArr
+        .filter((g) => g.data.startsWith(mesKey))
+        .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
+      out.push({ mes: mesKey, kwh: kwhMes, esperado: esperadoDia * diasNoMes });
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+    return out;
   }
 
   // Helper compartilhado: KPIs fixos (hoje/mes/ano/total) + alertas de saude,
@@ -737,6 +747,7 @@ export class MonitoringService {
 
     const { kpis, alertas } = this.montarKpisEAlertas(s, ger, hojeDate);
     const nav = navegacao(opts.vista, opts.ref, hojeDate, s.data_instalacao ?? null);
+    const serieMensalCompleta = this.montarSerieMensalCompleta(ger, kpis.esperadoDiaKwh, hojeDate);
 
     const [y, mes] = opts.ref.split('-').map(Number);
     let serie: { x: string; kwh: number }[] = [];
@@ -750,7 +761,7 @@ export class MonitoringService {
       totalDiaKwh = row ? Number(row.geracao_kwh) : null;
     }
 
-    return { sistema: s, kpis, alertas, vista: opts.vista, ref: opts.ref, nav, serie, totalDiaKwh };
+    return { sistema: s, kpis, alertas, vista: opts.vista, ref: opts.ref, nav, serie, totalDiaKwh, serieMensalCompleta };
   }
 
   private resolverPeriodo(
