@@ -36,13 +36,13 @@ describe('navegacao', () => {
   it('mes: label pt-BR e setas; nao passa do mes de hoje', () => {
     const n = navegacao('mes', '2026-07-15', hoje, '2025-01-01');
     expect(n.label).toBe('julho de 2026');
-    expect(n.anterior).toBe('2026-06-15');
+    expect(n.anterior).toBe('2026-06-01'); // âncora no dia 1 (evita data inválida em mês curto)
     expect(n.proximo).toBeNull();
   });
   it('ano: label e setas; nao passa do ano de hoje', () => {
     const n = navegacao('ano', '2026-03-01', hoje, '2025-01-01');
     expect(n.label).toBe('2026');
-    expect(n.anterior).toBe('2025-03-01');
+    expect(n.anterior).toBe('2025-01-01'); // âncora no 1º de janeiro
     expect(n.proximo).toBeNull();
   });
   it('dia: nao passa de hoje; label dd/mm/aaaa', () => {

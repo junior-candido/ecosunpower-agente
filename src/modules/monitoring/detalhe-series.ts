@@ -49,14 +49,17 @@ export function navegacao(
   const iso = (yy: number, mm: number, dd: number) => `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
   const hy = hoje.getUTCFullYear(), hm = hoje.getUTCMonth() + 1, hd = hoje.getUTCDate();
 
+  // Mês/Ano: o `ref` só marca o período, então ancoramos no DIA 1 (sempre uma
+  // data válida). Preservar o dia original geraria datas inválidas ao andar pra
+  // um mês curto (ex.: 2026-06-31) — o que quebraria o rótulo/curva na aba Dia.
   if (vista === 'ano') {
-    return { anterior: iso(y - 1, m, d), proximo: y < hy ? iso(y + 1, m, d) : null, label: `${y}` };
+    return { anterior: iso(y - 1, 1, 1), proximo: y < hy ? iso(y + 1, 1, 1) : null, label: `${y}` };
   }
   if (vista === 'mes') {
     const antMes = m === 1 ? { yy: y - 1, mm: 12 } : { yy: y, mm: m - 1 };
     const proxMes = m === 12 ? { yy: y + 1, mm: 1 } : { yy: y, mm: m + 1 };
     const noFuturo = proxMes.yy > hy || (proxMes.yy === hy && proxMes.mm > hm);
-    return { anterior: iso(antMes.yy, antMes.mm, d), proximo: noFuturo ? null : iso(proxMes.yy, proxMes.mm, d), label: `${MESES_PT[m - 1]} de ${y}` };
+    return { anterior: iso(antMes.yy, antMes.mm, 1), proximo: noFuturo ? null : iso(proxMes.yy, proxMes.mm, 1), label: `${MESES_PT[m - 1]} de ${y}` };
   }
   const base = new Date(Date.UTC(y, m - 1, d));
   const ant = new Date(base); ant.setUTCDate(ant.getUTCDate() - 1);
