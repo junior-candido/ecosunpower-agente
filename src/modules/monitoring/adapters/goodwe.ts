@@ -28,6 +28,7 @@ import crypto from 'crypto';
 import type {
   AdapterResult,
   GeracaoDiaria,
+  IntradayResult,
   ListSitesResult,
   MonitoringAdapter,
   SiteResumo,
@@ -295,6 +296,25 @@ export function parseChartGeneration(data: ChartData, inicio: string, fim: strin
   return out;
 }
 
+// GetPlantPowerChart devolve a curva de POTÊNCIA do dia. A linha da geração PV
+// tem name='PCurve_Power_PV' e unit='W'; xy=[{x:'HH:mm', y:<W>|null}].
+interface ChartLineIntra { name?: string; unit?: string; xy?: Array<{ x?: string; y?: number | null }> }
+export function parseIntradayGoodwe(data: { lines?: ChartLineIntra[] }): Array<{ hora: string; kw: number }> {
+  const lines = Array.isArray(data?.lines) ? data.lines : [];
+  const line = lines.find((l) => l.name === 'PCurve_Power_PV')
+    ?? lines.find((l) => (l.unit ?? '').toUpperCase() === 'W')
+    ?? lines[0];
+  const xy = line && Array.isArray(line.xy) ? line.xy : [];
+  const out: Array<{ hora: string; kw: number }> = [];
+  for (const p of xy) {
+    const hora = (p?.x ?? '').trim();
+    if (!hora) continue;
+    if (typeof p.y !== 'number' || !Number.isFinite(p.y)) continue;
+    out.push({ hora, kw: Number((p.y / 1000).toFixed(3)) });
+  }
+  return out;
+}
+
 interface MonitorRecord {
   powerstation_id?: string;
   stationname?: string;
@@ -375,6 +395,20 @@ export const goodweAdapter: MonitoringAdapter = {
     // Status detalhado (offline real) fica pro cron/listSites; aqui, teve leitura
     // no intervalo = ok, senão desconhecido (mesma simplicidade do FoxESS em prod).
     return { ok: true, geracoes, statusInversor: geracoes.length > 0 ? 'ok' : 'desconhecido' };
+  },
+
+  // GetPlantPowerChart → curva de potência (kW) do dia da usina. Ao vivo.
+  async fetchIntraday(credenciais: Record<string, unknown>, dia: string): Promise<IntradayResult> {
+    const parsed = parseCreds(credenciais);
+    if ('error' in parsed) return { ok: false, reason: parsed.error };
+    if (!parsed.siteId) return { ok: false, reason: 'GoodWe fetchIntraday precisa de site_id' };
+    const r = await semsPostAuth<{ lines?: ChartLineIntra[] }>(
+      '/api/v2/Charts/GetPlantPowerChart',
+      { id: parsed.siteId, date: dia, full_script: false },
+      parsed,
+    );
+    if (!r.ok) return { ok: false, reason: r.reason };
+    return { ok: true, pontos: parseIntradayGoodwe(r.data) };
   },
 
   // QueryPowerStationMonitor paginado → todas as usinas do instalador.

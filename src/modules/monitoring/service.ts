@@ -14,6 +14,7 @@ import type { SupabaseService } from '../supabase.js';
 import { getAdapter, marcasSuportadas } from './adapter-registry.js';
 import type { MarcaInversor, SistemaCliente, SiteResumo } from './types.js';
 import { classificarSistema, esperadoDiaKwh } from './classificacao.js';
+import { serieMesDiaria, serieAnoMensal, navegacao, type Vista } from './detalhe-series.js';
 
 interface SyncResult {
   totalSistemas: number;
@@ -45,6 +46,23 @@ export interface DetalheSistema {
   // Mantemos o overview mensal de SEMPRE (ate hoje, todos os meses com dados)
   serieMensalCompleta: { mes: string; kwh: number; esperado: number }[];
   alertas: Array<{ tipo: string; severidade: 'aviso' | 'urgente' | 'info'; texto: string }>;
+}
+
+// Detalhe da usina na visão de CALENDÁRIO (abas Dia/Mês/Ano + setas).
+// Reaproveita os MESMOS kpis/alertas de DetalheSistema — muda só a `serie`,
+// que passa a ser por vista (mês=diária, ano=mensal, dia=curva ao vivo na rota).
+export interface DetalheCalendario {
+  sistema: SistemaCliente;
+  kpis: DetalheSistema['kpis'];
+  alertas: DetalheSistema['alertas'];
+  vista: Vista;
+  ref: string; // YYYY-MM-DD
+  nav: { anterior: string; proximo: string | null; label: string };
+  serie: { x: string; kwh: number }[];
+  totalDiaKwh: number | null; // só na vista 'dia' — total do geracao_diaria do ref
+  // Overview mensal de TODA a vida do sistema — alimenta o gráfico "Histórico
+  // mensal completo", que permanece igual nas duas visões.
+  serieMensalCompleta: DetalheSistema['serieMensalCompleta'];
 }
 
 export class MonitoringService {
@@ -531,7 +549,6 @@ export class MonitoringService {
 
     const s = sistema as SistemaCliente;
     const hojeDate = new Date();
-    const hojeStr = isoDate(hojeDate);
 
     // Resolve range do periodo
     const { inicio, fim, label, presetAtual } = this.resolverPeriodo(options, s.data_instalacao);
@@ -545,18 +562,10 @@ export class MonitoringService {
 
     const geracoesArr = (todasGeracoes ?? []) as { data: string; geracao_kwh: number }[];
 
-    // KPIs (sempre fixos: hoje/mes/ano/total)
-    const hojeRow = geracoesArr.find((g) => g.data === hojeStr);
-    const inicioMes = isoDate(new Date(hojeDate.getFullYear(), hojeDate.getMonth(), 1));
-    const inicioAno = isoDate(new Date(hojeDate.getFullYear(), 0, 1));
-    const geracaoMes = geracoesArr.filter((g) => g.data >= inicioMes)
-      .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
-    const geracaoAno = geracoesArr.filter((g) => g.data >= inicioAno)
-      .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
-    const geracaoTotal = geracoesArr.reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
-
-    const kWp = Number(s.potencia_kwp ?? 0);
-    const esperadoDia = esperadoDiaKwh(s.potencia_kwp, s.uf);
+    // KPIs + alertas (sempre fixos: hoje/mes/ano/total) — extraidos pra reuso
+    // pelo getDetalheCalendario (mesma logica, sem duplicar).
+    const { kpis, alertas } = this.montarKpisEAlertas(s, geracoesArr, hojeDate);
+    const esperadoDia = kpis.esperadoDiaKwh;
 
     // Serie do periodo selecionado
     const diasRange = Math.ceil((new Date(fim).getTime() - new Date(inicio).getTime()) / (24 * 60 * 60 * 1000)) + 1;
@@ -602,32 +611,71 @@ export class MonitoringService {
     }
 
     // Serie mensal COMPLETA (todos os meses com dados desde primeira geracao)
-    const serieMensalCompleta: { mes: string; kwh: number; esperado: number }[] = [];
-    if (geracoesArr.length > 0) {
-      const primeiroDia = new Date(geracoesArr[0].data);
-      const cursor = new Date(primeiroDia.getFullYear(), primeiroDia.getMonth(), 1);
-      const fimMensal = new Date(hojeDate.getFullYear(), hojeDate.getMonth(), 1);
-      while (cursor <= fimMensal) {
-        const ano = cursor.getFullYear();
-        const mes = cursor.getMonth() + 1;
-        const mesKey = `${ano}-${String(mes).padStart(2, '0')}`;
-        const diasNoMes = new Date(ano, mes, 0).getDate();
-        const kwhMes = geracoesArr
-          .filter((g) => g.data.startsWith(mesKey))
-          .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
-        serieMensalCompleta.push({
-          mes: mesKey,
-          kwh: kwhMes,
-          esperado: esperadoDia * diasNoMes,
-        });
-        cursor.setMonth(cursor.getMonth() + 1);
-      }
+    const serieMensalCompleta = this.montarSerieMensalCompleta(geracoesArr, esperadoDia, hojeDate);
+
+    return {
+      sistema: s,
+      kpis,
+      periodo: { inicio, fim, label, granularidade, presetAtual },
+      serie,
+      serieMensalCompleta,
+      alertas,
+    };
+  }
+
+  // Helper compartilhado: overview mensal de TODA a vida do sistema (todos os
+  // meses com dados desde a 1a geracao). Usado pelo grafico "Historico mensal
+  // completo", que continua presente nas duas visoes do detalhe.
+  private montarSerieMensalCompleta(
+    geracoesArr: { data: string; geracao_kwh: number }[],
+    esperadoDia: number,
+    hojeDate: Date,
+  ): { mes: string; kwh: number; esperado: number }[] {
+    const out: { mes: string; kwh: number; esperado: number }[] = [];
+    if (geracoesArr.length === 0) return out;
+    const primeiroDia = new Date(geracoesArr[0].data);
+    const cursor = new Date(primeiroDia.getFullYear(), primeiroDia.getMonth(), 1);
+    const fimMensal = new Date(hojeDate.getFullYear(), hojeDate.getMonth(), 1);
+    while (cursor <= fimMensal) {
+      const ano = cursor.getFullYear();
+      const mes = cursor.getMonth() + 1;
+      const mesKey = `${ano}-${String(mes).padStart(2, '0')}`;
+      const diasNoMes = new Date(ano, mes, 0).getDate();
+      const kwhMes = geracoesArr
+        .filter((g) => g.data.startsWith(mesKey))
+        .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
+      out.push({ mes: mesKey, kwh: kwhMes, esperado: esperadoDia * diasNoMes });
+      cursor.setMonth(cursor.getMonth() + 1);
     }
+    return out;
+  }
+
+  // Helper compartilhado: KPIs fixos (hoje/mes/ano/total) + alertas de saude,
+  // exatamente como o detalhe sempre mostrou. Usado por getDetalheSistema e
+  // getDetalheCalendario pra nao duplicar a logica.
+  private montarKpisEAlertas(
+    s: SistemaCliente,
+    geracoesArr: { data: string; geracao_kwh: number }[],
+    hojeDate: Date,
+  ): { kpis: DetalheSistema['kpis']; alertas: DetalheSistema['alertas'] } {
+    const hojeStr = isoDate(hojeDate);
+
+    // KPIs (sempre fixos: hoje/mes/ano/total)
+    const hojeRow = geracoesArr.find((g) => g.data === hojeStr);
+    const inicioMes = isoDate(new Date(hojeDate.getFullYear(), hojeDate.getMonth(), 1));
+    const inicioAno = isoDate(new Date(hojeDate.getFullYear(), 0, 1));
+    const geracaoMes = geracoesArr.filter((g) => g.data >= inicioMes)
+      .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
+    const geracaoAno = geracoesArr.filter((g) => g.data >= inicioAno)
+      .reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
+    const geracaoTotal = geracoesArr.reduce((s2, g) => s2 + Number(g.geracao_kwh), 0);
+
+    const esperadoDia = esperadoDiaKwh(s.potencia_kwp, s.uf);
 
     // Status / alertas (baseado em ULTIMOS 7 DIAS reais — independente do range selecionado)
     const ultimos7Inicio = isoDate(new Date(hojeDate.getTime() - 7 * 24 * 60 * 60 * 1000));
-    const ultimos7Geracoes = geracoesArr.filter((g) => g.data >= ultimos7Inicio);
-    const realUltimos7 = ultimos7Geracoes.reduce((s2, d) => s2 + Number(d.geracao_kwh), 0);
+    const realUltimos7 = geracoesArr.filter((g) => g.data >= ultimos7Inicio)
+      .reduce((s2, d) => s2 + Number(d.geracao_kwh), 0);
     const esperadoUltimos7 = esperadoDia * 7;
     const ratioUltimos7 = esperadoUltimos7 > 0 ? realUltimos7 / esperadoUltimos7 : 1;
 
@@ -642,19 +690,18 @@ export class MonitoringService {
       }
     }
 
-    const alertas: Array<{ tipo: string; severidade: 'aviso' | 'urgente' | 'info'; texto: string }> = [];
+    const alertas: DetalheSistema['alertas'] = [];
     const cls = classificarSistema({
       ativo: s.ativo,
       ultimoErro: s.ultimo_erro ?? null,
       potenciaKwp: s.potencia_kwp,
       uf: s.uf,
       diasSemGeracao: offlineHa,
-      realUltimos7: realUltimos7,
+      realUltimos7,
     });
     if (cls.alerta) alertas.push(cls.alerta);
 
     return {
-      sistema: s,
       kpis: {
         hojeKwh: hojeRow ? Number(hojeRow.geracao_kwh) : null,
         mesKwh: geracaoMes,
@@ -663,11 +710,58 @@ export class MonitoringService {
         esperadoDiaKwh: esperadoDia,
         ratioUltimos7,
       },
-      periodo: { inicio, fim, label, granularidade, presetAtual },
-      serie,
-      serieMensalCompleta,
       alertas,
     };
+  }
+
+  // Detalhe da usina na visão de CALENDÁRIO (abas Dia/Mês/Ano).
+  // Reaproveita a MESMA carga de sistema/geração + KPIs/alertas do
+  // getDetalheSistema (via montarKpisEAlertas). A `serie` muda por vista:
+  //   - mes: geração diária do mês do `ref` (barras kWh/dia)
+  //   - ano: geração mensal do ano do `ref` (barras kWh/mês)
+  //   - dia: serie vazia (a curva de potência vem ao vivo na rota); expõe
+  //          `totalDiaKwh` = geração registrada naquele dia (fallback).
+  async getDetalheCalendario(
+    id: string,
+    opts: { vista: Vista; ref: string },
+  ): Promise<DetalheCalendario | null> {
+    const { data: sistema, error } = await this.supabase.getClient()
+      .from('sistemas_clientes')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error || !sistema) return null;
+
+    const s = sistema as SistemaCliente;
+    const hojeDate = new Date();
+
+    // Mesma consulta que getDetalheSistema usa: TODAS as geracoes (KPIs
+    // total/ano precisam do historico completo). As funcoes puras de serie
+    // filtram internamente pelo ano/mes do `ref`.
+    const { data: todasGeracoes } = await this.supabase.getClient()
+      .from('geracao_diaria')
+      .select('data, geracao_kwh')
+      .eq('sistema_id', id)
+      .order('data', { ascending: true });
+    const ger = (todasGeracoes ?? []) as { data: string; geracao_kwh: number }[];
+
+    const { kpis, alertas } = this.montarKpisEAlertas(s, ger, hojeDate);
+    const nav = navegacao(opts.vista, opts.ref, hojeDate, s.data_instalacao ?? null);
+    const serieMensalCompleta = this.montarSerieMensalCompleta(ger, kpis.esperadoDiaKwh, hojeDate);
+
+    const [y, mes] = opts.ref.split('-').map(Number);
+    let serie: { x: string; kwh: number }[] = [];
+    let totalDiaKwh: number | null = null;
+    if (opts.vista === 'mes') {
+      serie = serieMesDiaria(ger, y, mes).map((p) => ({ x: p.data, kwh: p.kwh }));
+    } else if (opts.vista === 'ano') {
+      serie = serieAnoMensal(ger, y).map((p) => ({ x: p.mes, kwh: p.kwh }));
+    } else {
+      const row = ger.find((g) => g.data === opts.ref);
+      totalDiaKwh = row ? Number(row.geracao_kwh) : null;
+    }
+
+    return { sistema: s, kpis, alertas, vista: opts.vista, ref: opts.ref, nav, serie, totalDiaKwh, serieMensalCompleta };
   }
 
   private resolverPeriodo(

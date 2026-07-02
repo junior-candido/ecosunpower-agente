@@ -2,7 +2,8 @@
 // Tailwind via CDN + Chart.js via CDN. Identidade EcoSun: azul navy + amarelo solar.
 
 import type { DashboardKpi, PropostaRow, ManutencaoRow, GraficoMensal, SistemaMonitorRow } from './queries.js';
-import type { DetalheSistema } from '../monitoring/service.js';
+import type { DetalheCalendario } from '../monitoring/service.js';
+import type { IntradayPonto } from '../monitoring/types.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64, LOGO_ECOSUNPOWER_DARK_BASE64 } from '../proposal/assets/logo-base64.js';
 import { formatPhoneBR, normalizeBrazilianPhone } from '../meta-leadgen.js';
 import { renderClienteSelector } from './proprietario.js';
@@ -900,7 +901,9 @@ export interface AbordagemTimelineRow {
 }
 
 export function renderDetalheSistemaPage(
-  d: DetalheSistema,
+  d: DetalheCalendario,
+  curvaDia?: IntradayPonto[] | null,
+  curvaMsg?: string | null,
   dono?: { id: string; name: string | null } | null,
   timelineAbordagens?: AbordagemTimelineRow[],
   prontuarioHtml?: string,
@@ -938,17 +941,23 @@ export function renderDetalheSistemaPage(
   // Dados pros graficos (Chart.js)
   const meses = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
-  // Serie do periodo selecionado (diaria ou mensal dependendo do range)
+  // Serie do periodo selecionado, por vista:
+  //  - mes: um ponto por dia do mes (rotulo = dia)
+  //  - ano: um ponto por mes do ano (rotulo = mes abreviado)
+  //  - dia: curva de potencia (kW) ao vivo — labels = horas, dados = kW
   const labelsPeriodo = d.serie.map((p) => {
-    if (d.periodo.granularidade === 'mensal') {
-      const [y, m] = p.data.split('-');
-      return `${meses[parseInt(m, 10) - 1]}/${y.slice(2)}`;
+    if (d.vista === 'ano') {
+      const m = p.x.split('-')[1];
+      return meses[parseInt(m, 10) - 1] ?? p.x;
     }
-    const [, mm, dia] = p.data.split('-');
-    return `${dia}/${mm}`;
+    return p.x.split('-')[2]; // dia do mes
   });
   const valoresPeriodo = d.serie.map((p) => Number(p.kwh.toFixed(1)));
-  const esperadoPeriodo = d.serie.map((p) => Number(p.esperado.toFixed(1)));
+  const serieToda0 = d.serie.length > 0 && d.serie.every((p) => p.kwh === 0);
+
+  // Curva do Dia (ao vivo)
+  const labelsDia = (curvaDia ?? []).map((p) => p.hora);
+  const valoresDia = (curvaDia ?? []).map((p) => Number(p.kw.toFixed(3)));
 
   // Serie mensal completa (overview de TODA a vida do sistema)
   const labelsMensal = d.serieMensalCompleta.map((p) => {
@@ -959,8 +968,27 @@ export function renderDetalheSistemaPage(
   const esperadoMensal = d.serieMensalCompleta.map((p) => Math.round(p.esperado));
 
   const ratioPct = Math.round(d.kpis.ratioUltimos7 * 100);
-  const ratioCor = ratioPct < 70 ? 'rose' : ratioPct > 110 ? 'emerald' : 'sky';
   const ratioCorClass = ratioPct < 70 ? 'text-rose-600' : ratioPct > 110 ? 'text-emerald-600' : 'text-sky-700';
+
+  // Abas Dia/Mês/Ano + setas de navegação (◀▶) por calendário.
+  const tab = (v: 'dia' | 'mes' | 'ano', txt: string) =>
+    `<a href="/dashboard/monitoramento/${escapeHtml(s.id)}?vista=${v}&ref=${escapeHtml(d.ref)}" class="px-3 py-1.5 rounded-md text-sm ${d.vista === v ? 'bg-sky-700 text-white font-semibold' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">${txt}</a>`;
+  const seta = (destino: string | null, simbolo: string) =>
+    destino
+      ? `<a href="/dashboard/monitoramento/${escapeHtml(s.id)}?vista=${d.vista}&ref=${destino}" class="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700">${simbolo}</a>`
+      : `<span class="px-2 py-1 rounded bg-slate-50 text-slate-300">${simbolo}</span>`;
+
+  // Título do gráfico do meio + gráfico por vista.
+  const graficoMeio = d.vista === 'dia'
+    ? (curvaDia && curvaDia.length > 0
+        ? `<div style="height:300px;position:relative"><canvas id="graficoDia"></canvas></div>`
+        : `<div class="text-sm text-slate-600">
+             ${escapeHtml(curvaMsg ?? 'Curva do dia indisponível.')}
+             <div class="mt-2 text-slate-900 font-semibold">Geração do dia: ${d.totalDiaKwh !== null ? `${d.totalDiaKwh.toFixed(1)} kWh` : '—'}</div>
+           </div>`)
+    : (serieToda0
+        ? `<div class="text-sm text-slate-500">Sem geração registrada nesse período.</div>`
+        : `<div style="height:300px;position:relative"><canvas id="graficoPeriodo"></canvas></div>`);
 
   const body = `
     <div class="mb-4">
@@ -1028,29 +1056,23 @@ export function renderDetalheSistemaPage(
 
     <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
       <div class="flex flex-wrap items-center gap-2">
-        <span class="text-sm font-semibold text-slate-700">📅 Período:</span>
-        ${(['30d', '90d', '6m', '1a', '2a', '5a', 'tudo'] as const).map((p) => {
-          const labels: Record<string, string> = { '30d': '30 dias', '90d': '90 dias', '6m': '6 meses', '1a': '1 ano', '2a': '2 anos', '5a': '5 anos', 'tudo': 'Tudo' };
-          const ativo = d.periodo.presetAtual === p;
-          return `<a href="/dashboard/monitoramento/${escapeHtml(s.id)}?preset=${p}" class="px-3 py-1.5 rounded-md text-sm transition ${ativo ? 'bg-sky-700 text-white font-semibold' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">${labels[p]}</a>`;
-        }).join('')}
-        <form method="get" action="/dashboard/monitoramento/${escapeHtml(s.id)}" class="flex flex-wrap items-center gap-2 ml-auto">
-          <input type="date" name="inicio" value="${d.periodo.inicio}" class="px-2 py-1 border border-slate-300 rounded-md text-sm">
-          <span class="text-slate-500 text-sm">até</span>
-          <input type="date" name="fim" value="${d.periodo.fim}" class="px-2 py-1 border border-slate-300 rounded-md text-sm">
-          <button class="px-3 py-1.5 rounded-md text-sm bg-amber-500 hover:bg-amber-600 text-white font-medium">Aplicar</button>
-        </form>
+        <div class="flex items-center gap-2">
+          ${tab('dia', 'Dia')} ${tab('mes', 'Mês')} ${tab('ano', 'Ano')}
+        </div>
+        <div class="flex items-center gap-2 ml-auto">
+          ${seta(d.nav.anterior, '◀')}
+          <span class="text-sm font-semibold text-slate-700 min-w-[9rem] text-center">${escapeHtml(d.nav.label)}</span>
+          ${seta(d.nav.proximo, '▶')}
+        </div>
       </div>
     </section>
 
     <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-base font-semibold text-slate-900">Geração — ${escapeHtml(d.periodo.label)}</h2>
-        <span class="text-xs text-slate-500">${d.periodo.granularidade === 'diaria' ? 'visão diária' : 'visão mensal'}</span>
+        <h2 class="text-base font-semibold text-slate-900">Geração — ${escapeHtml(d.nav.label)}</h2>
+        <span class="text-xs text-slate-500">${d.vista === 'dia' ? 'potência (kW) ao vivo' : d.vista === 'ano' ? 'kWh por mês' : 'kWh por dia'}</span>
       </div>
-      <div style="height:300px;position:relative">
-        <canvas id="graficoPeriodo"></canvas>
-      </div>
+      ${graficoMeio}
     </section>
 
     ${d.serieMensalCompleta.length > 1 ? `
@@ -1146,6 +1168,7 @@ export function renderDetalheSistemaPage(
   // NAO recarrega se cliente clicou em algum filtro/preset (preserva URL).
   setTimeout(() => location.reload(), 30000);
 
+  // Gráfico do meio na vista Mês/Ano: barras de kWh (por dia / por mês).
   const ctxPeriodo = document.getElementById('graficoPeriodo');
   if (ctxPeriodo) {
     new Chart(ctxPeriodo, {
@@ -1154,22 +1177,10 @@ export function renderDetalheSistemaPage(
         labels: ${JSON.stringify(labelsPeriodo)},
         datasets: [
           {
-            label: 'Real (kWh)',
+            label: 'Geração (kWh)',
             data: ${JSON.stringify(valoresPeriodo)},
             backgroundColor: '#f59e0b',
             borderRadius: 4,
-            order: 2,
-          },
-          {
-            label: 'Esperado (kWh)',
-            data: ${JSON.stringify(esperadoPeriodo)},
-            type: 'line',
-            borderColor: '#0ea5e9',
-            borderDash: [4, 4],
-            borderWidth: 2,
-            fill: false,
-            pointRadius: 0,
-            order: 1,
           },
         ],
       },
@@ -1180,6 +1191,38 @@ export function renderDetalheSistemaPage(
         scales: {
           y: { beginAtZero: true, title: { display: true, text: 'kWh' } },
           x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 15 } }
+        }
+      }
+    });
+  }
+
+  // Gráfico do meio na vista Dia: curva de potência (kW) ao vivo.
+  const ctxDia = document.getElementById('graficoDia');
+  if (ctxDia) {
+    new Chart(ctxDia, {
+      type: 'line',
+      data: {
+        labels: ${JSON.stringify(labelsDia)},
+        datasets: [
+          {
+            label: 'Potência (kW)',
+            data: ${JSON.stringify(valoresDia)},
+            borderColor: '#f59e0b',
+            backgroundColor: 'rgba(245,158,11,0.15)',
+            borderWidth: 2,
+            fill: true,
+            pointRadius: 0,
+            tension: 0.3,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'top' } },
+        scales: {
+          y: { beginAtZero: true, title: { display: true, text: 'kW' } },
+          x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } }
         }
       }
     });

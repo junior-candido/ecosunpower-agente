@@ -12,6 +12,7 @@ import {
   solisSign,
   mesesNoIntervalo,
   parseStationMonth,
+  parseIntradaySolis,
   capacidadeKwp,
   parseStationRecord,
   solisAdapter,
@@ -117,6 +118,23 @@ describe('parseStationMonth', () => {
   it('data não-array → vazio', () => {
     expect(parseStationMonth(null, '2026-07-01', '2026-07-01')).toEqual([]);
   });
+});
+
+// ============================================================================
+// parseIntradaySolis — stationDay (array) → kW por horário
+// Campos reais confirmados ao vivo 01/07: hora=timeStr, potência=power (W).
+// ============================================================================
+
+describe('parseIntradaySolis', () => {
+  it('mapeia hora (timeStr) + converte power W→kW, descarta invalido', () => {
+    const data = [
+      { timeStr: '06:00', power: 0 },
+      { timeStr: '12:00', power: 25850 },
+      { timeStr: '18:00', power: null },
+    ];
+    expect(parseIntradaySolis(data)).toEqual([{ hora: '06:00', kw: 0 }, { hora: '12:00', kw: 25.85 }]);
+  });
+  it('nao-array → vazio', () => expect(parseIntradaySolis(null)).toEqual([]));
 });
 
 // ============================================================================

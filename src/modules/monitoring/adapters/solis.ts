@@ -31,6 +31,7 @@ import crypto from 'crypto';
 import type {
   AdapterResult,
   GeracaoDiaria,
+  IntradayResult,
   ListSitesResult,
   MonitoringAdapter,
   SiteResumo,
@@ -207,6 +208,24 @@ export function parseStationMonth(data: unknown, inicio: string, fim: string): G
   return out;
 }
 
+// stationDay devolve um ARRAY de pontos do dia. Campos confirmados ao vivo
+// (01/07): `timeStr`="HH:mm:ss" (hora) e `power` (potência instantânea em W —
+// ex.: 13780 → 13.78 kW, coerente com powerPec="0.001"). W→kW = ÷1000.
+interface SolisDayPonto { timeStr?: string; power?: number | string | null }
+export function parseIntradaySolis(data: unknown): Array<{ hora: string; kw: number }> {
+  const arr = Array.isArray(data) ? (data as SolisDayPonto[]) : [];
+  const out: Array<{ hora: string; kw: number }> = [];
+  for (const p of arr) {
+    const hora = (p?.timeStr ?? '').toString().trim();
+    if (!hora) continue;
+    const raw = p?.power;
+    const w = typeof raw === 'string' ? Number(raw) : raw;
+    if (typeof w !== 'number' || !Number.isFinite(w)) continue;
+    out.push({ hora, kw: Number((w / 1000).toFixed(3)) });
+  }
+  return out;
+}
+
 interface StationListRec {
   id?: string;
   stationName?: string;
@@ -284,6 +303,16 @@ export const solisAdapter: MonitoringAdapter = {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([data, kwh]) => ({ data, geracao_kwh: Number(kwh.toFixed(3)) }));
     return { ok: true, geracoes, statusInversor: geracoes.length > 0 ? 'ok' : 'desconhecido' };
+  },
+
+  // stationDay → curva de potência (kW) do dia da usina. Ao vivo.
+  async fetchIntraday(credenciais: Record<string, unknown>, dia: string): Promise<IntradayResult> {
+    const parsed = parseCreds(credenciais);
+    if ('error' in parsed) return { ok: false, reason: parsed.error };
+    if (!parsed.siteId) return { ok: false, reason: 'Solis fetchIntraday precisa de site_id' };
+    const r = await solisPost<unknown>(parsed, '/v1/api/stationDay', { id: parsed.siteId, time: dia, timeZone: -3, money: 'BRL' });
+    if (!r.ok) return { ok: false, reason: r.reason };
+    return { ok: true, pontos: parseIntradaySolis(r.data) };
   },
 
   // userStationList paginado → todas as usinas do instalador.
