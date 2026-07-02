@@ -23,6 +23,10 @@ export interface DispatchCtx {
     sistema: { id: string; apelido: string; potencia_kwp: number | null; marca_inversor: string; lead_id: string | null; uf: string | null },
     lead: { id: string; name: string | null; phone: string },
   ) => Promise<'proposta' | 'enviada' | 'inelegivel'>;
+  // Resumo diário (incremento 2): com dono + autonomia OFF, queda/milestone
+  // NÃO viram mensagem individual — o resumo diário cobre (ação no painel).
+  // Campo opcional: sem ele, comportamento 100% atual (compat).
+  autonomiaOn?: (tipo: 'queda' | 'parabens') => Promise<boolean>;
 }
 
 function addDays(d: Date, n: number): Date {
@@ -52,6 +56,35 @@ export async function runDispatchCycle(hoje: Date, ctx: DispatchCtx): Promise<{
         continue;
       }
       const lead = sistema.lead_id ? await ctx.supabase.getLeadById(sistema.lead_id) : null;
+
+      // Resumo diário: não-urgente em treino é absorvido (sem mensagem
+      // individual). Offline/erro_integracao/órfã NUNCA passam por aqui.
+      // etapa_obra === 'pos_venda' é obrigatório: o resumo só lista usinas do
+      // pós-venda (listarClientesPosVenda) — em obra segue o fluxo atual
+      // (proporAbordagem / alerta individual), senão a queda ficaria absorvida
+      // pra sempre sem aparecer em lugar nenhum.
+      if (ctx.autonomiaOn && lead && lead.phone && sistema.etapa_obra === 'pos_venda' &&
+          (alerta.tipo === 'queda_geracao' || alerta.tipo === 'milestone_economia')) {
+        const tipoFlag = alerta.tipo === 'queda_geracao' ? 'queda' : 'parabens';
+        let auto = true; // erro na leitura da config → segue o fluxo atual (seguro)
+        try { auto = await ctx.autonomiaOn(tipoFlag); } catch { auto = true; }
+        if (!auto) {
+          if (ctx.dryRun) {
+            console.log(`[proactive-alerts] dispatch DRY: absorveria no resumo — alerta=${alerta.id} tipo=${alerta.tipo}`);
+            await ctx.supabase.unlockAlerta(alerta.id, addDays(hoje, 3).toISOString());
+            dryRunSimulados++;
+            continue;
+          }
+          // Marco absorvido fica ABERTO com trava longa: resolver faria o detect
+          // recriar o alerta toda hora (churn); aberto ele deduplica e não repinta
+          // nada na tela (saúde ignora milestone). Queda mantém +3d (pinta o amarelo).
+          const travaDias = alerta.tipo === 'milestone_economia' ? 30 : 3;
+          await ctx.supabase.marcarAlertaAbsorvidoPorResumo(
+            alerta.id, hoje.toISOString(), addDays(hoje, travaDias).toISOString());
+          console.log(`[proactive-alerts] dispatch: absorvido pelo resumo — alerta=${alerta.id} tipo=${alerta.tipo}`);
+          continue;
+        }
+      }
 
       // Eva Monitoramento Evolutivo: alerta de tipo "cliente" com dono vinculado
       // tenta virar abordagem ao cliente. Inelegível → fluxo atual (alerta admin).

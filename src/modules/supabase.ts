@@ -1203,6 +1203,25 @@ export class SupabaseService {
     if (error) console.error('[supabase] marcarAlertaEnviado:', error.message);
   }
 
+  // Resumo diário do pós-venda: alerta não-urgente em treino não vira mensagem
+  // individual — fica registrado como absorvido e não compete de novo antes do
+  // prazo. Fica sempre ABERTO (nunca resolvido): resolver faria o detect
+  // recriar o alerta toda hora (churn) porque o detect só dedupa contra
+  // alertas OPEN do mesmo tipo. Quem decide a trava é o dispatcher: marco
+  // (milestone_economia) usa +30d (aberto não repinta nada — saúde da tela
+  // ignora esse tipo), queda (queda_geracao) usa +3d (é ela que pinta o
+  // amarelo da tela).
+  async marcarAlertaAbsorvidoPorResumo(id: string, sentAt: string, nextSendAt: string): Promise<void> {
+    const { error } = await this.client
+      .from('monitoring_alerts')
+      .update({
+        acao_disparada: 'resumo_diario', acao_disparada_em: sentAt,
+        last_sent_at: sentAt, next_send_at: nextSendAt,
+      })
+      .eq('id', id);
+    if (error) console.error('[supabase] marcarAlertaAbsorvidoPorResumo:', error.message);
+  }
+
   async snoozeAlerta(sistemaId: string, snoozedUntil: string): Promise<void> {
     await this.client
       .from('monitoring_alerts')

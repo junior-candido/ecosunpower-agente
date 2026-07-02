@@ -8250,6 +8250,12 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
         sendAdminWithButtons({ metaWaba, sendText }, to, body, buttons, footer),
       adminPhone: config.engineerPhone,
       dryRun: proactiveDryRun,
+      // Resumo diário: em treino, queda/milestone não viram msg individual.
+      autonomiaOn: async (tipo: 'queda' | 'parabens') => {
+        const { getConfig } = await import('./modules/monitoring/abordagem/abordagens-repo.js');
+        const cfg = await getConfig(supabase.getClient());
+        return tipo === 'queda' ? cfg.queda_auto : cfg.parabens_auto;
+      },
       // Eva Monitoramento Evolutivo: alerta de tipo "cliente" com dono vira
       // abordagem da Eva. O wrapper recalcula diasOffline/percentualQueda
       // REAIS da MESMA fonte do radar (geracao_diaria + esperadoDiaKwh,
@@ -8348,6 +8354,19 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
         } catch (err) {
           console.error('[abordagem] cron de pendências falhou:', (err as Error).message);
         }
+      }
+      // Resumo diário do pós-venda (17h-18h BRT): try/catch próprio — falha
+      // nunca derruba dispatch nem pendências. O runner decide janela/CAS.
+      try {
+        const { rodarResumoDiario } = await import('./modules/dashboard/pos-venda-resumo-diario.js');
+        await rodarResumoDiario({
+          client: supabase.getClient(),
+          sendText: async (to: string, t: string) => { await sendText(to, t); },
+          adminPhone: config.engineerPhone,
+          dryRun: process.env.PROACTIVE_ALERTS_DRY_RUN === '1',
+        }, new Date());
+      } catch (err) {
+        console.error('[resumo-diario] cron falhou:', (err as Error).message);
       }
     };
     setInterval(runProactiveDispatch, 15 * 60 * 1000); // 15min
