@@ -50,4 +50,30 @@ describe('sugestaoProativa — memoria', () => {
     expect(sugestaoProativa(l, HOJE)?.tipo).toBe('upgrade');
     expect(sugestaoProativa({ ...l, snoozedTipos: new Set(['upgrade']) }, HOJE)).toBeNull();
   });
+
+  it('saude amarela (queda de geracao aberta) sugere queda', () => {
+    const s = sugestaoProativa({
+      saude: 'amarelo',
+      ultimoContatoEm: null,
+      elegivelUpgrade: false,
+      dataInstalacao: null,
+      gerouBem: false,
+      ultimoContatoPositivoEm: null,
+      snoozedTipos: new Set<string>(),
+    }, new Date('2026-07-02T12:00:00Z'));
+    expect(s?.tipo).toBe('queda');
+  });
+
+  it('saude amarela com queda snoozed NAO sugere queda', () => {
+    const s = sugestaoProativa({
+      saude: 'amarelo',
+      ultimoContatoEm: null,
+      elegivelUpgrade: false,
+      dataInstalacao: null,
+      gerouBem: false,
+      ultimoContatoPositivoEm: null,
+      snoozedTipos: new Set(['queda']),
+    }, new Date('2026-07-02T12:00:00Z'));
+    expect(s?.tipo).not.toBe('queda');
+  });
 });

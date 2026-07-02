@@ -25,7 +25,9 @@ const diasSem = (iso: string | null, hoje: Date): number | null =>
   iso ? Math.floor((hoje.getTime() - new Date(iso).getTime()) / DIA) : null;
 
 export function sugestaoProativa(l: LinhaSugestao, hoje: Date): Sugestao | null {
-  if (l.saude === 'vermelho' && !l.snoozedTipos.has('queda')) {
+  // amarelo = alerta de queda aberto; vermelho = offline/zerada — nos
+  // dois casos a dica certa é oferecer revisão/limpeza
+  if ((l.saude === 'vermelho' || l.saude === 'amarelo') && !l.snoozedTipos.has('queda')) {
     return {
       tipo: 'queda',
       texto: '💡 Geração caiu — ofereça revisão/limpeza',
