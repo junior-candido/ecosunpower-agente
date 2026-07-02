@@ -40,6 +40,7 @@ Junior já conhece o cliente, só quer o PDF/link pra enviar manualmente. Foco e
 **OBRIGATÓRIO:**
 - `nomeCliente` (vai no PDF)
 - Dados de geração: `consumoMensalKwh`, `fatorPerda`, `tarifaRsKwh`, `potenciaKwp`, `modulo`, `inversor`, `tipoCliente`, `modalidade`, `concessionaria`, `estruturaFixacao`, `valorTotalRs` — sem isso a engine de cálculo quebra
+- **Proposta SÓ de serviço:** os campos solares não se aplicam; `valorTotalRs` só é necessário quando o Junior orça por valor fechado — quando ele dá preço por item, o sistema soma os itens (não peça total).
 
 **OPCIONAL (pergunta UMA vez, aceita "pula"/"n/a"/"depois", NÃO insiste):**
 - `enderecoCliente`, `telefoneCliente`, `emailCliente`, `documentoCliente`

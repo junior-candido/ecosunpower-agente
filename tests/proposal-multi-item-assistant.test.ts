@@ -332,4 +332,7 @@ describe('buildSystemPrompt — regra da proposta de serviço', () => {
     expect(prompt).toContain("valorTotalRs` NÃO é obrigatório");
     expect(prompt).toContain("NUNCA o liste em `missing`");
   });
+  it('CAMPOS OBRIGATÓRIOS tem a exceção do só-serviço', () => {
+    expect(prompt).toContain('Exceção — proposta SÓ de serviço');
+  });
 });
