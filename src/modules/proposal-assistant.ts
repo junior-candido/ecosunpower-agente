@@ -721,6 +721,11 @@ export class ProposalAssistant {
 
     if (/^\/(proposta|propor|gerar?\s*proposta)(\s|$)/.test(norm)) return true;
 
+    // "proposta de serviço ..." escrito solto (o jeito que o menu ensina)
+    // também abre o modo — sem isso a mensagem caía solta e a Caixa de
+    // Entrada do financeiro tratava os R$ como lançamento (botões PF/PJ).
+    if (/^\/?proposta de servicos?(\s|$)/.test(norm)) return true;
+
     const palavrasSoltas = ['proposta', 'propostas', 'gerar proposta', 'fazer proposta'];
     if (palavrasSoltas.includes(norm)) return true;
 
