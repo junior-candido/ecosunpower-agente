@@ -28,6 +28,7 @@ function fakeCtx(overrides: any = {}) {
         id: 'sid-1', apelido: 'Casa', potencia_kwp: 5, marca_inversor: 'deye', lead_id: 'lid-1',
       }),
       getLeadById: vi.fn().mockResolvedValue({ id: 'lid-1', name: 'João', phone: '5561...' }),
+      marcarAlertaAbsorvidoPorResumo: vi.fn().mockResolvedValue(undefined),
       ...overrides.supabase,
     },
     sendAdminWithButtons: vi.fn().mockResolvedValue(undefined),
@@ -96,5 +97,88 @@ describe('runDispatchCycle', () => {
     expect(r.enviados).toBe(0);
     expect(r.dryRunSimulados).toBe(1);
     expect(ctx.sendAdminWithButtons).not.toHaveBeenCalled();
+  });
+
+  it('queda com dono + autonomia OFF: absorvida pelo resumo, nada individual', async () => {
+    const ctx = fakeCtx({
+      supabase: { getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta({ tipo: 'queda_geracao', severidade: 'aviso' })]) },
+      autonomiaOn: vi.fn().mockResolvedValue(false),
+      proporAbordagem: vi.fn(),
+    });
+    const r = await runDispatchCycle(horaJanela, ctx as any);
+    expect(ctx.sendAdminWithButtons).not.toHaveBeenCalled();
+    expect(ctx.proporAbordagem).not.toHaveBeenCalled();
+    expect(ctx.supabase.marcarAlertaAbsorvidoPorResumo).toHaveBeenCalledOnce();
+    expect(r.enviados).toBe(0);
+  });
+
+  it('milestone com dono + autonomia OFF: absorvida (boa noticia vai no resumo)', async () => {
+    const ctx = fakeCtx({
+      supabase: { getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta({ tipo: 'milestone_economia', severidade: 'info' })]) },
+      autonomiaOn: vi.fn().mockResolvedValue(false),
+      proporAbordagem: vi.fn(),
+    });
+    await runDispatchCycle(horaJanela, ctx as any);
+    expect(ctx.proporAbordagem).not.toHaveBeenCalled();
+    expect(ctx.supabase.marcarAlertaAbsorvidoPorResumo).toHaveBeenCalledOnce();
+  });
+
+  it('queda com autonomia ON: segue pro proporAbordagem (igual hoje)', async () => {
+    const ctx = fakeCtx({
+      supabase: { getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta({ tipo: 'queda_geracao' })]) },
+      autonomiaOn: vi.fn().mockResolvedValue(true),
+      proporAbordagem: vi.fn().mockResolvedValue('enviada'),
+    });
+    const r = await runDispatchCycle(horaJanela, ctx as any);
+    expect(ctx.proporAbordagem).toHaveBeenCalledOnce();
+    expect(ctx.supabase.marcarAlertaAbsorvidoPorResumo).not.toHaveBeenCalled();
+    expect(r.enviados).toBe(1);
+  });
+
+  it('offline ignora autonomiaOn: urgente continua individual', async () => {
+    const ctx = fakeCtx({
+      supabase: { getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta({ tipo: 'sistema_offline' })]) },
+      autonomiaOn: vi.fn().mockResolvedValue(false),
+      proporAbordagem: vi.fn().mockResolvedValue('proposta'),
+    });
+    await runDispatchCycle(horaJanela, ctx as any);
+    expect(ctx.proporAbordagem).toHaveBeenCalledOnce();
+    expect(ctx.supabase.marcarAlertaAbsorvidoPorResumo).not.toHaveBeenCalled();
+  });
+
+  it('sem autonomiaOn no ctx (compat): tudo igual hoje', async () => {
+    const ctx = fakeCtx({
+      supabase: { getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta({ tipo: 'queda_geracao' })]) },
+      proporAbordagem: vi.fn().mockResolvedValue('proposta'),
+    });
+    await runDispatchCycle(horaJanela, ctx as any);
+    expect(ctx.proporAbordagem).toHaveBeenCalledOnce();
+  });
+
+  it('queda absorvida em dry-run: nao marca, so simula', async () => {
+    const ctx = fakeCtx({
+      supabase: { getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta({ tipo: 'queda_geracao' })]) },
+      autonomiaOn: vi.fn().mockResolvedValue(false),
+      dryRun: true,
+    });
+    const r = await runDispatchCycle(horaJanela, ctx as any);
+    expect(ctx.supabase.marcarAlertaAbsorvidoPorResumo).not.toHaveBeenCalled();
+    expect(r.dryRunSimulados).toBe(1);
+  });
+
+  it('queda SEM dono (orfa): alerta individual continua (cadastrar dono)', async () => {
+    const ctx = fakeCtx({
+      supabase: {
+        getAlertasParaDespachar: vi.fn().mockResolvedValue([alerta({ tipo: 'queda_geracao' })]),
+        getSistemaById: vi.fn().mockResolvedValue({
+          id: 'sid-1', apelido: 'Casa', potencia_kwp: 5, marca_inversor: 'deye', lead_id: null,
+        }),
+      },
+      autonomiaOn: vi.fn().mockResolvedValue(false),
+    });
+    const r = await runDispatchCycle(horaJanela, ctx as any);
+    expect(ctx.sendAdminWithButtons).toHaveBeenCalledOnce();
+    expect(ctx.supabase.marcarAlertaAbsorvidoPorResumo).not.toHaveBeenCalled();
+    expect(r.enviados).toBe(1);
   });
 });

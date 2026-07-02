@@ -1203,6 +1203,19 @@ export class SupabaseService {
     if (error) console.error('[supabase] marcarAlertaEnviado:', error.message);
   }
 
+  // Resumo diário do pós-venda: alerta não-urgente em treino não vira mensagem
+  // individual — fica registrado como absorvido e não compete por 3 dias.
+  async marcarAlertaAbsorvidoPorResumo(id: string, sentAt: string, nextSendAt: string): Promise<void> {
+    const { error } = await this.client
+      .from('monitoring_alerts')
+      .update({
+        acao_disparada: 'resumo_diario', acao_disparada_em: sentAt,
+        last_sent_at: sentAt, next_send_at: nextSendAt,
+      })
+      .eq('id', id);
+    if (error) console.error('[supabase] marcarAlertaAbsorvidoPorResumo:', error.message);
+  }
+
   async snoozeAlerta(sistemaId: string, snoozedUntil: string): Promise<void> {
     await this.client
       .from('monitoring_alerts')
