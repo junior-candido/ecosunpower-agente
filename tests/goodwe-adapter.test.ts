@@ -12,6 +12,7 @@ import {
   parseLocation,
   janelasParaIntervalo,
   parseChartGeneration,
+  parseIntradayGoodwe,
   parseStationRecord,
   goodweAdapter,
   type ParsedCreds,
@@ -155,6 +156,21 @@ describe('parseChartGeneration', () => {
   it('resposta sem lines → vazio', () => {
     expect(parseChartGeneration({} as never, '2026-07-01', '2026-07-01')).toEqual([]);
   });
+});
+
+// ============================================================================
+// parseIntradayGoodwe — lines[PCurve_Power_PV].xy → kW por horário
+// ============================================================================
+
+describe('parseIntradayGoodwe', () => {
+  it('pega a linha PCurve_Power_PV e converte W→kW', () => {
+    const data = { lines: [
+      { name: 'PCurve_Power_PV', unit: 'W', xy: [{ x: '06:00', y: 0 }, { x: '12:00', y: 17281 }, { x: '18:00', y: null }] },
+      { name: 'Consumption', unit: 'W', xy: [{ x: '12:00', y: 5 }] },
+    ] };
+    expect(parseIntradayGoodwe(data)).toEqual([{ hora: '06:00', kw: 0 }, { hora: '12:00', kw: 17.281 }]);
+  });
+  it('sem linha de potencia → vazio', () => expect(parseIntradayGoodwe({})).toEqual([]));
 });
 
 // ============================================================================
