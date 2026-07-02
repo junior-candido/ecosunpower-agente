@@ -304,6 +304,9 @@ describe('isProposalTrigger — proposta de serviço', () => {
     expect(t('proposta')).toBe(true);
     expect(t('quero gerar proposta pro Marcio')).toBe(true);
   });
+  it('espaços duplicados não quebram o gatilho', () => {
+    expect(t('proposta  de  serviço pro João, padrão 2500')).toBe(true);
+  });
 });
 
 describe('buildSystemPrompt — regra da proposta de serviço', () => {
@@ -324,5 +327,9 @@ describe('buildSystemPrompt — regra da proposta de serviço', () => {
   });
   it('a instrução antiga de "quase sempre valor único" saiu', () => {
     expect(prompt).not.toContain('quase sempre é orçado por UM VALOR ÚNICO');
+  });
+  it('no caminho por item, valorTotalRs não é obrigatório nem entra em missing', () => {
+    expect(prompt).toContain("valorTotalRs` NÃO é obrigatório");
+    expect(prompt).toContain("NUNCA o liste em `missing`");
   });
 });

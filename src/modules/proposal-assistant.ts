@@ -426,7 +426,7 @@ ${marcasKnowledge}
         • \`true\` → serviço "JÁ INCLUSO": já está DENTRO do valor que o Junior passou, então NÃO soma de novo (na proposta aparece com selo "já incluso"). Use quando o Junior diz "já incluso", "já está no valor", "dentro do total", "sem custo adicional", "já contemplado", "incluso no preço".
     REGRA DE OURO da conta: \`valorTotalRs\` é SEMPRE só o valor do solar. Se um serviço é \`jaIncluso: true\`, o \`valorTotalRs\` que o Junior passou JÁ contém esse serviço — não desconte nem some nada, o sistema faz a conta certa. Você só entende e classifica; quem soma/subtrai é SEMPRE o sistema, NUNCA você de cabeça.
     **PROPOSTA SÓ DE SERVIÇO (sem solar):** se o Junior pedir uma proposta só de serviço (ex: desmontagem/reinstalação, adequação de padrão, projeto elétrico, sem kit solar), preencha \`servicos[]\` (as tarefas) + \`nomeCliente\` (+ telefone se modo eva_envia). NÃO invente \`potenciaKwp\`, módulo, inversor nem consumo — deixe ausentes/0. **VALOR — dois jeitos, ambos oficiais:**
-        • **POR ITEM** (quando o Junior dá preço por tarefa, ex: "padrão 2500, SPDA 1800, projeto 900"): preencha o \`valorRs\` de CADA tarefa em \`servicos[]\` e deixe \`valorTotalRs\` ausente — O SISTEMA SOMA os itens, você NUNCA soma de cabeça. Se alguma tarefa ficou sem preço, pergunte o preço DELA (\`action: ask_more\`) antes de gerar — soma furada não pode. Se o Junior disser que uma tarefa "está inclusa" em outra, ponha \`valorRs: 0\` nela e registre isso na \`descricao\` (ex: "incluso na adequação de padrão").
+        • **POR ITEM** (quando o Junior dá preço por tarefa, ex: "padrão 2500, SPDA 1800, projeto 900"): preencha o \`valorRs\` de CADA tarefa em \`servicos[]\` e deixe \`valorTotalRs\` ausente — O SISTEMA SOMA os itens, você NUNCA soma de cabeça. Se alguma tarefa ficou sem preço, pergunte o preço DELA (\`action: ask_more\`) antes de gerar — soma furada não pode. Se o Junior disser que uma tarefa "está inclusa" em outra, ponha \`valorRs: 0\` nela e registre isso na \`descricao\` (ex: "incluso na adequação de padrão"). Nesse caminho o \`valorTotalRs\` NÃO é obrigatório — NUNCA o liste em \`missing\`.
         • **VALOR FECHADO** (quando o Junior dá um número só, ex: "total R$ 7.800"): ponha em \`valorTotalRs\` e deixe as tarefas SEM \`valorRs\`. Continua valendo como sempre.
         • **CONFLITO:** se ele der preços por item E TAMBÉM um total que não bate com a soma, você NÃO escolhe: mostre a soma dos itens e pergunte qual vale.
     No resumo de conferência (\`ready_to_generate\`) da proposta de serviço, liste CADA serviço com o preço e o total no final (ex: "• Adequação de padrão — R$ 2.500\\n• SPDA — R$ 1.800\\n💵 Total: R$ 4.300"); no valor fechado, liste as tarefas e o total único. NÃO liste os campos solares em \`missing\`.
@@ -728,7 +728,7 @@ export class ProposalAssistant {
     // "proposta de serviço ..." escrito solto (o jeito que o menu ensina)
     // também abre o modo — sem isso a mensagem caía solta e a Caixa de
     // Entrada do financeiro tratava os R$ como lançamento (botões PF/PJ).
-    if (/^\/?proposta de servicos?(\s|$)/.test(norm)) return true;
+    if (/^\/?proposta\s+de\s+servicos?(\s|$)/.test(norm)) return true;
 
     const palavrasSoltas = ['proposta', 'propostas', 'gerar proposta', 'fazer proposta'];
     if (palavrasSoltas.includes(norm)) return true;
