@@ -90,4 +90,9 @@ describe('ficha de marca na proposta renderizada', () => {
     const html = renderProposalHTML(data, baseCalc());
     expect(html).toContain('FICHA CUSTOM DO INVERSOR XYZ');
   });
+  it('celular: halo da logo do hero reduzido; desktop intacto', () => {
+    const html = renderProposalHTML(baseData(), baseCalc());
+    expect(html).toContain('drop-shadow(0 0 9px rgba(102,207,243,.75))'); // desktop como sempre
+    expect(html).toContain('drop-shadow(0 0 5px rgba(102,207,243,.45))'); // mobile: metade
+  });
 });

@@ -202,6 +202,8 @@ section{padding:80px 0}
 .brand-logo.cta{height:58px;margin:0 auto 26px}
 .brand-logo.foot{height:44px;margin-bottom:12px}
 @media(max-width:768px){.brand-logo{height:80px}.brand-logo.cta{height:46px}.brand-logo.foot{height:38px}
+  /* halo do desktop é fixo em px; na logo menor do celular ele engolia as letras (apagava o E) */
+  .hero .brand-logo{filter:drop-shadow(0 0 5px rgba(102,207,243,.45)) drop-shadow(0 0 10px rgba(31,184,232,.3))}
   .hero-nav{flex-direction:column;align-items:flex-start;gap:14px;margin-bottom:40px}
   .hero-meta{text-align:left}}
 .hero-meta{font-size:13px;opacity:0.85;text-align:right}
