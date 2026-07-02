@@ -139,4 +139,10 @@ describe('renderServiceOnlyHTML', () => {
     expect(() => renderServiceOnlyHTML({ ...base, servicos: [] })).toThrow();
     expect(() => renderServiceOnlyHTML({ ...base, nomeCliente: '' })).toThrow();
   });
+  it('celular: halo da logo reduzido (não apaga o E); desktop intacto', () => {
+    const html = renderServiceOnlyHTML(base);
+    expect(html).toContain('drop-shadow(0 0 9px rgba(102,207,243,.75))'); // desktop como sempre
+    expect(html).toContain('drop-shadow(0 0 5px rgba(102,207,243,.45))'); // mobile: metade
+    expect(html).toContain('drop-shadow(0 0 10px rgba(31,184,232,.3))');  // mobile: metade
+  });
 });

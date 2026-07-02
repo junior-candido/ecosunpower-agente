@@ -143,7 +143,8 @@ img{max-width:100%}
 .brand-logo.foot{height:40px;filter:none;margin:0 auto 10px}
 .svc-nav{display:flex;justify-content:space-between;align-items:center;margin-bottom:40px;gap:16px}
 @media(max-width:768px){
-  .brand-logo{height:54px}
+  /* halo do desktop é fixo em px; na logo menor do celular ele engolia as letras (apagava o E) */
+  .brand-logo{height:54px;filter:drop-shadow(0 0 5px rgba(102,207,243,.45)) drop-shadow(0 0 10px rgba(31,184,232,.3))}
   .svc-nav{flex-direction:column;align-items:flex-start}
   .svc-nav .meta{text-align:left}
 }
