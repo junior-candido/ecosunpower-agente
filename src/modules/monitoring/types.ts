@@ -64,6 +64,13 @@ export interface AdapterFetchError {
 
 export type AdapterResult = AdapterFetchResult | AdapterFetchError;
 
+// Um ponto da curva intradiária de potência.
+export interface IntradayPonto { hora: string; kw: number }
+
+export type IntradayResult =
+  | { ok: true; pontos: IntradayPonto[] }
+  | { ok: false; reason: string };
+
 // Interface que cada marca precisa implementar.
 // fetchGeneration(sistema, dataInicio, dataFim) -> array de { data, geracao_kwh }
 export interface MonitoringAdapter {
@@ -86,6 +93,12 @@ export interface MonitoringAdapter {
   // Retorna null se as credenciais por planta nao carregam info suficiente da
   // conta (adapter nao suporta discovery).
   extractAccountCreds?(credsPlanta: Record<string, unknown>): Record<string, unknown> | null;
+  // Opcional: curva intradiária de POTÊNCIA (kW) de um dia (YYYY-MM-DD). Ao vivo.
+  // Adapter sem suporte não implementa — a tela degrada pro total do dia.
+  fetchIntraday?(
+    credenciais: Record<string, unknown>,
+    dia: string,
+  ): Promise<IntradayResult>;
 }
 
 // Site/planta retornado por listSites — schema unificado pra qualquer marca.
