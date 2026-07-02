@@ -76,7 +76,7 @@ Hoje `runDispatchCycle` manda alerta individual ou vira `proporAbordagem`
 | `erro_integracao` | — | — | **igual hoje** (alerta admin na hora) |
 | usina órfã (sem dono) | não | — | **igual hoje** (alerta "cadastrar dono") |
 | `queda_geracao` | sim | **auto ON** | **igual hoje** (Eva manda sozinha + eco 🤖) |
-| `queda_geracao` | sim | auto OFF | **não manda nada individual** — marca o alerta como absorvido pelo resumo (`acao_disparada='resumo_diario'`, `next_send_at` +3d); a queda aparece no resumo via saúde vermelha da tela |
+| `queda_geracao` | sim | auto OFF | **não manda nada individual** — marca o alerta como absorvido pelo resumo (`acao_disparada='resumo_diario'`, `next_send_at` +3d); a queda aparece no resumo via saúde da tela (ver pré-requisito abaixo) |
 | `milestone_economia` | sim | **auto ON** | **igual hoje** |
 | `milestone_economia` | sim | auto OFF | **não manda nada individual** — absorvido pelo resumo (a boa notícia aparece como `geracao_saudavel`); coerente com "depoimento é decisão manual do Junior" |
 
@@ -84,6 +84,20 @@ Hoje `runDispatchCycle` manda alerta individual ou vira `proporAbordagem`
   (copiloto do incremento 1, que já registra abordagem + memória + snooze).
 - O motor de abordagens (escada/lembrete/encerramento/vassoura) **continua
   intocado** pras conversas já abertas e pro modo auto.
+
+## Pré-requisito descoberto no código: a queda não pinta a tela hoje
+
+A saúde da tela (`pos-venda-queries` → `saudeUsina`) lê alertas só de
+`alertas_sistema` — tabela em que **ninguém escreve** (só leitura e resolve).
+A queda detectada pelo monitoramento mora em `monitoring_alerts`. Sem conserto,
+absorver a queda no dispatcher a deixaria invisível (nem zap, nem tela).
+
+Conserto (2 pontos, também melhora a tela por si só):
+1. `pos-venda-queries` passa a ler TAMBÉM `monitoring_alerts` abertos
+   (`resolved_at is null`) e junta na entrada de `saudeUsina` (os nomes de
+   tipo já casam: `sistema_offline` → vermelho, `queda_geracao` → amarelo).
+2. `sugestaoProativa` passa a sugerir `queda` também com saúde **amarela**
+   (hoje só vermelha) — amarelo é exatamente "queda de geração aberta".
 
 ## O que NÃO muda (compatibilidade travada)
 
