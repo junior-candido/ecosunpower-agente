@@ -64,8 +64,12 @@ export interface AdapterFetchError {
 
 export type AdapterResult = AdapterFetchResult | AdapterFetchError;
 
-// Um ponto da curva intradiária de potência.
-export interface IntradayPonto { hora: string; kw: number }
+// Um ponto da curva intradiária.
+//   kw  = potência instantânea naquele horário
+//   kwh = energia acumulada no dia ATÉ aquele horário (opcional — adapters que
+//         não expõem energia intradiária deixam de fora; a tela degrada pra só a
+//         potência). O total do dia = último kwh da série.
+export interface IntradayPonto { hora: string; kw: number; kwh?: number }
 
 export type IntradayResult =
   | { ok: true; pontos: IntradayPonto[] }
@@ -105,11 +109,14 @@ export interface MonitoringAdapter {
   // Retorna null se as credenciais por planta nao carregam info suficiente da
   // conta (adapter nao suporta discovery).
   extractAccountCreds?(credsPlanta: Record<string, unknown>): Record<string, unknown> | null;
-  // Opcional: curva intradiária de POTÊNCIA (kW) de um dia (YYYY-MM-DD). Ao vivo.
-  // Adapter sem suporte não implementa — a tela degrada pro total do dia.
+  // Opcional: curva intradiária de um dia (YYYY-MM-DD). Ao vivo. Cada ponto tem
+  // potência (kW) e, quando a marca expõe, energia acumulada (kWh). Adapter sem
+  // suporte não implementa — a tela degrada pro total do dia. `ctx` permite
+  // persistir credenciais que rotam durante a chamada (ex: refresh_token Sungrow).
   fetchIntraday?(
     credenciais: Record<string, unknown>,
     dia: string,
+    ctx?: AdapterContext,
   ): Promise<IntradayResult>;
 }
 

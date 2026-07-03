@@ -14,6 +14,8 @@ import {
   parseSerieDiaria,
   parseGeracaoHojeKwh,
   janelasDeDias,
+  janelas3hDaylight,
+  parseDeviceMinuto,
   sungrowAdapter,
   type ParsedCreds,
 } from '../src/modules/monitoring/adapters/sungrow.js';
@@ -295,6 +297,107 @@ describe('fetchGeneration (rede mockada)', () => {
     const r = await sungrowAdapter.fetchGeneration({ ...CONTA, site_id: '1' }, '2026-01-01', '2026-01-05');
     expect(r.ok).toBe(true);
     expect(calls.some((c) => c.path.endsWith('RealTimeData'))).toBe(false);
+  });
+});
+
+// ============================================================================
+// CURVA DO DIA (intraday)
+// ============================================================================
+
+describe('janelas3hDaylight', () => {
+  it('5 janelas de 3h cobrindo 05h–20h, formato yyyyMMddHHmmss', () => {
+    const js = janelas3hDaylight('2026-06-30');
+    expect(js).toEqual([
+      ['20260630050000', '20260630080000'],
+      ['20260630080000', '20260630110000'],
+      ['20260630110000', '20260630140000'],
+      ['20260630140000', '20260630170000'],
+      ['20260630170000', '20260630200000'],
+    ]);
+  });
+});
+
+describe('parseDeviceMinuto', () => {
+  it('converte W->kW e Wh->kWh, ordena por hora', () => {
+    const rd = { '1517903_1_1_1': [
+      { time_stamp: '20260630110000', p24: '73001.0', p1: '150000.0' },
+      { time_stamp: '20260630090000', p24: '30000.0', p1: '50000.0' },
+    ] };
+    expect(parseDeviceMinuto(rd)).toEqual([
+      { hora: '09:00', kw: 30, kwh: 50 },
+      { hora: '11:00', kw: 73.001, kwh: 150 },
+    ]);
+  });
+
+  it('SOMA os inversores no mesmo horário', () => {
+    const rd = {
+      'INV_A': [{ time_stamp: '20260630120000', p24: '40000.0', p1: '100000.0' }],
+      'INV_B': [{ time_stamp: '20260630120000', p24: '35000.0', p1: '90000.0' }],
+    };
+    expect(parseDeviceMinuto(rd)).toEqual([{ hora: '12:00', kw: 75, kwh: 190 }]);
+  });
+
+  it('ignora point_dict e pontos sem potência/energia', () => {
+    const rd = {
+      point_dict: [{ point_id: 24, point_name: 'x' }],
+      'INV': [
+        { time_stamp: '20260630120000', p24: '10000.0' }, // só potência (sem kwh)
+        { time_stamp: '20260630123000' },                  // vazio -> descartado
+      ],
+    };
+    const out = parseDeviceMinuto(rd);
+    expect(out).toEqual([{ hora: '12:00', kw: 10 }]);
+    expect(out[0].kwh).toBeUndefined();
+  });
+});
+
+describe('fetchIntraday (rede mockada)', () => {
+  beforeEach(() => clearAllTokens());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('dia de HOJE → ok:false (Sungrow só dá dias passados)', async () => {
+    const r = await sungrowAdapter.fetchIntraday!({ ...CONTA, site_id: '1' }, hoje);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/dia seguinte|passad/i);
+  });
+
+  it('dia passado: lista inversores, soma janelas, devolve curva kW+kWh', async () => {
+    mockFetch({
+      '/openapi/apiManage/refreshToken': () => ({ result_code: '1', result_data: { access_token: 'AT', refresh_token: 'RT-ORIGINAL' } }),
+      '/openapi/platform/getDeviceListByPsId': () => ({ result_code: '1', result_data: { pageList: [{ ps_key: '1_1_1_1' }] } }),
+      '/openapi/platform/getDevicePointMinuteDataList': (body) => ({
+        result_code: '1',
+        // devolve 1 ponto por janela, no horário de início da janela
+        result_data: { '1_1_1_1': [{ time_stamp: body.start_time_stamp, p24: '20000.0', p1: '5000.0' }] },
+      }),
+    });
+    const r = await sungrowAdapter.fetchIntraday!({ ...CONTA, site_id: '1' }, '2026-06-30');
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.pontos.length).toBeGreaterThanOrEqual(5); // 1 por janela (5 janelas)
+      expect(r.pontos[0]).toEqual({ hora: '05:00', kw: 20, kwh: 5 });
+      expect(r.pontos.every((p) => p.kwh === 5)).toBe(true);
+    }
+  });
+
+  it('usina sem inversor (ex: micro) → ok:false', async () => {
+    mockFetch({
+      '/openapi/apiManage/refreshToken': () => ({ result_code: '1', result_data: { access_token: 'AT', refresh_token: 'RT-ORIGINAL' } }),
+      '/openapi/platform/getDeviceListByPsId': () => ({ result_code: '1', result_data: { pageList: [] } }),
+    });
+    const r = await sungrowAdapter.fetchIntraday!({ ...CONTA, site_id: '1' }, '2026-06-30');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/inversor/i);
+  });
+
+  it('dia glitch (inversor não reporta minuto) → ok:false', async () => {
+    mockFetch({
+      '/openapi/apiManage/refreshToken': () => ({ result_code: '1', result_data: { access_token: 'AT', refresh_token: 'RT-ORIGINAL' } }),
+      '/openapi/platform/getDeviceListByPsId': () => ({ result_code: '1', result_data: { pageList: [{ ps_key: 'K' }] } }),
+      '/openapi/platform/getDevicePointMinuteDataList': () => ({ result_code: '1', result_data: { K: [] } }),
+    });
+    const r = await sungrowAdapter.fetchIntraday!({ ...CONTA, site_id: '1' }, '2026-06-30');
+    expect(r.ok).toBe(false);
   });
 });
 

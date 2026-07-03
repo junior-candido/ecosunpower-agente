@@ -955,9 +955,27 @@ export function renderDetalheSistemaPage(
   const valoresPeriodo = d.serie.map((p) => Number(p.kwh.toFixed(1)));
   const serieToda0 = d.serie.length > 0 && d.serie.every((p) => p.kwh === 0);
 
-  // Curva do Dia (ao vivo)
+  // Curva do Dia (ao vivo): potência (kW) sempre; energia acumulada (kWh) quando
+  // a marca fornece (campo opcional kwh no ponto).
   const labelsDia = (curvaDia ?? []).map((p) => p.hora);
   const valoresDia = (curvaDia ?? []).map((p) => Number(p.kw.toFixed(3)));
+  const temEnergiaDia = (curvaDia ?? []).some((p) => typeof p.kwh === 'number');
+  const valoresEnergiaDia = (curvaDia ?? []).map((p) => (typeof p.kwh === 'number' ? Number(p.kwh.toFixed(2)) : null));
+  const totalEnergiaDia = temEnergiaDia
+    ? Math.max(0, ...(curvaDia ?? []).map((p) => (typeof p.kwh === 'number' ? p.kwh : 0)))
+    : null;
+  const datasetsDia: Array<Record<string, unknown>> = [{
+    label: 'Potência (kW)', data: valoresDia, borderColor: '#f59e0b',
+    backgroundColor: 'rgba(245,158,11,0.15)', borderWidth: 2, fill: true,
+    pointRadius: 0, tension: 0.3, yAxisID: 'y',
+  }];
+  if (temEnergiaDia) {
+    datasetsDia.push({
+      label: 'Energia acumulada (kWh)', data: valoresEnergiaDia, borderColor: '#0ea5e9',
+      backgroundColor: 'rgba(14,165,233,0.10)', borderWidth: 2, fill: false,
+      pointRadius: 0, tension: 0.3, yAxisID: 'y1',
+    });
+  }
 
   // Serie mensal completa (overview de TODA a vida do sistema)
   const labelsMensal = d.serieMensalCompleta.map((p) => {
@@ -981,7 +999,8 @@ export function renderDetalheSistemaPage(
   // Título do gráfico do meio + gráfico por vista.
   const graficoMeio = d.vista === 'dia'
     ? (curvaDia && curvaDia.length > 0
-        ? `<div style="height:300px;position:relative"><canvas id="graficoDia"></canvas></div>`
+        ? `${totalEnergiaDia !== null ? `<div class="text-sm text-slate-900 font-semibold mb-2">Geração do dia: ${totalEnergiaDia.toFixed(1)} kWh</div>` : ''}
+           <div style="height:300px;position:relative"><canvas id="graficoDia"></canvas></div>`
         : `<div class="text-sm text-slate-600">
              ${escapeHtml(curvaMsg ?? 'Curva do dia indisponível.')}
              <div class="mt-2 text-slate-900 font-semibold">Geração do dia: ${d.totalDiaKwh !== null ? `${d.totalDiaKwh.toFixed(1)} kWh` : '—'}</div>
@@ -1203,25 +1222,16 @@ export function renderDetalheSistemaPage(
       type: 'line',
       data: {
         labels: ${JSON.stringify(labelsDia)},
-        datasets: [
-          {
-            label: 'Potência (kW)',
-            data: ${JSON.stringify(valoresDia)},
-            borderColor: '#f59e0b',
-            backgroundColor: 'rgba(245,158,11,0.15)',
-            borderWidth: 2,
-            fill: true,
-            pointRadius: 0,
-            tension: 0.3,
-          },
-        ],
+        datasets: ${JSON.stringify(datasetsDia)},
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
         plugins: { legend: { position: 'top' } },
         scales: {
-          y: { beginAtZero: true, title: { display: true, text: 'kW' } },
+          y: { beginAtZero: true, position: 'left', title: { display: true, text: 'kW' } },
+          ${temEnergiaDia ? `y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'kWh' } },` : ''}
           x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } }
         }
       }

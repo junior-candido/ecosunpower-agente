@@ -240,7 +240,8 @@ export class MonitoringService {
   // Monta o AdapterContext pra um sistema. Hoje só provê persistAccountCreds:
   // regrava um patch de credenciais em TODAS as plantas da mesma conta (mesmo
   // marca + appkey). Usado pelo Sungrow, cujo refresh_token rota a cada renovação.
-  private buildAdapterContext(sistema: SistemaCliente): AdapterContext {
+  // Público pra rota de detalhe passar no fetchIntraday.
+  buildAdapterContext(sistema: SistemaCliente): AdapterContext {
     return {
       persistAccountCreds: (patch) =>
         this.persistCredsPorConta(sistema.marca_inversor, (sistema.api_credentials as Record<string, unknown>)?.appkey, patch),
