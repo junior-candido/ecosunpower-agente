@@ -1342,6 +1342,8 @@ export function renderTelemetriaPage(
   `;
 
   const scripts = serie.length > 0 ? `
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
     const ctxT = document.getElementById('graficoTelemetria');
     if (ctxT) {
       new Chart(ctxT, {
@@ -1366,6 +1368,7 @@ export function renderTelemetriaPage(
         }
       });
     }
+</script>
   ` : '';
 
   return renderLayout({ active: 'monitoramento', title: `Dados — ${sistema.apelido}`, body, scripts });
