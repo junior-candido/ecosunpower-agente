@@ -33,7 +33,7 @@
 //   POST /v1.0/station/history — histórico de geração da planta
 
 import crypto from 'crypto';
-import type { AdapterResult, ListSitesResult, MonitoringAdapter } from '../types.js';
+import type { AdapterResult, IntradayPonto, IntradayResult, ListSitesResult, MonitoringAdapter } from '../types.js';
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
 import { getOrFetch } from '../util/token-cache.js';
 
@@ -313,6 +313,24 @@ async function deyePost(
   return { ok: true, data: json };
 }
 
+// Curva do dia da Deye (station/history granularity=1 "frame"). Cada item tem
+// generationPower (W) + timeStamp (unix seg, UTC). Vira { hora BRT, kw }. A Deye
+// não dá energia acumulada por frame (generationValue é null no frame), então a
+// curva é só potência. Brasil = UTC-3 (sem horário de verão). Puro/testável.
+export function parseDeyeFrames(
+  items: Array<{ timeStamp?: number | string; generationPower?: number | string | null }>,
+): IntradayPonto[] {
+  const out: IntradayPonto[] = [];
+  for (const it of items) {
+    const ts = Number(it.timeStamp);
+    const w = typeof it.generationPower === 'string' ? Number(it.generationPower) : (it.generationPower as number);
+    if (!Number.isFinite(ts) || !Number.isFinite(w)) continue;
+    const hora = new Date((ts - 3 * 3600) * 1000).toISOString().slice(11, 16); // BRT (UTC-3)
+    out.push({ hora, kw: Number((Math.max(0, w) / 1000).toFixed(3)) });
+  }
+  return out.sort((a, b) => a.hora.localeCompare(b.hora));
+}
+
 // ============================================================================
 // ADAPTER
 // ============================================================================
@@ -552,6 +570,33 @@ export const deyeAdapter: MonitoringAdapter = {
     });
 
     return { ok: true, sites };
+  },
+
+  // Curva do dia (potência kW) — validada ao vivo 03/07. Vem do NÍVEL DA ESTAÇÃO
+  // (station/history granularity=1 "frame"), que INCLUI o dia atual. Sem energia
+  // acumulada (a Deye não dá por frame). Telemetria completa (tensão/corrente)
+  // fica pra quando o app Deye ganhar escopo de "device" (device/list volta 0 hoje).
+  async fetchIntraday(credenciais: Record<string, unknown>, dia: string): Promise<IntradayResult> {
+    const parsed = parseCreds(credenciais);
+    if ('error' in parsed) return { ok: false, reason: parsed.error };
+    const stationId = (credenciais as { site_id?: unknown; stationId?: unknown }).site_id
+      ?? (credenciais as { stationId?: unknown }).stationId;
+    if (!stationId) return { ok: false, reason: 'Deye fetchIntraday precisa de site_id (stationId)' };
+
+    const body = { stationId: Number(stationId), startAt: dia, endAt: dia, granularity: 1 };
+    const tk = await obterToken(parsed);
+    if (!tk.ok) return { ok: false, reason: tk.reason };
+    let r = await deyePost(baseUrl(parsed), '/v1.0/station/history', tk.token, body);
+    if (!r.ok && isAuthFailure(r)) {
+      const tk2 = await obterToken(parsed, true);
+      if (!tk2.ok) return { ok: false, reason: tk2.reason };
+      r = await deyePost(baseUrl(parsed), '/v1.0/station/history', tk2.token, body);
+    }
+    if (!r.ok) return { ok: false, reason: r.reason };
+    const items = (r.data?.stationDataItems as Array<{ timeStamp?: number; generationPower?: number | null }>) ?? [];
+    const pontos = parseDeyeFrames(items);
+    if (pontos.length === 0) return { ok: false, reason: 'Sem curva pra esse dia.' };
+    return { ok: true, pontos };
   },
 
   // Deye: credenciais da conta = tudo menos site_id (que e por planta).
