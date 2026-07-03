@@ -30,6 +30,7 @@ function escapeHtmlSimple(s: string): string {
 import type { SupabaseService } from '../supabase.js';
 import { empresa } from '../empresa-config.js';
 import type { MonitoringService } from '../monitoring/service.js';
+import { TelemetriaService } from '../monitoring/telemetria-service.js';
 import type { ProposalAssistant } from '../proposal-assistant.js';
 import type { MetaWhatsAppService } from '../meta-whatsapp.js';
 import {
@@ -52,6 +53,7 @@ import {
   renderImportarSitesPage,
   renderDetalheSistemaPage,
   renderEditarSistemaPage,
+  renderTelemetriaPage,
   renderLayout,
 } from './views.js';
 import {
@@ -174,6 +176,7 @@ export function createDashboardRouter(
 ): Router {
   const router = Router();
   const supabase = supabaseService.getClient();
+  const telemetriaService = new TelemetriaService(supabaseService, monitoringService);
 
   // Middleware-fábrica de gating de permissão por área/nível. Aplicado ANTES
   // dos handlers das rotas por área. Sem permissão → 403. Compatível com o
@@ -1983,6 +1986,31 @@ export function createDashboardRouter(
     } catch (err) {
       console.error('[dashboard/monitoramento/detalhe]', err);
       res.status(500).send(`<h2>Erro ao carregar detalhe</h2><pre>${(err as Error).message}</pre>`);
+    }
+  });
+
+  // Tela "Dados" — telemetria completa (tensão/corrente/potência/etc no tempo).
+  router.get('/monitoramento/:id/dados', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).send('UUID invalido');
+    try {
+      const { data: sistema } = await supabase.from('sistemas_clientes').select('id,apelido,marca_inversor').eq('id', id).maybeSingle();
+      if (!sistema) return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
+
+      const { devices, grandezas } = await telemetriaService.listarGrandezas(id, (sistema as { marca_inversor: string }).marca_inversor);
+      const periodosOk = ['dia', 'semana', 'mes'] as const;
+      const periodo = (periodosOk as readonly string[]).includes(String(req.query.periodo)) ? String(req.query.periodo) as 'dia' | 'semana' | 'mes' : 'dia';
+      const device = typeof req.query.device === 'string' && devices.includes(req.query.device) ? req.query.device : (devices[0] ?? '');
+      const ponto = typeof req.query.ponto === 'string' && grandezas.some((g) => g.ponto === req.query.ponto) ? req.query.ponto : (grandezas[0]?.ponto ?? '');
+
+      const diasAtras = periodo === 'dia' ? 1 : periodo === 'semana' ? 7 : 30;
+      const inicioIso = new Date(Date.now() - diasAtras * 24 * 60 * 60 * 1000).toISOString();
+      const serie = (device && ponto) ? await telemetriaService.serieTelemetria(id, device, ponto, inicioIso) : [];
+
+      res.send(renderTelemetriaPage(sistema as { id: string; apelido: string }, devices, grandezas, { device, ponto, periodo }, serie));
+    } catch (err) {
+      console.error('[dashboard/monitoramento/dados]', err);
+      res.status(500).send(`<h2>Erro ao carregar dados</h2><pre>${(err as Error).message}</pre>`);
     }
   });
 

@@ -89,4 +89,42 @@ export class TelemetriaService {
     if (del.error) { console.warn(`[telemetria] resumirAntigos delete: ${del.error.message}`); return { resumidos: resumo.length, apagados: 0 }; }
     return { resumidos: resumo.length, apagados: rows.length };
   }
+
+  // Pra tela "Dados": dispositivos que já reportaram + as grandezas do catálogo
+  // (rótulo/unidade amigáveis) da marca do sistema.
+  async listarGrandezas(
+    sistemaId: string,
+    marca: string,
+  ): Promise<{ devices: string[]; grandezas: Array<{ ponto: string; rotulo: string; unidade: string }> }> {
+    const client = this.supabase.getClient();
+    const { data: meds } = await client.from('telemetria_medicoes').select('device_key').eq('sistema_id', sistemaId);
+    const devices = [...new Set((meds ?? []).map((m: { device_key: string }) => m.device_key))].sort();
+    const { data: cat } = await client
+      .from('telemetria_catalogo')
+      .select('ponto,rotulo,unidade')
+      .eq('marca', marca)
+      .eq('device_type', 1);
+    const grandezas = (cat ?? []).map((c: { ponto: string; rotulo: string; unidade: string }) => ({ ponto: c.ponto, rotulo: c.rotulo, unidade: c.unidade }));
+    return { devices, grandezas };
+  }
+
+  // Série de uma grandeza no tempo (fino, de telemetria_medicoes) a partir de `inicioIso`.
+  async serieTelemetria(
+    sistemaId: string,
+    deviceKey: string,
+    ponto: string,
+    inicioIso: string,
+  ): Promise<Array<{ ts: string; valor: number }>> {
+    const client = this.supabase.getClient();
+    const { data } = await client
+      .from('telemetria_medicoes')
+      .select('ts,valor')
+      .eq('sistema_id', sistemaId)
+      .eq('device_key', deviceKey)
+      .eq('ponto', ponto)
+      .gte('ts', inicioIso)
+      .order('ts', { ascending: true })
+      .limit(5000);
+    return (data ?? []).map((r: { ts: string; valor: number }) => ({ ts: r.ts, valor: Number(r.valor) }));
+  }
 }

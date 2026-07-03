@@ -1034,6 +1034,7 @@ export function renderDetalheSistemaPage(
         </div>
         <div class="flex flex-wrap gap-2">
           <a href="/dashboard/monitoramento/${escapeHtml(s.id)}/editar" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm rounded-lg font-medium">✏️ Editar</a>
+          <a href="/dashboard/monitoramento/${escapeHtml(s.id)}/dados" class="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-sm rounded-lg font-medium">📈 Dados</a>
           <form action="/dashboard/monitoramento/${escapeHtml(s.id)}/sync" method="post" class="inline">
             <button class="px-4 py-2 bg-sky-700 hover:bg-sky-800 text-white text-sm rounded-lg font-medium">🔄 Atualizar</button>
           </form>
@@ -1278,6 +1279,96 @@ export function renderDetalheSistemaPage(
     body,
     scripts,
   });
+}
+
+// =========================================================================
+// TELA "DADOS" — telemetria completa (tensão/corrente/potência/etc no tempo)
+// =========================================================================
+export function renderTelemetriaPage(
+  sistema: { id: string; apelido: string },
+  devices: string[],
+  grandezas: Array<{ ponto: string; rotulo: string; unidade: string }>,
+  sel: { device: string; ponto: string; periodo: 'dia' | 'semana' | 'mes' },
+  serie: Array<{ ts: string; valor: number }>,
+): string {
+  const g = grandezas.find((x) => x.ponto === sel.ponto);
+  const unidade = g?.unidade ?? '';
+  const rotulo = g?.rotulo ?? sel.ponto;
+  // Rótulo do eixo X: só hora no "dia", dia+hora no resto.
+  const labels = serie.map((p) => sel.periodo === 'dia'
+    ? p.ts.slice(11, 16)
+    : `${p.ts.slice(8, 10)}/${p.ts.slice(5, 7)} ${p.ts.slice(11, 16)}`);
+  const valores = serie.map((p) => p.valor);
+
+  const opt = (v: string, txt: string, cur: string) =>
+    `<option value="${escapeHtml(v)}"${v === cur ? ' selected' : ''}>${escapeHtml(txt)}</option>`;
+  const selDevice = devices.map((d) => opt(d, d, sel.device)).join('');
+  const selGrandeza = grandezas.map((x) => opt(x.ponto, `${x.rotulo} (${x.unidade})`, sel.ponto)).join('');
+  const periodos = [['dia', 'Dia'], ['semana', 'Semana'], ['mes', 'Mês']] as const;
+  const selPeriodo = periodos.map(([v, t]) => opt(v, t, sel.periodo)).join('');
+
+  const base = `/dashboard/monitoramento/${escapeHtml(sistema.id)}/dados`;
+  const inputCls = 'px-3 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500';
+
+  const grafico = devices.length === 0
+    ? `<div class="text-sm text-slate-600">Ainda não há telemetria coletada para esta usina. O coletor roda a cada 15 min — volte em alguns minutos.</div>`
+    : serie.length === 0
+      ? `<div class="text-sm text-slate-600">Sem dados de "${escapeHtml(rotulo)}" nesse período.</div>`
+      : `<div style="height:340px;position:relative"><canvas id="graficoTelemetria"></canvas></div>`;
+
+  const body = `
+    <div class="mb-4">
+      <a href="/dashboard/monitoramento/${escapeHtml(sistema.id)}" class="text-sm text-slate-600 hover:underline">← Voltar pra usina</a>
+    </div>
+    <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6">
+      <h1 class="text-2xl font-bold text-slate-900 mb-1">${escapeHtml(sistema.apelido)}</h1>
+      <p class="text-slate-500 text-sm mb-4">Dados detalhados do inversor (tensão, corrente, potência, temperatura…) ao longo do tempo.</p>
+      <form method="get" action="${base}" class="flex flex-wrap gap-3 items-end mb-6" id="form-telemetria">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Inversor</label>
+          <select name="device" class="${inputCls}" onchange="document.getElementById('form-telemetria').submit()">${selDevice || '<option>—</option>'}</select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Grandeza</label>
+          <select name="ponto" class="${inputCls}" onchange="document.getElementById('form-telemetria').submit()">${selGrandeza}</select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Período</label>
+          <select name="periodo" class="${inputCls}" onchange="document.getElementById('form-telemetria').submit()">${selPeriodo}</select>
+        </div>
+      </form>
+      ${grafico}
+    </div>
+  `;
+
+  const scripts = serie.length > 0 ? `
+    const ctxT = document.getElementById('graficoTelemetria');
+    if (ctxT) {
+      new Chart(ctxT, {
+        type: 'line',
+        data: {
+          labels: ${JSON.stringify(labels)},
+          datasets: [{
+            label: ${JSON.stringify(`${rotulo} (${unidade})`)},
+            data: ${JSON.stringify(valores)},
+            borderColor: '#0ea5e9',
+            backgroundColor: 'rgba(14,165,233,0.12)',
+            borderWidth: 2, fill: true, pointRadius: 0, tension: 0.25,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: {
+            y: { title: { display: true, text: ${JSON.stringify(unidade)} } },
+            x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } }
+          }
+        }
+      });
+    }
+  ` : '';
+
+  return renderLayout({ active: 'monitoramento', title: `Dados — ${sistema.apelido}`, body, scripts });
 }
 
 // =========================================================================
