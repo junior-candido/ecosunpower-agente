@@ -75,6 +75,12 @@ export type IntradayResult =
   | { ok: true; pontos: IntradayPonto[] }
   | { ok: false; reason: string };
 
+export interface TelemetryLeitura { ponto: string; valor: number; unidade: string; ts: string }
+export interface TelemetryDevice { deviceKey: string; leituras: TelemetryLeitura[] }
+export type TelemetryResult =
+  | { ok: true; devices: TelemetryDevice[] }
+  | { ok: false; reason: string; invalidCredentials?: boolean };
+
 // Contexto opcional passado pelo service ao adapter. Hoje só serve pra
 // PERSISTIR credenciais que mudam sozinhas durante a chamada — o caso do
 // Sungrow, cujo refresh_token ROTA a cada renovação e precisa ser regravado no
@@ -118,6 +124,14 @@ export interface MonitoringAdapter {
     dia: string,
     ctx?: AdapterContext,
   ): Promise<IntradayResult>;
+  // Opcional: foto ATUAL de todas as grandezas catalogadas por dispositivo.
+  // `catalogo` = ponto_nativo -> { ponto, unidade, fator }. `ts` = horário da foto (ISO).
+  fetchTelemetry?(
+    credenciais: Record<string, unknown>,
+    catalogo: Map<string, { ponto: string; unidade: string; fator: number }>,
+    ts: string,
+    ctx?: AdapterContext,
+  ): Promise<TelemetryResult>;
 }
 
 // Site/planta retornado por listSites — schema unificado pra qualquer marca.

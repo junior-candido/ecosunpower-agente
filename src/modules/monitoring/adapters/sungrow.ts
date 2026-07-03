@@ -36,6 +36,8 @@ import type {
   ListSitesResult,
   MonitoringAdapter,
   SiteResumo,
+  TelemetryDevice,
+  TelemetryResult,
 } from '../types.js';
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
 import { getOrFetch } from '../util/token-cache.js';
@@ -435,6 +437,43 @@ export function parseDeviceMinuto(resultData: unknown): IntradayPonto[] {
   return out.sort((a, b) => a.hora.localeCompare(b.hora));
 }
 
+// Parseia a resposta de getDeviceRealTimeData → foto ATUAL de cada dispositivo,
+// mapeando só os pontos presentes no catálogo (ponto_nativo -> normalização).
+//   result_data.device_point_list = [{ ps_key, p24:"<W>", p13112:"<V>", ... }]
+// Cada valor cru vem na menor unidade da Sungrow (W/Wh/V/A); aplica o `fator` do
+// catálogo (ex: 0.001 = W->kW). Dispositivo sem nenhuma leitura catalogada é omitido.
+export function parseTelemetriaRealTime(
+  resultData: unknown,
+  catalogo: Map<string, { ponto: string; unidade: string; fator: number }>,
+  ts: string,
+): TelemetryDevice[] {
+  if (!resultData || typeof resultData !== 'object') return [];
+  const list = (resultData as Record<string, unknown>).device_point_list;
+  if (!Array.isArray(list)) return [];
+  const out: TelemetryDevice[] = [];
+  for (const row of list) {
+    if (!row || typeof row !== 'object') continue;
+    // getDeviceRealTimeData aninha os valores em `device_point` (validado ao vivo
+    // 03/07): [{ device_point: { ps_key, p24, p5, ... } }]. Fallback pro item cru
+    // se algum dia vier achatado.
+    const rowObj = row as Record<string, unknown>;
+    const o = (rowObj.device_point && typeof rowObj.device_point === 'object'
+      ? rowObj.device_point
+      : rowObj) as Record<string, unknown>;
+    const deviceKey = String(o.ps_key ?? o.device_sn ?? '');
+    if (!deviceKey) continue;
+    const leituras: TelemetryDevice['leituras'] = [];
+    for (const [nativo, meta] of catalogo) {
+      const raw = o[`p${nativo}`];
+      const n = typeof raw === 'string' ? Number(raw) : (raw as number);
+      if (!Number.isFinite(n)) continue;
+      leituras.push({ ponto: meta.ponto, valor: Number((n * meta.fator).toFixed(4)), unidade: meta.unidade, ts });
+    }
+    if (leituras.length > 0) out.push({ deviceKey, leituras });
+  }
+  return out;
+}
+
 function normalizeUf(v: unknown): string | null {
   const s = String(v ?? '').trim();
   return s.length === 2 ? s.toUpperCase() : null;
@@ -623,6 +662,31 @@ export const sungrowAdapter: MonitoringAdapter = {
     const pontos = [...porHora.values()].sort((a, b) => a.hora.localeCompare(b.hora));
     if (pontos.length === 0) return { ok: false, reason: 'Sem curva pra esse dia (o inversor não reportou dados minuto a minuto).' };
     return { ok: true, pontos };
+  },
+
+  async fetchTelemetry(
+    credenciais: Record<string, unknown>,
+    catalogo: Map<string, { ponto: string; unidade: string; fator: number }>,
+    ts: string,
+    ctx?: AdapterContext,
+  ): Promise<TelemetryResult> {
+    const parsed = parseCreds(credenciais);
+    if ('error' in parsed) return { ok: false, reason: parsed.error, invalidCredentials: true };
+    if (!parsed.siteId) return { ok: false, reason: 'Sungrow fetchTelemetry precisa de site_id (ps_id)' };
+    const dev = await listarDeviceKeys(parsed, ctx);
+    if (!dev.ok) return { ok: false, reason: dev.reason, invalidCredentials: dev.invalidCredentials };
+    if (dev.keys.length === 0) return { ok: true, devices: [] };
+    const pontos = [...catalogo.keys()];
+    if (pontos.length === 0) return { ok: true, devices: [] };
+    // getDeviceRealTimeData exige device_type; no piloto consultamos os inversores string (type 1).
+    const r = await authPost<unknown>(
+      parsed,
+      '/openapi/platform/getDeviceRealTimeData',
+      { ps_key_list: dev.keys, device_type: 1, point_id_list: pontos, is_get_point_dict: '0' },
+      ctx,
+    );
+    if (!r.ok) return { ok: false, reason: r.reason, invalidCredentials: r.invalidCredentials };
+    return { ok: true, devices: parseTelemetriaRealTime(r.data, catalogo, ts) };
   },
 
   // Credenciais da CONTA (sem o site_id) pro discovery deduplicar.

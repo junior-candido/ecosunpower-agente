@@ -77,6 +77,7 @@ import { DriveUploader } from './modules/proposal/drive-uploader.js';
 import { montarRespostaAtualizar } from './modules/proposal/atualizar-proposta.js';
 import { contarPropostasSemDados, resgatarDadosInput } from './modules/proposal/resgatar-dados-input.js';
 import { MonitoringService } from './modules/monitoring/service.js';
+import { TelemetriaService } from './modules/monitoring/telemetria-service.js';
 import { createDashboardRouter } from './modules/dashboard/router.js';
 import { ensureSeed } from './modules/dashboard/seed.js';
 import { resolveChannel } from './modules/dashboard/resolve-channel.js';
@@ -8238,6 +8239,41 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setInterval(checkMonitoringDiscovery, 60 * 60 * 1000);  // 1x por hora
     setTimeout(checkMonitoringDiscovery, 10 * 60 * 1000);   // 10min apos start
     console.log('[monitoring] Cron de descoberta started (1x/hora)');
+
+    // Telemetria (fundação): coletor de 15 min. Tira a foto de todas as grandezas
+    // catalogadas de cada inversor (marcas com fetchTelemetry — hoje Sungrow) e
+    // grava em telemetria_medicoes. Admin pull, fora do gate de passive mode.
+    const telemetriaService = new TelemetriaService(supabase, monitoringService);
+    const coletarTelemetria = async () => {
+      try {
+        const r = await telemetriaService.coletar(new Date().toISOString());
+        if (r.sistemas > 0) {
+          console.log(`[telemetria] coleta: ${r.medicoes} medições de ${r.sistemas} sistema(s), ${r.falhas} falha(s)`);
+        }
+      } catch (err) {
+        console.error('[telemetria] coleta falhou:', (err as Error).message);
+      }
+    };
+    setInterval(coletarTelemetria, 15 * 60 * 1000);  // a cada 15 min
+    setTimeout(coletarTelemetria, 3 * 60 * 1000);    // 3min apos start
+    console.log('[telemetria] Cron de coleta started (a cada 15min)');
+
+    // Telemetria — retenção: 1x/dia resume o que passou de 6 meses e apaga o fino.
+    const resumirTelemetria = async () => {
+      try {
+        const corte = new Date();
+        corte.setMonth(corte.getMonth() - 6);
+        const r = await telemetriaService.resumirAntigos(corte.toISOString());
+        if (r.resumidos > 0 || r.apagados > 0) {
+          console.log(`[telemetria] retenção: ${r.resumidos} resumo(s), ${r.apagados} fino(s) apagado(s)`);
+        }
+      } catch (err) {
+        console.error('[telemetria] retenção falhou:', (err as Error).message);
+      }
+    };
+    setInterval(resumirTelemetria, 24 * 60 * 60 * 1000);  // 1x/dia
+    setTimeout(resumirTelemetria, 20 * 60 * 1000);        // 20min apos start
+    console.log('[telemetria] Cron de retenção started (1x/dia)');
 
     // ============================================
     // Modulo 6 — alerta proativo da carteira
