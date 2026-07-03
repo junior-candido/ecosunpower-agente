@@ -15,6 +15,24 @@ export function montarCatalogo(
   return m;
 }
 
+// Agrega leituras finas em resumo diário por (sistema, device, ponto, dia).
+export function agregarDia(
+  rows: Array<{ sistema_id: string; device_key: string; ponto: string; ts: string; valor: number; unidade: string }>,
+): Array<{ sistema_id: string; device_key: string; ponto: string; dia: string; valor_min: number; valor_max: number; valor_med: number; unidade: string }> {
+  const g = new Map<string, { sistema_id: string; device_key: string; ponto: string; dia: string; unidade: string; vs: number[] }>();
+  for (const r of rows) {
+    const dia = r.ts.slice(0, 10);
+    const k = `${r.sistema_id}|${r.device_key}|${r.ponto}|${dia}`;
+    if (!g.has(k)) g.set(k, { sistema_id: r.sistema_id, device_key: r.device_key, ponto: r.ponto, dia, unidade: r.unidade, vs: [] });
+    g.get(k)!.vs.push(r.valor);
+  }
+  return [...g.values()].map((x) => ({
+    sistema_id: x.sistema_id, device_key: x.device_key, ponto: x.ponto, dia: x.dia, unidade: x.unidade,
+    valor_min: Math.min(...x.vs), valor_max: Math.max(...x.vs),
+    valor_med: Number((x.vs.reduce((a, b) => a + b, 0) / x.vs.length).toFixed(4)),
+  }));
+}
+
 // Provê o AdapterContext (pra persistir rotação de token). MonitoringService cumpre isso.
 export interface CtxProvider { buildAdapterContext(s: SistemaCliente): AdapterContext }
 
@@ -51,5 +69,24 @@ export class TelemetriaService {
       } catch (err) { falhas++; console.warn(`[telemetria] sistema=${s.id} excecao: ${(err as Error).message}`); }
     }
     return { sistemas: n, medicoes, falhas };
+  }
+
+  // Resume as leituras finas com mais de 6 meses em telemetria_resumo (diário) e
+  // apaga as finas antigas. `corteIso` = limite (tudo com ts < corte é resumido).
+  async resumirAntigos(corteIso: string): Promise<{ resumidos: number; apagados: number }> {
+    const client = this.supabase.getClient();
+    const { data, error } = await client
+      .from('telemetria_medicoes')
+      .select('sistema_id,device_key,ponto,ts,valor,unidade')
+      .lt('ts', corteIso);
+    if (error) { console.warn(`[telemetria] resumirAntigos select: ${error.message}`); return { resumidos: 0, apagados: 0 }; }
+    const rows = (data ?? []) as Array<{ sistema_id: string; device_key: string; ponto: string; ts: string; valor: number; unidade: string }>;
+    if (rows.length === 0) return { resumidos: 0, apagados: 0 };
+    const resumo = agregarDia(rows);
+    const up = await client.from('telemetria_resumo').upsert(resumo, { onConflict: 'sistema_id,device_key,ponto,dia' });
+    if (up.error) { console.warn(`[telemetria] resumirAntigos upsert: ${up.error.message}`); return { resumidos: 0, apagados: 0 }; }
+    const del = await client.from('telemetria_medicoes').delete().lt('ts', corteIso);
+    if (del.error) { console.warn(`[telemetria] resumirAntigos delete: ${del.error.message}`); return { resumidos: resumo.length, apagados: 0 }; }
+    return { resumidos: resumo.length, apagados: rows.length };
   }
 }
