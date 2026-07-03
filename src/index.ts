@@ -8258,6 +8258,23 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setTimeout(coletarTelemetria, 3 * 60 * 1000);    // 3min apos start
     console.log('[telemetria] Cron de coleta started (a cada 15min)');
 
+    // Telemetria — retenção: 1x/dia resume o que passou de 6 meses e apaga o fino.
+    const resumirTelemetria = async () => {
+      try {
+        const corte = new Date();
+        corte.setMonth(corte.getMonth() - 6);
+        const r = await telemetriaService.resumirAntigos(corte.toISOString());
+        if (r.resumidos > 0 || r.apagados > 0) {
+          console.log(`[telemetria] retenção: ${r.resumidos} resumo(s), ${r.apagados} fino(s) apagado(s)`);
+        }
+      } catch (err) {
+        console.error('[telemetria] retenção falhou:', (err as Error).message);
+      }
+    };
+    setInterval(resumirTelemetria, 24 * 60 * 60 * 1000);  // 1x/dia
+    setTimeout(resumirTelemetria, 20 * 60 * 1000);        // 20min apos start
+    console.log('[telemetria] Cron de retenção started (1x/dia)');
+
     // ============================================
     // Modulo 6 — alerta proativo da carteira
     // ============================================
