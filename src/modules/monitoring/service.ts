@@ -12,7 +12,7 @@
 
 import type { SupabaseService } from '../supabase.js';
 import { getAdapter, marcasSuportadas } from './adapter-registry.js';
-import type { MarcaInversor, SistemaCliente, SiteResumo } from './types.js';
+import type { AdapterContext, MarcaInversor, SistemaCliente, SiteResumo } from './types.js';
 import { classificarSistema, esperadoDiaKwh } from './classificacao.js';
 import { serieMesDiaria, serieAnoMensal, navegacao, type Vista } from './detalhe-series.js';
 
@@ -99,6 +99,7 @@ export class MonitoringService {
           sistema.api_credentials,
           dataInicio,
           dataFim,
+          this.buildAdapterContext(sistema),
         );
 
         if (!result.ok) {
@@ -183,6 +184,7 @@ export class MonitoringService {
         sistema.api_credentials,
         isoDate(cursor),
         isoDate(chunkFim),
+        this.buildAdapterContext(sistema),
       );
       if (!result.ok) {
         ultimoErro = result.reason;
@@ -224,7 +226,7 @@ export class MonitoringService {
     const dataFim = isoDate(new Date());
     const dataInicio = isoDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
 
-    const result = await adapter.fetchGeneration(sistema.api_credentials, dataInicio, dataFim);
+    const result = await adapter.fetchGeneration(sistema.api_credentials, dataInicio, dataFim, this.buildAdapterContext(sistema));
     if (!result.ok) return { ok: false, reason: result.reason };
 
     await this.upsertGeracoes(sistema.id, result.geracoes);
@@ -233,6 +235,42 @@ export class MonitoringService {
       ultimo_erro: null,
     });
     return { ok: true };
+  }
+
+  // Monta o AdapterContext pra um sistema. Hoje só provê persistAccountCreds:
+  // regrava um patch de credenciais em TODAS as plantas da mesma conta (mesmo
+  // marca + appkey). Usado pelo Sungrow, cujo refresh_token rota a cada renovação.
+  private buildAdapterContext(sistema: SistemaCliente): AdapterContext {
+    return {
+      persistAccountCreds: (patch) =>
+        this.persistCredsPorConta(sistema.marca_inversor, (sistema.api_credentials as Record<string, unknown>)?.appkey, patch),
+    };
+  }
+
+  // Aplica um patch (merge) em sistemas_clientes.api_credentials de todas as
+  // plantas com a mesma marca + appkey. Sem appkey, não faz nada (evita alterar
+  // credenciais de marcas que não têm conta compartilhada).
+  private async persistCredsPorConta(
+    marca: MarcaInversor,
+    appkey: unknown,
+    patch: Record<string, unknown>,
+  ): Promise<void> {
+    if (typeof appkey !== 'string' || !appkey) return;
+    const client = this.supabase.getClient();
+    const { data, error } = await client
+      .from('sistemas_clientes')
+      .select('id, api_credentials')
+      .eq('marca_inversor', marca)
+      .eq('api_credentials->>appkey', appkey);
+    if (error) { console.warn(`[monitoring] persistCredsPorConta select: ${error.message}`); return; }
+    for (const row of data ?? []) {
+      const merged = { ...(row.api_credentials as Record<string, unknown>), ...patch };
+      const { error: upErr } = await client
+        .from('sistemas_clientes')
+        .update({ api_credentials: merged, updated_at: new Date().toISOString() })
+        .eq('id', row.id);
+      if (upErr) console.warn(`[monitoring] persistCredsPorConta update ${row.id}: ${upErr.message}`);
+    }
   }
 
   private async listarSistemasAtivos(): Promise<SistemaCliente[]> {
@@ -310,7 +348,11 @@ export class MonitoringService {
       };
     }
 
-    const result = await adapter.listSites(credenciaisConta);
+    const ctxConta: AdapterContext = {
+      persistAccountCreds: (patch) =>
+        this.persistCredsPorConta(marca, (credenciaisConta as Record<string, unknown>)?.appkey, patch),
+    };
+    const result = await adapter.listSites(credenciaisConta, ctxConta);
     if (!result.ok) {
       return { ok: false, reason: result.reason, novos: 0, atualizados: 0, total: 0 };
     }

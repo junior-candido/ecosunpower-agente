@@ -13,6 +13,7 @@ import { abbAdapter } from './adapters/abb.js';
 import { foxessAdapter } from './adapters/foxess.js';
 import { goodweAdapter } from './adapters/goodwe.js';
 import { solisAdapter } from './adapters/solis.js';
+import { sungrowAdapter } from './adapters/sungrow.js';
 
 const adapters: Partial<Record<MarcaInversor, MonitoringAdapter>> = {
   solaredge: solarEdgeAdapter,
@@ -22,7 +23,7 @@ const adapters: Partial<Record<MarcaInversor, MonitoringAdapter>> = {
   foxess: foxessAdapter,         // LIVE 27/06 — validado em prod (30 inversores Q1-2500-E)
   goodwe: goodweAdapter,         // SEMS Portal (API interna, e-mail+senha) — validado ao vivo 01/07
   solis: solisAdapter,           // API oficial SolisCloud (KeyId+KeySecret, HMAC) — validado ao vivo 01/07
-  // sungrow: sungrowAdapter,    // app aprovado, falta plugar (cripto pronta na branch)
+  sungrow: sungrowAdapter,       // OpenAPI OAuth2 texto plano (app só-Monitoring) — validado ao vivo 03/07
   // hoymiles: hoymilesAdapter,  // futuro
   // huawei: huaweiAdapter,      // futuro
 };
