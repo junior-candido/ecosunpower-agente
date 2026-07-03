@@ -1527,7 +1527,7 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
         <div>
           <label for="marca" class="block text-sm font-semibold text-slate-700 mb-2">Marca do inversor</label>
           <select name="marca" id="marca" required
-                  onchange="['solaredge','deye','nep','abb','foxess','goodwe','solis'].forEach(function(m){var el=document.getElementById('campos-'+m);if(!el)return;var ativo=document.getElementById('marca').value===m;el.style.display=ativo?'block':'none';el.disabled=!ativo;});"
+                  onchange="['solaredge','deye','nep','abb','foxess','goodwe','solis','sungrow'].forEach(function(m){var el=document.getElementById('campos-'+m);if(!el)return;var ativo=document.getElementById('marca').value===m;el.style.display=ativo?'block':'none';el.disabled=!ativo;});"
                   class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition">
             <option value="solaredge">SolarEdge</option>
             <option value="deye">Deye Cloud</option>
@@ -1536,7 +1536,7 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
             <option value="foxess">FoxESS (micro Q1 / inversores)</option>
             <option value="goodwe">GoodWe (SEMS Portal)</option>
             <option value="solis">Solis (SolisCloud API)</option>
-            <option value="sungrow" disabled>Sungrow (em breve)</option>
+            <option value="sungrow">Sungrow (iSolarCloud OpenAPI)</option>
             <option value="hoymiles" disabled>Hoymiles (em breve)</option>
             <option value="huawei" disabled>Huawei (em breve)</option>
           </select>
@@ -1750,6 +1750,51 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
           <div class="mt-3 px-4 py-3 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-xs">
             🔑 <strong>API oficial:</strong> a chave já é o acesso (assinatura por chamada, sem login).
             Limite de ~1 chamada/segundo — o sistema respeita o ritmo sozinho.
+          </div>
+        </fieldset>
+
+        <fieldset id="campos-sungrow" style="display:none" disabled class="border-0 p-0 m-0">
+          <div class="space-y-3">
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">Appkey do app iSolarCloud</label>
+              <input name="sungrow_appkey" type="text" placeholder="ex.: 42A190E0D6873F64206A3AC1498A29EB"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">Secret key (x-access-key)</label>
+              <input name="sungrow_secret" type="text" placeholder="cola aqui a Secret key do app"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">Application ID</label>
+              <input id="sungrow_app_id" name="sungrow_app_id" type="text" placeholder="ex.: 3229"
+                     oninput="var b=document.getElementById('sungrow-auth-link');var id=this.value.trim();var rd=encodeURIComponent((document.getElementById('sungrow_redirect')||{}).value||'');b.href=id?('https://web3.isolarcloud.com.hk/#/authorized-app?cloudId=2&applicationId='+id+'&redirectUrl='+rd):'#';b.style.pointerEvents=id?'auto':'none';b.style.opacity=id?'1':'0.5';"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">Redirect URL (igual à cadastrada no app)</label>
+              <input id="sungrow_redirect" name="sungrow_redirect" type="text" value="https://www.ecosunpowerenergia.com.br"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">Código de autorização</label>
+              <input name="sungrow_code" type="text" placeholder="o code que aparece na URL depois de autorizar"
+                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:border-amber-500">
+            </div>
+          </div>
+          <div class="mt-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+            <strong>📋 Como pegar o código (só na 1ª vez):</strong>
+            <ol class="list-decimal ml-5 mt-2 space-y-1">
+              <li>Preencha o <strong>Application ID</strong> acima e clique em
+                <a id="sungrow-auth-link" href="#" target="_blank" rel="noopener" style="pointer-events:none;opacity:0.5" class="underline font-semibold text-amber-900">Abrir a tela de autorização →</a></li>
+              <li>Logado como dono das usinas, <strong>selecione as usinas</strong>, aceite e clique em <strong>"Concordar e autorizar"</strong>.</li>
+              <li>A página vai redirecionar pra <code>...ecosunpowerenergia.com.br/?code=<strong>XXXXXX</strong></code>. Copie o valor do <strong>code</strong> e cole aqui.</li>
+            </ol>
+          </div>
+          <div class="mt-3 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs">
+            ✅ <strong>Depois disso, renova sozinho:</strong> o código é trocado por um token que o
+            sistema renova automaticamente. Você só repete se revogar o acesso. Use um app
+            <strong>só de Monitoring</strong> (com "Grid control" a autorização falha).
           </div>
         </fieldset>
 

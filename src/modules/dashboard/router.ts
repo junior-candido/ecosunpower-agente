@@ -1890,6 +1890,22 @@ export function createDashboardRouter(
       }
       credenciais = { keyId, keySecret };
       if (apiUrl) credenciais.apiUrl = apiUrl;
+    } else if (marca === 'sungrow') {
+      // Sungrow é OAuth2: appkey + secret (x-access-key) + o código de
+      // autorização (uso único) que sai no redirect ao autorizar o app. O
+      // adapter troca o code por refresh_token na 1a importação (bootstrap).
+      const appkey = String(req.body?.sungrow_appkey ?? '').trim();
+      const accessKey = String(req.body?.sungrow_secret ?? '').trim();
+      const appId = String(req.body?.sungrow_app_id ?? '').trim();
+      const redirectUri = String(req.body?.sungrow_redirect ?? '').trim();
+      const code = String(req.body?.sungrow_code ?? '').trim();
+      if (!appkey || !accessKey || !redirectUri || !code) {
+        return res.status(400).send(renderImportarSitesPage({
+          errorMsg: 'Sungrow precisa de Appkey, Secret key, a Redirect URL e o código de autorização (gere autorizando o app SÓ-Monitoring).',
+        }));
+      }
+      credenciais = { appkey, accessKey, redirectUri, code };
+      if (appId) credenciais.appId = appId;
     } else {
       return res.status(400).send(renderImportarSitesPage({
         errorMsg: `Marca ${marca} ainda nao tem adapter implementado.`,

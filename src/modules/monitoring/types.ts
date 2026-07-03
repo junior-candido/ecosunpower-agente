@@ -71,6 +71,17 @@ export type IntradayResult =
   | { ok: true; pontos: IntradayPonto[] }
   | { ok: false; reason: string };
 
+// Contexto opcional passado pelo service ao adapter. Hoje só serve pra
+// PERSISTIR credenciais que mudam sozinhas durante a chamada — o caso do
+// Sungrow, cujo refresh_token ROTA a cada renovação e precisa ser regravado no
+// banco (em todas as plantas da mesma conta) senão a próxima sync quebra.
+// Adapters que não renovam nada simplesmente ignoram o ctx.
+export interface AdapterContext {
+  // Aplica um patch (merge) nas credenciais da CONTA — todas as plantas que
+  // compartilham o mesmo appkey/conta. Idempotente; falha silenciosa é logada.
+  persistAccountCreds?(patch: Record<string, unknown>): Promise<void>;
+}
+
 // Interface que cada marca precisa implementar.
 // fetchGeneration(sistema, dataInicio, dataFim) -> array de { data, geracao_kwh }
 export interface MonitoringAdapter {
@@ -79,10 +90,11 @@ export interface MonitoringAdapter {
     credenciais: Record<string, unknown>,
     dataInicio: string,
     dataFim: string,
+    ctx?: AdapterContext,
   ): Promise<AdapterResult>;
   // Opcional: listar sites/plantas associadas a uma chave de conta.
   // Permite import em massa pelo dashboard. Adapter sem suporte retorna null.
-  listSites?(credenciaisConta: Record<string, unknown>): Promise<ListSitesResult>;
+  listSites?(credenciaisConta: Record<string, unknown>, ctx?: AdapterContext): Promise<ListSitesResult>;
   // Opcional: extrai as credenciais da CONTA (instalador) a partir das
   // credenciais de uma planta cadastrada. Usado pelo cron de descoberta pra
   // deduplicar contas e re-chamar listSites detectando plantas novas.
