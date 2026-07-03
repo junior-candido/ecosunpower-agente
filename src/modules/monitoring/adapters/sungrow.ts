@@ -31,6 +31,8 @@ import type {
   AdapterContext,
   AdapterResult,
   GeracaoDiaria,
+  IntradayPonto,
+  IntradayResult,
   ListSitesResult,
   MonitoringAdapter,
   SiteResumo,
@@ -48,6 +50,16 @@ const LANG = '_pt_BR';
 const POINT_DAILY = '83022';
 const POINT_TOTAL = '83024';
 const POINT_POWER = '83033';
+
+// Pontos de medição do DISPOSITIVO (inversor) — pra curva intradiária, que só
+// existe no nível do inversor (o nível da usina não guarda potência minuto a
+// minuto). Valores em W / Wh.
+//   24 = potência ativa total (W)
+//   1  = geração de HOJE acumulada (Wh)
+const DEV_POINT_POWER = '24';
+const DEV_POINT_YIELD_TODAY = '1';
+// Tipos de dispositivo que geram: 1 = inversor string, 55 = microinversor.
+const DEVICE_TYPES_GERACAO = [1, 55];
 
 // access_token dura ~48h (172799s). Cacheamos por ~40h: refresca antes de expirar
 // e, como o refresh_token ROTA, minimiza o nº de rotações (cada uma tem que ser
@@ -278,6 +290,31 @@ async function authPost<T>(
   return { ok: false, reason: r1.reason, invalidCredentials: r1.invalidCredentials };
 }
 
+// Lista os ps_keys dos dispositivos que geram (inversor string + micro) de uma
+// planta. Usado só pela curva intradiária (a geração diária é por planta).
+async function listarDeviceKeys(
+  c: ParsedCreds,
+  ctx?: AdapterContext,
+): Promise<{ ok: true; keys: string[] } | { ok: false; reason: string; invalidCredentials?: boolean }> {
+  const keys: string[] = [];
+  let page = 1;
+  let safety = 20;
+  while (safety-- > 0) {
+    const r = await authPost<{ pageList?: Array<{ ps_key?: string }> }>(
+      c,
+      '/openapi/platform/getDeviceListByPsId',
+      { ps_id: c.siteId, device_type_list: DEVICE_TYPES_GERACAO, page, size: 100 },
+      ctx,
+    );
+    if (!r.ok) return r;
+    const lista = Array.isArray(r.data?.pageList) ? r.data.pageList : [];
+    for (const d of lista) if (d.ps_key) keys.push(d.ps_key);
+    if (lista.length < 100) break;
+    page++;
+  }
+  return { ok: true, keys };
+}
+
 // ============================================================================
 // PARSING HELPERS  (puros, testáveis sem rede)
 // ============================================================================
@@ -342,6 +379,60 @@ export function parseGeracaoHojeKwh(resultData: unknown, psId: string): number |
   const wh = typeof raw === 'string' ? Number(raw) : (raw as number);
   if (!Number.isFinite(wh)) return null;
   return Number((Math.max(0, wh) / 1000).toFixed(3));
+}
+
+function numOrNull(v: unknown): number | null {
+  const n = typeof v === 'string' ? Number(v) : (v as number);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Janelas de 3h (limite duro da API) cobrindo o horário de sol (05:00–20:00) de
+// um dia YYYY-MM-DD. 5 janelas. Pares [start,end] em yyyyMMddHHmmss (hora local
+// da usina). O ponto da borda (ex: 08:00) repete entre janelas — deduplicado por
+// hora no fetchIntraday.
+export function janelas3hDaylight(dia: string): Array<[string, string]> {
+  const ymd = isoParaYmd(dia);
+  const marcos = [5, 8, 11, 14, 17, 20];
+  const out: Array<[string, string]> = [];
+  for (let i = 0; i < marcos.length - 1; i++) {
+    const a = String(marcos[i]).padStart(2, '0');
+    const b = String(marcos[i + 1]).padStart(2, '0');
+    out.push([`${ymd}${a}0000`, `${ymd}${b}0000`]);
+  }
+  return out;
+}
+
+// Parseia a resposta de getDevicePointMinuteDataList → pontos da curva, SOMANDO
+// os dispositivos (inversores/micros) por horário. Formato:
+//   result_data[ps_key] = [{ time_stamp:"yyyyMMddHHmmss", p24:"<W>", p1:"<Wh>" }]
+//   (result_data.point_dict é ignorado). p24=potência, p1=energia do dia acum.
+export function parseDeviceMinuto(resultData: unknown): IntradayPonto[] {
+  if (!resultData || typeof resultData !== 'object') return [];
+  const rd = resultData as Record<string, unknown>;
+  const porTs = new Map<string, { kw: number; kwh: number; temKw: boolean; temKwh: boolean }>();
+  for (const [k, v] of Object.entries(rd)) {
+    if (k === 'point_dict' || !Array.isArray(v)) continue; // só as séries por ps_key
+    for (const item of v) {
+      if (!item || typeof item !== 'object') continue;
+      const o = item as Record<string, unknown>;
+      const ts = String(o.time_stamp ?? '');
+      if (!/^\d{12,14}$/.test(ts)) continue;
+      const acc = porTs.get(ts) ?? { kw: 0, kwh: 0, temKw: false, temKwh: false };
+      const pw = numOrNull(o[`p${DEV_POINT_POWER}`]);
+      const en = numOrNull(o[`p${DEV_POINT_YIELD_TODAY}`]);
+      if (pw !== null) { acc.kw += pw / 1000; acc.temKw = true; }
+      if (en !== null) { acc.kwh += en / 1000; acc.temKwh = true; }
+      porTs.set(ts, acc);
+    }
+  }
+  const out: IntradayPonto[] = [];
+  for (const [ts, acc] of porTs) {
+    if (!acc.temKw && !acc.temKwh) continue;
+    const ponto: IntradayPonto = { hora: `${ts.slice(8, 10)}:${ts.slice(10, 12)}`, kw: Number(Math.max(0, acc.kw).toFixed(3)) };
+    if (acc.temKwh) ponto.kwh = Number(Math.max(0, acc.kwh).toFixed(3));
+    out.push(ponto);
+  }
+  return out.sort((a, b) => a.hora.localeCompare(b.hora));
 }
 
 function normalizeUf(v: unknown): string | null {
@@ -481,6 +572,57 @@ export const sungrowAdapter: MonitoringAdapter = {
       page++;
     }
     return { ok: true, sites };
+  },
+
+  // Curva do dia (potência kW + energia kWh acumulada) de um dia YYYY-MM-DD.
+  // Vem do NÍVEL DO INVERSOR (a usina não guarda potência minuto a minuto),
+  // somando os inversores. Limitações da API aberta da Sungrow:
+  //   - NÃO entrega o dia atual (só dias anteriores).
+  //   - Máx 3h por chamada → quebra o dia em janelas (05h–20h).
+  //   - Micro/plantas sem telemetria minuto degradam (retorna ok:false → a tela
+  //     mostra o aviso padrão, sem quebrar).
+  async fetchIntraday(
+    credenciais: Record<string, unknown>,
+    dia: string,
+    ctx?: AdapterContext,
+  ): Promise<IntradayResult> {
+    const parsed = parseCreds(credenciais);
+    if ('error' in parsed) return { ok: false, reason: parsed.error };
+    if (!parsed.siteId) return { ok: false, reason: 'Sungrow fetchIntraday precisa de site_id (ps_id)' };
+    if (dia >= isoHoje()) {
+      return { ok: false, reason: 'A Sungrow só disponibiliza a curva detalhada a partir do dia seguinte.' };
+    }
+
+    const dev = await listarDeviceKeys(parsed, ctx);
+    if (!dev.ok) return { ok: false, reason: dev.reason };
+    if (dev.keys.length === 0) {
+      return { ok: false, reason: 'Nenhum inversor com dados minuto a minuto nesta usina.' };
+    }
+
+    const porHora = new Map<string, IntradayPonto>();
+    for (const [st, et] of janelas3hDaylight(dia)) {
+      const r = await authPost<unknown>(
+        parsed,
+        '/openapi/platform/getDevicePointMinuteDataList',
+        {
+          ps_key_list: dev.keys,
+          points: `p${DEV_POINT_POWER},p${DEV_POINT_YIELD_TODAY}`,
+          is_get_point_dict: '0',
+          start_time_stamp: st,
+          end_time_stamp: et,
+          minute_interval: '5',
+        },
+        ctx,
+      );
+      if (!r.ok) {
+        if (r.invalidCredentials) return { ok: false, reason: r.reason };
+        continue; // janela com erro pontual não derruba as outras
+      }
+      for (const p of parseDeviceMinuto(r.data)) porHora.set(p.hora, p);
+    }
+    const pontos = [...porHora.values()].sort((a, b) => a.hora.localeCompare(b.hora));
+    if (pontos.length === 0) return { ok: false, reason: 'Sem curva pra esse dia (o inversor não reportou dados minuto a minuto).' };
+    return { ok: true, pontos };
   },
 
   // Credenciais da CONTA (sem o site_id) pro discovery deduplicar.

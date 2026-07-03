@@ -1964,9 +1964,9 @@ export function createDashboardRouter(
         const adapter = getAdapter(detalhe.sistema.marca_inversor);
         if (adapter?.fetchIntraday) {
           try {
-            const r = await adapter.fetchIntraday(detalhe.sistema.api_credentials, refQ);
+            const r = await adapter.fetchIntraday(detalhe.sistema.api_credentials, refQ, monitoringService.buildAdapterContext(detalhe.sistema));
             if (r.ok && r.pontos.length > 0) curvaDia = r.pontos;
-            else curvaMsg = 'Sem curva pra esse dia.';
+            else curvaMsg = (!r.ok && r.reason) ? r.reason : 'Sem curva pra esse dia.';
           } catch { curvaMsg = 'Não consegui buscar a curva agora.'; }
         } else {
           curvaMsg = 'Curva minuto a minuto não disponível para este inversor.';
