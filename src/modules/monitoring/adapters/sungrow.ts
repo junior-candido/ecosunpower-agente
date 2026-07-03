@@ -453,7 +453,13 @@ export function parseTelemetriaRealTime(
   const out: TelemetryDevice[] = [];
   for (const row of list) {
     if (!row || typeof row !== 'object') continue;
-    const o = row as Record<string, unknown>;
+    // getDeviceRealTimeData aninha os valores em `device_point` (validado ao vivo
+    // 03/07): [{ device_point: { ps_key, p24, p5, ... } }]. Fallback pro item cru
+    // se algum dia vier achatado.
+    const rowObj = row as Record<string, unknown>;
+    const o = (rowObj.device_point && typeof rowObj.device_point === 'object'
+      ? rowObj.device_point
+      : rowObj) as Record<string, unknown>;
     const deviceKey = String(o.ps_key ?? o.device_sn ?? '');
     if (!deviceKey) continue;
     const leituras: TelemetryDevice['leituras'] = [];

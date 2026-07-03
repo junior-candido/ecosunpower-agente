@@ -56,13 +56,26 @@ CREATE TABLE IF NOT EXISTS telemetria_resumo (
   PRIMARY KEY (sistema_id, device_key, ponto, dia)
 );
 
--- Seed do catálogo Sungrow (inversor string, device_type=1). Pontos base confirmados;
--- tensão CC/CA e corrente por fase entram após a validação ao vivo do fetchTelemetry.
+-- Seed do catálogo Sungrow (inversor string, device_type=1). 17 grandezas
+-- confirmadas AO VIVO 03/07 na Usina Planaltina (getDeviceRealTimeData, valores
+-- aninhados em device_point). API devolve W/Wh -> catálogo em kW/kWh (fator 0.001
+-- aplicado no código); V/A/Hz/°C ficam como vêm.
 INSERT INTO telemetria_catalogo (marca, device_type, ponto_nativo, ponto, rotulo, unidade, categoria) VALUES
-  ('sungrow', 1, '24', 'potencia',      'Potência ativa',    'kW',  'potencia'),
-  ('sungrow', 1, '1',  'energia_dia',    'Geração do dia',    'kWh', 'energia'),
-  ('sungrow', 1, '2',  'energia_total',  'Geração total',     'kWh', 'energia'),
-  ('sungrow', 1, '14', 'potencia_cc',    'Potência CC total', 'kW',  'potencia'),
-  ('sungrow', 1, '11', 'potencia_mppt1', 'Potência MPPT1',    'kW',  'potencia'),
-  ('sungrow', 1, '12', 'potencia_mppt2', 'Potência MPPT2',    'kW',  'potencia')
+  ('sungrow', 1, '24', 'potencia',          'Potência ativa',        'kW',  'potencia'),
+  ('sungrow', 1, '1',  'energia_dia',        'Geração do dia',        'kWh', 'energia'),
+  ('sungrow', 1, '2',  'energia_total',      'Geração total',         'kWh', 'energia'),
+  ('sungrow', 1, '14', 'potencia_cc',        'Potência CC (entrada)', 'kW',  'potencia'),
+  ('sungrow', 1, '4',  'temperatura',        'Temperatura interna',   '°C',  'temperatura'),
+  ('sungrow', 1, '5',  'tensao_mppt1',       'Tensão MPPT1',          'V',   'tensao'),
+  ('sungrow', 1, '6',  'corrente_mppt1',     'Corrente MPPT1',        'A',   'corrente'),
+  ('sungrow', 1, '7',  'tensao_mppt2',       'Tensão MPPT2',          'V',   'tensao'),
+  ('sungrow', 1, '8',  'corrente_mppt2',     'Corrente MPPT2',        'A',   'corrente'),
+  ('sungrow', 1, '18', 'tensao_fase_a',      'Tensão fase A',         'V',   'tensao'),
+  ('sungrow', 1, '19', 'tensao_fase_b',      'Tensão fase B',         'V',   'tensao'),
+  ('sungrow', 1, '20', 'tensao_fase_c',      'Tensão fase C',         'V',   'tensao'),
+  ('sungrow', 1, '21', 'corrente_fase_a',    'Corrente fase A',       'A',   'corrente'),
+  ('sungrow', 1, '22', 'corrente_fase_b',    'Corrente fase B',       'A',   'corrente'),
+  ('sungrow', 1, '23', 'corrente_fase_c',    'Corrente fase C',       'A',   'corrente'),
+  ('sungrow', 1, '27', 'frequencia',         'Frequência da rede',    'Hz',  'outro'),
+  ('sungrow', 1, '95', 'tensao_barramento',  'Tensão de barramento',  'V',   'tensao')
 ON CONFLICT DO NOTHING;
