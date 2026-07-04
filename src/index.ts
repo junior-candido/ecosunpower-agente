@@ -8280,6 +8280,19 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setTimeout(resumirTelemetria, 20 * 60 * 1000);        // 20min apos start
     console.log('[telemetria] Cron de retenção started (1x/dia)');
 
+    // RH — retenção LGPD: currículos/candidatos com mais de 12 meses são apagados.
+    const limparRh = async () => {
+      try {
+        const r = await limparCandidatosAntigos(supabase.getClient(), corteRetencao(Date.now()));
+        if (r.apagados > 0) console.log(`[rh] retenção: ${r.apagados} candidato(s) antigo(s) apagado(s)`);
+      } catch (err) {
+        console.error('[rh] retenção falhou:', (err as Error).message);
+      }
+    };
+    setInterval(limparRh, 24 * 60 * 60 * 1000);  // 1x/dia
+    setTimeout(limparRh, 25 * 60 * 1000);        // 25min apos start
+    console.log('[rh] Cron de retenção LGPD started (1x/dia, corte 12 meses)');
+
     // ============================================
     // Modulo 6 — alerta proativo da carteira
     // ============================================
