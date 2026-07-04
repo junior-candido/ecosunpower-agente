@@ -80,6 +80,7 @@ import { MonitoringService } from './modules/monitoring/service.js';
 import { TelemetriaService } from './modules/monitoring/telemetria-service.js';
 import { criarRhRoutesPublicas } from './modules/rh/routes-publicas.js';
 import { limparCandidatosAntigos, corteRetencao } from './modules/rh/store.js';
+import { TriagemService } from './modules/rh/triagem.js';
 import { createDashboardRouter } from './modules/dashboard/router.js';
 import { ensureSeed } from './modules/dashboard/seed.js';
 import { resolveChannel } from './modules/dashboard/resolve-channel.js';
@@ -7273,8 +7274,21 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     next();
   });
 
+  // RH — triagem IA de currículos (Entrega 2): nota+resumo na chegada; nota >=8
+  // avisa o Junior no zap. Cron de varredura mais abaixo (junto dos outros crons).
+  const rhTriagem = new TriagemService(
+    supabase.getClient(),
+    new Anthropic({ apiKey: config.anthropicApiKey }),
+    (texto) => sendText(config.engineerPhone, texto),
+  );
+
   // RH público (página /trabalhe-conosco do site): vagas abertas + candidatura.
-  app.use(criarRhRoutesPublicas(supabase.getClient()));
+  app.use(criarRhRoutesPublicas(supabase.getClient(), {
+    // candidatura nova -> triagem em ~5s (sem segurar a resposta do formulário)
+    aposCandidatura: () => setTimeout(() => {
+      rhTriagem.triarPendentes(3).catch((err) => console.warn('[rh-triagem] pós-candidatura:', (err as Error).message));
+    }, 5000),
+  }));
 
   // Dashboard interno EcoSun (Modulo 3 da plataforma). Auth basica via senha
   // env DASHBOARD_PASSWORD. Rotas: /dashboard/home, /dashboard/propostas,
@@ -8292,6 +8306,20 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setInterval(limparRh, 24 * 60 * 60 * 1000);  // 1x/dia
     setTimeout(limparRh, 25 * 60 * 1000);        // 25min apos start
     console.log('[rh] Cron de retenção LGPD started (1x/dia, corte 12 meses)');
+
+    // RH — varredura da triagem IA: pega candidatos sem nota (chegados com o
+    // servidor fora, retroativos ou com falha transitória de API).
+    const triarRh = async () => {
+      try {
+        const r = await rhTriagem.triarPendentes(5);
+        if (r.triados > 0 || r.falhas > 0) console.log(`[rh-triagem] varredura: ${r.triados} triado(s), ${r.falhas} falha(s)`);
+      } catch (err) {
+        console.error('[rh-triagem] varredura falhou:', (err as Error).message);
+      }
+    };
+    setInterval(triarRh, 5 * 60 * 1000);  // a cada 5 min
+    setTimeout(triarRh, 2 * 60 * 1000);   // 2min apos start
+    console.log('[rh-triagem] Cron de triagem IA started (a cada 5min)');
 
     // ============================================
     // Modulo 6 — alerta proativo da carteira

@@ -46,7 +46,10 @@ export function estourouLimite(ip: string, agoraMs: number, registro: Map<string
   return false;
 }
 
-export function criarRhRoutesPublicas(client: SupabaseClient): Router {
+export function criarRhRoutesPublicas(
+  client: SupabaseClient,
+  opts?: { aposCandidatura?: () => void },  // gatilho da triagem IA (dispara e não espera)
+): Router {
   const router = Router();
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: CURRICULO_MAX_BYTES + 1024 } });
   // Escopado em /rh: este router é montado na raiz do app — sem o prefixo,
@@ -107,6 +110,7 @@ export function criarRhRoutesPublicas(client: SupabaseClient): Router {
     }
     console.log(`[rh] candidatura recebida: ${r.dados.nome} (vaga=${r.dados.vagaId ?? 'banco-talentos'})`);
     res.json({ ok: true });
+    try { opts?.aposCandidatura?.(); } catch { /* triagem é melhor-esforço, não afeta a resposta */ }
   });
 
   // Erro do multer (arquivo grande/campo errado) vira 400 legível, não 500 feio.

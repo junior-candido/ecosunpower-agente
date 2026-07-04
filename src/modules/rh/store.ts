@@ -123,7 +123,11 @@ export async function salvarCandidatura(
 export interface FiltrosCandidatos { vagaId?: string; status?: string; q?: string }
 
 export async function listarCandidatos(client: SupabaseClient, filtros: FiltrosCandidatos): Promise<CandidatoRow[]> {
-  let query = client.from('rh_candidatos').select('*').order('created_at', { ascending: false }).limit(500);
+  // Melhor nota primeiro (quem ainda não foi triado vai pro fim); empate = mais novo primeiro.
+  let query = client.from('rh_candidatos').select('*')
+    .order('nota_ia', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+    .limit(500);
   if (filtros.vagaId === 'banco') query = query.is('vaga_id', null);
   else if (filtros.vagaId) query = query.eq('vaga_id', filtros.vagaId);
   if (filtros.status && (STATUS_VALIDOS as readonly string[]).includes(filtros.status)) query = query.eq('status', filtros.status);

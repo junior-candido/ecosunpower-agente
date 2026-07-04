@@ -41,4 +41,15 @@ describe('telas RH', () => {
     const html = renderCandidatosPage(semVaga as never, vagas as never, {}, undefined);
     expect(html).toContain('Banco de Talentos');
   });
+
+  it('triagem IA: nota, resumo e alertas aparecem na linha do candidato', () => {
+    const triado = [{
+      ...(candidatos[0] as object),
+      nota_ia: 8.5, resumo_ia: 'Eletricista com 5 anos de obra.', alertas_ia: 'Não menciona NR-35',
+    }] as never[];
+    const html = renderCandidatosPage(triado as never, vagas as never, {}, undefined);
+    expect(html).toContain('8.5');
+    expect(html).toContain('Eletricista com 5 anos de obra.');
+    expect(html).toContain('Não menciona NR-35');
+  });
 });
