@@ -78,6 +78,8 @@ import { montarRespostaAtualizar } from './modules/proposal/atualizar-proposta.j
 import { contarPropostasSemDados, resgatarDadosInput } from './modules/proposal/resgatar-dados-input.js';
 import { MonitoringService } from './modules/monitoring/service.js';
 import { TelemetriaService } from './modules/monitoring/telemetria-service.js';
+import { criarRhRoutesPublicas } from './modules/rh/routes-publicas.js';
+import { limparCandidatosAntigos, corteRetencao } from './modules/rh/store.js';
 import { createDashboardRouter } from './modules/dashboard/router.js';
 import { ensureSeed } from './modules/dashboard/seed.js';
 import { resolveChannel } from './modules/dashboard/resolve-channel.js';
@@ -7271,6 +7273,9 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     next();
   });
 
+  // RH público (página /trabalhe-conosco do site): vagas abertas + candidatura.
+  app.use(criarRhRoutesPublicas(supabase.getClient()));
+
   // Dashboard interno EcoSun (Modulo 3 da plataforma). Auth basica via senha
   // env DASHBOARD_PASSWORD. Rotas: /dashboard/home, /dashboard/propostas,
   // /dashboard/manutencao. Mais paginas serao adicionadas em fases.
@@ -8274,6 +8279,19 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setInterval(resumirTelemetria, 24 * 60 * 60 * 1000);  // 1x/dia
     setTimeout(resumirTelemetria, 20 * 60 * 1000);        // 20min apos start
     console.log('[telemetria] Cron de retenção started (1x/dia)');
+
+    // RH — retenção LGPD: currículos/candidatos com mais de 12 meses são apagados.
+    const limparRh = async () => {
+      try {
+        const r = await limparCandidatosAntigos(supabase.getClient(), corteRetencao(Date.now()));
+        if (r.apagados > 0) console.log(`[rh] retenção: ${r.apagados} candidato(s) antigo(s) apagado(s)`);
+      } catch (err) {
+        console.error('[rh] retenção falhou:', (err as Error).message);
+      }
+    };
+    setInterval(limparRh, 24 * 60 * 60 * 1000);  // 1x/dia
+    setTimeout(limparRh, 25 * 60 * 1000);        // 25min apos start
+    console.log('[rh] Cron de retenção LGPD started (1x/dia, corte 12 meses)');
 
     // ============================================
     // Modulo 6 — alerta proativo da carteira

@@ -25,11 +25,13 @@ export function brl(v: number | null | undefined): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 }
 
-function formatDate(iso: string | null): string {
+export function formatDate(iso: string | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso.slice(0, 10);
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  // Sempre em horário de Brasília: o servidor roda em UTC — sem o timeZone,
+  // tudo que acontece depois das 21h aparecia com a data do dia seguinte.
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' });
 }
 
 function relativeTime(iso: string | null): string {
@@ -82,7 +84,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios';
+  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios' | 'rh_candidatos' | 'rh_vagas';
   title: string;
   body: string;
   scripts?: string;
@@ -150,6 +152,13 @@ const SIDEBAR_SETORES: SideSetor[] = [
     titulo: '💰 Financeiro',
     itens: [
       { href: '/dashboard/financeiro', key: 'financeiro', label: '💰 Financeiro', area: 'financeiro' },
+    ],
+  },
+  {
+    titulo: '👥 RH',
+    itens: [
+      { href: '/dashboard/rh/candidatos', key: 'rh_candidatos', label: '📋 Candidatos', area: 'rh' },
+      { href: '/dashboard/rh/vagas', key: 'rh_vagas', label: '📢 Vagas', area: 'rh' },
     ],
   },
   {

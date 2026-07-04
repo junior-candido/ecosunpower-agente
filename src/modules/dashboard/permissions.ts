@@ -5,7 +5,7 @@
 
 export const AREAS = [
   'leads', 'propostas', 'usinas', 'financeiro',
-  'marketing', 'relatorios', 'usuarios', 'configuracoes',
+  'marketing', 'relatorios', 'usuarios', 'configuracoes', 'rh',
 ] as const;
 export type Area = (typeof AREAS)[number];
 

@@ -286,6 +286,99 @@ export function createDashboardRouter(
     res.redirect('/dashboard/usuarios');
   });
 
+  // ----- RH (Trabalhe Conosco): vagas + funil de candidatos -----
+  router.get('/rh', (_req: AuthedRequest, res) => { res.redirect('/dashboard/rh/candidatos'); });
+
+  router.get('/rh/vagas', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'rh', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
+    const { listarVagas } = await import('../rh/store.js');
+    const { renderVagasPage } = await import('./rh-views.js');
+    res.type('html').send(renderVagasPage(await listarVagas(supabase), req.dashUser));
+  });
+
+  router.get('/rh/vagas/nova', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'rh', 'criar')) { res.status(403).send('Sem permissão'); return; }
+    const { renderVagaFormPage } = await import('./rh-views.js');
+    res.type('html').send(renderVagaFormPage(null, req.dashUser));
+  });
+
+  router.post('/rh/vagas', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'rh', 'criar')) { res.status(403).send('Sem permissão'); return; }
+    const b = req.body ?? {};
+    const { criarVaga } = await import('../rh/store.js');
+    const r = await criarVaga(supabase, {
+      titulo: String(b.titulo ?? ''), descricao: String(b.descricao ?? ''),
+      requisitos: String(b.requisitos ?? ''), cidade: String(b.cidade ?? 'Brasília-DF'),
+      tipo: String(b.tipo ?? 'CLT'),
+    });
+    if (!r.ok) { res.status(400).send(r.error ?? 'Erro ao criar vaga'); return; }
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_vaga', entidadeId: r.id, acao: 'criou' });
+    res.redirect('/dashboard/rh/vagas');
+  });
+
+  router.get('/rh/vagas/:id', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'rh', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
+    const { getVaga } = await import('../rh/store.js');
+    const { renderVagaFormPage } = await import('./rh-views.js');
+    const vaga = await getVaga(supabase, String(req.params.id));
+    if (!vaga) { res.status(404).send('Vaga não encontrada'); return; }
+    res.type('html').send(renderVagaFormPage(vaga, req.dashUser));
+  });
+
+  router.post('/rh/vagas/:id', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'rh', 'editar')) { res.status(403).send('Sem permissão'); return; }
+    const b = req.body ?? {};
+    if (!String(b.titulo ?? '').trim()) { res.status(400).send('Título da vaga é obrigatório.'); return; }
+    const { atualizarVaga } = await import('../rh/store.js');
+    await atualizarVaga(supabase, String(req.params.id), {
+      titulo: String(b.titulo ?? ''), descricao: String(b.descricao ?? ''),
+      requisitos: String(b.requisitos ?? ''), cidade: String(b.cidade ?? ''),
+      tipo: String(b.tipo ?? 'CLT'),
+    });
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_vaga', entidadeId: String(req.params.id), acao: 'editar' });
+    res.redirect('/dashboard/rh/vagas');
+  });
+
+  router.post('/rh/vagas/:id/status', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'rh', 'editar')) { res.status(403).send('Sem permissão'); return; }
+    const status = req.body?.status === 'fechada' ? 'fechada' as const : 'aberta' as const;
+    const { atualizarVaga } = await import('../rh/store.js');
+    await atualizarVaga(supabase, String(req.params.id), { status });
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_vaga', entidadeId: String(req.params.id), acao: status === 'fechada' ? 'fechou' : 'reabriu' });
+    res.redirect('/dashboard/rh/vagas');
+  });
+
+  router.get('/rh/candidatos', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'rh', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
+    const { listarCandidatos, listarVagas } = await import('../rh/store.js');
+    const { renderCandidatosPage } = await import('./rh-views.js');
+    const filtros = {
+      vagaId: typeof req.query.vaga === 'string' && req.query.vaga ? req.query.vaga : undefined,
+      status: typeof req.query.status === 'string' && req.query.status ? req.query.status : undefined,
+      q: typeof req.query.q === 'string' && req.query.q ? req.query.q : undefined,
+    };
+    const [candidatos, vagas] = await Promise.all([listarCandidatos(supabase, filtros), listarVagas(supabase)]);
+    res.type('html').send(renderCandidatosPage(candidatos, vagas, filtros, req.dashUser));
+  });
+
+  router.post('/rh/candidatos/:id/status', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'rh', 'editar')) { res.status(403).send('Sem permissão'); return; }
+    const { mudarStatus } = await import('../rh/store.js');
+    const novoStatus = String(req.body?.status ?? '');
+    const r = await mudarStatus(supabase, String(req.params.id), novoStatus, req.dashUser?.nome ?? '?');
+    if (!r.ok) { res.status(400).send(r.error ?? 'Erro'); return; }
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_candidato', entidadeId: String(req.params.id), acao: `status:${novoStatus}` });
+    res.redirect('/dashboard/rh/candidatos');
+  });
+
+  router.get('/rh/candidatos/:id/curriculo', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'rh', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
+    const { urlCurriculoDoCandidato } = await import('../rh/store.js');
+    const url = await urlCurriculoDoCandidato(supabase, String(req.params.id));
+    if (!url) { res.status(404).send('Currículo não encontrado — tenta de novo em instantes.'); return; }
+    res.redirect(url);
+  });
+
   // Botão one-off pra importar os leads da campanha de formulário Meta junho/2026
   // (sem mexer em terminal de prod). GET = prévia + botão; POST = grava. Idempotente.
   router.get('/import-leads-junho', async (_req: Request, res: Response) => {
