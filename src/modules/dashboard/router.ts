@@ -328,6 +328,7 @@ export function createDashboardRouter(
   router.post('/rh/vagas/:id', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'editar')) { res.status(403).send('Sem permissão'); return; }
     const b = req.body ?? {};
+    if (!String(b.titulo ?? '').trim()) { res.status(400).send('Título da vaga é obrigatório.'); return; }
     const { atualizarVaga } = await import('../rh/store.js');
     await atualizarVaga(supabase, String(req.params.id), {
       titulo: String(b.titulo ?? ''), descricao: String(b.descricao ?? ''),

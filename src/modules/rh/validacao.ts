@@ -51,6 +51,11 @@ export function validarCandidatura(
     return { ok: false, erro: `O arquivo "${nomeArquivo}" não é um PDF.` };
   }
 
+  // vaga_id vem do cliente: formato errado (não-uuid) é lixo/adulteração — recusa
+  // antes de qualquer IO (senão o PDF subia pro bucket e o INSERT estourava).
   const vagaId = (input.vagaId ?? '').trim();
+  if (vagaId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vagaId)) {
+    return { ok: false, erro: 'Vaga inválida — escolha uma vaga da lista.' };
+  }
   return { ok: true, dados: { nome, telefone, email: (input.email ?? '').trim(), vagaId: vagaId || null } };
 }

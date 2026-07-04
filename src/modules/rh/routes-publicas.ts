@@ -7,7 +7,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import multer from 'multer';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { validarCandidatura, CURRICULO_MAX_BYTES } from './validacao.js';
-import { listarVagasAbertas, salvarCandidatura } from './store.js';
+import { getVaga, listarVagasAbertas, salvarCandidatura } from './store.js';
 
 const ORIGENS_PERMITIDAS = new Set([
   'https://ecosunpower.eng.br',
@@ -63,11 +63,10 @@ export function criarRhRoutesPublicas(client: SupabaseClient): Router {
   });
 
   router.post('/rh/candidatura', upload.single('curriculo'), async (req: Request, res: Response) => {
-    const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '?').split(',')[0].trim();
-    if (estourouLimite(ip, Date.now())) {
-      res.status(429).json({ ok: false, erro: 'Muitas tentativas — tenta de novo mais tarde.' });
-      return;
-    }
+    // IP real = ÚLTIMO da lista X-Forwarded-For (o proxy anexa no fim; o
+    // primeiro pode ser forjado pelo cliente e driblaria o limite).
+    const xff = String(req.headers['x-forwarded-for'] ?? '');
+    const ip = (xff.split(',').pop() ?? '').trim() || String(req.socket.remoteAddress ?? '?');
     const b = (req.body ?? {}) as Record<string, unknown>;
     const r = validarCandidatura(
       {
@@ -87,6 +86,18 @@ export function criarRhRoutesPublicas(client: SupabaseClient): Router {
       if (r.spam) { res.json({ ok: true }); return; } // robô: finge sucesso, sem dica
       res.status(400).json({ ok: false, erro: r.erro });
       return;
+    }
+    // Limite só conta candidatura VÁLIDA: quem errou o anexo 5x não fica
+    // trancado na 6ª tentativa (a certa). Bot de envio válido continua barrado.
+    if (estourouLimite(ip, Date.now())) {
+      res.status(429).json({ ok: false, erro: 'Muitas tentativas — tenta de novo mais tarde.' });
+      return;
+    }
+    // Vaga do formulário: se não existe mais ou já fechou, vai pro Banco de
+    // Talentos em vez de perder a candidatura (ou aceitar em vaga encerrada).
+    if (r.dados.vagaId) {
+      const vaga = await getVaga(client, r.dados.vagaId);
+      if (!vaga || vaga.status !== 'aberta') r.dados.vagaId = null;
     }
     const salvo = await salvarCandidatura(client, r.dados, req.file!.buffer);
     if (!salvo.ok) {

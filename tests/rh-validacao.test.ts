@@ -42,10 +42,13 @@ describe('validarCandidatura', () => {
     expect(validarCandidatura(base, grande, 'c.pdf').ok).toBe(false);
   });
 
-  it('vaga escolhida vem no resultado', () => {
-    const r = validarCandidatura({ ...base, vagaId: 'abc-123' }, pdfBuf, 'c.pdf');
+  it('vaga escolhida (uuid) vem no resultado; vaga_id forjado (não-uuid) é recusado', () => {
+    const uuid = 'a1b2c3d4-1111-2222-3333-444455556666';
+    const r = validarCandidatura({ ...base, vagaId: uuid }, pdfBuf, 'c.pdf');
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.dados.vagaId).toBe('abc-123');
+    if (r.ok) expect(r.dados.vagaId).toBe(uuid);
+    expect(validarCandidatura({ ...base, vagaId: 'lixo' }, pdfBuf, 'c.pdf').ok).toBe(false);
+    expect(validarCandidatura({ ...base, vagaId: '../../etc' }, pdfBuf, 'c.pdf').ok).toBe(false);
   });
 });
 

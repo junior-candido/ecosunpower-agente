@@ -29,7 +29,9 @@ export function formatDate(iso: string | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso.slice(0, 10);
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  // Sempre em horário de Brasília: o servidor roda em UTC — sem o timeZone,
+  // tudo que acontece depois das 21h aparecia com a data do dia seguinte.
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' });
 }
 
 function relativeTime(iso: string | null): string {

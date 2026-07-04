@@ -142,13 +142,26 @@ export async function mudarStatus(
   if (!(STATUS_VALIDOS as readonly string[]).includes(novoStatus)) {
     return { ok: false, error: `status inválido: ${novoStatus}` };
   }
-  const { data: atual } = await client.from('rh_candidatos').select('status,historico').eq('id', id).maybeSingle();
-  if (!atual) return { ok: false, error: 'candidato não encontrado' };
-  const historico = Array.isArray((atual as { historico: unknown }).historico) ? (atual as CandidatoRow).historico : [];
-  historico.push({ de: (atual as { status: string }).status, para: novoStatus, quem, quando: new Date().toISOString() });
-  const { error } = await client.from('rh_candidatos').update({ status: novoStatus, historico }).eq('id', id);
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
+  // Ler-e-gravar com trava otimista: o update só pega se o status ainda for o
+  // que a gente leu (.eq status). Dois usuários mexendo juntos não apagam a
+  // entrada de histórico um do outro — o segundo relê e tenta de novo.
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    const { data: atual } = await client.from('rh_candidatos').select('status,historico').eq('id', id).maybeSingle();
+    if (!atual) return { ok: false, error: 'candidato não encontrado' };
+    const statusLido = (atual as { status: string }).status;
+    const historico = Array.isArray((atual as { historico: unknown }).historico) ? (atual as CandidatoRow).historico : [];
+    historico.push({ de: statusLido, para: novoStatus, quem, quando: new Date().toISOString() });
+    const { data: gravadas, error } = await client
+      .from('rh_candidatos')
+      .update({ status: novoStatus, historico })
+      .eq('id', id)
+      .eq('status', statusLido)
+      .select('id');
+    if (error) return { ok: false, error: error.message };
+    if ((gravadas ?? []).length > 0) return { ok: true };
+    // status mudou por baixo — relê e tenta de novo
+  }
+  return { ok: false, error: 'conflito de edição — tenta de novo' };
 }
 
 // URL assinada temporária (10 min) pro dashboard abrir o PDF do cofre privado.
