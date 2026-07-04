@@ -82,7 +82,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios';
+  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios' | 'rh_candidatos' | 'rh_vagas';
   title: string;
   body: string;
   scripts?: string;
@@ -150,6 +150,13 @@ const SIDEBAR_SETORES: SideSetor[] = [
     titulo: '💰 Financeiro',
     itens: [
       { href: '/dashboard/financeiro', key: 'financeiro', label: '💰 Financeiro', area: 'financeiro' },
+    ],
+  },
+  {
+    titulo: '👥 RH',
+    itens: [
+      { href: '/dashboard/rh/candidatos', key: 'rh_candidatos', label: '📋 Candidatos', area: 'rh' },
+      { href: '/dashboard/rh/vagas', key: 'rh_vagas', label: '📢 Vagas', area: 'rh' },
     ],
   },
   {
