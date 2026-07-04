@@ -378,7 +378,7 @@ export function renderLoginPage(input: LoginPageInput = {}): string {
 
     <div class="bg-white rounded-2xl shadow-2xl p-8">
       ${erro}
-      <form action="/dashboard/login" method="post" class="space-y-5">
+      <form action="/dashboard/login" method="post" autocomplete="on" class="space-y-5">
         ${next ? `<input type="hidden" name="next" value="${escapeHtml(next)}">` : ''}
 
         <div>
@@ -409,6 +409,12 @@ export function renderLoginPage(input: LoginPageInput = {}): string {
             class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition"
             placeholder="Digite sua senha">
         </div>
+
+        <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+          <input type="checkbox" name="manter" value="1" checked
+            class="w-5 h-5 rounded border-slate-300 text-sky-600 focus:ring-sky-500">
+          Continuar conectado neste aparelho (60 dias)
+        </label>
 
         <button
           type="submit"

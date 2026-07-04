@@ -79,12 +79,13 @@ export function criarSessionAuth(client: SupabaseClient) {
   };
 }
 
-export function setSessionCookie(res: Response, userId: string): void {
+// manter=true (padrão): cookie persistente de 60 dias. manter=false (usuário
+// desmarcou "Continuar conectado" no login): cookie de sessão — sem Max-Age,
+// morre quando o navegador fecha (bom pra computador emprestado).
+export function setSessionCookie(res: Response, userId: string, manter = true): void {
   const token = gerarTokenSessao(userId);
-  res.setHeader(
-    'Set-Cookie',
-    `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${COOKIE_TTL_DAYS * 24 * 60 * 60}`,
-  );
+  const base = `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Strict`;
+  res.setHeader('Set-Cookie', manter ? `${base}; Max-Age=${COOKIE_TTL_DAYS * 24 * 60 * 60}` : base);
 }
 
 export function clearSessionCookie(res: Response): void {
