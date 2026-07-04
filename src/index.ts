@@ -78,6 +78,8 @@ import { montarRespostaAtualizar } from './modules/proposal/atualizar-proposta.j
 import { contarPropostasSemDados, resgatarDadosInput } from './modules/proposal/resgatar-dados-input.js';
 import { MonitoringService } from './modules/monitoring/service.js';
 import { TelemetriaService } from './modules/monitoring/telemetria-service.js';
+import { criarRhRoutesPublicas } from './modules/rh/routes-publicas.js';
+import { limparCandidatosAntigos, corteRetencao } from './modules/rh/store.js';
 import { createDashboardRouter } from './modules/dashboard/router.js';
 import { ensureSeed } from './modules/dashboard/seed.js';
 import { resolveChannel } from './modules/dashboard/resolve-channel.js';
@@ -7270,6 +7272,9 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     }
     next();
   });
+
+  // RH público (página /trabalhe-conosco do site): vagas abertas + candidatura.
+  app.use(criarRhRoutesPublicas(supabase.getClient()));
 
   // Dashboard interno EcoSun (Modulo 3 da plataforma). Auth basica via senha
   // env DASHBOARD_PASSWORD. Rotas: /dashboard/home, /dashboard/propostas,

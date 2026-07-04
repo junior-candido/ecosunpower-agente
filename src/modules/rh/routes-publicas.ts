@@ -1,0 +1,95 @@
+// src/modules/rh/routes-publicas.ts
+// Rotas PÚBLICAS do RH — a página /trabalhe-conosco do site consome:
+//   GET  /rh/vagas        -> vagas abertas (JSON)
+//   POST /rh/candidatura  -> formulário multipart com o currículo em PDF
+// CORS liberado só pro domínio do site. Honeypot + rate limit contra spam.
+import { Router, type Request, type Response, type NextFunction } from 'express';
+import multer from 'multer';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { validarCandidatura, CURRICULO_MAX_BYTES } from './validacao.js';
+import { listarVagasAbertas, salvarCandidatura } from './store.js';
+
+const ORIGENS_PERMITIDAS = new Set([
+  'https://ecosunpower.eng.br',
+  'https://www.ecosunpower.eng.br',
+]);
+
+function cors(req: Request, res: Response, next: NextFunction): void {
+  const origin = String(req.headers.origin ?? '');
+  if (ORIGENS_PERMITIDAS.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  }
+  if (req.method === 'OPTIONS') { res.sendStatus(204); return; }
+  next();
+}
+
+// Rate limit simples em memória: máx 5 candidaturas por IP por hora.
+const enviosPorIp = new Map<string, number[]>();
+const JANELA_MS = 60 * 60 * 1000;
+export function estourouLimite(ip: string, agoraMs: number, registro: Map<string, number[]> = enviosPorIp): boolean {
+  const lista = (registro.get(ip) ?? []).filter((t) => agoraMs - t < JANELA_MS);
+  if (lista.length >= 5) { registro.set(ip, lista); return true; }
+  lista.push(agoraMs);
+  registro.set(ip, lista);
+  return false;
+}
+
+export function criarRhRoutesPublicas(client: SupabaseClient): Router {
+  const router = Router();
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: CURRICULO_MAX_BYTES + 1024 } });
+  router.use(cors);
+
+  router.get('/rh/vagas', async (_req: Request, res: Response) => {
+    try {
+      res.json({ vagas: await listarVagasAbertas(client) });
+    } catch (err) {
+      console.warn('[rh] GET /rh/vagas:', (err as Error).message);
+      res.status(500).json({ vagas: [] });
+    }
+  });
+
+  router.post('/rh/candidatura', upload.single('curriculo'), async (req: Request, res: Response) => {
+    const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '?').split(',')[0].trim();
+    if (estourouLimite(ip, Date.now())) {
+      res.status(429).json({ ok: false, erro: 'Muitas tentativas — tenta de novo mais tarde.' });
+      return;
+    }
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const r = validarCandidatura(
+      {
+        nome: String(b.nome ?? ''),
+        telefone: String(b.telefone ?? ''),
+        email: String(b.email ?? ''),
+        vagaId: String(b.vaga_id ?? ''),
+        consentimento: String(b.consentimento ?? ''),
+        website: String(b.website ?? ''),
+      },
+      req.file?.buffer,
+      String(req.file?.originalname ?? ''),
+    );
+    if (!r.ok) {
+      if (r.spam) { res.json({ ok: true }); return; } // robô: finge sucesso, sem dica
+      res.status(400).json({ ok: false, erro: r.erro });
+      return;
+    }
+    const salvo = await salvarCandidatura(client, r.dados, req.file!.buffer);
+    if (!salvo.ok) {
+      console.warn('[rh] candidatura falhou:', salvo.error);
+      res.status(500).json({ ok: false, erro: 'Não consegui salvar agora — tenta de novo em instantes.' });
+      return;
+    }
+    console.log(`[rh] candidatura recebida: ${r.dados.nome} (vaga=${r.dados.vagaId ?? 'banco-talentos'})`);
+    res.json({ ok: true });
+  });
+
+  // Erro do multer (arquivo grande/campo errado) vira 400 legível, não 500 feio.
+  router.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    console.warn('[rh] upload rejeitado:', (err as Error)?.message);
+    res.status(400).json({ ok: false, erro: 'Arquivo inválido ou grande demais (máx 5 MB).' });
+  });
+
+  return router;
+}
