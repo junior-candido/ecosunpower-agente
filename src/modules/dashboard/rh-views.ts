@@ -105,7 +105,11 @@ export function renderCandidatosPage(
 
   const linhas = candidatos.map((c) => `
     <tr class="border-b border-slate-200 hover:bg-slate-50">
-      <td class="px-3 py-2 font-medium">${esc(c.nome)}</td>
+      <td class="px-3 py-2">
+        <div class="font-medium">${esc(c.nome)}</div>
+        ${c.resumo_ia ? `<div class="text-xs text-slate-500 mt-0.5 max-w-md">🧠 ${esc(c.resumo_ia)}</div>` : ''}
+        ${c.alertas_ia ? `<div class="text-xs text-amber-600 mt-0.5 max-w-md">⚠️ ${esc(c.alertas_ia)}</div>` : ''}
+      </td>
       <td class="px-3 py-2 text-slate-500">${c.vaga_id ? esc(tituloVaga.get(c.vaga_id) ?? 'vaga encerrada') : '🗂 Banco de Talentos'}</td>
       <td class="px-3 py-2 whitespace-nowrap">
         <a href="https://wa.me/${esc(c.telefone)}" target="_blank" class="text-emerald-600 hover:underline">💬 ${esc(c.telefone)}</a>
