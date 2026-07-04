@@ -379,6 +379,15 @@ export function createDashboardRouter(
     res.redirect(url);
   });
 
+  router.post('/rh/candidatos/:id/excluir', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'rh', 'excluir')) { res.status(403).send('Sem permissão'); return; }
+    const { excluirCandidato } = await import('../rh/store.js');
+    const r = await excluirCandidato(supabase, String(req.params.id));
+    if (!r.ok) { res.status(400).send(r.error ?? 'Erro ao excluir'); return; }
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_candidato', entidadeId: String(req.params.id), acao: 'excluiu' });
+    res.redirect('/dashboard/rh/candidatos');
+  });
+
   // Botão one-off pra importar os leads da campanha de formulário Meta junho/2026
   // (sem mexer em terminal de prod). GET = prévia + botão; POST = grava. Idempotente.
   router.get('/import-leads-junho', async (_req: Request, res: Response) => {

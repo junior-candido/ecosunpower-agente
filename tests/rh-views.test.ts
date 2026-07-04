@@ -42,6 +42,15 @@ describe('telas RH', () => {
     expect(html).toContain('Banco de Talentos');
   });
 
+  it('excluir candidato: botão com confirmação dupla e sem quebra com apóstrofo no nome', () => {
+    const html = renderCandidatosPage(candidatos as never, vagas as never, {}, undefined);
+    expect(html).toContain('/dashboard/rh/candidatos/c1/excluir');
+    expect(html).toContain('Confirma de novo');
+    const onsubmits = html.match(/onsubmit="[^"]*"/g) ?? [];
+    expect(onsubmits.length).toBeGreaterThan(0);
+    for (const os of onsubmits) expect(os).not.toContain('&#039;');
+  });
+
   it('triagem IA: nota, resumo e alertas aparecem na linha do candidato', () => {
     const triado = [{
       ...(candidatos[0] as object),
