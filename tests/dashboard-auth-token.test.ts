@@ -19,3 +19,29 @@ describe('token de sessão com user_id', () => {
     expect(lerUserIdDoToken('')).toBeNull();
   });
 });
+
+describe('setSessionCookie — manter conectado (checkbox do login)', () => {
+  function fakeRes() {
+    const headers: Record<string, string> = {};
+    return {
+      headers,
+      setHeader(nome: string, valor: string) { headers[nome] = valor; },
+    };
+  }
+
+  it('padrão (manter=true): cookie persistente com Max-Age de 60 dias', async () => {
+    const { setSessionCookie } = await import('../src/modules/dashboard/auth.js');
+    const res = fakeRes();
+    setSessionCookie(res as never, 'user-42');
+    expect(res.headers['Set-Cookie']).toContain(`Max-Age=${60 * 24 * 60 * 60}`);
+  });
+
+  it('manter=false: cookie de sessão (SEM Max-Age — morre ao fechar o navegador)', async () => {
+    const { setSessionCookie } = await import('../src/modules/dashboard/auth.js');
+    const res = fakeRes();
+    setSessionCookie(res as never, 'user-42', false);
+    expect(res.headers['Set-Cookie']).not.toContain('Max-Age');
+    expect(res.headers['Set-Cookie']).toContain('ecosun_dash_token=');
+    expect(res.headers['Set-Cookie']).toContain('HttpOnly');
+  });
+});

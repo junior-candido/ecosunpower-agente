@@ -79,3 +79,15 @@ describe('renderLayout tema escuro ESCOPADO (regressão fix)', () => {
     expect(renderMonitoramentoPage([], {})).toContain('ecosun-body-dark');
   });
 });
+
+describe('renderLoginPage — salvar senha / manter conectado', () => {
+  it('form pede salvamento pro navegador e tem a caixinha "Continuar conectado" marcada', async () => {
+    const { renderLoginPage } = await import('../src/modules/dashboard/views.js');
+    const html = renderLoginPage({});
+    expect(html).toContain('autocomplete="on"');
+    expect(html).toContain('autocomplete="username"');
+    expect(html).toContain('autocomplete="current-password"');
+    expect(html).toMatch(/name="manter"[^>]*checked/);
+    expect(html).toContain('Continuar conectado');
+  });
+});

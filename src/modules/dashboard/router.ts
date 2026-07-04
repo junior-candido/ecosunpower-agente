@@ -217,7 +217,8 @@ export function createDashboardRouter(
         renderLoginPage({ errorMsg: 'Login ou senha inválidos. Tenta de novo.', next }),
       );
     }
-    setSessionCookie(res, found.user.id);
+    // Checkbox "Continuar conectado": marcada (padrão) = cookie 60d; desmarcada = só a sessão.
+    setSessionCookie(res, found.user.id, req.body?.manter === '1');
     await touchLastLogin(supabase, found.user.id);
     await audit(supabase, { companyId: found.user.companyId, userId: found.user.id, entidade: 'sessao', acao: 'login' });
     res.redirect(next.startsWith('/dashboard') ? next : '/dashboard/cockpit');
