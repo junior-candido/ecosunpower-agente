@@ -119,7 +119,10 @@ export function renderCandidatosPage(
       <td class="px-3 py-2">${selectStatus(c)}</td>
       <td class="px-3 py-2 text-slate-500">${dataBr(c.created_at)}</td>
       <td class="px-3 py-2 text-right whitespace-nowrap">
-        <a href="/dashboard/rh/candidatos/${esc(c.id)}/curriculo" target="_blank" class="text-sky-600 hover:underline">📄 Currículo</a>
+        <a href="/dashboard/rh/candidatos/${esc(c.id)}/curriculo" target="_blank" class="text-sky-600 hover:underline mr-2">📄 Currículo</a>
+        <form method="POST" action="/dashboard/rh/candidatos/${esc(c.id)}/excluir" class="inline" onsubmit="return confirm('Excluir este candidato de vez? Apaga os dados e o PDF do currículo. Sem volta.') && confirm('Confirma de novo: excluir permanentemente?')">
+          <button class="text-rose-600 hover:underline" title="Excluir candidato (apaga dados + currículo)">🗑</button>
+        </form>
       </td>
     </tr>`).join('');
 

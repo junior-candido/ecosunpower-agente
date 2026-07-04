@@ -183,6 +183,22 @@ export async function urlCurriculoDoCandidato(client: SupabaseClient, candidatoI
   return urlCurriculo(client, path);
 }
 
+// Exclusão manual de 1 candidato (botão do dashboard / pedido LGPD do titular).
+// PDF primeiro, linha depois — mesma regra da retenção: Storage falhou, a linha
+// fica e o botão avisa (sem PDF órfão perdido no bucket).
+export async function excluirCandidato(client: SupabaseClient, id: string): Promise<{ ok: boolean; error?: string }> {
+  const { data } = await client.from('rh_candidatos').select('curriculo_path').eq('id', id).maybeSingle();
+  if (!data) return { ok: false, error: 'candidato não encontrado' };
+  const path = (data as { curriculo_path: string }).curriculo_path;
+  if (path) {
+    const rm = await client.storage.from(BUCKET).remove([path]);
+    if (rm.error) return { ok: false, error: `não consegui apagar o PDF agora (${rm.error.message}) — tenta de novo` };
+  }
+  const del = await client.from('rh_candidatos').delete().eq('id', id);
+  if (del.error) return { ok: false, error: del.error.message };
+  return { ok: true };
+}
+
 // Retenção LGPD: apaga candidatos (e PDFs) com mais de 12 meses.
 // PDF primeiro, linha depois: se o Storage falhar, a linha FICA (tenta de novo
 // amanhã) — apagar a linha antes deixaria PDF órfão pra sempre no bucket.
