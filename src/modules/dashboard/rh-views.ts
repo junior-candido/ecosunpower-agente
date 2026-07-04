@@ -1,19 +1,10 @@
 // src/modules/dashboard/rh-views.ts
 // Telas da área RH: vagas (CRUD) + candidatos (funil de seleção).
 // Molde visual: usuarios-views.ts (tema claro, tabelas simples).
-import { renderLayout } from './views.js';
+import { renderLayout, escapeHtml as esc, formatDate as dataBr } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { VagaRow, CandidatoRow, FiltrosCandidatos } from '../rh/store.js';
 import { STATUS_VALIDOS } from '../rh/store.js';
-
-function esc(s: string | null | undefined): string {
-  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]!));
-}
-
-const dataBr = (iso: string) => {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-};
 
 const STATUS_ROTULO: Record<string, string> = {
   novo: '🆕 novo', triado: '🔎 triado', entrevista: '🗓 entrevista',

@@ -48,3 +48,25 @@ describe('validarCandidatura', () => {
     if (r.ok) expect(r.dados.vagaId).toBe('abc-123');
   });
 });
+
+describe('estourouLimite (rate limit por IP)', async () => {
+  const { estourouLimite } = await import('../src/modules/rh/routes-publicas.js');
+
+  it('libera 5 envios na janela de 1h e barra o 6º; janela expirada libera de novo', () => {
+    const reg = new Map<string, number[]>();
+    const t0 = 1_000_000;
+    for (let i = 0; i < 5; i++) expect(estourouLimite('1.2.3.4', t0 + i, reg)).toBe(false);
+    expect(estourouLimite('1.2.3.4', t0 + 5, reg)).toBe(true);          // 6º barra
+    expect(estourouLimite('5.6.7.8', t0 + 5, reg)).toBe(false);          // outro IP passa
+    expect(estourouLimite('1.2.3.4', t0 + 61 * 60 * 1000, reg)).toBe(false); // 1h depois libera
+  });
+
+  it('faxina: IPs de passagem somem do registro quando ele cresce', () => {
+    const reg = new Map<string, number[]>();
+    const t0 = 1_000_000;
+    for (let i = 0; i < 1001; i++) estourouLimite(`ip-${i}`, t0, reg);
+    // 1h+ depois, um envio novo dispara a faxina dos vencidos
+    estourouLimite('novo-ip', t0 + 2 * 60 * 60 * 1000, reg);
+    expect(reg.size).toBeLessThan(10);
+  });
+});

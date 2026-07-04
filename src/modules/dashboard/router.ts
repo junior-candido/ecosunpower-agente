@@ -334,6 +334,7 @@ export function createDashboardRouter(
       requisitos: String(b.requisitos ?? ''), cidade: String(b.cidade ?? ''),
       tipo: String(b.tipo ?? 'CLT'),
     });
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_vaga', entidadeId: String(req.params.id), acao: 'editar' });
     res.redirect('/dashboard/rh/vagas');
   });
 
@@ -342,6 +343,7 @@ export function createDashboardRouter(
     const status = req.body?.status === 'fechada' ? 'fechada' as const : 'aberta' as const;
     const { atualizarVaga } = await import('../rh/store.js');
     await atualizarVaga(supabase, String(req.params.id), { status });
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_vaga', entidadeId: String(req.params.id), acao: status === 'fechada' ? 'fechou' : 'reabriu' });
     res.redirect('/dashboard/rh/vagas');
   });
 
@@ -361,19 +363,18 @@ export function createDashboardRouter(
   router.post('/rh/candidatos/:id/status', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'editar')) { res.status(403).send('Sem permissão'); return; }
     const { mudarStatus } = await import('../rh/store.js');
-    const r = await mudarStatus(supabase, String(req.params.id), String(req.body?.status ?? ''), req.dashUser?.nome ?? '?');
+    const novoStatus = String(req.body?.status ?? '');
+    const r = await mudarStatus(supabase, String(req.params.id), novoStatus, req.dashUser?.nome ?? '?');
     if (!r.ok) { res.status(400).send(r.error ?? 'Erro'); return; }
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_candidato', entidadeId: String(req.params.id), acao: `status:${novoStatus}` });
     res.redirect('/dashboard/rh/candidatos');
   });
 
   router.get('/rh/candidatos/:id/curriculo', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
-    const { data } = await supabase.from('rh_candidatos').select('curriculo_path').eq('id', String(req.params.id)).maybeSingle();
-    const path = (data as { curriculo_path?: string } | null)?.curriculo_path;
-    if (!path) { res.status(404).send('Currículo não encontrado'); return; }
-    const { urlCurriculo } = await import('../rh/store.js');
-    const url = await urlCurriculo(supabase, path);
-    if (!url) { res.status(404).send('Não consegui gerar o link do PDF agora — tenta de novo.'); return; }
+    const { urlCurriculoDoCandidato } = await import('../rh/store.js');
+    const url = await urlCurriculoDoCandidato(supabase, String(req.params.id));
+    if (!url) { res.status(404).send('Currículo não encontrado — tenta de novo em instantes.'); return; }
     res.redirect(url);
   });
 

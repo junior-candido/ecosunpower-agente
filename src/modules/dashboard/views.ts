@@ -25,7 +25,7 @@ export function brl(v: number | null | undefined): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 }
 
-function formatDate(iso: string | null): string {
+export function formatDate(iso: string | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso.slice(0, 10);

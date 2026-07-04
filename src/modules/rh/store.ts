@@ -158,7 +158,17 @@ export async function urlCurriculo(client: SupabaseClient, path: string): Promis
   return data.signedUrl;
 }
 
+// Atalho pro router: candidato -> URL assinada do currículo (null se não achar).
+export async function urlCurriculoDoCandidato(client: SupabaseClient, candidatoId: string): Promise<string | null> {
+  const { data } = await client.from('rh_candidatos').select('curriculo_path').eq('id', candidatoId).maybeSingle();
+  const path = (data as { curriculo_path?: string } | null)?.curriculo_path;
+  if (!path) return null;
+  return urlCurriculo(client, path);
+}
+
 // Retenção LGPD: apaga candidatos (e PDFs) com mais de 12 meses.
+// PDF primeiro, linha depois: se o Storage falhar, a linha FICA (tenta de novo
+// amanhã) — apagar a linha antes deixaria PDF órfão pra sempre no bucket.
 export async function limparCandidatosAntigos(client: SupabaseClient, corteIso: string): Promise<{ apagados: number }> {
   const { data, error } = await client.from('rh_candidatos').select('id,curriculo_path').lt('created_at', corteIso);
   if (error || !data || data.length === 0) return { apagados: 0 };
@@ -166,7 +176,10 @@ export async function limparCandidatosAntigos(client: SupabaseClient, corteIso: 
   const paths = rows.map((r) => r.curriculo_path).filter(Boolean);
   if (paths.length > 0) {
     const rm = await client.storage.from(BUCKET).remove(paths);
-    if (rm.error) console.warn('[rh] retenção: falha ao remover PDFs:', rm.error.message);
+    if (rm.error) {
+      console.warn('[rh] retenção: falha ao remover PDFs (linhas mantidas, tenta amanhã):', rm.error.message);
+      return { apagados: 0 };
+    }
   }
   const del = await client.from('rh_candidatos').delete().in('id', rows.map((r) => r.id));
   if (del.error) { console.warn('[rh] retenção: delete falhou:', del.error.message); return { apagados: 0 }; }

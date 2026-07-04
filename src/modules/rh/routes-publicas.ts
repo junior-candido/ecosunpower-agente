@@ -12,6 +12,7 @@ import { listarVagasAbertas, salvarCandidatura } from './store.js';
 const ORIGENS_PERMITIDAS = new Set([
   'https://ecosunpower.eng.br',
   'https://www.ecosunpower.eng.br',
+  'http://localhost:4321', // astro dev do site (npm run dev)
 ]);
 
 function cors(req: Request, res: Response, next: NextFunction): void {
@@ -30,6 +31,14 @@ function cors(req: Request, res: Response, next: NextFunction): void {
 const enviosPorIp = new Map<string, number[]>();
 const JANELA_MS = 60 * 60 * 1000;
 export function estourouLimite(ip: string, agoraMs: number, registro: Map<string, number[]> = enviosPorIp): boolean {
+  // Faxina: IPs de passagem (1 POST e some) não podem acumular pra sempre.
+  if (registro.size > 1000) {
+    for (const [k, ts] of registro) {
+      const vivos = ts.filter((t) => agoraMs - t < JANELA_MS);
+      if (vivos.length === 0) registro.delete(k);
+      else registro.set(k, vivos);
+    }
+  }
   const lista = (registro.get(ip) ?? []).filter((t) => agoraMs - t < JANELA_MS);
   if (lista.length >= 5) { registro.set(ip, lista); return true; }
   lista.push(agoraMs);
@@ -67,7 +76,9 @@ export function criarRhRoutesPublicas(client: SupabaseClient): Router {
         email: String(b.email ?? ''),
         vagaId: String(b.vaga_id ?? ''),
         consentimento: String(b.consentimento ?? ''),
-        website: String(b.website ?? ''),
+        // honeypot: o form manda como "extra_info" (nome neutro — "website"
+        // era preenchido pelo autofill do Chrome e derrubava gente de verdade)
+        website: String(b.extra_info ?? ''),
       },
       req.file?.buffer,
       String(req.file?.originalname ?? ''),
