@@ -30,6 +30,9 @@ import type {
   ListSitesResult,
   MonitoringAdapter,
   SiteResumo,
+  TelemetryDevice,
+  TelemetryLeitura,
+  TelemetryResult,
 } from '../types.js';
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
 
@@ -227,6 +230,26 @@ export function parseFoxHistory(
     .sort((x, y) => x.hora.localeCompare(y.hora));
 }
 
+// Parseia /op/v0/device/real/query (datas de UM device) → leituras normalizadas,
+// mapeando pelo catálogo (ponto_nativo = nome da variável FoxESS). A FoxESS já
+// devolve nas unidades finais (kW/V/A/°C), então NÃO aplica fator.
+export function parseFoxRealTime(
+  datas: Array<{ variable?: string; value?: number | string | null }>,
+  catalogo: Map<string, { ponto: string; unidade: string; fator: number }>,
+  ts: string,
+): TelemetryLeitura[] {
+  const leituras: TelemetryLeitura[] = [];
+  for (const d of datas) {
+    const meta = d.variable ? catalogo.get(d.variable) : undefined;
+    if (!meta) continue;
+    if (d.value === null || d.value === undefined) continue;
+    const v = typeof d.value === 'string' ? Number(d.value) : d.value;
+    if (!Number.isFinite(v)) continue;
+    leituras.push({ ponto: meta.ponto, valor: Number(v.toFixed(4)), unidade: meta.unidade, ts });
+  }
+  return leituras;
+}
+
 // ============================================================================
 // ADAPTER
 // ============================================================================
@@ -375,6 +398,39 @@ export const foxessAdapter: MonitoringAdapter = {
       });
     if (pontos.length === 0) return { ok: false, reason: 'Sem curva pra esse dia.' };
     return { ok: true, pontos };
+  },
+
+  // Telemetria (foto atual) — /op/v0/device/real/query por micro. Validado ao
+  // vivo 03/07: mesmo os micros Q1 reportam tensão/corrente/potência por PV,
+  // tensão/corrente/freq da rede e temperatura. Uma leitura por deviceSN.
+  async fetchTelemetry(
+    credenciais: Record<string, unknown>,
+    catalogo: Map<string, { ponto: string; unidade: string; fator: number }>,
+    ts: string,
+  ): Promise<TelemetryResult> {
+    const parsed = parseCreds(credenciais);
+    if ('error' in parsed) return { ok: false, reason: parsed.error, invalidCredentials: true };
+    if (parsed.deviceSNs.length === 0) return { ok: true, devices: [] };
+    const variables = [...catalogo.keys()];
+    if (variables.length === 0) return { ok: true, devices: [] };
+
+    const devices: TelemetryDevice[] = [];
+    for (const sn of parsed.deviceSNs) {
+      const r = await foxPost<Array<{ datas?: Array<{ variable?: string; value?: number | string | null }> }>>(
+        parsed.apiKey,
+        '/op/v0/device/real/query',
+        { sn, variables },
+      );
+      if (!r.ok) {
+        if (r.invalidCredentials) return { ok: false, reason: r.reason, invalidCredentials: true };
+        console.warn(`[foxess] real ${sn} falhou (${r.reason}); pula esse micro`);
+        continue;
+      }
+      const datas = Array.isArray(r.data) ? (r.data[0]?.datas ?? []) : [];
+      const leituras = parseFoxRealTime(datas, catalogo, ts);
+      if (leituras.length > 0) devices.push({ deviceKey: sn, leituras });
+    }
+    return { ok: true, devices };
   },
 
   // FoxESS: credenciais da conta = só a apiKey (mesma key na conta e na planta).
