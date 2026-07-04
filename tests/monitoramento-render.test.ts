@@ -29,6 +29,19 @@ describe('renderMonitoramentoPage (smoke)', () => {
     expect(renderMonitoramentoPage([], {})).toContain('Nenhum sistema');
   });
 
+  it('busca/filtros + Importar/Atualizar ficam no TOPO (antes dos KPIs e do bloco de ação)', () => {
+    const html = renderMonitoramentoPage(rows, {});
+    const posBusca = html.indexOf('name="q"');
+    const posImportar = html.indexOf('📥 Importar');
+    const posKpis = html.indexOf('Usinas ativas');
+    const posAcao = html.indexOf('Precisa de ação');
+    expect(posBusca).toBeGreaterThan(-1);
+    expect(posImportar).toBeGreaterThan(-1);
+    expect(posBusca).toBeLessThan(posKpis);
+    expect(posImportar).toBeLessThan(posKpis);
+    expect(posBusca).toBeLessThan(posAcao);
+  });
+
   it('SEGURANÇA: nome com apóstrofo não quebra o confirm de exclusão (sem &#039; em onsubmit)', () => {
     const perigosa = [{
       ...rows[0], id: '9', apelido: "Bar do Z'é D'Ávila", nivel: 'urgente',
