@@ -40,7 +40,9 @@ export function estourouLimite(ip: string, agoraMs: number, registro: Map<string
 export function criarRhRoutesPublicas(client: SupabaseClient): Router {
   const router = Router();
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: CURRICULO_MAX_BYTES + 1024 } });
-  router.use(cors);
+  // Escopado em /rh: este router é montado na raiz do app — sem o prefixo,
+  // o CORS engoliria as requisições OPTIONS do app inteiro.
+  router.use('/rh', cors);
 
   router.get('/rh/vagas', async (_req: Request, res: Response) => {
     try {
