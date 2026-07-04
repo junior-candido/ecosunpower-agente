@@ -25,6 +25,8 @@ import crypto from 'crypto';
 import type {
   AdapterResult,
   GeracaoDiaria,
+  IntradayPonto,
+  IntradayResult,
   ListSitesResult,
   MonitoringAdapter,
   SiteResumo,
@@ -196,6 +198,35 @@ function dentroDoIntervalo(data: string, inicio: string, fim: string): boolean {
   return data >= inicio && data <= fim;
 }
 
+// Parseia o resultado de /op/v0/device/history/query de UM dispositivo → pontos
+// { hora, kw, kwh } por horário. `datas` = [{ variable, data:[{time,value}] }].
+// generationPower = potência (kW); todayYield = energia do dia acumulada (kWh).
+// Os timestamps já vêm em BRT ("YYYY-MM-DD HH:MM:SS BRT-0300") → hora = chars 11..16.
+export function parseFoxHistory(
+  datas: Array<{ variable?: string; data?: Array<{ time?: string; value?: number | null }> }>,
+): Array<{ hora: string; kw?: number; kwh?: number }> {
+  const porHora = new Map<string, { kw?: number; kwh?: number }>();
+  for (const d of datas) {
+    const isPower = d.variable === 'generationPower';
+    const isEnergy = d.variable === 'todayYield';
+    if (!isPower && !isEnergy) continue;
+    for (const p of d.data ?? []) {
+      const hora = String(p.time ?? '').slice(11, 16);
+      if (!/^\d\d:\d\d$/.test(hora)) continue;
+      if (p.value === null || p.value === undefined) continue; // Number(null)=0 — descarta antes
+      const v = Number(p.value);
+      if (!Number.isFinite(v)) continue;
+      const acc = porHora.get(hora) ?? {};
+      if (isPower) acc.kw = Number(Math.max(0, v).toFixed(3));
+      if (isEnergy) acc.kwh = Number(Math.max(0, v).toFixed(3));
+      porHora.set(hora, acc);
+    }
+  }
+  return [...porHora.entries()]
+    .map(([hora, a]) => ({ hora, ...a }))
+    .sort((x, y) => x.hora.localeCompare(y.hora));
+}
+
 // ============================================================================
 // ADAPTER
 // ============================================================================
@@ -297,6 +328,53 @@ export const foxessAdapter: MonitoringAdapter = {
       });
     }
     return { ok: true, sites };
+  },
+
+  // Curva do dia (potência kW + energia kWh acumulada) — validada ao vivo 03/07.
+  // Vem do /op/v0/device/history/query (dados brutos ~3min, INCLUI hoje). Como a
+  // usina = vários micros (deviceSNs), SOMA a potência/energia dos micros por
+  // horário. Bônus: o mesmo endpoint traz tensão/corrente/temp (telemetria) — a
+  // ser ligado depois no fetchTelemetry.
+  async fetchIntraday(credenciais: Record<string, unknown>, dia: string): Promise<IntradayResult> {
+    const parsed = parseCreds(credenciais);
+    if ('error' in parsed) return { ok: false, reason: parsed.error };
+    if (parsed.deviceSNs.length === 0) {
+      return { ok: false, reason: 'FoxESS fetchIntraday precisa de credenciais.deviceSNs (micros da usina)' };
+    }
+    const [y, m, d] = dia.split('-').map(Number);
+    if (!y || !m || !d) return { ok: false, reason: `dia inválido: ${dia}` };
+    const begin = Date.UTC(y, m - 1, d, 3, 0, 0);   // 00:00 BRT (UTC-3)
+    const end = begin + 24 * 60 * 60 * 1000;
+
+    const combinado = new Map<string, { kw: number; kwh: number; temKwh: boolean }>();
+    for (const sn of parsed.deviceSNs) {
+      const r = await foxPost<Array<{ datas?: Array<{ variable?: string; data?: Array<{ time?: string; value?: number | null }> }> }>>(
+        parsed.apiKey,
+        '/op/v0/device/history/query',
+        { sn, variables: ['generationPower', 'todayYield'], begin, end },
+      );
+      if (!r.ok) {
+        if (r.invalidCredentials) return { ok: false, reason: r.reason };
+        console.warn(`[foxess] history ${sn} falhou (${r.reason}); pula esse micro`);
+        continue;
+      }
+      const datas = Array.isArray(r.data) ? (r.data[0]?.datas ?? []) : [];
+      for (const p of parseFoxHistory(datas)) {
+        const acc = combinado.get(p.hora) ?? { kw: 0, kwh: 0, temKwh: false };
+        if (p.kw !== undefined) acc.kw += p.kw;
+        if (p.kwh !== undefined) { acc.kwh += p.kwh; acc.temKwh = true; }
+        combinado.set(p.hora, acc);
+      }
+    }
+    const pontos: IntradayPonto[] = [...combinado.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([hora, a]) => {
+        const pt: IntradayPonto = { hora, kw: Number(a.kw.toFixed(3)) };
+        if (a.temKwh) pt.kwh = Number(a.kwh.toFixed(3));
+        return pt;
+      });
+    if (pontos.length === 0) return { ok: false, reason: 'Sem curva pra esse dia.' };
+    return { ok: true, pontos };
   },
 
   // FoxESS: credenciais da conta = só a apiKey (mesma key na conta e na planta).
