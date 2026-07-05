@@ -85,6 +85,55 @@ export function renderVagaFormPage(vaga: VagaRow | null, viewer?: DashUser): str
 }
 
 // ---------------------------------------------------------------------------
+// BUSCA ESPERTA (banco de talentos)
+// ---------------------------------------------------------------------------
+
+export interface ResultadoBuscaView {
+  id: string;
+  motivo: string;
+  candidato: { nome: string; vaga: string | null; nota_ia: number | null; status: string };
+}
+
+export function renderBuscaPage(
+  pergunta: string,
+  resultados: ResultadoBuscaView[] | null,   // null = ainda não buscou
+  viewer?: DashUser,
+  erro?: string,
+): string {
+  const cards = (resultados ?? []).map((r) => `
+    <div class="bg-white rounded-lg border border-slate-200 p-4 flex flex-col gap-1">
+      <div class="flex items-center justify-between gap-2">
+        <div class="font-semibold text-slate-800">${esc(r.candidato.nome)}</div>
+        ${r.candidato.nota_ia !== null && r.candidato.nota_ia !== undefined ? `<span class="text-sm font-bold ${Number(r.candidato.nota_ia) >= 7 ? 'text-emerald-600' : 'text-amber-600'}">nota ${Number(r.candidato.nota_ia).toFixed(1)}</span>` : ''}
+      </div>
+      <div class="text-xs text-slate-500">${r.candidato.vaga ? esc(r.candidato.vaga) : '🗂 Banco de Talentos'} · ${esc(STATUS_ROTULO[r.candidato.status] ?? r.candidato.status)}</div>
+      <div class="text-sm text-slate-700 mt-1">💡 ${esc(r.motivo)}</div>
+      <div class="mt-2">
+        <a href="/dashboard/rh/candidatos/${esc(r.id)}/curriculo" target="_blank" class="text-sky-600 hover:underline text-sm mr-4">📄 Currículo</a>
+        <a href="/dashboard/rh/candidatos" class="text-slate-500 hover:underline text-sm">ver na lista →</a>
+      </div>
+    </div>`).join('');
+
+  const body = `
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-xl font-bold">🔎 Busca inteligente no banco de talentos</h1>
+    <a href="/dashboard/rh/candidatos" class="text-sky-600 hover:underline text-sm">📋 Candidatos →</a>
+  </div>
+  <form method="GET" action="/dashboard/rh/busca" class="bg-white rounded-lg border border-slate-200 p-4 mb-6 flex flex-wrap gap-2">
+    <input name="q" value="${esc(pergunta)}" required minlength="3"
+      placeholder='pergunte como quiser — ex.: "quem tem NR-35 e experiência em telhado?"'
+      class="flex-1 min-w-[280px] border border-slate-300 rounded-md px-3 py-2 text-sm">
+    <button class="bg-sky-600 hover:bg-sky-700 text-white rounded-md px-5 py-2 text-sm font-semibold">Buscar</button>
+  </form>
+  ${erro ? `<div class="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-sm p-4 mb-4">${esc(erro)}</div>` : ''}
+  ${resultados === null ? `
+  <p class="text-sm text-slate-500">A IA vasculha os perfis de todos os candidatos guardados (os resumos que a triagem fez de cada currículo) e devolve quem encaixa, com o motivo. Quanto mais currículos triados, melhor ela acha.</p>` : resultados.length === 0 ? `
+  <div class="rounded-lg border border-slate-200 bg-white p-6 text-center text-slate-500">Ninguém no banco encaixa nessa pergunta ainda. Tenta reformular ou amplia o critério.</div>` : `
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">${cards}</div>`}`;
+  return renderLayout({ active: 'rh_busca', title: 'RH · Busca inteligente', body, user: viewer });
+}
+
+// ---------------------------------------------------------------------------
 // CANDIDATOS
 // ---------------------------------------------------------------------------
 

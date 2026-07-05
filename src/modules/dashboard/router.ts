@@ -379,6 +379,27 @@ export function createDashboardRouter(
     res.redirect(url);
   });
 
+  router.get('/rh/busca', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'rh', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
+    const { renderBuscaPage } = await import('./rh-views.js');
+    const pergunta = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (!pergunta) { res.type('html').send(renderBuscaPage('', null, req.dashUser)); return; }
+    if (!options.anthropicApiKey) {
+      res.type('html').send(renderBuscaPage(pergunta, null, req.dashUser, 'IA não configurada neste ambiente.'));
+      return;
+    }
+    try {
+      const { buscarNoBanco } = await import('../rh/busca.js');
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const anthropic = new Anthropic({ apiKey: options.anthropicApiKey });
+      const resultados = await buscarNoBanco(anthropic, supabase, pergunta);
+      res.type('html').send(renderBuscaPage(pergunta, resultados, req.dashUser));
+    } catch (err) {
+      console.warn('[rh-busca]', (err as Error).message);
+      res.type('html').send(renderBuscaPage(pergunta, null, req.dashUser, 'A busca falhou agora — tenta de novo em instantes.'));
+    }
+  });
+
   router.post('/rh/candidatos/:id/excluir', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'excluir')) { res.status(403).send('Sem permissão'); return; }
     const { excluirCandidato } = await import('../rh/store.js');
