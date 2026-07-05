@@ -1,6 +1,6 @@
 // tests/rh-views.test.ts
 import { describe, it, expect } from 'vitest';
-import { renderVagasPage, renderVagaFormPage, renderCandidatosPage } from '../src/modules/dashboard/rh-views.js';
+import { renderVagasPage, renderVagaFormPage, renderCandidatosPage, renderBuscaPage } from '../src/modules/dashboard/rh-views.js';
 
 const vagas = [{
   id: 'v1', titulo: 'Instalador Fotovoltaico', descricao: 'obra', requisitos: 'NR-35',
@@ -49,6 +49,19 @@ describe('telas RH', () => {
     const onsubmits = html.match(/onsubmit="[^"]*"/g) ?? [];
     expect(onsubmits.length).toBeGreaterThan(0);
     for (const os of onsubmits) expect(os).not.toContain('&#039;');
+  });
+
+  it('busca IA: form vazio, resultados com motivo, e vazio com mensagem', () => {
+    const soForm = renderBuscaPage('', null, undefined);
+    expect(soForm).toContain('action="/dashboard/rh/busca"');
+    const comResultado = renderBuscaPage('quem tem NR-35?', [
+      { id: 'c1', motivo: 'NR-35 em dia', candidato: { nome: "José D'Ávila", vaga: 'Instalador', nota_ia: 8, status: 'novo' } },
+    ], undefined);
+    expect(comResultado).toContain('D&#039;Ávila');
+    expect(comResultado).toContain('NR-35 em dia');
+    expect(comResultado).toContain('/dashboard/rh/candidatos/c1/curriculo');
+    const vazio = renderBuscaPage('quem sabe russo?', [], undefined);
+    expect(vazio).toContain('Ninguém no banco encaixa');
   });
 
   it('triagem IA: nota, resumo e alertas aparecem na linha do candidato', () => {
