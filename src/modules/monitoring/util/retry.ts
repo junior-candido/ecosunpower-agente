@@ -14,6 +14,29 @@
 // nunca lançam: eles capturam o erro e retornam `{ ok: false, ... }`. Assim o
 // caller (nepPost, deye, etc) continua com a mesma forma de retorno.
 
+// Status HTTP que indicam tropeço PASSAGEIRO do servidor do fabricante (vale
+// re-tentar): 429 = rate limit; 500/502/503/504 = backend indisponível / gateway
+// sem upstream. 401/403 NÃO entram aqui (é credencial — cada adapter tem seu
+// fluxo de refresh de token).
+export const TRANSIENT_HTTP_STATUS = new Set([429, 500, 502, 503, 504]);
+
+// Classificador PADRÃO de falha passageira, compartilhado por todos os adapters
+// de monitoramento. Um resultado é passageiro (vale repetir) quando NÃO é de
+// credencial e é 5xx/429 OU queda de rede/timeout (reason começa com "network:").
+// Os adapters devolvem `{ ok:false, status?, reason?, invalidCredentials? }` —
+// pra 5xx pegarem, o adapter precisa setar `status` no ramo de erro HTTP.
+export function isTransientFailure(r: {
+  ok: boolean;
+  status?: number;
+  reason?: string;
+  invalidCredentials?: boolean;
+}): boolean {
+  if (r.ok) return false;
+  if (r.invalidCredentials) return false;
+  if (typeof r.status === 'number' && TRANSIENT_HTTP_STATUS.has(r.status)) return true;
+  return typeof r.reason === 'string' && r.reason.startsWith('network:');
+}
+
 export interface RetryOpts {
   /** Nº de RE-tentativas após a 1ª execução. Default 2 → até 3 execuções. */
   retries?: number;

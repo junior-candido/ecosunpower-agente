@@ -36,6 +36,7 @@ import crypto from 'crypto';
 import type { AdapterResult, IntradayPonto, IntradayResult, ListSitesResult, MonitoringAdapter } from '../types.js';
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
 import { getOrFetch } from '../util/token-cache.js';
+import { retryTransient, isTransientFailure } from '../util/retry.js';
 
 function baseUrl(creds: ParsedCreds): string {
   return `https://${creds.dataCenter}-developer.deyecloud.com`;
@@ -93,7 +94,9 @@ function parseCreds(c: Record<string, unknown>): ParsedCreds | { error: string }
   return { appId, appSecret, email, password, dataCenter, countryCode, companyId };
 }
 
-type TokenResult = { ok: true; token: string } | { ok: false; reason: string; invalidCredentials?: boolean };
+type TokenResult =
+  | { ok: true; token: string }
+  | { ok: false; reason: string; status?: number; invalidCredentials?: boolean };
 
 // Cache de token POR CONTA (não por planta): o token org-scoped vale pra conta
 // inteira, então as 22 plantas Ecosunpower compartilham 1 token. Sem isto, cada
@@ -125,7 +128,15 @@ function isAuthFailure(r: { status?: number; reason: string }): boolean {
 // POST /v1.0/account/token. Sem companyId = token PESSOAL (organizationId:0,
 // só lê plantas pessoais). Com companyId = token ORG-SCOPED (lê as plantas da
 // organização — ex: as 22 da Ecosunpower).
+// postToken = postTokenOnce + retry em erro passageiro (5xx/429/rede). Um blip
+// no portal Deye na hora de emitir o token não pode mais derrubar a conta inteira
+// até o próximo cron. O refresh de auth (401/403) continua fora daqui — isso é
+// credencial, não é transitório, e tem o fluxo próprio (obterToken forceRefresh).
 async function postToken(creds: ParsedCreds, companyId?: number): Promise<TokenResult> {
+  return retryTransient(() => postTokenOnce(creds, companyId), isTransientFailure);
+}
+
+async function postTokenOnce(creds: ParsedCreds, companyId?: number): Promise<TokenResult> {
   const base = baseUrl(creds);
   const url = `${base}/v1.0/account/token?appId=${encodeURIComponent(creds.appId)}`;
 
@@ -160,7 +171,8 @@ async function postToken(creds: ParsedCreds, companyId?: number): Promise<TokenR
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
-    return { ok: false, reason: `Deye token ${resp.status}: ${text.slice(0, 200)}` };
+    // status setado pra o isTransientFailure poder classificar 5xx/429 como passageiro.
+    return { ok: false, reason: `Deye token ${resp.status}: ${text.slice(0, 200)}`, status: resp.status };
   }
 
   let json: { accessToken?: string; access_token?: string; Bearer?: string; success?: boolean; msg?: string; code?: string };
@@ -269,7 +281,20 @@ async function resolverToken(creds: ParsedCreds): Promise<TokenResult> {
 // HELPERS
 // ============================================================================
 
+// deyePost = deyePostOnce + retry em erro passageiro (502/503/504/429/rede). Um
+// tropeço momentâneo do portal Deye não marca mais a planta com erro até o cron
+// seguinte. O 401/403 (auth) NÃO entra aqui (não é transitório) — segue tratado
+// pela auto-cura de token no fetchGeneration (obterToken forceRefresh).
 async function deyePost(
+  baseUrlStr: string,
+  endpoint: string,
+  token: string,
+  body: Record<string, unknown>,
+): Promise<{ ok: true; data: any } | { ok: false; reason: string; status?: number }> {
+  return retryTransient(() => deyePostOnce(baseUrlStr, endpoint, token, body), isTransientFailure);
+}
+
+async function deyePostOnce(
   baseUrlStr: string,
   endpoint: string,
   token: string,

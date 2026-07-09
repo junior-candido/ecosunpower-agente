@@ -37,6 +37,7 @@ import type {
   SiteResumo,
 } from '../types.js';
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
+import { retryTransient, isTransientFailure } from '../util/retry.js';
 
 const DEFAULT_BASE = 'https://www.soliscloud.com:13333';
 // Intervalo mínimo entre chamadas Solis (limite é 1/s; folga de segurança).
@@ -115,12 +116,25 @@ function throttle(): Promise<void> {
 
 interface SolisEnvelope<T> { success?: boolean; code?: string | number; msg?: string; data?: T }
 
+// solisPost = solisPostOnce + retry em erro passageiro (5xx/429/rede). Um blip
+// momentâneo do SolisCloud (502/503/504) ou um estouro do rate limit agressivo
+// (429 "too many request 1 times") não pode mais derrubar a coleta da usina até
+// o próximo ciclo do cron. O retry COMPARTILHADO (isTransientFailure) já cobre o
+// 429 — antes havia um retry inline só pra 429, que virou duplicado e foi
+// removido. 401/403 (credencial) NÃO é transitório: cai fora na hora.
 async function solisPost<T>(
   parsed: ParsedCreds,
   resource: string,
   body: Record<string, unknown>,
-  retriesRateLimit = 2,
-): Promise<{ ok: true; data: T } | { ok: false; reason: string; invalidCredentials?: boolean }> {
+): Promise<{ ok: true; data: T } | { ok: false; reason: string; status?: number; invalidCredentials?: boolean }> {
+  return retryTransient(() => solisPostOnce<T>(parsed, resource, body), isTransientFailure);
+}
+
+async function solisPostOnce<T>(
+  parsed: ParsedCreds,
+  resource: string,
+  body: Record<string, unknown>,
+): Promise<{ ok: true; data: T } | { ok: false; reason: string; status?: number; invalidCredentials?: boolean }> {
   await throttle();
 
   const bodyStr = JSON.stringify(body);
@@ -140,19 +154,15 @@ async function solisPost<T>(
     return { ok: false, reason: `network: ${(err as Error).message}` };
   }
 
-  // 429 = estourou o rate limit: espera e re-tenta (o throttle já espaça, mas
-  // sob concorrência pode bater). 401/403 = chave/assinatura errada.
-  if (resp.status === 429 && retriesRateLimit > 0) {
-    await new Promise((r) => setTimeout(r, MIN_INTERVAL_MS));
-    return solisPost<T>(parsed, resource, body, retriesRateLimit - 1);
-  }
+  // 401/403 = chave/assinatura errada (credencial, não repete). O 429 cai no
+  // ramo !resp.ok abaixo com status:429 → o retry compartilhado re-tenta.
   if (resp.status === 401 || resp.status === 403) {
     const txt = await resp.text().catch(() => '');
-    return { ok: false, reason: `Solis ${resp.status}: ${txt.slice(0, 160)}`, invalidCredentials: true };
+    return { ok: false, reason: `Solis ${resp.status}: ${txt.slice(0, 160)}`, status: resp.status, invalidCredentials: true };
   }
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
-    return { ok: false, reason: `Solis HTTP ${resp.status}: ${txt.slice(0, 160)}` };
+    return { ok: false, reason: `Solis HTTP ${resp.status}: ${txt.slice(0, 160)}`, status: resp.status };
   }
 
   let json: SolisEnvelope<T>;

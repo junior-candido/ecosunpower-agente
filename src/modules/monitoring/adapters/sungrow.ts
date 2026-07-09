@@ -41,6 +41,7 @@ import type {
 } from '../types.js';
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
 import { getOrFetch } from '../util/token-cache.js';
+import { retryTransient, isTransientFailure } from '../util/retry.js';
 
 export const DEFAULT_GATEWAY = 'https://gateway.isolarcloud.com.hk';
 const LANG = '_pt_BR';
@@ -216,14 +217,27 @@ async function obterToken(c: ParsedCreds, ctx?: AdapterContext, forceRefresh = f
 // REQUEST HELPERS
 // ============================================================================
 
-// POST cru (texto plano). `bearer` != null => Authorization. Endpoints de token
-// não levam Bearer; endpoints de dados levam.
+// rawPost = rawPostOnce + retry em erro passageiro (502/503/504/429/rede). Um
+// tropeço momentâneo do servidor da Sungrow não pode mais derrubar a sync até o
+// próximo cron. O refresh de token (401/403) continua uma camada acima, no
+// authPost — aqui só re-tentamos o que é transitório de verdade.
 async function rawPost<T>(
   c: ParsedCreds,
   path: string,
   data: Record<string, unknown>,
   bearer: string | null,
-): Promise<{ ok: true; data: T; msg: string } | { ok: false; reason: string; invalidCredentials?: boolean }> {
+): Promise<{ ok: true; data: T; msg: string } | { ok: false; reason: string; status?: number; invalidCredentials?: boolean }> {
+  return retryTransient(() => rawPostOnce<T>(c, path, data, bearer), isTransientFailure);
+}
+
+// POST cru (texto plano). `bearer` != null => Authorization. Endpoints de token
+// não levam Bearer; endpoints de dados levam.
+async function rawPostOnce<T>(
+  c: ParsedCreds,
+  path: string,
+  data: Record<string, unknown>,
+  bearer: string | null,
+): Promise<{ ok: true; data: T; msg: string } | { ok: false; reason: string; status?: number; invalidCredentials?: boolean }> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json;charset=UTF-8',
     'sys_code': '901',
@@ -247,7 +261,7 @@ async function rawPost<T>(
   }
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
-    return { ok: false, reason: `Sungrow ${resp.status}: ${txt.slice(0, 200)}` };
+    return { ok: false, reason: `Sungrow ${resp.status}: ${txt.slice(0, 200)}`, status: resp.status };
   }
 
   let json: SungrowEnvelope<T>;
