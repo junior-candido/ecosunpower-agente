@@ -24,6 +24,7 @@ import crypto from 'crypto';
 import type { AdapterResult, ListSitesResult, MonitoringAdapter, SiteResumo } from '../types.js';
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
 import { getOrFetch } from '../util/token-cache.js';
+import { retryTransient } from '../util/retry.js';
 
 const BASE_URL = 'https://api.nepviewer.net';
 
@@ -125,7 +126,7 @@ export function normalizeUf(stateName: string | undefined | null): string | null
 
 type TokenResult =
   | { ok: true; token: string }
-  | { ok: false; reason: string; invalidCredentials?: boolean };
+  | { ok: false; reason: string; status?: number; invalidCredentials?: boolean };
 
 async function obterToken(creds: ParsedCreds, forceRefresh = false): Promise<TokenResult> {
   return getOrFetch(
@@ -150,6 +151,10 @@ async function obterToken(creds: ParsedCreds, forceRefresh = false): Promise<Tok
 // É o que torna o modo email+password automático (igual ABB/Deye): quando o
 // JWT cacheado expira/401, obterToken chama signIn e renova sem ninguem mexer.
 async function signIn(email: string, password: string): Promise<TokenResult> {
+  return retryTransient(() => signInOnce(email, password), ehFalhaTransitoria);
+}
+
+async function signInOnce(email: string, password: string): Promise<TokenResult> {
   const body = { account: email, password };
   let resp: Response;
   try {
@@ -172,7 +177,7 @@ async function signIn(email: string, password: string): Promise<TokenResult> {
   }
 
   if (!resp.ok) {
-    return { ok: false, reason: `NEP sign-in HTTP ${resp.status}` };
+    return { ok: false, reason: `NEP sign-in HTTP ${resp.status}`, status: resp.status };
   }
 
   let json: { code?: number; msg?: string; data?: { userInfo?: { token?: string } } };
@@ -230,11 +235,50 @@ export function extrairToken(data: unknown): string | undefined {
 
 interface NepResponse<T> { code: number; msg: string; data: T }
 
+type NepPostResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; reason: string; status?: number; invalidCredentials?: boolean };
+
+// Status HTTP que indicam tropeço PASSAGEIRO do servidor da NEP (vale re-tentar):
+// 429 = rate limit, 500/502/503/504 = backend indisponível/gateway sem upstream.
+// 401/403 NÃO entram aqui (é credencial — tem fluxo próprio de refresh).
+const NEP_STATUS_TRANSITORIO = new Set([429, 500, 502, 503, 504]);
+
+// Fonte ÚNICA da verdade: uma falha é passageira (vale repetir) quando NÃO é de
+// credencial e é 5xx/429 ou queda de rede/timeout. Serve tanto pro nepPostOnce
+// quanto pro signInOnce (ambos têm status? + reason nas falhas).
+function ehFalhaTransitoria(r: {
+  ok: boolean;
+  status?: number;
+  reason?: string;
+  invalidCredentials?: boolean;
+}): boolean {
+  if (r.ok) return false;
+  if (r.invalidCredentials) return false; // 401/403: credencial, não adianta repetir
+  if (typeof r.status === 'number' && NEP_STATUS_TRANSITORIO.has(r.status)) return true;
+  return typeof r.reason === 'string' && r.reason.startsWith('network:'); // rede / timeout
+}
+
+// nepPost = nepPostOnce + retry em erro passageiro (502 & cia). Um blip de alguns
+// minutos no servidor da NEP não pode mais derrubar a integração até o próximo
+// cron (que pra micro é 1× por dia). O refresh de 401 continua uma camada acima,
+// no nepPostAuth — aqui só re-tentamos o que é transitório de verdade.
 async function nepPost<T = unknown>(
   endpoint: string,
   body: Record<string, unknown>,
   token: string,
-): Promise<{ ok: true; data: T } | { ok: false; reason: string; status?: number; invalidCredentials?: boolean }> {
+): Promise<NepPostResult<T>> {
+  return retryTransient<NepPostResult<T>>(
+    () => nepPostOnce<T>(endpoint, body, token),
+    ehFalhaTransitoria,
+  );
+}
+
+async function nepPostOnce<T = unknown>(
+  endpoint: string,
+  body: Record<string, unknown>,
+  token: string,
+): Promise<NepPostResult<T>> {
   const url = `${BASE_URL}${endpoint}`;
   const bodyStr = JSON.stringify(body);
   const sign = nepSign(body);
