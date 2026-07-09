@@ -33,6 +33,7 @@ import crypto from 'crypto';
 import type { AdapterResult, ListSitesResult, MonitoringAdapter, SiteResumo } from '../types.js';
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
 import { getOrFetch } from '../util/token-cache.js';
+import { retryTransient, isTransientFailure } from '../util/retry.js';
 
 const BASE_URL = 'https://api.auroravision.net/api/rest';
 const TOKEN_TTL_MS = 50 * 60 * 1000; // 50min (margem dos 60min de inatividade da API)
@@ -75,7 +76,7 @@ function cacheKey(c: ParsedCreds): string {
 
 type TokenResult =
   | { ok: true; token: string }
-  | { ok: false; reason: string; invalidCredentials?: boolean };
+  | { ok: false; reason: string; status?: number; invalidCredentials?: boolean };
 
 async function obterToken(c: ParsedCreds, forceRefresh = false): Promise<TokenResult> {
   return getOrFetch(
@@ -86,7 +87,15 @@ async function obterToken(c: ParsedCreds, forceRefresh = false): Promise<TokenRe
   );
 }
 
+// fazerAuth = fazerAuthOnce + retry em erro passageiro (502 & cia). O login da
+// ABB (GET /authenticate) tambem pode tropecar num blip do servidor; sem retry,
+// a conta inteira caia ate o proximo cron. O refresh de token continua uma
+// camada acima (abbGetAuth) — aqui so re-tentamos o que e transitorio de verdade.
 async function fazerAuth(c: ParsedCreds): Promise<TokenResult> {
+  return retryTransient(() => fazerAuthOnce(c), isTransientFailure);
+}
+
+async function fazerAuthOnce(c: ParsedCreds): Promise<TokenResult> {
   const basic = Buffer.from(`${c.userId}:${c.password}`).toString('base64');
   let resp: Response;
   try {
@@ -111,7 +120,7 @@ async function fazerAuth(c: ParsedCreds): Promise<TokenResult> {
   }
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
-    return { ok: false, reason: `ABB authenticate ${resp.status}: ${text.slice(0, 200)}` };
+    return { ok: false, reason: `ABB authenticate ${resp.status}: ${text.slice(0, 200)}`, status: resp.status };
   }
   let json: { result?: string };
   try {
@@ -130,7 +139,18 @@ async function fazerAuth(c: ParsedCreds): Promise<TokenResult> {
 // REQUEST HELPER
 // ============================================================================
 
+// abbGet = abbGetOnce + retry em erro passageiro (502/503/504/429/rede). Um blip
+// no backend da Aurora Vision na hora do cron nao pode mais derrubar a leitura da
+// usina ate o proximo ciclo. O refresh de 401 continua uma camada acima
+// (abbGetAuth) — aqui so re-tentamos o que e transitorio de verdade.
 async function abbGet<T = unknown>(
+  endpoint: string,
+  token: string,
+): Promise<{ ok: true; data: T } | { ok: false; reason: string; status?: number; invalidCredentials?: boolean }> {
+  return retryTransient(() => abbGetOnce<T>(endpoint, token), isTransientFailure);
+}
+
+async function abbGetOnce<T = unknown>(
   endpoint: string,
   token: string,
 ): Promise<{ ok: true; data: T } | { ok: false; reason: string; status?: number; invalidCredentials?: boolean }> {

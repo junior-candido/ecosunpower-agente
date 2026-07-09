@@ -13,8 +13,61 @@
 
 import type { AdapterResult, ListSitesResult, MonitoringAdapter } from '../types.js';
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
+import { retryTransient, isTransientFailure } from '../util/retry.js';
 
 const BASE_URL = 'https://monitoringapi.solaredge.com';
+
+// Resultado do helper HTTP comum. Igual formato dos outros adapters
+// (ok/reason/status/invalidCredentials) pra o isTransientFailure classificar.
+type SeGetResult =
+  | { ok: true; data: unknown }
+  | { ok: false; reason: string; status?: number; invalidCredentials?: boolean };
+
+// Faz o GET + trata a camada HTTP comum aos 2 métodos (fetchGeneration e
+// listSites): rede, 401/403 (credencial), demais !resp.ok (com `status` — pro
+// retry pegar 5xx/429) e JSON inválido. No sucesso devolve o JSON parseado; cada
+// método interpreta o `data` do seu jeito (energy.values / sites.site).
+// As mensagens de erro são EXATAMENTE as de antes pra não mudar o visível — o
+// `credErro` guarda a única diferença entre os dois métodos no 401/403
+// ("credenciais invalidas..." em fetchGeneration, "api_key invalida..." em listSites).
+async function seGetJson(
+  url: string | URL,
+  credErro = 'credenciais invalidas ou sem permissao',
+): Promise<SeGetResult> {
+  let resp: Response;
+  try {
+    // 30s timeout pra nao travar o cron se SolarEdge estiver lento.
+    resp = await fetchWithTimeout(url);
+  } catch (err) {
+    return { ok: false, reason: `network: ${(err as Error).message}` };
+  }
+
+  if (resp.status === 401 || resp.status === 403) {
+    return {
+      ok: false,
+      reason: `SolarEdge ${resp.status} (${credErro})`,
+      invalidCredentials: true,
+    };
+  }
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    return { ok: false, reason: `SolarEdge ${resp.status}: ${body.slice(0, 200)}`, status: resp.status };
+  }
+
+  let json: unknown;
+  try {
+    json = await resp.json();
+  } catch (err) {
+    return { ok: false, reason: `JSON invalido: ${(err as Error).message}` };
+  }
+  return { ok: true, data: json };
+}
+
+// seGet = seGetJson + retry em erro passageiro (5xx/429/rede). Um blip momentaneo
+// no servidor da SolarEdge nao derruba a sync ate o proximo cron. 401/403
+// (credencial) nunca repete — isTransientFailure ja filtra.
+const seGet = (url: string | URL, credErro?: string): Promise<SeGetResult> =>
+  retryTransient(() => seGetJson(url, credErro), isTransientFailure);
 
 export const solarEdgeAdapter: MonitoringAdapter = {
   marca: 'solaredge',
@@ -41,33 +94,10 @@ export const solarEdgeAdapter: MonitoringAdapter = {
     url.searchParams.set('endDate', dataFim);
     url.searchParams.set('api_key', apiKey);
 
-    let resp: Response;
-    try {
-      // 30s timeout pra nao travar o cron se SolarEdge estiver lento.
-      resp = await fetchWithTimeout(url);
-    } catch (err) {
-      const msg = (err as Error).message;
-      return { ok: false, reason: `network: ${msg}` };
-    }
-
-    if (resp.status === 401 || resp.status === 403) {
-      return {
-        ok: false,
-        reason: `SolarEdge ${resp.status} (credenciais invalidas ou sem permissao)`,
-        invalidCredentials: true,
-      };
-    }
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => '');
-      return { ok: false, reason: `SolarEdge ${resp.status}: ${body.slice(0, 200)}` };
-    }
-
-    let json: unknown;
-    try {
-      json = await resp.json();
-    } catch (err) {
-      return { ok: false, reason: `JSON invalido: ${(err as Error).message}` };
-    }
+    // seGet cuida da camada HTTP comum + retry em erro passageiro (5xx/rede).
+    const r = await seGet(url);
+    if (!r.ok) return r;
+    const json = r.data;
 
     const energy = (json as { energy?: { unit?: string; values?: { date: string; value: number | null }[] } }).energy;
     if (!energy || !Array.isArray(energy.values)) {
@@ -113,25 +143,6 @@ export const solarEdgeAdapter: MonitoringAdapter = {
     url.searchParams.set('size', '100'); // SolarEdge: max 100 por chamada
     url.searchParams.set('api_key', apiKey);
 
-    let resp: Response;
-    try {
-      resp = await fetchWithTimeout(url);
-    } catch (err) {
-      return { ok: false, reason: `network: ${(err as Error).message}` };
-    }
-
-    if (resp.status === 401 || resp.status === 403) {
-      return {
-        ok: false,
-        reason: `SolarEdge ${resp.status} (api_key invalida ou sem permissao)`,
-        invalidCredentials: true,
-      };
-    }
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => '');
-      return { ok: false, reason: `SolarEdge ${resp.status}: ${body.slice(0, 200)}` };
-    }
-
     interface RawSite {
       id?: number | string;
       name?: string;
@@ -139,12 +150,11 @@ export const solarEdgeAdapter: MonitoringAdapter = {
       installationDate?: string;
       location?: { country?: string; city?: string; address?: string; zip?: string };
     }
-    let json: { sites?: { site?: RawSite[] } };
-    try {
-      json = (await resp.json()) as typeof json;
-    } catch (err) {
-      return { ok: false, reason: `JSON invalido: ${(err as Error).message}` };
-    }
+
+    // seGet cuida da camada HTTP comum + retry em erro passageiro (5xx/rede).
+    const r = await seGet(url, 'api_key invalida ou sem permissao');
+    if (!r.ok) return r;
+    const json = r.data as { sites?: { site?: RawSite[] } };
 
     const rawSites = json.sites?.site ?? [];
     if (!Array.isArray(rawSites)) {

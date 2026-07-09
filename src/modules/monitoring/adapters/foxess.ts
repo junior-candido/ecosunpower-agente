@@ -35,6 +35,7 @@ import type {
   TelemetryResult,
 } from '../types.js';
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
+import { retryTransient, isTransientFailure } from '../util/retry.js';
 
 const BASE_URL = 'https://www.foxesscloud.com';
 const LANG = 'en';
@@ -114,11 +115,11 @@ interface FoxEnvelope<T> { errno?: number; msg?: string; result?: T }
 // errnos de credencial inválida → invalidCredentials (não retentar em loop).
 const AUTH_ERRNOS = new Set([40256, 41807, 41808, 41809]); // signature/token errors
 
-async function foxPost<T>(
+async function foxPostOnce<T>(
   apiKey: string,
   path: string,
   body: Record<string, unknown>,
-): Promise<{ ok: true; data: T } | { ok: false; reason: string; invalidCredentials?: boolean }> {
+): Promise<{ ok: true; data: T } | { ok: false; reason: string; status?: number; invalidCredentials?: boolean }> {
   const now = Date.now();
   let resp: Response;
   try {
@@ -139,7 +140,8 @@ async function foxPost<T>(
 
   if (!resp.ok) {
     const txt = await resp.text().catch(() => '');
-    return { ok: false, reason: `FoxESS HTTP ${resp.status}: ${txt.slice(0, 200)}` };
+    // status: sem ele o 5xx não é classificado como passageiro pelo retry.
+    return { ok: false, reason: `FoxESS HTTP ${resp.status}: ${txt.slice(0, 200)}`, status: resp.status };
   }
 
   let json: FoxEnvelope<T>;
@@ -158,6 +160,17 @@ async function foxPost<T>(
     };
   }
   return { ok: true, data: (json.result as T) ?? ({} as T) };
+}
+
+// foxPost = foxPostOnce + retry em erro passageiro (502/503/504/429/rede). Um
+// blip de alguns minutos no servidor da FoxESS não pode mais derrubar a usina
+// até o próximo cron. isTransientFailure NUNCA repete credencial (invalidCredentials).
+async function foxPost<T>(
+  apiKey: string,
+  path: string,
+  body: Record<string, unknown>,
+): Promise<{ ok: true; data: T } | { ok: false; reason: string; status?: number; invalidCredentials?: boolean }> {
+  return retryTransient(() => foxPostOnce<T>(apiKey, path, body), isTransientFailure);
 }
 
 // ============================================================================

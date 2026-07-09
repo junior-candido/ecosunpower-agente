@@ -35,6 +35,7 @@ import type {
 } from '../types.js';
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
 import { getOrFetch } from '../util/token-cache.js';
+import { retryTransient, isTransientFailure } from '../util/retry.js';
 
 // LIMITAÇÃO conhecida: algumas contas SEMS são roteadas pra uma API regional
 // (eu./us.semsportal.com) que o CrossLogin devolve em `data.api`. A conta da
@@ -113,8 +114,17 @@ function cacheKey(creds: ParsedCreds): string {
 }
 
 // POST /api/v2/Common/CrossLogin — login e-mail+senha → header de auth pronto.
+// crossLogin = crossLoginOnce + retry em erro passageiro (5xx/429/rede). Um blip
+// do SEMS no login não pode mais derrubar a conta inteira até o próximo cron. O
+// 401/hasError (credencial) NÃO é transitório → não repete (isTransientFailure).
 async function crossLogin(email: string, password: string): Promise<
-  { ok: true; token: string } | { ok: false; reason: string; invalidCredentials?: boolean }
+  { ok: true; token: string } | { ok: false; reason: string; status?: number; invalidCredentials?: boolean }
+> {
+  return retryTransient(() => crossLoginOnce(email, password), isTransientFailure);
+}
+
+async function crossLoginOnce(email: string, password: string): Promise<
+  { ok: true; token: string } | { ok: false; reason: string; status?: number; invalidCredentials?: boolean }
 > {
   let resp: Response;
   try {
@@ -126,7 +136,7 @@ async function crossLogin(email: string, password: string): Promise<
   } catch (err) {
     return { ok: false, reason: `network: ${(err as Error).message}` };
   }
-  if (!resp.ok) return { ok: false, reason: `GoodWe CrossLogin HTTP ${resp.status}` };
+  if (!resp.ok) return { ok: false, reason: `GoodWe CrossLogin HTTP ${resp.status}`, status: resp.status };
 
   let json: { hasError?: boolean; code?: number; msg?: string; data?: CrossLoginData };
   try {
@@ -166,11 +176,23 @@ function tokenExpirado(status: number, msg: string | undefined, code: number | u
   return /not\s*login|token|expire|auth|会话|登录|登陆/i.test(msg ?? '');
 }
 
+// semsPost = semsPostOnce + retry em erro passageiro (5xx/429/rede). O refresh de
+// token expirado continua uma camada acima (semsPostAuth); aqui só re-tentamos o
+// que é transitório de verdade. `expired` (auth) não é passageiro pra isTransient
+// e 401/403 ficam fora do conjunto transitório → auth nunca é repetido aqui.
 async function semsPost<T>(
   path: string,
   body: Record<string, unknown>,
   authHeader: string,
-): Promise<{ ok: true; data: T } | { ok: false; reason: string; expired?: boolean }> {
+): Promise<{ ok: true; data: T } | { ok: false; reason: string; status?: number; expired?: boolean }> {
+  return retryTransient(() => semsPostOnce<T>(path, body, authHeader), isTransientFailure);
+}
+
+async function semsPostOnce<T>(
+  path: string,
+  body: Record<string, unknown>,
+  authHeader: string,
+): Promise<{ ok: true; data: T } | { ok: false; reason: string; status?: number; expired?: boolean }> {
   let resp: Response;
   try {
     resp = await fetchWithTimeout(`${BASE_URL}${path}`, {
@@ -187,6 +209,7 @@ async function semsPost<T>(
     return {
       ok: false,
       reason: `GoodWe HTTP ${resp.status}: ${txt.slice(0, 200)}`,
+      status: resp.status,
       expired: tokenExpirado(resp.status, txt, undefined),
     };
   }

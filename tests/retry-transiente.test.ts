@@ -7,9 +7,31 @@
 // `sleep` é injetável pra o teste não esperar de verdade.
 
 import { describe, it, expect, vi } from 'vitest';
-import { retryTransient } from '../src/modules/monitoring/util/retry.js';
+import { retryTransient, isTransientFailure } from '../src/modules/monitoring/util/retry.js';
 
 const noSleep = () => Promise.resolve();
+
+describe('isTransientFailure', () => {
+  it('sucesso nunca é transitório', () => {
+    expect(isTransientFailure({ ok: true })).toBe(false);
+  });
+  it('credencial inválida (401/403) NÃO é transitória, mesmo com status 5xx casual', () => {
+    expect(isTransientFailure({ ok: false, status: 401, invalidCredentials: true })).toBe(false);
+    expect(isTransientFailure({ ok: false, status: 503, invalidCredentials: true })).toBe(false);
+  });
+  it('5xx e 429 são transitórios', () => {
+    for (const s of [429, 500, 502, 503, 504]) {
+      expect(isTransientFailure({ ok: false, status: s })).toBe(true);
+    }
+  });
+  it('erro de rede/timeout (reason "network:") é transitório', () => {
+    expect(isTransientFailure({ ok: false, reason: 'network: aborted' })).toBe(true);
+  });
+  it('erro definitivo (404, code de negócio) NÃO é transitório', () => {
+    expect(isTransientFailure({ ok: false, status: 404 })).toBe(false);
+    expect(isTransientFailure({ ok: false, reason: 'Solis code=1004: sem dados' })).toBe(false);
+  });
+});
 
 describe('retryTransient', () => {
   it('retorna no primeiro sucesso, sem repetir', async () => {
