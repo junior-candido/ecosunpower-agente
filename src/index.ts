@@ -7691,8 +7691,26 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
 
   // ===== Rota de descadastro de e-mail (espinha do Elo) =====
   // Sem auth — link clicavel direto do e-mail. URL publica: /e/descadastro?lid=<leadId>
+  //
+  // Importante: o GET NAO MUTA nada — so mostra uma pagina de confirmacao.
+  // Scanners de seguranca de e-mail (Outlook Safe Links, Proofpoint etc.)
+  // pre-buscam (prefetch) todo link do e-mail automaticamente; se o GET
+  // executasse o descadastro, o lead seria descadastrado sem nunca ter
+  // clicado. A mutacao real fica no POST, disparado pelo botao "Confirmar".
   app.get('/e/descadastro', async (req, res) => {
-    const lid = String(req.query.lid ?? '');
+    const lid = escapeHtml(String(req.query.lid ?? ''));
+    res.type('text/html').send(
+      '<html><body style="font-family:sans-serif;text-align:center;padding:60px">' +
+      '<h2>Quer parar de receber nossos e-mails?</h2>' +
+      `<form method="POST" action="/e/descadastro?lid=${lid}">` +
+      `<input type="hidden" name="lid" value="${lid}">` +
+      '<button type="submit" style="font-size:16px;padding:10px 20px;margin-top:16px;cursor:pointer">Confirmar descadastro</button>' +
+      '</form></body></html>',
+    );
+  });
+
+  app.post('/e/descadastro', async (req, res) => {
+    const lid = String((req.body as { lid?: string } | undefined)?.lid ?? req.query.lid ?? '');
     try {
       if (lid) {
         const { data } = await supabase.getClient()
