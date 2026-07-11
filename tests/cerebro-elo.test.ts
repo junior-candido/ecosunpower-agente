@@ -29,6 +29,18 @@ describe('responderComoElo', () => {
     expect(typeof r).toBe('string');
     expect(r.length).toBeGreaterThan(0);
   });
+
+  it('nao bloqueia resposta com contagem real (>= 100)', async () => {
+    const a = fakeAnthropic('Monitoro 300 usinas gerando energia agora.');
+    const r = await responderComoElo(a as any, 'quantas usinas?', snap);
+    expect(r).toContain('300');
+  });
+
+  it('nao bloqueia total de eventos', async () => {
+    const a = fakeAnthropic('O Elo ja registrou 120 eventos conectados.');
+    const r = await responderComoElo(a as any, 'quantos eventos?', snap);
+    expect(r).toContain('120');
+  });
 });
 
 describe('montarFalasElo', () => {

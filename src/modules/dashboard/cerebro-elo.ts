@@ -3,16 +3,19 @@
 // SnapshotElo real (cerebro-data.ts), NUNCA inventando numero. E tambem
 // monta as falas de narracao ambiente da tela viva a partir do mesmo
 // snapshot. Best-effort: falha na IA nunca quebra a tela.
-import { aplicarTravaPreco } from '../email/price-lock.js';
+import { aplicarTravaPrecoExplicito } from '../email/price-lock.js';
 import type { SnapshotElo } from './cerebro-data.js';
 
 /**
  * Responde uma pergunta do usuario como o Elo, ancorado no snapshot real.
  * O snapshot inteiro vai pro system prompt como "DADOS REAIS" e a IA e
  * instruida a nunca inventar numero — se nao estiver nos dados, deve dizer
- * que ainda nao tem esse dado. A trava de preco (aplicarTravaPreco) e uma
- * segunda guarda: se mesmo assim a IA cravar um valor em reais, a resposta
- * cai pro fallback seguro.
+ * que ainda nao tem esse dado. A trava de preco (aplicarTravaPrecoExplicito)
+ * e uma segunda guarda: se mesmo assim a IA cravar um valor em reais, a
+ * resposta cai pro fallback seguro. Usamos a variante EXPLICITA (nao a
+ * estrita do e-mail) porque o Elo responde contagens reais (leads, usinas,
+ * eventos) que costumam passar de 100 — a heuristica de "numero solto de
+ * 3+ digitos" da variante estrita bloquearia essas respostas corretas.
  */
 export async function responderComoElo(
   anthropic: any,
@@ -40,7 +43,7 @@ export async function responderComoElo(
     console.warn('[elo-pergunta] IA falhou:', (err as Error)?.message);
   }
 
-  return aplicarTravaPreco(
+  return aplicarTravaPrecoExplicito(
     resposta,
     'Sobre valores eu prefiro te conectar com o time — mas posso te contar como o negocio esta indo. 😊',
   );

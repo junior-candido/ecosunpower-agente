@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { contemPreco, aplicarTravaPreco } from '../src/modules/email/price-lock.js';
+import { contemPreco, aplicarTravaPreco, contemPrecoExplicito } from '../src/modules/email/price-lock.js';
 
 describe('trava de preco', () => {
   it('detecta valores em reais', () => {
@@ -32,5 +32,21 @@ describe('trava de preco', () => {
     expect(contemPreco('gerou 18% acima do previsto')).toBe(false);
     expect(contemPreco('sua energia em 2026')).toBe(false);
     expect(contemPreco('economia na conta de luz todo mes')).toBe(false); // "economia" sem numero
+  });
+});
+
+describe('trava de preco explicita (usada pelo Elo)', () => {
+  it('detecta sinais explicitos de preco', () => {
+    expect(contemPrecoExplicito('R$ 19.900')).toBe(true);
+    expect(contemPrecoExplicito('custa mil reais')).toBe(true);
+    expect(contemPrecoExplicito('12x de 499')).toBe(true);
+    expect(contemPrecoExplicito('parcelas de 1.200,00')).toBe(true);
+    expect(contemPrecoExplicito('pague 1900 a vista')).toBe(true);
+  });
+
+  it('NAO bloqueia contagens reais (diferenca chave em relacao a variante estrita)', () => {
+    expect(contemPrecoExplicito('300 usinas')).toBe(false);
+    expect(contemPrecoExplicito('120 eventos')).toBe(false);
+    expect(contemPrecoExplicito('a venda leva 34 dias')).toBe(false);
   });
 });

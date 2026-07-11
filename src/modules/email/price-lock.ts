@@ -35,3 +35,20 @@ export function contemPreco(texto: string): boolean {
 export function aplicarTravaPreco(texto: string, fallback: string): string {
   return contemPreco(texto) ? fallback : texto;
 }
+
+// Variante ESTRITA (usada pelo redator de e-mail) fica intocada acima.
+// Abaixo, uma variante mais estreita: so acusa preco quando ha um sinal
+// explicito de moeda/parcela (R$, reais, Nx, valor com separador de milhar,
+// "N a vista"). NAO usa a heuristica de numero solto de 3+ digitos — entao
+// um numero real tipo "120 eventos" ou "300 usinas" NAO e tratado como preco.
+// Usada pelo Elo, que responde perguntas com contagens reais que podem
+// facilmente passar de 100.
+export function contemPrecoExplicito(texto: string): boolean {
+  const t = texto ?? '';
+  return PADROES.some((re) => re.test(t));
+}
+
+// Se o texto gerado tem preco EXPLICITO, devolve o fallback seguro; senao devolve o texto.
+export function aplicarTravaPrecoExplicito(texto: string, fallback: string): string {
+  return contemPrecoExplicito(texto) ? fallback : texto;
+}
