@@ -6,3 +6,6 @@ tmp/
 
 # brainstorming visual companion (local, nao versionar)
 .superpowers/
+
+# dados de import one-off (planilhas com dados reais de leads/e-mails — nunca versionar)
+scripts/data/

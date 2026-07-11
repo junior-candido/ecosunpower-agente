@@ -35,6 +35,7 @@ import { SiteDeployService } from './modules/site-deploy.js';
 import { PublicReviewsService } from './modules/public-reviews.js';
 import { CaseCreatorAssistant } from './modules/case-creator-assistant.js';
 import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone } from './modules/meta-leadgen.js';
+import { emailValido } from './modules/email/email-util.js';
 import { enviarTemplateInicial, TEMPLATE_FALLBACK } from './modules/template-inicial.js';
 import { parseTrackingTag } from './modules/tracking.js';
 import { generateWeeklyReport, formatReportForWhatsApp } from './modules/ads-report.js';
@@ -102,6 +103,10 @@ import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/servic
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
 import { carregarEmpresaConfig, carregarKits, empresa, listaMarcasTexto } from './modules/empresa-config.js';
+import { mapResendEvento } from './modules/email/resend-events.js';
+import { EmailSequenceService } from './modules/email/email-sequence.js';
+import { EmailSender } from './modules/email/resend-client.js';
+import { registrarEvento } from './modules/elo/eventos.js';
 // Escape pra páginas públicas que interpolam campos da empresa_config em HTML
 // (config é admin-controlled, mas vem do banco — defesa em profundidade).
 import { escapeHtml } from './modules/dashboard/views.js';
@@ -5210,6 +5215,9 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     if (!lead?.id) return;
     await supabase.cancelEvaIntro(lead.id, 'client_replied').catch(() => {});
     const cancelled = await supabase.cancelCadence(lead.id, 'client_replied').catch(() => 0);
+    // Cliente respondeu no zap -> para tambem a sequencia de e-mail pendente
+    // (nao faz sentido continuar mandando e-mail frio pra quem ja respondeu).
+    await supabase.cancelEmailSequence(lead.id, 'respondeu').catch(() => {});
     if (cancelled > 0) {
       console.log(`[cadence] ${cancelled} toques cancelados pra ${from} (cliente respondeu)`);
       // 🔥 Sinal quente — notifica Junior imediatamente (nao espera digest 3x/dia)
@@ -5885,6 +5893,22 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
             .from('leads')
             .update(updatePayload)
             .eq('id', leadId);
+
+          // E-mail (Task 16 — Elo + Maquina de E-mail): se o form trouxe um
+          // endereco com formato valido, grava em leads.email/email_origem e
+          // matricula o lead na sequencia de nutricao (6 toques, Task 6).
+          // Best-effort em cada etapa: setLeadEmail() ja nao lanca (so loga e
+          // retorna false), e scheduleEmailSequence() tem .catch proprio —
+          // nunca deve derrubar o resto da intake (welcome message etc).
+          if (normalized.email && emailValido(normalized.email)) {
+            const emailOk = await supabase.setLeadEmail(leadId, normalized.email, 'lead_ad');
+            const optedOut = Boolean((existing as Record<string, unknown> | null)?.email_opt_out);
+            if (emailOk && !optedOut) {
+              await supabase.scheduleEmailSequence(leadId).catch((err) => {
+                console.warn(`[meta-leadgen] scheduleEmailSequence falhou para lead ${leadId}:`, (err as Error).message);
+              });
+            }
+          }
 
           try {
             await metaLeadgen.markEventProcessed(leadgenId, leadId);
@@ -7612,6 +7636,109 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     res.type('text/html').send(renderPosInstalacaoHtml(view));
   });
 
+  // ===== Webhook do Resend (espinha do Elo) =====
+  // Sem auth — o Resend chama esse endpoint. Best-effort: NUNCA lanca, sempre
+  // responde 200 (senao o Resend fica retentando infinitamente). O body ja
+  // vem parseado pelo express.json() global (linha ~5717).
+  // TODO (seguranca): validar assinatura svix do Resend antes de confiar no payload.
+  app.post('/webhooks/resend', async (req, res) => {
+    try {
+      const ev = mapResendEvento(req.body);
+      if (ev) {
+        const mid = (ev.payload as any)?.provider_message_id;
+        let leadId: string | null = null;
+        if (mid) {
+          const { data } = await supabase.getClient()
+            .from('email_sequencia')
+            .select('lead_id')
+            .eq('provider_message_id', mid)
+            .limit(1);
+          leadId = data?.[0]?.lead_id ?? null;
+        }
+        await registrarEvento(supabase.getClient(), { ...ev, leadId });
+        if (ev.tipo === 'email_descadastro' && leadId) {
+          await supabase.cancelEmailSequence(leadId, 'complaint');
+        }
+        // 🔥 Reacao: abriu/clicou pode ter deixado o lead quente — checa e
+        // alerta o admin (best-effort, nunca derruba o 200 do webhook).
+        if ((ev.tipo === 'email_aberto' || ev.tipo === 'email_clicado') && leadId) {
+          try {
+            const { checarLeadQuente } = await import('./modules/email/email-reacao.js');
+            const { sendAdminWithButtons } = await import('./modules/eva-admin-buttons.js');
+            const { acquireAlertLock } = await import('./modules/eva-alerts.js');
+            const lead = await supabase.getLeadById(leadId).catch(() => null);
+            await checarLeadQuente({
+              client: supabase.getClient(),
+              leadId,
+              nome: lead?.name ?? 'Lead sem nome',
+              adminPhone: config.engineerPhone,
+              sendAdminWithButtons,
+              metaWaba: metaWaba ?? null,
+              sendText,
+              acquireAlertLock,
+              minAberturas: Number(process.env.EMAIL_HOT_OPENS ?? 3),
+            });
+          } catch (err) {
+            console.warn('[resend-webhook] checarLeadQuente falhou (ignorado):', (err as Error)?.message ?? err);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[resend-webhook] ignorado:', (err as Error)?.message ?? err);
+    }
+    res.status(200).json({ ok: true });
+  });
+
+  // ===== Rota de descadastro de e-mail (espinha do Elo) =====
+  // Sem auth — link clicavel direto do e-mail. URL publica: /e/descadastro?lid=<leadId>
+  //
+  // Importante: o GET NAO MUTA nada — so mostra uma pagina de confirmacao.
+  // Scanners de seguranca de e-mail (Outlook Safe Links, Proofpoint etc.)
+  // pre-buscam (prefetch) todo link do e-mail automaticamente; se o GET
+  // executasse o descadastro, o lead seria descadastrado sem nunca ter
+  // clicado. A mutacao real fica no POST, disparado pelo botao "Confirmar".
+  app.get('/e/descadastro', async (req, res) => {
+    const lid = escapeHtml(String(req.query.lid ?? ''));
+    res.type('text/html').send(
+      '<html><body style="font-family:sans-serif;text-align:center;padding:60px">' +
+      '<h2>Quer parar de receber nossos e-mails?</h2>' +
+      `<form method="POST" action="/e/descadastro?lid=${lid}">` +
+      `<input type="hidden" name="lid" value="${lid}">` +
+      '<button type="submit" style="font-size:16px;padding:10px 20px;margin-top:16px;cursor:pointer">Confirmar descadastro</button>' +
+      '</form></body></html>',
+    );
+  });
+
+  app.post('/e/descadastro', async (req, res) => {
+    const lid = String((req.body as { lid?: string } | undefined)?.lid ?? req.query.lid ?? '');
+    try {
+      if (lid) {
+        const { data } = await supabase.getClient()
+          .from('leads')
+          .select('email')
+          .eq('id', lid)
+          .limit(1);
+        const email = data?.[0]?.email;
+        if (email) {
+          await supabase.registrarDescadastro(email, lid, 'link');
+          await supabase.cancelEmailSequence(lid, 'descadastro');
+          await registrarEvento(supabase.getClient(), {
+            tipo: 'email_descadastro',
+            leadId: lid,
+            canal: 'email',
+            origem: 'link',
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[descadastro] ignorado:', (err as Error)?.message ?? err);
+    }
+    res.type('text/html').send(
+      '<html><body style="font-family:sans-serif;text-align:center;padding:60px">' +
+      '<h2>Pronto!</h2><p>Você não receberá mais nossos e-mails. 💚</p></body></html>',
+    );
+  });
+
   // Pagina publica de Politica de Privacidade pra uso nos Lead Ads da Meta.
   // LGPD (Lei 13.709/2018) exige transparencia sobre coleta/uso de dados.
   // URL publica: /privacidade (usar no campo do Meta Lead Form)
@@ -8085,6 +8212,32 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     // Primeira passada 2min apos start (captura backlog de toques vencidos durante restart)
     setTimeout(() => cadence.processCadence().catch(() => {}), 2 * 60 * 1000);
     console.log('[cadence] Cadence scheduler started (checks every 15 min, 9h-20h BRT)');
+
+    // Maquina de e-mail (Elo): espelha a cadencia de WhatsApp, so que pro
+    // canal e-mail. Processa steps de email_sequencia vencidos a cada 15min,
+    // respeita horario comercial 9h-20h BRT em dias uteis (podeEnviarAgora).
+    const emailSeq = new EmailSequenceService(
+      supabase,
+      new Anthropic({ apiKey: config.anthropicApiKey }),
+      new EmailSender(process.env.RESEND_API_KEY ?? '', process.env.EMAIL_FROM ?? ''),
+      {
+        from: process.env.EMAIL_FROM ?? '',
+        baseUrl: config.publicProposalBaseUrl,
+        hotOpens: Number(process.env.EMAIL_HOT_OPENS ?? 3),
+        empresa: empresa().nomeFantasia,
+      },
+    );
+    const runEmailSeq = async () => {
+      try {
+        const n = await emailSeq.processSequence();
+        if (n) console.log(`[email-seq] enviados: ${n}`);
+      } catch (err) {
+        console.warn('[email-seq] ciclo falhou:', (err as Error)?.message);
+      }
+    };
+    setInterval(runEmailSeq, 15 * 60 * 1000);
+    setTimeout(runEmailSeq, 3 * 60 * 1000); // primeira passada 3min apos boot
+    console.log('[email-seq] scheduler started (15min, dias uteis 9-20 BRT)');
 
     // Auto-agendamento de cadencia: a cada 1h, busca leads novos silentes
     // ha mais de 24h sem cadencia agendada e dispara scheduleCadence

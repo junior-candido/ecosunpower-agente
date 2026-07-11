@@ -7,6 +7,7 @@
 //   - dash-alerts            -> URL /dashboard/leads?only_alerts=1
 //   - cad-force              -> dispara cadencia pros silentes agora (force=true)
 //   - lead-view:<id>         -> URL /dashboard/leads/<id>
+//   - email-quente:<id>      -> mesmo que lead-view (alerta de lead quente por e-mail)
 //   - lead-pause:<id>        -> seta eva_active=false (Junior assume)
 //   - lead-resume:<id>       -> seta eva_active=true
 //   - lead-optout:<id>       -> opt_out=true + eva_active=false + cancela cadencia
@@ -116,7 +117,8 @@ export async function tryHandleEvaAdminButton(args: {
         return true;
       }
 
-      case 'lead-view': {
+      case 'lead-view':
+      case 'email-quente': {
         if (!leadId) {
           await args.sendText(args.from, '⚠️ Botão sem lead id.');
           return true;

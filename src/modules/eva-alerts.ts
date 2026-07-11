@@ -38,7 +38,7 @@ function formatPhoneShort(phone: string): string {
  * Lock idempotente via app_flags. Retorna true se conseguiu o lock
  * (primeira vez), false se ja foi disparado pra essa chave.
  */
-async function acquireAlertLock(client: SupabaseClient, key: string): Promise<boolean> {
+export async function acquireAlertLock(client: SupabaseClient, key: string): Promise<boolean> {
   try {
     const { error } = await client.from('app_flags').insert({ key, value: 'fired' });
     if (error) {

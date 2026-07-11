@@ -101,6 +101,7 @@ import { can } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
 import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } from './blog-views.js';
+import { renderEmailPage } from './email-views.js';
 import { listarClientesPosVenda, listarAgendaPosVenda } from './pos-venda-queries.js';
 import { renderPosVendaPage } from './pos-venda-views.js';
 import { objetivoManual, fallbackMensagem } from './pos-venda-mensagens.js';
@@ -1378,6 +1379,54 @@ export function createDashboardRouter(
       console.error('[dashboard/blog] foto falhou:', msg);
       res.redirect(`/dashboard/marketing/blog/${encodeURIComponent(id)}/revisar?erro=` + encodeURIComponent(msg));
     }
+  });
+
+  // ----------------------------------------------------------------------
+  // E-mail Marketing (sob o setor Marketing) — métricas da sequência (a
+  // partir de eventos_elo) + botão ligar/pausar. O motor (EmailSequenceService)
+  // checa a flag 'email_seq_ligado' em app_flags antes de mandar.
+  // ----------------------------------------------------------------------
+  router.get('/marketing/email', exigir('marketing', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    let metricas = { enviados: 0, abertos: 0, clicados: 0, quentes: 0, descadastros: 0 };
+    try {
+      const counts = await supabaseService.contarEventosPorTipo([
+        'email_enviado', 'email_aberto', 'email_clicado', 'lead_quente_email', 'email_descadastro',
+      ]);
+      metricas = {
+        enviados: counts.email_enviado,
+        abertos: counts.email_aberto,
+        clicados: counts.email_clicado,
+        quentes: counts.lead_quente_email,
+        descadastros: counts.email_descadastro,
+      };
+    } catch (err) {
+      console.warn('[dashboard/email] falha ao contar eventos_elo (segue com zeros):', (err as Error).message);
+    }
+    const ligado = (await supabaseService.getFlag('email_seq_ligado')) ?? true;
+    res.type('text/html').send(renderLayout({
+      active: 'email',
+      title: 'E-mail Marketing',
+      body: renderEmailPage(metricas, ligado),
+      user: req.dashUser,
+    }));
+  });
+
+  router.post('/marketing/email/ligar', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+    await supabaseService.setFlag('email_seq_ligado', true);
+    await audit(supabase, {
+      companyId: req.dashUser!.companyId, userId: req.dashUser!.id,
+      entidade: 'email_seq', entidadeId: 'email_seq_ligado', acao: 'email_seq_ligada',
+    });
+    res.redirect('/dashboard/marketing/email?ok=1');
+  });
+
+  router.post('/marketing/email/pausar', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+    await supabaseService.setFlag('email_seq_ligado', false);
+    await audit(supabase, {
+      companyId: req.dashUser!.companyId, userId: req.dashUser!.id,
+      entidade: 'email_seq', entidadeId: 'email_seq_ligado', acao: 'email_seq_pausada',
+    });
+    res.redirect('/dashboard/marketing/email?ok=1');
   });
 
   // Backfill manual de leads.channel — alternativa ao CLI quando Easypanel não
