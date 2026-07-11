@@ -8,9 +8,27 @@
 
 ---
 
+## 0. Nomes (identidade)
+
+- **Elo** = o nome do cérebro (a inteligência central que fala e interage). Significa o "elo" que liga tudo — *nada se perde, tudo se conecta*. Faz par com a **Eva** (rosto do atendimento no WhatsApp). Decidido pelo Junior 11/07.
+- **Departamentos** = os módulos do ecossistema, organizados como áreas de uma empresa que o Elo coordena:
+
+| Departamento | Reúne |
+|---|---|
+| 🎯 Comercial | Leads · Funil/CRM · Propostas |
+| 💬 Atendimento | Eva (WhatsApp) |
+| 📣 Marketing | Campanhas · Site/Blog · **E-mail** |
+| ⚡ Operação / Engenharia | Usinas · Monitoramento |
+| 🤝 Relacionamento / Pós-venda | Clientes · Garantia · Indicação |
+| 💰 Financeiro | Cobrança · Contas |
+
+Na tela viva (fatia futura), o **Elo** fica no centro coordenando, e cada **departamento** é um neurônio que pulsa.
+
+---
+
 ## 1. Visão (o norte)
 
-Construir o **Cérebro do Ecossistema EcoSunPower**: um lugar central que guarda *tudo que acontece* no negócio, conectado, para que **nada se perca** e a empresa consiga tirar **estudos** de dentro dela mesma. O cérebro tem 3 partes, todas apoiadas na mesma espinha de dados:
+Construir o **Elo — o Cérebro do Ecossistema EcoSunPower**: um lugar central que guarda *tudo que acontece* no negócio, conectado, para que **nada se perca** e a empresa consiga tirar **estudos** de dentro dela mesma. O Elo tem 3 partes, todas apoiadas na mesma espinha de dados:
 
 - **A) A Espinha** — linha do tempo única de eventos (fundação invisível).
 - **B) A Máquina de E-mail** — 1º "órgão": manda a mensagem certa na hora certa da jornada, mede comportamento e **reage**.
@@ -28,7 +46,7 @@ Esta spec cobre **apenas a Fatia 1**: **A Espinha + a primeira sequência da Má
 ## 2. Escopo da Fatia 1
 
 **Entra:**
-1. Espinha: tabela `eventos_cerebro` + registradores (hooks) nos pontos-chave.
+1. Espinha: tabela `eventos_elo` + registradores (hooks) nos pontos-chave.
 2. E-mails na base: import da planilha histórica + captura no cadastro daqui pra frente + opt-out (LGPD).
 3. Infra de envio: **Resend** com domínio autenticado (SPF/DKIM/DMARC).
 4. Motor de sequência: 1ª jornada "nutrir e converter lead frio" (6 e-mails), autoria mista (modelo aprovado + IA personaliza assunto/abertura), com trava de preço.
@@ -48,7 +66,7 @@ Esta spec cobre **apenas a Fatia 1**: **A Espinha + a primeira sequência da Má
 
 ```
                         ┌─────────────────────────────┐
-   Eva/Leads/Propostas  │   ESPINHA: eventos_cerebro   │   Estudos (futuro)
+   Eva/Leads/Propostas  │   ESPINHA: eventos_elo   │   Estudos (futuro)
    ──── registradores ─▶│  (linha do tempo única)      │◀── Tela viva (futuro)
                         └──────────────┬──────────────┘
                                        │ lê pra decidir / escreve o que acontece
@@ -66,7 +84,7 @@ Esta spec cobre **apenas a Fatia 1**: **A Espinha + a primeira sequência da Má
                         └─────────────────────────────┘
 ```
 
-### 3.1 A Espinha — `eventos_cerebro`
+### 3.1 A Espinha — `eventos_elo`
 
 Tabela única, append-only, um registro por evento.
 
@@ -86,7 +104,7 @@ Tabela única, append-only, um registro por evento.
 
 **Registradores (hooks):** funções `registrarEvento(...)` chamadas nos pontos-chave que já existem (criação de lead, envio/recebimento de mensagem, geração/abertura de proposta, fechamento). Reaproveitam o que já é feito hoje em `lead_atividades`/`audit_log` — a espinha é a visão unificada, não substitui as tabelas atuais nesta fatia. Toda chamada é best-effort.
 
-> **Nota de reuso:** verificar antes de codar se parte disso já pode ser derivado de `lead_atividades`/`conversations`/`audit_log`. Decidir com o dev se `eventos_cerebro` é tabela nova (recomendado, pela flexibilidade do `jsonb` e por ser a base da tela viva) ou uma *view* unificadora. Recomendação: **tabela nova**, com os hooks alimentando ela em paralelo.
+> **Nota de reuso:** verificar antes de codar se parte disso já pode ser derivado de `lead_atividades`/`conversations`/`audit_log`. Decidir com o dev se `eventos_elo` é tabela nova (recomendado, pela flexibilidade do `jsonb` e por ser a base da tela viva) ou uma *view* unificadora. Recomendação: **tabela nova**, com os hooks alimentando ela em paralelo.
 
 ### 3.2 E-mails na base
 - Verificar se a tabela `leads` já tem coluna `email`; se não, criar (migration).
@@ -159,7 +177,7 @@ Nova rota no dashboard, dentro do setor **Marketing** (ao lado de Campanhas/Blog
 ---
 
 ## 6. Critérios de pronto (Fatia 1)
-- [ ] `eventos_cerebro` criada + registradores nos pontos-chave gravando eventos reais.
+- [ ] `eventos_elo` criada + registradores nos pontos-chave gravando eventos reais.
 - [ ] E-mails históricos importados; cobertura de e-mail da base medida; captura ligada daqui pra frente.
 - [ ] Domínio autenticado no Resend (SPF/DKIM/DMARC verdes); e-mail de teste chega na **caixa de entrada**.
 - [ ] Sequência v1 (6 e-mails) dispara pelo motor de 15min, respeita horário, é idempotente e para quando o lead responde/fecha/descadastra.
