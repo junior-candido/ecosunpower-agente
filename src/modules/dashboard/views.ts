@@ -118,8 +118,8 @@ const SIDEBAR_SETORES: SideSetor[] = [
   {
     titulo: '📊 Visão geral',
     itens: [
+      { href: '/dashboard/home', key: 'home', label: '📊 Visão geral' },
       { href: '/dashboard/cockpit', key: 'cockpit', label: '⚡ Cockpit' },
-      { href: '/dashboard/home', key: 'home', label: '🏠 Home' },
     ],
   },
   {
