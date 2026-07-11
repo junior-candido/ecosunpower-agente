@@ -779,6 +779,119 @@ export class SupabaseService {
       .eq('id', id);
   }
 
+  // ==========================================================================
+  // SEQUENCIA DE E-MAIL (Elo + Maquina de E-mail — Fatia 1, migration 069)
+  //
+  // Espelha eva_cadence: mesma logica de agendamento, lock CAS pra evitar
+  // envio duplicado quando mais de um worker roda, e status pending/sending/
+  // sent/failed/cancelled.
+  // ==========================================================================
+
+  /** Intervalos em dias da sequencia de e-mail (toque 1 = imediato). */
+  static readonly EMAIL_SEQUENCE_INTERVALS_DAYS = [0, 2, 5, 10, 18, 30];
+
+  async scheduleEmailSequence(leadId: string): Promise<void> {
+    const dias = SupabaseService.EMAIL_SEQUENCE_INTERVALS_DAYS;
+    const now = Date.now();
+    const rows = dias.map((d, i) => ({
+      lead_id: leadId,
+      step: i + 1,
+      status: 'pending',
+      scheduled_for: new Date(now + d * 24 * 60 * 60 * 1000).toISOString(),
+    }));
+
+    await this.client
+      .from('email_sequencia')
+      .upsert(rows, { onConflict: 'lead_id,step', ignoreDuplicates: true });
+  }
+
+  async getDueEmailSteps(batchLimit: number = 50): Promise<any[]> {
+    const lim = Math.min(Math.max(batchLimit, 1), 200);
+    const { data, error } = await this.client
+      .from('email_sequencia')
+      .select('id, lead_id, step, leads!inner(id, name, city, email, email_opt_out, profile)')
+      .eq('status', 'pending')
+      .lte('scheduled_for', new Date().toISOString())
+      .limit(lim);
+
+    if (error) {
+      console.warn('[email] getDueEmailSteps:', error.message);
+      return [];
+    }
+    return data ?? [];
+  }
+
+  async lockEmailForSending(id: string): Promise<boolean> {
+    const { data } = await this.client
+      .from('email_sequencia')
+      .update({ status: 'sending' })
+      .eq('id', id)
+      .eq('status', 'pending')
+      .select('id');
+
+    return Array.isArray(data) && data.length > 0;
+  }
+
+  async markEmailSent(id: string, providerMessageId: string, subject: string): Promise<void> {
+    await this.client
+      .from('email_sequencia')
+      .update({
+        status: 'sent',
+        sent_at: new Date().toISOString(),
+        provider_message_id: providerMessageId,
+        subject_sent: subject,
+      })
+      .eq('id', id)
+      .eq('status', 'sending');
+  }
+
+  async markEmailFailed(id: string, err: string): Promise<void> {
+    await this.client
+      .from('email_sequencia')
+      .update({ status: 'failed', error_message: err.slice(0, 500) })
+      .eq('id', id)
+      .eq('status', 'sending');
+  }
+
+  async cancelEmailSequence(leadId: string, reason: string): Promise<void> {
+    await this.client
+      .from('email_sequencia')
+      .update({ status: 'cancelled', cancelled_reason: reason })
+      .eq('lead_id', leadId)
+      .eq('status', 'pending');
+  }
+
+  async isEmailDescadastrado(email: string): Promise<boolean> {
+    const { data } = await this.client
+      .from('email_descadastro')
+      .select('email')
+      .eq('email', email.toLowerCase())
+      .limit(1);
+
+    return Array.isArray(data) && data.length > 0;
+  }
+
+  async registrarDescadastro(email: string, leadId: string | null, motivo: string): Promise<void> {
+    await this.client
+      .from('email_descadastro')
+      .upsert({ email: email.toLowerCase(), lead_id: leadId, motivo });
+
+    if (leadId) {
+      await this.client.from('leads').update({ email_opt_out: true }).eq('id', leadId);
+    }
+  }
+
+  async getModeloEmail(step: number): Promise<any | null> {
+    const { data } = await this.client
+      .from('email_modelos')
+      .select('*')
+      .eq('step', step)
+      .eq('ativo', true)
+      .limit(1);
+
+    return Array.isArray(data) && data[0] ? data[0] : null;
+  }
+
   /**
    * Retorna o id do lead existente pelo telefone, ou cria um novo (status='qualificado').
    * Usado por savePropostaPublica e pelo modo /fechar pra garantir que
