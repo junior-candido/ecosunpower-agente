@@ -84,7 +84,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca';
+  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro';
   title: string;
   body: string;
   scripts?: string;
@@ -120,6 +120,7 @@ const SIDEBAR_SETORES: SideSetor[] = [
     itens: [
       { href: '/dashboard/home', key: 'home', label: '📊 Visão geral' },
       { href: '/dashboard/cockpit', key: 'cockpit', label: '⚡ Cockpit' },
+      { href: '/dashboard/cerebro', key: 'cerebro', label: '🧠 Cérebro', area: 'relatorios' },
     ],
   },
   {
