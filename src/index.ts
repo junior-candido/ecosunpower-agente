@@ -5212,6 +5212,9 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     if (!lead?.id) return;
     await supabase.cancelEvaIntro(lead.id, 'client_replied').catch(() => {});
     const cancelled = await supabase.cancelCadence(lead.id, 'client_replied').catch(() => 0);
+    // Cliente respondeu no zap -> para tambem a sequencia de e-mail pendente
+    // (nao faz sentido continuar mandando e-mail frio pra quem ja respondeu).
+    await supabase.cancelEmailSequence(lead.id, 'respondeu').catch(() => {});
     if (cancelled > 0) {
       console.log(`[cadence] ${cancelled} toques cancelados pra ${from} (cliente respondeu)`);
       // 🔥 Sinal quente — notifica Junior imediatamente (nao espera digest 3x/dia)
@@ -7636,6 +7639,29 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         await registrarEvento(supabase.getClient(), { ...ev, leadId });
         if (ev.tipo === 'email_descadastro' && leadId) {
           await supabase.cancelEmailSequence(leadId, 'complaint');
+        }
+        // 🔥 Reacao: abriu/clicou pode ter deixado o lead quente — checa e
+        // alerta o admin (best-effort, nunca derruba o 200 do webhook).
+        if ((ev.tipo === 'email_aberto' || ev.tipo === 'email_clicado') && leadId) {
+          try {
+            const { checarLeadQuente } = await import('./modules/email/email-reacao.js');
+            const { sendAdminWithButtons } = await import('./modules/eva-admin-buttons.js');
+            const { acquireAlertLock } = await import('./modules/eva-alerts.js');
+            const lead = await supabase.getLeadById(leadId).catch(() => null);
+            await checarLeadQuente({
+              client: supabase.getClient(),
+              leadId,
+              nome: lead?.name ?? 'Lead sem nome',
+              adminPhone: config.engineerPhone,
+              sendAdminWithButtons,
+              metaWaba: metaWaba ?? null,
+              sendText,
+              acquireAlertLock,
+              minAberturas: 3,
+            });
+          } catch (err) {
+            console.warn('[resend-webhook] checarLeadQuente falhou (ignorado):', (err as Error)?.message ?? err);
+          }
         }
       }
     } catch (err) {
