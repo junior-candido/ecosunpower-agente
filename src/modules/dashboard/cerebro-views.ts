@@ -32,40 +32,58 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { height:100%; background:#060b16; overflow:hidden; font-family:-apple-system,Segoe UI,Roboto,sans-serif; }
-  #wrap { position:fixed; inset:0; }
-  #canvasWrap { position:absolute; top:0; left:0; bottom:0; right:0; transition:right .28s ease; }
-  canvas { display:block; width:100%; height:100%; cursor:pointer; }
-  #wrap.panel-open #canvasWrap { right:360px; }
+  /* ---- layout em zonas: topbar / cerebro / fala / caixa de pergunta, cada
+     um com sua propria altura, empilhados numa coluna flex — o cerebro
+     nunca fica escondido atras das barras (nem no PC, nem no celular).
+     #panel (numeros do departamento) fica de fora dessa coluna: no PC ele
+     e um sliver fixo a direita que encolhe a zona do canvas; no celular
+     ele vira uma bandeja (bottom-sheet) por cima, ja que so aparece sob
+     demanda (clique num neuronio). ---- */
+  #wrap {
+    position:fixed; inset:0;
+    display:flex; flex-direction:column;
+    height:100vh; height:100dvh; /* 100dvh conta a barra do navegador no celular */
+    overflow:hidden;
+  }
   .topbar {
-    position:absolute; top:0; left:0; right:0; z-index:5;
+    flex:0 0 auto;
     display:flex; align-items:center; gap:12px;
-    padding:18px 26px;
-    background:linear-gradient(180deg, rgba(6,11,22,.85), rgba(6,11,22,0));
-    pointer-events:none;
+    padding:14px 26px;
+    background:rgba(6,11,22,.92);
+    border-bottom:1px solid rgba(52,211,153,.12);
   }
   .topbar .dot { width:10px; height:10px; border-radius:50%; background:#22c55e; box-shadow:0 0 14px #22c55e; animation:blink 2s infinite; }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
   .topbar h1 { color:#e6f0ff; font-size:16px; font-weight:700; letter-spacing:.3px; }
   .topbar h1 b { color:#34d399; font-weight:800; }
   .topbar span { color:#5f7fa8; font-size:13px; font-weight:400; }
+  .hint { flex:0 0 auto; text-align:center; padding:6px 0; color:#3d557a; font-size:12px; }
+
+  /* zona do meio: o cerebro vive SO aqui — flex:1 pega o espaco que sobrou
+     entre topbar e a barra de fala, nunca embaixo delas */
+  #canvasWrap {
+    flex:1 1 auto; position:relative; min-height:0; width:100%;
+    transition:width .28s ease;
+  }
+  #wrap.panel-open #canvasWrap { width:calc(100% - min(360px, 88vw)); }
+  canvas { display:block; width:100%; height:100%; cursor:pointer; }
+
   .speech {
-    position:absolute; left:50%; bottom:120px; transform:translateX(-50%);
-    z-index:5; width:min(720px, 88vw);
+    flex:0 0 auto; align-self:center;
+    width:min(720px, 88vw); margin:10px 0;
     background:rgba(11,22,40,.72); backdrop-filter:blur(10px);
     border:1px solid rgba(52,211,153,.25);
-    border-radius:16px; padding:18px 24px;
+    border-radius:16px; padding:16px 24px;
     box-shadow:0 10px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.05);
     text-align:center;
-    pointer-events:none;
   }
   .speech .who { color:#34d399; font-size:12px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:8px; display:flex; align-items:center; justify-content:center; gap:8px; }
   .speech .who i { width:6px; height:6px; border-radius:50%; background:#34d399; box-shadow:0 0 10px #34d399; }
   .speech p { color:#dbe8fb; font-size:18px; line-height:1.55; min-height:56px; transition:opacity .5s; }
-  .hint { position:absolute; top:70px; left:50%; transform:translateX(-50%); z-index:5; color:#3d557a; font-size:12px; pointer-events:none; }
 
   #askBox {
-    position:absolute; left:50%; bottom:28px; transform:translateX(-50%);
-    z-index:6; width:min(560px, 88vw);
+    flex:0 0 auto; align-self:center;
+    width:min(560px, 88vw); margin:0 0 18px;
     display:flex; gap:8px;
   }
   #askForm { display:flex; gap:8px; flex:1; min-width:0; }
@@ -117,9 +135,11 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
   #panel .kpi .n { font-size:22px; font-weight:800; color:#34d399; }
   #panel .kpi .l { font-size:13px; color:#9fb4d4; }
 
-  /* ---- celular: painel vira bottom-sheet, canvas fica full-width, alvos maiores ---- */
+  /* ---- celular: painel vira bottom-sheet POR CIMA (overlay temporario, fecha
+     no X ou tocando fora) — o canvas NAO encolhe, ele so fica coberto
+     enquanto o painel esta aberto, o que e esperado pois e sob demanda ---- */
   @media (max-width: 640px) {
-    #wrap.panel-open #canvasWrap { right:0; }
+    #wrap.panel-open #canvasWrap { width:100%; }
     #panel {
       top:auto; left:0; right:0; bottom:0; width:100%; max-height:55vh;
       border-left:none; border-top:1px solid rgba(52,211,153,.25);
@@ -129,12 +149,12 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
       padding:22px 18px;
     }
     #panel.open { transform:translateY(0); }
-    .topbar { padding:12px 14px; gap:8px; }
+    .topbar { padding:10px 14px; gap:8px; }
     .topbar span { display:none; }
     .hint { display:none; }
-    .speech { bottom:132px; width:92vw; padding:14px 18px; }
+    .speech { width:94vw; margin:6px 0; padding:12px 16px; }
     .speech p { font-size:15px; min-height:40px; }
-    #askBox { bottom:14px; width:94vw; gap:6px; }
+    #askBox { width:96vw; margin-bottom:12px; gap:6px; }
     #askForm { gap:6px; }
     #askInput { padding:12px 12px; font-size:16px; min-height:44px; }
     #askForm button, #micBtn, #voiceToggle { min-width:44px; min-height:44px; }
@@ -143,13 +163,13 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
 </head>
 <body>
 <div id="wrap">
-  <div id="canvasWrap"><canvas id="c"></canvas></div>
   <div class="topbar">
     <div class="dot"></div>
     <h1><b>Elo</b> · cérebro do EcoSunPower</h1>
     <span>· coordenando os departamentos, ao vivo</span>
   </div>
   <div class="hint">clique num departamento pra ver os números · o Elo no centro</div>
+  <div id="canvasWrap"><canvas id="c"></canvas></div>
   <div class="speech">
     <div class="who"><i></i> o Elo está falando</div>
     <p id="say">${primeiraFala}</p>
@@ -172,19 +192,31 @@ const SNAP = ${snapJson};
 const FALAS = ${falasJson};
 
 const wrap = document.getElementById('wrap');
+const canvasWrap = document.getElementById('canvasWrap');
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 let W, H, DPR;
-// telas estreitas (celular) encolhem um pouco os neuronios/labels pra nao
-// ficar apertado; 900px pra cima usa escala cheia
+// telas/zonas pequenas (celular, ou painel aberto encolhendo a largura)
+// encolhem um pouco os neuronios/labels pra nao ficar apertado nem vazar
+// pra fora da zona do meio; 560px de lado menor pra cima usa escala cheia
 let NODE_SCALE = 1;
 function resize(){
   DPR = Math.min(window.devicePixelRatio||1, 2);
-  W = cv.clientWidth; H = cv.clientHeight;
+  // mede a ZONA DO CANVAS (o meio do layout em coluna), nunca a janela
+  // inteira — e essa zona que fica entre a topbar e a barra de fala, entao
+  // as posicoes normalizadas dos neuronios (0..1) sempre caem dentro dela
+  W = canvasWrap.clientWidth; H = canvasWrap.clientHeight;
   cv.width = W*DPR; cv.height = H*DPR;
   ctx.setTransform(DPR,0,0,DPR,0,0);
-  NODE_SCALE = Math.max(0.62, Math.min(1, W/900));
+  const ladoMenor = Math.min(W, H);
+  NODE_SCALE = Math.max(0.55, Math.min(1, ladoMenor/560));
 }
-window.addEventListener('resize', resize); resize();
+window.addEventListener('resize', resize);
+// ResizeObserver pega qualquer mudanca no tamanho real da zona do canvas
+// (rotacao do celular, fonte carregando, etc.), nao so o resize da janela
+if(window.ResizeObserver){
+  new ResizeObserver(resize).observe(canvasWrap);
+}
+resize();
 
 // re-chama resize() a cada frame enquanto o painel abre/fecha (transicao CSS
 // de ~280ms), pra o cerebro reacomodar suavemente na area que sobrou
@@ -325,7 +357,8 @@ askForm.addEventListener('submit', function(e){
   })
   .then(function(r){ return r.json(); })
   .then(function(data){
-    const resposta = data && data.resposta ? data.resposta : 'Não consegui responder agora, tenta de novo.';
+    const bruta = data && data.resposta ? data.resposta : 'Não consegui responder agora, tenta de novo.';
+    const resposta = limparParaVoz(bruta);
     showSay(resposta);
     speak(resposta);
   })
@@ -392,10 +425,23 @@ if(hasTTS){
 } else {
   voiceToggle.style.display = 'none';
 }
+// tira simbolo de markdown/emoji antes de falar, senao o sintetizador le
+// "asterisco asterisco" em voz alta em vez de so o texto
+function limparParaVoz(t){
+  if(!t) return '';
+  return String(t)
+    .replace(/\\p{Extended_Pictographic}/gu, '')   // emojis
+    .replace(/[\uFE0F\u200D]/g, '')                 // seletor de variacao / zero-width-joiner de emoji
+    .replace(/[*_\`~#>]+/g, '')                   // negrito/italico/codigo/citacao/titulo do markdown
+    .replace(/^\\s*[•\\-]\\s+/gm, '')           // marcador de lista (bullet)
+    .replace(/\\s+/g, ' ')                         // colapsa espacos/quebras de linha
+    .trim();
+}
 function speak(texto){
-  if(!hasTTS || !voiceOn || !texto) return;
+  const limpo = limparParaVoz(texto);
+  if(!hasTTS || !voiceOn || !limpo) return;
   window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(texto);
+  const u = new SpeechSynthesisUtterance(limpo);
   u.lang = 'pt-BR';
   window.speechSynthesis.speak(u);
 }
@@ -473,6 +519,17 @@ function closePanel(){
   animatePanelResize();
 }
 panelClose.addEventListener('click', closePanel);
+
+// clique/toque fora do painel fecha (o painel do celular e uma bandeja
+// sob demanda, cobrindo parte da tela — some ao tocar em qualquer coisa
+// atras dela). O clique no canvas ja tem sua propria logica (abre outro
+// departamento ou fecha), entao ele fica de fora daqui.
+document.addEventListener('click', function(ev){
+  if(!panel.classList.contains('open')) return;
+  if(panel.contains(ev.target)) return;
+  if(ev.target === cv) return;
+  closePanel();
+}, true);
 
 cv.addEventListener('click', function(ev){
   const rect = cv.getBoundingClientRect();
