@@ -3504,5 +3504,44 @@ export function createDashboardRouter(
     }
   });
 
+  // ============================================
+  // Cérebro do Elo: tela viva full-screen (sem sidebar, feita pra
+  // apresentação) + "Pergunte ao Elo" ancorado no snapshot real.
+  // ============================================
+
+  router.get('/cerebro', exigir('relatorios', 'visualizar'), async (_req: Request, res: Response) => {
+    try {
+      const { montarSnapshotElo } = await import('./cerebro-data.js');
+      const { montarFalasElo } = await import('./cerebro-elo.js');
+      const { renderCerebroPage } = await import('./cerebro-views.js');
+      const snap = await montarSnapshotElo(supabaseService);
+      const falas = montarFalasElo(snap);
+      res.type('text/html').send(renderCerebroPage(snap, falas));
+    } catch (err) {
+      console.error('[dashboard/cerebro]', err);
+      res.status(500).type('text/html').send(`<h2>Erro Cérebro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  router.post('/cerebro/perguntar', exigir('relatorios', 'visualizar'), async (req: Request, res: Response) => {
+    const pergunta = String(req.body?.pergunta ?? '').slice(0, 500);
+    let resposta = 'Não entendi, pode repetir?';
+    try {
+      if (!options.anthropicApiKey) {
+        resposta = 'IA não configurada neste ambiente.';
+      } else {
+        const { montarSnapshotElo } = await import('./cerebro-data.js');
+        const { responderComoElo } = await import('./cerebro-elo.js');
+        const { default: Anthropic } = await import('@anthropic-ai/sdk');
+        const anthropic = new Anthropic({ apiKey: options.anthropicApiKey });
+        const snap = await montarSnapshotElo(supabaseService);
+        resposta = await responderComoElo(anthropic, pergunta, snap);
+      }
+    } catch (err) {
+      console.warn('[cerebro-perguntar]', (err as Error)?.message);
+    }
+    res.json({ resposta });
+  });
+
   return router;
 }

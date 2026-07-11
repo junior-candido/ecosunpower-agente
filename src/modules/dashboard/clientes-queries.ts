@@ -5,7 +5,9 @@ import { esperadoDiaKwh } from '../monitoring/classificacao.js';
 import { getSignedUrls } from '../anexos/storage.js';
 import type { ClienteRow, ClienteDetail, AnexoListItem, SistemaOrfaoCard } from '../clientes/types.js';
 
-const CLIENTE_STATUSES = [
+// Exportado pra cerebro-data.ts (snapshot do Elo) reusar o mesmo critério de
+// "virou cliente" em vez de duplicar a lista.
+export const CLIENTE_STATUSES = [
   'contrato_assinado', 'instalado', 'medidor_trocado',
   'operando', 'pos_venda_concluido',
 ];
