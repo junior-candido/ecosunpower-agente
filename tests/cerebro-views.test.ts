@@ -32,4 +32,12 @@ describe('renderCerebroPage', () => {
     expect(html).toContain('width=device-width');
     expect(html).toMatch(/@media \(max-width:\s*640px\)/);
   });
+
+  it('layout em zonas: coluna flex (topbar/cerebro/fala/pergunta nunca sobrepostos)', () => {
+    const html = renderCerebroPage(snap, ['oi']);
+    expect(html).toMatch(/#wrap\s*\{[^}]*flex-direction:\s*column/);
+    // o canvas mede a ZONA do meio (#canvasWrap), nao a janela inteira
+    expect(html).toMatch(/canvasWrap\.clientWidth/);
+    expect(html).toMatch(/canvasWrap\.clientHeight/);
+  });
 });

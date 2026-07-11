@@ -17,6 +17,16 @@ describe('responderComoElo', () => {
     expect(sys.toLowerCase()).toContain('nunca invente'); // regra anti-alucinacao
   });
 
+  it('instrui a IA a responder em texto simples, sem markdown/asteriscos/emojis (a resposta e falada)', async () => {
+    let sys = '';
+    const a = fakeAnthropic('Voce tem 42 leads no momento.', (s) => { sys = s; });
+    await responderComoElo(a as any, 'quantos leads?', snap);
+    const sysLower = sys.toLowerCase();
+    expect(sysLower).toContain('sem markdown');
+    expect(sysLower).toContain('asteriscos');
+    expect(sysLower).toContain('emojis');
+  });
+
   it('trava de preco: se a IA cravar valor, cai pra saida segura', async () => {
     const a = fakeAnthropic('Fica por R$ 19.900 o sistema');
     const r = await responderComoElo(a as any, 'preco?', snap);
