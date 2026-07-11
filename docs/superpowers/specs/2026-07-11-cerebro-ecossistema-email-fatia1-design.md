@@ -170,6 +170,9 @@ Nova rota no dashboard, dentro do setor **Marketing** (ao lado de Campanhas/Blog
 - **Princípio de orquestração — "chefe de 1000 → 100 → 10 → 5 → um cérebro"** (Jetro/Êxodo 18: líderes de milhares, centenas, cinquentas, dezenas): o Elo não gerencia tudo direto — ele delega em **camadas hierárquicas** de "chefes" (orquestradores), cada um cuidando de um span menor, até a tarefa na ponta. É como o Elo escala a coordenação sem virar caos. Casa com os "departamentos com zoom" (cada nível da hierarquia é um sub-neurônio que abre). Modelagem futura: eventos/tarefas carregam a cadeia hierárquica (quem delegou → quem executa).
 - **Implicação pra Fatia 1:** manter os eventos ricos o suficiente (departamento de origem, tipo, referência, e espaço no `payload` pra cadeia hierárquica futura) pra que essas evoluções sejam só "ler a espinha de outro jeito", sem retrabalho de dados.
 
+### 4.2 CLONE-READY (obrigatório JÁ na Fatia 1 — a demanda está subindo)
+Junior 11/07: a demanda pelo produto disparou (1 post → "bafafá"; tem 20+ grupos de solar). Regra pra TODO código desta fatia: **nada da EcoSunPower pode ficar "chumbado" no código** — nome da empresa, domínio, remetente, telefone, marca vêm de **config/env**, nunca literais. Assim replicar pra outro integrador = **clonar a stack (kit clone no EasyPanel) + trocar a config**, sem mexer no código. Concretamente: (a) `eventos_elo.company_id` já existe (esqueleto multiempresa); (b) `EMAIL_FROM`/domínio/baseUrl por env; (c) o email-writer **reusa `interpolarEmpresa`/config de empresa** (mesma que a Eva usa em `cadence.ts`) — NÃO hardcodar "EcoSunPower" no prompt. **Multi-tenant completo (isolamento, WABA por cliente, white-label, cobrança) NÃO é desta fatia** — é a linha EcoSof ([[project_saas_revenda_plataforma]], retomar segunda 14/07). Hoje = clone-ready; produto-de-vender = EcoSof.
+
 ---
 
 ## 5. Riscos e cuidados
