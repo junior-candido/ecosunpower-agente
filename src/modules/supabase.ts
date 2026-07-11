@@ -893,6 +893,21 @@ export class SupabaseService {
   }
 
   /**
+   * Lê uma flag booleana da tabela app_flags (key/value texto: 'true'/'false').
+   * Retorna null se a chave não existe (permite o caller decidir o default).
+   */
+  async getFlag(key: string): Promise<boolean | null> {
+    const { data } = await this.client.from('app_flags').select('value').eq('key', key).maybeSingle();
+    if (!data) return null;
+    return (data as { value: string }).value === 'true';
+  }
+
+  /** Grava/atualiza uma flag booleana em app_flags (upsert por key). */
+  async setFlag(key: string, value: boolean): Promise<void> {
+    await this.client.from('app_flags').upsert({ key, value: value ? 'true' : 'false' }, { onConflict: 'key' });
+  }
+
+  /**
    * Retorna o id do lead existente pelo telefone, ou cria um novo (status='qualificado').
    * Usado por savePropostaPublica e pelo modo /fechar pra garantir que
    * proposta sempre fica linkada a um lead. Resolve bug Fase 1 (proposta orfa).

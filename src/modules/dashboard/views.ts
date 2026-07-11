@@ -84,7 +84,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca';
+  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca';
   title: string;
   body: string;
   scripts?: string;
@@ -136,6 +136,7 @@ const SIDEBAR_SETORES: SideSetor[] = [
     itens: [
       { href: '/dashboard/marketing', key: 'marketing', label: '📣 Campanhas', area: 'marketing' },
       { href: '/dashboard/marketing/blog', key: 'blog', label: '📝 Blog', area: 'marketing' },
+      { href: '/dashboard/marketing/email', key: 'email', label: '✉️ E-mail Marketing', area: 'marketing' },
       { href: '/dashboard/cadencia', key: 'cadencia', label: '🔄 Cadência', area: 'marketing' },
     ],
   },

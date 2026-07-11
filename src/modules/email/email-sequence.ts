@@ -29,6 +29,9 @@ export class EmailSequenceService {
   async processSequence(): Promise<number> {
     const now = (this.opts.now ?? (() => new Date()))();
     if (!podeEnviarAgora(now)) return 0;
+    // Botão ligar/pausar do dashboard (aba E-mail Marketing). Flag ausente =
+    // permitido (compatibilidade); só um pause explícito interrompe o envio.
+    if ((await this.supa.getFlag?.('email_seq_ligado')) === false) return 0;
     const due = await this.supa.getDueEmailSteps(this.opts.batchLimit ?? 50);
     let enviados = 0;
     for (const row of due) {
