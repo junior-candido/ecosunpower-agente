@@ -17,4 +17,12 @@ describe('renderCerebroPage', () => {
     const html = renderCerebroPage(snap, ['oi']);
     expect(html).toMatch(/SNAP\s*=/); // snapshot embutido em <script>
   });
+
+  it('tem voz: microfone (entrada) e sintese de fala (saida), com feature-detect', () => {
+    const html = renderCerebroPage(snap, ['oi']);
+    expect(html).toMatch(/SpeechRecognition|webkitSpeechRecognition/);
+    expect(html).toContain('speechSynthesis');
+    expect(html).toContain('id="micBtn"'); // botao do microfone
+    expect(html).toContain('id="voiceToggle"'); // liga/desliga a voz do Elo
+  });
 });

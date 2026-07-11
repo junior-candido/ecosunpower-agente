@@ -68,9 +68,9 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
     z-index:6; width:min(560px, 88vw);
     display:flex; gap:8px;
   }
-  #askForm { display:flex; gap:8px; width:100%; }
+  #askForm { display:flex; gap:8px; flex:1; min-width:0; }
   #askInput {
-    flex:1; background:rgba(11,22,40,.85); border:1px solid rgba(251,191,36,.35);
+    flex:1; min-width:0; background:rgba(11,22,40,.85); border:1px solid rgba(251,191,36,.35);
     border-radius:12px; padding:12px 16px; color:#e6f0ff; font-size:14px; outline:none;
   }
   #askInput::placeholder { color:#5f7fa8; }
@@ -80,6 +80,19 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
     border-radius:12px; padding:0 20px; font-weight:700; font-size:14px; cursor:pointer;
   }
   #askForm button:disabled { opacity:.6; cursor:default; }
+  #micBtn, #voiceToggle {
+    flex-shrink:0; width:44px; background:rgba(11,22,40,.85); border:1px solid rgba(52,211,153,.35);
+    border-radius:12px; color:#dbe8fb; font-size:18px; cursor:pointer;
+  }
+  #micBtn.listening {
+    background:linear-gradient(135deg,#f87171,#ef4444); border-color:#fca5a5;
+    animation:micPulse 1.1s infinite;
+  }
+  @keyframes micPulse {
+    0%,100% { box-shadow:0 0 0 0 rgba(248,113,113,.55); }
+    50% { box-shadow:0 0 0 10px rgba(248,113,113,0); }
+  }
+  #voiceToggle.off { opacity:.4; }
 
   #panel {
     position:absolute; top:0; right:0; bottom:0; z-index:8;
@@ -121,8 +134,10 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
   <div id="askBox">
     <form id="askForm" autocomplete="off">
       <input id="askInput" type="text" placeholder="Pergunte ao Elo..." maxlength="300" />
+      <button type="button" id="micBtn" aria-label="Falar com o Elo" title="Falar com o Elo">🎤</button>
       <button type="submit" id="askBtn">Perguntar</button>
     </form>
+    <button type="button" id="voiceToggle" aria-label="Ligar/desligar a voz do Elo" title="Voz do Elo">🔊</button>
   </div>
   <aside id="panel">
     <button class="panelClose" id="panelClose" type="button" aria-label="Fechar">✕</button>
@@ -283,16 +298,80 @@ askForm.addEventListener('submit', function(e){
   })
   .then(function(r){ return r.json(); })
   .then(function(data){
-    showSay(data && data.resposta ? data.resposta : 'Não consegui responder agora, tenta de novo.');
+    const resposta = data && data.resposta ? data.resposta : 'Não consegui responder agora, tenta de novo.';
+    showSay(resposta);
+    speak(resposta);
   })
   .catch(function(){
-    showSay('Deu um erro ao falar com o Elo. Tenta de novo em instantes.');
+    const resposta = 'Deu um erro ao falar com o Elo. Tenta de novo em instantes.';
+    showSay(resposta);
+    speak(resposta);
   })
   .finally(function(){
     askBtn.disabled = false;
     setTimeout(startCycle, 6000);
   });
 });
+
+// ---- voz: entrada por microfone (Web Speech API, gratis, so no navegador) ----
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const micBtn = document.getElementById('micBtn');
+if(SR){
+  const recognition = new SR();
+  recognition.lang = 'pt-BR';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  let listening = false;
+  recognition.addEventListener('result', function(ev){
+    const texto = ev.results[0][0].transcript;
+    askInput.value = texto;
+    if(askForm.requestSubmit) askForm.requestSubmit();
+    else askForm.dispatchEvent(new Event('submit', {cancelable:true}));
+  });
+  recognition.addEventListener('end', function(){
+    listening = false;
+    micBtn.classList.remove('listening');
+  });
+  recognition.addEventListener('error', function(){
+    listening = false;
+    micBtn.classList.remove('listening');
+  });
+  micBtn.addEventListener('click', function(){
+    if(listening){ recognition.stop(); return; }
+    try {
+      recognition.start();
+      listening = true;
+      micBtn.classList.add('listening');
+    } catch(err){
+      listening = false;
+      micBtn.classList.remove('listening');
+    }
+  });
+} else {
+  micBtn.style.display = 'none';
+}
+
+// ---- voz: saida — o Elo fala a resposta em voz alta (nao as falas ambiente) ----
+const hasTTS = 'speechSynthesis' in window;
+const voiceToggle = document.getElementById('voiceToggle');
+let voiceOn = true;
+if(hasTTS){
+  voiceToggle.addEventListener('click', function(){
+    voiceOn = !voiceOn;
+    voiceToggle.classList.toggle('off', !voiceOn);
+    voiceToggle.textContent = voiceOn ? '🔊' : '🔇';
+    if(!voiceOn) window.speechSynthesis.cancel();
+  });
+} else {
+  voiceToggle.style.display = 'none';
+}
+function speak(texto){
+  if(!hasTTS || !voiceOn || !texto) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(texto);
+  u.lang = 'pt-BR';
+  window.speechSynthesis.speak(u);
+}
 
 // ---- painel lateral: clique num departamento abre os números reais ----
 const DEPT_INFO = {
