@@ -33,7 +33,9 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { height:100%; background:#060b16; overflow:hidden; font-family:-apple-system,Segoe UI,Roboto,sans-serif; }
   #wrap { position:fixed; inset:0; }
-  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; cursor:pointer; }
+  #canvasWrap { position:absolute; top:0; left:0; bottom:0; right:0; transition:right .28s ease; }
+  canvas { display:block; width:100%; height:100%; cursor:pointer; }
+  #wrap.panel-open #canvasWrap { right:360px; }
   .topbar {
     position:absolute; top:0; left:0; right:0; z-index:5;
     display:flex; align-items:center; gap:12px;
@@ -66,9 +68,9 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
     z-index:6; width:min(560px, 88vw);
     display:flex; gap:8px;
   }
-  #askForm { display:flex; gap:8px; width:100%; }
+  #askForm { display:flex; gap:8px; flex:1; min-width:0; }
   #askInput {
-    flex:1; background:rgba(11,22,40,.85); border:1px solid rgba(251,191,36,.35);
+    flex:1; min-width:0; background:rgba(11,22,40,.85); border:1px solid rgba(251,191,36,.35);
     border-radius:12px; padding:12px 16px; color:#e6f0ff; font-size:14px; outline:none;
   }
   #askInput::placeholder { color:#5f7fa8; }
@@ -78,6 +80,19 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
     border-radius:12px; padding:0 20px; font-weight:700; font-size:14px; cursor:pointer;
   }
   #askForm button:disabled { opacity:.6; cursor:default; }
+  #micBtn, #voiceToggle {
+    flex-shrink:0; width:44px; background:rgba(11,22,40,.85); border:1px solid rgba(52,211,153,.35);
+    border-radius:12px; color:#dbe8fb; font-size:18px; cursor:pointer;
+  }
+  #micBtn.listening {
+    background:linear-gradient(135deg,#f87171,#ef4444); border-color:#fca5a5;
+    animation:micPulse 1.1s infinite;
+  }
+  @keyframes micPulse {
+    0%,100% { box-shadow:0 0 0 0 rgba(248,113,113,.55); }
+    50% { box-shadow:0 0 0 10px rgba(248,113,113,0); }
+  }
+  #voiceToggle.off { opacity:.4; }
 
   #panel {
     position:absolute; top:0; right:0; bottom:0; z-index:8;
@@ -101,11 +116,34 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
   #panel .kpi { display:flex; justify-content:space-between; align-items:baseline; padding:10px 0; border-bottom:1px solid rgba(255,255,255,.06); }
   #panel .kpi .n { font-size:22px; font-weight:800; color:#34d399; }
   #panel .kpi .l { font-size:13px; color:#9fb4d4; }
+
+  /* ---- celular: painel vira bottom-sheet, canvas fica full-width, alvos maiores ---- */
+  @media (max-width: 640px) {
+    #wrap.panel-open #canvasWrap { right:0; }
+    #panel {
+      top:auto; left:0; right:0; bottom:0; width:100%; max-height:55vh;
+      border-left:none; border-top:1px solid rgba(52,211,153,.25);
+      border-radius:20px 20px 0 0;
+      box-shadow:0 -20px 50px rgba(0,0,0,.5);
+      transform:translateY(100%);
+      padding:22px 18px;
+    }
+    #panel.open { transform:translateY(0); }
+    .topbar { padding:12px 14px; gap:8px; }
+    .topbar span { display:none; }
+    .hint { display:none; }
+    .speech { bottom:132px; width:92vw; padding:14px 18px; }
+    .speech p { font-size:15px; min-height:40px; }
+    #askBox { bottom:14px; width:94vw; gap:6px; }
+    #askForm { gap:6px; }
+    #askInput { padding:12px 12px; font-size:16px; min-height:44px; }
+    #askForm button, #micBtn, #voiceToggle { min-width:44px; min-height:44px; }
+  }
 </style>
 </head>
 <body>
 <div id="wrap">
-  <canvas id="c"></canvas>
+  <div id="canvasWrap"><canvas id="c"></canvas></div>
   <div class="topbar">
     <div class="dot"></div>
     <h1><b>Elo</b> · cérebro do EcoSunPower</h1>
@@ -119,8 +157,10 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
   <div id="askBox">
     <form id="askForm" autocomplete="off">
       <input id="askInput" type="text" placeholder="Pergunte ao Elo..." maxlength="300" />
+      <button type="button" id="micBtn" aria-label="Falar com o Elo" title="Falar com o Elo">🎤</button>
       <button type="submit" id="askBtn">Perguntar</button>
     </form>
+    <button type="button" id="voiceToggle" aria-label="Ligar/desligar a voz do Elo" title="Voz do Elo">🔊</button>
   </div>
   <aside id="panel">
     <button class="panelClose" id="panelClose" type="button" aria-label="Fechar">✕</button>
@@ -131,15 +171,33 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
 const SNAP = ${snapJson};
 const FALAS = ${falasJson};
 
+const wrap = document.getElementById('wrap');
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 let W, H, DPR;
+// telas estreitas (celular) encolhem um pouco os neuronios/labels pra nao
+// ficar apertado; 900px pra cima usa escala cheia
+let NODE_SCALE = 1;
 function resize(){
   DPR = Math.min(window.devicePixelRatio||1, 2);
   W = cv.clientWidth; H = cv.clientHeight;
   cv.width = W*DPR; cv.height = H*DPR;
   ctx.setTransform(DPR,0,0,DPR,0,0);
+  NODE_SCALE = Math.max(0.62, Math.min(1, W/900));
 }
 window.addEventListener('resize', resize); resize();
+
+// re-chama resize() a cada frame enquanto o painel abre/fecha (transicao CSS
+// de ~280ms), pra o cerebro reacomodar suavemente na area que sobrou
+let panelResizeRaf = null;
+function animatePanelResize(){
+  if(panelResizeRaf) cancelAnimationFrame(panelResizeRaf);
+  const start = performance.now(), dur = 340;
+  (function step(now){
+    resize();
+    if(now - start < dur){ panelResizeRaf = requestAnimationFrame(step); }
+    else { panelResizeRaf = null; }
+  })(start);
+}
 
 // ---- Elo + departamentos (posições normalizadas), números reais do SNAP ----
 const NODES = [
@@ -212,7 +270,7 @@ function frame(){
   for(const n of NODES){
     const x=px(n), y=py(n);
     const pulse = n.core ? (1+0.06*Math.sin(tG*2)) : (1+0.05*Math.sin(tG*2.4+n.x*8));
-    const r = n.r*pulse;
+    const r = n.r*NODE_SCALE*pulse;
     ctx.save(); ctx.shadowBlur=n.core?42:20; ctx.shadowColor=n.c;
     const rg=ctx.createRadialGradient(x,y,2,x,y,r);
     rg.addColorStop(0, n.core?'rgba(210,255,230,.98)':'rgba(255,255,255,.9)');
@@ -221,9 +279,9 @@ function frame(){
     ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fillStyle=rg; ctx.fill();
     ctx.restore();
     ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.strokeStyle=n.c; ctx.globalAlpha=.5; ctx.lineWidth=1.4; ctx.stroke(); ctx.globalAlpha=1;
-    ctx.font=(n.core?30:16)+'px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font=((n.core?30:16)*NODE_SCALE)+'px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(n.emoji, x, y+1);
-    ctx.font='700 '+(n.core?18:12)+'px -apple-system,Segoe UI,sans-serif';
+    ctx.font='700 '+((n.core?18:12)*NODE_SCALE)+'px -apple-system,Segoe UI,sans-serif';
     ctx.fillStyle= n.core?'#c9ffe4':'#cfe0f5';
     ctx.fillText(n.label, x, y + r + (n.core?20:15));
   }
@@ -267,16 +325,80 @@ askForm.addEventListener('submit', function(e){
   })
   .then(function(r){ return r.json(); })
   .then(function(data){
-    showSay(data && data.resposta ? data.resposta : 'Não consegui responder agora, tenta de novo.');
+    const resposta = data && data.resposta ? data.resposta : 'Não consegui responder agora, tenta de novo.';
+    showSay(resposta);
+    speak(resposta);
   })
   .catch(function(){
-    showSay('Deu um erro ao falar com o Elo. Tenta de novo em instantes.');
+    const resposta = 'Deu um erro ao falar com o Elo. Tenta de novo em instantes.';
+    showSay(resposta);
+    speak(resposta);
   })
   .finally(function(){
     askBtn.disabled = false;
     setTimeout(startCycle, 6000);
   });
 });
+
+// ---- voz: entrada por microfone (Web Speech API, gratis, so no navegador) ----
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const micBtn = document.getElementById('micBtn');
+if(SR){
+  const recognition = new SR();
+  recognition.lang = 'pt-BR';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  let listening = false;
+  recognition.addEventListener('result', function(ev){
+    const texto = ev.results[0][0].transcript;
+    askInput.value = texto;
+    if(askForm.requestSubmit) askForm.requestSubmit();
+    else askForm.dispatchEvent(new Event('submit', {cancelable:true}));
+  });
+  recognition.addEventListener('end', function(){
+    listening = false;
+    micBtn.classList.remove('listening');
+  });
+  recognition.addEventListener('error', function(){
+    listening = false;
+    micBtn.classList.remove('listening');
+  });
+  micBtn.addEventListener('click', function(){
+    if(listening){ recognition.stop(); return; }
+    try {
+      recognition.start();
+      listening = true;
+      micBtn.classList.add('listening');
+    } catch(err){
+      listening = false;
+      micBtn.classList.remove('listening');
+    }
+  });
+} else {
+  micBtn.style.display = 'none';
+}
+
+// ---- voz: saida — o Elo fala a resposta em voz alta (nao as falas ambiente) ----
+const hasTTS = 'speechSynthesis' in window;
+const voiceToggle = document.getElementById('voiceToggle');
+let voiceOn = true;
+if(hasTTS){
+  voiceToggle.addEventListener('click', function(){
+    voiceOn = !voiceOn;
+    voiceToggle.classList.toggle('off', !voiceOn);
+    voiceToggle.textContent = voiceOn ? '🔊' : '🔇';
+    if(!voiceOn) window.speechSynthesis.cancel();
+  });
+} else {
+  voiceToggle.style.display = 'none';
+}
+function speak(texto){
+  if(!hasTTS || !voiceOn || !texto) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(texto);
+  u.lang = 'pt-BR';
+  window.speechSynthesis.speak(u);
+}
 
 // ---- painel lateral: clique num departamento abre os números reais ----
 const DEPT_INFO = {
@@ -342,18 +464,26 @@ function openPanel(deptKey){
   }
   panelBody.innerHTML = html;
   panel.classList.add('open');
+  wrap.classList.add('panel-open');
+  animatePanelResize();
 }
-function closePanel(){ panel.classList.remove('open'); }
+function closePanel(){
+  panel.classList.remove('open');
+  wrap.classList.remove('panel-open');
+  animatePanelResize();
+}
 panelClose.addEventListener('click', closePanel);
 
 cv.addEventListener('click', function(ev){
   const rect = cv.getBoundingClientRect();
   const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
+  // no celular o dedo e menos preciso que o mouse: alvo de toque maior
+  const tol = W < 480 ? 24 : 12;
   let hit = null;
   for(const n of NODES){
     const nx = px(n), ny = py(n);
     const dist = Math.hypot(x-nx, y-ny);
-    if(dist <= n.r + 12){ hit = n; break; }
+    if(dist <= n.r*NODE_SCALE + tol){ hit = n; break; }
   }
   if(hit) openPanel(hit.dept); else closePanel();
 });
