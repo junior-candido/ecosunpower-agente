@@ -861,6 +861,23 @@ export class SupabaseService {
       .eq('status', 'pending');
   }
 
+  /**
+   * Grava email + origem no lead (intake — Meta Lead Ads, formulario do site
+   * etc). Best-effort: nunca lanca, so avisa no console e retorna false. O
+   * caller decide se prossegue com a matricula na sequencia de e-mail.
+   */
+  async setLeadEmail(leadId: string, email: string, origem: string): Promise<boolean> {
+    const { error } = await this.client
+      .from('leads')
+      .update({ email: email.toLowerCase().trim(), email_origem: origem, updated_at: new Date().toISOString() })
+      .eq('id', leadId);
+    if (error) {
+      console.warn(`[supabase] setLeadEmail falhou para lead ${leadId}:`, error.message);
+      return false;
+    }
+    return true;
+  }
+
   async isEmailDescadastrado(email: string): Promise<boolean> {
     const { data } = await this.client
       .from('email_descadastro')

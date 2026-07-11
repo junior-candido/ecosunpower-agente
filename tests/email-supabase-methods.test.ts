@@ -103,6 +103,32 @@ describe('SupabaseService — metodos da sequencia de e-mail', () => {
     expect(result).toBe(false);
   });
 
+  it('setLeadEmail grava email normalizado (lowercase/trim) + origem e retorna true', async () => {
+    fromResults['leads'] = { data: null, error: null };
+    const { SupabaseService } = await import('../src/modules/supabase.js');
+    const sb = new SupabaseService({ supabaseUrl: 'https://x.supabase.co', supabaseServiceKey: 'key' });
+
+    const ok = await sb.setLeadEmail('lead-1', '  Lead@Gmail.com  ', 'lead_ad');
+
+    expect(ok).toBe(true);
+    const updateCall = callLog.find((c) => c.table === 'leads' && c.method === 'update');
+    expect(updateCall?.args[0]).toEqual(
+      expect.objectContaining({ email: 'lead@gmail.com', email_origem: 'lead_ad' }),
+    );
+    const eqCall = callLog.find((c) => c.table === 'leads' && c.method === 'eq');
+    expect(eqCall?.args).toEqual(['id', 'lead-1']);
+  });
+
+  it('setLeadEmail retorna false (best-effort, nao lanca) quando o client devolve erro', async () => {
+    fromResults['leads'] = { data: null, error: { message: 'constraint violation' } };
+    const { SupabaseService } = await import('../src/modules/supabase.js');
+    const sb = new SupabaseService({ supabaseUrl: 'https://x.supabase.co', supabaseServiceKey: 'key' });
+
+    const ok = await sb.setLeadEmail('lead-2', 'lead@gmail.com', 'lead_ad');
+
+    expect(ok).toBe(false);
+  });
+
   it('scheduleEmailSequence monta 6 linhas com steps 1..6 pro lead, via upsert idempotente', async () => {
     fromResults['email_sequencia'] = { data: null, error: null };
     const { SupabaseService } = await import('../src/modules/supabase.js');

@@ -35,6 +35,7 @@ import { SiteDeployService } from './modules/site-deploy.js';
 import { PublicReviewsService } from './modules/public-reviews.js';
 import { CaseCreatorAssistant } from './modules/case-creator-assistant.js';
 import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone } from './modules/meta-leadgen.js';
+import { emailValido } from './modules/email/email-util.js';
 import { enviarTemplateInicial, TEMPLATE_FALLBACK } from './modules/template-inicial.js';
 import { parseTrackingTag } from './modules/tracking.js';
 import { generateWeeklyReport, formatReportForWhatsApp } from './modules/ads-report.js';
@@ -5892,6 +5893,22 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
             .from('leads')
             .update(updatePayload)
             .eq('id', leadId);
+
+          // E-mail (Task 16 — Elo + Maquina de E-mail): se o form trouxe um
+          // endereco com formato valido, grava em leads.email/email_origem e
+          // matricula o lead na sequencia de nutricao (6 toques, Task 6).
+          // Best-effort em cada etapa: setLeadEmail() ja nao lanca (so loga e
+          // retorna false), e scheduleEmailSequence() tem .catch proprio —
+          // nunca deve derrubar o resto da intake (welcome message etc).
+          if (normalized.email && emailValido(normalized.email)) {
+            const emailOk = await supabase.setLeadEmail(leadId, normalized.email, 'lead_ad');
+            const optedOut = Boolean((existing as Record<string, unknown> | null)?.email_opt_out);
+            if (emailOk && !optedOut) {
+              await supabase.scheduleEmailSequence(leadId).catch((err) => {
+                console.warn(`[meta-leadgen] scheduleEmailSequence falhou para lead ${leadId}:`, (err as Error).message);
+              });
+            }
+          }
 
           try {
             await metaLeadgen.markEventProcessed(leadgenId, leadId);
