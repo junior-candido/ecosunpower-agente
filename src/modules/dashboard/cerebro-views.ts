@@ -33,7 +33,9 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { height:100%; background:#060b16; overflow:hidden; font-family:-apple-system,Segoe UI,Roboto,sans-serif; }
   #wrap { position:fixed; inset:0; }
-  canvas { position:absolute; inset:0; width:100%; height:100%; display:block; cursor:pointer; }
+  #canvasWrap { position:absolute; top:0; left:0; bottom:0; right:0; transition:right .28s ease; }
+  canvas { display:block; width:100%; height:100%; cursor:pointer; }
+  #wrap.panel-open #canvasWrap { right:360px; }
   .topbar {
     position:absolute; top:0; left:0; right:0; z-index:5;
     display:flex; align-items:center; gap:12px;
@@ -105,7 +107,7 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
 </head>
 <body>
 <div id="wrap">
-  <canvas id="c"></canvas>
+  <div id="canvasWrap"><canvas id="c"></canvas></div>
   <div class="topbar">
     <div class="dot"></div>
     <h1><b>Elo</b> · cérebro do EcoSunPower</h1>
@@ -131,6 +133,7 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
 const SNAP = ${snapJson};
 const FALAS = ${falasJson};
 
+const wrap = document.getElementById('wrap');
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 let W, H, DPR;
 function resize(){
@@ -140,6 +143,19 @@ function resize(){
   ctx.setTransform(DPR,0,0,DPR,0,0);
 }
 window.addEventListener('resize', resize); resize();
+
+// re-chama resize() a cada frame enquanto o painel abre/fecha (transicao CSS
+// de ~280ms), pra o cerebro reacomodar suavemente na area que sobrou
+let panelResizeRaf = null;
+function animatePanelResize(){
+  if(panelResizeRaf) cancelAnimationFrame(panelResizeRaf);
+  const start = performance.now(), dur = 340;
+  (function step(now){
+    resize();
+    if(now - start < dur){ panelResizeRaf = requestAnimationFrame(step); }
+    else { panelResizeRaf = null; }
+  })(start);
+}
 
 // ---- Elo + departamentos (posições normalizadas), números reais do SNAP ----
 const NODES = [
@@ -342,8 +358,14 @@ function openPanel(deptKey){
   }
   panelBody.innerHTML = html;
   panel.classList.add('open');
+  wrap.classList.add('panel-open');
+  animatePanelResize();
 }
-function closePanel(){ panel.classList.remove('open'); }
+function closePanel(){
+  panel.classList.remove('open');
+  wrap.classList.remove('panel-open');
+  animatePanelResize();
+}
 panelClose.addEventListener('click', closePanel);
 
 cv.addEventListener('click', function(ev){
