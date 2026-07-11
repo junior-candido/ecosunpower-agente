@@ -164,6 +164,12 @@ Nova rota no dashboard, dentro do setor **Marketing** (ao lado de Campanhas/Blog
 - Template WABA aprovado pra alertas fora da janela de 24h.
 - Multi-tenant / EcoSof (linha separada — retomar segunda 14/07).
 
+### 4.1 NORTE estratégico do Elo (fatias futuras — não construir agora, mas a espinha já prepara)
+- **Elo ORQUESTRADOR:** o Elo não só guarda eventos — ele **coordena e designa tarefas** pros departamentos e pessoas (o "maestro" que sabe de tudo e distribui o trabalho no momento certo). A reação de "lead quente → avisa vendedor" desta Fatia 1 é o **primeiro embrião** disso. Evolui pra um motor de regras/tarefas que atribui e acompanha (liga com Fase 4 Automação do CRM — `project_crm_plataforma`).
+- **Departamentos com ZOOM (peças neurais internas):** na tela viva, cada departamento é um neurônio **clicável que se subdivide**, revelando as tarefas/peças internas em andamento (dar "zoom no cérebro" e ver os sub-neurônios de cada área trabalhando). Requer que cada evento/tarefa carregue `departamento` + hierarquia — por isso `eventos_elo.payload` (jsonb) já nasce flexível e a espinha guarda `origem`/`canal`.
+- **Princípio de orquestração — "chefe de 1000 → 100 → 10 → 5 → um cérebro"** (Jetro/Êxodo 18: líderes de milhares, centenas, cinquentas, dezenas): o Elo não gerencia tudo direto — ele delega em **camadas hierárquicas** de "chefes" (orquestradores), cada um cuidando de um span menor, até a tarefa na ponta. É como o Elo escala a coordenação sem virar caos. Casa com os "departamentos com zoom" (cada nível da hierarquia é um sub-neurônio que abre). Modelagem futura: eventos/tarefas carregam a cadeia hierárquica (quem delegou → quem executa).
+- **Implicação pra Fatia 1:** manter os eventos ricos o suficiente (departamento de origem, tipo, referência, e espaço no `payload` pra cadeia hierárquica futura) pra que essas evoluções sejam só "ler a espinha de outro jeito", sem retrabalho de dados.
+
 ---
 
 ## 5. Riscos e cuidados
