@@ -147,4 +147,34 @@ describe('SupabaseService — metodos da sequencia de e-mail', () => {
 
     expect(upsertCall!.args[1]).toEqual({ onConflict: 'lead_id,step', ignoreDuplicates: true });
   });
+
+  it('contarEventosPorTipo faz um HEAD count exato por tipo (evita o teto de 1000 linhas do PostgREST)', async () => {
+    fromResults['eventos_elo'] = { data: null, count: 7, error: null };
+    const { SupabaseService } = await import('../src/modules/supabase.js');
+    const sb = new SupabaseService({ supabaseUrl: 'https://x.supabase.co', supabaseServiceKey: 'key' });
+
+    const out = await sb.contarEventosPorTipo(['email_enviado', 'email_aberto']);
+
+    expect(out).toEqual({ email_enviado: 7, email_aberto: 7 });
+
+    const selectCalls = callLog.filter((c) => c.table === 'eventos_elo' && c.method === 'select');
+    expect(selectCalls).toHaveLength(2);
+    expect(selectCalls[0].args).toEqual(['*', { count: 'exact', head: true }]);
+
+    const eqCalls = callLog.filter((c) => c.table === 'eventos_elo' && c.method === 'eq');
+    expect(eqCalls.map((c) => c.args)).toEqual([
+      ['tipo', 'email_enviado'],
+      ['tipo', 'email_aberto'],
+    ]);
+  });
+
+  it('contarEventosPorTipo usa 0 quando count vem null', async () => {
+    fromResults['eventos_elo'] = { data: null, count: null, error: null };
+    const { SupabaseService } = await import('../src/modules/supabase.js');
+    const sb = new SupabaseService({ supabaseUrl: 'https://x.supabase.co', supabaseServiceKey: 'key' });
+
+    const out = await sb.contarEventosPorTipo(['email_descadastro']);
+
+    expect(out).toEqual({ email_descadastro: 0 });
+  });
 });

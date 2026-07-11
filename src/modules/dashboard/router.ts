@@ -101,7 +101,7 @@ import { can } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
 import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } from './blog-views.js';
-import { renderEmailPage, resumirMetricas } from './email-views.js';
+import { renderEmailPage } from './email-views.js';
 import { listarClientesPosVenda, listarAgendaPosVenda } from './pos-venda-queries.js';
 import { renderPosVendaPage } from './pos-venda-views.js';
 import { objetivoManual, fallbackMensagem } from './pos-venda-mensagens.js';
@@ -1387,21 +1387,26 @@ export function createDashboardRouter(
   // checa a flag 'email_seq_ligado' em app_flags antes de mandar.
   // ----------------------------------------------------------------------
   router.get('/marketing/email', exigir('marketing', 'visualizar'), async (req: AuthedRequest, res: Response) => {
-    let eventos: Array<{ tipo: string }> = [];
+    let metricas = { enviados: 0, abertos: 0, clicados: 0, quentes: 0, descadastros: 0 };
     try {
-      const { data } = await supabase
-        .from('eventos_elo')
-        .select('tipo')
-        .in('tipo', ['email_enviado', 'email_aberto', 'email_clicado', 'lead_quente_email', 'email_descadastro']);
-      eventos = data ?? [];
+      const counts = await supabaseService.contarEventosPorTipo([
+        'email_enviado', 'email_aberto', 'email_clicado', 'lead_quente_email', 'email_descadastro',
+      ]);
+      metricas = {
+        enviados: counts.email_enviado,
+        abertos: counts.email_aberto,
+        clicados: counts.email_clicado,
+        quentes: counts.lead_quente_email,
+        descadastros: counts.email_descadastro,
+      };
     } catch (err) {
-      console.warn('[dashboard/email] falha ao ler eventos_elo (segue com zeros):', (err as Error).message);
+      console.warn('[dashboard/email] falha ao contar eventos_elo (segue com zeros):', (err as Error).message);
     }
     const ligado = (await supabaseService.getFlag('email_seq_ligado')) ?? true;
     res.type('text/html').send(renderLayout({
       active: 'email',
       title: 'E-mail Marketing',
-      body: renderEmailPage(resumirMetricas(eventos), ligado),
+      body: renderEmailPage(metricas, ligado),
       user: req.dashUser,
     }));
   });

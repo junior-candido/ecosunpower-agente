@@ -898,6 +898,26 @@ export class SupabaseService {
     }
   }
 
+  /**
+   * Conta eventos em eventos_elo por tipo, um HEAD count por tipo (não
+   * seleciona linhas). O PostgREST cobre `select` normal com um teto de
+   * ~1000 linhas por página — contar em JS a partir de um `.select('tipo')`
+   * plateauia/subconta assim que o volume passa disso. Um `count: 'exact',
+   * head: true` por tipo evita o teto (custa 1 query por tipo, tudo bem
+   * pra um punhado de tipos).
+   */
+  async contarEventosPorTipo(tipos: string[]): Promise<Record<string, number>> {
+    const out: Record<string, number> = {};
+    for (const t of tipos) {
+      const { count } = await this.client
+        .from('eventos_elo')
+        .select('*', { count: 'exact', head: true })
+        .eq('tipo', t);
+      out[t] = count ?? 0;
+    }
+    return out;
+  }
+
   async getModeloEmail(step: number): Promise<any | null> {
     const { data } = await this.client
       .from('email_modelos')
