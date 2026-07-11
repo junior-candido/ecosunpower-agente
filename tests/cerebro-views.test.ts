@@ -25,4 +25,11 @@ describe('renderCerebroPage', () => {
     expect(html).toContain('id="micBtn"'); // botao do microfone
     expect(html).toContain('id="voiceToggle"'); // liga/desliga a voz do Elo
   });
+
+  it('e responsivo: viewport meta e media query pra celular (painel vira bottom-sheet)', () => {
+    const html = renderCerebroPage(snap, ['oi']);
+    expect(html).toContain('name="viewport"');
+    expect(html).toContain('width=device-width');
+    expect(html).toMatch(/@media \(max-width:\s*640px\)/);
+  });
 });

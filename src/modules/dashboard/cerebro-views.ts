@@ -116,6 +116,29 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
   #panel .kpi { display:flex; justify-content:space-between; align-items:baseline; padding:10px 0; border-bottom:1px solid rgba(255,255,255,.06); }
   #panel .kpi .n { font-size:22px; font-weight:800; color:#34d399; }
   #panel .kpi .l { font-size:13px; color:#9fb4d4; }
+
+  /* ---- celular: painel vira bottom-sheet, canvas fica full-width, alvos maiores ---- */
+  @media (max-width: 640px) {
+    #wrap.panel-open #canvasWrap { right:0; }
+    #panel {
+      top:auto; left:0; right:0; bottom:0; width:100%; max-height:55vh;
+      border-left:none; border-top:1px solid rgba(52,211,153,.25);
+      border-radius:20px 20px 0 0;
+      box-shadow:0 -20px 50px rgba(0,0,0,.5);
+      transform:translateY(100%);
+      padding:22px 18px;
+    }
+    #panel.open { transform:translateY(0); }
+    .topbar { padding:12px 14px; gap:8px; }
+    .topbar span { display:none; }
+    .hint { display:none; }
+    .speech { bottom:132px; width:92vw; padding:14px 18px; }
+    .speech p { font-size:15px; min-height:40px; }
+    #askBox { bottom:14px; width:94vw; gap:6px; }
+    #askForm { gap:6px; }
+    #askInput { padding:12px 12px; font-size:16px; min-height:44px; }
+    #askForm button, #micBtn, #voiceToggle { min-width:44px; min-height:44px; }
+  }
 </style>
 </head>
 <body>
@@ -151,11 +174,15 @@ const FALAS = ${falasJson};
 const wrap = document.getElementById('wrap');
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 let W, H, DPR;
+// telas estreitas (celular) encolhem um pouco os neuronios/labels pra nao
+// ficar apertado; 900px pra cima usa escala cheia
+let NODE_SCALE = 1;
 function resize(){
   DPR = Math.min(window.devicePixelRatio||1, 2);
   W = cv.clientWidth; H = cv.clientHeight;
   cv.width = W*DPR; cv.height = H*DPR;
   ctx.setTransform(DPR,0,0,DPR,0,0);
+  NODE_SCALE = Math.max(0.62, Math.min(1, W/900));
 }
 window.addEventListener('resize', resize); resize();
 
@@ -243,7 +270,7 @@ function frame(){
   for(const n of NODES){
     const x=px(n), y=py(n);
     const pulse = n.core ? (1+0.06*Math.sin(tG*2)) : (1+0.05*Math.sin(tG*2.4+n.x*8));
-    const r = n.r*pulse;
+    const r = n.r*NODE_SCALE*pulse;
     ctx.save(); ctx.shadowBlur=n.core?42:20; ctx.shadowColor=n.c;
     const rg=ctx.createRadialGradient(x,y,2,x,y,r);
     rg.addColorStop(0, n.core?'rgba(210,255,230,.98)':'rgba(255,255,255,.9)');
@@ -252,9 +279,9 @@ function frame(){
     ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fillStyle=rg; ctx.fill();
     ctx.restore();
     ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.strokeStyle=n.c; ctx.globalAlpha=.5; ctx.lineWidth=1.4; ctx.stroke(); ctx.globalAlpha=1;
-    ctx.font=(n.core?30:16)+'px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font=((n.core?30:16)*NODE_SCALE)+'px serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(n.emoji, x, y+1);
-    ctx.font='700 '+(n.core?18:12)+'px -apple-system,Segoe UI,sans-serif';
+    ctx.font='700 '+((n.core?18:12)*NODE_SCALE)+'px -apple-system,Segoe UI,sans-serif';
     ctx.fillStyle= n.core?'#c9ffe4':'#cfe0f5';
     ctx.fillText(n.label, x, y + r + (n.core?20:15));
   }
@@ -450,11 +477,13 @@ panelClose.addEventListener('click', closePanel);
 cv.addEventListener('click', function(ev){
   const rect = cv.getBoundingClientRect();
   const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
+  // no celular o dedo e menos preciso que o mouse: alvo de toque maior
+  const tol = W < 480 ? 24 : 12;
   let hit = null;
   for(const n of NODES){
     const nx = px(n), ny = py(n);
     const dist = Math.hypot(x-nx, y-ny);
-    if(dist <= n.r + 12){ hit = n; break; }
+    if(dist <= n.r*NODE_SCALE + tol){ hit = n; break; }
   }
   if(hit) openPanel(hit.dept); else closePanel();
 });
