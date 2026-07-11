@@ -103,7 +103,7 @@ Tabela única, append-only, um registro por evento.
 ### 3.4 Motor de sequência
 - Tabela `email_sequencia (id, lead_id, step, status, agendado_para, enviado_em, ...)` com **unique (lead_id, step)** pra idempotência (mesmo padrão da cadência da Eva `eva_cadence`).
 - Scheduler no `setInterval` do `index.ts` (a cada 15 min, mesmo motor da cadência): busca quem está "due" pro próximo step, gera e envia, agenda o próximo.
-- **Respeita horário comercial BRT (9h–20h)** e não envia fim de semana (a confirmar com Junior).
+- **Respeita horário comercial BRT (9h–20h) e envia SÓ em dias úteis** (não envia sábado/domingo) — decidido pelo Junior 11/07.
 - **Para a sequência** (status `cancelled`) se o lead: responde (qualquer canal), fecha venda (`venda_ganha`), ou descadastra.
 - **Coordenação com WhatsApp:** não enviar e-mail no mesmo dia em que a Eva já mandou toque de cadência pro mesmo lead (checar `eva_cadence`/últimas mensagens).
 
