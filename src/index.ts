@@ -103,6 +103,8 @@ import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/tem
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
 import { carregarEmpresaConfig, carregarKits, empresa, listaMarcasTexto } from './modules/empresa-config.js';
 import { mapResendEvento } from './modules/email/resend-events.js';
+import { EmailSequenceService } from './modules/email/email-sequence.js';
+import { EmailSender } from './modules/email/resend-client.js';
 import { registrarEvento } from './modules/elo/eventos.js';
 // Escape pra páginas públicas que interpolam campos da empresa_config em HTML
 // (config é admin-controlled, mas vem do banco — defesa em profundidade).
@@ -7657,7 +7659,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
               metaWaba: metaWaba ?? null,
               sendText,
               acquireAlertLock,
-              minAberturas: 3,
+              minAberturas: Number(process.env.EMAIL_HOT_OPENS ?? 3),
             });
           } catch (err) {
             console.warn('[resend-webhook] checarLeadQuente falhou (ignorado):', (err as Error)?.message ?? err);
@@ -8175,6 +8177,32 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     // Primeira passada 2min apos start (captura backlog de toques vencidos durante restart)
     setTimeout(() => cadence.processCadence().catch(() => {}), 2 * 60 * 1000);
     console.log('[cadence] Cadence scheduler started (checks every 15 min, 9h-20h BRT)');
+
+    // Maquina de e-mail (Elo): espelha a cadencia de WhatsApp, so que pro
+    // canal e-mail. Processa steps de email_sequencia vencidos a cada 15min,
+    // respeita horario comercial 9h-20h BRT em dias uteis (podeEnviarAgora).
+    const emailSeq = new EmailSequenceService(
+      supabase,
+      new Anthropic({ apiKey: config.anthropicApiKey }),
+      new EmailSender(process.env.RESEND_API_KEY ?? '', process.env.EMAIL_FROM ?? ''),
+      {
+        from: process.env.EMAIL_FROM ?? '',
+        baseUrl: config.publicProposalBaseUrl,
+        hotOpens: Number(process.env.EMAIL_HOT_OPENS ?? 3),
+        empresa: empresa().nomeFantasia,
+      },
+    );
+    const runEmailSeq = async () => {
+      try {
+        const n = await emailSeq.processSequence();
+        if (n) console.log(`[email-seq] enviados: ${n}`);
+      } catch (err) {
+        console.warn('[email-seq] ciclo falhou:', (err as Error)?.message);
+      }
+    };
+    setInterval(runEmailSeq, 15 * 60 * 1000);
+    setTimeout(runEmailSeq, 3 * 60 * 1000); // primeira passada 3min apos boot
+    console.log('[email-seq] scheduler started (15min, dias uteis 9-20 BRT)');
 
     // Auto-agendamento de cadencia: a cada 1h, busca leads novos silentes
     // ha mais de 24h sem cadencia agendada e dispara scheduleCadence
