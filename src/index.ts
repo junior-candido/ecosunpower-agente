@@ -102,6 +102,8 @@ import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/servic
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
 import { carregarEmpresaConfig, carregarKits, empresa, listaMarcasTexto } from './modules/empresa-config.js';
+import { mapResendEvento } from './modules/email/resend-events.js';
+import { registrarEvento } from './modules/elo/eventos.js';
 // Escape pra páginas públicas que interpolam campos da empresa_config em HTML
 // (config é admin-controlled, mas vem do banco — defesa em profundidade).
 import { escapeHtml } from './modules/dashboard/views.js';
@@ -7610,6 +7612,68 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     );
 
     res.type('text/html').send(renderPosInstalacaoHtml(view));
+  });
+
+  // ===== Webhook do Resend (espinha do Elo) =====
+  // Sem auth — o Resend chama esse endpoint. Best-effort: NUNCA lanca, sempre
+  // responde 200 (senao o Resend fica retentando infinitamente). O body ja
+  // vem parseado pelo express.json() global (linha ~5717).
+  // TODO (seguranca): validar assinatura svix do Resend antes de confiar no payload.
+  app.post('/webhooks/resend', async (req, res) => {
+    try {
+      const ev = mapResendEvento(req.body);
+      if (ev) {
+        const mid = (ev.payload as any)?.provider_message_id;
+        let leadId: string | null = null;
+        if (mid) {
+          const { data } = await supabase.getClient()
+            .from('email_sequencia')
+            .select('lead_id')
+            .eq('provider_message_id', mid)
+            .limit(1);
+          leadId = data?.[0]?.lead_id ?? null;
+        }
+        await registrarEvento(supabase.getClient(), { ...ev, leadId });
+        if (ev.tipo === 'email_descadastro' && leadId) {
+          await supabase.cancelEmailSequence(leadId, 'complaint');
+        }
+      }
+    } catch (err) {
+      console.warn('[resend-webhook] ignorado:', (err as Error)?.message ?? err);
+    }
+    res.status(200).json({ ok: true });
+  });
+
+  // ===== Rota de descadastro de e-mail (espinha do Elo) =====
+  // Sem auth — link clicavel direto do e-mail. URL publica: /e/descadastro?lid=<leadId>
+  app.get('/e/descadastro', async (req, res) => {
+    const lid = String(req.query.lid ?? '');
+    try {
+      if (lid) {
+        const { data } = await supabase.getClient()
+          .from('leads')
+          .select('email')
+          .eq('id', lid)
+          .limit(1);
+        const email = data?.[0]?.email;
+        if (email) {
+          await supabase.registrarDescadastro(email, lid, 'link');
+          await supabase.cancelEmailSequence(lid, 'descadastro');
+          await registrarEvento(supabase.getClient(), {
+            tipo: 'email_descadastro',
+            leadId: lid,
+            canal: 'email',
+            origem: 'link',
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[descadastro] ignorado:', (err as Error)?.message ?? err);
+    }
+    res.type('text/html').send(
+      '<html><body style="font-family:sans-serif;text-align:center;padding:60px">' +
+      '<h2>Pronto!</h2><p>Você não receberá mais nossos e-mails. 💚</p></body></html>',
+    );
   });
 
   // Pagina publica de Politica de Privacidade pra uso nos Lead Ads da Meta.
