@@ -13,7 +13,7 @@ function makeFakeClient(countsByTable: Record<string, number | 'throw'>) {
   const from = (table: string) => {
     const cfg = countsByTable[table];
     const builder: any = {};
-    const chainMethods = ['eq', 'in', 'gte', 'lte', 'select'];
+    const chainMethods = ['eq', 'in', 'gte', 'lte', 'like', 'select'];
     for (const m of chainMethods) {
       builder[m] = (...args: any[]) => {
         callLog.push({ table, method: m, args });
@@ -60,6 +60,8 @@ describe('montarSnapshotElo', () => {
       operacao: { usinas: 2 },
       relacionamento: { clientes: 10, manutencoes: 4 },
       financeiro: { vendas: 6 },
+      // site e calculadora contam eventos_elo (like) — no fake, count por tabela = 7
+      externos: { site: 7, calculadora: 7 },
       elo: { totalEventos: 7 },
     });
   });
@@ -134,6 +136,7 @@ describe('montarSnapshotElo', () => {
       operacao: { usinas: 0 },
       relacionamento: { clientes: 0, manutencoes: 0 },
       financeiro: { vendas: 0 },
+      externos: { site: 0, calculadora: 0 },
       elo: { totalEventos: 0 },
     });
   });
