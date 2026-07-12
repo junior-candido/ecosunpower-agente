@@ -1,11 +1,27 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { buildSystemBlocks } from './system-blocks.js';
 import { formatCacheUsage } from './cache-log.js';
+import { registrarUsoIa } from './custos/ia-metering.js';
 import { empresa, interpolarEmpresa } from './empresa-config.js';
 import { promptFileDoModo } from './eva-modo.js';
+
+// Client Supabase dedicado ao medidor de custos de IA. Lazy + memoizado:
+// criado sob demanda a partir das mesmas envs do SupabaseService. Em
+// teste/build (sem env) fica null → registrarUsoIa vira no-op best-effort.
+// Assim o medidor liga em prod sem refatorar o construtor do Brain nem o
+// index.ts (o Brain hoje só recebe apiKey + reviewLink).
+let _custosClient: SupabaseClient | null | undefined;
+function getCustosClient(): SupabaseClient | null {
+  if (_custosClient !== undefined) return _custosClient;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY;
+  _custosClient = url && key ? createClient(url, key) : null;
+  return _custosClient;
+}
 
 interface MessageEntry {
   role: 'user' | 'assistant';
@@ -110,6 +126,15 @@ export class Brain {
 
     // Prova do prompt caching em prod (commit 71c8583).
     console.log(formatCacheUsage(response.usage));
+
+    // Medidor de custo de IA (best-effort, nunca derruba a resposta). A Eva é
+    // o maior consumidor de tokens — grava tokens + custo estimado em BRL na
+    // custos_ia_uso. Sem await pra não somar latência na resposta ao cliente.
+    void registrarUsoIa(getCustosClient(), {
+      modelo: 'claude-sonnet-4-6',
+      origem: 'eva',
+      usage: response.usage,
+    });
 
     const text = response.content
       .filter((block): block is Anthropic.TextBlock => block.type === 'text')

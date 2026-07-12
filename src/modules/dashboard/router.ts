@@ -3547,5 +3547,53 @@ export function createDashboardRouter(
     res.json({ resposta });
   });
 
+  // ===== Cofre de Custos (camuflado no Elo) — SÓ CEO/admin + PIN =====
+  // Dado sensível: o custo NUNCA entra no snapshot público do Elo. Só sai por
+  // aqui, e só se: (1) usuário logado é admin (isAdmin) E (2) o PIN bate com
+  // CUSTOS_PIN (env). Sem CUSTOS_PIN setado, o cofre fica fechado (403).
+  router.post('/cerebro/custos', exigir('relatorios', 'visualizar'), async (req: Request, res: Response) => {
+    const viewer = (req as AuthedRequest).dashUser;
+    const pin = String(req.body?.pin ?? '');
+    const esperado = process.env.CUSTOS_PIN ?? '';
+    if (!viewer?.isAdmin || !esperado || pin !== esperado) {
+      res.status(403).json({ erro: 'acesso negado' });
+      return;
+    }
+    try {
+      const { montarCustosMes } = await import('./custos-data.js');
+      const custos = await montarCustosMes(supabaseService);
+      res.json(custos);
+    } catch (err) {
+      console.warn('[cerebro-custos]', (err as Error)?.message);
+      res.status(500).json({ erro: 'falha ao montar custos' });
+    }
+  });
+
+  // Cadastrar um custo fixo (servidor/assinatura) — mesmo cofre (admin + PIN).
+  router.post('/cerebro/custos/fixo', exigir('relatorios', 'visualizar'), async (req: Request, res: Response) => {
+    const viewer = (req as AuthedRequest).dashUser;
+    const pin = String(req.body?.pin ?? '');
+    const esperado = process.env.CUSTOS_PIN ?? '';
+    if (!viewer?.isAdmin || !esperado || pin !== esperado) {
+      res.status(403).json({ erro: 'acesso negado' });
+      return;
+    }
+    const nome = String(req.body?.nome ?? '').slice(0, 80).trim();
+    const valorReais = Number(req.body?.valor);
+    if (!nome || !(valorReais > 0)) {
+      res.status(400).json({ erro: 'nome e valor (em reais) são obrigatórios' });
+      return;
+    }
+    try {
+      await supabaseService.getClient()
+        .from('custos_fixos')
+        .insert({ nome, valor_cents: Math.round(valorReais * 100) });
+      res.json({ ok: true });
+    } catch (err) {
+      console.warn('[cerebro-custos-fixo]', (err as Error)?.message);
+      res.status(500).json({ erro: 'falha ao salvar' });
+    }
+  });
+
   return router;
 }
