@@ -31,6 +31,18 @@ CREATE TABLE IF NOT EXISTS custos_fixos (
 );
 CREATE INDEX IF NOT EXISTS idx_custos_fixos_ativo ON custos_fixos (ativo);
 
+-- Seed dos fixos ja conhecidos (informados pelo Junior). Idempotente por nome —
+-- roda 2x sem duplicar. Junior edita/desativa/ajusta depois no cofre.
+-- Plano Claude do Junior: R$ 1.159,37/mes. Planos dos filhos: US$ 20 x 2 = US$ 40,
+-- convertido a ~5,40 = R$ 216,00 (valor em BRL; reajustar se a cotacao mudar).
+INSERT INTO custos_fixos (nome, valor_cents)
+SELECT 'Plano Claude - Junior (mensal)', 115937
+WHERE NOT EXISTS (SELECT 1 FROM custos_fixos WHERE nome = 'Plano Claude - Junior (mensal)');
+
+INSERT INTO custos_fixos (nome, valor_cents)
+SELECT 'Planos Claude - filhos (2x US$ 20)', 21600
+WHERE NOT EXISTS (SELECT 1 FROM custos_fixos WHERE nome = 'Planos Claude - filhos (2x US$ 20)');
+
 -- RLS: mesma postura das outras tabelas (service role acessa; o app controla).
 ALTER TABLE custos_ia_uso ENABLE ROW LEVEL SECURITY;
 ALTER TABLE custos_fixos ENABLE ROW LEVEL SECURITY;
