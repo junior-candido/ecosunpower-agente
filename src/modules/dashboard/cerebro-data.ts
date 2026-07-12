@@ -13,6 +13,7 @@ export type SnapshotElo = {
   operacao: { usinas: number };
   relacionamento: { clientes: number; manutencoes: number };
   financeiro: { vendas: number };
+  externos: { site: number; calculadora: number };
   elo: { totalEventos: number };
 };
 
@@ -68,6 +69,8 @@ export async function montarSnapshotElo(supabase: SupabaseService): Promise<Snap
     totalEventos,
     blog,
     anuncios,
+    site,
+    calculadora,
   ] = await Promise.all([
     contar(supabase, 'leads'),
     contar(supabase, 'leads', (q) => q.eq('status', 'negociacao')),
@@ -88,6 +91,10 @@ export async function montarSnapshotElo(supabase: SupabaseService): Promise<Snap
     // marketing:lead_ads da espinha (cresce conforme lead de anúncio entra).
     contar(supabase, 'blog_drafts', (q) => q.eq('status', 'published')),
     contar(supabase, 'eventos_elo', (q) => q.eq('tipo', 'marketing:lead_ads')),
+    // Casas em outros repos (bilhetes que chegam pela portinha /elo/evento):
+    // site:* (visitas/leads do site) e calculadora:* (orçamentos gerados).
+    contar(supabase, 'eventos_elo', (q) => q.like('tipo', 'site:%')),
+    contar(supabase, 'eventos_elo', (q) => q.like('tipo', 'calculadora:%')),
   ]);
 
   return {
@@ -97,6 +104,7 @@ export async function montarSnapshotElo(supabase: SupabaseService): Promise<Snap
     operacao: { usinas },
     relacionamento: { clientes, manutencoes },
     financeiro: { vendas },
+    externos: { site, calculadora },
     elo: { totalEventos },
   };
 }

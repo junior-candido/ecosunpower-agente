@@ -201,16 +201,19 @@ const NS = 'http://www.w3.org/2000/svg';
 // ---- as 9 casas ligadas na espinha do Elo (numeros reais do SNAP) ----
 function num(v){ return (typeof v === 'number' && isFinite(v)) ? v : 0; }
 const M = SNAP.marketing || {};
+const X = SNAP.externos || {};
 const HOUSES = [
-  { key:'leads',         em:'🎯', nm:'Leads',         n:num(SNAP.comercial && SNAP.comercial.leads),   lb:'no funil',        src:'novo · estágio',    ang:-90 },
-  { key:'propostas',     em:'📄', nm:'Propostas',     n:num(SNAP.comercial && SNAP.comercial.propostas), lb:'enviadas',       src:'criada · aberta',   ang:-50 },
-  { key:'anuncios',      em:'📣', nm:'Anúncios',      n:num(M.anuncios),                                lb:'leads de anúncio', src:'Meta · Google',     ang:-10 },
-  { key:'blog',          em:'✍️', nm:'Blog',          n:num(M.blog),                                    lb:'artigos no ar',    src:'publicado',         ang:30 },
-  { key:'financeiro',    em:'💰', nm:'Financeiro',    n:num(SNAP.financeiro && SNAP.financeiro.vendas), lb:'vendas',          src:'conta · recebido',  ang:70 },
-  { key:'posvenda',      em:'🤝', nm:'Pós-venda',     n:num(SNAP.relacionamento && SNAP.relacionamento.clientes), lb:'clientes', src:'etapa da obra',  ang:110 },
-  { key:'monitoramento', em:'📈', nm:'Monitoramento', n:num(SNAP.operacao && SNAP.operacao.usinas),     lb:'usinas',          src:'alerta de usina',   ang:150 },
-  { key:'email',         em:'📧', nm:'E-mail',        n:num(M.emailsEnviados),                          lb:'enviados',        src:'sequência viva',    ang:190 },
-  { key:'eva',           em:'💬', nm:'Eva · Zap',     n:num(SNAP.atendimento && SNAP.atendimento.conversas), lb:'conversas',  src:'mensagem · resposta', ang:230 }
+  { key:'leads',         em:'🎯', nm:'Leads',         n:num(SNAP.comercial && SNAP.comercial.leads),   lb:'no funil',         src:'novo · estágio' },
+  { key:'propostas',     em:'📄', nm:'Propostas',     n:num(SNAP.comercial && SNAP.comercial.propostas), lb:'enviadas',        src:'criada · aberta' },
+  { key:'calculadora',   em:'🧮', nm:'Calculadora',   n:num(X.calculadora),                             lb:'orçamentos',       src:'kit · proposta' },
+  { key:'site',          em:'🌐', nm:'Site',          n:num(X.site),                                    lb:'visitas · leads',  src:'formulário' },
+  { key:'anuncios',      em:'📣', nm:'Anúncios',      n:num(M.anuncios),                                lb:'leads de anúncio', src:'Meta · Google' },
+  { key:'blog',          em:'✍️', nm:'Blog',          n:num(M.blog),                                    lb:'artigos no ar',    src:'publicado' },
+  { key:'financeiro',    em:'💰', nm:'Financeiro',    n:num(SNAP.financeiro && SNAP.financeiro.vendas), lb:'vendas',           src:'conta · recebido' },
+  { key:'posvenda',      em:'🤝', nm:'Pós-venda',     n:num(SNAP.relacionamento && SNAP.relacionamento.clientes), lb:'clientes', src:'etapa da obra' },
+  { key:'monitoramento', em:'📈', nm:'Monitoramento', n:num(SNAP.operacao && SNAP.operacao.usinas),     lb:'usinas',           src:'alerta de usina' },
+  { key:'email',         em:'📧', nm:'E-mail',        n:num(M.emailsEnviados),                          lb:'enviados',         src:'sequência viva' },
+  { key:'eva',           em:'💬', nm:'Eva · Zap',     n:num(SNAP.atendimento && SNAP.atendimento.conversas), lb:'conversas',   src:'mensagem · resposta' }
 ];
 
 const stageZone = document.getElementById('stageZone');
@@ -250,7 +253,9 @@ function addPulse(path, color, seed){
 function abrirCasa(key){ openPanel(key); }
 
 HOUSES.forEach(function(h, i){
-  const a = h.ang * Math.PI / 180;
+  // distribui as casas igualmente em volta do Elo (comeca no topo, -90deg),
+  // seja qual for a quantidade — assim adicionar casa nova nao desalinha
+  const a = (-90 + i * (360 / HOUSES.length)) * Math.PI / 180;
   const hx = CX + R*Math.cos(a), hy = CY + R*Math.sin(a);
   const bx = CX + BR*Math.cos(a), by = CY + BR*Math.sin(a);
   const ex = CX + (R-72)*Math.cos(a), ey = CY + (R-72)*Math.sin(a);
@@ -413,6 +418,8 @@ const INFO = {
   propostas: { titulo:'📄 Propostas', desc:'Sei quando uma proposta é criada e quando o cliente abre pela primeira vez.', kpis:[ ['Propostas enviadas', num(C.propostas)] ] },
   anuncios: { titulo:'📣 Anúncios', desc:'Cada lead que chega de um anúncio pago do Meta ou Google vira um bilhete pra mim.', kpis:[ ['Leads de anúncio', num(M.anuncios)] ] },
   blog: { titulo:'✍️ Blog', desc:'Toda vez que um artigo novo é publicado no site, eu registro.', kpis:[ ['Artigos no ar', num(M.blog)] ] },
+  calculadora: { titulo:'🧮 Calculadora', desc:'A calculadora solar monta kits e orçamentos — cada orçamento gerado vira um bilhete pra mim.', kpis:[ ['Orçamentos', num(X.calculadora)] ] },
+  site: { titulo:'🌐 Site', desc:'O site institucional traz visitas e leads — eu registro o que chega de lá.', kpis:[ ['Visitas e leads', num(X.site)] ] },
   financeiro: { titulo:'💰 Financeiro', desc:'Registro cada conta a receber e cada recebimento — o resultado de tudo que passa por mim.', kpis:[ ['Vendas fechadas', num(F.vendas)] ] },
   posvenda: { titulo:'🤝 Pós-venda', desc:'Cuido do cliente depois da venda: a cada etapa da obra que avança, eu sei.', kpis:[ ['Clientes', num(RL.clientes)], ['Manutenções', num(RL.manutencoes)] ] },
   monitoramento: { titulo:'📈 Monitoramento', desc:'Monitoro a geração de cada usina — quando uma dá alerta, o bilhete chega na hora.', kpis:[ ['Usinas monitoradas', num(O.usinas)] ] },

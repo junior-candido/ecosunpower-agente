@@ -7778,6 +7778,41 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     );
   });
 
+  // ===== Portinha da espinha do Elo pra casas em OUTROS repos =====
+  // Site e Calculadora moram em repositorios separados; aqui eles mandam
+  // bilhete pro Elo por HTTP (fetch best-effort do lado deles). Token simples
+  // (ELO_INGEST_TOKEN) — sem token configurado a rota fica FECHADA (nao vira
+  // porta aberta). Best-effort: sempre 200, aceita so tipos 'site:*' e
+  // 'calculadora:*' pra portinha nao virar canal pra qualquer coisa.
+  app.post('/elo/evento', async (req, res) => {
+    const token = (req.headers['x-webhook-token'] as string) ?? (req.query.token as string) ?? '';
+    const esperado = process.env.ELO_INGEST_TOKEN ?? '';
+    if (!esperado || token !== esperado) {
+      res.status(401).json({ error: 'invalid token' });
+      return;
+    }
+    try {
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const tipo = typeof b.tipo === 'string' ? b.tipo.slice(0, 80) : '';
+      if (!tipo || !/^(site|calculadora):[a-z_]+$/.test(tipo)) {
+        res.status(200).json({ ok: false, ignored: true });
+        return;
+      }
+      const departamento = tipo.startsWith('calculadora') ? 'comercial' : 'marketing';
+      await registrarEvento(supabase.getClient(), {
+        tipo,
+        departamento,
+        canal: 'web',
+        origem: tipo.split(':')[0],
+        payload:
+          b.payload && typeof b.payload === 'object' ? (b.payload as Record<string, unknown>) : {},
+      });
+    } catch (err) {
+      console.warn('[elo/evento] ignorado:', (err as Error)?.message ?? err);
+    }
+    res.status(200).json({ ok: true });
+  });
+
   // Pagina publica de Politica de Privacidade pra uso nos Lead Ads da Meta.
   // LGPD (Lei 13.709/2018) exige transparencia sobre coleta/uso de dados.
   // URL publica: /privacidade (usar no campo do Meta Lead Form)

@@ -41,11 +41,11 @@ describe('renderCerebroPage', () => {
     expect(html).toMatch(/sizeStage/);
   });
 
-  it('mostra as 9 casas do ecossistema ligadas na espinha do Elo', () => {
+  it('mostra as casas do ecossistema ligadas na espinha do Elo (inclui Calculadora e Site)', () => {
     const html = renderCerebroPage(snap, ['oi']);
     // as casas sao montadas a partir do array HOUSES no JS client-side
     expect(html).toMatch(/HOUSES\s*=/);
-    for (const casa of ['Leads', 'Propostas', 'Anúncios', 'Blog', 'Financeiro', 'Pós-venda', 'Monitoramento', 'E-mail']) {
+    for (const casa of ['Leads', 'Propostas', 'Calculadora', 'Site', 'Anúncios', 'Blog', 'Financeiro', 'Pós-venda', 'Monitoramento', 'E-mail']) {
       expect(html).toContain(casa);
     }
     // a legenda dos bilhetes (dourado entra, verde sai) — a "cara do mapa"
