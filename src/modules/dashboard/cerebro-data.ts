@@ -9,7 +9,7 @@ import { CLIENTE_STATUSES } from './clientes-queries.js';
 export type SnapshotElo = {
   comercial: { leads: number; negociacao: number; ganhos: number; propostas: number };
   atendimento: { conversas: number };
-  marketing: { emailsEnviados: number; emailsAbertos: number; leadsQuentes: number };
+  marketing: { emailsEnviados: number; emailsAbertos: number; leadsQuentes: number; blog: number; anuncios: number };
   operacao: { usinas: number };
   relacionamento: { clientes: number; manutencoes: number };
   financeiro: { vendas: number };
@@ -66,6 +66,8 @@ export async function montarSnapshotElo(supabase: SupabaseService): Promise<Snap
     manutencoes,
     vendas,
     totalEventos,
+    blog,
+    anuncios,
   ] = await Promise.all([
     contar(supabase, 'leads'),
     contar(supabase, 'leads', (q) => q.eq('status', 'negociacao')),
@@ -80,12 +82,18 @@ export async function montarSnapshotElo(supabase: SupabaseService): Promise<Snap
     contar(supabase, 'manutencoes'),
     contar(supabase, 'fechamentos'),
     contar(supabase, 'eventos_elo'),
+    // Casas novas ligadas na espinha (12/07): blog publicado + leads de anúncios.
+    // marketing:blog_publicado ainda não tem histórico → usa o blog_drafts
+    // publicado (número real de artigos no ar); anúncios conta os bilhetes
+    // marketing:lead_ads da espinha (cresce conforme lead de anúncio entra).
+    contar(supabase, 'blog_drafts', (q) => q.eq('status', 'published')),
+    contar(supabase, 'eventos_elo', (q) => q.eq('tipo', 'marketing:lead_ads')),
   ]);
 
   return {
     comercial: { leads, negociacao, ganhos, propostas },
     atendimento: { conversas },
-    marketing: { emailsEnviados, emailsAbertos, leadsQuentes },
+    marketing: { emailsEnviados, emailsAbertos, leadsQuentes, blog, anuncios },
     operacao: { usinas },
     relacionamento: { clientes, manutencoes },
     financeiro: { vendas },

@@ -33,11 +33,22 @@ describe('renderCerebroPage', () => {
     expect(html).toMatch(/@media \(max-width:\s*640px\)/);
   });
 
-  it('layout em zonas: coluna flex (topbar/cerebro/fala/pergunta nunca sobrepostos)', () => {
+  it('layout em zonas: coluna flex (topbar/mapa/fala/pergunta nunca sobrepostos)', () => {
     const html = renderCerebroPage(snap, ['oi']);
     expect(html).toMatch(/#wrap\s*\{[^}]*flex-direction:\s*column/);
-    // o canvas mede a ZONA do meio (#canvasWrap), nao a janela inteira
-    expect(html).toMatch(/canvasWrap\.clientWidth/);
-    expect(html).toMatch(/canvasWrap\.clientHeight/);
+    // o mapa vive na zona do meio (#stageZone), que mantem o palco quadrado
+    expect(html).toContain('stageZone');
+    expect(html).toMatch(/sizeStage/);
+  });
+
+  it('mostra as 9 casas do ecossistema ligadas na espinha do Elo', () => {
+    const html = renderCerebroPage(snap, ['oi']);
+    // as casas sao montadas a partir do array HOUSES no JS client-side
+    expect(html).toMatch(/HOUSES\s*=/);
+    for (const casa of ['Leads', 'Propostas', 'Anúncios', 'Blog', 'Financeiro', 'Pós-venda', 'Monitoramento', 'E-mail']) {
+      expect(html).toContain(casa);
+    }
+    // a legenda dos bilhetes (dourado entra, verde sai) — a "cara do mapa"
+    expect(html).toContain('bilhete indo pro Elo');
   });
 });

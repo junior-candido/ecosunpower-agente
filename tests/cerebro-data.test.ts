@@ -46,6 +46,7 @@ describe('montarSnapshotElo', () => {
       sistemas_clientes: 2,
       manutencoes: 4,
       fechamentos: 6,
+      blog_drafts: 8,
     });
 
     const snap = await montarSnapshotElo(supabase);
@@ -53,7 +54,9 @@ describe('montarSnapshotElo', () => {
     expect(snap).toEqual({
       comercial: { leads: 10, negociacao: 10, ganhos: 10, propostas: 5 },
       atendimento: { conversas: 3 },
-      marketing: { emailsEnviados: 7, emailsAbertos: 7, leadsQuentes: 7 },
+      // blog vem de blog_drafts (published); anuncios vem de eventos_elo
+      // (tipo marketing:lead_ads) — o count depende só da TABELA no fake.
+      marketing: { emailsEnviados: 7, emailsAbertos: 7, leadsQuentes: 7, blog: 8, anuncios: 7 },
       operacao: { usinas: 2 },
       relacionamento: { clientes: 10, manutencoes: 4 },
       financeiro: { vendas: 6 },
@@ -127,7 +130,7 @@ describe('montarSnapshotElo', () => {
     expect(snap).toEqual({
       comercial: { leads: 0, negociacao: 0, ganhos: 0, propostas: 0 },
       atendimento: { conversas: 0 },
-      marketing: { emailsEnviados: 0, emailsAbertos: 0, leadsQuentes: 0 },
+      marketing: { emailsEnviados: 0, emailsAbertos: 0, leadsQuentes: 0, blog: 0, anuncios: 0 },
       operacao: { usinas: 0 },
       relacionamento: { clientes: 0, manutencoes: 0 },
       financeiro: { vendas: 0 },
