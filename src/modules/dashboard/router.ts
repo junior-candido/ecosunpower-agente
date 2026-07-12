@@ -3535,7 +3535,11 @@ export function createDashboardRouter(
         const { default: Anthropic } = await import('@anthropic-ai/sdk');
         const anthropic = new Anthropic({ apiKey: options.anthropicApiKey });
         const snap = await montarSnapshotElo(supabaseService);
-        resposta = await responderComoElo(anthropic, pergunta, snap);
+        const viewer = (req as AuthedRequest).dashUser;
+        resposta = await responderComoElo(anthropic, pergunta, snap, {
+          isCeo: !!viewer?.isAdmin,
+          nome: viewer?.nome,
+        });
       }
     } catch (err) {
       console.warn('[cerebro-perguntar]', (err as Error)?.message);

@@ -82,7 +82,7 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
   }
   .house:hover, .house:focus-visible { transform:translate(-50%,-50%) translateY(-3px); border-color:var(--green); outline:none; }
   .house .em { font-size:clamp(13px,2.2vmin,17px); line-height:1; }
-  .house .nm { font-weight:700; font-size:clamp(8.5px,1.35vmin,10.5px); color:var(--ink); margin-top:3px; letter-spacing:-.01em; }
+  .house .nm { font-weight:700; font-size:clamp(8.5px,1.35vmin,10.5px); color:var(--ink); margin-top:3px; letter-spacing:-.01em; line-height:1.15; overflow-wrap:anywhere; word-break:break-word; hyphens:auto; }
   .house .n { font-weight:800; font-size:clamp(13px,2.3vmin,18px); color:var(--green); margin-top:1px; font-variant-numeric:tabular-nums; line-height:1.1; }
   .house .lb { font-size:clamp(7.5px,1.05vmin,9px); color:var(--ink-soft); }
   .house .src { font-size:7.5px; color:var(--ink-faint); margin-top:2px; letter-spacing:.02em; }
@@ -376,12 +376,32 @@ function limparParaVoz(t){
     .replace(/\\s+/g, ' ')                         // colapsa espacos/quebras de linha
     .trim();
 }
+// escolhe a MELHOR voz pt-BR disponivel no navegador (dicçao e fluencia). As
+// vozes carregam de forma assincrona, entao re-escolhe no onvoiceschanged.
+let eloVoice = null;
+function pickVoice(){
+  if(!hasTTS) return;
+  const vs = window.speechSynthesis.getVoices() || [];
+  const pt = vs.filter(function(v){ return /pt[-_]?br/i.test(v.lang) || /portug/i.test(v.name); });
+  const pref = ['Google portugu', 'Luciana', 'Microsoft Thalita', 'Microsoft Francisca', 'Microsoft Maria', 'Natural', 'Microsoft Daniel'];
+  for(let i=0;i<pref.length;i++){
+    const alvo = pref[i];
+    const hit = pt.find(function(v){ return v.name.indexOf(alvo) !== -1; });
+    if(hit){ eloVoice = hit; return; }
+  }
+  if(pt.length) eloVoice = pt[0];
+}
+pickVoice();
+if(hasTTS){ window.speechSynthesis.onvoiceschanged = pickVoice; }
 function speak(texto){
   const limpo = limparParaVoz(texto);
   if(!hasTTS || !voiceOn || !limpo) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(limpo);
   u.lang = 'pt-BR';
+  if(eloVoice) u.voice = eloVoice;
+  u.rate = 0.98;   // um tiquinho mais devagar = mais claro e fluente
+  u.pitch = 1.02;
   window.speechSynthesis.speak(u);
 }
 

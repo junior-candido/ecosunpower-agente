@@ -17,6 +17,25 @@ describe('responderComoElo', () => {
     expect(sys.toLowerCase()).toContain('nunca invente'); // regra anti-alucinacao
   });
 
+  it('sabe a identidade: empresa de Brasilia e quem e o CEO no contexto', async () => {
+    let sys = '';
+    await responderComoElo(fakeAnthropic('ok', (s) => { sys = s; }) as any, 'oi', snap, { isCeo: true });
+    expect(sys.toLowerCase()).toContain('bras'); // Brasília-DF (via descricaoCurta da empresa)
+    expect(sys.toLowerCase()).toContain('ceo');  // sabe que a empresa tem um CEO
+  });
+
+  it('reconhece quem fala: CEO libera tudo; equipe recebe so o necessario', async () => {
+    let sysCeo = '';
+    await responderComoElo(fakeAnthropic('ok', (s) => { sysCeo = s; }) as any, 'como vai?', snap, { isCeo: true, nome: 'Junior' });
+    expect(sysCeo).toContain('CEO');
+    expect(sysCeo).toContain('Junior');
+
+    let sysEquipe = '';
+    await responderComoElo(fakeAnthropic('ok', (s) => { sysEquipe = s; }) as any, 'como vai?', snap, { isCeo: false, nome: 'Maria' });
+    expect(sysEquipe).toContain('Maria');
+    expect(sysEquipe.toLowerCase()).toContain('so com a direcao'); // barra detalhe profundo
+  });
+
   it('instrui a IA a responder em texto simples, sem markdown/asteriscos/emojis (a resposta e falada)', async () => {
     let sys = '';
     const a = fakeAnthropic('Voce tem 42 leads no momento.', (s) => { sys = s; });
