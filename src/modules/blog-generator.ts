@@ -5,6 +5,7 @@ import { join } from 'path';
 import type { NewsScraperService } from './news-scraper.js';
 import { empresa, nomeTituloCase } from './empresa-config.js';
 import { pickBlogHeroPhoto, pexelsIdFromUrl, downloadImage } from './blog-image.js';
+import { registrarEvento } from './elo/eventos.js';
 
 /**
  * Blog Generator — gera drafts de posts pro blog ecosunpower.eng.br baseados
@@ -507,10 +508,30 @@ Responda apenas o JSON.`;
   }
 
   async markPublished(draftId: string): Promise<void> {
-    await this.supabase
+    const { data, error } = await this.supabase
       .from('blog_drafts')
       .update({ status: 'published', published_at: new Date().toISOString() })
-      .eq('id', draftId);
+      .eq('id', draftId)
+      .select('id, slug, title')
+      .maybeSingle();
+
+    // Elo — liga a casa "Blog" na espinha do event-stream. Escolho disparar o
+    // evento AQUI (markPublished) e NAO em saveDraft: saveDraft apenas cria o
+    // rascunho com status 'pending'; é neste ponto que o artigo vira
+    // 'published' de fato (depois do commit no repo do site). Por isso o tipo
+    // 'marketing:blog_publicado' casa exatamente com este momento.
+    // Best-effort: só registra quando o update não deu erro, e registrarEvento
+    // nunca lança — não altera o comportamento existente do publish.
+    if (!error) {
+      const row = (data ?? {}) as { id?: string; slug?: string; title?: string };
+      await registrarEvento(this.supabase, {
+        tipo: 'marketing:blog_publicado',
+        departamento: 'marketing',
+        canal: 'sistema',
+        origem: 'blog',
+        payload: { titulo: row.title ?? null, slug: row.slug ?? null, id: row.id ?? draftId },
+      });
+    }
   }
 
   async markDiscarded(draftId: string, reason?: string): Promise<void> {

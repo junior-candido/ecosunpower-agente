@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { registrarEvento } from './elo/eventos.js';
 
 // Enum de installation_status. Fonte unica — importe no endpoint pra
 // validacao, evita drift entre codigo e migration (CHECK constraint espelha
@@ -71,6 +72,19 @@ export class PostInstallService {
   // 500 ao inves de lie 200.
   async scheduleOnMeterSwap(leadId: string): Promise<void> {
     const now = new Date();
+
+    // Etapa anterior da jornada — só pra enriquecer o evento do Elo (best-effort;
+    // qualquer falha aqui NÃO pode atrapalhar a troca do medidor).
+    let etapaAntiga: string | null = null;
+    try {
+      const { data: prev } = await this.supabase
+        .from('leads')
+        .select('installation_status')
+        .eq('id', leadId)
+        .maybeSingle();
+      etapaAntiga = (prev as { installation_status?: string | null } | null)?.installation_status ?? null;
+    } catch { /* best-effort: ignora */ }
+
     const { error: updateErr } = await this.supabase
       .from('leads')
       .update({
@@ -108,6 +122,18 @@ export class PostInstallService {
       throw new Error(`Failed to schedule touches: ${error.message}`);
     }
     console.log(`[post-install] Scheduled ${rows.length} touches for lead ${leadId}`);
+
+    // Elo — casa "Pós-venda / Relacionamento": a etapa da obra/jornada do cliente
+    // mudou (medidor trocado = entra oficialmente no pós-venda). Best-effort:
+    // registrarEvento NUNCA lança, então não muda o comportamento do agendamento.
+    await registrarEvento(this.supabase, {
+      tipo: 'relacionamento:etapa_obra',
+      departamento: 'relacionamento',
+      canal: 'sistema',
+      origem: 'pos-venda',
+      clienteId: leadId,
+      payload: { etapaAntiga, etapaNova: 'medidor_trocado' },
+    });
   }
 
   async cancelAll(leadId: string): Promise<number> {

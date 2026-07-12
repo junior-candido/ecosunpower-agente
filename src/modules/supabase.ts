@@ -5,6 +5,18 @@ import { proximaEtapaPorEvento, type EventoFunil } from './dashboard/pipeline.js
 import { registrarAtividade } from './dashboard/atividades.js';
 import { criarTarefa, cancelarTarefasPendentesDoLead } from './dashboard/tarefas.js';
 import { variantesTelefone } from './phone.js';
+import { registrarEvento } from './elo/eventos.js';
+
+// Elo: mapeia a origem livre do lead pro canal canônico do event-stream.
+// Best-effort — a maioria dos leads entra por WhatsApp (default). E-mail e web
+// só quando a origem deixa claro; caso contrário, sistema pra origem exótica.
+function canalDeOrigem(origin?: string | null): 'whatsapp' | 'email' | 'web' | 'sistema' {
+  const o = String(origin ?? '').toLowerCase();
+  if (!o) return 'whatsapp';
+  if (o.includes('email') || o.includes('e-mail')) return 'email';
+  if (/\b(ad|ads|meta|instagram|facebook|form|web|site|google|leadgen)\b/.test(o)) return 'web';
+  return 'sistema';
+}
 
 export interface MessageEntry {
   role: 'user' | 'assistant';
@@ -89,6 +101,18 @@ export class SupabaseService {
       .single();
 
     if (error) throw new Error(`Failed to upsert lead: ${error.message}`);
+
+    // Elo (casa Comercial): chegou aqui = getLeadByPhone não achou variante →
+    // é lead genuinamente NOVO (o caminho de update por telefone existente
+    // retornou lá em cima). Best-effort, nunca derruba o cadastro.
+    await registrarEvento(this.client, {
+      tipo: 'comercial:lead_novo',
+      departamento: 'comercial',
+      leadId: result.id,
+      canal: canalDeOrigem(data.origin),
+      payload: { origem: data.origin ?? null, status: data.status ?? null },
+    });
+
     return { id: result.id };
   }
 
@@ -993,6 +1017,13 @@ export class SupabaseService {
         titulo: `Etapa: ${atual} → ${proxima}`, automatica: true,
         payload: { de: atual, para: proxima, evento },
       });
+      // Elo (casa Comercial): estágio do lead mudou. Best-effort.
+      await registrarEvento(this.client, {
+        tipo: 'comercial:estagio_mudou',
+        departamento: 'comercial',
+        leadId,
+        payload: { de: atual, para: proxima, evento },
+      });
     }
   }
 
@@ -1080,6 +1111,15 @@ export class SupabaseService {
       .single();
 
     if (error) throw new Error(`Failed to save proposta publica: ${error.message}`);
+
+    // Elo (casa Comercial): proposta pública criada. Best-effort. leadId pode
+    // ser null (proposta sem telefone) — o event-stream aceita.
+    await registrarEvento(this.client, {
+      tipo: 'comercial:proposta_criada',
+      departamento: 'comercial',
+      leadId,
+      payload: { propostaId: data.id, numeroProposta: input.numeroProposta, slug: input.slug },
+    });
 
     // Hook de funil (Fase 2) — best-effort, nunca quebra o salvamento da proposta.
     if (leadId) {
@@ -1204,7 +1244,7 @@ export class SupabaseService {
     try {
       const { data } = await this.client
         .from('propostas_publicas')
-        .select('acessos, lead_id')
+        .select('id, acessos, lead_id')
         .eq('slug', slug)
         .maybeSingle();
 
@@ -1223,6 +1263,19 @@ export class SupabaseService {
       if (leadIdDaProposta) {
         try { await this.onPropostaAberta(leadIdDaProposta); }
         catch (e) { console.warn('[funil] onPropostaAberta falhou:', (e as Error).message); }
+      }
+
+      // Elo (casa Comercial): proposta aberta pelo cliente. Só na PRIMEIRA
+      // visualização (acessosAntes === 0) — evita disparar em cada refresh.
+      // Best-effort, nunca bloqueia a resposta HTTP da proposta.
+      if (acessosAntes === 0) {
+        await registrarEvento(this.client, {
+          tipo: 'comercial:proposta_aberta',
+          departamento: 'comercial',
+          canal: 'web',
+          leadId: leadIdDaProposta,
+          payload: { propostaId: (data as { id?: string }).id ?? null, slug },
+        });
       }
 
       return { acessosAntes };

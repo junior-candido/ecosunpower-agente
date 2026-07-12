@@ -1,5 +1,6 @@
 // src/modules/monitoring/proactive-alerts/dispatcher.ts
 import type { SupabaseService } from '../../supabase.js';
+import { registrarEvento } from '../../elo/eventos.js';
 import { dentroDaJanela } from './janela.js';
 import { formatAlertMessage } from './format.js';
 import type { MonitoringAlertRow, AlertButton } from './types.js';
@@ -126,6 +127,24 @@ export async function runDispatchCycle(hoje: Date, ctx: DispatchCtx): Promise<{
         hoje.toISOString(),
         addDays(hoje, 3).toISOString(),
       );
+      // Elo: registra o disparo do alerta de usina/inversor na espinha de
+      // eventos. Best-effort — só ADICIONA o registro, nunca muda o fluxo do
+      // dispatch (registrarEvento não lança; o getClient é protegido).
+      try {
+        await registrarEvento(ctx.supabase.getClient?.(), {
+          tipo: 'operacao:alerta_usina',
+          departamento: 'operacao',
+          canal: 'sistema',
+          origem: 'monitoramento',
+          clienteId: sistema.lead_id ?? null,
+          payload: {
+            marca: sistema.marca_inversor ?? null,
+            usinaId: alerta.sistema_id,
+            tipoAlerta: alerta.tipo,
+            mensagem: texto,
+          },
+        });
+      } catch { /* best-effort: registro de evento nunca derruba o dispatch */ }
       enviados++;
     } catch (err) {
       console.error('[proactive-alerts] dispatch falhou:', (err as Error).message);
