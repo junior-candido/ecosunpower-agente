@@ -145,8 +145,8 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
   .legend i.v { background:var(--green); box-shadow:0 0 8px var(--green); }
 
   /* cadeado CAMUFLADO do cofre de custos — canto direito do topo, discreto (só o CEO sabe) */
-  .cofre-lock { margin-left:auto; width:14px; height:14px; padding:0; border-radius:50%; background:transparent; border:1px solid rgba(255,255,255,.08); opacity:.4; cursor:pointer; transition:opacity .2s; }
-  .cofre-lock:hover, .cofre-lock:focus-visible { opacity:.85; outline:none; }
+  .cofre-lock { margin-left:auto; padding:2px 7px; font-size:15px; line-height:1; background:transparent; border:none; opacity:.55; cursor:pointer; transition:opacity .2s, transform .2s; }
+  .cofre-lock:hover, .cofre-lock:focus-visible { opacity:1; transform:scale(1.12); outline:none; }
   #cofre { position:fixed; top:0; right:0; bottom:0; z-index:30; width:min(380px,92vw); background:rgba(6,11,22,.98); backdrop-filter:blur(16px); border-left:1px solid rgba(245,179,1,.3); box-shadow:-20px 0 50px rgba(0,0,0,.6); transform:translateX(100%); transition:transform .28s ease; padding:26px 22px; color:#dbe8fb; overflow-y:auto; }
   #cofre.open { transform:translateX(0); }
   #cofre h2 { font-size:20px; margin:6px 30px 6px 0; color:var(--ink); }
@@ -189,7 +189,7 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
     <div class="dot"></div>
     <h1><b>Elo</b> · cérebro do EcoSunPower</h1>
     <span>· as casas do ecossistema ligadas, ao vivo</span>
-    <button class="cofre-lock" id="cofreLock" type="button" aria-label="."></button>
+    <button class="cofre-lock" id="cofreLock" type="button" aria-label="Custos" title="Custos">🔒</button>
   </div>
   <div class="hint">clique numa casa pra ver os números · o Elo no centro liga todas</div>
   <div id="stageZone"><div id="stage"><svg class="links" id="links" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true"></svg></div></div>
