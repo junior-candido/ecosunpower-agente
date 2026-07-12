@@ -43,6 +43,20 @@ INSERT INTO custos_fixos (nome, valor_cents)
 SELECT 'Planos Claude - filhos (2x US$ 20)', 21600
 WHERE NOT EXISTS (SELECT 1 FROM custos_fixos WHERE nome = 'Planos Claude - filhos (2x US$ 20)');
 
+-- OpenAI: US$ 56,61/mes -> R$ 305,69 (~5,40).
+INSERT INTO custos_fixos (nome, valor_cents)
+SELECT 'OpenAI (mensal)', 30569
+WHERE NOT EXISTS (SELECT 1 FROM custos_fixos WHERE nome = 'OpenAI (mensal)');
+
+-- Workspace (Google) e Cloudify: em REAIS.
+INSERT INTO custos_fixos (nome, valor_cents)
+SELECT 'Workspace (mensal)', 7514
+WHERE NOT EXISTS (SELECT 1 FROM custos_fixos WHERE nome = 'Workspace (mensal)');
+
+INSERT INTO custos_fixos (nome, valor_cents)
+SELECT 'Cloudify (mensal)', 8319
+WHERE NOT EXISTS (SELECT 1 FROM custos_fixos WHERE nome = 'Cloudify (mensal)');
+
 -- RLS: mesma postura das outras tabelas (service role acessa; o app controla).
 ALTER TABLE custos_ia_uso ENABLE ROW LEVEL SECURITY;
 ALTER TABLE custos_fixos ENABLE ROW LEVEL SECURITY;
