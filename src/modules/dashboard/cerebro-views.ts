@@ -144,6 +144,26 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
   .legend i.g { background:var(--gold); box-shadow:0 0 8px var(--gold); }
   .legend i.v { background:var(--green); box-shadow:0 0 8px var(--green); }
 
+  /* cadeado CAMUFLADO do cofre de custos — canto direito do topo, discreto (só o CEO sabe) */
+  .cofre-lock { margin-left:auto; width:14px; height:14px; padding:0; border-radius:50%; background:transparent; border:1px solid rgba(255,255,255,.08); opacity:.4; cursor:pointer; transition:opacity .2s; }
+  .cofre-lock:hover, .cofre-lock:focus-visible { opacity:.85; outline:none; }
+  #cofre { position:fixed; top:0; right:0; bottom:0; z-index:30; width:min(380px,92vw); background:rgba(6,11,22,.98); backdrop-filter:blur(16px); border-left:1px solid rgba(245,179,1,.3); box-shadow:-20px 0 50px rgba(0,0,0,.6); transform:translateX(100%); transition:transform .28s ease; padding:26px 22px; color:#dbe8fb; overflow-y:auto; }
+  #cofre.open { transform:translateX(0); }
+  #cofre h2 { font-size:20px; margin:6px 30px 6px 0; color:var(--ink); }
+  #cofre .desc { color:#9fb4d4; font-size:13px; margin-bottom:16px; }
+  #cofreForm { display:flex; gap:8px; margin-bottom:10px; }
+  #cofrePin { flex:1; min-width:0; background:rgba(11,22,40,.85); border:1px solid rgba(245,179,1,.35); border-radius:12px; padding:12px 14px; color:var(--ink); font-size:16px; letter-spacing:3px; outline:none; }
+  #cofreForm button { background:linear-gradient(135deg,#fbbf24,#f59e0b); color:#1a1400; border:none; border-radius:12px; padding:0 18px; font-weight:700; cursor:pointer; }
+  #cofreMsg { font-size:13px; color:#f87171; min-height:16px; margin-bottom:6px; }
+  #cofre .linha { display:flex; justify-content:space-between; align-items:baseline; padding:11px 0; border-bottom:1px solid rgba(255,255,255,.06); }
+  #cofre .linha .l { color:#9fb4d4; font-size:14px; }
+  #cofre .linha .n { font-size:17px; font-weight:800; color:var(--ink); font-variant-numeric:tabular-nums; }
+  #cofre .linha.total .n { color:var(--gold); font-size:22px; }
+  #cofre .add { margin-top:18px; padding-top:14px; border-top:1px solid rgba(255,255,255,.08); }
+  #cofre .add input { width:100%; margin-bottom:8px; background:rgba(11,22,40,.85); border:1px solid var(--line); border-radius:10px; padding:10px 12px; color:var(--ink); font-size:14px; outline:none; }
+  #cofre .add button { width:100%; background:rgba(52,211,153,.15); border:1px solid var(--green); color:var(--green-soft); border-radius:10px; padding:10px; font-weight:700; cursor:pointer; }
+  @media (max-width: 640px) { #cofre { top:auto; left:0; right:0; bottom:0; width:100%; max-height:72vh; border-left:none; border-top:1px solid rgba(245,179,1,.3); border-radius:20px 20px 0 0; transform:translateY(100%); } #cofre.open { transform:translateY(0); } }
+
   @media (prefers-reduced-motion: reduce) { .brain::before { animation:none; } .pulse { display:none; } }
 
   /* ---- celular: painel vira bottom-sheet POR CIMA (overlay, fecha no X ou
@@ -169,6 +189,7 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
     <div class="dot"></div>
     <h1><b>Elo</b> · cérebro do EcoSunPower</h1>
     <span>· as casas do ecossistema ligadas, ao vivo</span>
+    <button class="cofre-lock" id="cofreLock" type="button" aria-label="."></button>
   </div>
   <div class="hint">clique numa casa pra ver os números · o Elo no centro liga todas</div>
   <div id="stageZone"><div id="stage"><svg class="links" id="links" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true"></svg></div></div>
@@ -191,6 +212,19 @@ export function renderCerebroPage(snap: SnapshotElo, falas: string[]): string {
   <aside id="panel">
     <button class="panelClose" id="panelClose" type="button" aria-label="Fechar">✕</button>
     <div id="panelBody"></div>
+  </aside>
+  <aside id="cofre">
+    <button class="panelClose" id="cofreClose" type="button" aria-label="Fechar">✕</button>
+    <div id="cofreBody">
+      <h2>🔒 Cofre</h2>
+      <p class="desc">Área restrita. Digite o PIN pra ver os custos do mês.</p>
+      <form id="cofreForm" autocomplete="off">
+        <input id="cofrePin" type="password" inputmode="numeric" placeholder="PIN" maxlength="12" />
+        <button type="submit" id="cofreBtn">Abrir</button>
+      </form>
+      <div id="cofreMsg"></div>
+      <div id="cofreDados"></div>
+    </div>
   </aside>
 </div>
 <script>
@@ -447,6 +481,63 @@ document.addEventListener('click', function(ev){
   if(ev.target.closest && ev.target.closest('.house, .brain')) return;
   closePanel();
 }, true);
+
+// ---- Cofre de Custos (camuflado): 🔒 -> PIN -> custos reais do mês ----
+// O custo NUNCA vem no SNAP; ele é buscado só aqui, e o servidor só devolve se
+// for admin (CEO) + PIN certo. Sem regex nesta parte (sem risco de tela branca).
+const cofre = document.getElementById('cofre');
+const cofreLock = document.getElementById('cofreLock');
+const cofreClose = document.getElementById('cofreClose');
+const cofreForm = document.getElementById('cofreForm');
+const cofrePin = document.getElementById('cofrePin');
+const cofreMsg = document.getElementById('cofreMsg');
+const cofreDados = document.getElementById('cofreDados');
+let cofrePinOk = '';
+function reais(cents){ return (Number(cents||0)/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
+function abrirCofre(){ cofre.classList.add('open'); setTimeout(function(){ cofrePin.focus(); }, 300); }
+function fecharCofre(){ cofre.classList.remove('open'); cofreMsg.textContent=''; cofreDados.innerHTML=''; cofrePin.value=''; cofrePinOk=''; cofreForm.style.display='flex'; }
+cofreLock.addEventListener('click', abrirCofre);
+cofreClose.addEventListener('click', fecharCofre);
+
+function linhaCusto(l, c, cls){ return '<div class="linha '+(cls||'')+'"><span class="l">'+l+'</span><span class="n">'+reais(c)+'</span></div>'; }
+function renderCustos(d){
+  cofreDados.innerHTML =
+    linhaCusto('📣 Anúncios (Meta)', d.metaCents) +
+    linhaCusto('🔍 Anúncios (Google)', d.googleCents) +
+    linhaCusto('🧠 IA (Claude)', d.iaCents) +
+    linhaCusto('🔵 Fixos (servidor/assinaturas)', d.fixosCents) +
+    linhaCusto('Total do mês', d.totalCents, 'total') +
+    '<div class="add">' +
+      '<input id="fixoNome" type="text" placeholder="Novo fixo: nome (ex.: Servidor)" maxlength="80" />' +
+      '<input id="fixoValor" type="number" step="0.01" min="0" placeholder="Valor por mês (R$)" />' +
+      '<button type="button" id="fixoAdd">+ Adicionar custo fixo</button>' +
+    '</div>';
+  document.getElementById('fixoAdd').addEventListener('click', addFixo);
+}
+
+cofreForm.addEventListener('submit', function(e){
+  e.preventDefault();
+  const pin = cofrePin.value.trim();
+  if(!pin) return;
+  cofreMsg.style.color=''; cofreMsg.textContent='Abrindo...';
+  fetch('/dashboard/cerebro/custos', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pin: pin}) })
+    .then(function(r){ if(r.status===403){ throw new Error('403'); } return r.json(); })
+    .then(function(d){ cofrePinOk = pin; cofreMsg.textContent=''; cofreForm.style.display='none'; renderCustos(d); })
+    .catch(function(err){ cofreMsg.style.color='#f87171'; cofreMsg.textContent = (String(err && err.message) === '403') ? 'PIN incorreto ou sem acesso.' : 'Erro ao abrir. Tenta de novo.'; });
+});
+
+function addFixo(){
+  const nome = (document.getElementById('fixoNome').value || '').trim();
+  const valor = Number(document.getElementById('fixoValor').value);
+  if(!nome || !(valor > 0)){ cofreMsg.style.color='#f87171'; cofreMsg.textContent='Preencha nome e valor.'; return; }
+  cofreMsg.style.color=''; cofreMsg.textContent='Salvando...';
+  fetch('/dashboard/cerebro/custos/fixo', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pin: cofrePinOk, nome: nome, valor: valor}) })
+    .then(function(r){ if(!r.ok){ throw new Error('falhou'); } return r.json(); })
+    .then(function(){ cofreMsg.textContent=''; return fetch('/dashboard/cerebro/custos', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pin: cofrePinOk}) }); })
+    .then(function(r){ return r.json(); })
+    .then(function(d){ renderCustos(d); })
+    .catch(function(){ cofreMsg.style.color='#f87171'; cofreMsg.textContent='Não deu pra salvar.'; });
+}
 </script>
 </body>
 </html>`;
