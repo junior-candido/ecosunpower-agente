@@ -4470,6 +4470,23 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         payload: { direcao: 'in' },
       });
 
+      // Elo (casa Site): lead veio da COTACAO do site. O site e estatico e nao
+      // pode guardar segredo, entao em vez de ele mandar bilhete (token
+      // exposto), o Elo RECONHECE a mensagem-assinatura que o site pre-preenche
+      // no WhatsApp ("Fiz a cotacao rapida no site"). Seguro, sem tocar no site.
+      // Best-effort. Normaliza acento/caixa pra casar mesmo com variacao.
+      const textoNorm = String(text).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+      if (textoNorm.includes('cotacao rapida no site')) {
+        await registrarEvento(supabase.getClient(), {
+          tipo: 'site:cotacao',
+          departamento: 'marketing',
+          canal: 'web',
+          origem: 'site',
+          leadId,
+          payload: { fonte: 'cotacao' },
+        });
+      }
+
       const response = await brain.processMessage(
         text,
         history,
