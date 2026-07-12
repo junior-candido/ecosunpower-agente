@@ -4,6 +4,7 @@
 // monta as falas de narracao ambiente da tela viva a partir do mesmo
 // snapshot. Best-effort: falha na IA nunca quebra a tela.
 import { aplicarTravaPrecoExplicito } from '../email/price-lock.js';
+import { empresa, nomeTituloCase } from '../empresa-config.js';
 import type { SnapshotElo } from './cerebro-data.js';
 
 /**
@@ -21,16 +22,39 @@ export async function responderComoElo(
   anthropic: any,
   pergunta: string,
   snap: SnapshotElo,
+  ctx?: { isCeo?: boolean; nome?: string },
 ): Promise<string> {
   const dados = JSON.stringify(snap);
-  const system =
-    'Voce e o Elo, o cerebro do EcoSunPower. Responda a pergunta do usuario APENAS com base nos DADOS REAIS abaixo. ' +
-    'NUNCA invente numeros nem fatos. Se a resposta nao estiver nos dados, diga que ainda nao tem esse dado. ' +
-    'Nunca cite preco ou valor em reais. Seja claro, curto e caloroso, em portugues do Brasil. ' +
-    'Sua resposta e falada em voz alta por um sintetizador de voz, entao responda em texto corrido, ' +
-    'como se estivesse conversando: SEM markdown, sem asteriscos, sem listas com marcadores ou numeradas, ' +
-    'sem titulos/cabecalhos e sem emojis — so frases naturais.\n' +
-    'DADOS REAIS: ' + dados;
+  const e = empresa();
+  const ceoNome = nomeTituloCase(e.rtNome);
+  // Sem ctx explicito, assume acesso total (compatibilidade); a rota passa o
+  // usuario logado do dashboard (isAdmin = direcao/CEO).
+  const isCeo = ctx?.isCeo !== false;
+  const quemFala = ctx?.nome && ctx.nome.trim() ? ctx.nome.trim() : isCeo ? ceoNome : 'alguem da equipe';
+
+  const identidade =
+    'Voce e o Elo, o cerebro do ' + e.nomeFantasia + ' — ' + e.descricaoCurta + '. ' +
+    'Regiao de atuacao: ' + e.regiaoAtuacao + '. ' +
+    'Voce liga todos os departamentos (casas) do ecossistema pra que nada se perca: Atendimento (a Eva no ' +
+    'WhatsApp), Comercial (leads e propostas), Marketing (e-mail, blog e anuncios), Operacao (monitoramento ' +
+    'das usinas), Relacionamento (pos-venda) e Financeiro. O fundador e CEO da empresa e ' + ceoNome + '. ';
+
+  const acesso = isCeo
+    ? 'Voce esta falando com ' + quemFala + ', o CEO. Pode contar tudo: numeros, tendencias, o que estiver nos dados. '
+    : 'Voce esta falando com ' + quemFala + ', da equipe. Responda de forma geral e acolhedora, so o que for ' +
+      'necessario. NAO entre em detalhes profundos nem sensiveis da operacao (estrategia, margens, planos ' +
+      'internos, numeros que so a direcao deve ver). Se pedirem esse nivel de detalhe, diga com gentileza que ' +
+      'isso e so com a direcao. ';
+
+  const regras =
+    'Responda a pergunta APENAS com base nos DADOS REAIS abaixo. NUNCA invente numeros nem fatos. Se a resposta ' +
+    'nao estiver nos dados, diga que ainda nao tem esse dado. Nunca cite preco ou valor em reais. ' +
+    'Fale como uma pessoa conversando, com naturalidade e fluencia: frases curtas, claras e bem pontuadas, ' +
+    'em portugues do Brasil. Sua resposta e falada em voz alta por um sintetizador de voz, entao responda em ' +
+    'texto corrido: SEM markdown, sem asteriscos, sem listas com marcadores ou numeradas, sem titulos/cabecalhos ' +
+    'e sem emojis — so frases naturais.\n';
+
+  const system = identidade + acesso + regras + 'DADOS REAIS: ' + dados;
 
   let resposta = 'Nao consegui pensar agora, tenta de novo daqui a pouco.';
   try {
