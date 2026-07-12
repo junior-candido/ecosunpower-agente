@@ -8,6 +8,7 @@ import {
   criarLancamentoRecebimento, getRecebimentosDaConta, apagarRecebimento, reverterConta,
 } from './repo.js';
 import { calcularRBT12 } from './rbt12.js';
+import { registrarEvento } from '../elo/eventos.js';
 
 export interface EntradaCalculoConta {
   valor: number;
@@ -85,6 +86,12 @@ export async function criarContaDeFechamento(client: SupabaseClient, args: {
     anexoAplicado: calc.anexo, aliquotaEfetiva: calc.efetiva, faixa: calc.faixa,
     rbt12, fatorR: calc.fatorR, createdBy: args.createdBy,
   });
+  // Elo (best-effort, nunca lança): conta a receber criada.
+  await registrarEvento(client, {
+    tipo: 'financeiro:conta', leadId: args.leadId, departamento: 'financeiro',
+    canal: 'sistema', origem: 'financeiro',
+    payload: { contaId, valor: args.valor, clienteNome: args.descricao },
+  });
   return { contaId, calc };
 }
 
@@ -128,6 +135,12 @@ export async function registrarRecebimento(client: SupabaseClient, contaId: stri
   // 3º soma no bucket RBT12
   await somarReceitaNoMes(client, comp, conta.atividade_id, parcela);
   const saldoRestante = Math.round((Number(conta.valor) - acumulado) * 100) / 100;
+  // Elo (best-effort, nunca lança): recebimento registrado.
+  await registrarEvento(client, {
+    tipo: 'financeiro:recebimento', leadId: conta.lead_id ?? null, departamento: 'financeiro',
+    canal: 'sistema', origem: 'financeiro',
+    payload: { contaId, valor: parcela },
+  });
   return { calc, total, parcela, acumulado, saldoRestante };
 }
 

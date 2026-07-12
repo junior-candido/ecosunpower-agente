@@ -4458,6 +4458,18 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         + (contextoAbordagem ? `\n\n${contextoAbordagem}` : '')
         + contextoProposta;
 
+      // Elo (casa Atendimento): mensagem do lead chegou e vai ser processada
+      // pela Eva. Ponto único e central — depois de todos os early-returns de
+      // comando/botão do admin, então só conta mensagem real de cliente que a
+      // Eva atende. Best-effort, nunca bloqueia a resposta.
+      await registrarEvento(supabase.getClient(), {
+        tipo: 'atendimento:mensagem',
+        departamento: 'atendimento',
+        canal: 'whatsapp',
+        leadId,
+        payload: { direcao: 'in' },
+      });
+
       const response = await brain.processMessage(
         text,
         history,
@@ -4488,6 +4500,16 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           console.log(`[sandbox] Would send to ${from}: ${part}`);
         }
       }
+
+      // Elo (casa Atendimento): a Eva respondeu o lead. Ponto único (1 evento
+      // por turno, mesmo com resposta quebrada em vários balões). Best-effort.
+      await registrarEvento(supabase.getClient(), {
+        tipo: 'atendimento:eva_respondeu',
+        departamento: 'atendimento',
+        canal: 'whatsapp',
+        leadId,
+        payload: { direcao: 'out' },
+      });
 
       // Update conversation
       const updatedMessages = [
@@ -5893,6 +5915,23 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
             .from('leads')
             .update(updatePayload)
             .eq('id', leadId);
+
+          // Elo (casa Marketing): lead veio de anúncio (Meta Lead Ads). Evento
+          // ESPECÍFICO de ads — ADICIONAL ao comercial:lead_novo genérico que o
+          // upsertLead já dispara. Best-effort, nunca derruba o processamento.
+          await registrarEvento(supabase.getClient(), {
+            tipo: 'marketing:lead_ads',
+            departamento: 'marketing',
+            leadId,
+            canal: 'web',
+            origem: 'meta',
+            payload: {
+              formId: details.form_id ?? null,
+              campanha: details.campaign_id ?? null,
+              adId: details.ad_id ?? null,
+              plataforma: platform,
+            },
+          });
 
           // E-mail (Task 16 — Elo + Maquina de E-mail): se o form trouxe um
           // endereco com formato valido, grava em leads.email/email_origem e
