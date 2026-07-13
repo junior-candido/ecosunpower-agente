@@ -175,6 +175,12 @@ export function createDashboardRouter(
     proposalAssistant?: ProposalAssistant;
     metaService?: MetaWhatsAppService;
     engineerPhone?: string; // telefone do Junior — recebe o aviso "cliente fechou"
+    // Salva contrato+procuração no Drive/Workspace (vem pronto do index.ts quando
+    // o Google está configurado). Retorna o link da pasta do cliente.
+    salvarContratoNoDrive?: (input: {
+      nomeTitular: string; cpfTitular: string; version: number;
+      contratoPdf?: Buffer; procuracaoPdf?: Buffer; dadosInputJson: string;
+    }) => Promise<{ folderWebViewLink: string }>;
     blogGenerator?: BlogGenerator;
     // Wrapper que publica o draft espelhando o fluxo do WhatsApp (publishDraftToGitHub
     // com PAT/repo/branch da config + markPublished). Vem pronto do index.ts.
@@ -1650,11 +1656,37 @@ export function createDashboardRouter(
         q, buscou, resultados,
         docsResultado: String(req.query.docs ?? ''),
         envioResultado: String(req.query.envio ?? ''),
+        driveResultado: String(req.query.drive ?? ''),
         user: (req as AuthedRequest).dashUser,
       }));
     } catch (err) {
       console.error('[dashboard/contratos]', err);
       res.status(500).send(`<h2>Erro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  // ☁️ Salva contrato + procuração no Drive/Workspace (pasta do cliente).
+  router.post('/leads/:id/salvar-drive', exigir('propostas', 'editar'), async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    try {
+      if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      if (!options.salvarContratoNoDrive) return res.redirect(voltarDoc(req, id, 'drive=off'));
+      const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
+      const info = await montarFechamentoAuto(supabase, id);
+      if (!info) return res.redirect(voltarDoc(req, id, 'drive=erro'));
+      const [contrato, procuracao] = await Promise.all([gerarDocBuffer(id, 'contrato'), gerarDocBuffer(id, 'procuracao')]);
+      await options.salvarContratoNoDrive({
+        nomeTitular: info.nome,
+        cpfTitular: (info.dados.titular_uc as { cpf?: string }).cpf ?? '',
+        version: 1,
+        contratoPdf: contrato?.pdf,
+        procuracaoPdf: procuracao?.pdf,
+        dadosInputJson: JSON.stringify(info.dados),
+      });
+      res.redirect(voltarDoc(req, id, 'drive=ok'));
+    } catch (err) {
+      console.error('[dashboard/salvar-drive]', err);
+      res.redirect(voltarDoc(req, id, 'drive=erro'));
     }
   });
 
