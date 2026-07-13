@@ -14,7 +14,18 @@ export interface DashboardKpi {
   clientesInstalados: number;
   manutencaoPendente: number;
   ticketMedio: number; // R$ por proposta (estimado via dados_input.investimento)
+  // Vendas fechadas = funil real (contrato_assinado+). Mês/ano pela data real
+  // do fechamento (contract_signed_at, gravada pelo Coração da Venda).
+  vendasTotal: number;
+  vendasMesAtual: number;
+  vendasAnoAtual: number;
+  // Usinas que entraram (sistema cadastrado) neste mês.
+  usinasMesAtual: number;
 }
+
+// Funil real de venda fechada: a partir de contrato assinado. Mesmo critério
+// do /clientes (CLIENTE_STATUSES) — a fonte da verdade de "vendeu".
+const VENDA_STATUSES = ['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido'];
 
 export interface PropostaRow {
   id: string;
@@ -126,6 +137,29 @@ export async function fetchDashboardKpis(supabase: SupabaseClient): Promise<Dash
     .select('id', { count: 'exact', head: true })
     .in('installation_status', ['instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido']);
 
+  // Vendas fechadas (funil real). Total = quem está em contrato_assinado+.
+  const { count: vendasTotal } = await supabase
+    .from('leads')
+    .select('id', { count: 'exact', head: true })
+    .in('installation_status', VENDA_STATUSES);
+
+  // Mês/ano pela DATA real do fechamento (contract_signed_at).
+  const { count: vendasMesAtual } = await supabase
+    .from('leads')
+    .select('id', { count: 'exact', head: true })
+    .gte('contract_signed_at', inicioMes);
+
+  const { count: vendasAnoAtual } = await supabase
+    .from('leads')
+    .select('id', { count: 'exact', head: true })
+    .gte('contract_signed_at', inicioAno);
+
+  // Usinas que entraram este mês (sistema cadastrado).
+  const { count: usinasMesAtual } = await supabase
+    .from('sistemas_clientes')
+    .select('id', { count: 'exact', head: true })
+    .gte('created_at', inicioMes);
+
   // Manutencao pendente: lembretes com status pending E data ja chegou ou esta proxima (proximos 30 dias)
   const proximos30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
     .toISOString().slice(0, 10);
@@ -164,6 +198,10 @@ export async function fetchDashboardKpis(supabase: SupabaseClient): Promise<Dash
     clientesInstalados: clientesInstalados ?? 0,
     manutencaoPendente: manutencaoPendente ?? 0,
     ticketMedio,
+    vendasTotal: vendasTotal ?? 0,
+    vendasMesAtual: vendasMesAtual ?? 0,
+    vendasAnoAtual: vendasAnoAtual ?? 0,
+    usinasMesAtual: usinasMesAtual ?? 0,
   };
 }
 
