@@ -10,17 +10,29 @@ export interface ContratoCliente {
   status: string | null;
 }
 
+export interface TipoContratoItem {
+  tipo: string;
+  nome: string;
+  emoji: string;
+  descricao: string;
+}
+
 export interface ContratosPageInput {
   q: string;
   buscou: boolean;
   resultados: ContratoCliente[];
+  /** Os tipos de contrato registrados na central (vêm do contratos-registry). */
+  tipos: TipoContratoItem[];
   docsResultado?: string;
   envioResultado?: string;
   driveResultado?: string;
   user?: any;
 }
 
-function banner(docs: string, envio: string, drive: string): string {
+/** Avisos de "li os documentos / enviei no zap / salvei no Drive". A tela do
+ *  formulário reusa os mesmos — senão um caso (ex.: cliente sem telefone) some
+ *  numa tela e aparece na outra. */
+export function bannerContratos(docs: string, envio: string, drive: string): string {
   const box = (cls: string, txt: string) => `<div class="mb-4 text-sm px-4 py-3 rounded-lg border ${cls}">${txt}</div>`;
   let out = '';
   const d = parseInt(docs, 10);
@@ -48,12 +60,32 @@ function envioBtn(leadId: string, nome: string, tipo: 'contrato' | 'procuracao',
     </form>`;
 }
 
-function cardCliente(c: ContratoCliente): string {
+// Cada tipo da central vira uma linha: abre o formulário DAQUELE contrato, com
+// os campos já preenchidos e os brancos destacados. É o caminho principal —
+// os botões de gerar/enviar direto continuam logo abaixo, como atalho.
+function linhaTipo(leadId: string, t: TipoContratoItem): string {
+  return `<a href="/dashboard/leads/${leadId}/contrato-form?tipo=${encodeURIComponent(t.tipo)}"
+      class="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2.5 hover:border-amber-400 hover:bg-amber-50 transition">
+      <span class="text-xl">${t.emoji}</span>
+      <span class="min-w-0">
+        <span class="block text-sm font-semibold text-slate-900">${escapeHtml(t.nome)}</span>
+        <span class="block text-xs text-slate-500">${escapeHtml(t.descricao)}</span>
+      </span>
+      <span class="ml-auto text-xs font-semibold text-amber-700 whitespace-nowrap">📝 conferir e gerar →</span>
+    </a>`;
+}
+
+function cardCliente(c: ContratoCliente, tipos: TipoContratoItem[]): string {
   const id = c.leadId;
   return `<div class="rounded-xl border border-slate-200 bg-white px-4 py-4 mb-3 shadow-sm">
     <div class="flex items-center justify-between mb-3">
       <div class="font-semibold text-slate-900">${escapeHtml(c.nome)}</div>
       <span class="text-xs text-slate-500">${escapeHtml(c.status ?? '')}</span>
+    </div>
+
+    <div class="mb-4">
+      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">Qual contrato?</div>
+      <div class="grid gap-2">${tipos.map((t) => linhaTipo(id, t)).join('\n')}</div>
     </div>
 
     <div class="flex flex-wrap gap-2 items-center mb-2">
@@ -68,7 +100,7 @@ function cardCliente(c: ContratoCliente): string {
     </div>
 
     <div class="flex flex-wrap gap-2 items-center mb-2">
-      <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">📄 Gerar:</span>
+      <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">⚡ Gerar direto:</span>
       <a href="/dashboard/leads/${id}/contrato.pdf" target="_blank" class="px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700">📄 Contrato</a>
       <a href="/dashboard/leads/${id}/procuracao.pdf" target="_blank" class="px-3 py-1.5 rounded-lg text-sm bg-indigo-100 text-indigo-800 hover:bg-indigo-200">🖊️ Procuração</a>
     </div>
@@ -93,7 +125,7 @@ function cardCliente(c: ContratoCliente): string {
 }
 
 export function renderContratosPage(input: ContratosPageInput): string {
-  const { q, buscou, resultados, docsResultado = '', envioResultado = '', driveResultado = '', user } = input;
+  const { q, buscou, resultados, tipos, docsResultado = '', envioResultado = '', driveResultado = '', user } = input;
 
   const busca = `
     <form method="get" action="/dashboard/contratos" class="flex flex-wrap gap-2 items-end mb-6">
@@ -109,16 +141,16 @@ export function renderContratosPage(input: ContratosPageInput): string {
   if (buscou && resultados.length === 0) {
     lista = `<div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-amber-800">Nenhum cliente com "<strong>${escapeHtml(q)}</strong>".</div>`;
   } else if (resultados.length > 0) {
-    lista = resultados.map(cardCliente).join('\n');
+    lista = resultados.map((c) => cardCliente(c, tipos)).join('\n');
   }
 
   const body = `
   <div class="max-w-3xl mx-auto">
     <div class="mb-5">
-      <h1 class="text-2xl font-bold text-slate-900">📄 Contratos & Procurações</h1>
-      <p class="text-slate-500 mt-1">Busca o cliente, a IA lê conta de luz + CNH, gera o PDF na hora e envia no zap. Sempre gera — o que faltar vem como espaço em branco.</p>
+      <h1 class="text-2xl font-bold text-slate-900">📄 Central de Contratos</h1>
+      <p class="text-slate-500 mt-1">Busca o cliente, escolhe o tipo de contrato, confere os campos (a IA já preenche o que dá, lendo a conta de luz e a CNH) e gera o PDF — pra baixar, mandar no zap ou salvar no Drive. Sempre gera: o que faltar sai como espaço em branco.</p>
     </div>
-    ${banner(docsResultado, envioResultado, driveResultado)}
+    ${bannerContratos(docsResultado, envioResultado, driveResultado)}
     ${busca}
     ${lista}
   </div>`;

@@ -2563,18 +2563,28 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       }
       const lead = leads[0];
       await sendText(from, `Gerando ${rotulo} de *${lead.name}*... 📄`);
+      // Mesmo motor e mesmo registro da central de contratos do dashboard — a Eva
+      // não pode gerar de um jeito e a tela de outro (nem pegar o rascunho errado).
       const { montarFechamentoAuto } = await import('./modules/closing/fechamento-auto.js');
-      const r = await montarFechamentoAuto(supabase.getClient(), lead.id);
+      const { getContrato } = await import('./modules/closing/contratos-registry.js');
+      const def = getContrato(tipo === 'contrato' ? 'fv' : 'procuracao')!;
+      const r = await montarFechamentoAuto(supabase.getClient(), lead.id, def.tipo);
       if (!r) { await sendText(from, 'Não achei os dados desse cliente.'); return true; }
-      const { renderContrato, renderProcuracao } = await import('./modules/closing/index.js');
       const { renderHtmlToPdf } = await import('./modules/closing/closing-render.js');
-      const html = tipo === 'contrato' ? renderContrato(r.dados) : renderProcuracao(r.dados);
-      const pdf = await renderHtmlToPdf(html);
-      const filename = `${tipo}-${r.nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
+      const pdf = await renderHtmlToPdf(def.render(r.dados));
+      const filename = `${def.arquivo}-${r.nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
       if (!metaWaba) { await sendText(from, 'Envio de documento indisponível agora.'); return true; }
       const up = await metaWaba.uploadMedia(pdf, 'application/pdf', filename);
-      const falta = r.faltando.length ? `\n\n⚠️ Faltou preencher: ${r.faltando.join(', ')} — completa no cadastro que refaço.` : '';
+      const falta = r.faltando.length ? `\n\n⚠️ Faltou preencher: ${r.faltando.join(', ')} — completa na tela de Contratos que refaço.` : '';
       await metaWaba.sendDocumentById(from, up.mediaId, filename, `Segue ${rotulo} de ${r.nome}. 📄${falta}`);
+      await registrarEvento(supabase.getClient(), {
+        tipo: 'comercial:contrato_enviado',
+        departamento: 'comercial',
+        canal: 'whatsapp',
+        origem: 'eva',
+        leadId: lead.id,
+        payload: { tipo_contrato: def.tipo, destino: 'eu', campos_em_branco: r.faltando.length },
+      });
       return true;
     } catch (err) {
       console.error('[contrato-rapido]', err);

@@ -29,6 +29,7 @@ import {
 } from './solar-params.js';
 import { renderProposalHTML, type ProposalData } from './proposal/template.js';
 import { temBateria } from './proposal/bateria.js';
+import { parcelaCartaoBelenus, parcelasMaxCartaoSolar } from './proposal/cartao-solar.js';
 import { obterLogoBase64, LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './proposal/assets/logo-base64.js';
 import { somaServicosExtras, renderServiceOnlyHTML, type ServicoItem, type ServiceOnlyData } from './proposal/service-render.js';
 import { montarDadosInputCompleto } from './proposal/dados-input.js';
@@ -1945,35 +1946,20 @@ export class ProposalAssistant {
     return valorPosCarencia * fator;
   }
 
-  // Tabela Belenus (parceria EcoSunPower) — acréscimo TOTAL sobre o valor à vista
-  // por nº de parcelas no cartão. Coletada/calibrada pelo Junior em 07/06/2026
-  // (kit R$ 10.000: 1x +287 ... 12x +1149 ... 24x +2105). É taxa POR FAIXA (degraus
-  // a cada ~6 parcelas), NÃO um juros composto de taxa única — por isso guardamos
-  // a tabela exata em vez de uma fórmula. O acréscimo é % do valor (proporcional),
-  // então vale pra qualquer valor de venda. Hoje a proposta solar mostra só 24x.
-  private static readonly BELENUS_ACRESCIMO: Record<number, number> = {
-    1: 0.0287, 2: 0.0450, 3: 0.0515, 4: 0.0580, 5: 0.0645, 6: 0.0710,
-    7: 0.0813, 8: 0.0879, 9: 0.0947, 10: 0.1014, 11: 0.1081, 12: 0.1149,
-    13: 0.1273, 14: 0.1341, 15: 0.1410, 16: 0.1480, 17: 0.1549, 18: 0.1620,
-    19: 0.1745, 20: 0.1816, 21: 0.1888, 22: 0.1959, 23: 0.2032, 24: 0.2105,
-  };
-
-  // Parcela no cartão Belenus: total = valor × (1 + acréscimo), parcela = total / n.
-  private static parcelaCartaoBelenus(valor: number, parcelas: number): number {
-    const acr = ProposalAssistant.BELENUS_ACRESCIMO[parcelas] ?? ProposalAssistant.BELENUS_ACRESCIMO[24];
-    return (valor * (1 + acr)) / parcelas;
-  }
+  // A tabela Belenus mora em proposal/cartao-solar.ts — fonte ÚNICA, porque a
+  // Central de Contratos precisa da MESMA conta (senão o cliente lê um número na
+  // proposta e assina outro no contrato).
 
   // [ECOSOF] Cartão do solar atrás da flag empresa_config.belenus_ativo:
   // ligada (EcoSun, seed) = tabela Belenus exata em 24×; desligada = cartão
   // genérico de até 12× na maquininha (mesma tabela do service-payment) —
   // um clone sem a parceria nunca herda taxa de terceiro.
   private static parcelasCartaoSolar(): number {
-    return empresa().belenusAtivo ? 24 : 12;
+    return parcelasMaxCartaoSolar();
   }
   private static parcelaCartaoSolar(valor: number): number {
     return empresa().belenusAtivo
-      ? ProposalAssistant.parcelaCartaoBelenus(valor, 24)
+      ? parcelaCartaoBelenus(valor, 24)
       : valorParcelaCartao(valor, 12);
   }
 

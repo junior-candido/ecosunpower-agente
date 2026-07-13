@@ -1,0 +1,252 @@
+import { describe, it, expect } from 'vitest';
+import { getContrato, valoresDoFormulario, parseFormulario } from '../src/modules/closing/contratos-registry.js';
+import { completarComPlaceholders } from '../src/modules/closing/fechamento-auto.js';
+import { renderAditivo } from '../src/modules/closing/templates/aditivo.html.js';
+
+const def = () => getContrato('aditivo')!;
+
+describe('o aditivo entrou na central como mais um tipo', () => {
+  it('está registrado e sabe se renderizar até vazio (nunca trava)', () => {
+    expect(def().nome).toContain('aditivo');
+    expect(renderAditivo(completarComPlaceholders({})).length).toBeGreaterThan(500);
+  });
+
+  // O valor e o pagamento "de antes" saem do retrato congelado — o operador não
+  // digita. Já a DATA é editável: congelar é guardar o retrato, não é o cliente ter
+  // assinado. Quem sabe quando ele assinou é o Junior, então ele escreve.
+  it('o valor e o pagamento de antes são só de leitura; a data, não', () => {
+    const antes = def().campos.filter((c) => c.grupo === 'O contrato que está valendo');
+    expect(antes.map((c) => c.id)).toEqual(['adit_contrato_data', 'adit_valor_anterior', 'adit_pagamento_anterior']);
+
+    const data = antes.find((c) => c.id === 'adit_contrato_data')!;
+    expect(data.somenteLeitura).toBeFalsy(); // ele escreve
+    expect(data.tipo).toBe('data');
+
+    expect(antes.find((c) => c.id === 'adit_valor_anterior')!.somenteLeitura).toBe(true);
+    expect(antes.find((c) => c.id === 'adit_pagamento_anterior')!.somenteLeitura).toBe(true);
+  });
+
+  it('o formulário mostra o que o contrato congelado dizia', () => {
+    const vals = valoresDoFormulario(def(), {
+      aditivo: {
+        contrato_data: '2026-07-10',
+        valor_anterior: 20959.09,
+        forma_pagamento_anterior: 'Cartão de crédito — 24x',
+      },
+    });
+    expect(vals.adit_contrato_data).toBe('2026-07-10'); // formato do campo de data
+    expect(vals.adit_valor_anterior).toBe('20.959,09');
+    expect(vals.adit_pagamento_anterior).toBe('Cartão de crédito — 24x');
+  });
+
+  it('a data que o Junior escreve é a que sai no documento — e não vira o dia anterior', () => {
+    const { rascunho } = parseFormulario(def(), { adit_contrato_data: '2026-07-20' });
+    expect(rascunho.aditivo!.contrato_data).toBe('2026-07-20');
+
+    const html = renderAditivo(completarComPlaceholders({
+      titular_uc: { tipo: 'PF', nome: 'Antonio', cpf: '111.444.777-35' } as any,
+      aditivo: { contrato_data: '2026-07-20', motivo: 'prazo', novo_prazo: '45 dias' },
+    }));
+    expect(html).toContain('20/07/2026');
+    expect(html).not.toContain('19/07/2026'); // o fuso de Brasília não come um dia
+  });
+});
+
+// CASO REAL 1 do Junior: "falei que era 24x sem juros, o cliente foi passar o
+// cartão e a bandeira só aceitou 21x — aí precisa alterar o contrato".
+describe('caso real: o cartão só passou em 21x', () => {
+  it('o documento diz o que era, o que passa a ser, e que o resto continua valendo', () => {
+    const { rascunho } = parseFormulario(def(), {
+      adit_motivo: 'pagamento',
+      adit_nova_forma_pagamento: 'Sol Fácil — 21x de R$ 1.201,45',
+      adit_justificativa: 'A bandeira do cartão do cliente não autorizou 24 parcelas.',
+    });
+    const dados = completarComPlaceholders({
+      ...rascunho,
+      titular_uc: { tipo: 'PF', nome: 'Antonio Ricardo', cpf: '111.444.777-35' } as any,
+      aditivo: {
+        ...rascunho.aditivo,
+        contrato_data: '2026-07-10T13:00:00Z',
+        valor_anterior: 20959.09,
+        forma_pagamento_anterior: 'Sol Fácil — 24x sem juros',
+      },
+    });
+    const html = renderAditivo(dados);
+
+    expect(html).toContain('10/07/2026'); // cita o contrato original
+    expect(html).toContain('24x sem juros'); // como estava
+    expect(html).toContain('21x'); // como passa a ser
+    expect(html).toContain('bandeira do cartão'); // a justificativa
+    expect(html).toContain('Permanecem inalteradas'); // o resto do contrato vale
+    expect(html).toContain('20.959,09'); // o valor NÃO mudou
+  });
+});
+
+// CASO REAL 2: "fecha o contrato e, executando o serviço, surge mais serviço no
+// dia ou depois — o aditivo organiza".
+describe('caso real: apareceu serviço a mais na obra', () => {
+  it('registra o que entrou, o valor a mais e o novo total', () => {
+    const { rascunho } = parseFormulario(def(), {
+      adit_motivo: 'servicos',
+      adit_servicos: 'Troca do padrão de entrada e reforço da estrutura do telhado.',
+      adit_valor_adicional: 'R$ 2.400,00',
+      adit_novo_valor_total: '23.359,09',
+    });
+    const dados = completarComPlaceholders({
+      ...rascunho,
+      titular_uc: { tipo: 'PF', nome: 'Antonio Ricardo', cpf: '111.444.777-35' } as any,
+      aditivo: { ...rascunho.aditivo, contrato_data: '2026-07-10T13:00:00Z', valor_anterior: 20959.09 },
+    });
+    const html = renderAditivo(dados);
+
+    expect(html).toContain('Troca do padrão de entrada');
+    expect(html).toContain('2.400,00'); // o valor a mais
+    expect(html).toContain('23.359,09'); // o novo total
+    expect(html).toContain('20.959,09'); // de quanto era
+    expect(html).toContain('Permanecem inalteradas');
+  });
+
+  it('o valor a mais e o novo total viram número de verdade (não texto)', () => {
+    const { rascunho } = parseFormulario(def(), {
+      adit_valor_adicional: 'R$ 2.400,00',
+      adit_novo_valor_total: '23.359,09',
+    });
+    expect(rascunho.aditivo!.valor_adicional).toBe(2400);
+    expect(rascunho.aditivo!.novo_valor_total).toBe(23359.09);
+  });
+});
+
+// Regra do Junior: "coisa que varia, quem muda sou eu". A justificativa e a
+// cláusula extra são DELE — nada preenche, nem o sistema nem a IA. E nada obriga:
+// pode escrever só uma, as duas, ou nenhuma.
+describe('o que varia é escrito pelo Junior — e nada é obrigado', () => {
+  it('a cláusula extra entra no documento', () => {
+    const { rascunho } = parseFormulario(def(), {
+      adit_motivo: 'servicos',
+      adit_servicos: 'Troca do padrão de entrada.',
+      adit_clausula_extra: 'A CONTRATADA concede 6 meses adicionais de garantia sobre o padrão instalado.',
+    });
+    const html = renderAditivo(completarComPlaceholders({
+      ...rascunho,
+      titular_uc: { tipo: 'PF', nome: 'Antonio', cpf: '111.444.777-35' } as any,
+      aditivo: { ...rascunho.aditivo, contrato_data: '2026-07-10T13:00:00Z', valor_anterior: 20959.09 },
+    }));
+    expect(html).toContain('6 meses adicionais de garantia');
+  });
+
+  it('só a justificativa, sem cláusula extra → sai só a justificativa', () => {
+    const html = renderAditivo(completarComPlaceholders({
+      titular_uc: { tipo: 'PF', nome: 'Antonio', cpf: '111.444.777-35' } as any,
+      aditivo: { motivo: 'prazo', novo_prazo: '45 dias', justificativa: 'Atraso na homologação.' },
+    }));
+    expect(html).toContain('Atraso na homologação');
+    expect(html).not.toContain('DISPOSIÇÕES ESPECIAIS');
+  });
+
+  it('nenhuma das duas → o documento sai do mesmo jeito (nada trava)', () => {
+    const html = renderAditivo(completarComPlaceholders({
+      titular_uc: { tipo: 'PF', nome: 'Antonio', cpf: '111.444.777-35' } as any,
+      aditivo: { motivo: 'prazo', novo_prazo: '45 dias' },
+    }));
+    expect(html).toContain('45 dias');
+    expect(html).toContain('Permanecem inalteradas');
+    expect(html).not.toContain('JUSTIFICATIVA');
+  });
+
+  it('as duas juntas → as duas saem, cada uma na sua cláusula', () => {
+    const html = renderAditivo(completarComPlaceholders({
+      titular_uc: { tipo: 'PF', nome: 'Antonio', cpf: '111.444.777-35' } as any,
+      aditivo: {
+        motivo: 'pagamento',
+        nova_forma_pagamento: 'Sol Fácil — 21x',
+        justificativa: 'A bandeira não autorizou 24 parcelas.',
+        clausula_extra: 'O cliente arca com a taxa de religação junto à concessionária.',
+      },
+    }));
+    expect(html).toContain('A bandeira não autorizou');
+    expect(html).toContain('taxa de religação');
+  });
+
+  it('a IA NÃO pode sugerir justificativa nem cláusula extra (são do Junior)', async () => {
+    const { camposQueIaPodeSugerir } = await import('../src/modules/closing/contratos-registry.js');
+    const ids = camposQueIaPodeSugerir(def()).map((c) => c.id);
+    expect(ids).not.toContain('adit_justificativa');
+    expect(ids).not.toContain('adit_clausula_extra');
+    expect(ids).not.toContain('adit_servicos');
+    expect(ids).not.toContain('adit_valor_adicional');
+  });
+});
+
+// A revisão pegou: se mudasse o pagamento E entrasse serviço novo, uma cláusula
+// dizia "o valor total permanece R$ 20.959,09" e a de baixo dizia "passa de
+// R$ 20.959,09 para R$ 23.359,09". Duas cláusulas se negando no mesmo papel assinado.
+describe('o documento não pode se contradizer', () => {
+  const base = {
+    titular_uc: { tipo: 'PF', nome: 'Antonio', cpf: '111.444.777-35' } as any,
+  };
+
+  it('serviço a mais + pagamento novo: o documento NÃO diz que o valor ficou inalterado', () => {
+    const html = renderAditivo(completarComPlaceholders({
+      ...base,
+      aditivo: {
+        motivo: 'servicos',
+        contrato_data: '2026-07-10T13:00:00Z',
+        valor_anterior: 20959.09,
+        forma_pagamento_anterior: 'Cartão de crédito — 24x',
+        nova_forma_pagamento: 'Cartão de crédito — 21x de R$ 1.186,48',
+        servicos_novos: 'Troca do padrão de entrada.',
+        valor_adicional: 2400,
+        novo_valor_total: 23359.09,
+      },
+    }));
+    expect(html).toContain('23.359,09'); // o novo total está lá
+    expect(html).not.toContain('permanece inalterado'); // e a mentira sumiu
+  });
+
+  it('só mudou o parcelamento: aí SIM o preço dos serviços permanece o mesmo', () => {
+    const html = renderAditivo(completarComPlaceholders({
+      ...base,
+      aditivo: {
+        motivo: 'pagamento',
+        contrato_data: '2026-07-10T13:00:00Z',
+        valor_anterior: 20959.09,
+        forma_pagamento_anterior: 'Cartão de crédito — 24x',
+        nova_forma_pagamento: 'Cartão de crédito — 21x de R$ 1.186,48',
+      },
+    }));
+    expect(html).toContain('permanece inalterado em');
+    expect(html).toContain('20.959,09');
+    // e explica que o acréscimo do cartão é do cliente, não muda o preço
+    expect(html).toContain('administradora do cartão');
+  });
+
+  it('aditivo escrito SÓ na cláusula extra não sai com uma cláusula vazia', () => {
+    const html = renderAditivo(completarComPlaceholders({
+      ...base,
+      aditivo: { contrato_data: '2026-07-10T13:00:00Z', clausula_extra: 'A garantia passa a ser de 18 meses.' },
+    }));
+    expect(html).toContain('18 meses');
+    expect(html).not.toContain('DA ALTERAÇÃO'); // a cláusula-lixo não entra
+    expect(html).not.toContain('_______________________');
+  });
+
+  it('serviço a mais sem mexer no prazo: o documento diz isso na cara', () => {
+    const html = renderAditivo(completarComPlaceholders({
+      ...base,
+      aditivo: { motivo: 'servicos', servicos_novos: 'Reforço do telhado.', valor_adicional: 800, novo_valor_total: 21759.09, valor_anterior: 20959.09 },
+    }));
+    expect(html).toContain('não alteram o prazo');
+  });
+});
+
+describe('sem contrato congelado, o aditivo não inventa o "antes"', () => {
+  it('a data e o valor saem em branco no documento (não sai data errada)', () => {
+    const html = renderAditivo(completarComPlaceholders({
+      titular_uc: { tipo: 'PF', nome: 'Antonio', cpf: '111.444.777-35' } as any,
+      aditivo: { motivo: 'pagamento', nova_forma_pagamento: 'Sol Fácil — 21x' },
+    }));
+    expect(html).toContain('____/____/________'); // lacuna pra preencher à mão
+    expect(html).not.toContain('NaN');
+    expect(html).not.toContain('Invalid Date');
+  });
+});

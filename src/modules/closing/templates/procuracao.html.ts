@@ -7,6 +7,7 @@
 
 import type { DadosFechamento, PessoaFisica, PessoaJuridica } from '../types.js';
 import { empresa } from '../../empresa-config.js';
+import { escaparDadosFechamento } from '../escapar-dados.js';
 
 // [ECOSOF] Dados do OUTORGADO vêm da empresa_config. Função (não const de
 // módulo) pra ler empresa() em RUNTIME — /recarregar-config vale sem restart.
@@ -64,7 +65,9 @@ function hojeFormatado(): string {
   return `${d.getDate()} de ${meses[d.getMonth()]} de ${d.getFullYear()}`;
 }
 
-export function renderProcuracao(dados: DadosFechamento): string {
+export function renderProcuracao(entrada: DadosFechamento): string {
+  // Mesma blindagem do contrato: dado de fora não entra cru no HTML.
+  const dados = escaparDadosFechamento(entrada);
   const OUTORGADO = outorgado();
   const titular = descreveTitular(dados.titular_uc);
   const uc = (dados.uc_numero && dados.uc_numero.trim()) ? dados.uc_numero : '(a confirmar)';
