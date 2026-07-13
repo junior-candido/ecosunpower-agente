@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { empresa } from './empresa-config.js';
+import { medirIa } from './custos/ia-metering.js';
 
 // Cadencia de auto-followup pra leads que engajaram e depois ficaram silenciosos.
 // Dispara SO SE a ultima mensagem na conversa foi da Eva (cliente nao respondeu).
@@ -268,6 +269,7 @@ Gere APENAS o texto da mensagem, sem explicacao.`;
       max_tokens: 300,
       messages: [{ role: 'user', content: prompt }],
     });
+    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'followup', usage: res.usage });
     const raw = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)

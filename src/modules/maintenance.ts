@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseService } from './supabase.js';
 import { empresa } from './empresa-config.js';
+import { medirIa } from './custos/ia-metering.js';
 
 /**
  * Modulo de manutencao da Eva:
@@ -144,6 +145,7 @@ em branco), nada mais.`;
       max_tokens: 300,
       messages: [{ role: 'user', content: prompt }],
     });
+    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'maintenance', usage: response.usage });
 
     const block = response.content[0];
     return block.type === 'text' ? block.text.trim() : `oi, aqui e a ${empresa().nomeAtendente.toLowerCase()} da ${empresa().nomeFantasia.toLowerCase()}. posso te ajudar?`;
@@ -161,6 +163,7 @@ em branco), nada mais.`;
       max_tokens: 300,
       messages: [{ role: 'user', content: prompt }],
     });
+    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'maintenance', usage: response.usage });
     const block = response.content[0];
     return block.type === 'text' ? block.text.trim() : fallback;
   }

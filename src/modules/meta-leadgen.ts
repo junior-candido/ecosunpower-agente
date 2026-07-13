@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { medirIa } from './custos/ia-metering.js';
 
 const GRAPH_API = 'https://graph.facebook.com/v21.0';
 
@@ -272,6 +273,7 @@ Gere APENAS o texto da mensagem, sem nenhuma explicacao, sem prefixo.`;
       max_tokens: 300,
       messages: [{ role: 'user', content: prompt }],
     });
+    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'leadgen', usage: res.usage });
     return res.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)

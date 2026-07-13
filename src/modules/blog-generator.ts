@@ -6,6 +6,7 @@ import type { NewsScraperService } from './news-scraper.js';
 import { empresa, nomeTituloCase } from './empresa-config.js';
 import { pickBlogHeroPhoto, pexelsIdFromUrl, downloadImage } from './blog-image.js';
 import { registrarEvento } from './elo/eventos.js';
+import { medirIa } from './custos/ia-metering.js';
 
 /**
  * Blog Generator — gera drafts de posts pro blog ecosunpower.eng.br baseados
@@ -141,6 +142,7 @@ export class BlogGenerator {
       messages: [{ role: 'user', content: userPrompt }],
       system: systemPrompt,
     });
+    medirIa({ modelo: 'claude-opus-4-7', origem: 'blog', usage: response.usage });
 
     const text = response.content[0]?.type === 'text' ? response.content[0].text : '';
     if (!text) throw new Error('Resposta vazia do Claude');

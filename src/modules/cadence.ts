@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { SupabaseService } from './supabase.js';
 import type { TemplateComponent } from './meta-whatsapp.js';
 import { empresa, interpolarEmpresa } from './empresa-config.js';
+import { medirIa } from './custos/ia-metering.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -447,6 +448,7 @@ ${pickGuidanceForStep(ctx.step)}`, empresa());
         { role: 'user', content: `Gere agora a mensagem do toque ${ctx.step}.` },
       ],
     });
+    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'cadence', usage: response.usage });
 
     const block = response.content.find((b) => b.type === 'text');
     if (!block || block.type !== 'text') throw new Error('Claude nao retornou texto');

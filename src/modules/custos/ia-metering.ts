@@ -7,6 +7,8 @@
 // REGRA DE OURO: gravar custo é best-effort. Um erro aqui (banco fora, usage
 // malformado, etc.) NUNCA pode derrubar a resposta da Eva/Elo. Tudo em try/catch.
 
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+
 // Preços oficiais Anthropic, em USD por MILHÃO de tokens (cache 2026-06-24).
 // input = tokens de entrada "frescos"; output = tokens gerados.
 // Cache é derivado do input do próprio modelo (não hardcode separado):
@@ -108,4 +110,26 @@ export async function registrarUsoIa(
     // Best-effort: medir custo nunca pode derrubar o fluxo da IA.
     console.error('[custos] registrarUsoIa falhou (best-effort):', (err as Error)?.message);
   }
+}
+
+// Client Supabase dedicado ao medidor de custos de IA. Lazy + memoizado:
+// criado sob demanda a partir das mesmas envs do SupabaseService. Em
+// teste/build (sem env) fica null → registrarUsoIa vira no-op best-effort.
+// Assim qualquer módulo mede sem precisar receber um client no construtor.
+let _custosClient: SupabaseClient | null | undefined;
+export function getCustosClient(): SupabaseClient | null {
+  if (_custosClient !== undefined) return _custosClient;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY;
+  _custosClient = url && key ? createClient(url, key) : null;
+  return _custosClient;
+}
+
+/**
+ * Conveniência best-effort pra medir uma chamada de IA de qualquer módulo,
+ * sem precisar de um client Supabase à mão. Resolve o client lazy e dispara
+ * registrarUsoIa sem esperar (fire-and-forget). Nunca lança, nunca bloqueia.
+ */
+export function medirIa(args: { modelo: string; origem?: string; usage: any }): void {
+  void registrarUsoIa(getCustosClient(), args);
 }

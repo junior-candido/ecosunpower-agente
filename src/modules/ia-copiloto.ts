@@ -6,6 +6,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { medirIa } from './custos/ia-metering.js';
 
 // Carrega a base de vendas (conhecimento/vendas-ia.md) — cacheada. Degrada sem
 // quebrar: se não achar o arquivo, o copiloto funciona sem a base (devolve '').
@@ -99,6 +100,7 @@ export async function responderCopiloto(
     system,
     messages,
   });
+  medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'ia-copiloto', usage: resp.usage });
   return resp.content
     .filter((b): b is Anthropic.TextBlock => b.type === 'text')
     .map((b) => b.text)
