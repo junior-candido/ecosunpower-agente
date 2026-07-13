@@ -1866,6 +1866,11 @@ export function createDashboardRouter(
       const def = getContrato(tipoDaCentral(req.body?.tipo)) ?? getContrato('fv')!;
       if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
 
+      // SALVA o que está na tela ANTES de carimbar. Sem isso, quem preenchesse o
+      // formulário e clicasse direto em "este é o contrato que vale" congelaria os
+      // dados VELHOS, em silêncio — e o aditivo citaria o contrato errado.
+      await salvarFormulario(req, id, def);
+
       const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
       const r = await montarFechamentoAuto(supabase, id, 'fv'); // o retrato é o do CONTRATO
       if (!r) return res.status(404).send('Lead não encontrado');
@@ -1935,32 +1940,45 @@ export function createDashboardRouter(
   //  2. o que é daquele negócio (valor, sistema, combinados) vai pro rascunho
   //     leads.contrato_dados[tipo].
   // Campo em branco fica de fora dos dois: salvar nunca apaga o que já existia.
+  // Grava o formulário: cadastro → colunas do lead; negócio → contrato_dados[tipo].
+  // Usada pelo botão Salvar E pelo Congelar (que salva antes de congelar, senão
+  // ele carimbaria os dados velhos de quem preencheu e clicou direto em congelar).
+  async function salvarFormulario(
+    req: Request,
+    id: string,
+    def: import('../closing/contratos-registry.js').DefinicaoContrato,
+  ): Promise<string[]> {
+    const { parseFormulario } = await import('../closing/contratos-registry.js');
+    const { cadastro, rascunho } = parseFormulario(def, req.body ?? {});
+
+    const { data: lead } = await supabase.from('leads').select('contrato_dados').eq('id', id).maybeSingle();
+    const atual = (lead as { contrato_dados?: Record<string, unknown> } | null)?.contrato_dados;
+    const base = atual && typeof atual === 'object' && !Array.isArray(atual) ? atual : {};
+
+    const patch: Record<string, unknown> = {
+      ...cadastro,
+      contrato_dados: { ...base, [def.tipo]: rascunho },
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from('leads').update(patch).eq('id', id);
+    if (error) throw error;
+
+    const viewer = (req as AuthedRequest).dashUser;
+    if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'contrato_dados', valorNovo: def.tipo });
+    return Object.keys(cadastro);
+  }
+
   router.post('/leads/:id/contrato-form', exigir('propostas', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.params.id);
     try {
       if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-      const { getContrato, parseFormulario } = await import('../closing/contratos-registry.js');
+      const { getContrato } = await import('../closing/contratos-registry.js');
       const def = getContrato(tipoDaCentral(req.body?.tipo));
       if (!def) return res.status(400).send('Tipo de contrato desconhecido');
       if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
 
-      const { cadastro, rascunho } = parseFormulario(def, req.body ?? {});
-
-      const { data: lead } = await supabase.from('leads').select('contrato_dados').eq('id', id).maybeSingle();
-      const atual = (lead as { contrato_dados?: Record<string, unknown> } | null)?.contrato_dados;
-      const base = atual && typeof atual === 'object' && !Array.isArray(atual) ? atual : {};
-
-      const patch: Record<string, unknown> = {
-        ...cadastro,
-        contrato_dados: { ...base, [def.tipo]: rascunho },
-        updated_at: new Date().toISOString(),
-      };
-      const { error } = await supabase.from('leads').update(patch).eq('id', id);
-      if (error) throw error;
-
-      const viewer = (req as AuthedRequest).dashUser;
-      if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'contrato_dados', valorNovo: def.tipo });
-      await eventoContrato(req, id, def.tipo, 'dados_conferidos', { campos_cadastro: Object.keys(cadastro) });
+      const campos = await salvarFormulario(req, id, def);
+      await eventoContrato(req, id, def.tipo, 'dados_conferidos', { campos_cadastro: campos });
       res.redirect(`/dashboard/leads/${id}/contrato-form?tipo=${encodeURIComponent(def.tipo)}&salvo=1`);
     } catch (err) {
       console.error('[dashboard/contrato-form/salvar]', err);

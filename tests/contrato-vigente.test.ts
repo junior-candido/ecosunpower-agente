@@ -8,29 +8,41 @@ import { completarComPlaceholders } from '../src/modules/closing/fechamento-auto
 // "contrato original" muda junto, e o aditivo compararia com um fantasma.
 // Congelar = guardar o RETRATO do que foi combinado, com data.
 
+// Cliente falso HONESTO: respeita order() e limit(), e ERRA no maybeSingle() com
+// mais de uma linha — igual o PostgREST de verdade. Um fake que ignora ordenação
+// deixaria passar o bug de pegar a versão MAIS ANTIGA do contrato.
 function fakeClient(estado: { linhas: any[] }) {
   return {
     from() {
       const b: any = {};
       const filtros: any = {};
+      let desc = false;
+      let limite = Infinity;
       b.insert = (row: any) => {
-        const nova = { id: 'F' + (estado.linhas.length + 1), created_at: '2026-07-13T10:00:00Z', ...row };
+        const n = estado.linhas.length + 1;
+        // cada congelamento é um minuto depois — pra ordenação ter o que ordenar
+        const nova = { id: 'F' + n, created_at: `2026-07-13T10:0${n}:00Z`, ...row };
         estado.linhas.push(nova);
         b._retorno = nova;
         return b;
       };
-      b.update = (patch: any) => { b._patch = patch; return b; };
       b.select = () => b;
       b.eq = (col: string, v: any) => { filtros[col] = v; return b; };
-      b.in = () => b;
-      b.order = () => b;
-      b.limit = () => b;
+      b.order = (_col: string, opts?: { ascending?: boolean }) => { desc = opts?.ascending === false; return b; };
+      b.limit = (n: number) => { limite = n; return b; };
       b.single = async () => ({ data: b._retorno, error: null });
       b.maybeSingle = async () => {
-        const achadas = estado.linhas
+        let linhas = estado.linhas
           .filter((l) => (filtros.lead_id ? l.lead_id === filtros.lead_id : true))
-          .filter((l) => l.status !== 'cancelado');
-        return { data: achadas[achadas.length - 1] ?? null, error: null };
+          .filter((l) => (filtros.status ? l.status === filtros.status : true))
+          .sort((x, y) => String(x.created_at).localeCompare(String(y.created_at)));
+        if (desc) linhas = linhas.reverse();
+        linhas = linhas.slice(0, limite);
+        if (linhas.length > 1) {
+          // é o que o PostgREST faz: maybeSingle com várias linhas é ERRO
+          return { data: null, error: { message: 'multiple rows returned' } };
+        }
+        return { data: linhas[0] ?? null, error: null };
       };
       return b;
     },
@@ -85,7 +97,31 @@ describe('contratoVigente — o que vale hoje', () => {
     const v = await contratoVigente(fakeClient(estado), 'L1');
     expect(v!.dados.comercial.forma_pagamento).toBe('Sol Fácil — 24x sem juros');
     expect(v!.dados.comercial.valor_total_brl).toBe(20959.09);
-    expect(v!.congeladoEm).toBe('2026-07-13T10:00:00Z');
+    expect(v!.congeladoEm).toBe('2026-07-13T10:01:00Z');
+  });
+
+  // O bug que quase passou: buscando em ordem CRESCENTE, o "contrato que vale"
+  // seria a v1 — e o aditivo citaria o contrato VELHO, com a forma de pagamento
+  // antiga. Num documento assinado, isso é grave.
+  it('depois de congelar 2x, o que vale é a versão NOVA (não a antiga)', async () => {
+    const estado = { linhas: [] as any[] };
+    await congelarContrato(fakeClient(estado), 'L1', DADOS, 'Junior');
+
+    const v2 = completarComPlaceholders({
+      ...DADOS,
+      comercial: { valor_total_brl: 23359.09, forma_pagamento: 'Sol Fácil — 21x de R$ 1.201,45' },
+    } as any);
+    await congelarContrato(fakeClient(estado), 'L1', v2, 'Junior');
+
+    const vigente = await contratoVigente(fakeClient(estado), 'L1');
+    expect(vigente!.dados.comercial.forma_pagamento).toBe('Sol Fácil — 21x de R$ 1.201,45');
+    expect(vigente!.dados.comercial.valor_total_brl).toBe(23359.09);
+  });
+
+  it('só olha o contrato DESSE cliente (não pega o do vizinho)', async () => {
+    const estado = { linhas: [] as any[] };
+    await congelarContrato(fakeClient(estado), 'L1', DADOS, 'Junior');
+    expect(await contratoVigente(fakeClient(estado), 'L2')).toBeNull();
   });
 
   it('banco fora do ar não derruba a tela — devolve null', async () => {

@@ -137,20 +137,21 @@ function congelar(page: ContratoFormInput): string {
   const caixa = (cls: string, dentro: string) =>
     `<section class="rounded-xl border ${cls} p-5 mb-4">${dentro}</section>`;
 
+  // O botão vive DENTRO do formulário (formaction): ele salva o que está na tela e
+  // só então congela. Se ficasse fora, quem preenchesse e clicasse direto aqui
+  // carimbaria os dados velhos, em silêncio.
   const botao = (texto: string, cls: string) => `
-    <form method="POST" action="/dashboard/leads/${page.leadId}/contrato-congelar" class="inline"
-      onsubmit="return confirm('Congelar este contrato como o que vale? O que estiver salvo agora vira o retrato oficial.')">
-      <input type="hidden" name="tipo" value="${escapeHtml(page.def.tipo)}" />
-      <button class="px-4 py-2 rounded-lg text-sm font-semibold ${cls}">${texto}</button>
-    </form>`;
+    <button formaction="/dashboard/leads/${page.leadId}/contrato-congelar"
+      onclick="return confirm('Salvar o que está na tela e congelar como o contrato que vale?')"
+      class="px-4 py-2 rounded-lg text-sm font-semibold ${cls}">${texto}</button>`;
 
   if (!v) {
     return caixa('border-slate-200 bg-white shadow-sm', `
       <h2 class="font-semibold text-slate-900 mb-1">📌 Este contrato ainda não foi congelado</h2>
       <p class="text-sm text-slate-600 mb-3">
         Enquanto não congelar, o PDF é montado do zero toda vez (a partir do cadastro e da proposta) —
-        se a proposta mudar amanhã, o "contrato original" muda junto. Congelar guarda o <strong>retrato</strong>
-        do que foi combinado, com data. <strong>É o que permite fazer aditivo depois.</strong>
+        se a proposta mudar amanhã, o "contrato original" muda junto. Congelar salva o que está na tela e guarda
+        o <strong>retrato</strong> do que foi combinado, com data. <strong>É o que permite fazer aditivo depois.</strong>
       </p>
       ${botao('✅ Este é o contrato que vale', 'bg-slate-900 text-white hover:bg-slate-700')}`);
   }
@@ -404,12 +405,12 @@ export function renderContratoFormPage(page: ContratoFormInput): string {
     ${page.congelou ? '<div class="mb-4 text-sm px-4 py-3 rounded-lg border bg-emerald-50 border-emerald-300 text-emerald-800">📌 Contrato congelado! Agora ele é <strong>o</strong> contrato desse cliente — e dá pra fazer aditivo.</div>' : ''}
     ${avisoAditivo(page)}
     ${avisos(page)}
-    ${congelar(page)}
 
-    <!-- Tudo dentro de UM formulário: assim o botão da IA e o da prévia levam
-         junto o que você acabou de digitar, em vez de apagar da tela. -->
+    <!-- Tudo dentro de UM formulário: assim os botões (IA, prévia, congelar) levam
+         junto o que você acabou de digitar, em vez de apagar ou ignorar. -->
     <form method="POST" action="/dashboard/leads/${page.leadId}/contrato-form" id="form-contrato">
       <input type="hidden" name="tipo" value="${escapeHtml(def.tipo)}" />
+      ${congelar(page)}
 
       <div class="mb-4">
         <button formaction="/dashboard/leads/${page.leadId}/contrato-ia"

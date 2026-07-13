@@ -24,13 +24,17 @@ export interface ContratoCongelado {
 /** O contrato que vale pro cliente hoje (a versão mais nova, fora as canceladas). */
 export async function contratoVigente(sb: SupabaseClient, leadId: string): Promise<ContratoCongelado | null> {
   try {
+    // A MAIS NOVA (desc + limit 1). Duas armadilhas aqui:
+    //  - `ascending: true` pegaria a v1 e o aditivo citaria o contrato VELHO;
+    //  - sem `limit(1)`, o maybeSingle() do PostgREST ERRA quando volta mais de
+    //    uma linha — e cliente que congelou 2x tem 2 linhas.
     const { data, error } = await sb
       .from('fechamentos')
       .select('id, dados_snapshot, created_at, created_by, status')
       .eq('lead_id', leadId)
       .eq('status', 'aprovado_junior')
-      .order('created_at', { ascending: true })
-      .limit(50)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
     if (error || !data) return null;
     const linha = data as { id: string; dados_snapshot: DadosFechamento; created_at: string; created_by: string };
