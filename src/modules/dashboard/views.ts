@@ -454,7 +454,7 @@ export function renderLoginPage(input: LoginPageInput = {}): string {
 // HOME — KPIs + grafico
 // =========================================================================
 
-export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[], graficoVendas: GraficoMensal[] = []): string {
+export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[], graficoVendas: GraficoMensal[] = [], mesLabel = 'Este mês', mesValue = ''): string {
   const card = (
     titulo: string,
     valor: string,
@@ -483,7 +483,14 @@ export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[], gra
     </div>
 
     <section class="mb-8">
-      <h2 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">📅 Este mês</h2>
+      <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
+        <h2 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">📅 ${escapeHtml(mesLabel)}</h2>
+        <form method="get" action="/dashboard/home" class="flex items-center gap-2">
+          <label class="text-xs text-slate-500">Ver mês:</label>
+          <input type="month" name="mes" value="${escapeHtml(mesValue)}" onchange="this.form.submit()"
+            class="text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-amber-400 outline-none" />
+        </form>
+      </div>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
         ${card('💰 Vendas fechadas', String(kpis.vendasMesAtual), `${kpis.vendasAnoAtual} no ano · ${kpis.vendasTotal} total`, 'emerald', 'text-emerald-700')}
         ${card('📤 Propostas', String(kpis.propostasMesAtual), `${kpis.propostasAnoAtual} no ano · ${kpis.totalPropostas} total`, 'amber', 'text-amber-600')}
