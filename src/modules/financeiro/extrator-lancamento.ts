@@ -5,6 +5,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { CATEGORIA_SLUGS } from './lancamentos.js';
 import { medirIa } from '../custos/ia-metering.js';
+import { pdfGrandeDemais, PDF_TIMEOUT_MS } from '../pdf-guard.js';
 
 export interface ExtracaoLancamento {
   financeiro: boolean;
@@ -230,13 +231,15 @@ const MODELO_FORTE = 'claude-opus-4-7';
 const MODELO_RAPIDO = 'claude-haiku-4-5-20251001';
 
 async function chamarComFallback(client: Anthropic, messages: Anthropic.Messages.MessageParam[], maxTokens: number): Promise<string> {
+  // timeout: doc/PDF pesado não pode pendurar a chamada por minutos (deixa a Eva
+  // muda). 90s é folgado pra ler uma nota/comprovante; acima disso, erra e segue.
   let response;
   try {
-    response = await client.messages.create({ model: MODELO_FORTE, max_tokens: maxTokens, messages });
+    response = await client.messages.create({ model: MODELO_FORTE, max_tokens: maxTokens, messages }, { timeout: PDF_TIMEOUT_MS });
     medirIa({ modelo: MODELO_FORTE, origem: 'financeiro', usage: response.usage });
   } catch (apiErr) {
     console.warn('[caixa-entrada] Opus indisponível, fallback Haiku:', (apiErr as Error).message);
-    response = await client.messages.create({ model: MODELO_RAPIDO, max_tokens: maxTokens, messages });
+    response = await client.messages.create({ model: MODELO_RAPIDO, max_tokens: maxTokens, messages }, { timeout: PDF_TIMEOUT_MS });
     medirIa({ modelo: MODELO_RAPIDO, origem: 'financeiro', usage: response.usage });
   }
   return response.content.filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text').map((b) => b.text).join('');
@@ -281,6 +284,12 @@ export async function extrairDeImagem(client: Anthropic, base64: string, mediaTy
 
 // hoje = data em America/Sao_Paulo (BRT). NUNCA new Date().toISOString() direto — das 21h às 0h o servidor UTC já virou o dia.
 export async function extrairDePdf(client: Anthropic, base64: string, hoje: string): Promise<ExtracaoLancamento[]> {
+  // PDF pesado trava a leitura — devolve vazio pra o fluxo seguir (a mensagem
+  // amigável de "manda como foto" sai no caminho da conta, em index.ts).
+  if (pdfGrandeDemais(base64)) {
+    console.warn('[caixa-entrada] PDF grande demais, pulando extração pra não travar');
+    return [];
+  }
   const raw = await chamarComFallback(client, [{
     role: 'user',
     content: [

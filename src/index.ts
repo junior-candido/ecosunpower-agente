@@ -5650,6 +5650,15 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       // Arquiva o original no cofre do lead (Junior precisa ter a conta em maos)
       if (lead) await archiveInboundMedia(supabase, lead.id, 'pdf', media.base64, media.mimetype, messageId);
 
+      // Guarda: PDF pesado trava a leitura (chamada demora minutos). Barra na
+      // entrada com uma saida amigavel em vez de deixar a Eva muda.
+      const { pdfGrandeDemais, bytesParaMB, tamanhoBase64Bytes, PDF_TIMEOUT_MS } = await import('./modules/pdf-guard.js');
+      if (pdfGrandeDemais(media.base64)) {
+        const mb = bytesParaMB(tamanhoBase64Bytes(media.base64));
+        if (!isSandbox) await sendText(from, `Esse PDF ta pesado (${mb}MB) e eu nao consigo ler ele inteiro por aqui 😅. Manda so a pagina da conta como *foto*, que eu leio rapidinho!`);
+        return;
+      }
+
       // Use Claude to analyze the PDF (Opus; fallback Haiku se Opus indisponivel)
       const pdfClient = new Anthropic({ apiKey: config.anthropicApiKey });
       const pdfMessages: Anthropic.Messages.MessageParam[] = [
@@ -5692,12 +5701,14 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       // Opus pra ler conta sem erro grosseiro (dinheiro em jogo). Fallback Haiku em
       // erro de API (429/overloaded/5xx) — melhor ler com modelo menor do que rejeitar
       // conta legivel. A trava de coerencia (prompt + solar.ts) ainda protege.
+      // timeout curto: se a leitura travar, falha rapido e cai no catch (que
+      // avisa o cliente) em vez de pendurar a mensagem por minutos.
       let analysisResponse;
       try {
-        analysisResponse = await pdfClient.messages.create({ model: 'claude-opus-4-7', max_tokens: 1500, messages: pdfMessages });
+        analysisResponse = await pdfClient.messages.create({ model: 'claude-opus-4-7', max_tokens: 1500, messages: pdfMessages }, { timeout: PDF_TIMEOUT_MS });
       } catch (apiErr) {
         console.warn('[document] Opus indisponivel, fallback Haiku:', (apiErr as Error).message);
-        analysisResponse = await pdfClient.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 1500, messages: pdfMessages });
+        analysisResponse = await pdfClient.messages.create({ model: 'claude-haiku-4-5-20251001', max_tokens: 1500, messages: pdfMessages }, { timeout: PDF_TIMEOUT_MS });
       }
 
       const analysisText = analysisResponse.content
