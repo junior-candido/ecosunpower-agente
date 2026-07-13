@@ -251,20 +251,20 @@ const CAMPOS_UC: CampoContrato[] = [
   },
 ];
 
-// As formas de pagamento que a EcoSun usa de verdade. É atalho, não camisa de
-// força: o campo continua livre pra escrever o que foi acertado com o cliente
-// (ex.: "Sol Fácil, 12x de R$ 2.006,25").
+// As formas de pagamento que a EcoSun usa. É atalho, não camisa de força: o campo
+// continua livre pra escrever o que foi acertado (ex.: "Cartão de crédito — 21x de
+// R$ 1.186,48"). A calculadora do cartão escreve a frase pronta.
 //
-// Cartão parcelado (Sol Fácil / maquininha) e financiamento (Belenus / Fort Lev)
-// são negócios diferentes, com juros diferentes — por isso aparecem separados: o
-// contrato tem que dizer qual dos dois foi.
+// ⚠️ Nada de nome de PARCEIRO aqui. O contrato é o documento mais cliente-facing
+// que existe, e o sistema já tem a regra (proposal-assistant) de que o nome do
+// parceiro do cartão não aparece pro cliente — ele pode mudar de fornecedor. Cartão
+// é "cartão de crédito"; financiamento é "financiamento bancário" (e aí o operador
+// escreve o banco que aprovou, se quiser).
 const FORMAS_DE_PAGAMENTO = [
   'À vista no PIX',
   'Entrada + saldo na entrega',
-  'Sol Fácil — cartão parcelado (até 18x, sem juros até 3x)',
-  'Cartão na maquininha da EcoSun',
-  'Financiamento Belenus',
-  'Financiamento Fort Lev',
+  'Cartão de crédito — parcelado',
+  'Financiamento bancário',
   'Boleto bancário',
 ];
 

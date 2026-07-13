@@ -181,7 +181,9 @@ export function createDashboardRouter(
     // o Google está configurado). Retorna o link da pasta do cliente.
     salvarContratoNoDrive?: (input: {
       nomeTitular: string; cpfTitular: string; version: number;
-      contratoPdf?: Buffer; procuracaoPdf?: Buffer; dadosInputJson: string;
+      contratoPdf?: Buffer; procuracaoPdf?: Buffer;
+      extras?: Array<{ nome: string; pdf: Buffer }>;
+      dadosInputJson: string;
     }) => Promise<{ folderWebViewLink: string }>;
     blogGenerator?: BlogGenerator;
     // Wrapper que publica o draft espelhando o fluxo do WhatsApp (publishDraftToGitHub
@@ -1908,9 +1910,14 @@ export function createDashboardRouter(
       if (!r) return res.status(404).send('Lead não encontrado');
 
       const valores = await valoresDaTela(def, r.cru, req.body);
-      const valor = numeroBR(valores.com_valor ?? '');
+      // No contrato, parcela o valor da venda. No ADITIVO, parcela o valor do
+      // contrato congelado — é ele que o cliente vai repassar pro cartão.
+      const valor = def.tipo === 'aditivo'
+        ? (r.vigente?.dados.comercial?.valor_total_brl ?? numeroBR(valores.adit_valor_anterior ?? ''))
+        : numeroBR(valores.com_valor ?? '');
 
-      const { tabelaCartao, SOLFACIL } = await import('../closing/parcelamento-cartao.js');
+      // A MESMA tabela que a proposta mostrou pro cliente. Nunca outra.
+      const { tabelaCartaoSolar, frasePagamentoCartao } = await import('../closing/../proposal/cartao-solar.js');
       const tela = {
         leadId: id, nome: r.nome, def,
         tipos: CONTRATOS.map((c) => ({ tipo: c.tipo, nome: c.nome, emoji: c.emoji })),
@@ -1924,10 +1931,15 @@ export function createDashboardRouter(
       if (!valor || valor <= 0) {
         return res.send(renderContratoFormPage({ ...tela, parcelamentoSemValor: true }));
       }
-      res.send(renderContratoFormPage({
-        ...tela,
-        parcelamento: { valor, linhas: tabelaCartao(valor, SOLFACIL) },
+      // A frase vem PRONTA daqui (frasePagamentoCartao, a mesma que os testes
+      // cobrem) — a tela não remonta texto de dinheiro por conta própria.
+      const linhas = tabelaCartaoSolar(valor).map((l) => ({
+        parcelas: l.parcelas,
+        parcela: l.parcela,
+        total: l.total,
+        frase: frasePagamentoCartao(valor, l.parcelas),
       }));
+      res.send(renderContratoFormPage({ ...tela, parcelamento: { valor, linhas } }));
     } catch (err) {
       console.error('[dashboard/contrato-parcelas]', err);
       res.status(500).send(`<h2>Erro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -2009,7 +2021,11 @@ export function createDashboardRouter(
       if (!doc) return res.redirect(voltarDoc(req, id, 'envio=erro'));
       const filename = nomeDoArquivo(doc.arquivo, doc.nome);
       const up = await meta.uploadMedia(doc.pdf, 'application/pdf', filename);
-      const caption = tipo === 'procuracao' ? 'Segue a procuração 🖊️' : 'Segue o contrato 📄';
+      // A legenda sai do REGISTRO: o aditivo chegava no zap do cliente anunciado
+      // como "Segue o contrato".
+      const { getContrato } = await import('../closing/contratos-registry.js');
+      const defEnvio = getContrato(tipo);
+      const caption = defEnvio ? `${defEnvio.emoji} Segue ${defEnvio.nome.toLowerCase()}` : 'Segue o documento 📄';
       await meta.sendDocumentById(to, up.mediaId, filename, caption);
       await eventoContrato(req, id, tipo, 'enviado', { destino, campos_em_branco: doc.faltando });
       res.redirect(voltarDoc(req, id, `envio=ok-${destino}`));
@@ -2059,13 +2075,21 @@ export function createDashboardRouter(
       const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
       const info = await montarFechamentoAuto(supabase, id);
       if (!info) return res.redirect(voltarDoc(req, id, 'drive=erro'));
-      const [contrato, procuracao] = await Promise.all([gerarDocBuffer(id, 'fv'), gerarDocBuffer(id, 'procuracao')]);
+      // O tipo que está na tela vai junto: o ADITIVO nunca era arquivado (o botão
+      // salvava contrato+procuração chumbados).
+      const tipoTela = tipoDaCentral(req.body?.tipo_contrato);
+      const [contrato, procuracao, extra] = await Promise.all([
+        gerarDocBuffer(id, 'fv'),
+        gerarDocBuffer(id, 'procuracao'),
+        tipoTela !== 'fv' && tipoTela !== 'procuracao' ? gerarDocBuffer(id, tipoTela) : Promise.resolve(null),
+      ]);
       await options.salvarContratoNoDrive({
         nomeTitular: info.nome,
         cpfTitular: (info.dados.titular_uc as { cpf?: string }).cpf ?? '',
         version: 1,
         contratoPdf: contrato?.pdf,
         procuracaoPdf: procuracao?.pdf,
+        extras: extra ? [{ nome: extra.arquivo, pdf: extra.pdf }] : undefined,
         dadosInputJson: JSON.stringify(info.dados),
       });
       await eventoContrato(req, id, tipoDaCentral(req.body?.tipo_contrato), 'no_drive', {});

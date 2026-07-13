@@ -156,6 +156,68 @@ describe('o que varia é escrito pelo Junior — e nada é obrigado', () => {
   });
 });
 
+// A revisão pegou: se mudasse o pagamento E entrasse serviço novo, uma cláusula
+// dizia "o valor total permanece R$ 20.959,09" e a de baixo dizia "passa de
+// R$ 20.959,09 para R$ 23.359,09". Duas cláusulas se negando no mesmo papel assinado.
+describe('o documento não pode se contradizer', () => {
+  const base = {
+    titular_uc: { tipo: 'PF', nome: 'Antonio', cpf: '111.444.777-35' } as any,
+  };
+
+  it('serviço a mais + pagamento novo: o documento NÃO diz que o valor ficou inalterado', () => {
+    const html = renderAditivo(completarComPlaceholders({
+      ...base,
+      aditivo: {
+        motivo: 'servicos',
+        contrato_data: '2026-07-10T13:00:00Z',
+        valor_anterior: 20959.09,
+        forma_pagamento_anterior: 'Cartão de crédito — 24x',
+        nova_forma_pagamento: 'Cartão de crédito — 21x de R$ 1.186,48',
+        servicos_novos: 'Troca do padrão de entrada.',
+        valor_adicional: 2400,
+        novo_valor_total: 23359.09,
+      },
+    }));
+    expect(html).toContain('23.359,09'); // o novo total está lá
+    expect(html).not.toContain('permanece inalterado'); // e a mentira sumiu
+  });
+
+  it('só mudou o parcelamento: aí SIM o preço dos serviços permanece o mesmo', () => {
+    const html = renderAditivo(completarComPlaceholders({
+      ...base,
+      aditivo: {
+        motivo: 'pagamento',
+        contrato_data: '2026-07-10T13:00:00Z',
+        valor_anterior: 20959.09,
+        forma_pagamento_anterior: 'Cartão de crédito — 24x',
+        nova_forma_pagamento: 'Cartão de crédito — 21x de R$ 1.186,48',
+      },
+    }));
+    expect(html).toContain('permanece inalterado em');
+    expect(html).toContain('20.959,09');
+    // e explica que o acréscimo do cartão é do cliente, não muda o preço
+    expect(html).toContain('administradora do cartão');
+  });
+
+  it('aditivo escrito SÓ na cláusula extra não sai com uma cláusula vazia', () => {
+    const html = renderAditivo(completarComPlaceholders({
+      ...base,
+      aditivo: { contrato_data: '2026-07-10T13:00:00Z', clausula_extra: 'A garantia passa a ser de 18 meses.' },
+    }));
+    expect(html).toContain('18 meses');
+    expect(html).not.toContain('DA ALTERAÇÃO'); // a cláusula-lixo não entra
+    expect(html).not.toContain('_______________________');
+  });
+
+  it('serviço a mais sem mexer no prazo: o documento diz isso na cara', () => {
+    const html = renderAditivo(completarComPlaceholders({
+      ...base,
+      aditivo: { motivo: 'servicos', servicos_novos: 'Reforço do telhado.', valor_adicional: 800, novo_valor_total: 21759.09, valor_anterior: 20959.09 },
+    }));
+    expect(html).toContain('não alteram o prazo');
+  });
+});
+
 describe('sem contrato congelado, o aditivo não inventa o "antes"', () => {
   it('a data e o valor saem em branco no documento (não sai data errada)', () => {
     const html = renderAditivo(completarComPlaceholders({

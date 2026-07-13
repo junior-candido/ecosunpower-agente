@@ -16,6 +16,8 @@ export interface UploadFechamentoInput {
   contratoPdf?: Buffer;
   procuracaoHtml?: string;
   procuracaoPdf?: Buffer;
+  /** Outros documentos da central (termo aditivo, etc.) — arquivados na mesma pasta. */
+  extras?: Array<{ nome: string; pdf: Buffer }>;
   dadosInputJson: string;
 }
 
@@ -102,6 +104,12 @@ export class ClosingDriveUploader {
     if (input.procuracaoPdf) {
       // PDF backup; link Doc e o que volta no zap, mas mantemos PDF como historico imutavel
       await this.uploadPdf(`procuracao-v${input.version}.pdf`, input.procuracaoPdf, clienteId);
+    }
+
+    // Outros documentos da central (aditivo, ...): PDF na pasta do cliente. Sem
+    // isso, o documento que ALTERA o contrato era o único que não ficava arquivado.
+    for (const extra of input.extras ?? []) {
+      await this.uploadPdf(`${extra.nome}-v${input.version}.pdf`, extra.pdf, clienteId);
     }
 
     // Contrato: idem

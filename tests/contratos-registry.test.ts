@@ -207,16 +207,25 @@ describe('forma de pagamento — sugere as de sempre, mas aceita o que foi acord
     expect(campo.tipo).toBe('texto_sugerido');
     expect(campo.sugestoes!.length).toBeGreaterThan(3);
     expect(campo.sugestoes).toContain('À vista no PIX');
-    expect(campo.sugestoes).toContain('Financiamento Belenus');
-    expect(campo.sugestoes).toContain('Financiamento Fort Lev');
-    expect(campo.sugestoes).toContain('Cartão na maquininha da EcoSun');
-    // cartão parcelado e financiamento são coisas diferentes — não podem se misturar
-    expect(campo.sugestoes!.some((s) => s.includes('Sol Fácil'))).toBe(true);
+    expect(campo.sugestoes).toContain('Cartão de crédito — parcelado');
+    expect(campo.sugestoes).toContain('Financiamento bancário');
+  });
+
+  // O contrato é o documento mais cliente-facing que existe, e o sistema já tinha a
+  // regra de que o nome do parceiro do cartão não aparece pro cliente (ele pode
+  // mudar de fornecedor). A lista tinha furado essa regra.
+  it('NUNCA sugere nome de parceiro (o cliente não pode ver isso no contrato)', () => {
+    const campo = getContrato('fv')!.campos.find((c) => c.id === 'com_forma_pagamento')!;
+    const tudo = campo.sugestoes!.join(' ').toLowerCase();
+    expect(tudo).not.toContain('belenus');
+    expect(tudo).not.toContain('solfácil');
+    expect(tudo).not.toContain('sol fácil');
+    expect(tudo).not.toContain('fort lev');
   });
 
   it('escolher uma da lista funciona', () => {
-    const { cadastro } = parseFormulario(getContrato('fv')!, { com_forma_pagamento: 'Financiamento Belenus' });
-    expect(cadastro.forma_pagamento).toBe('Financiamento Belenus');
+    const { cadastro } = parseFormulario(getContrato('fv')!, { com_forma_pagamento: 'Financiamento bancário' });
+    expect(cadastro.forma_pagamento).toBe('Financiamento bancário');
   });
 
   // O ponto: NÃO é um select. O que o Junior combinou na unha entra igual.

@@ -54,43 +54,57 @@ function clausulas(d: DadosFechamento): string {
   let n = 1;
 
   const antes = `firmado em <strong>${dataBR(a.contrato_data)}</strong>`;
+  const temTexto = (s?: string) => !!(s && s.trim());
 
-  if (a.motivo === 'pagamento' || a.nova_forma_pagamento) {
+  // O PREÇO muda? Só quando entra serviço a mais. Trocar 24x por 21x NÃO muda o
+  // preço dos serviços — muda o que a administradora do cartão cobra do cliente.
+  // Sem essa distinção, duas cláusulas do mesmo documento se contradiziam: uma
+  // dizia "o valor permanece R$ 20.959,09" e a outra "passa para R$ 23.359,09".
+  const mudaPreco = !!(a.valor_adicional || a.novo_valor_total);
+
+  if (a.motivo === 'pagamento' || temTexto(a.nova_forma_pagamento)) {
+    const precoInalterado = mudaPreco ? '' : `
+      <p><strong>§1º.</strong> O preço dos serviços permanece inalterado em <strong>${brl(a.valor_anterior)}</strong>.</p>
+      <p><strong>§2º.</strong> Eventual acréscimo cobrado pela administradora do cartão em razão do número de
+      parcelas é de responsabilidade da CONTRATANTE e não altera o preço previsto no §1º.</p>`;
     partes.push(`<h2>CLÁUSULA ${n++}ª — DA FORMA DE PAGAMENTO</h2>
-      <p>Fica alterada a forma de pagamento pactuada no contrato ${antes}, que passa a vigorar
-      conforme abaixo, permanecendo inalterado o valor total contratado de <strong>${brl(a.valor_anterior)}</strong>:</p>
+      <p>As partes ajustam, de comum acordo, a alteração da forma de pagamento pactuada no contrato ${antes},
+      que passa a vigorar conforme abaixo:</p>
       <p><strong>Como estava:</strong> ${ou(a.forma_pagamento_anterior)}</p>
-      <p><strong>Como passa a ser:</strong> ${ou(a.nova_forma_pagamento)}</p>`);
+      <p><strong>Como passa a ser:</strong> ${ou(a.nova_forma_pagamento)}</p>${precoInalterado}`);
   }
 
-  if (a.motivo === 'servicos' || a.servicos_novos) {
+  if (a.motivo === 'servicos' || temTexto(a.servicos_novos)) {
     partes.push(`<h2>CLÁUSULA ${n++}ª — DOS SERVIÇOS ACRESCIDOS</h2>
       <p>As partes ajustam, de comum acordo, o acréscimo dos seguintes serviços ao objeto do contrato ${antes}:</p>
       <p>${ou(a.servicos_novos)}</p>
       <p>Pelos serviços acrescidos, a CONTRATANTE pagará à CONTRATADA o valor adicional de
       <strong>${brl(a.valor_adicional)}</strong>, passando o valor total do contrato de
-      <strong>${brl(a.valor_anterior)}</strong> para <strong>${brl(a.novo_valor_total)}</strong>.</p>`);
+      <strong>${brl(a.valor_anterior)}</strong> para <strong>${brl(a.novo_valor_total)}</strong>.</p>
+      ${temTexto(a.novo_prazo) ? '' : `<p>Os serviços acrescidos não alteram o prazo de execução previsto no contrato.</p>`}`);
   }
 
-  if (a.motivo === 'prazo' || a.novo_prazo) {
+  if (a.motivo === 'prazo' || temTexto(a.novo_prazo)) {
     partes.push(`<h2>CLÁUSULA ${n++}ª — DO PRAZO</h2>
-      <p>Fica alterado o prazo pactuado no contrato ${antes}, que passa a ser: ${ou(a.novo_prazo)}.</p>`);
+      <p>As partes ajustam, de comum acordo, a alteração do prazo pactuado no contrato ${antes},
+      que passa a ser: ${ou(a.novo_prazo)}.</p>`);
   }
 
+  // Escritas pelo operador — nada preenche sozinho, e nada obriga.
+  if (temTexto(a.justificativa)) {
+    partes.push(`<h2>CLÁUSULA ${n++}ª — DA JUSTIFICATIVA</h2><p>${a.justificativa}</p>`);
+  }
+  if (temTexto(a.clausula_extra)) {
+    partes.push(`<h2>CLÁUSULA ${n++}ª — DAS DISPOSIÇÕES ESPECIAIS</h2><p>${a.clausula_extra}</p>`);
+  }
+
+  // O "nada foi dito" só vale se NENHUMA cláusula acima entrou — inclusive a
+  // cláusula extra. Antes, um aditivo escrito só na cláusula extra saía com uma
+  // CLÁUSULA 1ª vazia, com linha pontilhada, num papel que vai pra assinatura.
   if (partes.length === 0) {
     partes.push(`<h2>CLÁUSULA ${n++}ª — DA ALTERAÇÃO</h2>
       <p>Fica alterado o contrato ${antes}, nos termos abaixo:</p>
       <p>${BRANCO}</p>`);
-  }
-
-  // As duas abaixo são escritas pelo operador — nada preenche sozinho, e nada
-  // obriga: pode vir só uma, as duas, ou nenhuma.
-  if (a.justificativa && a.justificativa.trim()) {
-    partes.push(`<h2>CLÁUSULA ${n++}ª — DA JUSTIFICATIVA</h2><p>${a.justificativa}</p>`);
-  }
-
-  if (a.clausula_extra && a.clausula_extra.trim()) {
-    partes.push(`<h2>CLÁUSULA ${n++}ª — DAS DISPOSIÇÕES ESPECIAIS</h2><p>${a.clausula_extra}</p>`);
   }
 
   partes.push(`<h2>CLÁUSULA ${n++}ª — DA RATIFICAÇÃO</h2>
@@ -106,8 +120,13 @@ export function renderAditivo(entrada: DadosFechamento): string {
   const C = contratada();
   const contratante = d.contratante ?? d.titular_uc;
   const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-  const cidade = (d.titular_uc as PessoaFisica)?.endereco?.cidade || 'Brasília';
-  const uf = (d.titular_uc as PessoaFisica)?.endereco?.uf || 'DF';
+  // A cidade da assinatura vem de quem ASSINA (o contratante), igual no contrato —
+  // e o placeholder "_____" é texto, então o `||` sozinho não o descartava: a
+  // assinatura saía como "_______________________-DF".
+  const semBranco = (s?: string) => (s && !s.includes('___') ? s : '');
+  const endAssina = (contratante as PessoaFisica)?.endereco;
+  const cidade = semBranco(endAssina?.cidade) || 'Brasília';
+  const uf = semBranco(endAssina?.uf) || 'DF';
 
   return `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
