@@ -2498,6 +2498,31 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // Toque numa linha da lista "Fechei uma venda" (id 'fechei_pick:<leadId>'):
+  // registra a venda direto pelo Coração da Venda + tira da cadência.
+  async function tryHandleFecheiPick(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const m = text.trim().match(/^fechei_pick:([0-9a-f-]{36})$/i);
+    if (!m) return false;
+    const leadId = m[1];
+    const { data: lead } = await supabase.getClient()
+      .from('leads').select('id, name, phone').eq('id', leadId).maybeSingle();
+    if (!lead) { await sendText(from, '❌ Não achei esse lead. Abre o menu e tenta de novo.'); return true; }
+    await supabase.getClient()
+      .from('leads')
+      .update({ status: 'transferido', opt_out: true, updated_at: new Date().toISOString() })
+      .eq('id', leadId);
+    let virouVenda = false;
+    try {
+      const r = await registrarVenda(supabase.getClient(), { leadId, tipo: 'sistema', origem: 'eva' });
+      virouVenda = r.ok;
+    } catch (e) {
+      console.warn('[fechei_pick] registrarVenda (best-effort) falhou:', (e as Error)?.message);
+    }
+    await sendText(from, `✅ *${(lead as { name?: string }).name ?? 'Cliente'}* marcado como *venda fechada*!${virouVenda ? '\nO dashboard e o Elo já sabem. 🎉' : ''}\nSaiu da cadência também.`);
+    return true;
+  }
+
   // /google [dias]: snapshot Google Ads no zap pra admin. Sem dias = 7d default.
   // /google 30 = ultimos 30 dias. Reusa fetchGoogleAdsSummary do dashboard.
   // Resposta inclui comparativo 7d vs 30d quando dias=7 (default) e dashboard
@@ -3364,6 +3389,28 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           await sendText(to, 'Apaga pelo painel: dashboard.ecosunpower.eng.br/dashboard/financeiro');
         }
       },
+      acaoFecheiVenda: async (to: string) => {
+        // Clicável: manda a lista de propostas em aberto; o Junior toca no cliente
+        // que fechou e o toque volta como texto 'fechei_pick:<leadId>' (tratado
+        // em tryHandleFecheiPick). "Tudo no menu, fácil de clicar".
+        const { listarPropostasAbertas } = await import('./modules/vendas/propostas-abertas.js');
+        const rows = await listarPropostasAbertas(supabase.getClient(), 9);
+        if (rows.length === 0) {
+          await sendText(to, 'Nenhuma proposta em aberto encontrada. Se já vendeu mesmo assim, manda: *fechei nome do cliente*');
+          return;
+        }
+        if (metaWaba) {
+          await metaWaba.sendInteractiveList(to, {
+            header: '✅ Fechei uma venda',
+            body: 'Toque no cliente que fechou a venda:',
+            buttonText: 'Escolher',
+            sections: [{ title: 'Propostas em aberto', rows: rows.map((r) => ({ id: r.id, title: r.title, description: r.description })) }],
+            footer: 'Marca a venda e avisa o Elo',
+          });
+        } else {
+          await sendText(to, 'Pra registrar a venda, manda: *fechei nome do cliente*');
+        }
+      },
       acaoGerarPost: async (to: string) => {
         if (!marketing) { await sendText(to, '❌ Geração de posts está desativada.'); return; }
         await sendText(to, '✨ Gerando um post de teste (imagem)... chega aqui em ~1 min.');
@@ -3860,6 +3907,10 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /resgatar-forms — dispara template inicial pra leads de formulário Meta sem 1ª mensagem
     if (await tryHandleResgatarFormsCommand(from, text)) return;
+
+    // Toque na lista "Fechei uma venda" (fechei_pick:<leadId>) — vem antes do
+    // /fechei por texto, pra o id da linha não cair no parser de nome.
+    if (await tryHandleFecheiPick(from, text)) return;
 
     // /fechei — marca lead como cliente fechado (remove da cadência)
     if (await tryHandleFecheiCommand(from, text)) return;
