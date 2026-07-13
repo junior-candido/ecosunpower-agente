@@ -529,6 +529,13 @@ export function renderLeadDetailPage(
         <a href="/dashboard/leads/${lead.id}" class="px-3 py-1.5 rounded-lg text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50">🔄 Atualizar</a>
       </div>
 
+      <!-- Bloco Documentos: contrato + procuração (gerador confiável, sempre gera) -->
+      <div class="flex flex-wrap gap-2 items-center">
+        <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">📄 Documentos:</span>
+        <a href="/dashboard/leads/${lead.id}/contrato.pdf" target="_blank" class="px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700">📄 Gerar contrato</a>
+        <a href="/dashboard/leads/${lead.id}/procuracao.pdf" target="_blank" class="px-3 py-1.5 rounded-lg text-sm bg-indigo-100 text-indigo-800 hover:bg-indigo-200">🖊️ Gerar procuração</a>
+      </div>
+
       <!-- Bloco 2: Mudar status -->
       <div class="flex flex-wrap gap-2 items-center">
         <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">Status:</span>
