@@ -19,9 +19,10 @@
 //
 // Regra de ouro da sessão: NUNCA trava. Campo vazio não impede nada — vira espaço
 // em branco no PDF (completarComPlaceholders) e aparece destacado na tela.
-import type { DadosFechamento, Endereco, PessoaFisica } from './types.js';
+import type { Aditivo, DadosFechamento, Endereco, PessoaFisica } from './types.js';
 import { renderContrato } from './templates/contrato.html.js';
 import { renderProcuracao } from './templates/procuracao.html.js';
+import { renderAditivo } from './templates/aditivo.html.js';
 
 export type GrupoCampo = string;
 
@@ -304,6 +305,87 @@ const CAMPOS_COMERCIAL: CampoContrato[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 📎 TERMO ADITIVO — os 2 casos reais do Junior:
+//   1. o cartão do cliente não passou em 24x, a bandeira só liberou 21x;
+//   2. no meio da obra apareceu serviço a mais.
+// O "antes" (data do contrato, valor, forma de pagamento) NÃO é digitado: sai do
+// contrato congelado. Por isso os 3 primeiros campos são só de leitura.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function aditivo(out: Partial<DadosFechamento>): Aditivo {
+  if (!out.aditivo) out.aditivo = {};
+  return out.aditivo;
+}
+
+const dataBR = (iso?: string) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+};
+
+const CAMPOS_ADITIVO: CampoContrato[] = [
+  {
+    id: 'adit_contrato_data', label: 'Contrato firmado em', grupo: 'O contrato que está valendo', tipo: 'texto',
+    somenteLeitura: true, dica: 'vem do contrato congelado — se estiver vazio, congela o contrato primeiro',
+    ler: (d) => dataBR(d.aditivo?.contrato_data), gravar: () => {},
+  },
+  {
+    id: 'adit_valor_anterior', label: 'Valor do contrato', grupo: 'O contrato que está valendo', tipo: 'moeda',
+    somenteLeitura: true, ler: (d) => mostrarNumero(d.aditivo?.valor_anterior), gravar: () => {},
+  },
+  {
+    id: 'adit_pagamento_anterior', label: 'Como estava o pagamento', grupo: 'O contrato que está valendo', tipo: 'texto',
+    somenteLeitura: true, ler: (d) => texto(d.aditivo?.forma_pagamento_anterior), gravar: () => {},
+  },
+
+  {
+    id: 'adit_motivo', label: 'Por que o aditivo?', grupo: 'O que muda', tipo: 'select', obrigatorio: true,
+    opcoes: [
+      { valor: 'pagamento', texto: '💳 Mudou a forma de pagamento (ex.: o cartão só passou em 21x)' },
+      { valor: 'servicos', texto: '🔧 Apareceu serviço a mais na obra' },
+      { valor: 'prazo', texto: '📅 Mudou o prazo' },
+      { valor: 'outro', texto: '📝 Outro' },
+    ],
+    ler: (d) => texto(d.aditivo?.motivo),
+    gravar: (o, v) => { aditivo(o).motivo = v as Aditivo['motivo']; },
+  },
+  {
+    id: 'adit_nova_forma_pagamento', label: 'Como passa a ser o pagamento', grupo: 'O que muda', tipo: 'texto_sugerido',
+    sugestoes: FORMAS_DE_PAGAMENTO, dica: 'usa a calculadora do cartão aí embaixo, ou escreve o que ficou',
+    ler: (d) => texto(d.aditivo?.nova_forma_pagamento),
+    gravar: (o, v) => { aditivo(o).nova_forma_pagamento = v; },
+  },
+  {
+    id: 'adit_servicos', label: 'Serviços que entraram', grupo: 'O que muda', tipo: 'textarea',
+    dica: 'ex.: troca do padrão de entrada, reforço da estrutura do telhado, 20 m de cabo a mais',
+    ler: (d) => texto(d.aditivo?.servicos_novos),
+    gravar: (o, v) => { aditivo(o).servicos_novos = v; },
+  },
+  {
+    id: 'adit_valor_adicional', label: 'Valor a mais (R$)', grupo: 'O que muda', tipo: 'moeda',
+    ler: (d) => mostrarNumero(d.aditivo?.valor_adicional),
+    gravar: gravaNumero((o, n) => { aditivo(o).valor_adicional = n; }),
+  },
+  {
+    id: 'adit_novo_valor_total', label: 'Novo valor total (R$)', grupo: 'O que muda', tipo: 'moeda',
+    dica: 'valor do contrato + o valor a mais',
+    ler: (d) => mostrarNumero(d.aditivo?.novo_valor_total),
+    gravar: gravaNumero((o, n) => { aditivo(o).novo_valor_total = n; }),
+  },
+  {
+    id: 'adit_novo_prazo', label: 'Novo prazo', grupo: 'O que muda', tipo: 'texto',
+    ler: (d) => texto(d.aditivo?.novo_prazo),
+    gravar: (o, v) => { aditivo(o).novo_prazo = v; },
+  },
+  {
+    id: 'adit_justificativa', label: 'Justificativa (entra no documento)', grupo: 'O que muda', tipo: 'textarea',
+    dica: 'o porquê, em uma frase — ex.: a bandeira do cartão do cliente não autorizou 24 parcelas',
+    ler: (d) => texto(d.aditivo?.justificativa),
+    gravar: (o, v) => { aditivo(o).justificativa = v; },
+  },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Os tipos de contrato da central
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -325,6 +407,15 @@ export const CONTRATOS: DefinicaoContrato[] = [
     arquivo: 'procuracao',
     campos: [...CAMPOS_PESSOA, ...CAMPOS_ENDERECO, ...CAMPOS_UC],
     render: renderProcuracao,
+  },
+  {
+    tipo: 'aditivo',
+    nome: 'Termo aditivo ao contrato',
+    emoji: '📎',
+    descricao: 'Muda o que precisa (pagamento, serviço a mais, prazo) — o resto do contrato continua valendo.',
+    arquivo: 'aditivo',
+    campos: [...CAMPOS_ADITIVO, ...CAMPOS_PESSOA],
+    render: renderAditivo,
   },
 ];
 

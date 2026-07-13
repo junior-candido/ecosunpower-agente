@@ -1623,6 +1623,15 @@ export function createDashboardRouter(
     }
     return valores;
   }
+  // O carimbo do contrato congelado, do jeito que a tela mostra.
+  function vigenteDaTela(r: { vigente?: { congeladoEm: string; dados: { comercial: { valor_total_brl: number; forma_pagamento: string } } } | null }) {
+    if (!r.vigente) return null;
+    return {
+      congeladoEm: r.vigente.congeladoEm,
+      valor: r.vigente.dados.comercial?.valor_total_brl ?? 0,
+      formaPagamento: r.vigente.dados.comercial?.forma_pagamento ?? '',
+    };
+  }
   // O documento que o cliente recebe nunca leva o id interno no nome: sai
   // "contrato-antonio.pdf", não "fv-antonio.pdf".
   function nomeDoArquivo(arquivo: string, nome: string): string {
@@ -1649,7 +1658,7 @@ export function createDashboardRouter(
     req: Request,
     leadId: string,
     tipo: string,
-    acao: 'gerado' | 'enviado' | 'no_drive' | 'dados_conferidos' | 'ia_revisou',
+    acao: 'gerado' | 'enviado' | 'no_drive' | 'dados_conferidos' | 'ia_revisou' | 'congelado',
     payload: Record<string, unknown> = {},
   ): Promise<void> {
     await registrarEvento(supabase, {
@@ -1697,6 +1706,8 @@ export function createDashboardRouter(
         leadId: id,
         nome: r.nome,
         def,
+        vigente: vigenteDaTela(r),
+        congelou: req.query.congelou === '1',
         tipos: CONTRATOS.map((c) => ({ tipo: c.tipo, nome: c.nome, emoji: c.emoji })),
         valores: valoresDoFormulario(def, r.cru),
         faltando: camposFaltando(def, r.cru),
@@ -1775,6 +1786,7 @@ export function createDashboardRouter(
         tipos: CONTRATOS.map((c) => ({ tipo: c.tipo, nome: c.nome, emoji: c.emoji })),
         temProposta: r.temProposta,
         faltando: def.campos.filter((c) => c.obrigatorio && !valores[c.id]),
+        vigente: vigenteDaTela(r),
         user: (req as AuthedRequest).dashUser,
       };
 
@@ -1841,6 +1853,39 @@ export function createDashboardRouter(
     }
   });
 
+  // 📌 "Este é o contrato que vale": congela o retrato do que foi combinado
+  // (valor, kWp, módulos, forma de pagamento, dados do cliente) com data e autor.
+  // Sem isso não existe ADITIVO — o aditivo precisa citar "o contrato firmado em
+  // tal data", e hoje o PDF é montado do zero toda vez. Reusa a tabela
+  // `fechamentos` (dados_snapshot + parent_id), que já existia parada.
+  router.post('/leads/:id/contrato-congelar', exigir('propostas', 'editar'), async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    try {
+      if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      const { getContrato } = await import('../closing/contratos-registry.js');
+      const def = getContrato(tipoDaCentral(req.body?.tipo)) ?? getContrato('fv')!;
+      if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
+
+      const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
+      const r = await montarFechamentoAuto(supabase, id, 'fv'); // o retrato é o do CONTRATO
+      if (!r) return res.status(404).send('Lead não encontrado');
+
+      const viewer = (req as AuthedRequest).dashUser;
+      const { congelarContrato } = await import('../closing/contrato-vigente.js');
+      await congelarContrato(supabase, id, r.dados, viewer?.nome ?? 'dashboard');
+
+      if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'contrato_congelado', valorNovo: String(r.dados.comercial.valor_total_brl) });
+      await eventoContrato(req, id, def.tipo, 'congelado', {
+        valor: r.dados.comercial.valor_total_brl,
+        forma_pagamento: r.dados.comercial.forma_pagamento,
+      });
+      res.redirect(`/dashboard/leads/${id}/contrato-form?tipo=${encodeURIComponent(def.tipo)}&congelou=1`);
+    } catch (err) {
+      console.error('[dashboard/contrato-congelar]', err);
+      res.status(500).send(`<h2>Erro ao congelar</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
   // 💳 Calcula a tabela do cartão em cima do valor que está na tela. A conta é
   // feita AQUI (no servidor, pelo mesmo módulo dos testes) — nada de reescrever a
   // fórmula em JavaScript na página e ter duas verdades sobre dinheiro.
@@ -1867,6 +1912,7 @@ export function createDashboardRouter(
         temProposta: r.temProposta,
         faltando: def.campos.filter((c) => c.obrigatorio && !valores[c.id]),
         valores,
+        vigente: vigenteDaTela(r),
         user: (req as AuthedRequest).dashUser,
       };
 

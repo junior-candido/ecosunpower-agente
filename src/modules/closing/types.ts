@@ -65,8 +65,38 @@ export type Concessionaria = 'Neoenergia-DF' | 'Equatorial-GO';
 
 export type DocPedido = 'contrato' | 'procuracao';
 
+/**
+ * O que um TERMO ADITIVO carrega. Casos reais do Junior:
+ *  1. o cartão do cliente não passou em 24x, a bandeira só liberou 21x → muda a
+ *     cláusula de pagamento;
+ *  2. no meio da obra apareceu serviço a mais → o aditivo organiza o que entrou,
+ *     quanto ficou e o novo total.
+ * O aditivo COMPLEMENTA o contrato (não substitui): o resto continua valendo.
+ *
+ * O "antes" (contrato_data, valor_anterior, forma_pagamento_anterior) NÃO é
+ * digitado — sai do contrato congelado. É o retrato do que foi combinado.
+ */
+export type MotivoAditivo = 'pagamento' | 'servicos' | 'prazo' | 'outro';
+
+export interface Aditivo {
+  motivo?: MotivoAditivo;
+  // o que era antes (vem do contrato congelado, ver contrato-vigente.ts)
+  contrato_data?: string; // ISO
+  valor_anterior?: number;
+  forma_pagamento_anterior?: string;
+  // o que passa a valer
+  nova_forma_pagamento?: string;
+  servicos_novos?: string;
+  valor_adicional?: number;
+  novo_valor_total?: number;
+  novo_prazo?: string;
+  justificativa?: string;
+}
+
 export interface DadosFechamento {
   titular_uc: Pessoa;
+  /** Só existe quando o documento é um termo aditivo. */
+  aditivo?: Aditivo;
   uc_numero?: string; // 'a confirmar' se vazio
   ligacao_nova?: boolean; // pedido de ligação nova (UC ainda não existe) — UC deixa de ser obrigatória e a procuração ganha o poder de ligação nova
   concessionaria: Concessionaria;

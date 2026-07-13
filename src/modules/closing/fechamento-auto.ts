@@ -10,6 +10,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DadosFechamento, PessoaFisica, Endereco, UF } from './types.js';
 import { fetchByLeadId, buildInitialData } from './closing-data-fetcher.js';
 import { deepMerge } from './closing-assistant.js';
+import { contratoVigente, type ContratoCongelado } from './contrato-vigente.js';
 
 const BRANCO = '_______________________';
 
@@ -87,6 +88,9 @@ export function completarComPlaceholders(p: Partial<DadosFechamento>): DadosFech
       forma_pagamento: com.forma_pagamento || BRANCO,
     },
     disposicoes_especiais: p.disposicoes_especiais,
+    // O aditivo passa inteiro (o template dele decide o que fazer com cada campo
+    // vazio). Se não é aditivo, nem existe.
+    aditivo: p.aditivo ? obj<DadosFechamento['aditivo']>(p.aditivo) : undefined,
     docs_pedidos: ['contrato', 'procuracao'],
   };
 }
@@ -114,6 +118,8 @@ export interface FechamentoAutoResult {
   faltando: string[];
   nome: string;
   temProposta: boolean;
+  /** O contrato congelado ("este é o contrato que vale"). Null = nunca congelaram. */
+  vigente?: ContratoCongelado | null;
 }
 
 /**
@@ -147,6 +153,21 @@ export async function montarFechamentoAuto(
   const automatico = buildInitialData(lead, proposta);
   const rascunho = lerRascunho(lead, tipo);
   const cru = rascunho ? (deepMerge(automatico as any, rascunho as any) as Partial<DadosFechamento>) : automatico;
+
+  // O contrato congelado ("este é o contrato que vale"). A tela usa pra mostrar o
+  // carimbo; o ADITIVO usa pra saber o "antes" — que NÃO se digita, sai daqui.
+  // Sem contrato congelado não existe "antes", e a tela manda congelar primeiro
+  // em vez de deixar o operador inventar a data.
+  const vigente = await contratoVigente(sb, leadId);
+  if (tipo === 'aditivo' && vigente) {
+    cru.aditivo = {
+      ...(cru.aditivo ?? {}),
+      contrato_data: vigente.congeladoEm,
+      valor_anterior: vigente.dados.comercial?.valor_total_brl,
+      forma_pagamento_anterior: vigente.dados.comercial?.forma_pagamento,
+    };
+  }
+
   const dados = completarComPlaceholders(cru);
   return {
     dados,
@@ -154,5 +175,6 @@ export async function montarFechamentoAuto(
     faltando: listarFaltando(dados, !!proposta),
     nome: lead.name || 'Cliente',
     temProposta: !!proposta,
+    vigente,
   };
 }

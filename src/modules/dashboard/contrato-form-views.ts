@@ -36,6 +36,10 @@ export interface ContratoFormInput {
   parcelamento?: { valor: number; linhas: Parcelamento[] } | null;
   /** Pediu pra calcular mas o valor da venda está em branco. */
   parcelamentoSemValor?: boolean;
+  /** O contrato congelado ("este é o contrato que vale"). Null = nunca congelaram. */
+  vigente?: { congeladoEm: string; valor: number; formaPagamento: string } | null;
+  /** Acabou de congelar agora. */
+  congelou?: boolean;
   user?: unknown;
 }
 
@@ -117,6 +121,59 @@ function campo(c: CampoContrato, valor: string, sugestao?: SugestaoIa): string {
 }
 
 const dinheiro = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const dataHoraBR = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+};
+
+// 📌 "Este é o contrato que vale" — congela o retrato do que foi combinado.
+// Sem isso não existe aditivo: o aditivo precisa dizer "antes era 24x sem juros",
+// e esse "antes" só existe se alguém tiver carimbado o contrato.
+function congelar(page: ContratoFormInput): string {
+  if (page.def.tipo === 'aditivo') return ''; // aditivo não se congela; contrato sim
+  const v = page.vigente;
+
+  const caixa = (cls: string, dentro: string) =>
+    `<section class="rounded-xl border ${cls} p-5 mb-4">${dentro}</section>`;
+
+  const botao = (texto: string, cls: string) => `
+    <form method="POST" action="/dashboard/leads/${page.leadId}/contrato-congelar" class="inline"
+      onsubmit="return confirm('Congelar este contrato como o que vale? O que estiver salvo agora vira o retrato oficial.')">
+      <input type="hidden" name="tipo" value="${escapeHtml(page.def.tipo)}" />
+      <button class="px-4 py-2 rounded-lg text-sm font-semibold ${cls}">${texto}</button>
+    </form>`;
+
+  if (!v) {
+    return caixa('border-slate-200 bg-white shadow-sm', `
+      <h2 class="font-semibold text-slate-900 mb-1">📌 Este contrato ainda não foi congelado</h2>
+      <p class="text-sm text-slate-600 mb-3">
+        Enquanto não congelar, o PDF é montado do zero toda vez (a partir do cadastro e da proposta) —
+        se a proposta mudar amanhã, o "contrato original" muda junto. Congelar guarda o <strong>retrato</strong>
+        do que foi combinado, com data. <strong>É o que permite fazer aditivo depois.</strong>
+      </p>
+      ${botao('✅ Este é o contrato que vale', 'bg-slate-900 text-white hover:bg-slate-700')}`);
+  }
+
+  return caixa('border-emerald-300 bg-emerald-50', `
+    <h2 class="font-semibold text-slate-900 mb-1">📌 Contrato congelado em ${dataHoraBR(v.congeladoEm)}</h2>
+    <p class="text-sm text-emerald-900 mb-3">
+      Valendo: <strong>${dinheiro(v.valor)}</strong> — ${escapeHtml(v.formaPagamento)}.
+      Mudou alguma coisa? Faz um <strong>termo aditivo</strong> (lá em cima), que ele cita este contrato sozinho.
+    </p>
+    ${botao('🔄 Congelar de novo (vira a versão seguinte)', 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50')}`);
+}
+
+// 📎 O aditivo sem contrato congelado não tem o que citar.
+function avisoAditivo(page: ContratoFormInput): string {
+  if (page.def.tipo !== 'aditivo' || page.vigente) return '';
+  return `<div class="mb-4 text-sm px-4 py-3 rounded-lg border bg-amber-50 border-amber-300 text-amber-800">
+      <strong>Esse cliente não tem contrato congelado.</strong> O aditivo precisa dizer "fica alterado o contrato
+      firmado em tal data" — e essa data não existe ainda. Vai na aba do <strong>Contrato</strong>, confere os dados
+      e clica em <strong>"Este é o contrato que vale"</strong>. Aí volta aqui. (O aditivo gera assim mesmo, mas com a
+      data em branco pra preencher à mão.)
+    </div>`;
+}
 
 // 💳 A calculadora do cartão. A taxa da Solfácil foi descoberta a partir das
 // tabelas reais do Junior, então aqui a conta é feita — não é chute. Financiamento
@@ -344,7 +401,10 @@ export function renderContratoFormPage(page: ContratoFormInput): string {
     </div>
 
     ${abas(page)}
+    ${page.congelou ? '<div class="mb-4 text-sm px-4 py-3 rounded-lg border bg-emerald-50 border-emerald-300 text-emerald-800">📌 Contrato congelado! Agora ele é <strong>o</strong> contrato desse cliente — e dá pra fazer aditivo.</div>' : ''}
+    ${avisoAditivo(page)}
     ${avisos(page)}
+    ${congelar(page)}
 
     <!-- Tudo dentro de UM formulário: assim o botão da IA e o da prévia levam
          junto o que você acabou de digitar, em vez de apagar da tela. -->
