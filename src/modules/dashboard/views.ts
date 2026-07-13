@@ -454,7 +454,7 @@ export function renderLoginPage(input: LoginPageInput = {}): string {
 // HOME — KPIs + grafico
 // =========================================================================
 
-export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[]): string {
+export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[], graficoVendas: GraficoMensal[] = []): string {
   const card = (
     titulo: string,
     valor: string,
@@ -474,6 +474,7 @@ export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[]): st
     return `${meses[parseInt(m) - 1]}/${y.slice(2)}`;
   });
   const valores = grafico.map(g => g.total);
+  const valoresVendas = graficoVendas.map(g => g.total);
 
   const body = `
     <div class="mb-6">
@@ -496,6 +497,13 @@ export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[]): st
       ${card('Em qualificação', String(kpis.leadsQualificando), `${escapeHtml(empresa().nomeAtendente)} ativa neles`, 'violet', 'text-violet-700')}
       ${card('Ticket médio', brl(kpis.ticketMedio), 'últimas 50 propostas', 'emerald', 'text-emerald-700')}
       ${card('Manutenção próx 30d', String(kpis.manutencaoPendente), 'lembretes pendentes', kpis.manutencaoPendente > 0 ? 'rose' : 'sky', kpis.manutencaoPendente > 0 ? 'text-rose-600' : 'text-slate-900')}
+    </section>
+
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
+      <h2 class="text-lg font-semibold text-slate-900 mb-4">💰 Vendas fechadas — últimos 12 meses</h2>
+      <div style="height:280px;position:relative">
+        <canvas id="graficoVendas"></canvas>
+      </div>
     </section>
 
     <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
@@ -527,28 +535,35 @@ export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[]): st
   const scripts = `
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
+  const opcoesGrafico = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { beginAtZero: true, ticks: { stepSize: 1 } },
+      x: { grid: { display: false } }
+    }
+  };
+  const ctxVendas = document.getElementById('graficoVendas');
+  if (ctxVendas) {
+    new Chart(ctxVendas, {
+      type: 'bar',
+      data: {
+        labels: ${JSON.stringify(labels)},
+        datasets: [{ label: 'Vendas', data: ${JSON.stringify(valoresVendas)}, backgroundColor: '#10b981', borderRadius: 6 }]
+      },
+      options: opcoesGrafico
+    });
+  }
   const ctx = document.getElementById('graficoMensal');
   if (ctx) {
     new Chart(ctx, {
       type: 'bar',
       data: {
         labels: ${JSON.stringify(labels)},
-        datasets: [{
-          label: 'Propostas',
-          data: ${JSON.stringify(valores)},
-          backgroundColor: '#f59e0b',
-          borderRadius: 6,
-        }]
+        datasets: [{ label: 'Propostas', data: ${JSON.stringify(valores)}, backgroundColor: '#f59e0b', borderRadius: 6 }]
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { beginAtZero: true, ticks: { stepSize: 1 } },
-          x: { grid: { display: false } }
-        }
-      }
+      options: opcoesGrafico
     });
   }
 </script>`;

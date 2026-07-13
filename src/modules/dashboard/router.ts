@@ -43,6 +43,7 @@ import {
   fetchDashboardKpis,
   listPropostas,
   fetchPropostasPorMes,
+  fetchVendasPorMes,
   getTimelineAbordagens,
   getKPIsAbordagemMes,
 } from './queries.js';
@@ -548,11 +549,12 @@ export function createDashboardRouter(
   // Home: KPIs + grafico mensal.
   router.get('/home', async (_req: Request, res: Response) => {
     try {
-      const [kpis, grafico] = await Promise.all([
+      const [kpis, grafico, graficoVendas] = await Promise.all([
         fetchDashboardKpis(supabase),
         fetchPropostasPorMes(supabase),
+        fetchVendasPorMes(supabase),
       ]);
-      res.send(renderHomePage(kpis, grafico));
+      res.send(renderHomePage(kpis, grafico, graficoVendas));
     } catch (err) {
       console.error('[dashboard/home]', err);
       res.status(500).send(`<h2>Erro ao carregar dashboard</h2><pre>${(err as Error).message}</pre>`);
