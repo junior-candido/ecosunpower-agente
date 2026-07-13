@@ -9,6 +9,7 @@ import { renderLayout, escapeHtml } from './views.js';
 import { bannerContratos } from './contratos-views.js';
 import { gruposDoContrato, type CampoContrato, type DefinicaoContrato } from '../closing/contratos-registry.js';
 import type { AchadoRevisao, SugestaoIa } from '../closing/revisar-contrato.js';
+import type { Parcelamento } from '../closing/parcelamento-cartao.js';
 
 export interface ContratoFormInput {
   leadId: string;
@@ -31,6 +32,10 @@ export interface ContratoFormInput {
   iaFalhou?: boolean;
   /** Não tem chave da IA configurada no servidor. */
   iaIndisponivel?: boolean;
+  /** A tabela do cartão calculada pro valor que está na tela (botão "calcular"). */
+  parcelamento?: { valor: number; linhas: Parcelamento[] } | null;
+  /** Pediu pra calcular mas o valor da venda está em branco. */
+  parcelamentoSemValor?: boolean;
   user?: unknown;
 }
 
@@ -111,7 +116,64 @@ function campo(c: CampoContrato, valor: string, sugestao?: SugestaoIa): string {
     </div>`;
 }
 
-function grupo(titulo: string, campos: CampoContrato[], valores: Record<string, string>, sugestoes: Record<string, SugestaoIa>): string {
+const dinheiro = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+// 💳 A calculadora do cartão. A taxa da Solfácil foi descoberta a partir das
+// tabelas reais do Junior, então aqui a conta é feita — não é chute. Financiamento
+// (Belenus, Fort Lev) NÃO entra: quem define a parcela é o banco, e a máquina não
+// pode inventar juros de banco dentro de um contrato.
+function calculadoraCartao(page: ContratoFormInput): string {
+  const alvo = `/dashboard/leads/${page.leadId}/contrato-parcelas`;
+  let resultado = '';
+
+  if (page.parcelamentoSemValor) {
+    resultado = `<div class="mt-3 text-sm px-3 py-2 rounded-lg border bg-amber-50 border-amber-300 text-amber-800">
+        Preenche o <strong>Valor total</strong> aí em cima primeiro — sem ele não tem o que parcelar.
+      </div>`;
+  } else if (page.parcelamento) {
+    const linhas = page.parcelamento.linhas.map((l) => {
+      const frase = l.comJuros
+        ? `Sol Fácil — ${l.parcelas}x de ${dinheiro(l.parcela)} (total ${dinheiro(l.total)})`
+        : `Sol Fácil — ${l.parcelas}x de ${dinheiro(l.parcela)} sem juros (total ${dinheiro(l.total)})`;
+      const selo = l.comJuros
+        ? `<span class="text-xs text-slate-500">total ${dinheiro(l.total)}</span>`
+        : '<span class="text-xs font-semibold text-emerald-700">sem juros</span>';
+      return `<tr class="border-t border-slate-100">
+          <td class="py-1.5 pr-3 text-slate-600 whitespace-nowrap">${l.parcelas}x</td>
+          <td class="py-1.5 pr-3 font-semibold text-slate-900 whitespace-nowrap">${dinheiro(l.parcela)}</td>
+          <td class="py-1.5 pr-3">${selo}</td>
+          <td class="py-1.5 text-right">
+            <button type="button" data-usar="com_forma_pagamento" data-valor="${escapeHtml(frase)}"
+              class="px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-900 text-white hover:bg-slate-700">usar</button>
+          </td>
+        </tr>`;
+    }).join('');
+    resultado = `<div class="mt-3 rounded-lg border border-slate-200 overflow-hidden">
+        <div class="px-3 py-2 bg-slate-50 text-xs text-slate-600">
+          Em cima de <strong>${dinheiro(page.parcelamento.valor)}</strong>. Clica em <strong>usar</strong> pra escrever no contrato.
+        </div>
+        <div class="max-h-64 overflow-y-auto">
+          <table class="w-full text-sm px-3"><tbody>${linhas}</tbody></table>
+        </div>
+      </div>`;
+  }
+
+  return `<div class="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="font-semibold text-slate-900 text-sm">💳 Calcular a parcela no cartão</span>
+        <button formaction="${alvo}" class="px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700">
+          Calcular
+        </button>
+        <span class="text-xs text-slate-500">taxa da Sol Fácil (3,19% + 1,689% ao mês, até 18x — sem juros até 3x)</span>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">
+        Financiamento (Belenus, Fort Lev) não entra aqui: quem define a parcela é o banco. Escreve no campo o que veio aprovado.
+      </p>
+      ${resultado}
+    </div>`;
+}
+
+function grupo(titulo: string, campos: CampoContrato[], valores: Record<string, string>, sugestoes: Record<string, SugestaoIa>, extra = ''): string {
   if (campos.length === 0) return '';
   const faltam = campos.filter((c) => c.obrigatorio && !valores[c.id]).length;
   const aviso = faltam > 0
@@ -124,6 +186,7 @@ function grupo(titulo: string, campos: CampoContrato[], valores: Record<string, 
       </div>
       <div class="grid gap-4 sm:grid-cols-2">
         ${campos.map((c) => campo(c, valores[c.id] ?? '', sugestoes[c.id])).join('\n')}
+        ${extra}
       </div>
     </section>`;
 }
@@ -261,8 +324,15 @@ export function renderContratoFormPage(page: ContratoFormInput): string {
 
   // Os grupos vêm da ordem dos campos do próprio tipo — tipo novo com um grupo
   // novo ("A locação", "O serviço") aparece sozinho, sem mexer nesta tela.
+  // A calculadora do cartão mora junto com o valor e a forma de pagamento.
   const grupos = gruposDoContrato(def)
-    .map((g) => grupo(g, def.campos.filter((c) => c.grupo === g), valores, sugestoes))
+    .map((g) => grupo(
+      g,
+      def.campos.filter((c) => c.grupo === g),
+      valores,
+      sugestoes,
+      g === 'O negócio' ? calculadoraCartao(page) : '',
+    ))
     .join('\n');
 
   const body = `

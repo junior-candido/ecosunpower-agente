@@ -1841,6 +1841,48 @@ export function createDashboardRouter(
     }
   });
 
+  // 💳 Calcula a tabela do cartão em cima do valor que está na tela. A conta é
+  // feita AQUI (no servidor, pelo mesmo módulo dos testes) — nada de reescrever a
+  // fórmula em JavaScript na página e ter duas verdades sobre dinheiro.
+  router.post('/leads/:id/contrato-parcelas', exigir('propostas', 'visualizar'), async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      const { CONTRATOS, getContrato, numeroBR } = await import('../closing/contratos-registry.js');
+      const def = getContrato(tipoDaCentral(req.body?.tipo));
+      if (!def) return res.status(400).send('Tipo de contrato desconhecido');
+      if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
+
+      const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
+      const r = await montarFechamentoAuto(supabase, id, def.tipo);
+      if (!r) return res.status(404).send('Lead não encontrado');
+
+      const valores = await valoresDaTela(def, r.cru, req.body);
+      const valor = numeroBR(valores.com_valor ?? '');
+
+      const { tabelaCartao, SOLFACIL } = await import('../closing/parcelamento-cartao.js');
+      const tela = {
+        leadId: id, nome: r.nome, def,
+        tipos: CONTRATOS.map((c) => ({ tipo: c.tipo, nome: c.nome, emoji: c.emoji })),
+        temProposta: r.temProposta,
+        faltando: def.campos.filter((c) => c.obrigatorio && !valores[c.id]),
+        valores,
+        user: (req as AuthedRequest).dashUser,
+      };
+
+      if (!valor || valor <= 0) {
+        return res.send(renderContratoFormPage({ ...tela, parcelamentoSemValor: true }));
+      }
+      res.send(renderContratoFormPage({
+        ...tela,
+        parcelamento: { valor, linhas: tabelaCartao(valor, SOLFACIL) },
+      }));
+    } catch (err) {
+      console.error('[dashboard/contrato-parcelas]', err);
+      res.status(500).send(`<h2>Erro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
   // Salvar o formulário faz DUAS coisas, e é aí que o ecossistema se amarra:
   //  1. o que é dado do CLIENTE (CPF, RG, estado civil, endereço, UC...) vai pras
   //     colunas do lead — vale pra todo contrato, pra Eva e pro CRM;
