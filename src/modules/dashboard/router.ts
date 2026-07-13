@@ -724,7 +724,7 @@ export function createDashboardRouter(
       }
 
       const conversaIA = await supabaseService.getConversaIA(id);
-      res.send(renderLeadDetailPage(lead, conversaIA, String(req.query.docs ?? '')));
+      res.send(renderLeadDetailPage(lead, conversaIA, String(req.query.docs ?? ''), String(req.query.envio ?? '')));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);
       res.status(500).send(`<h2>Erro ao carregar lead</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -1564,26 +1564,60 @@ export function createDashboardRouter(
   // 📄 Gerador CONFIÁVEL de contrato/procuração: monta os dados do cadastro +
   // proposta (buildInitialData), preenche brancos onde faltar e gera o PDF na
   // hora. Determinístico — SEMPRE gera, nunca trava por falta de dado.
+  async function gerarDocBuffer(leadId: string, tipo: 'contrato' | 'procuracao'): Promise<{ pdf: Buffer; nome: string } | null> {
+    const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
+    const r = await montarFechamentoAuto(supabase, leadId);
+    if (!r) return null;
+    const { renderContrato, renderProcuracao } = await import('../closing/index.js');
+    const { renderHtmlToPdf } = await import('../closing/closing-render.js');
+    const html = tipo === 'contrato' ? renderContrato(r.dados) : renderProcuracao(r.dados);
+    const pdf = await renderHtmlToPdf(html);
+    return { pdf, nome: r.nome || 'cliente' };
+  }
   async function gerarDocPdf(req: Request, res: Response, tipo: 'contrato' | 'procuracao') {
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-      const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
-      const r = await montarFechamentoAuto(supabase, id);
-      if (!r) return res.status(404).send('Lead não encontrado');
-      const { renderContrato, renderProcuracao } = await import('../closing/index.js');
-      const { renderHtmlToPdf } = await import('../closing/closing-render.js');
-      const html = tipo === 'contrato' ? renderContrato(r.dados) : renderProcuracao(r.dados);
-      const pdf = await renderHtmlToPdf(html);
-      const nomeArq = `${tipo}-${(r.nome || 'cliente').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
+      const doc = await gerarDocBuffer(id, tipo);
+      if (!doc) return res.status(404).send('Lead não encontrado');
+      const nomeArq = `${tipo}-${doc.nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
       res.type('application/pdf');
       res.setHeader('Content-Disposition', `inline; filename="${nomeArq}"`);
-      res.send(pdf);
+      res.send(doc.pdf);
     } catch (err) {
       console.error('[dashboard/doc-pdf]', err);
       res.status(500).send(`<h2>Erro ao gerar</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
     }
   }
+
+  // 📤 Entrega: gera o PDF e ENVIA pelo WhatsApp — pro cliente (lead.phone) ou
+  // pro zap do Junior (engineerPhone). Upload buffer → media_id → sendDocumentById.
+  router.post('/leads/:id/enviar-doc', exigir('propostas', 'editar'), async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    try {
+      if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      const tipo = req.body?.tipo === 'procuracao' ? 'procuracao' : 'contrato';
+      const destino = req.body?.destino === 'cliente' ? 'cliente' : 'eu';
+      const meta = options.metaService;
+      if (!meta) return res.redirect(`/dashboard/leads/${id}?envio=off`);
+      let to: string | null | undefined = options.engineerPhone;
+      if (destino === 'cliente') {
+        const { data: lead } = await supabase.from('leads').select('phone').eq('id', id).maybeSingle();
+        to = (lead as { phone?: string } | null)?.phone ?? null;
+      }
+      if (!to) return res.redirect(`/dashboard/leads/${id}?envio=semzap`);
+      const doc = await gerarDocBuffer(id, tipo);
+      if (!doc) return res.redirect(`/dashboard/leads/${id}?envio=erro`);
+      const filename = `${tipo}-${doc.nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
+      const up = await meta.uploadMedia(doc.pdf, 'application/pdf', filename);
+      const caption = tipo === 'contrato' ? 'Segue o contrato 📄' : 'Segue a procuração 🖊️';
+      await meta.sendDocumentById(to, up.mediaId, filename, caption);
+      res.redirect(`/dashboard/leads/${id}?envio=ok-${destino}`);
+    } catch (err) {
+      console.error('[dashboard/enviar-doc]', err);
+      res.redirect(`/dashboard/leads/${id}?envio=erro`);
+    }
+  });
   router.get('/leads/:id/contrato.pdf', exigir('propostas', 'visualizar'), (req: Request, res: Response) => gerarDocPdf(req, res, 'contrato'));
   router.get('/leads/:id/procuracao.pdf', exigir('propostas', 'visualizar'), (req: Request, res: Response) => gerarDocPdf(req, res, 'procuracao'));
 
