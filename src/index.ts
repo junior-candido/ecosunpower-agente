@@ -2551,6 +2551,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     if (['pular', 'pula', 'nao', 'não', 'skip', '-', 'depois'].includes(t)) {
       fecheiValorState.delete(from);
       await sendText(from, '👍 Beleza, venda registrada sem valor. Dá pra somar depois pelo painel, se quiser.');
+      await perguntarTipoVenda(from, pend.leadId, pend.nome);
       return true;
     }
     const valor = parseValorReais(text);
@@ -2567,6 +2568,40 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       .eq('id', pend.leadId);
     const brl = valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     await sendText(from, `💰 Valor de *${pend.nome}* salvo: *${brl}*. Já entra no faturamento do mês. 🎉`);
+    await perguntarTipoVenda(from, pend.leadId, pend.nome);
+    return true;
+  }
+
+  // Pergunta (com botões) se a venda foi sistema ou serviço — 1 toque, fecha o
+  // registro completo pelo zap. A venda já foi salva; isto só refina o tipo.
+  async function perguntarTipoVenda(from: string, leadId: string, nome: string): Promise<void> {
+    if (!metaWaba) return;
+    try {
+      await metaWaba.sendInteractiveButtons(
+        from,
+        `Pra fechar o registro de *${nome}*: foi sistema solar ou serviço?`,
+        [
+          { id: `venda_tipo:${leadId}:sistema`, title: '🔆 Sistema' },
+          { id: `venda_tipo:${leadId}:servico`, title: '🔧 Serviço' },
+        ],
+        'Marca o tipo da venda',
+      );
+    } catch (e) {
+      console.warn('[venda-tipo] botões falharam (best-effort):', (e as Error)?.message);
+    }
+  }
+
+  // Toque no botão "Sistema/Serviço" (id 'venda_tipo:<leadId>:<tipo>').
+  async function tryHandleVendaTipo(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const m = text.trim().match(/^venda_tipo:([0-9a-f-]{36}):(sistema|servico)$/i);
+    if (!m) return false;
+    const [, leadId, tipo] = m;
+    await supabase.getClient()
+      .from('leads')
+      .update({ venda_tipo: tipo, updated_at: new Date().toISOString() })
+      .eq('id', leadId);
+    await sendText(from, tipo === 'servico' ? '🔧 Marcado como *serviço*. Prontinho! ✅' : '🔆 Marcado como *sistema*. Prontinho! ✅');
     return true;
   }
 
@@ -3954,6 +3989,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /resgatar-forms — dispara template inicial pra leads de formulário Meta sem 1ª mensagem
     if (await tryHandleResgatarFormsCommand(from, text)) return;
+
+    // Toque no botão de tipo (sistema/serviço) logo após registrar a venda.
+    if (await tryHandleVendaTipo(from, text)) return;
 
     // Resposta com o VALOR logo após tocar em "Fechei uma venda" — vem antes de
     // tudo (inclusive do gate financeiro) pra o número não virar outra coisa.
