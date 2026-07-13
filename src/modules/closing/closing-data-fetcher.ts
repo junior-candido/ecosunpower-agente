@@ -12,6 +12,23 @@ export function normalizarModalidade(raw: unknown): Modalidade {
   return 'autoconsumo_local';
 }
 
+// O cadastro guarda o estado civil como id ('uniao_estavel'), igual à tela de
+// clientes. No contrato tem que sair escrito por extenso.
+const ESTADO_CIVIL_POR_EXTENSO: Record<string, string> = {
+  solteiro: 'Solteiro(a)',
+  casado: 'Casado(a)',
+  uniao_estavel: 'União estável',
+  divorciado: 'Divorciado(a)',
+  separado: 'Separado(a)',
+  viuvo: 'Viúvo(a)',
+};
+
+export function estadoCivilPorExtenso(raw: string | null | undefined): string | undefined {
+  const s = String(raw ?? '').trim();
+  if (!s) return undefined;
+  return ESTADO_CIVIL_POR_EXTENSO[s.toLowerCase()] ?? s; // texto livre antigo passa direto
+}
+
 export interface LeadRow {
   id: string;
   name: string;
@@ -22,6 +39,8 @@ export interface LeadRow {
   orgao_emissor_rg: string | null;
   data_nascimento: string | null;
   estado_civil: string | null;
+  profissao: string | null;
+  contrato_dados: Record<string, unknown> | null;
   cep: string | null;
   endereco_rua: string | null;
   endereco_numero: string | null;
@@ -144,7 +163,8 @@ export function buildInitialData(
     cpf: lead.cpf_cnpj ?? undefined,
     rg: lead.rg ?? undefined,
     orgao_emissor_rg: lead.orgao_emissor_rg ?? undefined,
-    estado_civil: lead.estado_civil ?? undefined,
+    estado_civil: estadoCivilPorExtenso(lead.estado_civil),
+    profissao: lead.profissao ?? undefined,
     data_nascimento: lead.data_nascimento ?? undefined,
     nacionalidade: 'Brasileiro(a)',
     endereco: endereco as Endereco,

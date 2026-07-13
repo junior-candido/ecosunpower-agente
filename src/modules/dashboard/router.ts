@@ -102,6 +102,7 @@ import { audit } from './audit.js';
 import { registrarVenda } from '../vendas/registrar-venda.js';
 import { renderFecharVendaPage, type PropostaAberta } from './vendas-views.js';
 import { renderContratosPage, type ContratoCliente } from './contratos-views.js';
+import { renderContratoFormPage } from './contrato-form-views.js';
 import { CLIENTE_STATUSES } from './clientes-queries.js';
 import { can } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
@@ -1576,31 +1577,82 @@ export function createDashboardRouter(
   // senão, volta pra tela do lead.
   function voltarDoc(req: Request, leadId: string, params: string): string {
     const next = String((req.body?.next ?? req.query?.next ?? '')).trim();
+    if (next === 'form') {
+      const t = String(req.body?.tipo_contrato ?? 'fv').trim();
+      return `/dashboard/leads/${leadId}/contrato-form?tipo=${encodeURIComponent(t)}&${params}`;
+    }
     if (next === 'contratos') {
       const nome = String(req.body?.nome ?? '').trim();
       return `/dashboard/contratos?q=${encodeURIComponent(nome)}&${params}`;
     }
     return `/dashboard/leads/${leadId}?${params}`;
   }
-  async function gerarDocBuffer(leadId: string, tipo: 'contrato' | 'procuracao'): Promise<{ pdf: Buffer; nome: string } | null> {
-    const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
-    const r = await montarFechamentoAuto(supabase, leadId);
-    if (!r) return null;
-    const { renderContrato, renderProcuracao } = await import('../closing/index.js');
-    const { renderHtmlToPdf } = await import('../closing/closing-render.js');
-    const html = tipo === 'contrato' ? renderContrato(r.dados) : renderProcuracao(r.dados);
-    const pdf = await renderHtmlToPdf(html);
-    return { pdf, nome: r.nome || 'cliente' };
+  // Qual tipo da central gerar. O corpo antigo mandava tipo=contrato|procuracao
+  // (só existiam esses dois) — 'contrato' agora quer dizer o de sistema FV.
+  function tipoDaCentral(raw: unknown): string {
+    const t = String(raw ?? 'fv').trim();
+    return t === 'contrato' ? 'fv' : t;
   }
-  async function gerarDocPdf(req: Request, res: Response, tipo: 'contrato' | 'procuracao') {
+  // Gera o PDF de QUALQUER contrato registrado na central: monta os dados
+  // (cadastro + proposta + IA + o rascunho do formulário) e passa pro template
+  // daquele tipo. Tipo novo entra no registro e passa por aqui sem mudar nada.
+  // O lead é mesmo da empresa de quem está logado? Sem isso, um operador de outra
+  // empresa poderia abrir (e gravar) o contrato de um cliente que não é dele só
+  // sabendo o id da URL. Sem usuário na sessão (ambiente sem login), deixa passar.
+  async function leadDaEmpresa(req: Request, leadId: string): Promise<boolean> {
+    const viewer = (req as AuthedRequest).dashUser;
+    if (!viewer?.companyId) return true;
+    const { data } = await supabase.from('leads').select('id').eq('id', leadId).eq('company_id', viewer.companyId).maybeSingle();
+    return !!data;
+  }
+  // O documento que o cliente recebe nunca leva o id interno no nome: sai
+  // "contrato-antonio.pdf", não "fv-antonio.pdf".
+  function nomeDoArquivo(arquivo: string, nome: string): string {
+    return `${arquivo}-${nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
+  }
+  async function gerarDocBuffer(
+    leadId: string,
+    tipoContrato: string,
+  ): Promise<{ pdf: Buffer; nome: string; arquivo: string; faltando: number } | null> {
+    const tipo = tipoDaCentral(tipoContrato);
+    const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
+    const { getContrato } = await import('../closing/contratos-registry.js');
+    const def = getContrato(tipo);
+    if (!def) return null;
+    const r = await montarFechamentoAuto(supabase, leadId, tipo);
+    if (!r) return null;
+    const { renderHtmlToPdf } = await import('../closing/closing-render.js');
+    const pdf = await renderHtmlToPdf(def.render(r.dados));
+    return { pdf, nome: r.nome || 'cliente', arquivo: def.arquivo, faltando: r.faltando.length };
+  }
+  // 🧠 O cérebro (Elo) tem que saber de tudo: contrato gerado, mandado no zap,
+  // salvo no Drive — datado, ligado ao lead. Best-effort: nunca derruba o fluxo.
+  async function eventoContrato(
+    req: Request,
+    leadId: string,
+    tipo: string,
+    acao: 'gerado' | 'enviado' | 'no_drive' | 'dados_conferidos',
+    payload: Record<string, unknown> = {},
+  ): Promise<void> {
+    await registrarEvento(supabase, {
+      tipo: `comercial:contrato_${acao}`,
+      departamento: 'comercial',
+      canal: acao === 'enviado' ? 'whatsapp' : 'sistema',
+      origem: 'central_contratos',
+      leadId,
+      payload: { tipo_contrato: tipo, usuario: (req as AuthedRequest).dashUser?.nome ?? null, ...payload },
+    });
+  }
+  async function gerarDocPdf(req: Request, res: Response, tipoPadrao: string) {
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      const tipo = tipoDaCentral(req.query.tipo ?? tipoPadrao);
       const doc = await gerarDocBuffer(id, tipo);
       if (!doc) return res.status(404).send('Lead não encontrado');
-      const nomeArq = `${tipo}-${doc.nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
+      await eventoContrato(req, id, tipo, 'gerado', { campos_em_branco: doc.faltando });
       res.type('application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${nomeArq}"`);
+      res.setHeader('Content-Disposition', `inline; filename="${nomeDoArquivo(doc.arquivo, doc.nome)}"`);
       res.send(doc.pdf);
     } catch (err) {
       console.error('[dashboard/doc-pdf]', err);
@@ -1608,14 +1660,90 @@ export function createDashboardRouter(
     }
   }
 
+  // 📝 O FORMULÁRIO da central de contratos: mostra todos os campos do tipo
+  // escolhido já preenchidos (cadastro + proposta + IA), com os brancos em
+  // vermelho. O que o Junior digitar aqui vence na hora de gerar o PDF.
+  router.get('/leads/:id/contrato-form', exigir('propostas', 'visualizar'), async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      const { CONTRATOS, getContrato, valoresDoFormulario, camposFaltando } = await import('../closing/contratos-registry.js');
+      const def = getContrato(tipoDaCentral(req.query.tipo));
+      if (!def) return res.status(400).send('Tipo de contrato desconhecido');
+      if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
+
+      const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
+      const r = await montarFechamentoAuto(supabase, id, def.tipo);
+      if (!r) return res.status(404).send('Lead não encontrado');
+      res.send(renderContratoFormPage({
+        leadId: id,
+        nome: r.nome,
+        def,
+        tipos: CONTRATOS.map((c) => ({ tipo: c.tipo, nome: c.nome, emoji: c.emoji })),
+        valores: valoresDoFormulario(def, r.cru),
+        faltando: camposFaltando(def, r.cru),
+        temProposta: r.temProposta,
+        salvo: req.query.salvo === '1',
+        envioResultado: String(req.query.envio ?? ''),
+        driveResultado: String(req.query.drive ?? ''),
+        user: (req as AuthedRequest).dashUser,
+      }));
+    } catch (err) {
+      console.error('[dashboard/contrato-form]', err);
+      res.status(500).send(`<h2>Erro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  // Salvar o formulário faz DUAS coisas, e é aí que o ecossistema se amarra:
+  //  1. o que é dado do CLIENTE (CPF, RG, estado civil, endereço, UC...) vai pras
+  //     colunas do lead — vale pra todo contrato, pra Eva e pro CRM;
+  //  2. o que é daquele negócio (valor, sistema, combinados) vai pro rascunho
+  //     leads.contrato_dados[tipo].
+  // Campo em branco fica de fora dos dois: salvar nunca apaga o que já existia.
+  router.post('/leads/:id/contrato-form', exigir('propostas', 'editar'), async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    try {
+      if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      const { getContrato, parseFormulario } = await import('../closing/contratos-registry.js');
+      const def = getContrato(tipoDaCentral(req.body?.tipo));
+      if (!def) return res.status(400).send('Tipo de contrato desconhecido');
+      if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
+
+      const { cadastro, rascunho } = parseFormulario(def, req.body ?? {});
+
+      const { data: lead } = await supabase.from('leads').select('contrato_dados').eq('id', id).maybeSingle();
+      const atual = (lead as { contrato_dados?: Record<string, unknown> } | null)?.contrato_dados;
+      const base = atual && typeof atual === 'object' && !Array.isArray(atual) ? atual : {};
+
+      const patch: Record<string, unknown> = {
+        ...cadastro,
+        contrato_dados: { ...base, [def.tipo]: rascunho },
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase.from('leads').update(patch).eq('id', id);
+      if (error) throw error;
+
+      const viewer = (req as AuthedRequest).dashUser;
+      if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'contrato_dados', valorNovo: def.tipo });
+      await eventoContrato(req, id, def.tipo, 'dados_conferidos', { campos_cadastro: Object.keys(cadastro) });
+      res.redirect(`/dashboard/leads/${id}/contrato-form?tipo=${encodeURIComponent(def.tipo)}&salvo=1`);
+    } catch (err) {
+      console.error('[dashboard/contrato-form/salvar]', err);
+      res.status(500).send(`<h2>Erro ao salvar</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
   // 📤 Entrega: gera o PDF e ENVIA pelo WhatsApp — pro cliente (lead.phone) ou
   // pro zap do Junior (engineerPhone). Upload buffer → media_id → sendDocumentById.
   router.post('/leads/:id/enviar-doc', exigir('propostas', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.params.id);
     try {
       if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-      const tipo = req.body?.tipo === 'procuracao' ? 'procuracao' : 'contrato';
+      // tipo_contrato vem do formulário (qualquer tipo da central); `tipo` é o
+      // caminho antigo (contrato|procuracao) dos botões diretos.
+      const tipo = tipoDaCentral(req.body?.tipo_contrato ?? req.body?.tipo);
       const destino = req.body?.destino === 'cliente' ? 'cliente' : 'eu';
+      if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
       const meta = options.metaService;
       if (!meta) return res.redirect(voltarDoc(req, id, 'envio=off'));
       let to: string | null | undefined = options.engineerPhone;
@@ -1626,10 +1754,11 @@ export function createDashboardRouter(
       if (!to) return res.redirect(voltarDoc(req, id, 'envio=semzap'));
       const doc = await gerarDocBuffer(id, tipo);
       if (!doc) return res.redirect(voltarDoc(req, id, 'envio=erro'));
-      const filename = `${tipo}-${doc.nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
+      const filename = nomeDoArquivo(doc.arquivo, doc.nome);
       const up = await meta.uploadMedia(doc.pdf, 'application/pdf', filename);
-      const caption = tipo === 'contrato' ? 'Segue o contrato 📄' : 'Segue a procuração 🖊️';
+      const caption = tipo === 'procuracao' ? 'Segue a procuração 🖊️' : 'Segue o contrato 📄';
       await meta.sendDocumentById(to, up.mediaId, filename, caption);
+      await eventoContrato(req, id, tipo, 'enviado', { destino, campos_em_branco: doc.faltando });
       res.redirect(voltarDoc(req, id, `envio=ok-${destino}`));
     } catch (err) {
       console.error('[dashboard/enviar-doc]', err);
@@ -1652,8 +1781,10 @@ export function createDashboardRouter(
           status: l.installation_status ?? l.status ?? null,
         }));
       }
+      const { CONTRATOS } = await import('../closing/contratos-registry.js');
       res.send(renderContratosPage({
         q, buscou, resultados,
+        tipos: CONTRATOS.map((c) => ({ tipo: c.tipo, nome: c.nome, emoji: c.emoji, descricao: c.descricao })),
         docsResultado: String(req.query.docs ?? ''),
         envioResultado: String(req.query.envio ?? ''),
         driveResultado: String(req.query.drive ?? ''),
@@ -1670,11 +1801,12 @@ export function createDashboardRouter(
     const id = String(req.params.id);
     try {
       if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
       if (!options.salvarContratoNoDrive) return res.redirect(voltarDoc(req, id, 'drive=off'));
       const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
       const info = await montarFechamentoAuto(supabase, id);
       if (!info) return res.redirect(voltarDoc(req, id, 'drive=erro'));
-      const [contrato, procuracao] = await Promise.all([gerarDocBuffer(id, 'contrato'), gerarDocBuffer(id, 'procuracao')]);
+      const [contrato, procuracao] = await Promise.all([gerarDocBuffer(id, 'fv'), gerarDocBuffer(id, 'procuracao')]);
       await options.salvarContratoNoDrive({
         nomeTitular: info.nome,
         cpfTitular: (info.dados.titular_uc as { cpf?: string }).cpf ?? '',
@@ -1683,6 +1815,7 @@ export function createDashboardRouter(
         procuracaoPdf: procuracao?.pdf,
         dadosInputJson: JSON.stringify(info.dados),
       });
+      await eventoContrato(req, id, tipoDaCentral(req.body?.tipo_contrato), 'no_drive', {});
       res.redirect(voltarDoc(req, id, 'drive=ok'));
     } catch (err) {
       console.error('[dashboard/salvar-drive]', err);
@@ -1690,7 +1823,7 @@ export function createDashboardRouter(
     }
   });
 
-  router.get('/leads/:id/contrato.pdf', exigir('propostas', 'visualizar'), (req: Request, res: Response) => gerarDocPdf(req, res, 'contrato'));
+  router.get('/leads/:id/contrato.pdf', exigir('propostas', 'visualizar'), (req: Request, res: Response) => gerarDocPdf(req, res, 'fv'));
   router.get('/leads/:id/procuracao.pdf', exigir('propostas', 'visualizar'), (req: Request, res: Response) => gerarDocPdf(req, res, 'procuracao'));
 
   // 🤖 Sessão Contrato — IA lê conta de luz + CNH e preenche o cadastro

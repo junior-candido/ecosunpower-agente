@@ -9,6 +9,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DadosFechamento, PessoaFisica, Endereco, UF } from './types.js';
 import { fetchByLeadId, buildInitialData } from './closing-data-fetcher.js';
+import { deepMerge } from './closing-assistant.js';
 
 const BRANCO = '_______________________';
 
@@ -45,25 +46,46 @@ function completarPessoa(x?: Partial<PessoaFisica>): PessoaFisica {
  * Preenche um Partial<DadosFechamento> até virar um DadosFechamento COMPLETO e
  * válido, usando espaços em branco onde faltar. Nunca lança.
  */
+/** Só aproveita o que é objeto de verdade — jsonb estragado não derruba o PDF. */
+function obj<T>(v: unknown): Partial<T> {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Partial<T>) : {};
+}
+
+function completarSistema(v: unknown): DadosFechamento['sistema'] {
+  const s = obj<DadosFechamento['sistema']>(v);
+  const mod = obj<{ marca: string; potencia_w: number; quantidade: number }>(s.modulos);
+  const inv = obj<{ marca: string; modelo: string; potencia_kw: number; quantidade?: number }>(s.inversor);
+  return {
+    kwp: Number(s.kwp) || 0,
+    modalidade: s.modalidade || 'autoconsumo_local',
+    modulos: { marca: mod.marca || BRANCO, potencia_w: Number(mod.potencia_w) || 0, quantidade: Number(mod.quantidade) || 0 },
+    inversor: { marca: inv.marca || BRANCO, modelo: inv.modelo || BRANCO, potencia_kw: Number(inv.potencia_kw) || 0, quantidade: inv.quantidade },
+  };
+}
+
 export function completarComPlaceholders(p: Partial<DadosFechamento>): DadosFechamento {
-  const titular = completarPessoa(p.titular_uc as Partial<PessoaFisica> | undefined);
+  const titular = completarPessoa(obj<PessoaFisica>(p.titular_uc));
+  const com = obj<DadosFechamento['comercial']>(p.comercial);
   return {
     titular_uc: titular,
     uc_numero: p.uc_numero || 'a confirmar',
     ligacao_nova: p.ligacao_nova,
     concessionaria: p.concessionaria || 'Neoenergia-DF',
-    endereco_instalacao: completarEndereco(p.endereco_instalacao),
-    contratante: p.contratante ? completarPessoa(p.contratante as Partial<PessoaFisica>) : titular,
+    endereco_instalacao: completarEndereco(obj<Endereco>(p.endereco_instalacao)),
+    // O texto do contrato imprime o CONTRATANTE (quem assina) — não o titular.
+    // Quando é a mesma pessoa (o normal), o contratante TEM que ser o titular já
+    // corrigido, senão o que o operador arruma no formulário não chega no PDF.
+    contratante: p.contratante_eh_titular === false
+      ? completarPessoa(obj<PessoaFisica>(p.contratante))
+      : titular,
     contratante_eh_titular: p.contratante_eh_titular ?? true,
     relacao_contratante: p.relacao_contratante,
     observacao_partes: p.observacao_partes,
-    sistema: p.sistema || {
-      kwp: 0,
-      modalidade: 'autoconsumo_local',
-      modulos: { marca: BRANCO, potencia_w: 0, quantidade: 0 },
-      inversor: { marca: BRANCO, modelo: BRANCO, potencia_kw: 0 },
+    sistema: completarSistema(p.sistema),
+    comercial: {
+      valor_total_brl: Number(com.valor_total_brl) || 0,
+      forma_pagamento: com.forma_pagamento || BRANCO,
     },
-    comercial: p.comercial || { valor_total_brl: 0, forma_pagamento: BRANCO },
     disposicoes_especiais: p.disposicoes_especiais,
     docs_pedidos: ['contrato', 'procuracao'],
   };
@@ -85,27 +107,52 @@ export function listarFaltando(dados: DadosFechamento, temProposta: boolean): st
 }
 
 export interface FechamentoAutoResult {
+  /** Pronto pra virar PDF: completo, com brancos onde faltou. */
   dados: DadosFechamento;
+  /** O mesmo, mas CRU (sem os "____") — é o que alimenta o formulário da tela. */
+  cru: Partial<DadosFechamento>;
   faltando: string[];
   nome: string;
+  temProposta: boolean;
 }
 
 /**
- * Monta os dados do fechamento de um lead, prontos pra renderizar contrato/
- * procuração. Determinístico e best-effort: se não achar o lead, devolve null;
- * senão, SEMPRE devolve dados completos (com brancos onde faltar).
+ * O rascunho que o Junior salvou no formulário da central de contratos, guardado
+ * em `leads.contrato_dados` separado por tipo: { fv: {...}, procuracao: {...} }.
+ * Best-effort: coluna nova/vazia/estragada → null, nunca lança.
+ */
+export function lerRascunho(lead: unknown, tipo: string): Partial<DadosFechamento> | null {
+  const cd = (lead as { contrato_dados?: unknown } | null)?.contrato_dados;
+  if (!cd || typeof cd !== 'object' || Array.isArray(cd)) return null;
+  const r = (cd as Record<string, unknown>)[tipo];
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
+  return r as Partial<DadosFechamento>;
+}
+
+/**
+ * Monta os dados do fechamento de um lead, prontos pra renderizar qualquer
+ * contrato da central. Determinístico e best-effort: se não achar o lead, devolve
+ * null; senão, SEMPRE devolve dados completos (com brancos onde faltar).
+ *
+ * Ordem de quem manda (o de baixo vence): cadastro do lead + proposta + o que a
+ * IA leu da conta/CNH → POR CIMA, o rascunho que o operador digitou no formulário.
  */
 export async function montarFechamentoAuto(
   sb: SupabaseClient,
   leadId: string,
+  tipo = 'fv',
 ): Promise<FechamentoAutoResult | null> {
   const { lead, proposta } = await fetchByLeadId(sb, leadId);
   if (!lead) return null;
-  const partial = buildInitialData(lead, proposta);
-  const dados = completarComPlaceholders(partial);
+  const automatico = buildInitialData(lead, proposta);
+  const rascunho = lerRascunho(lead, tipo);
+  const cru = rascunho ? (deepMerge(automatico as any, rascunho as any) as Partial<DadosFechamento>) : automatico;
+  const dados = completarComPlaceholders(cru);
   return {
     dados,
+    cru,
     faltando: listarFaltando(dados, !!proposta),
     nome: lead.name || 'Cliente',
+    temProposta: !!proposta,
   };
 }
