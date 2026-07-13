@@ -83,8 +83,14 @@ function clausulas(d: DadosFechamento): string {
       <p>${BRANCO}</p>`);
   }
 
+  // As duas abaixo são escritas pelo operador — nada preenche sozinho, e nada
+  // obriga: pode vir só uma, as duas, ou nenhuma.
   if (a.justificativa && a.justificativa.trim()) {
     partes.push(`<h2>CLÁUSULA ${n++}ª — DA JUSTIFICATIVA</h2><p>${a.justificativa}</p>`);
+  }
+
+  if (a.clausula_extra && a.clausula_extra.trim()) {
+    partes.push(`<h2>CLÁUSULA ${n++}ª — DAS DISPOSIÇÕES ESPECIAIS</h2><p>${a.clausula_extra}</p>`);
   }
 
   partes.push(`<h2>CLÁUSULA ${n++}ª — DA RATIFICAÇÃO</h2>

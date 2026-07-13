@@ -377,11 +377,21 @@ const CAMPOS_ADITIVO: CampoContrato[] = [
     ler: (d) => texto(d.aditivo?.novo_prazo),
     gravar: (o, v) => { aditivo(o).novo_prazo = v; },
   },
+  // Os dois abaixo são do OPERADOR. Nada preenche — nem o sistema, nem a IA (eles
+  // não têm coluna de cadastro, então ficam fora do alcance dela de propósito).
+  // Regra do Junior: "coisa que varia, quem muda sou eu". Nenhum é obrigatório:
+  // pode escrever um, os dois, ou nenhum — o documento sai igual.
   {
-    id: 'adit_justificativa', label: 'Justificativa (entra no documento)', grupo: 'O que muda', tipo: 'textarea',
+    id: 'adit_justificativa', label: 'Justificativa (vira uma cláusula)', grupo: 'O que muda', tipo: 'textarea',
     dica: 'o porquê, em uma frase — ex.: a bandeira do cartão do cliente não autorizou 24 parcelas',
     ler: (d) => texto(d.aditivo?.justificativa),
     gravar: (o, v) => { aditivo(o).justificativa = v; },
+  },
+  {
+    id: 'adit_clausula_extra', label: 'Cláusula extra (você escreve, vai do jeito que escrever)', grupo: 'O que muda', tipo: 'textarea',
+    dica: 'pro que não cabe em nenhum campo — ex.: a EcoSun concede 6 meses a mais de garantia sobre o padrão',
+    ler: (d) => texto(d.aditivo?.clausula_extra),
+    gravar: (o, v) => { aditivo(o).clausula_extra = v; },
   },
 ];
 

@@ -95,6 +95,67 @@ describe('caso real: apareceu serviço a mais na obra', () => {
   });
 });
 
+// Regra do Junior: "coisa que varia, quem muda sou eu". A justificativa e a
+// cláusula extra são DELE — nada preenche, nem o sistema nem a IA. E nada obriga:
+// pode escrever só uma, as duas, ou nenhuma.
+describe('o que varia é escrito pelo Junior — e nada é obrigado', () => {
+  it('a cláusula extra entra no documento', () => {
+    const { rascunho } = parseFormulario(def(), {
+      adit_motivo: 'servicos',
+      adit_servicos: 'Troca do padrão de entrada.',
+      adit_clausula_extra: 'A CONTRATADA concede 6 meses adicionais de garantia sobre o padrão instalado.',
+    });
+    const html = renderAditivo(completarComPlaceholders({
+      ...rascunho,
+      titular_uc: { tipo: 'PF', nome: 'Antonio', cpf: '111.444.777-35' } as any,
+      aditivo: { ...rascunho.aditivo, contrato_data: '2026-07-10T13:00:00Z', valor_anterior: 20959.09 },
+    }));
+    expect(html).toContain('6 meses adicionais de garantia');
+  });
+
+  it('só a justificativa, sem cláusula extra → sai só a justificativa', () => {
+    const html = renderAditivo(completarComPlaceholders({
+      titular_uc: { tipo: 'PF', nome: 'Antonio', cpf: '111.444.777-35' } as any,
+      aditivo: { motivo: 'prazo', novo_prazo: '45 dias', justificativa: 'Atraso na homologação.' },
+    }));
+    expect(html).toContain('Atraso na homologação');
+    expect(html).not.toContain('DISPOSIÇÕES ESPECIAIS');
+  });
+
+  it('nenhuma das duas → o documento sai do mesmo jeito (nada trava)', () => {
+    const html = renderAditivo(completarComPlaceholders({
+      titular_uc: { tipo: 'PF', nome: 'Antonio', cpf: '111.444.777-35' } as any,
+      aditivo: { motivo: 'prazo', novo_prazo: '45 dias' },
+    }));
+    expect(html).toContain('45 dias');
+    expect(html).toContain('Permanecem inalteradas');
+    expect(html).not.toContain('JUSTIFICATIVA');
+  });
+
+  it('as duas juntas → as duas saem, cada uma na sua cláusula', () => {
+    const html = renderAditivo(completarComPlaceholders({
+      titular_uc: { tipo: 'PF', nome: 'Antonio', cpf: '111.444.777-35' } as any,
+      aditivo: {
+        motivo: 'pagamento',
+        nova_forma_pagamento: 'Sol Fácil — 21x',
+        justificativa: 'A bandeira não autorizou 24 parcelas.',
+        clausula_extra: 'O cliente arca com a taxa de religação junto à concessionária.',
+      },
+    }));
+    expect(html).toContain('A bandeira não autorizou');
+    expect(html).toContain('taxa de religação');
+  });
+
+  it('a IA NÃO pode sugerir justificativa nem cláusula extra (são do Junior)', async () => {
+    const { camposQueIaPodeSugerir } = await import('../src/modules/closing/contratos-registry.js');
+    const ids = camposQueIaPodeSugerir(def()).map((c) => c.id);
+    expect(ids).not.toContain('adit_justificativa');
+    expect(ids).not.toContain('adit_clausula_extra');
+    expect(ids).not.toContain('adit_servicos');
+    expect(ids).not.toContain('adit_valor_adicional');
+  });
+});
+
 describe('sem contrato congelado, o aditivo não inventa o "antes"', () => {
   it('a data e o valor saem em branco no documento (não sai data errada)', () => {
     const html = renderAditivo(completarComPlaceholders({

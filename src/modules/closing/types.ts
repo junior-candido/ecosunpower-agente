@@ -90,7 +90,12 @@ export interface Aditivo {
   valor_adicional?: number;
   novo_valor_total?: number;
   novo_prazo?: string;
+  // Os dois campos abaixo são do OPERADOR — nada preenche (nem a IA). Regra do
+  // Junior: "coisa que varia, quem muda sou eu". E nada obriga: pode escrever uma,
+  // as duas, ou nenhuma.
   justificativa?: string;
+  /** Texto livre que vira uma cláusula a mais, pro que não cabe em campo nenhum. */
+  clausula_extra?: string;
 }
 
 export interface DadosFechamento {
