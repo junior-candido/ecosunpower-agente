@@ -9,6 +9,26 @@ export function isValidCPF(s: unknown): boolean {
   return onlyDigits(s).length === 11;
 }
 
+/**
+ * CPF com o DÍGITO VERIFICADOR conferido de verdade (a conta da Receita).
+ * O isValidCPF acima só olha o tamanho — serve pro que o humano digita (ele sabe
+ * o próprio CPF). Já o que a IA SUGERE tem que passar por aqui: "111.111.111-11"
+ * tem 11 dígitos e é lixo, e num contrato isso não pode entrar.
+ */
+export function cpfDigitoConfere(s: unknown): boolean {
+  const d = onlyDigits(s);
+  if (d.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(d)) return false; // 000..., 111... não existem
+
+  const digito = (ate: number): number => {
+    let soma = 0;
+    for (let i = 0; i < ate; i++) soma += Number(d[i]) * (ate + 1 - i);
+    const r = (soma * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  return digito(9) === Number(d[9]) && digito(10) === Number(d[10]);
+}
+
 export function isValidCNPJ(s: unknown): boolean {
   if (typeof s !== 'string') return false;
   return onlyDigits(s).length === 14;

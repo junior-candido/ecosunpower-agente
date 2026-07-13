@@ -8,6 +8,7 @@
 
 import type { DadosFechamento, PessoaFisica, PessoaJuridica } from '../types.js';
 import { empresa } from '../../empresa-config.js';
+import { escaparDadosFechamento } from '../escapar-dados.js';
 
 // [ECOSOF] Dados da CONTRATADA vêm da empresa_config. Função (não const de
 // módulo) pra ler empresa() em RUNTIME — /recarregar-config vale sem restart.
@@ -86,7 +87,11 @@ function modalidadeLabel(m: DadosFechamento['sistema']['modalidade']): string {
   }
 }
 
-export function renderContrato(dados: DadosFechamento): string {
+export function renderContrato(entrada: DadosFechamento): string {
+  // Blindagem na porta: nome/endereço/RG podem vir do perfil do WhatsApp, da IA
+  // que leu a CNH ou do formulário do Meta — nada disso é confiável. Escapa aqui
+  // e o resto do template pode interpolar à vontade.
+  const dados = escaparDadosFechamento(entrada);
   const CONTRATADA = contratada();
   const contratante = fmtPessoa(dados.contratante);
   const contratadaStr = `${CONTRATADA.razao_social}, pessoa jurídica de direito privado, inscrita no CNPJ sob o nº ${CONTRATADA.cnpj}, com sede na ${CONTRATADA.endereco}, neste ato representada por ${CONTRATADA.representante_nome}, brasileiro, ${CONTRATADA.representante_titulo}, portador do CPF nº ${CONTRATADA.representante_cpf}, RG nº ${CONTRATADA.representante_rg}, registrado no CREA/CFT sob o nº ${CONTRATADA.representante_crea}`;

@@ -103,6 +103,7 @@ import { registrarVenda } from '../vendas/registrar-venda.js';
 import { renderFecharVendaPage, type PropostaAberta } from './vendas-views.js';
 import { renderContratosPage, type ContratoCliente } from './contratos-views.js';
 import { renderContratoFormPage } from './contrato-form-views.js';
+import type { SugestaoIa } from '../closing/revisar-contrato.js';
 import { CLIENTE_STATUSES } from './clientes-queries.js';
 import { can } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
@@ -1605,6 +1606,23 @@ export function createDashboardRouter(
     const { data } = await supabase.from('leads').select('id').eq('id', leadId).eq('company_id', viewer.companyId).maybeSingle();
     return !!data;
   }
+  // O que mostrar nos campos: o que está salvo (cadastro + proposta + IA + rascunho)
+  // e, por cima, o que o operador acabou de digitar e ainda não salvou. Sem isso, o
+  // botão da IA (ou o da prévia) apagaria da tela o que ele tinha acabado de escrever.
+  async function valoresDaTela(
+    def: import('../closing/contratos-registry.js').DefinicaoContrato,
+    cru: Partial<import('../closing/types.js').DadosFechamento>,
+    body: Record<string, unknown> | undefined,
+  ): Promise<Record<string, string>> {
+    const { valoresDoFormulario, limparTexto } = await import('../closing/contratos-registry.js');
+    const valores = valoresDoFormulario(def, cru);
+    for (const c of def.campos) {
+      if (c.somenteLeitura) continue;
+      const digitado = limparTexto(String(body?.[c.id] ?? ''));
+      if (digitado) valores[c.id] = digitado;
+    }
+    return valores;
+  }
   // O documento que o cliente recebe nunca leva o id interno no nome: sai
   // "contrato-antonio.pdf", não "fv-antonio.pdf".
   function nomeDoArquivo(arquivo: string, nome: string): string {
@@ -1631,7 +1649,7 @@ export function createDashboardRouter(
     req: Request,
     leadId: string,
     tipo: string,
-    acao: 'gerado' | 'enviado' | 'no_drive' | 'dados_conferidos',
+    acao: 'gerado' | 'enviado' | 'no_drive' | 'dados_conferidos' | 'ia_revisou',
     payload: Record<string, unknown> = {},
   ): Promise<void> {
     await registrarEvento(supabase, {
@@ -1690,6 +1708,135 @@ export function createDashboardRouter(
       }));
     } catch (err) {
       console.error('[dashboard/contrato-form]', err);
+      res.status(500).send(`<h2>Erro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  // 👀 A PRÉVIA do documento: o contrato montado em HTML, exatamente o mesmo que
+  // vira PDF. Vai dentro do quadro na tela do formulário — o Junior lê antes de
+  // mandar pro cliente.
+  // Aceita GET (documento como está salvo) e POST (documento com o que está
+  // DIGITADO na tela agora, mesmo sem salvar) — é o "ver como vai ficar".
+  async function contratoPreview(req: Request, res: Response) {
+    try {
+      const id = String(req.params.id);
+      if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      const { getContrato, dadosDaTela } = await import('../closing/contratos-registry.js');
+      const def = getContrato(tipoDaCentral(req.body?.tipo ?? req.query.tipo));
+      if (!def) return res.status(400).send('Tipo de contrato desconhecido');
+      if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
+
+      const { montarFechamentoAuto, completarComPlaceholders } = await import('../closing/fechamento-auto.js');
+      const { deepMerge } = await import('../closing/closing-assistant.js');
+      const r = await montarFechamentoAuto(supabase, id, def.tipo);
+      if (!r) return res.status(404).send('Lead não encontrado');
+
+      let dados = r.dados;
+      if (req.method === 'POST' && req.body) {
+        // o que está DIGITADO na tela (mesmo sem salvar) entra por cima, só pra ver
+        const naTela = dadosDaTela(def, req.body);
+        dados = completarComPlaceholders(deepMerge(r.cru as any, naTela as any));
+      }
+
+      // O documento vai dentro de um quadro no painel: mesmo com os dados já
+      // escapados no template, o quadro é trancado (nada de script, nada de rede).
+      res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:");
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.type('html').send(def.render(dados));
+    } catch (err) {
+      console.error('[dashboard/contrato-preview]', err);
+      res.status(500).send('<p>Não consegui montar a prévia agora.</p>');
+    }
+  }
+  router.get('/leads/:id/contrato-preview', exigir('propostas', 'visualizar'), contratoPreview);
+  router.post('/leads/:id/contrato-preview', exigir('propostas', 'visualizar'), contratoPreview);
+
+  // 🤖 A IA completa os brancos (procurando no cadastro, na proposta e na conversa
+  // do zap) e revisa o contrato. Ela só SUGERE: devolve a tela com os campos
+  // preenchidos em roxo, pro Junior conferir e salvar. Nada vai pro banco aqui.
+  router.post('/leads/:id/contrato-ia', exigir('propostas', 'editar'), async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      const { CONTRATOS, getContrato, camposQueIaPodeSugerir } = await import('../closing/contratos-registry.js');
+      const def = getContrato(tipoDaCentral(req.body?.tipo));
+      if (!def) return res.status(400).send('Tipo de contrato desconhecido');
+      if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
+
+      const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
+      const r = await montarFechamentoAuto(supabase, id, def.tipo);
+      if (!r) return res.status(404).send('Lead não encontrado');
+
+      // O botão da IA fica DENTRO do formulário: o que o Junior já digitou (e
+      // ainda não salvou) vem no corpo e continua na tela depois que a IA roda.
+      const valores = await valoresDaTela(def, r.cru, req.body);
+      const tela = {
+        leadId: id, nome: r.nome, def,
+        tipos: CONTRATOS.map((c) => ({ tipo: c.tipo, nome: c.nome, emoji: c.emoji })),
+        temProposta: r.temProposta,
+        faltando: def.campos.filter((c) => c.obrigatorio && !valores[c.id]),
+        user: (req as AuthedRequest).dashUser,
+      };
+
+      if (!options.anthropicApiKey) {
+        return res.send(renderContratoFormPage({ ...tela, valores, iaIndisponivel: true }));
+      }
+
+      // As fontes onde a IA pode procurar. Nada de inventar: o que ela sugerir tem
+      // que estar escrito aqui dentro (a conferência do trecho é feita no parse).
+      const { fetchByLeadId } = await import('../closing/closing-data-fetcher.js');
+      const { lead, proposta } = await fetchByLeadId(supabase, id);
+      const { data: conv } = await supabase
+        .from('conversations').select('messages').eq('lead_id', id)
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      const bruto = (conv as { messages?: unknown } | null)?.messages;
+      const mensagens = Array.isArray(bruto) ? (bruto as Array<{ role?: string; content?: string }>) : [];
+      const conversa = mensagens
+        .slice(-40)
+        .map((m) => `${m?.role === 'assistant' ? 'Eva' : 'cliente'}: ${String(m?.content ?? '').slice(0, 400)}`)
+        .join('\n');
+
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const { revisarContrato } = await import('../closing/revisar-contrato.js');
+      // maxRetries baixo: é uma tela esperando. Melhor avisar "não revisei" rápido
+      // do que deixar o Junior olhando pra página travada por 2 minutos.
+      const anthropic = new Anthropic({ apiKey: options.anthropicApiKey, maxRetries: 1 });
+      const revisao = await revisarContrato(anthropic, {
+        nomeContrato: def.nome,
+        // A IA vê TODOS os campos (pra revisar o contrato inteiro)...
+        campos: def.campos
+          .filter((c) => !c.somenteLeitura)
+          .map((c) => ({ id: c.id, label: c.label, valor: valores[c.id] ?? '', obrigatorio: c.obrigatorio })),
+        lead: (lead ?? {}) as Record<string, unknown>,
+        proposta: proposta?.dados_input ?? null,
+        conversa,
+      });
+
+      // ...mas só pode SUGERIR dado de cadastro. Valor e cláusula, nem que ela ache
+      // "escrito na conversa" — sobre dinheiro ela só avisa (achado).
+      const podeSugerir = new Set(camposQueIaPodeSugerir(def).map((c) => c.id));
+      const sugestoes: Record<string, SugestaoIa> = {};
+      for (const [campo, s] of Object.entries(revisao.sugestoes)) {
+        if (!podeSugerir.has(campo)) continue;
+        if (valores[campo]) continue; // não mexe no que já está preenchido
+        sugestoes[campo] = s;
+      }
+      await eventoContrato(req, id, def.tipo, 'ia_revisou', {
+        sugeridos: Object.keys(sugestoes),
+        achados: revisao.achados.length,
+        respondeu: revisao.ok,
+      });
+
+      res.send(renderContratoFormPage({
+        ...tela,
+        valores, // ← a sugestão NÃO entra no campo. Fica do lado, com botão "usar".
+        sugestoes,
+        achados: revisao.achados,
+        iaRodou: true,
+        iaFalhou: !revisao.ok,
+      }));
+    } catch (err) {
+      console.error('[dashboard/contrato-ia]', err);
       res.status(500).send(`<h2>Erro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
     }
   });

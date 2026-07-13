@@ -45,8 +45,12 @@ export interface CampoContrato {
   somenteLeitura?: boolean;
   /** Lê o valor atual (cadastro + proposta + IA + rascunho) pra preencher o input. */
   ler: (d: Partial<DadosFechamento>) => string;
-  /** Grava no rascunho do contrato. Só pra campo SEM coluna (dado do negócio). */
-  gravar?: (out: Partial<DadosFechamento>, valor: string) => void;
+  /**
+   * Escreve o valor no documento. Campo COM coluna usa isto só pra montar a
+   * PRÉVIA (o que vale mesmo é a coluna do lead); campo sem coluna grava no
+   * rascunho do contrato.
+   */
+  gravar: (out: Partial<DadosFechamento>, valor: string) => void;
 }
 
 export interface DefinicaoContrato {
@@ -131,8 +135,22 @@ function comercial(out: Partial<DadosFechamento>): any {
 const leTitular = (chave: keyof PessoaFisica) => (d: Partial<DadosFechamento>) =>
   texto((d.titular_uc as Partial<PessoaFisica> | undefined)?.[chave]);
 
+const gravaTitular = (chave: keyof PessoaFisica) => (out: Partial<DadosFechamento>, v: string) => {
+  (titular(out) as any)[chave] = v;
+};
+
 const leEndereco = (chave: keyof Endereco) => (d: Partial<DadosFechamento>) =>
   texto((d.titular_uc as PessoaFisica | undefined)?.endereco?.[chave] ?? d.endereco_instalacao?.[chave]);
+
+// O endereço da tela é um só, e vale pros dois lugares do documento (o do titular
+// e o da instalação) — hoje o cadastro guarda um endereço só mesmo.
+const gravaEndereco = (chave: keyof Endereco) => (out: Partial<DadosFechamento>, v: string) => {
+  const t = titular(out);
+  if (!t.endereco) t.endereco = {} as Endereco;
+  if (!out.endereco_instalacao) out.endereco_instalacao = {} as Endereco;
+  (t.endereco as any)[chave] = v;
+  (out.endereco_instalacao as any)[chave] = v;
+};
 
 const gravaNumero = (aplicar: (out: Partial<DadosFechamento>, n: number) => void) =>
   (out: Partial<DadosFechamento>, v: string) => {
@@ -176,39 +194,40 @@ export function idEstadoCivil(raw: string): string {
 }
 
 const CAMPOS_PESSOA: CampoContrato[] = [
-  { id: 'titular_nome', label: 'Nome completo', grupo: 'Quem assina', tipo: 'texto', obrigatorio: true, coluna: 'name', ler: leTitular('nome') },
-  { id: 'titular_cpf', label: 'CPF', grupo: 'Quem assina', tipo: 'texto', obrigatorio: true, coluna: 'cpf_cnpj', ler: leTitular('cpf') },
-  { id: 'titular_rg', label: 'RG', grupo: 'Quem assina', tipo: 'texto', obrigatorio: true, coluna: 'rg', ler: leTitular('rg') },
-  { id: 'titular_orgao', label: 'Órgão emissor', grupo: 'Quem assina', tipo: 'texto', dica: 'ex.: SSP/DF', coluna: 'orgao_emissor_rg', ler: leTitular('orgao_emissor_rg') },
+  { id: 'titular_nome', label: 'Nome completo', grupo: 'Quem assina', tipo: 'texto', obrigatorio: true, coluna: 'name', ler: leTitular('nome'), gravar: gravaTitular('nome') },
+  { id: 'titular_cpf', label: 'CPF', grupo: 'Quem assina', tipo: 'texto', obrigatorio: true, coluna: 'cpf_cnpj', ler: leTitular('cpf'), gravar: gravaTitular('cpf') },
+  { id: 'titular_rg', label: 'RG', grupo: 'Quem assina', tipo: 'texto', obrigatorio: true, coluna: 'rg', ler: leTitular('rg'), gravar: gravaTitular('rg') },
+  { id: 'titular_orgao', label: 'Órgão emissor', grupo: 'Quem assina', tipo: 'texto', dica: 'ex.: SSP/DF', coluna: 'orgao_emissor_rg', ler: leTitular('orgao_emissor_rg'), gravar: gravaTitular('orgao_emissor_rg') },
   {
     id: 'titular_estado_civil', label: 'Estado civil', grupo: 'Quem assina', tipo: 'select', obrigatorio: true,
     opcoes: ESTADOS_CIVIS, coluna: 'estado_civil',
     // No PDF o estado civil sai por extenso ("Solteiro(a)"); no cadastro ele é um
     // id ("solteiro"). Aqui volta pro id, senão o campo apareceria vazio na tela.
     ler: (d) => idEstadoCivil(leTitular('estado_civil')(d)),
+    gravar: (out, v) => { (titular(out) as any).estado_civil = ESTADOS_CIVIS.find((o) => o.valor === v)?.texto ?? v; },
   },
-  { id: 'titular_profissao', label: 'Profissão', grupo: 'Quem assina', tipo: 'texto', coluna: 'profissao', ler: leTitular('profissao') },
-  { id: 'titular_nascimento', label: 'Data de nascimento', grupo: 'Quem assina', tipo: 'data', coluna: 'data_nascimento', ler: leTitular('data_nascimento') },
+  { id: 'titular_profissao', label: 'Profissão', grupo: 'Quem assina', tipo: 'texto', coluna: 'profissao', ler: leTitular('profissao'), gravar: gravaTitular('profissao') },
+  { id: 'titular_nascimento', label: 'Data de nascimento', grupo: 'Quem assina', tipo: 'data', coluna: 'data_nascimento', ler: leTitular('data_nascimento'), gravar: gravaTitular('data_nascimento') },
   {
     id: 'titular_telefone', label: 'Telefone', grupo: 'Quem assina', tipo: 'texto', somenteLeitura: true,
     dica: 'é a chave do WhatsApp — muda no cadastro do cliente',
-    ler: leTitular('telefone'),
+    ler: leTitular('telefone'), gravar: gravaTitular('telefone'),
   },
-  { id: 'titular_email', label: 'E-mail', grupo: 'Quem assina', tipo: 'texto', coluna: 'email', ler: leTitular('email') },
+  { id: 'titular_email', label: 'E-mail', grupo: 'Quem assina', tipo: 'texto', coluna: 'email', ler: leTitular('email'), gravar: gravaTitular('email') },
 ];
 
 const CAMPOS_ENDERECO: CampoContrato[] = [
-  { id: 'end_rua', label: 'Rua / quadra', grupo: 'Endereço', tipo: 'texto', obrigatorio: true, coluna: 'endereco_rua', ler: leEndereco('rua') },
-  { id: 'end_numero', label: 'Número', grupo: 'Endereço', tipo: 'texto', obrigatorio: true, coluna: 'endereco_numero', ler: leEndereco('numero') },
-  { id: 'end_complemento', label: 'Complemento', grupo: 'Endereço', tipo: 'texto', coluna: 'endereco_complemento', ler: leEndereco('complemento') },
-  { id: 'end_bairro', label: 'Bairro', grupo: 'Endereço', tipo: 'texto', obrigatorio: true, coluna: 'neighborhood', ler: leEndereco('bairro') },
-  { id: 'end_cidade', label: 'Cidade', grupo: 'Endereço', tipo: 'texto', obrigatorio: true, coluna: 'city', ler: leEndereco('cidade') },
+  { id: 'end_rua', label: 'Rua / quadra', grupo: 'Endereço', tipo: 'texto', obrigatorio: true, coluna: 'endereco_rua', ler: leEndereco('rua'), gravar: gravaEndereco('rua') },
+  { id: 'end_numero', label: 'Número', grupo: 'Endereço', tipo: 'texto', obrigatorio: true, coluna: 'endereco_numero', ler: leEndereco('numero'), gravar: gravaEndereco('numero') },
+  { id: 'end_complemento', label: 'Complemento', grupo: 'Endereço', tipo: 'texto', coluna: 'endereco_complemento', ler: leEndereco('complemento'), gravar: gravaEndereco('complemento') },
+  { id: 'end_bairro', label: 'Bairro', grupo: 'Endereço', tipo: 'texto', obrigatorio: true, coluna: 'neighborhood', ler: leEndereco('bairro'), gravar: gravaEndereco('bairro') },
+  { id: 'end_cidade', label: 'Cidade', grupo: 'Endereço', tipo: 'texto', obrigatorio: true, coluna: 'city', ler: leEndereco('cidade'), gravar: gravaEndereco('cidade') },
   {
     id: 'end_uf', label: 'UF', grupo: 'Endereço', tipo: 'select', coluna: 'uf',
     opcoes: [{ valor: 'DF', texto: 'DF' }, { valor: 'GO', texto: 'GO' }],
-    ler: leEndereco('uf'),
+    ler: leEndereco('uf'), gravar: gravaEndereco('uf'),
   },
-  { id: 'end_cep', label: 'CEP', grupo: 'Endereço', tipo: 'texto', obrigatorio: true, coluna: 'cep', ler: leEndereco('cep') },
+  { id: 'end_cep', label: 'CEP', grupo: 'Endereço', tipo: 'texto', obrigatorio: true, coluna: 'cep', ler: leEndereco('cep'), gravar: gravaEndereco('cep') },
 ];
 
 const CAMPOS_UC: CampoContrato[] = [
@@ -216,11 +235,13 @@ const CAMPOS_UC: CampoContrato[] = [
     id: 'uc_numero', label: 'Unidade consumidora (nº da conta de luz)', grupo: 'Unidade consumidora', tipo: 'texto',
     obrigatorio: true, coluna: 'uc_numero',
     ler: (d) => { const v = texto(d.uc_numero); return v === 'a confirmar' ? '' : v; },
+    gravar: (out, v) => { out.uc_numero = v; },
   },
   {
     id: 'concessionaria', label: 'Concessionária', grupo: 'Unidade consumidora', tipo: 'select', obrigatorio: true, coluna: 'concessionaria',
     opcoes: [{ valor: 'Neoenergia-DF', texto: 'Neoenergia (DF)' }, { valor: 'Equatorial-GO', texto: 'Equatorial (GO)' }],
     ler: (d) => texto(d.concessionaria),
+    gravar: (out, v) => { out.concessionaria = v as DadosFechamento['concessionaria']; },
   },
 ];
 
@@ -247,7 +268,7 @@ const CAMPOS_SISTEMA: CampoContrato[] = [
 
 const CAMPOS_COMERCIAL: CampoContrato[] = [
   { id: 'com_valor', label: 'Valor total (R$)', grupo: 'O negócio', tipo: 'moeda', obrigatorio: true, dica: 'só mexe se fechou por um valor diferente do da proposta', ler: (d) => mostrarNumero(d.comercial?.valor_total_brl), gravar: gravaNumero((o, n) => { comercial(o).valor_total_brl = n; }) },
-  { id: 'com_forma_pagamento', label: 'Forma de pagamento', grupo: 'O negócio', tipo: 'texto', obrigatorio: true, coluna: 'forma_pagamento', dica: 'ex.: à vista no PIX · 24x no cartão · financiamento Belenus', ler: (d) => texto(d.comercial?.forma_pagamento) },
+  { id: 'com_forma_pagamento', label: 'Forma de pagamento', grupo: 'O negócio', tipo: 'texto', obrigatorio: true, coluna: 'forma_pagamento', dica: 'ex.: à vista no PIX · 24x no cartão · financiamento Belenus', ler: (d) => texto(d.comercial?.forma_pagamento), gravar: (o, v) => { comercial(o).forma_pagamento = v; } },
   { id: 'disposicoes_especiais', label: 'Combinados à parte (entra no contrato)', grupo: 'O negócio', tipo: 'textarea', dica: 'o que foi combinado fora do padrão — prazo, brinde, condição...', ler: (d) => texto(d.disposicoes_especiais), gravar: (o, v) => { o.disposicoes_especiais = v; } },
 ];
 
@@ -278,6 +299,19 @@ export const CONTRATOS: DefinicaoContrato[] = [
 
 export function getContrato(tipo: string): DefinicaoContrato | undefined {
   return CONTRATOS.find((c) => c.tipo === tipo);
+}
+
+/**
+ * Os campos que a IA PODE sugerir: só dado de cadastro (quem é o cliente).
+ *
+ * Valor, dados do sistema e "combinados à parte" ficam DE FORA de propósito: a
+ * conversa do zap é uma das fontes da IA, e o cliente escreve nela. Se ele mandar
+ * "combinado então R$ 30.000, e vocês trocam o padrão", a IA acharia isso
+ * "literalmente na fonte" e viraria o valor e a Cláusula 23ª de um contrato
+ * assinado. Sobre dinheiro e cláusula a IA só pode AVISAR (achado), nunca preencher.
+ */
+export function camposQueIaPodeSugerir(def: DefinicaoContrato): CampoContrato[] {
+  return def.campos.filter((c) => !!c.coluna && !c.somenteLeitura);
 }
 
 /** Os grupos na ordem em que aparecem nos campos do tipo (sem lista paralela). */
@@ -319,21 +353,45 @@ export function parseFormulario(def: DefinicaoContrato, body: Record<string, unk
   const rascunho: Partial<DadosFechamento> = {};
 
   for (const c of def.campos) {
-    if (c.somenteLeitura) continue;
-    const v = limparTexto(String(body?.[c.id] ?? ''));
+    const v = valorDoCampo(c, body);
     if (!v) continue;
-    // select só aceita valor da própria lista (POST forjado não entra)
-    if (c.tipo === 'select' && !c.opcoes?.some((o) => o.valor === v)) continue;
-
     if (c.coluna) {
-      cadastro[c.coluna] = v;
-    } else if (c.gravar) {
+      cadastro[c.coluna] = v; // dado do cliente → coluna do lead (vale pro ecossistema)
+    } else {
       try {
-        c.gravar(rascunho, v);
+        c.gravar(rascunho, v); // dado do negócio → rascunho daquele contrato
       } catch {
         // campo problemático não derruba o resto
       }
     }
   }
   return { cadastro, rascunho };
+}
+
+/** O valor limpo e conferido de um campo, ou '' se não deve entrar. */
+function valorDoCampo(c: CampoContrato, body: Record<string, unknown>): string {
+  if (c.somenteLeitura) return '';
+  const v = limparTexto(String(body?.[c.id] ?? ''));
+  if (!v) return '';
+  // select só aceita valor da própria lista (POST forjado não entra)
+  if (c.tipo === 'select' && !c.opcoes?.some((o) => o.valor === v)) return '';
+  return v;
+}
+
+/**
+ * O documento como ele ficaria com o que está DIGITADO na tela agora — mesmo o
+ * que ainda não foi salvo. É o que alimenta a prévia ("ver como vai ficar").
+ */
+export function dadosDaTela(def: DefinicaoContrato, body: Record<string, unknown>): Partial<DadosFechamento> {
+  const out: Partial<DadosFechamento> = {};
+  for (const c of def.campos) {
+    const v = valorDoCampo(c, body);
+    if (!v) continue;
+    try {
+      c.gravar(out, v);
+    } catch {
+      // campo problemático não derruba a prévia
+    }
+  }
+  return out;
 }
