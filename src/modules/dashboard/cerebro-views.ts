@@ -500,13 +500,25 @@ cofreLock.addEventListener('click', abrirCofre);
 cofreClose.addEventListener('click', fecharCofre);
 
 function linhaCusto(l, c, cls){ return '<div class="linha '+(cls||'')+'"><span class="l">'+l+'</span><span class="n">'+reais(c)+'</span></div>'; }
+function linhaNum(l, n){ return '<div class="linha"><span class="l">'+l+'</span><span class="n">'+String(n)+'</span></div>'; }
+function linhaResultado(c){
+  var pos = Number(c||0) >= 0;
+  var cor = pos ? '#34d399' : '#f87171';
+  var rot = pos ? '⚖️ Resultado (lucro)' : '⚖️ Resultado (prejuízo)';
+  return '<div class="linha total"><span class="l">'+rot+'</span><span class="n" style="color:'+cor+'">'+reais(c)+'</span></div>';
+}
 function renderCustos(d){
   cofreDados.innerHTML =
     linhaCusto('📣 Anúncios (Meta)', d.metaCents) +
     linhaCusto('🔍 Anúncios (Google)', d.googleCents) +
     linhaCusto('🧠 IA (Claude)', d.iaCents) +
     linhaCusto('🔵 Fixos (servidor/assinaturas)', d.fixosCents) +
-    linhaCusto('Total do mês', d.totalCents, 'total') +
+    linhaCusto('Total gasto no mês', d.totalCents, 'total') +
+    '<div style="height:8px"></div>' +
+    linhaCusto('💰 Faturamento do mês', d.faturamentoCents) +
+    linhaNum('📊 Vendas no mês', d.vendasMes) +
+    linhaCusto('🎯 Custo por venda', d.custoPorVendaCents) +
+    linhaResultado(d.lucroCents) +
     '<div class="add">' +
       '<input id="fixoNome" type="text" placeholder="Novo fixo: nome (ex.: Servidor)" maxlength="80" />' +
       '<input id="fixoValor" type="number" step="0.01" min="0" placeholder="Valor por mês (R$)" />' +
