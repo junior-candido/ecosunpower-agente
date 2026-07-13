@@ -201,6 +201,28 @@ describe('parseFormulario — dado de cadastro vai pro CLIENTE, dado do negócio
   });
 });
 
+describe('forma de pagamento — sugere as de sempre, mas aceita o que foi acordado', () => {
+  it('vem com uma lista de sugestões pra escolher', () => {
+    const campo = getContrato('fv')!.campos.find((c) => c.id === 'com_forma_pagamento')!;
+    expect(campo.tipo).toBe('texto_sugerido');
+    expect(campo.sugestoes!.length).toBeGreaterThan(3);
+    expect(campo.sugestoes).toContain('À vista no PIX');
+    expect(campo.sugestoes).toContain('Financiamento Belenus');
+  });
+
+  it('escolher uma da lista funciona', () => {
+    const { cadastro } = parseFormulario(getContrato('fv')!, { com_forma_pagamento: 'Cartão de crédito — 24x' });
+    expect(cadastro.forma_pagamento).toBe('Cartão de crédito — 24x');
+  });
+
+  // O ponto: NÃO é um select. O que o Junior combinou na unha entra igual.
+  it('escrever qualquer coisa fora da lista TAMBÉM funciona', () => {
+    const combinado = '10 mil de entrada no PIX e 20x de R$ 647 no cartão, 1ª parcela só em setembro';
+    const { cadastro } = parseFormulario(getContrato('fv')!, { com_forma_pagamento: combinado });
+    expect(cadastro.forma_pagamento).toBe(combinado);
+  });
+});
+
 describe('gruposDoContrato', () => {
   it('devolve os grupos na ordem dos campos (tipo novo não precisa mexer na tela)', () => {
     expect(gruposDoContrato(getContrato('fv')!)).toEqual([

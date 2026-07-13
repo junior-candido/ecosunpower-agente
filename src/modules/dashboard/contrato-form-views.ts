@@ -61,6 +61,15 @@ function campoHtml(c: CampoContrato, valor: string, vazio: boolean): string {
   if (c.tipo === 'textarea') {
     return `<textarea name="${c.id}" id="campo-${c.id}" rows="3" class="${cls}" placeholder="${escapeHtml(c.dica ?? '')}">${v}</textarea>`;
   }
+  // Lista de atalhos, mas campo LIVRE: o operador escolhe uma das de sempre ou
+  // escreve o que combinou com o cliente. (É o caso da forma de pagamento.)
+  if (c.tipo === 'texto_sugerido') {
+    const lista = `lista-${c.id}`;
+    const itens = (c.sugestoes ?? []).map((s) => `<option value="${escapeHtml(s)}"></option>`).join('');
+    return `<input type="text" name="${c.id}" id="campo-${c.id}" value="${v}" list="${lista}"
+        placeholder="${escapeHtml(c.dica ?? '')}" autocomplete="off" class="${cls}" />
+      <datalist id="${lista}">${itens}</datalist>`;
+  }
   const htmlType = c.tipo === 'data' ? 'date' : 'text';
   const inputmode = c.tipo === 'numero' || c.tipo === 'moeda' ? ' inputmode="decimal"' : '';
   return `<input type="${htmlType}" name="${c.id}" id="campo-${c.id}" value="${v}"${inputmode} placeholder="${escapeHtml(c.dica ?? '')}" class="${cls}" />`;

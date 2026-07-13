@@ -25,7 +25,10 @@ import { renderProcuracao } from './templates/procuracao.html.js';
 
 export type GrupoCampo = string;
 
-export type TipoCampo = 'texto' | 'numero' | 'moeda' | 'data' | 'select' | 'textarea';
+// 'select' = só as opções da lista valem. 'texto_sugerido' = a lista é um atalho,
+// mas o operador pode escrever qualquer coisa (é o caso da forma de pagamento:
+// tem as de sempre, e tem o que foi combinado na unha com o cliente).
+export type TipoCampo = 'texto' | 'numero' | 'moeda' | 'data' | 'select' | 'texto_sugerido' | 'textarea';
 
 export interface CampoContrato {
   id: string; // nome do input na tela (ex.: 'titular_cpf')
@@ -33,6 +36,8 @@ export interface CampoContrato {
   grupo: GrupoCampo;
   tipo: TipoCampo;
   opcoes?: Array<{ valor: string; texto: string }>;
+  /** Atalhos de 'texto_sugerido': aparecem numa lista, mas não obrigam a nada. */
+  sugestoes?: string[];
   dica?: string;
   /** Obrigatório = se ficar vazio, sai em branco no PDF → destaca na tela. */
   obrigatorio?: boolean;
@@ -245,6 +250,18 @@ const CAMPOS_UC: CampoContrato[] = [
   },
 ];
 
+// As formas de pagamento que a EcoSun mais usa. É atalho, não camisa de força:
+// o campo continua livre pra escrever o que foi acertado com o cliente.
+const FORMAS_DE_PAGAMENTO = [
+  'À vista no PIX',
+  'Entrada + saldo na entrega',
+  'Cartão de crédito — 12x',
+  'Cartão de crédito — 18x',
+  'Cartão de crédito — 24x',
+  'Financiamento Belenus',
+  'Boleto bancário',
+];
+
 // Do NEGÓCIO daquele contrato — não é cadastro do cliente, então fica no rascunho.
 const CAMPOS_SISTEMA: CampoContrato[] = [
   { id: 'sis_kwp', label: 'Potência do sistema (kWp)', grupo: 'A usina', tipo: 'numero', obrigatorio: true, ler: (d) => mostrarNumero(d.sistema?.kwp), gravar: gravaNumero((o, n) => { sistema(o).kwp = n; }) },
@@ -268,7 +285,16 @@ const CAMPOS_SISTEMA: CampoContrato[] = [
 
 const CAMPOS_COMERCIAL: CampoContrato[] = [
   { id: 'com_valor', label: 'Valor total (R$)', grupo: 'O negócio', tipo: 'moeda', obrigatorio: true, dica: 'só mexe se fechou por um valor diferente do da proposta', ler: (d) => mostrarNumero(d.comercial?.valor_total_brl), gravar: gravaNumero((o, n) => { comercial(o).valor_total_brl = n; }) },
-  { id: 'com_forma_pagamento', label: 'Forma de pagamento', grupo: 'O negócio', tipo: 'texto', obrigatorio: true, coluna: 'forma_pagamento', dica: 'ex.: à vista no PIX · 24x no cartão · financiamento Belenus', ler: (d) => texto(d.comercial?.forma_pagamento), gravar: (o, v) => { comercial(o).forma_pagamento = v; } },
+  {
+    id: 'com_forma_pagamento', label: 'Forma de pagamento', grupo: 'O negócio', tipo: 'texto_sugerido',
+    obrigatorio: true, coluna: 'forma_pagamento',
+    // As de sempre ficam a um clique — mas o campo é livre: o que foi combinado
+    // com o cliente entra do jeito que foi combinado, e é isso que vai pro contrato.
+    sugestoes: FORMAS_DE_PAGAMENTO,
+    dica: 'escolhe uma ou escreve o que foi combinado',
+    ler: (d) => texto(d.comercial?.forma_pagamento),
+    gravar: (o, v) => { comercial(o).forma_pagamento = v; },
+  },
   { id: 'disposicoes_especiais', label: 'Combinados à parte (entra no contrato)', grupo: 'O negócio', tipo: 'textarea', dica: 'o que foi combinado fora do padrão — prazo, brinde, condição...', ler: (d) => texto(d.disposicoes_especiais), gravar: (o, v) => { o.disposicoes_especiais = v; } },
 ];
 
