@@ -11,7 +11,7 @@ function depsStub(): MenuDeps {
     pricing: h(), proposal: h(), closing: h(), creative: h(), banner: h(),
     bannerKits: h(), reativarBase: h(), juniorBlog: h(), scheduling: h(),
     caseCreator: h(), testimonialAdmin: h(), relatorio: h(), resgatarForms: h(),
-    googleAds: h(), acaoImposto: a(), acaoApagar: a(), acaoGerarPost: a(),
+    googleAds: h(), acaoImposto: a(), acaoApagar: a(), acaoGerarPost: a(), acaoFecheiVenda: a(),
   };
 }
 
@@ -84,9 +84,9 @@ describe('menu — comandos novos', () => {
     expect(item('menu_fin_material')?.hint).toContain('preço do');
   });
 
-  it('marcar como fechado está em Propostas como dica', () => {
+  it('fechei uma venda está em Propostas e é clicável (action que abre a lista)', () => {
     expect(catDoItem('menu_fechei')).toBe('propostas');
-    expect(item('menu_fechei')?.hint).toContain('fechei');
+    expect(item('menu_fechei')?.action).toBeTypeOf('function');
   });
 
   it('resgatar leads de formulário está em Marketing com trigger /resgatar-forms', () => {
