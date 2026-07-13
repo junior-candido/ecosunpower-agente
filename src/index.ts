@@ -1829,10 +1829,19 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     createdAt: number;
   }>();
 
+  // Estado do "Fechei uma venda" clicável: depois que o Junior toca no cliente,
+  // a Eva pergunta o valor e guarda aqui quem está esperando resposta. Expira em
+  // 10min (a limpeza abaixo cuida). In-memory: se o processo reinicia, o pior
+  // caso é o Junior somar o valor pelo painel — a venda já ficou registrada.
+  const fecheiValorState = new Map<string, { leadId: string; nome: string; createdAt: number }>();
+
   setInterval(() => {
     const cutoff = Date.now() - 10 * 60 * 1000;
     for (const [k, v] of creativeFlowState) {
       if (v.createdAt < cutoff) creativeFlowState.delete(k);
+    }
+    for (const [k, v] of fecheiValorState) {
+      if (v.createdAt < cutoff) fecheiValorState.delete(k);
     }
   }, 5 * 60 * 1000).unref();
 
@@ -2519,7 +2528,45 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     } catch (e) {
       console.warn('[fechei_pick] registrarVenda (best-effort) falhou:', (e as Error)?.message);
     }
-    await sendText(from, `✅ *${(lead as { name?: string }).name ?? 'Cliente'}* marcado como *venda fechada*!${virouVenda ? '\nO dashboard e o Elo já sabem. 🎉' : ''}\nSaiu da cadência também.`);
+    const nome = (lead as { name?: string }).name ?? 'Cliente';
+    if (virouVenda) {
+      // Pergunta o valor logo em seguida (guarda o estado) — assim fecha 100%
+      // pelo zap e o faturamento do cofre já pega o valor.
+      fecheiValorState.set(from, { leadId, nome, createdAt: Date.now() });
+      await sendText(from, `✅ *${nome}* marcado como *venda fechada*! 🎉 O dashboard e o Elo já sabem.\n\n💰 Qual foi o valor da venda? Manda o número (ex: *25000* ou *25 mil*), ou responde *pular*.`);
+    } else {
+      await sendText(from, `✅ *${nome}* marcado como fechado. Saiu da cadência também.`);
+    }
+    return true;
+  }
+
+  // Resposta com o VALOR logo após o toque em "Fechei uma venda" (fecheiValorState).
+  // Só age se há uma venda esperando valor desse número. "pular" encerra sem valor.
+  async function tryHandleFecheiValor(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const pend = fecheiValorState.get(from);
+    if (!pend) return false;
+    if (Date.now() - pend.createdAt > 10 * 60 * 1000) { fecheiValorState.delete(from); return false; }
+    const t = text.trim().toLowerCase();
+    if (['pular', 'pula', 'nao', 'não', 'skip', '-', 'depois'].includes(t)) {
+      fecheiValorState.delete(from);
+      await sendText(from, '👍 Beleza, venda registrada sem valor. Dá pra somar depois pelo painel, se quiser.');
+      return true;
+    }
+    const valor = parseValorReais(text);
+    if (valor == null) {
+      // Não parece um valor — solta o estado e deixa a mensagem seguir o fluxo
+      // normal (não prende o Junior num "modo valor").
+      fecheiValorState.delete(from);
+      return false;
+    }
+    fecheiValorState.delete(from);
+    await supabase.getClient()
+      .from('leads')
+      .update({ venda_valor_cents: Math.round(valor * 100), updated_at: new Date().toISOString() })
+      .eq('id', pend.leadId);
+    const brl = valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    await sendText(from, `💰 Valor de *${pend.nome}* salvo: *${brl}*. Já entra no faturamento do mês. 🎉`);
     return true;
   }
 
@@ -3907,6 +3954,10 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /resgatar-forms — dispara template inicial pra leads de formulário Meta sem 1ª mensagem
     if (await tryHandleResgatarFormsCommand(from, text)) return;
+
+    // Resposta com o VALOR logo após tocar em "Fechei uma venda" — vem antes de
+    // tudo (inclusive do gate financeiro) pra o número não virar outra coisa.
+    if (await tryHandleFecheiValor(from, text)) return;
 
     // Toque na lista "Fechei uma venda" (fechei_pick:<leadId>) — vem antes do
     // /fechei por texto, pra o id da linha não cair no parser de nome.
