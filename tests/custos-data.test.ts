@@ -116,7 +116,28 @@ describe('montarCustosMes', () => {
       iaCents: 0,
       fixosCents: 0,
       totalCents: 0,
+      faturamentoCents: 0,
+      vendasMes: 0,
+      lucroCents: 0,
+      custoPorVendaCents: 0,
     });
+  });
+
+  it('faturamento soma venda_valor_cents das vendas do mês; lucro = faturamento - custos', async () => {
+    const { supabase, callLog } = fakeSupabase({
+      meta_ads_insights: [{ spend_cents: 1000 }],
+      custos_fixos: [{ valor_cents: 2000 }],
+      leads: [{ venda_valor_cents: 500000 }, { venda_valor_cents: 300000 }],
+    });
+
+    const custos = await montarCustosMes(supabase);
+
+    expect(custos.faturamentoCents).toBe(800000); // 5000 + 3000 reais
+    expect(custos.totalCents).toBe(3000); // 1000 meta + 2000 fixos
+    expect(custos.lucroCents).toBe(800000 - 3000);
+    // faturamento filtra leads por contract_signed_at >= 1º dia do mês
+    const leadsGte = callLog.filter((c) => c.table === 'leads' && c.method === 'gte');
+    expect(leadsGte.some((c) => c.args[0] === 'contract_signed_at')).toBe(true);
   });
 
   it('totalCents = meta + google + ia + fixos', async () => {

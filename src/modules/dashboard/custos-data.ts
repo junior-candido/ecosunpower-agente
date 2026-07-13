@@ -12,6 +12,11 @@ export type CustosMes = {
   iaCents: number;
   fixosCents: number;
   totalCents: number;
+  // Receita e resultado do mês — o outro lado da conta (só o CEO vê, no cofre).
+  faturamentoCents: number; // soma dos valores das vendas fechadas no mês
+  vendasMes: number; // quantas vendas fecharam no mês (pela data de fechamento)
+  lucroCents: number; // faturamento - custos (pode ser negativo)
+  custoPorVendaCents: number; // custos do mês / nº de vendas do mês
 };
 
 // 1º dia do mês corrente em UTC, no formato YYYY-MM-DD — serve tanto pra colunas
@@ -57,20 +62,48 @@ async function somar(
 export async function montarCustosMes(supabase: SupabaseService): Promise<CustosMes> {
   const inicioMes = primeiroDiaDoMesUTC();
 
-  const [metaCents, googleCents, iaCents, fixosCents] = await Promise.all([
+  const [metaCents, googleCents, iaCents, fixosCents, faturamentoCents, vendasMes] = await Promise.all([
     somar(supabase, 'meta_ads_insights', 'spend_cents', (q) => q.gte('date_start', inicioMes)),
     somar(supabase, 'channel_daily_metrics', 'spend_cents', (q) =>
       q.eq('channel', 'google').gte('date', inicioMes),
     ),
     somar(supabase, 'custos_ia_uso', 'custo_cents', (q) => q.gte('created_at', inicioMes)),
     somar(supabase, 'custos_fixos', 'valor_cents', (q) => q.eq('ativo', true)),
+    // Faturamento do mês: soma dos valores das vendas fechadas (Coração da Venda
+    // grava venda_valor_cents; a data é contract_signed_at). Vendas sem valor
+    // preenchido somam 0 — não distorcem.
+    somar(supabase, 'leads', 'venda_valor_cents', (q) => q.gte('contract_signed_at', inicioMes)),
+    contarVendasMes(supabase, inicioMes),
   ]);
+
+  const totalCents = metaCents + googleCents + iaCents + fixosCents;
+  const lucroCents = faturamentoCents - totalCents;
+  const custoPorVendaCents = vendasMes > 0 ? Math.round(totalCents / vendasMes) : 0;
 
   return {
     metaCents,
     googleCents,
     iaCents,
     fixosCents,
-    totalCents: metaCents + googleCents + iaCents + fixosCents,
+    totalCents,
+    faturamentoCents,
+    vendasMes,
+    lucroCents,
+    custoPorVendaCents,
   };
+}
+
+// Conta quantas vendas fecharam no mês (pela data real do fechamento). Best-effort.
+async function contarVendasMes(supabase: SupabaseService, inicioMes: string): Promise<number> {
+  try {
+    const client = supabase.getClient();
+    const { count, error } = await client
+      .from('leads')
+      .select('id', { count: 'exact', head: true })
+      .gte('contract_signed_at', inicioMes);
+    if (error) return 0;
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
 }
