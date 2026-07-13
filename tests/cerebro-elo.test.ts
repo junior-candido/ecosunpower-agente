@@ -36,6 +36,28 @@ describe('responderComoElo', () => {
     expect(sysEquipe.toLowerCase()).toContain('so com a direcao'); // barra detalhe profundo
   });
 
+  it('memoria: inclui o historico da conversa nas mensagens (follow-up funciona)', async () => {
+    let msgs: any[] = [];
+    const a = { messages: { create: async (args: any) => { msgs = args.messages; return { content: [{ type: 'text', text: 'ok' }] }; } } };
+    await responderComoElo(a as any, 'e a segunda maior?', snap, {
+      historico: [{ pergunta: 'qual a maior cidade?', resposta: 'e Brasilia' }],
+    });
+    // o historico vira par user+assistant ANTES da pergunta atual
+    expect(msgs).toHaveLength(3);
+    expect(msgs[0]).toEqual({ role: 'user', content: 'qual a maior cidade?' });
+    expect(msgs[1]).toEqual({ role: 'assistant', content: 'e Brasilia' });
+    expect(msgs[2].role).toBe('user');
+    expect(msgs[2].content).toContain('e a segunda maior?');
+  });
+
+  it('sem historico: manda so a pergunta atual (1 mensagem)', async () => {
+    let msgs: any[] = [];
+    const a = { messages: { create: async (args: any) => { msgs = args.messages; return { content: [{ type: 'text', text: 'ok' }] }; } } };
+    await responderComoElo(a as any, 'oi', snap);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe('user');
+  });
+
   it('instrui a IA a responder em texto simples, sem markdown/asteriscos/emojis (a resposta e falada)', async () => {
     let sys = '';
     const a = fakeAnthropic('Voce tem 42 leads no momento.', (s) => { sys = s; });
