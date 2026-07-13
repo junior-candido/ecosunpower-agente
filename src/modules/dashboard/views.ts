@@ -84,7 +84,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro';
+  active: 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro';
   title: string;
   body: string;
   scripts?: string;
@@ -126,6 +126,7 @@ const SIDEBAR_SETORES: SideSetor[] = [
   {
     titulo: '💼 Comercial',
     itens: [
+      { href: '/dashboard/vendas/fechar', key: 'fechar_venda', label: '💰 Fechou! (registrar venda)' },
       { href: '/dashboard/leads', key: 'leads', label: '👥 Leads', area: 'leads' },
       { href: '/dashboard/leads/kanban', key: 'kanban', label: '📋 Funil (Kanban)', area: 'leads' },
       { href: '/dashboard/clientes', key: 'clientes', label: '🤝 Clientes' },

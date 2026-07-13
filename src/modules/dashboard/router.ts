@@ -98,6 +98,9 @@ import { ETAPAS_USINA } from '../usina-etapas.js';
 import { criarTarefa, concluirTarefa, adiarTarefa, cancelarTarefasPendentesDoLead } from './tarefas.js';
 import { registrarAtividade, listarTimeline } from './atividades.js';
 import { audit } from './audit.js';
+import { registrarVenda } from '../vendas/registrar-venda.js';
+import { renderFecharVendaPage, type PropostaAberta } from './vendas-views.js';
+import { CLIENTE_STATUSES } from './clientes-queries.js';
 import { can } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
@@ -1468,6 +1471,77 @@ export function createDashboardRouter(
     } catch (err) {
       console.error('[dashboard/propostas]', err);
       res.status(500).send(`<h2>Erro ao listar propostas</h2><pre>${(err as Error).message}</pre>`);
+    }
+  });
+
+  // ❤️ CORAÇÃO DA VENDA — botão "Fechou!". Busca as propostas em aberto pelo
+  // nome do cliente; o Junior clica na que fechou e registra. Registrar chama
+  // registrarVenda (a mesma função que a Eva usa) → sistema todo alinhado.
+  router.get('/vendas/fechar', exigir('propostas', 'visualizar'), async (req: Request, res: Response) => {
+    try {
+      const q = String(req.query.q ?? '').trim();
+      const okNome = req.query.ok ? String(req.query.ok) : null;
+      const hoje = new Date().toISOString().slice(0, 10);
+      const buscou = q.length > 0;
+      let resultados: PropostaAberta[] = [];
+      if (buscou) {
+        const { data: props } = await supabase
+          .from('propostas_publicas')
+          .select('id, lead_id, cliente_nome, numero_proposta, created_at, revoked')
+          .ilike('cliente_nome', `%${q}%`)
+          .not('lead_id', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        const linhas = (props ?? []).filter((p: any) => p.revoked !== true);
+        const leadIds = [...new Set(linhas.map((p: any) => p.lead_id))];
+        const statusPorLead = new Map<string, string | null>();
+        if (leadIds.length) {
+          const { data: leadsRows } = await supabase
+            .from('leads').select('id, installation_status').in('id', leadIds);
+          for (const l of (leadsRows ?? []) as any[]) statusPorLead.set(l.id, l.installation_status ?? null);
+        }
+        resultados = linhas.map((p: any) => ({
+          leadId: p.lead_id,
+          propostaId: p.id,
+          clienteNome: p.cliente_nome ?? '(sem nome)',
+          numeroProposta: p.numero_proposta ?? null,
+          createdAt: p.created_at ?? null,
+          jaVenda: CLIENTE_STATUSES.includes(String(statusPorLead.get(p.lead_id) ?? '')),
+        }));
+      }
+      res.send(renderFecharVendaPage({
+        q, buscou, resultados, hoje,
+        ok: okNome ? { nome: okNome } : null,
+        user: (req as AuthedRequest).dashUser,
+      }));
+    } catch (err) {
+      console.error('[dashboard/vendas/fechar]', err);
+      res.status(500).send(`<h2>Erro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  router.post('/vendas/registrar', exigir('propostas', 'editar'), async (req: Request, res: Response) => {
+    try {
+      const leadId = String(req.body?.leadId ?? '').trim();
+      const nome = String(req.body?.nome ?? '').trim();
+      if (!UUID_RE.test(leadId)) return res.status(400).send('lead inválido');
+      const tipo = req.body?.tipo === 'servico' ? 'servico' : 'sistema';
+      const valorReais = parseFloat(String(req.body?.valor ?? '').replace(',', '.'));
+      const kwp = parseFloat(String(req.body?.kwp ?? ''));
+      const data = String(req.body?.data ?? '').trim() || null;
+      const r = await registrarVenda(supabase, {
+        leadId, tipo,
+        valorCents: Number.isFinite(valorReais) ? Math.round(valorReais * 100) : null,
+        kwp: Number.isFinite(kwp) ? kwp : null,
+        data, origem: 'dashboard',
+      });
+      if (!r.ok) return res.status(500).send(`erro ao registrar: ${escapeHtmlSimple(r.erro ?? '')}`);
+      const viewer = (req as AuthedRequest).dashUser;
+      if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: leadId, acao: 'venda', valorNovo: tipo });
+      res.redirect(`/dashboard/vendas/fechar?ok=${encodeURIComponent(nome || 'cliente')}`);
+    } catch (err) {
+      console.error('[dashboard/vendas/registrar]', err);
+      res.status(500).send(`<h2>Erro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
     }
   });
 

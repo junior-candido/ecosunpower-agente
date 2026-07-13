@@ -67,14 +67,18 @@ describe('montarSnapshotElo', () => {
     const snap = await montarSnapshotElo(supabase);
 
     expect(snap).toEqual({
-      comercial: { leads: 10, negociacao: 10, ganhos: 10, propostas: 5 },
+      // negociacao=leads(installation_status), ganhos=leads(installation_status),
+      // leadsMes=leads(created_at gte), propostasMes=propostas_publicas(gte) →
+      // count por tabela no fake: leads=10, propostas_publicas=5.
+      comercial: { leads: 10, leadsMes: 10, negociacao: 10, ganhos: 10, propostas: 5, propostasMes: 5 },
       atendimento: { conversas: 3 },
       // blog vem de blog_drafts (published); anuncios vem de eventos_elo
       // (tipo marketing:lead_ads) — o count depende só da TABELA no fake.
       marketing: { emailsEnviados: 7, emailsAbertos: 7, leadsQuentes: 7, blog: 8, anuncios: 7 },
-      operacao: { usinas: 2 },
+      operacao: { usinas: 2, usinasMes: 2 },
       relacionamento: { clientes: 10, manutencoes: 4 },
-      financeiro: { vendas: 6 },
+      // vendas/mês/ano vêm de leads (installation_status / contract_signed_at) → 10.
+      financeiro: { vendas: 10, vendasMes: 10, vendasAno: 10 },
       // site e calculadora contam eventos_elo (like) — no fake, count por tabela = 7
       externos: { site: 7, calculadora: 7 },
       elo: { totalEventos: 7 },
@@ -99,12 +103,18 @@ describe('montarSnapshotElo', () => {
     const leadsEq = callLog.filter((c) => c.table === 'leads' && c.method === 'eq');
     expect(leadsEq).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ args: ['status', 'negociacao'] }),
-        expect.objectContaining({ args: ['status', 'ganho'] }),
+        // Negociação = proposta aceita (installation_status), não o enum status
+        // (que nem tem 'negociacao'/'ganho' na produção).
+        expect.objectContaining({ args: ['installation_status', 'proposta_aceita'] }),
       ]),
     );
+    // Ganhos/vendas/clientes usam installation_status IN CLIENTE_STATUSES.
     const leadsIn = callLog.filter((c) => c.table === 'leads' && c.method === 'in');
     expect(leadsIn.some((c) => c.args[0] === 'installation_status')).toBe(true);
+    // Linha do tempo: vendas/mês usa contract_signed_at; leads/mês usa created_at.
+    const leadsGte = callLog.filter((c) => c.table === 'leads' && c.method === 'gte');
+    expect(leadsGte.some((c) => c.args[0] === 'contract_signed_at')).toBe(true);
+    expect(leadsGte.some((c) => c.args[0] === 'created_at')).toBe(true);
 
     const eventosEq = callLog.filter((c) => c.table === 'eventos_elo' && c.method === 'eq');
     expect(eventosEq).toEqual(
@@ -147,12 +157,12 @@ describe('montarSnapshotElo', () => {
     const snap = await montarSnapshotElo(supabase);
 
     expect(snap).toEqual({
-      comercial: { leads: 0, negociacao: 0, ganhos: 0, propostas: 0 },
+      comercial: { leads: 0, leadsMes: 0, negociacao: 0, ganhos: 0, propostas: 0, propostasMes: 0 },
       atendimento: { conversas: 0 },
       marketing: { emailsEnviados: 0, emailsAbertos: 0, leadsQuentes: 0, blog: 0, anuncios: 0 },
-      operacao: { usinas: 0 },
+      operacao: { usinas: 0, usinasMes: 0 },
       relacionamento: { clientes: 0, manutencoes: 0 },
-      financeiro: { vendas: 0 },
+      financeiro: { vendas: 0, vendasMes: 0, vendasAno: 0 },
       externos: { site: 0, calculadora: 0 },
       elo: { totalEventos: 0 },
       uso: { calculadora: { hojeMin: 0, semanaMin: 0, pessoas: [] } },
@@ -219,7 +229,8 @@ describe('montarSnapshotElo', () => {
     // O resto do snapshot segue normal.
     expect(snap.comercial.leads).toBe(10);
     expect(snap.elo.totalEventos).toBe(7);
-    expect(snap.financeiro.vendas).toBe(6);
+    // vendas agora = leads(installation_status) → 10 (não mais fechamentos).
+    expect(snap.financeiro.vendas).toBe(10);
     expect(snap.operacao.usinas).toBe(2);
   });
 });

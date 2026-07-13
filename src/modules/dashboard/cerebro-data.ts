@@ -7,12 +7,12 @@ import type { SupabaseService } from '../supabase.js';
 import { CLIENTE_STATUSES } from './clientes-queries.js';
 
 export type SnapshotElo = {
-  comercial: { leads: number; negociacao: number; ganhos: number; propostas: number };
+  comercial: { leads: number; leadsMes: number; negociacao: number; ganhos: number; propostas: number; propostasMes: number };
   atendimento: { conversas: number };
   marketing: { emailsEnviados: number; emailsAbertos: number; leadsQuentes: number; blog: number; anuncios: number };
-  operacao: { usinas: number };
+  operacao: { usinas: number; usinasMes: number };
   relacionamento: { clientes: number; manutencoes: number };
-  financeiro: { vendas: number };
+  financeiro: { vendas: number; vendasMes: number; vendasAno: number };
   externos: { site: number; calculadora: number };
   elo: { totalEventos: number };
   uso: {
@@ -102,6 +102,11 @@ async function contar(
  *   (ver src/modules/email/email-sequence.ts, email-reacao.ts, resend-events.ts).
  */
 export async function montarSnapshotElo(supabase: SupabaseService): Promise<SnapshotElo> {
+  // Linha do tempo: início do mês e do ano (pra "esse mês" / "esse ano").
+  const agora = new Date();
+  const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1).toISOString();
+  const inicioAno = new Date(agora.getFullYear(), 0, 1).toISOString();
+
   const [
     leads,
     negociacao,
@@ -121,10 +126,20 @@ export async function montarSnapshotElo(supabase: SupabaseService): Promise<Snap
     site,
     calculadora,
     usoCalculadora,
+    leadsMes,
+    propostasMes,
+    vendasMes,
+    vendasAno,
+    usinasMes,
   ] = await Promise.all([
     contar(supabase, 'leads'),
-    contar(supabase, 'leads', (q) => q.eq('status', 'negociacao')),
-    contar(supabase, 'leads', (q) => q.eq('status', 'ganho')),
+    // Negociação e ganhos NÃO vêm do enum `status` (o funil real de venda é o
+    // `installation_status`, não os status 'negociacao'/'ganho' que nem existem
+    // na produção). Negociação = proposta aceita, fechando o contrato.
+    // Ganhos = venda fechada = installation_status a partir de contrato_assinado
+    // (CLIENTE_STATUSES — mesmíssimo critério de "virou cliente" do /clientes).
+    contar(supabase, 'leads', (q) => q.eq('installation_status', 'proposta_aceita')),
+    contar(supabase, 'leads', (q) => q.in('installation_status', CLIENTE_STATUSES)),
     contar(supabase, 'propostas_publicas'),
     contar(supabase, 'conversations'),
     contar(supabase, 'eventos_elo', (q) => q.eq('tipo', 'email_enviado')),
@@ -133,7 +148,10 @@ export async function montarSnapshotElo(supabase: SupabaseService): Promise<Snap
     contar(supabase, 'sistemas_clientes'),
     contar(supabase, 'leads', (q) => q.in('installation_status', CLIENTE_STATUSES)),
     contar(supabase, 'manutencoes'),
-    contar(supabase, 'fechamentos'),
+    // Vendas = mesma verdade dos ganhos/clientes: quem fechou (contrato_assinado+).
+    // A tabela `fechamentos` é outra coisa (docs de fechamento, pouco usada) —
+    // não é o número de vendas. Usar o funil real evita mostrar "2 vendas".
+    contar(supabase, 'leads', (q) => q.in('installation_status', CLIENTE_STATUSES)),
     contar(supabase, 'eventos_elo'),
     // Casas novas ligadas na espinha (12/07): blog publicado + leads de anúncios.
     // marketing:blog_publicado ainda não tem histórico → usa o blog_drafts
@@ -146,15 +164,23 @@ export async function montarSnapshotElo(supabase: SupabaseService): Promise<Snap
     contar(supabase, 'eventos_elo', (q) => q.like('tipo', 'site:%')),
     contar(supabase, 'eventos_elo', (q) => q.like('tipo', 'calculadora:%')),
     agregarUsoCalculadora(supabase),
+    // Linha do tempo (esse mês / esse ano) — leads e propostas pela data de
+    // criação; vendas pela data REAL do fechamento (contract_signed_at, gravada
+    // pelo Coração da Venda); usinas pelo mês que o sistema entrou.
+    contar(supabase, 'leads', (q) => q.gte('created_at', inicioMes)),
+    contar(supabase, 'propostas_publicas', (q) => q.gte('created_at', inicioMes)),
+    contar(supabase, 'leads', (q) => q.gte('contract_signed_at', inicioMes)),
+    contar(supabase, 'leads', (q) => q.gte('contract_signed_at', inicioAno)),
+    contar(supabase, 'sistemas_clientes', (q) => q.gte('created_at', inicioMes)),
   ]);
 
   return {
-    comercial: { leads, negociacao, ganhos, propostas },
+    comercial: { leads, leadsMes, negociacao, ganhos, propostas, propostasMes },
     atendimento: { conversas },
     marketing: { emailsEnviados, emailsAbertos, leadsQuentes, blog, anuncios },
-    operacao: { usinas },
+    operacao: { usinas, usinasMes },
     relacionamento: { clientes, manutencoes },
-    financeiro: { vendas },
+    financeiro: { vendas, vendasMes, vendasAno },
     externos: { site, calculadora },
     elo: { totalEventos },
     uso: { calculadora: usoCalculadora },

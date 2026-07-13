@@ -57,6 +57,9 @@ export async function responderComoElo(
     'equipamentos, normas, o mundo solar), use seu conhecimento e explique com inteligencia e clareza. Nunca ' +
     'cite preco ou valor em reais. Cubra TODO o ecossistema quando ajudar: nao so o comercial, mas tambem o ' +
     'tecnico (engenharia, usinas, monitoramento) e o relacionamento. ' +
+    'Os dados trazem o TOTAL e tambem o do MES atual e do ANO (campos terminados em Mes/Ano: leadsMes, ' +
+    'propostasMes, vendasMes, vendasAno, usinasMes). Quando perguntarem de um periodo (esse mes, esse ano), ' +
+    'use o campo certo e deixe claro de que periodo e o numero. ' +
     'Fale HUMANIZADO, como uma pessoa de verdade conversando — com naturalidade, calor e inteligencia. Frases ' +
     'curtas, claras e bem pontuadas, em portugues do Brasil. Sua resposta e falada em voz alta por um ' +
     'sintetizador de voz, entao responda em texto corrido: SEM markdown, sem asteriscos, sem listas com ' +
@@ -104,16 +107,19 @@ export function montarFalasElo(snap: SnapshotElo): string[] {
     'Oi, eu sou o Elo. Ligo todos os departamentos do EcoSunPower pra que nada se perca.',
   ];
   if (snap.comercial?.leads) {
-    falas.push(`Agora estou cuidando de ${snap.comercial.leads} leads, ${snap.comercial.negociacao} em negociacao.`);
+    const mes = snap.comercial.leadsMes ? `, ${snap.comercial.leadsMes} novos esse mes` : '';
+    falas.push(`Agora estou cuidando de ${snap.comercial.leads} leads${mes}.`);
   }
   if (snap.marketing?.emailsAbertos) {
     falas.push(`Ja tivemos ${snap.marketing.emailsAbertos} e-mails abertos.`);
   }
   if (snap.operacao?.usinas) {
-    falas.push(`Monitoro ${snap.operacao.usinas} usinas gerando energia.`);
+    const mes = snap.operacao.usinasMes ? `, ${snap.operacao.usinasMes} entraram esse mes` : '';
+    falas.push(`Monitoro ${snap.operacao.usinas} usinas gerando energia${mes}.`);
   }
   if (snap.financeiro?.vendas) {
-    falas.push(`Ja comemoramos ${snap.financeiro.vendas} vendas fechadas.`);
+    const mes = snap.financeiro.vendasMes ? `, ${snap.financeiro.vendasMes} so esse mes` : '';
+    falas.push(`Ja comemoramos ${snap.financeiro.vendas} vendas fechadas${mes}.`);
   }
   falas.push('Cada conversa, clique e venda: eu guardo e conecto. Nada se perde comigo.');
   return falas;
