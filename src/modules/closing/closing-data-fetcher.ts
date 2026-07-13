@@ -68,15 +68,24 @@ export async function fetchByLeadId(sb: SupabaseClient, leadId: string): Promise
   const lead = leadRes.data as LeadRow | null;
   if (!lead) return { lead: null, proposta: null };
 
-  const propRes = await sb
-    .from('propostas_publicas')
-    .select('*')
-    .or(`cliente_telefone.eq.${lead.phone},cliente_nome.ilike.%${lead.name}%`)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (propRes.error) throw propRes.error;
-  return { lead, proposta: (propRes.data as PropostaPublicaRow | null) ?? null };
+  // Acha a proposta do cliente em 3 níveis, do mais confiável pro mais tolerante:
+  // 1) lead_id EXATO (o link certo — e a faxina de duplicados já religou aqui),
+  // 2) telefone exato, 3) nome (ilike). Assim não perde a proposta por acento
+  // no nome ou formato do telefone.
+  const buscar = async (aplicar: (q: any) => any): Promise<PropostaPublicaRow | null> => {
+    const r = await aplicar(sb.from('propostas_publicas').select('*'))
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (r.error) return null;
+    return (r.data as PropostaPublicaRow | null) ?? null;
+  };
+
+  let proposta = await buscar((q) => q.eq('lead_id', leadId));
+  if (!proposta && lead.phone) proposta = await buscar((q) => q.eq('cliente_telefone', lead.phone));
+  if (!proposta && lead.name) proposta = await buscar((q) => q.ilike('cliente_nome', `%${lead.name}%`));
+
+  return { lead, proposta };
 }
 
 // Normaliza nome pra comparar SEM acento/maiúscula ("Márcio" ~ "marcio").
