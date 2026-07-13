@@ -481,17 +481,21 @@ export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[]): st
       <p class="text-slate-600 text-sm">Resumo das atividades da Eva e do funil de propostas.</p>
     </div>
 
-    <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-      ${card('Propostas mês', String(kpis.propostasMesAtual), `${kpis.propostasAnoAtual} no ano · ${kpis.totalPropostas} total`, 'amber', 'text-amber-600')}
-      ${card('Ticket médio', brl(kpis.ticketMedio), 'baseado nas últimas 50 propostas', 'emerald', 'text-emerald-700')}
-      ${card('Leads mês', String(kpis.leadsMesAtual), `${kpis.totalLeads} total`, 'sky', 'text-sky-700')}
-      ${card('Em qualificação', String(kpis.leadsQualificando), `${escapeHtml(empresa().nomeAtendente)} ativa neles`, 'violet', 'text-violet-700')}
+    <section class="mb-8">
+      <h2 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">📅 Este mês</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        ${card('💰 Vendas fechadas', String(kpis.vendasMesAtual), `${kpis.vendasAnoAtual} no ano · ${kpis.vendasTotal} total`, 'emerald', 'text-emerald-700')}
+        ${card('📤 Propostas', String(kpis.propostasMesAtual), `${kpis.propostasAnoAtual} no ano · ${kpis.totalPropostas} total`, 'amber', 'text-amber-600')}
+        ${card('🎯 Leads novos', String(kpis.leadsMesAtual), `${kpis.totalLeads} total`, 'sky', 'text-sky-700')}
+        ${card('⚡ Usinas que entraram', String(kpis.usinasMesAtual), 'novos sistemas no mês', 'violet', 'text-violet-700')}
+      </div>
     </section>
 
-    <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
       ${card('Clientes instalados', String(kpis.clientesInstalados), 'sistemas operando', 'emerald')}
+      ${card('Em qualificação', String(kpis.leadsQualificando), `${escapeHtml(empresa().nomeAtendente)} ativa neles`, 'violet', 'text-violet-700')}
+      ${card('Ticket médio', brl(kpis.ticketMedio), 'últimas 50 propostas', 'emerald', 'text-emerald-700')}
       ${card('Manutenção próx 30d', String(kpis.manutencaoPendente), 'lembretes pendentes', kpis.manutencaoPendente > 0 ? 'rose' : 'sky', kpis.manutencaoPendente > 0 ? 'text-rose-600' : 'text-slate-900')}
-      ${card('Total propostas', String(kpis.totalPropostas), 'desde sempre', 'indigo')}
     </section>
 
     <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
