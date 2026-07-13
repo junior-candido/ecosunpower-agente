@@ -41,7 +41,7 @@ export function construirMenu(deps: MenuDeps): MenuCategoria[] {
         { id: 'menu_abordar', title: '💬 Abordar cliente', description: 'Eva fala com quem já abriu a proposta', hint: '💬 Pra Eva abordar um cliente na hora (mesmo que ele já tenha aberto a proposta), manda:\n*abordar nome do cliente*\n(ex: abordar Jonnata)' },
         { id: 'menu_resgatar', title: '♻️ Resgatar antigas', description: 'Recuperar dados do Drive', hint: '♻️ Manda */resgatar-propostas* pra recuperar os dados das propostas antigas (do Drive).' },
         { id: 'menu_rascunho', title: '📝 Rascunho', description: 'Retomar a não terminada', hint: '📝 Manda *rascunho* pra voltar pra proposta que você não terminou.' },
-        { id: 'menu_fechei', title: '✅ Marcar como fechado', description: 'Tira o lead da cadência', hint: '✅ Pra marcar um lead como fechado (sai da cadência), manda:\n*fechei nome ou telefone*\n(ex: fechei Edimilson)' },
+        { id: 'menu_fechei', title: '✅ Fechei uma venda', description: 'Registra a venda + tira da cadência', hint: '✅ Pra registrar uma venda fechada (marca no funil, avisa o Elo e sai da cadência), manda:\n*fechei nome ou telefone*\n(ex: fechei Edimilson)' },
       ],
     },
     {

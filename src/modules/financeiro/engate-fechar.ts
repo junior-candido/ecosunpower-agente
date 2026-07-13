@@ -4,6 +4,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { criarContaDeFechamento, registrarRecebimento } from './contas.js';
 import { cancelarConta } from './repo.js';
+import { registrarVenda } from '../vendas/registrar-venda.js';
 
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -64,6 +65,17 @@ export async function createFechamentoConta(
   const { contaId, calc } = await criarContaDeFechamento(client, {
     fechamentoId, leadId, atividadeId, descricao: `Venda fechamento ${fechamentoId.slice(0, 8)}`, valor, createdBy: adminPhone,
   });
+  // ❤️ Coração da Venda: fechar pela Eva também marca o lead como VENDIDO
+  // (contrato_assinado + data + valor) e avisa o Elo — assim o funil, o
+  // dashboard e as métricas ficam alinhados com o financeiro. Mesma função do
+  // botão "Fechou!" do dashboard. Best-effort: nunca quebra o financeiro.
+  if (leadId) {
+    try {
+      await registrarVenda(client, { leadId, tipo: 'sistema', valorCents: Math.round(valor * 100), origem: 'eva' });
+    } catch (e) {
+      console.warn('[engate-fechar] registrarVenda (best-effort) falhou:', (e as Error)?.message);
+    }
+  }
   await waba.sendInteractiveButtons(
     adminPhone,
     `✅ Conta a receber criada: ${brl(valor)} (Anexo ${calc.anexo}).\nImposto provisório a separar: *${brl(calc.imposto)}*.\nQuando receber, marque aqui:`,

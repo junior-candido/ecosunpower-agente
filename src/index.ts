@@ -107,6 +107,7 @@ import { mapResendEvento } from './modules/email/resend-events.js';
 import { EmailSequenceService } from './modules/email/email-sequence.js';
 import { EmailSender } from './modules/email/resend-client.js';
 import { registrarEvento } from './modules/elo/eventos.js';
+import { registrarVenda } from './modules/vendas/registrar-venda.js';
 // Escape pra páginas públicas que interpolam campos da empresa_config em HTML
 // (config é admin-controlled, mas vem do banco — defesa em profundidade).
 import { escapeHtml } from './modules/dashboard/views.js';
@@ -2479,7 +2480,21 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       .from('leads')
       .update({ status: 'transferido', opt_out: true, updated_at: new Date().toISOString() })
       .eq('id', lead.id);
-    await sendText(from, `✅ *${lead.name}* (${lead.phone}) marcado como cliente fechado.\nRemovido da cadência automaticamente. Eva não vai disparar mais template pra ele.`);
+    // ❤️ Coração da Venda: "fechei" também MARCA A VENDA no funil (contrato_assinado
+    // + data do fechamento) e avisa o Elo — mesma função do botão "Fechou!" do
+    // dashboard. Assim fechar pela Eva alinha o dashboard, o Elo e as métricas.
+    // Best-effort: nunca quebra o "tirar da cadência" que já funcionava.
+    let virouVenda = false;
+    try {
+      const r = await registrarVenda(supabase.getClient(), { leadId: lead.id, tipo: 'sistema', origem: 'eva' });
+      virouVenda = r.ok;
+    } catch (e) {
+      console.warn('[fechei] registrarVenda (best-effort) falhou:', (e as Error)?.message);
+    }
+    const extra = virouVenda
+      ? '\nRegistrado como *venda fechada* — o dashboard e o Elo já sabem. 🎉'
+      : '';
+    await sendText(from, `✅ *${lead.name}* (${lead.phone}) marcado como cliente fechado.\nRemovido da cadência automaticamente. Eva não vai disparar mais template pra ele.${extra}`);
     return true;
   }
 
