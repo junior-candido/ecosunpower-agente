@@ -454,6 +454,18 @@ function renderMsgCopiloto(m: { role: 'user' | 'assistant'; conteudo: string }):
   return `<div class="text-sm bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 mr-8 whitespace-pre-wrap">${escapeHtml(m.conteudo)}<div class="mt-1"><button type="button" onclick="ia_copiarTexto(this)" class="text-xs text-indigo-600 hover:underline">📋 Copiar</button></div></div>`;
 }
 
+// Mensagem do resultado do envio do documento pelo WhatsApp (?envio= na URL).
+function envioBanner(resultado: string): string {
+  const box = (cls: string, txt: string) => `<div class="text-xs px-3 py-2 rounded-lg border ${cls}">${txt}</div>`;
+  if (!resultado) return '';
+  if (resultado === 'ok-cliente') return box('bg-emerald-50 text-emerald-700 border-emerald-200', '✅ Documento enviado pro zap do cliente!');
+  if (resultado === 'ok-eu') return box('bg-emerald-50 text-emerald-700 border-emerald-200', '✅ Documento enviado pro seu zap!');
+  if (resultado === 'semzap') return box('bg-amber-50 text-amber-700 border-amber-200', 'Sem telefone pra enviar.');
+  if (resultado === 'off') return box('bg-amber-50 text-amber-700 border-amber-200', 'Envio por WhatsApp indisponível (config).');
+  if (resultado === 'erro') return box('bg-rose-50 text-rose-700 border-rose-200', 'Não consegui enviar (o cliente pode estar fora da janela de 24h do WhatsApp). Manda pro seu zap e encaminha.');
+  return '';
+}
+
 // Mensagem do resultado da leitura de documentos por IA (?docs= na URL).
 function docsBanner(resultado: string): string {
   const box = (cls: string, txt: string) =>
@@ -468,10 +480,22 @@ function docsBanner(resultado: string): string {
   return '';
 }
 
+// Botãozinho de enviar doc pelo zap (form POST com tipo+destino). Envio pro
+// cliente pede confirmação (vai direto pro WhatsApp dele).
+function docEnvioBtn(leadId: string, tipo: 'contrato' | 'procuracao', destino: 'cliente' | 'eu', label: string, cls: string): string {
+  const confirmar = destino === 'cliente' ? ` onsubmit="return confirm('Enviar direto pro WhatsApp do cliente?')"` : '';
+  return `<form method="POST" action="/dashboard/leads/${leadId}/enviar-doc" class="inline"${confirmar}>
+      <input type="hidden" name="tipo" value="${tipo}" />
+      <input type="hidden" name="destino" value="${destino}" />
+      <button class="px-2.5 py-1 rounded-md text-xs ${cls}">${label}</button>
+    </form>`;
+}
+
 export function renderLeadDetailPage(
   lead: LeadDetail,
   conversa: { role: 'user' | 'assistant'; conteudo: string }[] = [],
   docsResultado = '',
+  envioResultado = '',
 ): string {
   const phoneFmt = formatPhone(lead.phone);
   const nome = escapeHtml(lead.name ?? 'Sem nome');
@@ -544,9 +568,10 @@ export function renderLeadDetailPage(
         <a href="/dashboard/leads/${lead.id}" class="px-3 py-1.5 rounded-lg text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50">🔄 Atualizar</a>
       </div>
 
-      <!-- Bloco Documentos: IA lê conta+CNH → preenche → gera PDF (sempre gera) -->
+      <!-- Bloco Documentos: IA lê conta+CNH → preenche → gera PDF → envia (sempre gera) -->
       <div class="space-y-2 pt-1">
         ${docsBanner(docsResultado)}
+        ${envioBanner(envioResultado)}
         <form method="POST" action="/dashboard/leads/${lead.id}/ler-documentos" enctype="multipart/form-data" class="flex flex-wrap gap-2 items-center">
           <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">🤖 Ler documentos:</span>
           <input type="file" name="docs" accept="image/*,application/pdf" multiple
@@ -557,6 +582,13 @@ export function renderLeadDetailPage(
           <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">📄 Gerar:</span>
           <a href="/dashboard/leads/${lead.id}/contrato.pdf" target="_blank" class="px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700">📄 Contrato</a>
           <a href="/dashboard/leads/${lead.id}/procuracao.pdf" target="_blank" class="px-3 py-1.5 rounded-lg text-sm bg-indigo-100 text-indigo-800 hover:bg-indigo-200">🖊️ Procuração</a>
+        </div>
+        <div class="flex flex-wrap gap-2 items-center">
+          <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">📤 Enviar no zap:</span>
+          ${docEnvioBtn(lead.id, 'contrato', 'cliente', '📄 Contrato → cliente', 'bg-emerald-600 text-white hover:bg-emerald-700')}
+          ${docEnvioBtn(lead.id, 'contrato', 'eu', '📄 Contrato → meu zap', 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200')}
+          ${docEnvioBtn(lead.id, 'procuracao', 'cliente', '🖊️ Procuração → cliente', 'bg-emerald-600 text-white hover:bg-emerald-700')}
+          ${docEnvioBtn(lead.id, 'procuracao', 'eu', '🖊️ Procuração → meu zap', 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200')}
         </div>
       </div>
 
