@@ -7594,6 +7594,13 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     proposalAssistant,
     metaService: metaWaba ?? undefined,
     engineerPhone: config.engineerPhone,
+    // Salva contrato+procuração no Drive/Workspace (reusa o uploader do fechamento).
+    salvarContratoNoDrive: closingDriveUploader
+      ? async (input) => {
+          const r = await closingDriveUploader!.uploadFechamento({ ...input, ano: String(new Date().getFullYear()) });
+          return { folderWebViewLink: r.folderWebViewLink };
+        }
+      : undefined,
     blogGenerator,
     // Espelha EXATAMENTE o fluxo "publicar" do WhatsApp (linhas ~975-983):
     // markApproved → publishDraftToGitHub(PAT/repo/branch da config) → markPublished.

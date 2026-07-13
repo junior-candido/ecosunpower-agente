@@ -16,10 +16,11 @@ export interface ContratosPageInput {
   resultados: ContratoCliente[];
   docsResultado?: string;
   envioResultado?: string;
+  driveResultado?: string;
   user?: any;
 }
 
-function banner(docs: string, envio: string): string {
+function banner(docs: string, envio: string, drive: string): string {
   const box = (cls: string, txt: string) => `<div class="mb-4 text-sm px-4 py-3 rounded-lg border ${cls}">${txt}</div>`;
   let out = '';
   const d = parseInt(docs, 10);
@@ -30,6 +31,9 @@ function banner(docs: string, envio: string): string {
   else if (envio === 'ok-eu') out += box('bg-emerald-50 border-emerald-300 text-emerald-800', '✅ Enviado pro seu zap!');
   else if (envio === 'erro') out += box('bg-rose-50 border-rose-300 text-rose-800', 'Não consegui enviar (cliente pode estar fora da janela de 24h). Manda pro seu zap e encaminha.');
   else if (envio === 'semzap') out += box('bg-amber-50 border-amber-300 text-amber-800', 'Esse cliente está sem telefone.');
+  if (drive === 'ok') out += box('bg-emerald-50 border-emerald-300 text-emerald-800', '☁️ Contrato + procuração salvos no seu Drive/Workspace (na pasta do cliente)!');
+  else if (drive === 'off') out += box('bg-amber-50 border-amber-300 text-amber-800', 'Drive/Workspace não está configurado no servidor.');
+  else if (drive === 'erro') out += box('bg-rose-50 border-rose-300 text-rose-800', 'Não consegui salvar no Drive agora.');
   return out;
 }
 
@@ -76,11 +80,20 @@ function cardCliente(c: ContratoCliente): string {
       ${envioBtn(id, c.nome, 'procuracao', 'cliente', 'Procuração → cliente', 'bg-emerald-600 text-white hover:bg-emerald-700')}
       ${envioBtn(id, c.nome, 'procuracao', 'eu', 'Procuração → meu zap', 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200')}
     </div>
+
+    <div class="flex flex-wrap gap-2 items-center mt-2">
+      <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">☁️ Workspace:</span>
+      <form method="POST" action="/dashboard/leads/${id}/salvar-drive" class="inline">
+        <input type="hidden" name="next" value="contratos" />
+        <input type="hidden" name="nome" value="${escapeHtml(c.nome)}" />
+        <button class="px-3 py-1.5 rounded-lg text-sm bg-sky-600 text-white hover:bg-sky-700">☁️ Salvar no Drive</button>
+      </form>
+    </div>
   </div>`;
 }
 
 export function renderContratosPage(input: ContratosPageInput): string {
-  const { q, buscou, resultados, docsResultado = '', envioResultado = '', user } = input;
+  const { q, buscou, resultados, docsResultado = '', envioResultado = '', driveResultado = '', user } = input;
 
   const busca = `
     <form method="get" action="/dashboard/contratos" class="flex flex-wrap gap-2 items-end mb-6">
@@ -105,7 +118,7 @@ export function renderContratosPage(input: ContratosPageInput): string {
       <h1 class="text-2xl font-bold text-slate-900">📄 Contratos & Procurações</h1>
       <p class="text-slate-500 mt-1">Busca o cliente, a IA lê conta de luz + CNH, gera o PDF na hora e envia no zap. Sempre gera — o que faltar vem como espaço em branco.</p>
     </div>
-    ${banner(docsResultado, envioResultado)}
+    ${banner(docsResultado, envioResultado, driveResultado)}
     ${busca}
     ${lista}
   </div>`;
