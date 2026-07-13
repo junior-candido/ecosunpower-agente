@@ -94,10 +94,14 @@ export interface ManutencaoRow {
 // KPIs do home
 // =========================================================================
 
-export async function fetchDashboardKpis(supabase: SupabaseClient): Promise<DashboardKpi> {
+export async function fetchDashboardKpis(supabase: SupabaseClient, mesRef: Date = new Date()): Promise<DashboardKpi> {
   const now = new Date();
-  const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-  const inicioAno = new Date(now.getFullYear(), 0, 1).toISOString();
+  // Período do filtro — default: mês corrente (mesRef=agora). fimMes/fimAno são o
+  // limite SUPERIOR, pra funcionar em meses/anos passados (não só o atual).
+  const inicioMes = new Date(mesRef.getFullYear(), mesRef.getMonth(), 1).toISOString();
+  const fimMes = new Date(mesRef.getFullYear(), mesRef.getMonth() + 1, 1).toISOString();
+  const inicioAno = new Date(mesRef.getFullYear(), 0, 1).toISOString();
+  const fimAno = new Date(mesRef.getFullYear() + 1, 0, 1).toISOString();
 
   // Conta total propostas
   const { count: totalPropostas } = await supabase
@@ -109,13 +113,15 @@ export async function fetchDashboardKpis(supabase: SupabaseClient): Promise<Dash
     .from('propostas_publicas')
     .select('id', { count: 'exact', head: true })
     .eq('revoked', false)
-    .gte('created_at', inicioMes);
+    .gte('created_at', inicioMes)
+    .lt('created_at', fimMes);
 
   const { count: propostasAnoAtual } = await supabase
     .from('propostas_publicas')
     .select('id', { count: 'exact', head: true })
     .eq('revoked', false)
-    .gte('created_at', inicioAno);
+    .gte('created_at', inicioAno)
+    .lt('created_at', fimAno);
 
   // Conta leads
   const { count: totalLeads } = await supabase
@@ -125,7 +131,8 @@ export async function fetchDashboardKpis(supabase: SupabaseClient): Promise<Dash
   const { count: leadsMesAtual } = await supabase
     .from('leads')
     .select('id', { count: 'exact', head: true })
-    .gte('created_at', inicioMes);
+    .gte('created_at', inicioMes)
+    .lt('created_at', fimMes);
 
   const { count: leadsQualificando } = await supabase
     .from('leads')
@@ -147,18 +154,21 @@ export async function fetchDashboardKpis(supabase: SupabaseClient): Promise<Dash
   const { count: vendasMesAtual } = await supabase
     .from('leads')
     .select('id', { count: 'exact', head: true })
-    .gte('contract_signed_at', inicioMes);
+    .gte('contract_signed_at', inicioMes)
+    .lt('contract_signed_at', fimMes);
 
   const { count: vendasAnoAtual } = await supabase
     .from('leads')
     .select('id', { count: 'exact', head: true })
-    .gte('contract_signed_at', inicioAno);
+    .gte('contract_signed_at', inicioAno)
+    .lt('contract_signed_at', fimAno);
 
-  // Usinas que entraram este mês (sistema cadastrado).
+  // Usinas que entraram no mês do filtro (sistema cadastrado).
   const { count: usinasMesAtual } = await supabase
     .from('sistemas_clientes')
     .select('id', { count: 'exact', head: true })
-    .gte('created_at', inicioMes);
+    .gte('created_at', inicioMes)
+    .lt('created_at', fimMes);
 
   // Manutencao pendente: lembretes com status pending E data ja chegou ou esta proxima (proximos 30 dias)
   const proximos30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)

@@ -546,15 +546,24 @@ export function createDashboardRouter(
     }
   });
 
-  // Home: KPIs + grafico mensal.
-  router.get('/home', async (_req: Request, res: Response) => {
+  // Home: KPIs + grafico mensal. ?mes=YYYY-MM filtra os cards por um mês passado.
+  router.get('/home', async (req: Request, res: Response) => {
     try {
+      const agora = new Date();
+      const mesParam = String(req.query.mes ?? '').match(/^(\d{4})-(\d{2})$/);
+      const ehAtual = !mesParam;
+      const mesRef = mesParam
+        ? new Date(parseInt(mesParam[1], 10), parseInt(mesParam[2], 10) - 1, 1)
+        : agora;
+      const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+      const mesLabel = ehAtual ? 'Este mês' : `${MESES[mesRef.getMonth()]} de ${mesRef.getFullYear()}`;
+      const mesValue = `${mesRef.getFullYear()}-${String(mesRef.getMonth() + 1).padStart(2, '0')}`;
       const [kpis, grafico, graficoVendas] = await Promise.all([
-        fetchDashboardKpis(supabase),
+        fetchDashboardKpis(supabase, mesRef),
         fetchPropostasPorMes(supabase),
         fetchVendasPorMes(supabase),
       ]);
-      res.send(renderHomePage(kpis, grafico, graficoVendas));
+      res.send(renderHomePage(kpis, grafico, graficoVendas, mesLabel, mesValue));
     } catch (err) {
       console.error('[dashboard/home]', err);
       res.status(500).send(`<h2>Erro ao carregar dashboard</h2><pre>${(err as Error).message}</pre>`);
