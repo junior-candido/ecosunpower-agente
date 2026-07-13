@@ -2540,6 +2540,49 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // "contrato <nome>" / "procuracao <nome>" — gera o PDF confiável (proposta +
+  // cadastro, preenche brancos onde faltar) e manda no zap do Junior. Nunca trava.
+  async function tryHandleContratoRapido(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const m = text.trim().match(/^\/?(contrato|procuracao|procuração)\s+(.+)$/i);
+    if (!m) return false;
+    const tipo: 'contrato' | 'procuracao' = m[1].toLowerCase().startsWith('proc') ? 'procuracao' : 'contrato';
+    const nome = m[2].trim();
+    const rotulo = tipo === 'contrato' ? 'contrato' : 'procuração';
+    try {
+      const { searchLeadByName } = await import('./modules/closing/closing-data-fetcher.js');
+      const leads = await searchLeadByName(supabase.getClient(), nome);
+      if (leads.length === 0) {
+        await sendText(from, `Não achei ninguém com "${nome}". Confere o nome e manda de novo.`);
+        return true;
+      }
+      if (leads.length > 1) {
+        const lista = leads.slice(0, 5).map((l, i) => `${i + 1}. ${l.name}`).join('\n');
+        await sendText(from, `Achei mais de um com "${nome}":\n${lista}\nManda o nome mais completo.`);
+        return true;
+      }
+      const lead = leads[0];
+      await sendText(from, `Gerando ${rotulo} de *${lead.name}*... 📄`);
+      const { montarFechamentoAuto } = await import('./modules/closing/fechamento-auto.js');
+      const r = await montarFechamentoAuto(supabase.getClient(), lead.id);
+      if (!r) { await sendText(from, 'Não achei os dados desse cliente.'); return true; }
+      const { renderContrato, renderProcuracao } = await import('./modules/closing/index.js');
+      const { renderHtmlToPdf } = await import('./modules/closing/closing-render.js');
+      const html = tipo === 'contrato' ? renderContrato(r.dados) : renderProcuracao(r.dados);
+      const pdf = await renderHtmlToPdf(html);
+      const filename = `${tipo}-${r.nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
+      if (!metaWaba) { await sendText(from, 'Envio de documento indisponível agora.'); return true; }
+      const up = await metaWaba.uploadMedia(pdf, 'application/pdf', filename);
+      const falta = r.faltando.length ? `\n\n⚠️ Faltou preencher: ${r.faltando.join(', ')} — completa no cadastro que refaço.` : '';
+      await metaWaba.sendDocumentById(from, up.mediaId, filename, `Segue ${rotulo} de ${r.nome}. 📄${falta}`);
+      return true;
+    } catch (err) {
+      console.error('[contrato-rapido]', err);
+      await sendText(from, `Deu um problema gerando o ${rotulo} agora. Tenta pelo dashboard (tela do cliente).`);
+      return true;
+    }
+  }
+
   // Resposta com o VALOR logo após o toque em "Fechei uma venda" (fecheiValorState).
   // Só age se há uma venda esperando valor desse número. "pular" encerra sem valor.
   async function tryHandleFecheiValor(from: string, text: string): Promise<boolean> {
@@ -4031,6 +4074,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // Eva Proposta — Junior gera proposta comercial completa (PDF + web)
     if (await tryHandleProposalCommand(from, text)) return;
+
+    // 📄 Gerador CONFIÁVEL na Eva: "contrato <nome>" / "procuracao <nome>" gera o
+    // PDF direto dos dados (proposta+cadastro) e MANDA no zap. Nunca trava. Vem
+    // ANTES do /fechar conversacional (que travava) pra ser o caminho padrão.
+    if (await tryHandleContratoRapido(from, text)) return;
 
     // Eva Fechamento — Junior gera contrato + procuração via /fechar
     if (await tryHandleClosingCommand(from, text)) return;

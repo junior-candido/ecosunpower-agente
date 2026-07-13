@@ -101,6 +101,7 @@ import { registrarAtividade, listarTimeline } from './atividades.js';
 import { audit } from './audit.js';
 import { registrarVenda } from '../vendas/registrar-venda.js';
 import { renderFecharVendaPage, type PropostaAberta } from './vendas-views.js';
+import { renderContratosPage, type ContratoCliente } from './contratos-views.js';
 import { CLIENTE_STATUSES } from './clientes-queries.js';
 import { can } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
@@ -1564,6 +1565,17 @@ export function createDashboardRouter(
   // 📄 Gerador CONFIÁVEL de contrato/procuração: monta os dados do cadastro +
   // proposta (buildInitialData), preenche brancos onde faltar e gera o PDF na
   // hora. Determinístico — SEMPRE gera, nunca trava por falta de dado.
+  // Pra onde voltar depois de ler/enviar doc: se veio da tela de Contratos
+  // (next=contratos), volta pra ela com o cliente ainda na busca (?q=nome);
+  // senão, volta pra tela do lead.
+  function voltarDoc(req: Request, leadId: string, params: string): string {
+    const next = String((req.body?.next ?? req.query?.next ?? '')).trim();
+    if (next === 'contratos') {
+      const nome = String(req.body?.nome ?? '').trim();
+      return `/dashboard/contratos?q=${encodeURIComponent(nome)}&${params}`;
+    }
+    return `/dashboard/leads/${leadId}?${params}`;
+  }
   async function gerarDocBuffer(leadId: string, tipo: 'contrato' | 'procuracao'): Promise<{ pdf: Buffer; nome: string } | null> {
     const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
     const r = await montarFechamentoAuto(supabase, leadId);
@@ -1599,25 +1611,53 @@ export function createDashboardRouter(
       const tipo = req.body?.tipo === 'procuracao' ? 'procuracao' : 'contrato';
       const destino = req.body?.destino === 'cliente' ? 'cliente' : 'eu';
       const meta = options.metaService;
-      if (!meta) return res.redirect(`/dashboard/leads/${id}?envio=off`);
+      if (!meta) return res.redirect(voltarDoc(req, id, 'envio=off'));
       let to: string | null | undefined = options.engineerPhone;
       if (destino === 'cliente') {
         const { data: lead } = await supabase.from('leads').select('phone').eq('id', id).maybeSingle();
         to = (lead as { phone?: string } | null)?.phone ?? null;
       }
-      if (!to) return res.redirect(`/dashboard/leads/${id}?envio=semzap`);
+      if (!to) return res.redirect(voltarDoc(req, id, 'envio=semzap'));
       const doc = await gerarDocBuffer(id, tipo);
-      if (!doc) return res.redirect(`/dashboard/leads/${id}?envio=erro`);
+      if (!doc) return res.redirect(voltarDoc(req, id, 'envio=erro'));
       const filename = `${tipo}-${doc.nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
       const up = await meta.uploadMedia(doc.pdf, 'application/pdf', filename);
       const caption = tipo === 'contrato' ? 'Segue o contrato 📄' : 'Segue a procuração 🖊️';
       await meta.sendDocumentById(to, up.mediaId, filename, caption);
-      res.redirect(`/dashboard/leads/${id}?envio=ok-${destino}`);
+      res.redirect(voltarDoc(req, id, `envio=ok-${destino}`));
     } catch (err) {
       console.error('[dashboard/enviar-doc]', err);
-      res.redirect(`/dashboard/leads/${id}?envio=erro`);
+      res.redirect(voltarDoc(req, id, 'envio=erro'));
     }
   });
+  // 📄 Tela dedicada de Contratos & Procurações: busca o cliente pelo nome e
+  // mostra os botões (ler docs / gerar / enviar). Reusa as rotas por lead_id.
+  router.get('/contratos', exigir('propostas', 'visualizar'), async (req: Request, res: Response) => {
+    try {
+      const q = String(req.query.q ?? '').trim();
+      const buscou = q.length > 0;
+      let resultados: ContratoCliente[] = [];
+      if (buscou) {
+        const { searchLeadByName } = await import('../closing/closing-data-fetcher.js');
+        const leads = await searchLeadByName(supabase, q);
+        resultados = leads.slice(0, 10).map((l: any) => ({
+          leadId: l.id,
+          nome: l.name ?? '(sem nome)',
+          status: l.installation_status ?? l.status ?? null,
+        }));
+      }
+      res.send(renderContratosPage({
+        q, buscou, resultados,
+        docsResultado: String(req.query.docs ?? ''),
+        envioResultado: String(req.query.envio ?? ''),
+        user: (req as AuthedRequest).dashUser,
+      }));
+    } catch (err) {
+      console.error('[dashboard/contratos]', err);
+      res.status(500).send(`<h2>Erro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
   router.get('/leads/:id/contrato.pdf', exigir('propostas', 'visualizar'), (req: Request, res: Response) => gerarDocPdf(req, res, 'contrato'));
   router.get('/leads/:id/procuracao.pdf', exigir('propostas', 'visualizar'), (req: Request, res: Response) => gerarDocPdf(req, res, 'procuracao'));
 
@@ -1629,8 +1669,8 @@ export function createDashboardRouter(
     try {
       if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
       const files = ((req.files as Express.Multer.File[] | undefined) ?? []);
-      if (files.length === 0) return res.redirect(`/dashboard/leads/${id}?docs=vazio`);
-      if (!options.anthropicApiKey) return res.redirect(`/dashboard/leads/${id}?docs=off`);
+      if (files.length === 0) return res.redirect(voltarDoc(req, id, 'docs=vazio'));
+      if (!options.anthropicApiKey) return res.redirect(voltarDoc(req, id, 'docs=off'));
       const { default: Anthropic } = await import('@anthropic-ai/sdk');
       const anthropic = new Anthropic({ apiKey: options.anthropicApiKey });
       const { extrairDocsContrato } = await import('../closing/extrair-docs-contrato.js');
@@ -1653,10 +1693,10 @@ export function createDashboardRouter(
       if (d.endereco?.uf) patch.uf = d.endereco.uf;
       const lidos = Object.keys(patch).filter((k) => k !== 'updated_at').length;
       if (lidos > 0) await supabase.from('leads').update(patch).eq('id', id);
-      res.redirect(`/dashboard/leads/${id}?docs=${lidos}`);
+      res.redirect(voltarDoc(req, id, `docs=${lidos}`));
     } catch (err) {
       console.error('[dashboard/ler-documentos]', err);
-      res.redirect(`/dashboard/leads/${id}?docs=erro`);
+      res.redirect(voltarDoc(req, id, 'docs=erro'));
     }
   });
 
