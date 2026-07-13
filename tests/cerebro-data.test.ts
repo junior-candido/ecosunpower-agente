@@ -8,7 +8,13 @@ import { montarSnapshotElo } from '../src/modules/dashboard/cerebro-data.js';
 // batem no mesmo número (todos vêm de 'leads').
 type CallLog = { table: string; method: string; args: any[] };
 
-function makeFakeClient(countsByTable: Record<string, number | 'throw'>) {
+// A query de uso (tabela 'elo_uso') resolve LINHAS { data, error } em vez de
+// count. `usoConfig` controla o que ela devolve: linhas, um erro (best-effort
+// → uso zerado) ou 'throw' (exceção). Undefined → sem linhas.
+type UsoRow = { usuario: string; dia: string; batidas: number };
+type UsoConfig = UsoRow[] | 'error' | 'throw' | undefined;
+
+function makeFakeClient(countsByTable: Record<string, number | 'throw'>, usoConfig?: UsoConfig) {
   const callLog: CallLog[] = [];
   const from = (table: string) => {
     const cfg = countsByTable[table];
@@ -21,6 +27,15 @@ function makeFakeClient(countsByTable: Record<string, number | 'throw'>) {
       };
     }
     builder.then = (resolve: any, reject: any) => {
+      if (table === 'elo_uso') {
+        if (usoConfig === 'throw') {
+          return Promise.reject(new Error(`boom: ${table}`)).catch(reject ?? (() => {}));
+        }
+        if (usoConfig === 'error') {
+          return Promise.resolve({ data: null, error: { message: 'boom uso' } }).then(resolve, reject);
+        }
+        return Promise.resolve({ data: usoConfig ?? [], error: null }).then(resolve, reject);
+      }
       if (cfg === 'throw') {
         return Promise.reject(new Error(`boom: ${table}`)).catch(reject ?? (() => {}));
       }
@@ -31,8 +46,8 @@ function makeFakeClient(countsByTable: Record<string, number | 'throw'>) {
   return { client: { from } as any, callLog };
 }
 
-function fakeSupabase(countsByTable: Record<string, number | 'throw'>) {
-  const { client, callLog } = makeFakeClient(countsByTable);
+function fakeSupabase(countsByTable: Record<string, number | 'throw'>, usoConfig?: UsoConfig) {
+  const { client, callLog } = makeFakeClient(countsByTable, usoConfig);
   return { supabase: { getClient: () => client } as any, callLog };
 }
 
@@ -63,6 +78,8 @@ describe('montarSnapshotElo', () => {
       // site e calculadora contam eventos_elo (like) — no fake, count por tabela = 7
       externos: { site: 7, calculadora: 7 },
       elo: { totalEventos: 7 },
+      // sem usoConfig → query de uso devolve [] → tudo zerado.
+      uso: { calculadora: { hojeMin: 0, semanaMin: 0, pessoas: [] } },
     });
   });
 
@@ -138,6 +155,71 @@ describe('montarSnapshotElo', () => {
       financeiro: { vendas: 0 },
       externos: { site: 0, calculadora: 0 },
       elo: { totalEventos: 0 },
+      uso: { calculadora: { hojeMin: 0, semanaMin: 0, pessoas: [] } },
     });
+  });
+
+  it('uso: agrega batidas da calculadora em hoje/semana/pessoas (2 pessoas, 2 dias)', async () => {
+    const hoje = new Date().toISOString().slice(0, 10);
+    const ontem = new Date(Date.now() - 1 * 86400000).toISOString().slice(0, 10);
+    // Ana: 30 hoje + 20 ontem = 50 na semana. Bruno: 10 hoje + 5 ontem = 15.
+    const { supabase } = fakeSupabase(
+      { leads: 1, eventos_elo: 1, fechamentos: 1 },
+      [
+        { usuario: 'Ana', dia: hoje, batidas: 30 },
+        { usuario: 'Ana', dia: ontem, batidas: 20 },
+        { usuario: 'Bruno', dia: hoje, batidas: 10 },
+        { usuario: 'Bruno', dia: ontem, batidas: 5 },
+      ],
+    );
+
+    const snap = await montarSnapshotElo(supabase);
+
+    expect(snap.uso.calculadora.hojeMin).toBe(40); // 30 + 10
+    expect(snap.uso.calculadora.semanaMin).toBe(65); // 50 + 15
+    // Ordenado por semanaMin desc: Ana (50) antes de Bruno (15).
+    expect(snap.uso.calculadora.pessoas).toEqual([
+      { quem: 'Ana', hojeMin: 30, semanaMin: 50 },
+      { quem: 'Bruno', hojeMin: 10, semanaMin: 15 },
+    ]);
+  });
+
+  it('uso: pega no máximo top 6 pessoas por semanaMin', async () => {
+    const hoje = new Date().toISOString().slice(0, 10);
+    // 8 pessoas com semanaMin crescente (p1=1 ... p8=8) → top 6 = p8..p3.
+    const rows = Array.from({ length: 8 }, (_, i) => ({
+      usuario: `p${i + 1}`,
+      dia: hoje,
+      batidas: i + 1,
+    }));
+    const { supabase } = fakeSupabase({ leads: 1 }, rows);
+
+    const snap = await montarSnapshotElo(supabase);
+
+    expect(snap.uso.calculadora.pessoas).toHaveLength(6);
+    expect(snap.uso.calculadora.pessoas.map((p) => p.quem)).toEqual([
+      'p8',
+      'p7',
+      'p6',
+      'p5',
+      'p4',
+      'p3',
+    ]);
+  });
+
+  it('best-effort: erro na query de uso → uso zerado, resto do snapshot ok', async () => {
+    const { supabase } = fakeSupabase(
+      { leads: 10, eventos_elo: 7, fechamentos: 6, sistemas_clientes: 2 },
+      'error',
+    );
+
+    const snap = await montarSnapshotElo(supabase);
+
+    expect(snap.uso.calculadora).toEqual({ hojeMin: 0, semanaMin: 0, pessoas: [] });
+    // O resto do snapshot segue normal.
+    expect(snap.comercial.leads).toBe(10);
+    expect(snap.elo.totalEventos).toBe(7);
+    expect(snap.financeiro.vendas).toBe(6);
+    expect(snap.operacao.usinas).toBe(2);
   });
 });

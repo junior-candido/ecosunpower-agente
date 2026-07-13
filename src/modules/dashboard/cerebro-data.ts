@@ -15,7 +15,56 @@ export type SnapshotElo = {
   financeiro: { vendas: number };
   externos: { site: number; calculadora: number };
   elo: { totalEventos: number };
+  uso: {
+    calculadora: {
+      hojeMin: number; // soma de batidas onde dia = hoje (UTC)
+      semanaMin: number; // soma de batidas dos ultimos 7 dias (dia >= hoje-6)
+      pessoas: Array<{ quem: string; hojeMin: number; semanaMin: number }>; // por usuario, ordenado por semanaMin desc, top 6
+    };
+  };
 };
+
+// Agregação de uso da calculadora (QUEM usa e por QUANTO tempo, hoje e na
+// semana). Best-effort: UMA query traz as batidas dos últimos 7 dias e a
+// agregação (hoje/semana/pessoas) roda em JS. Erro em qualquer etapa → zeros/[].
+// Datas em UTC (a coluna `dia` é date → comparamos como string 'yyyy-mm-dd').
+async function agregarUsoCalculadora(
+  supabase: SupabaseService,
+): Promise<SnapshotElo['uso']['calculadora']> {
+  const vazio = { hojeMin: 0, semanaMin: 0, pessoas: [] as Array<{ quem: string; hojeMin: number; semanaMin: number }> };
+  try {
+    const hoje = new Date().toISOString().slice(0, 10);
+    const seisDiasAtras = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+    const client = supabase.getClient();
+    const { data, error } = await client
+      .from('elo_uso')
+      .select('usuario, dia, batidas')
+      .eq('ferramenta', 'calculadora')
+      .gte('dia', seisDiasAtras);
+    if (error || !data) return vazio;
+
+    let hojeMin = 0;
+    let semanaMin = 0;
+    const porPessoa = new Map<string, { quem: string; hojeMin: number; semanaMin: number }>();
+    for (const linha of data as Array<{ usuario: string; dia: string; batidas: number }>) {
+      const batidas = linha.batidas ?? 0;
+      const quem = linha.usuario ?? 'anonimo';
+      const ehHoje = linha.dia === hoje;
+      semanaMin += batidas;
+      if (ehHoje) hojeMin += batidas;
+      const p = porPessoa.get(quem) ?? { quem, hojeMin: 0, semanaMin: 0 };
+      p.semanaMin += batidas;
+      if (ehHoje) p.hojeMin += batidas;
+      porPessoa.set(quem, p);
+    }
+    const pessoas = [...porPessoa.values()]
+      .sort((a, b) => b.semanaMin - a.semanaMin)
+      .slice(0, 6);
+    return { hojeMin, semanaMin, pessoas };
+  } catch {
+    return vazio;
+  }
+}
 
 // HEAD count numa tabela (não traz linhas, só o total — mesmo padrão de
 // SupabaseService.contarEventosPorTipo). Best-effort: erro em qualquer etapa
@@ -71,6 +120,7 @@ export async function montarSnapshotElo(supabase: SupabaseService): Promise<Snap
     anuncios,
     site,
     calculadora,
+    usoCalculadora,
   ] = await Promise.all([
     contar(supabase, 'leads'),
     contar(supabase, 'leads', (q) => q.eq('status', 'negociacao')),
@@ -95,6 +145,7 @@ export async function montarSnapshotElo(supabase: SupabaseService): Promise<Snap
     // site:* (visitas/leads do site) e calculadora:* (orçamentos gerados).
     contar(supabase, 'eventos_elo', (q) => q.like('tipo', 'site:%')),
     contar(supabase, 'eventos_elo', (q) => q.like('tipo', 'calculadora:%')),
+    agregarUsoCalculadora(supabase),
   ]);
 
   return {
@@ -106,5 +157,6 @@ export async function montarSnapshotElo(supabase: SupabaseService): Promise<Snap
     financeiro: { vendas },
     externos: { site, calculadora },
     elo: { totalEventos },
+    uso: { calculadora: usoCalculadora },
   };
 }

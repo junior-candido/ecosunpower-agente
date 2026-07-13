@@ -7830,6 +7830,39 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     res.status(200).json({ ok: true });
   });
 
+  // ===== Batida de uso (heartbeat) — o Elo sabe QUEM usa O QUÊ e por QUANTO tempo =====
+  // Ferramentas externas (calculadora, etc.) mandam uma batida por minuto enquanto
+  // estao em uso. Mesma trava do /elo/evento (ELO_INGEST_TOKEN). Best-effort (200).
+  // Grava via RPC atomica elo_uso_bump (1 linha por ferramenta/usuario/dia; batidas ~ min).
+  app.post('/elo/uso', async (req, res) => {
+    const token = (req.headers['x-webhook-token'] as string) ?? (req.query.token as string) ?? '';
+    const esperado = process.env.ELO_INGEST_TOKEN ?? '';
+    if (!esperado || token !== esperado) {
+      res.status(401).json({ error: 'invalid token' });
+      return;
+    }
+    try {
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const ferramenta = typeof b.ferramenta === 'string' ? b.ferramenta.slice(0, 40) : '';
+      if (!ferramenta || !/^[a-z_]+$/.test(ferramenta)) {
+        res.status(200).json({ ok: false, ignored: true });
+        return;
+      }
+      const usuario = typeof b.usuario === 'string' ? b.usuario.slice(0, 120) : null;
+      const userId = typeof b.userId === 'string' ? b.userId.slice(0, 80) : null;
+      const dia = new Date().toISOString().slice(0, 10); // yyyy-mm-dd (UTC)
+      await supabase.getClient().rpc('elo_uso_bump', {
+        p_ferramenta: ferramenta,
+        p_usuario: usuario,
+        p_user_id: userId,
+        p_dia: dia,
+      });
+    } catch (err) {
+      console.warn('[elo/uso] ignorado:', (err as Error)?.message ?? err);
+    }
+    res.status(200).json({ ok: true });
+  });
+
   // Pagina publica de Politica de Privacidade pra uso nos Lead Ads da Meta.
   // LGPD (Lei 13.709/2018) exige transparencia sobre coleta/uso de dados.
   // URL publica: /privacidade (usar no campo do Meta Lead Form)
