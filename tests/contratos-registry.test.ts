@@ -208,11 +208,15 @@ describe('forma de pagamento — sugere as de sempre, mas aceita o que foi acord
     expect(campo.sugestoes!.length).toBeGreaterThan(3);
     expect(campo.sugestoes).toContain('À vista no PIX');
     expect(campo.sugestoes).toContain('Financiamento Belenus');
+    expect(campo.sugestoes).toContain('Financiamento Fort Lev');
+    expect(campo.sugestoes).toContain('Cartão na maquininha da EcoSun');
+    // cartão parcelado e financiamento são coisas diferentes — não podem se misturar
+    expect(campo.sugestoes!.some((s) => s.includes('Sol Fácil'))).toBe(true);
   });
 
   it('escolher uma da lista funciona', () => {
-    const { cadastro } = parseFormulario(getContrato('fv')!, { com_forma_pagamento: 'Cartão de crédito — 24x' });
-    expect(cadastro.forma_pagamento).toBe('Cartão de crédito — 24x');
+    const { cadastro } = parseFormulario(getContrato('fv')!, { com_forma_pagamento: 'Financiamento Belenus' });
+    expect(cadastro.forma_pagamento).toBe('Financiamento Belenus');
   });
 
   // O ponto: NÃO é um select. O que o Junior combinou na unha entra igual.
