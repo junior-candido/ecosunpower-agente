@@ -18,12 +18,16 @@ export interface LeadRow {
   phone: string | null;
   email: string | null;
   cpf_cnpj: string | null;
+  rg: string | null;
+  orgao_emissor_rg: string | null;
   data_nascimento: string | null;
   estado_civil: string | null;
   cep: string | null;
   endereco_rua: string | null;
   endereco_numero: string | null;
   endereco_complemento: string | null;
+  neighborhood: string | null;
+  city: string | null;
   uf: string | null;
   concessionaria: string | null;
   uc_numero: string | null;
@@ -121,6 +125,8 @@ function buildEndereco(lead: LeadRow): Partial<Endereco> {
     rua: lead.endereco_rua ?? undefined,
     numero: lead.endereco_numero ?? undefined,
     complemento: lead.endereco_complemento ?? undefined,
+    bairro: lead.neighborhood ?? undefined,
+    cidade: lead.city ?? undefined,
     uf: (lead.uf as UF) ?? undefined,
     cep: lead.cep ?? undefined,
   } as Partial<Endereco>;
@@ -136,6 +142,8 @@ export function buildInitialData(
     tipo: 'PF',
     nome: lead.name,
     cpf: lead.cpf_cnpj ?? undefined,
+    rg: lead.rg ?? undefined,
+    orgao_emissor_rg: lead.orgao_emissor_rg ?? undefined,
     estado_civil: lead.estado_civil ?? undefined,
     data_nascimento: lead.data_nascimento ?? undefined,
     nacionalidade: 'Brasileiro(a)',

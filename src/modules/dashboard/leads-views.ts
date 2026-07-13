@@ -454,9 +454,24 @@ function renderMsgCopiloto(m: { role: 'user' | 'assistant'; conteudo: string }):
   return `<div class="text-sm bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 mr-8 whitespace-pre-wrap">${escapeHtml(m.conteudo)}<div class="mt-1"><button type="button" onclick="ia_copiarTexto(this)" class="text-xs text-indigo-600 hover:underline">📋 Copiar</button></div></div>`;
 }
 
+// Mensagem do resultado da leitura de documentos por IA (?docs= na URL).
+function docsBanner(resultado: string): string {
+  const box = (cls: string, txt: string) =>
+    `<div class="text-xs px-3 py-2 rounded-lg border ${cls}">${txt}</div>`;
+  if (!resultado) return '';
+  if (resultado === 'erro') return box('bg-rose-50 text-rose-700 border-rose-200', 'Não consegui ler os documentos agora. Tenta de novo ou preenche na mão — o contrato gera do mesmo jeito.');
+  if (resultado === 'vazio') return box('bg-amber-50 text-amber-700 border-amber-200', 'Nenhum arquivo enviado.');
+  if (resultado === 'off') return box('bg-amber-50 text-amber-700 border-amber-200', 'Leitura por IA indisponível (config).');
+  const n = parseInt(resultado, 10);
+  if (Number.isFinite(n) && n > 0) return box('bg-emerald-50 text-emerald-700 border-emerald-200', `✅ IA preencheu ${n} campo(s) do cadastro. Confere e gera o contrato!`);
+  if (n === 0) return box('bg-amber-50 text-amber-700 border-amber-200', 'Li os documentos, mas não achei dado novo pra preencher.');
+  return '';
+}
+
 export function renderLeadDetailPage(
   lead: LeadDetail,
   conversa: { role: 'user' | 'assistant'; conteudo: string }[] = [],
+  docsResultado = '',
 ): string {
   const phoneFmt = formatPhone(lead.phone);
   const nome = escapeHtml(lead.name ?? 'Sem nome');
@@ -529,11 +544,20 @@ export function renderLeadDetailPage(
         <a href="/dashboard/leads/${lead.id}" class="px-3 py-1.5 rounded-lg text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50">🔄 Atualizar</a>
       </div>
 
-      <!-- Bloco Documentos: contrato + procuração (gerador confiável, sempre gera) -->
-      <div class="flex flex-wrap gap-2 items-center">
-        <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">📄 Documentos:</span>
-        <a href="/dashboard/leads/${lead.id}/contrato.pdf" target="_blank" class="px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700">📄 Gerar contrato</a>
-        <a href="/dashboard/leads/${lead.id}/procuracao.pdf" target="_blank" class="px-3 py-1.5 rounded-lg text-sm bg-indigo-100 text-indigo-800 hover:bg-indigo-200">🖊️ Gerar procuração</a>
+      <!-- Bloco Documentos: IA lê conta+CNH → preenche → gera PDF (sempre gera) -->
+      <div class="space-y-2 pt-1">
+        ${docsBanner(docsResultado)}
+        <form method="POST" action="/dashboard/leads/${lead.id}/ler-documentos" enctype="multipart/form-data" class="flex flex-wrap gap-2 items-center">
+          <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">🤖 Ler documentos:</span>
+          <input type="file" name="docs" accept="image/*,application/pdf" multiple
+            class="text-xs text-slate-600 file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-violet-100 file:text-violet-800 file:cursor-pointer" />
+          <button class="px-3 py-1.5 rounded-lg text-sm bg-violet-600 text-white hover:bg-violet-700">Ler conta + CNH e preencher</button>
+        </form>
+        <div class="flex flex-wrap gap-2 items-center">
+          <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">📄 Gerar:</span>
+          <a href="/dashboard/leads/${lead.id}/contrato.pdf" target="_blank" class="px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700">📄 Contrato</a>
+          <a href="/dashboard/leads/${lead.id}/procuracao.pdf" target="_blank" class="px-3 py-1.5 rounded-lg text-sm bg-indigo-100 text-indigo-800 hover:bg-indigo-200">🖊️ Procuração</a>
+        </div>
       </div>
 
       <!-- Bloco 2: Mudar status -->

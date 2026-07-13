@@ -183,6 +183,11 @@ export function createDashboardRouter(
   const router = Router();
   const supabase = supabaseService.getClient();
   const telemetriaService = new TelemetriaService(supabaseService, monitoringService);
+  // Upload em memória, reusado por várias rotas (fotos, anexos, docs do contrato).
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024 },
+  });
 
   // Middleware-fábrica de gating de permissão por área/nível. Aplicado ANTES
   // dos handlers das rotas por área. Sem permissão → 403. Compatível com o
@@ -719,7 +724,7 @@ export function createDashboardRouter(
       }
 
       const conversaIA = await supabaseService.getConversaIA(id);
-      res.send(renderLeadDetailPage(lead, conversaIA));
+      res.send(renderLeadDetailPage(lead, conversaIA, String(req.query.docs ?? '')));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);
       res.status(500).send(`<h2>Erro ao carregar lead</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -1581,6 +1586,45 @@ export function createDashboardRouter(
   }
   router.get('/leads/:id/contrato.pdf', exigir('propostas', 'visualizar'), (req: Request, res: Response) => gerarDocPdf(req, res, 'contrato'));
   router.get('/leads/:id/procuracao.pdf', exigir('propostas', 'visualizar'), (req: Request, res: Response) => gerarDocPdf(req, res, 'procuracao'));
+
+  // 🤖 Sessão Contrato — IA lê conta de luz + CNH e preenche o cadastro
+  // (CPF, RG, endereço, UC). Robusto: o que a IA não ler fica como está (não
+  // sobrescreve com vazio). Depois é só gerar o contrato — os dados já vêm.
+  router.post('/leads/:id/ler-documentos', exigir('propostas', 'editar'), upload.array('docs', 4), async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    try {
+      if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      const files = ((req.files as Express.Multer.File[] | undefined) ?? []);
+      if (files.length === 0) return res.redirect(`/dashboard/leads/${id}?docs=vazio`);
+      if (!options.anthropicApiKey) return res.redirect(`/dashboard/leads/${id}?docs=off`);
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const anthropic = new Anthropic({ apiKey: options.anthropicApiKey });
+      const { extrairDocsContrato } = await import('../closing/extrair-docs-contrato.js');
+      const arquivos = files.map((f) => ({ base64: f.buffer.toString('base64'), mimeType: f.mimetype }));
+      const d = await extrairDocsContrato(anthropic, arquivos);
+      // Patch só com o que a IA leu (nunca sobrescreve dado bom com vazio).
+      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (d.cpf) patch.cpf_cnpj = d.cpf;
+      if (d.rg) patch.rg = d.rg;
+      if (d.orgao_emissor_rg) patch.orgao_emissor_rg = d.orgao_emissor_rg;
+      if (d.data_nascimento) patch.data_nascimento = d.data_nascimento;
+      if (d.estado_civil) patch.estado_civil = d.estado_civil;
+      if (d.uc_numero) patch.uc_numero = d.uc_numero;
+      if (d.concessionaria) patch.concessionaria = d.concessionaria;
+      if (d.endereco?.rua) patch.endereco_rua = d.endereco.rua;
+      if (d.endereco?.numero) patch.endereco_numero = d.endereco.numero;
+      if (d.endereco?.bairro) patch.neighborhood = d.endereco.bairro;
+      if (d.endereco?.cidade) patch.city = d.endereco.cidade;
+      if (d.endereco?.cep) patch.cep = d.endereco.cep;
+      if (d.endereco?.uf) patch.uf = d.endereco.uf;
+      const lidos = Object.keys(patch).filter((k) => k !== 'updated_at').length;
+      if (lidos > 0) await supabase.from('leads').update(patch).eq('id', id);
+      res.redirect(`/dashboard/leads/${id}?docs=${lidos}`);
+    } catch (err) {
+      console.error('[dashboard/ler-documentos]', err);
+      res.redirect(`/dashboard/leads/${id}?docs=erro`);
+    }
+  });
 
   // Visualizacoes detalhadas de UMA proposta (timeline + KPIs).
   // ?preview=1 inclui aberturas preview admin no timeline (default: exclui).
@@ -2729,11 +2773,6 @@ export function createDashboardRouter(
   });
 
   // ===== Perfil do Cliente A1 =====
-  const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 20 * 1024 * 1024 },
-  });
-
   // ===== Ordem de Serviço (peça 2b) — "1 OS, 3 portas, 1 função que fecha" =====
   // Portas a/b: abrir OS de uma manutenção agendada.
   router.post('/manutencao/:id/os/abrir', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
