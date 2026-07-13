@@ -379,6 +379,36 @@ export async function fetchPropostasPorMes(supabase: SupabaseClient): Promise<Gr
   return Array.from(buckets.entries()).map(([mes, total]) => ({ mes, total }));
 }
 
+// Vendas fechadas por mês (últimos 12 meses), pela DATA real do fechamento
+// (contract_signed_at, gravada pelo Coração da Venda). Mesma forma do gráfico
+// de propostas — vira a curva de vendas do dashboard.
+export async function fetchVendasPorMes(supabase: SupabaseClient): Promise<GraficoMensal[]> {
+  const now = new Date();
+  const inicio12mesesAtras = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+
+  const { data, error } = await supabase
+    .from('leads')
+    .select('contract_signed_at')
+    .gte('contract_signed_at', inicio12mesesAtras.toISOString())
+    .order('contract_signed_at', { ascending: true });
+
+  if (error) throw new Error(`fetchVendasPorMes: ${error.message}`);
+
+  const buckets = new Map<string, number>();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    buckets.set(key, 0);
+  }
+  for (const row of data ?? []) {
+    if (!row.contract_signed_at) continue;
+    const d = new Date(row.contract_signed_at);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (buckets.has(key)) buckets.set(key, (buckets.get(key) ?? 0) + 1);
+  }
+  return Array.from(buckets.entries()).map(([mes, total]) => ({ mes, total }));
+}
+
 // ====================================================================
 // Módulo 6: alerta proativo — KPIs no painel de monitoramento
 // ====================================================================
