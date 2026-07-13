@@ -4,6 +4,7 @@
 // nada já salvo. Degrada seguro: qualquer dúvida/erro → devolve o texto ORIGINAL.
 
 import type Anthropic from '@anthropic-ai/sdk';
+import { medirIa } from './custos/ia-metering.js';
 
 const MODELO = 'claude-haiku-4-5-20251001';
 const MIN_CHARS = 3;
@@ -84,6 +85,7 @@ export async function corrigirOrtografia(
       console.warn('[corretor] timeout/erro, mantém original');
       return original;
     }
+    medirIa({ modelo: MODELO, origem: 'corretor', usage: (resp as any).usage });
     const out = resp.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)

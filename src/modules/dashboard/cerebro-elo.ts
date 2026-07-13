@@ -5,6 +5,7 @@
 // snapshot. Best-effort: falha na IA nunca quebra a tela.
 import { aplicarTravaPrecoExplicito } from '../email/price-lock.js';
 import { empresa, nomeTituloCase } from '../empresa-config.js';
+import { medirIa } from '../custos/ia-metering.js';
 import type { SnapshotElo } from './cerebro-data.js';
 
 /**
@@ -64,6 +65,7 @@ export async function responderComoElo(
       system,
       messages: [{ role: 'user', content: String(pergunta).slice(0, 500) }],
     });
+    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'elo', usage: resp.usage });
     const txt = resp.content.find((b: any) => b.type === 'text')?.text as string | undefined;
     if (txt && txt.trim()) resposta = txt.trim();
   } catch (err) {

@@ -1,4 +1,5 @@
 import { aplicarTravaPreco } from './price-lock.js';
+import { medirIa } from '../custos/ia-metering.js';
 
 export type WriterCtx = {
   step: number;
@@ -36,6 +37,7 @@ export async function gerarAssuntoAbertura(
       system,
       messages: [{ role: 'user', content: user }],
     });
+    medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'email', usage: resp.usage });
     const txt = (resp.content.find((b: any) => b.type === 'text')?.text ?? '') as string;
     const mA = txt.match(/ASSUNTO:\s*(.+)/i);
     const mB = txt.match(/ABERTURA:\s*(.+)/i);

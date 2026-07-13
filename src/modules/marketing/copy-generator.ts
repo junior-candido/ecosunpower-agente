@@ -1,6 +1,7 @@
 // src/modules/marketing/copy-generator.ts
 import Anthropic from '@anthropic-ai/sdk';
 import type { Persona, CreativeCopy } from './types.js';
+import { medirIa } from '../custos/ia-metering.js';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -33,6 +34,7 @@ export async function generateCopies(params: {
       content: `BRIEFING: ${params.briefing}\n\nPERSONA:\n${personaCtx}\n\nGere as 3 copies em JSON puro.`,
     }],
   });
+  medirIa({ modelo: 'claude-opus-4-7', origem: 'copy', usage: message.usage });
 
   const text = message.content[0].type === 'text' ? message.content[0].text : '';
   const jsonMatch = text.match(/\[[\s\S]*\]/);

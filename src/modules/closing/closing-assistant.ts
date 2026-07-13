@@ -115,6 +115,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { medirIa } from '../custos/ia-metering.js';
 
 const __dirname_closing = dirname(fileURLToPath(import.meta.url));
 const SYSTEM_PROMPT_PATH = join(__dirname_closing, '..', '..', 'prompts', 'closing-system.md');
@@ -183,6 +184,7 @@ export function createAnthropicLlmCaller(apiKey: string): LlmCaller {
         { role: 'user', content: `${stateBlock}\n\n---\nMensagem do Junior:\n${userMessage}` },
       ],
     });
+    medirIa({ modelo: 'claude-sonnet-4-6', origem: 'closing', usage: res.usage });
 
     const text = res.content.filter((b) => b.type === 'text').map((b: any) => b.text).join('\n');
     // LLM responde JSON puro OU JSON em bloco ```json...``` OU JSON cercado de

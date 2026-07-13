@@ -29,6 +29,7 @@ function escapeHtmlSimple(s: string): string {
 }
 import type { SupabaseService } from '../supabase.js';
 import { empresa } from '../empresa-config.js';
+import { registrarEvento } from '../elo/eventos.js';
 import type { MonitoringService } from '../monitoring/service.js';
 import { TelemetriaService } from '../monitoring/telemetria-service.js';
 import type { ProposalAssistant } from '../proposal-assistant.js';
@@ -2513,6 +2514,16 @@ export function createDashboardRouter(
         await audit(supabase, {
           companyId: viewer.companyId, userId: viewer.id, entidade: 'usina',
           entidadeId: usinaId, acao: 'vincular_cliente', valorNovo: leadId,
+        });
+        // Elo (casa Pós-venda/Relacionamento): a usina virou cliente e entrou no
+        // pós-venda. Fecha a última casa que faltava na espinha. Best-effort.
+        await registrarEvento(supabase, {
+          tipo: 'relacionamento:cliente_novo',
+          departamento: 'relacionamento',
+          canal: 'sistema',
+          origem: 'crm',
+          clienteId: leadId,
+          payload: { usinaId },
         });
       }
       console.log(`[usinas/vincular] ${aplicados}/${paresOk.length} usinas vinculadas + enviadas ao pos_venda (de ${pares.length} recebidas)`);
