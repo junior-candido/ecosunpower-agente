@@ -1556,6 +1556,32 @@ export function createDashboardRouter(
     }
   });
 
+  // 📄 Gerador CONFIÁVEL de contrato/procuração: monta os dados do cadastro +
+  // proposta (buildInitialData), preenche brancos onde faltar e gera o PDF na
+  // hora. Determinístico — SEMPRE gera, nunca trava por falta de dado.
+  async function gerarDocPdf(req: Request, res: Response, tipo: 'contrato' | 'procuracao') {
+    try {
+      const id = String(req.params.id);
+      if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
+      const r = await montarFechamentoAuto(supabase, id);
+      if (!r) return res.status(404).send('Lead não encontrado');
+      const { renderContrato, renderProcuracao } = await import('../closing/index.js');
+      const { renderHtmlToPdf } = await import('../closing/closing-render.js');
+      const html = tipo === 'contrato' ? renderContrato(r.dados) : renderProcuracao(r.dados);
+      const pdf = await renderHtmlToPdf(html);
+      const nomeArq = `${tipo}-${(r.nome || 'cliente').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
+      res.type('application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${nomeArq}"`);
+      res.send(pdf);
+    } catch (err) {
+      console.error('[dashboard/doc-pdf]', err);
+      res.status(500).send(`<h2>Erro ao gerar</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  }
+  router.get('/leads/:id/contrato.pdf', exigir('propostas', 'visualizar'), (req: Request, res: Response) => gerarDocPdf(req, res, 'contrato'));
+  router.get('/leads/:id/procuracao.pdf', exigir('propostas', 'visualizar'), (req: Request, res: Response) => gerarDocPdf(req, res, 'procuracao'));
+
   // Visualizacoes detalhadas de UMA proposta (timeline + KPIs).
   // ?preview=1 inclui aberturas preview admin no timeline (default: exclui).
   router.get('/propostas/:slug/visualizacoes', async (req: Request, res: Response) => {
