@@ -23,7 +23,7 @@ export async function responderComoElo(
   anthropic: any,
   pergunta: string,
   snap: SnapshotElo,
-  ctx?: { isCeo?: boolean; nome?: string },
+  ctx?: { isCeo?: boolean; nome?: string; historico?: Array<{ pergunta: string; resposta: string }> },
 ): Promise<string> {
   const dados = JSON.stringify(snap);
   const e = empresa();
@@ -38,7 +38,10 @@ export async function responderComoElo(
     'Regiao de atuacao: ' + e.regiaoAtuacao + '. ' +
     'Voce liga todos os departamentos (casas) do ecossistema pra que nada se perca: Atendimento (a Eva no ' +
     'WhatsApp), Comercial (leads e propostas), Marketing (e-mail, blog e anuncios), Operacao (monitoramento ' +
-    'das usinas), Relacionamento (pos-venda) e Financeiro. O fundador e CEO da empresa e ' + ceoNome + '. ';
+    'das usinas), Relacionamento (pos-venda) e Financeiro. O fundador e CEO da empresa e ' + ceoNome + '. ' +
+    'Voce entende de energia solar DE VERDADE — o lado tecnico (engenharia, dimensionamento, geracao, ' +
+    'monitoramento das usinas, equipamentos, normas das concessionarias) e o comercial — e fala com ' +
+    'inteligencia sobre energia no geral. ';
 
   const acesso = isCeo
     ? 'Voce esta falando com ' + quemFala + ', o CEO. Pode contar tudo: numeros, tendencias, o que estiver nos dados. '
@@ -48,14 +51,28 @@ export async function responderComoElo(
       'isso e so com a direcao. ';
 
   const regras =
-    'Responda a pergunta APENAS com base nos DADOS REAIS abaixo. NUNCA invente numeros nem fatos. Se a resposta ' +
-    'nao estiver nos dados, diga que ainda nao tem esse dado. Nunca cite preco ou valor em reais. ' +
-    'Fale como uma pessoa conversando, com naturalidade e fluencia: frases curtas, claras e bem pontuadas, ' +
-    'em portugues do Brasil. Sua resposta e falada em voz alta por um sintetizador de voz, entao responda em ' +
-    'texto corrido: SEM markdown, sem asteriscos, sem listas com marcadores ou numeradas, sem titulos/cabecalhos ' +
-    'e sem emojis — so frases naturais.\n';
+    'Sobre os NUMEROS e fatos INTERNOS da empresa (leads, propostas, usinas, vendas, eventos), responda so com ' +
+    'base nos DADOS REAIS abaixo — NUNCA invente numeros nem fatos internos; se nao estiver nos dados, diga que ' +
+    'ainda nao tem esse dado. Ja sobre ENERGIA EM GERAL (dimensionamento, geracao, economia, monitoramento, ' +
+    'equipamentos, normas, o mundo solar), use seu conhecimento e explique com inteligencia e clareza. Nunca ' +
+    'cite preco ou valor em reais. Cubra TODO o ecossistema quando ajudar: nao so o comercial, mas tambem o ' +
+    'tecnico (engenharia, usinas, monitoramento) e o relacionamento. ' +
+    'Fale HUMANIZADO, como uma pessoa de verdade conversando — com naturalidade, calor e inteligencia. Frases ' +
+    'curtas, claras e bem pontuadas, em portugues do Brasil. Sua resposta e falada em voz alta por um ' +
+    'sintetizador de voz, entao responda em texto corrido: SEM markdown, sem asteriscos, sem listas com ' +
+    'marcadores ou numeradas, sem titulos/cabecalhos e sem emojis — so frases naturais.\n';
 
-  const system = identidade + acesso + regras + 'DADOS REAIS: ' + dados;
+  const memoriaNota = ctx?.historico && ctx.historico.length
+    ? 'Voce esta no meio de uma conversa — lembre das mensagens anteriores e responda no fio dela. '
+    : '';
+  const system = identidade + acesso + memoriaNota + regras + 'DADOS REAIS: ' + dados;
+
+  // Memoria conversacional: as trocas anteriores viram mensagens no contexto,
+  // entao o Elo lembra do que ja foi falado (follow-ups funcionam).
+  const historicoMsgs = (ctx?.historico ?? []).flatMap((h) => [
+    { role: 'user' as const, content: String(h.pergunta).slice(0, 500) },
+    { role: 'assistant' as const, content: String(h.resposta).slice(0, 1000) },
+  ]);
 
   let resposta = 'Nao consegui pensar agora, tenta de novo daqui a pouco.';
   try {
@@ -63,7 +80,7 @@ export async function responderComoElo(
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 300,
       system,
-      messages: [{ role: 'user', content: String(pergunta).slice(0, 500) }],
+      messages: [...historicoMsgs, { role: 'user', content: String(pergunta).slice(0, 500) }],
     });
     medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'elo', usage: resp.usage });
     const txt = resp.content.find((b: any) => b.type === 'text')?.text as string | undefined;

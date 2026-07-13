@@ -3547,10 +3547,16 @@ export function createDashboardRouter(
         const anthropic = new Anthropic({ apiKey: options.anthropicApiKey });
         const snap = await montarSnapshotElo(supabaseService);
         const viewer = (req as AuthedRequest).dashUser;
+        // Memória do Elo: pega as últimas trocas desse usuário pra dar contexto.
+        const { getMemoriaRecenteElo, salvarMemoriaElo } = await import('./cerebro-memoria.js');
+        const historico = await getMemoriaRecenteElo(supabaseService, viewer?.id);
         resposta = await responderComoElo(anthropic, pergunta, snap, {
           isCeo: !!viewer?.isAdmin,
           nome: viewer?.nome,
+          historico,
         });
+        // guarda a troca pra o Elo lembrar na próxima (best-effort, não bloqueia).
+        void salvarMemoriaElo(supabaseService, { userId: viewer?.id, quem: viewer?.nome, pergunta, resposta });
       }
     } catch (err) {
       console.warn('[cerebro-perguntar]', (err as Error)?.message);
