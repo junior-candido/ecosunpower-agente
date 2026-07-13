@@ -161,8 +161,11 @@ export async function montarFechamentoAuto(
   const vigente = await contratoVigente(sb, leadId);
   if (tipo === 'aditivo' && vigente) {
     cru.aditivo = {
+      // sugestão: a data do congelamento (mas congelar não é o cliente ter
+      // assinado — por isso o campo é editável e o que o operador escrever VENCE)
+      contrato_data: vigente.congeladoEm.slice(0, 10),
       ...(cru.aditivo ?? {}),
-      contrato_data: vigente.congeladoEm,
+      // o valor e o pagamento "de antes" saem sempre do retrato congelado
       valor_anterior: vigente.dados.comercial?.valor_total_brl,
       forma_pagamento_anterior: vigente.dados.comercial?.forma_pagamento,
     };

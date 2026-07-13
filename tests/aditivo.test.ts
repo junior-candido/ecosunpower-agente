@@ -11,23 +11,44 @@ describe('o aditivo entrou na central como mais um tipo', () => {
     expect(renderAditivo(completarComPlaceholders({})).length).toBeGreaterThan(500);
   });
 
-  it('o "antes" é só de leitura — o operador não digita a data do contrato', () => {
+  // O valor e o pagamento "de antes" saem do retrato congelado — o operador não
+  // digita. Já a DATA é editável: congelar é guardar o retrato, não é o cliente ter
+  // assinado. Quem sabe quando ele assinou é o Junior, então ele escreve.
+  it('o valor e o pagamento de antes são só de leitura; a data, não', () => {
     const antes = def().campos.filter((c) => c.grupo === 'O contrato que está valendo');
     expect(antes.map((c) => c.id)).toEqual(['adit_contrato_data', 'adit_valor_anterior', 'adit_pagamento_anterior']);
-    for (const c of antes) expect(c.somenteLeitura).toBe(true);
+
+    const data = antes.find((c) => c.id === 'adit_contrato_data')!;
+    expect(data.somenteLeitura).toBeFalsy(); // ele escreve
+    expect(data.tipo).toBe('data');
+
+    expect(antes.find((c) => c.id === 'adit_valor_anterior')!.somenteLeitura).toBe(true);
+    expect(antes.find((c) => c.id === 'adit_pagamento_anterior')!.somenteLeitura).toBe(true);
   });
 
   it('o formulário mostra o que o contrato congelado dizia', () => {
     const vals = valoresDoFormulario(def(), {
       aditivo: {
-        contrato_data: '2026-07-10T13:00:00Z',
+        contrato_data: '2026-07-10',
         valor_anterior: 20959.09,
-        forma_pagamento_anterior: 'Sol Fácil — 24x sem juros',
+        forma_pagamento_anterior: 'Cartão de crédito — 24x',
       },
     });
-    expect(vals.adit_contrato_data).toBe('10/07/2026');
+    expect(vals.adit_contrato_data).toBe('2026-07-10'); // formato do campo de data
     expect(vals.adit_valor_anterior).toBe('20.959,09');
-    expect(vals.adit_pagamento_anterior).toBe('Sol Fácil — 24x sem juros');
+    expect(vals.adit_pagamento_anterior).toBe('Cartão de crédito — 24x');
+  });
+
+  it('a data que o Junior escreve é a que sai no documento — e não vira o dia anterior', () => {
+    const { rascunho } = parseFormulario(def(), { adit_contrato_data: '2026-07-20' });
+    expect(rascunho.aditivo!.contrato_data).toBe('2026-07-20');
+
+    const html = renderAditivo(completarComPlaceholders({
+      titular_uc: { tipo: 'PF', nome: 'Antonio', cpf: '111.444.777-35' } as any,
+      aditivo: { contrato_data: '2026-07-20', motivo: 'prazo', novo_prazo: '45 dias' },
+    }));
+    expect(html).toContain('20/07/2026');
+    expect(html).not.toContain('19/07/2026'); // o fuso de Brasília não come um dia
   });
 });
 

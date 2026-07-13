@@ -32,11 +32,15 @@ function docDe(p: PessoaFisica | PessoaJuridica): string {
   return p.tipo === 'PJ' ? `CNPJ nº ${p.cnpj}` : `CPF nº ${p.cpf}`;
 }
 
+// "2026-07-20" → "20/07/2026", sem passar por new Date(): o JS lê data-sem-hora
+// como meia-noite UTC, e em Brasília (UTC-3) isso vira o DIA ANTERIOR. Num contrato,
+// citar a data errada da assinatura é problema sério.
 function dataBR(iso?: string): string {
   if (!iso) return '____/____/________';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso));
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 }
 
 function brl(n?: number): string {

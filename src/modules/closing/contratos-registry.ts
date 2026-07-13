@@ -324,10 +324,15 @@ const dataBR = (iso?: string) => {
 };
 
 const CAMPOS_ADITIVO: CampoContrato[] = [
+  // A data que o aditivo cita ("fica alterado o contrato firmado em..."). Vem
+  // sugerida do contrato congelado, mas é EDITÁVEL: congelar é guardar o retrato,
+  // não é o cliente ter assinado. Quem sabe a data da assinatura é o operador —
+  // então ele escreve. (Sem inventar coluna nova pra isso: é campo do documento.)
   {
-    id: 'adit_contrato_data', label: 'Contrato firmado em', grupo: 'O contrato que está valendo', tipo: 'texto',
-    somenteLeitura: true, dica: 'vem do contrato congelado — se estiver vazio, congela o contrato primeiro',
-    ler: (d) => dataBR(d.aditivo?.contrato_data), gravar: () => {},
+    id: 'adit_contrato_data', label: 'Contrato firmado em', grupo: 'O contrato que está valendo', tipo: 'data',
+    dica: 'a data em que o cliente assinou — corrige se estiver diferente',
+    ler: (d) => texto(d.aditivo?.contrato_data).slice(0, 10),
+    gravar: (o, v) => { aditivo(o).contrato_data = v; },
   },
   {
     id: 'adit_valor_anterior', label: 'Valor do contrato', grupo: 'O contrato que está valendo', tipo: 'moeda',
