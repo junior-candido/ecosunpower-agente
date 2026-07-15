@@ -14,6 +14,209 @@ rodar.
 
 ---
 
+## ⚠️ Achado do Lote 1 (15/07/2026): banco de produção pode estar atrás das migrations
+
+Ao aplicar a `077`, o Junior encontrou `elo_memoria` (criada na migration `072`) **inexistente**
+no banco de produção — a `072` nunca tinha sido aplicada lá, mesmo já estando na `main` havia
+tempo. Corrigido na hora (aplicou a `072` a mão, depois o `company_id`), mas fica o alerta: **não
+dá pra assumir que "está na `main`" = "está no banco"** — o fluxo é manual (SQL Editor, sem
+`supabase db push`/tracking automático), então drift é possível e silencioso até travar em algo.
+
+**Antes de qualquer lote de backfill (Passo 2 em diante), rode as duas queries abaixo no SQL
+Editor.** São só `SELECT` — não mudam nada, pode rodar quantas vezes quiser.
+
+**Query 1 — alguma tabela esperada não existe no banco?**
+```sql
+WITH esperadas(tabela) AS (
+  VALUES
+    ('alertas_sistema'),
+    ('app_flags'),
+    ('audit_log'),
+    ('blog_drafts'),
+    ('channel_daily_metrics'),
+    ('companies'),
+    ('conversation_patterns'),
+    ('conversations'),
+    ('custos_fixos'),
+    ('custos_ia_uso'),
+    ('dashboard_roles'),
+    ('dashboard_users'),
+    ('dm_messages'),
+    ('dm_threads'),
+    ('dossiers'),
+    ('elo_memoria'),
+    ('elo_uso'),
+    ('email_descadastro'),
+    ('email_modelos'),
+    ('email_sequencia'),
+    ('empresa_config'),
+    ('empresa_kits'),
+    ('engineers'),
+    ('eva_cadence'),
+    ('eva_intro_pending'),
+    ('eva_knowledge_chunks'),
+    ('eventos_elo'),
+    ('external_articles'),
+    ('fechamentos'),
+    ('financeiro_anexos'),
+    ('financeiro_atividades'),
+    ('financeiro_categorias'),
+    ('financeiro_contas_a_receber'),
+    ('financeiro_lancamentos'),
+    ('financeiro_materiais_compras'),
+    ('financeiro_parametros'),
+    ('financeiro_recebimentos'),
+    ('financeiro_receita_mensal'),
+    ('followups'),
+    ('geracao_diaria'),
+    ('lead_anexos'),
+    ('lead_atividades'),
+    ('lead_ia_conversas'),
+    ('lead_tarefas'),
+    ('leads'),
+    ('learning_insights'),
+    ('logs'),
+    ('maintenance_reminders'),
+    ('manutencoes'),
+    ('marketing_alerts'),
+    ('marketing_campaign_logs'),
+    ('marketing_campaigns'),
+    ('marketing_creative_logs'),
+    ('marketing_creatives'),
+    ('marketing_drafts'),
+    ('marketing_personas'),
+    ('meta_ads_insights'),
+    ('meta_leadgen_events'),
+    ('monitoring_abordagens'),
+    ('monitoring_alerts'),
+    ('monitoring_config'),
+    ('monitoring_treino'),
+    ('ordens_servico'),
+    ('os_fotos'),
+    ('pos_venda_sugestao_memoria'),
+    ('post_install_touches'),
+    ('proposta_attachments'),
+    ('proposta_visualizacoes'),
+    ('propostas_publicas'),
+    ('reengagement_touches'),
+    ('relatorio_slugs'),
+    ('relatorios_pos_instalacao'),
+    ('rh_candidatos'),
+    ('rh_vagas'),
+    ('sistemas_clientes'),
+    ('telemetria_catalogo'),
+    ('telemetria_medicoes'),
+    ('telemetria_medicoes_2026_07'),
+    ('telemetria_medicoes_2026_08'),
+    ('telemetria_medicoes_2026_09'),
+    ('telemetria_medicoes_2026_10'),
+    ('telemetria_medicoes_2026_11'),
+    ('telemetria_medicoes_2026_12'),
+    ('telemetria_medicoes_2027_01'),
+    ('telemetria_medicoes_2027_02'),
+    ('telemetria_medicoes_2027_03'),
+    ('telemetria_medicoes_2027_04'),
+    ('telemetria_medicoes_2027_05'),
+    ('telemetria_medicoes_2027_06'),
+    ('telemetria_resumo'),
+    ('testimonials')
+)
+SELECT e.tabela AS tabela_esperada_mas_ausente
+FROM esperadas e
+LEFT JOIN pg_tables t ON t.schemaname = 'public' AND t.tablename = e.tabela
+WHERE t.tablename IS NULL
+ORDER BY 1;
+-- Resultado vazio = banco em dia com as 91 tabelas que as migrations definem hoje.
+-- Cada linha que aparecer é uma migration que criou aquela tabela e nunca rodou aqui.
+```
+
+**Query 2 — das 61 tabelas do Lote 1, alguma ficou sem a coluna `company_id`?**
+```sql
+WITH tenant_tabelas(tabela) AS (
+  VALUES
+    ('alertas_sistema'),
+    ('blog_drafts'),
+    ('channel_daily_metrics'),
+    ('conversation_patterns'),
+    ('conversations'),
+    ('custos_fixos'),
+    ('custos_ia_uso'),
+    ('dm_messages'),
+    ('dm_threads'),
+    ('dossiers'),
+    ('elo_memoria'),
+    ('elo_uso'),
+    ('email_descadastro'),
+    ('email_modelos'),
+    ('email_sequencia'),
+    ('engineers'),
+    ('eva_cadence'),
+    ('eva_intro_pending'),
+    ('external_articles'),
+    ('fechamentos'),
+    ('financeiro_atividades'),
+    ('financeiro_categorias'),
+    ('financeiro_contas_a_receber'),
+    ('financeiro_lancamentos'),
+    ('financeiro_materiais_compras'),
+    ('financeiro_parametros'),
+    ('financeiro_recebimentos'),
+    ('financeiro_receita_mensal'),
+    ('followups'),
+    ('geracao_diaria'),
+    ('lead_anexos'),
+    ('learning_insights'),
+    ('maintenance_reminders'),
+    ('manutencoes'),
+    ('marketing_alerts'),
+    ('marketing_campaign_logs'),
+    ('marketing_campaigns'),
+    ('marketing_creative_logs'),
+    ('marketing_creatives'),
+    ('marketing_drafts'),
+    ('marketing_personas'),
+    ('meta_ads_insights'),
+    ('meta_leadgen_events'),
+    ('monitoring_abordagens'),
+    ('monitoring_alerts'),
+    ('ordens_servico'),
+    ('os_fotos'),
+    ('pos_venda_sugestao_memoria'),
+    ('post_install_touches'),
+    ('proposta_attachments'),
+    ('proposta_visualizacoes'),
+    ('propostas_publicas'),
+    ('reengagement_touches'),
+    ('relatorio_slugs'),
+    ('relatorios_pos_instalacao'),
+    ('rh_candidatos'),
+    ('rh_vagas'),
+    ('sistemas_clientes'),
+    ('telemetria_medicoes'),
+    ('telemetria_resumo'),
+    ('testimonials')
+)
+SELECT tt.tabela AS tabela_sem_company_id
+FROM tenant_tabelas tt
+WHERE NOT EXISTS (
+  SELECT 1 FROM information_schema.columns c
+  WHERE c.table_schema = 'public' AND c.table_name = tt.tabela AND c.column_name = 'company_id'
+)
+ORDER BY 1;
+-- Resultado vazio = as 61 tabelas do Lote 1 estão todas com a coluna. Confirma o "61/61".
+```
+
+Se a Query 1 apontar alguma tabela faltando, o jeito é o mesmo que o Junior já fez com a
+`elo_memoria`: aplicar a migration que cria aquela tabela primeiro (na ordem certa, olhando o
+número dela), depois seguir com o `company_id`. Vale rodar a Query 1 de novo depois, pra confirmar
+que não sobrou nenhuma.
+
+**Nota de manutenção:** essas duas listas (91 e 61 tabelas) são uma fotografia de hoje
+(migrations até `078`). Se novas migrations entrarem depois, as listas ficam desatualizadas — me
+avisa que eu regenero a partir do `supabase/migrations/` atual antes do próximo lote.
+
+---
+
 ## O que o Lote 1 entrega (este PR)
 
 | Arquivo | O que faz | Risco |
