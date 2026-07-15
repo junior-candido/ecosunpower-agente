@@ -39,6 +39,28 @@ describe('renderFormNovaProposta', () => {
     expect(html).toContain('enctype="multipart/form-data"');
   });
 
+  it('inclui os ids do campo consumo, potência e o slot de sugestão automática', () => {
+    const html = renderFormNovaProposta({
+      lead_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      lead: null,
+      erros: [],
+    });
+    expect(html).toContain('id="input-consumo-kwh"');
+    expect(html).toContain('id="input-potencia-kwp"');
+    expect(html).toContain('id="sugestao-equipamento"');
+  });
+
+  it('script de sugestão busca a rota certa e só preenche a Potência quando o vendedor clica em "usar"', () => {
+    const html = renderFormNovaProposta({
+      lead_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      lead: null,
+      erros: [],
+    });
+    expect(html).toContain('/dashboard/propostas/sugestao-equipamento?consumo=');
+    expect(html).toContain('btn-usar-sugestao');
+    expect(html).toContain("inputPotencia.value = sugestao.kWpReal");
+  });
+
   it('mostra erros inline quando vier do POST', () => {
     const html = renderFormNovaProposta({
       lead_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',

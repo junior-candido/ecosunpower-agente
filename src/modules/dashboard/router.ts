@@ -90,6 +90,7 @@ import {
   MARCAS_INVERSOR,
   TIPOS_ESTRUTURA,
 } from './proposta-form-view.js';
+import { sugerirEquipamento } from '../sugestao-equipamento.js';
 import { renderUsuariosListPage, renderUsuarioEditPage } from './usuarios-views.js';
 import { listUsers, listRoles, createUser, updateUser, getUserByLogin, touchLastLogin } from './users-store.js';
 import { hashSenha, verificarSenha } from './password.js';
@@ -3933,6 +3934,18 @@ export function createDashboardRouter(
 
     return { data, attachments, tipo, erros };
   }
+
+  // Sugestão automática de kWp/painéis a partir do consumo — só matemática,
+  // reusa sugerirEquipamento() (mesma conta que a proposta já usa via dimensionarSistema).
+  router.get('/propostas/sugestao-equipamento', (req: Request, res: Response) => {
+    const consumo = Number(req.query.consumo);
+    if (!Number.isFinite(consumo) || consumo <= 0) {
+      return res.status(400).json({ ok: false, erro: 'Parâmetro consumo inválido.' });
+    }
+    const sugestao = sugerirEquipamento(consumo);
+    if (!sugestao) return res.json({ ok: false, erro: 'Não foi possível sugerir equipamento para esse consumo.' });
+    res.json({ ok: true, sugestao });
+  });
 
   router.get('/propostas/novo', async (req: Request, res: Response) => {
     const lead_id = String(req.query.lead_id ?? '');

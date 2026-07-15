@@ -145,7 +145,9 @@ export function renderFormNovaProposta(input: {
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <label class="block">
               <span class="text-xs text-slate-300">Potência (kWp) *</span>
-              <input name="potenciaKwp" type="number" step="0.01" required value="${escapeHtml(v('potenciaKwp', ''))}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input id="input-potencia-kwp" name="potenciaKwp" type="number" step="0.01" required value="${escapeHtml(v('potenciaKwp', ''))}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <!-- Preenchido via JS a partir de /dashboard/propostas/sugestao-equipamento quando o consumo muda -->
+              <span id="sugestao-equipamento" class="text-[11px] text-cyan-400 mt-1 block"></span>
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Fator de perda *</span>
@@ -155,7 +157,7 @@ export function renderFormNovaProposta(input: {
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Consumo médio (kWh/mês) *</span>
-              <input name="consumoMensalKwh" type="number" step="1" required value="${escapeHtml(v('consumoMensalKwh', c?.consumo_medio_kwh))}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
+              <input id="input-consumo-kwh" name="consumoMensalKwh" type="number" step="1" required value="${escapeHtml(v('consumoMensalKwh', c?.consumo_medio_kwh))}" class="mt-1 w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 text-sm">
             </label>
             <label class="block">
               <span class="text-xs text-slate-300">Modalidade</span>
@@ -297,7 +299,46 @@ export function renderFormNovaProposta(input: {
       </form>
     </div>
   `;
-  return renderLayout({ active: 'clientes', title: tituloPagina, body, dark: true });
+
+  // Busca a sugestão de kWp/painéis (GET /dashboard/propostas/sugestao-equipamento)
+  // toda vez que o vendedor digita o consumo, com debounce pra não martelar o servidor.
+  const scripts = `<script>
+(function () {
+  const inputConsumo = document.getElementById('input-consumo-kwh');
+  const inputPotencia = document.getElementById('input-potencia-kwp');
+  const sugestaoEl = document.getElementById('sugestao-equipamento');
+  if (!inputConsumo || !inputPotencia || !sugestaoEl) return;
+
+  async function buscarSugestao(consumoKwh) {
+    const r = await fetch('/dashboard/propostas/sugestao-equipamento?consumo=' + encodeURIComponent(consumoKwh));
+    const j = await r.json();
+    return j.ok ? j.sugestao : null;
+  }
+
+  // Opção B: nunca preenche a Potência sozinho — só sugere, com botão "usar"
+  // pro vendedor decidir. Evita trocar um número que ele não escolheu.
+  function mostrarSugestao(sugestao) {
+    sugestaoEl.innerHTML = '💡 Sugestão: ' + sugestao.kWpReal + ' kWp (' + sugestao.quantidadePaineis + ' painéis) ' +
+      '<button type="button" id="btn-usar-sugestao" class="underline text-cyan-300 hover:text-cyan-200">usar</button>';
+    document.getElementById('btn-usar-sugestao').addEventListener('click', () => {
+      inputPotencia.value = sugestao.kWpReal;
+    });
+  }
+
+  let timer;
+  inputConsumo.addEventListener('input', () => {
+    clearTimeout(timer);
+    const consumo = Number(inputConsumo.value);
+    if (!consumo || consumo <= 0) { sugestaoEl.textContent = ''; return; }
+    timer = setTimeout(async () => {
+      const sugestao = await buscarSugestao(consumo);
+      if (sugestao) mostrarSugestao(sugestao);
+    }, 400); // espera 400ms sem digitar antes de buscar
+  });
+})();
+</script>`;
+
+  return renderLayout({ active: 'clientes', title: tituloPagina, body, dark: true, scripts });
 }
 
 export function renderPreviewProposta(input: {
