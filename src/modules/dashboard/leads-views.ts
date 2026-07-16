@@ -454,42 +454,8 @@ function renderMsgCopiloto(m: { role: 'user' | 'assistant'; conteudo: string }):
   return `<div class="text-sm bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 mr-8 whitespace-pre-wrap">${escapeHtml(m.conteudo)}<div class="mt-1"><button type="button" onclick="ia_copiarTexto(this)" class="text-xs text-indigo-600 hover:underline">📋 Copiar</button></div></div>`;
 }
 
-// Mensagem do resultado do envio do documento pelo WhatsApp (?envio= na URL).
-function envioBanner(resultado: string): string {
-  const box = (cls: string, txt: string) => `<div class="text-xs px-3 py-2 rounded-lg border ${cls}">${txt}</div>`;
-  if (!resultado) return '';
-  if (resultado === 'ok-cliente') return box('bg-emerald-50 text-emerald-700 border-emerald-200', '✅ Documento enviado pro zap do cliente!');
-  if (resultado === 'ok-eu') return box('bg-emerald-50 text-emerald-700 border-emerald-200', '✅ Documento enviado pro seu zap!');
-  if (resultado === 'semzap') return box('bg-amber-50 text-amber-700 border-amber-200', 'Sem telefone pra enviar.');
-  if (resultado === 'off') return box('bg-amber-50 text-amber-700 border-amber-200', 'Envio por WhatsApp indisponível (config).');
-  if (resultado === 'erro') return box('bg-rose-50 text-rose-700 border-rose-200', 'Não consegui enviar (o cliente pode estar fora da janela de 24h do WhatsApp). Manda pro seu zap e encaminha.');
-  return '';
-}
-
-// Mensagem do resultado da leitura de documentos por IA (?docs= na URL).
-function docsBanner(resultado: string): string {
-  const box = (cls: string, txt: string) =>
-    `<div class="text-xs px-3 py-2 rounded-lg border ${cls}">${txt}</div>`;
-  if (!resultado) return '';
-  if (resultado === 'erro') return box('bg-rose-50 text-rose-700 border-rose-200', 'Não consegui ler os documentos agora. Tenta de novo ou preenche na mão — o contrato gera do mesmo jeito.');
-  if (resultado === 'vazio') return box('bg-amber-50 text-amber-700 border-amber-200', 'Nenhum arquivo enviado.');
-  if (resultado === 'off') return box('bg-amber-50 text-amber-700 border-amber-200', 'Leitura por IA indisponível (config).');
-  const n = parseInt(resultado, 10);
-  if (Number.isFinite(n) && n > 0) return box('bg-emerald-50 text-emerald-700 border-emerald-200', `✅ IA preencheu ${n} campo(s) do cadastro. Confere e gera o contrato!`);
-  if (n === 0) return box('bg-amber-50 text-amber-700 border-amber-200', 'Li os documentos, mas não achei dado novo pra preencher.');
-  return '';
-}
-
-// Botãozinho de enviar doc pelo zap (form POST com tipo+destino). Envio pro
-// cliente pede confirmação (vai direto pro WhatsApp dele).
-function docEnvioBtn(leadId: string, tipo: 'contrato' | 'procuracao', destino: 'cliente' | 'eu', label: string, cls: string): string {
-  const confirmar = destino === 'cliente' ? ` onsubmit="return confirm('Enviar direto pro WhatsApp do cliente?')"` : '';
-  return `<form method="POST" action="/dashboard/leads/${leadId}/enviar-doc" class="inline"${confirmar}>
-      <input type="hidden" name="tipo" value="${tipo}" />
-      <input type="hidden" name="destino" value="${destino}" />
-      <button class="px-2.5 py-1 rounded-md text-xs ${cls}">${label}</button>
-    </form>`;
-}
+// (docsBanner / envioBanner / docEnvioBtn removidos 15/07: o contrato saiu da ficha
+//  do lead e mora na Central de Contratos — essas telas de doc não vivem mais aqui.)
 
 export function renderLeadDetailPage(
   lead: LeadDetail,
@@ -537,85 +503,83 @@ export function renderLeadDetailPage(
         })
         .join('')}</ul>`;
 
+  // Já é venda? (não mostra "Fechou!" de novo — mostra que já registrou)
+  const jaVenda = ['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido']
+    .includes(String((lead as any).installation_status ?? ''));
+  const dataVenda = (lead as any).contract_signed_at
+    ? new Date((lead as any).contract_signed_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+    : '';
+  const hojeStr = new Date().toISOString().slice(0, 10);
+
   const acoes = `
-    <div class="mt-4 space-y-3">
-      <!-- Bloco 1: Eva on/off + cadência -->
-      <div class="flex flex-wrap gap-2">
-        ${lead.eva_active
-          ? `<form method="POST" action="/dashboard/leads/${lead.id}/pause-eva">
-              <button class="px-3 py-1.5 rounded-lg text-sm bg-slate-200 text-slate-800 hover:bg-slate-300">🚫 Pausar Eva</button>
-            </form>`
-          : `<form method="POST" action="/dashboard/leads/${lead.id}/resume-eva">
-              <button class="px-3 py-1.5 rounded-lg text-sm bg-emerald-600 text-white hover:bg-emerald-700">▶️ Reativar Eva</button>
-            </form>`}
-        ${!lead.has_cadence_pending && !lead.opt_out
-          ? `<form method="POST" action="/dashboard/leads/${lead.id}/start-cadence">
-              <button class="px-3 py-1.5 rounded-lg text-sm bg-amber-600 text-white hover:bg-amber-700">📅 Iniciar cadência</button>
-            </form>`
-          : ''}
-        ${lead.has_cadence_pending
-          ? `<form method="POST" action="/dashboard/leads/${lead.id}/cancel-cadence" onsubmit="return confirm('Cancelar todos os toques pendentes?')">
-              <button class="px-3 py-1.5 rounded-lg text-sm bg-rose-100 text-rose-800 hover:bg-rose-200">❌ Cancelar cadência</button>
-            </form>`
-          : ''}
-        ${!lead.opt_out
-          ? `<form method="POST" action="/dashboard/leads/${lead.id}/opt-out" onsubmit="return confirm('Marcar que esse contato pediu pra parar? A Eva nunca mais conversa com ele.')">
-              <button class="px-3 py-1.5 rounded-lg text-sm bg-slate-100 text-slate-700 hover:bg-slate-200">🚪 Pediu pra parar</button>
-            </form>`
-          : `<form method="POST" action="/dashboard/leads/${lead.id}/opt-in">
-              <button class="px-3 py-1.5 rounded-lg text-sm bg-emerald-100 text-emerald-800 hover:bg-emerald-200">↩️ Voltar a receber</button>
-            </form>`}
-        <a href="/dashboard/leads/${lead.id}" class="px-3 py-1.5 rounded-lg text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50">🔄 Atualizar</a>
+    <div class="mt-4 space-y-4">
+      <!-- Card: Atendimento (Eva) — quem fala com o cliente -->
+      <div class="rounded-xl border border-slate-200 bg-white p-4">
+        <div class="text-sm font-bold text-slate-800 mb-3">🟢 Atendimento (Eva)</div>
+        <div class="flex flex-wrap gap-2">
+          ${lead.eva_active
+            ? `<form method="POST" action="/dashboard/leads/${lead.id}/pause-eva">
+                <button class="px-3 py-1.5 rounded-lg text-sm bg-slate-200 text-slate-800 hover:bg-slate-300">🚫 Pausar Eva</button>
+              </form>`
+            : `<form method="POST" action="/dashboard/leads/${lead.id}/resume-eva">
+                <button class="px-3 py-1.5 rounded-lg text-sm bg-emerald-600 text-white hover:bg-emerald-700">▶️ Reativar Eva</button>
+              </form>`}
+          ${!lead.has_cadence_pending && !lead.opt_out
+            ? `<form method="POST" action="/dashboard/leads/${lead.id}/start-cadence">
+                <button class="px-3 py-1.5 rounded-lg text-sm bg-amber-600 text-white hover:bg-amber-700">📅 Iniciar cadência</button>
+              </form>`
+            : ''}
+          ${lead.has_cadence_pending
+            ? `<form method="POST" action="/dashboard/leads/${lead.id}/cancel-cadence" onsubmit="return confirm('Cancelar todos os toques pendentes?')">
+                <button class="px-3 py-1.5 rounded-lg text-sm bg-rose-100 text-rose-800 hover:bg-rose-200">❌ Cancelar cadência</button>
+              </form>`
+            : ''}
+          ${!lead.opt_out
+            ? `<form method="POST" action="/dashboard/leads/${lead.id}/opt-out" onsubmit="return confirm('Marcar que esse contato pediu pra parar? A Eva nunca mais conversa com ele.')">
+                <button class="px-3 py-1.5 rounded-lg text-sm bg-slate-100 text-slate-700 hover:bg-slate-200">🚪 Pediu pra parar</button>
+              </form>`
+            : `<form method="POST" action="/dashboard/leads/${lead.id}/opt-in">
+                <button class="px-3 py-1.5 rounded-lg text-sm bg-emerald-100 text-emerald-800 hover:bg-emerald-200">↩️ Voltar a receber</button>
+              </form>`}
+          <a href="/dashboard/leads/${lead.id}" class="px-3 py-1.5 rounded-lg text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50">🔄 Atualizar</a>
+        </div>
       </div>
 
-      <!-- Bloco Documentos: IA lê conta+CNH → preenche → gera PDF → envia (sempre gera) -->
-      <div class="space-y-2 pt-1">
-        ${docsBanner(docsResultado)}
-        ${envioBanner(envioResultado)}
-        <form method="POST" action="/dashboard/leads/${lead.id}/ler-documentos" enctype="multipart/form-data" class="flex flex-wrap gap-2 items-center">
-          <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">🤖 Ler documentos:</span>
-          <input type="file" name="docs" accept="image/*,application/pdf" multiple
-            class="text-xs text-slate-600 file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-violet-100 file:text-violet-800 file:cursor-pointer" />
-          <button class="px-3 py-1.5 rounded-lg text-sm bg-violet-600 text-white hover:bg-violet-700">Ler conta + CNH e preencher</button>
+      <!-- Card: Venda — fechar a venda + ir pro contrato + nome. (Mover pelo funil é
+           papel do Kanban; contrato mora na Central — aqui só o atalho.) -->
+      <div class="rounded-xl border border-slate-200 bg-white p-4">
+        <div class="text-sm font-bold text-slate-800 mb-3">🎯 Venda</div>
+        ${jaVenda
+          ? `<div class="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">✔ Venda registrada${dataVenda ? ` em ${dataVenda}` : ''}.</div>`
+          : `<form method="POST" action="/dashboard/leads/${lead.id}/fechou" class="flex flex-wrap gap-2 items-end">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Tipo</label>
+                <select name="tipo" class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
+                  <option value="sistema">🔆 Sistema</option>
+                  <option value="servico">🔧 Serviço</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Valor (R$)</label>
+                <input name="valor" type="number" step="0.01" min="0" placeholder="opcional" class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm w-28" />
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Data</label>
+                <input name="data" type="date" value="${hojeStr}" class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
+              </div>
+              <button class="px-4 py-2 rounded-lg text-sm bg-emerald-600 text-white font-semibold hover:bg-emerald-700">✅ Fechou! (registrar venda)</button>
+            </form>`}
+        <div class="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2">
+          <a href="/dashboard/leads/${lead.id}/contrato-form?tipo=fv" class="px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700 font-semibold">📄 Fazer contrato →</a>
+          <span class="text-xs text-slate-400">abre o formulário na Central com esse cliente (ler conta+CNH, preencher, gerar, enviar).</span>
+        </div>
+        <form method="POST" action="/dashboard/leads/${lead.id}/edit-name" class="flex flex-wrap gap-2 items-center mt-3 pt-3 border-t border-slate-100">
+          <span class="text-xs text-slate-500 mr-1">Nome:</span>
+          <input type="text" name="name" value="${escapeHtml(lead.name ?? '')}" placeholder="Nome do cliente"
+            class="px-2.5 py-1 rounded-md text-sm border border-slate-300 w-64" />
+          <button class="px-3 py-1 rounded-md text-xs bg-slate-700 text-white hover:bg-slate-800">✏️ Salvar</button>
         </form>
-        <div class="flex flex-wrap gap-2 items-center">
-          <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">📄 Gerar:</span>
-          <a href="/dashboard/leads/${lead.id}/contrato.pdf" target="_blank" class="px-3 py-1.5 rounded-lg text-sm bg-indigo-600 text-white hover:bg-indigo-700">📄 Contrato</a>
-          <a href="/dashboard/leads/${lead.id}/procuracao.pdf" target="_blank" class="px-3 py-1.5 rounded-lg text-sm bg-indigo-100 text-indigo-800 hover:bg-indigo-200">🖊️ Procuração</a>
-        </div>
-        <div class="flex flex-wrap gap-2 items-center">
-          <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">📤 Enviar no zap:</span>
-          ${docEnvioBtn(lead.id, 'contrato', 'cliente', '📄 Contrato → cliente', 'bg-emerald-600 text-white hover:bg-emerald-700')}
-          ${docEnvioBtn(lead.id, 'contrato', 'eu', '📄 Contrato → meu zap', 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200')}
-          ${docEnvioBtn(lead.id, 'procuracao', 'cliente', '🖊️ Procuração → cliente', 'bg-emerald-600 text-white hover:bg-emerald-700')}
-          ${docEnvioBtn(lead.id, 'procuracao', 'eu', '🖊️ Procuração → meu zap', 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200')}
-        </div>
       </div>
-
-      <!-- Bloco 2: Mudar status -->
-      <div class="flex flex-wrap gap-2 items-center">
-        <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">Status:</span>
-        ${['novo', 'qualificando', 'agendado', 'transferido', 'perdido']
-          .map((s) => {
-            const isCurrent = lead.status === s;
-            const cls = isCurrent
-              ? 'bg-indigo-600 text-white'
-              : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50';
-            return `<form method="POST" action="/dashboard/leads/${lead.id}/set-status" class="inline">
-                <input type="hidden" name="status" value="${s}" />
-                <button class="px-2.5 py-1 rounded-md text-xs ${cls}" ${isCurrent ? 'disabled' : ''}>${escapeHtml(s)}</button>
-              </form>`;
-          })
-          .join('')}
-      </div>
-
-      <!-- Bloco 3: Editar nome -->
-      <form method="POST" action="/dashboard/leads/${lead.id}/edit-name" class="flex flex-wrap gap-2 items-center">
-        <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold mr-1">Nome:</span>
-        <input type="text" name="name" value="${escapeHtml(lead.name ?? '')}" placeholder="Nome do cliente"
-          class="px-2.5 py-1 rounded-md text-sm border border-slate-300 w-64" />
-        <button class="px-3 py-1 rounded-md text-xs bg-slate-700 text-white hover:bg-slate-800">✏️ Salvar</button>
-      </form>
 
       <!-- Bloco IA: Copiloto de vendas CONVERSACIONAL (histórico salvo por lead) -->
       <div class="pt-2 border-t border-slate-100">

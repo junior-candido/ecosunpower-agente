@@ -21,11 +21,16 @@ export interface ContratosPageInput {
   q: string;
   buscou: boolean;
   resultados: ContratoCliente[];
+  /** Clientes recentes (fecharam / viraram cliente) — a lista que abre por padrão,
+   *  pra NÃO ser só uma caixa de busca cega. */
+  recentes?: ContratoCliente[];
   /** Os tipos de contrato registrados na central (vêm do contratos-registry). */
   tipos: TipoContratoItem[];
   docsResultado?: string;
   envioResultado?: string;
   driveResultado?: string;
+  /** Resultado do "criar contrato manual" (faltou/erro) — pra não falhar calado. */
+  novoResultado?: string;
   user?: any;
 }
 
@@ -124,33 +129,71 @@ function cardCliente(c: ContratoCliente, tipos: TipoContratoItem[]): string {
   </div>`;
 }
 
+/** Bloco "criar do zero": cliente novo/fora do sistema → cria o cadastro e cai
+ *  DIRETO no formulário pra preencher na mão. Não depende de proposta nem de IA —
+ *  é o caminho manual garantido (contrato é receita: não pode travar). */
+function blocoCriarManual(): string {
+  return `
+    <div class="mb-6 rounded-xl border-2 border-emerald-200 bg-emerald-50/60 p-4">
+      <div class="font-semibold text-slate-800">➕ Criar contrato manual</div>
+      <div class="text-xs text-slate-500 mb-3">Cliente novo ou fora do sistema? Cria aqui e cai direto no formulário pra preencher na mão — não precisa de proposta nem de IA.</div>
+      <form method="post" action="/dashboard/contratos/novo" class="flex flex-wrap gap-2 items-end">
+        <div class="flex-1 min-w-[160px]">
+          <label class="block text-xs text-slate-500 mb-1">Nome do cliente</label>
+          <input name="name" required placeholder="Nome completo"
+            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div class="min-w-[150px]">
+          <label class="block text-xs text-slate-500 mb-1">WhatsApp</label>
+          <input name="phone" required placeholder="5561999999999"
+            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <button class="bg-emerald-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-emerald-700 text-sm">Criar e preencher →</button>
+      </form>
+    </div>`;
+}
+
 export function renderContratosPage(input: ContratosPageInput): string {
-  const { q, buscou, resultados, tipos, docsResultado = '', envioResultado = '', driveResultado = '', user } = input;
+  const { q, buscou, resultados, recentes = [], tipos, docsResultado = '', envioResultado = '', driveResultado = '', novoResultado = '', user } = input;
+
+  const avisoNovo = novoResultado === 'faltou'
+    ? `<div class="mb-4 text-sm px-4 py-3 rounded-lg border bg-amber-50 border-amber-300 text-amber-800">Pra criar o contrato manual, preencha o <strong>nome</strong> e o <strong>telefone</strong> do cliente.</div>`
+    : novoResultado === 'erro'
+    ? `<div class="mb-4 text-sm px-4 py-3 rounded-lg border bg-rose-50 border-rose-300 text-rose-800">Não consegui criar o cliente agora. Confere o telefone (só números) e tenta de novo.</div>`
+    : '';
 
   const busca = `
     <form method="get" action="/dashboard/contratos" class="flex flex-wrap gap-2 items-end mb-6">
       <div class="flex-1 min-w-[220px]">
-        <label class="block text-sm text-slate-600 mb-1">Nome do cliente</label>
-        <input name="q" value="${escapeHtml(q)}" autofocus placeholder="Digite o nome e busque..."
+        <label class="block text-sm text-slate-600 mb-1">Buscar por nome ou telefone</label>
+        <input name="q" value="${escapeHtml(q)}" placeholder="Nome ou telefone do cliente..."
           class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-400 outline-none" />
       </div>
       <button class="bg-slate-900 text-white px-5 py-2 rounded-lg font-semibold hover:bg-slate-800">🔎 Buscar</button>
     </form>`;
 
   let lista = '';
-  if (buscou && resultados.length === 0) {
-    lista = `<div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-amber-800">Nenhum cliente com "<strong>${escapeHtml(q)}</strong>".</div>`;
-  } else if (resultados.length > 0) {
-    lista = resultados.map((c) => cardCliente(c, tipos)).join('\n');
+  if (buscou) {
+    // com busca: mostra o resultado do filtro
+    lista = resultados.length > 0
+      ? resultados.map((c) => cardCliente(c, tipos)).join('\n')
+      : `<div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-amber-800">Nenhum cliente com "<strong>${escapeHtml(q)}</strong>". Tenta outro trecho do nome, o telefone, ou crie manual acima.</div>`;
+  } else {
+    // sem busca: abre com a LISTA de clientes recentes (não é caixa cega)
+    lista = recentes.length > 0
+      ? `<div class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">Clientes recentes</div>${recentes.map((c) => cardCliente(c, tipos)).join('\n')}`
+      : `<div class="rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 text-slate-500 text-sm">Ainda não há clientes recentes. Busque acima ou crie um contrato manual.</div>`;
   }
 
   const body = `
   <div class="max-w-3xl mx-auto">
     <div class="mb-5">
       <h1 class="text-2xl font-bold text-slate-900">📄 Central de Contratos</h1>
-      <p class="text-slate-500 mt-1">Busca o cliente, escolhe o tipo de contrato, confere os campos (a IA já preenche o que dá, lendo a conta de luz e a CNH) e gera o PDF — pra baixar, mandar no zap ou salvar no Drive. Sempre gera: o que faltar sai como espaço em branco.</p>
+      <p class="text-slate-500 mt-1">Escolhe o cliente, o tipo de contrato, confere os campos e gera o PDF — pra baixar, mandar no zap ou salvar no Drive. A IA <strong>ajuda</strong> lendo a conta de luz e a CNH, mas o preenchimento é seu: <strong>sempre gera</strong>, o que faltar sai em branco.</p>
     </div>
     ${bannerContratos(docsResultado, envioResultado, driveResultado)}
+    ${avisoNovo}
+    ${blocoCriarManual()}
     ${busca}
     ${lista}
   </div>`;

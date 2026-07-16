@@ -104,27 +104,53 @@ export function normalizarNomeBusca(s: string): string {
 }
 
 export async function searchLeadByName(sb: SupabaseClient, term: string): Promise<LeadRow[]> {
-  // 1) ilike direto (rápido). NÃO exclui mais 'transferido': /fechar/contrato é
-  // justamente pra quem virou cliente. Só exclui 'inativo' (lixo).
+  // Acha o lead por NOME ou TELEFONE, sem perder ninguém — é a MESMA porta que a
+  // Eva /fechei usa, agora reusada pela Central de Contratos e pela tela "Fechou!".
+  const encontrados = new Map<string, LeadRow>();
+  const juntar = (rows: LeadRow[] | null | undefined) => {
+    for (const r of rows ?? []) if (r?.id) encontrados.set(r.id, r);
+  };
+  // Filtro de status que NÃO derruba lead sem etapa: o `.not('status','in','(inativo)')`
+  // antigo excluía também status NULL (no Postgres `NULL IN (...)` é NULL → `NOT NULL`
+  // é NULL → a linha some). Um lead recém-criado sem etapa sumia da busca. Aqui:
+  // status é NULL OU diferente de 'inativo'.
+  const naoInativo = 'status.is.null,status.neq.inativo';
+
+  // 1) ilike direto no nome (rápido).
   const direct = await sb
     .from('leads')
     .select('*')
     .ilike('name', `%${term}%`)
-    .not('status', 'in', '(inativo)')
+    .or(naoInativo)
     .order('created_at', { ascending: false })
     .limit(10);
   if (direct.error) throw direct.error;
-  const rows = (direct.data as LeadRow[]) ?? [];
-  if (rows.length > 0) return rows;
+  juntar(direct.data as LeadRow[]);
 
-  // 2) fallback IGNORANDO ACENTO: o ilike é sensível a acento ("Marcio" não acha
+  // 2) TELEFONE: quando o termo tem dígitos suficientes, busca também por telefone
+  // (tolera prefixo — últimos 9 dígitos), igual ao /fechei da Eva. Cliente digitado
+  // como número não some só por não bater o nome do perfil do WhatsApp.
+  const digitos = term.replace(/\D/g, '');
+  if (digitos.length >= 8) {
+    const porTelefone = await sb
+      .from('leads')
+      .select('*')
+      .ilike('phone', `%${digitos.slice(-9)}`)
+      .limit(10);
+    if (porTelefone.error) throw porTelefone.error;
+    juntar(porTelefone.data as LeadRow[]);
+  }
+
+  if (encontrados.size > 0) return [...encontrados.values()].slice(0, 10);
+
+  // 3) fallback IGNORANDO ACENTO: o ilike é sensível a acento ("Marcio" não acha
   // "Márcio"). Busca um lote recente e filtra no JS por nome normalizado.
   const termN = normalizarNomeBusca(term);
   if (!termN) return [];
   const recent = await sb
     .from('leads')
     .select('*')
-    .not('status', 'in', '(inativo)')
+    .or(naoInativo)
     .order('created_at', { ascending: false })
     .limit(400);
   if (recent.error) throw recent.error;

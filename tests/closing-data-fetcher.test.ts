@@ -5,36 +5,33 @@ import { leadCamilaRow, propostaPublicaCamilaRow } from './fixtures/closing-cami
 
 function mockSupabase(opts: {
   leadById?: any;
-  leadsByName?: any[];  // resultado do ilike direto
-  leadsRecent?: any[];  // lote recente do fallback (sem ilike)
+  leadsByName?: any[];   // resultado do ilike no nome
+  leadsByPhone?: any[];  // resultado do ilike no telefone
+  leadsRecent?: any[];   // lote recente do fallback (sem ilike)
   propostas?: any[];
 }) {
   return {
     from: (table: string) => {
       if (table === 'leads') {
-        return {
-          select: () => ({
-            eq: (_col: string, _val: string) => ({
-              maybeSingle: async () => ({ data: opts.leadById ?? null, error: null }),
-            }),
-            ilike: (_col: string, _val: string) => ({
-              not: (_c: string, _o: string, _v: string) => ({
-                order: () => ({
-                  limit: () => ({ data: opts.leadsByName ?? [], error: null }),
-                }),
-              }),
-              order: () => ({
-                limit: () => ({ data: opts.leadsByName ?? [], error: null }),
-              }),
-            }),
-            // Fallback do searchLeadByName (sem ilike): select().not().order().limit()
-            not: (_c: string, _o: string, _v: string) => ({
-              order: () => ({
-                limit: () => ({ data: opts.leadsRecent ?? [], error: null }),
-              }),
-            }),
+        // Builder encadeável: lembra em QUAL coluna o ilike caiu pra devolver o
+        // dataset certo no limit() (nome / telefone / fallback recente).
+        let ilikeCol: string | null = null;
+        const b: any = {
+          select: () => b,
+          eq: (_col: string, _val: string) => ({
+            maybeSingle: async () => ({ data: opts.leadById ?? null, error: null }),
           }),
+          ilike: (col: string, _val: string) => { ilikeCol = col; return b; },
+          or: (_expr: string) => b,
+          order: () => b,
+          limit: async () => {
+            const data = ilikeCol === 'phone' ? (opts.leadsByPhone ?? [])
+              : ilikeCol === 'name' ? (opts.leadsByName ?? [])
+              : (opts.leadsRecent ?? []); // sem ilike = fallback recente
+            return { data, error: null };
+          },
         };
+        return b;
       }
       if (table === 'propostas_publicas') {
         return {
@@ -104,6 +101,22 @@ describe('closing-data-fetcher', () => {
   it('searchLeadByName: ilike direto acha → não usa fallback', async () => {
     const sb = mockSupabase({ leadsByName: [leadCamilaRow], leadsRecent: [] });
     const res = await searchLeadByName(sb, 'Camila');
+    expect(res).toHaveLength(1);
+  });
+
+  it('searchLeadByName: acha por TELEFONE quando o termo é número (não só nome)', async () => {
+    // nome não bate (perfil do WhatsApp é outro), mas o telefone acha
+    const sb = mockSupabase({ leadsByName: [], leadsByPhone: [{ ...leadCamilaRow, id: 'tel-1' }] });
+    const res = await searchLeadByName(sb, '5561998800770');
+    expect(res).toHaveLength(1);
+    expect(res[0].id).toBe('tel-1');
+  });
+
+  it('searchLeadByName: nome E telefone juntos deduplicam pelo id', async () => {
+    const mesmo = { ...leadCamilaRow, id: 'dup-1' };
+    const sb = mockSupabase({ leadsByName: [mesmo], leadsByPhone: [mesmo] });
+    // termo com dígitos suficientes dispara as duas buscas; o mesmo lead não repete
+    const res = await searchLeadByName(sb, 'Camila 5561998800770');
     expect(res).toHaveLength(1);
   });
 
