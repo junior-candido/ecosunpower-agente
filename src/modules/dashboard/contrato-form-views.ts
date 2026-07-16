@@ -417,12 +417,16 @@ export function renderContratoFormPage(page: ContratoFormInput): string {
       <input type="hidden" name="tipo" value="${escapeHtml(def.tipo)}" />
       ${congelar(page)}
 
-      <div class="mb-4">
+      <!-- MANUAL EM 1º PLANO (Junior 15/07): contrato é receita, não pode depender
+           da IA. Preencher os campos + gerar é o caminho principal; a IA é ajuda
+           OPCIONAL (botão secundário, não o grandão do topo). -->
+      <div class="mb-4 rounded-lg bg-slate-50 border border-slate-200 p-3">
+        <div class="text-sm text-slate-700 mb-2">📝 <strong>Preencha os campos abaixo e gere o PDF.</strong> O contrato sai sempre — o que faltar fica em branco pra completar na mão.</div>
         <button formaction="/dashboard/leads/${page.leadId}/contrato-ia"
-          class="w-full sm:w-auto px-5 py-2.5 rounded-lg font-semibold bg-violet-600 text-white hover:bg-violet-700">
-          🤖 IA: procurar o que falta e revisar o contrato
+          class="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-violet-300 text-violet-700 hover:bg-violet-50">
+          🤖 IA (opcional): procurar o que falta e revisar
         </button>
-        <span class="block sm:inline sm:ml-3 text-sm text-slate-500 mt-2 sm:mt-0">Ela procura no cadastro, na proposta e na conversa do zap — e aponta o que está errado. <strong>Ela não preenche nada sozinha</strong>: sugere, e você decide.</span>
+        <span class="block sm:inline sm:ml-2 text-xs text-slate-500 mt-1 sm:mt-0">Sugere (não preenche sozinha) e aponta erros. Se a IA cair, o contrato gera do mesmo jeito.</span>
       </div>
 
       ${revisaoIa(page)}

@@ -6,7 +6,7 @@ import { renderLayout, escapeHtml, formatDate } from './views.js';
 
 export interface PropostaAberta {
   leadId: string;
-  propostaId: string;
+  propostaId: string | null; // null quando o cliente fechou SEM proposta publicada
   clienteNome: string;
   numeroProposta: string | null;
   createdAt: string | null;
@@ -34,8 +34,8 @@ export function renderFecharVendaPage(input: FecharVendaInput): string {
   const busca = `
     <form method="get" action="/dashboard/vendas/fechar" class="flex flex-wrap gap-2 items-end mb-6">
       <div class="flex-1 min-w-[220px]">
-        <label class="block text-sm text-slate-600 mb-1">Nome do cliente</label>
-        <input name="q" value="${escapeHtml(q)}" autofocus placeholder="Digite o nome e busque..."
+        <label class="block text-sm text-slate-600 mb-1">Nome ou telefone do cliente</label>
+        <input name="q" value="${escapeHtml(q)}" autofocus placeholder="Nome ou telefone e busque..."
           class="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-amber-400 outline-none" />
       </div>
       <button class="bg-slate-900 text-white px-5 py-2 rounded-lg font-semibold hover:bg-slate-800">🔎 Buscar</button>
@@ -44,7 +44,7 @@ export function renderFecharVendaPage(input: FecharVendaInput): string {
   let lista = '';
   if (buscou && resultados.length === 0) {
     lista = `<div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-amber-800">
-      Nenhuma proposta encontrada com "<strong>${escapeHtml(q)}</strong>". Confira o nome ou gere a proposta antes.
+      Nenhum cliente encontrado com "<strong>${escapeHtml(q)}</strong>". Tenta outro trecho do nome, ou o telefone.
     </div>`;
   } else if (resultados.length > 0) {
     lista = resultados.map((r) => cardProposta(r, hoje)).join('\n');
@@ -54,7 +54,7 @@ export function renderFecharVendaPage(input: FecharVendaInput): string {
   <div class="max-w-3xl mx-auto">
     <div class="mb-5">
       <h1 class="text-2xl font-bold text-slate-900">💰 Fechou!</h1>
-      <p class="text-slate-500 mt-1">Registre o momento exato que a venda fechou. Busque o cliente pela proposta, clique na certa e pronto — o Elo e as métricas atualizam na hora.</p>
+      <p class="text-slate-500 mt-1">Registre o momento exato que a venda fechou. Busque o cliente pelo <strong>nome ou telefone</strong> (com ou sem proposta), clique e pronto — o Elo e as métricas atualizam na hora.</p>
     </div>
     ${banner}
     ${busca}
@@ -66,13 +66,18 @@ export function renderFecharVendaPage(input: FecharVendaInput): string {
 
 function cardProposta(r: PropostaAberta, hoje: string): string {
   const data = r.createdAt ? formatDate(r.createdAt) : '—';
-  const numero = r.numeroProposta ? `Proposta ${escapeHtml(r.numeroProposta)}` : 'Proposta';
+  // Sem proposta publicada é OK (fechou por indicação/venda direta): mostra "sem proposta"
+  // em vez de fingir que tem uma. Com proposta, mostra o número.
+  const numero = r.numeroProposta ? `Proposta ${escapeHtml(r.numeroProposta)}`
+    : (r.propostaId ? 'Proposta' : 'Sem proposta');
+  // "· enviada {data}" só faz sentido quando existe proposta.
+  const sub = r.propostaId ? `${numero} · enviada ${data}` : numero;
 
   if (r.jaVenda) {
     return `<div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 mb-3 flex items-center justify-between">
       <div>
         <div class="font-semibold text-slate-800">${escapeHtml(r.clienteNome)}</div>
-        <div class="text-xs text-slate-500">${numero} · enviada ${data}</div>
+        <div class="text-xs text-slate-500">${sub}</div>
       </div>
       <span class="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2 py-1 rounded-full">✔ já é venda</span>
     </div>`;
@@ -81,11 +86,11 @@ function cardProposta(r: PropostaAberta, hoje: string): string {
   return `<form method="post" action="/dashboard/vendas/registrar"
       class="rounded-xl border border-slate-200 bg-white px-4 py-4 mb-3 shadow-sm">
     <input type="hidden" name="leadId" value="${escapeHtml(r.leadId)}" />
-    <input type="hidden" name="propostaId" value="${escapeHtml(r.propostaId)}" />
+    <input type="hidden" name="propostaId" value="${escapeHtml(r.propostaId ?? '')}" />
     <input type="hidden" name="nome" value="${escapeHtml(r.clienteNome)}" />
     <div class="mb-3">
       <div class="font-semibold text-slate-900">${escapeHtml(r.clienteNome)}</div>
-      <div class="text-xs text-slate-500">${numero} · enviada ${data}</div>
+      <div class="text-xs text-slate-500">${sub}</div>
     </div>
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
       <div>

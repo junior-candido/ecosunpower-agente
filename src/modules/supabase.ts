@@ -1976,16 +1976,21 @@ export class SupabaseService {
     concessionaria?: string | null;
     consumo_medio_kwh?: number | null;
     profile?: 'residencial' | 'comercial' | 'rural' | 'industrial' | 'indefinido' | null;
+    /** Empresa dona do lead. Sem isso o cliente nasce na EcoSun (#1) e some das
+     *  telas de outra empresa (multi-tenant). Default EcoSun quando não vem. */
+    companyId?: string | null;
   }): Promise<{ ok: boolean; lead_id?: string; error?: string }> {
     // Confere se já existe lead com mesmo telefone (evita duplicata)
     const phoneClean = String(input.phone).replace(/\D/g, '');
     if (!phoneClean) return { ok: false, error: 'Telefone obrigatório' };
 
-    const { data: existente } = await this.client
-      .from('leads')
-      .select('id, name')
-      .eq('phone', phoneClean)
-      .maybeSingle();
+    // Duplicata é POR EMPRESA: a MESMA pessoa pode ser cliente de dois integradores
+    // (multi-tenant). Sem escopar, criar cliente na Empresa B trava porque o telefone
+    // existe na Empresa A. `.limit(1)` (não maybeSingle) pra não estourar com duplicata.
+    let dedup = this.client.from('leads').select('id, name').eq('phone', phoneClean).limit(1);
+    if (input.companyId) dedup = dedup.eq('company_id', input.companyId);
+    const { data: existentes } = await dedup;
+    const existente = (existentes ?? [])[0];
     if (existente) {
       return { ok: false, error: `Já existe cliente com esse telefone: ${existente.name ?? 'sem nome'}` };
     }
@@ -2002,9 +2007,10 @@ export class SupabaseService {
         concessionaria: input.concessionaria ?? null,
         consumo_medio_kwh: input.consumo_medio_kwh ?? null,
         profile: input.profile ?? 'indefinido',
-        // Empresa dona do lead (default EcoSun, single-tenant). Sem isso o
-        // cliente some das telas filtradas por company (Pós-venda, CRM).
-        company_id: '00000000-0000-0000-0000-000000000001',
+        // Empresa dona do lead. Vem do operador logado (multi-tenant); default
+        // EcoSun (#1) quando não informado. Sem isso o cliente some das telas
+        // filtradas por company (Pós-venda, CRM).
+        company_id: input.companyId ?? '00000000-0000-0000-0000-000000000001',
         installation_status: null,
         eva_active: false,
         opt_out: false,

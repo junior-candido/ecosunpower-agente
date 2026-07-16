@@ -1512,29 +1512,41 @@ export function createDashboardRouter(
       const buscou = q.length > 0;
       let resultados: PropostaAberta[] = [];
       if (buscou) {
-        const { data: props } = await supabase
-          .from('propostas_publicas')
-          .select('id, lead_id, cliente_nome, numero_proposta, created_at, revoked')
-          .ilike('cliente_nome', `%${q}%`)
-          .not('lead_id', 'is', null)
-          .order('created_at', { ascending: false })
-          .limit(20);
-        const linhas = (props ?? []).filter((p: any) => p.revoked !== true);
-        const leadIds = [...new Set(linhas.map((p: any) => p.lead_id))];
-        const statusPorLead = new Map<string, string | null>();
+        // Busca em LEADS (nome/telefone) — não só em propostas_publicas. Antes só
+        // achava quem tinha proposta PUBLICADA; quem fechou sem proposta (indicação,
+        // venda direta) ficava invisível e não dava pra registrar a venda.
+        const { searchLeadByName } = await import('../closing/closing-data-fetcher.js');
+        // searchLeadByName é service-role e company-blind (compartilhada com a Eva);
+        // filtra por empresa AQUI pra não expor lead de outra empresa na tela.
+        const cid = (req as AuthedRequest).dashUser?.companyId;
+        const leads = (await searchLeadByName(supabase, q))
+          .filter((l: any) => !cid || l.company_id === cid);
+        // Enriquece com a última proposta (nº + data) SÓ pra mostrar/pré-preencher —
+        // não é mais requisito pra aparecer.
+        const leadIds = leads.map((l: any) => l.id);
+        const propPorLead = new Map<string, any>();
         if (leadIds.length) {
-          const { data: leadsRows } = await supabase
-            .from('leads').select('id, installation_status').in('id', leadIds);
-          for (const l of (leadsRows ?? []) as any[]) statusPorLead.set(l.id, l.installation_status ?? null);
+          const { data: props } = await supabase
+            .from('propostas_publicas')
+            .select('id, lead_id, numero_proposta, created_at, revoked')
+            .in('lead_id', leadIds)
+            .order('created_at', { ascending: false });
+          for (const p of (props ?? []) as any[]) {
+            if (p.revoked === true) continue;
+            if (!propPorLead.has(p.lead_id)) propPorLead.set(p.lead_id, p);
+          }
         }
-        resultados = linhas.map((p: any) => ({
-          leadId: p.lead_id,
-          propostaId: p.id,
-          clienteNome: p.cliente_nome ?? '(sem nome)',
-          numeroProposta: p.numero_proposta ?? null,
-          createdAt: p.created_at ?? null,
-          jaVenda: CLIENTE_STATUSES.includes(String(statusPorLead.get(p.lead_id) ?? '')),
-        }));
+        resultados = leads.map((l: any) => {
+          const p = propPorLead.get(l.id);
+          return {
+            leadId: l.id,
+            propostaId: p?.id ?? null,
+            clienteNome: l.name ?? '(sem nome)',
+            numeroProposta: p?.numero_proposta ?? null,
+            createdAt: p?.created_at ?? l.created_at ?? null,
+            jaVenda: CLIENTE_STATUSES.includes(String(l.installation_status ?? '')),
+          };
+        });
       }
       res.send(renderFecharVendaPage({
         q, buscou, resultados, hoje,
@@ -1552,6 +1564,10 @@ export function createDashboardRouter(
       const leadId = String(req.body?.leadId ?? '').trim();
       const nome = String(req.body?.nome ?? '').trim();
       if (!UUID_RE.test(leadId)) return res.status(400).send('lead inválido');
+      // Trava de empresa: sem isso, com a busca agora varrendo TODOS os leads, um
+      // operador poderia registrar venda no lead de outra empresa (mesmo padrão do
+      // /leads/:id/fechou).
+      if (!(await leadDaEmpresa(req, leadId))) return res.status(404).send('Lead não encontrado');
       const tipo = req.body?.tipo === 'servico' ? 'servico' : 'sistema';
       const valorReais = parseFloat(String(req.body?.valor ?? '').replace(',', '.'));
       const kwp = parseFloat(String(req.body?.kwp ?? ''));
@@ -1676,6 +1692,7 @@ export function createDashboardRouter(
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
       const tipo = tipoDaCentral(req.query.tipo ?? tipoPadrao);
       const doc = await gerarDocBuffer(id, tipo);
       if (!doc) return res.status(404).send('Lead não encontrado');
@@ -2040,11 +2057,34 @@ export function createDashboardRouter(
     try {
       const q = String(req.query.q ?? '').trim();
       const buscou = q.length > 0;
+      const cid = (req as AuthedRequest).dashUser?.companyId;
       let resultados: ContratoCliente[] = [];
+      let recentes: ContratoCliente[] = [];
       if (buscou) {
         const { searchLeadByName } = await import('../closing/closing-data-fetcher.js');
-        const leads = await searchLeadByName(supabase, q);
+        // filtra por empresa (searchLeadByName é company-blind por ser compartilhada
+        // com a Eva) — não expor cliente de outra empresa na Central.
+        const leads = (await searchLeadByName(supabase, q))
+          .filter((l: any) => !cid || l.company_id === cid);
         resultados = leads.slice(0, 10).map((l: any) => ({
+          leadId: l.id,
+          nome: l.name ?? '(sem nome)',
+          status: l.installation_status ?? l.status ?? null,
+        }));
+      } else {
+        // Sem busca: abre com a LISTA de clientes recentes (quem virou cliente /
+        // fechou) — pra Central não ser só uma caixa cega. Filtro por company
+        // (mesma empresa do operador), como o resto do dashboard.
+        let rec = supabase
+          .from('leads')
+          .select('id, name, installation_status, status, updated_at')
+          .or(`installation_status.in.(${CLIENTE_STATUSES.join(',')}),status.eq.transferido`)
+          .is('archived_at', null)
+          .order('updated_at', { ascending: false })
+          .limit(12);
+        if (cid) rec = rec.eq('company_id', cid);
+        const { data: recData } = await rec;
+        recentes = (recData ?? []).map((l: any) => ({
           leadId: l.id,
           nome: l.name ?? '(sem nome)',
           status: l.installation_status ?? l.status ?? null,
@@ -2052,16 +2092,73 @@ export function createDashboardRouter(
       }
       const { CONTRATOS } = await import('../closing/contratos-registry.js');
       res.send(renderContratosPage({
-        q, buscou, resultados,
+        q, buscou, resultados, recentes,
         tipos: CONTRATOS.map((c) => ({ tipo: c.tipo, nome: c.nome, emoji: c.emoji, descricao: c.descricao })),
         docsResultado: String(req.query.docs ?? ''),
         envioResultado: String(req.query.envio ?? ''),
         driveResultado: String(req.query.drive ?? ''),
+        novoResultado: String(req.query.novo ?? ''),
         user: (req as AuthedRequest).dashUser,
       }));
     } catch (err) {
       console.error('[dashboard/contratos]', err);
       res.status(500).send(`<h2>Erro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  // ➕ Criar contrato MANUAL: cria (ou reusa) o cadastro do cliente e cai DIRETO
+  // no formulário do contrato pra preencher na mão. Não depende de proposta nem
+  // de IA — é o caminho garantido (contrato é receita, não pode travar).
+  router.post('/contratos/novo', exigir('propostas', 'editar'), async (req: Request, res: Response) => {
+    try {
+      const name = String(req.body?.name ?? '').trim();
+      const phone = String(req.body?.phone ?? '').replace(/\D/g, '');
+      if (!name || phone.length < 8) return res.redirect('/dashboard/contratos?novo=faltou');
+      const cid = (req as AuthedRequest).dashUser?.companyId;
+      const { CONTRATOS } = await import('../closing/contratos-registry.js');
+      const tipo = CONTRATOS[0]?.tipo ?? 'fv';
+      // Já existe cliente com esse telefone NA MINHA EMPRESA? REUSA (não trava, não
+      // duplica). Filtra por company: telefone da MESMA pessoa pode ser cliente de
+      // outra empresa — não pode reusar (nem travar) por causa dela.
+      let lookup = supabase.from('leads').select('id').eq('phone', phone).limit(1);
+      if (cid) lookup = lookup.eq('company_id', cid);
+      const { data: existentes } = await lookup;
+      let leadId = (existentes as Array<{ id?: string }> | null)?.[0]?.id;
+      if (!leadId) {
+        const r = await supabaseService.criarLeadAvulso({ name, phone, companyId: cid ?? null });
+        if (!r.ok || !r.lead_id) return res.redirect('/dashboard/contratos?novo=erro');
+        leadId = r.lead_id;
+      }
+      res.redirect(303, `/dashboard/leads/${leadId}/contrato-form?tipo=${encodeURIComponent(tipo)}`);
+    } catch (err) {
+      console.error('[dashboard/contratos/novo]', err);
+      res.redirect('/dashboard/contratos?novo=erro');
+    }
+  });
+
+  // ✅ Fechou! DIRETO da ficha do lead — registra a venda (Coração da Venda) sem
+  // ter que ir na tela separada. Volta pra ficha.
+  router.post('/leads/:id/fechou', exigir('propostas', 'editar'), async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    try {
+      if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
+      const tipo = req.body?.tipo === 'servico' ? 'servico' : 'sistema';
+      const valorReais = parseFloat(String(req.body?.valor ?? '').replace(',', '.'));
+      const kwp = parseFloat(String(req.body?.kwp ?? ''));
+      const data = String(req.body?.data ?? '').trim() || null;
+      const r = await registrarVenda(supabase, {
+        leadId: id, tipo,
+        valorCents: Number.isFinite(valorReais) ? Math.round(valorReais * 100) : null,
+        kwp: Number.isFinite(kwp) ? kwp : null,
+        data, origem: 'dashboard-ficha',
+      });
+      const viewer = (req as AuthedRequest).dashUser;
+      if (viewer && r.ok) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'venda', valorNovo: tipo });
+      res.redirect(303, `/dashboard/leads/${id}`);
+    } catch (err) {
+      console.error('[dashboard/leads/fechou]', err);
+      res.redirect(303, `/dashboard/leads/${id}`);
     }
   });
 
@@ -2110,6 +2207,7 @@ export function createDashboardRouter(
     const id = String(req.params.id);
     try {
       if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
       const files = ((req.files as Express.Multer.File[] | undefined) ?? []);
       if (files.length === 0) return res.redirect(voltarDoc(req, id, 'docs=vazio'));
       if (!options.anthropicApiKey) return res.redirect(voltarDoc(req, id, 'docs=off'));
