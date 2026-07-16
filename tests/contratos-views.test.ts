@@ -12,15 +12,29 @@ describe('renderContratosPage — Central de Contratos', () => {
     expect(html).toContain('action="/dashboard/contratos/novo"');
   });
 
-  it('sem busca: abre com a LISTA de clientes recentes (não caixa cega)', () => {
+  it('sem busca: dropdown pra escolher cliente + os 2 contratos fechados como card rápido', () => {
     const html = renderContratosPage({
       q: '', buscou: false, resultados: [], tipos,
-      recentes: [{ leadId: 'l1', nome: 'Lucas Azevedo', status: 'contrato_assinado' }],
+      recentes: [{ leadId: 'l1', nome: 'Edmilson', status: 'contrato_assinado' }, { leadId: 'l2', nome: 'Antonio Alcântara', status: 'instalado' }],
     });
-    expect(html).toContain('Clientes recentes');
-    expect(html).toContain('Lucas Azevedo');
-    // clicar no cliente abre o FORMULÁRIO do contrato daquele lead
+    // dropdown (lista suspensa) de clientes
+    expect(html).toContain('<select name="lead"');
+    expect(html).toContain('Edmilson');
+    // os 2 últimos fechados como acesso rápido
+    expect(html).toContain('Últimos contratos fechados');
     expect(html).toContain('/dashboard/leads/l1/contrato-form');
+  });
+
+  it('cliente selecionado (?lead): mostra a BARRA DE AÇÕES dele (não card por cliente)', () => {
+    const html = renderContratosPage({
+      q: '', buscou: false, resultados: [], recentes: [], tipos, tipoSel: 'fv',
+      selecionado: { leadId: 'l9', nome: 'Lucas Azevedo', status: 'contrato_assinado' },
+    });
+    // ações direto na barra, sem abrir o formulário antes
+    expect(html).toContain('/dashboard/leads/l9/ler-documentos');
+    expect(html).toContain('/dashboard/leads/l9/contrato-form?tipo=fv');
+    expect(html).toContain('/dashboard/leads/l9/contrato.pdf?tipo=fv');
+    expect(html).toContain('/dashboard/leads/l9/salvar-drive');
   });
 
   it('a busca é por nome OU telefone (não só nome)', () => {
@@ -42,11 +56,13 @@ describe('renderContratosPage — Central de Contratos', () => {
     expect(erro).toContain('Não consegui criar');
   });
 
-  it('mantém o leitor de conta+CNH (IA lê documentos) no card do cliente', () => {
+  it('busca popula o dropdown com os resultados (nome/telefone)', () => {
     const html = renderContratosPage({
       q: 'Lucas', buscou: true, tipos, recentes: [],
       resultados: [{ leadId: 'l1', nome: 'Lucas', status: null }],
     });
-    expect(html).toContain('/dashboard/leads/l1/ler-documentos');
+    expect(html).toContain('<select name="lead"');
+    expect(html).toContain('value="l1"');
+    expect(html).toContain('resultado(s) pra');
   });
 });

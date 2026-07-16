@@ -1592,8 +1592,8 @@ export function createDashboardRouter(
   // proposta (buildInitialData), preenche brancos onde faltar e gera o PDF na
   // hora. Determinístico — SEMPRE gera, nunca trava por falta de dado.
   // Pra onde voltar depois de ler/enviar doc: se veio da tela de Contratos
-  // (next=contratos), volta pra ela com o cliente ainda na busca (?q=nome);
-  // senão, volta pra tela do lead.
+  // (next=contratos), volta pra ela com o CLIENTE ainda selecionado no dropdown
+  // (?lead=<id>) e o mesmo TIPO (?tipo=); senão, volta pra tela do lead.
   function voltarDoc(req: Request, leadId: string, params: string): string {
     const next = String((req.body?.next ?? req.query?.next ?? '')).trim();
     if (next === 'form') {
@@ -1601,8 +1601,11 @@ export function createDashboardRouter(
       return `/dashboard/leads/${leadId}/contrato-form?tipo=${encodeURIComponent(t)}&${params}`;
     }
     if (next === 'contratos') {
-      const nome = String(req.body?.nome ?? '').trim();
-      return `/dashboard/contratos?q=${encodeURIComponent(nome)}&${params}`;
+      // Volta pro cliente SELECIONADO na Central (dropdown), não pra uma busca —
+      // assim ler docs/gerar/enviar mantém o cliente E o tipo na barra de ações.
+      const tc = String(req.body?.tipo_central ?? '').trim();
+      const tParam = tc ? `&tipo=${encodeURIComponent(tc)}` : '';
+      return `/dashboard/contratos?lead=${encodeURIComponent(leadId)}${tParam}&${params}`;
     }
     return `/dashboard/leads/${leadId}?${params}`;
   }
@@ -2058,8 +2061,10 @@ export function createDashboardRouter(
       const q = String(req.query.q ?? '').trim();
       const buscou = q.length > 0;
       const cid = (req as AuthedRequest).dashUser?.companyId;
+      const leadSel = String(req.query.lead ?? '').trim();
+      const tipoSel = String(req.query.tipo ?? '').trim() || undefined;
+
       let resultados: ContratoCliente[] = [];
-      let recentes: ContratoCliente[] = [];
       if (buscou) {
         const { searchLeadByName } = await import('../closing/closing-data-fetcher.js');
         // filtra por empresa (searchLeadByName é company-blind por ser compartilhada
@@ -2071,28 +2076,41 @@ export function createDashboardRouter(
           nome: l.name ?? '(sem nome)',
           status: l.installation_status ?? l.status ?? null,
         }));
-      } else {
-        // Sem busca: abre com a LISTA de clientes recentes (quem virou cliente /
-        // fechou) — pra Central não ser só uma caixa cega. Filtro por company
-        // (mesma empresa do operador), como o resto do dashboard.
-        let rec = supabase
-          .from('leads')
-          .select('id, name, installation_status, status, updated_at')
-          .or(`installation_status.in.(${CLIENTE_STATUSES.join(',')}),status.eq.transferido`)
-          .is('archived_at', null)
-          .order('updated_at', { ascending: false })
-          .limit(12);
-        if (cid) rec = rec.eq('company_id', cid);
-        const { data: recData } = await rec;
-        recentes = (recData ?? []).map((l: any) => ({
-          leadId: l.id,
-          nome: l.name ?? '(sem nome)',
-          status: l.installation_status ?? l.status ?? null,
-        }));
       }
+
+      // Recentes = contratos JÁ FECHADOS (venda registrada), pela data do fechamento —
+      // NÃO leads crus (Junior 15/07). Sempre carregado: popula o dropdown E os 2 cards
+      // de acesso rápido. Filtro por company como o resto do dashboard.
+      let rec = supabase
+        .from('leads')
+        .select('id, name, installation_status, contract_signed_at')
+        .in('installation_status', CLIENTE_STATUSES)
+        .is('archived_at', null)
+        .order('contract_signed_at', { ascending: false, nullsFirst: false })
+        .limit(20);
+      if (cid) rec = rec.eq('company_id', cid);
+      const { data: recData } = await rec;
+      const recentes: ContratoCliente[] = (recData ?? []).map((l: any) => ({
+        leadId: l.id,
+        nome: l.name ?? '(sem nome)',
+        status: l.installation_status ?? null,
+      }));
+
+      // Cliente escolhido no dropdown (?lead=) — valida empresa e pega nome/status.
+      let selecionado: ContratoCliente | null = null;
+      if (UUID_RE.test(leadSel) && (await leadDaEmpresa(req, leadSel))) {
+        const { data: l } = await supabase
+          .from('leads').select('id, name, installation_status, status').eq('id', leadSel).maybeSingle();
+        if (l) selecionado = {
+          leadId: (l as any).id,
+          nome: (l as any).name ?? '(sem nome)',
+          status: (l as any).installation_status ?? (l as any).status ?? null,
+        };
+      }
+
       const { CONTRATOS } = await import('../closing/contratos-registry.js');
       res.send(renderContratosPage({
-        q, buscou, resultados, recentes,
+        q, buscou, resultados, recentes, selecionado, tipoSel,
         tipos: CONTRATOS.map((c) => ({ tipo: c.tipo, nome: c.nome, emoji: c.emoji, descricao: c.descricao })),
         docsResultado: String(req.query.docs ?? ''),
         envioResultado: String(req.query.envio ?? ''),
