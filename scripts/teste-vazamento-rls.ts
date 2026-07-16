@@ -4,13 +4,13 @@
 // EcoSun lê os dados dela. NÃO altera nada no banco (a única escrita tentada
 // é a que TEM que ser bloqueada — e se não for, a gente quer saber JÁ).
 //
-// Rodar (precisa das envs — NUNCA colar segredo em chat/commit):
-//   SUPABASE_URL=... SUPABASE_ANON_KEY=... SUPABASE_JWT_SECRET=... \
-//     npx tsx scripts/teste-vazamento-rls.ts
-// (no Windows/PowerShell: $env:SUPABASE_URL='...'; etc; depois npx tsx ...)
+// Rodar: npx tsx scripts/teste-vazamento-rls.ts
+// (lê SUPABASE_URL, SUPABASE_ANON_KEY e SUPABASE_JWT_SECRET do .env da raiz —
+//  NUNCA colar segredo em chat/commit)
 //
 // SUPABASE_JWT_SECRET: painel do Supabase → Project Settings → API → JWT Secret.
 
+import 'dotenv/config'; // lê o .env da raiz — as chaves ficam lá, nunca no chat
 import { clientDaEmpresa } from '../src/modules/tenant-client.js';
 
 const ECO = '00000000-0000-0000-0000-000000000001';
