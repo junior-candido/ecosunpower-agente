@@ -219,10 +219,10 @@ export function renderContratosPage(input: ContratosPageInput): string {
     ${barraSelecao(opcoes, selecionado, q, tipos, tipoAtual)}
     ${selecionado ? barraAcoes(selecionado, tipoAtual, tipos) : ''}
     ${semResultado ? `<div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-amber-800 mb-4">Nenhum cliente com "<strong>${escapeHtml(q)}</strong>". Tenta outro trecho, o telefone, ou cria manual abaixo.</div>` : ''}
+    ${blocoCriarManual()}
     ${(!selecionado && !buscou && doisUltimos.length > 0)
       ? `<div class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">Últimos contratos fechados</div>${doisUltimos.map((c) => cardRecente(c, tipoAtual)).join('')}`
       : ''}
-    ${blocoCriarManual()}
   </div>`;
 
   return renderLayout({ active: 'contratos', title: 'Contratos & Procurações', body, user });
