@@ -26,6 +26,7 @@ export interface ContratoFormInput {
   faltando: CampoContrato[];
   temProposta: boolean;
   salvo?: boolean;
+  docsResultado?: string;
   envioResultado?: string;
   driveResultado?: string;
   /** O que a IA achou pra cada campo em branco — SUGESTÃO, não vai pro campo sozinha. */
@@ -326,7 +327,7 @@ function avisos(page: ContratoFormInput): string {
   const box = (cls: string, txt: string) => `<div class="mb-4 text-sm px-4 py-3 rounded-lg border ${cls}">${txt}</div>`;
   // Mesmos avisos de envio/Drive da tela de busca (inclusive "cliente sem
   // telefone" e "Drive desligado", que aqui sumiam).
-  let out = bannerContratos('', page.envioResultado ?? '', page.driveResultado ?? '');
+  let out = bannerContratos(page.docsResultado ?? '', page.envioResultado ?? '', page.driveResultado ?? '');
 
   const n = page.faltando.length;
   if (n > 0) {
@@ -410,6 +411,23 @@ export function renderContratoFormPage(page: ContratoFormInput): string {
     ${page.congelou ? '<div class="mb-4 text-sm px-4 py-3 rounded-lg border bg-emerald-50 border-emerald-300 text-emerald-800">📌 Contrato congelado! Agora ele é <strong>o</strong> contrato desse cliente — e dá pra fazer aditivo.</div>' : ''}
     ${avisoAditivo(page)}
     ${avisos(page)}
+
+    <!-- LEITOR de conta de luz + CNH DENTRO do formulário (Junior 15/07: "no
+         preenchimento cadê os leitores?"). Sobe os documentos, a IA extrai e
+         preenche CPF/RG/estado civil/nascimento/endereço/UC nas colunas do lead;
+         next=form volta pra ESTA tela já preenchida. Form próprio (multipart),
+         fora do form-contrato — assim não some com o que já foi digitado. -->
+    <form method="POST" action="/dashboard/leads/${page.leadId}/ler-documentos" enctype="multipart/form-data"
+        class="mb-4 rounded-lg bg-violet-50 border border-violet-200 p-3">
+      <input type="hidden" name="next" value="form" />
+      <input type="hidden" name="tipo_contrato" value="${escapeHtml(def.tipo)}" />
+      <div class="text-sm text-slate-700 mb-2">🤖 <strong>Ler conta de luz + CNH</strong> — sobe os documentos e a IA preenche CPF, RG, estado civil, data de nascimento, endereço e UC pra você não digitar na mão.</div>
+      <div class="flex flex-wrap gap-2 items-center">
+        <input type="file" name="docs" accept="image/*,application/pdf" multiple
+          class="text-xs text-slate-600 file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-violet-100 file:text-violet-800 file:cursor-pointer" />
+        <button class="px-4 py-2 rounded-lg text-sm bg-violet-600 text-white hover:bg-violet-700 font-medium">Ler e preencher</button>
+      </div>
+    </form>
 
     <!-- Tudo dentro de UM formulário: assim os botões (IA, prévia, congelar) levam
          junto o que você acabou de digitar, em vez de apagar ou ignorar. -->

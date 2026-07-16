@@ -48,6 +48,8 @@ export function bannerContratos(docs: string, envio: string, drive: string): str
   if (docs && Number.isFinite(d) && d > 0) out += box('bg-emerald-50 border-emerald-300 text-emerald-800', `✅ IA preencheu ${d} campo(s) do cadastro. Agora é só gerar/enviar.`);
   else if (docs === 'erro') out += box('bg-rose-50 border-rose-300 text-rose-800', 'Não consegui ler os documentos. Preenche no cadastro — o PDF gera do mesmo jeito.');
   else if (docs === '0') out += box('bg-amber-50 border-amber-300 text-amber-800', 'Li os documentos mas não achei dado novo.');
+  else if (docs === 'vazio') out += box('bg-amber-50 border-amber-300 text-amber-800', 'Anexe pelo menos um documento (conta de luz ou CNH) pra ler.');
+  else if (docs === 'off') out += box('bg-amber-50 border-amber-300 text-amber-800', 'O leitor de IA não está configurado no servidor. Preenche na mão — o contrato gera do mesmo jeito.');
   if (envio === 'ok-cliente') out += box('bg-emerald-50 border-emerald-300 text-emerald-800', '✅ Enviado pro zap do cliente!');
   else if (envio === 'ok-eu') out += box('bg-emerald-50 border-emerald-300 text-emerald-800', '✅ Enviado pro seu zap!');
   else if (envio === 'erro') out += box('bg-rose-50 border-rose-300 text-rose-800', 'Não consegui enviar (cliente pode estar fora da janela de 24h). Manda pro seu zap e encaminha.');

@@ -1735,6 +1735,7 @@ export function createDashboardRouter(
         faltando: camposFaltando(def, r.cru),
         temProposta: r.temProposta,
         salvo: req.query.salvo === '1',
+        docsResultado: String(req.query.docs ?? ''),
         envioResultado: String(req.query.envio ?? ''),
         driveResultado: String(req.query.drive ?? ''),
         user: (req as AuthedRequest).dashUser,
@@ -2240,7 +2241,13 @@ export function createDashboardRouter(
       if (d.rg) patch.rg = d.rg;
       if (d.orgao_emissor_rg) patch.orgao_emissor_rg = d.orgao_emissor_rg;
       if (d.data_nascimento) patch.data_nascimento = d.data_nascimento;
-      if (d.estado_civil) patch.estado_civil = d.estado_civil;
+      // estado civil CANÔNICO na coluna (id: 'casado', 'uniao_estavel'...) — a IA
+      // devolve "Casado(a)"; sem normalizar, telas que casam estrito pelo id (ex.:
+      // cadastro do cliente) mostram vazio. idEstadoCivil resolve o texto no id.
+      if (d.estado_civil) {
+        const { idEstadoCivil } = await import('../closing/contratos-registry.js');
+        patch.estado_civil = idEstadoCivil(d.estado_civil) || d.estado_civil;
+      }
       if (d.uc_numero) patch.uc_numero = d.uc_numero;
       if (d.concessionaria) patch.concessionaria = d.concessionaria;
       if (d.endereco?.rua) patch.endereco_rua = d.endereco.rua;
