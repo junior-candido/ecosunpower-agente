@@ -1019,13 +1019,14 @@ export function createDashboardRouter(
     let due_at: string | null = null;
     if (dueRaw) { const d = new Date(dueRaw); if (!isNaN(d.getTime())) due_at = d.toISOString(); }
     const viewer = (req as AuthedRequest).dashUser;
+    const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
     // Posse: vendedor não pode criar tarefa em lead de OUTRO vendedor (admin passa direto).
-    const { data: leadRow } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    const { data: leadRow } = await db.from('leads').select('claimed_by').eq('id', id).maybeSingle();
     if (!leadRow || (viewer && !podeVerLead(viewer, leadRow))) return res.status(403).send('Lead de outro vendedor');
     // Dono da tarefa = quem já está com o lead (claimed_by), se houver.
     const assigned_to = (leadRow?.claimed_by as string | null) ?? null;
     try {
-      await criarTarefa(supabase, {
+      await criarTarefa(db, {
         company_id: viewer?.companyId ?? ECOSUN,
         lead_id: id, titulo, tipo, due_at, prioridade,
         automatica: false, created_by: viewer?.id ?? null, assigned_to,
@@ -1034,7 +1035,7 @@ export function createDashboardRouter(
       return res.status(500).send(`erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
     if (viewer) {
-      await registrarAtividade(supabase, {
+      await registrarAtividade(db, {
         company_id: viewer.companyId, lead_id: id, tipo: 'tarefa_criada',
         titulo, automatica: false, user_id: viewer.id,
       });
@@ -1049,17 +1050,18 @@ export function createDashboardRouter(
     const tid = String(req.params.tid);
     if (!UUID_RE.test(id) || !UUID_RE.test(tid)) return res.status(400).send('id inválido');
     const viewer = (req as AuthedRequest).dashUser;
+    const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
     // Posse: vendedor não pode mexer em tarefa de lead de OUTRO vendedor (admin passa direto).
-    const { data: leadRow } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    const { data: leadRow } = await db.from('leads').select('claimed_by').eq('id', id).maybeSingle();
     if (!leadRow || (viewer && !podeVerLead(viewer, leadRow))) return res.status(403).send('Lead de outro vendedor');
     try {
       // leadId amarra a tarefa ao lead da URL (evita concluir tarefa de outro lead via :tid).
-      await concluirTarefa(supabase, tid, viewer?.id ?? null, id);
+      await concluirTarefa(db, tid, viewer?.id ?? null, id);
     } catch (err) {
       return res.status(500).send(`erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
     if (viewer) {
-      await registrarAtividade(supabase, {
+      await registrarAtividade(db, {
         company_id: viewer.companyId, lead_id: id, tipo: 'tarefa_concluida',
         titulo: 'Tarefa concluída', automatica: false, user_id: viewer.id,
       });
@@ -1074,12 +1076,13 @@ export function createDashboardRouter(
     const tid = String(req.params.tid);
     if (!UUID_RE.test(id) || !UUID_RE.test(tid)) return res.status(400).send('id inválido');
     const viewer = (req as AuthedRequest).dashUser;
+    const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
     // Posse: vendedor não pode mexer em tarefa de lead de OUTRO vendedor (admin passa direto).
-    const { data: leadRow } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    const { data: leadRow } = await db.from('leads').select('claimed_by').eq('id', id).maybeSingle();
     if (!leadRow || (viewer && !podeVerLead(viewer, leadRow))) return res.status(403).send('Lead de outro vendedor');
     try {
       // leadId amarra a tarefa ao lead da URL (evita adiar tarefa de outro lead via :tid).
-      await adiarTarefa(supabase, tid, 2, id);
+      await adiarTarefa(db, tid, 2, id);
     } catch (err) {
       return res.status(500).send(`erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
@@ -1097,18 +1100,19 @@ export function createDashboardRouter(
       || (tipo === 'ligacao' ? 'Ligação registrada' : 'Nota');
     const descricao = String(req.body?.descricao ?? '').trim().slice(0, 2000) || undefined;
     const viewer = (req as AuthedRequest).dashUser;
+    const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
     // Posse: vendedor não pode registrar atividade em lead de OUTRO vendedor (admin passa direto).
-    const { data: leadRow } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    const { data: leadRow } = await db.from('leads').select('claimed_by').eq('id', id).maybeSingle();
     if (!leadRow || (viewer && !podeVerLead(viewer, leadRow))) return res.status(403).send('Lead de outro vendedor');
     try {
       if (viewer) {
-        await registrarAtividade(supabase, {
+        await registrarAtividade(db, {
           company_id: viewer.companyId, lead_id: id, tipo,
           titulo, descricao, automatica: false, user_id: viewer.id,
         });
       }
       // Nota/ligação contam como contato com o cliente.
-      await supabase.from('leads')
+      await db.from('leads')
         .update({ last_contact_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq('id', id);
     } catch (err) {
