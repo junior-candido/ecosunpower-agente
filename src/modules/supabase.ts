@@ -6,7 +6,7 @@ import { registrarAtividade } from './dashboard/atividades.js';
 import { criarTarefa, cancelarTarefasPendentesDoLead } from './dashboard/tarefas.js';
 import { variantesTelefone } from './phone.js';
 import { registrarEvento } from './elo/eventos.js';
-import { clientDoOperador, tenantEnvDoProcesso, type RequisicaoComOperador } from './tenant-client.js';
+import { clientDoTenantOuNull, type RequisicaoComOperador } from './tenant-client.js';
 
 // Elo: mapeia a origem livre do lead pro canal canônico do event-stream.
 // Best-effort — a maioria dos leads entra por WhatsApp (default). E-mail e web
@@ -2161,8 +2161,6 @@ type EnvLike = Record<string, string | undefined>;
  *  métodos). Senão → o `svcServico` de hoje (ZERO mudança até virar a chave).
  *  Usar SÓ em rotas de tenant (dashboard = uma empresa); webhooks/jobs seguem no serviço. */
 export function svcDoOperador(req: RequisicaoComOperador, svcServico: SupabaseService, e: EnvLike = process.env): SupabaseService {
-  if (e.RLS_TENANT_ROTAS !== '1') return svcServico;
-  const env = tenantEnvDoProcesso(e);
-  if (!env) return svcServico;   // flag ligada mas env incompleta → não quebra a rota
-  return SupabaseService.comClient(clientDoOperador(req, env));
+  const c = clientDoTenantOuNull(req, e);   // fonte ÚNICA da decisão (flag+env+aviso de bypass)
+  return c ? SupabaseService.comClient(c) : svcServico;
 }

@@ -122,8 +122,17 @@ import type { ManutencaoTipo } from './manutencao-motor.js';
 import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, fotoCountsPorItem, concluirOS } from './os-queries.js';
 import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
 import { hidratarChecklist, resumoOS, type OSTipo } from './os-checklist.js';
-import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
-import { svcDoOperador } from '../supabase.js';          // strangler do WRAPPER (mesmo flag)
+// ── Multi-tenant Fase B (docs/ecosof/04) — RECEITA de migração de rota ──
+//  Rota de TENANT (dado de UMA empresa)? Troque o client de serviço pelo do operador:
+//   • função livre  f(supabase, …)  →  const db = bancoDoOperador(req, supabase); f(db, …)
+//   • método do wrapper supabaseService.metodo(…) → svcDoOperador(req, supabaseService).metodo(…)
+//  NÃO migrar (fica no serviço/bypass, de propósito): audit()/logs (auditoria é
+//   cross-cutting, grava sempre), app_flags/dashboard_users (global/auth), webhooks/
+//   jobs/monitoring (credenciais de API), propostas por slug público (sem sessão).
+//  Tudo atrás da flag RLS_TENANT_ROTAS (OFF = idêntico ao de hoje). Guarda estática:
+//   tests/tenant-rota-guard.test.ts barra rota nova de tenant no serviço cru.
+import { bancoDoOperador } from '../tenant-client.js';
+import { svcDoOperador } from '../supabase.js';
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
 // didApply=false: prévia + botão pra gravar. didApply=true: resultado da gravação.
@@ -741,7 +750,7 @@ export function createDashboardRouter(
         return res.status(403).send('<h2>Lead de outro vendedor</h2>');
       }
 
-      const conversaIA = await supabaseService.getConversaIA(id);
+      const conversaIA = await svcDoOperador(req as AuthedRequest, supabaseService).getConversaIA(id);
       res.send(renderLeadDetailPage(lead, conversaIA, String(req.query.docs ?? ''), String(req.query.envio ?? '')));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);

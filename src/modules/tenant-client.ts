@@ -77,14 +77,29 @@ export function tenantEnvDoProcesso(e: EnvLike = process.env): TenantClientEnv |
   return { url, anonKey, jwtSecret };
 }
 
-/** SWITCH strangler (Fatia 3): o banco que a rota deve usar.
- *  Com a flag `RLS_TENANT_ROTAS=1` E env completa → client-do-OPERADOR (o Postgres
- *  impõe o isolamento via RLS 079). Senão → o `servico` (comportamento de hoje:
- *  ZERO mudança em produção até o Junior setar as chaves e virar a flag). Migra
- *  rota a rota trocando `supabase` por `bancoDoOperador(req, supabase)`. */
-export function bancoDoOperador(req: RequisicaoComOperador, servico: SupabaseClient, e: EnvLike = process.env): SupabaseClient {
-  if (e.RLS_TENANT_ROTAS !== '1') return servico;
+let jaAvisouBypass = false;
+
+/** DECISÃO ÚNICA do strangler (fonte única — bancoDoOperador E svcDoOperador usam):
+ *  devolve o client-do-OPERADOR quando a flag `RLS_TENANT_ROTAS=1` E a env está
+ *  completa; senão `null` (o chamador cai no serviço = comportamento de hoje).
+ *  Se a flag está LIGADA mas a env falta, LOGA um aviso ALTO (uma vez) — nada de
+ *  bypass mudo: "achei que estava isolado e não estava" é o pior cenário de venda. */
+export function clientDoTenantOuNull(req: RequisicaoComOperador, e: EnvLike = process.env): SupabaseClient | null {
+  if (e.RLS_TENANT_ROTAS !== '1') return null;
   const env = tenantEnvDoProcesso(e);
-  if (!env) return servico;   // flag ligada mas env incompleta → não quebra a rota
-  return clientDoOperador(req, env);
+  if (!env) {
+    if (!jaAvisouBypass) {
+      jaAvisouBypass = true;
+      console.warn('[multi-tenant] ⚠️ RLS_TENANT_ROTAS=1 mas SUPABASE_URL/ANON_KEY/JWT_SECRET incompleta — RODANDO EM BYPASS (service_role), SEM isolamento por empresa. Configure as 3 chaves ou desligue a flag.');
+    }
+    return null;
+  }
+  return clientDoOperador(req, env);   // sem sessão → estoura (fail-closed: melhor 500 que vazar)
+}
+
+/** SWITCH strangler (Fatia 3): o client cru que a rota deve usar. Flag OFF / env
+ *  incompleta → `servico` (ZERO mudança em produção). Migra trocando `supabase` por
+ *  `bancoDoOperador(req, supabase)`. */
+export function bancoDoOperador(req: RequisicaoComOperador, servico: SupabaseClient, e: EnvLike = process.env): SupabaseClient {
+  return clientDoTenantOuNull(req, e) ?? servico;
 }

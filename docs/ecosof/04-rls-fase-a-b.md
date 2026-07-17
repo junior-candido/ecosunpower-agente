@@ -66,3 +66,20 @@ a conexão virar direta — nada a refazer).
 
 **Pergunta em aberto pro Jonnata:** onde nasce o JWT por empresa (helper único
 em `modules/supabase.ts`?) e qual o TTL/rotação. Combinar antes de codar.
+
+## Fase B — IMPLEMENTADO (17/07, branch feat/rls-forca-e-isolamento)
+
+O crachá nasce em `src/modules/tenant-client.ts`: `jwtDaEmpresa` (HS256, `SUPABASE_JWT_SECRET`, TTL 10 min) → `clientDaEmpresa` → `clientDoOperador(req)` (company_id SÓ da sessão `req.dashUser`, nunca do frontend). Decisão única em `clientDoTenantOuNull` (flag+env+aviso de bypass). O wrapper de 110 métodos ganha `SupabaseService.comClient(client)` (mesma classe amarrada ao crachá, via `Object.create`).
+
+### Receita: migrar UMA rota de tenant (strangler)
+Tudo atrás da flag `RLS_TENANT_ROTAS` (OFF = idêntico ao de hoje; liga só com `SUPABASE_JWT_SECRET`+`SUPABASE_ANON_KEY`+`SUPABASE_URL` no EasyPanel):
+1. **Função livre** `f(supabase, …)` → `const db = bancoDoOperador(req, supabase); f(db, …)`.
+2. **Método do wrapper** `supabaseService.metodo(…)` → `svcDoOperador(req, supabaseService).metodo(…)`.
+3. **NÃO migrar** (fica no serviço/bypass, de propósito): `audit()`/`logs` (auditoria cross-cutting, grava sempre), `app_flags`/`dashboard_users` (global/auth), webhooks/jobs/monitoring (credenciais de API), propostas por **slug público** (sem sessão de operador). Custos: conferir se `custos_fixos` tem `company_id` antes de escopar.
+4. **Guarda:** `tests/tenant-rota-guard.test.ts` (ratchet — nº de `supabase.from`/`supabaseService.metodo` crus no router só CAI; rota nova no serviço cru quebra o teste).
+
+### ⏭️ Falta (pré-venda como multi-tenant seguro)
+- **auth.ts:15** — segredo de sessão com fallback `'fallback-mude-isso'` (âncora do company_id): **falhar-fechado** (recusar subir sem `META_APP_SECRET`/`DASHBOARD_PASSWORD` real).
+- **Teste de vazamento no CI** (§4): promover `scripts/teste-vazamento-rls.ts` a job com `supabase start` + 2 tenants FAKE (hoje é script manual contra prod, 1 fake + a ECO real).
+- **~43 rotas** de tenant ainda no serviço cru (Home/Cockpit, Clientes, Pós-venda, Usinas, Propostas) — migrar pela receita acima.
+- **Eva/webhook** ainda em full-bypass: derivar `company_id` do `phone_number_id` (escopo remanescente).

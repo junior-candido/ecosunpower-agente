@@ -33,8 +33,10 @@ describe('svcDoOperador — o wrapper do OPERADOR (switch strangler)', () => {
     expect(svc).toBeInstanceOf(SupabaseService);
   });
 
-  it('flag LIGADA mas env incompleta → cai no serviço (não quebra a rota)', () => {
+  it('flag LIGADA mas env incompleta (vazia OU parcial) → cai no serviço (não quebra)', () => {
     expect(svcDoOperador(req, svcServico, { RLS_TENANT_ROTAS: '1' })).toBe(svcServico);
+    // env PARCIAL (só URL, falta ANON_KEY e JWT_SECRET) — também cai no serviço
+    expect(svcDoOperador(req, svcServico, { RLS_TENANT_ROTAS: '1', SUPABASE_URL: 'https://x.supabase.co' })).toBe(svcServico);
   });
 
   it('sem operador logado (sem sessão) → estoura (não emite crachá sem sessão)', () => {

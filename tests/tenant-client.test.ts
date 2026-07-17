@@ -40,6 +40,19 @@ describe('jwtDaEmpresa — o crachá de UMA empresa', () => {
   it('recusa segredo vazio (melhor quebrar aqui que assinar crachá sem tranca)', () => {
     expect(() => jwtDaEmpresa(ECO, '', 1_700_000_000_000)).toThrow(/segredo/i);
   });
+
+  it('TTL custom é respeitado (crachá pode ter validade menor que os 10 min)', () => {
+    const agora = 1_700_000_000_000;
+    const payload = b64urlJson(jwtDaEmpresa(ECO, SEGREDO, agora, 30).split('.')[1]!);
+    expect(payload.exp).toBe(Math.floor(agora / 1000) + 30);
+  });
+
+  it('segredo DIFERENTE gera assinatura diferente (a tranca depende do segredo)', () => {
+    const agora = 1_700_000_000_000;
+    const a = jwtDaEmpresa(ECO, SEGREDO, agora).split('.')[2];
+    const b = jwtDaEmpresa(ECO, 'outro-segredo', agora).split('.')[2];
+    expect(a).not.toBe(b);
+  });
 });
 
 describe('clientDaEmpresa — client Supabase com o crachá da empresa', () => {
@@ -95,5 +108,9 @@ describe('bancoDoOperador — o switch strangler (flag RLS_TENANT_ROTAS)', () =>
   it('flag LIGADA mas env incompleta → cai no serviço (não quebra a rota)', () => {
     expect(bancoDoOperador(req, servico, { RLS_TENANT_ROTAS: '1' })).toBe(servico);
     expect(bancoDoOperador(req, servico, { RLS_TENANT_ROTAS: '1', SUPABASE_URL: 'https://x.supabase.co' })).toBe(servico);
+  });
+
+  it('flag LIGADA + env completa + SEM sessão → estoura (fail-closed, igual o svc)', () => {
+    expect(() => bancoDoOperador({}, servico, { ...envCompleta, RLS_TENANT_ROTAS: '1' })).toThrow(/sess|operador|logad/i);
   });
 });
