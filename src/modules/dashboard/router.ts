@@ -876,7 +876,8 @@ export function createDashboardRouter(
   router.post('/leads/:id/pause-eva', async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const { error } = await supabase
+    const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
+    const { error } = await db
       .from('leads')
       .update({ eva_active: false, updated_at: new Date().toISOString() })
       .eq('id', id);
@@ -888,7 +889,8 @@ export function createDashboardRouter(
   router.post('/leads/:id/resume-eva', async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const { error } = await supabase
+    const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
+    const { error } = await db
       .from('leads')
       .update({ eva_active: true, updated_at: new Date().toISOString() })
       .eq('id', id);
@@ -900,7 +902,8 @@ export function createDashboardRouter(
   router.post('/leads/:id/cancel-cadence', async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const { error } = await supabase
+    const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
+    const { error } = await db
       .from('eva_cadence')
       .update({ status: 'cancelled', cancelled_reason: 'manual_dashboard' })
       .eq('lead_id', id)
@@ -914,13 +917,14 @@ export function createDashboardRouter(
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     const now = new Date().toISOString();
-    const { error: e1 } = await supabase
+    const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
+    const { error: e1 } = await db
       .from('leads')
       .update({ opt_out: true, eva_active: false, updated_at: now })
       .eq('id', id);
     if (e1) return res.status(500).send(`erro: ${escapeHtmlSimple(e1.message)}`);
     // Cancela cadencia pendente tambem
-    await supabase
+    await db
       .from('eva_cadence')
       .update({ status: 'cancelled', cancelled_reason: 'opt_out' })
       .eq('lead_id', id)
@@ -932,7 +936,8 @@ export function createDashboardRouter(
   router.post('/leads/:id/opt-in', async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const { error } = await supabase
+    const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
+    const { error } = await db
       .from('leads')
       .update({ opt_out: false, updated_at: new Date().toISOString() })
       .eq('id', id);
