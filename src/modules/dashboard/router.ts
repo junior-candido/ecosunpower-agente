@@ -695,7 +695,8 @@ export function createDashboardRouter(
     try {
       const viewer = (req as AuthedRequest).dashUser!;
       const { renderKanbanPage } = await import('./kanban-views.js');
-      const grupos = await leadsParaKanban(supabase, viewer);
+      const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
+      const grupos = await leadsParaKanban(db, viewer);
       res.type('text/html').send(renderKanbanPage(grupos, viewer));
     } catch (err) {
       console.error('[dashboard/leads/kanban]', err);
@@ -709,13 +710,14 @@ export function createDashboardRouter(
     try {
       const { getLeadDetail } = await import('./leads-queries.js');
       const { renderLeadDetailPage } = await import('./leads-views.js');
-      const lead = await getLeadDetail(supabase, id);
+      const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS (dado do tenant)
+      const lead = await getLeadDetail(db, id);
       if (!lead) return res.status(404).send('lead não encontrado');
 
       // Claim automático: vendedor (não-admin) que abre um lead do balcão vira dono.
       const viewer = (req as AuthedRequest).dashUser!;
       if (!viewer.isAdmin && lead.claimed_by == null && can(viewer, 'leads', 'editar')) {
-        const captured = await claimLead(supabase, id, viewer.id);
+        const captured = await claimLead(db, id, viewer.id);
         if (captured) {
           await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'claim' });
           lead.claimed_by = viewer.id; // reflete na renderização atual
@@ -723,7 +725,7 @@ export function createDashboardRouter(
           // Corrida: outro vendedor capturou primeiro. O claimed_by em memória
           // ainda está nulo (lido antes do claim), então re-lê do banco pra que
           // o podeVerLead abaixo barre o perdedor (403) em vez de deixar passar 1×.
-          const { data: atual } = await supabase
+          const { data: atual } = await db
             .from('leads')
             .select('claimed_by')
             .eq('id', id)
@@ -947,9 +949,10 @@ export function createDashboardRouter(
     if (!allowed.includes(status)) return res.status(400).send('status inválido');
     // Posse: vendedor não pode mexer em lead de OUTRO vendedor (mesmo gate de /set-etapa).
     const user = (req as AuthedRequest).dashUser!;
-    const { data: lead } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS (dado do tenant)
+    const { data: lead } = await db.from('leads').select('claimed_by').eq('id', id).maybeSingle();
     if (!lead || (user && !podeVerLead(user, lead))) return res.status(403).send('Lead de outro vendedor');
-    const { error } = await supabase
+    const { error } = await db
       .from('leads')
       .update({ status, updated_at: new Date().toISOString() })
       .eq('id', id);
@@ -968,21 +971,22 @@ export function createDashboardRouter(
     if (!(ORDEM_ETAPAS as readonly string[]).includes(etapa)) return res.status(400).send('etapa inválida');
     // Posse: vendedor não pode mexer em lead de OUTRO vendedor (admin passa direto).
     const user = (req as AuthedRequest).dashUser!;
-    const { data: leadDono } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS (dado do tenant)
+    const { data: leadDono } = await db.from('leads').select('claimed_by').eq('id', id).maybeSingle();
     if (!leadDono || !podeVerLead(user, leadDono)) return res.status(403).send('Lead de outro vendedor');
-    const { error } = await supabase
+    const { error } = await db
       .from('leads')
       .update({ status: etapa, updated_at: new Date().toISOString() })
       .eq('id', id);
     if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
     // Etapa 'ganho' é terminal: cancela tarefas pendentes pra não alertar SLA-fantasma.
     if (etapa === 'ganho') {
-      try { await cancelarTarefasPendentesDoLead(supabase, id); } catch (e) { console.warn('[set-etapa] cancelar tarefas falhou (segue):', (e as Error).message); }
+      try { await cancelarTarefasPendentesDoLead(db, id); } catch (e) { console.warn('[set-etapa] cancelar tarefas falhou (segue):', (e as Error).message); }
     }
     const viewer = (req as AuthedRequest).dashUser;
     if (viewer) {
       try {
-        await registrarAtividade(supabase, {
+        await registrarAtividade(db, {
           company_id: viewer.companyId, lead_id: id, tipo: 'etapa_mudou',
           titulo: `Etapa movida (kanban): → ${etapa}`, automatica: false, user_id: viewer.id,
         });
