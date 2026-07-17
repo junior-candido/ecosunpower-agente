@@ -6,6 +6,7 @@ import { registrarAtividade } from './dashboard/atividades.js';
 import { criarTarefa, cancelarTarefasPendentesDoLead } from './dashboard/tarefas.js';
 import { variantesTelefone } from './phone.js';
 import { registrarEvento } from './elo/eventos.js';
+import { clientDoOperador, tenantEnvDoProcesso, type RequisicaoComOperador } from './tenant-client.js';
 
 // Elo: mapeia a origem livre do lead pro canal canônico do event-stream.
 // Best-effort — a maioria dos leads entra por WhatsApp (default). E-mail e web
@@ -69,6 +70,15 @@ export class SupabaseService {
 
   constructor(config: Pick<Config, 'supabaseUrl' | 'supabaseServiceKey'>) {
     this.client = createClient(config.supabaseUrl, config.supabaseServiceKey);
+  }
+
+  /** Fábrica: um SupabaseService que fala com o banco por um client JÁ PRONTO (ex.:
+   *  o crachá do tenant). Mesmos 110 métodos, agora sob o RLS daquele client — é a
+   *  Fase B (docs/ecosof/04) sem reescrever o wrapper inteiro. */
+  static comClient(client: SupabaseClient): SupabaseService {
+    const svc = Object.create(SupabaseService.prototype) as SupabaseService;
+    svc.client = client;   // dentro da classe, acesso ao private é permitido
+    return svc;
   }
 
   getClient(): SupabaseClient {
@@ -2141,4 +2151,18 @@ export class SupabaseService {
     if (error) return [];
     return data ?? [];
   }
+}
+
+type EnvLike = Record<string, string | undefined>;
+
+/** SWITCH strangler do WRAPPER (Fase B): o SupabaseService que a rota do dashboard
+ *  deve usar. Com a flag `RLS_TENANT_ROTAS=1` + env completa → wrapper amarrado ao
+ *  crachá do OPERADOR (o Postgres impõe o isolamento por empresa em TODOS os 110
+ *  métodos). Senão → o `svcServico` de hoje (ZERO mudança até virar a chave).
+ *  Usar SÓ em rotas de tenant (dashboard = uma empresa); webhooks/jobs seguem no serviço. */
+export function svcDoOperador(req: RequisicaoComOperador, svcServico: SupabaseService, e: EnvLike = process.env): SupabaseService {
+  if (e.RLS_TENANT_ROTAS !== '1') return svcServico;
+  const env = tenantEnvDoProcesso(e);
+  if (!env) return svcServico;   // flag ligada mas env incompleta → não quebra a rota
+  return SupabaseService.comClient(clientDoOperador(req, env));
 }

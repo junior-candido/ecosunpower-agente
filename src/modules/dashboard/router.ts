@@ -123,6 +123,7 @@ import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, 
 import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
 import { hidratarChecklist, resumoOS, type OSTipo } from './os-checklist.js';
 import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
+import { svcDoOperador } from '../supabase.js';          // strangler do WRAPPER (mesmo flag)
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
 // didApply=false: prévia + botão pra gravar. didApply=true: resultado da gravação.
@@ -1137,7 +1138,8 @@ export function createDashboardRouter(
   router.post('/leads/:id/delete', exigir('leads', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const r = await supabaseService.excluirLead(id);
+    const svc = svcDoOperador(req as AuthedRequest, supabaseService);   // strangler do wrapper
+    const r = await svc.excluirLead(id);
     if (!r.ok) {
       return res.status(400).send(
         `<h2>Não foi possível excluir</h2><p>${escapeHtmlSimple(r.error ?? '')}</p><a href="/dashboard/leads/${id}">← voltar</a>`,
@@ -1151,7 +1153,7 @@ export function createDashboardRouter(
   router.post('/leads/:id/arquivar', exigir('leads', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const r = await supabaseService.arquivarLead(id);
+    const r = await svcDoOperador(req as AuthedRequest, supabaseService).arquivarLead(id);
     if (!r.ok) return res.status(500).send(`erro: ${escapeHtmlSimple(r.error ?? '')}`);
     const viewer = (req as AuthedRequest).dashUser;
     if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'arquivou' });
@@ -1166,7 +1168,8 @@ export function createDashboardRouter(
     if (!reason) {
       return res.status(400).send('Motivo obrigatório. <a href="/dashboard/leads/' + id + '">← voltar</a>');
     }
-    const r = await supabaseService.marcarLeadPerdido(id, reason, notes || null);
+    const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
+    const r = await svcDoOperador(req as AuthedRequest, supabaseService).marcarLeadPerdido(id, reason, notes || null);
     if (!r.ok) {
       return res.status(400).send(
         `<h2>Erro ao marcar perdido</h2><p>${escapeHtmlSimple(r.error ?? '')}</p><a href="/dashboard/leads/${id}">← voltar</a>`,
@@ -1175,14 +1178,14 @@ export function createDashboardRouter(
     const viewer = (req as AuthedRequest).dashUser;
     if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'perdeu', valorNovo: reason });
     // Lead virou terminal (perdido): cancela tarefas pendentes pra não alertar SLA-fantasma.
-    try { await cancelarTarefasPendentesDoLead(supabase, id); } catch (e) { console.warn('[mark-lost] cancelar tarefas falhou (segue):', (e as Error).message); }
+    try { await cancelarTarefasPendentesDoLead(db, id); } catch (e) { console.warn('[mark-lost] cancelar tarefas falhou (segue):', (e as Error).message); }
     res.redirect(`/dashboard/leads/${id}`);
   });
 
   router.post('/leads/:id/unmark-lost', async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const r = await supabaseService.desmarcarLeadPerdido(id);
+    const r = await svcDoOperador(req as AuthedRequest, supabaseService).desmarcarLeadPerdido(id);
     if (!r.ok) return res.status(500).send(`erro: ${escapeHtmlSimple(r.error ?? '')}`);
     res.redirect(`/dashboard/leads/${id}`);
   });
@@ -1190,7 +1193,7 @@ export function createDashboardRouter(
   router.post('/leads/:id/desarquivar', async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const r = await supabaseService.desarquivarLead(id);
+    const r = await svcDoOperador(req as AuthedRequest, supabaseService).desarquivarLead(id);
     if (!r.ok) return res.status(500).send(`erro: ${escapeHtmlSimple(r.error ?? '')}`);
     res.redirect(`/dashboard/leads/${id}`);
   });
