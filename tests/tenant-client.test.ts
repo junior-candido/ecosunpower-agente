@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import crypto from 'crypto';
-import { jwtDaEmpresa, clientDaEmpresa } from '../src/modules/tenant-client.js';
+import { jwtDaEmpresa, clientDaEmpresa, clientDoOperador, bancoDoOperador } from '../src/modules/tenant-client.js';
 
 // FASE B do RLS (docs/ecosof/04-rls-fase-a-b.md): o app deixa de usar a
 // chave-mestra nas rotas de tenant e passa a se identificar POR EMPRESA com um
@@ -52,5 +52,48 @@ describe('clientDaEmpresa — client Supabase com o crachá da empresa', () => {
   it('cria o client sem rede (só monta os headers)', () => {
     const c = clientDaEmpresa(ECO, { url: 'https://x.supabase.co', anonKey: 'anon', jwtSecret: SEGREDO });
     expect(c).toBeTruthy();
+  });
+});
+
+describe('clientDoOperador — crachá a partir da SESSÃO do operador (Fatia 3)', () => {
+  const env = { url: 'https://x.supabase.co', anonKey: 'anon', jwtSecret: SEGREDO };
+
+  it('usa o companyId da sessão (req.dashUser.companyId)', () => {
+    expect(clientDoOperador({ dashUser: { companyId: ECO } }, env)).toBeTruthy();
+  });
+
+  it('recusa sem operador logado (sem sessão = sem crachá)', () => {
+    expect(() => clientDoOperador({}, env)).toThrow(/sess|operador|logad/i);
+    expect(() => clientDoOperador({ dashUser: {} }, env)).toThrow();
+  });
+
+  it('company_id NUNCA vem do frontend — só a sessão conta (body/header ignorados)', () => {
+    // request "malicioso" com company_id no body mas sem sessão → recusa
+    expect(() => clientDoOperador({ body: { company_id: ECO } } as never, env)).toThrow();
+    // sessão manda: mesmo com body diferente, quem vale é o dashUser
+    const c = clientDoOperador({ dashUser: { companyId: ECO }, body: { company_id: '1 OR 1=1' } } as never, env);
+    expect(c).toBeTruthy();
+  });
+});
+
+describe('bancoDoOperador — o switch strangler (flag RLS_TENANT_ROTAS)', () => {
+  const req = { dashUser: { companyId: ECO } };
+  const servico = { __service: true } as never;   // sentinela do client de serviço
+  const envCompleta = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_ANON_KEY: 'anon', SUPABASE_JWT_SECRET: SEGREDO };
+
+  it('flag DESLIGADA → usa o serviço (zero mudança em produção)', () => {
+    expect(bancoDoOperador(req, servico, { ...envCompleta })).toBe(servico);
+    expect(bancoDoOperador(req, servico, { ...envCompleta, RLS_TENANT_ROTAS: '0' })).toBe(servico);
+  });
+
+  it('flag LIGADA + env completa → usa o client-do-operador (não é o serviço)', () => {
+    const db = bancoDoOperador(req, servico, { ...envCompleta, RLS_TENANT_ROTAS: '1' });
+    expect(db).not.toBe(servico);
+    expect(db).toBeTruthy();
+  });
+
+  it('flag LIGADA mas env incompleta → cai no serviço (não quebra a rota)', () => {
+    expect(bancoDoOperador(req, servico, { RLS_TENANT_ROTAS: '1' })).toBe(servico);
+    expect(bancoDoOperador(req, servico, { RLS_TENANT_ROTAS: '1', SUPABASE_URL: 'https://x.supabase.co' })).toBe(servico);
   });
 });

@@ -53,3 +53,38 @@ export function clientDaEmpresa(companyId: string, env: TenantClientEnv): Supaba
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }
+
+/** Requisição com a sessão do operador logado (o dashboard preenche `req.dashUser`). */
+export interface RequisicaoComOperador {
+  dashUser?: { companyId?: string };
+}
+
+/** Client-do-tenant a partir da SESSÃO do operador (Fatia 3, strangler).
+ *  O `company_id` sai SÓ do `req.dashUser` (sessão) — NUNCA de body/header/query,
+ *  que o operador poderia forjar. Sem sessão, não emite crachá (melhor 500 que vazar). */
+export function clientDoOperador(req: RequisicaoComOperador, env: TenantClientEnv): SupabaseClient {
+  const companyId = req.dashUser?.companyId;
+  if (!companyId) throw new Error('sem operador logado (req.dashUser.companyId) — não emito crachá sem sessão');
+  return clientDaEmpresa(companyId, env);
+}
+
+type EnvLike = Record<string, string | undefined>;
+
+/** Lê a env do tenant do process.env — undefined se qualquer chave faltar. */
+export function tenantEnvDoProcesso(e: EnvLike = process.env): TenantClientEnv | undefined {
+  const url = e.SUPABASE_URL, anonKey = e.SUPABASE_ANON_KEY, jwtSecret = e.SUPABASE_JWT_SECRET;
+  if (!url || !anonKey || !jwtSecret) return undefined;
+  return { url, anonKey, jwtSecret };
+}
+
+/** SWITCH strangler (Fatia 3): o banco que a rota deve usar.
+ *  Com a flag `RLS_TENANT_ROTAS=1` E env completa → client-do-OPERADOR (o Postgres
+ *  impõe o isolamento via RLS 079). Senão → o `servico` (comportamento de hoje:
+ *  ZERO mudança em produção até o Junior setar as chaves e virar a flag). Migra
+ *  rota a rota trocando `supabase` por `bancoDoOperador(req, supabase)`. */
+export function bancoDoOperador(req: RequisicaoComOperador, servico: SupabaseClient, e: EnvLike = process.env): SupabaseClient {
+  if (e.RLS_TENANT_ROTAS !== '1') return servico;
+  const env = tenantEnvDoProcesso(e);
+  if (!env) return servico;   // flag ligada mas env incompleta → não quebra a rota
+  return clientDoOperador(req, env);
+}

@@ -122,6 +122,7 @@ import type { ManutencaoTipo } from './manutencao-motor.js';
 import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, fotoCountsPorItem, concluirOS } from './os-queries.js';
 import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
 import { hidratarChecklist, resumoOS, type OSTipo } from './os-checklist.js';
+import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
 // didApply=false: prévia + botão pra gravar. didApply=true: resultado da gravação.
@@ -663,9 +664,12 @@ export function createDashboardRouter(
       const limit = Math.max(1, Math.min(200, parseInt(String(req.query.limit ?? '10')) || 10));
       const offset = Math.max(0, parseInt(String(req.query.offset ?? '0')) || 0);
       const { buildLeadsInsights } = await import('./ai-summary.js');
+      // Fatia 3 (strangler RLS): 1ª rota no client-do-operador. Com a flag desligada
+      // (padrão) é o mesmo supabase de serviço — zero mudança até o Junior virar a chave.
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
       const [result, insights] = await Promise.all([
-        listLeads(supabase, { status, only_alerts, atencao, search, limit, offset, viewerId: viewer.id, viewerIsAdmin: viewer.isAdmin }),
-        buildLeadsInsights(supabase),
+        listLeads(db, { status, only_alerts, atencao, search, limit, offset, viewerId: viewer.id, viewerIsAdmin: viewer.isAdmin }),
+        buildLeadsInsights(db),
       ]);
       res.send(renderLeadsListPage(result.rows, {
         status,
