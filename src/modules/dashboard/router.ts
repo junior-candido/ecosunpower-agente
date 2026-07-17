@@ -1122,7 +1122,8 @@ export function createDashboardRouter(
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     const name = String(req.body?.name ?? '').trim().slice(0, 100);
-    const { error } = await supabase
+    const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
+    const { error } = await db
       .from('leads')
       .update({ name: name || null, updated_at: new Date().toISOString() })
       .eq('id', id);
