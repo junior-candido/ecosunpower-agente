@@ -87,6 +87,10 @@ export async function tryHandleEvaAdminButton(args: {
   onDonoPular?: () => Promise<void>;
   onDonoPularTudo?: () => Promise<void>;
   onDonoCancelar?: () => Promise<void>;
+  // Campanha via Eva (preview de e-mail): aprovar/refazer/descartar.
+  onCampanhaAprovar?: (campanhaId: string) => Promise<void>;
+  onCampanhaRefazer?: (campanhaId: string) => Promise<void>;
+  onCampanhaDescartar?: (campanhaId: string) => Promise<void>;
 }): Promise<boolean> {
   // Regex relaxado: aceita qualquer sufixo apos a action (ex: fechar-doc:procuracao:<uuid>)
   const m = args.text.trim().match(/^evabt:([a-z0-9-]+)(?::(.+))?$/i);
@@ -368,6 +372,25 @@ export async function tryHandleEvaAdminButton(args: {
       }
       case 'dono-cancelar': {
         if (args.onDonoCancelar) await args.onDonoCancelar();
+        return true;
+      }
+
+      case 'camp-ok': {
+        if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem id da campanha.'); return true; }
+        if (args.onCampanhaAprovar) await args.onCampanhaAprovar(leadId);
+        else await args.sendText(args.from, '⚠️ Handler de campanha não configurado.');
+        return true;
+      }
+      case 'camp-re': {
+        if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem id da campanha.'); return true; }
+        if (args.onCampanhaRefazer) await args.onCampanhaRefazer(leadId);
+        else await args.sendText(args.from, '⚠️ Handler de campanha não configurado.');
+        return true;
+      }
+      case 'camp-x': {
+        if (!leadId) { await args.sendText(args.from, '⚠️ Botão sem id da campanha.'); return true; }
+        if (args.onCampanhaDescartar) await args.onCampanhaDescartar(leadId);
+        else await args.sendText(args.from, '⚠️ Handler de campanha não configurado.');
         return true;
       }
 

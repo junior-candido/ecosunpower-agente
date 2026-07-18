@@ -1038,6 +1038,56 @@ export class SupabaseService {
   }
 
   /**
+   * Destinatários de uma CAMPANHA de e-mail avulsa (feature "Campanha via Eva").
+   * Reusa os MESMOS filtros de elegibilidade da jornada (inscreverLeadsElegiveisEmail):
+   * lead com e-mail, sem email_opt_out, não arquivado, status != 'perdido',
+   * installation_status fora dos CLIENTE_STATUSES, e-mail não descadastrado.
+   *
+   * DIFERENÇA da jornada: campanha é AVULSA — NÃO exclui quem já está na
+   * email_sequencia (a campanha vai pra base toda que aceita e-mail, esteja ou
+   * não na régua automática).
+   *
+   * O filtro de status roda em JS (não em SQL) pela mesma armadilha do NULL
+   * documentada em inscreverLeadsElegiveisEmail (um `.not(col,'in',(...))` puro
+   * derruba silenciosamente toda linha com a coluna NULL).
+   */
+  async listarDestinatariosCampanha(max: number = 1000): Promise<Array<{ id: string; email: string; name: string }>> {
+    const CLIENTE_STATUSES = ['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido'];
+
+    const { data, error } = await this.client
+      .from('leads')
+      .select('id, name, email, status, installation_status, archived_at, email_opt_out')
+      .not('email', 'is', null)
+      .neq('email', '')
+      .not('email_opt_out', 'is', true)
+      .is('archived_at', null)
+      .limit(5000);
+
+    if (error) {
+      console.warn('[campanha] listarDestinatariosCampanha: busca de leads falhou:', error.message);
+      return [];
+    }
+
+    const candidatos = ((data ?? []) as any[]).filter((l) => {
+      if (!l.email || l.email_opt_out || l.archived_at) return false;
+      if (l.status === 'perdido') return false;
+      if (l.installation_status && CLIENTE_STATUSES.includes(l.installation_status)) return false;
+      return true;
+    });
+    if (candidatos.length === 0) return [];
+
+    const { data: descadastrados } = await this.client.from('email_descadastro').select('email');
+    const emailsDescadastrados = new Set(
+      ((descadastrados ?? []) as any[]).map((r) => String(r.email ?? '').toLowerCase()),
+    );
+
+    return candidatos
+      .filter((l) => !emailsDescadastrados.has(String(l.email).toLowerCase()))
+      .slice(0, max)
+      .map((l) => ({ id: l.id as string, email: l.email as string, name: (l.name ?? '') as string }));
+  }
+
+  /**
    * Retorna o id do lead existente pelo telefone, ou cria um novo (status='qualificado').
    * Usado por savePropostaPublica e pelo modo /fechar pra garantir que
    * proposta sempre fica linkada a um lead. Resolve bug Fase 1 (proposta orfa).

@@ -106,6 +106,7 @@ import { carregarEmpresaConfig, carregarKits, empresa, listaMarcasTexto } from '
 import { mapResendEvento } from './modules/email/resend-events.js';
 import { EmailSequenceService } from './modules/email/email-sequence.js';
 import { EmailSender } from './modules/email/resend-client.js';
+import { CampanhaService, botoesPreviewCampanha, type CampanhaGerada } from './modules/email/campanha.js';
 import { registrarEvento } from './modules/elo/eventos.js';
 import { registrarVenda } from './modules/vendas/registrar-venda.js';
 // Escape pra páginas públicas que interpolam campos da empresa_config em HTML
@@ -422,6 +423,49 @@ async function main() {
     const { messageId } = await messaging.sendText(to, text, delay);
     if (messageId) await takeover.markBotSent(messageId);
   };
+
+  // "Campanha via Eva": /campanha no zap -> gera e-mail (Claude + FLUX) -> manda
+  // preview pro Junior com botões (aprovar/refazer/descartar) -> ao aprovar,
+  // dispara pra base elegível. Precisa do Replicate (FLUX); sem token = null.
+  const campanha = config.replicateApiToken
+    ? new CampanhaService({
+        anthropic: new Anthropic({ apiKey: config.anthropicApiKey }),
+        imageGen: new ImageGenerator(config.replicateApiToken),
+        supabase: supabase.getClient(),
+        sender: new EmailSender(process.env.RESEND_API_KEY ?? '', process.env.EMAIL_FROM ?? ''),
+        listarDestinatarios: (max) => supabase.listarDestinatariosCampanha(max),
+        baseUrl: config.publicProposalBaseUrl,
+        siteUrl: config.siteUrl,
+        empresa: empresa().nomeFantasia,
+        // Preview no WhatsApp: imagem hero + legenda (assunto/título/nº destinatários)
+        // + botões. Fallback sem WABA: texto com a URL da imagem.
+        enviarPreview: async (c: CampanhaGerada) => {
+          const to = config.engineerPhone;
+          const dest = await supabase.listarDestinatariosCampanha(1000).catch(() => []);
+          const caption = `${c.assunto}\n\n${c.titulo}\n\n~${dest.length} destinatários`;
+          const botoes = botoesPreviewCampanha(c.id);
+          if (metaWaba) {
+            try {
+              const resp = await fetch(c.image_url);
+              const buf = Buffer.from(await resp.arrayBuffer());
+              const { mediaId } = await metaWaba.uploadMedia(buf, 'image/png', `campanha-${c.id}.png`);
+              await metaWaba.sendImageById(to, mediaId, caption);
+            } catch (err) {
+              console.warn('[campanha] preview com imagem falhou, mando texto:', (err as Error).message);
+              await sendText(to, `${caption}\n\n🖼 ${c.image_url}`);
+            }
+            await sendAdminWithButtons({ metaWaba, sendText }, to, 'Aprova essa campanha?', botoes, 'Campanha de e-mail');
+          } else {
+            await sendText(to, `${caption}\n\n🖼 ${c.image_url}\n\nResponda: aprovar / refazer / descartar`);
+          }
+        },
+      })
+    : null;
+  if (campanha) {
+    console.log('[campanha] Campanha via Eva ativa — comando /campanha');
+  } else {
+    console.warn('[campanha] Disabled: REPLICATE_API_TOKEN nao setado');
+  }
 
   // Registra na conversa que a 1ª mensagem ao lead foi um template aprovado
   // (WABA). Sem esse registro o message_count fica 0 e o auto-ack re-dispara
@@ -2446,6 +2490,31 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
+  // /campanha [tema]: gera uma campanha de e-mail (copy do Claude + imagem FLUX)
+  // e manda o preview pro Junior no zap. Sem tema = tema rotativo do dia; com
+  // tema = texto livre vence. Geração em segundo plano (leva ~1 min).
+  async function tryHandleCampanhaCommand(from: string, text: string): Promise<boolean> {
+    if (!isAdminPhone(from)) return false;
+    const m = text.trim().match(/^\/?campanha(?:\s+(.+))?$/i);
+    if (!m) return false;
+    if (!campanha) {
+      await sendText(from, '❌ Geração de campanha está desativada (falta REPLICATE_API_TOKEN).');
+      return true;
+    }
+    const tema = m[1]?.trim() || undefined;
+    await sendText(from, '🎨 Montando a campanha... te mando o preview em ~1 min.');
+    // Fire-and-forget: a geração (Claude + FLUX) leva ~1 min, não pode travar o webhook.
+    void (async () => {
+      try {
+        await campanha!.gerar(tema);
+      } catch (err) {
+        console.error('[campanha] gerar falhou:', err);
+        await sendText(from, `❌ Não consegui montar a campanha agora: ${(err as Error).message}`);
+      }
+    })();
+    return true;
+  }
+
   // /fechei <nome ou telefone>: marca lead como cliente fechado.
   // status=transferido + opt_out=true => removido da cadencia automaticamente.
   async function tryHandleFecheiCommand(from: string, text: string): Promise<boolean> {
@@ -4007,6 +4076,34 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           await clearDonoCadState(from);
           await sendText(from, 'Cadastro cancelado. O alerta volta na próxima rodada.');
         },
+        // Campanha via Eva: botões do preview. Aprovar dispara o envio (pesado,
+        // roda em segundo plano); refazer gera outra; descartar só arquiva.
+        onCampanhaAprovar: campanha ? async (id) => {
+          const dest = await supabase.listarDestinatariosCampanha(1000).catch(() => []);
+          await sendText(from, `📤 Enviando pra ${dest.length} leads...`);
+          void (async () => {
+            try {
+              const r = await campanha!.aprovar(id);
+              await sendText(from, `✅ Campanha enviada pra ${r.enviados} leads!`);
+            } catch (err) {
+              await sendText(from, `❌ Erro ao enviar a campanha: ${(err as Error).message}`);
+            }
+          })();
+        } : undefined,
+        onCampanhaRefazer: campanha ? async (id) => {
+          await sendText(from, '🔄 Refazendo... te mando um novo preview em ~1 min.');
+          void (async () => {
+            try {
+              await campanha!.refazer(id);
+            } catch (err) {
+              await sendText(from, `❌ Não consegui refazer: ${(err as Error).message}`);
+            }
+          })();
+        } : undefined,
+        onCampanhaDescartar: campanha ? async (id) => {
+          await campanha!.descartar(id);
+          await sendText(from, '🗑️ Campanha descartada.');
+        } : undefined,
       })) return;
     }
 
@@ -4059,6 +4156,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // /email — adiciona/atualiza email de um lead
     if (await tryHandleEmailCommand(from, text)) return;
+
+    // /campanha — gera campanha de e-mail (Claude + FLUX) e manda preview pro Junior
+    if (await tryHandleCampanhaCommand(from, text)) return;
 
     // /banner — modo conversacional (captura respostas durante fluxo) + comando inicial
     if (await tryHandleBannerModeStep(from, text)) return;
