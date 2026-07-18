@@ -14,6 +14,7 @@ import { gerarAssuntoAbertura } from './email-writer.js';
 import { registrarEvento } from '../elo/eventos.js';
 import { montarMolduraEmail } from './email-moldura.js';
 import { buscarNoticiasBlog } from './blog-noticias.js';
+import { dicaDoDia } from './dicas-de-ouro.js';
 import type { EmailSender } from './resend-client.js';
 
 const RSS_URL_PADRAO = 'https://www.ecosunpower.eng.br/rss.xml';
@@ -61,7 +62,7 @@ export class EmailSequenceService {
         const link = `${this.opts.baseUrl}/e/descadastro?lid=${lead.id}`;
         const conteudoHtml = (abertura ? `<p>${abertura}</p>` : '') +
           renderTemplate(modelo.corpo_html, { nome: lead.name, cidade: lead.city, o_que_pediu: lead.profile, link_descadastro: link });
-        const html = montarMolduraEmail({ conteudoHtml, linkDescadastro: link, noticias, empresa: this.opts.empresa });
+        const html = montarMolduraEmail({ conteudoHtml, linkDescadastro: link, noticias, empresa: this.opts.empresa, dica: dicaDoDia(now) });
         const msgId = await this.sender.enviar({ to: lead.email, subject: assunto, html });
         await this.supa.markEmailSent(row.id, msgId, assunto);
         await registrarEvento(this.supa.getClient(), {
