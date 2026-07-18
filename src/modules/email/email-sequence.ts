@@ -1,12 +1,21 @@
 // src/modules/email/email-sequence.ts
-// Envia so em dias uteis (seg-sex), das 9h as 20h BRT (UTC-3).
+// Janela de envio — plano de automação aprovado 18/07: segunda a caixa de
+// entrada esta cheia (todo mundo volta do fim de semana), entao NAO envia
+// as segundas; o step que vence na segunda so dispara na terca, 9h. Sexta
+// so ate as 15h (depois disso o e-mail se perde no fim de expediente).
+// Terca/quarta/quinta seguem 9h-20h. Fim de semana continua sem envio.
+//
+// Nota: a prioridade de manha (a maior parte dos envios cair entre 9h-11h)
+// e EMERGENTE, nao programada: os steps que venceram durante a noite ficam
+// "devidos" e todos disparam junto na abertura da janela das 9h.
 export function podeEnviarAgora(now: Date = new Date()): boolean {
   const brtMs = now.getTime() - 3 * 60 * 60 * 1000;
   const brt = new Date(brtMs);
   const dia = brt.getUTCDay();          // 0=domingo ... 6=sabado
   const hora = brt.getUTCHours();
-  if (dia === 0 || dia === 6) return false;
-  return hora >= 9 && hora < 20;
+  if (dia === 0 || dia === 6 || dia === 1) return false; // fim de semana + segunda
+  if (dia === 5) return hora >= 9 && hora < 15;           // sexta: so ate 15h
+  return hora >= 9 && hora < 20;                          // terca/quarta/quinta
 }
 
 import { renderTemplate, STEPS_JORNADA } from './templates.js';

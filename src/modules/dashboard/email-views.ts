@@ -4,6 +4,7 @@
 // ligar/pausar o envio automático. Espelha blog-views.ts.
 
 import { escapeHtml } from './views.js';
+import type { DesempenhoStep } from './email-metricas.js';
 
 export function resumirMetricas(eventos: Array<{ tipo: string }>) {
   const c = (t: string) => eventos.filter((e) => e.tipo === t).length;
@@ -16,7 +17,11 @@ export function resumirMetricas(eventos: Array<{ tipo: string }>) {
   };
 }
 
-export function renderEmailPage(m: ReturnType<typeof resumirMetricas>, ligado: boolean): string {
+export function renderEmailPage(
+  m: ReturnType<typeof resumirMetricas>,
+  ligado: boolean,
+  desempenho: DesempenhoStep[] = [],
+): string {
   const card = (rot: string, v: number) => `
     <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;min-width:130px">
       <div style="color:#64748b;font-size:12px">${escapeHtml(rot)}</div>
@@ -27,6 +32,34 @@ export function renderEmailPage(m: ReturnType<typeof resumirMetricas>, ligado: b
   const statusBadge = ligado
     ? `<span style="background:#064e3b;color:#d1fae5;border-radius:999px;padding:3px 12px;font-weight:600;font-size:13px">🟢 ligada</span>`
     : `<span style="background:#450a0a;color:#fecaca;border-radius:999px;padding:3px 12px;font-weight:600;font-size:13px">⏸️ pausada</span>`;
+
+  const linhasDesempenho = desempenho.length
+    ? desempenho.map((d) => `
+      <tr>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#0f172a">${escapeHtml(String(d.step))}. ${escapeHtml(d.nome)}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;color:#0f172a">${d.enviados}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;color:#0f172a">${d.abertos} <span style="color:#64748b">(${d.taxaAbertura}%)</span></td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;color:#0f172a">${d.clicados} <span style="color:#64748b">(${d.taxaClique}%)</span></td>
+      </tr>`).join('')
+    : `<tr><td colspan="4" style="padding:16px 12px;color:#64748b;text-align:center">Ainda sem e-mails enviados nesta jornada.</td></tr>`;
+
+  const tabelaDesempenho = `
+    <div style="margin:24px 0">
+      <h2 style="font-size:16px;font-weight:700;color:#0f172a;margin-bottom:10px">📊 Desempenho por e-mail da jornada</h2>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:14px">
+          <thead>
+            <tr style="background:#f8fafc">
+              <th style="padding:10px 12px;text-align:left;color:#64748b;font-size:12px">E-mail</th>
+              <th style="padding:10px 12px;text-align:right;color:#64748b;font-size:12px">Enviados</th>
+              <th style="padding:10px 12px;text-align:right;color:#64748b;font-size:12px">Abertos</th>
+              <th style="padding:10px 12px;text-align:right;color:#64748b;font-size:12px">Clicados</th>
+            </tr>
+          </thead>
+          <tbody>${linhasDesempenho}</tbody>
+        </table>
+      </div>
+    </div>`;
 
   return `
   <div style="max-width:920px;margin:0 auto">
@@ -46,5 +79,7 @@ export function renderEmailPage(m: ReturnType<typeof resumirMetricas>, ligado: b
         ${ligado ? '⏸️ Pausar sequência' : '▶️ Ligar sequência'}
       </button>
     </form>
+
+    ${tabelaDesempenho}
   </div>`;
 }

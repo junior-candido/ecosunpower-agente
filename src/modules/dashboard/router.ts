@@ -110,6 +110,7 @@ import type { AuthedRequest } from './auth.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
 import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } from './blog-views.js';
 import { renderEmailPage } from './email-views.js';
+import { desempenhoPorStep } from './email-metricas.js';
 import { listarClientesPosVenda, listarAgendaPosVenda } from './pos-venda-queries.js';
 import { renderPosVendaPage } from './pos-venda-views.js';
 import { objetivoManual, fallbackMensagem } from './pos-venda-mensagens.js';
@@ -1492,11 +1493,17 @@ export function createDashboardRouter(
     } catch (err) {
       console.warn('[dashboard/email] falha ao contar eventos_elo (segue com zeros):', (err as Error).message);
     }
+    let desempenho: Awaited<ReturnType<typeof desempenhoPorStep>> = [];
+    try {
+      desempenho = await desempenhoPorStep(supabaseService.getClient());
+    } catch (err) {
+      console.warn('[dashboard/email] falha ao montar desempenho por step (segue vazio):', (err as Error).message);
+    }
     const ligado = (await supabaseService.getFlag('email_seq_ligado')) ?? true;
     res.type('text/html').send(renderLayout({
       active: 'email',
       title: 'E-mail Marketing',
-      body: renderEmailPage(metricas, ligado),
+      body: renderEmailPage(metricas, ligado, desempenho),
       user: req.dashUser,
     }));
   });

@@ -23,7 +23,8 @@ export async function gerarAssuntoAbertura(
   const system =
     `Voce escreve e-mails curtos e humanos para ${empresa}. ` +
     'NUNCA cite preco, valor em reais, parcelas ou numeros de economia. ' +
-    'Responda EXATAMENTE no formato:\nASSUNTO: <ate 60 caracteres>\nABERTURA: <1 frase>';
+    'O assunto deve ter entre 35 e 55 caracteres, direto e sem clickbait. ' +
+    'Responda EXATAMENTE no formato:\nASSUNTO: <entre 35 e 55 caracteres>\nABERTURA: <1 frase>';
   const user =
     `Tema do e-mail (step ${ctx.step}): ${ctx.tema}\n` +
     `Lead: nome=${ctx.nome ?? ''}, cidade=${ctx.cidade ?? ''}, pediu=${ctx.oQuePediu ?? ''}`;
@@ -51,5 +52,22 @@ export async function gerarAssuntoAbertura(
   assunto = aplicarTravaPreco(assunto, assuntoPadrao);
   abertura = aplicarTravaPreco(abertura, '');
 
+  // Guarda pos-IA: pedimos 35-55 na instrucao, mas a IA pode ignorar. Se vier
+  // longo demais, corta no limite das palavras (sem "..." — reticencias em
+  // assunto de e-mail parecem spam). O assunto padrao (fallback) fica como esta.
+  if (assunto !== assuntoPadrao) {
+    assunto = truncarAssunto(assunto);
+  }
+
   return { assunto, abertura };
+}
+
+const LIMITE_MAX_ASSUNTO = 70;
+
+function truncarAssunto(assunto: string, max: number = LIMITE_MAX_ASSUNTO): string {
+  if (assunto.length <= max) return assunto;
+  let cortado = assunto.slice(0, max);
+  const ultimoEspaco = cortado.lastIndexOf(' ');
+  if (ultimoEspaco > 0) cortado = cortado.slice(0, ultimoEspaco);
+  return cortado.trimEnd();
 }
