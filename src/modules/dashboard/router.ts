@@ -316,7 +316,9 @@ export function createDashboardRouter(
     if (!can(req.dashUser, 'rh', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
     const { listarVagas } = await import('../rh/store.js');
     const { renderVagasPage } = await import('./rh-views.js');
-    res.type('html').send(renderVagasPage(await listarVagas(supabase), req.dashUser));
+    // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+    const db = bancoDoOperador(req, supabase);
+    res.type('html').send(renderVagasPage(await listarVagas(db), req.dashUser));
   });
 
   router.get('/rh/vagas/nova', async (req: AuthedRequest, res) => {
@@ -343,7 +345,9 @@ export function createDashboardRouter(
     if (!can(req.dashUser, 'rh', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
     const { getVaga } = await import('../rh/store.js');
     const { renderVagaFormPage } = await import('./rh-views.js');
-    const vaga = await getVaga(supabase, String(req.params.id));
+    // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+    const db = bancoDoOperador(req, supabase);
+    const vaga = await getVaga(db, String(req.params.id));
     if (!vaga) { res.status(404).send('Vaga não encontrada'); return; }
     res.type('html').send(renderVagaFormPage(vaga, req.dashUser));
   });
@@ -380,7 +384,9 @@ export function createDashboardRouter(
       status: typeof req.query.status === 'string' && req.query.status ? req.query.status : undefined,
       q: typeof req.query.q === 'string' && req.query.q ? req.query.q : undefined,
     };
-    const [candidatos, vagas] = await Promise.all([listarCandidatos(supabase, filtros), listarVagas(supabase)]);
+    // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+    const db = bancoDoOperador(req, supabase);
+    const [candidatos, vagas] = await Promise.all([listarCandidatos(db, filtros), listarVagas(db)]);
     res.type('html').send(renderCandidatosPage(candidatos, vagas, filtros, req.dashUser));
   });
 
@@ -397,7 +403,9 @@ export function createDashboardRouter(
   router.get('/rh/candidatos/:id/curriculo', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
     const { urlCurriculoDoCandidato } = await import('../rh/store.js');
-    const url = await urlCurriculoDoCandidato(supabase, String(req.params.id));
+    // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+    const db = bancoDoOperador(req, supabase);
+    const url = await urlCurriculoDoCandidato(db, String(req.params.id));
     if (!url) { res.status(404).send('Currículo não encontrado — tenta de novo em instantes.'); return; }
     res.redirect(url);
   });
@@ -415,7 +423,9 @@ export function createDashboardRouter(
       const { buscarNoBanco } = await import('../rh/busca.js');
       const { default: Anthropic } = await import('@anthropic-ai/sdk');
       const anthropic = new Anthropic({ apiKey: options.anthropicApiKey });
-      const resultados = await buscarNoBanco(anthropic, supabase, pergunta);
+      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
+      const resultados = await buscarNoBanco(anthropic, db, pergunta);
       res.type('html').send(renderBuscaPage(pergunta, resultados, req.dashUser));
     } catch (err) {
       console.warn('[rh-busca]', (err as Error).message);
@@ -459,7 +469,9 @@ export function createDashboardRouter(
     try {
       const { getCockpitData } = await import('./cockpit-queries.js');
       const { renderCockpitPage } = await import('./cockpit-views.js');
-      const data = await getCockpitData(supabase);
+      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      const data = await getCockpitData(db);
       // IA: sintese leads aguardando + insights gerais da plataforma.
       let leadsAguardando: Awaited<ReturnType<typeof import('./lead-synthesis.js').getLeadsAguardandoAcao>> = [];
       let platformInsights: Awaited<ReturnType<typeof import('./lead-synthesis.js').getPlatformInsights>> = [];
@@ -469,8 +481,8 @@ export function createDashboardRouter(
           const { getLeadsAguardandoAcao, getPlatformInsights } = await import('./lead-synthesis.js');
           const anthropic = new Anthropic({ apiKey: options.anthropicApiKey });
           [leadsAguardando, platformInsights] = await Promise.all([
-            getLeadsAguardandoAcao(supabase, anthropic, 6),
-            getPlatformInsights(supabase, anthropic),
+            getLeadsAguardandoAcao(db, anthropic, 6),
+            getPlatformInsights(db, anthropic),
           ]);
         } catch (err) {
           console.warn('[cockpit] sintese IA falhou (segue sem):', (err as Error).message);
@@ -501,10 +513,12 @@ export function createDashboardRouter(
   });
 
   // Endpoint JSON pro auto-refresh do cockpit (so dados, sem HTML).
-  router.get('/cockpit/data', async (_req: Request, res: Response) => {
+  router.get('/cockpit/data', async (req: Request, res: Response) => {
     try {
       const { getCockpitData } = await import('./cockpit-queries.js');
-      const data = await getCockpitData(supabase);
+      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      const data = await getCockpitData(db);
       res.json(data);
     } catch (err) {
       console.error('[dashboard/cockpit/data]', err);
@@ -1235,15 +1249,17 @@ export function createDashboardRouter(
       const offset = Math.max(0, parseInt(String(req.query.offset ?? '0')) || 0);
       const { buildMarketingInsights } = await import('./ai-summary.js');
       const { fetchGoogleAnalyticsSummary } = await import('../marketing/google-analytics/index.js');
+      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
       const [kpis, campaignsResult, creatives, alerts, channels, insights, googleAds7d, googleAds30d, ga4_30d] = await Promise.all([
-        fetchMarketingKpis(supabase),
-        listActiveCampaigns(supabase, { status, search, limit, offset }),
-        listRecentCreatives(supabase, 8),
-        listPendingAlerts(supabase),
-        fetchChannelFunnel(supabase, periodo),
-        buildMarketingInsights(supabase),
-        fetchGoogleAdsSummary(supabase, 7),
-        fetchGoogleAdsSummary(supabase, 30),
+        fetchMarketingKpis(db),
+        listActiveCampaigns(db, { status, search, limit, offset }),
+        listRecentCreatives(db, 8),
+        listPendingAlerts(db),
+        fetchChannelFunnel(db, periodo),
+        buildMarketingInsights(db),
+        fetchGoogleAdsSummary(db, 7),
+        fetchGoogleAdsSummary(db, 30),
         fetchGoogleAnalyticsSummary(30).catch((err) => ({
           sessions: 0, users: 0, pageviews: 0, dias_com_dado: 0, channels: [], top_pages: [],
           error: (err as Error).message,
@@ -1254,7 +1270,7 @@ export function createDashboardRouter(
       try {
         const { fetchCampaignQualityInputs } = await import('../marketing/campaign-quality-data.js');
         const { analyzeCampaignQuality } = await import('../marketing/campaign-quality.js');
-        const inputs = await fetchCampaignQualityInputs(supabase, 14);
+        const inputs = await fetchCampaignQualityInputs(db, 14);
         campaignQuality = analyzeCampaignQuality(inputs.spends, inputs.leads);
       } catch (err) {
         console.warn('[dashboard/marketing] campaignQuality falhou (segue sem):', (err as Error).message);
@@ -4310,7 +4326,9 @@ export function createDashboardRouter(
     try {
       const { getFinanceiroData } = await import('./financeiro-queries.js');
       const { renderFinanceiroPage } = await import('./financeiro-views.js');
-      const data = await getFinanceiroData(supabase, parseFiltrosFinanceiro(req.query));
+      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
+      const data = await getFinanceiroData(db, parseFiltrosFinanceiro(req.query));
       res.type('text/html').send(renderFinanceiroPage(data, req.dashUser));
     } catch (err) {
       res.status(500).type('text/html').send(`<h2>Erro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -4320,7 +4338,9 @@ export function createDashboardRouter(
   router.get('/financeiro/data', async (req, res) => {
     try {
       const { getFinanceiroData } = await import('./financeiro-queries.js');
-      res.json(await getFinanceiroData(supabase, parseFiltrosFinanceiro(req.query)));
+      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      res.json(await getFinanceiroData(db, parseFiltrosFinanceiro(req.query)));
     } catch (err) {
       res.status(500).json({ error: (err as Error).message });
     }
