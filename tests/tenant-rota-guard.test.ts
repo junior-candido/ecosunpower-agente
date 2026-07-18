@@ -21,6 +21,6 @@ describe('guarda multi-tenant — acessos crus ao banco no router (ratchet)', ()
   });
 
   it('supabaseService.metodo(...) cru não aumenta (migre pro svcDoOperador)', () => {
-    expect(conta(/\bsupabaseService\.[a-zA-Z]/g)).toBeLessThanOrEqual(47);
+    expect(conta(/\bsupabaseService\.[a-zA-Z]/g)).toBeLessThanOrEqual(44);
   });
 });

@@ -469,7 +469,8 @@ export function createDashboardRouter(
     try {
       const { getCockpitData } = await import('./cockpit-queries.js');
       const { renderCockpitPage } = await import('./cockpit-views.js');
-      const data = await getCockpitData(supabase);
+      const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
+      const data = await getCockpitData(db);
       // IA: sintese leads aguardando + insights gerais da plataforma.
       let leadsAguardando: Awaited<ReturnType<typeof import('./lead-synthesis.js').getLeadsAguardandoAcao>> = [];
       let platformInsights: Awaited<ReturnType<typeof import('./lead-synthesis.js').getPlatformInsights>> = [];
@@ -479,8 +480,8 @@ export function createDashboardRouter(
           const { getLeadsAguardandoAcao, getPlatformInsights } = await import('./lead-synthesis.js');
           const anthropic = new Anthropic({ apiKey: options.anthropicApiKey });
           [leadsAguardando, platformInsights] = await Promise.all([
-            getLeadsAguardandoAcao(supabase, anthropic, 6),
-            getPlatformInsights(supabase, anthropic),
+            getLeadsAguardandoAcao(db, anthropic, 6),
+            getPlatformInsights(db, anthropic),
           ]);
         } catch (err) {
           console.warn('[cockpit] sintese IA falhou (segue sem):', (err as Error).message);
@@ -511,10 +512,11 @@ export function createDashboardRouter(
   });
 
   // Endpoint JSON pro auto-refresh do cockpit (so dados, sem HTML).
-  router.get('/cockpit/data', async (_req: Request, res: Response) => {
+  router.get('/cockpit/data', async (req: Request, res: Response) => {
     try {
       const { getCockpitData } = await import('./cockpit-queries.js');
-      const data = await getCockpitData(supabase);
+      const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
+      const data = await getCockpitData(db);
       res.json(data);
     } catch (err) {
       console.error('[dashboard/cockpit/data]', err);
@@ -585,10 +587,11 @@ export function createDashboardRouter(
       const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
       const mesLabel = ehAtual ? 'Este mês' : `${MESES[mesRef.getMonth()]} de ${mesRef.getFullYear()}`;
       const mesValue = `${mesRef.getFullYear()}-${String(mesRef.getMonth() + 1).padStart(2, '0')}`;
+      const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
       const [kpis, grafico, graficoVendas] = await Promise.all([
-        fetchDashboardKpis(supabase, mesRef),
-        fetchPropostasPorMes(supabase),
-        fetchVendasPorMes(supabase),
+        fetchDashboardKpis(db, mesRef),
+        fetchPropostasPorMes(db),
+        fetchVendasPorMes(db),
       ]);
       res.send(renderHomePage(kpis, grafico, graficoVendas, mesLabel, mesValue));
     } catch (err) {
@@ -602,7 +605,8 @@ export function createDashboardRouter(
   router.post('/cadencia/fechou', async (req: Request, res: Response) => {
     const id = String(req.body?.id ?? '').trim();
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const { data: leadRow, error } = await supabase
+    const db = bancoDoOperador(req as AuthedRequest, supabase);   // strangler RLS
+    const { data: leadRow, error } = await db
       .from('leads')
       .update({ status: 'transferido', opt_out: true, updated_at: new Date().toISOString() })
       .eq('id', id)
@@ -3570,7 +3574,7 @@ export function createDashboardRouter(
   router.post('/clientes/:id/arquivar', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
     if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
-    const r = await supabaseService.arquivarLead(id);
+    const r = await svcDoOperador(req as AuthedRequest, supabaseService).arquivarLead(id);
     if (!r.ok) {
       return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/clientes/${id}">← voltar</a>`);
     }
@@ -3580,7 +3584,7 @@ export function createDashboardRouter(
   router.post('/clientes/:id/desarquivar', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
     if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
-    const r = await supabaseService.desarquivarLead(id);
+    const r = await svcDoOperador(req as AuthedRequest, supabaseService).desarquivarLead(id);
     if (!r.ok) {
       return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/clientes?show=arquivados">← voltar</a>`);
     }
@@ -3722,7 +3726,7 @@ export function createDashboardRouter(
     const id = String(req.params.id ?? '');
     if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
 
-    const r = await supabaseService.excluirLead(id);
+    const r = await svcDoOperador(req as AuthedRequest, supabaseService).excluirLead(id);
     if (!r.ok) {
       return res.status(400).send(
         `<h2>Não foi possível excluir</h2><p>${escapeHtmlSimple(r.error ?? '')}</p><a href="/dashboard/clientes/${id}">← voltar</a>`
