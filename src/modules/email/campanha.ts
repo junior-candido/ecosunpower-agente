@@ -256,6 +256,21 @@ export class CampanhaService {
     });
   }
 
+  /** E-mail completo renderizado (qualquer status) — o link "ver completo" do
+   *  preview no zap abre isto no navegador ANTES de aprovar (regra do Junior:
+   *  aprovar vendo o real, não só o resumo). Lead de amostra "Cliente". */
+  async visualizar(id: string): Promise<string> {
+    const { data: row, error } = await this.deps.supabase
+      .from('email_campanhas')
+      .select('id, status, tema, assunto, kicker, titulo, corpo_html, cta_label, image_url')
+      .eq('id', id)
+      .single();
+    if (error || !row) throw new Error(`Campanha ${id} não encontrada`);
+    const campanha = rowParaCampanha(row);
+    const noticias = await buscarNoticiasBlog(this.deps.rssUrl ?? RSS_URL_PADRAO).catch(() => []);
+    return this.montarHtmlParaLead(campanha, { id: 'preview', email: '', name: 'Cliente' }, noticias);
+  }
+
   // Aprova e dispara: carrega a campanha pendente, lista a base, busca notícias 1x,
   // e envia lead a lead (erro num lead não para o loop). Marca 'enviada' no fim.
   async aprovar(id: string): Promise<{ enviados: number }> {
