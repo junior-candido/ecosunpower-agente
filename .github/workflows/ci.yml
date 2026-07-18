@@ -21,7 +21,7 @@ permissions:
 jobs:
   testar-e-juntar:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Baixar o código
         uses: actions/checkout@v4
@@ -42,6 +42,23 @@ jobs:
 
       - name: Rodar os testes
         run: npx vitest run
+
+      - name: Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Subir Supabase local (aplica as 79 migrations num banco zerado)
+        run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,realtime,storage-api,inbucket
+
+      - name: Teste de vazamento RLS (2 empresas fake — vermelho = vazou)
+        run: |
+          eval "$(supabase status -o env | sed 's/^/export /')"
+          export SUPABASE_URL="${API_URL:-${SUPABASE_URL:-http://127.0.0.1:54321}}"
+          export SUPABASE_ANON_KEY="${ANON_KEY:-$SUPABASE_ANON_KEY}"
+          export SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY:-$SUPABASE_SERVICE_ROLE_KEY}"
+          export SUPABASE_JWT_SECRET="super-secret-jwt-token-with-at-least-32-characters-long"
+          npx tsx scripts/teste-vazamento-ci.ts
 
       - name: Juntar automaticamente (só se tudo passou)
         if: success()
