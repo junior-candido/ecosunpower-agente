@@ -575,10 +575,12 @@ export function createDashboardRouter(
       const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
       const mesLabel = ehAtual ? 'Este mês' : `${MESES[mesRef.getMonth()]} de ${mesRef.getFullYear()}`;
       const mesValue = `${mesRef.getFullYear()}-${String(mesRef.getMonth() + 1).padStart(2, '0')}`;
+      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
       const [kpis, grafico, graficoVendas] = await Promise.all([
-        fetchDashboardKpis(supabase, mesRef),
-        fetchPropostasPorMes(supabase),
-        fetchVendasPorMes(supabase),
+        fetchDashboardKpis(db, mesRef),
+        fetchPropostasPorMes(db),
+        fetchVendasPorMes(db),
       ]);
       res.send(renderHomePage(kpis, grafico, graficoVendas, mesLabel, mesValue));
     } catch (err) {
@@ -639,7 +641,9 @@ export function createDashboardRouter(
     try {
       const { listCadenciaLeads, calcKpis } = await import('./cadencia-queries.js');
       const { renderCadenciaPage } = await import('./cadencia-views.js');
-      const rows = await listCadenciaLeads(supabase);
+      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      const rows = await listCadenciaLeads(db);
       const kpis = calcKpis(rows);
       const filterStatus = typeof req.query.status === 'string' ? req.query.status : undefined;
       res.send(renderCadenciaPage({ rows, kpis, filterStatus }));
@@ -695,7 +699,9 @@ export function createDashboardRouter(
     try {
       const viewer = (req as AuthedRequest).dashUser!;
       const { renderKanbanPage } = await import('./kanban-views.js');
-      const grupos = await leadsParaKanban(supabase, viewer);
+      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      const grupos = await leadsParaKanban(db, viewer);
       res.type('text/html').send(renderKanbanPage(grupos, viewer));
     } catch (err) {
       console.error('[dashboard/leads/kanban]', err);
@@ -1497,7 +1503,9 @@ export function createDashboardRouter(
       const offset = Math.max(0, parseInt((req.query.offset as string) ?? '0') || 0);
       const search = (req.query.q as string) ?? '';
 
-      const { rows, total } = await listPropostas(supabase, { limit, offset, search });
+      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      const { rows, total } = await listPropostas(db, { limit, offset, search });
       res.send(renderPropostasPage({ rows, total, offset, limit, search }, (req as AuthedRequest).dashUser));
     } catch (err) {
       console.error('[dashboard/propostas]', err);
@@ -2279,9 +2287,11 @@ export function createDashboardRouter(
       }
       const incluirPreview = req.query.preview === '1';
 
+      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
       const [resumo, visualizacoes] = await Promise.all([
-        resumoVisualizacoesPorSlug(supabase, slug),
-        listVisualizacoesPorSlug(supabase, slug, { incluir_preview: incluirPreview }),
+        resumoVisualizacoesPorSlug(db, slug),
+        listVisualizacoesPorSlug(db, slug, { incluir_preview: incluirPreview }),
       ]);
 
       if (!resumo) {
@@ -2303,7 +2313,9 @@ export function createDashboardRouter(
         return res.status(400).type('text/plain').send('slug inválido');
       }
       const incluirPreview = req.query.preview === '1';
-      const visualizacoes = await listVisualizacoesPorSlug(supabase, slug, {
+      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      const visualizacoes = await listVisualizacoesPorSlug(db, slug, {
         incluir_preview: incluirPreview,
       });
       const csv = renderVisualizacoesCsv(visualizacoes);
@@ -2320,9 +2332,11 @@ export function createDashboardRouter(
   // automático) mandam via wa.me e gravam na timeline + abordagem.
   router.get('/pos-venda', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     try {
+      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
       const [linhas, agenda] = await Promise.all([
-        listarClientesPosVenda(supabase, req.dashUser!.companyId),
-        listarAgendaPosVenda(supabase, req.dashUser!.companyId),
+        listarClientesPosVenda(db, req.dashUser!.companyId),
+        listarAgendaPosVenda(db, req.dashUser!.companyId),
       ]);
       res.type('text/html').send(renderPosVendaPage(linhas, req.dashUser, agenda));
     } catch (err) {
@@ -3179,10 +3193,12 @@ export function createDashboardRouter(
   // Manutencao: agenda guiada por atenção + prontuário + leitura manual.
   router.get('/manutencao', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     try {
+      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
       const [agenda, leiturasPendentes, usinasRes] = await Promise.all([
-        listarAgenda(supabase),
-        listarLeiturasPendentes(supabase),
-        supabase.from('sistemas_clientes').select('id, apelido').eq('ativo', true).order('apelido'),
+        listarAgenda(db),
+        listarLeiturasPendentes(db),
+        db.from('sistemas_clientes').select('id, apelido').eq('ativo', true).order('apelido'),
       ]);
       const usinas = (usinasRes.data ?? []).map((u: any) => ({ id: u.id, apelido: u.apelido }));
       res.type('text/html').send(renderManutencaoPage({ agenda, leiturasPendentes, usinas }, req.dashUser));
@@ -3249,7 +3265,9 @@ export function createDashboardRouter(
   // /:sistemaId pra não ser engolido pelo param ('kanban' não é UUID).
   router.get('/usinas/kanban', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     try {
-      const { data, error } = await supabase
+      // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
+      const { data, error } = await db
         .from('sistemas_clientes')
         .select('id, apelido, cidade, potencia_kwp, etapa_obra, etapa_obra_updated_at')
         .eq('ativo', true)
