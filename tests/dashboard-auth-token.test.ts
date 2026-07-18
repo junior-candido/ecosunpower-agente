@@ -20,6 +20,22 @@ describe('token de sessão com user_id', () => {
   });
 });
 
+describe('getSecret — falha-fechado (sem fallback fraco hard-coded)', () => {
+  it('sem META_APP_SECRET e sem DASHBOARD_PASSWORD, gerarTokenSessao lança erro mencionando "segredo"', () => {
+    const metaOrig = process.env.META_APP_SECRET;
+    const dashOrig = process.env.DASHBOARD_PASSWORD;
+    delete process.env.META_APP_SECRET;
+    delete process.env.DASHBOARD_PASSWORD;
+    try {
+      expect(() => gerarTokenSessao('user-42')).toThrow(/segredo/i);
+    } finally {
+      // restaura pro resto da suite (beforeAll roda só uma vez por arquivo)
+      if (metaOrig === undefined) delete process.env.META_APP_SECRET; else process.env.META_APP_SECRET = metaOrig;
+      if (dashOrig === undefined) delete process.env.DASHBOARD_PASSWORD; else process.env.DASHBOARD_PASSWORD = dashOrig;
+    }
+  });
+});
+
 describe('setSessionCookie — manter conectado (checkbox do login)', () => {
   function fakeRes() {
     const headers: Record<string, string> = {};

@@ -1,6 +1,8 @@
 // Auth do dashboard: login por pessoa + cookie de sessão HMAC carregando o user_id.
 // Cookie 'ecosun_dash_token' = `<userId>.<exp>.<hmac(userId.exp)>`. 60 dias.
-// Assinado com META_APP_SECRET (fallback DASHBOARD_PASSWORD).
+// Assinado com META_APP_SECRET (fallback DASHBOARD_PASSWORD). Sem nenhum dos
+// dois configurado, falha-fechado: getSecret() lança erro em vez de usar um
+// segredo hard-coded — sessão nunca é assinada com fallback fraco.
 
 import crypto from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
@@ -12,7 +14,9 @@ const COOKIE_NAME = 'ecosun_dash_token';
 const COOKIE_TTL_DAYS = 60;
 
 function getSecret(): string {
-  return process.env.META_APP_SECRET ?? process.env.DASHBOARD_PASSWORD ?? 'fallback-mude-isso';
+  const s = process.env.META_APP_SECRET ?? process.env.DASHBOARD_PASSWORD;
+  if (!s) throw new Error('Sem segredo de sessão (META_APP_SECRET ou DASHBOARD_PASSWORD) — não assino cookie de sessão com fallback fraco.');
+  return s;
 }
 
 function assinar(payload: string): string {

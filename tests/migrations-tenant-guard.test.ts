@@ -76,6 +76,66 @@ function findAlteredWithCompanyId(sql: string): Set<string> {
   return altered;
 }
 
+// --- Segunda regra (docs/ecosof/04-rls-fase-a-b.md §B.5, "guarda de regressão"):
+// a partir da migration 080 (depois da 079 que ligou RLS+FORCE em tudo que já
+// existia), toda tabela NOVA precisa nascer com RLS habilitado e pelo menos uma
+// política, NA MESMA migration — senão fica com company_id mas sem o Postgres
+// impondo nada (a app já é service_role/bypass; RLS é a segunda trava). Até a
+// 079 (inclusive) fica intocado — é o histórico que a Fase A já cobriu.
+const MIGRACAO_MINIMA_RLS = 80;
+
+// Mesma allowlist de motivo — tabelas globais/singleton não têm company_id
+// pra uma política filtrar, então RLS+política não fazem sentido nelas.
+// (mantida separada da ALLOWLIST de company_id porque as regras são independentes:
+// uma tabela pode entrar numa allowlist e não na outra, se um dia surgir o caso.)
+const ALLOWLIST_RLS: Record<string, string> = {
+  companies: 'a tabela de tenants em si; id É o tenant, não tem company_id próprio',
+  app_flags: 'flags de app, key/value global',
+  logs: 'log de sistema, global — RLS ligado sem política já nega quem não tem bypass (ver 079)',
+  monitoring_config: 'singleton (id=1), config de autonomia do monitoramento',
+  monitoring_treino: 'regras de treino internas, não é dado de cliente',
+  telemetria_catalogo: 'catálogo de referência (marca/ponto -> código normalizado)',
+  empresa_config: 'singleton (id=1), identidade da implantação (modelo SILO do Kit Clone)',
+  empresa_kits: 'catálogo de kits da implantação, mesmo eixo SILO do empresa_config',
+  financeiro_anexos: 'referência fixa dos anexos do Simples Nacional (lei, não dado de cliente)',
+  eva_knowledge_chunks: 'já tem tenant_id (text, slug), conceito de namespace do RAG, não company_id',
+};
+
+function extraiNumeroMigration(caminhoOuNome: string): number | null {
+  const base = caminhoOuNome.split(/[\\/]/).pop() ?? caminhoOuNome;
+  const m = /^(\d+)_/.exec(base);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function temEnableRls(sql: string, tabela: string): boolean {
+  const re = new RegExp(`ALTER TABLE\\s+(?:IF EXISTS\\s+)?(?:public\\.)?${tabela}\\s+ENABLE\\s+ROW\\s+LEVEL\\s+SECURITY`, 'i');
+  return re.test(sql);
+}
+
+function temPolicy(sql: string, tabela: string): boolean {
+  // CREATE POLICY <nome> ON <tabela> ... — nome pode ser identificador solto
+  // (company_isolation) ou string entre aspas ("Service role full access",
+  // estilo usado nas migrations antigas).
+  const re = new RegExp(`CREATE POLICY\\s+(?:"[^"]*"|\\S+)\\s+ON\\s+(?:public\\.)?${tabela}\\b`, 'i');
+  return re.test(sql);
+}
+
+// Função pura exportada: dado o SQL de UMA migration, devolve a lista (ordenada)
+// de tabelas criadas nesse arquivo que ficaram sem RLS habilitado ou sem
+// política — as duas coisas têm que estar na MESMA migration que cria a tabela.
+// allowlist é injetável pra permitir os testes de unidade abaixo usarem fixtures
+// isoladas (sem precisar repetir os nomes da allowlist real).
+export function checarRlsTabelasNovas(sql: string, allowlist: Record<string, string> = ALLOWLIST_RLS): string[] {
+  const criadas = findCreatedTables(sql);
+  const ofensores: string[] = [];
+  for (const [tabela] of criadas) {
+    if (tabela in allowlist) continue;
+    const ok = temEnableRls(sql, tabela) && temPolicy(sql, tabela);
+    if (!ok) ofensores.push(tabela);
+  }
+  return ofensores.sort();
+}
+
 describe('migrations — toda tabela nova nasce com company_id (ou está na allowlist)', () => {
   const dir = join(process.cwd(), 'supabase', 'migrations');
   const files = migrationFiles(dir);
@@ -108,5 +168,56 @@ describe('migrations — toda tabela nova nasce com company_id (ou está na allo
     const created = findCreatedTables(fullSql);
     const mortas = Object.keys(ALLOWLIST).filter((t) => !created.has(t));
     expect(mortas, `Entradas na allowlist sem tabela correspondente: ${mortas.join(', ')}`).toEqual([]);
+  });
+});
+
+describe('migrations >= 080 — tabela nova nasce com RLS habilitado + política (mesma migration)', () => {
+  const dir = join(process.cwd(), 'supabase', 'migrations');
+  const files = migrationFiles(dir);
+  const arquivosNovos = files.filter((f) => {
+    const n = extraiNumeroMigration(f);
+    return n !== null && n >= MIGRACAO_MINIMA_RLS;
+  });
+
+  it('cada migration >= 080: toda CREATE TABLE tem ENABLE ROW LEVEL SECURITY + CREATE POLICY no mesmo arquivo (fora da allowlist)', () => {
+    const ofensores: string[] = [];
+    for (const f of arquivosNovos) {
+      const sql = readFileSync(f, 'utf-8');
+      const problemas = checarRlsTabelasNovas(sql);
+      if (problemas.length > 0) ofensores.push(`${f}: ${problemas.join(', ')}`);
+    }
+    expect(
+      ofensores,
+      `Migration(s) com tabela nova sem RLS+política: \n${ofensores.join('\n')}\n` +
+        `Adicione, na MESMA migration: ALTER TABLE <t> ENABLE ROW LEVEL SECURITY (+ FORCE, idealmente) e ` +
+        `CREATE POLICY ... ON <t>. Se é global/singleton: adicione em ALLOWLIST_RLS com o motivo.`,
+    ).toEqual([]);
+  });
+});
+
+describe('checarRlsTabelasNovas — teste de unidade da própria checagem (fixtures inline, sem depender de arquivo)', () => {
+  it('passa: CREATE TABLE + ENABLE/FORCE RLS + CREATE POLICY na mesma migration', () => {
+    const sqlOk = `
+      CREATE TABLE exemplo_ok (
+        id uuid primary key default gen_random_uuid(),
+        company_id uuid not null references companies(id)
+      );
+      ALTER TABLE exemplo_ok ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE exemplo_ok FORCE ROW LEVEL SECURITY;
+      CREATE POLICY company_isolation ON exemplo_ok
+        USING (company_id = coalesce(current_setting('app.company_id', true)::uuid, company_id));
+    `;
+    expect(checarRlsTabelasNovas(sqlOk)).toEqual([]);
+  });
+
+  it('falha: CREATE TABLE sem nenhuma CREATE POLICY (RLS habilitado não basta sozinho)', () => {
+    const sqlSemPolicy = `
+      CREATE TABLE exemplo_sem_policy (
+        id uuid primary key default gen_random_uuid(),
+        company_id uuid not null references companies(id)
+      );
+      ALTER TABLE exemplo_sem_policy ENABLE ROW LEVEL SECURITY;
+    `;
+    expect(checarRlsTabelasNovas(sqlSemPolicy)).toEqual(['exemplo_sem_policy']);
   });
 });
