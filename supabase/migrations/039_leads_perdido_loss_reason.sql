@@ -31,7 +31,7 @@ alter table leads add column if not exists loss_notes text;
 -- 4. Timestamp pra analytics ("perdidos nos ultimos 30d")
 alter table leads add column if not exists lost_at timestamptz;
 
--- Index parcial pros perdidos: vive em 039_zz_index_perdido.sql (usa o valor
+-- Index parcial pros perdidos: vive em 0800_splits_de_enum_pos_criacao.sql (usa o valor
 -- 'perdido' criado acima; Postgres exige transação separada — 55P04).
 
 comment on column leads.loss_reason is
