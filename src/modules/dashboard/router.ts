@@ -3066,7 +3066,8 @@ export function createDashboardRouter(
     const id = String(req.params.id ?? '');
     if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).send('UUID invalido');
     try {
-      const { data: sistema } = await supabase.from('sistemas_clientes').select('id,apelido,marca_inversor').eq('id', id).maybeSingle();
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      const { data: sistema } = await db.from('sistemas_clientes').select('id,apelido,marca_inversor').eq('id', id).maybeSingle();
       if (!sistema) return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
 
       const { devices, grandezas } = await telemetriaService.listarGrandezas(id, (sistema as { marca_inversor: string }).marca_inversor);
