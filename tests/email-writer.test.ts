@@ -19,4 +19,18 @@ describe('gerarAssuntoAbertura', () => {
     expect(r.assunto).toBe('Sua energia solar');
     expect(r.abertura).toBe('');   // abertura com preco vira vazia (o corpo do modelo assume)
   });
+
+  it('corta assunto longo demais da IA sem cortar no meio da palavra e sem reticencias', async () => {
+    const assuntoLongo = 'Joao, essa novidade sobre energia solar em Brasilia vai te interessar muito e economizar sua conta de luz todo mes';
+    expect(assuntoLongo.length).toBeGreaterThan(70);
+    const anthropic = fakeAnthropic(`ASSUNTO: ${assuntoLongo}\nABERTURA: Oi Joao`);
+    const r = await gerarAssuntoAbertura(anthropic as any, { step: 1, tema: 'x', nome: 'Joao', cidade: 'Brasilia' }, 'Assunto padrao');
+    expect(r.assunto.length).toBeLessThanOrEqual(70);
+    expect(r.assunto.endsWith(' ')).toBe(false);
+    expect(r.assunto.endsWith('...')).toBe(false);
+    // nao deve cortar no meio de uma palavra: a ultima palavra do resultado
+    // deve aparecer inteira (como uma palavra completa) no texto original.
+    const ultimaPalavra = r.assunto.split(' ').pop() as string;
+    expect(assuntoLongo.split(' ')).toContain(ultimaPalavra);
+  });
 });
