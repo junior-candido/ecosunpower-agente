@@ -442,7 +442,7 @@ async function main() {
         enviarPreview: async (c: CampanhaGerada) => {
           const to = config.engineerPhone;
           const dest = await supabase.listarDestinatariosCampanha(1000).catch(() => []);
-          const caption = `${c.assunto}\n\n${c.titulo}\n\n~${dest.length} destinatários`;
+          const caption = `${c.assunto}\n\n${c.titulo}\n\n~${dest.length} destinatários\n👀 Ver completo: ${config.publicProposalBaseUrl}/e/campanha/${c.id}`;
           const botoes = botoesPreviewCampanha(c.id);
           if (metaWaba) {
             try {
@@ -3578,6 +3578,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       relatorio: tryHandleRelatorioCommand,
       resgatarForms: tryHandleResgatarFormsCommand,
       googleAds: tryHandleGoogleAdsCommand,
+      campanha: tryHandleCampanhaCommand,
       acaoImposto: async (to: string) => {
         await setImpostoAwait(to);
         await sendText(to, '🧾 Qual o valor da venda? Manda só o número (ex: *30000* ou *30 mil*).');
@@ -8084,6 +8085,19 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // pre-buscam (prefetch) todo link do e-mail automaticamente; se o GET
   // executasse o descadastro, o lead seria descadastrado sem nunca ter
   // clicado. A mutacao real fica no POST, disparado pelo botao "Confirmar".
+  // "Ver completo" da campanha (link do preview no zap): renderiza o e-mail
+  // inteiro no navegador ANTES de aprovar (regra: aprovar vendo o real). Id é
+  // uuid aleatório (não-adivinhável); conteúdo é o e-mail de marketing em si.
+  app.get('/e/campanha/:id', async (req, res) => {
+    try {
+      if (!campanha) { res.status(503).send('Campanha indisponível.'); return; }
+      const html = await campanha.visualizar(String(req.params.id));
+      res.type('text/html').send(html);
+    } catch {
+      res.status(404).send('Campanha não encontrada.');
+    }
+  });
+
   app.get('/e/descadastro', async (req, res) => {
     const lid = escapeHtml(String(req.query.lid ?? ''));
     res.type('text/html').send(

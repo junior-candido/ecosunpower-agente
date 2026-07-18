@@ -17,7 +17,7 @@ export interface MenuDeps {
   pricing: Handler; proposal: Handler; closing: Handler; creative: Handler;
   banner: Handler; bannerKits: Handler; reativarBase: Handler; juniorBlog: Handler;
   scheduling: Handler; caseCreator: Handler; testimonialAdmin: Handler; relatorio: Handler;
-  resgatarForms: Handler; googleAds: Handler;
+  resgatarForms: Handler; googleAds: Handler; campanha: Handler;
   acaoImposto: Acao; acaoApagar: Acao; acaoGerarPost: Acao; acaoFecheiVenda: Acao;
 }
 
@@ -63,6 +63,7 @@ export function construirMenu(deps: MenuDeps): MenuCategoria[] {
         { id: 'menu_google', title: '📊 Resumo Google Ads', description: 'Gasto, cliques, CPC, CTR', trigger: '/google', handler: deps.googleAds },
         { id: 'menu_banner_kits', title: '🖼️ Banner tabela (kits)', description: 'Tabela premium com kits OnGrid', trigger: '/banner-kits', handler: deps.bannerKits },
         { id: 'menu_gerar_post', title: '✨ Gerar post (teste)', description: 'Cria um post agora e te manda', action: deps.acaoGerarPost },
+        { id: 'menu_campanha', title: '📧 Campanha de e-mail', description: 'Eva cria (copy+imagem), você aprova', trigger: '/campanha', handler: deps.campanha },
       ],
     },
     {
