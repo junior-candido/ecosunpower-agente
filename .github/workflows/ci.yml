@@ -51,12 +51,34 @@ jobs:
       - name: Subir Supabase local (aplica as 79 migrations num banco zerado)
         run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,realtime,storage-api,inbucket
 
+      - name: Semear 2 empresas fake (psql direto no Postgres local)
+        run: |
+          eval "$(supabase status -o env | sed 's/^/export /')"
+          DB="${DB_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}"
+          psql "$DB" -v ON_ERROR_STOP=1 <<'SQL'
+          insert into companies (id, nome) values
+            ('11111111-1111-4111-8111-111111111111', 'Empresa A (teste CI)'),
+            ('22222222-2222-4222-8222-222222222222', 'Empresa B (teste CI)')
+          on conflict (id) do nothing;
+          insert into leads (name, phone, company_id) values
+            ('Lead da A', '+5561900000001', '11111111-1111-4111-8111-111111111111'),
+            ('Lead da B', '+5561900000002', '22222222-2222-4222-8222-222222222222')
+          on conflict (phone) do nothing;
+          -- controle: as duas linhas TÊM que existir (senão as provas não valem)
+          do $$
+          declare n int;
+          begin
+            select count(*) into n from leads where company_id in
+              ('11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222');
+            if n <> 2 then raise exception 'semeadura incompleta: % leads', n; end if;
+          end $$;
+          SQL
+
       - name: Teste de vazamento RLS (2 empresas fake — vermelho = vazou)
         run: |
           eval "$(supabase status -o env | sed 's/^/export /')"
           export SUPABASE_URL="${API_URL:-${SUPABASE_URL:-http://127.0.0.1:54321}}"
           export SUPABASE_ANON_KEY="${ANON_KEY:-$SUPABASE_ANON_KEY}"
-          export SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY:-$SUPABASE_SERVICE_ROLE_KEY}"
           export SUPABASE_JWT_SECRET="super-secret-jwt-token-with-at-least-32-characters-long"
           npx tsx scripts/teste-vazamento-ci.ts
 

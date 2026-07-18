@@ -12,7 +12,6 @@
 // contra localhost/127.0.0.1. Se SUPABASE_URL apontar pra qualquer outra coisa
 // (produção, staging), ele recusa e sai com código 2 ANTES de tocar em nada.
 
-import { createClient } from '@supabase/supabase-js';
 import { clientDaEmpresa } from '../src/modules/tenant-client.js';
 
 const A = '11111111-1111-4111-8111-111111111111';
@@ -21,14 +20,11 @@ const B = '22222222-2222-4222-8222-222222222222';
 const env = {
   url: process.env.SUPABASE_URL ?? '',
   anonKey: process.env.SUPABASE_ANON_KEY ?? '',
-  serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
   jwtSecret: process.env.SUPABASE_JWT_SECRET ?? '',
 };
 
-if (!env.url || !env.anonKey || !env.serviceKey || !env.jwtSecret) {
-  console.error(
-    'Faltou env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY e SUPABASE_JWT_SECRET.'
-  );
+if (!env.url || !env.anonKey || !env.jwtSecret) {
+  console.error('Faltou env: SUPABASE_URL, SUPABASE_ANON_KEY e SUPABASE_JWT_SECRET.');
   process.exit(2);
 }
 
@@ -49,44 +45,9 @@ const ok = (nome: string, passou: boolean, detalhe: string) => {
   if (!passou) falhas++;
 };
 
-const servico = createClient(env.url, env.serviceKey, { auth: { persistSession: false } });
-
-// 0) SEMEAR: duas empresas fake + um lead pra cada, com o client de service_role
-//    (bypassa RLS — é a única "chave-mestra" que deveria conseguir escrever livre).
-{
-  const { error: errCompanies } = await servico.from('companies').upsert(
-    [
-      { id: A, nome: 'Empresa A (teste CI)' },
-      { id: B, nome: 'Empresa B (teste CI)' },
-    ],
-    { onConflict: 'id' }
-  );
-  if (errCompanies) {
-    console.error('Falha ao semear companies:', errCompanies.message);
-    process.exit(1);
-  }
-}
-
-let leadIdA = '';
-let leadIdB = '';
-{
-  const { data: dataA, error: errA } = await servico
-    .from('leads')
-    .insert({ name: 'Lead da A', phone: '+5561900000001', company_id: A })
-    .select('id')
-    .single();
-  const { data: dataB, error: errB } = await servico
-    .from('leads')
-    .insert({ name: 'Lead da B', phone: '+5561900000002', company_id: B })
-    .select('id')
-    .single();
-  if (errA || errB || !dataA || !dataB) {
-    console.error('Falha ao semear leads:', errA?.message, errB?.message);
-    process.exit(1);
-  }
-  leadIdA = dataA.id;
-  leadIdB = dataB.id;
-}
+// SEMEADURA: feita pelo passo psql do ci.yml (direto no Postgres local, sem
+// depender do formato da chave service_role do CLI — que mudou de JWT pra
+// sb_secret e o PostgREST passou a tratar como anon: foi o vermelho do run 3).
 
 const crachaA = clientDaEmpresa(A, { url: env.url, anonKey: env.anonKey, jwtSecret: env.jwtSecret });
 const crachaB = clientDaEmpresa(B, { url: env.url, anonKey: env.anonKey, jwtSecret: env.jwtSecret });
@@ -111,6 +72,14 @@ const crachaB = clientDaEmpresa(B, { url: env.url, anonKey: env.anonKey, jwtSecr
     !error && linhas.length === 1 && linhas[0]?.name === 'Lead da B',
     error ? `erro: ${error.message}` : `linhas: ${linhas.length} (${linhas.map((l) => l.name).join(', ')})`
   );
+}
+
+// id do lead da B, visto pela própria B (pro teste de UPDATE cruzado abaixo)
+let leadIdB = '';
+{
+  const { data } = await crachaB.from('leads').select('id').eq('name', 'Lead da B').limit(1);
+  leadIdB = data?.[0]?.id ?? '';
+  if (!leadIdB) { console.error('Não achei o lead da B via crachá B — semeadura do psql rodou?'); process.exit(1); }
 }
 
 // 3) Crachá A tenta INSERT um lead FORJANDO company_id=B → o WITH CHECK barra.
@@ -140,17 +109,8 @@ const crachaB = clientDaEmpresa(B, { url: env.url, anonKey: env.anonKey, jwtSecr
   );
 }
 
-// 5) Controle: service_role (bypassa RLS) enxerga as duas — prova que o teste
-//    em si está funcionando (se isto falhar, as provas acima não valem nada).
-{
-  const { data, error } = await servico.from('leads').select('id, name').in('company_id', [A, B]);
-  const nomes = (data ?? []).map((l) => l.name).sort();
-  ok(
-    'Controle: service_role vê as DUAS (A e B)',
-    !error && nomes.length === 2 && nomes.includes('Lead da A') && nomes.includes('Lead da B'),
-    error ? `erro: ${error.message}` : `linhas: ${nomes.join(', ')}`
-  );
-}
+// 5) Controle (contagem crua) roda no passo psql do ci.yml — se a semeadura
+//    não tiver 2 leads, o próprio psql falha com ON_ERROR_STOP antes daqui.
 
 console.log(
   falhas === 0
