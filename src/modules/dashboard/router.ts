@@ -609,7 +609,9 @@ export function createDashboardRouter(
   router.post('/cadencia/fechou', async (req: Request, res: Response) => {
     const id = String(req.body?.id ?? '').trim();
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const { data: leadRow, error } = await supabase
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
+    const { data: leadRow, error } = await db
       .from('leads')
       .update({ status: 'transferido', opt_out: true, updated_at: new Date().toISOString() })
       .eq('id', id)
@@ -643,7 +645,9 @@ export function createDashboardRouter(
   router.post('/cadencia/optout', async (req: Request, res: Response) => {
     const id = String(req.body?.id ?? '').trim();
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const { error } = await supabase
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
+    const { error } = await db
       .from('leads')
       .update({ opt_out: true, eva_active: false, updated_at: new Date().toISOString() })
       .eq('id', id);
@@ -895,7 +899,9 @@ export function createDashboardRouter(
   router.post('/leads/:id/pause-eva', async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const { error } = await supabase
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
+    const { error } = await db
       .from('leads')
       .update({ eva_active: false, updated_at: new Date().toISOString() })
       .eq('id', id);
@@ -907,7 +913,9 @@ export function createDashboardRouter(
   router.post('/leads/:id/resume-eva', async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const { error } = await supabase
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
+    const { error } = await db
       .from('leads')
       .update({ eva_active: true, updated_at: new Date().toISOString() })
       .eq('id', id);
@@ -919,7 +927,9 @@ export function createDashboardRouter(
   router.post('/leads/:id/cancel-cadence', async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const { error } = await supabase
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
+    const { error } = await db
       .from('eva_cadence')
       .update({ status: 'cancelled', cancelled_reason: 'manual_dashboard' })
       .eq('lead_id', id)
@@ -932,14 +942,16 @@ export function createDashboardRouter(
   router.post('/leads/:id/opt-out', async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
     const now = new Date().toISOString();
-    const { error: e1 } = await supabase
+    const { error: e1 } = await db
       .from('leads')
       .update({ opt_out: true, eva_active: false, updated_at: now })
       .eq('id', id);
     if (e1) return res.status(500).send(`erro: ${escapeHtmlSimple(e1.message)}`);
     // Cancela cadencia pendente tambem
-    await supabase
+    await db
       .from('eva_cadence')
       .update({ status: 'cancelled', cancelled_reason: 'opt_out' })
       .eq('lead_id', id)
@@ -951,7 +963,9 @@ export function createDashboardRouter(
   router.post('/leads/:id/opt-in', async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    const { error } = await supabase
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
+    const { error } = await db
       .from('leads')
       .update({ opt_out: false, updated_at: new Date().toISOString() })
       .eq('id', id);
@@ -966,11 +980,13 @@ export function createDashboardRouter(
     const status = String(req.body?.status ?? '').trim();
     const allowed = ['novo', 'qualificando', 'agendado', 'transferido', 'perdido'];
     if (!allowed.includes(status)) return res.status(400).send('status inválido');
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
     // Posse: vendedor não pode mexer em lead de OUTRO vendedor (mesmo gate de /set-etapa).
     const user = (req as AuthedRequest).dashUser!;
-    const { data: lead } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    const { data: lead } = await db.from('leads').select('claimed_by').eq('id', id).maybeSingle();
     if (!lead || (user && !podeVerLead(user, lead))) return res.status(403).send('Lead de outro vendedor');
-    const { error } = await supabase
+    const { error } = await db
       .from('leads')
       .update({ status, updated_at: new Date().toISOString() })
       .eq('id', id);
@@ -987,23 +1003,25 @@ export function createDashboardRouter(
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     const etapa = String(req.body?.etapa ?? '').trim();
     if (!(ORDEM_ETAPAS as readonly string[]).includes(etapa)) return res.status(400).send('etapa inválida');
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
     // Posse: vendedor não pode mexer em lead de OUTRO vendedor (admin passa direto).
     const user = (req as AuthedRequest).dashUser!;
-    const { data: leadDono } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    const { data: leadDono } = await db.from('leads').select('claimed_by').eq('id', id).maybeSingle();
     if (!leadDono || !podeVerLead(user, leadDono)) return res.status(403).send('Lead de outro vendedor');
-    const { error } = await supabase
+    const { error } = await db
       .from('leads')
       .update({ status: etapa, updated_at: new Date().toISOString() })
       .eq('id', id);
     if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
     // Etapa 'ganho' é terminal: cancela tarefas pendentes pra não alertar SLA-fantasma.
     if (etapa === 'ganho') {
-      try { await cancelarTarefasPendentesDoLead(supabase, id); } catch (e) { console.warn('[set-etapa] cancelar tarefas falhou (segue):', (e as Error).message); }
+      try { await cancelarTarefasPendentesDoLead(db, id); } catch (e) { console.warn('[set-etapa] cancelar tarefas falhou (segue):', (e as Error).message); }
     }
     const viewer = (req as AuthedRequest).dashUser;
     if (viewer) {
       try {
-        await registrarAtividade(supabase, {
+        await registrarAtividade(db, {
           company_id: viewer.companyId, lead_id: id, tipo: 'etapa_mudou',
           titulo: `Etapa movida (kanban): → ${etapa}`, automatica: false, user_id: viewer.id,
         });
@@ -1030,13 +1048,15 @@ export function createDashboardRouter(
     let due_at: string | null = null;
     if (dueRaw) { const d = new Date(dueRaw); if (!isNaN(d.getTime())) due_at = d.toISOString(); }
     const viewer = (req as AuthedRequest).dashUser;
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
     // Posse: vendedor não pode criar tarefa em lead de OUTRO vendedor (admin passa direto).
-    const { data: leadRow } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    const { data: leadRow } = await db.from('leads').select('claimed_by').eq('id', id).maybeSingle();
     if (!leadRow || (viewer && !podeVerLead(viewer, leadRow))) return res.status(403).send('Lead de outro vendedor');
     // Dono da tarefa = quem já está com o lead (claimed_by), se houver.
     const assigned_to = (leadRow?.claimed_by as string | null) ?? null;
     try {
-      await criarTarefa(supabase, {
+      await criarTarefa(db, {
         company_id: viewer?.companyId ?? ECOSUN,
         lead_id: id, titulo, tipo, due_at, prioridade,
         automatica: false, created_by: viewer?.id ?? null, assigned_to,
@@ -1045,7 +1065,7 @@ export function createDashboardRouter(
       return res.status(500).send(`erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
     if (viewer) {
-      await registrarAtividade(supabase, {
+      await registrarAtividade(db, {
         company_id: viewer.companyId, lead_id: id, tipo: 'tarefa_criada',
         titulo, automatica: false, user_id: viewer.id,
       });
@@ -1060,17 +1080,19 @@ export function createDashboardRouter(
     const tid = String(req.params.tid);
     if (!UUID_RE.test(id) || !UUID_RE.test(tid)) return res.status(400).send('id inválido');
     const viewer = (req as AuthedRequest).dashUser;
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
     // Posse: vendedor não pode mexer em tarefa de lead de OUTRO vendedor (admin passa direto).
-    const { data: leadRow } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    const { data: leadRow } = await db.from('leads').select('claimed_by').eq('id', id).maybeSingle();
     if (!leadRow || (viewer && !podeVerLead(viewer, leadRow))) return res.status(403).send('Lead de outro vendedor');
     try {
       // leadId amarra a tarefa ao lead da URL (evita concluir tarefa de outro lead via :tid).
-      await concluirTarefa(supabase, tid, viewer?.id ?? null, id);
+      await concluirTarefa(db, tid, viewer?.id ?? null, id);
     } catch (err) {
       return res.status(500).send(`erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
     if (viewer) {
-      await registrarAtividade(supabase, {
+      await registrarAtividade(db, {
         company_id: viewer.companyId, lead_id: id, tipo: 'tarefa_concluida',
         titulo: 'Tarefa concluída', automatica: false, user_id: viewer.id,
       });
@@ -1085,12 +1107,14 @@ export function createDashboardRouter(
     const tid = String(req.params.tid);
     if (!UUID_RE.test(id) || !UUID_RE.test(tid)) return res.status(400).send('id inválido');
     const viewer = (req as AuthedRequest).dashUser;
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
     // Posse: vendedor não pode mexer em tarefa de lead de OUTRO vendedor (admin passa direto).
-    const { data: leadRow } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    const { data: leadRow } = await db.from('leads').select('claimed_by').eq('id', id).maybeSingle();
     if (!leadRow || (viewer && !podeVerLead(viewer, leadRow))) return res.status(403).send('Lead de outro vendedor');
     try {
       // leadId amarra a tarefa ao lead da URL (evita adiar tarefa de outro lead via :tid).
-      await adiarTarefa(supabase, tid, 2, id);
+      await adiarTarefa(db, tid, 2, id);
     } catch (err) {
       return res.status(500).send(`erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
@@ -1108,18 +1132,20 @@ export function createDashboardRouter(
       || (tipo === 'ligacao' ? 'Ligação registrada' : 'Nota');
     const descricao = String(req.body?.descricao ?? '').trim().slice(0, 2000) || undefined;
     const viewer = (req as AuthedRequest).dashUser;
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
     // Posse: vendedor não pode registrar atividade em lead de OUTRO vendedor (admin passa direto).
-    const { data: leadRow } = await supabase.from('leads').select('claimed_by').eq('id', id).maybeSingle();
+    const { data: leadRow } = await db.from('leads').select('claimed_by').eq('id', id).maybeSingle();
     if (!leadRow || (viewer && !podeVerLead(viewer, leadRow))) return res.status(403).send('Lead de outro vendedor');
     try {
       if (viewer) {
-        await registrarAtividade(supabase, {
+        await registrarAtividade(db, {
           company_id: viewer.companyId, lead_id: id, tipo,
           titulo, descricao, automatica: false, user_id: viewer.id,
         });
       }
       // Nota/ligação contam como contato com o cliente.
-      await supabase.from('leads')
+      await db.from('leads')
         .update({ last_contact_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq('id', id);
     } catch (err) {
@@ -1134,7 +1160,9 @@ export function createDashboardRouter(
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     const name = String(req.body?.name ?? '').trim().slice(0, 100);
-    const { error } = await supabase
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
+    const { error } = await db
       .from('leads')
       .update({ name: name || null, updated_at: new Date().toISOString() })
       .eq('id', id);
@@ -1185,8 +1213,10 @@ export function createDashboardRouter(
     }
     const viewer = (req as AuthedRequest).dashUser;
     if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'perdeu', valorNovo: reason });
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
     // Lead virou terminal (perdido): cancela tarefas pendentes pra não alertar SLA-fantasma.
-    try { await cancelarTarefasPendentesDoLead(supabase, id); } catch (e) { console.warn('[mark-lost] cancelar tarefas falhou (segue):', (e as Error).message); }
+    try { await cancelarTarefasPendentesDoLead(db, id); } catch (e) { console.warn('[mark-lost] cancelar tarefas falhou (segue):', (e as Error).message); }
     res.redirect(`/dashboard/leads/${id}`);
   });
 
@@ -1210,6 +1240,8 @@ export function createDashboardRouter(
   router.post('/leads/:id/start-cadence', async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
     try {
       // supabase aqui e o SupabaseClient cru; precisamos do service.
       // Workaround: chama scheduleCadence via SQL direto seguindo mesmo padrao.
@@ -1222,9 +1254,9 @@ export function createDashboardRouter(
         status: 'pending',
       }));
       // Cancela toques pendentes antigos primeiro (idempotencia)
-      await supabase.from('eva_cadence').update({ status: 'cancelled', cancelled_reason: 'superseded' })
+      await db.from('eva_cadence').update({ status: 'cancelled', cancelled_reason: 'superseded' })
         .eq('lead_id', id).eq('status', 'pending');
-      const { error } = await supabase.from('eva_cadence').upsert(rows, { onConflict: 'lead_id,step', ignoreDuplicates: false });
+      const { error } = await db.from('eva_cadence').upsert(rows, { onConflict: 'lead_id,step', ignoreDuplicates: false });
       if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
       res.redirect(`/dashboard/leads/${id}`);
     } catch (err) {

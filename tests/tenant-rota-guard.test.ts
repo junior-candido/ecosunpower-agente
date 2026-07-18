@@ -9,7 +9,7 @@ import { join } from 'path';
 // `supabase.from(` cru sem que alguém migre outra rota primeiro.
 //
 // abaixe o teto a cada rota migrada — impede regressão (novo supabase.from cru)
-const TETO = 39;
+const TETO = 30;
 
 describe('router do dashboard — teto de supabase.from( cru (ratchet RLS Fase B)', () => {
   const arquivo = join(process.cwd(), 'src', 'modules', 'dashboard', 'router.ts');
