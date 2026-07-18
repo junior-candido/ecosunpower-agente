@@ -6,9 +6,10 @@
 alter table leads add column if not exists cpf_cnpj text;
 alter table leads add column if not exists data_nascimento date;
 alter table leads add column if not exists estado_civil text;
--- adiciona 'rural' ao enum lead_profile antes do UPDATE
+-- adiciona 'rural' ao enum lead_profile (o UPDATE que USA o valor novo vive em
+-- 033_zz_backfill_rural.sql: Postgres proíbe usar valor de enum na MESMA
+-- transação que o criou — 55P04. Em prod foi aplicado na mão, em partes.)
 alter type lead_profile add value if not exists 'rural';
-update leads set profile = 'rural'::lead_profile where profile = 'agronegocio'::lead_profile;
 alter table leads add column if not exists cep text;
 alter table leads add column if not exists endereco_rua text;
 alter table leads add column if not exists endereco_numero text;
