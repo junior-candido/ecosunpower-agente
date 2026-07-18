@@ -2044,8 +2044,10 @@ export function createDashboardRouter(
   ): Promise<string[]> {
     const { parseFormulario } = await import('../closing/contratos-registry.js');
     const { cadastro, rascunho } = parseFormulario(def, req.body ?? {});
+    // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+    const db = bancoDoOperador(req as AuthedRequest, supabase);
 
-    const { data: lead } = await supabase.from('leads').select('contrato_dados').eq('id', id).maybeSingle();
+    const { data: lead } = await db.from('leads').select('contrato_dados').eq('id', id).maybeSingle();
     const atual = (lead as { contrato_dados?: Record<string, unknown> } | null)?.contrato_dados;
     const base = atual && typeof atual === 'object' && !Array.isArray(atual) ? atual : {};
 
@@ -2054,7 +2056,7 @@ export function createDashboardRouter(
       contrato_dados: { ...base, [def.tipo]: rascunho },
       updated_at: new Date().toISOString(),
     };
-    const { error } = await supabase.from('leads').update(patch).eq('id', id);
+    const { error } = await db.from('leads').update(patch).eq('id', id);
     if (error) throw error;
 
     const viewer = (req as AuthedRequest).dashUser;
@@ -2095,7 +2097,9 @@ export function createDashboardRouter(
       if (!meta) return res.redirect(voltarDoc(req, id, 'envio=off'));
       let to: string | null | undefined = options.engineerPhone;
       if (destino === 'cliente') {
-        const { data: lead } = await supabase.from('leads').select('phone').eq('id', id).maybeSingle();
+        // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+        const db = bancoDoOperador(req as AuthedRequest, supabase);
+        const { data: lead } = await db.from('leads').select('phone').eq('id', id).maybeSingle();
         to = (lead as { phone?: string } | null)?.phone ?? null;
       }
       if (!to) return res.redirect(voltarDoc(req, id, 'envio=semzap'));
@@ -2125,13 +2129,15 @@ export function createDashboardRouter(
       const cid = (req as AuthedRequest).dashUser?.companyId;
       const leadSel = String(req.query.lead ?? '').trim();
       const tipoSel = String(req.query.tipo ?? '').trim() || undefined;
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
 
       let resultados: ContratoCliente[] = [];
       if (buscou) {
         const { searchLeadByName } = await import('../closing/closing-data-fetcher.js');
         // filtra por empresa (searchLeadByName é company-blind por ser compartilhada
         // com a Eva) — não expor cliente de outra empresa na Central.
-        const leads = (await searchLeadByName(supabase, q))
+        const leads = (await searchLeadByName(db, q))
           .filter((l: any) => !cid || l.company_id === cid);
         resultados = leads.slice(0, 10).map((l: any) => ({
           leadId: l.id,
@@ -2143,7 +2149,7 @@ export function createDashboardRouter(
       // Recentes = contratos JÁ FECHADOS (venda registrada), pela data do fechamento —
       // NÃO leads crus (Junior 15/07). Sempre carregado: popula o dropdown E os 2 cards
       // de acesso rápido. Filtro por company como o resto do dashboard.
-      let rec = supabase
+      let rec = db
         .from('leads')
         .select('id, name, installation_status, contract_signed_at')
         .in('installation_status', CLIENTE_STATUSES)
@@ -2161,7 +2167,7 @@ export function createDashboardRouter(
       // Cliente escolhido no dropdown (?lead=) — valida empresa e pega nome/status.
       let selecionado: ContratoCliente | null = null;
       if (UUID_RE.test(leadSel) && (await leadDaEmpresa(req, leadSel))) {
-        const { data: l } = await supabase
+        const { data: l } = await db
           .from('leads').select('id, name, installation_status, status').eq('id', leadSel).maybeSingle();
         if (l) selecionado = {
           leadId: (l as any).id,
@@ -2197,10 +2203,12 @@ export function createDashboardRouter(
       const cid = (req as AuthedRequest).dashUser?.companyId;
       const { CONTRATOS } = await import('../closing/contratos-registry.js');
       const tipo = CONTRATOS[0]?.tipo ?? 'fv';
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
       // Já existe cliente com esse telefone NA MINHA EMPRESA? REUSA (não trava, não
       // duplica). Filtra por company: telefone da MESMA pessoa pode ser cliente de
       // outra empresa — não pode reusar (nem travar) por causa dela.
-      let lookup = supabase.from('leads').select('id').eq('phone', phone).limit(1);
+      let lookup = db.from('leads').select('id').eq('phone', phone).limit(1);
       if (cid) lookup = lookup.eq('company_id', cid);
       const { data: existentes } = await lookup;
       let leadId = (existentes as Array<{ id?: string }> | null)?.[0]?.id;
@@ -2318,7 +2326,11 @@ export function createDashboardRouter(
       if (d.endereco?.cep) patch.cep = d.endereco.cep;
       if (d.endereco?.uf) patch.uf = d.endereco.uf;
       const lidos = Object.keys(patch).filter((k) => k !== 'updated_at').length;
-      if (lidos > 0) await supabase.from('leads').update(patch).eq('id', id);
+      if (lidos > 0) {
+        // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+        const db = bancoDoOperador(req as AuthedRequest, supabase);
+        await db.from('leads').update(patch).eq('id', id);
+      }
       res.redirect(voltarDoc(req, id, `docs=${lidos}`));
     } catch (err) {
       console.error('[dashboard/ler-documentos]', err);
@@ -2419,12 +2431,14 @@ export function createDashboardRouter(
     const pergunta = String(req.body?.pergunta ?? '').trim();
     if (!pergunta) return res.status(400).json({ erro: 'Pergunta vazia.' });
     try {
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
       // Filtra por company (igual /pos-venda/:leadId/acao): não ler cliente de outra empresa.
-      const { data: lead } = await supabase.from('leads').select('name, city')
+      const { data: lead } = await db.from('leads').select('name, city')
         .eq('id', leadId).eq('company_id', req.dashUser!.companyId).maybeSingle();
       if (!lead) return res.status(404).json({ erro: 'Cliente não encontrado.' });
       // order antes do limit: cliente com várias usinas (ex: Superbom) -> pega a 1ª de forma determinística.
-      const { data: sis } = await supabase.from('sistemas_clientes')
+      const { data: sis } = await db.from('sistemas_clientes')
         .select('id, potencia_kwp, marca_inversor, data_instalacao, acompanhamento, api_credentials')
         .eq('lead_id', leadId).eq('ativo', true)
         .order('created_at', { ascending: true }).limit(1).maybeSingle();
@@ -2438,7 +2452,7 @@ export function createDashboardRouter(
       let geracaoResumo: string | null = null;
       if (temMonitoramento && (sis as any).id) {
         const desde = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-        const { data: ger } = await supabase.from('geracao_diaria')
+        const { data: ger } = await db.from('geracao_diaria')
           .select('geracao_kwh').eq('sistema_id', (sis as any).id).gte('data', desde);
         const total = (ger ?? []).reduce((s: number, g: any) => s + Number(g.geracao_kwh || 0), 0);
         if ((ger ?? []).length > 0) geracaoResumo = `Últimos 30 dias: ${Math.round(total)} kWh`;
@@ -2492,7 +2506,9 @@ export function createDashboardRouter(
       if (!template) return res.status(400).json({ erro: 'Ação sem template (ex: contato não envia).' });
 
       const companyId = req.dashUser!.companyId;
-      const { data: lead } = await supabase.from('leads').select('name, phone')
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
+      const { data: lead } = await db.from('leads').select('name, phone')
         .eq('id', leadId).eq('company_id', companyId).maybeSingle();
       if (!lead) return res.status(404).json({ erro: 'Cliente não encontrado.' });
       const to = normalizarTelefone((lead.phone as string | null) ?? '');
@@ -2514,7 +2530,7 @@ export function createDashboardRouter(
       });
       const MAP_EVA: Record<string, 'parabens' | 'depoimento' | 'queda'> = { parabens: 'parabens', depoimento: 'depoimento', limpeza: 'queda' };
       if (MAP_EVA[tipo]) {
-        const { data: sistema } = await supabase.from('sistemas_clientes').select('id')
+        const { data: sistema } = await db.from('sistemas_clientes').select('id')
           .eq('lead_id', leadId).eq('ativo', true).order('created_at', { ascending: true }).limit(1).maybeSingle();
         if (sistema) {
           await registrarAbordagemManual(supabase, {
@@ -2556,7 +2572,9 @@ export function createDashboardRouter(
     try {
       const { normalizarTelefone } = await import('./pos-venda-envio.js');
       const companyId = req.dashUser!.companyId;
-      const { data: lead } = await supabase.from('leads').select('phone')
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
+      const { data: lead } = await db.from('leads').select('phone')
         .eq('id', leadId).eq('company_id', companyId).maybeSingle();
       if (!lead) return res.status(404).json({ erro: 'Cliente não encontrado.' });
       const to = normalizarTelefone((lead.phone as string | null) ?? '');
@@ -2598,11 +2616,13 @@ export function createDashboardRouter(
 
     try {
       const companyId = req.dashUser!.companyId;
-      const { data: lead } = await supabase.from('leads')
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
+      const { data: lead } = await db.from('leads')
         .select('id, name, phone, company_id').eq('id', leadId).eq('company_id', companyId).maybeSingle();
       if (!lead) { res.status(404).json({ error: 'lead não encontrado' }); return; }
       const leadRow = lead as { id: string; name: string | null; phone: string | null };
-      const { data: sistema } = await supabase.from('sistemas_clientes')
+      const { data: sistema } = await db.from('sistemas_clientes')
         .select('id, potencia_kwp').eq('lead_id', leadId).eq('ativo', true)
         .order('created_at', { ascending: true }).limit(1).maybeSingle();
       const sistemaRow = sistema as { id: string; potencia_kwp: number | null } | null;
@@ -2633,7 +2653,7 @@ export function createDashboardRouter(
 
       let mes: { kwh: number; reais: number; mesLabel: string; parcial: boolean } | null = null;
       if (sistemaRow) {
-        const { data: ger } = await supabase.from('geracao_diaria')
+        const { data: ger } = await db.from('geracao_diaria')
           .select('data, geracao_kwh').eq('sistema_id', sistemaRow.id)
           .gte('data', new Date(Date.now() - 62 * 86400000).toISOString().slice(0, 10));
         mes = numerosMes((ger ?? []).map((g: any) => ({ data: g.data, geracao_kwh: Number(g.geracao_kwh) })), TARIFA_RS_KWH, new Date());
@@ -2682,7 +2702,9 @@ export function createDashboardRouter(
     }
     try {
       const companyId = req.dashUser!.companyId;
-      const { data: lead } = await supabase.from('leads').select('id')
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
+      const { data: lead } = await db.from('leads').select('id')
         .eq('id', leadId).eq('company_id', companyId).maybeSingle();
       if (!lead) return res.status(404).json({ erro: 'Cliente não encontrado.' });
       await criarTarefa(supabase, {
@@ -2701,7 +2723,9 @@ export function createDashboardRouter(
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).json({ erro: 'id inválido' });
     try {
-      const leadId = await leadDaTarefaNaCompany(supabase, id, req.dashUser!.companyId);
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
+      const leadId = await leadDaTarefaNaCompany(db, id, req.dashUser!.companyId);
       if (!leadId) return res.status(404).json({ erro: 'Tarefa não encontrada.' });
       await concluirTarefa(supabase, id, req.dashUser!.id, leadId);
       res.json({ ok: true });
@@ -2717,7 +2741,9 @@ export function createDashboardRouter(
     if (!UUID_RE.test(id)) return res.status(400).json({ erro: 'id inválido' });
     const dias = Math.min(Math.max(Number(req.body?.dias) || 1, 1), 30);
     try {
-      const leadId = await leadDaTarefaNaCompany(supabase, id, req.dashUser!.companyId);
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
+      const leadId = await leadDaTarefaNaCompany(db, id, req.dashUser!.companyId);
       if (!leadId) return res.status(404).json({ erro: 'Tarefa não encontrada.' });
       await adiarTarefa(supabase, id, dias, leadId);
       res.json({ ok: true });
@@ -2735,7 +2761,9 @@ export function createDashboardRouter(
     if (!texto) return res.status(400).json({ erro: 'Nota vazia.' });
     try {
       const companyId = req.dashUser!.companyId;
-      const { data: lead } = await supabase.from('leads').select('id')
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
+      const { data: lead } = await db.from('leads').select('id')
         .eq('id', leadId).eq('company_id', companyId).maybeSingle();
       if (!lead) return res.status(404).json({ erro: 'Cliente não encontrado.' });
       await registrarAtividade(supabase, {
@@ -2755,7 +2783,9 @@ export function createDashboardRouter(
     if (!UUID_RE.test(leadId)) return res.status(400).json({ erro: 'id inválido' });
     try {
       const companyId = req.dashUser!.companyId;
-      const { data: lead } = await supabase.from('leads').select('id')
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
+      const { data: lead } = await db.from('leads').select('id')
         .eq('id', leadId).eq('company_id', companyId).maybeSingle();
       if (!lead) return res.status(404).json({ erro: 'Cliente não encontrado.' });
       const itens = await listarTimeline(supabase, leadId, 50);
@@ -3266,7 +3296,9 @@ export function createDashboardRouter(
       if (!UUID_RE.test(sistemaId) || !TIPOS.includes(tipo) || !/^\d{4}-\d{2}-\d{2}$/.test(dataAgendada)) {
         res.status(400).send('dados inválidos'); return;
       }
-      const { data: s } = await supabase.from('sistemas_clientes').select('lead_id').eq('id', sistemaId).maybeSingle();
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
+      const { data: s } = await db.from('sistemas_clientes').select('lead_id').eq('id', sistemaId).maybeSingle();
       await criarManutencao(supabase, { sistemaId, leadId: (s as any)?.lead_id ?? null, tipo, origem: 'manual', dataAgendada });
       res.redirect('/dashboard/manutencao');
     } catch (err) {
@@ -3283,7 +3315,9 @@ export function createDashboardRouter(
       await marcarManutencaoFeita(supabase, id, {
         feitaEm: String(req.body.feitaEm ?? hoje), feitoPor: req.dashUser!.id, notas: req.body.notas ? String(req.body.notas) : undefined,
       });
-      const { data: m } = await supabase.from('manutencoes').select('lead_id, tipo').eq('id', id).maybeSingle();
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
+      const { data: m } = await db.from('manutencoes').select('lead_id, tipo').eq('id', id).maybeSingle();
       if ((m as any)?.lead_id) {
         await registrarAtividade(supabase, {
           company_id: req.dashUser!.companyId, lead_id: (m as any).lead_id, tipo: 'visita',
@@ -3334,10 +3368,12 @@ export function createDashboardRouter(
   router.get('/usinas/vincular', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
     try {
       const companyId = req.dashUser!.companyId;
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
       const [usinasRes, leadsRes] = await Promise.all([
-        supabase.from('sistemas_clientes')
+        db.from('sistemas_clientes')
           .select('id, apelido').eq('ativo', true).is('lead_id', null).order('apelido'),
-        supabase.from('leads')
+        db.from('leads')
           .select('id, name').eq('company_id', companyId).order('name'),
       ]);
       if (usinasRes.error) throw new Error(usinasRes.error.message);
@@ -3361,17 +3397,19 @@ export function createDashboardRouter(
       const { sanitizarPares } = await import('./vincular-usinas.js');
       const pares = sanitizarPares((req.body ?? {}) as Record<string, unknown>);
       const viewer = req.dashUser!;
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
       // Defesa multi-empresa: só aceita vincular a leads da própria company.
       // (sistemas_clientes não tem company_id; o vínculo é o que define a dona.)
       const leadIds = [...new Set(pares.map((p) => p.leadId))];
       const { data: leadsValidos } = leadIds.length
-        ? await supabase.from('leads').select('id').eq('company_id', viewer.companyId).in('id', leadIds)
+        ? await db.from('leads').select('id').eq('company_id', viewer.companyId).in('id', leadIds)
         : { data: [] as Array<{ id: string }> };
       const idsValidos = new Set((leadsValidos ?? []).map((l: any) => l.id));
       const paresOk = pares.filter((p) => idsValidos.has(p.leadId));
       let aplicados = 0;
       for (const { usinaId, leadId } of paresOk) {
-        const { error } = await supabase.from('sistemas_clientes')
+        const { error } = await db.from('sistemas_clientes')
           .update({ lead_id: leadId, etapa_obra: 'pos_venda', etapa_obra_updated_at: new Date().toISOString() })
           .eq('id', usinaId).eq('ativo', true);
         if (error) { console.warn(`[usinas/vincular] ${usinaId} falhou: ${error.message}`); continue; }
@@ -3502,7 +3540,9 @@ export function createDashboardRouter(
       if (!UUID_RE.test(sistemaId) || !['limpeza', 'revisao_inversor', 'revisao_eletrica', 'corretiva', 'inspecao'].includes(tipo)) {
         res.status(400).send('dados inválidos'); return;
       }
-      const { data: s } = await supabase.from('sistemas_clientes').select('lead_id').eq('id', sistemaId).maybeSingle();
+      // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
+      const db = bancoDoOperador(req, supabase);
+      const { data: s } = await db.from('sistemas_clientes').select('lead_id').eq('id', sistemaId).maybeSingle();
       const osId = await criarOS(supabase, { sistemaId, leadId: (s as any)?.lead_id ?? null, tipo });
       res.redirect(`/dashboard/os/${osId}`);
     } catch (err) { console.error('[os] nova falhou:', (err as Error).message); res.status(500).send('erro ao criar OS'); }
