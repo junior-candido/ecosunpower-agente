@@ -176,11 +176,16 @@ export async function urlCurriculo(client: SupabaseClient, path: string): Promis
 }
 
 // Atalho pro router: candidato -> URL assinada do currículo (null se não achar).
-export async function urlCurriculoDoCandidato(client: SupabaseClient, candidatoId: string): Promise<string | null> {
+// `storageClient` (opcional): a URL assinada sai do STORAGE, que a RLS da 079 NÃO
+// cobre (política é das tabelas, não do storage.objects) — com o crachá do tenant
+// a assinatura falharia. A LEITURA da tabela usa `client` (isolada pelo RLS); a
+// assinatura usa o client de SERVIÇO. Sem vazamento: o path vem da linha que o
+// próprio RLS liberou. Ausente = usa o mesmo client (comportamento antigo).
+export async function urlCurriculoDoCandidato(client: SupabaseClient, candidatoId: string, storageClient?: SupabaseClient): Promise<string | null> {
   const { data } = await client.from('rh_candidatos').select('curriculo_path').eq('id', candidatoId).maybeSingle();
   const path = (data as { curriculo_path?: string } | null)?.curriculo_path;
   if (!path) return null;
-  return urlCurriculo(client, path);
+  return urlCurriculo(storageClient ?? client, path);
 }
 
 // Exclusão manual de 1 candidato (botão do dashboard / pedido LGPD do titular).

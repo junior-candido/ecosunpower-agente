@@ -405,7 +405,8 @@ export function createDashboardRouter(
     const { urlCurriculoDoCandidato } = await import('../rh/store.js');
     // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
     const db = bancoDoOperador(req, supabase);
-    const url = await urlCurriculoDoCandidato(db, String(req.params.id));
+    // Tabela via crachá (RLS); URL assinada via SERVIÇO (storage fica fora da 079).
+    const url = await urlCurriculoDoCandidato(db, String(req.params.id), supabase);
     if (!url) { res.status(404).send('Currículo não encontrado — tenta de novo em instantes.'); return; }
     res.redirect(url);
   });

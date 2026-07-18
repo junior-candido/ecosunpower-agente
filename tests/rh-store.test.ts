@@ -1,6 +1,40 @@
 // tests/rh-store.test.ts — partes puras do store do RH
 import { describe, it, expect } from 'vitest';
-import { montarPathCurriculo, STATUS_VALIDOS, corteRetencao } from '../src/modules/rh/store.js';
+import { montarPathCurriculo, STATUS_VALIDOS, corteRetencao, urlCurriculoDoCandidato } from '../src/modules/rh/store.js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+// Fake mínimo: tabela responde num client, storage assina no OUTRO — prova a
+// separação (RLS Fase B): leitura no crachá, URL assinada no serviço.
+function fakeClients() {
+  const chamadas: string[] = [];
+  const tabela = {
+    from: (t: string) => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => { chamadas.push(`tabela:${t}`); return { data: { curriculo_path: 'vaga-1/cv.pdf' } }; } }) }),
+    }),
+    storage: { from: () => ({ createSignedUrl: async () => { chamadas.push('storage:ERRADO(crachá)'); return { data: null, error: new Error('sem política de storage') }; } }) },
+  } as unknown as SupabaseClient;
+  const servico = {
+    from: () => { throw new Error('serviço não deve ler a tabela'); },
+    storage: { from: () => ({ createSignedUrl: async () => { chamadas.push('storage:servico'); return { data: { signedUrl: 'https://ok/cv.pdf' }, error: null }; } }) },
+  } as unknown as SupabaseClient;
+  return { tabela, servico, chamadas };
+}
+
+describe('urlCurriculoDoCandidato — storage no client de serviço (RLS Fase B)', () => {
+  it('lê a tabela no crachá e assina a URL no serviço quando storageClient vem', async () => {
+    const { tabela, servico, chamadas } = fakeClients();
+    const url = await urlCurriculoDoCandidato(tabela, 'cand-1', servico);
+    expect(url).toBe('https://ok/cv.pdf');
+    expect(chamadas).toEqual(['tabela:rh_candidatos', 'storage:servico']);
+  });
+
+  it('sem storageClient, usa o mesmo client (comportamento antigo intacto)', async () => {
+    const { tabela, chamadas } = fakeClients();
+    const url = await urlCurriculoDoCandidato(tabela, 'cand-1');
+    expect(url).toBeNull(); // o fake do crachá falha a assinatura de propósito
+    expect(chamadas).toEqual(['tabela:rh_candidatos', 'storage:ERRADO(crachá)']);
+  });
+});
 
 describe('rh store (partes puras)', () => {
   it('path do currículo: vaga vira pasta, sem vaga = banco-talentos', () => {
