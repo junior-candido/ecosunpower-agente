@@ -1,7 +1,18 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EmailSequenceService } from '../src/modules/email/email-sequence.js';
+import { _limparCacheNoticias } from '../src/modules/email/blog-noticias.js';
 
 describe('EmailSequenceService.processSequence', () => {
+  beforeEach(() => {
+    _limparCacheNoticias();
+    // A moldura busca noticias do blog 1x por ciclo (best-effort) — evita bater
+    // na rede de verdade durante o teste, simulando o blog indisponivel.
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('sem rede no teste')));
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('envia um step due e marca como enviado', async () => {
     const supa = {
       getDueEmailSteps: vi.fn().mockResolvedValue([

@@ -12,12 +12,17 @@ export function podeEnviarAgora(now: Date = new Date()): boolean {
 import { renderTemplate, STEPS_JORNADA } from './templates.js';
 import { gerarAssuntoAbertura } from './email-writer.js';
 import { registrarEvento } from '../elo/eventos.js';
+import { montarMolduraEmail } from './email-moldura.js';
+import { buscarNoticiasBlog } from './blog-noticias.js';
 import type { EmailSender } from './resend-client.js';
+
+const RSS_URL_PADRAO = 'https://www.ecosunpower.eng.br/rss.xml';
 
 export type SeqOpts = {
   from: string; baseUrl: string; hotOpens: number;
   empresa?: string;              // CLONE-READY: nome da empresa vem da config
   now?: () => Date; batchLimit?: number;
+  rssUrl?: string;                // feed do blog pra secao "Novidades" da moldura
 };
 
 // Motor da sequencia de e-mail: espelha CadenceService.processCadence (src/modules/cadence.ts)
@@ -33,6 +38,10 @@ export class EmailSequenceService {
     // permitido (compatibilidade); só um pause explícito interrompe o envio.
     if ((await this.supa.getFlag?.('email_seq_ligado')) === false) return 0;
     const due = await this.supa.getDueEmailSteps(this.opts.batchLimit ?? 50);
+    if (due.length === 0) return 0;
+    // Busca as noticias do blog UMA vez por ciclo (nao por e-mail) — best-effort,
+    // se o blog estiver fora do ar a jornada segue normal sem a secao.
+    const noticias = await buscarNoticiasBlog(this.opts.rssUrl ?? RSS_URL_PADRAO).catch(() => []);
     let enviados = 0;
     for (const row of due) {
       const lead = row.leads;
@@ -50,8 +59,9 @@ export class EmailSequenceService {
           modelo.assunto_padrao,
         );
         const link = `${this.opts.baseUrl}/e/descadastro?lid=${lead.id}`;
-        const html = (abertura ? `<p>${abertura}</p>` : '') +
+        const conteudoHtml = (abertura ? `<p>${abertura}</p>` : '') +
           renderTemplate(modelo.corpo_html, { nome: lead.name, cidade: lead.city, o_que_pediu: lead.profile, link_descadastro: link });
+        const html = montarMolduraEmail({ conteudoHtml, linkDescadastro: link, noticias, empresa: this.opts.empresa });
         const msgId = await this.sender.enviar({ to: lead.email, subject: assunto, html });
         await this.supa.markEmailSent(row.id, msgId, assunto);
         await registrarEvento(this.supa.getClient(), {

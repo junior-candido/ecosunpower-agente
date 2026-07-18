@@ -969,6 +969,75 @@ export class SupabaseService {
   }
 
   /**
+   * Inscreve automaticamente na jornada de e-mail (scheduleEmailSequence) todo
+   * lead ABERTO e elegivel: tem e-mail, nao deu opt-out, nao esta arquivado,
+   * nao virou cliente (installation_status) e nao esta 'perdido' (status).
+   * Cobre a base existente + leads futuros de qualquer origem, chamado num
+   * sweep periodico (src/index.ts) — idempotente porque scheduleEmailSequence
+   * ja usa upsert com ignoreDuplicates.
+   *
+   * Duplica a lista de CLIENTE_STATUSES em vez de importar de
+   * dashboard/clientes-queries.ts pra nao criar dependencia server->dashboard
+   * (raias separadas, ver CLAUDE.md). Se essa lista mudar la, muda aqui tambem.
+   *
+   * O filtro de status roda em JS (nao em SQL): um `.not(col,'in',(...))` puro
+   * no Postgres derruba silenciosamente toda linha com a coluna NULL (armadilha
+   * ja documentada em dashboard/leads-queries.ts) — e a maioria dos leads
+   * abertos tem installation_status NULL. Fazer a checagem em JS depois de um
+   * fetch mais simples evita essa pegadinha.
+   */
+  async inscreverLeadsElegiveisEmail(max: number = 500): Promise<number> {
+    const CLIENTE_STATUSES = ['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido'];
+
+    const { data, error } = await this.client
+      .from('leads')
+      .select('id, email, status, installation_status, archived_at, email_opt_out')
+      .not('email', 'is', null)
+      .neq('email', '')
+      .not('email_opt_out', 'is', true)
+      .is('archived_at', null)
+      .limit(2000);
+
+    if (error) {
+      console.warn('[email] inscreverLeadsElegiveisEmail: busca de leads falhou:', error.message);
+      return 0;
+    }
+
+    const candidatos = ((data ?? []) as any[]).filter((l) => {
+      if (!l.email || l.email_opt_out || l.archived_at) return false;
+      if (l.status === 'perdido') return false;
+      if (l.installation_status && CLIENTE_STATUSES.includes(l.installation_status)) return false;
+      return true;
+    });
+    if (candidatos.length === 0) return 0;
+
+    const [{ data: jaInscritos }, { data: descadastrados }] = await Promise.all([
+      this.client.from('email_sequencia').select('lead_id'),
+      this.client.from('email_descadastro').select('email'),
+    ]);
+    const idsInscritos = new Set(((jaInscritos ?? []) as any[]).map((r) => r.lead_id));
+    const emailsDescadastrados = new Set(
+      ((descadastrados ?? []) as any[]).map((r) => String(r.email ?? '').toLowerCase()),
+    );
+
+    const elegiveis = candidatos
+      .filter((l) => !idsInscritos.has(l.id) && !emailsDescadastrados.has(String(l.email).toLowerCase()))
+      .slice(0, max);
+
+    let inscritos = 0;
+    for (const lead of elegiveis) {
+      try {
+        await this.scheduleEmailSequence(lead.id);
+        inscritos++;
+      } catch (err) {
+        console.error(`[email] inscreverLeadsElegiveisEmail: falhou pro lead ${lead.id}:`, (err as Error)?.message);
+      }
+    }
+    if (inscritos) console.log(`[email] inscrição automática: ${inscritos} lead(s) novo(s) na jornada`);
+    return inscritos;
+  }
+
+  /**
    * Retorna o id do lead existente pelo telefone, ou cria um novo (status='qualificado').
    * Usado por savePropostaPublica e pelo modo /fechar pra garantir que
    * proposta sempre fica linkada a um lead. Resolve bug Fase 1 (proposta orfa).
