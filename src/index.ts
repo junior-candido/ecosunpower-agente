@@ -8594,6 +8594,26 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setTimeout(runEmailSeq, 3 * 60 * 1000); // primeira passada 3min apos boot
     console.log('[email-seq] scheduler started (15min, dias uteis 9-20 BRT)');
 
+    // Inscricao automatica na jornada de e-mail: a cada 1h, varre TODOS os
+    // leads abertos e elegiveis (base existente + leads novos de qualquer
+    // origem) e matricula quem ainda nao esta na sequencia. Idempotente
+    // (scheduleEmailSequence faz upsert com ignoreDuplicates), entao rodar de
+    // novo em cima de quem ja esta inscrito e inofensivo. Respeita o mesmo
+    // botao ligar/pausar do dashboard (aba E-mail Marketing) que o motor de
+    // envio usa.
+    const runInscricaoAutomatica = async () => {
+      try {
+        if ((await supabase.getFlag('email_seq_ligado')) === false) return;
+        const n = await supabase.inscreverLeadsElegiveisEmail();
+        if (n) console.log('[email] inscrição automática:', n, 'lead(s) novos na jornada');
+      } catch (err) {
+        console.warn('[email] inscricao automatica falhou:', (err as Error)?.message);
+      }
+    };
+    setInterval(runInscricaoAutomatica, 60 * 60 * 1000); // a cada 1h
+    setTimeout(runInscricaoAutomatica, 2 * 60 * 1000); // primeira passada 2min apos start (pega a base existente sem esperar 1h)
+    console.log('[email] inscricao automatica scheduler started (1h)');
+
     // Auto-agendamento de cadencia: a cada 1h, busca leads novos silentes
     // ha mais de 24h sem cadencia agendada e dispara scheduleCadence
     // automaticamente. Garante que NENHUM lead da campanha seja esquecido
