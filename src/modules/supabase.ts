@@ -248,7 +248,11 @@ export class SupabaseService {
     return true;
   }
 
-  async getOrCreateConversation(leadId: string): Promise<ConversationData> {
+  // companyId (multi-tenant fatia 2): quando informado, carimba company_id na
+  // conversa NOVA (INSERT). Ausente → coluna usa o default (EcoSun, migration
+  // 077) = comportamento de hoje. O ramo de conversa EXISTENTE nunca é
+  // reatribuído (nunca troca a empresa de uma conversa já aberta).
+  async getOrCreateConversation(leadId: string, companyId?: string): Promise<ConversationData> {
     const { data: existing, error: findError } = await this.client
       .from('conversations')
       .select('*')
@@ -282,6 +286,7 @@ export class SupabaseService {
         message_count: 0,
         last_message_at: new Date().toISOString(),
         expires_at: expiresAt,
+        ...(companyId ? { company_id: companyId } : {}),
       })
       .select()
       .single();
