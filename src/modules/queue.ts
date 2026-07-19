@@ -11,6 +11,10 @@ export interface QueueMessage {
   pushName?: string;
   caption?: string;
   mimeType?: string;
+  // Empresa dona da mensagem (multi-tenant fatia 1). Resolvida no webhook a
+  // partir do phone_number_id que recebeu a msg. Opcional: jobs antigos na
+  // fila (sem esse campo) continuam parseando → o consumidor cai em EcoSun.
+  companyId?: string;
   // CTWA referral (Click-to-WhatsApp Ad) — preenchido apenas na 1a msg do
   // lead que veio clicando num anuncio Meta. Permite mapping ad_id->template.
   referral?: {

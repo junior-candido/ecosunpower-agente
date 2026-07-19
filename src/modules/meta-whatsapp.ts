@@ -355,14 +355,17 @@ export class MetaWhatsAppService {
         const contacts = (value.contacts as Array<Record<string, unknown>> | undefined) ?? [];
         const contact = contacts[0];
         const profile = contact?.profile as Record<string, string> | undefined;
-        return this.parseMessage(msg, profile?.name);
+        // metadata.phone_number_id = ID do numero que RECEBEU a msg. Base do
+        // multi-tenant (fatia 1). Ausente em payloads antigos → undefined.
+        const metadata = value.metadata as { phone_number_id?: string } | undefined;
+        return this.parseMessage(msg, profile?.name, metadata?.phone_number_id);
       }
     }
     return null;
   }
 
   // Parse de UM evento de mensagem (entry.changes[].value.messages[i]).
-  private parseMessage(msg: Record<string, unknown>, pushName?: string): IncomingMessage | null {
+  private parseMessage(msg: Record<string, unknown>, pushName?: string, phoneNumberId?: string): IncomingMessage | null {
     const from = (msg.from as string) ?? '';
     const messageId = (msg.id as string) ?? '';
     const timestampSec = Number(msg.timestamp ?? 0);
@@ -386,7 +389,7 @@ export class MetaWhatsAppService {
       };
     }
 
-    const base = { from, timestamp, messageId, fromMe: false, pushName, referral };
+    const base = { from, timestamp, messageId, fromMe: false, pushName, referral, phoneNumberId };
 
     switch (type) {
       case 'text': {

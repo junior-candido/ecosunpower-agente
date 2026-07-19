@@ -55,6 +55,10 @@ interface LeadData {
   // Click id CTWA (referral.ctwa_clid). Chave pra casar conversao com anuncio
   // via Conversions API. Leads organicos/antigos ficam null. (migration 044)
   ctwa_clid?: string | null;
+  // Empresa dona do lead (multi-tenant). So aplicado na CRIACAO de lead novo —
+  // nunca reatribui tenant de lead existente (o update strip-a esse campo).
+  // Ausente = default da coluna no banco (EcoSun). (migration 081)
+  company_id?: string;
 }
 
 interface DossierData {
@@ -82,7 +86,9 @@ export class SupabaseService {
     if (data.phone) {
       const existente = await this.getLeadByPhone(data.phone);
       if (existente) {
-        const { phone: _ignora, ...rest } = data;
+        // Lead ja existe: NUNCA reatribui a empresa (evita "mover" lead de
+        // tenant por engano). company_id so vale na criacao.
+        const { phone: _ignora, company_id: _icid, ...rest } = data;
         const { data: upd, error: updErr } = await this.client
           .from('leads')
           .update({ ...rest, updated_at: new Date().toISOString() })

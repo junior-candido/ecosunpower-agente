@@ -2,6 +2,7 @@ import express from 'express';
 import { loadConfig } from './config.js';
 import { EvolutionService } from './modules/evolution.js';
 import { MessageQueue } from './modules/queue.js';
+import { criarTenantResolver, ECOSUN_COMPANY_ID } from './modules/tenant-resolver.js';
 import { SupabaseService } from './modules/supabase.js';
 import { KnowledgeBase } from './modules/knowledge.js';
 import { detectTopics } from './modules/knowledge-topics.js';
@@ -259,6 +260,11 @@ async function main() {
   }
 
   const supabase = new SupabaseService(config);
+
+  // Resolver de tenant (multi-tenant fatia 1): phone_number_id do webhook →
+  // company_id (mapa da migration 081). Com a coluna NULL em todo mundo, tudo
+  // resolve EcoSun = comportamento de hoje. Cache 5min, best-effort.
+  const tenantResolver = criarTenantResolver(supabase.getClient());
 
   // [Corretor] Corretor de português compartilhado (1 cliente Anthropic) injetado
   // nos assistants que recebem texto livre do Junior (cases, fechamento). Corrige
@@ -3699,6 +3705,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     from: string,
     text: string,
     ctwaReferral?: import('./modules/evolution.js').IncomingMessage['referral'],
+    companyId?: string,
   ) {
     // Hook: se essa mensagem eh de cliente que recebeu followup automatico
     // de proposta, marca como "cliente respondeu" no banco. Fire-and-forget,
@@ -4394,7 +4401,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       const isNewLead = !lead;
 
       if (!lead) {
-        const result = await supabase.upsertLead({ phone: from, status: 'novo' });
+        // Multi-tenant fatia 1: carimba a empresa dona na CRIACAO do lead novo.
+        // Ausente → EcoSun (default). Hoje sempre EcoSun = comportamento igual.
+        const result = await supabase.upsertLead({ phone: from, status: 'novo', company_id: companyId ?? ECOSUN_COMPANY_ID });
         lead = { id: result.id, phone: from } as NonNullable<typeof lead>;
       }
 
@@ -5590,7 +5599,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
   }
 
   // Handle audio messages
-  async function handleAudioMessage(from: string, messageId: string) {
+  async function handleAudioMessage(from: string, messageId: string, companyId?: string) {
     if (await takeover.isPaused(from)) {
       console.log(`[takeover] Skipping audio from ${from} — human takeover active`);
       return;
@@ -5629,7 +5638,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       }
 
       console.log(`[audio] Transcribed from ${from}: "${text.substring(0, 80)}..."`);
-      await handleTextMessage(from, text);
+      await handleTextMessage(from, text, undefined, companyId);
     } catch (error) {
       console.error(`[audio] Error processing audio from ${from}:`, error);
       const msg = 'Nao consegui processar o audio. Pode me enviar por texto? 😊';
@@ -5734,7 +5743,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
   }
 
   // Handle video messages (depoimentos, casos, registros)
-  async function handleVideoMessage(from: string, messageId: string, caption?: string) {
+  async function handleVideoMessage(from: string, messageId: string, caption?: string, companyId?: string) {
     if (await tryHandleCaseCreatorMedia(from, messageId, 'video')) return;
     if (await tryHandleProposalMedia(from, messageId, 'video')) return;
 
@@ -5819,7 +5828,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         'avaliacao do Google. Se o video nao for depoimento (ex: foto de conta, telhado, ' +
         'etc.), responda adequadamente ao conteudo sem salvar depoimento.]',
       );
-      await handleTextMessage(from, parts.join(' '));
+      await handleTextMessage(from, parts.join(' '), undefined, companyId);
 
       if (lead) {
         await supabase.logEvent('info', 'video', `Received video from ${from} (${(videoBuffer.byteLength / 1024).toFixed(0)}KB, transcribed=${Boolean(transcription)})`);
@@ -6002,6 +6011,10 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
 
   // Initialize queue
   const queue = new MessageQueue(config.redisHost, config.redisPort, async (msg) => {
+    // Empresa dona (multi-tenant fatia 1): resolvida no webhook. Jobs antigos na
+    // fila / canal Evolution nao trazem → EcoSun (comportamento de hoje).
+    const companyId = msg.companyId ?? ECOSUN_COMPANY_ID;
+
     // Seed WhatsApp profile name as lead.name if we don't have a name yet
     if (msg.pushName) {
       const trimmed = msg.pushName.trim();
@@ -6010,7 +6023,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         try {
           const existing = await supabase.getLeadByPhone(msg.from);
           if (!existing?.name) {
-            await supabase.upsertLead({ phone: msg.from, name: trimmed });
+            await supabase.upsertLead({ phone: msg.from, name: trimmed, company_id: companyId });
             console.log(`[lead] Seeded pushName "${trimmed}" for ${msg.from}`);
           }
         } catch (err) {
@@ -6026,16 +6039,16 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
 
     switch (msg.type) {
       case 'text':
-        await handleTextMessage(msg.from, msg.content, msg.referral);
+        await handleTextMessage(msg.from, msg.content, msg.referral, companyId);
         break;
       case 'audio':
-        await handleAudioMessage(msg.from, mediaRef(msg.content, msg.messageId));
+        await handleAudioMessage(msg.from, mediaRef(msg.content, msg.messageId), companyId);
         break;
       case 'image':
         await handleImageMessage(msg.from, mediaRef(msg.content, msg.messageId));
         break;
       case 'video':
-        await handleVideoMessage(msg.from, mediaRef(msg.content, msg.messageId), msg.caption);
+        await handleVideoMessage(msg.from, mediaRef(msg.content, msg.messageId), msg.caption, companyId);
         break;
       case 'document':
         // Apos fix do parseMessage: msg.content = media_id (igual image/video),
@@ -6059,17 +6072,19 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
               shared_coordinates: coords,
               shared_maps_url: mapsUrl,
             };
-            await supabase.upsertLead({ phone: msg.from, energy_data: mergedEnergy });
+            await supabase.upsertLead({ phone: msg.from, energy_data: mergedEnergy, company_id: companyId });
             console.log(`[location] Saved coords for ${msg.from}: ${coords}`);
             await handleTextMessage(
               msg.from,
               `[O cliente acabou de compartilhar a localizacao exata pelo WhatsApp. Coordenadas: ${coords}. Link do Maps: ${mapsUrl}. Use essas coordenadas no campo client_coordinates quando for agendar a visita. Agora pergunte o endereco textual (rua/numero/bairro) pra complementar, caso ainda nao tenha.]`,
+              undefined,
+              companyId,
             );
           } else {
-            await handleTextMessage(msg.from, `[Cliente compartilhou localizacao mas nao foi possivel ler as coordenadas.]`);
+            await handleTextMessage(msg.from, `[Cliente compartilhou localizacao mas nao foi possivel ler as coordenadas.]`, undefined, companyId);
           }
         } catch {
-          await handleTextMessage(msg.from, `[Cliente compartilhou localizacao: ${msg.content}]`);
+          await handleTextMessage(msg.from, `[Cliente compartilhou localizacao: ${msg.content}]`, undefined, companyId);
         }
         break;
       }
@@ -6484,7 +6499,13 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           return;
         }
 
-        console.log(`[waba] 📥 Mensagem recebida de ${parsed.from} (${parsed.type}): ${parsed.content.slice(0, 80)}`);
+        // Multi-tenant (fatia 1): descobre a empresa dona a partir do numero
+        // que recebeu a msg. Best-effort — resolver nunca derruba a mensagem.
+        const companyId = await tenantResolver
+          .companyDoNumero(parsed.phoneNumberId)
+          .catch(() => ECOSUN_COMPANY_ID);
+
+        console.log(`[waba] 📥 Mensagem recebida de ${parsed.from} (${parsed.type}) empresa=${companyId.slice(0, 8)}: ${parsed.content.slice(0, 80)}`);
 
         await queue.addMessage({
           type: parsed.type,
@@ -6496,6 +6517,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           caption: parsed.caption,
           mimeType: parsed.mimeType,
           referral: parsed.referral,
+          companyId,
         });
       } catch (err) {
         console.error('[waba] Webhook processing error:', (err as Error).message);
