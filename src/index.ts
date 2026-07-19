@@ -4559,7 +4559,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         }
       }
 
-      const conversation = await supabase.getOrCreateConversation(leadId);
+      const conversation = await supabase.getOrCreateConversation(leadId, companyId);
 
       // Auto-ack template: dispara template Utility em primeira sessao ou pausa
       // >1h pra UX (cliente nao fica esperando 5-30s no vacuo enquanto Eva processa
@@ -5647,7 +5647,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
   }
 
   // Handle image messages
-  async function handleImageMessage(from: string, messageId: string) {
+  async function handleImageMessage(from: string, messageId: string, companyId?: string) {
     if (await tryHandleCaseCreatorMedia(from, messageId, 'image')) return;
     if (await tryHandleProposalMedia(from, messageId, 'image')) return;
 
@@ -5717,7 +5717,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
       // Save to conversation
       if (lead) {
-        const conversation = await supabase.getOrCreateConversation(lead.id);
+        const conversation = await supabase.getOrCreateConversation(lead.id, companyId);
         const updatedMessages = [
           ...conversation.messages,
           { role: 'user' as const, content: '[Enviou uma foto]', timestamp: new Date().toISOString() },
@@ -5855,7 +5855,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
   }
 
   // Handle document messages (PDF)
-  async function handleDocumentMessage(from: string, messageId: string, mimetype: string) {
+  async function handleDocumentMessage(from: string, messageId: string, mimetype: string, companyId?: string) {
     // PRIORIDADE: se Junior anexou doc pra proposta personalizada, captura aqui
     if (await tryHandleProposalMedia(from, messageId, 'document')) return;
 
@@ -5988,7 +5988,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
 
       // Save to conversation
       if (lead) {
-        const conversation = await supabase.getOrCreateConversation(lead.id);
+        const conversation = await supabase.getOrCreateConversation(lead.id, companyId);
         const updatedMessages = [
           ...conversation.messages,
           { role: 'user' as const, content: '[Enviou um PDF]', timestamp: new Date().toISOString() },
@@ -6045,7 +6045,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         await handleAudioMessage(msg.from, mediaRef(msg.content, msg.messageId), companyId);
         break;
       case 'image':
-        await handleImageMessage(msg.from, mediaRef(msg.content, msg.messageId));
+        await handleImageMessage(msg.from, mediaRef(msg.content, msg.messageId), companyId);
         break;
       case 'video':
         await handleVideoMessage(msg.from, mediaRef(msg.content, msg.messageId), msg.caption, companyId);
@@ -6057,6 +6057,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           msg.from,
           mediaRef(msg.content, msg.messageId),
           msg.mimeType ?? msg.content,
+          companyId,
         );
         break;
       case 'location': {
@@ -8760,6 +8761,49 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setInterval(runInscricaoAutomatica, 60 * 60 * 1000); // a cada 1h
     setTimeout(runInscricaoAutomatica, 2 * 60 * 1000); // primeira passada 2min apos start (pega a base existente sem esperar 1h)
     console.log('[email] inscricao automatica scheduler started (1h)');
+
+    // Multi-tenant (fatia 2): auto-mapeia a EcoSun ao número WABA do próprio
+    // app ~30s após o boot. One-shot, best-effort. Sem esse mapa, o resolver
+    // segue caindo em EcoSun (comportamento de hoje) — então é só pra deixar a
+    // EcoSun explicitamente registrada assim que a fatia 2 sobe, sem SQL manual.
+    // NUNCA sobrescreve um mapa já existente (o `.is(...null)` no update e o
+    // aviso no ramo "diferente" garantem isso).
+    const autoMapearEcosunWaba = async () => {
+      try {
+        const phoneId = config.metaWabaPhoneNumberId;
+        if (!phoneId) return; // sem número no config → nada a mapear (silencioso)
+        const client = supabase.getClient();
+        const { data, error } = await client
+          .from('companies')
+          .select('waba_phone_number_id')
+          .eq('id', ECOSUN_COMPANY_ID)
+          .maybeSingle();
+        if (error) {
+          console.warn('[tenant] auto-map EcoSun: erro ao ler companies:', error.message);
+          return;
+        }
+        const atual = (data as { waba_phone_number_id?: string | null } | null)?.waba_phone_number_id ?? null;
+        if (atual === null) {
+          const { error: updErr } = await client
+            .from('companies')
+            .update({ waba_phone_number_id: phoneId })
+            .eq('id', ECOSUN_COMPANY_ID)
+            .is('waba_phone_number_id', null);
+          if (updErr) {
+            console.warn('[tenant] auto-map EcoSun: update falhou:', updErr.message);
+            return;
+          }
+          console.log(`[tenant] EcoSun mapeada ao número WABA ${phoneId} (auto)`);
+        } else if (atual !== phoneId) {
+          console.warn(`[tenant] EcoSun já mapeada a um número WABA diferente (${atual}); config diz ${phoneId}. NÃO sobrescrevendo.`);
+        }
+        // atual === phoneId → já certo, nada a fazer.
+      } catch (err) {
+        console.warn('[tenant] auto-map EcoSun falhou:', (err as Error)?.message);
+      }
+    };
+    setTimeout(autoMapearEcosunWaba, 30 * 1000); // ~30s após boot (one-shot)
+    console.log('[tenant] auto-map EcoSun agendado (~30s após boot)');
 
     // Auto-agendamento de cadencia: a cada 1h, busca leads novos silentes
     // ha mais de 24h sem cadencia agendada e dispara scheduleCadence
