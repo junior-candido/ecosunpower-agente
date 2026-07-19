@@ -1094,7 +1094,10 @@ export class SupabaseService {
    *
    * Lanca se phone vazio (leads.phone e NOT NULL UNIQUE).
    */
-  async getOrCreateLeadByPhone(phone: string, nameIfNew: string): Promise<string> {
+  // company_id EXPLÍCITO (Fase 2): com 1 tenant o DEFAULT da coluna segurava;
+  // com o tenant #2 um lead criado "no default" nasceria na empresa errada.
+  // Quem sabe a empresa (webhook/rota) passa; ausente = EcoSun (compat).
+  async getOrCreateLeadByPhone(phone: string, nameIfNew: string, companyId = '00000000-0000-0000-0000-000000000001'): Promise<string> {
     if (!phone || !phone.trim()) {
       throw new Error('getOrCreateLeadByPhone: telefone obrigatorio');
     }
@@ -1106,7 +1109,7 @@ export class SupabaseService {
 
     const { data: created, error: insertErr } = await this.client
       .from('leads')
-      .insert({ name: nameIfNew, phone: phoneClean, status: 'qualificado' })
+      .insert({ name: nameIfNew, phone: phoneClean, status: 'qualificado', company_id: companyId })
       .select('id')
       .single();
     if (insertErr) throw new Error(`getOrCreateLeadByPhone insert: ${insertErr.message}`);
