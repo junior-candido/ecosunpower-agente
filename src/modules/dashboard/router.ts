@@ -4416,7 +4416,7 @@ export function createDashboardRouter(
     }
   });
 
-  router.get('/financeiro/data', async (req, res) => {
+  router.get('/financeiro/data', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
     try {
       const { getFinanceiroData } = await import('./financeiro-queries.js');
       // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
