@@ -6499,11 +6499,22 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           return;
         }
 
-        // Multi-tenant (fatia 1): descobre a empresa dona a partir do numero
-        // que recebeu a msg. Best-effort — resolver nunca derruba a mensagem.
-        const companyId = await tenantResolver
+        // Multi-tenant (fatia 2): descobre a empresa dona a partir do numero
+        // que recebeu a msg. No mundo SEM mapeamentos (hoje) sempre resolve
+        // EcoSun. Se JÁ houver mapeamentos e este número não resolver, o
+        // resolver devolve companyId=null (falha-fechado) e a gente RETÉM a
+        // mensagem — processar como EcoSun vazaria conversa de outra empresa.
+        // O .catch mantém a garantia de "nunca derruba por exceção" no mundo
+        // legado (zero mapeamentos); no mundo mapeado o motivo 'erro' já é
+        // tratado dentro do resolver (falha-fechado).
+        const r = await tenantResolver
           .companyDoNumero(parsed.phoneNumberId)
-          .catch(() => ECOSUN_COMPANY_ID);
+          .catch(() => ({ companyId: ECOSUN_COMPANY_ID, motivo: 'erro' as const }));
+        if (!r.companyId) {
+          console.warn(`[waba] mensagem de número não-resolvido (${parsed.phoneNumberId}) com mapeamentos ativos — RETIDA (não processada). from=${parsed.from}`);
+          return; // falha-fechado: não processa como EcoSun
+        }
+        const companyId = r.companyId;
 
         console.log(`[waba] 📥 Mensagem recebida de ${parsed.from} (${parsed.type}) empresa=${companyId.slice(0, 8)}: ${parsed.content.slice(0, 80)}`);
 
