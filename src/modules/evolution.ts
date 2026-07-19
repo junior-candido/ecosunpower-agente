@@ -10,6 +10,10 @@ export interface IncomingMessage {
   pushName?: string;
   caption?: string; // legenda em imagem/video
   mimeType?: string; // mime do anexo (preenchido em document; tambem populado em image/video se vier no payload)
+  // ID do NÚMERO que RECEBEU a mensagem (value.metadata.phone_number_id no
+  // webhook WABA). Base do multi-tenant: mapeia pro company_id via companies.
+  // waba_phone_number_id (migration 081). So o canal WABA preenche.
+  phoneNumberId?: string;
   // Click-to-WhatsApp Ad (CTWA) referral. Presente APENAS na 1a msg do lead
   // que veio clicando num anuncio Meta. Permite mapping ad_id -> template
   // pra A/B test sem precisar de tag no body do anuncio.

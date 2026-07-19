@@ -44,6 +44,24 @@ describe('MessageQueue', () => {
     expect(queue).toBeDefined();
   });
 
+  it('carrega companyId no job (multi-tenant fatia 1)', async () => {
+    const { MessageQueue } = await import('../src/modules/queue.js');
+    const queue = new MessageQueue('127.0.0.1', 6379, async () => {});
+    // Campo opcional: enfileira sem quebrar tipo/runtime e chega no add da fila.
+    await queue.addMessage({
+      type: 'text',
+      from: '5561999999999',
+      content: 'Ola',
+      timestamp: new Date().toISOString(),
+      messageId: 'msg-mt',
+      companyId: '00000000-0000-0000-0000-000000000002',
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const addMock = (queue as any).queue.add as ReturnType<typeof vi.fn>;
+    const jobData = addMock.mock.calls.at(-1)?.[1];
+    expect(jobData.companyId).toBe('00000000-0000-0000-0000-000000000002');
+  });
+
   it('should check Redis health', async () => {
     const { MessageQueue } = await import('../src/modules/queue.js');
     const queue = new MessageQueue('127.0.0.1', 6379, async () => {});
