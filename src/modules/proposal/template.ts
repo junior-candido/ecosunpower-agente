@@ -720,7 +720,7 @@ ${data.modoComparacao ? '' : `<section class="payment-section">
 </section>`}
 
 ${/* Serviços somam ao total exibido na própria seção; payback/ROI seguem solar-only de propósito (serviço não gera economia de energia). */''}
-${/* No modo comparação o "total (solar + serviços)" travaria no valor da Opção A e confundiria o cliente — então a seção de serviços não entra na comparação. */''}
+${/* No modo comparação a seção ENTRA (pedido 21/07), mas mostra a soma SÓ dos serviços ("somam à opção escolhida") — total de uma opção travaria na A e confundiria. */''}
 ${renderServicosAdicionaisSection(data.servicos ?? [], data.valorTotalRs, !!data.modoComparacao)}
 
 ${socialProofHtml}

@@ -225,6 +225,14 @@ describe('montarInputOpcaoComparacao', () => {
     }
   });
 
+  it('topo SEM bateria + B com bateria própria: só a B vira híbrida', () => {
+    const b = montarInputOpcaoComparacao(data,
+      { potenciaKwp: 8.5, valorTotalRs: 28000, bateria: { fabricante: 'BYD', modelo: 'B-Box', capacidadeKwh: 10.2, quantidade: 1 } }, 1);
+    expect(b.bateria?.fabricante).toBe('BYD');
+    const a = montarInputOpcaoComparacao(data, { potenciaKwp: 17, valorTotalRs: 32290 }, 0);
+    expect(a.bateria).toBeUndefined();
+  });
+
   it('on-grid × híbrido: a Opção B NÃO herda a bateria da A (topo) — cada opção tem a sua', () => {
     const dataHibrida = { ...data, bateria: { fabricante: 'BYD', modelo: 'B-Box', capacidadeKwh: 10.2, quantidade: 1 } };
     const semBateria = montarInputOpcaoComparacao(dataHibrida, { potenciaKwp: 8.5, valorTotalRs: 18837 }, 1);

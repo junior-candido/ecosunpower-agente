@@ -154,6 +154,23 @@ describe('renderComparacaoSolar', () => {
     expect(html).toContain('>2.020<');
   });
 
+  it('bateria com 2 unidades soma a capacidade (2× 5 kWh → 10 kWh)', () => {
+    const html = renderComparacaoSolar([
+      { ...opcoes[0], bateriaFabricante: 'Huawei', bateriaModelo: 'LUNA', bateriaCapacidadeKwh: 5, bateriaQuantidade: 2 },
+      { ...opcoes[1] },
+    ]);
+    expect(html).toContain('2× LUNA');
+    expect(html).toMatch(/10(,0)?\s?kWh/);
+  });
+
+  it('bateria sem capacidade OU sem quantidade: linha não aparece (régua do motor)', () => {
+    const html = renderComparacaoSolar([
+      { ...opcoes[0], bateriaFabricante: 'BYD', bateriaModelo: 'B-Box' }, // incompleta
+      { ...opcoes[1], bateriaFabricante: 'Huawei', bateriaCapacidadeKwh: 5 }, // sem quantidade
+    ]);
+    expect(html).not.toContain('Bateria');
+  });
+
   it('card mostra a linha de Bateria quando a opção é híbrida', () => {
     const html = renderComparacaoSolar([
       { ...opcoes[0], bateriaFabricante: 'BYD', bateriaModelo: 'B-Box HVS', bateriaCapacidadeKwh: 10.2, bateriaQuantidade: 1 },

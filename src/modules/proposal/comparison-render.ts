@@ -106,11 +106,14 @@ export function renderComparacaoSolar(opcoes: ComparacaoOpcao[]): string {
       </div>` : '';
     const modulosTxt = linhaEquipamento(o.moduloQuantidade, o.moduloModelo, o.moduloFabricante, o.moduloPotenciaW);
     const inversorTxt = linhaEquipamento(o.inversorQuantidade, o.inversorModelo, o.inversorFabricante);
-    // Bateria: "1× B-Box HVS · 10,2 kWh" — só na opção híbrida.
+    // Bateria: "1× B-Box HVS · 10,2 kWh" — só na opção híbrida DE VERDADE (mesma
+    // régua do motor: capacidade e quantidade > 0; senão o card diria híbrido
+    // com o cálculo rodando on-grid).
     const capKwh = Number(o.bateriaCapacidadeKwh);
+    const qtdBat = Number(o.bateriaQuantidade);
     const bateriaNome = (o.bateriaModelo || o.bateriaFabricante || '').trim();
-    const bateriaTxt = bateriaNome
-      ? `${(o.bateriaQuantidade && o.bateriaQuantidade > 0) ? `${o.bateriaQuantidade}× ` : ''}${bateriaNome}${(isFinite(capKwh) && capKwh > 0) ? ` · ${fmtNum(capKwh * ((o.bateriaQuantidade && o.bateriaQuantidade > 0) ? o.bateriaQuantidade : 1), 1)} kWh` : ''}`
+    const bateriaTxt = (bateriaNome && isFinite(capKwh) && capKwh > 0 && isFinite(qtdBat) && qtdBat > 0)
+      ? `${qtdBat}× ${bateriaNome} · ${fmtNum(capKwh * qtdBat, 1)} kWh`
       : '';
     // Economia mensal em destaque — é o número que o cliente mais entende ("quanto sobra por mês").
     // Com autoconsumo remoto o valor é o TOTAL e a divisão casa + outra unidade vem embaixo.
