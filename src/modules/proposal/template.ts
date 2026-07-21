@@ -167,7 +167,10 @@ export function renderProposalHTML(data: ProposalData, calc: ProposalCalculation
     throw new Error('renderProposalHTML: calc.geracaoMensalKwh invalido — verificar potencia/HSP/fatorPerda');
   }
 
-  const economiaPercent = Math.min(100, (calc.economiaMensal / calc.contaSemSistemaMensal) * 100);
+  // % da conta: só a parte DESTA casa — a economia remota abate a fatura da outra
+  // unidade e não pode inflar o percentual da conta local (ficava >100%).
+  const economiaCasaMensal = calc.economiaMensal - (calc.economiaRemotaMensal ?? 0);
+  const economiaPercent = Math.min(100, (economiaCasaMensal / calc.contaSemSistemaMensal) * 100);
   const geracaoMensal = Math.round(calc.geracaoMensalKwh);
   const consumoMedioMensalKwh = calc.consumoMensalDistribuido.reduce((a, b) => a + b, 0) / 12;
   const autonomiaHoras = temBateria(data.bateria) ? autonomiaBackupHoras(data.bateria!, consumoMedioMensalKwh) : null;
@@ -378,7 +381,9 @@ footer strong{color:#fff;font-weight:600}
       <div>
         <div class="hero-stat-label">Economia</div>
         <div class="hero-stat-value">${calc.economiaMensal > 0 ? `R$ ${fmtRs(calc.economiaMensal, 0)}` : fmtPct(economiaPercent, 0)}</div>
-        <div class="hero-stat-unit">${calc.economiaMensal > 0 ? `por mês · ~${fmtPct(economiaPercent, 0)} da conta` : 'na conta de luz'}</div>
+        <div class="hero-stat-unit">${calc.economiaMensal > 0
+          ? ((calc.economiaRemotaMensal ?? 0) > 0 ? 'por mês · nesta casa + outra unidade' : `por mês · ~${fmtPct(economiaPercent, 0)} da conta`)
+          : 'na conta de luz'}</div>
       </div>
       <div>
         <div class="hero-stat-label">Investimento</div>
@@ -644,16 +649,18 @@ ${data.modoComparacao ? '' : `<section class="financial-section">
         <div class="compare-period">por mês · Fio B + iluminação pública</div>
         <ul class="compare-list">
           <li><span>Custo anual</span> <strong>R$ ${fmtRs(calc.contaComSistemaMensal * 12, 0)}</strong></li>
-          <li><span>Economia em 25 anos</span> <strong>R$ ${fmtRs(calc.economiaVidaUtil, 0)}</strong></li>
+          <li><span>Economia em 25 anos${(calc.economiaRemotaMensal ?? 0) > 0 ? ' (nas duas unidades)' : ''}</span> <strong>R$ ${fmtRs(calc.economiaVidaUtil, 0)}</strong></li>
         </ul>
       </div>
     </div>
     ${calc.economiaMensal > 0 ? `<div style="margin:8px 0 40px;padding:32px 24px;background:linear-gradient(135deg,#ECFDF5,#D1FAE5);border-radius:24px;text-align:center;border:1px solid #A7F3D0">
       <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:#047857;margin-bottom:10px">Você deixa de pagar todo mês</div>
       <div style="font-family:'Space Grotesk',sans-serif;font-size:48px;font-weight:800;color:#047857;line-height:1">R$ ${fmtRs(calc.economiaMensal, 0)}<span style="font-size:22px;font-weight:600;color:#059669"> /mês</span></div>
-      <div style="font-size:15px;color:#065F46;margin-top:10px;max-width:520px;margin-left:auto;margin-right:auto">${(data.servicos && data.servicos.length > 0)
-        ? `Economia gerada pelo sistema solar — cerca de ${fmtPct(economiaPercent, 0)} da conta de luz, ou <strong>R$ ${fmtRs(calc.economiaAnual, 0)}/ano</strong>. Os serviços adicionais abaixo são contratados à parte.`
-        : `É o que hoje sai do seu bolso pra concessionária e passa a ficar com você — cerca de ${fmtPct(economiaPercent, 0)} da conta. São <strong>R$ ${fmtRs(calc.economiaAnual, 0)}/ano</strong> que voltam pro seu orçamento.`}</div>
+      <div style="font-size:15px;color:#065F46;margin-top:10px;max-width:520px;margin-left:auto;margin-right:auto">${(calc.economiaRemotaMensal ?? 0) > 0
+        ? `<strong>R$ ${fmtRs(economiaCasaMensal, 0)} nesta casa + R$ ${fmtRs(calc.economiaRemotaMensal, 0)} na sua outra unidade</strong> (os créditos que sobram abatem a fatura de lá). São <strong>R$ ${fmtRs(calc.economiaAnual, 0)}/ano</strong> que voltam pro seu orçamento.${(data.servicos && data.servicos.length > 0) ? ' Os serviços adicionais abaixo são contratados à parte.' : ''}`
+        : (data.servicos && data.servicos.length > 0)
+          ? `Economia gerada pelo sistema solar — cerca de ${fmtPct(economiaPercent, 0)} da conta de luz, ou <strong>R$ ${fmtRs(calc.economiaAnual, 0)}/ano</strong>. Os serviços adicionais abaixo são contratados à parte.`
+          : `É o que hoje sai do seu bolso pra concessionária e passa a ficar com você — cerca de ${fmtPct(economiaPercent, 0)} da conta. São <strong>R$ ${fmtRs(calc.economiaAnual, 0)}/ano</strong> que voltam pro seu orçamento.`}</div>
     </div>` : ''}
     <h3 style="font-size:24px;margin-bottom:24px">Indicadores de viabilidade</h3>
     <div class="indicators-grid">

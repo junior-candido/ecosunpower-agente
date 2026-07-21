@@ -58,6 +58,18 @@ export interface ProposalInput {
   // curva de sazonalidade padrao — assim o cliente ve exatamente o que o estudo
   // mostrou. A media dos 12 vira a geracao mensal usada nos indicadores (payback/ROI).
   geracaoMensalKwhDistribuidoOverride?: number[];
+
+  // Autoconsumo REMOTO (SCEE): consumo mensal de outra(s) unidade(s) do mesmo
+  // titular que absorve os creditos excedentes. A economia dessa compensacao
+  // (tarifa − Fio B) e REAL e soma na economia mensal/projecao. So o que a
+  // outra unidade consome de fato — o resto continua como credito guardado.
+  // PREMISSA: outra unidade na MESMA distribuidora (exigencia do SCEE) e com a
+  // MESMA tarifa/classe da principal — se diferir (ex: rural), o valor e aproximado.
+  consumoRemotoMensalKwh?: number;
+  // Modo "restante": o Junior diz so o consumo local e que TODO o excedente vai
+  // pra outra unidade — o motor usa os creditos inteiros como compensacao remota.
+  // Quando consumoRemotoMensalKwh vier junto, o numero explicito manda.
+  consumoRemotoRestante?: boolean;
 }
 
 export interface ProposalCalculations {
@@ -69,9 +81,13 @@ export interface ProposalCalculations {
   // Economia
   contaSemSistemaMensal: number;
   contaComSistemaMensal: number;
-  economiaMensal: number;
+  economiaMensal: number;   // TOTAL (casa + remoto quando houver)
   economiaAnual: number;
   economiaVidaUtil: number;
+  // Autoconsumo remoto (0 quando nao ha outra unidade)
+  economiaRemotaMensal: number;    // R$ abatidos na(s) outra(s) unidade(s), ja com Fio B
+  creditosUsadosRemotoKwh: number; // kWh de credito consumidos pela outra unidade
+  creditosGuardadosKwh: number;    // kWh que sobram DEPOIS do remoto (banco de 60 meses)
 
   // Indicadores
   paybackAnos: number;
@@ -497,7 +513,19 @@ export function calcular(input: ProposalInput): ProposalCalculations {
     tipoSistema,
   });
   const contaComSistemaMensal = contaComDetalhada.total;
-  const economiaMensal = contaSemSistemaMensal - contaComSistemaMensal;
+
+  // Autoconsumo remoto: creditos abatem a fatura da outra unidade do titular.
+  // Economia real = kWh compensados la × (tarifa − Fio B da compensacao).
+  // Numero explicito manda; modo "restante" absorve a sobra inteira.
+  const consumoRemotoMensalKwh = (input.consumoRemotoMensalKwh && input.consumoRemotoMensalKwh > 0)
+    ? input.consumoRemotoMensalKwh
+    : (input.consumoRemotoRestante ? contaComDetalhada.creditosKwh : 0);
+  const creditosUsadosRemotoKwh = Math.min(contaComDetalhada.creditosKwh, consumoRemotoMensalKwh);
+  const creditosGuardadosKwh = Math.max(0, contaComDetalhada.creditosKwh - creditosUsadosRemotoKwh);
+  const economiaRemotaMensal = creditosUsadosRemotoKwh * tarifaRsKwh
+    - creditosUsadosRemotoKwh * tusdFioBRsKwh * percentualFioBVigente;
+
+  const economiaMensal = contaSemSistemaMensal - contaComSistemaMensal + economiaRemotaMensal;
   const economiaAnual = economiaMensal * 12;
 
   // Projecao anual (vida util). DOIS efeitos compostos por ano:
@@ -526,7 +554,12 @@ export function calcular(input: ProposalInput): ProposalCalculations {
       tipoSistema,
     }).total;
     const comSistAno = comSistMensalAno * 12;
-    const econAno = semSistAno - comSistAno;
+    // Economia remota do ano: mesmos kWh, tarifa/tusd reajustadas e o % do Fio B do ano.
+    const econRemotaAno = creditosUsadosRemotoKwh > 0
+      ? (creditosUsadosRemotoKwh * tarifaRsKwh * reajuste
+        - creditosUsadosRemotoKwh * tusdFioBRsKwh * reajuste * fioBpctAno) * 12
+      : 0;
+    const econAno = semSistAno - comSistAno + econRemotaAno;
     contaSemSistemaAnual.push(semSistAno);
     contaComSistemaAnual.push(comSistAno);
     fluxoCaixaAnual.push(econAno);
@@ -579,6 +612,9 @@ export function calcular(input: ProposalInput): ProposalCalculations {
     economiaMensal,
     economiaAnual,
     economiaVidaUtil: economiaAcum,
+    economiaRemotaMensal,
+    creditosUsadosRemotoKwh,
+    creditosGuardadosKwh,
     paybackAnos,
     paybackMeses,
     paybackInviavel,

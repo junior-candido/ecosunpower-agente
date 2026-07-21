@@ -98,6 +98,19 @@ describe('renderComparacaoSolar', () => {
     expect(html).toContain('60 meses');
   });
 
+  it('autoconsumo remoto: economia dividida (casa + outra unidade) e kWh abatidos lá', () => {
+    const html = renderComparacaoSolar([
+      { ...opcoes[0], economiaMensalRs: 1924, economiaRemotaRs: 783, creditosRemotoKwh: 900, creditosMensalKwh: 52 },
+      { ...opcoes[1], economiaMensalRs: 741 },
+    ]);
+    expect(html).toContain('R$ 1.924'); // total em destaque
+    expect(html).toContain('R$ 1.141'); // parte da casa (total − remoto)
+    expect(html).toContain('R$ 783');   // parte da outra unidade
+    expect(html.toLowerCase()).toContain('outra unidade');
+    expect(html).toContain('900');      // kWh abatidos lá
+    expect(html).toContain('52');       // sobra guardada DEPOIS do remoto
+  });
+
   it('NÃO mostra créditos quando são zero ou não informados', () => {
     const html = renderComparacaoSolar([
       { ...opcoes[0], creditosMensalKwh: 0 },

@@ -7,12 +7,13 @@ function baseCalc(): ProposalCalculations {
     geracaoMensalKwh: 1000, geracaoAnualKwh: 12000, geracaoVidaUtilKwh: 300000,
     contaSemSistemaMensal: 1000, contaComSistemaMensal: 100, economiaMensal: 900,
     economiaAnual: 10800, economiaVidaUtil: 320000,
+    economiaRemotaMensal: 0, creditosUsadosRemotoKwh: 0, creditosGuardadosKwh: 0,
     paybackAnos: 4, paybackMeses: 2, paybackInviavel: false, roiVezes: 8,
     tirPercentual: 25, rsPorWp: 4.5, co2EvitadoToneladas: 25,
     geracaoMensalDistribuida: Array(12).fill(1000), consumoMensalDistribuido: Array(12).fill(720),
     fluxoCaixaAnual: [-38500, ...Array(25).fill(12000)],
     contaSemSistemaAnual: Array(25).fill(12000), contaComSistemaAnual: Array(25).fill(1200),
-    contaComDetalhada: { total: 100, fioB: 80, consumoRede: 0, cip: 20, autoconsumoKwh: 250, injetadoKwh: 750 },
+    contaComDetalhada: { total: 100, fioB: 80, consumoRede: 0, cip: 20, autoconsumoKwh: 250, injetadoKwh: 750, compensadaKwh: 750, creditosKwh: 0 },
     tipoSistema: 'on_grid', percentualGeracaoInjetadaUsado: 0.75,
     anoInicial: 2026, percentualFioBInicial: 0.60,
     tabelaSimultaneidade: [], tabelaFioBAnos: [],
@@ -30,6 +31,29 @@ function baseData(): ProposalData {
     empresa: { nome: 'EcoSunPower', cnpj: '00', cidade: 'Brasília-DF', telefone: '(61) 99697-8781', site: 'ecosunpower.eng.br' },
   };
 }
+
+describe('render — autoconsumo remoto na proposta principal', () => {
+  it('hero e box verde mostram a divisão casa + outra unidade, % coerente com a conta local', () => {
+    const calc: ProposalCalculations = {
+      ...baseCalc(),
+      contaSemSistemaMensal: 1295, contaComSistemaMensal: 154,
+      economiaMensal: 1924, economiaAnual: 1924 * 12,
+      economiaRemotaMensal: 783, creditosUsadosRemotoKwh: 900, creditosGuardadosKwh: 52,
+    };
+    const html = renderProposalHTML(baseData(), calc);
+    expect(html.toLowerCase()).toContain('outra unidade');
+    expect(html).toContain('R$ 1.141'); // parte desta casa (total − remoto)
+    expect(html).toContain('R$ 783');   // parte da outra unidade
+    expect(html).toContain('(nas duas unidades)'); // rótulo da economia 25 anos
+    // o % da conta nunca pode passar de 100 nem usar o total — 1141/1295 ≈ 88%
+    expect(html).not.toMatch(/1\d\d% da conta/);
+  });
+
+  it('sem remoto: proposta idêntica de sempre, sem menção a outra unidade', () => {
+    const html = renderProposalHTML(baseData(), baseCalc());
+    expect(html.toLowerCase()).not.toContain('outra unidade');
+  });
+});
 
 describe('render — proposta híbrida (com bateria)', () => {
   it('mostra selo Híbrido, card da bateria e benefícios + autonomia', () => {
