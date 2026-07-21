@@ -96,6 +96,8 @@ export interface ServiceOnlyData {
   // Total da proposta. Quando o serviço é orçado por VALOR ÚNICO (sem preço por
   // item), vem daqui. Se ausente, cai na soma dos itens (compatível com o legado).
   totalRs?: number;
+  // Observações do Junior (texto dele, textual) — mesma seção da proposta solar.
+  observacoes?: string[];
   formasPagamento: Array<{ tipo: string; titulo: string; valorPrincipal: string; valorSecundario: string; recomendado?: boolean; bullets: string[]; meioPagamento?: 'pix' | 'cartao' | 'financiamento' }>;
   empresa: { nome: string; cnpj: string; cidade: string; telefone: string; site: string };
 }
@@ -182,6 +184,13 @@ ${blocosServico}
     <div style="font-family:'Space Grotesk',sans-serif;font-size:32px;font-weight:700">R$ ${fmtRs(total, 0)}</div>
   </div>
 </section>
+
+${(data.observacoes && data.observacoes.length > 0) ? `<section style="padding:24px 24px 0;max-width:900px;margin:0 auto">
+  <h2 style="font-family:'Space Grotesk',sans-serif;font-size:22px;margin-bottom:12px">Observações</h2>
+  <div style="background:#FFFBEB;border:1px solid #FDE68A;border-left:4px solid #F59E0B;border-radius:14px;padding:20px 24px">
+    ${data.observacoes.map(o => `<div style="display:flex;gap:10px;align-items:flex-start;padding:6px 0;font-size:15px;color:#1F2937;line-height:1.6"><span>📌</span><span>${escapeHtml(o)}</span></div>`).join('')}
+  </div>
+</section>` : ''}
 
 <section style="padding:48px 24px;max-width:900px;margin:0 auto">
   <h2 style="font-family:'Space Grotesk',sans-serif;font-size:22px;margin-bottom:24px">Como você prefere pagar?</h2>

@@ -62,6 +62,9 @@ export interface ProposalData {
   // Serviços adicionais (item livre que SOMA ao valor solar). Opcional —
   // ausência mantém a proposta solar-only idêntica à de antes.
   servicos?: ServicoItem[];
+  // Observações do JUNIOR (texto dele, textual — ex: "o inversor híbrido já é
+  // preparado para receber baterias"). Aparecem em QUALQUER modo de proposta.
+  observacoes?: string[];
   // Comparação de 2 sistemas: HTML do quadro lado a lado + flag pra ocultar a
   // análise pesada (gráfico e financeiro), que refletem só UM sistema e
   // confundiriam quando o cliente está comparando duas opções.
@@ -722,6 +725,16 @@ ${data.modoComparacao ? '' : `<section class="payment-section">
 ${/* Serviços somam ao total exibido na própria seção; payback/ROI seguem solar-only de propósito (serviço não gera economia de energia). */''}
 ${/* No modo comparação a seção ENTRA (pedido 21/07), mas mostra a soma SÓ dos serviços ("somam à opção escolhida") — total de uma opção travaria na A e confundiria. */''}
 ${renderServicosAdicionaisSection(data.servicos ?? [], data.valorTotalRs, !!data.modoComparacao)}
+
+${/* OBSERVAÇÕES do Junior (21/07): texto dele, em QUALQUER modo — ex: "o inversor híbrido já é preparado para receber baterias". */''}
+${(data.observacoes && data.observacoes.length > 0) ? `<section style="background:#fff;padding:48px 0">
+  <div class="container">
+    <span class="section-tag">Observações</span>
+    <div style="background:#FFFBEB;border:1px solid #FDE68A;border-left:4px solid #F59E0B;border-radius:14px;padding:20px 24px;margin-top:12px">
+      ${data.observacoes.map(o => `<div style="display:flex;gap:10px;align-items:flex-start;padding:6px 0;font-size:15px;color:#1F2937;line-height:1.6"><span>📌</span><span>${escapeHtml(o)}</span></div>`).join('')}
+    </div>
+  </div>
+</section>` : ''}
 
 ${socialProofHtml}
 

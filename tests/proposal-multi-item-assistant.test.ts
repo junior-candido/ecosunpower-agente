@@ -1,5 +1,31 @@
 import { describe, it, expect } from 'vitest';
-import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData, buildServiceImagePrompt, buildComparacaoOpcao, hydrarOpcaoPrincipalDaComparacao, montarInputOpcaoComparacao, buildMensagemClienteProposta, ProposalAssistant, buildSystemPrompt } from '../src/modules/proposal-assistant.js';
+import { mapServicosFromClaude, resumoServicosParaJunior, isPropostaSoServico, buildServiceOnlyData, buildServiceImagePrompt, buildComparacaoOpcao, hydrarOpcaoPrincipalDaComparacao, montarInputOpcaoComparacao, buildMensagemClienteProposta, observacoesDaProposta, ProposalAssistant, buildSystemPrompt } from '../src/modules/proposal-assistant.js';
+
+// Pedido do Junior 21/07: "orçei inversor híbrido SEM bateria e pedi obs de que
+// ele já é preparado pra receber baterias — a Eva aceitou e o texto não saiu".
+// Campo observacoes[]: texto do JUNIOR, textual, em QUALQUER modo de proposta.
+describe('observacoesDaProposta — saneamento do texto do Junior', () => {
+  it('aceita lista de strings, limpa vazios e preserva o texto', () => {
+    const obs = observacoesDaProposta(['O inversor híbrido já é preparado para receber baterias.', '  ', 'Garantia estendida negociada.']);
+    expect(obs).toEqual(['O inversor híbrido já é preparado para receber baterias.', 'Garantia estendida negociada.']);
+  });
+  it('aceita string única (a Eva às vezes manda sem array)', () => {
+    expect(observacoesDaProposta('Cliente vai ampliar pra 3 baterias em 2027.'))
+      .toEqual(['Cliente vai ampliar pra 3 baterias em 2027.']);
+  });
+  it('vazio/lixo → undefined (proposta sem a seção)', () => {
+    expect(observacoesDaProposta(undefined)).toBeUndefined();
+    expect(observacoesDaProposta([])).toBeUndefined();
+    expect(observacoesDaProposta([42, {}])).toBeUndefined();
+    expect(observacoesDaProposta('   ')).toBeUndefined();
+  });
+  it('teto de 8 observações × 600 chars (ninguém quebra o layout)', () => {
+    const dez = Array.from({ length: 10 }, (_, i) => `obs ${i}`);
+    expect(observacoesDaProposta(dez)?.length).toBe(8);
+    const longa = 'x'.repeat(1000);
+    expect(observacoesDaProposta([longa])![0]!.length).toBeLessThanOrEqual(600);
+  });
+});
 
 describe('buildMensagemClienteProposta', () => {
   it('mensagem limpa pro cliente: saudação (1º nome) + link, SEM nada interno', () => {
