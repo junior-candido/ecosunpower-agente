@@ -81,7 +81,8 @@ describe('makeCapiReporter', () => {
     expect(events[0].user_data.ctwa_clid).toBe('CLID_ABC');
     expect(events[0].user_data.whatsapp_business_account_id).toBe('WABA_1');
     expect(events[0].user_data.ph).toHaveLength(1);
-    expect(recordCapiStage).toHaveBeenCalledWith('lead-1', 'lead_qualificado');
+    // [MT 3d] o 3º arg é o db opcional do crachá — sem db, undefined (singleton)
+    expect(recordCapiStage).toHaveBeenCalledWith('lead-1', 'lead_qualificado', undefined);
   });
 
   it('NAO marca como enviado quando a Meta falha (nao perde o evento)', async () => {

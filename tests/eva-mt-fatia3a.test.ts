@@ -107,3 +107,45 @@ describe('fatia 3c — helpers do caminho da mensagem', () => {
     expect((src.match(/registrarEvento\(db\.getClient\(\)/g) ?? []).length).toBeGreaterThanOrEqual(3);
   });
 });
+
+// FATIA 3d — SINGLETONS por chamada: followup/reengagement/capiReporter/
+// proposalFollowup/testimonials/postInstall escrevem pelo crachá no caminho da
+// mensagem; crons/HTTP/admin seguem no singleton (default do parâmetro).
+describe('fatia 3d — singletons do caminho da mensagem no crachá', () => {
+  const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const src = readFileSync(join(raiz, 'src', 'index.ts'), 'utf8');
+  const mod = (p: string) => readFileSync(join(raiz, 'src', 'modules', p), 'utf8');
+
+  it('os métodos de ESCRITA ganharam client/db injetável com default no singleton', () => {
+    expect(mod('followup.ts')).toContain('resetForLead(leadId: string, client: SupabaseClient = this.client)');
+    expect(mod('reengagement-cadence.ts')).toContain('cancelAllTouches(leadId: string, client: SupabaseClient = this.supabase)');
+    expect(mod('post-install.ts')).toContain('cancelAll(leadId: string, client: SupabaseClient = this.supabase)');
+    expect(mod('post-install.ts')).toContain('markReviewConfirmed(leadId: string, client: SupabaseClient = this.supabase)');
+    expect(mod('testimonials.ts')).toContain('client: SupabaseClient = this.supabase');
+    expect(mod('proposal-followup.ts')).toContain('markClienteRespondeu(telefone: string, db: SupabaseService = this.supabase)');
+    expect(mod('capi-reporter.ts')).toContain('db?: unknown');
+  });
+
+  it('caminho da mensagem passa o crachá pra CADA singleton (index.ts)', () => {
+    expect(src).toContain('followup.resetForLead(lead.id, db.getClient())');
+    // 1 no handler de texto + 3 nas actions (opt_out / off_topic / disqualify)
+    expect((src.match(/reengagement\.cancelAllTouches\((lead\.id|leadId), db\.getClient\(\)\)/g) ?? []).length).toBeGreaterThanOrEqual(4);
+    expect((src.match(/postInstall(\?|\b).{0,3}cancelAll\(leadId, db\.getClient\(\)\)/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect(src).toContain('postInstall.markReviewConfirmed(leadId, db.getClient())');
+    expect(src).toContain('}, db.getClient());'); // testimonials.save(..., db.getClient())
+    expect(src).toContain("capiReporter(leadId, 'Lead', { db })");
+    expect(src).toContain("capiReporter(leadId, 'lead_qualificado', { db })");
+    expect(src).toContain('proposalFollowup.markClienteRespondeu(from, db)');
+  });
+
+  it('capiReporter roteia as deps de banco pelo db quando informado', () => {
+    expect(src).toContain('?? supabase).getLeadForCapi(id)');
+    expect(src).toContain('?? supabase).recordCapiStage(id, stage)');
+    expect(mod('capi-reporter.ts')).toContain('deps.getLeadForCapi(leadId, opts?.db)');
+    expect(mod('capi-reporter.ts')).toContain('deps.recordCapiStage(leadId, eventName, opts?.db)');
+  });
+
+  it('crons continuam no singleton (nenhum db vaza pros processDueTouches)', () => {
+    expect(src).not.toMatch(/processDueTouches\(db/);
+  });
+});
