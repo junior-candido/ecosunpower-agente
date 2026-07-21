@@ -227,11 +227,49 @@ describe('calcularContaMensalDetalhada — sistema superdimensionado (Fio B só 
     expect(r.creditosGuardadosKwh).toBeCloseTo(0);
   });
 
+  it('modo "restante": outra unidade absorve TODA a sobra, sem precisar do número de lá', () => {
+    const r = calcular({
+      potenciaKwp: 17, fatorPerda: 0.78, hsp: 5.4,
+      consumoMensalKwh: 1200, tarifaRsKwh: 1.05, reajusteAnualEnergia: 0,
+      tusdFioBRsKwh: 0.30, percentualFioBVigente: 0.60, percentualGeracaoInjetada: 0.75,
+      custoIluminacaoPublica: 35, valorTotalRs: 32290, vidaUtilAnos: 25,
+      geracaoMensalKwhOverride: 2152, anoInicial: 2026, tipoSistema: 'on_grid',
+      consumoRemotoRestante: true,
+    });
+    expect(r.creditosUsadosRemotoKwh).toBeCloseTo(952); // toda a sobra
+    expect(r.creditosGuardadosKwh).toBeCloseTo(0);
+    // remota: 952×1,05 − 952×0,30×60% = 999,6 − 171,4 ≈ 828
+    expect(r.economiaRemotaMensal).toBeCloseTo(828, 0);
+    expect(r.economiaMensal).toBeCloseTo(1141 + 828, 0);
+  });
+
+  it('número explícito da outra unidade MANDA sobre o modo "restante"', () => {
+    const r = calcular({
+      potenciaKwp: 17, fatorPerda: 0.78, hsp: 5.4,
+      consumoMensalKwh: 1200, tarifaRsKwh: 1.05, reajusteAnualEnergia: 0,
+      tusdFioBRsKwh: 0.30, percentualFioBVigente: 0.60, percentualGeracaoInjetada: 0.75,
+      custoIluminacaoPublica: 35, valorTotalRs: 32290, vidaUtilAnos: 25,
+      geracaoMensalKwhOverride: 2152, anoInicial: 2026, tipoSistema: 'on_grid',
+      consumoRemotoMensalKwh: 900, consumoRemotoRestante: true,
+    });
+    expect(r.creditosUsadosRemotoKwh).toBeCloseTo(900); // o número real é mais honesto
+    expect(r.creditosGuardadosKwh).toBeCloseTo(52);
+  });
+
   it('sem consumo remoto: tudo igual a antes (campos novos zerados)', () => {
     const r = calcular(baseInput());
     expect(r.creditosUsadosRemotoKwh).toBe(0);
     expect(r.creditosGuardadosKwh).toBe(0);
     expect(r.economiaRemotaMensal).toBe(0);
+  });
+
+  it('sistema justo + remoto informado: NÃO inventa economia (sem sobra, nada vai pra lá)', () => {
+    // geração ≤ consumo → créditos 0 → min(0, 900) = 0 → economia remota 0
+    const sem = calcular(baseInput());
+    const com = calcular(baseInput({ consumoRemotoMensalKwh: 900 }));
+    expect(com.creditosUsadosRemotoKwh).toBe(0);
+    expect(com.economiaRemotaMensal).toBe(0);
+    expect(com.economiaMensal).toBeCloseTo(sem.economiaMensal);
   });
 
   it('remoto entra na projeção de 25 anos (payback melhora de verdade)', () => {

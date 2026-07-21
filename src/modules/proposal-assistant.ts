@@ -462,7 +462,7 @@ ${marcasKnowledge}
 11. **COMPARAÇÃO (2 sistemas solares):** se o Junior quiser que o cliente compare duas opções de sistema, preencha a proposta normalmente com a **Opção A** (potência, módulo, inversor, valorTotalRs no nível principal do \`data\`) E devolva \`comparacao: [opcaoA, opcaoB]\`. **CADA opção precisa vir COMPLETA** — não só a marca: \`rotulo\`, \`potenciaKwp\`, \`valorTotalRs\`, \`modulo\` (com \`fabricante\`, \`modelo\`, \`potenciaW\` e \`quantidade\`) e \`inversor\` (com \`fabricante\`, \`modelo\` e \`quantidade\`). As duas opções têm de ser **DIFERENTES de verdade** (potência/equipamento/valor distintos) — se o Junior só descreveu UM sistema, NÃO invente o outro: peça os dados do segundo sistema (\`action: ask_more\`, listando o que falta da Opção B). NÃO marque recomendação — as duas são neutras. O sistema calcula a geração/payback de CADA uma pela potência dela (você NÃO calcula nada) e monta o quadro comparativo lado a lado. ⚠️ **NUNCA copie a geração do estudo (nem \`geracaoMensalKwh\` nem \`geracaoMensalKwhDistribuido\`) pra DENTRO das opções de \`comparacao[]\`** — o estudo do topo pertence à Opção A; só inclua geração dentro de uma opção se o Junior mandar estudo PRÓPRIO daquela opção.
    **PERGUNTE POR OPÇÃO (comparação bem feita):** ao coletar os dados da comparação, pergunte explicitamente, de forma curta: (1) *"Alguma das opções tem estudo PVSol próprio? Se sim, qual e com que geração?"* — o estudo da **Opção A fica no TOPO do \`data\`, como sempre** (nunca o mova pra dentro de \`comparacao[0]\`); estudo próprio de OUTRA opção (B em diante) entra DENTRO daquela opção (\`geracaoMensalKwh\` ou \`geracaoMensalKwhDistribuido\` na própria opção); (2) *"As duas são pro mesmo consumo do cliente, ou cada uma é um cenário?"* — se o Junior disser que uma opção é pra outro consumo (ex: "a B é pra 800 kWh"), preencha \`consumoMensalKwh\` DENTRO daquela opção; sem resposta, as duas usam o consumo do cliente do topo. NUNCA invente estudo nem consumo de cenário — só preencha dentro da opção o que o Junior disser explicitamente.
 12. **ECONOMIA MENSAL EM R$:** a proposta mostra pro cliente quanto ele economiza POR MÊS em reais (o número que ele mais entende). Pra esse valor sair certo, peça ao Junior — quando ele não informar — a **tarifa real do kWh da conta** (\`tarifaRsKwh\`) e o **valor da iluminação pública** da conta (\`custoIluminacaoPublica\`). São RECOMENDADOS, não bloqueiam: se o Junior não tiver, use os defaults do sistema e siga. Quando ele informar, respeite o número dele.
-13. **AUTOCONSUMO REMOTO (outra unidade do titular):** quando o sistema gera MAIS do que o consumo da casa (ex: estudo dimensionado pra 2 unidades) OU quando o Junior mencionar "outra casa/unidade/os créditos vão pra...", PERGUNTE: *"Os créditos que sobram vão abater outra unidade do cliente? Quanto ela consome por mês (kWh)?"* e preencha \`consumoRemotoMensalKwh\` (número, kWh/mês somado das outras unidades). O sistema calcula a economia de lá (com Fio B) e mostra a divisão "nesta casa + na outra unidade" — a economia fica MAIOR e mais real. NUNCA invente esse número; sem resposta do Junior, deixe ausente (a sobra aparece como crédito guardado).
+13. **AUTOCONSUMO REMOTO (outra unidade do titular):** quando o sistema gera MAIS do que o consumo da casa (ex: estudo dimensionado pra 2 unidades) OU quando o Junior mencionar "outra casa/unidade/os créditos vão pra...", PERGUNTE: *"Os créditos que sobram vão abater outra unidade do cliente? Quanto ela consome por mês (kWh)?"* e preencha \`consumoRemotoMensalKwh\` (número, kWh/mês somado das outras unidades). Se o Junior disser **"o restante/o que sobrar vai pra outra unidade"** sem dar número, preencha \`consumoRemotoRestante: true\` (o motor manda TODA a sobra pra lá). O sistema calcula a economia de lá (com Fio B) e mostra a divisão "nesta casa + na outra unidade" — a economia fica MAIOR e mais real. NUNCA invente o número; sem resposta do Junior, deixe ambos ausentes (a sobra aparece como crédito guardado).
 
 # FORMATO DE RESPOSTA
 
@@ -1906,11 +1906,16 @@ export class ProposalAssistant {
       : undefined;
 
     // Autoconsumo remoto: consumo da(s) outra(s) unidade(s) do titular que
-    // absorve creditos. Aceita o alias consumoOutraUnidadeKwh.
-    const consumoRemotoRaw = Number(data.consumoRemotoMensalKwh ?? data.consumoOutraUnidadeKwh);
+    // absorve creditos. Aceita o alias consumoOutraUnidadeKwh. Modo "restante"
+    // (tudo que sobrar vai pra outra unidade): flag booleana OU a palavra
+    // 'restante' no proprio campo de consumo remoto.
+    const consumoRemotoBruto = data.consumoRemotoMensalKwh ?? data.consumoOutraUnidadeKwh;
+    const consumoRemotoRaw = Number(consumoRemotoBruto);
     const consumoRemotoMensalKwh = (isFinite(consumoRemotoRaw) && consumoRemotoRaw > 0)
       ? consumoRemotoRaw
       : undefined;
+    const consumoRemotoRestante = data.consumoRemotoRestante === true
+      || /restante|resto|sobra/i.test(String(consumoRemotoBruto ?? ''));
 
     return {
       potenciaKwp,
@@ -1918,6 +1923,7 @@ export class ProposalAssistant {
       hsp,
       consumoMensalKwh,
       consumoRemotoMensalKwh,
+      consumoRemotoRestante: consumoRemotoRestante || undefined,
       tarifaRsKwh: Number(data.tarifaRsKwh ?? tarifaDefault),
       tusdFioBRsKwh: Number(data.tusdFioBRsKwh ?? tusdFioBDefault),
       percentualFioBVigente: Number(data.percentualFioBVigente ?? percentualFioB),

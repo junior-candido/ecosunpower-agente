@@ -63,7 +63,13 @@ export interface ProposalInput {
   // titular que absorve os creditos excedentes. A economia dessa compensacao
   // (tarifa − Fio B) e REAL e soma na economia mensal/projecao. So o que a
   // outra unidade consome de fato — o resto continua como credito guardado.
+  // PREMISSA: outra unidade na MESMA distribuidora (exigencia do SCEE) e com a
+  // MESMA tarifa/classe da principal — se diferir (ex: rural), o valor e aproximado.
   consumoRemotoMensalKwh?: number;
+  // Modo "restante": o Junior diz so o consumo local e que TODO o excedente vai
+  // pra outra unidade — o motor usa os creditos inteiros como compensacao remota.
+  // Quando consumoRemotoMensalKwh vier junto, o numero explicito manda.
+  consumoRemotoRestante?: boolean;
 }
 
 export interface ProposalCalculations {
@@ -510,9 +516,10 @@ export function calcular(input: ProposalInput): ProposalCalculations {
 
   // Autoconsumo remoto: creditos abatem a fatura da outra unidade do titular.
   // Economia real = kWh compensados la × (tarifa − Fio B da compensacao).
+  // Numero explicito manda; modo "restante" absorve a sobra inteira.
   const consumoRemotoMensalKwh = (input.consumoRemotoMensalKwh && input.consumoRemotoMensalKwh > 0)
     ? input.consumoRemotoMensalKwh
-    : 0;
+    : (input.consumoRemotoRestante ? contaComDetalhada.creditosKwh : 0);
   const creditosUsadosRemotoKwh = Math.min(contaComDetalhada.creditosKwh, consumoRemotoMensalKwh);
   const creditosGuardadosKwh = Math.max(0, contaComDetalhada.creditosKwh - creditosUsadosRemotoKwh);
   const economiaRemotaMensal = creditosUsadosRemotoKwh * tarifaRsKwh

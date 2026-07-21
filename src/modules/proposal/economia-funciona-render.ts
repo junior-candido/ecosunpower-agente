@@ -98,7 +98,7 @@ function renderPassoAPasso(calc: ProposalCalculations): string {
         <strong style="color:#0E7CB8">${fmtKwh(calc.creditosGuardadosKwh)}</strong>
       </div>` : ''}
       <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px dashed #E2E8F0">
-        <span>= Fio B no mês</span>
+        <span>= Fio B ${calc.creditosUsadosRemotoKwh > 0 ? 'nesta casa' : 'no mês'}</span>
         <strong style="color:#0F172A">R$ ${fmtRs(d.fioB)}</strong>
       </div>
       ${linhaConsumoRede}
