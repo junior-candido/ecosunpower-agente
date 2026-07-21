@@ -260,7 +260,7 @@ export function temCarregadorNosServicos(
 // Conta mensal pos-solar DETALHADA (breakdown pra ilustracao da proposta).
 // Ramifica por tipo de sistema:
 // - off_grid: sem rede -> sem Fio B, sem consumo da rede, sem iluminacao -> conta 0.
-// - on_grid / hibrido: Fio B (sobre injetado) + consumo nao coberto + iluminacao.
+// - on_grid / hibrido: Fio B (sobre a energia COMPENSADA) + consumo nao coberto + iluminacao.
 //   (o efeito do modo da bateria entra via percentualGeracaoInjetada, que o
 //    chamador define com percentualInjetadoSugerido.)
 export interface ContaDetalhada {

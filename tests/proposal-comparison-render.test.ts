@@ -131,6 +131,17 @@ describe('renderComparacaoSolar', () => {
     expect(html).not.toContain('<svg');
   });
 
+  it('curva toda zeros ou com NaN: sem gráfico, sem quebrar', () => {
+    const zeros = Array(12).fill(0);
+    const comNaN = [...Array(11).fill(100), NaN];
+    const html = renderComparacaoSolar([
+      { ...opcoes[0], geracaoMensalDistribuida: zeros },
+      { ...opcoes[1], geracaoMensalDistribuida: comNaN },
+    ]);
+    expect(html).not.toContain('<svg');
+    expect(html).not.toContain('NaN');
+  });
+
   it('mostra o consumo usado no cálculo quando as opções usam consumos DIFERENTES (cenários)', () => {
     const html = renderComparacaoSolar([
       { ...opcoes[0], consumoMensalKwh: 1200 },

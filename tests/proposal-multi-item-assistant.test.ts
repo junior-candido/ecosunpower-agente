@@ -185,6 +185,14 @@ describe('montarInputOpcaoComparacao', () => {
     expect(out.consumoMensalKwh).toBe(800);
   });
 
+  it('consumo inválido na opção (0/negativo/lixo) NÃO sobrescreve o consumo do cliente', () => {
+    for (const invalido of [0, -10, NaN, 'abc']) {
+      const op = { potenciaKwp: 8.5, valorTotalRs: 18837, consumoMensalKwh: invalido };
+      const out = montarInputOpcaoComparacao(data, op, 1);
+      expect(out.consumoMensalKwh).toBe(1000); // consumo do topo preservado
+    }
+  });
+
   it('não muta o data original', () => {
     const snapshot = { ...data };
     montarInputOpcaoComparacao(data, { potenciaKwp: 9 }, 1);

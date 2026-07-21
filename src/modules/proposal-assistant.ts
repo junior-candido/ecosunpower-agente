@@ -196,7 +196,7 @@ export function buildComparacaoOpcao(
     economiaMensalRs: Math.round(calc.economiaMensal ?? 0),
     creditosMensalKwh: (creditosKwh && creditosKwh > 0) ? Math.round(creditosKwh) : undefined,
     geracaoMensalDistribuida: calc.geracaoMensalDistribuida,
-    consumoMensalKwh: (dados.consumoMensalKwh && dados.consumoMensalKwh > 0) ? dados.consumoMensalKwh : undefined,
+    consumoMensalKwh: (Number(dados.consumoMensalKwh) > 0) ? Number(dados.consumoMensalKwh) : undefined,
     cartaoParcelaRs: dados.cartaoParcelaRs,
     cartaoParcelas: dados.cartaoParcelas,
     financiamentoParcelaRs: dados.financiamentoParcelaRs,
@@ -227,7 +227,11 @@ export function montarInputOpcaoComparacao(data: any, op: any, indice: number): 
     delete base.geracaoMensalKwhDistribuido;
     delete base.geracaoMensal12Meses;
   }
-  return { ...base, ...op };
+  // Consumo de cenário só vale se for número de verdade — 0/negativo/lixo do
+  // extrator não pode sobrescrever o consumo do cliente em silêncio.
+  const opLimpa = { ...op };
+  if (!(Number(opLimpa.consumoMensalKwh) > 0)) delete opLimpa.consumoMensalKwh;
+  return { ...base, ...opLimpa };
 }
 
 // Comparação de 2 sistemas: o extrator (LLM) deve repetir a Opção A no topo do `data`
@@ -446,7 +450,7 @@ ${marcasKnowledge}
         • **CONFLITO:** se ele der preços por item E TAMBÉM um total que não bate com a soma, você NÃO escolhe: mostre a soma dos itens e pergunte qual vale (\`action: ask_more\`).
     No resumo de conferência (\`ready_to_generate\`) da proposta de serviço, liste CADA serviço com o preço e o total no final (ex: "• Adequação de padrão — R$ 2.500\\n• SPDA — R$ 1.800\\n💵 Total: R$ 4.300"); no valor fechado, liste as tarefas e o total único. NÃO liste os campos solares em \`missing\`.
 11. **COMPARAÇÃO (2 sistemas solares):** se o Junior quiser que o cliente compare duas opções de sistema, preencha a proposta normalmente com a **Opção A** (potência, módulo, inversor, valorTotalRs no nível principal do \`data\`) E devolva \`comparacao: [opcaoA, opcaoB]\`. **CADA opção precisa vir COMPLETA** — não só a marca: \`rotulo\`, \`potenciaKwp\`, \`valorTotalRs\`, \`modulo\` (com \`fabricante\`, \`modelo\`, \`potenciaW\` e \`quantidade\`) e \`inversor\` (com \`fabricante\`, \`modelo\` e \`quantidade\`). As duas opções têm de ser **DIFERENTES de verdade** (potência/equipamento/valor distintos) — se o Junior só descreveu UM sistema, NÃO invente o outro: peça os dados do segundo sistema (\`action: ask_more\`, listando o que falta da Opção B). NÃO marque recomendação — as duas são neutras. O sistema calcula a geração/payback de CADA uma pela potência dela (você NÃO calcula nada) e monta o quadro comparativo lado a lado. ⚠️ **NUNCA copie a geração do estudo (nem \`geracaoMensalKwh\` nem \`geracaoMensalKwhDistribuido\`) pra DENTRO das opções de \`comparacao[]\`** — o estudo do topo pertence à Opção A; só inclua geração dentro de uma opção se o Junior mandar estudo PRÓPRIO daquela opção.
-   **PERGUNTE POR OPÇÃO (comparação bem feita):** ao coletar os dados da comparação, pergunte explicitamente, de forma curta: (1) *"Alguma das opções tem estudo PVSol próprio? Se sim, qual e com que geração?"* — estudo próprio entra DENTRO da opção (\`geracaoMensalKwh\` ou \`geracaoMensalKwhDistribuido\` na própria opção); (2) *"As duas são pro mesmo consumo do cliente, ou cada uma é um cenário?"* — se o Junior disser que uma opção é pra outro consumo (ex: "a B é pra 800 kWh"), preencha \`consumoMensalKwh\` DENTRO daquela opção; sem resposta, as duas usam o consumo do cliente do topo. NUNCA invente estudo nem consumo de cenário — só preencha dentro da opção o que o Junior disser explicitamente.
+   **PERGUNTE POR OPÇÃO (comparação bem feita):** ao coletar os dados da comparação, pergunte explicitamente, de forma curta: (1) *"Alguma das opções tem estudo PVSol próprio? Se sim, qual e com que geração?"* — o estudo da **Opção A fica no TOPO do \`data\`, como sempre** (nunca o mova pra dentro de \`comparacao[0]\`); estudo próprio de OUTRA opção (B em diante) entra DENTRO daquela opção (\`geracaoMensalKwh\` ou \`geracaoMensalKwhDistribuido\` na própria opção); (2) *"As duas são pro mesmo consumo do cliente, ou cada uma é um cenário?"* — se o Junior disser que uma opção é pra outro consumo (ex: "a B é pra 800 kWh"), preencha \`consumoMensalKwh\` DENTRO daquela opção; sem resposta, as duas usam o consumo do cliente do topo. NUNCA invente estudo nem consumo de cenário — só preencha dentro da opção o que o Junior disser explicitamente.
 12. **ECONOMIA MENSAL EM R$:** a proposta mostra pro cliente quanto ele economiza POR MÊS em reais (o número que ele mais entende). Pra esse valor sair certo, peça ao Junior — quando ele não informar — a **tarifa real do kWh da conta** (\`tarifaRsKwh\`) e o **valor da iluminação pública** da conta (\`custoIluminacaoPublica\`). São RECOMENDADOS, não bloqueiam: se o Junior não tiver, use os defaults do sistema e siga. Quando ele informar, respeite o número dele.
 
 # FORMATO DE RESPOSTA
@@ -1368,8 +1372,9 @@ export class ProposalAssistant {
               Number(op.valorTotalRs), ProposalAssistant.TAXA_FINANC_AM, 90, ProposalAssistant.MESES_CARENCIA_FINANC,
             )),
             // Consumo que ESTA opção usou no cálculo (cenário próprio quando o Junior
-            // varia; o card só mostra quando as opções diferem entre si).
-            consumoMensalKwh: numOuUndef(ci.consumoMensalKwh),
+            // varia; o card só mostra quando as opções diferem entre si). Só valores
+            // EXPLÍCITOS — o fallback derivado do calculator não vira "consumo" no card.
+            consumoMensalKwh: numOuUndef(op.consumoMensalKwh ?? data.consumoMensalKwh),
           },
           c,
         );

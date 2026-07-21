@@ -76,7 +76,7 @@ export function renderComparacaoSolar(opcoes: ComparacaoOpcao[]): string {
 
   // Consumo só aparece nos cards quando as opções usam consumos DIFERENTES
   // (cenários). Igual nas duas = é do cliente, não diferencia nada.
-  const consumos = opcoes.map(o => o.consumoMensalKwh).filter((v): v is number => isFinite(Number(v)) && Number(v) > 0);
+  const consumos = opcoes.map(o => Number(o.consumoMensalKwh)).filter(v => isFinite(v) && v > 0);
   const consumosDiferentes = consumos.length === opcoes.length && new Set(consumos).size > 1;
 
   const cards = opcoes.map(o => {
@@ -106,8 +106,9 @@ export function renderComparacaoSolar(opcoes: ComparacaoOpcao[]): string {
            <div style="font-size:12px;color:#64748B;margin-top:2px">energia guardada por 60 meses — pra crescer o consumo sem pagar mais</div>
          </div>`
       : '';
-    const consumoLinha = (consumosDiferentes && o.consumoMensalKwh && o.consumoMensalKwh > 0)
-      ? linha('Consumo do cenário', fmtNum(o.consumoMensalKwh) + ' kWh/mês')
+    const consumoOpcao = Number(o.consumoMensalKwh);
+    const consumoLinha = (consumosDiferentes && isFinite(consumoOpcao) && consumoOpcao > 0)
+      ? linha('Consumo do cenário', fmtNum(consumoOpcao) + ' kWh/mês')
       : '';
     return `
       <div style="flex:1;min-width:280px;border:1px solid #E2E8F0;border-radius:20px;padding:28px;background:#fff">
