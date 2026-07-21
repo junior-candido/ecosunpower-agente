@@ -5,6 +5,10 @@ interface SocialProofInput {
   googleNota: string;
   googleQtdAvaliacoes: number;
   depoimento?: { texto: string; cliente: string; cidade: string };
+  // Tipo do cliente desta proposta: quando NENHUM case é do tipo dele (ex:
+  // rural — o site ainda não tem), o rótulo "parecidos com o seu projeto"
+  // seria promessa falsa; troca pra "Obras da EcoSunPower...".
+  tipoCliente?: Case['tipo'];
 }
 
 function escapeHtml(s: string): string {
@@ -17,14 +21,22 @@ function escapeHtml(s: string): string {
 }
 
 export function renderSocialProofPage(input: SocialProofInput): string {
-  const { cases, googleNota, googleQtdAvaliacoes, depoimento } = input;
+  const { cases, googleNota, googleQtdAvaliacoes, depoimento, tipoCliente } = input;
+  const temDoTipo = tipoCliente ? cases.some(c => c.tipo === tipoCliente) : true;
+  const tituloCases = temDoTipo
+    ? 'Outros clientes parecidos com o seu projeto:'
+    : 'Obras da EcoSunPower em Brasília e Goiás:';
 
-  const cards = cases.slice(0, 3).map(c => `
-    <div style="flex:1;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#fff">
-      <img src="${escapeHtml(c.fotoPrincipal)}" alt="${escapeHtml(c.titulo)}" style="width:100%;height:120px;object-fit:cover" />
-      <div style="padding:12px">
-        <div style="font-weight:bold;font-size:13px">${escapeHtml(c.titulo)}</div>
-        <div style="font-size:11px;color:#64748b">${escapeHtml(c.cidade)}-${escapeHtml(c.uf)}${c.kwp ? ` · ${c.kwp} kWp` : ''}</div>
+  // GRADE 3×2 com foto GRANDE (pedido Junior 21/07: eram 3 tiras achatadas de
+  // 120px; agora até 6 obras em cards com foto alta — a proposta mostra o
+  // portfólio de verdade). break-inside:avoid: card nunca parte no PDF.
+  const cards = cases.slice(0, 6).map(c => `
+    <div style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;background:#fff;break-inside:avoid;box-shadow:0 1px 3px rgba(15,23,42,.06)">
+      <img src="${escapeHtml(c.fotoPrincipal)}" alt="${escapeHtml(c.titulo)}" style="width:100%;height:150px;object-fit:cover;display:block" />
+      <div style="padding:10px 12px">
+        <div style="font-weight:bold;font-size:12.5px;line-height:1.3">${escapeHtml(c.titulo)}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px">${escapeHtml(c.cidade)}-${escapeHtml(c.uf)}${Number(c.kwp) > 0 ? ` · ${Number(c.kwp)} kWp` : ''}</div>
+        ${c.economiaMensalBrl ? `<div style="font-size:11px;color:#047857;font-weight:600;margin-top:2px">economiza R$ ${Math.round(c.economiaMensalBrl).toLocaleString('pt-BR')}/mês</div>` : ''}
       </div>
     </div>
   `).join('');
@@ -52,8 +64,11 @@ export function renderSocialProofPage(input: SocialProofInput): string {
     ${depoimentoHtml}
   </div>
 
-  <h3 style="font-size:14px;color:#475569;margin:0 0 12px">Outros clientes parecidos com o seu projeto:</h3>
-  <div style="display:flex;gap:12px">${cards}</div>
+  <h3 style="font-size:14px;color:#475569;margin:0 0 12px">${escapeHtml(tituloCases)}</h3>
+  ${/* auto-fit 200px: no A4 do PDF (~740px úteis) dá as 3 colunas da grade 3×2;
+      no celular cai pra 1-2 colunas sozinho (media query não alcança estilo
+      inline — achado de review 21/07). minmax menor viraria 4 colunas no PDF. */''}
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">${cards}</div>
 
   <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:11px;color:#94a3b8">
     <span>Linha do Sol™ — EcoSunPower</span>
