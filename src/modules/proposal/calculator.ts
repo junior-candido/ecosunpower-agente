@@ -270,6 +270,8 @@ export interface ContaDetalhada {
   cip: number;         // iluminacao publica
   autoconsumoKwh: number;
   injetadoKwh: number;
+  compensadaKwh: number; // energia injetada que abateu consumo da rede (paga Fio B)
+  creditosKwh: number;   // excedente injetado que vira credito SCEE (valido 60 meses)
 }
 
 export function calcularContaMensalDetalhada(p: {
@@ -283,12 +285,21 @@ export function calcularContaMensalDetalhada(p: {
   tipoSistema: TipoSistema;
 }): ContaDetalhada {
   if (p.tipoSistema === 'off_grid') {
-    return { total: 0, fioB: 0, consumoRede: 0, cip: 0, autoconsumoKwh: 0, injetadoKwh: 0 };
+    return { total: 0, fioB: 0, consumoRede: 0, cip: 0, autoconsumoKwh: 0, injetadoKwh: 0, compensadaKwh: 0, creditosKwh: 0 };
   }
-  const injetadoKwh = p.geracaoKwh * p.percentualGeracaoInjetada;
-  const autoconsumoKwh = Math.max(0, p.geracaoKwh - injetadoKwh);
-  const fioB = injetadoKwh * p.tusdFioBRsKwh * p.percentualFioBVigente;
-  const consumoLiquido = Math.max(0, p.consumoKwh - p.geracaoKwh);
+  // Autoconsumo simultaneo nao passa do que o cliente consome; o que a casa nao
+  // usa na hora vai TODO pra rede (sistema superdimensionado injeta mais que o %).
+  const autoconsumoTeoricoKwh = p.geracaoKwh * (1 - p.percentualGeracaoInjetada);
+  const autoconsumoKwh = Math.min(p.consumoKwh, autoconsumoTeoricoKwh);
+  const injetadoKwh = Math.max(0, p.geracaoKwh - autoconsumoKwh);
+  // Lei 14.300 art. 27: Fio B incide sobre a energia injetada e COMPENSADA na
+  // fatura — nao sobre tudo que entra na rede. O excedente vira credito (60
+  // meses) e so paga Fio B quando for consumido; aqui e custo futuro, nao mensal.
+  const consumoRedeKwh = Math.max(0, p.consumoKwh - autoconsumoKwh);
+  const compensadaKwh = Math.min(injetadoKwh, consumoRedeKwh);
+  const creditosKwh = Math.max(0, injetadoKwh - compensadaKwh);
+  const fioB = compensadaKwh * p.tusdFioBRsKwh * p.percentualFioBVigente;
+  const consumoLiquido = Math.max(0, consumoRedeKwh - compensadaKwh);
   const consumoRede = consumoLiquido * p.tarifaRsKwh;
   const cip = p.custoIluminacaoPublica;
   return {
@@ -298,6 +309,8 @@ export function calcularContaMensalDetalhada(p: {
     cip,
     autoconsumoKwh,
     injetadoKwh,
+    compensadaKwh,
+    creditosKwh,
   };
 }
 
