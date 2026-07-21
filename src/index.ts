@@ -4876,7 +4876,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       // Handle actions from Claude (may be multiple in a single response)
       for (const act of response.actions) {
         try {
-          await handleAction(act, leadId, from, conversation.id);
+          await handleAction(act, leadId, from, conversation.id, db);
         } catch (err) {
           console.error(`[action] Failed to handle "${act.action}":`, err);
         }
@@ -4946,7 +4946,8 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     action: { action: string; data: Record<string, unknown> },
     leadId: string,
     from: string,
-    conversationId: string
+    conversationId: string,
+    db: SupabaseService = supabase,
   ) {
     switch (action.action) {
       case 'update_lead': {
@@ -4965,7 +4966,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         if (d.future_demand) leadUpdate.future_demand = d.future_demand;
         leadUpdate.status = 'qualificando';
 
-        await supabase.upsertLead(leadUpdate as unknown as Parameters<typeof supabase.upsertLead>[0]);
+        await db.upsertLead(leadUpdate as unknown as Parameters<typeof db.upsertLead>[0]);
         console.log(`[action] Updated lead ${from}:`, Object.keys(leadUpdate).join(', '));
 
         // Rede de proteção: se o lead acabou de cruzar o criterio minimo
@@ -4975,7 +4976,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         // com a varredura). Best-effort: nunca quebra o fluxo da action.
         if (leadUpdate.energy_data) {
           try {
-            const fresh = await supabase.getLeadByPhone(from);
+            const fresh = await db.getLeadByPhone(from);
             if (fresh) {
               const { alertHotLeadBackstop } = await import('./modules/eva-alerts.js');
               await alertHotLeadBackstop(
@@ -5002,21 +5003,21 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         // qualification_complete chega depois do schedule_visit), nao
         // re-marca pra qualificado nem manda alerta — agendamento ja
         // gerou o alerta certo.
-        const existingLead = await supabase.getLeadByPhone(from);
+        const existingLead = await db.getLeadByPhone(from);
         if (existingLead?.status === 'agendado') {
           console.log(`[qualification_complete] lead ${from} ja agendado — pula alerta duplicado`);
           break;
         }
-        await supabase.upsertLead({ phone: from, status: 'qualificado' });
+        await db.upsertLead({ phone: from, status: 'qualificado' });
         // CAPI estagio 2: lead passou no criterio (R$700/700kWh). Carimbo
         // 'lead_qualificado' pra Meta — alvo de otimizacao. Fire-and-forget.
         void capiReporter(leadId, 'lead_qualificado');
-        await supabase.updateConversation(conversationId, {
+        await db.updateConversation(conversationId, {
           qualification_step: 'qualificacao_completa',
           // session_status removido — Eva fica ativa pra continuar buscando agendamento.
         });
 
-        const lead = await supabase.getLeadByPhone(from);
+        const lead = await db.getLeadByPhone(from);
         if (lead) {
           const dossierText = DossierBuilder.format({
             leadNumber: Date.now() % 10000,
@@ -5032,7 +5033,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             recommendation: 'Entrar em contato para apresentar proposta.',
           });
 
-          await supabase.saveDossier({
+          await db.saveDossier({
             lead_id: leadId,
             content: action.data,
             formatted_text: dossierText,
@@ -5078,8 +5079,8 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       }
 
       case 'transfer_to_human': {
-        await supabase.upsertLead({ phone: from, status: 'transferido' });
-        await supabase.updateConversation(conversationId, {
+        await db.upsertLead({ phone: from, status: 'transferido' });
+        await db.updateConversation(conversationId, {
           qualification_step: 'transferido',
           session_status: 'completed',
         });
@@ -5091,7 +5092,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           console.warn('[transfer] pauseFor falhou:', (err as Error).message),
         );
 
-        const lead = await supabase.getLeadByPhone(from) as (Record<string, unknown> | null);
+        const lead = await db.getLeadByPhone(from) as (Record<string, unknown> | null);
         const contactType = lead?.contact_type as string | undefined;
         const contactTypeLabel = contactType ? ` (${contactType})` : '';
         const leadName = lead?.name as string | undefined;
@@ -5166,7 +5167,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         let clientCoordinates = (d.client_coordinates as string | undefined)?.trim();
         // Fall back to coords saved from a shared WhatsApp location
         if (!clientCoordinates) {
-          const leadNow = await supabase.getLeadByPhone(from);
+          const leadNow = await db.getLeadByPhone(from);
           const ed = leadNow?.energy_data as Record<string, unknown> | undefined;
           if (ed?.shared_coordinates && typeof ed.shared_coordinates === 'string') {
             clientCoordinates = ed.shared_coordinates;
@@ -5224,7 +5225,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             break;
           }
 
-          const lead = await supabase.getLeadByPhone(from);
+          const lead = await db.getLeadByPhone(from);
           const summary = isMeet
             ? `Meet - ${lead?.name ?? from} - apresentacao estudo`
             : `Visita tecnica - ${lead?.name ?? from} - ${lead?.city ?? ''}`.trim();
@@ -5276,8 +5277,8 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
           // Lead -> status agendado (sai do limbo). Cadencia automatica pra
           // este lead deve parar — Eva ja fechou o objetivo principal.
-          await supabase.upsertLead({ phone: from, status: 'agendado' });
-          await supabase.cancelCadence(leadId, 'visita_agendada').catch(() => {});
+          await db.upsertLead({ phone: from, status: 'agendado' });
+          await db.cancelCadence(leadId, 'visita_agendada').catch(() => {});
 
           // Alerta WABA pro Junior — agendamento eh sinal QUENTE, ele precisa
           // ver na hora pra confirmar logistica e equipamento. NUNCA silencia,
@@ -5336,7 +5337,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
       case 'opt_out': {
         // Client requested to stop receiving messages
-        await supabase.getClient()
+        await db.getClient()
           .from('leads')
           .update({ opt_out: true, updated_at: new Date().toISOString() })
           .eq('phone', from);
@@ -5359,17 +5360,17 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         // com botoes pra ele confirmar/desfazer manualmente.
         const reason = (action.data as Record<string, unknown> | undefined)?.reason as string | undefined ?? 'tema fora do escopo';
         const now = new Date().toISOString();
-        await supabase.getClient()
+        await db.getClient()
           .from('leads')
           .update({ opt_out: true, eva_active: false, status: 'perdido', updated_at: now })
           .eq('phone', from);
         // Cancela cadencia/reengagement/postinstall pendente
-        await supabase.cancelCadence(leadId, 'off_topic').catch(() => {});
+        await db.cancelCadence(leadId, 'off_topic').catch(() => {});
         await reengagement.cancelAllTouches(leadId).catch(() => 0);
         if (postInstall) await postInstall.cancelAll(leadId).catch(() => 0);
         // Notifica Junior com botoes pra desfazer se foi falso positivo
         if (!isSandbox) {
-          const lead = await supabase.getLeadByPhone(from);
+          const lead = await db.getLeadByPhone(from);
           const alertBody = [
             `🚫 *Eva marcou contato fora de escopo*`,
             ``,
@@ -5409,17 +5410,17 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         const dqReason = (action.data as Record<string, unknown> | undefined)?.reason as string | undefined ?? `lead fora do criterio (R$${empresa().criterioLeadValor}/${empresa().criterioLeadKwh}kWh) ou vulneravel`;
         // Fetch UMA vez (id imutavel) e reusa pra nome + botoes — parity com
         // mark_off_topic, sem round-trip extra de DB nesse path terminal.
-        const dqLead = await supabase.getLeadByPhone(from);
+        const dqLead = await db.getLeadByPhone(from);
         const { leadPatch, notifyBody } = buildDisqualifyPlan({
           reason: dqReason,
           leadName: dqLead?.name,
           phone: from,
         });
-        await supabase.getClient()
+        await db.getClient()
           .from('leads')
           .update(leadPatch)
           .eq('phone', from);
-        await supabase.cancelCadence(leadId, 'disqualify_lead').catch(() => {});
+        await db.cancelCadence(leadId, 'disqualify_lead').catch(() => {});
         await reengagement.cancelAllTouches(leadId).catch(() => 0);
         if (postInstall) await postInstall.cancelAll(leadId).catch(() => 0);
         if (!isSandbox) {
@@ -5497,7 +5498,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           // Se depoimento em video ou audio positivo, avisar Junior pra usar no marketing
           if ((fmt === 'video' || fmt === 'audio') && sentiment === 'positivo' && !isSandbox) {
             // getLeadByPhone e best-effort: falha aqui nao deve estourar o handler
-            const lead = await supabase.getLeadByPhone(from).catch(() => null);
+            const lead = await db.getLeadByPhone(from).catch(() => null);
             const leadName = lead?.name ?? from;
             const body = `🎤 *Depoimento em ${fmt} chegou!*\n\nDe: ${leadName}\nSalvei no banco. Aprovar pra usar no marketing?`;
             const fallback = `${body}\n\n✅ /aprovar-depoimento ${saved.id}\n❌ Ignora se nao for usavel`;
@@ -5559,7 +5560,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
     // Handle contact_type if present
     if (action.data.contact_type) {
-      await supabase.getClient()
+      await db.getClient()
         .from('leads')
         .update({ contact_type: action.data.contact_type, updated_at: new Date().toISOString() })
         .eq('phone', from);
@@ -5567,7 +5568,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
     // Handle "perdido" status (bought from competitor)
     if (action.data.status === 'perdido') {
-      await supabase.getClient()
+      await db.getClient()
         .from('leads')
         .update({ status: 'inativo', contact_type: 'perdido', updated_at: new Date().toISOString() })
         .eq('phone', from);
@@ -5737,7 +5738,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
         // Handle actions (update_lead with energy data from bill photo)
         if (action) {
-          await handleAction(action, lead.id, from, conversation.id);
+          await handleAction(action, lead.id, from, conversation.id, db);
         }
       }
 
@@ -6006,7 +6007,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           messages: updatedMessages.slice(-20),
           message_count: conversation.message_count + 2,
         });
-        if (action) await handleAction(action, lead.id, from, conversation.id);
+        if (action) await handleAction(action, lead.id, from, conversation.id, db);
       }
 
       await supabase.logEvent('info', 'document', `Analyzed PDF from ${from}`);

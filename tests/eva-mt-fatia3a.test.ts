@@ -59,3 +59,29 @@ describe('SupabaseService.comClient / paraMensagem — clone, nunca mutação', 
     expect(db.getClient()).not.toBe(svc.getClient());
   });
 });
+
+// FATIA 3b — handleAction ganhou `db` na assinatura e as escritas das 10
+// actions rodam pelo crachá. RATCHET: o que sobra de `supabase.` no corpo é
+// SÓ o intencional (logs global · escalonamento/app_flags · abordagem helper
+// que migra na 3c). Subiu o número = alguém escreveu fora do crachá.
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+describe('fatia 3b — ratchet do handleAction', () => {
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.ts'), 'utf8');
+  const ini = src.indexOf('async function handleAction');
+  const fim = src.indexOf('async function cancelIntroIfPending');
+  const corpo = src.slice(ini, fim);
+  it('assinatura tem o db (crachá injetado pelos handlers)', () => {
+    expect(corpo).toContain('db: SupabaseService = supabase');
+  });
+  it('restam NO MÁXIMO 3 usos diretos de `supabase.` (logs/escalonamento/abordagem) — baixar na 3c', () => {
+    const usos = (corpo.match(/\bsupabase\./g) ?? []).length;
+    expect(usos).toBeLessThanOrEqual(3);
+  });
+  it('as escritas das actions rodam pelo db (amostra: upsertLead/cancelCadence/updateConversation)', () => {
+    expect((corpo.match(/\bdb\.(upsertLead|cancelCadence|updateConversation|saveDossier|getClient)\b/g) ?? []).length)
+      .toBeGreaterThanOrEqual(10);
+  });
+});
