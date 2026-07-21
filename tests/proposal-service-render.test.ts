@@ -117,6 +117,19 @@ describe('renderServiceOnlyHTML', () => {
     expect(html).not.toContain('Payback');
     expect(html).not.toContain('barGeracaoGrad'); // sem o gráfico solar
   });
+  it('observações do Junior aparecem (mesma seção da proposta solar), escapadas', () => {
+    const html = renderServiceOnlyHTML({ ...base, observacoes: [
+      'O padrão novo já fica preparado pra futura ampliação.',
+      '<img src=x onerror=alert(1)>',
+    ] });
+    expect(html).toContain('Observações');
+    expect(html).toContain('O padrão novo já fica preparado pra futura ampliação.');
+    expect(html).not.toContain('<img src=x');
+    expect(html).toContain('&lt;img');
+  });
+  it('sem observações: seção ausente', () => {
+    expect(renderServiceOnlyHTML(base)).not.toContain('Observações');
+  });
   it('inclui a imagem do serviço quando há imagemUrl', () => {
     const html = renderServiceOnlyHTML({ ...base, servicos: [{ ...base.servicos[0], imagemUrl: 'https://x/img.jpg' }] });
     expect(html).toContain('https://x/img.jpg');

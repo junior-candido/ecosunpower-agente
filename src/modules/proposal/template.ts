@@ -731,7 +731,7 @@ ${(data.observacoes && data.observacoes.length > 0) ? `<section style="backgroun
   <div class="container">
     <span class="section-tag">Observações</span>
     <div style="background:#FFFBEB;border:1px solid #FDE68A;border-left:4px solid #F59E0B;border-radius:14px;padding:20px 24px;margin-top:12px">
-      ${data.observacoes.map(o => `<div style="display:flex;gap:10px;align-items:flex-start;padding:6px 0;font-size:15px;color:#1F2937;line-height:1.6"><span>📌</span><span>${escapeHtml(o)}</span></div>`).join('')}
+      ${data.observacoes.map(o => `<div style="display:flex;gap:10px;align-items:flex-start;padding:6px 0;font-size:15px;color:#1F2937;line-height:1.6;break-inside:avoid"><span>📌</span><span style="white-space:pre-line">${escapeHtml(o)}</span></div>`).join('')}
     </div>
   </div>
 </section>` : ''}
