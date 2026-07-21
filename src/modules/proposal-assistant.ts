@@ -787,7 +787,9 @@ export class ProposalAssistant {
   private async buildSocialProofHtml(tipoCliente: string | undefined): Promise<string> {
     try {
       const tipo = this.tipoToCaseTipo(tipoCliente);
-      const cases = await this.casesFetcher.getByTipo(tipo, 3);
+      // 6 obras na grade 3×2 (pedido Junior 21/07) — o fetcher completa com
+      // featured de outros tipos quando o tipo do cliente não tem 6.
+      const cases = await this.casesFetcher.getByTipo(tipo, 6);
       if (cases.length === 0) return '';
       return renderSocialProofPage({
         cases,

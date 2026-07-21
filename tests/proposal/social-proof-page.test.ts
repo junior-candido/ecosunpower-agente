@@ -59,17 +59,37 @@ describe('renderSocialProofPage', () => {
     expect(html).toContain('Carlos E.');
   });
 
-  it('limita a 3 cases mesmo se passar mais', () => {
-    const cases: Case[] = Array.from({ length: 5 }).map((_, i) => ({
+  // Pedido do Junior 21/07: "hoje tem apenas 3 fotos num formato retangular
+  // (achatado) — quero pelo menos 6, organizadas num formato que veja melhor".
+  it('mostra até 6 cases; o 7º fica de fora', () => {
+    const cases: Case[] = Array.from({ length: 8 }).map((_, i) => ({
       ...baseCase,
       slug: `c${i}`,
       titulo: `Caso ${i}`,
     }));
     const html = renderSocialProofPage({ cases, googleNota: '4.9', googleQtdAvaliacoes: 0 });
-    expect(html).toContain('Caso 0');
-    expect(html).toContain('Caso 1');
+    for (let i = 0; i < 6; i++) expect(html).toContain(`Caso ${i}`);
+    expect(html).not.toContain('Caso 6');
+    expect(html).not.toContain('Caso 7');
+  });
+
+  it('layout em GRADE de 3 colunas com foto grande (não mais a tira achatada de 120px)', () => {
+    const cases: Case[] = Array.from({ length: 6 }).map((_, i) => ({
+      ...baseCase, slug: `c${i}`, titulo: `Caso ${i}`, kwp: 10 + i,
+    }));
+    const html = renderSocialProofPage({ cases, googleNota: '4.9', googleQtdAvaliacoes: 0 });
+    expect(html).toContain('grid-template-columns:repeat(3,1fr)');
+    expect(html).toContain('object-fit:cover');
+    expect(html).not.toContain('height:120px'); // a tira antiga morreu
+    expect(html).toContain('break-inside:avoid'); // card não parte no PDF
+  });
+
+  it('com só 3 cases continua bonito (grade se ajusta, nada quebra)', () => {
+    const cases: Case[] = Array.from({ length: 3 }).map((_, i) => ({
+      ...baseCase, slug: `c${i}`, titulo: `Caso ${i}`,
+    }));
+    const html = renderSocialProofPage({ cases, googleNota: '4.9', googleQtdAvaliacoes: 0 });
     expect(html).toContain('Caso 2');
-    expect(html).not.toContain('Caso 3');
-    expect(html).not.toContain('Caso 4');
+    expect(html).not.toContain('undefined');
   });
 });
