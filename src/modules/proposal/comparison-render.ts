@@ -27,7 +27,13 @@ export interface ComparacaoOpcao {
   inversorQuantidade?: number;
   // Créditos SCEE: energia que sobra por mês (geração além do consumo) e fica
   // guardada por 60 meses. Só aparece quando > 0 — é o argumento da opção maior.
+  // Com autoconsumo remoto, é a sobra DEPOIS de abater a outra unidade.
   creditosMensalKwh?: number;
+  // Autoconsumo remoto (outra unidade do mesmo titular): economia em R$ de lá
+  // (já com Fio B) e os kWh abatidos. A economia mensal (economiaMensalRs) já é
+  // o TOTAL — estes campos abrem a divisão casa + outra unidade no card.
+  economiaRemotaRs?: number;
+  creditosRemotoKwh?: number;
   // Curva de geração mês a mês (12 valores, jan→dez): do estudo PVSol quando a
   // opção tem, senão a sazonalidade calculada. Vira o mini-gráfico do card.
   geracaoMensalDistribuida?: number[];
@@ -92,10 +98,23 @@ export function renderComparacaoSolar(opcoes: ComparacaoOpcao[]): string {
     const modulosTxt = linhaEquipamento(o.moduloQuantidade, o.moduloModelo, o.moduloFabricante, o.moduloPotenciaW);
     const inversorTxt = linhaEquipamento(o.inversorQuantidade, o.inversorModelo, o.inversorFabricante);
     // Economia mensal em destaque — é o número que o cliente mais entende ("quanto sobra por mês").
+    // Com autoconsumo remoto o valor é o TOTAL e a divisão casa + outra unidade vem embaixo.
+    const remota = Number(o.economiaRemotaRs);
+    const temRemota = isFinite(remota) && remota > 0 && (o.economiaMensalRs ?? 0) > remota;
+    const divisaoRemota = temRemota
+      ? `<div style="font-size:13px;color:#059669;margin-top:4px">R$ ${fmtRs((o.economiaMensalRs as number) - remota, 0)} nesta casa + R$ ${fmtRs(remota, 0)} na outra unidade</div>`
+      : '';
     const economiaMensal = (o.economiaMensalRs && o.economiaMensalRs > 0)
       ? `<div style="margin:16px 0;padding:14px 16px;background:#ECFDF5;border-radius:12px;text-align:center">
            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#059669">Economia mensal</div>
            <div style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;color:#047857">R$ ${fmtRs(o.economiaMensalRs, 0)}<span style="font-size:14px;font-weight:500;color:#059669">/mês</span></div>
+           ${divisaoRemota}
+         </div>`
+      : '';
+    // Outra unidade (autoconsumo remoto): os kWh que abatem a fatura de lá.
+    const remotoBox = (o.creditosRemotoKwh && o.creditosRemotoKwh > 0)
+      ? `<div style="margin:12px 0;padding:10px 16px;background:#F0FDF4;border-radius:12px;text-align:center;font-size:13px;color:#166534">
+           🏠 <b>+ ${fmtNum(o.creditosRemotoKwh)} kWh/mês</b> abatidos na outra unidade (mesmo titular)
          </div>`
       : '';
     // Créditos SCEE: destaque quando a opção gera mais do que o cliente consome.
@@ -126,6 +145,7 @@ export function renderComparacaoSolar(opcoes: ComparacaoOpcao[]): string {
           ? `<div style="padding:4px 0 12px;text-align:right;color:#64748B;font-size:13px">ou até 90× de <strong style="color:#0F172A">R$ ${fmtRs(o.financiamentoParcelaRs, 0)}</strong> financiado</div>`
           : ''}
         ${economiaMensal}
+        ${remotoBox}
         ${creditos}
         ${linha('Payback', escapeHtml(o.paybackTexto))}
         ${linha('Economia 25 anos', 'R$ ' + fmtRs(o.economia25AnosRs, 0))}

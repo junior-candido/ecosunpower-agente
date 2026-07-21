@@ -89,9 +89,13 @@ function renderPassoAPasso(calc: ProposalCalculations): string {
         <span>🔁 Vai pra rede e volta abatendo sua conta — só sobre isto incide o <b>Fio B (${fmtPctInt(calc.percentualFioBInicial)} em ${calc.anoInicial})</b></span>
         <strong style="color:#0F172A">${fmtKwh(d.compensadaKwh)}</strong>
       </div>
-      ${d.creditosKwh > 0 ? `<div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px dashed #E2E8F0">
+      ${calc.creditosUsadosRemotoKwh > 0 ? `<div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px dashed #E2E8F0">
+        <span style="color:#15803D">🏠 Abate a fatura da sua <b>outra unidade</b> — economia de <b>R$ ${fmtRs(calc.economiaRemotaMensal)}</b> lá, já com o Fio B descontado</span>
+        <strong style="color:#15803D">${fmtKwh(calc.creditosUsadosRemotoKwh)}</strong>
+      </div>` : ''}
+      ${calc.creditosGuardadosKwh > 0 ? `<div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px dashed #E2E8F0">
         <span style="color:#0E7CB8">🏦 Sobra e fica guardada como <b>crédito</b> (vale 60 meses) — só paga Fio B quando você usar</span>
-        <strong style="color:#0E7CB8">${fmtKwh(d.creditosKwh)}</strong>
+        <strong style="color:#0E7CB8">${fmtKwh(calc.creditosGuardadosKwh)}</strong>
       </div>` : ''}
       <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px dashed #E2E8F0">
         <span>= Fio B no mês</span>

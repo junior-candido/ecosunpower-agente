@@ -52,6 +52,20 @@ describe('renderEconomiaFuncionaSection', () => {
     expect(html).not.toContain('1.614 kWh');
   });
 
+  it('autoconsumo remoto: passo a passo mostra a outra unidade em R$ e a sobra REAL', () => {
+    const calc = calcular(input({
+      potenciaKwp: 17, consumoMensalKwh: 1200, geracaoMensalKwhOverride: 2152,
+      tarifaRsKwh: 1.05, custoIluminacaoPublica: 35, reajusteAnualEnergia: 0,
+      consumoRemotoMensalKwh: 900,
+    }));
+    const html = renderEconomiaFuncionaSection(calc, { temCarregador: false });
+    expect(html.toLowerCase()).toContain('outra unidade');
+    expect(html).toContain('900 kWh');   // abatidos lá
+    expect(html).toContain('783');       // economia de lá em R$
+    expect(html).toContain('52 kWh');    // guardado é só o que sobra DEPOIS do remoto
+    expect(html).not.toContain('952 kWh'); // o bruto não aparece mais como "sobra"
+  });
+
   it('sistema justo (sem sobra): passo a passo igual ao de antes, sem linha de créditos', () => {
     const html = renderEconomiaFuncionaSection(calcular(input()), { temCarregador: false });
     expect(html.toLowerCase()).not.toContain('crédito');
