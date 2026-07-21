@@ -88,3 +88,19 @@ export function bancoDoOperador(req: RequisicaoComOperador, servico: SupabaseCli
   if (!env) return servico;   // flag ligada mas env incompleta → não quebra a rota
   return clientDoOperador(req, env);
 }
+
+/** SWITCH strangler da EVA (Fatia 3a): o client que o caminho da MENSAGEM deve
+ *  usar pra escrever os dados do tenant. Com `RLS_EVA=1` E env completa E
+ *  companyId RESOLVIDO (pelo webhook/tenant-resolver) → client-da-EMPRESA
+ *  (o Postgres impõe o isolamento via RLS 079). Senão → o `servico`
+ *  (comportamento de hoje: ZERO mudança até virar a flag).
+ *  companyId ausente NUNCA vira crachá "chutado" da EcoSun: mensagem sem tenant
+ *  resolvido é legado/Evolution e segue no serviço — a retenção falha-fechado
+ *  de número não-mapeado já aconteceu ANTES, no webhook (fatia 2). */
+export function clientDaMensagem(companyId: string | undefined, servico: SupabaseClient, e: EnvLike = process.env): SupabaseClient {
+  if (e.RLS_EVA !== '1') return servico;
+  if (!companyId) return servico;
+  const env = tenantEnvDoProcesso(e);
+  if (!env) return servico;   // flag ligada mas env incompleta → não quebra o consumer
+  return clientDaEmpresa(companyId, env);
+}
