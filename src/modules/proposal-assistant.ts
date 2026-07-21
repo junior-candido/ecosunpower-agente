@@ -162,7 +162,9 @@ export function buildServiceOnlyData(params: {
     servicos,
     totalRs: totalServicos,
     formasPagamento: data.formasPagamento ?? criarPagamentoPadrao(totalServicos),
-    observacoes: observacoesDaProposta(data.observacoes),
+    // ?? data.observacao: o extrator às vezes emite no SINGULAR (mesmo padrão
+    // já previsto no corretor) — sem o fallback o texto morria calado de novo.
+    observacoes: observacoesDaProposta(data.observacoes ?? data.observacao),
     empresa,
   };
 }
@@ -1614,7 +1616,7 @@ export class ProposalAssistant {
           numeroProposta,
           pdfBuffer,
           htmlContent: html,
-          inputDataJson: JSON.stringify({ servicos }, null, 2),
+          inputDataJson: JSON.stringify({ servicos, observacoes: observacoesDaProposta(data.observacoes ?? data.observacao) }, null, 2),
           shareWithEmail: data.emailCliente,
         })
       : Promise.reject(new Error('Drive uploader nao configurado'));
@@ -1626,7 +1628,7 @@ export class ProposalAssistant {
           clienteNome: data.nomeCliente,
           clienteTelefone: data.telefoneCliente,
           htmlContent: html,
-          dadosInput: { comercial: { servicos, soServico: true } },
+          dadosInput: { comercial: { servicos, soServico: true }, observacoes: observacoesDaProposta(data.observacoes ?? data.observacao) },
           tipo: 'basica',
           modoEnvio,
         })
@@ -1868,6 +1870,10 @@ export class ProposalAssistant {
       }
     }
     add(data.estruturaFixacao, 'descricao');
+    // observacoes em LISTA (o formato da regra 14) fica TEXTUAL de propósito —
+    // o add só pega string, então o array passa reto sem corretor: o texto é
+    // do Junior e ele confere no resumo antes de gerar. Os add abaixo cobrem
+    // só o caso legado de vir como string solta.
     add(data, 'observacoes');
     add(data, 'observacao'); // o extrator pode emitir no singular
     add(data, 'formasPagamento'); // só corrige se for string livre (add checa o tipo)
@@ -2034,7 +2040,7 @@ export class ProposalAssistant {
         valorComServicos,
       ),
       servicos,
-      observacoes: observacoesDaProposta(data.observacoes),
+      observacoes: observacoesDaProposta(data.observacoes ?? data.observacao),
       empresa: this.companyDefaults,
     };
   }
