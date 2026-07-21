@@ -3707,6 +3707,12 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     ctwaReferral?: import('./modules/evolution.js').IncomingMessage['referral'],
     companyId?: string,
   ) {
+    // EVA MT FATIA 3a — o banco DESTA mensagem: com RLS_EVA=1 + env + companyId
+    // resolvido, as escritas do NÚCLEO (lead/conversa) rodam com o crachá da
+    // empresa (RLS 079 impõe o isolamento). Flag desligada → `db === supabase`
+    // (mesma instância, zero mudança). Actions/helpers migram nas fatias 3b-3d.
+    const db = supabase.paraMensagem(companyId);
+
     // Hook: se essa mensagem eh de cliente que recebeu followup automatico
     // de proposta, marca como "cliente respondeu" no banco. Fire-and-forget,
     // nao bloqueia o handler. No-op se nao houver proposta correspondente.
@@ -4402,8 +4408,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
       if (!lead) {
         // Multi-tenant fatia 1: carimba a empresa dona na CRIACAO do lead novo.
-        // Ausente → EcoSun (default). Hoje sempre EcoSun = comportamento igual.
-        const result = await supabase.upsertLead({ phone: from, status: 'novo', company_id: companyId ?? ECOSUN_COMPANY_ID });
+        // Ausente → EcoSun (default). Fatia 3a: escrita pelo `db` (crachá).
+        const result = await db.upsertLead({ phone: from, status: 'novo', company_id: companyId ?? ECOSUN_COMPANY_ID });
         lead = { id: result.id, phone: from } as NonNullable<typeof lead>;
       }
 
@@ -4462,7 +4468,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
               utm_campaign: parsed.campaign,
               origin: source,
             };
-            await supabase.getClient()
+            await db.getClient()
               .from('leads')
               .update({
                 ...trackingRow,
@@ -4489,7 +4495,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
             ? await resolveCampaignIdFromAd(adId, config.metaWabaAccessToken)
             : null;
           const patch = buildCtwaPatch(adId, campaignId);
-          await supabase.getClient()
+          await db.getClient()
             .from('leads')
             .update({ ...patch, updated_at: new Date().toISOString() })
             .eq('id', leadId);
@@ -4559,7 +4565,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         }
       }
 
-      const conversation = await supabase.getOrCreateConversation(leadId, companyId);
+      const conversation = await db.getOrCreateConversation(leadId, companyId);
 
       // Auto-ack template: dispara template Utility em primeira sessao ou pausa
       // >1h pra UX (cliente nao fica esperando 5-30s no vacuo enquanto Eva processa
@@ -4860,7 +4866,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
       const messagesToKeep = updatedMessages.slice(-20);
 
-      await supabase.updateConversation(conversation.id, {
+      await db.updateConversation(conversation.id, {
         messages: messagesToKeep,
         summary: conversation.summary,
         message_count: conversation.message_count + 2,
@@ -5648,6 +5654,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
   // Handle image messages
   async function handleImageMessage(from: string, messageId: string, companyId?: string) {
+    const db = supabase.paraMensagem(companyId); // EVA MT 3a: crachá nas escritas de conversa
     if (await tryHandleCaseCreatorMedia(from, messageId, 'image')) return;
     if (await tryHandleProposalMedia(from, messageId, 'image')) return;
 
@@ -5717,13 +5724,13 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
       // Save to conversation
       if (lead) {
-        const conversation = await supabase.getOrCreateConversation(lead.id, companyId);
+        const conversation = await db.getOrCreateConversation(lead.id, companyId);
         const updatedMessages = [
           ...conversation.messages,
           { role: 'user' as const, content: '[Enviou uma foto]', timestamp: new Date().toISOString() },
           { role: 'assistant' as const, content: safeDisplay, timestamp: new Date().toISOString() },
         ];
-        await supabase.updateConversation(conversation.id, {
+        await db.updateConversation(conversation.id, {
           messages: updatedMessages.slice(-20),
           message_count: conversation.message_count + 2,
         });
@@ -5856,6 +5863,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
   // Handle document messages (PDF)
   async function handleDocumentMessage(from: string, messageId: string, mimetype: string, companyId?: string) {
+    const db = supabase.paraMensagem(companyId); // EVA MT 3a: crachá nas escritas de conversa
     // PRIORIDADE: se Junior anexou doc pra proposta personalizada, captura aqui
     if (await tryHandleProposalMedia(from, messageId, 'document')) return;
 
@@ -5988,13 +5996,13 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
 
       // Save to conversation
       if (lead) {
-        const conversation = await supabase.getOrCreateConversation(lead.id, companyId);
+        const conversation = await db.getOrCreateConversation(lead.id, companyId);
         const updatedMessages = [
           ...conversation.messages,
           { role: 'user' as const, content: '[Enviou um PDF]', timestamp: new Date().toISOString() },
           { role: 'assistant' as const, content: analysisText, timestamp: new Date().toISOString() },
         ];
-        await supabase.updateConversation(conversation.id, {
+        await db.updateConversation(conversation.id, {
           messages: updatedMessages.slice(-20),
           message_count: conversation.message_count + 2,
         });

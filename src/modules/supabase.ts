@@ -6,6 +6,7 @@ import { registrarAtividade } from './dashboard/atividades.js';
 import { criarTarefa, cancelarTarefasPendentesDoLead } from './dashboard/tarefas.js';
 import { variantesTelefone } from './phone.js';
 import { registrarEvento } from './elo/eventos.js';
+import { clientDaMensagem } from './tenant-client.js';
 
 // Elo: mapeia a origem livre do lead pro canal canônico do event-stream.
 // Best-effort — a maioria dos leads entra por WhatsApp (default). E-mail e web
@@ -70,13 +71,32 @@ interface DossierData {
 
 export class SupabaseService {
   private client: SupabaseClient;
+  private readonly configRef: Pick<Config, 'supabaseUrl' | 'supabaseServiceKey'>;
 
-  constructor(config: Pick<Config, 'supabaseUrl' | 'supabaseServiceKey'>) {
-    this.client = createClient(config.supabaseUrl, config.supabaseServiceKey);
+  constructor(config: Pick<Config, 'supabaseUrl' | 'supabaseServiceKey'>, client?: SupabaseClient) {
+    this.configRef = config;
+    this.client = client ?? createClient(config.supabaseUrl, config.supabaseServiceKey);
   }
 
   getClient(): SupabaseClient {
     return this.client;
+  }
+
+  /** EVA MT Fatia 3a — CLONE deste serviço com OUTRO client (o crachá da
+   *  empresa da mensagem). Todos os ~90 métodos passam a rodar tenant-scoped
+   *  de graça. NUNCA muta o singleton: os crons de fundo (cadence, e-mail,
+   *  monitoring) são multi-tenant e continuam no service_role. */
+  comClient(client: SupabaseClient): SupabaseService {
+    return new SupabaseService(this.configRef, client);
+  }
+
+  /** O SupabaseService que o caminho da MENSAGEM deve usar: com `RLS_EVA=1` +
+   *  env do tenant + companyId resolvido → clone com o crachá da empresa;
+   *  senão → ESTA MESMA instância (===, zero mudança). Decisão única em
+   *  clientDaMensagem (tenant-client.ts). */
+  paraMensagem(companyId?: string, e: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env): SupabaseService {
+    const c = clientDaMensagem(companyId, this.client, e);
+    return c === this.client ? this : this.comClient(c);
   }
 
   async upsertLead(data: LeadData): Promise<{ id: string }> {
