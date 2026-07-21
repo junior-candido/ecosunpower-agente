@@ -88,14 +88,19 @@ describe('Layout do modo comparação', () => {
     expect(parcelas[0]).not.toBe(parcelas[1]);
   });
 
-  it('comparação + serviços: a seção de serviços NÃO entra (total travaria na Opção A)', async () => {
+  // Comportamento MUDOU 21/07 (pedido do Junior: "on-grid + híbrido + serviços em
+  // uma só"): os serviços AGORA entram na comparação, com a soma SÓ deles
+  // ("somam à opção escolhida") — o antigo problema do total travado na Opção A
+  // foi resolvido não mostrando total de opção nenhuma.
+  it('comparação + serviços: serviços ENTRAM, com soma só deles (sem total de uma opção)', async () => {
     const html = await gerarHtml({
       comparacao,
       servicos: [{ titulo: 'Carregador EV', descricao: 'Wallbox', valorRs: 4500, jaIncluso: false }],
     });
     expect(html).toContain('Compare as opções');
-    expect(html).not.toContain('Carregador EV');
-    expect(html.toLowerCase()).not.toContain('total da proposta');
+    expect(html).toContain('Carregador EV');
+    expect(html).toContain('somam à opção escolhida');
+    expect(html).not.toContain('Total da proposta (solar + serviços)');
   });
 
   it('proposta de UM sistema MANTÉM todas as seções normais', async () => {

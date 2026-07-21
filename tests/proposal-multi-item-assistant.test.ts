@@ -208,6 +208,19 @@ describe('montarInputOpcaoComparacao', () => {
     }
   });
 
+  it('on-grid × híbrido: a Opção B NÃO herda a bateria da A (topo) — cada opção tem a sua', () => {
+    const dataHibrida = { ...data, bateria: { fabricante: 'BYD', modelo: 'B-Box', capacidadeKwh: 10.2, quantidade: 1 } };
+    const semBateria = montarInputOpcaoComparacao(dataHibrida, { potenciaKwp: 8.5, valorTotalRs: 18837 }, 1);
+    expect(semBateria.bateria).toBeUndefined();
+    // Opção A (índice 0) mantém a bateria do topo
+    const opcaoA = montarInputOpcaoComparacao(dataHibrida, { potenciaKwp: 17, valorTotalRs: 32290 }, 0);
+    expect(opcaoA.bateria).toEqual(dataHibrida.bateria);
+    // B com bateria própria: a dela manda
+    const bComBateria = montarInputOpcaoComparacao(dataHibrida,
+      { potenciaKwp: 8.5, valorTotalRs: 28000, bateria: { fabricante: 'Huawei', modelo: 'LUNA', capacidadeKwh: 5, quantidade: 1 } }, 1);
+    expect(bComBateria.bateria?.fabricante).toBe('Huawei');
+  });
+
   it('não muta o data original', () => {
     const snapshot = { ...data };
     montarInputOpcaoComparacao(data, { potenciaKwp: 9 }, 1);

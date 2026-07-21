@@ -25,6 +25,11 @@ export interface ComparacaoOpcao {
   inversorFabricante: string;
   inversorModelo?: string;
   inversorQuantidade?: number;
+  // Bateria (opção HÍBRIDA na comparação on-grid × híbrido). Ausente = on-grid.
+  bateriaFabricante?: string;
+  bateriaModelo?: string;
+  bateriaCapacidadeKwh?: number;
+  bateriaQuantidade?: number;
   // Créditos SCEE: energia que sobra por mês (geração além do consumo) e fica
   // guardada por 60 meses. Só aparece quando > 0 — é o argumento da opção maior.
   // Com autoconsumo remoto, é a sobra DEPOIS de abater a outra unidade.
@@ -49,7 +54,7 @@ function renderMiniGeracaoSVG(curva?: number[]): string {
   const max = Math.max(...curva);
   if (max <= 0) return '';
   const MESES = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
-  const W = 280, H = 96, padTop = 8, padBottom = 16, padX = 4;
+  const W = 280, H = 96, padTop = 12, padBottom = 16, padX = 4;
   const innerH = H - padTop - padBottom;
   const groupW = (W - padX * 2) / 12;
   const barW = Math.min(14, groupW * 0.6);
@@ -57,8 +62,12 @@ function renderMiniGeracaoSVG(curva?: number[]): string {
     const h = Math.max(2, (v / max) * innerH);
     const x = padX + i * groupW + (groupW - barW) / 2;
     const y = padTop + innerH - h;
+    const cx = (padX + i * groupW + groupW / 2).toFixed(1);
+    // valor da geração em cima de cada barra (pedido do Junior 21/07)
+    const valor = `<text x="${cx}" y="${Math.max(6, y - 2).toFixed(1)}" text-anchor="middle" font-size="5.5" font-weight="600" fill="#475569">${fmtNum(Math.round(v))}</text>`;
     return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="2.5" fill="#0E7CB8" opacity="${v === max ? '1' : '0.75'}"/>
-      <text x="${(padX + i * groupW + groupW / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle" font-size="8" fill="#94A3B8">${MESES[i]}</text>`;
+      ${valor}
+      <text x="${cx}" y="${H - 4}" text-anchor="middle" font-size="8" fill="#94A3B8">${MESES[i]}</text>`;
   }).join('');
   return `
       <div style="margin-top:16px">
@@ -97,6 +106,12 @@ export function renderComparacaoSolar(opcoes: ComparacaoOpcao[]): string {
       </div>` : '';
     const modulosTxt = linhaEquipamento(o.moduloQuantidade, o.moduloModelo, o.moduloFabricante, o.moduloPotenciaW);
     const inversorTxt = linhaEquipamento(o.inversorQuantidade, o.inversorModelo, o.inversorFabricante);
+    // Bateria: "1× B-Box HVS · 10,2 kWh" — só na opção híbrida.
+    const capKwh = Number(o.bateriaCapacidadeKwh);
+    const bateriaNome = (o.bateriaModelo || o.bateriaFabricante || '').trim();
+    const bateriaTxt = bateriaNome
+      ? `${(o.bateriaQuantidade && o.bateriaQuantidade > 0) ? `${o.bateriaQuantidade}× ` : ''}${bateriaNome}${(isFinite(capKwh) && capKwh > 0) ? ` · ${fmtNum(capKwh * ((o.bateriaQuantidade && o.bateriaQuantidade > 0) ? o.bateriaQuantidade : 1), 1)} kWh` : ''}`
+      : '';
     // Economia mensal em destaque — é o número que o cliente mais entende ("quanto sobra por mês").
     // Com autoconsumo remoto o valor é o TOTAL e a divisão casa + outra unidade vem embaixo.
     const remota = Number(o.economiaRemotaRs);
@@ -135,6 +150,7 @@ export function renderComparacaoSolar(opcoes: ComparacaoOpcao[]): string {
         ${linha('Potência', fmtNum(o.potenciaKwp, 1) + ' kWp')}
         ${modulosTxt ? linha('Módulos', escapeHtml(modulosTxt)) : ''}
         ${inversorTxt ? linha('Inversor', escapeHtml(inversorTxt)) : ''}
+        ${bateriaTxt ? linha('Bateria', escapeHtml(bateriaTxt)) : ''}
         ${linha('Geração', fmtNum(o.geracaoMensalKwh) + ' kWh/mês')}
         ${consumoLinha}
         ${linha('Investimento', 'R$ ' + fmtRs(o.valorTotalRs, 0))}

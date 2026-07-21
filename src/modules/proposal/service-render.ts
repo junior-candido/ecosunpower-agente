@@ -32,7 +32,7 @@ export function somaServicosExtras(servicos: ServicoItem[] | undefined): number 
 // Lista cada serviço (título, descrição, preço). Serviços "a mais" somam ao
 // valor do solar; serviços "já incluso" aparecem com selo e NÃO somam (já estão
 // dentro do valor do solar). Vazio => string vazia (seção some).
-export function renderServicosAdicionaisSection(servicos: ServicoItem[], valorSolarRs: number): string {
+export function renderServicosAdicionaisSection(servicos: ServicoItem[], valorSolarRs: number, modoComparacao = false): string {
   if (!servicos || servicos.length === 0) return '';
   const validos = servicos.filter((s): s is ServicoItem => !!s && typeof s.titulo === 'string');
   if (validos.length === 0) return '';
@@ -61,6 +61,20 @@ export function renderServicosAdicionaisSection(servicos: ServicoItem[], valorSo
   // Rótulo do total: só fala "solar + serviços" quando há serviço que soma.
   const rotuloTotal = temExtras ? 'Total da proposta (solar + serviços)' : 'Total da proposta';
 
+  // Na COMPARAÇÃO não tem "o" valor do solar (são duas opções) — mostra a lista
+  // e a soma SÓ dos serviços, avisando que soma à opção escolhida.
+  const blocoTotal = modoComparacao
+    ? (temExtras ? `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:24px;padding:28px;border-radius:16px;background:linear-gradient(135deg,var(--primary-600) 0%,var(--primary-800) 100%);color:#fff;margin-top:8px">
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600;letter-spacing:0.02em">Serviços (somam à opção escolhida)</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:32px;font-weight:700">+ R$ ${fmtRs(somaServicosExtras(validos), 0)}</div>
+    </div>` : '')
+    : `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:24px;padding:28px;border-radius:16px;background:linear-gradient(135deg,var(--primary-600) 0%,var(--primary-800) 100%);color:#fff;margin-top:8px">
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600;letter-spacing:0.02em">${rotuloTotal}</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:32px;font-weight:700">R$ ${fmtRs(totalGeral, 0)}</div>
+    </div>`;
+
   return `
 <section style="background:var(--surface-alt);padding:80px 0">
   <div class="container">
@@ -68,10 +82,7 @@ export function renderServicosAdicionaisSection(servicos: ServicoItem[], valorSo
     <h2 class="section-title">Além do sistema solar</h2>
     <p class="section-subtitle">Serviços de engenharia elétrica inclusos nesta proposta.</p>
     ${linhas}
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:24px;padding:28px;border-radius:16px;background:linear-gradient(135deg,var(--primary-600) 0%,var(--primary-800) 100%);color:#fff;margin-top:8px">
-      <div style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600;letter-spacing:0.02em">${rotuloTotal}</div>
-      <div style="font-family:'Space Grotesk',sans-serif;font-size:32px;font-weight:700">R$ ${fmtRs(totalGeral, 0)}</div>
-    </div>
+    ${blocoTotal}
   </div>
 </section>`;
 }
