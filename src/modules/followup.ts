@@ -66,8 +66,10 @@ export class FollowupModule {
   // Marca followups anteriores como inativos — proximo silencio reinicia do step 1.
   // NAO deleta (preserva audit). So toca em steps 1-7 (auto-followup), ignora
   // step 100 (lost_client 6-month check).
-  async resetForLead(leadId: string): Promise<void> {
-    await this.client
+  // [MT fatia 3d] `client` injetavel: no caminho da MENSAGEM entra o crachá do
+  // tenant (flag RLS_EVA); crons/admin seguem no singleton (default).
+  async resetForLead(leadId: string, client: SupabaseClient = this.client): Promise<void> {
+    await client
       .from('followups')
       .update({ active: false })
       .eq('lead_id', leadId)

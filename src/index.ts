@@ -595,8 +595,11 @@ async function main() {
     ? makeCapiReporter({
         capi: new MetaCapi({ datasetId: config.metaCapiDatasetId!, token: config.metaCapiToken! }),
         wabaId: config.metaWabaBusinessAccountId!,
-        getLeadForCapi: (id) => supabase.getLeadForCapi(id),
-        recordCapiStage: (id, stage) => supabase.recordCapiStage(id, stage),
+        // [MT fatia 3d] db opcional = SupabaseService do crachá (caminho da
+        // mensagem); sem db, singleton (crons/HTTP). Cast é local: o tipo do
+        // capi-reporter usa unknown pra não acoplar no SupabaseService.
+        getLeadForCapi: (id, db) => ((db as SupabaseService | undefined) ?? supabase).getLeadForCapi(id),
+        recordCapiStage: (id, stage, db) => ((db as SupabaseService | undefined) ?? supabase).recordCapiStage(id, stage),
       })
     : async () => { /* CAPI off: falta META_CAPI_TOKEN, META_WABA_BUSINESS_ACCOUNT_ID ou META_CAPI_DATASET_ID */ };
   console.log(`[capi] Conversions API ${capiOn ? 'ATIVA' : 'off (falta token/WABA id/dataset)'} — dataset ${config.metaCapiDatasetId ?? 'NAO SETADO'}`);
@@ -3709,15 +3712,18 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     companyId?: string,
   ) {
     // EVA MT FATIA 3a — o banco DESTA mensagem: com RLS_EVA=1 + env + companyId
-    // resolvido, as escritas do NÚCLEO (lead/conversa) rodam com o crachá da
-    // empresa (RLS 079 impõe o isolamento). Flag desligada → `db === supabase`
-    // (mesma instância, zero mudança). Actions/helpers migram nas fatias 3b-3d.
+    // resolvido, as escritas rodam com o crachá da empresa (RLS 079 impõe o
+    // isolamento). Flag desligada → `db === supabase` (mesma instância, zero
+    // mudança). Núcleo (3a), actions (3b), helpers (3c) e singletons (3d) já
+    // recebem este db; crons/HTTP/admin seguem no singleton de propósito.
     const db = supabase.paraMensagem(companyId);
 
     // Hook: se essa mensagem eh de cliente que recebeu followup automatico
     // de proposta, marca como "cliente respondeu" no banco. Fire-and-forget,
     // nao bloqueia o handler. No-op se nao houver proposta correspondente.
-    proposalFollowup.markClienteRespondeu(from);
+    // [MT 3d] escrita pelo crachá; os botões admin logo abaixo ficam no
+    // singleton (admin = EcoSun, fora do caminho do tenant).
+    proposalFollowup.markClienteRespondeu(from, db);
 
     // Botoes do followup de proposta (junior_envia, modo "Eva pergunta antes
     // de mandar"). So Junior (admin) toca esses botoes — early return.
@@ -4393,8 +4399,10 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       }
 
       // If this lead has an active reengagement cadence, cancel it — they replied
+      // [MT 3d] escrita pelo crachá (db); leitura hasPendingTouches fica no
+      // singleton (fatia de escrita; flag-off é idêntico de qualquer jeito).
       if (lead?.id && await reengagement.hasPendingTouches(lead.id)) {
-        const canceled = await reengagement.cancelAllTouches(lead.id);
+        const canceled = await reengagement.cancelAllTouches(lead.id, db.getClient());
         console.log(`[reengagement] Canceled ${canceled} pending touches for ${from} (replied)`);
       }
       // Cliente respondeu — reseta cadencia de auto-followup pro proximo silencio
@@ -4403,7 +4411,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       // melhor nem chamar se for perdido).
       // Cast porque LeadData.status enum nao lista 'perdido' mas codigo usa.
       if (lead?.id && (lead.status as string) !== 'perdido') {
-        await followup.resetForLead(lead.id).catch(() => { /* nao critico */ });
+        await followup.resetForLead(lead.id, db.getClient()).catch(() => { /* nao critico */ });
       }
       const isNewLead = !lead;
 
@@ -4420,10 +4428,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       // o referral traz o ctwa_clid. Guarda no lead (pra usar nos estagios
       // seguintes) e devolve o evento "Lead" pra Meta. Fire-and-forget.
       if (ctwaReferral?.ctwaClid) {
-        await supabase
+        // [MT 3d] escrita do ctwa_clid e o estágio CAPI pelo crachá (db).
+        await db
           .upsertLead({ phone: from, ctwa_clid: ctwaReferral.ctwaClid })
           .catch((err) => console.warn('[capi] falha ao salvar ctwa_clid:', (err as Error).message));
-        void capiReporter(leadId, 'Lead');
+        void capiReporter(leadId, 'Lead', { db });
       }
 
       // TRACKING DE ORIGEM: se e a primeira mensagem e contem tag tipo
@@ -5012,7 +5021,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         await db.upsertLead({ phone: from, status: 'qualificado' });
         // CAPI estagio 2: lead passou no criterio (R$700/700kWh). Carimbo
         // 'lead_qualificado' pra Meta — alvo de otimizacao. Fire-and-forget.
-        void capiReporter(leadId, 'lead_qualificado');
+        void capiReporter(leadId, 'lead_qualificado', { db });
         await db.updateConversation(conversationId, {
           qualification_step: 'qualificacao_completa',
           // session_status removido — Eva fica ativa pra continuar buscando agendamento.
@@ -5343,11 +5352,11 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           .update({ opt_out: true, updated_at: new Date().toISOString() })
           .eq('phone', from);
         // Also cancel any pending reengagement touches
-        const canceled = await reengagement.cancelAllTouches(leadId);
+        const canceled = await reengagement.cancelAllTouches(leadId, db.getClient());
         if (canceled > 0) console.log(`[reengagement] Canceled ${canceled} touches after opt-out`);
         // Also cancel pending post-install touches
         if (postInstall) {
-          const canceledPost = await postInstall.cancelAll(leadId);
+          const canceledPost = await postInstall.cancelAll(leadId, db.getClient());
           if (canceledPost > 0) console.log(`[post-install] Canceled ${canceledPost} touches after opt-out`);
         }
         console.log(`[action] Opt-out registered for ${from}`);
@@ -5367,8 +5376,8 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           .eq('phone', from);
         // Cancela cadencia/reengagement/postinstall pendente
         await db.cancelCadence(leadId, 'off_topic').catch(() => {});
-        await reengagement.cancelAllTouches(leadId).catch(() => 0);
-        if (postInstall) await postInstall.cancelAll(leadId).catch(() => 0);
+        await reengagement.cancelAllTouches(leadId, db.getClient()).catch(() => 0);
+        if (postInstall) await postInstall.cancelAll(leadId, db.getClient()).catch(() => 0);
         // Notifica Junior com botoes pra desfazer se foi falso positivo
         if (!isSandbox) {
           const lead = await db.getLeadByPhone(from);
@@ -5422,8 +5431,8 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           .update(leadPatch)
           .eq('phone', from);
         await db.cancelCadence(leadId, 'disqualify_lead').catch(() => {});
-        await reengagement.cancelAllTouches(leadId).catch(() => 0);
-        if (postInstall) await postInstall.cancelAll(leadId).catch(() => 0);
+        await reengagement.cancelAllTouches(leadId, db.getClient()).catch(() => 0);
+        if (postInstall) await postInstall.cancelAll(leadId, db.getClient()).catch(() => 0);
         if (!isSandbox) {
           if (metaWaba && dqLead?.id) {
             try {
@@ -5450,7 +5459,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         // Eva detectou que o cliente ja avaliou no Google. Cancela toques
         // pendentes de review e marca timestamp no lead.
         if (postInstall) {
-          await postInstall.markReviewConfirmed(leadId);
+          await postInstall.markReviewConfirmed(leadId, db.getClient());
           console.log(`[action] Review confirmed for ${from}`);
         } else {
           console.warn(`[action] mark_review_confirmed received but postInstall disabled`);
@@ -5490,7 +5499,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             sentiment,
             sourceMessageId: (d.source_message_id as string) ?? null,
             notes: (d.notes as string) ?? null,
-          });
+          }, db.getClient());
           if (saved.duplicate) {
             console.log(`[action] Testimonial already existed ${saved.id} (${fmt}), skipping notification`);
             break;

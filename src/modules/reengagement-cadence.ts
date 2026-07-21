@@ -52,8 +52,10 @@ export class ReengagementCadence {
     }
   }
 
-  async cancelAllTouches(leadId: string): Promise<number> {
-    const { data, error } = await this.supabase
+  // [MT fatia 3d] `client` injetavel: caminho da MENSAGEM passa o crachá do
+  // tenant (flag RLS_EVA); crons/endpoints seguem no singleton (default).
+  async cancelAllTouches(leadId: string, client: SupabaseClient = this.supabase): Promise<number> {
+    const { data, error } = await client
       .from('reengagement_touches')
       .update({ status: 'canceled' })
       .eq('lead_id', leadId)

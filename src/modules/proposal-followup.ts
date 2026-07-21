@@ -645,19 +645,21 @@ export class ProposalFollowupService {
   // Hook chamado pelo brain quando recebe mensagem de cliente que tem
   // proposta com followup_sent_at recente e cliente_respondeu_at NULL.
   // Marca como respondido. NAO BLOQUEIA — fire-and-forget.
-  markClienteRespondeu(telefone: string): void {
-    this.markClienteRespondeuAsync(telefone).catch((err) => {
+  // [MT fatia 3d] `db` injetavel: caminho da MENSAGEM passa o SupabaseService
+  // do crachá (flag RLS_EVA); triggers HTTP/crons seguem no singleton (default).
+  markClienteRespondeu(telefone: string, db: SupabaseService = this.supabase): void {
+    this.markClienteRespondeuAsync(telefone, db).catch((err) => {
       console.warn('[proposal-followup] markClienteRespondeu:', err.message);
     });
   }
 
-  private async markClienteRespondeuAsync(telefone: string): Promise<void> {
+  private async markClienteRespondeuAsync(telefone: string, db: SupabaseService = this.supabase): Promise<void> {
     const normalizado = this.normalizarTelefone(telefone);
     if (!normalizado) return;
 
     // Pega proposta(s) com followup ja enviado e cliente_respondeu_at NULL
     // pra esse telefone. Marca tudo como respondido.
-    const { data, error } = await this.supabase.getClient()
+    const { data, error } = await db.getClient()
       .from('propostas_publicas')
       .select('id, cliente_telefone, dados_input')
       .not('followup_sent_at', 'is', null)
@@ -679,7 +681,7 @@ export class ProposalFollowupService {
 
     if (idsParaMarcar.length === 0) return;
 
-    await this.supabase.getClient()
+    await db.getClient()
       .from('propostas_publicas')
       .update({ cliente_respondeu_at: new Date().toISOString() })
       .in('id', idsParaMarcar);

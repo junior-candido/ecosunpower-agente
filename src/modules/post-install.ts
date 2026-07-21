@@ -136,8 +136,10 @@ export class PostInstallService {
     });
   }
 
-  async cancelAll(leadId: string): Promise<number> {
-    const { data, error } = await this.supabase
+  // [MT fatia 3d] `client` injetavel nos dois metodos do caminho da MENSAGEM:
+  // entra o crachá do tenant (flag RLS_EVA); crons seguem no singleton.
+  async cancelAll(leadId: string, client: SupabaseClient = this.supabase): Promise<number> {
+    const { data, error } = await client
       .from('post_install_touches')
       .update({ status: 'canceled' })
       .eq('lead_id', leadId)
@@ -150,11 +152,11 @@ export class PostInstallService {
     return data?.length ?? 0;
   }
 
-  async markReviewConfirmed(leadId: string): Promise<void> {
+  async markReviewConfirmed(leadId: string, client: SupabaseClient = this.supabase): Promise<void> {
     const now = new Date().toISOString();
 
     // Marca o lead como tendo avaliado (idempotente — so seta se ainda for null)
-    await this.supabase
+    await client
       .from('leads')
       .update({ review_confirmed_at: now })
       .eq('id', leadId)
@@ -163,7 +165,7 @@ export class PostInstallService {
     // So atualiza toques AINDA pending pra nao sobrescrever historico de
     // sent/failed com 'review_confirmed'. Se o cliente avaliar depois do
     // envio, queremos preservar o sent_at original.
-    const { data, error } = await this.supabase
+    const { data, error } = await client
       .from('post_install_touches')
       .update({ status: 'review_confirmed' })
       .eq('lead_id', leadId)

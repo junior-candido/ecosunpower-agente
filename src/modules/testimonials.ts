@@ -31,12 +31,14 @@ export interface TestimonialRow {
 export class TestimonialService {
   constructor(private supabase: SupabaseClient) {}
 
-  async save(input: SaveTestimonialInput): Promise<{ id: string; duplicate: boolean }> {
+  // [MT fatia 3d] `client` injetavel: caminho da MENSAGEM passa o crachá do
+  // tenant (flag RLS_EVA); admin/relatorios seguem no singleton (default).
+  async save(input: SaveTestimonialInput, client: SupabaseClient = this.supabase): Promise<{ id: string; duplicate: boolean }> {
     // Dedup: se ja existe depoimento com o mesmo source_message_id, retorna
     // ele em vez de inserir duplicata. Protege contra replay de mensagem
     // do WhatsApp (queue retry, restart com mensagem ainda na fila).
     if (input.sourceMessageId) {
-      const { data: existing } = await this.supabase
+      const { data: existing } = await client
         .from('testimonials')
         .select('id')
         .eq('source_message_id', input.sourceMessageId)
@@ -56,7 +58,7 @@ export class TestimonialService {
       source_message_id: input.sourceMessageId ?? null,
       notes: input.notes ?? null,
     };
-    const { data, error } = await this.supabase
+    const { data, error } = await client
       .from('testimonials')
       .insert(row)
       .select('id')
@@ -64,7 +66,7 @@ export class TestimonialService {
     if (error) {
       // Colisao de unique index (race condition) = volta a buscar o existente
       if (error.code === '23505' && input.sourceMessageId) {
-        const { data: existing } = await this.supabase
+        const { data: existing } = await client
           .from('testimonials')
           .select('id')
           .eq('source_message_id', input.sourceMessageId)

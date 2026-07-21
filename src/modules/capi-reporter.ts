@@ -21,11 +21,14 @@ export interface LeadCapiInfo {
   capi_stages_sent?: string[] | null;
 }
 
+// [MT fatia 3d] as deps de banco aceitam um `db` opcional (SupabaseService do
+// crachá) — o caminho da MENSAGEM passa o dele; sem db, singleton (crons/HTTP).
+// Tipado como unknown aqui pra não acoplar este módulo ao SupabaseService.
 export interface CapiReporterDeps {
   capi: MetaCapi;
   wabaId: string;
-  getLeadForCapi: (leadId: string) => Promise<LeadCapiInfo | null>;
-  recordCapiStage: (leadId: string, stage: string) => Promise<boolean>;
+  getLeadForCapi: (leadId: string, db?: unknown) => Promise<LeadCapiInfo | null>;
+  recordCapiStage: (leadId: string, stage: string, db?: unknown) => Promise<boolean>;
   /** Injetavel pra teste. Default: Date.now. */
   now?: () => number;
 }
@@ -33,7 +36,7 @@ export interface CapiReporterDeps {
 export type CapiReporter = (
   leadId: string,
   eventName: string,
-  opts?: { value?: number },
+  opts?: { value?: number; db?: unknown },
 ) => Promise<void>;
 
 export function makeCapiReporter(deps: CapiReporterDeps): CapiReporter {
@@ -41,7 +44,7 @@ export function makeCapiReporter(deps: CapiReporterDeps): CapiReporter {
 
   return async (leadId, eventName, opts) => {
     try {
-      const lead = await deps.getLeadForCapi(leadId);
+      const lead = await deps.getLeadForCapi(leadId, opts?.db);
       if (!lead?.ctwa_clid) return;
       if (lead.capi_stages_sent?.includes(eventName)) return;
 
@@ -56,7 +59,7 @@ export function makeCapiReporter(deps: CapiReporterDeps): CapiReporter {
 
       const res = await deps.capi.sendEvents([event]);
       if (res.ok) {
-        await deps.recordCapiStage(leadId, eventName);
+        await deps.recordCapiStage(leadId, eventName, opts?.db);
         console.log(`[capi] ${eventName} enviado pra Meta — lead=${leadId}`);
       } else {
         console.warn(`[capi] ${eventName} falhou pra lead=${leadId}: ${res.error}`);
