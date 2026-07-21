@@ -11,17 +11,25 @@ export interface EnviarPropostaInput {
   pdfBuffer: Buffer;
   pdfFilename: string;
   economiaMensal?: number | null; // pra linha persuasiva; null em só-serviço
+  economiaRemotaMensal?: number | null; // parte que abate a OUTRA unidade (autoconsumo remoto)
 }
 
 const fmtRs = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 
 // [ECOSOF] empresa() avaliada na CHAMADA (arrow function) — runtime, não load.
-const SAUDACAO = (nomeCliente: string | undefined, economiaMensal?: number | null) => {
+const SAUDACAO = (nomeCliente: string | undefined, economiaMensal?: number | null, economiaRemotaMensal?: number | null) => {
   const primeiro = (nomeCliente ?? '').trim().split(/\s+/)[0] || '';
   const ola = primeiro ? `Olá, ${primeiro}! 👋` : 'Olá! 👋';
+  // Autoconsumo remoto: o total não cabe em "sua conta fica X mais barata" — divide.
+  const remota = (typeof economiaRemotaMensal === 'number' && economiaRemotaMensal > 0
+    && typeof economiaMensal === 'number' && economiaMensal > economiaRemotaMensal)
+    ? economiaRemotaMensal
+    : 0;
   const linhaEconomia =
     typeof economiaMensal === 'number' && economiaMensal > 0
-      ? `Sua conta de luz fica cerca de ${fmtRs(economiaMensal)} mais barata por mês ☀️\n\n`
+      ? (remota > 0
+        ? `Sua conta de luz fica cerca de ${fmtRs(economiaMensal - remota)} mais barata por mês — e os créditos ainda abatem ${fmtRs(remota)} na sua outra unidade ☀️\n\n`
+        : `Sua conta de luz fica cerca de ${fmtRs(economiaMensal)} mais barata por mês ☀️\n\n`)
       : '';
   return (
     `${ola}\n\n` +
@@ -63,7 +71,7 @@ export async function enviarPropostaParaCliente(
     // 1) Saudação + botão clicável que ABRE a proposta web (URL escondida atrás do botão).
     await meta.sendCtaUrlButton(
       to,
-      SAUDACAO(input.nomeCliente, input.economiaMensal),
+      SAUDACAO(input.nomeCliente, input.economiaMensal, input.economiaRemotaMensal),
       BOTAO_VER,
       input.linkWebPublico,
     );

@@ -88,7 +88,8 @@ export function montarBlocoProposta(dados: unknown, nomeCliente?: string | null)
   if (geracao !== null) linhas.push(`- Geração estimada: ${fmtBr(geracao)} kWh/mês`);
   if (consumoKwh !== null) linhas.push(`- Consumo informado: ${fmtBr(consumoKwh)} kWh/mês`);
   if (valor !== null) linhas.push(`- Investimento total: R$ ${fmtBr(valor)}`);
-  if (economiaMensal !== null) linhas.push(`- Economia estimada: R$ ${fmtBr(economiaMensal)}/mês`);
+  const consumoRemoto = num(d.consumoRemotoMensalKwh);
+  if (economiaMensal !== null) linhas.push(`- Economia estimada: R$ ${fmtBr(economiaMensal)}/mês${(consumoRemoto !== null && consumoRemoto > 0) || d.consumoRemotoRestante ? ' (inclui a outra unidade do titular — parte abate a fatura de lá)' : ''}`);
   if (payback) linhas.push(`- Retorno (payback): ${payback}`);
 
   const lm = linhaModulo(d.modulo ?? opcaoA.modulo);
