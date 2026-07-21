@@ -151,3 +151,42 @@ describe('fatia 3d — singletons do caminho da mensagem no crachá', () => {
     expect(src).not.toMatch(/processFollowups\(db/);
   });
 });
+
+// FATIA 3e — company_id EXPLÍCITO + blindagem dos 0-linhas. É a última fatia
+// antes de ligar a RLS_EVA: sem o carimbo, sob crachá do tenant o dossiê/evento
+// caía no default EcoSun e o WITH CHECK da 079 rejeitava EM SILÊNCIO.
+describe('fatia 3e — carimbo de empresa e blindagem', () => {
+  const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const src = readFileSync(join(raiz, 'src', 'index.ts'), 'utf8');
+  const mod = (p: string) => readFileSync(join(raiz, 'src', 'modules', p), 'utf8');
+
+  it('paraMensagem propaga o companyId pro clone (companyIdDaMensagem)', () => {
+    const sup = mod('supabase.ts');
+    expect(sup).toContain('companyIdDaMensagem?: string');
+    expect(sup).toContain('this.comClient(c, companyId)');
+  });
+
+  it('saveDossier carimba a empresa', () => {
+    expect(src).toMatch(/saveDossier\(\{[\s\S]{0,400}?company_id: db\.companyIdDaMensagem \?\? ECOSUN_COMPANY_ID/);
+    expect(mod('supabase.ts')).toMatch(/interface DossierData \{[\s\S]{0,600}?company_id\?: string/);
+  });
+
+  it('upsertLead das actions (qualificado/transferido/agendado) carimba a empresa', () => {
+    expect((src.match(/status: '(qualificado|transferido|agendado)', company_id: db\.companyIdDaMensagem \?\? ECOSUN_COMPANY_ID/g) ?? []).length).toBe(3);
+  });
+
+  it('registrarEvento carimba a empresa nos 3 pontos do caminho da mensagem', () => {
+    expect((src.match(/companyId: db\.companyIdDaMensagem/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    // e o módulo só manda company_id quando informado (default da coluna intacto)
+    expect(mod('elo/eventos.ts')).toContain("...(ev.companyId ? { company_id: ev.companyId } : {})");
+  });
+
+  it('updates de leads POR PHONE das actions nunca engolem 0 linhas', () => {
+    expect((src.match(/\[action\]\[3e\].+atualizou 0 linhas/g) ?? []).length).toBe(3);
+  });
+
+  it('a leitura getLeadByPhone do caminho da mensagem roda pelo crachá', () => {
+    expect(src).not.toContain('supabase.getLeadByPhone(from)');
+    expect((src.match(/db\.getLeadByPhone\(from\)/g) ?? []).length).toBeGreaterThanOrEqual(6);
+  });
+});

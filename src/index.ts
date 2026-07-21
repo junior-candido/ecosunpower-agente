@@ -4383,7 +4383,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       return;
     }
     try {
-      let lead = await supabase.getLeadByPhone(from);
+      let lead = await db.getLeadByPhone(from);
 
       // Bloqueio: se lead existe e Eva esta INATIVA pra ele, ignora (Junior atende manual)
       // Lead novo (lead == null) sempre passa — sera criado com eva_active=true (default).
@@ -4524,7 +4524,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         void (async () => {
           try {
             const { alertNewLeadGoogleAds } = await import('./modules/eva-alerts.js');
-            const freshLead = await supabase.getLeadByPhone(from);
+            const freshLead = await db.getLeadByPhone(from);
             await alertNewLeadGoogleAds(
               { client: supabase.getClient(), engineerPhone: config.engineerPhone, sendText, metaWaba: metaWaba ?? null },
               leadId,
@@ -4807,6 +4807,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         canal: 'whatsapp',
         leadId,
         payload: { direcao: 'in' },
+        companyId: db.companyIdDaMensagem, // [3e] carimbo; undefined = default EcoSun
       });
 
       // Elo (casa Site): lead veio da COTACAO do site. O site e estatico e nao
@@ -4823,6 +4824,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           origem: 'site',
           leadId,
           payload: { fonte: 'cotacao' },
+          companyId: db.companyIdDaMensagem, // [3e]
         });
       }
 
@@ -4865,6 +4867,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         canal: 'whatsapp',
         leadId,
         payload: { direcao: 'out' },
+        companyId: db.companyIdDaMensagem, // [3e]
       });
 
       // Update conversation
@@ -4901,7 +4904,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       void (async () => {
         try {
           const { motivoEscalonamento, alertEscalonamento, leadEncerrado } = await import('./modules/eva-alerts.js');
-          const freshEscal = await supabase.getLeadByPhone(from);
+          const freshEscal = await db.getLeadByPhone(from);
           // Lead desqualificado/encerrado NESTE turno (disqualify_lead seta
           // eva_active=false/descartado/inviavel) -> NAO escalar: senao o Junior
           // recebe "Eva pediu reforco" contradizendo "Eva encerrou lead inviavel
@@ -5018,7 +5021,9 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           console.log(`[qualification_complete] lead ${from} ja agendado — pula alerta duplicado`);
           break;
         }
-        await db.upsertLead({ phone: from, status: 'qualificado' });
+        // [MT 3e] carimbo no fallback-INSERT (lead sumido = raro, mas sob crachá
+        // o insert sem company_id caía no default EcoSun e o WITH CHECK rejeitava)
+        await db.upsertLead({ phone: from, status: 'qualificado', company_id: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID });
         // CAPI estagio 2: lead passou no criterio (R$700/700kWh). Carimbo
         // 'lead_qualificado' pra Meta — alvo de otimizacao. Fire-and-forget.
         void capiReporter(leadId, 'lead_qualificado', { db });
@@ -5043,11 +5048,15 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             recommendation: 'Entrar em contato para apresentar proposta.',
           });
 
+          // [MT fatia 3e] carimbo explícito da empresa: sem ele, sob tenant B o
+          // dossiê caía no default EcoSun e o WITH CHECK da 079 REJEITAVA — o
+          // dossiê sumia falha-fechado (achado do review da 3c).
           await db.saveDossier({
             lead_id: leadId,
             content: action.data,
             formatted_text: dossierText,
             status: 'sent',
+            company_id: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID,
           });
 
           if (!isSandbox) {
@@ -5089,7 +5098,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       }
 
       case 'transfer_to_human': {
-        await db.upsertLead({ phone: from, status: 'transferido' });
+        await db.upsertLead({ phone: from, status: 'transferido', company_id: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID }); // [3e]
         await db.updateConversation(conversationId, {
           qualification_step: 'transferido',
           session_status: 'completed',
@@ -5287,7 +5296,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
           // Lead -> status agendado (sai do limbo). Cadencia automatica pra
           // este lead deve parar — Eva ja fechou o objetivo principal.
-          await db.upsertLead({ phone: from, status: 'agendado' });
+          await db.upsertLead({ phone: from, status: 'agendado', company_id: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID }); // [3e]
           await db.cancelCadence(leadId, 'visita_agendada').catch(() => {});
 
           // Alerta WABA pro Junior — agendamento eh sinal QUENTE, ele precisa
@@ -5347,10 +5356,14 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
       case 'opt_out': {
         // Client requested to stop receiving messages
-        await db.getClient()
+        // [MT 3e] blindagem: sob crachá, 0 linhas = lead invisível pro tenant
+        // (leitura errada a montante) — loga ALTO em vez de fingir sucesso.
+        const { data: optOutRows } = await db.getClient()
           .from('leads')
           .update({ opt_out: true, updated_at: new Date().toISOString() })
-          .eq('phone', from);
+          .eq('phone', from)
+          .select('id');
+        if (!optOutRows?.length) console.warn(`[action][3e] opt_out atualizou 0 linhas pra ${from} — lead fora do tenant?`);
         // Also cancel any pending reengagement touches
         const canceled = await reengagement.cancelAllTouches(leadId, db.getClient());
         if (canceled > 0) console.log(`[reengagement] Canceled ${canceled} touches after opt-out`);
@@ -5370,10 +5383,12 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         // com botoes pra ele confirmar/desfazer manualmente.
         const reason = (action.data as Record<string, unknown> | undefined)?.reason as string | undefined ?? 'tema fora do escopo';
         const now = new Date().toISOString();
-        await db.getClient()
+        const { data: offTopicRows } = await db.getClient()
           .from('leads')
           .update({ opt_out: true, eva_active: false, status: 'perdido', updated_at: now })
-          .eq('phone', from);
+          .eq('phone', from)
+          .select('id');
+        if (!offTopicRows?.length) console.warn(`[action][3e] mark_off_topic atualizou 0 linhas pra ${from} — lead fora do tenant?`);
         // Cancela cadencia/reengagement/postinstall pendente
         await db.cancelCadence(leadId, 'off_topic').catch(() => {});
         await reengagement.cancelAllTouches(leadId, db.getClient()).catch(() => 0);
@@ -5426,10 +5441,12 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           leadName: dqLead?.name,
           phone: from,
         });
-        await db.getClient()
+        const { data: dqRows } = await db.getClient()
           .from('leads')
           .update(leadPatch)
-          .eq('phone', from);
+          .eq('phone', from)
+          .select('id');
+        if (!dqRows?.length) console.warn(`[action][3e] disqualify_lead atualizou 0 linhas pra ${from} — lead fora do tenant?`);
         await db.cancelCadence(leadId, 'disqualify_lead').catch(() => {});
         await reengagement.cancelAllTouches(leadId, db.getClient()).catch(() => 0);
         if (postInstall) await postInstall.cancelAll(leadId, db.getClient()).catch(() => 0);
@@ -5645,7 +5662,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       }
 
       // Arquiva o audio original no cofre do lead (Junior quer TUDO em maos)
-      const audioLead = await supabase.getLeadByPhone(from).catch(() => null);
+      const audioLead = await db.getLeadByPhone(from).catch(() => null);
       if (audioLead) await archiveInboundMedia(supabase, audioLead.id, 'audio', media.base64, media.mimetype, messageId);
 
       const text = await transcriber.transcribeFromBase64(media.base64, media.mimetype);
@@ -5695,7 +5712,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     }
     await cancelIntroIfPending(from, db);
     try {
-      const lead = await supabase.getLeadByPhone(from);
+      const lead = await db.getLeadByPhone(from);
       const context = lead?.name
         ? `Cliente: ${lead.name}, Cidade: ${lead.city ?? 'nao informada'}, Perfil: ${lead.profile ?? 'indefinido'}`
         : 'Cliente novo, ainda sem dados coletados';
@@ -5777,7 +5794,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     }
     await cancelIntroIfPending(from, db);
     try {
-      const lead = await supabase.getLeadByPhone(from);
+      const lead = await db.getLeadByPhone(from);
       if (!isSandbox) await sendText(from, 'Recebi o video! Deixa eu dar uma olhada...');
 
       const media = await messaging.getMediaBase64(messageId);
@@ -5910,7 +5927,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         return;
       }
 
-      const lead = await supabase.getLeadByPhone(from);
+      const lead = await db.getLeadByPhone(from);
       const context = lead?.name
         ? `Cliente: ${lead.name}, Cidade: ${lead.city ?? 'nao informada'}, Perfil: ${lead.profile ?? 'indefinido'}`
         : 'Cliente novo, ainda sem dados coletados';
