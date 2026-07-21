@@ -97,6 +97,11 @@ export function montarBlocoProposta(dados: unknown, nomeCliente?: string | null)
   const li = linhaInversor(d.inversor ?? opcaoA.inversor);
   if (li) linhas.push(li);
 
+  // Observações do Junior na proposta — a Eva PRECISA saber delas na conversa
+  // (ex: cliente pergunta "é preparado pra bateria?" e a resposta está na obs).
+  const obs = Array.isArray(d.observacoes) ? d.observacoes.filter((o: unknown): o is string => typeof o === 'string' && o.trim().length > 0) : [];
+  for (const o of obs.slice(0, 8)) linhas.push(`- Observação da proposta: ${txt(o, 200)}`);
+
   // Se houver mais de uma opção na comparação, sinaliza pra Eva poder comparar.
   if (Array.isArray(d.comparacao) && d.comparacao.length > 1) {
     const outras = d.comparacao

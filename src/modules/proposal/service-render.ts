@@ -188,7 +188,7 @@ ${blocosServico}
 ${(data.observacoes && data.observacoes.length > 0) ? `<section style="padding:24px 24px 0;max-width:900px;margin:0 auto">
   <h2 style="font-family:'Space Grotesk',sans-serif;font-size:22px;margin-bottom:12px">Observações</h2>
   <div style="background:#FFFBEB;border:1px solid #FDE68A;border-left:4px solid #F59E0B;border-radius:14px;padding:20px 24px">
-    ${data.observacoes.map(o => `<div style="display:flex;gap:10px;align-items:flex-start;padding:6px 0;font-size:15px;color:#1F2937;line-height:1.6"><span>📌</span><span>${escapeHtml(o)}</span></div>`).join('')}
+    ${data.observacoes.map(o => `<div style="display:flex;gap:10px;align-items:flex-start;padding:6px 0;font-size:15px;color:#1F2937;line-height:1.6;break-inside:avoid"><span>📌</span><span style="white-space:pre-line">${escapeHtml(o)}</span></div>`).join('')}
   </div>
 </section>` : ''}
 

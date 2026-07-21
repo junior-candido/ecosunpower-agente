@@ -4383,6 +4383,17 @@ export function createDashboardRouter(
       }
       // Reabrir "atualizar essa": preserva o número da proposta original.
       const orig = await supabaseService.getPropostaInputBySlug(slug);
+      // Campos que o FORM não edita (vêm da Eva): sem este merge, salvar pelo
+      // dashboard APAGAVA observações/serviços/bateria/comparação/remoto da
+      // proposta original EM SILÊNCIO (achado de review 21/07). O form manda
+      // undefined pra eles — se um dia o form ganhar o campo, o form vence.
+      {
+        const di = (orig?.dadosInput ?? {}) as Record<string, unknown>;
+        const alvo = parsed.data as Record<string, unknown>;
+        for (const k of ['observacoes', 'observacao', 'servicos', 'bateria', 'comparacao', 'consumoRemotoMensalKwh', 'consumoRemotoRestante']) {
+          if (alvo[k] === undefined && di[k] !== undefined) alvo[k] = di[k];
+        }
+      }
       await options.proposalAssistant.generateProposalCore({ data: parsed.data, modoEnvio: 'junior_envia', tipo: parsed.tipo, attachments, reopenSlug: slug, numeroProposta: orig?.numeroProposta });
       return res.redirect(303, `/dashboard/propostas/${slug}/preview?lead_id=`);
     } catch (err) {
