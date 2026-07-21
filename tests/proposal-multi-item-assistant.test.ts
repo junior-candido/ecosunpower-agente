@@ -134,6 +134,22 @@ describe('montarInputOpcaoComparacao', () => {
     expect(out.geracaoMensalKwhDistribuido).toEqual(doze);
   });
 
+  it('topo com array + Opção B com número único próprio: o número da B manda, o array não vaza', () => {
+    const dataComEstudo = { ...data, geracaoMensalKwhDistribuido: [2200, 2180, 2150, 2100, 2050, 2000, 2080, 2150, 2200, 2220, 2240, 2254] };
+    const op = { potenciaKwp: 8.5, valorTotalRs: 18837, geracaoMensalKwh: 1076 };
+    const out = montarInputOpcaoComparacao(dataComEstudo, op, 1);
+    expect(out.geracaoMensalKwh).toBe(1076);
+    expect(out.geracaoMensalKwhDistribuido).toBeUndefined();
+  });
+
+  it('se a Opção B trouxer os 12 meses dela pelo ALIAS (geracaoMensal12Meses), o dela manda', () => {
+    const dozeDaB = [1100, 1090, 1075, 1050, 1025, 1000, 1040, 1075, 1100, 1110, 1120, 1127];
+    const dataComEstudo = { ...data, geracaoMensal12Meses: [2200, 2180, 2150, 2100, 2050, 2000, 2080, 2150, 2200, 2220, 2240, 2254] };
+    const op = { potenciaKwp: 8.5, valorTotalRs: 18837, geracaoMensal12Meses: dozeDaB };
+    const out = montarInputOpcaoComparacao(dataComEstudo, op, 1);
+    expect(out.geracaoMensal12Meses).toEqual(dozeDaB);
+  });
+
   it('se a própria Opção B trouxer os 12 meses dela (estudo próprio), esses mandam', () => {
     const dozeDaB = [1100, 1090, 1075, 1050, 1025, 1000, 1040, 1075, 1100, 1110, 1120, 1127];
     const dataComEstudo = { ...data, geracaoMensalKwhDistribuido: [2200, 2180, 2150, 2100, 2050, 2000, 2080, 2150, 2200, 2220, 2240, 2254] };
