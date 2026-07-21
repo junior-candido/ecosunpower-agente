@@ -71,6 +71,20 @@ export function mapServicosFromClaude(raw: unknown): ServicoItem[] | undefined {
   return itens.length > 0 ? itens : undefined;
 }
 
+// OBSERVAÇÕES da proposta (pedido Junior 21/07: "inversor híbrido sem bateria,
+// obs de que já é preparado pra receber" — a Eva aceitava e o texto sumia,
+// porque o campo NÃO EXISTIA). Texto do JUNIOR, textual, em qualquer modo.
+// Saneamento: aceita string ou lista, tira vazios, teto 8 × 600 chars.
+export function observacoesDaProposta(raw: unknown): string[] | undefined {
+  const lista = Array.isArray(raw) ? raw : (typeof raw === 'string' ? [raw] : []);
+  const limpas = lista
+    .filter((o): o is string => typeof o === 'string')
+    .map((o) => o.trim().slice(0, 600))
+    .filter((o) => o.length > 0)
+    .slice(0, 8);
+  return limpas.length > 0 ? limpas : undefined;
+}
+
 // Monta as linhas de resumo dos serviços pro WhatsApp do Junior depois de gerar
 // a proposta. Serviços "a mais" somam ao total geral; "já incluso" aparecem à
 // parte (sem custo extra, não mudam o total). Sem serviços => nenhuma linha.
@@ -148,6 +162,7 @@ export function buildServiceOnlyData(params: {
     servicos,
     totalRs: totalServicos,
     formasPagamento: data.formasPagamento ?? criarPagamentoPadrao(totalServicos),
+    observacoes: observacoesDaProposta(data.observacoes),
     empresa,
   };
 }
@@ -497,6 +512,7 @@ ${marcasKnowledge}
    **ON-GRID × HÍBRIDO na mesma comparação:** funciona — a \`bateria\` vai DENTRO da opção híbrida (com \`fabricante\`, \`modelo\`, \`capacidadeKwh\`, \`quantidade\`); a opção sem bateria é on-grid. A bateria do topo do \`data\` pertence à Opção A — NUNCA copie a bateria da A pra dentro da B. Na comparação, "híbrido" descreve a OPÇÃO que tem bateria — NÃO escreva "híbrido" na \`modalidade\`/\`tipoCliente\` do topo (que valem pras duas). **PERGUNTE O MODO da bateria** (*"a bateria vai ciclar todo dia guardando o excedente (autoconsumo) ou é só backup pra falta de luz?"*) e preencha \`modo\` dentro da bateria da opção ("autoconsumo" | "backup" | "time_of_use") — é o modo que muda o número: **autoconsumo/time_of_use injetam bem menos na rede (menos Fio B, economia maior); backup rende IGUAL ao on-grid** (a bateria fica de reserva) — nesse caso a diferença entre as opções é preço e segurança, não economia, e você NÃO deve prometer economia maior. Bateria precisa vir COMPLETA (capacidadeKwh e quantidade) pra linha "Bateria" aparecer no card. Serviços extras (\`servicos[]\`) continuam no topo, valem pra proposta inteira e convivem normalmente com a comparação.
 12. **ECONOMIA MENSAL EM R$:** a proposta mostra pro cliente quanto ele economiza POR MÊS em reais (o número que ele mais entende). Pra esse valor sair certo, peça ao Junior — quando ele não informar — a **tarifa real do kWh da conta** (\`tarifaRsKwh\`) e o **valor da iluminação pública** da conta (\`custoIluminacaoPublica\`). São RECOMENDADOS, não bloqueiam: se o Junior não tiver, use os defaults do sistema e siga. Quando ele informar, respeite o número dele.
 13. **AUTOCONSUMO REMOTO (outra unidade do titular):** quando o sistema gera MAIS do que o consumo da casa (ex: estudo dimensionado pra 2 unidades) OU quando o Junior mencionar "outra casa/unidade/os créditos vão pra...", PERGUNTE: *"Os créditos que sobram vão abater outra unidade do cliente? Quanto ela consome por mês (kWh)?"* e preencha \`consumoRemotoMensalKwh\` (número, kWh/mês somado das outras unidades). Se o Junior disser **"o restante/o que sobrar vai pra outra unidade"** sem dar número, preencha \`consumoRemotoRestante: true\` (o motor manda TODA a sobra pra lá). O sistema calcula a economia de lá (com Fio B) e mostra a divisão "nesta casa + na outra unidade" — a economia fica MAIOR e mais real. NUNCA invente o número; sem resposta do Junior, deixe ambos ausentes (a sobra aparece como crédito guardado).
+14. **OBSERVAÇÕES DO JUNIOR (qualquer modo):** quando o Junior pedir pra "colocar uma observação/obs/nota" na proposta (ex: *"coloca a obs de que o inversor híbrido já é preparado pra receber baterias"*), capture o texto DELE — o mais fiel possível, só ajustando gramática mínima — em \`observacoes\` (lista de strings). A proposta mostra numa seção "Observações" própria, em QUALQUER modo (solar, comparação, híbrida, só-serviço). NUNCA invente observação nem complete com informação técnica que ele não disse; máx. 8. Repita as observações no resumo de confirmação pro Junior conferir o texto ANTES de gerar.
 
 # FORMATO DE RESPOSTA
 
@@ -540,6 +556,7 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
       { "titulo": "Carregador EV", "descricao": "Wallbox 7,4 kW instalado com circuito dedicado", "valorRs": 4500, "jaIncluso": false },
       { "titulo": "Adequação de padrão", "descricao": "Troca do padrão de entrada para trifásico", "valorRs": 1000, "jaIncluso": true }
     ],
+    "observacoes": ["O inversor híbrido já é preparado para receber baterias no futuro."],
     "comparacao": [
       { "rotulo": "Opção A", "potenciaKwp": 8.4, "valorTotalRs": 38500, "modulo": { "fabricante": "Trina", "modelo": "Vertex 700W", "potenciaW": 700, "quantidade": 12 }, "inversor": { "fabricante": "Sungrow", "modelo": "SG5.0RS-L", "quantidade": 1 } },
       { "rotulo": "Opção B", "potenciaKwp": 10.5, "valorTotalRs": 48000, "modulo": { "fabricante": "LONGi", "modelo": "Hi-MO X10 580W", "potenciaW": 580, "quantidade": 18 }, "inversor": { "fabricante": "SolarEdge", "modelo": "SE7K", "quantidade": 1 } }
@@ -2017,6 +2034,7 @@ export class ProposalAssistant {
         valorComServicos,
       ),
       servicos,
+      observacoes: observacoesDaProposta(data.observacoes),
       empresa: this.companyDefaults,
     };
   }

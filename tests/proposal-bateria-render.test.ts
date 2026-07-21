@@ -55,6 +55,33 @@ describe('render — autoconsumo remoto na proposta principal', () => {
   });
 });
 
+describe('render — observações do Junior (pedido 21/07: híbrido preparado p/ baterias)', () => {
+  it('proposta normal: seção Observações com o texto do Junior, escapado', () => {
+    const data = baseData();
+    data.observacoes = ['O inversor híbrido já é preparado para receber baterias.', '<script>alert(1)</script>'];
+    const html = renderProposalHTML(data, baseCalc());
+    expect(html).toContain('Observações');
+    expect(html).toContain('O inversor híbrido já é preparado para receber baterias.');
+    expect(html).not.toContain('<script>alert(1)');
+    expect(html).toContain('&lt;script&gt;');
+  });
+
+  it('modo COMPARAÇÃO também mostra as observações (qualquer modo)', () => {
+    const data = baseData();
+    data.modoComparacao = true;
+    data.comparacaoHtml = '<section>comparacao</section>';
+    data.observacoes = ['Inversor preparado para baterias.'];
+    const html = renderProposalHTML(data, baseCalc());
+    expect(html).toContain('Observações');
+    expect(html).toContain('Inversor preparado para baterias.');
+  });
+
+  it('sem observações: seção não aparece', () => {
+    const html = renderProposalHTML(baseData(), baseCalc());
+    expect(html).not.toContain('>Observações<');
+  });
+});
+
 describe('render — serviços na proposta com comparação (pedido 21/07)', () => {
   it('modo comparação MOSTRA os serviços, com soma só deles (sem total de uma opção)', () => {
     const data = baseData();
