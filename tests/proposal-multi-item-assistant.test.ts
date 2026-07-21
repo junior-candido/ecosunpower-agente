@@ -101,6 +101,23 @@ describe('buildComparacaoOpcao', () => {
     expect(o.consumoMensalKwh).toBeUndefined();
   });
 
+  it('bateria INCOMPLETA (sem capacidade/quantidade) não vira linha "Bateria" no card', () => {
+    const o = buildComparacaoOpcao('A',
+      { ...dados, bateria: { fabricante: 'BYD', modelo: 'B-Box' } } as any, // sem capacidade nem quantidade
+      { geracaoMensalKwh: 300, paybackAnos: 4, paybackMeses: 0, paybackInviavel: false, economiaVidaUtil: 8000 } as any);
+    expect(o.bateriaModelo).toBeUndefined();
+    expect(o.bateriaFabricante).toBeUndefined();
+  });
+
+  it('bateria completa carrega pro card', () => {
+    const o = buildComparacaoOpcao('A',
+      { ...dados, bateria: { fabricante: 'BYD', modelo: 'B-Box HVS', capacidadeKwh: 10.2, quantidade: 1 } } as any,
+      { geracaoMensalKwh: 300, paybackAnos: 4, paybackMeses: 0, paybackInviavel: false, economiaVidaUtil: 8000 } as any);
+    expect(o.bateriaModelo).toBe('B-Box HVS');
+    expect(o.bateriaCapacidadeKwh).toBe(10.2);
+    expect(o.bateriaQuantidade).toBe(1);
+  });
+
   it('carrega quantidade/modelo dos equipamentos e a economia mensal arredondada', () => {
     const dadosCompletos = {
       potenciaKwp: 8.4, valorTotalRs: 38500,
@@ -219,6 +236,28 @@ describe('montarInputOpcaoComparacao', () => {
     const bComBateria = montarInputOpcaoComparacao(dataHibrida,
       { potenciaKwp: 8.5, valorTotalRs: 28000, bateria: { fabricante: 'Huawei', modelo: 'LUNA', capacidadeKwh: 5, quantidade: 1 } }, 1);
     expect(bComBateria.bateria?.fabricante).toBe('Huawei');
+  });
+
+  it('simultaneidade editada no topo (da A) NÃO vaza pra B — a B usa a sugerida do perfil dela', () => {
+    const dataComInjecao = { ...data, percentualGeracaoInjetada: 0.15 }; // Junior editou olhando a A híbrida
+    const out = montarInputOpcaoComparacao(dataComInjecao, { potenciaKwp: 8.5, valorTotalRs: 18837 }, 1);
+    expect(out.percentualGeracaoInjetada).toBeUndefined();
+    // se a própria B trouxer a dela, essa vale
+    const comPropria = montarInputOpcaoComparacao(dataComInjecao, { potenciaKwp: 8.5, valorTotalRs: 18837, percentualGeracaoInjetada: 0.45 }, 1);
+    expect(comPropria.percentualGeracaoInjetada).toBe(0.45);
+  });
+
+  it('palavra "híbrido" na modalidade do topo não contamina opção SEM bateria própria', () => {
+    const dataHibrida = {
+      ...data, modalidade: 'híbrido com bateria',
+      bateria: { fabricante: 'BYD', modelo: 'B-Box', capacidadeKwh: 10.2, quantidade: 1 },
+    };
+    const b = montarInputOpcaoComparacao(dataHibrida, { potenciaKwp: 8.5, valorTotalRs: 18837 }, 1);
+    // sem bateria própria, a B não pode "parecer" híbrida pelo texto do topo
+    expect(String(b.modalidade ?? '')).not.toMatch(/h[ií]brid|bateria/i);
+    // a A (índice 0) mantém tudo — ela É a híbrida
+    const a = montarInputOpcaoComparacao(dataHibrida, { potenciaKwp: 17, valorTotalRs: 32290 }, 0);
+    expect(a.modalidade).toBe('híbrido com bateria');
   });
 
   it('não muta o data original', () => {

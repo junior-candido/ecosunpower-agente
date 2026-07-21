@@ -193,6 +193,9 @@ export function buildComparacaoOpcao(
   const creditosKwh = calc.creditosGuardadosKwh ?? calc.contaComDetalhada?.creditosKwh;
   const remotoKwh = calc.creditosUsadosRemotoKwh;
   const remotaRs = calc.economiaRemotaMensal;
+  // Linha "Bateria" só com bateria DE VERDADE (mesma régua do motor: capacidade e
+  // quantidade > 0) — senão o card diria "híbrido" com o cálculo rodando on-grid.
+  const bateriaValida = temBateria(dados.bateria as any) ? dados.bateria : undefined;
   return {
     rotulo,
     potenciaKwp: dados.potenciaKwp,
@@ -204,10 +207,10 @@ export function buildComparacaoOpcao(
     creditosMensalKwh: (creditosKwh && creditosKwh > 0) ? Math.round(creditosKwh) : undefined,
     creditosRemotoKwh: (remotoKwh && remotoKwh > 0) ? Math.round(remotoKwh) : undefined,
     economiaRemotaRs: (remotaRs && remotaRs > 0) ? Math.round(remotaRs) : undefined,
-    bateriaFabricante: dados.bateria?.fabricante,
-    bateriaModelo: dados.bateria?.modelo,
-    bateriaCapacidadeKwh: (Number(dados.bateria?.capacidadeKwh) > 0) ? Number(dados.bateria?.capacidadeKwh) : undefined,
-    bateriaQuantidade: (Number(dados.bateria?.quantidade) > 0) ? Number(dados.bateria?.quantidade) : undefined,
+    bateriaFabricante: bateriaValida?.fabricante,
+    bateriaModelo: bateriaValida?.modelo,
+    bateriaCapacidadeKwh: (Number(bateriaValida?.capacidadeKwh) > 0) ? Number(bateriaValida?.capacidadeKwh) : undefined,
+    bateriaQuantidade: (Number(bateriaValida?.quantidade) > 0) ? Number(bateriaValida?.quantidade) : undefined,
     geracaoMensalDistribuida: calc.geracaoMensalDistribuida,
     consumoMensalKwh: (Number(dados.consumoMensalKwh) > 0) ? Number(dados.consumoMensalKwh) : undefined,
     cartaoParcelaRs: dados.cartaoParcelaRs,
@@ -243,6 +246,9 @@ export function montarInputOpcaoComparacao(data: any, op: any, indice: number): 
     // híbrida se trouxer bateria PRÓPRIA — senão herdaria o tipo de sistema da A.
     delete base.bateria;
     delete base.modoBateria;
+    // Simultaneidade editada no topo é da A (Junior ajusta olhando a bateria
+    // dela) — a B usa a sugerida do perfil, ou a própria se vier na opção.
+    delete base.percentualGeracaoInjetada;
   }
   // Consumo de cenário só vale se for número de verdade — 0/negativo/lixo do
   // extrator não pode sobrescrever o consumo do cliente em silêncio.
@@ -250,7 +256,16 @@ export function montarInputOpcaoComparacao(data: any, op: any, indice: number): 
   const opLimpa = { ...op };
   if (!(Number(opLimpa.consumoMensalKwh) > 0)) delete opLimpa.consumoMensalKwh;
   if (!(Number(opLimpa.consumoRemotoMensalKwh) > 0)) delete opLimpa.consumoRemotoMensalKwh;
-  return { ...base, ...opLimpa };
+  const out = { ...base, ...opLimpa };
+  // Blindagem do classificador: "híbrido"/"bateria" escritos na modalidade ou
+  // tipoCliente do topo descrevem a opção COM bateria — numa opção sem bateria
+  // própria, o texto contaminaria o tipoSistema (regex do calculator). Limpa nas
+  // CÓPIAS; perfil (residencial/comercial/rural) e off-grid não usam essas palavras.
+  if (!temBateria(out.bateria)) {
+    if (typeof out.modalidade === 'string') out.modalidade = out.modalidade.replace(/h[ií]brid\w*|bateria\w*/gi, '').replace(/\s+/g, ' ').trim();
+    if (typeof out.tipoCliente === 'string') out.tipoCliente = out.tipoCliente.replace(/h[ií]brid\w*|bateria\w*/gi, '').replace(/\s+/g, ' ').trim();
+  }
+  return out;
 }
 
 // Comparação de 2 sistemas: o extrator (LLM) deve repetir a Opção A no topo do `data`
@@ -479,7 +494,7 @@ ${marcasKnowledge}
     No resumo de conferência (\`ready_to_generate\`) da proposta de serviço, liste CADA serviço com o preço e o total no final (ex: "• Adequação de padrão — R$ 2.500\\n• SPDA — R$ 1.800\\n💵 Total: R$ 4.300"); no valor fechado, liste as tarefas e o total único. NÃO liste os campos solares em \`missing\`.
 11. **COMPARAÇÃO (2 sistemas solares):** se o Junior quiser que o cliente compare duas opções de sistema, preencha a proposta normalmente com a **Opção A** (potência, módulo, inversor, valorTotalRs no nível principal do \`data\`) E devolva \`comparacao: [opcaoA, opcaoB]\`. **CADA opção precisa vir COMPLETA** — não só a marca: \`rotulo\`, \`potenciaKwp\`, \`valorTotalRs\`, \`modulo\` (com \`fabricante\`, \`modelo\`, \`potenciaW\` e \`quantidade\`) e \`inversor\` (com \`fabricante\`, \`modelo\` e \`quantidade\`). As duas opções têm de ser **DIFERENTES de verdade** (potência/equipamento/valor distintos) — se o Junior só descreveu UM sistema, NÃO invente o outro: peça os dados do segundo sistema (\`action: ask_more\`, listando o que falta da Opção B). NÃO marque recomendação — as duas são neutras. O sistema calcula a geração/payback de CADA uma pela potência dela (você NÃO calcula nada) e monta o quadro comparativo lado a lado. ⚠️ **NUNCA copie a geração do estudo (nem \`geracaoMensalKwh\` nem \`geracaoMensalKwhDistribuido\`) pra DENTRO das opções de \`comparacao[]\`** — o estudo do topo pertence à Opção A; só inclua geração dentro de uma opção se o Junior mandar estudo PRÓPRIO daquela opção.
    **PERGUNTE POR OPÇÃO (comparação bem feita):** ao coletar os dados da comparação, pergunte explicitamente, de forma curta: (1) *"Alguma das opções tem estudo PVSol próprio? Se sim, qual e com que geração?"* — o estudo da **Opção A fica no TOPO do \`data\`, como sempre** (nunca o mova pra dentro de \`comparacao[0]\`); estudo próprio de OUTRA opção (B em diante) entra DENTRO daquela opção (\`geracaoMensalKwh\` ou \`geracaoMensalKwhDistribuido\` na própria opção); (2) *"As duas são pro mesmo consumo do cliente, ou cada uma é um cenário?"* — se o Junior disser que uma opção é pra outro consumo (ex: "a B é pra 800 kWh"), preencha \`consumoMensalKwh\` DENTRO daquela opção; sem resposta, as duas usam o consumo do cliente do topo. NUNCA invente estudo nem consumo de cenário — só preencha dentro da opção o que o Junior disser explicitamente.
-   **ON-GRID × HÍBRIDO na mesma comparação:** funciona — a \`bateria\` vai DENTRO da opção híbrida (com \`fabricante\`, \`modelo\`, \`capacidadeKwh\`, \`quantidade\`); a opção sem bateria é on-grid. A bateria do topo do \`data\` pertence à Opção A — NUNCA copie a bateria da A pra dentro da B. O sistema calcula cada opção com o tipo dela (híbrido injeta menos, paga menos Fio B) e mostra a linha "Bateria" no card da híbrida. Serviços extras (\`servicos[]\`) continuam no topo, valem pra proposta inteira e convivem normalmente com a comparação.
+   **ON-GRID × HÍBRIDO na mesma comparação:** funciona — a \`bateria\` vai DENTRO da opção híbrida (com \`fabricante\`, \`modelo\`, \`capacidadeKwh\`, \`quantidade\`); a opção sem bateria é on-grid. A bateria do topo do \`data\` pertence à Opção A — NUNCA copie a bateria da A pra dentro da B. Na comparação, "híbrido" descreve a OPÇÃO que tem bateria — NÃO escreva "híbrido" na \`modalidade\`/\`tipoCliente\` do topo (que valem pras duas). O sistema calcula cada opção com o tipo dela (híbrido injeta menos, paga menos Fio B) e mostra a linha "Bateria" no card da híbrida (bateria precisa vir COMPLETA: capacidadeKwh e quantidade). Serviços extras (\`servicos[]\`) continuam no topo, valem pra proposta inteira e convivem normalmente com a comparação.
 12. **ECONOMIA MENSAL EM R$:** a proposta mostra pro cliente quanto ele economiza POR MÊS em reais (o número que ele mais entende). Pra esse valor sair certo, peça ao Junior — quando ele não informar — a **tarifa real do kWh da conta** (\`tarifaRsKwh\`) e o **valor da iluminação pública** da conta (\`custoIluminacaoPublica\`). São RECOMENDADOS, não bloqueiam: se o Junior não tiver, use os defaults do sistema e siga. Quando ele informar, respeite o número dele.
 13. **AUTOCONSUMO REMOTO (outra unidade do titular):** quando o sistema gera MAIS do que o consumo da casa (ex: estudo dimensionado pra 2 unidades) OU quando o Junior mencionar "outra casa/unidade/os créditos vão pra...", PERGUNTE: *"Os créditos que sobram vão abater outra unidade do cliente? Quanto ela consome por mês (kWh)?"* e preencha \`consumoRemotoMensalKwh\` (número, kWh/mês somado das outras unidades). Se o Junior disser **"o restante/o que sobrar vai pra outra unidade"** sem dar número, preencha \`consumoRemotoRestante: true\` (o motor manda TODA a sobra pra lá). O sistema calcula a economia de lá (com Fio B) e mostra a divisão "nesta casa + na outra unidade" — a economia fica MAIOR e mais real. NUNCA invente o número; sem resposta do Junior, deixe ambos ausentes (a sobra aparece como crédito guardado).
 
