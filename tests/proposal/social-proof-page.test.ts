@@ -78,10 +78,23 @@ describe('renderSocialProofPage', () => {
       ...baseCase, slug: `c${i}`, titulo: `Caso ${i}`, kwp: 10 + i,
     }));
     const html = renderSocialProofPage({ cases, googleNota: '4.9', googleQtdAvaliacoes: 0 });
-    expect(html).toContain('grid-template-columns:repeat(3,1fr)');
+    expect(html).toContain('grid-template-columns:repeat(auto-fit,minmax(200px,1fr))'); // 3 col no A4, 1-2 no celular
     expect(html).toContain('object-fit:cover');
     expect(html).not.toContain('height:120px'); // a tira antiga morreu
     expect(html).toContain('break-inside:avoid'); // card não parte no PDF
+  });
+
+  it('cliente de tipo SEM case (rural): rótulo honesto, sem "parecidos com o seu projeto"', () => {
+    const cases: Case[] = [{ ...baseCase, tipo: 'residencial' }];
+    const html = renderSocialProofPage({ cases, googleNota: '4.9', googleQtdAvaliacoes: 0, tipoCliente: 'rural' });
+    expect(html).not.toContain('parecidos com o seu projeto');
+    expect(html).toContain('Obras da EcoSunPower');
+  });
+
+  it('cliente com case do tipo: rótulo "parecidos" continua', () => {
+    const cases: Case[] = [{ ...baseCase, tipo: 'residencial' }];
+    const html = renderSocialProofPage({ cases, googleNota: '4.9', googleQtdAvaliacoes: 0, tipoCliente: 'residencial' });
+    expect(html).toContain('parecidos com o seu projeto');
   });
 
   it('com só 3 cases continua bonito (grade se ajusta, nada quebra)', () => {

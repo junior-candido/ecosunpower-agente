@@ -782,8 +782,8 @@ export class ProposalAssistant {
   }
 
   // Busca 3 cases similares ao tipo do cliente e renderiza o HTML da pagina
-  // de prova social que vai antes do CTA "fechar" no PDF/web da proposta.
-  // Retorna '' se algo falhar — proposta segue sem prova social, sem quebrar.
+  // de prova social (6 obras em grade 3×2) que vai antes do CTA "fechar" no
+  // PDF/web. Retorna '' se algo falhar — proposta segue sem prova social.
   private async buildSocialProofHtml(tipoCliente: string | undefined): Promise<string> {
     try {
       const tipo = this.tipoToCaseTipo(tipoCliente);
@@ -795,6 +795,7 @@ export class ProposalAssistant {
         cases,
         googleNota: this.googleNota,
         googleQtdAvaliacoes: this.googleQtdAvaliacoes,
+        tipoCliente: tipo,
       });
     } catch (err) {
       console.warn('[proposal/social-proof] erro montando bloco:', (err as Error).message);
