@@ -109,6 +109,39 @@ describe('montarInputOpcaoComparacao', () => {
     expect(out.geracaoMensalKwh).toBe(1350);
   });
 
+  // Bug real (proposta 21/07): estudo PVSol veio como os 12 MESES (geracaoMensalKwhDistribuido).
+  // A Opção B herdava o array do topo e saía com a MESMA geração da A (2.152 kWh/mês nas duas,
+  // mesmo a B tendo metade da potência). O array do estudo é da Opção A, igual ao número único.
+  it('Opção B NÃO herda os 12 meses do estudo (geracaoMensalKwhDistribuido) do topo', () => {
+    const doze = [2200, 2180, 2150, 2100, 2050, 2000, 2080, 2150, 2200, 2220, 2240, 2254];
+    const dataComEstudo = { ...data, geracaoMensalKwhDistribuido: doze };
+    const out = montarInputOpcaoComparacao(dataComEstudo, { potenciaKwp: 8.5, valorTotalRs: 18837 }, 1);
+    expect(out.geracaoMensalKwhDistribuido).toBeUndefined();
+    expect(out.geracaoMensal12Meses).toBeUndefined();
+  });
+
+  it('Opção B NÃO herda o alias geracaoMensal12Meses do topo', () => {
+    const doze = [2200, 2180, 2150, 2100, 2050, 2000, 2080, 2150, 2200, 2220, 2240, 2254];
+    const dataComEstudo = { ...data, geracaoMensal12Meses: doze };
+    const out = montarInputOpcaoComparacao(dataComEstudo, { potenciaKwp: 8.5, valorTotalRs: 18837 }, 1);
+    expect(out.geracaoMensal12Meses).toBeUndefined();
+  });
+
+  it('Opção A (índice 0) mantém os 12 meses do estudo', () => {
+    const doze = [2200, 2180, 2150, 2100, 2050, 2000, 2080, 2150, 2200, 2220, 2240, 2254];
+    const dataComEstudo = { ...data, geracaoMensalKwhDistribuido: doze };
+    const out = montarInputOpcaoComparacao(dataComEstudo, { potenciaKwp: 17, valorTotalRs: 32290 }, 0);
+    expect(out.geracaoMensalKwhDistribuido).toEqual(doze);
+  });
+
+  it('se a própria Opção B trouxer os 12 meses dela (estudo próprio), esses mandam', () => {
+    const dozeDaB = [1100, 1090, 1075, 1050, 1025, 1000, 1040, 1075, 1100, 1110, 1120, 1127];
+    const dataComEstudo = { ...data, geracaoMensalKwhDistribuido: [2200, 2180, 2150, 2100, 2050, 2000, 2080, 2150, 2200, 2220, 2240, 2254] };
+    const op = { potenciaKwp: 8.5, valorTotalRs: 18837, geracaoMensalKwhDistribuido: dozeDaB };
+    const out = montarInputOpcaoComparacao(dataComEstudo, op, 1);
+    expect(out.geracaoMensalKwhDistribuido).toEqual(dozeDaB);
+  });
+
   it('não muta o data original', () => {
     const snapshot = { ...data };
     montarInputOpcaoComparacao(data, { potenciaKwp: 9 }, 1);

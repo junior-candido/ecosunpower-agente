@@ -212,6 +212,10 @@ export function montarInputOpcaoComparacao(data: any, op: any, indice: number): 
     delete base.geracaoMensalKwh;
     delete base.geracaoKwh;
     delete base.geracao;
+    // O estudo mês-a-mês (PVSol dos 12 meses) também é da Opção A — sem apagar,
+    // a média dos 12 virava a geração da B (as duas saíam idênticas).
+    delete base.geracaoMensalKwhDistribuido;
+    delete base.geracaoMensal12Meses;
   }
   return { ...base, ...op };
 }
