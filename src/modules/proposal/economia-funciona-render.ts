@@ -1,7 +1,8 @@
 // src/modules/proposal/economia-funciona-render.ts
 // Seção "Como sua economia funciona": responde a dúvida recorrente do cliente
 // ("ainda fica caro depois do solar?") explicando, com os NÚMEROS dele, por que
-// ainda vem uma conta (o Fio B sobre o que é injetado) e por que ela é pequena.
+// ainda vem uma conta (o Fio B sobre a energia COMPENSADA) e por que ela é
+// pequena. Sistema superdimensionado mostra também a sobra em créditos.
 // Duas tabelinhas: (1) simultaneidade — quanto mais usa de dia, menos paga;
 // (2) Fio B sobe com os anos (Lei 14.300). Off-grid: "você sai da conta de luz".
 // Os números vêm prontos do calculator (ProposalCalculations) — aqui só formata.
@@ -48,7 +49,7 @@ function renderTabelaFioBAnos(calc: ProposalCalculations): string {
   return `<div style="flex:1 1 320px;min-width:280px;background:#fff;border:1px solid #E2E8F0;border-radius:18px;overflow:hidden">
     <div style="padding:16px 18px;background:#FFF7ED;border-bottom:1px solid #FED7AA">
       <div style="font-weight:800;color:#9A3412;font-size:15px">📅 O Fio B sobe com os anos</div>
-      <div style="font-size:13px;color:#9A3412;margin-top:4px">Lei 14.300: a taxa sobre o injetado cresce até 100% em 2029. Sua conta acompanha — e ainda é pequena.</div>
+      <div style="font-size:13px;color:#9A3412;margin-top:4px">Lei 14.300: a taxa sobre a energia que volta abatendo sua conta cresce até 100% em 2029. Sua conta acompanha — e ainda é pequena.</div>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:14px">
       <thead><tr style="background:#F8FAFC">
@@ -85,9 +86,13 @@ function renderPassoAPasso(calc: ProposalCalculations): string {
         <strong style="color:#15803D">${fmtKwh(d.autoconsumoKwh)}</strong>
       </div>
       <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px dashed #E2E8F0">
-        <span>🔁 Vai pra rede e volta como crédito — só sobre isto incide o <b>Fio B (${fmtPctInt(calc.percentualFioBInicial)} em ${calc.anoInicial})</b></span>
-        <strong style="color:#0F172A">${fmtKwh(d.injetadoKwh)}</strong>
+        <span>🔁 Vai pra rede e volta abatendo sua conta — só sobre isto incide o <b>Fio B (${fmtPctInt(calc.percentualFioBInicial)} em ${calc.anoInicial})</b></span>
+        <strong style="color:#0F172A">${fmtKwh(d.compensadaKwh)}</strong>
       </div>
+      ${d.creditosKwh > 0 ? `<div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px dashed #E2E8F0">
+        <span style="color:#0E7CB8">🏦 Sobra e fica guardada como <b>crédito</b> (vale 60 meses) — só paga Fio B quando você usar</span>
+        <strong style="color:#0E7CB8">${fmtKwh(d.creditosKwh)}</strong>
+      </div>` : ''}
       <div style="display:flex;justify-content:space-between;padding:10px 0;border-top:1px dashed #E2E8F0">
         <span>= Fio B no mês</span>
         <strong style="color:#0F172A">R$ ${fmtRs(d.fioB)}</strong>

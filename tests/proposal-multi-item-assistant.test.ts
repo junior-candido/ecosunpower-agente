@@ -65,6 +65,27 @@ describe('buildComparacaoOpcao', () => {
       { geracaoMensalKwh: 300, paybackAnos: 4, paybackMeses: 0, paybackInviavel: false, economiaVidaUtil: 8000 } as any);
     expect(o.paybackTexto).toBe('4 anos');
   });
+  it('carrega créditos, curva mês a mês e consumo do cenário pro card', () => {
+    const curva = [1180, 1150, 1100, 1040, 980, 950, 1000, 1060, 1120, 1160, 1170, 1190];
+    const o = buildComparacaoOpcao('Opção A',
+      { ...dados, consumoMensalKwh: 1200 } as any,
+      { geracaoMensalKwh: 2152, paybackAnos: 2, paybackMeses: 9, paybackInviavel: false,
+        economiaVidaUtil: 920120, economiaMensal: 1141,
+        contaComDetalhada: { creditosKwh: 952.3 },
+        geracaoMensalDistribuida: curva } as any);
+    expect(o.creditosMensalKwh).toBe(952);
+    expect(o.geracaoMensalDistribuida).toEqual(curva);
+    expect(o.consumoMensalKwh).toBe(1200);
+  });
+
+  it('sem créditos/curva/consumo: campos ficam undefined (card omite)', () => {
+    const o = buildComparacaoOpcao('B', dados,
+      { geracaoMensalKwh: 300, paybackAnos: 4, paybackMeses: 0, paybackInviavel: false, economiaVidaUtil: 8000 } as any);
+    expect(o.creditosMensalKwh).toBeUndefined();
+    expect(o.geracaoMensalDistribuida).toBeUndefined();
+    expect(o.consumoMensalKwh).toBeUndefined();
+  });
+
   it('carrega quantidade/modelo dos equipamentos e a economia mensal arredondada', () => {
     const dadosCompletos = {
       potenciaKwp: 8.4, valorTotalRs: 38500,
@@ -156,6 +177,20 @@ describe('montarInputOpcaoComparacao', () => {
     const op = { potenciaKwp: 8.5, valorTotalRs: 18837, geracaoMensalKwhDistribuido: dozeDaB };
     const out = montarInputOpcaoComparacao(dataComEstudo, op, 1);
     expect(out.geracaoMensalKwhDistribuido).toEqual(dozeDaB);
+  });
+
+  it('cenário: se a Opção B trouxer consumo próprio (ex: 800 kWh), o cálculo dela usa esse', () => {
+    const op = { potenciaKwp: 8.5, valorTotalRs: 18837, consumoMensalKwh: 800 };
+    const out = montarInputOpcaoComparacao(data, op, 1);
+    expect(out.consumoMensalKwh).toBe(800);
+  });
+
+  it('consumo inválido na opção (0/negativo/lixo) NÃO sobrescreve o consumo do cliente', () => {
+    for (const invalido of [0, -10, NaN, 'abc']) {
+      const op = { potenciaKwp: 8.5, valorTotalRs: 18837, consumoMensalKwh: invalido };
+      const out = montarInputOpcaoComparacao(data, op, 1);
+      expect(out.consumoMensalKwh).toBe(1000); // consumo do topo preservado
+    }
   });
 
   it('não muta o data original', () => {

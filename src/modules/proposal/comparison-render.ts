@@ -25,6 +25,40 @@ export interface ComparacaoOpcao {
   inversorFabricante: string;
   inversorModelo?: string;
   inversorQuantidade?: number;
+  // Créditos SCEE: energia que sobra por mês (geração além do consumo) e fica
+  // guardada por 60 meses. Só aparece quando > 0 — é o argumento da opção maior.
+  creditosMensalKwh?: number;
+  // Curva de geração mês a mês (12 valores, jan→dez): do estudo PVSol quando a
+  // opção tem, senão a sazonalidade calculada. Vira o mini-gráfico do card.
+  geracaoMensalDistribuida?: number[];
+  // Consumo usado no cálculo DESTA opção. Normalmente é o mesmo do cliente nas
+  // duas; quando o Junior monta cenários (ex: B pra 800 kWh), o card avisa.
+  consumoMensalKwh?: number;
+}
+
+// Mini-gráfico de barras da geração mês a mês (SVG inline, mesmo azul da marca
+// usado no gráfico grande da proposta). Curva inválida (≠12 números) → ''.
+function renderMiniGeracaoSVG(curva?: number[]): string {
+  if (!Array.isArray(curva) || curva.length !== 12 || !curva.every(v => isFinite(v) && v >= 0)) return '';
+  const max = Math.max(...curva);
+  if (max <= 0) return '';
+  const MESES = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+  const W = 280, H = 96, padTop = 8, padBottom = 16, padX = 4;
+  const innerH = H - padTop - padBottom;
+  const groupW = (W - padX * 2) / 12;
+  const barW = Math.min(14, groupW * 0.6);
+  const barras = curva.map((v, i) => {
+    const h = Math.max(2, (v / max) * innerH);
+    const x = padX + i * groupW + (groupW - barW) / 2;
+    const y = padTop + innerH - h;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="2.5" fill="#0E7CB8" opacity="${v === max ? '1' : '0.75'}"/>
+      <text x="${(padX + i * groupW + groupW / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle" font-size="8" fill="#94A3B8">${MESES[i]}</text>`;
+  }).join('');
+  return `
+      <div style="margin-top:16px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#64748B;margin-bottom:6px">Geração mês a mês</div>
+        <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img" aria-label="Geração mensal estimada ao longo do ano">${barras}</svg>
+      </div>`;
 }
 
 // Monta "12× Vertex 700W" (módulo) ou "1× SG5.0RS-L" (inversor). Sem quantidade,
@@ -39,6 +73,11 @@ function linhaEquipamento(qtd?: number, modelo?: string, fabricante?: string, po
 
 export function renderComparacaoSolar(opcoes: ComparacaoOpcao[]): string {
   if (!opcoes || opcoes.length < 2) return '';
+
+  // Consumo só aparece nos cards quando as opções usam consumos DIFERENTES
+  // (cenários). Igual nas duas = é do cliente, não diferencia nada.
+  const consumos = opcoes.map(o => Number(o.consumoMensalKwh)).filter(v => isFinite(v) && v > 0);
+  const consumosDiferentes = consumos.length === opcoes.length && new Set(consumos).size > 1;
 
   const cards = opcoes.map(o => {
     const fModulo = getBrandFicha(o.moduloFabricante, 'modulo');
@@ -59,6 +98,18 @@ export function renderComparacaoSolar(opcoes: ComparacaoOpcao[]): string {
            <div style="font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;color:#047857">R$ ${fmtRs(o.economiaMensalRs, 0)}<span style="font-size:14px;font-weight:500;color:#059669">/mês</span></div>
          </div>`
       : '';
+    // Créditos SCEE: destaque quando a opção gera mais do que o cliente consome.
+    const creditos = (o.creditosMensalKwh && o.creditosMensalKwh > 0)
+      ? `<div style="margin:12px 0;padding:12px 16px;background:#F0F9FF;border-radius:12px;text-align:center">
+           <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#0E7CB8">Sobra em créditos</div>
+           <div style="font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700;color:#075985">+ ${fmtNum(o.creditosMensalKwh)} kWh<span style="font-size:13px;font-weight:500;color:#0E7CB8">/mês</span></div>
+           <div style="font-size:12px;color:#64748B;margin-top:2px">energia guardada por 60 meses — pra crescer o consumo sem pagar mais</div>
+         </div>`
+      : '';
+    const consumoOpcao = Number(o.consumoMensalKwh);
+    const consumoLinha = (consumosDiferentes && isFinite(consumoOpcao) && consumoOpcao > 0)
+      ? linha('Consumo do cenário', fmtNum(consumoOpcao) + ' kWh/mês')
+      : '';
     return `
       <div style="flex:1;min-width:280px;border:1px solid #E2E8F0;border-radius:20px;padding:28px;background:#fff">
         <div style="font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;color:#0F172A;margin-bottom:16px">${escapeHtml(o.rotulo)}</div>
@@ -66,6 +117,7 @@ export function renderComparacaoSolar(opcoes: ComparacaoOpcao[]): string {
         ${modulosTxt ? linha('Módulos', escapeHtml(modulosTxt)) : ''}
         ${inversorTxt ? linha('Inversor', escapeHtml(inversorTxt)) : ''}
         ${linha('Geração', fmtNum(o.geracaoMensalKwh) + ' kWh/mês')}
+        ${consumoLinha}
         ${linha('Investimento', 'R$ ' + fmtRs(o.valorTotalRs, 0))}
         ${(o.cartaoParcelaRs && o.cartaoParcelaRs > 0)
           ? `<div style="padding:8px 0 0;text-align:right;color:#64748B;font-size:13px">ou ${o.cartaoParcelas ?? 24}× de <strong style="color:#0F172A">R$ ${fmtRs(o.cartaoParcelaRs, 0)}</strong> no cartão</div>`
@@ -74,8 +126,10 @@ export function renderComparacaoSolar(opcoes: ComparacaoOpcao[]): string {
           ? `<div style="padding:4px 0 12px;text-align:right;color:#64748B;font-size:13px">ou até 90× de <strong style="color:#0F172A">R$ ${fmtRs(o.financiamentoParcelaRs, 0)}</strong> financiado</div>`
           : ''}
         ${economiaMensal}
+        ${creditos}
         ${linha('Payback', escapeHtml(o.paybackTexto))}
         ${linha('Economia 25 anos', 'R$ ' + fmtRs(o.economia25AnosRs, 0))}
+        ${renderMiniGeracaoSVG(o.geracaoMensalDistribuida)}
         ${ficha('Módulo', fModulo)}
         ${ficha('Inversor', fInversor)}
       </div>`;

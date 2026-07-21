@@ -35,6 +35,29 @@ describe('renderEconomiaFuncionaSection', () => {
     expect(html).not.toContain('Fio B 60%'); // sem rampa de Fio B
   });
 
+  it('passo a passo bate com o cálculo: o kWh mostrado pro Fio B é o COMPENSADO, não o injetado', () => {
+    // caso real 21/07: 17 kWp gerando 2152 pra consumo 1200 — injeta 1614 mas só compensa 662.
+    const calc = calcular(input({
+      potenciaKwp: 17, consumoMensalKwh: 1200, geracaoMensalKwhOverride: 2152,
+      tarifaRsKwh: 1.05, custoIluminacaoPublica: 35,
+    }));
+    const html = renderEconomiaFuncionaSection(calc, { temCarregador: false });
+    // a linha do Fio B mostra os 662 compensados (cliente confere: 662×0,30×60% ≈ o R$ exibido)
+    expect(html).toContain('662 kWh');
+    // e os créditos aparecem no passo a passo (952 kWh guardados, 60 meses)
+    expect(html).toContain('952 kWh');
+    expect(html.toLowerCase()).toContain('crédito');
+    expect(html).toContain('60 meses');
+    // o texto antigo que apontava o Fio B pro injetado inteiro não pode sobrar
+    expect(html).not.toContain('1.614 kWh');
+  });
+
+  it('sistema justo (sem sobra): passo a passo igual ao de antes, sem linha de créditos', () => {
+    const html = renderEconomiaFuncionaSection(calcular(input()), { temCarregador: false });
+    expect(html.toLowerCase()).not.toContain('crédito');
+    expect(html).toContain('375 kWh'); // injetado = compensado no sistema justo
+  });
+
   it('carregador: mostra a dica de carregar de dia quando há carregador', () => {
     const semCarro = renderEconomiaFuncionaSection(calcular(input()), { temCarregador: false });
     const comCarro = renderEconomiaFuncionaSection(calcular(input()), { temCarregador: true });

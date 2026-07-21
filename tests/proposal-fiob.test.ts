@@ -125,6 +125,90 @@ describe('calcularContaMensalDetalhada — breakdown por tipo de sistema', () =>
   });
 });
 
+describe('calcularContaMensalDetalhada — sistema superdimensionado (Fio B só sobre a energia COMPENSADA)', () => {
+  // Lei 14.300 art. 27: o Fio B incide sobre a energia injetada e COMPENSADA na
+  // fatura, não sobre tudo que entra na rede. O excedente vira CRÉDITO (60 meses)
+  // e só paga Fio B quando for consumido. Caso real 21/07: sistema 2× o consumo
+  // saía com Fio B sobre 1.614 kWh quando o cliente só compensa 662.
+  const casoReal = {
+    consumoKwh: 1200,
+    geracaoKwh: 2152,
+    tarifaRsKwh: 1.05,
+    tusdFioBRsKwh: 0.30,
+    percentualFioBVigente: 0.60,
+    percentualGeracaoInjetada: 0.75,
+    custoIluminacaoPublica: 35,
+    tipoSistema: 'on_grid' as const,
+  };
+
+  it('caso real: Fio B sobre os 662 kWh compensados, não sobre os 1.614 injetados', () => {
+    const c = calcularContaMensalDetalhada(casoReal);
+    // autoconsumo simultâneo: 25% de 2.152 = 538 (menor que o consumo, ok)
+    expect(c.autoconsumoKwh).toBeCloseTo(538);
+    // da rede o cliente puxa 1.200 - 538 = 662 → tudo compensado pelos créditos
+    expect(c.compensadaKwh).toBeCloseTo(662);
+    expect(c.fioB).toBeCloseTo(662 * 0.30 * 0.60, 1); // ~119, não ~290
+    expect(c.consumoRede).toBeCloseTo(0); // nada fica sem cobertura
+    expect(c.total).toBeCloseTo(662 * 0.30 * 0.60 + 35, 1); // ~154
+  });
+
+  it('caso real: o excedente vira crédito (injetado - compensado = ~952 kWh)', () => {
+    const c = calcularContaMensalDetalhada(casoReal);
+    expect(c.injetadoKwh).toBeCloseTo(1614);
+    expect(c.creditosKwh).toBeCloseTo(1614 - 662);
+  });
+
+  it('caso real: economia mensal do calcular() sai ~R$ 1.141 (teto = conta do cliente)', () => {
+    const r = calcular({
+      potenciaKwp: 17,
+      fatorPerda: 0.78,
+      hsp: 5.4,
+      consumoMensalKwh: 1200,
+      tarifaRsKwh: 1.05,
+      reajusteAnualEnergia: 0,
+      tusdFioBRsKwh: 0.30,
+      percentualFioBVigente: 0.60,
+      percentualGeracaoInjetada: 0.75,
+      custoIluminacaoPublica: 35,
+      valorTotalRs: 32290,
+      vidaUtilAnos: 25,
+      geracaoMensalKwhOverride: 2152,
+      anoInicial: 2026,
+      tipoSistema: 'on_grid',
+    });
+    // conta hoje: 1200×1,05 + 35 = 1.295 · conta com solar: ~154 → economia ~1.141
+    expect(r.economiaMensal).toBeCloseTo(1295 - (662 * 0.30 * 0.60 + 35), 0);
+    expect(r.contaComDetalhada.creditosKwh).toBeCloseTo(952);
+  });
+
+  it('autoconsumo simultâneo não passa do consumo (comercial gerando muito): sobra vai pra injeção', () => {
+    const c = calcularContaMensalDetalhada({
+      consumoKwh: 300, geracaoKwh: 2000, tarifaRsKwh: 1.0, tusdFioBRsKwh: 0.30,
+      percentualFioBVigente: 0.60, percentualGeracaoInjetada: 0.45,
+      custoIluminacaoPublica: 0, tipoSistema: 'on_grid',
+    });
+    // autoconsumo teórico 55% de 2000 = 1100, mas o cliente só consome 300
+    expect(c.autoconsumoKwh).toBeCloseTo(300);
+    expect(c.injetadoKwh).toBeCloseTo(1700); // o resto TODO vai pra rede
+    expect(c.compensadaKwh).toBeCloseTo(0);  // não puxa nada da rede → nada a compensar
+    expect(c.fioB).toBeCloseTo(0);
+    expect(c.creditosKwh).toBeCloseTo(1700);
+  });
+
+  it('sistema justo (geração ≤ consumo): números idênticos ao modelo antigo, créditos zero', () => {
+    const c = calcularContaMensalDetalhada({
+      consumoKwh: 1200, geracaoKwh: 1000, tarifaRsKwh: 1.05, tusdFioBRsKwh: 0.30,
+      percentualFioBVigente: 0.60, percentualGeracaoInjetada: 0.75,
+      custoIluminacaoPublica: 35, tipoSistema: 'on_grid',
+    });
+    // igual ao print da Opção B: fioB 135 + não coberto 200×1,05 + CIP 35 → economia 915
+    expect(c.fioB).toBeCloseTo(1000 * 0.75 * 0.30 * 0.60);
+    expect(c.consumoRede).toBeCloseTo(200 * 1.05);
+    expect(c.creditosKwh).toBeCloseTo(0);
+    expect(c.total).toBeCloseTo(135 + 210 + 35);
+  });
+});
+
 describe('calcular() — Fio B crescente ano a ano na projeção', () => {
   it('a conta com sistema sobe nos anos seguintes (Fio B 60%→100%)', () => {
     // sem reajuste de energia: a única coisa que muda é o % do Fio B.

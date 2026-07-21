@@ -87,6 +87,79 @@ describe('renderComparacaoSolar', () => {
     expect(html).not.toContain('×  '); // não monta "qtd× " vazio
   });
 
+  it('mostra a linha de créditos quando a opção gera mais do que o cliente consome', () => {
+    const completas: ComparacaoOpcao[] = [
+      { ...opcoes[0], creditosMensalKwh: 952 },
+      { ...opcoes[1] }, // sem créditos
+    ];
+    const html = renderComparacaoSolar(completas);
+    expect(html).toContain('952');
+    expect(html.toLowerCase()).toContain('crédito');
+    expect(html).toContain('60 meses');
+  });
+
+  it('NÃO mostra créditos quando são zero ou não informados', () => {
+    const html = renderComparacaoSolar([
+      { ...opcoes[0], creditosMensalKwh: 0 },
+      { ...opcoes[1] },
+    ]);
+    expect(html.toLowerCase()).not.toContain('crédito');
+  });
+
+  it('desenha o mini-gráfico de geração mês a mês quando a opção traz a curva', () => {
+    const curva = [1180, 1150, 1100, 1040, 980, 950, 1000, 1060, 1120, 1160, 1170, 1190];
+    const html = renderComparacaoSolar([
+      { ...opcoes[0], geracaoMensalDistribuida: curva },
+      { ...opcoes[1], geracaoMensalDistribuida: curva.map(v => v * 0.5) },
+    ]);
+    expect(html).toContain('<svg'); // gráfico é SVG inline
+    expect(html.toLowerCase()).toContain('geração mês a mês');
+    expect((html.match(/<svg/g) ?? []).length).toBeGreaterThanOrEqual(2); // um por card
+  });
+
+  it('sem curva: não desenha gráfico nem quebra', () => {
+    const html = renderComparacaoSolar(opcoes);
+    expect(html).not.toContain('<svg');
+    expect(html).not.toContain('undefined');
+  });
+
+  it('curva inválida (≠ 12 valores) é ignorada sem quebrar', () => {
+    const html = renderComparacaoSolar([
+      { ...opcoes[0], geracaoMensalDistribuida: [100, 200] },
+      opcoes[1],
+    ]);
+    expect(html).not.toContain('<svg');
+  });
+
+  it('curva toda zeros ou com NaN: sem gráfico, sem quebrar', () => {
+    const zeros = Array(12).fill(0);
+    const comNaN = [...Array(11).fill(100), NaN];
+    const html = renderComparacaoSolar([
+      { ...opcoes[0], geracaoMensalDistribuida: zeros },
+      { ...opcoes[1], geracaoMensalDistribuida: comNaN },
+    ]);
+    expect(html).not.toContain('<svg');
+    expect(html).not.toContain('NaN');
+  });
+
+  it('mostra o consumo usado no cálculo quando as opções usam consumos DIFERENTES (cenários)', () => {
+    const html = renderComparacaoSolar([
+      { ...opcoes[0], consumoMensalKwh: 1200 },
+      { ...opcoes[1], consumoMensalKwh: 800 },
+    ]);
+    expect(html.toLowerCase()).toContain('consumo');
+    expect(html).toContain('1.200');
+    expect(html).toContain('800');
+  });
+
+  it('consumo IGUAL nas duas: não repete a linha em cada card (é do cliente, não da opção)', () => {
+    const html = renderComparacaoSolar([
+      { ...opcoes[0], consumoMensalKwh: 1200 },
+      { ...opcoes[1], consumoMensalKwh: 1200 },
+    ]);
+    expect(html.toLowerCase()).not.toContain('consumo de');
+  });
+
   it('retorna string vazia com menos de 2 opções', () => {
     expect(renderComparacaoSolar([opcoes[0]])).toBe('');
     expect(renderComparacaoSolar([])).toBe('');
