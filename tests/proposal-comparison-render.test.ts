@@ -144,6 +144,45 @@ describe('renderComparacaoSolar', () => {
     expect(html).not.toContain('<svg');
   });
 
+  it('mini-gráfico mostra o NÚMERO da geração em cada barra (pedido 21/07)', () => {
+    const curva = [2020, 1939, 2070, 1997, 2121, 2051, 2267, 2489, 2581, 2402, 1920, 1970];
+    const html = renderComparacaoSolar([
+      { ...opcoes[0], geracaoMensalDistribuida: curva },
+      { ...opcoes[1] },
+    ]);
+    expect(html).toContain('>2.489<'); // valor em cima da barra (pt-BR)
+    expect(html).toContain('>2.020<');
+  });
+
+  it('bateria com 2 unidades soma a capacidade (2× 5 kWh → 10 kWh)', () => {
+    const html = renderComparacaoSolar([
+      { ...opcoes[0], bateriaFabricante: 'Huawei', bateriaModelo: 'LUNA', bateriaCapacidadeKwh: 5, bateriaQuantidade: 2 },
+      { ...opcoes[1] },
+    ]);
+    expect(html).toContain('2× LUNA');
+    expect(html).toMatch(/10(,0)?\s?kWh/);
+  });
+
+  it('bateria sem capacidade OU sem quantidade: linha não aparece (régua do motor)', () => {
+    const html = renderComparacaoSolar([
+      { ...opcoes[0], bateriaFabricante: 'BYD', bateriaModelo: 'B-Box' }, // incompleta
+      { ...opcoes[1], bateriaFabricante: 'Huawei', bateriaCapacidadeKwh: 5 }, // sem quantidade
+    ]);
+    expect(html).not.toContain('Bateria');
+  });
+
+  it('card mostra a linha de Bateria quando a opção é híbrida', () => {
+    const html = renderComparacaoSolar([
+      { ...opcoes[0], bateriaFabricante: 'BYD', bateriaModelo: 'B-Box HVS', bateriaCapacidadeKwh: 10.2, bateriaQuantidade: 1 },
+      { ...opcoes[1] }, // on-grid, sem linha de bateria
+    ]);
+    expect(html).toContain('Bateria');
+    expect(html).toContain('B-Box HVS');
+    expect(html).toMatch(/10,2\s?kWh/);
+    // só um card tem a linha
+    expect((html.match(/Bateria/g) ?? []).length).toBe(1);
+  });
+
   it('curva toda zeros ou com NaN: sem gráfico, sem quebrar', () => {
     const zeros = Array(12).fill(0);
     const comNaN = [...Array(11).fill(100), NaN];

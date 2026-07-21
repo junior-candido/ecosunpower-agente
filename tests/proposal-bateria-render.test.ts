@@ -55,6 +55,31 @@ describe('render — autoconsumo remoto na proposta principal', () => {
   });
 });
 
+describe('render — serviços na proposta com comparação (pedido 21/07)', () => {
+  it('modo comparação MOSTRA os serviços, com soma só deles (sem total de uma opção)', () => {
+    const data = baseData();
+    data.modoComparacao = true;
+    data.comparacaoHtml = '<section>comparacao</section>';
+    data.servicos = [
+      { titulo: 'Carregador EV', descricao: 'Wallbox 7,4 kW', valorRs: 4500, jaIncluso: false },
+      { titulo: 'Adequação de padrão', descricao: 'Padrão trifásico', valorRs: 0, jaIncluso: true },
+    ];
+    const html = renderProposalHTML(data, baseCalc());
+    expect(html).toContain('Carregador EV');
+    expect(html).toContain('somam à opção escolhida');
+    expect(html).toContain('R$ 4.500');
+    expect(html).not.toContain('Total da proposta (solar + serviços)'); // não existe "o" total na dupla
+  });
+
+  it('sem comparação: seção de serviços igual à de sempre (total solar + serviços)', () => {
+    const data = baseData();
+    data.servicos = [{ titulo: 'Carregador EV', descricao: 'Wallbox', valorRs: 4500, jaIncluso: false }];
+    const html = renderProposalHTML(data, baseCalc());
+    expect(html).toContain('Total da proposta (solar + serviços)');
+    expect(html).toContain('R$ 43.000'); // 38.500 + 4.500
+  });
+});
+
 describe('render — proposta híbrida (com bateria)', () => {
   it('mostra selo Híbrido, card da bateria e benefícios + autonomia', () => {
     const data = baseData();
