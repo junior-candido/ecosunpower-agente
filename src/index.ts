@@ -4,6 +4,7 @@ import { EvolutionService } from './modules/evolution.js';
 import { MessageQueue } from './modules/queue.js';
 import { criarTenantResolver, ECOSUN_COMPANY_ID } from './modules/tenant-resolver.js';
 import { SupabaseService } from './modules/supabase.js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { KnowledgeBase } from './modules/knowledge.js';
 import { detectTopics } from './modules/knowledge-topics.js';
 import { conhecimentoDirDoModo, isVitrineEcosof } from './modules/eva-modo.js';
@@ -886,7 +887,7 @@ async function main() {
   // pra injetar no cérebro. Busca pela última proposta cujo telefone bate (match
   // pelos últimos 8 dígitos — robusto a formatos/DDI). Nunca lança → '' degrada
   // pro fluxo normal da Eva.
-  const montarContextoProposta = async (from: string): Promise<string> => {
+  const montarContextoProposta = async (from: string, client: SupabaseClient = supabase.getClient()): Promise<string> => {
     try {
       const alvo = normalizeBrazilianPhone(from);
       const digits = (from || '').replace(/\D/g, '');
@@ -897,7 +898,7 @@ async function main() {
       // no código — senão um substring poderia trazer a proposta de OUTRO cliente
       // (mesmos 8 dígitos finais em DDD diferente) e a Eva falaria nome/números
       // errados (vazamento). Sem match EXATO → '' (degrada pro fluxo normal).
-      const { data, error } = await supabase.getClient()
+      const { data, error } = await client
         .from('propostas_publicas')
         .select('cliente_nome, cliente_telefone, dados_input')
         .ilike('cliente_telefone', `%${ultimos8}%`)
@@ -977,8 +978,8 @@ async function main() {
   // alertas proativos — em DRY nada chega no cliente. O waba é um adaptador
   // fino: OrqDeps declara components como unknown[] (não conhece o tipo do
   // MetaWhatsAppService) — o cast é só ponte de tipo, o valor passa intacto.
-  const getOrqDeps = () => ({
-    supabase: supabase.getClient(),
+  const getOrqDeps = (client?: SupabaseClient) => ({
+    supabase: client ?? supabase.getClient(),
     anthropic: new Anthropic({ apiKey: config.anthropicApiKey }),
     waba: {
       sendInteractiveButtons: (to: string, body: string, buttons: Array<{ id: string; title: string }>, footer?: string) =>
@@ -4388,7 +4389,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       // Se cliente respondeu antes do delay 2h da intro automatica, cancela a intro.
       // (lead?.id pode ser null aqui pra primeira mensagem de lead novo — sem intro pra cancelar)
       if (lead?.id) {
-        await supabase.cancelEvaIntro(lead.id, 'client_replied').catch(() => {});
+        await db.cancelEvaIntro(lead.id, 'client_replied').catch(() => {});
       }
 
       // If this lead has an active reengagement cadence, cancel it — they replied
@@ -4544,7 +4545,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         try {
           const { getAbordagemAbertaPorLeadPhone } =
             await import('./modules/monitoring/abordagem/abordagens-repo.js');
-          abordagemAtiva = await getAbordagemAbertaPorLeadPhone(supabase.getClient(), leadId);
+          abordagemAtiva = await getAbordagemAbertaPorLeadPhone(db.getClient(), leadId);
         } catch (err) {
           console.warn('[abordagem] lookup de abordagem ativa falhou:', (err as Error).message);
         }
@@ -4556,7 +4557,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
             // o cliente (quick reply ou mensagem real da escada pós-template) —
             // seguir pra Eva mandaria uma 2ª mensagem redundante com contexto
             // stale. 'segue_eva' = só registrou; injeta o contexto e segue.
-            const resultado = await handleRespostaCliente(getOrqDeps(), abordagemAtiva, text);
+            const resultado = await handleRespostaCliente(getOrqDeps(db.getClient()), abordagemAtiva, text);
             if (resultado === 'respondi') return;
             contextoAbordagem = montarContextoAbordagem(abordagemAtiva);
           } catch (err) {
@@ -4782,7 +4783,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       // contextoProposta (Fatia 2): números reais da proposta do cliente + postura
       // de consultora — vazio pra quem não tem proposta. SOMADO ao conhecimento
       // técnico (não substitui): a Eva mantém toda a base (normas, rateio, etc.).
-      const contextoProposta = await montarContextoProposta(from);
+      const contextoProposta = await montarContextoProposta(from, db.getClient());
       const knowledge = baseKnowledge + leadContext
         + (contextoAbordagem ? `\n\n${contextoAbordagem}` : '')
         + contextoProposta;
@@ -4791,7 +4792,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       // pela Eva. Ponto único e central — depois de todos os early-returns de
       // comando/botão do admin, então só conta mensagem real de cliente que a
       // Eva atende. Best-effort, nunca bloqueia a resposta.
-      await registrarEvento(supabase.getClient(), {
+      await registrarEvento(db.getClient(), {
         tipo: 'atendimento:mensagem',
         departamento: 'atendimento',
         canal: 'whatsapp',
@@ -4806,7 +4807,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       // Best-effort. Normaliza acento/caixa pra casar mesmo com variacao.
       const textoNorm = String(text).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
       if (textoNorm.includes('cotacao rapida no site')) {
-        await registrarEvento(supabase.getClient(), {
+        await registrarEvento(db.getClient(), {
           tipo: 'site:cotacao',
           departamento: 'marketing',
           canal: 'web',
@@ -4849,7 +4850,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
       // Elo (casa Atendimento): a Eva respondeu o lead. Ponto único (1 evento
       // por turno, mesmo com resposta quebrada em vários balões). Best-effort.
-      await registrarEvento(supabase.getClient(), {
+      await registrarEvento(db.getClient(), {
         tipo: 'atendimento:eva_respondeu',
         departamento: 'atendimento',
         canal: 'whatsapp',
@@ -5536,7 +5537,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         if (!metaWaba) break;
         const { getAbordagemAbertaPorLeadPhone } =
           await import('./modules/monitoring/abordagem/abordagens-repo.js');
-        const aberta = await getAbordagemAbertaPorLeadPhone(supabase.getClient(), leadId);
+        const aberta = await getAbordagemAbertaPorLeadPhone(db.getClient(), leadId);
         if (!aberta) {
           console.warn(`[abordagem] abordagem_update sem abordagem aberta (lead=${leadId}) — ignorada`);
           break;
@@ -5552,7 +5553,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         const causaRaiz = typeof d.causa_raiz === 'string' && d.causa_raiz.trim()
           ? d.causa_raiz.trim().slice(0, 300) : null;
         const { atualizarPorConversa } = await import('./modules/monitoring/abordagem/orquestrador.js');
-        await atualizarPorConversa(getOrqDeps(), aberta.id, { resumo, desfecho, causaRaiz });
+        await atualizarPorConversa(getOrqDeps(db.getClient()), aberta.id, { resumo, desfecho, causaRaiz });
         console.log(`[action] abordagem_update lead=${leadId} abordagem=${aberta.id} desfecho=${desfecho ?? 'null'}`);
         break;
       }
@@ -5579,14 +5580,14 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
   // Helper: se cliente respondeu (qualquer midia/texto), cancela intro pendente
   // E CADENCIA PENDENTE pra Eva nao mandar toques automatizados depois da
   // conversa ja iniciada. Eva entra no fluxo normal de qualificacao.
-  async function cancelIntroIfPending(from: string): Promise<void> {
-    const lead = await supabase.getLeadByPhone(from);
+  async function cancelIntroIfPending(from: string, db: SupabaseService = supabase): Promise<void> {
+    const lead = await db.getLeadByPhone(from);
     if (!lead?.id) return;
-    await supabase.cancelEvaIntro(lead.id, 'client_replied').catch(() => {});
-    const cancelled = await supabase.cancelCadence(lead.id, 'client_replied').catch(() => 0);
+    await db.cancelEvaIntro(lead.id, 'client_replied').catch(() => {});
+    const cancelled = await db.cancelCadence(lead.id, 'client_replied').catch(() => 0);
     // Cliente respondeu no zap -> para tambem a sequencia de e-mail pendente
     // (nao faz sentido continuar mandando e-mail frio pra quem ja respondeu).
-    await supabase.cancelEmailSequence(lead.id, 'respondeu').catch(() => {});
+    await db.cancelEmailSequence(lead.id, 'respondeu').catch(() => {});
     if (cancelled > 0) {
       console.log(`[cadence] ${cancelled} toques cancelados pra ${from} (cliente respondeu)`);
       // 🔥 Sinal quente — notifica Junior imediatamente (nao espera digest 3x/dia)
@@ -5607,6 +5608,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
   // Handle audio messages
   async function handleAudioMessage(from: string, messageId: string, companyId?: string) {
+    const db = supabase.paraMensagem(companyId); // EVA MT 3c: crachá nos cancelamentos
     if (await takeover.isPaused(from)) {
       console.log(`[takeover] Skipping audio from ${from} — human takeover active`);
       return;
@@ -5615,7 +5617,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       console.log(`[eva-active] Skipping audio from ${from} — eva_active=false`);
       return;
     }
-    await cancelIntroIfPending(from);
+    await cancelIntroIfPending(from, db);
     if (!transcriber) {
       const msg = 'Nao consegui ouvir o audio. Pode me enviar por texto, por favor? 😊';
       if (!isSandbox) await sendText(from, msg);
@@ -5682,7 +5684,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       console.log(`[eva-active] Skipping image from ${from} — eva_active=false`);
       return;
     }
-    await cancelIntroIfPending(from);
+    await cancelIntroIfPending(from, db);
     try {
       const lead = await supabase.getLeadByPhone(from);
       const context = lead?.name
@@ -5752,6 +5754,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
   // Handle video messages (depoimentos, casos, registros)
   async function handleVideoMessage(from: string, messageId: string, caption?: string, companyId?: string) {
+    const db = supabase.paraMensagem(companyId); // EVA MT 3c: crachá nos cancelamentos
     if (await tryHandleCaseCreatorMedia(from, messageId, 'video')) return;
     if (await tryHandleProposalMedia(from, messageId, 'video')) return;
 
@@ -5763,7 +5766,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       console.log(`[eva-active] Skipping video from ${from} — eva_active=false`);
       return;
     }
-    await cancelIntroIfPending(from);
+    await cancelIntroIfPending(from, db);
     try {
       const lead = await supabase.getLeadByPhone(from);
       if (!isSandbox) await sendText(from, 'Recebi o video! Deixa eu dar uma olhada...');
@@ -5890,7 +5893,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       console.log(`[eva-active] Skipping document from ${from} — eva_active=false`);
       return;
     }
-    await cancelIntroIfPending(from);
+    await cancelIntroIfPending(from, db);
     try {
       if (!mimetype.includes('pdf')) {
         const msg = 'Recebi o arquivo! Por enquanto consigo analisar PDFs e imagens. Se for uma conta de luz, pode mandar como foto ou PDF 😊';

@@ -76,12 +76,34 @@ describe('fatia 3b — ratchet do handleAction', () => {
   it('assinatura tem o db (crachá injetado pelos handlers)', () => {
     expect(corpo).toContain('db: SupabaseService = supabase');
   });
-  it('restam NO MÁXIMO 3 usos diretos de `supabase.` (logs/escalonamento/abordagem) — baixar na 3c', () => {
+  it('restam NO MÁXIMO 2 usos diretos de `supabase.` (logs global + escalonamento/app_flags) — 3c levou a abordagem', () => {
     const usos = (corpo.match(/\bsupabase\./g) ?? []).length;
-    expect(usos).toBeLessThanOrEqual(3);
+    expect(usos).toBeLessThanOrEqual(2);
   });
   it('as escritas das actions rodam pelo db (amostra: upsertLead/cancelCadence/updateConversation)', () => {
     expect((corpo.match(/\bdb\.(upsertLead|cancelCadence|updateConversation|saveDossier|getClient)\b/g) ?? []).length)
       .toBeGreaterThanOrEqual(10);
+  });
+});
+
+// FATIA 3c — helpers com client injetável + cancelIntroIfPending no crachá.
+describe('fatia 3c — helpers do caminho da mensagem', () => {
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.ts'), 'utf8');
+  it('cancelIntroIfPending recebe o db e roteia os cancelamentos por ele', () => {
+    const ini = src.indexOf('async function cancelIntroIfPending');
+    const corpo = src.slice(ini, src.indexOf('\n  }', ini));
+    expect(corpo).toContain('db: SupabaseService = supabase');
+    expect(corpo).toContain('db.cancelEvaIntro');
+    expect(corpo).toContain('db.cancelCadence');
+    expect(corpo).toContain('db.cancelEmailSequence');
+    // o alerta de cadência FICA no serviço (app_flags é global)
+    expect(corpo).toContain('client: supabase.getClient()');
+  });
+  it('getOrqDeps aceita client injetado (abordagem escreve com o crachá da mensagem)', () => {
+    expect(src).toContain('const getOrqDeps = (client?: SupabaseClient)');
+    expect(src).toContain('supabase: client ?? supabase.getClient()');
+  });
+  it('registrarEvento do handler de texto roda pelo db (3 pontos)', () => {
+    expect((src.match(/registrarEvento\(db\.getClient\(\)/g) ?? []).length).toBeGreaterThanOrEqual(3);
   });
 });
