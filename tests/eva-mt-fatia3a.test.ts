@@ -132,7 +132,8 @@ describe('fatia 3d — singletons do caminho da mensagem no crachá', () => {
     expect((src.match(/reengagement\.cancelAllTouches\((lead\.id|leadId), db\.getClient\(\)\)/g) ?? []).length).toBeGreaterThanOrEqual(4);
     expect((src.match(/postInstall(\?|\b).{0,3}cancelAll\(leadId, db\.getClient\(\)\)/g) ?? []).length).toBeGreaterThanOrEqual(3);
     expect(src).toContain('postInstall.markReviewConfirmed(leadId, db.getClient())');
-    expect(src).toContain('}, db.getClient());'); // testimonials.save(..., db.getClient())
+    // testimonials.save(<objeto>, db.getClient()) — regex ancorada no save
+    expect(src).toMatch(/testimonials\.save\(\{[\s\S]{0,600}?\}, db\.getClient\(\)\)/);
     expect(src).toContain("capiReporter(leadId, 'Lead', { db })");
     expect(src).toContain("capiReporter(leadId, 'lead_qualificado', { db })");
     expect(src).toContain('proposalFollowup.markClienteRespondeu(from, db)');
@@ -145,7 +146,8 @@ describe('fatia 3d — singletons do caminho da mensagem no crachá', () => {
     expect(mod('capi-reporter.ts')).toContain('deps.recordCapiStage(leadId, eventName, opts?.db)');
   });
 
-  it('crons continuam no singleton (nenhum db vaza pros processDueTouches)', () => {
+  it('crons continuam no singleton (nenhum db vaza pros processDueTouches/processFollowups)', () => {
     expect(src).not.toMatch(/processDueTouches\(db/);
+    expect(src).not.toMatch(/processFollowups\(db/);
   });
 });

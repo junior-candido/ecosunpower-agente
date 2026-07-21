@@ -3712,9 +3712,10 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     companyId?: string,
   ) {
     // EVA MT FATIA 3a — o banco DESTA mensagem: com RLS_EVA=1 + env + companyId
-    // resolvido, as escritas do NÚCLEO (lead/conversa) rodam com o crachá da
-    // empresa (RLS 079 impõe o isolamento). Flag desligada → `db === supabase`
-    // (mesma instância, zero mudança). Actions/helpers migram nas fatias 3b-3d.
+    // resolvido, as escritas rodam com o crachá da empresa (RLS 079 impõe o
+    // isolamento). Flag desligada → `db === supabase` (mesma instância, zero
+    // mudança). Núcleo (3a), actions (3b), helpers (3c) e singletons (3d) já
+    // recebem este db; crons/HTTP/admin seguem no singleton de propósito.
     const db = supabase.paraMensagem(companyId);
 
     // Hook: se essa mensagem eh de cliente que recebeu followup automatico
