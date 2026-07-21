@@ -20,6 +20,21 @@ describe('buildMensagemClienteProposta', () => {
     expect(m.toLowerCase()).not.toContain('revisão');
     expect(m).not.toContain('───');
   });
+  it('autoconsumo remoto: a mensagem NÃO promete o total na conta da casa — divide certinho', () => {
+    // total 1924 com 783 da outra unidade → conta da casa fica ~1141 mais barata
+    const m = buildMensagemClienteProposta('Marcelo', 'https://x/p/abc', false, 'https://x/p/abc.pdf', 1924, 783);
+    expect(m).toContain('R$ 1.141');
+    expect(m).toContain('R$ 783');
+    expect(m.toLowerCase()).toContain('outra unidade');
+    expect(m).not.toMatch(/conta de luz fica cerca de R\$ 1\.924/); // promessa impossível
+  });
+
+  it('sem remoto: mensagem igual à de sempre', () => {
+    const m = buildMensagemClienteProposta('Marcelo', 'https://x/p/abc', false, 'https://x/p/abc.pdf', 900);
+    expect(m).toContain('R$ 900');
+    expect(m.toLowerCase()).not.toContain('outra unidade');
+  });
+
   it('serviço: texto adapta (não fala "energia solar")', () => {
     const m = buildMensagemClienteProposta('Edmilson', 'https://x/p/y', true);
     expect(m).toContain('Edmilson');

@@ -276,6 +276,7 @@ export function buildMensagemClienteProposta(
   ehServico: boolean,
   pdfUrl: string,
   economiaMensal: number | null,
+  economiaRemotaMensal?: number | null,
 ): string {
   // Balão 100% LIMPO — o Junior copia o balão inteiro e manda pro cliente sem editar.
   // Copy "a" (foco no bolso): puxa a economia mensal REAL da proposta. WhatsApp mostra
@@ -286,9 +287,17 @@ export function buildMensagemClienteProposta(
   const fmtRs = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 
   // Abertura: com economia válida (>0 e proposta solar) usa o número; senão, genérica.
+  // Com autoconsumo remoto o total NÃO cabe na frase "sua conta fica X mais barata"
+  // (parte da economia é na OUTRA unidade) — divide certinho pra fatura não desmentir.
   const temEconomia = !ehServico && typeof economiaMensal === 'number' && economiaMensal > 0;
+  const remota = (typeof economiaRemotaMensal === 'number' && economiaRemotaMensal > 0
+    && temEconomia && (economiaMensal as number) > economiaRemotaMensal)
+    ? economiaRemotaMensal
+    : 0;
   const abertura = temEconomia
-    ? `Sua proposta de energia solar da ${empresa().nomeFantasia} está pronta — e sua conta de luz fica cerca de ${fmtRs(economiaMensal as number)} mais barata por mês ☀️`
+    ? (remota > 0
+      ? `Sua proposta de energia solar da ${empresa().nomeFantasia} está pronta — sua conta de luz fica cerca de ${fmtRs((economiaMensal as number) - remota)} mais barata por mês, e os créditos ainda abatem ${fmtRs(remota)} na sua outra unidade ☀️`
+      : `Sua proposta de energia solar da ${empresa().nomeFantasia} está pronta — e sua conta de luz fica cerca de ${fmtRs(economiaMensal as number)} mais barata por mês ☀️`)
     : ehServico
       ? `Sua proposta da ${empresa().nomeFantasia} está pronta — feita sob medida pra você ☀️`
       : `Sua proposta de energia solar da ${empresa().nomeFantasia} está pronta — feita sob medida pra você ☀️`;
@@ -1236,6 +1245,7 @@ export class ProposalAssistant {
     try {
       let pdfBuffer: Buffer;
       let economiaMensalEnvio: number | null = null;
+      let economiaRemotaEnvio: number | null = null;
       if (isPropostaSoServico(last.data)) {
         // Proposta SÓ-SERVIÇO: re-renderiza pelo layout de serviço — NUNCA o solar,
         // que sairia cheio de "R$ NaN" (sem potência/equipamentos). Reusa o
@@ -1260,6 +1270,7 @@ export class ProposalAssistant {
         const calcInput = this.dataToCalculatorInput(last.data);
         const calculations = calcular(calcInput);
         economiaMensalEnvio = calculations.economiaMensal;
+        economiaRemotaEnvio = calculations.economiaRemotaMensal || null;
         const socialProofHtml = await this.buildSocialProofHtml(last.proposalData.tipoCliente);
         const html = renderProposalHTML(last.proposalData, calculations, socialProofHtml, await this.logoProposta());
         pdfBuffer = await htmlToPdf(html, { waitForChartMs: 2000 });
@@ -1272,6 +1283,7 @@ export class ProposalAssistant {
         pdfBuffer,
         pdfFilename: `Proposta-${empresa().nomeFantasia.replace(/[^a-zA-Z0-9]/g, '')}-${nome.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '-')}.pdf`,
         economiaMensal: economiaMensalEnvio,
+        economiaRemotaMensal: economiaRemotaEnvio,
       });
 
       if (!result.ok) {
@@ -1725,6 +1737,7 @@ export class ProposalAssistant {
               ehServico,
               `${result.publicUrl}.pdf`,
               economiaMensalCliente,
+              result.calculations?.economiaRemotaMensal ?? null,
             ),
           );
           clienteEnviada = true;
