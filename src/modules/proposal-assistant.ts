@@ -47,7 +47,7 @@ import { downloadWabaMedia } from './proposal/attachments/whatsapp-media-downloa
 import type { MetaWhatsAppService } from './meta-whatsapp.js';
 import { enviarPropostaParaCliente } from './eva-sender.js';
 import { CasesFetcher, type Case } from './cases-fetcher.js';
-import { empresa, interpolarEmpresa } from './empresa-config.js';
+import { empresa, interpolarEmpresa, comEmpresaDe } from './empresa-config.js';
 import { renderSocialProofPage } from './proposal/social-proof-page.js';
 import { resumirRascunho } from './proposal/rascunho.js';
 
@@ -444,6 +444,10 @@ export interface GenerateProposalCoreInput {
   // No reopen, preserva o número da proposta original (senão o cliente veria um
   // número diferente a cada reabertura). Passado pela rota de reabrir.
   numeroProposta?: string;
+  // [Fase 2 B1b] EMPRESA dona da proposta: a geração roda com empresa()
+  // respondendo pela config dela (CNPJ/PIX/nome/textos do tenant) e a proposta
+  // salva carimbada. Ausente/EcoSun = comportamento de sempre.
+  companyId?: string | null;
 }
 
 export interface GenerateProposalCoreResult {
@@ -1349,7 +1353,14 @@ export class ProposalAssistant {
   // Usado pela tela admin A4 e pelo shim privado generateProposal (zap).
   // Faz: validate -> calc -> render -> PDF -> upload Drive (paralelo) + Supabase (paralelo).
   // NAO toca Redis, NAO retorna string formatada — quem chama formata.
+  // [Fase 2 B1b] roda inteira DENTRO do contexto da empresa (comEmpresaDe):
+  // todos os empresa() do caminho (template/cartão/pagamento/logo/companyDefaults)
+  // respondem pela config do tenant. EcoSun/ausente = idêntico ao de sempre.
   async generateProposalCore(input: GenerateProposalCoreInput): Promise<GenerateProposalCoreResult> {
+    return comEmpresaDe(input.companyId, () => this.generateProposalCoreImpl(input));
+  }
+
+  private async generateProposalCoreImpl(input: GenerateProposalCoreInput): Promise<GenerateProposalCoreResult> {
     if (!this.driveUploader && !this.supabaseService) {
       throw new Error('Nenhum destino configurado (Drive ou Supabase)');
     }
@@ -1371,7 +1382,7 @@ export class ProposalAssistant {
     // o cálculo solar (que não se aplica). Resolve o caso Edmilson.
     if (isPropostaSoServico(data)) {
       const servicos = mapServicosTitulos(data.servicos)!;
-      return await this.generateServiceOnlyCore({ data, servicos, modoEnvio });
+      return await this.generateServiceOnlyCore({ data, servicos, modoEnvio, companyId: input.companyId ?? null });
     }
 
     const calcInput = this.dataToCalculatorInput(data);
@@ -1481,6 +1492,7 @@ export class ProposalAssistant {
           dadosInput: undefined,
           tipo,
           modoEnvio,
+          companyId: input.companyId ?? null,
         });
       }
 
@@ -1532,6 +1544,7 @@ export class ProposalAssistant {
                   dadosInput: dadosInputMinimo,
                   tipo,
                   modoEnvio,
+                  companyId: input.companyId ?? null,
                 })))
       : Promise.reject(new Error('Supabase service nao configurado'));
 
@@ -1584,7 +1597,7 @@ export class ProposalAssistant {
   // hospedagem (Drive + web pública). Espelha o fim de generateProposalCore, mas
   // sem cálculo solar — devolve calculations=null. Resolve o caso Edmilson.
   private async generateServiceOnlyCore(input: {
-    data: any; servicos: ServicoItem[]; modoEnvio: ModoEnvio;
+    data: any; servicos: ServicoItem[]; modoEnvio: ModoEnvio; companyId?: string | null;
   }): Promise<GenerateProposalCoreResult> {
     const { data, servicos, modoEnvio } = input;
     const ano = new Date().getFullYear();
@@ -1634,6 +1647,7 @@ export class ProposalAssistant {
           dadosInput: { comercial: { servicos, soServico: true }, observacoes: observacoesDaProposta(data.observacoes ?? data.observacao) },
           tipo: 'basica',
           modoEnvio,
+          companyId: input.companyId ?? null,
         })
       : Promise.reject(new Error('Supabase service nao configurado'));
 
