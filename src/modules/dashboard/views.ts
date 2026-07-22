@@ -124,7 +124,7 @@ const SIDEBAR_SETORES: SideSetor[] = [
     itens: [
       { href: '/dashboard/home', key: 'home', label: '📊 Visão geral' },
       { href: '/dashboard/cockpit', key: 'cockpit', label: '⚡ Cockpit' },
-      { href: '/dashboard/cerebro', key: 'cerebro', label: '🧠 Cérebro', area: 'relatorios' },
+      { href: '/dashboard/cerebro', key: 'cerebro', label: '🧠 Cérebro', area: 'relatorios', soEcosun: true },
     ],
   },
   {
@@ -134,7 +134,7 @@ const SIDEBAR_SETORES: SideSetor[] = [
       { href: '/dashboard/contratos', key: 'contratos', label: '📄 Contratos & Procurações' },
       { href: '/dashboard/leads', key: 'leads', label: '👥 Leads', area: 'leads' },
       { href: '/dashboard/leads/kanban', key: 'kanban', label: '📋 Funil (Kanban)', area: 'leads' },
-      { href: '/dashboard/clientes', key: 'clientes', label: '🤝 Clientes' },
+      { href: '/dashboard/clientes', key: 'clientes', label: '🤝 Clientes', soEcosun: true },
       { href: '/dashboard/propostas', key: 'propostas', label: '📊 Propostas', area: 'propostas' },
     ],
   },
