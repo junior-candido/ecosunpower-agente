@@ -15,19 +15,23 @@ export function montarCatalogo(
   return m;
 }
 
+// [Fase 2 A3] carimbo explícito — nunca confiar no DEFAULT EcoSun da coluna.
+const ECOSUN_COMPANY_ID_TEL = '00000000-0000-0000-0000-000000000001';
+
 // Agrega leituras finas em resumo diário por (sistema, device, ponto, dia).
+// [A3] O resumo herda o company_id das medições (mesmo sistema = mesma empresa).
 export function agregarDia(
-  rows: Array<{ sistema_id: string; device_key: string; ponto: string; ts: string; valor: number; unidade: string }>,
-): Array<{ sistema_id: string; device_key: string; ponto: string; dia: string; valor_min: number; valor_max: number; valor_med: number; unidade: string }> {
-  const g = new Map<string, { sistema_id: string; device_key: string; ponto: string; dia: string; unidade: string; vs: number[] }>();
+  rows: Array<{ sistema_id: string; device_key: string; ponto: string; ts: string; valor: number; unidade: string; company_id?: string | null }>,
+): Array<{ sistema_id: string; device_key: string; ponto: string; dia: string; valor_min: number; valor_max: number; valor_med: number; unidade: string; company_id: string }> {
+  const g = new Map<string, { sistema_id: string; device_key: string; ponto: string; dia: string; unidade: string; company_id: string; vs: number[] }>();
   for (const r of rows) {
     const dia = r.ts.slice(0, 10);
     const k = `${r.sistema_id}|${r.device_key}|${r.ponto}|${dia}`;
-    if (!g.has(k)) g.set(k, { sistema_id: r.sistema_id, device_key: r.device_key, ponto: r.ponto, dia, unidade: r.unidade, vs: [] });
+    if (!g.has(k)) g.set(k, { sistema_id: r.sistema_id, device_key: r.device_key, ponto: r.ponto, dia, unidade: r.unidade, company_id: r.company_id ?? ECOSUN_COMPANY_ID_TEL, vs: [] });
     g.get(k)!.vs.push(r.valor);
   }
   return [...g.values()].map((x) => ({
-    sistema_id: x.sistema_id, device_key: x.device_key, ponto: x.ponto, dia: x.dia, unidade: x.unidade,
+    sistema_id: x.sistema_id, device_key: x.device_key, ponto: x.ponto, dia: x.dia, unidade: x.unidade, company_id: x.company_id,
     valor_min: Math.min(...x.vs), valor_max: Math.max(...x.vs),
     valor_med: Number((x.vs.reduce((a, b) => a + b, 0) / x.vs.length).toFixed(4)),
   }));
@@ -60,7 +64,7 @@ export class TelemetriaService {
         const r = await adapter.fetchTelemetry(s.api_credentials, catalogo, agoraIso, this.ctxProvider.buildAdapterContext(s));
         if (!r.ok) { falhas++; continue; }
         const rows = r.devices.flatMap((d) =>
-          d.leituras.map((l) => ({ sistema_id: s.id, device_key: d.deviceKey, ponto: l.ponto, ts: l.ts, valor: l.valor, unidade: l.unidade })),
+          d.leituras.map((l) => ({ sistema_id: s.id, device_key: d.deviceKey, ponto: l.ponto, ts: l.ts, valor: l.valor, unidade: l.unidade, company_id: s.company_id ?? ECOSUN_COMPANY_ID_TEL })),
         );
         if (rows.length === 0) continue;
         const { error } = await client.from('telemetria_medicoes').upsert(rows, { onConflict: 'sistema_id,device_key,ponto,ts' });
@@ -77,10 +81,10 @@ export class TelemetriaService {
     const client = this.supabase.getClient();
     const { data, error } = await client
       .from('telemetria_medicoes')
-      .select('sistema_id,device_key,ponto,ts,valor,unidade')
+      .select('sistema_id,device_key,ponto,ts,valor,unidade,company_id')
       .lt('ts', corteIso);
     if (error) { console.warn(`[telemetria] resumirAntigos select: ${error.message}`); return { resumidos: 0, apagados: 0 }; }
-    const rows = (data ?? []) as Array<{ sistema_id: string; device_key: string; ponto: string; ts: string; valor: number; unidade: string }>;
+    const rows = (data ?? []) as Array<{ sistema_id: string; device_key: string; ponto: string; ts: string; valor: number; unidade: string; company_id?: string | null }>;
     if (rows.length === 0) return { resumidos: 0, apagados: 0 };
     const resumo = agregarDia(rows);
     const up = await client.from('telemetria_resumo').upsert(resumo, { onConflict: 'sistema_id,device_key,ponto,dia' });

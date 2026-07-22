@@ -31,9 +31,11 @@ describe('agregarDia', () => {
       { sistema_id: 'S', device_key: 'K', ponto: 'potencia', ts: '2026-01-01T12:00:00Z', valor: 30, unidade: 'kW' },
       { sistema_id: 'S', device_key: 'K', ponto: 'potencia', ts: '2026-01-02T12:00:00Z', valor: 20, unidade: 'kW' },
     ];
+    // [A3] resumo carrega company_id (medições legadas sem carimbo = EcoSun explícito)
+    const ECOSUN = '00000000-0000-0000-0000-000000000001';
     expect(agregarDia(rows)).toEqual([
-      { sistema_id: 'S', device_key: 'K', ponto: 'potencia', dia: '2026-01-01', valor_min: 10, valor_max: 30, valor_med: 20, unidade: 'kW' },
-      { sistema_id: 'S', device_key: 'K', ponto: 'potencia', dia: '2026-01-02', valor_min: 20, valor_max: 20, valor_med: 20, unidade: 'kW' },
+      { sistema_id: 'S', device_key: 'K', ponto: 'potencia', dia: '2026-01-01', valor_min: 10, valor_max: 30, valor_med: 20, unidade: 'kW', company_id: ECOSUN },
+      { sistema_id: 'S', device_key: 'K', ponto: 'potencia', dia: '2026-01-02', valor_min: 20, valor_max: 20, valor_med: 20, unidade: 'kW', company_id: ECOSUN },
     ]);
   });
 });

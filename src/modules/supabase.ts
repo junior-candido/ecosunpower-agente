@@ -1533,9 +1533,12 @@ export class SupabaseService {
     texto: string;
     primeiro_visto_em: string;
     next_send_at: string;
+    // [Fase 2 A3] empresa dona do sistema — carimbo explícito (nunca o default).
+    company_id?: string | null;
   }): Promise<void> {
     const { error } = await this.client.from('monitoring_alerts').insert({
       ...input,
+      company_id: input.company_id ?? '00000000-0000-0000-0000-000000000001',
       last_sent_at: null,
       snoozed_until: null,
       resolved_at: null,

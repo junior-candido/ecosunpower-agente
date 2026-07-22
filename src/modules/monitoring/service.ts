@@ -23,6 +23,28 @@ interface SyncResult {
   marcasSemAdapter: number;
 }
 
+// [Fase 2 A3] Toda escrita derivada de um sistema carimba o company_id DO
+// SISTEMA — nunca confia no DEFAULT da coluna (EcoSun, 077): pra usina de
+// tenant o default seria a empresa ERRADA e o dado sumiria pro dono sob RLS.
+export const ECOSUN_COMPANY_ID_MONIT = '00000000-0000-0000-0000-000000000001';
+
+/** Linhas de geracao_diaria com o carimbo da empresa do sistema (puro, testável). */
+export function linhasGeracao(
+  sistemaId: string,
+  companyId: string | null | undefined,
+  geracoes: { data: string; geracao_kwh: number }[],
+): Array<{ sistema_id: string; data: string; geracao_kwh: number; fetched_at: string; fetched_source: string; company_id: string }> {
+  const fetchedAt = new Date().toISOString();
+  return geracoes.map((g) => ({
+    sistema_id: sistemaId,
+    data: g.data,
+    geracao_kwh: g.geracao_kwh,
+    fetched_at: fetchedAt,
+    fetched_source: 'cron',
+    company_id: companyId ?? ECOSUN_COMPANY_ID_MONIT,
+  }));
+}
+
 export interface DetalheSistema {
   sistema: SistemaCliente;
   kpis: {
@@ -115,7 +137,7 @@ export class MonitoringService {
           continue;
         }
 
-        await this.upsertGeracoes(sistema.id, result.geracoes);
+        await this.upsertGeracoes(sistema.id, result.geracoes, sistema.company_id);
         await this.atualizarStatusSistema(sistema.id, {
           ultima_sincronizacao: new Date().toISOString(),
           ultimo_erro: null,
@@ -191,7 +213,7 @@ export class MonitoringService {
         if (result.invalidCredentials) break; // sem ponto continuar
         // Erro temporario: tenta proximo chunk mesmo assim
       } else {
-        await this.upsertGeracoes(sistemaId, result.geracoes);
+        await this.upsertGeracoes(sistemaId, result.geracoes, sistema.company_id);
         totalDias += result.geracoes.length;
       }
       chunks++;
@@ -229,7 +251,7 @@ export class MonitoringService {
     const result = await adapter.fetchGeneration(sistema.api_credentials, dataInicio, dataFim, this.buildAdapterContext(sistema));
     if (!result.ok) return { ok: false, reason: result.reason };
 
-    await this.upsertGeracoes(sistema.id, result.geracoes);
+    await this.upsertGeracoes(sistema.id, result.geracoes, sistema.company_id);
     await this.atualizarStatusSistema(sistema.id, {
       ultima_sincronizacao: new Date().toISOString(),
       ultimo_erro: null,
@@ -274,11 +296,16 @@ export class MonitoringService {
     }
   }
 
-  private async listarSistemasAtivos(): Promise<SistemaCliente[]> {
-    const { data, error } = await this.supabase.getClient()
+  // [Fase 2 A3] companyId presente = só as usinas daquela empresa (tela do
+  // dashboard passa a empresa do OPERADOR — Sabion não vê EcoSun e vice-versa).
+  // Ausente = todas (crons/relatórios internos, que são multi-tenant).
+  private async listarSistemasAtivos(companyId?: string | null): Promise<SistemaCliente[]> {
+    let q = this.supabase.getClient()
       .from('sistemas_clientes')
       .select('*')
       .eq('ativo', true);
+    if (companyId) q = q.eq('company_id', companyId);
+    const { data, error } = await q;
     if (error) throw new Error(`listarSistemasAtivos: ${error.message}`);
     return (data ?? []) as SistemaCliente[];
   }
@@ -286,15 +313,10 @@ export class MonitoringService {
   private async upsertGeracoes(
     sistemaId: string,
     geracoes: { data: string; geracao_kwh: number }[],
+    companyId?: string | null,
   ): Promise<void> {
     if (geracoes.length === 0) return;
-    const rows = geracoes.map((g) => ({
-      sistema_id: sistemaId,
-      data: g.data,
-      geracao_kwh: g.geracao_kwh,
-      fetched_at: new Date().toISOString(),
-      fetched_source: 'cron',
-    }));
+    const rows = linhasGeracao(sistemaId, companyId, geracoes);
     const { error } = await this.supabase.getClient()
       .from('geracao_diaria')
       .upsert(rows, { onConflict: 'sistema_id,data' });
@@ -327,6 +349,9 @@ export class MonitoringService {
   async importarSitesEmMassa(
     marca: MarcaInversor,
     credenciaisConta: Record<string, unknown>,
+    // [Fase 2 A3] dono das usinas criadas: vem do OPERADOR (dashboard) ou do
+    // sistema que já tinha a conta (discovery). Ausente = EcoSun explícito.
+    companyId?: string | null,
   ): Promise<{
     ok: boolean;
     reason?: string;
@@ -395,11 +420,14 @@ export class MonitoringService {
         const { normalizarNome } = await import('../dashboard/vincular-usinas.js');
         let leadId: string | null = null;
         const alvo = normalizarNome(site.apelido);
+        const donoId = companyId ?? ECOSUN_COMPANY_ID_MONIT;
         // Só casa com nome NÃO vazio: apelido em branco ('  '/'---') normaliza
         // pra '' e casaria com qualquer lead de nome vazio — vínculo errado.
+        // [A3] e SÓ leads da MESMA empresa (nunca vincular usina do tenant a
+        // lead de outra — nome igual entre empresas é colisão, não vínculo).
         if (alvo) {
           const { data: leads } = await this.supabase.getClient()
-            .from('leads').select('id, name');
+            .from('leads').select('id, name').eq('company_id', donoId);
           const hit = (leads ?? []).find((l: any) => normalizarNome(l.name) === alvo);
           leadId = hit?.id ?? null;
         }
@@ -416,6 +444,7 @@ export class MonitoringService {
             ativo: true,
             lead_id: leadId,
             etapa_obra: 'pos_venda',
+            company_id: donoId,
           });
         if (error) { erros++; console.warn(`[monitoring/import] insert ${marca} ${site.apelido} falhou: ${error.message}`); }
         else novos++;
@@ -447,10 +476,11 @@ export class MonitoringService {
       const adapter = getAdapter(marca);
       if (!adapter || !adapter.listSites) continue;
 
-      // Pega todas api_keys distintas daquela marca
+      // Pega todas api_keys distintas daquela marca (com o dono — [A3]: site
+      // novo descoberto nasce na MESMA empresa da conta que o revelou)
       const { data, error } = await this.supabase.getClient()
         .from('sistemas_clientes')
-        .select('api_credentials')
+        .select('api_credentials, company_id')
         .eq('marca_inversor', marca);
       if (error) {
         console.warn(`[monitoring/discovery] ${marca}:`, error.message);
@@ -462,22 +492,23 @@ export class MonitoringService {
       // SolarEdge, jwt pra NEP, {userId,password,apiKey} pra ABB). Adapter
       // sem extractAccountCreds = sem discovery automatico (skip).
       if (!adapter.extractAccountCreds) continue;
-      const contas = new Map<string, Record<string, unknown>>();
+      const contas = new Map<string, { creds: Record<string, unknown>; companyId: string | null }>();
       for (const row of data ?? []) {
         const accountCreds = adapter.extractAccountCreds(row.api_credentials as Record<string, unknown>);
         if (!accountCreds) continue;
         // Chave de dedup: JSON canonico das credenciais da conta (mesmo
-        // objeto = mesma string).
+        // objeto = mesma string). Mesma conta em 2 empresas (não deveria
+        // existir): fica o primeiro dono visto.
         const key = JSON.stringify(accountCreds, Object.keys(accountCreds).sort());
-        contas.set(key, accountCreds);
+        if (!contas.has(key)) contas.set(key, { creds: accountCreds, companyId: (row as any).company_id ?? null });
       }
       if (contas.size === 0) continue; // marca nao tem nenhum sistema cadastrado ainda
 
       let novos = 0;
       let atualizados = 0;
       let erros = 0;
-      for (const accountCreds of contas.values()) {
-        const r = await this.importarSitesEmMassa(marca, accountCreds);
+      for (const conta of contas.values()) {
+        const r = await this.importarSitesEmMassa(marca, conta.creds, conta.companyId);
         if (r.ok) {
           novos += r.novos;
           atualizados += r.atualizados;
@@ -858,12 +889,14 @@ export class MonitoringService {
   }
 
   // Listagem pra dashboard. Inclui geracao do dia atual.
-  async listarParaDashboard(): Promise<Array<SistemaCliente & {
+  // [Fase 2 A3] companyId = empresa do operador (tela por tenant); ausente =
+  // todas (crons multi-tenant: alertas proativos, pós-instalação etc).
+  async listarParaDashboard(companyId?: string | null): Promise<Array<SistemaCliente & {
     geracao_hoje_kwh: number | null;
     geracao_mes_kwh: number;
     geracao_7d_kwh: number;
   }>> {
-    const sistemas = await this.listarSistemasAtivos();
+    const sistemas = await this.listarSistemasAtivos(companyId);
     if (sistemas.length === 0) return [];
 
     const hoje = isoDate(new Date());
