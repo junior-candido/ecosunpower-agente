@@ -9,6 +9,7 @@ import { formatPhoneBR, normalizeBrazilianPhone } from '../meta-leadgen.js';
 import { renderClienteSelector } from './proprietario.js';
 import { empresa } from '../empresa-config.js';
 import { can, type Area, type Nivel, type DashUser } from './permissions.js';
+import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 
 export function escapeHtml(s: string | null | undefined): string {
   if (s === null || s === undefined) return '';
@@ -84,7 +85,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'contratos' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro';
+  active: 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'contratos' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios' | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro';
   title: string;
   body: string;
   scripts?: string;
@@ -103,6 +104,9 @@ interface SideItem {
   label: string;
   area?: Area;
   nivel?: Nivel;
+  // [Fase 2 A1] item exclusivo da EcoSun (gestão de tenants): some pro
+  // usuário de outra empresa mesmo sendo admin (a rota também barra).
+  soEcosun?: boolean;
 }
 // Estrutura de um setor (departamento) do sidebar.
 interface SideSetor {
@@ -170,6 +174,7 @@ const SIDEBAR_SETORES: SideSetor[] = [
     titulo: '⚙️ Configurações',
     itens: [
       { href: '/dashboard/usuarios', key: 'usuarios', label: '👤 Usuários', area: 'usuarios' },
+      { href: '/dashboard/empresas', key: 'empresas', label: '🏢 Empresas (tenants)', area: 'usuarios', nivel: 'administrar', soEcosun: true },
     ],
   },
 ];
@@ -177,10 +182,18 @@ const SIDEBAR_SETORES: SideSetor[] = [
 export function renderLayout(input: LayoutInput): string {
   const { active, title, body, scripts, dark, user } = input;
 
+  // [Fase 2 A2] Marca do dashboard pelo company da SESSÃO: tenant vê o nome
+  // dele; EcoSun (ou telas legadas sem user) vê o visual de sempre, byte a byte.
+  const marcaTenant =
+    user?.companyNome && user.companyId !== ECOSUN_COMPANY_ID ? user.companyNome : null;
+
   // Mesmo gate do navItem antigo: área presente + usuário presente e sem
-  // permissão → esconde. Sem área ou sem usuário → mostra.
-  const itemVisivel = (it: SideItem): boolean =>
-    !(it.area && user && !can(user, it.area, it.nivel ?? 'visualizar'));
+  // permissão → esconde. Sem área ou sem usuário → mostra. Item soEcosun
+  // some pra usuário de outra empresa (gestão de tenants é da EcoSun).
+  const itemVisivel = (it: SideItem): boolean => {
+    if (it.soEcosun && user && user.companyId !== ECOSUN_COMPANY_ID) return false;
+    return !(it.area && user && !can(user, it.area, it.nivel ?? 'visualizar'));
+  };
 
   const linkClass = (key: string) =>
     active === key
@@ -217,7 +230,7 @@ export function renderLayout(input: LayoutInput): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escapeHtml(title)} · EcoSun Dashboard</title>
+<title>${escapeHtml(title)} · ${marcaTenant ? `${escapeHtml(marcaTenant)} Dashboard` : 'EcoSun Dashboard'}</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -295,7 +308,9 @@ export function renderLayout(input: LayoutInput): string {
     <aside class="ecosun-sidebar text-white shadow-xl flex flex-col flex-shrink-0 lg:sticky lg:top-0 lg:h-screen">
       <div class="px-4 py-5 border-b border-white/10 text-center">
         <a href="/dashboard/home" title="Ir para a Home" class="inline-block">
-          <img src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="EcoSunPower" class="h-12 w-auto mx-auto">
+          ${marcaTenant
+            ? `<div class="text-xl font-extrabold text-white leading-tight">${escapeHtml(marcaTenant)}</div>`
+            : `<img src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="EcoSunPower" class="h-12 w-auto mx-auto">`}
         </a>
         <div class="text-[11px] text-sky-200 mt-2 tracking-[0.18em] uppercase">Dashboard interno</div>
       </div>
@@ -316,7 +331,7 @@ export function renderLayout(input: LayoutInput): string {
         <button type="button" aria-label="Abrir menu"
           onclick="document.getElementById('dash-root').classList.toggle('sidebar-open')"
           class="text-2xl leading-none px-2 py-1 rounded-lg hover:bg-white/10">☰</button>
-        <span class="font-semibold tracking-tight">EcoSunPower</span>
+        <span class="font-semibold tracking-tight">${marcaTenant ? escapeHtml(marcaTenant) : 'EcoSunPower'}</span>
       </div>
 
       <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 relative z-0">
@@ -325,12 +340,14 @@ export function renderLayout(input: LayoutInput): string {
 
       <footer class="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 text-xs text-slate-500 text-center border-t border-slate-200 mt-8">
         <div class="flex items-center justify-center gap-2 flex-wrap">
-          <span>☀</span>
+          ${marcaTenant
+            ? `<span>☀</span><span>${escapeHtml(marcaTenant)}</span>`
+            : `<span>☀</span>
           <span>EcoSunPower Energia Solar</span>
           <span class="text-slate-300 hidden sm:inline">·</span>
           <span>CNPJ 33.020.459/0001-06</span>
           <span class="text-slate-300 hidden sm:inline">·</span>
-          <span>Brasília-DF</span>
+          <span>Brasília-DF</span>`}
         </div>
       </footer>
     </div>

@@ -91,7 +91,7 @@ import {
   TIPOS_ESTRUTURA,
 } from './proposta-form-view.js';
 import { renderUsuariosListPage, renderUsuarioEditPage } from './usuarios-views.js';
-import { listUsers, listRoles, createUser, updateUser, getUserByLogin, touchLastLogin } from './users-store.js';
+import { listUsers, listRoles, createUser, updateUser, getUserByLoginTodasEmpresas, touchLastLogin } from './users-store.js';
 import { hashSenha, verificarSenha } from './password.js';
 import { claimLead, podeVerLead, listLeads, leadsParaKanban } from './leads-queries.js';
 import { ORDEM_ETAPAS } from './pipeline.js';
@@ -234,9 +234,14 @@ export function createDashboardRouter(
       ? req.body.next
       : '/dashboard/cockpit';
 
-    const found = login ? await getUserByLogin(supabase, ECOSUN, login) : null;
-    const ok = found ? await verificarSenha(senha, found.senhaHash) : false;
-    if (!ok || !found) {
+    // [Fase 2 A1] Login MULTI-EMPRESA: candidatos de todas as empresas (EcoSun
+    // primeiro — comportamento antigo preservado), a senha desempata.
+    const candidatos = login ? await getUserByLoginTodasEmpresas(supabase, login) : [];
+    let found: { user: (typeof candidatos)[number]['user']; senhaHash: string | null } | null = null;
+    for (const c of candidatos) {
+      if (await verificarSenha(senha, c.senhaHash)) { found = c; break; }
+    }
+    if (!found) {
       return res.status(401).type('text/html').send(
         renderLoginPage({ errorMsg: 'Login ou senha inválidos. Tenta de novo.', next }),
       );
@@ -308,6 +313,42 @@ export function createDashboardRouter(
     });
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: 'editar' });
     res.redirect('/dashboard/usuarios');
+  });
+
+  // ----- EMPRESAS/TENANTS (Fase 2 A1 — docs/ecosof/07): SÓ admin da EcoSun.
+  // Provisiona tenant: empresa + papel Administrador + 1º usuário. Roda no
+  // client de SERVIÇO de propósito (operação cross-tenant de identidade).
+  const ehAdminEcosun = (u: AuthedRequest['dashUser']): boolean =>
+    !!u && u.companyId === ECOSUN && can(u, 'usuarios', 'administrar');
+
+  router.get('/empresas', async (req: AuthedRequest, res) => {
+    if (!ehAdminEcosun(req.dashUser)) { res.status(403).send('Sem permissão'); return; }
+    const { listCompaniesComUsuarios } = await import('./empresas-store.js');
+    const { renderEmpresasPage } = await import('./empresas-views.js');
+    const empresas = await listCompaniesComUsuarios(supabase);
+    const aviso = req.query.ok
+      ? { tipo: 'ok' as const, texto: 'Empresa criada! Entregue o login/senha ao administrador do tenant.' }
+      : req.query.erro
+        ? { tipo: 'erro' as const, texto: String(req.query.erro) }
+        : undefined;
+    res.type('html').send(renderEmpresasPage(empresas, req.dashUser, aviso));
+  });
+
+  router.post('/empresas/nova', async (req: AuthedRequest, res) => {
+    if (!ehAdminEcosun(req.dashUser)) { res.status(403).send('Sem permissão'); return; }
+    const { nome, admin_nome, admin_login, admin_senha } = req.body ?? {};
+    if (!nome || !admin_nome || !admin_login || !admin_senha) { res.status(400).send('Campos obrigatórios'); return; }
+    if (String(admin_senha).length < 8) { res.status(400).send('Senha inicial precisa de 8+ caracteres'); return; }
+    const { criarEmpresaComAdmin } = await import('./empresas-store.js');
+    const r = await criarEmpresaComAdmin(supabase, {
+      nome: String(nome).trim(),
+      adminNome: String(admin_nome).trim(),
+      adminLogin: String(admin_login).trim().toLowerCase(),
+      senhaHash: await hashSenha(String(admin_senha)),
+    });
+    if ('error' in r) { res.redirect(`/dashboard/empresas?erro=${encodeURIComponent(r.error)}`); return; }
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'empresa', entidadeId: r.companyId, acao: 'criou' });
+    res.redirect('/dashboard/empresas?ok=1');
   });
 
   // ----- RH (Trabalhe Conosco): vagas + funil de candidatos -----

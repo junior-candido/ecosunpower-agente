@@ -24,6 +24,9 @@ export interface DashUser {
   isAdmin: boolean;
   roleNome: string;
   permissoes: Permissoes;
+  // [Fase 2 A2] Nome da empresa da sessão (companies.nome) — o layout usa pra
+  // marcar o dashboard do tenant. Ausente/EcoSun = visual EcoSun de sempre.
+  companyNome?: string;
 }
 
 export function can(user: DashUser | null | undefined, area: Area, nivel: Nivel): boolean {
