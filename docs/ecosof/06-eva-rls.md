@@ -37,10 +37,10 @@ Storage (upload de anexo) fica SEMPRE no serviço — a 079 não cobre
 
 ## Gap conhecido (fazer antes do tenant #2 REAL)
 
-- **Prova de vazamento no CI para o caminho da Eva**: estender
-  `scripts/teste-vazamento-ci.ts` com (a) INSERT de dossiê/evento SEM
-  company_id sob crachá A → provar que o WITH CHECK rejeita; (b) COM carimbo
-  de A → aceita, e crachá B não lê. Hoje o CI só prova `leads` genérico.
+- ✅ **FECHADO 22/07** — prova de vazamento do caminho da Eva no CI:
+  `scripts/teste-vazamento-ci.ts` provas 6-10 — dossiê/evento SEM company_id
+  sob crachá A é REJEITADO (default EcoSun bate no WITH CHECK = fail-closed);
+  COM carimbo de A entra, e crachá B lê 0. Roda em todo PR (gate do merge).
 - Leituras de contexto da conversa (histórico etc.) fora do escopo das fatias
   3a-3e continuam no serviço — inofensivas com 1 tenant ativo; revisar quando
   o tenant #2 tiver WhatsApp próprio mapeado (`companies.waba_phone_number_id`).

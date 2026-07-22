@@ -112,9 +112,95 @@ let leadIdB = '';
 // 5) Controle (contagem crua) roda no passo psql do ci.yml — se a semeadura
 //    não tiver 2 leads, o próprio psql falha com ON_ERROR_STOP antes daqui.
 
+// ————————————————————————————————————————————————————————————————————————
+// CAMINHO DA EVA (fatias 3a-3e + checklist docs/ecosof/06-eva-rls.md):
+// as escritas da mensagem (dossiê, eventos do Elo) sob o crachá do tenant.
+// Fecha o "gap conhecido" do 06: antes só `leads` genérico era provado.
+// ————————————————————————————————————————————————————————————————————————
+
+// id do lead da A (pro dossiê com FK)
+let leadIdA = '';
+{
+  const { data } = await crachaA.from('leads').select('id').eq('name', 'Lead da A').limit(1);
+  leadIdA = data?.[0]?.id ?? '';
+  if (!leadIdA) { console.error('Não achei o lead da A via crachá A — semeadura do psql rodou?'); process.exit(1); }
+}
+
+// 6) Dossiê SEM carimbo sob crachá A → o DEFAULT da coluna (EcoSun) bate no
+//    WITH CHECK da 079 e o INSERT é REJEITADO (fail-closed — é por isso que a
+//    fatia 3e carimba company_id em toda escrita do caminho da mensagem).
+{
+  const { error } = await crachaA
+    .from('dossiers')
+    .insert({ lead_id: leadIdA, formatted_text: 'TESTE-VAZAMENTO sem carimbo' });
+  ok(
+    'Dossiê SEM carimbo sob crachá A é rejeitado (default EcoSun ≠ tenant)',
+    !!error,
+    error ? `barrado: ${error.code ?? '?'} — ${error.message}` : 'ACEITOU SEM CARIMBO — escrita silenciosa fora do tenant!'
+  );
+}
+
+// 7) Dossiê COM carimbo da A sob crachá A → aceito…
+let dossierIdA = '';
+{
+  const { data, error } = await crachaA
+    .from('dossiers')
+    .insert({ lead_id: leadIdA, formatted_text: 'Dossiê da A (teste CI)', company_id: A })
+    .select('id')
+    .single();
+  dossierIdA = data?.id ?? '';
+  ok(
+    'Dossiê COM carimbo da A entra normal',
+    !error && !!dossierIdA,
+    error ? `erro: ${error.message}` : `id: ${dossierIdA}`
+  );
+}
+
+// 8) …e o crachá B não enxerga o dossiê da A.
+{
+  const { data, error } = await crachaB.from('dossiers').select('id');
+  const linhas = data?.length ?? 0;
+  ok(
+    'Crachá B NÃO vê o dossiê da A',
+    !error && linhas === 0,
+    error ? `erro: ${error.message}` : `linhas: ${linhas}`
+  );
+}
+
+// 9) Evento do Elo SEM carimbo sob crachá A → rejeitado. (No app o erro é
+//    ENGOLIDO de propósito pelo registrarEvento — o evento sumiria em silêncio;
+//    aqui provamos que a 3e carimbar é o que salva o evento do tenant.)
+{
+  const { error } = await crachaA
+    .from('eventos_elo')
+    .insert({ tipo: 'teste_vazamento_ci', lead_id: leadIdA, payload: {} });
+  ok(
+    'Evento do Elo SEM carimbo sob crachá A é rejeitado',
+    !!error,
+    error ? `barrado: ${error.code ?? '?'} — ${error.message}` : 'ACEITOU SEM CARIMBO — evento vazaria pra EcoSun!'
+  );
+}
+
+// 10) Evento COM carimbo da A → aceito; crachá B lê 0.
+{
+  const { error } = await crachaA
+    .from('eventos_elo')
+    .insert({ tipo: 'teste_vazamento_ci', lead_id: leadIdA, payload: {}, company_id: A });
+  const { data: doB, error: errB } = await crachaB
+    .from('eventos_elo')
+    .select('id')
+    .eq('tipo', 'teste_vazamento_ci');
+  const linhasB = doB?.length ?? 0;
+  ok(
+    'Evento COM carimbo da A entra e o crachá B não lê',
+    !error && !errB && linhasB === 0,
+    error ? `insert falhou: ${error.message}` : errB ? `leitura B falhou: ${errB.message}` : `B leu: ${linhasB}`
+  );
+}
+
 console.log(
   falhas === 0
-    ? '\n🔒 ISOLAMENTO PROVADO NO CI — 2 empresas fake, zero vazamento.'
+    ? '\n🔒 ISOLAMENTO PROVADO NO CI — leads + caminho da Eva (dossiê/eventos), zero vazamento.'
     : `\n🚨 ${falhas} PROVA(S) FALHARAM NO CI — vazamento de dado entre empresas. Build vermelho.`
 );
 process.exit(falhas === 0 ? 0 : 1);
