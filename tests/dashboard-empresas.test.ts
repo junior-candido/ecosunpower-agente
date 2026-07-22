@@ -165,4 +165,13 @@ describe('A2 — marca do dashboard pelo company da sessão', () => {
     expect(deEcosun).toContain('/dashboard/empresas');
     expect(deTenant).not.toContain('/dashboard/empresas');
   });
+
+  it('[A3½] Clientes e Cérebro (leem pelo serviço) somem do menu do tenant até a migração', () => {
+    const deEcosun = renderLayout({ active: 'home', title: 'T', body: '', user: adminEcosun });
+    const deTenant = renderLayout({ active: 'home', title: 'T', body: '', user: adminSabion });
+    expect(deEcosun).toContain('/dashboard/clientes');
+    expect(deEcosun).toContain('/dashboard/cerebro');
+    expect(deTenant).not.toContain('/dashboard/clientes');
+    expect(deTenant).not.toContain('/dashboard/cerebro');
+  });
 });

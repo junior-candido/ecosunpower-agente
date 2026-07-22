@@ -3679,6 +3679,26 @@ export function createDashboardRouter(
     } catch (err) { console.error('[os] laudo falhou:', (err as Error).message); res.status(500).send('erro no laudo'); }
   });
 
+  // [Fase 2 A3½] /clientes e /cerebro ainda leem pelo SERVIÇO (refactor de
+  // injeção pendente — "shape errado" do 05/07): pra um TENANT essas telas
+  // mostrariam dados da EcoSun. Até a migração, ficam EcoSun-only com aviso
+  // honesto (o menu já esconde; isto cobre URL digitada na mão).
+  const soEcosunPorEnquanto = (req: Request, res: Response, next: () => void): void => {
+    const u = (req as AuthedRequest).dashUser;
+    if (u && u.companyId !== ECOSUN) {
+      res.status(403).type('html').send(
+        '<div style="font-family:sans-serif;text-align:center;padding:60px 20px;color:#334155">'
+        + '<h2>🔒 Em breve para a sua empresa</h2>'
+        + '<p>Esta área ainda está sendo preparada no ambiente multi-empresa.</p>'
+        + '<a href="/dashboard/cockpit">← voltar ao painel</a></div>',
+      );
+      return;
+    }
+    next();
+  };
+  router.use('/clientes', soEcosunPorEnquanto);
+  router.use('/cerebro', soEcosunPorEnquanto);
+
   router.get('/clientes', async (req: Request, res: Response) => {
     try {
       const limit = Math.max(1, Math.min(200, parseInt((req.query.limit as string) ?? '50') || 50));
