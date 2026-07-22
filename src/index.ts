@@ -4978,6 +4978,9 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         if (d.opportunities) leadUpdate.opportunities = d.opportunities;
         if (d.future_demand) leadUpdate.future_demand = d.future_demand;
         leadUpdate.status = 'qualificando';
+        // [MT 3e] carimbo no fallback-INSERT (igual aos irmãos qualificado/
+        // transferido/agendado; update descarta company_id, idêntico)
+        leadUpdate.company_id = db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID;
 
         await db.upsertLead(leadUpdate as unknown as Parameters<typeof db.upsertLead>[0]);
         console.log(`[action] Updated lead ${from}:`, Object.keys(leadUpdate).join(', '));
@@ -5639,7 +5642,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       console.log(`[takeover] Skipping audio from ${from} — human takeover active`);
       return;
     }
-    if (!(await supabase.isEvaActiveForPhone(from))) {
+    if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
       console.log(`[eva-active] Skipping audio from ${from} — eva_active=false`);
       return;
     }
@@ -5663,7 +5666,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
       // Arquiva o audio original no cofre do lead (Junior quer TUDO em maos)
       const audioLead = await db.getLeadByPhone(from).catch(() => null);
-      if (audioLead) await archiveInboundMedia(supabase, audioLead.id, 'audio', media.base64, media.mimetype, messageId);
+      if (audioLead) await archiveInboundMedia(supabase, audioLead.id, 'audio', media.base64, media.mimetype, messageId, { db, companyId: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID });
 
       const text = await transcriber.transcribeFromBase64(media.base64, media.mimetype);
       if (!text) {
@@ -5706,7 +5709,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       console.log(`[takeover] Skipping image from ${from} — human takeover active`);
       return;
     }
-    if (!(await supabase.isEvaActiveForPhone(from))) {
+    if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
       console.log(`[eva-active] Skipping image from ${from} — eva_active=false`);
       return;
     }
@@ -5728,7 +5731,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       }
 
       // Arquiva a foto original no cofre do lead (conta de luz, telhado, etc.)
-      if (lead) await archiveInboundMedia(supabase, lead.id, 'imagem', media.base64, media.mimetype, messageId);
+      if (lead) await archiveInboundMedia(supabase, lead.id, 'imagem', media.base64, media.mimetype, messageId, { db, companyId: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID });
 
       const imageDataUrl = `data:${media.mimetype};base64,${media.base64}`;
       const analysisText = await vision.analyzeImage(imageDataUrl, context);
@@ -5788,7 +5791,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       console.log(`[takeover] Skipping video from ${from} — human takeover active`);
       return;
     }
-    if (!(await supabase.isEvaActiveForPhone(from))) {
+    if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
       console.log(`[eva-active] Skipping video from ${from} — eva_active=false`);
       return;
     }
@@ -5804,7 +5807,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       }
 
       // Arquiva no cofre do lead (alem do bucket testimonials) — Junior quer TUDO em maos
-      if (lead) await archiveInboundMedia(supabase, lead.id, 'video', media.base64, media.mimetype, messageId);
+      if (lead) await archiveInboundMedia(supabase, lead.id, 'video', media.base64, media.mimetype, messageId, { db, companyId: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID });
 
       // Upload to Supabase Storage pra preservar o original
       const videoBuffer = Buffer.from(media.base64, 'base64');
@@ -5915,7 +5918,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       console.log(`[takeover] Skipping document from ${from} — human takeover active`);
       return;
     }
-    if (!(await supabase.isEvaActiveForPhone(from))) {
+    if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
       console.log(`[eva-active] Skipping document from ${from} — eva_active=false`);
       return;
     }
@@ -5943,7 +5946,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       }
 
       // Arquiva o original no cofre do lead (Junior precisa ter a conta em maos)
-      if (lead) await archiveInboundMedia(supabase, lead.id, 'pdf', media.base64, media.mimetype, messageId);
+      if (lead) await archiveInboundMedia(supabase, lead.id, 'pdf', media.base64, media.mimetype, messageId, { db, companyId: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID });
 
       // Guarda: PDF pesado trava a leitura (chamada demora minutos). Barra na
       // entrada com uma saida amigavel em vez de deixar a Eva muda.
@@ -6052,6 +6055,11 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     // Empresa dona (multi-tenant fatia 1): resolvida no webhook. Jobs antigos na
     // fila / canal Evolution nao trazem → EcoSun (comportamento de hoje).
     const companyId = msg.companyId ?? ECOSUN_COMPANY_ID;
+    // [MT 3e] o banco DESTE job do consumer: seed/localização liam e escreviam
+    // pelo SINGLETON — sob 2 tenants com o MESMO telefone, o nome/coordenadas do
+    // cliente do tenant B iam parar no lead da EcoSun (achado do review). Flag
+    // off = mesma instância, idêntico.
+    const dbMsg = supabase.paraMensagem(msg.companyId);
 
     // Seed WhatsApp profile name as lead.name if we don't have a name yet
     if (msg.pushName) {
@@ -6059,9 +6067,9 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       const looksLikeNumber = /^\+?\d/.test(trimmed);
       if (trimmed && !looksLikeNumber) {
         try {
-          const existing = await supabase.getLeadByPhone(msg.from);
+          const existing = await dbMsg.getLeadByPhone(msg.from);
           if (!existing?.name) {
-            await supabase.upsertLead({ phone: msg.from, name: trimmed, company_id: companyId });
+            await dbMsg.upsertLead({ phone: msg.from, name: trimmed, company_id: companyId });
             console.log(`[lead] Seeded pushName "${trimmed}" for ${msg.from}`);
           }
         } catch (err) {
@@ -6105,13 +6113,14 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
             const coords = `${parsed.lat.toFixed(6)},${parsed.lng.toFixed(6)}`;
             const mapsUrl = `https://www.google.com/maps?q=${coords}`;
             // Persist on the lead so Eva can use in schedule_visit later
-            const existing = await supabase.getLeadByPhone(msg.from);
+            // [MT 3e] pelo crachá do job — nunca no lead de outra empresa
+            const existing = await dbMsg.getLeadByPhone(msg.from);
             const mergedEnergy = {
               ...(existing?.energy_data as Record<string, unknown> | undefined ?? {}),
               shared_coordinates: coords,
               shared_maps_url: mapsUrl,
             };
-            await supabase.upsertLead({ phone: msg.from, energy_data: mergedEnergy, company_id: companyId });
+            await dbMsg.upsertLead({ phone: msg.from, energy_data: mergedEnergy, company_id: companyId });
             console.log(`[location] Saved coords for ${msg.from}: ${coords}`);
             await handleTextMessage(
               msg.from,

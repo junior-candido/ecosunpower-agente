@@ -141,12 +141,15 @@ export class SupabaseService {
     // Elo (casa Comercial): chegou aqui = getLeadByPhone não achou variante →
     // é lead genuinamente NOVO (o caminho de update por telefone existente
     // retornou lá em cima). Best-effort, nunca derruba o cadastro.
+    // [MT 3e] carimbo: era o 4º ponto de registrarEvento sem empresa (achado do
+    // review — escondido DENTRO do método; sob crachá o evento sumia calado).
     await registrarEvento(this.client, {
       tipo: 'comercial:lead_novo',
       departamento: 'comercial',
       leadId: result.id,
       canal: canalDeOrigem(data.origin),
       payload: { origem: data.origin ?? null, status: data.status ?? null },
+      companyId: (data.company_id as string | undefined) ?? this.companyIdDaMensagem,
     });
 
     return { id: result.id };
@@ -1872,6 +1875,7 @@ export class SupabaseService {
     lead_id: string; tipo: string; descricao: string | null;
     storage_path: string; mime_type: string | null; size_bytes: number | null;
     created_by: string;
+    company_id?: string; // [MT 3e] carimbo da empresa dona (lead_anexos na 079)
   }): Promise<{ ok: boolean; id?: string; error?: string }> {
     const { data, error } = await this.client
       .from('lead_anexos')

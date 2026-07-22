@@ -27,7 +27,7 @@ export async function registrarEvento(client: any, ev: EventoInput): Promise<voi
       canal: ev.canal ?? null,
       origem: ev.origem ?? null,
       payload: ev.payload ?? {},
-      // ausente = deixa o DEFAULT da coluna (EcoSun, migration 077) agir —
+      // ausente = deixa o DEFAULT da coluna (EcoSun, migration 069) agir —
       // idêntico ao de sempre pros chamadores que não carimbam.
       ...(ev.companyId ? { company_id: ev.companyId } : {}),
     });
