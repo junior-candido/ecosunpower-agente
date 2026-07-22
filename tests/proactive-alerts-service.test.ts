@@ -9,6 +9,14 @@ function fakeSupabase(overrides: any = {}) {
     getAlertasAbertosBySistemas: vi.fn().mockResolvedValue([]),
     criarAlertaPendente: vi.fn().mockResolvedValue(undefined),
     resolverAlerta: vi.fn().mockResolvedValue(undefined),
+    // [A3] runDetectionCycle busca o dono (company_id) dos sistemas com alerta novo
+    getClient: () => ({
+      from: () => ({
+        select: () => ({
+          in: () => Promise.resolve({ data: [{ id: 'sid-1', company_id: '33333333-3333-4333-8333-333333333333' }], error: null }),
+        }),
+      }),
+    }),
     ...overrides,
   };
 }
@@ -39,6 +47,8 @@ describe('ProactiveAlertService.runDetectionCycle', () => {
     expect(callArg.sistema_id).toBe('sid-1');
     expect(callArg.tipo).toBe('sistema_offline');
     expect(callArg.next_send_at).toBe(hoje.toISOString());
+    // [A3] alerta nasce carimbado com a empresa dona do sistema
+    expect(callArg.company_id).toBe('33333333-3333-4333-8333-333333333333');
   });
 
   it('resolve alertas abertos quando condição desaparece', async () => {

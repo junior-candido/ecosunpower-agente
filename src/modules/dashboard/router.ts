@@ -2847,7 +2847,9 @@ export function createDashboardRouter(
   // Monitoramento: lista de sistemas FV instalados com geracao do dia/mes.
   router.get('/monitoramento', exigir('usinas', 'visualizar'), async (req: Request, res: Response) => {
     try {
-      const sistemas = await monitoringService.listarParaDashboard();
+      // [Fase 2 A3] só as usinas da EMPRESA do operador (Sabion não vê EcoSun
+      // e vice-versa — o serviço filtra por company_id).
+      const sistemas = await monitoringService.listarParaDashboard((req as AuthedRequest).dashUser?.companyId ?? null);
       const hoje = new Date();
       const enriched = sistemas.map((s) => {
         const cls = classificarSistema({
@@ -3029,7 +3031,9 @@ export function createDashboardRouter(
     }
 
     try {
-      const result = await monitoringService.importarSitesEmMassa(marca, credenciais);
+      // [Fase 2 A3] usinas importadas nascem na EMPRESA DO OPERADOR logado —
+      // o admin do tenant importando a conta dele cria as usinas DELE.
+      const result = await monitoringService.importarSitesEmMassa(marca, credenciais, (req as AuthedRequest).dashUser?.companyId ?? null);
       if (!result.ok) {
         return res.status(400).send(renderImportarSitesPage({
           errorMsg: result.reason ?? 'Falha ao importar.',

@@ -43,6 +43,16 @@ export class ProactiveAlertService {
     for (const id of resolvidos) {
       await this.supabase.resolverAlerta(id, hoje.toISOString(), 'auto');
     }
+    // [Fase 2 A3] alerta nasce carimbado com a empresa DONA do sistema (uma
+    // consulta leve por ciclo; o detector puro não precisa saber de tenant).
+    let donoDe = new Map<string, string | null>();
+    if (novos.length > 0) {
+      const { data: donos } = await this.supabase.getClient()
+        .from('sistemas_clientes')
+        .select('id, company_id')
+        .in('id', novos.map((n) => n.sistema_id));
+      donoDe = new Map((donos ?? []).map((d: any) => [d.id as string, (d.company_id as string | null) ?? null]));
+    }
     for (const n of novos) {
       await this.supabase.criarAlertaPendente({
         sistema_id: n.sistema_id,
@@ -51,6 +61,7 @@ export class ProactiveAlertService {
         texto: n.alerta.texto,
         primeiro_visto_em: hoje.toISOString(),
         next_send_at: hoje.toISOString(),
+        company_id: donoDe.get(n.sistema_id) ?? null,
       });
     }
     // persistentes_devidos: nada aqui — dispatcher pega pela fila do DB

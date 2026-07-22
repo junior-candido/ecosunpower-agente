@@ -18,6 +18,8 @@ export type Orientacao = 'N' | 'NE' | 'L' | 'SE' | 'S' | 'SO' | 'O' | 'NO';
 
 export interface SistemaCliente {
   id: string;
+  // [Fase 2 A3] dono da usina (077/079) — toda escrita derivada carimba com ele.
+  company_id?: string | null;
   lead_id: string | null;
   apelido: string;
   marca_inversor: MarcaInversor;

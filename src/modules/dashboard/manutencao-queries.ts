@@ -141,11 +141,16 @@ export async function registrarLeituraManual(client: SupabaseClient, p: {
   const ano = Number(p.competencia.slice(0, 4)), mes = Number(p.competencia.slice(5, 7));
   const diasNoMes = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
 
+  // [Fase 2 A3] busca o sistema ANTES pra carimbar a leitura com a empresa
+  // DONA (sem isso o default EcoSun quebrava/vazava a leitura de tenant).
+  const { data: s } = await client.from('sistemas_clientes')
+    .select('potencia_kwp, company_id').eq('id', p.sistemaId).maybeSingle();
+  const companyId = ((s as any)?.company_id as string | undefined) ?? '00000000-0000-0000-0000-000000000001';
+
   const { error } = await client.from('geracao_diaria')
-    .upsert({ sistema_id: p.sistemaId, data: dia, geracao_kwh: p.kwh, fetched_source: 'manual' }, { onConflict: 'sistema_id,data' });
+    .upsert({ sistema_id: p.sistemaId, data: dia, geracao_kwh: p.kwh, fetched_source: 'manual', company_id: companyId }, { onConflict: 'sistema_id,data' });
   if (error) throw new Error(`registrarLeituraManual: ${error.message}`);
 
-  const { data: s } = await client.from('sistemas_clientes').select('potencia_kwp').eq('id', p.sistemaId).maybeSingle();
   const kwp = (s as any)?.potencia_kwp != null ? Number((s as any).potencia_kwp) : 0;
   return feedbackLeitura(p.kwh, kwp, HSP_PADRAO, diasNoMes);
 }
