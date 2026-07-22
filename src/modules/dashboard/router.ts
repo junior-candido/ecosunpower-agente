@@ -4313,6 +4313,8 @@ export function createDashboardRouter(
           modoEnvio: 'junior_envia',
           tipo,
           attachments: attachments.length > 0 ? attachments : undefined,
+          // [B1b] proposta nasce na EMPRESA do operador (marca/carimbo do tenant)
+          companyId: (req as AuthedRequest).dashUser?.companyId ?? null,
         });
         return res.redirect(303, `/dashboard/propostas/${result.slug}/preview?lead_id=${lead_id}`);
       } catch (err) {
@@ -4443,7 +4445,7 @@ export function createDashboardRouter(
       }
       const attachments = parsed.attachments.length ? parsed.attachments : undefined;
       if (modo === 'nova') {
-        const result = await options.proposalAssistant.generateProposalCore({ data: parsed.data, modoEnvio: 'junior_envia', tipo: parsed.tipo, attachments });
+        const result = await options.proposalAssistant.generateProposalCore({ data: parsed.data, modoEnvio: 'junior_envia', tipo: parsed.tipo, attachments, companyId: (req as AuthedRequest).dashUser?.companyId ?? null });
         return res.redirect(303, `/dashboard/propostas/${result.slug}/preview?lead_id=`);
       }
       // Reabrir "atualizar essa": preserva o número da proposta original.
@@ -4459,7 +4461,7 @@ export function createDashboardRouter(
           if (alvo[k] === undefined && di[k] !== undefined) alvo[k] = di[k];
         }
       }
-      await options.proposalAssistant.generateProposalCore({ data: parsed.data, modoEnvio: 'junior_envia', tipo: parsed.tipo, attachments, reopenSlug: slug, numeroProposta: orig?.numeroProposta });
+      await options.proposalAssistant.generateProposalCore({ data: parsed.data, modoEnvio: 'junior_envia', tipo: parsed.tipo, attachments, reopenSlug: slug, numeroProposta: orig?.numeroProposta, companyId: (req as AuthedRequest).dashUser?.companyId ?? null });
       return res.redirect(303, `/dashboard/propostas/${slug}/preview?lead_id=`);
     } catch (err) {
       res.status(500).type('text/html').send(`<p>Erro ao reabrir: ${escapeHtmlSimple((err as Error).message)}</p>`);

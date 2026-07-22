@@ -1248,12 +1248,16 @@ export class SupabaseService {
     dadosInput?: Record<string, unknown>;
     tipo?: 'basica' | 'personalizada';
     modoEnvio?: 'junior_envia' | 'eva_envia';
+    // [Fase 2 B1b] empresa dona da proposta — carimbo explícito (o dashboard
+    // lista propostas pelo crachá; sem carimbo a proposta do tenant sumiria).
+    companyId?: string | null;
   }): Promise<{ id: string; expiresAt: string }> {
+    const donoId = input.companyId ?? '00000000-0000-0000-0000-000000000001';
     // Vincula lead se telefone vier preenchido. Resolve bug Fase 1 (proposta orfa).
     let leadId: string | null = null;
     if (input.clienteTelefone && input.clienteTelefone.trim()) {
       try {
-        leadId = await this.getOrCreateLeadByPhone(input.clienteTelefone, input.clienteNome);
+        leadId = await this.getOrCreateLeadByPhone(input.clienteTelefone, input.clienteNome, donoId);
       } catch (err) {
         // Falha no get-or-create NAO bloqueia salvar a proposta — loga e segue.
         console.warn('[supabase] savePropostaPublica getOrCreateLeadByPhone falhou:', (err as Error).message);
@@ -1272,6 +1276,7 @@ export class SupabaseService {
         tipo: input.tipo ?? 'basica',
         modo_envio: input.modoEnvio ?? 'junior_envia',
         lead_id: leadId,
+        company_id: donoId,
       })
       .select('id, expires_at')
       .single();
@@ -1285,6 +1290,7 @@ export class SupabaseService {
       departamento: 'comercial',
       leadId,
       payload: { propostaId: data.id, numeroProposta: input.numeroProposta, slug: input.slug },
+      companyId: donoId, // [B1b] evento do Elo carimbado com a empresa da proposta
     });
 
     // Hook de funil (Fase 2) — best-effort, nunca quebra o salvamento da proposta.

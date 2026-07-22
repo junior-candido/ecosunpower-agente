@@ -4,6 +4,7 @@
 // quando a tabela ainda não existe (deploy antes da migration 049) — o
 // comportamento fica idêntico ao hardcode antigo.
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 export interface EmpresaConfig {
   razaoSocial: string; nomeFantasia: string; cnpj: string;
@@ -165,7 +166,15 @@ let carregadaDoBanco = false;
 // Config por empresa (companyId → config). EcoSun também mora aqui.
 let cachePorEmpresa = new Map<string, Readonly<EmpresaConfig>>();
 
-export function empresa(): Readonly<EmpresaConfig> { return cache; }
+// [Fase 2 B1b] Contexto assíncrono: código rodando dentro de comEmpresaDe(...)
+// vê empresa() responder pela EMPRESA DAQUELE CONTEXTO — os ~25 call sites do
+// caminho da proposta (template, cartão, pagamento, logo) viram tenant-aware
+// sem mudar assinatura nenhuma. Fora de contexto = cache global (EcoSun/clone).
+const alsEmpresa = new AsyncLocalStorage<Readonly<EmpresaConfig>>();
+
+export function empresa(): Readonly<EmpresaConfig> {
+  return alsEmpresa.getStore() ?? cache;
+}
 
 /**
  * [B1a] Config da EMPRESA pedida. Miss (tenant sem linha na 082 ainda) devolve
@@ -175,6 +184,15 @@ export function empresa(): Readonly<EmpresaConfig> { return cache; }
 export function empresaDe(companyId?: string | null): Readonly<EmpresaConfig> {
   if (!companyId || companyId === ECOSUN_COMPANY) return cache;
   return cachePorEmpresa.get(companyId) ?? EMPRESA_DEFAULTS;
+}
+
+/**
+ * [B1b] Roda `fn` com empresa() respondendo pela empresa do companyId — vale
+ * pra tudo que rodar DENTRO (awaits inclusos, é AsyncLocalStorage). EcoSun ou
+ * companyId ausente = mesmo cache global de sempre (byte-idêntico).
+ */
+export function comEmpresaDe<T>(companyId: string | null | undefined, fn: () => T): T {
+  return alsEmpresa.run(empresaDe(companyId), fn);
 }
 
 /** Apenas para testes — reseta estado interno do módulo entre casos. */

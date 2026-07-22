@@ -287,3 +287,55 @@ describe('empresa-config: B1a multi-empresa (empresaDe)', () => {
     expect(empresa().nomeFantasia).toBe('CloneCorp');
   });
 });
+
+// [Fase 2 B1b] comEmpresaDe: contexto assincrono — empresa() responde pela
+// empresa do contexto (awaits inclusos); fora do contexto, cache global.
+describe('empresa-config: B1b comEmpresaDe (contexto assincrono)', () => {
+  const ECOSUN = '00000000-0000-0000-0000-000000000001';
+  const SABION = '33333333-3333-4333-8333-333333333333';
+  beforeEach(() => { _resetEstadoParaTeste(); });
+
+  async function carregaDuas() {
+    const client = {
+      from: () => ({ select: async () => ({ data: [
+        { nome_fantasia: 'EcoSunPower', razao_social: 'ECOSUN', cnpj: '33', company_id: ECOSUN },
+        { nome_fantasia: 'Sabion Solar', razao_social: 'SABION', cnpj: '99', company_id: SABION },
+      ], error: null }) }),
+    } as unknown as Parameters<typeof carregarEmpresaConfig>[0];
+    await carregarEmpresaConfig(client);
+  }
+
+  it('dentro do contexto do tenant, empresa() vira o tenant; fora, EcoSun', async () => {
+    await carregaDuas();
+    const { comEmpresaDe } = await import('../src/modules/empresa-config.js');
+    expect(empresa().nomeFantasia).toBe('EcoSunPower');
+    const dentro = comEmpresaDe(SABION, () => empresa().nomeFantasia);
+    expect(dentro).toBe('Sabion Solar');
+    expect(empresa().nomeFantasia).toBe('EcoSunPower'); // fora: intacto
+  });
+
+  it('o contexto atravessa awaits (e o EcoSun/ausente e identico ao global)', async () => {
+    await carregaDuas();
+    const { comEmpresaDe } = await import('../src/modules/empresa-config.js');
+    const nome = await comEmpresaDe(SABION, async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      return empresa().nomeFantasia;
+    });
+    expect(nome).toBe('Sabion Solar');
+    const eco = await comEmpresaDe(undefined, async () => empresa().nomeFantasia);
+    expect(eco).toBe('EcoSunPower');
+    const eco2 = await comEmpresaDe(ECOSUN, async () => empresa().nomeFantasia);
+    expect(eco2).toBe('EcoSunPower');
+  });
+
+  it('contextos concorrentes nao se contaminam', async () => {
+    await carregaDuas();
+    const { comEmpresaDe } = await import('../src/modules/empresa-config.js');
+    const [a, b] = await Promise.all([
+      comEmpresaDe(SABION, async () => { await new Promise((r) => setTimeout(r, 10)); return empresa().nomeFantasia; }),
+      comEmpresaDe(undefined, async () => { await new Promise((r) => setTimeout(r, 3)); return empresa().nomeFantasia; }),
+    ]);
+    expect(a).toBe('Sabion Solar');
+    expect(b).toBe('EcoSunPower');
+  });
+});
