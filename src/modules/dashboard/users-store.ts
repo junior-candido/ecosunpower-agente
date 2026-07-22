@@ -31,6 +31,9 @@ function montarDashUser(u: UserRow, role: RoleRow | null): DashUser {
     isAdmin: role?.is_admin ?? false,
     roleNome: role?.nome ?? '(sem papel)',
     permissoes: role?.permissoes ?? {},
+    // [Fase 2 A2] embed companies(nome) — ausente (mock/linha órfã) fica undefined
+    // e o layout cai no visual EcoSun de sempre.
+    companyNome: (u as any).companies?.nome ?? undefined,
   };
 }
 
@@ -41,7 +44,7 @@ export async function getUserByLogin(
 ): Promise<{ user: DashUser; senhaHash: string | null } | null> {
   const { data: u } = await client
     .from('dashboard_users')
-    .select('id, company_id, nome, login, senha_hash, role_id, ativo')
+    .select('id, company_id, nome, login, senha_hash, role_id, ativo, companies:company_id (nome)')
     .eq('company_id', companyId)
     .eq('login', login)
     .eq('ativo', true)
@@ -51,10 +54,34 @@ export async function getUserByLogin(
   return { user: montarDashUser(u as UserRow, role), senhaHash: (u as UserRow).senha_hash };
 }
 
+// [Fase 2 A1] Login MULTI-EMPRESA: mesmo login pode existir em empresas
+// diferentes (unique é por (company_id, login)). Devolve TODOS os candidatos
+// ativos, EcoSun PRIMEIRO — o POST /login testa a senha na ordem, então o
+// login da EcoSun se comporta exatamente como antes; a senha desempata.
+const ECOSUN_ID = '00000000-0000-0000-0000-000000000001';
+export async function getUserByLoginTodasEmpresas(
+  client: SupabaseClient,
+  login: string,
+): Promise<Array<{ user: DashUser; senhaHash: string | null }>> {
+  const { data } = await client
+    .from('dashboard_users')
+    .select('id, company_id, nome, login, senha_hash, role_id, ativo, companies:company_id (nome)')
+    .eq('login', login)
+    .eq('ativo', true);
+  const rows = ((data as UserRow[] | null) ?? []).slice()
+    .sort((a, b) => Number(b.company_id === ECOSUN_ID) - Number(a.company_id === ECOSUN_ID));
+  const out: Array<{ user: DashUser; senhaHash: string | null }> = [];
+  for (const u of rows) {
+    const role = u.role_id ? await getRole(client, u.role_id) : null;
+    out.push({ user: montarDashUser(u, role), senhaHash: u.senha_hash });
+  }
+  return out;
+}
+
 export async function getUserById(client: SupabaseClient, id: string): Promise<DashUser | null> {
   const { data: u } = await client
     .from('dashboard_users')
-    .select('id, company_id, nome, login, senha_hash, role_id, ativo')
+    .select('id, company_id, nome, login, senha_hash, role_id, ativo, companies:company_id (nome)')
     .eq('id', id)
     .eq('ativo', true)
     .maybeSingle();
