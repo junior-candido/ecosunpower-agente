@@ -67,6 +67,9 @@ interface DossierData {
   content: Record<string, unknown>;
   formatted_text: string;
   status: 'draft' | 'sent' | 'read' | 'actioned';
+  // [MT fatia 3e] carimbo da empresa dona — sob crachá do tenant, sem ele o
+  // default EcoSun batia no WITH CHECK da 079 e o dossiê sumia falha-fechado.
+  company_id?: string;
 }
 
 export class SupabaseService {
@@ -86,9 +89,16 @@ export class SupabaseService {
    *  empresa da mensagem). Todos os ~90 métodos passam a rodar tenant-scoped
    *  de graça. NUNCA muta o singleton: os crons de fundo (cadence, e-mail,
    *  monitoring) são multi-tenant e continuam no service_role. */
-  comClient(client: SupabaseClient): SupabaseService {
-    return new SupabaseService(this.configRef, client);
+  comClient(client: SupabaseClient, companyIdDaMensagem?: string): SupabaseService {
+    const clone = new SupabaseService(this.configRef, client);
+    clone.companyIdDaMensagem = companyIdDaMensagem;
+    return clone;
   }
+
+  /** [MT fatia 3e] A empresa RESOLVIDA da mensagem que originou este clone.
+   *  Escritas que precisam CARIMBAR company_id (dossiê, eventos do Elo)
+   *  leem daqui — no singleton é undefined (caller cai no default EcoSun). */
+  companyIdDaMensagem?: string;
 
   /** O SupabaseService que o caminho da MENSAGEM deve usar: com `RLS_EVA=1` +
    *  env do tenant + companyId resolvido → clone com o crachá da empresa;
@@ -96,7 +106,7 @@ export class SupabaseService {
    *  clientDaMensagem (tenant-client.ts). */
   paraMensagem(companyId?: string, e: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env): SupabaseService {
     const c = clientDaMensagem(companyId, this.client, e);
-    return c === this.client ? this : this.comClient(c);
+    return c === this.client ? this : this.comClient(c, companyId);
   }
 
   async upsertLead(data: LeadData): Promise<{ id: string }> {
@@ -131,12 +141,15 @@ export class SupabaseService {
     // Elo (casa Comercial): chegou aqui = getLeadByPhone não achou variante →
     // é lead genuinamente NOVO (o caminho de update por telefone existente
     // retornou lá em cima). Best-effort, nunca derruba o cadastro.
+    // [MT 3e] carimbo: era o 4º ponto de registrarEvento sem empresa (achado do
+    // review — escondido DENTRO do método; sob crachá o evento sumia calado).
     await registrarEvento(this.client, {
       tipo: 'comercial:lead_novo',
       departamento: 'comercial',
       leadId: result.id,
       canal: canalDeOrigem(data.origin),
       payload: { origem: data.origin ?? null, status: data.status ?? null },
+      companyId: (data.company_id as string | undefined) ?? this.companyIdDaMensagem,
     });
 
     return { id: result.id };
@@ -1862,6 +1875,7 @@ export class SupabaseService {
     lead_id: string; tipo: string; descricao: string | null;
     storage_path: string; mime_type: string | null; size_bytes: number | null;
     created_by: string;
+    company_id?: string; // [MT 3e] carimbo da empresa dona (lead_anexos na 079)
   }): Promise<{ ok: boolean; id?: string; error?: string }> {
     const { data, error } = await this.client
       .from('lead_anexos')

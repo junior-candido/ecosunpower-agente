@@ -38,6 +38,8 @@ interface SupabaseLike {
     lead_id: string; tipo: string; descricao: string | null;
     storage_path: string; mime_type: string | null; size_bytes: number | null;
     created_by: string;
+    // [MT 3e] carimbo da empresa dona do anexo (lead_anexos está na 079)
+    company_id?: string;
   }): Promise<{ ok: boolean; id?: string; error?: string }>;
 }
 
@@ -50,6 +52,10 @@ export async function archiveInboundMedia(
   base64: string,
   mimeType: string,
   messageId?: string,
+  // [MT 3e] db = SupabaseService do crachá da mensagem (a LINHA do anexo vai
+  // por ele + carimbo); o STORAGE fica SEMPRE no serviço (1º arg) — a 079 não
+  // cobre storage.objects (mesma lição do currículo do RH, 18/07).
+  opts?: { db?: SupabaseLike; companyId?: string },
 ): Promise<{ ok: boolean; storage_path?: string }> {
   try {
     if (!leadId || !base64) return { ok: false };
@@ -64,10 +70,11 @@ export async function archiveInboundMedia(
     }
 
     const descricao = `Recebido do cliente via WhatsApp (${kind})${messageId ? ` · msg:${messageId}` : ''}`;
-    const ins = await supabase.insertAnexo({
+    const ins = await (opts?.db ?? supabase).insertAnexo({
       lead_id: leadId, tipo, descricao,
       storage_path: up.storage_path, mime_type: mimeType, size_bytes: buffer.byteLength,
       created_by: 'cliente',
+      ...(opts?.companyId ? { company_id: opts.companyId } : {}),
     });
     if (!ins.ok) {
       console.warn(`[inbound-media] insertAnexo falhou (${kind}):`, ins.error);

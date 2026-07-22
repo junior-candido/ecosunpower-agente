@@ -151,3 +151,90 @@ describe('fatia 3d — singletons do caminho da mensagem no crachá', () => {
     expect(src).not.toMatch(/processFollowups\(db/);
   });
 });
+
+// FATIA 3e — company_id EXPLÍCITO + blindagem dos 0-linhas. É a última fatia
+// antes de ligar a RLS_EVA: sem o carimbo, sob crachá do tenant o dossiê/evento
+// caía no default EcoSun e o WITH CHECK da 079 rejeitava EM SILÊNCIO.
+describe('fatia 3e — carimbo de empresa e blindagem', () => {
+  const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const src = readFileSync(join(raiz, 'src', 'index.ts'), 'utf8');
+  const mod = (p: string) => readFileSync(join(raiz, 'src', 'modules', p), 'utf8');
+
+  it('paraMensagem propaga o companyId pro clone (companyIdDaMensagem)', () => {
+    const sup = mod('supabase.ts');
+    expect(sup).toContain('companyIdDaMensagem?: string');
+    expect(sup).toContain('this.comClient(c, companyId)');
+  });
+
+  it('saveDossier carimba a empresa', () => {
+    expect(src).toMatch(/saveDossier\(\{[\s\S]{0,400}?company_id: db\.companyIdDaMensagem \?\? ECOSUN_COMPANY_ID/);
+    expect(mod('supabase.ts')).toMatch(/interface DossierData \{[\s\S]{0,600}?company_id\?: string/);
+  });
+
+  it('upsertLead das actions (qualificado/transferido/agendado) carimba a empresa', () => {
+    expect((src.match(/status: '(qualificado|transferido|agendado)', company_id: db\.companyIdDaMensagem \?\? ECOSUN_COMPANY_ID/g) ?? []).length).toBe(3);
+  });
+
+  it('registrarEvento carimba a empresa nos 3 pontos do caminho da mensagem', () => {
+    expect((src.match(/companyId: db\.companyIdDaMensagem/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    // e o módulo só manda company_id quando informado (default da coluna intacto)
+    expect(mod('elo/eventos.ts')).toContain("...(ev.companyId ? { company_id: ev.companyId } : {})");
+  });
+
+  it('updates de leads POR PHONE das actions nunca engolem 0 linhas', () => {
+    expect((src.match(/\[action\]\[3e\].+atualizou 0 linhas/g) ?? []).length).toBe(3);
+  });
+
+  it('a leitura getLeadByPhone do caminho da mensagem roda pelo crachá', () => {
+    expect(src).not.toContain('supabase.getLeadByPhone(from)');
+    expect((src.match(/db\.getLeadByPhone\(from\)/g) ?? []).length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('gate isEvaActiveForPhone dos 4 handlers de mídia roda pelo crachá', () => {
+    expect(src).not.toContain('supabase.isEvaActiveForPhone(from)');
+    expect((src.match(/db\.isEvaActiveForPhone\(from\)/g) ?? []).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('anexos de mídia: linha pelo crachá + carimbo; storage FICA no serviço', () => {
+    // os 4 pontos passam { db, companyId } — o 1º arg (storage) segue supabase
+    expect((src.match(/archiveInboundMedia\(supabase,[^\n]+\{ db, companyId: db\.companyIdDaMensagem \?\? ECOSUN_COMPANY_ID \}\)/g) ?? []).length).toBe(4);
+  });
+
+  it('consumer (seed do pushName + localização) lê/escreve pelo crachá do job', () => {
+    expect(src).toContain('const dbMsg = supabase.paraMensagem(msg.companyId)');
+    expect((src.match(/dbMsg\.(getLeadByPhone|upsertLead)\(/g) ?? []).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('registrarEvento de lead_novo (DENTRO do upsertLead) carimba a empresa', () => {
+    const sup = readFileSync(join(raiz, 'src', 'modules', 'supabase.ts'), 'utf8');
+    expect(sup).toMatch(/comercial:lead_novo[\s\S]{0,400}?companyId: \(data\.company_id as string \| undefined\) \?\? this\.companyIdDaMensagem/);
+  });
+});
+
+// Comportamento REAL (não grep): o clone do paraMensagem carrega o companyId
+// junto com o crachá — e flag off devolve a MESMA instância sem carimbo.
+describe('fatia 3e — paraMensagem propaga o companyId (instância real)', () => {
+  it('flag OFF: mesma instância (===), companyIdDaMensagem undefined', async () => {
+    const { SupabaseService } = await import('../src/modules/supabase.js');
+    const svc = new SupabaseService({ supabaseUrl: 'http://localhost:54321', supabaseServiceKey: 'service-fake' } as never);
+    const db = svc.paraMensagem('11111111-1111-1111-1111-111111111111', { RLS_EVA: undefined });
+    expect(db).toBe(svc);
+    expect(db.companyIdDaMensagem).toBeUndefined();
+  });
+
+  it('flag ON + env completa: clone com o MESMO companyId do crachá', async () => {
+    const { SupabaseService } = await import('../src/modules/supabase.js');
+    const svc = new SupabaseService({ supabaseUrl: 'http://localhost:54321', supabaseServiceKey: 'service-fake' } as never);
+    const env = {
+      RLS_EVA: '1',
+      SUPABASE_URL: 'http://localhost:54321',
+      SUPABASE_ANON_KEY: 'anon-fake',
+      SUPABASE_JWT_SECRET: 'segredo-de-teste-bem-comprido-1234567890',
+    };
+    const cid = '22222222-2222-2222-2222-222222222222';
+    const db = svc.paraMensagem(cid, env);
+    expect(db).not.toBe(svc);
+    expect(db.companyIdDaMensagem).toBe(cid);
+    expect(svc.companyIdDaMensagem).toBeUndefined(); // singleton nunca é mutado
+  });
+});
