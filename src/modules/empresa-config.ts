@@ -153,31 +153,60 @@ export function listaMarcasTexto(e: EmpresaConfig): string {
 
 // ---------------------------------------------------------------------------
 // Cache + loader (I/O fino). init no boot; getter síncrono pro resto do app.
+// [Fase 2 B1a] O cofre virou MULTI-EMPRESA por baixo: o loader carrega TODAS
+// as linhas (migration 082: 1 linha por company) e o resto do app continua
+// lendo empresa() (EcoSun) idêntico — call sites migram pra empresaDe(companyId)
+// nas fatias B1b+ (proposta/contrato/Eva com a marca do tenant).
 // ---------------------------------------------------------------------------
+const ECOSUN_COMPANY = '00000000-0000-0000-0000-000000000001';
 let cache: Readonly<EmpresaConfig> = EMPRESA_DEFAULTS;
 // Flag: true após o primeiro carregamento bem-sucedido do banco.
 let carregadaDoBanco = false;
+// Config por empresa (companyId → config). EcoSun também mora aqui.
+let cachePorEmpresa = new Map<string, Readonly<EmpresaConfig>>();
 
 export function empresa(): Readonly<EmpresaConfig> { return cache; }
+
+/**
+ * [B1a] Config da EMPRESA pedida. Miss (tenant sem linha na 082 ainda) devolve
+ * os DEFAULTS EcoSun — nunca a linha de OUTRO tenant. Sync (cache do boot),
+ * mesmo contrato do empresa().
+ */
+export function empresaDe(companyId?: string | null): Readonly<EmpresaConfig> {
+  if (!companyId || companyId === ECOSUN_COMPANY) return cache;
+  return cachePorEmpresa.get(companyId) ?? EMPRESA_DEFAULTS;
+}
 
 /** Apenas para testes — reseta estado interno do módulo entre casos. */
 export function _resetEstadoParaTeste(): void {
   cache = EMPRESA_DEFAULTS;
   carregadaDoBanco = false;
+  cachePorEmpresa = new Map();
 }
 
 export async function carregarEmpresaConfig(client: SupabaseClient): Promise<{ ok: boolean; config: Readonly<EmpresaConfig> }> {
   try {
-    const { data, error } = await client.from('empresa_config').select('*').eq('id', 1).maybeSingle();
-    if (error || !data) {
+    // [B1a] carrega TODAS as linhas (uma por empresa). Antes da 082 o select
+    // devolve só a linha id=1 sem company_id → cai no ramo EcoSun (idêntico).
+    const { data, error } = await client.from('empresa_config').select('*');
+    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    if (error || rows.length === 0) {
       console.warn('[empresa-config] tabela ausente/vazia — usando defaults EcoSun:', error?.message ?? 'sem linha');
       // Erro em RELOAD mantém a config anterior — num clone, rebaixar pra defaults EcoSun seria vazar a marca de outro tenant.
       if (!carregadaDoBanco) cache = EMPRESA_DEFAULTS;
       return { ok: false, config: cache };
     }
-    cache = normalizarEmpresaRow(data as Record<string, unknown>);
+    const novoMapa = new Map<string, Readonly<EmpresaConfig>>();
+    for (const row of rows) {
+      const cfg = normalizarEmpresaRow(row);
+      // Linha sem dono = a histórica id=1 (pré-082) = EcoSun.
+      const dono = (typeof row.company_id === 'string' && row.company_id) ? row.company_id : ECOSUN_COMPANY;
+      novoMapa.set(dono, cfg);
+    }
+    cachePorEmpresa = novoMapa;
+    cache = novoMapa.get(ECOSUN_COMPANY) ?? cache;
     carregadaDoBanco = true;
-    console.log(`[empresa-config] carregada: ${cache.nomeFantasia} (atendente: ${cache.nomeAtendente})`);
+    console.log(`[empresa-config] carregada: ${cache.nomeFantasia} (atendente: ${cache.nomeAtendente})${novoMapa.size > 1 ? ` · +${novoMapa.size - 1} tenant(s)` : ''}`);
     return { ok: true, config: cache };
   } catch (err) {
     console.warn('[empresa-config] falha ao carregar — defaults EcoSun:', (err as Error).message);

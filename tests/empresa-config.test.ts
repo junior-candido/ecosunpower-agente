@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { readFileSync } from 'fs';
 import {
   EMPRESA_DEFAULTS, normalizarEmpresaRow, interpolarEmpresa, listaMarcasTexto,
-  carregarEmpresaConfig, empresa, _resetEstadoParaTeste, nomeTituloCase,
+  carregarEmpresaConfig, empresa, empresaDe, _resetEstadoParaTeste, nomeTituloCase,
 } from '../src/modules/empresa-config.js';
 
 describe('empresa-config: defaults EcoSun (fallback sem banco)', () => {
@@ -120,10 +120,9 @@ describe('solar-params: fallback regional pela empresa_config (Step 1c)', () => 
   it('com hsp/tarifa padrão setados no banco, UF desconhecida usa o fallback do clone (mapa DF/GO intacto)', async () => {
     const client = {
       from: () => ({
-        select: () => ({
-          eq: () => ({
-            maybeSingle: async () => ({
-              data: {
+        // [B1a] loader novo: select('*') direto (todas as linhas)
+        select: async () => ({
+              data: [{
                 razao_social: 'SOLARCORP', nome_fantasia: 'SolarCorp', cnpj: '1',
                 endereco: 'x', cidade: 'Uberlândia', uf: 'MG', cep: null,
                 email: 'a@b.com', site_url: 'https://x', atuacao_desde: 2021,
@@ -135,10 +134,8 @@ describe('solar-params: fallback regional pela empresa_config (Step 1c)', () => 
                 garantia_instalacao_meses: 12, fator_perda_padrao: 0.78, belenus_ativo: false,
                 logo_storage_path: null,
                 hsp_padrao: 4.8, tarifa_kwh_padrao: 0.95, concessionaria_padrao: 'CEMIG-MG',
-              },
+              }],
               error: null,
-            }),
-          }),
         }),
       }),
     } as unknown as Parameters<typeof carregarEmpresaConfig>[0];
@@ -165,10 +162,8 @@ describe('empresa-config: I1 — reload com erro mantém config anterior', () =>
     // 1) Primeiro carregamento: sucesso com row de cliente customizado
     const successClient = {
       from: () => ({
-        select: () => ({
-          eq: () => ({
-            maybeSingle: async () => ({
-              data: {
+        select: async () => ({
+              data: [{
                 razao_social: 'SOLARCORP LTDA',
                 nome_fantasia: 'SolarCorp',
                 cnpj: '11.111.111/0001-11',
@@ -181,10 +176,8 @@ describe('empresa-config: I1 — reload com erro mantém config anterior', () =>
                 marcas_permitidas: ['Trina Solar'], marcas_bloqueadas: [],
                 garantia_instalacao_meses: 12, fator_perda_padrao: 0.78, belenus_ativo: false,
                 logo_storage_path: null, hsp_padrao: null, tarifa_kwh_padrao: null, concessionaria_padrao: null,
-              },
+              }],
               error: null,
-            }),
-          }),
         }),
       }),
     } as unknown as Parameters<typeof carregarEmpresaConfig>[0];
@@ -197,11 +190,7 @@ describe('empresa-config: I1 — reload com erro mantém config anterior', () =>
     // 2) Segundo carregamento: banco retorna erro
     const errorClient = {
       from: () => ({
-        select: () => ({
-          eq: () => ({
-            maybeSingle: async () => ({ data: null, error: { message: 'connection refused' } }),
-          }),
-        }),
+        select: async () => ({ data: null, error: { message: 'connection refused' } }),
       }),
     } as unknown as Parameters<typeof carregarEmpresaConfig>[0];
 
@@ -217,10 +206,8 @@ describe('empresa-config: I1 — reload com erro mantém config anterior', () =>
     // 1) Carregamento inicial bem-sucedido
     const successClient = {
       from: () => ({
-        select: () => ({
-          eq: () => ({
-            maybeSingle: async () => ({
-              data: {
+        select: async () => ({
+              data: [{
                 razao_social: 'ACME SOLAR', nome_fantasia: 'AcmeSolar', cnpj: '22.222.222/0001-22',
                 endereco: 'Av Y', cidade: 'Goiânia', uf: 'GO', cep: null,
                 email: 'b@c.com', site_url: 'https://acme.com', atuacao_desde: 2022,
@@ -231,10 +218,8 @@ describe('empresa-config: I1 — reload com erro mantém config anterior', () =>
                 marcas_permitidas: ['Jinko Solar'], marcas_bloqueadas: [],
                 garantia_instalacao_meses: 12, fator_perda_padrao: 0.80, belenus_ativo: false,
                 logo_storage_path: null, hsp_padrao: null, tarifa_kwh_padrao: null, concessionaria_padrao: null,
-              },
+              }],
               error: null,
-            }),
-          }),
         }),
       }),
     } as unknown as Parameters<typeof carregarEmpresaConfig>[0];
@@ -246,11 +231,7 @@ describe('empresa-config: I1 — reload com erro mantém config anterior', () =>
     // 2) Segundo carregamento lança exceção
     const throwClient = {
       from: () => ({
-        select: () => ({
-          eq: () => ({
-            maybeSingle: async () => { throw new Error('network error'); },
-          }),
-        }),
+        select: async () => { throw new Error('network error'); },
       }),
     } as unknown as Parameters<typeof carregarEmpresaConfig>[0];
 
@@ -260,5 +241,49 @@ describe('empresa-config: I1 — reload com erro mantém config anterior', () =>
     expect(r2.config.nomeFantasia).toBe('AcmeSolar');
     expect(empresa().nomeFantasia).toBe('AcmeSolar');
     expect(r2.config.nomeFantasia).not.toBe(EMPRESA_DEFAULTS.nomeFantasia);
+  });
+});
+
+// [Fase 2 B1a] O cofre virou multi-empresa por baixo (migration 082):
+// carrega TODAS as linhas; empresaDe(companyId) devolve a config do tenant;
+// miss NUNCA devolve a marca de outro tenant (cai nos defaults EcoSun).
+describe('empresa-config: B1a multi-empresa (empresaDe)', () => {
+  const ECOSUN = '00000000-0000-0000-0000-000000000001';
+  const SABION = '33333333-3333-4333-8333-333333333333';
+  const OUTRA = '44444444-4444-4444-8444-444444444444';
+  beforeEach(() => { _resetEstadoParaTeste(); });
+
+  const linhaEcoSun = { nome_fantasia: 'EcoSunPower', razao_social: 'ECOSUNPOWER ENERGIA SOLAR LTDA', cnpj: '33.020.459/0001-06', company_id: ECOSUN };
+  const linhaSabion = { nome_fantasia: 'Sabion Solar', razao_social: 'SABION LTDA', cnpj: '99.999.999/0001-99', pix_chave: 'pix-do-sabion', company_id: SABION };
+
+  it('duas linhas: empresa() segue EcoSun; empresaDe(tenant) devolve a do tenant', async () => {
+    const client = {
+      from: () => ({ select: async () => ({ data: [linhaEcoSun, linhaSabion], error: null }) }),
+    } as unknown as Parameters<typeof carregarEmpresaConfig>[0];
+    const r = await carregarEmpresaConfig(client);
+    expect(r.ok).toBe(true);
+    expect(empresa().nomeFantasia).toBe('EcoSunPower');
+    expect(empresaDe(SABION).nomeFantasia).toBe('Sabion Solar');
+    expect(empresaDe(SABION).pixChave).toBe('pix-do-sabion');
+    expect(empresaDe(ECOSUN).nomeFantasia).toBe('EcoSunPower');
+    expect(empresaDe(undefined).nomeFantasia).toBe('EcoSunPower');
+  });
+
+  it('miss (tenant sem linha) = defaults EcoSun, NUNCA a linha de outro tenant', async () => {
+    const client = {
+      from: () => ({ select: async () => ({ data: [linhaEcoSun, linhaSabion], error: null }) }),
+    } as unknown as Parameters<typeof carregarEmpresaConfig>[0];
+    await carregarEmpresaConfig(client);
+    const cfg = empresaDe(OUTRA);
+    expect(cfg.nomeFantasia).toBe(EMPRESA_DEFAULTS.nomeFantasia);
+    expect(cfg.pixChave).not.toBe('pix-do-sabion');
+  });
+
+  it('linha legada SEM company_id (pre-082 / clone EcoSof) segue sendo a empresa da instalacao', async () => {
+    const client = {
+      from: () => ({ select: async () => ({ data: [{ nome_fantasia: 'CloneCorp', razao_social: 'CLONE', cnpj: '1' }], error: null }) }),
+    } as unknown as Parameters<typeof carregarEmpresaConfig>[0];
+    await carregarEmpresaConfig(client);
+    expect(empresa().nomeFantasia).toBe('CloneCorp');
   });
 });
