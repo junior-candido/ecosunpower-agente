@@ -72,7 +72,12 @@ function campoHtml(c: CampoContrato, valor: string, vazio: boolean): string {
     const opcoes = (c.opcoes ?? [])
       .map((o) => `<option value="${escapeHtml(o.valor)}"${o.valor === valor ? ' selected' : ''}>${escapeHtml(o.texto)}</option>`)
       .join('');
-    return `<select name="${c.id}" id="campo-${c.id}" class="${cls}"><option value="">— escolher —</option>${opcoes}</select>`;
+    // Select que já vem com uma opção escolhida (o ler() nunca devolve vazio)
+    // não ganha o "— escolher —": escolher o vazio seria descartado ao salvar e
+    // o operador ficaria sem entender por que o valor antigo voltou.
+    const temEscolhido = (c.opcoes ?? []).some((o) => o.valor === valor);
+    const opcaoVazia = temEscolhido ? '' : '<option value="">— escolher —</option>';
+    return `<select name="${c.id}" id="campo-${c.id}" class="${cls}">${opcaoVazia}${opcoes}</select>`;
   }
   if (c.tipo === 'textarea') {
     return `<textarea name="${c.id}" id="campo-${c.id}" rows="3" class="${cls}" placeholder="${escapeHtml(c.dica ?? '')}">${v}</textarea>`;
@@ -116,7 +121,10 @@ function campo(c: CampoContrato, valor: string, sugestao?: SugestaoIa): string {
     ? '<span class="ml-2 text-xs font-normal text-rose-600">vai sair em branco no PDF</span>'
     : '';
   const cor = vazio ? 'text-rose-700 font-semibold' : 'text-slate-600';
-  const dica = c.somenteLeitura && c.dica
+  // Input/textarea mostram a dica como placeholder; select não tem placeholder,
+  // então a dica aparece escrita embaixo (senão viraria código morto — e é nela
+  // que mora o efeito jurídico de escolhas como a da visita técnica).
+  const dica = (c.somenteLeitura || c.tipo === 'select') && c.dica
     ? `<div class="text-xs text-slate-400 mt-1">${escapeHtml(c.dica)}</div>`
     : '';
   return `<div>
