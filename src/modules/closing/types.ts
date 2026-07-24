@@ -115,6 +115,12 @@ export interface DadosFechamento {
   sistema: Sistema;
   comercial: Comercial;
   disposicoes_especiais?: string;
+  /**
+   * A visita técnica já aconteceu quando o contrato foi emitido? Muda a cláusula
+   * da visita: true = texto no passado (sem a rescisão "não concordei com as
+   * adequações"); false/ausente = texto padrão (visita após a assinatura).
+   */
+  visita_tecnica_realizada?: boolean;
 
   docs_pedidos: DocPedido[];
 }

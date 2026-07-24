@@ -72,7 +72,12 @@ function campoHtml(c: CampoContrato, valor: string, vazio: boolean): string {
     const opcoes = (c.opcoes ?? [])
       .map((o) => `<option value="${escapeHtml(o.valor)}"${o.valor === valor ? ' selected' : ''}>${escapeHtml(o.texto)}</option>`)
       .join('');
-    return `<select name="${c.id}" id="campo-${c.id}" class="${cls}"><option value="">— escolher —</option>${opcoes}</select>`;
+    // Select que já vem com uma opção escolhida (o ler() nunca devolve vazio)
+    // não ganha o "— escolher —": escolher o vazio seria descartado ao salvar e
+    // o operador ficaria sem entender por que o valor antigo voltou.
+    const temEscolhido = (c.opcoes ?? []).some((o) => o.valor === valor);
+    const opcaoVazia = temEscolhido ? '' : '<option value="">— escolher —</option>';
+    return `<select name="${c.id}" id="campo-${c.id}" class="${cls}">${opcaoVazia}${opcoes}</select>`;
   }
   if (c.tipo === 'textarea') {
     return `<textarea name="${c.id}" id="campo-${c.id}" rows="3" class="${cls}" placeholder="${escapeHtml(c.dica ?? '')}">${v}</textarea>`;
@@ -116,7 +121,10 @@ function campo(c: CampoContrato, valor: string, sugestao?: SugestaoIa): string {
     ? '<span class="ml-2 text-xs font-normal text-rose-600">vai sair em branco no PDF</span>'
     : '';
   const cor = vazio ? 'text-rose-700 font-semibold' : 'text-slate-600';
-  const dica = c.somenteLeitura && c.dica
+  // Input/textarea mostram a dica como placeholder; select não tem placeholder,
+  // então a dica aparece escrita embaixo (senão viraria código morto — e é nela
+  // que mora o efeito jurídico de escolhas como a da visita técnica).
+  const dica = (c.somenteLeitura || c.tipo === 'select') && c.dica
     ? `<div class="text-xs text-slate-400 mt-1">${escapeHtml(c.dica)}</div>`
     : '';
   return `<div>
@@ -330,6 +338,14 @@ function avisos(page: ContratoFormInput): string {
   let out = bannerContratos(page.docsResultado ?? '', page.envioResultado ?? '', page.driveResultado ?? '');
 
   const n = page.faltando.length;
+  // O pagamento merece grito próprio: é a cláusula do dinheiro, e já saiu contrato
+  // emitido com "____" nela (o operador tinha posto o valor nos combinados à parte).
+  if (page.faltando.some((c) => c.id === 'com_forma_pagamento')) {
+    const temCombinados = !!(page.valores['disposicoes_especiais'] ?? '').trim();
+    out += box('bg-red-50 border-red-300 text-red-800',
+      `<strong>⚠️ Forma de pagamento vazia.</strong> Do jeito que está, a cláusula de pagamento sai com uma linha em branco no contrato.` +
+      (temCombinados ? ' Vi texto nos "Combinados à parte" — se o pagamento estiver lá, ele vai no campo <strong>Forma de pagamento</strong> (é ele que aparece na cláusula certa).' : ''));
+  }
   if (n > 0) {
     const nomes = page.faltando.map((c) => escapeHtml(c.label)).join(' · ');
     out += box('bg-amber-50 border-amber-300 text-amber-800',

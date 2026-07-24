@@ -294,3 +294,40 @@ describe('numeroBR — o Junior digita como brasileiro', () => {
     expect(numeroBR('abc')).toBeUndefined();
   });
 });
+
+describe('visita técnica — escolher no formulário se já foi feita', () => {
+  const fv = getContrato('fv')!;
+
+  it('o contrato FV tem o campo, como select com as 2 opções', () => {
+    const campo = fv.campos.find((c) => c.id === 'visita_tecnica');
+    expect(campo).toBeDefined();
+    expect(campo!.tipo).toBe('select');
+    expect(campo!.opcoes?.map((o) => o.valor)).toEqual(['a_realizar', 'realizada']);
+    expect(campo!.obrigatorio).toBeFalsy(); // tem padrão — nunca "falta"
+  });
+
+  it('sem escolha salva, o select mostra o padrão (ainda vai ser feita)', () => {
+    const vals = valoresDoFormulario(fv, {});
+    expect(vals['visita_tecnica']).toBe('a_realizar');
+  });
+
+  it('parseFormulario grava a escolha no rascunho (realizada → true, a_realizar → false)', () => {
+    const feita = parseFormulario(fv, { visita_tecnica: 'realizada' });
+    expect(feita.rascunho.visita_tecnica_realizada).toBe(true);
+    const pendente = parseFormulario(fv, { visita_tecnica: 'a_realizar' });
+    expect(pendente.rascunho.visita_tecnica_realizada).toBe(false);
+    // é dado do contrato, não do cadastro do cliente
+    expect(feita.cadastro).not.toHaveProperty('visita_tecnica');
+  });
+
+  it('a escolha sobrevive ao completarComPlaceholders (chega no render)', () => {
+    const { rascunho } = parseFormulario(fv, { visita_tecnica: 'realizada' });
+    const dados = completarComPlaceholders(rascunho);
+    expect(dados.visita_tecnica_realizada).toBe(true);
+  });
+
+  it('procuração e aditivo NÃO ganham o campo (é coisa do contrato FV)', () => {
+    expect(getContrato('procuracao')!.campos.find((c) => c.id === 'visita_tecnica')).toBeUndefined();
+    expect(getContrato('aditivo')!.campos.find((c) => c.id === 'visita_tecnica')).toBeUndefined();
+  });
+});
