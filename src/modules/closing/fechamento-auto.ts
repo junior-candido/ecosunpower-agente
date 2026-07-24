@@ -88,6 +88,7 @@ export function completarComPlaceholders(p: Partial<DadosFechamento>): DadosFech
       forma_pagamento: com.forma_pagamento || BRANCO,
     },
     disposicoes_especiais: p.disposicoes_especiais,
+    visita_tecnica_realizada: p.visita_tecnica_realizada,
     // O aditivo passa inteiro (o template dele decide o que fazer com cada campo
     // vazio). Se não é aditivo, nem existe.
     aditivo: p.aditivo ? obj<DadosFechamento['aditivo']>(p.aditivo) : undefined,

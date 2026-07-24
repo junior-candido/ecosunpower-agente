@@ -110,10 +110,30 @@ export function renderContrato(entrada: DadosFechamento): string {
     return `${cidade}-${uf}, ${d.getDate()} de ${meses[d.getMonth()]} de ${d.getFullYear()}.`;
   })();
 
+  // Numeração SEQUENCIAL (1ª a 16ª/17ª). O template antigo pulava números
+  // (6→8, 9→11, 12→14, 18→23) e o contrato emitido saía com buracos.
+  // As disposições especiais, quando existem, entram antes do foro — por isso
+  // só o número do foro é dinâmico.
   const disposicoes = dados.disposicoes_especiais
-    ? `<h2>CLÁUSULA 23ª — DAS DISPOSIÇÕES ESPECIAIS</h2>
-<p>${dados.disposicoes_especiais}</p>`
+    ? `<h2>CLÁUSULA 16ª — DAS DISPOSIÇÕES ESPECIAIS</h2>
+<p>${dados.disposicoes_especiais}</p>
+
+<hr/>
+`
     : '';
+  const numForo = dados.disposicoes_especiais ? 17 : 16;
+
+  // Visita técnica: o operador escolhe no formulário se ela JÁ FOI FEITA.
+  // Feita = cláusula no passado, sem a rescisão "não concordei com as adequações"
+  // (que só faz sentido antes da visita); adequações passam a valer na execução.
+  const visitaFeita = dados.visita_tecnica_realizada === true;
+  const clausulaVisita = visitaFeita
+    ? `<p>4.1. A <strong>visita técnica</strong> ao local da instalação <strong>já foi realizada</strong> pela CONTRATADA, com validação final das condições do imóvel para o projeto, não tendo sido identificada necessidade de adequações além do previsto na Proposta Comercial.</p>
+<p>4.2. Caso, durante a execução dos serviços, seja identificada a necessidade de <strong>adequações não previstas na Proposta Comercial</strong> (troca de padrão, reforço estrutural, obras complementares), a CONTRATADA apresentará à CONTRATANTE orçamento adicional, que somente será executado mediante aceite formal por escrito (incluindo WhatsApp ou e-mail).</p>`
+    : `<p>4.1. Após a assinatura deste contrato e o recebimento dos documentos do CONTRATANTE (Cláusula 2.1), a CONTRATADA realizará <strong>visita técnica</strong> ao local da instalação para validação final do projeto.</p>
+<p>4.2. Caso a visita técnica identifique a necessidade de <strong>adequações não previstas na Proposta Comercial</strong> (troca de padrão, reforço estrutural, obras complementares), a CONTRATADA apresentará à CONTRATANTE orçamento adicional, que somente será executado mediante aceite formal por escrito (incluindo WhatsApp ou e-mail).</p>
+<p>4.3. Caso a CONTRATANTE não concorde com as adequações propostas, este contrato poderá ser rescindido sem multa, com devolução dos valores pagos, deduzidos os custos com visita técnica e elaboração de projeto, no valor de até <strong>R$ 1.500,00</strong>.</p>`;
+  const etapasAcesso = visitaFeita ? '(instalação e vistoria)' : '(visita técnica, instalação e vistoria)';
 
   const nomeContratante = dados.contratante.tipo === 'PF' ? dados.contratante.nome : dados.contratante.razao_social;
   const cpfContratante = dados.contratante.tipo === 'PF' ? dados.contratante.cpf : dados.contratante.cnpj;
@@ -161,7 +181,7 @@ ${observacaoHtml}
 <p>1.1. Constitui objeto deste contrato a prestação dos seguintes serviços pela CONTRATADA:</p>
 <p>a) <strong>Elaboração de projeto elétrico</strong> de Sistema de Geração Distribuída Fotovoltaica de <strong>${sistema.kwp} kWp</strong>, sob modalidade de <strong>${modalidadeLabel(sistema.modalidade)}</strong>;</p>
 <p>b) <strong>Homologação</strong> do projeto junto à concessionária <strong>${dados.concessionaria}</strong> (Unidade Consumidora nº ${dados.uc_numero ?? '(a confirmar)'});</p>
-<p>c) <strong>Fornecimento e instalação</strong> dos equipamentos descritos na Cláusula 11ª, no imóvel localizado em ${dados.endereco_instalacao.rua}, ${dados.endereco_instalacao.numero}, ${dados.endereco_instalacao.bairro}, ${dados.endereco_instalacao.cidade}-${dados.endereco_instalacao.uf}, CEP ${dados.endereco_instalacao.cep};</p>
+<p>c) <strong>Fornecimento e instalação</strong> dos equipamentos descritos na Cláusula 9ª, no imóvel localizado em ${dados.endereco_instalacao.rua}, ${dados.endereco_instalacao.numero}, ${dados.endereco_instalacao.bairro}, ${dados.endereco_instalacao.cidade}-${dados.endereco_instalacao.uf}, CEP ${dados.endereco_instalacao.cep};</p>
 <p>d) <strong>Solicitação de vistoria, religação e ativação do sistema</strong> junto à concessionária, <strong>com acompanhamento até a efetiva troca do medidor</strong>;</p>
 <p>e) <strong>Anotação de Responsabilidade Técnica</strong> junto ao CREA/CFT, sob responsabilidade do Sr. ${CONTRATADA.representante_nome}, CREA/CFT nº ${CONTRATADA.representante_crea}.</p>
 
@@ -185,11 +205,11 @@ ${observacaoHtml}
 <li>Procuração específica para que a CONTRATADA represente a CONTRATANTE perante a concessionária ${dados.concessionaria}.</li>
 </ul>
 
-<p>2.2. <strong>Garantir o livre acesso</strong> dos técnicos da CONTRATADA ao local da instalação durante todas as etapas (visita técnica, instalação e vistoria).</p>
+<p>2.2. <strong>Garantir o livre acesso</strong> dos técnicos da CONTRATADA ao local da instalação durante todas as etapas ${etapasAcesso}.</p>
 
 <p>2.3. <strong>Da adequação estrutural do telhado:</strong> Após a CONTRATADA informar à CONTRATANTE o <strong>peso dos módulos fotovoltaicos</strong> e as <strong>condições de fixação da estrutura sobre o telhado do imóvel</strong>, caso a CONTRATANTE (ou o proprietário do imóvel) entenda que a estrutura existente não suporta a carga adicional, fica de sua exclusiva responsabilidade providenciar a <strong>adequação prévia da estrutura</strong> antes do início da instalação. A CONTRATADA não se responsabiliza por danos decorrentes de estrutura inadequada ou subdimensionada quando previamente informada e não reforçada pela CONTRATANTE.</p>
 
-<p>2.4. <strong>Realizar os pagamentos</strong> nas condições e prazos da Cláusula 9ª.</p>
+<p>2.4. <strong>Realizar os pagamentos</strong> nas condições e prazos da Cláusula 8ª.</p>
 
 <p>2.5. <strong>Comunicar imediatamente</strong> qualquer anormalidade no sistema durante o período de garantia.</p>
 
@@ -198,19 +218,17 @@ ${observacaoHtml}
 <h2>CLÁUSULA 3ª — DAS OBRIGAÇÕES DA CONTRATADA</h2>
 
 <p>3.1. Executar os serviços com zelo técnico, observando as normas ABNT NBR 5410, NBR 16690, NBR 16149, NBR 16150 e demais normas aplicáveis.</p>
-<p>3.2. Fornecer <strong>equipamentos novos, originais e homologados pelo INMETRO</strong> conforme especificado na Cláusula 11ª.</p>
+<p>3.2. Fornecer <strong>equipamentos novos, originais e homologados pelo INMETRO</strong> conforme especificado na Cláusula 9ª.</p>
 <p>3.3. Emitir <strong>Anotação de Responsabilidade Técnica</strong> junto ao CREA/CFT.</p>
-<p>3.4. Cumprir os prazos da Cláusula 8ª, ressalvadas as hipóteses de força maior previstas na Cláusula 16ª.</p>
+<p>3.4. Cumprir os prazos da Cláusula 7ª, ressalvadas as hipóteses de força maior previstas na Cláusula 13ª.</p>
 <p>3.5. Manter sigilo sobre dados, informações e documentos da CONTRATANTE, mesmo após o término do contrato.</p>
-<p>3.6. Disponibilizar <strong>garantia técnica</strong> dos equipamentos e da instalação, conforme Cláusula 12ª.</p>
+<p>3.6. Disponibilizar <strong>garantia técnica</strong> dos equipamentos e da instalação, conforme Cláusula 10ª.</p>
 
 <hr/>
 
 <h2>CLÁUSULA 4ª — DA VISITA TÉCNICA E PROJETO EXECUTIVO</h2>
 
-<p>4.1. Após a assinatura deste contrato e o recebimento dos documentos do CONTRATANTE (Cláusula 2.1), a CONTRATADA realizará <strong>visita técnica</strong> ao local da instalação para validação final do projeto.</p>
-<p>4.2. Caso a visita técnica identifique a necessidade de <strong>adequações não previstas na Proposta Comercial</strong> (troca de padrão, reforço estrutural, obras complementares), a CONTRATADA apresentará à CONTRATANTE orçamento adicional, que somente será executado mediante aceite formal por escrito (incluindo WhatsApp ou e-mail).</p>
-<p>4.3. Caso a CONTRATANTE não concorde com as adequações propostas, este contrato poderá ser rescindido sem multa, com devolução dos valores pagos, deduzidos os custos com visita técnica e elaboração de projeto, no valor de até <strong>R$ 1.500,00</strong>.</p>
+${clausulaVisita}
 
 <hr/>
 
@@ -231,26 +249,26 @@ ${observacaoHtml}
 
 <hr/>
 
-<h2>CLÁUSULA 8ª — DOS PRAZOS E CRONOGRAMA</h2>
+<h2>CLÁUSULA 7ª — DOS PRAZOS E CRONOGRAMA</h2>
 
-<p>8.1. <strong>Prazo total estimado:</strong> entre <strong>30 (trinta) e 45 (quarenta e cinco) dias corridos</strong>, contados a partir da confirmação do pagamento da primeira parcela e do recebimento integral dos documentos da CONTRATANTE.</p>
-<p>8.2. Cronograma de etapas (estimativa):</p>
+<p>7.1. <strong>Prazo total estimado:</strong> entre <strong>30 (trinta) e 45 (quarenta e cinco) dias corridos</strong>, contados a partir da confirmação do pagamento da primeira parcela e do recebimento integral dos documentos da CONTRATANTE.</p>
+<p>7.2. Cronograma de etapas (estimativa):</p>
 <p>a) Processamento do pagamento: até 2 dias úteis;<br/>
 b) Despacho do material pelo distribuidor: até 15 dias corridos;<br/>
 c) Submissão e aprovação do projeto pela concessionária: 15 a 20 dias corridos (em paralelo ao item "b");<br/>
 d) Instalação: 1 a 3 dias úteis;<br/>
 e) Vistoria, troca do medidor e religação: depende exclusivamente da concessionária ${dados.concessionaria}.</p>
-<p>8.3. <strong>Variação de prazos:</strong> sem prejuízo do prazo estimado no item 8.1, os prazos previstos nesta cláusula são estimativas e podem variar. O prazo médio de <strong>entrega do material no local</strong> (despacho e transporte) é de <strong>3 (três) semanas a 30 (trinta) dias corridos</strong>, ao qual se soma o prazo de <strong>análise, aprovação e vistoria da concessionária ${dados.concessionaria}</strong>, de responsabilidade exclusiva desta e fora do controle da CONTRATADA.</p>
+<p>7.3. <strong>Variação de prazos:</strong> sem prejuízo do prazo estimado no item 7.1, os prazos previstos nesta cláusula são estimativas e podem variar. O prazo médio de <strong>entrega do material no local</strong> (despacho e transporte) é de <strong>3 (três) semanas a 30 (trinta) dias corridos</strong>, ao qual se soma o prazo de <strong>análise, aprovação e vistoria da concessionária ${dados.concessionaria}</strong>, de responsabilidade exclusiva desta e fora do controle da CONTRATADA.</p>
 
 <hr/>
 
-<h2>CLÁUSULA 9ª — DO PREÇO E CONDIÇÕES DE PAGAMENTO</h2>
+<h2>CLÁUSULA 8ª — DO PREÇO E CONDIÇÕES DE PAGAMENTO</h2>
 
-<p>9.1. O valor total dos serviços e equipamentos é de <strong>${formatBRL(dados.comercial.valor_total_brl)}</strong>.</p>
+<p>8.1. O valor total dos serviços e equipamentos é de <strong>${formatBRL(dados.comercial.valor_total_brl)}</strong>.</p>
 
-<p>9.2. <strong>Forma de pagamento:</strong> ${dados.comercial.forma_pagamento}.</p>
+<p>8.2. <strong>Forma de pagamento:</strong> ${dados.comercial.forma_pagamento}.</p>
 
-<p>9.3. <strong>Atraso no pagamento</strong> implicará:</p>
+<p>8.3. <strong>Atraso no pagamento</strong> implicará:</p>
 <ul>
 <li>Multa moratória de <strong>2% (dois por cento)</strong> sobre o valor em atraso;</li>
 <li>Juros de mora de <strong>1% (um por cento) ao mês</strong>, pro rata die;</li>
@@ -261,7 +279,7 @@ e) Vistoria, troca do medidor e religação: depende exclusivamente da concessio
 
 <hr/>
 
-<h2>CLÁUSULA 11ª — DOS EQUIPAMENTOS</h2>
+<h2>CLÁUSULA 9ª — DOS EQUIPAMENTOS</h2>
 
 <h3>Módulos Fotovoltaicos</h3>
 <ul>
@@ -288,12 +306,12 @@ ${sistema.inversor.quantidade ? `<li><strong>Quantidade:</strong> ${sistema.inve
 
 <hr/>
 
-<h2>CLÁUSULA 12ª — DAS GARANTIAS</h2>
+<h2>CLÁUSULA 10ª — DAS GARANTIAS</h2>
 
-<p>12.1. <strong>Módulos fotovoltaicos ${sistema.modulos.marca}:</strong> garantia contra defeitos de fabricação e eficiência linear conforme fabricante.</p>
-<p>12.2. <strong>Inversor ${sistema.inversor.marca} ${sistema.inversor.modelo}:</strong> garantia conforme fabricante.</p>
+<p>10.1. <strong>Módulos fotovoltaicos ${sistema.modulos.marca}:</strong> garantia contra defeitos de fabricação e eficiência linear conforme fabricante.</p>
+<p>10.2. <strong>Inversor ${sistema.inversor.marca} ${sistema.inversor.modelo}:</strong> garantia conforme fabricante.</p>
 
-<p>12.3. <strong>Mão de obra e instalação — Garantia de 12 (doze) meses</strong> contados da data de emissão do "Termo de Comissionamento", cobrindo especificamente:</p>
+<p>10.3. <strong>Mão de obra e instalação — Garantia de 12 (doze) meses</strong> contados da data de emissão do "Termo de Comissionamento", cobrindo especificamente:</p>
 <ul>
 <li><strong>Defeitos na fiação</strong> realizada pela CONTRATADA;</li>
 <li><strong>Curto-circuito por falha de ligação</strong> decorrente de não seguir norma técnica;</li>
@@ -302,9 +320,9 @@ ${sistema.inversor.quantidade ? `<li><strong>Quantidade:</strong> ${sistema.inve
 <li><strong>Vazamentos no telhado</strong> decorrentes da instalação dos módulos pela CONTRATADA.</li>
 </ul>
 
-<p>12.4. <strong>Estrutura de fixação:</strong> garantia conforme fabricante, mínimo de 5 (cinco) anos.</p>
+<p>10.4. <strong>Estrutura de fixação:</strong> garantia conforme fabricante, mínimo de 5 (cinco) anos.</p>
 
-<p>12.5. <strong>A garantia NÃO cobre:</strong></p>
+<p>10.5. <strong>A garantia NÃO cobre:</strong></p>
 <ul>
 <li>Danos causados por descargas atmosféricas (raios) — recomenda-se contratar seguro próprio;</li>
 <li>Vandalismo, furto ou roubo de equipamentos;</li>
@@ -314,61 +332,59 @@ ${sistema.inversor.quantidade ? `<li><strong>Quantidade:</strong> ${sistema.inve
 <li>Caso fortuito ou força maior (granizo, ventos extremos, enchente).</li>
 </ul>
 
-<p>12.6. A CONTRATANTE deve <strong>acionar a garantia exclusivamente pela CONTRATADA</strong>, que fará a interface com o fabricante. Acionamento direto ao fabricante pode invalidar a garantia da instalação.</p>
+<p>10.6. A CONTRATANTE deve <strong>acionar a garantia exclusivamente pela CONTRATADA</strong>, que fará a interface com o fabricante. Acionamento direto ao fabricante pode invalidar a garantia da instalação.</p>
 
 <hr/>
 
-<h2>CLÁUSULA 14ª — DA RESCISÃO</h2>
+<h2>CLÁUSULA 11ª — DA RESCISÃO</h2>
 
-<p>14.1. <strong>Rescisão por inadimplemento:</strong> o descumprimento de qualquer cláusula contratual por qualquer das partes ensejará a rescisão imediata, observado o seguinte:</p>
+<p>11.1. <strong>Rescisão por inadimplemento:</strong> o descumprimento de qualquer cláusula contratual por qualquer das partes ensejará a rescisão imediata, observado o seguinte:</p>
 <p>a) Se por culpa da CONTRATANTE (ex: inadimplência superior a 15 dias, falta de fornecimento de documentos por mais de 30 dias), a CONTRATADA poderá reter até <strong>30% (trinta por cento)</strong> dos valores já recebidos a título de cláusula penal compensatória.</p>
 <p>b) Se por culpa da CONTRATADA, esta devolverá integralmente os valores pagos referentes a serviços não realizados, acrescidos de multa de <strong>10% (dez por cento)</strong> sobre o valor pago.</p>
 
-<p>14.2. <strong>Rescisão imotivada pela CONTRATANTE</strong> (sem culpa da CONTRATADA):</p>
+<p>11.2. <strong>Rescisão imotivada pela CONTRATANTE</strong> (sem culpa da CONTRATADA):</p>
 <p>a) <strong>Antes</strong> do envio do pedido de compra dos materiais: devolução de 100% dos valores, descontados custos com visita técnica e projeto (até R$ 1.500,00);</p>
 <p>b) <strong>Após</strong> o pedido de compra dos materiais: devolução de 50% dos valores, sendo a outra metade retida para cobrir custos de cancelamento, frete reverso e armazenagem;</p>
 <p>c) <strong>Após</strong> a entrega dos materiais no local: devolução limitada a 20% dos valores, retidos os custos de equipamentos comprados.</p>
 
-<p>14.3. <strong>Rescisão imotivada pela CONTRATADA:</strong> devolução integral dos valores recebidos, acrescidos de multa de 10%.</p>
+<p>11.3. <strong>Rescisão imotivada pela CONTRATADA:</strong> devolução integral dos valores recebidos, acrescidos de multa de 10%.</p>
 
 <hr/>
 
-<h2>CLÁUSULA 15ª — DO DIREITO DE ARREPENDIMENTO (CDC Art. 49)</h2>
+<h2>CLÁUSULA 12ª — DO DIREITO DE ARREPENDIMENTO (CDC Art. 49)</h2>
 
-<p>15.1. Em conformidade com o art. 49 do Código de Defesa do Consumidor, caso o presente contrato tenha sido celebrado <strong>fora do estabelecimento comercial da CONTRATADA</strong> (por meios eletrônicos, à distância, em domicílio da CONTRATANTE), a CONTRATANTE poderá exercer o <strong>direito de arrependimento no prazo de 7 (sete) dias corridos</strong> contados da assinatura, com devolução integral dos valores pagos, sem qualquer ônus.</p>
-
-<hr/>
-
-<h2>CLÁUSULA 16ª — DO CASO FORTUITO E FORÇA MAIOR</h2>
-
-<p>16.1. Não constituirão descumprimento contratual os atrasos ou interrupções decorrentes de greves, falta generalizada de matéria-prima, restrições aduaneiras, pandemias, calamidade pública, eventos climáticos extremos, apagões, racionamento de energia ou prazos da concessionária ${dados.concessionaria} e da ANEEL.</p>
+<p>12.1. Em conformidade com o art. 49 do Código de Defesa do Consumidor, caso o presente contrato tenha sido celebrado <strong>fora do estabelecimento comercial da CONTRATADA</strong> (por meios eletrônicos, à distância, em domicílio da CONTRATANTE), a CONTRATANTE poderá exercer o <strong>direito de arrependimento no prazo de 7 (sete) dias corridos</strong> contados da assinatura, com devolução integral dos valores pagos, sem qualquer ônus.</p>
 
 <hr/>
 
-<h2>CLÁUSULA 17ª — DA PROTEÇÃO DE DADOS (LGPD)</h2>
+<h2>CLÁUSULA 13ª — DO CASO FORTUITO E FORÇA MAIOR</h2>
 
-<p>17.1. A CONTRATADA, na qualidade de <strong>controladora de dados</strong>, tratará os dados pessoais da CONTRATANTE (nome, CPF, RG, endereço, dados bancários, conta de luz, fotos do imóvel) <strong>estritamente para a execução deste contrato</strong> e cumprimento de obrigações legais.</p>
-<p>17.2. A CONTRATANTE <strong>autoriza expressamente</strong> o compartilhamento de seus dados com: ${dados.concessionaria}, ANEEL, distribuidor de equipamentos, Cartórios (procuração) e bancos.</p>
-<p>17.3. A CONTRATADA atenderá aos direitos do titular previstos na Lei 13.709/2018 (acesso, correção, exclusão, portabilidade).</p>
+<p>13.1. Não constituirão descumprimento contratual os atrasos ou interrupções decorrentes de greves, falta generalizada de matéria-prima, restrições aduaneiras, pandemias, calamidade pública, eventos climáticos extremos, apagões, racionamento de energia ou prazos da concessionária ${dados.concessionaria} e da ANEEL.</p>
 
 <hr/>
 
-<h2>CLÁUSULA 18ª — DAS COMUNICAÇÕES ELETRÔNICAS</h2>
+<h2>CLÁUSULA 14ª — DA PROTEÇÃO DE DADOS (LGPD)</h2>
 
-<p>18.1. As comunicações entre as partes serão consideradas válidas e oficiais quando realizadas por:</p>
+<p>14.1. A CONTRATADA, na qualidade de <strong>controladora de dados</strong>, tratará os dados pessoais da CONTRATANTE (nome, CPF, RG, endereço, dados bancários, conta de luz, fotos do imóvel) <strong>estritamente para a execução deste contrato</strong> e cumprimento de obrigações legais.</p>
+<p>14.2. A CONTRATANTE <strong>autoriza expressamente</strong> o compartilhamento de seus dados com: ${dados.concessionaria}, ANEEL, distribuidor de equipamentos, Cartórios (procuração) e bancos.</p>
+<p>14.3. A CONTRATADA atenderá aos direitos do titular previstos na Lei 13.709/2018 (acesso, correção, exclusão, portabilidade).</p>
+
+<hr/>
+
+<h2>CLÁUSULA 15ª — DAS COMUNICAÇÕES ELETRÔNICAS</h2>
+
+<p>15.1. As comunicações entre as partes serão consideradas válidas e oficiais quando realizadas por:</p>
 <ul>
 <li>WhatsApp e e-mail nos contatos informados no preâmbulo deste contrato;</li>
 <li>Carta com aviso de recebimento (AR) para os endereços indicados no preâmbulo.</li>
 </ul>
-<p>18.2. <strong>Aceites, aditivos e confirmações realizados via WhatsApp ou e-mail</strong> terão pleno valor probatório, conforme art. 10 da MP 2.200-2/2001 e art. 225 do Código Civil.</p>
+<p>15.2. <strong>Aceites, aditivos e confirmações realizados via WhatsApp ou e-mail</strong> terão pleno valor probatório, conforme art. 10 da MP 2.200-2/2001 e art. 225 do Código Civil.</p>
 
 <hr/>
 
-${disposicoes}
+${disposicoes}<h2>CLÁUSULA ${numForo}ª — DO FORO</h2>
 
-<h2>CLÁUSULA 24ª — DO FORO</h2>
-
-<p>24.1. As partes elegem o foro da comarca de <strong>${cidade}-${uf}</strong> (domicílio da CONTRATANTE, art. 101, I, do CDC) para dirimir quaisquer controvérsias oriundas deste contrato, sendo facultado à CONTRATANTE optar pelo foro de seu domicílio.</p>
+<p>${numForo}.1. As partes elegem o foro da comarca de <strong>${cidade}-${uf}</strong> (domicílio da CONTRATANTE, art. 101, I, do CDC) para dirimir quaisquer controvérsias oriundas deste contrato, sendo facultado à CONTRATANTE optar pelo foro de seu domicílio.</p>
 
 <hr/>
 

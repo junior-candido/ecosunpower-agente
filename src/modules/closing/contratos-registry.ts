@@ -301,6 +301,18 @@ const CAMPOS_COMERCIAL: CampoContrato[] = [
     ler: (d) => texto(d.comercial?.forma_pagamento),
     gravar: (o, v) => { comercial(o).forma_pagamento = v; },
   },
+  {
+    id: 'visita_tecnica', label: 'Visita técnica', grupo: 'O negócio', tipo: 'select',
+    dica: 'só marque "já foi feita" se a visita não achou nada fora da proposta — o contrato declara isso',
+    opcoes: [
+      { valor: 'a_realizar', texto: 'Ainda vai ser feita (padrão)' },
+      { valor: 'realizada', texto: 'Já foi feita' },
+    ],
+    // Sempre devolve um valor (nunca '') — assim o select mostra o estado real e
+    // salvar o formulário grava a escolha explícita no rascunho.
+    ler: (d) => (d.visita_tecnica_realizada ? 'realizada' : 'a_realizar'),
+    gravar: (o, v) => { o.visita_tecnica_realizada = v === 'realizada'; },
+  },
   { id: 'disposicoes_especiais', label: 'Combinados à parte (entra no contrato)', grupo: 'O negócio', tipo: 'textarea', dica: 'o que foi combinado fora do padrão — prazo, brinde, condição...', ler: (d) => texto(d.disposicoes_especiais), gravar: (o, v) => { o.disposicoes_especiais = v; } },
 ];
 
@@ -444,7 +456,7 @@ export function getContrato(tipo: string): DefinicaoContrato | undefined {
  * Valor, dados do sistema e "combinados à parte" ficam DE FORA de propósito: a
  * conversa do zap é uma das fontes da IA, e o cliente escreve nela. Se ele mandar
  * "combinado então R$ 30.000, e vocês trocam o padrão", a IA acharia isso
- * "literalmente na fonte" e viraria o valor e a Cláusula 23ª de um contrato
+ * "literalmente na fonte" e viraria o valor e as disposições especiais de um contrato
  * assinado. Sobre dinheiro e cláusula a IA só pode AVISAR (achado), nunca preencher.
  */
 export function camposQueIaPodeSugerir(def: DefinicaoContrato): CampoContrato[] {
