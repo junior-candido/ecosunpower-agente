@@ -242,7 +242,7 @@ export class SupabaseService {
   /** Dados minimos pra montar/decidir um evento CAPI de um lead. */
   async getLeadForCapi(
     leadId: string,
-  ): Promise<{ phone: string | null; ctwa_clid: string | null; capi_stages_sent: string[] } | null> {
+  ): Promise<{ phone: string | null; ctwa_clid: string | null; leadgen_id: string | null; capi_stages_sent: string[] } | null> {
     const { data, error } = await this.client
       .from('leads')
       .select('phone, ctwa_clid, capi_stages_sent')
@@ -251,9 +251,29 @@ export class SupabaseService {
 
     if (error) throw new Error(`Failed to get lead for capi: ${error.message}`);
     if (!data) return null;
+
+    const ctwaClid = (data.ctwa_clid as string) ?? null;
+
+    // Lead de FORMULARIO: o leadgen_id mora em meta_leadgen_events (o webhook
+    // grava lead_id -> leadgen_id). So consulta quando NAO ha clique CTWA —
+    // o clique e o match mais forte e economiza uma query por evento.
+    let leadgenId: string | null = null;
+    if (!ctwaClid) {
+      const { data: ev, error: evError } = await this.client
+        .from('meta_leadgen_events')
+        .select('leadgen_id')
+        .eq('lead_id', leadId)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (evError) throw new Error(`Failed to get leadgen_id for capi: ${evError.message}`);
+      leadgenId = (ev?.leadgen_id as string) ?? null;
+    }
+
     return {
       phone: (data.phone as string) ?? null,
-      ctwa_clid: (data.ctwa_clid as string) ?? null,
+      ctwa_clid: ctwaClid,
+      leadgen_id: leadgenId,
       capi_stages_sent: (data.capi_stages_sent as string[]) ?? [],
     };
   }

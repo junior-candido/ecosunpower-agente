@@ -5,19 +5,23 @@
 // chamar uma funcao de uma linha em cada ponto de transicao de funil.
 //
 // REGRAS:
-//  1. Lead sem ctwa_clid (organico/antigo) -> nao manda. Sem clique nao da
-//     pra casar a conversao com o anuncio.
+//  1. Roteamento pelo jeito de casar o evento com o anuncio:
+//     - ctwa_clid (clique CTWA) -> evento business_messaging (match mais forte)
+//     - leadgen_id (formulario instantaneo) -> evento CRM system_generated
+//     - nenhum dos dois (organico/antigo) -> nao manda
 //  2. Estagio ja reportado (capi_stages_sent) -> nao manda de novo.
 //  3. So marca como enviado APOS a Meta confirmar (ok), pra nao perder evento
 //     numa falha transitoria de rede.
 //  4. NUNCA lanca. Tudo aqui e fire-and-forget; o atendimento da Eva nao pode
 //     quebrar porque a Meta caiu.
 
-import { buildCtwaEvent, MetaCapi } from './meta-capi.js';
+import { buildCtwaEvent, buildCrmLeadEvent, CapiEvent, CapiCrmEvent, MetaCapi } from './meta-capi.js';
 
 export interface LeadCapiInfo {
   phone?: string | null;
   ctwa_clid?: string | null;
+  /** leadgen_id do formulario Meta (meta_leadgen_events). Null = nao veio de form. */
+  leadgen_id?: string | null;
   capi_stages_sent?: string[] | null;
 }
 
@@ -45,17 +49,36 @@ export function makeCapiReporter(deps: CapiReporterDeps): CapiReporter {
   return async (leadId, eventName, opts) => {
     try {
       const lead = await deps.getLeadForCapi(leadId, opts?.db);
-      if (!lead?.ctwa_clid) return;
+      if (!lead) return;
       if (lead.capi_stages_sent?.includes(eventName)) return;
 
-      const event = buildCtwaEvent({
-        eventName,
-        eventTimeMs: now(),
-        ctwaClid: lead.ctwa_clid,
-        wabaId: deps.wabaId,
-        phone: lead.phone ?? undefined,
-        value: opts?.value,
-      });
+      // event_id deterministico: mensagens em rajada disparam o mesmo estagio
+      // antes do recordCapiStage gravar — a Meta dedupa pelo event_id.
+      const eventId = `${leadId}:${eventName}`;
+
+      let event: CapiEvent | CapiCrmEvent;
+      if (lead.ctwa_clid) {
+        event = buildCtwaEvent({
+          eventName,
+          eventTimeMs: now(),
+          ctwaClid: lead.ctwa_clid,
+          wabaId: deps.wabaId,
+          phone: lead.phone ?? undefined,
+          value: opts?.value,
+          eventId,
+        });
+      } else if (lead.leadgen_id) {
+        event = buildCrmLeadEvent({
+          eventName,
+          eventTimeMs: now(),
+          leadgenId: lead.leadgen_id,
+          phone: lead.phone ?? undefined,
+          value: opts?.value,
+          eventId,
+        });
+      } else {
+        return; // organico/antigo: sem chave pra casar com anuncio
+      }
 
       const res = await deps.capi.sendEvents([event]);
       if (res.ok) {

@@ -604,6 +604,31 @@ async function main() {
     : async () => { /* CAPI off: falta META_CAPI_TOKEN, META_WABA_BUSINESS_ACCOUNT_ID ou META_CAPI_DATASET_ID */ };
   console.log(`[capi] Conversions API ${capiOn ? 'ATIVA' : 'off (falta token/WABA id/dataset)'} — dataset ${config.metaCapiDatasetId ?? 'NAO SETADO'}`);
 
+  // CAPI estagio "lead_respondeu": lead de FORMULARIO ja existente respondeu
+  // no zap — texto, foto ou PDF (a resposta mais comum e a foto da conta de
+  // luz). CTWA fica DE FORA de proposito: quem clicou no anuncio do zap ja
+  // conversa por definicao (o estagio 'Lead' cobre) e o sinal so discrimina
+  // no formulario. `stages.includes('Lead')` cobre o lead quente que
+  // preencheu o form mantendo lead_source antigo (o webhook preserva a
+  // origem original de quem ja estava no funil). Guarda barata pelos campos
+  // do lead ja carregado (select *): lead organico nao gera query extra; a
+  // idempotencia real fica no reporter (capi_stages_sent).
+  const maybeCapiRespondeu = (lead: unknown, db?: unknown): void => {
+    const l = lead as {
+      id?: string;
+      ctwa_clid?: string | null;
+      lead_source?: string | null;
+      capi_stages_sent?: string[] | null;
+    } | null;
+    if (!l?.id || l.ctwa_clid) return;
+    const stages = l.capi_stages_sent ?? [];
+    const veioDeForm =
+      l.lead_source === 'ad_ig_leadform' || l.lead_source === 'ad_fb_leadform' || stages.includes('Lead');
+    if (veioDeForm && !stages.includes('lead_respondeu')) {
+      void capiReporter(l.id, 'lead_respondeu', { db });
+    }
+  };
+
   // Follow-up automatico de proposta: notifica Junior toda vez que cliente
   // abre o link publico (throttle 5min), e na primeira abertura manda
   // mensagem pro cliente perguntando se ficou alguma duvida. Preview admin
@@ -4435,6 +4460,12 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         void capiReporter(leadId, 'Lead', { db });
       }
 
+      // CAPI "lead_respondeu": sinal de ouro pro "Leads de conversao" do Meta
+      // — o algoritmo aprende a trazer gente que RESPONDE, nao so quem
+      // preenche formulario. Regras e guarda no helper (definido junto do
+      // capiReporter). Lead novo nao e "resposta" (acabou de nascer aqui).
+      if (!isNewLead) maybeCapiRespondeu(lead, db);
+
       // TRACKING DE ORIGEM: se e a primeira mensagem e contem tag tipo
       // #ig-abc123 / #fb-xyz / #ad-ca1 / #rem-x, extrai e classifica lead_source.
       // So atualiza pra leads NOVOS (preserva atribuicao de leads que ja engajaram
@@ -5716,6 +5747,8 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     await cancelIntroIfPending(from, db);
     try {
       const lead = await db.getLeadByPhone(from);
+      // Foto e RESPOSTA (geralmente a conta de luz) — conta pro CAPI tambem.
+      maybeCapiRespondeu(lead, db);
       const context = lead?.name
         ? `Cliente: ${lead.name}, Cidade: ${lead.city ?? 'nao informada'}, Perfil: ${lead.profile ?? 'indefinido'}`
         : 'Cliente novo, ainda sem dados coletados';
@@ -5931,6 +5964,8 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       }
 
       const lead = await db.getLeadByPhone(from);
+      // PDF e RESPOSTA (geralmente a conta de luz) — conta pro CAPI tambem.
+      maybeCapiRespondeu(lead, db);
       const context = lead?.name
         ? `Cliente: ${lead.name}, Cidade: ${lead.city ?? 'nao informada'}, Perfil: ${lead.profile ?? 'indefinido'}`
         : 'Cliente novo, ainda sem dados coletados';
@@ -6359,6 +6394,13 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           } catch (err) {
             console.error(`[meta-leadgen] markEventProcessed failed for ${leadgenId}:`, (err as Error).message);
           }
+
+          // CAPI estagio "Lead" (formulario): devolve a chegada pro Meta via
+          // CRM integration (system_generated + lead_id). DEPOIS do
+          // markEventProcessed — e ele quem grava o lead_id no evento, e o
+          // getLeadForCapi acha o leadgen_id por esse vinculo. Fire-and-forget;
+          // webhook e caminho service-role (sem crachá), reporter no singleton.
+          void capiReporter(leadId, 'Lead');
 
           // C3 — anti double-welcome: se welcome_sent_at ja tem valor, nao
           // agenda de novo. Cliente ja recebeu a primeira mensagem.

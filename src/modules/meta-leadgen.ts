@@ -197,10 +197,14 @@ export class MetaLeadgenService {
   }
 
   async markEventProcessed(leadgenId: string, leadId: string): Promise<void> {
-    await this.supabase
+    // supabase-js NAO lanca em erro de update — sem este check a falha era
+    // engolida, o lead_id nao gravava e o estagio CAPI 'Lead' do formulario
+    // se perdia em silencio (o lookup do reporter depende deste vinculo).
+    const { error } = await this.supabase
       .from('meta_leadgen_events')
       .update({ processed: true, lead_id: leadId })
       .eq('leadgen_id', leadgenId);
+    if (error) throw new Error(`Failed to mark leadgen event processed: ${error.message}`);
   }
 
   async markEventFailed(leadgenId: string, errorMessage: string): Promise<void> {

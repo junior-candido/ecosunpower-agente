@@ -18,6 +18,7 @@ import {
   hashSha256,
   normalizePhone,
   buildCtwaEvent,
+  buildCrmLeadEvent,
   MetaCapi,
 } from '../src/modules/meta-capi.js';
 
@@ -87,6 +88,81 @@ describe('buildCtwaEvent', () => {
     expect(buildCtwaEvent(base).custom_data).toBeUndefined();
     const ev = buildCtwaEvent({ ...base, value: 25000, currency: 'BRL' });
     expect(ev.custom_data).toEqual({ value: 25000, currency: 'BRL' });
+  });
+});
+
+describe('buildCrmLeadEvent (lead de formulario instantaneo)', () => {
+  // Lead de FORMULARIO nao tem ctwa_clid — a Meta casa o evento pelo
+  // lead_id (leadgen_id do webhook) com action_source=system_generated.
+  // Formato do guia oficial "Conversions API for CRM integration".
+  const base = {
+    eventName: 'lead_qualificado',
+    eventTimeMs: 1_700_000_000_000,
+    leadgenId: '525645896321548',
+  };
+
+  it('monta o envelope CRM: system_generated + lead_id numerico', () => {
+    const ev = buildCrmLeadEvent(base);
+    expect(ev.action_source).toBe('system_generated');
+    expect(ev.event_name).toBe('lead_qualificado');
+    expect(ev.event_time).toBe(1_700_000_000);
+    expect(ev.user_data.lead_id).toBe(525645896321548);
+  });
+
+  it('marca a origem como CRM (event_source + lead_event_source)', () => {
+    const ev = buildCrmLeadEvent(base);
+    expect(ev.custom_data?.event_source).toBe('crm');
+    expect(ev.custom_data?.lead_event_source).toBe('EcoSunPower CRM');
+  });
+
+  it('inclui telefone embaralhado (ph) quando informado', () => {
+    const ev = buildCrmLeadEvent({ ...base, phone: '+55 61 99999-9999' });
+    expect(ev.user_data.ph).toEqual([hashSha256('5561999999999')]);
+  });
+
+  it('value entra no custom_data junto com a origem CRM', () => {
+    const ev = buildCrmLeadEvent({ ...base, value: 32000 });
+    expect(ev.custom_data).toEqual({
+      event_source: 'crm',
+      lead_event_source: 'EcoSunPower CRM',
+      value: 32000,
+      currency: 'BRL',
+    });
+  });
+
+  it('leadgen_id maior que o inteiro seguro vira string (nao corrompe o numero)', () => {
+    // Number('99999999999999999') perderia precisao em silencio e o evento
+    // nunca casaria com o lead na Meta. Acima de 2^53-1, mantem string.
+    const ev = buildCrmLeadEvent({ ...base, leadgenId: '99999999999999999' });
+    expect(ev.user_data.lead_id).toBe('99999999999999999');
+  });
+
+  it('inclui event_id quando informado (dedup do lado da Meta)', () => {
+    const ev = buildCrmLeadEvent({ ...base, eventId: 'lead-1:lead_respondeu' });
+    expect(ev.event_id).toBe('lead-1:lead_respondeu');
+  });
+});
+
+describe('event_id no evento CTWA (dedup do lado da Meta)', () => {
+  it('inclui event_id quando informado', () => {
+    const ev = buildCtwaEvent({
+      eventName: 'Lead',
+      eventTimeMs: 1_700_000_000_000,
+      ctwaClid: 'CLID_ABC',
+      wabaId: 'WABA_123',
+      eventId: 'lead-1:Lead',
+    });
+    expect(ev.event_id).toBe('lead-1:Lead');
+  });
+
+  it('sem eventId nao poe a chave (retrocompat)', () => {
+    const ev = buildCtwaEvent({
+      eventName: 'Lead',
+      eventTimeMs: 1_700_000_000_000,
+      ctwaClid: 'CLID_ABC',
+      wabaId: 'WABA_123',
+    });
+    expect(ev.event_id).toBeUndefined();
   });
 });
 

@@ -36,11 +36,16 @@ export interface CtwaEventParams {
   value?: number;
   /** Moeda do value. Default BRL quando value presente. */
   currency?: string;
+  /** Chave de dedup na Meta (ex: `${leadId}:${eventName}`). Mensagens em
+   *  rajada disparam o mesmo estagio antes do recordCapiStage gravar — com
+   *  event_id igual, a Meta descarta a duplicata sozinha. Opcional. */
+  eventId?: string;
 }
 
 export interface CapiEvent {
   event_name: string;
   event_time: number; // UNIX em segundos
+  event_id?: string;
   action_source: 'business_messaging';
   messaging_channel: 'whatsapp';
   user_data: {
@@ -81,12 +86,92 @@ export function buildCtwaEvent(params: CtwaEventParams): CapiEvent {
     },
   };
 
+  if (params.eventId) {
+    event.event_id = params.eventId;
+  }
+
   if (params.phone) {
     event.user_data.ph = [hashSha256(normalizePhone(params.phone))];
   }
 
   if (typeof params.value === 'number') {
     event.custom_data = { value: params.value, currency: params.currency ?? 'BRL' };
+  }
+
+  return event;
+}
+
+// ---- Leads de FORMULARIO instantaneo (CRM integration) ----
+//
+// Lead de formulario NAO tem ctwa_clid. A Meta casa o evento pelo `lead_id`
+// (o leadgen_id que chega no webhook) com action_source=system_generated.
+// Formato do guia oficial "Conversions API for CRM integration" — e o que a
+// otimizacao "Leads de conversao" (Conversion Leads) do Gerenciador consome.
+
+/** Nome do CRM mostrado na Meta como origem do evento (lead_event_source). */
+export const CRM_LEAD_EVENT_SOURCE = 'EcoSunPower CRM';
+
+export interface CrmLeadEventParams {
+  /** Nome do estagio do funil. Ex: 'Lead', 'lead_respondeu', 'lead_qualificado'. */
+  eventName: string;
+  /** Quando o estagio aconteceu, em ms (Date.now()). Convertido pra segundos. */
+  eventTimeMs: number;
+  /** leadgen_id do webhook do formulario. Chave de match na Meta. */
+  leadgenId: string;
+  /** Telefone cru do cliente; embaralhado (SHA256) antes de mandar. Opcional. */
+  phone?: string;
+  /** Valor do negocio (ex: ticket da proposta). Opcional. */
+  value?: number;
+  /** Moeda do value. Default BRL quando value presente. */
+  currency?: string;
+  /** Chave de dedup na Meta (ex: `${leadId}:${eventName}`). Opcional. */
+  eventId?: string;
+}
+
+export interface CapiCrmEvent {
+  event_name: string;
+  event_time: number; // UNIX em segundos
+  event_id?: string;
+  action_source: 'system_generated';
+  user_data: {
+    /** Numerico quando cabe em inteiro seguro; string acima disso (nunca corrompe). */
+    lead_id: number | string;
+    ph?: string[];
+  };
+  custom_data: {
+    event_source: 'crm';
+    lead_event_source: string;
+    value?: number;
+    currency?: string;
+  };
+}
+
+/** Monta um evento CRM (lead de formulario) pronto pro endpoint /events. */
+export function buildCrmLeadEvent(params: CrmLeadEventParams): CapiCrmEvent {
+  // Number('99999999999999999') perde precisao EM SILENCIO acima de 2^53-1 e
+  // o evento nunca casaria com o lead. Acima do inteiro seguro, mantem string.
+  const asNumber = Number(params.leadgenId);
+  const leadId = Number.isSafeInteger(asNumber) ? asNumber : params.leadgenId;
+
+  const event: CapiCrmEvent = {
+    event_name: params.eventName,
+    event_time: Math.floor(params.eventTimeMs / 1000),
+    action_source: 'system_generated',
+    user_data: { lead_id: leadId },
+    custom_data: { event_source: 'crm', lead_event_source: CRM_LEAD_EVENT_SOURCE },
+  };
+
+  if (params.eventId) {
+    event.event_id = params.eventId;
+  }
+
+  if (params.phone) {
+    event.user_data.ph = [hashSha256(normalizePhone(params.phone))];
+  }
+
+  if (typeof params.value === 'number') {
+    event.custom_data.value = params.value;
+    event.custom_data.currency = params.currency ?? 'BRL';
   }
 
   return event;
@@ -121,7 +206,10 @@ export class MetaCapi {
    * Manda os eventos pra Meta. NUNCA lanca — devolve { ok: false, error }
    * em qualquer falha (rede, token, resposta de erro). Lista vazia = no-op.
    */
-  async sendEvents(events: CapiEvent[], opts?: { testEventCode?: string }): Promise<SendResult> {
+  async sendEvents(
+    events: Array<CapiEvent | CapiCrmEvent>,
+    opts?: { testEventCode?: string },
+  ): Promise<SendResult> {
     if (events.length === 0) return { ok: true, eventsReceived: 0 };
 
     const payload: Record<string, unknown> = { data: events };
