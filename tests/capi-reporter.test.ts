@@ -117,6 +117,129 @@ describe('makeCapiReporter', () => {
     expect(events[0].custom_data).toEqual({ value: 32000, currency: 'BRL' });
   });
 
+  // ---- Leads de FORMULARIO (sem clique CTWA, com leadgen_id) ----
+
+  it('lead de formulario manda evento CRM (system_generated + lead_id)', async () => {
+    const { capi, sendEvents } = fakeCapi();
+    const recordCapiStage = vi.fn().mockResolvedValue(true);
+    const report = makeCapiReporter({
+      capi,
+      wabaId: 'WABA_1',
+      getLeadForCapi: async () => ({
+        phone: '+55 61 98888-7777',
+        ctwa_clid: null,
+        leadgen_id: '525645896321548',
+        capi_stages_sent: [],
+      }),
+      recordCapiStage,
+      now: () => NOW,
+    });
+
+    await report('lead-form-1', 'lead_respondeu');
+
+    expect(sendEvents).toHaveBeenCalledTimes(1);
+    const [events] = sendEvents.mock.calls[0];
+    expect(events[0].action_source).toBe('system_generated');
+    expect(events[0].event_name).toBe('lead_respondeu');
+    expect(events[0].user_data.lead_id).toBe(525645896321548);
+    expect(events[0].user_data.ph).toHaveLength(1);
+    // event_id deterministico: mensagens em rajada geram eventos duplicados
+    // (corrida antes do recordCapiStage) — a Meta dedupa pelo event_id.
+    expect(events[0].event_id).toBe('lead-form-1:lead_respondeu');
+    expect(recordCapiStage).toHaveBeenCalledWith('lead-form-1', 'lead_respondeu', undefined);
+  });
+
+  it('value (ticket) tambem vai no caminho CRM, junto da origem crm', async () => {
+    const { capi, sendEvents } = fakeCapi();
+    const report = makeCapiReporter({
+      capi,
+      wabaId: 'WABA_1',
+      getLeadForCapi: async () => ({
+        phone: '5561999',
+        ctwa_clid: null,
+        leadgen_id: '525645896321548',
+        capi_stages_sent: [],
+      }),
+      recordCapiStage: vi.fn().mockResolvedValue(true),
+      now: () => NOW,
+    });
+
+    await report('lead-form-1', 'fechado', { value: 32000 });
+
+    const [events] = sendEvents.mock.calls[0];
+    expect(events[0].custom_data).toEqual({
+      event_source: 'crm',
+      lead_event_source: 'EcoSunPower CRM',
+      value: 32000,
+      currency: 'BRL',
+    });
+  });
+
+  it('com clique E leadgen_id, o clique (CTWA) vence — match mais forte', async () => {
+    const { capi, sendEvents } = fakeCapi();
+    const report = makeCapiReporter({
+      capi,
+      wabaId: 'WABA_1',
+      getLeadForCapi: async () => ({
+        phone: '5561999',
+        ctwa_clid: 'CLID_X',
+        leadgen_id: '525645896321548',
+        capi_stages_sent: [],
+      }),
+      recordCapiStage: vi.fn().mockResolvedValue(true),
+      now: () => NOW,
+    });
+
+    await report('lead-1', 'Lead');
+
+    const [events] = sendEvents.mock.calls[0];
+    expect(events[0].action_source).toBe('business_messaging');
+    expect(events[0].user_data.ctwa_clid).toBe('CLID_X');
+    expect(events[0].event_id).toBe('lead-1:Lead');
+  });
+
+  it('idempotencia vale pro caminho de formulario tambem', async () => {
+    const { capi, sendEvents } = fakeCapi();
+    const recordCapiStage = vi.fn();
+    const report = makeCapiReporter({
+      capi,
+      wabaId: 'WABA_1',
+      getLeadForCapi: async () => ({
+        phone: '5561999',
+        ctwa_clid: null,
+        leadgen_id: '525645896321548',
+        capi_stages_sent: ['lead_respondeu'],
+      }),
+      recordCapiStage,
+      now: () => NOW,
+    });
+
+    await report('lead-form-1', 'lead_respondeu');
+
+    expect(sendEvents).not.toHaveBeenCalled();
+    expect(recordCapiStage).not.toHaveBeenCalled();
+  });
+
+  it('sem clique e sem leadgen_id continua sem mandar nada (organico)', async () => {
+    const { capi, sendEvents } = fakeCapi();
+    const report = makeCapiReporter({
+      capi,
+      wabaId: 'WABA_1',
+      getLeadForCapi: async () => ({
+        phone: '5561999',
+        ctwa_clid: null,
+        leadgen_id: null,
+        capi_stages_sent: [],
+      }),
+      recordCapiStage: vi.fn(),
+      now: () => NOW,
+    });
+
+    await report('lead-organico', 'lead_qualificado');
+
+    expect(sendEvents).not.toHaveBeenCalled();
+  });
+
   it('nunca lanca, mesmo se getLeadForCapi estourar', async () => {
     const { capi } = fakeCapi();
     const report = makeCapiReporter({
