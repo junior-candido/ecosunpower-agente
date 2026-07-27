@@ -779,30 +779,77 @@ export function renderMonitoramentoPage(
   const marcas = new Set(rows.map((r) => r.marca_inversor)).size;
   const problemas = rows.filter((r) => r.nivel === 'urgente' || r.nivel === 'aviso');
 
+  // [Tema claro do tenant — pedido do Thiago 27/07] O TENANT vê o painel no
+  // tema CLARO (mesma cara da página de detalhe que ele aprovou); a EcoSun
+  // segue no escuro de sempre, byte a byte (as strings do ramo escuro são as
+  // originais, intocadas — teste garante).
+  const claro = !!user && user.companyId !== ECOSUN_COMPANY_ID;
+  const P = claro ? {
+    kpiCard: 'bg-white rounded-xl border border-slate-200 p-5 shadow-sm',
+    kpiLabel: 'text-xs uppercase tracking-wider text-slate-500 font-semibold',
+    corKpi: { amber: 'text-amber-600', sky: 'text-sky-700', emerald: 'text-emerald-600', violet: 'text-violet-600' },
+    saudeOk: 'text-emerald-600', saudeRuim: 'text-rose-600', saudeMeia: 'text-amber-600',
+    cardUrgente: 'border-rose-300 bg-rose-50', cardAviso: 'border-amber-300 bg-amber-50',
+    linkUsina: 'text-sky-700', textoUrgente: 'text-rose-700', textoAviso: 'text-amber-700',
+    mutedCard: 'text-slate-500',
+    btnDetalhe: 'bg-slate-200 hover:bg-slate-300 text-slate-800',
+    pillPausado: 'bg-slate-200 text-slate-500', pillUrgente: 'bg-rose-100 text-rose-700',
+    pillAviso: 'bg-amber-100 text-amber-700', pillInfo: 'bg-sky-100 text-sky-700',
+    pillOk: 'bg-emerald-100 text-emerald-700',
+    linhaHover: 'hover:bg-slate-50', tdTexto: 'text-slate-700', tdHoje: 'text-amber-600', tdMes: 'text-emerald-600', tdIdade: 'text-slate-500',
+    h1: 'text-slate-900', sub: 'text-slate-600',
+    input: 'px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-800 text-sm',
+    btnLimpar: 'px-3 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm',
+    h2Acao: 'text-slate-800', vazioOk: 'rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-emerald-700 text-center font-medium',
+    tabelaWrap: 'bg-white rounded-xl border border-slate-200 overflow-x-auto',
+    thead: 'bg-slate-100 border-b border-slate-200', theadTexto: 'text-slate-500', tbodyDivide: 'divide-y divide-slate-100',
+    vazioWrap: 'bg-white rounded-xl border border-slate-200 p-8 text-center', vazioTexto: 'text-slate-800',
+  } : {
+    kpiCard: 'bg-slate-800/60 backdrop-blur rounded-xl border border-slate-700 p-5 shadow-lg',
+    kpiLabel: 'text-xs uppercase tracking-wider text-slate-400 font-semibold',
+    corKpi: { amber: 'text-amber-400', sky: 'text-sky-300', emerald: 'text-emerald-300', violet: 'text-violet-300' },
+    saudeOk: 'text-emerald-400', saudeRuim: 'text-rose-400', saudeMeia: 'text-amber-400',
+    cardUrgente: 'border-rose-500/60 bg-rose-500/10', cardAviso: 'border-amber-500/60 bg-amber-500/10',
+    linkUsina: 'text-sky-300', textoUrgente: 'text-rose-300', textoAviso: 'text-amber-300',
+    mutedCard: 'text-slate-400',
+    btnDetalhe: 'bg-slate-700 hover:bg-slate-600 text-slate-100',
+    pillPausado: 'bg-slate-700 text-slate-400', pillUrgente: 'bg-rose-500/20 text-rose-300',
+    pillAviso: 'bg-amber-500/20 text-amber-300', pillInfo: 'bg-sky-500/20 text-sky-300',
+    pillOk: 'bg-emerald-500/20 text-emerald-300',
+    linhaHover: 'hover:bg-slate-800/50', tdTexto: 'text-slate-300', tdHoje: 'text-amber-300', tdMes: 'text-emerald-300', tdIdade: 'text-slate-400',
+    h1: 'text-slate-100', sub: 'text-slate-400',
+    input: 'px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm',
+    btnLimpar: 'px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm',
+    h2Acao: 'text-slate-200', vazioOk: 'rounded-xl border border-emerald-600/40 bg-emerald-500/10 p-6 text-emerald-300 text-center font-medium',
+    tabelaWrap: 'bg-slate-800/60 rounded-xl border border-slate-700 overflow-x-auto',
+    thead: 'bg-slate-900/80 border-b border-slate-700', theadTexto: 'text-slate-400', tbodyDivide: 'divide-y divide-slate-800',
+    vazioWrap: 'bg-slate-800/60 rounded-xl border border-slate-700 p-8 text-center', vazioTexto: 'text-slate-200',
+  };
+
   const kpi = (t: string, v: string, sub: string, cor: string) => `
-    <div class="bg-slate-800/60 backdrop-blur rounded-xl border border-slate-700 p-5 shadow-lg">
-      <div class="text-xs uppercase tracking-wider text-slate-400 font-semibold">${escapeHtml(t)}</div>
+    <div class="${P.kpiCard}">
+      <div class="${P.kpiLabel}">${escapeHtml(t)}</div>
       <div class="text-3xl font-bold ${cor} mt-2">${escapeHtml(v)}</div>
       <div class="text-xs text-slate-500 mt-1">${escapeHtml(sub)}</div>
     </div>`;
 
-  const saudeCor = okCount === ativos.length ? 'text-emerald-400'
-    : problemas.some((p) => p.nivel === 'urgente') ? 'text-rose-400' : 'text-amber-400';
+  const saudeCor = okCount === ativos.length ? P.saudeOk
+    : problemas.some((p) => p.nivel === 'urgente') ? P.saudeRuim : P.saudeMeia;
 
   const cardProblema = (r: SistemaMonitorRow) => {
-    const cor = r.nivel === 'urgente' ? 'border-rose-500/60 bg-rose-500/10' : 'border-amber-500/60 bg-amber-500/10';
+    const cor = r.nivel === 'urgente' ? P.cardUrgente : P.cardAviso;
     return `
     <div class="rounded-xl border ${cor} p-4 flex flex-col gap-2">
       <div class="flex items-center justify-between gap-2">
-        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="font-semibold text-sky-300 hover:underline">${escapeHtml(r.apelido)}</a>
+        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="font-semibold ${P.linkUsina} hover:underline">${escapeHtml(r.apelido)}</a>
         ${marcaBadge(r.marca_inversor)}
       </div>
-      <div class="text-xs text-slate-400">${escapeHtml([r.cidade, r.uf].filter(Boolean).join('/') || '—')}</div>
-      <div class="text-sm ${r.nivel === 'urgente' ? 'text-rose-300' : 'text-amber-300'}">${escapeHtml(r.alertaTexto ?? '')}</div>
+      <div class="text-xs ${P.mutedCard}">${escapeHtml([r.cidade, r.uf].filter(Boolean).join('/') || '—')}</div>
+      <div class="text-sm ${r.nivel === 'urgente' ? P.textoUrgente : P.textoAviso}">${escapeHtml(r.alertaTexto ?? '')}</div>
       <div class="text-xs text-slate-500">⏱ ${escapeHtml(r.garantiaIdade)} · garantia EcoSun: ${escapeHtml(r.garantiaEcosun)}</div>
       <div class="flex flex-wrap gap-2 mt-1">
         <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/sync" method="post"><button class="px-3 py-1.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold">🔄 Sincronizar</button></form>
-        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 text-slate-100 text-xs font-semibold">🔎 Detalhe</a>
+        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="px-3 py-1.5 rounded-md ${P.btnDetalhe} text-xs font-semibold">🔎 Detalhe</a>
         <a href="/dashboard/monitoramento/${escapeHtml(r.id)}/relatorio" class="px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold">📄 Gerar relatório</a>
         <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/excluir" method="post" onsubmit="return confirm('EXCLUIR esta usina de vez? Isso apaga todo o histórico de geração. Esta ação não tem volta.') && confirm('Confirma de novo: excluir esta usina permanentemente?')"><button class="px-3 py-1.5 rounded-md bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold">🗑 Excluir</button></form>
       </div>
@@ -812,29 +859,29 @@ export function renderMonitoramentoPage(
   const sincOk = (r: SistemaMonitorRow) => r.ultima_sincronizacao
     && (Date.now() - new Date(r.ultima_sincronizacao).getTime() < 36 * 60 * 60 * 1000);
   const statusPill = (r: SistemaMonitorRow) => !r.ativo
-    ? '<span class="px-2 py-1 rounded text-xs bg-slate-700 text-slate-400">⏸ Pausado</span>'
+    ? `<span class="px-2 py-1 rounded text-xs ${P.pillPausado}">⏸ Pausado</span>`
     : r.nivel === 'urgente'
-      ? '<span class="px-2 py-1 rounded text-xs bg-rose-500/20 text-rose-300">⚠️ Urgente</span>'
+      ? `<span class="px-2 py-1 rounded text-xs ${P.pillUrgente}">⚠️ Urgente</span>`
       : r.nivel === 'aviso'
-        ? '<span class="px-2 py-1 rounded text-xs bg-amber-500/20 text-amber-300">⚠️ Atenção</span>'
+        ? `<span class="px-2 py-1 rounded text-xs ${P.pillAviso}">⚠️ Atenção</span>`
         : r.nivel === 'info'
-          ? '<span class="px-2 py-1 rounded text-xs bg-sky-500/20 text-sky-300">🌟 Acima</span>'
+          ? `<span class="px-2 py-1 rounded text-xs ${P.pillInfo}">🌟 Acima</span>`
           : sincOk(r)
-            ? '<span class="px-2 py-1 rounded text-xs bg-emerald-500/20 text-emerald-300">✅ OK</span>'
-            : '<span class="px-2 py-1 rounded text-xs bg-amber-500/20 text-amber-300">⏳ Aguardando</span>';
+            ? `<span class="px-2 py-1 rounded text-xs ${P.pillOk}">✅ OK</span>`
+            : `<span class="px-2 py-1 rounded text-xs ${P.pillAviso}">⏳ Aguardando</span>`;
 
   const linha = (r: SistemaMonitorRow) => `
-    <tr class="hover:bg-slate-800/50 cursor-pointer" onclick="window.location='/dashboard/monitoramento/${escapeHtml(r.id)}'">
+    <tr class="${P.linhaHover} cursor-pointer" onclick="window.location='/dashboard/monitoramento/${escapeHtml(r.id)}'">
       <td class="px-4 py-3 text-sm">
-        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="font-medium text-sky-300 hover:underline">${escapeHtml(r.apelido)}</a>
+        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="font-medium ${P.linkUsina} hover:underline">${escapeHtml(r.apelido)}</a>
         <div class="text-xs text-slate-500">${escapeHtml([r.cidade, r.uf].filter(Boolean).join('/') || '—')}</div>
       </td>
       <td class="px-4 py-3 text-sm">${marcaBadge(r.marca_inversor)}</td>
-      <td class="px-4 py-3 text-sm text-slate-300">${r.potencia_kwp ? `${r.potencia_kwp.toFixed(2)} kWp` : '—'}</td>
-      <td class="px-4 py-3 text-sm text-amber-300 font-bold">${r.geracao_hoje_kwh !== null ? `${r.geracao_hoje_kwh.toFixed(1)} kWh` : '—'}</td>
-      <td class="px-4 py-3 text-sm text-emerald-300">${r.geracao_mes_kwh > 0 ? `${r.geracao_mes_kwh.toFixed(0)} kWh` : '—'}</td>
+      <td class="px-4 py-3 text-sm ${P.tdTexto}">${r.potencia_kwp ? `${r.potencia_kwp.toFixed(2)} kWp` : '—'}</td>
+      <td class="px-4 py-3 text-sm ${P.tdHoje} font-bold">${r.geracao_hoje_kwh !== null ? `${r.geracao_hoje_kwh.toFixed(1)} kWh` : '—'}</td>
+      <td class="px-4 py-3 text-sm ${P.tdMes}">${r.geracao_mes_kwh > 0 ? `${r.geracao_mes_kwh.toFixed(0)} kWh` : '—'}</td>
       <td class="px-4 py-3 text-sm">${statusPill(r)}</td>
-      <td class="px-4 py-3 text-xs text-slate-400">⏱ ${escapeHtml(r.garantiaIdade)}</td>
+      <td class="px-4 py-3 text-xs ${P.tdIdade}">⏱ ${escapeHtml(r.garantiaIdade)}</td>
       <td class="px-4 py-3 text-right whitespace-nowrap" onclick="event.stopPropagation()">
         <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/excluir" method="post" class="inline" onsubmit="return confirm('EXCLUIR esta usina de vez? Apaga todo o histórico. Sem volta.') && confirm('Confirma de novo: excluir esta usina permanentemente?')">
           <button class="px-2.5 py-1.5 rounded-md bg-rose-700 hover:bg-rose-800 text-white text-xs">🗑</button>
@@ -849,18 +896,18 @@ export function renderMonitoramentoPage(
 
   const body = `
     <div class="mb-6">
-      <h1 class="text-2xl font-bold text-slate-100">⚡ Painel de Triagem — Usinas</h1>
-      <p class="text-slate-400 text-sm">Primeiro o que precisa de ação. Depois a carteira inteira, filtrável.</p>
+      <h1 class="text-2xl font-bold ${P.h1}">⚡ Painel de Triagem — Usinas</h1>
+      <p class="${P.sub} text-sm">Primeiro o que precisa de ação. Depois a carteira inteira, filtrável.</p>
     </div>
 
     <form method="get" action="/dashboard/monitoramento" class="mb-6 flex flex-wrap gap-2 items-center">
-      <input name="q" value="${escapeHtml(q.q ?? '')}" placeholder="🔎 cliente ou cidade" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm">
-      <select name="marca" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm">${opt('', 'Todas as marcas', q.marca)}${marcasUnicas.map((m) => opt(m, m, q.marca)).join('')}</select>
-      <select name="cidade" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm">${opt('', 'Todas as cidades', q.cidade)}${cidadesUnicas.map((c) => opt(c, c, q.cidade)).join('')}</select>
-      <select name="status" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm">${opt('', 'Todos os status', q.status)}${['urgente', 'aviso', 'info', 'ok'].map((s) => opt(s, s, q.status)).join('')}</select>
-      <select name="ord" class="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm">${opt('severidade', 'Ordenar: severidade', q.ord)}${opt('geracao_desc', 'Ordenar: geração ↓', q.ord)}${opt('nome', 'Ordenar: nome', q.ord)}</select>
+      <input name="q" value="${escapeHtml(q.q ?? '')}" placeholder="🔎 cliente ou cidade" class="${P.input}">
+      <select name="marca" class="${P.input}">${opt('', 'Todas as marcas', q.marca)}${marcasUnicas.map((m) => opt(m, m, q.marca)).join('')}</select>
+      <select name="cidade" class="${P.input}">${opt('', 'Todas as cidades', q.cidade)}${cidadesUnicas.map((c) => opt(c, c, q.cidade)).join('')}</select>
+      <select name="status" class="${P.input}">${opt('', 'Todos os status', q.status)}${['urgente', 'aviso', 'info', 'ok'].map((s) => opt(s, s, q.status)).join('')}</select>
+      <select name="ord" class="${P.input}">${opt('severidade', 'Ordenar: severidade', q.ord)}${opt('geracao_desc', 'Ordenar: geração ↓', q.ord)}${opt('nome', 'Ordenar: nome', q.ord)}</select>
       <button class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold">Filtrar</button>
-      <a href="/dashboard/monitoramento" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm">Limpar</a>
+      <a href="/dashboard/monitoramento" class="${P.btnLimpar}">Limpar</a>
       <span class="ml-auto flex gap-2">
         <a href="/dashboard/monitoramento/importar" class="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold">📥 Importar</a>
         ${rows.length ? `<form action="/dashboard/monitoramento/sync-todos" method="post"><button class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold">🔄 Atualizar todas</button></form>` : ''}
@@ -868,11 +915,11 @@ export function renderMonitoramentoPage(
     </form>
 
     <section class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-      ${kpi('Usinas ativas', String(ativos.length), `${totalKwp.toFixed(1)} kWp total`, 'text-amber-400')}
-      ${kpi('Geração hoje', `${totalHoje.toFixed(1)} kWh`, 'somatório', 'text-sky-300')}
-      ${kpi('Geração mês', `${totalMes.toFixed(0)} kWh`, 'mês corrente', 'text-emerald-300')}
+      ${kpi('Usinas ativas', String(ativos.length), `${totalKwp.toFixed(1)} kWp total`, P.corKpi.amber)}
+      ${kpi('Geração hoje', `${totalHoje.toFixed(1)} kWh`, 'somatório', P.corKpi.sky)}
+      ${kpi('Geração mês', `${totalMes.toFixed(0)} kWh`, 'mês corrente', P.corKpi.emerald)}
       ${kpi('Saúde da frota', `${okCount}/${ativos.length}`, 'usinas OK', saudeCor)}
-      ${kpi('Marcas', String(marcas), 'integradas', 'text-violet-300')}
+      ${kpi('Marcas', String(marcas), 'integradas', P.corKpi.violet)}
     </section>
 
     ${alertasResumo ? `
@@ -924,35 +971,35 @@ export function renderMonitoramentoPage(
     </section>` : ''}
 
     <section class="mb-8">
-      <h2 class="text-lg font-bold text-slate-200 mb-3">⚠️ Precisa de ação ${problemas.length ? `<span class="text-rose-400">(${problemas.length})</span>` : ''}</h2>
+      <h2 class="text-lg font-bold ${P.h2Acao} mb-3">⚠️ Precisa de ação ${problemas.length ? `<span class="text-rose-400">(${problemas.length})</span>` : ''}</h2>
       ${problemas.length === 0
-        ? '<div class="rounded-xl border border-emerald-600/40 bg-emerald-500/10 p-6 text-emerald-300 text-center font-medium">✅ Tudo certo — nenhuma usina precisando de ação agora.</div>'
+        ? `<div class="${P.vazioOk}">✅ Tudo certo — nenhuma usina precisando de ação agora.</div>`
         : `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">${problemas.map(cardProblema).join('')}</div>`}
     </section>
 
     ${rows.length === 0 ? `
-    <section class="bg-slate-800/60 rounded-xl border border-slate-700 p-8 text-center">
+    <section class="${P.vazioWrap}">
       <div class="text-5xl mb-3">⚡</div>
-      <div class="text-slate-200 font-medium mb-2">Nenhum sistema cadastrado ainda.</div>
+      <div class="${P.vazioTexto} font-medium mb-2">Nenhum sistema cadastrado ainda.</div>
       <a href="/dashboard/monitoramento/importar" class="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 text-white font-semibold">📥 Importar agora</a>
     </section>` : `
-    <section class="bg-slate-800/60 rounded-xl border border-slate-700 overflow-x-auto">
+    <section class="${P.tabelaWrap}">
       <table class="w-full min-w-[820px]">
-        <thead class="bg-slate-900/80 border-b border-slate-700">
-          <tr class="text-left text-xs uppercase tracking-wider text-slate-400">
+        <thead class="${P.thead}">
+          <tr class="text-left text-xs uppercase tracking-wider ${P.theadTexto}">
             <th class="px-4 py-3 font-semibold">Sistema</th><th class="px-4 py-3 font-semibold">Marca</th>
             <th class="px-4 py-3 font-semibold">Potência</th><th class="px-4 py-3 font-semibold">Hoje</th>
             <th class="px-4 py-3 font-semibold">Mês</th><th class="px-4 py-3 font-semibold">Status</th>
             <th class="px-4 py-3 font-semibold">Idade</th><th class="px-4 py-3 font-semibold text-right">Excluir</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-slate-800">${rows.map(linha).join('')}</tbody>
+        <tbody class="${P.tbodyDivide}">${rows.map(linha).join('')}</tbody>
       </table>
     </section>
     <div class="mt-4 text-xs text-slate-500 text-center">💡 Sincronização automática a cada <strong>15 min</strong>. Página atualiza sozinha a cada <strong>30s</strong>.</div>`}
   `;
   const scripts = `<script>setTimeout(() => location.reload(), 30000);</script>`;
-  return renderLayout({ active: 'monitoramento', title: 'Monitoramento', body, scripts, dark: true, user });
+  return renderLayout({ active: 'monitoramento', title: 'Monitoramento', body, scripts, dark: !claro, user });
 }
 
 // =========================================================================
