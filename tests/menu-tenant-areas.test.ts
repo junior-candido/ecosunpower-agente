@@ -1,0 +1,62 @@
+// tests/menu-tenant-areas.test.ts
+//
+// Achado na degustação Sabion 27/07 (3º da noite): itens de menu SEM área
+// ("Visão geral", "Cockpit", "Fechou!", "Contratos", "Manutenção") aparecem
+// pra TODO MUNDO — desenho de quando só existia a EcoSun. Pro tenant isso é
+// menu poluído com conveniência da casa.
+// Regra nova (pedido do Junior: "tinha que vir só Operação; as outras quando
+// for solicitado"): usuário de TENANT só vê item com ÁREA explícita que o
+// papel dele permite. Liberar módulo novo = editar o papel (sem deploy).
+// EcoSun: comportamento de sempre, byte a byte.
+
+import { describe, it, expect } from 'vitest';
+import { renderMonitoramentoPage } from '../src/modules/dashboard/views.js';
+
+const ECOSUN = '00000000-0000-0000-0000-000000000001';
+
+const THIAGO = {
+  id: 'u1', companyId: 'aaaa1111-2222-3333-4444-555566667777',
+  nome: 'Thiago', login: 'thiago-sabion', isAdmin: false,
+  roleNome: 'Monitoramento', permissoes: { usinas: ['visualizar' as const] },
+  companyNome: 'Sabion Solar',
+};
+
+const ECOSUN_OPERADOR = {
+  ...THIAGO,
+  id: 'u2', companyId: ECOSUN, login: 'junior', nome: 'Junior',
+  companyNome: undefined,
+};
+
+function sidebarDe(user: typeof THIAGO): string {
+  return renderMonitoramentoPage([], {}, undefined, undefined, undefined, user);
+}
+
+describe('menu lateral — tenant só vê áreas explícitas do papel', () => {
+  it('tenant com usinas:visualizar vê Monitoramento e Pós-venda', () => {
+    const html = sidebarDe(THIAGO);
+    expect(html).toContain('Monitoramento');
+    expect(html).toContain('Pós-venda');
+    expect(html).toContain('Kanban de Obras');
+  });
+
+  it('tenant NÃO vê itens soltos (sem área) da casa', () => {
+    const html = sidebarDe(THIAGO);
+    expect(html).not.toContain('Cockpit');
+    expect(html).not.toContain('Fechou!');
+    expect(html).not.toContain('Contratos &amp; Procurações');
+    expect(html).not.toContain('Manutenção');
+  });
+
+  it('tenant sem permissão de marketing não vê o setor Marketing', () => {
+    const html = sidebarDe(THIAGO);
+    expect(html).not.toContain('Campanhas');
+    expect(html).not.toContain('E-mail Marketing');
+  });
+
+  it('EcoSun continua vendo os itens soltos de sempre (nada muda pra casa)', () => {
+    const html = sidebarDe(ECOSUN_OPERADOR);
+    expect(html).toContain('Cockpit');
+    expect(html).toContain('Manutenção');
+    expect(html).toContain('Monitoramento');
+  });
+});

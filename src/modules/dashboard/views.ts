@@ -190,8 +190,14 @@ export function renderLayout(input: LayoutInput): string {
   // Mesmo gate do navItem antigo: área presente + usuário presente e sem
   // permissão → esconde. Sem área ou sem usuário → mostra. Item soEcosun
   // some pra usuário de outra empresa (gestão de tenants é da EcoSun).
+  // [Degustação Sabion 27/07] TENANT só vê item com ÁREA explícita que o
+  // papel permite — item "solto" (sem area: Cockpit, Fechou!, Contratos,
+  // Manutenção...) é conveniência da casa EcoSun e vira poluição/vazamento
+  // de UX na tela do tenant. Liberar módulo novo pro tenant = editar o
+  // papel dele (cardápio modular), sem deploy.
   const itemVisivel = (it: SideItem): boolean => {
     if (it.soEcosun && user && user.companyId !== ECOSUN_COMPANY_ID) return false;
+    if (!it.area && user && user.companyId !== ECOSUN_COMPANY_ID) return false;
     return !(it.area && user && !can(user, it.area, it.nivel ?? 'visualizar'));
   };
 
