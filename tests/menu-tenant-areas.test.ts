@@ -60,3 +60,16 @@ describe('menu lateral — tenant só vê áreas explícitas do papel', () => {
     expect(html).toContain('Monitoramento');
   });
 });
+
+describe('painel de triagem — TEMA CLARO pro tenant (pedido do Thiago 27/07)', () => {
+  it('tenant: tela clara (cards brancos), sem o fundo escuro', () => {
+    const html = sidebarDe(THIAGO);
+    expect(html).toContain('bg-white');
+    expect(html).not.toContain('bg-slate-800/60');
+  });
+
+  it('EcoSun: tela escura de sempre, byte a byte', () => {
+    const html = sidebarDe(ECOSUN_OPERADOR);
+    expect(html).toContain('bg-slate-800/60');
+  });
+});
