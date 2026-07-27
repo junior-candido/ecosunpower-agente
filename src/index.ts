@@ -36,7 +36,7 @@ import { TestimonialService, TestimonialFormat } from './modules/testimonials.js
 import { SiteDeployService } from './modules/site-deploy.js';
 import { PublicReviewsService } from './modules/public-reviews.js';
 import { CaseCreatorAssistant } from './modules/case-creator-assistant.js';
-import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone } from './modules/meta-leadgen.js';
+import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone, registrarEventosMinimos } from './modules/meta-leadgen.js';
 import { emailValido } from './modules/email/email-util.js';
 import { enviarTemplateInicial, TEMPLATE_FALLBACK } from './modules/template-inicial.js';
 import { parseTrackingTag } from './modules/tracking.js';
@@ -6214,61 +6214,19 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     }
   });
 
-  // POST: evento real de novo lead preenchido no formulario do IG/FB
-  app.post('/webhook/meta/leadgen', async (req, res) => {
-    console.log(`[meta-leadgen] POST received, body size=${((req as unknown as { rawBody?: string }).rawBody ?? '').length}, sig=${req.headers['x-hub-signature-256'] ? 'present' : 'MISSING'}`);
-    if (!metaLeadgen) {
-      res.status(503).json({ error: 'Meta leadgen disabled' });
-      return;
-    }
-    const rawBody = (req as unknown as { rawBody?: string }).rawBody ?? '';
-    const signature = req.headers['x-hub-signature-256'] as string | undefined;
-    if (!metaLeadgen.validateSignature(rawBody, signature)) {
-      console.warn('[meta-leadgen] HMAC signature invalid');
-      res.status(403).json({ error: 'Invalid signature' });
-      return;
-    }
+  // Processa UM evento leadgen JA GRAVADO em meta_leadgen_events (passos 2+
+  // do fluxo): Graph API -> lead no CRM -> CAPI 'Lead' -> template/welcome ->
+  // aviso ao Junior. Compartilhado entre o webhook e o /meta-leadgen/reprocess
+  // (resgate manual de lead perdido). Lanca em falha — cada chamador decide
+  // como avisar (webhook: zap + markEventFailed; reprocess: resposta HTTP).
+  async function processarEventoLeadgen(leadgenId: string): Promise<
+    | { status: 'sem_telefone'; nome: string | null }
+    | { status: 'welcome_ja_enviado'; leadId: string }
+    | { status: 'ok'; leadId: string; phone: string; nome: string | null; template: string | null }
+  > {
+    if (!metaLeadgen) throw new Error('Meta leadgen disabled');
 
-    // IMPORTANTE: respondemos 200 imediato. Meta tem timeout agressivo (5s) e
-    // retenta se nao receber resposta rapida. O processamento e async.
-    res.status(200).json({ status: 'received' });
-
-    const payload = req.body as LeadgenPayload & { sample?: { field: string; value: unknown } };
-    // Teste do painel Webhooks manda `{ sample: {...} }` sem object=page. Loga e
-    // retorna pra reviewer ver 200, mas sem processar (IDs sao fake 4444...).
-    if (payload.sample) {
-      console.log('[meta-leadgen] Test payload from Webhooks panel received (sample data, no processing)');
-      return;
-    }
-    if (payload.object !== 'page') {
-      console.log(`[meta-leadgen] Payload object != 'page' (got '${payload.object}'), skipping`);
-      return;
-    }
-    console.log(`[meta-leadgen] Processing leadgen webhook (${payload.entry?.length ?? 0} entries)`);
-
-    // Processa cada entry / change de forma independente (varios leads
-    // podem chegar no mesmo payload em teoria). Erros nao devem derrubar
-    // os outros — cada um tem try/catch isolado.
-    for (const entry of payload.entry ?? []) {
-      for (const change of entry.changes ?? []) {
-        if (change.field !== 'leadgen') continue;
-        const leadgenId = change.value.leadgen_id;
-        if (!leadgenId) continue;
-
-        try {
-          // 1) Grava evento minimo PRIMEIRO pra dedup (custa so 1 INSERT).
-          //    Se retry, o unique index barra aqui e evitamos re-fetch no Graph API.
-          const minimalDetails = {
-            leadgen_id: leadgenId,
-            field_data: [],
-          };
-          const { isNew } = await metaLeadgen.recordEvent(minimalDetails, change.value);
-          if (!isNew) {
-            console.log(`[meta-leadgen] Event ${leadgenId} already received, skipping (dedup)`);
-            continue;
-          }
-
-          // 2) So agora paga o Graph API pra detalhes completos
+          // 2) Graph API pra detalhes completos (field_data nao vem no webhook)
           const details = await metaLeadgen.fetchLeadDetails(leadgenId);
 
           // 3) Detecta plataforma via adset targeting (mais preciso que nome).
@@ -6318,7 +6276,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
             } catch (err) {
               console.warn('[meta-leadgen] aviso de lead sem telefone falhou:', (err as Error).message);
             }
-            continue;
+            return { status: 'sem_telefone', nome: normalized.name };
           }
 
           // Checa se lead ja existe pra decidir se podemos sobrescrever lead_source.
@@ -6408,7 +6366,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           const existingWelcome = (existing as Record<string, unknown> | null)?.welcome_sent_at as string | null | undefined;
           if (existingWelcome) {
             console.log(`[meta-leadgen] Welcome already sent for ${normalized.phone} at ${existingWelcome}, skipping`);
-            continue;
+            return { status: 'welcome_ja_enviado', leadId };
           }
 
           // Manda a abertura NA HORA que o lead chega (speed-to-lead). Sem timer na
@@ -6501,25 +6459,105 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
               console.warn('[meta-leadgen] aviso pro Junior falhou:', (err as Error).message);
             }
           }
-        } catch (err) {
-          console.error(`[meta-leadgen] Processing ${leadgenId} failed:`, (err as Error).message);
-          await metaLeadgen.markEventFailed(leadgenId, (err as Error).message).catch((e) => {
-            console.error(`[meta-leadgen] markEventFailed also failed:`, (e as Error).message);
-          });
-          // Avisa o Junior MESMO no erro: lead pago chegou e a Eva NAO vai
-          // atender — sem este aviso o lead morre invisivel ate alguem olhar
-          // a central do Meta ou o banco.
-          try {
-            await sendText(
-              config.engineerPhone,
-              `⚠️ *Lead Meta chegou mas deu ERRO no processamento — Eva não vai atender*\n` +
-              `🆔 ${leadgenId}\n` +
-              `💥 ${(err as Error).message.slice(0, 200)}\n` +
-              `_Olha a central de leads do Meta e me chama pra investigar._`,
-            );
-          } catch (e2) {
-            console.warn('[meta-leadgen] aviso de erro pro Junior falhou:', (e2 as Error).message);
-          }
+
+    return { status: 'ok', leadId, phone: normalized.phone, nome: normalized.name, template: aberturaEnviada };
+  }
+
+  // POST: evento real de novo lead preenchido no formulario do IG/FB
+  app.post('/webhook/meta/leadgen', async (req, res) => {
+    console.log(`[meta-leadgen] POST received, body size=${((req as unknown as { rawBody?: string }).rawBody ?? '').length}, sig=${req.headers['x-hub-signature-256'] ? 'present' : 'MISSING'}`);
+    if (!metaLeadgen) {
+      res.status(503).json({ error: 'Meta leadgen disabled' });
+      return;
+    }
+    const rawBody = (req as unknown as { rawBody?: string }).rawBody ?? '';
+    const signature = req.headers['x-hub-signature-256'] as string | undefined;
+    if (!metaLeadgen.validateSignature(rawBody, signature)) {
+      console.warn('[meta-leadgen] HMAC signature invalid');
+      res.status(403).json({ error: 'Invalid signature' });
+      return;
+    }
+
+    const payload = req.body as LeadgenPayload & { sample?: { field: string; value: unknown } };
+    // Teste do painel Webhooks manda `{ sample: {...} }` sem object=page. Loga e
+    // retorna pra reviewer ver 200, mas sem processar (IDs sao fake 4444...).
+    if (payload.sample) {
+      console.log('[meta-leadgen] Test payload from Webhooks panel received (sample data, no processing)');
+      res.status(200).json({ status: 'received' });
+      return;
+    }
+    if (payload.object !== 'page') {
+      console.log(`[meta-leadgen] Payload object != 'page' (got '${payload.object}'), skipping`);
+      res.status(200).json({ status: 'received' });
+      return;
+    }
+
+    const changes: Array<{ leadgen_id: string } & Record<string, unknown>> = [];
+    for (const entry of payload.entry ?? []) {
+      for (const change of entry.changes ?? []) {
+        if (change.field !== 'leadgen') continue;
+        if (!change.value?.leadgen_id) continue;
+        changes.push(change.value as { leadgen_id: string } & Record<string, unknown>);
+      }
+    }
+    if (changes.length === 0) {
+      res.status(200).json({ status: 'received' });
+      return;
+    }
+
+    // ACK pro Meta so DEPOIS de gravar o registro minimo de cada lead (1
+    // INSERT cada, com retry — bem dentro do timeout de ~5s do Meta). Se
+    // alguma gravacao falhar mesmo assim, responde 500: o Meta REENVIA
+    // sozinho com backoff e o dedup (23505) protege quem ja gravou. Antes o
+    // 200 saia ANTES do INSERT — rede piscou = lead pago perdido pra sempre
+    // (caso Adriana 27/07, leadgen 1071371745313562).
+    const { novos, falhas } = await registrarEventosMinimos(metaLeadgen, changes);
+    if (falhas.length > 0) {
+      res.status(500).json({ status: 'retry', falharam: falhas.length });
+    } else {
+      res.status(200).json({ status: 'received' });
+    }
+    console.log(`[meta-leadgen] Processing leadgen webhook (${changes.length} changes, ${novos.length} novos, ${falhas.length} falhas de gravacao)`);
+
+    // Avisa o Junior de cada falha de gravacao — mas agora o Meta reenvia.
+    for (const falha of falhas) {
+      console.error(`[meta-leadgen] recordEvent falhou pra ${falha.leadgenId}: ${falha.erro}`);
+      try {
+        await sendText(
+          config.engineerPhone,
+          `⚠️ *Lead Meta chegou mas falhou ao GRAVAR (rede/banco)*\n` +
+          `🆔 ${falha.leadgenId}\n` +
+          `💥 ${falha.erro.slice(0, 200)}\n` +
+          `_Respondi erro pro Meta e ele vai reenviar sozinho. Se este aviso repetir pro MESMO lead, me chama pra rodar o reprocesso._`,
+        );
+      } catch (e2) {
+        console.warn('[meta-leadgen] aviso de falha de gravacao falhou:', (e2 as Error).message);
+      }
+    }
+
+    // Processa cada lead novo de forma independente — erro em um nao derruba
+    // os outros (ja gravados; recuperaveis via /meta-leadgen/reprocess).
+    for (const { leadgenId } of novos) {
+      try {
+        await processarEventoLeadgen(leadgenId);
+      } catch (err) {
+        console.error(`[meta-leadgen] Processing ${leadgenId} failed:`, (err as Error).message);
+        await metaLeadgen.markEventFailed(leadgenId, (err as Error).message).catch((e) => {
+          console.error(`[meta-leadgen] markEventFailed also failed:`, (e as Error).message);
+        });
+        // Avisa o Junior MESMO no erro: lead pago chegou e a Eva NAO vai
+        // atender — sem este aviso o lead morre invisivel ate alguem olhar
+        // a central do Meta ou o banco.
+        try {
+          await sendText(
+            config.engineerPhone,
+            `⚠️ *Lead Meta chegou mas deu ERRO no processamento — Eva não vai atender*\n` +
+            `🆔 ${leadgenId}\n` +
+            `💥 ${(err as Error).message.slice(0, 200)}\n` +
+            `_O evento ficou gravado no banco — me chama pra rodar o reprocesso deste lead._`,
+          );
+        } catch (e2) {
+          console.warn('[meta-leadgen] aviso de erro pro Junior falhou:', (e2 as Error).message);
         }
       }
     }
@@ -7390,6 +7428,49 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         welcome_eta_seconds: Math.round(delayMs / 1000),
       });
     } catch (err) {
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // Endpoint de RESGATE: reprocessa um leadgen_id REAL que se perdeu (ex:
+  // rede piscou no INSERT e o Meta ja tinha levado 200 — caso Adriana 27/07).
+  // Roda o MESMO fluxo do webhook: grava evento -> Graph API -> lead -> CAPI
+  // -> template da campanha. Idempotente: evento ja processado responde 409.
+  // Uso: GET /meta-leadgen/reprocess?token=...&leadgen_id=1071371745313562
+  app.get('/meta-leadgen/reprocess', async (req, res) => {
+    const token = (req.query.token as string) ?? '';
+    if (!evolution.validateWebhookToken(token)) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+    if (!metaLeadgen) {
+      res.status(503).json({ error: 'Meta leadgen disabled' });
+      return;
+    }
+    const leadgenId = ((req.query.leadgen_id as string) ?? '').trim();
+    if (!/^\d{5,25}$/.test(leadgenId)) {
+      res.status(400).json({ error: 'leadgen_id invalido (esperado o numero da central de leads do Meta)' });
+      return;
+    }
+
+    try {
+      // Grava (ou reencontra) o evento. rawPayload marca a origem manual.
+      const { isNew } = await metaLeadgen.recordEvent(
+        { leadgen_id: leadgenId, field_data: [] },
+        { reprocess: true, em: new Date().toISOString() },
+      );
+      if (!isNew) {
+        const evento = await metaLeadgen.buscarEvento(leadgenId);
+        if (evento?.processed) {
+          res.status(409).json({ status: 'ja_processado', lead_id: evento.lead_id });
+          return;
+        }
+      }
+      const resultado = await processarEventoLeadgen(leadgenId);
+      console.log(`[meta-leadgen] Reprocesso manual de ${leadgenId}: ${resultado.status}`);
+      res.json({ acao: 'reprocessado', ...resultado });
+    } catch (err) {
+      await metaLeadgen.markEventFailed(leadgenId, (err as Error).message).catch(() => {});
       res.status(500).json({ error: (err as Error).message });
     }
   });
