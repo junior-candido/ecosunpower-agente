@@ -2115,8 +2115,13 @@ export class SupabaseService {
   // Exclui inativos (arquivados). Retorna no máximo `limit` resultados.
   async searchClientesParaVinculo(
     rawTerm: string,
+    // [Degustação Sabion 27/07] busca SEMPRE presa à empresa do operador —
+    // rodava sem filtro e o tenant via nome/telefone dos clientes da EcoSun.
+    // Sem empresa na sessão → lista vazia (fail-closed).
+    companyId: string | null | undefined,
     limit = 10,
   ): Promise<Array<{ id: string; name: string | null; phone: string | null; city: string | null }>> {
+    if (!companyId) return [];
     const { buildClienteSearchFilter } = await import('./dashboard/proprietario.js');
     const f = buildClienteSearchFilter(rawTerm);
     if (!f.valid) return [];
@@ -2124,6 +2129,7 @@ export class SupabaseService {
       .from('leads')
       .select('id, name, phone, city')
       .or(f.or)
+      .eq('company_id', companyId)
       .neq('status', 'inativo')
       .order('name', { ascending: true })
       .limit(limit);

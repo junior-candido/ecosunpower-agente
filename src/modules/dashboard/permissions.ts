@@ -46,3 +46,14 @@ const ECOSUN_DISPARO = '00000000-0000-0000-0000-000000000001';
 export function podeDispararMensagens(companyId: string | null | undefined): boolean {
   return companyId === ECOSUN_DISPARO;
 }
+
+// [Degustação Sabion 27/07] Usina só abre pra EMPRESA dona. Usina sem carimbo
+// (company_id null) é legado pré-multi-tenant = EcoSun. Operador sem empresa
+// na sessão → nega (fail-closed). Usado nas rotas /monitoramento/:id*.
+export function usinaPertenceAoOperador(
+  companyDaUsina: string | null | undefined,
+  companyDoOperador: string | null | undefined,
+): boolean {
+  if (!companyDoOperador) return false;
+  return (companyDaUsina ?? ECOSUN_DISPARO) === companyDoOperador;
+}
