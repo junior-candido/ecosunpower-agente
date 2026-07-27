@@ -8,6 +8,18 @@ describe('esperadoDiaKwh', () => {
     expect(esperadoDiaKwh(10, 'DF')).toBeCloseTo(10 * 5.2 * 0.8);
     expect(esperadoDiaKwh(null, 'GO')).toBe(0);
   });
+
+  // Degustação Sabion 27/07: a carteira do tenant é do RJ — irradiação menor
+  // que o Planalto. Sem o HSP do RJ, a régua cobrava sol de cerrado do céu
+  // carioca e gerava "abaixo do esperado" falso em usina saudável.
+  it('RJ (e vizinhos SP/ES) usam HSP proprio, menor que o do Planalto', () => {
+    expect(esperadoDiaKwh(10, 'RJ')).toBeCloseTo(10 * 4.8 * 0.8);
+    expect(esperadoDiaKwh(10, 'SP')).toBeCloseTo(10 * 4.9 * 0.8);
+    expect(esperadoDiaKwh(10, 'ES')).toBeCloseTo(10 * 4.9 * 0.8);
+    // UF desconhecida segue no padrao 5.2 (nao quebra ninguem)
+    expect(esperadoDiaKwh(10, 'AC')).toBeCloseTo(10 * 5.2 * 0.8);
+    expect(esperadoDiaKwh(10, null)).toBeCloseTo(10 * 5.2 * 0.8);
+  });
 });
 
 describe('classificarSistema', () => {

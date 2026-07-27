@@ -24,8 +24,20 @@ export interface Classificacao {
   alerta: Alerta | null;
 }
 
+// HSP médio por UF (horas de sol pleno/dia, plano inclinado — Atlas Brasileiro
+// de Energia Solar, valores conservadores). Default 5.2 = Planalto (DF).
+// RJ/SP/ES entraram na degustação Sabion 27/07: a carteira do tenant é do RJ
+// e a régua do cerrado gerava "abaixo do esperado" falso em usina saudável.
+const HSP_POR_UF: Record<string, number> = {
+  GO: 5.3,
+  DF: 5.2,
+  RJ: 4.8,
+  SP: 4.9,
+  ES: 4.9,
+};
+
 export function esperadoDiaKwh(potenciaKwp: number | null, uf: string | null): number {
-  const hsp = uf === 'GO' ? 5.3 : 5.2;
+  const hsp = HSP_POR_UF[(uf ?? '').toUpperCase()] ?? 5.2;
   return Number(potenciaKwp ?? 0) * hsp * 0.80;
 }
 
