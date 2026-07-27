@@ -836,28 +836,123 @@ export function renderMonitoramentoPage(
   const saudeCor = okCount === ativos.length ? P.saudeOk
     : problemas.some((p) => p.nivel === 'urgente') ? P.saudeRuim : P.saudeMeia;
 
-  const cardProblema = (r: SistemaMonitorRow) => {
-    const cor = r.nivel === 'urgente' ? P.cardUrgente : P.cardAviso;
-    return `
-    <div class="rounded-xl border ${cor} p-4 flex flex-col gap-2">
-      <div class="flex items-center justify-between gap-2">
-        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="font-semibold ${P.linkUsina} hover:underline">${escapeHtml(r.apelido)}</a>
-        ${marcaBadge(r.marca_inversor)}
-      </div>
-      <div class="text-xs ${P.mutedCard}">${escapeHtml([r.cidade, r.uf].filter(Boolean).join('/') || '—')}</div>
-      <div class="text-sm ${r.nivel === 'urgente' ? P.textoUrgente : P.textoAviso}">${escapeHtml(r.alertaTexto ?? '')}</div>
-      <div class="text-xs text-slate-500">⏱ ${escapeHtml(r.garantiaIdade)} · garantia EcoSun: ${escapeHtml(r.garantiaEcosun)}</div>
-      <div class="flex flex-wrap gap-2 mt-1">
-        <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/sync" method="post"><button class="px-3 py-1.5 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold">🔄 Sincronizar</button></form>
-        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="px-3 py-1.5 rounded-md ${P.btnDetalhe} text-xs font-semibold">🔎 Detalhe</a>
-        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}/relatorio" class="px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold">📄 Gerar relatório</a>
-        <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/excluir" method="post" onsubmit="return confirm('EXCLUIR esta usina de vez? Isso apaga todo o histórico de geração. Esta ação não tem volta.') && confirm('Confirma de novo: excluir esta usina permanentemente?')"><button class="px-3 py-1.5 rounded-md bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold">🗑 Excluir</button></form>
-      </div>
-    </div>`;
-  };
-
   const sincOk = (r: SistemaMonitorRow) => r.ultima_sincronizacao
     && (Date.now() - new Date(r.ultima_sincronizacao).getTime() < 36 * 60 * 60 * 1000);
+
+  // [Painel de Operação em COLUNAS — referência do Thiago 27/07; "vamos fazer
+  // algo melhor" — Junior]. 4 grupos por status com contagem + kWp somado no
+  // cabeçalho; mini-card clicável com marca, kWp e GERAÇÃO DE HOJE (a
+  // referência só mostrava potência) + ações rápidas (sync/relatório).
+  const cardUsina = (r: SistemaMonitorRow) => `
+    <div class="card-usina rounded-lg border ${claro ? 'bg-white border-slate-200 shadow-sm hover:shadow' : 'bg-slate-800/70 border-slate-700 hover:border-slate-500'} p-3 cursor-pointer" onclick="window.location='/dashboard/monitoramento/${escapeHtml(r.id)}'">
+      <div class="font-semibold text-sm ${P.linkUsina} leading-tight">${escapeHtml(r.apelido)}</div>
+      <div class="text-[11px] ${P.mutedCard} mb-1">${escapeHtml([r.cidade, r.uf].filter(Boolean).join('/') || '—')}</div>
+      ${r.alertaTexto ? `<div class="text-[11px] ${r.nivel === 'urgente' ? P.textoUrgente : P.textoAviso} mb-1 leading-snug">${escapeHtml(r.alertaTexto)}</div>` : ''}
+      <div class="flex items-center justify-between gap-2 mt-1">
+        <span class="flex items-center gap-2">${marcaBadge(r.marca_inversor)}<span class="text-[11px] ${P.tdTexto}">${r.potencia_kwp ? `${r.potencia_kwp.toFixed(1)} kWp` : '—'}</span></span>
+        <span class="text-[11px] font-bold ${P.tdHoje}">${r.geracao_hoje_kwh !== null ? `☀️ ${r.geracao_hoje_kwh.toFixed(1)} kWh` : '—'}</span>
+      </div>
+      <div class="flex gap-1.5 mt-2" onclick="event.stopPropagation()">
+        <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/sync" method="post"><button title="Sincronizar" class="px-2 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white text-[11px]">🔄</button></form>
+        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}/relatorio" title="Gerar relatório" class="px-2 py-1 rounded bg-violet-600 hover:bg-violet-700 text-white text-[11px]">📄</a>
+      </div>
+    </div>`;
+
+  const falhas = ativos.filter((r) => r.nivel === 'urgente');
+  const atencoes = ativos.filter((r) => r.nivel === 'aviso');
+  const saudaveis = ativos.filter((r) => (r.nivel === 'ok' || r.nivel === 'info') && sincOk(r));
+  const aguardando = ativos.filter((r) => (r.nivel === 'ok' || r.nivel === 'info') && !sincOk(r));
+  const pausadas = rows.filter((r) => !r.ativo);
+
+  const colunaStatus = (titulo: string, icone: string, corHead: string, lista: SistemaMonitorRow[]) => `
+    <div class="coluna-status">
+      <div class="flex items-center justify-between rounded-t-lg px-3 py-2 ${corHead}">
+        <span class="text-sm font-bold">${icone} ${escapeHtml(titulo)}</span>
+        <span class="text-sm font-bold">${lista.length}</span>
+      </div>
+      <div class="text-[11px] ${P.mutedCard} px-3 py-1 ${claro ? 'bg-slate-100' : 'bg-slate-900/60'} rounded-b-none">${lista.reduce((s, r) => s + (r.potencia_kwp ?? 0), 0).toFixed(1)} kWp</div>
+      <div class="flex flex-col gap-2 p-2 rounded-b-lg ${claro ? 'bg-slate-50 border border-t-0 border-slate-200' : 'bg-slate-900/40 border border-t-0 border-slate-800'} min-h-[80px]">
+        ${lista.length ? lista.map(cardUsina).join('') : `<div class="text-xs ${P.mutedCard} text-center py-4">— nenhuma —</div>`}
+      </div>
+    </div>`;
+
+  const boardHtml = `
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      ${colunaStatus('Falha', '🔴', claro ? 'bg-rose-600 text-white' : 'bg-rose-700 text-white', falhas)}
+      ${colunaStatus('Atenção', '🟡', claro ? 'bg-amber-500 text-white' : 'bg-amber-600 text-white', atencoes)}
+      ${colunaStatus('Gerando OK', '🟢', claro ? 'bg-emerald-600 text-white' : 'bg-emerald-700 text-white', saudaveis)}
+      ${colunaStatus('Aguardando dados', '⚪', claro ? 'bg-slate-600 text-white' : 'bg-slate-700 text-white', aguardando)}
+    </div>
+    ${pausadas.length ? `<div class="mt-2 text-xs ${P.mutedCard}">⏸ ${pausadas.length} usina(s) pausada(s) — aparecem só na tabela abaixo.</div>` : ''}`;
+
+  // [ÓRBITA DA FROTA — assinatura futurista, pedido do Junior 27/07 ("quero
+  // algo futurista e único")]. A carteira como SISTEMA SOLAR: sol central =
+  // geração de HOJE pulsando; um ponto em órbita por usina ativa, ordenados
+  // por status (os arcos coloridos são a saúde da frota num relance). Clique
+  // no ponto abre a usina; hover destaca e mostra o nome. Anel gira devagar
+  // (90s/volta); quem desativa movimento no sistema vê tudo parado.
+  const orbitaOrdem = [...falhas, ...atencoes, ...aguardando, ...saudaveis];
+  const corPonto = (r: SistemaMonitorRow) =>
+    r.nivel === 'urgente' ? '#F43F5E'
+      : r.nivel === 'aviso' ? '#F59E0B'
+        : sincOk(r) ? '#10B981' : '#94A3B8';
+  const N_ORB = orbitaOrdem.length;
+  const RAIO_ORB = 132;
+  const CENTRO_ORB = 170;
+  const rPonto = N_ORB > 70 ? 4 : N_ORB > 40 ? 5.5 : 7;
+  const pontosOrbita = orbitaOrdem.map((r, i) => {
+    const ang = (i / Math.max(N_ORB, 1)) * 2 * Math.PI - Math.PI / 2;
+    const x = (CENTRO_ORB + RAIO_ORB * Math.cos(ang)).toFixed(1);
+    const y = (CENTRO_ORB + RAIO_ORB * Math.sin(ang)).toFixed(1);
+    return `<a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="ponto-usina"><circle cx="${x}" cy="${y}" r="${rPonto}" fill="${corPonto(r)}"><title>${escapeHtml(r.apelido)} · ${r.geracao_hoje_kwh !== null ? `${r.geracao_hoje_kwh.toFixed(1)} kWh hoje` : 'sem dados hoje'}</title></circle></a>`;
+  }).join('');
+
+  const chipOrbita = (cor: string, label: string, lista: SistemaMonitorRow[]) => `
+    <div class="rounded-xl ${claro ? 'bg-white/70 border border-slate-200' : 'bg-slate-800/50 border border-slate-700'} backdrop-blur-sm px-3 py-2 flex items-center gap-2">
+      <span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${cor}"></span>
+      <span class="text-xs ${P.mutedCard}">${escapeHtml(label)}</span>
+      <span class="ml-auto text-base font-bold ${P.h1}" style="font-family:'Space Grotesk',ui-sans-serif,system-ui">${lista.length}</span>
+    </div>`;
+
+  const orbitaHtml = N_ORB === 0 ? '' : `
+    <section class="orbita-frota mb-8 rounded-2xl ${claro ? 'bg-gradient-to-b from-sky-50 via-white to-amber-50/40 border border-slate-200' : 'border border-slate-800'} p-4 md:p-6 relative overflow-hidden"${claro ? '' : ' style="background:radial-gradient(1200px 420px at 30% -10%, rgba(14,165,233,.12), transparent), linear-gradient(180deg, #0B1220 0%, #070B14 100%)"'}>
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap');
+        .orbita-frota .anel { animation: orbita-giro 90s linear infinite; transform-origin: ${CENTRO_ORB}px ${CENTRO_ORB}px; }
+        .orbita-frota .sol-pulso { animation: sol-pulsa 3.2s ease-in-out infinite; transform-origin: ${CENTRO_ORB}px ${CENTRO_ORB}px; }
+        @keyframes orbita-giro { to { transform: rotate(360deg); } }
+        @keyframes sol-pulsa { 0%,100% { opacity: .45 } 50% { opacity: .85 } }
+        @media (prefers-reduced-motion: reduce) { .orbita-frota .anel, .orbita-frota .sol-pulso { animation: none } }
+        .orbita-frota .ponto-usina circle { cursor: pointer; }
+        .orbita-frota .ponto-usina:hover circle, .orbita-frota .ponto-usina:focus circle { stroke: ${claro ? '#0F172A' : '#F8FAFC'}; stroke-width: 2.5; }
+      </style>
+      <div class="flex flex-col lg:flex-row items-center gap-6">
+        <svg viewBox="0 0 340 340" class="w-[300px] h-[300px] md:w-[340px] md:h-[340px] shrink-0" role="img" aria-label="Órbita da frota: cada ponto é uma usina, a cor é o status">
+          <defs>
+            <radialGradient id="grad-sol" cx="50%" cy="42%">
+              <stop offset="0%" stop-color="#FDE68A"/><stop offset="55%" stop-color="#F59E0B"/><stop offset="100%" stop-color="#D97706"/>
+            </radialGradient>
+          </defs>
+          <circle cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="${RAIO_ORB}" fill="none" stroke="${claro ? '#CBD5E1' : '#1E293B'}" stroke-width="1" stroke-dasharray="2 7"/>
+          <circle class="sol-pulso" cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="76" fill="url(#grad-sol)" opacity=".45"/>
+          <circle class="sol-central" cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="60" fill="url(#grad-sol)"/>
+          <text x="${CENTRO_ORB}" y="${CENTRO_ORB - 4}" text-anchor="middle" font-size="27" font-weight="700" fill="#3B2300" style="font-family:'Space Grotesk',ui-sans-serif,system-ui">${totalHoje.toFixed(1)}</text>
+          <text x="${CENTRO_ORB}" y="${CENTRO_ORB + 15}" text-anchor="middle" font-size="11" font-weight="500" fill="#5A3E00">kWh hoje</text>
+          <text x="${CENTRO_ORB}" y="${CENTRO_ORB + 31}" text-anchor="middle" font-size="10" fill="#5A3E00">${ativos.length} usinas ☀️</text>
+          <g class="anel">${pontosOrbita}</g>
+        </svg>
+        <div class="flex-1 w-full">
+          <div class="text-xl font-bold ${P.h1}" style="font-family:'Space Grotesk',ui-sans-serif,system-ui">Órbita da Frota</div>
+          <div class="text-xs ${P.mutedCard} mb-4">Cada ponto é uma usina — a cor é o status de agora. Clique num ponto pra abrir.</div>
+          <div class="grid grid-cols-2 gap-3">
+            ${chipOrbita('#F43F5E', 'Falha', falhas)}
+            ${chipOrbita('#F59E0B', 'Atenção', atencoes)}
+            ${chipOrbita('#10B981', 'Gerando OK', saudaveis)}
+            ${chipOrbita('#94A3B8', 'Aguardando dados', aguardando)}
+          </div>
+        </div>
+      </div>
+    </section>`;
   const statusPill = (r: SistemaMonitorRow) => !r.ativo
     ? `<span class="px-2 py-1 rounded text-xs ${P.pillPausado}">⏸ Pausado</span>`
     : r.nivel === 'urgente'
@@ -922,6 +1017,8 @@ export function renderMonitoramentoPage(
       ${kpi('Marcas', String(marcas), 'integradas', P.corKpi.violet)}
     </section>
 
+    ${orbitaHtml}
+
     ${alertasResumo ? `
     <section class="mb-8">
       <h2 class="text-sm uppercase tracking-wider text-slate-400 font-semibold mb-3">🔔 Alertas proativos</h2>
@@ -971,10 +1068,8 @@ export function renderMonitoramentoPage(
     </section>` : ''}
 
     <section class="mb-8">
-      <h2 class="text-lg font-bold ${P.h2Acao} mb-3">⚠️ Precisa de ação ${problemas.length ? `<span class="text-rose-400">(${problemas.length})</span>` : ''}</h2>
-      ${problemas.length === 0
-        ? `<div class="${P.vazioOk}">✅ Tudo certo — nenhuma usina precisando de ação agora.</div>`
-        : `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">${problemas.map(cardProblema).join('')}</div>`}
+      <h2 class="text-lg font-bold ${P.h2Acao} mb-3">🗂 Painel de Operação ${problemas.length ? `<span class="text-rose-400">(${problemas.length} precisam de ação)</span>` : ''}</h2>
+      ${boardHtml}
     </section>
 
     ${rows.length === 0 ? `

@@ -15,9 +15,12 @@ const rows = [
 ] as any[];
 
 describe('renderMonitoramentoPage (smoke)', () => {
-  it('renderiza bloco de ação só com o urgente, lista com todos, e tema escuro', () => {
+  it('renderiza o Painel de Operação em colunas, lista com todos, e tema escuro', () => {
     const html = renderMonitoramentoPage(rows, {});
-    expect(html).toContain('Precisa de ação');
+    // [27/07] "Precisa de ação" virou o Painel de Operação em colunas por
+    // status (referência do Thiago) — urgente cai na coluna Falha.
+    expect(html).toContain('Painel de Operação');
+    expect(html).toContain('coluna-status');
     expect(html).toContain('Casa Silva');
     expect(html).toContain('Bar Rota');
     expect(html).toContain('Saúde da frota');
@@ -34,7 +37,7 @@ describe('renderMonitoramentoPage (smoke)', () => {
     const posBusca = html.indexOf('name="q"');
     const posImportar = html.indexOf('📥 Importar');
     const posKpis = html.indexOf('Usinas ativas');
-    const posAcao = html.indexOf('Precisa de ação');
+    const posAcao = html.indexOf('Painel de Operação');
     expect(posBusca).toBeGreaterThan(-1);
     expect(posImportar).toBeGreaterThan(-1);
     expect(posBusca).toBeLessThan(posKpis);
