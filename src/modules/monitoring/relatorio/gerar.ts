@@ -1,6 +1,6 @@
 // src/modules/monitoring/relatorio/gerar.ts
 import { montarDadosRelatorio, type ModoRelatorio } from './dados.js';
-import { renderRelatorioHtml } from './template.js';
+import { renderRelatorioHtml, type MarcaRelatorio } from './template.js';
 import type { GravidadeResult } from './gravidade.js';
 
 export interface GerarDeps {
@@ -12,6 +12,9 @@ export interface GerarDeps {
   // [ECOSOF] logo já resolvida pelo caller (obterLogoBase64: Storage com
   // fallback). Ausente = logo EcoSun embutida (default do template).
   logoBase64?: string;
+  // [Degustação Sabion 27/07] usina de tenant → marca neutra do tenant
+  // (resolverMarcaRelatorio). Ausente = visual EcoSun de sempre.
+  marca?: MarcaRelatorio;
 }
 
 export type GerarResult =
@@ -26,7 +29,7 @@ export async function gerarRelatorio(
   const dados = await montarDadosRelatorio({ getDetalhe: deps.getDetalhe }, sistemaId, modo);
   if ('erro' in dados) return { ok: false, reason: dados.erro };
 
-  const html = renderRelatorioHtml(dados, modo, deps.logoBase64);
+  const html = renderRelatorioHtml(dados, modo, deps.logoBase64, deps.marca);
   let pdfBuffer: Buffer;
   try {
     pdfBuffer = await deps.htmlToPdf(html);

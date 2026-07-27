@@ -34,9 +34,25 @@ function renderCtaVisita(apelido: string): string {
   </div>`;
 }
 
+// [Degustação Sabion 27/07] Relatório de usina de TENANT sai NEUTRO com a
+// marca DELE: nome no cabeçalho, sem logo (até o B1c ter upload), sem CTA da
+// Eva (Eva é da casa) e sem CNPJ/rodapé da EcoSun. Sem `marca` = EcoSun.
+export interface MarcaRelatorio {
+  nome: string;
+  logoBase64: string | null; // null = sem logo (neutro); B1c pluga a do tenant
+}
+
 // [ECOSOF] logoBase64 opcional: caller (PDF/rota pública) resolve via
 // obterLogoBase64 (Storage com fallback); default = logo EcoSun embutida.
-export function renderRelatorioHtml(data: RelatorioData, modo: ModoRelatorio, logoBase64: string = LOGO_ECOSUNPOWER_BRANCO_BASE64): string {
+export function renderRelatorioHtml(
+  data: RelatorioData,
+  modo: ModoRelatorio,
+  logoBase64: string = LOGO_ECOSUNPOWER_BRANCO_BASE64,
+  marca?: MarcaRelatorio,
+): string {
+  const nomeMarca = marca?.nome ?? empresa().nomeFantasia;
+  const logoSrc = marca ? marca.logoBase64 : logoBase64;
+  const logoHtml = logoSrc ? `<img class="logo" src="${logoSrc}" alt="${esc(nomeMarca)}">` : '';
   const C = `--primary-600:#0E7CB8;--primary-700:#0B5A87;--accent-500:#FFC72C;--dark:#0F172A;--muted:#64748B`;
   const local = [data.cidade, data.uf].filter(Boolean).join('/') || '—';
 
@@ -65,7 +81,7 @@ export function renderRelatorioHtml(data: RelatorioData, modo: ModoRelatorio, lo
 
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Relatório da Usina · ${esc(data.apelido)} · ${esc(empresa().nomeFantasia)}</title>
+<title>Relatório da Usina · ${esc(data.apelido)} · ${esc(nomeMarca)}</title>
 <style>:root{${C}} body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#F8FAFC;color:var(--dark)}
 .wrap{max-width:760px;margin:0 auto;background:#fff}
 .hero{background:linear-gradient(135deg,#1FB8E8 0%,#0E7CB8 60%,#0F172A 100%);color:#fff;padding:28px 24px;position:relative}
@@ -76,13 +92,13 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 img.logo{height:34px;width:auto;background:#fff;border-radius:8px;padding:5px}</style></head>
 <body><div class="wrap">
   <div class="hero">
-    <img class="logo" src="${logoBase64}" alt="${esc(empresa().nomeFantasia)}">
-    <div style="font-weight:700;letter-spacing:.04em;margin-top:10px">${esc(empresa().nomeFantasia.toUpperCase())} · RELATÓRIO DA USINA</div>
+    ${logoHtml}
+    <div style="font-weight:700;letter-spacing:.04em;margin-top:10px">${esc(nomeMarca.toUpperCase())} · RELATÓRIO DA USINA</div>
     <div style="font-size:20px;font-weight:700;margin-top:6px">${esc(data.apelido)}</div>
     <div style="opacity:.85;font-size:13px">${esc(local)} · ${esc(data.marcaInversor)} · ${data.potenciaKwp ?? '—'} kWp · idade ${esc(data.garantia.idadeTexto)}</div>
   </div>
   ${saudacao}${semDados}
-  ${renderCtaVisita(data.apelido)}
+  ${marca ? '' : renderCtaVisita(data.apelido)}
   <div class="kpis">
     <div class="kpi"><div>Geração no mês</div><b>${data.kpis.mesKwh.toFixed(0)} kWh</b></div>
     <div class="kpi"><div>Geração no ano</div><b>${data.kpis.anoKwh.toFixed(0)} kWh</b></div>
@@ -93,12 +109,14 @@ img.logo{height:34px;width:auto;background:#fff;border-radius:8px;padding:5px}</
   <div style="padding:0 24px 8px"><b>Histórico mês a mês</b></div>
   <div style="padding:0 24px 16px"><table><tbody>${linhasMensais}</tbody></table></div>
   <div style="padding:0 24px 16px;font-size:13px;color:var(--muted)">
-    <b>Garantias:</b> Instalação/mão de obra ${esc(empresa().nomeFantasia)}: ${data.garantia.ecosun.status === 'vigente' ? `vigente (${(data.garantia.ecosun as any).mesesRestantes} meses restantes)` : data.garantia.ecosun.status === 'encerrada' ? `encerrada` : 'a confirmar'}.
+    <b>Garantias:</b> Instalação/mão de obra ${esc(nomeMarca)}: ${data.garantia.ecosun.status === 'vigente' ? `vigente (${(data.garantia.ecosun as any).mesesRestantes} meses restantes)` : data.garantia.ecosun.status === 'encerrada' ? `encerrada` : 'a confirmar'}.
     Inversor (fabricante): ${esc(data.garantia.fabricanteInversor)}. Painel: ${esc(data.garantia.fabricantePainel)}.
   </div>
-  <div class="foot">
+  ${marca ? `<div class="foot">
+    ${esc(marca.nome)} · Relatório gerado pela plataforma de monitoramento.
+  </div>` : `<div class="foot">
     ${esc(empresa().nomeFantasia)} Energia Solar · CNPJ ${esc(empresa().cnpj)} · ${esc(`${empresa().cidade}-${empresa().uf}`)}<br>
     Projeto e instalação sob responsabilidade do nosso <b>Responsável Técnico (ART CREA / TRT CFT)</b>. Conforme ABNT NBR 5410, NBR 16690, NBR 16149/16150 e NR-10.
-  </div>
+  </div>`}
 </div></body></html>`;
 }
