@@ -976,6 +976,9 @@ export function renderDetalheSistemaPage(
   dono?: { id: string; name: string | null } | null,
   timelineAbordagens?: AbordagemTimelineRow[],
   prontuarioHtml?: string,
+  // [Degustação Sabion 27/07] sem o user o layout montava o menu completo e a
+  // marca EcoSun pro tenant (modo compat de tela antiga).
+  user?: DashUser,
 ): string {
   const s = d.sistema;
   const localizacao = [s.cidade, s.uf].filter(Boolean).join('/') || '—';
@@ -1347,6 +1350,7 @@ export function renderDetalheSistemaPage(
     title: s.apelido,
     body,
     scripts,
+    user,
   });
 }
 
@@ -1359,6 +1363,7 @@ export function renderTelemetriaPage(
   grandezas: Array<{ ponto: string; rotulo: string; unidade: string }>,
   sel: { device: string; ponto: string; periodo: 'dia' | 'semana' | 'mes' },
   serie: Array<{ ts: string; valor: number }>,
+  user?: DashUser,
 ): string {
   const g = grandezas.find((x) => x.ponto === sel.ponto);
   const unidade = g?.unidade ?? '';
@@ -1440,7 +1445,7 @@ export function renderTelemetriaPage(
 </script>
   ` : '';
 
-  return renderLayout({ active: 'monitoramento', title: `Dados — ${sistema.apelido}`, body, scripts });
+  return renderLayout({ active: 'monitoramento', title: `Dados — ${sistema.apelido}`, body, scripts, user });
 }
 
 // =========================================================================
@@ -1489,6 +1494,7 @@ const INVERSORES_MODELOS_SUGESTOES = [
 export function renderEditarSistemaPage(
   s: import('../monitoring/types.js').SistemaCliente,
   dono?: { id: string; name: string | null; phone: string | null } | null,
+  user?: DashUser,
 ): string {
   const dl = (id: string, items: string[]) =>
     `<datalist id="${id}">${items.map(i => `<option value="${escapeHtml(i)}"></option>`).join('')}</datalist>`;
@@ -1649,7 +1655,7 @@ export function renderEditarSistemaPage(
     </form>
   `;
 
-  return renderLayout({ active: 'monitoramento', title: `Editar ${s.apelido}`, body });
+  return renderLayout({ active: 'monitoramento', title: `Editar ${s.apelido}`, body, user });
 }
 
 // =========================================================================

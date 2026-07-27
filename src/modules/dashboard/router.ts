@@ -105,7 +105,7 @@ import { renderContratosPage, type ContratoCliente } from './contratos-views.js'
 import { renderContratoFormPage } from './contrato-form-views.js';
 import type { SugestaoIa } from '../closing/revisar-contrato.js';
 import { CLIENTE_STATUSES } from './clientes-queries.js';
-import { can, podeDispararMensagens } from './permissions.js';
+import { can, podeDispararMensagens, usinaPertenceAoOperador } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
 import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } from './blog-views.js';
@@ -3092,7 +3092,9 @@ export function createDashboardRouter(
 
     try {
       const detalhe = await monitoringService.getDetalheCalendario(id, { vista, ref: refQ });
-      if (!detalhe) {
+      // [Degustação Sabion 27/07] usina só abre pra empresa dona — a lista já
+      // filtrava, mas o detalhe abria pra qualquer logado com o link.
+      if (!detalhe || !usinaPertenceAoOperador(detalhe.sistema.company_id ?? null, (req as AuthedRequest).dashUser?.companyId)) {
         return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
       }
 
@@ -3119,7 +3121,7 @@ export function createDashboardRouter(
         getTimelineAbordagens(supabase, id).catch(() => [] as import('./queries.js').AbordagemTimelineRow[]),
         prontuarioUsina(supabase, id).catch(() => []),
       ]);
-      res.send(renderDetalheSistemaPage(detalhe, curvaDia, curvaMsg, donoRow ? { id: donoRow.id, name: donoRow.name } : null, timelineAbordagens, renderProntuario(prontuario)));
+      res.send(renderDetalheSistemaPage(detalhe, curvaDia, curvaMsg, donoRow ? { id: donoRow.id, name: donoRow.name } : null, timelineAbordagens, renderProntuario(prontuario), (req as AuthedRequest).dashUser));
     } catch (err) {
       console.error('[dashboard/monitoramento/detalhe]', err);
       res.status(500).send(`<h2>Erro ao carregar detalhe</h2><pre>${(err as Error).message}</pre>`);
@@ -3145,7 +3147,7 @@ export function createDashboardRouter(
       const inicioIso = new Date(Date.now() - diasAtras * 24 * 60 * 60 * 1000).toISOString();
       const serie = (device && ponto) ? await telemetriaService.serieTelemetria(id, device, ponto, inicioIso) : [];
 
-      res.send(renderTelemetriaPage(sistema as { id: string; apelido: string }, devices, grandezas, { device, ponto, periodo }, serie));
+      res.send(renderTelemetriaPage(sistema as { id: string; apelido: string }, devices, grandezas, { device, ponto, periodo }, serie, (req as AuthedRequest).dashUser));
     } catch (err) {
       console.error('[dashboard/monitoramento/dados]', err);
       res.status(500).send(`<h2>Erro ao carregar dados</h2><pre>${(err as Error).message}</pre>`);
@@ -3157,16 +3159,24 @@ export function createDashboardRouter(
     const id = String(req.params.id ?? '');
     if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).send('UUID invalido');
     const detalhe = await monitoringService.getDetalheSistema(id);
-    if (!detalhe) return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
+    // [Degustação Sabion 27/07] editar tambem so pra empresa dona da usina.
+    if (!detalhe || !usinaPertenceAoOperador(detalhe.sistema.company_id ?? null, (req as AuthedRequest).dashUser?.companyId)) {
+      return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
+    }
     const leadId = detalhe.sistema.lead_id;
     const donoRow = leadId ? await supabaseService.getClienteByLeadId(leadId) : null;
     const dono = donoRow ? { id: donoRow.id, name: donoRow.name, phone: donoRow.phone } : null;
-    res.send(renderEditarSistemaPage(detalhe.sistema, dono));
+    res.send(renderEditarSistemaPage(detalhe.sistema, dono, (req as AuthedRequest).dashUser));
   });
 
   router.post('/monitoramento/:id/editar', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
     if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).send('UUID invalido');
+    // [Degustação Sabion 27/07] gravar tambem so pra empresa dona da usina.
+    const sisDono = await supabaseService.getSistemaById(id);
+    if (!sisDono || !usinaPertenceAoOperador((sisDono.company_id as string | null) ?? null, (req as AuthedRequest).dashUser?.companyId)) {
+      return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
+    }
     const body = req.body ?? {};
     // Conversoes de tipo. Strings vazias viram null pra permitir clear de campos.
     const numOuNull = (v: unknown): number | null => {
@@ -3238,7 +3248,9 @@ export function createDashboardRouter(
   router.get('/api/clientes/search', async (req: Request, res: Response) => {
     try {
       const q = String(req.query.q ?? '');
-      const rows = await supabaseService.searchClientesParaVinculo(q, 10);
+      // [Degustação Sabion 27/07] busca presa à empresa do operador — rodava
+      // sem filtro e o tenant via nome/telefone dos clientes da EcoSun.
+      const rows = await supabaseService.searchClientesParaVinculo(q, (req as AuthedRequest).dashUser?.companyId, 10);
       res.json(rows);
     } catch (err) {
       console.error('[dashboard/clientes/search]', err);
@@ -3251,6 +3263,11 @@ export function createDashboardRouter(
   router.post('/monitoramento/:id/backfill', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
     if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).send('UUID invalido');
+    // [Degustação Sabion 27/07] backfill so pra empresa dona da usina.
+    const sisDono = await supabaseService.getSistemaById(id);
+    if (!sisDono || !usinaPertenceAoOperador((sisDono.company_id as string | null) ?? null, (req as AuthedRequest).dashUser?.companyId)) {
+      return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
+    }
     try {
       const r = await monitoringService.backfillHistorico(id);
       if (!r.ok) {
@@ -3281,6 +3298,11 @@ export function createDashboardRouter(
     const id = String(req.params.id ?? '');
     if (!/^[0-9a-f-]{36}$/i.test(id)) {
       return res.status(400).send('UUID invalido');
+    }
+    // [Degustação Sabion 27/07] sync manual so pra empresa dona da usina.
+    const sisDono = await supabaseService.getSistemaById(id);
+    if (!sisDono || !usinaPertenceAoOperador((sisDono.company_id as string | null) ?? null, (req as AuthedRequest).dashUser?.companyId)) {
+      return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
     }
     try {
       const result = await monitoringService.syncOne(id);

@@ -1599,7 +1599,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     if (/^cancelar$/i.test(t)) { await clearDonoCadState(from); await sendText(from, 'Cadastro cancelado.'); return true; }
 
     if (st.etapa === 'busca') {
-      const achados = await supabase.searchClientesParaVinculo(t, 3);
+      // Fluxo do zap do ADMIN EcoSun (isAdminPhone acima) → busca presa à casa.
+      const achados = await supabase.searchClientesParaVinculo(t, ECOSUN_COMPANY_ID, 3);
       if (achados.length === 0) {
         if (metaWaba) await metaWaba.sendInteractiveButtons(from, 'Não achei ninguém com esse nome. Quer criar novo?', [
           { id: 'evabt:dono-novo', title: 'Criar novo' }, { id: 'evabt:dono-cancelar', title: 'Cancelar' },
