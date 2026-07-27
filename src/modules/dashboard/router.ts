@@ -3348,6 +3348,22 @@ export function createDashboardRouter(
       }
       const { resolverMarcaRelatorio } = await import('../monitoring/relatorio/marca.js');
       const marca = await resolverMarcaRelatorio(supabaseService.getClient(), (sisDono.company_id as string | null) ?? null);
+      // [Decisão do Junior 27/07] usina de TENANT não ganha link público — o
+      // endereço é da casa (propostas.ecosunpower...) e apareceria pro cliente
+      // do tenant. Sai SÓ O PDF (neutro), direto no navegador. Link com
+      // domínio próprio = item do plano white-label (Junior oferece no zap).
+      if (marca) {
+        const { montarDadosRelatorio } = await import('../monitoring/relatorio/dados.js');
+        const { renderRelatorioHtml } = await import('../monitoring/relatorio/template.js');
+        const dados = await montarDadosRelatorio(
+          { getDetalhe: (sid: string) => monitoringService.getDetalheSistema(sid) }, id, 'acompanhamento');
+        if ('erro' in dados) {
+          return res.status(500).send(`<h2>Erro ao gerar relatório</h2><pre>${escapeHtmlSimple(dados.erro)}</pre><a href="/dashboard/monitoramento">← voltar</a>`);
+        }
+        const pdf = await htmlToPdf(renderRelatorioHtml(dados, 'acompanhamento', undefined, marca));
+        res.type('application/pdf').set('Content-Disposition', 'inline; filename="relatorio-usina.pdf"').send(pdf);
+        return;
+      }
       const r = await gerarRelatorio({
         getDetalhe: (sid: string) => monitoringService.getDetalheSistema(sid),
         criarSlug: (sid: string) => supabaseService.criarRelatorioSlug(sid),
