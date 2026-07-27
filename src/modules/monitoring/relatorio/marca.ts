@@ -13,6 +13,31 @@ import type { MarcaRelatorio } from './template.js';
 
 const ECOSUN = '00000000-0000-0000-0000-000000000001';
 
+// Logo do tenant por CONVENÇÃO de Storage (sem migration, sem UI): subir o
+// arquivo em branding/tenants/<companyId>/logo.png no painel do Supabase e
+// ela entra na folha. Sem arquivo = folha neutra (logo null). Cache só de
+// SUCESSO — upload novo aparece no próximo relatório sem reiniciar nada.
+const LOGO_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const logoTenantCache = new Map<string, string>();
+
+async function logoDoTenant(client: SupabaseClient, companyId: string): Promise<string | null> {
+  const path = `tenants/${companyId}/logo.png`;
+  const cached = logoTenantCache.get(path);
+  if (cached) return cached;
+  try {
+    const { data, error } = await client.storage.from('branding').download(path);
+    if (error || !data) return null;
+    const buf = Buffer.from(await data.arrayBuffer());
+    if (buf.length === 0) return null;
+    if (data.type && !LOGO_MIMES.has(data.type)) return null;
+    const uri = `data:${data.type || 'image/png'};base64,${buf.toString('base64')}`;
+    logoTenantCache.set(path, uri);
+    return uri;
+  } catch {
+    return null;
+  }
+}
+
 export async function resolverMarcaRelatorio(
   client: SupabaseClient,
   companyId: string | null | undefined,
@@ -25,6 +50,6 @@ export async function resolverMarcaRelatorio(
     .maybeSingle();
   return {
     nome: ((data as { nome?: string } | null)?.nome) ?? 'Monitoramento Solar',
-    logoBase64: null,
+    logoBase64: await logoDoTenant(client, companyId),
   };
 }
