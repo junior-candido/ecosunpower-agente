@@ -1667,6 +1667,12 @@ export class SupabaseService {
       .not('next_send_at', 'is', null)
       .lte('next_send_at', hojeIso)
       .or(`snoozed_until.is.null,snoozed_until.lte.${hojeIso}`)
+      // Despacho vai pro zap do ADMIN EcoSun — so alertas da CASA entram na
+      // fila: company_id da EcoSun ou null (legado pre-multi-tenant). Alerta
+      // de tenant fica no banco (tela do tenant; zap do tenant = produto
+      // futuro). Achado na degustacao Sabion 27/07: 27 usinas importadas sem
+      // geracao viraram "offline" no zap do Junior.
+      .or(`company_id.is.null,company_id.eq.00000000-0000-0000-0000-000000000001`)
       .order('primeiro_visto_em', { ascending: true })
       .limit(limit * 2);  // pega 2x pra reordenar por severidade no JS
     if (error) {
