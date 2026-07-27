@@ -170,7 +170,15 @@ export class MetaLeadgenService {
 
   // Grava evento bruto em meta_leadgen_events (idempotente via unique index
   // em leadgen_id). Retorna `{ isNew }` pra chamador decidir se processa.
-  async recordEvent(details: LeadDetails, rawPayload: unknown): Promise<{ isNew: boolean }> {
+  // Falha de TRANSPORTE (rede piscou, supabase-js devolve erro SEM code, ex:
+  // "TypeError: fetch failed" — caso Adriana 27/07) retenta ate 3x antes de
+  // lancar. Erro Postgres/PostgREST (tem code) nao retenta: nao e passageiro.
+  async recordEvent(
+    details: LeadDetails,
+    rawPayload: unknown,
+    opts: { retryDelayMs?: number } = {},
+  ): Promise<{ isNew: boolean }> {
+    const retryDelayMs = opts.retryDelayMs ?? 300;
     const row = {
       leadgen_id: details.leadgen_id,
       ad_id: details.ad_id ?? null,
@@ -183,17 +191,36 @@ export class MetaLeadgenService {
       raw_payload: rawPayload,
       processed: false,
     };
-    const { error } = await this.supabase
-      .from('meta_leadgen_events')
-      .insert(row);
-    if (error) {
+    const TENTATIVAS = 3;
+    for (let tentativa = 1; ; tentativa++) {
+      const { error } = await this.supabase
+        .from('meta_leadgen_events')
+        .insert(row);
+      if (!error) return { isNew: true };
       if (error.code === '23505') {
         // Ja tinha — webhook retry, ignora
         return { isNew: false };
       }
-      throw new Error(`Failed to record leadgen event: ${error.message}`);
+      const transporte = !error.code;
+      if (!transporte || tentativa >= TENTATIVAS) {
+        throw new Error(`Failed to record leadgen event: ${error.message}`);
+      }
+      await new Promise((r) => setTimeout(r, retryDelayMs * tentativa));
     }
-    return { isNew: true };
+  }
+
+  // Le o evento pra decidir reprocesso: null = nunca gravou (insert falhou),
+  // processed=false = gravou mas o processamento quebrou no meio.
+  async buscarEvento(
+    leadgenId: string,
+  ): Promise<{ processed: boolean; lead_id: string | null } | null> {
+    const { data, error } = await this.supabase
+      .from('meta_leadgen_events')
+      .select('processed, lead_id')
+      .eq('leadgen_id', leadgenId)
+      .maybeSingle();
+    if (error) throw new Error(`Failed to fetch leadgen event: ${error.message}`);
+    return (data as { processed: boolean; lead_id: string | null } | null) ?? null;
   }
 
   async markEventProcessed(leadgenId: string, leadId: string): Promise<void> {
@@ -284,6 +311,34 @@ Gere APENAS o texto da mensagem, sem nenhuma explicacao, sem prefixo.`;
       .join('')
       .trim();
   }
+}
+
+// Grava o registro MINIMO de cada change ANTES do ACK ao Meta. Quem falhar
+// entra em `falhas` e o webhook responde 500 — o Meta reenvia sozinho (com
+// backoff, por horas) e o dedup 23505 protege quem ja gravou. Antes disso o
+// 200 saia na frente do INSERT: rede piscou = lead pago perdido pra sempre.
+export interface RegistroMinimoResultado {
+  novos: Array<{ leadgenId: string; changeValue: Record<string, unknown> }>;
+  falhas: Array<{ leadgenId: string; erro: string }>;
+}
+
+export async function registrarEventosMinimos(
+  svc: Pick<MetaLeadgenService, 'recordEvent'>,
+  changes: Array<{ leadgen_id: string } & Record<string, unknown>>,
+): Promise<RegistroMinimoResultado> {
+  const resultado: RegistroMinimoResultado = { novos: [], falhas: [] };
+  for (const change of changes) {
+    try {
+      const { isNew } = await svc.recordEvent(
+        { leadgen_id: change.leadgen_id, field_data: [] },
+        change,
+      );
+      if (isNew) resultado.novos.push({ leadgenId: change.leadgen_id, changeValue: change });
+    } catch (err) {
+      resultado.falhas.push({ leadgenId: change.leadgen_id, erro: (err as Error).message });
+    }
+  }
+  return resultado;
 }
 
 // Normaliza telefone BR pra formato Evolution: 55DDNNNNNNNNN (sem +, espaco, -, parentese).
