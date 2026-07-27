@@ -105,7 +105,7 @@ import { renderContratosPage, type ContratoCliente } from './contratos-views.js'
 import { renderContratoFormPage } from './contrato-form-views.js';
 import type { SugestaoIa } from '../closing/revisar-contrato.js';
 import { CLIENTE_STATUSES } from './clientes-queries.js';
-import { can } from './permissions.js';
+import { can, podeDispararMensagens } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
 import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } from './blog-views.js';
@@ -2474,6 +2474,11 @@ export function createDashboardRouter(
   // Copiloto de pós-venda: chat com a IA (escreve mensagem limpa) + salva histórico.
   // Espelha /leads/:id/ia-copiloto, mas com cérebro de pós-venda.
   router.post('/pos-venda/:leadId/copiloto', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    // [Gate B5 provisório] copiloto gasta IA da casa e redige em nome da Eva —
+    // exclusivo EcoSun até virar item de plano do tenant.
+    if (!podeDispararMensagens(req.dashUser?.companyId)) {
+      return res.status(403).json({ erro: 'Copiloto ainda não está disponível pra sua empresa.' });
+    }
     const leadId = String(req.params.leadId);
     if (!UUID_RE.test(leadId)) return res.status(400).json({ erro: 'id inválido' });
     const pergunta = String(req.body?.pergunta ?? '').trim();
@@ -2544,6 +2549,10 @@ export function createDashboardRouter(
   // Botão de ação do pós-venda -> dispara o TEMPLATE aprovado pela Eva (funciona
   // dentro e fora da janela 24h). Corpo: { tipo: 'parabens'|'limpeza'|... }.
   router.post('/pos-venda/:leadId/enviar-template', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    // [Gate B5 provisório] tenant edita cadastro, mas NUNCA dispara pela WABA da casa.
+    if (!podeDispararMensagens(req.dashUser?.companyId)) {
+      return res.status(403).json({ erro: 'Envio de mensagens ainda não está disponível pra sua empresa.' });
+    }
     const leadId = String(req.params.leadId);
     if (!UUID_RE.test(leadId)) return res.status(400).json({ erro: 'id inválido' });
     if (!options.metaService) return res.status(500).json({ erro: 'WhatsApp não configurado.' });
@@ -2612,6 +2621,10 @@ export function createDashboardRouter(
   // Chat do copiloto -> envia o TEXTO LIVRE pela Eva. Só funciona dentro da
   // janela de 24h do WhatsApp; se a Meta recusar, devolve aviso amigável.
   router.post('/pos-venda/:leadId/enviar-texto', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    // [Gate B5 provisório] tenant edita cadastro, mas NUNCA dispara pela WABA da casa.
+    if (!podeDispararMensagens(req.dashUser?.companyId)) {
+      return res.status(403).json({ erro: 'Envio de mensagens ainda não está disponível pra sua empresa.' });
+    }
     const leadId = String(req.params.leadId);
     if (!UUID_RE.test(leadId)) return res.status(400).json({ erro: 'id inválido' });
     if (!options.metaService) return res.status(500).json({ erro: 'WhatsApp não configurado.' });
