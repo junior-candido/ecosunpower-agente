@@ -8189,13 +8189,18 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
       const d = await montarDadosRelatorio(
         { getDetalhe: (id) => monitoringService.getDetalheSistema(id) }, r.sistemaId, 'acompanhamento');
       if ('erro' in d) return res.status(500).type('text/html').send(propostaErrorHtml('error'));
+      // [Degustação Sabion 27/07] usina de tenant → relatório com a marca
+      // NEUTRA do tenant (sem logo/CNPJ/CTA da EcoSun) também no link público.
+      const { resolverMarcaRelatorio } = await import('./modules/monitoring/relatorio/marca.js');
+      const sisMarca = await supabase.getSistemaById(r.sistemaId);
+      const marca = await resolverMarcaRelatorio(supabase.getClient(), (sisMarca?.company_id as string | null) ?? null);
       if (req.query.pdf === '1') {
         const { htmlToPdf } = await import('./modules/proposal/pdf-generator.js');
-        const pdf = await htmlToPdf(renderRelatorioHtml(d, 'acompanhamento', logoRelatorio));
+        const pdf = await htmlToPdf(renderRelatorioHtml(d, 'acompanhamento', logoRelatorio, marca));
         res.type('application/pdf').set('Content-Disposition', 'inline; filename="relatorio.pdf"').send(pdf);
         return;
       }
-      res.type('text/html').send(renderRelatorioHtml(d, 'acompanhamento', logoRelatorio));
+      res.type('text/html').send(renderRelatorioHtml(d, 'acompanhamento', logoRelatorio, marca));
     } catch (err) {
       console.error('[relatorio-publico]', err);
       res.status(500).type('text/html').send(propostaErrorHtml('error'));

@@ -3339,6 +3339,15 @@ export function createDashboardRouter(
       // [ECOSOF] Logo resolvida em runtime (Storage com fallback embutido).
       const { obterLogoBase64 } = await import('../proposal/assets/logo-base64.js');
       const id = String(req.params.id ?? '');
+      if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).send('UUID invalido');
+      // [Degustação Sabion 27/07] relatório só pra empresa dona da usina; e
+      // usina de tenant sai com a marca NEUTRA dele (sem logo/CNPJ da casa).
+      const sisDono = await supabaseService.getSistemaById(id);
+      if (!sisDono || !usinaPertenceAoOperador((sisDono.company_id as string | null) ?? null, (req as AuthedRequest).dashUser?.companyId)) {
+        return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
+      }
+      const { resolverMarcaRelatorio } = await import('../monitoring/relatorio/marca.js');
+      const marca = await resolverMarcaRelatorio(supabaseService.getClient(), (sisDono.company_id as string | null) ?? null);
       const r = await gerarRelatorio({
         getDetalhe: (sid: string) => monitoringService.getDetalheSistema(sid),
         criarSlug: (sid: string) => supabaseService.criarRelatorioSlug(sid),
@@ -3346,6 +3355,7 @@ export function createDashboardRouter(
         gerarQr: gerarQrCodeDataUrl,
         baseUrl: process.env.PUBLIC_BASE_URL ?? 'https://propostas.ecosunpower.eng.br',
         logoBase64: await obterLogoBase64(supabaseService.getClient()),
+        marca,
       }, id, 'acompanhamento');
       if (!r.ok) {
         return res.status(500).send(`<h2>Erro ao gerar relatório</h2><pre>${r.reason}</pre><a href="/dashboard/monitoramento">← voltar</a>`);
