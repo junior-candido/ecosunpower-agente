@@ -20,6 +20,8 @@ export interface RelatorioData {
   uf: string | null;
   marcaInversor: string;
   potenciaKwp: number | null;
+  // [Folha do tenant 27/07] base da linha "Instalada em X · garantia até Y".
+  dataInstalacao: string | null;
   kpis: { hojeKwh: number | null; mesKwh: number; anoKwh: number; totalKwh: number };
   serieMensal: { mes: string; kwh: number; esperado: number }[];
   economiaEstimadaReais: number;
@@ -66,6 +68,7 @@ export async function montarDadosRelatorio(
     uf: s.uf ?? null,
     marcaInversor: s.marca_inversor,
     potenciaKwp: s.potencia_kwp ?? null,
+    dataInstalacao: s.data_instalacao ?? null,
     kpis: {
       hojeKwh: d.kpis?.hojeKwh ?? null,
       mesKwh: Number(d.kpis?.mesKwh ?? 0),

@@ -13,6 +13,15 @@ function esc(s: unknown): string {
 function brl(v: number): string {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
+function fmtDataBR(iso: string): string {
+  const [a, m, d] = iso.slice(0, 10).split('-');
+  return `${d}/${m}/${a}`;
+}
+function somarMesesIso(iso: string, meses: number): string {
+  const d = new Date(iso.slice(0, 10) + 'T00:00:00Z');
+  d.setUTCMonth(d.getUTCMonth() + meses);
+  return d.toISOString().slice(0, 10);
+}
 
 /**
  * CTA proeminente pra cliente solicitar visita técnica pós-venda.
@@ -79,6 +88,27 @@ export function renderRelatorioHtml(
     ? data.serieMensal.map((m) => `<tr><td style="padding:6px 10px">${esc(m.mes)}</td><td style="padding:6px 10px;text-align:right">${m.kwh.toFixed(0)} kWh</td></tr>`).join('')
     : `<tr><td colspan="2" style="padding:10px;color:var(--muted)">—</td></tr>`);
 
+  // [Folha do tenant 27/07 — pedido do Thiago] gráfico de barras com os
+  // valores mensais. SOMENTE na folha do tenant; a tabela da EcoSun fica
+  // byte a byte como sempre foi.
+  const ultimosMeses = data.serieMensal.slice(-12);
+  const maxKwh = Math.max(...ultimosMeses.map((m) => m.kwh), 1);
+  const graficoMensal = `<div style="display:flex;align-items:flex-end;gap:6px;padding:10px 0 4px">${ultimosMeses.map((m) => {
+    const h = Math.max(6, Math.round((m.kwh / maxKwh) * 110));
+    const mesLabel = `${m.mes.slice(5, 7)}/${m.mes.slice(2, 4)}`;
+    return `<div class="barra-mes" style="flex:1;text-align:center">
+      <div style="font-size:11px;color:var(--primary-700);font-weight:700">${m.kwh.toFixed(0)}</div>
+      <div style="height:${h}px;background:linear-gradient(180deg,#1FB8E8,#0E7CB8);border-radius:6px 6px 0 0;margin:2px 3px 0"></div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px">${esc(mesLabel)}</div>
+    </div>`;
+  }).join('')}</div>`;
+
+  // [Folha do tenant] garantia com VIGÊNCIA: instalada em X · até Y (12 meses
+  // de instalação). Sem data de instalação cai no texto de sempre.
+  const vigenciaTenant = (marca && data.dataInstalacao)
+    ? `Instalada em ${fmtDataBR(data.dataInstalacao)} · Garantia da instalação (${esc(marca.nome)}): até ${fmtDataBR(somarMesesIso(data.dataInstalacao, 12))}${data.garantia.ecosun.status === 'vigente' ? ` — vigente, ${(data.garantia.ecosun as any).mesesRestantes} meses restantes` : ''}.`
+    : null;
+
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Relatório da Usina · ${esc(data.apelido)} · ${esc(nomeMarca)}</title>
@@ -107,9 +137,9 @@ img.logo{height:34px;width:auto;background:#fff;border-radius:8px;padding:5px}</
   </div>
   ${diag}
   <div style="padding:0 24px 8px"><b>Histórico mês a mês</b></div>
-  <div style="padding:0 24px 16px"><table><tbody>${linhasMensais}</tbody></table></div>
+  <div style="padding:0 24px 16px">${marca ? graficoMensal : `<table><tbody>${linhasMensais}</tbody></table>`}</div>
   <div style="padding:0 24px 16px;font-size:13px;color:var(--muted)">
-    <b>Garantias:</b> Instalação/mão de obra ${esc(nomeMarca)}: ${data.garantia.ecosun.status === 'vigente' ? `vigente (${(data.garantia.ecosun as any).mesesRestantes} meses restantes)` : data.garantia.ecosun.status === 'encerrada' ? `encerrada` : 'a confirmar'}.
+    <b>Garantias:</b> ${vigenciaTenant ?? `Instalação/mão de obra ${esc(nomeMarca)}: ${data.garantia.ecosun.status === 'vigente' ? `vigente (${(data.garantia.ecosun as any).mesesRestantes} meses restantes)` : data.garantia.ecosun.status === 'encerrada' ? `encerrada` : 'a confirmar'}.`}
     Inversor (fabricante): ${esc(data.garantia.fabricanteInversor)}. Painel: ${esc(data.garantia.fabricantePainel)}.
   </div>
   ${marca ? `<div class="foot">
