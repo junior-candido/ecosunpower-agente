@@ -37,6 +37,7 @@ import { SiteDeployService } from './modules/site-deploy.js';
 import { PublicReviewsService } from './modules/public-reviews.js';
 import { CaseCreatorAssistant } from './modules/case-creator-assistant.js';
 import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone, registrarEventosMinimos } from './modules/meta-leadgen.js';
+import { extrairRespostasForm, mesclarEnergyData, blocoContinuacaoForm } from './modules/leadgen-form-respostas.js';
 import { emailValido } from './modules/email/email-util.js';
 import { enviarTemplateInicial, TEMPLATE_FALLBACK } from './modules/template-inicial.js';
 import { parseTrackingTag } from './modules/tracking.js';
@@ -4703,6 +4704,11 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           if (ed.contracted_demand_kw) leadContext += `- Demanda contratada: ${ed.contracted_demand_kw} kW\n`;
           if (ed.tariff_type) leadContext += `- Tarifa: ${ed.tariff_type}\n`;
         }
+        // Modo continuacao (Fase 3 do funil): lead do formulario Meta ja
+        // respondeu faixa da conta / tipo de imovel — Eva confirma e aprofunda
+        // (pede foto da conta) em vez de re-perguntar o que o form ja perguntou.
+        const blocoForm = blocoContinuacaoForm(lead.energy_data as Record<string, unknown> | null);
+        if (blocoForm) leadContext += blocoForm + '\n';
         if (lead.future_demand) leadContext += `- Demanda futura: ${lead.future_demand}\n`;
         if (lead.opportunities && Object.keys(lead.opportunities).length > 0) {
           const opp = lead.opportunities as Record<string, boolean>;
@@ -6305,6 +6311,14 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           if (!isHot) {
             updatePayload.lead_source = normalized.source;
           }
+          // Fase 3 do funil: respostas do form (faixa da conta / tipo de
+          // imovel) viram energy_data — merge preserva monthly_bill exato de
+          // conversa anterior. E a base do modo continuacao da Eva.
+          const energyDataForm = mesclarEnergyData(
+            (existing?.energy_data as Record<string, unknown> | null) ?? null,
+            extrairRespostasForm(normalized.extraFields),
+          );
+          if (energyDataForm) updatePayload.energy_data = energyDataForm;
           // Computa canal canônico a partir dos campos de atribuição desta
           // atualização. ad_campaign_id tem prioridade máxima em resolveChannel
           // (qualquer campaign_id = meta). lead_source entra se for lead novo.
