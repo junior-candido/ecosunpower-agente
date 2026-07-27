@@ -36,3 +36,13 @@ export function can(user: DashUser | null | undefined, area: Area, nivel: Nivel)
   if (perms.includes('administrar')) return true;
   return perms.includes(nivel);
 }
+
+// [Gate B5 provisório — degustação Sabion 27/07] Disparo de MENSAGEM (Eva /
+// WABA / IA falando com cliente) é exclusivo da CASA EcoSun até cada tenant
+// ter WABA própria. Existe pra que o papel do tenant possa ganhar 'editar'
+// (cadastrar os próprios clientes, mover Kanban) SEM falar em nome da EcoSun
+// pelo número da EcoSun. Sem empresa → lado seguro (não dispara).
+const ECOSUN_DISPARO = '00000000-0000-0000-0000-000000000001';
+export function podeDispararMensagens(companyId: string | null | undefined): boolean {
+  return companyId === ECOSUN_DISPARO;
+}
