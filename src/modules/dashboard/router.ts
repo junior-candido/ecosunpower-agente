@@ -2882,12 +2882,19 @@ export function createDashboardRouter(
         ord: typeof req.query.ord === 'string' ? req.query.ord : undefined,
       };
       const filtered = filtrarOrdenarSistemas(enriched as any, qf);
+      // KPIs GLOBAIS da operação EcoSun (alertas proativos + Eva no mês): as
+      // queries são SEM filtro de empresa — só entram na tela da PRÓPRIA
+      // EcoSun. Tenant não vê agregado de outra casa (achado na degustação
+      // Sabion 27/07: os números da EcoSun vazavam na tela do Sabion).
+      const ehEcosun = (req as AuthedRequest).dashUser?.companyId === ECOSUN;
       const { getAlertasAtivosResumo, getAlertasEnviadosUltimos7d } = await import('./queries.js');
-      const [alertasResumo, sparkline7d, kpisEva] = await Promise.all([
-        getAlertasAtivosResumo(supabase),
-        getAlertasEnviadosUltimos7d(supabase),
-        getKPIsAbordagemMes(supabase).catch(() => undefined),
-      ]);
+      const [alertasResumo, sparkline7d, kpisEva] = ehEcosun
+        ? await Promise.all([
+            getAlertasAtivosResumo(supabase),
+            getAlertasEnviadosUltimos7d(supabase),
+            getKPIsAbordagemMes(supabase).catch(() => undefined),
+          ])
+        : [undefined, undefined, undefined];
       res.send(renderMonitoramentoPage(filtered as any, qf, alertasResumo, sparkline7d, kpisEva, (req as AuthedRequest).dashUser));
     } catch (err) {
       console.error('[dashboard/monitoramento]', err);
