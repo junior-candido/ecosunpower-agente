@@ -380,10 +380,11 @@ export function createDashboardRouter(
           ultimoEventoISO: ((evento.data ?? [])[0] as { created_at?: string } | undefined)?.created_at ?? null,
         };
       }
-      // manutencoes (migration 083): pode ainda não existir — degrada pra [].
+      // manutencoes_predio (migration 083 — nome com sufixo: `manutencoes` já
+      // era a manutenção de USINAS!): pode ainda não existir — degrada pra [].
       let manutencoes: Array<{ company_id: string | null; titulo: string; status: string }> = [];
       try {
-        const r = await client.from('manutencoes').select('company_id, titulo, status').order('criado_em', { ascending: false }).limit(100);
+        const r = await client.from('manutencoes_predio').select('company_id, titulo, status').order('criado_em', { ascending: false }).limit(100);
         if (!r.error) manutencoes = (r.data ?? []) as typeof manutencoes;
       } catch { /* sem a 083 aplicada ainda — letreiro vazio */ }
       const predio = montarPredio({
