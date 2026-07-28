@@ -14,6 +14,7 @@ function fakeSupabase(sistemas: any[], geracoes: any[]) {
             in() { return q; },
             gte() { return q; },
             order() { return q; },
+            range() { return q; },
             then(res: any) {
               if (tabela === 'sistemas_clientes') return res({ data: sistemas, error: null });
               return res({ data: geracoes, error: null });
