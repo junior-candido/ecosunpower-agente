@@ -13,6 +13,7 @@ interface SistemaListadoDashboard {
   uf: string | null;
   geracao_7d_kwh: number;
   diasSemGeracao?: number;          // se monitoring expor; senão derive
+  status_inversor?: 'ok' | 'offline' | 'falha' | 'desconhecido' | null; // 084
 }
 
 export class ProactiveAlertService {
@@ -32,6 +33,7 @@ export class ProactiveAlertService {
       uf: s.uf,
       diasSemGeracao: s.diasSemGeracao ?? (s.geracao_7d_kwh > 0 ? 0 : 7),  // proxy
       realUltimos7: s.geracao_7d_kwh,
+      status_inversor: s.status_inversor ?? null,
     }));
 
     const abertos = await this.supabase.getAlertasAbertosBySistemas(

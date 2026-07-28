@@ -31,6 +31,10 @@ export interface SistemaCliente {
   ativo: boolean;
   ultima_sincronizacao: string | null;
   ultimo_erro: string | null;
+  // 084: último status devolvido pelo adapter (ok|offline|falha|desconhecido)
+  // — dá nome ao problema no alerta de usina parada (fatia 1, Thiago 28/07).
+  status_inversor?: string | null;
+  status_inversor_em?: string | null;
   // Dados detalhados (migration 022) — cruzamento com geração real
   painel_marca?: string | null;
   painel_modelo?: string | null;
