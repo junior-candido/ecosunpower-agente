@@ -8,6 +8,7 @@ import {
 } from './pos-venda-saude.js';
 import { agruparAgenda, type AgendaAgrupada, type TarefaAgenda } from './pos-venda-agenda.js';
 import { tiposSnoozed } from './pos-venda-sugestao-memoria.js';
+import { buscarPaginado } from '../monitoring/paginacao.js';
 
 export interface PosVendaLinha {
   leadId: string;
@@ -92,11 +93,13 @@ export async function listarClientesPosVenda(client: SupabaseClient, companyId: 
     alertasPorSistema.set(a.sistema_id, arr);
   }
 
-  // 4) geração recente (30d) por sistema
-  const { data: geracaoData, error: e4 } = await client.from('geracao_diaria')
+  // 4) geração recente (30d) por sistema — PAGINADO: frota inteira × 30 dias
+  // passa do teto de 1000 linhas do PostgREST e vinha truncado (usina cortada
+  // aparecia como "sem gerar" na saúde da tela; mesma causa raiz do #161).
+  const geracaoData = await buscarPaginado(() => client.from('geracao_diaria')
     .select('sistema_id, data, geracao_kwh')
-    .in('sistema_id', sistemaIds).gte('data', diasAtras(30));
-  if (e4) throw new Error(`listarClientesPosVenda/geracao: ${e4.message}`);
+    .in('sistema_id', sistemaIds).gte('data', diasAtras(30))
+    .order('sistema_id', { ascending: true }).order('data', { ascending: true }));
   const geracaoPorSistema = new Map<string, Array<{ data: string; geracao_kwh: number }>>();
   for (const g of (geracaoData ?? []) as any[]) {
     const arr = geracaoPorSistema.get(g.sistema_id) ?? [];
