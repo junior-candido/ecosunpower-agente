@@ -125,6 +125,7 @@ const SIDEBAR_SETORES: SideSetor[] = [
       { href: '/dashboard/home', key: 'home', label: '📊 Visão geral' },
       { href: '/dashboard/cockpit', key: 'cockpit', label: '⚡ Cockpit' },
       { href: '/dashboard/cerebro', key: 'cerebro', label: '🧠 Cérebro', area: 'relatorios', soEcosun: true },
+      { href: '/dashboard/predio', key: 'predio', label: '🏢 Prédio Vivo', soEcosun: true },
     ],
   },
   {
