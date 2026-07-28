@@ -11,6 +11,9 @@ export interface ClassificacaoInput {
   uf: string | null;
   diasSemGeracao: number; // dias consecutivos sem geração>0 (detalhe: preciso; lista: proxy 7d=0 -> 7)
   realUltimos7: number;   // kWh somados nos últimos 7 dias
+  // Último status devolvido pelo adapter da marca (guardado pelo sync na 084).
+  // Dá NOME ao problema da usina parada (fatia 1 do pedido do Thiago 28/07).
+  statusInversor?: 'ok' | 'offline' | 'falha' | 'desconhecido' | null;
 }
 
 export interface Alerta {
@@ -52,12 +55,21 @@ export function classificarSistema(i: ClassificacaoInput): Classificacao {
   }
 
   if (i.diasSemGeracao >= 3) {
+    const d = i.diasSemGeracao;
+    // O motivo vem do statusInversor quando o adapter informa; sem status,
+    // texto antigo intacto (zero regressão). Tipo continua 'sistema_offline'
+    // pra não quebrar dedupe/dispatcher/botões do zap.
+    const texto =
+      i.statusInversor === 'offline'
+        ? `Sem comunicação há ${d} dias — o inversor não está enviando dados. Checar WiFi/internet da usina.`
+        : i.statusInversor === 'falha'
+          ? `Falha reportada pelo inversor há ${d} dias. Checar o equipamento.`
+          : i.statusInversor === 'ok'
+            ? `Parada há ${d} dias — comunicando, mas sem gerar. Checar disjuntor/strings.`
+            : `Sem geração há ${d} dias. Verificar inversor / conexão WiFi.`;
     return {
       nivel: 'urgente',
-      alerta: {
-        tipo: 'sistema_offline', severidade: 'urgente',
-        texto: `Sem geração há ${i.diasSemGeracao} dias. Verificar inversor / conexão WiFi.`,
-      },
+      alerta: { tipo: 'sistema_offline', severidade: 'urgente', texto },
     };
   }
 

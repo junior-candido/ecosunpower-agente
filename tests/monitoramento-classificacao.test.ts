@@ -103,3 +103,28 @@ describe('zero-regressão: textos batem com os literais antigos de getDetalheSis
       .toBe('Geração últimos 7 dias 35% ABAIXO do esperado. Pode ser sujeira/sombreamento — agendar limpeza.');
   });
 });
+
+describe('motivo no alerta de usina parada (fatia 1 — statusInversor, Thiago 28/07)', () => {
+  const base = { ativo: true, ultimoErro: null, potenciaKwp: 5, uf: 'DF', diasSemGeracao: 7, realUltimos7: 0 };
+  it('offline → sem comunicação (WiFi/internet)', () => {
+    const c = classificarSistema({ ...base, statusInversor: 'offline' } as any);
+    expect(c.alerta!.tipo).toBe('sistema_offline');
+    expect(c.alerta!.texto).toContain('Sem comunicação há 7 dias');
+    expect(c.alerta!.texto).toContain('WiFi');
+  });
+  it('falha → falha reportada pelo inversor', () => {
+    const c = classificarSistema({ ...base, statusInversor: 'falha' } as any);
+    expect(c.alerta!.tipo).toBe('sistema_offline');
+    expect(c.alerta!.texto).toContain('Falha reportada pelo inversor');
+  });
+  it('ok → parada mas comunicando (disjuntor/strings)', () => {
+    const c = classificarSistema({ ...base, statusInversor: 'ok' } as any);
+    expect(c.alerta!.texto).toContain('comunicando, mas sem gerar');
+  });
+  it('desconhecido/ausente → texto antigo, zero regressão', () => {
+    for (const s of ['desconhecido', undefined, null]) {
+      const c = classificarSistema({ ...base, statusInversor: s } as any);
+      expect(c.alerta!.texto).toBe('Sem geração há 7 dias. Verificar inversor / conexão WiFi.');
+    }
+  });
+});
