@@ -14,6 +14,7 @@ import type { SupabaseService } from '../supabase.js';
 import { getAdapter, marcasSuportadas } from './adapter-registry.js';
 import type { AdapterContext, MarcaInversor, SistemaCliente, SiteResumo } from './types.js';
 import { classificarSistema, esperadoDiaKwh } from './classificacao.js';
+import { buscarPaginado } from './paginacao.js';
 import { serieMesDiaria, serieAnoMensal, navegacao, type Vista } from './detalhe-series.js';
 
 interface SyncResult {
@@ -888,24 +889,9 @@ export class MonitoringService {
     return { inicio: isoDate(inicio), fim: hojeStr, label: labels[preset] ?? 'Período custom', presetAtual: preset };
   }
 
-  // O PostgREST corta QUALQUER resposta em 1000 linhas, mesmo sem .limit().
-  // Com a frota crescendo, a janela do mês passou disso e usinas viravam
-  // soma 0 → alerta "sem geração" FALSO (bug 28/07). Busca em páginas de 1000
-  // até vir página incompleta. `montarConsulta` deve criar uma consulta NOVA
-  // a cada chamada (o builder do supabase-js é mutável) e já vir com .order()
-  // fixo — paginação sem ordem estável repete/pula linhas.
-  private async buscarGeracoesPaginado(montarConsulta: () => any): Promise<any[]> {
-    const PAGINA = 1000;
-    const out: any[] = [];
-    for (let pagina = 0; ; pagina++) {
-      const { data, error } = await montarConsulta()
-        .range(pagina * PAGINA, pagina * PAGINA + PAGINA - 1);
-      if (error) break; // mesmo contrato de antes: erro → devolve o que tem
-      const rows = data ?? [];
-      out.push(...rows);
-      if (rows.length < PAGINA) break;
-    }
-    return out;
+  // Leitura paginada (teto de 1000 linhas do PostgREST) — ver paginacao.ts.
+  private buscarGeracoesPaginado(montarConsulta: () => any): Promise<any[]> {
+    return buscarPaginado(montarConsulta);
   }
 
   // Listagem pra dashboard. Inclui geracao do dia atual.
