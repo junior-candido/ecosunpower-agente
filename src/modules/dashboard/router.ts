@@ -351,6 +351,54 @@ export function createDashboardRouter(
     res.redirect('/dashboard/empresas?ok=1');
   });
 
+  // ===== O PRÉDIO VIVO (F1 — spec 2026-07-28): multi-tenant em 3D, SÓ EcoSun =====
+  router.get('/predio', async (req: AuthedRequest, res) => {
+    if (!ehAdminEcosun(req.dashUser)) { res.status(403).send('Sem permissão'); return; }
+    const { renderPredioPage } = await import('./predio-views.js');
+    res.type('html').send(renderPredioPage());
+  });
+
+  router.get('/api/predio', async (req: AuthedRequest, res) => {
+    if (!ehAdminEcosun(req.dashUser)) { res.status(403).json({ erro: 'só EcoSun' }); return; }
+    try {
+      const client = supabase;
+      const { montarPredio } = await import('../predio/dados.js');
+      const { data: companies } = await client.from('companies').select('id, nome, created_at').order('created_at');
+      const porCompany: Record<string, { usinas: number; assentos: number; leads: number; ultimoLoginISO: string | null; ultimoEventoISO: string | null }> = {};
+      for (const c of (companies ?? []) as Array<{ id: string }>) {
+        const [usinas, users, leads, evento] = await Promise.all([
+          client.from('sistemas_clientes').select('id', { count: 'exact', head: true }).eq('company_id', c.id),
+          client.from('dashboard_users').select('last_login').eq('company_id', c.id).order('last_login', { ascending: false }),
+          client.from('leads').select('id', { count: 'exact', head: true }).eq('company_id', c.id),
+          client.from('eventos_elo').select('created_at').eq('company_id', c.id).order('created_at', { ascending: false }).limit(1),
+        ]);
+        porCompany[c.id] = {
+          usinas: usinas.count ?? 0,
+          assentos: (users.data ?? []).length,
+          leads: leads.count ?? 0,
+          ultimoLoginISO: ((users.data ?? [])[0] as { last_login?: string } | undefined)?.last_login ?? null,
+          ultimoEventoISO: ((evento.data ?? [])[0] as { created_at?: string } | undefined)?.created_at ?? null,
+        };
+      }
+      // manutencoes (migration 083): pode ainda não existir — degrada pra [].
+      let manutencoes: Array<{ company_id: string | null; titulo: string; status: string }> = [];
+      try {
+        const r = await client.from('manutencoes').select('company_id, titulo, status').order('criado_em', { ascending: false }).limit(100);
+        if (!r.error) manutencoes = (r.data ?? []) as typeof manutencoes;
+      } catch { /* sem a 083 aplicada ainda — letreiro vazio */ }
+      const predio = montarPredio({
+        agoraISO: new Date().toISOString(),
+        companies: (companies ?? []) as never,
+        porCompany,
+        manutencoes,
+      });
+      res.json({ ...predio, manutencoes });
+    } catch (err) {
+      console.error('[predio] dados falharam:', (err as Error).message);
+      res.status(500).json({ erro: (err as Error).message });
+    }
+  });
+
   // ----- RH (Trabalhe Conosco): vagas + funil de candidatos -----
   router.get('/rh', (_req: AuthedRequest, res) => { res.redirect('/dashboard/rh/candidatos'); });
 
