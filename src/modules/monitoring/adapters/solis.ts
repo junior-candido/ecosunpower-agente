@@ -312,7 +312,7 @@ export const solisAdapter: MonitoringAdapter = {
     const geracoes: GeracaoDiaria[] = [...porDia.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([data, kwh]) => ({ data, geracao_kwh: Number(kwh.toFixed(3)) }));
-    return { ok: true, geracoes, statusInversor: geracoes.length > 0 ? 'ok' : 'desconhecido' };
+    return { ok: true, geracoes, statusInversor: 'desconhecido' }; // 'ok' era proxy (linhas na resposta ≠ inversor comunicando) — mentia no alerta com motivo; status real desta marca = fase 2
   },
 
   // stationDay → curva de potência (kW) do dia da usina. Ao vivo.
