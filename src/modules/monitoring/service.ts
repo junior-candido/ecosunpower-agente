@@ -628,13 +628,13 @@ export class MonitoringService {
     const { inicio, fim, label, presetAtual } = this.resolverPeriodo(options, s.data_instalacao);
 
     // Busca TODAS as geracoes do sistema (pra KPIs ano/total + serie mensal completa)
-    const { data: todasGeracoes } = await this.supabase.getClient()
+    const todasGeracoes = await this.buscarGeracoesPaginado(() => this.supabase.getClient()
       .from('geracao_diaria')
       .select('data, geracao_kwh')
       .eq('sistema_id', sistemaId)
-      .order('data', { ascending: true });
+      .order('data', { ascending: true }));
 
-    const geracoesArr = (todasGeracoes ?? []) as { data: string; geracao_kwh: number }[];
+    const geracoesArr = todasGeracoes as { data: string; geracao_kwh: number }[];
 
     // KPIs + alertas (sempre fixos: hoje/mes/ano/total) — extraidos pra reuso
     // pelo getDetalheCalendario (mesma logica, sem duplicar).
@@ -812,12 +812,12 @@ export class MonitoringService {
     // Mesma consulta que getDetalheSistema usa: TODAS as geracoes (KPIs
     // total/ano precisam do historico completo). As funcoes puras de serie
     // filtram internamente pelo ano/mes do `ref`.
-    const { data: todasGeracoes } = await this.supabase.getClient()
+    const todasGeracoes = await this.buscarGeracoesPaginado(() => this.supabase.getClient()
       .from('geracao_diaria')
       .select('data, geracao_kwh')
       .eq('sistema_id', id)
-      .order('data', { ascending: true });
-    const ger = (todasGeracoes ?? []) as { data: string; geracao_kwh: number }[];
+      .order('data', { ascending: true }));
+    const ger = todasGeracoes as { data: string; geracao_kwh: number }[];
 
     const { kpis, alertas } = this.montarKpisEAlertas(s, ger, hojeDate);
     const nav = navegacao(opts.vista, opts.ref, hojeDate, s.data_instalacao ?? null);
@@ -888,6 +888,26 @@ export class MonitoringService {
     return { inicio: isoDate(inicio), fim: hojeStr, label: labels[preset] ?? 'Período custom', presetAtual: preset };
   }
 
+  // O PostgREST corta QUALQUER resposta em 1000 linhas, mesmo sem .limit().
+  // Com a frota crescendo, a janela do mês passou disso e usinas viravam
+  // soma 0 → alerta "sem geração" FALSO (bug 28/07). Busca em páginas de 1000
+  // até vir página incompleta. `montarConsulta` deve criar uma consulta NOVA
+  // a cada chamada (o builder do supabase-js é mutável) e já vir com .order()
+  // fixo — paginação sem ordem estável repete/pula linhas.
+  private async buscarGeracoesPaginado(montarConsulta: () => any): Promise<any[]> {
+    const PAGINA = 1000;
+    const out: any[] = [];
+    for (let pagina = 0; ; pagina++) {
+      const { data, error } = await montarConsulta()
+        .range(pagina * PAGINA, pagina * PAGINA + PAGINA - 1);
+      if (error) break; // mesmo contrato de antes: erro → devolve o que tem
+      const rows = data ?? [];
+      out.push(...rows);
+      if (rows.length < PAGINA) break;
+    }
+    return out;
+  }
+
   // Listagem pra dashboard. Inclui geracao do dia atual.
   // [Fase 2 A3] companyId = empresa do operador (tela por tenant); ausente =
   // todas (crons multi-tenant: alertas proativos, pós-instalação etc).
@@ -904,11 +924,15 @@ export class MonitoringService {
     const ha7 = isoDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
     const desde = inicioMes < ha7 ? inicioMes : ha7;
     const ids = sistemas.map((s) => s.id);
-    const { data: geracoes } = await this.supabase.getClient()
+    // Ordem fixa (sistema_id, data) pra paginação estável — sem ela as páginas
+    // podem repetir/pular linhas entre uma chamada e outra.
+    const geracoes = await this.buscarGeracoesPaginado(() => this.supabase.getClient()
       .from('geracao_diaria')
       .select('sistema_id, data, geracao_kwh')
       .in('sistema_id', ids)
-      .gte('data', desde);
+      .gte('data', desde)
+      .order('sistema_id', { ascending: true })
+      .order('data', { ascending: true }));
 
     const porSistema = new Map<string, { hoje: number | null; mes: number; ult7: number }>();
     for (const sid of ids) porSistema.set(sid, { hoje: null, mes: 0, ult7: 0 });
