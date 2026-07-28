@@ -23,7 +23,10 @@ describe('renderMonitoramentoPage (smoke)', () => {
     expect(html).toContain('coluna-status');
     expect(html).toContain('Casa Silva');
     expect(html).toContain('Bar Rota');
-    expect(html).toContain('Saúde da frota');
+    // [27/07] fileira de KPIs deu lugar à Órbita da Frota (mesma informação,
+    // faixa compacta) — a saúde vive na linha-resumo da órbita.
+    expect(html).toContain('Órbita da Frota');
+    expect(html).toContain('Saúde');
     expect(html).toContain('/dashboard/monitoramento/1/excluir');
     expect(html).toContain('1 ano 2 meses');
     expect(html).toContain('bg-slate-900');
@@ -36,7 +39,7 @@ describe('renderMonitoramentoPage (smoke)', () => {
     const html = renderMonitoramentoPage(rows, {});
     const posBusca = html.indexOf('name="q"');
     const posImportar = html.indexOf('📥 Importar');
-    const posKpis = html.indexOf('Usinas ativas');
+    const posKpis = html.indexOf('Órbita da Frota');
     const posAcao = html.indexOf('Painel de Operação');
     expect(posBusca).toBeGreaterThan(-1);
     expect(posImportar).toBeGreaterThan(-1);
