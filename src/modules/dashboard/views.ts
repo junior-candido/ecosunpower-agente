@@ -914,8 +914,12 @@ export function renderMonitoramentoPage(
       <span class="ml-auto text-base font-bold ${P.h1}" style="font-family:'Space Grotesk',ui-sans-serif,system-ui">${lista.length}</span>
     </div>`;
 
+  // Compacta ("cresce muito pra baixo" — Junior): a Órbita é uma FAIXA baixa
+  // que SUBSTITUI a fileira de KPIs — tudo que os 5 cartões mostravam está
+  // nela (hoje/usinas no sol, status nos chips, mês/kWp/marcas/saúde na
+  // linha-resumo). Página fica mais curta do que era ANTES da órbita.
   const orbitaHtml = N_ORB === 0 ? '' : `
-    <section class="orbita-frota mb-8 rounded-2xl ${claro ? 'bg-gradient-to-b from-sky-50 via-white to-amber-50/40 border border-slate-200' : 'border border-slate-800'} p-4 md:p-6 relative overflow-hidden"${claro ? '' : ' style="background:radial-gradient(1200px 420px at 30% -10%, rgba(14,165,233,.12), transparent), linear-gradient(180deg, #0B1220 0%, #070B14 100%)"'}>
+    <section class="orbita-frota mb-6 rounded-2xl ${claro ? 'bg-gradient-to-r from-sky-50 via-white to-amber-50/40 border border-slate-200' : 'border border-slate-800'} p-3 md:p-4 relative overflow-hidden"${claro ? '' : ' style="background:radial-gradient(900px 300px at 25% -10%, rgba(14,165,233,.12), transparent), linear-gradient(180deg, #0B1220 0%, #070B14 100%)"'}>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap');
         .orbita-frota .anel { animation: orbita-giro 90s linear infinite; transform-origin: ${CENTRO_ORB}px ${CENTRO_ORB}px; }
@@ -926,25 +930,30 @@ export function renderMonitoramentoPage(
         .orbita-frota .ponto-usina circle { cursor: pointer; }
         .orbita-frota .ponto-usina:hover circle, .orbita-frota .ponto-usina:focus circle { stroke: ${claro ? '#0F172A' : '#F8FAFC'}; stroke-width: 2.5; }
       </style>
-      <div class="flex flex-col lg:flex-row items-center gap-6">
-        <svg viewBox="0 0 340 340" class="w-[300px] h-[300px] md:w-[340px] md:h-[340px] shrink-0" role="img" aria-label="Órbita da frota: cada ponto é uma usina, a cor é o status">
+      <div class="flex flex-col md:flex-row items-center gap-4 md:gap-6">
+        <svg viewBox="0 0 340 340" class="w-[190px] h-[190px] md:w-[210px] md:h-[210px] shrink-0" role="img" aria-label="Órbita da frota: cada ponto é uma usina, a cor é o status">
           <defs>
             <radialGradient id="grad-sol" cx="50%" cy="42%">
               <stop offset="0%" stop-color="#FDE68A"/><stop offset="55%" stop-color="#F59E0B"/><stop offset="100%" stop-color="#D97706"/>
             </radialGradient>
           </defs>
           <circle cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="${RAIO_ORB}" fill="none" stroke="${claro ? '#CBD5E1' : '#1E293B'}" stroke-width="1" stroke-dasharray="2 7"/>
-          <circle class="sol-pulso" cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="76" fill="url(#grad-sol)" opacity=".45"/>
-          <circle class="sol-central" cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="60" fill="url(#grad-sol)"/>
-          <text x="${CENTRO_ORB}" y="${CENTRO_ORB - 4}" text-anchor="middle" font-size="27" font-weight="700" fill="#3B2300" style="font-family:'Space Grotesk',ui-sans-serif,system-ui">${totalHoje.toFixed(1)}</text>
-          <text x="${CENTRO_ORB}" y="${CENTRO_ORB + 15}" text-anchor="middle" font-size="11" font-weight="500" fill="#5A3E00">kWh hoje</text>
-          <text x="${CENTRO_ORB}" y="${CENTRO_ORB + 31}" text-anchor="middle" font-size="10" fill="#5A3E00">${ativos.length} usinas ☀️</text>
+          <circle class="sol-pulso" cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="82" fill="url(#grad-sol)" opacity=".45"/>
+          <circle class="sol-central" cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="66" fill="url(#grad-sol)"/>
+          <text x="${CENTRO_ORB}" y="${CENTRO_ORB - 4}" text-anchor="middle" font-size="30" font-weight="700" fill="#3B2300" style="font-family:'Space Grotesk',ui-sans-serif,system-ui">${totalHoje.toFixed(1)}</text>
+          <text x="${CENTRO_ORB}" y="${CENTRO_ORB + 17}" text-anchor="middle" font-size="12" font-weight="500" fill="#5A3E00">kWh hoje</text>
+          <text x="${CENTRO_ORB}" y="${CENTRO_ORB + 34}" text-anchor="middle" font-size="11" fill="#5A3E00">${ativos.length} usinas ☀️</text>
           <g class="anel">${pontosOrbita}</g>
         </svg>
-        <div class="flex-1 w-full">
-          <div class="text-xl font-bold ${P.h1}" style="font-family:'Space Grotesk',ui-sans-serif,system-ui">Órbita da Frota</div>
-          <div class="text-xs ${P.mutedCard} mb-4">Cada ponto é uma usina — a cor é o status de agora. Clique num ponto pra abrir.</div>
-          <div class="grid grid-cols-2 gap-3">
+        <div class="flex-1 w-full min-w-0">
+          <div class="flex flex-wrap items-baseline gap-x-3">
+            <span class="text-lg font-bold ${P.h1}" style="font-family:'Space Grotesk',ui-sans-serif,system-ui">Órbita da Frota</span>
+            <span class="text-[11px] ${P.mutedCard}">Cada ponto é uma usina — a cor é o status. Clique pra abrir.</span>
+          </div>
+          <div class="text-xs ${P.mutedCard} mt-0.5 mb-2">
+            Mês: <b class="${P.tdMes}">${totalMes.toFixed(0)} kWh</b> · ${totalKwp.toFixed(1)} kWp · ${marcas} marca(s) · Saúde <b class="${saudeCor}">${okCount}/${ativos.length}</b>
+          </div>
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
             ${chipOrbita('#F43F5E', 'Falha', falhas)}
             ${chipOrbita('#F59E0B', 'Atenção', atencoes)}
             ${chipOrbita('#10B981', 'Gerando OK', saudaveis)}
@@ -1009,15 +1018,14 @@ export function renderMonitoramentoPage(
       </span>
     </form>
 
+    ${orbitaHtml || `
     <section class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
       ${kpi('Usinas ativas', String(ativos.length), `${totalKwp.toFixed(1)} kWp total`, P.corKpi.amber)}
       ${kpi('Geração hoje', `${totalHoje.toFixed(1)} kWh`, 'somatório', P.corKpi.sky)}
       ${kpi('Geração mês', `${totalMes.toFixed(0)} kWh`, 'mês corrente', P.corKpi.emerald)}
       ${kpi('Saúde da frota', `${okCount}/${ativos.length}`, 'usinas OK', saudeCor)}
       ${kpi('Marcas', String(marcas), 'integradas', P.corKpi.violet)}
-    </section>
-
-    ${orbitaHtml}
+    </section>`}
 
     ${alertasResumo ? `
     <section class="mb-8">
