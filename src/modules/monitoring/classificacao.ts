@@ -14,6 +14,9 @@ export interface ClassificacaoInput {
   // Último status devolvido pelo adapter da marca (guardado pelo sync na 084).
   // Dá NOME ao problema da usina parada (fatia 1 do pedido do Thiago 28/07).
   statusInversor?: 'ok' | 'offline' | 'falha' | 'desconhecido' | null;
+  // Régua POR EMPRESA (085): fração do esperado abaixo da qual acende o
+  // amarelo. Ausente = 0.70 (padrão histórico). Vem de empresaDe(company_id).
+  corteAtencao?: number | null;
 }
 
 export interface Alerta {
@@ -77,7 +80,8 @@ export function classificarSistema(i: ClassificacaoInput): Classificacao {
   const esperado7 = esperadoDiaKwh(i.potenciaKwp, i.uf) * 7;
   const ratio = esperado7 > 0 ? i.realUltimos7 / esperado7 : 1;
 
-  if (kWp > 0 && ratio < 0.70 && i.realUltimos7 > 0) {
+  const corte = i.corteAtencao ?? 0.70;
+  if (kWp > 0 && ratio < corte && i.realUltimos7 > 0) {
     const pct = Math.round((1 - ratio) * 100);
     return {
       nivel: 'aviso',

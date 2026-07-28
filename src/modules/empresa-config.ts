@@ -23,6 +23,9 @@ export interface EmpresaConfig {
   hspPadrao: number | null;       // ex.: 5.40; null = usa o resolver atual por UF
   tarifaPadrao: number | null;    // ex.: 1.050; null = resolver atual
   concessionariaPadrao: string | null; // ex.: 'CEMIG-MG'; null = resolver atual
+  // 085: régua do aviso de geração baixa (% do esperado que acende o amarelo).
+  // 70 = padrão histórico; tenant pode afrouxar (ex.: Sabion 60).
+  reguaAtencaoPct: number;
 }
 
 export const EMPRESA_DEFAULTS: EmpresaConfig = {
@@ -49,6 +52,7 @@ export const EMPRESA_DEFAULTS: EmpresaConfig = {
   garantiaInstalacaoMeses: 12, fatorPerdaPadrao: 0.78, belenusAtivo: true,
   logoStoragePath: null,
   hspPadrao: null, tarifaPadrao: null, concessionariaPadrao: null,
+  reguaAtencaoPct: 70,
 };
 // Congelado: dezenas de call sites vão ler isto — mutação acidental corromperia a config global.
 Object.freeze(EMPRESA_DEFAULTS);
@@ -102,6 +106,7 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
     hspPadrao: nn(row.hsp_padrao),
     tarifaPadrao: nn(row.tarifa_kwh_padrao),
     concessionariaPadrao: sn(row.concessionaria_padrao),
+    reguaAtencaoPct: n(row.regua_atencao_pct, D.reguaAtencaoPct),
   };
   Object.freeze(result.marcasPermitidas);
   Object.freeze(result.marcasBloqueadas);

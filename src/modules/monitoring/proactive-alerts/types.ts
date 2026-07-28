@@ -45,6 +45,8 @@ export interface SistemaParaDetect {
   realUltimos7: number;
   // 084: último status do adapter — dá o MOTIVO no texto do alerta (fatia 1).
   status_inversor?: 'ok' | 'offline' | 'falha' | 'desconhecido' | null;
+  // 085: régua da empresa dona (fração; ausente = 0.70).
+  corteAtencao?: number | null;
 }
 
 // Botão WABA

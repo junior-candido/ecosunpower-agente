@@ -128,3 +128,23 @@ describe('motivo no alerta de usina parada (fatia 1 — statusInversor, Thiago 2
     }
   });
 });
+
+describe('régua de atenção POR EMPRESA (corteAtencao — Thiago 28/07)', () => {
+  const base = { ativo: true, ultimoErro: null, potenciaKwp: 10, uf: 'RJ', diasSemGeracao: 0 };
+  // 10 kWp no RJ → esperado 7d = 10 × 4.8 × 0.80 × 7 = 268.8 kWh
+  it('corte 60%: ratio 65% deixa de ser aviso (era aviso no corte padrão 70%)', () => {
+    const real = 268.8 * 0.65;
+    const padrao = classificarSistema({ ...base, realUltimos7: real } as any);
+    expect(padrao.alerta?.tipo).toBe('queda_geracao');
+    const custom = classificarSistema({ ...base, realUltimos7: real, corteAtencao: 0.60 } as any);
+    expect(custom.alerta).toBeNull();
+  });
+  it('corte 60%: ratio 55% continua aviso', () => {
+    const c = classificarSistema({ ...base, realUltimos7: 268.8 * 0.55, corteAtencao: 0.60 } as any);
+    expect(c.alerta?.tipo).toBe('queda_geracao');
+  });
+  it('sem corteAtencao → 70% (zero regressão)', () => {
+    const c = classificarSistema({ ...base, realUltimos7: 268.8 * 0.69 } as any);
+    expect(c.alerta?.tipo).toBe('queda_geracao');
+  });
+});

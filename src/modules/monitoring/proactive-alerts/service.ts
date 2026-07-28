@@ -1,11 +1,13 @@
 // src/modules/monitoring/proactive-alerts/service.ts
 import type { SupabaseService } from '../../supabase.js';
 import type { MonitoringService } from '../service.js';
+import { empresaDe } from '../../empresa-config.js';
 import { detectarAlertasPendentes } from './detect.js';
 import type { SistemaParaDetect, MonitoringAlertRow } from './types.js';
 
 interface SistemaListadoDashboard {
   id: string;
+  company_id?: string | null;
   lead_id: string | null;
   ativo: boolean;
   ultimo_erro: string | null;
@@ -34,6 +36,7 @@ export class ProactiveAlertService {
       diasSemGeracao: s.diasSemGeracao ?? (s.geracao_7d_kwh > 0 ? 0 : 7),  // proxy
       realUltimos7: s.geracao_7d_kwh,
       status_inversor: s.status_inversor ?? null,
+      corteAtencao: empresaDe(s.company_id).reguaAtencaoPct / 100, // 085
     }));
 
     const abertos = await this.supabase.getAlertasAbertosBySistemas(

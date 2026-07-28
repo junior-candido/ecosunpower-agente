@@ -28,7 +28,7 @@ function escapeHtmlSimple(s: string): string {
     .replace(/'/g, '&#039;');
 }
 import type { SupabaseService } from '../supabase.js';
-import { empresa } from '../empresa-config.js';
+import { empresa, empresaDe } from '../empresa-config.js';
 import { registrarEvento } from '../elo/eventos.js';
 import type { MonitoringService } from '../monitoring/service.js';
 import { TelemetriaService } from '../monitoring/telemetria-service.js';
@@ -2921,6 +2921,9 @@ export function createDashboardRouter(
           uf: s.uf,
           diasSemGeracao: (s.geracao_7d_kwh ?? 0) === 0 && s.ativo ? 7 : 0,
           realUltimos7: s.geracao_7d_kwh ?? 0,
+          // 084/085: motivo no card + régua da empresa dona da usina
+          statusInversor: (s.status_inversor as 'ok' | 'offline' | 'falha' | 'desconhecido' | null | undefined) ?? null,
+          corteAtencao: empresaDe(s.company_id).reguaAtencaoPct / 100,
         });
         const g = garantiaInfo(
           { data_instalacao: s.data_instalacao, marca_inversor: s.marca_inversor, painel_marca: (s as { painel_marca?: string | null }).painel_marca ?? null },

@@ -15,6 +15,7 @@ import { getAdapter, marcasSuportadas } from './adapter-registry.js';
 import type { AdapterContext, MarcaInversor, SistemaCliente, SiteResumo } from './types.js';
 import { classificarSistema, esperadoDiaKwh } from './classificacao.js';
 import { buscarPaginado } from './paginacao.js';
+import { empresaDe } from '../empresa-config.js';
 import { serieMesDiaria, serieAnoMensal, navegacao, type Vista } from './detalhe-series.js';
 
 interface SyncResult {
@@ -782,6 +783,7 @@ export class MonitoringService {
       diasSemGeracao: offlineHa,
       realUltimos7,
       statusInversor: (s.status_inversor as 'ok' | 'offline' | 'falha' | 'desconhecido' | null | undefined) ?? null,
+      corteAtencao: empresaDe(s.company_id).reguaAtencaoPct / 100, // 085
     });
     if (cls.alerta) alertas.push(cls.alerta);
 
