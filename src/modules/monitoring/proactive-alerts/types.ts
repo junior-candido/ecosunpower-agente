@@ -43,6 +43,8 @@ export interface SistemaParaDetect {
   uf: string | null;
   diasSemGeracao: number;
   realUltimos7: number;
+  // 084: último status do adapter — dá o MOTIVO no texto do alerta (fatia 1).
+  status_inversor?: 'ok' | 'offline' | 'falha' | 'desconhecido' | null;
 }
 
 // Botão WABA

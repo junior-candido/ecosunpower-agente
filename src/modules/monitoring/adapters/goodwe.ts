@@ -417,7 +417,7 @@ export const goodweAdapter: MonitoringAdapter = {
 
     // Status detalhado (offline real) fica pro cron/listSites; aqui, teve leitura
     // no intervalo = ok, senão desconhecido (mesma simplicidade do FoxESS em prod).
-    return { ok: true, geracoes, statusInversor: geracoes.length > 0 ? 'ok' : 'desconhecido' };
+    return { ok: true, geracoes, statusInversor: 'desconhecido' }; // 'ok' era proxy (linhas na resposta ≠ inversor comunicando) — mentia no alerta com motivo; status real desta marca = fase 2
   },
 
   // GetPlantPowerChart → curva de potência (kW) do dia da usina. Ao vivo.

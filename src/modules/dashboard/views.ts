@@ -766,7 +766,7 @@ export interface KPIsAbordagemMes {
 
 export function renderMonitoramentoPage(
   rows: SistemaMonitorRow[],
-  q: { q?: string; marca?: string; cidade?: string; status?: string; ord?: string },
+  q: { q?: string; marca?: string; cidade?: string; status?: string; ord?: string; painel?: string },
   alertasResumo?: { urgente: number; aviso: number; info: number; total: number },
   sparkline7d?: Array<{ dia: string; enviados: number }>,
   kpisEva?: KPIsAbordagemMes,
@@ -865,24 +865,50 @@ export function renderMonitoramentoPage(
   const aguardando = ativos.filter((r) => (r.nivel === 'ok' || r.nivel === 'info') && !sincOk(r));
   const pausadas = rows.filter((r) => !r.ativo);
 
-  const colunaStatus = (titulo: string, icone: string, corHead: string, lista: SistemaMonitorRow[]) => `
+  // [Filtro do board — pedido do Thiago 28/07: "ao clicar, entra somente no
+  // status"]. Cabeçalho vira link ?painel=<chave>; com filtro ativo só a
+  // coluna escolhida aparece e o cabeçalho ganha "✕ ver tudo". A Órbita segue
+  // mostrando a frota inteira (é o mapa geral) — só o board filtra.
+  const CORES_HEAD: Record<string, string> = {
+    falha: claro ? 'bg-rose-600 text-white' : 'bg-rose-700 text-white',
+    atencao: claro ? 'bg-amber-500 text-white' : 'bg-amber-600 text-white',
+    ok: claro ? 'bg-emerald-600 text-white' : 'bg-emerald-700 text-white',
+    aguardando: claro ? 'bg-slate-600 text-white' : 'bg-slate-700 text-white',
+  };
+  const PAINEIS: Record<string, { titulo: string; icone: string; lista: SistemaMonitorRow[] }> = {
+    falha: { titulo: 'Falha', icone: '🔴', lista: falhas },
+    atencao: { titulo: 'Atenção', icone: '🟡', lista: atencoes },
+    ok: { titulo: 'Gerando OK', icone: '🟢', lista: saudaveis },
+    aguardando: { titulo: 'Aguardando dados', icone: '⚪', lista: aguardando },
+  };
+  const painelAtivo = q.painel && q.painel in PAINEIS ? q.painel : null;
+
+  const colunaStatus = (chave: string) => {
+    const { titulo, icone, lista } = PAINEIS[chave];
+    const ativa = painelAtivo === chave;
+    const href = ativa ? '/dashboard/monitoramento' : `/dashboard/monitoramento?painel=${chave}`;
+    return `
     <div class="coluna-status">
-      <div class="flex items-center justify-between rounded-t-lg px-3 py-2 ${corHead}">
-        <span class="text-sm font-bold">${icone} ${escapeHtml(titulo)}</span>
+      <a href="${href}" class="flex items-center justify-between rounded-t-lg px-3 py-2 ${CORES_HEAD[chave]}" title="${ativa ? 'Voltar a ver todos os status' : 'Ver só este status'}">
+        <span class="text-sm font-bold">${icone} ${escapeHtml(titulo)}${ativa ? ' <span class="font-normal opacity-80">· ✕ ver tudo</span>' : ''}</span>
         <span class="text-sm font-bold">${lista.length}</span>
-      </div>
+      </a>
       <div class="text-[11px] ${P.mutedCard} px-3 py-1 ${claro ? 'bg-slate-100' : 'bg-slate-900/60'} rounded-b-none">${lista.reduce((s, r) => s + (r.potencia_kwp ?? 0), 0).toFixed(1)} kWp</div>
       <div class="flex flex-col gap-2 p-2 rounded-b-lg ${claro ? 'bg-slate-50 border border-t-0 border-slate-200' : 'bg-slate-900/40 border border-t-0 border-slate-800'} min-h-[80px]">
         ${lista.length ? lista.map(cardUsina).join('') : `<div class="text-xs ${P.mutedCard} text-center py-4">— nenhuma —</div>`}
       </div>
     </div>`;
+  };
 
-  const boardHtml = `
+  const boardHtml = painelAtivo ? `
+    <div class="grid grid-cols-1 gap-4">
+      ${colunaStatus(painelAtivo)}
+    </div>` : `
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-      ${colunaStatus('Falha', '🔴', claro ? 'bg-rose-600 text-white' : 'bg-rose-700 text-white', falhas)}
-      ${colunaStatus('Atenção', '🟡', claro ? 'bg-amber-500 text-white' : 'bg-amber-600 text-white', atencoes)}
-      ${colunaStatus('Gerando OK', '🟢', claro ? 'bg-emerald-600 text-white' : 'bg-emerald-700 text-white', saudaveis)}
-      ${colunaStatus('Aguardando dados', '⚪', claro ? 'bg-slate-600 text-white' : 'bg-slate-700 text-white', aguardando)}
+      ${colunaStatus('falha')}
+      ${colunaStatus('atencao')}
+      ${colunaStatus('ok')}
+      ${colunaStatus('aguardando')}
     </div>
     ${pausadas.length ? `<div class="mt-2 text-xs ${P.mutedCard}">⏸ ${pausadas.length} usina(s) pausada(s) — aparecem só na tabela abaixo.</div>` : ''}`;
 
@@ -908,12 +934,14 @@ export function renderMonitoramentoPage(
     return `<a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="ponto-usina"><circle cx="${x}" cy="${y}" r="${rPonto}" fill="${corPonto(r)}"><title>${escapeHtml(r.apelido)} · ${r.geracao_hoje_kwh !== null ? `${r.geracao_hoje_kwh.toFixed(1)} kWh hoje` : 'sem dados hoje'}</title></circle></a>`;
   }).join('');
 
-  const chipOrbita = (cor: string, label: string, lista: SistemaMonitorRow[]) => `
-    <div class="rounded-xl ${claro ? 'bg-white/70 border border-slate-200' : 'bg-slate-800/50 border border-slate-700'} backdrop-blur-sm px-3 py-2 flex items-center gap-2">
+  // Chip clicável: leva pro board filtrado do status (mesmo destino dos
+  // cabeçalhos das colunas — pedido do Thiago 28/07).
+  const chipOrbita = (cor: string, label: string, lista: SistemaMonitorRow[], chave: string) => `
+    <a href="/dashboard/monitoramento?painel=${chave}" class="rounded-xl ${claro ? 'bg-white/70 border border-slate-200 hover:border-slate-400' : 'bg-slate-800/50 border border-slate-700 hover:border-slate-500'} backdrop-blur-sm px-3 py-2 flex items-center gap-2" title="Ver só ${escapeHtml(label)}">
       <span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${cor}"></span>
       <span class="text-xs ${P.mutedCard}">${escapeHtml(label)}</span>
       <span class="ml-auto text-base font-bold ${P.h1}" style="font-family:'Space Grotesk',ui-sans-serif,system-ui">${lista.length}</span>
-    </div>`;
+    </a>`;
 
   // Compacta ("cresce muito pra baixo" — Junior): a Órbita é uma FAIXA baixa
   // que SUBSTITUI a fileira de KPIs — tudo que os 5 cartões mostravam está
@@ -955,10 +983,10 @@ export function renderMonitoramentoPage(
             Mês: <b class="${P.tdMes}">${totalMes.toFixed(0)} kWh</b> · ${totalKwp.toFixed(1)} kWp · ${marcas} marca(s) · Saúde <b class="${saudeCor}">${okCount}/${ativos.length}</b>
           </div>
           <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
-            ${chipOrbita('#F43F5E', 'Falha', falhas)}
-            ${chipOrbita('#F59E0B', 'Atenção', atencoes)}
-            ${chipOrbita('#10B981', 'Gerando OK', saudaveis)}
-            ${chipOrbita('#94A3B8', 'Aguardando dados', aguardando)}
+            ${chipOrbita('#F43F5E', 'Falha', falhas, 'falha')}
+            ${chipOrbita('#F59E0B', 'Atenção', atencoes, 'atencao')}
+            ${chipOrbita('#10B981', 'Gerando OK', saudaveis, 'ok')}
+            ${chipOrbita('#94A3B8', 'Aguardando dados', aguardando, 'aguardando')}
           </div>
         </div>
       </div>

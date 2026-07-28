@@ -2942,6 +2942,9 @@ export function createDashboardRouter(
         cidade: typeof req.query.cidade === 'string' ? req.query.cidade : undefined,
         status: typeof req.query.status === 'string' ? req.query.status : undefined,
         ord: typeof req.query.ord === 'string' ? req.query.ord : undefined,
+        // Board filtrado por status (pedido Thiago 28/07) — só a view usa;
+        // filtrarOrdenarSistemas ignora (a tabela tem o filtro `status` dela).
+        painel: typeof req.query.painel === 'string' ? req.query.painel : undefined,
       };
       const filtered = filtrarOrdenarSistemas(enriched as any, qf);
       // KPIs GLOBAIS da operação EcoSun (alertas proativos + Eva no mês): as

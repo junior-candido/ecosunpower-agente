@@ -33,6 +33,7 @@ export function detectarAlertasPendentes(
           uf: s.uf,
           diasSemGeracao: s.diasSemGeracao,
           realUltimos7: s.realUltimos7,
+          statusInversor: s.status_inversor ?? null,
         })
       : { nivel: 'ok' as const, alerta: null };
 

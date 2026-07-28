@@ -142,6 +142,10 @@ export class MonitoringService {
         await this.atualizarStatusSistema(sistema.id, {
           ultima_sincronizacao: new Date().toISOString(),
           ultimo_erro: null,
+          // 084: guarda o status devolvido pelo adapter (fatia 1 do "alerta
+          // com motivo"). Sem o campo → 'desconhecido' (não deixa valor velho).
+          status_inversor: result.statusInversor ?? 'desconhecido',
+          status_inversor_em: new Date().toISOString(),
         });
         sucessos++;
         console.log(
@@ -256,6 +260,8 @@ export class MonitoringService {
     await this.atualizarStatusSistema(sistema.id, {
       ultima_sincronizacao: new Date().toISOString(),
       ultimo_erro: null,
+      status_inversor: result.statusInversor ?? 'desconhecido',
+      status_inversor_em: new Date().toISOString(),
     });
     return { ok: true };
   }
@@ -330,6 +336,8 @@ export class MonitoringService {
       ultima_sincronizacao: string;
       ultimo_erro: string | null;
       ativo: boolean;
+      status_inversor: string;
+      status_inversor_em: string;
     }>,
   ): Promise<void> {
     if (Object.keys(fields).filter((k) => (fields as any)[k] !== undefined).length === 0) return;
@@ -773,6 +781,7 @@ export class MonitoringService {
       uf: s.uf,
       diasSemGeracao: offlineHa,
       realUltimos7,
+      statusInversor: (s.status_inversor as 'ok' | 'offline' | 'falha' | 'desconhecido' | null | undefined) ?? null,
     });
     if (cls.alerta) alertas.push(cls.alerta);
 
