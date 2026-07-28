@@ -1,6 +1,7 @@
 // src/modules/monitoring/relatorio/dados.ts
 import { garantiaInfo, type GarantiaResult } from '../garantia.js';
 import { classificarSistema } from '../classificacao.js';
+import { empresaDe } from '../../empresa-config.js';
 import { classificarGravidade, type GravidadeResult } from './gravidade.js';
 
 // Tarifa default p/ economia ESTIMADA (Junior ajusta depois). Nunca promete
@@ -47,6 +48,9 @@ export async function montarDadosRelatorio(
     uf: s.uf,
     diasSemGeracao: cls0DiasSemGeracao(d),
     realUltimos7: ratio7d * (Number(d.kpis?.esperadoDiaKwh ?? 0) * 7),
+    // 084/085: motivo do problema + régua da empresa dona da usina
+    statusInversor: (s.status_inversor as 'ok' | 'offline' | 'falha' | 'desconhecido' | null | undefined) ?? null,
+    corteAtencao: empresaDe(s.company_id).reguaAtencaoPct / 100,
   });
   const offline = cls.alerta?.tipo === 'sistema_offline';
   const erro = cls.alerta?.tipo === 'erro_integracao';
