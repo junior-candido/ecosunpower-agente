@@ -57,6 +57,20 @@ para a auto-rotação.
   carregar, definir o proxy de atividade por tenant (audit log + updated_at de
   leads/usinas/sessões) e anotar a migration/fatia necessária.
 
+## Manutenção do prédio × pedidos do dono (adição 28/07, ideia do Junior)
+
+- **Manutenção do prédio** (= entregas da EcoSun pra plataforma inteira): mora
+  no **térreo/hall** — letreiro com as últimas manutenções do condomínio.
+- **Pedidos do dono** (= demandas de UM tenant, ex.: tudo que o Thiago pediu):
+  **capacete 👷 na fachada do apto** quando há pedido em andamento + aba
+  **"Pedidos & Entregas"** no cockpit do tenant (pedido → fazendo → entregue).
+- **Dados:** tabela `manutencoes` — `id, company_id (null = prédio/todos),
+  titulo, descricao, status (pedido|fazendo|entregue), criado_em, entregue_em`.
+  Migration numerada (combinar no grupo). Registro pelo painel (EcoSun).
+- **Futuro comercial (fora de escopo agora):** o dono vê e ABRE pedidos pelo
+  painel dele — canal oficial de demanda por tenant e argumento de renovação.
+- Encaixe nas fatias: dados+térreo na F1; capacete+aba na F2.
+
 ## Fatias
 
 - **F0** — investigação da atividade por empresa (acima). Sem código de tela.
