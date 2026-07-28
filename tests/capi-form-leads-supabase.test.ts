@@ -185,15 +185,16 @@ describe('ganchos CAPI form leads no index.ts (teste-guarda, padrao da casa)', (
   });
 
   it('resposta do cliente dispara lead_respondeu pelo crachá (db)', () => {
-    expect(src).toContain("void capiReporter(l.id, 'lead_respondeu', { db })");
-    // Guarda barato: form (ou quem ja tem estagio Lead), nunca CTWA
-    expect(src).toContain("l.lead_source === 'ad_ig_leadform' || l.lead_source === 'ad_fb_leadform'");
-    expect(src).toContain("stages.includes('Lead')");
+    expect(src).toContain("void capiReporter(l.id!, 'lead_respondeu', { db })");
+    // [28/07] guarda mudou de casa (mesma régua): vive no módulo
+    // aviso-conversa-iniciada e serve pros DOIS efeitos (CAPI + aviso Junior).
+    expect(src).toContain('deveAvisarConversaIniciada(l)');
   });
 
   it('foto e PDF tambem contam como resposta (conta de luz e a resposta mais comum)', () => {
-    // 3 chamadas: texto, imagem e documento (a definicao usa `= (`, nao conta)
-    const chamadas = src.split('maybeCapiRespondeu(lead, db)').length - 1;
+    // 3 chamadas: texto, imagem e documento — agora com preview da resposta
+    // no 3º argumento (aviso "conversa iniciada" pro Junior).
+    const chamadas = src.split('maybeCapiRespondeu(lead, db').length - 1;
     expect(chamadas).toBeGreaterThanOrEqual(3);
   });
 });

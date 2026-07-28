@@ -38,6 +38,7 @@ import { PublicReviewsService } from './modules/public-reviews.js';
 import { CaseCreatorAssistant } from './modules/case-creator-assistant.js';
 import { MetaLeadgenService, LeadgenPayload, normalizeBrazilianPhone, registrarEventosMinimos } from './modules/meta-leadgen.js';
 import { extrairRespostasForm, mesclarEnergyData, blocoContinuacaoForm } from './modules/leadgen-form-respostas.js';
+import { deveAvisarConversaIniciada, montarAvisoConversaIniciada } from './modules/aviso-conversa-iniciada.js';
 import { emailValido } from './modules/email/email-util.js';
 import { enviarTemplateInicial, TEMPLATE_FALLBACK } from './modules/template-inicial.js';
 import { parseTrackingTag } from './modules/tracking.js';
@@ -614,20 +615,23 @@ async function main() {
   // origem original de quem ja estava no funil). Guarda barata pelos campos
   // do lead ja carregado (select *): lead organico nao gera query extra; a
   // idempotencia real fica no reporter (capi_stages_sent).
-  const maybeCapiRespondeu = (lead: unknown, db?: unknown): void => {
-    const l = lead as {
-      id?: string;
-      ctwa_clid?: string | null;
-      lead_source?: string | null;
-      capi_stages_sent?: string[] | null;
-    } | null;
-    if (!l?.id || l.ctwa_clid) return;
-    const stages = l.capi_stages_sent ?? [];
-    const veioDeForm =
-      l.lead_source === 'ad_ig_leadform' || l.lead_source === 'ad_fb_leadform' || stages.includes('Lead');
-    if (veioDeForm && !stages.includes('lead_respondeu')) {
-      void capiReporter(l.id, 'lead_respondeu', { db });
-    }
+  const maybeCapiRespondeu = (lead: unknown, db?: unknown, previewResposta?: string): void => {
+    const l = lead as import('./modules/aviso-conversa-iniciada.js').LeadParaAviso | null;
+    // Régua única no módulo (deveAvisarConversaIniciada = MESMA guarda de
+    // sempre do lead_respondeu) pros DOIS efeitos: CAPI + aviso ao Junior.
+    if (!l || !deveAvisarConversaIniciada(l)) return;
+    void capiReporter(l.id!, 'lead_respondeu', { db });
+    // [28/07 — pedido do Junior] o momento de ouro no zap dele: "fulano
+    // começou a conversar" com botões Ver conversa / Assumir. Fire-and-forget.
+    void (async () => {
+      try {
+        const { texto, botoes, footer } = montarAvisoConversaIniciada(l, previewResposta ?? null);
+        if (metaWaba) await metaWaba.sendInteractiveButtons(config.engineerPhone, texto, botoes, footer);
+        else await sendText(config.engineerPhone, texto);
+      } catch (err) {
+        console.warn('[conversa-iniciada] aviso pro Junior falhou:', (err as Error).message);
+      }
+    })();
   };
 
   // Follow-up automatico de proposta: notifica Junior toda vez que cliente
@@ -4466,7 +4470,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       // — o algoritmo aprende a trazer gente que RESPONDE, nao so quem
       // preenche formulario. Regras e guarda no helper (definido junto do
       // capiReporter). Lead novo nao e "resposta" (acabou de nascer aqui).
-      if (!isNewLead) maybeCapiRespondeu(lead, db);
+      if (!isNewLead) maybeCapiRespondeu(lead, db, text);
 
       // TRACKING DE ORIGEM: se e a primeira mensagem e contem tag tipo
       // #ig-abc123 / #fb-xyz / #ad-ca1 / #rem-x, extrai e classifica lead_source.
@@ -5755,7 +5759,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     try {
       const lead = await db.getLeadByPhone(from);
       // Foto e RESPOSTA (geralmente a conta de luz) — conta pro CAPI tambem.
-      maybeCapiRespondeu(lead, db);
+      maybeCapiRespondeu(lead, db, '📷 Enviou uma foto (provavelmente a conta de luz)');
       const context = lead?.name
         ? `Cliente: ${lead.name}, Cidade: ${lead.city ?? 'nao informada'}, Perfil: ${lead.profile ?? 'indefinido'}`
         : 'Cliente novo, ainda sem dados coletados';
@@ -5972,7 +5976,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
       const lead = await db.getLeadByPhone(from);
       // PDF e RESPOSTA (geralmente a conta de luz) — conta pro CAPI tambem.
-      maybeCapiRespondeu(lead, db);
+      maybeCapiRespondeu(lead, db, '📄 Enviou um PDF (provavelmente a conta de luz)');
       const context = lead?.name
         ? `Cliente: ${lead.name}, Cidade: ${lead.city ?? 'nao informada'}, Perfil: ${lead.profile ?? 'indefinido'}`
         : 'Cliente novo, ainda sem dados coletados';
