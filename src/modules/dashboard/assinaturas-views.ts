@@ -23,6 +23,7 @@ export function renderAssinaturasPage(
   hoje: string,
   user: DashUser | undefined,
   aviso?: { tipo: 'ok' | 'erro'; texto: string; link?: string },
+  empresas: { id: string; nome: string }[] = [],
 ): string {
   const linhas = assinaturas.map((a) => {
     const sit = situacaoDaAssinatura({ status: a.status, venceEm: a.venceEm }, hoje);
@@ -87,6 +88,12 @@ export function renderAssinaturasPage(
         <label class="block text-sm">E-mail<input name="email" type="email" class="w-full border border-slate-300 rounded-lg px-3 py-2"></label>
         <label class="block text-sm">Telefone (zap)<input name="telefone" class="w-full border border-slate-300 rounded-lg px-3 py-2" placeholder="5561999998888"></label>
       </div>
+      <label class="block text-sm">Empresa (tenant) — obrigatório pro monitoramento (é quem trava/destrava)
+        <select name="company_id" class="w-full border border-slate-300 rounded-lg px-3 py-2">
+          <option value="">— nenhuma —</option>
+          ${empresas.map((e) => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.nome)}</option>`).join('')}
+        </select>
+      </label>
       <div class="grid grid-cols-3 gap-3">
         <label class="block text-sm">Valor (R$)<input name="valor" required class="w-full border border-slate-300 rounded-lg px-3 py-2" placeholder="297,00"></label>
         <label class="block text-sm">Limite (usinas)<input name="limite" class="w-full border border-slate-300 rounded-lg px-3 py-2" placeholder="110"></label>

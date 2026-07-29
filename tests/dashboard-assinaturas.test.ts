@@ -30,6 +30,11 @@ describe('renderAssinaturasPage', () => {
   it('form editar tem o checkbox de zap confirmado (Junior confirma na mão até a Fase 2)', () => {
     expect(html).toContain('name="zap_ok"');
   });
+  it('form nova tem o select de empresa (tenant) — é quem trava/destrava no monitoramento', () => {
+    const comEmpresas = renderAssinaturasPage(PRODUTOS, ASSINATURAS, '2026-07-29', undefined, undefined, [{ id: 'c1', nome: 'Sabion Solar' }]);
+    expect(comEmpresas).toContain('name="company_id"');
+    expect(comEmpresas).toContain('Sabion Solar');
+  });
 });
 
 describe('menu lateral', () => {
