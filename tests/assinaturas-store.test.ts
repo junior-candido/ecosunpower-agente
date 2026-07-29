@@ -3,7 +3,32 @@
 // lembrete 2d antes, 3d de tolerância vencida, trava. Aqui: situação
 // derivada (pra tela) e novo vencimento ao pagar (+1 mês).
 import { describe, it, expect } from 'vitest';
-import { situacaoDaAssinatura, novoVencimento } from '../src/modules/dashboard/assinaturas-store.js';
+import {
+  situacaoDaAssinatura, novoVencimento,
+  listarAssinaturas, criarAssinatura, renovarAssinatura,
+} from '../src/modules/dashboard/assinaturas-store.js';
+
+// Mock chainable do supabase-js (mesmo estilo dos testes de empresas):
+// grava inserts/updates por tabela e devolve as respostas na ordem.
+function mockClient(respostas: Record<string, any[]>) {
+  const inserts: Record<string, any[]> = {};
+  const updates: Record<string, any[]> = {};
+  const client = {
+    from(tabela: string) {
+      const resposta = () => (respostas[tabela] ?? []).shift() ?? { data: null, error: null };
+      const chain: any = {
+        insert(row: any) { (inserts[tabela] ??= []).push(row); return chain; },
+        update(row: any) { (updates[tabela] ??= []).push(row); return chain; },
+        select() { return chain; }, eq() { return chain; }, order() { return chain; },
+        single() { return Promise.resolve(resposta()); },
+        maybeSingle() { return Promise.resolve(resposta()); },
+        then(res: any, rej: any) { return Promise.resolve(resposta()).then(res, rej); },
+      };
+      return chain;
+    },
+  };
+  return { client: client as any, inserts, updates };
+}
 
 describe('situacaoDaAssinatura (badge da tela)', () => {
   const base = { status: 'ativa' as const, venceEm: '2026-08-20' };
@@ -34,5 +59,37 @@ describe('novoVencimento (pagou → +1 mês)', () => {
   it('fim de mês não estoura: 31/jan → 28/fev, 31/dez vira 31/jan do ano seguinte', () => {
     expect(novoVencimento('2026-01-31', '2026-01-01')).toBe('2026-02-28');
     expect(novoVencimento('2026-12-31', '2026-12-01')).toBe('2027-01-31');
+  });
+});
+
+describe('listarAssinaturas', () => {
+  it('devolve a lista com o nome do produto embutido', async () => {
+    const { client } = mockClient({
+      assinaturas: [{ data: [{ id: 'a1', produto_id: 'monitoramento', nome: 'Sabion', email: 't@x.com', telefone: null, zap_confirmado: false, valor_centavos: 29700, limite: 110, vence_em: '2026-08-29', status: 'ativa', assinatura_produtos: { nome: 'Monitoramento de Usinas' } }], error: null }],
+    });
+    const lista = await listarAssinaturas(client);
+    expect(lista).toEqual([{ id: 'a1', produtoId: 'monitoramento', produtoNome: 'Monitoramento de Usinas', nome: 'Sabion', email: 't@x.com', telefone: null, zapConfirmado: false, valorCentavos: 29700, limite: 110, venceEm: '2026-08-29', status: 'ativa' }]);
+  });
+});
+
+describe('criarAssinatura', () => {
+  it('insere com os campos certos e devolve o id', async () => {
+    const { client, inserts } = mockClient({ assinaturas: [{ data: { id: 'a2' }, error: null }] });
+    const id = await criarAssinatura(client, { produtoId: 'calculadora', nome: 'Fulano', email: 'f@x.com', telefone: '61999998888', valorCentavos: 5700, limite: null, venceEm: '2026-08-29' });
+    expect(id).toBe('a2');
+    expect(inserts.assinaturas?.[0]).toMatchObject({ produto_id: 'calculadora', nome: 'Fulano', valor_centavos: 5700, vence_em: '2026-08-29' });
+  });
+});
+
+describe('renovarAssinatura', () => {
+  it('pagou → vence_em +1 mês e status volta pra ativa', async () => {
+    const { client, updates } = mockClient({
+      assinaturas: [
+        { data: { vence_em: '2026-08-20' }, error: null },  // leitura
+        { data: null, error: null },                         // update
+      ],
+    });
+    await renovarAssinatura(client, 'a1', '2026-08-14');
+    expect(updates.assinaturas?.[0]).toEqual({ vence_em: '2026-09-20', status: 'ativa' });
   });
 });
