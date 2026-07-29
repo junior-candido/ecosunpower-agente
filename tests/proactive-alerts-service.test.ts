@@ -90,6 +90,22 @@ describe('ProactiveAlertService.runDetectionCycle', () => {
     expect(calls[0].tipo).toBe('queda_geracao');
   });
 
+  // Achado dos reviews 29/07: com a janela 7d sem o hoje, usina instalada/
+  // religada HOJE tem geracao_7d_kwh=0 mas geracao_hoje_kwh>0 — o proxy de
+  // diasSemGeracao precisa olhar o hoje pra não gritar "offline" falso no zap
+  // (caso real: instalação da Fernanda em 30/07).
+  it('usina que só gerou HOJE não vira alerta de offline', async () => {
+    const sb = fakeSupabase();
+    const ms = fakeMonitoringService([sistemaListado({
+      geracao_7d_kwh: 0, geracao_hoje_kwh: 8,
+      diasSemGeracao: undefined, // força o serviço a usar o PROXY (caso real)
+    })]);
+    const svc = new ProactiveAlertService(sb as any, ms as any);
+    const r = await svc.runDetectionCycle(hoje);
+    expect(r.novos).toBe(0);
+    expect(sb.criarAlertaPendente).not.toHaveBeenCalled();
+  });
+
   it('lista vazia -> nada acontece', async () => {
     const sb = fakeSupabase();
     const ms = fakeMonitoringService([]);

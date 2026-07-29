@@ -20,6 +20,7 @@ interface SistemaListadoDashboard {
   potencia_kwp: number | null;
   uf: string | null;
   geracao_7d_kwh: number;
+  geracao_hoje_kwh?: number | null; // 29/07: janela 7d não conta o hoje — o proxy precisa dele
   diasSemGeracao?: number;          // se monitoring expor; senão derive
   status_inversor?: 'ok' | 'offline' | 'falha' | 'desconhecido' | null; // 084
 }
@@ -56,7 +57,10 @@ export class ProactiveAlertService {
       ultimo_erro: s.ultimo_erro,
       potencia_kwp: s.potencia_kwp,
       uf: s.uf,
-      diasSemGeracao: s.diasSemGeracao ?? (s.geracao_7d_kwh > 0 ? 0 : 7),  // proxy
+      // Proxy: 7d completos zerados E nada hoje = parada. Usina instalada ou
+      // religada HOJE tem 7d=0 mas hoje>0 — não é offline (achado reviews 29/07).
+      diasSemGeracao: s.diasSemGeracao
+        ?? ((s.geracao_7d_kwh > 0 || (s.geracao_hoje_kwh ?? 0) > 0) ? 0 : 7),
       realUltimos7: s.geracao_7d_kwh,
       status_inversor: s.status_inversor ?? null,
       corteAtencao: empresaDe(s.company_id).reguaAtencaoPct / 100, // 085

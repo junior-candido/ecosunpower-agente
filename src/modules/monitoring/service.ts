@@ -56,6 +56,9 @@ export interface DetalheSistema {
     totalKwh: number;
     esperadoDiaKwh: number;
     ratioUltimos7: number;
+    // 29/07: mediana de kWh/kWp em 7d da carteira da empresa (régua relativa).
+    // null = carteira pequena/sem referência → superfícies usam a régua absoluta.
+    medianaCarteira7d: number | null;
   };
   // Periodo selecionado
   periodo: {
@@ -776,8 +779,9 @@ export class MonitoringService {
     const esperadoDia = esperadoDiaKwh(s.potencia_kwp, s.uf);
 
     // Status / alertas (baseado em ULTIMOS 7 DIAS reais — independente do range selecionado)
-    // 7 dias COMPLETOS: o hoje parcial não entra (de manhã diluía a média
-    // e acendia queda falsa — Thiago 29/07).
+    // Exatamente 7 dias COMPLETOS [hoje-7, hoje) — a janela antiga somava 8
+    // datas-calendário contra um esperado de 7 (fencepost); mesma janela da
+    // lista/mediana pra card e detalhe contarem a mesma história.
     const ultimos7Inicio = isoDate(new Date(hojeDate.getTime() - 7 * 24 * 60 * 60 * 1000));
     const realUltimos7 = geracoesArr.filter((g) => g.data >= ultimos7Inicio && g.data < hojeStr)
       .reduce((s2, d) => s2 + Number(d.geracao_kwh), 0);
@@ -817,6 +821,7 @@ export class MonitoringService {
         totalKwh: geracaoTotal,
         esperadoDiaKwh: esperadoDia,
         ratioUltimos7,
+        medianaCarteira7d,
       },
       alertas,
     };
@@ -961,8 +966,9 @@ export class MonitoringService {
       if (!acc) continue;
       const kwh = Number(g.geracao_kwh) || 0;
       if (g.data >= inicioMes) acc.mes += kwh;
-      // 7d = 7 dias COMPLETOS: o hoje parcial (de manhã quase-zero) puxava
-      // a soma pra baixo e acendia queda falsa no radar (Thiago 29/07).
+      // 7d = exatamente 7 dias COMPLETOS [hoje-7, hoje). A janela antiga
+      // (>= ha7, sem teto) somava 8 datas-calendário contra um esperado de 7
+      // dias — fencepost. Hoje parcial fica só em geracao_hoje_kwh.
       if (g.data >= ha7 && g.data < hoje) acc.ult7 += kwh;
       if (g.data === hoje) acc.hoje = kwh;
     }

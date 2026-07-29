@@ -44,4 +44,29 @@ describe('montarDadosRelatorio', () => {
     const r = await montarDadosRelatorio(deps(null), 'x', 'acompanhamento');
     expect('erro' in r).toBe(true);
   });
+
+  // Régua relativa (29/07): o relatório do CLIENTE não pode acusar "queda
+  // forte" que o painel não mostra. Quando o detalhe traz a mediana da
+  // carteira, a gravidade usa a régua relativa.
+  it('julho nublado: ratio absoluto 0.45 mas usina na mediana da carteira → sinal saudável', async () => {
+    // real7 = 0.45 × 41.6 × 7 = 131.04 kWh; 10 kWp → 13.1 kWh/kWp ≈ mediana 12.6
+    const det = {
+      ...detalheFake,
+      kpis: { ...detalheFake.kpis, ratioUltimos7: 0.45, medianaCarteira7d: 12.6 },
+      alertas: [],
+    };
+    const r = await montarDadosRelatorio(deps(det), 's1', 'acompanhamento');
+    if (!('erro' in r)) expect(r.sinal.gravidade).toBeNull();
+  });
+
+  it('usina de fato ruim continua grave no relatório mesmo com mediana', async () => {
+    // real7 = 0.12 × 41.6 × 7 = 34.9 kWh; 10 kWp → 3.5 kWh/kWp vs mediana 12.6 = 28%
+    const det = {
+      ...detalheFake,
+      kpis: { ...detalheFake.kpis, ratioUltimos7: 0.12, medianaCarteira7d: 12.6 },
+      alertas: [{ tipo: 'queda_geracao', severidade: 'aviso', texto: 'Geração últimos 7 dias 72% abaixo da média da carteira. Pode ser sujeira/sombreamento — agendar limpeza.' }],
+    };
+    const r = await montarDadosRelatorio(deps(det), 's1', 'acompanhamento');
+    if (!('erro' in r)) expect(r.sinal.gravidade).toBe('grave');
+  });
 });

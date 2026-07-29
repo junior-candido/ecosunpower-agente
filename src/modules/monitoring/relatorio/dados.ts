@@ -1,7 +1,5 @@
 // src/modules/monitoring/relatorio/dados.ts
 import { garantiaInfo, type GarantiaResult } from '../garantia.js';
-import { classificarSistema } from '../classificacao.js';
-import { empresaDe } from '../../empresa-config.js';
 import { classificarGravidade, type GravidadeResult } from './gravidade.js';
 
 // Tarifa default p/ economia ESTIMADA (Junior ajusta depois). Nunca promete
@@ -41,21 +39,23 @@ export async function montarDadosRelatorio(
   const s = d.sistema;
 
   const ratio7d = Number(d.kpis?.ratioUltimos7 ?? 1);
-  const cls = classificarSistema({
-    ativo: s.ativo,
-    ultimoErro: s.ultimo_erro ?? null,
-    potenciaKwp: s.potencia_kwp,
-    uf: s.uf,
-    diasSemGeracao: cls0DiasSemGeracao(d),
-    realUltimos7: ratio7d * (Number(d.kpis?.esperadoDiaKwh ?? 0) * 7),
-    // 084/085: motivo do problema + régua da empresa dona da usina
-    statusInversor: (s.status_inversor as 'ok' | 'offline' | 'falha' | 'desconhecido' | null | undefined) ?? null,
-    corteAtencao: empresaDe(s.company_id).reguaAtencaoPct / 100,
-  });
-  const offline = cls.alerta?.tipo === 'sistema_offline';
-  const erro = cls.alerta?.tipo === 'erro_integracao';
+  // Os alertas do detalhe JÁ saem da régua oficial (relativa à carteira
+  // quando há mediana — 29/07); re-classificar aqui criava régua paralela.
+  const tiposAlerta = new Set(((d.alertas ?? []) as { tipo: string }[]).map((a) => a.tipo));
+  const offline = tiposAlerta.has('sistema_offline');
+  const erro = tiposAlerta.has('erro_integracao');
+  // Gravidade na MESMA régua do painel: relativa quando há mediana; senão
+  // absoluta (ratio7d) — o relatório do cliente não pode acusar queda que o
+  // painel não mostra (julho nublado derruba a carteira inteira junto).
+  const mediana = (d.kpis?.medianaCarteira7d ?? null) as number | null;
+  const esperado7 = Number(d.kpis?.esperadoDiaKwh ?? 0) * 7;
+  const real7 = ratio7d * esperado7;
+  const kwp = Number(s.potencia_kwp ?? 0);
+  const ratioEfetivo = (mediana != null && mediana > 0 && kwp > 0 && real7 > 0)
+    ? (real7 / kwp) / mediana
+    : ratio7d;
   const grav = classificarGravidade({
-    apelido: s.apelido, offline, diasSemGeracao: cls0DiasSemGeracao(d), erro, ratio7d,
+    apelido: s.apelido, offline, diasSemGeracao: cls0DiasSemGeracao(d), erro, ratio7d: ratioEfetivo,
   });
 
   const garantia = garantiaInfo({

@@ -1236,7 +1236,15 @@ export function renderDetalheSistemaPage(
   const valoresMensal = d.serieMensalCompleta.map((p) => Math.round(p.kwh));
   const esperadoMensal = d.serieMensalCompleta.map((p) => Math.round(p.esperado));
 
-  const ratioPct = Math.round(d.kpis.ratioUltimos7 * 100);
+  // Performance 7d na MESMA régua da seção de alertas logo abaixo (29/07):
+  // relativa à mediana da carteira quando existe; absoluta (HSP) senão.
+  // Sem isso a mesma página se contradizia (card vermelho, alertas OK).
+  const esperado7Card = d.kpis.esperadoDiaKwh * 7;
+  const real7Card = d.kpis.ratioUltimos7 * esperado7Card;
+  const kwpCard = Number(s.potencia_kwp ?? 0);
+  const medianaCard = d.kpis.medianaCarteira7d;
+  const cardRelativo = medianaCard != null && medianaCard > 0 && kwpCard > 0 && real7Card > 0;
+  const ratioPct = Math.round((cardRelativo ? (real7Card / kwpCard) / medianaCard : d.kpis.ratioUltimos7) * 100);
   const ratioCorClass = ratioPct < 70 ? 'text-rose-600' : ratioPct > 110 ? 'text-emerald-600' : 'text-sky-700';
 
   // Abas Dia/Mês/Ano + setas de navegação (◀▶) por calendário.
@@ -1315,8 +1323,10 @@ export function renderDetalheSistemaPage(
         <span class="text-3xl font-bold ${ratioCorClass}">${ratioPct}%</span>
       </div>
       <div class="text-sm text-slate-600">
-        Comparação geração real vs esperada (kWp × HSP regional × fator 0.80).
-        ${ratioPct < 70 ? '⚠️ <strong class="text-rose-600">Performance baixa</strong> — possível sujeira/sombreamento.' : ratioPct > 110 ? '✨ <strong class="text-emerald-600">Acima do esperado</strong> — condições ótimas.' : '✅ Dentro da faixa normal de operação.'}
+        ${cardRelativo
+          ? 'Comparação com a média da carteira (kWh por kWp, últimos 7 dias completos) — clima afeta todo mundo junto, só destoa quem tem problema.'
+          : 'Comparação geração real vs esperada (kWp × HSP regional × fator 0.80).'}
+        ${ratioPct < 70 ? '⚠️ <strong class="text-rose-600">Performance baixa</strong> — possível sujeira/sombreamento.' : ratioPct > 110 ? `✨ <strong class="text-emerald-600">${cardRelativo ? 'Acima da média da carteira' : 'Acima do esperado'}</strong> — condições ótimas.` : '✅ Dentro da faixa normal de operação.'}
       </div>
     </section>
 

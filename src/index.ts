@@ -1027,6 +1027,10 @@ async function main() {
     // I7: takeover também vale pros envios do cron (lembrete/reagendada/
     // pós-limpeza) — Junior na conversa, a Eva espera o próximo ciclo.
     estaEmTakeover: (p: string) => takeover.isPaused(p),
+    // 29/07: régua relativa — o recomputo da queda (reescrita/lembrete) usa a
+    // MESMA mediana do radar (cache 5 min por empresa no MonitoringService).
+    medianaDaCarteira7d: (companyId: string | null) =>
+      monitoringService.medianaDaCarteira7d(companyId),
   });
 
   // Helper pra detectar e processar comandos de blog vindos do Junior.
@@ -9271,7 +9275,7 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
             return 'inelegivel';
           }
           const { proporAbordagem } = await import('./modules/monitoring/abordagem/orquestrador.js');
-          const { esperadoDiaKwh } = await import('./modules/monitoring/classificacao.js');
+          const { percentualQueda7d } = await import('./modules/monitoring/classificacao.js');
           const client = supabase.getClient();
           const hoje = new Date();
           const dia = (d: Date) => d.toISOString().slice(0, 10);
@@ -9293,18 +9297,21 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
                   (hoje.getTime() - new Date(`${ultima.data}T12:00:00Z`).getTime()) / (24 * 60 * 60 * 1000)), 1);
               }
             } else if (alerta.tipo === 'queda_geracao') {
-              // mesmo cálculo do radar: real 7d ÷ esperado 7d
+              // MESMO cálculo do radar (29/07): 7 dias COMPLETOS (sem o hoje
+              // parcial) e régua relativa à carteira quando há mediana — a Eva
+              // fala pro cliente o MESMO número do painel.
               const { data, error } = await client.from('geracao_diaria')
                 .select('geracao_kwh')
                 .eq('sistema_id', sistema.id)
-                .gte('data', dia(atras(7))).lte('data', dia(hoje));
+                .gte('data', dia(atras(7))).lt('data', dia(hoje));
               if (error) throw new Error(error.message);
               const real7 = (data ?? []).reduce((s, g) => s + Number(g.geracao_kwh), 0);
-              const esperado7 = esperadoDiaKwh(sistema.potencia_kwp, sistema.uf) * 7;
-              if (esperado7 > 0 && real7 > 0) {
-                const pct = Math.round((1 - real7 / esperado7) * 100);
-                if (pct > 0 && pct < 100) percentualQueda = pct;
-              }
+              const { data: sisRow } = await client.from('sistemas_clientes')
+                .select('company_id').eq('id', sistema.id).maybeSingle();
+              const mediana = await monitoringService.medianaDaCarteira7d(
+                (sisRow?.company_id as string | null | undefined) ?? null,
+              );
+              percentualQueda = percentualQueda7d(real7, sistema.potencia_kwp, sistema.uf, mediana);
             }
           } catch (err) {
             console.warn('[abordagem] recomputar dados do alerta falhou:', (err as Error).message);

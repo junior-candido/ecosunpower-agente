@@ -2924,7 +2924,9 @@ export function createDashboardRouter(
           ultimoErro: s.ultimo_erro ?? null,
           potenciaKwp: s.potencia_kwp,
           uf: s.uf,
-          diasSemGeracao: (s.geracao_7d_kwh ?? 0) === 0 && s.ativo ? 7 : 0,
+          // 7d completos zerados E nada hoje = parada; usina que estreia/volta
+          // HOJE tem 7d=0 mas hoje>0 — não é offline (achado reviews 29/07).
+          diasSemGeracao: (s.geracao_7d_kwh ?? 0) === 0 && (s.geracao_hoje_kwh ?? 0) === 0 && s.ativo ? 7 : 0,
           realUltimos7: s.geracao_7d_kwh ?? 0,
           // 084/085: motivo no card + régua da empresa dona da usina
           statusInversor: (s.status_inversor as 'ok' | 'offline' | 'falha' | 'desconhecido' | null | undefined) ?? null,

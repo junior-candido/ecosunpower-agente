@@ -1,6 +1,6 @@
 // tests/monitoramento-classificacao.test.ts
 import { describe, it, expect } from 'vitest';
-import { classificarSistema, esperadoDiaKwh, medianaEspecifica7d } from '../src/modules/monitoring/classificacao.js';
+import { classificarSistema, esperadoDiaKwh, medianaEspecifica7d, percentualQueda7d } from '../src/modules/monitoring/classificacao.js';
 
 describe('esperadoDiaKwh', () => {
   it('usa HSP 5.3 em GO e 5.2 fora, fator 0.80', () => {
@@ -223,6 +223,27 @@ describe('classificarSistema com régua relativa à carteira (medianaCarteira7d)
       ...carlosAndre, realUltimos7: 0, diasSemGeracao: 7, medianaCarteira7d: 16,
     });
     expect(r.alerta?.tipo).toBe('sistema_offline');
+  });
+});
+
+// Helper único do "% de queda" — a Eva/abordagem usava régua absoluta e a
+// janela velha (com o hoje parcial), falando número diferente do painel.
+describe('percentualQueda7d (número que a Eva fala pro cliente)', () => {
+  it('com mediana da carteira: % relativo, igual ao painel', () => {
+    // 24,1 kWh / 6,75 kWp / mediana 16 → 78% abaixo
+    expect(percentualQueda7d(24.1, 6.75, 'RJ', 16)).toBe(78);
+  });
+  it('sem mediana: cai na régua absoluta de HSP', () => {
+    // 6,75 kWp RJ → esperado7 = 181,4; 90,4 → 50% abaixo
+    expect(percentualQueda7d(90.4, 6.75, 'RJ', null)).toBe(50);
+  });
+  it('acima da referência ou sem dado → null (abordar seria inventar número)', () => {
+    expect(percentualQueda7d(6.75 * 20, 6.75, 'RJ', 16)).toBeNull(); // acima da mediana
+    expect(percentualQueda7d(0, 6.75, 'RJ', 16)).toBeNull();          // sem geração
+    expect(percentualQueda7d(50, null, 'RJ', 16)).toBeNull();         // sem kWp
+  });
+  it('fronteira: exatamente na mediana → null (queda 0% não é queda)', () => {
+    expect(percentualQueda7d(6.75 * 16, 6.75, 'RJ', 16)).toBeNull();
   });
 });
 

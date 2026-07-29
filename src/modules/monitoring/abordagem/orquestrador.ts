@@ -23,7 +23,7 @@ import {
 } from './abordagens-repo.js';
 import type { AbordagemRow, AbordagemTipo, AbordagemDesfecho } from './tipos.js';
 import { tarifaPorConcessionaria } from '../../solar-params.js';
-import { esperadoDiaKwh } from '../classificacao.js';
+import { esperadoDiaKwh, percentualQueda7d } from '../classificacao.js';
 import { dentroDaJanela } from '../proactive-alerts/janela.js';
 
 export interface OrqDeps {
@@ -42,6 +42,10 @@ export interface OrqDeps {
   // I7: takeover (Junior assumiu a conversa) — os envios do cron pulam o
   // cliente e re-tentam no próximo ciclo. Opcional: sem o campo, segue normal.
   estaEmTakeover?: (phone: string) => Promise<boolean>;
+  // 29/07: régua relativa — mediana de kWh/kWp da carteira da empresa (cache
+  // no MonitoringService). Opcional: sem o campo, o recomputo usa a régua
+  // absoluta de HSP (comportamento antigo).
+  medianaDaCarteira7d?: (companyId: string | null) => Promise<number | null>;
 }
 
 // [ECOSOF] Footer dos interactive WABA do monitoramento — vai pro dono do
@@ -87,7 +91,7 @@ const BOTOES_APROVACAO = (id: string) => [
 // ---------------------------------------------------------------------------
 
 interface LeadBasico { id: string; name: string | null; phone: string | null; opt_out: boolean | null }
-interface SistemaBasico { id: string; apelido: string; potencia_kwp: number | null; cidade: string | null; uf: string | null; lead_id: string | null }
+interface SistemaBasico { id: string; apelido: string; potencia_kwp: number | null; cidade: string | null; uf: string | null; lead_id: string | null; company_id: string | null }
 
 async function getLeadBasico(client: SupabaseClient, leadId: string): Promise<LeadBasico | null> {
   const { data, error } = await client.from('leads')
@@ -98,7 +102,7 @@ async function getLeadBasico(client: SupabaseClient, leadId: string): Promise<Le
 
 async function getSistemaBasico(client: SupabaseClient, sistemaId: string): Promise<SistemaBasico | null> {
   const { data, error } = await client.from('sistemas_clientes')
-    .select('id, apelido, potencia_kwp, cidade, uf, lead_id').eq('id', sistemaId).maybeSingle();
+    .select('id, apelido, potencia_kwp, cidade, uf, lead_id, company_id').eq('id', sistemaId).maybeSingle();
   if (error) throw new Error(`getSistemaBasico: ${error.message}`);
   return (data as SistemaBasico | null) ?? null;
 }
@@ -129,6 +133,7 @@ async function getMes(
 // mas eles não ficam gravados na linha; recomputar é determinístico e barato).
 async function recomputarDados(
   client: SupabaseClient, row: AbordagemRow, hoje: Date,
+  medianaFn?: (companyId: string | null) => Promise<number | null>,
 ): Promise<ContextoRedacao['dados']> {
   const dados: ContextoRedacao['dados'] = {
     percentualQueda: null, diasOffline: null, mes: null,
@@ -146,14 +151,13 @@ async function recomputarDados(
       dados.diasOffline = Math.max(dias, 1);
     }
   } else if (row.tipo === 'queda') {
-    // mesmo cálculo do radar (classificacao.ts): real 7d ÷ esperado 7d
-    const ger7 = await getGeracaoEntre(client, sistema.id, isoDia(addDias(hoje, -7)), isoDia(hoje));
+    // MESMO cálculo do radar (29/07): 7 dias COMPLETOS (sem o hoje parcial) e
+    // régua relativa à carteira quando há mediana — o cliente ouve da Eva o
+    // mesmo número que o painel mostra.
+    const ger7 = await getGeracaoEntre(client, sistema.id, isoDia(addDias(hoje, -7)), isoDia(addDias(hoje, -1)));
     const real7 = ger7.reduce((s, g) => s + Number(g.geracao_kwh), 0);
-    const esperado7 = esperadoDiaKwh(sistema.potencia_kwp, sistema.uf) * 7;
-    if (esperado7 > 0 && real7 > 0) {
-      const pct = Math.round((1 - real7 / esperado7) * 100);
-      if (pct > 0 && pct < 100) dados.percentualQueda = pct;
-    }
+    const mediana = medianaFn ? await medianaFn(sistema.company_id ?? null) : null;
+    dados.percentualQueda = percentualQueda7d(real7, sistema.potencia_kwp, sistema.uf, mediana);
   } else {
     dados.mes = await getMes(client, sistema, hoje);
   }
@@ -561,7 +565,7 @@ export async function handleTextoAdminAjuste(deps: OrqDeps, texto: string): Prom
       }
       const lead = await getLeadBasico(client, ajustando.lead_id);
       const sistema = await getSistemaBasico(client, ajustando.sistema_id);
-      const dados = await recomputarDados(client, ajustando, new Date());
+      const dados = await recomputarDados(client, ajustando, new Date(), deps.medianaDaCarteira7d);
       // I4: sem o número obrigatório do tipo, reescrever seria inventar dado.
       if (faltaDadoChave(ajustando.tipo, dados)) {
         await deps.sendText(deps.adminPhone,
@@ -754,7 +758,7 @@ export async function processarPendencias(deps: OrqDeps, agora: Date): Promise<v
           // o fallback do objetivoDoDegrau é só rede de segurança, não fluxo).
           const escada = ESCADAS[row.tipo];
           const etapaLembrete = escada[escada.length - 1].etapa;
-          const dados = await recomputarDados(client, row, agora);
+          const dados = await recomputarDados(client, row, agora, deps.medianaDaCarteira7d);
           // I4: sem o número obrigatório do tipo (integração fora do ar?) não
           // dá pra redigir lembrete honesto — pula; o timeout encerra depois.
           if (faltaDadoChave(row.tipo, dados)) continue;

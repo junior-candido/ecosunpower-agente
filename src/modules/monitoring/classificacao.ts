@@ -67,6 +67,29 @@ export function medianaEspecifica7d(
   return specs.length % 2 === 1 ? specs[meio] : (specs[meio - 1] + specs[meio]) / 2;
 }
 
+// "% de queda" ÚNICO pra quem fala número com o cliente (Eva/abordagem) —
+// mesma régua do radar: relativa quando há mediana da carteira, HSP senão.
+// null = sem número honesto pra falar (acima da referência, sem kWp, sem dado).
+export function percentualQueda7d(
+  real7: number,
+  potenciaKwp: number | null,
+  uf: string | null,
+  medianaCarteira7d: number | null,
+): number | null {
+  const kWp = Number(potenciaKwp ?? 0);
+  if (real7 <= 0) return null;
+  let ratio: number | null = null;
+  if (medianaCarteira7d != null && medianaCarteira7d > 0 && kWp > 0) {
+    ratio = (real7 / kWp) / medianaCarteira7d;
+  } else {
+    const esperado7 = esperadoDiaKwh(potenciaKwp, uf) * 7;
+    ratio = esperado7 > 0 ? real7 / esperado7 : null;
+  }
+  if (ratio == null) return null;
+  const pct = Math.round((1 - ratio) * 100);
+  return pct > 0 && pct < 100 ? pct : null;
+}
+
 export function classificarSistema(i: ClassificacaoInput): Classificacao {
   if (!i.ativo) return { nivel: 'ok', alerta: null };
 
