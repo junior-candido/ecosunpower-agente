@@ -52,6 +52,17 @@ describe('detectarAlertasPendentes', () => {
     expect(r.novos).toEqual([]);
   });
 
+  // Régua relativa (29/07): a mediana da carteira chega até o classificador
+  // — usina saudável em julho nublado não pode virar alerta novo no zap.
+  it('mediana da carteira repassada: queda pela régua HSP mas saudável vs carteira -> nada', () => {
+    const s = sistema({
+      realUltimos7: 5 * 5.2 * 0.80 * 7 * 0.5, // 50% do esperado HSP -> quedaria
+      medianaCarteira7d: (5 * 5.2 * 0.80 * 7 * 0.5) / 5, // = exatamente a mediana -> ok
+    });
+    const r = detectarAlertasPendentes([s], [], hoje);
+    expect(r.novos).toEqual([]);
+  });
+
   it('sistema com queda + sem aberto -> novo', () => {
     const s = sistema({ realUltimos7: 5 * 5.2 * 0.80 * 7 * 0.5 }); // 50% do esperado -> queda
     const r = detectarAlertasPendentes([s], [], hoje);

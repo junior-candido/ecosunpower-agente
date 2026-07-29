@@ -2,6 +2,7 @@
 import type { SupabaseService } from '../../supabase.js';
 import type { MonitoringService } from '../service.js';
 import { empresaDe } from '../../empresa-config.js';
+import { medianaEspecifica7d } from '../classificacao.js';
 import { detectarAlertasPendentes } from './detect.js';
 import { avaliarTelemetriaUsina, type MedicaoFina } from './telemetria-regras.js';
 import { buscarPaginado } from '../paginacao.js';
@@ -31,6 +32,23 @@ export class ProactiveAlertService {
 
   async runDetectionCycle(hoje: Date): Promise<{ novos: number; resolvidos: number; persistentes: number }> {
     const sistemasRaw = await this.monitoring.listarParaDashboard() as SistemaListadoDashboard[];
+
+    // Régua relativa (29/07): mediana de kWh/kWp POR EMPRESA — o ciclo é
+    // multi-tenant e a carteira de um tenant não é referência pra outro.
+    const porEmpresa = new Map<string, SistemaListadoDashboard[]>();
+    for (const s of sistemasRaw) {
+      const k = s.company_id ?? '';
+      const arr = porEmpresa.get(k) ?? [];
+      arr.push(s);
+      porEmpresa.set(k, arr);
+    }
+    const medianaDe = new Map<string, number | null>();
+    for (const [k, lista] of porEmpresa) {
+      medianaDe.set(k, medianaEspecifica7d(lista.map((s) => ({
+        potenciaKwp: s.potencia_kwp, realUltimos7: s.geracao_7d_kwh,
+      }))));
+    }
+
     const sistemas: SistemaParaDetect[] = sistemasRaw.map((s) => ({
       id: s.id,
       lead_id: s.lead_id,
@@ -42,6 +60,7 @@ export class ProactiveAlertService {
       realUltimos7: s.geracao_7d_kwh,
       status_inversor: s.status_inversor ?? null,
       corteAtencao: empresaDe(s.company_id).reguaAtencaoPct / 100, // 085
+      medianaCarteira7d: medianaDe.get(s.company_id ?? '') ?? null,
     }));
 
     const abertos = await this.supabase.getAlertasAbertosBySistemas(

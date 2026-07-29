@@ -51,6 +51,9 @@ export interface SistemaParaDetect {
   status_inversor?: 'ok' | 'offline' | 'falha' | 'desconhecido' | null;
   // 085: régua da empresa dona (fração; ausente = 0.70).
   corteAtencao?: number | null;
+  // 29/07: mediana de kWh/kWp em 7d da carteira da MESMA empresa
+  // (régua relativa — ausente = régua absoluta de HSP).
+  medianaCarteira7d?: number | null;
 }
 
 // Botão WABA
