@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   situacaoDaAssinatura, novoVencimento,
   listarAssinaturas, criarAssinatura, renovarAssinatura,
+  listarAtivas, avisosDoCiclo, registrarAviso, linkPendente,
 } from '../src/modules/dashboard/assinaturas-store.js';
 
 // Mock chainable do supabase-js (mesmo estilo dos testes de empresas):
@@ -19,7 +20,7 @@ function mockClient(respostas: Record<string, any[]>) {
       const chain: any = {
         insert(row: any) { (inserts[tabela] ??= []).push(row); return chain; },
         update(row: any) { (updates[tabela] ??= []).push(row); return chain; },
-        select() { return chain; }, eq() { return chain; }, order() { return chain; },
+        select() { return chain; }, eq() { return chain; }, order() { return chain; }, limit() { return chain; },
         single() { return Promise.resolve(resposta()); },
         maybeSingle() { return Promise.resolve(resposta()); },
         then(res: any, rej: any) { return Promise.resolve(resposta()).then(res, rej); },
@@ -68,7 +69,7 @@ describe('listarAssinaturas', () => {
       assinaturas: [{ data: [{ id: 'a1', produto_id: 'monitoramento', nome: 'Sabion', email: 't@x.com', telefone: null, zap_confirmado: false, valor_centavos: 29700, limite: 110, vence_em: '2026-08-29', status: 'ativa', assinatura_produtos: { nome: 'Monitoramento de Usinas' } }], error: null }],
     });
     const lista = await listarAssinaturas(client);
-    expect(lista).toEqual([{ id: 'a1', produtoId: 'monitoramento', produtoNome: 'Monitoramento de Usinas', nome: 'Sabion', email: 't@x.com', telefone: null, zapConfirmado: false, valorCentavos: 29700, limite: 110, venceEm: '2026-08-29', status: 'ativa' }]);
+    expect(lista).toEqual([{ id: 'a1', produtoId: 'monitoramento', produtoNome: 'Monitoramento de Usinas', nome: 'Sabion', email: 't@x.com', telefone: null, zapConfirmado: false, valorCentavos: 29700, limite: 110, venceEm: '2026-08-29', status: 'ativa', companyId: null }]);
   });
 });
 
@@ -91,5 +92,44 @@ describe('renovarAssinatura', () => {
     });
     await renovarAssinatura(client, 'a1', '2026-08-14');
     expect(updates.assinaturas?.[0]).toEqual({ vence_em: '2026-09-20', status: 'ativa' });
+  });
+});
+
+describe('editarAssinatura — zap confirmado', () => {
+  it('grava zap_confirmado quando o campo vem', async () => {
+    const { editarAssinatura } = await import('../src/modules/dashboard/assinaturas-store.js');
+    const { client, updates } = mockClient({ assinaturas: [{ data: null, error: null }] });
+    await editarAssinatura(client, 'a1', { zapConfirmado: true });
+    expect(updates.assinaturas?.[0]).toEqual({ zap_confirmado: true });
+  });
+});
+
+describe('apoios do motor (fatia 2)', () => {
+  it('listarAtivas devolve só as ativas (filtro no banco)', async () => {
+    const { client } = mockClient({
+      assinaturas: [{ data: [{ id: 'a1', produto_id: 'calculadora', nome: 'F', email: null, telefone: null, zap_confirmado: false, valor_centavos: 5700, limite: null, vence_em: '2026-08-29', status: 'ativa', company_id: null, assinatura_produtos: { nome: 'Calculadora' } }], error: null }],
+    });
+    const lista = await listarAtivas(client);
+    expect(lista.length).toBe(1);
+    expect(lista[0]!.produtoNome).toBe('Calculadora');
+  });
+  it('avisosDoCiclo devolve os tipos já enviados como Set', async () => {
+    const { client } = mockClient({ assinatura_avisos: [{ data: [{ tipo: 'aviso8' }, { tipo: 'aviso2' }], error: null }] });
+    const s = await avisosDoCiclo(client, 'a1', '2026-08-20');
+    expect(s.has('aviso8')).toBe(true);
+    expect(s.has('ultimo')).toBe(false);
+  });
+  it('registrarAviso insere com company_id; UNIQUE duplicado não explode', async () => {
+    const { client, inserts } = mockClient({ assinatura_avisos: [{ data: null, error: null }] });
+    await registrarAviso(client, 'a1', 'comp-1', 'aviso8', '2026-08-20');
+    expect(inserts.assinatura_avisos?.[0]).toEqual({ assinatura_id: 'a1', company_id: 'comp-1', tipo: 'aviso8', ciclo: '2026-08-20' });
+    const dup = mockClient({ assinatura_avisos: [{ data: null, error: { message: 'duplicate key value violates unique constraint' } }] });
+    await expect(registrarAviso(dup.client, 'a1', null, 'aviso8', '2026-08-20')).resolves.toBeUndefined();
+  });
+  it('linkPendente devolve o link da cobrança pendente (ou null)', async () => {
+    const { client } = mockClient({ cobrancas: [{ data: [{ link_url: 'https://checkout.infinitepay.io/x' }], error: null }] });
+    expect(await linkPendente(client, 'a1')).toBe('https://checkout.infinitepay.io/x');
+    const vazio = mockClient({ cobrancas: [{ data: [], error: null }] });
+    expect(await linkPendente(vazio.client, 'a1')).toBeNull();
   });
 });

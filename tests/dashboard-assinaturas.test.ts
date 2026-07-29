@@ -8,7 +8,7 @@ const PRODUTOS = [
   { id: 'monitoramento', nome: 'Monitoramento de Usinas', valorCentavosPadrao: 29700 },
 ];
 const ASSINATURAS = [
-  { id: 'a1', produtoId: 'monitoramento', produtoNome: 'Monitoramento de Usinas', nome: 'Sabion Solar', email: 't@x.com', telefone: '5521999998888', zapConfirmado: false, valorCentavos: 29700, limite: 110, venceEm: '2026-08-29', status: 'ativa' as const },
+  { id: 'a1', produtoId: 'monitoramento', produtoNome: 'Monitoramento de Usinas', nome: 'Sabion Solar', email: 't@x.com', telefone: '5521999998888', zapConfirmado: false, valorCentavos: 29700, limite: 110, venceEm: '2026-08-29', status: 'ativa' as const, companyId: null },
 ];
 
 describe('renderAssinaturasPage', () => {
@@ -26,6 +26,9 @@ describe('renderAssinaturasPage', () => {
   });
   it('mostra o limite do plano (110 usinas)', () => {
     expect(html).toContain('110');
+  });
+  it('form editar tem o checkbox de zap confirmado (Junior confirma na mão até a Fase 2)', () => {
+    expect(html).toContain('name="zap_ok"');
   });
 });
 
