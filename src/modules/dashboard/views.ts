@@ -85,7 +85,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'contratos' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'usuarios' | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro';
+  active: 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'contratos' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'assinaturas' | 'usuarios' | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro';
   title: string;
   body: string;
   scripts?: string;
@@ -162,6 +162,7 @@ const SIDEBAR_SETORES: SideSetor[] = [
     itens: [
       { href: '/dashboard/financeiro', key: 'financeiro', label: '💰 Financeiro', area: 'financeiro' },
       { href: '/dashboard/cobrar', key: 'cobrar', label: '💳 Cobrar cliente', area: 'financeiro' },
+      { href: '/dashboard/assinaturas', key: 'assinaturas', label: '📆 Assinaturas', area: 'financeiro' },
     ],
   },
   {
