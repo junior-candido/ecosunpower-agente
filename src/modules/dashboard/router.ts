@@ -179,6 +179,8 @@ export function createDashboardRouter(
     proposalAssistant?: ProposalAssistant;
     metaService?: MetaWhatsAppService;
     engineerPhone?: string; // telefone do Junior — recebe o aviso "cliente fechou"
+    infinitepayHandle?: string; // InfiniteTag pra gerar link de cobrança (peça 1 pagamento)
+    appBaseUrl?: string;        // URL pública do app (pro webhook_url da InfinitePay)
     // Salva contrato+procuração no Drive/Workspace (vem pronto do index.ts quando
     // o Google está configurado). Retorna o link da pasta do cliente.
     salvarContratoNoDrive?: (input: {
@@ -267,6 +269,102 @@ export function createDashboardRouter(
   // Raiz redireciona pro cockpit (visao geral 1-tela). Era /home antes.
   router.get('/', (_req, res) => {
     res.redirect('/dashboard/cockpit');
+  });
+
+  // ----- COBRANÇAS (InfinitePay) — gera link de pagamento pro cliente -----
+  // Cria a cobrança PENDENTE + o link. O cliente paga → o webhook /webhook/
+  // infinitepay confirma e marca "pago". Pré-preenche os dados do lead pra o
+  // cliente não redigitar. Retorna JSON com o link (o front mostra/copia).
+  router.post('/cobrancas', async (req: AuthedRequest, res) => {
+    try {
+      const handle = options.infinitepayHandle;
+      if (!handle) { res.status(503).json({ erro: 'Cobrança não configurada (falta INFINITEPAY_HANDLE).' }); return; }
+      const descricao = String(req.body?.descricao ?? '').trim();
+      // aceita "1.234,56" (pt-BR) ou "1234.56"
+      const valorReais = Number(String(req.body?.valor ?? '').replace(/\./g, '').replace(',', '.'));
+      let leadId = req.body?.lead_id ? String(req.body.lead_id) : null;
+      if (!descricao) { res.status(400).json({ erro: 'Descrição obrigatória.' }); return; }
+      if (!(valorReais > 0)) { res.status(400).json({ erro: 'Valor inválido.' }); return; }
+      const valorCentavos = Math.round(valorReais * 100);
+      const companyId = req.dashUser!.companyId;
+      const telefone = String(req.body?.telefone ?? '').trim();
+
+      let cliente: { nome?: string; email?: string; telefone?: string } | undefined;
+      if (leadId) {
+        // lead pelo crachá do operador (RLS Fase B) — não vaza lead de outra empresa
+        const db = bancoDoOperador(req, supabase);
+        const { data: lead } = await db.from('leads').select('name, email, phone')
+          .eq('id', leadId).eq('company_id', companyId).maybeSingle();
+        if (lead) cliente = { nome: (lead as { name?: string }).name ?? undefined, email: (lead as { email?: string }).email ?? undefined, telefone: (lead as { phone?: string }).phone ?? undefined };
+      } else if (telefone) {
+        // telefone digitado na página → vincula ao lead (variantes do 9º dígito)
+        const { acharLeadPorTelefone } = await import('./cobrancas-store.js');
+        const lead = await acharLeadPorTelefone(bancoDoOperador(req, supabase), companyId, telefone);
+        if (lead) { leadId = lead.id; cliente = { nome: lead.nome, email: lead.email, telefone: lead.telefone }; }
+        else cliente = { telefone: telefone.replace(/\D/g, '') || undefined }; // sem lead: ao menos pré-preenche o checkout
+      }
+
+      const cob = await supabaseService.criarCobranca({ companyId, leadId, descricao, valorCentavos });
+      const { criarLinkPagamento } = await import('../infinitepay.js');
+      const base = (options.appBaseUrl ?? '').replace(/\/$/, '');
+      const r = await criarLinkPagamento({
+        handle, orderNsu: cob.orderNsu, itens: [{ descricao, valorCentavos }],
+        redirectUrl: base ? `${base}/pago` : undefined,
+        webhookUrl: base ? `${base}/webhook/infinitepay` : undefined,
+        cliente,
+      });
+      if (!r.ok) { res.status(502).json({ erro: `Falha ao gerar link: ${r.reason}` }); return; }
+      await supabaseService.salvarLinkCobranca(cob.id, r.url);
+      res.json({ ok: true, link: r.url, cobrancaId: cob.id });
+    } catch (err) {
+      console.error('[dashboard/cobrancas]', err);
+      res.status(500).json({ erro: 'Falha ao criar cobrança.' });
+    }
+  });
+
+  // Página simples pra gerar uma cobrança (descrição + valor → link).
+  router.get('/cobrar', (req: AuthedRequest, res) => {
+    const off = !options.infinitepayHandle;
+    res.type('html').send(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Cobrar cliente</title>
+<style>body{font-family:system-ui,Segoe UI,sans-serif;background:#0b1c2b;color:#eaf2f8;margin:0;padding:24px}
+.card{max-width:520px;margin:0 auto;background:#12324a;border-radius:14px;padding:22px}
+h1{font-size:19px;margin:0 0 4px}p.sub{color:#9fb6c7;font-size:13px;margin:0 0 16px}
+label{display:block;font-size:13px;color:#c4d6e4;margin:12px 0 4px}
+input{width:100%;box-sizing:border-box;padding:11px;border-radius:9px;border:1px solid #2a4a63;background:#0e2233;color:#fff;font-size:15px}
+button{margin-top:18px;width:100%;padding:13px;border:0;border-radius:10px;background:#17a6e0;color:#fff;font-size:16px;font-weight:600;cursor:pointer}
+button:disabled{opacity:.5}.res{margin-top:18px;display:none}.res a.link{display:block;word-break:break-all;background:#0e2233;border:1px solid #2a4a63;border-radius:9px;padding:11px;color:#17a6e0;font-size:13px}
+.row{display:flex;gap:10px;margin-top:10px}.row button{margin:0;background:#1fa968}.row button.copy{background:#2a4a63}
+.err{color:#ff9a9a;font-size:13px;margin-top:12px}.off{background:#5a3d00;color:#ffd27a;padding:12px;border-radius:9px;font-size:13px;margin-bottom:14px}</style></head>
+<body><div class="card"><h1>💳 Cobrar cliente</h1><p class="sub">Gera um link de pagamento (Pix ou cartão) pra mandar pro cliente.</p>
+${off ? '<div class="off">⚠️ Falta configurar o <b>INFINITEPAY_HANDLE</b> no servidor pra ativar a cobrança.</div>' : ''}
+<label>Descrição</label><input id="d" placeholder="ex: Reorganização e limpeza — Superbom">
+<label>Valor (R$)</label><input id="v" inputmode="decimal" placeholder="ex: 15.000,00">
+<label>Telefone do cliente (opcional — vincula ao lead)</label><input id="t" placeholder="ex: 5561999998888">
+<button id="b" ${off ? 'disabled' : ''}>Gerar link de pagamento</button>
+<div class="err" id="e"></div>
+<div class="res" id="r"><label>Link gerado — manda pro cliente:</label><a class="link" id="l" target="_blank"></a>
+<div class="row"><button class="copy" id="c">Copiar</button><button id="w">Enviar no WhatsApp</button></div></div></div>
+<script>
+var b=document.getElementById('b');
+b.onclick=async function(){
+  var d=document.getElementById('d').value.trim(),v=document.getElementById('v').value.trim(),t=document.getElementById('t').value.trim();
+  var e=document.getElementById('e');e.textContent='';
+  if(!d||!v){e.textContent='Preencha descrição e valor.';return;}
+  b.disabled=true;b.textContent='Gerando…';
+  try{
+    var resp=await fetch('/dashboard/cobrancas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({descricao:d,valor:v,telefone:t})});
+    var j=await resp.json();
+    if(!resp.ok||!j.link){e.textContent=j.erro||'Falha ao gerar.';return;}
+    var l=document.getElementById('l');l.href=j.link;l.textContent=j.link;
+    document.getElementById('r').style.display='block';
+    document.getElementById('c').onclick=function(){navigator.clipboard.writeText(j.link);this.textContent='Copiado!';};
+    var msg='Segue o link pra pagamento (Pix ou cartão): '+j.link;
+    document.getElementById('w').onclick=function(){window.open('https://wa.me/'+(t.replace(/\\D/g,''))+'?text='+encodeURIComponent(msg),'_blank');};
+  }catch(err){e.textContent='Erro de rede.';}
+  finally{b.disabled=false;b.textContent='Gerar link de pagamento';}
+};
+</script></body></html>`);
   });
 
   // ----- USUARIOS (gestao de pessoas + papeis; so admin/gestao de usuarios) -----

@@ -55,6 +55,14 @@ const configSchema = z.object({
   useWabaCloudApi: z.coerce.boolean().default(false), // flag: quando true, usa WABA; quando false, usa Evolution
   igUserId: z.string().optional(),                    // IG-Scoped Business User ID (qualificador IG DM)
   replicateApiToken: z.string().optional(),
+  // InfiniteTag da conta InfinitePay (ex: 'ecosunpower', sem o $) — usada pra
+  // gerar link de pagamento e confirmar via payment_check. É público, não é
+  // segredo. Ausente = cobrança pela InfinitePay desligada.
+  infinitepayHandle: z.string().optional(),
+  // URL pública do app (ex: https://app.ecosunpower.eng.br) — usada pra montar
+  // o webhook_url da InfinitePay e o redirect pós-pagamento. Ausente = link sai
+  // sem webhook (paga, mas não marca "pago" sozinho).
+  appBaseUrl: z.string().optional(),
   // Higgsfield Cloud API (geração de imagem top pros posts de marketing).
   // Formato: "KEY_ID:KEY_SECRET". Se ausente, marketing usa FLUX (Replicate) como antes.
   higgsfieldCredentials: z.string().optional(),
@@ -132,6 +140,8 @@ export function loadConfig(): Config {
     useWabaCloudApi: process.env.USE_WABA_CLOUD_API,
     igUserId: process.env.IG_USER_ID || undefined,
     replicateApiToken: process.env.REPLICATE_API_TOKEN || undefined,
+    infinitepayHandle: process.env.INFINITEPAY_HANDLE || undefined,
+    appBaseUrl: process.env.APP_BASE_URL || undefined,
     higgsfieldCredentials: process.env.HIGGSFIELD_CREDENTIALS || undefined,
     pexelsApiKey: process.env.PEXELS_API_KEY || undefined,
     tavusApiKey: process.env.TAVUS_API_KEY || undefined,
