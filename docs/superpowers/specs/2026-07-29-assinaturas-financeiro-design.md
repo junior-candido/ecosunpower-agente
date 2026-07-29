@@ -10,7 +10,7 @@ Os produtos da casa viraram mensalidade e cada um cobra de um jeito:
 - **Calculadora** (SaaS): assinantes pagam pelo Kiwify (~R$ 57/mês — valor a
   confirmar com o Junior; fica configurável).
 - **Monitoramento** (Sabion/SunBright): R$ 297/mês, preço de fundador combinado
-  com o Thiago (até 80 usinas) — hoje sem cobrança nenhuma no sistema.
+  com o Thiago (**até 110 usinas**) — hoje sem cobrança nenhuma no sistema.
 - Serviços avulsos: página Cobrar (InfinitePay), já no ar.
 
 Não existe um lugar onde o Junior veja quem paga o quê, quem está vencendo e
@@ -27,7 +27,20 @@ aparece **na área do cliente** (Fase 2).
 ### Produtos e valores
 - Cadastro de produtos com valor padrão mensal: **Calculadora** (R$ 57 — confirmar)
   e **Monitoramento** (R$ 297). Editável na tela, sem deploy.
-- Cada assinante pode ter **valor próprio** (negociado — caso Sabion/fundador).
+- Cada assinante pode ter **valor próprio** (negociado — caso Sabion/fundador) e
+  **limite do plano** (ex: monitoramento até 110 usinas).
+
+### Trava de limite do plano (pedido do Junior)
+- A assinatura guarda o limite (ex: 110 usinas) e a tela mostra o uso:
+  **"87/110 usinas"** — o Junior vê chegando perto.
+- **Na área do assinante (tenant)**: contador visível; chegou perto → banner
+  "seu plano vai até 110 usinas"; **bateu o limite → trava o cadastro de usina
+  nova**, com recado "fale com a EcoSun pra ampliar o plano".
+- Bateu o limite → aviso no zap do Junior (hora de vender upgrade, régua de
+  saída do preço fundador).
+- **Upgrade de plano** (fluxo do Junior: "atingiu o patamar → aviso → upgrade"):
+  o Junior edita a assinatura na tela (novo valor + novo limite) e o ciclo
+  seguinte já cobra o valor novo. Sem burocracia extra na Fase 1.
 
 ### A tela
 - Lista de assinantes: produto · valor · situação (🟢 ativa · 🟡 vencendo ·
