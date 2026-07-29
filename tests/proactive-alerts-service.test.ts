@@ -66,6 +66,46 @@ describe('ProactiveAlertService.runDetectionCycle', () => {
     expect(sb.resolverAlerta).toHaveBeenCalledWith('aid-1', hoje.toISOString(), 'auto');
   });
 
+  // Régua relativa (29/07): o ciclo agrupa POR EMPRESA e calcula a mediana
+  // de kWh/kWp de cada carteira. Julho nublado no RJ derrubou a carteira
+  // INTEIRA do tenant → usina saudável não pode virar alerta no zap.
+  it('régua relativa por empresa: carteira grande protege usina na mediana; carteira pequena segue HSP', async () => {
+    const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    // Empresa A: 6 usinas de 5 kWp gerando 60 kWh/7d (41% do esperado HSP —
+    // a régua antiga acusaria TODAS; a mediana da carteira diz que é o clima).
+    const frotaA = Array.from({ length: 6 }, (_, i) => sistemaListado({
+      id: `a${i}`, lead_id: `la${i}`, company_id: A, geracao_7d_kwh: 60,
+    }));
+    // Empresa B: 1 usina idêntica, carteira pequena → sem mediana → HSP acusa.
+    const frotaB = [sistemaListado({ id: 'b1', lead_id: 'lb1', company_id: B, geracao_7d_kwh: 60 })];
+    const sb = fakeSupabase();
+    const ms = fakeMonitoringService([...frotaA, ...frotaB]);
+    const svc = new ProactiveAlertService(sb as any, ms as any);
+    const r = await svc.runDetectionCycle(hoje);
+    expect(r.novos).toBe(1);
+    const calls = sb.criarAlertaPendente.mock.calls.map((c: any[]) => c[0]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].sistema_id).toBe('b1');
+    expect(calls[0].tipo).toBe('queda_geracao');
+  });
+
+  // Achado dos reviews 29/07: com a janela 7d sem o hoje, usina instalada/
+  // religada HOJE tem geracao_7d_kwh=0 mas geracao_hoje_kwh>0 — o proxy de
+  // diasSemGeracao precisa olhar o hoje pra não gritar "offline" falso no zap
+  // (caso real: instalação da Fernanda em 30/07).
+  it('usina que só gerou HOJE não vira alerta de offline', async () => {
+    const sb = fakeSupabase();
+    const ms = fakeMonitoringService([sistemaListado({
+      geracao_7d_kwh: 0, geracao_hoje_kwh: 8,
+      diasSemGeracao: undefined, // força o serviço a usar o PROXY (caso real)
+    })]);
+    const svc = new ProactiveAlertService(sb as any, ms as any);
+    const r = await svc.runDetectionCycle(hoje);
+    expect(r.novos).toBe(0);
+    expect(sb.criarAlertaPendente).not.toHaveBeenCalled();
+  });
+
   it('lista vazia -> nada acontece', async () => {
     const sb = fakeSupabase();
     const ms = fakeMonitoringService([]);

@@ -8,7 +8,9 @@ export interface GravidadeInput {
   offline: boolean;
   diasSemGeracao: number;
   erro: boolean;
-  ratio7d: number; // geração real 7d / esperado 7d
+  // Razão de 7d vs a REFERÊNCIA da régua oficial: mediana de kWh/kWp da
+  // carteira quando existe (29/07), senão o esperado absoluto de HSP.
+  ratio7d: number;
 }
 
 export type Gravidade = 'grave' | 'medio' | 'leve' | null;

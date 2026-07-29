@@ -13,7 +13,7 @@
 import type { SupabaseService } from '../supabase.js';
 import { getAdapter, marcasSuportadas } from './adapter-registry.js';
 import type { AdapterContext, MarcaInversor, SistemaCliente, SiteResumo } from './types.js';
-import { classificarSistema, esperadoDiaKwh } from './classificacao.js';
+import { classificarSistema, esperadoDiaKwh, medianaEspecifica7d } from './classificacao.js';
 import { buscarPaginado } from './paginacao.js';
 import { empresaDe } from '../empresa-config.js';
 import { serieMesDiaria, serieAnoMensal, navegacao, type Vista } from './detalhe-series.js';
@@ -56,6 +56,9 @@ export interface DetalheSistema {
     totalKwh: number;
     esperadoDiaKwh: number;
     ratioUltimos7: number;
+    // 29/07: mediana de kWh/kWp em 7d da carteira da empresa (régua relativa).
+    // null = carteira pequena/sem referência → superfícies usam a régua absoluta.
+    medianaCarteira7d: number | null;
   };
   // Periodo selecionado
   periodo: {
@@ -612,6 +615,23 @@ export class MonitoringService {
     return { ok: true };
   }
 
+  // Régua relativa (29/07): mediana de kWh/kWp em 7d da carteira da empresa.
+  // Cache de 5 min — o detalhe abre a cada clique e o relatório roda usina a
+  // usina; sem cache seria um scan da frota inteira por chamada.
+  private medianaCache = new Map<string, { v: number | null; em: number }>();
+  async medianaDaCarteira7d(companyId: string | null | undefined): Promise<number | null> {
+    // Sem empresa conhecida não há carteira de referência (não misturar tenants).
+    if (!companyId) return null;
+    const hit = this.medianaCache.get(companyId);
+    if (hit && Date.now() - hit.em < 5 * 60_000) return hit.v;
+    const rows = await this.listarParaDashboard(companyId);
+    const v = medianaEspecifica7d(rows.map((r) => ({
+      potenciaKwp: r.potencia_kwp, realUltimos7: r.geracao_7d_kwh,
+    })));
+    this.medianaCache.set(companyId, { v, em: Date.now() });
+    return v;
+  }
+
   // Detalhe completo de UM sistema pra pagina de analise.
   // periodo opcional: { preset: '30d'|'90d'|'6m'|'1a'|'2a'|'5a'|'tudo' }
   //                OR { inicio: 'YYYY-MM-DD', fim: 'YYYY-MM-DD' }
@@ -648,7 +668,8 @@ export class MonitoringService {
 
     // KPIs + alertas (sempre fixos: hoje/mes/ano/total) — extraidos pra reuso
     // pelo getDetalheCalendario (mesma logica, sem duplicar).
-    const { kpis, alertas } = this.montarKpisEAlertas(s, geracoesArr, hojeDate);
+    const medianaCarteira = await this.medianaDaCarteira7d(s.company_id);
+    const { kpis, alertas } = this.montarKpisEAlertas(s, geracoesArr, hojeDate, medianaCarteira);
     const esperadoDia = kpis.esperadoDiaKwh;
 
     // Serie do periodo selecionado
@@ -741,6 +762,7 @@ export class MonitoringService {
     s: SistemaCliente,
     geracoesArr: { data: string; geracao_kwh: number }[],
     hojeDate: Date,
+    medianaCarteira7d: number | null = null,
   ): { kpis: DetalheSistema['kpis']; alertas: DetalheSistema['alertas'] } {
     const hojeStr = isoDate(hojeDate);
 
@@ -757,8 +779,11 @@ export class MonitoringService {
     const esperadoDia = esperadoDiaKwh(s.potencia_kwp, s.uf);
 
     // Status / alertas (baseado em ULTIMOS 7 DIAS reais — independente do range selecionado)
+    // Exatamente 7 dias COMPLETOS [hoje-7, hoje) — a janela antiga somava 8
+    // datas-calendário contra um esperado de 7 (fencepost); mesma janela da
+    // lista/mediana pra card e detalhe contarem a mesma história.
     const ultimos7Inicio = isoDate(new Date(hojeDate.getTime() - 7 * 24 * 60 * 60 * 1000));
-    const realUltimos7 = geracoesArr.filter((g) => g.data >= ultimos7Inicio)
+    const realUltimos7 = geracoesArr.filter((g) => g.data >= ultimos7Inicio && g.data < hojeStr)
       .reduce((s2, d) => s2 + Number(d.geracao_kwh), 0);
     const esperadoUltimos7 = esperadoDia * 7;
     const ratioUltimos7 = esperadoUltimos7 > 0 ? realUltimos7 / esperadoUltimos7 : 1;
@@ -784,6 +809,7 @@ export class MonitoringService {
       realUltimos7,
       statusInversor: (s.status_inversor as 'ok' | 'offline' | 'falha' | 'desconhecido' | null | undefined) ?? null,
       corteAtencao: empresaDe(s.company_id).reguaAtencaoPct / 100, // 085
+      medianaCarteira7d, // 29/07: régua relativa à carteira da empresa
     });
     if (cls.alerta) alertas.push(cls.alerta);
 
@@ -795,6 +821,7 @@ export class MonitoringService {
         totalKwh: geracaoTotal,
         esperadoDiaKwh: esperadoDia,
         ratioUltimos7,
+        medianaCarteira7d,
       },
       alertas,
     };
@@ -831,7 +858,7 @@ export class MonitoringService {
       .order('data', { ascending: true }));
     const ger = todasGeracoes as { data: string; geracao_kwh: number }[];
 
-    const { kpis, alertas } = this.montarKpisEAlertas(s, ger, hojeDate);
+    const { kpis, alertas } = this.montarKpisEAlertas(s, ger, hojeDate, await this.medianaDaCarteira7d(s.company_id));
     const nav = navegacao(opts.vista, opts.ref, hojeDate, s.data_instalacao ?? null);
     const serieMensalCompleta = this.montarSerieMensalCompleta(ger, kpis.esperadoDiaKwh, hojeDate);
 
@@ -939,7 +966,10 @@ export class MonitoringService {
       if (!acc) continue;
       const kwh = Number(g.geracao_kwh) || 0;
       if (g.data >= inicioMes) acc.mes += kwh;
-      if (g.data >= ha7) acc.ult7 += kwh;
+      // 7d = exatamente 7 dias COMPLETOS [hoje-7, hoje). A janela antiga
+      // (>= ha7, sem teto) somava 8 datas-calendário contra um esperado de 7
+      // dias — fencepost. Hoje parcial fica só em geracao_hoje_kwh.
+      if (g.data >= ha7 && g.data < hoje) acc.ult7 += kwh;
       if (g.data === hoje) acc.hoje = kwh;
     }
 

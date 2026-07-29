@@ -41,6 +41,7 @@ export function detectarAlertasPendentes(
           realUltimos7: s.realUltimos7,
           statusInversor: s.status_inversor ?? null,
           corteAtencao: s.corteAtencao ?? null,
+          medianaCarteira7d: s.medianaCarteira7d ?? null,
         })
       : { nivel: 'ok' as const, alerta: null };
 

@@ -68,7 +68,7 @@ import {
 } from './proposta-views-view.js';
 import type { MarcaInversor } from '../monitoring/types.js';
 import type { ResultadoImport } from '../leads-import-meta-junho.js';
-import { classificarSistema } from '../monitoring/classificacao.js';
+import { classificarSistema, medianaEspecifica7d } from '../monitoring/classificacao.js';
 import { getAdapter } from '../monitoring/adapter-registry.js';
 import { garantiaInfo } from '../monitoring/garantia.js';
 import { filtrarOrdenarSistemas } from '../monitoring/filtro.js';
@@ -2913,17 +2913,25 @@ export function createDashboardRouter(
       // e vice-versa — o serviço filtra por company_id).
       const sistemas = await monitoringService.listarParaDashboard((req as AuthedRequest).dashUser?.companyId ?? null);
       const hoje = new Date();
+      // Régua relativa (29/07): a lista já é da empresa do operador — a
+      // mediana de kWh/kWp desta carteira vira a referência de queda.
+      const medianaCarteira = medianaEspecifica7d(sistemas.map((s) => ({
+        potenciaKwp: s.potencia_kwp, realUltimos7: s.geracao_7d_kwh ?? 0,
+      })));
       const enriched = sistemas.map((s) => {
         const cls = classificarSistema({
           ativo: s.ativo,
           ultimoErro: s.ultimo_erro ?? null,
           potenciaKwp: s.potencia_kwp,
           uf: s.uf,
-          diasSemGeracao: (s.geracao_7d_kwh ?? 0) === 0 && s.ativo ? 7 : 0,
+          // 7d completos zerados E nada hoje = parada; usina que estreia/volta
+          // HOJE tem 7d=0 mas hoje>0 — não é offline (achado reviews 29/07).
+          diasSemGeracao: (s.geracao_7d_kwh ?? 0) === 0 && (s.geracao_hoje_kwh ?? 0) === 0 && s.ativo ? 7 : 0,
           realUltimos7: s.geracao_7d_kwh ?? 0,
           // 084/085: motivo no card + régua da empresa dona da usina
           statusInversor: (s.status_inversor as 'ok' | 'offline' | 'falha' | 'desconhecido' | null | undefined) ?? null,
           corteAtencao: empresaDe(s.company_id).reguaAtencaoPct / 100,
+          medianaCarteira7d: medianaCarteira,
         });
         const g = garantiaInfo(
           { data_instalacao: s.data_instalacao, marca_inversor: s.marca_inversor, painel_marca: (s as { painel_marca?: string | null }).painel_marca ?? null },

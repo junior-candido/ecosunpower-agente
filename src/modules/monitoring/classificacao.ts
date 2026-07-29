@@ -17,6 +17,11 @@ export interface ClassificacaoInput {
   // Régua POR EMPRESA (085): fração do esperado abaixo da qual acende o
   // amarelo. Ausente = 0.70 (padrão histórico). Vem de empresaDe(company_id).
   corteAtencao?: number | null;
+  // Régua RELATIVA À CARTEIRA (29/07): mediana de kWh/kWp em 7 dias das
+  // usinas da MESMA empresa (medianaEspecifica7d). Nublou pra todos, a
+  // mediana desce junto — só destoa quem está pior que as irmãs. Ausente
+  // (carteira pequena) = régua absoluta de HSP, comportamento antigo.
+  medianaCarteira7d?: number | null;
 }
 
 export interface Alerta {
@@ -45,6 +50,44 @@ const HSP_POR_UF: Record<string, number> = {
 export function esperadoDiaKwh(potenciaKwp: number | null, uf: string | null): number {
   const hsp = HSP_POR_UF[(uf ?? '').toUpperCase()] ?? 5.2;
   return Number(potenciaKwp ?? 0) * hsp * 0.80;
+}
+
+// Mediana de kWh/kWp em 7 dias da carteira. Só usinas com kWp>0 E geração>0
+// entram (usina parada é problema, não referência). Menos de 5 válidas =
+// null: carteira pequena demais pra mediana valer como régua.
+export function medianaEspecifica7d(
+  sistemas: Array<{ potenciaKwp: number | null; realUltimos7: number }>,
+): number | null {
+  const specs = sistemas
+    .filter((s) => Number(s.potenciaKwp ?? 0) > 0 && s.realUltimos7 > 0)
+    .map((s) => s.realUltimos7 / Number(s.potenciaKwp))
+    .sort((a, b) => a - b);
+  if (specs.length < 5) return null;
+  const meio = Math.floor(specs.length / 2);
+  return specs.length % 2 === 1 ? specs[meio] : (specs[meio - 1] + specs[meio]) / 2;
+}
+
+// "% de queda" ÚNICO pra quem fala número com o cliente (Eva/abordagem) —
+// mesma régua do radar: relativa quando há mediana da carteira, HSP senão.
+// null = sem número honesto pra falar (acima da referência, sem kWp, sem dado).
+export function percentualQueda7d(
+  real7: number,
+  potenciaKwp: number | null,
+  uf: string | null,
+  medianaCarteira7d: number | null,
+): number | null {
+  const kWp = Number(potenciaKwp ?? 0);
+  if (real7 <= 0) return null;
+  let ratio: number | null = null;
+  if (medianaCarteira7d != null && medianaCarteira7d > 0 && kWp > 0) {
+    ratio = (real7 / kWp) / medianaCarteira7d;
+  } else {
+    const esperado7 = esperadoDiaKwh(potenciaKwp, uf) * 7;
+    ratio = esperado7 > 0 ? real7 / esperado7 : null;
+  }
+  if (ratio == null) return null;
+  const pct = Math.round((1 - ratio) * 100);
+  return pct > 0 && pct < 100 ? pct : null;
 }
 
 export function classificarSistema(i: ClassificacaoInput): Classificacao {
@@ -80,15 +123,22 @@ export function classificarSistema(i: ClassificacaoInput): Classificacao {
   const esperado7 = esperadoDiaKwh(i.potenciaKwp, i.uf) * 7;
   const ratio = esperado7 > 0 ? i.realUltimos7 / esperado7 : 1;
 
+  // QUEDA pela régua relativa quando há mediana da carteira; senão HSP.
+  // O MILESTONE (mais abaixo) fica SEMPRE na régua absoluta — metade da
+  // carteira está acima da mediana, seria parabéns em massa.
+  const mediana = i.medianaCarteira7d ?? null;
+  const usaRelativa = mediana != null && mediana > 0 && kWp > 0 && i.realUltimos7 > 0;
+  const ratioQueda = usaRelativa ? (i.realUltimos7 / kWp) / mediana : ratio;
+
   const corte = i.corteAtencao ?? 0.70;
-  if (kWp > 0 && ratio < corte && i.realUltimos7 > 0) {
-    const pct = Math.round((1 - ratio) * 100);
+  if (kWp > 0 && ratioQueda < corte && i.realUltimos7 > 0) {
+    const pct = Math.round((1 - ratioQueda) * 100);
+    const texto = usaRelativa
+      ? `Geração últimos 7 dias ${pct}% abaixo da média da carteira. Pode ser sujeira/sombreamento — agendar limpeza.`
+      : `Geração últimos 7 dias ${pct}% ABAIXO do esperado. Pode ser sujeira/sombreamento — agendar limpeza.`;
     return {
       nivel: 'aviso',
-      alerta: {
-        tipo: 'queda_geracao', severidade: 'aviso',
-        texto: `Geração últimos 7 dias ${pct}% ABAIXO do esperado. Pode ser sujeira/sombreamento — agendar limpeza.`,
-      },
+      alerta: { tipo: 'queda_geracao', severidade: 'aviso', texto },
     };
   }
   if (kWp > 0 && ratio > 1.10) {

@@ -1,6 +1,6 @@
 // tests/monitoramento-classificacao.test.ts
 import { describe, it, expect } from 'vitest';
-import { classificarSistema, esperadoDiaKwh } from '../src/modules/monitoring/classificacao.js';
+import { classificarSistema, esperadoDiaKwh, medianaEspecifica7d, percentualQueda7d } from '../src/modules/monitoring/classificacao.js';
 
 describe('esperadoDiaKwh', () => {
   it('usa HSP 5.3 em GO e 5.2 fora, fator 0.80', () => {
@@ -126,6 +126,124 @@ describe('motivo no alerta de usina parada (fatia 1 — statusInversor, Thiago 2
       const c = classificarSistema({ ...base, statusInversor: s } as any);
       expect(c.alerta!.texto).toBe('Sem geração há 7 dias. Verificar inversor / conexão WiFi.');
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// Régua RELATIVA À CARTEIRA (Thiago 29/07): em julho/RJ a carteira
+// INTEIRA ficou ~40% abaixo da régua anual de HSP (inverno + nublado)
+// e o painel acendeu aviso em usina saudável. A mediana de kWh/kWp da
+// própria carteira desce junto com o clima — só destoa quem está pior
+// que as irmãs. Caso real: Carlos André 6,75 kWp / 90,4 kWh, mediana
+// da carteira ~13,4 → 84% da mediana = saudável (a régua antiga dizia
+// "51% ABAIXO").
+// ─────────────────────────────────────────────────────────────────
+describe('medianaEspecifica7d (kWh por kWp da carteira em 7 dias)', () => {
+  const s = (potenciaKwp: number | null, realUltimos7: number) => ({ potenciaKwp, realUltimos7 });
+
+  it('mediana dos kWh/kWp das usinas válidas (kWp>0 e geração>0)', () => {
+    // specs: 10, 14, 16, 18, 20 → mediana 16
+    const carteira = [s(5, 50), s(5, 70), s(5, 80), s(5, 90), s(5, 100)];
+    expect(medianaEspecifica7d(carteira)).toBeCloseTo(16);
+  });
+
+  it('ignora usina sem kWp, kWp zero e geração zero (parada não puxa a régua pra baixo)', () => {
+    const carteira = [
+      s(5, 50), s(5, 70), s(5, 80), s(5, 90), s(5, 100),
+      s(null, 120), s(0, 120), s(5, 0),
+    ];
+    expect(medianaEspecifica7d(carteira)).toBeCloseTo(16);
+  });
+
+  it('menos de 5 usinas válidas → null (carteira pequena não é referência)', () => {
+    expect(medianaEspecifica7d([s(5, 50), s(5, 70), s(5, 80), s(5, 90)])).toBeNull();
+    expect(medianaEspecifica7d([])).toBeNull();
+  });
+
+  it('número par de usinas → média dos dois do meio', () => {
+    // specs: 10, 14, 18, 20 + 12, 16 → ordenado 10,12,14,16,18,20 → mediana 15
+    const carteira = [s(5, 50), s(5, 60), s(5, 70), s(5, 80), s(5, 90), s(5, 100)];
+    expect(medianaEspecifica7d(carteira)).toBeCloseTo(15);
+  });
+});
+
+describe('classificarSistema com régua relativa à carteira (medianaCarteira7d)', () => {
+  // Caso real do print do Thiago: 6,75 kWp no RJ, 90,4 kWh em 7 dias.
+  // Régua antiga (HSP anual): esperado7 = 6,75×4,8×0,8×7 = 181,4 → "50% ABAIXO" (falso).
+  const carlosAndre = {
+    ativo: true, ultimoErro: null, potenciaKwp: 6.75, uf: 'RJ',
+    diasSemGeracao: 0, realUltimos7: 90.4,
+  };
+
+  it('caso real: 84% da mediana da carteira → OK (a régua antiga acusava 50% abaixo)', () => {
+    const semMediana = classificarSistema({ ...carlosAndre });
+    expect(semMediana.alerta?.tipo).toBe('queda_geracao'); // prova que a antiga acusava
+    const comMediana = classificarSistema({ ...carlosAndre, medianaCarteira7d: 16 });
+    expect(comMediana.nivel).toBe('ok');
+    expect(comMediana.alerta).toBeNull();
+  });
+
+  it('usina de fato ruim continua acendendo: 22% da mediana → aviso com % vs carteira', () => {
+    // Edson Alves: 6,75 kWp, 24,1 kWh → spec 3,57 / mediana 16 = 22% → 78% abaixo
+    const r = classificarSistema({
+      ...carlosAndre, realUltimos7: 24.1, medianaCarteira7d: 16,
+    });
+    expect(r.nivel).toBe('aviso');
+    expect(r.alerta?.tipo).toBe('queda_geracao');
+    expect(r.alerta?.texto).toBe(
+      'Geração últimos 7 dias 78% abaixo da média da carteira. Pode ser sujeira/sombreamento — agendar limpeza.',
+    );
+  });
+
+  it('respeita o corteAtencao da empresa também na régua relativa', () => {
+    // spec/mediana = 65%: corte 70% acusa, corte 60% não
+    const r70 = classificarSistema({ ...carlosAndre, realUltimos7: 6.75 * 16 * 0.65, medianaCarteira7d: 16 });
+    expect(r70.alerta?.tipo).toBe('queda_geracao');
+    const r60 = classificarSistema({
+      ...carlosAndre, realUltimos7: 6.75 * 16 * 0.65, medianaCarteira7d: 16, corteAtencao: 0.60,
+    });
+    expect(r60.alerta).toBeNull();
+  });
+
+  it('milestone (ACIMA do esperado) continua na régua ABSOLUTA — mediana não gera parabéns em meia carteira', () => {
+    // 25 kWh/kWp = 156% da mediana 16, mas abaixo de 110% do esperado HSP
+    // (esperado7 RJ = 26,88 kWh/kWp) → NÃO é milestone.
+    const r = classificarSistema({ ...carlosAndre, realUltimos7: 6.75 * 25, medianaCarteira7d: 16 });
+    expect(r.nivel).toBe('ok');
+    expect(r.alerta).toBeNull();
+  });
+
+  it('mediana ausente/null → régua antiga intacta (carteira pequena, zero regressão)', () => {
+    const r = classificarSistema({ ...carlosAndre, medianaCarteira7d: null });
+    expect(r.alerta?.texto).toContain('ABAIXO do esperado');
+  });
+
+  it('geração zero não usa régua relativa (segue pro fluxo de offline/dias sem geração)', () => {
+    const r = classificarSistema({
+      ...carlosAndre, realUltimos7: 0, diasSemGeracao: 7, medianaCarteira7d: 16,
+    });
+    expect(r.alerta?.tipo).toBe('sistema_offline');
+  });
+});
+
+// Helper único do "% de queda" — a Eva/abordagem usava régua absoluta e a
+// janela velha (com o hoje parcial), falando número diferente do painel.
+describe('percentualQueda7d (número que a Eva fala pro cliente)', () => {
+  it('com mediana da carteira: % relativo, igual ao painel', () => {
+    // 24,1 kWh / 6,75 kWp / mediana 16 → 78% abaixo
+    expect(percentualQueda7d(24.1, 6.75, 'RJ', 16)).toBe(78);
+  });
+  it('sem mediana: cai na régua absoluta de HSP', () => {
+    // 6,75 kWp RJ → esperado7 = 181,4; 90,4 → 50% abaixo
+    expect(percentualQueda7d(90.4, 6.75, 'RJ', null)).toBe(50);
+  });
+  it('acima da referência ou sem dado → null (abordar seria inventar número)', () => {
+    expect(percentualQueda7d(6.75 * 20, 6.75, 'RJ', 16)).toBeNull(); // acima da mediana
+    expect(percentualQueda7d(0, 6.75, 'RJ', 16)).toBeNull();          // sem geração
+    expect(percentualQueda7d(50, null, 'RJ', 16)).toBeNull();         // sem kWp
+  });
+  it('fronteira: exatamente na mediana → null (queda 0% não é queda)', () => {
+    expect(percentualQueda7d(6.75 * 16, 6.75, 'RJ', 16)).toBeNull();
   });
 });
 

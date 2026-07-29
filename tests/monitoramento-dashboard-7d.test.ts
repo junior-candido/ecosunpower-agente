@@ -28,7 +28,11 @@ function fakeSupabase(sistemas: any[], geracoes: any[]) {
 }
 
 describe('listarParaDashboard inclui geracao_7d_kwh', () => {
-  it('soma janela 7d separada de hoje/mes', async () => {
+  // 29/07: a janela 7d = exatamente 7 dias COMPLETOS [hoje-7, hoje). A
+  // janela antiga (>= hoje-7, sem teto) somava 8 datas-calendário contra um
+  // esperado de 7 dias (fencepost). O hoje parcial segue nos campos
+  // geracao_hoje_kwh e geracao_mes_kwh, só sai da régua de 7 dias.
+  it('soma janela 7d = 7 dias COMPLETOS, sem o hoje parcial', async () => {
     const hoje = new Date().toISOString().slice(0, 10);
     const ha5 = new Date(Date.now() - 5 * 864e5).toISOString().slice(0, 10);
     const svc = new MonitoringService(fakeSupabase(
@@ -39,7 +43,7 @@ describe('listarParaDashboard inclui geracao_7d_kwh', () => {
       ],
     ));
     const rows = await svc.listarParaDashboard();
-    expect(rows[0].geracao_hoje_kwh).toBe(8);
-    expect(rows[0].geracao_7d_kwh).toBe(28);
+    expect(rows[0].geracao_hoje_kwh).toBe(8);   // hoje continua no campo dele
+    expect(rows[0].geracao_7d_kwh).toBe(20);    // ...mas fora da janela 7d
   });
 });
