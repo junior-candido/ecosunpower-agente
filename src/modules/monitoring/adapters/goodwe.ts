@@ -346,6 +346,18 @@ interface MonitorRecord {
   location?: string;
 }
 
+// [Fase 2A — alerta com motivo] Status REAL da usina no SEMS
+// (QueryPowerStationMonitor.status: -1=offline · 0=em espera · 1=gerando · 2=falha).
+// 0 (standby, ex.: noite/madrugada) NÃO é problema → 'ok'.
+export function mapStatusGoodweStation(
+  status: number | null | undefined,
+): 'ok' | 'offline' | 'falha' | 'desconhecido' {
+  if (status === -1) return 'offline';
+  if (status === 2) return 'falha';
+  if (status === 0 || status === 1) return 'ok';
+  return 'desconhecido';
+}
+
 // QueryPowerStationMonitor → SiteResumo (sem credenciais; o adapter injeta).
 export function parseStationRecord(r: MonitorRecord): Omit<SiteResumo, 'credenciais'> | null {
   const id = (r.powerstation_id ?? '').trim();
@@ -415,9 +427,23 @@ export const goodweAdapter: MonitoringAdapter = {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([data, kwh]) => ({ data, geracao_kwh: Number(kwh.toFixed(3)) }));
 
-    // Status detalhado (offline real) fica pro cron/listSites; aqui, teve leitura
-    // no intervalo = ok, senão desconhecido (mesma simplicidade do FoxESS em prod).
-    return { ok: true, geracoes, statusInversor: 'desconhecido' }; // 'ok' era proxy (linhas na resposta ≠ inversor comunicando) — mentia no alerta com motivo; status real desta marca = fase 2
+    // [Fase 2A] status REAL da usina via QueryPowerStationMonitor (key = busca
+    // pelo próprio id). Best-effort: QUALQUER erro → 'desconhecido' — status
+    // nunca derruba o sync de geração.
+    let statusInversor: 'ok' | 'offline' | 'falha' | 'desconhecido' = 'desconhecido';
+    try {
+      const st = await semsPostAuth<QueryMonitorData>(
+        '/api/v2/PowerStationMonitor/QueryPowerStationMonitor',
+        { page_index: 1, page_size: 50, key: parsed.siteId, orderby: '', powerstation_type: '', powerstation_status: '' },
+        parsed,
+      );
+      if (st.ok) {
+        const lista = st.data.list ?? st.data.record ?? [];
+        const rec = (Array.isArray(lista) ? lista : []).find((x) => (x.powerstation_id ?? '').trim() === parsed.siteId);
+        statusInversor = mapStatusGoodweStation(rec?.status);
+      }
+    } catch { /* best-effort */ }
+    return { ok: true, geracoes, statusInversor };
   },
 
   // GetPlantPowerChart → curva de potência (kW) do dia da usina. Ao vivo.

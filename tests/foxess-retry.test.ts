@@ -56,17 +56,21 @@ describe('foxessAdapter.fetchGeneration — retry em erro passageiro', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(res502())                  // 1ª: tropeço da FoxESS
-      .mockResolvedValueOnce(resJson(200, reportOk));   // 2ª: já voltou
+      .mockResolvedValueOnce(resJson(200, reportOk))    // 2ª: já voltou
+      // 3ª: device/list da consulta de STATUS (fase 2A) — SN1 online
+      .mockResolvedValueOnce(resJson(200, { errno: 0, result: { data: [{ deviceSN: 'SN1', status: 1 }] } }));
     vi.stubGlobal('fetch', fetchMock);
 
     const p = foxessAdapter.fetchGeneration(CREDS, '2026-07-01', '2026-07-01');
     await vi.runAllTimersAsync(); // avança o backoff
     const r = await p;
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // report 2× (502 + sucesso) + device/list 1× (status real, fase 2A)
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.geracoes).toEqual([{ data: '2026-07-01', geracao_kwh: 1.5 }]);
+    expect(r.statusInversor).toBe('ok');
   });
 
   it('NÃO repete em erro de credencial (errno de auth não é passageiro)', async () => {

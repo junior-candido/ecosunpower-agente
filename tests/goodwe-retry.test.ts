@@ -69,6 +69,13 @@ describe('goodweAdapter.fetchGeneration — retry em erro passageiro', () => {
     const fetchMock = vi.fn().mockImplementation((url: string | URL) => {
       const u = String(url);
       if (u.includes('CrossLogin')) return Promise.resolve(resJson(200, loginOk));
+      // QueryPowerStationMonitor = consulta de STATUS (fase 2A) — usina gerando
+      if (u.includes('QueryPowerStationMonitor')) {
+        return Promise.resolve(resJson(200, {
+          hasError: false, code: 0,
+          data: { list: [{ powerstation_id: 'ps-uuid-1', status: 1 }] },
+        }));
+      }
       // GetChartByPlant: 1º tropeça (502), 2º já voltou (200)
       dataCalls++;
       return Promise.resolve(dataCalls === 1 ? res502() : resJson(200, chartOk));
@@ -79,11 +86,12 @@ describe('goodweAdapter.fetchGeneration — retry em erro passageiro', () => {
     await vi.runAllTimersAsync(); // avança o backoff
     const r = await p;
 
-    // A chamada de dados repetiu (login 1× + dados 2×)
+    // A chamada de dados repetiu (login 1× + dados 2×; status não conta aqui)
     expect(dataCalls).toBe(2);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.geracoes).toEqual([{ data: '2026-07-08', geracao_kwh: 1.5 }]);
+    expect(r.statusInversor).toBe('ok');
   });
 
   it('NÃO repete quando o login falha por credencial (hasError)', async () => {
