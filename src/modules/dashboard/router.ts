@@ -181,6 +181,8 @@ export function createDashboardRouter(
     engineerPhone?: string; // telefone do Junior — recebe o aviso "cliente fechou"
     infinitepayHandle?: string; // InfiniteTag pra gerar link de cobrança (peça 1 pagamento)
     appBaseUrl?: string;        // URL pública do app (pro webhook_url da InfinitePay)
+    calculadoraUrl?: string;        // ponte de acesso da calculadora (fatia 3a)
+    assinaturasSyncToken?: string;  // token compartilhado da ponte
     // Salva contrato+procuração no Drive/Workspace (vem pronto do index.ts quando
     // o Google está configurado). Retorna o link da pasta do cliente.
     salvarContratoNoDrive?: (input: {
@@ -374,14 +376,16 @@ b.onclick=async function(){
 
   router.get('/assinaturas', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
     try {
-      const { listarAssinaturas, listarProdutos } = await import('./assinaturas-store.js');
+      const { listarAssinaturas, listarProdutos, listarEmpresasSimples } = await import('./assinaturas-store.js');
       const { renderAssinaturasPage } = await import('./assinaturas-views.js');
-      const [produtos, assinaturas] = await Promise.all([listarProdutos(supabase), listarAssinaturas(supabase)]);
+      const [produtos, assinaturas, empresas] = await Promise.all([
+        listarProdutos(supabase), listarAssinaturas(supabase), listarEmpresasSimples(supabase),
+      ]);
       const q = req.query as Record<string, string | undefined>;
       // link só se for https de verdade (vem da URL — não confiar cego)
       const link = q.link && /^https:\/\//.test(q.link) ? q.link : undefined;
       const aviso = q.ok ? { tipo: 'ok' as const, texto: q.ok, link } : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
-      res.type('html').send(renderAssinaturasPage(produtos, assinaturas, hojeISO(), req.dashUser, aviso));
+      res.type('html').send(renderAssinaturasPage(produtos, assinaturas, hojeISO(), req.dashUser, aviso, empresas));
     } catch (err) {
       console.error('[assinaturas]', err);
       res.status(500).send('Falha ao carregar as assinaturas. A migration 090 já foi aplicada no banco?');
@@ -400,6 +404,7 @@ b.onclick=async function(){
         produtoId: String(b.produto), nome: String(b.nome).trim(),
         email: String(b.email ?? '').trim() || null, telefone: String(b.telefone ?? '').replace(/\D/g, '') || null,
         valorCentavos, limite: b.limite ? Number(b.limite) : null, venceEm: String(b.vence_em),
+        companyId: b.company_id ? String(b.company_id) : null,
       });
       res.redirect('/dashboard/assinaturas?ok=' + encodeURIComponent('Assinatura criada.'));
     } catch (err) {
@@ -438,9 +443,24 @@ b.onclick=async function(){
     try {
       const status = String(req.body?.status ?? '');
       if (!['ativa', 'travada', 'cancelada'].includes(status)) { res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Status inválido.')); return; }
-      const { setStatusAssinatura } = await import('./assinaturas-store.js');
-      await setStatusAssinatura(supabase, String(req.params.id), status as 'ativa' | 'travada' | 'cancelada');
-      res.redirect('/dashboard/assinaturas?ok=' + encodeURIComponent(status === 'travada' ? 'Assinatura travada.' : 'Assinatura liberada.'));
+      const { setStatusAssinatura, getAssinatura } = await import('./assinaturas-store.js');
+      const id = String(req.params.id);
+      await setStatusAssinatura(supabase, id, status as 'ativa' | 'travada' | 'cancelada');
+      // O acesso REAL acompanha (calculadora via ponte, monitoramento via
+      // companies.ativo). Falha da ponte não desfaz o status — avisa na tela.
+      const a = await getAssinatura(supabase, id);
+      let pontinha = '';
+      if (a && status !== 'cancelada') {
+        const { aplicarAcesso } = await import('../assinaturas-sync.js');
+        const ok = await aplicarAcesso(supabase, a, status === 'travada' ? 'travar' : 'liberar', {
+          env: { calculadoraUrl: options.calculadoraUrl, syncToken: options.assinaturasSyncToken },
+          avisarFalha: options.sendText && options.engineerPhone
+            ? (t) => options.sendText!(options.engineerPhone!, t).then(() => undefined)
+            : undefined,
+        });
+        if (!ok) pontinha = ' ⚠️ Mas a ponte de acesso falhou — tente de novo em instantes.';
+      }
+      res.redirect('/dashboard/assinaturas?ok=' + encodeURIComponent((status === 'travada' ? 'Assinatura travada.' : 'Assinatura liberada.') + pontinha));
     } catch (err) {
       console.error('[assinaturas/status]', err);
       res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Falha ao mudar o status.'));

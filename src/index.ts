@@ -6620,10 +6620,19 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         if (marcou) {
           console.log('[infinitepay] cobranca PAGA', cob.id, r.metodo, r.pagoCentavos);
           if (cob.assinaturaId) {
-            // Mensalidade: pagou → vencimento anda 1 mês e destrava se travada.
+            // Mensalidade: pagou → vencimento anda 1 mês, destrava se travada
+            // e o ACESSO real acompanha (ponte calculadora / companies.ativo).
             try {
-              const { renovarAssinatura } = await import('./modules/dashboard/assinaturas-store.js');
+              const { renovarAssinatura, getAssinatura } = await import('./modules/dashboard/assinaturas-store.js');
               await renovarAssinatura(supabase.getClient(), cob.assinaturaId, new Date().toISOString().slice(0, 10));
+              const a = await getAssinatura(supabase.getClient(), cob.assinaturaId);
+              if (a) {
+                const { aplicarAcesso } = await import('./modules/assinaturas-sync.js');
+                await aplicarAcesso(supabase.getClient(), a, 'liberar', {
+                  env: { calculadoraUrl: config.calculadoraUrl, syncToken: config.assinaturasSyncToken },
+                  avisarFalha: (t) => sendText(config.engineerPhone, t).then(() => undefined),
+                });
+              }
             } catch (err) {
               console.error('[infinitepay] renovarAssinatura falhou:', (err as Error).message);
             }
@@ -7986,6 +7995,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     metaService: metaWaba ?? undefined,
     engineerPhone: config.engineerPhone,
     infinitepayHandle: config.infinitepayHandle,
+    calculadoraUrl: config.calculadoraUrl,
+    assinaturasSyncToken: config.assinaturasSyncToken,
     appBaseUrl: config.appBaseUrl,
     // Salva contrato+procuração no Drive/Workspace (reusa o uploader do fechamento).
     salvarContratoNoDrive: closingDriveUploader
@@ -9045,7 +9056,18 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
           await supabase.salvarLinkCobranca(cob.id, link.url);
           return link.url;
         },
-        travar: (id) => store.setStatusAssinatura(client, id, 'travada'),
+        travar: async (id) => {
+          await store.setStatusAssinatura(client, id, 'travada');
+          // O acesso REAL acompanha a trava (ponte calculadora / companies.ativo).
+          const a = await store.getAssinatura(client, id);
+          if (a) {
+            const { aplicarAcesso } = await import('./modules/assinaturas-sync.js');
+            await aplicarAcesso(client, a, 'travar', {
+              env: { calculadoraUrl: config.calculadoraUrl, syncToken: config.assinaturasSyncToken },
+              avisarFalha: (t) => sendText(config.engineerPhone, t).then(() => undefined),
+            });
+          }
+        },
         enviarEmail: async (to, assunto, corpoHtml, ctaUrl) => {
           if (!sender) return;
           const html = montarMolduraEmail({

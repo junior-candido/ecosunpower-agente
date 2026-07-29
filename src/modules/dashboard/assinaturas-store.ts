@@ -109,6 +109,13 @@ export async function setStatusAssinatura(client: SupabaseClient, id: string, st
   if (error) throw new Error(`setStatusAssinatura: ${error.message}`);
 }
 
+/** Empresas (tenants) ativas pro select do form — id + nome, só isso. */
+export async function listarEmpresasSimples(client: SupabaseClient): Promise<{ id: string; nome: string }[]> {
+  const { data, error } = await client.from('companies').select('id, nome').eq('ativo', true).order('nome');
+  if (error) throw new Error(`listarEmpresasSimples: ${error.message}`);
+  return (data ?? []).map((c: any) => ({ id: c.id, nome: c.nome }));
+}
+
 // ---- Apoios do motor automático (fatia 2) ----
 
 /** Assinaturas ativas (o motor decide o que fazer com cada uma). */
