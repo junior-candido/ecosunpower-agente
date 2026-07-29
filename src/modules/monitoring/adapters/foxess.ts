@@ -268,7 +268,48 @@ export function parseFoxRealTime(
 // ============================================================================
 
 interface PlantListItem { stationID?: string; name?: string; ianaTimezone?: string }
-interface DeviceListItem { deviceSN?: string; stationID?: string; stationName?: string; deviceType?: string }
+interface DeviceListItem { deviceSN?: string; stationID?: string; stationName?: string; deviceType?: string; status?: number }
+
+// [Fase 2A — alerta com motivo] Status REAL da usina a partir do /op/v0/device/list
+// (status por device: 1=online · 2=falha · 3=offline). Função pura, testável:
+// falha em qualquer micro MEU vence tudo; um online já é 'ok' (usina comunicando);
+// todos offline = 'offline'; nada casou/sem status = 'desconhecido'.
+export function derivarStatusFoxDevices(
+  devices: Array<{ deviceSN?: string; status?: number }>,
+  deviceSNs: string[],
+): 'ok' | 'offline' | 'falha' | 'desconhecido' {
+  const meus = devices.filter((d) => d.deviceSN && deviceSNs.includes(d.deviceSN));
+  if (meus.length === 0) return 'desconhecido';
+  let online = 0, offline = 0;
+  for (const d of meus) {
+    if (d.status === 2) return 'falha';
+    if (d.status === 1) online++;
+    else if (d.status === 3) offline++;
+  }
+  if (online > 0) return 'ok';
+  if (offline === meus.length) return 'offline';
+  return 'desconhecido';
+}
+
+// Consulta best-effort do device/list pro status (mesma paginação do listSites).
+// QUALQUER erro → 'desconhecido' — status nunca derruba o sync de geração.
+async function statusRealFox(apiKey: string, deviceSNs: string[]): Promise<'ok' | 'offline' | 'falha' | 'desconhecido'> {
+  try {
+    const devices: DeviceListItem[] = [];
+    let pagina = 1, safety = 50;
+    while (safety-- > 0) {
+      const r = await foxPost<{ data?: DeviceListItem[] }>(apiKey, '/op/v0/device/list', { currentPage: pagina, pageSize: 100 });
+      if (!r.ok) return 'desconhecido';
+      const lista = Array.isArray(r.data?.data) ? r.data.data : [];
+      devices.push(...lista);
+      if (lista.length < 100) break;
+      pagina++;
+    }
+    return derivarStatusFoxDevices(devices, deviceSNs);
+  } catch {
+    return 'desconhecido';
+  }
+}
 
 export const foxessAdapter: MonitoringAdapter = {
   marca: 'foxess',
@@ -306,7 +347,9 @@ export const foxessAdapter: MonitoringAdapter = {
     const geracoes: GeracaoDiaria[] = [...porDia.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([data, kwh]) => ({ data, geracao_kwh: Number(kwh.toFixed(3)) }));
-    return { ok: true, geracoes, statusInversor: 'desconhecido' }; // 'ok' era proxy (linhas na resposta ≠ inversor comunicando) — mentia no alerta com motivo; status real desta marca = fase 2
+    // [Fase 2A] status REAL via device/list (best-effort; nunca derruba o sync)
+    const statusInversor = await statusRealFox(parsed.apiKey, parsed.deviceSNs);
+    return { ok: true, geracoes, statusInversor };
   },
 
   // Lista 1 SITE por USINA (plant/list) + agrupa os micros (device/list) por
