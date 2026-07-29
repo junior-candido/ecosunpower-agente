@@ -367,6 +367,103 @@ b.onclick=async function(){
 </script></body></html>`);
   });
 
+  // ----- ASSINATURAS (central de mensalidades — spec 2026-07-29) -----
+  // Fatia 1: lista + botões manuais. Avisos/trava automática = fatia 2.
+  const parseReais = (v: unknown): number => Math.round(Number(String(v ?? '').replace(/\./g, '').replace(',', '.')) * 100);
+  const hojeISO = () => new Date().toISOString().slice(0, 10);
+
+  router.get('/assinaturas', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
+    try {
+      const { listarAssinaturas, listarProdutos } = await import('./assinaturas-store.js');
+      const { renderAssinaturasPage } = await import('./assinaturas-views.js');
+      const [produtos, assinaturas] = await Promise.all([listarProdutos(supabase), listarAssinaturas(supabase)]);
+      const q = req.query as Record<string, string | undefined>;
+      // link só se for https de verdade (vem da URL — não confiar cego)
+      const link = q.link && /^https:\/\//.test(q.link) ? q.link : undefined;
+      const aviso = q.ok ? { tipo: 'ok' as const, texto: q.ok, link } : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
+      res.type('html').send(renderAssinaturasPage(produtos, assinaturas, hojeISO(), req.dashUser, aviso));
+    } catch (err) {
+      console.error('[assinaturas]', err);
+      res.status(500).send('Falha ao carregar as assinaturas. A migration 090 já foi aplicada no banco?');
+    }
+  });
+
+  router.post('/assinaturas/nova', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    try {
+      const { criarAssinatura } = await import('./assinaturas-store.js');
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const valorCentavos = parseReais(b.valor);
+      if (!b.produto || !String(b.nome ?? '').trim() || !(valorCentavos > 0) || !b.vence_em) {
+        res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Preencha produto, nome, valor e vencimento.')); return;
+      }
+      await criarAssinatura(supabase, {
+        produtoId: String(b.produto), nome: String(b.nome).trim(),
+        email: String(b.email ?? '').trim() || null, telefone: String(b.telefone ?? '').replace(/\D/g, '') || null,
+        valorCentavos, limite: b.limite ? Number(b.limite) : null, venceEm: String(b.vence_em),
+      });
+      res.redirect('/dashboard/assinaturas?ok=' + encodeURIComponent('Assinatura criada.'));
+    } catch (err) {
+      console.error('[assinaturas/nova]', err);
+      res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Falha ao criar assinatura.'));
+    }
+  });
+
+  router.post('/assinaturas/:id/cobrar', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    try {
+      const handle = options.infinitepayHandle;
+      if (!handle) { res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Falta INFINITEPAY_HANDLE no servidor.')); return; }
+      const { getAssinatura } = await import('./assinaturas-store.js');
+      const a = await getAssinatura(supabase, String(req.params.id));
+      if (!a) { res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Assinatura não achada.')); return; }
+      const descricao = `${a.produtoNome} — mensalidade (${a.nome})`;
+      const cob = await supabaseService.criarCobranca({ companyId: req.dashUser!.companyId, leadId: null, assinaturaId: a.id, descricao, valorCentavos: a.valorCentavos });
+      const { criarLinkPagamento } = await import('../infinitepay.js');
+      const base = (options.appBaseUrl ?? '').replace(/\/$/, '');
+      const r = await criarLinkPagamento({
+        handle, orderNsu: cob.orderNsu, itens: [{ descricao, valorCentavos: a.valorCentavos }],
+        redirectUrl: base ? `${base}/pago` : undefined,
+        webhookUrl: base ? `${base}/webhook/infinitepay` : undefined,
+        cliente: { nome: a.nome, email: a.email ?? undefined, telefone: a.telefone ?? undefined },
+      });
+      if (!r.ok) { res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent(`Falha ao gerar link: ${r.reason}`)); return; }
+      await supabaseService.salvarLinkCobranca(cob.id, r.url);
+      res.redirect('/dashboard/assinaturas?ok=' + encodeURIComponent('Link gerado — manda pro assinante:') + '&link=' + encodeURIComponent(r.url));
+    } catch (err) {
+      console.error('[assinaturas/cobrar]', err);
+      res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Falha ao gerar cobrança.'));
+    }
+  });
+
+  router.post('/assinaturas/:id/status', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    try {
+      const status = String(req.body?.status ?? '');
+      if (!['ativa', 'travada', 'cancelada'].includes(status)) { res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Status inválido.')); return; }
+      const { setStatusAssinatura } = await import('./assinaturas-store.js');
+      await setStatusAssinatura(supabase, String(req.params.id), status as 'ativa' | 'travada' | 'cancelada');
+      res.redirect('/dashboard/assinaturas?ok=' + encodeURIComponent(status === 'travada' ? 'Assinatura travada.' : 'Assinatura liberada.'));
+    } catch (err) {
+      console.error('[assinaturas/status]', err);
+      res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Falha ao mudar o status.'));
+    }
+  });
+
+  router.post('/assinaturas/:id/editar', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    try {
+      const { editarAssinatura } = await import('./assinaturas-store.js');
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const campos: { valorCentavos?: number; telefone?: string | null; limite?: number | null; venceEm?: string } = {};
+      if (b.valor) { const v = parseReais(b.valor); if (v > 0) campos.valorCentavos = v; }
+      if (b.telefone !== undefined) campos.telefone = String(b.telefone).replace(/\D/g, '') || null;
+      if (b.limite !== undefined) campos.limite = b.limite ? Number(b.limite) : null;
+      if (b.vence_em) campos.venceEm = String(b.vence_em);
+      await editarAssinatura(supabase, String(req.params.id), campos);
+      res.redirect('/dashboard/assinaturas?ok=' + encodeURIComponent('Assinatura atualizada.'));
+    } catch (err) {
+      console.error('[assinaturas/editar]', err);
+      res.redirect('/dashboard/assinaturas?erro=' + encodeURIComponent('Falha ao salvar.'));
+    }
+  });
+
   // ----- USUARIOS (gestao de pessoas + papeis; so admin/gestao de usuarios) -----
   const ECOSUN = '00000000-0000-0000-0000-000000000001';
 

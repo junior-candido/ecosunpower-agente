@@ -6619,6 +6619,15 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         const marcou = await supabase.marcarCobrancaPaga(cob.id, { transactionNsu: wh.transaction_nsu, invoiceSlug: wh.invoice_slug, metodo: r.metodo, pagoCentavos: r.pagoCentavos });
         if (marcou) {
           console.log('[infinitepay] cobranca PAGA', cob.id, r.metodo, r.pagoCentavos);
+          if (cob.assinaturaId) {
+            // Mensalidade: pagou → vencimento anda 1 mês e destrava se travada.
+            try {
+              const { renovarAssinatura } = await import('./modules/dashboard/assinaturas-store.js');
+              await renovarAssinatura(supabase.getClient(), cob.assinaturaId, new Date().toISOString().slice(0, 10));
+            } catch (err) {
+              console.error('[infinitepay] renovarAssinatura falhou:', (err as Error).message);
+            }
+          }
           const reais = ((r.pagoCentavos ?? cob.valorCentavos) / 100).toFixed(2).replace('.', ',');
           try { await sendText(config.engineerPhone, `💰 Pagamento confirmado! R$ ${reais} via ${r.metodo === 'pix' ? 'Pix' : 'cartão'} (InfinitePay).`); } catch { /* best-effort */ }
         }
