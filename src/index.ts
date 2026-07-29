@@ -6587,6 +6587,44 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
   });
 
   // ==========================================================================
+  // INFINITEPAY — webhook de confirmação de pagamento (Checkout Integrado)
+  // ==========================================================================
+  // Em cada link a gente manda webhook_url apontando pra cá. A InfinitePay NÃO
+  // assina o webhook (sem HMAC) → reconfirmamos no payment_check antes de marcar
+  // pago (webhookConfirmado). ACK 200 = processado/ignorado; 400 = pede RETRY
+  // (erro de verificação ou interno — nunca perde um pagamento de verdade).
+  app.post('/webhook/infinitepay', async (req, res) => {
+    const ack = () => res.status(200).json({ success: true, message: null });
+    try {
+      const wh = (req.body ?? {}) as { order_nsu?: string; transaction_nsu?: string; invoice_slug?: string; amount?: number };
+      if (!wh.order_nsu || !wh.transaction_nsu || !wh.invoice_slug) return ack();
+      const handle = config.infinitepayHandle;
+      if (!handle) return ack(); // cobrança InfinitePay desligada
+      const cob = await supabase.getCobrancaByOrderNsu(String(wh.order_nsu));
+      if (!cob || cob.status !== 'pendente') return ack(); // não é nossa OU já paga
+      const { verificarPagamento, webhookConfirmado } = await import('./modules/infinitepay.js');
+      const verificar = (p: { orderNsu: string; transactionNsu: string; slug: string }) => verificarPagamento({ handle, ...p });
+      const r = await webhookConfirmado(
+        { order_nsu: wh.order_nsu, transaction_nsu: wh.transaction_nsu, invoice_slug: wh.invoice_slug, amount: wh.amount },
+        cob.valorCentavos, verificar,
+      );
+      if (r.erroVerificacao) { res.status(400).json({ success: false, message: 'verificacao indisponivel — retry' }); return; }
+      if (r.confirmado) {
+        const marcou = await supabase.marcarCobrancaPaga(cob.id, { transactionNsu: wh.transaction_nsu, invoiceSlug: wh.invoice_slug, metodo: r.metodo, pagoCentavos: r.pagoCentavos });
+        if (marcou) {
+          console.log('[infinitepay] cobranca PAGA', cob.id, r.metodo, r.pagoCentavos);
+          const reais = ((r.pagoCentavos ?? cob.valorCentavos) / 100).toFixed(2).replace('.', ',');
+          try { await sendText(config.engineerPhone, `💰 Pagamento confirmado! R$ ${reais} via ${r.metodo === 'pix' ? 'Pix' : 'cartão'} (InfinitePay).`); } catch { /* best-effort */ }
+        }
+      }
+      return ack();
+    } catch (err) {
+      console.error('[webhook/infinitepay]', err);
+      res.status(400).json({ success: false, message: 'erro interno — retry' }); // pede retry, não perde pagamento
+    }
+  });
+
+  // ==========================================================================
   // WHATSAPP BUSINESS CLOUD API (WABA) — webhook oficial Meta
   // ==========================================================================
   // Configurar no Meta Developers app -> WhatsApp -> Configuracao -> Webhook:
@@ -7932,6 +7970,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     proposalAssistant,
     metaService: metaWaba ?? undefined,
     engineerPhone: config.engineerPhone,
+    infinitepayHandle: config.infinitepayHandle,
+    appBaseUrl: config.appBaseUrl,
     // Salva contrato+procuração no Drive/Workspace (reusa o uploader do fechamento).
     salvarContratoNoDrive: closingDriveUploader
       ? async (input) => {

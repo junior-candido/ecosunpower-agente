@@ -89,6 +89,13 @@ describe('webhookConfirmado (blindagem anti-fraude)', () => {
     const r = await webhookConfirmado(wh, 2011582, check as any);
     expect(r.confirmado).toBe(false);
   });
+
+  it('erro na verificação (rede) → não confirma MAS pede retry (erroVerificacao)', async () => {
+    const check = vi.fn().mockResolvedValue({ ok: false, reason: 'network: x' });
+    const r = await webhookConfirmado(wh, 2011582, check as any);
+    expect(r.confirmado).toBe(false);
+    expect(r.erroVerificacao).toBe(true);
+  });
 });
 
 describe('criarLinkPagamento (rede, com fetch injetado)', () => {

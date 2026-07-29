@@ -151,9 +151,12 @@ export async function webhookConfirmado(
   wh: WebhookInfinitePay,
   valorEsperadoCentavos: number,
   verificar: VerificarFn,
-): Promise<{ confirmado: boolean; metodo?: string; pagoCentavos?: number }> {
+): Promise<{ confirmado: boolean; erroVerificacao?: boolean; metodo?: string; pagoCentavos?: number }> {
   const r = await verificar({ orderNsu: wh.order_nsu, transactionNsu: wh.transaction_nsu, slug: wh.invoice_slug });
-  if (!r.ok || !r.pago) return { confirmado: false };
+  // Não deu pra CONFIRMAR (rede/erro no payment_check): não marca pago, mas
+  // sinaliza pro webhook pedir RETRY (senão perde um pagamento de verdade).
+  if (!r.ok) return { confirmado: false, erroVerificacao: true };
+  if (!r.pago) return { confirmado: false };
   if (typeof r.pagoCentavos === 'number' && r.pagoCentavos < valorEsperadoCentavos) return { confirmado: false };
   return { confirmado: true, metodo: r.metodo, pagoCentavos: r.pagoCentavos };
 }

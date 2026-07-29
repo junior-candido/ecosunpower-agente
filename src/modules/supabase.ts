@@ -1322,6 +1322,49 @@ export class SupabaseService {
     return { id: data.id, expiresAt: data.expires_at };
   }
 
+  // ==========================================================================
+  // COBRANÇAS (InfinitePay) — peça 1 do pagamento. Rodam pelo service-role
+  // (webhook sem sessão + billing admin); a RLS da 089 protege a leitura.
+  // ==========================================================================
+
+  /** Cria uma cobrança PENDENTE; o banco gera id + order_nsu. */
+  async criarCobranca(dados: { companyId: string | null; leadId?: string | null; descricao: string; valorCentavos: number }): Promise<{ id: string; orderNsu: string }> {
+    const { data, error } = await this.getClient()
+      .from('cobrancas')
+      .insert({ company_id: dados.companyId, lead_id: dados.leadId ?? null, descricao: dados.descricao, valor_centavos: dados.valorCentavos })
+      .select('id, order_nsu')
+      .single();
+    if (error) throw new Error(`criarCobranca: ${error.message}`);
+    return { id: data.id as string, orderNsu: data.order_nsu as string };
+  }
+
+  /** Grava o link de pagamento gerado pela InfinitePay. */
+  async salvarLinkCobranca(id: string, linkUrl: string): Promise<void> {
+    const { error } = await this.getClient().from('cobrancas').update({ link_url: linkUrl }).eq('id', id);
+    if (error) throw new Error(`salvarLinkCobranca: ${error.message}`);
+  }
+
+  /** Busca a cobrança pelo order_nsu (usado pelo webhook da InfinitePay). */
+  async getCobrancaByOrderNsu(orderNsu: string): Promise<{ id: string; valorCentavos: number; status: string; companyId: string | null; leadId: string | null } | null> {
+    const { data } = await this.getClient()
+      .from('cobrancas').select('id, valor_centavos, status, company_id, lead_id')
+      .eq('order_nsu', orderNsu).maybeSingle();
+    if (!data) return null;
+    return { id: data.id, valorCentavos: data.valor_centavos, status: data.status, companyId: data.company_id, leadId: data.lead_id };
+  }
+
+  /** Marca a cobrança como PAGA. IDEMPOTENTE: só age se ainda 'pendente'
+   *  (webhook duplicado não re-processa). Devolve true se marcou agora. */
+  async marcarCobrancaPaga(id: string, info: { transactionNsu?: string; invoiceSlug?: string; metodo?: string; pagoCentavos?: number }): Promise<boolean> {
+    const { data, error } = await this.getClient()
+      .from('cobrancas')
+      .update({ status: 'pago', transaction_nsu: info.transactionNsu ?? null, invoice_slug: info.invoiceSlug ?? null, metodo: info.metodo ?? null, pago_centavos: info.pagoCentavos ?? null, pago_em: new Date().toISOString() })
+      .eq('id', id).eq('status', 'pendente')
+      .select('id');
+    if (error) throw new Error(`marcarCobrancaPaga: ${error.message}`);
+    return (data?.length ?? 0) > 0;
+  }
+
   async getPropostaInputBySlug(slug: string): Promise<{
     dadosInput: Record<string, unknown> | null;
     numeroProposta: string;
