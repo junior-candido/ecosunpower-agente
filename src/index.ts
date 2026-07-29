@@ -8994,6 +8994,76 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setInterval(runEmailSeq, 15 * 60 * 1000);
     setTimeout(runEmailSeq, 3 * 60 * 1000); // primeira passada 3min apos boot
     console.log('[email-seq] scheduler started (15min, dias uteis 9-20 BRT)');
+  }
+
+  // ===== ASSINATURAS: motor de avisos/trava (fatia 2 — regua 8d/2d/venceu+3d) =====
+  // 1x/dia apos 9h BRT, idempotente (lock em app_flags + UNIQUE por aviso).
+  if (config.infinitepayHandle) {
+    const rodarMotorAssinaturas = async () => {
+      const now = new Date();
+      const brtHour = (now.getUTCHours() - 3 + 24) % 24;
+      if (brtHour < 9) return;
+      const hoje = new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const { data: flag } = await supabase.getClient().from('app_flags')
+        .select('value').eq('key', 'assinaturas_motor_last_run').maybeSingle();
+      if (flag?.value === hoje) return;
+      const { error: lockErr } = await supabase.getClient().from('app_flags')
+        .upsert({ key: 'assinaturas_motor_last_run', value: hoje }, { onConflict: 'key' });
+      if (lockErr) { console.warn('[assinaturas-motor] lock falhou:', lockErr.message); return; }
+
+      const { processarAssinaturas } = await import('./modules/assinaturas-motor.js');
+      const store = await import('./modules/dashboard/assinaturas-store.js');
+      const { criarLinkPagamento } = await import('./modules/infinitepay.js');
+      const { montarMolduraEmail } = await import('./modules/email/email-moldura.js');
+      const { EmailSender } = await import('./modules/email/resend-client.js');
+      const client = supabase.getClient();
+      const base = (config.appBaseUrl ?? '').replace(/\/$/, '');
+      const sender = process.env.RESEND_API_KEY
+        ? new EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '')
+        : null;
+
+      const r = await processarAssinaturas({
+        listarAtivas: () => store.listarAtivas(client),
+        avisosDoCiclo: (id, ciclo) => store.avisosDoCiclo(client, id, ciclo),
+        registrarAviso: async (id, tipo, ciclo) => {
+          const a = await store.getAssinatura(client, id);
+          await store.registrarAviso(client, id, a?.companyId ?? null, tipo, ciclo);
+        },
+        linkDaCobranca: async (a) => {
+          const existente = await store.linkPendente(client, a.id);
+          if (existente) return existente;
+          const descricao = `${a.produtoNome} — mensalidade (${a.nome})`;
+          const cob = await supabase.criarCobranca({ companyId: null, assinaturaId: a.id, descricao, valorCentavos: a.valorCentavos });
+          const link = await criarLinkPagamento({
+            handle: config.infinitepayHandle!, orderNsu: cob.orderNsu,
+            itens: [{ descricao, valorCentavos: a.valorCentavos }],
+            redirectUrl: base ? `${base}/pago` : undefined,
+            webhookUrl: base ? `${base}/webhook/infinitepay` : undefined,
+            cliente: { nome: a.nome, email: a.email ?? undefined, telefone: a.telefone ?? undefined },
+          });
+          if (!link.ok) { console.warn('[assinaturas-motor] link falhou:', link.reason); return null; }
+          await supabase.salvarLinkCobranca(cob.id, link.url);
+          return link.url;
+        },
+        travar: (id) => store.setStatusAssinatura(client, id, 'travada'),
+        enviarEmail: async (to, assunto, corpoHtml, ctaUrl) => {
+          if (!sender) return;
+          const html = montarMolduraEmail({
+            conteudoHtml: corpoHtml, titulo: assunto,
+            ctaLabel: ctaUrl ? 'Pagar agora (Pix ou cartão)' : undefined,
+            ctaUrl: ctaUrl ?? undefined,
+            linkDescadastro: 'https://ecosunpower.eng.br',
+          });
+          await sender.enviar({ to, subject: assunto, html });
+        },
+        enviarZap: (tel, texto) => sendText(tel, texto).then(() => undefined),
+        avisarJunior: (texto) => sendText(config.engineerPhone, texto).then(() => undefined),
+      }, hoje);
+      if (r.avisos + r.travadas > 0) console.log(`[assinaturas-motor] ${r.avisos} avisos, ${r.travadas} travadas (${hoje})`);
+    };
+    setInterval(() => rodarMotorAssinaturas().catch((e) => console.error('[assinaturas-motor]', e)), 60 * 60 * 1000);
+    setTimeout(() => rodarMotorAssinaturas().catch((e) => console.error('[assinaturas-motor]', e)), 4 * 60 * 1000);
+    console.log('[assinaturas-motor] scheduler ligado (1x/dia apos 9h BRT, idempotente)');
 
     // Inscricao automatica na jornada de e-mail: a cada 1h, varre TODOS os
     // leads abertos e elegiveis (base existente + leads novos de qualquer
