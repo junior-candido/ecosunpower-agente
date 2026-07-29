@@ -119,6 +119,7 @@ export interface MonitoringAdapter {
   // - Deye:      { appId, appSecret, email, password, dataCenter, companyId? }
   // - NEP:       { jwt } (sem o sid)
   // - ABB:       { userId, password, apiKey } (sem o plantEntityID)
+  // - SAJ:       { username, password, region } (sem o site_id)
   // Retorna null se as credenciais por planta nao carregam info suficiente da
   // conta (adapter nao suporta discovery).
   extractAccountCreds?(credsPlanta: Record<string, unknown>): Record<string, unknown> | null;

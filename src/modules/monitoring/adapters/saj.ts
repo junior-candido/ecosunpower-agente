@@ -53,6 +53,9 @@ const ROOTS: Record<string, string> = {
 export function sajSignature(params: Record<string, string | number>): Record<string, string | number> {
   const signParams = Object.keys(params).join(',');
   const ordenado = Object.keys(params).sort().map((k) => `${k}=${params[k]}`).join('&');
+  // latin1 casa com o app (que assina bytes de 1 char). Hoje nenhum param
+  // assinado tem não-ASCII (só ids/datas/nºs); se um dia tiver, conferir se o
+  // backend espera UTF-8 aqui.
   const h = crypto.createHash('md5').update(Buffer.from(`${ordenado}&key=${QUERY_SIGN_KEY}`, 'latin1')).digest('hex');
   const signature = crypto.createHash('sha1').update(h, 'utf8').digest('hex').toUpperCase();
   return { ...params, signature, signParams };
@@ -65,10 +68,16 @@ export function sajEncryptPassword(plain: string): string {
   return Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]).toString('hex');
 }
 
+// Data local de Brasília (UTC-3) — o portal valida clientDate contra o relógio
+// dele; toISOString() é UTC e às 21h-24h locais já viraria "amanhã".
+function dataBrasilia(): string {
+  return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
 function paramsBase(): Record<string, string | number> {
   return {
     appProjectName: 'elekeeper',
-    clientDate: new Date().toISOString().slice(0, 10),
+    clientDate: dataBrasilia(),
     lang: 'en',
     timeStamp: Date.now(),
     random: crypto.randomBytes(16).toString('hex'),
@@ -136,7 +145,8 @@ export function parseCommonChart(
   for (let i = 0; i < dias.length && i < serie.dataList.length; i++) {
     const dia = Number(dias[i]);
     const kwh = Number(serie.dataList[i]);
-    if (!Number.isFinite(dia) || dia < 1 || dia > 31 || !Number.isFinite(kwh)) continue;
+    // kwh < 0 = lixo do portal (geração nunca é negativa) → não entra no banco
+    if (!Number.isFinite(dia) || dia < 1 || dia > 31 || !Number.isFinite(kwh) || kwh < 0) continue;
     const data = `${mes}-${String(dia).padStart(2, '0')}`;
     if (data < inicio || data > fim) continue;
     out.push({ data, geracao_kwh: kwh });
@@ -169,13 +179,29 @@ export function parseDataInstalacaoSaj(createDate: string | null | undefined): s
 
 const TIMEOUT_MS = 20_000;
 
+// RATE LIMITER (module-level) — o limite do portal SAJ não é documentado e a
+// carteira tem 85 plantas (+ backfill de até 10 anos = ~120 chamadas por
+// planta). Espaça TODAS as chamadas em ≥300ms pra não martelar o portal —
+// mesmo padrão do Solis, mas folgado (a SAJ não publicou 1 req/s).
+const MIN_INTERVAL_MS = 300;
+let gate: Promise<void> = Promise.resolve();
+function throttle(): Promise<void> {
+  const prev = gate;
+  let release!: () => void;
+  gate = new Promise<void>((r) => { release = r; });
+  return prev.then(async () => {
+    await new Promise((r) => setTimeout(r, MIN_INTERVAL_MS));
+    release();
+  });
+}
+
 interface Envelope<T> { errCode?: number; errMsg?: string; data?: T }
 
 function cacheKey(creds: SajCreds): string {
   return `saj|${creds.region}|${creds.username}|${crypto.createHash('sha256').update(creds.password).digest('hex').slice(0, 12)}`;
 }
 
-async function login(creds: SajCreds): Promise<{ ok: true; token: string } | { ok: false; reason: string; invalidCredentials?: boolean }> {
+async function login(creds: SajCreds): Promise<{ ok: true; token: string } | { ok: false; reason: string; status?: number; invalidCredentials?: boolean }> {
   const form = new URLSearchParams({
     ...Object.fromEntries(Object.entries(sajSignature(paramsBase())).map(([k, v]) => [k, String(v)])),
     username: creds.username,
@@ -183,20 +209,28 @@ async function login(creds: SajCreds): Promise<{ ok: true; token: string } | { o
     rememberMe: 'false',
     loginType: '1',
   });
-  const resp = await fetchWithTimeout(`${ROOTS[creds.region]}/api/v1/sys/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: form.toString(),
-  }, TIMEOUT_MS);
+  let resp: Response;
+  try {
+    await throttle();
+    resp = await fetchWithTimeout(`${ROOTS[creds.region]}/api/v1/sys/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+    }, TIMEOUT_MS);
+  } catch (err) {
+    // queda de rede/timeout: prefixo network: → isTransientFailure retenta
+    return { ok: false, reason: `network: SAJ login ${(err as Error).message}` };
+  }
   const json = (await resp.json().catch(() => null)) as Envelope<{ token?: string; tokenHead?: string }> | null;
-  if (!json) return { ok: false, reason: `SAJ login HTTP ${resp.status}: resposta não-JSON` };
+  // status no retorno pra o retry pegar 5xx/429 do gateway (contrato do retry.ts)
+  if (!json) return { ok: false, reason: `SAJ login HTTP ${resp.status}: resposta não-JSON`, status: resp.status };
   if (json.errCode !== 0) {
     // 10003 = conta/senha incorreta (mensagem do portal) → não retentar
     const invalid = json.errCode === 10003;
-    return { ok: false, reason: `SAJ login errCode=${json.errCode}: ${json.errMsg ?? ''}`, invalidCredentials: invalid };
+    return { ok: false, reason: `SAJ login errCode=${json.errCode}: ${json.errMsg ?? ''}`, status: resp.status, invalidCredentials: invalid };
   }
   const token = json.data?.token ? `${json.data.tokenHead ?? 'Bearer '}${json.data.token}` : null;
-  if (!token) return { ok: false, reason: 'SAJ login sem token na resposta' };
+  if (!token) return { ok: false, reason: 'SAJ login sem token na resposta', status: resp.status };
   return { ok: true, token };
 }
 
@@ -207,33 +241,48 @@ async function tokenDe(creds: SajCreds, forceRefresh = false) {
 // 5xx/429 nas chamadas já autenticadas = tropeço do servidor SAJ → retry
 const httpTransiente = (r: { status: number }): boolean => TRANSIENT_HTTP_STATUS.has(r.status);
 
-// true = resposta indica token vencido/ausente → vale re-logar UMA vez
+// true = resposta indica token vencido/ausente → vale re-logar UMA vez.
+// Só conta como token vencido se a resposta também for ERRO (errCode!=0) —
+// senão uma msg de sucesso com a palavra "token" forçaria re-login à toa.
 function tokenVencido(status: number, json: Envelope<unknown> | null): boolean {
   if (status === 401) return true;
   const msg = (json?.errMsg ?? '').toLowerCase();
-  return msg.includes('token') || msg.includes('login') && json?.errCode !== 0;
+  return (msg.includes('token') || msg.includes('login')) && json?.errCode !== 0;
 }
 
+// Queda de rede/timeout vira status 503 (∈ TRANSIENT_HTTP_STATUS) pra o
+// retryTransient re-tentar — senão um blip de conexão jogava a usina no
+// vermelho por um ciclo inteiro (a dor que o util de retry existe pra evitar).
 async function getV1<T>(creds: SajCreds, token: string, path: string, extra: Record<string, string | number>): Promise<{ status: number; json: Envelope<T> | null }> {
   const qs = new URLSearchParams(
     Object.entries(sajSignature({ ...extra, ...paramsBase() })).map(([k, v]) => [k, String(v)]),
   ).toString();
-  const resp = await fetchWithTimeout(`${ROOTS[creds.region]}/api/v1${path}?${qs}`, {
-    headers: { Authorization: token },
-  }, TIMEOUT_MS);
-  const json = (await resp.json().catch(() => null)) as Envelope<T> | null;
-  return { status: resp.status, json };
+  try {
+    await throttle();
+    const resp = await fetchWithTimeout(`${ROOTS[creds.region]}/api/v1${path}?${qs}`, {
+      headers: { Authorization: token },
+    }, TIMEOUT_MS);
+    const json = (await resp.json().catch(() => null)) as Envelope<T> | null;
+    return { status: resp.status, json };
+  } catch {
+    return { status: 503, json: null };
+  }
 }
 
 async function postV2<T>(creds: SajCreds, token: string, path: string, body: Record<string, string | number>): Promise<{ status: number; json: Envelope<T> | null }> {
   const payload = sajSignature({ ...body, ...paramsBase() });
-  const resp = await fetchWithTimeout(`${ROOTS[creds.region]}/api/v2${path}`, {
-    method: 'POST',
-    headers: { Authorization: token, 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  }, TIMEOUT_MS);
-  const json = (await resp.json().catch(() => null)) as Envelope<T> | null;
-  return { status: resp.status, json };
+  try {
+    await throttle();
+    const resp = await fetchWithTimeout(`${ROOTS[creds.region]}/api/v2${path}`, {
+      method: 'POST',
+      headers: { Authorization: token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }, TIMEOUT_MS);
+    const json = (await resp.json().catch(() => null)) as Envelope<T> | null;
+    return { status: resp.status, json };
+  } catch {
+    return { status: 503, json: null };
+  }
 }
 
 // ============================================================================
@@ -270,7 +319,10 @@ export const sajAdapter: MonitoringAdapter = {
         if (tokenVencido(r.status, r.json)) {
           tok = await tokenDe(creds, true);
           if (!tok.ok) return { ok: false, reason: tok.reason, invalidCredentials: tok.invalidCredentials };
-          r = await postV2<unknown>(creds, tok.token, '/monitor/plant/chart/getCommonChartData', corpo);
+          r = await retryTransient(
+            () => postV2<unknown>(creds, (tok as { token: string }).token, '/monitor/plant/chart/getCommonChartData', corpo),
+            httpTransiente,
+          );
         }
         if (r.json?.errCode !== 0) {
           return { ok: false, reason: `SAJ getCommonChartData ${mes}: HTTP ${r.status} errCode=${r.json?.errCode}: ${r.json?.errMsg ?? ''}` };
@@ -298,26 +350,41 @@ export const sajAdapter: MonitoringAdapter = {
     if ('error' in creds) return { ok: false, reason: creds.error, invalidCredentials: true };
 
     try {
-      const tok = await tokenDe(creds);
+      let tok = await tokenDe(creds);
       if (!tok.ok) return { ok: false, reason: tok.reason, invalidCredentials: tok.invalidCredentials };
 
       const sites: SiteResumo[] = [];
+      const vistos = new Set<string>(); // dedupe por plantUid (API pode clampar a página)
       let pageNo = 1;
       let total = Infinity;
+      let jaRelogou = false;
       // pageSize 100; teto de 50 páginas = 5000 plantas (backstop anti-loop)
       while (sites.length < total && pageNo <= 50) {
-        const r = await retryTransient(
-          () => getV1<{ total?: number; list?: PlantaLista[] }>(creds, tok.token, '/monitor/plant/getPlantList', { pageNo, pageSize: 100 }),
+        let r = await retryTransient(
+          () => getV1<{ total?: number; list?: PlantaLista[] }>(creds, (tok as { token: string }).token, '/monitor/plant/getPlantList', { pageNo, pageSize: 100 }),
           httpTransiente,
         );
+        if (tokenVencido(r.status, r.json) && !jaRelogou) {
+          jaRelogou = true;
+          tok = await tokenDe(creds, true);
+          if (!tok.ok) return { ok: false, reason: tok.reason, invalidCredentials: tok.invalidCredentials };
+          r = await retryTransient(
+            () => getV1<{ total?: number; list?: PlantaLista[] }>(creds, (tok as { token: string }).token, '/monitor/plant/getPlantList', { pageNo, pageSize: 100 }),
+            httpTransiente,
+          );
+        }
         if (r.json?.errCode !== 0) {
           return { ok: false, reason: `SAJ getPlantList: HTTP ${r.status} errCode=${r.json?.errCode}: ${r.json?.errMsg ?? ''}` };
         }
         const lista = r.json.data?.list ?? [];
-        total = Number(r.json.data?.total ?? lista.length);
+        const totalApi = Number(r.json.data?.total);
+        total = Number.isFinite(totalApi) ? totalApi : sites.length; // total ausente → para nesta página
         if (lista.length === 0) break;
+        let novos = 0;
         for (const p of lista) {
-          if (!p.plantUid) continue;
+          if (!p.plantUid || vistos.has(p.plantUid)) continue; // dedupe
+          vistos.add(p.plantUid);
+          novos++;
           sites.push({
             externalId: p.plantUid,
             apelido: (p.plantName ?? '').trim() || `SAJ ${p.plantUid.slice(0, 6)}`,
@@ -330,6 +397,8 @@ export const sajAdapter: MonitoringAdapter = {
             credenciais: buildSiteCredenciais(creds, p.plantUid),
           });
         }
+        // Página inteira já vista (API clampou pageNo além do fim) → para.
+        if (novos === 0) break;
         pageNo++;
       }
       return { ok: true, sites };

@@ -81,6 +81,15 @@ describe('parseCommonChart (série PV_PRODUCTION do mês → geração diária)'
     const g = parseCommonChart({ xAxis: { coordinateList: ['1', '2'] }, yAxis: [{ legendKey: 'PV_PRODUCTION', dataList: ['abc', '5.5'] }] }, '2026-07', '2026-07-01', '2026-07-31');
     expect(g).toEqual([{ data: '2026-07-02', geracao_kwh: 5.5 }]);
   });
+  it('kWh negativo (lixo do portal) é pulado — geração nunca é negativa', () => {
+    const g = parseCommonChart({ xAxis: { coordinateList: ['1', '2'] }, yAxis: [{ legendKey: 'PV_PRODUCTION', dataList: ['-3.2', '5.5'] }] }, '2026-07', '2026-07-01', '2026-07-31');
+    expect(g).toEqual([{ data: '2026-07-02', geracao_kwh: 5.5 }]);
+  });
+  it('data/xAxis ausente → vazio (resposta malformada não quebra)', () => {
+    expect(parseCommonChart({ yAxis: [{ legendKey: 'PV_PRODUCTION', dataList: ['5'] }] }, '2026-07', '2026-07-01', '2026-07-31')).toEqual([]);
+    expect(parseCommonChart(null, '2026-07', '2026-07-01', '2026-07-31')).toEqual([]);
+    expect(parseCommonChart({}, '2026-07', '2026-07-01', '2026-07-31')).toEqual([]);
+  });
 });
 
 describe('statusSaj (censo real 29/07: 1=ok·73, 2=falha·1, 3=offline·11)', () => {
