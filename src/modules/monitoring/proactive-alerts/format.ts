@@ -25,6 +25,8 @@ function header(tipo: MonitoringAlertRow['tipo']): string {
     case 'queda_geracao': return '🟡 QUEDA';
     case 'erro_integracao': return '🔴 INTEGRAÇÃO';
     case 'milestone_economia': return '🟢 BOMBANDO';
+    case 'tensao_rede_alta': return '⚡ TENSÃO ALTA';
+    case 'string_zerada': return '🔌 STRING ZERADA';
   }
 }
 
@@ -53,6 +55,14 @@ function botoesFor(tipo: MonitoringAlertRow['tipo'], sId: string): AlertButton[]
         { id: `evabt:alert-eva-depoimento:${sId}`, title: '⭐ Eva depoimento' },
         { id: `evabt:alert-snooze7d:${sId}`, title: '💤 Adiar 7d' },
         { id: `evabt:alert-ignorar:${sId}`, title: '❌ Ignorar' },
+      ];
+    // Fase 2B: problema TÉCNICO é do operador (não vira abordagem Eva ao cliente)
+    case 'tensao_rede_alta':
+    case 'string_zerada':
+      return [
+        { id: `evabt:alert-ver:${sId}`, title: '🔍 Ver detalhe' },
+        { id: `evabt:alert-snooze3d:${sId}`, title: '💤 Adiar 3d' },
+        { id: `evabt:alert-resolvido:${sId}`, title: '✅ Já resolvi' },
       ];
   }
 }
