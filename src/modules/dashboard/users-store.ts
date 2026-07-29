@@ -22,6 +22,14 @@ interface UserRow {
   ativo: boolean;
 }
 
+// [Fatia 3a assinaturas] Empresa travada por falta de pagamento (companies.
+// ativo = false) barra TODOS os usuários dela — no login e a cada request
+// (getUserById roda por request → travou, o tenant cai na hora). Sem embed
+// (mock antigo) ou ativo = true → passa (compat; a EcoSun está sempre ativa).
+function companyTravada(u: unknown): boolean {
+  return (u as { companies?: { ativo?: boolean } }).companies?.ativo === false;
+}
+
 function montarDashUser(u: UserRow, role: RoleRow | null): DashUser {
   return {
     id: u.id,
@@ -65,10 +73,11 @@ export async function getUserByLoginTodasEmpresas(
 ): Promise<Array<{ user: DashUser; senhaHash: string | null }>> {
   const { data } = await client
     .from('dashboard_users')
-    .select('id, company_id, nome, login, senha_hash, role_id, ativo, companies:company_id (nome)')
+    .select('id, company_id, nome, login, senha_hash, role_id, ativo, companies:company_id (nome, ativo)')
     .eq('login', login)
     .eq('ativo', true);
   const rows = ((data as UserRow[] | null) ?? []).slice()
+    .filter((u) => !companyTravada(u))
     .sort((a, b) => Number(b.company_id === ECOSUN_ID) - Number(a.company_id === ECOSUN_ID));
   const out: Array<{ user: DashUser; senhaHash: string | null }> = [];
   for (const u of rows) {
@@ -81,11 +90,12 @@ export async function getUserByLoginTodasEmpresas(
 export async function getUserById(client: SupabaseClient, id: string): Promise<DashUser | null> {
   const { data: u } = await client
     .from('dashboard_users')
-    .select('id, company_id, nome, login, senha_hash, role_id, ativo, companies:company_id (nome)')
+    .select('id, company_id, nome, login, senha_hash, role_id, ativo, companies:company_id (nome, ativo)')
     .eq('id', id)
     .eq('ativo', true)
     .maybeSingle();
   if (!u) return null;
+  if (companyTravada(u)) return null; // empresa suspensa por falta de pagamento
   const role = (u as UserRow).role_id ? await getRole(client, (u as UserRow).role_id!) : null;
   return montarDashUser(u as UserRow, role);
 }
