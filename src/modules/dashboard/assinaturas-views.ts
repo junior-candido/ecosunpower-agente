@@ -46,6 +46,7 @@ export function renderAssinaturasPage(
             <label class="block">Telefone (zap)<input name="telefone" value="${escapeHtml(a.telefone ?? '')}" class="w-full border border-slate-300 rounded px-2 py-1"></label>
             <label class="block">Limite (usinas)<input name="limite" value="${a.limite ?? ''}" class="w-full border border-slate-300 rounded px-2 py-1"></label>
             <label class="block">Vence em<input type="date" name="vence_em" value="${a.venceEm}" class="w-full border border-slate-300 rounded px-2 py-1"></label>
+            <label class="flex items-center gap-2"><input type="checkbox" name="zap_ok" value="1" ${a.zapConfirmado ? 'checked' : ''}> Zap confirmado (recebe avisos)</label>
             <button class="px-3 py-1 rounded bg-amber-400 hover:bg-amber-300 text-slate-900 font-semibold">Salvar</button>
           </form>
         </details>

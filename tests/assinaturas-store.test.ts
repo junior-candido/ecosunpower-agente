@@ -95,6 +95,15 @@ describe('renovarAssinatura', () => {
   });
 });
 
+describe('editarAssinatura — zap confirmado', () => {
+  it('grava zap_confirmado quando o campo vem', async () => {
+    const { editarAssinatura } = await import('../src/modules/dashboard/assinaturas-store.js');
+    const { client, updates } = mockClient({ assinaturas: [{ data: null, error: null }] });
+    await editarAssinatura(client, 'a1', { zapConfirmado: true });
+    expect(updates.assinaturas?.[0]).toEqual({ zap_confirmado: true });
+  });
+});
+
 describe('apoios do motor (fatia 2)', () => {
   it('listarAtivas devolve só as ativas (filtro no banco)', async () => {
     const { client } = mockClient({

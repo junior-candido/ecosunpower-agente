@@ -91,13 +91,14 @@ export async function getAssinatura(client: SupabaseClient, id: string): Promise
 }
 
 export async function editarAssinatura(client: SupabaseClient, id: string, campos: {
-  valorCentavos?: number; telefone?: string | null; limite?: number | null; venceEm?: string;
+  valorCentavos?: number; telefone?: string | null; limite?: number | null; venceEm?: string; zapConfirmado?: boolean;
 }): Promise<void> {
   const row: Record<string, unknown> = {};
   if (campos.valorCentavos !== undefined) row.valor_centavos = campos.valorCentavos;
   if (campos.telefone !== undefined) row.telefone = campos.telefone;
   if (campos.limite !== undefined) row.limite = campos.limite;
   if (campos.venceEm !== undefined) row.vence_em = campos.venceEm;
+  if (campos.zapConfirmado !== undefined) row.zap_confirmado = campos.zapConfirmado;
   if (Object.keys(row).length === 0) return;
   const { error } = await client.from('assinaturas').update(row).eq('id', id);
   if (error) throw new Error(`editarAssinatura: ${error.message}`);

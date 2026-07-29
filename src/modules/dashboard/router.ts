@@ -456,6 +456,8 @@ b.onclick=async function(){
       if (b.telefone !== undefined) campos.telefone = String(b.telefone).replace(/\D/g, '') || null;
       if (b.limite !== undefined) campos.limite = b.limite ? Number(b.limite) : null;
       if (b.vence_em) campos.venceEm = String(b.vence_em);
+      // checkbox: desmarcado nem vem no body → false
+      (campos as { zapConfirmado?: boolean }).zapConfirmado = b.zap_ok === '1';
       await editarAssinatura(supabase, String(req.params.id), campos);
       res.redirect('/dashboard/assinaturas?ok=' + encodeURIComponent('Assinatura atualizada.'));
     } catch (err) {

@@ -27,6 +27,9 @@ describe('renderAssinaturasPage', () => {
   it('mostra o limite do plano (110 usinas)', () => {
     expect(html).toContain('110');
   });
+  it('form editar tem o checkbox de zap confirmado (Junior confirma na mão até a Fase 2)', () => {
+    expect(html).toContain('name="zap_ok"');
+  });
 });
 
 describe('menu lateral', () => {
