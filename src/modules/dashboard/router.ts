@@ -373,12 +373,19 @@ b.onclick=async function(){
   const hojeISO = () => new Date().toISOString().slice(0, 10);
 
   router.get('/assinaturas', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
-    const { listarAssinaturas, listarProdutos } = await import('./assinaturas-store.js');
-    const { renderAssinaturasPage } = await import('./assinaturas-views.js');
-    const [produtos, assinaturas] = await Promise.all([listarProdutos(supabase), listarAssinaturas(supabase)]);
-    const q = req.query as Record<string, string | undefined>;
-    const aviso = q.ok ? { tipo: 'ok' as const, texto: q.ok, link: q.link } : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
-    res.type('html').send(renderAssinaturasPage(produtos, assinaturas, hojeISO(), req.dashUser, aviso));
+    try {
+      const { listarAssinaturas, listarProdutos } = await import('./assinaturas-store.js');
+      const { renderAssinaturasPage } = await import('./assinaturas-views.js');
+      const [produtos, assinaturas] = await Promise.all([listarProdutos(supabase), listarAssinaturas(supabase)]);
+      const q = req.query as Record<string, string | undefined>;
+      // link só se for https de verdade (vem da URL — não confiar cego)
+      const link = q.link && /^https:\/\//.test(q.link) ? q.link : undefined;
+      const aviso = q.ok ? { tipo: 'ok' as const, texto: q.ok, link } : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
+      res.type('html').send(renderAssinaturasPage(produtos, assinaturas, hojeISO(), req.dashUser, aviso));
+    } catch (err) {
+      console.error('[assinaturas]', err);
+      res.status(500).send('Falha ao carregar as assinaturas. A migration 090 já foi aplicada no banco?');
+    }
   });
 
   router.post('/assinaturas/nova', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
