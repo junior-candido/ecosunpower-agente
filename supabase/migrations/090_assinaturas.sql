@@ -40,9 +40,20 @@ CREATE INDEX IF NOT EXISTS idx_assinaturas_produto ON assinaturas(produto_id);
 ALTER TABLE cobrancas ADD COLUMN IF NOT EXISTS assinatura_id uuid REFERENCES assinaturas(id);
 CREATE INDEX IF NOT EXISTS idx_cobrancas_assinatura ON cobrancas(assinatura_id);
 
--- Billing é assunto do admin da casa: só o service-role (BYPASS) mexe.
--- RLS ligada SEM política = negado pra qualquer client de tenant.
+-- Billing roda pelo service-role (BYPASS). RLS é a segunda trava:
+-- assinatura_produtos é catálogo global → RLS ligada SEM política (nega tenants);
+-- assinaturas ganha a política padrão da casa (079/089) — de quebra, na Fase 2
+-- o tenant enxerga a PRÓPRIA assinatura ("Minha assinatura") sem furo.
 ALTER TABLE assinatura_produtos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assinatura_produtos FORCE ROW LEVEL SECURITY;
 ALTER TABLE assinaturas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assinaturas FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS company_isolation ON assinaturas;
+CREATE POLICY company_isolation ON assinaturas
+  AS PERMISSIVE FOR ALL
+  USING (company_id = (SELECT coalesce(
+      nullif(current_setting('app.company_id', true), '')::uuid,
+      (auth.jwt() ->> 'company_id')::uuid)))
+  WITH CHECK (company_id = (SELECT coalesce(
+      nullif(current_setting('app.company_id', true), '')::uuid,
+      (auth.jwt() ->> 'company_id')::uuid)));

@@ -22,6 +22,7 @@ const ALLOWLIST: Record<string, string> = {
   empresa_config: 'singleton (id=1), identidade da implantação (modelo SILO do Kit Clone, eixo diferente do pool company_id — ver 02-decisao-vocabulario.md §1.5)',
   empresa_kits: 'catálogo de kits da implantação, mesmo eixo SILO do empresa_config',
   financeiro_anexos: 'referência fixa dos anexos do Simples Nacional (lei, não dado de cliente)',
+  assinatura_produtos: 'catálogo global de produtos assináveis (calculadora, monitoramento) — preço padrão da casa, não dado de tenant (090)',
   // conceito de tenant diferente (RAG, não é o pool do CRM)
   eva_knowledge_chunks: 'já tem tenant_id (text, slug), conceito de namespace do RAG — ver 02-decisao-vocabulario.md §3',
 };
@@ -98,6 +99,7 @@ const ALLOWLIST_RLS: Record<string, string> = {
   empresa_config: 'singleton (id=1), identidade da implantação (modelo SILO do Kit Clone)',
   empresa_kits: 'catálogo de kits da implantação, mesmo eixo SILO do empresa_config',
   financeiro_anexos: 'referência fixa dos anexos do Simples Nacional (lei, não dado de cliente)',
+  assinatura_produtos: 'catálogo global de produtos assináveis — RLS ligada sem política nega quem não tem bypass (090)',
   eva_knowledge_chunks: 'já tem tenant_id (text, slug), conceito de namespace do RAG, não company_id',
 };
 
