@@ -14,6 +14,7 @@ import { foxessAdapter } from './adapters/foxess.js';
 import { goodweAdapter } from './adapters/goodwe.js';
 import { solisAdapter } from './adapters/solis.js';
 import { sungrowAdapter } from './adapters/sungrow.js';
+import { sajAdapter } from './adapters/saj.js';
 
 const adapters: Partial<Record<MarcaInversor, MonitoringAdapter>> = {
   solaredge: solarEdgeAdapter,
@@ -24,6 +25,7 @@ const adapters: Partial<Record<MarcaInversor, MonitoringAdapter>> = {
   goodwe: goodweAdapter,         // SEMS Portal (API interna, e-mail+senha) — validado ao vivo 01/07
   solis: solisAdapter,           // API oficial SolisCloud (KeyId+KeySecret, HMAC) — validado ao vivo 01/07
   sungrow: sungrowAdapter,       // OpenAPI OAuth2 texto plano (app só-Monitoring) — validado ao vivo 03/07
+  saj: sajAdapter,               // elekeeper (assinatura MD5+SHA1, senha AES-ECB) — validado ao vivo 29/07 (85 plantas SunBright)
   // hoymiles: hoymilesAdapter,  // futuro
   // huawei: huaweiAdapter,      // futuro
 };

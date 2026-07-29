@@ -11,7 +11,8 @@ export type MarcaInversor =
   | 'foxess'
   | 'nep'
   | 'abb'
-  | 'solis';
+  | 'solis'
+  | 'saj';
 
 export type TelhadoTipo = 'ceramica' | 'fibrocimento' | 'laje' | 'metalico' | 'solo' | 'outro';
 export type Orientacao = 'N' | 'NE' | 'L' | 'SE' | 'S' | 'SO' | 'O' | 'NO';
