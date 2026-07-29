@@ -3107,6 +3107,16 @@ export function createDashboardRouter(
       }
       credenciais = { appkey, accessKey, redirectUri, code };
       if (appId) credenciais.appId = appId;
+    } else if (marca === 'saj') {
+      // Campos saj_* pra nao colidir com username/password de outros branches.
+      const username = String(req.body?.saj_username ?? '').trim();
+      const password = String(req.body?.saj_password ?? '').trim();
+      if (!username || !password) {
+        return res.status(400).send(renderImportarSitesPage({
+          errorMsg: 'SAJ precisa de usuário e senha do portal elekeeper/eSolar (login do instalador).',
+        }));
+      }
+      credenciais = { username, password };
     } else {
       return res.status(400).send(renderImportarSitesPage({
         errorMsg: `Marca ${marca} ainda nao tem adapter implementado.`,
