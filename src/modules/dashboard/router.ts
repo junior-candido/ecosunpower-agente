@@ -282,11 +282,12 @@ export function createDashboardRouter(
       const descricao = String(req.body?.descricao ?? '').trim();
       // aceita "1.234,56" (pt-BR) ou "1234.56"
       const valorReais = Number(String(req.body?.valor ?? '').replace(/\./g, '').replace(',', '.'));
-      const leadId = req.body?.lead_id ? String(req.body.lead_id) : null;
+      let leadId = req.body?.lead_id ? String(req.body.lead_id) : null;
       if (!descricao) { res.status(400).json({ erro: 'Descrição obrigatória.' }); return; }
       if (!(valorReais > 0)) { res.status(400).json({ erro: 'Valor inválido.' }); return; }
       const valorCentavos = Math.round(valorReais * 100);
       const companyId = req.dashUser!.companyId;
+      const telefone = String(req.body?.telefone ?? '').trim();
 
       let cliente: { nome?: string; email?: string; telefone?: string } | undefined;
       if (leadId) {
@@ -295,6 +296,12 @@ export function createDashboardRouter(
         const { data: lead } = await db.from('leads').select('name, email, phone')
           .eq('id', leadId).eq('company_id', companyId).maybeSingle();
         if (lead) cliente = { nome: (lead as { name?: string }).name ?? undefined, email: (lead as { email?: string }).email ?? undefined, telefone: (lead as { phone?: string }).phone ?? undefined };
+      } else if (telefone) {
+        // telefone digitado na página → vincula ao lead (variantes do 9º dígito)
+        const { acharLeadPorTelefone } = await import('./cobrancas-store.js');
+        const lead = await acharLeadPorTelefone(bancoDoOperador(req, supabase), companyId, telefone);
+        if (lead) { leadId = lead.id; cliente = { nome: lead.nome, email: lead.email, telefone: lead.telefone }; }
+        else cliente = { telefone: telefone.replace(/\D/g, '') || undefined }; // sem lead: ao menos pré-preenche o checkout
       }
 
       const cob = await supabaseService.criarCobranca({ companyId, leadId, descricao, valorCentavos });
@@ -346,7 +353,7 @@ b.onclick=async function(){
   if(!d||!v){e.textContent='Preencha descrição e valor.';return;}
   b.disabled=true;b.textContent='Gerando…';
   try{
-    var resp=await fetch('/dashboard/cobrancas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({descricao:d,valor:v})});
+    var resp=await fetch('/dashboard/cobrancas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({descricao:d,valor:v,telefone:t})});
     var j=await resp.json();
     if(!resp.ok||!j.link){e.textContent=j.erro||'Falha ao gerar.';return;}
     var l=document.getElementById('l');l.href=j.link;l.textContent=j.link;

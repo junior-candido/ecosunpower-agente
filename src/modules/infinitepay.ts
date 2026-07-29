@@ -127,6 +127,26 @@ export async function verificarPagamento(p: CheckParams, fetchImpl: FetchLike = 
 }
 
 // ============================================================================
+// PÁGINA /pago — o checkout redireciona pra cá depois do pagamento
+// ============================================================================
+
+/**
+ * Página de "obrigado" pós-pagamento (destino do redirect_url). Sem ela o
+ * cliente pagava e caía num 404. Neutra de marca (serve pra qualquer tenant);
+ * a confirmação oficial chega pelo webhook → aviso no WhatsApp.
+ */
+export function paginaPago(): string {
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Pagamento recebido</title>
+<style>body{font-family:system-ui,Segoe UI,sans-serif;background:#0b1c2b;color:#eaf2f8;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px}
+.card{max-width:440px;background:#12324a;border-radius:14px;padding:28px;text-align:center}
+.ok{font-size:44px}h1{font-size:20px;margin:10px 0 6px}p{color:#c4d6e4;font-size:14px;line-height:1.5;margin:6px 0}</style></head>
+<body><div class="card"><div class="ok">✅</div><h1>Pagamento recebido!</h1>
+<p>Obrigado pela confiança. Assim que a operadora confirmar, você recebe o comprovante da nossa equipe pelo WhatsApp.</p>
+<p>Pode fechar esta página.</p></div></body></html>`;
+}
+
+// ============================================================================
 // WEBHOOK — blindagem anti-fraude (sem HMAC → reconfirma no payment_check)
 // ============================================================================
 

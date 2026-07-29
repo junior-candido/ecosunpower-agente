@@ -6,7 +6,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   montarCorpoLink, parseRespostaLink, montarCorpoCheck, parseRespostaCheck,
-  criarLinkPagamento, verificarPagamento, webhookConfirmado,
+  criarLinkPagamento, verificarPagamento, webhookConfirmado, paginaPago,
 } from '../src/modules/infinitepay.js';
 
 describe('montarCorpoLink', () => {
@@ -95,6 +95,20 @@ describe('webhookConfirmado (blindagem anti-fraude)', () => {
     const r = await webhookConfirmado(wh, 2011582, check as any);
     expect(r.confirmado).toBe(false);
     expect(r.erroVerificacao).toBe(true);
+  });
+});
+
+describe('paginaPago (redirect pós-pagamento — /pago)', () => {
+  // O link manda o cliente pra {base}/pago depois de pagar. Sem esta página
+  // o cliente pagava e caía num 404 — péssima última impressão.
+  it('é uma página pt-BR agradecendo o pagamento', () => {
+    const html = paginaPago();
+    expect(html).toContain('lang="pt-BR"');
+    expect(html).toContain('Pagamento recebido');
+    expect(html.toLowerCase()).toContain('obrigado');
+  });
+  it('avisa que a confirmação chega no WhatsApp (o webhook confirma depois)', () => {
+    expect(paginaPago()).toContain('WhatsApp');
   });
 });
 

@@ -6593,6 +6593,12 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
   // assina o webhook (sem HMAC) → reconfirmamos no payment_check antes de marcar
   // pago (webhookConfirmado). ACK 200 = processado/ignorado; 400 = pede RETRY
   // (erro de verificação ou interno — nunca perde um pagamento de verdade).
+  // Destino do redirect_url dos links de cobrança: página de obrigado.
+  app.get('/pago', async (_req, res) => {
+    const { paginaPago } = await import('./modules/infinitepay.js');
+    res.type('html').send(paginaPago());
+  });
+
   app.post('/webhook/infinitepay', async (req, res) => {
     const ack = () => res.status(200).json({ success: true, message: null });
     try {
