@@ -85,7 +85,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'contratos' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'assinaturas' | 'usuarios' | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro';
+  active: 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'contratos' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'assinaturas' | 'minha_assinatura' | 'usuarios' | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro';
   title: string;
   body: string;
   scripts?: string;
@@ -107,6 +107,9 @@ interface SideItem {
   // [Fase 2 A1] item exclusivo da EcoSun (gestão de tenants): some pro
   // usuário de outra empresa mesmo sendo admin (a rota também barra).
   soEcosun?: boolean;
+  // [Fatia 4 assinaturas] item exclusivo do TENANT (ex: Minha assinatura):
+  // some pra EcoSun e pra telas sem usuário.
+  soTenant?: boolean;
 }
 // Estrutura de um setor (departamento) do sidebar.
 interface SideSetor {
@@ -152,6 +155,7 @@ const SIDEBAR_SETORES: SideSetor[] = [
     titulo: '⚡ Operação',
     itens: [
       { href: '/dashboard/monitoramento', key: 'monitoramento', label: '⚡ Monitoramento', area: 'usinas' },
+      { href: '/dashboard/minha-assinatura', key: 'minha_assinatura', label: '📆 Minha assinatura', area: 'usinas', soTenant: true },
       { href: '/dashboard/usinas/kanban', key: 'usinas_kanban', label: '🏗️ Kanban de Obras', area: 'usinas' },
       { href: '/dashboard/pos-venda', key: 'pos_venda', label: '❤️ Pós-venda', area: 'usinas' },
       { href: '/dashboard/manutencao', key: 'manutencao', label: '🔧 Manutenção' },
@@ -200,6 +204,7 @@ export function renderLayout(input: LayoutInput): string {
   // papel dele (cardápio modular), sem deploy.
   const itemVisivel = (it: SideItem): boolean => {
     if (it.soEcosun && user && user.companyId !== ECOSUN_COMPANY_ID) return false;
+    if (it.soTenant && (!user || user.companyId === ECOSUN_COMPANY_ID)) return false;
     if (!it.area && user && user.companyId !== ECOSUN_COMPANY_ID) return false;
     return !(it.area && user && !can(user, it.area, it.nivel ?? 'visualizar'));
   };

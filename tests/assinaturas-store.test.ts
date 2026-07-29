@@ -106,6 +106,23 @@ describe('editarAssinatura — zap confirmado', () => {
   });
 });
 
+describe('assinaturaDaEmpresa (fatia 4 — Minha assinatura do tenant)', () => {
+  it('devolve a assinatura (ativa/travada) da empresa', async () => {
+    const { client } = mockClient({
+      assinaturas: [{ data: [{ id: 'a1', produto_id: 'monitoramento', nome: 'Sabion', email: null, telefone: null, zap_confirmado: false, valor_centavos: 29700, limite: 110, vence_em: '2026-08-29', status: 'ativa', company_id: 'c1', assinatura_produtos: { nome: 'Monitoramento de Usinas' } }], error: null }],
+    });
+    const { assinaturaDaEmpresa } = await import('../src/modules/dashboard/assinaturas-store.js');
+    const a = await assinaturaDaEmpresa(client, 'c1');
+    expect(a?.id).toBe('a1');
+    expect(a?.produtoNome).toBe('Monitoramento de Usinas');
+  });
+  it('empresa sem assinatura → null', async () => {
+    const { client } = mockClient({ assinaturas: [{ data: [], error: null }] });
+    const { assinaturaDaEmpresa } = await import('../src/modules/dashboard/assinaturas-store.js');
+    expect(await assinaturaDaEmpresa(client, 'c1')).toBeNull();
+  });
+});
+
 describe('limite do plano (fatia 3b — trava das 110 usinas)', () => {
   it('infoLimiteMonitoramento: acha a assinatura de monitoramento com limite da empresa', async () => {
     const { client } = mockClient({

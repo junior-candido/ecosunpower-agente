@@ -493,6 +493,67 @@ b.onclick=async function(){
     }
   });
 
+  // ----- MINHA ASSINATURA (tela do TENANT — fatia 4) -----
+  // O assinante vê a própria mensalidade (situação, vencimento, uso do plano,
+  // link de pagar) e cadastra o zap com código. Escopo: SEMPRE a empresa da
+  // sessão — tenant nunca enxerga assinatura dos outros.
+  const confirmadorZapPromise = import('./zap-confirmacao.js').then((m) => m.criarConfirmadorZap());
+
+  router.get('/minha-assinatura', async (req: AuthedRequest, res) => {
+    try {
+      const { assinaturaDaEmpresa, contarUsinasAtivas, linkPendente } = await import('./assinaturas-store.js');
+      const { renderMinhaAssinaturaPage } = await import('./minha-assinatura-views.js');
+      const cid = req.dashUser!.companyId;
+      const a = await assinaturaDaEmpresa(supabase, cid);
+      const uso = a && a.limite !== null ? await contarUsinasAtivas(supabase, cid).catch(() => null) : null;
+      const linkPagar = a ? await linkPendente(supabase, a.id) : null;
+      const q = req.query as Record<string, string | undefined>;
+      const aviso = q.ok ? { tipo: 'ok' as const, texto: q.ok } : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
+      res.type('html').send(renderMinhaAssinaturaPage(a, hojeISO(), uso, linkPagar, req.dashUser, aviso));
+    } catch (err) {
+      console.error('[minha-assinatura]', err);
+      res.status(500).send('Falha ao carregar a assinatura.');
+    }
+  });
+
+  router.post('/minha-assinatura/zap/solicitar', async (req: AuthedRequest, res) => {
+    try {
+      const telefone = String(req.body?.telefone ?? '').replace(/\D/g, '');
+      if (telefone.length < 10) { res.redirect('/dashboard/minha-assinatura?erro=' + encodeURIComponent('Telefone inválido — use DDI+DDD+número, ex: 5561999998888.')); return; }
+      if (!options.sendText) { res.redirect('/dashboard/minha-assinatura?erro=' + encodeURIComponent('Envio de WhatsApp indisponível no momento.')); return; }
+      const { assinaturaDaEmpresa } = await import('./assinaturas-store.js');
+      const a = await assinaturaDaEmpresa(supabase, req.dashUser!.companyId);
+      if (!a) { res.redirect('/dashboard/minha-assinatura?erro=' + encodeURIComponent('Assinatura não encontrada.')); return; }
+      const confirmador = await confirmadorZapPromise;
+      const r = confirmador.solicitar(a.id, telefone);
+      if (!r.ok) { res.redirect('/dashboard/minha-assinatura?erro=' + encodeURIComponent(r.erro)); return; }
+      await options.sendText(telefone, `Seu código de confirmação é: ${r.codigo}\n\nDigite ele na tela "Minha assinatura" pra ativar os avisos por aqui. (Se não foi você, ignore.)`);
+      res.redirect('/dashboard/minha-assinatura?ok=' + encodeURIComponent('Código enviado no seu WhatsApp — digite ele aqui embaixo.'));
+    } catch (err) {
+      console.error('[minha-assinatura/zap]', err);
+      res.redirect('/dashboard/minha-assinatura?erro=' + encodeURIComponent('Falha ao enviar o código.'));
+    }
+  });
+
+  router.post('/minha-assinatura/zap/confirmar', async (req: AuthedRequest, res) => {
+    try {
+      const codigo = String(req.body?.codigo ?? '').trim();
+      const { assinaturaDaEmpresa, editarAssinatura } = await import('./assinaturas-store.js');
+      const a = await assinaturaDaEmpresa(supabase, req.dashUser!.companyId);
+      if (!a) { res.redirect('/dashboard/minha-assinatura?erro=' + encodeURIComponent('Assinatura não encontrada.')); return; }
+      const confirmador = await confirmadorZapPromise;
+      const telefone = confirmador.telefonePendente(a.id);
+      if (!confirmador.confirmar(a.id, codigo) || !telefone) {
+        res.redirect('/dashboard/minha-assinatura?erro=' + encodeURIComponent('Código errado ou vencido — peça um novo.')); return;
+      }
+      await editarAssinatura(supabase, a.id, { telefone, zapConfirmado: true });
+      res.redirect('/dashboard/minha-assinatura?ok=' + encodeURIComponent('✅ WhatsApp confirmado! Os avisos da assinatura vão chegar por lá.'));
+    } catch (err) {
+      console.error('[minha-assinatura/zap-confirmar]', err);
+      res.redirect('/dashboard/minha-assinatura?erro=' + encodeURIComponent('Falha ao confirmar.'));
+    }
+  });
+
   // ----- USUARIOS (gestao de pessoas + papeis; so admin/gestao de usuarios) -----
   const ECOSUN = '00000000-0000-0000-0000-000000000001';
 

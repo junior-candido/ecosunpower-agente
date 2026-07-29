@@ -116,6 +116,17 @@ export async function listarEmpresasSimples(client: SupabaseClient): Promise<{ i
   return (data ?? []).map((c: any) => ({ id: c.id, nome: c.nome }));
 }
 
+/** A assinatura (ativa ou travada) da empresa — "Minha assinatura" do tenant. */
+export async function assinaturaDaEmpresa(client: SupabaseClient, companyId: string): Promise<AssinaturaRow | null> {
+  const { data } = await client.from('assinaturas').select(CAMPOS)
+    .eq('company_id', companyId)
+    .in('status', ['ativa', 'travada'])
+    .order('criado_em', { ascending: false })
+    .limit(1);
+  const r = (data as any[] | null)?.[0];
+  return r ? paraRow(r) : null;
+}
+
 // ---- Limite do plano (fatia 3b — trava das 110 usinas) ----
 
 /** Assinatura de monitoramento COM limite da empresa (null = sem trava).
