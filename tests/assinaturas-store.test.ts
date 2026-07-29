@@ -7,6 +7,7 @@ import {
   situacaoDaAssinatura, novoVencimento,
   listarAssinaturas, criarAssinatura, renovarAssinatura,
   listarAtivas, avisosDoCiclo, registrarAviso, linkPendente,
+  infoLimiteMonitoramento, contarUsinasAtivas,
 } from '../src/modules/dashboard/assinaturas-store.js';
 
 // Mock chainable do supabase-js (mesmo estilo dos testes de empresas):
@@ -21,6 +22,7 @@ function mockClient(respostas: Record<string, any[]>) {
         insert(row: any) { (inserts[tabela] ??= []).push(row); return chain; },
         update(row: any) { (updates[tabela] ??= []).push(row); return chain; },
         select() { return chain; }, eq() { return chain; }, order() { return chain; }, limit() { return chain; },
+        not() { return chain; }, in() { return chain; },
         single() { return Promise.resolve(resposta()); },
         maybeSingle() { return Promise.resolve(resposta()); },
         then(res: any, rej: any) { return Promise.resolve(resposta()).then(res, rej); },
@@ -101,6 +103,23 @@ describe('editarAssinatura — zap confirmado', () => {
     const { client, updates } = mockClient({ assinaturas: [{ data: null, error: null }] });
     await editarAssinatura(client, 'a1', { zapConfirmado: true });
     expect(updates.assinaturas?.[0]).toEqual({ zap_confirmado: true });
+  });
+});
+
+describe('limite do plano (fatia 3b — trava das 110 usinas)', () => {
+  it('infoLimiteMonitoramento: acha a assinatura de monitoramento com limite da empresa', async () => {
+    const { client } = mockClient({
+      assinaturas: [{ data: [{ id: 'a1', limite: 110, nome: 'Sabion' }], error: null }],
+    });
+    expect(await infoLimiteMonitoramento(client, 'comp-sabion')).toEqual({ assinaturaId: 'a1', limite: 110, nome: 'Sabion' });
+  });
+  it('empresa sem assinatura com limite → null (sem trava)', async () => {
+    const { client } = mockClient({ assinaturas: [{ data: [], error: null }] });
+    expect(await infoLimiteMonitoramento(client, 'comp-x')).toBeNull();
+  });
+  it('contarUsinasAtivas usa o count do banco', async () => {
+    const { client } = mockClient({ sistemas_clientes: [{ data: null, error: null, count: 87 }] });
+    expect(await contarUsinasAtivas(client, 'comp-sabion')).toBe(87);
   });
 });
 

@@ -376,16 +376,23 @@ b.onclick=async function(){
 
   router.get('/assinaturas', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
     try {
-      const { listarAssinaturas, listarProdutos, listarEmpresasSimples } = await import('./assinaturas-store.js');
+      const { listarAssinaturas, listarProdutos, listarEmpresasSimples, contarUsinasAtivas } = await import('./assinaturas-store.js');
       const { renderAssinaturasPage } = await import('./assinaturas-views.js');
       const [produtos, assinaturas, empresas] = await Promise.all([
         listarProdutos(supabase), listarAssinaturas(supabase), listarEmpresasSimples(supabase),
       ]);
+      // Uso do plano ("87/110 usinas") pras assinaturas de monitoramento com limite.
+      const usoPorAssinatura: Record<string, number> = {};
+      await Promise.all(assinaturas
+        .filter((a) => a.produtoId === 'monitoramento' && a.companyId && a.limite !== null)
+        .map(async (a) => {
+          try { usoPorAssinatura[a.id] = await contarUsinasAtivas(supabase, a.companyId!); } catch { /* sem uso na tela */ }
+        }));
       const q = req.query as Record<string, string | undefined>;
       // link só se for https de verdade (vem da URL — não confiar cego)
       const link = q.link && /^https:\/\//.test(q.link) ? q.link : undefined;
       const aviso = q.ok ? { tipo: 'ok' as const, texto: q.ok, link } : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
-      res.type('html').send(renderAssinaturasPage(produtos, assinaturas, hojeISO(), req.dashUser, aviso, empresas));
+      res.type('html').send(renderAssinaturasPage(produtos, assinaturas, hojeISO(), req.dashUser, aviso, empresas, usoPorAssinatura));
     } catch (err) {
       console.error('[assinaturas]', err);
       res.status(500).send('Falha ao carregar as assinaturas. A migration 090 já foi aplicada no banco?');
@@ -3343,7 +3350,30 @@ b.onclick=async function(){
     try {
       // [Fase 2 A3] usinas importadas nascem na EMPRESA DO OPERADOR logado —
       // o admin do tenant importando a conta dele cria as usinas DELE.
-      const result = await monitoringService.importarSitesEmMassa(marca, credenciais, (req as AuthedRequest).dashUser?.companyId ?? null);
+      const companyDoOperador = (req as AuthedRequest).dashUser?.companyId ?? null;
+
+      // [Fatia 3b assinaturas] Trava do patamar: empresa com plano limitado
+      // (ex: fundador 110 usinas) não importa acima do limite. Fluxo do Junior:
+      // atingiu o patamar → aviso (zap pro Junior) → upgrade de plano na tela.
+      if (companyDoOperador) {
+        const { infoLimiteMonitoramento, contarUsinasAtivas } = await import('./assinaturas-store.js');
+        const plano = await infoLimiteMonitoramento(supabase, companyDoOperador);
+        if (plano) {
+          const uso = await contarUsinasAtivas(supabase, companyDoOperador);
+          if (uso >= plano.limite) {
+            if (options.sendText && options.engineerPhone) {
+              options.sendText(options.engineerPhone,
+                `📈 ${plano.nome} bateu o patamar do plano (${uso}/${plano.limite} usinas) e tentou importar mais. Hora do upgrade! (editar valor+limite na tela Assinaturas)`,
+              ).catch(() => { /* best-effort */ });
+            }
+            return res.status(400).send(renderImportarSitesPage({
+              errorMsg: `Seu plano vai até ${plano.limite} usinas (você já tem ${uso}). Fale com a EcoSun pra ampliar o plano — liberamos na hora.`,
+            }));
+          }
+        }
+      }
+
+      const result = await monitoringService.importarSitesEmMassa(marca, credenciais, companyDoOperador);
       if (!result.ok) {
         return res.status(400).send(renderImportarSitesPage({
           errorMsg: result.reason ?? 'Falha ao importar.',

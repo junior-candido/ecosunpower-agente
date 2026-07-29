@@ -35,6 +35,10 @@ describe('renderAssinaturasPage', () => {
     expect(comEmpresas).toContain('name="company_id"');
     expect(comEmpresas).toContain('Sabion Solar');
   });
+  it('coluna Limite mostra o USO quando conhecido: "87/110 usinas"', () => {
+    const comUso = renderAssinaturasPage(PRODUTOS, ASSINATURAS, '2026-07-29', undefined, undefined, [], { a1: 87 });
+    expect(comUso).toContain('87/110 usinas');
+  });
 });
 
 describe('menu lateral', () => {

@@ -116,6 +116,35 @@ export async function listarEmpresasSimples(client: SupabaseClient): Promise<{ i
   return (data ?? []).map((c: any) => ({ id: c.id, nome: c.nome }));
 }
 
+// ---- Limite do plano (fatia 3b — trava das 110 usinas) ----
+
+/** Assinatura de monitoramento COM limite da empresa (null = sem trava).
+ *  Vale ativa OU travada (travada continua contando o plano; cancelada não). */
+export async function infoLimiteMonitoramento(
+  client: SupabaseClient,
+  companyId: string,
+): Promise<{ assinaturaId: string; limite: number; nome: string } | null> {
+  const { data } = await client.from('assinaturas')
+    .select('id, limite, nome')
+    .eq('produto_id', 'monitoramento')
+    .eq('company_id', companyId)
+    .in('status', ['ativa', 'travada'])
+    .not('limite', 'is', null)
+    .limit(1);
+  const r = (data as { id: string; limite: number; nome: string }[] | null)?.[0];
+  return r ? { assinaturaId: r.id, limite: r.limite, nome: r.nome } : null;
+}
+
+/** Quantas usinas ativas a empresa tem (uso do plano). */
+export async function contarUsinasAtivas(client: SupabaseClient, companyId: string): Promise<number> {
+  const { count, error } = await client.from('sistemas_clientes')
+    .select('id', { count: 'exact', head: true })
+    .eq('company_id', companyId)
+    .eq('ativo', true);
+  if (error) throw new Error(`contarUsinasAtivas: ${error.message}`);
+  return count ?? 0;
+}
+
 // ---- Apoios do motor automático (fatia 2) ----
 
 /** Assinaturas ativas (o motor decide o que fazer com cada uma). */
