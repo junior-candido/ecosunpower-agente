@@ -15,10 +15,16 @@ export function detectarAlertasPendentes(
   const out: DetectOutput = { novos: [], resolvidos: [], persistentes_devidos: [] };
   const hojeIso = hoje.toISOString();
 
+  // Só a FAMÍLIA de geração participa deste detect. Os tipos de telemetria
+  // (fase 2B) têm ciclo próprio — sem este filtro, o "mudou de natureza"
+  // abaixo resolveria um tensao_rede_alta só porque a geração está ok.
+  const FAMILIA_GERACAO = new Set(['sistema_offline', 'queda_geracao', 'erro_integracao', 'milestone_economia']);
+
   // index por sistema_id
   const abertosBySistema = new Map<string, MonitoringAlertRow[]>();
   for (const a of alertasAbertos) {
     if (a.resolved_at) continue;
+    if (!FAMILIA_GERACAO.has(a.tipo)) continue;
     const arr = abertosBySistema.get(a.sistema_id) ?? [];
     arr.push(a);
     abertosBySistema.set(a.sistema_id, arr);

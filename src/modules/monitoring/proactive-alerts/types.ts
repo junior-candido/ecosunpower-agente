@@ -6,7 +6,11 @@ export type AlertTipo =
   | 'sistema_offline'
   | 'queda_geracao'
   | 'erro_integracao'
-  | 'milestone_economia';
+  | 'milestone_economia'
+  // Fase 2B: vigias de telemetria (ciclo diário próprio; o detect de geração
+  // NÃO cria nem resolve estes — ver FAMILIA_GERACAO no detect.ts)
+  | 'tensao_rede_alta'
+  | 'string_zerada';
 
 // Row em monitoring_alerts (linha 1:1 do DB)
 export interface MonitoringAlertRow {

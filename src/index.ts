@@ -9384,8 +9384,25 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     // intervalo entre 06:00 e 06:59 BRT, onde o setInterval só pegaria às 07:xx.
     setTimeout(checkAnniversaryHour, 8 * 60 * 1000);
 
+    // [Fase 2B] Vigias de tensão/corrente da telemetria — 1×/dia às 18h BRT
+    // (depois da tarde, quando a sobretensão aparece). Mesmo idioma do cron
+    // do aniversário: checa a hora local a cada hora + no startup.
+    const runTelemetriaRules = async () => {
+      try {
+        await proactiveAlertService.runTelemetriaRulesCycle(new Date());
+      } catch (err) {
+        console.error('[proactive-alerts] telemetria cron falhou:', (err as Error).message);
+      }
+    };
+    const checkTelemetriaHour = () => {
+      const h = new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false });
+      if (Number(h) === 18) runTelemetriaRules();
+    };
+    setInterval(checkTelemetriaHour, 60 * 60 * 1000);
+    setTimeout(checkTelemetriaHour, 9 * 60 * 1000);
+
     console.log(
-      `[proactive-alerts] crons started (detect 60min, dispatch 15min, anniversary 06h BRT). DRY_RUN=${proactiveDryRun}`,
+      `[proactive-alerts] crons started (detect 60min, dispatch 15min, anniversary 06h BRT, telemetria 18h BRT). DRY_RUN=${proactiveDryRun}`,
     );
 
     // ============================================
