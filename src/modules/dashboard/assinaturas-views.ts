@@ -24,6 +24,7 @@ export function renderAssinaturasPage(
   user: DashUser | undefined,
   aviso?: { tipo: 'ok' | 'erro'; texto: string; link?: string },
   empresas: { id: string; nome: string }[] = [],
+  usoPorAssinatura: Record<string, number> = {},
 ): string {
   const linhas = assinaturas.map((a) => {
     const sit = situacaoDaAssinatura({ status: a.status, venceEm: a.venceEm }, hoje);
@@ -34,7 +35,13 @@ export function renderAssinaturasPage(
       <td class="px-4 py-3 font-medium">${escapeHtml(a.nome)}<div class="text-xs text-slate-400">${escapeHtml(a.email ?? '')}</div></td>
       <td class="px-4 py-3 text-sm">${escapeHtml(a.produtoNome)}</td>
       <td class="px-4 py-3 text-sm">R$ ${reais(a.valorCentavos)}</td>
-      <td class="px-4 py-3 text-sm">${a.limite !== null ? `${a.limite} usinas` : '—'}</td>
+      <td class="px-4 py-3 text-sm">${(() => {
+        if (a.limite === null) return '—';
+        const uso = usoPorAssinatura[a.id];
+        if (uso === undefined) return `${a.limite} usinas`;
+        const cor = uso >= a.limite ? 'text-rose-600 font-semibold' : uso >= a.limite * 0.9 ? 'text-amber-600 font-semibold' : '';
+        return `<span class="${cor}">${uso}/${a.limite} usinas</span>`;
+      })()}</td>
       <td class="px-4 py-3 text-sm">${dataBr(a.venceEm)}</td>
       <td class="px-4 py-3">${BADGE[sit]}</td>
       <td class="px-4 py-3 text-sm">${a.telefone ? (a.zapConfirmado ? '✅ zap' : '📱 sem confirmar') : '—'}</td>
