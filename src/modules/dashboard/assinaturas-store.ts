@@ -42,15 +42,17 @@ export interface AssinaturaRow {
   id: string; produtoId: string; produtoNome: string; nome: string;
   email: string | null; telefone: string | null; zapConfirmado: boolean;
   valorCentavos: number; limite: number | null; venceEm: string; status: StatusAssinatura;
+  companyId: string | null;
 }
 
-const CAMPOS = 'id, produto_id, nome, email, telefone, zap_confirmado, valor_centavos, limite, vence_em, status, assinatura_produtos(nome)';
+const CAMPOS = 'id, produto_id, nome, email, telefone, zap_confirmado, valor_centavos, limite, vence_em, status, company_id, assinatura_produtos(nome)';
 
 function paraRow(r: any): AssinaturaRow {
   return {
     id: r.id, produtoId: r.produto_id, produtoNome: r.assinatura_produtos?.nome ?? r.produto_id,
     nome: r.nome, email: r.email, telefone: r.telefone, zapConfirmado: r.zap_confirmado,
     valorCentavos: r.valor_centavos, limite: r.limite, venceEm: r.vence_em, status: r.status,
+    companyId: r.company_id ?? null,
   };
 }
 
@@ -104,6 +106,39 @@ export async function editarAssinatura(client: SupabaseClient, id: string, campo
 export async function setStatusAssinatura(client: SupabaseClient, id: string, status: StatusAssinatura): Promise<void> {
   const { error } = await client.from('assinaturas').update({ status }).eq('id', id);
   if (error) throw new Error(`setStatusAssinatura: ${error.message}`);
+}
+
+// ---- Apoios do motor automático (fatia 2) ----
+
+/** Assinaturas ativas (o motor decide o que fazer com cada uma). */
+export async function listarAtivas(client: SupabaseClient): Promise<AssinaturaRow[]> {
+  const { data, error } = await client
+    .from('assinaturas').select(CAMPOS).eq('status', 'ativa');
+  if (error) throw new Error(`listarAtivas: ${error.message}`);
+  return (data ?? []).map(paraRow);
+}
+
+/** Tipos de aviso já enviados neste ciclo (idempotência do cron). */
+export async function avisosDoCiclo(client: SupabaseClient, assinaturaId: string, ciclo: string): Promise<Set<string>> {
+  const { data } = await client.from('assinatura_avisos').select('tipo')
+    .eq('assinatura_id', assinaturaId).eq('ciclo', ciclo);
+  return new Set((data ?? []).map((r: any) => r.tipo as string));
+}
+
+export async function registrarAviso(client: SupabaseClient, assinaturaId: string, companyId: string | null, tipo: string, ciclo: string): Promise<void> {
+  const { error } = await client.from('assinatura_avisos')
+    .insert({ assinatura_id: assinaturaId, company_id: companyId, tipo, ciclo });
+  // conflito de UNIQUE = alguém registrou no meio — ok, idempotência funcionando
+  if (error && !/duplicate|unique/i.test(error.message)) throw new Error(`registrarAviso: ${error.message}`);
+}
+
+/** Link da cobrança PENDENTE mais recente da assinatura (null se não tem). */
+export async function linkPendente(client: SupabaseClient, assinaturaId: string): Promise<string | null> {
+  const { data } = await client.from('cobrancas').select('link_url')
+    .eq('assinatura_id', assinaturaId).eq('status', 'pendente')
+    .order('criado_em', { ascending: false }).limit(1);
+  const url = (data as { link_url: string | null }[] | null)?.[0]?.link_url;
+  return url ?? null;
 }
 
 /** Pagamento confirmado: vence_em anda 1 mês e a assinatura volta pra ativa. */

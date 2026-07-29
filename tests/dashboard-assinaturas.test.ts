@@ -8,7 +8,7 @@ const PRODUTOS = [
   { id: 'monitoramento', nome: 'Monitoramento de Usinas', valorCentavosPadrao: 29700 },
 ];
 const ASSINATURAS = [
-  { id: 'a1', produtoId: 'monitoramento', produtoNome: 'Monitoramento de Usinas', nome: 'Sabion Solar', email: 't@x.com', telefone: '5521999998888', zapConfirmado: false, valorCentavos: 29700, limite: 110, venceEm: '2026-08-29', status: 'ativa' as const },
+  { id: 'a1', produtoId: 'monitoramento', produtoNome: 'Monitoramento de Usinas', nome: 'Sabion Solar', email: 't@x.com', telefone: '5521999998888', zapConfirmado: false, valorCentavos: 29700, limite: 110, venceEm: '2026-08-29', status: 'ativa' as const, companyId: null },
 ];
 
 describe('renderAssinaturasPage', () => {
