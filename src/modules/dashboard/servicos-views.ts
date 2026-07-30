@@ -189,7 +189,7 @@ export function renderNovoServicoPage(tipos: TipoServico[], user: DashUser | und
    fetch('/dashboard/servicos/nova',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},
     body:JSON.stringify({tipo:tipo,leadId:estado.leadId,clienteNovo:estado.leadId?null:{nome:nomeNovo,telefone:telNovo},
      sistemaId:estado.sistemaId,data:document.getElementById('f_data').value,
-     observacoes:document.getElementById('f_observacoes').value.trim(),midias:midias}})
+     observacoes:document.getElementById('f_observacoes').value.trim(),midias:midias})})
    .then(function(r){return r.json()}).then(function(j){
     if(!j.ok)throw new Error(j.erro||'falha');
     var arquivos=estado.fotos.concat(estado.videos),ups=j.uploads||[],feitas=[];
