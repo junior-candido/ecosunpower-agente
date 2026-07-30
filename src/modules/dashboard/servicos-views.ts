@@ -75,15 +75,19 @@ export function renderDetalheServicoPage(
 // Guia de fotos por tipo de serviço (pedido do Junior 29/07: "um guia escrito
 // das fotos a serem enviadas"). Rascunho do Claude — o Junior ajusta o texto.
 const GUIAS_FOTOS: Record<string, string[]> = {
+  // Lista do Junior (29/07) — palavras dele.
   'visita-tecnica': [
-    'Padrão de entrada ABERTO (disjuntor geral visível)',
-    'Medidor de perto (número legível)',
-    'Quadro de distribuição aberto',
-    'Telhado por CIMA (todas as águas onde vão os painéis)',
-    'Estrutura do telhado por BAIXO (madeiramento/metálica)',
-    'Local previsto do inversor (parede)',
-    'Caminho do cabeamento (do telhado até o quadro)',
-    'Conta de luz (foto ou PDF)',
+    'Foto do padrão de entrada',
+    'Foto do quadro elétrico',
+    'Foto da bitola do cabo do padrão de entrada',
+    'Foto do ramal do medidor',
+    'Ponto de conexão',
+    'Foto da bitola do fio que chega no quadro',
+    'Ponto de conexão do sistema fotovoltaico',
+    'Foto abaixo do telhado',
+    'Tipo de telha',
+    'Capacidade da corrente do disjuntor',
+    'Extras que viu — anotar nas observações',
   ],
   // Lista do Junior (29/07) — palavras dele, ordem da obra.
   'termino-instalacao': [

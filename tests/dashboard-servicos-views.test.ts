@@ -47,10 +47,13 @@ describe('renderNovoServicoPage (form mobile)', () => {
     expect(html).toContain('Fotos pra tirar neste serviço');
     expect(html).toContain('data-tipo="visita-tecnica"');
     expect(html).toContain('data-tipo="termino-instalacao"');
-    expect(html).toContain('Padrão de entrada ABERTO');
-    expect(html).toContain('cabo tronco');           // lista do término é a do Junior
+    // As duas listas são as DITADAS pelo Junior (29/07)
+    expect(html).toContain('bitola do cabo do padrão de entrada');
+    expect(html).toContain('Tipo de telha');
+    expect(html).toContain('Capacidade da corrente do disjuntor'); // "corrente", NUNCA "amperagem"
+    expect(html).toContain('cabo tronco');
     expect(html).toContain('placa de geração própria');
-    expect(html).toContain('corrente CA');           // "corrente", NUNCA "amperagem"
+    expect(html).toContain('corrente CA');
     expect(html).toContain('mostraGuia');
   });
 });
