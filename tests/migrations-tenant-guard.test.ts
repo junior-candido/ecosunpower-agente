@@ -23,6 +23,7 @@ const ALLOWLIST: Record<string, string> = {
   empresa_kits: 'catálogo de kits da implantação, mesmo eixo SILO do empresa_config',
   financeiro_anexos: 'referência fixa dos anexos do Simples Nacional (lei, não dado de cliente)',
   assinatura_produtos: 'catálogo global de produtos assináveis (calculadora, monitoramento) — preço padrão da casa, não dado de tenant (090)',
+  servico_tipos: 'catálogo global de tipos de serviço de campo (visita, instalação...) — não é dado de tenant (092)',
   // conceito de tenant diferente (RAG, não é o pool do CRM)
   eva_knowledge_chunks: 'já tem tenant_id (text, slug), conceito de namespace do RAG — ver 02-decisao-vocabulario.md §3',
 };
@@ -100,6 +101,7 @@ const ALLOWLIST_RLS: Record<string, string> = {
   empresa_kits: 'catálogo de kits da implantação, mesmo eixo SILO do empresa_config',
   financeiro_anexos: 'referência fixa dos anexos do Simples Nacional (lei, não dado de cliente)',
   assinatura_produtos: 'catálogo global de produtos assináveis — RLS ligada sem política nega quem não tem bypass (090)',
+  servico_tipos: 'catálogo global de tipos de serviço — RLS ligada sem política nega quem não tem bypass (092)',
   eva_knowledge_chunks: 'já tem tenant_id (text, slug), conceito de namespace do RAG, não company_id',
 };
 
