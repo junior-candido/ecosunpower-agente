@@ -523,7 +523,11 @@ b.onclick=async function(){
   router.get('/servicos/novo', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
     const { listarTipos } = await import('./servicos-store.js');
     const { renderNovoServicoPage } = await import('./servicos-views.js');
-    res.type('html').send(renderNovoServicoPage(await listarTipos(supabase), req.dashUser));
+    const { listUsers } = await import('./users-store.js');
+    const usuarios = (await listUsers(supabase, req.dashUser!.companyId))
+      .filter((u) => u.ativo)
+      .map((u) => ({ id: u.id, nome: u.nome }));
+    res.type('html').send(renderNovoServicoPage(await listarTipos(supabase), req.dashUser, usuarios));
   });
 
   router.get('/servicos/buscar-cliente', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
@@ -570,11 +574,14 @@ b.onclick=async function(){
 
       const { criarServico } = await import('./servicos-store.js');
       const { randomUUID } = await import('crypto');
+      // Atribuiu a alguém → nasce 🟡 pendente pra pessoa completar no campo.
+      const atribuidoA = b.atribuidoA ? String(b.atribuidoA) : null;
       const servicoId = await criarServico(supabase, {
         companyId: req.dashUser!.companyId, tipoId: tipo, leadId,
         sistemaId: b.sistemaId ? String(b.sistemaId) : null,
         observacoes: String(b.observacoes ?? '').trim() || null,
         dataServico, criadoPor: req.dashUser!.id,
+        atribuidoA, status: atribuidoA ? 'atribuido' : 'concluido',
       });
 
       const uploads: { path: string; url: string }[] = [];
@@ -588,6 +595,59 @@ b.onclick=async function(){
     } catch (err) {
       console.error('[servicos/nova]', err);
       res.status(500).json({ ok: false, erro: 'Falha ao criar o registro.' });
+    }
+  });
+
+  // Mais mídias num serviço EXISTENTE (o instalador completando o atribuído).
+  router.post('/servicos/:id/uploads', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
+    try {
+      const servicoId = String(req.params.id);
+      const { getServico } = await import('./servicos-store.js');
+      const { randomUUID } = await import('crypto');
+      const s = await getServico(supabase, servicoId);
+      if (!s) { res.status(404).json({ ok: false, erro: 'Registro não achado.' }); return; }
+      const midias = (Array.isArray(req.body?.midias) ? req.body.midias : []) as { tipoMidia?: string; contentType?: string }[];
+      if (s.videos + midias.filter((m) => m.tipoMidia === 'video').length > 2) {
+        res.status(400).json({ ok: false, erro: 'Máximo de 2 vídeos por registro.' }); return;
+      }
+      const uploads: { path: string; url: string }[] = [];
+      for (const m of midias) {
+        const path = `${s.leadId}/servico/${servicoId}/${randomUUID()}.${extDoContentType(String(m.contentType ?? ''))}`;
+        const { data, error } = await supabase.storage.from(BUCKET_SERVICOS).createSignedUploadUrl(path);
+        if (error || !data) { console.warn('[servicos] signed upload falhou:', error?.message); continue; }
+        uploads.push({ path, url: data.signedUrl });
+      }
+      res.json({ ok: true, uploads });
+    } catch (err) {
+      console.error('[servicos/uploads]', err);
+      res.status(500).json({ ok: false, erro: 'Falha ao preparar os envios.' });
+    }
+  });
+
+  // Instalador terminou: concluir + zap pro Junior.
+  router.post('/servicos/:id/concluir', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
+    try {
+      const servicoId = String(req.params.id);
+      const { getServico, concluirServico } = await import('./servicos-store.js');
+      const antes = await getServico(supabase, servicoId);
+      if (!antes) { res.status(404).json({ ok: false, erro: 'Registro não achado.' }); return; }
+      const obsFinais = String(req.body?.observacoes ?? '').trim();
+      const observacoes = obsFinais
+        ? (antes.observacoes ? `${antes.observacoes}\n---\n${obsFinais}` : obsFinais)
+        : null;
+      await concluirServico(supabase, servicoId, observacoes);
+      if (options.sendText && options.engineerPhone) {
+        const depois = await getServico(supabase, servicoId);
+        options.sendText(options.engineerPhone,
+          `✅ Serviço concluído: ${antes.tipoNome} — ${antes.clienteNome}` +
+          ` (${depois?.fotos ?? 0} fotos, ${depois?.videos ?? 0} vídeo${(depois?.videos ?? 0) === 1 ? '' : 's'})` +
+          ` por ${req.dashUser!.nome}. Veja na tela Serviços.`,
+        ).catch(() => { /* best-effort */ });
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[servicos/concluir]', err);
+      res.status(500).json({ ok: false, erro: 'Falha ao concluir.' });
     }
   });
 

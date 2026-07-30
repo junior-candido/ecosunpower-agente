@@ -8,8 +8,9 @@ const TIPOS = [
   { id: 'termino-instalacao', nome: 'Término de instalação (entrega)' },
 ];
 const SERVICOS = [
-  { id: 's1', tipoId: 'visita-tecnica', tipoNome: 'Visita técnica', leadId: 'l1', clienteNome: 'Fernanda', sistemaId: null, observacoes: 'ok', dataServico: '2026-07-30', fotos: 3, videos: 1 },
+  { id: 's1', tipoId: 'visita-tecnica', tipoNome: 'Visita técnica', leadId: 'l1', clienteNome: 'Fernanda', sistemaId: null, observacoes: 'ok', dataServico: '2026-07-30', fotos: 3, videos: 1, status: 'concluido' as const, atribuidoA: null, atribuidoNome: null },
 ];
+const ATRIBUIDO = { ...SERVICOS[0]!, id: 's2', tipoId: 'termino-instalacao', tipoNome: 'Término de instalação (entrega)', status: 'atribuido' as const, atribuidoA: 'u-inst', atribuidoNome: 'João Instalador', fotos: 0, videos: 0 };
 
 describe('renderServicosPage (lista)', () => {
   const html = renderServicosPage(SERVICOS, undefined);
@@ -59,12 +60,47 @@ describe('renderNovoServicoPage (form mobile)', () => {
 });
 
 describe('o JS embutido da página é VÁLIDO (guarda do bug 29/07: 1 parêntese matou todos os botões)', () => {
-  it('todo <script> das telas de serviços compila', () => {
-    for (const html of [renderNovoServicoPage(TIPOS, undefined), renderServicosPage(SERVICOS, undefined)]) {
+  it('todo <script> das telas de serviços compila (novo, lista e detalhe pendente)', async () => {
+    const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
+    for (const html of [
+      renderNovoServicoPage(TIPOS, undefined, [{ id: 'u1', nome: 'João' }]),
+      renderServicosPage(SERVICOS, undefined),
+      renderDetalheServicoPage(ATRIBUIDO, [], undefined),
+    ]) {
       for (const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
         expect(() => new Function(m[1]!)).not.toThrow();
       }
     }
+  });
+});
+
+describe('atribuição (F2)', () => {
+  it('form novo tem o select Atribuir a com os usuários', () => {
+    const html = renderNovoServicoPage(TIPOS, undefined, [{ id: 'u-inst', nome: 'João Instalador' }]);
+    expect(html).toContain('name="atribuido"');
+    expect(html).toContain('João Instalador');
+    expect(html).toContain('eu mesmo');
+  });
+  it('lista: pendente do usuário logado sobe pra seção "Seus serviços pendentes"', () => {
+    const eu = { id: 'u-inst', companyId: 'c1', nome: 'João', login: 'j', isAdmin: false, roleNome: 'Campo', permissoes: { servicos: ['visualizar', 'criar'] } } as any;
+    const html = renderServicosPage([SERVICOS[0]!, ATRIBUIDO], eu);
+    expect(html).toContain('Seus serviços pendentes');
+    expect(html).toContain('🟡 pendente');
+    expect(html).toContain('🟢 concluído');
+  });
+  it('detalhe pendente vira tela de trabalho: guia + anexos + Concluir', async () => {
+    const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
+    const html = renderDetalheServicoPage(ATRIBUIDO, [], undefined);
+    expect(html).toContain('Fotos pra tirar neste serviço'); // guia do tipo aparece
+    expect(html).toContain('cabo tronco');                    // lista do Junior (término)
+    expect(html).toContain('Concluir serviço');
+    expect(html).toContain('/concluir');
+    expect(html).toContain('Atribuído a João Instalador');
+  });
+  it('detalhe concluído NÃO tem o modo de trabalho', async () => {
+    const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
+    const html = renderDetalheServicoPage(SERVICOS[0]!, [], undefined);
+    expect(html).not.toContain('Concluir serviço');
   });
 });
 

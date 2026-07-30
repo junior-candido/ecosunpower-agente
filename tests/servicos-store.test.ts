@@ -2,15 +2,18 @@
 import { describe, it, expect } from 'vitest';
 import {
   listarTipos, criarServico, listarServicos, servicosDoLead, registrarMidias,
+  concluirServico,
 } from '../src/modules/dashboard/servicos-store.js';
 
 function mockClient(respostas: Record<string, any[]>) {
   const inserts: Record<string, any[]> = {};
+  const updates: Record<string, any[]> = {};
   const client = {
     from(tabela: string) {
       const resposta = () => (respostas[tabela] ?? []).shift() ?? { data: null, error: null };
       const chain: any = {
         insert(row: any) { (inserts[tabela] ??= []).push(row); return chain; },
+        update(row: any) { (updates[tabela] ??= []).push(row); return chain; },
         select() { return chain; }, eq() { return chain; }, order() { return chain; }, limit() { return chain; },
         single() { return Promise.resolve(resposta()); },
         maybeSingle() { return Promise.resolve(resposta()); },
@@ -19,7 +22,7 @@ function mockClient(respostas: Record<string, any[]>) {
       return chain;
     },
   };
-  return { client: client as any, inserts };
+  return { client: client as any, inserts, updates };
 }
 
 describe('listarTipos', () => {
@@ -60,6 +63,27 @@ describe('listarServicos / servicosDoLead', () => {
     const { client } = mockClient({ servicos: [{ data: [LINHA], error: null }] });
     const lista = await servicosDoLead(client, 'l1');
     expect(lista[0]!.tipoNome).toBe('Visita técnica');
+  });
+});
+
+describe('atribuição (F2)', () => {
+  it('criarServico grava atribuido_a e status atribuido', async () => {
+    const { client, inserts } = mockClient({ servicos: [{ data: { id: 's2' }, error: null }] });
+    await criarServico(client, {
+      companyId: 'c1', tipoId: 'instalacao-fv', leadId: 'l1', dataServico: '2026-07-30',
+      atribuidoA: 'u-instalador', status: 'atribuido',
+    });
+    expect(inserts.servicos?.[0]).toMatchObject({ atribuido_a: 'u-instalador', status: 'atribuido' });
+  });
+  it('sem atribuição → nasce concluido (registro preenchido na hora)', async () => {
+    const { client, inserts } = mockClient({ servicos: [{ data: { id: 's3' }, error: null }] });
+    await criarServico(client, { companyId: 'c1', tipoId: 'visita-tecnica', leadId: 'l1', dataServico: '2026-07-30' });
+    expect(inserts.servicos?.[0]).toMatchObject({ status: 'concluido', atribuido_a: null });
+  });
+  it('concluirServico marca concluido (e pode anexar observações)', async () => {
+    const { client, updates } = mockClient({ servicos: [{ data: null, error: null }] });
+    await concluirServico(client, 's2', 'tudo instalado, telhado ok');
+    expect(updates.servicos?.[0]).toEqual({ status: 'concluido', observacoes: 'tudo instalado, telhado ok' });
   });
 });
 
