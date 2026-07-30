@@ -678,14 +678,12 @@ b.onclick=async function(){
         try {
           const { telefoneDoUsuario } = await import('./users-store.js');
           const { getServico } = await import('./servicos-store.js');
+          const { textoAvisoServico } = await import('./servicos-zap.js');
           const tel = await telefoneDoUsuario(supabase, atribuidoA);
           if (tel) {
             const s = await getServico(supabase, servicoId);
             const base = (options.appBaseUrl ?? '').replace(/\/$/, '');
-            await options.sendText(tel,
-              `🔧 Novo serviço pra você: ${s?.tipoNome ?? tipo} — ${s?.clienteNome ?? ''}, dia ${dataServico.split('-').reverse().join('/')}.` +
-              (base ? `\nAbra pra ver o guia de fotos: ${base}/dashboard/servicos/${servicoId}` : '\nAbra a tela Serviços no dashboard pra ver o guia.'),
-            );
+            if (s) await options.sendText(tel, textoAvisoServico(s, base ? `${base}/dashboard/servicos/${servicoId}` : null));
           }
         } catch (err) {
           console.warn('[servicos] aviso de atribuição falhou:', (err as Error).message);

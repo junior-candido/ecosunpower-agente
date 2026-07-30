@@ -183,7 +183,7 @@ export function renderDetalheServicoPage(
 
 // Guia de fotos por tipo de serviço (pedido do Junior 29/07: "um guia escrito
 // das fotos a serem enviadas"). Rascunho do Claude — o Junior ajusta o texto.
-const GUIAS_FOTOS: Record<string, string[]> = {
+export const GUIAS_FOTOS: Record<string, string[]> = {
   // Lista do Junior (29/07) — palavras dele.
   'visita-tecnica': [
     'Foto do padrão de entrada',
