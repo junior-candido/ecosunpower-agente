@@ -24,8 +24,11 @@ começamos alinhando o pós-vendas".
 **Registro de serviço de campo**, feito pelo celular, dentro do dashboard:
 
 - **Tipo de serviço** (tabela `servico_tipos` com seed, ajustável):
-  visita técnica · instalação FV · manutenção/limpeza · projeto elétrico ·
-  padrão de entrada · reforma de quadro · laudo/vistoria · outro.
+  visita técnica · instalação FV · **término de instalação (entrega)** ·
+  manutenção/limpeza · projeto elétrico · padrão de entrada · reforma de
+  quadro · laudo/vistoria · outro. (Junior 29/07: "ataca o antes e depois —
+  visita e término de instalação" — o par visita/término documenta o ciclo
+  completo da obra na usina.)
 - **Cliente**: busca existente por nome/telefone (autocomplete) **ou cria na
   hora** (nome + telefone → reusa `getOrCreateLeadByPhone`, dedup do 9º dígito).
   Cliente avulso vira lead normal — histórico num lugar só.
