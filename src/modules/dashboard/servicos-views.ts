@@ -72,15 +72,46 @@ export function renderDetalheServicoPage(
   return renderLayout({ active: 'servicos', title: s.tipoNome, body, user });
 }
 
+// Guia de fotos por tipo de serviço (pedido do Junior 29/07: "um guia escrito
+// das fotos a serem enviadas"). Rascunho do Claude — o Junior ajusta o texto.
+const GUIAS_FOTOS: Record<string, string[]> = {
+  'visita-tecnica': [
+    'Padrão de entrada ABERTO (disjuntor geral visível)',
+    'Medidor de perto (número legível)',
+    'Quadro de distribuição aberto',
+    'Telhado por CIMA (todas as águas onde vão os painéis)',
+    'Estrutura do telhado por BAIXO (madeiramento/metálica)',
+    'Local previsto do inversor (parede)',
+    'Caminho do cabeamento (do telhado até o quadro)',
+    'Conta de luz (foto ou PDF)',
+  ],
+  'termino-instalacao': [
+    'Painéis instalados — visão geral do telhado',
+    'Fixação/estrutura de perto (1 ponto)',
+    'Inversor LIGADO (display/LEDs acesos)',
+    'String box aberta (proteções CC)',
+    'Quadro com o disjuntor FV identificado (etiqueta)',
+    'Padrão de entrada final',
+    'Aterramento (haste/conexão)',
+    '🎥 Vídeo curto do inversor operando (mostra a geração na tela)',
+  ],
+};
+
 export function renderNovoServicoPage(tipos: TipoServico[], user: DashUser | undefined): string {
   const opcoes = tipos.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.nome)}</option>`).join('');
   const hoje = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const guias = Object.entries(GUIAS_FOTOS).map(([tipo, itens]) =>
+    `<div class="guia-fotos hidden mt-2 px-4 py-3 rounded-xl bg-sky-50 border border-sky-200" data-tipo="${escapeHtml(tipo)}">
+      <p class="text-sm font-semibold text-sky-900 mb-1">📷 Fotos pra tirar neste serviço:</p>
+      <ol class="text-sm text-sky-800 list-decimal ml-5 space-y-0.5">${itens.map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</ol>
+    </div>`).join('');
 
   const body = `
   <div class="mb-5"><h1 class="text-2xl font-bold text-slate-800">➕ Novo registro</h1></div>
   <div class="max-w-xl space-y-4" id="form">
     <label class="block"><span class="text-sm font-medium text-slate-700">Tipo de serviço</span>
-      <select id="f_tipo" class="mt-1 w-full border border-slate-300 rounded-xl px-4 py-3 text-base">${opcoes}</select></label>
+      <select id="f_tipo" onchange="mostraGuia()" class="mt-1 w-full border border-slate-300 rounded-xl px-4 py-3 text-base">${opcoes}</select></label>
+    ${guias}
 
     <div class="block"><span class="text-sm font-medium text-slate-700">Cliente</span>
       <input id="f_busca" placeholder="Busque por nome ou telefone…" autocomplete="off" class="mt-1 w-full border border-slate-300 rounded-xl px-4 py-3 text-base">
@@ -120,6 +151,12 @@ export function renderNovoServicoPage(tipos: TipoServico[], user: DashUser | und
   <script>
   var MAX_VIDEOS=2, MAX_VIDEO_MB=100;
   var estado={leadId:null,sistemaId:null,fotos:[],videos:[]};
+
+  function mostraGuia(){
+   var t=document.getElementById('f_tipo').value;
+   document.querySelectorAll('.guia-fotos').forEach(function(g){
+    g.classList.toggle('hidden',g.getAttribute('data-tipo')!==t)})}
+  mostraGuia();
 
   function debounce(f,ms){var t;return function(){var a=arguments;clearTimeout(t);t=setTimeout(function(){f.apply(null,a)},ms)}}
 
