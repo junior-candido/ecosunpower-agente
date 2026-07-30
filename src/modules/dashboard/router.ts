@@ -591,6 +591,25 @@ b.onclick=async function(){
         if (error || !data) { console.warn('[servicos] signed upload falhou:', error?.message); continue; }
         uploads.push({ path, url: data.signedUrl });
       }
+
+      // Atribuiu? Avisa o instalador NO ZAP na hora (se tiver telefone cadastrado).
+      if (atribuidoA && options.sendText) {
+        try {
+          const { telefoneDoUsuario } = await import('./users-store.js');
+          const { getServico } = await import('./servicos-store.js');
+          const tel = await telefoneDoUsuario(supabase, atribuidoA);
+          if (tel) {
+            const s = await getServico(supabase, servicoId);
+            const base = (options.appBaseUrl ?? '').replace(/\/$/, '');
+            await options.sendText(tel,
+              `🔧 Novo serviço pra você: ${s?.tipoNome ?? tipo} — ${s?.clienteNome ?? ''}, dia ${dataServico.split('-').reverse().join('/')}.` +
+              (base ? `\nAbra pra ver o guia de fotos: ${base}/dashboard/servicos/${servicoId}` : '\nAbra a tela Serviços no dashboard pra ver o guia.'),
+            );
+          }
+        } catch (err) {
+          console.warn('[servicos] aviso de atribuição falhou:', (err as Error).message);
+        }
+      }
       res.json({ ok: true, id: servicoId, uploads });
     } catch (err) {
       console.error('[servicos/nova]', err);
@@ -759,11 +778,12 @@ b.onclick=async function(){
 
   router.post('/usuarios/novo', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'usuarios', 'criar')) { res.status(403).send('Sem permissão'); return; }
-    const { nome, login, senha, role_id } = req.body ?? {};
+    const { nome, login, senha, role_id, telefone } = req.body ?? {};
     if (!nome || !login || !senha || !role_id) { res.status(400).send('Campos obrigatórios'); return; }
     const r = await createUser(supabase, {
       companyId: req.dashUser!.companyId, nome, login,
       senhaHash: await hashSenha(senha), roleId: role_id,
+      telefone: String(telefone ?? '').replace(/\D/g, '') || null,
     });
     if ('error' in r) { res.status(400).send(r.error === 'login_em_uso' ? 'Login já existe' : r.error); return; }
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: r.id, acao: 'criou' });
@@ -775,7 +795,7 @@ b.onclick=async function(){
     const cid = req.dashUser!.companyId;
     const userId = String(req.params.id);
     const { data: u } = await supabase.from('dashboard_users')
-      .select('id, nome, login, ativo, role_id').eq('id', userId).maybeSingle();
+      .select('id, nome, login, ativo, role_id, telefone').eq('id', userId).maybeSingle();
     if (!u) { res.status(404).send('Usuário não encontrado'); return; }
     const roles = await listRoles(supabase, cid);
     res.type('html').send(renderUsuarioEditPage(u as any, roles, req.dashUser));
@@ -784,10 +804,11 @@ b.onclick=async function(){
   router.post('/usuarios/:id', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'usuarios', 'editar')) { res.status(403).send('Sem permissão'); return; }
     const userId = String(req.params.id);
-    const { nome, role_id, senha, ativo } = req.body ?? {};
+    const { nome, role_id, senha, ativo, telefone } = req.body ?? {};
     await updateUser(supabase, userId, {
       nome, roleId: role_id, ativo: ativo === 'on' || ativo === true,
       senhaHash: senha ? await hashSenha(senha) : undefined,
+      telefone: telefone !== undefined ? (String(telefone).replace(/\D/g, '') || null) : undefined,
     });
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: 'editar' });
     res.redirect('/dashboard/usuarios');
