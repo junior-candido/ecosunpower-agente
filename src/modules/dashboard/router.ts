@@ -819,6 +819,85 @@ b.onclick=async function(){
     }
   });
 
+  // 📤 Enviar pelo zap: reenvio pro atribuído OU número avulso (com acesso
+  // temporário criado na hora, ou só as informações). Pedido do Junior 30/07.
+  router.post('/servicos/:id/enviar-zap', exigir('servicos', 'editar'), async (req: AuthedRequest, res) => {
+    try {
+      if (!options.sendText) { res.status(400).json({ ok: false, erro: 'Envio de WhatsApp indisponível no momento.' }); return; }
+      const { getServico, atribuirServico } = await import('./servicos-store.js');
+      const { textoAvisoServico, textoInfoServico } = await import('./servicos-zap.js');
+      const s = await getServico(supabase, String(req.params.id));
+      if (!s) { res.status(404).json({ ok: false, erro: 'Registro não achado.' }); return; }
+      const base = (options.appBaseUrl ?? '').replace(/\/$/, '');
+      const link = base ? `${base}/dashboard/servicos/${s.id}` : null;
+      const destino = String(req.body?.destino ?? 'atribuido');
+
+      if (destino === 'atribuido') {
+        if (!s.atribuidoA) { res.status(400).json({ ok: false, erro: 'Este serviço não está atribuído a ninguém.' }); return; }
+        const { telefoneDoUsuario } = await import('./users-store.js');
+        const tel = await telefoneDoUsuario(supabase, s.atribuidoA);
+        if (!tel) { res.status(400).json({ ok: false, erro: 'O atribuído não tem telefone cadastrado — edite ele na tela Usuários.' }); return; }
+        await options.sendText(tel, textoAvisoServico(s, link));
+        res.json({ ok: true }); return;
+      }
+
+      // Número avulso
+      const tel = String(req.body?.telefone ?? '').replace(/\D/g, '');
+      const nome = String(req.body?.nome ?? '').trim();
+      if (tel.length < 10) { res.status(400).json({ ok: false, erro: 'Telefone inválido — use DDD+número.' }); return; }
+      const modo = String(req.body?.modo ?? 'info');
+
+      if (modo === 'info') {
+        // Endereço do cliente entra na mensagem, se tiver.
+        const { data: lead } = await supabase.from('leads')
+          .select('endereco_rua, endereco_numero, neighborhood, city')
+          .eq('id', s.leadId).maybeSingle();
+        const l = lead as { endereco_rua?: string; endereco_numero?: string; neighborhood?: string; city?: string } | null;
+        const endereco = [l?.endereco_rua, l?.endereco_numero, l?.neighborhood, l?.city].filter(Boolean).join(', ') || null;
+        await options.sendText(tel, textoInfoServico(s, endereco));
+        res.json({ ok: true }); return;
+      }
+
+      // modo 'acesso': já tem cadastro pelo telefone? Reusa (reativa se preciso).
+      const { usuarioPorTelefone, updateUser, createUser, textoBoasVindas, listRoles } = await import('./users-store.js');
+      const cid = req.dashUser!.companyId;
+      const jaExiste = await usuarioPorTelefone(supabase, cid, tel);
+      if (jaExiste) {
+        if (!jaExiste.ativo) await updateUser(supabase, jaExiste.id, { ativo: true });
+        await atribuirServico(supabase, s.id, jaExiste.id);
+        const depois = await getServico(supabase, s.id);
+        await options.sendText(tel, textoAvisoServico(depois ?? s, link));
+        res.json({ ok: true, aviso: `${jaExiste.nome} já tinha cadastro — atribuí e enviei o guia.` }); return;
+      }
+
+      // Cria na hora: papel Campo + ⏳ acesso temporário (expira ao concluir, #184).
+      if (!nome) { res.status(400).json({ ok: false, erro: 'Informe o nome de quem vai receber.' }); return; }
+      const roles = await listRoles(supabase, cid);
+      const campo = roles.find((r) => r.nome.trim().toLowerCase() === 'campo');
+      if (!campo) { res.status(400).json({ ok: false, erro: 'Crie antes o papel "Campo" (área serviços) na tela Usuários.' }); return; }
+      const { randomUUID } = await import('crypto');
+      const senha = randomUUID().replace(/-/g, '').slice(0, 8);
+      const login = `${nome.split(' ')[0]!.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')}${tel.slice(-4)}`;
+      const r = await createUser(supabase, {
+        companyId: cid, nome, login, senhaHash: await hashSenha(senha),
+        roleId: campo.id, telefone: tel, acessoTemporario: true,
+      });
+      if ('error' in r) {
+        res.status(400).json({ ok: false, erro: r.error === 'login_em_uso' ? `O login "${login}" já existe — crie o usuário na tela Usuários.` : r.error }); return;
+      }
+      await audit(supabase, { companyId: cid, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: r.id, acao: 'criou' });
+      await atribuirServico(supabase, s.id, r.id);
+      const depois = await getServico(supabase, s.id);
+      await options.sendText(tel,
+        textoBoasVindas(nome, login, senha, base ? `${base}/dashboard` : null) +
+        `\n\n${textoAvisoServico(depois ?? s, link)}`);
+      res.json({ ok: true, aviso: `Acesso temporário criado pra ${nome} (login ${login}) — guia enviado.` });
+    } catch (err) {
+      console.error('[servicos/enviar-zap]', err);
+      res.status(500).json({ ok: false, erro: 'Falha ao enviar — tente de novo.' });
+    }
+  });
+
   router.get('/servicos/:id', exigir('servicos', 'visualizar'), async (req: AuthedRequest, res) => {
     try {
       const { getServico, midiasDoServico } = await import('./servicos-store.js');
