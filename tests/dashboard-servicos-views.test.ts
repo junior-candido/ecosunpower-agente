@@ -45,6 +45,16 @@ describe('renderNovoServicoPage (form mobile)', () => {
   });
 });
 
+describe('o JS embutido da página é VÁLIDO (guarda do bug 29/07: 1 parêntese matou todos os botões)', () => {
+  it('todo <script> das telas de serviços compila', () => {
+    for (const html of [renderNovoServicoPage(TIPOS, undefined), renderServicosPage(SERVICOS, undefined)]) {
+      for (const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
+        expect(() => new Function(m[1]!)).not.toThrow();
+      }
+    }
+  });
+});
+
 describe('renderDetalheServicoPage', () => {
   it('mostra o registro com fotos e vídeo (URLs assinadas)', async () => {
     const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
