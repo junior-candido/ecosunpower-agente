@@ -908,7 +908,14 @@ b.onclick=async function(){
       const midias = await midiasDoServico(supabase, s.id);
       const urls = await getSignedUrls(supabase, midias.map((m) => m.path), 3600);
       const comUrl = midias.map((m) => ({ tipoMidia: m.tipoMidia, url: urls[m.path] ?? '' })).filter((m) => m.url);
-      res.type('html').send(renderDetalheServicoPage(s, comUrl, req.dashUser, can(req.dashUser, 'servicos', 'editar')));
+      const podeEditar = can(req.dashUser, 'servicos', 'editar');
+      let telAtribuido: string | null = null;
+      if (podeEditar && s.atribuidoA) {
+        const { telefoneDoUsuario } = await import('./users-store.js');
+        telAtribuido = await telefoneDoUsuario(supabase, s.atribuidoA);
+      }
+      res.type('html').send(renderDetalheServicoPage(s, comUrl, req.dashUser, podeEditar,
+        { pode: podeEditar, telAtribuido, criadoAgora: (req.query as Record<string, string | undefined>).criado === '1' }));
     } catch (err) {
       console.error('[servicos/detalhe]', err);
       res.status(500).send('Falha ao carregar o registro.');

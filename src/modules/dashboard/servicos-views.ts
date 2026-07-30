@@ -69,6 +69,7 @@ export function renderDetalheServicoPage(
   midias: { tipoMidia: string; url: string }[],
   user: DashUser | undefined,
   podeReabrir = false,
+  envioZap?: { pode: boolean; telAtribuido: string | null; criadoAgora?: boolean },
 ): string {
   const fotos = midias.filter((m) => m.tipoMidia === 'foto')
     .map((m) => `<a href="${escapeHtml(m.url)}" target="_blank"><img src="${escapeHtml(m.url)}" class="w-full h-36 object-cover rounded-xl"></a>`).join('');
@@ -151,9 +152,62 @@ export function renderDetalheServicoPage(
     </script>`
     : '';
 
+  // 📤 Enviar pelo zap (quem pode editar): reenvio pro atribuído ou número
+  // avulso — avulso escolhe entre acesso temporário criado na hora ou só as
+  // informações. Pedido do Junior 30/07.
+  const faixaCriado = envioZap?.criadoAgora
+    ? `<div class="mb-4 px-4 py-3 rounded-xl text-sm bg-emerald-50 text-emerald-800 border border-emerald-200">✅ Serviço criado! Quer mandar as informações no zap de quem vai fazer? Use o botão aqui embaixo.</div>`
+    : '';
+  const opcaoAtribuido = s.atribuidoA
+    ? (envioZap?.telAtribuido
+      ? `<label class="flex items-center gap-2 text-sm"><input type="radio" name="z_destino" value="atribuido" checked onchange="zapModo()"> Pro atribuído: <b>${escapeHtml(s.atribuidoNome ?? '')}</b> (${escapeHtml(envioZap.telAtribuido)})</label>`
+      : `<p class="text-sm text-amber-700">⚠️ ${escapeHtml(s.atribuidoNome ?? 'O atribuído')} está sem telefone cadastrado — <a class="underline" href="/dashboard/usuarios">cadastre na tela Usuários</a> ou use "Outro número".</p>`)
+    : '';
+  const zapHtml = envioZap?.pode ? `
+    <button onclick="document.getElementById('zap_modal').classList.remove('hidden')" class="mt-4 w-full px-5 py-3 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white font-bold shadow">📤 Enviar pelo zap</button>
+    <div id="zap_modal" class="hidden mt-3 bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-3">
+      ${opcaoAtribuido}
+      <label class="flex items-center gap-2 text-sm"><input type="radio" name="z_destino" value="avulso" ${s.atribuidoA && envioZap.telAtribuido ? '' : 'checked'} onchange="zapModo()"> Outro número</label>
+      <div id="z_avulso" class="space-y-2">
+        <div class="grid grid-cols-2 gap-2">
+          <input id="z_nome" placeholder="Nome" class="border border-slate-300 rounded-xl px-3 py-2 text-sm">
+          <input id="z_tel" placeholder="Telefone (zap)" inputmode="tel" class="border border-slate-300 rounded-xl px-3 py-2 text-sm">
+        </div>
+        <label class="flex items-center gap-2 text-sm"><input type="radio" name="z_modo" value="acesso" checked> 🔑 Criar acesso temporário (entra, tira as fotos e conclui; o acesso expira sozinho)</label>
+        <label class="flex items-center gap-2 text-sm"><input type="radio" name="z_modo" value="info"> 📄 Só as informações (endereço + roteiro de fotos, sem acesso)</label>
+      </div>
+      <button id="z_enviar" onclick="zapEnviar()" class="w-full px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">Enviar</button>
+      <div id="z_status" class="text-sm text-center text-slate-500"></div>
+    </div>
+    <script>
+    function zapModo(){
+     var d=document.querySelector('input[name="z_destino"]:checked');
+     document.getElementById('z_avulso').style.display=(d&&d.value==='avulso')?'':'none'}
+    zapModo();
+    function zapEnviar(){
+     var d=document.querySelector('input[name="z_destino"]:checked');
+     var m=document.querySelector('input[name="z_modo"]:checked');
+     var corpo={destino:d?d.value:'avulso'};
+     if(corpo.destino==='avulso'){
+      corpo.telefone=document.getElementById('z_tel').value.trim();
+      corpo.nome=document.getElementById('z_nome').value.trim();
+      corpo.modo=m?m.value:'info';
+      if(!corpo.telefone){alert('Informe o telefone');return}}
+     var btn=document.getElementById('z_enviar');btn.disabled=true;btn.textContent='Enviando…';
+     fetch('/dashboard/servicos/${escapeHtml(s.id)}/enviar-zap',{method:'POST',
+      headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(corpo)})
+     .then(function(r){return r.json()}).then(function(j){
+      btn.disabled=false;btn.textContent='Enviar';
+      if(!j.ok)throw new Error(j.erro||'falha');
+      document.getElementById('z_status').textContent='✅ Enviado!'+(j.aviso?' '+j.aviso:'')})
+     .catch(function(e){btn.disabled=false;btn.textContent='Enviar';
+      document.getElementById('z_status').textContent='❌ '+e.message})}
+    </script>` : '';
+
   const body = `
   <a href="/dashboard/servicos" class="text-sm text-slate-600 hover:underline">← Voltar</a>
   <div class="max-w-xl mt-3">
+    ${faixaCriado}
     <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
       <div class="flex items-center justify-between">
         <span class="text-lg font-bold text-slate-800">${escapeHtml(s.tipoNome)}</span>
@@ -169,6 +223,7 @@ export function renderDetalheServicoPage(
     ${fotos ? `<div class="grid grid-cols-2 gap-2 mt-4">${fotos}</div>` : ''}
     ${videos}
     ${completar}
+    ${zapHtml}
     ${s.status === 'concluido' && podeReabrir ? `
     <details class="mt-5"><summary class="text-sm text-amber-700 cursor-pointer select-none">🔄 Faltou algo? Reabrir o serviço</summary>
       <form method="post" action="/dashboard/servicos/${s.id}/reabrir" class="mt-2 flex gap-2">
@@ -380,7 +435,7 @@ export function renderNovoServicoPage(
      return fetch('/dashboard/servicos/'+j.id+'/confirmar-midias',{method:'POST',
       headers:{'Content-Type':'application/json','Accept':'application/json'},
       body:JSON.stringify({midias:feitas})})}).then(function(){
-     window.location='/dashboard/servicos?ok='+encodeURIComponent('Registro salvo!'+(ups.length?' ('+feitas.length+'/'+ups.length+' arquivos)':''))})})
+     window.location='/dashboard/servicos/'+j.id+'?criado=1'})})
    .catch(function(e){alert('Falha ao salvar: '+e.message);btn.disabled=false;btn.textContent='💾 Salvar registro'})}
   </script>`;
 
