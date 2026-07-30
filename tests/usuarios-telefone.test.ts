@@ -1,7 +1,7 @@
 // F2 do Diário — telefone (zap) no usuário: cadastrado na tela Usuários,
 // usado pro aviso "novo serviço atribuído a você" chegar no WhatsApp.
 import { describe, it, expect } from 'vitest';
-import { createUser, updateUser, telefoneDoUsuario } from '../src/modules/dashboard/users-store.js';
+import { createUser, updateUser, telefoneDoUsuario, textoBoasVindas } from '../src/modules/dashboard/users-store.js';
 
 function mockClient(respostas: Record<string, any[]> = {}) {
   const inserts: any[] = [];
@@ -30,6 +30,14 @@ describe('telefone do usuário', () => {
     const t2 = mockClient();
     await updateUser(t2.client, 'u1', { telefone: null });
     expect(t2.updates[0]).toEqual({ telefone: null });
+  });
+  it('textoBoasVindas tem link, login, senha e o pedido de troca', () => {
+    const t = textoBoasVindas('João', 'joao', 'abc12345', 'https://app.exemplo.com/dashboard');
+    expect(t).toContain('João');
+    expect(t).toContain('joao');
+    expect(t).toContain('abc12345');
+    expect(t).toContain('https://app.exemplo.com/dashboard');
+    expect(t.toUpperCase()).toContain('TROQUE');
   });
   it('telefoneDoUsuario devolve o número (ou null)', async () => {
     const { client } = mockClient({ maybeSingle: [{ data: { telefone: '5561999998888' }, error: null }] });

@@ -168,6 +168,15 @@ export async function telefoneDoUsuario(client: SupabaseClient, id: string): Pro
   return (data as { telefone?: string | null } | null)?.telefone ?? null;
 }
 
+/** Zap de boas-vindas do usuário novo: acesso + login + senha inicial.
+ *  A senha viaja UMA vez, na criação, com o pedido de troca no 1º acesso. */
+export function textoBoasVindas(nome: string, login: string, senhaInicial: string, urlDashboard: string | null): string {
+  return `👋 Olá, ${nome}! Seu acesso ao sistema da EcoSunPower está pronto:\n\n` +
+    (urlDashboard ? `🌐 Endereço: ${urlDashboard}\n` : '') +
+    `👤 Login: ${login}\n🔑 Senha inicial: ${senhaInicial}\n\n` +
+    `Entre e TROQUE a senha no primeiro acesso, combinado? Qualquer dúvida, fala com a gente.`;
+}
+
 export async function touchLastLogin(client: SupabaseClient, id: string): Promise<void> {
   await client.from('dashboard_users').update({ last_login_at: new Date().toISOString() }).eq('id', id);
 }
