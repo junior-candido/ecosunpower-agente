@@ -85,7 +85,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'contratos' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'assinaturas' | 'minha_assinatura' | 'usuarios' | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro';
+  active: 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'contratos' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'assinaturas' | 'minha_assinatura' | 'servicos' | 'usuarios' | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro';
   title: string;
   body: string;
   scripts?: string;
@@ -158,6 +158,7 @@ const SIDEBAR_SETORES: SideSetor[] = [
       { href: '/dashboard/minha-assinatura', key: 'minha_assinatura', label: '📆 Minha assinatura', area: 'usinas', soTenant: true },
       { href: '/dashboard/usinas/kanban', key: 'usinas_kanban', label: '🏗️ Kanban de Obras', area: 'usinas' },
       { href: '/dashboard/pos-venda', key: 'pos_venda', label: '❤️ Pós-venda', area: 'usinas' },
+      { href: '/dashboard/servicos', key: 'servicos', label: '🔧 Serviços (campo)', area: 'servicos' },
       { href: '/dashboard/manutencao', key: 'manutencao', label: '🔧 Manutenção' },
     ],
   },
