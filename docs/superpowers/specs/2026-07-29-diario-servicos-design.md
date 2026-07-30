@@ -31,7 +31,10 @@ começamos alinhando o pós-vendas".
   Cliente avulso vira lead normal — histórico num lugar só.
 - **Usina (opcional)**: se o serviço é numa instalação cadastrada, amarra nela.
 - **Fotos** (câmera do celular, múltiplas, comprimidas no navegador como nas
-  coletas ~1600px) + **observações** (texto livre) + **data** (default hoje) +
+  coletas ~1600px) + **vídeo** (pedido do Junior 29/07: "opção de pelo menos 1
+  vídeo" — até 2 por registro, direto da câmera, curto; sem transcodificar no
+  navegador, sobe como veio, com teto de tamanho ~100 MB e aviso "vídeo curto
+  sobe rápido") + **observações** (texto livre) + **data** (default hoje) +
   **quem fez** (usuário logado, automático).
 - **Salvar → gravado**. Sem zap no meio, sem passo manual.
 
@@ -65,8 +68,8 @@ o papel Campo não ganha chave nenhuma).
 - `servicos`: id, company_id (EcoSun), tipo_id, lead_id (cliente — obrigatório),
   sistema_id (usina, opcional), descricao/observacoes text, data_servico date,
   criado_por (dashboard_users), criado_em. RLS company_isolation.
-- `servico_fotos`: id, servico_id, company_id, path storage, legenda opcional,
-  ordem, criado_em. RLS idem.
+- `servico_fotos` (fotos E vídeos): id, servico_id, company_id, path storage,
+  tipo_midia ('foto'|'video'), legenda opcional, ordem, criado_em. RLS idem.
 
 ## Fases
 
