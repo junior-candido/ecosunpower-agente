@@ -787,6 +787,15 @@ b.onclick=async function(){
     });
     if ('error' in r) { res.status(400).send(r.error === 'login_em_uso' ? 'Login já existe' : r.error); return; }
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: r.id, acao: 'criou' });
+    // Boas-vindas no zap (telefone preenchido): acesso + login + senha inicial
+    // — a senha viaja UMA vez, com o pedido de troca no 1º acesso.
+    const telNovo = String(telefone ?? '').replace(/\D/g, '');
+    if (telNovo && options.sendText) {
+      const { textoBoasVindas } = await import('./users-store.js');
+      const base = (options.appBaseUrl ?? '').replace(/\/$/, '');
+      options.sendText(telNovo, textoBoasVindas(String(nome), String(login), String(senha), base ? `${base}/dashboard` : null))
+        .catch((e) => console.warn('[usuarios] boas-vindas no zap falhou:', (e as Error).message));
+    }
     res.redirect('/dashboard/usuarios');
   });
 
