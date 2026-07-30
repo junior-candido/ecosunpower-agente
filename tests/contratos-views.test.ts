@@ -66,3 +66,12 @@ describe('renderContratosPage — Central de Contratos', () => {
     expect(html).toContain('resultado(s) pra');
   });
 });
+
+describe('📷 Tirar foto (câmera no celular, 30/07)', () => {
+  it('barra Ler conta+CNH tem o botão da câmera', () => {
+    const html = renderContratosPage({ q: '', buscou: false, resultados: [], recentes: [], tipos, tipoSel: 'fv',
+      selecionado: { leadId: 'l9', nome: 'Lucas', status: 'contrato_assinado' } });
+    expect(html).toContain('Tirar foto');
+    expect(html).toContain("setAttribute('capture'");
+  });
+});

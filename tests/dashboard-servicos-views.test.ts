@@ -35,8 +35,11 @@ describe('renderNovoServicoPage (form mobile)', () => {
     expect(html).toContain('name="data"');
     expect(html).toContain('observacoes');
   });
-  it('aceita foto e vídeo (máx 2 vídeos avisado no código)', () => {
-    expect(html).toContain('accept="image/*"');
+  it('câmera E galeria separadas (bug 30/07: Android abria só arquivos)', () => {
+    expect(html).toContain('capture="environment"');           // 📷 abre a câmera
+    expect(html).toContain('accept="image/*" multiple');       // 🖼️ galeria continua
+    expect(html).toContain('Tirar foto');
+    expect(html).toContain('Galeria');
     expect(html).toContain('accept="video/*"');
     expect(html).toContain('MAX_VIDEOS=2');
   });
@@ -66,6 +69,7 @@ describe('o JS embutido da página é VÁLIDO (guarda do bug 29/07: 1 parêntese
       renderNovoServicoPage(TIPOS, undefined, [{ id: 'u1', nome: 'João' }]),
       renderServicosPage(SERVICOS, undefined),
       renderDetalheServicoPage(ATRIBUIDO, [], undefined),
+      renderDetalheServicoPage(ATRIBUIDO, [], undefined, false, { pode: true, telAtribuido: '556199', criadoAgora: true }),
     ]) {
       for (const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
         expect(() => new Function(m[1]!)).not.toThrow();
@@ -96,6 +100,7 @@ describe('atribuição (F2)', () => {
     expect(html).toContain('Concluir serviço');
     expect(html).toContain('/concluir');
     expect(html).toContain('Atribuído a João Instalador');
+    expect(html).toContain('capture="environment"'); // câmera também na tela do instalador
   });
   it('detalhe concluído NÃO tem o modo de trabalho', async () => {
     const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
@@ -107,6 +112,39 @@ describe('atribuição (F2)', () => {
     expect(renderDetalheServicoPage(SERVICOS[0]!, [], undefined, true)).toContain('/reabrir');
     expect(renderDetalheServicoPage(SERVICOS[0]!, [], undefined, false)).not.toContain('/reabrir');
     expect(renderDetalheServicoPage(ATRIBUIDO, [], undefined, true)).not.toContain('/reabrir'); // pendente não reabre
+  });
+});
+
+describe('📤 Enviar pelo zap (detalhe)', () => {
+  const zap = { pode: true, telAtribuido: '5561999998888', criadoAgora: false };
+  it('quem pode editar vê o botão e o modal (atribuído + outro número + 2 modos)', async () => {
+    const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
+    const html = renderDetalheServicoPage(ATRIBUIDO, [], undefined, false, zap);
+    expect(html).toContain('Enviar pelo zap');
+    expect(html).toContain('/enviar-zap');
+    expect(html).toContain('João Instalador');          // opção do atribuído com nome
+    expect(html).toContain('Outro número');
+    expect(html).toContain('Criar acesso temporário');
+    expect(html).toContain('Só as informações');
+  });
+  it('sem permissão de editar → sem botão', async () => {
+    const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
+    expect(renderDetalheServicoPage(ATRIBUIDO, [], undefined, false, { pode: false, telAtribuido: null }))
+      .not.toContain('Enviar pelo zap');
+  });
+  it('atribuído SEM telefone → orienta cadastrar', async () => {
+    const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
+    const html = renderDetalheServicoPage(ATRIBUIDO, [], undefined, false, { pode: true, telAtribuido: null });
+    expect(html).toContain('sem telefone cadastrado');
+  });
+  it('criadoAgora → faixa "Serviço criado" com o convite de enviar', async () => {
+    const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
+    const html = renderDetalheServicoPage(ATRIBUIDO, [], undefined, false, { ...zap, criadoAgora: true });
+    expect(html).toContain('Serviço criado');
+  });
+  it('form novo redireciona pro detalhe com ?criado=1 (aviso pós-salvar)', () => {
+    const html = renderNovoServicoPage(TIPOS, undefined);
+    expect(html).toContain('?criado=1');
   });
 });
 

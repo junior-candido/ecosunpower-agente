@@ -439,8 +439,9 @@ export function renderContratoFormPage(page: ContratoFormInput): string {
       <input type="hidden" name="tipo_contrato" value="${escapeHtml(def.tipo)}" />
       <div class="text-sm text-slate-700 mb-2">🤖 <strong>Ler conta de luz + CNH</strong> — sobe os documentos e a IA preenche CPF, RG, estado civil, data de nascimento, endereço e UC pra você não digitar na mão.</div>
       <div class="flex flex-wrap gap-2 items-center">
-        <input type="file" name="docs" accept="image/*,application/pdf" multiple
+        <input type="file" name="docs" accept="image/*,application/pdf" multiple id="cf_docs"
           class="text-xs text-slate-600 file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-violet-100 file:text-violet-800 file:cursor-pointer" />
+        <button type="button" onclick="var i=document.getElementById('cf_docs');i.setAttribute('capture','environment');i.setAttribute('accept','image/*');i.removeAttribute('multiple');i.click();i.removeAttribute('capture');i.setAttribute('accept','image/*,application/pdf');i.setAttribute('multiple','')" class="px-3 py-2 rounded-lg text-sm bg-violet-100 text-violet-800 hover:bg-violet-200">📷 Tirar foto</button>
         <button class="px-4 py-2 rounded-lg text-sm bg-violet-600 text-white hover:bg-violet-700 font-medium">Ler e preencher</button>
       </div>
     </form>

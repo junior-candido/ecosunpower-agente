@@ -120,3 +120,11 @@ describe('renderPreviewProposta', () => {
     expect(html).toMatch(/this\.dataset\.nome/);
   });
 });
+
+describe('📷 Tirar foto (câmera no celular, 30/07)', () => {
+  it('cada campo de foto tem o botão da câmera', () => {
+    const html = renderFormNovaProposta({ lead_id: 'x', lead: null, erros: [] });
+    expect(html).toContain('Tirar foto');
+    expect(html).toContain("setAttribute('capture'");
+  });
+});

@@ -26,7 +26,8 @@ export function renderFormNovoRelatorio(input: {
       <form action="/dashboard/clientes/${escapeHtml(input.lead_id)}/relatorio-pos-instalacao" method="post" enctype="multipart/form-data" class="bg-slate-800/60 border border-slate-700 rounded-xl p-6 space-y-5">
         <div>
           <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">📸 Fotos da obra <span class="text-slate-500 font-normal">(pode selecionar várias de uma vez)</span></label>
-          <input type="file" name="fotos" multiple accept="image/*" class="block w-full text-sm text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-cyan-600 file:text-white hover:file:bg-cyan-700 cursor-pointer">
+          <input type="file" name="fotos" multiple accept="image/*" class="block w-full text-sm text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-cyan-600 file:text-white hover:file:bg-cyan-700 cursor-pointer" id="rp_fotos">
+          <button type="button" onclick="var i=document.getElementById('rp_fotos');i.setAttribute('capture','environment');i.removeAttribute('multiple');i.click();i.removeAttribute('capture');i.setAttribute('multiple','')" class="mt-2 px-3 py-1.5 rounded-lg text-sm bg-slate-700 text-slate-100 hover:bg-slate-600">📷 Tirar foto</button>
           <p class="text-xs text-slate-500 mt-1">Máx 10 fotos · até 20MB cada · JPG/PNG/WebP/HEIC.</p>
         </div>
 

@@ -131,8 +131,9 @@ function barraAcoes(sel: ContratoCliente, tipoSel: string, tipos: TipoContratoIt
         <form method="POST" action="/dashboard/leads/${id}/ler-documentos" enctype="multipart/form-data" class="flex items-center gap-2">
           <input type="hidden" name="next" value="contratos" />
           <input type="hidden" name="tipo_central" value="${escapeHtml(tipoSel)}" />
-          <input type="file" name="docs" accept="image/*,application/pdf" multiple
+          <input type="file" name="docs" accept="image/*,application/pdf" multiple id="cc_docs"
             class="text-xs text-slate-600 file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-violet-100 file:text-violet-800 file:cursor-pointer" />
+          <button type="button" onclick="var i=document.getElementById('cc_docs');i.setAttribute('capture','environment');i.setAttribute('accept','image/*');i.removeAttribute('multiple');i.click();i.removeAttribute('capture');i.setAttribute('accept','image/*,application/pdf');i.setAttribute('multiple','')" class="px-3 py-2 rounded-lg text-sm bg-violet-100 text-violet-800 hover:bg-violet-200">📷 Tirar foto</button>
           <button class="px-3 py-2 rounded-lg text-sm bg-violet-600 text-white hover:bg-violet-700">🤖 Ler conta+CNH</button>
         </form>
         <a href="/dashboard/leads/${id}/${doc}.pdf?tipo=${encodeURIComponent(tipoSel)}" target="_blank"

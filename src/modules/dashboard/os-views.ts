@@ -29,8 +29,9 @@ function renderItem(osId: string, i: ItemPreenchido, fotos: FotoOS[], travado: b
   const upload = travado ? '' : `
     <form method="post" action="/dashboard/os/${escapeHtml(osId)}/foto" enctype="multipart/form-data" class="inline-flex items-center gap-1 mt-1">
       <input type="hidden" name="itemChave" value="${escapeHtml(i.chave)}">
-      <input type="file" name="foto" accept="image/*" class="text-xs">
-      <button class="px-2 py-0.5 rounded bg-slate-700 text-white text-xs">📷 Enviar</button>
+      <input type="file" name="foto" accept="image/*" class="text-xs" id="os_foto_${escapeHtml(i.chave)}">
+      <button type="button" onclick="var i=document.getElementById('os_foto_${escapeHtml(i.chave)}');i.setAttribute('capture','environment');i.click();i.removeAttribute('capture')" class="px-2 py-0.5 rounded bg-slate-600 text-white text-xs">📷 Tirar foto</button>
+      <button class="px-2 py-0.5 rounded bg-slate-700 text-white text-xs">📤 Enviar</button>
     </form>`;
   return `<div class="py-1"><div class="text-sm">${escapeHtml(i.label)} <span class="text-xs text-slate-400">(${i.fotos} foto${i.fotos === 1 ? '' : 's'})</span></div>
     <div class="flex flex-wrap gap-1 mt-1">${minis}</div>${upload}</div>`;
