@@ -136,13 +136,14 @@ export async function listUsers(client: SupabaseClient, companyId: string): Prom
 
 export async function createUser(
   client: SupabaseClient,
-  input: { companyId: string; nome: string; login: string; senhaHash: string; roleId: string; telefone?: string | null; acessoTemporario?: boolean },
+  input: { companyId: string; nome: string; login: string; senhaHash: string; roleId: string; telefone?: string | null; acessoTemporario?: boolean; email?: string | null },
 ): Promise<{ id: string } | { error: string }> {
   const { data, error } = await client.from('dashboard_users').insert({
     company_id: input.companyId, nome: input.nome, login: input.login,
     senha_hash: input.senhaHash, role_id: input.roleId, ativo: true,
     telefone: input.telefone ?? null,
     acesso_temporario: input.acessoTemporario ?? false,
+    email: input.email ?? null,
   }).select('id').single();
   if (error) return { error: error.code === '23505' ? 'login_em_uso' : error.message };
   return { id: (data as { id: string }).id };
@@ -151,7 +152,7 @@ export async function createUser(
 export async function updateUser(
   client: SupabaseClient,
   id: string,
-  patch: { nome?: string; roleId?: string; ativo?: boolean; senhaHash?: string; telefone?: string | null; acessoTemporario?: boolean },
+  patch: { nome?: string; roleId?: string; ativo?: boolean; senhaHash?: string; telefone?: string | null; acessoTemporario?: boolean; email?: string | null },
 ): Promise<void> {
   const upd: Record<string, unknown> = {};
   if (patch.nome !== undefined) upd.nome = patch.nome;
@@ -160,6 +161,7 @@ export async function updateUser(
   if (patch.senhaHash !== undefined) upd.senha_hash = patch.senhaHash;
   if (patch.telefone !== undefined) upd.telefone = patch.telefone;
   if (patch.acessoTemporario !== undefined) upd.acesso_temporario = patch.acessoTemporario;
+  if (patch.email !== undefined) upd.email = patch.email;
   if (Object.keys(upd).length === 0) return;
   await client.from('dashboard_users').update(upd).eq('id', id);
 }
@@ -168,6 +170,21 @@ export async function updateUser(
 export async function telefoneDoUsuario(client: SupabaseClient, id: string): Promise<string | null> {
   const { data } = await client.from('dashboard_users').select('telefone').eq('id', id).maybeSingle();
   return (data as { telefone?: string | null } | null)?.telefone ?? null;
+}
+
+/** Excluir DE VEZ um usuário SEM histórico. As chaves estrangeiras do banco
+ *  (servicos.criado_por/atribuido_a, auditoria...) barram quem já fez algo —
+ *  nesse caso devolvemos o motivo e a pessoa fica como inativa. */
+export async function deleteUserSemHistorico(
+  client: SupabaseClient,
+  id: string,
+): Promise<{ ok: true } | { ok: false; motivo: string }> {
+  const { error } = await client.from('dashboard_users').delete().eq('id', id);
+  if (error) {
+    if (error.code === '23503') return { ok: false, motivo: 'a pessoa tem histórico (serviços/registros amarrados a ela)' };
+    return { ok: false, motivo: error.message };
+  }
+  return { ok: true };
 }
 
 /** Nome + ativo + temporário — pro juízo da expiração do acesso (Diário F2). */
@@ -189,6 +206,17 @@ export function textoBoasVindas(nome: string, login: string, senhaInicial: strin
     (urlDashboard ? `🌐 Endereço: ${urlDashboard}\n` : '') +
     `👤 Login: ${login}\n🔑 Senha inicial: ${senhaInicial}\n\n` +
     `Entre e TROQUE a senha no primeiro acesso, combinado? Qualquer dúvida, fala com a gente.`;
+}
+
+/** Miolo do E-MAIL de boas-vindas (usuários de TENANT) — vai dentro da
+ *  moldura bonita (montarMolduraEmail) com o botão "Acessar o sistema". */
+export function corpoEmailBoasVindas(nome: string, login: string, senhaInicial: string): string {
+  return `<p>Olá, <b>${nome}</b>!</p>` +
+    `<p>Seu acesso à plataforma está pronto. Suas credenciais:</p>` +
+    `<p style="background:#f1f5f9;border-radius:8px;padding:12px 16px;font-size:15px">` +
+    `👤 <b>Login:</b> ${login}<br>🔑 <b>Senha inicial:</b> ${senhaInicial}</p>` +
+    `<p>Por segurança, <b>troque a senha no primeiro acesso</b>.</p>` +
+    `<p>Qualquer dúvida, é só responder este e-mail.</p>`;
 }
 
 export async function touchLastLogin(client: SupabaseClient, id: string): Promise<void> {

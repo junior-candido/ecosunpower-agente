@@ -9,14 +9,20 @@ function esc(s: string): string {
 }
 
 export function renderUsuariosListPage(users: UserListItem[], roles: RoleRow[], viewer?: DashUser): string {
-  const linhas = users.map((u) => `
-    <tr class="border-b border-slate-200 hover:bg-slate-50">
+  // Ativos primeiro; inativos vão pro fim, discretos.
+  const ordenados = [...users].sort((a, b) => Number(b.ativo) - Number(a.ativo));
+  const linhas = ordenados.map((u) => `
+    <tr class="border-b border-slate-200 hover:bg-slate-50 ${u.ativo ? '' : 'opacity-50'}">
       <td class="px-3 py-2">${esc(u.nome)}</td>
       <td class="px-3 py-2 text-slate-500">${esc(u.login)}</td>
       <td class="px-3 py-2">${esc(u.role_nome ?? '—')}</td>
       <td class="px-3 py-2">${u.ativo ? '🟢 ativo' : '⚪ inativo'}</td>
-      <td class="px-3 py-2 text-right">
+      <td class="px-3 py-2 text-right whitespace-nowrap space-x-2">
         <a href="/dashboard/usuarios/${u.id}" class="text-sky-600 hover:underline">editar</a>
+        ${u.id === viewer?.id ? '' : u.ativo
+          ? `<form method="POST" action="/dashboard/usuarios/${u.id}/ativo" class="inline"><input type="hidden" name="valor" value="nao"><button class="text-rose-600 hover:underline">desativar</button></form>`
+          : `<form method="POST" action="/dashboard/usuarios/${u.id}/ativo" class="inline"><input type="hidden" name="valor" value="sim"><button class="text-emerald-600 hover:underline">reativar</button></form>
+             <form method="POST" action="/dashboard/usuarios/${u.id}/excluir" class="inline" onsubmit="return confirm('Excluir de vez? Só funciona se a pessoa não tiver histórico.')"><button class="text-slate-400 hover:underline">excluir</button></form>`}
       </td>
     </tr>`).join('');
 
@@ -31,6 +37,7 @@ export function renderUsuariosListPage(users: UserListItem[], roles: RoleRow[], 
     <input name="login" placeholder="Login" required class="border border-slate-300 rounded-md px-3 py-1.5" />
     <input name="senha" type="password" placeholder="Senha inicial" required class="border border-slate-300 rounded-md px-3 py-1.5" />
     <input name="telefone" inputmode="tel" placeholder="Zap (5561999998888)" class="border border-slate-300 rounded-md px-3 py-1.5" />
+    <input name="email" type="email" placeholder="E-mail (boas-vindas bonitas)" class="border border-slate-300 rounded-md px-3 py-1.5" />
     <select name="role_id" required class="border border-slate-300 rounded-md px-3 py-1.5">${opcoesPapel}</select>
     <button class="bg-sky-600 hover:bg-sky-700 text-white rounded-md px-4 py-2">Criar usuário</button>
     <label class="text-xs text-slate-600 flex items-center gap-2 md:col-span-6">
@@ -47,7 +54,7 @@ export function renderUsuariosListPage(users: UserListItem[], roles: RoleRow[], 
 }
 
 export function renderUsuarioEditPage(
-  user: { id: string; nome: string; login: string; ativo: boolean; role_id: string | null; telefone?: string | null; acesso_temporario?: boolean },
+  user: { id: string; nome: string; login: string; ativo: boolean; role_id: string | null; telefone?: string | null; acesso_temporario?: boolean; email?: string | null },
   roles: RoleRow[],
   viewer?: DashUser,
 ): string {
@@ -67,6 +74,9 @@ export function renderUsuarioEditPage(
     </label>
     <label class="text-sm">Telefone (zap) — recebe o aviso de serviço atribuído
       <input name="telefone" inputmode="tel" value="${esc(user.telefone ?? '')}" placeholder="5561999998888" class="w-full border border-slate-300 rounded-md px-3 py-1.5" />
+    </label>
+    <label class="text-sm">E-mail
+      <input name="email" type="email" value="${esc(user.email ?? '')}" class="w-full border border-slate-300 rounded-md px-3 py-1.5" />
     </label>
     <label class="text-sm flex items-center gap-2">
       <input type="checkbox" name="ativo" ${user.ativo ? 'checked' : ''} /> Ativo
