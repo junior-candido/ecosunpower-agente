@@ -17,6 +17,24 @@ function mockClient(respostas: Record<string, any[]> = {}) {
   return { client: { from: () => chain } as any, inserts, updates };
 }
 
+describe('excluir de vez (só sem histórico)', () => {
+  it('FK barrando (23503) → devolve motivo amigável', async () => {
+    const { deleteUserSemHistorico } = await import('../src/modules/dashboard/users-store.js');
+    const chain: any = {
+      delete() { return chain; },
+      eq() { return Promise.resolve({ error: { code: '23503', message: 'fk' } }); },
+    };
+    const r = await deleteUserSemHistorico({ from: () => chain } as any, 'u1');
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.motivo).toContain('histórico');
+  });
+  it('sem histórico → exclui', async () => {
+    const { deleteUserSemHistorico } = await import('../src/modules/dashboard/users-store.js');
+    const chain: any = { delete() { return chain; }, eq() { return Promise.resolve({ error: null }); } };
+    expect((await deleteUserSemHistorico({ from: () => chain } as any, 'u1')).ok).toBe(true);
+  });
+});
+
 describe('acesso temporário (expira ao concluir)', () => {
   it('createUser e updateUser gravam acesso_temporario', async () => {
     const { client, inserts } = mockClient();
@@ -41,6 +59,21 @@ describe('telefone do usuário', () => {
     const t2 = mockClient();
     await updateUser(t2.client, 'u1', { telefone: null });
     expect(t2.updates[0]).toEqual({ telefone: null });
+  });
+  it('createUser/updateUser gravam o email (096 — boas-vindas bonitas pro tenant)', async () => {
+    const { client, inserts } = mockClient();
+    await createUser(client, { companyId: 'c1', nome: 'Thiago', login: 't', senhaHash: 'h', roleId: 'r1', email: 'thiago@sabion.com' });
+    expect(inserts[0]).toMatchObject({ email: 'thiago@sabion.com' });
+    const t2 = mockClient();
+    await updateUser(t2.client, 'u1', { email: null });
+    expect(t2.updates[0]).toEqual({ email: null });
+  });
+  it('corpoEmailBoasVindas tem login, senha e o pedido de troca', async () => {
+    const { corpoEmailBoasVindas } = await import('../src/modules/dashboard/users-store.js');
+    const c = corpoEmailBoasVindas('Thiago', 'thiago', 'abc12345');
+    expect(c).toContain('thiago');
+    expect(c).toContain('abc12345');
+    expect(c).toContain('troque a senha');
   });
   it('textoBoasVindas tem link, login, senha e o pedido de troca', () => {
     const t = textoBoasVindas('João', 'joao', 'abc12345', 'https://app.exemplo.com/dashboard');

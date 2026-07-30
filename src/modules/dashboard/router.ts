@@ -830,13 +830,15 @@ b.onclick=async function(){
 
   router.post('/usuarios/novo', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'usuarios', 'criar')) { res.status(403).send('Sem permissão'); return; }
-    const { nome, login, senha, role_id, telefone, acesso_temporario } = req.body ?? {};
+    const { nome, login, senha, role_id, telefone, acesso_temporario, email } = req.body ?? {};
     if (!nome || !login || !senha || !role_id) { res.status(400).send('Campos obrigatórios'); return; }
+    const emailLimpo = String(email ?? '').trim().toLowerCase() || null;
     const r = await createUser(supabase, {
       companyId: req.dashUser!.companyId, nome, login,
       senhaHash: await hashSenha(senha), roleId: role_id,
       telefone: String(telefone ?? '').replace(/\D/g, '') || null,
       acessoTemporario: acesso_temporario === 'on' || acesso_temporario === true,
+      email: emailLimpo,
     });
     if ('error' in r) { res.status(400).send(r.error === 'login_em_uso' ? 'Login já existe' : r.error); return; }
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: r.id, acao: 'criou' });
@@ -849,6 +851,55 @@ b.onclick=async function(){
       options.sendText(telNovo, textoBoasVindas(String(nome), String(login), String(senha), base ? `${base}/dashboard` : null))
         .catch((e) => console.warn('[usuarios] boas-vindas no zap falhou:', (e as Error).message));
     }
+    // Usuário de TENANT com e-mail → boas-vindas BONITAS por e-mail também
+    // (moldura EcoSunPower + botão de acesso). Time da casa fica só no zap.
+    if (emailLimpo && req.dashUser!.companyId !== ECOSUN && process.env.RESEND_API_KEY) {
+      try {
+        const { corpoEmailBoasVindas } = await import('./users-store.js');
+        const { montarMolduraEmail } = await import('../email/email-moldura.js');
+        const { EmailSender } = await import('../email/resend-client.js');
+        const base = (options.appBaseUrl ?? '').replace(/\/$/, '');
+        const html = montarMolduraEmail({
+          conteudoHtml: corpoEmailBoasVindas(String(nome), String(login), String(senha)),
+          titulo: 'Seu acesso está pronto! 🎉',
+          kicker: 'Bem-vindo(a) à plataforma',
+          ctaLabel: 'Acessar o sistema',
+          ctaUrl: base ? `${base}/dashboard` : 'https://ecosunpower.eng.br',
+          linkDescadastro: 'https://ecosunpower.eng.br',
+        });
+        const sender = new EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '');
+        sender.enviar({ to: emailLimpo, subject: 'Seu acesso à plataforma está pronto 🎉', html })
+          .catch((e) => console.warn('[usuarios] boas-vindas por e-mail falhou:', (e as Error).message));
+      } catch (err) {
+        console.warn('[usuarios] e-mail de boas-vindas falhou:', (err as Error).message);
+      }
+    }
+    res.redirect('/dashboard/usuarios');
+  });
+
+  // Botões rápidos da lista: desativar/reativar sem entrar na edição.
+  router.post('/usuarios/:id/ativo', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'usuarios', 'editar')) { res.status(403).send('Sem permissão'); return; }
+    const userId = String(req.params.id);
+    if (userId === req.dashUser!.id) { res.status(400).send('Você não pode desativar a si mesmo.'); return; }
+    await updateUser(supabase, userId, { ativo: String(req.body?.valor) === 'sim' });
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: String(req.body?.valor) === 'sim' ? 'reativou' : 'desativou' });
+    res.redirect('/dashboard/usuarios');
+  });
+
+  // Excluir DE VEZ: só se a pessoa não tiver histórico (as amarras do banco
+  // barram quem já registrou algo — aí fica inativo, que preserva a história).
+  router.post('/usuarios/:id/excluir', async (req: AuthedRequest, res) => {
+    if (!can(req.dashUser, 'usuarios', 'administrar')) { res.status(403).send('Sem permissão'); return; }
+    const userId = String(req.params.id);
+    if (userId === req.dashUser!.id) { res.status(400).send('Você não pode excluir a si mesmo.'); return; }
+    const { deleteUserSemHistorico } = await import('./users-store.js');
+    const r = await deleteUserSemHistorico(supabase, userId);
+    if (!r.ok) {
+      res.status(400).send(`Não deu pra excluir: ${r.motivo}. Deixe como inativo — o histórico fica preservado. <a href="/dashboard/usuarios">← voltar</a>`);
+      return;
+    }
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: 'excluiu' });
     res.redirect('/dashboard/usuarios');
   });
 
@@ -857,7 +908,7 @@ b.onclick=async function(){
     const cid = req.dashUser!.companyId;
     const userId = String(req.params.id);
     const { data: u } = await supabase.from('dashboard_users')
-      .select('id, nome, login, ativo, role_id, telefone, acesso_temporario').eq('id', userId).maybeSingle();
+      .select('id, nome, login, ativo, role_id, telefone, acesso_temporario, email').eq('id', userId).maybeSingle();
     if (!u) { res.status(404).send('Usuário não encontrado'); return; }
     const roles = await listRoles(supabase, cid);
     res.type('html').send(renderUsuarioEditPage(u as any, roles, req.dashUser));
@@ -866,12 +917,13 @@ b.onclick=async function(){
   router.post('/usuarios/:id', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'usuarios', 'editar')) { res.status(403).send('Sem permissão'); return; }
     const userId = String(req.params.id);
-    const { nome, role_id, senha, ativo, telefone, acesso_temporario } = req.body ?? {};
+    const { nome, role_id, senha, ativo, telefone, acesso_temporario, email } = req.body ?? {};
     await updateUser(supabase, userId, {
       nome, roleId: role_id, ativo: ativo === 'on' || ativo === true,
       senhaHash: senha ? await hashSenha(senha) : undefined,
       telefone: telefone !== undefined ? (String(telefone).replace(/\D/g, '') || null) : undefined,
       acessoTemporario: acesso_temporario === 'on' || acesso_temporario === true,
+      email: email !== undefined ? (String(email).trim().toLowerCase() || null) : undefined,
     });
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: 'editar' });
     res.redirect('/dashboard/usuarios');
