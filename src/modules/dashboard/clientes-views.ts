@@ -493,7 +493,8 @@ function renderAbaAnexos(d: ClienteDetail): string {
 
   const upload = `
     <form action="/dashboard/clientes/${escapeHtml(d.id)}/anexos" method="post" enctype="multipart/form-data" class="bg-cyan-500/5 border border-dashed border-cyan-500/40 rounded-lg p-3 flex flex-col items-center justify-center aspect-square">
-      <input type="file" name="file" required class="text-[10px] text-slate-300 mb-1" accept="image/*,application/pdf">
+      <input type="file" name="file" required class="text-[10px] text-slate-300 mb-1" accept="image/*,application/pdf" id="anexo_file">
+      <button type="button" onclick="var i=document.getElementById('anexo_file');i.setAttribute('capture','environment');i.setAttribute('accept','image/*');i.click();i.removeAttribute('capture');i.setAttribute('accept','image/*,application/pdf')" class="bg-slate-700 hover:bg-slate-600 text-white text-[10px] rounded px-2 py-0.5 mb-1 w-full">📷 Tirar foto</button>
       <select name="tipo" required class="text-[10px] bg-slate-900 border border-slate-700 text-slate-100 rounded mb-1 w-full">
         ${TIPOS.map(t => `<option value="${t.id}">${t.label}</option>`).join('')}
       </select>

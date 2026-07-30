@@ -43,3 +43,11 @@ describe('renderOSLaudoHtml', () => {
     expect(html.toLowerCase()).not.toContain('engenheiro');
   });
 });
+
+describe('📷 Tirar foto (câmera no celular, 30/07)', () => {
+  it('OS aberta tem o botão que liga o capture na hora do clique', () => {
+    const html = renderOSPage(os(), hidratarChecklist('limpeza', {}, {}), [], undefined);
+    expect(html).toContain('Tirar foto');
+    expect(html).toContain("setAttribute('capture'");
+  });
+});
