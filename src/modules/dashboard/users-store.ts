@@ -136,12 +136,13 @@ export async function listUsers(client: SupabaseClient, companyId: string): Prom
 
 export async function createUser(
   client: SupabaseClient,
-  input: { companyId: string; nome: string; login: string; senhaHash: string; roleId: string; telefone?: string | null },
+  input: { companyId: string; nome: string; login: string; senhaHash: string; roleId: string; telefone?: string | null; acessoTemporario?: boolean },
 ): Promise<{ id: string } | { error: string }> {
   const { data, error } = await client.from('dashboard_users').insert({
     company_id: input.companyId, nome: input.nome, login: input.login,
     senha_hash: input.senhaHash, role_id: input.roleId, ativo: true,
     telefone: input.telefone ?? null,
+    acesso_temporario: input.acessoTemporario ?? false,
   }).select('id').single();
   if (error) return { error: error.code === '23505' ? 'login_em_uso' : error.message };
   return { id: (data as { id: string }).id };
@@ -150,7 +151,7 @@ export async function createUser(
 export async function updateUser(
   client: SupabaseClient,
   id: string,
-  patch: { nome?: string; roleId?: string; ativo?: boolean; senhaHash?: string; telefone?: string | null },
+  patch: { nome?: string; roleId?: string; ativo?: boolean; senhaHash?: string; telefone?: string | null; acessoTemporario?: boolean },
 ): Promise<void> {
   const upd: Record<string, unknown> = {};
   if (patch.nome !== undefined) upd.nome = patch.nome;
@@ -158,6 +159,7 @@ export async function updateUser(
   if (patch.ativo !== undefined) upd.ativo = patch.ativo;
   if (patch.senhaHash !== undefined) upd.senha_hash = patch.senhaHash;
   if (patch.telefone !== undefined) upd.telefone = patch.telefone;
+  if (patch.acessoTemporario !== undefined) upd.acesso_temporario = patch.acessoTemporario;
   if (Object.keys(upd).length === 0) return;
   await client.from('dashboard_users').update(upd).eq('id', id);
 }
@@ -166,6 +168,18 @@ export async function updateUser(
 export async function telefoneDoUsuario(client: SupabaseClient, id: string): Promise<string | null> {
   const { data } = await client.from('dashboard_users').select('telefone').eq('id', id).maybeSingle();
   return (data as { telefone?: string | null } | null)?.telefone ?? null;
+}
+
+/** Nome + ativo + temporário — pro juízo da expiração do acesso (Diário F2). */
+export async function dadosAcessoUsuario(
+  client: SupabaseClient,
+  id: string,
+): Promise<{ nome: string; ativo: boolean; acessoTemporario: boolean } | null> {
+  const { data } = await client.from('dashboard_users')
+    .select('nome, ativo, acesso_temporario').eq('id', id).maybeSingle();
+  if (!data) return null;
+  const u = data as { nome: string; ativo: boolean; acesso_temporario?: boolean };
+  return { nome: u.nome, ativo: u.ativo, acessoTemporario: u.acesso_temporario ?? false };
 }
 
 /** Zap de boas-vindas do usuário novo: acesso + login + senha inicial.

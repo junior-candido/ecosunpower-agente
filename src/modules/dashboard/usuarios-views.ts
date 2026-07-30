@@ -33,6 +33,9 @@ export function renderUsuariosListPage(users: UserListItem[], roles: RoleRow[], 
     <input name="telefone" inputmode="tel" placeholder="Zap (5561999998888)" class="border border-slate-300 rounded-md px-3 py-1.5" />
     <select name="role_id" required class="border border-slate-300 rounded-md px-3 py-1.5">${opcoesPapel}</select>
     <button class="bg-sky-600 hover:bg-sky-700 text-white rounded-md px-4 py-2">Criar usuário</button>
+    <label class="text-xs text-slate-600 flex items-center gap-2 md:col-span-6">
+      <input type="checkbox" name="acesso_temporario" /> ⏳ Acesso temporário — expira sozinho quando concluir os serviços atribuídos (reabrir um serviço reativa)
+    </label>
   </form>
   <table class="w-full bg-white rounded-lg border border-slate-200 text-sm">
     <thead><tr class="text-left text-slate-500 border-b border-slate-200">
@@ -44,7 +47,7 @@ export function renderUsuariosListPage(users: UserListItem[], roles: RoleRow[], 
 }
 
 export function renderUsuarioEditPage(
-  user: { id: string; nome: string; login: string; ativo: boolean; role_id: string | null; telefone?: string | null },
+  user: { id: string; nome: string; login: string; ativo: boolean; role_id: string | null; telefone?: string | null; acesso_temporario?: boolean },
   roles: RoleRow[],
   viewer?: DashUser,
 ): string {
@@ -67,6 +70,9 @@ export function renderUsuarioEditPage(
     </label>
     <label class="text-sm flex items-center gap-2">
       <input type="checkbox" name="ativo" ${user.ativo ? 'checked' : ''} /> Ativo
+    </label>
+    <label class="text-sm flex items-center gap-2">
+      <input type="checkbox" name="acesso_temporario" ${user.acesso_temporario ? 'checked' : ''} /> ⏳ Acesso temporário (expira ao concluir os serviços)
     </label>
     <button class="bg-sky-600 hover:bg-sky-700 text-white rounded-md px-4 py-2 w-fit">Salvar</button>
   </form>`;

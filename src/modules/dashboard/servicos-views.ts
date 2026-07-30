@@ -68,6 +68,7 @@ export function renderDetalheServicoPage(
   s: ServicoRow,
   midias: { tipoMidia: string; url: string }[],
   user: DashUser | undefined,
+  podeReabrir = false,
 ): string {
   const fotos = midias.filter((m) => m.tipoMidia === 'foto')
     .map((m) => `<a href="${escapeHtml(m.url)}" target="_blank"><img src="${escapeHtml(m.url)}" class="w-full h-36 object-cover rounded-xl"></a>`).join('');
@@ -166,6 +167,14 @@ export function renderDetalheServicoPage(
     ${fotos ? `<div class="grid grid-cols-2 gap-2 mt-4">${fotos}</div>` : ''}
     ${videos}
     ${completar}
+    ${s.status === 'concluido' && podeReabrir ? `
+    <details class="mt-5"><summary class="text-sm text-amber-700 cursor-pointer select-none">🔄 Faltou algo? Reabrir o serviço</summary>
+      <form method="post" action="/dashboard/servicos/${s.id}/reabrir" class="mt-2 flex gap-2">
+        <input name="motivo" placeholder="O que faltou? (vai no zap do instalador)" class="flex-1 border border-slate-300 rounded-xl px-4 py-2 text-sm">
+        <button class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold">Reabrir</button>
+      </form>
+      <p class="text-xs text-slate-500 mt-1">Reabrir reativa o acesso do instalador (se temporário) e avisa ele no zap; ao concluir de novo, expira de novo.</p>
+    </details>` : ''}
   </div>`;
   return renderLayout({ active: 'servicos', title: s.tipoNome, body, user });
 }
