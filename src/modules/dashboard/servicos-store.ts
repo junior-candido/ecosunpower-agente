@@ -35,6 +35,12 @@ export async function reabrirServico(client: SupabaseClient, id: string): Promis
   if (error) throw new Error(`reabrirServico: ${error.message}`);
 }
 
+/** 📤 Enviar pelo zap: amarra o serviço em alguém e volta pra 🟡 pendente. */
+export async function atribuirServico(client: SupabaseClient, id: string, userId: string): Promise<void> {
+  const { error } = await client.from('servicos').update({ atribuido_a: userId, status: 'atribuido' }).eq('id', id);
+  if (error) throw new Error(`atribuirServico: ${error.message}`);
+}
+
 /** Quantos serviços 🟡 pendentes o usuário ainda tem (regra do acesso temporário). */
 export async function contarPendentesDoUsuario(client: SupabaseClient, userId: string): Promise<number> {
   const { count, error } = await client.from('servicos')

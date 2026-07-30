@@ -172,6 +172,20 @@ export async function telefoneDoUsuario(client: SupabaseClient, id: string): Pro
   return (data as { telefone?: string | null } | null)?.telefone ?? null;
 }
 
+/** Acha usuário da empresa pelo telefone (📤 enviar serviço pelo zap sem duplicar gente). */
+export async function usuarioPorTelefone(
+  client: SupabaseClient,
+  companyId: string,
+  telefone: string,
+): Promise<{ id: string; nome: string; ativo: boolean } | null> {
+  const { data } = await client.from('dashboard_users')
+    .select('id, nome, ativo')
+    .eq('company_id', companyId)
+    .eq('telefone', telefone)
+    .maybeSingle();
+  return (data as { id: string; nome: string; ativo: boolean } | null) ?? null;
+}
+
 /** Excluir DE VEZ um usuário SEM histórico. As chaves estrangeiras do banco
  *  (servicos.criado_por/atribuido_a, auditoria...) barram quem já fez algo —
  *  nesse caso devolvemos o motivo e a pessoa fica como inativa. */

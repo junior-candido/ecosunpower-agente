@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   listarTipos, criarServico, listarServicos, servicosDoLead, registrarMidias,
-  concluirServico,
+  concluirServico, atribuirServico,
 } from '../src/modules/dashboard/servicos-store.js';
 
 function mockClient(respostas: Record<string, any[]>) {
@@ -63,6 +63,14 @@ describe('listarServicos / servicosDoLead', () => {
     const { client } = mockClient({ servicos: [{ data: [LINHA], error: null }] });
     const lista = await servicosDoLead(client, 'l1');
     expect(lista[0]!.tipoNome).toBe('Visita técnica');
+  });
+});
+
+describe('atribuirServico (📤 enviar pelo zap)', () => {
+  it('amarra o usuário e volta pra 🟡 pendente', async () => {
+    const { client, updates } = mockClient({ servicos: [{ data: null, error: null }] });
+    await atribuirServico(client, 's1', 'u-novo');
+    expect(updates.servicos?.[0]).toMatchObject({ atribuido_a: 'u-novo', status: 'atribuido' });
   });
 });
 
