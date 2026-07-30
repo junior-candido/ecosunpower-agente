@@ -45,6 +45,23 @@ describe('renderNovoServicoPage (form mobile)', () => {
   });
 });
 
+describe('renderDetalheServicoPage', () => {
+  it('mostra o registro com fotos e vídeo (URLs assinadas)', async () => {
+    const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
+    const html = renderDetalheServicoPage(
+      SERVICOS[0]!,
+      [
+        { tipoMidia: 'foto', url: 'https://x/assinada-1.jpg' },
+        { tipoMidia: 'video', url: 'https://x/assinada-2.mp4' },
+      ],
+      undefined,
+    );
+    expect(html).toContain('Visita técnica');
+    expect(html).toContain('assinada-1.jpg');
+    expect(html).toContain('<video');
+  });
+});
+
 describe('menu — item Serviços', () => {
   it('aparece com gate da área servicos', () => {
     const html = renderLayout({ active: 'servicos', title: 'X', body: '' } as any);

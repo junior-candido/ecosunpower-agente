@@ -46,6 +46,32 @@ export function renderServicosPage(
   return renderLayout({ active: 'servicos', title: 'Serviços', body, user });
 }
 
+export function renderDetalheServicoPage(
+  s: ServicoRow,
+  midias: { tipoMidia: string; url: string }[],
+  user: DashUser | undefined,
+): string {
+  const fotos = midias.filter((m) => m.tipoMidia === 'foto')
+    .map((m) => `<a href="${escapeHtml(m.url)}" target="_blank"><img src="${escapeHtml(m.url)}" class="w-full h-36 object-cover rounded-xl"></a>`).join('');
+  const videos = midias.filter((m) => m.tipoMidia === 'video')
+    .map((m) => `<video src="${escapeHtml(m.url)}" controls preload="metadata" class="w-full rounded-xl mt-3"></video>`).join('');
+  const body = `
+  <a href="/dashboard/servicos" class="text-sm text-slate-600 hover:underline">← Voltar</a>
+  <div class="max-w-xl mt-3">
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+      <div class="flex items-center justify-between">
+        <span class="text-lg font-bold text-slate-800">${escapeHtml(s.tipoNome)}</span>
+        <span class="text-sm text-slate-500">${dataBr(s.dataServico)}</span>
+      </div>
+      <div class="text-sm text-slate-600 mt-1">👤 ${escapeHtml(s.clienteNome)}</div>
+      ${s.observacoes ? `<p class="text-sm text-slate-700 mt-3 whitespace-pre-wrap">${escapeHtml(s.observacoes)}</p>` : ''}
+    </div>
+    ${fotos ? `<div class="grid grid-cols-2 gap-2 mt-4">${fotos}</div>` : ''}
+    ${videos}
+  </div>`;
+  return renderLayout({ active: 'servicos', title: s.tipoNome, body, user });
+}
+
 export function renderNovoServicoPage(tipos: TipoServico[], user: DashUser | undefined): string {
   const opcoes = tipos.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.nome)}</option>`).join('');
   const hoje = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
