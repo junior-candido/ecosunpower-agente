@@ -17,6 +17,17 @@ function mockClient(respostas: Record<string, any[]> = {}) {
   return { client: { from: () => chain } as any, inserts, updates };
 }
 
+describe('acesso temporário (expira ao concluir)', () => {
+  it('createUser e updateUser gravam acesso_temporario', async () => {
+    const { client, inserts } = mockClient();
+    await createUser(client, { companyId: 'c1', nome: 'João', login: 'joao', senhaHash: 'h', roleId: 'r1', acessoTemporario: true });
+    expect(inserts[0]).toMatchObject({ acesso_temporario: true });
+    const t2 = mockClient();
+    await updateUser(t2.client, 'u1', { acessoTemporario: false });
+    expect(t2.updates[0]).toEqual({ acesso_temporario: false });
+  });
+});
+
 describe('telefone do usuário', () => {
   it('createUser grava o telefone (só dígitos entram pelo router)', async () => {
     const { client, inserts } = mockClient();

@@ -663,6 +663,25 @@ b.onclick=async function(){
           ` por ${req.dashUser!.nome}. Veja na tela Serviços.`,
         ).catch(() => { /* best-effort */ });
       }
+
+      // ⏳ Acesso temporário: concluiu e não sobrou pendente → a porta fecha sozinha.
+      if (antes.atribuidoA) {
+        try {
+          const { contarPendentesDoUsuario } = await import('./servicos-store.js');
+          const { updateUser, dadosAcessoUsuario } = await import('./users-store.js');
+          const u = await dadosAcessoUsuario(supabase, antes.atribuidoA);
+          if (u?.acessoTemporario && u.ativo && (await contarPendentesDoUsuario(supabase, antes.atribuidoA)) === 0) {
+            await updateUser(supabase, antes.atribuidoA, { ativo: false });
+            if (options.sendText && options.engineerPhone) {
+              options.sendText(options.engineerPhone,
+                `🔒 Acesso temporário de ${u.nome} expirou (serviços concluídos). Pra chamar de novo: reabra um serviço ou atribua um novo — reativa sozinho.`,
+              ).catch(() => { /* best-effort */ });
+            }
+          }
+        } catch (err) {
+          console.warn('[servicos] expiração do acesso falhou:', (err as Error).message);
+        }
+      }
       res.json({ ok: true });
     } catch (err) {
       console.error('[servicos/concluir]', err);
@@ -688,6 +707,39 @@ b.onclick=async function(){
     }
   });
 
+  // 🔄 Reabrir: faltou algo — volta pra pendente, REATIVA o instalador
+  // (acesso temporário) e avisa ele no zap com o motivo. Concluir de novo
+  // expira de novo — a porta abre e fecha sozinha.
+  router.post('/servicos/:id/reabrir', exigir('servicos', 'editar'), async (req: AuthedRequest, res) => {
+    try {
+      const servicoId = String(req.params.id);
+      const motivo = String(req.body?.motivo ?? '').trim();
+      const { getServico, reabrirServico } = await import('./servicos-store.js');
+      const s = await getServico(supabase, servicoId);
+      if (!s) { res.redirect('/dashboard/servicos?erro=' + encodeURIComponent('Registro não achado.')); return; }
+      await reabrirServico(supabase, servicoId);
+      if (s.atribuidoA) {
+        const { updateUser, telefoneDoUsuario } = await import('./users-store.js');
+        await updateUser(supabase, s.atribuidoA, { ativo: true }); // reativa (temporário ou não)
+        if (options.sendText) {
+          const tel = await telefoneDoUsuario(supabase, s.atribuidoA);
+          if (tel) {
+            const base = (options.appBaseUrl ?? '').replace(/\/$/, '');
+            options.sendText(tel,
+              `🔄 Serviço reaberto: ${s.tipoNome} — ${s.clienteNome}.` +
+              (motivo ? `\nFaltou: ${motivo}` : '') +
+              (base ? `\nComplete aqui: ${base}/dashboard/servicos/${servicoId}` : ''),
+            ).catch(() => { /* best-effort */ });
+          }
+        }
+      }
+      res.redirect(`/dashboard/servicos/${servicoId}`);
+    } catch (err) {
+      console.error('[servicos/reabrir]', err);
+      res.redirect('/dashboard/servicos?erro=' + encodeURIComponent('Falha ao reabrir.'));
+    }
+  });
+
   router.get('/servicos/:id', exigir('servicos', 'visualizar'), async (req: AuthedRequest, res) => {
     try {
       const { getServico, midiasDoServico } = await import('./servicos-store.js');
@@ -698,7 +750,7 @@ b.onclick=async function(){
       const midias = await midiasDoServico(supabase, s.id);
       const urls = await getSignedUrls(supabase, midias.map((m) => m.path), 3600);
       const comUrl = midias.map((m) => ({ tipoMidia: m.tipoMidia, url: urls[m.path] ?? '' })).filter((m) => m.url);
-      res.type('html').send(renderDetalheServicoPage(s, comUrl, req.dashUser));
+      res.type('html').send(renderDetalheServicoPage(s, comUrl, req.dashUser, can(req.dashUser, 'servicos', 'editar')));
     } catch (err) {
       console.error('[servicos/detalhe]', err);
       res.status(500).send('Falha ao carregar o registro.');
@@ -778,12 +830,13 @@ b.onclick=async function(){
 
   router.post('/usuarios/novo', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'usuarios', 'criar')) { res.status(403).send('Sem permissão'); return; }
-    const { nome, login, senha, role_id, telefone } = req.body ?? {};
+    const { nome, login, senha, role_id, telefone, acesso_temporario } = req.body ?? {};
     if (!nome || !login || !senha || !role_id) { res.status(400).send('Campos obrigatórios'); return; }
     const r = await createUser(supabase, {
       companyId: req.dashUser!.companyId, nome, login,
       senhaHash: await hashSenha(senha), roleId: role_id,
       telefone: String(telefone ?? '').replace(/\D/g, '') || null,
+      acessoTemporario: acesso_temporario === 'on' || acesso_temporario === true,
     });
     if ('error' in r) { res.status(400).send(r.error === 'login_em_uso' ? 'Login já existe' : r.error); return; }
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: r.id, acao: 'criou' });
@@ -804,7 +857,7 @@ b.onclick=async function(){
     const cid = req.dashUser!.companyId;
     const userId = String(req.params.id);
     const { data: u } = await supabase.from('dashboard_users')
-      .select('id, nome, login, ativo, role_id, telefone').eq('id', userId).maybeSingle();
+      .select('id, nome, login, ativo, role_id, telefone, acesso_temporario').eq('id', userId).maybeSingle();
     if (!u) { res.status(404).send('Usuário não encontrado'); return; }
     const roles = await listRoles(supabase, cid);
     res.type('html').send(renderUsuarioEditPage(u as any, roles, req.dashUser));
@@ -813,11 +866,12 @@ b.onclick=async function(){
   router.post('/usuarios/:id', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'usuarios', 'editar')) { res.status(403).send('Sem permissão'); return; }
     const userId = String(req.params.id);
-    const { nome, role_id, senha, ativo, telefone } = req.body ?? {};
+    const { nome, role_id, senha, ativo, telefone, acesso_temporario } = req.body ?? {};
     await updateUser(supabase, userId, {
       nome, roleId: role_id, ativo: ativo === 'on' || ativo === true,
       senhaHash: senha ? await hashSenha(senha) : undefined,
       telefone: telefone !== undefined ? (String(telefone).replace(/\D/g, '') || null) : undefined,
+      acessoTemporario: acesso_temporario === 'on' || acesso_temporario === true,
     });
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: 'editar' });
     res.redirect('/dashboard/usuarios');

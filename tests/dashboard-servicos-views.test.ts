@@ -102,6 +102,12 @@ describe('atribuição (F2)', () => {
     const html = renderDetalheServicoPage(SERVICOS[0]!, [], undefined);
     expect(html).not.toContain('Concluir serviço');
   });
+  it('Reabrir aparece SÓ no concluído e SÓ pra quem pode editar', async () => {
+    const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
+    expect(renderDetalheServicoPage(SERVICOS[0]!, [], undefined, true)).toContain('/reabrir');
+    expect(renderDetalheServicoPage(SERVICOS[0]!, [], undefined, false)).not.toContain('/reabrir');
+    expect(renderDetalheServicoPage(ATRIBUIDO, [], undefined, true)).not.toContain('/reabrir'); // pendente não reabre
+  });
 });
 
 describe('renderDetalheServicoPage', () => {

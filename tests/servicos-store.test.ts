@@ -85,6 +85,17 @@ describe('atribuição (F2)', () => {
     await concluirServico(client, 's2', 'tudo instalado, telhado ok');
     expect(updates.servicos?.[0]).toEqual({ status: 'concluido', observacoes: 'tudo instalado, telhado ok' });
   });
+  it('reabrirServico volta pra atribuido (faltou algo)', async () => {
+    const { reabrirServico } = await import('../src/modules/dashboard/servicos-store.js');
+    const { client, updates } = mockClient({ servicos: [{ data: null, error: null }] });
+    await reabrirServico(client, 's2');
+    expect(updates.servicos?.[0]).toEqual({ status: 'atribuido' });
+  });
+  it('contarPendentesDoUsuario usa o count (regra do acesso temporário)', async () => {
+    const { contarPendentesDoUsuario } = await import('../src/modules/dashboard/servicos-store.js');
+    const { client } = mockClient({ servicos: [{ data: null, error: null, count: 0 } as any] });
+    expect(await contarPendentesDoUsuario(client, 'u-inst')).toBe(0);
+  });
 });
 
 describe('registrarMidias', () => {

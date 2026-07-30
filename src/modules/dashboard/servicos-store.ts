@@ -29,6 +29,21 @@ export async function criarServico(client: SupabaseClient, d: {
   return (data as { id: string }).id;
 }
 
+/** Reabrir: faltou algo — volta pra 🟡 pendente (o instalador completa de novo). */
+export async function reabrirServico(client: SupabaseClient, id: string): Promise<void> {
+  const { error } = await client.from('servicos').update({ status: 'atribuido' }).eq('id', id);
+  if (error) throw new Error(`reabrirServico: ${error.message}`);
+}
+
+/** Quantos serviços 🟡 pendentes o usuário ainda tem (regra do acesso temporário). */
+export async function contarPendentesDoUsuario(client: SupabaseClient, userId: string): Promise<number> {
+  const { count, error } = await client.from('servicos')
+    .select('id', { count: 'exact', head: true })
+    .eq('atribuido_a', userId).eq('status', 'atribuido');
+  if (error) throw new Error(`contarPendentesDoUsuario: ${error.message}`);
+  return count ?? 0;
+}
+
 /** Instalador terminou: marca concluído (observações finais opcionais). */
 export async function concluirServico(client: SupabaseClient, id: string, observacoes?: string | null): Promise<void> {
   const row: Record<string, unknown> = { status: 'concluido' };
