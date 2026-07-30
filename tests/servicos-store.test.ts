@@ -1,0 +1,84 @@
+// Diário de Serviços F1 — store: tipos, criar registro, listar, mídias.
+import { describe, it, expect } from 'vitest';
+import {
+  listarTipos, criarServico, listarServicos, servicosDoLead, registrarMidias,
+} from '../src/modules/dashboard/servicos-store.js';
+
+function mockClient(respostas: Record<string, any[]>) {
+  const inserts: Record<string, any[]> = {};
+  const client = {
+    from(tabela: string) {
+      const resposta = () => (respostas[tabela] ?? []).shift() ?? { data: null, error: null };
+      const chain: any = {
+        insert(row: any) { (inserts[tabela] ??= []).push(row); return chain; },
+        select() { return chain; }, eq() { return chain; }, order() { return chain; }, limit() { return chain; },
+        single() { return Promise.resolve(resposta()); },
+        maybeSingle() { return Promise.resolve(resposta()); },
+        then(res: any, rej: any) { return Promise.resolve(resposta()).then(res, rej); },
+      };
+      return chain;
+    },
+  };
+  return { client: client as any, inserts };
+}
+
+describe('listarTipos', () => {
+  it('devolve os tipos ativos', async () => {
+    const { client } = mockClient({ servico_tipos: [{ data: [{ id: 'visita-tecnica', nome: 'Visita técnica' }], error: null }] });
+    expect(await listarTipos(client)).toEqual([{ id: 'visita-tecnica', nome: 'Visita técnica' }]);
+  });
+});
+
+describe('criarServico', () => {
+  it('insere com os campos certos e devolve o id', async () => {
+    const { client, inserts } = mockClient({ servicos: [{ data: { id: 's1' }, error: null }] });
+    const id = await criarServico(client, {
+      companyId: 'c1', tipoId: 'visita-tecnica', leadId: 'l1', sistemaId: null,
+      observacoes: 'telhado ok', dataServico: '2026-07-30', criadoPor: 'u1',
+    });
+    expect(id).toBe('s1');
+    expect(inserts.servicos?.[0]).toMatchObject({
+      company_id: 'c1', tipo_id: 'visita-tecnica', lead_id: 'l1', sistema_id: null,
+      observacoes: 'telhado ok', data_servico: '2026-07-30', criado_por: 'u1',
+    });
+  });
+});
+
+describe('listarServicos / servicosDoLead', () => {
+  const LINHA = {
+    id: 's1', tipo_id: 'visita-tecnica', lead_id: 'l1', sistema_id: null,
+    observacoes: 'ok', data_servico: '2026-07-30', criado_em: 'x',
+    servico_tipos: { nome: 'Visita técnica' }, leads: { name: 'Fernanda' },
+    servico_fotos: [{ tipo_midia: 'foto' }, { tipo_midia: 'foto' }, { tipo_midia: 'video' }],
+  };
+  it('lista com nome do tipo, do cliente e contagem de mídias', async () => {
+    const { client } = mockClient({ servicos: [{ data: [LINHA], error: null }] });
+    const [s] = await listarServicos(client);
+    expect(s).toMatchObject({ id: 's1', tipoNome: 'Visita técnica', clienteNome: 'Fernanda', fotos: 2, videos: 1, dataServico: '2026-07-30' });
+  });
+  it('servicosDoLead usa o mesmo formato', async () => {
+    const { client } = mockClient({ servicos: [{ data: [LINHA], error: null }] });
+    const lista = await servicosDoLead(client, 'l1');
+    expect(lista[0]!.tipoNome).toBe('Visita técnica');
+  });
+});
+
+describe('registrarMidias', () => {
+  it('insere uma linha por mídia com ordem e company', async () => {
+    const { client, inserts } = mockClient({ servico_fotos: [{ data: null, error: null }] });
+    await registrarMidias(client, 's1', 'c1', [
+      { path: 'l1/servico/s1/a.jpg', tipoMidia: 'foto' },
+      { path: 'l1/servico/s1/b.mp4', tipoMidia: 'video' },
+    ]);
+    expect(inserts.servico_fotos?.[0]).toEqual([
+      { servico_id: 's1', company_id: 'c1', storage_path: 'l1/servico/s1/a.jpg', tipo_midia: 'foto', ordem: 0 },
+      { servico_id: 's1', company_id: 'c1', storage_path: 'l1/servico/s1/b.mp4', tipo_midia: 'video', ordem: 1 },
+    ]);
+  });
+  it('lista vazia → não toca o banco', async () => {
+    let tocou = false;
+    const client = { from() { tocou = true; throw new Error('x'); } };
+    await registrarMidias(client as any, 's1', 'c1', []);
+    expect(tocou).toBe(false);
+  });
+});
