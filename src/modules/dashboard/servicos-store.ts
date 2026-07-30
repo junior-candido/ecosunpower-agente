@@ -16,23 +16,35 @@ export async function listarTipos(client: SupabaseClient): Promise<TipoServico[]
 export async function criarServico(client: SupabaseClient, d: {
   companyId: string | null; tipoId: string; leadId: string; sistemaId?: string | null;
   observacoes?: string | null; dataServico: string; criadoPor?: string | null;
+  atribuidoA?: string | null; status?: 'atribuido' | 'concluido';
 }): Promise<string> {
   const { data, error } = await client.from('servicos').insert({
     company_id: d.companyId, tipo_id: d.tipoId, lead_id: d.leadId,
     sistema_id: d.sistemaId ?? null, observacoes: d.observacoes ?? null,
     data_servico: d.dataServico, criado_por: d.criadoPor ?? null,
+    atribuido_a: d.atribuidoA ?? null,
+    status: d.status ?? 'concluido', // preenchido na hora = já concluído
   }).select('id').single();
   if (error) throw new Error(`criarServico: ${error.message}`);
   return (data as { id: string }).id;
+}
+
+/** Instalador terminou: marca concluído (observações finais opcionais). */
+export async function concluirServico(client: SupabaseClient, id: string, observacoes?: string | null): Promise<void> {
+  const row: Record<string, unknown> = { status: 'concluido' };
+  if (observacoes !== undefined && observacoes !== null && observacoes !== '') row.observacoes = observacoes;
+  const { error } = await client.from('servicos').update(row).eq('id', id);
+  if (error) throw new Error(`concluirServico: ${error.message}`);
 }
 
 export interface ServicoRow {
   id: string; tipoId: string; tipoNome: string; leadId: string; clienteNome: string;
   sistemaId: string | null; observacoes: string | null; dataServico: string;
   fotos: number; videos: number;
+  status: 'atribuido' | 'concluido'; atribuidoA: string | null; atribuidoNome: string | null;
 }
 
-const CAMPOS = 'id, tipo_id, lead_id, sistema_id, observacoes, data_servico, criado_em, servico_tipos(nome), leads(name), servico_fotos(tipo_midia)';
+const CAMPOS = 'id, tipo_id, lead_id, sistema_id, observacoes, data_servico, criado_em, status, atribuido_a, servico_tipos(nome), leads(name), servico_fotos(tipo_midia), atribuido:dashboard_users!servicos_atribuido_a_fkey(nome)';
 
 function paraRow(r: any): ServicoRow {
   const midias: { tipo_midia: string }[] = r.servico_fotos ?? [];
@@ -42,6 +54,9 @@ function paraRow(r: any): ServicoRow {
     sistemaId: r.sistema_id, observacoes: r.observacoes, dataServico: r.data_servico,
     fotos: midias.filter((m) => m.tipo_midia === 'foto').length,
     videos: midias.filter((m) => m.tipo_midia === 'video').length,
+    status: (r.status === 'atribuido' ? 'atribuido' : 'concluido'),
+    atribuidoA: r.atribuido_a ?? null,
+    atribuidoNome: r.atribuido?.nome ?? null,
   };
 }
 
