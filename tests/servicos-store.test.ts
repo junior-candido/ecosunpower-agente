@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   listarTipos, criarServico, listarServicos, servicosDoLead, registrarMidias,
-  concluirServico, atribuirServico,
+  concluirServico, atribuirServico, enderecoDoLead,
 } from '../src/modules/dashboard/servicos-store.js';
 
 function mockClient(respostas: Record<string, any[]>) {
@@ -71,6 +71,17 @@ describe('atribuirServico (📤 enviar pelo zap)', () => {
     const { client, updates } = mockClient({ servicos: [{ data: null, error: null }] });
     await atribuirServico(client, 's1', 'u-novo');
     expect(updates.servicos?.[0]).toMatchObject({ atribuido_a: 'u-novo', status: 'atribuido' });
+  });
+});
+
+describe('enderecoDoLead (zap só-informações — fora do router por causa da catraca RLS)', () => {
+  it('monta a linha do endereço com o que tiver', async () => {
+    const { client } = mockClient({ leads: [{ data: { endereco_rua: 'Rua X', endereco_numero: '100', neighborhood: 'Jardim Botânico', city: 'Brasília' }, error: null }] });
+    expect(await enderecoDoLead(client, 'l1')).toBe('Rua X, 100, Jardim Botânico, Brasília');
+  });
+  it('lead sem endereço → null', async () => {
+    const { client } = mockClient({ leads: [{ data: {}, error: null }] });
+    expect(await enderecoDoLead(client, 'l1')).toBeNull();
   });
 });
 

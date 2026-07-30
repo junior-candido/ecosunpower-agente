@@ -41,6 +41,16 @@ export async function atribuirServico(client: SupabaseClient, id: string, userId
   if (error) throw new Error(`atribuirServico: ${error.message}`);
 }
 
+/** Endereço do cliente numa linha só (zap "só as informações" do 📤 Enviar
+ *  pelo zap). Fica aqui e não no router por causa da catraca RLS (tenant-rota-guard). */
+export async function enderecoDoLead(client: SupabaseClient, leadId: string): Promise<string | null> {
+  const { data } = await client.from('leads')
+    .select('endereco_rua, endereco_numero, neighborhood, city')
+    .eq('id', leadId).maybeSingle();
+  const l = data as { endereco_rua?: string; endereco_numero?: string; neighborhood?: string; city?: string } | null;
+  return [l?.endereco_rua, l?.endereco_numero, l?.neighborhood, l?.city].filter(Boolean).join(', ') || null;
+}
+
 /** Quantos serviços 🟡 pendentes o usuário ainda tem (regra do acesso temporário). */
 export async function contarPendentesDoUsuario(client: SupabaseClient, userId: string): Promise<number> {
   const { count, error } = await client.from('servicos')

@@ -848,12 +848,10 @@ b.onclick=async function(){
       const modo = String(req.body?.modo ?? 'info');
 
       if (modo === 'info') {
-        // Endereço do cliente entra na mensagem, se tiver.
-        const { data: lead } = await supabase.from('leads')
-          .select('endereco_rua, endereco_numero, neighborhood, city')
-          .eq('id', s.leadId).maybeSingle();
-        const l = lead as { endereco_rua?: string; endereco_numero?: string; neighborhood?: string; city?: string } | null;
-        const endereco = [l?.endereco_rua, l?.endereco_numero, l?.neighborhood, l?.city].filter(Boolean).join(', ') || null;
+        // Endereço do cliente entra na mensagem, se tiver (consulta no store —
+        // a catraca RLS barra supabase.from cru aqui no router).
+        const { enderecoDoLead } = await import('./servicos-store.js');
+        const endereco = await enderecoDoLead(supabase, s.leadId);
         await options.sendText(tel, textoInfoServico(s, endereco));
         res.json({ ok: true }); return;
       }
