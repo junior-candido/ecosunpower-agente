@@ -1273,7 +1273,9 @@ b.onclick=async function(){
       }
 
       const conversaIA = await supabaseService.getConversaIA(id);
-      res.send(renderLeadDetailPage(lead, conversaIA, String(req.query.docs ?? ''), String(req.query.envio ?? '')));
+      const { servicosDoLead } = await import('./servicos-store.js');
+      const servicosDoCliente = await servicosDoLead(supabase, id).catch(() => []);
+      res.send(renderLeadDetailPage(lead, conversaIA, String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);
       res.status(500).send(`<h2>Erro ao carregar lead</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
