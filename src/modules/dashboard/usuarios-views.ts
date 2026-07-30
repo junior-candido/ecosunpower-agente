@@ -26,10 +26,11 @@ export function renderUsuariosListPage(users: UserListItem[], roles: RoleRow[], 
   <div class="flex items-center justify-between mb-4">
     <h1 class="text-xl font-bold">Usuários</h1>
   </div>
-  <form method="POST" action="/dashboard/usuarios/novo" class="bg-white rounded-lg border border-slate-200 p-4 mb-6 grid grid-cols-1 md:grid-cols-5 gap-3">
+  <form method="POST" action="/dashboard/usuarios/novo" class="bg-white rounded-lg border border-slate-200 p-4 mb-6 grid grid-cols-1 md:grid-cols-6 gap-3">
     <input name="nome" placeholder="Nome" required class="border border-slate-300 rounded-md px-3 py-1.5" />
     <input name="login" placeholder="Login" required class="border border-slate-300 rounded-md px-3 py-1.5" />
     <input name="senha" type="password" placeholder="Senha inicial" required class="border border-slate-300 rounded-md px-3 py-1.5" />
+    <input name="telefone" inputmode="tel" placeholder="Zap (5561999998888)" class="border border-slate-300 rounded-md px-3 py-1.5" />
     <select name="role_id" required class="border border-slate-300 rounded-md px-3 py-1.5">${opcoesPapel}</select>
     <button class="bg-sky-600 hover:bg-sky-700 text-white rounded-md px-4 py-2">Criar usuário</button>
   </form>
@@ -43,7 +44,7 @@ export function renderUsuariosListPage(users: UserListItem[], roles: RoleRow[], 
 }
 
 export function renderUsuarioEditPage(
-  user: { id: string; nome: string; login: string; ativo: boolean; role_id: string | null },
+  user: { id: string; nome: string; login: string; ativo: boolean; role_id: string | null; telefone?: string | null },
   roles: RoleRow[],
   viewer?: DashUser,
 ): string {
@@ -60,6 +61,9 @@ export function renderUsuarioEditPage(
     </label>
     <label class="text-sm">Nova senha (deixe em branco pra manter)
       <input name="senha" type="password" class="w-full border border-slate-300 rounded-md px-3 py-1.5" />
+    </label>
+    <label class="text-sm">Telefone (zap) — recebe o aviso de serviço atribuído
+      <input name="telefone" inputmode="tel" value="${esc(user.telefone ?? '')}" placeholder="5561999998888" class="w-full border border-slate-300 rounded-md px-3 py-1.5" />
     </label>
     <label class="text-sm flex items-center gap-2">
       <input type="checkbox" name="ativo" ${user.ativo ? 'checked' : ''} /> Ativo

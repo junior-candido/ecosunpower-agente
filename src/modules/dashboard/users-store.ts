@@ -136,11 +136,12 @@ export async function listUsers(client: SupabaseClient, companyId: string): Prom
 
 export async function createUser(
   client: SupabaseClient,
-  input: { companyId: string; nome: string; login: string; senhaHash: string; roleId: string },
+  input: { companyId: string; nome: string; login: string; senhaHash: string; roleId: string; telefone?: string | null },
 ): Promise<{ id: string } | { error: string }> {
   const { data, error } = await client.from('dashboard_users').insert({
     company_id: input.companyId, nome: input.nome, login: input.login,
     senha_hash: input.senhaHash, role_id: input.roleId, ativo: true,
+    telefone: input.telefone ?? null,
   }).select('id').single();
   if (error) return { error: error.code === '23505' ? 'login_em_uso' : error.message };
   return { id: (data as { id: string }).id };
@@ -149,15 +150,22 @@ export async function createUser(
 export async function updateUser(
   client: SupabaseClient,
   id: string,
-  patch: { nome?: string; roleId?: string; ativo?: boolean; senhaHash?: string },
+  patch: { nome?: string; roleId?: string; ativo?: boolean; senhaHash?: string; telefone?: string | null },
 ): Promise<void> {
   const upd: Record<string, unknown> = {};
   if (patch.nome !== undefined) upd.nome = patch.nome;
   if (patch.roleId !== undefined) upd.role_id = patch.roleId;
   if (patch.ativo !== undefined) upd.ativo = patch.ativo;
   if (patch.senhaHash !== undefined) upd.senha_hash = patch.senhaHash;
+  if (patch.telefone !== undefined) upd.telefone = patch.telefone;
   if (Object.keys(upd).length === 0) return;
   await client.from('dashboard_users').update(upd).eq('id', id);
+}
+
+/** Telefone (zap) do usuário — pro aviso de serviço atribuído. */
+export async function telefoneDoUsuario(client: SupabaseClient, id: string): Promise<string | null> {
+  const { data } = await client.from('dashboard_users').select('telefone').eq('id', id).maybeSingle();
+  return (data as { telefone?: string | null } | null)?.telefone ?? null;
 }
 
 export async function touchLastLogin(client: SupabaseClient, id: string): Promise<void> {
