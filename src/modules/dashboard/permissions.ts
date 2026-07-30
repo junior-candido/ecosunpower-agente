@@ -6,6 +6,7 @@
 export const AREAS = [
   'leads', 'propostas', 'usinas', 'financeiro',
   'marketing', 'relatorios', 'usuarios', 'configuracoes', 'rh',
+  'servicos', // Diário de Serviços (registro de campo — papel "Campo" vê só isso)
 ] as const;
 export type Area = (typeof AREAS)[number];
 
