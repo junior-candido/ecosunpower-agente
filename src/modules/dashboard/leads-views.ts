@@ -462,6 +462,8 @@ export function renderLeadDetailPage(
   conversa: { role: 'user' | 'assistant'; conteudo: string }[] = [],
   docsResultado = '',
   envioResultado = '',
+  // [Diário de Serviços F1] registros de campo do cliente (visita, instalação…)
+  servicos: { id: string; tipoNome: string; dataServico: string; fotos: number; videos: number }[] = [],
 ): string {
   const phoneFmt = formatPhone(lead.phone);
   const nome = escapeHtml(lead.name ?? 'Sem nome');
@@ -739,6 +741,17 @@ export function renderLeadDetailPage(
             <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6">
               <h2 class="text-lg font-semibold text-slate-900 mb-3">Oportunidades</h2>
               <pre class="text-xs bg-slate-50 p-3 rounded overflow-x-auto">${escapeHtml(JSON.stringify(lead.opportunities, null, 2))}</pre>
+            </div>` : ''}
+
+          ${servicos.length > 0 ? `
+            <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6">
+              <h2 class="text-lg font-semibold text-slate-900 mb-3">🔧 Serviços de campo (${servicos.length})</h2>
+              <div class="space-y-2">
+                ${servicos.map((s) => `<a href="/dashboard/servicos/${s.id}" class="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 hover:bg-sky-50 border border-slate-200 text-sm">
+                  <span class="font-medium">${escapeHtml(s.tipoNome)}</span>
+                  <span class="text-slate-500">${s.dataServico.split('-').reverse().join('/')}${s.fotos ? ` · ${s.fotos}📷` : ''}${s.videos ? ` · ${s.videos}🎥` : ''}</span>
+                </a>`).join('')}
+              </div>
             </div>` : ''}
 
           ${(lead.anexos ?? []).length > 0 ? `

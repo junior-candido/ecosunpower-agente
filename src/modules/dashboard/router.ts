@@ -493,6 +493,139 @@ b.onclick=async function(){
     }
   });
 
+  // ----- SERVIÇOS (Diário de campo — spec 2026-07-29) -----
+  // Mobile-first. Papel "Campo" tem SÓ a área servicos e enxerga só isso.
+  // Mídia: navegador sobe DIRETO pro bucket client-attachments via URL
+  // assinada (vídeo de até 100MB não passa pelo Express).
+  const BUCKET_SERVICOS = 'client-attachments';
+  const extDoContentType = (ct: string): string => {
+    if (/jpe?g/.test(ct)) return 'jpg';
+    if (/png/.test(ct)) return 'png';
+    if (/mp4/.test(ct)) return 'mp4';
+    if (/quicktime/.test(ct)) return 'mov';
+    if (/webm/.test(ct)) return 'webm';
+    return 'bin';
+  };
+
+  router.get('/servicos', exigir('servicos', 'visualizar'), async (req: AuthedRequest, res) => {
+    try {
+      const { listarServicos } = await import('./servicos-store.js');
+      const { renderServicosPage } = await import('./servicos-views.js');
+      const q = req.query as Record<string, string | undefined>;
+      const aviso = q.ok ? { tipo: 'ok' as const, texto: q.ok } : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
+      res.type('html').send(renderServicosPage(await listarServicos(supabase), req.dashUser, aviso));
+    } catch (err) {
+      console.error('[servicos]', err);
+      res.status(500).send('Falha ao carregar os serviços. A migration 092 já foi aplicada?');
+    }
+  });
+
+  router.get('/servicos/novo', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
+    const { listarTipos } = await import('./servicos-store.js');
+    const { renderNovoServicoPage } = await import('./servicos-views.js');
+    res.type('html').send(renderNovoServicoPage(await listarTipos(supabase), req.dashUser));
+  });
+
+  router.get('/servicos/buscar-cliente', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
+    const q = String(req.query.q ?? '').trim().replace(/[,%]/g, ' ');
+    if (q.length < 2) { res.json({ clientes: [] }); return; }
+    const db = bancoDoOperador(req, supabase);
+    const { data } = await db.from('leads').select('id, name, phone')
+      .eq('company_id', req.dashUser!.companyId)
+      .or(`name.ilike.%${q}%,phone.ilike.%${q}%`)
+      .limit(8);
+    res.json({ clientes: (data ?? []).map((l: any) => ({ id: l.id, nome: l.name ?? '(sem nome)', telefone: l.phone ?? '' })) });
+  });
+
+  router.get('/servicos/buscar-usina', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
+    const q = String(req.query.q ?? '').trim().replace(/[,%]/g, ' ');
+    if (q.length < 2) { res.json({ usinas: [] }); return; }
+    const db = bancoDoOperador(req, supabase);
+    const { data } = await db.from('sistemas_clientes').select('id, apelido')
+      .ilike('apelido', `%${q}%`).eq('ativo', true).limit(8);
+    res.json({ usinas: (data ?? []).map((s: any) => ({ id: s.id, nome: s.apelido })) });
+  });
+
+  router.post('/servicos/nova', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
+    try {
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const tipo = String(b.tipo ?? '').trim();
+      const dataServico = String(b.data ?? '').trim();
+      if (!tipo || !dataServico) { res.status(400).json({ ok: false, erro: 'Tipo e data são obrigatórios.' }); return; }
+
+      // Cliente: existente OU criado na hora (nome+telefone, dedup do 9º dígito)
+      let leadId = b.leadId ? String(b.leadId) : null;
+      if (!leadId) {
+        const novo = b.clienteNovo as { nome?: string; telefone?: string } | null;
+        const nome = String(novo?.nome ?? '').trim();
+        const tel = String(novo?.telefone ?? '').replace(/\D/g, '');
+        if (!nome || tel.length < 10) { res.status(400).json({ ok: false, erro: 'Cliente: escolha um existente ou informe nome + telefone.' }); return; }
+        leadId = await supabaseService.getOrCreateLeadByPhone(tel, nome, req.dashUser!.companyId);
+      }
+
+      const midias = (Array.isArray(b.midias) ? b.midias : []) as { nome?: string; tipoMidia?: string; contentType?: string }[];
+      if (midias.filter((m) => m.tipoMidia === 'video').length > 2) {
+        res.status(400).json({ ok: false, erro: 'Máximo de 2 vídeos por registro.' }); return;
+      }
+
+      const { criarServico } = await import('./servicos-store.js');
+      const { randomUUID } = await import('crypto');
+      const servicoId = await criarServico(supabase, {
+        companyId: req.dashUser!.companyId, tipoId: tipo, leadId,
+        sistemaId: b.sistemaId ? String(b.sistemaId) : null,
+        observacoes: String(b.observacoes ?? '').trim() || null,
+        dataServico, criadoPor: req.dashUser!.id,
+      });
+
+      const uploads: { path: string; url: string }[] = [];
+      for (const m of midias) {
+        const path = `${leadId}/servico/${servicoId}/${randomUUID()}.${extDoContentType(String(m.contentType ?? ''))}`;
+        const { data, error } = await supabase.storage.from(BUCKET_SERVICOS).createSignedUploadUrl(path);
+        if (error || !data) { console.warn('[servicos] signed upload falhou:', error?.message); continue; }
+        uploads.push({ path, url: data.signedUrl });
+      }
+      res.json({ ok: true, id: servicoId, uploads });
+    } catch (err) {
+      console.error('[servicos/nova]', err);
+      res.status(500).json({ ok: false, erro: 'Falha ao criar o registro.' });
+    }
+  });
+
+  router.post('/servicos/:id/confirmar-midias', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
+    try {
+      const servicoId = String(req.params.id);
+      const { getServico, registrarMidias } = await import('./servicos-store.js');
+      const s = await getServico(supabase, servicoId);
+      if (!s) { res.status(404).json({ ok: false, erro: 'Registro não achado.' }); return; }
+      const prefixo = `${s.leadId}/servico/${servicoId}/`;
+      const midias = ((Array.isArray(req.body?.midias) ? req.body.midias : []) as { path?: string; tipoMidia?: string }[])
+        .filter((m) => typeof m.path === 'string' && m.path.startsWith(prefixo)) // só paths DESTE registro
+        .map((m) => ({ path: String(m.path), tipoMidia: (m.tipoMidia === 'video' ? 'video' : 'foto') as 'foto' | 'video' }));
+      await registrarMidias(supabase, servicoId, req.dashUser!.companyId, midias);
+      res.json({ ok: true, registradas: midias.length });
+    } catch (err) {
+      console.error('[servicos/confirmar]', err);
+      res.status(500).json({ ok: false, erro: 'Falha ao registrar as mídias.' });
+    }
+  });
+
+  router.get('/servicos/:id', exigir('servicos', 'visualizar'), async (req: AuthedRequest, res) => {
+    try {
+      const { getServico, midiasDoServico } = await import('./servicos-store.js');
+      const { renderDetalheServicoPage } = await import('./servicos-views.js');
+      const { getSignedUrls } = await import('../anexos/storage.js');
+      const s = await getServico(supabase, String(req.params.id));
+      if (!s) { res.status(404).send('Registro não achado.'); return; }
+      const midias = await midiasDoServico(supabase, s.id);
+      const urls = await getSignedUrls(supabase, midias.map((m) => m.path), 3600);
+      const comUrl = midias.map((m) => ({ tipoMidia: m.tipoMidia, url: urls[m.path] ?? '' })).filter((m) => m.url);
+      res.type('html').send(renderDetalheServicoPage(s, comUrl, req.dashUser));
+    } catch (err) {
+      console.error('[servicos/detalhe]', err);
+      res.status(500).send('Falha ao carregar o registro.');
+    }
+  });
+
   // ----- MINHA ASSINATURA (tela do TENANT — fatia 4) -----
   // O assinante vê a própria mensalidade (situação, vencimento, uso do plano,
   // link de pagar) e cadastra o zap com código. Escopo: SEMPRE a empresa da
@@ -1140,7 +1273,9 @@ b.onclick=async function(){
       }
 
       const conversaIA = await supabaseService.getConversaIA(id);
-      res.send(renderLeadDetailPage(lead, conversaIA, String(req.query.docs ?? ''), String(req.query.envio ?? '')));
+      const { servicosDoLead } = await import('./servicos-store.js');
+      const servicosDoCliente = await servicosDoLead(supabase, id).catch(() => []);
+      res.send(renderLeadDetailPage(lead, conversaIA, String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);
       res.status(500).send(`<h2>Erro ao carregar lead</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
