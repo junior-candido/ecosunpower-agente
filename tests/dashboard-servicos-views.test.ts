@@ -48,7 +48,9 @@ describe('renderNovoServicoPage (form mobile)', () => {
     expect(html).toContain('data-tipo="visita-tecnica"');
     expect(html).toContain('data-tipo="termino-instalacao"');
     expect(html).toContain('Padrão de entrada ABERTO');
-    expect(html).toContain('Inversor LIGADO');
+    expect(html).toContain('cabo tronco');           // lista do término é a do Junior
+    expect(html).toContain('placa de geração própria');
+    expect(html).toContain('corrente CA');           // "corrente", NUNCA "amperagem"
     expect(html).toContain('mostraGuia');
   });
 });
