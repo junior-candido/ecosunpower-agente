@@ -6639,6 +6639,14 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           }
           const reais = ((r.pagoCentavos ?? cob.valorCentavos) / 100).toFixed(2).replace('.', ',');
           try { await sendText(config.engineerPhone, `💰 Pagamento confirmado! R$ ${reais} via ${r.metodo === 'pix' ? 'Pix' : 'cartão'} (InfinitePay).`); } catch { /* best-effort */ }
+          // Vigia da forma (097): pagou diferente do combinado? Avisa a diferença.
+          try {
+            const { analisarFormaPaga } = await import('./modules/cobranca-forma.js');
+            const avisoForma = analisarFormaPaga(cob, { metodo: r.metodo, parcelas: r.parcelas });
+            if (avisoForma) await sendText(config.engineerPhone, avisoForma);
+          } catch (err) {
+            console.warn('[infinitepay] vigia da forma falhou:', (err as Error).message);
+          }
         }
       }
       return ack();
