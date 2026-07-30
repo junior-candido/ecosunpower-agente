@@ -87,10 +87,12 @@ export function renderDetalheServicoPage(
     : '';
   const completar = s.status === 'atribuido'
     ? `${guia}
-    <div class="mt-4 grid grid-cols-2 gap-3">
-      <label class="block text-center px-4 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">📷 Fotos
+    <div class="mt-4 grid grid-cols-3 gap-2">
+      <label class="block text-center px-2 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">📷 Tirar foto
+        <input type="file" accept="image/*" capture="environment" style="display:none" onchange="addFotos(this)"></label>
+      <label class="block text-center px-2 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">🖼️ Galeria
         <input type="file" accept="image/*" multiple style="display:none" onchange="addFotos(this)"></label>
-      <label class="block text-center px-4 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">🎥 Vídeo (máx 2)
+      <label class="block text-center px-2 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">🎥 Vídeo (máx 2)
         <input type="file" accept="video/*" style="display:none" onchange="addVideo(this)"></label>
     </div>
     <div id="anexos" class="grid grid-cols-3 gap-2 mt-2"></div>
@@ -272,10 +274,12 @@ export function renderNovoServicoPage(
     <label class="block"><span class="text-sm font-medium text-slate-700">Observações</span>
       <textarea id="f_observacoes" name="observacoes" rows="3" placeholder="O que foi visto/feito…" class="mt-1 w-full border border-slate-300 rounded-xl px-4 py-3 text-base"></textarea></label>
 
-    <div class="grid grid-cols-2 gap-3">
-      <label class="block text-center px-4 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">📷 Fotos
+    <div class="grid grid-cols-3 gap-2">
+      <label class="block text-center px-2 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">📷 Tirar foto
+        <input type="file" accept="image/*" capture="environment" style="display:none" onchange="addFotos(this)"></label>
+      <label class="block text-center px-2 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">🖼️ Galeria
         <input type="file" accept="image/*" multiple style="display:none" onchange="addFotos(this)"></label>
-      <label class="block text-center px-4 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">🎥 Vídeo (máx 2)
+      <label class="block text-center px-2 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">🎥 Vídeo (máx 2)
         <input type="file" accept="video/*" style="display:none" onchange="addVideo(this)"></label>
     </div>
     <div id="anexos" class="grid grid-cols-3 gap-2"></div>

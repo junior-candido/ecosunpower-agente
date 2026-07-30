@@ -35,8 +35,11 @@ describe('renderNovoServicoPage (form mobile)', () => {
     expect(html).toContain('name="data"');
     expect(html).toContain('observacoes');
   });
-  it('aceita foto e vídeo (máx 2 vídeos avisado no código)', () => {
-    expect(html).toContain('accept="image/*"');
+  it('câmera E galeria separadas (bug 30/07: Android abria só arquivos)', () => {
+    expect(html).toContain('capture="environment"');           // 📷 abre a câmera
+    expect(html).toContain('accept="image/*" multiple');       // 🖼️ galeria continua
+    expect(html).toContain('Tirar foto');
+    expect(html).toContain('Galeria');
     expect(html).toContain('accept="video/*"');
     expect(html).toContain('MAX_VIDEOS=2');
   });
@@ -96,6 +99,7 @@ describe('atribuição (F2)', () => {
     expect(html).toContain('Concluir serviço');
     expect(html).toContain('/concluir');
     expect(html).toContain('Atribuído a João Instalador');
+    expect(html).toContain('capture="environment"'); // câmera também na tela do instalador
   });
   it('detalhe concluído NÃO tem o modo de trabalho', async () => {
     const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
