@@ -43,6 +43,14 @@ describe('renderNovoServicoPage (form mobile)', () => {
     expect(html).toContain('/dashboard/servicos/nova');
     expect(html).toContain('confirmar-midias');
   });
+  it('guia de fotos por tipo (visita e término) aparece conforme o select', () => {
+    expect(html).toContain('Fotos pra tirar neste serviço');
+    expect(html).toContain('data-tipo="visita-tecnica"');
+    expect(html).toContain('data-tipo="termino-instalacao"');
+    expect(html).toContain('Padrão de entrada ABERTO');
+    expect(html).toContain('Inversor LIGADO');
+    expect(html).toContain('mostraGuia');
+  });
 });
 
 describe('o JS embutido da página é VÁLIDO (guarda do bug 29/07: 1 parêntese matou todos os botões)', () => {
