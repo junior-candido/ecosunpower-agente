@@ -259,7 +259,7 @@ export function renderFormNovaProposta(input: {
               <label class="block md:col-span-1">
                 <span class="text-xs text-slate-300">Foto ${i}</span>
                 <input type="file" name="foto${i}" accept="image/*" class="mt-1 block w-full text-sm text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-cyan-600 file:text-white hover:file:bg-cyan-700 cursor-pointer" id="foto_inp_${i}">
-                <button type="button" onclick="var i=document.getElementById('foto_inp_${i}');i.setAttribute('capture','environment');i.click();i.removeAttribute('capture')" class="mt-1 px-2 py-1 rounded text-xs bg-slate-700 text-slate-100 hover:bg-slate-600">📷 Tirar foto</button>
+                <button type="button" onclick="event.preventDefault();var i=document.getElementById('foto_inp_${i}');i.setAttribute('capture','environment');i.click();i.removeAttribute('capture')" class="mt-1 px-2 py-1 rounded text-xs bg-slate-700 text-slate-100 hover:bg-slate-600">📷 Tirar foto</button>
               </label>
               <label class="block md:col-span-2">
                 <span class="text-xs text-slate-300">Legenda</span>

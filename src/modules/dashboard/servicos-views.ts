@@ -156,7 +156,7 @@ export function renderDetalheServicoPage(
   // avulso — avulso escolhe entre acesso temporário criado na hora ou só as
   // informações. Pedido do Junior 30/07.
   const faixaCriado = envioZap?.criadoAgora
-    ? `<div class="mb-4 px-4 py-3 rounded-xl text-sm bg-emerald-50 text-emerald-800 border border-emerald-200">✅ Serviço criado! Quer mandar as informações no zap de quem vai fazer? Use o botão aqui embaixo.</div>`
+    ? `<div class="mb-4 px-4 py-3 rounded-xl text-sm bg-emerald-50 text-emerald-800 border border-emerald-200">✅ Serviço criado!${envioZap.pode ? ' Quer mandar as informações no zap de quem vai fazer? Use o botão aqui embaixo.' : ''}</div>`
     : '';
   const opcaoAtribuido = s.atribuidoA
     ? (envioZap?.telAtribuido
