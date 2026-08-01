@@ -40,6 +40,21 @@ entregar projeto que vai dar problema em 2-3 anos.
 - Premium emergente, tecnologia N-Type
 - Excelente pra cliente que quer diferenciação
 
+#### DMEGC Solar
+- Tier 1 BNEF e S&P Global · top 5 mundial em módulos (ranking Wood Mackenzie 2025)
+- Grupo Hengdian DMEGC — gigante industrial com 40+ anos de história
+- N-Type TOPCon bifacial vidro duplo (séries de 605 a 630W)
+- Garantia de 30 anos de potência, degradação de só 0,4% ao ano
+- Operação LATAM/Brasil própria com datasheets em português
+- DETALHES: ver `modulos-dmegc.md`
+
+#### Hanersun
+- Tier 1 BNEF · linhas HItouch 5N e 6N
+- N-Type TOPCon, eficiência até 22,6%+, LID/LeTID praticamente zero
+- Garantia de 15 anos de produto / 30 anos de potência
+- Presença consolidada no Brasil (site BR e grandes distribuidoras)
+- DETALHES: ver `modulos-hanersun.md`
+
 ### Tier 1 adicional disponível (sob demanda)
 
 - Canadian Solar — muito forte no Brasil, suporte robusto
@@ -49,6 +64,7 @@ entregar projeto que vai dar problema em 2-3 anos.
 
 - **Cliente padrão (residencial/comercial geral):** Trina, JA Solar ou LONGi
 - **Cliente exigente (alto padrão):** Jinko N-Type ou DAH
+- **Custo-benefício premium com garantia longa:** DMEGC ou Hanersun
 
 ### Tecnologias premium atuais (que usamos)
 
@@ -101,15 +117,23 @@ entregar projeto que vai dar problema em 2-3 anos.
 #### SolaX
 - Linha de microinversores X1-IES (15 anos de garantia — top do segmento)
 - Linha híbrida X1/X3 (10 anos de garantia, padrão da indústria) com armazenamento integrado
+- Híbridos trifásicos X3-ULTRA (15-30 kW, até 2 torres de bateria T-BAT) e BESS C&I ESS-AELIO (50-60 kW / 100-200 kWh)
 - Premium intermediário com qualidade europeia
 - Promovida pra dia-a-dia em 13/05/2026
+
+#### GoodWe
+- Top 3 do ranking de inversores no Brasil — TOTALMENTE no nosso escopo, do residencial ao C&I
+- String (XS G3, SDT), microinversor (MIS), híbridos ET (12-30 kW) e ET 50-100K
+- Armazenamento completo: baterias Lynx A/F/U (residencial) e linha C&I — gabinete Lynx C 60 kWh (com inversor ET embutido, expansível a 101-156 kWh), ESA 125/261
+- Peak shaving, backup UPS, zero export e microrrede — monitoramento SEMS
+- Promovida pra dia-a-dia em 31/07/2026 (linha da casa pra BESS C&I)
+- DETALHES: ver `goodwe-armazenamento-ci-modulo2.md`, `goodwe-plus-modulo1.md`, `bateria-goodwe-lynx-*.md`
 
 ### Inversores adicionais disponíveis (sob demanda)
 
 - **Huawei** — hoje o mais forte em híbrido + bateria no Brasil
 - **Fronius** — premium austríaco
 - **SMA** — referência alemã
-- **GoodWe** — top 3 ranking BR
 - **APsystems** — líder mundial em microinversor
 
 ### NÃO trabalhamos com
