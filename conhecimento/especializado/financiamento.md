@@ -13,6 +13,10 @@
 - Sem juros (apenas taxa de administracao)
 - Precisa ser contemplado para instalar
 
+### Cartao de credito
+- Parcelamento em ate 18x, sem juros ate 3x
+- Taxas por parcela: ver o conhecimento "Parcelamento no Cartao"
+
 ### Pagamento a vista
 - Melhor custo-beneficio
 - Retorno do investimento mais rapido
