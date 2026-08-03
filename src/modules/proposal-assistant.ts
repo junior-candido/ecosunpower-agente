@@ -29,7 +29,7 @@ import {
 } from './solar-params.js';
 import { renderProposalHTML, type ProposalData } from './proposal/template.js';
 import { temBateria } from './proposal/bateria.js';
-import { parcelaCartaoBelenus, parcelasMaxCartaoSolar } from './proposal/cartao-solar.js';
+import { parcelaCartaoBelenus, parcelaCartaoSolFacil, parcelasMaxCartaoSolar, type TabelaCartao } from './proposal/cartao-solar.js';
 import { obterLogoBase64, LOGO_ECOSUNPOWER_BRANCO_BASE64 } from './proposal/assets/logo-base64.js';
 import { somaServicosExtras, renderServiceOnlyHTML, type ServicoItem, type ServiceOnlyData } from './proposal/service-render.js';
 import { montarDadosInputCompleto } from './proposal/dados-input.js';
@@ -465,15 +465,16 @@ export interface GenerateProposalCoreResult {
 // restart. O texto cru fica cacheado no construtor (knowledge não muda).
 export function buildSystemPrompt(propostasKnowledge: string, marcasKnowledge: string): string {
   // [ECOSOF] O item de cartão é condicional na MONTAGEM (não placeholder):
-  // belenus_ativo (EcoSun, seed) = tabela do parceiro em 24×; flag desligada =
-  // cartão genérico de até 12× na maquininha (service-payment). O texto do
-  // ramo "true" é byte-idêntico ao prompt antigo.
+  // belenus_ativo (EcoSun, seed) = DOIS cartões (parceria 24× + Sol Fácil 18×);
+  // flag desligada = cartão genérico de até 12× na maquininha (service-payment).
   const itemCartaoPrompt = empresa().belenusAtivo
-    ? `2. Cartão de crédito em 24× — NÃO calcule a parcela do cartão: o sistema preenche
-     o valor exato. Só inclua a opção com meioPagamento "cartao"; pode deixar
-     valorPrincipal vazio que o sistema corrige. NUNCA escreva o nome do parceiro/
-     fornecedor do cartão (ex: "Belenus") no texto que vai pro cliente — use só
-     "Cartão de crédito".`
+    ? `2. DOIS cartões de crédito, como DUAS opções separadas:
+     • "Em até 24× com juros baixos" → meioPagamento "cartao", tabelaCartao "parceria"
+     • "Em até 18× · sem juros até 3×" → meioPagamento "cartao", tabelaCartao "solfacil"
+     NÃO calcule parcela de cartão: o sistema preenche o valor exato de cada tabela;
+     pode deixar valorPrincipal vazio que o sistema corrige. NUNCA escreva nome de
+     distribuidor do cartão (ex: "Belenus", "Sol Fácil", "Fortlev") no texto que vai
+     pro cliente — use só "Cartão de crédito".`
     : `2. Cartão de crédito em até 12× na maquininha — NÃO calcule a parcela do cartão:
      o sistema preenche o valor exato. Só inclua a opção com meioPagamento "cartao";
      pode deixar valorPrincipal vazio que o sistema corrige.`;
@@ -642,11 +643,11 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
   - Se Junior não disser, ASSUMA "Telha cerâmica" mas adicione em missing pra confirmar.
 - estruturaFixacao.material: default "Alumínio anodizado + parafusos inox" salvo se Junior especificar.
 
-- formasPagamento: SEMPRE incluir 3 opções padrão:
+- formasPagamento: SEMPRE incluir as opções padrão:
   1. À vista PIX/TED (recomendado, sem juros)
   ${itemCartaoPrompt}
   3. Financiamento até 90× com carência até 120 dias (Solfácil/Sol Agora/BV/Santander, ~1.7%a.m., fator ~2.10)
-  Calcule as parcelas do financiamento baseadas em valorTotalRs (o cartão é do sistema). Se Junior pedir customização ("só à vista", "12x sem juros"), respeitar.
+  Calcule as parcelas do financiamento baseadas em valorTotalRs (os cartões são do sistema). Se você deixar alguma forma sem valorPrincipal, o sistema completa sozinho — nunca sai vazio pro cliente. Se Junior pedir customização ("só à vista", "12x sem juros"), respeitar.
 
 ## EXEMPLO DE FLUXO
 
@@ -1449,9 +1450,11 @@ export class ProposalAssistant {
             // `bateria: null` explícito na opção = SEM bateria (não cai no topo).
             bateria: (op.bateria !== undefined) ? op.bateria : (i === 0 ? data.bateria : undefined),
             valorTotalRs: Number(op.valorTotalRs),
-            // Pagamento da PRÓPRIA opção (cartão 24× + financiamento até 90×) fica dentro
-            // do quadro, já que no modo comparação a seção de pagamento de 1 valor some —
-            // assim o cliente não perde nenhuma forma de pagamento ao comparar.
+            // Pagamento da PRÓPRIA opção (cartão parceria 24× + financiamento até 90×)
+            // fica dentro do quadro, já que no modo comparação a seção de pagamento de
+            // 1 valor some — assim o cliente não perde nenhuma forma ao comparar.
+            // (O cartão 18× Sol Fácil aparece na proposta normal; no quadro comparativo
+            // mostramos um cartão só pra não poluir.)
             cartaoParcelaRs: Math.round(ProposalAssistant.parcelaCartaoSolar(Number(op.valorTotalRs))),
             cartaoParcelas: ProposalAssistant.parcelasCartaoSolar(),
             financiamentoParcelaRs: Math.round(ProposalAssistant.parcelaTabelaPrice(
@@ -2052,7 +2055,7 @@ export class ProposalAssistant {
       bateria: data.bateria,
       estruturaFixacao: data.estruturaFixacao,
       valorTotalRs: Number(data.valorTotalRs),
-      formasPagamento: this.enforceCartaoBelenus(
+      formasPagamento: this.enforceCartoesSolar(
         data.formasPagamento ?? this.defaultPaymentOptions(valorComServicos),
         valorComServicos,
       ),
@@ -2062,9 +2065,10 @@ export class ProposalAssistant {
     };
   }
 
-  // Taxas reais abril/2026.
-  // CARTAO BELENUS (parceria EcoSunPower): ver tabela exata BELENUS_ACRESCIMO abaixo
-  // (substituiu a calibracao antiga de ~0,42% a.m., que subestimava o acrescimo real).
+  // Taxas reais abril/2026 (financiamento) e 03/08/2026 (cartoes).
+  // CARTOES DO SOLAR: DUAS tabelas vivas em proposal/cartao-solar.ts (fonte unica) —
+  // 'parceria' (Belenus, ate 24x, acrescimo por fora) e 'solfacil' (Sol Facil/Fortlev,
+  // ate 18x, taxa POR DENTRO, sem juros ate 3x). Dois distribuidores do Junior.
   // FINANCIAMENTO SOLAR 2026: Santander 1,11-1,25%, BV 1,17%, Solfacil CET 1,32-1,57%.
   // Media realista 1,40% a.m. CET (cobre Solfacil/BV/Santander/Sol Agora).
   private static readonly TAXA_FINANC_AM = 0.014; // 1,4% a.m. CET medio
@@ -2078,77 +2082,113 @@ export class ProposalAssistant {
     return valorPosCarencia * fator;
   }
 
-  // A tabela Belenus mora em proposal/cartao-solar.ts — fonte ÚNICA, porque a
+  // As tabelas dos cartões moram em proposal/cartao-solar.ts — fonte ÚNICA, porque a
   // Central de Contratos precisa da MESMA conta (senão o cliente lê um número na
   // proposta e assina outro no contrato).
 
-  // [ECOSOF] Cartão do solar atrás da flag empresa_config.belenus_ativo:
-  // ligada (EcoSun, seed) = tabela Belenus exata em 24×; desligada = cartão
-  // genérico de até 12× na maquininha (mesma tabela do service-payment) —
-  // um clone sem a parceria nunca herda taxa de terceiro.
-  private static parcelasCartaoSolar(): number {
-    return parcelasMaxCartaoSolar();
+  // [ECOSOF] Cartões do solar atrás da flag empresa_config.belenus_ativo:
+  // ligada (EcoSun, seed) = 'parceria' 24× exata + 'solfacil' 18× por dentro;
+  // desligada = cartão genérico de até 12× na maquininha (mesma tabela do
+  // service-payment) — um clone sem as parcerias nunca herda taxa de terceiro.
+  private static parcelasCartaoSolar(tabela: TabelaCartao = 'parceria'): number {
+    return parcelasMaxCartaoSolar(tabela);
   }
-  private static parcelaCartaoSolar(valor: number): number {
-    return empresa().belenusAtivo
-      ? parcelaCartaoBelenus(valor, 24)
-      : valorParcelaCartao(valor, 12);
+  private static parcelaCartaoSolar(valor: number, tabela: TabelaCartao = 'parceria'): number {
+    if (!empresa().belenusAtivo) return valorParcelaCartao(valor, 12);
+    return tabela === 'solfacil'
+      ? parcelaCartaoSolFacil(valor, 18)
+      : parcelaCartaoBelenus(valor, 24);
   }
 
-  // O cartão do solar SEMPRE usa a parcela calculada pelo sistema — a Eva nunca
-  // calcula cartão de cabeça. Mesmo quando a Eva monta formasPagamento, este
-  // passo força o valor do cartão. [ECOSOF] Com belenus_ativo (EcoSun) é a
-  // tabela Belenus exata em 24× + mensagem das bandeiras; sem a flag é o cartão
-  // genérico 12× da maquininha (sem bandeiras do parceiro). A sanitização do
-  // nome "Belenus" roda sempre (inócua quando a Eva nem citou).
-  private enforceCartaoBelenus(
+  // Os cartões do solar SEMPRE usam a parcela calculada pelo sistema — a Eva nunca
+  // calcula cartão de cabeça. São DUAS tabelas vivas ('parceria' 24× e 'solfacil'
+  // 18× — dois distribuidores); o campo `tabelaCartao` diz qual é, e cartão da Eva
+  // sem marcador é inferido pelo texto ("18x/18×" → solfacil; na dúvida, parceria,
+  // que é o comportamento antigo). [ECOSOF] Sem belenus_ativo é o cartão genérico
+  // 12× da maquininha.
+  //
+  // Nome de distribuidor (Belenus/Sol Fácil/Fortlev) NUNCA vai pro cliente no
+  // cartão — no financiamento "Solfácil" é banco parceiro e PODE aparecer.
+  //
+  // E NENHUMA forma sai sem valorPrincipal: financiamento sem valor ganha a
+  // parcela Price 90× com carência (o "undefined" na proposta de 03/08/2026 era
+  // exatamente isso); as demais caem no valor à vista.
+  private enforceCartoesSolar(
     formas: ProposalData['formasPagamento'],
     valorBase: number,
   ): ProposalData['formasPagamento'] {
     const fmtRs = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
-    const parcela = Math.round(ProposalAssistant.parcelaCartaoSolar(valorBase));
-    const bandeiras = 'Parcelamento: Visa/Amex até 24× · Master/Elo até 21× · demais até 12×';
-    // O nome "Belenus" é do parceiro/fornecedor e NÃO deve aparecer pro cliente
-    // (pode mudar de fornecedor). Limpa qualquer menção no texto cliente-facing,
-    // mesmo que a Eva tenha escrito. A tabela de preço interna não muda.
-    const semBelenus = (s: string) =>
-      (s ?? '')
-        .replace(/\s*[·\-—]?\s*(parceria\s+ecosunpower\s*x\s*belenus|cart[ãa]o\s+belenus|belenus)\b/gi, '')
+    const bandeirasParceria = 'Parcelamento: Visa/Amex até 24× · Master/Elo até 21× · demais até 12×';
+    const condicaoSolfacil = 'Em até 18× · sem juros até 3×';
+    const limpezaFinal = (s: string) =>
+      s
         .replace(/\(\s*\)/g, '')          // parênteses que ficaram vazios ("(Belenus)" → "()")
         .replace(/\s+([,.;:])/g, '$1')    // espaço solto antes de pontuação
         .replace(/\s{2,}/g, ' ')
         .replace(/^[·\-—,\s]+|[·\-—,\s]+$/g, '')
         .trim();
+    // "Belenus" nunca aparece em lugar nenhum (nem fora do cartão).
+    const semBelenus = (s?: string) =>
+      limpezaFinal((s ?? '')
+        .replace(/\s*[·\-—]?\s*(parceria\s+ecosunpower\s*x\s*belenus|cart[ãa]o\s+belenus|belenus)\b/gi, ''));
+    // No CARTÃO, nenhum distribuidor aparece (Sol Fácil/Fortlev inclusos).
+    const semDistribuidorCartao = (s?: string) =>
+      limpezaFinal(semBelenus(s)
+        .replace(/\s*[·\-—]?\s*(cart[ãa]o\s+(sol\s*f[áa]cil|solf[áa]cil|fortlev)|sol\s*f[áa]cil|solf[áa]cil|fortlev)\b/gi, ''));
+    // Defesa anti-"undefined": toda forma sai com valorPrincipal preenchido.
+    const valorPrincipalGarantido = (f: ProposalData['formasPagamento'][number]) => {
+      const v = (f.valorPrincipal ?? '').trim();
+      if (v && v.toLowerCase() !== 'undefined') return v;
+      if (f.meioPagamento === 'financiamento') {
+        return fmtRs(Math.round(ProposalAssistant.parcelaTabelaPrice(
+          valorBase, ProposalAssistant.TAXA_FINANC_AM, 90, ProposalAssistant.MESES_CARENCIA_FINANC,
+        )));
+      }
+      return fmtRs(valorBase);
+    };
     return formas.map((f) => {
       // valorSecundario TAMBÉM vai pro cliente (template) e pode ter sido escrito pela
-      // Eva — então sanitiza nas duas pontas. Aplica em todas as formas (PIX/financiamento
-      // não têm Belenus, então é inócuo) pra cobrir qualquer menção solta.
+      // Eva — então sanitiza nas duas pontas.
       if (f.meioPagamento !== 'cartao') {
         return {
           ...f,
           tipo: semBelenus(f.tipo),
           titulo: semBelenus(f.titulo),
+          valorPrincipal: valorPrincipalGarantido(f),
           valorSecundario: semBelenus(f.valorSecundario),
-          bullets: f.bullets.map(semBelenus).filter(Boolean),
+          bullets: (f.bullets ?? []).map(semBelenus).filter(Boolean),
         };
       }
-      const tipo = semBelenus(f.tipo) || 'Cartão de crédito';
-      const bulletsLimpos = f.bullets.map(semBelenus).filter(Boolean);
-      // Bandeiras/limites (Visa/Amex 24× etc.) são condição da parceria Belenus —
-      // só entram com a flag ligada.
-      const bullets = !empresa().belenusAtivo || bulletsLimpos.some((b) => b.includes('Visa/Amex'))
-        ? bulletsLimpos
-        : [...bulletsLimpos, bandeiras];
-      return { ...f, tipo, titulo: semBelenus(f.titulo), valorSecundario: semBelenus(f.valorSecundario), valorPrincipal: fmtRs(parcela), bullets };
+      const tabela: TabelaCartao = f.tabelaCartao
+        ?? (/18\s*[x×]/i.test(`${f.titulo ?? ''} ${f.tipo ?? ''} ${f.valorSecundario ?? ''}`) ? 'solfacil' : 'parceria');
+      const parcela = Math.round(ProposalAssistant.parcelaCartaoSolar(valorBase, tabela));
+      const tipo = semDistribuidorCartao(f.tipo) || 'Cartão de crédito';
+      let bullets = (f.bullets ?? []).map(semDistribuidorCartao).filter(Boolean);
+      if (empresa().belenusAtivo) {
+        if (tabela === 'solfacil') {
+          // Condições do parceiro ANTIGO (Visa/Amex 24× etc.) não valem no 18× —
+          // troca pelo resumo da tabela por dentro.
+          bullets = bullets.filter((b) => !/visa\/amex|master\/elo|24\s*[x×]|21\s*[x×]/i.test(b));
+          if (!bullets.some((b) => /sem juros até 3×/i.test(b))) bullets = [condicaoSolfacil, ...bullets];
+        } else if (!bullets.some((b) => b.includes('Visa/Amex'))) {
+          bullets = [...bullets, bandeirasParceria];
+        }
+      }
+      return {
+        ...f,
+        tabelaCartao: tabela,
+        tipo,
+        titulo: semDistribuidorCartao(f.titulo),
+        valorSecundario: semDistribuidorCartao(f.valorSecundario),
+        valorPrincipal: fmtRs(parcela),
+        bullets,
+      };
     });
   }
 
   private defaultPaymentOptions(valorRs: number): ProposalData['formasPagamento'] {
     const fmtRs = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 
-    const cartaoParcela = Math.round(
-      ProposalAssistant.parcelaCartaoSolar(valorRs),
-    );
     const financiamentoParcela = Math.round(
       ProposalAssistant.parcelaTabelaPrice(
         valorRs,
@@ -2158,35 +2198,37 @@ export class ProposalAssistant {
       ),
     );
 
-    return [
-      {
-        tipo: 'À Vista',
-        titulo: 'PIX ou TED',
-        valorPrincipal: fmtRs(valorRs),
-        valorSecundario: 'pagamento único',
-        recomendado: true,
-        bullets: ['Sem juros, sem entrada', 'Início imediato do projeto', 'Maior economia no longo prazo'],
-        meioPagamento: 'pix',
-      },
-      // [ECOSOF] Texto do cartão acompanha a flag: 24× (Belenus/EcoSun, idêntico
-      // ao antigo) ou genérico 12× na maquininha.
-      empresa().belenusAtivo
-        ? {
-          tipo: 'Cartão de crédito',
-          titulo: 'Em até 24× com juros baixos',
-          valorPrincipal: fmtRs(cartaoParcela),
-          valorSecundario: 'a partir de 24× · aprovação imediata',
-          bullets: [
-            'Taxa especial pra solar — bem menor que cartão tradicional',
-            'Aprovação imediata, sem análise formal',
-            'Comece sem espera',
-          ],
-          meioPagamento: 'cartao' as const,
-        }
-        : {
+    const aVista = {
+      tipo: 'À Vista',
+      titulo: 'PIX ou TED',
+      valorPrincipal: fmtRs(valorRs),
+      valorSecundario: 'pagamento único',
+      recomendado: true,
+      bullets: ['Sem juros, sem entrada', 'Início imediato do projeto', 'Maior economia no longo prazo'],
+      meioPagamento: 'pix' as const,
+    };
+    const financiamento = {
+      tipo: 'Financiamento Solar',
+      titulo: 'Até 90× · carência 120 dias',
+      valorPrincipal: fmtRs(financiamentoParcela),
+      valorSecundario: 'por mês · 1ª parcela em até 120 dias',
+      bullets: [
+        'Bancos parceiros: Solfácil, Sol Agora, BV Solar, Santander',
+        'CET médio ~1,40% a.m. (taxas reais abr/26)',
+        'Sua geração já paga a parcela',
+        'Aprovação 24-48h conforme CPF',
+      ],
+      meioPagamento: 'financiamento' as const,
+    };
+
+    // [ECOSOF] Sem a flag da parceria: cartão genérico 12× na maquininha (3 formas).
+    if (!empresa().belenusAtivo) {
+      return [
+        aVista,
+        {
           tipo: 'Cartão de crédito',
           titulo: 'Em até 12× na maquininha',
-          valorPrincipal: fmtRs(cartaoParcela),
+          valorPrincipal: fmtRs(Math.round(ProposalAssistant.parcelaCartaoSolar(valorRs))),
           valorSecundario: 'em até 12× · aprovação imediata',
           bullets: [
             'Parcele no cartão em até 12×',
@@ -2195,19 +2237,38 @@ export class ProposalAssistant {
           ],
           meioPagamento: 'cartao' as const,
         },
+        financiamento,
+      ];
+    }
+
+    // EcoSun: os DOIS cartões lado a lado (dois distribuidores, cliente escolhe) — 4 formas.
+    return [
+      aVista,
       {
-        tipo: 'Financiamento Solar',
-        titulo: 'Até 90× · carência 120 dias',
-        valorPrincipal: fmtRs(financiamentoParcela),
-        valorSecundario: 'por mês · 1ª parcela em até 120 dias',
+        tipo: 'Cartão de crédito',
+        titulo: 'Em até 24× com juros baixos',
+        valorPrincipal: fmtRs(Math.round(ProposalAssistant.parcelaCartaoSolar(valorRs, 'parceria'))),
+        valorSecundario: 'parcela em 24× · aprovação imediata',
         bullets: [
-          'Bancos parceiros: Solfácil, Sol Agora, BV Solar, Santander',
-          'CET médio ~1,40% a.m. (taxas reais abr/26)',
-          'Sua geração já paga a parcela',
-          'Aprovação 24-48h conforme CPF',
+          'Taxa especial pra solar — bem menor que cartão tradicional',
+          'Aprovação imediata, sem análise formal',
         ],
-        meioPagamento: 'financiamento',
+        meioPagamento: 'cartao' as const,
+        tabelaCartao: 'parceria' as const,
       },
+      {
+        tipo: 'Cartão de crédito',
+        titulo: 'Em até 18× · sem juros até 3×',
+        valorPrincipal: fmtRs(Math.round(ProposalAssistant.parcelaCartaoSolar(valorRs, 'solfacil'))),
+        valorSecundario: 'parcela em 18× · aprovação imediata',
+        bullets: [
+          'Sem juros até 3× — e taxa baixa até 18×',
+          'Aprovação imediata, sem análise formal',
+        ],
+        meioPagamento: 'cartao' as const,
+        tabelaCartao: 'solfacil' as const,
+      },
+      financiamento,
     ];
   }
 }
