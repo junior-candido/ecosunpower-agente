@@ -49,7 +49,8 @@ export interface ProposalData {
 
   // Comercial
   valorTotalRs: number;
-  formasPagamento: Array<{ tipo: string; titulo: string; descricao?: string; valorPrincipal: string; valorSecundario: string; recomendado?: boolean; bullets: string[]; meioPagamento?: 'pix' | 'cartao' | 'financiamento'; tabelaCartao?: 'parceria' | 'solfacil' }>;
+  // `fixado`: o Junior DITOU o valor na conversa — o sistema respeita e não recalcula.
+  formasPagamento: Array<{ tipo: string; titulo: string; descricao?: string; valorPrincipal: string; valorSecundario: string; recomendado?: boolean; bullets: string[]; meioPagamento?: 'pix' | 'cartao' | 'financiamento'; tabelaCartao?: 'parceria' | 'solfacil'; fixado?: boolean }>;
 
   // Tipo da proposta (basica/personalizada) e estudo personalizado opcional
   tipo?: 'basica' | 'personalizada';
