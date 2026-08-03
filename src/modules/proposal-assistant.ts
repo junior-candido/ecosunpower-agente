@@ -472,9 +472,12 @@ export function buildSystemPrompt(propostasKnowledge: string, marcasKnowledge: s
      • "Em até 24× com juros baixos" → meioPagamento "cartao", tabelaCartao "parceria"
      • "Em até 18× · sem juros até 3×" → meioPagamento "cartao", tabelaCartao "solfacil"
      NÃO calcule parcela de cartão: o sistema preenche o valor exato de cada tabela;
-     pode deixar valorPrincipal vazio que o sistema corrige. NUNCA escreva nome de
-     distribuidor do cartão (ex: "Belenus", "Sol Fácil", "Fortlev") no texto que vai
-     pro cliente — use só "Cartão de crédito".`
+     pode deixar valorPrincipal vazio que o sistema corrige. EXCEÇÃO — o Junior DITOU
+     o valor ("cartão 18x de 1.700"): aí a opção sai com o valor DELE em valorPrincipal
+     e "fixado": true (o sistema respeita; a regra de não calcular é contra VOCÊ
+     inventar número, nunca contra o Junior). NUNCA escreva nome de distribuidor do
+     cartão (ex: "Belenus", "Sol Fácil", "Fortlev") no texto que vai pro cliente —
+     use só "Cartão de crédito".`
     : `2. Cartão de crédito em até 12× na maquininha — NÃO calcule a parcela do cartão:
      o sistema preenche o valor exato. Só inclua a opção com meioPagamento "cartao";
      pode deixar valorPrincipal vazio que o sistema corrige.`;
@@ -647,7 +650,7 @@ Você DEVE responder SEMPRE com um único objeto JSON em uma única linha (sem m
   1. À vista PIX/TED (recomendado, sem juros)
   ${itemCartaoPrompt}
   3. Financiamento até 90× com carência até 120 dias (Solfácil/Sol Agora/BV/Santander, ~1.7%a.m., fator ~2.10)
-  Calcule as parcelas do financiamento baseadas em valorTotalRs (os cartões são do sistema). Se você deixar alguma forma sem valorPrincipal, o sistema completa sozinho — nunca sai vazio pro cliente. Se Junior pedir customização ("só à vista", "12x sem juros"), respeitar.
+  No financiamento o valorPrincipal é a PARCELA MENSAL — NUNCA o valor à vista (cliente leria "R$ 26.500" e acharia que não parcela). Se você deixar alguma forma sem valorPrincipal, o sistema completa sozinho — nunca sai vazio pro cliente. Valores DITADOS pelo Junior saem com "fixado": true e o sistema respeita. Se Junior pedir customização ("só à vista", "12x sem juros"), respeitar.
 
 ## EXEMPLO DE FLUXO
 
@@ -2136,14 +2139,23 @@ export class ProposalAssistant {
       limpezaFinal(semBelenus(s)
         .replace(/\s*[·\-—]?\s*(cart[ãa]o\s+(sol\s*f[áa]cil|solf[áa]cil|fortlev)|sol\s*f[áa]cil|solf[áa]cil|fortlev)\b/gi, ''));
     // Defesa anti-"undefined": toda forma sai com valorPrincipal preenchido.
+    // E no FINANCIAMENTO nunca sai o valor à vista (Eva já copiou o total pra lá —
+    // cliente leria "Financiamento: R$ 26.500" e acharia que não parcela nada):
+    // valor suspeito (≥ 30% do total) e não fixado → recalcula a parcela Price.
+    const numeroDe = (s?: string) =>
+      Number((s ?? '').replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+    const parcelaFinanciamento = () => fmtRs(Math.round(ProposalAssistant.parcelaTabelaPrice(
+      valorBase, ProposalAssistant.TAXA_FINANC_AM, 90, ProposalAssistant.MESES_CARENCIA_FINANC,
+    )));
     const valorPrincipalGarantido = (f: ProposalData['formasPagamento'][number]) => {
       const v = (f.valorPrincipal ?? '').trim();
-      if (v && v.toLowerCase() !== 'undefined') return v;
+      const vazio = !v || v.toLowerCase() === 'undefined';
       if (f.meioPagamento === 'financiamento') {
-        return fmtRs(Math.round(ProposalAssistant.parcelaTabelaPrice(
-          valorBase, ProposalAssistant.TAXA_FINANC_AM, 90, ProposalAssistant.MESES_CARENCIA_FINANC,
-        )));
+        if (f.fixado && !vazio) return v; // o Junior ditou — vale o que ele mandou
+        if (vazio || numeroDe(v) >= valorBase * 0.3) return parcelaFinanciamento();
+        return v;
       }
+      if (!vazio) return v;
       return fmtRs(valorBase);
     };
     return formas.map((f) => {
@@ -2161,6 +2173,10 @@ export class ProposalAssistant {
       }
       const tabela: TabelaCartao = f.tabelaCartao
         ?? (/18\s*[x×]/i.test(`${f.titulo ?? ''} ${f.tipo ?? ''} ${f.valorSecundario ?? ''}`) ? 'solfacil' : 'parceria');
+      // O Junior DITOU a parcela na conversa? Então vale a dele — o sistema só
+      // calcula quando ninguém ditou (a proteção é contra a EVA inventar número,
+      // nunca contra o dono da proposta).
+      const valorDitado = (f.fixado && (f.valorPrincipal ?? '').trim()) || '';
       const parcela = Math.round(ProposalAssistant.parcelaCartaoSolar(valorBase, tabela));
       const tipo = semDistribuidorCartao(f.tipo) || 'Cartão de crédito';
       let bullets = (f.bullets ?? []).map(semDistribuidorCartao).filter(Boolean);
@@ -2180,7 +2196,7 @@ export class ProposalAssistant {
         tipo,
         titulo: semDistribuidorCartao(f.titulo),
         valorSecundario: semDistribuidorCartao(f.valorSecundario),
-        valorPrincipal: fmtRs(parcela),
+        valorPrincipal: valorDitado || fmtRs(parcela),
         bullets,
       };
     });

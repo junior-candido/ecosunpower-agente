@@ -164,4 +164,59 @@ describe('Nunca "undefined" pro cliente (bug real da proposta de 03/08)', () => 
     const pix = r.proposalData.formasPagamento.find((f: any) => f.meioPagamento === 'pix');
     expect(pix.valorPrincipal).toBe('R$ 10.000');
   });
+
+  it('financiamento com o valor À VISTA dentro (não fixado) → sistema troca pela parcela Price', async () => {
+    // Bug real 03/08 (2ª rodada): Eva copiou o total à vista pro financiamento —
+    // cliente leria "Financiamento: R$ 10.000" e acharia que não parcela nada.
+    const formasPagamento = [
+      { tipo: 'Financiamento', titulo: 'Financiamento até 90×', valorPrincipal: 'R$ 10.000',
+        valorSecundario: '', bullets: [], meioPagamento: 'financiamento' },
+    ];
+    const r = await pa.generateProposalCore({ data: baseData({ formasPagamento }), modoEnvio: 'junior_envia', tipo: 'basica' });
+    const fin = r.proposalData.formasPagamento.find((f: any) => f.meioPagamento === 'financiamento');
+    expect(fin.valorPrincipal).toBe('R$ 207');
+  });
+});
+
+describe('O que o Junior DITA, vale (fixado: true)', () => {
+  let pa: ProposalAssistant;
+
+  beforeEach(() => {
+    vi.stubEnv('HIGGSFIELD_CREDENTIALS', '');
+    pa = novaAssistente();
+  });
+
+  it('cartão ditado ("18× de 1.700") sai com o valor do Junior, não o da tabela', async () => {
+    const formasPagamento = [
+      { tipo: 'Cartão', titulo: 'Cartão de crédito 18×', valorPrincipal: 'R$ 1.700',
+        valorSecundario: '18 parcelas fixas', bullets: [], meioPagamento: 'cartao', fixado: true },
+    ];
+    const r = await pa.generateProposalCore({ data: baseData({ formasPagamento }), modoEnvio: 'junior_envia', tipo: 'basica' });
+    const cartao = r.proposalData.formasPagamento.find((f: any) => f.meioPagamento === 'cartao');
+    expect(cartao.valorPrincipal).toBe('R$ 1.700');
+  });
+
+  it('cartão ditado ainda passa pela limpeza de nome de distribuidor', async () => {
+    const formasPagamento = [
+      { tipo: 'Cartão Sol Fácil', titulo: 'Sol Fácil 18×', valorPrincipal: 'R$ 1.700',
+        valorSecundario: '', bullets: [], meioPagamento: 'cartao', fixado: true },
+    ];
+    const r = await pa.generateProposalCore({ data: baseData({ formasPagamento }), modoEnvio: 'junior_envia', tipo: 'basica' });
+    const cartao = r.proposalData.formasPagamento.find((f: any) => f.meioPagamento === 'cartao');
+    expect(cartao.valorPrincipal).toBe('R$ 1.700');
+    expect(cartao.tipo).toBe('Cartão de crédito');
+    // Só os campos que o TEMPLATE imprime pro cliente (tabelaCartao é marcador interno)
+    const visivel = [cartao.tipo, cartao.titulo, cartao.valorSecundario, ...cartao.bullets].join(' | ').toLowerCase();
+    expect(visivel).not.toMatch(/sol\s*f[aá]cil/);
+  });
+
+  it('financiamento ditado fica como o Junior mandou', async () => {
+    const formasPagamento = [
+      { tipo: 'Financiamento', titulo: 'Até 90×', valorPrincipal: 'R$ 250',
+        valorSecundario: 'por mês', bullets: [], meioPagamento: 'financiamento', fixado: true },
+    ];
+    const r = await pa.generateProposalCore({ data: baseData({ formasPagamento }), modoEnvio: 'junior_envia', tipo: 'basica' });
+    const fin = r.proposalData.formasPagamento.find((f: any) => f.meioPagamento === 'financiamento');
+    expect(fin.valorPrincipal).toBe('R$ 250');
+  });
 });
