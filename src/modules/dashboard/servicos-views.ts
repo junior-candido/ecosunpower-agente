@@ -101,7 +101,7 @@ export function renderDetalheServicoPage(
     <button id="concluir" onclick="concluir()" class="mt-3 w-full px-5 py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-lg font-bold shadow">✅ Concluir serviço</button>
     <div id="progresso" class="text-sm text-slate-500 text-center mt-2"></div>
     <script>
-    var MAX_VIDEOS=2, MAX_VIDEO_MB=100, SID='${escapeHtml(s.id)}';
+    var MAX_VIDEOS=2, MAX_VIDEO_MB=180, SID='${escapeHtml(s.id)}';
     var estado={fotos:[],videos:[]};
     function comprime(f){return new Promise(function(res,rej){
      var img=new Image(),u=URL.createObjectURL(f);
@@ -347,7 +347,7 @@ export function renderNovoServicoPage(
   </div>
 
   <script>
-  var MAX_VIDEOS=2, MAX_VIDEO_MB=100;
+  var MAX_VIDEOS=2, MAX_VIDEO_MB=180;
   var estado={leadId:null,sistemaId:null,fotos:[],videos:[]};
 
   function mostraGuia(){
