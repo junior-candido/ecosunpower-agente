@@ -37,9 +37,11 @@ const template = {
   components: [
     {
       type: 'BODY' as const,
+      // Regra da Meta: variável não pode abrir nem FECHAR o corpo — por isso
+      // o texto continua depois do {{4}} (Junior esbarrou nisso no painel 05/08).
       text:
         '🔧 Novo serviço pra você: *{{1}}* — cliente *{{2}}*, dia {{3}}.\n' +
-        'Abra pra ver o guia de fotos: {{4}}',
+        'Abra o guia de fotos aqui: {{4}} — qualquer dúvida, chama o escritório.',
       example: {
         body_text: [[
           'Instalação FV',
