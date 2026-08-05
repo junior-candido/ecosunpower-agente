@@ -2,17 +2,10 @@
 import { randomUUID } from 'crypto';
 import type { SupabaseService } from '../../supabase.js';
 import { uploadAnexo, getSignedUrls } from '../../anexos/storage.js';
+import { novoSlug } from '../slug.js';
 import type { DraftInput, RelatorioPosInstalacaoView, RelatorioPosInstalacaoRow } from './types.js';
 
 const PUBLIC_BASE_URL = process.env.PROPOSAL_PUBLIC_BASE_URL ?? 'https://propostas.ecosunpower.eng.br';
-
-// Slug curto não-enumerável (igual S3)
-function novoSlug(): string {
-  const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
-  let s = '';
-  for (let i = 0; i < 10; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return s;
-}
 
 // Tipo da função que resolve sistema FV vinculado ao lead (injetado pra evitar circular import)
 export type ResolverSistema = (leadId: string) => Promise<{
