@@ -117,7 +117,7 @@ export function renderPastaHtml(v: PastaView): string {
   .banner-revisao{background:#fcd34d;color:#78350f;padding:10px;text-align:center;font-weight:600;font-size:14px}
   .container{max-width:780px;margin:0 auto;padding:20px 16px 32px}
   header.hero{background:linear-gradient(135deg,#0891b2 0%,#7c3aed 100%);color:#fff;padding:30px 22px;border-radius:18px;text-align:center;margin-bottom:16px}
-  header.hero img.logo{max-height:52px;max-width:220px;margin-bottom:12px}
+  header.hero img.logo{max-height:140px;max-width:85%;margin-bottom:14px}
   header.hero h1{font-size:24px;font-weight:700;margin-bottom:4px}
   header.hero .sub{font-size:14px;opacity:.92}
   .capa{border-radius:16px;overflow:hidden;margin-bottom:16px;box-shadow:0 4px 18px rgba(0,0,0,.12)}

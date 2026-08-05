@@ -4,7 +4,7 @@
 import type { SupabaseService } from '../../supabase.js';
 import { uploadAnexo, deleteAnexoFile, getSignedUrls } from '../../anexos/storage.js';
 import { novoSlug } from '../slug.js';
-import { obterLogoBase64 } from '../../proposal/assets/logo-base64.js';
+import { LOGO_PASTA_BASE64 } from './logo-pasta.js';
 import { empresa } from '../../empresa-config.js';
 import type { ResolverSistema } from '../pos-instalacao/service.js';
 import { SECOES } from './types.js';
@@ -193,7 +193,8 @@ export class PastaService {
       data_entrega: pasta.data_entrega,
       sistema,
       capa_url: capaPath ? (urls[capaPath] ?? null) : null,
-      logo_base64: await obterLogoBase64(this.supabase.getClient()),
+      // Logo "ecosun png" prata embutida — a do obterLogoBase64 o Junior não gosta na pasta.
+      logo_base64: LOGO_PASTA_BASE64,
       whatsapp: empresa().telefoneAtendente,
       secoes,
       slug: pasta.slug,

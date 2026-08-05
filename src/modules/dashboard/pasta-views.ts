@@ -109,7 +109,7 @@ export function renderEditorPasta(input: {
         ${listaHtml || '<p class="text-xs text-slate-500 mb-2">Nada aqui ainda.</p>'}
         <form action="/dashboard/pastas/${escapeHtml(p.id)}/arquivos" method="post" enctype="multipart/form-data" class="mt-3 flex items-center gap-2">
           <input type="hidden" name="secao" value="${s.id}">
-          <input type="file" name="arquivos" multiple ${s.id === 'fotos' ? 'accept="image/*"' : s.id === 'monitoramento' ? 'accept="image/*,video/*"' : 'accept="image/*,application/pdf"'} required
+          <input type="file" name="arquivos" multiple ${s.id === 'fotos' || s.id === 'monitoramento' ? 'accept="image/*,video/*"' : 'accept="image/*,application/pdf"'} required
             class="block flex-1 text-xs text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-cyan-600 file:text-white hover:file:bg-cyan-700 cursor-pointer">
           <button class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-100 text-xs whitespace-nowrap">⬆️ Adicionar</button>
         </form>

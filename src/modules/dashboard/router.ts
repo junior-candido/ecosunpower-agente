@@ -5119,11 +5119,12 @@ b.onclick=async function(){
       const files = ((req as any).files ?? []) as Express.Multer.File[];
       if (files.length === 0) return res.status(400).send('Escolha ao menos 1 arquivo');
       for (const f of files) {
-        // Monitoramento aceita vídeo também (app gerando); demais seções imagem/PDF.
+        // Fotos e Monitoramento aceitam vídeo (obra/drone e app gerando); demais imagem/PDF.
+        const aceitaVideo = secao === 'monitoramento' || secao === 'fotos';
         const ok = f.mimetype.startsWith('image/')
           || f.mimetype === 'application/pdf'
-          || (secao === 'monitoramento' && f.mimetype.startsWith('video/'));
-        if (!ok) return res.status(415).send(`Tipo inválido: ${escapeHtmlSimple(f.mimetype)}. Só imagem${secao === 'monitoramento' ? ', vídeo' : ''} ou PDF.`);
+          || (aceitaVideo && f.mimetype.startsWith('video/'));
+        if (!ok) return res.status(415).send(`Tipo inválido: ${escapeHtmlSimple(f.mimetype)}. Só imagem${aceitaVideo ? ', vídeo' : ''} ou PDF.`);
       }
 
       const r = await pastaService.adicionarArquivos(id, secao as SecaoId, files.map((f) => ({
