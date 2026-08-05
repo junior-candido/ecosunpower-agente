@@ -187,7 +187,12 @@ export function createDashboardRouter(
       to: string,
       name: string,
       lang: string,
-      components: Array<{ type: 'body'; parameters: Array<{ type: 'text'; text: string }> }>,
+      components: Array<{
+        type: 'body' | 'button';
+        sub_type?: 'url';
+        index?: number;
+        parameters: Array<{ type: 'text'; text: string }>;
+      }>,
     ) => Promise<unknown>;
     proposalAssistant?: ProposalAssistant;
     metaService?: MetaWhatsAppService;

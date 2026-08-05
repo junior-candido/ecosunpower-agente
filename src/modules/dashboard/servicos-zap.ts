@@ -19,14 +19,16 @@ export function textoAvisoServico(s: ServicoRow, linkServico: string | null): st
 
 export const TEMPLATE_AVISO_SERVICO = 'aviso_servico_v1';
 
-/** Parâmetros {{1}}..{{4}} do template aviso_servico_v1, na ordem. */
-export function paramsTemplateAvisoServico(s: ServicoRow, linkServico: string | null): string[] {
-  return [
-    s.tipoNome,
-    s.clienteNome,
-    dataBr(s.dataServico),
-    linkServico ?? 'abra a tela Serviços no dashboard',
-  ];
+/** Parâmetros {{1}}..{{3}} do corpo (o link vai no BOTÃO de URL dinâmico). */
+export function paramsTemplateAvisoServico(s: ServicoRow): string[] {
+  return [s.tipoNome, s.clienteNome, dataBr(s.dataServico)];
+}
+
+export interface ComponenteTemplateAviso {
+  type: 'body' | 'button';
+  sub_type?: 'url';
+  index?: number;
+  parameters: Array<{ type: 'text'; text: string }>;
 }
 
 export interface CanaisAviso {
@@ -35,14 +37,16 @@ export interface CanaisAviso {
     to: string,
     name: string,
     lang: string,
-    components: Array<{ type: 'body'; parameters: Array<{ type: 'text'; text: string }> }>,
+    components: ComponenteTemplateAviso[],
   ) => Promise<unknown>;
 }
 
 /**
  * Envia o aviso pro time: template quando o canal é a API oficial; texto
  * normal quando não há template (Evolution) ou como fallback se o template
- * falhar (ex.: ainda não aprovado pela Meta).
+ * falhar (ex.: ainda não aprovado pela Meta). O template tem botão de URL
+ * dinâmico ("Guia de fotos e vídeos") — o id do serviço é OBRIGATÓRIO como
+ * parâmetro do botão, senão a Meta recusa o envio.
  */
 export async function enviarAvisoServico(
   canais: CanaisAviso,
@@ -55,7 +59,13 @@ export async function enviarAvisoServico(
       await canais.sendTemplate(tel, TEMPLATE_AVISO_SERVICO, 'pt_BR', [
         {
           type: 'body',
-          parameters: paramsTemplateAvisoServico(s, linkServico).map((t) => ({ type: 'text' as const, text: t })),
+          parameters: paramsTemplateAvisoServico(s).map((t) => ({ type: 'text' as const, text: t })),
+        },
+        {
+          type: 'button',
+          sub_type: 'url',
+          index: 0,
+          parameters: [{ type: 'text' as const, text: s.id }],
         },
       ]);
       return;

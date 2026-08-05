@@ -37,23 +37,33 @@ const template = {
   components: [
     {
       type: 'BODY' as const,
-      // Regra da Meta: variável não pode abrir nem FECHAR o corpo — por isso
-      // o texto continua depois do {{4}} (Junior esbarrou nisso no painel 05/08).
+      // Link NÃO vai no corpo: vai no botão de URL dinâmico (decidido com o
+      // Junior 05/08 — e a Meta não aceita variável fechando o corpo).
       text:
         '🔧 Novo serviço pra você: *{{1}}* — cliente *{{2}}*, dia {{3}}.\n' +
-        'Abra o guia de fotos aqui: {{4}} — qualquer dúvida, chama o escritório.',
+        'Toque no botão abaixo pra ver o guia de fotos.',
       example: {
         body_text: [[
           'Instalação FV',
           'Fernanda Almeida',
           '08/08/2026',
-          'https://propostas.ecosunpower.eng.br/dashboard/servicos/abc123',
         ]],
       },
     },
     {
       type: 'FOOTER' as const,
       text: 'EcoSunPower — Diário de Serviços',
+    },
+    {
+      type: 'BUTTONS' as const,
+      buttons: [
+        {
+          type: 'URL' as const,
+          text: 'Guia de fotos e vídeos',   // máx 25 chars da Meta
+          url: 'https://propostas.ecosunpower.eng.br/dashboard/servicos/{{1}}',
+          example: ['https://propostas.ecosunpower.eng.br/dashboard/servicos/abc123'],
+        },
+      ],
     },
   ],
 };
