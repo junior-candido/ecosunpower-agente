@@ -42,19 +42,28 @@ export function renderPastaHtml(v: PastaView): string {
       </div>
     </section>` : '';
 
-  // Seções: fotos = galeria com lightbox; demais = cartões "tocou, abriu".
+  // Seções: fotos/monitoramento = galeria com lightbox (+ player pra vídeo);
+  // demais = cartões "tocou, abriu".
   const secoesHtml = v.secoes.map((s) => {
-    if (s.secao === 'fotos') {
+    if (s.secao === 'fotos' || s.secao === 'monitoramento') {
+      const videos = s.arquivos.filter((a) => a.is_video);
+      const imagens = s.arquivos.filter((a) => !a.is_video);
       return `
     <section>
       <h2>${escapeHtml(s.titulo)}</h2>
+      ${videos.map((a) => `
+      <div class="video-wrap">
+        <video controls playsinline preload="metadata" src="${escapeHtml(a.url)}"></video>
+        ${a.caption ? `<div class="video-caption">${escapeHtml(a.caption)}</div>` : ''}
+      </div>`).join('')}
+      ${imagens.length > 0 ? `
       <div class="grid-fotos">
-        ${s.arquivos.map((a) => `
+        ${imagens.map((a) => `
         <figure onclick="abrirFoto('${escapeHtml(a.url)}')">
           <img src="${escapeHtml(a.url)}" alt="${escapeHtml(a.caption ?? 'Foto da instalação')}" loading="lazy">
           ${a.caption ? `<figcaption>${escapeHtml(a.caption)}</figcaption>` : ''}
         </figure>`).join('')}
-      </div>
+      </div>` : ''}
     </section>`;
     }
     return `
@@ -114,6 +123,9 @@ export function renderPastaHtml(v: PastaView): string {
   .grid-fotos figure{background:#f5f5f4;border-radius:10px;overflow:hidden;cursor:pointer}
   .grid-fotos img{width:100%;height:130px;object-fit:cover;display:block}
   .grid-fotos figcaption{padding:5px 8px;font-size:11px;color:#78716c;background:#fff}
+  .video-wrap{margin-bottom:10px}
+  .video-wrap video{width:100%;border-radius:10px;background:#000;max-height:420px}
+  .video-caption{font-size:11px;color:#78716c;padding:4px 2px}
   .lista-docs{display:flex;flex-direction:column;gap:8px}
   .doc{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid #e7e5e4;border-radius:12px;text-decoration:none;color:#1c1917;background:#fafaf9}
   .doc:active{background:#f0f9ff}

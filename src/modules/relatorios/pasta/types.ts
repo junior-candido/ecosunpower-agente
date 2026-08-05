@@ -1,10 +1,11 @@
 // src/modules/relatorios/pasta/types.ts
 
-export type SecaoId = 'fotos' | 'projeto' | 'art' | 'homologacao' | 'manuais' | 'garantia' | 'contrato';
+export type SecaoId = 'fotos' | 'monitoramento' | 'projeto' | 'art' | 'homologacao' | 'manuais' | 'garantia' | 'contrato';
 
 // Ordem de exibição na página pública e no editor admin.
 export const SECOES: ReadonlyArray<{ id: SecaoId; titulo: string }> = [
-  { id: 'fotos',       titulo: '📸 Fotos da instalação' },
+  { id: 'fotos',         titulo: '📸 Fotos da instalação' },
+  { id: 'monitoramento', titulo: '📊 Monitoramento' },   // fotos e vídeos do app gerando
   { id: 'projeto',     titulo: '📐 Projeto' },
   { id: 'art',         titulo: '📋 ART' },
   { id: 'homologacao', titulo: '✅ Homologação' },
@@ -60,7 +61,7 @@ export interface PastaView {
   secoes: Array<{
     secao: SecaoId;
     titulo: string;
-    arquivos: Array<{ url: string; nome: string; caption: string | null; is_imagem: boolean }>;
+    arquivos: Array<{ url: string; nome: string; caption: string | null; is_imagem: boolean; is_video: boolean }>;
   }>;
   slug: string;
   publico: boolean;                 // false = banner PREVIEW

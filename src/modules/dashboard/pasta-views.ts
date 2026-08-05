@@ -86,7 +86,7 @@ export function renderEditorPasta(input: {
       <div class="flex items-center gap-3 py-2 border-b border-slate-700/40 last:border-0">
         ${s.id === 'fotos' && input.fotos_urls[a.storage_path]
           ? `<img src="${escapeHtml(input.fotos_urls[a.storage_path])}" class="w-14 h-14 object-cover rounded-lg" alt="">`
-          : '<span class="text-xl w-14 text-center">📄</span>'}
+          : `<span class="text-xl w-14 text-center">${/\.(mp4|mov|webm|m4v)$/i.test(a.storage_path) ? '🎬' : '📄'}</span>`}
         <span class="flex-1 text-sm text-slate-200 break-all">${escapeHtml(a.nome_exibicao)}
           ${a.origem === 'r-pi' ? '<span class="text-xs text-violet-300 ml-1">(do relatório)</span>' : ''}
           ${p.capa_storage_path === a.storage_path ? '<span class="text-xs text-amber-300 ml-1">⭐ capa</span>' : ''}
@@ -108,7 +108,7 @@ export function renderEditorPasta(input: {
         ${listaHtml || '<p class="text-xs text-slate-500 mb-2">Nada aqui ainda.</p>'}
         <form action="/dashboard/pastas/${escapeHtml(p.id)}/arquivos" method="post" enctype="multipart/form-data" class="mt-3 flex items-center gap-2">
           <input type="hidden" name="secao" value="${s.id}">
-          <input type="file" name="arquivos" multiple ${s.id === 'fotos' ? 'accept="image/*"' : 'accept="image/*,application/pdf"'} required
+          <input type="file" name="arquivos" multiple ${s.id === 'fotos' ? 'accept="image/*"' : s.id === 'monitoramento' ? 'accept="image/*,video/*"' : 'accept="image/*,application/pdf"'} required
             class="block flex-1 text-xs text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-cyan-600 file:text-white hover:file:bg-cyan-700 cursor-pointer">
           <button class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-100 text-xs whitespace-nowrap">⬆️ Adicionar</button>
         </form>

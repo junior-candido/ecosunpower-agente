@@ -12,10 +12,18 @@ import type { ArquivoPasta, PastaClienteRow, PastaView, SecaoId } from './types.
 
 const PUBLIC_BASE_URL = process.env.PROPOSAL_PUBLIC_BASE_URL ?? 'https://propostas.ecosunpower.eng.br';
 const IMG_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'gif']);
+const VIDEO_EXTS = new Set(['mp4', 'mov', 'webm', 'm4v']);
+
+function extDe(storagePath: string): string {
+  return storagePath.split('.').pop()?.toLowerCase() ?? '';
+}
 
 function ehImagem(storagePath: string): boolean {
-  const ext = storagePath.split('.').pop()?.toLowerCase() ?? '';
-  return IMG_EXTS.has(ext);
+  return IMG_EXTS.has(extDe(storagePath));
+}
+
+function ehVideo(storagePath: string): boolean {
+  return VIDEO_EXTS.has(extDe(storagePath));
 }
 
 export class PastaService {
@@ -153,6 +161,7 @@ export class PastaService {
           nome: a.nome_exibicao,
           caption: a.caption ?? null,
           is_imagem: ehImagem(a.storage_path),
+          is_video: ehVideo(a.storage_path),
         })),
     })).filter((s) => s.arquivos.length > 0);
 

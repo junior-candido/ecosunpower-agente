@@ -230,6 +230,24 @@ describe('PastaService.resolverView', () => {
     expect(v!.secoes[1].arquivos[0].url).toBe('https://sig/lead-1/pasta/p.pdf');
   });
 
+  it('vídeo do monitoramento sai com is_video=true', async () => {
+    const sb = fakeSupabase();
+    const svc = new PastaService(sb as any, semSistema);
+    const v = await svc.resolverView({
+      ...PASTA_BASE,
+      status: 'publicada',
+      arquivos: [
+        { secao: 'monitoramento', storage_path: 'lead-1/pasta/m.mp4', nome_exibicao: 'app-gerando.mp4', origem: 'upload' },
+        { secao: 'monitoramento', storage_path: 'lead-1/pasta/m.jpg', nome_exibicao: 'print-app.jpg', origem: 'upload' },
+      ],
+    } as any, true);
+    expect(v!.secoes[0].secao).toBe('monitoramento');
+    expect(v!.secoes[0].arquivos[0].is_video).toBe(true);
+    expect(v!.secoes[0].arquivos[0].is_imagem).toBe(false);
+    expect(v!.secoes[0].arquivos[1].is_video).toBe(false);
+    expect(v!.secoes[0].arquivos[1].is_imagem).toBe(true);
+  });
+
   it('sem capa definida: usa a primeira foto', async () => {
     const sb = fakeSupabase();
     const svc = new PastaService(sb as any, semSistema);

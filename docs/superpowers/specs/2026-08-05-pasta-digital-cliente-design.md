@@ -52,6 +52,9 @@ Feita **primeiro pra celular** (o link chega pelo zap):
 - **Resumo do sistema:** potência (kWp), nº de placas, marca/modelo do inversor —
   automático do cadastro (snapshot no momento da publicação, como o r-pi faz).
 - **Fotos da instalação:** galeria; toque amplia (lightbox simples, sem biblioteca externa).
+- **Monitoramento (ajuste do Junior 05/08):** seção 📊 Monitoramento com FOTOS e
+  VÍDEOS do app gerando (vídeo até 20MB, player na página). Substitui a ideia de
+  "manual do monitoramento".
 - **Documentos em cartões por seção:** 📐 Projeto · 📋 ART · ✅ Homologação ·
   📖 Manuais · 🛡️ Garantia · 📄 Contrato. Só aparecem seções que têm arquivo.
 - **Comportamento por aparelho:**
