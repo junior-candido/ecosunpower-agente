@@ -28,6 +28,7 @@ export function renderListaPastas(input: {
       <td class="py-3 px-3 text-slate-300 text-sm">${p.acessos} acesso${p.acessos === 1 ? '' : 's'}</td>
       <td class="py-3 px-3 text-slate-400 text-sm">${p.enviado_em ? '📤 ' + escapeHtml(String(p.enviado_em).slice(0, 10)) : '—'}</td>
       <td class="py-3 px-3">
+        <a href="/dashboard/pastas/${escapeHtml(p.id)}" class="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 mr-1">✏️ editar</a>
         ${p.status === 'publicada'
           ? `<button onclick="navigator.clipboard.writeText('${escapeHtml(input.publicBase)}/pasta/${escapeHtml(p.slug)}').then(()=>this.textContent='✅ copiado')" class="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200">🔗 copiar link</button>`
           : ''}
@@ -149,6 +150,13 @@ export function renderEditorPasta(input: {
         <code class="text-xs bg-slate-900 px-2 py-1 rounded text-sky-300">${escapeHtml(publicUrl)}</code>
         <button onclick="navigator.clipboard.writeText('${escapeHtml(publicUrl)}').then(()=>this.textContent='✅ copiado')" class="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200">copiar</button>
       </div>` : ''}
+
+      <div class="mb-4 flex justify-end">
+        <form action="/dashboard/pastas/${escapeHtml(p.id)}/excluir" method="post"
+          onsubmit="return confirm('EXCLUIR a pasta inteira de ${escapeHtml((input.cliente_nome ?? 'este cliente').replace(/'/g, ''))}?\n\nTodos os arquivos enviados somem e o link do cliente PARA DE FUNCIONAR. Não tem volta.')">
+          <button class="text-xs px-3 py-1.5 rounded-lg bg-rose-900/50 hover:bg-rose-800 text-rose-200">🗑️ Excluir pasta inteira</button>
+        </form>
+      </div>
 
       <form action="/dashboard/pastas/${escapeHtml(p.id)}/dados" method="post" class="mb-4 bg-slate-800/60 border border-slate-700 rounded-xl p-5 grid gap-4 md:grid-cols-2">
         <div>

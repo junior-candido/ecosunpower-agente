@@ -141,6 +141,24 @@ export class PastaService {
     return this.supabase.atualizarPastaCliente(pastaId, { status: 'publicada' });
   }
 
+  // Exclui a pasta inteira: apaga do bucket só os uploads próprios (arquivo de
+  // origem r-pi pertence ao relatório) e remove a linha. Link do cliente morre.
+  async excluirPasta(pastaId: string): Promise<{ ok: boolean; error?: string }> {
+    const pasta = await this.supabase.getPastaClienteById(pastaId);
+    if (!pasta) return { ok: false, error: 'Pasta não encontrada' };
+    const proprios = (pasta.arquivos ?? [])
+      .filter((a: ArquivoPasta) => a.origem !== 'r-pi')
+      .map((a: ArquivoPasta) => a.storage_path);
+    if (proprios.length > 0) {
+      try {
+        await this.supabase.getClient().storage.from('client-attachments').remove(proprios);
+      } catch (e) {
+        console.warn('[pasta] limpeza do bucket falhou (segue com a exclusão):', (e as Error).message);
+      }
+    }
+    return this.supabase.deletarPastaCliente(pastaId);
+  }
+
   async resolverView(pasta: PastaClienteRow, publico: boolean): Promise<PastaView | null> {
     const lead = await this.supabase.getClienteByLeadId(pasta.lead_id);
     if (!lead) return null;

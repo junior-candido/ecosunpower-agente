@@ -5198,6 +5198,15 @@ b.onclick=async function(){
     res.redirect(303, `/dashboard/pastas/${id}`);
   });
 
+  // Excluir a pasta inteira (o link do cliente morre — confirmação forte na tela)
+  router.post('/pastas/:id/excluir', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const r = await pastaService.excluirPasta(id);
+    if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/pastas">← voltar</a>`);
+    res.redirect(303, '/dashboard/pastas');
+  });
+
   // Prévia (iframe com o HTML público em modo preview)
   router.get('/pastas/:id/preview', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
