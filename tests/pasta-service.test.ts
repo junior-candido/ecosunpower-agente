@@ -314,3 +314,40 @@ describe('PastaService.enviarPorWhatsApp', () => {
     expect(sendText.mock.calls[0][1]).toContain('g.page/r/CWB5ipa57HzhEAI/review');
   });
 });
+
+describe('PastaService.excluirPasta', () => {
+  it('apaga do bucket só os uploads próprios (r-pi fica) e remove a linha', async () => {
+    const storage = {
+      upload: vi.fn(), createSignedUrls: vi.fn(),
+      remove: vi.fn().mockResolvedValue({ data: null, error: null }), download: vi.fn(),
+    };
+    const sb = fakeSupabase({
+      getPastaClienteById: vi.fn().mockResolvedValue({
+        ...PASTA_BASE,
+        arquivos: [
+          { secao: 'fotos', storage_path: 'lead-1/pasta/a.jpg', nome_exibicao: 'a.jpg', origem: 'upload' },
+          { secao: 'fotos', storage_path: 'lead-1/pos_instalacao/f.jpg', nome_exibicao: 'f.jpg', origem: 'r-pi' },
+        ],
+      }),
+      deletarPastaCliente: vi.fn().mockResolvedValue({ ok: true }),
+      getClient: vi.fn().mockReturnValue({ storage: { from: vi.fn().mockReturnValue(storage) } }),
+    });
+    const svc = new PastaService(sb as any, semSistema);
+    const r = await svc.excluirPasta('pasta-1');
+    expect(r.ok).toBe(true);
+    expect(storage.remove).toHaveBeenCalledWith(['lead-1/pasta/a.jpg']);
+    expect(storage.remove).toHaveBeenCalledTimes(1);
+    expect(sb.deletarPastaCliente).toHaveBeenCalledWith('pasta-1');
+  });
+
+  it('pasta inexistente → erro claro', async () => {
+    const sb = fakeSupabase({
+      getPastaClienteById: vi.fn().mockResolvedValue(null),
+      deletarPastaCliente: vi.fn(),
+    });
+    const svc = new PastaService(sb as any, semSistema);
+    const r = await svc.excluirPasta('x');
+    expect(r.ok).toBe(false);
+    expect(sb.deletarPastaCliente).not.toHaveBeenCalled();
+  });
+});

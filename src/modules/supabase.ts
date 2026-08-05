@@ -2450,6 +2450,12 @@ export class SupabaseService {
     return { ok: true };
   }
 
+  async deletarPastaCliente(id: string): Promise<{ ok: boolean; error?: string }> {
+    const { error } = await this.client.from('pastas_cliente').delete().eq('id', id);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }
+
   async marcarPastaClienteEnviada(id: string, phone: string): Promise<void> {
     await this.client
       .from('pastas_cliente')
