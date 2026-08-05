@@ -135,12 +135,15 @@ export function renderDetalheServicoPage(
       body:JSON.stringify({midias:midias})})
      .then(function(r){return r.json()}).then(function(j){
       if(!j.ok)throw new Error(j.erro||'falha');
-      var ups=j.uploads||[],feitas=[],fila=Promise.resolve();
+      var ups=j.uploads||[],feitas=[],falhas=[],fila=Promise.resolve();
       ups.forEach(function(u,i){fila=fila.then(function(){
        prog('Subindo '+(i+1)+' de '+ups.length+'…');
        return fetch(u.url,{method:'PUT',headers:{'Content-Type':midias[i].contentType},body:arquivos[i]})
-        .then(function(r){if(r.ok)feitas.push({path:u.path,tipoMidia:midias[i].tipoMidia})})})});
+        .then(function(r){if(r.ok)feitas.push({path:u.path,tipoMidia:midias[i].tipoMidia});
+         else falhas.push(midias[i].nome+' (erro '+r.status+(r.status===413?' — arquivo grande demais pro cofre':'')+')')})
+        .catch(function(){falhas.push(midias[i].nome+' (rede caiu no meio)')})})});
       return fila.then(function(){
+       if(falhas.length)alert('⚠️ '+falhas.length+' arquivo(s) NÃO subiram:\\n'+falhas.join('\\n')+'\\n\\nO resto foi salvo. Vídeo grande é a causa mais comum — tente um vídeo mais curto.');
        return fetch('/dashboard/servicos/'+SID+'/confirmar-midias',{method:'POST',
         headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({midias:feitas})})})
       .then(function(){
@@ -425,13 +428,16 @@ export function renderNovoServicoPage(
      observacoes:document.getElementById('f_observacoes').value.trim(),midias:midias})})
    .then(function(r){return r.json()}).then(function(j){
     if(!j.ok)throw new Error(j.erro||'falha');
-    var arquivos=estado.fotos.concat(estado.videos),ups=j.uploads||[],feitas=[];
+    var arquivos=estado.fotos.concat(estado.videos),ups=j.uploads||[],feitas=[],falhas=[];
     var fila=Promise.resolve();
     ups.forEach(function(u,i){fila=fila.then(function(){
      prog('Subindo '+(i+1)+' de '+ups.length+'…');
      return fetch(u.url,{method:'PUT',headers:{'Content-Type':midias[i].contentType},body:arquivos[i]})
-      .then(function(r){if(r.ok)feitas.push({path:u.path,tipoMidia:midias[i].tipoMidia})})})});
+      .then(function(r){if(r.ok)feitas.push({path:u.path,tipoMidia:midias[i].tipoMidia});
+       else falhas.push(midias[i].nome+' (erro '+r.status+(r.status===413?' — arquivo grande demais pro cofre':'')+')')})
+      .catch(function(){falhas.push(midias[i].nome+' (rede caiu no meio)')})})});
     return fila.then(function(){
+     if(falhas.length)alert('⚠️ '+falhas.length+' arquivo(s) NÃO subiram:\\n'+falhas.join('\\n')+'\\n\\nO resto foi salvo. Vídeo grande é a causa mais comum — tente um vídeo mais curto.');
      return fetch('/dashboard/servicos/'+j.id+'/confirmar-midias',{method:'POST',
       headers:{'Content-Type':'application/json','Accept':'application/json'},
       body:JSON.stringify({midias:feitas})})}).then(function(){
