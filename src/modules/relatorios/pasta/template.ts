@@ -95,6 +95,15 @@ export function renderPastaHtml(v: PastaView): string {
     ? `<a class="btn-zap" href="https://wa.me/${escapeHtml(v.whatsapp)}" target="_blank" rel="noopener">💬 Falar com a ${escapeHtml(empresa().nomeFantasia)}</a>`
     : '';
 
+  // Melhor hora de pedir avaliação: cliente acabou de receber a usina + a pasta.
+  const reviewUrl = empresa().googleReviewUrl;
+  const avaliacaoHtml = reviewUrl ? `
+  <section class="avaliacao">
+    <h2>⭐ Gostou do nosso trabalho?</h2>
+    <p>Sua avaliação leva 1 minuto e ajuda outras famílias a chegarem na energia solar.</p>
+    <a class="btn-avaliar" href="${escapeHtml(reviewUrl)}" target="_blank" rel="noopener">⭐ Avaliar no Google</a>
+  </section>` : '';
+
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -138,6 +147,10 @@ export function renderPastaHtml(v: PastaView): string {
   .zip-mobile{text-align:center;margin-top:10px}
   .zip-mobile button{background:none;border:none;color:#78716c;font-size:12px;text-decoration:underline;cursor:pointer}
   .btn-zap{display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;border-radius:12px;background:#16a34a;color:#fff;font-size:15px;font-weight:700;text-decoration:none;margin-top:6px}
+  .avaliacao{background:linear-gradient(135deg,#fef9c3 0%,#fde68a 100%);border-color:#fcd34d;text-align:center}
+  .avaliacao h2{color:#92400e}
+  .avaliacao p{font-size:14px;color:#78350f;margin-bottom:12px}
+  .btn-avaliar{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:12px;background:#d97706;color:#fff;font-size:15px;font-weight:700;text-decoration:none}
   footer{text-align:center;padding:24px 0 8px;color:#78716c;font-size:13px}
   footer .marca{font-weight:700;color:#0c4a6e;margin-bottom:2px}
   #lightbox{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:50;align-items:center;justify-content:center;padding:16px}
@@ -172,6 +185,8 @@ ${previewBanner}
   ${sistemaHtml}
 
   ${secoesHtml}
+
+  ${avaliacaoHtml}
 
   ${zapHtml}
 
