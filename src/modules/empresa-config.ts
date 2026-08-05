@@ -19,6 +19,9 @@ export interface EmpresaConfig {
   marcasPermitidas: string[]; marcasBloqueadas: string[];
   garantiaInstalacaoMeses: number; fatorPerdaPadrao: number; belenusAtivo: boolean;
   logoStoragePath: string | null;
+  // Link "Pedir avaliações" do Google Meu Negócio — usado na Pasta Digital
+  // do Cliente (página + mensagem do zap). null = blocos de avaliação somem.
+  googleReviewUrl: string | null;
   // região técnica (fallback quando UF do cliente não está no solar-params)
   hspPadrao: number | null;       // ex.: 5.40; null = usa o resolver atual por UF
   tarifaPadrao: number | null;    // ex.: 1.050; null = resolver atual
@@ -51,6 +54,7 @@ export const EMPRESA_DEFAULTS: EmpresaConfig = {
   marcasBloqueadas: ['Growatt'],
   garantiaInstalacaoMeses: 12, fatorPerdaPadrao: 0.78, belenusAtivo: true,
   logoStoragePath: null,
+  googleReviewUrl: 'https://g.page/r/CWB5ipa57HzhEAI/review',
   hspPadrao: null, tarifaPadrao: null, concessionariaPadrao: null,
   reguaAtencaoPct: 70,
 };
@@ -103,6 +107,9 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
     fatorPerdaPadrao: n(row.fator_perda_padrao, D.fatorPerdaPadrao),
     belenusAtivo: b(row.belenus_ativo, D.belenusAtivo),
     logoStoragePath: sn(row.logo_storage_path),
+    // Tenant sem link cai no null (não herda o da EcoSun — avaliação é da empresa dela);
+    // a EcoSun (row sem a coluna OU singleton default) usa o default de código.
+    googleReviewUrl: 'google_review_url' in row ? sn(row.google_review_url) : D.googleReviewUrl,
     hspPadrao: nn(row.hsp_padrao),
     tarifaPadrao: nn(row.tarifa_kwh_padrao),
     concessionariaPadrao: sn(row.concessionaria_padrao),

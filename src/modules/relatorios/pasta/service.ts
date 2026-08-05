@@ -198,11 +198,16 @@ export class PastaService {
 
     const primeiroNome = (lead.name ?? 'Olá').split(/\s+/)[0];
     const link = `${PUBLIC_BASE_URL}/pasta/${pasta.slug}`;
+    // Convite de avaliação junto da entrega (melhor momento) — some se não houver link.
+    const reviewUrl = empresa().googleReviewUrl;
+    const convite = reviewUrl
+      ? `\n\nE se puder, deixa sua avaliação no Google — leva 1 minuto e ajuda demais: ${reviewUrl}`
+      : '';
     const body = pasta.mensagem_zap?.trim()
-      ? `${pasta.mensagem_zap.trim()}\n\n${link}`
+      ? `${pasta.mensagem_zap.trim()}\n\n${link}${convite}`
       : `📁 ${primeiroNome}, sua usina agora tem uma pasta digital!\n\n` +
         `Fotos da obra, projeto e todos os seus documentos guardados num lugar só:\n${link}\n\n` +
-        `Salve esse link — ele é seu. Qualquer dúvida, é só chamar a gente.`;
+        `Salve esse link — ele é seu. Qualquer dúvida, é só chamar a gente.${convite}`;
 
     await sendText(lead.phone, body);
     await this.supabase.marcarPastaClienteEnviada(pastaId, lead.phone);

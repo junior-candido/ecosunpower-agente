@@ -59,6 +59,12 @@ describe('renderPastaHtml', () => {
     expect(renderPastaHtml(view())).toContain('wa.me/5561996978781');
   });
 
+  it('bloco de avaliação com o link do Google entra na página', () => {
+    const html = renderPastaHtml(view());
+    expect(html).toContain('https://g.page/r/CWB5ipa57HzhEAI/review');
+    expect(html).toContain('Avaliar no Google');
+  });
+
   it('vídeo do monitoramento vira player <video>; foto vira galeria', () => {
     const html = renderPastaHtml(view({
       secoes: [

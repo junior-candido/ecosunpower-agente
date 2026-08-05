@@ -305,4 +305,12 @@ describe('PastaService.enviarPorWhatsApp', () => {
     expect(sendText.mock.calls[0][1]).toContain('/pasta/abcdefghjk');
     expect(sb.marcarPastaClienteEnviada).toHaveBeenCalledWith('pasta-1', '5561999990000');
   });
+
+  it('mensagem padrão convida pra avaliação no Google', async () => {
+    const sb = fakeSupabase({ getPastaClienteById: vi.fn().mockResolvedValue(publicada) });
+    const sendText = vi.fn().mockResolvedValue(undefined);
+    const svc = new PastaService(sb as any, semSistema);
+    await svc.enviarPorWhatsApp('pasta-1', sendText);
+    expect(sendText.mock.calls[0][1]).toContain('g.page/r/CWB5ipa57HzhEAI/review');
+  });
 });
