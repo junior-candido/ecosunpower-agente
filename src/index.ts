@@ -105,6 +105,8 @@ import { makeMaterialQueryHandler } from './modules/financeiro/materiais.js';
 import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/cron.js';
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
+import { PastaService } from './modules/relatorios/pasta/service.js';
+import { renderPastaHtml } from './modules/relatorios/pasta/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
 import { carregarEmpresaConfig, carregarKits, empresa, listaMarcasTexto } from './modules/empresa-config.js';
 import { mapResendEvento } from './modules/email/resend-events.js';
@@ -8328,6 +8330,48 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     );
 
     res.type('text/html').send(renderPosInstalacaoHtml(view));
+  });
+
+  // ===== Pasta Digital do Cliente (rota pública) =====
+  // Sem auth — cliente abre via link secreto enviado no WhatsApp.
+  // URL pública: https://propostas.ecosunpower.eng.br/pasta/<slug>
+  app.get('/pasta/:slug', async (req, res) => {
+    const slug = String(req.params.slug ?? '');
+    if (!/^[a-z0-9]{6,20}$/.test(slug)) return res.status(400).send('Slug inválido');
+
+    const pasta = await supabase.getPastaClienteBySlug(slug);
+    // Rascunho NÃO é público — só depois de publicar.
+    if (!pasta || pasta.status !== 'publicada') {
+      return res.status(404).type('text/html').send(`
+      <!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Não encontrada</title>
+      <style>body{font-family:sans-serif;text-align:center;padding:60px 20px;color:#444}</style></head>
+      <body><h1>📁 Pasta não encontrada</h1><p>O link que você acessou pode estar errado ou ter sido removido.</p></body></html>
+    `);
+    }
+
+    const pastaService = new PastaService(supabase, async (leadId) => {
+      const sistemas = await monitoringService.listarParaDashboard() as any[];
+      const s = sistemas.find((x) => x.lead_id === leadId);
+      if (!s) return null;
+      return {
+        id: s.id,
+        apelido: s.apelido,
+        marca_inversor: s.marca_inversor,
+        potencia_kwp: s.potencia_kwp,
+        qtd_paineis: s.qtd_paineis ?? null,
+        painel_marca: s.painel_marca ?? null,
+        painel_modelo: s.painel_modelo ?? null,
+        inversor_modelo: s.inversor_modelo ?? null,
+      };
+    });
+    const view = await pastaService.resolverView(pasta, true);
+    if (!view) return res.status(500).send('Erro ao montar a pasta');
+
+    supabase.incrementarAcessoPasta(slug).catch((e) =>
+      console.warn('[pasta] increment failed:', (e as Error).message),
+    );
+
+    res.type('text/html').send(renderPastaHtml(view));
   });
 
   // ===== Webhook do Resend (espinha do Elo) =====

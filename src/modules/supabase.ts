@@ -2381,6 +2381,88 @@ export class SupabaseService {
     if (error) console.warn('[supabase] increment_pi_access:', error.message);
   }
 
+  // ====================================================================
+  // Pasta Digital do Cliente
+  // ====================================================================
+
+  async criarPastaCliente(input: { lead_id: string; slug: string }): Promise<{ ok: boolean; id?: string; error?: string }> {
+    const { data, error } = await this.client
+      .from('pastas_cliente')
+      .insert({ lead_id: input.lead_id, slug: input.slug, created_by: 'junior' })
+      .select('id')
+      .single();
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, id: data.id };
+  }
+
+  async getPastaClienteByLead(leadId: string): Promise<any | null> {
+    const { data, error } = await this.client
+      .from('pastas_cliente')
+      .select('*')
+      .eq('lead_id', leadId)
+      .maybeSingle();
+    if (error) {
+      console.warn('[supabase] getPastaClienteByLead:', error.message);
+      return null;
+    }
+    return data;
+  }
+
+  async getPastaClienteById(id: string): Promise<any | null> {
+    const { data, error } = await this.client
+      .from('pastas_cliente')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error) return null;
+    return data;
+  }
+
+  async getPastaClienteBySlug(slug: string): Promise<any | null> {
+    const { data, error } = await this.client
+      .from('pastas_cliente')
+      .select('*')
+      .eq('slug', slug)
+      .single();
+    if (error) return null;
+    return data;
+  }
+
+  async listPastasCliente(limit: number = 100): Promise<any[]> {
+    const { data, error } = await this.client
+      .from('pastas_cliente')
+      .select('id, lead_id, slug, status, arquivos, acessos, ultimo_acesso_em, enviado_em, updated_at, leads(name)')
+      .order('updated_at', { ascending: false })
+      .limit(limit);
+    if (error) {
+      console.warn('[supabase] listPastasCliente:', error.message);
+      return [];
+    }
+    return data ?? [];
+  }
+
+  async atualizarPastaCliente(id: string, patch: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+    const { error } = await this.client
+      .from('pastas_cliente')
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }
+
+  async marcarPastaClienteEnviada(id: string, phone: string): Promise<void> {
+    await this.client
+      .from('pastas_cliente')
+      .update({ enviado_em: new Date().toISOString(), enviado_para_phone: phone })
+      .eq('id', id);
+  }
+
+  async incrementarAcessoPasta(slug: string): Promise<void> {
+    // RPC atômico (definido na migration 098) — evita race em concurrent reads.
+    const { error } = await this.client.rpc('increment_pasta_access', { p_slug: slug });
+    if (error) console.warn('[supabase] increment_pasta_access:', error.message);
+  }
+
   async getLeadsMedidorTrocadoSemRelatorio(): Promise<any[]> {
     const { data, error } = await this.client
       .from('leads')
