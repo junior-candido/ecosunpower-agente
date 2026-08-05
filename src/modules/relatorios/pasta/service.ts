@@ -82,8 +82,9 @@ export class PastaService {
     if (pasta.capa_storage_path === storagePath) patch.capa_storage_path = null;
     const r = await this.supabase.atualizarPastaCliente(pastaId, patch);
     if (!r.ok) return { ok: false, error: r.error };
-    // Arquivo do r-pi pertence ao relatório — só desvincula, não apaga do bucket.
-    if (alvo.origem !== 'r-pi') {
+    // Só apaga do bucket o que a PASTA subiu — arquivo referenciado (r-pi,
+    // diário de serviços) pertence à origem.
+    if ((alvo.origem ?? 'upload') === 'upload') {
       try { await deleteAnexoFile(this.supabase.getClient(), storagePath); } catch {}
     }
     return { ok: true };
@@ -105,6 +106,37 @@ export class PastaService {
         nome_exibicao: `foto-obra-${jaTem.size + i + 1}.jpg`,
         caption: f.caption ?? null,
         origem: 'r-pi' as const,
+      }));
+    if (novas.length === 0) return { ok: true, adicionadas: 0 };
+    const r = await this.supabase.atualizarPastaCliente(pastaId, {
+      arquivos: [...(pasta.arquivos ?? []), ...novas],
+    });
+    if (!r.ok) return { ok: false, adicionadas: 0, error: r.error };
+    return { ok: true, adicionadas: novas.length };
+  }
+
+  /**
+   * Sincroniza com o Diário de Serviços/visitas: referencia fotos e vídeos de
+   * TODOS os serviços do lead (mesmo bucket — sem re-upload), pulando o que já
+   * está na pasta. buscarMidias é injetado pelo router (servicosDoLead + midiasDoServico).
+   */
+  async puxarFotosDosServicos(
+    pastaId: string,
+    buscarMidias: (leadId: string) => Promise<Array<{ path: string; tipoMidia: string; legenda?: string | null }>>,
+  ): Promise<{ ok: boolean; adicionadas: number; error?: string }> {
+    const pasta = await this.supabase.getPastaClienteById(pastaId);
+    if (!pasta) return { ok: false, adicionadas: 0, error: 'Pasta não encontrada' };
+    const midias = await buscarMidias(pasta.lead_id);
+    if (midias.length === 0) return { ok: false, adicionadas: 0, error: 'Cliente não tem serviços/visitas com fotos' };
+    const jaTem = new Set((pasta.arquivos ?? []).map((a: ArquivoPasta) => a.storage_path));
+    const novas: ArquivoPasta[] = midias
+      .filter((m) => m.path && !jaTem.has(m.path))
+      .map((m, i) => ({
+        secao: 'fotos' as const,
+        storage_path: m.path,
+        nome_exibicao: `servico-${i + 1}.${extDe(m.path) || (m.tipoMidia === 'video' ? 'mp4' : 'jpg')}`,
+        caption: m.legenda ?? null,
+        origem: 'servico' as const,
       }));
     if (novas.length === 0) return { ok: true, adicionadas: 0 };
     const r = await this.supabase.atualizarPastaCliente(pastaId, {
@@ -147,7 +179,7 @@ export class PastaService {
     const pasta = await this.supabase.getPastaClienteById(pastaId);
     if (!pasta) return { ok: false, error: 'Pasta não encontrada' };
     const proprios = (pasta.arquivos ?? [])
-      .filter((a: ArquivoPasta) => a.origem !== 'r-pi')
+      .filter((a: ArquivoPasta) => (a.origem ?? 'upload') === 'upload')
       .map((a: ArquivoPasta) => a.storage_path);
     if (proprios.length > 0) {
       try {

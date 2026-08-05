@@ -380,3 +380,75 @@ describe('PastaService.excluirPasta', () => {
     expect(sb.deletarPastaCliente).not.toHaveBeenCalled();
   });
 });
+
+describe('PastaService.puxarFotosDosServicos', () => {
+  it('traz fotos e vídeos dos serviços/visitas sem re-upload, com legenda e origem servico', async () => {
+    const sb = fakeSupabase({
+      getPastaClienteById: vi.fn().mockResolvedValue({
+        ...PASTA_BASE,
+        arquivos: [{ secao: 'fotos', storage_path: 'lead-1/servico/s1/a.jpg', nome_exibicao: 'a.jpg', origem: 'servico' }],
+      }),
+    });
+    const buscarMidias = vi.fn().mockResolvedValue([
+      { path: 'lead-1/servico/s1/a.jpg', tipoMidia: 'foto', legenda: 'Visita técnica · 01/08/2026' },
+      { path: 'lead-1/servico/s1/b.jpg', tipoMidia: 'foto', legenda: 'Visita técnica · 01/08/2026' },
+      { path: 'lead-1/servico/s2/c.mp4', tipoMidia: 'video', legenda: 'Instalação FV · 03/08/2026' },
+    ]);
+    const svc = new PastaService(sb as any, semSistema);
+    const r = await svc.puxarFotosDosServicos('pasta-1', buscarMidias);
+    expect(r.ok).toBe(true);
+    expect(r.adicionadas).toBe(2);
+    expect(buscarMidias).toHaveBeenCalledWith('lead-1');
+    const arquivos = sb.atualizarPastaCliente.mock.calls[0][1].arquivos;
+    expect(arquivos.length).toBe(3);
+    expect(arquivos[1]).toMatchObject({ secao: 'fotos', storage_path: 'lead-1/servico/s1/b.jpg', origem: 'servico', caption: 'Visita técnica · 01/08/2026' });
+    expect(arquivos[2].storage_path).toBe('lead-1/servico/s2/c.mp4');
+  });
+
+  it('lead sem serviços com mídia → ok=false com aviso', async () => {
+    const sb = fakeSupabase();
+    const svc = new PastaService(sb as any, semSistema);
+    const r = await svc.puxarFotosDosServicos('pasta-1', vi.fn().mockResolvedValue([]));
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe('origem servico protege o bucket (arquivo pertence ao Diário de Serviços)', () => {
+  it('remover arquivo origem=servico NÃO apaga do bucket', async () => {
+    const storage = {
+      upload: vi.fn(), createSignedUrls: vi.fn(),
+      remove: vi.fn().mockResolvedValue({ data: null, error: null }), download: vi.fn(),
+    };
+    const sb = fakeSupabase({
+      getPastaClienteById: vi.fn().mockResolvedValue({
+        ...PASTA_BASE,
+        arquivos: [{ secao: 'fotos', storage_path: 'lead-1/servico/s1/a.jpg', nome_exibicao: 'a.jpg', origem: 'servico' }],
+      }),
+      getClient: vi.fn().mockReturnValue({ storage: { from: vi.fn().mockReturnValue(storage) } }),
+    });
+    const svc = new PastaService(sb as any, semSistema);
+    await svc.removerArquivo('pasta-1', 'lead-1/servico/s1/a.jpg');
+    expect(storage.remove).not.toHaveBeenCalled();
+  });
+
+  it('excluir pasta NÃO apaga arquivos origem=servico do bucket', async () => {
+    const storage = {
+      upload: vi.fn(), createSignedUrls: vi.fn(),
+      remove: vi.fn().mockResolvedValue({ data: null, error: null }), download: vi.fn(),
+    };
+    const sb = fakeSupabase({
+      getPastaClienteById: vi.fn().mockResolvedValue({
+        ...PASTA_BASE,
+        arquivos: [
+          { secao: 'fotos', storage_path: 'lead-1/pasta/meu.jpg', nome_exibicao: 'meu.jpg', origem: 'upload' },
+          { secao: 'fotos', storage_path: 'lead-1/servico/s1/a.jpg', nome_exibicao: 'a.jpg', origem: 'servico' },
+        ],
+      }),
+      deletarPastaCliente: vi.fn().mockResolvedValue({ ok: true }),
+      getClient: vi.fn().mockReturnValue({ storage: { from: vi.fn().mockReturnValue(storage) } }),
+    });
+    const svc = new PastaService(sb as any, semSistema);
+    await svc.excluirPasta('pasta-1');
+    expect(storage.remove).toHaveBeenCalledWith(['lead-1/pasta/meu.jpg']);
+  });
+});

@@ -5091,6 +5091,8 @@ b.onclick=async function(){
     if (!pasta) return res.status(404).send('Pasta não encontrada');
     const lead = await supabaseService.getClienteByLeadId(pasta.lead_id);
     const rels = await supabaseService.listRelatoriosPosInstalacaoByLead(pasta.lead_id, 1);
+    const { servicosDoLead } = await import('./servicos-store.js');
+    const servicosLead = await servicosDoLead(supabase, pasta.lead_id).catch(() => []);
     // Miniaturas das fotos no editor (TTL curto)
     const fotoPaths = (pasta.arquivos ?? [])
       .filter((a: any) => a.secao === 'fotos')
@@ -5102,6 +5104,7 @@ b.onclick=async function(){
       pasta,
       cliente_nome: lead?.name ?? null,
       tem_rpi: rels.length > 0,
+      tem_servicos: servicosLead.length > 0,
       fotos_urls: fotosUrls,
       publicBase: PASTA_PUBLIC_BASE,
     }));
@@ -5144,6 +5147,26 @@ b.onclick=async function(){
     if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
     const r = await pastaService.removerArquivo(id, String(req.body?.storage_path ?? ''));
     if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2>`);
+    res.redirect(303, `/dashboard/pastas/${id}`);
+  });
+
+  // Sincronizar com o Diário de Serviços/visitas (fotos e vídeos de TODOS os
+  // serviços do lead — mesmo bucket, só referencia, sem re-upload)
+  router.post('/pastas/:id/puxar-servicos', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const r = await pastaService.puxarFotosDosServicos(id, async (leadId) => {
+      const { servicosDoLead, midiasDoServico } = await import('./servicos-store.js');
+      const servicos = await servicosDoLead(supabase, leadId);
+      const out: Array<{ path: string; tipoMidia: string; legenda?: string | null }> = [];
+      for (const s of servicos) {
+        const midias = await midiasDoServico(supabase, s.id);
+        const dataBr = s.dataServico.split('-').reverse().join('/');
+        for (const m of midias) out.push({ path: m.path, tipoMidia: m.tipoMidia, legenda: `${s.tipoNome} · ${dataBr}` });
+      }
+      return out;
+    });
+    if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/pastas/${id}">← voltar</a>`);
     res.redirect(303, `/dashboard/pastas/${id}`);
   });
 
