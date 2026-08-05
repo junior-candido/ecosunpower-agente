@@ -5194,7 +5194,7 @@ b.onclick=async function(){
     if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
     const sendText = options.sendText;
     if (!sendText) return res.status(500).send('sendText não configurado neste ambiente.');
-    const r = await pastaService.enviarPorWhatsApp(id, sendText);
+    const r = await pastaService.enviarPorWhatsApp(id, sendText, options.sendTemplate);
     if (!r.ok) return res.status(400).send(`<h2>Não foi possível enviar: ${escapeHtmlSimple(r.reason ?? '')}</h2><a href="/dashboard/pastas/${id}">← voltar</a>`);
     res.redirect(303, `/dashboard/pastas/${id}`);
   });

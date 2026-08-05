@@ -206,6 +206,14 @@ export class PastaService {
   async enviarPorWhatsApp(
     pastaId: string,
     sendText: (to: string, text: string) => Promise<void>,
+    // Template aprovado (WABA): garante entrega mesmo com a janela 24h fechada
+    // (texto livre fora da janela é descartado em silêncio). Fallback = texto.
+    sendTemplate?: (
+      to: string,
+      name: string,
+      lang: string,
+      components: Array<{ type: 'body' | 'button'; sub_type?: 'url'; index?: number; parameters: Array<{ type: 'text'; text: string }> }>,
+    ) => Promise<unknown>,
   ): Promise<{ ok: boolean; reason?: string }> {
     const pasta = await this.supabase.getPastaClienteById(pastaId);
     if (!pasta) return { ok: false, reason: 'pasta_not_found' };
@@ -217,6 +225,19 @@ export class PastaService {
 
     const primeiroNome = (lead.name ?? 'Olá').split(/\s+/)[0];
     const link = `${PUBLIC_BASE_URL}/pasta/${pasta.slug}`;
+
+    if (sendTemplate) {
+      try {
+        await sendTemplate(lead.phone, 'pasta_digital_v1', 'pt_BR', [
+          { type: 'body', parameters: [{ type: 'text', text: primeiroNome }] },
+          { type: 'button', sub_type: 'url', index: 0, parameters: [{ type: 'text', text: pasta.slug }] },
+        ]);
+        await this.supabase.marcarPastaClienteEnviada(pastaId, lead.phone);
+        return { ok: true };
+      } catch (err) {
+        console.warn('[pasta] template de envio falhou, caindo pro texto livre:', (err as Error).message);
+      }
+    }
     // Convite de avaliação junto da entrega (melhor momento) — some se não houver link.
     const reviewUrl = empresa().googleReviewUrl;
     const convite = reviewUrl
