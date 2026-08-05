@@ -2,6 +2,7 @@
 // Acesso a dashboard_users e dashboard_roles. Monta o DashUser (com papel+permissoes)
 // usado pelo auth e pelas telas de /usuarios.
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { telefoneParaEnvio } from '../phone.js';
 import type { DashUser, Permissoes } from './permissions.js';
 
 export interface RoleRow {
@@ -169,7 +170,9 @@ export async function updateUser(
 /** Telefone (zap) do usuário — pro aviso de serviço atribuído. */
 export async function telefoneDoUsuario(client: SupabaseClient, id: string): Promise<string | null> {
   const { data } = await client.from('dashboard_users').select('telefone').eq('id', id).maybeSingle();
-  return (data as { telefone?: string | null } | null)?.telefone ?? null;
+  // Sempre na forma pronta pro sendText (com o 55) — número digitado sem o
+  // país no cadastro deixava o aviso de serviço morrer em silêncio (05/08).
+  return telefoneParaEnvio((data as { telefone?: string | null } | null)?.telefone);
 }
 
 /** Acha usuário da empresa pelo telefone (📤 enviar serviço pelo zap sem duplicar gente). */
