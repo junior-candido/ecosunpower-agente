@@ -1,0 +1,61 @@
+// tests/pasta-template.test.ts
+import { describe, it, expect } from 'vitest';
+import { renderPastaHtml } from '../src/modules/relatorios/pasta/template.js';
+import type { PastaView } from '../src/modules/relatorios/pasta/types.js';
+
+function view(o: Partial<PastaView> = {}): PastaView {
+  return {
+    cliente_nome: 'João <b>Silva</b>',
+    cliente_cidade: 'Brasília', cliente_uf: 'DF',
+    data_entrega: '2026-08-01',
+    sistema: null,
+    capa_url: null,
+    logo_base64: 'data:image/png;base64,AAA',
+    whatsapp: '5561996978781',
+    secoes: [
+      { secao: 'fotos', titulo: '📸 Fotos da instalação', arquivos: [
+        { url: 'https://sig/f1.jpg', nome: 'f1.jpg', caption: null, is_imagem: true },
+      ]},
+      { secao: 'projeto', titulo: '📐 Projeto', arquivos: [
+        { url: 'https://sig/p.pdf', nome: 'prancha.pdf', caption: null, is_imagem: false },
+      ]},
+    ],
+    slug: 'abcdefghjk', publico: true, gerado_em: '2026-08-05T12:00:00Z',
+    ...o,
+  };
+}
+
+describe('renderPastaHtml', () => {
+  it('só renderiza seções que vieram na view', () => {
+    const html = renderPastaHtml(view());
+    expect(html).toContain('Fotos da instalação');
+    expect(html).toContain('Projeto');
+    expect(html).not.toContain('Homologação');
+    expect(html).not.toContain('Contrato');
+  });
+
+  it('escapa HTML do nome do cliente', () => {
+    const html = renderPastaHtml(view());
+    expect(html).not.toContain('<b>Silva</b>');
+    expect(html).toContain('&lt;b&gt;');
+  });
+
+  it('preview mostra banner; público não', () => {
+    expect(renderPastaHtml(view({ publico: false }))).toContain('PREVIEW');
+    expect(renderPastaHtml(view({ publico: true }))).not.toContain('PREVIEW');
+  });
+
+  it('lista de arquivos do ZIP vai como JSON seguro no script', () => {
+    const html = renderPastaHtml(view());
+    expect(html).toContain('const ARQUIVOS_ZIP');
+    expect(html).toContain('https://sig/p.pdf');
+    // </script> dentro de URL/nome não pode quebrar a página
+    const comNomeMaligno = view();
+    comNomeMaligno.secoes[1].arquivos[0].nome = 'a</script><script>alert(1)';
+    expect(renderPastaHtml(comNomeMaligno)).not.toContain('</script><script>alert(1)');
+  });
+
+  it('botão do zap usa o telefone da empresa', () => {
+    expect(renderPastaHtml(view())).toContain('wa.me/5561996978781');
+  });
+});
