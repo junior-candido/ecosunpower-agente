@@ -12,6 +12,60 @@ export function textoAvisoServico(s: ServicoRow, linkServico: string | null): st
     (linkServico ? `\nAbra pra ver o guia de fotos: ${linkServico}` : '\nAbra a tela Serviços no dashboard pra ver o guia.');
 }
 
+// ===== Template aprovado pro aviso (bug 05/08) =====
+// Fora da janela 24h a Cloud API aceita texto livre e DESCARTA em silêncio
+// (tela verde, celular mudo). Funcionário de campo quase nunca tem janela
+// aberta com o número da Eva → aviso por TEMPLATE chega sempre.
+
+export const TEMPLATE_AVISO_SERVICO = 'aviso_servico_v1';
+
+/** Parâmetros {{1}}..{{4}} do template aviso_servico_v1, na ordem. */
+export function paramsTemplateAvisoServico(s: ServicoRow, linkServico: string | null): string[] {
+  return [
+    s.tipoNome,
+    s.clienteNome,
+    dataBr(s.dataServico),
+    linkServico ?? 'abra a tela Serviços no dashboard',
+  ];
+}
+
+export interface CanaisAviso {
+  sendText: (to: string, text: string) => Promise<unknown>;
+  sendTemplate?: (
+    to: string,
+    name: string,
+    lang: string,
+    components: Array<{ type: 'body'; parameters: Array<{ type: 'text'; text: string }> }>,
+  ) => Promise<unknown>;
+}
+
+/**
+ * Envia o aviso pro time: template quando o canal é a API oficial; texto
+ * normal quando não há template (Evolution) ou como fallback se o template
+ * falhar (ex.: ainda não aprovado pela Meta).
+ */
+export async function enviarAvisoServico(
+  canais: CanaisAviso,
+  tel: string,
+  s: ServicoRow,
+  linkServico: string | null,
+): Promise<void> {
+  if (canais.sendTemplate) {
+    try {
+      await canais.sendTemplate(tel, TEMPLATE_AVISO_SERVICO, 'pt_BR', [
+        {
+          type: 'body',
+          parameters: paramsTemplateAvisoServico(s, linkServico).map((t) => ({ type: 'text' as const, text: t })),
+        },
+      ]);
+      return;
+    } catch (err) {
+      console.warn('[servicos] template do aviso falhou, caindo pro texto livre:', (err as Error).message);
+    }
+  }
+  await canais.sendText(tel, textoAvisoServico(s, linkServico));
+}
+
 /** "Só as informações" (sem acesso): tipo, cliente, endereço e o guia numerado. */
 export function textoInfoServico(s: ServicoRow, endereco: string | null): string {
   const guia = GUIAS_FOTOS[s.tipoId];

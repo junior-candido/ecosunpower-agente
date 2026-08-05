@@ -13,6 +13,19 @@
  * Sempre inclui o número original (só dígitos). Não inventa nada além do 9º
  * dígito de celular BR reconhecível — entrada não reconhecida volta como está.
  */
+/**
+ * Forma ÚNICA pronta pro sendText: só dígitos e, se vier sem o país
+ * (10–11 dígitos = DDD + local), completa o 55. Formato não reconhecido
+ * volta só com os dígitos (não inventa). Vazio → null.
+ * Bug 05/08: telefone de usuário salvo sem o 55 ia cru pra API do WhatsApp
+ * e o aviso de serviço morria em silêncio.
+ */
+export function telefoneParaEnvio(raw: string | null | undefined): string | null {
+  const d = (raw ?? '').replace(/\D/g, '');
+  if (!d) return null;
+  return d.length === 10 || d.length === 11 ? '55' + d : d;
+}
+
 export function variantesTelefone(raw: string): string[] {
   const d = (raw ?? '').replace(/\D/g, '');
   if (!d) return [];

@@ -1,7 +1,7 @@
 // variantesTelefone: gera as formas plausíveis do MESMO celular brasileiro
 // (ambiguidade do 9º dígito + país 55), pra achar o lead e não duplicar.
 import { describe, it, expect } from 'vitest';
-import { variantesTelefone } from '../src/modules/phone.js';
+import { variantesTelefone, telefoneParaEnvio } from '../src/modules/phone.js';
 
 describe('variantesTelefone', () => {
   it('número com 9 (13 díg) também gera a forma sem 9 (12 díg)', () => {
@@ -37,5 +37,27 @@ describe('variantesTelefone', () => {
   it('não inventa variante pra coisa que não é celular BR reconhecível', () => {
     // 9 dígitos soltos: devolve só ele mesmo, sem inventar 9º dígito
     expect(variantesTelefone('123456789')).toEqual(['123456789']);
+  });
+});
+
+// telefoneParaEnvio: forma única pronta pro sendText (bug 05/08 — número sem
+// o 55 ia cru pra API e o zap morria em silêncio).
+describe('telefoneParaEnvio', () => {
+  it('completa o 55 quando vier só DDD + local', () => {
+    expect(telefoneParaEnvio('61996688219')).toBe('5561996688219');
+    expect(telefoneParaEnvio('6133334444')).toBe('556133334444');
+  });
+  it('tira máscara e espaços', () => {
+    expect(telefoneParaEnvio('(61) 99668-8219')).toBe('5561996688219');
+  });
+  it('já com 55 fica como está', () => {
+    expect(telefoneParaEnvio('5561996688219')).toBe('5561996688219');
+  });
+  it('vazio/nulo → null', () => {
+    expect(telefoneParaEnvio('')).toBeNull();
+    expect(telefoneParaEnvio('   ')).toBeNull();
+  });
+  it('formato não reconhecido volta só com os dígitos (não inventa)', () => {
+    expect(telefoneParaEnvio('123456789')).toBe('123456789');
   });
 });

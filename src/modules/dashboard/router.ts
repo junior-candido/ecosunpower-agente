@@ -181,6 +181,14 @@ export function createDashboardRouter(
     metaWabaAccessToken?: string;
     anthropicApiKey?: string;
     sendText?: (to: string, text: string) => Promise<void>;
+    // Template aprovado (WABA): aviso de serviço chega mesmo com a janela 24h
+    // fechada — texto livre fora da janela é descartado em silêncio (05/08).
+    sendTemplate?: (
+      to: string,
+      name: string,
+      lang: string,
+      components: Array<{ type: 'body'; parameters: Array<{ type: 'text'; text: string }> }>,
+    ) => Promise<unknown>;
     proposalAssistant?: ProposalAssistant;
     metaService?: MetaWhatsAppService;
     engineerPhone?: string; // telefone do Junior — recebe o aviso "cliente fechou"
@@ -683,12 +691,12 @@ b.onclick=async function(){
         try {
           const { telefoneDoUsuario } = await import('./users-store.js');
           const { getServico } = await import('./servicos-store.js');
-          const { textoAvisoServico } = await import('./servicos-zap.js');
+          const { enviarAvisoServico } = await import('./servicos-zap.js');
           const tel = await telefoneDoUsuario(supabase, atribuidoA);
           if (tel) {
             const s = await getServico(supabase, servicoId);
             const base = (options.appBaseUrl ?? '').replace(/\/$/, '');
-            if (s) await options.sendText(tel, textoAvisoServico(s, base ? `${base}/dashboard/servicos/${servicoId}` : null));
+            if (s) await enviarAvisoServico({ sendText: options.sendText, sendTemplate: options.sendTemplate }, tel, s, base ? `${base}/dashboard/servicos/${servicoId}` : null);
           }
         } catch (err) {
           console.warn('[servicos] aviso de atribuição falhou:', (err as Error).message);
@@ -830,7 +838,8 @@ b.onclick=async function(){
     try {
       if (!options.sendText) { res.status(400).json({ ok: false, erro: 'Envio de WhatsApp indisponível no momento.' }); return; }
       const { getServico, atribuirServico } = await import('./servicos-store.js');
-      const { textoAvisoServico, textoInfoServico } = await import('./servicos-zap.js');
+      const { textoAvisoServico, textoInfoServico, enviarAvisoServico } = await import('./servicos-zap.js');
+      const canaisAviso = { sendText: options.sendText, sendTemplate: options.sendTemplate };
       const s = await getServico(supabase, String(req.params.id));
       if (!s) { res.status(404).json({ ok: false, erro: 'Registro não achado.' }); return; }
       const base = (options.appBaseUrl ?? '').replace(/\/$/, '');
@@ -842,7 +851,7 @@ b.onclick=async function(){
         const { telefoneDoUsuario } = await import('./users-store.js');
         const tel = await telefoneDoUsuario(supabase, s.atribuidoA);
         if (!tel) { res.status(400).json({ ok: false, erro: 'O atribuído não tem telefone cadastrado — edite ele na tela Usuários.' }); return; }
-        await options.sendText(tel, textoAvisoServico(s, link));
+        await enviarAvisoServico(canaisAviso, tel, s, link);
         res.json({ ok: true }); return;
       }
 
@@ -869,7 +878,7 @@ b.onclick=async function(){
         if (!jaExiste.ativo) await updateUser(supabase, jaExiste.id, { ativo: true });
         await atribuirServico(supabase, s.id, jaExiste.id);
         const depois = await getServico(supabase, s.id);
-        await options.sendText(tel, textoAvisoServico(depois ?? s, link));
+        await enviarAvisoServico(canaisAviso, tel, depois ?? s, link);
         res.json({ ok: true, aviso: `${jaExiste.nome} já tinha cadastro — atribuí e enviei o guia.` }); return;
       }
 
