@@ -158,6 +158,7 @@ const SIDEBAR_SETORES: SideSetor[] = [
       { href: '/dashboard/minha-assinatura', key: 'minha_assinatura', label: '📆 Minha assinatura', area: 'usinas', soTenant: true },
       { href: '/dashboard/usinas/kanban', key: 'usinas_kanban', label: '🏗️ Kanban de Obras', area: 'usinas' },
       { href: '/dashboard/pos-venda', key: 'pos_venda', label: '❤️ Pós-venda', area: 'usinas' },
+      { href: '/dashboard/pastas', key: 'pastas', label: '📁 Pasta do Cliente', area: 'usinas' },
       { href: '/dashboard/servicos', key: 'servicos', label: '🔧 Serviços (campo)', area: 'servicos' },
       { href: '/dashboard/manutencao', key: 'manutencao', label: '🔧 Manutenção' },
     ],

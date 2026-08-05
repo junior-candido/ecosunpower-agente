@@ -77,10 +77,15 @@ import { listClientes, getClienteDetail } from './clientes-queries.js';
 import { renderClientesListPage, renderClienteDetailPage, renderFormNovoCliente } from './clientes-views.js';
 import { parseProprietarioInput } from './proprietario.js';
 import { getEvaInsights } from '../clientes/insights.js';
-import { uploadAnexo, deleteAnexoFile } from '../anexos/storage.js';
+import { uploadAnexo, deleteAnexoFile, getSignedUrls } from '../anexos/storage.js';
 import { PosInstalacaoService } from '../relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from '../relatorios/pos-instalacao/template.js';
 import { renderFormNovoRelatorio, renderPreviewRelatorio } from './relatorio-pi-views.js';
+import { renderListaPastas, renderEditorPasta, renderPreviewPasta } from './pasta-views.js';
+import { PastaService } from '../relatorios/pasta/service.js';
+import { renderPastaHtml } from '../relatorios/pasta/template.js';
+import { SECOES } from '../relatorios/pasta/types.js';
+import type { SecaoId } from '../relatorios/pasta/types.js';
 import {
   renderFormNovaProposta,
   renderPreviewProposta,
@@ -4919,8 +4924,8 @@ b.onclick=async function(){
 
   // ===== A5 — Relatório Pós-Instalação =====
 
-  // Helper pra criar instância (resolve sistema injection)
-  const posInstService = new PosInstalacaoService(supabaseService, async (leadId) => {
+  // Resolve sistema FV do lead (compartilhado: r-pi e pasta digital)
+  const resolverSistemaFV = async (leadId: string) => {
     const sistemas = await monitoringService.listarParaDashboard() as any[];
     const s = sistemas.find((x: any) => x.lead_id === leadId);
     if (!s) return null;
@@ -4934,7 +4939,9 @@ b.onclick=async function(){
       painel_modelo: s.painel_modelo ?? null,
       inversor_modelo: s.inversor_modelo ?? null,
     };
-  });
+  };
+  const posInstService = new PosInstalacaoService(supabaseService, resolverSistemaFV);
+  const pastaService = new PastaService(supabaseService, resolverSistemaFV);
 
   // GET form de novo relatório
   router.get('/clientes/:id/relatorio-pos-instalacao/novo', async (req: Request, res: Response) => {
@@ -5024,6 +5031,170 @@ b.onclick=async function(){
     const r = await posInstService.enviarPorWhatsApp(rid, sendText);
     if (!r.ok) return res.status(400).send(`<h2>Não foi possível enviar: ${escapeHtmlSimple(r.reason ?? '')}</h2><a href="/dashboard/clientes/${id}">← voltar</a>`);
     res.redirect(303, `/dashboard/clientes/${id}/relatorio-pos-instalacao/${rid}/preview`);
+  });
+
+  // ===== Pasta Digital do Cliente =====
+
+  const PASTA_PUBLIC_BASE = process.env.PROPOSAL_PUBLIC_BASE_URL ?? 'https://propostas.ecosunpower.eng.br';
+  const SECAO_IDS = new Set<string>(SECOES.map((s) => s.id));
+
+  // Lista + form "abrir pasta"
+  router.get('/pastas', async (_req: Request, res: Response) => {
+    const [rows, clientes] = await Promise.all([
+      supabaseService.listPastasCliente(),
+      supabaseService.listClientesByStatus(
+        ['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido'],
+        { ord: 'nome' }, 200, 0, true,
+      ),
+    ]);
+    const pastas = rows.map((r: any) => ({
+      id: r.id, slug: r.slug, status: r.status, acessos: r.acessos,
+      enviado_em: r.enviado_em, updated_at: r.updated_at,
+      cliente_nome: r.leads?.name ?? null,
+      qtd_arquivos: (r.arquivos ?? []).length,
+    }));
+    res.type('text/html').send(renderListaPastas({
+      pastas,
+      clientes: clientes.map((c: any) => ({ id: c.id, name: c.name })),
+      publicBase: PASTA_PUBLIC_BASE,
+    }));
+  });
+
+  // Abrir (criar ou reabrir) a pasta do lead
+  router.post('/pastas', async (req: Request, res: Response) => {
+    const leadId = String(req.body?.lead_id ?? '');
+    if (!UUID_RE.test(leadId)) return res.status(400).send('Escolha um cliente');
+    const r = await pastaService.obterOuCriarPorLead(leadId);
+    if (!r.ok || !r.pasta) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2>`);
+    res.redirect(303, `/dashboard/pastas/${r.pasta.id}`);
+  });
+
+  // Editor
+  router.get('/pastas/:id', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const pasta = await supabaseService.getPastaClienteById(id);
+    if (!pasta) return res.status(404).send('Pasta não encontrada');
+    const lead = await supabaseService.getClienteByLeadId(pasta.lead_id);
+    const rels = await supabaseService.listRelatoriosPosInstalacaoByLead(pasta.lead_id, 1);
+    // Miniaturas das fotos no editor (TTL curto)
+    const fotoPaths = (pasta.arquivos ?? [])
+      .filter((a: any) => a.secao === 'fotos')
+      .map((a: any) => a.storage_path);
+    const fotosUrls = fotoPaths.length > 0
+      ? await getSignedUrls(supabaseService.getClient(), fotoPaths, 3600)
+      : {};
+    res.type('text/html').send(renderEditorPasta({
+      pasta,
+      cliente_nome: lead?.name ?? null,
+      tem_rpi: rels.length > 0,
+      fotos_urls: fotosUrls,
+      publicBase: PASTA_PUBLIC_BASE,
+    }));
+  });
+
+  // Upload de arquivos numa seção
+  router.post('/pastas/:id/arquivos',
+    upload.array('arquivos', 20),
+    async (req: Request, res: Response) => {
+      const id = String(req.params.id ?? '');
+      if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+      const secao = String(req.body?.secao ?? '');
+      if (!SECAO_IDS.has(secao)) return res.status(400).send('Seção inválida');
+
+      const files = ((req as any).files ?? []) as Express.Multer.File[];
+      if (files.length === 0) return res.status(400).send('Escolha ao menos 1 arquivo');
+      for (const f of files) {
+        const ok = f.mimetype.startsWith('image/') || f.mimetype === 'application/pdf';
+        if (!ok) return res.status(415).send(`Tipo inválido: ${escapeHtmlSimple(f.mimetype)}. Só imagem ou PDF.`);
+      }
+
+      const r = await pastaService.adicionarArquivos(id, secao as SecaoId, files.map((f) => ({
+        buffer: f.buffer,
+        mimeType: f.mimetype,
+        ext: (f.originalname.split('.').pop() ?? 'bin').toLowerCase().slice(0, 8),
+        nome: f.originalname.slice(0, 120),
+      })));
+      if (!r.ok) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2>`);
+      res.redirect(303, `/dashboard/pastas/${id}`);
+    },
+  );
+
+  // Remover arquivo
+  router.post('/pastas/:id/arquivos/remover', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const r = await pastaService.removerArquivo(id, String(req.body?.storage_path ?? ''));
+    if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2>`);
+    res.redirect(303, `/dashboard/pastas/${id}`);
+  });
+
+  // Puxar fotos do r-pi
+  router.post('/pastas/:id/puxar-rpi', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const r = await pastaService.puxarFotosDoRelatorio(id);
+    if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/pastas/${id}">← voltar</a>`);
+    res.redirect(303, `/dashboard/pastas/${id}`);
+  });
+
+  // Definir capa
+  router.post('/pastas/:id/capa', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const r = await pastaService.definirCapa(id, String(req.body?.storage_path ?? ''));
+    if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2>`);
+    res.redirect(303, `/dashboard/pastas/${id}`);
+  });
+
+  // Salvar data de entrega + mensagem do zap
+  router.post('/pastas/:id/dados', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const dataRaw = req.body?.data_entrega ? String(req.body.data_entrega) : null;
+    if (dataRaw && !/^\d{4}-\d{2}-\d{2}$/.test(dataRaw)) return res.status(400).send('Data inválida');
+    const r = await pastaService.atualizarDados(id, {
+      data_entrega: dataRaw,
+      mensagem_zap: req.body?.mensagem_zap ? String(req.body.mensagem_zap).trim() || null : null,
+    });
+    if (!r.ok) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2>`);
+    res.redirect(303, `/dashboard/pastas/${id}`);
+  });
+
+  // Publicar
+  router.post('/pastas/:id/publicar', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const r = await pastaService.publicar(id);
+    if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/pastas/${id}">← voltar</a>`);
+    res.redirect(303, `/dashboard/pastas/${id}`);
+  });
+
+  // Enviar link pelo WhatsApp
+  router.post('/pastas/:id/enviar', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const sendText = options.sendText;
+    if (!sendText) return res.status(500).send('sendText não configurado neste ambiente.');
+    const r = await pastaService.enviarPorWhatsApp(id, sendText);
+    if (!r.ok) return res.status(400).send(`<h2>Não foi possível enviar: ${escapeHtmlSimple(r.reason ?? '')}</h2><a href="/dashboard/pastas/${id}">← voltar</a>`);
+    res.redirect(303, `/dashboard/pastas/${id}`);
+  });
+
+  // Prévia (iframe com o HTML público em modo preview)
+  router.get('/pastas/:id/preview', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const pasta = await supabaseService.getPastaClienteById(id);
+    if (!pasta) return res.status(404).send('Pasta não encontrada');
+    const lead = await supabaseService.getClienteByLeadId(pasta.lead_id);
+    const view = await pastaService.resolverView(pasta, false);
+    if (!view) return res.status(500).send('Erro montando prévia');
+    res.type('text/html').send(renderPreviewPasta({
+      pasta_id: id,
+      cliente_nome: lead?.name ?? null,
+      html_preview: renderPastaHtml(view),
+    }));
   });
 
   // ========================================================================
