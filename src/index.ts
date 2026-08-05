@@ -8001,6 +8001,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     metaWabaAccessToken: config.metaWabaAccessToken,
     anthropicApiKey: config.anthropicApiKey,
     sendText,
+    // Só a API oficial tem template; no Evolution o texto livre já chega sempre.
+    sendTemplate: metaWaba ? (to, name, lang, components) => metaWaba!.sendTemplate(to, name, lang, components) : undefined,
     proposalAssistant,
     metaService: metaWaba ?? undefined,
     engineerPhone: config.engineerPhone,
