@@ -19,7 +19,9 @@ export interface ArquivoPasta {
   storage_path: string;
   nome_exibicao: string;
   caption?: string | null;
-  origem?: 'upload' | 'r-pi';   // 'r-pi' = referenciado do relatório, NÃO apagar do bucket ao remover
+  // 'r-pi'/'servico' = REFERENCIADO (relatório pós-instalação / diário de serviços):
+  // o arquivo pertence à origem — NUNCA apagar do bucket ao remover/excluir.
+  origem?: 'upload' | 'r-pi' | 'servico';
 }
 
 export interface PastaClienteRow {

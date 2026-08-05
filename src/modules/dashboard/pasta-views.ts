@@ -75,6 +75,7 @@ export function renderEditorPasta(input: {
   pasta: PastaClienteRow;
   cliente_nome: string | null;
   tem_rpi: boolean;
+  tem_servicos: boolean;
   fotos_urls: Record<string, string>;   // storage_path -> signed url (miniaturas das fotos)
   publicBase: string;
 }): string {
@@ -113,10 +114,17 @@ export function renderEditorPasta(input: {
             class="block flex-1 text-xs text-slate-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-cyan-600 file:text-white hover:file:bg-cyan-700 cursor-pointer">
           <button class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-100 text-xs whitespace-nowrap">⬆️ Adicionar</button>
         </form>
-        ${s.id === 'fotos' && input.tem_rpi ? `
-        <form action="/dashboard/pastas/${escapeHtml(p.id)}/puxar-rpi" method="post" class="mt-2">
-          <button class="text-xs px-3 py-1.5 rounded-lg bg-violet-800/70 hover:bg-violet-700 text-violet-100">✨ Puxar fotos do Relatório Pós-Instalação</button>
-        </form>` : ''}
+        ${s.id === 'fotos' && (input.tem_rpi || input.tem_servicos) ? `
+        <div class="mt-2 flex gap-2 flex-wrap">
+          ${input.tem_rpi ? `
+          <form action="/dashboard/pastas/${escapeHtml(p.id)}/puxar-rpi" method="post">
+            <button class="text-xs px-3 py-1.5 rounded-lg bg-violet-800/70 hover:bg-violet-700 text-violet-100">✨ Puxar fotos do Relatório Pós-Instalação</button>
+          </form>` : ''}
+          ${input.tem_servicos ? `
+          <form action="/dashboard/pastas/${escapeHtml(p.id)}/puxar-servicos" method="post">
+            <button class="text-xs px-3 py-1.5 rounded-lg bg-violet-800/70 hover:bg-violet-700 text-violet-100">🔧 Puxar fotos dos Serviços/Visitas</button>
+          </form>` : ''}
+        </div>` : ''}
       </div>`;
   }).join('');
 
