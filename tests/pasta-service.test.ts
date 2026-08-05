@@ -313,6 +313,35 @@ describe('PastaService.enviarPorWhatsApp', () => {
     await svc.enviarPorWhatsApp('pasta-1', sendText);
     expect(sendText.mock.calls[0][1]).toContain('g.page/r/CWB5ipa57HzhEAI/review');
   });
+
+  it('com WABA: usa o template pasta_digital_v1 (corpo=nome, botão=slug) e NÃO o texto', async () => {
+    const sb = fakeSupabase({ getPastaClienteById: vi.fn().mockResolvedValue(publicada) });
+    const sendText = vi.fn().mockResolvedValue(undefined);
+    const sendTemplate = vi.fn().mockResolvedValue({ messageId: 'm1' });
+    const svc = new PastaService(sb as any, semSistema);
+    const r = await svc.enviarPorWhatsApp('pasta-1', sendText, sendTemplate);
+    expect(r.ok).toBe(true);
+    const [to, nome, lang, components] = sendTemplate.mock.calls[0];
+    expect(to).toBe('5561999990000');
+    expect(nome).toBe('pasta_digital_v1');
+    expect(lang).toBe('pt_BR');
+    expect(components).toEqual([
+      { type: 'body', parameters: [{ type: 'text', text: 'João' }] },
+      { type: 'button', sub_type: 'url', index: 0, parameters: [{ type: 'text', text: 'abcdefghjk' }] },
+    ]);
+    expect(sendText).not.toHaveBeenCalled();
+    expect(sb.marcarPastaClienteEnviada).toHaveBeenCalledWith('pasta-1', '5561999990000');
+  });
+
+  it('template falhou (não aprovado ainda) → cai pro texto com link', async () => {
+    const sb = fakeSupabase({ getPastaClienteById: vi.fn().mockResolvedValue(publicada) });
+    const sendText = vi.fn().mockResolvedValue(undefined);
+    const sendTemplate = vi.fn().mockRejectedValue(new Error('132001 template does not exist'));
+    const svc = new PastaService(sb as any, semSistema);
+    const r = await svc.enviarPorWhatsApp('pasta-1', sendText, sendTemplate);
+    expect(r.ok).toBe(true);
+    expect(sendText.mock.calls[0][1]).toContain('/pasta/abcdefghjk');
+  });
 });
 
 describe('PastaService.excluirPasta', () => {
