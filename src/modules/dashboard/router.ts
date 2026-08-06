@@ -1109,22 +1109,14 @@ b.onclick=async function(){
     if (!can(req.dashUser, 'usuarios', 'administrar')) { res.status(403).send('Sem permissão'); return; }
     const userId = String(req.params.id);
     if (userId === req.dashUser!.id) { res.status(400).send('Você não pode excluir a si mesmo.'); return; }
-    // Com destinatário: transfere serviços/leads antes de excluir (Junior 05/08).
-    const destino = String((req.body as Record<string, unknown> | undefined)?.transferir_para ?? '').trim();
-    if (destino) {
-      const { excluirTransferindoHistorico } = await import('./users-store.js');
-      const rt = await excluirTransferindoHistorico(supabase, userId, destino);
-      if (!rt.ok) { res.status(400).send(`Não deu pra excluir: ${rt.motivo}. <a href="/dashboard/usuarios">← voltar</a>`); return; }
-      await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: 'excluiu_transferindo', valorNovo: destino });
-      res.redirect('/dashboard/usuarios'); return;
-    }
-    const { deleteUserSemHistorico } = await import('./users-store.js');
-    const r = await deleteUserSemHistorico(supabase, userId);
-    if (!r.ok) {
-      res.status(400).send(`Não deu pra excluir: ${r.motivo}. Deixe como inativo — o histórico fica preservado. <a href="/dashboard/usuarios">← voltar</a>`);
-      return;
-    }
-    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: 'excluiu' });
+    // Decreto do Junior 06/08: excluir SEMPRE funciona — "eu que digo quando
+    // pode ou não, e não o sistema". Histórico (serviços/leads) transfere
+    // automaticamente pra quem excluiu (ou pro transferir_para, se vier).
+    const destino = String((req.body as Record<string, unknown> | undefined)?.transferir_para ?? '').trim() || req.dashUser!.id;
+    const { excluirTransferindoHistorico } = await import('./users-store.js');
+    const rt = await excluirTransferindoHistorico(supabase, userId, destino);
+    if (!rt.ok) { res.status(400).send(`Não deu pra excluir: ${rt.motivo}. <a href="/dashboard/usuarios">← voltar</a>`); return; }
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: 'excluiu_transferindo', valorNovo: destino });
     res.redirect('/dashboard/usuarios');
   });
 
