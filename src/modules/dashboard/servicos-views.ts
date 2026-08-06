@@ -242,6 +242,23 @@ export function renderDetalheServicoPage(
       </form>
       <p class="text-xs text-slate-500 mt-1">Reabrir reativa o acesso do instalador (se temporário) e avisa ele no zap; ao concluir de novo, expira de novo.</p>
     </details>` : ''}
+    ${podeReabrir && s.campoSlug ? (() => {
+      const vencido = s.campoExpiraEm ? new Date(s.campoExpiraEm).getTime() < Date.now() : false;
+      const venceBr = s.campoExpiraEm ? new Date(s.campoExpiraEm).toLocaleDateString('pt-BR') : '';
+      return vencido
+        ? `<div class="mt-4 bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-800">
+             🕰 O link de campo${s.campoNome ? ` do(a) <b>${escapeHtml(s.campoNome)}</b>` : ''} <b>venceu</b> (${escapeHtml(venceBr)}) — reenvie pelo 📤 pra gerar um novo.
+           </div>`
+        : `<div class="mt-4 bg-cyan-50 border border-cyan-200 rounded-2xl p-4">
+             <div class="text-xs font-bold text-cyan-800 uppercase tracking-wide mb-1">🪄 Link de campo${s.campoNome ? ` — ${escapeHtml(s.campoNome)}` : ''} <span class="font-normal normal-case text-cyan-600">(vale até ${escapeHtml(venceBr)})</span></div>
+             <div class="flex items-center gap-2">
+               <code id="linkCampo" class="flex-1 text-xs bg-white border border-cyan-200 rounded-lg px-2 py-1.5 text-cyan-900 break-all"></code>
+               <button onclick="navigator.clipboard.writeText(document.getElementById('linkCampo').textContent).then(()=>{this.textContent='✅'})" class="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-semibold whitespace-nowrap">📋 copiar</button>
+             </div>
+             <p class="text-xs text-cyan-700 mt-1">Manda pelo seu zap — quem tocar trabalha direto, sem senha.</p>
+             <script>document.getElementById('linkCampo').textContent = window.location.origin + '/dashboard/servicos/campo-${escapeHtml(s.campoSlug)}';</script>
+           </div>`;
+    })() : ''}
     ${podeReabrir ? `
     <form method="post" action="/dashboard/servicos/${s.id}/excluir" class="mt-4 text-right"
       onsubmit="return confirm('Mover este serviço pra Lixeira? Dá pra restaurar quando quiser (nada é apagado).')">

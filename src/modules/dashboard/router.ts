@@ -5067,13 +5067,22 @@ b.onclick=async function(){
 
   // Lista + form "abrir pasta"
   router.get('/pastas', async (_req: Request, res: Response) => {
-    const [rows, clientes] = await Promise.all([
+    const [rows, clientes, comServico] = await Promise.all([
       supabaseService.listPastasCliente(),
       supabaseService.listClientesByStatus(
         ['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido'],
         { ord: 'nome' }, 200, 0, true,
       ),
+      // Fino 06/08: quem entrou pela porta do SERVIÇO (garantia, elétrica, órfão
+      // adotado — caso Kelven) também ganha pasta, sem depender de status.
+      import('./servicos-store.js').then(({ leadsComServico }) => leadsComServico(supabase)),
     ]);
+    const porId = new Map<string, { id: string; name: string | null }>();
+    for (const c of clientes as any[]) porId.set(c.id, { id: c.id, name: c.name });
+    for (const s of comServico) {
+      if (!porId.has(s.id)) porId.set(s.id, s);
+    }
+    const listaClientes = [...porId.values()].sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'pt-BR'));
     const pastas = rows.map((r: any) => ({
       id: r.id, slug: r.slug, status: r.status, acessos: r.acessos,
       enviado_em: r.enviado_em, updated_at: r.updated_at,
@@ -5082,7 +5091,7 @@ b.onclick=async function(){
     }));
     res.type('text/html').send(renderListaPastas({
       pastas,
-      clientes: clientes.map((c: any) => ({ id: c.id, name: c.name })),
+      clientes: listaClientes,
       publicBase: PASTA_PUBLIC_BASE,
     }));
   });
