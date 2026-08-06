@@ -73,9 +73,12 @@ export interface ServicoRow {
   sistemaId: string | null; observacoes: string | null; dataServico: string;
   fotos: number; videos: number;
   status: 'atribuido' | 'concluido'; atribuidoA: string | null; atribuidoNome: string | null;
+  campoNome?: string | null;   // LINK MÁGICO: nome de quem faz (sem usuário)
 }
 
 const CAMPOS = 'id, tipo_id, lead_id, sistema_id, observacoes, data_servico, criado_em, status, atribuido_a, servico_tipos(nome), leads(name), servico_fotos(tipo_midia), atribuido:dashboard_users!servicos_atribuido_a_fkey(nome)';
+// Versão do LINK MÁGICO: mesmos campos + validade/nome do link (checagem de vencimento).
+const CAMPOS_CAMPO = CAMPOS + ', excluido_em, campo_expira_em, campo_nome';
 
 function paraRow(r: any): ServicoRow {
   const midias: { tipo_midia: string }[] = r.servico_fotos ?? [];
@@ -88,6 +91,7 @@ function paraRow(r: any): ServicoRow {
     status: (r.status === 'atribuido' ? 'atribuido' : 'concluido'),
     atribuidoA: r.atribuido_a ?? null,
     atribuidoNome: r.atribuido?.nome ?? null,
+    campoNome: r.campo_nome ?? null,
   };
 }
 
@@ -110,6 +114,42 @@ export async function servicosDoLead(client: SupabaseClient, leadId: string): Pr
 export async function getServico(client: SupabaseClient, id: string): Promise<ServicoRow | null> {
   const { data } = await client.from('servicos').select(CAMPOS).eq('id', id).maybeSingle();
   return data ? paraRow(data) : null;
+}
+
+// ===== LINK MÁGICO do campo (Junior 06/08) =====
+// O serviço ganha um link secreto com validade em DIAS — quem recebe trabalha
+// direto, SEM usuário/senha/trava. Venceu? O escritório gera outro. O nome de
+// quem faz fica registrado no serviço (campo_nome).
+
+export async function gerarLinkCampo(
+  client: SupabaseClient,
+  servicoId: string,
+  nomeQuemFaz: string,
+  validadeDias: number,
+): Promise<{ slug: string }> {
+  const { novoSlug } = await import('../relatorios/slug.js');
+  const slug = novoSlug();
+  const expira = new Date(Date.now() + Math.max(1, validadeDias) * 24 * 3600 * 1000).toISOString();
+  const { error } = await client.from('servicos')
+    .update({ campo_slug: slug, campo_expira_em: expira, campo_nome: nomeQuemFaz || null })
+    .eq('id', servicoId);
+  if (error) throw new Error(`gerarLinkCampo: ${error.message}`);
+  return { slug };
+}
+
+export async function getServicoPorCampoSlug(
+  client: SupabaseClient,
+  slug: string,
+): Promise<{ ok: true; servico: ServicoRow } | { ok: false; motivo: 'nao_achado' | 'vencido' }> {
+  const { data } = await client.from('servicos').select(CAMPOS_CAMPO)
+    .eq('campo_slug', slug).maybeSingle();
+  if (!data) return { ok: false, motivo: 'nao_achado' };
+  const row = data as { campo_expira_em?: string | null; excluido_em?: string | null };
+  if (row.excluido_em) return { ok: false, motivo: 'nao_achado' };
+  if (row.campo_expira_em && new Date(row.campo_expira_em).getTime() < Date.now()) {
+    return { ok: false, motivo: 'vencido' };
+  }
+  return { ok: true, servico: paraRow(data) };
 }
 
 // ===== Lixeira (excluir SEMPRE com desfazer — Junior 05/08) =====

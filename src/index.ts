@@ -7994,6 +7994,73 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     }, 5000),
   }));
 
+  // ===== LINK MÁGICO do serviço (Junior 06/08) — rotas PÚBLICAS =====
+  // Declaradas ANTES do app.use('/dashboard') de propósito: o campo abre por
+  // link secreto com validade, SEM login/usuário/senha. O slug é a credencial
+  // (mesmo padrão de /pasta e /r-pi). Casa com o botão do template aprovado
+  // (URL base .../dashboard/servicos/ + parâmetro "campo/<slug>").
+  const ECOSUN_COMPANY = '00000000-0000-0000-0000-000000000001';
+  const extCampo = (ct: string): string => {
+    if (/jpe?g/.test(ct)) return 'jpg';
+    if (/png/.test(ct)) return 'png';
+    if (/webp/.test(ct)) return 'webp';
+    if (/heic|heif/.test(ct)) return 'heic';
+    if (/mp4/.test(ct)) return 'mp4';
+    if (/quicktime|mov/.test(ct)) return 'mov';
+    if (/webm/.test(ct)) return 'webm';
+    return 'bin';
+  };
+  const servicoDoSlug = async (slugRaw: unknown) => {
+    const slug = String(slugRaw ?? '');
+    if (!/^[a-z0-9]{6,20}$/.test(slug)) return { ok: false as const, motivo: 'nao_achado' as const };
+    const { getServicoPorCampoSlug } = await import('./modules/dashboard/servicos-store.js');
+    return getServicoPorCampoSlug(supabase.getClient(), slug);
+  };
+
+  app.get('/dashboard/servicos/campo/:slug', async (req, res) => {
+    const { renderCampoPublicoPage, renderCampoLinkProblemaPage, GUIAS_FOTOS } = await import('./modules/dashboard/servicos-views.js');
+    const r = await servicoDoSlug(req.params.slug);
+    if (!r.ok) return res.status(r.motivo === 'vencido' ? 410 : 404).type('text/html').send(renderCampoLinkProblemaPage(r.motivo));
+    res.type('text/html').send(renderCampoPublicoPage(r.servico, String(req.params.slug), GUIAS_FOTOS[r.servico.tipoId] ?? []));
+  });
+
+  app.post('/dashboard/servicos/campo/:slug/uploads', async (req, res) => {
+    const r = await servicoDoSlug(req.params.slug);
+    if (!r.ok) { res.status(404).json({ ok: false, erro: 'Link inválido ou vencido' }); return; }
+    const midias = (Array.isArray((req.body as any)?.midias) ? (req.body as any).midias : []) as { tipoMidia?: string; contentType?: string }[];
+    if (midias.length === 0 || midias.length > 40) { res.status(400).json({ ok: false, erro: 'Quantidade de arquivos inválida' }); return; }
+    if (midias.filter((m) => m.tipoMidia === 'video').length > 2) { res.status(400).json({ ok: false, erro: 'Máximo de 2 vídeos' }); return; }
+    const { randomUUID } = await import('crypto');
+    const uploads: { path: string; url: string }[] = [];
+    for (const m of midias) {
+      const path = `${r.servico.leadId}/servico/${r.servico.id}/${randomUUID()}.${extCampo(String(m.contentType ?? ''))}`;
+      const { data, error } = await supabase.getClient().storage.from('client-attachments').createSignedUploadUrl(path);
+      if (error || !data) { console.warn('[campo] signed upload falhou:', error?.message); continue; }
+      uploads.push({ path, url: data.signedUrl });
+    }
+    res.json({ ok: true, uploads });
+  });
+
+  app.post('/dashboard/servicos/campo/:slug/confirmar-midias', async (req, res) => {
+    const r = await servicoDoSlug(req.params.slug);
+    if (!r.ok) { res.status(404).json({ ok: false }); return; }
+    const { registrarMidias } = await import('./modules/dashboard/servicos-store.js');
+    const midias = (Array.isArray((req.body as any)?.midias) ? (req.body as any).midias : [])
+      .filter((m: any) => typeof m?.path === 'string' && m.path.startsWith(`${r.servico.leadId}/servico/${r.servico.id}/`))
+      .map((m: any) => ({ path: m.path, tipoMidia: m.tipoMidia === 'video' ? 'video' as const : 'foto' as const }));
+    await registrarMidias(supabase.getClient(), r.servico.id, ECOSUN_COMPANY, midias);
+    res.json({ ok: true });
+  });
+
+  app.post('/dashboard/servicos/campo/:slug/concluir', async (req, res) => {
+    const r = await servicoDoSlug(req.params.slug);
+    if (!r.ok) { res.status(404).json({ ok: false }); return; }
+    const { concluirServico } = await import('./modules/dashboard/servicos-store.js');
+    const obs = (req.body as any)?.observacoes ? String((req.body as any).observacoes).slice(0, 2000) : undefined;
+    await concluirServico(supabase.getClient(), r.servico.id, obs);
+    res.json({ ok: true });
+  });
+
   // Dashboard interno EcoSun (Modulo 3 da plataforma). Auth basica via senha
   // env DASHBOARD_PASSWORD. Rotas: /dashboard/home, /dashboard/propostas,
   // /dashboard/manutencao. Mais paginas serao adicionadas em fases.

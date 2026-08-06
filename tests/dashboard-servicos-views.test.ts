@@ -124,7 +124,7 @@ describe('📤 Enviar pelo zap (detalhe)', () => {
     expect(html).toContain('/enviar-zap');
     expect(html).toContain('João Instalador');          // opção do atribuído com nome
     expect(html).toContain('Outro número');
-    expect(html).toContain('Criar acesso temporário');
+    expect(html).toContain('Mandar o serviço por LINK');
     expect(html).toContain('Só as informações');
   });
   it('sem permissão de editar → sem botão', async () => {
