@@ -53,6 +53,9 @@ export async function enviarAvisoServico(
   tel: string,
   s: ServicoRow,
   linkServico: string | null,
+  // Parâmetro do botão de URL do template (base fixa .../dashboard/servicos/).
+  // Padrão = id do serviço (tela logada); LINK MÁGICO passa `campo/<slug>`.
+  botaoParam?: string,
 ): Promise<void> {
   if (canais.sendTemplate) {
     try {
@@ -65,7 +68,7 @@ export async function enviarAvisoServico(
           type: 'button',
           sub_type: 'url',
           index: 0,
-          parameters: [{ type: 'text' as const, text: s.id }],
+          parameters: [{ type: 'text' as const, text: botaoParam ?? s.id }],
         },
       ]);
       return;

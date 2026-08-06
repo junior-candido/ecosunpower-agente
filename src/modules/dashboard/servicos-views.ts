@@ -6,6 +6,7 @@
 // DIRETO pro Storage (PUT na URL assinada — vídeo não passa pelo Express);
 // 3) POST /servicos/:id/confirmar-midias com o que subiu → lista.
 import { renderLayout, escapeHtml } from './views.js';
+import { LOGO_PASTA_BASE64 } from '../relatorios/pasta/logo-pasta.js';
 import type { DashUser } from './permissions.js';
 import type { ServicoRow, TipoServico } from './servicos-store.js';
 
@@ -177,8 +178,11 @@ export function renderDetalheServicoPage(
           <input id="z_nome" placeholder="Nome" class="border border-slate-300 rounded-xl px-3 py-2 text-sm">
           <input id="z_tel" placeholder="Telefone (zap)" inputmode="tel" class="border border-slate-300 rounded-xl px-3 py-2 text-sm">
         </div>
-        <label class="flex items-center gap-2 text-sm"><input type="radio" name="z_modo" value="acesso" checked> 🔑 Criar acesso temporário (entra, tira as fotos e conclui; o acesso expira sozinho)</label>
-        <label class="flex items-center gap-2 text-sm"><input type="radio" name="z_modo" value="info"> 📄 Só as informações (endereço + roteiro de fotos, sem acesso)</label>
+        <label class="flex items-center gap-2 text-sm"><input type="radio" name="z_modo" value="acesso" checked> 🪄 Mandar o serviço por LINK (toca e trabalha — sem senha, sem cadastro)</label>
+        <div class="flex items-center gap-2 text-xs text-slate-500 pl-6">link vale por
+          <input id="z_dias" type="number" min="1" max="60" value="7" class="w-14 border border-slate-300 rounded-lg px-2 py-1 text-sm text-center"> dias
+        </div>
+        <label class="flex items-center gap-2 text-sm"><input type="radio" name="z_modo" value="info"> 📄 Só as informações (endereço + roteiro de fotos, sem link)</label>
       </div>
       <button id="z_enviar" onclick="zapEnviar()" class="w-full px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">Enviar</button>
       <div id="z_status" class="text-sm text-center text-slate-500"></div>
@@ -196,7 +200,9 @@ export function renderDetalheServicoPage(
       corpo.telefone=document.getElementById('z_tel').value.trim();
       corpo.nome=document.getElementById('z_nome').value.trim();
       corpo.modo=m?m.value:'info';
-      if(!corpo.telefone){alert('Informe o telefone');return}}
+      corpo.dias=parseInt(document.getElementById('z_dias').value,10)||7;
+      if(!corpo.telefone){alert('Informe o telefone');return}
+      if(corpo.modo==='acesso'&&!corpo.nome){alert('Informe o nome de quem vai fazer');return}}
      var btn=document.getElementById('z_enviar');btn.disabled=true;btn.textContent='Enviando…';
      fetch('/dashboard/servicos/${escapeHtml(s.id)}/enviar-zap',{method:'POST',
       headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(corpo)})
@@ -476,4 +482,142 @@ export function renderNovoServicoPage(
   </script>`;
 
   return renderLayout({ active: 'servicos', title: 'Novo serviço', body, user });
+}
+
+// ===== PÁGINA PÚBLICA DO LINK MÁGICO (Junior 06/08) =====
+// Quem recebe o link trabalha DIRETO: sem login, sem senha, sem usuário.
+// Página solta (fora do layout do dashboard), feita pra celular no sol.
+
+export function renderCampoPublicoPage(s: ServicoRow, slug: string, guia: string[]): string {
+  const dataBr = s.dataServico.split('-').reverse().join('/');
+  const guiaHtml = guia.length
+    ? `<ol class="guia">${guia.map((g) => `<li>${escapeHtml(g)}</li>`).join('')}</ol>`
+    : '<p class="dica">Registre fotos gerais do serviço.</p>';
+  const concluido = s.status === 'concluido';
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="robots" content="noindex">
+<title>${escapeHtml(s.tipoNome)} — ${escapeHtml(s.clienteNome)}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#f1f5f9;color:#1c1917;line-height:1.55}
+  .topo{background:linear-gradient(135deg,#0c4a6e 0%,#0891b2 100%);text-align:center;padding:18px 16px}
+  .topo img{max-height:72px;max-width:70%}
+  .wrap{max-width:560px;margin:0 auto;padding:16px}
+  .cartao{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:18px;margin-bottom:14px}
+  h1{font-size:19px;color:#0c4a6e;margin-bottom:2px}
+  .sub{font-size:13px;color:#64748b}
+  .quem{margin-top:8px;font-size:13px;background:#ecfeff;color:#0e7490;border-radius:8px;padding:6px 10px;display:inline-block}
+  h2{font-size:15px;color:#0c4a6e;margin-bottom:8px}
+  .guia{padding-left:22px;font-size:14px}
+  .guia li{margin-bottom:6px}
+  .dica{font-size:13px;color:#64748b}
+  .botoes{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}
+  .botoes label{border:2px dashed #cbd5e1;border-radius:12px;padding:12px 6px;text-align:center;font-size:13px;color:#475569;cursor:pointer;background:#f8fafc}
+  #anexos{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  #anexos img{width:72px;height:72px;object-fit:cover;border-radius:10px}
+  #anexos .vid{width:72px;height:72px;border-radius:10px;background:#0f172a;color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center}
+  textarea{width:100%;border:1px solid #cbd5e1;border-radius:12px;padding:10px;font-size:14px;margin-top:10px}
+  .concluir{width:100%;margin-top:12px;padding:15px;border:none;border-radius:14px;background:#16a34a;color:#fff;font-size:16px;font-weight:700;cursor:pointer}
+  .concluir:disabled{opacity:.6}
+  #progresso{text-align:center;font-size:13px;color:#0891b2;margin-top:8px;min-height:18px}
+  .feito{text-align:center;padding:30px 16px}
+  .feito .check{font-size:52px}
+  footer{text-align:center;font-size:11px;color:#94a3b8;padding:14px}
+</style></head>
+<body>
+<div class="topo"><img src="${LOGO_PASTA_BASE64}" alt="EcoSunPower"></div>
+<div class="wrap">
+  <div class="cartao">
+    <h1>🔧 ${escapeHtml(s.tipoNome)}</h1>
+    <div class="sub">Cliente: <b>${escapeHtml(s.clienteNome)}</b> · dia ${escapeHtml(dataBr)}</div>
+    ${s.campoNome ? `<div class="quem">👷 Serviço de: ${escapeHtml(s.campoNome)}</div>` : ''}
+    ${s.observacoes ? `<p class="dica" style="margin-top:8px">📝 ${escapeHtml(s.observacoes)}</p>` : ''}
+  </div>
+
+  ${concluido ? `
+  <div class="cartao feito">
+    <div class="check">✅</div>
+    <h2>Serviço já concluído — obrigado!</h2>
+    <p class="dica">Se faltou algo, fala com o escritório que a gente reabre.</p>
+  </div>` : `
+  <div class="cartao">
+    <h2>📷 Fotos pra tirar</h2>
+    ${guiaHtml}
+  </div>
+
+  <div class="cartao">
+    <h2>📤 Anexar e concluir</h2>
+    <div class="botoes">
+      <label>📷 Tirar foto<input type="file" accept="image/*" capture="environment" style="display:none" onchange="addFotos(this)"></label>
+      <label>🖼️ Galeria<input type="file" accept="image/*" multiple style="display:none" onchange="addFotos(this)"></label>
+      <label>🎬 Vídeo (máx 2)<input type="file" accept="video/*" style="display:none" onchange="addVideo(this)"></label>
+    </div>
+    <div id="anexos"></div>
+    <textarea id="obs" rows="2" placeholder="Observações (opcional)"></textarea>
+    <button class="concluir" id="btnConcluir" onclick="concluir()">✅ Concluir serviço</button>
+    <div id="progresso"></div>
+  </div>`}
+
+  <footer>EcoSunPower — Diário de Serviços · link de trabalho seguro</footer>
+</div>
+${concluido ? '' : `<script>
+var SLUG=${JSON.stringify(slug)},MAX_VIDEOS=2,MAX_VIDEO_MB=180;
+var estado={fotos:[],videos:[]};
+function comprime(f){return new Promise(function(ok,ruim){var img=new Image();var url=URL.createObjectURL(f);
+ img.onload=function(){var m=1600,w=img.width,h=img.height;if(w>m||h>m){var r=Math.min(m/w,m/h);w=Math.round(w*r);h=Math.round(h*r)}
+  var c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);
+  c.toBlob(function(b){URL.revokeObjectURL(url);b?ok(b):ruim()},'image/jpeg',0.72)};
+ img.onerror=function(){URL.revokeObjectURL(url);ruim()};img.src=url})}
+function pinta(){var d=document.getElementById('anexos');d.innerHTML='';
+ estado.fotos.forEach(function(b,i){var img=document.createElement('img');img.src=URL.createObjectURL(b);
+  img.onclick=function(){estado.fotos.splice(i,1);pinta()};d.appendChild(img)});
+ estado.videos.forEach(function(f,i){var v=document.createElement('div');v.className='vid';v.textContent='🎬 '+(f.size/1048576|0)+'MB';
+  v.onclick=function(){estado.videos.splice(i,1);pinta()};d.appendChild(v)})}
+function addFotos(inp){var fs=Array.prototype.slice.call(inp.files||[]);inp.value='';
+ Promise.all(fs.map(comprime)).then(function(bs){estado.fotos=estado.fotos.concat(bs);pinta()})
+ .catch(function(){alert('Falha ao ler a foto')})}
+function addVideo(inp){var f=inp.files&&inp.files[0];inp.value='';if(!f)return;
+ if(estado.videos.length>=MAX_VIDEOS){alert('Máximo de '+MAX_VIDEOS+' vídeos');return}
+ if(f.size>MAX_VIDEO_MB*1048576){alert('Vídeo muito grande (máx '+MAX_VIDEO_MB+'MB) — grave um trecho mais curto');return}
+ estado.videos.push(f);pinta()}
+function prog(t){document.getElementById('progresso').textContent=t}
+function concluir(){
+ if(!estado.fotos.length&&!estado.videos.length){if(!confirm('Concluir sem nenhuma foto?'))return}
+ var btn=document.getElementById('btnConcluir');btn.disabled=true;btn.textContent='Enviando…';
+ var midias=estado.fotos.map(function(b,i){return{nome:'foto-'+(i+1)+'.jpg',tipoMidia:'foto',contentType:'image/jpeg'}})
+  .concat(estado.videos.map(function(f,i){return{nome:'video-'+(i+1),tipoMidia:'video',contentType:f.type||'video/mp4'}}));
+ var arquivos=estado.fotos.concat(estado.videos);
+ fetch('/dashboard/servicos/campo/'+SLUG+'/uploads',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({midias:midias})})
+ .then(function(r){return r.json()}).then(function(j){
+  if(!j.ok)throw new Error(j.erro||'falha');
+  var ups=j.uploads||[],feitas=[],falhas=[],fila=Promise.resolve();
+  ups.forEach(function(u,i){fila=fila.then(function(){
+   prog('Subindo '+(i+1)+' de '+ups.length+'…');
+   return fetch(u.url,{method:'PUT',headers:{'Content-Type':midias[i].contentType},body:arquivos[i]})
+    .then(function(r){if(r.ok)feitas.push({path:u.path,tipoMidia:midias[i].tipoMidia});
+     else falhas.push(midias[i].nome+' (erro '+r.status+')')})
+    .catch(function(){falhas.push(midias[i].nome+' (rede caiu)')})})});
+  return fila.then(function(){
+   if(falhas.length)alert('⚠️ '+falhas.length+' arquivo(s) não subiram:\\n'+falhas.join('\\n'));
+   return fetch('/dashboard/servicos/campo/'+SLUG+'/confirmar-midias',{method:'POST',
+    headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({midias:feitas})})})
+  .then(function(){
+   return fetch('/dashboard/servicos/campo/'+SLUG+'/concluir',{method:'POST',
+    headers:{'Content-Type':'application/json','Accept':'application/json'},
+    body:JSON.stringify({observacoes:document.getElementById('obs').value.trim()})})})
+  .then(function(){window.location.reload()})})
+ .catch(function(e){alert('Falha: '+e.message);btn.disabled=false;btn.textContent='✅ Concluir serviço'})}
+</script>`}
+</body></html>`;
+}
+
+export function renderCampoLinkProblemaPage(motivo: 'nao_achado' | 'vencido'): string {
+  const msg = motivo === 'vencido'
+    ? { t: '⏰ Esse link venceu', d: 'Pede pro escritório mandar um link novo no seu zap — leva 10 segundos.' }
+    : { t: '🔎 Link não encontrado', d: 'Confere se o link veio completo, ou pede um novo pro escritório.' };
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${msg.t}</title>
+<style>body{font-family:sans-serif;text-align:center;padding:70px 24px;color:#334155;background:#f1f5f9}h1{font-size:22px;margin-bottom:10px}</style></head>
+<body><h1>${msg.t}</h1><p>${msg.d}</p></body></html>`;
 }
