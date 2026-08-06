@@ -916,10 +916,11 @@ b.onclick=async function(){
       const dias = Math.min(60, Math.max(1, parseInt(String(req.body?.dias ?? '7'), 10) || 7));
       const { gerarLinkCampo } = await import('./servicos-store.js');
       const { slug } = await gerarLinkCampo(supabase, s.id, nome, dias);
-      const linkCampo = base ? `${base}/dashboard/servicos/campo/${slug}` : `/dashboard/servicos/campo/${slug}`;
+      // Forma com TRAÇO (campo-slug): a barra era %2F no botão do WhatsApp e caía no login.
+      const linkCampo = base ? `${base}/dashboard/servicos/campo-${slug}` : `/dashboard/servicos/campo-${slug}`;
       const depois = await getServico(supabase, s.id);
-      await enviarAvisoServico(canaisAviso, tel, depois ?? s, linkCampo, `campo/${slug}`);
-      res.json({ ok: true, aviso: `🪄 Link enviado pra ${nome} — vale ${dias} dia(s). Sem cadastro, sem senha.` });
+      await enviarAvisoServico(canaisAviso, tel, depois ?? s, linkCampo, `campo-${slug}`);
+      res.json({ ok: true, aviso: `🪄 Link enviado pra ${nome} — vale ${dias} dia(s). Se precisar, copia: ${linkCampo}` });
     } catch (err) {
       console.error('[servicos/enviar-zap]', err);
       res.status(500).json({ ok: false, erro: 'Falha ao enviar — tente de novo.' });
