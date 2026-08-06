@@ -115,32 +115,40 @@ describe('atribuição (F2)', () => {
   });
 });
 
-describe('📤 Enviar pelo zap (detalhe)', () => {
-  const zap = { pode: true, telAtribuido: '5561999998888', criadoAgora: false };
-  it('quem pode editar vê o botão e o modal (atribuído + outro número + 2 modos)', async () => {
+describe('🪄 Gerar link de campo (detalhe) — sem zap, só o link (Junior 06/08)', () => {
+  it('quem pode editar vê o botão e o modal (nome + validade)', async () => {
     const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
-    const html = renderDetalheServicoPage(ATRIBUIDO, [], undefined, false, zap);
-    expect(html).toContain('Enviar pelo zap');
-    expect(html).toContain('/enviar-zap');
-    expect(html).toContain('João Instalador');          // opção do atribuído com nome
-    expect(html).toContain('Outro número');
-    expect(html).toContain('Mandar o serviço por LINK');
-    expect(html).toContain('Só as informações');
+    const html = renderDetalheServicoPage(ATRIBUIDO, [], undefined, false, { pode: true });
+    expect(html).toContain('Gerar link de campo');
+    expect(html).toContain('/link-campo');
+    expect(html).toContain('quem vai fazer');
+  });
+  it('nada de zap: sem "Enviar pelo zap", sem rota enviar-zap, sem telefone', async () => {
+    const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
+    const html = renderDetalheServicoPage(ATRIBUIDO, [], undefined, false, { pode: true });
+    expect(html).not.toContain('Enviar pelo zap');
+    expect(html).not.toContain('/enviar-zap');
+    expect(html).not.toContain('Outro número');
+    expect(html).not.toContain('Só as informações');
   });
   it('sem permissão de editar → sem botão', async () => {
     const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
-    expect(renderDetalheServicoPage(ATRIBUIDO, [], undefined, false, { pode: false, telAtribuido: null }))
-      .not.toContain('Enviar pelo zap');
+    expect(renderDetalheServicoPage(ATRIBUIDO, [], undefined, false, { pode: false }))
+      .not.toContain('Gerar link de campo');
   });
-  it('atribuído SEM telefone → orienta cadastrar', async () => {
+  it('criadoAgora → faixa "Serviço criado" convidando a gerar o link', async () => {
     const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
-    const html = renderDetalheServicoPage(ATRIBUIDO, [], undefined, false, { pode: true, telAtribuido: null });
-    expect(html).toContain('sem telefone cadastrado');
-  });
-  it('criadoAgora → faixa "Serviço criado" com o convite de enviar', async () => {
-    const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
-    const html = renderDetalheServicoPage(ATRIBUIDO, [], undefined, false, { ...zap, criadoAgora: true });
+    const html = renderDetalheServicoPage(ATRIBUIDO, [], undefined, false, { pode: true, criadoAgora: true });
     expect(html).toContain('Serviço criado');
+    expect(html).toContain('link de campo');
+  });
+  it('link vencido → orienta gerar um novo (sem falar em 📤/zap)', async () => {
+    const { renderDetalheServicoPage } = await import('../src/modules/dashboard/servicos-views.js');
+    const vencido = { ...SERVICOS[0]!, campoSlug: 'abc123', campoExpiraEm: '2020-01-01T00:00:00Z' };
+    const html = renderDetalheServicoPage(vencido, [], undefined, true, { pode: true });
+    expect(html).toContain('venceu');
+    expect(html).toContain('gere um novo');
+    expect(html).not.toContain('reenvie pelo 📤');
   });
   it('form novo redireciona pro detalhe com ?criado=1 (aviso pós-salvar)', () => {
     const html = renderNovoServicoPage(TIPOS, undefined);

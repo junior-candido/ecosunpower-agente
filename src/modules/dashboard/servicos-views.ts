@@ -71,7 +71,7 @@ export function renderDetalheServicoPage(
   midias: { tipoMidia: string; url: string }[],
   user: DashUser | undefined,
   podeReabrir = false,
-  envioZap?: { pode: boolean; telAtribuido: string | null; criadoAgora?: boolean },
+  linkCampo?: { pode: boolean; criadoAgora?: boolean },
 ): string {
   const fotos = midias.filter((m) => m.tipoMidia === 'foto')
     .map((m) => `<a href="${escapeHtml(m.url)}" target="_blank"><img src="${escapeHtml(m.url)}" class="w-full h-36 object-cover rounded-xl"></a>`).join('');
@@ -157,61 +157,48 @@ export function renderDetalheServicoPage(
     </script>`
     : '';
 
-  // 📤 Enviar pelo zap (quem pode editar): reenvio pro atribuído ou número
-  // avulso — avulso escolhe entre acesso temporário criado na hora ou só as
-  // informações. Pedido do Junior 30/07.
-  const faixaCriado = envioZap?.criadoAgora
-    ? `<div class="mb-4 px-4 py-3 rounded-xl text-sm bg-emerald-50 text-emerald-800 border border-emerald-200">✅ Serviço criado!${envioZap.pode ? ' Quer mandar as informações no zap de quem vai fazer? Use o botão aqui embaixo.' : ''}</div>`
+  // 🪄 Gerar link de campo (quem pode editar): o serviço vai pro campo por
+  // link secreto com validade — sem usuário/senha. A plataforma NÃO manda
+  // zap: o escritório copia o link e manda pelo zap pessoal (Junior 06/08 —
+  // o template de aviso saiu: caía no login e ainda custava por envio).
+  const faixaCriado = linkCampo?.criadoAgora
+    ? `<div class="mb-4 px-4 py-3 rounded-xl text-sm bg-emerald-50 text-emerald-800 border border-emerald-200">✅ Serviço criado!${linkCampo.pode ? ' Gere o link de campo aqui embaixo e mande pelo seu zap pra quem vai fazer.' : ''}</div>`
     : '';
-  const opcaoAtribuido = s.atribuidoA
-    ? (envioZap?.telAtribuido
-      ? `<label class="flex items-center gap-2 text-sm"><input type="radio" name="z_destino" value="atribuido" checked onchange="zapModo()"> Pro atribuído: <b>${escapeHtml(s.atribuidoNome ?? '')}</b> (${escapeHtml(envioZap.telAtribuido)})</label>`
-      : `<p class="text-sm text-amber-700">⚠️ ${escapeHtml(s.atribuidoNome ?? 'O atribuído')} está sem telefone cadastrado — <a class="underline" href="/dashboard/usuarios">cadastre na tela Usuários</a> ou use "Outro número".</p>`)
-    : '';
-  const zapHtml = envioZap?.pode ? `
-    <button onclick="document.getElementById('zap_modal').classList.remove('hidden')" class="mt-4 w-full px-5 py-3 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white font-bold shadow">📤 Enviar pelo zap</button>
-    <div id="zap_modal" class="hidden mt-3 bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-3">
-      ${opcaoAtribuido}
-      <label class="flex items-center gap-2 text-sm"><input type="radio" name="z_destino" value="avulso" ${s.atribuidoA && envioZap.telAtribuido ? '' : 'checked'} onchange="zapModo()"> Outro número</label>
-      <div id="z_avulso" class="space-y-2">
-        <div class="grid grid-cols-2 gap-2">
-          <input id="z_nome" placeholder="Nome" class="border border-slate-300 rounded-xl px-3 py-2 text-sm">
-          <input id="z_tel" placeholder="Telefone (zap)" inputmode="tel" class="border border-slate-300 rounded-xl px-3 py-2 text-sm">
-        </div>
-        <label class="flex items-center gap-2 text-sm"><input type="radio" name="z_modo" value="acesso" checked> 🪄 Mandar o serviço por LINK (toca e trabalha — sem senha, sem cadastro)</label>
-        <div class="flex items-center gap-2 text-xs text-slate-500 pl-6">link vale por
-          <input id="z_dias" type="number" min="1" max="60" value="7" class="w-14 border border-slate-300 rounded-lg px-2 py-1 text-sm text-center"> dias
-        </div>
-        <label class="flex items-center gap-2 text-sm"><input type="radio" name="z_modo" value="info"> 📄 Só as informações (endereço + roteiro de fotos, sem link)</label>
+  const linkCampoHtml = linkCampo?.pode ? `
+    <button onclick="document.getElementById('link_modal').classList.remove('hidden')" class="mt-4 w-full px-5 py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold shadow">🪄 Gerar link de campo</button>
+    <div id="link_modal" class="hidden mt-3 bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-3">
+      <p class="text-sm text-slate-600">O link abre o serviço direto — sem senha, sem cadastro. Copie e mande pelo seu zap.</p>
+      <input id="l_nome" placeholder="Nome de quem vai fazer" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm">
+      <div class="flex items-center gap-2 text-xs text-slate-500">link vale por
+        <input id="l_dias" type="number" min="1" max="60" value="7" class="w-14 border border-slate-300 rounded-lg px-2 py-1 text-sm text-center"> dias
       </div>
-      <button id="z_enviar" onclick="zapEnviar()" class="w-full px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">Enviar</button>
-      <div id="z_status" class="text-sm text-center text-slate-500"></div>
+      <button id="l_gerar" onclick="gerarLinkCampo()" class="w-full px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">🪄 Gerar link</button>
+      <div id="l_pronto" class="hidden">
+        <div class="flex items-center gap-2">
+          <code id="l_link" class="flex-1 text-xs bg-white border border-cyan-200 rounded-lg px-2 py-1.5 text-cyan-900 break-all"></code>
+          <button onclick="copiarLinkCampo(this)" class="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-semibold whitespace-nowrap">📋 copiar</button>
+        </div>
+      </div>
+      <div id="l_status" class="text-sm text-center text-slate-500"></div>
     </div>
     <script>
-    function zapModo(){
-     var d=document.querySelector('input[name="z_destino"]:checked');
-     document.getElementById('z_avulso').style.display=(d&&d.value==='avulso')?'':'none'}
-    zapModo();
-    function zapEnviar(){
-     var d=document.querySelector('input[name="z_destino"]:checked');
-     var m=document.querySelector('input[name="z_modo"]:checked');
-     var corpo={destino:d?d.value:'avulso'};
-     if(corpo.destino==='avulso'){
-      corpo.telefone=document.getElementById('z_tel').value.trim();
-      corpo.nome=document.getElementById('z_nome').value.trim();
-      corpo.modo=m?m.value:'info';
-      corpo.dias=parseInt(document.getElementById('z_dias').value,10)||7;
-      if(!corpo.telefone){alert('Informe o telefone');return}
-      if(corpo.modo==='acesso'&&!corpo.nome){alert('Informe o nome de quem vai fazer');return}}
-     var btn=document.getElementById('z_enviar');btn.disabled=true;btn.textContent='Enviando…';
-     fetch('/dashboard/servicos/${escapeHtml(s.id)}/enviar-zap',{method:'POST',
-      headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(corpo)})
+    function gerarLinkCampo(){
+     var nome=document.getElementById('l_nome').value.trim();
+     if(!nome){alert('Informe o nome de quem vai fazer');return}
+     var dias=parseInt(document.getElementById('l_dias').value,10)||7;
+     var btn=document.getElementById('l_gerar');btn.disabled=true;btn.textContent='Gerando…';
+     fetch('/dashboard/servicos/${escapeHtml(s.id)}/link-campo',{method:'POST',
+      headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({nome:nome,dias:dias})})
      .then(function(r){return r.json()}).then(function(j){
-      btn.disabled=false;btn.textContent='Enviar';
+      btn.disabled=false;btn.textContent='🪄 Gerar link';
       if(!j.ok)throw new Error(j.erro||'falha');
-      document.getElementById('z_status').textContent='✅ Enviado!'+(j.aviso?' '+j.aviso:'')})
-     .catch(function(e){btn.disabled=false;btn.textContent='Enviar';
-      document.getElementById('z_status').textContent='❌ '+e.message})}
+      var l=j.link&&j.link.indexOf('http')===0?j.link:window.location.origin+j.link;
+      document.getElementById('l_link').textContent=l;
+      document.getElementById('l_pronto').classList.remove('hidden');
+      document.getElementById('l_status').textContent='✅ Link pronto — vale '+j.dias+' dia(s). Copie e mande no seu zap.'})
+     .catch(function(e){btn.disabled=false;btn.textContent='🪄 Gerar link';
+      document.getElementById('l_status').textContent='❌ '+e.message})}
+    function copiarLinkCampo(btn){navigator.clipboard.writeText(document.getElementById('l_link').textContent).then(function(){btn.textContent='✅ copiado'})}
     </script>` : '';
 
   const body = `
@@ -233,7 +220,7 @@ export function renderDetalheServicoPage(
     ${fotos ? `<div class="grid grid-cols-2 gap-2 mt-4">${fotos}</div>` : ''}
     ${videos}
     ${completar}
-    ${zapHtml}
+    ${linkCampoHtml}
     ${s.status === 'concluido' && podeReabrir ? `
     <details class="mt-5"><summary class="text-sm text-amber-700 cursor-pointer select-none">🔄 Faltou algo? Reabrir o serviço</summary>
       <form method="post" action="/dashboard/servicos/${s.id}/reabrir" class="mt-2 flex gap-2">
@@ -247,7 +234,7 @@ export function renderDetalheServicoPage(
       const venceBr = s.campoExpiraEm ? new Date(s.campoExpiraEm).toLocaleDateString('pt-BR') : '';
       return vencido
         ? `<div class="mt-4 bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-800">
-             🕰 O link de campo${s.campoNome ? ` do(a) <b>${escapeHtml(s.campoNome)}</b>` : ''} <b>venceu</b> (${escapeHtml(venceBr)}) — reenvie pelo 📤 pra gerar um novo.
+             🕰 O link de campo${s.campoNome ? ` do(a) <b>${escapeHtml(s.campoNome)}</b>` : ''} <b>venceu</b> (${escapeHtml(venceBr)}) — gere um novo no 🪄 aqui em cima.
            </div>`
         : `<div class="mt-4 bg-cyan-50 border border-cyan-200 rounded-2xl p-4">
              <div class="text-xs font-bold text-cyan-800 uppercase tracking-wide mb-1">🪄 Link de campo${s.campoNome ? ` — ${escapeHtml(s.campoNome)}` : ''} <span class="font-normal normal-case text-cyan-600">(vale até ${escapeHtml(venceBr)})</span></div>
