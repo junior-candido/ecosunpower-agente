@@ -91,16 +91,18 @@ function paraRow(r: any): ServicoRow {
   };
 }
 
-export async function listarServicos(client: SupabaseClient, limite = 100): Promise<ServicoRow[]> {
-  const { data, error } = await client.from('servicos').select(CAMPOS)
-    .order('data_servico', { ascending: false }).limit(limite);
+export async function listarServicos(client: SupabaseClient, limite = 100, lixeira = false): Promise<ServicoRow[]> {
+  let q = client.from('servicos').select(CAMPOS);
+  // Lixeira (Junior 05/08): excluído some das listas mas é restaurável.
+  q = lixeira ? q.not('excluido_em', 'is', null) : q.is('excluido_em', null);
+  const { data, error } = await q.order('data_servico', { ascending: false }).limit(limite);
   if (error) throw new Error(`listarServicos: ${error.message}`);
   return (data ?? []).map(paraRow);
 }
 
 export async function servicosDoLead(client: SupabaseClient, leadId: string): Promise<ServicoRow[]> {
   const { data, error } = await client.from('servicos').select(CAMPOS)
-    .eq('lead_id', leadId).order('data_servico', { ascending: false });
+    .eq('lead_id', leadId).is('excluido_em', null).order('data_servico', { ascending: false });
   if (error) throw new Error(`servicosDoLead: ${error.message}`);
   return (data ?? []).map(paraRow);
 }
@@ -108,6 +110,19 @@ export async function servicosDoLead(client: SupabaseClient, leadId: string): Pr
 export async function getServico(client: SupabaseClient, id: string): Promise<ServicoRow | null> {
   const { data } = await client.from('servicos').select(CAMPOS).eq('id', id).maybeSingle();
   return data ? paraRow(data) : null;
+}
+
+// ===== Lixeira (excluir SEMPRE com desfazer — Junior 05/08) =====
+// Excluir = carimbar excluido_em; restaurar = limpar. Nada é apagado.
+
+export async function excluirServico(client: SupabaseClient, id: string): Promise<void> {
+  const { error } = await client.from('servicos').update({ excluido_em: new Date().toISOString() }).eq('id', id);
+  if (error) throw new Error(`excluirServico: ${error.message}`);
+}
+
+export async function restaurarServico(client: SupabaseClient, id: string): Promise<void> {
+  const { error } = await client.from('servicos').update({ excluido_em: null }).eq('id', id);
+  if (error) throw new Error(`restaurarServico: ${error.message}`);
 }
 
 export async function registrarMidias(

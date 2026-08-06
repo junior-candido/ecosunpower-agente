@@ -619,6 +619,40 @@ b.onclick=async function(){
     }
   });
 
+  // Lixeira (Junior 05/08: excluir SEMPRE com desfazer). Declarada ANTES de /servicos/:id.
+  router.get('/servicos/lixeira', exigir('servicos', 'editar'), async (req: AuthedRequest, res) => {
+    try {
+      const { listarServicos } = await import('./servicos-store.js');
+      const { renderLixeiraServicosPage } = await import('./servicos-views.js');
+      res.type('html').send(renderLixeiraServicosPage(await listarServicos(supabase, 100, true), req.dashUser));
+    } catch (err) {
+      console.error('[servicos/lixeira]', err);
+      res.status(500).send('Falha ao carregar a lixeira. A migration 099 já foi aplicada?');
+    }
+  });
+
+  router.post('/servicos/:id/excluir', exigir('servicos', 'editar'), async (req: AuthedRequest, res) => {
+    try {
+      const { excluirServico } = await import('./servicos-store.js');
+      await excluirServico(supabase, String(req.params.id));
+      res.redirect('/dashboard/servicos?ok=' + encodeURIComponent('🗑️ Foi pra Lixeira — dá pra restaurar quando quiser.'));
+    } catch (err) {
+      console.error('[servicos/excluir]', err);
+      res.redirect('/dashboard/servicos?erro=' + encodeURIComponent('Falha ao excluir. A migration 099 já foi aplicada?'));
+    }
+  });
+
+  router.post('/servicos/:id/restaurar', exigir('servicos', 'editar'), async (req: AuthedRequest, res) => {
+    try {
+      const { restaurarServico } = await import('./servicos-store.js');
+      await restaurarServico(supabase, String(req.params.id));
+      res.redirect('/dashboard/servicos?ok=' + encodeURIComponent('♻️ Restaurado!'));
+    } catch (err) {
+      console.error('[servicos/restaurar]', err);
+      res.redirect('/dashboard/servicos/lixeira');
+    }
+  });
+
   router.get('/servicos/novo', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
     const { listarTipos } = await import('./servicos-store.js');
     const { renderNovoServicoPage } = await import('./servicos-views.js');
@@ -1075,6 +1109,15 @@ b.onclick=async function(){
     if (!can(req.dashUser, 'usuarios', 'administrar')) { res.status(403).send('Sem permissão'); return; }
     const userId = String(req.params.id);
     if (userId === req.dashUser!.id) { res.status(400).send('Você não pode excluir a si mesmo.'); return; }
+    // Com destinatário: transfere serviços/leads antes de excluir (Junior 05/08).
+    const destino = String((req.body as Record<string, unknown> | undefined)?.transferir_para ?? '').trim();
+    if (destino) {
+      const { excluirTransferindoHistorico } = await import('./users-store.js');
+      const rt = await excluirTransferindoHistorico(supabase, userId, destino);
+      if (!rt.ok) { res.status(400).send(`Não deu pra excluir: ${rt.motivo}. <a href="/dashboard/usuarios">← voltar</a>`); return; }
+      await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: 'excluiu_transferindo', valorNovo: destino });
+      res.redirect('/dashboard/usuarios'); return;
+    }
     const { deleteUserSemHistorico } = await import('./users-store.js');
     const r = await deleteUserSemHistorico(supabase, userId);
     if (!r.ok) {

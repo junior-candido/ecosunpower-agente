@@ -204,6 +204,47 @@ export async function deleteUserSemHistorico(
   return { ok: true };
 }
 
+/**
+ * Excluir usuário TRANSFERINDO o histórico pra outra pessoa da MESMA empresa
+ * (pedido do Junior 05/08 — clones de instalador com serviços amarrados).
+ * Serviços e posse de lead vão pro destinatário; auditoria NÃO transfere
+ * (é registro de quem fez) — só desamarra (user_id = null).
+ */
+export async function excluirTransferindoHistorico(
+  client: SupabaseClient,
+  id: string,
+  paraId: string,
+): Promise<{ ok: true } | { ok: false; motivo: string }> {
+  if (!paraId) return { ok: false, motivo: 'escolha pra quem transferir o histórico' };
+  if (paraId === id) return { ok: false, motivo: 'não dá pra transferir o histórico pra própria pessoa' };
+  const { data: origem } = await client.from('dashboard_users').select('id, company_id').eq('id', id).maybeSingle();
+  if (!origem) return { ok: false, motivo: 'usuário não encontrado' };
+  const { data: destino } = await client.from('dashboard_users').select('id, company_id').eq('id', paraId).maybeSingle();
+  if (!destino) return { ok: false, motivo: 'destinatário não encontrado' };
+  if ((destino as { company_id: string }).company_id !== (origem as { company_id: string }).company_id) {
+    return { ok: false, motivo: 'o destinatário é de outra empresa' };
+  }
+
+  const transferencias: Array<[string, string]> = [
+    ['servicos', 'atribuido_a'],
+    ['servicos', 'criado_por'],
+    ['leads', 'claimed_by'],
+  ];
+  for (const [tabela, coluna] of transferencias) {
+    const { error } = await client.from(tabela).update({ [coluna]: paraId }).eq(coluna, id);
+    if (error) return { ok: false, motivo: `transferindo ${tabela}.${coluna}: ${error.message}` };
+  }
+  const { error: eAudit } = await client.from('audit_log').update({ user_id: null }).eq('user_id', id);
+  if (eAudit) return { ok: false, motivo: `desamarrando auditoria: ${eAudit.message}` };
+
+  const { error } = await client.from('dashboard_users').delete().eq('id', id);
+  if (error) {
+    if (error.code === '23503') return { ok: false, motivo: 'sobrou uma amarração que eu não conhecia — deixe a pessoa como inativa e avise o suporte' };
+    return { ok: false, motivo: error.message };
+  }
+  return { ok: true };
+}
+
 /** Nome + ativo + temporário — pro juízo da expiração do acesso (Diário F2). */
 export async function dadosAcessoUsuario(
   client: SupabaseClient,
