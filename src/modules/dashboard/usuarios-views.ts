@@ -19,17 +19,13 @@ export function renderUsuariosListPage(users: UserListItem[], roles: RoleRow[], 
       <td class="px-3 py-2">${u.ativo ? '🟢 ativo' : '⚪ inativo'}</td>
       <td class="px-3 py-2 text-right whitespace-nowrap space-x-2">
         <a href="/dashboard/usuarios/${u.id}" class="text-sky-600 hover:underline">editar</a>
-        ${u.id === viewer?.id ? '' : u.ativo
+        ${u.id === viewer?.id ? '' : `${u.ativo
           ? `<form method="POST" action="/dashboard/usuarios/${u.id}/ativo" class="inline"><input type="hidden" name="valor" value="nao"><button class="text-rose-600 hover:underline">desativar</button></form>`
-          : `<form method="POST" action="/dashboard/usuarios/${u.id}/ativo" class="inline"><input type="hidden" name="valor" value="sim"><button class="text-emerald-600 hover:underline">reativar</button></form>
-             <form method="POST" action="/dashboard/usuarios/${u.id}/excluir" class="inline"
-               onsubmit="return confirm('Excluir este cadastro?\\n\\nSe escolheu alguém no seletor, o histórico (serviços, leads) passa pra essa pessoa antes. Essa exclusão NÃO tem desfazer — na dúvida, deixe inativo.')">
-               <select name="transferir_para" class="text-xs border border-slate-300 rounded px-1 py-0.5">
-                 <option value="">sem transferir (só se não tiver histórico)</option>
-                 ${ordenados.filter((o) => o.id !== u.id && o.ativo).map((o) => `<option value="${o.id}">histórico → ${esc(o.nome)}</option>`).join('')}
-               </select>
-               <button class="text-slate-400 hover:text-rose-600 hover:underline">excluir</button>
-             </form>`}
+          : `<form method="POST" action="/dashboard/usuarios/${u.id}/ativo" class="inline"><input type="hidden" name="valor" value="sim"><button class="text-emerald-600 hover:underline">reativar</button></form>`}
+          <form method="POST" action="/dashboard/usuarios/${u.id}/excluir" class="inline"
+            onsubmit="return confirm('Excluir ${esc(u.nome)}?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.')">
+            <button class="text-slate-400 hover:text-rose-600 hover:underline">excluir</button>
+          </form>`}
       </td>
     </tr>`).join('');
 
