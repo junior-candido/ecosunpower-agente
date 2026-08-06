@@ -6722,6 +6722,17 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           return;
         }
 
+        // EQUIPE NUNCA é lead (B.O. 06/08: instalador respondeu o aviso de
+        // serviço e a Eva tratou como lead quente). Telefone cadastrado em
+        // Usuários = conversa interna, Eva fica MUDA.
+        {
+          const { ehTelefoneDaEquipe } = await import('./modules/dashboard/users-store.js');
+          if (await ehTelefoneDaEquipe(supabase.getClient(), parsed.from).catch(() => false)) {
+            console.log(`[waba] Ignorada mensagem da EQUIPE (${parsed.from}) — não é lead.`);
+            return;
+          }
+        }
+
         // Multi-tenant (fatia 2): descobre a empresa dona a partir do numero
         // que recebeu a msg. No mundo SEM mapeamentos (hoje) sempre resolve
         // EcoSun. Se JÁ houver mapeamentos e este número não resolver, o
@@ -6854,6 +6865,16 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     if (parsed.from.includes('-') || parsed.from.length > 15) {
       res.status(200).json({ status: 'ignored_group' });
       return;
+    }
+
+    // EQUIPE NUNCA é lead (B.O. 06/08) — telefone cadastrado em Usuários = interno.
+    if (!parsed.fromMe) {
+      const { ehTelefoneDaEquipe } = await import('./modules/dashboard/users-store.js');
+      if (await ehTelefoneDaEquipe(supabase.getClient(), parsed.from).catch(() => false)) {
+        console.log(`[evolution] Ignorada mensagem da EQUIPE (${parsed.from}) — não é lead.`);
+        res.status(200).json({ status: 'ignored_equipe' });
+        return;
+      }
     }
 
     // Handle fromMe messages: distinguish bot echoes from Junior typing manually in WhatsApp
@@ -8017,11 +8038,24 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     return getServicoPorCampoSlug(supabase.getClient(), slug);
   };
 
-  app.get('/dashboard/servicos/campo/:slug', async (req, res) => {
+  const campoPageHandler = async (slugRaw: unknown, res: import('express').Response) => {
     const { renderCampoPublicoPage, renderCampoLinkProblemaPage, GUIAS_FOTOS } = await import('./modules/dashboard/servicos-views.js');
-    const r = await servicoDoSlug(req.params.slug);
+    const r = await servicoDoSlug(slugRaw);
     if (!r.ok) return res.status(r.motivo === 'vencido' ? 410 : 404).type('text/html').send(renderCampoLinkProblemaPage(r.motivo));
-    res.type('text/html').send(renderCampoPublicoPage(r.servico, String(req.params.slug), GUIAS_FOTOS[r.servico.tipoId] ?? []));
+    res.type('text/html').send(renderCampoPublicoPage(r.servico, String(slugRaw), GUIAS_FOTOS[r.servico.tipoId] ?? []));
+  };
+
+  app.get('/dashboard/servicos/campo/:slug', (req, res) => { void campoPageHandler(req.params.slug, res); });
+  // Forma SEM barra (campo-<slug>): o botão do template do WhatsApp codifica a
+  // "/" do parâmetro (%2F) e o link quebrava caindo no login — traço não sofre
+  // encoding. É a forma que o template envia.
+  app.get('/dashboard/servicos/campo-:slug', (req, res) => { void campoPageHandler(req.params.slug, res); });
+  // Rede de segurança: se ainda chegar %2F cru na URL (mensagens já enviadas),
+  // redireciona pra forma com traço em vez de cair no login.
+  app.use('/dashboard/servicos', (req, res, next) => {
+    const m = /^\/campo%2[fF]([a-zA-Z0-9]{6,20})$/.exec(req.url);
+    if (m) return res.redirect(302, `/dashboard/servicos/campo-${m[1]}`);
+    next();
   });
 
   app.post('/dashboard/servicos/campo/:slug/uploads', async (req, res) => {

@@ -245,6 +245,20 @@ export async function excluirTransferindoHistorico(
   return { ok: true };
 }
 
+/**
+ * O telefone é de alguém da EQUIPE (dashboard_users)? A Eva usa isso pra NUNCA
+ * tratar instalador/equipe como lead (B.O. 06/08: Jota virou "lead quente").
+ * Compara pelas variantes BR (com/sem 55, com/sem 9º dígito).
+ */
+export async function ehTelefoneDaEquipe(client: SupabaseClient, phone: string): Promise<boolean> {
+  const { variantesTelefone } = await import('../phone.js');
+  const variantes = variantesTelefone(phone);
+  if (variantes.length === 0) return false;
+  const { data } = await client.from('dashboard_users')
+    .select('id').in('telefone', variantes).limit(1);
+  return !!(data && data.length > 0);
+}
+
 /** Nome + ativo + temporário — pro juízo da expiração do acesso (Diário F2). */
 export async function dadosAcessoUsuario(
   client: SupabaseClient,
