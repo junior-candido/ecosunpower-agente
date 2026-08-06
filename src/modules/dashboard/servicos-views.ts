@@ -55,6 +55,7 @@ export function renderServicosPage(
   <div class="flex items-center justify-between mb-6">
     <div><h1 class="text-2xl font-bold text-slate-800">🔧 Serviços</h1>
     <p class="text-sm text-slate-500 mt-1">Registro de campo: visita, instalação, manutenção — tudo gravado no cliente.</p></div>
+    <a href="/dashboard/servicos/lixeira" class="text-sm text-slate-400 hover:text-slate-600 hover:underline">🗑️ Lixeira</a>
   </div>
   ${avisoHtml}
   <a href="/dashboard/servicos/novo" class="block w-full max-w-xl text-center px-5 py-4 mb-6 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-900 text-lg font-bold shadow">➕ Novo registro</a>
@@ -101,7 +102,7 @@ export function renderDetalheServicoPage(
     <button id="concluir" onclick="concluir()" class="mt-3 w-full px-5 py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-lg font-bold shadow">✅ Concluir serviço</button>
     <div id="progresso" class="text-sm text-slate-500 text-center mt-2"></div>
     <script>
-    var MAX_VIDEOS=2, MAX_VIDEO_MB=100, SID='${escapeHtml(s.id)}';
+    var MAX_VIDEOS=2, MAX_VIDEO_MB=180, SID='${escapeHtml(s.id)}';
     var estado={fotos:[],videos:[]};
     function comprime(f){return new Promise(function(res,rej){
      var img=new Image(),u=URL.createObjectURL(f);
@@ -235,8 +236,37 @@ export function renderDetalheServicoPage(
       </form>
       <p class="text-xs text-slate-500 mt-1">Reabrir reativa o acesso do instalador (se temporário) e avisa ele no zap; ao concluir de novo, expira de novo.</p>
     </details>` : ''}
+    ${podeReabrir ? `
+    <form method="post" action="/dashboard/servicos/${s.id}/excluir" class="mt-4 text-right"
+      onsubmit="return confirm('Mover este serviço pra Lixeira? Dá pra restaurar quando quiser (nada é apagado).')">
+      <button class="text-xs text-slate-400 hover:text-rose-600 hover:underline">🗑️ Excluir (vai pra Lixeira, dá pra desfazer)</button>
+    </form>` : ''}
   </div>`;
   return renderLayout({ active: 'servicos', title: s.tipoNome, body, user });
+}
+
+// Lixeira: excluído some da lista mas volta com 1 clique (Junior 05/08:
+// "excluir sempre com opção de desfazer").
+export function renderLixeiraServicosPage(servicos: ServicoRow[], user: DashUser | undefined): string {
+  const linhas = servicos.map((s) => `
+    <div class="bg-white border border-slate-200 rounded-2xl p-4 flex items-center justify-between gap-3">
+      <div>
+        <div class="font-semibold text-slate-700">${escapeHtml(s.tipoNome)} — ${escapeHtml(s.clienteNome)}</div>
+        <div class="text-xs text-slate-400">dia ${escapeHtml(s.dataServico.split('-').reverse().join('/'))}</div>
+      </div>
+      <form method="post" action="/dashboard/servicos/${s.id}/restaurar">
+        <button class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">♻️ Restaurar</button>
+      </form>
+    </div>`).join('\n');
+
+  const body = `
+  <div class="mb-6">
+    <a href="/dashboard/servicos" class="text-sky-600 text-sm hover:underline">← Voltar aos serviços</a>
+    <h1 class="text-2xl font-bold text-slate-800 mt-2">🗑️ Lixeira de serviços</h1>
+    <p class="text-sm text-slate-500 mt-1">Nada aqui foi apagado — restaure quando quiser.</p>
+  </div>
+  <div class="space-y-3 max-w-xl">${linhas || '<p class="text-slate-400 py-8 text-center">Lixeira vazia. 🌱</p>'}</div>`;
+  return renderLayout({ active: 'servicos', title: 'Lixeira de serviços', body, user });
 }
 
 // Guia de fotos por tipo de serviço (pedido do Junior 29/07: "um guia escrito
@@ -347,7 +377,7 @@ export function renderNovoServicoPage(
   </div>
 
   <script>
-  var MAX_VIDEOS=2, MAX_VIDEO_MB=100;
+  var MAX_VIDEOS=2, MAX_VIDEO_MB=180;
   var estado={leadId:null,sistemaId:null,fotos:[],videos:[]};
 
   function mostraGuia(){

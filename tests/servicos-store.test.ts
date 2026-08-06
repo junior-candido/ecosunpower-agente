@@ -15,6 +15,7 @@ function mockClient(respostas: Record<string, any[]>) {
         insert(row: any) { (inserts[tabela] ??= []).push(row); return chain; },
         update(row: any) { (updates[tabela] ??= []).push(row); return chain; },
         select() { return chain; }, eq() { return chain; }, order() { return chain; }, limit() { return chain; },
+        is() { return chain; }, not() { return chain; },
         single() { return Promise.resolve(resposta()); },
         maybeSingle() { return Promise.resolve(resposta()); },
         then(res: any, rej: any) { return Promise.resolve(resposta()).then(res, rej); },
