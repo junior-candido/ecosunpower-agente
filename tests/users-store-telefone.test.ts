@@ -51,3 +51,25 @@ describe('telefoneDoUsuario — normaliza pro envio', () => {
     expect(await telefoneDoUsuario(client, 'u1')).toBeNull();
   });
 });
+
+// B.O. 06/08: Jota respondeu o aviso e a Eva tratou como LEAD QUENTE.
+// ehTelefoneDaEquipe = vacina (Eva muda pra número de Usuários).
+describe('ehTelefoneDaEquipe', () => {
+  function clientEquipe(acha: boolean) {
+    return {
+      from: () => ({ select: () => ({ in: () => ({ limit: async () => ({ data: acha ? [{ id: 'u1' }] : [] }) }) }) }),
+    } as any;
+  }
+  it('número da equipe (mesmo sem o 55 no cadastro) → true', async () => {
+    const { ehTelefoneDaEquipe } = await import('../src/modules/dashboard/users-store.js');
+    expect(await ehTelefoneDaEquipe(clientEquipe(true), '5561996688219')).toBe(true);
+  });
+  it('número desconhecido → false', async () => {
+    const { ehTelefoneDaEquipe } = await import('../src/modules/dashboard/users-store.js');
+    expect(await ehTelefoneDaEquipe(clientEquipe(false), '5561900000000')).toBe(false);
+  });
+  it('vazio → false sem consultar', async () => {
+    const { ehTelefoneDaEquipe } = await import('../src/modules/dashboard/users-store.js');
+    expect(await ehTelefoneDaEquipe(clientEquipe(true), '')).toBe(false);
+  });
+});
