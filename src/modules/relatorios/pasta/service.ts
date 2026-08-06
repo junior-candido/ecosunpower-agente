@@ -259,15 +259,20 @@ export class PastaService {
     const link = `${PUBLIC_BASE_URL}/pasta/${pasta.slug}`;
 
     if (sendTemplate) {
-      try {
-        await sendTemplate(lead.phone, 'pasta_digital_v1', 'pt_BR', [
-          { type: 'body', parameters: [{ type: 'text', text: primeiroNome }] },
-          { type: 'button', sub_type: 'url', index: 0, parameters: [{ type: 'text', text: pasta.slug }] },
-        ]);
-        await this.supabase.marcarPastaClienteEnviada(pastaId, lead.phone);
-        return { ok: true };
-      } catch (err) {
-        console.warn('[pasta] template de envio falhou, caindo pro texto livre:', (err as Error).message);
+      const components: Parameters<NonNullable<typeof sendTemplate>>[3] = [
+        { type: 'body', parameters: [{ type: 'text', text: primeiroNome }] },
+        { type: 'button', sub_type: 'url', index: 0, parameters: [{ type: 'text', text: pasta.slug }] },
+      ];
+      // O template foi criado no painel como "Portuguese (POR)" (pt_PT) por
+      // engano do seletor da Meta (print do Junior 06/08) — tenta BR e PT.
+      for (const idioma of ['pt_BR', 'pt_PT'] as const) {
+        try {
+          await sendTemplate(lead.phone, 'pasta_digital_v1', idioma, components);
+          await this.supabase.marcarPastaClienteEnviada(pastaId, lead.phone);
+          return { ok: true };
+        } catch (err) {
+          console.warn(`[pasta] template ${idioma} falhou:`, (err as Error).message);
+        }
       }
     }
     // Convite de avaliação junto da entrega (melhor momento) — some se não houver link.
