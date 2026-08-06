@@ -73,12 +73,15 @@ export interface ServicoRow {
   sistemaId: string | null; observacoes: string | null; dataServico: string;
   fotos: number; videos: number;
   status: 'atribuido' | 'concluido'; atribuidoA: string | null; atribuidoNome: string | null;
-  campoNome?: string | null;   // LINK MÁGICO: nome de quem faz (sem usuário)
+  // LINK MÁGICO: nome de quem faz + link atual e validade (visível na tela)
+  campoNome?: string | null;
+  campoSlug?: string | null;
+  campoExpiraEm?: string | null;
 }
 
-const CAMPOS = 'id, tipo_id, lead_id, sistema_id, observacoes, data_servico, criado_em, status, atribuido_a, servico_tipos(nome), leads(name), servico_fotos(tipo_midia), atribuido:dashboard_users!servicos_atribuido_a_fkey(nome)';
-// Versão do LINK MÁGICO: mesmos campos + validade/nome do link (checagem de vencimento).
-const CAMPOS_CAMPO = CAMPOS + ', excluido_em, campo_expira_em, campo_nome';
+const CAMPOS = 'id, tipo_id, lead_id, sistema_id, observacoes, data_servico, criado_em, status, atribuido_a, campo_slug, campo_expira_em, campo_nome, servico_tipos(nome), leads(name), servico_fotos(tipo_midia), atribuido:dashboard_users!servicos_atribuido_a_fkey(nome)';
+// Versão do LINK MÁGICO: mesmos campos + excluido_em (checagem de vencimento/lixeira).
+const CAMPOS_CAMPO = CAMPOS + ', excluido_em';
 
 function paraRow(r: any): ServicoRow {
   const midias: { tipo_midia: string }[] = r.servico_fotos ?? [];
@@ -92,6 +95,8 @@ function paraRow(r: any): ServicoRow {
     atribuidoA: r.atribuido_a ?? null,
     atribuidoNome: r.atribuido?.nome ?? null,
     campoNome: r.campo_nome ?? null,
+    campoSlug: r.campo_slug ?? null,
+    campoExpiraEm: r.campo_expira_em ?? null,
   };
 }
 
@@ -114,6 +119,18 @@ export async function servicosDoLead(client: SupabaseClient, leadId: string): Pr
 export async function getServico(client: SupabaseClient, id: string): Promise<ServicoRow | null> {
   const { data } = await client.from('servicos').select(CAMPOS).eq('id', id).maybeSingle();
   return data ? paraRow(data) : null;
+}
+
+/** Clientes (leads) que têm serviço registrado — a Pasta Digital lista eles
+ *  mesmo sem status de "fechado" (garantia/elétrica/órfão adotado — caso Kelven). */
+export async function leadsComServico(client: SupabaseClient): Promise<{ id: string; name: string | null }[]> {
+  const { data } = await client.from('servicos')
+    .select('lead_id, leads(name)').is('excluido_em', null).limit(300);
+  const porId = new Map<string, { id: string; name: string | null }>();
+  for (const r of (data ?? []) as any[]) {
+    if (r.lead_id && !porId.has(r.lead_id)) porId.set(r.lead_id, { id: r.lead_id, name: r.leads?.name ?? null });
+  }
+  return [...porId.values()];
 }
 
 // ===== LINK MÁGICO do campo (Junior 06/08) =====
