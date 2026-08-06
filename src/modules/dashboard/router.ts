@@ -725,22 +725,8 @@ b.onclick=async function(){
         uploads.push({ path, url: data.signedUrl });
       }
 
-      // Atribuiu? Avisa o instalador NO ZAP na hora (se tiver telefone cadastrado).
-      if (atribuidoA && options.sendText) {
-        try {
-          const { telefoneDoUsuario } = await import('./users-store.js');
-          const { getServico } = await import('./servicos-store.js');
-          const { enviarAvisoServico } = await import('./servicos-zap.js');
-          const tel = await telefoneDoUsuario(supabase, atribuidoA);
-          if (tel) {
-            const s = await getServico(supabase, servicoId);
-            const base = (options.appBaseUrl ?? '').replace(/\/$/, '');
-            if (s) await enviarAvisoServico({ sendText: options.sendText, sendTemplate: options.sendTemplate }, tel, s, base ? `${base}/dashboard/servicos/${servicoId}` : null);
-          }
-        } catch (err) {
-          console.warn('[servicos] aviso de atribuição falhou:', (err as Error).message);
-        }
-      }
+      // Sem aviso automático no zap (Junior 06/08): quem vai fazer recebe o
+      // LINK DE CAMPO, copiado da tela e mandado pelo zap pessoal do escritório.
       res.json({ ok: true, id: servicoId, uploads });
     } catch (err) {
       console.error('[servicos/nova]', err);
@@ -871,59 +857,26 @@ b.onclick=async function(){
     }
   });
 
-  // 📤 Enviar pelo zap: reenvio pro atribuído OU número avulso (com acesso
-  // temporário criado na hora, ou só as informações). Pedido do Junior 30/07.
-  router.post('/servicos/:id/enviar-zap', exigir('servicos', 'editar'), async (req: AuthedRequest, res) => {
+  // 🪄 Gerar LINK DE CAMPO: o serviço vai pro campo por link secreto com
+  // validade em dias — sem usuário/senha. A plataforma NÃO manda zap
+  // (Junior 06/08: o template caía no login e ainda custava por envio) —
+  // o escritório copia o link e manda pelo zap pessoal.
+  router.post('/servicos/:id/link-campo', exigir('servicos', 'editar'), async (req: AuthedRequest, res) => {
     try {
-      if (!options.sendText) { res.status(400).json({ ok: false, erro: 'Envio de WhatsApp indisponível no momento.' }); return; }
-      const { getServico, atribuirServico } = await import('./servicos-store.js');
-      const { textoAvisoServico, textoInfoServico, enviarAvisoServico } = await import('./servicos-zap.js');
-      const canaisAviso = { sendText: options.sendText, sendTemplate: options.sendTemplate };
+      const { getServico, gerarLinkCampo } = await import('./servicos-store.js');
       const s = await getServico(supabase, String(req.params.id));
       if (!s) { res.status(404).json({ ok: false, erro: 'Registro não achado.' }); return; }
-      const base = (options.appBaseUrl ?? '').replace(/\/$/, '');
-      const link = base ? `${base}/dashboard/servicos/${s.id}` : null;
-      const destino = String(req.body?.destino ?? 'atribuido');
-
-      if (destino === 'atribuido') {
-        if (!s.atribuidoA) { res.status(400).json({ ok: false, erro: 'Este serviço não está atribuído a ninguém.' }); return; }
-        const { telefoneDoUsuario } = await import('./users-store.js');
-        const tel = await telefoneDoUsuario(supabase, s.atribuidoA);
-        if (!tel) { res.status(400).json({ ok: false, erro: 'O atribuído não tem telefone cadastrado — edite ele na tela Usuários.' }); return; }
-        await enviarAvisoServico(canaisAviso, tel, s, link);
-        res.json({ ok: true }); return;
-      }
-
-      // Número avulso
-      const tel = String(req.body?.telefone ?? '').replace(/\D/g, '');
       const nome = String(req.body?.nome ?? '').trim();
-      if (tel.length < 10) { res.status(400).json({ ok: false, erro: 'Telefone inválido — use DDD+número.' }); return; }
-      const modo = String(req.body?.modo ?? 'info');
-
-      if (modo === 'info') {
-        // Endereço do cliente entra na mensagem, se tiver (consulta no store —
-        // a catraca RLS barra supabase.from cru aqui no router).
-        const { enderecoDoLead } = await import('./servicos-store.js');
-        const endereco = await enderecoDoLead(supabase, s.leadId);
-        await options.sendText(tel, textoInfoServico(s, endereco));
-        res.json({ ok: true }); return;
-      }
-
-      // modo 'acesso' = LINK MÁGICO (Junior 06/08): nada de usuário/senha.
-      // O serviço ganha um link secreto com validade em dias; quem recebe toca
-      // e trabalha. O nome fica registrado no serviço (campo_nome).
       if (!nome) { res.status(400).json({ ok: false, erro: 'Informe o nome de quem vai fazer.' }); return; }
       const dias = Math.min(60, Math.max(1, parseInt(String(req.body?.dias ?? '7'), 10) || 7));
-      const { gerarLinkCampo } = await import('./servicos-store.js');
       const { slug } = await gerarLinkCampo(supabase, s.id, nome, dias);
-      // Forma com TRAÇO (campo-slug): a barra era %2F no botão do WhatsApp e caía no login.
-      const linkCampo = base ? `${base}/dashboard/servicos/campo-${slug}` : `/dashboard/servicos/campo-${slug}`;
-      const depois = await getServico(supabase, s.id);
-      await enviarAvisoServico(canaisAviso, tel, depois ?? s, linkCampo, `campo-${slug}`);
-      res.json({ ok: true, aviso: `🪄 Link enviado pra ${nome} — vale ${dias} dia(s). Se precisar, copia: ${linkCampo}` });
+      const base = (options.appBaseUrl ?? '').replace(/\/$/, '');
+      // Forma com TRAÇO (campo-slug): a barra virava %2F no WhatsApp e caía no login.
+      const link = `${base}/dashboard/servicos/campo-${slug}`;
+      res.json({ ok: true, link, dias });
     } catch (err) {
-      console.error('[servicos/enviar-zap]', err);
-      res.status(500).json({ ok: false, erro: 'Falha ao enviar — tente de novo.' });
+      console.error('[servicos/link-campo]', err);
+      res.status(500).json({ ok: false, erro: 'Falha ao gerar o link — tente de novo.' });
     }
   });
 
@@ -938,13 +891,8 @@ b.onclick=async function(){
       const urls = await getSignedUrls(supabase, midias.map((m) => m.path), 3600);
       const comUrl = midias.map((m) => ({ tipoMidia: m.tipoMidia, url: urls[m.path] ?? '' })).filter((m) => m.url);
       const podeEditar = can(req.dashUser, 'servicos', 'editar');
-      let telAtribuido: string | null = null;
-      if (podeEditar && s.atribuidoA) {
-        const { telefoneDoUsuario } = await import('./users-store.js');
-        telAtribuido = await telefoneDoUsuario(supabase, s.atribuidoA);
-      }
       res.type('html').send(renderDetalheServicoPage(s, comUrl, req.dashUser, podeEditar,
-        { pode: podeEditar, telAtribuido, criadoAgora: (req.query as Record<string, string | undefined>).criado === '1' }));
+        { pode: podeEditar, criadoAgora: (req.query as Record<string, string | undefined>).criado === '1' }));
     } catch (err) {
       console.error('[servicos/detalhe]', err);
       res.status(500).send('Falha ao carregar o registro.');
