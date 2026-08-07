@@ -28,6 +28,32 @@ describe('gerarLinkCampo', () => {
     const seteDias = Date.now() + 7 * 24 * 3600 * 1000;
     expect(Math.abs(expira - seteDias)).toBeLessThan(60000); // ~7 dias, tolerância 1min
   });
+  it('gerar link ABRE o serviço (bug Hudson 06/08: sem atribuído nascia "concluído")', async () => {
+    const { client, updates } = mockClient();
+    await gerarLinkCampo(client, 'srv-1', 'Jeane', 7);
+    expect(updates[0].set.status).toBe('atribuido');
+  });
+});
+
+describe('renderCampoPublicoPage — envio não pode falhar em silêncio (bug Jeane 06/08)', () => {
+  const SERVICO = {
+    id: 's1', tipoId: 'visita-tecnica', tipoNome: 'Visita técnica', leadId: 'l1',
+    clienteNome: 'Jeane', sistemaId: null, observacoes: null, dataServico: '2026-08-07',
+    fotos: 0, videos: 0, status: 'atribuido' as const, atribuidoA: null, atribuidoNome: null,
+  };
+  it('o JS confere a resposta de CADA passo (uploads, confirmar, concluir)', async () => {
+    const { renderCampoPublicoPage } = await import('../src/modules/dashboard/servicos-views.js');
+    const html = renderCampoPublicoPage(SERVICO, 'abcdefghjk', []);
+    // helper que valida status+ok de toda resposta — usado nos 3 passos
+    expect(html).toContain('function checa(');
+    expect((html.match(/\.then\(checa\)/g) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+  it('só recarrega DEPOIS de conferir o concluir; falha aparece na tela', async () => {
+    const { renderCampoPublicoPage } = await import('../src/modules/dashboard/servicos-views.js');
+    const html = renderCampoPublicoPage(SERVICO, 'abcdefghjk', []);
+    expect(html).toContain('Não consegui enviar');
+    expect(html).not.toContain(".then(function(){window.location.reload()})");
+  });
 });
 
 describe('getServicoPorCampoSlug', () => {
