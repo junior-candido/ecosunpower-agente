@@ -8059,40 +8059,55 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   });
 
   app.post('/dashboard/servicos/campo/:slug/uploads', async (req, res) => {
-    const r = await servicoDoSlug(req.params.slug);
-    if (!r.ok) { res.status(404).json({ ok: false, erro: 'Link inválido ou vencido' }); return; }
-    const midias = (Array.isArray((req.body as any)?.midias) ? (req.body as any).midias : []) as { tipoMidia?: string; contentType?: string }[];
-    if (midias.length === 0 || midias.length > 40) { res.status(400).json({ ok: false, erro: 'Quantidade de arquivos inválida' }); return; }
-    if (midias.filter((m) => m.tipoMidia === 'video').length > 2) { res.status(400).json({ ok: false, erro: 'Máximo de 2 vídeos' }); return; }
-    const { randomUUID } = await import('crypto');
-    const uploads: { path: string; url: string }[] = [];
-    for (const m of midias) {
-      const path = `${r.servico.leadId}/servico/${r.servico.id}/${randomUUID()}.${extCampo(String(m.contentType ?? ''))}`;
-      const { data, error } = await supabase.getClient().storage.from('client-attachments').createSignedUploadUrl(path);
-      if (error || !data) { console.warn('[campo] signed upload falhou:', error?.message); continue; }
-      uploads.push({ path, url: data.signedUrl });
+    try {
+      const r = await servicoDoSlug(req.params.slug);
+      if (!r.ok) { res.status(404).json({ ok: false, erro: 'Link inválido ou vencido' }); return; }
+      const midias = (Array.isArray((req.body as any)?.midias) ? (req.body as any).midias : []) as { tipoMidia?: string; contentType?: string }[];
+      if (midias.length === 0 || midias.length > 40) { res.status(400).json({ ok: false, erro: 'Quantidade de arquivos inválida' }); return; }
+      if (midias.filter((m) => m.tipoMidia === 'video').length > 2) { res.status(400).json({ ok: false, erro: 'Máximo de 2 vídeos' }); return; }
+      const { randomUUID } = await import('crypto');
+      const uploads: { path: string; url: string }[] = [];
+      for (const m of midias) {
+        const path = `${r.servico.leadId}/servico/${r.servico.id}/${randomUUID()}.${extCampo(String(m.contentType ?? ''))}`;
+        const { data, error } = await supabase.getClient().storage.from('client-attachments').createSignedUploadUrl(path);
+        if (error || !data) { console.warn('[campo] signed upload falhou:', error?.message); continue; }
+        uploads.push({ path, url: data.signedUrl });
+      }
+      res.json({ ok: true, uploads });
+    } catch (err) {
+      console.error('[campo/uploads]', err);
+      res.status(500).json({ ok: false, erro: 'Falha ao preparar o envio — tenta de novo' });
     }
-    res.json({ ok: true, uploads });
   });
 
   app.post('/dashboard/servicos/campo/:slug/confirmar-midias', async (req, res) => {
-    const r = await servicoDoSlug(req.params.slug);
-    if (!r.ok) { res.status(404).json({ ok: false }); return; }
-    const { registrarMidias } = await import('./modules/dashboard/servicos-store.js');
-    const midias = (Array.isArray((req.body as any)?.midias) ? (req.body as any).midias : [])
-      .filter((m: any) => typeof m?.path === 'string' && m.path.startsWith(`${r.servico.leadId}/servico/${r.servico.id}/`))
-      .map((m: any) => ({ path: m.path, tipoMidia: m.tipoMidia === 'video' ? 'video' as const : 'foto' as const }));
-    await registrarMidias(supabase.getClient(), r.servico.id, ECOSUN_COMPANY, midias);
-    res.json({ ok: true });
+    try {
+      const r = await servicoDoSlug(req.params.slug);
+      if (!r.ok) { res.status(404).json({ ok: false, erro: 'Link inválido ou vencido' }); return; }
+      const { registrarMidias } = await import('./modules/dashboard/servicos-store.js');
+      const midias = (Array.isArray((req.body as any)?.midias) ? (req.body as any).midias : [])
+        .filter((m: any) => typeof m?.path === 'string' && m.path.startsWith(`${r.servico.leadId}/servico/${r.servico.id}/`))
+        .map((m: any) => ({ path: m.path, tipoMidia: m.tipoMidia === 'video' ? 'video' as const : 'foto' as const }));
+      await registrarMidias(supabase.getClient(), r.servico.id, ECOSUN_COMPANY, midias);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[campo/confirmar-midias]', err);
+      res.status(500).json({ ok: false, erro: 'Falha ao registrar as fotos — tenta de novo' });
+    }
   });
 
   app.post('/dashboard/servicos/campo/:slug/concluir', async (req, res) => {
-    const r = await servicoDoSlug(req.params.slug);
-    if (!r.ok) { res.status(404).json({ ok: false }); return; }
-    const { concluirServico } = await import('./modules/dashboard/servicos-store.js');
-    const obs = (req.body as any)?.observacoes ? String((req.body as any).observacoes).slice(0, 2000) : undefined;
-    await concluirServico(supabase.getClient(), r.servico.id, obs);
-    res.json({ ok: true });
+    try {
+      const r = await servicoDoSlug(req.params.slug);
+      if (!r.ok) { res.status(404).json({ ok: false, erro: 'Link inválido ou vencido' }); return; }
+      const { concluirServico } = await import('./modules/dashboard/servicos-store.js');
+      const obs = (req.body as any)?.observacoes ? String((req.body as any).observacoes).slice(0, 2000) : undefined;
+      await concluirServico(supabase.getClient(), r.servico.id, obs);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[campo/concluir]', err);
+      res.status(500).json({ ok: false, erro: 'Falha ao concluir — tenta de novo' });
+    }
   });
 
   // Dashboard interno EcoSun (Modulo 3 da plataforma). Auth basica via senha

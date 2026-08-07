@@ -578,24 +578,30 @@ function pinta(){var d=document.getElementById('anexos');d.innerHTML='';
  estado.fotos.forEach(function(b,i){var img=document.createElement('img');img.src=URL.createObjectURL(b);
   img.onclick=function(){estado.fotos.splice(i,1);pinta()};d.appendChild(img)});
  estado.videos.forEach(function(f,i){var v=document.createElement('div');v.className='vid';v.textContent='🎬 '+(f.size/1048576|0)+'MB';
-  v.onclick=function(){estado.videos.splice(i,1);pinta()};d.appendChild(v)})}
+  v.onclick=function(){estado.videos.splice(i,1);pinta()};d.appendChild(v)});
+ var n=estado.fotos.length+estado.videos.length;
+ document.getElementById('btnConcluir').textContent=n?'✅ Concluir serviço ('+n+' anexo'+(n>1?'s':'')+')':'✅ Concluir serviço'}
 function addFotos(inp){var fs=Array.prototype.slice.call(inp.files||[]);inp.value='';
  Promise.all(fs.map(comprime)).then(function(bs){estado.fotos=estado.fotos.concat(bs);pinta()})
- .catch(function(){alert('Falha ao ler a foto')})}
+ .catch(function(){prog('⚠️ Não consegui ler essa foto — tenta de novo ou use a Galeria');alert('Não consegui ler a foto — tenta de novo ou use a Galeria')})}
 function addVideo(inp){var f=inp.files&&inp.files[0];inp.value='';if(!f)return;
  if(estado.videos.length>=MAX_VIDEOS){alert('Máximo de '+MAX_VIDEOS+' vídeos');return}
  if(f.size>MAX_VIDEO_MB*1048576){alert('Vídeo muito grande (máx '+MAX_VIDEO_MB+'MB) — grave um trecho mais curto');return}
  estado.videos.push(f);pinta()}
 function prog(t){document.getElementById('progresso').textContent=t}
+function checa(r){
+ return r.json().catch(function(){throw new Error('o servidor respondeu estranho (código '+r.status+')')})
+  .then(function(j){if(!j.ok)throw new Error(j.erro||('falha no servidor (código '+r.status+')'));return j})}
 function concluir(){
- if(!estado.fotos.length&&!estado.videos.length){if(!confirm('Concluir sem nenhuma foto?'))return}
+ if(!estado.fotos.length&&!estado.videos.length){if(!confirm('Nenhuma foto anexada ainda (elas aparecem em miniatura antes de enviar). Concluir mesmo assim, sem foto?'))return}
  var btn=document.getElementById('btnConcluir');btn.disabled=true;btn.textContent='Enviando…';
  var midias=estado.fotos.map(function(b,i){return{nome:'foto-'+(i+1)+'.jpg',tipoMidia:'foto',contentType:'image/jpeg'}})
   .concat(estado.videos.map(function(f,i){return{nome:'video-'+(i+1),tipoMidia:'video',contentType:f.type||'video/mp4'}}));
  var arquivos=estado.fotos.concat(estado.videos);
- fetch('/dashboard/servicos/campo/'+SLUG+'/uploads',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({midias:midias})})
- .then(function(r){return r.json()}).then(function(j){
-  if(!j.ok)throw new Error(j.erro||'falha');
+ var passoUploads=midias.length
+  ? fetch('/dashboard/servicos/campo/'+SLUG+'/uploads',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({midias:midias})}).then(checa)
+  : Promise.resolve({uploads:[]});
+ passoUploads.then(function(j){
   var ups=j.uploads||[],feitas=[],falhas=[],fila=Promise.resolve();
   ups.forEach(function(u,i){fila=fila.then(function(){
    prog('Subindo '+(i+1)+' de '+ups.length+'…');
@@ -604,15 +610,19 @@ function concluir(){
      else falhas.push(midias[i].nome+' (erro '+r.status+')')})
     .catch(function(){falhas.push(midias[i].nome+' (rede caiu)')})})});
   return fila.then(function(){
-   if(falhas.length)alert('⚠️ '+falhas.length+' arquivo(s) não subiram:\\n'+falhas.join('\\n'));
+   if(falhas.length&&!confirm('⚠️ '+falhas.length+' arquivo(s) NÃO subiram:\\n'+falhas.join('\\n')+'\\n\\nConcluir mesmo assim? (Cancelar = tentar de novo)'))
+    throw new Error(falhas.length+' arquivo(s) não subiram — nada foi concluído, tenta de novo');
+   prog('Registrando as fotos…');
    return fetch('/dashboard/servicos/campo/'+SLUG+'/confirmar-midias',{method:'POST',
-    headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({midias:feitas})})})
+    headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({midias:feitas})}).then(checa)})
   .then(function(){
+   prog('Concluindo o serviço…');
    return fetch('/dashboard/servicos/campo/'+SLUG+'/concluir',{method:'POST',
     headers:{'Content-Type':'application/json','Accept':'application/json'},
-    body:JSON.stringify({observacoes:document.getElementById('obs').value.trim()})})})
-  .then(function(){window.location.reload()})})
- .catch(function(e){alert('Falha: '+e.message);btn.disabled=false;btn.textContent='✅ Concluir serviço'})}
+    body:JSON.stringify({observacoes:document.getElementById('obs').value.trim()})}).then(checa)})
+  .then(function(){prog('✅ Tudo certo!');window.location.reload()})})
+ .catch(function(e){prog('❌ Não consegui enviar: '+e.message);alert('❌ Não consegui enviar: '+e.message);
+  btn.disabled=false;pinta()})}
 </script>`}
 </body></html>`;
 }

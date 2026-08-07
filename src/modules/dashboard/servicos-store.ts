@@ -147,8 +147,10 @@ export async function gerarLinkCampo(
   const { novoSlug } = await import('../relatorios/slug.js');
   const slug = novoSlug();
   const expira = new Date(Date.now() + Math.max(1, validadeDias) * 24 * 3600 * 1000).toISOString();
+  // Gerar link ABRE o serviço (bug Hudson 06/08): criado sem atribuído ele
+  // nascia "concluído" — com link no campo, só conclui quem trabalhar.
   const { error } = await client.from('servicos')
-    .update({ campo_slug: slug, campo_expira_em: expira, campo_nome: nomeQuemFaz || null })
+    .update({ campo_slug: slug, campo_expira_em: expira, campo_nome: nomeQuemFaz || null, status: 'atribuido' })
     .eq('id', servicoId);
   if (error) throw new Error(`gerarLinkCampo: ${error.message}`);
   return { slug };
