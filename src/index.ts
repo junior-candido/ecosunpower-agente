@@ -8371,6 +8371,27 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     }
   });
 
+  // Radar das propostas do SITE: as páginas estáticas de proposta
+  // (ecosunpower.eng.br/propostas/*) carregam um GIF invisível daqui.
+  // Cada abertura registra visita (proposta_visualizacoes, prefixo site:)
+  // e avisa o Junior no zap (1ª na hora; revisitas com folga de 5 min).
+  // Público: a chave é o token não-enumerável por proposta; resposta é
+  // SEMPRE 200 GIF (token inválido não descobre que é inválido).
+  app.get('/sp/:token', async (req, res) => {
+    const { handleBeacon } = await import('./modules/site-proposta-beacon.js');
+    handleBeacon(req, res, {
+      notificar: (texto) => sendText(config.engineerPhone, texto),
+      registrarVisita: ({ slug, ip, userAgent, referer }) =>
+        supabase.registrarVisualizacaoProposta({
+          slug,
+          ipAddress: ip,
+          userAgent,
+          isPreview: false,
+          referer,
+        }),
+    });
+  });
+
   // Pagina publica do Relatorio da Usina (S3). Slug nao-enumeravel, TTL 60d.
   // Regenera HTML fresco a cada acesso (relatorio sempre atualizado).
   // ?pdf=1 -> baixa o PDF. NAO cria slug novo (so consome o existente).
