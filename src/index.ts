@@ -4822,13 +4822,17 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       } else {
         // retrieveChunks nunca lança — retorna [] em qualquer falha (fallback core-only).
         const { loadCoreContent } = await import('./modules/rag/core-files.js');
-        const { retrieveChunks } = await import('./modules/rag/retrieve.js');
+        const { retrieveChunks, ragTenantDe } = await import('./modules/rag/retrieve.js');
         const { makeClient, embedTexts } = await import('./modules/rag/embeddings.js');
         const { buildHybridKnowledge } = await import('./modules/rag/hybrid.js');
         const coreContent = loadCoreContent(join(__dirname, '..', conhecimentoDirDoModo()));
+        // [B2a] conhecimento pela empresa da MENSAGEM (crachá do resolver):
+        // EcoSun/legado = slug 'ecosunpower' (idêntico ao de sempre); tenant #2
+        // busca a chave dele — sem ingest, vem [] (nunca o catálogo da EcoSun).
         const chunks = config.openaiApiKey
           ? await retrieveChunks(text, supabase.getClient(), config,
-              (q) => embedTexts(q, makeClient(config.openaiApiKey!)))
+              (q) => embedTexts(q, makeClient(config.openaiApiKey!)),
+              ragTenantDe(db.companyIdDaMensagem))
           : [];
         if (chunks.length > 0) {
           console.log(`[rag] ${chunks.length} chunk(s) recuperados para o brain`);
