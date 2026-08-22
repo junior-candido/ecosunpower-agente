@@ -213,6 +213,9 @@ export function createDashboardRouter(
     // Wrapper que publica o draft espelhando o fluxo do WhatsApp (publishDraftToGitHub
     // com PAT/repo/branch da config + markPublished). Vem pronto do index.ts.
     publicarDraft?: (draft: BlogDraft) => Promise<{ url: string }>;
+    // Follow-up vivo: chamado depois que a proposta sai pro cliente (POST
+    // /propostas/:slug/enviar) pra agendar o ritmo D0…mensal. Nunca lança.
+    onPropostaEnviada?: (p: { slug: string; leadId: string | null; enviadaEmMs: number }) => void;
   } = {},
 ): Router {
   const router = Router();
@@ -5543,6 +5546,9 @@ b.onclick=async function(){
     await supabaseService.marcarPropostaPublicaEnviada(slug);
 
     const lead_id = String(req.body.lead_id ?? '');
+    // Follow-up vivo: proposta saiu pro cliente → arma o ritmo de acompanhamento.
+    try { options.onPropostaEnviada?.({ slug, leadId: lead_id || null, enviadaEmMs: Date.now() }); }
+    catch (err) { console.warn('[followup-vivo] agendar pos-envio (dashboard) falhou:', (err as Error).message); }
     res.redirect(303, `/dashboard/propostas/${slug}/preview${lead_id ? `?lead_id=${lead_id}` : ''}`);
   });
 

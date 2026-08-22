@@ -52,6 +52,10 @@ import { fetchCampaignQualityInputs } from './modules/marketing/campaign-quality
 import { MetaCapi } from './modules/meta-capi.js';
 import { makeCapiReporter, type CapiReporter } from './modules/capi-reporter.js';
 import { ProposalFollowupService } from './modules/proposal-followup.js';
+import { FollowupVivoService } from './modules/vendas/followup-vivo.js';
+import { VisitasService } from './modules/vendas/visitas.js';
+import { CasesFetcher } from './modules/cases-fetcher.js';
+import { medirIa } from './modules/custos/ia-metering.js';
 import { construirMenu, rowsCategorias, rowsSubmenu } from './modules/menu/menu.js';
 import {
   ClosingAssistant,
@@ -584,6 +588,12 @@ async function main() {
     googleNota: config.googleNota,
     googleQtdAvaliacoes: config.googleQtdAvaliacoes,
     proposalPreviewToken: config.proposalPreviewToken,
+    // [followup-vivo] closure lazy: followupVivo nasce mais abaixo no main() e
+    // isto só é CHAMADO em runtime (quando a Eva manda a proposta pro cliente).
+    onPropostaEnviada: (pv) => {
+      followupVivo.agendarParaProposta(pv)
+        .catch((err) => console.warn('[followup-vivo] agendar pos-envio falhou:', (err as Error).message));
+    },
   });
 
   const driveOk = !!driveUploader;
@@ -663,6 +673,50 @@ async function main() {
     gerarAbordagemInteligente: (slug: string, tel: string) => gerarAbordagemInteligente(slug, tel),
   });
   console.log('[proposal-followup] Servico ativo (notifica toda abertura, throttle 5min)');
+
+  // Follow-up vivo (spec 21/08 §6): ritmo sem fim da proposta (D0…mensal) + toque
+  // pós-visita 24h. Convive com o proposal-followup (que só cuida da 1ª abertura):
+  // este aqui é o acompanhamento longo, com mensagem escrita na hora pelo Haiku
+  // em cima dos FATOS da proposta. Closures lazy (janela24hAberta/takeover) pelo
+  // mesmo motivo do bloco acima: os consts nascem mais abaixo no main().
+  const casesFetcherFollowupVivo = new CasesFetcher({ siteUrl: config.siteUrl });
+  const anthropicFollowupVivo = new Anthropic({ apiKey: config.anthropicApiKey });
+  const followupVivo = new FollowupVivoService({
+    client: supabase.getClient(),
+    sendText,
+    sendTemplate: (to, nome, template) => metaWaba
+      ? enviarTemplateInicial(metaWaba, to, nome, template)
+      : Promise.reject(new Error('waba_indisponivel')),
+    janela24hAberta: (p: string) => janela24hAberta(p),
+    emTakeover: (p: string) => takeover.isPaused(p),
+    redator: async (prompt: string) => {
+      const r = await anthropicFollowupVivo.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 300,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'followup-vivo', usage: r.usage });
+      return r.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n');
+    },
+    buscarCasoSimilar: async (cidade: string | null) => {
+      try {
+        const todos = await casesFetcherFollowupVivo.getAll();
+        const c = (cidade ? todos.find((x) => x.cidade.toLowerCase() === cidade.toLowerCase()) : undefined)
+          ?? todos.find((x) => x.featured)
+          ?? todos[0];
+        return c ? { titulo: c.titulo, cidade: c.cidade, kwp: c.kwp, fotoUrl: c.fotoPrincipal } : null;
+      } catch {
+        return null;
+      }
+    },
+    proposalBaseUrl: `${config.publicProposalBaseUrl}/p`,
+    validadeKitDias: 15,
+  });
+  const visitas = new VisitasService({ client: supabase.getClient(), followupVivo });
+  console.log('[followup-vivo] Servico ativo (ritmo de proposta sem fim + pos-visita 24h)');
 
   // Eva Fechamento: modo /fechar conversacional pra Junior fechar venda
   // (gera contrato + procuração no Drive). Reusa OAuth do Drive proposal.
@@ -863,6 +917,42 @@ async function main() {
     if (!m) return false;
     const resposta = await proposalFollowup.abordarManual(m[1]);
     await sendText(from, resposta);
+    return true;
+  };
+
+  // "/followup <nome>" — mostra o ritmo do follow-up vivo daquele cliente.
+  // "/followup parar <nome>" — encerra o ritmo (Junior assumiu na mão).
+  const tryHandleFollowupVivoCommand = async (from: string, text: string): Promise<boolean> => {
+    if (!isAdminPhone(from)) return false;
+    const m = /^\/?followup\s+(parar\s+)?(.+)$/i.exec(text.trim());
+    if (!m) return false;
+    const parar = !!m[1];
+    const nome = m[2].trim();
+    const { data: props } = await supabase.getClient()
+      .from('propostas_publicas')
+      .select('slug, cliente_nome, lead_id')
+      .ilike('cliente_nome', `%${nome}%`)
+      .eq('revoked', false)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const p = props?.[0];
+    if (!p) { await sendText(from, `Não achei proposta de "${nome}".`); return true; }
+    if (parar) {
+      await followupVivo.cancelarPorSlug(p.slug, 'junior_parou');
+      await sendText(from, `✋ Follow-up de ${p.cliente_nome} parado.`);
+      return true;
+    }
+    const { data: rows } = await supabase.getClient()
+      .from('proposta_followup_vivo')
+      .select('etapa, status, scheduled_for, sent_at')
+      .eq('proposta_slug', p.slug)
+      .order('scheduled_for', { ascending: true });
+    const icone = (st: string) => (st === 'sent' ? '✅' : st === 'pending' ? '⏳' : st === 'paused' ? '⏸' : '✖');
+    const linhas = (rows ?? []).map((r) => {
+      const quando = new Date(r.sent_at ?? r.scheduled_for).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      return `${icone(String(r.status))} ${r.etapa} — ${quando}`;
+    });
+    await sendText(from, `📡 Follow-up ${p.cliente_nome}\n${linhas.join('\n') || '(nenhuma etapa)'}\n\nPra parar: /followup parar ${nome}`);
     return true;
   };
 
@@ -2473,6 +2563,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       .from('leads')
       .update({ opt_out: true, eva_active: false, status: 'inativo', updated_at: new Date().toISOString() })
       .eq('id', lead.id);
+    void followupVivo.cancelarPorLead(lead.id, 'opt_out');
     console.log(`[opt-out] cliente ${from} (${lead.name}) optou por sair via "${raw}"`);
     await sendText(
       from,
@@ -3761,6 +3852,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // [MT 3d] escrita pelo crachá; os botões admin logo abaixo ficam no
     // singleton (admin = EcoSun, fora do caminho do tenant).
     proposalFollowup.markClienteRespondeu(from, db);
+    // Follow-up vivo: cliente falou → pausa o ritmo (a conversa manda).
+    void followupVivo.pausarPorResposta(from);
 
     // Botoes do followup de proposta (junior_envia, modo "Eva pergunta antes
     // de mandar"). So Junior (admin) toca esses botoes — early return.
@@ -3790,7 +3883,12 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           const { data: fch } = await supabase.getClient()
             .from('fechamentos').select('lead_id').eq('id', finFechamentoId).maybeSingle();
           const leadGanhoId = (fch as { lead_id?: string | null } | null)?.lead_id ?? null;
-          if (leadGanhoId) await supabase.onLeadGanho(leadGanhoId);
+          if (leadGanhoId) {
+            await supabase.onLeadGanho(leadGanhoId);
+            // Fechou: o ritmo morre e a visita vira 'fechou' (não re-arma nada).
+            void followupVivo.cancelarPorLead(leadGanhoId, 'fechou');
+            void visitas.marcarResultado(leadGanhoId, 'fechou');
+          }
         } catch (e) {
           console.warn('[funil] onLeadGanho falhou:', (e as Error).message);
         }
@@ -4259,6 +4357,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // (proposta/preço/agenda) e a frase começar com "abordar", o modo trata —
     // o comando não sequestra a conversa. Fora de modo, dispara normal.
     if (await tryHandleAbordarCommand(from, text)) return;
+
+    // "/followup <nome>" / "/followup parar <nome>" — estado do ritmo de proposta.
+    if (await tryHandleFollowupVivoCommand(from, text)) return;
 
     // "ajustar <nome>" / "atualizar <nome>" (Junior) — reabre uma proposta JÁ
     // ENVIADA DENTRO do zap: a Eva carrega os dados e o Junior ajusta conversando,
@@ -5353,6 +5454,16 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           // este lead deve parar — Eva ja fechou o objetivo principal.
           await db.upsertLead({ phone: from, status: 'agendado', company_id: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID }); // [3e]
           await db.cancelCadence(leadId, 'visita_agendada').catch(() => {});
+          // Follow-up vivo NÃO para aqui: a visita é o começo do próximo ciclo.
+          // Registra pra disparar o toque pós-visita 24h depois do fim.
+          void visitas.registrar({
+            leadId: lead?.id ?? leadId,
+            phone: from,
+            tipo: isMeet ? 'meet' : 'visita',
+            inicioMs: Date.parse(startISO),
+            fimMs: Date.parse(endISO),
+            calendarEventId: event.eventId ?? null,
+          });
 
           // Alerta WABA pro Junior — agendamento eh sinal QUENTE, ele precisa
           // ver na hora pra confirmar logistica e equipamento. NUNCA silencia,
@@ -5427,6 +5538,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           const canceledPost = await postInstall.cancelAll(leadId, db.getClient());
           if (canceledPost > 0) console.log(`[post-install] Canceled ${canceledPost} touches after opt-out`);
         }
+        void followupVivo.cancelarPorLead(leadId, 'opt_out');
         console.log(`[action] Opt-out registered for ${from}`);
         break;
       }
@@ -5446,6 +5558,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         if (!offTopicRows?.length) console.warn(`[action][3e] mark_off_topic atualizou 0 linhas pra ${from} — lead fora do tenant?`);
         // Cancela cadencia/reengagement/postinstall pendente
         await db.cancelCadence(leadId, 'off_topic').catch(() => {});
+        void followupVivo.cancelarPorLead(leadId, 'off_topic');
         await reengagement.cancelAllTouches(leadId, db.getClient()).catch(() => 0);
         if (postInstall) await postInstall.cancelAll(leadId, db.getClient()).catch(() => 0);
         // Notifica Junior com botoes pra desfazer se foi falso positivo
@@ -5503,6 +5616,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           .select('id');
         if (!dqRows?.length) console.warn(`[action][3e] disqualify_lead atualizou 0 linhas pra ${from} — lead fora do tenant?`);
         await db.cancelCadence(leadId, 'disqualify_lead').catch(() => {});
+        void followupVivo.cancelarPorLead(leadId, 'disqualify_lead');
         await reengagement.cancelAllTouches(leadId, db.getClient()).catch(() => 0);
         if (postInstall) await postInstall.cancelAll(leadId, db.getClient()).catch(() => 0);
         if (!isSandbox) {
@@ -6934,6 +7048,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         if (lead?.id) {
           await supabase.cancelEvaIntro(lead.id, 'eva_off_command').catch(() => {});
           await supabase.cancelCadence(lead.id, 'eva_off_command').catch(() => {});
+          void followupVivo.cancelarPorLead(lead.id, 'eva_off_command');
         }
         console.log(`[eva-active] Eva DESATIVADA permanentemente pra ${parsed.from}`);
         res.status(200).json({ status: 'eva_disabled' });
@@ -8130,6 +8245,11 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     calculadoraUrl: config.calculadoraUrl,
     assinaturasSyncToken: config.assinaturasSyncToken,
     appBaseUrl: config.appBaseUrl,
+    // [followup-vivo] Junior mandou a proposta pela tela → arma o ritmo.
+    onPropostaEnviada: (pv) => {
+      followupVivo.agendarParaProposta(pv)
+        .catch((err) => console.warn('[followup-vivo] agendar pos-envio falhou:', (err as Error).message));
+    },
     // Salva contrato+procuração no Drive/Workspace (reusa o uploader do fechamento).
     salvarContratoNoDrive: closingDriveUploader
       ? async (input) => {
@@ -8364,6 +8484,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         .then((result) => {
           if (result) {
             proposalFollowup.triggerOnView(slug, result.acessosAntes, 'web');
+            // Primeira abertura: se ele ler e não responder, a Eva volta em 2h.
+            if (result.acessosAntes === 0) void followupVivo.agendarAbriuSemResposta(slug, Date.now());
           }
         })
         .catch((err) => {
@@ -9174,6 +9296,27 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     // Primeira passada 2min apos start (captura backlog de toques vencidos durante restart)
     setTimeout(() => cadence.processCadence().catch(() => {}), 2 * 60 * 1000);
     console.log('[cadence] Cadence scheduler started (checks every 15 min, 9h-20h BRT)');
+
+    // Follow-up vivo: manda as etapas vencidas da proposta, o toque pós-visita
+    // (24h depois) e retoma quem ficou 48h em silêncio. Mesmo ritmo da cadência
+    // (15 min), primeira passada 3 min depois do boot. O horário/elegibilidade
+    // ficam dentro do serviço — aqui é só o relógio.
+    const tickFollowupVivo = async () => {
+      const agora = Date.now();
+      let enviadas = 0; let posVisita = 0; let retomadas = 0;
+      try { enviadas = await followupVivo.processarDevidos(agora); }
+      catch (err) { console.error('[followup-vivo] processarDevidos falhou:', (err as Error).message); }
+      try { posVisita = await visitas.processarPosVisita(agora); }
+      catch (err) { console.error('[followup-vivo] processarPosVisita falhou:', (err as Error).message); }
+      try { retomadas = await followupVivo.retomarSilenciosas(agora); }
+      catch (err) { console.error('[followup-vivo] retomarSilenciosas falhou:', (err as Error).message); }
+      if (enviadas > 0 || posVisita > 0 || retomadas > 0) {
+        console.log(`[followup-vivo] tick: enviadas=${enviadas} posVisita=${posVisita} retomadas=${retomadas}`);
+      }
+    };
+    setTimeout(() => { void tickFollowupVivo(); }, 3 * 60 * 1000);
+    setInterval(() => { void tickFollowupVivo(); }, 15 * 60 * 1000);
+    console.log('[followup-vivo] Scheduler started (checks every 15 min)');
 
     // Maquina de e-mail (Elo): espelha a cadencia de WhatsApp, so que pro
     // canal e-mail. Processa steps de email_sequencia vencidos a cada 15min,
