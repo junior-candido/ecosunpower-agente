@@ -94,7 +94,7 @@ describe('FollowupVivoService', () => {
     await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
     expect(db.tabelas.proposta_followup_vivo).toHaveLength(10);
     expect(db.tabelas.eva_cadence[0].status).toBe('cancelled');
-    expect(db.tabelas.reengagement_touches[0].status).toBe('cancelled');
+    expect(db.tabelas.reengagement_touches[0].status).toBe('canceled'); // grafia do módulo dono
   });
 
   it('agendar duas vezes não duplica nem sobrescreve etapa já enviada (onConflict slug+etapa)', async () => {
@@ -379,5 +379,46 @@ describe('FollowupVivoService', () => {
     expect(d3.status).toBe('pending');
     expect(d3.cancelled_reason).toBeNull();
     expect(d3.error_message).toBeNull();
+  });
+
+  it('agendarParaProposta com leadId null resolve o lead pelo slug e cancela as cadências', async () => {
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: null, enviadaEmMs: T0 });
+    expect(db.tabelas.proposta_followup_vivo).toHaveLength(10);
+    expect(db.tabelas.proposta_followup_vivo.every(r => r.lead_id === 'L1')).toBe(true);
+    expect(db.tabelas.eva_cadence[0].status).toBe('cancelled');
+    expect(db.tabelas.reengagement_touches[0].status).toBe('canceled');
+  });
+
+  it('envio usa o telefone NORMALIZADO mesmo com cliente_telefone formatado', async () => {
+    db.tabelas.propostas_publicas[0].cliente_telefone = '(61) 99999-9999';
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    expect(await svc.processarDevidos(T0 + 25 * 3_600_000)).toBe(1);
+    expect((svc as any).deps.sendText).toHaveBeenCalledWith('5561999999999', expect.any(String));
+    expect((svc as any).deps.janela24hAberta).toHaveBeenCalledWith('5561999999999');
+    expect((svc as any).deps.emTakeover).toHaveBeenCalledWith('5561999999999');
+  });
+
+  it('telefone que não normaliza → cancela com sem_telefone', async () => {
+    db.tabelas.propostas_publicas[0].cliente_telefone = '1234';
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    expect(await svc.processarDevidos(T0 + 25 * 3_600_000)).toBe(0);
+    expect(db.tabelas.proposta_followup_vivo.every(r => r.status === 'cancelled' && r.cancelled_reason === 'sem_telefone')).toBe(true);
+  });
+
+  it('NA24 com proposta já aberta (acessos > 0) → cancela só a NA24 com ja_abriu; D3 segue depois', async () => {
+    db.tabelas.propostas_publicas[0].acessos = 1;
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    expect(await svc.processarDevidos(T0 + 25 * 3_600_000)).toBe(0);
+    const na24 = db.tabelas.proposta_followup_vivo.find(r => r.etapa === 'NA24')!;
+    expect(na24.status).toBe('cancelled');
+    expect(na24.cancelled_reason).toBe('ja_abriu');
+    expect((svc as any).deps.sendText).not.toHaveBeenCalled();
+    expect(db.tabelas.proposta_followup_vivo.filter(r => r.etapa !== 'NA24').every(r => r.status === 'pending')).toBe(true);
+    expect(await svc.processarDevidos(T0 + 3 * DIA + 60_000)).toBe(1);
+    expect(db.tabelas.proposta_followup_vivo.find(r => r.etapa === 'D3')!.status).toBe('sent');
   });
 });

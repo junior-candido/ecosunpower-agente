@@ -46,15 +46,21 @@ export class FollowupVivoService {
 
   /** Proposta enviada: cria as etapas fixas (sem tocar nas já existentes) e cala as cadências antigas do lead. */
   async agendarParaProposta(p: { slug: string; leadId: string | null; enviadaEmMs: number }): Promise<void> {
+    let leadId = p.leadId;
+    if (!leadId) {
+      const { data: prop } = await this.deps.client.from('propostas_publicas').select('lead_id').eq('slug', p.slug).maybeSingle();
+      leadId = prop?.lead_id ?? null;
+    }
     const etapas = planejarEtapas(p.enviadaEmMs).map(e => ({
-      proposta_slug: p.slug, lead_id: p.leadId, etapa: e.etapa,
+      proposta_slug: p.slug, lead_id: leadId, etapa: e.etapa,
       scheduled_for: new Date(e.scheduledForMs).toISOString(), status: 'pending',
     }));
     const { error } = await this.deps.client.from(T).upsert(etapas, { onConflict: ON_CONFLICT, ignoreDuplicates: true });
     if (error) { console.error('[followup-vivo] agendar falhou:', error.message); return; }
-    if (p.leadId) {
-      await this.deps.client.from('eva_cadence').update({ status: 'cancelled', cancelled_reason: 'followup_vivo' }).eq('lead_id', p.leadId).eq('status', 'pending');
-      await this.deps.client.from('reengagement_touches').update({ status: 'cancelled' }).eq('lead_id', p.leadId).eq('status', 'pending');
+    if (leadId) {
+      await this.deps.client.from('eva_cadence').update({ status: 'cancelled', cancelled_reason: 'followup_vivo' }).eq('lead_id', leadId).eq('status', 'pending');
+      // 'canceled' (um L) = grafia do módulo dono de reengagement_touches
+      await this.deps.client.from('reengagement_touches').update({ status: 'canceled' }).eq('lead_id', leadId).eq('status', 'pending');
     }
     console.log(`[followup-vivo] ${etapas.length} etapas agendadas slug=${p.slug}`);
   }
@@ -201,17 +207,25 @@ export class FollowupVivoService {
 
   private async processarUma(row: EtapaRow, agoraMs: number): Promise<boolean> {
     const { data: prop } = await this.deps.client.from('propostas_publicas')
-      .select('slug, cliente_nome, cliente_telefone, lead_id, created_at, dados_input, revoked')
+      .select('slug, cliente_nome, cliente_telefone, lead_id, created_at, dados_input, revoked, acessos')
       .eq('slug', row.proposta_slug).maybeSingle();
-    if (!prop || prop.revoked || !prop.cliente_telefone) {
+    const to = prop?.cliente_telefone ? normalizeBrazilianPhone(String(prop.cliente_telefone)) : null;
+    if (!prop || prop.revoked || !to) {
       await this.cancelarPorSlug(row.proposta_slug, !prop ? 'proposta_inexistente' : prop.revoked ? 'proposta_revogada' : 'sem_telefone');
+      return false;
+    }
+    // NA24 = "não abriu em 24h": se já abriu, essa etapa perde o sentido (as outras seguem)
+    if (row.etapa === 'NA24' && (Number(prop.acessos) || 0) > 0) {
+      const { error } = await this.deps.client.from(T).update({ status: 'cancelled', cancelled_reason: 'ja_abriu' }).eq('id', row.id);
+      if (error) console.error(`[followup-vivo] cancelar NA24 falhou id=${row.id}:`, error.message);
+      else console.log(`[followup-vivo] NA24 cancelada slug=${row.proposta_slug}: proposta já aberta`);
       return false;
     }
     const leadId: string | null = row.lead_id ?? prop.lead_id ?? null;
     const { data: lead } = leadId
       ? await this.deps.client.from('leads').select('eva_active, opt_out, status, contact_type').eq('id', leadId).maybeSingle()
       : { data: null };
-    const eleg = elegivelParaFollowup(lead ?? {}, await this.deps.emTakeover(prop.cliente_telefone));
+    const eleg = elegivelParaFollowup(lead ?? {}, await this.deps.emTakeover(to));
     if (!eleg.ok) {
       if (eleg.motivo === 'takeover') return false; // fica pendente, volta quando o Junior soltar
       await this.cancelarPorSlug(row.proposta_slug, eleg.motivo);
@@ -233,12 +247,12 @@ export class FollowupVivoService {
     const caso = argumento === 'prova_social' ? await this.deps.buscarCasoSimilar(fatos.cidade) : null;
 
     let registro: string;
-    if (await this.deps.janela24hAberta(prop.cliente_telefone)) {
+    if (await this.deps.janela24hAberta(to)) {
       const msg = await gerarMensagemEtapa(argumento, fatos, caso, this.deps.redator);
-      await this.deps.sendText(prop.cliente_telefone, msg.texto);
+      await this.deps.sendText(to, msg.texto);
       registro = msg.texto;
     } else {
-      const { templateUsado } = await this.deps.sendTemplate(prop.cliente_telefone, prop.cliente_nome, this.deps.templateFallback);
+      const { templateUsado } = await this.deps.sendTemplate(to, prop.cliente_nome, this.deps.templateFallback);
       registro = `template:${templateUsado}`;
     }
     const { error: errSent } = await this.deps.client.from(T).update({ status: 'sent', sent_at: new Date(agoraMs).toISOString(), message_sent: registro }).eq('id', row.id);
