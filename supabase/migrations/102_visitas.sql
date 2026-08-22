@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS public.visitas (
   created_at        timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_visitas_pendentes ON public.visitas (fim) WHERE resultado IS NULL;
+CREATE INDEX IF NOT EXISTS idx_visitas_lead ON public.visitas (lead_id);
 
 -- RLS: política padrão da casa (079/089/092/098). O app usa service role
 -- (bypassa RLS); a política protege acesso direto com JWT de tenant.

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ETAPAS_FIXAS, planejarEtapas, proximoHorarioValido, dentroDoHorario,
-  elegivelParaFollowup, proximaEtapaMensal,
+  elegivelParaFollowup, proximaEtapaMensal, argumentoDaEtapa,
 } from '../src/modules/vendas/followup-vivo-plano.js';
 
 // 2026-08-24 é segunda-feira. 12:00 BRT = 15:00Z
@@ -42,6 +42,33 @@ describe('dentroDoHorario / proximoHorarioValido (8h–20h BRT, nunca domingo)',
   it('7h59 BRT → 8h do mesmo dia', () => {
     const seg0759 = Date.UTC(2026, 7, 24, 10, 59, 0);
     expect(proximoHorarioValido(seg0759)).toBe(Date.UTC(2026, 7, 24, 11, 0, 0));
+  });
+  it('sábado 20h BRT (limite exclusivo) → domingo bloqueado → segunda 8h', () => {
+    const sab20 = Date.UTC(2026, 7, 29, 23, 0, 0); // 29/08 20:00 BRT (sábado)
+    expect(dentroDoHorario(sab20)).toBe(false);
+    expect(proximoHorarioValido(sab20)).toBe(Date.UTC(2026, 7, 31, 11, 0, 0)); // 31/08 08:00 BRT (segunda)
+  });
+  it('exatamente 20h BRT de dia útil → empurra pro dia seguinte 8h', () => {
+    const seg20 = Date.UTC(2026, 7, 24, 23, 0, 0); // 24/08 20:00 BRT (segunda)
+    expect(dentroDoHorario(seg20)).toBe(false);
+    expect(proximoHorarioValido(seg20)).toBe(Date.UTC(2026, 7, 25, 11, 0, 0)); // 25/08 08:00 BRT (terça)
+  });
+  it('exatamente 8h BRT de dia útil → não muda', () => {
+    const seg08 = Date.UTC(2026, 7, 24, 11, 0, 0); // 24/08 08:00 BRT (segunda)
+    expect(dentroDoHorario(seg08)).toBe(true);
+    expect(proximoHorarioValido(seg08)).toBe(seg08);
+  });
+});
+
+describe('argumentoDaEtapa', () => {
+  it.each([
+    ['A2H', 'duvida_ab'],
+    ['D0', 'resumo'],
+    ['POS_VISITA', 'pos_visita'],
+    ['M7', 'toque_leve'],
+    ['XYZ', 'toque_leve'],
+  ])('%s → %s', (etapa, esperado) => {
+    expect(argumentoDaEtapa(etapa)).toBe(esperado);
   });
 });
 

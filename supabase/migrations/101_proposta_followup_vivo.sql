@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS public.proposta_followup_vivo (
   cancelled_reason text,
   error_message   text,
   created_at      timestamptz NOT NULL DEFAULT now(),
+  -- Re-armar uma etapa (ex.: cliente reabriu conversa e o follow-up recomeça) é
+  -- sempre UPSERT (onConflict proposta_slug,etapa) resetando status/scheduled_for/
+  -- sent_at/message_sent — NUNCA um INSERT novo, senão duplica a etapa.
   UNIQUE (proposta_slug, etapa)
 );
 CREATE INDEX IF NOT EXISTS idx_pfv_due ON public.proposta_followup_vivo (scheduled_for) WHERE status = 'pending';

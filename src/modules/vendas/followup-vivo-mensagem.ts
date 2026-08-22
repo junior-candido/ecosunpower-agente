@@ -1,9 +1,23 @@
 import type { Argumento } from './followup-vivo-plano.js';
 import { primeiroNome } from '../template-inicial.js';
+import { parcelaCartaoSolar } from '../proposal/cartao-solar.js';
 
+// Formato REAL de propostas_publicas.dados_input (camelCase) — a proposta salva
+// `...data` (ProposalData) + `investimento.total` derivado (ver
+// src/modules/proposal/dados-input.ts e src/modules/closing/closing-data-fetcher.ts:56-77).
+// NÃO existe valorTotal/parcela18x prontos no dados_input; economiaMensal só existe
+// se a proposal-assistant persistiu calc.economiaMensal (ver proposal-assistant.ts).
+// Números às vezes chegam como string (JSON legado) — por isso a coerção em num().
 export interface PropostaParaMensagem {
   cliente_nome: string; slug: string; created_at: string;
-  dados_input: Record<string, unknown> | null;
+  dados_input: {
+    potenciaKwp?: number | string;
+    valorTotalRs?: number | string;
+    investimento?: { total?: number | string };
+    enderecoCliente?: string; // resumido (cidade-UF) — não existe campo de cidade isolado
+    economiaMensal?: number | string;
+    [key: string]: unknown;
+  } | null;
 }
 export interface ContextoMensagem { linkProposta: string; validadeKitDias: number; agoraMs: number }
 export interface Fatos {
@@ -13,19 +27,33 @@ export interface Fatos {
 }
 export interface CasoSimilar { titulo: string; cidade: string; kwp?: number; fotoUrl?: string }
 
-const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+// Coerce string numéricas (JSON legado) e descarta zero/negativo — nunca aparece
+// "economia de R$ 0" ou "parcela de R$ -50" numa mensagem.
+function num(v: unknown): number | null {
+  const n = typeof v === 'string' ? Number(v) : v;
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null;
+}
 export const brl = (v: number) =>
+  // toLocaleString('pt-BR') separa "R$" do número com NBSP (U+00A0); troca por
+  // espaço comum pra bater com o texto que a IA escreve e com os testes.
   ('R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })).replace(/ /g, ' ');
 
 export function montarFatos(p: PropostaParaMensagem, ctx: ContextoMensagem): Fatos {
   const d = p.dados_input ?? {};
+  const valorTotal = num(d.valorTotalRs) ?? num(d.investimento?.total);
+  // Mesma tabela que a proposta renderiza (18x Sol Fácil) — nunca reinventar a conta.
+  const parcela18x = valorTotal != null ? parcelaCartaoSolar(valorTotal, 18, 'solfacil')?.parcela ?? null : null;
   const diasDesde = Math.floor((ctx.agoraMs - Date.parse(p.created_at)) / 86_400_000);
   return {
     primeiroNome: primeiroNome(p.cliente_nome),
     link: ctx.linkProposta,
-    economiaMensal: num(d.economiaMensal), valorTotal: num(d.valorTotal),
-    potenciaKwp: num(d.potenciaKwp), parcela18x: num(d.parcela18x),
-    cidade: typeof d.cidade === 'string' ? d.cidade : null,
+    economiaMensal: num(d.economiaMensal),
+    valorTotal,
+    potenciaKwp: num(d.potenciaKwp),
+    parcela18x,
+    cidade: typeof d.enderecoCliente === 'string' ? d.enderecoCliente : null,
+    // Validade contada a partir do created_at da proposta — aproximação de "data
+    // da cotação" (spec §6 D+12); não existe um carimbo de "cotação enviada" à parte.
     diasRestantesValidade: Math.max(0, ctx.validadeKitDias - diasDesde),
   };
 }

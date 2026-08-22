@@ -23,7 +23,7 @@ export const ETAPAS_FIXAS: EtapaDef[] = [
   { etapa: 'M1',   offsetMs: 120 * DIA, argumento: 'toque_leve' },
 ];
 export const INTERVALO_MENSAL_MS = 30 * DIA;
-export const ARGUMENTO_POR_ETAPA: Record<string, Argumento> = Object.fromEntries(
+const ARGUMENTO_POR_ETAPA: Record<string, Argumento> = Object.fromEntries(
   ETAPAS_FIXAS.map(e => [e.etapa, e.argumento]),
 );
 export function argumentoDaEtapa(etapa: string): Argumento {
