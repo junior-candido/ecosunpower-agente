@@ -8,7 +8,7 @@ export const ESTADOS_VENDA = [
 ] as const;
 export type EstadoVenda = typeof ESTADOS_VENDA[number];
 
-const VIVOS_POS_QUALIFICACAO: EstadoVenda[] = [
+export const VIVOS_POS_QUALIFICACAO: EstadoVenda[] = [
   'QUALIFICADO', 'PRECIFICANDO', 'AGUARDANDO_OK', 'CHAMA_JUNIOR', 'PROPOSTA_ENVIADA', 'FOLLOWUP_VIVO', 'AGENDADO',
 ];
 
@@ -17,17 +17,27 @@ export const TRANSICOES: Record<EstadoVenda, EstadoVenda[]> = {
   QUALIFICADO:      ['PRECIFICANDO', 'CHAMA_JUNIOR', 'PROPOSTA_ENVIADA', 'QUER_JUNIOR', 'PERDIDO'],
   PRECIFICANDO:     ['AGUARDANDO_OK', 'CHAMA_JUNIOR', 'QUER_JUNIOR', 'PERDIDO'],
   AGUARDANDO_OK:    ['PRECIFICANDO', 'PROPOSTA_ENVIADA', 'CHAMA_JUNIOR', 'QUER_JUNIOR', 'PERDIDO'],
-  CHAMA_JUNIOR:     ['PROPOSTA_ENVIADA', 'QUER_JUNIOR', 'PERDIDO'],
+  CHAMA_JUNIOR:     ['PROPOSTA_ENVIADA', 'PRECIFICANDO', 'QUER_JUNIOR', 'PERDIDO'],
   PROPOSTA_ENVIADA: ['FOLLOWUP_VIVO', 'AGENDADO', 'QUER_JUNIOR', 'FECHADO', 'PERDIDO'],
   FOLLOWUP_VIVO:    ['AGENDADO', 'QUER_JUNIOR', 'FECHADO', 'PERDIDO', 'PROPOSTA_ENVIADA'],
   AGENDADO:         ['FOLLOWUP_VIVO', 'QUER_JUNIOR', 'FECHADO', 'PERDIDO'],
   QUER_JUNIOR:      ['PROPOSTA_ENVIADA', 'FOLLOWUP_VIVO', 'AGENDADO', 'FECHADO', 'PERDIDO'],
   FECHADO:          [],
-  PERDIDO:          [],
+  PERDIDO:          ['QUALIFICADO', 'QUER_JUNIOR'],
 };
 
 export function estadoOuNovo(v: unknown): EstadoVenda {
-  return (ESTADOS_VENDA as readonly string[]).includes(String(v)) ? (v as EstadoVenda) : 'NOVO';
+  if (typeof v !== 'string') {
+    if (v !== null && v !== undefined) {
+      console.warn(`[estado-venda] estado desconhecido coagido para NOVO: ${JSON.stringify(v)}`);
+    }
+    return 'NOVO';
+  }
+  if ((ESTADOS_VENDA as readonly string[]).includes(v)) return v as EstadoVenda;
+  if (v !== '') {
+    console.warn(`[estado-venda] estado desconhecido coagido para NOVO: ${JSON.stringify(v)}`);
+  }
+  return 'NOVO';
 }
 
 export function transicaoValida(de: EstadoVenda, para: EstadoVenda): boolean {
@@ -45,5 +55,3 @@ export function estadosAlcancaveis(): EstadoVenda[] {
   }
   return [...vistos];
 }
-
-export { VIVOS_POS_QUALIFICACAO };
