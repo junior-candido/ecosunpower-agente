@@ -52,6 +52,10 @@ import { fetchCampaignQualityInputs } from './modules/marketing/campaign-quality
 import { MetaCapi } from './modules/meta-capi.js';
 import { makeCapiReporter, type CapiReporter } from './modules/capi-reporter.js';
 import { ProposalFollowupService } from './modules/proposal-followup.js';
+import { FollowupVivoService } from './modules/vendas/followup-vivo.js';
+import { VisitasService } from './modules/vendas/visitas.js';
+import { CasesFetcher } from './modules/cases-fetcher.js';
+import { medirIa } from './modules/custos/ia-metering.js';
 import { construirMenu, rowsCategorias, rowsSubmenu } from './modules/menu/menu.js';
 import {
   ClosingAssistant,
@@ -663,6 +667,50 @@ async function main() {
     gerarAbordagemInteligente: (slug: string, tel: string) => gerarAbordagemInteligente(slug, tel),
   });
   console.log('[proposal-followup] Servico ativo (notifica toda abertura, throttle 5min)');
+
+  // Follow-up vivo (spec 21/08 §6): ritmo sem fim da proposta (D0…mensal) + toque
+  // pós-visita 24h. Convive com o proposal-followup (que só cuida da 1ª abertura):
+  // este aqui é o acompanhamento longo, com mensagem escrita na hora pelo Haiku
+  // em cima dos FATOS da proposta. Closures lazy (janela24hAberta/takeover) pelo
+  // mesmo motivo do bloco acima: os consts nascem mais abaixo no main().
+  const casesFetcherFollowupVivo = new CasesFetcher({ siteUrl: config.siteUrl });
+  const anthropicFollowupVivo = new Anthropic({ apiKey: config.anthropicApiKey });
+  const followupVivo = new FollowupVivoService({
+    client: supabase.getClient(),
+    sendText,
+    sendTemplate: (to, nome, template) => metaWaba
+      ? enviarTemplateInicial(metaWaba, to, nome, template)
+      : Promise.reject(new Error('waba_indisponivel')),
+    janela24hAberta: (p: string) => janela24hAberta(p),
+    emTakeover: (p: string) => takeover.isPaused(p),
+    redator: async (prompt: string) => {
+      const r = await anthropicFollowupVivo.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 300,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'followup-vivo', usage: r.usage });
+      return r.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n');
+    },
+    buscarCasoSimilar: async (cidade: string | null) => {
+      try {
+        const todos = await casesFetcherFollowupVivo.getAll();
+        const c = (cidade ? todos.find((x) => x.cidade.toLowerCase() === cidade.toLowerCase()) : undefined)
+          ?? todos.find((x) => x.featured)
+          ?? todos[0];
+        return c ? { titulo: c.titulo, cidade: c.cidade, kwp: c.kwp, fotoUrl: c.fotoPrincipal } : null;
+      } catch {
+        return null;
+      }
+    },
+    proposalBaseUrl: `${config.publicProposalBaseUrl}/p`,
+    validadeKitDias: 15,
+  });
+  const visitas = new VisitasService({ client: supabase.getClient(), followupVivo });
+  console.log('[followup-vivo] Servico ativo (ritmo de proposta sem fim + pos-visita 24h)');
 
   // Eva Fechamento: modo /fechar conversacional pra Junior fechar venda
   // (gera contrato + procuração no Drive). Reusa OAuth do Drive proposal.
@@ -9174,6 +9222,27 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     // Primeira passada 2min apos start (captura backlog de toques vencidos durante restart)
     setTimeout(() => cadence.processCadence().catch(() => {}), 2 * 60 * 1000);
     console.log('[cadence] Cadence scheduler started (checks every 15 min, 9h-20h BRT)');
+
+    // Follow-up vivo: manda as etapas vencidas da proposta, o toque pós-visita
+    // (24h depois) e retoma quem ficou 48h em silêncio. Mesmo ritmo da cadência
+    // (15 min), primeira passada 3 min depois do boot. O horário/elegibilidade
+    // ficam dentro do serviço — aqui é só o relógio.
+    const tickFollowupVivo = async () => {
+      const agora = Date.now();
+      let enviadas = 0; let posVisita = 0; let retomadas = 0;
+      try { enviadas = await followupVivo.processarDevidos(agora); }
+      catch (err) { console.error('[followup-vivo] processarDevidos falhou:', (err as Error).message); }
+      try { posVisita = await visitas.processarPosVisita(agora); }
+      catch (err) { console.error('[followup-vivo] processarPosVisita falhou:', (err as Error).message); }
+      try { retomadas = await followupVivo.retomarSilenciosas(agora); }
+      catch (err) { console.error('[followup-vivo] retomarSilenciosas falhou:', (err as Error).message); }
+      if (enviadas > 0 || posVisita > 0 || retomadas > 0) {
+        console.log(`[followup-vivo] tick: enviadas=${enviadas} posVisita=${posVisita} retomadas=${retomadas}`);
+      }
+    };
+    setTimeout(() => { void tickFollowupVivo(); }, 3 * 60 * 1000);
+    setInterval(() => { void tickFollowupVivo(); }, 15 * 60 * 1000);
+    console.log('[followup-vivo] Scheduler started (checks every 15 min)');
 
     // Maquina de e-mail (Elo): espelha a cadencia de WhatsApp, so que pro
     // canal e-mail. Processa steps de email_sequencia vencidos a cada 15min,
