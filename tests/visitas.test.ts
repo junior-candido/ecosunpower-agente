@@ -22,7 +22,15 @@ describe('VisitasService', () => {
     const client: any = { from: (_t: string) => ({
       insert: async (r: any) => { rows.push({ id: `v${rows.length + 1}`, ...r }); return { error: null }; },
       select: () => ({ is: () => ({ lte: async (_k: string, v: string) => ({ data: rows.filter(r => r.resultado == null && r.fim <= v), error: null }) }) }),
-      update: (p: any) => ({ eq: async (k: string, v: string) => { rows.filter(r => r[k] === v).forEach(r => Object.assign(r, p)); return { error: null }; } }),
+      update: (p: any) => {
+        const f: Array<(r: any) => boolean> = [];
+        const u: any = {
+          eq: (k: string, v: string) => { f.push(r => r[k] === v); return u; },
+          is: (k: string, v: any) => { f.push(r => r[k] == v); return u; },
+          then: (res: any) => { rows.filter(r => f.every(x => x(r))).forEach(r => Object.assign(r, p)); return Promise.resolve({ error: null }).then(res); },
+        };
+        return u;
+      },
     }) };
     const followup = { agendarPosVisita: vi.fn().mockResolvedValue(undefined) };
     return { rows, client, followup, svc: new VisitasService({ client, followupVivo: followup as any }) };
@@ -58,5 +66,15 @@ describe('VisitasService', () => {
     await d.svc.marcarResultado('L1', 'fechou');
     expect(d.rows[0].resultado).toBe('fechou');
     expect(await d.svc.processarPosVisita(T0)).toBe(0);
+  });
+
+  it('marcarResultado não sobrescreve visita que já tem resultado', async () => {
+    const d = deps();
+    await d.svc.registrar({ leadId: 'L1', phone: '55', tipo: 'visita', inicioMs: T0 - 50 * H, fimMs: T0 - 49 * H, calendarEventId: null });
+    await d.svc.registrar({ leadId: 'L1', phone: '55', tipo: 'visita', inicioMs: T0 - 3 * H, fimMs: T0 - 2 * H, calendarEventId: null });
+    await d.svc.processarPosVisita(T0); // primeira vira followup_enviado
+    await d.svc.marcarResultado('L1', 'fechou');
+    expect(d.rows[0].resultado).toBe('followup_enviado');
+    expect(d.rows[1].resultado).toBe('fechou');
   });
 });

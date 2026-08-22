@@ -27,7 +27,7 @@ export class VisitasService {
   }
 
   async marcarResultado(leadId: string, resultado: 'fechou' | 'cancelada'): Promise<void> {
-    const { error } = await this.deps.client.from('visitas').update({ resultado }).eq('lead_id', leadId);
+    const { error } = await this.deps.client.from('visitas').update({ resultado }).eq('lead_id', leadId).is('resultado', null);
     if (error) console.error('[visitas] marcarResultado falhou:', error.message);
   }
 

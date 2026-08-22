@@ -10,6 +10,7 @@ import {
   type CasoSimilar, type RedatorIA, type PropostaParaMensagem,
 } from './followup-vivo-mensagem.js';
 import { registrarEvento } from '../elo/eventos.js';
+import { normalizeBrazilianPhone } from '../meta-leadgen.js';
 
 export interface FollowupVivoDeps {
   client: SupabaseClient;
@@ -31,6 +32,9 @@ const ON_CONFLICT = 'proposta_slug,etapa';
 const A2H_MS = 2 * 3_600_000;
 const SILENCIO_RETOMADA_MS = 48 * 3_600_000;
 const ETAPAS_REARME_POS_VISITA = ['D3', 'D5', 'D8', 'D12', 'D20'];
+const SENDING_EXPIRA_MS = 30 * 60_000;
+/** cancelamentos que nenhuma visita reverte (a proposta não existe mais) */
+const CANCELAMENTOS_DEFINITIVOS = ['proposta_revogada', 'proposta_inexistente'];
 
 interface EtapaRow { id: string; proposta_slug: string; lead_id: string | null; etapa: string; scheduled_for: string }
 
@@ -69,12 +73,23 @@ export class FollowupVivoService {
   /** Pós-visita: cria etapa POS_VISITA pra agora (dentro do horário) na proposta mais recente do lead
    *  e re-arma D3..D20 relativos à visita (o cliente viu o Junior — voltou a ser quente), mesmo as já enviadas. */
   async agendarPosVisita(p: { leadId: string | null; phone: string; agoraMs: number }): Promise<void> {
-    let q = this.deps.client.from('propostas_publicas').select('slug, lead_id').eq('revoked', false)
-      .order('created_at', { ascending: false }).limit(1);
-    q = p.leadId ? q.eq('lead_id', p.leadId) : q.eq('cliente_telefone', p.phone);
-    const { data } = await q;
-    const prop = data?.[0];
+    if (p.leadId) {
+      const { data: lead } = await this.deps.client.from('leads').select('eva_active, opt_out, status, contact_type').eq('id', p.leadId).maybeSingle();
+      const eleg = elegivelParaFollowup(lead ?? {}, false);
+      if (!eleg.ok) { console.log(`[followup-vivo] pós-visita ignorada lead=${p.leadId} motivo=${eleg.motivo}`); return; }
+    }
+    let prop: { slug: string; lead_id: string | null } | undefined;
+    if (p.leadId) {
+      const { data } = await this.deps.client.from('propostas_publicas').select('slug, lead_id').eq('revoked', false)
+        .eq('lead_id', p.leadId).order('created_at', { ascending: false }).limit(1);
+      prop = data?.[0];
+    } else {
+      prop = (await this.propostasPorTelefone(p.phone))[0];
+    }
     if (!prop) { console.log(`[followup-vivo] pós-visita sem proposta lead=${p.leadId} phone=${p.phone}`); return; }
+    const { data: definitivas } = await this.deps.client.from(T).select('id').eq('proposta_slug', prop.slug)
+      .eq('status', 'cancelled').in('cancelled_reason', CANCELAMENTOS_DEFINITIVOS).limit(1);
+    if (definitivas && definitivas.length > 0) { console.log(`[followup-vivo] pós-visita ignorada slug=${prop.slug}: proposta cancelada em definitivo`); return; }
     const leadId = p.leadId ?? prop.lead_id ?? null;
     const rearme = planejarEtapas(p.agoraMs).filter(e => ETAPAS_REARME_POS_VISITA.includes(e.etapa));
     const linhas = [
@@ -82,39 +97,55 @@ export class FollowupVivoService {
       ...rearme.map(e => ({ etapa: e.etapa, scheduled_for: new Date(e.scheduledForMs).toISOString() })),
     ].map(l => ({
       proposta_slug: prop.slug, lead_id: leadId, etapa: l.etapa, scheduled_for: l.scheduled_for,
-      status: 'pending', sent_at: null, message_sent: null,
+      status: 'pending', sent_at: null, message_sent: null, cancelled_reason: null, error_message: null,
     }));
     const { error } = await this.deps.client.from(T).upsert(linhas, { onConflict: ON_CONFLICT });
     if (error) console.error('[followup-vivo] pós-visita falhou:', error.message);
     else console.log(`[followup-vivo] POS_VISITA + ${rearme.length} etapas re-armadas slug=${prop.slug}`);
   }
 
+  /** propostas_publicas.cliente_telefone é texto livre ("(61) 99999-9999"). O ilike é só PRÉ-FILTRO
+   *  pelos 4 últimos dígitos (sempre contíguos em qualquer formatação BR — os 8 últimos podem ter hífen
+   *  no meio); a checagem AUTORITATIVA é igualdade do telefone normalizado (padrão da casa, cf. index.ts
+   *  montarContextoProposta). Mais recente primeiro. */
+  private async propostasPorTelefone(phone: string): Promise<Array<{ slug: string; lead_id: string | null }>> {
+    const alvo = normalizeBrazilianPhone(phone);
+    if (!alvo) return [];
+    const ultimos4 = alvo.slice(-4);
+    const { data, error } = await this.deps.client.from('propostas_publicas').select('slug, lead_id, cliente_telefone')
+      .ilike('cliente_telefone', `%${ultimos4}%`).eq('revoked', false)
+      .order('created_at', { ascending: false }).limit(50);
+    if (error) { console.error('[followup-vivo] busca por telefone falhou:', error.message); return []; }
+    return (data ?? [])
+      .filter(p => normalizeBrazilianPhone(String(p.cliente_telefone ?? '')) === alvo)
+      .map(p => ({ slug: p.slug as string, lead_id: (p.lead_id as string | null) ?? null }));
+  }
+
   /** Cliente respondeu: a conversa normal assume; pendentes ficam paused. */
   async pausarPorResposta(telefone: string): Promise<void> {
-    const { data: props } = await this.deps.client.from('propostas_publicas').select('slug').eq('cliente_telefone', telefone).eq('revoked', false);
-    for (const p of props ?? []) {
-      await this.deps.client.from(T).update({ status: 'paused' }).eq('proposta_slug', p.slug).eq('status', 'pending');
+    for (const p of await this.propostasPorTelefone(telefone)) {
+      const { error } = await this.deps.client.from(T).update({ status: 'paused' }).eq('proposta_slug', p.slug).eq('status', 'pending');
+      if (error) console.error(`[followup-vivo] pausar falhou slug=${p.slug}:`, error.message);
     }
   }
 
   /** Cron: paused → pending quando a última mensagem da conversa é da Eva há ≥ 48 h. Devolve quantas etapas re-armou. */
   async retomarSilenciosas(agoraMs: number): Promise<number> {
-    const { data: pausadas } = await this.deps.client.from(T).select('proposta_slug, lead_id').eq('status', 'paused');
+    const { data: pausadas, error } = await this.deps.client.from(T).select('id, scheduled_for, proposta_slug, lead_id').eq('status', 'paused');
+    if (error) { console.error('[followup-vivo] busca de pausadas falhou:', error.message); return 0; }
     const leads = [...new Set((pausadas ?? []).map(r => r.lead_id).filter(Boolean))] as string[];
     let n = 0;
     for (const leadId of leads) {
       if (!(await this.evaSilenciosaHa(leadId, SILENCIO_RETOMADA_MS, agoraMs))) continue;
-      const slugs = [...new Set((pausadas ?? []).filter(r => r.lead_id === leadId).map(r => r.proposta_slug as string))];
-      for (const slug of slugs) {
-        // re-arma: etapas futuras voltam a pending; as já vencidas vão pra agora (dentro do horário)
-        const { data: rows } = await this.deps.client.from(T).select('id, scheduled_for').eq('proposta_slug', slug).eq('status', 'paused');
-        for (const r of rows ?? []) {
-          const sf = Math.max(Date.parse(r.scheduled_for), proximoHorarioValido(agoraMs));
-          await this.deps.client.from(T).update({ status: 'pending', scheduled_for: new Date(sf).toISOString() }).eq('id', r.id);
-          n++;
-        }
+      const rows = (pausadas ?? []).filter(r => r.lead_id === leadId);
+      // re-arma: etapas futuras voltam a pending; as já vencidas vão pra agora (dentro do horário)
+      for (const r of rows) {
+        const sf = Math.max(Date.parse(r.scheduled_for), proximoHorarioValido(agoraMs));
+        const { error: e } = await this.deps.client.from(T).update({ status: 'pending', scheduled_for: new Date(sf).toISOString() }).eq('id', r.id);
+        if (e) { console.error(`[followup-vivo] retomar falhou id=${r.id}:`, e.message); continue; }
+        n++;
       }
-      if (slugs.length) console.log(`[followup-vivo] retomada após silêncio lead=${leadId} propostas=${slugs.length}`);
+      if (rows.length) console.log(`[followup-vivo] retomada após silêncio lead=${leadId} etapas=${rows.length}`);
     }
     return n;
   }
@@ -134,15 +165,23 @@ export class FollowupVivoService {
   }
 
   async cancelarPorSlug(slug: string, motivo: string): Promise<void> {
-    await this.deps.client.from(T).update({ status: 'cancelled', cancelled_reason: motivo }).eq('proposta_slug', slug).in('status', ['pending', 'paused']);
+    const { error } = await this.deps.client.from(T).update({ status: 'cancelled', cancelled_reason: motivo }).eq('proposta_slug', slug).in('status', ['pending', 'paused']);
+    if (error) console.error(`[followup-vivo] cancelar slug=${slug} falhou:`, error.message);
   }
   async cancelarPorLead(leadId: string, motivo: string): Promise<void> {
-    await this.deps.client.from(T).update({ status: 'cancelled', cancelled_reason: motivo }).eq('lead_id', leadId).in('status', ['pending', 'paused']);
+    const { error } = await this.deps.client.from(T).update({ status: 'cancelled', cancelled_reason: motivo }).eq('lead_id', leadId).in('status', ['pending', 'paused']);
+    if (error) console.error(`[followup-vivo] cancelar lead=${leadId} falhou:`, error.message);
   }
 
   /** Chamado pelo cron. Devolve quantas etapas foram enviadas. */
   async processarDevidos(agoraMs: number): Promise<number> {
     if (!dentroDoHorario(agoraMs)) return 0;
+    // varredura: 'sending' preso (processo caiu no meio) vira failed — nunca pending, pra não entregar em dobro
+    const { data: presas, error: errPresas } = await this.deps.client.from(T)
+      .update({ status: 'failed', error_message: 'sending_expirado' })
+      .eq('status', 'sending').lt('scheduled_for', new Date(agoraMs - SENDING_EXPIRA_MS).toISOString()).select('id');
+    if (errPresas) console.error('[followup-vivo] varredura de sending falhou:', errPresas.message);
+    else if (presas && presas.length > 0) console.warn(`[followup-vivo] ${presas.length} etapa(s) presas em sending marcadas failed`);
     const { data: devidas, error } = await this.deps.client.from(T)
       .select('id, proposta_slug, lead_id, etapa, scheduled_for')
       .eq('status', 'pending').lte('scheduled_for', new Date(agoraMs).toISOString())
@@ -202,7 +241,8 @@ export class FollowupVivoService {
       const { templateUsado } = await this.deps.sendTemplate(prop.cliente_telefone, prop.cliente_nome, this.deps.templateFallback);
       registro = `template:${templateUsado}`;
     }
-    await this.deps.client.from(T).update({ status: 'sent', sent_at: new Date(agoraMs).toISOString(), message_sent: registro }).eq('id', row.id);
+    const { error: errSent } = await this.deps.client.from(T).update({ status: 'sent', sent_at: new Date(agoraMs).toISOString(), message_sent: registro }).eq('id', row.id);
+    if (errSent) console.error(`[followup-vivo] marcar sent falhou id=${row.id} (mensagem JÁ enviada):`, errSent.message);
     const viaTemplate = registro.startsWith('template:');
     console.log(`[followup-vivo] etapa ${row.etapa} enviada slug=${row.proposta_slug} (${viaTemplate ? registro : 'texto'})`);
     await registrarEvento(this.deps.client, {

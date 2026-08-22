@@ -19,6 +19,7 @@ function fakeDb() {
     q.in = (k: string, vs: any[]) => { q._f.push((r: Row) => vs.includes(r[k])); return q; };
     q.lte = (k: string, v: any) => { q._f.push((r: Row) => r[k] <= v); return q; };
     q.lt = (k: string, v: any) => { q._f.push((r: Row) => r[k] < v); return q; };
+    q.ilike = (k: string, pat: string) => { const sub = pat.replace(/%/g, '').toLowerCase(); q._f.push((r: Row) => String(r[k] ?? '').toLowerCase().includes(sub)); return q; };
     q.order = (k: string, o?: any) => { q._order = [k, !!o?.ascending]; return q; };
     q.limit = (n: number) => { q._limit = n; return q; };
     const resultado = () => {
@@ -44,6 +45,7 @@ function fakeDb() {
       const u: any = { _f: [...q._f] };
       u.eq = (k: string, v: any) => { u._f.push((r: Row) => r[k] === v); return u; };
       u.in = (k: string, vs: any[]) => { u._f.push((r: Row) => vs.includes(r[k])); return u; };
+      u.lt = (k: string, v: any) => { u._f.push((r: Row) => r[k] < v); return u; };
       u.select = () => u;
       u.then = (res: any) => {
         let hit = rows.filter(r => u._f.every((f: any) => f(r)));
@@ -303,5 +305,79 @@ describe('FollowupVivoService', () => {
     expect(Date.parse(d3.scheduled_for)).toBe(esperado);
     expect(d12.status).toBe('pending');
     expect(d12.scheduled_for).toBe(d12Antes);
+  });
+
+  it('pausarPorResposta acha a proposta mesmo com telefone formatado "(61) 99999-9999"', async () => {
+    db.tabelas.propostas_publicas[0].cliente_telefone = '(61) 99999-9999';
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    await svc.pausarPorResposta('5561999999999');
+    expect(db.tabelas.proposta_followup_vivo.every(r => r.status === 'paused')).toBe(true);
+  });
+
+  it('pausarPorResposta NÃO pausa proposta de outro número com mesmos 8 dígitos finais (DDD diferente)', async () => {
+    db.tabelas.propostas_publicas[0].cliente_telefone = '(11) 99999-9999';
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    await svc.pausarPorResposta('5561999999999');
+    expect(db.tabelas.proposta_followup_vivo.every(r => r.status === 'pending')).toBe(true);
+  });
+
+  it('agendarPosVisita por telefone acha proposta com telefone formatado', async () => {
+    db.tabelas.propostas_publicas[0].cliente_telefone = '+55 (61) 99999-9999';
+    const svc = mk(db);
+    await svc.agendarPosVisita({ leadId: null, phone: '5561999999999', agoraMs: T0 + 9 * DIA });
+    expect(db.tabelas.proposta_followup_vivo.find(r => r.etapa === 'POS_VISITA')).toBeTruthy();
+  });
+
+  it('processarDevidos varre "sending" preso há mais de 30 min → failed (não reenvia)', async () => {
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    const na24 = db.tabelas.proposta_followup_vivo.find(r => r.etapa === 'NA24')!;
+    na24.status = 'sending';
+    const n = await svc.processarDevidos(T0 + 25 * 3_600_000); // NA24 vencida há 1h
+    expect(n).toBe(0);
+    expect(na24.status).toBe('failed');
+    expect(na24.error_message).toBe('sending_expirado');
+    expect((svc as any).deps.sendText).not.toHaveBeenCalled();
+  });
+
+  it('"sending" recente (< 30 min) não é varrido', async () => {
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    const na24 = db.tabelas.proposta_followup_vivo.find(r => r.etapa === 'NA24')!;
+    na24.status = 'sending';
+    await svc.processarDevidos(Date.parse(na24.scheduled_for) + 10 * 60_000);
+    expect(na24.status).toBe('sending');
+  });
+
+  it('agendarPosVisita com lead em opt-out não re-arma nada', async () => {
+    db.tabelas.leads[0].opt_out = true;
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    await svc.cancelarPorLead('L1', 'opt_out');
+    await svc.agendarPosVisita({ leadId: 'L1', phone: '5561999999999', agoraMs: T0 + 9 * DIA });
+    expect(db.tabelas.proposta_followup_vivo.find(r => r.etapa === 'POS_VISITA')).toBeUndefined();
+    expect(db.tabelas.proposta_followup_vivo.every(r => r.status === 'cancelled')).toBe(true);
+  });
+
+  it('agendarPosVisita com proposta revogada (cancelada por isso) não re-arma', async () => {
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    await svc.cancelarPorSlug('joel', 'proposta_revogada');
+    await svc.agendarPosVisita({ leadId: 'L1', phone: '5561999999999', agoraMs: T0 + 9 * DIA });
+    expect(db.tabelas.proposta_followup_vivo.find(r => r.etapa === 'POS_VISITA')).toBeUndefined();
+    expect(db.tabelas.proposta_followup_vivo.every(r => r.status === 'cancelled')).toBe(true);
+  });
+
+  it('agendarPosVisita re-arma etapa cancelada por outro motivo (ex.: fechou errado) zerando cancelled_reason', async () => {
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    await svc.cancelarPorSlug('joel', 'takeover');
+    await svc.agendarPosVisita({ leadId: 'L1', phone: '5561999999999', agoraMs: T0 + 9 * DIA });
+    const d3 = db.tabelas.proposta_followup_vivo.find(r => r.etapa === 'D3')!;
+    expect(d3.status).toBe('pending');
+    expect(d3.cancelled_reason).toBeNull();
+    expect(d3.error_message).toBeNull();
   });
 });
