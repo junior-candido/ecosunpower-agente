@@ -23,23 +23,47 @@ export type ComandoTabela =
   | { acao: 'desativar'; tipo: TipoItem; marca: string; modelo: string }
   | { acao: 'erro'; erro: 'formato' | 'preco_invalido' | 'micro_sem_modulos_por_unidade' | 'telhado_desconhecido' };
 
-export function parsePrecoBr(s: string): number | null {
-  const limpo = s.trim().replace(/^r\$\s*/i, '');
-  // "1.050,00" → 1050 · "980" → 980 · "1450.50" → 1450.5
-  const norm = /,\d{1,2}$/.test(limpo) ? limpo.replace(/\./g, '').replace(',', '.') : limpo.replace(/,/g, '');
-  const n = Number(norm);
-  return Number.isFinite(n) ? n : null;
+/**
+ * Lê número escrito como gente escreve no zap (pt-BR) — e NUNCA confunde
+ * ponto de milhar com decimal: "1.050" é mil e cinquenta, não 1,05.
+ * Aceita: 1.050 · 12.500 · 2.500.000 · 1.050,00 · 980,5 · R$ 1.050 · 1450.50 · 980
+ * Recusa (devolve null): "" · "abc" · "1.0500" · "1,234.56" · negativos.
+ */
+export function parseNumeroBr(entrada: unknown): number | null {
+  if (typeof entrada === 'number') return Number.isFinite(entrada) ? entrada : null;
+  if (typeof entrada !== 'string') return null;
+  const limpo = entrada.trim().replace(/^r\$\s*/i, '').trim();
+  if (!limpo) return null;
+  // pt-BR: milhar com ponto, decimal com vírgula (o ponto some, a vírgula vira ponto).
+  if (/^\d{1,3}(\.\d{3})*(,\d{1,2})?$/.test(limpo)) {
+    const n = Number(limpo.replace(/\./g, '').replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+  }
+  // Simples: 980 · 980,5 · 1450.50 (decimal com ponto, jeito de calculadora).
+  if (/^\d+([.,]\d{1,2})?$/.test(limpo)) {
+    const n = Number(limpo.replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
 }
 
+/** Preço é número lido do mesmo jeito — nome mantido pra quem já importava. */
+export const parsePrecoBr = parseNumeroBr;
+
+/** "Cerâmico" / "CERAMICO" / "ceramico" → 'ceramico' (tira acento pela faixa combinante). */
 const normalizarTelhado = (s: string): Telhado | null => {
-  const t = s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const t = s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   return (TELHADOS as readonly string[]).includes(t) ? (t as Telhado) : null;
 };
 
 export function parseComandoTabela(texto: string): ComandoTabela | null {
-  const m = /^\/?tabela(?:\s+(.*))?$/i.exec(texto.trim());
+  const t = texto.trim();
+  // "tabela" solto (sem barra) é atalho pra listar. Com argumento a barra é
+  // OBRIGATÓRIA — senão "tabela de preços chegou" viraria comando.
+  if (/^\/?tabela$/i.test(t)) return { acao: 'listar' };
+  const m = /^\/tabela\s+(.+)$/i.exec(t);
   if (!m) return null;
-  let resto = (m[1] ?? '').trim();
+  let resto = m[1].trim();
   if (!resto) return { acao: 'listar' };
 
   let fonte: FonteItem = 'junior';
@@ -54,8 +78,8 @@ export function parseComandoTabela(texto: string): ComandoTabela | null {
     const me = /^estrutura\s+(\S+)$/i.exec(alvo);
     if (me) { const t = normalizarTelhado(me[1]); return t ? { acao: 'desativar', tipo: 'estrutura', marca: t, modelo: t } : { acao: 'erro', erro: 'telhado_desconhecido' }; }
     if (/^cabos$/i.test(alvo)) return { acao: 'desativar', tipo: 'cabos_protecao', marca: 'geral', modelo: 'geral' };
-    const mo = /^(?:modulo\s+)?(\S+)\s+(\d{3,4})$/i.exec(alvo);
-    if (mo) return { acao: 'desativar', tipo: 'modulo', marca: mo[1], modelo: mo[2] };
+    const mo = /^(?:modulo\s+)?(.+?)\s+(\d{3,4})$/i.exec(alvo);
+    if (mo) return { acao: 'desativar', tipo: 'modulo', marca: mo[1].trim(), modelo: mo[2] };
     return { acao: 'erro', erro: 'formato' };
   }
 
@@ -82,9 +106,9 @@ export function parseComandoTabela(texto: string): ComandoTabela | null {
   if (/^cabos$/i.test(esquerda)) {
     return { acao: 'atualizar', item: { tipo: 'cabos_protecao', marca: 'geral', modelo: 'geral', potenciaW: null, modulosPorUnidade: null, unidade: 'kwp', ...base } };
   }
-  const mod = /^(?:modulo\s+)?(\S+)\s+(\d{3,4})$/i.exec(esquerda);
+  const mod = /^(?:modulo\s+)?(.+?)\s+(\d{3,4})$/i.exec(esquerda);
   if (mod) {
-    return { acao: 'atualizar', item: { tipo: 'modulo', marca: mod[1], modelo: mod[2], potenciaW: Number(mod[2]), modulosPorUnidade: null, unidade: 'un', ...base } };
+    return { acao: 'atualizar', item: { tipo: 'modulo', marca: mod[1].trim(), modelo: mod[2], potenciaW: Number(mod[2]), modulosPorUnidade: null, unidade: 'un', ...base } };
   }
   return { acao: 'erro', erro: 'formato' };
 }
