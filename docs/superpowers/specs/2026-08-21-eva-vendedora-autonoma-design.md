@@ -41,7 +41,7 @@ Entrada (da qualificação): consumo-alvo kWh/mês, cidade/concessionária, tipo
    | Consumo-alvo | kWp típico | Serviço R$/Wp |
    |---|---|---|
    | 500–700 kWh | 4–6 | 0,95 |
-   | 700–1.000 | 6–9 | 0,80 |
+   | 700–1.000 | 6–9 | 0,85 (era 0,80; Junior subiu 22/08 — aumento de custos) |
    | 1.000–1.500 | 9–13 | 0,70 |
 
    Infra extra (padrão de entrada, carregador EV, laje com bloquete) = itens à parte, como hoje.
