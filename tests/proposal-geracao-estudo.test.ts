@@ -103,4 +103,15 @@ describe('Geração sempre do estudo', () => {
     expect(fields.dadosInput.nomeCliente).toBe('Teste');
     expect(fields.htmlContent).toContain('<');
   });
+
+  // Follow-up vivo (spec 2026-08-21 §6) lê economiaMensal do dados_input pra
+  // montar a mensagem do argumento "economia" — sem isso, a etapa D3 nunca
+  // teria o número real e cairia sempre no toque_leve.
+  it('salva calculations.economiaMensal no dados_input (follow-up vivo lê de lá)', async () => {
+    const r = await pa.generateProposalCore({
+      data: baseData({ geracaoMensalKwh: 1350 }), modoEnvio: 'junior_envia', tipo: 'personalizada', attachments: estudoAttach,
+    });
+    const [, fields] = sb.updatePropostaPublica.mock.calls[0];
+    expect(fields.dadosInput.economiaMensal).toBe(r.calculations!.economiaMensal);
+  });
 });

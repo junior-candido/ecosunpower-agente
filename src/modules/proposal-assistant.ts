@@ -1526,9 +1526,10 @@ export class ProposalAssistant {
         })
       : Promise.reject(new Error(isReopen ? 'Drive pulado no reopen' : 'Drive uploader nao configurado'));
 
-    // Salva o `data` COMPLETO (pra reabrir) + investimento.total derivado (KPIs do dashboard).
+    // Salva o `data` COMPLETO (pra reabrir) + investimento.total derivado (KPIs do dashboard)
+    // + economiaMensal (o follow-up vivo lê daqui pro argumento "economia" — spec 2026-08-21 §6).
     const dadosInputMinimo: Record<string, unknown> = montarDadosInputCompleto(
-      data as Record<string, unknown>,
+      { ...(data as Record<string, unknown>), economiaMensal: calculations.economiaMensal },
       Number(data.valorTotalRs) + somaServicosExtras(mapServicosFromClaude(data.servicos)),
     );
 
