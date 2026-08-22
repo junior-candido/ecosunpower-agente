@@ -106,6 +106,23 @@ export class ReengagementCadence {
           .eq('id', touch.id);
         continue;
       }
+      // Follow-up vivo (spec 21/08 §6) mandou embora a cadência antiga: se o lead
+      // tem etapa viva de proposta (pending|paused), quem fala com ele é a Eva do
+      // follow-up vivo — este toque legado sai de cena pra não duplicar mensagem.
+      const { data: vivo } = await this.supabase
+        .from('proposta_followup_vivo')
+        .select('id')
+        .eq('lead_id', lead.id)
+        .in('status', ['pending', 'paused'])
+        .limit(1);
+      if (vivo && vivo.length > 0) {
+        await this.supabase
+          .from('reengagement_touches')
+          .update({ status: 'canceled' })
+          .eq('id', touch.id);
+        console.log(`[reengagement-cadence] Touch ${touch.touch_number} cancelado pro lead ${lead.id} — follow-up vivo no comando`);
+        continue;
+      }
       try {
         const message = await this.generateMessage(touch.topic_type, lead.name);
         await this.sendText(lead.phone, message);
