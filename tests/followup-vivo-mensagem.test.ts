@@ -5,8 +5,11 @@ import { parcelaCartaoSolar } from '../src/modules/proposal/cartao-solar.js';
 // Formato REAL de propostas_publicas.dados_input (camelCase) — ver
 // src/modules/proposal/dados-input.ts e src/modules/closing/closing-data-fetcher.ts:56-77.
 // Não existem valorTotal, economiaMensal (antes da persistência) nem parcela18x prontos —
-// valorTotal vem de valorTotalRs (ou investimento.total) e a parcela é calculada
-// com a MESMA tabela que a proposta renderiza (cartao-solar.ts).
+// valorTotal PREFERE investimento.total (valor COM serviços extras, o que o cliente vê
+// na proposta — proposal-assistant.ts:2042-2063), caindo pra valorTotalRs (só o kit)
+// quando não há investimento. A parcela é calculada com a MESMA tabela que a proposta
+// renderiza (cartao-solar.ts) e arredondada como no PDF (fmtRs(Math.round(parcela)),
+// proposal-assistant.ts ~2279).
 const proposta = {
   cliente_nome: 'Joel Lima Peres', slug: 'joel-lima-peres', created_at: '2026-08-18T12:00:00Z',
   dados_input: {
@@ -18,10 +21,10 @@ const proposta = {
   },
 };
 const ctx = { linkProposta: 'https://ecosunpower.eng.br/p/joel-lima-peres', validadeKitDias: 15, agoraMs: Date.parse('2026-08-21T15:00:00Z') };
-const parcelaEsperada = parcelaCartaoSolar(19200, 18, 'solfacil')!.parcela;
+const parcelaEsperada = Math.round(parcelaCartaoSolar(19200, 18, 'solfacil')!.parcela);
 
 describe('montarFatos', () => {
-  it('extrai economia, total (de valorTotalRs), kWp, parcela (via cartao-solar) e validade restante', () => {
+  it('extrai economia, total (de investimento.total), kWp, parcela arredondada e validade restante', () => {
     const f = montarFatos(proposta, ctx);
     expect(f.primeiroNome).toBe('Joel');
     expect(f.economiaMensal).toBe(743);
@@ -31,8 +34,14 @@ describe('montarFatos', () => {
     expect(f.link).toBe(ctx.linkProposta);
     expect(f.cidade).toBe('Brasília-DF');
   });
-  it('valorTotalRs como STRING "19200" ainda vira 19200 (coerção numérica)', () => {
-    const f = montarFatos({ ...proposta, dados_input: { ...proposta.dados_input, valorTotalRs: '19200' as unknown as number } }, ctx);
+  it('investimento.total (valor COM serviços) prevalece sobre valorTotalRs (só o kit) quando os dois existem', () => {
+    const f = montarFatos({ ...proposta, dados_input: { ...proposta.dados_input, valorTotalRs: 19200, investimento: { total: 23700 } } }, ctx);
+    expect(f.valorTotal).toBe(23700);
+    expect(f.parcela18x).toBe(Math.round(parcelaCartaoSolar(23700, 18, 'solfacil')!.parcela));
+  });
+  it('sem investimento.total, valorTotalRs como STRING "19200" ainda vira 19200 (coerção numérica)', () => {
+    const { investimento, ...semInvestimento } = proposta.dados_input;
+    const f = montarFatos({ ...proposta, dados_input: { ...semInvestimento, valorTotalRs: '19200' as unknown as number } }, ctx);
     expect(f.valorTotal).toBe(19200);
   });
   it('sem valorTotalRs cai pra investimento.total', () => {

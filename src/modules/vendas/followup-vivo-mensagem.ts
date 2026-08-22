@@ -40,9 +40,14 @@ export const brl = (v: number) =>
 
 export function montarFatos(p: PropostaParaMensagem, ctx: ContextoMensagem): Fatos {
   const d = p.dados_input ?? {};
-  const valorTotal = num(d.valorTotalRs) ?? num(d.investimento?.total);
-  // Mesma tabela que a proposta renderiza (18x Sol Fácil) — nunca reinventar a conta.
-  const parcela18x = valorTotal != null ? parcelaCartaoSolar(valorTotal, 18, 'solfacil')?.parcela ?? null : null;
+  // investimento.total é o valor COM serviços extras (o que o cliente vê na proposta —
+  // proposal-assistant.ts:2042-2063); valorTotalRs é só o kit. Preferir sempre o total
+  // com serviços, senão a mensagem cotaria um valor menor do que o cliente já viu.
+  const valorTotal = num(d.investimento?.total) ?? num(d.valorTotalRs);
+  // Mesma tabela que a proposta renderiza (18x Sol Fácil), arredondada como no PDF
+  // (fmtRs(Math.round(parcela)), proposal-assistant.ts ~2279) — nunca reinventar a conta.
+  const parcelaBruta = valorTotal != null ? parcelaCartaoSolar(valorTotal, 18, 'solfacil')?.parcela ?? null : null;
+  const parcela18x = parcelaBruta != null ? Math.round(parcelaBruta) : null;
   const diasDesde = Math.floor((ctx.agoraMs - Date.parse(p.created_at)) / 86_400_000);
   return {
     primeiroNome: primeiroNome(p.cliente_nome),
