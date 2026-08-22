@@ -7,6 +7,8 @@ function fakeDb() {
     proposta_followup_vivo: [], eva_cadence: [], reengagement_touches: [],
     propostas_publicas: [], leads: [], conversations: [], eventos_elo: [],
   };
+  /** etapas cujo lock otimista (pending -> sending) deve "perder" (outro cron pegou antes) */
+  const lockPerde = new Set<string>();
   const from = (t: string) => {
     const rows = tabelas[t];
     const q: any = { _f: [] as Array<(r: Row) => boolean>, _order: null as null | [string, boolean], _limit: Infinity, _sel: null as null | string };
@@ -19,13 +21,14 @@ function fakeDb() {
     q.lt = (k: string, v: any) => { q._f.push((r: Row) => r[k] < v); return q; };
     q.order = (k: string, o?: any) => { q._order = [k, !!o?.ascending]; return q; };
     q.limit = (n: number) => { q._limit = n; return q; };
-    q.maybeSingle = async () => ({ data: ap()[0] ?? null, error: null });
-    q.single = q.maybeSingle;
-    q.then = (res: any) => {
+    const resultado = () => {
       let d = ap();
       if (q._order) d = [...d].sort((a, b) => (a[q._order![0]] < b[q._order![0]] ? -1 : 1) * (q._order![1] ? 1 : -1));
-      return Promise.resolve({ data: d.slice(0, q._limit), error: null }).then(res);
+      return d.slice(0, q._limit);
     };
+    q.maybeSingle = async () => ({ data: resultado()[0] ?? null, error: null });
+    q.single = q.maybeSingle;
+    q.then = (res: any) => Promise.resolve({ data: resultado(), error: null }).then(res);
     // honra ignoreDuplicates: true = não toca linha existente; false = merge
     q.upsert = async (list: Row[] | Row, opts?: any) => {
       for (const r of Array.isArray(list) ? list : [list]) {
@@ -43,7 +46,8 @@ function fakeDb() {
       u.in = (k: string, vs: any[]) => { u._f.push((r: Row) => vs.includes(r[k])); return u; };
       u.select = () => u;
       u.then = (res: any) => {
-        const hit = rows.filter(r => u._f.every((f: any) => f(r)));
+        let hit = rows.filter(r => u._f.every((f: any) => f(r)));
+        if (patch.status === 'sending') hit = hit.filter(r => !lockPerde.has(r.etapa));
         hit.forEach(r => Object.assign(r, patch));
         return Promise.resolve({ data: hit, error: null }).then(res);
       };
@@ -51,7 +55,7 @@ function fakeDb() {
     };
     return q;
   };
-  return { tabelas, client: { from } };
+  return { tabelas, lockPerde, client: { from } };
 }
 
 const T0 = Date.UTC(2026, 7, 24, 15, 0, 0); // seg 12:00 BRT
@@ -214,5 +218,90 @@ describe('FollowupVivoService', () => {
     expect(d3.message_sent).toBeNull();
     expect(Date.parse(d3.scheduled_for)).toBe(visita + 3 * DIA);
     expect(db.tabelas.proposta_followup_vivo).toHaveLength(11);
+  });
+
+  it('lock perdido (outro cron pegou a etapa) → não envia e não mexe no status', async () => {
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    db.lockPerde.add('D3');
+    const n = await svc.processarDevidos(T0 + 3 * DIA + 60_000);
+    expect(n).toBe(1); // só NA24
+    expect((svc as any).deps.sendText).toHaveBeenCalledTimes(1);
+    expect(db.tabelas.proposta_followup_vivo.find(r => r.etapa === 'D3')!.status).toBe('pending');
+    expect(db.tabelas.proposta_followup_vivo.find(r => r.etapa === 'NA24')!.status).toBe('sent');
+  });
+
+  it('proposta revogada → cancela com proposta_revogada', async () => {
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    db.tabelas.propostas_publicas[0].revoked = true;
+    expect(await svc.processarDevidos(T0 + 25 * 3_600_000)).toBe(0);
+    expect((svc as any).deps.sendText).not.toHaveBeenCalled();
+    expect(db.tabelas.proposta_followup_vivo.every(r => r.status === 'cancelled' && r.cancelled_reason === 'proposta_revogada')).toBe(true);
+  });
+
+  it('proposta sem telefone → cancela com sem_telefone', async () => {
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    db.tabelas.propostas_publicas[0].cliente_telefone = null;
+    expect(await svc.processarDevidos(T0 + 25 * 3_600_000)).toBe(0);
+    expect(db.tabelas.proposta_followup_vivo.every(r => r.status === 'cancelled' && r.cancelled_reason === 'sem_telefone')).toBe(true);
+  });
+
+  it('agendarPosVisita sem leadId cai pro telefone e escolhe a proposta mais recente', async () => {
+    db.tabelas.propostas_publicas.push({
+      slug: 'joel-v2', cliente_nome: 'Joel Lima', cliente_telefone: '5561999999999', lead_id: null,
+      created_at: new Date(T0 + 5 * DIA).toISOString(), dados_input: {}, revoked: false,
+    });
+    const svc = mk(db);
+    await svc.agendarPosVisita({ leadId: null, phone: '5561999999999', agoraMs: T0 + 9 * DIA });
+    const pos = db.tabelas.proposta_followup_vivo.filter(r => r.etapa === 'POS_VISITA');
+    expect(pos).toHaveLength(1);
+    expect(pos[0].proposta_slug).toBe('joel-v2');
+  });
+
+  it('agendarPosVisita com leadId e duas propostas → a mais recente por created_at', async () => {
+    db.tabelas.propostas_publicas.push({
+      slug: 'joel-antiga', cliente_nome: 'Joel Lima', cliente_telefone: '5561999999999', lead_id: 'L1',
+      created_at: new Date(T0 - 30 * DIA).toISOString(), dados_input: {}, revoked: false,
+    });
+    const svc = mk(db);
+    await svc.agendarPosVisita({ leadId: 'L1', phone: '5561999999999', agoraMs: T0 + 9 * DIA });
+    const pos = db.tabelas.proposta_followup_vivo.filter(r => r.etapa === 'POS_VISITA');
+    expect(pos).toHaveLength(1);
+    expect(pos[0].proposta_slug).toBe('joel');
+  });
+
+  it('pausarPorResposta só pausa pending — sent continua sent', async () => {
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    await svc.processarDevidos(T0 + 25 * 3_600_000); // NA24 enviada
+    await svc.pausarPorResposta('5561999999999');
+    const na24 = db.tabelas.proposta_followup_vivo.find(r => r.etapa === 'NA24')!;
+    expect(na24.status).toBe('sent');
+    expect(db.tabelas.proposta_followup_vivo.filter(r => r.etapa !== 'NA24').every(r => r.status === 'paused')).toBe(true);
+  });
+
+  it('retomarSilenciosas: vencida vai pra proximoHorarioValido(agora), futura mantém a própria data', async () => {
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    await svc.pausarPorResposta('5561999999999');
+    db.tabelas.conversations.push({
+      lead_id: 'L1', created_at: new Date(T0).toISOString(), last_message_at: new Date(T0).toISOString(),
+      messages: [{ role: 'assistant', content: 'olá', timestamp: '' }],
+    });
+    const agora = Date.UTC(2026, 7, 29, 23, 30, 0); // sáb 20:30 BRT (fora do horário) → seg 31/08 08:00 BRT
+    const esperado = Date.UTC(2026, 7, 31, 11, 0, 0);
+    const d3Antes = db.tabelas.proposta_followup_vivo.find(r => r.etapa === 'D3')!.scheduled_for;
+    const d12Antes = db.tabelas.proposta_followup_vivo.find(r => r.etapa === 'D12')!.scheduled_for;
+    expect(Date.parse(d3Antes)).toBeLessThan(agora);
+    expect(Date.parse(d12Antes)).toBeGreaterThan(esperado);
+    await svc.retomarSilenciosas(agora);
+    const d3 = db.tabelas.proposta_followup_vivo.find(r => r.etapa === 'D3')!;
+    const d12 = db.tabelas.proposta_followup_vivo.find(r => r.etapa === 'D12')!;
+    expect(d3.status).toBe('pending');
+    expect(Date.parse(d3.scheduled_for)).toBe(esperado);
+    expect(d12.status).toBe('pending');
+    expect(d12.scheduled_for).toBe(d12Antes);
   });
 });
