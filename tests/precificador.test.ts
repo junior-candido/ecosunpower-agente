@@ -37,29 +37,69 @@ describe('precificador', () => {
     if (!r.ok) return;
     expect(r.consumoAlvoKwh).toBe(733);
     expect(r.kwpAlvo).toBeCloseTo(6.43, 2);
-    expect(r.servicoRsPorWp).toBe(0.80);
-    // Risen 715: ceil(6426,3/715)=9 mód → 6,435 kWp → 3 micros → kit 9×980 + 3×1450 + 9×95 + 6,435×420 = 8820+4350+855+2702,7 = 16.727,70; serviço 6435×0,80 = 5.148 → 21.875,70
-    // JA 625: ceil(6426,3/625)=11 mód → 6,875 kWp → 3 micros → kit 11×900 + 3×1450 + 11×95 + 6,875×420 = 9900+4350+1045+2887,5 = 18.182,50; serviço 6875×0,80 = 5.500 → 23.682,50
+    expect(r.servicoRsPorWp).toBe(0.85);
+    // Risen 715: ceil(6426,3/715)=9 mód → 6,435 kWp → 3 micros → kit 9×980 + 3×1450 + 9×95 + 6,435×420 = 8820+4350+855+2702,7 = 16.727,70; serviço 6435×0,85 = 5.469,75 → 22.197,45
+    // JA 625: ceil(6426,3/625)=11 mód → 6,875 kWp → 3 micros → kit 11×900 + 3×1450 + 11×95 + 6,875×420 = 9900+4350+1045+2887,5 = 18.182,50; serviço 6875×0,85 = 5.843,75 → 24.026,25
     expect(r.opcoes.map(o => o.rotulo)).toEqual(['A', 'B']);
     const [a, b] = r.opcoes;
     expect(a).toMatchObject({ moduloMarca: 'Risen', moduloModelo: '715', modulos: 9, kwpReal: 6.44, microMarca: 'Hoymiles', micros: 3 });
     expect(a.kit).toBeCloseTo(16727.7, 1);
-    expect(a.servico).toBeCloseTo(5148, 1);
-    expect(a.total).toBeCloseTo(21875.7, 1);
-    expect(a.rsPorWp).toBeCloseTo(21875.7 / 6435, 3);
+    expect(a.servico).toBeCloseTo(5469.75, 1);
+    expect(a.total).toBeCloseTo(22197.45, 1);
+    expect(a.rsPorWp).toBe(3.449);
     expect(b).toMatchObject({ moduloMarca: 'JA', modulos: 11, micros: 3 });
-    expect(b.total).toBeCloseTo(23682.5, 1);
+    expect(b.total).toBeCloseTo(24026.25, 1);
     expect(a.parcela18x).toBeGreaterThan(a.total / 18);
     // DESVIO (ver relatório): o plano esperava `avisos: []`, mas com os
-    // preços da tabelaBase() o rsPorWp total (kit + serviço) de A (3,40) e
-    // B (3,44) fica muito acima do teto de 2,60 R$/Wp — a regra do código
+    // preços da tabelaBase() o rsPorWp total (kit + serviço) de A (3,45) e
+    // B (3,50) fica muito acima do teto de 2,60 R$/Wp — a regra do código
     // (rsPorWp > TETO → acima_mercado) dispara corretamente pras duas
     // opções. Isso é consistente com o card-sombra.test.ts, cuja fixture
     // fixa usa exatamente esse mesmo cenário "🚨 Muito acima do mercado".
     expect(r.avisos).toEqual([
-      { tipo: 'acima_mercado', texto: 'A a 3.40 R$/Wp — acima do teto 2.60 (Greener 2.21) 🚨 Muito acima do mercado' },
-      { tipo: 'acima_mercado', texto: 'B a 3.44 R$/Wp — acima do teto 2.60 (Greener 2.21) 🚨 Muito acima do mercado' },
+      { tipo: 'acima_mercado', texto: 'A a 3,45 R$/Wp — acima do teto 2,60 (Greener 2,21) 🚨 Muito acima do mercado' },
+      { tipo: 'acima_mercado', texto: 'B a 3,50 R$/Wp — acima do teto 2,60 (Greener 2,21) 🚨 Muito acima do mercado' },
     ]);
+  });
+
+  it('A/B determinístico: total empatado desempata por kwpReal e depois pelo nome do módulo (ordem alfabética)', () => {
+    const t = tabelaBase();
+    // AAA 715: mesmo Wp e mesmo preço do Risen 715 → mesmo total e mesmo kwpReal exatos.
+    // Desempate cai no nome "marca modelo": "AAA 715" < "Risen 715" < "ZZZ 715".
+    t.push(item({ tipo: 'modulo', marca: 'AAA', modelo: '715', potenciaW: 715, precoUnitario: 980 }));
+    t.push(item({ tipo: 'modulo', marca: 'ZZZ', modelo: '715', potenciaW: 715, precoUnitario: 980 }));
+    const r = precificar({ consumoAlvoKwh: 733, telhado: 'ceramico', tabela: t, agoraMs: T0 });
+    if (!r.ok) throw new Error('esperava ok');
+    // JA (625) tem total mais alto, então fica fora do A/B; entre os empatados a ordem é alfabética.
+    expect(r.opcoes.map(o => o.moduloMarca)).toEqual(['AAA', 'Risen']);
+  });
+
+  it.each([
+    [700, 0.85],
+    [999, 0.85],
+    [1000, 0.70],
+    [1500, 0.70],
+  ])('faixa de serviço na fronteira: %i kWh → %s R$/Wp', (kwh, band) => {
+    const r = precificar({ consumoAlvoKwh: kwh, telhado: 'ceramico', tabela: tabelaBase(), agoraMs: T0 });
+    if (!r.ok) throw new Error('esperava ok');
+    expect(r.servicoRsPorWp).toBe(band);
+    const a = r.opcoes[0];
+    const kwpRealExato = (a.modulos * a.moduloWp) / 1000;
+    expect(Math.abs(a.servico - kwpRealExato * 1000 * band)).toBeLessThanOrEqual(0.01);
+  });
+
+  it('parcela é injetável: parcela:()=>null zera parcela18x sem chamar a tabela oficial do cartão', () => {
+    const r = precificar({ consumoAlvoKwh: 733, telhado: 'ceramico', tabela: tabelaBase(), agoraMs: T0, parcela: () => null });
+    if (!r.ok) throw new Error('esperava ok');
+    expect(r.opcoes.every(o => o.parcela18x === null)).toBe(true);
+  });
+
+  it('estrutura/cabos com preço zerado é ignorado (usa o próximo preço válido)', () => {
+    const t = tabelaBase();
+    t.unshift(item({ tipo: 'estrutura', marca: 'ceramico', modelo: 'promo', precoUnitario: 0 }));
+    const r = precificar({ consumoAlvoKwh: 733, telhado: 'ceramico', tabela: t, agoraMs: T0 });
+    if (!r.ok) throw new Error('esperava ok');
+    expect(r.opcoes[0].kit).toBeCloseTo(16727.7, 1);
   });
 
   it('micro: escolhe o mais barato por opção e respeita módulos por unidade', () => {

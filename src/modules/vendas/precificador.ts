@@ -1,7 +1,8 @@
 // src/modules/vendas/precificador.ts
 // Precificador (spec §4). PURO: recebe consumo-alvo + tabela, devolve opções A/B.
 // NENHUM número nasce aqui por achismo: régua 3,75 (golden PV*SOL DF/GO), tabela do Junior,
-// serviço por faixa aprovada, parcela pela tabela oficial do cartão, trava Greener.
+// serviço por faixa aprovada, trava Greener. Única dependência impura: a parcela do cartão,
+// injetada via `parcela` (default = tabela oficial solfácil 18x) — testável sem mockar nada externo.
 import { compararGreener } from '../proposal/calculator.js';
 import { parcelaCartaoSolar } from '../proposal/cartao-solar.js';
 import { servicoRsPorWp } from './autonomia.js';
@@ -39,15 +40,29 @@ export interface PrecificarInput {
   telhado: Telhado;
   tabela: ItemPreco[];
   agoraMs: number;
+  /** Injetável pra teste. Default = tabela oficial do cartão (solfácil, 18x). */
+  parcela?: (total: number) => number | null;
 }
+
+/** Ordem estável pra desempate de itens da tabela (marca+modelo). */
+const porMarcaModelo = (x: { marca: string; modelo: string }, y: { marca: string; modelo: string }) =>
+  `${x.marca} ${x.modelo}`.localeCompare(`${y.marca} ${y.modelo}`);
+
+const num2 = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export function precificar(p: PrecificarInput): ResultadoPrecificacao {
   if (!Number.isFinite(p.consumoAlvoKwh) || p.consumoAlvoKwh <= 0) return { ok: false, erro: 'consumo_invalido', faltando: [] };
 
+  const calcParcela = p.parcela ?? ((total: number) => parcelaCartaoSolar(total, 18, 'solfacil')?.parcela ?? null);
+
   const modulosTab = p.tabela.filter(i => i.tipo === 'modulo' && (i.potenciaW ?? 0) > 0 && i.precoUnitario > 0);
   const microsTab = p.tabela.filter(i => i.tipo === 'micro' && (i.modulosPorUnidade ?? 0) > 0 && i.precoUnitario > 0);
-  const estrutura = p.tabela.find(i => i.tipo === 'estrutura' && i.marca === p.telhado);
-  const cabos = p.tabela.find(i => i.tipo === 'cabos_protecao');
+  const estrutura = p.tabela
+    .filter(i => i.tipo === 'estrutura' && i.marca === p.telhado && i.precoUnitario > 0)
+    .sort(porMarcaModelo)[0];
+  const cabos = p.tabela
+    .filter(i => i.tipo === 'cabos_protecao' && i.precoUnitario > 0)
+    .sort(porMarcaModelo)[0];
   const faltando: string[] = [];
   if (!modulosTab.length) faltando.push('módulo');
   if (!microsTab.length) faltando.push('micro');
@@ -65,24 +80,25 @@ export function precificar(p: PrecificarInput): ResultadoPrecificacao {
     const kwpRealExato = (modulos * wp) / 1000;
     // micro mais barato pra esse número de módulos
     const micro = microsTab
-      .map(m => ({ m, qtd: Math.ceil(modulos / m.modulosPorUnidade!), custo: Math.ceil(modulos / m.modulosPorUnidade!) * m.precoUnitario }))
+      .map(m => { const qtd = Math.ceil(modulos / m.modulosPorUnidade!); return { m, qtd, custo: qtd * m.precoUnitario }; })
       .sort((x, y) => x.custo - y.custo)[0];
     const kit = modulos * mod.precoUnitario + micro.custo + modulos * estrutura!.precoUnitario + kwpRealExato * cabos!.precoUnitario;
     const servico = kwpRealExato * 1000 * rsWpServico;
     const total = kit + servico;
     const rsPorWp = total / (kwpRealExato * 1000);
     const g = compararGreener(kwpRealExato, rsPorWp);
-    const parc = parcelaCartaoSolar(r2(total), 18, 'solfacil');
     return {
       moduloMarca: mod.marca, moduloModelo: mod.modelo, moduloWp: wp, modulos,
       microMarca: micro.m.marca, microModelo: micro.m.modelo, micros: micro.qtd,
       kwpReal: r2(kwpRealExato),
       kit: r2(kit), servico: r2(servico), total: r2(total), rsPorWp: Math.round(rsPorWp * 1000) / 1000,
-      parcela18x: parc ? parc.parcela : null,
+      parcela18x: calcParcela(r2(total)),
       greener: { rotulo: g.rotulo, rsPorWpReferencia: g.rsPorWpReferencia },
       itensUsados: [mod, micro.m, estrutura!, cabos!],
     };
-  }).sort((x, y) => x.total - y.total);
+  }).sort((x, y) => x.total - y.total || y.kwpReal - x.kwpReal || porMarcaModelo(
+    { marca: x.moduloMarca, modelo: x.moduloModelo }, { marca: y.moduloMarca, modelo: y.moduloModelo },
+  ));
 
   const a = candidatos[0];
   const b = candidatos.find(c => c.moduloMarca !== a.moduloMarca) ?? null;
@@ -90,15 +106,18 @@ export function precificar(p: PrecificarInput): ResultadoPrecificacao {
   const avisos: Aviso[] = [];
   if (!b) avisos.push({ tipo: 'so_uma_marca', texto: 'Só uma marca de módulo na tabela — sem opção B.' });
 
+  const precoVelhoVistos = new Set<string>();
   const opcoes: OpcaoPrecificada[] = escolhidos.map((c, idx) => {
     const rotulo = idx === 0 ? 'A' : 'B';
     if (c.rsPorWp > TETO_RS_POR_WP) {
-      avisos.push({ tipo: 'acima_mercado', texto: `${rotulo} a ${c.rsPorWp.toFixed(2)} R$/Wp — acima do teto ${TETO_RS_POR_WP.toFixed(2)} (Greener ${c.greener.rsPorWpReferencia.toFixed(2)}) ${c.greener.rotulo}` });
+      avisos.push({ tipo: 'acima_mercado', texto: `${rotulo} a ${num2(c.rsPorWp)} R$/Wp — acima do teto ${num2(TETO_RS_POR_WP)} (Greener ${num2(c.greener.rsPorWpReferencia)}) ${c.greener.rotulo}` });
     }
     for (const i of c.itensUsados) {
       const d = diasDesde(i.atualizadoEmMs, p.agoraMs);
       const nome = i.tipo === 'estrutura' ? `estrutura ${i.marca}` : i.tipo === 'cabos_protecao' ? 'cabos' : `${i.marca} ${i.modelo}`;
-      if (d > PRECO_VELHO_DIAS && !avisos.some(a => a.tipo === 'preco_velho' && a.texto.startsWith(nome))) {
+      const chave = `${i.tipo}|${nome}`;
+      if (d > PRECO_VELHO_DIAS && !precoVelhoVistos.has(chave)) {
+        precoVelhoVistos.add(chave);
         avisos.push({ tipo: 'preco_velho', texto: `${nome} com preço de ${d} d — confere na loja.` });
       }
     }

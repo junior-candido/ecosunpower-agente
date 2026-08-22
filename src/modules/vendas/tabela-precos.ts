@@ -74,7 +74,7 @@ export class TabelaPrecosService {
     try {
       const { data, error } = await this.deps.client.from('tabela_precos')
         .select('tipo, marca, modelo, potencia_w, modulos_por_unidade, preco_unitario, unidade, fonte, atualizado_em')
-        .eq('company_id', this.deps.companyId).eq('ativo', true).order('tipo');
+        .eq('company_id', this.deps.companyId).eq('ativo', true).order('tipo').order('marca').order('modelo');
       if (error) {
         console.error('[tabela] ler falhou', error.message ?? error);
         return { ok: false };
