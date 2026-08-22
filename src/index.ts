@@ -920,6 +920,42 @@ async function main() {
     return true;
   };
 
+  // "/followup <nome>" — mostra o ritmo do follow-up vivo daquele cliente.
+  // "/followup parar <nome>" — encerra o ritmo (Junior assumiu na mão).
+  const tryHandleFollowupVivoCommand = async (from: string, text: string): Promise<boolean> => {
+    if (!isAdminPhone(from)) return false;
+    const m = /^\/?followup\s+(parar\s+)?(.+)$/i.exec(text.trim());
+    if (!m) return false;
+    const parar = !!m[1];
+    const nome = m[2].trim();
+    const { data: props } = await supabase.getClient()
+      .from('propostas_publicas')
+      .select('slug, cliente_nome, lead_id')
+      .ilike('cliente_nome', `%${nome}%`)
+      .eq('revoked', false)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const p = props?.[0];
+    if (!p) { await sendText(from, `Não achei proposta de "${nome}".`); return true; }
+    if (parar) {
+      await followupVivo.cancelarPorSlug(p.slug, 'junior_parou');
+      await sendText(from, `✋ Follow-up de ${p.cliente_nome} parado.`);
+      return true;
+    }
+    const { data: rows } = await supabase.getClient()
+      .from('proposta_followup_vivo')
+      .select('etapa, status, scheduled_for, sent_at')
+      .eq('proposta_slug', p.slug)
+      .order('scheduled_for', { ascending: true });
+    const icone = (st: string) => (st === 'sent' ? '✅' : st === 'pending' ? '⏳' : st === 'paused' ? '⏸' : '✖');
+    const linhas = (rows ?? []).map((r) => {
+      const quando = new Date(r.sent_at ?? r.scheduled_for).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      return `${icone(String(r.status))} ${r.etapa} — ${quando}`;
+    });
+    await sendText(from, `📡 Follow-up ${p.cliente_nome}\n${linhas.join('\n') || '(nenhuma etapa)'}\n\nPra parar: /followup parar ${nome}`);
+    return true;
+  };
+
   // /recarregar-config — recarrega empresa_config do banco sem redeploy. Útil
   // depois de editar a tabela no SQL Editor do Supabase.
   async function tryHandleRecarregarConfigCommand(from: string, text: string): Promise<boolean> {
@@ -4321,6 +4357,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // (proposta/preço/agenda) e a frase começar com "abordar", o modo trata —
     // o comando não sequestra a conversa. Fora de modo, dispara normal.
     if (await tryHandleAbordarCommand(from, text)) return;
+
+    // "/followup <nome>" / "/followup parar <nome>" — estado do ritmo de proposta.
+    if (await tryHandleFollowupVivoCommand(from, text)) return;
 
     // "ajustar <nome>" / "atualizar <nome>" (Junior) — reabre uma proposta JÁ
     // ENVIADA DENTRO do zap: a Eva carrega os dados e o Junior ajusta conversando,
