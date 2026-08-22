@@ -2056,13 +2056,22 @@ Cada um é **uma linha** `void estadoVenda.transicionar(...)`, ao lado da chamad
 
 | Onde (gancho da fatia 1) | Transição |
 |---|---|
-| `followupVivo.agendarParaProposta(...)` (envio pelo dashboard e `onPropostaEnviada`) — quando `leadId` existir | `{ para: 'PROPOSTA_ENVIADA', motivo: 'proposta enviada', autor: 'junior' }` e em seguida `{ para: 'FOLLOWUP_VIVO', motivo: 'follow-up agendado', autor: 'sistema' }` |
+| `followupVivo.agendarParaProposta(...)` (envio pelo dashboard e `onPropostaEnviada`) — quando `leadId` existir | cadeia QUALIFICADO → PROPOSTA_ENVIADA → FOLLOWUP_VIVO (ver bloco abaixo) |
 | `visitas.registrar(...)` (visita_agendada) | `{ para: 'AGENDADO', motivo: 'visita agendada', autor: 'eva' }` |
 | `followupVivo.cancelarPorLead(leadId, 'opt_out')` / `'disqualify'` | `{ para: 'PERDIDO', motivo: <mesmo motivo>, autor: 'sistema' }` |
 | `followupVivo.cancelarPorLead(leadId, 'eva_off')` / `'inativo'` / takeover (`takeover.pause`) | `{ para: 'QUER_JUNIOR', motivo: <mesmo motivo>, autor: 'junior' }` |
 | `onLeadGanho` → `'fechou'` | `{ para: 'FECHADO', motivo: 'venda registrada', autor: 'junior' }` |
 
-Transições inválidas (ex.: lead NOVO recebendo PROPOSTA_ENVIADA porque o Junior postou sem a Eva qualificar) são **rejeitadas com warn** — aceitável na fatia 2; a fatia 3 cobre o caminho QUALIFICADO explícito. Para não perder esses casos, em `agendarParaProposta` fazer antes `transicionar(QUALIFICADO, 'proposta sem qualificação prévia')` e só então PROPOSTA_ENVIADA (a primeira vira no-op se já estava qualificado ou falha silenciosa se já estava adiante).
+Transições inválidas (ex.: lead NOVO recebendo PROPOSTA_ENVIADA porque o Junior postou sem a Eva qualificar) são **rejeitadas com warn** — aceitável na fatia 2; a fatia 3 cobre o caminho QUALIFICADO explícito. Para não perder esses casos, em `agendarParaProposta` **encadear** (nunca dois `void` soltos — o update tem lock otimista e a segunda leitura veria o estado velho):
+
+```ts
+void (async () => {
+  await estadoVenda.transicionar({ leadId, para: 'QUALIFICADO', motivo: 'proposta sem qualificação prévia', autor: 'sistema', agoraMs: Date.now() });
+  await estadoVenda.transicionar({ leadId, para: 'PROPOSTA_ENVIADA', motivo: 'proposta enviada', autor: 'junior', agoraMs: Date.now() });
+  await estadoVenda.transicionar({ leadId, para: 'FOLLOWUP_VIVO', motivo: 'follow-up agendado', autor: 'sistema', agoraMs: Date.now() });
+})();
+```
+(a primeira vira no-op/inválida se já estava adiante — ambos silenciosos). Regras atualizadas no review: `PERDIDO → QUALIFICADO | QUER_JUNIOR` (reabrir) e `CHAMA_JUNIOR → PRECIFICANDO`.
 
 - [ ] **Step 7: tsc + suíte completa**
 
