@@ -686,6 +686,7 @@ export class ProposalAssistant {
   private googleNota: string;
   private googleQtdAvaliacoes: number;
   private proposalPreviewToken: string | null;
+  private onPropostaEnviada: ((p: { slug: string; leadId: string | null; enviadaEmMs: number }) => void) | null;
 
   constructor(opts: {
     apiKey: string;
@@ -706,6 +707,9 @@ export class ProposalAssistant {
     // /p/:slug?eu=<token> na resposta — Junior usa esse pra revisar sem
     // virar "primeira visualizacao do cliente".
     proposalPreviewToken?: string;
+    // Follow-up vivo: chamado quando a Eva manda a proposta pro cliente
+    // (modo eva_envia) pra armar o ritmo de acompanhamento. Nunca lança.
+    onPropostaEnviada?: (p: { slug: string; leadId: string | null; enviadaEmMs: number }) => void;
   }) {
     this.client = new Anthropic({ apiKey: opts.apiKey });
     this.redis = new IORedis({
@@ -739,6 +743,7 @@ export class ProposalAssistant {
     this.googleNota = opts.googleNota ?? '4.9';
     this.googleQtdAvaliacoes = opts.googleQtdAvaliacoes ?? 0;
     this.proposalPreviewToken = opts.proposalPreviewToken ?? null;
+    this.onPropostaEnviada = opts.onPropostaEnviada ?? null;
   }
 
   // [ECOSOF] Bloco "empresa" da proposta lido de empresa_config em RUNTIME
@@ -1343,6 +1348,16 @@ export class ProposalAssistant {
 
       if (!result.ok) {
         return `⚠️ Erro ao enviar pro cliente: ${result.reason.slice(0, 150)}`;
+      }
+
+      // Follow-up vivo: proposta saiu pro cliente → arma o ritmo de acompanhamento.
+      // O slug sai do próprio link público (.../p/<slug>); leadId fica nulo aqui
+      // (o serviço resolve pelo lead_id da propostas_publicas na hora de enviar).
+      try {
+        const slugEnviado = (last.publicUrl.split('/p/')[1] ?? '').split(/[?#]/)[0];
+        if (slugEnviado) this.onPropostaEnviada?.({ slug: slugEnviado, leadId: null, enviadaEmMs: Date.now() });
+      } catch (err) {
+        console.warn('[followup-vivo] agendar pos-envio (eva_envia) falhou:', (err as Error).message);
       }
 
       // Limpa estado depois do envio (sucesso = ciclo encerrado)

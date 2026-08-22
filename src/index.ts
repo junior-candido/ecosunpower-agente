@@ -588,6 +588,12 @@ async function main() {
     googleNota: config.googleNota,
     googleQtdAvaliacoes: config.googleQtdAvaliacoes,
     proposalPreviewToken: config.proposalPreviewToken,
+    // [followup-vivo] closure lazy: followupVivo nasce mais abaixo no main() e
+    // isto só é CHAMADO em runtime (quando a Eva manda a proposta pro cliente).
+    onPropostaEnviada: (pv) => {
+      followupVivo.agendarParaProposta(pv)
+        .catch((err) => console.warn('[followup-vivo] agendar pos-envio falhou:', (err as Error).message));
+    },
   });
 
   const driveOk = !!driveUploader;
@@ -2521,6 +2527,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       .from('leads')
       .update({ opt_out: true, eva_active: false, status: 'inativo', updated_at: new Date().toISOString() })
       .eq('id', lead.id);
+    void followupVivo.cancelarPorLead(lead.id, 'opt_out');
     console.log(`[opt-out] cliente ${from} (${lead.name}) optou por sair via "${raw}"`);
     await sendText(
       from,
@@ -3809,6 +3816,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // [MT 3d] escrita pelo crachá; os botões admin logo abaixo ficam no
     // singleton (admin = EcoSun, fora do caminho do tenant).
     proposalFollowup.markClienteRespondeu(from, db);
+    // Follow-up vivo: cliente falou → pausa o ritmo (a conversa manda).
+    void followupVivo.pausarPorResposta(from);
 
     // Botoes do followup de proposta (junior_envia, modo "Eva pergunta antes
     // de mandar"). So Junior (admin) toca esses botoes — early return.
@@ -3838,7 +3847,12 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           const { data: fch } = await supabase.getClient()
             .from('fechamentos').select('lead_id').eq('id', finFechamentoId).maybeSingle();
           const leadGanhoId = (fch as { lead_id?: string | null } | null)?.lead_id ?? null;
-          if (leadGanhoId) await supabase.onLeadGanho(leadGanhoId);
+          if (leadGanhoId) {
+            await supabase.onLeadGanho(leadGanhoId);
+            // Fechou: o ritmo morre e a visita vira 'fechou' (não re-arma nada).
+            void followupVivo.cancelarPorLead(leadGanhoId, 'fechou');
+            void visitas.marcarResultado(leadGanhoId, 'fechou');
+          }
         } catch (e) {
           console.warn('[funil] onLeadGanho falhou:', (e as Error).message);
         }
@@ -5401,6 +5415,16 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           // este lead deve parar — Eva ja fechou o objetivo principal.
           await db.upsertLead({ phone: from, status: 'agendado', company_id: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID }); // [3e]
           await db.cancelCadence(leadId, 'visita_agendada').catch(() => {});
+          // Follow-up vivo NÃO para aqui: a visita é o começo do próximo ciclo.
+          // Registra pra disparar o toque pós-visita 24h depois do fim.
+          void visitas.registrar({
+            leadId: lead?.id ?? leadId,
+            phone: from,
+            tipo: isMeet ? 'meet' : 'visita',
+            inicioMs: Date.parse(startISO),
+            fimMs: Date.parse(endISO),
+            calendarEventId: event.eventId ?? null,
+          });
 
           // Alerta WABA pro Junior — agendamento eh sinal QUENTE, ele precisa
           // ver na hora pra confirmar logistica e equipamento. NUNCA silencia,
@@ -5475,6 +5499,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           const canceledPost = await postInstall.cancelAll(leadId, db.getClient());
           if (canceledPost > 0) console.log(`[post-install] Canceled ${canceledPost} touches after opt-out`);
         }
+        void followupVivo.cancelarPorLead(leadId, 'opt_out');
         console.log(`[action] Opt-out registered for ${from}`);
         break;
       }
@@ -5494,6 +5519,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         if (!offTopicRows?.length) console.warn(`[action][3e] mark_off_topic atualizou 0 linhas pra ${from} — lead fora do tenant?`);
         // Cancela cadencia/reengagement/postinstall pendente
         await db.cancelCadence(leadId, 'off_topic').catch(() => {});
+        void followupVivo.cancelarPorLead(leadId, 'off_topic');
         await reengagement.cancelAllTouches(leadId, db.getClient()).catch(() => 0);
         if (postInstall) await postInstall.cancelAll(leadId, db.getClient()).catch(() => 0);
         // Notifica Junior com botoes pra desfazer se foi falso positivo
@@ -5551,6 +5577,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           .select('id');
         if (!dqRows?.length) console.warn(`[action][3e] disqualify_lead atualizou 0 linhas pra ${from} — lead fora do tenant?`);
         await db.cancelCadence(leadId, 'disqualify_lead').catch(() => {});
+        void followupVivo.cancelarPorLead(leadId, 'disqualify_lead');
         await reengagement.cancelAllTouches(leadId, db.getClient()).catch(() => 0);
         if (postInstall) await postInstall.cancelAll(leadId, db.getClient()).catch(() => 0);
         if (!isSandbox) {
@@ -6982,6 +7009,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         if (lead?.id) {
           await supabase.cancelEvaIntro(lead.id, 'eva_off_command').catch(() => {});
           await supabase.cancelCadence(lead.id, 'eva_off_command').catch(() => {});
+          void followupVivo.cancelarPorLead(lead.id, 'eva_off_command');
         }
         console.log(`[eva-active] Eva DESATIVADA permanentemente pra ${parsed.from}`);
         res.status(200).json({ status: 'eva_disabled' });
@@ -8178,6 +8206,11 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     calculadoraUrl: config.calculadoraUrl,
     assinaturasSyncToken: config.assinaturasSyncToken,
     appBaseUrl: config.appBaseUrl,
+    // [followup-vivo] Junior mandou a proposta pela tela → arma o ritmo.
+    onPropostaEnviada: (pv) => {
+      followupVivo.agendarParaProposta(pv)
+        .catch((err) => console.warn('[followup-vivo] agendar pos-envio falhou:', (err as Error).message));
+    },
     // Salva contrato+procuração no Drive/Workspace (reusa o uploader do fechamento).
     salvarContratoNoDrive: closingDriveUploader
       ? async (input) => {
@@ -8412,6 +8445,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         .then((result) => {
           if (result) {
             proposalFollowup.triggerOnView(slug, result.acessosAntes, 'web');
+            // Primeira abertura: se ele ler e não responder, a Eva volta em 2h.
+            if (result.acessosAntes === 0) void followupVivo.agendarAbriuSemResposta(slug, Date.now());
           }
         })
         .catch((err) => {
