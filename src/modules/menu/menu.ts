@@ -85,6 +85,7 @@ export function construirMenu(deps: MenuDeps): MenuCategoria[] {
         { id: 'menu_fin_lojas', title: '🏪 Status das lojas', description: 'Quantos itens por loja + última sync', hint: '🏪 Manda */lojas* que eu te digo quantos itens cada loja (Belenus/Sol Fácil/Fortlev) tem na tabela viva e quando atualizou.' },
         { id: 'menu_fin_comparar', title: '🏪 Comparar lojas', description: 'Melhor preço nas 3 distribuidoras', hint: '🏪 Manda */comparar marca potência* (ex: */comparar sungrow 5kw* · */comparar risen 715*) que eu mostro o melhor preço entre Belenus, Sol Fácil e Fortlev.' },
         { id: 'menu_fin_cotar', title: '💰 Cotar com margem', description: 'Custo → imposto → margem → preço', hint: '💰 Manda */cotar materiais kWp* (ex: */cotar 12000 5*) que eu calculo imposto, margem, preço sugerido e o desconto máximo que dá pra dar.' },
+        { id: 'menu_fin_kit', title: '🧰 Montar kit + preço', description: 'Kit mais barato das 3 lojas + preço', hint: '🧰 Manda */kit módulos Wp kW* (ex: */kit 12 615 8*) que eu monto o kit mais barato das 3 lojas e já calculo o preço sugerido. Pra travar a margem: */kit 12 615 8 30*.' },
         { id: 'menu_fin_painel', title: '📈 Abrir painel', description: 'Tela do financeiro', hint: '📈 Painel do financeiro: dashboard.ecosunpower.eng.br/dashboard/financeiro' },
         { id: 'menu_fin_apagar', title: '🗑️ Apagar lançamento', description: 'Apagar um gasto/entrada errado', action: deps.acaoApagar },
       ],

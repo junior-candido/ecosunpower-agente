@@ -54,6 +54,28 @@ export function calcularCotacao(e: EntradaCotacao): Cotacao {
     impostoValor, lucro, lucroPct: e.margemAlvoPct, precoMinimo, descontoMaxRs, descontoMaxPct };
 }
 
+export interface MargemNoPreco {
+  precoVenda: number;
+  impostoValor: number;
+  lucro: number;       // preço − custo − imposto
+  lucroPct: number;    // lucro / preço * 100
+  abaixoDoCusto: boolean;
+}
+
+/**
+ * Junior digitou o PREÇO dele → devolve a margem que sobra nesse preço.
+ * (A sugestão do sistema é ponto de partida; o valor do Junior manda.)
+ */
+export function margemDoPreco(custoTotal: number, precoVenda: number, impostoPct: number): MargemNoPreco {
+  const impostoValor = r2(precoVenda * impostoPct / 100);
+  const lucro = r2(precoVenda - custoTotal - impostoValor);
+  return {
+    precoVenda: r2(precoVenda), impostoValor, lucro,
+    lucroPct: precoVenda > 0 ? r2((lucro / precoVenda) * 100) : 0,
+    abaixoDoCusto: lucro < 0,
+  };
+}
+
 const brl = (v: number) => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Mensagem pro Junior no zap na hora de cotar. */

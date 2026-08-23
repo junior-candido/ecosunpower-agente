@@ -81,3 +81,14 @@ export function montarKitPorLoja(itens: ItemCatalogo[], spec: EspecKit): KitLoja
   // ordena: kits completos (sem faltando) e mais baratos primeiro
   return kits.sort((a, b) => (a.faltando.length - b.faltando.length) || (a.total - b.total));
 }
+
+/** O kit COMPLETO (sem categoria faltando) mais barato — base pra cotação. null se nenhum completo. */
+export function melhorKitCompleto(kits: KitLoja[]): KitLoja | null {
+  return kits.filter((k) => k.faltando.length === 0).sort((a, b) => a.total - b.total)[0] ?? null;
+}
+
+/** kWp do kit a partir do módulo escolhido × quantidade. */
+export function kwpDoKit(k: KitLoja): number {
+  const wp = k.modulo?.potenciaW ?? 0;
+  return Number(((wp * k.moduloQtd) / 1000).toFixed(3));
+}

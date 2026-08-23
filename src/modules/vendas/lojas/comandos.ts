@@ -6,6 +6,7 @@
 import type { CatalogoLojaService, ItemCatalogo } from './catalogo-loja.js';
 import { compararLojas, type GrupoComparacao } from './comparador.js';
 import { calcularCotacao, resumoCotacao } from './cotacao.js';
+import { montarKitPorLoja, melhorKitCompleto, kwpDoKit } from './kit.js';
 
 const FONTE_LABEL: Record<string, string> = { belenus: 'Belenus', solfacil: 'Sol Fácil', fortlev: 'Fortlev' };
 const brl = (v: number) => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -109,6 +110,38 @@ export function makeLojasHandler(d: LojasHandlerDeps): (from: string, text: stri
       } catch (e) {
         await d.sendText(from, '⚠️ Não consegui comparar agora. Tenta de novo em instantes.');
         console.error('[lojas] /comparar', e instanceof Error ? e.message : e);
+      }
+      return true;
+    }
+
+    // /kit 12 615 8 [margem%] → monta o kit mais barato das 3 lojas + preço sugerido.
+    if (/^\/kit\b/i.test(t)) {
+      const n = t.replace(/^\/kit\s*/i, '').trim().split(/\s+/).map((x) => Number(x.replace(',', '.')));
+      const [mod, wp, kw, marg] = n;
+      if (!(mod > 0) || !(wp > 0) || !(kw > 0)) {
+        await d.sendText(from, 'Ex.: /kit 12 615 8  (12 módulos de 615Wp + inversor 8kW). Opcional a margem: /kit 12 615 8 30');
+        return true;
+      }
+      try {
+        const itens = await d.svc.listarAtivos();
+        const kits = montarKitPorLoja(itens, { modulos: mod, wpModulo: wp, inversorKw: kw });
+        const melhor = melhorKitCompleto(kits);
+        if (!melhor) { await d.sendText(from, '🔎 Nenhuma loja tem o kit completo (módulo+inversor+estrutura) pra essa configuração. Vê o que falta na tela do Comparador.'); return true; }
+        const cot = calcularCotacao({
+          custoMateriais: melhor.total, potenciaKwp: kwpDoKit(melhor),
+          servicoRsPorWp: d.servicoRsPorWp ?? 0.85, impostoPct: d.impostoPct ?? 6,
+          margemAlvoPct: Number.isFinite(marg) && marg > 0 ? marg : (d.margemAlvoPct ?? 25),
+          margemMinimaPct: d.margemMinimaPct ?? 12,
+        });
+        const linhaLoja = (k: typeof kits[number]) => `${k.fonte === melhor.fonte ? '🏆 ' : '   '}${FONTE_LABEL[k.fonte] ?? k.fonte}: ${brl(k.total)}${k.faltando.length ? ' (falta ' + k.faltando.join('/') + ')' : ''}`;
+        await d.sendText(from,
+          `🧰 *Kit ${mod}× ${wp}Wp + ${kw}kW*\n` +
+          kits.map(linhaLoja).join('\n') + '\n\n' +
+          `Materiais (${FONTE_LABEL[melhor.fonte] ?? melhor.fonte}): ${brl(melhor.total)}\n` +
+          `${resumoCotacao(cot).replace('💰 *Cotação*\nMateriais (melhor preço 3 lojas): ' + brl(cot.custoMateriais) + '\n', '')}`);
+      } catch (e) {
+        await d.sendText(from, '⚠️ Não consegui montar o kit agora.');
+        console.error('[lojas] /kit', e instanceof Error ? e.message : e);
       }
       return true;
     }

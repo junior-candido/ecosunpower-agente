@@ -4,7 +4,10 @@
 // filtros. Lê da catalogo_loja (tabela viva). Growatt filtrado. Só render.
 import { renderLayout, escapeHtml, brl } from './views.js';
 import type { KitLoja, EspecKit } from '../vendas/lojas/kit.js';
+import type { Cotacao, MargemNoPreco } from '../vendas/lojas/cotacao.js';
 import type { ItemCatalogo } from '../vendas/lojas/catalogo-loja.js';
+
+interface CotParams { servicoRsPorWp: number; impostoPct: number; margemAlvoPct: number; margemMinimaPct: number; }
 
 const FONTE_LABEL: Record<string, string> = { belenus: 'Belenus', solfacil: 'Sol Fácil', fortlev: 'Fortlev' };
 const CAT_LABEL: Record<string, string> = {
@@ -44,12 +47,16 @@ function kitCard(k: KitLoja, ehMelhor: boolean): string {
   </div>`;
 }
 
-function secaoKit(spec: EspecKit | null, kits: KitLoja[]): string {
+function secaoKit(spec: EspecKit | null, kits: KitLoja[], marcasMod: string[], marcasInv: string[], marcaMod: string, marcaInv: string): string {
   const v = (x: unknown) => (x == null ? '' : String(x));
+  const optMarca = (lista: string[], sel: string, label: string) =>
+    `<option value="">${label}</option>` + lista.map((m) => `<option value="${escapeHtml(m)}"${m === sel ? ' selected' : ''}>${escapeHtml(m)}</option>`).join('');
   const form = `<form method="get" action="/dashboard/lojas" class="flex flex-wrap items-end gap-3 mb-4">
     <label class="text-sm">Nº de módulos<br><input name="modulos" type="number" min="1" value="${v(spec?.modulos)}" class="border border-slate-300 rounded px-2 py-1 w-24" placeholder="ex: 12"></label>
     <label class="text-sm">Wp do módulo<br><input name="wp" type="number" value="${v(spec?.wpModulo)}" class="border border-slate-300 rounded px-2 py-1 w-24" placeholder="ex: 615"></label>
+    <label class="text-sm">Marca módulo<br><select name="marcamod" class="border border-slate-300 rounded px-2 py-1">${optMarca(marcasMod, marcaMod, 'Mais barato')}</select></label>
     <label class="text-sm">Inversor (kW)<br><input name="invkw" type="number" step="0.1" value="${v(spec?.inversorKw)}" class="border border-slate-300 rounded px-2 py-1 w-24" placeholder="ex: 8"></label>
+    <label class="text-sm">Marca inversor<br><select name="marcainv" class="border border-slate-300 rounded px-2 py-1">${optMarca(marcasInv, marcaInv, 'Mais barato')}</select></label>
     <button class="px-4 py-1.5 rounded-lg bg-sky-700 hover:bg-sky-800 text-white text-sm font-semibold">Montar kit</button>
   </form>`;
 
@@ -64,7 +71,46 @@ function secaoKit(spec: EspecKit | null, kits: KitLoja[]): string {
   return `<h2 class="text-sm font-semibold text-slate-600 mb-2">🧰 Montar kit → total por loja</h2>${form}${corpo}`;
 }
 
-function tabelaCatalogo(itens: ItemCatalogo[], catSel: string, fonteSel: string): string {
+// ---- Cotação do kit (ajustável; o valor do Junior manda) ----
+function secaoCotacao(
+  spec: EspecKit, cot: Cotacao | null, p: CotParams, precoManual: number | null,
+  margManual: MargemNoPreco | null, melhorFonte: string | null,
+): string {
+  if (!cot) return '';
+  const v = (x: unknown) => (x == null ? '' : String(x));
+  // form preserva o kit (hidden) + parâmetros ajustáveis
+  const form = `<form method="get" action="/dashboard/lojas" class="flex flex-wrap items-end gap-3 mb-3 bg-slate-50 border border-slate-200 rounded-lg p-3">
+    <input type="hidden" name="modulos" value="${v(spec.modulos)}"><input type="hidden" name="wp" value="${v(spec.wpModulo)}"><input type="hidden" name="invkw" value="${v(spec.inversorKw)}">
+    <label class="text-sm">Serviço R$/Wp<br><input name="serv" type="number" step="0.01" value="${v(p.servicoRsPorWp)}" class="border border-slate-300 rounded px-2 py-1 w-24"></label>
+    <label class="text-sm">Imposto %<br><input name="imp" type="number" step="0.1" value="${v(p.impostoPct)}" class="border border-slate-300 rounded px-2 py-1 w-20"></label>
+    <label class="text-sm">Margem %<br><input name="marg" type="number" step="0.1" value="${v(p.margemAlvoPct)}" class="border border-slate-300 rounded px-2 py-1 w-20"></label>
+    <label class="text-sm">Seu preço (opcional)<br><input name="preco" type="text" value="${v(precoManual)}" class="border border-slate-300 rounded px-2 py-1 w-28" placeholder="ex: 22000"></label>
+    <button class="px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold">Calcular</button>
+  </form>`;
+  const linha = (r: string, val: string, forte = false) => `<div class="flex justify-between py-1 border-b border-slate-100 ${forte ? 'font-bold text-slate-800' : 'text-slate-600'}"><span>${r}</span><span>${val}</span></div>`;
+  const sugerido = `<div class="rounded-xl border border-slate-200 bg-white p-4">
+    <div class="font-bold text-slate-800 mb-2">Sugestão (margem ${p.margemAlvoPct}%)</div>
+    ${linha('Materiais' + (melhorFonte ? ` (${FONTE_LABEL[melhorFonte] ?? melhorFonte})` : ''), brl(cot.custoMateriais))}
+    ${linha('Serviço', brl(cot.custoServico))}
+    ${linha('Custo total', brl(cot.custoTotal))}
+    ${linha('Imposto', brl(cot.impostoValor))}
+    ${linha('Preço sugerido', brl(cot.precoSugerido), true)}
+    ${linha('Lucro', `${brl(cot.lucro)} (${cot.lucroPct}%)`)}
+    ${linha('Pode baixar até', `${brl(cot.precoMinimo)} (desc. máx ${brl(cot.descontoMaxRs)})`)}
+  </div>`;
+  const seuPreco = margManual ? `<div class="rounded-xl border ${margManual.abaixoDoCusto ? 'border-red-300 bg-red-50' : 'border-emerald-300 bg-emerald-50'} p-4">
+    <div class="font-bold text-slate-800 mb-2">No SEU preço</div>
+    ${linha('Seu preço de venda', brl(margManual.precoVenda), true)}
+    ${linha('Custo total', brl(cot.custoTotal))}
+    ${linha('Imposto', brl(margManual.impostoValor))}
+    ${linha('Lucro', `${brl(margManual.lucro)} (${margManual.lucroPct}%)`, true)}
+    ${margManual.abaixoDoCusto ? '<div class="text-red-600 text-sm mt-1">⚠️ abaixo do custo — você teria prejuízo nesse preço.</div>' : ''}
+  </div>` : `<div class="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 flex items-center">Digite <b class="mx-1">Seu preço</b> pra ver a margem no seu valor (a sugestão é só ponto de partida — o seu número manda).</div>`;
+  return `<h2 class="text-sm font-semibold text-slate-600 mb-2 mt-6">💰 Cotação do kit mais barato</h2>${form}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">${sugerido}${seuPreco}</div>`;
+}
+
+function tabelaCatalogo(itens: ItemCatalogo[], catSel: string, fonteSel: string, mostrarGrandes: boolean): string {
   const cats = ['', 'modulo', 'micro', 'inversor_string', 'inversor_hibrido', 'bateria', 'estrutura', 'cabo', 'componente'];
   const fontes = ['', 'belenus', 'solfacil', 'fortlev'];
   const opt = (val: string, sel: string, label: string) => `<option value="${val}"${val === sel ? ' selected' : ''}>${label}</option>`;
@@ -73,6 +119,7 @@ function tabelaCatalogo(itens: ItemCatalogo[], catSel: string, fonteSel: string)
       ${cats.map((c) => opt(c, catSel, c ? CAT_LABEL[c] : 'Todas')).join('')}</select></label>
     <label class="text-sm">Loja<br><select name="fonte" class="border border-slate-300 rounded px-2 py-1">
       ${fontes.map((f) => opt(f, fonteSel, f ? FONTE_LABEL[f] : 'Todas')).join('')}</select></label>
+    <label class="text-sm flex items-center gap-1 pb-1"><input type="checkbox" name="grandes" value="1"${mostrarGrandes ? ' checked' : ''}> mostrar inversores grandes (&gt;20kW)</label>
     <button class="px-4 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-800 text-white text-sm font-semibold">Filtrar</button>
   </form>`;
   const linhas = itens.slice(0, 400).map((i) => `<tr class="border-t border-slate-100 hover:bg-slate-50">
@@ -99,14 +146,25 @@ export interface LojasPageInput {
   atualizadoEmMs: number | null;
   kitSpec: EspecKit | null;
   kits: KitLoja[];
+  cotacao: Cotacao | null;
+  cotParams: CotParams;
+  precoManual: number | null;
+  margemManual: MargemNoPreco | null;
+  melhorFonte: string | null;
   catalogo: ItemCatalogo[];
   catSel: string;
   fonteSel: string;
+  mostrarGrandes: boolean;
+  marcasModulo: string[];
+  marcasInversor: string[];
+  marcaMod: string;
+  marcaInv: string;
   user?: any;
 }
 
 export function renderLojasPage(input: LojasPageInput): string {
-  const { totalItens, contagemPorFonte, atualizadoEmMs, kitSpec, kits, catalogo, catSel, fonteSel, user } = input;
+  const { totalItens, contagemPorFonte, atualizadoEmMs, kitSpec, kits, cotacao, cotParams, precoManual, margemManual, melhorFonte, catalogo, catSel, fonteSel, mostrarGrandes, marcasModulo, marcasInversor, marcaMod, marcaInv, user } = input;
+  const cotacaoHtml = kitSpec ? secaoCotacao(kitSpec, cotacao, cotParams, precoManual, margemManual, melhorFonte) : '';
   const body = `<div class="max-w-6xl mx-auto">
     <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
       <h1 class="text-xl font-bold text-slate-800">🏪 Comparador de Lojas</h1>
@@ -115,7 +173,7 @@ export function renderLojasPage(input: LojasPageInput): string {
     ${placarLojas(contagemPorFonte, atualizadoEmMs)}
     ${totalItens === 0
       ? `<div class="rounded-lg border border-slate-200 bg-white p-6 text-center text-slate-600">Ainda não há preços na tabela viva. A Sol Fácil sincroniza sozinha 1×/dia; Belenus/Fortlev o Junior atualiza sob demanda.</div>`
-      : `${secaoKit(kitSpec, kits)}${tabelaCatalogo(catalogo, catSel, fonteSel)}`}
+      : `${secaoKit(kitSpec, kits, marcasModulo, marcasInversor, marcaMod, marcaInv)}${cotacaoHtml}${tabelaCatalogo(catalogo, catSel, fonteSel, mostrarGrandes)}`}
   </div>`;
   return renderLayout({ active: 'lojas', title: 'Comparador de Lojas', body, user });
 }
