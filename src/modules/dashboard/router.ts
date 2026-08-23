@@ -1506,6 +1506,31 @@ b.onclick=async function(){
     res.redirect('/dashboard/cadencia');
   });
 
+  // Comparador de Lojas: lê a catalogo_loja (tabela viva) da company do operador,
+  // compara o mesmo produto entre Belenus/Sol Fácil/Fortlev e mostra melhor preço +
+  // oportunidades de desconto. Multi-tenant (usa companyId do operador).
+  router.get('/lojas', async (req: AuthedRequest, res: Response) => {
+    try {
+      const { CatalogoLojaService } = await import('../vendas/lojas/catalogo-loja.js');
+      const { compararLojas } = await import('../vendas/lojas/comparador.js');
+      const { oportunidadesDesconto } = await import('../vendas/lojas/cotacao.js');
+      const { renderLojasPage } = await import('./lojas-views.js');
+      const companyId = req.dashUser!.companyId;
+      const svc = new CatalogoLojaService({ client: supabase, companyId });
+      const itens = await svc.listarAtivos();
+      const grupos = compararLojas(itens);
+      const oportunidades = oportunidadesDesconto(grupos);
+      const fontesComDados = [...new Set(itens.map((i) => i.fonte))];
+      const atualizadoEmMs = itens.length ? Math.max(...itens.map((i) => i.atualizadoEmMs)) : null;
+      res.send(renderLojasPage({
+        grupos, oportunidades, totalItens: itens.length, fontesComDados, atualizadoEmMs, user: req.dashUser,
+      }));
+    } catch (err) {
+      console.error('[dashboard/lojas]', err);
+      res.status(500).send(`<h2>Erro ao carregar comparador</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
   // Cadência: acompanhamento da reativação de leads da base terceirizada.
   router.get('/cadencia', async (req: Request, res: Response) => {
     try {

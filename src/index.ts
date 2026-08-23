@@ -57,6 +57,8 @@ import { VisitasService } from './modules/vendas/visitas.js';
 // Fatia 2 — Eva Vendedora: estado de venda, tabela de preços do Junior e precificador sombra.
 import { EstadoVendaService } from './modules/vendas/estado-venda.js';
 import { TabelaPrecosService, makeTabelaHandler } from './modules/vendas/tabela-precos.js';
+import { CatalogoLojaService } from './modules/vendas/lojas/catalogo-loja.js';
+import { sincronizarLojas, credenciaisDoEnv } from './modules/vendas/lojas/sincronizar-lojas.js';
 import { LeitorPrintTabela } from './modules/vendas/tabela-precos-print.js';
 import { SombraService, makeSombraHandler } from './modules/vendas/sombra.js';
 import { consumoAlvo } from './modules/vendas/autonomia.js';
@@ -9412,6 +9414,33 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setTimeout(() => { void tickFollowupVivo(); }, 3 * 60 * 1000);
     setInterval(() => { void tickFollowupVivo(); }, 15 * 60 * 1000);
     console.log('[followup-vivo] Scheduler started (checks every 15 min)');
+
+    // Tabela viva: 1x/dia puxa o catálogo das 3 lojas (Belenus/Sol Fácil/Fortlev) e
+    // faz upsert em catalogo_loja. SÓ liga se houver segredo de loja configurado
+    // (sem segredo = no-op, deploy seguro). Avisa o Junior no zap se uma loja falhar.
+    const credsLojas = credenciaisDoEnv();
+    if (credsLojas.belenus || credsLojas.solfacil || credsLojas.fortlevCookie) {
+      const catalogoLoja = new CatalogoLojaService({ client: supabase.getClient(), companyId: ECOSUN_COMPANY_ID });
+      const rodarTabelaViva = async () => {
+        try {
+          const res = await sincronizarLojas({
+            catalogo: catalogoLoja, ...credsLojas, agoraMs: () => Date.now(),
+            alertar: (m) => sendText(config.engineerPhone, m),
+          });
+          const okN = res.filter((r) => r.ok).length;
+          const itens = res.reduce((s, r) => s + r.itens, 0);
+          if (res.length) console.log(`[tabela-viva] sync: ${okN}/${res.length} lojas ok, ${itens} itens`);
+        } catch (err) {
+          console.error('[tabela-viva] tick falhou:', (err as Error).message);
+        }
+      };
+      setTimeout(() => { void rodarTabelaViva(); }, 6 * 60 * 1000);        // 6min após start
+      setInterval(() => { void rodarTabelaViva(); }, 24 * 60 * 60 * 1000); // 1x/dia
+      console.log('[tabela-viva] Scheduler started (1x/dia, lojas: ' +
+        [credsLojas.belenus && 'belenus', credsLojas.solfacil && 'solfacil', credsLojas.fortlevCookie && 'fortlev'].filter(Boolean).join(',') + ')');
+    } else {
+      console.log('[tabela-viva] sem segredos de loja — scheduler não iniciado (no-op)');
+    }
 
     // Maquina de e-mail (Elo): espelha a cadencia de WhatsApp, so que pro
     // canal e-mail. Processa steps de email_sequencia vencidos a cada 15min,
