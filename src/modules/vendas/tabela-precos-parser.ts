@@ -3,7 +3,7 @@
 
 export type TipoItem = 'modulo' | 'micro' | 'estrutura' | 'cabos_protecao';
 export type FonteItem = 'junior' | 'belenus' | 'solfacil';
-export const TELHADOS = ['ceramico', 'fibrocimento', 'metalico', 'laje'] as const;
+export const TELHADOS = ['fibrocimento', 'laje', 'solo', 'carport', 'ceramico', 'metalico'] as const;
 export type Telhado = typeof TELHADOS[number];
 
 export interface ItemTabela {

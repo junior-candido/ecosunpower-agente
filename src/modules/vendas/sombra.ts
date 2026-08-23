@@ -64,7 +64,7 @@ export function escapeIlike(s: string): string {
   return s.replace(/\*/g, '').replace(/[\\%_]/g, '\\$&');
 }
 
-const TELHADO_PADRAO: Telhado = 'ceramico';
+const TELHADO_PADRAO: Telhado = 'fibrocimento'; // o Junior trabalha com fibrocimento/laje/solo/carport (23/08)
 
 // A UNIQUE (lead_id, versao) é a dona da verdade: duas rodadas quase juntas (ou
 // um select em réplica atrasada) calculam a MESMA versão e a segunda é recusada

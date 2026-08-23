@@ -4,7 +4,7 @@ import type { ResultadoPrecificacao, OpcaoPrecificada } from './precificador.js'
 import type { Faixa } from './autonomia.js';
 
 const num = (v: number, casas = 2) => v.toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
-const TELHADO_NOME: Record<string, string> = { ceramico: 'cerâmico', fibrocimento: 'fibrocimento', metalico: 'metálico', laje: 'laje' };
+const TELHADO_NOME: Record<string, string> = { fibrocimento: 'fibrocimento', laje: 'laje', solo: 'solo', carport: 'carport', ceramico: 'cerâmico', metalico: 'metálico' };
 
 function linhaOpcao(o: OpcaoPrecificada): string {
   const parcela = o.parcela18x !== null ? ` · 18× ${num(o.parcela18x)}` : '';

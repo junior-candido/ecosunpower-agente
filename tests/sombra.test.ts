@@ -78,7 +78,7 @@ const tabelaOk = (): ItemPreco[] => [
   item({ tipo: 'modulo', marca: 'Risen', modelo: '715', potenciaW: 715, precoUnitario: 980 }),
   item({ tipo: 'modulo', marca: 'JA', modelo: '625', potenciaW: 625, precoUnitario: 900 }),
   item({ tipo: 'micro', marca: 'Hoymiles', modelo: 'HMS-2000-4T', modulosPorUnidade: 4, precoUnitario: 1450 }),
-  item({ tipo: 'estrutura', marca: 'ceramico', modelo: 'ceramico', precoUnitario: 95, unidade: 'modulo' }),
+  item({ tipo: 'estrutura', marca: 'fibrocimento', modelo: 'fibrocimento', precoUnitario: 95, unidade: 'modulo' }),
   item({ tipo: 'cabos_protecao', marca: 'geral', modelo: 'geral', precoUnitario: 420, unidade: 'kwp' }),
 ];
 
@@ -144,7 +144,7 @@ describe('SombraService.rodarParaLead', () => {
     expect(r).toMatchObject({ ok: true, versao: 1 });
     expect(db.tabelas.propostas_versoes).toHaveLength(1);
     expect(db.tabelas.propostas_versoes[0]).toMatchObject({ lead_id: 'L1', company_id: 'C1', versao: 1, autor: 'eva', sombra: true });
-    expect(db.tabelas.propostas_versoes[0].params_json).toMatchObject({ consumoAlvoKwh: 734, telhado: 'ceramico', telhadoAssumido: true, faixa: 'autonoma', origem: 'teste' });
+    expect(db.tabelas.propostas_versoes[0].params_json).toMatchObject({ consumoAlvoKwh: 734, telhado: 'fibrocimento', telhadoAssumido: true, faixa: 'autonoma', origem: 'teste' });
     expect(db.tabelas.propostas_versoes[0].resultado_json.ok).toBe(true);
     expect(registrarEvento).toHaveBeenCalledWith(db.client, expect.objectContaining({
       tipo: 'comercial:sombra_gerada', departamento: 'comercial', leadId: 'L1', companyId: 'C1',
@@ -207,7 +207,7 @@ describe('SombraService.rodarParaLead', () => {
     const { svc, sendText } = mk(db, []);
     const r = await svc.rodarParaLead({ leadId: 'L1', agoraMs: T0, origem: 'x' });
     expect(r).toMatchObject({ ok: false, erro: 'tabela_incompleta' });
-    expect(sendText.mock.calls[0][1]).toContain('falta na tabela: módulo, micro, estrutura ceramico, cabos');
+    expect(sendText.mock.calls[0][1]).toContain('falta na tabela: módulo, micro');
   });
 
   it('nunca lança', async () => {
