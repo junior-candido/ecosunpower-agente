@@ -82,11 +82,18 @@ export function construirMenu(deps: MenuDeps): MenuCategoria[] {
         { id: 'menu_fin_imposto', title: '🧾 Calcular imposto', description: 'Quanto separar de uma venda', action: deps.acaoImposto },
         { id: 'menu_fin_lancar', title: '💸 Lançar gasto/entrada', description: 'Foto, áudio ou texto', hint: '💸 Manda a foto/áudio do comprovante, ou escreve direto: *gastei 380 no posto* / *recebi 5000 do João*. Eu lanço e classifico sozinha.' },
         { id: 'menu_fin_material', title: '💰 Preço de material', description: 'Comparar onde está mais barato', hint: '💰 Pra comparar onde um material está mais barato, pergunta o preço dele:\n*preço do cabo 6mm*\n(eu já te mostro o ranking das lojas)' },
-        { id: 'menu_fin_lojas', title: '🏪 Status das lojas', description: 'Quantos itens por loja + última sync', hint: '🏪 Manda */lojas* que eu te digo quantos itens cada loja (Belenus/Sol Fácil/Fortlev) tem na tabela viva e quando atualizou.' },
-        { id: 'menu_fin_comparar', title: '🏪 Comparar lojas', description: 'Melhor preço nas 3 distribuidoras', hint: '🏪 Manda */comparar marca potência* (ex: */comparar sungrow 5kw* · */comparar risen 715*) que eu mostro o melhor preço entre Belenus, Sol Fácil e Fortlev.' },
-        { id: 'menu_fin_cotar', title: '💰 Cotar com margem', description: 'Custo → imposto → margem → preço', hint: '💰 Manda */cotar materiais kWp* (ex: */cotar 12000 5*) que eu calculo imposto, margem, preço sugerido e o desconto máximo que dá pra dar.' },
         { id: 'menu_fin_painel', title: '📈 Abrir painel', description: 'Tela do financeiro', hint: '📈 Painel do financeiro: dashboard.ecosunpower.eng.br/dashboard/financeiro' },
         { id: 'menu_fin_apagar', title: '🗑️ Apagar lançamento', description: 'Apagar um gasto/entrada errado', action: deps.acaoApagar },
+      ],
+    },
+    {
+      id: 'lojas', title: '🏪 Lojas', description: 'Comparar preço, montar kit, cotar',
+      items: [
+        { id: 'menu_lojas_status', title: '🏪 Status das lojas', description: 'Quantos itens por loja + última sync', hint: '🏪 Manda */lojas* que eu te digo quantos itens cada loja (Belenus/Sol Fácil/Fortlev) tem na tabela viva e quando atualizou.' },
+        { id: 'menu_lojas_comparar', title: '🔎 Comparar preço', description: 'Melhor preço nas 3 distribuidoras', hint: '🔎 Manda */comparar marca potência* (ex: */comparar sungrow 5kw* · */comparar risen 715*) que eu mostro o melhor preço entre Belenus, Sol Fácil e Fortlev.' },
+        { id: 'menu_lojas_kit', title: '🧰 Montar kit + preço', description: 'Kit mais barato das 3 lojas + preço sugerido', hint: '🧰 Manda */kit módulos Wp kW* (ex: */kit 12 615 8*) que eu monto o kit mais barato das 3 lojas e já calculo o preço sugerido. Trava a margem: */kit 12 615 8 30*.' },
+        { id: 'menu_lojas_cotar', title: '💰 Cotar com margem', description: 'Custo → imposto → margem → preço', hint: '💰 Manda */cotar materiais kWp* (ex: */cotar 12000 5*) que eu calculo imposto, margem, preço sugerido e o desconto máximo.' },
+        { id: 'menu_lojas_painel', title: '📈 Abrir comparador', description: 'Tela do comparador de lojas', hint: '📈 Comparador de Lojas: dashboard.ecosunpower.eng.br/dashboard/lojas' },
       ],
     },
     {

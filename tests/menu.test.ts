@@ -16,17 +16,17 @@ function depsStub(): MenuDeps {
 }
 
 describe('menu — estrutura', () => {
-  it('tem as 6 categorias na ordem esperada', () => {
+  it('tem as 7 categorias na ordem esperada', () => {
     const cats = construirMenu(depsStub());
     expect(cats.map(c => c.id)).toEqual([
-      'propostas', 'fechamento', 'marketing', 'atendimento', 'financeiro', 'operacao',
+      'propostas', 'fechamento', 'marketing', 'atendimento', 'financeiro', 'lojas', 'operacao',
     ]);
   });
 
   it('rowsCategorias devolve uma row por categoria com id menucat_*', () => {
     const cats = construirMenu(depsStub());
     const rows = rowsCategorias(cats);
-    expect(rows).toHaveLength(6);
+    expect(rows).toHaveLength(7);
     expect(rows.every(r => r.id.startsWith('menucat_'))).toBe(true);
   });
 });

@@ -1512,7 +1512,8 @@ b.onclick=async function(){
   router.get('/lojas', async (req: AuthedRequest, res: Response) => {
     try {
       const { CatalogoLojaService } = await import('../vendas/lojas/catalogo-loja.js');
-      const { montarKitPorLoja } = await import('../vendas/lojas/kit.js');
+      const { montarKitPorLoja, melhorKitCompleto, kwpDoKit } = await import('../vendas/lojas/kit.js');
+      const { calcularCotacao, margemDoPreco } = await import('../vendas/lojas/cotacao.js');
       const { marcaBanida } = await import('../vendas/lojas/tipos.js');
       const { renderLojasPage } = await import('./lojas-views.js');
       const companyId = req.dashUser!.companyId;
@@ -1528,21 +1529,57 @@ b.onclick=async function(){
       const nMod = parseInt(String(req.query.modulos ?? ''), 10);
       const wp = parseInt(String(req.query.wp ?? ''), 10);
       const invkw = parseFloat(String(req.query.invkw ?? '').replace(',', '.'));
+      const marcaMod = typeof req.query.marcamod === 'string' ? req.query.marcamod : '';
+      const marcaInv = typeof req.query.marcainv === 'string' ? req.query.marcainv : '';
       const kitSpec = Number.isFinite(nMod) && nMod > 0
-        ? { modulos: nMod, wpModulo: Number.isFinite(wp) ? wp : null, inversorKw: Number.isFinite(invkw) ? invkw : null }
+        ? { modulos: nMod, wpModulo: Number.isFinite(wp) ? wp : null, inversorKw: Number.isFinite(invkw) ? invkw : null,
+            marcaModulo: marcaMod || null, marcaInversor: marcaInv || null }
         : null;
       const kits = kitSpec ? montarKitPorLoja(itens, kitSpec) : [];
+      // marcas disponíveis pros seletores (não trava no mais barato — Junior escolhe)
+      const marcasModulo = [...new Set(itens.filter((i) => i.categoria === 'modulo').map((i) => i.marca).filter(Boolean))].sort();
+      const marcasInversor = [...new Set(itens.filter((i) => ['inversor_string', 'micro', 'inversor_hibrido'].includes(i.categoria)).map((i) => i.marca).filter(Boolean))].sort();
 
-      // Catálogo filtrado (categoria + loja), ordenado do mais barato
+      // Cotação do kit mais barato — parâmetros ajustáveis (default da casa), e se o
+      // Junior digitar "seu preço" mostra a margem no VALOR DELE (o dele manda).
+      const numOr = (q: unknown, def: number) => { const n = parseFloat(String(q ?? '').replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) ? n : def; };
+      const cotParams = {
+        servicoRsPorWp: numOr(req.query.serv, 0.85),
+        impostoPct: numOr(req.query.imp, 6),
+        margemAlvoPct: numOr(req.query.marg, 25),
+        margemMinimaPct: numOr(req.query.margmin, 12),
+      };
+      const precoManual = parseFloat(String(req.query.preco ?? '').replace(/\./g, '').replace(',', '.'));
+      const melhorKit = kitSpec ? melhorKitCompleto(kits) : null;
+      let cotacao: ReturnType<typeof calcularCotacao> | null = null;
+      let margemManual: ReturnType<typeof margemDoPreco> | null = null;
+      let melhorFonte: string | null = null;
+      if (melhorKit) {
+        try {
+          cotacao = calcularCotacao({ custoMateriais: melhorKit.total, potenciaKwp: kwpDoKit(melhorKit), ...cotParams });
+          melhorFonte = melhorKit.fonte;
+          if (Number.isFinite(precoManual) && precoManual > 0) margemManual = margemDoPreco(cotacao.custoTotal, precoManual, cotParams.impostoPct);
+        } catch { /* imposto+margem>=100% etc — segue sem cotação */ }
+      }
+
+      // Catálogo filtrado (categoria + loja), ordenado do mais barato.
+      // Por padrão mostra o porte residencial/pequeno (inversor ≤ 20 kW ≈ até ~2000 kWh);
+      // os grandes só aparecem com "grandes=1" (Junior: "esses maiores só se eu pedir").
       const catSel = typeof req.query.cat === 'string' ? req.query.cat : '';
       const fonteSel = typeof req.query.fonte === 'string' ? req.query.fonte : '';
+      const mostrarGrandes = req.query.grandes === '1';
+      const ehInversorCat = (c: string) => c === 'inversor_string' || c === 'micro' || c === 'inversor_hibrido';
       const catalogo = itens
         .filter((i) => (!catSel || i.categoria === catSel) && (!fonteSel || i.fonte === fonteSel))
+        .filter((i) => mostrarGrandes || !ehInversorCat(i.categoria) || !(i.potenciaW && i.potenciaW > 20000))
         .sort((a, b) => a.precoUnitario - b.precoUnitario);
 
       res.send(renderLojasPage({
         totalItens: itens.length, contagemPorFonte, atualizadoEmMs,
-        kitSpec, kits, catalogo, catSel, fonteSel, user: req.dashUser,
+        kitSpec, kits, catalogo, catSel, fonteSel, mostrarGrandes,
+        marcasModulo, marcasInversor, marcaMod, marcaInv,
+        cotacao, cotParams, precoManual: Number.isFinite(precoManual) ? precoManual : null, margemManual, melhorFonte,
+        user: req.dashUser,
       }));
     } catch (err) {
       console.error('[dashboard/lojas]', err);

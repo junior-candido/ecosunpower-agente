@@ -52,3 +52,26 @@ describe('montarKitPorLoja', () => {
     expect(bel.modulo!.potenciaW).toBe(615); // ignora o 715 mais barato
   });
 });
+
+describe('kit é sempre de UMA loja (não mistura)', () => {
+  it('cada kit usa só itens da própria loja; loja incompleta vira faltando', () => {
+    const itens = [
+      // Belenus: só módulo (sem inversor nem estrutura)
+      it0({ fonte: 'belenus', categoria: 'modulo', potenciaW: 615, precoUnitario: 500, marca: 'TCL' }),
+      // Sol Fácil: kit completo
+      it0({ fonte: 'solfacil', categoria: 'modulo', potenciaW: 615, precoUnitario: 600, marca: 'OSDA' }),
+      it0({ fonte: 'solfacil', categoria: 'inversor_string', potenciaW: 8000, precoUnitario: 4000, marca: 'GOODWE' }),
+      it0({ fonte: 'solfacil', categoria: 'estrutura', precoUnitario: 20, marca: 'x' }),
+    ];
+    const kits = montarKitPorLoja(itens, { modulos: 10, wpModulo: 615, inversorKw: 8 });
+    const bel = kits.find((k) => k.fonte === 'belenus')!;
+    // Belenus não tem inversor/estrutura da PRÓPRIA loja → faltando (não pega da Sol Fácil)
+    expect(bel.inversor).toBeNull();
+    expect(bel.faltando).toContain('inversor');
+    // o único kit completo é o da Sol Fácil (tudo da mesma loja)
+    const completos = kits.filter((k) => k.faltando.length === 0);
+    expect(completos).toHaveLength(1);
+    expect(completos[0].fonte).toBe('solfacil');
+    expect(completos[0].modulo!.marca).toBe('OSDA'); // módulo da Sol Fácil, não o TCL da Belenus
+  });
+});
