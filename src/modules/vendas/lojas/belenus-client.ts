@@ -27,6 +27,16 @@ export const FAMILIAS_BELENUS: { familia: number; categoria: CategoriaLoja }[] =
 export type FetchFn = typeof fetch;
 export interface BelenusCreds { email: string; senha: string; }
 
+// A Belenus fica atrás de WAF/nginx e devolve 403 pra requisição "de servidor"
+// sem cara de navegador. Estes headers imitam o Chrome (foi como funcionou na
+// sessão do Junior) — User-Agent/Origin/Referer são o que costuma destravar.
+const HEADERS_NAVEGADOR: Record<string, string> = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36',
+  'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+  Origin: BASE,
+  Referer: `${BASE}/`,
+};
+
 /** Acha o primeiro JWT (x.y.z) dentro de um objeto de sessão. */
 function acharJwt(o: unknown): string | null {
   if (typeof o === 'string') return o.split('.').length === 3 && o.length > 100 ? o : null;
@@ -43,7 +53,7 @@ function acharJwt(o: unknown): string | null {
 export async function loginBelenus(creds: BelenusCreds, fetchFn: FetchFn = fetch): Promise<string> {
   const res = await fetchFn(`${BASE}/api/autenticacao/Usuario/Login/PessoaJuridicaByEmail`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...HEADERS_NAVEGADOR },
     body: JSON.stringify({ email: creds.email, senha: creds.senha }),
   });
   if (!res.ok) throw new Error(`Belenus login HTTP ${res.status}`);
@@ -57,7 +67,7 @@ export async function loginBelenus(creds: BelenusCreds, fetchFn: FetchFn = fetch
 export async function vitrineBelenus(token: string, familia: number, fetchFn: FetchFn = fetch): Promise<any[]> {
   const res = await fetchFn(`${BASE}/api/catalogo/catalogo/vitrine`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}`, ...HEADERS_NAVEGADOR },
     body: JSON.stringify({ siteId: SITE_ID, familia, filtros: [], skip: 1, take: 300, order: 0 }),
   });
   if (!res.ok) throw new Error(`Belenus vitrine ${familia} HTTP ${res.status}`);
