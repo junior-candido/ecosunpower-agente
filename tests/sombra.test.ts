@@ -378,10 +378,12 @@ describe('SombraService.rodarSeNuncaRodou', () => {
 describe('makeSombraHandler', () => {
   const prep = (admin = true, op: OpcoesFake = {}) => {
     const db = fakeDb(op);
-    db.tabelas.leads.push({ id: 'L1', name: 'Joel Lima', energy_data: { consumption_kwh: 734 }, created_at: '2026-08-01' });
-    db.tabelas.leads.push({ id: 'L2', name: 'Joelma', energy_data: { consumption_kwh: 600 }, created_at: '2026-08-10' });
+    db.tabelas.leads.push({ id: 'L1', name: 'Joel Lima', company_id: 'C1', energy_data: { consumption_kwh: 734 }, created_at: '2026-08-01' });
+    db.tabelas.leads.push({ id: 'L2', name: 'Joelma', company_id: 'C1', energy_data: { consumption_kwh: 600 }, created_at: '2026-08-10' });
+    // lead de OUTRO tenant com o mesmo nome: nunca pode aparecer no /sombra do Junior
+    db.tabelas.leads.push({ id: 'L9', name: 'Joel Lima', company_id: 'C2', energy_data: { consumption_kwh: 900 }, created_at: '2026-08-20' });
     const { svc, sendText } = mk(db);
-    const h = makeSombraHandler({ svc, client: db.client as any, isAdminPhone: () => admin, sendText, agoraMs: () => T0 });
+    const h = makeSombraHandler({ svc, client: db.client as any, isAdminPhone: () => admin, sendText, agoraMs: () => T0, companyId: 'C1' });
     return { h, sendText, db };
   };
 
@@ -433,11 +435,17 @@ describe('makeSombraHandler', () => {
 
   it('mais de 5 homônimos vira "5+" (busca traz 6 pra saber que passou)', async () => {
     const { h, sendText, db } = prep();
-    for (let i = 3; i <= 8; i++) db.tabelas.leads.push({ id: `L${i}`, name: `Joel ${i}`, energy_data: { consumption_kwh: 734 }, created_at: `2026-07-0${i - 2}` });
+    for (let i = 3; i <= 8; i++) db.tabelas.leads.push({ id: `L${i}`, company_id: 'C1', name: `Joel ${i}`, energy_data: { consumption_kwh: 734 }, created_at: `2026-07-0${i - 2}` });
     await h('x', '/sombra Joel');
     expect(sendText.mock.calls[0][1]).toContain('5+ leads com "Joel"');
   });
 
+  it('/sombra nunca pega lead de outro tenant (mesmo nome)', async () => {
+    const { h, db } = prep();
+    await h('x', '/sombra Joel Lima');
+    expect(db.tabelas.propostas_versoes.every((v: any) => v.lead_id !== 'L9')).toBe(true);
+    expect(db.tabelas.propostas_versoes[0]?.lead_id).toBe('L1');
+  });
   it('nome sem lead avisa', async () => {
     const { h, sendText } = prep();
     await h('x', '/sombra Ninguém');
@@ -486,9 +494,9 @@ describe('makeSombraHandler', () => {
 
   it('rodada fora da faixa NÃO vira aviso de erro (o card já explicou)', async () => {
     const db = fakeDb();
-    db.tabelas.leads.push({ id: 'L1', name: 'Zé', energy_data: { consumption_kwh: 300 }, created_at: '2026-08-01' });
+    db.tabelas.leads.push({ id: 'L1', name: 'Zé', company_id: 'C1', energy_data: { consumption_kwh: 300 }, created_at: '2026-08-01' });
     const { svc, sendText } = mk(db);
-    const h = makeSombraHandler({ svc, client: db.client as any, isAdminPhone: () => true, sendText, agoraMs: () => T0 });
+    const h = makeSombraHandler({ svc, client: db.client as any, isAdminPhone: () => true, sendText, agoraMs: () => T0, companyId: 'C1' });
     await h('x', '/sombra Zé');
     expect(sendText.mock.calls.some(c => String(c[1]).includes('Não consegui rodar'))).toBe(false);
     expect(sendText.mock.calls.at(-1)![1]).toContain('abaixo de 500');

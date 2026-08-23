@@ -180,6 +180,7 @@ export function makeSombraHandler(d: {
   isAdminPhone: (from: string) => boolean;
   sendText: (to: string, text: string) => Promise<void>;
   agoraMs: () => number;
+  companyId: string; // só leads deste tenant
 }): (from: string, text: string) => Promise<boolean> {
   return async (from, text) => {
     if (!d.isAdminPhone(from)) return false;
@@ -196,7 +197,7 @@ export function makeSombraHandler(d: {
     try {
       // Pede 6 sabendo que mostra 5: o sexto só serve pra dizer "5+".
       const { data, error } = await d.client.from('leads').select('id, name, created_at')
-        .ilike('name', `%${padrao}%`).is('archived_at', null).order('created_at', { ascending: false }).limit(6);
+        .eq('company_id', d.companyId).ilike('name', `%${padrao}%`).is('archived_at', null).order('created_at', { ascending: false }).limit(6);
       if (error) {
         console.error('[sombra] buscar lead falhou', msgErro(error));
         await d.sendText(from, '⚠️ Não consegui consultar os leads agora.');
