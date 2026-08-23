@@ -59,6 +59,7 @@ import { EstadoVendaService } from './modules/vendas/estado-venda.js';
 import { TabelaPrecosService, makeTabelaHandler } from './modules/vendas/tabela-precos.js';
 import { CatalogoLojaService } from './modules/vendas/lojas/catalogo-loja.js';
 import { sincronizarLojas, credenciaisDoEnv } from './modules/vendas/lojas/sincronizar-lojas.js';
+import { makeLojasHandler } from './modules/vendas/lojas/comandos.js';
 import { LeitorPrintTabela } from './modules/vendas/tabela-precos-print.js';
 import { SombraService, makeSombraHandler } from './modules/vendas/sombra.js';
 import { consumoAlvo } from './modules/vendas/autonomia.js';
@@ -770,6 +771,10 @@ async function main() {
     },
   });
   const tryHandleTabelaCommand = makeTabelaHandler({ svc: tabelaPrecos, isAdminPhone, sendText, agoraMs: () => Date.now() });
+  const tryHandleLojasCommand = makeLojasHandler({
+    svc: new CatalogoLojaService({ client: supabase.getClient(), companyId: ECOSUN_COMPANY_ID }),
+    isAdminPhone, sendText,
+  });
   const tryHandleSombraCommand = makeSombraHandler({ svc: sombra, client: supabase.getClient(), isAdminPhone, sendText, agoraMs: () => Date.now(), companyId: ECOSUN_COMPANY_ID });
 
   // Eva Fechamento: modo /fechar conversacional pra Junior fechar venda
@@ -4418,6 +4423,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // Fatia 2 — "/tabela ..." mantém a tabela de preços de kit do Junior.
     if (await tryHandleTabelaCommand(from, text)) return;
+    if (await tryHandleLojasCommand(from, text)) return;
     // Fatia 2 — "ok tabela" confirma os itens lidos de um print da loja.
     if (isAdminPhone(from) && await leitorPrintTabela.tratarTexto(from, text)) return;
     // Fatia 2 — "/sombra <nome>": a Eva precifica e mostra pro Junior, sem enviar nada ao cliente.

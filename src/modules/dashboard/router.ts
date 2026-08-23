@@ -1521,9 +1521,11 @@ b.onclick=async function(){
       const grupos = compararLojas(itens);
       const oportunidades = oportunidadesDesconto(grupos);
       const fontesComDados = [...new Set(itens.map((i) => i.fonte))];
+      const contagemPorFonte: Record<string, number> = { belenus: 0, solfacil: 0, fortlev: 0 };
+      for (const i of itens) contagemPorFonte[i.fonte] = (contagemPorFonte[i.fonte] ?? 0) + 1;
       const atualizadoEmMs = itens.length ? Math.max(...itens.map((i) => i.atualizadoEmMs)) : null;
       res.send(renderLojasPage({
-        grupos, oportunidades, totalItens: itens.length, fontesComDados, atualizadoEmMs, user: req.dashUser,
+        grupos, oportunidades, totalItens: itens.length, fontesComDados, contagemPorFonte, atualizadoEmMs, user: req.dashUser,
       }));
     } catch (err) {
       console.error('[dashboard/lojas]', err);
