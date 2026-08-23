@@ -2,7 +2,7 @@
 // Normaliza a resposta da vitrine Belenus (POST /api/catalogo/catalogo/vitrine)
 // pra ItemLoja. PURO e testável — o client (HTTP/login) é outro arquivo.
 import type { CategoriaLoja, ItemLoja } from './tipos.js';
-import { potenciaWpDeTexto } from './tipos.js';
+import { potenciaWpDeTexto, marcaBanida } from './tipos.js';
 
 /** Uma família da vitrine já com a categoria normalizada que ela representa. */
 export interface FamiliaBelenus {
@@ -81,7 +81,7 @@ export function normalizarBelenus(familias: FamiliaBelenus[]): ItemLoja[] {
     for (const prod of fam.produtos ?? []) {
       for (const op of prod?.opcoes ?? []) {
         const item = itemDeOpcaoBelenus(op, fam.categoria);
-        if (item) out.push(item);
+        if (item && !marcaBanida(item.marca, item.descricao)) out.push(item);
       }
     }
   }

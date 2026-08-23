@@ -2,7 +2,7 @@
 // Normaliza a resposta do GraphQL getSpareProducts (Sol Fácil) pra ItemLoja.
 // PURO e testável — o client (Keycloak/HTTP) é outro arquivo.
 import type { CategoriaLoja, ItemLoja } from './tipos.js';
-import { potenciaWDeCampo } from './tipos.js';
+import { potenciaWDeCampo, marcaBanida } from './tipos.js';
 
 /** Categoria da loja (MODULES, INVERTERS, ...) + descrição → categoria normalizada. */
 export function categoriaSolfacil(categoriaLoja: string, descricao: string): CategoriaLoja {
@@ -84,7 +84,7 @@ export function normalizarSolfacil(produtos: any[], categoriaLoja: string): Item
   const out: ItemLoja[] = [];
   for (const p of produtos ?? []) {
     const item = itemDeProdutoSolfacil(p, categoriaLoja);
-    if (item) out.push(item);
+    if (item && !marcaBanida(item.marca, item.descricao)) out.push(item);
   }
   return out;
 }
