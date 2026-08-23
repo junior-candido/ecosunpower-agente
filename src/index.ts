@@ -54,6 +54,11 @@ import { makeCapiReporter, type CapiReporter } from './modules/capi-reporter.js'
 import { ProposalFollowupService } from './modules/proposal-followup.js';
 import { FollowupVivoService } from './modules/vendas/followup-vivo.js';
 import { VisitasService } from './modules/vendas/visitas.js';
+// Fatia 2 — Eva Vendedora: estado de venda, tabela de preços do Junior e precificador sombra.
+import { EstadoVendaService } from './modules/vendas/estado-venda.js';
+import { TabelaPrecosService, makeTabelaHandler } from './modules/vendas/tabela-precos.js';
+import { LeitorPrintTabela } from './modules/vendas/tabela-precos-print.js';
+import { SombraService, makeSombraHandler } from './modules/vendas/sombra.js';
 import { CasesFetcher } from './modules/cases-fetcher.js';
 import { medirIa } from './modules/custos/ia-metering.js';
 import { construirMenu, rowsCategorias, rowsSubmenu } from './modules/menu/menu.js';
@@ -593,6 +598,16 @@ async function main() {
     onPropostaEnviada: (pv) => {
       followupVivo.agendarParaProposta(pv)
         .catch((err) => console.warn('[followup-vivo] agendar pos-envio falhou:', (err as Error).message));
+      // Fatia 2 — esteira de estado. ENCADEADO (nunca três "void" soltos): o update
+      // tem lock otimista e a leitura seguinte veria o estado velho.
+      const leadIdPv = pv.leadId;
+      if (leadIdPv) {
+        void (async () => {
+          await estadoVenda.transicionar({ leadId: leadIdPv, para: 'QUALIFICADO', motivo: 'proposta sem qualificação prévia', autor: 'sistema', agoraMs: Date.now() });
+          await estadoVenda.transicionar({ leadId: leadIdPv, para: 'PROPOSTA_ENVIADA', motivo: 'proposta enviada', autor: 'junior', agoraMs: Date.now() });
+          await estadoVenda.transicionar({ leadId: leadIdPv, para: 'FOLLOWUP_VIVO', motivo: 'follow-up agendado', autor: 'sistema', agoraMs: Date.now() });
+        })();
+      }
     },
   });
 
@@ -717,6 +732,42 @@ async function main() {
   });
   const visitas = new VisitasService({ client: supabase.getClient(), followupVivo });
   console.log('[followup-vivo] Servico ativo (ritmo de proposta sem fim + pos-visita 24h)');
+
+  // Fatia 2 — Eva Vendedora: estado de venda + tabela de preços + sombra (spec 2026-08-21 §10.2).
+  // Date.now() só aqui nas closures do index; os módulos recebem o tempo injetado.
+  const estadoVenda = new EstadoVendaService({ client: supabase.getClient(), registrarEvento });
+  const tabelaPrecos = new TabelaPrecosService({
+    client: supabase.getClient(),
+    companyId: ECOSUN_COMPANY_ID,
+    registrarEvento,
+  });
+  const sombra = new SombraService({
+    client: supabase.getClient(),
+    tabela: tabelaPrecos,
+    sendText,
+    registrarEvento,
+    adminPhone: config.engineerPhone,
+  });
+  const leitorPrintTabela = new LeitorPrintTabela({
+    svc: tabelaPrecos,
+    isAdminPhone,
+    sendText,
+    agoraMs: () => Date.now(),
+    lerImagem: async (base64, mimeType, prompt) => {
+      const r = await anthropicFollowupVivo.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1500,
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: mimeType as 'image/jpeg', data: base64 } },
+          { type: 'text', text: prompt },
+        ] }],
+      });
+      medirIa({ modelo: 'claude-haiku-4-5-20251001', origem: 'tabela-precos-print', usage: r.usage });
+      return r.content.map((c) => (c.type === 'text' ? c.text : '')).join('');
+    },
+  });
+  const tryHandleTabelaCommand = makeTabelaHandler({ svc: tabelaPrecos, isAdminPhone, sendText, agoraMs: () => Date.now() });
+  const tryHandleSombraCommand = makeSombraHandler({ svc: sombra, client: supabase.getClient(), isAdminPhone, sendText, agoraMs: () => Date.now() });
 
   // Eva Fechamento: modo /fechar conversacional pra Junior fechar venda
   // (gera contrato + procuração no Drive). Reusa OAuth do Drive proposal.
@@ -2564,6 +2615,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       .update({ opt_out: true, eva_active: false, status: 'inativo', updated_at: new Date().toISOString() })
       .eq('id', lead.id);
     void followupVivo.cancelarPorLead(lead.id, 'opt_out');
+    // Fatia 2 — esteira de estado.
+    void estadoVenda.transicionar({ leadId: lead.id, para: 'PERDIDO', motivo: 'opt_out', autor: 'sistema', agoraMs: Date.now() });
     console.log(`[opt-out] cliente ${from} (${lead.name}) optou por sair via "${raw}"`);
     await sendText(
       from,
@@ -3888,6 +3941,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
             // Fechou: o ritmo morre e a visita vira 'fechou' (não re-arma nada).
             void followupVivo.cancelarPorLead(leadGanhoId, 'fechou');
             void visitas.marcarResultado(leadGanhoId, 'fechou');
+            // Fatia 2 — esteira de estado.
+            void estadoVenda.transicionar({ leadId: leadGanhoId, para: 'FECHADO', motivo: 'venda registrada', autor: 'junior', agoraMs: Date.now() });
           }
         } catch (e) {
           console.warn('[funil] onLeadGanho falhou:', (e as Error).message);
@@ -4357,6 +4412,13 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // (proposta/preço/agenda) e a frase começar com "abordar", o modo trata —
     // o comando não sequestra a conversa. Fora de modo, dispara normal.
     if (await tryHandleAbordarCommand(from, text)) return;
+
+    // Fatia 2 — "/tabela ..." mantém a tabela de preços de kit do Junior.
+    if (await tryHandleTabelaCommand(from, text)) return;
+    // Fatia 2 — "ok tabela" confirma os itens lidos de um print da loja.
+    if (isAdminPhone(from) && await leitorPrintTabela.tratarTexto(from, text)) return;
+    // Fatia 2 — "/sombra <nome>": a Eva precifica e mostra pro Junior, sem enviar nada ao cliente.
+    if (await tryHandleSombraCommand(from, text)) return;
 
     // "/followup <nome>" / "/followup parar <nome>" — estado do ritmo de proposta.
     if (await tryHandleFollowupVivoCommand(from, text)) return;
@@ -5158,6 +5220,14 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             console.warn('[hotlead] alerta imediato falhou:', (err as Error).message);
           }
         }
+
+        // Fatia 2 — lead ganhou consumo: vira QUALIFICADO e a Eva roda a sombra uma
+        // única vez (silenciosa fora da faixa). Nada disso vai pro cliente.
+        const consumoNovo = Number((leadUpdate.energy_data as Record<string, unknown> | undefined)?.consumption_kwh);
+        if (leadId && consumoNovo > 0) {
+          void estadoVenda.transicionar({ leadId, para: 'QUALIFICADO', motivo: 'consumo informado', autor: 'eva', agoraMs: Date.now() });
+          void sombra.rodarSeNuncaRodou(leadId, Date.now());
+        }
         break;
       }
 
@@ -5266,6 +5336,8 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         await takeover.pauseFor(from).catch((err) =>
           console.warn('[transfer] pauseFor falhou:', (err as Error).message),
         );
+        // Fatia 2 — esteira de estado: cliente pediu o Junior.
+        void estadoVenda.transicionar({ leadId, para: 'QUER_JUNIOR', motivo: 'transfer_to_human', autor: 'junior', agoraMs: Date.now() });
 
         const lead = await db.getLeadByPhone(from) as (Record<string, unknown> | null);
         const contactType = lead?.contact_type as string | undefined;
@@ -5464,6 +5536,8 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             fimMs: Date.parse(endISO),
             calendarEventId: event.eventId ?? null,
           });
+          // Fatia 2 — esteira de estado.
+          void estadoVenda.transicionar({ leadId: lead?.id ?? leadId, para: 'AGENDADO', motivo: 'visita agendada', autor: 'eva', agoraMs: Date.now() });
 
           // Alerta WABA pro Junior — agendamento eh sinal QUENTE, ele precisa
           // ver na hora pra confirmar logistica e equipamento. NUNCA silencia,
@@ -5539,6 +5613,8 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           if (canceledPost > 0) console.log(`[post-install] Canceled ${canceledPost} touches after opt-out`);
         }
         void followupVivo.cancelarPorLead(leadId, 'opt_out');
+        // Fatia 2 — esteira de estado.
+        void estadoVenda.transicionar({ leadId, para: 'PERDIDO', motivo: 'opt_out', autor: 'sistema', agoraMs: Date.now() });
         console.log(`[action] Opt-out registered for ${from}`);
         break;
       }
@@ -5617,6 +5693,8 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         if (!dqRows?.length) console.warn(`[action][3e] disqualify_lead atualizou 0 linhas pra ${from} — lead fora do tenant?`);
         await db.cancelCadence(leadId, 'disqualify_lead').catch(() => {});
         void followupVivo.cancelarPorLead(leadId, 'disqualify_lead');
+        // Fatia 2 — esteira de estado.
+        void estadoVenda.transicionar({ leadId, para: 'PERDIDO', motivo: 'disqualify_lead', autor: 'sistema', agoraMs: Date.now() });
         await reengagement.cancelAllTouches(leadId, db.getClient()).catch(() => 0);
         if (postInstall) await postInstall.cancelAll(leadId, db.getClient()).catch(() => 0);
         if (!isSandbox) {
@@ -5851,7 +5929,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
   }
 
   // Handle image messages
-  async function handleImageMessage(from: string, messageId: string, companyId?: string) {
+  async function handleImageMessage(from: string, messageId: string, companyId?: string, caption?: string) {
     const db = supabase.paraMensagem(companyId); // EVA MT 3a: crachá nas escritas de conversa
     if (await tryHandleCaseCreatorMedia(from, messageId, 'image')) return;
     if (await tryHandleProposalMedia(from, messageId, 'image')) return;
@@ -5861,6 +5939,8 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     if (isAdminPhone(from) && metaWaba) {
       const media = await messaging.getMediaBase64(messageId);
       if (media) {
+        // Fatia 2 — print da loja com legenda "tabela" vira itens de preço (antes do financeiro).
+        if (await leitorPrintTabela.tratarImagem(from, { base64: media.base64, mimeType: media.mimetype, legenda: caption ?? null })) return;
         const { tryHandleFinanceiroMedia } = await import('./modules/financeiro/caixa-entrada.js');
         const tratou = await tryHandleFinanceiroMedia(
           getCaixaDeps(), from,
@@ -6261,7 +6341,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         await handleAudioMessage(msg.from, mediaRef(msg.content, msg.messageId), companyId);
         break;
       case 'image':
-        await handleImageMessage(msg.from, mediaRef(msg.content, msg.messageId), companyId);
+        await handleImageMessage(msg.from, mediaRef(msg.content, msg.messageId), companyId, msg.caption);
         break;
       case 'video':
         await handleVideoMessage(msg.from, mediaRef(msg.content, msg.messageId), msg.caption, companyId);
@@ -7049,6 +7129,8 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           await supabase.cancelEvaIntro(lead.id, 'eva_off_command').catch(() => {});
           await supabase.cancelCadence(lead.id, 'eva_off_command').catch(() => {});
           void followupVivo.cancelarPorLead(lead.id, 'eva_off_command');
+          // Fatia 2 — esteira de estado.
+          void estadoVenda.transicionar({ leadId: lead.id, para: 'QUER_JUNIOR', motivo: 'eva_off_command', autor: 'junior', agoraMs: Date.now() });
         }
         console.log(`[eva-active] Eva DESATIVADA permanentemente pra ${parsed.from}`);
         res.status(200).json({ status: 'eva_disabled' });
@@ -8249,6 +8331,16 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     onPropostaEnviada: (pv) => {
       followupVivo.agendarParaProposta(pv)
         .catch((err) => console.warn('[followup-vivo] agendar pos-envio falhou:', (err as Error).message));
+      // Fatia 2 — esteira de estado. ENCADEADO (nunca três "void" soltos): o update
+      // tem lock otimista e a leitura seguinte veria o estado velho.
+      const leadIdPv = pv.leadId;
+      if (leadIdPv) {
+        void (async () => {
+          await estadoVenda.transicionar({ leadId: leadIdPv, para: 'QUALIFICADO', motivo: 'proposta sem qualificação prévia', autor: 'sistema', agoraMs: Date.now() });
+          await estadoVenda.transicionar({ leadId: leadIdPv, para: 'PROPOSTA_ENVIADA', motivo: 'proposta enviada', autor: 'junior', agoraMs: Date.now() });
+          await estadoVenda.transicionar({ leadId: leadIdPv, para: 'FOLLOWUP_VIVO', motivo: 'follow-up agendado', autor: 'sistema', agoraMs: Date.now() });
+        })();
+      }
     },
     // Salva contrato+procuração no Drive/Workspace (reusa o uploader do fechamento).
     salvarContratoNoDrive: closingDriveUploader
