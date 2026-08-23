@@ -76,6 +76,28 @@ export function makeLojasHandler(d: LojasHandlerDeps): (from: string, text: stri
     if (!d.isAdminPhone(from)) return false;
     const t = text.trim();
 
+    // /lojas → status da tabela viva (quantos itens por loja + quando atualizou).
+    // O "teste eficiente": uma mensagem diz tudo, sem abrir log nem dashboard.
+    if (/^\/lojas\b/i.test(t) && !/^\/lojas\s+\S/.test(t)) {
+      try {
+        const itens = await d.svc.listarAtivos();
+        const cont: Record<string, number> = { belenus: 0, solfacil: 0, fortlev: 0 };
+        let maisRecente = 0;
+        for (const i of itens) { cont[i.fonte] = (cont[i.fonte] ?? 0) + 1; if (i.atualizadoEmMs > maisRecente) maisRecente = i.atualizadoEmMs; }
+        const h = maisRecente ? Math.floor((Date.now() - maisRecente) / 3_600_000) : null;
+        const quando = h == null ? 'sem sync ainda' : h === 0 ? 'agora há pouco' : h < 24 ? `há ${h}h` : `há ${Math.floor(h / 24)}d`;
+        const linha = (f: string, nome: string) => `${cont[f] > 0 ? '✅' : '⚠️'} ${nome}: ${cont[f] ?? 0}`;
+        await d.sendText(from,
+          `🏪 *Tabela viva* (${itens.length} itens · ${quando})\n` +
+          `${linha('belenus', 'Belenus')}\n${linha('solfacil', 'Sol Fácil')}\n${linha('fortlev', 'Fortlev')}\n\n` +
+          `Comparar: */comparar sungrow 5kw* · Cotar: */cotar 12000 5*`);
+      } catch (e) {
+        await d.sendText(from, '⚠️ Não consegui ler a tabela viva agora.');
+        console.error('[lojas] /lojas', e instanceof Error ? e.message : e);
+      }
+      return true;
+    }
+
     if (/^\/comparar\b/i.test(t)) {
       const alvo = t.replace(/^\/comparar\s*/i, '').trim();
       if (!alvo) { await d.sendText(from, 'Ex.: /comparar sungrow 5kw · /comparar risen 715 · /comparar deye hibrido'); return true; }

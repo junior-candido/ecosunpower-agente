@@ -52,38 +52,57 @@ export interface LojasPageInput {
   oportunidades: OportunidadeDesconto[];
   totalItens: number;             // itens ativos na catalogo_loja
   fontesComDados: string[];       // lojas que têm dados hoje
+  contagemPorFonte: Record<string, number>;  // { belenus: N, solfacil: N, fortlev: N }
   atualizadoEmMs: number | null;  // item mais recente
   user?: any;
 }
 
+/** Placar das 3 lojas — o "teste eficiente": abre a tela e vê na hora quem carregou. */
+function placarLojas(cont: Record<string, number>, atualizadoEmMs: number | null): string {
+  const idade = atualizadoEmMs ? Math.floor((Date.now() - atualizadoEmMs) / 3_600_000) : null;
+  const quando = idade == null ? '' : idade === 0 ? 'agora há pouco' : idade < 24 ? `há ${idade}h` : `há ${Math.floor(idade / 24)}d`;
+  const chip = (fonte: string) => {
+    const n = cont[fonte] ?? 0;
+    const ok = n > 0;
+    const cor = ok ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-slate-50 border-slate-200 text-slate-400';
+    return `<div class="rounded-lg border ${cor} px-3 py-2 text-center min-w-[110px]">
+      <div class="text-lg font-bold">${n}</div>
+      <div class="text-xs">${FONTE_LABEL[fonte]} ${ok ? '✅' : '⚠️'}</div>
+    </div>`;
+  };
+  return `<div class="flex items-center gap-2 flex-wrap mb-4">
+    ${chip('belenus')}${chip('solfacil')}${chip('fortlev')}
+    ${quando ? `<div class="text-xs text-slate-500 ml-1">atualizado ${quando}</div>` : ''}
+  </div>`;
+}
+
 export function renderLojasPage(input: LojasPageInput): string {
-  const { grupos, oportunidades, totalItens, fontesComDados, atualizadoEmMs, user } = input;
+  const { grupos, oportunidades, totalItens, contagemPorFonte, atualizadoEmMs, user } = input;
 
-  const vazio = totalItens === 0;
-  const idade = atualizadoEmMs ? Math.floor((Date.now() - atualizadoEmMs) / 86400_000) : null;
-  const selo = fontesComDados.length
-    ? fontesComDados.map((f) => FONTE_LABEL[f] ?? f).join(' · ')
-    : 'nenhuma loja ainda';
+  const placar = placarLojas(contagemPorFonte, atualizadoEmMs);
+  const lojasComDados = Object.values(contagemPorFonte).filter((n) => n > 0).length;
 
-  const body = vazio
-    ? `<div class="max-w-2xl mx-auto mt-10 text-center">
-         <div class="text-5xl mb-3">🏪</div>
-         <h1 class="text-xl font-bold text-slate-800">Comparador de Lojas</h1>
-         <p class="text-slate-600 mt-2">Ainda não há preços na tabela viva. O robô puxa os catálogos de Belenus, Sol Fácil e Fortlev 1×/dia — assim que rodar, os produtos aparecem aqui com o melhor preço entre as lojas.</p>
-         <p class="text-slate-400 text-sm mt-2">(Depende dos segredos das lojas configurados no servidor.)</p>
-       </div>`
-    : `<div class="max-w-6xl mx-auto">
-        <div class="flex items-center justify-between flex-wrap gap-2 mb-4">
+  const body = `<div class="max-w-6xl mx-auto">
+        <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
           <h1 class="text-xl font-bold text-slate-800">🏪 Comparador de Lojas</h1>
-          <div class="text-sm text-slate-500">${totalItens} itens · ${escapeHtml(selo)}${idade !== null ? ` · atualizado ${idade === 0 ? 'hoje' : `há ${idade} d`}` : ''}</div>
+          <div class="text-sm text-slate-500">${totalItens} itens no total</div>
         </div>
-
-        ${oportunidades.length ? `<h2 class="text-sm font-semibold text-slate-600 mb-2">💰 Onde economizar / pedir desconto (top ${Math.min(oportunidades.length, 12)})</h2>
+        ${placar}
+        ${totalItens === 0
+          ? `<div class="rounded-lg border border-slate-200 bg-white p-6 text-center text-slate-600">
+               Ainda não há preços na tabela viva. O robô puxa os catálogos 1×/dia — assim que rodar, os produtos aparecem aqui.
+               <div class="text-slate-400 text-sm mt-1">(Se algum placar está ⚠️ zerado, aquela loja ainda não sincronizou — confira o segredo dela.)</div>
+             </div>`
+          : `${oportunidades.length ? `<h2 class="text-sm font-semibold text-slate-600 mb-2">💰 Onde economizar / pedir desconto (top ${Math.min(oportunidades.length, 12)})</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
           ${oportunidades.slice(0, 12).map(cardOportunidade).join('')}
         </div>` : ''}
 
-        <h2 class="text-sm font-semibold text-slate-600 mb-2">Comparação por produto (mesmo item em 2+ lojas)</h2>
+        ${grupos.length === 0
+          ? `<div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-slate-700">
+               Só <b>${lojasComDados} loja</b> tem preço agora, então ainda não dá pra comparar produto a produto. O comparativo entre lojas aparece quando <b>2+ lojas</b> carregarem (falta ${['belenus','solfacil','fortlev'].filter((f)=>!(contagemPorFonte[f]>0)).map((f)=>FONTE_LABEL[f]).join(', ') || 'nenhuma'}).
+             </div>`
+          : `<h2 class="text-sm font-semibold text-slate-600 mb-2">Comparação por produto (mesmo item em 2+ lojas)</h2>
         <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
           <table class="min-w-full text-sm">
             <thead class="bg-slate-100 text-slate-600 text-xs uppercase">
@@ -100,7 +119,7 @@ export function renderLojasPage(input: LojasPageInput): string {
             <tbody>${grupos.map(linhaGrupo).join('')}</tbody>
           </table>
         </div>
-        <p class="text-xs text-slate-400 mt-3">🏆 = mais barato. Compara o mesmo produto (marca + potência + tensão) entre as lojas. Preço: Belenus/Fortlev à vista · Sol Fácil no Pix. Frete não incluído (varia por transportadora).</p>
+        <p class="text-xs text-slate-400 mt-3">🏆 = mais barato. Compara o mesmo produto (marca + potência + tensão) entre as lojas. Preço: Belenus/Fortlev à vista · Sol Fácil no Pix. Frete não incluído (varia por transportadora).</p>`}`}
        </div>`;
 
   return renderLayout({ active: 'lojas', title: 'Comparador de Lojas', body, user });
