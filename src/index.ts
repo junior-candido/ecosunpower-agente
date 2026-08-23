@@ -59,6 +59,7 @@ import { EstadoVendaService } from './modules/vendas/estado-venda.js';
 import { TabelaPrecosService, makeTabelaHandler } from './modules/vendas/tabela-precos.js';
 import { LeitorPrintTabela } from './modules/vendas/tabela-precos-print.js';
 import { SombraService, makeSombraHandler } from './modules/vendas/sombra.js';
+import { consumoAlvo } from './modules/vendas/autonomia.js';
 import { CasesFetcher } from './modules/cases-fetcher.js';
 import { medirIa } from './modules/custos/ia-metering.js';
 import { construirMenu, rowsCategorias, rowsSubmenu } from './modules/menu/menu.js';
@@ -767,7 +768,7 @@ async function main() {
     },
   });
   const tryHandleTabelaCommand = makeTabelaHandler({ svc: tabelaPrecos, isAdminPhone, sendText, agoraMs: () => Date.now() });
-  const tryHandleSombraCommand = makeSombraHandler({ svc: sombra, client: supabase.getClient(), isAdminPhone, sendText, agoraMs: () => Date.now() });
+  const tryHandleSombraCommand = makeSombraHandler({ svc: sombra, client: supabase.getClient(), isAdminPhone, sendText, agoraMs: () => Date.now(), companyId: ECOSUN_COMPANY_ID });
 
   // Eva Fechamento: modo /fechar conversacional pra Junior fechar venda
   // (gera contrato + procuração no Drive). Reusa OAuth do Drive proposal.
@@ -5223,8 +5224,10 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
         // Fatia 2 — lead ganhou consumo: vira QUALIFICADO e a Eva roda a sombra uma
         // única vez (silenciosa fora da faixa). Nada disso vai pro cliente.
-        const consumoNovo = Number((leadUpdate.energy_data as Record<string, unknown> | undefined)?.consumption_kwh);
-        if (leadId && consumoNovo > 0) {
+        // Só pra lead da EcoSun: a tabela de preços e o card são do Junior (tenant
+        // EcoSun); lead de outro tenant (ex.: Conquista Solar) não entra aqui.
+        const consumoNovo = consumoAlvo({ consumoKwh: (leadUpdate.energy_data as Record<string, unknown> | undefined)?.consumption_kwh });
+        if (leadId && consumoNovo !== null && leadUpdate.company_id === ECOSUN_COMPANY_ID) {
           void estadoVenda.transicionar({ leadId, para: 'QUALIFICADO', motivo: 'consumo informado', autor: 'eva', agoraMs: Date.now() });
           void sombra.rodarSeNuncaRodou(leadId, Date.now());
         }
