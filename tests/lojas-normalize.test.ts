@@ -70,11 +70,11 @@ describe('Fortlev normalize', () => {
   });
   it('card → ItemLoja com potência (kW→W), marca 1ª palavra, datasheet INMETRO', () => {
     const card = { precoTexto: 'R$ 2.495,37', component: {
-      code: 'IIN00250', name: 'GROWATT ON-GRID 6KW - 220V - 2 MPPT - AFCI (MIN6000TL-X2)', family: 'inverter',
+      code: 'IIN00366', name: 'SUNGROW ON-GRID 6KW - 220V - 2 MPPT - AFCI (SG6.0RS)', family: 'inverter',
       tech_data: { output: { nominal_power: 6 } },
-      attachments: [{ path: 'https://s3/CERTIFICADO DO INMETRO - IIN00250 - GROWATT MIN 6000TL-X2.pdf' }] } };
+      attachments: [{ path: 'https://s3/CERTIFICADO DO INMETRO - IIN00366 - SUNGROW SG6.0RS.pdf' }] } };
     const out = normalizarFortlev([card]);
-    expect(out[0]).toMatchObject({ fonte: 'fortlev', categoria: 'inversor_string', sku: 'IIN00250', marca: 'GROWATT', potenciaW: 6000, precoUnitario: 2495.37 });
+    expect(out[0]).toMatchObject({ fonte: 'fortlev', categoria: 'inversor_string', sku: 'IIN00366', marca: 'SUNGROW', potenciaW: 6000, precoUnitario: 2495.37 });
     expect(out[0].datasheet).toContain('INMETRO');
   });
 });
@@ -127,5 +127,19 @@ describe('comparador', () => {
     ];
     expect(compararLojas(itens)).toHaveLength(0); // marcas diferentes, sem par
     expect(compararLojas(itens, { incluirLojaUnica: true })).toHaveLength(2);
+  });
+});
+
+import { marcaBanida } from '../src/modules/vendas/lojas/tipos.js';
+describe('Growatt banido', () => {
+  it('marcaBanida pega growatt (marca ou descrição)', () => {
+    expect(marcaBanida('GROWATT', '')).toBe(true);
+    expect(marcaBanida('growatt', '')).toBe(true);
+    expect(marcaBanida('X', 'INVERSOR 6KW GROWATT MIN6000')).toBe(true);
+    expect(marcaBanida('SUNGROW', 'INVERSOR')).toBe(false);
+  });
+  it('normalizarFortlev NÃO devolve Growatt', () => {
+    const cards = [{ precoTexto: 'R$ 100,00', component: { code: 'G1', name: 'GROWATT MIN6000', family: 'inverter', tech_data: { output: { nominal_power: 6 } }, attachments: [] } }];
+    expect(normalizarFortlev(cards)).toHaveLength(0);
   });
 });

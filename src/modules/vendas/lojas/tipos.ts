@@ -35,6 +35,11 @@ export interface ItemLoja {
   rsPorWp: number | null;   // só módulo.
 }
 
+/** Marca banida na casa (nunca entra em catálogo/comparador/kit). Só Growatt hoje. */
+export function marcaBanida(marca: string, descricao = ''): boolean {
+  return /growatt/i.test(`${marca} ${descricao}`);
+}
+
 /** Wp a partir de texto tipo "530W", "600 W", "MODULO ... 715W ..." — pega o maior "NNNW". */
 export function potenciaWpDeTexto(texto: string): number | null {
   const achados = [...texto.matchAll(/(\d{3,4})\s*w(?![a-z])/gi)].map((m) => Number(m[1]));

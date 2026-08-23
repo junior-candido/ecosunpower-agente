@@ -1512,20 +1512,37 @@ b.onclick=async function(){
   router.get('/lojas', async (req: AuthedRequest, res: Response) => {
     try {
       const { CatalogoLojaService } = await import('../vendas/lojas/catalogo-loja.js');
-      const { compararLojas } = await import('../vendas/lojas/comparador.js');
-      const { oportunidadesDesconto } = await import('../vendas/lojas/cotacao.js');
+      const { montarKitPorLoja } = await import('../vendas/lojas/kit.js');
+      const { marcaBanida } = await import('../vendas/lojas/tipos.js');
       const { renderLojasPage } = await import('./lojas-views.js');
       const companyId = req.dashUser!.companyId;
       const svc = new CatalogoLojaService({ client: supabase, companyId });
-      const itens = await svc.listarAtivos();
-      const grupos = compararLojas(itens);
-      const oportunidades = oportunidadesDesconto(grupos);
-      const fontesComDados = [...new Set(itens.map((i) => i.fonte))];
+      // defesa extra: Growatt nunca aparece, mesmo se sobrou linha no banco
+      const itens = (await svc.listarAtivos()).filter((i) => !marcaBanida(i.marca, i.descricao));
+
       const contagemPorFonte: Record<string, number> = { belenus: 0, solfacil: 0, fortlev: 0 };
       for (const i of itens) contagemPorFonte[i.fonte] = (contagemPorFonte[i.fonte] ?? 0) + 1;
       const atualizadoEmMs = itens.length ? Math.max(...itens.map((i) => i.atualizadoEmMs)) : null;
+
+      // Kit (se veio parâmetro): nº de módulos obrigatório pra montar
+      const nMod = parseInt(String(req.query.modulos ?? ''), 10);
+      const wp = parseInt(String(req.query.wp ?? ''), 10);
+      const invkw = parseFloat(String(req.query.invkw ?? '').replace(',', '.'));
+      const kitSpec = Number.isFinite(nMod) && nMod > 0
+        ? { modulos: nMod, wpModulo: Number.isFinite(wp) ? wp : null, inversorKw: Number.isFinite(invkw) ? invkw : null }
+        : null;
+      const kits = kitSpec ? montarKitPorLoja(itens, kitSpec) : [];
+
+      // Catálogo filtrado (categoria + loja), ordenado do mais barato
+      const catSel = typeof req.query.cat === 'string' ? req.query.cat : '';
+      const fonteSel = typeof req.query.fonte === 'string' ? req.query.fonte : '';
+      const catalogo = itens
+        .filter((i) => (!catSel || i.categoria === catSel) && (!fonteSel || i.fonte === fonteSel))
+        .sort((a, b) => a.precoUnitario - b.precoUnitario);
+
       res.send(renderLojasPage({
-        grupos, oportunidades, totalItens: itens.length, fontesComDados, contagemPorFonte, atualizadoEmMs, user: req.dashUser,
+        totalItens: itens.length, contagemPorFonte, atualizadoEmMs,
+        kitSpec, kits, catalogo, catSel, fonteSel, user: req.dashUser,
       }));
     } catch (err) {
       console.error('[dashboard/lojas]', err);

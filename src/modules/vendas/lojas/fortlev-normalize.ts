@@ -3,6 +3,7 @@
 // no @click="addCart({...})"). PURO e testável — quem baixa o HTML/extrai o JSON
 // é o client. Aqui entra o objeto `component` já parseado.
 import type { CategoriaLoja, ItemLoja } from './tipos.js';
+import { marcaBanida } from './tipos.js';
 
 /** family da Fortlev + nome → categoria normalizada da casa. */
 export function categoriaFortlev(family: string, nome: string): CategoriaLoja {
@@ -98,7 +99,7 @@ export function normalizarFortlev(cards: CardFortlev[]): ItemLoja[] {
   const out: ItemLoja[] = [];
   for (const card of cards ?? []) {
     const item = itemDeCardFortlev(card);
-    if (item) out.push(item);
+    if (item && !marcaBanida(item.marca, item.descricao)) out.push(item);
   }
   return out;
 }
