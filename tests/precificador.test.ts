@@ -130,14 +130,19 @@ describe('precificador', () => {
     expect(r.avisos.some(a => a.tipo === 'so_uma_marca')).toBe(true);
   });
 
-  it('falta estrutura do telhado → erro com lista do que falta', () => {
+  it('sem estrutura do telhado NÃO bloqueia: entra como zero (material dentro do serviço, Junior 23/08)', () => {
     const r = precificar({ consumoAlvoKwh: 734, telhado: 'fibrocimento', tabela: tabelaBase(), agoraMs: T0 });
-    expect(r).toEqual({ ok: false, erro: 'tabela_incompleta', faltando: ['estrutura fibrocimento'] });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // mesmo kit da opção A sem os 9×95 de estrutura cerâmica (cabos continuam)
+    const comEstrutura = precificar({ consumoAlvoKwh: 734, telhado: 'ceramico', tabela: tabelaBase(), agoraMs: T0 });
+    if (!comEstrutura.ok) throw new Error('esperava ok');
+    expect(r.opcoes[0].kit).toBeCloseTo(comEstrutura.opcoes[0].kit - comEstrutura.opcoes[0].modulos * 95, 1);
   });
 
   it('tabela vazia → lista tudo que falta', () => {
     const r = precificar({ consumoAlvoKwh: 734, telhado: 'ceramico', tabela: [], agoraMs: T0 });
-    expect(r).toEqual({ ok: false, erro: 'tabela_incompleta', faltando: ['módulo', 'micro', 'estrutura ceramico', 'cabos'] });
+    expect(r).toEqual({ ok: false, erro: 'tabela_incompleta', faltando: ['módulo', 'micro'] });
   });
 
   it('consumo inválido → erro', () => {

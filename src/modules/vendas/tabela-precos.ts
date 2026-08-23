@@ -138,7 +138,7 @@ function linhaItem(i: ItemPreco, agoraMs: number, bullet = '• '): string {
 }
 
 export function formatarListaTabela(itens: ItemPreco[], agoraMs: number): string {
-  if (!itens.length) return '📋 Tabela de preços vazia.\nExemplos:\n/tabela JA 625 = 980\n/tabela micro Hoymiles HMS-2000-4T 4 = 1450\n/tabela estrutura ceramico = 95\n/tabela cabos = 420';
+  if (!itens.length) return '📋 Tabela de preços vazia.\nExemplos:\n/tabela JA 625 = 980\n/tabela micro Hoymiles HMS-2000-4T 4 = 1450\n/tabela estrutura fibrocimento = 95\n/tabela cabos = 420';
   const grupo = (tipo: TipoItem, titulo: string) => {
     const lista = itens.filter(i => i.tipo === tipo);
     return lista.length ? `${titulo}\n${lista.map(i => linhaItem(i, agoraMs)).join('\n')}` : '';
@@ -147,7 +147,7 @@ export function formatarListaTabela(itens: ItemPreco[], agoraMs: number): string
     .filter(Boolean).join('\n\n');
 }
 
-const AJUDA = 'Não entendi. Formatos:\n/tabela JA 625 = 980  (o 625 = a potência do módulo em Wp)\n/tabela micro Hoymiles HMS-2000-4T 4 = 1450  (o 4 = quantos módulos por micro)\n/tabela estrutura ceramico|fibrocimento|metalico|laje = 95\n/tabela cabos = 420\n/tabela tira JA 625\n/tabela fonte belenus JA 625 = 980';
+const AJUDA = 'Não entendi. Formatos:\n/tabela JA 625 = 980  (o 625 = a potência do módulo em Wp)\n/tabela micro Hoymiles HMS-2000-4T 4 = 1450  (o 4 = quantos módulos por micro)\n/tabela estrutura fibrocimento|laje|solo|carport|ceramico|metalico = 95\n/tabela cabos = 420\n/tabela tira JA 625\n/tabela fonte belenus JA 625 = 980';
 const FALHA_ESCRITA = '⚠️ Não consegui gravar na tabela agora. Tenta de novo em instantes.';
 
 export function makeTabelaHandler(d: {
@@ -176,7 +176,7 @@ export function makeTabelaHandler(d: {
       } else if (cmd.erro === 'micro_sem_modulos_por_unidade') {
         await d.sendText(from, 'Faltou dizer quantos módulos cada micro aceita. Ex.: /tabela micro GoodWe GW2000-MIS 4 = 1300');
       } else if (cmd.erro === 'telhado_desconhecido') {
-        await d.sendText(from, 'Telhado tem que ser: ceramico, fibrocimento, metalico ou laje.');
+        await d.sendText(from, 'Telhado tem que ser: fibrocimento, laje, solo, carport, ceramico ou metalico.');
       } else if (cmd.erro === 'preco_invalido') {
         await d.sendText(from, 'Preço tem que ser maior que zero.');
       } else {

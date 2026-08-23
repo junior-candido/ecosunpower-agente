@@ -66,8 +66,8 @@ export function precificar(p: PrecificarInput): ResultadoPrecificacao {
   const faltando: string[] = [];
   if (!modulosTab.length) faltando.push('módulo');
   if (!microsTab.length) faltando.push('micro');
-  if (!estrutura) faltando.push(`estrutura ${p.telhado}`);
-  if (!cabos) faltando.push('cabos');
+  // Estrutura e cabos são OPCIONAIS (decisão Junior 23/08): quando não estão na tabela,
+  // entram como zero — o material de instalação já está dentro do serviço por Wp.
   if (faltando.length) return { ok: false, erro: 'tabela_incompleta', faltando };
 
   const alvo = kwpAlvo(p.consumoAlvoKwh);
@@ -82,7 +82,7 @@ export function precificar(p: PrecificarInput): ResultadoPrecificacao {
     const micro = microsTab
       .map(m => { const qtd = Math.ceil(modulos / m.modulosPorUnidade!); return { m, qtd, custo: qtd * m.precoUnitario }; })
       .sort((x, y) => x.custo - y.custo)[0];
-    const kit = modulos * mod.precoUnitario + micro.custo + modulos * estrutura!.precoUnitario + kwpRealExato * cabos!.precoUnitario;
+    const kit = modulos * mod.precoUnitario + micro.custo + modulos * (estrutura?.precoUnitario ?? 0) + kwpRealExato * (cabos?.precoUnitario ?? 0);
     const servico = kwpRealExato * 1000 * rsWpServico;
     const total = kit + servico;
     const rsPorWp = total / (kwpRealExato * 1000);
@@ -94,7 +94,7 @@ export function precificar(p: PrecificarInput): ResultadoPrecificacao {
       kit: r2(kit), servico: r2(servico), total: r2(total), rsPorWp: Math.round(rsPorWp * 1000) / 1000,
       parcela18x: calcParcela(r2(total)),
       greener: { rotulo: g.rotulo, rsPorWpReferencia: g.rsPorWpReferencia },
-      itensUsados: [mod, micro.m, estrutura!, cabos!],
+      itensUsados: [mod, micro.m, ...(estrutura ? [estrutura] : []), ...(cabos ? [cabos] : [])],
     };
   }).sort((x, y) => x.total - y.total || y.kwpReal - x.kwpReal || porMarcaModelo(
     { marca: x.moduloMarca, modelo: x.moduloModelo }, { marca: y.moduloMarca, modelo: y.moduloModelo },
