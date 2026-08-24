@@ -1513,7 +1513,7 @@ b.onclick=async function(){
     try {
       const { CatalogoLojaService } = await import('../vendas/lojas/catalogo-loja.js');
       const { montarKitPorLoja, melhorKitCompleto, kwpDoKit } = await import('../vendas/lojas/kit.js');
-      const { calcularCotacao, margemDoPreco } = await import('../vendas/lojas/cotacao.js');
+      const { calcularCotacao, margemDoPreco, parseParamCotacao } = await import('../vendas/lojas/cotacao.js');
       const { marcaBanida } = await import('../vendas/lojas/tipos.js');
       const { renderLojasPage } = await import('./lojas-views.js');
       const companyId = req.dashUser!.companyId;
@@ -1544,12 +1544,12 @@ b.onclick=async function(){
 
       // Cotação do kit mais barato — parâmetros ajustáveis (default da casa), e se o
       // Junior digitar "seu preço" mostra a margem no VALOR DELE (o dele manda).
-      const numOr = (q: unknown, def: number) => { const n = parseFloat(String(q ?? '').replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) ? n : def; };
+      // parseParamCotacao: decimal com ponto (type=number), blindado por faixa (ver cotacao.ts).
       const cotParams = {
-        servicoRsPorWp: numOr(req.query.serv, 0.85),
-        impostoPct: numOr(req.query.imp, 6),
-        margemAlvoPct: numOr(req.query.marg, 25),
-        margemMinimaPct: numOr(req.query.margmin, 12),
+        servicoRsPorWp: parseParamCotacao(req.query.serv, 0.85, 0, 5),   // R$/Wp (0–5 é o mundo real)
+        impostoPct: parseParamCotacao(req.query.imp, 6, 0, 100),
+        margemAlvoPct: parseParamCotacao(req.query.marg, 25, 0, 99),
+        margemMinimaPct: parseParamCotacao(req.query.margmin, 12, 0, 99),
       };
       const precoManual = parseFloat(String(req.query.preco ?? '').replace(/\./g, '').replace(',', '.'));
       const melhorKit = kitSpec ? melhorKitCompleto(kits) : null;

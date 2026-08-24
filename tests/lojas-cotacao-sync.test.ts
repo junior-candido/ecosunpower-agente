@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { calcularCotacao, oportunidadesDesconto } from '../src/modules/vendas/lojas/cotacao.js';
+import { calcularCotacao, oportunidadesDesconto, parseParamCotacao } from '../src/modules/vendas/lojas/cotacao.js';
 import { sincronizarLojas, credenciaisDoEnv } from '../src/modules/vendas/lojas/sincronizar-lojas.js';
 import type { GrupoComparacao } from '../src/modules/vendas/lojas/comparador.js';
 
@@ -24,6 +24,31 @@ describe('calcularCotacao', () => {
 
   it('lança se imposto+margem >= 100%', () => {
     expect(() => calcularCotacao({ custoMateriais: 100, potenciaKwp: 1, servicoRsPorWp: 0, impostoPct: 60, margemAlvoPct: 45 })).toThrow();
+  });
+});
+
+describe('parseParamCotacao — o bug do serviço 0.80 → 80', () => {
+  it('decimal com PONTO (type=number) NÃO vira milhar', () => {
+    expect(parseParamCotacao('0.80', 0.85, 0, 5)).toBe(0.8);   // era o bug: virava 80
+    expect(parseParamCotacao('0.85', 0.85, 0, 5)).toBe(0.85);
+    expect(parseParamCotacao('1.2', 0.85, 0, 5)).toBe(1.2);
+  });
+  it('aceita vírgula também', () => {
+    expect(parseParamCotacao('0,80', 0.85, 0, 5)).toBe(0.8);
+  });
+  it('inteiros (imposto/margem) passam', () => {
+    expect(parseParamCotacao('6', 6, 0, 100)).toBe(6);
+    expect(parseParamCotacao('25', 25, 0, 100)).toBe(25);
+  });
+  it('fora da faixa sã → usa o padrão (blinda a proposta)', () => {
+    expect(parseParamCotacao('80', 0.85, 0, 5)).toBe(0.85);    // serviço 80 R$/Wp é absurdo
+    expect(parseParamCotacao('-1', 0.85, 0, 5)).toBe(0.85);
+    expect(parseParamCotacao('999', 25, 0, 99)).toBe(25);
+  });
+  it('vazio/lixo → padrão', () => {
+    expect(parseParamCotacao('', 0.85, 0, 5)).toBe(0.85);
+    expect(parseParamCotacao(undefined, 0.85, 0, 5)).toBe(0.85);
+    expect(parseParamCotacao('abc', 0.85, 0, 5)).toBe(0.85);
   });
 });
 
