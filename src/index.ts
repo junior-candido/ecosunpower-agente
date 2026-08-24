@@ -60,6 +60,8 @@ import { TabelaPrecosService, makeTabelaHandler } from './modules/vendas/tabela-
 import { CatalogoLojaService } from './modules/vendas/lojas/catalogo-loja.js';
 import { sincronizarLojas, credenciaisDoEnv } from './modules/vendas/lojas/sincronizar-lojas.js';
 import { makeLojasHandler } from './modules/vendas/lojas/comandos.js';
+import { tokenSolfacil } from './modules/vendas/lojas/solfacil-client.js';
+import { puxarKitsSolfacil } from './modules/vendas/lojas/solfacil-kit-client.js';
 import { LeitorPrintTabela } from './modules/vendas/tabela-precos-print.js';
 import { SombraService, makeSombraHandler } from './modules/vendas/sombra.js';
 import { consumoAlvo } from './modules/vendas/autonomia.js';
@@ -771,9 +773,22 @@ async function main() {
     },
   });
   const tryHandleTabelaCommand = makeTabelaHandler({ svc: tabelaPrecos, isAdminPhone, sendText, agoraMs: () => Date.now() });
+  const solfacilCreds = process.env.SOLFACIL_USER && process.env.SOLFACIL_PASS
+    ? { usuario: process.env.SOLFACIL_USER, senha: process.env.SOLFACIL_PASS }
+    : null;
   const tryHandleLojasCommand = makeLojasHandler({
     svc: new CatalogoLojaService({ client: supabase.getClient(), companyId: ECOSUN_COMPANY_ID }),
     isAdminPhone, sendText,
+    // Kit REAL da Sol Fácil ao vivo (só se houver login no servidor).
+    puxarKitsReais: solfacilCreds
+      ? async (p) => {
+          const token = await tokenSolfacil(solfacilCreds);
+          return puxarKitsSolfacil(token, {
+            power: p.power, region: p.region, inverterType: p.inverterType,
+            inverterManufacturer: p.inverterManufacturer,
+          });
+        }
+      : undefined,
   });
   const tryHandleSombraCommand = makeSombraHandler({ svc: sombra, client: supabase.getClient(), isAdminPhone, sendText, agoraMs: () => Date.now(), companyId: ECOSUN_COMPANY_ID });
 

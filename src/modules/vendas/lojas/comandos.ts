@@ -7,6 +7,7 @@ import type { CatalogoLojaService, ItemCatalogo } from './catalogo-loja.js';
 import { compararLojas, type GrupoComparacao } from './comparador.js';
 import { calcularCotacao, resumoCotacao } from './cotacao.js';
 import { montarKitPorLoja, melhorKitCompleto, kwpDoKit } from './kit.js';
+import type { KitOferta } from './kit-oferta.js';
 
 const FONTE_LABEL: Record<string, string> = { belenus: 'Belenus', solfacil: 'Sol Fácil', fortlev: 'Fortlev' };
 const brl = (v: number) => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -60,6 +61,47 @@ export function parseCotar(texto: string): ComandoCotar | null {
   return { custoMateriais: nums[0], kwp: nums[1] };
 }
 
+export interface ParamsKitReais {
+  power: number;
+  region?: string;
+  inverterType?: string;        // micro | string
+  inverterManufacturer?: string;
+}
+
+/** Parseia "/kitreal 5 micro deye" · "/kitreal 8 go string" → params. null se sem kWp. */
+export function parseKitReal(texto: string): ParamsKitReais | null {
+  const toks = texto.replace(/^\/kitreal\s*/i, '').trim().split(/\s+/).filter(Boolean);
+  let power: number | null = null;
+  const p: ParamsKitReais = { power: 0 };
+  for (const tk of toks) {
+    const low = semAcento(tk);
+    const num = Number(tk.replace(',', '.'));
+    if (power == null || (Number.isFinite(num) && num > 0 && power === 0 && !/^(df|go)$/.test(low))) {
+      if (Number.isFinite(num) && num > 0) { power = num; continue; }
+    }
+    if (/^(df|go)$/.test(low)) { p.region = low.toUpperCase(); continue; }
+    if (/^(micro|string)$/.test(low)) { p.inverterType = low; continue; }
+    p.inverterManufacturer = (p.inverterManufacturer ? p.inverterManufacturer + ' ' : '') + tk.toUpperCase();
+  }
+  if (!power || power <= 0) return null;
+  p.power = power;
+  return p;
+}
+
+/** Formata as ofertas de kit REAL (preço de kit fechado) pro zap. `cot` já vem pronta. */
+export function formatarKitsReais(kits: KitOferta[], power: number, cotResumo?: string): string {
+  if (!kits.length) return `🔎 A Sol Fácil não devolveu kit pra ${power} kWp com esse filtro. Tenta sem marca, ou outra potência.`;
+  const alt = kits.some((k) => k.ehAlternativa) ? '\n⚠️ _Alguns são alternativa (a loja não tinha o pedido exato)._' : '';
+  const linhas = kits.slice(0, 5).map((k, i) => {
+    const pix = k.pagamentos.find((p) => /pix/i.test(p.nome));
+    const rwp = k.rsPorWp != null ? ` · ${k.rsPorWp.toString().replace('.', ',')}/Wp` : '';
+    const pixTxt = pix?.precoFinal != null ? ` · Pix ${brl(pix.precoFinal)}` : '';
+    return `${i === 0 ? '🏆 ' : '   '}${k.inversorMarca}/${k.moduloMarca}: *${brl(k.precoTotal)}*${rwp}${pixTxt}`;
+  });
+  return `🧰 *Kit real Sol Fácil ${power} kWp* (preço de kit fechado)\n\n${linhas.join('\n')}${alt}` +
+    (cotResumo ? `\n\n${cotResumo}` : '');
+}
+
 export interface LojasHandlerDeps {
   svc: CatalogoLojaService;
   isAdminPhone: (from: string) => boolean;
@@ -69,6 +111,8 @@ export interface LojasHandlerDeps {
   impostoPct?: number;
   margemAlvoPct?: number;
   margemMinimaPct?: number;
+  /** Puxa kit REAL da loja (Sol Fácil ao vivo). Opcional: sem credenciais, o comando avisa. */
+  puxarKitsReais?: (p: ParamsKitReais) => Promise<KitOferta[]>;
 }
 
 /** Handler dos comandos /comparar e /cotar. Retorna true se tratou a mensagem. */
@@ -142,6 +186,31 @@ export function makeLojasHandler(d: LojasHandlerDeps): (from: string, text: stri
       } catch (e) {
         await d.sendText(from, '⚠️ Não consegui montar o kit agora.');
         console.error('[lojas] /kit', e instanceof Error ? e.message : e);
+      }
+      return true;
+    }
+
+    // /kitreal 5 [micro|string] [marca] → PREÇO DE KIT REAL da loja (não soma de avulso).
+    if (/^\/kitreal\b/i.test(t)) {
+      if (!d.puxarKitsReais) { await d.sendText(from, '⚠️ Kit real indisponível (falta login da loja no servidor).'); return true; }
+      const p = parseKitReal(t);
+      if (!p) { await d.sendText(from, 'Ex.: /kitreal 5  ·  /kitreal 8 micro  ·  /kitreal 5 go string  (kWp + opcional micro/string, região DF/GO e marca)'); return true; }
+      try {
+        const kits = await d.puxarKitsReais(p);
+        let cotResumo: string | undefined;
+        const melhor = kits.filter((k) => k.precoTotal > 0).sort((a, b) => a.precoTotal - b.precoTotal)[0];
+        if (melhor) {
+          const cot = calcularCotacao({
+            custoMateriais: melhor.precoTotal, potenciaKwp: p.power,
+            servicoRsPorWp: d.servicoRsPorWp ?? 0.85, impostoPct: d.impostoPct ?? 6,
+            margemAlvoPct: d.margemAlvoPct ?? 25, margemMinimaPct: d.margemMinimaPct ?? 12,
+          });
+          cotResumo = resumoCotacao(cot).replace('Materiais (melhor preço 3 lojas)', `Kit (${FONTE_LABEL[melhor.fonte] ?? melhor.fonte})`);
+        }
+        await d.sendText(from, formatarKitsReais(kits, p.power, cotResumo));
+      } catch (e) {
+        await d.sendText(from, '⚠️ Não consegui puxar o kit real agora. Tenta de novo em instantes.');
+        console.error('[lojas] /kitreal', e instanceof Error ? e.message : e);
       }
       return true;
     }
