@@ -30,6 +30,17 @@ export interface Cotacao {
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
+ * Lê um parâmetro numérico de cotação (serviço/imposto/margem) vindo da tela.
+ * Campos type=number mandam decimal com PONTO ("0.80") — NÃO tratar ponto como milhar
+ * (era o bug que fazia 0.80 virar 80). Aceita vírgula também. Fora da faixa sã, devolve
+ * o padrão — blinda a proposta contra valor digitado errado (ex.: serviço 80 R$/Wp).
+ */
+export function parseParamCotacao(valor: unknown, padrao: number, min: number, max: number): number {
+  const n = parseFloat(String(valor ?? '').replace(',', '.'));
+  return Number.isFinite(n) && n >= min && n <= max ? n : padrao;
+}
+
+/**
  * Modelo: imposto e margem incidem sobre o PREÇO DE VENDA (faturamento).
  *   preco = custoTotal / (1 − (imposto% + margem%)/100)
  * Assim, no preço sugerido: imposto = preco×imposto%, lucro = preco×margem%.
