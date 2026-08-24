@@ -1579,47 +1579,11 @@ b.onclick=async function(){
         .filter((i) => mostrarGrandes || !ehInversorCat(i.categoria) || !(i.potenciaW && i.potenciaW > 20000))
         .sort((a, b) => a.precoUnitario - b.precoUnitario);
 
-      // ---- Kit REAL (preço de kit fechado, ao vivo) ----
-      const { puxarKitReal } = await import('../vendas/lojas/kit-ao-vivo.js');
-      const kwpReal = parseFloat(String(req.query.kwpreal ?? '').replace(',', '.'));
-      const regiaoReal = (typeof req.query.regiao === 'string' && /^(DF|GO)$/i.test(req.query.regiao)) ? req.query.regiao.toUpperCase() : 'DF';
-      const kitReal = {
-        power: Number.isFinite(kwpReal) && kwpReal > 0 ? kwpReal : null,
-        region: regiaoReal,
-        zipcode: typeof req.query.cep === 'string' ? req.query.cep.replace(/\D/g, '').slice(0, 8) : '',
-        inverterType: (typeof req.query.invtype === 'string' && /^(micro|string)$/.test(req.query.invtype)) ? req.query.invtype : '',
-        inverterManufacturer: typeof req.query.invmarca === 'string' ? req.query.invmarca.trim() : '',
-      };
-      let kitRealView: Awaited<ReturnType<typeof puxarKitReal>> | null = null;
-      let cotReal: ReturnType<typeof calcularCotacao> | null = null;
-      let margemManualReal: ReturnType<typeof margemDoPreco> | null = null;
-      let melhorFonteReal: string | null = null;
-      if (kitReal.power) {
-        kitRealView = await puxarKitReal({
-          power: kitReal.power, region: kitReal.region, zipcode: kitReal.zipcode || undefined,
-          inverterType: kitReal.inverterType || undefined, inverterManufacturer: kitReal.inverterManufacturer || undefined,
-        });
-        const maisBarato = kitRealView.solfacil.filter((o) => o.precoTotal > 0)[0];
-        if (maisBarato) {
-          try {
-            cotReal = calcularCotacao({ custoMateriais: maisBarato.precoTotal, potenciaKwp: kitReal.power, ...cotParams });
-            melhorFonteReal = maisBarato.fonte;
-            if (Number.isFinite(precoManual) && precoManual > 0) margemManualReal = margemDoPreco(cotReal.custoTotal, precoManual, cotParams.impostoPct);
-          } catch { /* imposto+margem>=100% — segue sem cotação */ }
-        }
-      }
-
       res.send(renderLojasPage({
         totalItens: itens.length, contagemPorFonte, atualizadoEmMs,
         kitSpec, kits, catalogo, catSel, fonteSel, mostrarGrandes,
         marcasModulo, marcasInversor, marcaMod, marcaInv,
         cotacao, cotParams, precoManual: Number.isFinite(precoManual) ? precoManual : null, margemManual, melhorFonte,
-        kitReal,
-        kitRealView: kitRealView ? {
-          solfacil: kitRealView.solfacil, erros: kitRealView.erros, semCredencial: kitRealView.semCredencial,
-          fortlev: 'assistida', belenus: 'assistida',
-        } : null,
-        cotReal, margemManualReal, melhorFonteReal,
         user: req.dashUser,
       }));
     } catch (err) {
