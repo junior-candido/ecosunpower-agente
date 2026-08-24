@@ -41,9 +41,9 @@ function kitCard(k: KitLoja, ehMelhor: boolean): string {
     </div>
     ${linha('Módulos', k.modulo, k.moduloQtd, k.moduloTotal)}
     ${linha('Inversor', k.inversor, 1, k.inversorTotal)}
-    ${linha('Estrutura', k.estrutura, k.moduloQtd, k.estruturaTotal)}
+    ${k.estruturaRsPorModulo > 0 ? `<div class="flex justify-between gap-2 text-sm py-1 border-b border-slate-100"><span class="text-slate-600">Estrutura <span class="text-slate-400">${k.moduloQtd}× R$${k.estruturaRsPorModulo}/mód</span></span><span>${brl(k.estruturaTotal)}</span></div>` : ''}
     <div class="flex justify-between mt-2 pt-1 font-bold text-slate-800"><span>Total do kit</span><span>${brl(k.total)}</span></div>
-    ${k.faltando.length ? `<div class="text-xs text-amber-600 mt-1">⚠️ faltou nesta loja: ${k.faltando.join(', ')} (total parcial)</div>` : ''}
+    ${k.faltando.length ? `<div class="text-xs text-amber-600 mt-1">⚠️ esta loja não tem o inversor pedido (total só de módulos${k.estruturaRsPorModulo > 0 ? '+estrutura' : ''})</div>` : ''}
   </div>`;
 }
 
@@ -57,6 +57,7 @@ function secaoKit(spec: EspecKit | null, kits: KitLoja[], marcasMod: string[], m
     <label class="text-sm">Marca módulo<br><select name="marcamod" class="border border-slate-300 rounded px-2 py-1">${optMarca(marcasMod, marcaMod, 'Mais barato')}</select></label>
     <label class="text-sm">Inversor (kW)<br><input name="invkw" type="number" step="0.1" value="${v(spec?.inversorKw)}" class="border border-slate-300 rounded px-2 py-1 w-24" placeholder="ex: 8"></label>
     <label class="text-sm">Marca inversor<br><select name="marcainv" class="border border-slate-300 rounded px-2 py-1">${optMarca(marcasInv, marcaInv, 'Mais barato')}</select></label>
+    <label class="text-sm">Estrutura R$/módulo<br><input name="estr" type="number" step="0.01" value="${v(spec?.estruturaRsPorModulo)}" class="border border-slate-300 rounded px-2 py-1 w-24" placeholder="ex: 90"></label>
     <button class="px-4 py-1.5 rounded-lg bg-sky-700 hover:bg-sky-800 text-white text-sm font-semibold">Montar kit</button>
   </form>`;
 
@@ -80,7 +81,7 @@ function secaoCotacao(
   const v = (x: unknown) => (x == null ? '' : String(x));
   // form preserva o kit (hidden) + parâmetros ajustáveis
   const form = `<form method="get" action="/dashboard/lojas" class="flex flex-wrap items-end gap-3 mb-3 bg-slate-50 border border-slate-200 rounded-lg p-3">
-    <input type="hidden" name="modulos" value="${v(spec.modulos)}"><input type="hidden" name="wp" value="${v(spec.wpModulo)}"><input type="hidden" name="invkw" value="${v(spec.inversorKw)}">
+    <input type="hidden" name="modulos" value="${v(spec.modulos)}"><input type="hidden" name="wp" value="${v(spec.wpModulo)}"><input type="hidden" name="invkw" value="${v(spec.inversorKw)}"><input type="hidden" name="marcamod" value="${v(spec.marcaModulo)}"><input type="hidden" name="marcainv" value="${v(spec.marcaInversor)}"><input type="hidden" name="estr" value="${v(spec.estruturaRsPorModulo)}">
     <label class="text-sm">Serviço R$/Wp<br><input name="serv" type="number" step="0.01" value="${v(p.servicoRsPorWp)}" class="border border-slate-300 rounded px-2 py-1 w-24"></label>
     <label class="text-sm">Imposto %<br><input name="imp" type="number" step="0.1" value="${v(p.impostoPct)}" class="border border-slate-300 rounded px-2 py-1 w-20"></label>
     <label class="text-sm">Margem %<br><input name="marg" type="number" step="0.1" value="${v(p.margemAlvoPct)}" class="border border-slate-300 rounded px-2 py-1 w-20"></label>

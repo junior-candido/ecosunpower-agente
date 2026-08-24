@@ -1531,9 +1531,11 @@ b.onclick=async function(){
       const invkw = parseFloat(String(req.query.invkw ?? '').replace(',', '.'));
       const marcaMod = typeof req.query.marcamod === 'string' ? req.query.marcamod : '';
       const marcaInv = typeof req.query.marcainv === 'string' ? req.query.marcainv : '';
+      const estr = parseFloat(String(req.query.estr ?? '').replace(',', '.'));
       const kitSpec = Number.isFinite(nMod) && nMod > 0
         ? { modulos: nMod, wpModulo: Number.isFinite(wp) ? wp : null, inversorKw: Number.isFinite(invkw) ? invkw : null,
-            marcaModulo: marcaMod || null, marcaInversor: marcaInv || null }
+            marcaModulo: marcaMod || null, marcaInversor: marcaInv || null,
+            estruturaRsPorModulo: Number.isFinite(estr) ? estr : null }
         : null;
       const kits = kitSpec ? montarKitPorLoja(itens, kitSpec) : [];
       // marcas disponíveis pros seletores (não trava no mais barato — Junior escolhe)
@@ -1569,8 +1571,11 @@ b.onclick=async function(){
       const fonteSel = typeof req.query.fonte === 'string' ? req.query.fonte : '';
       const mostrarGrandes = req.query.grandes === '1';
       const ehInversorCat = (c: string) => c === 'inversor_string' || c === 'micro' || c === 'inversor_hibrido';
+      // Sem categoria escolhida: mostra só o que o Junior compra (módulo/inversor/bateria),
+      // esconde peça solta (parafuso, porca, arruela, cabo...). Escolhendo a categoria, mostra ela.
+      const RELEVANTES = ['modulo', 'micro', 'inversor_string', 'inversor_hibrido', 'bateria'];
       const catalogo = itens
-        .filter((i) => (!catSel || i.categoria === catSel) && (!fonteSel || i.fonte === fonteSel))
+        .filter((i) => (catSel ? i.categoria === catSel : RELEVANTES.includes(i.categoria)) && (!fonteSel || i.fonte === fonteSel))
         .filter((i) => mostrarGrandes || !ehInversorCat(i.categoria) || !(i.potenciaW && i.potenciaW > 20000))
         .sort((a, b) => a.precoUnitario - b.precoUnitario);
 

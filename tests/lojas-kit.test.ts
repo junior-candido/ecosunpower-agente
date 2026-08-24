@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { montarKitPorLoja } from '../src/modules/vendas/lojas/kit.js';
+import { montarKitPorLoja, melhorKitCompleto, kwpDoKit } from '../src/modules/vendas/lojas/kit.js';
 import type { ItemCatalogo } from '../src/modules/vendas/lojas/catalogo-loja.js';
 
 const it0 = (o: Partial<ItemCatalogo>): ItemCatalogo => ({
@@ -8,70 +8,65 @@ const it0 = (o: Partial<ItemCatalogo>): ItemCatalogo => ({
   rsPorWp: null, atualizadoEmMs: 1, ...o,
 });
 
-describe('montarKitPorLoja', () => {
-  const itens = [
-    // Belenus
-    it0({ fonte: 'belenus', categoria: 'modulo', potenciaW: 615, precoUnitario: 550, marca: 'TCL' }),
-    it0({ fonte: 'belenus', categoria: 'modulo', potenciaW: 615, precoUnitario: 590, marca: 'JA' }),
-    it0({ fonte: 'belenus', categoria: 'inversor_string', potenciaW: 8000, precoUnitario: 2800, marca: 'GROWATT-ish' }),
-    it0({ fonte: 'belenus', categoria: 'estrutura', potenciaW: null, precoUnitario: 15, marca: 'belenergy' }),
-    // Sol Fácil
-    it0({ fonte: 'solfacil', categoria: 'modulo', potenciaW: 615, precoUnitario: 600, marca: 'OSDA' }),
-    it0({ fonte: 'solfacil', categoria: 'inversor_string', potenciaW: 8000, precoUnitario: 4200, marca: 'GOODWE' }),
-    // Sol Fácil sem estrutura
-  ];
+const itens = [
+  it0({ fonte: 'belenus', categoria: 'modulo', potenciaW: 615, precoUnitario: 550, marca: 'TCL' }),
+  it0({ fonte: 'belenus', categoria: 'modulo', potenciaW: 615, precoUnitario: 590, marca: 'JA' }),
+  it0({ fonte: 'belenus', categoria: 'inversor_string', potenciaW: 8000, precoUnitario: 2800, marca: 'SUNGROW' }),
+  it0({ fonte: 'solfacil', categoria: 'modulo', potenciaW: 615, precoUnitario: 600, marca: 'OSDA' }),
+  it0({ fonte: 'solfacil', categoria: 'inversor_string', potenciaW: 8000, precoUnitario: 4200, marca: 'GOODWE' }),
+  it0({ fonte: 'fortlev', categoria: 'inversor_string', potenciaW: 8000, precoUnitario: 3000, marca: 'DEYE' }), // fortlev SEM módulo
+];
 
-  it('monta kit e soma por loja (módulos×qtd + inversor + estrutura×qtd)', () => {
-    const kits = montarKitPorLoja(itens, { modulos: 12, wpModulo: 615, inversorKw: 8 });
+describe('montarKitPorLoja', () => {
+  it('soma módulos + inversor + estrutura(R$/módulo informado)', () => {
+    const kits = montarKitPorLoja(itens, { modulos: 12, wpModulo: 615, inversorKw: 8, estruturaRsPorModulo: 90 });
     const bel = kits.find((k) => k.fonte === 'belenus')!;
-    expect(bel.modulo!.preco).toBe(550);          // pegou o mais barato (TCL)
-    expect(bel.moduloTotal).toBe(6600);           // 550×12
+    expect(bel.modulo!.preco).toBe(550);        // mais barato (TCL)
+    expect(bel.moduloTotal).toBe(6600);
     expect(bel.inversorTotal).toBe(2800);
-    expect(bel.estruturaTotal).toBe(180);         // 15×12
-    expect(bel.total).toBe(9580);
+    expect(bel.estruturaTotal).toBe(1080);      // 90×12
+    expect(bel.total).toBe(10480);
     expect(bel.faltando).toEqual([]);
   });
 
-  it('marca faltando quando loja não tem uma categoria', () => {
+  it('loja SEM o módulo não é mencionada (Fortlev só tem inversor)', () => {
+    const kits = montarKitPorLoja(itens, { modulos: 12, wpModulo: 615, inversorKw: 8, estruturaRsPorModulo: 90 });
+    expect(kits.find((k) => k.fonte === 'fortlev')).toBeUndefined();
+    expect(kits.map((k) => k.fonte).sort()).toEqual(['belenus', 'solfacil']);
+  });
+
+  it('sem estrutura informada, estruturaTotal = 0', () => {
     const kits = montarKitPorLoja(itens, { modulos: 12, wpModulo: 615, inversorKw: 8 });
+    expect(kits[0].estruturaTotal).toBe(0);
+  });
+
+  it('kit é de UMA loja só (módulo e inversor da mesma fonte)', () => {
+    const kits = montarKitPorLoja(itens, { modulos: 10, wpModulo: 615, inversorKw: 8, estruturaRsPorModulo: 80 });
     const sf = kits.find((k) => k.fonte === 'solfacil')!;
-    expect(sf.estrutura).toBeNull();
-    expect(sf.faltando).toContain('estrutura');
+    expect(sf.modulo!.marca).toBe('OSDA');      // módulo da Sol Fácil
+    expect(sf.inversor!.marca).toBe('GOODWE');  // inversor da Sol Fácil (não pega Belenus)
   });
 
-  it('ordena: kits completos e mais baratos primeiro', () => {
-    const kits = montarKitPorLoja(itens, { modulos: 12, wpModulo: 615, inversorKw: 8 });
-    // belenus é completo → vem antes da solfacil (que falta estrutura)
-    expect(kits[0].fonte).toBe('belenus');
-  });
-
-  it('filtra Wp do módulo (não pega potência errada)', () => {
+  it('filtra Wp e marca do módulo', () => {
     const mix = [...itens, it0({ fonte: 'belenus', categoria: 'modulo', potenciaW: 715, precoUnitario: 400, marca: 'BARATO' })];
-    const kits = montarKitPorLoja(mix, { modulos: 10, wpModulo: 615, inversorKw: 8 });
+    const kits = montarKitPorLoja(mix, { modulos: 10, wpModulo: 615, inversorKw: 8, marcaModulo: 'JA' });
     const bel = kits.find((k) => k.fonte === 'belenus')!;
-    expect(bel.modulo!.potenciaW).toBe(615); // ignora o 715 mais barato
+    expect(bel.modulo!.marca).toBe('JA');       // respeitou a marca (não pegou o 715 mais barato)
+    expect(bel.modulo!.potenciaW).toBe(615);
   });
-});
 
-describe('kit é sempre de UMA loja (não mistura)', () => {
-  it('cada kit usa só itens da própria loja; loja incompleta vira faltando', () => {
-    const itens = [
-      // Belenus: só módulo (sem inversor nem estrutura)
-      it0({ fonte: 'belenus', categoria: 'modulo', potenciaW: 615, precoUnitario: 500, marca: 'TCL' }),
-      // Sol Fácil: kit completo
-      it0({ fonte: 'solfacil', categoria: 'modulo', potenciaW: 615, precoUnitario: 600, marca: 'OSDA' }),
-      it0({ fonte: 'solfacil', categoria: 'inversor_string', potenciaW: 8000, precoUnitario: 4000, marca: 'GOODWE' }),
-      it0({ fonte: 'solfacil', categoria: 'estrutura', precoUnitario: 20, marca: 'x' }),
-    ];
-    const kits = montarKitPorLoja(itens, { modulos: 10, wpModulo: 615, inversorKw: 8 });
-    const bel = kits.find((k) => k.fonte === 'belenus')!;
-    // Belenus não tem inversor/estrutura da PRÓPRIA loja → faltando (não pega da Sol Fácil)
-    expect(bel.inversor).toBeNull();
-    expect(bel.faltando).toContain('inversor');
-    // o único kit completo é o da Sol Fácil (tudo da mesma loja)
-    const completos = kits.filter((k) => k.faltando.length === 0);
-    expect(completos).toHaveLength(1);
-    expect(completos[0].fonte).toBe('solfacil');
-    expect(completos[0].modulo!.marca).toBe('OSDA'); // módulo da Sol Fácil, não o TCL da Belenus
+  it('faltando inversor quando a loja tem módulo mas não o inversor pedido', () => {
+    const so = [it0({ fonte: 'belenus', categoria: 'modulo', potenciaW: 615, precoUnitario: 550, marca: 'TCL' })];
+    const kits = montarKitPorLoja(so, { modulos: 12, wpModulo: 615, inversorKw: 8, estruturaRsPorModulo: 90 });
+    expect(kits[0].inversor).toBeNull();
+    expect(kits[0].faltando).toEqual(['inversor']);
+    expect(melhorKitCompleto(kits)).toBeNull(); // não é completo
+  });
+
+  it('melhorKitCompleto pega o mais barato entre os completos; kwpDoKit correto', () => {
+    const kits = montarKitPorLoja(itens, { modulos: 10, wpModulo: 615, inversorKw: 8, estruturaRsPorModulo: 0 });
+    const melhor = melhorKitCompleto(kits)!;
+    expect(melhor.fonte).toBe('belenus');       // 550×10+2800 < 600×10+4200
+    expect(kwpDoKit(melhor)).toBeCloseTo(6.15); // 615×10/1000
   });
 });
