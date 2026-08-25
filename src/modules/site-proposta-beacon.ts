@@ -20,6 +20,7 @@ export const SITE_PROPOSTAS: Record<string, SiteProposta> = {
   'b2bf04e184c0eee36d30abcb': { slug: 'pedro-henrique', nome: 'Pedro Henrique' },
   '3bee1e4fbaff3ed769e145a1': { slug: 'fernao-lopes', nome: 'Fernão' },
   '75e7612c022d6360e5f5db77': { slug: 'bruno-duarte', nome: 'Bruno Duarte' },
+  '3c6b0e94b42ca55a04b00e67': { slug: 'vanessa-mendes', nome: 'Vanessa Mendes' },
 };
 
 // GIF transparente de 1×1 (89a) — resposta padrão do beacon.
