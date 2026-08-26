@@ -118,6 +118,8 @@ import { makeImpostoHandler, montarRespostaImposto, parseValorReais } from './mo
 import { makeRelatorioHandler } from './modules/financeiro/comando-relatorio.js';
 import { makeMaterialQueryHandler } from './modules/financeiro/materiais.js';
 import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/cron.js';
+import { tickEnvioAutoPasta, criarEnvioAutoDb, proximoLembrete9h } from './modules/relatorios/pasta/envio-auto.js';
+import { tickDetectarMedidor, criarDetectarMedidorDb, textoAvisoMedidor } from './modules/monitoring/detectar-medidor.js';
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
 import { PastaService } from './modules/relatorios/pasta/service.js';
@@ -4338,6 +4340,32 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           await campanha!.descartar(id);
           await sendText(from, '🗑️ Campanha descartada.');
         } : undefined,
+        // Pasta digital pós-obra — botões do aviso automático (modo b)
+        onPastaEnviar: async (pastaId) => {
+          const sendTemplateFn = metaWaba
+            ? (to: string, name: string, lang: string, components: unknown[]) =>
+              metaWaba!.sendTemplate(to, name, lang, components as Parameters<NonNullable<typeof metaWaba>['sendTemplate']>[3])
+            : undefined;
+          // enviarPorWhatsApp não usa o resolver de sistema — instância leve aqui.
+          const pastaSvc = new PastaService(supabase, async () => null);
+          const r = await pastaSvc.enviarPorWhatsApp(pastaId, sendText, sendTemplateFn as any);
+          if (r.ok) {
+            const p = await supabase.getPastaClienteById(pastaId);
+            await sendText(from, `✅ Pasta enviada pro cliente${p?.enviado_para_phone ? ` (${p.enviado_para_phone})` : ''}.`);
+          } else {
+            const motivo: Record<string, string> = {
+              nao_publicada: 'a pasta não está publicada', lead_not_found: 'cliente não encontrado',
+              opt_out: 'cliente pediu pra não receber mensagens', sem_phone: 'cliente sem telefone', pasta_not_found: 'pasta não encontrada',
+              ja_enviada: 'essa pasta já foi enviada ao cliente (reenvio só pelo dashboard)',
+            };
+            await sendText(from, `❌ Não enviei: ${motivo[r.reason ?? ''] ?? r.reason}.\nhttps://dashboard.ecosunpower.eng.br/dashboard/pastas/${pastaId}`);
+          }
+        },
+        onPastaSegurar: async (pastaId) => {
+          const ate = proximoLembrete9h(new Date());
+          await criarEnvioAutoDb(supabase.getClient()).segurar(pastaId, ate.toISOString());
+          await sendText(from, `⏸ Segurei. Te lembro amanhã às 9h (ou envia pelo dashboard quando quiser).`);
+        },
       })) return;
     }
 
@@ -10095,6 +10123,40 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setTimeout(runPosInstalacaoNotif, 10 * 60 * 1000);   // 10min após boot
 
     console.log('[pos-instalacao] cron started (1x/hora dentro da janela)');
+
+    // ============================================
+    // Pasta digital pós-obra — envio automático (modo b) + detecção do medidor
+    // Spec: docs/superpowers/specs/2026-08-26-pasta-envio-automatico-design.md
+    // ============================================
+    const envioAutoDb = criarEnvioAutoDb(supabase.getClient());
+    const tickPastaEnvio = async () => {
+      try {
+        await tickEnvioAutoPasta({
+          db: envioAutoDb,
+          adminPhone: config.engineerPhone,
+          enviarComBotoes: (to, body, buttons, footer) =>
+            sendAdminWithButtons({ metaWaba, sendText }, to, body, buttons, footer),
+        });
+      } catch (err) { console.error('[pasta-envio-auto] tick falhou:', (err as Error).message); }
+    };
+    setTimeout(() => { void tickPastaEnvio(); }, 5 * 60 * 1000);
+    setInterval(() => { void tickPastaEnvio(); }, 15 * 60 * 1000);
+
+    const detectarDb = criarDetectarMedidorDb(supabase.getClient());
+    const tickMedidor = async () => {
+      try {
+        await tickDetectarMedidor({
+          db: detectarDb,
+          onMarcado: async (lead, kwh) => {
+            if (postInstall) await postInstall.scheduleOnMeterSwap(lead.leadId).catch(() => undefined);
+            await sendText(config.engineerPhone, textoAvisoMedidor(lead, kwh));
+          },
+        });
+      } catch (err) { console.error('[detectar-medidor] tick falhou:', (err as Error).message); }
+    };
+    setTimeout(() => { void tickMedidor(); }, 7 * 60 * 1000);
+    setInterval(() => { void tickMedidor(); }, 60 * 60 * 1000); // 1x/hora basta: geração é diária
+    console.log('[pasta-envio-auto] cron started (15 min) · [detectar-medidor] cron started (1h)');
 
     // ============================================
     // CRM Fase 2 — Motor de SLA do funil

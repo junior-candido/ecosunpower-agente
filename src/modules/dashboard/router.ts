@@ -5137,6 +5137,40 @@ b.onclick=async function(){
   router.post('/pastas', async (req: Request, res: Response) => {
     const leadId = String(req.body?.lead_id ?? '');
     if (!UUID_RE.test(leadId)) return res.status(400).send('Escolha um cliente');
+    // R3: pasta só pra cliente com venda registrada. Se não tem, oferece registrar
+    // na hora (valor · kWp · data) — mesma registrarVenda da Eva/Fechou!.
+    const leadAtual = await supabaseService.getClienteByLeadId(leadId);
+    const jaVenda = CLIENTE_STATUSES.includes(String(leadAtual?.installation_status ?? ''));
+    const { leadsComServico } = await import('./servicos-store.js');
+    const temServico = (await leadsComServico(supabase).catch(() => [] as Array<{ id: string }>)).some((s) => s.id === leadId);
+    if (!jaVenda && !temServico) {
+      if (String(req.body?.registrar ?? '') !== '1') {
+        const nome = escapeHtmlSimple(leadAtual?.name ?? 'este lead');
+        return res.type('text/html').send(`<!doctype html><meta charset="utf-8"><body style="font-family:system-ui;background:#0f172a;color:#e2e8f0;padding:32px;max-width:520px;margin:auto">
+<h2 style="margin-bottom:6px">📁 Pasta só pra cliente com venda</h2>
+<p style="color:#94a3b8;margin-bottom:18px">${nome} ainda não está registrado como venda (Fechou!). Registra agora e a pasta abre em seguida:</p>
+<form method="post" action="/dashboard/pastas" style="display:grid;gap:10px">
+  <input type="hidden" name="lead_id" value="${escapeHtmlSimple(leadId)}"><input type="hidden" name="registrar" value="1">
+  <label>Valor da venda (R$)<br><input name="valor" type="text" inputmode="decimal" placeholder="ex.: 19.200,00" required style="width:100%;padding:8px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#fff"></label>
+  <label>Potência (kWp)<br><input name="kwp" type="text" inputmode="decimal" placeholder="ex.: 8,58" style="width:100%;padding:8px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#fff"></label>
+  <label>Data do fechamento<br><input name="data" type="date" value="${new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10)}" style="width:100%;padding:8px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#fff"></label>
+  <label><select name="tipo" style="width:100%;padding:8px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#fff"><option value="sistema">Sistema fotovoltaico</option><option value="servico">Serviço (elétrica, limpeza, garantia…)</option></select></label>
+  <button style="padding:10px;border-radius:8px;background:#0891b2;color:#fff;font-weight:700;border:0">💰 Registrar venda e abrir a pasta</button>
+  <a href="/dashboard/pastas" style="color:#7dd3fc;font-size:14px">← voltar</a>
+</form></body>`);
+      }
+      const valorTxt = String(req.body?.valor ?? '').replace(/\./g, '').replace(',', '.');
+      const kwpTxt = String(req.body?.kwp ?? '').replace(',', '.');
+      const valorCents = Math.round((parseFloat(valorTxt) || 0) * 100);
+      if (valorCents <= 0) return res.status(400).send('<h2>Informe o valor da venda</h2><a href="/dashboard/pastas">← voltar</a>');
+      const rv = await registrarVenda(supabase, {
+        leadId, valorCents, kwp: kwpTxt ? parseFloat(kwpTxt) : null,
+        data: String(req.body?.data ?? '') || null,
+        tipo: String(req.body?.tipo ?? 'sistema') === 'servico' ? 'servico' : 'sistema',
+        origem: 'pasta',
+      });
+      if (!rv.ok) return res.status(500).send(`<h2>Não registrou a venda: ${escapeHtmlSimple(rv.erro ?? '')}</h2><a href="/dashboard/pastas">← voltar</a>`);
+    }
     const r = await pastaService.obterOuCriarPorLead(leadId);
     if (!r.ok || !r.pasta) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2>`);
     res.redirect(303, `/dashboard/pastas/${r.pasta.id}`);
@@ -5159,6 +5193,9 @@ b.onclick=async function(){
     const fotosUrls = fotoPaths.length > 0
       ? await getSignedUrls(supabaseService.getClient(), fotoPaths, 3600)
       : {};
+    const { secoesFaltando } = await import('../relatorios/pasta/completude.js');
+    const { SECOES } = await import('../relatorios/pasta/types.js');
+    const faltando = secoesFaltando(pasta.arquivos ?? []).map((id) => SECOES.find((s) => s.id === id)?.titulo ?? id);
     res.type('text/html').send(renderEditorPasta({
       pasta,
       cliente_nome: lead?.name ?? null,
@@ -5166,6 +5203,7 @@ b.onclick=async function(){
       tem_servicos: servicosLead.length > 0,
       fotos_urls: fotosUrls,
       publicBase: PASTA_PUBLIC_BASE,
+      faltando,
     }));
   });
 
@@ -5276,7 +5314,7 @@ b.onclick=async function(){
     if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
     const sendText = options.sendText;
     if (!sendText) return res.status(500).send('sendText não configurado neste ambiente.');
-    const r = await pastaService.enviarPorWhatsApp(id, sendText, options.sendTemplate);
+    const r = await pastaService.enviarPorWhatsApp(id, sendText, options.sendTemplate, { forcar: true });
     if (!r.ok) return res.status(400).send(`<h2>Não foi possível enviar: ${escapeHtmlSimple(r.reason ?? '')}</h2><a href="/dashboard/pastas/${id}">← voltar</a>`);
     res.redirect(303, `/dashboard/pastas/${id}`);
   });

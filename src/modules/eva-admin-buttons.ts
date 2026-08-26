@@ -91,6 +91,9 @@ export async function tryHandleEvaAdminButton(args: {
   onCampanhaAprovar?: (campanhaId: string) => Promise<void>;
   onCampanhaRefazer?: (campanhaId: string) => Promise<void>;
   onCampanhaDescartar?: (campanhaId: string) => Promise<void>;
+  // Pasta digital pós-obra (envio automático modo b): Enviar agora / Segurar / Ver
+  onPastaEnviar?: (pastaId: string) => Promise<void>;
+  onPastaSegurar?: (pastaId: string) => Promise<void>;
 }): Promise<boolean> {
   // Regex relaxado: aceita qualquer sufixo apos a action (ex: fechar-doc:procuracao:<uuid>)
   const m = args.text.trim().match(/^evabt:([a-z0-9-]+)(?::(.+))?$/i);
@@ -104,6 +107,23 @@ export async function tryHandleEvaAdminButton(args: {
 
   try {
     switch (action) {
+      case 'pasta-enviar': {
+        if (!leadId) return false;
+        if (args.onPastaEnviar) await args.onPastaEnviar(leadId);
+        else await args.sendText(args.from, '⚠️ Envio da pasta não está ligado neste ambiente.');
+        return true;
+      }
+      case 'pasta-segurar': {
+        if (!leadId) return false;
+        if (args.onPastaSegurar) await args.onPastaSegurar(leadId);
+        else await args.sendText(args.from, '⏸ Ok, segurei.');
+        return true;
+      }
+      case 'pasta-ver': {
+        if (!leadId) return false;
+        await args.sendText(args.from, `👁 Pasta no dashboard:\n${DASHBOARD_BASE}/dashboard/pastas/${leadId}`);
+        return true;
+      }
       case 'dash-leads':
         await args.sendText(args.from, `📊 Dashboard de leads:\n${DASHBOARD_BASE}/leads`);
         return true;
