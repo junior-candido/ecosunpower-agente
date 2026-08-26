@@ -195,7 +195,7 @@ describe('PastaService.publicar', () => {
     expect(sb.atualizarPastaCliente).not.toHaveBeenCalled();
   });
 
-  it('com arquivo: muda status pra publicada', async () => {
+  it('só com fotos: INCOMPLETA, não publica e diz o que falta (R2)', async () => {
     const sb = fakeSupabase({
       getPastaClienteById: vi.fn().mockResolvedValue({
         ...PASTA_BASE,
@@ -204,8 +204,66 @@ describe('PastaService.publicar', () => {
     });
     const svc = new PastaService(sb as any, semSistema);
     const r = await svc.publicar('pasta-1');
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/falta:.*Contrato/);
+    expect(sb.atualizarPastaCliente).not.toHaveBeenCalled();
+  });
+
+  it('com as 7 seções: publica e move o lead pra instalado (R4)', async () => {
+    const arquivos = ['fotos', 'projeto', 'art', 'homologacao', 'manuais', 'garantia', 'contrato']
+      .map((secao) => ({ secao, storage_path: `lead-1/pasta/${secao}.pdf`, nome_exibicao: `${secao}.pdf`, origem: 'upload' }));
+    const eq = vi.fn().mockResolvedValue({ error: null });
+    const update = vi.fn().mockReturnValue({ eq });
+    const sb = fakeSupabase({
+      getPastaClienteById: vi.fn().mockResolvedValue({ ...PASTA_BASE, arquivos }),
+      getClienteByLeadId: vi.fn().mockResolvedValue({ id: 'lead-1', name: 'João', installation_status: 'contrato_assinado' }),
+      getClient: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ update }) }),
+    });
+    const svc = new PastaService(sb as any, semSistema);
+    const r = await svc.publicar('pasta-1');
     expect(r.ok).toBe(true);
     expect(sb.atualizarPastaCliente.mock.calls[0][1].status).toBe('publicada');
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ installation_status: 'instalado' }));
+    expect(eq).toHaveBeenCalledWith('id', 'lead-1');
+  });
+
+  it('com as 7 seções e lead já em medidor_trocado: publica e NÃO rebaixa a jornada', async () => {
+    const arquivos = ['fotos', 'projeto', 'art', 'homologacao', 'manuais', 'garantia', 'contrato']
+      .map((secao) => ({ secao, storage_path: `x/${secao}.pdf`, nome_exibicao: `${secao}.pdf`, origem: 'upload' }));
+    const update = vi.fn();
+    const sb = fakeSupabase({
+      getPastaClienteById: vi.fn().mockResolvedValue({ ...PASTA_BASE, arquivos }),
+      getClienteByLeadId: vi.fn().mockResolvedValue({ id: 'lead-1', name: 'João', installation_status: 'medidor_trocado' }),
+      getClient: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ update }) }),
+    });
+    const svc = new PastaService(sb as any, semSistema);
+    const r = await svc.publicar('pasta-1');
+    expect(r.ok).toBe(true);
+    expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('PastaService.enviarPorWhatsApp — guarda de reenvio (R8)', () => {
+  it('pasta já enviada: recusa (ja_enviada) e não manda nada', async () => {
+    const sb = fakeSupabase({
+      getPastaClienteById: vi.fn().mockResolvedValue({ ...PASTA_BASE, status: 'publicada', enviado_em: '2026-08-26T12:00:00Z', enviado_para_phone: '5561999990000' }),
+    });
+    const svc = new PastaService(sb as any, semSistema);
+    const sendText = vi.fn().mockResolvedValue(undefined);
+    const r = await svc.enviarPorWhatsApp('pasta-1', sendText);
+    expect(r).toEqual({ ok: false, reason: 'ja_enviada' });
+    expect(sendText).not.toHaveBeenCalled();
+    expect(sb.marcarPastaClienteEnviada).not.toHaveBeenCalled();
+  });
+  it('pasta já enviada + forcar (dashboard): reenvia', async () => {
+    const sb = fakeSupabase({
+      getPastaClienteById: vi.fn().mockResolvedValue({ ...PASTA_BASE, status: 'publicada', enviado_em: '2026-08-26T12:00:00Z' }),
+    });
+    const svc = new PastaService(sb as any, semSistema);
+    const sendText = vi.fn().mockResolvedValue(undefined);
+    const r = await svc.enviarPorWhatsApp('pasta-1', sendText, undefined, { forcar: true });
+    expect(r.ok).toBe(true);
+    expect(sendText).toHaveBeenCalledTimes(1);
   });
 });
 

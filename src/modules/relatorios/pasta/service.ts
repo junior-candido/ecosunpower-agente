@@ -8,6 +8,7 @@ import { LOGO_PASTA_BASE64 } from './logo-pasta.js';
 import { empresa } from '../../empresa-config.js';
 import type { ResolverSistema } from '../pos-instalacao/service.js';
 import { SECOES } from './types.js';
+import { secoesFaltando, textoFaltando } from './completude.js';
 import type { ArquivoPasta, PastaClienteRow, PastaView, SecaoId } from './types.js';
 
 const PUBLIC_BASE_URL = process.env.PROPOSAL_PUBLIC_BASE_URL ?? 'https://propostas.ecosunpower.eng.br';
@@ -170,7 +171,27 @@ export class PastaService {
     if ((pasta.arquivos ?? []).length === 0) {
       return { ok: false, error: 'Adicione ao menos 1 arquivo antes de publicar' };
     }
-    return this.supabase.atualizarPastaCliente(pastaId, { status: 'publicada' });
+    // R2: só publica COMPLETA (7 seções obrigatórias). Monitoramento é opcional.
+    const faltando = secoesFaltando(pasta.arquivos ?? []);
+    if (faltando.length > 0) {
+      return { ok: false, error: `Pasta incompleta — ${textoFaltando(faltando)}` };
+    }
+    const r = await this.supabase.atualizarPastaCliente(pastaId, { status: 'publicada' });
+    if (!r.ok) return r;
+    // R4: publicar move a jornada pra "instalado" (não rebaixa quem já passou disso).
+    try {
+      const lead = await this.supabase.getClienteByLeadId(pasta.lead_id);
+      const antes = String(lead?.installation_status ?? '');
+      const jaAlem = ['instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido'].includes(antes);
+      if (lead && !jaAlem) {
+        await this.supabase.getClient().from('leads').update({
+          installation_status: 'instalado', installed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        }).eq('id', pasta.lead_id);
+      }
+    } catch (err) {
+      console.warn('[pasta] publicar: não moveu jornada pra instalado:', (err as Error).message);
+    }
+    return r;
   }
 
   // Exclui a pasta inteira: apaga do bucket só os uploads próprios (arquivo de
@@ -246,10 +267,14 @@ export class PastaService {
       lang: string,
       components: Array<{ type: 'body' | 'button'; sub_type?: 'url'; index?: number; parameters: Array<{ type: 'text'; text: string }> }>,
     ) => Promise<unknown>,
+    opts?: { forcar?: boolean },
   ): Promise<{ ok: boolean; reason?: string }> {
     const pasta = await this.supabase.getPastaClienteById(pastaId);
     if (!pasta) return { ok: false, reason: 'pasta_not_found' };
     if (pasta.status !== 'publicada') return { ok: false, reason: 'nao_publicada' };
+    // R8: nunca enviar 2× ao cliente por toque duplo no botão. Reenvio de
+    // propósito só pelo dashboard (forcar: true).
+    if (pasta.enviado_em && !opts?.forcar) return { ok: false, reason: 'ja_enviada' };
     const lead = await this.supabase.getClienteByLeadId(pasta.lead_id);
     if (!lead) return { ok: false, reason: 'lead_not_found' };
     if (lead.opt_out) return { ok: false, reason: 'opt_out' };

@@ -78,9 +78,12 @@ export function renderEditorPasta(input: {
   tem_servicos: boolean;
   fotos_urls: Record<string, string>;   // storage_path -> signed url (miniaturas das fotos)
   publicBase: string;
+  faltando?: string[];                  // títulos das seções obrigatórias sem arquivo (R2) — trava o Publicar
 }): string {
   const p = input.pasta;
   const arquivos: ArquivoPasta[] = p.arquivos ?? [];
+  const faltando = input.faltando ?? [];
+  const incompleta = faltando.length > 0;
 
   const blocosSecoes = SECOES.map((s) => {
     const doSecao = arquivos.filter((a) => a.secao === s.id);
@@ -143,7 +146,7 @@ export function renderEditorPasta(input: {
         <div class="flex gap-2 flex-wrap">
           <a href="/dashboard/pastas/${escapeHtml(p.id)}/preview" class="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm">👁️ Prévia</a>
           <form action="/dashboard/pastas/${escapeHtml(p.id)}/publicar" method="post">
-            <button class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-semibold">${p.status === 'publicada' ? '🔄 Republicar' : '🚀 Publicar'}</button>
+            <button ${incompleta ? 'disabled' : ''} title="${incompleta ? escapeHtml('Falta: ' + faltando.join(', ')) : ''}" class="px-4 py-2 rounded-lg text-white text-sm font-semibold ${incompleta ? 'bg-slate-600 cursor-not-allowed opacity-70' : 'bg-cyan-600 hover:bg-cyan-700'}">${p.status === 'publicada' ? '🔄 Republicar' : '🚀 Publicar'}</button>
           </form>
           ${p.status === 'publicada' ? `
           <form action="/dashboard/pastas/${escapeHtml(p.id)}/enviar" method="post" onsubmit="return confirm('Enviar o link da pasta pelo WhatsApp do cliente agora?')">
@@ -151,6 +154,13 @@ export function renderEditorPasta(input: {
           </form>` : ''}
         </div>
       </div>
+
+      ${incompleta ? `
+      <div class="mb-4 bg-amber-900/30 border border-amber-600/60 rounded-xl p-4 text-sm text-amber-200">
+        🔒 <b>Pasta incompleta — o Publicar libera quando as 7 seções tiverem arquivo.</b>
+        Falta: ${escapeHtml(faltando.join(' · '))}. (Monitoramento é opcional.)
+        Quando publicar e o medidor estiver trocado, a Eva te avisa no zap com o botão <b>Enviar agora</b>.
+      </div>` : ''}
 
       ${p.status === 'publicada' ? `
       <div class="mb-4 bg-slate-800/60 border border-slate-700 rounded-xl p-4 flex items-center gap-3 flex-wrap">
