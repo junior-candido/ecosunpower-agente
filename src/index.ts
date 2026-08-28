@@ -3,6 +3,8 @@ import { loadConfig } from './config.js';
 import { EvolutionService } from './modules/evolution.js';
 import { MessageQueue } from './modules/queue.js';
 import { criarTenantResolver, ECOSUN_COMPANY_ID } from './modules/tenant-resolver.js';
+import { criarEvolutionTenantResolver } from './modules/evolution-tenant.js';
+import { comCanal, canalExigeEvolution } from './modules/canal-contexto.js';
 import { SupabaseService } from './modules/supabase.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { KnowledgeBase } from './modules/knowledge.js';
@@ -264,6 +266,12 @@ async function main() {
   // Ambos implementam a mesma interface (sendText, parseWebhook, etc).
   const messaging = metaWaba ?? evolution;
 
+  // Tenant conectado por QR numa instância Evolution PRÓPRIA (migration 107,
+  // ex.: Conquista Solar → 'conquista-solar'): a mensagem dele entra pelo
+  // /webhook com body.instance e a resposta TEM que sair pela mesma instância —
+  // nunca pela WABA/instância da EcoSun. Fora desse caso = `messaging` de hoje.
+  const messagingDaMensagem = () => (canalExigeEvolution() ? evolution : messaging);
+
   // Instagram Direct Messaging (qualificador IG DM).
   // Reusa META_WABA_ACCESS_TOKEN + META_APP_SECRET (mesma App Meta).
   // IG_USER_ID = IG-Scoped Business User ID (ex: 17841...). Diferente do
@@ -287,6 +295,8 @@ async function main() {
   // company_id (mapa da migration 081). Com a coluna NULL em todo mundo, tudo
   // resolve EcoSun = comportamento de hoje. Cache 5min, best-effort.
   const tenantResolver = criarTenantResolver(supabase.getClient());
+  // 107: instância Evolution ↔ empresa (tenant conectado por QR, ex.: Conquista Solar)
+  const evolutionTenant = criarEvolutionTenantResolver(supabase.getClient());
 
   // [Corretor] Corretor de português compartilhado (1 cliente Anthropic) injetado
   // nos assistants que recebem texto livre do Junior (cases, fechamento). Corrige
@@ -448,7 +458,7 @@ async function main() {
   // Roteia automaticamente WABA Cloud API ou Evolution conforme USE_WABA_CLOUD_API.
   const sendText = async (to: string, text: string): Promise<void> => {
     const delay = typingDelay(text);
-    const { messageId } = await messaging.sendText(to, text, delay);
+    const { messageId } = await messagingDaMensagem().sendText(to, text, delay);
     if (messageId) await takeover.markBotSent(messageId);
   };
 
@@ -5955,7 +5965,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       if (!isSandbox) await sendText(from, 'Ouvindo seu audio... 🎧');
 
       // Download audio via Evolution API
-      const media = await messaging.getMediaBase64(messageId);
+      const media = await messagingDaMensagem().getMediaBase64(messageId);
       if (!media) {
         const msg = 'Nao consegui baixar o audio. Pode mandar de novo? 😊';
         if (!isSandbox) await sendText(from, msg);
@@ -5991,7 +6001,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     // Caixa de Entrada (Fatia 3): foto de comprovante do Junior vira lançamento.
     // Baixa a mídia aqui só pro admin; pro cliente nada muda.
     if (isAdminPhone(from) && metaWaba) {
-      const media = await messaging.getMediaBase64(messageId);
+      const media = await messagingDaMensagem().getMediaBase64(messageId);
       if (media) {
         // Fatia 2 — print da loja com legenda "tabela" vira itens de preço (antes do financeiro).
         if (await leitorPrintTabela.tratarImagem(from, { base64: media.base64, mimeType: media.mimetype, legenda: caption ?? null })) return;
@@ -6025,7 +6035,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       if (!isSandbox) await sendText(from, 'Recebi a foto! Analisando... 📋');
 
       // Download image via Evolution API
-      const media = await messaging.getMediaBase64(messageId);
+      const media = await messagingDaMensagem().getMediaBase64(messageId);
       if (!media) {
         const msg = 'Nao consegui abrir a foto. Pode enviar novamente? 📸';
         if (!isSandbox) await sendText(from, msg);
@@ -6102,7 +6112,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       const lead = await db.getLeadByPhone(from);
       if (!isSandbox) await sendText(from, 'Recebi o video! Deixa eu dar uma olhada...');
 
-      const media = await messaging.getMediaBase64(messageId);
+      const media = await messagingDaMensagem().getMediaBase64(messageId);
       if (!media) {
         if (!isSandbox) await sendText(from, 'nao consegui baixar o video aqui, pode tentar enviar de novo?');
         return;
@@ -6204,7 +6214,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
     // Caixa de Entrada (Fatia 3): PDF de comprovante/nota do Junior.
     if (isAdminPhone(from) && metaWaba && mimetype.includes('pdf')) {
-      const media = await messaging.getMediaBase64(messageId);
+      const media = await messagingDaMensagem().getMediaBase64(messageId);
       if (media) {
         const { tryHandleFinanceiroMedia } = await import('./modules/financeiro/caixa-entrada.js');
         const tratou = await tryHandleFinanceiroMedia(
@@ -6242,7 +6252,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       if (!isSandbox) await sendText(from, 'Recebi o PDF! Analisando... 📄');
 
       // Download PDF via Evolution API
-      const media = await messaging.getMediaBase64(messageId);
+      const media = await messagingDaMensagem().getMediaBase64(messageId);
       if (!media) {
         const msg = 'Nao consegui abrir o PDF. Pode enviar novamente? 📄';
         if (!isSandbox) await sendText(from, msg);
@@ -6359,6 +6369,10 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     // Empresa dona (multi-tenant fatia 1): resolvida no webhook. Jobs antigos na
     // fila / canal Evolution nao trazem → EcoSun (comportamento de hoje).
     const companyId = msg.companyId ?? ECOSUN_COMPANY_ID;
+    // Canal de RESPOSTA deste job (107): tenant com instância Evolution própria
+    // responde por ela. EcoSun / sem mapeamento → undefined = canal de hoje.
+    const evolutionInstance = await evolutionTenant.instanciaDaEmpresa(msg.companyId);
+    await comCanal({ companyId, evolutionInstance }, async () => {
     // [MT 3e] o banco DESTE job do consumer: seed/localização liam e escreviam
     // pelo SINGLETON — sob 2 tenants com o MESMO telefone, o nome/coordenadas do
     // cliente do tenant B iam parar no lead da EcoSun (achado do review). Flag
@@ -6443,6 +6457,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       default:
         console.log(`[router] Unknown message type "${msg.type}" from ${msg.from}`);
     }
+    }); // comCanal
   }, config.redisPassword);
 
   // Express server
@@ -7113,6 +7128,17 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       return;
     }
 
+    // 107: de QUAL instância veio? Instância mapeada em companies.evolution_instance
+    // = tenant conectado por QR (ex.: Conquista Solar). Sem mapeamento (a
+    // instância da Eva nunca está na tabela) → undefined = EcoSun, como hoje.
+    const instanciaOrigem = typeof (req.body as { instance?: unknown })?.instance === 'string'
+      ? (req.body as { instance: string }).instance
+      : undefined;
+    const companyIdDaInstancia = await evolutionTenant.companyDaInstancia(instanciaOrigem);
+    if (companyIdDaInstancia) {
+      console.log(`[evolution] 📥 instância "${instanciaOrigem}" → empresa ${companyIdDaInstancia.slice(0, 8)} (${parsed.from}, ${parsed.type})`);
+    }
+
     // Double check: ignore groups
     if (parsed.from.includes('-') || parsed.from.length > 15) {
       res.status(200).json({ status: 'ignored_group' });
@@ -7342,6 +7368,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       pushName: parsed.pushName,
       caption: parsed.caption,
       mimeType: parsed.mimeType,
+      companyId: companyIdDaInstancia, // 107: undefined = EcoSun (consumer já trata)
     });
 
     res.status(200).json({ status: 'queued' });
