@@ -338,7 +338,8 @@ export function createDashboardRouter(
     const marca = empresaDe(tok.companyId).nomeFantasia;
     const erro = senha.length < 8 ? 'A senha precisa ter pelo menos 8 caracteres.' : senha !== senha2 ? 'As duas senhas não são iguais.' : null;
     if (erro) { res.status(400).type('text/html').send(renderDefinirSenhaPage({ token: t, nome: u?.nome ?? '', empresa: marca, tipo: tok.tipo, errorMsg: erro })); return; }
-    await supabase.from('dashboard_users').update({ senha_hash: await hashSenha(senha), ativo: true }).eq('id', tok.userId);
+    const { definirSenhaUsuario } = await import('./users-store.js');
+    await definirSenhaUsuario(supabase, tok.userId, await hashSenha(senha));
     await marcarTokenUsado(supabase, tok.id);
     setSessionCookie(res, tok.userId, true);
     await touchLastLogin(supabase, tok.userId);

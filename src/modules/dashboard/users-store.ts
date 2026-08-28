@@ -310,6 +310,12 @@ export async function usuariosParaReset(
     .map((u) => ({ id: u.id, companyId: u.company_id, nome: u.nome, email: String(u.email).trim().toLowerCase() }));
 }
 
+/** Grava a senha escolhida pelo próprio usuário (convite / reset) e garante o acesso ativo. */
+export async function definirSenhaUsuario(client: SupabaseClient, id: string, senhaHash: string): Promise<void> {
+  const { error } = await client.from('dashboard_users').update({ senha_hash: senhaHash, ativo: true }).eq('id', id);
+  if (error) throw new Error(`senha não gravada: ${error.message}`);
+}
+
 export async function touchLastLogin(client: SupabaseClient, id: string): Promise<void> {
   await client.from('dashboard_users').update({ last_login_at: new Date().toISOString() }).eq('id', id);
 }
