@@ -94,6 +94,8 @@ Eva nasceu. Sem WABA/Meta na fase 1.
 `/webhook?token=<WEBHOOK_TOKEN>` + evento MESSAGES_UPSERT + base64 · `UPDATE
 companies SET evolution_instance='...'` (cache 5 min).
 
+**Conexão do número (self-service, 28/08)**: o admin do tenant (`usuarios:administrar`) abre **📱 Conectar WhatsApp** (`/dashboard/whatsapp`, menu Configurações) — QR renovado a cada 30 s + estado ao vivo + pairing code opcional com o número **exato** do WhatsApp (com/sem 9º dígito). `src/modules/evolution-conexao.ts` fala com a Evolution (`connectionState`/`connect`), apikey só no servidor, sem tabela nova. Lição Conquista: código ditado por telefone não funciona; QR na tela do próprio cliente sim.
+
 **Limitações (fase 2)**: crons fora do consumer (followup, cadência, reengajamento,
 follow-up vivo, pós-instalação) ficam **restritos à EcoSun** (`company_id = EcoSun`
 nas queries) até ganharem contexto por lead · alertas de qualificação vão pro

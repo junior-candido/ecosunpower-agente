@@ -85,7 +85,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'contratos' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'pastas' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'assinaturas' | 'minha_assinatura' | 'servicos' | 'usuarios' | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro' | 'lojas' | 'predio';
+  active: 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'contratos' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'pastas' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'kanban' | 'clientes' | 'financeiro' | 'assinaturas' | 'minha_assinatura' | 'whatsapp' | 'servicos' | 'usuarios' | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro' | 'lojas' | 'predio';
   title: string;
   body: string;
   scripts?: string;
@@ -184,6 +184,7 @@ const SIDEBAR_SETORES: SideSetor[] = [
     titulo: '⚙️ Configurações',
     itens: [
       { href: '/dashboard/usuarios', key: 'usuarios', label: '👤 Usuários', area: 'usuarios' },
+      { href: '/dashboard/whatsapp', key: 'whatsapp', label: '📱 Conectar WhatsApp', area: 'usuarios', nivel: 'administrar', soTenant: true },
       { href: '/dashboard/empresas', key: 'empresas', label: '🏢 Empresas (tenants)', area: 'usuarios', nivel: 'administrar', soEcosun: true },
     ],
   },
