@@ -31,6 +31,7 @@ export interface CriarEmpresaInput {
   nome: string;
   adminNome: string;
   adminLogin: string;
+  adminEmail?: string | null;
   senhaHash: string;
 }
 
@@ -72,6 +73,7 @@ export async function criarEmpresaComAdmin(
       company_id: companyId,
       nome: input.adminNome,
       login: input.adminLogin,
+      email: input.adminEmail ?? null,
       senha_hash: input.senhaHash,
       role_id: roleId,
       ativo: true,

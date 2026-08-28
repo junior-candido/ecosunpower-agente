@@ -49,7 +49,7 @@ export function renderEmpresasPage(
 
   <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 max-w-xl accent-amber">
     <h2 class="text-lg font-semibold text-slate-800 mb-1">➕ Provisionar nova empresa</h2>
-    <p class="text-xs text-slate-500 mb-4">O login e a senha abaixo são do PRIMEIRO administrador do tenant — entregue a ele e peça pra trocar a senha no primeiro acesso.</p>
+    <p class="text-xs text-slate-500 mb-4">Login e e-mail do PRIMEIRO administrador do tenant. <b>Deixe a senha vazia</b> pra ele receber um <b>convite por e-mail</b> e criar a própria senha (ninguém vê a senha de ninguém). Só preencha a senha inicial se não houver e-mail.</p>
     <form method="post" action="/dashboard/empresas/nova" class="space-y-3">
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-1">Nome da empresa</label>
@@ -65,9 +65,13 @@ export function renderEmpresasPage(
           <input name="admin_login" required maxlength="60" autocomplete="off" class="w-full border border-slate-300 rounded-lg px-3 py-2" placeholder="ex.: thiago">
         </div>
         <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">Senha inicial</label>
-          <input name="admin_senha" type="password" required minlength="8" autocomplete="new-password" class="w-full border border-slate-300 rounded-lg px-3 py-2">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Senha inicial (opcional)</label>
+          <input name="admin_senha" type="password" minlength="8" autocomplete="new-password" class="w-full border border-slate-300 rounded-lg px-3 py-2" placeholder="vazio = convite por e-mail">
         </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">E-mail do administrador</label>
+        <input name="admin_email" type="email" maxlength="120" autocomplete="off" class="w-full border border-slate-300 rounded-lg px-3 py-2" placeholder="ex.: jimena@empresa.com.br (recebe o convite)">
       </div>
       <button type="submit" class="px-4 py-2 rounded-lg bg-amber-400 text-slate-900 font-semibold hover:bg-amber-300 transition">Criar empresa</button>
     </form>
