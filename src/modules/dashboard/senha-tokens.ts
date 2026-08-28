@@ -24,6 +24,25 @@ export function gerarTokenCru(): string {
 
 export interface TokenCriado { tokenCru: string; expiraEm: Date }
 
+export const COOLDOWN_MINUTOS = 3;
+
+// Já existe um link vivo criado há menos de COOLDOWN_MINUTOS pra este usuário/tipo?
+// Sem isso, quem fica reenviando "esqueci minha senha" com o login da vítima
+// invalida o link legítimo antes de ela clicar (e enche a caixa dela).
+export async function existeTokenRecente(
+  client: SupabaseClient,
+  userId: string,
+  tipo: TipoToken,
+  agora: Date = new Date(),
+): Promise<boolean> {
+  const { data } = await client.from('dashboard_senha_tokens')
+    .select('id')
+    .eq('user_id', userId).eq('tipo', tipo).is('usado_em', null)
+    .gt('created_at', new Date(agora.getTime() - COOLDOWN_MINUTOS * 60 * 1000).toISOString())
+    .limit(1);
+  return ((data as unknown[] | null) ?? []).length > 0;
+}
+
 export async function criarTokenSenha(
   client: SupabaseClient,
   input: { companyId: string; userId: string; tipo: TipoToken },
@@ -41,6 +60,7 @@ export async function criarTokenSenha(
     tipo: input.tipo,
     token_hash: hashToken(tokenCru),
     expira_em: expiraEm.toISOString(),
+    created_at: agora.toISOString(),
   });
   if (error) throw new Error(`token de senha não criado: ${error.message}`);
   return { tokenCru, expiraEm };

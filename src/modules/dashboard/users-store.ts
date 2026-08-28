@@ -304,15 +304,16 @@ export async function usuariosParaReset(
     .from('dashboard_users')
     .select('id, company_id, nome, email, ativo')
     .eq('ativo', true)
-    .or(`login.eq.${ident},email.eq.${ident}`);
+    .or(`login.eq.${ident},email.ilike.${ident}`); // ilike sem curinga = igualdade sem caixa
   return ((data as Array<{ id: string; company_id: string; nome: string; email: string | null }> | null) ?? [])
     .filter((u) => Boolean(u.email))
     .map((u) => ({ id: u.id, companyId: u.company_id, nome: u.nome, email: String(u.email).trim().toLowerCase() }));
 }
 
-/** Grava a senha escolhida pelo próprio usuário (convite / reset) e garante o acesso ativo. */
+/** Grava a senha escolhida pelo próprio usuário (convite / reset). NÃO mexe em `ativo`:
+ *  usuário desativado pelo admin não se reativa sozinho pelo link. */
 export async function definirSenhaUsuario(client: SupabaseClient, id: string, senhaHash: string): Promise<void> {
-  const { error } = await client.from('dashboard_users').update({ senha_hash: senhaHash, ativo: true }).eq('id', id);
+  const { error } = await client.from('dashboard_users').update({ senha_hash: senhaHash }).eq('id', id).eq('ativo', true);
   if (error) throw new Error(`senha não gravada: ${error.message}`);
 }
 

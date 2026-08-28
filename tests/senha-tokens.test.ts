@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  criarTokenSenha, validarTokenSenha, marcarTokenUsado, hashToken, VALIDADE_HORAS,
+  criarTokenSenha, validarTokenSenha, marcarTokenUsado, hashToken, VALIDADE_HORAS, existeTokenRecente,
   renderDefinirSenhaPage, renderEsqueciSenhaPage, renderLinkInvalidoPage, corpoEmailConvite,
 } from '../src/modules/dashboard/senha-tokens.js';
 
@@ -18,6 +18,8 @@ function fakeClient() {
         select() { b._op = 'select'; return b; },
         eq(k: string, v: unknown) { b._f.push([k, v]); return b; },
         is(k: string, _v: unknown) { b._isNull.push(k); return b; },
+        gt(k: string, v: string) { b._gt = [k, v]; return b; },
+        limit() { const rs = linhas.filter((r) => b._match(r) && (!b._gt || String(r[b._gt[0]]) > b._gt[1])); return Promise.resolve({ data: rs }); },
         _match(r: Record<string, unknown>) { return b._f.every(([k, v]: [string, unknown]) => r[k] === v) && b._isNull.every((k: string) => r[k] === null); },
         maybeSingle() { const r = linhas.find((x) => b._match(x)); return Promise.resolve({ data: r ?? null }); },
         then(res: (v: unknown) => void) { // update encadeado sem maybeSingle
@@ -65,6 +67,16 @@ describe('senha-tokens (108) — convite e reset', () => {
     const t2 = await criarTokenSenha(client, { companyId: 'c1', userId: 'u1', tipo: 'convite' }, agora);
     expect(await validarTokenSenha(client, t1.tokenCru, agora)).toBeNull();
     expect(await validarTokenSenha(client, t2.tokenCru, agora)).not.toBeNull();
+  });
+
+  it('cooldown: link criado há < 3 min conta como recente; depois não', async () => {
+    const { client } = fakeClient();
+    const agora = new Date('2026-08-28T12:00:00Z');
+    expect(await existeTokenRecente(client, 'u1', 'reset', agora)).toBe(false);
+    await criarTokenSenha(client, { companyId: 'c1', userId: 'u1', tipo: 'reset' }, agora);
+    expect(await existeTokenRecente(client, 'u1', 'reset', new Date(agora.getTime() + 60_000))).toBe(true);
+    expect(await existeTokenRecente(client, 'u1', 'reset', new Date(agora.getTime() + 10 * 60_000))).toBe(false);
+    expect(await existeTokenRecente(client, 'u2', 'reset', agora)).toBe(false);
   });
 
   it('telas: formulário com token escondido, escape de HTML, mensagens', () => {

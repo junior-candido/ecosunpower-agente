@@ -283,22 +283,36 @@ export function createDashboardRouter(
     res.redirect('/dashboard/login');
   });
 
-  // ----------------------------------------------------------------------
-  // Daqui pra baixo, tudo exige auth.
-  // ----------------------------------------------------------------------
-
   // ===== Definir senha: convite por e-mail + "esqueci minha senha" (migration 108) — PÚBLICO =====
   // O token cru só existe no link do e-mail; no banco fica o sha256. Vale uma vez e expira.
+  // Rate limit por IP (memória do processo): 5 pedidos a cada 15 min. Barato e suficiente
+  // pra barrar bombardeio de e-mail; o cooldown por usuário (existeTokenRecente) protege o alvo.
+  const pedidosSenhaPorIp = new Map<string, number[]>();
+  function ipEstourou(ip: string): boolean {
+    const agora = Date.now();
+    const janela = (pedidosSenhaPorIp.get(ip) ?? []).filter((t) => agora - t < 15 * 60 * 1000);
+    janela.push(agora);
+    pedidosSenhaPorIp.set(ip, janela);
+    if (pedidosSenhaPorIp.size > 5000) pedidosSenhaPorIp.clear(); // teto de memória
+    return janela.length > 5;
+  }
+  const semCacheSemReferer = (res: Response) => {
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Cache-Control', 'no-store');
+  };
+
   async function enviarLinkSenha(
     alvo: { id: string; companyId: string; nome: string; email: string },
     tipo: 'convite' | 'reset',
   ): Promise<boolean> {
     if (!process.env.RESEND_API_KEY) { console.warn('[senha] RESEND_API_KEY ausente — link de senha NÃO enviado'); return false; }
-    const { criarTokenSenha, corpoEmailConvite, corpoEmailReset, VALIDADE_HORAS } = await import('./senha-tokens.js');
+    const { criarTokenSenha, existeTokenRecente, corpoEmailConvite, corpoEmailReset, VALIDADE_HORAS } = await import('./senha-tokens.js');
+    if (tipo === 'reset' && await existeTokenRecente(supabase, alvo.id, tipo)) return false; // cooldown: link recente segue válido
     const { montarMolduraEmail } = await import('../email/email-moldura.js');
     const { EmailSender } = await import('../email/resend-client.js');
     const { tokenCru } = await criarTokenSenha(supabase, { companyId: alvo.companyId, userId: alvo.id, tipo });
-    const base = (options.appBaseUrl ?? process.env.DASHBOARD_BASE_URL ?? 'https://dashboard.ecosunpower.eng.br').replace(/\/$/, '');
+    // Host do DASHBOARD primeiro (é onde o cookie de sessão vale); APP_BASE_URL é da InfinitePay.
+    const base = (process.env.DASHBOARD_BASE_URL ?? options.appBaseUrl ?? 'https://dashboard.ecosunpower.eng.br').replace(/\/$/, '');
     const url = `${base}/dashboard/definir-senha?t=${encodeURIComponent(tokenCru)}`;
     const marca = empresaDe(alvo.companyId).nomeFantasia;
     const html = montarMolduraEmail({
@@ -309,6 +323,8 @@ export function createDashboardRouter(
       ctaUrl: url,
       ctaNota: `Ou copie e cole no navegador: ${url}`,
       empresa: marca,
+      siteUrl: empresaDe(alvo.companyId).siteUrl,
+      transacional: true,
       linkDescadastro: base,
     });
     const sender = new EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '');
@@ -317,59 +333,72 @@ export function createDashboardRouter(
   }
 
   router.get('/definir-senha', async (req: Request, res: Response) => {
+    semCacheSemReferer(res);
     const { validarTokenSenha, renderDefinirSenhaPage, renderLinkInvalidoPage } = await import('./senha-tokens.js');
     const t = typeof req.query.t === 'string' ? req.query.t : '';
     const tok = await validarTokenSenha(supabase, t);
-    if (!tok) { res.status(410).type('text/html').send(renderLinkInvalidoPage(empresa().nomeFantasia)); return; }
     const { getUserById } = await import('./users-store.js');
-    const u = await getUserById(supabase, tok.userId);
-    res.type('text/html').send(renderDefinirSenhaPage({ token: t, nome: u?.nome ?? '', empresa: empresaDe(tok.companyId).nomeFantasia, tipo: tok.tipo }));
+    // getUserById devolve null pra usuário inativo / empresa travada → link não vale.
+    const u = tok ? await getUserById(supabase, tok.userId) : null;
+    if (!tok || !u) { res.status(410).type('text/html').send(renderLinkInvalidoPage(tok ? empresaDe(tok.companyId).nomeFantasia : empresa().nomeFantasia)); return; }
+    res.type('text/html').send(renderDefinirSenhaPage({ token: t, nome: u.nome, empresa: empresaDe(tok.companyId).nomeFantasia, tipo: tok.tipo }));
   });
 
   router.post('/definir-senha', async (req: Request, res: Response) => {
+    semCacheSemReferer(res);
     const { validarTokenSenha, marcarTokenUsado, renderDefinirSenhaPage, renderLinkInvalidoPage } = await import('./senha-tokens.js');
     const t = String(req.body?.t ?? '');
     const senha = String(req.body?.senha ?? '');
     const senha2 = String(req.body?.senha2 ?? '');
     const tok = await validarTokenSenha(supabase, t);
-    if (!tok) { res.status(410).type('text/html').send(renderLinkInvalidoPage(empresa().nomeFantasia)); return; }
-    const { getUserById } = await import('./users-store.js');
-    const u = await getUserById(supabase, tok.userId);
+    const { getUserById, definirSenhaUsuario } = await import('./users-store.js');
+    const u = tok ? await getUserById(supabase, tok.userId) : null;
+    if (!tok || !u) { res.status(410).type('text/html').send(renderLinkInvalidoPage(tok ? empresaDe(tok.companyId).nomeFantasia : empresa().nomeFantasia)); return; }
     const marca = empresaDe(tok.companyId).nomeFantasia;
     const erro = senha.length < 8 ? 'A senha precisa ter pelo menos 8 caracteres.' : senha !== senha2 ? 'As duas senhas não são iguais.' : null;
-    if (erro) { res.status(400).type('text/html').send(renderDefinirSenhaPage({ token: t, nome: u?.nome ?? '', empresa: marca, tipo: tok.tipo, errorMsg: erro })); return; }
-    const { definirSenhaUsuario } = await import('./users-store.js');
+    if (erro) { res.status(400).type('text/html').send(renderDefinirSenhaPage({ token: t, nome: u.nome, empresa: marca, tipo: tok.tipo, errorMsg: erro })); return; }
     await definirSenhaUsuario(supabase, tok.userId, await hashSenha(senha));
     await marcarTokenUsado(supabase, tok.id);
-    setSessionCookie(res, tok.userId, true);
+    // Sessão só do navegador (sem 60 dias): quem clicou no e-mail provou posse, mas o
+    // "continuar conectado" é escolha do login normal.
+    setSessionCookie(res, tok.userId, false);
     await touchLastLogin(supabase, tok.userId);
     await audit(supabase, { companyId: tok.companyId, userId: tok.userId, entidade: 'sessao', acao: tok.tipo === 'convite' ? 'senha_criada_convite' : 'senha_redefinida' });
     res.redirect('/dashboard/cockpit');
   });
 
   router.get('/esqueci-senha', async (_req: Request, res: Response) => {
+    semCacheSemReferer(res);
     const { renderEsqueciSenhaPage } = await import('./senha-tokens.js');
     res.type('text/html').send(renderEsqueciSenhaPage({ empresa: empresa().nomeFantasia }));
   });
 
   router.post('/esqueci-senha', async (req: Request, res: Response) => {
+    semCacheSemReferer(res);
     const { renderEsqueciSenhaPage } = await import('./senha-tokens.js');
     const ident = String(req.body?.identificacao ?? '').trim().toLowerCase();
-    if (ident) {
+    const ip = String(req.headers['x-forwarded-for'] ?? req.ip ?? '').split(',')[0].trim() || 'sem-ip';
+    // Resposta SEMPRE igual e IMEDIATA (não revela se o login existe — nem pelo tempo).
+    res.type('text/html').send(renderEsqueciSenhaPage({ empresa: empresa().nomeFantasia, enviado: true }));
+    if (!ident || ipEstourou(ip)) { if (ident) console.warn('[senha] esqueci-senha: rate limit por IP'); return; }
+    void (async () => {
       try {
         const { usuariosParaReset } = await import('./users-store.js');
         const alvos = await usuariosParaReset(supabase, ident);
+        let enviados = 0;
         for (const a of alvos) {
-          await enviarLinkSenha(a, 'reset').catch((e) => console.warn('[senha] reset por e-mail falhou:', (e as Error).message));
+          if (await enviarLinkSenha(a, 'reset').catch((e) => { console.warn('[senha] reset por e-mail falhou:', (e as Error).message); return false; })) enviados++;
         }
-        console.log(`[senha] esqueci-senha "${ident}" → ${alvos.length} e-mail(s)`);
+        console.log(`[senha] esqueci-senha: ${enviados} e-mail(s) enviado(s)`); // sem login/e-mail no log
       } catch (e) {
         console.warn('[senha] esqueci-senha falhou:', (e as Error).message);
       }
-    }
-    // Resposta SEMPRE igual (não revela se o login existe).
-    res.type('text/html').send(renderEsqueciSenhaPage({ empresa: empresa().nomeFantasia, enviado: true }));
+    })();
   });
+
+  // ----------------------------------------------------------------------
+  // Daqui pra baixo, tudo exige auth.
+  // ----------------------------------------------------------------------
 
   router.use(criarSessionAuth(supabase));
 
@@ -1187,6 +1216,7 @@ b.onclick=async function(){
     // E-mail: campo próprio ou o login, quando o login já é um e-mail.
     const emailLimpo = String(admin_email ?? '').trim().toLowerCase() || (loginLimpo.includes('@') ? loginLimpo : '');
     if (!senhaStr && !emailLimpo) { res.redirect(`/dashboard/empresas?erro=${encodeURIComponent('Informe um e-mail (convite) ou uma senha inicial')}`); return; }
+    if (!senhaStr && !process.env.RESEND_API_KEY) { res.redirect(`/dashboard/empresas?erro=${encodeURIComponent('Envio de e-mail desligado no servidor (RESEND_API_KEY) — preencha uma senha inicial')}`); return; }
     if (senhaStr && senhaStr.length < 8) { res.status(400).send('Senha inicial precisa de 8+ caracteres'); return; }
     const { criarEmpresaComAdmin } = await import('./empresas-store.js');
     const { gerarTokenCru } = await import('./senha-tokens.js');
@@ -1203,10 +1233,21 @@ b.onclick=async function(){
     if (!senhaStr) {
       const ok = await enviarLinkSenha({ id: r.userId, companyId: r.companyId, nome: String(admin_nome).trim(), email: emailLimpo }, 'convite')
         .catch((e) => { console.warn('[empresas] convite por e-mail falhou:', (e as Error).message); return false; });
-      res.redirect(ok ? '/dashboard/empresas?ok=convite' : `/dashboard/empresas?erro=${encodeURIComponent('Empresa criada, mas o e-mail de convite falhou — use "Esqueci minha senha" ou defina uma senha')}`);
+      res.redirect(ok ? '/dashboard/empresas?ok=convite' : `/dashboard/empresas?erro=${encodeURIComponent('Empresa criada, mas o e-mail de convite não saiu — clique em "Reenviar convite" na lista')}`);
       return;
     }
     res.redirect('/dashboard/empresas?ok=1');
+  });
+
+  // Reenvia o link de criar senha pro administrador da empresa (e-mail cadastrado).
+  router.post('/empresas/:id/convite', async (req: AuthedRequest, res) => {
+    if (!ehAdminEcosun(req.dashUser)) { res.status(403).send('Sem permissão'); return; }
+    const { adminComEmailDaEmpresa } = await import('./empresas-store.js');
+    const alvo = await adminComEmailDaEmpresa(supabase, String(req.params.id));
+    if (!alvo) { res.redirect(`/dashboard/empresas?erro=${encodeURIComponent('Essa empresa não tem administrador ativo com e-mail cadastrado')}`); return; }
+    const ok = await enviarLinkSenha(alvo, 'convite').catch((e) => { console.warn('[empresas] reenvio de convite falhou:', (e as Error).message); return false; });
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'empresa', entidadeId: String(req.params.id), acao: ok ? 'reenviou_convite' : 'reenvio_convite_falhou' });
+    res.redirect(ok ? '/dashboard/empresas?ok=convite' : `/dashboard/empresas?erro=${encodeURIComponent('O e-mail não saiu — confira RESEND_API_KEY/EMAIL_FROM no servidor')}`);
   });
 
   // ===== O PRÉDIO VIVO (F1 — spec 2026-07-28): multi-tenant em 3D, SÓ EcoSun =====

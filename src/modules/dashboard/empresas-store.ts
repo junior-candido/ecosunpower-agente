@@ -27,6 +27,24 @@ export async function listCompaniesComUsuarios(client: SupabaseClient): Promise<
   }));
 }
 
+/** 1º usuário com e-mail da empresa (o administrador) — alvo do "Reenviar convite". */
+export async function adminComEmailDaEmpresa(
+  client: SupabaseClient,
+  companyId: string,
+): Promise<{ id: string; companyId: string; nome: string; email: string } | null> {
+  const { data } = await client
+    .from('dashboard_users')
+    .select('id, nome, email')
+    .eq('company_id', companyId)
+    .eq('ativo', true)
+    .not('email', 'is', null)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const u = data as { id: string; nome: string; email: string } | null;
+  return u ? { id: u.id, companyId, nome: u.nome, email: String(u.email).trim().toLowerCase() } : null;
+}
+
 export interface CriarEmpresaInput {
   nome: string;
   adminNome: string;

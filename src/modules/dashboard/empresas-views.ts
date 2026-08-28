@@ -18,6 +18,7 @@ export function renderEmpresasPage(
         <td class="px-4 py-3 text-center">${e.usuarios}</td>
         <td class="px-4 py-3 text-center">${e.ativo ? '<span class="text-emerald-600">ativa</span>' : '<span class="text-rose-600">inativa</span>'}</td>
         <td class="px-4 py-3 text-sm text-slate-500">${escapeHtml((e.createdAt ?? '').slice(0, 10))}</td>
+        <td class="px-4 py-3 text-right"><form method="post" action="/dashboard/empresas/${escapeHtml(e.id)}/convite" class="inline"><button type="submit" class="text-xs px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100" title="Manda um novo link de criar senha pro administrador (e-mail cadastrado)">✉️ Reenviar convite</button></form></td>
       </tr>`,
     )
     .join('\n');
@@ -41,6 +42,7 @@ export function renderEmpresasPage(
           <th class="px-4 py-3 text-center">Usuários</th>
           <th class="px-4 py-3 text-center">Status</th>
           <th class="px-4 py-3">Criada em</th>
+          <th class="px-4 py-3"></th>
         </tr>
       </thead>
       <tbody>${linhas}</tbody>

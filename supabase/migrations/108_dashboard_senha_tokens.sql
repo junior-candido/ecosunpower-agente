@@ -2,6 +2,9 @@
 -- Fim da senha temporária passada no zap: o admin cadastra só o e-mail, o usuário
 -- recebe um link único (expira) e cria a própria senha. Ninguém vê senha de ninguém.
 -- Guardamos só o HASH (sha256) do token — o token cru viaja uma vez, no e-mail.
+-- Aplicar no SQL Editor (produção) antes ou logo após o deploy — número 108 combinado.
+-- RLS: o app lê/escreve pelo SERVIÇO (service_role, BYPASSRLS) nas rotas públicas;
+-- a política abaixo só vale pra acesso direto com JWT de tenant — mesmo padrão da 102.
 
 CREATE TABLE IF NOT EXISTS public.dashboard_senha_tokens (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),

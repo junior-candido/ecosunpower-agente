@@ -31,6 +31,8 @@ export interface MolduraOpts {
   ctaNota?: string;
   /** 💡 Dica de ouro: box destacado, linguagem simples, tira-dúvida (Junior 18/07). */
   dica?: { titulo: string; texto: string };
+  /** E-mail transacional (acesso/senha): rodapé sem 'descadastrar' nem texto de newsletter. */
+  transacional?: boolean;
 }
 
 const NAVY = '#0b1220';         // header/rodapé
@@ -168,9 +170,11 @@ export function montarMolduraEmail(opts: MolduraOpts): string {
             </tr>${secaoDica(opts)}${secaoCta(opts)}${secaoNoticias(opts.noticias ?? [])}
             <tr>
               <td style="background:${NAVY}; padding:22px 40px; text-align:center; font-family:${FONTE};">
-                <p style="margin:0 0 6px; font-size:13px; color:#c9d2dc; font-weight:bold;">${escapeHtml(empresa)} — energia solar de ponta a ponta</p>
+                <p style="margin:0 0 6px; font-size:13px; color:#c9d2dc; font-weight:bold;">${escapeHtml(empresa)}${opts.transacional ? '' : ' — energia solar de ponta a ponta'}</p>
                 <p style="margin:0 0 10px; font-size:12px;"><a href="${escapeHtml(siteUrl)}" style="color:${AMBAR}; text-decoration:none;">${escapeHtml(siteLabel)}</a></p>
-                <p style="margin:0; font-size:11px; color:#6b7686;">Você recebe este e-mail porque conversou com a gente sobre energia solar.<br/>Não quer mais receber? <a href="${escapeHtml(opts.linkDescadastro)}" style="color:#8a94a3;">Descadastrar</a></p>
+                ${opts.transacional
+                  ? `<p style="margin:0; font-size:11px; color:#6b7686;">E-mail automático de acesso à plataforma. Se você não pediu isso, pode ignorar.</p>`
+                  : `<p style="margin:0; font-size:11px; color:#6b7686;">Você recebe este e-mail porque conversou com a gente sobre energia solar.<br/>Não quer mais receber? <a href="${escapeHtml(opts.linkDescadastro)}" style="color:#8a94a3;">Descadastrar</a></p>`}
               </td>
             </tr>
           </table>
