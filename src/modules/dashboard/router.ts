@@ -200,6 +200,13 @@ export function createDashboardRouter(
     infinitepayHandle?: string; // InfiniteTag pra gerar link de cobrança (peça 1 pagamento)
     appBaseUrl?: string;        // URL pública do app (pro webhook_url da InfinitePay)
     calculadoraUrl?: string;        // ponte de acesso da calculadora (fatia 3a)
+    // Conectar WhatsApp self-service do tenant (28/08): QR/estado da instância
+    // Evolution mapeada em companies.evolution_instance. A apikey fica aqui.
+    evolutionConexao?: {
+      baseUrl: string;
+      apiKey: string;
+      instanciaDaEmpresa: (companyId: string) => Promise<string | undefined>;
+    };
     assinaturasSyncToken?: string;  // token compartilhado da ponte
     // Salva contrato+procuração no Drive/Workspace (vem pronto do index.ts quando
     // o Google está configurado). Retorna o link da pasta do cliente.
@@ -1020,6 +1027,58 @@ b.onclick=async function(){
   // link de pagar) e cadastra o zap com código. Escopo: SEMPRE a empresa da
   // sessão — tenant nunca enxerga assinatura dos outros.
   const confirmadorZapPromise = import('./zap-confirmacao.js').then((m) => m.criarConfirmadorZap());
+
+  // ----------------------------------------------------------------------
+  // Conectar WhatsApp (tenant, self-service) — QR grande que se renova + estado
+  // ao vivo. Só pra empresas com instância própria; a EcoSun (Eva) não usa.
+  // ----------------------------------------------------------------------
+  const ECOSUN_TENANT_ROOT = '00000000-0000-0000-0000-000000000001';
+  // Duas abas abertas (ou F5 nervoso) não podem derrubar o QR uma da outra:
+  // cada chamada a /instance/connect gera QR novo, então reaproveita por 15 s.
+  const qrCache = new Map<string, { at: number; valor: import('../evolution-conexao.js').QrConexao }>();
+  async function instanciaDoTenant(req: AuthedRequest): Promise<string | null> {
+    const cid = req.dashUser?.companyId;
+    if (!cid || cid === ECOSUN_TENANT_ROOT || !options.evolutionConexao) return null;
+    const inst = await options.evolutionConexao.instanciaDaEmpresa(cid).catch(() => undefined);
+    return inst ?? null;
+  }
+  router.get('/whatsapp', exigir('usuarios', 'administrar'), async (req: AuthedRequest, res) => {
+    try {
+      const { renderWhatsappPage } = await import('./whatsapp-views.js');
+      const { estadoConexao } = await import('../evolution-conexao.js');
+      const instancia = await instanciaDoTenant(req);
+      const estado = instancia && options.evolutionConexao ? await estadoConexao(options.evolutionConexao, instancia).catch(() => 'desconhecido' as const) : 'desconhecido' as const;
+      res.type('html').send(renderWhatsappPage({ user: req.dashUser, instancia, estado }));
+    } catch (err) {
+      console.error('[whatsapp]', err);
+      res.status(500).send('Falha ao carregar a conexão do WhatsApp.');
+    }
+  });
+  router.get('/whatsapp/estado.json', exigir('usuarios', 'administrar'), async (req: AuthedRequest, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const instancia = await instanciaDoTenant(req);
+    if (!instancia || !options.evolutionConexao) { res.json({ estado: 'desconhecido' }); return; }
+    const { estadoConexao } = await import('../evolution-conexao.js');
+    res.json({ estado: await estadoConexao(options.evolutionConexao, instancia).catch(() => 'desconhecido') });
+  });
+  router.get('/whatsapp/qr.json', exigir('usuarios', 'administrar'), async (req: AuthedRequest, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const instancia = await instanciaDoTenant(req);
+    if (!instancia || !options.evolutionConexao) { res.json({ estado: 'desconhecido' }); return; }
+    const { obterQrConexao } = await import('../evolution-conexao.js');
+    try {
+      const c = qrCache.get(instancia);
+      const r = c && Date.now() - c.at < 15_000 && c.valor.base64
+        ? c.valor
+        : await obterQrConexao(options.evolutionConexao, instancia);
+      if (r.estado === 'open' && c?.valor.estado !== 'open') console.log(`[whatsapp] ✅ instância "${instancia}" conectada (empresa ${req.dashUser!.companyId.slice(0, 8)})`);
+      qrCache.set(instancia, { at: Date.now(), valor: r });
+      res.json(r);
+    } catch (err) {
+      console.warn('[whatsapp] qr falhou:', (err as Error).message);
+      res.json({ estado: 'desconhecido' });
+    }
+  });
 
   router.get('/minha-assinatura', async (req: AuthedRequest, res) => {
     try {

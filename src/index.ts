@@ -8432,6 +8432,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     engineerPhone: config.engineerPhone,
     infinitepayHandle: config.infinitepayHandle,
     calculadoraUrl: config.calculadoraUrl,
+    evolutionConexao: { baseUrl: config.evolutionApiUrl, apiKey: config.evolutionApiKey, instanciaDaEmpresa: (cid) => evolutionTenant.instanciaDaEmpresa(cid) },
     assinaturasSyncToken: config.assinaturasSyncToken,
     appBaseUrl: config.appBaseUrl,
     // [followup-vivo] Junior mandou a proposta pela tela → arma o ritmo.
