@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { ECOSUN_COMPANY_ID } from './tenant-resolver.js';
 
 interface CadenceStep {
   days: number;
@@ -82,6 +83,7 @@ export class ReengagementCadence {
     const { data, error } = await this.supabase
       .from('reengagement_touches')
       .select('id, touch_number, topic_type, leads(id, phone, name)')
+      .eq('company_id', ECOSUN_COMPANY_ID) // cron fora de contexto: só EcoSun (tenant = fase 2)
       .eq('status', 'pending')
       .lte('scheduled_for', new Date().toISOString())
       .limit(10); // safety cap: max 10 touches per run

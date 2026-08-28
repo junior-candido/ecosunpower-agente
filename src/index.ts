@@ -127,7 +127,7 @@ import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/tem
 import { PastaService } from './modules/relatorios/pasta/service.js';
 import { renderPastaHtml } from './modules/relatorios/pasta/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
-import { carregarEmpresaConfig, carregarKits, empresa, listaMarcasTexto } from './modules/empresa-config.js';
+import { carregarEmpresaConfig, carregarKits, empresa, comEmpresaDe, listaMarcasTexto } from './modules/empresa-config.js';
 import { mapResendEvento } from './modules/email/resend-events.js';
 import { EmailSequenceService } from './modules/email/email-sequence.js';
 import { EmailSender } from './modules/email/resend-client.js';
@@ -3722,7 +3722,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       for (const img of pkg.imagens) {
         if (metaWaba) {
           try {
-            await metaWaba.sendMedia(from, img.url, `[${img.style}]`, 'image');
+            await messagingDaMensagem().sendMedia(from, img.url, `[${img.style}]`, 'image'); // 107: pelo canal do tenant
           } catch (err) {
             console.warn(`[creative-agent] sendMedia falhou (${img.style}):`, (err as Error).message);
             await sendText(from, `🖼 [${img.style}]\n${img.url}`);
@@ -4863,7 +4863,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       // Cliente com abordagem de monitoramento ATIVA fica FORA do auto-ack:
       // ele está respondendo a Eva sobre a usina dele — mandar template de
       // qualificação no meio seria ruído (cliente sem abordagem: intacto).
-      if (metaWaba && !abordagemAtiva) {
+      if (metaWaba && !abordagemAtiva && !canalExigeEvolution()) { // 107: template WABA é da EcoSun
         const isNewSession = conversation.message_count === 0;
         const elapsedMs = Date.now() - new Date(conversation.last_message_at).getTime();
         const isLongPause = elapsedMs > 60 * 60 * 1000; // 1h
@@ -6372,7 +6372,9 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     // Canal de RESPOSTA deste job (107): tenant com instância Evolution própria
     // responde por ela. EcoSun / sem mapeamento → undefined = canal de hoje.
     const evolutionInstance = await evolutionTenant.instanciaDaEmpresa(msg.companyId);
-    await comCanal({ companyId, evolutionInstance }, async () => {
+    // Persona/marca do tenant (empresa_config: nome_atendente 'Clara', critério, região)
+    // + canal de resposta, pro job inteiro (awaits inclusos).
+    await comEmpresaDe(companyId, () => comCanal({ companyId, evolutionInstance }, async () => {
     // [MT 3e] o banco DESTE job do consumer: seed/localização liam e escreviam
     // pelo SINGLETON — sob 2 tenants com o MESMO telefone, o nome/coordenadas do
     // cliente do tenant B iam parar no lead da EcoSun (achado do review). Flag
@@ -6398,8 +6400,10 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
 
     // WABA usa media_id pra baixar midia (vindo em msg.content do parseMessage),
     // enquanto Evolution usa messageId. Roteamento condicional pra ambos funcionarem.
+    // 107: job vindo da instância Evolution do tenant → mídia se baixa pelo messageId
+    // (content é a URL), mesmo com WABA ligada pra EcoSun.
     const mediaRef = (mediaContent: string, fallbackId: string) =>
-      metaWaba ? mediaContent : fallbackId;
+      (metaWaba && !canalExigeEvolution()) ? mediaContent : fallbackId;
 
     switch (msg.type) {
       case 'text':
@@ -6457,7 +6461,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       default:
         console.log(`[router] Unknown message type "${msg.type}" from ${msg.from}`);
     }
-    }); // comCanal
+    })); // comCanal + comEmpresaDe
   }, config.redisPassword);
 
   // Express server
@@ -7137,6 +7141,12 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     const companyIdDaInstancia = await evolutionTenant.companyDaInstancia(instanciaOrigem);
     if (companyIdDaInstancia) {
       console.log(`[evolution] 📥 instância "${instanciaOrigem}" → empresa ${companyIdDaInstancia.slice(0, 8)} (${parsed.from}, ${parsed.type})`);
+    } else if (instanciaOrigem && instanciaOrigem !== config.evolutionInstance) {
+      // Falha-fechado: instância que NÃO é a da Eva e não está mapeada (typo,
+      // cadastro faltando, empresa inativa, banco fora) NUNCA vira lead da EcoSun.
+      console.warn(`[evolution] ⚠️ instância "${instanciaOrigem}" não mapeada em companies.evolution_instance — mensagem de ${parsed.from} RETIDA`);
+      res.status(200).json({ status: 'instancia_nao_mapeada' });
+      return;
     }
 
     // Double check: ignore groups
@@ -7160,6 +7170,22 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       const isBotEcho = await takeover.isBotSent(parsed.messageId);
       if (isBotEcho) {
         res.status(200).json({ status: 'ignored_bot_echo' });
+        return;
+      }
+
+      // 107: dono do TENANT digitou no próprio zap (ex.: Jimena na Conquista).
+      // Só o takeover: pausa a assistente pra esse contato; "clara on"/"eva on"
+      // devolve. Os comandos administrativos abaixo (ativar nome, manutenção,
+      // findContacts...) são da EcoSun e agiriam nos dados dela — não passam.
+      if (companyIdDaInstancia) {
+        const txt = parsed.type === 'text' ? parsed.content.trim().toLowerCase().replace(/\s+/g, ' ') : '';
+        if (/^\/?(eva|clara|bot)\s+(on|voltar)$/.test(txt)) {
+          await takeover.resumeFor(parsed.from);
+          res.status(200).json({ status: 'tenant_assistente_resumed' });
+          return;
+        }
+        await takeover.pauseFor(parsed.from);
+        res.status(200).json({ status: 'tenant_human_takeover' });
         return;
       }
 

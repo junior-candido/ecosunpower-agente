@@ -56,13 +56,36 @@ describe('evolution-tenant (107) — instância ↔ empresa', () => {
     warn.mockRestore();
   });
 
-  it('empresa sem instância própria (EcoSun) → undefined; companyId undefined não consulta', async () => {
+  it('empresa sem instância própria (EcoSun) → undefined, CACHEADO (1 query por 5 min, não por job)', async () => {
     const { client, chamadas } = fakeClient({ data: { evolution_instance: null }, error: null });
     const r = criarEvolutionTenantResolver(client);
     expect(await r.instanciaDaEmpresa(undefined)).toBeUndefined();
     expect(chamadas()).toBe(0);
     expect(await r.instanciaDaEmpresa('00000000-0000-0000-0000-000000000001')).toBeUndefined();
+    expect(await r.instanciaDaEmpresa('00000000-0000-0000-0000-000000000001')).toBeUndefined();
     expect(chamadas()).toBe(1);
+  });
+
+  it('coluna ainda não existe (deploy antes da 107) → undefined e CACHEIA (sem 1 query por mensagem)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { client, chamadas } = fakeClient({ data: null, error: { code: '42703', message: 'column companies.evolution_instance does not exist' } });
+    const r = criarEvolutionTenantResolver(client);
+    expect(await r.companyDaInstancia('conquista-solar')).toBeUndefined();
+    expect(await r.companyDaInstancia('conquista-solar')).toBeUndefined();
+    expect(await r.instanciaDaEmpresa('empresa-x')).toBeUndefined();
+    expect(await r.instanciaDaEmpresa('empresa-x')).toBeUndefined();
+    expect(chamadas()).toBe(2); // 1 por direção, depois cache
+    warn.mockRestore();
+  });
+
+  it('erro genérico em instanciaDaEmpresa → undefined e NÃO cacheia', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { client, chamadas } = fakeClient({ data: null, error: { message: 'timeout' } });
+    const r = criarEvolutionTenantResolver(client);
+    expect(await r.instanciaDaEmpresa('empresa-x')).toBeUndefined();
+    expect(await r.instanciaDaEmpresa('empresa-x')).toBeUndefined();
+    expect(chamadas()).toBe(2);
+    warn.mockRestore();
   });
 });
 
@@ -89,8 +112,9 @@ describe('canal-contexto — instância de resposta segue a mensagem', () => {
     });
   });
 
-  it('EvolutionService manda pela instância do contexto', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ key: { id: 'm1' } }) });
+  it('EvolutionService manda (texto, mídia, download) pela instância do contexto', async () => {
+    const fetchOriginal = global.fetch;
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ key: { id: 'm1' }, base64: 'AA==', mimetype: 'image/jpeg' }) });
     global.fetch = fetchMock as unknown as typeof fetch;
     const { EvolutionService } = await import('../src/modules/evolution.js');
     const svc = new EvolutionService({
@@ -100,5 +124,12 @@ describe('canal-contexto — instância de resposta segue a mensagem', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('http://evo/message/sendText/conquista-solar');
     await svc.sendText('5561999', 'oi');
     expect(fetchMock.mock.calls[1][0]).toBe('http://evo/message/sendText/ecosunpower');
+    await comCanal({ companyId: 'empresa-conquista', evolutionInstance: 'conquista-solar' }, async () => {
+      await svc.sendMedia('5577999', 'http://img', 'legenda', 'image');
+      await svc.getMediaBase64('msg-1');
+    });
+    expect(fetchMock.mock.calls[2][0]).toBe('http://evo/message/sendMedia/conquista-solar');
+    expect(fetchMock.mock.calls[3][0]).toBe('http://evo/chat/getBase64FromMediaMessage/conquista-solar');
+    global.fetch = fetchOriginal;
   });
 });

@@ -20,6 +20,11 @@ export interface EvolutionTenantResolver {
 
 type Entrada<T> = { valor: T; at: number };
 
+// PostgREST devolve 42703 (undefined_column) enquanto a migration 107 não rodou.
+function colunaInexistente(error: { code?: string; message?: string }): boolean {
+  return error.code === '42703' || /does not exist/i.test(error.message ?? '');
+}
+
 export function criarEvolutionTenantResolver(client: SupabaseClient): EvolutionTenantResolver {
   const porInstancia = new Map<string, Entrada<string | undefined>>();
   const porEmpresa = new Map<string, Entrada<string | undefined>>();
@@ -43,7 +48,11 @@ export function criarEvolutionTenantResolver(client: SupabaseClient): EvolutionT
           .maybeSingle();
         if (error) {
           console.warn(`[evolution-tenant] erro ao resolver instância "${chave}": ${error.message} — seguindo como EcoSun`);
-          return undefined; // não cacheia erro
+          // Coluna ainda não existe (deploy antes da migration 107): cacheia o
+          // "não mapeado" pra não custar 1 query + 1 warn POR MENSAGEM até o SQL
+          // rodar; 5 min depois da migration volta a consultar sozinho.
+          if (colunaInexistente(error)) porInstancia.set(chave, { valor: undefined, at: Date.now() });
+          return undefined;
         }
         const id = (data as { id?: string } | null)?.id;
         porInstancia.set(chave, { valor: id, at: Date.now() });
@@ -67,6 +76,7 @@ export function criarEvolutionTenantResolver(client: SupabaseClient): EvolutionT
           .maybeSingle();
         if (error) {
           console.warn(`[evolution-tenant] erro ao buscar instância da empresa ${companyId.slice(0, 8)}: ${error.message}`);
+          if (colunaInexistente(error)) porEmpresa.set(companyId, { valor: undefined, at: Date.now() });
           return undefined;
         }
         const inst = (data as { evolution_instance?: string | null } | null)?.evolution_instance ?? undefined;

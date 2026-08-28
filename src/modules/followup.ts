@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { empresa } from './empresa-config.js';
+import { ECOSUN_COMPANY_ID } from './tenant-resolver.js';
 import { medirIa } from './custos/ia-metering.js';
 
 // Cadencia de auto-followup pra leads que engajaram e depois ficaram silenciosos.
@@ -84,6 +85,7 @@ export class FollowupModule {
       .from('leads')
       .select('id, phone, name, city, status, energy_data, updated_at, opt_out')
       .in('status', ['novo', 'qualificando', 'qualificado'])
+      .eq('company_id', ECOSUN_COMPANY_ID) // cron fora de contexto: só EcoSun (tenant = fase 2)
       .eq('opt_out', false)
       .lt('updated_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
       .limit(50);
@@ -189,6 +191,7 @@ export class FollowupModule {
       .from('leads')
       .select('id, phone, name, city, energy_data, status, updated_at, opt_out')
       .eq('status', 'perdido')
+      .eq('company_id', ECOSUN_COMPANY_ID) // cron fora de contexto: só EcoSun (tenant = fase 2)
       .eq('opt_out', false);
     if (!lostLeads || lostLeads.length === 0) return;
 

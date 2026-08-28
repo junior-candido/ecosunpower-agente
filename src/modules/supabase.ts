@@ -808,6 +808,7 @@ export class SupabaseService {
     const { data, error } = await this.client
       .from('eva_cadence')
       .select('id, lead_id, step, scheduled_for, leads!inner(phone, name, ad_campaign_id)')
+      .eq('company_id', '00000000-0000-0000-0000-000000000001') // cron fora de contexto: só EcoSun (tenant = fase 2)
       .eq('status', 'pending')
       .lte('scheduled_for', new Date().toISOString())
       .order('scheduled_for', { ascending: true })

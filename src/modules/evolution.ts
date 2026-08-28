@@ -1,3 +1,4 @@
+import { instanciaEvolutionAtual } from './canal-contexto.js';
 import type { Config } from '../config.js';
 
 export interface IncomingMessage {
@@ -28,8 +29,6 @@ export interface IncomingMessage {
     ctwaClid?: string;
   };
 }
-
-import { instanciaEvolutionAtual } from './canal-contexto.js';
 
 export class EvolutionService {
   private baseUrl: string;
