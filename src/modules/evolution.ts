@@ -1,3 +1,4 @@
+import { instanciaEvolutionAtual } from './canal-contexto.js';
 import type { Config } from '../config.js';
 
 export interface IncomingMessage {
@@ -42,11 +43,17 @@ export class EvolutionService {
     this.webhookToken = config.webhookToken;
   }
 
+  // Instância usada AGORA: a do tenant em contexto (canal-contexto, tenant
+  // conectado por QR numa instância própria) ou a padrão do env (Eva).
+  private instanciaAtual(): string {
+    return instanciaEvolutionAtual(this.instance);
+  }
+
   async sendText(to: string, text: string, delayMs?: number): Promise<{ messageId: string }> {
     const body: Record<string, unknown> = { number: to, text };
     if (delayMs && delayMs > 0) body.delay = delayMs;
     const response = await fetch(
-      `${this.baseUrl}/message/sendText/${this.instance}`,
+      `${this.baseUrl}/message/sendText/${this.instanciaAtual()}`,
       {
         method: 'POST',
         headers: {
@@ -143,7 +150,7 @@ export class EvolutionService {
     const timer = setTimeout(() => controller.abort(), 30000);
     try {
       const res = await fetch(
-        `${this.baseUrl}/message/sendMedia/${this.instance}`,
+        `${this.baseUrl}/message/sendMedia/${this.instanciaAtual()}`,
         {
           method: 'POST',
           headers: {
@@ -177,7 +184,7 @@ export class EvolutionService {
   async getMediaBase64(messageId: string): Promise<{ base64: string; mimetype: string } | null> {
     try {
       const response = await fetch(
-        `${this.baseUrl}/chat/getBase64FromMediaMessage/${this.instance}`,
+        `${this.baseUrl}/chat/getBase64FromMediaMessage/${this.instanciaAtual()}`,
         {
           method: 'POST',
           headers: {
@@ -224,7 +231,7 @@ export class EvolutionService {
   }>> {
     try {
       const response = await fetch(
-        `${this.baseUrl}/chat/findContacts/${this.instance}`,
+        `${this.baseUrl}/chat/findContacts/${this.instanciaAtual()}`,
         {
           method: 'POST',
           headers: {

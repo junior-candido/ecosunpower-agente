@@ -68,3 +68,33 @@ MONITORAMENTO isolados. Isso corta os itens 2, 3 e 5 do MVP:
 Fatia A1: fluxo de criar operador do tenant (tela admin simples ou script
 assistido) + A2 mínimo (nome/logo no dashboard pelo company da sessão) — os
 dois juntos dão a demo "login do Sabion vê o prédio dele vazio".
+
+## Trilho B — tenant SEM Meta: instância Evolution própria por QR (migration 107, 28/08/2026)
+
+Caso: Conquista Solar ("Clara", número 77 99961-0038) conecta por QR numa instância
+própria (`conquista-solar`) na MESMA Evolution API da Eva — mesma jornada com que a
+Eva nasceu. Sem WABA/Meta na fase 1.
+
+**Como funciona**
+- `companies.evolution_instance` (107, único parcial) amarra instância → empresa.
+- `POST /webhook` lê `body.instance`: mapeada → job entra na fila com `companyId`;
+  instância da Eva (`EVOLUTION_INSTANCE`) → EcoSun como hoje; **qualquer outra
+  instância não mapeada → RETIDA** (`instancia_nao_mapeada`, falha-fechado: typo,
+  cadastro faltando, `ativo=false` ou banco fora nunca viram lead da EcoSun).
+- Consumer roda cada job em `comEmpresaDe(companyId)` (persona/marca/critério do
+  `empresa_config` do tenant) + `comCanal({companyId, evolutionInstance})`.
+- `EvolutionService` usa a instância do contexto (AsyncLocalStorage); o wrapper
+  `sendText`/`getMediaBase64`/`sendMedia` do index escolhe Evolution quando o
+  contexto tem instância própria — mesmo com WABA ligada pra EcoSun.
+- Dono do tenant digitando no próprio zap (`fromMe`): só takeover (pausa) e
+  `clara on`/`eva on` (volta). Comandos administrativos da Eva não passam.
+
+**Pré-requisitos por tenant**: empresa + admin (tela Empresas) · linha em
+`empresa_config` (nome_atendente etc.) · instância criada na Evolution com webhook
+`/webhook?token=<WEBHOOK_TOKEN>` + evento MESSAGES_UPSERT + base64 · `UPDATE
+companies SET evolution_instance='...'` (cache 5 min).
+
+**Limitações (fase 2)**: crons fora do consumer (followup, cadência, reengajamento,
+follow-up vivo, pós-instalação) ficam **restritos à EcoSun** (`company_id = EcoSun`
+nas queries) até ganharem contexto por lead · alertas de qualificação vão pro
+`engineerPhone` (EcoSun) · `takeover` é por telefone (global) · logo no bucket.
