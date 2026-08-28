@@ -283,6 +283,119 @@ export function createDashboardRouter(
     res.redirect('/dashboard/login');
   });
 
+  // ===== Definir senha: convite por e-mail + "esqueci minha senha" (migration 108) — PÚBLICO =====
+  // O token cru só existe no link do e-mail; no banco fica o sha256. Vale uma vez e expira.
+  // Rate limit por IP (memória do processo): 5 pedidos a cada 15 min. Barato e suficiente
+  // pra barrar bombardeio de e-mail; o cooldown por usuário (existeTokenRecente) protege o alvo.
+  const pedidosSenhaPorIp = new Map<string, number[]>();
+  function ipEstourou(ip: string): boolean {
+    const agora = Date.now();
+    const janela = (pedidosSenhaPorIp.get(ip) ?? []).filter((t) => agora - t < 15 * 60 * 1000);
+    janela.push(agora);
+    pedidosSenhaPorIp.set(ip, janela);
+    if (pedidosSenhaPorIp.size > 5000) pedidosSenhaPorIp.clear(); // teto de memória
+    return janela.length > 5;
+  }
+  const semCacheSemReferer = (res: Response) => {
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Cache-Control', 'no-store');
+  };
+
+  async function enviarLinkSenha(
+    alvo: { id: string; companyId: string; nome: string; email: string },
+    tipo: 'convite' | 'reset',
+  ): Promise<boolean> {
+    if (!process.env.RESEND_API_KEY) { console.warn('[senha] RESEND_API_KEY ausente — link de senha NÃO enviado'); return false; }
+    const { criarTokenSenha, existeTokenRecente, corpoEmailConvite, corpoEmailReset, VALIDADE_HORAS } = await import('./senha-tokens.js');
+    if (tipo === 'reset' && await existeTokenRecente(supabase, alvo.id, tipo)) return false; // cooldown: link recente segue válido
+    const { montarMolduraEmail } = await import('../email/email-moldura.js');
+    const { EmailSender } = await import('../email/resend-client.js');
+    const { tokenCru } = await criarTokenSenha(supabase, { companyId: alvo.companyId, userId: alvo.id, tipo });
+    // Host do DASHBOARD primeiro (é onde o cookie de sessão vale); APP_BASE_URL é da InfinitePay.
+    const base = (process.env.DASHBOARD_BASE_URL ?? options.appBaseUrl ?? 'https://dashboard.ecosunpower.eng.br').replace(/\/$/, '');
+    const url = `${base}/dashboard/definir-senha?t=${encodeURIComponent(tokenCru)}`;
+    const marca = empresaDe(alvo.companyId).nomeFantasia;
+    const html = montarMolduraEmail({
+      conteudoHtml: tipo === 'convite' ? corpoEmailConvite(alvo.nome, marca, VALIDADE_HORAS.convite) : corpoEmailReset(alvo.nome, VALIDADE_HORAS.reset),
+      titulo: tipo === 'convite' ? 'Seu acesso está pronto! 🎉' : 'Redefinir a sua senha',
+      kicker: marca,
+      ctaLabel: tipo === 'convite' ? 'Criar minha senha' : 'Criar nova senha',
+      ctaUrl: url,
+      ctaNota: `Ou copie e cole no navegador: ${url}`,
+      empresa: marca,
+      siteUrl: empresaDe(alvo.companyId).siteUrl,
+      transacional: true,
+      linkDescadastro: base,
+    });
+    const sender = new EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '');
+    await sender.enviar({ to: alvo.email, subject: tipo === 'convite' ? `Seu acesso à plataforma ${marca} — crie sua senha` : `Redefinir senha — ${marca}`, html });
+    return true;
+  }
+
+  router.get('/definir-senha', async (req: Request, res: Response) => {
+    semCacheSemReferer(res);
+    const { validarTokenSenha, renderDefinirSenhaPage, renderLinkInvalidoPage } = await import('./senha-tokens.js');
+    const t = typeof req.query.t === 'string' ? req.query.t : '';
+    const tok = await validarTokenSenha(supabase, t);
+    const { getUserById } = await import('./users-store.js');
+    // getUserById devolve null pra usuário inativo / empresa travada → link não vale.
+    const u = tok ? await getUserById(supabase, tok.userId) : null;
+    if (!tok || !u) { res.status(410).type('text/html').send(renderLinkInvalidoPage(tok ? empresaDe(tok.companyId).nomeFantasia : empresa().nomeFantasia)); return; }
+    res.type('text/html').send(renderDefinirSenhaPage({ token: t, nome: u.nome, empresa: empresaDe(tok.companyId).nomeFantasia, tipo: tok.tipo }));
+  });
+
+  router.post('/definir-senha', async (req: Request, res: Response) => {
+    semCacheSemReferer(res);
+    const { validarTokenSenha, marcarTokenUsado, renderDefinirSenhaPage, renderLinkInvalidoPage } = await import('./senha-tokens.js');
+    const t = String(req.body?.t ?? '');
+    const senha = String(req.body?.senha ?? '');
+    const senha2 = String(req.body?.senha2 ?? '');
+    const tok = await validarTokenSenha(supabase, t);
+    const { getUserById, definirSenhaUsuario } = await import('./users-store.js');
+    const u = tok ? await getUserById(supabase, tok.userId) : null;
+    if (!tok || !u) { res.status(410).type('text/html').send(renderLinkInvalidoPage(tok ? empresaDe(tok.companyId).nomeFantasia : empresa().nomeFantasia)); return; }
+    const marca = empresaDe(tok.companyId).nomeFantasia;
+    const erro = senha.length < 8 ? 'A senha precisa ter pelo menos 8 caracteres.' : senha !== senha2 ? 'As duas senhas não são iguais.' : null;
+    if (erro) { res.status(400).type('text/html').send(renderDefinirSenhaPage({ token: t, nome: u.nome, empresa: marca, tipo: tok.tipo, errorMsg: erro })); return; }
+    await definirSenhaUsuario(supabase, tok.userId, await hashSenha(senha));
+    await marcarTokenUsado(supabase, tok.id);
+    // Sessão só do navegador (sem 60 dias): quem clicou no e-mail provou posse, mas o
+    // "continuar conectado" é escolha do login normal.
+    setSessionCookie(res, tok.userId, false);
+    await touchLastLogin(supabase, tok.userId);
+    await audit(supabase, { companyId: tok.companyId, userId: tok.userId, entidade: 'sessao', acao: tok.tipo === 'convite' ? 'senha_criada_convite' : 'senha_redefinida' });
+    res.redirect('/dashboard/cockpit');
+  });
+
+  router.get('/esqueci-senha', async (_req: Request, res: Response) => {
+    semCacheSemReferer(res);
+    const { renderEsqueciSenhaPage } = await import('./senha-tokens.js');
+    res.type('text/html').send(renderEsqueciSenhaPage({ empresa: empresa().nomeFantasia }));
+  });
+
+  router.post('/esqueci-senha', async (req: Request, res: Response) => {
+    semCacheSemReferer(res);
+    const { renderEsqueciSenhaPage } = await import('./senha-tokens.js');
+    const ident = String(req.body?.identificacao ?? '').trim().toLowerCase();
+    const ip = String(req.headers['x-forwarded-for'] ?? req.ip ?? '').split(',')[0].trim() || 'sem-ip';
+    // Resposta SEMPRE igual e IMEDIATA (não revela se o login existe — nem pelo tempo).
+    res.type('text/html').send(renderEsqueciSenhaPage({ empresa: empresa().nomeFantasia, enviado: true }));
+    if (!ident || ipEstourou(ip)) { if (ident) console.warn('[senha] esqueci-senha: rate limit por IP'); return; }
+    void (async () => {
+      try {
+        const { usuariosParaReset } = await import('./users-store.js');
+        const alvos = await usuariosParaReset(supabase, ident);
+        let enviados = 0;
+        for (const a of alvos) {
+          if (await enviarLinkSenha(a, 'reset').catch((e) => { console.warn('[senha] reset por e-mail falhou:', (e as Error).message); return false; })) enviados++;
+        }
+        console.log(`[senha] esqueci-senha: ${enviados} e-mail(s) enviado(s)`); // sem login/e-mail no log
+      } catch (e) {
+        console.warn('[senha] esqueci-senha falhou:', (e as Error).message);
+      }
+    })();
+  });
+
   // ----------------------------------------------------------------------
   // Daqui pra baixo, tudo exige auth.
   // ----------------------------------------------------------------------
@@ -1087,7 +1200,7 @@ b.onclick=async function(){
     const { renderEmpresasPage } = await import('./empresas-views.js');
     const empresas = await listCompaniesComUsuarios(supabase);
     const aviso = req.query.ok
-      ? { tipo: 'ok' as const, texto: 'Empresa criada! Entregue o login/senha ao administrador do tenant.' }
+      ? { tipo: 'ok' as const, texto: req.query.ok === 'convite' ? 'Empresa criada! O administrador recebeu um e-mail para criar a própria senha (link vale 72 h).' : 'Empresa criada! Entregue o login/senha ao administrador do tenant.' }
       : req.query.erro
         ? { tipo: 'erro' as const, texto: String(req.query.erro) }
         : undefined;
@@ -1096,19 +1209,45 @@ b.onclick=async function(){
 
   router.post('/empresas/nova', async (req: AuthedRequest, res) => {
     if (!ehAdminEcosun(req.dashUser)) { res.status(403).send('Sem permissão'); return; }
-    const { nome, admin_nome, admin_login, admin_senha } = req.body ?? {};
-    if (!nome || !admin_nome || !admin_login || !admin_senha) { res.status(400).send('Campos obrigatórios'); return; }
-    if (String(admin_senha).length < 8) { res.status(400).send('Senha inicial precisa de 8+ caracteres'); return; }
+    const { nome, admin_nome, admin_login, admin_senha, admin_email } = req.body ?? {};
+    if (!nome || !admin_nome || !admin_login) { res.status(400).send('Campos obrigatórios'); return; }
+    const loginLimpo = String(admin_login).trim().toLowerCase();
+    const senhaStr = String(admin_senha ?? '');
+    // E-mail: campo próprio ou o login, quando o login já é um e-mail.
+    const emailLimpo = String(admin_email ?? '').trim().toLowerCase() || (loginLimpo.includes('@') ? loginLimpo : '');
+    if (!senhaStr && !emailLimpo) { res.redirect(`/dashboard/empresas?erro=${encodeURIComponent('Informe um e-mail (convite) ou uma senha inicial')}`); return; }
+    if (!senhaStr && !process.env.RESEND_API_KEY) { res.redirect(`/dashboard/empresas?erro=${encodeURIComponent('Envio de e-mail desligado no servidor (RESEND_API_KEY) — preencha uma senha inicial')}`); return; }
+    if (senhaStr && senhaStr.length < 8) { res.status(400).send('Senha inicial precisa de 8+ caracteres'); return; }
     const { criarEmpresaComAdmin } = await import('./empresas-store.js');
+    const { gerarTokenCru } = await import('./senha-tokens.js');
     const r = await criarEmpresaComAdmin(supabase, {
       nome: String(nome).trim(),
       adminNome: String(admin_nome).trim(),
-      adminLogin: String(admin_login).trim().toLowerCase(),
-      senhaHash: await hashSenha(String(admin_senha)),
+      adminLogin: loginLimpo,
+      adminEmail: emailLimpo || null,
+      // Sem senha inicial: hash de um segredo aleatório (inutilizável) até o convite ser aceito.
+      senhaHash: await hashSenha(senhaStr || gerarTokenCru()),
     });
     if ('error' in r) { res.redirect(`/dashboard/empresas?erro=${encodeURIComponent(r.error)}`); return; }
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'empresa', entidadeId: r.companyId, acao: 'criou' });
+    if (!senhaStr) {
+      const ok = await enviarLinkSenha({ id: r.userId, companyId: r.companyId, nome: String(admin_nome).trim(), email: emailLimpo }, 'convite')
+        .catch((e) => { console.warn('[empresas] convite por e-mail falhou:', (e as Error).message); return false; });
+      res.redirect(ok ? '/dashboard/empresas?ok=convite' : `/dashboard/empresas?erro=${encodeURIComponent('Empresa criada, mas o e-mail de convite não saiu — clique em "Reenviar convite" na lista')}`);
+      return;
+    }
     res.redirect('/dashboard/empresas?ok=1');
+  });
+
+  // Reenvia o link de criar senha pro administrador da empresa (e-mail cadastrado).
+  router.post('/empresas/:id/convite', async (req: AuthedRequest, res) => {
+    if (!ehAdminEcosun(req.dashUser)) { res.status(403).send('Sem permissão'); return; }
+    const { adminComEmailDaEmpresa } = await import('./empresas-store.js');
+    const alvo = await adminComEmailDaEmpresa(supabase, String(req.params.id));
+    if (!alvo) { res.redirect(`/dashboard/empresas?erro=${encodeURIComponent('Essa empresa não tem administrador ativo com e-mail cadastrado')}`); return; }
+    const ok = await enviarLinkSenha(alvo, 'convite').catch((e) => { console.warn('[empresas] reenvio de convite falhou:', (e as Error).message); return false; });
+    await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'empresa', entidadeId: String(req.params.id), acao: ok ? 'reenviou_convite' : 'reenvio_convite_falhou' });
+    res.redirect(ok ? '/dashboard/empresas?ok=convite' : `/dashboard/empresas?erro=${encodeURIComponent('O e-mail não saiu — confira RESEND_API_KEY/EMAIL_FROM no servidor')}`);
   });
 
   // ===== O PRÉDIO VIVO (F1 — spec 2026-07-28): multi-tenant em 3D, SÓ EcoSun =====

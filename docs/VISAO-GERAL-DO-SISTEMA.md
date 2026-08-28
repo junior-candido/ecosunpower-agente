@@ -143,3 +143,8 @@ O dashboard e a Eva leem/escrevem o MESMO banco via `SupabaseService`.
 4. Vai mexer fora da sua raia? Avise o Junior.
 
 **Na dúvida, pergunte ao Junior.** Reusar > recriar.
+
+## Acesso: convite por e-mail e "esqueci minha senha" (28/08/2026)
+`src/modules/dashboard/senha-tokens.ts` + migration 108 `dashboard_senha_tokens`. Rotas públicas
+`/dashboard/definir-senha` e `/dashboard/esqueci-senha`. Empresas → Nova sem senha = convite por
+e-mail (72 h); reset = 2 h; ninguém vê senha de ninguém. Detalhes em `docs/ecosof/07-fase2-tenant2.md`.

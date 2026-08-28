@@ -291,6 +291,32 @@ export function corpoEmailBoasVindas(nome: string, login: string, senhaInicial: 
     `<p>Qualquer dúvida, é só responder este e-mail.</p>`;
 }
 
+/** "Esqueci minha senha": usuários ATIVOS cujo login OU e-mail bate com o que
+ *  a pessoa digitou e que TÊM e-mail cadastrado (sem e-mail não há pra onde mandar).
+ *  Pode devolver mais de um (mesmo login em empresas diferentes) — cada um recebe o seu link. */
+export async function usuariosParaReset(
+  client: SupabaseClient,
+  identificacao: string,
+): Promise<Array<{ id: string; companyId: string; nome: string; email: string }>> {
+  const ident = identificacao.trim().toLowerCase().replace(/[^a-z0-9@._+\-]/g, '');
+  if (!ident) return [];
+  const { data } = await client
+    .from('dashboard_users')
+    .select('id, company_id, nome, email, ativo')
+    .eq('ativo', true)
+    .or(`login.eq.${ident},email.ilike.${ident}`); // ilike sem curinga = igualdade sem caixa
+  return ((data as Array<{ id: string; company_id: string; nome: string; email: string | null }> | null) ?? [])
+    .filter((u) => Boolean(u.email))
+    .map((u) => ({ id: u.id, companyId: u.company_id, nome: u.nome, email: String(u.email).trim().toLowerCase() }));
+}
+
+/** Grava a senha escolhida pelo próprio usuário (convite / reset). NÃO mexe em `ativo`:
+ *  usuário desativado pelo admin não se reativa sozinho pelo link. */
+export async function definirSenhaUsuario(client: SupabaseClient, id: string, senhaHash: string): Promise<void> {
+  const { error } = await client.from('dashboard_users').update({ senha_hash: senhaHash }).eq('id', id).eq('ativo', true);
+  if (error) throw new Error(`senha não gravada: ${error.message}`);
+}
+
 export async function touchLastLogin(client: SupabaseClient, id: string): Promise<void> {
   await client.from('dashboard_users').update({ last_login_at: new Date().toISOString() }).eq('id', id);
 }

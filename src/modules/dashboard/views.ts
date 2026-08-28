@@ -471,6 +471,8 @@ export function renderLoginPage(input: LoginPageInput = {}): string {
         </button>
       </form>
 
+      <p class="mt-4 text-center text-sm"><a href="/dashboard/esqueci-senha" class="text-sky-700 hover:underline">Esqueci minha senha</a></p>
+
       <div class="mt-6 pt-6 border-t border-slate-100 text-center text-xs text-slate-400">
         Em caso de dúvida, fale com o líder técnico.<br>
         EcoSunPower Energia Solar · Brasília-DF

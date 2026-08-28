@@ -98,3 +98,19 @@ companies SET evolution_instance='...'` (cache 5 min).
 follow-up vivo, pós-instalação) ficam **restritos à EcoSun** (`company_id = EcoSun`
 nas queries) até ganharem contexto por lead · alertas de qualificação vão pro
 `engineerPhone` (EcoSun) · `takeover` é por telefone (global) · logo no bucket.
+
+## Acesso do operador do tenant — convite por e-mail (migration 108, 28/08/2026)
+
+Fim da senha temporária passada no zap. Em 🏢 Empresas → Nova, o admin informa **login +
+e-mail** e deixa a senha vazia: o usuário nasce com hash aleatório (inutilizável) e recebe
+um e-mail (moldura com a marca do tenant) com link `/dashboard/definir-senha?t=<token>`
+(72 h, uso único). Ele cria a própria senha e já entra. Na tela de login há
+"Esqueci minha senha" → `/dashboard/esqueci-senha` (link de 2 h, resposta sempre neutra).
+
+Peças: `src/modules/dashboard/senha-tokens.ts` (token = 32 bytes, só sha256 no banco,
+expiração por tipo, reenvio invalida o anterior, cooldown 3 min por usuário) · tabela
+`dashboard_senha_tokens` (108, RLS padrão) · rotas públicas em `router.ts` antes do
+`criarSessionAuth` (rate limit 5/15 min por IP, `Referrer-Policy: no-referrer`).
+Usuário desativado pelo admin NÃO se reativa pelo link. Fica pra próxima fatia: botão
+"reenviar convite / redefinir por e-mail" em Configurações → Usuários e o mesmo fluxo em
+`/usuarios/novo` (hoje ainda aceita senha inicial + boas-vindas).
