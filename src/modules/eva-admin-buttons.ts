@@ -34,7 +34,7 @@ export interface AdminButtonCtx {
 
 /**
  * Envia mensagem com botoes interativos se WABA disponivel. Senao envia
- * texto puro (sem os IDs como instrucao — botao nao ajuda no Evolution).
+ * texto puro com as opcoes numeradas e o id pra responder (fallback Evolution).
  */
 export async function sendAdminWithButtons(
   ctx: AdminButtonCtx,
@@ -51,7 +51,8 @@ export async function sendAdminWithButtons(
       console.warn('[admin-buttons] WABA falhou, fallback texto:', (err as Error).message);
     }
   }
-  await ctx.sendText(to, body);
+  const opcoes = buttons.map((b, i) => `${i + 1}) ${b.title} → responda: ${b.id}`).join('\n');
+  await ctx.sendText(to, opcoes ? `${body}\n\n${opcoes}` : body);
 }
 
 const DASHBOARD_BASE = 'https://dashboard.ecosunpower.eng.br';

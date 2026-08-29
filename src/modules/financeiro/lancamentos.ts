@@ -19,7 +19,7 @@ export interface CamposLancamento {
   tipo: 'despesa' | 'entrada' | null;
   valor: number | null;
   data_evento: string | null; // YYYY-MM-DD
-  pf_pj: 'PF' | 'PJ' | null;
+  pf_pj: 'PF' | 'PJ' | 'FRONTEIRA' | null;
 }
 
 // O que falta pra esse lançamento poder ser CONFIRMADO. Eva pergunta o que
@@ -29,7 +29,7 @@ export function validarParaConfirmar(c: CamposLancamento): { ok: boolean; faltan
   if (!c.tipo) faltando.push('tipo');
   if (!(typeof c.valor === 'number' && c.valor > 0)) faltando.push('valor');
   if (!c.data_evento || !DATA_RE.test(c.data_evento)) faltando.push('data');
-  if (c.pf_pj !== 'PF' && c.pf_pj !== 'PJ') faltando.push('pf_pj');
+  if (c.pf_pj !== 'PF' && c.pf_pj !== 'PJ' && c.pf_pj !== 'FRONTEIRA') faltando.push('pf_pj');
   return { ok: faltando.length === 0, faltando };
 }
 

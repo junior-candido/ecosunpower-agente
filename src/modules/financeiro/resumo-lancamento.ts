@@ -12,7 +12,7 @@ export interface LancamentoResumo {
   data_evento: string;
   contraparte: string | null;
   categoriaNome: string | null;
-  pf_pj: 'PF' | 'PJ' | null;
+  pf_pj: 'PF' | 'PJ' | 'FRONTEIRA' | null;
   tem_nota?: boolean;
 }
 
@@ -49,6 +49,7 @@ export function montarBlocoItens(itens: ItemResumo[]): string {
   return txt;
 }
 
+// LEGADO — remover quando não houver pendente no banco.
 export function montarResumoPendente(l: LancamentoResumo, opts: { duplicado: boolean; itens?: ItemResumo[] }): MsgComBotoes {
   const aviso = opts.duplicado
     ? '\n⚠️ Parece igual a um lançamento que você já fez nesse dia.'
@@ -66,6 +67,22 @@ export function montarResumoPendente(l: LancamentoResumo, opts: { duplicado: boo
   };
 }
 
+// Fatia 1 "sem trava": o lançamento JÁ entrou confirmado — uma linha + botões só
+// pra corrigir/apagar. Confiança baixa = assumimos PJ sem dicionário nem pista → oferece PF.
+export function montarRegistrado(l: LancamentoResumo, o: { confianca: 'alta' | 'media' | 'baixa'; obraNome: string | null }): MsgComBotoes {
+  const emoji = l.tipo === 'entrada' ? '💰' : '💸';
+  const partes = [`${emoji} ${brl(l.valor)}`, l.contraparte, l.categoriaNome, l.pf_pj, o.obraNome, dataBR(l.data_evento)].filter(Boolean);
+  let body = `✅ Registrei: ${partes.join(' · ')}`;
+  const buttons: BotaoZap[] = [];
+  if (o.confianca === 'baixa') {
+    body += '\n(assumi PJ — se for seu, toca em PF)';
+    buttons.push({ id: `finlan:pf:${l.id}`, title: 'É PF' });
+  }
+  buttons.push({ id: `finlan:corr:${l.id}`, title: 'Corrigir' }, { id: `finlan:apg:${l.id}`, title: 'Apagar' });
+  return { body, buttons };
+}
+
+// LEGADO — remover quando não houver pendente no banco.
 export function montarPedidoPfPj(lancamentoId: string): MsgComBotoes {
   return {
     body: 'Esse é da empresa ou pessoal?',
@@ -93,6 +110,19 @@ export function montarOfertaVinculoConta(lancamentoId: string, contaId: string, 
       { id: `finlan:vinc:${lancamentoId}:${contaId}`, title: 'É dessa venda' },
       { id: `finlan:avul:${lancamentoId}`, title: 'Entrada avulsa' },
       { id: `finlan:desc:${lancamentoId}`, title: 'Descartar' },
+    ],
+  };
+}
+
+// Fatia 1: a entrada JÁ está no caixa — a oferta de vínculo é extra opcional
+// (sem "Descartar": ignorar o convite não muda nada).
+export function montarOfertaVinculoRegistrado(lancamentoId: string, contaId: string, clienteNome: string, saldo: number): MsgComBotoes {
+  return {
+    body: `Encontrei venda em aberto de *${clienteNome}* (falta ${brl(saldo)}). Essa entrada é dela?`,
+    buttons: [
+      { id: `finlan:vinc:${lancamentoId}:${contaId}`, title: 'É dessa venda' },
+      { id: `finlan:avul:${lancamentoId}`, title: 'Entrada avulsa' },
+      { id: 'finlan:noop:0', title: 'Não é' },
     ],
   };
 }

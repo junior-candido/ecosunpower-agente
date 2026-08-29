@@ -20,6 +20,9 @@ describe('financeiro/lancamentos: categorias', () => {
 
 describe('financeiro/lancamentos: validação pra confirmar', () => {
   const ok = { tipo: 'despesa' as const, valor: 380, data_evento: '2026-06-11', pf_pj: 'PJ' as const };
+  it('FRONTEIRA (empresa pagou coisa PF ou vice-versa) conta como preenchido', () => {
+    expect(validarParaConfirmar({ ...ok, pf_pj: 'FRONTEIRA' })).toEqual({ ok: true, faltando: [] });
+  });
   it('lançamento completo passa', () => {
     expect(validarParaConfirmar(ok)).toEqual({ ok: true, faltando: [] });
   });

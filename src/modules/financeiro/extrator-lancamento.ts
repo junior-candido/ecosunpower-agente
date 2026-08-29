@@ -15,7 +15,7 @@ export interface ExtracaoLancamento {
   data: string | null;            // YYYY-MM-DD
   contraparte: string | null;
   categoria_slug: string | null;
-  pf_pj: 'PF' | 'PJ' | null;
+  pf_pj: 'PF' | 'PJ' | 'FRONTEIRA' | null;
   obra_ref: string | null;        // nome do cliente/obra citado, se houver
   descricao: string | null;
   material: string | null;        // nome do material comprado (DPS, cabo 6mm) — só compra de material

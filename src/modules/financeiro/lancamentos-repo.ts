@@ -1,7 +1,9 @@
 // src/modules/financeiro/lancamentos-repo.ts
 // I/O fino da Caixa de Entrada. Regras puras ficam em lancamentos.ts.
+import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { competenciaDe, TTL_PENDENTE_MS, type ChaveDuplicado } from './lancamentos.js';
+import { normalizarTexto } from './favorecidos.js';
 
 export interface LancamentoRow {
   id: string;
@@ -13,21 +15,34 @@ export interface LancamentoRow {
   contraparte: string | null;
   descricao: string | null;
   categoria_id: string | null;
-  pf_pj: 'PF' | 'PJ' | null;
+  pf_pj: 'PF' | 'PJ' | 'FRONTEIRA' | null;
   lead_id: string | null;
   conta_id: string | null;
   tem_nota: boolean;
   storage_path: string | null;
   extracao: Record<string, unknown> | null;
   created_at: string;
+  banco_conta: string;
+  favorecido_id: string | null;
+  confianca: 'alta' | 'media' | 'baixa' | 'pendente';
+  arquivo_id: string | null;
 }
 
-const COLS = 'id, tipo, status, valor, data_evento, competencia, contraparte, descricao, categoria_id, pf_pj, lead_id, conta_id, tem_nota, storage_path, extracao, created_at';
+const COLS = 'id, tipo, status, valor, data_evento, competencia, contraparte, descricao, categoria_id, pf_pj, lead_id, conta_id, tem_nota, storage_path, extracao, created_at, banco_conta, favorecido_id, confianca, arquivo_id';
 
+export type BancoConta = 'sicoob_cc'|'sicoob_cartao'|'itau_pj'|'itau_pf'|'visa_emp'|'latam'|'santander_pj'|'mercado_pago'|'dinheiro'|'desconhecido';
+
+// Chave de duplicidade: mesmo banco + dia + valor + descrição normalizada (extrato importado 2× não entra 2×).
+export function hashDedupe(k: { bancoConta: BancoConta; dataEvento: string; valor: number; descricao: string | null }): string {
+  const base = `${k.bancoConta}|${k.dataEvento}|${Math.round(k.valor * 100)}|${normalizarTexto(k.descricao)}`;
+  return createHash('sha1').update(base).digest('hex');
+}
+
+// LEGADO — remover quando não houver pendente no banco (Fatia 1 registra direto confirmado).
 export async function criarPendente(client: SupabaseClient, l: {
   tipo: 'despesa' | 'entrada'; valor: number; dataEvento: string;
   contraparte: string | null; descricao: string | null; categoriaId: string | null;
-  pfPj: 'PF' | 'PJ' | null; leadId: string | null; storagePath: string | null;
+  pfPj: 'PF' | 'PJ' | 'FRONTEIRA' | null; leadId: string | null; storagePath: string | null;
   mimeType: string | null; origem: 'zap_midia' | 'zap_texto'; messageId: string | null;
   extracao: Record<string, unknown>; createdBy: string; temNota: boolean;
 }): Promise<string> {
@@ -43,6 +58,54 @@ export async function criarPendente(client: SupabaseClient, l: {
   return (data as { id: string }).id;
 }
 
+// Fatia 1 "registra sem travar": entra JÁ confirmado, com banco/favorecido/confiança.
+// Duplicado (índice único em hash_dedupe) vira Error('DUPLICADO') pro chamador tratar.
+export async function criarConfirmado(client: SupabaseClient, l: {
+  tipo: 'despesa' | 'entrada'; valor: number; dataEvento: string;
+  contraparte: string | null; descricao: string | null; categoriaId: string | null;
+  pfPj: 'PF' | 'PJ' | 'FRONTEIRA'; leadId: string | null; storagePath: string | null;
+  mimeType: string | null; origem: 'zap_midia' | 'zap_texto' | 'extrato' | 'tela' | 'conta'; messageId: string | null;
+  extracao: Record<string, unknown>; createdBy: string; temNota: boolean;
+  bancoConta: BancoConta; favorecidoId: string | null; confianca: 'alta' | 'media' | 'baixa' | 'pendente'; arquivoId: string | null;
+}): Promise<string> {
+  const descDedupe = (l.descricao ?? l.contraparte ?? '').trim() || null;
+  const { data, error } = await client.from('financeiro_lancamentos').insert({
+    tipo: l.tipo, status: 'confirmado', valor: l.valor, data_evento: l.dataEvento,
+    competencia: competenciaDe(l.dataEvento), contraparte: l.contraparte,
+    descricao: l.descricao, categoria_id: l.categoriaId, pf_pj: l.pfPj,
+    lead_id: l.leadId, storage_path: l.storagePath, mime_type: l.mimeType,
+    origem: l.origem, message_id: l.messageId, extracao: l.extracao, created_by: l.createdBy,
+    tem_nota: l.temNota, banco_conta: l.bancoConta, favorecido_id: l.favorecidoId,
+    confianca: l.confianca, arquivo_id: l.arquivoId,
+    // Sem descrição nem contraparte não dá pra afirmar que é o mesmo → sem hash (nunca dedupa).
+    hash_dedupe: descDedupe
+      ? hashDedupe({ bancoConta: l.bancoConta, dataEvento: l.dataEvento, valor: l.valor, descricao: descDedupe })
+      : null,
+  }).select('id').single();
+  if (error) {
+    if ((error as { code?: string }).code === '23505') throw new Error('DUPLICADO');
+    throw new Error(`criarConfirmado: ${error.message}`);
+  }
+  return (data as { id: string }).id;
+}
+
+// Confirmados sem favorecido e com confiança baixa/pendente num período — pro resumo semanal.
+export async function getSemDono(client: SupabaseClient, deIso: string, ateIso: string): Promise<LancamentoRow[]> {
+  const { data, error } = await client.from('financeiro_lancamentos').select(COLS)
+    .eq('status', 'confirmado').is('favorecido_id', null).in('confianca', ['baixa', 'pendente'])
+    .gte('data_evento', deIso).lte('data_evento', ateIso).order('valor', { ascending: false }).limit(100);
+  if (error) throw new Error(`getSemDono: ${error.message}`);
+  return (data ?? []) as LancamentoRow[];
+}
+
+// Admin apontou o dono: grava favorecido/mundo/categoria e sobe a confiança pra alta.
+export async function definirFavorecido(client: SupabaseClient, lancamentoId: string, favorecidoId: string, pfPj: 'PF'|'PJ'|'FRONTEIRA', categoriaId: string | null): Promise<void> {
+  const { error } = await client.from('financeiro_lancamentos')
+    .update({ favorecido_id: favorecidoId, pf_pj: pfPj, categoria_id: categoriaId, confianca: 'alta', updated_at: new Date().toISOString() })
+    .eq('id', lancamentoId);
+  if (error) throw new Error(`definirFavorecido: ${error.message}`);
+}
+
 export async function getLancamento(client: SupabaseClient, id: string): Promise<LancamentoRow | null> {
   const { data, error } = await client.from('financeiro_lancamentos').select(COLS).eq('id', id).maybeSingle();
   if (error) throw new Error(`getLancamento: ${error.message}`);
@@ -52,7 +115,7 @@ export async function getLancamento(client: SupabaseClient, id: string): Promise
 // Transição de status com CAS no status atual (clique duplo: só o 1º casa).
 export async function mudarStatus(
   client: SupabaseClient, id: string,
-  de: 'pendente' | 'confirmado', para: 'confirmado' | 'apagado',
+  de: 'pendente' | 'confirmado', para: 'pendente' | 'confirmado' | 'apagado',
   patch: Record<string, unknown> = {},
 ): Promise<boolean> {
   const { data, error } = await client.from('financeiro_lancamentos')
@@ -71,6 +134,34 @@ export async function gravarContaNoLancamento(client: SupabaseClient, id: string
   if (error) console.warn('[caixa-entrada] gravarContaNoLancamento falhou:', error.message);
 }
 
+// Vincula conta a um lançamento CONFIRMADO ainda sem conta — CAS porteiro do vinc/atv
+// na Fatia 1 (clique duplo: só o 1º casa). true = vinculou.
+export async function vincularContaSeLivre(client: SupabaseClient, id: string, contaId: string): Promise<boolean> {
+  const { data, error } = await client.from('financeiro_lancamentos')
+    .update({ conta_id: contaId, updated_at: new Date().toISOString() })
+    .eq('id', id).eq('status', 'confirmado').is('conta_id', null).select('id');
+  if (error) throw new Error(`vincularContaSeLivre: ${error.message}`);
+  return Boolean(data && data.length > 0);
+}
+
+// Compensação do vincularContaSeLivre quando o passo de dinheiro falha (lançamento fica no caixa, sem conta).
+// Só desfaz o PRÓPRIO vínculo (filtro por conta_id): o clique B nunca apaga o vínculo do clique A.
+export async function desvincularConta(client: SupabaseClient, id: string, contaId: string): Promise<void> {
+  const { error } = await client.from('financeiro_lancamentos')
+    .update({ conta_id: null, updated_at: new Date().toISOString() })
+    .eq('id', id).eq('status', 'confirmado').eq('conta_id', contaId);
+  if (error) console.warn('[caixa-entrada] desvincularConta falhou:', error.message);
+}
+
+// Botão "É PF"/"PJ" num lançamento já registrado: troca o mundo e sobe a confiança
+// pra alta (o dono disse — mesmo peso do definirFavorecido).
+export async function definirPfPj(client: SupabaseClient, id: string, pfPj: 'PF' | 'PJ' | 'FRONTEIRA'): Promise<void> {
+  const { error } = await client.from('financeiro_lancamentos')
+    .update({ pf_pj: pfPj, confianca: 'alta', updated_at: new Date().toISOString() })
+    .eq('id', id).neq('status', 'apagado');
+  if (error) throw new Error(`definirPfPj: ${error.message}`);
+}
+
 // Reverte um lançamento confirmado de volta pra pendente (compensação quando
 // o passo de dinheiro falha DEPOIS do CAS porteiro — vinc/atv).
 export async function reverterParaPendente(client: SupabaseClient, id: string): Promise<void> {
@@ -78,6 +169,15 @@ export async function reverterParaPendente(client: SupabaseClient, id: string): 
     .update({ status: 'pendente', conta_id: null, updated_at: new Date().toISOString() })
     .eq('id', id).eq('status', 'confirmado');
   if (error) console.warn('[caixa-entrada] reverterParaPendente falhou:', error.message);
+}
+
+// Compensação da correção: o corrigido não entrou → o original (soft-apagado) volta pro
+// caixa com a descrição original (sem o sufixo "[substituído por correção]").
+export async function restaurarApagado(client: SupabaseClient, id: string, para: 'confirmado' | 'pendente', descricaoOriginal: string | null): Promise<void> {
+  const { error } = await client.from('financeiro_lancamentos')
+    .update({ status: para, descricao: descricaoOriginal, updated_at: new Date().toISOString() })
+    .eq('id', id).eq('status', 'apagado');
+  if (error) throw new Error(`restaurarApagado: ${error.message}`);
 }
 
 // Saldo em aberto de uma conta a receber (null = conta inexistente ou já fechada).
@@ -97,18 +197,30 @@ export async function atualizarPendente(client: SupabaseClient, id: string, patc
   if (error) throw new Error(`atualizarPendente: ${error.message}`);
 }
 
-// Pendente mais recente "esperando" resposta do admin (campo faltando/correção).
-// Janela 1h = só pra ENGOLIR resposta de texto; o GC de 24h (expirarPendentesAntigos)
-// é outra coisa — pendente velho ainda confirma por clique explícito.
+// Pendente mais recente "esperando" resposta do admin (só existe quando a Eva
+// PERGUNTOU algo: Corrigir / valor faltando). Janela de 10 min a partir do
+// PEDIDO (extracao.aguardando_desde; fallback created_at) = só pra ENGOLIR a
+// resposta de texto — passou disso, texto novo é lançamento novo (nunca trava).
+// O GC de 24h (expirarPendentesAntigos) é outra coisa.
+export const JANELA_AGUARDANDO_MS = 10 * 60 * 1000;
+
+// PURO: o pedido da Eva ainda está dentro da janela?
+export function dentroDaJanela(extracao: Record<string, unknown> | null, createdAt: string, agora: Date = new Date()): boolean {
+  const desde = typeof extracao?.aguardando_desde === 'string' ? extracao.aguardando_desde : createdAt;
+  const t = Date.parse(desde);
+  if (Number.isNaN(t)) return false;
+  return agora.getTime() - t <= JANELA_AGUARDANDO_MS;
+}
+
 export async function getPendenteAguardando(client: SupabaseClient, createdBy: string): Promise<LancamentoRow | null> {
-  const desde = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const { data, error } = await client.from('financeiro_lancamentos').select(COLS)
-    .eq('status', 'pendente').gte('created_at', desde)
+    .eq('status', 'pendente')
     .eq('created_by', createdBy)
     .contains('extracao', { aguardando: true })
-    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    .order('updated_at', { ascending: false }).limit(3);
   if (error) throw new Error(`getPendenteAguardando: ${error.message}`);
-  return (data as LancamentoRow) ?? null;
+  const rows = (data ?? []) as LancamentoRow[];
+  return rows.find((r) => dentroDaJanela(r.extracao, r.created_at)) ?? null;
 }
 
 export async function getConfirmadosDoDia(client: SupabaseClient, dataEvento: string): Promise<ChaveDuplicado[]> {
@@ -151,12 +263,25 @@ export async function buscarConfirmadoPorContraparte(client: SupabaseClient, ter
   return (data as LancamentoRow) ?? null;
 }
 
-// Varredura preguiçosa: roda ao criar pendente novo (sem cron). >24h expira.
+// Varredura preguiçosa: roda a cada registro (sem cron). Pendente parado >24h
+// (updated_at — o Corrigir mexe em lançamento antigo) expira. Quem ERA confirmado
+// (botão Corrigir sem resposta) volta pro caixa em vez de sumir — nunca some.
 export async function expirarPendentesAntigos(client: SupabaseClient): Promise<void> {
   const limite = new Date(Date.now() - TTL_PENDENTE_MS).toISOString();
+  const { data, error: errSel } = await client.from('financeiro_lancamentos')
+    .select('id, extracao')
+    .eq('status', 'pendente').lt('updated_at', limite)
+    .contains('extracao', { era_confirmado: true });
+  if (errSel) { console.warn('[caixa-entrada] expirarPendentes (busca) falhou:', errSel.message); return; }
+  for (const r of (data ?? []) as Array<{ id: string; extracao: Record<string, unknown> | null }>) {
+    const { error } = await client.from('financeiro_lancamentos')
+      .update({ status: 'confirmado', extracao: { ...r.extracao, aguardando: false }, updated_at: new Date().toISOString() })
+      .eq('id', r.id).eq('status', 'pendente');
+    if (error) { console.warn('[caixa-entrada] restaurar confirmado falhou:', error.message); return; }
+  }
   const { error } = await client.from('financeiro_lancamentos')
     .update({ status: 'apagado', updated_at: new Date().toISOString() })
-    .eq('status', 'pendente').lt('created_at', limite);
+    .eq('status', 'pendente').lt('updated_at', limite);
   if (error) console.warn('[caixa-entrada] expirarPendentes falhou:', error.message);
 }
 

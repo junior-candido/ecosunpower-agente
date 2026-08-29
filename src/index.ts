@@ -119,6 +119,12 @@ import { sendAdminWithButtons } from './modules/eva-admin-buttons.js';
 import { makeImpostoHandler, montarRespostaImposto, parseValorReais } from './modules/financeiro/comando-imposto.js';
 import { makeRelatorioHandler } from './modules/financeiro/comando-relatorio.js';
 import { makeMaterialQueryHandler } from './modules/financeiro/materiais.js';
+import { makeCaixaHandler } from './modules/financeiro/comando-caixa.js';
+import { marcarPaga } from './modules/financeiro/contas-pagar.js';
+import { tickArquivos } from './modules/financeiro/arquivos-fila.js';
+import { registrarEFalar } from './modules/financeiro/caixa-entrada.js';
+import { tickVencimentos } from './modules/financeiro/tick-vencimentos.js';
+import { tickResumoSemanal, responderFavorecido } from './modules/financeiro/resumo-semanal.js';
 import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/cron.js';
 import { tickEnvioAutoPasta, criarEnvioAutoDb, proximoLembrete9h } from './modules/relatorios/pasta/envio-auto.js';
 import { tickDetectarMedidor, criarDetectarMedidorDb, textoAvisoMedidor } from './modules/monitoring/detectar-medidor.js';
@@ -974,6 +980,12 @@ async function main() {
   const tryHandleRelatorioCommand = makeRelatorioHandler(supabase.getClient(), isAdminPhone, sendText);
   const tryHandleConsultaMaterial = makeMaterialQueryHandler(supabase.getClient(), isAdminPhone, sendText);
 
+  // Data de hoje (AAAA-MM-DD) em Brasília — usada pelo financeiro (/caixa, ticks, botão Paguei).
+  const hojeBRT = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+
+  // /caixa ou /contas — a pagar 7 dias, a receber, hoje, sem dono (Fatia 1)
+  const tryHandleCaixaCommand = makeCaixaHandler({ client: supabase.getClient(), isAdminPhone, sendText, hoje: hojeBRT });
+
   // Correção tardia de preço de material ("a curva da Itaiaia era 8") — antes do gate da Caixa.
   const tryHandleCorrecaoPreco = async (from: string, text: string): Promise<boolean> => {
     if (!isAdminPhone(from) || !metaWaba) return false;
@@ -1062,8 +1074,10 @@ async function main() {
   const getCaixaDeps = () => ({
     supabase: supabase.getClient(),
     anthropic: new Anthropic({ apiKey: config.anthropicApiKey }),
-    waba: metaWaba!,
     sendText: async (to: string, t: string) => { await sendText(to, t); },
+    // Botões via WABA quando houver; senão texto puro (Caixa não depende de WABA).
+    sendWithButtons: (to: string, body: string, buttons: Array<{ id: string; title: string }>, footer?: string) =>
+      sendAdminWithButtons({ metaWaba, sendText: async (t: string, x: string) => { await sendText(t, x); } }, to, body, buttons, footer),
   });
 
   // Eva Monitoramento Evolutivo (Task 8): janela 24h CONSERVADORA.
@@ -4029,20 +4043,49 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     }
 
     // finlan:<acao>:<id>[:<extra>] — botões da Caixa de Entrada (Fatia 3).
+    // Sem WABA os botões viram texto (sendWithButtons faz o fallback) — a Caixa não exige WABA.
     if (isAdminPhone(from) && text.trim().startsWith('finlan:')) {
-      if (!metaWaba) {
-        console.warn('[caixa-entrada] WABA indisponível');
-        await sendText(from, '❌ WABA indisponível pros botões do financeiro');
-        return;
-      }
-      const { handleFinlanButton } = await import('./modules/financeiro/caixa-entrada.js');
+      const { handleFinlanButton } = await import('./modules/financeiro/botoes-caixa.js');
       await handleFinlanButton(getCaixaDeps(), from, text.trim());
+      return;
+    }
+
+    // finpg:<paguei|ver|noop>:<contaId> — botões do tick de vencimentos (contas a pagar).
+    if (isAdminPhone(from) && text.trim().startsWith('finpg:')) {
+      const [, acao, id] = text.trim().split(':');
+      try {
+        if (acao === 'paguei' && id) {
+          const ok = await marcarPaga(supabase.getClient(), id, hojeBRT(), null);
+          await sendText(from, ok ? '✅ Marcado como pago.' : 'Essa conta já não estava aberta.');
+        } else if (acao === 'ver') {
+          await sendText(from, '👍 Te lembro de novo no próximo aviso.');
+        }
+      } catch (err) {
+        console.error('[financeiro] finpg falhou:', (err as Error).message);
+        await sendText(from, `❌ Não consegui marcar: ${(err as Error).message}`);
+      }
+      return;
+    }
+
+    // finfav:<mo|mat|pf>:<lancamentoId> — botões do resumo semanal: aprende o favorecido
+    // e aplica a todos os lançamentos sem dono com a mesma contraparte.
+    if (isAdminPhone(from) && text.trim().startsWith('finfav:')) {
+      const [, acao, id] = text.trim().split(':');
+      try {
+        if ((acao === 'mo' || acao === 'mat' || acao === 'pf') && id) {
+          const n = await responderFavorecido(supabase.getClient(), acao, id);
+          await sendText(from, `👍 Aprendi. Apliquei em ${n} lançamento(s); não pergunto mais.`);
+        }
+      } catch (err) {
+        console.error('[financeiro] finfav falhou:', (err as Error).message);
+        await sendText(from, `❌ Não consegui aprender: ${(err as Error).message}`);
+      }
       return;
     }
 
     // mab:<acao>:<id|tipo> — botões do Monitoramento Evolutivo (aprovar/ajustar/
     // descartar abordagem, feedback 👍/👎, autonomia, pós-sem-resposta).
-    // ORDEM DOS BLOCOS ADMIN (decisão Task 8): finrec → finrcv → finlan → mab →
+    // ORDEM DOS BLOCOS ADMIN (decisão Task 8): finrec → finrcv → finlan → finpg → finfav → mab →
     // ...comandos/modos... → pré-checagem de ajuste do monitoramento (ANTES do
     // gate financeiro, pra "tira o emoji" não pagar Haiku à toa) → gate
     // financeiro → takeover. Gateado em isAdminPhone — cliente nem entra.
@@ -4403,6 +4446,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // Correção tardia de preço de material (precisa vir antes do gate do caixa).
     if (await tryHandleCorrecaoPreco(from, text)) return;
 
+    // "/caixa" ou "/contas" — a pagar 7 dias, a receber, hoje, sem dono (Fatia 1)
+    if (await tryHandleCaixaCommand(from, text)) return;
+
     // "relatório [mês]" — resumo financeiro do mês (Peça 3); antes do gate da Caixa de Entrada
     if (await tryHandleRelatorioCommand(from, text)) return;
 
@@ -4635,7 +4681,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // Caixa de Entrada (Fatia 3): texto do Junior fora de modo pode ser gasto/
     // entrada ("gastei 380 no posto"). Gate Haiku barato decide; se não for
     // financeiro, segue o fluxo normal da Eva. Inclui transcrições de áudio.
-    if (isAdminPhone(from) && metaWaba) {
+    if (isAdminPhone(from)) {
       const { tryHandleFinanceiroTexto } = await import('./modules/financeiro/caixa-entrada.js');
       if (await tryHandleFinanceiroTexto(getCaixaDeps(), from, text)) return;
     }
@@ -6000,7 +6046,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
     // Caixa de Entrada (Fatia 3): foto de comprovante do Junior vira lançamento.
     // Baixa a mídia aqui só pro admin; pro cliente nada muda.
-    if (isAdminPhone(from) && metaWaba) {
+    if (isAdminPhone(from)) {
       const media = await messagingDaMensagem().getMediaBase64(messageId);
       if (media) {
         // Fatia 2 — print da loja com legenda "tabela" vira itens de preço (antes do financeiro).
@@ -6213,7 +6259,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     if (await tryHandleProposalMedia(from, messageId, 'document')) return;
 
     // Caixa de Entrada (Fatia 3): PDF de comprovante/nota do Junior.
-    if (isAdminPhone(from) && metaWaba && mimetype.includes('pdf')) {
+    if (isAdminPhone(from) && mimetype.includes('pdf')) {
       const media = await messagingDaMensagem().getMediaBase64(messageId);
       if (media) {
         const { tryHandleFinanceiroMedia } = await import('./modules/financeiro/caixa-entrada.js');
@@ -10308,6 +10354,74 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setInterval(runFinanceiroAlertas, 6 * 60 * 60 * 1000); // 4x/dia
     setTimeout(runFinanceiroAlertas, 9 * 60 * 1000); // primeira rodada 9min após boot
     console.log('[financeiro-alertas] cron started (4x/dia, dedupe diário por tipo)');
+
+    // ============================================
+    // Financeiro Fatia 1 — fila de arquivos (1 arquivo/min) e vencimentos (8h BRT)
+    // ============================================
+    // Fila: lê o próximo arquivo pesado (PDF multi-página / imagem grande) fora do webhook.
+    const tickFinArquivos = async () => {
+      try {
+        await tickArquivos({
+          client: supabase.getClient(),
+          anthropic: new Anthropic({ apiKey: config.anthropicApiKey }),
+          hoje: hojeBRT,
+          registrar: (from, e, arquivoId) =>
+            registrarEFalar(getCaixaDeps(), from, e, null, undefined, arquivoId).then(() => undefined),
+          avisar: async (to, t) => { await sendText(to, t); },
+        });
+      } catch (err) {
+        console.error('[fin-arquivos] tick falhou:', (err as Error).message);
+      }
+    };
+    setTimeout(() => { void tickFinArquivos(); }, 2 * 60 * 1000);
+    setInterval(() => { void tickFinArquivos(); }, 60 * 1000);
+    console.log('[fin-arquivos] cron started (1 arquivo/min)');
+
+    // Vencimentos: roda de hora em hora, só age às 8h BRT (dedupe por lembrete na conta).
+    const tickFinVenc = async () => {
+      try {
+        const dryRun = process.env.PROACTIVE_ALERTS_DRY_RUN === '1';
+        await tickVencimentos({
+          client: supabase.getClient(),
+          adminPhone: config.engineerPhone,
+          hoje: hojeBRT,
+          enviarComBotoes: async (to, body, buttons, footer) => {
+            if (dryRun) { console.log(`[fin-vencimentos] DRY_RUN — ${body.slice(0, 80)}`); return; }
+            await sendAdminWithButtons({ metaWaba, sendText }, to, body, buttons, footer);
+          },
+        });
+      } catch (err) {
+        console.error('[fin-vencimentos] tick falhou:', (err as Error).message);
+      }
+    };
+    setTimeout(() => { void tickFinVenc(); }, 3 * 60 * 1000);
+    setInterval(() => { void tickFinVenc(); }, 60 * 60 * 1000);
+    console.log('[fin-vencimentos] cron started (1x/hora, age às 8h BRT)');
+
+    // Resumo semanal: roda de hora em hora, só age segunda às 8h BRT (dedupe em memória, 1×/dia).
+    const tickFinSemanal = async () => {
+      try {
+        const dryRun = process.env.PROACTIVE_ALERTS_DRY_RUN === '1';
+        await tickResumoSemanal({
+          client: supabase.getClient(),
+          adminPhone: config.engineerPhone,
+          hoje: hojeBRT,
+          sendText: async (to, t) => {
+            if (dryRun) { console.log(`[fin-semanal] DRY_RUN — ${t.slice(0, 80)}`); return; }
+            await sendText(to, t);
+          },
+          enviarComBotoes: async (to, body, buttons, footer) => {
+            if (dryRun) { console.log(`[fin-semanal] DRY_RUN — ${body.slice(0, 80)}`); return; }
+            await sendAdminWithButtons({ metaWaba, sendText }, to, body, buttons, footer);
+          },
+        });
+      } catch (err) {
+        console.error('[fin-semanal] tick falhou:', (err as Error).message);
+      }
+    };
+    setTimeout(() => { void tickFinSemanal(); }, 4 * 60 * 1000);
+    setInterval(() => { void tickFinSemanal(); }, 60 * 60 * 1000);
+    console.log('[fin-semanal] cron started (1x/hora, age segunda 8h BRT)');
   }
 
   // Canal Solar ingestion (every 3 days)
