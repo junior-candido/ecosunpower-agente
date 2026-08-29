@@ -92,7 +92,7 @@ Todas com `company_id` (multi-tenant já existe). Categorias = as do manual §38
 5. **Fatia 5 — Open Finance (opcional)** como fonte automática de `fin_lancamentos` (origem extrato).
 
 ## 10. Decisões já tomadas
-- Pró-labore fixo (valor e dia a definir pelo Junior antes de 01/09) é a única regra "dura": o sistema espera esse lançamento todo mês e alerta se não houver.
+- Pró-labore fixo do Junior: **R$ 7.000 bruto, todo dia 5, a partir de 05/09/2026** (INSS 11 % + IRRF na fonte; líquido ≈ 5.675). Edilene (sócia) não recebe pró-labore — tem empresa própria; só distribuição de lucro/aportes. É a única regra "dura": o sistema espera esse lançamento PJ→PF todo dia 5 e alerta se não houver; qualquer outra saída PJ→PF vira "Fronteira" a classificar.
 - Kit vai direto pro distribuidor: só o serviço é receita (exceção registrada quando passar pela conta).
 - Permuta registra as duas pontas (receita e custo).
 - Aporte de sócio (Edilene) e devolução do Jonnata (Honda) não são receita.
