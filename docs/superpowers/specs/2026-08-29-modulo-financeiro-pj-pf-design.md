@@ -85,7 +85,7 @@ Todas com `company_id` (multi-tenant já existe). Categorias = as do manual §38
 
 ## 9. Fatias de entrega (ordem)
 
-1. **Fatia 1 — "Registra sem travar" (pronta seg 01/09):** tabelas · Eva grava diário (texto/áudio/foto) com botões · contas a pagar/receber de setembro carregadas (as do plano de 29/08) · alertas de vencimento e DAS · resumo semanal no zap.
+1. **Fatia 1 — "Registra sem travar" — ✅ IMPLEMENTADA 29/08 (branch `feat/financeiro-sem-trava`, migrations 109+110):** favorecidos + classificador · Eva registra na hora (sem pendente/botão obrigatório, sem WABA obrigatório, janela de correção 10 min, número solto completa) · fila de arquivos página a página (pdf-lib) · contas a pagar + dívidas (parcelas do mês) · alertas 3d/hoje/atraso + DAS escalonado com botão Paguei · `/caixa` · resumo semanal com perguntas agrupadas e botão que aprende · seed set/26. Guia: `Documents\EcoSunPower\Financeiro\COMO-USAR-EVA-FINANCEIRO.md`. Ficou pra Fatia 2/3: importadores de extrato, tela, conciliação, DAS real×estimado.
 2. **Fatia 2 — Tela Financeiro (≈ 10 dias):** 4 cards + abas PJ/PF/Fronteira/A classificar · upload de extrato · importadores Sicoob, Itaú PJ/PF, Santander, LATAM, Visa CSV, Mercado Pago (fila página a página).
 3. **Fatia 3 — Conciliação e fechamento (até 05/10, fecha setembro):** pareamento extrato×diário×contas · perguntas agrupadas · relatório do mês + PDF contador · DAS real × estimado.
 4. **Fatia 4 — Propostas ligadas ao financeiro (o "nada solto")** — pedido do Junior 29/08 ("todas que envio proposta, ligado diretamente ao financeiro"):
