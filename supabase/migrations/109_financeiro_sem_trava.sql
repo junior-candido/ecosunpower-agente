@@ -101,14 +101,52 @@ ALTER TABLE financeiro_lancamentos
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_lanc_hash
   ON financeiro_lancamentos(hash_dedupe) WHERE hash_dedupe IS NOT NULL AND status <> 'apagado';
 
--- 6) RLS (template da casa, 108_dashboard_senha_tokens.sql)
-DO $$ DECLARE t text; BEGIN
-  FOREACH t IN ARRAY ARRAY['financeiro_favorecidos','financeiro_contas_a_pagar','financeiro_dividas','financeiro_arquivos'] LOOP
-    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
-    EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', t);
-    EXECUTE format('DROP POLICY IF EXISTS company_isolation ON public.%I', t);
-    EXECUTE format($p$CREATE POLICY company_isolation ON public.%I AS PERMISSIVE FOR ALL
-      USING (company_id = (SELECT coalesce(nullif(current_setting('app.company_id', true), '')::uuid, (auth.jwt() ->> 'company_id')::uuid)))
-      WITH CHECK (company_id = (SELECT coalesce(nullif(current_setting('app.company_id', true), '')::uuid, (auth.jwt() ->> 'company_id')::uuid)))$p$, t);
-  END LOOP;
-END $$;
+-- 6) RLS (template da casa, 108_dashboard_senha_tokens.sql) — explícito por tabela (guard tests/migrations-tenant-guard.test.ts)
+ALTER TABLE public.financeiro_favorecidos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.financeiro_favorecidos FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS company_isolation ON public.financeiro_favorecidos;
+CREATE POLICY company_isolation ON public.financeiro_favorecidos
+  AS PERMISSIVE FOR ALL
+  USING (company_id = (SELECT coalesce(
+      nullif(current_setting('app.company_id', true), '')::uuid,
+      (auth.jwt() ->> 'company_id')::uuid)))
+  WITH CHECK (company_id = (SELECT coalesce(
+      nullif(current_setting('app.company_id', true), '')::uuid,
+      (auth.jwt() ->> 'company_id')::uuid)));
+
+ALTER TABLE public.financeiro_contas_a_pagar ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.financeiro_contas_a_pagar FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS company_isolation ON public.financeiro_contas_a_pagar;
+CREATE POLICY company_isolation ON public.financeiro_contas_a_pagar
+  AS PERMISSIVE FOR ALL
+  USING (company_id = (SELECT coalesce(
+      nullif(current_setting('app.company_id', true), '')::uuid,
+      (auth.jwt() ->> 'company_id')::uuid)))
+  WITH CHECK (company_id = (SELECT coalesce(
+      nullif(current_setting('app.company_id', true), '')::uuid,
+      (auth.jwt() ->> 'company_id')::uuid)));
+
+ALTER TABLE public.financeiro_dividas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.financeiro_dividas FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS company_isolation ON public.financeiro_dividas;
+CREATE POLICY company_isolation ON public.financeiro_dividas
+  AS PERMISSIVE FOR ALL
+  USING (company_id = (SELECT coalesce(
+      nullif(current_setting('app.company_id', true), '')::uuid,
+      (auth.jwt() ->> 'company_id')::uuid)))
+  WITH CHECK (company_id = (SELECT coalesce(
+      nullif(current_setting('app.company_id', true), '')::uuid,
+      (auth.jwt() ->> 'company_id')::uuid)));
+
+ALTER TABLE public.financeiro_arquivos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.financeiro_arquivos FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS company_isolation ON public.financeiro_arquivos;
+CREATE POLICY company_isolation ON public.financeiro_arquivos
+  AS PERMISSIVE FOR ALL
+  USING (company_id = (SELECT coalesce(
+      nullif(current_setting('app.company_id', true), '')::uuid,
+      (auth.jwt() ->> 'company_id')::uuid)))
+  WITH CHECK (company_id = (SELECT coalesce(
+      nullif(current_setting('app.company_id', true), '')::uuid,
+      (auth.jwt() ->> 'company_id')::uuid)));
+
