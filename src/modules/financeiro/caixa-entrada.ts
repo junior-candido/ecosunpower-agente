@@ -15,7 +15,7 @@ import {
   getPendenteAguardando, getConfirmadosDoDia, getUltimoConfirmado,
   buscarConfirmadoPorContraparte, expirarPendentesAntigos, getCategorias,
   buscarContaAbertaPorNome, gravarContaNoLancamento, reverterParaPendente,
-  vincularContaSeLivre, desvincularConta, getSaldoConta, type LancamentoRow,
+  vincularContaSeLivre, desvincularConta, getSaldoConta, JANELA_AGUARDANDO_MS, type LancamentoRow,
 } from './lancamentos-repo.js';
 import { uploadComprovante } from './comprovantes.js';
 import { classificar } from './classificar.js';
@@ -78,6 +78,20 @@ export interface CaixaDeps {
 }
 
 type Herdado = { storagePath: string | null; mimeType?: string | null; leadId: string | null; categoriaId: string | null };
+type Midia = { base64: string; mimeType: string; messageId: string };
+
+// "Não peguei o valor" → o admin responde só "380". Guarda a extração em memória (por
+// admin, best-effort, processo único) e o número solto dentro da janela completa o registro.
+export interface EsperandoValor { extracao: ExtracaoLancamento; midia: Midia | null; herdado?: Herdado; desde: number }
+const esperandoValor = new Map<string, EsperandoValor>();
+
+// PURO: número solto dentro da janela → extração completa; senão null (expirou ou não é valor).
+export function combinarValorSolto(guardado: EsperandoValor, texto: string, agora: number = Date.now()): ExtracaoLancamento | null {
+  if (agora - guardado.desde > JANELA_AGUARDANDO_MS) return null;
+  const valor = parseValorReais(texto);
+  if (valor === null || valor <= 0) return null;
+  return { ...guardado.extracao, valor, campos_faltando: guardado.extracao.campos_faltando.filter((c) => c !== 'valor') };
+}
 
 async function nomeCategoria(deps: CaixaDeps, categoriaId: string | null): Promise<string | null> {
   if (!categoriaId) return null;
@@ -105,16 +119,18 @@ async function nomeLead(deps: CaixaDeps, leadId: string | null): Promise<string 
 // Devolve o id criado (null se não registrou: sem valor ou duplicado).
 export async function registrarEFalar(
   deps: CaixaDeps, from: string, e: ExtracaoLancamento,
-  midia: { base64: string; mimeType: string; messageId: string } | null,
+  midia: Midia | null,
   herdado?: Herdado, arquivoId: string | null = null,
 ): Promise<string | null> {
   await expirarPendentesAntigos(deps.supabase); // varredura preguiçosa (sem cron)
 
   // Sem valor não tem registro — pergunta UMA vez; a resposta entra como mensagem nova.
   if (decidirRegistro(e).acao === 'perguntar_valor') {
+    esperandoValor.set(from, { extracao: e, midia, herdado, desde: Date.now() });
     await deps.sendText(from, 'Não peguei o valor 🤔 Me fala o valor e o que foi (ex: "380 gasolina no Shell").');
     return null;
   }
+  esperandoValor.delete(from); // chegou lançamento novo: a pergunta antiga não vale mais
   const valor = e.valor as number;
   const tipo = e.tipo ?? 'despesa';
   const dataEvento = e.data ?? hojeBRT();
@@ -306,6 +322,18 @@ export async function tryHandleFinanceiroMedia(
 // Texto de admin (inclui transcrição de áudio/vídeo). Retorna true se tratou.
 export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, texto: string): Promise<boolean> {
   try {
+    // 0) Eva perguntou o valor há menos de 10 min e veio só o número → completa o registro.
+    const guardado = esperandoValor.get(from);
+    if (guardado) {
+      const completo = combinarValorSolto(guardado, texto);
+      if (completo) {
+        esperandoValor.delete(from);
+        await registrarEFalar(deps, from, completo, guardado.midia, guardado.herdado);
+        return true;
+      }
+      if (Date.now() - guardado.desde > JANELA_AGUARDANDO_MS) esperandoValor.delete(from);
+    }
+
     // 1) Eva PERGUNTOU algo há menos de 10 min (botão Corrigir)? Só aí o texto é resposta.
     const aguardando = await getPendenteAguardando(deps.supabase, from);
     if (aguardando) {

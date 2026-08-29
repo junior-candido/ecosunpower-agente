@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { decidirRegistro, mesclarCorrecao, registrarEFalar } from '../src/modules/financeiro/caixa-entrada.js';
+import { decidirRegistro, mesclarCorrecao, registrarEFalar, combinarValorSolto } from '../src/modules/financeiro/caixa-entrada.js';
 import { dentroDaJanela } from '../src/modules/financeiro/lancamentos-repo.js';
 
 describe('decidirRegistro (puro): nunca trava', () => {
@@ -76,5 +76,22 @@ describe('dentroDaJanela (puro): janela conta a partir do PEDIDO da Eva', () => 
   it('sem aguardando_desde → cai no created_at', () => {
     expect(dentroDaJanela({ aguardando: true }, min(3), agora)).toBe(true);
     expect(dentroDaJanela(null, min(30), agora)).toBe(false);
+  });
+});
+
+describe('combinarValorSolto (puro): número solto completa o registro sem valor', () => {
+  const extracao = { financeiro: true, intencao: 'lancar', tipo: 'despesa', valor: null, data: null, contraparte: 'Shell', categoria_slug: 'combustivel', pf_pj: null, obra_ref: null, descricao: 'gasolina', material: null, quantidade: null, unidade: null, itens: [], campos_faltando: ['valor'], relacionado: null, tem_nota: true } as const;
+  const agora = 1_000_000_000;
+  const guardado = { extracao: extracao as never, midia: null, desde: agora - 2 * 60_000 };
+  it('"380" → mescla valor 380 e some "valor" de campos_faltando', () => {
+    const r = combinarValorSolto(guardado, '380', agora);
+    expect(r).toMatchObject({ valor: 380, contraparte: 'Shell', descricao: 'gasolina', campos_faltando: [] });
+  });
+  it('"R$ 1.234,56" → 1234.56', () => {
+    expect(combinarValorSolto(guardado, 'R$ 1.234,56', agora)?.valor).toBe(1234.56);
+  });
+  it('expirado (11 min) → null; texto que não é valor → null', () => {
+    expect(combinarValorSolto({ ...guardado, desde: agora - 11 * 60_000 }, '380', agora)).toBeNull();
+    expect(combinarValorSolto(guardado, 'gasolina no shell', agora)).toBeNull();
   });
 });
