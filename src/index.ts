@@ -1062,8 +1062,10 @@ async function main() {
   const getCaixaDeps = () => ({
     supabase: supabase.getClient(),
     anthropic: new Anthropic({ apiKey: config.anthropicApiKey }),
-    waba: metaWaba!,
     sendText: async (to: string, t: string) => { await sendText(to, t); },
+    // Botões via WABA quando houver; senão texto puro (Caixa não depende de WABA).
+    sendWithButtons: (to: string, body: string, buttons: Array<{ id: string; title: string }>, footer?: string) =>
+      sendAdminWithButtons({ metaWaba, sendText: async (t: string, x: string) => { await sendText(t, x); } }, to, body, buttons, footer),
   });
 
   // Eva Monitoramento Evolutivo (Task 8): janela 24h CONSERVADORA.

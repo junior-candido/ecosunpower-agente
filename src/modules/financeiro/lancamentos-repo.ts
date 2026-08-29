@@ -133,6 +133,33 @@ export async function gravarContaNoLancamento(client: SupabaseClient, id: string
   if (error) console.warn('[caixa-entrada] gravarContaNoLancamento falhou:', error.message);
 }
 
+// Vincula conta a um lançamento CONFIRMADO ainda sem conta — CAS porteiro do vinc/atv
+// na Fatia 1 (clique duplo: só o 1º casa). true = vinculou.
+export async function vincularContaSeLivre(client: SupabaseClient, id: string, contaId: string): Promise<boolean> {
+  const { data, error } = await client.from('financeiro_lancamentos')
+    .update({ conta_id: contaId, updated_at: new Date().toISOString() })
+    .eq('id', id).eq('status', 'confirmado').is('conta_id', null).select('id');
+  if (error) throw new Error(`vincularContaSeLivre: ${error.message}`);
+  return Boolean(data && data.length > 0);
+}
+
+// Compensação do vincularContaSeLivre quando o passo de dinheiro falha (lançamento fica no caixa, sem conta).
+export async function desvincularConta(client: SupabaseClient, id: string): Promise<void> {
+  const { error } = await client.from('financeiro_lancamentos')
+    .update({ conta_id: null, updated_at: new Date().toISOString() })
+    .eq('id', id).eq('status', 'confirmado');
+  if (error) console.warn('[caixa-entrada] desvincularConta falhou:', error.message);
+}
+
+// Botão "É PF"/"PJ" num lançamento já registrado: troca o mundo e sobe a confiança
+// (o dono disse — não é mais "assumi PJ").
+export async function definirPfPj(client: SupabaseClient, id: string, pfPj: 'PF' | 'PJ' | 'FRONTEIRA'): Promise<void> {
+  const { error } = await client.from('financeiro_lancamentos')
+    .update({ pf_pj: pfPj, confianca: 'media', updated_at: new Date().toISOString() })
+    .eq('id', id).neq('status', 'apagado');
+  if (error) throw new Error(`definirPfPj: ${error.message}`);
+}
+
 // Reverte um lançamento confirmado de volta pra pendente (compensação quando
 // o passo de dinheiro falha DEPOIS do CAS porteiro — vinc/atv).
 export async function reverterParaPendente(client: SupabaseClient, id: string): Promise<void> {
@@ -159,11 +186,13 @@ export async function atualizarPendente(client: SupabaseClient, id: string, patc
   if (error) throw new Error(`atualizarPendente: ${error.message}`);
 }
 
-// Pendente mais recente "esperando" resposta do admin (campo faltando/correção).
-// Janela 1h = só pra ENGOLIR resposta de texto; o GC de 24h (expirarPendentesAntigos)
-// é outra coisa — pendente velho ainda confirma por clique explícito.
+// Pendente mais recente "esperando" resposta do admin (só existe quando a Eva
+// PERGUNTOU algo: Corrigir / valor faltando). Janela de 10 min = só pra ENGOLIR a
+// resposta de texto — passou disso, texto novo é lançamento novo (nunca trava).
+// O GC de 24h (expirarPendentesAntigos) é outra coisa.
+export const JANELA_AGUARDANDO_MS = 10 * 60 * 1000;
 export async function getPendenteAguardando(client: SupabaseClient, createdBy: string): Promise<LancamentoRow | null> {
-  const desde = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const desde = new Date(Date.now() - JANELA_AGUARDANDO_MS).toISOString();
   const { data, error } = await client.from('financeiro_lancamentos').select(COLS)
     .eq('status', 'pendente').gte('created_at', desde)
     .eq('created_by', createdBy)
