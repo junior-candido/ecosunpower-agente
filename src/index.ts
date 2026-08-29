@@ -3816,6 +3816,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       caseCreator: tryHandleCaseCreatorCommand,
       testimonialAdmin: tryHandleTestimonialAdminCommand,
       relatorio: tryHandleRelatorioCommand,
+      caixa: tryHandleCaixaCommand,
       resgatarForms: tryHandleResgatarFormsCommand,
       googleAds: tryHandleGoogleAdsCommand,
       campanha: tryHandleCampanhaCommand,
