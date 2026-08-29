@@ -37,7 +37,7 @@ describe('contas-pagar: getContasAbertas', () => {
       error: null,
     });
     const r = await getContasAbertas(client);
-    expect(r).toEqual([{ id: 'x', descricao: 'Y', valor: 123.45, vencimento: '2026-09-10', mundo: 'PJ', lembretes: [] }]);
+    expect(r).toEqual([{ id: 'x', descricao: 'Y', valor: 123.45, vencimento: '2026-09-10', mundo: 'PJ', lembretes: [], categoria_slug: null }]);
   });
 });
 

@@ -6,7 +6,7 @@ import type { ContaAberta } from './alertas-vencimento.js';
 // Contas em aberto, ordenadas por vencimento; `ateIso` filtra até uma data (ex.: fila de alertas do dia).
 export async function getContasAbertas(client: SupabaseClient, ateIso?: string): Promise<ContaAberta[]> {
   let q = client.from('financeiro_contas_a_pagar')
-    .select('id, descricao, valor, vencimento, mundo, lembretes')
+    .select('id, descricao, valor, vencimento, mundo, lembretes, categoria_slug')
     .eq('status', 'aberta')
     .order('vencimento');
   if (ateIso) q = q.lte('vencimento', ateIso);
@@ -16,6 +16,7 @@ export async function getContasAbertas(client: SupabaseClient, ateIso?: string):
     id: r.id as string, descricao: r.descricao as string, valor: Number(r.valor),
     vencimento: r.vencimento as string, mundo: r.mundo as 'PJ' | 'PF',
     lembretes: (r.lembretes as Array<{ tipo: string; em: string }>) ?? [],
+    categoria_slug: (r.categoria_slug as string | null) ?? null,
   }));
 }
 

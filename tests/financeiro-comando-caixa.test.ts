@@ -24,4 +24,10 @@ describe('montarCaixa', () => {
     const t = montarCaixa({ hojeIso: '2026-09-01', aPagar7d: [], aReceber: [], hoje: { entradas: 0, saidas: 0, n: 0 }, semDono: 0 });
     expect(t).not.toContain('sem dono');
   });
+
+  it('conta vencida (antes de hoje) ganha ⚠️', () => {
+    const t = montarCaixa({ hojeIso: '2026-09-05', aPagar7d: [{ descricao: 'LATAM', valor: 10, vencimento: '2026-09-01', mundo: 'PF' }, { descricao: 'Sicoob', valor: 10, vencimento: '2026-09-07', mundo: 'PJ' }], aReceber: [], hoje: { entradas: 0, saidas: 0, n: 0 }, semDono: 0 });
+    expect(t).toContain('• ⚠️ LATAM');
+    expect(t).toContain('• Sicoob');
+  });
 });

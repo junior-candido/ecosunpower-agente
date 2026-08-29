@@ -21,7 +21,7 @@ export function montarCaixa(d: {
   const linhas = [
     `💼 *Caixa — ${dBR(d.hojeIso)}*`,
     `\n📤 A PAGAR até ${dBR(ate)}: ${brl(totPagar)}`,
-    ...d.aPagar7d.map((c) => `• ${c.descricao} — ${brl(c.valor)} (${c.mundo}) ${dBR(c.vencimento)}`),
+    ...d.aPagar7d.map((c) => `• ${c.vencimento < d.hojeIso ? '⚠️ ' : ''}${c.descricao} — ${brl(c.valor)} (${c.mundo}) ${dBR(c.vencimento)}`),
     `\n📥 A RECEBER: ${brl(totReceber)}`,
     ...d.aReceber.slice(0, 8).map((c) => `• ${c.descricao} — ${brl(c.valor)}`),
     `\n📆 Hoje: ${d.hoje.n} lançamento(s) · entrou ${brl(d.hoje.entradas)} · saiu ${brl(d.hoje.saidas)}`,
@@ -41,32 +41,46 @@ export function makeCaixaHandler(deps: CaixaHandlerDeps) {
   return async function tryHandleCaixaCommand(from: string, text: string): Promise<boolean> {
     if (!deps.isAdminPhone(from)) return false;
     if (!/^\/?(caixa|contas)\s*$/i.test(text.trim())) return false;
-    const hojeIso = deps.hoje();
-    const aPagar7d = await getContasAbertas(deps.client, maisDias(hojeIso, 7));
+    try {
+      await deps.sendText(from, await montarCaixaDoBanco(deps.client, deps.hoje()));
+    } catch (err) {
+      console.error('[financeiro] /caixa falhou:', (err as Error).message);
+      await deps.sendText(from, `❌ Não consegui montar o caixa agora: ${(err as Error).message}`);
+    }
+    return true;
+  };
+}
 
-    const { data: rec } = await deps.client.from('financeiro_contas_a_receber')
+// I/O: lê o banco e monta o texto. Erro de banco vira Error('caixa: …') — o handler avisa o admin.
+async function montarCaixaDoBanco(client: SupabaseClient, hojeIso: string): Promise<string> {
+  {
+    const aPagar7d = await getContasAbertas(client, maisDias(hojeIso, 7));
+
+    const { data: rec, error: errRec } = await client.from('financeiro_contas_a_receber')
       .select('descricao, valor, valor_recebido')
       .in('status', ['pendente', 'recebido_parcial']).order('created_at');
+    if (errRec) throw new Error(`caixa: ${errRec.message}`);
     const aReceber = ((rec ?? []) as Array<{ descricao: string | null; valor: number; valor_recebido: number | null }>)
       .map((r) => ({ descricao: r.descricao ?? 'sem descrição', valor: Number(r.valor) - Number(r.valor_recebido ?? 0) }));
 
-    const { data: hj } = await deps.client.from('financeiro_lancamentos')
+    const { data: hj, error: errHj } = await client.from('financeiro_lancamentos')
       .select('tipo, valor').eq('status', 'confirmado').eq('data_evento', hojeIso);
+    if (errHj) throw new Error(`caixa: ${errHj.message}`);
     const hoje = { n: (hj ?? []).length, entradas: 0, saidas: 0 };
     for (const l of (hj ?? []) as Array<{ tipo: string; valor: number }>) {
       if (l.tipo === 'entrada') hoje.entradas += Number(l.valor); else hoje.saidas += Number(l.valor);
     }
 
-    const { count } = await deps.client.from('financeiro_lancamentos')
+    const { count, error: errSd } = await client.from('financeiro_lancamentos')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'confirmado').is('favorecido_id', null)
       .in('confianca', ['baixa', 'pendente']).gte('data_evento', hojeIso.slice(0, 8) + '01');
+    if (errSd) throw new Error(`caixa: ${errSd.message}`);
 
-    await deps.sendText(from, montarCaixa({
+    return montarCaixa({
       hojeIso,
       aPagar7d: aPagar7d.map((c) => ({ descricao: c.descricao, valor: c.valor, vencimento: c.vencimento, mundo: c.mundo })),
       aReceber, hoje, semDono: count ?? 0,
-    }));
-    return true;
-  };
+    });
+  }
 }

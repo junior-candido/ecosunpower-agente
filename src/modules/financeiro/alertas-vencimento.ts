@@ -1,6 +1,11 @@
 // src/modules/financeiro/alertas-vencimento.ts
 // PURO: regras de alerta de contas a pagar (3 dias antes / no dia / atrasada todo dia) e escalada do DAS.
-export interface ContaAberta { id: string; descricao: string; valor: number; vencimento: string; mundo: 'PJ' | 'PF'; lembretes: Array<{ tipo: string; em: string }> }
+export interface ContaAberta { id: string; descricao: string; valor: number; vencimento: string; mundo: 'PJ' | 'PF'; lembretes: Array<{ tipo: string; em: string }>; categoria_slug?: string | null }
+// DAS é decidido pela categoria; sem categoria, cai no nome (palavra inteira, maiúscula — "das salas" não conta).
+export function ehDas(c: { descricao: string; categoria_slug?: string | null }): boolean {
+  if (c.categoria_slug != null) return c.categoria_slug === 'imposto_das';
+  return /\bDAS\b/.test(c.descricao);
+}
 export interface AlertaVenc { contaId: string; tipo: '3d' | 'hoje' | 'atraso'; dias: number; texto: string }
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const dBR = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;

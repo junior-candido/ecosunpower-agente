@@ -4058,7 +4058,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           const ok = await marcarPaga(supabase.getClient(), id, hojeBRT(), null);
           await sendText(from, ok ? '✅ Marcado como pago.' : 'Essa conta já não estava aberta.');
         } else if (acao === 'ver') {
-          await sendText(from, '👍 Te lembro amanhã.');
+          await sendText(from, '👍 Te lembro de novo no próximo aviso.');
         }
       } catch (err) {
         console.error('[financeiro] finpg falhou:', (err as Error).message);
