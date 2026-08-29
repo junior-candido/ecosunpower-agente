@@ -67,6 +67,7 @@ export async function criarConfirmado(client: SupabaseClient, l: {
   extracao: Record<string, unknown>; createdBy: string; temNota: boolean;
   bancoConta: BancoConta; favorecidoId: string | null; confianca: 'alta' | 'media' | 'baixa' | 'pendente'; arquivoId: string | null;
 }): Promise<string> {
+  const descDedupe = (l.descricao ?? l.contraparte ?? '').trim() || null;
   const { data, error } = await client.from('financeiro_lancamentos').insert({
     tipo: l.tipo, status: 'confirmado', valor: l.valor, data_evento: l.dataEvento,
     competencia: competenciaDe(l.dataEvento), contraparte: l.contraparte,
@@ -75,7 +76,10 @@ export async function criarConfirmado(client: SupabaseClient, l: {
     origem: l.origem, message_id: l.messageId, extracao: l.extracao, created_by: l.createdBy,
     tem_nota: l.temNota, banco_conta: l.bancoConta, favorecido_id: l.favorecidoId,
     confianca: l.confianca, arquivo_id: l.arquivoId,
-    hash_dedupe: hashDedupe({ bancoConta: l.bancoConta, dataEvento: l.dataEvento, valor: l.valor, descricao: l.descricao ?? l.contraparte }),
+    // Sem descrição nem contraparte não dá pra afirmar que é o mesmo → sem hash (nunca dedupa).
+    hash_dedupe: descDedupe
+      ? hashDedupe({ bancoConta: l.bancoConta, dataEvento: l.dataEvento, valor: l.valor, descricao: descDedupe })
+      : null,
   }).select('id').single();
   if (error) {
     if ((error as { code?: string }).code === '23505') throw new Error('DUPLICADO');

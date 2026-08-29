@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { criarConfirmado, hashDedupe } from '../src/modules/financeiro/lancamentos-repo.js';
+import { criarConfirmado, hashDedupe, getSemDono, definirFavorecido } from '../src/modules/financeiro/lancamentos-repo.js';
 
 function sbMock(retorno: unknown) {
   const single = vi.fn().mockResolvedValue({ data: retorno, error: null });
@@ -42,5 +42,51 @@ describe('lancamentos-repo: criarConfirmado', () => {
       tipo: 'despesa', valor: 1, dataEvento: '2026-08-28', contraparte: null, descricao: null, categoriaId: null, pfPj: 'PJ', leadId: null, storagePath: null, mimeType: null,
       origem: 'zap_texto', messageId: null, extracao: {}, createdBy: 'x', temNota: false, bancoConta: 'desconhecido', favorecidoId: null, confianca: 'baixa', arquivoId: null,
     })).rejects.toThrow('DUPLICADO');
+  });
+});
+
+describe('lancamentos-repo: criarConfirmado sem contraparte', () => {
+  it('sem descrição nem contraparte → hash_dedupe null (não dá pra afirmar duplicado)', async () => {
+    const { client, insert } = sbMock({ id: 'L2' });
+    await criarConfirmado(client, {
+      tipo: 'despesa', valor: 50, dataEvento: '2026-08-28', contraparte: null, descricao: null, categoriaId: null, pfPj: 'PJ', leadId: null, storagePath: null, mimeType: null,
+      origem: 'zap_texto', messageId: null, extracao: {}, createdBy: 'x', temNota: false, bancoConta: 'desconhecido', favorecidoId: null, confianca: 'baixa', arquivoId: null,
+    });
+    const row = insert.mock.calls[0][0] as Record<string, unknown>;
+    expect(row.hash_dedupe).toBeNull();
+  });
+});
+
+// Mock encadeável: todo método devolve o próprio objeto; o await final resolve {data:[], error:null}.
+function chainMock() {
+  const calls: Record<string, unknown[][]> = {};
+  const chain: Record<string, unknown> = {};
+  for (const m of ['select', 'update', 'eq', 'is', 'in', 'gte', 'lte', 'order', 'limit']) {
+    chain[m] = vi.fn((...a: unknown[]) => { (calls[m] ??= []).push(a); return chain; });
+  }
+  chain.then = (res: (v: unknown) => void) => res({ data: [], error: null });
+  const from = vi.fn(() => chain);
+  return { client: { from } as never, from, calls };
+}
+
+describe('lancamentos-repo: getSemDono', () => {
+  it('filtra confirmado, sem favorecido, confiança baixa/pendente', async () => {
+    const { client, from, calls } = chainMock();
+    const r = await getSemDono(client, '2026-08-01', '2026-08-07');
+    expect(r).toEqual([]);
+    expect(from).toHaveBeenCalledWith('financeiro_lancamentos');
+    expect(calls.eq).toContainEqual(['status', 'confirmado']);
+    expect(calls.is).toContainEqual(['favorecido_id', null]);
+    expect(calls.in).toContainEqual(['confianca', ['baixa', 'pendente']]);
+  });
+});
+
+describe('lancamentos-repo: definirFavorecido', () => {
+  it('grava favorecido, mundo, categoria e sobe confiança pra alta', async () => {
+    const { client, calls } = chainMock();
+    await definirFavorecido(client, 'L1', 'fav-1', 'PF', 'cat-1');
+    const payload = calls.update[0][0] as Record<string, unknown>;
+    expect(payload).toMatchObject({ favorecido_id: 'fav-1', pf_pj: 'PF', categoria_id: 'cat-1', confianca: 'alta' });
+    expect(calls.eq).toContainEqual(['id', 'L1']);
   });
 });
