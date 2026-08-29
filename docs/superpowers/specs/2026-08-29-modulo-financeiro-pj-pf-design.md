@@ -88,7 +88,12 @@ Todas com `company_id` (multi-tenant já existe). Categorias = as do manual §38
 1. **Fatia 1 — "Registra sem travar" (pronta seg 01/09):** tabelas · Eva grava diário (texto/áudio/foto) com botões · contas a pagar/receber de setembro carregadas (as do plano de 29/08) · alertas de vencimento e DAS · resumo semanal no zap.
 2. **Fatia 2 — Tela Financeiro (≈ 10 dias):** 4 cards + abas PJ/PF/Fronteira/A classificar · upload de extrato · importadores Sicoob, Itaú PJ/PF, Santander, LATAM, Visa CSV, Mercado Pago (fila página a página).
 3. **Fatia 3 — Conciliação e fechamento (até 05/10, fecha setembro):** pareamento extrato×diário×contas · perguntas agrupadas · relatório do mês + PDF contador · DAS real × estimado.
-4. **Fatia 4 — `/fechar` cria a receber + margem por obra automática** (liga vendas ↔ financeiro).
+4. **Fatia 4 — Propostas ligadas ao financeiro (o "nada solto")** — pedido do Junior 29/08 ("todas que envio proposta, ligado diretamente ao financeiro"):
+   - Toda proposta enviada vira item vivo com estágio: `enviada` → `em_fechamento` (contrato gerado) → `fechada` (contrato ASSINADO) → conta a receber com vencimento previsto = data do fechamento + 75 dias (ciclo solar ≈ 90 d) → `recebida`. Saídas: `deu_ruim` (motivo obrigatório, Eva aprende) ou `esfriou` (sem resposta N dias → nutrição).
+   - **Venda só conta no Fechou! com contrato assinado**; antes é "em fechamento" (caso Joel 08/2026).
+   - Painel PJ: **Receita prevista 90 d** = Σ serviço da proposta × peso do estágio (enviada 20 % · em fechamento 60 % · assinada 100 %) + custo por obra fechada (Meta ÷ obras).
+   - Pendências (resposta do Claude e resumo semanal da Eva): "proposta X, Y dias sem resposta" com botões seguir / deu ruim / esfriou; "deu ruim" remove e registra motivo.
+   - Margem por obra automática (receita serviço − MO − material − TRT vinculados ao lead).
 5. **Fatia 5 — Open Finance (opcional)** como fonte automática de `fin_lancamentos` (origem extrato).
 
 ## 10. Decisões já tomadas
