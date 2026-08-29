@@ -42,7 +42,7 @@ export interface Pergunta { body: string; buttons: Array<{ id: string; title: st
 // PURO: uma pergunta por grupo, no máximo 5 (os maiores).
 export function montarPerguntas(grupos: Grupo[]): Pergunta[] {
   return grupos.slice(0, 5).map((g) => ({
-    body: `❓ *${g.contraparte}*: ${g.n} pagamento(s), total ${brl(g.total)}. Isso é:`,
+    body: `❓ *${g.contraparte.replace(/\*/g, '')}*: ${g.n} pagamento(s), total ${brl(g.total)}. Isso é:`,
     buttons: [
       { id: `finfav:mo:${g.exemploId}`, title: 'Mão de obra' },
       { id: `finfav:mat:${g.exemploId}`, title: 'Material' },
@@ -79,7 +79,7 @@ export async function tickResumoSemanal(d: ResumoSemanalDeps, agora = new Date()
   if (jaEnviou(hoje)) return;
   marcar(hoje);
 
-  const de = new Date(Date.parse(hoje) - 7 * 86_400_000).toISOString().slice(0, 10);
+  const de = new Date(Date.parse(hoje) - 6 * 86_400_000).toISOString().slice(0, 10); // 7 dias incluindo hoje
   const rows = await getSemDono(d.client, de, hoje);
   if (rows.length === 0) return;
   const grupos = agruparSemDono(rows);
@@ -92,8 +92,10 @@ export async function tickResumoSemanal(d: ResumoSemanalDeps, agora = new Date()
 }
 
 // Botão finfav:<mo|mat|pf>:<lancamentoId> → aprende o favorecido pela contraparte do
-// lançamento e aplica a TODOS os lançamentos sem dono com a mesma contraparte.
-// Devolve quantos foram atualizados.
+// lançamento e aplica a TODOS os lançamentos com a mesma contraparte (sem dono ou já
+// desse favorecido). IDEMPOTENTE: favorecidos tem UNIQUE (company_id, nome) — segundo
+// toque (ou troca de "Mão de obra" pra "Material") atualiza o existente em vez de inserir.
+// Devolve quantos lançamentos foram atualizados.
 export async function responderFavorecido(client: SupabaseClient, acao: 'mo' | 'mat' | 'pf', lancamentoId: string): Promise<number> {
   const { data: l, error } = await client.from('financeiro_lancamentos').select('contraparte').eq('id', lancamentoId).maybeSingle();
   if (error) throw new Error(`responderFavorecido: ${error.message}`);
@@ -104,12 +106,25 @@ export async function responderFavorecido(client: SupabaseClient, acao: 'mo' | '
   const mundo: 'PF' | 'PJ' = acao === 'pf' ? 'PF' : 'PJ';
   const cats = await getCategorias(client);
   const catId = cats.find((c) => c.slug === slug)?.id ?? null;
-  const favId = await aprenderFavorecido(client, {
-    nome: contraparte, padroes: [contraparte], categoria_slug: slug, mundo_padrao: mundo, tipo_padrao: 'despesa',
-  });
 
+  const { data: existente, error: e1 } = await client.from('financeiro_favorecidos').select('id')
+    .eq('nome', contraparte).maybeSingle();
+  if (e1) throw new Error(`responderFavorecido: ${e1.message}`);
+  let favId: string;
+  if (existente) {
+    favId = (existente as { id: string }).id;
+    const { error: e3 } = await client.from('financeiro_favorecidos')
+      .update({ categoria_slug: slug, mundo_padrao: mundo }).eq('id', favId);
+    if (e3) throw new Error(`responderFavorecido: ${e3.message}`);
+  } else {
+    favId = await aprenderFavorecido(client, {
+      nome: contraparte, padroes: [contraparte], categoria_slug: slug, mundo_padrao: mundo, tipo_padrao: 'despesa',
+    });
+  }
+
+  const t = contraparte.replace(/[%_]/g, '\\$&'); // escapa curinga do ilike
   const { data: iguais, error: e2 } = await client.from('financeiro_lancamentos').select('id')
-    .is('favorecido_id', null).ilike('contraparte', contraparte);
+    .or(`favorecido_id.is.null,favorecido_id.eq.${favId}`).neq('status', 'apagado').ilike('contraparte', t);
   if (e2) throw new Error(`responderFavorecido: ${e2.message}`);
   const lista = (iguais ?? []) as Array<{ id: string }>;
   for (const r of lista) await definirFavorecido(client, r.id, favId, mundo, catId);

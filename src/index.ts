@@ -4085,7 +4085,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // mab:<acao>:<id|tipo> — botões do Monitoramento Evolutivo (aprovar/ajustar/
     // descartar abordagem, feedback 👍/👎, autonomia, pós-sem-resposta).
-    // ORDEM DOS BLOCOS ADMIN (decisão Task 8): finrec → finrcv → finlan → mab →
+    // ORDEM DOS BLOCOS ADMIN (decisão Task 8): finrec → finrcv → finlan → finpg → finfav → mab →
     // ...comandos/modos... → pré-checagem de ajuste do monitoramento (ANTES do
     // gate financeiro, pra "tira o emoji" não pagar Haiku à toa) → gate
     // financeiro → takeover. Gateado em isAdminPhone — cliente nem entra.
