@@ -27,6 +27,8 @@ import {
 } from './resumo-lancamento.js';
 import { parseValorReais } from './comando-imposto.js';
 import { gravarComprasDaNota } from './materiais.js';
+import { tamanhoBase64Bytes } from '../pdf-guard.js';
+import { precisaFila, contarPaginas, enfileirar } from './arquivos-fila.js';
 
 export const FOOTER = 'Caixa de Entrada · Financeiro';
 export const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -326,12 +328,30 @@ function contador(deps: CaixaDeps, from: string) {
   return { reg, corrigir, falhou };
 }
 
-// Mídia de admin (imagem/pdf). Retorna true se tratou (era financeiro).
+// Guarda a mídia na fila (Storage + linha 'fila'); o tick lê em segundo plano.
+async function enfileirarMidia(deps: CaixaDeps, from: string, midia: Midia, bytes: number, paginas: number): Promise<string> {
+  return enfileirar(deps.supabase, {
+    base64: midia.base64, mimeType: midia.mimeType, bytes, paginas, origem: 'zap',
+    enviadoPor: from, messageId: midia.messageId, competencia: hojeBRT().slice(0, 7),
+  });
+}
+
+// Mídia de admin (imagem/pdf). Retorna true se tratou (era financeiro ou foi pra fila).
+// Regra: nada pesado é lido dentro do webhook — PDF com 2+ páginas ou arquivo
+// acima do limite vai pra fila e o admin recebe "recebi"; o resto lê na hora.
 export async function tryHandleFinanceiroMedia(
   deps: CaixaDeps, from: string, midia: Midia, kind: 'imagem' | 'pdf',
 ): Promise<boolean> {
   const c = contador(deps, from);
+  const bytes = tamanhoBase64Bytes(midia.base64);
+  let paginas = 1;
   try {
+    if (kind === 'pdf') paginas = await contarPaginas(midia.base64);
+    if (precisaFila({ bytes, paginas, mime: midia.mimeType })) {
+      await enfileirarMidia(deps, from, midia, bytes, paginas);
+      await deps.sendText(from, `📥 Recebi (${paginas} pág., ${(bytes / 1e6).toFixed(1)} MB). Vou ler em segundo plano e te aviso.`);
+      return true;
+    }
     const hoje = hojeBRT();
     const lista = kind === 'pdf'
       ? await extrairDePdf(deps.anthropic, midia.base64, hoje)
@@ -345,6 +365,14 @@ export async function tryHandleFinanceiroMedia(
     return true;
   } catch (err) {
     console.error('[caixa-entrada] midia falhou:', (err as Error).message);
+    // NUNCA SOME: o que não deu pra ler agora vai pra fila e o tick tenta de novo.
+    try {
+      await enfileirarMidia(deps, from, midia, bytes, paginas);
+      await deps.sendText(from, '📥 Guardei o arquivo; vou tentar ler em segundo plano.');
+      return true;
+    } catch (err2) {
+      console.error('[caixa-entrada] enfileirar após falha também falhou:', (err2 as Error).message);
+    }
     return c.falhou(err); // nada entrou → fluxo normal (nunca trava a Eva)
   }
 }
