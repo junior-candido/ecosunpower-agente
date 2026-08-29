@@ -12,7 +12,7 @@ export interface LancamentoResumo {
   data_evento: string;
   contraparte: string | null;
   categoriaNome: string | null;
-  pf_pj: 'PF' | 'PJ' | null;
+  pf_pj: 'PF' | 'PJ' | 'FRONTEIRA' | null;
   tem_nota?: boolean;
 }
 

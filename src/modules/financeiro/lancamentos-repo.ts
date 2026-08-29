@@ -1,7 +1,9 @@
 // src/modules/financeiro/lancamentos-repo.ts
 // I/O fino da Caixa de Entrada. Regras puras ficam em lancamentos.ts.
+import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { competenciaDe, TTL_PENDENTE_MS, type ChaveDuplicado } from './lancamentos.js';
+import { normalizarTexto } from './favorecidos.js';
 
 export interface LancamentoRow {
   id: string;
@@ -13,21 +15,33 @@ export interface LancamentoRow {
   contraparte: string | null;
   descricao: string | null;
   categoria_id: string | null;
-  pf_pj: 'PF' | 'PJ' | null;
+  pf_pj: 'PF' | 'PJ' | 'FRONTEIRA' | null;
   lead_id: string | null;
   conta_id: string | null;
   tem_nota: boolean;
   storage_path: string | null;
   extracao: Record<string, unknown> | null;
   created_at: string;
+  banco_conta: string;
+  favorecido_id: string | null;
+  confianca: 'alta' | 'media' | 'baixa' | 'pendente';
+  arquivo_id: string | null;
 }
 
-const COLS = 'id, tipo, status, valor, data_evento, competencia, contraparte, descricao, categoria_id, pf_pj, lead_id, conta_id, tem_nota, storage_path, extracao, created_at';
+const COLS = 'id, tipo, status, valor, data_evento, competencia, contraparte, descricao, categoria_id, pf_pj, lead_id, conta_id, tem_nota, storage_path, extracao, created_at, banco_conta, favorecido_id, confianca, arquivo_id';
+
+export type BancoConta = 'sicoob_cc'|'sicoob_cartao'|'itau_pj'|'itau_pf'|'visa_emp'|'latam'|'santander_pj'|'mercado_pago'|'dinheiro'|'desconhecido';
+
+// Chave de duplicidade: mesmo banco + dia + valor + descrição normalizada (extrato importado 2× não entra 2×).
+export function hashDedupe(k: { bancoConta: BancoConta; dataEvento: string; valor: number; descricao: string | null }): string {
+  const base = `${k.bancoConta}|${k.dataEvento}|${Math.round(k.valor * 100)}|${normalizarTexto(k.descricao)}`;
+  return createHash('sha1').update(base).digest('hex');
+}
 
 export async function criarPendente(client: SupabaseClient, l: {
   tipo: 'despesa' | 'entrada'; valor: number; dataEvento: string;
   contraparte: string | null; descricao: string | null; categoriaId: string | null;
-  pfPj: 'PF' | 'PJ' | null; leadId: string | null; storagePath: string | null;
+  pfPj: 'PF' | 'PJ' | 'FRONTEIRA' | null; leadId: string | null; storagePath: string | null;
   mimeType: string | null; origem: 'zap_midia' | 'zap_texto'; messageId: string | null;
   extracao: Record<string, unknown>; createdBy: string; temNota: boolean;
 }): Promise<string> {
@@ -41,6 +55,50 @@ export async function criarPendente(client: SupabaseClient, l: {
   }).select('id').single();
   if (error) throw new Error(`criarPendente: ${error.message}`);
   return (data as { id: string }).id;
+}
+
+// Fatia 1 "registra sem travar": entra JÁ confirmado, com banco/favorecido/confiança.
+// Duplicado (índice único em hash_dedupe) vira Error('DUPLICADO') pro chamador tratar.
+export async function criarConfirmado(client: SupabaseClient, l: {
+  tipo: 'despesa' | 'entrada'; valor: number; dataEvento: string;
+  contraparte: string | null; descricao: string | null; categoriaId: string | null;
+  pfPj: 'PF' | 'PJ' | 'FRONTEIRA'; leadId: string | null; storagePath: string | null;
+  mimeType: string | null; origem: 'zap_midia' | 'zap_texto' | 'extrato' | 'tela' | 'conta'; messageId: string | null;
+  extracao: Record<string, unknown>; createdBy: string; temNota: boolean;
+  bancoConta: BancoConta; favorecidoId: string | null; confianca: 'alta' | 'media' | 'baixa' | 'pendente'; arquivoId: string | null;
+}): Promise<string> {
+  const { data, error } = await client.from('financeiro_lancamentos').insert({
+    tipo: l.tipo, status: 'confirmado', valor: l.valor, data_evento: l.dataEvento,
+    competencia: competenciaDe(l.dataEvento), contraparte: l.contraparte,
+    descricao: l.descricao, categoria_id: l.categoriaId, pf_pj: l.pfPj,
+    lead_id: l.leadId, storage_path: l.storagePath, mime_type: l.mimeType,
+    origem: l.origem, message_id: l.messageId, extracao: l.extracao, created_by: l.createdBy,
+    tem_nota: l.temNota, banco_conta: l.bancoConta, favorecido_id: l.favorecidoId,
+    confianca: l.confianca, arquivo_id: l.arquivoId,
+    hash_dedupe: hashDedupe({ bancoConta: l.bancoConta, dataEvento: l.dataEvento, valor: l.valor, descricao: l.descricao ?? l.contraparte }),
+  }).select('id').single();
+  if (error) {
+    if ((error as { code?: string }).code === '23505') throw new Error('DUPLICADO');
+    throw new Error(`criarConfirmado: ${error.message}`);
+  }
+  return (data as { id: string }).id;
+}
+
+// Confirmados sem favorecido e com confiança baixa/pendente num período — pro resumo semanal.
+export async function getSemDono(client: SupabaseClient, deIso: string, ateIso: string): Promise<LancamentoRow[]> {
+  const { data, error } = await client.from('financeiro_lancamentos').select(COLS)
+    .eq('status', 'confirmado').is('favorecido_id', null).in('confianca', ['baixa', 'pendente'])
+    .gte('data_evento', deIso).lte('data_evento', ateIso).order('valor', { ascending: false }).limit(100);
+  if (error) throw new Error(`getSemDono: ${error.message}`);
+  return (data ?? []) as LancamentoRow[];
+}
+
+// Admin apontou o dono: grava favorecido/mundo/categoria e sobe a confiança pra alta.
+export async function definirFavorecido(client: SupabaseClient, lancamentoId: string, favorecidoId: string, pfPj: 'PF'|'PJ'|'FRONTEIRA', categoriaId: string | null): Promise<void> {
+  const { error } = await client.from('financeiro_lancamentos')
+    .update({ favorecido_id: favorecidoId, pf_pj: pfPj, categoria_id: categoriaId, confianca: 'alta', updated_at: new Date().toISOString() })
+    .eq('id', lancamentoId);
+  if (error) throw new Error(`definirFavorecido: ${error.message}`);
 }
 
 export async function getLancamento(client: SupabaseClient, id: string): Promise<LancamentoRow | null> {

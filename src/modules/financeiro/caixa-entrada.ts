@@ -36,7 +36,7 @@ const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', curren
 
 // PURO: uma entrada PJ com nota, ainda sem conta, precisa passar pelo motor de imposto (atividade).
 // Sem nota / despesa / PF / já vinculada → não passa (vira só caixa, ou já tratada).
-export function entradaPrecisaImposto(row: { tipo: 'despesa' | 'entrada'; pf_pj: 'PF' | 'PJ' | null; conta_id: string | null; tem_nota: boolean }): boolean {
+export function entradaPrecisaImposto(row: { tipo: 'despesa' | 'entrada'; pf_pj: 'PF' | 'PJ' | 'FRONTEIRA' | null; conta_id: string | null; tem_nota: boolean }): boolean {
   return row.tipo === 'entrada' && row.pf_pj === 'PJ' && !row.conta_id && row.tem_nota !== false;
 }
 
