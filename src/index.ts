@@ -4031,12 +4031,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     }
 
     // finlan:<acao>:<id>[:<extra>] — botões da Caixa de Entrada (Fatia 3).
+    // Sem WABA os botões viram texto (sendWithButtons faz o fallback) — a Caixa não exige WABA.
     if (isAdminPhone(from) && text.trim().startsWith('finlan:')) {
-      if (!metaWaba) {
-        console.warn('[caixa-entrada] WABA indisponível');
-        await sendText(from, '❌ WABA indisponível pros botões do financeiro');
-        return;
-      }
       const { handleFinlanButton } = await import('./modules/financeiro/botoes-caixa.js');
       await handleFinlanButton(getCaixaDeps(), from, text.trim());
       return;
@@ -4637,7 +4633,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     // Caixa de Entrada (Fatia 3): texto do Junior fora de modo pode ser gasto/
     // entrada ("gastei 380 no posto"). Gate Haiku barato decide; se não for
     // financeiro, segue o fluxo normal da Eva. Inclui transcrições de áudio.
-    if (isAdminPhone(from) && metaWaba) {
+    if (isAdminPhone(from)) {
       const { tryHandleFinanceiroTexto } = await import('./modules/financeiro/caixa-entrada.js');
       if (await tryHandleFinanceiroTexto(getCaixaDeps(), from, text)) return;
     }
@@ -6002,7 +5998,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
     // Caixa de Entrada (Fatia 3): foto de comprovante do Junior vira lançamento.
     // Baixa a mídia aqui só pro admin; pro cliente nada muda.
-    if (isAdminPhone(from) && metaWaba) {
+    if (isAdminPhone(from)) {
       const media = await messagingDaMensagem().getMediaBase64(messageId);
       if (media) {
         // Fatia 2 — print da loja com legenda "tabela" vira itens de preço (antes do financeiro).
@@ -6215,7 +6211,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     if (await tryHandleProposalMedia(from, messageId, 'document')) return;
 
     // Caixa de Entrada (Fatia 3): PDF de comprovante/nota do Junior.
-    if (isAdminPhone(from) && metaWaba && mimetype.includes('pdf')) {
+    if (isAdminPhone(from) && mimetype.includes('pdf')) {
       const media = await messagingDaMensagem().getMediaBase64(messageId);
       if (media) {
         const { tryHandleFinanceiroMedia } = await import('./modules/financeiro/caixa-entrada.js');
