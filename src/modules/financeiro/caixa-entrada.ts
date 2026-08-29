@@ -60,6 +60,10 @@ export function decidirRegistro(e: { valor: number | null; tipo: 'despesa' | 'en
   return typeof e.valor === 'number' && e.valor > 0 ? { acao: 'registrar' } : { acao: 'perguntar_valor' };
 }
 
+// Carimbo de quando a Eva PERGUNTOU — a janela de 10 min conta daqui, não da criação
+// (um "Corrigir" tocado no dia seguinte tem que engolir a resposta do mesmo jeito).
+const agoraIso = (): string => new Date().toISOString();
+
 const hojeBRT = (): string => {
   const brt = new Date(Date.now() - 3 * 60 * 60 * 1000);
   return brt.toISOString().slice(0, 10);
@@ -427,7 +431,7 @@ export async function handleFinlanButton(deps: CaixaDeps, from: string, buttonId
         }
         await atualizarPendente(deps.supabase, id, {
           // Nota com itens segue aberta pra correção por texto mesmo após resolver PF/PJ.
-          pf_pj: pfPj, extracao: { ...row.extracao, aguardando: pendenteAguardaTexto(false, row.extracao?.itens) },
+          pf_pj: pfPj, extracao: { ...row.extracao, aguardando: pendenteAguardaTexto(false, row.extracao?.itens), aguardando_desde: agoraIso() },
         });
         await mandarResumo(deps, from, id);
         return true;
@@ -442,12 +446,12 @@ export async function handleFinlanButton(deps: CaixaDeps, from: string, buttonId
         const v = validarParaConfirmar({ tipo: row.tipo, valor: Number(row.valor), data_evento: row.data_evento, pf_pj: row.pf_pj });
         if (!v.ok) {
           if (v.faltando.includes('pf_pj')) {
-            await atualizarPendente(deps.supabase, id, { extracao: { ...row.extracao, aguardando: true } });
+            await atualizarPendente(deps.supabase, id, { extracao: { ...row.extracao, aguardando: true, aguardando_desde: agoraIso() } });
             const msg = montarPedidoPfPj(id);
             await deps.sendWithButtons(from, msg.body, msg.buttons, FOOTER);
           } else {
             await deps.sendText(from, `Falta: ${v.faltando.join(', ')}. Me manda por texto que eu completo.`);
-            await atualizarPendente(deps.supabase, id, { extracao: { ...row.extracao, aguardando: true } });
+            await atualizarPendente(deps.supabase, id, { extracao: { ...row.extracao, aguardando: true, aguardando_desde: agoraIso() } });
           }
           return true;
         }
@@ -481,7 +485,7 @@ export async function handleFinlanButton(deps: CaixaDeps, from: string, buttonId
         if (row.tipo === 'entrada' && row.conta_id) { await deps.sendText(from, MSG_ENTRADA_LIGADA); return true; }
         const eraConfirmado = row.status === 'confirmado';
         if (eraConfirmado) await reverterParaPendente(deps.supabase, id);
-        await atualizarPendente(deps.supabase, id, { extracao: { ...row.extracao, aguardando: true, era_confirmado: eraConfirmado } });
+        await atualizarPendente(deps.supabase, id, { extracao: { ...row.extracao, aguardando: true, aguardando_desde: agoraIso(), era_confirmado: eraConfirmado } });
         await deps.sendText(from, 'O que tá errado? Me fala (ex: "era 350" / "é PF" / "foi ontem").');
         return true;
       }

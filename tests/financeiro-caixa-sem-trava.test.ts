@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { decidirRegistro, mesclarCorrecao, registrarEFalar } from '../src/modules/financeiro/caixa-entrada.js';
+import { dentroDaJanela } from '../src/modules/financeiro/lancamentos-repo.js';
 
 describe('decidirRegistro (puro): nunca trava', () => {
   it('com valor e tipo → registra já (confirmado)', () => {
@@ -60,5 +61,20 @@ describe('registrarEFalar: sem valor pergunta UMA vez e não grava nada', () => 
     expect((sendText.mock.calls[0] as unknown[])[1]).toContain('valor');
     expect(chain.insert).not.toHaveBeenCalled();
     expect(sendWithButtons).not.toHaveBeenCalled();
+  });
+});
+
+describe('dentroDaJanela (puro): janela conta a partir do PEDIDO da Eva', () => {
+  const agora = new Date('2026-09-02T09:00:00Z');
+  const min = (n: number) => new Date(agora.getTime() - n * 60_000).toISOString();
+  it('aguardando_desde há 5 min → dentro', () => {
+    expect(dentroDaJanela({ aguardando: true, aguardando_desde: min(5) }, min(60 * 15), agora)).toBe(true);
+  });
+  it('aguardando_desde há 15 min → fora', () => {
+    expect(dentroDaJanela({ aguardando: true, aguardando_desde: min(15) }, min(1), agora)).toBe(false);
+  });
+  it('sem aguardando_desde → cai no created_at', () => {
+    expect(dentroDaJanela({ aguardando: true }, min(3), agora)).toBe(true);
+    expect(dentroDaJanela(null, min(30), agora)).toBe(false);
   });
 });

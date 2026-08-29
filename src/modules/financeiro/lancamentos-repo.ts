@@ -187,19 +187,29 @@ export async function atualizarPendente(client: SupabaseClient, id: string, patc
 }
 
 // Pendente mais recente "esperando" resposta do admin (só existe quando a Eva
-// PERGUNTOU algo: Corrigir / valor faltando). Janela de 10 min = só pra ENGOLIR a
+// PERGUNTOU algo: Corrigir / valor faltando). Janela de 10 min a partir do
+// PEDIDO (extracao.aguardando_desde; fallback created_at) = só pra ENGOLIR a
 // resposta de texto — passou disso, texto novo é lançamento novo (nunca trava).
 // O GC de 24h (expirarPendentesAntigos) é outra coisa.
 export const JANELA_AGUARDANDO_MS = 10 * 60 * 1000;
+
+// PURO: o pedido da Eva ainda está dentro da janela?
+export function dentroDaJanela(extracao: Record<string, unknown> | null, createdAt: string, agora: Date = new Date()): boolean {
+  const desde = typeof extracao?.aguardando_desde === 'string' ? extracao.aguardando_desde : createdAt;
+  const t = Date.parse(desde);
+  if (Number.isNaN(t)) return false;
+  return agora.getTime() - t <= JANELA_AGUARDANDO_MS;
+}
+
 export async function getPendenteAguardando(client: SupabaseClient, createdBy: string): Promise<LancamentoRow | null> {
-  const desde = new Date(Date.now() - JANELA_AGUARDANDO_MS).toISOString();
   const { data, error } = await client.from('financeiro_lancamentos').select(COLS)
-    .eq('status', 'pendente').gte('created_at', desde)
+    .eq('status', 'pendente')
     .eq('created_by', createdBy)
     .contains('extracao', { aguardando: true })
-    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    .order('updated_at', { ascending: false }).limit(3);
   if (error) throw new Error(`getPendenteAguardando: ${error.message}`);
-  return (data as LancamentoRow) ?? null;
+  const rows = (data ?? []) as LancamentoRow[];
+  return rows.find((r) => dentroDaJanela(r.extracao, r.created_at)) ?? null;
 }
 
 export async function getConfirmadosDoDia(client: SupabaseClient, dataEvento: string): Promise<ChaveDuplicado[]> {
@@ -243,8 +253,14 @@ export async function buscarConfirmadoPorContraparte(client: SupabaseClient, ter
 }
 
 // Varredura preguiçosa: roda ao criar pendente novo (sem cron). >24h expira.
+// Pendente que ERA confirmado (botão Corrigir sem resposta) volta pro caixa — nunca some.
 export async function expirarPendentesAntigos(client: SupabaseClient): Promise<void> {
   const limite = new Date(Date.now() - TTL_PENDENTE_MS).toISOString();
+  const { error: errRestaura } = await client.from('financeiro_lancamentos')
+    .update({ status: 'confirmado', updated_at: new Date().toISOString() })
+    .eq('status', 'pendente').lt('created_at', limite)
+    .contains('extracao', { era_confirmado: true });
+  if (errRestaura) { console.warn('[caixa-entrada] restaurar confirmados falhou:', errRestaura.message); return; }
   const { error } = await client.from('financeiro_lancamentos')
     .update({ status: 'apagado', updated_at: new Date().toISOString() })
     .eq('status', 'pendente').lt('created_at', limite);
