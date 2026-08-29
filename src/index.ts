@@ -124,6 +124,7 @@ import { marcarPaga } from './modules/financeiro/contas-pagar.js';
 import { tickArquivos } from './modules/financeiro/arquivos-fila.js';
 import { registrarEFalar } from './modules/financeiro/caixa-entrada.js';
 import { tickVencimentos } from './modules/financeiro/tick-vencimentos.js';
+import { tickResumoSemanal, responderFavorecido } from './modules/financeiro/resumo-semanal.js';
 import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/cron.js';
 import { tickEnvioAutoPasta, criarEnvioAutoDb, proximoLembrete9h } from './modules/relatorios/pasta/envio-auto.js';
 import { tickDetectarMedidor, criarDetectarMedidorDb, textoAvisoMedidor } from './modules/monitoring/detectar-medidor.js';
@@ -4062,6 +4063,22 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       } catch (err) {
         console.error('[financeiro] finpg falhou:', (err as Error).message);
         await sendText(from, `❌ Não consegui marcar: ${(err as Error).message}`);
+      }
+      return;
+    }
+
+    // finfav:<mo|mat|pf>:<lancamentoId> — botões do resumo semanal: aprende o favorecido
+    // e aplica a todos os lançamentos sem dono com a mesma contraparte.
+    if (isAdminPhone(from) && text.trim().startsWith('finfav:')) {
+      const [, acao, id] = text.trim().split(':');
+      try {
+        if ((acao === 'mo' || acao === 'mat' || acao === 'pf') && id) {
+          const n = await responderFavorecido(supabase.getClient(), acao, id);
+          await sendText(from, `👍 Aprendi. Apliquei em ${n} lançamento(s); não pergunto mais.`);
+        }
+      } catch (err) {
+        console.error('[financeiro] finfav falhou:', (err as Error).message);
+        await sendText(from, `❌ Não consegui aprender: ${(err as Error).message}`);
       }
       return;
     }
@@ -10380,6 +10397,31 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setTimeout(() => { void tickFinVenc(); }, 3 * 60 * 1000);
     setInterval(() => { void tickFinVenc(); }, 60 * 60 * 1000);
     console.log('[fin-vencimentos] cron started (1x/hora, age às 8h BRT)');
+
+    // Resumo semanal: roda de hora em hora, só age segunda às 8h BRT (dedupe em memória, 1×/dia).
+    const tickFinSemanal = async () => {
+      try {
+        const dryRun = process.env.PROACTIVE_ALERTS_DRY_RUN === '1';
+        await tickResumoSemanal({
+          client: supabase.getClient(),
+          adminPhone: config.engineerPhone,
+          hoje: hojeBRT,
+          sendText: async (to, t) => {
+            if (dryRun) { console.log(`[fin-semanal] DRY_RUN — ${t.slice(0, 80)}`); return; }
+            await sendText(to, t);
+          },
+          enviarComBotoes: async (to, body, buttons, footer) => {
+            if (dryRun) { console.log(`[fin-semanal] DRY_RUN — ${body.slice(0, 80)}`); return; }
+            await sendAdminWithButtons({ metaWaba, sendText }, to, body, buttons, footer);
+          },
+        });
+      } catch (err) {
+        console.error('[fin-semanal] tick falhou:', (err as Error).message);
+      }
+    };
+    setTimeout(() => { void tickFinSemanal(); }, 4 * 60 * 1000);
+    setInterval(() => { void tickFinSemanal(); }, 60 * 60 * 1000);
+    console.log('[fin-semanal] cron started (1x/hora, age segunda 8h BRT)');
   }
 
   // Canal Solar ingestion (every 3 days)
