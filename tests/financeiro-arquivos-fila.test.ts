@@ -124,3 +124,38 @@ describe('caixa-entrada: falha inline com NADA registrado → reenfileira (nunca
     expect(String((sendText.mock.calls[0] as unknown[])[1])).toContain('Guardei o arquivo');
   });
 });
+
+describe('arquivos-fila: retomada em 2 ticks', () => {
+  it('tick 1 falha no 2º lote → erro_parcial/paginas_ok 4; tick 2 relê só as páginas 5–6 → ok', async () => {
+    const ext = await import('../src/modules/financeiro/extrator-lancamento.js');
+    const pdf = await pdfComPaginas(6);
+    const row: Record<string, unknown> = { id: 'A5', storage_path: 'p.pdf', mime_type: 'application/pdf', paginas: 6, paginas_ok: 0, tentativas: 0, enviado_por: '5561', tipo: 'outro', lancamentos_criados: 0 };
+    const { client, updates } = supabaseMock(row, pdf);
+    const registrar = vi.fn(async () => undefined);
+    const avisar = vi.fn(async () => undefined);
+    const deps = { client: client as never, anthropic: {} as never, registrar, avisar, hoje: () => '2026-08-29' };
+
+    // tick 1: 1º lote ok, 2º lote estoura
+    vi.mocked(ext.extrairDePdf).mockClear();
+    vi.mocked(ext.extrairDePdf).mockImplementationOnce(async () => [{ financeiro: true, descricao: 'a', valor: 1 } as never]);
+    vi.mocked(ext.extrairDePdf).mockRejectedValueOnce(new Error('IA caiu'));
+    await tickArquivos(deps);
+    expect(updates[updates.length - 1]).toMatchObject({ status: 'erro_parcial', paginas_ok: 4, lancamentos_criados: 1 });
+    expect(String(updates[updates.length - 1].erro)).toContain('páginas 5–6');
+    expect(avisar).not.toHaveBeenCalled();
+
+    // tick 2: mesma linha, já com o progresso gravado
+    Object.assign(row, { paginas_ok: 4, tentativas: 1, lancamentos_criados: 1 });
+    vi.mocked(ext.extrairDePdf).mockClear();
+    await tickArquivos(deps);
+    expect(vi.mocked(ext.extrairDePdf)).toHaveBeenCalledTimes(1);
+    expect(await contarPaginas(vi.mocked(ext.extrairDePdf).mock.calls[0][1])).toBe(2); // só as páginas 5–6
+    expect(updates[updates.length - 1]).toMatchObject({ status: 'ok', paginas_ok: 6, lancamentos_criados: 2 });
+    expect(avisar).toHaveBeenCalledTimes(1);
+    expect(registrar).toHaveBeenCalledTimes(2);
+  });
+  it('select do banco estoura → tick NÃO lança', async () => {
+    const client = { from: vi.fn(() => { throw new Error('banco fora'); }) };
+    await expect(tickArquivos({ client: client as never, anthropic: {} as never, registrar: vi.fn(), avisar: vi.fn(), hoje: () => '' })).resolves.toBeUndefined();
+  });
+});

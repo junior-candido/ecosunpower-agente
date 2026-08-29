@@ -1,6 +1,6 @@
 // src/modules/financeiro/arquivos-fila.ts
 // Fila de leitura de arquivos financeiros. Regra: nada pesado é lido dentro do
-// webhook. Enfileira, responde "recebi", um tick lê página a página e grava por lote.
+// webhook. Enfileira, responde 'recebi', um tick lê página a página e grava por lote.
 // Cada lote grava ANTES do próximo (paginas_ok avança) — se cair no meio, a
 // próxima tentativa retoma de onde parou, sem ler (nem contar) 2× o que já entrou.
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -97,7 +97,21 @@ const MSG_FALHA_FINAL = (motivo: string) =>
 
 // Um arquivo por tick (1 min). Lê por lotes; cada lote grava antes do próximo.
 // Lote que falha PARA a leitura (status erro_parcial) — o próximo tick retoma dele.
+// NUNCA lança: é chamado de setInterval; erro de banco/rede vira log e o próximo tick tenta.
+//
+// Contagem 2× na retomada: paginas_ok é gravado logo DEPOIS de registrar o lote. Se esse
+// update falhar, o próximo tick reextrai as mesmas páginas. Quem segura é o hash_dedupe de
+// criarConfirmado (lancamentos-repo.ts): mesma conta+data+valor+descrição/contraparte → DUPLICADO.
+// Item SEM descrição e SEM contraparte fica com hash null e PODE entrar 2× — aceito (raro); fica logado.
 export async function tickArquivos(d: TickDeps): Promise<void> {
+  try {
+    await tickArquivosInterno(d);
+  } catch (err) {
+    console.error('[fin-arquivos] tick falhou:', (err as Error).message);
+  }
+}
+
+async function tickArquivosInterno(d: TickDeps): Promise<void> {
   const { data } = await d.client.from(TABELA)
     .select('id, storage_path, mime_type, paginas, paginas_ok, tentativas, enviado_por, tipo, lancamentos_criados')
     .in('status', ['fila', 'erro_parcial']).lt('tentativas', MAX_TENTATIVAS)
@@ -118,7 +132,12 @@ export async function tickArquivos(d: TickDeps): Promise<void> {
   let erro: string | null = null;
   // Registra cada item financeiro extraído e soma no contador.
   const lancar = async (itens: ExtracaoLancamento[]) => {
-    for (const e of itens) if (e.financeiro) { await d.registrar(to ?? '', e, a.id); criados++; }
+    for (const e of itens) {
+      if (!e.financeiro) continue;
+      if (!e.descricao && !e.contraparte) console.warn('[fin-arquivos] item sem descrição/contraparte (sem dedupe):', a.id);
+      await d.registrar(to ?? '', e, a.id);
+      criados++;
+    }
   };
   try {
     const b64 = await baixarBase64(d.client, a.storage_path);
@@ -132,8 +151,9 @@ export async function tickArquivos(d: TickDeps): Promise<void> {
           paginasOk = ate + 1;
           await salvar({ paginas: total, paginas_ok: paginasOk, lancamentos_criados: criados });
         } catch (err) {
-          erro = `páginas ${de + 1}–${ate + 1}: ${(err as Error).message}`;
-          console.warn('[arquivos-fila] lote falhou:', a.id, erro);
+          const seguintes = ate + 1 < total ? ' e as páginas seguintes' : '';
+          erro = `páginas ${de + 1}–${ate + 1}${seguintes}: ${(err as Error).message}`;
+          console.warn('[fin-arquivos] lote falhou:', a.id, erro);
           break;
         }
       }
@@ -143,7 +163,7 @@ export async function tickArquivos(d: TickDeps): Promise<void> {
     }
   } catch (err) {
     erro = (err as Error).message;
-    console.error('[arquivos-fila] arquivo falhou:', a.id, erro);
+    console.error('[fin-arquivos] arquivo falhou:', a.id, erro);
   }
 
   const status = !erro ? 'ok' : ultima ? 'erro' : 'erro_parcial';
