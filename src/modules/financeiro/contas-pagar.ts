@@ -20,6 +20,7 @@ export async function getContasAbertas(client: SupabaseClient, ateIso?: string):
 }
 
 // Registra que um lembrete (3d/hoje/atraso) já foi enviado hoje, pra alertasDoDia não repetir.
+// Lê-e-grava sem lock: assume escritor único (o cron diário de alertas), não uso concorrente.
 export async function registrarLembrete(client: SupabaseClient, contaId: string, tipo: string, emIso: string): Promise<void> {
   const { data, error } = await client.from('financeiro_contas_a_pagar').select('lembretes').eq('id', contaId).single();
   if (error) throw new Error(`registrarLembrete: ${error.message}`);
@@ -53,6 +54,8 @@ export async function criarContaPagar(client: SupabaseClient, c: {
 // PURO: vencimento da parcela dentro da competência (AAAA-MM); dia inexistente no mês (ex.: 31 em setembro) clampa pro último dia.
 export function vencimentoNoMes(competencia: string, dia: number): string {
   const [ano, mes] = competencia.split('-').map(Number);
+  // `mes` (1-based, ex.: 9 = setembro) vira o mês 0-based SEGUINTE em Date.UTC; dia 0 desse mês "seguinte"
+  // é o último dia do mês 1-based original — truque padrão pra achar o fim do mês sem tabela de dias.
   const ultimoDia = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
   const d = Math.min(dia, ultimoDia);
   return `${competencia}-${String(d).padStart(2, '0')}`;
@@ -62,7 +65,8 @@ export function vencimentoNoMes(competencia: string, dia: number): string {
 export async function gerarParcelasDoMes(client: SupabaseClient, competencia: string): Promise<number> {
   const { data: dividas, error } = await client.from('financeiro_dividas').select('*').eq('ativa', true);
   if (error) throw new Error(`gerarParcelasDoMes: ${error.message}`);
-  const inicioMes = `${competencia}-01`, fimMes = `${competencia}-31`;
+  // fimMes precisa ser uma data REAL (30/09, não 31/09) — senão o Postgres rejeita o filtro lte('vencimento', ...).
+  const inicioMes = `${competencia}-01`, fimMes = vencimentoNoMes(competencia, 31);
   let criadas = 0;
   for (const d of (dividas ?? []) as Array<Record<string, unknown>>) {
     const venc = vencimentoNoMes(competencia, d.dia_vencimento as number);

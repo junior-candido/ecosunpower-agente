@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  getContasAbertas, marcarPaga, criarContaPagar, vencimentoNoMes, gerarParcelasDoMes,
+  getContasAbertas, marcarPaga, criarContaPagar, vencimentoNoMes, gerarParcelasDoMes, registrarLembrete,
 } from '../src/modules/financeiro/contas-pagar.js';
 
 // Mock encadeável: todo método devolve o próprio objeto; o await final resolve o valor passado (ou {data:[],error:null}).
@@ -132,5 +132,54 @@ describe('contas-pagar: gerarParcelasDoMes', () => {
     const client = { from } as never;
     const n = await gerarParcelasDoMes(client, '2026-09');
     expect(n).toBe(0);
+  });
+
+  it('checa existência de conta com o ÚLTIMO DIA REAL do mês (não "-31" inválido em mês de 30 dias)', async () => {
+    const dividas = [
+      { id: 'd1', credor: 'Banco A', mundo: 'PJ', parcela: 500, dia_vencimento: 10, ultima_parcela: null },
+    ];
+    const dividasChain: Record<string, unknown> = {};
+    for (const m of ['select', 'eq']) dividasChain[m] = vi.fn(() => dividasChain);
+    dividasChain.then = (res: (v: unknown) => void) => res({ data: dividas, error: null });
+
+    const checkCalls: Record<string, unknown[][]> = {};
+    const checkChain: Record<string, unknown> = {};
+    for (const m of ['select', 'eq', 'gte', 'lte', 'limit']) {
+      checkChain[m] = vi.fn((...a: unknown[]) => { (checkCalls[m] ??= []).push(a); return checkChain; });
+    }
+    // já tem conta → não insere, só serve pra capturar o filtro lte usado na checagem.
+    checkChain.then = (res: (v: unknown) => void) => res({ data: [{ id: 'existe' }], error: null });
+
+    let fromCall = 0;
+    const from = vi.fn(() => { fromCall++; return fromCall === 1 ? dividasChain : checkChain; });
+    const client = { from } as never;
+
+    await gerarParcelasDoMes(client, '2026-09'); // setembro tem 30 dias — "-31" seria data inválida
+    expect(checkCalls.lte).toContainEqual(['vencimento', '2026-09-30']);
+  });
+});
+
+describe('contas-pagar: registrarLembrete', () => {
+  it('lê os lembretes existentes, acrescenta o novo e grava sem perder os anteriores', async () => {
+    const selectChain: Record<string, unknown> = {};
+    for (const m of ['select', 'eq']) selectChain[m] = vi.fn(() => selectChain);
+    selectChain.single = vi.fn().mockResolvedValue({ data: { lembretes: [{ tipo: '3d', em: '2026-09-04' }] }, error: null });
+
+    const updateCalls: Record<string, unknown[][]> = {};
+    const updateChain: Record<string, unknown> = {};
+    for (const m of ['update', 'eq']) {
+      updateChain[m] = vi.fn((...a: unknown[]) => { (updateCalls[m] ??= []).push(a); return updateChain; });
+    }
+    updateChain.then = (res: (v: unknown) => void) => res({ data: null, error: null });
+
+    let fromCall = 0;
+    const from = vi.fn(() => { fromCall++; return fromCall === 1 ? selectChain : updateChain; });
+    const client = { from } as never;
+
+    await registrarLembrete(client, 'c1', 'hoje', '2026-09-07');
+
+    const payload = updateCalls.update[0][0] as Record<string, unknown>;
+    expect(payload.lembretes).toEqual([{ tipo: '3d', em: '2026-09-04' }, { tipo: 'hoje', em: '2026-09-07' }]);
+    expect(updateCalls.eq).toContainEqual(['id', 'c1']);
   });
 });
