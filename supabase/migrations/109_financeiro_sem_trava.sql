@@ -50,12 +50,13 @@ CREATE TABLE IF NOT EXISTS financeiro_dividas (
   parcela numeric(14,2) NOT NULL,
   dia_vencimento int NOT NULL CHECK (dia_vencimento BETWEEN 1 AND 31),
   ultima_parcela date,
-  taxa_mensal numeric(7,4),
+  taxa_mensal numeric(7,4), -- fração decimal (0.0293 = 2,93 %/mês)
   garantia text,
   observacao text,
   ativa boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE financeiro_contas_a_pagar DROP CONSTRAINT IF EXISTS fin_pagar_divida_fk;
 ALTER TABLE financeiro_contas_a_pagar
   ADD CONSTRAINT fin_pagar_divida_fk FOREIGN KEY (divida_id) REFERENCES financeiro_dividas(id) ON DELETE SET NULL;
 

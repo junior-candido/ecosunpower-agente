@@ -17,6 +17,11 @@ describe('favorecidos: casar', () => {
   it('acha por nome em áudio transcrito', () => { expect(casarFavorecido('paguei 800 pro kelvyn da loja 305', lista)?.id).toBe('k'); });
   it('acha CNPJ com ou sem barra/espaço', () => { expect(casarFavorecido('Pagamento Pix 32.489.209 0001-57 Boleto', lista)?.id).toBe('c'); });
   it('não acha → null (nunca chuta)', () => { expect(casarFavorecido('pix 10.198.309/0001-91', lista)).toBeNull(); });
+  it('CNPJ completo no dicionÃ¡rio casa texto com espaÃ§o no lugar da barra (raiz)', () => {
+    const full: Favorecido = { ...cft, id: 'f', padroes: ['32.489.209/0001-57'] };
+    expect(casarFavorecido('Pagamento Pix 32.489.209 0001-57 Boleto', [full])?.id).toBe('f');
+    expect(casarFavorecido('Pix 32.489.209/0001-57', [full])?.id).toBe('f');
+  });
   it('padrão mais longo ganha quando dois casam', () => {
     const a: Favorecido = { ...kelvyn, id: 'a', padroes: ['lucas'] };
     const b: Favorecido = { ...kelvyn, id: 'b', padroes: ['lucas rodrigues leite'] };
