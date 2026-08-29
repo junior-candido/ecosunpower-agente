@@ -32,6 +32,7 @@ CRM e Eva estão no mesmo repo, mas em pastas diferentes → quase nunca batem. 
 
 ## Rodar localmente
 - `npm install` · `npm test` (ou `npx vitest run`) · `npx tsc --noEmit`.
+- `npm install` pode exigir `--legacy-peer-deps` (conflito zod 3 vs 4 entre openai e anthropic SDK — pré-existente).
 - Testes e build rodam **sem segredo nenhum**. Rodar o app inteiro (Eva ao vivo) precisa das variáveis de ambiente — isso fica só com quem precisa.
 
 ## Coordenação

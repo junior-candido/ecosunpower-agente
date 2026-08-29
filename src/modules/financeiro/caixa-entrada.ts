@@ -325,7 +325,7 @@ function contador(deps: CaixaDeps, from: string) {
     } catch { /* melhor esforço */ }
     return true;
   };
-  return { reg, corrigir, falhou };
+  return { reg, corrigir, falhou, registrados: () => registrados };
 }
 
 // Guarda a mídia na fila (Storage + linha 'fila'); o tick lê em segundo plano.
@@ -365,8 +365,9 @@ export async function tryHandleFinanceiroMedia(
     return true;
   } catch (err) {
     console.error('[caixa-entrada] midia falhou:', (err as Error).message);
-    // NUNCA SOME: o que não deu pra ler agora vai pra fila e o tick tenta de novo.
-    try {
+    // NUNCA SOME: se NADA entrou, o arquivo vai pra fila e o tick tenta de novo.
+    // (Se algo já entrou inline, reenfileirar leria o arquivo 2× — fica o aviso parcial.)
+    if (c.registrados() === 0) try {
       await enfileirarMidia(deps, from, midia, bytes, paginas);
       await deps.sendText(from, '📥 Guardei o arquivo; vou tentar ler em segundo plano.');
       return true;

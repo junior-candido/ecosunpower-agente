@@ -99,3 +99,28 @@ describe('arquivos-fila: tickArquivos', () => {
     expect(String((avisar.mock.calls[0] as unknown[])[1])).toContain('Não consegui ler');
   });
 });
+
+describe('caixa-entrada: falha inline com NADA registrado → reenfileira (nunca some)', () => {
+  it('extração da imagem estoura → upload + linha na fila + "Guardei o arquivo"', async () => {
+    const { tryHandleFinanceiroMedia } = await import('../src/modules/financeiro/caixa-entrada.js');
+    const ext = await import('../src/modules/financeiro/extrator-lancamento.js');
+    vi.mocked(ext.extrairDeImagem).mockRejectedValueOnce(new Error('IA caiu'));
+    const inserts: unknown[] = [];
+    const chain: Record<string, unknown> = {};
+    for (const m of ['select', 'eq', 'update']) chain[m] = vi.fn(() => chain);
+    chain.insert = vi.fn((p: unknown) => { inserts.push(p); return chain; });
+    chain.single = vi.fn(async () => ({ data: { id: 'A9' }, error: null }));
+    chain.then = (res: (v: unknown) => void) => res({ data: null, error: null });
+    const upload = vi.fn(async () => ({ error: null }));
+    const supabase = { from: vi.fn(() => chain), storage: { from: vi.fn(() => ({ upload })) } };
+    const sendText = vi.fn(async () => undefined);
+    const ok = await tryHandleFinanceiroMedia(
+      { supabase: supabase as never, anthropic: {} as never, sendText, sendWithButtons: vi.fn(async () => undefined) },
+      '5561', { base64: Buffer.from('img').toString('base64'), mimeType: 'image/jpeg', messageId: 'm1' }, 'imagem',
+    );
+    expect(ok).toBe(true);
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(inserts[0]).toMatchObject({ origem: 'zap', status: 'fila', enviado_por: '5561', message_id: 'm1', paginas: 1 });
+    expect(String((sendText.mock.calls[0] as unknown[])[1])).toContain('Guardei o arquivo');
+  });
+});
