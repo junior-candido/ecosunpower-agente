@@ -4037,7 +4037,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         await sendText(from, '❌ WABA indisponível pros botões do financeiro');
         return;
       }
-      const { handleFinlanButton } = await import('./modules/financeiro/caixa-entrada.js');
+      const { handleFinlanButton } = await import('./modules/financeiro/botoes-caixa.js');
       await handleFinlanButton(getCaixaDeps(), from, text.trim());
       return;
     }

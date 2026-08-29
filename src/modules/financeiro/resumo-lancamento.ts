@@ -49,6 +49,7 @@ export function montarBlocoItens(itens: ItemResumo[]): string {
   return txt;
 }
 
+// LEGADO — remover quando não houver pendente no banco.
 export function montarResumoPendente(l: LancamentoResumo, opts: { duplicado: boolean; itens?: ItemResumo[] }): MsgComBotoes {
   const aviso = opts.duplicado
     ? '\n⚠️ Parece igual a um lançamento que você já fez nesse dia.'
@@ -81,6 +82,7 @@ export function montarRegistrado(l: LancamentoResumo, o: { confianca: 'alta' | '
   return { body, buttons };
 }
 
+// LEGADO — remover quando não houver pendente no banco.
 export function montarPedidoPfPj(lancamentoId: string): MsgComBotoes {
   return {
     body: 'Esse é da empresa ou pessoal?',

@@ -38,6 +38,7 @@ export function hashDedupe(k: { bancoConta: BancoConta; dataEvento: string; valo
   return createHash('sha1').update(base).digest('hex');
 }
 
+// LEGADO — remover quando não houver pendente no banco (Fatia 1 registra direto confirmado).
 export async function criarPendente(client: SupabaseClient, l: {
   tipo: 'despesa' | 'entrada'; valor: number; dataEvento: string;
   contraparte: string | null; descricao: string | null; categoriaId: string | null;
@@ -114,7 +115,7 @@ export async function getLancamento(client: SupabaseClient, id: string): Promise
 // Transição de status com CAS no status atual (clique duplo: só o 1º casa).
 export async function mudarStatus(
   client: SupabaseClient, id: string,
-  de: 'pendente' | 'confirmado', para: 'confirmado' | 'apagado',
+  de: 'pendente' | 'confirmado', para: 'pendente' | 'confirmado' | 'apagado',
   patch: Record<string, unknown> = {},
 ): Promise<boolean> {
   const { data, error } = await client.from('financeiro_lancamentos')
@@ -144,18 +145,19 @@ export async function vincularContaSeLivre(client: SupabaseClient, id: string, c
 }
 
 // Compensação do vincularContaSeLivre quando o passo de dinheiro falha (lançamento fica no caixa, sem conta).
-export async function desvincularConta(client: SupabaseClient, id: string): Promise<void> {
+// Só desfaz o PRÓPRIO vínculo (filtro por conta_id): o clique B nunca apaga o vínculo do clique A.
+export async function desvincularConta(client: SupabaseClient, id: string, contaId: string): Promise<void> {
   const { error } = await client.from('financeiro_lancamentos')
     .update({ conta_id: null, updated_at: new Date().toISOString() })
-    .eq('id', id).eq('status', 'confirmado');
+    .eq('id', id).eq('status', 'confirmado').eq('conta_id', contaId);
   if (error) console.warn('[caixa-entrada] desvincularConta falhou:', error.message);
 }
 
 // Botão "É PF"/"PJ" num lançamento já registrado: troca o mundo e sobe a confiança
-// (o dono disse — não é mais "assumi PJ").
+// pra alta (o dono disse — mesmo peso do definirFavorecido).
 export async function definirPfPj(client: SupabaseClient, id: string, pfPj: 'PF' | 'PJ' | 'FRONTEIRA'): Promise<void> {
   const { error } = await client.from('financeiro_lancamentos')
-    .update({ pf_pj: pfPj, confianca: 'media', updated_at: new Date().toISOString() })
+    .update({ pf_pj: pfPj, confianca: 'alta', updated_at: new Date().toISOString() })
     .eq('id', id).neq('status', 'apagado');
   if (error) throw new Error(`definirPfPj: ${error.message}`);
 }
@@ -167,6 +169,15 @@ export async function reverterParaPendente(client: SupabaseClient, id: string): 
     .update({ status: 'pendente', conta_id: null, updated_at: new Date().toISOString() })
     .eq('id', id).eq('status', 'confirmado');
   if (error) console.warn('[caixa-entrada] reverterParaPendente falhou:', error.message);
+}
+
+// Compensação da correção: o corrigido não entrou → o original (soft-apagado) volta pro
+// caixa com a descrição original (sem o sufixo "[substituído por correção]").
+export async function restaurarApagado(client: SupabaseClient, id: string, para: 'confirmado' | 'pendente', descricaoOriginal: string | null): Promise<void> {
+  const { error } = await client.from('financeiro_lancamentos')
+    .update({ status: para, descricao: descricaoOriginal, updated_at: new Date().toISOString() })
+    .eq('id', id).eq('status', 'apagado');
+  if (error) throw new Error(`restaurarApagado: ${error.message}`);
 }
 
 // Saldo em aberto de uma conta a receber (null = conta inexistente ou já fechada).
@@ -252,18 +263,25 @@ export async function buscarConfirmadoPorContraparte(client: SupabaseClient, ter
   return (data as LancamentoRow) ?? null;
 }
 
-// Varredura preguiçosa: roda ao criar pendente novo (sem cron). >24h expira.
-// Pendente que ERA confirmado (botão Corrigir sem resposta) volta pro caixa — nunca some.
+// Varredura preguiçosa: roda a cada registro (sem cron). Pendente parado >24h
+// (updated_at — o Corrigir mexe em lançamento antigo) expira. Quem ERA confirmado
+// (botão Corrigir sem resposta) volta pro caixa em vez de sumir — nunca some.
 export async function expirarPendentesAntigos(client: SupabaseClient): Promise<void> {
   const limite = new Date(Date.now() - TTL_PENDENTE_MS).toISOString();
-  const { error: errRestaura } = await client.from('financeiro_lancamentos')
-    .update({ status: 'confirmado', updated_at: new Date().toISOString() })
-    .eq('status', 'pendente').lt('created_at', limite)
+  const { data, error: errSel } = await client.from('financeiro_lancamentos')
+    .select('id, extracao')
+    .eq('status', 'pendente').lt('updated_at', limite)
     .contains('extracao', { era_confirmado: true });
-  if (errRestaura) { console.warn('[caixa-entrada] restaurar confirmados falhou:', errRestaura.message); return; }
+  if (errSel) { console.warn('[caixa-entrada] expirarPendentes (busca) falhou:', errSel.message); return; }
+  for (const r of (data ?? []) as Array<{ id: string; extracao: Record<string, unknown> | null }>) {
+    const { error } = await client.from('financeiro_lancamentos')
+      .update({ status: 'confirmado', extracao: { ...r.extracao, aguardando: false }, updated_at: new Date().toISOString() })
+      .eq('id', r.id).eq('status', 'pendente');
+    if (error) { console.warn('[caixa-entrada] restaurar confirmado falhou:', error.message); return; }
+  }
   const { error } = await client.from('financeiro_lancamentos')
     .update({ status: 'apagado', updated_at: new Date().toISOString() })
-    .eq('status', 'pendente').lt('created_at', limite);
+    .eq('status', 'pendente').lt('updated_at', limite);
   if (error) console.warn('[caixa-entrada] expirarPendentes falhou:', error.message);
 }
 

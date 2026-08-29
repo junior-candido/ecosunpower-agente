@@ -1,73 +1,36 @@
 // src/modules/financeiro/caixa-entrada.ts
 // Orquestrador da Caixa de Entrada Universal (Fatia 1 "sem trava"): mídia/texto do
 // ADMIN vira lançamento JÁ CONFIRMADO, com confiança. Botões servem só pra corrigir
-// ou apagar DEPOIS. Eva classifica (extrator + dicionário de favorecidos); imposto
-// e "atividade" ficam pro fechamento do mês — nunca travam o registro.
+// ou apagar DEPOIS (botoes-caixa.ts). Eva classifica (extrator + dicionário de
+// favorecidos); imposto e "atividade" ficam pro fechamento do mês — nunca travam.
+// Invariantes: NUNCA SOME (original só sai dos números com o corrigido dentro) e
+// NUNCA CONTA 2× (duplicado por hash; vínculo de venda com CAS).
 import type Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   gateTextoFinanceiro, extrairDeTexto, extrairDeImagem, extrairDePdf, corrigirItensComTexto,
   type ExtracaoLancamento, type ItemNota,
 } from './extrator-lancamento.js';
-import { validarParaConfirmar, ehDuplicado, resolverCategoria, competenciaDe } from './lancamentos.js';
+import { competenciaDe } from './lancamentos.js';
 import {
-  criarConfirmado, getLancamento, mudarStatus, atualizarPendente, definirPfPj,
-  getPendenteAguardando, getConfirmadosDoDia, getUltimoConfirmado,
-  buscarConfirmadoPorContraparte, expirarPendentesAntigos, getCategorias,
-  buscarContaAbertaPorNome, gravarContaNoLancamento, reverterParaPendente,
-  vincularContaSeLivre, desvincularConta, getSaldoConta, JANELA_AGUARDANDO_MS, type LancamentoRow,
+  criarConfirmado, getLancamento, mudarStatus, atualizarPendente, restaurarApagado,
+  getPendenteAguardando, getUltimoConfirmado, buscarConfirmadoPorContraparte,
+  expirarPendentesAntigos, getCategorias, buscarContaAbertaPorNome,
+  JANELA_AGUARDANDO_MS, type LancamentoRow,
 } from './lancamentos-repo.js';
 import { uploadComprovante } from './comprovantes.js';
 import { classificar } from './classificar.js';
 import { getFavorecidos } from './favorecidos.js';
 import {
-  montarResumoPendente, montarPedidoPfPj, montarConfirmacaoApagar, montarRegistrado,
-  montarOfertaVinculoConta, montarOfertaVinculoRegistrado, montarEscolhaAtividade,
-  montarPedidoEsclarecimento, montarAberturaMultipla, type LancamentoResumo, type ItemResumo,
+  montarConfirmacaoApagar, montarRegistrado, montarOfertaVinculoRegistrado,
+  montarPedidoEsclarecimento, montarAberturaMultipla, type LancamentoResumo,
 } from './resumo-lancamento.js';
-import { criarContaDeFechamento, registrarRecebimento } from './contas.js';
 import { parseValorReais } from './comando-imposto.js';
 import { gravarComprasDaNota } from './materiais.js';
-import { getAtividades, cancelarConta } from './repo.js';
 
-const FOOTER = 'Caixa de Entrada · Financeiro';
-const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const MSG_ENTRADA_LIGADA = '⚠️ Essa entrada está ligada a uma venda (recebimento e imposto já contados). Estorno é manual por enquanto — me chama que a gente ajusta no banco.';
-
-// PURO: uma entrada PJ com nota, ainda sem conta, precisa passar pelo motor de imposto (atividade).
-// Sem nota / despesa / PF / já vinculada → não passa (vira só caixa, ou já tratada).
-// (Fatia 1: não é mais etapa obrigatória do registro — usado só pelos botões legados.)
-export function entradaPrecisaImposto(row: { tipo: 'despesa' | 'entrada'; pf_pj: 'PF' | 'PJ' | 'FRONTEIRA' | null; conta_id: string | null; tem_nota: boolean }): boolean {
-  return row.tipo === 'entrada' && row.pf_pj === 'PJ' && !row.conta_id && row.tem_nota !== false;
-}
-
-// PURO: decide o que fazer com a lista extraída.
-// lancar = itens financeiros a registrar; esclarecer = deu dinheiro mas nada extraído (nunca calar).
-export function planejarCaptura(itens: ExtracaoLancamento[]): { lancar: ExtracaoLancamento[]; esclarecer: boolean } {
-  const lancar = itens.filter((i) => i.financeiro);
-  return { lancar, esclarecer: lancar.length === 0 };
-}
-
-// PURO: um pendente (legado) fica "aguardando" texto quando falta PF/PJ OU quando é nota
-// com itens — aí a correção de item por texto ("a curva é 7,00") é capturada.
-export function pendenteAguardaTexto(faltaPfPj: boolean, itens: unknown): boolean {
-  return faltaPfPj || (Array.isArray(itens) && itens.length > 0);
-}
-
-// PURO: com valor registra JÁ (tipo ausente vira despesa lá na frente); sem valor pergunta
-// UMA vez e não cria nada. É a única "pergunta" do caminho automático.
-export function decidirRegistro(e: { valor: number | null; tipo: 'despesa' | 'entrada' | null }): { acao: 'registrar' | 'perguntar_valor' } {
-  return typeof e.valor === 'number' && e.valor > 0 ? { acao: 'registrar' } : { acao: 'perguntar_valor' };
-}
-
-// Carimbo de quando a Eva PERGUNTOU — a janela de 10 min conta daqui, não da criação
-// (um "Corrigir" tocado no dia seguinte tem que engolir a resposta do mesmo jeito).
-const agoraIso = (): string => new Date().toISOString();
-
-const hojeBRT = (): string => {
-  const brt = new Date(Date.now() - 3 * 60 * 60 * 1000);
-  return brt.toISOString().slice(0, 10);
-};
+export const FOOTER = 'Caixa de Entrada · Financeiro';
+export const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+export const MSG_ENTRADA_LIGADA = '⚠️ Essa entrada está ligada a uma venda (recebimento e imposto já contados). Estorno é manual por enquanto — me chama que a gente ajusta no banco.';
 
 export interface CaixaDeps {
   supabase: SupabaseClient;
@@ -76,16 +39,73 @@ export interface CaixaDeps {
   // Botões: quem injeta decide (WABA com fallback texto). A Caixa não depende de WABA.
   sendWithButtons: (to: string, body: string, buttons: Array<{ id: string; title: string }>, footer?: string) => Promise<void>;
 }
+export type Categoria = { id: string; slug: string; nome: string };
+export type Herdado = { storagePath: string | null; mimeType?: string | null; leadId: string | null; categoriaId: string | null };
+export type Midia = { base64: string; mimeType: string; messageId: string };
 
-type Herdado = { storagePath: string | null; mimeType?: string | null; leadId: string | null; categoriaId: string | null };
-type Midia = { base64: string; mimeType: string; messageId: string };
+// ---------------------------------------------------------------------------
+// PUROS
+// ---------------------------------------------------------------------------
+
+// Uma entrada PJ com nota, ainda sem conta, precisa passar pelo motor de imposto (atividade).
+// (Fatia 1: não é mais etapa do registro — usado só pelo botão legado "conf".)
+export function entradaPrecisaImposto(row: { tipo: 'despesa' | 'entrada'; pf_pj: 'PF' | 'PJ' | 'FRONTEIRA' | null; conta_id: string | null; tem_nota: boolean }): boolean {
+  return row.tipo === 'entrada' && row.pf_pj === 'PJ' && !row.conta_id && row.tem_nota !== false;
+}
+
+// Decide o que fazer com a lista extraída.
+// lancar = itens financeiros a registrar; esclarecer = deu dinheiro mas nada extraído (nunca calar).
+export function planejarCaptura(itens: ExtracaoLancamento[]): { lancar: ExtracaoLancamento[]; esclarecer: boolean } {
+  const lancar = itens.filter((i) => i.financeiro);
+  return { lancar, esclarecer: lancar.length === 0 };
+}
+
+// LEGADO — remover quando não houver pendente no banco. Pendente fica "aguardando"
+// texto quando falta PF/PJ OU quando é nota com itens.
+export function pendenteAguardaTexto(faltaPfPj: boolean, itens: unknown): boolean {
+  return faltaPfPj || (Array.isArray(itens) && itens.length > 0);
+}
+
+// Com valor registra JÁ (tipo ausente vira despesa lá na frente); sem valor pergunta
+// UMA vez e não cria nada. É a única "pergunta" do caminho automático.
+export function decidirRegistro(e: { valor: number | null; tipo: 'despesa' | 'entrada' | null }): { acao: 'registrar' | 'perguntar_valor' } {
+  return typeof e.valor === 'number' && e.valor > 0 ? { acao: 'registrar' } : { acao: 'perguntar_valor' };
+}
+
+// Botão Corrigir: o lançamento "era confirmado" se está confirmado AGORA ou se já
+// tinha sido marcado antes (duplo toque não pode rebaixar true → false).
+export function proximoEraConfirmado(statusAtual: LancamentoRow['status'], extracao: Record<string, unknown> | null): boolean {
+  return statusAtual === 'confirmado' || extracao?.era_confirmado === true;
+}
+
+// Mescla o que o admin corrigiu com o que já estava no lançamento (só o que ele NÃO disse herda).
+export function mesclarCorrecao(base: LancamentoRow, e: Partial<ExtracaoLancamento>): ExtracaoLancamento {
+  const ext = (base.extracao ?? {}) as Partial<ExtracaoLancamento>;
+  return {
+    financeiro: true, intencao: 'lancar',
+    tipo: e.tipo ?? base.tipo,
+    valor: e.valor ?? Number(base.valor),
+    data: e.data ?? base.data_evento,
+    contraparte: e.contraparte ?? base.contraparte,
+    categoria_slug: e.categoria_slug && e.categoria_slug !== 'outros' ? e.categoria_slug : (ext.categoria_slug ?? null),
+    pf_pj: e.pf_pj ?? base.pf_pj,
+    obra_ref: e.obra_ref ?? ext.obra_ref ?? null,
+    descricao: e.descricao ?? base.descricao,
+    material: e.material ?? ext.material ?? null,
+    quantidade: e.quantidade ?? ext.quantidade ?? null,
+    unidade: e.unidade ?? ext.unidade ?? null,
+    itens: e.itens?.length ? e.itens : (Array.isArray(ext.itens) ? ext.itens : []),
+    campos_faltando: [], relacionado: true,
+    tem_nota: typeof e.tem_nota === 'boolean' ? e.tem_nota : base.tem_nota,
+  };
+}
 
 // "Não peguei o valor" → o admin responde só "380". Guarda a extração em memória (por
 // admin, best-effort, processo único) e o número solto dentro da janela completa o registro.
 export interface EsperandoValor { extracao: ExtracaoLancamento; midia: Midia | null; herdado?: Herdado; desde: number }
 const esperandoValor = new Map<string, EsperandoValor>();
 
-// PURO: número solto dentro da janela → extração completa; senão null (expirou ou não é valor).
+// Número solto dentro da janela → extração completa; senão null (expirou ou não é valor).
 export function combinarValorSolto(guardado: EsperandoValor, texto: string, agora: number = Date.now()): ExtracaoLancamento | null {
   if (agora - guardado.desde > JANELA_AGUARDANDO_MS) return null;
   const valor = parseValorReais(texto);
@@ -93,16 +113,23 @@ export function combinarValorSolto(guardado: EsperandoValor, texto: string, agor
   return { ...guardado.extracao, valor, campos_faltando: guardado.extracao.campos_faltando.filter((c) => c !== 'valor') };
 }
 
-async function nomeCategoria(deps: CaixaDeps, categoriaId: string | null): Promise<string | null> {
-  if (!categoriaId) return null;
-  const cats = await getCategorias(deps.supabase);
-  return cats.find((c) => c.id === categoriaId)?.nome ?? null;
-}
+// Carimbo de quando a Eva PERGUNTOU — a janela de 10 min conta daqui, não da criação.
+export const agoraIso = (): string => new Date().toISOString();
 
-async function rowParaResumo(deps: CaixaDeps, row: LancamentoRow): Promise<LancamentoResumo> {
+const hojeBRT = (): string => {
+  const brt = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  return brt.toISOString().slice(0, 10);
+};
+
+// ---------------------------------------------------------------------------
+// Helpers de I/O compartilhados (botões e legado usam)
+// ---------------------------------------------------------------------------
+
+export async function rowParaResumo(deps: CaixaDeps, row: LancamentoRow, cats?: Categoria[]): Promise<LancamentoResumo> {
+  const lista = row.categoria_id ? (cats ?? await getCategorias(deps.supabase)) : [];
   return {
     id: row.id, tipo: row.tipo, valor: Number(row.valor), data_evento: row.data_evento,
-    contraparte: row.contraparte, categoriaNome: await nomeCategoria(deps, row.categoria_id),
+    contraparte: row.contraparte, categoriaNome: lista.find((c) => c.id === row.categoria_id)?.nome ?? null,
     pf_pj: row.pf_pj, tem_nota: row.tem_nota,
   };
 }
@@ -112,6 +139,10 @@ async function nomeLead(deps: CaixaDeps, leadId: string | null): Promise<string 
   const { data } = await deps.supabase.from('leads').select('name').eq('id', leadId).maybeSingle();
   return (data as { name: string | null } | null)?.name ?? null;
 }
+
+// ---------------------------------------------------------------------------
+// REGISTRO
+// ---------------------------------------------------------------------------
 
 // Registra JÁ CONFIRMADO a partir de uma extração e responde "✅ Registrei" + botões
 // corrigir/apagar. Nunca cria pendente. Correção herda comprovante/categoria/obra do
@@ -124,13 +155,14 @@ export async function registrarEFalar(
 ): Promise<string | null> {
   await expirarPendentesAntigos(deps.supabase); // varredura preguiçosa (sem cron)
 
-  // Sem valor não tem registro — pergunta UMA vez; a resposta entra como mensagem nova.
+  // Sem valor não tem registro — pergunta UMA vez; o número solto seguinte completa.
+  // (Quem limpa a pergunta antiga é a captura, ANTES de processar a mensagem nova —
+  // assim o item 2 com valor de uma mesma nota não apaga a pergunta do item 1.)
   if (decidirRegistro(e).acao === 'perguntar_valor') {
     esperandoValor.set(from, { extracao: e, midia, herdado, desde: Date.now() });
     await deps.sendText(from, 'Não peguei o valor 🤔 Me fala o valor e o que foi (ex: "380 gasolina no Shell").');
     return null;
   }
-  esperandoValor.delete(from); // chegou lançamento novo: a pergunta antiga não vale mais
   const valor = e.valor as number;
   const tipo = e.tipo ?? 'despesa';
   const dataEvento = e.data ?? hojeBRT();
@@ -198,9 +230,9 @@ export async function registrarEFalar(
   if (e.itens?.length) await gravarComprasDaNota(deps.supabase, id).catch(() => undefined);
 
   const row = await getLancamento(deps.supabase, id);
-  const resumo: LancamentoResumo = row ? await rowParaResumo(deps, row) : {
+  const resumo: LancamentoResumo = row ? await rowParaResumo(deps, row, cats) : {
     id, tipo, valor, data_evento: dataEvento, contraparte: e.contraparte ?? cls.favorecido_nome,
-    categoriaNome: await nomeCategoria(deps, categoriaId), pf_pj: mundo, tem_nota: e.tem_nota,
+    categoriaNome: cats.find((c) => c.id === categoriaId)?.nome ?? null, pf_pj: mundo, tem_nota: e.tem_nota,
   };
   const msg = montarRegistrado(resumo, { confianca, obraNome });
   await deps.sendWithButtons(from, msg.body, msg.buttons, FOOTER);
@@ -221,68 +253,38 @@ async function oferecerVinculoConta(deps: CaixaDeps, from: string, row: Lancamen
   await deps.sendWithButtons(from, msg.body, msg.buttons, FOOTER);
 }
 
-// Correção por texto: apaga (soft) o original e registra o corrigido JÁ confirmado.
-// Simples e auditável: o histórico guarda os dois. O índice de duplicidade ignora apagados.
-async function substituirPorCorrecao(deps: CaixaDeps, from: string, alvo: LancamentoRow, corrigido: ExtracaoLancamento): Promise<void> {
-  await mudarStatus(deps.supabase, alvo.id, alvo.status === 'pendente' ? 'pendente' : 'confirmado', 'apagado',
+// ---------------------------------------------------------------------------
+// CORREÇÃO
+// ---------------------------------------------------------------------------
+
+// Correção: apaga (soft) o original e registra o corrigido JÁ confirmado. O índice de
+// duplicidade ignora apagados — por isso o original sai ANTES. Se o corrigido NÃO entrar
+// (erro ou duplicado com outro), o original VOLTA: nunca some. Devolve o id novo ou null.
+export async function substituirPorCorrecao(deps: CaixaDeps, from: string, alvo: LancamentoRow, corrigido: ExtracaoLancamento): Promise<string | null> {
+  const de = alvo.status === 'pendente' ? 'pendente' : 'confirmado';
+  const volta = alvo.status === 'confirmado' || alvo.extracao?.era_confirmado === true ? 'confirmado' : 'pendente';
+  await mudarStatus(deps.supabase, alvo.id, de, 'apagado',
     { descricao: `${alvo.descricao ?? ''} [substituído por correção]`.trim() });
-  // mime_type não está no row — o storage_path basta (extensão implícita no path).
-  const novo = await registrarEFalar(deps, from, corrigido, null,
-    { storagePath: alvo.storage_path, mimeType: undefined, leadId: alvo.lead_id, categoriaId: alvo.categoria_id });
-  // Raro (duplicado com OUTRO lançamento): o original já saiu dos números — avisa em vez de sumir.
-  if (!novo) await deps.sendText(from, '⚠️ O original saiu dos números e o corrigido não entrou. Me manda o lançamento completo de novo.');
-}
-
-// PURO: mescla o que o admin corrigiu com o que já estava no lançamento (só o que ele NÃO disse herda).
-export function mesclarCorrecao(base: LancamentoRow, e: Partial<ExtracaoLancamento>): ExtracaoLancamento {
-  const ext = (base.extracao ?? {}) as Partial<ExtracaoLancamento>;
-  return {
-    financeiro: true, intencao: 'lancar',
-    tipo: e.tipo ?? base.tipo,
-    valor: e.valor ?? Number(base.valor),
-    data: e.data ?? base.data_evento,
-    contraparte: e.contraparte ?? base.contraparte,
-    categoria_slug: e.categoria_slug && e.categoria_slug !== 'outros' ? e.categoria_slug : (ext.categoria_slug ?? null),
-    pf_pj: e.pf_pj ?? base.pf_pj,
-    obra_ref: e.obra_ref ?? ext.obra_ref ?? null,
-    descricao: e.descricao ?? base.descricao,
-    material: e.material ?? ext.material ?? null,
-    quantidade: e.quantidade ?? ext.quantidade ?? null,
-    unidade: e.unidade ?? ext.unidade ?? null,
-    itens: e.itens?.length ? e.itens : (Array.isArray(ext.itens) ? ext.itens : []),
-    campos_faltando: [], relacionado: true,
-    tem_nota: typeof e.tem_nota === 'boolean' ? e.tem_nota : base.tem_nota,
-  };
-}
-
-// Resumo de pendente LEGADO (criado antes da Fatia 1, ou via botões pf/pj antigos).
-async function mandarResumo(deps: CaixaDeps, from: string, lancamentoId: string): Promise<void> {
-  const row = await getLancamento(deps.supabase, lancamentoId);
-  if (!row || row.status !== 'pendente') return;
-
-  if (row.tipo === 'entrada' && row.pf_pj === 'PJ' && row.tem_nota !== false) {
-    const nomeBusca = (row.extracao?.obra_ref as string | undefined) ?? row.contraparte ?? '';
-    if (nomeBusca) {
-      const conta = await buscarContaAbertaPorNome(deps.supabase, nomeBusca);
-      if (conta) {
-        const msg = montarOfertaVinculoConta(row.id, conta.id, conta.clienteNome, conta.saldo);
-        await deps.sendWithButtons(from, msg.body, msg.buttons, FOOTER);
-        return;
+  let novo: string | null = null;
+  try {
+    // mime_type não está no row — o storage_path basta (extensão implícita no path).
+    novo = await registrarEFalar(deps, from, corrigido, null,
+      { storagePath: alvo.storage_path, mimeType: undefined, leadId: alvo.lead_id, categoriaId: alvo.categoria_id });
+  } finally {
+    if (!novo) {
+      try {
+        await restaurarApagado(deps.supabase, alvo.id, volta, alvo.descricao);
+        await deps.sendText(from, '⚠️ A correção não entrou — o original continua no caixa como estava.');
+      } catch (err) {
+        console.error('[caixa-entrada] restaurar original falhou:', (err as Error).message);
       }
     }
   }
-
-  const duplicado = ehDuplicado(
-    { valor: Number(row.valor), contraparte: row.contraparte, data_evento: row.data_evento },
-    await getConfirmadosDoDia(deps.supabase, row.data_evento),
-  );
-  const itens: ItemResumo[] = Array.isArray(row.extracao?.itens) ? (row.extracao!.itens as ItemResumo[]) : [];
-  const msg = montarResumoPendente(await rowParaResumo(deps, row), { duplicado, itens });
-  await deps.sendWithButtons(from, msg.body, msg.buttons, FOOTER);
+  return novo;
 }
 
 // Pendente "aguardando" que era confirmado (botão Corrigir) volta pro caixa quando a
-// resposta NÃO era correção — nunca fica pendente órfão esperando o GC apagar.
+// resposta NÃO era correção — nunca fica pendente órfão esperando o GC.
 async function soltarAguardando(deps: CaixaDeps, pend: LancamentoRow): Promise<void> {
   const extracao = { ...pend.extracao, aguardando: false };
   if (pend.extracao?.era_confirmado === true) {
@@ -293,15 +295,42 @@ async function soltarAguardando(deps: CaixaDeps, pend: LancamentoRow): Promise<v
 }
 
 // ---------------------------------------------------------------------------
-// ENTRADAS públicas (chamadas pelo index.ts)
+// CAPTURA (chamadas pelo index.ts)
 // ---------------------------------------------------------------------------
+
+// Contador do que já entrou: se der erro no meio, o admin fica sabendo o que ficou
+// de fora e a mensagem NÃO volta pro cérebro de conversa (já produziu efeito).
+function contador(deps: CaixaDeps, from: string) {
+  let registrados = 0;
+  let atual: ExtracaoLancamento | null = null;
+  const reg = async (e: ExtracaoLancamento, midia: Midia | null = null, herdado?: Herdado): Promise<string | null> => {
+    atual = e;
+    const id = await registrarEFalar(deps, from, e, midia, herdado);
+    if (id) registrados++;
+    return id;
+  };
+  const corrigir = async (alvo: LancamentoRow, corrigido: ExtracaoLancamento): Promise<void> => {
+    atual = corrigido;
+    if (await substituirPorCorrecao(deps, from, alvo, corrigido)) registrados++;
+  };
+  // Devolve true quando o erro deve ser considerado "tratado" (algo já entrou).
+  const falhou = async (err: unknown): Promise<boolean> => {
+    if (registrados === 0) return false;
+    const a = atual as ExtracaoLancamento | null;
+    const item = a ? [a.contraparte, a.descricao, a.valor !== null ? brl(a.valor) : null].filter(Boolean).join(' · ') : '?';
+    try {
+      await deps.sendText(from, `⚠️ Registrei ${registrados} lançamento(s); deu erro em "${item}": ${(err as Error).message}. Me manda esse de novo.`);
+    } catch { /* melhor esforço */ }
+    return true;
+  };
+  return { reg, corrigir, falhou };
+}
 
 // Mídia de admin (imagem/pdf). Retorna true se tratou (era financeiro).
 export async function tryHandleFinanceiroMedia(
-  deps: CaixaDeps, from: string,
-  midia: { base64: string; mimeType: string; messageId: string },
-  kind: 'imagem' | 'pdf',
+  deps: CaixaDeps, from: string, midia: Midia, kind: 'imagem' | 'pdf',
 ): Promise<boolean> {
+  const c = contador(deps, from);
   try {
     const hoje = hojeBRT();
     const lista = kind === 'pdf'
@@ -309,18 +338,20 @@ export async function tryHandleFinanceiroMedia(
       : await extrairDeImagem(deps.anthropic, midia.base64, midia.mimeType, hoje);
     const { lancar } = planejarCaptura(lista);
     if (lancar.length === 0) return false; // comprovante não-financeiro → fluxo normal
+    esperandoValor.delete(from); // mensagem financeira nova: a pergunta antiga não vale mais
     for (let i = 0; i < lancar.length; i++) {
-      await registrarEFalar(deps, from, lancar[i], i === 0 ? midia : null);
+      await c.reg(lancar[i], i === 0 ? midia : null);
     }
     return true;
   } catch (err) {
     console.error('[caixa-entrada] midia falhou:', (err as Error).message);
-    return false; // qualquer erro → fluxo normal (nunca trava a Eva)
+    return c.falhou(err); // nada entrou → fluxo normal (nunca trava a Eva)
   }
 }
 
 // Texto de admin (inclui transcrição de áudio/vídeo). Retorna true se tratou.
 export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, texto: string): Promise<boolean> {
+  const c = contador(deps, from);
   try {
     // 0) Eva perguntou o valor há menos de 10 min e veio só o número → completa o registro.
     const guardado = esperandoValor.get(from);
@@ -328,7 +359,7 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
       const completo = combinarValorSolto(guardado, texto);
       if (completo) {
         esperandoValor.delete(from);
-        await registrarEFalar(deps, from, completo, guardado.midia, guardado.herdado);
+        await c.reg(completo, guardado.midia, guardado.herdado);
         return true;
       }
       if (Date.now() - guardado.desde > JANELA_AGUARDANDO_MS) esperandoValor.delete(from);
@@ -343,7 +374,7 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
         ? (aguardando.extracao!.itens as ItemNota[]) : [];
       if (itensAtuais.length > 0) {
         const itensCorrigidos = await corrigirItensComTexto(deps.anthropic, itensAtuais, texto, hojeBRT());
-        await substituirPorCorrecao(deps, from, aguardando, mesclarCorrecao(aguardando, { itens: itensCorrigidos }));
+        await c.corrigir(aguardando, mesclarCorrecao(aguardando, { itens: itensCorrigidos }));
         return true;
       }
 
@@ -357,13 +388,14 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
       // Mescla SÓ com afirmação explícita do modelo; senão é lançamento novo.
       if (e && e.relacionado !== true) {
         await soltarAguardando(deps, aguardando);
-        await registrarEFalar(deps, from, e, null);
-        for (const x of extras) await registrarEFalar(deps, from, x, null);
+        esperandoValor.delete(from);
+        await c.reg(e);
+        for (const x of extras) await c.reg(x);
         return true;
       }
       if (e) {
-        await substituirPorCorrecao(deps, from, aguardando, mesclarCorrecao(aguardando, e));
-        for (const x of extras) await registrarEFalar(deps, from, x, null);
+        await c.corrigir(aguardando, mesclarCorrecao(aguardando, e));
+        for (const x of extras) await c.reg(x);
         return true;
       }
       await soltarAguardando(deps, aguardando);
@@ -373,7 +405,7 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
     // 1.5) Número solto (ex: "16mil", "30000", "R$ 30 mil") NÃO é lançamento.
     // Sem contexto (verbo/quem/categoria) é ambíguo — costuma ser cálculo de
     // imposto ou outra coisa. Nunca vira gasto/entrada sem o admin dizer mais.
-    // Protege o dinheiro: impede valor escorregar pro caixa (ex.: Calcular imposto).
+    // (A resposta à pergunta de valor já foi tratada no passo 0.)
     if (parseValorReais(texto) !== null) return false;
 
     // 2) Gate barato: é assunto financeiro?
@@ -385,11 +417,12 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
 
     // Rede de segurança: gate disse dinheiro mas não saiu nada → pergunta (nunca cala).
     if (esclarecer) { await deps.sendText(from, montarPedidoEsclarecimento()); return true; }
+    esperandoValor.delete(from); // mensagem financeira nova: a pergunta antiga não vale mais
 
     // apagar/corrigir = intenção de alvo único → trata o 1º item pelo caminho de hoje.
     const primeiro = lancar[0];
     const extras = lancar.slice(1); // itens além do 1º (ex.: "apaga o do posto, paguei 380")
-    const lancarExtras = async () => { for (const x of extras) await registrarEFalar(deps, from, x, null); };
+    const lancarExtras = async () => { for (const x of extras) await c.reg(x); };
     if (primeiro.intencao === 'apagar') {
       const alvo = primeiro.contraparte
         ? await buscarConfirmadoPorContraparte(deps.supabase, primeiro.contraparte)
@@ -415,7 +448,7 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
         await deps.sendText(from, MSG_ENTRADA_LIGADA);
         await lancarExtras(); return true;
       }
-      // Correção = apaga o antigo (soft) + registra o corrigido JÁ confirmado.
+      // Correção = apaga o antigo (soft) + registra o corrigido JÁ confirmado (com volta se falhar).
       const corrigido: ExtracaoLancamento = {
         ...primeiro, intencao: 'lancar',
         tipo: primeiro.tipo ?? alvo.tipo,
@@ -424,220 +457,16 @@ export async function tryHandleFinanceiroTexto(deps: CaixaDeps, from: string, te
         contraparte: primeiro.contraparte ?? alvo.contraparte,
         pf_pj: primeiro.pf_pj ?? alvo.pf_pj,
       };
-      await substituirPorCorrecao(deps, from, alvo, corrigido);
+      await c.corrigir(alvo, corrigido);
       await lancarExtras(); return true;
     }
 
     // lançamento(s) novo(s): se for mais de um, abre avisando quantos.
     if (lancar.length > 1) await deps.sendText(from, montarAberturaMultipla(lancar.length));
-    for (const e of lancar) {
-      await registrarEFalar(deps, from, e, null);
-    }
+    for (const e of lancar) await c.reg(e);
     return true;
   } catch (err) {
     console.error('[caixa-entrada] texto falhou:', (err as Error).message);
-    return false;
-  }
-}
-
-// Botões finlan:<acao>:<id>[:<extra>]. Retorna true se tratou.
-export async function handleFinlanButton(deps: CaixaDeps, from: string, buttonId: string): Promise<boolean> {
-  const [prefixo, acao, id, extra] = buttonId.trim().split(':');
-  if (prefixo !== 'finlan') return false;
-  if (acao === 'noop') return true;
-  try {
-    switch (acao) {
-      case 'pf': case 'pj': {
-        const row = await getLancamento(deps.supabase, id);
-        if (!row || row.status === 'apagado') { await deps.sendText(from, 'Esse lançamento já foi apagado.'); return true; }
-        const pfPj = acao.toUpperCase() as 'PF' | 'PJ';
-        if (row.status === 'confirmado') {
-          // Já registrado: só troca o mundo (botão "É PF" do registro com confiança baixa).
-          await definirPfPj(deps.supabase, id, pfPj);
-          await deps.sendText(from, pfPj === 'PF' ? '👍 Marquei como PF (pessoal).' : '👍 Marquei como PJ (empresa).');
-          return true;
-        }
-        await atualizarPendente(deps.supabase, id, {
-          // Nota com itens segue aberta pra correção por texto mesmo após resolver PF/PJ.
-          pf_pj: pfPj, extracao: { ...row.extracao, aguardando: pendenteAguardaTexto(false, row.extracao?.itens), aguardando_desde: agoraIso() },
-        });
-        await mandarResumo(deps, from, id);
-        return true;
-      }
-      case 'conf': {
-        // Legado: pendentes criados antes da Fatia 1 ainda confirmam por clique.
-        const row = await getLancamento(deps.supabase, id);
-        if (!row || row.status !== 'pendente') {
-          await deps.sendText(from, 'Esse lançamento não está mais pendente.');
-          return true;
-        }
-        const v = validarParaConfirmar({ tipo: row.tipo, valor: Number(row.valor), data_evento: row.data_evento, pf_pj: row.pf_pj });
-        if (!v.ok) {
-          if (v.faltando.includes('pf_pj')) {
-            await atualizarPendente(deps.supabase, id, { extracao: { ...row.extracao, aguardando: true, aguardando_desde: agoraIso() } });
-            const msg = montarPedidoPfPj(id);
-            await deps.sendWithButtons(from, msg.body, msg.buttons, FOOTER);
-          } else {
-            await deps.sendText(from, `Falta: ${v.faltando.join(', ')}. Me manda por texto que eu completo.`);
-            await atualizarPendente(deps.supabase, id, { extracao: { ...row.extracao, aguardando: true, aguardando_desde: agoraIso() } });
-          }
-          return true;
-        }
-        // Entrada PJ com nota e sem conta vinculada precisa de atividade (imposto) antes.
-        if (entradaPrecisaImposto(row)) {
-          const atividades = await getAtividades(deps.supabase);
-          const msg = montarEscolhaAtividade(id, atividades);
-          await deps.sendWithButtons(from, msg.body, msg.buttons, FOOTER);
-          return true;
-        }
-        const ok = await mudarStatus(deps.supabase, id, 'pendente', 'confirmado');
-        if (ok) {
-          const res = await gravarComprasDaNota(deps.supabase, id).catch(() => ({ gravados: 0, pulados: 0 }));
-          const sufMat = res.gravados === 0 ? ''
-            : res.pulados > 0
-              ? `\n📦 Guardei ${res.gravados} de ${res.gravados + res.pulados} preços (${res.pulados} ficaram de fora — faltou preço/nome).`
-              : `\n📦 Guardei ${res.gravados} preço(s) pra comparar (manda "preço do <material>").`;
-          const msgEntrada = row.tem_nota === false
-            ? `💰 Entrada lançada: ${brl(Number(row.valor))} (sem nota — fora do imposto).`
-            : `💰 Entrada lançada: ${brl(Number(row.valor))}.`;
-          await deps.sendText(from, (row.tipo === 'despesa' ? `💸 Lançado: ${brl(Number(row.valor))}. Tá no caixa.` : msgEntrada) + sufMat);
-        } else await deps.sendText(from, 'Esse lançamento já tinha sido processado.');
-        return true;
-      }
-      case 'corr': {
-        // Corrigir um lançamento JÁ registrado: volta pra pendente "aguardando" por 10 min;
-        // o próximo texto mescla e re-registra (substituirPorCorrecao). Sem resposta, o
-        // texto seguinte não-relacionado devolve ele pro caixa (soltarAguardando).
-        const row = await getLancamento(deps.supabase, id);
-        if (!row || row.status === 'apagado') { await deps.sendText(from, 'Esse lançamento já foi apagado.'); return true; }
-        if (row.tipo === 'entrada' && row.conta_id) { await deps.sendText(from, MSG_ENTRADA_LIGADA); return true; }
-        const eraConfirmado = row.status === 'confirmado';
-        if (eraConfirmado) await reverterParaPendente(deps.supabase, id);
-        await atualizarPendente(deps.supabase, id, { extracao: { ...row.extracao, aguardando: true, aguardando_desde: agoraIso(), era_confirmado: eraConfirmado } });
-        await deps.sendText(from, 'O que tá errado? Me fala (ex: "era 350" / "é PF" / "foi ontem").');
-        return true;
-      }
-      case 'desc': {
-        const ok = await mudarStatus(deps.supabase, id, 'pendente', 'apagado');
-        await deps.sendText(from, ok ? 'Descartado 👍' : 'Esse lançamento não está mais pendente.');
-        return true;
-      }
-      case 'apg': {
-        // Invariante Fatia 2: recebimento lançado não se desfaz por botão — estorno é manual (cancelarConta tem o mesmo guard).
-        const row = await getLancamento(deps.supabase, id);
-        if (row?.tipo === 'entrada' && row?.conta_id) {
-          await deps.sendText(from, MSG_ENTRADA_LIGADA);
-          return true;
-        }
-        const ok = await mudarStatus(deps.supabase, id, 'confirmado', 'apagado');
-        await deps.sendText(from, ok ? '🗑️ Apagado (fica no histórico, sai dos números).' : 'Esse já tinha sido apagado.');
-        return true;
-      }
-      case 'vinc': {
-        // finlan:vinc:<lancamentoId>:<contaId> — entrada casa com venda aberta.
-        // Aceita pendente (legado) e confirmado sem conta (Fatia 1).
-        if (!extra) { console.warn('[caixa-entrada] vinc sem contaId'); return true; }
-        const row = await getLancamento(deps.supabase, id);
-        if (!row || row.status === 'apagado' || (row.status === 'confirmado' && row.conta_id)) {
-          await deps.sendText(from, 'Esse lançamento já foi processado.'); return true;
-        }
-        // Saldo ANTES do CAS: valor maior que o saldo da venda não confirma nada.
-        const saldo = await getSaldoConta(deps.supabase, extra);
-        if (saldo === null) { await deps.sendText(from, '⚠️ Essa venda não está mais em aberto.'); return true; }
-        if (Number(row.valor) > saldo + 0.01) {
-          await deps.sendWithButtons(from,
-            `⚠️ O valor (${brl(Number(row.valor))}) é MAIOR que o saldo da venda (${brl(saldo)}). Lança como entrada avulsa ou corrige o valor:`,
-            [
-              { id: `finlan:avul:${id}`, title: 'Entrada avulsa' },
-              { id: `finlan:corr:${id}`, title: 'Corrigir valor' },
-              row.status === 'pendente' ? { id: `finlan:desc:${id}`, title: 'Descartar' } : { id: `finlan:apg:${id}`, title: 'Apagar' },
-            ], FOOTER);
-          return true;
-        }
-        // CAS no lançamento ANTES do dinheiro: clique duplo para aqui (1 recebimento só).
-        // Crash depois do CAS deixa lançamento com conta SEM recebimento — faltando e
-        // detectável, nunca duplicado (mesmo invariante da Fatia 2, contas.ts).
-        const eraPendente = row.status === 'pendente';
-        const ok = eraPendente
-          ? await mudarStatus(deps.supabase, id, 'pendente', 'confirmado', { conta_id: extra })
-          : await vincularContaSeLivre(deps.supabase, id, extra);
-        if (!ok) { await deps.sendText(from, 'Esse lançamento já tinha sido processado.'); return true; }
-        // Só o passo de DINHEIRO reverte — falha de envio de mensagem não desfaz recebimento já entrado.
-        let r: Awaited<ReturnType<typeof registrarRecebimento>>;
-        try {
-          r = await registrarRecebimento(deps.supabase, extra, Number(row.valor));
-        } catch (err) {
-          // Compensação: falha no passo de dinheiro desfaz o CAS porteiro — nunca fica vínculo fantasma.
-          if (eraPendente) await reverterParaPendente(deps.supabase, id);
-          else await desvincularConta(deps.supabase, id);
-          await deps.sendText(from, `❌ Não consegui registrar na venda (${(err as Error).message}). ${eraPendente ? 'O lançamento voltou pra pendente.' : 'O lançamento ficou no caixa, sem vínculo.'}`);
-          return true;
-        }
-        const aviso = r.total
-          ? `💵 Recebimento total na venda: ${brl(r.acumulado)}.`
-          : `💵 Parcela na venda: ${brl(r.parcela)} (falta ${brl(r.saldoRestante)}).`;
-        await deps.sendText(from, `${aviso}\nImposto desta parcela (Anexo ${r.calc.anexo}): *${brl(r.calc.imposto)}* — separe pro DAS.`);
-        return true;
-      }
-      case 'avul': {
-        const atividades = await getAtividades(deps.supabase);
-        const msg = montarEscolhaAtividade(id, atividades);
-        await deps.sendWithButtons(from, msg.body, msg.buttons, FOOTER);
-        return true;
-      }
-      case 'atv': {
-        // finlan:atv:<lancamentoId>:<atividadeId> — entrada avulsa PJ: cria conta
-        // avulsa + recebimento total imediato (motor Fatia 2 → imposto/RBT12 certos).
-        if (!extra) { console.warn('[caixa-entrada] atv sem atividadeId'); return true; }
-        const row = await getLancamento(deps.supabase, id);
-        if (!row || row.status === 'apagado' || (row.status === 'confirmado' && row.conta_id)) {
-          await deps.sendText(from, 'Esse lançamento já foi processado.'); return true;
-        }
-        const eraPendente = row.status === 'pendente';
-        // Pendente (legado): CAS porteiro ANTES de criar a conta — clique duplo não cria 2ª conta.
-        // Confirmado (Fatia 1): o CAS é o vínculo da conta (vincularContaSeLivre) logo abaixo;
-        // um clique duplo cria conta órfã que a compensação cancela.
-        if (eraPendente) {
-          const ok = await mudarStatus(deps.supabase, id, 'pendente', 'confirmado');
-          if (!ok) { await deps.sendText(from, 'Esse lançamento já tinha sido processado.'); return true; }
-        }
-        // Só o passo de DINHEIRO reverte — falha de envio de mensagem não desfaz recebimento já entrado.
-        let contaId: string | undefined;
-        let r: Awaited<ReturnType<typeof registrarRecebimento>>;
-        try {
-          ({ contaId } = await criarContaDeFechamento(deps.supabase, {
-            fechamentoId: null, leadId: row.lead_id, atividadeId: extra,
-            descricao: `Entrada avulsa — ${row.contraparte ?? row.descricao ?? 'sem descrição'}`,
-            valor: Number(row.valor), createdBy: from,
-          }));
-          if (eraPendente) {
-            await gravarContaNoLancamento(deps.supabase, id, contaId);
-          } else if (!(await vincularContaSeLivre(deps.supabase, id, contaId))) {
-            throw new Error('lançamento já vinculado a outra venda');
-          }
-          r = await registrarRecebimento(deps.supabase, contaId);
-        } catch (err) {
-          if (contaId) {
-            // Conta avulsa órfã não pode ficar inflando o "A receber" — cancela
-            // best-effort (o guard do cancelarConta protege se o dinheiro entrou).
-            try { await cancelarConta(deps.supabase, contaId); } catch { /* manual */ }
-          }
-          // Compensação: falha no passo de dinheiro desfaz o CAS porteiro — nunca fica vínculo fantasma.
-          if (eraPendente) await reverterParaPendente(deps.supabase, id);
-          else await desvincularConta(deps.supabase, id);
-          await deps.sendText(from, `❌ Não consegui registrar na venda (${(err as Error).message}). ${eraPendente ? 'O lançamento voltou pra pendente.' : 'O lançamento ficou no caixa, sem vínculo.'}`);
-          return true;
-        }
-        await deps.sendText(from, `💰 Entrada avulsa lançada: ${brl(Number(row.valor))}.\nImposto (Anexo ${r.calc.anexo}): *${brl(r.calc.imposto)}* — separe pro DAS.`);
-        return true;
-      }
-      default:
-        console.warn(`[caixa-entrada] finlan ação desconhecida: ${acao}`);
-        return true;
-    }
-  } catch (err) {
-    console.error('[caixa-entrada] botão falhou:', (err as Error).message);
-    await deps.sendText(from, `❌ ${(err as Error).message}`);
-    return true;
+    return c.falhou(err);
   }
 }

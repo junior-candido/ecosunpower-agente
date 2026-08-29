@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { criarConfirmado, hashDedupe, getSemDono, definirFavorecido } from '../src/modules/financeiro/lancamentos-repo.js';
+import { criarConfirmado, hashDedupe, getSemDono, definirFavorecido, desvincularConta, restaurarApagado } from '../src/modules/financeiro/lancamentos-repo.js';
 
 function sbMock(retorno: unknown) {
   const single = vi.fn().mockResolvedValue({ data: retorno, error: null });
@@ -88,5 +88,25 @@ describe('lancamentos-repo: definirFavorecido', () => {
     const payload = calls.update[0][0] as Record<string, unknown>;
     expect(payload).toMatchObject({ favorecido_id: 'fav-1', pf_pj: 'PF', categoria_id: 'cat-1', confianca: 'alta' });
     expect(calls.eq).toContainEqual(['id', 'L1']);
+  });
+});
+
+describe('lancamentos-repo: desvincularConta só desfaz o PRÓPRIO vínculo', () => {
+  it('filtra por id, status confirmado E conta_id (clique B não apaga o vínculo do clique A)', async () => {
+    const { client, calls } = chainMock();
+    await desvincularConta(client, 'L1', 'conta-B');
+    expect((calls.update[0][0] as Record<string, unknown>).conta_id).toBeNull();
+    expect(calls.eq).toContainEqual(['id', 'L1']);
+    expect(calls.eq).toContainEqual(['status', 'confirmado']);
+    expect(calls.eq).toContainEqual(['conta_id', 'conta-B']);
+  });
+});
+
+describe('lancamentos-repo: restaurarApagado', () => {
+  it('apagado → confirmado com a descrição original (sem o sufixo)', async () => {
+    const { client, calls } = chainMock();
+    await restaurarApagado(client, 'L1', 'confirmado', 'gasolina');
+    expect(calls.update[0][0]).toMatchObject({ status: 'confirmado', descricao: 'gasolina' });
+    expect(calls.eq).toContainEqual(['status', 'apagado']);
   });
 });

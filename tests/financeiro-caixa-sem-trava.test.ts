@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { decidirRegistro, mesclarCorrecao, registrarEFalar, combinarValorSolto } from '../src/modules/financeiro/caixa-entrada.js';
+import { decidirRegistro, mesclarCorrecao, registrarEFalar, combinarValorSolto, proximoEraConfirmado, substituirPorCorrecao } from '../src/modules/financeiro/caixa-entrada.js';
 import { dentroDaJanela } from '../src/modules/financeiro/lancamentos-repo.js';
 
 describe('decidirRegistro (puro): nunca trava', () => {
@@ -93,5 +93,39 @@ describe('combinarValorSolto (puro): número solto completa o registro sem valor
   it('expirado (11 min) → null; texto que não é valor → null', () => {
     expect(combinarValorSolto({ ...guardado, desde: agora - 11 * 60_000 }, '380', agora)).toBeNull();
     expect(combinarValorSolto(guardado, 'gasolina no shell', agora)).toBeNull();
+  });
+});
+
+describe('proximoEraConfirmado (puro): duplo toque em Corrigir não rebaixa', () => {
+  it('confirmado agora → true', () => { expect(proximoEraConfirmado('confirmado', null)).toBe(true); });
+  it('já pendente mas marcado era_confirmado → continua true', () => {
+    expect(proximoEraConfirmado('pendente', { aguardando: true, era_confirmado: true })).toBe(true);
+  });
+  it('pendente legado sem marca → false', () => { expect(proximoEraConfirmado('pendente', { aguardando: true })).toBe(false); });
+});
+
+describe('substituirPorCorrecao: se o corrigido não entra, o original volta (nunca some)', () => {
+  it('insert falha → update apagado, depois update confirmado com descrição original; erro propaga', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const chain: Record<string, unknown> = {};
+    for (const m of ['select', 'insert', 'eq', 'neq', 'is', 'in', 'gte', 'lt', 'lte', 'ilike', 'contains', 'order', 'limit', 'maybeSingle']) {
+      chain[m] = vi.fn(() => chain);
+    }
+    chain.update = vi.fn((p: Record<string, unknown>) => { updates.push(p); return chain; });
+    chain.single = vi.fn(() => ({ then: (res: (v: unknown) => void) => res({ data: null, error: { message: 'boom' } }) }));
+    chain.then = (res: (v: unknown) => void) => res({ data: [], error: null });
+    const deps = { supabase: { from: vi.fn(() => chain) } as never, anthropic: {} as never, sendText: vi.fn(async () => undefined), sendWithButtons: vi.fn(async () => undefined) };
+    const alvo = row({ descricao: 'gasolina' }) as never;
+    const corrigido = mesclarCorrecao(alvo, { valor: 350 });
+    await expect(substituirPorCorrecao(deps, '5561', alvo, corrigido)).rejects.toThrow('boom');
+    // 1º update = soft-apagar do original (com sufixo); último = volta pra confirmado.
+    // (No meio pode haver o GC preguiçoso de pendentes — não é deste lançamento.)
+    expect(updates[0]).toMatchObject({ status: 'apagado' });
+    expect(String(updates[0].descricao)).toContain('[substituído por correção]');
+    expect(updates[updates.length - 1].status).toBe('confirmado');
+    const restaura = updates.find((u) => u.status === 'confirmado')!;
+    expect(restaura.descricao).toBe('gasolina');
+    expect(deps.sendText).toHaveBeenCalledTimes(1);
+    expect((deps.sendText.mock.calls[0] as unknown[])[1]).toContain('original continua');
   });
 });
