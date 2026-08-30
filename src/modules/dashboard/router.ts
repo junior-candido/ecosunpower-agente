@@ -759,6 +759,81 @@ b.onclick=async function(){
     }
   });
 
+  router.get('/fiscal/:id/editar', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    const notaId = String(req.params.id);
+    if (!UUID_RE.test(notaId)) { res.status(404).send('Nota não achada'); return; }
+    try {
+      const { getNota, listarServicos } = await import('../financeiro/fiscal/notas-repo.js');
+      const { renderNovaNotaPage } = await import('./fiscal-views.js');
+      const companyId = req.dashUser!.companyId;
+      const nota = await getNota(supabase, companyId, notaId);
+      if (!nota) { res.status(404).send('Nota não achada'); return; }
+      if (nota.status !== 'preparada') { res.redirect(`/dashboard/fiscal/${notaId}`); return; }
+      const servicos = await listarServicos(supabase, companyId);
+      const q = req.query as Record<string, string | undefined>;
+      res.type('html').send(renderNovaNotaPage(servicos, {
+        notaId: nota.id, nome: nota.tomador.nome, doc: nota.tomador.doc, tipo: nota.tomador.tipo,
+        im: nota.tomador.im ?? undefined, endereco: nota.tomador.endereco, municipio: nota.tomador.municipio,
+        uf: nota.tomador.uf, email: nota.tomador.email ?? undefined,
+        servicoId: nota.servicoId ?? undefined, descricao: nota.descricao, competencia: nota.competencia,
+        valor: nota.valorBruto, issRetido: nota.issRetido,
+        erro: String(q.erro ?? '') || undefined,
+      }, req.dashUser));
+    } catch (err) {
+      console.error('[fiscal/:id/editar GET]', err);
+      res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+  });
+
+  router.post('/fiscal/:id/editar', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    const notaId = String(req.params.id);
+    if (!UUID_RE.test(notaId)) { res.status(404).send('Nota não achada'); return; }
+    try {
+      const { listarServicos, atualizarNotaPreparada, registrarEvento } = await import('../financeiro/fiscal/notas-repo.js');
+      const { calcularNota } = await import('../financeiro/fiscal/calculo.js');
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const companyId = req.dashUser!.companyId;
+      const valorCentavos = parseReais(b.valor);
+      const doc = String(b.doc ?? '').replace(/\D/g, '');
+      const nome = String(b.nome ?? '').trim();
+      const competencia = String(b.competencia ?? '');
+      const servicoId = String(b.servico_id ?? '');
+      if (!servicoId || !(valorCentavos > 0) || !nome || !doc || !competencia) {
+        res.redirect(`/dashboard/fiscal/${notaId}/editar?erro=` + encodeURIComponent('Preencha tomador, serviço, valor e competência.')); return;
+      }
+      const servicos = await listarServicos(supabase, companyId);
+      const servico = servicos.find((s) => s.id === servicoId);
+      if (!servico) {
+        res.redirect(`/dashboard/fiscal/${notaId}/editar?erro=` + encodeURIComponent('Serviço inválido.')); return;
+      }
+      const valorBruto = valorCentavos / 100;
+      const aliquotaIss = Number(servico.aliquota_iss);
+      const issRetido = b.iss_retido === 'on';
+      const calc = calcularNota({ valorBruto, aliquotaIss, issRetido });
+      const ok = await atualizarNotaPreparada(supabase, companyId, notaId, {
+        competencia, servicoId,
+        descricao: String(b.descricao ?? '').trim() || servico.descricao_padrao,
+        tomador: {
+          tipo: b.tipo === 'PF' ? 'PF' : 'PJ', doc, nome,
+          im: String(b.im ?? '').trim() || null,
+          endereco: String(b.endereco ?? '').trim(),
+          email: String(b.email ?? '').trim() || null,
+          municipio: String(b.municipio ?? '').trim() || 'Brasília',
+          uf: (String(b.uf ?? '').trim() || 'DF').toUpperCase(),
+        },
+        valorBruto, aliquotaIss, valorIss: calc.valorIss, issRetido, valorLiquido: calc.valorLiquido,
+        fechamentoId: String(b.fechamento_id ?? '').trim() || null,
+        leadId: String(b.lead_id ?? '').trim() || null,
+      });
+      if (!ok) { res.redirect(`/dashboard/fiscal/${notaId}`); return; }
+      await registrarEvento(supabase, notaId, 'editada', {});
+      res.redirect(`/dashboard/fiscal/${notaId}`);
+    } catch (err) {
+      console.error('[fiscal/:id/editar POST]', err);
+      res.redirect(`/dashboard/fiscal/${notaId}/editar?erro=` + encodeURIComponent((err as Error).message));
+    }
+  });
+
   router.post('/fiscal/nova', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
     try {
       const { listarServicos, criarNota, registrarEvento } = await import('../financeiro/fiscal/notas-repo.js');
@@ -861,6 +936,19 @@ b.onclick=async function(){
       res.redirect(data.signedUrl);
     } catch (err) {
       console.error('[fiscal/pdf]', err);
+      res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+  });
+
+  router.post('/fiscal/:id/excluir', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    const notaId = String(req.params.id);
+    if (!UUID_RE.test(notaId)) { res.status(404).send('Nota não achada'); return; }
+    try {
+      const { excluirNotaPreparada } = await import('../financeiro/fiscal/notas-repo.js');
+      const ok = await excluirNotaPreparada(supabase, req.dashUser!.companyId, notaId);
+      res.redirect(ok ? '/dashboard/fiscal' : `/dashboard/fiscal/${notaId}`);
+    } catch (err) {
+      console.error('[fiscal/:id/excluir]', err);
       res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
   });

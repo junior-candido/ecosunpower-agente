@@ -45,37 +45,47 @@ ${alertaCert}
   return renderLayout({ active: 'fiscal', title: 'Notas fiscais', body, dark: true, user });
 }
 
-export function renderNovaNotaPage(servicos: ServicoOpt[], prefill: { nome?: string; doc?: string; valor?: number; fechamentoId?: string; leadId?: string; erro?: string }, user?: DashUser): string {
-  const opts = servicos.map((s) => `<option value="${s.id}" data-aliq="${s.aliquota_iss}" data-descr="${escapeHtml(s.descricao_padrao)}">${escapeHtml(s.nome)} (${s.cod_trib_nacional})</option>`).join('');
+export interface NovaNotaPrefill {
+  nome?: string; doc?: string; valor?: number; fechamentoId?: string; leadId?: string; erro?: string;
+  notaId?: string; im?: string; endereco?: string; municipio?: string; uf?: string; email?: string;
+  tipo?: 'PJ' | 'PF'; servicoId?: string; descricao?: string; competencia?: string; issRetido?: boolean;
+}
+
+export function renderNovaNotaPage(servicos: ServicoOpt[], prefill: NovaNotaPrefill, user?: DashUser): string {
+  const opts = servicos.map((s) => `<option value="${s.id}" data-aliq="${s.aliquota_iss}" data-descr="${escapeHtml(s.descricao_padrao)}"${prefill.servicoId === s.id ? ' selected' : ''}>${escapeHtml(s.nome)} (${s.cod_trib_nacional})</option>`).join('');
+  const editando = Boolean(prefill.notaId);
+  const acao = editando ? `/dashboard/fiscal/${escapeHtml(prefill.notaId!)}/editar` : '/dashboard/fiscal/nova';
+  const titulo = editando ? '🧾 Editar nota (preparada)' : '🧾 Nova nota';
+  const botao = editando ? 'Salvar alterações' : 'Preparar nota';
   const body = `
 <div style="color:#d1d5db;max-width:640px">
-<h1 class="text-xl font-bold text-cyan-300 mb-4">🧾 Nova nota</h1>
+<h1 class="text-xl font-bold text-cyan-300 mb-4">${titulo}</h1>
 ${prefill.erro ? `<div class="card" style="border:1px solid #f87171;border-radius:10px;padding:8px;margin-bottom:8px">${escapeHtml(prefill.erro)}</div>` : ''}
-<form method="post" action="/dashboard/fiscal/nova" class="space-y-3">
+<form method="post" action="${acao}" class="space-y-3"${editando ? ' data-edit="1"' : ''}>
   <input type="hidden" name="fechamento_id" value="${escapeHtml(prefill.fechamentoId ?? '')}">
   <input type="hidden" name="lead_id" value="${escapeHtml(prefill.leadId ?? '')}">
-  <label class="block">Tomador é <select name="tipo" id="tipo" class="bg-gray-800 p-1 rounded"><option value="PJ">PJ (CNPJ)</option><option value="PF">PF (CPF)</option></select></label>
+  <label class="block">Tomador é <select name="tipo" id="tipo" class="bg-gray-800 p-1 rounded"><option value="PJ"${prefill.tipo !== 'PF' ? ' selected' : ''}>PJ (CNPJ)</option><option value="PF"${prefill.tipo === 'PF' ? ' selected' : ''}>PF (CPF)</option></select></label>
   <label class="block">CNPJ/CPF <input name="doc" id="doc" value="${escapeHtml(prefill.doc ?? '')}" class="bg-gray-800 p-1 rounded w-full" required>
     <button type="button" id="buscar" class="px-2 py-1 rounded bg-gray-700 mt-1">🔎 Buscar dados</button></label>
   <label class="block">Nome/Razão social <input name="nome" id="nome" value="${escapeHtml(prefill.nome ?? '')}" class="bg-gray-800 p-1 rounded w-full" required></label>
-  <label class="block">Inscrição municipal (se PJ do DF) <input name="im" id="im" class="bg-gray-800 p-1 rounded w-full"></label>
-  <label class="block">Endereço <input name="endereco" id="endereco" class="bg-gray-800 p-1 rounded w-full"></label>
+  <label class="block">Inscrição municipal (se PJ do DF) <input name="im" id="im" value="${escapeHtml(prefill.im ?? '')}" class="bg-gray-800 p-1 rounded w-full"></label>
+  <label class="block">Endereço <input name="endereco" id="endereco" value="${escapeHtml(prefill.endereco ?? '')}" class="bg-gray-800 p-1 rounded w-full"></label>
   <div class="grid grid-cols-2 gap-2">
-    <label>Município <input name="municipio" id="municipio" value="Brasília" class="bg-gray-800 p-1 rounded w-full"></label>
-    <label>UF <input name="uf" id="uf" value="DF" class="bg-gray-800 p-1 rounded w-full" maxlength="2"></label>
+    <label>Município <input name="municipio" id="municipio" value="${escapeHtml(prefill.municipio ?? 'Brasília')}" class="bg-gray-800 p-1 rounded w-full"></label>
+    <label>UF <input name="uf" id="uf" value="${escapeHtml(prefill.uf ?? 'DF')}" class="bg-gray-800 p-1 rounded w-full" maxlength="2"></label>
   </div>
-  <label class="block">E-mail do tomador <input name="email" id="email" type="email" class="bg-gray-800 p-1 rounded w-full"></label>
+  <label class="block">E-mail do tomador <input name="email" id="email" type="email" value="${escapeHtml(prefill.email ?? '')}" class="bg-gray-800 p-1 rounded w-full"></label>
   <label class="block">Serviço <select name="servico_id" id="servico" class="bg-gray-800 p-1 rounded w-full">${opts}</select></label>
-  <label class="block">Descrição na nota <textarea name="descricao" id="descricao" class="bg-gray-800 p-1 rounded w-full" rows="2"></textarea></label>
+  <label class="block">Descrição na nota <textarea name="descricao" id="descricao" class="bg-gray-800 p-1 rounded w-full" rows="2">${escapeHtml(prefill.descricao ?? '')}</textarea></label>
   <div class="grid grid-cols-2 gap-2">
     <label>Valor do serviço (R$) <input name="valor" id="valor" type="text" inputmode="decimal" value="${prefill.valor ?? ''}" class="bg-gray-800 p-1 rounded w-full" required></label>
-    <label>Competência <input name="competencia" type="date" value="${new Date().toISOString().slice(0, 10)}" class="bg-gray-800 p-1 rounded w-full" required></label>
+    <label>Competência <input name="competencia" type="date" value="${escapeHtml(prefill.competencia ?? new Date().toISOString().slice(0, 10))}" class="bg-gray-800 p-1 rounded w-full" required></label>
   </div>
-  <label class="block"><input type="checkbox" name="iss_retido" id="retido"> ISS retido pelo tomador (marca sozinho pra PJ do DF)</label>
+  <label class="block"><input type="checkbox" name="iss_retido" id="retido"${prefill.issRetido ? ' checked' : ''}> ISS retido pelo tomador (marca sozinho pra PJ do DF)</label>
   <div class="card" style="border:1px solid #1b2040;border-radius:10px;padding:10px" id="conta">
     Bruto: <b id="c-bruto">—</b> · ISS <span id="c-aliq">5%</span>: <b id="c-iss">—</b> · líquido a receber: <b id="c-liq" class="text-emerald-300">—</b>
   </div>
-  <button class="px-4 py-2 rounded bg-cyan-700 text-white">Preparar nota</button>
+  <button class="px-4 py-2 rounded bg-cyan-700 text-white">${botao}</button>
 </form></div>`;
   const scripts = `
 <script>
@@ -104,7 +114,7 @@ ${prefill.erro ? `<div class="card" style="border:1px solid #f87171;border-radiu
     $('nome').value=d.razaoSocial; $('endereco').value=d.endereco; $('municipio').value=d.municipio; $('uf').value=d.uf; if(d.email)$('email').value=d.email;
     autoRetencao();
   });
-  autoRetencao();
+  if (document.querySelector('form[data-edit="1"]')) { conta(); } else { autoRetencao(); }
 })();
 </script>`;
   return renderLayout({ active: 'fiscal', title: 'Nova nota', body, scripts, dark: true, user });
@@ -127,10 +137,18 @@ export function renderNotaDetalhe(n: NotaLinha, _config: ConfigInfo | null, user
       <button class="px-3 py-2 rounded bg-emerald-700 text-white">Anexar e lançar no caixa</button>
     </form>
   </div>` : '';
+  const acoesPreparada = n.status === 'preparada' ? `
+<p class="mt-1">
+  <a class="text-cyan-300" href="/dashboard/fiscal/${n.id}/editar">✏️ Editar</a>
+  <form method="post" action="/dashboard/fiscal/${n.id}/excluir" style="display:inline" onsubmit="return confirm('Excluir este rascunho de nota? Não dá pra desfazer.')">
+    <button class="text-rose-400" style="background:none;border:none;cursor:pointer">🗑️ Excluir</button>
+  </form>
+</p>` : '';
   const body = `
 <div style="color:#d1d5db;max-width:640px">
 <h1 class="text-xl font-bold text-cyan-300 mb-2">🧾 Nota ${n.numero ? 'nº ' + escapeHtml(n.numero) : '(preparada)'}</h1>
 <p>${STATUS[n.status] ?? n.status} · ${escapeHtml(n.tomador.nome)} · ${brl(n.valorBruto)} → líquido <b>${brl(n.valorLiquido)}</b>${n.issRetido ? ` (ISS retido ${brl(n.valorIss)})` : ''}</p>
+${acoesPreparada}
 ${preparar}
 ${n.pdfStoragePath ? `<p><a class="text-cyan-300" href="/dashboard/fiscal/${n.id}/pdf">📄 Baixar PDF</a></p>` : ''}
 ${n.contaReceberId ? '<p class="text-emerald-300">✅ Conta a receber criada no caixa.</p>' : ''}
