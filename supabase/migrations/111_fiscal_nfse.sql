@@ -78,7 +78,7 @@ CREATE POLICY company_isolation ON public.fiscal_config
       (auth.jwt() ->> 'company_id')::uuid)))
   WITH CHECK (company_id = (SELECT coalesce(
       nullif(current_setting('app.company_id', true), '')::uuid,
-      (auth.jwt() ->> 'company_id')::uuid));
+      (auth.jwt() ->> 'company_id')::uuid)));
 
 ALTER TABLE public.fiscal_servicos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fiscal_servicos FORCE ROW LEVEL SECURITY;
@@ -90,7 +90,7 @@ CREATE POLICY company_isolation ON public.fiscal_servicos
       (auth.jwt() ->> 'company_id')::uuid)))
   WITH CHECK (company_id = (SELECT coalesce(
       nullif(current_setting('app.company_id', true), '')::uuid,
-      (auth.jwt() ->> 'company_id')::uuid));
+      (auth.jwt() ->> 'company_id')::uuid)));
 
 ALTER TABLE public.fiscal_notas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fiscal_notas FORCE ROW LEVEL SECURITY;
@@ -102,7 +102,7 @@ CREATE POLICY company_isolation ON public.fiscal_notas
       (auth.jwt() ->> 'company_id')::uuid)))
   WITH CHECK (company_id = (SELECT coalesce(
       nullif(current_setting('app.company_id', true), '')::uuid,
-      (auth.jwt() ->> 'company_id')::uuid));
+      (auth.jwt() ->> 'company_id')::uuid)));
 
 ALTER TABLE public.fiscal_eventos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fiscal_eventos FORCE ROW LEVEL SECURITY;
@@ -114,7 +114,7 @@ CREATE POLICY company_isolation ON public.fiscal_eventos
       (auth.jwt() ->> 'company_id')::uuid)))
   WITH CHECK ((SELECT company_id FROM fiscal_notas WHERE id = nota_id) = (SELECT coalesce(
       nullif(current_setting('app.company_id', true), '')::uuid,
-      (auth.jwt() ->> 'company_id')::uuid));
+      (auth.jwt() ->> 'company_id')::uuid)));
 
 -- Seed EcoSun (idempotente):
 INSERT INTO fiscal_config (cnpj, inscricao_municipal, razao_social)
