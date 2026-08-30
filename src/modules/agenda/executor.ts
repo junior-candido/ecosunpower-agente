@@ -47,6 +47,22 @@ export interface AgendaEscrita {
   updateEvent(eventId: string, updates: { location?: string }): Promise<{ eventId: string; htmlLink: string }>;
 }
 
+// Monta um link clicável do Google Maps a partir de lat/lng — usado no pin
+// do WhatsApp do dono (Eva Agenda A1). BUG ao vivo (Junior): antes o
+// `location` do evento do Google Calendar guardava só as coordenadas cruas
+// ("−22.630000,−47.200000"), e tocar nesse texto no celular NÃO abre o Maps —
+// vira só um endereço de texto sem link. Um link https://.../maps?q=lat,lng
+// abre o app do Maps ao tocar. Aceita number ou string (Number(...) cobre
+// ambos e ainda tolera espaços em volta); 6 casas decimais é a mesma
+// precisão que o branch admin/cliente já usava antes (toFixed(6)).
+export function coordsParaLink(lat: number | string, lng: number | string): string {
+  const latNum = typeof lat === 'string' ? parseFloat(lat.trim()) : lat;
+  const lngNum = typeof lng === 'string' ? parseFloat(lng.trim()) : lng;
+  const latStr = Number.isFinite(latNum) ? latNum.toFixed(6) : String(lat).trim();
+  const lngStr = Number.isFinite(lngNum) ? lngNum.toFixed(6) : String(lng).trim();
+  return `https://www.google.com/maps?q=${latStr},${lngStr}`;
+}
+
 const MARCA_EVA = 'Compromisso criado pela Eva.';
 
 // Cria o evento no Google Agenda com a cor certa pelo âmbito (empresa=azul,
