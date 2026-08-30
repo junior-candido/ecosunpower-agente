@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { criarNota, listarNotas, anexarPdf, getNota, hashNota } from '../src/modules/financeiro/fiscal/notas-repo.js';
+import { criarNota, listarNotas, anexarPdf, getNota, hashNota, atualizarNotaPreparada, excluirNotaPreparada } from '../src/modules/financeiro/fiscal/notas-repo.js';
 
 function chainMock(resultado: unknown = { data: [], error: null }) {
   const calls: Record<string, unknown[][]> = {};
   const chain: Record<string, unknown> = {};
-  for (const m of ['select', 'insert', 'update', 'eq', 'is', 'in', 'gte', 'lte', 'order', 'limit']) {
+  for (const m of ['select', 'insert', 'update', 'delete', 'eq', 'is', 'in', 'gte', 'lte', 'order', 'limit']) {
     chain[m] = vi.fn((...a: unknown[]) => { (calls[m] ??= []).push(a); return chain; });
   }
   chain.single = vi.fn().mockResolvedValue(resultado);
@@ -62,5 +62,48 @@ describe('fiscal notas-repo', () => {
     await getNota(client, 'c1', 'n1');
     expect(calls.eq).toContainEqual(['company_id', 'c1']);
     expect(calls.eq).toContainEqual(['id', 'n1']);
+  });
+
+  const novosDadosNota = {
+    competencia: '2026-09-01', servicoId: 's2', descricao: 'limpeza revisada',
+    tomador: { tipo: 'PJ' as const, doc: '11.222.333/0001-44', nome: 'NOVO TOMADOR', im: null, endereco: 'QS 100', email: null, municipio: 'Brasília', uf: 'DF' },
+    valorBruto: 25000, aliquotaIss: 0.05, valorIss: 1250, issRetido: true, valorLiquido: 23750,
+    fechamentoId: null, leadId: null,
+  };
+
+  it('atualizarNotaPreparada atualiza com CAS (status=preparada + company) e recalcula o hash', async () => {
+    const { client, from, calls } = chainMock({ data: [{ id: 'n1' }], error: null });
+    const ok = await atualizarNotaPreparada(client, 'c1', 'n1', novosDadosNota);
+    expect(ok).toBe(true);
+    expect(from).toHaveBeenCalledWith('fiscal_notas');
+    expect(calls.eq).toContainEqual(['id', 'n1']);
+    expect(calls.eq).toContainEqual(['company_id', 'c1']);
+    expect(calls.eq).toContainEqual(['status', 'preparada']);
+    const row = calls.update![0][0] as Record<string, unknown>;
+    expect(row.hash_dedupe).toBe(hashNota('c1', '11.222.333/0001-44', 25000, '2026-09-01'));
+    expect(row.updated_at).toBeTruthy();
+  });
+
+  it('atualizarNotaPreparada devolve false quando a nota não está mais em preparada', async () => {
+    const { client } = chainMock({ data: [], error: null });
+    const ok = await atualizarNotaPreparada(client, 'c1', 'n1', novosDadosNota);
+    expect(ok).toBe(false);
+  });
+
+  it('excluirNotaPreparada exclui com CAS (status=preparada + company) e devolve true', async () => {
+    const { client, from, calls } = chainMock({ data: [{ id: 'n1' }], error: null });
+    const ok = await excluirNotaPreparada(client, 'c1', 'n1');
+    expect(ok).toBe(true);
+    expect(from).toHaveBeenCalledWith('fiscal_notas');
+    expect(calls.delete).toBeTruthy();
+    expect(calls.eq).toContainEqual(['id', 'n1']);
+    expect(calls.eq).toContainEqual(['company_id', 'c1']);
+    expect(calls.eq).toContainEqual(['status', 'preparada']);
+  });
+
+  it('excluirNotaPreparada devolve false quando a nota não está mais em preparada', async () => {
+    const { client } = chainMock({ data: [], error: null });
+    const ok = await excluirNotaPreparada(client, 'c1', 'n1');
+    expect(ok).toBe(false);
   });
 });
