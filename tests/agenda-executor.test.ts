@@ -9,6 +9,7 @@ import {
   marcar,
   desfazer,
   substituir,
+  anexarLocalizacao,
   listarDiaFormatado,
   listarSemanaFormatado,
   ehDiaInteiro,
@@ -26,12 +27,15 @@ function mockAgenda(opts?: {
 }): AgendaEscrita & {
   chamadasCriar: Array<Parameters<AgendaEscrita['createEvent']>[0]>;
   chamadasExcluir: string[];
+  chamadasAtualizar: Array<{ eventId: string; updates: { location?: string } }>;
 } {
   const chamadasCriar: Array<Parameters<AgendaEscrita['createEvent']>[0]> = [];
   const chamadasExcluir: string[] = [];
+  const chamadasAtualizar: Array<{ eventId: string; updates: { location?: string } }> = [];
   return {
     chamadasCriar,
     chamadasExcluir,
+    chamadasAtualizar,
     async createEvent(input) {
       chamadasCriar.push(input);
       if (opts?.falharCriar) throw new Error('Google Calendar fora do ar');
@@ -42,6 +46,10 @@ function mockAgenda(opts?: {
     },
     async listarEventos() {
       return opts?.eventos ?? [];
+    },
+    async updateEvent(eventId, updates) {
+      chamadasAtualizar.push({ eventId, updates });
+      return { eventId, htmlLink: `https://calendar.google.com/${eventId}` };
     },
   };
 }
@@ -212,6 +220,20 @@ describe('agenda/executor: substituir()', () => {
   });
 });
 
+describe('agenda/executor: anexarLocalizacao()', () => {
+  it('A) chama updateEvent só com { location }, preservando o eventId', async () => {
+    const cal = mockAgenda();
+    await anexarLocalizacao(cal, 'evt-123', 'Rua das Flores, 123');
+    expect(cal.chamadasAtualizar).toEqual([{ eventId: 'evt-123', updates: { location: 'Rua das Flores, 123' } }]);
+  });
+
+  it('B) erro no patch propaga normalmente (quem chama decide a mensagem amigável)', async () => {
+    const cal = mockAgenda();
+    cal.updateEvent = async () => { throw new Error('Google Calendar fora do ar'); };
+    await expect(anexarLocalizacao(cal, 'evt-1', 'Rua das Flores, 123')).rejects.toThrow('Google Calendar fora do ar');
+  });
+});
+
 describe('agenda/executor: listarDiaFormatado()', () => {
   it('10) dia vazio → "Nada marcado 🎉"', async () => {
     const cal = mockAgenda({ eventos: [] });
@@ -287,6 +309,7 @@ describe('agenda/executor: listarSemanaFormatado()', () => {
     const cal: AgendaEscrita = {
       async createEvent() { throw new Error('não usado neste teste'); },
       async deleteEvent() { /* não usado */ },
+      async updateEvent(eventId) { return { eventId, htmlLink: '' }; /* não usado */ },
       async listarEventos(inicioISO: string) {
         if (inicioISO.startsWith('2026-08-31')) {
           return [

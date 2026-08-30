@@ -120,7 +120,7 @@ import { makeImpostoHandler, montarRespostaImposto, parseValorReais } from './mo
 import { makeRelatorioHandler } from './modules/financeiro/comando-relatorio.js';
 import { makeMaterialQueryHandler } from './modules/financeiro/materiais.js';
 import { makeCaixaHandler } from './modules/financeiro/comando-caixa.js';
-import { tratarMensagemAgenda, tratarBotaoAgenda, type DepsAgenda as DepsAgendaComando } from './modules/agenda/comando-agenda.js';
+import { tratarMensagemAgenda, tratarBotaoAgenda, tratarLocalizacaoAgenda, type DepsAgenda as DepsAgendaComando } from './modules/agenda/comando-agenda.js';
 import { marcarPaga } from './modules/financeiro/contas-pagar.js';
 import { tickArquivos } from './modules/financeiro/arquivos-fila.js';
 import { registrarEFalar } from './modules/financeiro/caixa-entrada.js';
@@ -6572,13 +6572,43 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         // volta parece exatamente travar. Fix: (a) tudo dentro de try/catch —
         // um JSON.parse malformado não pode deixar a mensagem sem resposta;
         // (b) SEMPRE manda uma confirmação imediata, sucesso ou falha de parse.
+        //
+        // A1.2 (bug ao vivo — "marquei visita, mandei o pin, virou compromisso
+        // NOVO"): a decisão de "guardar pro próximo marcar" x "oferecer anexar
+        // no compromisso recém-criado" agora é da própria Eva Agenda
+        // (tratarLocalizacaoAgenda, comando-agenda.ts) — ela decide e devolve
+        // texto+botões prontos; aqui só despacha via o mesmo mecanismo dos
+        // botões ag_*. Sem Google Calendar configurado (agendaDeps null),
+        // mantém o fallback de sempre.
         if (isAdminPhone(msg.from)) {
           try {
             const parsedLoc = JSON.parse(msg.content) as { lat?: number; lng?: number };
             if (typeof parsedLoc.lat === 'number' && typeof parsedLoc.lng === 'number') {
-              agendaLocationPendente = { coords: `${parsedLoc.lat.toFixed(6)},${parsedLoc.lng.toFixed(6)}`, em: Date.now() };
-              console.log(`[agenda] Localização do dono guardada pro próximo compromisso: ${agendaLocationPendente.coords}`);
-              await sendText(msg.from, '📍 Peguei a localização! Me diz o compromisso que eu já marco com esse endereço (ex.: "visita amanhã 9h")');
+              const coords = `${parsedLoc.lat.toFixed(6)},${parsedLoc.lng.toFixed(6)}`;
+              const agendaDeps = getAgendaDeps();
+              const respLoc = agendaDeps ? await tratarLocalizacaoAgenda(agendaDeps, coords) : null;
+              if (respLoc) {
+                if (!respLoc.botoes || respLoc.botoes.length === 0) {
+                  // Sem compromisso recém-criado pra oferecer — mesmo fallback
+                  // de sempre: guarda pro próximo marcar.
+                  agendaLocationPendente = { coords, em: Date.now() };
+                  console.log(`[agenda] Localização do dono guardada pro próximo compromisso: ${coords}`);
+                }
+                if (respLoc.botoes && respLoc.botoes.length > 0) {
+                  await sendAdminWithButtons(
+                    { metaWaba, sendText: async (t: string, x: string) => { await sendText(t, x); } },
+                    msg.from, respLoc.texto,
+                    respLoc.botoes.map((b) => ({ id: b.id, title: b.rotulo })),
+                  );
+                } else {
+                  await sendText(msg.from, respLoc.texto);
+                }
+              } else {
+                // agendaDeps null (Google Calendar não configurado) — fallback de sempre.
+                agendaLocationPendente = { coords, em: Date.now() };
+                console.log(`[agenda] Localização do dono guardada pro próximo compromisso: ${coords}`);
+                await sendText(msg.from, '📍 Peguei a localização! Me diz o compromisso que eu já marco com esse endereço (ex.: "visita amanhã 9h")');
+              }
             } else {
               await sendText(msg.from, '📍 Recebi a localização mas não consegui ler as coordenadas — pode mandar o compromisso por texto mesmo? (ex.: "visita amanhã 9h")');
             }

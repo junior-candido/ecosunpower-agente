@@ -3,7 +3,7 @@
 // Tudo mockado (IA canned, AgendaEscrita em memória) — nunca bate em rede/banco.
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  tratarMensagemAgenda, tratarBotaoAgenda, resetEstadoAgenda,
+  tratarMensagemAgenda, tratarBotaoAgenda, tratarLocalizacaoAgenda, resetEstadoAgenda,
   type DepsAgenda,
 } from '../src/modules/agenda/comando-agenda.js';
 import { interpretar, resolverData, type ExtratorIA } from '../src/modules/agenda/interpretar.js';
@@ -44,12 +44,14 @@ function criarClock(inicialISO: string) {
 function mockCal(eventos: EventoAgendaListado[] = []): AgendaEscrita & {
   criados: Array<Parameters<AgendaEscrita['createEvent']>[0]>;
   excluidos: string[];
+  atualizados: Array<{ eventId: string; updates: { location?: string } }>;
 } {
   const criados: Array<Parameters<AgendaEscrita['createEvent']>[0]> = [];
   const excluidos: string[] = [];
+  const atualizados: Array<{ eventId: string; updates: { location?: string } }> = [];
   let n = 0;
   return {
-    criados, excluidos,
+    criados, excluidos, atualizados,
     async createEvent(input) {
       criados.push(input);
       n++;
@@ -57,6 +59,10 @@ function mockCal(eventos: EventoAgendaListado[] = []): AgendaEscrita & {
     },
     async deleteEvent(eventId) { excluidos.push(eventId); },
     async listarEventos() { return eventos; },
+    async updateEvent(eventId, updates) {
+      atualizados.push({ eventId, updates });
+      return { eventId, htmlLink: `https://calendar.google.com/${eventId}` };
+    },
   };
 }
 
@@ -651,5 +657,124 @@ describe('tratarBotaoAgenda: fallback de extração do id decorado (A1.1)', () =
     const deps = depsBase();
     const r = await tratarBotaoAgenda(deps, 'oi, tudo bem?');
     expect(r).toBeNull();
+  });
+});
+
+// -----------------------------------------------------------------------
+// tratarLocalizacaoAgenda — pin do WhatsApp chegando DEPOIS de um compromisso
+// já criado: anexa nele em vez de virar um compromisso NOVO (bug ao vivo do
+// Junior: marcou "visita" pela Eva, mandou o pin em seguida, o pin virou um
+// pedido de compromisso novo → conflito → "Marcar junto" → visita duplicada).
+// -----------------------------------------------------------------------
+
+describe('tratarLocalizacaoAgenda: anexar a compromisso recém-criado (ultimoCriado fresco)', () => {
+  it('45) pin chega com ultimoCriado fresco (≤10min) → pergunta com o título + botões ag_loc_sim/ag_loc_outro', async () => {
+    const cal = mockCal([]);
+    const deps = depsBase({ cal });
+    await tratarMensagemAgenda(deps, 'visita Cyntia amanhã 9h'); // cria evt-1, guarda ultimoCriado
+    const r = await tratarLocalizacaoAgenda(deps, '-15.793889,-47.882778');
+    expect(r).not.toBeNull();
+    expect(r!.texto).toContain('Visita Cyntia');
+    expect(r!.botoes).toEqual([
+      { id: 'ag_loc_sim', rotulo: 'Sim, anexar' },
+      { id: 'ag_loc_outro', rotulo: 'É outro compromisso' },
+    ]);
+  });
+
+  it('46) ag_loc_sim → chama updateEvent com o eventId certo + location, responde ✔ com o título', async () => {
+    const cal = mockCal([]);
+    const deps = depsBase({ cal });
+    await tratarMensagemAgenda(deps, 'visita Cyntia amanhã 9h');
+    await tratarLocalizacaoAgenda(deps, '-15.793889,-47.882778');
+    const r = await tratarBotaoAgenda(deps, 'ag_loc_sim');
+    expect(cal.atualizados).toEqual([{ eventId: 'evt-1', updates: { location: '-15.793889,-47.882778' } }]);
+    expect(r!.texto).toContain('Visita Cyntia');
+    expect(r!.texto).toContain('✔');
+  });
+
+  it('47) ag_loc_outro → cai no fallback (mesmo texto do caso "sem ultimoCriado") e a localização vale pro PRÓXIMO marcar', async () => {
+    const cal = mockCal([]);
+    const ia: ExtratorIA = {
+      async extrairAgenda(prompt: string) {
+        if (prompt.includes('dentista')) {
+          return '```json\n' + JSON.stringify({ compromisso: true, titulo: 'Dentista', detalhes: null, dataTexto: 'amanhã', horaTexto: '14h', duracaoTexto: null, diaInteiro: false, ambito: 'pessoal' }) + '\n```';
+        }
+        return '```json\n' + JSON.stringify({ compromisso: true, titulo: 'Visita Cyntia', detalhes: null, dataTexto: 'amanhã', horaTexto: '9h', duracaoTexto: null, diaInteiro: false, ambito: 'empresa' }) + '\n```';
+      },
+    };
+    const deps = depsBase({ cal, ia });
+    await tratarMensagemAgenda(deps, 'visita Cyntia amanhã 9h'); // cria evt-1
+    await tratarLocalizacaoAgenda(deps, '-15.793889,-47.882778');
+    const r = await tratarBotaoAgenda(deps, 'ag_loc_outro');
+    expect(r!.texto).toBe('📍 Peguei a localização! Me diz o compromisso que eu já marco com esse endereço (ex.: "visita amanhã 9h")');
+    expect(cal.atualizados).toHaveLength(0); // NÃO anexou no evento anterior
+
+    // 2ª mensagem SEM passar location explícito — a Eva usa a que ficou pendente
+    await tratarMensagemAgenda(deps, 'dentista amanhã 14h');
+    expect(cal.criados).toHaveLength(2);
+    expect(cal.criados[1].summary).toBe('Dentista');
+    expect(cal.criados[1].location).toBe('-15.793889,-47.882778');
+  });
+
+  it('48) pin SEM ultimoCriado (nenhum compromisso recém-criado) → comportamento atual: mensagem fixa, sem botões', async () => {
+    const deps = depsBase();
+    const r = await tratarLocalizacaoAgenda(deps, '-15.793889,-47.882778');
+    expect(r!.texto).toBe('📍 Peguei a localização! Me diz o compromisso que eu já marco com esse endereço (ex.: "visita amanhã 9h")');
+    expect(r!.botoes).toBeUndefined();
+  });
+
+  it('49) ultimoCriado expirado (>10min) → não pergunta "anexar", cai no comportamento atual', async () => {
+    const clock = criarClock(AGORA);
+    const cal = mockCal([]);
+    const deps: DepsAgenda = {
+      cal, ia: iaCanned({ titulo: 'Visita Cyntia', dataTexto: 'amanhã', horaTexto: '9h', ambito: 'empresa' }),
+      agoraISO: clock.agoraISO, nomesDeLeads: async () => [],
+    };
+    await tratarMensagemAgenda(deps, 'visita Cyntia amanhã 9h');
+    clock.avancar(11 * 60 * 1000);
+    const r = await tratarLocalizacaoAgenda(deps, '-15.793889,-47.882778');
+    expect(r!.botoes).toBeUndefined();
+    expect(r!.texto).toBe('📍 Peguei a localização! Me diz o compromisso que eu já marco com esse endereço (ex.: "visita amanhã 9h")');
+  });
+
+  it('50) erro no updateEvent (ag_loc_sim) → mensagem de erro específica, NÃO a genérica de agenda', async () => {
+    const cal = mockCal([]);
+    const deps = depsBase({ cal });
+    await tratarMensagemAgenda(deps, 'visita Cyntia amanhã 9h');
+    await tratarLocalizacaoAgenda(deps, '-15.793889,-47.882778');
+    cal.updateEvent = async () => { throw new Error('Google Calendar fora do ar'); };
+    const r = await tratarBotaoAgenda(deps, 'ag_loc_sim');
+    expect(r!.texto).not.toBe('❌ Deu ruim aqui na agenda agora — tenta de novo em instantes. Se repetir, me chama.');
+    expect(r!.texto.toLowerCase()).toContain('anexar');
+  });
+
+  it('51) ultimoCriado é atualizado também depois de "Substituir" (ag_subst) — pin depois aponta pro evento NOVO, não pro conflitante excluído', async () => {
+    const ia = iaCanned({ titulo: 'Visita Cyntia', dataTexto: 'amanhã', horaTexto: '9h', ambito: 'empresa' });
+    const interp = await interpDeReferencia(ia);
+    const conflitante: EventoAgendaListado = { id: 'conflito-1', titulo: 'Dentista', inicioISO: interp.inicioISO, fimISO: interp.fimISO, criadoPelaEva: true };
+    const cal = mockCal([conflitante]);
+    const deps = depsBase({ cal, ia });
+    await tratarMensagemAgenda(deps, 'visita Cyntia amanhã 9h'); // vira pendente de conflito
+    await tratarBotaoAgenda(deps, 'ag_subst'); // exclui conflitante, cria evt-1
+    const r = await tratarLocalizacaoAgenda(deps, '-15.793889,-47.882778');
+    expect(r!.botoes).toEqual([
+      { id: 'ag_loc_sim', rotulo: 'Sim, anexar' },
+      { id: 'ag_loc_outro', rotulo: 'É outro compromisso' },
+    ]);
+    await tratarBotaoAgenda(deps, 'ag_loc_sim');
+    expect(cal.atualizados).toEqual([{ eventId: 'evt-1', updates: { location: '-15.793889,-47.882778' } }]);
+  });
+
+  it('52) ultimoCriado é atualizado também depois de "Marcar junto" (ag_junto)', async () => {
+    const ia = iaCanned({ titulo: 'Visita Cyntia', dataTexto: 'amanhã', horaTexto: '9h', ambito: 'empresa' });
+    const interp = await interpDeReferencia(ia);
+    const conflitante: EventoAgendaListado = { id: 'conflito-1', titulo: 'Dentista', inicioISO: interp.inicioISO, fimISO: interp.fimISO, criadoPelaEva: true };
+    const cal = mockCal([conflitante]);
+    const deps = depsBase({ cal, ia });
+    await tratarMensagemAgenda(deps, 'visita Cyntia amanhã 9h'); // vira pendente de conflito
+    await tratarBotaoAgenda(deps, 'ag_junto'); // cria evt-1 mesmo com conflito
+    const r = await tratarLocalizacaoAgenda(deps, '-15.793889,-47.882778');
+    expect(r!.texto).toContain('Visita Cyntia');
+    expect(r!.botoes).not.toBeUndefined();
   });
 });

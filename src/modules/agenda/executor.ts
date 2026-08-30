@@ -39,6 +39,12 @@ export interface AgendaEscrita {
   createEvent(input: CriarEventoInput): Promise<EventoCriado>;
   deleteEvent(eventId: string): Promise<void>;
   listarEventos(inicioISO: string, fimISO: string): Promise<EventoAgendaListado[]>;
+  // Update parcial (patch) de um evento existente — hoje só usado pra anexar
+  // location (ver anexarLocalizacao abaixo). Assinatura estreita (só o que a
+  // Eva Agenda precisa) mas bate estruturalmente com CalendarService.updateEvent
+  // (src/modules/calendar.ts, Partial<CreateEventInput>) sem precisar importar
+  // nada de lá — mesmo padrão de createEvent/deleteEvent/listarEventos.
+  updateEvent(eventId: string, updates: { location?: string }): Promise<{ eventId: string; htmlLink: string }>;
 }
 
 const MARCA_EVA = 'Compromisso criado pela Eva.';
@@ -138,6 +144,15 @@ export async function substituir(
       `O compromisso conflitante foi excluído, mas não consegui criar o novo — tenta marcar de novo. Detalhe: ${(err as Error).message}`,
     );
   }
+}
+
+// Anexa uma localização (pin do WhatsApp) a um evento JÁ CRIADO — usado
+// quando o pin chega DEPOIS do compromisso (ex.: Junior marca "visita
+// amanhã 9h" e só alguns minutos depois manda o pin) em vez de virar um
+// compromisso novo. Patch parcial: só o campo location muda, o resto do
+// evento (título/horário/cor/descrição) fica intacto.
+export async function anexarLocalizacao(cal: AgendaEscrita, eventId: string, location: string): Promise<void> {
+  await cal.updateEvent(eventId, { location });
 }
 
 // ---------------------------------------------------------------------------
