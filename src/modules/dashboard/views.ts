@@ -168,6 +168,7 @@ const SIDEBAR_SETORES: SideSetor[] = [
     titulo: '💰 Financeiro',
     itens: [
       { href: '/dashboard/financeiro', key: 'financeiro', label: '💰 Financeiro', area: 'financeiro' },
+      { href: '/dashboard/fiscal', key: 'fiscal', label: '🧾 Notas', area: 'financeiro' },
       { href: '/dashboard/cobrar', key: 'cobrar', label: '💳 Cobrar cliente', area: 'financeiro' },
       { href: '/dashboard/assinaturas', key: 'assinaturas', label: '📆 Assinaturas', area: 'financeiro' },
     ],

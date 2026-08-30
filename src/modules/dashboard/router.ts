@@ -715,6 +715,155 @@ b.onclick=async function(){
     }
   });
 
+  // ── Fiscal (NFS-e) — F1: preparar + anexar ─────────────────────────────
+  const uploadPdf = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+  router.get('/fiscal', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
+    try {
+      const { listarNotas, getConfig } = await import('../financeiro/fiscal/notas-repo.js');
+      const { renderNotasPage } = await import('./fiscal-views.js');
+      const companyId = req.dashUser!.companyId;
+      const [notas, config] = await Promise.all([listarNotas(supabase, companyId), getConfig(supabase, companyId)]);
+      res.type('html').send(renderNotasPage(notas, config, req.dashUser));
+    } catch (err) {
+      console.error('[fiscal]', err);
+      res.status(500).send(`Erro: ${(err as Error).message}`);
+    }
+  });
+
+  router.get('/fiscal/nova', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    try {
+      const { listarServicos } = await import('../financeiro/fiscal/notas-repo.js');
+      const { renderNovaNotaPage } = await import('./fiscal-views.js');
+      const servicos = await listarServicos(supabase, req.dashUser!.companyId);
+      const q = req.query as Record<string, string | undefined>;
+      res.type('html').send(renderNovaNotaPage(servicos, {
+        fechamentoId: String(q.fechamento ?? '') || undefined,
+        leadId: String(q.lead ?? '') || undefined,
+        erro: String(q.erro ?? '') || undefined,
+      }, req.dashUser));
+    } catch (err) {
+      console.error('[fiscal/nova]', err);
+      res.status(500).send(`Erro: ${(err as Error).message}`);
+    }
+  });
+
+  router.get('/fiscal/cnpj/:doc', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    try {
+      const { consultarCnpj } = await import('../financeiro/fiscal/cnpj.js');
+      const dados = await consultarCnpj(String(req.params.doc));
+      if (!dados) { res.status(404).json({ erro: 'não achado' }); return; }
+      res.json(dados);
+    } catch (err) {
+      res.status(400).json({ erro: (err as Error).message });
+    }
+  });
+
+  router.post('/fiscal/nova', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    try {
+      const { listarServicos, criarNota, registrarEvento } = await import('../financeiro/fiscal/notas-repo.js');
+      const { calcularNota } = await import('../financeiro/fiscal/calculo.js');
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const companyId = req.dashUser!.companyId;
+      const valorCentavos = parseReais(b.valor);
+      const doc = String(b.doc ?? '').replace(/\D/g, '');
+      const nome = String(b.nome ?? '').trim();
+      const competencia = String(b.competencia ?? '');
+      const servicoId = String(b.servico_id ?? '');
+      if (!servicoId || !(valorCentavos > 0) || !nome || !doc || !competencia) {
+        res.redirect('/dashboard/fiscal/nova?erro=' + encodeURIComponent('Preencha tomador, serviço, valor e competência.')); return;
+      }
+      const servicos = await listarServicos(supabase, companyId);
+      const servico = servicos.find((s) => s.id === servicoId);
+      if (!servico) {
+        res.redirect('/dashboard/fiscal/nova?erro=' + encodeURIComponent('Serviço inválido.')); return;
+      }
+      const valorBruto = valorCentavos / 100;
+      const aliquotaIss = Number(servico.aliquota_iss);
+      const issRetido = b.iss_retido === 'on';
+      const calc = calcularNota({ valorBruto, aliquotaIss, issRetido });
+      const id = await criarNota(supabase, {
+        companyId, competencia, servicoId,
+        descricao: String(b.descricao ?? '').trim() || servico.descricao_padrao,
+        tomador: {
+          tipo: b.tipo === 'PF' ? 'PF' : 'PJ', doc, nome,
+          im: String(b.im ?? '').trim() || null,
+          endereco: String(b.endereco ?? '').trim(),
+          email: String(b.email ?? '').trim() || null,
+          municipio: String(b.municipio ?? '').trim() || 'Brasília',
+          uf: (String(b.uf ?? '').trim() || 'DF').toUpperCase(),
+        },
+        valorBruto, aliquotaIss, valorIss: calc.valorIss, issRetido, valorLiquido: calc.valorLiquido,
+        fechamentoId: String(b.fechamento_id ?? '').trim() || null,
+        leadId: String(b.lead_id ?? '').trim() || null,
+        createdBy: req.dashUser!.id,
+      });
+      await registrarEvento(supabase, id, 'preparada');
+      res.redirect(`/dashboard/fiscal/${id}`);
+    } catch (err) {
+      console.error('[fiscal/nova POST]', err);
+      res.redirect('/dashboard/fiscal/nova?erro=' + encodeURIComponent((err as Error).message));
+    }
+  });
+
+  router.get('/fiscal/:id', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
+    try {
+      const { getNota, getConfig } = await import('../financeiro/fiscal/notas-repo.js');
+      const nota = await getNota(supabase, String(req.params.id));
+      if (!nota) { res.status(404).send('Nota não achada'); return; }
+      const { renderNotaDetalhe } = await import('./fiscal-views.js');
+      const config = await getConfig(supabase, req.dashUser!.companyId);
+      res.type('html').send(renderNotaDetalhe(nota, config, req.dashUser));
+    } catch (err) {
+      console.error('[fiscal/:id]', err);
+      res.status(500).send(`Erro: ${(err as Error).message}`);
+    }
+  });
+
+  router.post('/fiscal/:id/anexar', exigir('financeiro', 'editar'), uploadPdf.single('pdf'), async (req: AuthedRequest, res) => {
+    const notaId = String(req.params.id);
+    try {
+      const file = (req as unknown as { file?: Express.Multer.File }).file;
+      const numero = String(req.body?.numero ?? '').trim();
+      if (!file || !numero) {
+        res.redirect(`/dashboard/fiscal/${notaId}?erro=` + encodeURIComponent('Falta o número da nota ou o PDF.')); return;
+      }
+      const { anexarPdf, getNota, registrarEvento } = await import('../financeiro/fiscal/notas-repo.js');
+      const { engatarNotaNoCaixa } = await import('../financeiro/fiscal/ponte-caixa.js');
+      const companyId = req.dashUser!.companyId;
+      const numeroSanitizado = numero.replace(/[^\w.-]/g, '_');
+      const path = `fiscal/${companyId}/${notaId}-nfse-${numeroSanitizado}.pdf`;
+      const { error: upErr } = await supabase.storage.from('client-attachments').upload(path, file.buffer, {
+        contentType: 'application/pdf', upsert: true,
+      });
+      if (upErr) throw new Error(`upload do PDF: ${upErr.message}`);
+      const ok = await anexarPdf(supabase, notaId, numero, path);
+      if (ok) {
+        const nota = await getNota(supabase, notaId);
+        if (nota) await engatarNotaNoCaixa(supabase, nota, { companyId, fechamentoId: null, leadId: null });
+        await registrarEvento(supabase, notaId, 'pdf_anexado', { numero, path });
+      }
+      res.redirect(`/dashboard/fiscal/${notaId}`);
+    } catch (err) {
+      console.error('[fiscal/anexar]', err);
+      res.status(500).send(`Erro: ${(err as Error).message}`);
+    }
+  });
+
+  router.get('/fiscal/:id/pdf', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
+    try {
+      const { getNota } = await import('../financeiro/fiscal/notas-repo.js');
+      const nota = await getNota(supabase, String(req.params.id));
+      if (!nota || !nota.pdfStoragePath) { res.status(404).send('Sem PDF'); return; }
+      const { data, error } = await supabase.storage.from('client-attachments').createSignedUrl(nota.pdfStoragePath, 300);
+      if (error || !data) { res.status(500).send('Falha ao gerar link do PDF'); return; }
+      res.redirect(data.signedUrl);
+    } catch (err) {
+      console.error('[fiscal/pdf]', err);
+      res.status(500).send(`Erro: ${(err as Error).message}`);
+    }
+  });
+
   // ----- SERVIÇOS (Diário de campo — spec 2026-07-29) -----
   // Mobile-first. Papel "Campo" tem SÓ a área servicos e enxerga só isso.
   // Mídia: navegador sobe DIRETO pro bucket client-attachments via URL
