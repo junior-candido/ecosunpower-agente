@@ -46,7 +46,11 @@ const MARCA_EVA = 'Compromisso criado pela Eva.';
 // Cria o evento no Google Agenda com a cor certa pelo âmbito (empresa=azul,
 // pessoal=verde) e a marca "criado pela Eva" na descrição — é essa marca que
 // CalendarService.listarEventos usa (via criadoPelaEva) pra saber que o
-// evento veio da Eva e não foi criado manualmente pelo Junior.
+// evento veio da Eva e não foi criado manualmente pelo Junior. A1.1: quando
+// a frase trouxe contexto além do básico (tarefas/materiais/valores — ex.:
+// "levar a escada, trocar o disjuntor, cobrar a segunda parcela"), esse
+// `interp.detalhes` vira o corpo da descrição — a marca da Eva NUNCA some,
+// só é sempre o ÚLTIMO parágrafo (listarEventos depende dela pra existir).
 export async function marcar(
   cal: AgendaEscrita,
   interp: Interpretacao,
@@ -54,13 +58,14 @@ export async function marcar(
   opts?: { location?: string; descricaoExtra?: string },
 ): Promise<EventoCriado> {
   const colorId = ambito === 'empresa' ? COR_EMPRESA : COR_PESSOAL;
-  const partesDescricao = [MARCA_EVA];
-  if (interp.diaInteiro) partesDescricao.push('(dia inteiro)');
-  if (opts?.descricaoExtra) partesDescricao.push(opts.descricaoExtra);
+  const marca = interp.diaInteiro ? `${MARCA_EVA} (dia inteiro)` : MARCA_EVA;
+  const description = [interp.detalhes, opts?.descricaoExtra, marca]
+    .filter((parte): parte is string => typeof parte === 'string' && parte.trim().length > 0)
+    .join('\n\n');
 
   return cal.createEvent({
     summary: interp.titulo,
-    description: partesDescricao.join(' '),
+    description,
     startISO: interp.inicioISO,
     endISO: interp.fimISO,
     location: opts?.location,
@@ -68,26 +73,55 @@ export async function marcar(
   });
 }
 
-// Desfaz um compromisso marcado pela Eva (comando "cancela"/"desfaz" no zap).
-export async function desfazer(cal: AgendaEscrita, eventId: string): Promise<void> {
-  await cal.deleteEvent(eventId);
+export interface ResultadoDesfazer {
+  jaEstava: boolean; // true = o evento já não existia (404/410) — idempotente, tratado como sucesso
+}
+
+// Erros de "não existe mais" do Google Calendar (double-press no botão
+// Desfazer, evento apagado manualmente na agenda, etc.) — a googleapis expõe
+// isso ora em err.code, ora em err.status, ora em err.response.status
+// dependendo da versão/transporte. Qualquer uma delas com 404/410 significa
+// "o evento já sumiu", que é exatamente o resultado que "desfazer" queria.
+function eventoJaSumiu(err: unknown): boolean {
+  const e = err as { code?: number | string; status?: number | string; response?: { status?: number | string } };
+  const status = e?.code ?? e?.status ?? e?.response?.status;
+  return status === 404 || status === 410 || status === '404' || status === '410';
+}
+
+// Desfaz um compromisso marcado pela Eva (comando "cancela"/"desfaz" no zap,
+// botão "Desfazer"). Idempotente: se o Google já não tem mais esse evento
+// (404/410 — já foi desfeito antes, ou apagado manualmente), NÃO é erro —
+// desfazer duas vezes o mesmo compromisso dá no mesmo resultado (evento
+// ausente), então devolve jaEstava:true em vez de lançar. Qualquer OUTRO
+// erro (rede fora do ar, permissão, etc.) continua propagando normalmente.
+export async function desfazer(cal: AgendaEscrita, eventId: string): Promise<ResultadoDesfazer> {
+  try {
+    await cal.deleteEvent(eventId);
+    return { jaEstava: false };
+  } catch (err) {
+    if (eventoJaSumiu(err)) return { jaEstava: true };
+    throw err;
+  }
 }
 
 // Substitui um evento em conflito pelo novo compromisso: exclui o conflitante
 // e SÓ DEPOIS cria o novo (nessa ordem — nunca cria antes de excluir, senão o
-// próprio novo evento contaria como conflito dele mesmo). Se a criação falhar
-// depois da exclusão já ter acontecido, propaga um erro com mensagem clara em
-// PT avisando que o conflitante já foi removido (pro Junior não achar que nada
-// mudou).
+// próprio novo evento contaria como conflito dele mesmo). A exclusão usa
+// desfazer() por baixo — 404/410 (conflitante já sumiu por algum motivo) não
+// impede a criação do novo, é tratado como sucesso idempotente igual ao botão
+// Desfazer. Se a CRIAÇÃO falhar depois da exclusão já ter acontecido, propaga
+// um erro com mensagem clara em PT avisando que o conflitante já foi removido
+// (pro Junior não achar que nada mudou).
 export async function substituir(
   cal: AgendaEscrita,
   eventIdConflitante: string,
   interp: Interpretacao,
   ambito: 'empresa' | 'pessoal',
+  opts?: { location?: string },
 ): Promise<EventoCriado> {
-  await cal.deleteEvent(eventIdConflitante);
+  await desfazer(cal, eventIdConflitante);
   try {
-    return await marcar(cal, interp, ambito);
+    return await marcar(cal, interp, ambito, opts);
   } catch (err) {
     throw new Error(
       `O compromisso conflitante foi excluído, mas não consegui criar o novo — tenta marcar de novo. Detalhe: ${(err as Error).message}`,
