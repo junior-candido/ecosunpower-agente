@@ -120,6 +120,7 @@ import { makeImpostoHandler, montarRespostaImposto, parseValorReais } from './mo
 import { makeRelatorioHandler } from './modules/financeiro/comando-relatorio.js';
 import { makeMaterialQueryHandler } from './modules/financeiro/materiais.js';
 import { makeCaixaHandler } from './modules/financeiro/comando-caixa.js';
+import { tratarMensagemAgenda, tratarBotaoAgenda, type DepsAgenda as DepsAgendaComando } from './modules/agenda/comando-agenda.js';
 import { marcarPaga } from './modules/financeiro/contas-pagar.js';
 import { tickArquivos } from './modules/financeiro/arquivos-fila.js';
 import { registrarEFalar } from './modules/financeiro/caixa-entrada.js';
@@ -1080,6 +1081,42 @@ async function main() {
     sendWithButtons: (to: string, body: string, buttons: Array<{ id: string; title: string }>, footer?: string) =>
       sendAdminWithButtons({ metaWaba, sendText: async (t: string, x: string) => { await sendText(t, x); } }, to, body, buttons, footer),
   });
+
+  // Eva Agenda A1 (secretária no zap): deps montadas sob demanda, null quando
+  // o Google Calendar não está configurado (mesmo guard do SchedulingAssistant).
+  const MODELO_AGENDA_FORTE = 'claude-opus-4-7';
+  const MODELO_AGENDA_RAPIDO = 'claude-haiku-4-5-20251001';
+  const AGENDA_LOCATION_TTL_MS = 10 * 60 * 1000;
+  // Pin de localização do WhatsApp do dono: guardado aqui (não no fluxo de
+  // lead/client_coordinates, que é outra coisa) e consumido pela PRÓXIMA
+  // mensagem de texto dele — vira o `location` do próximo compromisso marcado.
+  let agendaLocationPendente: { coords: string; em: number } | null = null;
+  const getAgendaDeps = (): DepsAgendaComando | null => {
+    if (!calendar) return null;
+    return {
+      cal: calendar,
+      ia: {
+        async extrairAgenda(prompt: string): Promise<string> {
+          const anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
+          let response;
+          try {
+            response = await anthropic.messages.create({ model: MODELO_AGENDA_FORTE, max_tokens: 512, messages: [{ role: 'user', content: prompt }] });
+            medirIa({ modelo: MODELO_AGENDA_FORTE, origem: 'agenda', usage: response.usage });
+          } catch (err) {
+            console.warn('[agenda] Opus indisponível, fallback Haiku:', (err as Error).message);
+            response = await anthropic.messages.create({ model: MODELO_AGENDA_RAPIDO, max_tokens: 512, messages: [{ role: 'user', content: prompt }] });
+            medirIa({ modelo: MODELO_AGENDA_RAPIDO, origem: 'agenda', usage: response.usage });
+          }
+          return response.content.filter((b): b is Anthropic.Messages.TextBlock => b.type === 'text').map((b) => b.text).join('');
+        },
+      },
+      agoraISO: () => new Date().toISOString(),
+      // TODO(agenda A2): não há hoje uma consulta barata de "todos os nomes de
+      // lead" pronta pra reusar aqui — classificar() cai no fallback por
+      // palavra-chave/horário comercial enquanto isso não existir.
+      nomesDeLeads: async () => [],
+    };
+  };
 
   // Eva Monitoramento Evolutivo (Task 8): janela 24h CONSERVADORA.
   // Só considera ABERTA quando a ÚLTIMA mensagem 'user' registrada na conversa
@@ -4052,6 +4089,26 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       return;
     }
 
+    // ag_* — botões da Eva Agenda A1 (conflito, desfazer, recolorir, sugestão de horário).
+    if (isAdminPhone(from) && text.trim().startsWith('ag_')) {
+      const agendaDeps = getAgendaDeps();
+      if (agendaDeps) {
+        const respAgenda = await tratarBotaoAgenda(agendaDeps, text.trim());
+        if (respAgenda) {
+          if (respAgenda.botoes && respAgenda.botoes.length > 0) {
+            await sendAdminWithButtons(
+              { metaWaba, sendText: async (t: string, x: string) => { await sendText(t, x); } },
+              from, respAgenda.texto,
+              respAgenda.botoes.map((b) => ({ id: b.id, title: b.rotulo })),
+            );
+          } else {
+            await sendText(from, respAgenda.texto);
+          }
+        }
+      }
+      return;
+    }
+
     // finpg:<paguei|ver|noop>:<contaId> — botões do tick de vencimentos (contas a pagar).
     if (isAdminPhone(from) && text.trim().startsWith('finpg:')) {
       const [, acao, id] = text.trim().split(':');
@@ -4450,6 +4507,34 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     // "/caixa" ou "/contas" — a pagar 7 dias, a receber, hoje, sem dono (Fatia 1)
     if (await tryHandleCaixaCommand(from, text)) return;
+
+    // Eva Agenda A1 — secretária no zap: "visita Cyntia quinta 9h" marca (com
+    // checagem de conflito + botões), "agenda amanhã"/"o que tenho hoje" consulta.
+    // Só o dono, só com o Google Calendar configurado. tratarMensagemAgenda
+    // devolve null quando o texto claramente não é assunto de agenda — o
+    // pipeline segue normal (comandos financeiros abaixo, depois a Eva).
+    if (isAdminPhone(from)) {
+      const agendaDeps = getAgendaDeps();
+      if (agendaDeps) {
+        const agendaLocation = agendaLocationPendente && Date.now() - agendaLocationPendente.em < AGENDA_LOCATION_TTL_MS
+          ? agendaLocationPendente.coords
+          : undefined;
+        const respAgenda = await tratarMensagemAgenda(agendaDeps, text, agendaLocation);
+        if (respAgenda) {
+          agendaLocationPendente = null; // pin consumido (usado ou não) — não vale pra um 2º compromisso
+          if (respAgenda.botoes && respAgenda.botoes.length > 0) {
+            await sendAdminWithButtons(
+              { metaWaba, sendText: async (t: string, x: string) => { await sendText(t, x); } },
+              from, respAgenda.texto,
+              respAgenda.botoes.map((b) => ({ id: b.id, title: b.rotulo })),
+            );
+          } else {
+            await sendText(from, respAgenda.texto);
+          }
+          return;
+        }
+      }
+    }
 
     // "relatório [mês]" — resumo financeiro do mês (Peça 3); antes do gate da Caixa de Entrada
     if (await tryHandleRelatorioCommand(from, text)) return;
@@ -6477,6 +6562,21 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         );
         break;
       case 'location': {
+        // Eva Agenda A1: pin do DONO vira o `location` do próximo compromisso
+        // que ele marcar (ver getAgendaDeps/agendaLocationPendente acima) — não
+        // é o fluxo de client_coordinates de lead logo abaixo, que é outra coisa.
+        if (isAdminPhone(msg.from)) {
+          try {
+            const parsedLoc = JSON.parse(msg.content) as { lat?: number; lng?: number };
+            if (typeof parsedLoc.lat === 'number' && typeof parsedLoc.lng === 'number') {
+              agendaLocationPendente = { coords: `${parsedLoc.lat.toFixed(6)},${parsedLoc.lng.toFixed(6)}`, em: Date.now() };
+              console.log(`[agenda] Localização do dono guardada pro próximo compromisso: ${agendaLocationPendente.coords}`);
+            }
+          } catch (err) {
+            console.warn('[agenda] Falha lendo localização do dono:', (err as Error).message);
+          }
+          break;
+        }
         try {
           const parsed = JSON.parse(msg.content) as { lat?: number; lng?: number };
           if (typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
