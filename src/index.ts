@@ -121,6 +121,7 @@ import { makeRelatorioHandler } from './modules/financeiro/comando-relatorio.js'
 import { makeMaterialQueryHandler } from './modules/financeiro/materiais.js';
 import { makeCaixaHandler } from './modules/financeiro/comando-caixa.js';
 import { tratarMensagemAgenda, tratarBotaoAgenda, tratarLocalizacaoAgenda, type DepsAgenda as DepsAgendaComando } from './modules/agenda/comando-agenda.js';
+import { coordsParaLink } from './modules/agenda/executor.js';
 import { marcarPaga } from './modules/financeiro/contas-pagar.js';
 import { tickArquivos } from './modules/financeiro/arquivos-fila.js';
 import { registrarEFalar } from './modules/financeiro/caixa-entrada.js';
@@ -6584,7 +6585,12 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           try {
             const parsedLoc = JSON.parse(msg.content) as { lat?: number; lng?: number };
             if (typeof parsedLoc.lat === 'number' && typeof parsedLoc.lng === 'number') {
-              const coords = `${parsedLoc.lat.toFixed(6)},${parsedLoc.lng.toFixed(6)}`;
+              // BUG ao vivo (Junior — "o pin não abre o mapa no celular"): o
+              // `location` do evento do Google Calendar guardava as
+              // coordenadas cruas ("-22.630000,-47.200000"), que o Calendar
+              // mostra como texto simples — tocar nele NÃO abre o Maps. Um
+              // link https://.../maps?q=lat,lng abre o app do Maps ao tocar.
+              const coords = coordsParaLink(parsedLoc.lat, parsedLoc.lng);
               const agendaDeps = getAgendaDeps();
               const respLoc = agendaDeps ? await tratarLocalizacaoAgenda(agendaDeps, coords) : null;
               if (respLoc) {
@@ -6626,7 +6632,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
           const parsed = JSON.parse(msg.content) as { lat?: number; lng?: number };
           if (typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
             const coords = `${parsed.lat.toFixed(6)},${parsed.lng.toFixed(6)}`;
-            const mapsUrl = `https://www.google.com/maps?q=${coords}`;
+            const mapsUrl = coordsParaLink(parsed.lat, parsed.lng);
             // Persist on the lead so Eva can use in schedule_visit later
             // [MT 3e] pelo crachá do job — nunca no lead de outra empresa
             const existing = await dbMsg.getLeadByPhone(msg.from);

@@ -13,6 +13,7 @@ import {
   listarDiaFormatado,
   listarSemanaFormatado,
   ehDiaInteiro,
+  coordsParaLink,
   COR_EMPRESA,
   COR_PESSOAL,
   type AgendaEscrita,
@@ -338,5 +339,28 @@ describe('agenda/executor: listarSemanaFormatado()', () => {
     const cal = mockAgenda({ eventos: [] });
     const r = await listarSemanaFormatado(cal, '2026-08-31');
     expect(r).toContain('Nada marcado');
+  });
+});
+
+describe('coordsParaLink (link clicável do Google Maps a partir do pin)', () => {
+  it('monta a URL com 6 casas decimais a partir de numbers', () => {
+    expect(coordsParaLink(-22.63, -47.2)).toBe('https://www.google.com/maps?q=-22.630000,-47.200000');
+  });
+
+  it('lida com coordenadas positivas', () => {
+    expect(coordsParaLink(22.63, 47.2)).toBe('https://www.google.com/maps?q=22.630000,47.200000');
+  });
+
+  it('aceita lat/lng vindos como string (trim + parse)', () => {
+    expect(coordsParaLink(' -22.63 ', ' -47.20 ')).toBe('https://www.google.com/maps?q=-22.630000,-47.200000');
+  });
+
+  it('arredonda pra 6 casas decimais mesmo com mais precisão de entrada', () => {
+    expect(coordsParaLink(-22.6300001234, -47.1999999)).toBe('https://www.google.com/maps?q=-22.630000,-47.200000');
+  });
+
+  it('nunca devolve as coordenadas cruas sem link — sempre um link clicável', () => {
+    const link = coordsParaLink(-22.63, -47.2);
+    expect(link.startsWith('https://www.google.com/maps?q=')).toBe(true);
   });
 });
