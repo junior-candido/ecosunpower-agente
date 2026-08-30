@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   interpretar, resolverData, resolverHora, resolverDuracaoMin, parseExtracaoAgenda,
+  parseExtracaoSegundaChance, montarPromptInterpretarAgenda, montarPromptSegundaChanceAgenda,
   type ExtratorIA,
 } from '../src/modules/agenda/interpretar.js';
 
@@ -119,6 +120,110 @@ describe('agenda/interpretar: interpretar() — orquestração completa', () => 
     expect(r!.inicioISO).toBe('2026-10-15T10:00:00-03:00');
     expect(r!.confianca).toBe('alta');
   });
+
+  it('A1.1: "entendido" traz o título extraído, mesmo com confiança alta', async () => {
+    const ia = iaQueDevolve(jsonCompromisso({ titulo: 'Visita Cyntia', dataTexto: 'amanhã', horaTexto: '9h' }));
+    const r = await interpretar('visita Cyntia amanhã 9h', '2026-08-28T10:00:00-03:00', ia);
+    expect(r!.entendido).toBe('Visita Cyntia');
+  });
+
+  it('A1.1: "detalhes" (tarefas/materiais/contexto) passa direto pra Interpretacao', async () => {
+    const ia = iaQueDevolve(jsonCompromisso({
+      titulo: 'Visita João', dataTexto: 'amanhã', horaTexto: '9h',
+      detalhes: 'Levar a escada; trocar o disjuntor da piscina; cobrar a segunda parcela',
+    }));
+    const r = await interpretar('visita no João amanhã 9h — levar a escada, trocar o disjuntor da piscina e cobrar a segunda parcela', '2026-08-28T10:00:00-03:00', ia);
+    expect(r!.detalhes).toBe('Levar a escada; trocar o disjuntor da piscina; cobrar a segunda parcela');
+  });
+
+  it('A1.1: sem "detalhes" → campo fica undefined (não string vazia)', async () => {
+    const ia = iaQueDevolve(jsonCompromisso({ titulo: 'Visita', dataTexto: 'amanhã', horaTexto: '9h' }));
+    const r = await interpretar('visita amanhã 9h', '2026-08-28T10:00:00-03:00', ia);
+    expect(r!.detalhes).toBeUndefined();
+  });
+
+  it('A1.1: "hoje à noite" sem horaTexto separado → hora cai pro fallback dentro do dataTexto (19h, confiança alta)', async () => {
+    const ia = iaQueDevolve(jsonCompromisso({ titulo: 'Culto', dataTexto: 'hoje à noite', horaTexto: null }));
+    const r = await interpretar('culto hoje à noite', '2026-08-28T10:00:00-03:00', ia);
+    expect(r!.inicioISO).toBe('2026-08-28T19:00:00-03:00');
+    expect(r!.confianca).toBe('alta');
+  });
+
+  describe('A1.1: 2ª chance — frase coloquial sem data/hora clara na 1ª extração', () => {
+    // Mock que responde de forma diferente a cada chamada — simula a 1ª
+    // extração (crua, ambígua) e a 2ª chamada (resolução explícita).
+    function iaSequencia(respostas: string[]): ExtratorIA & { chamadas: number } {
+      let i = 0;
+      const obj = {
+        chamadas: 0,
+        async extrairAgenda() {
+          obj.chamadas++;
+          const r = respostas[Math.min(i, respostas.length - 1)];
+          i++;
+          return r;
+        },
+      };
+      return obj;
+    }
+
+    it('resolução explícita válida (dataISO/hora) na 2ª chamada → confiança alta, chama a IA só 2x', async () => {
+      const primeira = jsonCompromisso({ titulo: 'Visita Cyntia', dataTexto: 'lá pelo meio da semana que vem sei lá', horaTexto: null });
+      const segunda = '```json\n' + JSON.stringify({
+        compromisso: true, titulo: 'Visita Cyntia', detalhes: null,
+        dataTexto: 'lá pelo meio da semana que vem sei lá', horaTexto: null, duracaoTexto: null,
+        diaInteiro: false, ambito: null,
+        resolucaoDataISO: '2026-09-02', resolucaoHora: '09:00',
+      }) + '\n```';
+      const ia = iaSequencia([primeira, segunda]);
+      const r = await interpretar('marca aí a visita da Cyntia lá pelo meio da semana que vem sei lá umas nove', '2026-08-28T10:00:00-03:00', ia);
+      expect(r).not.toBeNull();
+      expect(r!.confianca).toBe('alta');
+      expect(r!.inicioISO).toBe('2026-09-02T09:00:00-03:00');
+      expect(ia.chamadas).toBe(2);
+    });
+
+    it('sem resolução explícita, mas a 2ª extração de texto já é reconhecível → confiança alta pela camada determinística', async () => {
+      const primeira = jsonCompromisso({ titulo: 'Dentista', dataTexto: null, horaTexto: null });
+      const segunda = jsonCompromisso({ titulo: 'Dentista', dataTexto: 'amanhã', horaTexto: '9h' });
+      const ia = iaSequencia([primeira, segunda]);
+      const r = await interpretar('marca dentista amanhã de manhã cedo', '2026-08-28T10:00:00-03:00', ia);
+      expect(r!.confianca).toBe('alta');
+      expect(r!.inicioISO).toBe('2026-08-29T09:00:00-03:00');
+    });
+
+    it('resolução explícita NO PASSADO → rejeitada (validação determinística), cai pro fallback de texto', async () => {
+      const primeira = jsonCompromisso({ titulo: 'Reunião', dataTexto: null, horaTexto: null });
+      const segunda = '```json\n' + JSON.stringify({
+        compromisso: true, titulo: 'Reunião', detalhes: null,
+        dataTexto: null, horaTexto: null, duracaoTexto: null, diaInteiro: false, ambito: null,
+        resolucaoDataISO: '2020-01-01', resolucaoHora: '09:00', // no passado — inválido
+      }) + '\n```';
+      const ia = iaSequencia([primeira, segunda]);
+      const r = await interpretar('reunião não sei quando', '2026-08-28T10:00:00-03:00', ia);
+      expect(r!.confianca).toBe('baixa');
+    });
+
+    it('2ª chamada falha (rejeita a promise) → não derruba, confiança fica baixa com o melhor palpite', async () => {
+      let chamou = 0;
+      const ia: ExtratorIA = {
+        async extrairAgenda() {
+          chamou++;
+          if (chamou === 1) return jsonCompromisso({ titulo: 'Ligar fornecedor', dataTexto: null, horaTexto: null });
+          throw new Error('Anthropic fora do ar');
+        },
+      };
+      const r = await interpretar('preciso ligar pro fornecedor', '2026-08-28T10:00:00-03:00', ia);
+      expect(r).not.toBeNull();
+      expect(r!.confianca).toBe('baixa');
+      expect(r!.titulo).toBe('Ligar fornecedor');
+    });
+
+    it('confiança já alta na 1ª extração → NUNCA faz a 2ª chamada (economia)', async () => {
+      const ia = iaSequencia([jsonCompromisso({ titulo: 'Visita', dataTexto: 'amanhã', horaTexto: '9h' })]);
+      await interpretar('visita amanhã 9h', '2026-08-28T10:00:00-03:00', ia);
+      expect(ia.chamadas).toBe(1);
+    });
+  });
 });
 
 describe('agenda/interpretar: resolverData (puro)', () => {
@@ -160,7 +265,7 @@ describe('agenda/interpretar: resolverData (puro)', () => {
     expect(resolverData(null, AGORA)).toEqual({ dateISO: '2026-08-28', confiavel: false });
   });
   it('texto não reconhecido → hoje, não confiável (nunca explode)', () => {
-    expect(resolverData('semana que vem sei lá quando', AGORA).confiavel).toBe(false);
+    expect(resolverData('não sei quando, vamos ver', AGORA).confiavel).toBe(false);
   });
 
   // --- BUG 1 (revisão adversarial): "dia N" ignorava a hora do dia -----------
@@ -185,6 +290,23 @@ describe('agenda/interpretar: resolverData (puro)', () => {
     // hoje = 31/01/2027; dia 30 < dia 31 de hoje → mês seguinte candidato = fevereiro/2027 (28 dias, sem dia 30).
     const r = resolverData('dia 30', '2027-01-31T08:00:00-03:00');
     expect(r).toEqual({ dateISO: '2027-03-30', confiavel: true });
+  });
+
+  // --- A1.1: frases coloquiais/áudio — resolverData mais tolerante ----------
+  it('A1.1: "semana que vem" (sem dia da semana específico) → hoje + 7 dias corridos', () => {
+    expect(resolverData('semana que vem', AGORA)).toEqual({ dateISO: '2026-09-04', confiavel: true });
+  });
+  it('A1.1: "daqui a 3 dias" → soma direta a partir de hoje', () => {
+    expect(resolverData('daqui a 3 dias', AGORA)).toEqual({ dateISO: '2026-08-31', confiavel: true });
+  });
+  it('A1.1: "daqui a 1 dia" (singular) → +1 dia', () => {
+    expect(resolverData('daqui a 1 dia', AGORA)).toEqual({ dateISO: '2026-08-29', confiavel: true });
+  });
+  it('A1.1: "depois do almoço" → ainda hoje, confiável', () => {
+    expect(resolverData('depois do almoço', AGORA)).toEqual({ dateISO: '2026-08-28', confiavel: true });
+  });
+  it('A1.1: "hoje à noite" → hoje (o "à noite" não atrapalha o \\bhoje\\b)', () => {
+    expect(resolverData('hoje à noite', AGORA)).toEqual({ dateISO: '2026-08-28', confiavel: true });
   });
 });
 
@@ -212,6 +334,57 @@ describe('agenda/interpretar: resolverHora (puro)', () => {
   it('sem hora nenhuma → 09:00 default, não confiável', () => {
     expect(resolverHora(null)).toEqual({ hour: 9, minute: 0, confiavel: false });
   });
+
+  // --- A1.1: frases coloquiais/áudio — resolverHora bem mais tolerante -----
+  it('A1.1: "9" (número seco) → 09:00', () => {
+    expect(resolverHora('9')).toEqual({ hour: 9, minute: 0, confiavel: true });
+  });
+  it('A1.1: "9 horas" (com espaço) → 09:00', () => {
+    expect(resolverHora('9 horas')).toEqual({ hour: 9, minute: 0, confiavel: true });
+  });
+  it('A1.1: "9hrs" → 09:00', () => {
+    expect(resolverHora('9hrs')).toEqual({ hour: 9, minute: 0, confiavel: true });
+  });
+  it('A1.1: "9 e meia" → 09:30', () => {
+    expect(resolverHora('9 e meia')).toEqual({ hour: 9, minute: 30, confiavel: true });
+  });
+  it('A1.1: "nove" (extenso) → 09:00', () => {
+    expect(resolverHora('nove')).toEqual({ hour: 9, minute: 0, confiavel: true });
+  });
+  it('A1.1: "nove e meia" (extenso) → 09:30', () => {
+    expect(resolverHora('nove e meia')).toEqual({ hour: 9, minute: 30, confiavel: true });
+  });
+  it('A1.1: "duas da tarde" (extenso + período) → 14:00', () => {
+    expect(resolverHora('duas da tarde')).toEqual({ hour: 14, minute: 0, confiavel: true });
+  });
+  it('A1.1: "sete da noite" (extenso + período) → 19:00', () => {
+    expect(resolverHora('sete da noite')).toEqual({ hour: 19, minute: 0, confiavel: true });
+  });
+  it('A1.1: "meio dia" e "meio-dia" → 12:00', () => {
+    expect(resolverHora('meio dia')).toEqual({ hour: 12, minute: 0, confiavel: true });
+    expect(resolverHora('meio-dia')).toEqual({ hour: 12, minute: 0, confiavel: true });
+  });
+  it('A1.1: "umas 9" e "lá pelas 9" (aproximadores) → 09:00', () => {
+    expect(resolverHora('umas 9')).toEqual({ hour: 9, minute: 0, confiavel: true });
+    expect(resolverHora('lá pelas 9')).toEqual({ hour: 9, minute: 0, confiavel: true });
+  });
+  it('A1.1: "perto das 9" e "por volta das 9" (aproximadores) → 09:00', () => {
+    expect(resolverHora('perto das 9')).toEqual({ hour: 9, minute: 0, confiavel: true });
+    expect(resolverHora('por volta das 9')).toEqual({ hour: 9, minute: 0, confiavel: true });
+  });
+  it('A1.1: "fim da tarde" → 17:00 (não confunde com "tarde" genérico=14h)', () => {
+    expect(resolverHora('fim da tarde')).toEqual({ hour: 17, minute: 0, confiavel: true });
+  });
+  it('A1.1: "de manhãzinha" e "cedo" → 08:00 (não confunde com "manhã" genérico=9h)', () => {
+    expect(resolverHora('de manhãzinha')).toEqual({ hour: 8, minute: 0, confiavel: true });
+    expect(resolverHora('cedo')).toEqual({ hour: 8, minute: 0, confiavel: true });
+  });
+  it('A1.1: "na hora do almoço" → 12:00', () => {
+    expect(resolverHora('na hora do almoço')).toEqual({ hour: 12, minute: 0, confiavel: true });
+  });
+  it('A1.1: "à noite" → 19:00 (mesmo sem o "de")', () => {
+    expect(resolverHora('à noite')).toEqual({ hour: 19, minute: 0, confiavel: true });
+  });
 });
 
 describe('agenda/interpretar: resolverDuracaoMin (puro)', () => {
@@ -232,5 +405,61 @@ describe('agenda/interpretar: parseExtracaoAgenda (puro)', () => {
     expect(e).not.toBeNull();
     expect(e!.titulo).toBe('Visita');
     expect(e!.dataTexto).toBe('amanhã');
+  });
+
+  it('A1.1: campo "detalhes" (tarefas/materiais/contexto) é lido', () => {
+    const raw = '```json\n{"compromisso": true, "titulo": "Visita João", "detalhes": "Levar a escada; trocar o disjuntor da piscina; cobrar a segunda parcela", "dataTexto": "amanhã", "horaTexto": "9h", "duracaoTexto": null, "diaInteiro": false, "ambito": "empresa"}\n```';
+    const e = parseExtracaoAgenda(raw);
+    expect(e?.detalhes).toBe('Levar a escada; trocar o disjuntor da piscina; cobrar a segunda parcela');
+  });
+
+  it('A1.1: "detalhes" ausente/null → null (nunca quebra)', () => {
+    const raw = '```json\n{"compromisso": true, "titulo": "Visita", "dataTexto": null, "horaTexto": null, "duracaoTexto": null, "diaInteiro": false, "ambito": null}\n```';
+    expect(parseExtracaoAgenda(raw)?.detalhes).toBeNull();
+  });
+});
+
+describe('agenda/interpretar: parseExtracaoSegundaChance (puro)', () => {
+  it('lê a extração + resolução explícita (dataISO/hora) quando presentes', () => {
+    const raw = '```json\n{"compromisso": true, "titulo": "Visita", "detalhes": null, "dataTexto": "lá pelas nove", "horaTexto": null, "duracaoTexto": null, "diaInteiro": false, "ambito": null, "resolucaoDataISO": "2026-09-01", "resolucaoHora": "09:00"}\n```';
+    const r = parseExtracaoSegundaChance(raw);
+    expect(r).not.toBeNull();
+    expect(r!.extracao.titulo).toBe('Visita');
+    expect(r!.resolucaoDataISO).toBe('2026-09-01');
+    expect(r!.resolucaoHora).toBe('09:00');
+  });
+
+  it('resolucaoDataISO/resolucaoHora ausentes → null (não quebra)', () => {
+    const raw = '```json\n{"compromisso": true, "titulo": "Visita", "detalhes": null, "dataTexto": null, "horaTexto": null, "duracaoTexto": null, "diaInteiro": false, "ambito": null}\n```';
+    const r = parseExtracaoSegundaChance(raw);
+    expect(r).not.toBeNull();
+    expect(r!.resolucaoDataISO).toBeNull();
+    expect(r!.resolucaoHora).toBeNull();
+  });
+
+  it('compromisso:false → null (mesma regra de sempre)', () => {
+    expect(parseExtracaoSegundaChance('```json\n{"compromisso": false}\n```')).toBeNull();
+  });
+
+  it('JSON inválido → null (nunca explode)', () => {
+    expect(parseExtracaoSegundaChance('não é json nenhum')).toBeNull();
+  });
+});
+
+describe('agenda/interpretar: prompts (contêm as peças certas)', () => {
+  it('montarPromptInterpretarAgenda inclui a frase, o campo "detalhes" e exemplos coloquiais/áudio', () => {
+    const p = montarPromptInterpretarAgenda('marca aí uma visita segunda que vem lá pelas nove');
+    expect(p).toContain('marca aí uma visita segunda que vem lá pelas nove');
+    expect(p).toContain('detalhes');
+    expect(p).toContain('ÁUDIO TRANSCRITO');
+    expect(p).toContain('lá pelas nove');
+  });
+
+  it('montarPromptSegundaChanceAgenda inclui a frase, "agora" e pede resolucaoDataISO/resolucaoHora', () => {
+    const p = montarPromptSegundaChanceAgenda('dentista', '2026-08-28T10:00:00-03:00');
+    expect(p).toContain('dentista');
+    expect(p).toContain('2026-08-28T10:00:00-03:00');
+    expect(p).toContain('resolucaoDataISO');
+    expect(p).toContain('resolucaoHora');
   });
 });
