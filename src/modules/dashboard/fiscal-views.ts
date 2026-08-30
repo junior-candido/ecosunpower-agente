@@ -52,8 +52,8 @@ export function renderNovaNotaPage(servicos: ServicoOpt[], prefill: { nome?: str
 <h1 class="text-xl font-bold text-cyan-300 mb-4">🧾 Nova nota</h1>
 ${prefill.erro ? `<div class="card" style="border:1px solid #f87171;border-radius:10px;padding:8px;margin-bottom:8px">${escapeHtml(prefill.erro)}</div>` : ''}
 <form method="post" action="/dashboard/fiscal/nova" class="space-y-3">
-  <input type="hidden" name="fechamento_id" value="${prefill.fechamentoId ?? ''}">
-  <input type="hidden" name="lead_id" value="${prefill.leadId ?? ''}">
+  <input type="hidden" name="fechamento_id" value="${escapeHtml(prefill.fechamentoId ?? '')}">
+  <input type="hidden" name="lead_id" value="${escapeHtml(prefill.leadId ?? '')}">
   <label class="block">Tomador é <select name="tipo" id="tipo" class="bg-gray-800 p-1 rounded"><option value="PJ">PJ (CNPJ)</option><option value="PF">PF (CPF)</option></select></label>
   <label class="block">CNPJ/CPF <input name="doc" id="doc" value="${escapeHtml(prefill.doc ?? '')}" class="bg-gray-800 p-1 rounded w-full" required>
     <button type="button" id="buscar" class="px-2 py-1 rounded bg-gray-700 mt-1">🔎 Buscar dados</button></label>
