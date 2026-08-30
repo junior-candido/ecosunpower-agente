@@ -57,6 +57,17 @@ export async function marcar(
   ambito: 'empresa' | 'pessoal',
   opts?: { location?: string; descricaoExtra?: string },
 ): Promise<EventoCriado> {
+  // Guarda defensiva (belt+braces — interpretar.ts já rejeita isso ANTES de
+  // devolver confiança alta): nunca manda um evento com fim <= início pro
+  // Google. Se chegou até aqui mesmo assim, é bug de outra camada — melhor
+  // um erro claro em PT do que um evento invertido/de duração zero criado
+  // silenciosamente na agenda do Junior.
+  if (!interp.diaInteiro && Date.parse(interp.fimISO) <= Date.parse(interp.inicioISO)) {
+    throw new Error(
+      `Horário inválido: o fim (${interp.fimISO}) não pode ser igual ou antes do início (${interp.inicioISO}) — não marquei nada.`,
+    );
+  }
+
   const colorId = ambito === 'empresa' ? COR_EMPRESA : COR_PESSOAL;
   const marca = interp.diaInteiro ? `${MARCA_EVA} (dia inteiro)` : MARCA_EVA;
   const description = [interp.detalhes, opts?.descricaoExtra, marca]

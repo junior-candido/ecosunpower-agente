@@ -91,6 +91,25 @@ describe('agenda/executor: marcar()', () => {
     expect(cal.chamadasCriar[0].location).toBeUndefined();
   });
 
+  it('BUG 2 (revisão adversarial 30/08, belt+braces): fimISO <= inicioISO e não é dia inteiro → lança erro claro em PT, NÃO cria nada', async () => {
+    const cal = mockAgenda();
+    const invertido = interp({ inicioISO: '2026-08-31T15:00:00-03:00', fimISO: '2026-08-31T09:00:00-03:00' });
+    await expect(marcar(cal, invertido, 'empresa')).rejects.toThrow(/Horário inválido/i);
+    expect(cal.chamadasCriar).toHaveLength(0);
+  });
+
+  it('BUG 2: fimISO === inicioISO (duração zero) também é rejeitado', async () => {
+    const cal = mockAgenda();
+    const duracaoZero = interp({ inicioISO: '2026-08-31T09:00:00-03:00', fimISO: '2026-08-31T09:00:00-03:00' });
+    await expect(marcar(cal, duracaoZero, 'empresa')).rejects.toThrow(/Horário inválido/i);
+  });
+
+  it('BUG 2: dia inteiro com fim "antes" do início (00:00→23:59 do MESMO dia é normal, mas a guarda não se aplica a diaInteiro) — não lança', async () => {
+    const cal = mockAgenda();
+    const diaTodo = interp({ diaInteiro: true, inicioISO: '2026-08-31T00:00:00-03:00', fimISO: '2026-08-31T23:59:00-03:00' });
+    await expect(marcar(cal, diaTodo, 'empresa')).resolves.not.toThrow();
+  });
+
   it('6) usa título/horário da interpretação e devolve eventId/htmlLink', async () => {
     const cal = mockAgenda();
     const r = await marcar(cal, interp({ titulo: 'Dentista' }), 'pessoal');

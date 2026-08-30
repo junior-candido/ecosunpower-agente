@@ -224,6 +224,39 @@ describe('agenda/interpretar: interpretar() — orquestração completa', () => 
       expect(ia.chamadas).toBe(1);
     });
   });
+
+  describe('BUG 2 (revisão adversarial 30/08): intervalo degenerado (fim <= início) nunca sai como confiança alta', () => {
+    it('repro exato: dataTexto "dia 15 as 9" (sem horaTexto) → o fallback NÃO casa como intervalo 15→9; confiança fica baixa', async () => {
+      // A IA (canned) devolve o mesmo JSON nas duas chamadas (1ª extração +
+      // 2ª chance) — nenhuma delas melhora dia/hora, então o resultado final
+      // tem que ficar baixa de qualquer forma (não é só o permitirRange:false
+      // que resolve isso — é a combinação com a guarda final).
+      const ia = iaQueDevolve(jsonCompromisso({ titulo: 'Vistoria', dataTexto: 'dia 15 as 9', horaTexto: null }));
+      const r = await interpretar('vistoria dia 15 as 9', '2026-08-28T10:00:00-03:00', ia);
+      expect(r).not.toBeNull();
+      expect(r!.confianca).toBe('baixa');
+      // Nunca um evento com fim <= início, mesmo em confiança baixa (a Eva
+      // não usa esses valores pra marcar nada com confiança baixa, mas a
+      // guarda final garante isso de qualquer forma — belt+braces).
+      expect(Date.parse(r!.fimISO)).toBeGreaterThan(Date.parse(r!.inicioISO));
+    });
+
+    it('legítimo "das 9 às 12" (vindo do horaTexto de verdade) continua funcionando normalmente', async () => {
+      const ia = iaQueDevolve(jsonCompromisso({ titulo: 'Obra', dataTexto: 'amanhã', horaTexto: 'das 9 às 12' }));
+      const r = await interpretar('obra amanhã das 9 às 12', '2026-08-28T10:00:00-03:00', ia);
+      expect(r!.confianca).toBe('alta');
+      expect(r!.inicioISO).toBe('2026-08-29T09:00:00-03:00');
+      expect(r!.fimISO).toBe('2026-08-29T12:00:00-03:00');
+    });
+
+    it('guarda final: um horaTexto explícito com intervalo INVERTIDO ("das 15 às 9", erro de digitação) é rebaixado pra confiança baixa, nunca vira evento invertido', async () => {
+      const ia = iaQueDevolve(jsonCompromisso({ titulo: 'Reunião', dataTexto: 'amanhã', horaTexto: 'das 15 às 9' }));
+      const r = await interpretar('reunião amanhã das 15 às 9', '2026-08-28T10:00:00-03:00', ia);
+      expect(r).not.toBeNull();
+      expect(r!.confianca).toBe('baixa');
+      expect(Date.parse(r!.fimISO)).toBeGreaterThan(Date.parse(r!.inicioISO));
+    });
+  });
 });
 
 describe('agenda/interpretar: resolverData (puro)', () => {
@@ -384,6 +417,29 @@ describe('agenda/interpretar: resolverHora (puro)', () => {
   });
   it('A1.1: "à noite" → 19:00 (mesmo sem o "de")', () => {
     expect(resolverHora('à noite')).toEqual({ hour: 19, minute: 0, confiavel: true });
+  });
+
+  // --- BUG 2 (revisão adversarial 30/08): permitirRange:false pro fallback --
+  it('BUG 2: "das 9 às 12" com permitirRange (default true) → intervalo normal, sem mudança', () => {
+    expect(resolverHora('das 9 às 12')).toEqual({ hour: 9, minute: 0, confiavel: true, fimHour: 12, fimMinute: 0 });
+  });
+  it('BUG 2: "das 9 às 12" com permitirRange:false → NÃO casa como intervalo (fica sem confiança, pois não há período/dígito seco reconhecível sozinho)', () => {
+    const r = resolverHora('das 9 às 12', { permitirRange: false });
+    expect(r.fimHour).toBeUndefined();
+  });
+  it('BUG 2: "dia 15 as 9" (texto de DIA, não de hora) com permitirRange:false → não casa como intervalo 15→9 (não confiável)', () => {
+    const r = resolverHora('dia 15 as 9', { permitirRange: false });
+    expect(r.confiavel).toBe(false);
+    expect(r.fimHour).toBeUndefined();
+  });
+  it('BUG 2: "dia 15 as 9" com permitirRange (default true) — SEM o fix seria o bug: intervalo invertido 15→9', () => {
+    // Documenta o comportamento "cru" do regex de intervalo (não é usado
+    // assim de propósito pelo fallback — ver interpretar(), que passa
+    // permitirRange:false justamente pra evitar isso).
+    const r = resolverHora('dia 15 as 9');
+    expect(r.confiavel).toBe(true);
+    expect(r.hour).toBe(15);
+    expect(r.fimHour).toBe(9);
   });
 });
 

@@ -334,20 +334,30 @@ const FILLERS_HORA = /\b(l[áa]\s+pelas?|pelas?|perto\s+d(?:e|as|os)|por\s+volta
 // "cedo", "na hora do almoço", "à noite") e "9 horas"/"9hrs"/"9 e meia".
 // Sem nenhuma pista → 09:00 default, não confiável (a Eva deve avisar que
 // faltou hora clara).
-export function resolverHora(horaTexto: string | null): ResultadoHora {
+//
+// `opts.permitirRange` (default true): quando resolverHora é chamado como
+// FALLBACK sobre o dataTexto (não o horaTexto de verdade — ver interpretar()
+// mais abaixo), a regex de intervalo ("das X às Y") é perigosa: "dia 15 as 9"
+// é um DIA com filler, não um intervalo de hora, mas a regex casa mesmo assim
+// (15→9, fim antes do início). Chamadas com o texto genuíno de hora mantêm
+// permitirRange:true (é exatamente pra isso que ele serve: "das 9 às 12").
+export function resolverHora(horaTexto: string | null, opts?: { permitirRange?: boolean }): ResultadoHora {
+  const permitirRange = opts?.permitirRange ?? true;
   let norm = normalizarTexto(horaTexto ?? '');
   if (!norm) return { hour: 9, minute: 0, confiavel: false };
 
-  // Intervalo explícito: "das 9 às 12", "de 9h às 12h30", "9 as 12".
-  const range = norm.match(/(?:das|de)?\s*(\d{1,2})(?:h|:)?(\d{2})?\s*(?:as|-)\s*(\d{1,2})(?:h|:)?(\d{2})?/);
-  if (range) {
-    return {
-      hour: parseInt(range[1], 10),
-      minute: range[2] ? parseInt(range[2], 10) : 0,
-      confiavel: true,
-      fimHour: parseInt(range[3], 10),
-      fimMinute: range[4] ? parseInt(range[4], 10) : 0,
-    };
+  if (permitirRange) {
+    // Intervalo explícito: "das 9 às 12", "de 9h às 12h30", "9 as 12".
+    const range = norm.match(/(?:das|de)?\s*(\d{1,2})(?:h|:)?(\d{2})?\s*(?:as|-)\s*(\d{1,2})(?:h|:)?(\d{2})?/);
+    if (range) {
+      return {
+        hour: parseInt(range[1], 10),
+        minute: range[2] ? parseInt(range[2], 10) : 0,
+        confiavel: true,
+        fimHour: parseInt(range[3], 10),
+        fimMinute: range[4] ? parseInt(range[4], 10) : 0,
+      };
+    }
   }
 
   norm = norm.replace(FILLERS_HORA, ' ').replace(/\s+/g, ' ').trim();
@@ -484,8 +494,12 @@ export async function interpretar(frase: string, agoraISO: string, ia: ExtratorI
   let hora = resolverHora(extracao.horaTexto);
   // Fallback: às vezes o período de hora vem embutido no dataTexto mesmo
   // ("hoje à noite") em vez de vir separado no horaTexto — tenta achar ali.
+  // permitirRange:false — o dataTexto NÃO é hora de verdade; "dia 15 as 9"
+  // casaria como intervalo 15h→9h (fim antes do início) por coincidência de
+  // dígitos/"as", então intervalo nunca é aceito vindo desse fallback, só
+  // hora simples (dígito/extenso/período nomeado).
   if (!hora.confiavel && extracao.dataTexto) {
-    const tentativa = resolverHora(extracao.dataTexto);
+    const tentativa = resolverHora(extracao.dataTexto, { permitirRange: false });
     if (tentativa.confiavel) hora = tentativa;
   }
   let data = resolverData(extracao.dataTexto, agoraISO, { hour: hora.hour, minute: hora.minute });
@@ -519,7 +533,7 @@ export async function interpretar(frase: string, agoraISO: string, ia: ExtratorI
         } else {
           let hora2 = resolverHora(chance2.extracao.horaTexto);
           if (!hora2.confiavel && chance2.extracao.dataTexto) {
-            const tentativa2 = resolverHora(chance2.extracao.dataTexto);
+            const tentativa2 = resolverHora(chance2.extracao.dataTexto, { permitirRange: false });
             if (tentativa2.confiavel) hora2 = tentativa2;
           }
           const data2 = resolverData(chance2.extracao.dataTexto, agoraISO, { hour: hora2.hour, minute: hora2.minute });
@@ -545,6 +559,16 @@ export async function interpretar(frase: string, agoraISO: string, ia: ExtratorI
     fimISO = hora.fimHour !== undefined
       ? construirISO(data.dateISO, hora.fimHour, hora.fimMinute ?? 0)
       : construirISO(data.dateISO, hora.hour, hora.minute, duracaoMin);
+  }
+
+  // Guarda final determinística (belt+braces, além do permitirRange:false
+  // acima): um intervalo degenerado (fim <= início — ex.: um "das X às Y"
+  // invertido, ou qualquer combinação futura que escape as defesas de cima)
+  // NUNCA sai daqui como confiança alta pronto pra virar evento no Google. A
+  // Eva prefere perguntar de novo a mandar um evento de fim-antes-do-início.
+  if (!diaInteiroFinal && Date.parse(fimISO) <= Date.parse(inicioISO)) {
+    confiancaAlta = false;
+    fimISO = construirISO(data.dateISO, hora.hour, hora.minute, 60);
   }
 
   const confianca: 'alta' | 'baixa' = confiancaAlta ? 'alta' : 'baixa';
