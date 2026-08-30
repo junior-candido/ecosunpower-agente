@@ -123,7 +123,8 @@ import { makeCaixaHandler } from './modules/financeiro/comando-caixa.js';
 import { marcarPaga } from './modules/financeiro/contas-pagar.js';
 import { tickArquivos } from './modules/financeiro/arquivos-fila.js';
 import { registrarEFalar } from './modules/financeiro/caixa-entrada.js';
-import { tickVencimentos } from './modules/financeiro/tick-vencimentos.js';
+import { tickVencimentos, dentroDaJanela8h } from './modules/financeiro/tick-vencimentos.js';
+import { mensagemAlertaCertificado } from './modules/financeiro/fiscal/alerta-certificado.js';
 import { tickResumoSemanal, responderFavorecido } from './modules/financeiro/resumo-semanal.js';
 import { runPosInstalacaoNotifCycle } from './modules/relatorios/pos-instalacao/cron.js';
 import { tickEnvioAutoPasta, criarEnvioAutoDb, proximoLembrete9h } from './modules/relatorios/pasta/envio-auto.js';
@@ -10398,6 +10399,25 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setTimeout(() => { void tickFinVenc(); }, 3 * 60 * 1000);
     setInterval(() => { void tickFinVenc(); }, 60 * 60 * 1000);
     console.log('[fin-vencimentos] cron started (1x/hora, age às 8h BRT)');
+
+    // Certificado A1 (NFS-e): roda de hora em hora, só age às 8h BRT — avisa a 30/15/5 dias e vencido.
+    const tickFiscalCertificado = async () => {
+      if (!dentroDaJanela8h(new Date())) return;
+      try {
+        const { data } = await supabase.getClient()
+          .from('fiscal_config')
+          .select('cert_validade')
+          .eq('company_id', '00000000-0000-0000-0000-000000000001')
+          .single();
+        const msg = mensagemAlertaCertificado((data?.cert_validade as string | undefined) ?? null, hojeBRT());
+        if (msg) await sendText(config.engineerPhone, msg);
+      } catch (err) {
+        console.warn('[fiscal] alerta certificado falhou:', (err as Error).message);
+      }
+    };
+    setTimeout(() => { void tickFiscalCertificado(); }, 4 * 60 * 1000);
+    setInterval(() => { void tickFiscalCertificado(); }, 60 * 60 * 1000);
+    console.log('[fiscal] cron alerta certificado started (1x/hora, age às 8h BRT)');
 
     // Resumo semanal: roda de hora em hora, só age segunda às 8h BRT (dedupe em memória, 1×/dia).
     const tickFinSemanal = async () => {

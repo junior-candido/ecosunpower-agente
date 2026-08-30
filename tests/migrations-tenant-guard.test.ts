@@ -26,6 +26,8 @@ const ALLOWLIST: Record<string, string> = {
   servico_tipos: 'catálogo global de tipos de serviço de campo (visita, instalação...) — não é dado de tenant (092)',
   // conceito de tenant diferente (RAG, não é o pool do CRM)
   eva_knowledge_chunks: 'já tem tenant_id (text, slug), conceito de namespace do RAG — ver 02-decisao-vocabulario.md §3',
+  // tabelas-filha com escopo via parent (RLS faz join com a mãe pra trazer company_id)
+  fiscal_eventos: 'log-filho de fiscal_notas (company_id via nota_id; RLS faz join na mãe)',
 };
 
 function migrationFiles(dir: string): string[] {
