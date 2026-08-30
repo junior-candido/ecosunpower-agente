@@ -35,10 +35,12 @@ describe('fiscal engatarNotaNoCaixa', () => {
     expect(conta.valor).toBe(18995.25);
     expect(conta.descricao).toContain('NFS-e nº 84');
     expect(conta.fechamento_id).toBe('f1');
+    expect(conta.company_id).toBe('c1');
     const lanc = inserts.financeiro_lancamentos![0] as Record<string, unknown>;
     expect(lanc.valor).toBe(999.75);
     expect(lanc.tipo).toBe('despesa');
     expect(lanc.status).toBe('confirmado');
+    expect(lanc.company_id).toBe('c1');
     const upd = updates.fiscal_notas![0] as Record<string, unknown>;
     expect(upd.conta_receber_id).toBe('cr1');
     expect(upd.lancamento_iss_id).toBe('l1');

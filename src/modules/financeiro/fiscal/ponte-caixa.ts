@@ -2,6 +2,7 @@
 // Nota autorizada → dinheiro esperado (conta a receber, líquido) + ISS retido lançado
 // como despesa confirmada (o tomador já pagou por nós). Idempotência: quem chama só
 // engata se conta_receber_id ainda é NULL (anexarPdf tem CAS de status).
+// Sem transação: se falhar no meio, pode sobrar conta órfã (aceito na F1; caller re-tenta).
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { NotaLinha } from './notas-repo.js';
 
@@ -12,6 +13,7 @@ export async function engatarNotaNoCaixa(client: SupabaseClient, nota: NotaLinha
     descricao: `NFS-e nº ${nota.numero ?? '?'} — ${nota.tomador.nome}`,
     valor: nota.valorLiquido, status: 'pendente',
     fechamento_id: ctx.fechamentoId, lead_id: ctx.leadId, created_by: 'fiscal',
+    company_id: ctx.companyId,
   }).select('id').single();
   if (e1) throw new Error(`engatarNotaNoCaixa (conta): ${e1.message}`);
   const contaId = (conta as { id: string }).id;
@@ -26,6 +28,7 @@ export async function engatarNotaNoCaixa(client: SupabaseClient, nota: NotaLinha
       descricao: `ISS retido na fonte — NFS-e nº ${nota.numero ?? '?'} (${nota.tomador.nome})`,
       categoria_id: (cat as { id: string } | null)?.id ?? null,
       pf_pj: 'PJ', origem: 'tela', banco_conta: 'desconhecido', confianca: 'alta', created_by: 'fiscal',
+      company_id: ctx.companyId,
     }).select('id').single();
     if (e2) throw new Error(`engatarNotaNoCaixa (ISS): ${e2.message}`);
     lancamentoId = (lanc as { id: string }).id;
