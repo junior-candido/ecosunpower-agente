@@ -11,6 +11,7 @@ import {
   substituir,
   listarDiaFormatado,
   listarSemanaFormatado,
+  ehDiaInteiro,
   COR_EMPRESA,
   COR_PESSOAL,
   type AgendaEscrita,
@@ -179,6 +180,27 @@ describe('agenda/executor: listarDiaFormatado()', () => {
     const cal = mockAgenda({ eventos });
     const r = await listarDiaFormatado(cal, '2026-08-31', 'Amanhã');
     expect(r).toContain('🔵 09:00–10:00 Reunião externa');
+  });
+
+  it('16) evento all-day NATIVO do Google (fim exclusivo, 00:00 do dia SEGUINTE) também aparece como "dia todo"', async () => {
+    // Shape real que sai de calendar.ts listarEventos pra um evento all-day
+    // nativo do Google: start.date='2026-09-07' → '2026-09-07T00:00:00-03:00',
+    // end.date='2026-09-08' (exclusivo) → '2026-09-08T00:00:00-03:00'.
+    const eventos: EventoAgendaListado[] = [
+      { id: '1', titulo: 'Feriado', inicioISO: '2026-09-07T00:00:00-03:00', fimISO: '2026-09-08T00:00:00-03:00', criadoPelaEva: false },
+    ];
+    const cal = mockAgenda({ eventos });
+    const r = await listarDiaFormatado(cal, '2026-09-07', 'Hoje');
+    expect(r).toContain('dia todo');
+    expect(r).toContain('Feriado');
+    expect(r).not.toContain('00:00–00:00');
+  });
+});
+
+describe('agenda/executor: ehDiaInteiro() — guarda defensiva', () => {
+  it('17) inicioISO/fimISO vazios ou inválidos → NUNCA classifica como dia todo', () => {
+    expect(ehDiaInteiro({ id: 'x', titulo: 'Malformado', inicioISO: '', fimISO: '', criadoPelaEva: false })).toBe(false);
+    expect(ehDiaInteiro({ id: 'x', titulo: 'Só início', inicioISO: '2026-09-07T00:00:00-03:00', fimISO: '', criadoPelaEva: false })).toBe(false);
   });
 });
 

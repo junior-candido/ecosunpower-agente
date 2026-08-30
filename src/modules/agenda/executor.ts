@@ -120,35 +120,63 @@ function somarDias(dataISO: string, dias: number): string {
   return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
 }
 
-// Lê hora/minuto de um instante ISO em America/Sao_Paulo (timezone-safe, não
-// depende do TZ do host) — mesma técnica de interpretar.ts.
-function horaMinutoEmSaoPaulo(iso: string): { hour: number; minute: number } {
+interface PartsBRT { year: number; month: number; day: number; hour: number; minute: number }
+
+// Lê ano/mês/dia/hora/minuto de um instante ISO em America/Sao_Paulo
+// (timezone-safe, não depende do TZ do host) — mesma técnica de
+// interpretar.ts. Precisamos da data (não só hora/minuto) pra reconhecer o
+// formato all-day NATIVO do Google, cujo fim exclusivo cai em 00:00 de um
+// dia POSTERIOR (não é só "hora 23:59" no mesmo dia, como no padrão da Eva).
+function partsEmSaoPaulo(iso: string): PartsBRT {
   const d = new Date(iso);
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', hour12: false,
   }).formatToParts(d);
   const o: Record<string, string> = {};
   for (const p of parts) o[p.type] = p.value;
-  return { hour: parseInt(o.hour, 10) % 24, minute: parseInt(o.minute, 10) };
+  return {
+    year: parseInt(o.year, 10),
+    month: parseInt(o.month, 10),
+    day: parseInt(o.day, 10),
+    hour: parseInt(o.hour, 10) % 24,
+    minute: parseInt(o.minute, 10),
+  };
 }
 
-// Um evento é "dia inteiro" quando: (a) veio do Google como data pura, sem
-// horário (formato nativo de evento all-day, sem "T"), ou (b) foi criado pela
-// Eva com o padrão 00:00–23:59 (ver `marcar` acima / diaInteiro em
-// interpretar.ts).
-function ehDiaInteiro(e: EventoAgendaListado): boolean {
-  if (!e.inicioISO.includes('T')) return true;
-  const ini = horaMinutoEmSaoPaulo(e.inicioISO);
-  const fim = horaMinutoEmSaoPaulo(e.fimISO);
-  return ini.hour === 0 && ini.minute === 0 && fim.hour === 23 && fim.minute === 59;
+function diaMs(p: PartsBRT): number {
+  return Date.UTC(p.year, p.month - 1, p.day);
+}
+
+// Um evento é "dia inteiro" em um de dois formatos possíveis:
+//   (a) padrão da Eva (ver `marcar` acima): começa 00:00 e termina 23:59 do
+//       MESMO dia (diaInteiro em interpretar.ts);
+//   (b) padrão NATIVO do Google pra evento all-day: calendar.ts normaliza
+//       start.date/end.date pra dateTime, e o fim do Google é EXCLUSIVO — o
+//       evento começa 00:00 de um dia e "termina" 00:00 do dia SEGUINTE (ou
+//       mais, se durar vários dias), nunca 23:59.
+// Guarda defensiva: inicioISO/fimISO vazios, ausentes ou sem "T" (formato
+// inesperado) NUNCA classificam como dia inteiro — cai no formato de horário
+// normal em vez de arriscar um falso positivo.
+export function ehDiaInteiro(e: EventoAgendaListado): boolean {
+  if (!e.inicioISO || !e.fimISO || !e.inicioISO.includes('T') || !e.fimISO.includes('T')) return false;
+
+  const ini = partsEmSaoPaulo(e.inicioISO);
+  const fim = partsEmSaoPaulo(e.fimISO);
+  if (ini.hour !== 0 || ini.minute !== 0) return false;
+
+  if (fim.hour === 23 && fim.minute === 59 && diaMs(fim) === diaMs(ini)) return true; // padrão da Eva
+  if (fim.hour === 0 && fim.minute === 0 && diaMs(fim) > diaMs(ini)) return true;     // padrão nativo do Google
+
+  return false;
 }
 
 function formatarHorario(e: EventoAgendaListado): string {
   if (ehDiaInteiro(e)) return 'dia todo';
   const pad = (n: number) => String(n).padStart(2, '0');
-  const ini = horaMinutoEmSaoPaulo(e.inicioISO);
-  const fim = horaMinutoEmSaoPaulo(e.fimISO);
+  const ini = partsEmSaoPaulo(e.inicioISO);
+  const fim = partsEmSaoPaulo(e.fimISO);
   return `${pad(ini.hour)}:${pad(ini.minute)}–${pad(fim.hour)}:${pad(fim.minute)}`;
 }
 
