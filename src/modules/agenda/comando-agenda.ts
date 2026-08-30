@@ -173,18 +173,88 @@ async function processarCompromissoInterpretado(
   };
 }
 
+// Vocabulário reconhecido de data/hora — usado só pra decidir se a mensagem
+// SEGUINTE a um pendente é "só dia e hora" (completa) ou traz um ASSUNTO
+// NOVO junto (ex.: "visita na Ana quinta 10h" tem "visita"/"ana" sobrando,
+// não pode roubar um pendente "dentista"). Cobre os mesmos dias da semana/
+// períodos/números por extenso que interpretar.ts já reconhece, mais os
+// fillers de aproximação e preposição mais comuns em áudio (BUG 1, revisão
+// adversarial 30/08).
+const VOCAB_DATA_HORA = new Set([
+  // fillers/preposições/aproximadores
+  'as', 'a', 'dia', 'de', 'da', 'do', 'no', 'na', 'pra', 'para', 'la', 'pelas', 'pela',
+  'perto', 'volta', 'por', 'umas', 'que', 'vem', 'e', 'hs', 'h', 'horas', 'hora',
+  // dias relativos / períodos nomeados
+  'hoje', 'amanha', 'depois', 'daqui', 'dias', 'semana', 'meia', 'meio', 'manha',
+  'manhazinha', 'tarde', 'noite', 'cedo', 'almoco', 'fim',
+  // dias da semana (com e sem "-feira", já sem acento)
+  'domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'feira',
+  // números por extenso 1-23 (mesmos de resolverHora)
+  'um', 'uma', 'dois', 'duas', 'tres', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove',
+  'dez', 'onze', 'doze', 'treze', 'catorze', 'quatorze', 'quinze', 'dezesseis',
+  'dezessete', 'dezoito', 'dezenove', 'vinte',
+]);
+
+// Mensagem "só dia/hora": depois de tirar dígitos, pontuação e o vocabulário
+// conhecido de data/hora, sobra praticamente nada (≤2 chars). Um assunto
+// novo (nome de pessoa, título de compromisso...) sempre deixa sobra maior —
+// é isso que separa "amanhã 9h" (completa o pendente) de "visita na Ana
+// quinta 10h" (assunto novo, não pode roubar o pendente de outro compromisso).
+function ehApenasDataHora(texto: string): boolean {
+  const semDigitos = texto
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/\d+/g, ' ');
+  const palavras = semDigitos.split(/[^a-z]+/).filter(Boolean);
+  const sobra = palavras.filter((p) => !VOCAB_DATA_HORA.has(p)).join('');
+  return sobra.length <= 2;
+}
+
+// Palavras que só servem pra DIA (não pra hora) — removidas antes de tentar
+// achar a hora numa mensagem de completude tipo "quinta que vem lá pelas
+// 10": sem tirar "quinta"/"que"/"vem", o "10" sozinho no fim da frase não
+// bate em nenhum padrão de resolverHora (não tem "h" grudado, e a frase
+// inteira não é só o número — os padrões âncora ^...$ exigem isso).
+const PALAVRAS_SO_DE_DATA = new Set([
+  'hoje', 'amanha', 'depois', 'daqui', 'dias', 'dia', 'semana', 'que', 'vem',
+  'domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'feira',
+]);
+
+function extrairCandidatoHora(texto: string): string {
+  const norm = texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const tokens = norm.split(/[^a-z0-9]+/).filter(Boolean);
+  return tokens.filter((t) => !PALAVRAS_SO_DE_DATA.has(t)).join(' ');
+}
+
 // Tenta completar um pendente "aguardando data/hora" com a mensagem SEGUINTE
 // do Junior, quando ela só traz dia/hora (ex.: "amanhã 9h") — sem precisar
 // chamar a IA de novo. Isso mata o loop de "Que dia e hora?" repetido: em vez
 // de reiniciar a pergunta, a Eva já completa o compromisso original. Só
-// completa quando dia E hora (ou dia sozinho pra dia inteiro) ficam
-// reconhecíveis nessa mensagem — senão devolve null e o fluxo normal segue
-// (pode ser um pedido totalmente novo, ou o Junior mudou de ideia).
+// completa quando (1) a mensagem é SÓ dia/hora — ehApenasDataHora — e (2) dia
+// E hora (ou dia sozinho pra dia inteiro) ficam reconhecíveis nela — senão
+// devolve null e o fluxo normal segue (BUG 1: uma frase completa nova, tipo
+// "visita na Ana quinta 10h", NUNCA deve roubar um pendente de outro
+// compromisso — o assunto novo tem que vencer, e o pendente antigo continua
+// vivo até expirar ou ser SUBSTITUÍDO por essa nova pergunta/criação).
 function tentarCompletarPendente(
   pendente: PendenteAgenda, texto: string, agoraISO: string, location?: string,
 ): { interp: Interpretacao; location?: string } | null {
+  if (!ehApenasDataHora(texto)) return null;
+
   const dataTentativa = resolverData(texto, agoraISO);
-  const horaTentativa = resolverHora(texto);
+  let horaTentativa = resolverHora(texto);
+  // Fallback: quando dia e hora vêm misturados na mesma mensagem ("quinta
+  // que vem lá pelas 10"), as palavras de DIA no começo impedem os padrões
+  // âncora de resolverHora (soNum/bareNum) de casar o "10" sozinho no fim.
+  // Tira as palavras de dia e tenta de novo — permitirRange:false (mesma
+  // cautela do fallback de interpretar.ts): esse candidato derivado nunca
+  // deve virar um intervalo por coincidência de dígitos.
+  if (!horaTentativa.confiavel) {
+    const candidato = extrairCandidatoHora(texto);
+    const tentativa = resolverHora(candidato, { permitirRange: false });
+    if (tentativa.confiavel) horaTentativa = tentativa;
+  }
   const base = pendente.interp;
   if (!dataTentativa.confiavel || (!base.diaInteiro && !horaTentativa.confiavel)) return null;
 

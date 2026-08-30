@@ -152,6 +152,37 @@ describe('tratarMensagemAgenda: A1.1 completa o pendente "que dia e hora?" (mata
     expect(r2!.texto).toContain('📅 Marquei: Dentista');
   });
 
+  it('43 (BUG 1, revisão adversarial 30/08): mensagem seguinte é um COMPROMISSO NOVO COMPLETO ("visita na Ana quinta 10h") → NÃO rouba o pendente "dentista"; o assunto novo vence', async () => {
+    const cal = mockCal([]);
+    const ia: ExtratorIA = {
+      async extrairAgenda(prompt: string) {
+        if (prompt.includes('"dentista"')) {
+          return '```json\n' + JSON.stringify({ compromisso: true, titulo: 'Dentista', detalhes: null, dataTexto: null, horaTexto: null, duracaoTexto: null, diaInteiro: false, ambito: null }) + '\n```';
+        }
+        if (prompt.includes('visita na Ana quinta 10h')) {
+          return '```json\n' + JSON.stringify({ compromisso: true, titulo: 'Visita Ana', detalhes: null, dataTexto: 'quinta', horaTexto: '10h', duracaoTexto: null, diaInteiro: false, ambito: null }) + '\n```';
+        }
+        return '```json\n{"compromisso": false}\n```';
+      },
+    };
+    const deps = depsBase({ cal, ia });
+    await tratarMensagemAgenda(deps, 'dentista'); // fica pendente aguardando data/hora
+    const r2 = await tratarMensagemAgenda(deps, 'visita na Ana quinta 10h');
+    expect(cal.criados).toHaveLength(1);
+    expect(cal.criados[0].summary).toBe('Visita Ana'); // NÃO "Dentista"
+    expect(r2!.texto).toContain('📅 Marquei: Visita Ana');
+  });
+
+  it('44 (BUG 1): "quinta que vem lá pelas 10" (bare-ish — só dia/hora com fillers de aproximação) → COMPLETA "Dentista"', async () => {
+    const cal = mockCal([]);
+    const deps = depsBase({ cal, ia: iaCanned({ titulo: 'Dentista', dataTexto: null, horaTexto: null }) });
+    await tratarMensagemAgenda(deps, 'dentista');
+    const r2 = await tratarMensagemAgenda(deps, 'quinta que vem lá pelas 10');
+    expect(cal.criados).toHaveLength(1);
+    expect(cal.criados[0].summary).toBe('Dentista');
+    expect(r2!.texto).toContain('📅 Marquei: Dentista');
+  });
+
   it('37) mensagem seguinte que NÃO é só dia/hora → não completa (segue fluxo normal, não cria nada errado)', async () => {
     const cal = mockCal([]);
     const deps = depsBase({ cal, ia: iaCanned({ titulo: 'Dentista', dataTexto: null, horaTexto: null }) });
