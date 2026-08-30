@@ -15,7 +15,7 @@ export interface NovaNota {
   fechamentoId: string | null; leadId: string | null; createdBy: string;
 }
 export interface NotaLinha {
-  id: string; status: string; numero: string | null; competencia: string; descricao: string;
+  id: string; companyId: string; status: string; numero: string | null; competencia: string; descricao: string;
   tomador: Tomador; valorBruto: number; valorIss: number; issRetido: boolean; valorLiquido: number;
   pdfStoragePath: string | null; contaReceberId: string | null;
 }
@@ -41,33 +41,33 @@ export async function criarNota(client: SupabaseClient, n: NovaNota): Promise<st
   return (data as { id: string }).id;
 }
 
-export async function anexarPdf(client: SupabaseClient, notaId: string, numero: string, pdfPath: string): Promise<boolean> {
+export async function anexarPdf(client: SupabaseClient, companyId: string, notaId: string, numero: string, pdfPath: string): Promise<boolean> {
   const { data, error } = await client.from('fiscal_notas')
     .update({ status: 'autorizada', numero, pdf_storage_path: pdfPath, updated_at: new Date().toISOString() })
-    .eq('id', notaId).eq('status', 'preparada').select('id');
+    .eq('id', notaId).eq('status', 'preparada').eq('company_id', companyId).select('id');
   if (error) throw new Error(`anexarPdf: ${error.message}`);
   return (data ?? []).length === 1;
 }
 
 export async function listarNotas(client: SupabaseClient, companyId: string, limite = 100): Promise<NotaLinha[]> {
   const { data, error } = await client.from('fiscal_notas')
-    .select('id, status, numero, competencia, descricao, tomador, valor_bruto, valor_iss, iss_retido, valor_liquido, pdf_storage_path, conta_receber_id')
+    .select('id, company_id, status, numero, competencia, descricao, tomador, valor_bruto, valor_iss, iss_retido, valor_liquido, pdf_storage_path, conta_receber_id')
     .eq('company_id', companyId).order('competencia', { ascending: false }).limit(limite);
   if (error) throw new Error(`listarNotas: ${error.message}`);
   return (data ?? []).map(mapearNota);
 }
 
-export async function getNota(client: SupabaseClient, notaId: string): Promise<NotaLinha | null> {
+export async function getNota(client: SupabaseClient, companyId: string, notaId: string): Promise<NotaLinha | null> {
   const { data, error } = await client.from('fiscal_notas')
-    .select('id, status, numero, competencia, descricao, tomador, valor_bruto, valor_iss, iss_retido, valor_liquido, pdf_storage_path, conta_receber_id')
-    .eq('id', notaId).single();
+    .select('id, company_id, status, numero, competencia, descricao, tomador, valor_bruto, valor_iss, iss_retido, valor_liquido, pdf_storage_path, conta_receber_id')
+    .eq('id', notaId).eq('company_id', companyId).single();
   if (error) return null;
   return mapearNota(data as Record<string, unknown>);
 }
 
 function mapearNota(r: Record<string, unknown>): NotaLinha {
   return {
-    id: r.id as string, status: r.status as string, numero: (r.numero as string | null) ?? null,
+    id: r.id as string, companyId: r.company_id as string, status: r.status as string, numero: (r.numero as string | null) ?? null,
     competencia: r.competencia as string, descricao: r.descricao as string, tomador: r.tomador as Tomador,
     valorBruto: Number(r.valor_bruto), valorIss: Number(r.valor_iss), issRetido: Boolean(r.iss_retido),
     valorLiquido: Number(r.valor_liquido), pdfStoragePath: (r.pdf_storage_path as string | null) ?? null,

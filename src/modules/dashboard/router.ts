@@ -809,7 +809,7 @@ b.onclick=async function(){
   router.get('/fiscal/:id', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
     try {
       const { getNota, getConfig } = await import('../financeiro/fiscal/notas-repo.js');
-      const nota = await getNota(supabase, String(req.params.id));
+      const nota = await getNota(supabase, req.dashUser!.companyId, String(req.params.id));
       if (!nota) { res.status(404).send('Nota não achada'); return; }
       const { renderNotaDetalhe } = await import('./fiscal-views.js');
       const config = await getConfig(supabase, req.dashUser!.companyId);
@@ -837,9 +837,9 @@ b.onclick=async function(){
         contentType: 'application/pdf', upsert: true,
       });
       if (upErr) throw new Error(`upload do PDF: ${upErr.message}`);
-      const ok = await anexarPdf(supabase, notaId, numero, path);
+      const ok = await anexarPdf(supabase, companyId, notaId, numero, path);
       if (ok) {
-        const nota = await getNota(supabase, notaId);
+        const nota = await getNota(supabase, companyId, notaId);
         if (nota) await engatarNotaNoCaixa(supabase, nota, { companyId, fechamentoId: null, leadId: null });
         await registrarEvento(supabase, notaId, 'pdf_anexado', { numero, path });
       }
@@ -853,7 +853,7 @@ b.onclick=async function(){
   router.get('/fiscal/:id/pdf', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
     try {
       const { getNota } = await import('../financeiro/fiscal/notas-repo.js');
-      const nota = await getNota(supabase, String(req.params.id));
+      const nota = await getNota(supabase, req.dashUser!.companyId, String(req.params.id));
       if (!nota || !nota.pdfStoragePath) { res.status(404).send('Sem PDF'); return; }
       const { data, error } = await supabase.storage.from('client-attachments').createSignedUrl(nota.pdfStoragePath, 300);
       if (error || !data) { res.status(500).send('Falha ao gerar link do PDF'); return; }

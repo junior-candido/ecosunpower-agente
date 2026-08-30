@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { criarNota, listarNotas, anexarPdf, hashNota } from '../src/modules/financeiro/fiscal/notas-repo.js';
+import { criarNota, listarNotas, anexarPdf, getNota, hashNota } from '../src/modules/financeiro/fiscal/notas-repo.js';
 
 function chainMock(resultado: unknown = { data: [], error: null }) {
   const calls: Record<string, unknown[][]> = {};
@@ -45,15 +45,22 @@ describe('fiscal notas-repo', () => {
   });
   it('anexarPdf só atualiza nota em preparada (CAS) e devolve false se já anexada', async () => {
     const { client, calls } = chainMock({ data: [], error: null });
-    const ok = await anexarPdf(client, 'n1', '83', 'fiscal/c1/n1.pdf');
+    const ok = await anexarPdf(client, 'c1', 'n1', '83', 'fiscal/c1/n1.pdf');
     expect(ok).toBe(false);
     expect(calls.eq).toContainEqual(['id', 'n1']);
     expect(calls.eq).toContainEqual(['status', 'preparada']);
+    expect(calls.eq).toContainEqual(['company_id', 'c1']);
   });
   it('listarNotas filtra por company e ordena por competência desc', async () => {
     const { client, calls } = chainMock({ data: [], error: null });
     await listarNotas(client, 'c1');
     expect(calls.eq).toContainEqual(['company_id', 'c1']);
     expect(calls.order).toContainEqual(['competencia', { ascending: false }]);
+  });
+  it('getNota filtra por company_id além do id (corta acesso entre empresas)', async () => {
+    const { client, calls } = chainMock({ data: { id: 'n1' }, error: null });
+    await getNota(client, 'c1', 'n1');
+    expect(calls.eq).toContainEqual(['company_id', 'c1']);
+    expect(calls.eq).toContainEqual(['id', 'n1']);
   });
 });
