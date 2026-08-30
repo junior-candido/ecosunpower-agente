@@ -3,7 +3,7 @@
 // na rede. A resolução de data/hora é 100% determinística (testada aqui).
 import { describe, it, expect } from 'vitest';
 import {
-  interpretar, resolverData, resolverHora, resolverDuracaoMin,
+  interpretar, resolverData, resolverHora, resolverDuracaoMin, parseExtracaoAgenda,
   type ExtratorIA,
 } from '../src/modules/agenda/interpretar.js';
 
@@ -112,6 +112,13 @@ describe('agenda/interpretar: interpretar() — orquestração completa', () => 
     const r = await interpretar('visita amanhã 9h', '2026-08-28T10:00:00-03:00', ia);
     expect(r).toBeNull();
   });
+
+  it('BUG 1 (regressão): "dia 15 às 10h" no MESMO DIA à noite não marca no passado — vai pro mês seguinte', async () => {
+    const ia = iaQueDevolve(jsonCompromisso({ titulo: 'Vistoria', dataTexto: 'dia 15', horaTexto: '10h' }));
+    const r = await interpretar('vistoria dia 15 às 10h', '2026-09-15T22:00:00-03:00', ia);
+    expect(r!.inicioISO).toBe('2026-10-15T10:00:00-03:00');
+    expect(r!.confianca).toBe('alta');
+  });
 });
 
 describe('agenda/interpretar: resolverData (puro)', () => {
@@ -155,6 +162,30 @@ describe('agenda/interpretar: resolverData (puro)', () => {
   it('texto não reconhecido → hoje, não confiável (nunca explode)', () => {
     expect(resolverData('semana que vem sei lá quando', AGORA).confiavel).toBe(false);
   });
+
+  // --- BUG 1 (revisão adversarial): "dia N" ignorava a hora do dia -----------
+  it('"dia 15" no mesmo dia de hoje, hora AINDA NÃO passou → fica hoje', () => {
+    const r = resolverData('dia 15', '2026-09-15T08:00:00-03:00', { hour: 10, minute: 0 });
+    expect(r).toEqual({ dateISO: '2026-09-15', confiavel: true });
+  });
+  it('"dia 15" no mesmo dia de hoje, hora JÁ passou → dia 15 do mês seguinte (nunca no passado)', () => {
+    const r = resolverData('dia 15', '2026-09-15T22:00:00-03:00', { hour: 10, minute: 0 });
+    expect(r).toEqual({ dateISO: '2026-10-15', confiavel: true });
+  });
+
+  // --- BUG 2 (revisão adversarial): "dia N" não validava tamanho do mês ------
+  // Comportamento escolhido: quando o mês candidato não TEM esse dia (ex.: 31
+  // em setembro, 30 em fevereiro), avança pro PRÓXIMO mês que tenha — nunca
+  // deixa o overflow nativo do Date estourar pro mês seguinte sozinho.
+  it('"dia 31" num mês sem dia 31 (setembro tem 30) → avança pro próximo mês que tem esse dia', () => {
+    const r = resolverData('dia 31', '2026-09-05T08:00:00-03:00');
+    expect(r).toEqual({ dateISO: '2026-10-31', confiavel: true });
+  });
+  it('"dia 30" caindo em fevereiro (28 dias em 2027) → avança pra março', () => {
+    // hoje = 31/01/2027; dia 30 < dia 31 de hoje → mês seguinte candidato = fevereiro/2027 (28 dias, sem dia 30).
+    const r = resolverData('dia 30', '2027-01-31T08:00:00-03:00');
+    expect(r).toEqual({ dateISO: '2027-03-30', confiavel: true });
+  });
 });
 
 describe('agenda/interpretar: resolverHora (puro)', () => {
@@ -188,4 +219,18 @@ describe('agenda/interpretar: resolverDuracaoMin (puro)', () => {
   it('"duas horas" → 120', () => expect(resolverDuracaoMin('duas horas')).toBe(120));
   it('"meia hora" → 30', () => expect(resolverDuracaoMin('meia hora')).toBe(30));
   it('"1h30" → 90', () => expect(resolverDuracaoMin('1h30')).toBe(90));
+});
+
+describe('agenda/interpretar: parseExtracaoAgenda (puro)', () => {
+  it('aceita fence \`\`\`json\`\`\` (com tag)', () => {
+    const raw = '```json\n{"compromisso": true, "titulo": "Visita", "dataTexto": null, "horaTexto": null, "duracaoTexto": null, "diaInteiro": false, "ambito": null}\n```';
+    expect(parseExtracaoAgenda(raw)?.titulo).toBe('Visita');
+  });
+  it('MINOR (revisão adversarial): aceita fence \`\`\`  \`\`\` SEM a tag "json"', () => {
+    const raw = '```\n{"compromisso": true, "titulo": "Visita", "dataTexto": "amanhã", "horaTexto": "9h", "duracaoTexto": null, "diaInteiro": false, "ambito": null}\n```';
+    const e = parseExtracaoAgenda(raw);
+    expect(e).not.toBeNull();
+    expect(e!.titulo).toBe('Visita');
+    expect(e!.dataTexto).toBe('amanhã');
+  });
 });

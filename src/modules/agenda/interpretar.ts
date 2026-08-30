@@ -61,7 +61,8 @@ REGRAS:
 // Lê o JSON cru da IA. Tolerante a bloco \`\`\`json\`\`\` ou objeto solto;
 // qualquer falha de parse ou compromisso:false → null (nunca explode).
 export function parseExtracaoAgenda(raw: string): ExtracaoAgenda | null {
-  const fence = raw.match(/```json\s*([\s\S]*?)```/);
+  // Tag "json" é opcional — a IA às vezes devolve ``` puro sem a linguagem.
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
   const corpo = fence ? fence[1] : raw;
   let obj: unknown;
   try {
@@ -134,6 +135,12 @@ const DIAS_SEMANA: Record<string, number> = {
   domingo: 0, segunda: 1, terca: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6,
 };
 
+// Quantos dias tem o mês `month0` (0-based) de `year`. Dia 0 do mês seguinte
+// é sempre o último dia do mês atual — truque padrão com Date.UTC.
+function diasNoMes(year: number, month0: number): number {
+  return new Date(Date.UTC(year, month0 + 1, 0)).getUTCDate();
+}
+
 export interface ResultadoData { dateISO: string; confiavel: boolean }
 export interface HoraParcial { hour: number; minute: number }
 
@@ -160,13 +167,32 @@ export function resolverData(
   const diaMes = norm.match(/\bdia\s+(\d{1,2})\b/);
   if (diaMes) {
     const dia = parseInt(diaMes[1], 10);
-    let month = agora.month - 1; // 0-based
-    let year = agora.year;
-    if (dia < agora.day) {
-      month += 1;
+    // Guarda: "dia 45" etc. não é um dia de mês válido — cai no fallback não
+    // reconhecido lá embaixo em vez de entrar no cálculo (evita loop infinito
+    // no ajuste de mês curto mais abaixo).
+    if (dia >= 1 && dia <= 31) {
+      let month = agora.month - 1; // 0-based
+      let year = agora.year;
+      if (dia < agora.day) {
+        month += 1;
+      } else if (dia === agora.day) {
+        // Mesmo dia do mês de hoje: só fica neste mês se o horário ainda não
+        // passou — mesma regra do "mesmo dia da semana" logo abaixo.
+        const passou = horaResolvida
+          ? horaResolvida.hour < agora.hour || (horaResolvida.hour === agora.hour && horaResolvida.minute <= agora.minute)
+          : false;
+        if (passou) month += 1;
+      }
       if (month > 11) { month = 0; year += 1; }
+      // Mês candidato não TEM esse dia (ex.: 31 em setembro, 30 em fevereiro)
+      // → avança pro PRÓXIMO mês que tenha, nunca deixa o Date estourar
+      // sozinho pro mês seguinte (31/09 virando 01/10 seria um bug silencioso).
+      while (dia > diasNoMes(year, month)) {
+        month += 1;
+        if (month > 11) { month = 0; year += 1; }
+      }
+      return { dateISO: fmt(Date.UTC(year, month, dia)), confiavel: true };
     }
-    return { dateISO: fmt(Date.UTC(year, month, dia)), confiavel: true };
   }
 
   for (const [nome, wd] of Object.entries(DIAS_SEMANA)) {
