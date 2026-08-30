@@ -9,7 +9,8 @@ O Junior manda uma frase natural no zap ("visita na Cyntia quinta 9h") e a Eva m
 2. **Fala natural, cria direto** ("melhor simples e eu olho e vejo") → resposta com resumo + botão **Desfazer** (e "É pessoal"/"É empresa" pra corrigir cor).
 3. **Marcar + consultar** (letra a): "agenda hoje/amanhã/da semana".
 4. **Conflito = obrigatório na A1**: antes de criar, checar ocupação; se chocar, avisar e oferecer `[Marcar junto] [Substituir] [Sugerir horário]` — no sugerir, propor o primeiro horário livre do dia. "Ela deve ser uma secretária eficiente em todos os sentidos."
-5. Só funciona pro **número do Junior** (dono). Nunca mexe em eventos que ela não criou, EXCETO leitura (consulta lê tudo).
+5. **Entradas: texto E ÁUDIO** (voz transcrita — reusar a transcrição que a Eva já tem) · **pin de localização** do WhatsApp → vira o LOCAL do evento (mapa) · **PDF recebido junto** → anexo do evento (mesmo mecanismo do SchedulingAssistant de leads). "Tudo certinho" (Junior 30/08).
+6. Só funciona pro **número do Junior** (dono). Nunca mexe em eventos que ela não criou, EXCETO leitura (consulta lê tudo).
 
 ## Base existente (reusar, não recriar)
 - `src/modules/calendar.ts` — `CalendarService`: `createEvent` (com `colorId`), `isAvailable` (freebusy), OAuth refresh-token, `GOOGLE_CALENDAR_ID` no env. Usado hoje pelo SchedulingAssistant de leads. ✅ CONFIRMADO pelo Junior 30/08: já aponta pra agenda DELE, e os agendamentos de lead chegam certinhos com mapa/local, horário e até anexo PDF — a A1 herda essa riqueza (visita a lead pode incluir endereço/mapa).
@@ -33,7 +34,8 @@ O Junior manda uma frase natural no zap ("visita na Cyntia quinta 9h") e a Eva m
 - Não entendeu a data → UMA pergunta curta ("que dia?"), nunca interrogatório.
 
 ## Fatias
-- **A1**: interpretar + classificar + conflito + criar/desfazer/substituir/sugerir + consulta dia/amanhã/semana + botões. (esta entrega)
+- **A1**: interpretar (texto + áudio transcrito) + classificar + conflito + criar/desfazer/substituir/sugerir + consulta dia/amanhã/semana + botões + localização→local do evento. (esta entrega)
+- **A1.5**: PDF junto da mensagem → anexo do evento.
 - **A2**: "tô livre X?" · mudar/cancelar por frase ("muda o dentista pra 16h") · aprendizado das correções de cor.
 - **A3**: automáticos — obra confirmada → evento · lembrete 1h antes com endereço do cliente · convidados (Jonnata na obra).
 
