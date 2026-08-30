@@ -91,6 +91,25 @@ describe('agenda/executor: marcar()', () => {
     expect(cal.chamadasCriar[0].location).toBeUndefined();
   });
 
+  it('BUG 2 (revisão adversarial 30/08, belt+braces): fimISO <= inicioISO e não é dia inteiro → lança erro claro em PT, NÃO cria nada', async () => {
+    const cal = mockAgenda();
+    const invertido = interp({ inicioISO: '2026-08-31T15:00:00-03:00', fimISO: '2026-08-31T09:00:00-03:00' });
+    await expect(marcar(cal, invertido, 'empresa')).rejects.toThrow(/Horário inválido/i);
+    expect(cal.chamadasCriar).toHaveLength(0);
+  });
+
+  it('BUG 2: fimISO === inicioISO (duração zero) também é rejeitado', async () => {
+    const cal = mockAgenda();
+    const duracaoZero = interp({ inicioISO: '2026-08-31T09:00:00-03:00', fimISO: '2026-08-31T09:00:00-03:00' });
+    await expect(marcar(cal, duracaoZero, 'empresa')).rejects.toThrow(/Horário inválido/i);
+  });
+
+  it('BUG 2: dia inteiro com fim "antes" do início (00:00→23:59 do MESMO dia é normal, mas a guarda não se aplica a diaInteiro) — não lança', async () => {
+    const cal = mockAgenda();
+    const diaTodo = interp({ diaInteiro: true, inicioISO: '2026-08-31T00:00:00-03:00', fimISO: '2026-08-31T23:59:00-03:00' });
+    await expect(marcar(cal, diaTodo, 'empresa')).resolves.not.toThrow();
+  });
+
   it('6) usa título/horário da interpretação e devolve eventId/htmlLink', async () => {
     const cal = mockAgenda();
     const r = await marcar(cal, interp({ titulo: 'Dentista' }), 'pessoal');
@@ -99,6 +118,20 @@ describe('agenda/executor: marcar()', () => {
     expect(cal.chamadasCriar[0].endISO).toBe('2026-08-31T10:00:00-03:00');
     expect(r).toEqual({ eventId: 'novo-id', htmlLink: 'https://calendar.google.com/novo-id' });
   });
+
+  it('A1.1 (7b): "detalhes" (tarefas/materiais/contexto) entra na descrição JUNTO com a marca da Eva', async () => {
+    const cal = mockAgenda();
+    await marcar(cal, interp({ detalhes: 'Levar a escada; trocar o disjuntor da piscina; cobrar a segunda parcela' }), 'empresa');
+    expect(cal.chamadasCriar[0].description).toContain('Levar a escada; trocar o disjuntor da piscina; cobrar a segunda parcela');
+    expect(cal.chamadasCriar[0].description).toContain('criado pela Eva');
+  });
+
+  it('A1.1 (7c): sem "detalhes" → descrição só com a marca da Eva (não sobra linha em branco/undefined)', async () => {
+    const cal = mockAgenda();
+    await marcar(cal, interp(), 'empresa');
+    expect(cal.chamadasCriar[0].description).not.toContain('undefined');
+    expect(cal.chamadasCriar[0].description).toContain('criado pela Eva');
+  });
 });
 
 describe('agenda/executor: desfazer()', () => {
@@ -106,6 +139,36 @@ describe('agenda/executor: desfazer()', () => {
     const cal = mockAgenda();
     await desfazer(cal, 'abc-123');
     expect(cal.chamadasExcluir).toEqual(['abc-123']);
+  });
+
+  it('A1.1 (7d): exclusão normal (sem erro) → jaEstava:false', async () => {
+    const cal = mockAgenda();
+    const r = await desfazer(cal, 'abc-123');
+    expect(r).toEqual({ jaEstava: false });
+  });
+
+  it('A1.1 (7e): erro 404 (evento já não existe) → tratado como sucesso, jaEstava:true', async () => {
+    const cal = mockAgenda();
+    cal.deleteEvent = async () => { const err = new Error('Not Found') as Error & { code: number }; err.code = 404; throw err; };
+    const r = await desfazer(cal, 'ja-sumiu');
+    expect(r).toEqual({ jaEstava: true });
+  });
+
+  it('A1.1 (7f): erro 410 ("Resource has been deleted") → tratado como sucesso, jaEstava:true', async () => {
+    const cal = mockAgenda();
+    cal.deleteEvent = async () => {
+      const err = new Error('Resource has been deleted') as Error & { response: { status: number } };
+      err.response = { status: 410 };
+      throw err;
+    };
+    const r = await desfazer(cal, 'ja-sumiu-410');
+    expect(r).toEqual({ jaEstava: true });
+  });
+
+  it('A1.1 (7g): qualquer OUTRO erro (ex.: rede fora do ar) → propaga normalmente', async () => {
+    const cal = mockAgenda();
+    cal.deleteEvent = async () => { throw new Error('Google Calendar fora do ar'); };
+    await expect(desfazer(cal, 'x')).rejects.toThrow('Google Calendar fora do ar');
   });
 });
 
@@ -132,6 +195,20 @@ describe('agenda/executor: substituir()', () => {
     const cal = mockAgenda({ falharCriar: true });
     await expect(substituir(cal, 'conflitante-2', interp(), 'empresa')).rejects.toThrow(/excluíd[oa]/i);
     expect(cal.chamadasExcluir).toEqual(['conflitante-2']);
+  });
+
+  it('A1.1 (9b): conflitante já não existe (404) → não trava, cria o novo mesmo assim', async () => {
+    const cal = mockAgenda();
+    cal.deleteEvent = async () => { const err = new Error('Not Found') as Error & { code: number }; err.code = 404; throw err; };
+    const r = await substituir(cal, 'ja-sumiu', interp(), 'empresa');
+    expect(cal.chamadasCriar).toHaveLength(1);
+    expect(r.eventId).toBe('novo-id');
+  });
+
+  it('A1.1 (9c): repassa location pro novo evento quando informado', async () => {
+    const cal = mockAgenda();
+    await substituir(cal, 'conflitante-3', interp(), 'empresa', { location: 'Rua das Flores, 123' });
+    expect(cal.chamadasCriar[0].location).toBe('Rua das Flores, 123');
   });
 });
 

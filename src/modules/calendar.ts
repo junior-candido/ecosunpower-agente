@@ -171,6 +171,15 @@ export class CalendarService {
   }
 
   async deleteEvent(eventId: string): Promise<void> {
+    // sendUpdates:'all' pra participantes (quando existem) receberem o
+    // cancelamento por e-mail. Investigado no fix do "Desfazer" travando em
+    // erro genérico (A1.1, 30/08): não achamos evidência de que 'all' cause
+    // erro em eventos SEM attendees (é o caso comum da Eva Agenda) — a API
+    // não falha por causa do sendUpdates com lista vazia. O erro real que
+    // chegava até o Junior era events.delete devolvendo 404/410 quando o
+    // evento já não existe mais (double-press no botão, apagado manualmente
+    // na agenda etc.) — isso agora é tratado como sucesso idempotente em
+    // src/modules/agenda/executor.ts (ver desfazer()), não aqui.
     await this.calendar.events.delete({
       calendarId: this.calendarId,
       eventId,

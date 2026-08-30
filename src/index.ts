@@ -6565,15 +6565,30 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         // Eva Agenda A1: pin do DONO vira o `location` do próximo compromisso
         // que ele marcar (ver getAgendaDeps/agendaLocationPendente acima) — não
         // é o fluxo de client_coordinates de lead logo abaixo, que é outra coisa.
+        //
+        // BUG A1.1 (feedback ao vivo do Junior — "travou"): esse branch guardava
+        // o pin e dava `break` SEM NUNCA responder nada — não era exceção, era
+        // silêncio por design. Pro Junior, mandar um pin e não receber nada de
+        // volta parece exatamente travar. Fix: (a) tudo dentro de try/catch —
+        // um JSON.parse malformado não pode deixar a mensagem sem resposta;
+        // (b) SEMPRE manda uma confirmação imediata, sucesso ou falha de parse.
         if (isAdminPhone(msg.from)) {
           try {
             const parsedLoc = JSON.parse(msg.content) as { lat?: number; lng?: number };
             if (typeof parsedLoc.lat === 'number' && typeof parsedLoc.lng === 'number') {
               agendaLocationPendente = { coords: `${parsedLoc.lat.toFixed(6)},${parsedLoc.lng.toFixed(6)}`, em: Date.now() };
               console.log(`[agenda] Localização do dono guardada pro próximo compromisso: ${agendaLocationPendente.coords}`);
+              await sendText(msg.from, '📍 Peguei a localização! Me diz o compromisso que eu já marco com esse endereço (ex.: "visita amanhã 9h")');
+            } else {
+              await sendText(msg.from, '📍 Recebi a localização mas não consegui ler as coordenadas — pode mandar o compromisso por texto mesmo? (ex.: "visita amanhã 9h")');
             }
           } catch (err) {
             console.warn('[agenda] Falha lendo localização do dono:', (err as Error).message);
+            try {
+              await sendText(msg.from, '📍 Recebi a localização mas deu um erro aqui pra processar — me manda o compromisso por texto? (ex.: "visita amanhã 9h")');
+            } catch (err2) {
+              console.warn('[agenda] Falha respondendo o pin do dono:', (err2 as Error).message);
+            }
           }
           break;
         }
