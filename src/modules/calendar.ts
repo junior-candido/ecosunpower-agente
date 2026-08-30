@@ -136,6 +136,36 @@ export class CalendarService {
     }));
   }
 
+  // Lista eventos num formato enxuto pro módulo de agenda (classificar/
+  // conflito.ts) — satisfaz estruturalmente a interface LeitorAgenda de
+  // src/modules/agenda/conflito.ts sem precisar importar nada de lá.
+  // Aditivo: não mexe em listEvents (usado pelo SchedulingAssistant de leads).
+  async listarEventos(inicioISO: string, fimISO: string): Promise<Array<{
+    id: string;
+    titulo: string;
+    inicioISO: string;
+    fimISO: string;
+    colorId?: string;
+    criadoPelaEva: boolean;
+  }>> {
+    const res = await this.calendar.events.list({
+      calendarId: this.calendarId,
+      timeMin: inicioISO,
+      timeMax: fimISO,
+      singleEvents: true,
+      orderBy: 'startTime',
+    });
+    return (res.data.items ?? []).map((e) => ({
+      id: e.id ?? '',
+      titulo: e.summary ?? '(sem título)',
+      // Evento de dia inteiro vem em `date` (YYYY-MM-DD), sem `dateTime`.
+      inicioISO: e.start?.dateTime ?? e.start?.date ?? '',
+      fimISO: e.end?.dateTime ?? e.end?.date ?? '',
+      colorId: e.colorId ?? undefined,
+      criadoPelaEva: (e.description ?? '').includes('criado pela Eva'),
+    }));
+  }
+
   async deleteEvent(eventId: string): Promise<void> {
     await this.calendar.events.delete({
       calendarId: this.calendarId,
