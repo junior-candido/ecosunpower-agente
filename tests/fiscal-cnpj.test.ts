@@ -20,9 +20,26 @@ describe('fiscal consultarCnpj', () => {
     await expect(consultarCnpj('123')).rejects.toThrow('CNPJ inválido');
     expect(f).not.toHaveBeenCalled();
   });
-  it('BrasilAPI fora do ar → null (a tela deixa preencher à mão)', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+  it('todas as fontes fora do ar → null (a tela deixa preencher à mão)', async () => {
+    const f = vi.fn().mockResolvedValue({ ok: false, status: 404 });
+    vi.stubGlobal('fetch', f);
     expect(await consultarCnpj('08.616.988/0001-20')).toBeNull();
+    expect(f).toHaveBeenCalledTimes(2); // tentou BrasilAPI E minhareceita
+  });
+  it('BrasilAPI barrada → cai pra minhareceita.org e devolve os dados', async () => {
+    const f = vi.fn()
+      .mockRejectedValueOnce(new Error('bloqueio de IP'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ razao_social: 'Condominio do Edificio Spazio Verde', nome_fantasia: null,
+          logradouro: 'CA 08', numero: 'S/N', municipio: 'BRASILIA', uf: 'DF', cep: '71503508', email: null }),
+      });
+    vi.stubGlobal('fetch', f);
+    const r = await consultarCnpj('13.245.160/0001-42');
+    expect(f).toHaveBeenNthCalledWith(1, 'https://brasilapi.com.br/api/cnpj/v1/13245160000142', expect.objectContaining({ signal: expect.anything() }));
+    expect(f).toHaveBeenNthCalledWith(2, 'https://minhareceita.org/13245160000142', expect.objectContaining({ signal: expect.anything() }));
+    expect(r?.razaoSocial).toBe('Condominio do Edificio Spazio Verde');
+    expect(r?.endereco).toBe('CA 08, S/N');
   });
   it('rede caiu (fetch rejeita) → null', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ENOTFOUND')));
