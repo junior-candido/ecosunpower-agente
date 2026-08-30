@@ -6,7 +6,7 @@ import {
   tratarMensagemAgenda, tratarBotaoAgenda, resetEstadoAgenda,
   type DepsAgenda,
 } from '../src/modules/agenda/comando-agenda.js';
-import { interpretar, type ExtratorIA } from '../src/modules/agenda/interpretar.js';
+import { interpretar, resolverData, type ExtratorIA } from '../src/modules/agenda/interpretar.js';
 import type { AgendaEscrita, EventoAgendaListado } from '../src/modules/agenda/executor.js';
 
 // -----------------------------------------------------------------------
@@ -14,14 +14,15 @@ import type { AgendaEscrita, EventoAgendaListado } from '../src/modules/agenda/e
 // -----------------------------------------------------------------------
 
 function iaCanned(campos: {
-  titulo?: string | null; dataTexto?: string | null; horaTexto?: string | null;
+  titulo?: string | null; detalhes?: string | null; dataTexto?: string | null; horaTexto?: string | null;
   duracaoTexto?: string | null; diaInteiro?: boolean; ambito?: 'empresa' | 'pessoal' | null;
 } | null): ExtratorIA {
   const json = campos === null
-    ? { compromisso: false, titulo: null, dataTexto: null, horaTexto: null, duracaoTexto: null, diaInteiro: false, ambito: null }
+    ? { compromisso: false, titulo: null, detalhes: null, dataTexto: null, horaTexto: null, duracaoTexto: null, diaInteiro: false, ambito: null }
     : {
       compromisso: true,
       titulo: campos.titulo ?? 'Compromisso',
+      detalhes: campos.detalhes ?? null,
       dataTexto: campos.dataTexto ?? null,
       horaTexto: campos.horaTexto ?? null,
       duracaoTexto: campos.duracaoTexto ?? null,
@@ -123,12 +124,112 @@ describe('tratarMensagemAgenda: não é assunto de agenda', () => {
 });
 
 describe('tratarMensagemAgenda: confiança baixa', () => {
-  it('6) sem data nem hora reconhecível → pergunta curta, não cria nada', async () => {
+  it('6) sem data nem hora reconhecível → pergunta curta dizendo o que ENTENDEU, não cria nada', async () => {
     const deps = depsBase({ ia: iaCanned({ titulo: 'Reunião', dataTexto: null, horaTexto: null }) });
     const r = await tratarMensagemAgenda(deps, 'marca uma reunião');
-    expect(r!.texto).toMatch(/que dia e hora/i);
+    expect(r!.texto).toBe('Anotei "Reunião" 📝 — só me confirma o dia e a hora (ex.: amanhã 9h)');
     expect(r!.botoes).toBeUndefined();
     expect((deps.cal as ReturnType<typeof mockCal>).criados).toHaveLength(0);
+  });
+});
+
+// -----------------------------------------------------------------------
+// A1.1 — completar o pendente "que dia e hora?" em vez de reiniciar o loop
+// -----------------------------------------------------------------------
+
+describe('tratarMensagemAgenda: A1.1 completa o pendente "que dia e hora?" (mata o loop)', () => {
+  it('36) "dentista" (sem dia/hora) → pergunta; "amanhã 9h" na sequência → cria "Dentista" amanhã 9h', async () => {
+    const cal = mockCal([]);
+    const deps = depsBase({ cal, ia: iaCanned({ titulo: 'Dentista', dataTexto: null, horaTexto: null }) });
+    const r1 = await tratarMensagemAgenda(deps, 'dentista');
+    expect(r1!.texto).toContain('Anotei "Dentista"');
+    expect(cal.criados).toHaveLength(0);
+
+    const r2 = await tratarMensagemAgenda(deps, 'amanhã 9h');
+    expect(cal.criados).toHaveLength(1);
+    expect(cal.criados[0].summary).toBe('Dentista');
+    expect(cal.criados[0].startISO).toBe(`${resolverData('amanhã', AGORA).dateISO}T09:00:00-03:00`);
+    expect(r2!.texto).toContain('📅 Marquei: Dentista');
+  });
+
+  it('37) mensagem seguinte que NÃO é só dia/hora → não completa (segue fluxo normal, não cria nada errado)', async () => {
+    const cal = mockCal([]);
+    const deps = depsBase({ cal, ia: iaCanned({ titulo: 'Dentista', dataTexto: null, horaTexto: null }) });
+    await tratarMensagemAgenda(deps, 'dentista');
+    // Segunda mensagem não tem pista de dia/hora nenhuma — a IA (canned, sem
+    // ambito/data/hora de novo) mantém confiança baixa: segue perguntando.
+    const r2 = await tratarMensagemAgenda(deps, 'sei lá, depois eu vejo');
+    expect(cal.criados).toHaveLength(0);
+    expect(r2!.texto).toContain('Anotei');
+  });
+
+  it('38) pendente expira (10min) → completude NÃO acontece; a mensagem seguinte passa pelo fluxo normal (interpretar) do zero', async () => {
+    const clock = criarClock(AGORA);
+    const cal = mockCal([]);
+    // IA que responde de acordo com a frase recebida (o prompt embute a
+    // frase crua) — assim dá pra distinguir "usou o pendente antigo" de
+    // "processou a mensagem nova do zero via interpretar()".
+    const ia: ExtratorIA = {
+      async extrairAgenda(prompt: string) {
+        if (prompt.includes('"dentista"')) {
+          return '```json\n' + JSON.stringify({ compromisso: true, titulo: 'Dentista', detalhes: null, dataTexto: null, horaTexto: null, duracaoTexto: null, diaInteiro: false, ambito: null }) + '\n```';
+        }
+        if (prompt.includes('"amanhã 9h"')) {
+          return '```json\n' + JSON.stringify({ compromisso: true, titulo: 'Compromisso', detalhes: null, dataTexto: 'amanhã', horaTexto: '9h', duracaoTexto: null, diaInteiro: false, ambito: null }) + '\n```';
+        }
+        return '```json\n{"compromisso": false}\n```';
+      },
+    };
+    const deps: DepsAgenda = { cal, ia, agoraISO: clock.agoraISO, nomesDeLeads: async () => [] };
+    await tratarMensagemAgenda(deps, 'dentista'); // fica pendente aguardando data/hora
+    clock.avancar(11 * 60 * 1000); // passa do TTL de 10min — pendente expirou
+    const r2 = await tratarMensagemAgenda(deps, 'amanhã 9h');
+    // Criou um compromisso NOVO com título "Compromisso" (default) — não
+    // reaproveitou o título "Dentista" do pendente expirado.
+    expect(cal.criados).toHaveLength(1);
+    expect(cal.criados[0].summary).toBe('Compromisso');
+    expect(r2!.texto).toContain('📅 Marquei: Compromisso');
+  });
+
+  it('39) pin de localização chega JUNTO com a mensagem que completa o pendente → anexado ao evento final', async () => {
+    const cal = mockCal([]);
+    const deps = depsBase({ cal, ia: iaCanned({ titulo: 'Dentista', dataTexto: null, horaTexto: null }) });
+    await tratarMensagemAgenda(deps, 'dentista');
+    const r2 = await tratarMensagemAgenda(deps, 'amanhã 9h', '-15.793889,-47.882778');
+    expect(cal.criados[0].location).toBe('-15.793889,-47.882778');
+    expect(r2!.texto).toContain('📍 com localização');
+  });
+
+  it('40) pin chegou JUNTO com a 1ª mensagem (sem dia/hora ainda) → carrega pro evento quando completar depois', async () => {
+    const cal = mockCal([]);
+    const deps = depsBase({ cal, ia: iaCanned({ titulo: 'Dentista', dataTexto: null, horaTexto: null }) });
+    await tratarMensagemAgenda(deps, 'dentista', '-15.793889,-47.882778');
+    const r2 = await tratarMensagemAgenda(deps, 'amanhã 9h');
+    expect(cal.criados[0].location).toBe('-15.793889,-47.882778');
+    expect(r2!.texto).toContain('📍 com localização');
+  });
+});
+
+describe('tratarMensagemAgenda: A1.1 confirmação avisa quando há detalhes/localização', () => {
+  it('41) compromisso com "detalhes" (tarefas/materiais) → confirmação diz "com anotações"', async () => {
+    const cal = mockCal([]);
+    const deps = depsBase({
+      cal,
+      ia: iaCanned({
+        titulo: 'Visita João', dataTexto: 'amanhã', horaTexto: '9h', ambito: 'empresa',
+        detalhes: 'Levar a escada; trocar o disjuntor da piscina; cobrar a segunda parcela',
+      }),
+    });
+    const r = await tratarMensagemAgenda(deps, 'visita no João amanhã 9h — levar a escada, trocar o disjuntor da piscina e cobrar a segunda parcela');
+    expect(cal.criados[0].description).toContain('Levar a escada');
+    expect(r!.texto).toContain('📝 com anotações');
+  });
+
+  it('42) sem detalhes/localização → confirmação NÃO menciona anotações nem localização', async () => {
+    const deps = depsBase();
+    const r = await tratarMensagemAgenda(deps, 'visita Cyntia amanhã 9h');
+    expect(r!.texto).not.toContain('📝 com anotações');
+    expect(r!.texto).not.toContain('📍 com localização');
   });
 });
 
@@ -441,12 +542,83 @@ describe('tratarMensagemAgenda: erro vira resposta amigável (não derruba)', ()
 });
 
 describe('tratarBotaoAgenda: erro vira resposta amigável (não derruba)', () => {
-  it('29) cal.deleteEvent lança exceção → resposta de erro amigável (não lança)', async () => {
+  it('29) ag_desf: cal.deleteEvent lança exceção NÃO relacionada a 404/410 → mensagem específica de desfazer (não a genérica)', async () => {
     const cal = mockCal([]);
     cal.deleteEvent = async () => { throw new Error('Google Calendar fora do ar'); };
     const deps = depsBase({ cal });
     const r = await tratarBotaoAgenda(deps, 'ag_desf_evt-1');
     expect(r).not.toBeNull();
+    expect(r!.texto).toBe('Não consegui desfazer — confere na agenda se o evento ainda está lá.');
+  });
+
+  it('29b) ag_cor: erro genérico (não desfazer) continua caindo na mensagem amigável de sempre', async () => {
+    const cal = mockCal([]);
+    const ia = iaCanned({ titulo: 'Visita Cyntia', dataTexto: 'amanhã', horaTexto: '9h', ambito: 'empresa' });
+    const deps = depsBase({ cal, ia });
+    await tratarMensagemAgenda(deps, 'visita Cyntia amanhã 9h'); // cria evt-1
+    cal.createEvent = async () => { throw new Error('Google Calendar fora do ar'); };
+    const r = await tratarBotaoAgenda(deps, 'ag_cor_evt-1');
+    expect(r).not.toBeNull();
     expect(r!.texto).toBe('❌ Deu ruim aqui na agenda agora — tenta de novo em instantes. Se repetir, me chama.');
+  });
+});
+
+describe('tratarBotaoAgenda: ag_desf — 404/410 tratados como sucesso idempotente (A1.1)', () => {
+  it('30) evento já não existe (404) → "Já estava desfeito ✔" em vez do erro genérico', async () => {
+    const cal = mockCal([]);
+    cal.deleteEvent = async () => { const err = new Error('Not Found') as Error & { code: number }; err.code = 404; throw err; };
+    const deps = depsBase({ cal });
+    const r = await tratarBotaoAgenda(deps, 'ag_desf_evt-sumiu');
+    expect(r!.texto).toBe('Já estava desfeito ✔');
+  });
+
+  it('31) evento já não existe (410 "Resource has been deleted") → "Já estava desfeito ✔"', async () => {
+    const cal = mockCal([]);
+    cal.deleteEvent = async () => {
+      const err = new Error('Resource has been deleted') as Error & { response: { status: number } };
+      err.response = { status: 410 };
+      throw err;
+    };
+    const deps = depsBase({ cal });
+    const r = await tratarBotaoAgenda(deps, 'ag_desf_evt-sumiu-410');
+    expect(r!.texto).toBe('Já estava desfeito ✔');
+  });
+
+  it('32) double-press no mesmo botão → 1ª vez "Desfeito ✔", 2ª vez "Já estava desfeito ✔"', async () => {
+    let existe = true;
+    const cal = mockCal([]);
+    cal.deleteEvent = async () => {
+      if (!existe) { const err = new Error('Not Found') as Error & { code: number }; err.code = 404; throw err; }
+      existe = false;
+    };
+    const deps = depsBase({ cal });
+    const r1 = await tratarBotaoAgenda(deps, 'ag_desf_evt-dbl');
+    const r2 = await tratarBotaoAgenda(deps, 'ag_desf_evt-dbl');
+    expect(r1!.texto).toBe('Desfeito ✔');
+    expect(r2!.texto).toBe('Já estava desfeito ✔');
+  });
+});
+
+describe('tratarBotaoAgenda: fallback de extração do id decorado (A1.1)', () => {
+  it('33) "1. Desfazer (ag_desf_abc123)" (modo numerado/texto puro) ainda roteia pro handler certo', async () => {
+    const cal = mockCal([]);
+    const deps = depsBase({ cal });
+    const r = await tratarBotaoAgenda(deps, '1. Desfazer (ag_desf_abc123)');
+    expect(cal.excluidos).toEqual(['abc123']);
+    expect(r!.texto).toBe('Desfeito ✔');
+  });
+
+  it('34) id puro sem decoração continua funcionando normalmente (regressão)', async () => {
+    const cal = mockCal([]);
+    const deps = depsBase({ cal });
+    const r = await tratarBotaoAgenda(deps, 'ag_desf_evt-77');
+    expect(cal.excluidos).toEqual(['evt-77']);
+    expect(r!.texto).toBe('Desfeito ✔');
+  });
+
+  it('35) texto sem nenhum "ag_" embutido → continua null (não hijacka outro handler)', async () => {
+    const deps = depsBase();
+    const r = await tratarBotaoAgenda(deps, 'oi, tudo bem?');
+    expect(r).toBeNull();
   });
 });

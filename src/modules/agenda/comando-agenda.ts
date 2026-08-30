@@ -1,18 +1,21 @@
 // src/modules/agenda/comando-agenda.ts
-// Handler da Eva Agenda A1: cola interpretar/classificar/conflito/executor
-// numa conversa de zap com o DONO. Duas entradas só:
+// Handler da Eva Agenda A1 + A1.1: cola interpretar/classificar/conflito/
+// executor numa conversa de zap com o DONO. Duas entradas só:
 //   tratarMensagemAgenda — toda mensagem de texto (ou áudio já transcrito)
 //   tratarBotaoAgenda    — toque num botão "ag_*"
 // Tudo injetado (DepsAgenda) — nunca bate em rede/banco de verdade nos testes.
 //
-// Estado: o fluxo de conflito ("Marcar junto"/"Substituir"/"Sugerir horário")
-// e a correção de cor pós-marcação ("É pessoal"/"É empresa") são conversas
-// curtas — o Junior só tem UM compromisso "em aberto" por vez. Por isso o
-// estado pendente vive num Map module-level, com 1 chave fixa (dono único —
-// a Eva Agenda A1 só atende o telefone do Junior, ver design doc) e TTL de
-// 10min (relógio injetado via deps.agoraISO, nunca Date.now() direto — testável).
+// Estado: o fluxo de conflito ("Marcar junto"/"Substituir"/"Sugerir horário"),
+// a pergunta "que dia e hora?" (confiança baixa) e a correção de cor pós-
+// marcação ("É pessoal"/"É empresa") são conversas curtas — o Junior só tem
+// UM compromisso "em aberto" por vez. Por isso o estado pendente vive num Map
+// module-level, com 1 chave fixa (dono único — a Eva Agenda A1 só atende o
+// telefone do Junior, ver design doc) e TTL de 10min (relógio injetado via
+// deps.agoraISO, nunca Date.now() direto — testável).
 // resetEstadoAgenda() é só pra testes (isola cada `it` do módulo).
-import { interpretar, resolverData, type ExtratorIA, type Interpretacao } from './interpretar.js';
+import {
+  interpretar, resolverData, resolverHora, type ExtratorIA, type Interpretacao,
+} from './interpretar.js';
 import { classificar } from './classificar.js';
 import { acharConflitos, sugerirHorario, type EventoAgenda } from './conflito.js';
 import {
@@ -36,14 +39,23 @@ const TTL_MS = 10 * 60 * 1000;
 const CHAVE_DONO = 'dono'; // A1 só atende o telefone do Junior — 1 conversa pendente por vez.
 const MSG_EXPIROU = 'Esse pedido expirou — me manda de novo 😉';
 const MSG_ERRO = '❌ Deu ruim aqui na agenda agora — tenta de novo em instantes. Se repetir, me chama.';
+const MSG_DESFAZER_ERRO = 'Não consegui desfazer — confere na agenda se o evento ainda está lá.';
+
+// Loga o corpo real do erro do Google (err.response.data costuma ter o
+// motivo de verdade; err.message sozinho às vezes só diz "Bad Request").
+function logErroAgenda(prefixo: string, err: unknown): void {
+  const e = err as { response?: { data?: unknown } };
+  console.error(prefixo, e?.response?.data ?? err);
+}
 
 interface PendenteAgenda {
   interp: Interpretacao;
-  ambito: 'empresa' | 'pessoal';
+  ambito: 'empresa' | 'pessoal' | null;  // null enquanto ainda não foi resolvido (pendente "aguardando data/hora")
   conflitos: EventoAgenda[];
   location?: string;
   criadoEventId?: string;                                  // último evento criado (pra "É pessoal/empresa" recolorir)
   sugestao?: { inicioISO: string; fimISO: string };         // resposta pendente de "Sugerir horário" (aguardando Sim/Não)
+  aguardandoDataHora?: boolean;                             // true = pendente é a pergunta "que dia e hora?" (confiança baixa)
   em: number;                                               // epoch ms (via deps.agoraISO()) de quando foi guardado
 }
 
@@ -83,6 +95,15 @@ function partsEmSaoPaulo(iso: string): { day: number; month: number; hour: numbe
   };
 }
 
+// Monta um instante ISO com offset -03:00 fixo (mesma técnica de
+// interpretar.ts::construirISO — helper interno, não exportado de lá).
+function construirISOLocal(dataISO: string, hour: number, minute: number, deltaMin = 0): string {
+  const [y, m, d] = dataISO.split('-').map(Number);
+  const ms = Date.UTC(y, m - 1, d, hour, minute, 0) + deltaMin * 60_000;
+  const dt = new Date(ms);
+  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}T${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}:00-03:00`;
+}
+
 function rotuloDiaCurto(iso: string): string {
   const p = partsEmSaoPaulo(iso);
   return `${DIAS_ABREV[p.weekday]} ${pad(p.day)}/${pad(p.month)}`;
@@ -98,9 +119,12 @@ function bolinhaAmbito(ambito: 'empresa' | 'pessoal'): string {
   return ambito === 'empresa' ? '🔵 empresa' : '🟢 pessoal';
 }
 
-function montarConfirmacao(interp: Interpretacao, ambito: 'empresa' | 'pessoal'): string {
+function montarConfirmacao(interp: Interpretacao, ambito: 'empresa' | 'pessoal', location?: string): string {
   const horario = interp.diaInteiro ? 'dia todo' : faixaHorario(interp.inicioISO, interp.fimISO);
-  return `📅 Marquei: ${interp.titulo} · ${rotuloDiaCurto(interp.inicioISO)} · ${horario} · ${bolinhaAmbito(ambito)}`;
+  let texto = `📅 Marquei: ${interp.titulo} · ${rotuloDiaCurto(interp.inicioISO)} · ${horario} · ${bolinhaAmbito(ambito)}`;
+  if (interp.detalhes) texto += ' · 📝 com anotações';
+  if (location) texto += ' · 📍 com localização';
+  return texto;
 }
 
 function botoesPosMarcar(eventId: string, ambito: 'empresa' | 'pessoal'): Array<{ id: string; rotulo: string }> {
@@ -119,7 +143,69 @@ async function marcarEResponder(
     interp: p.interp, ambito: p.ambito, conflitos: [], location: p.location,
     criadoEventId: criado.eventId, em: Date.parse(deps.agoraISO()),
   });
-  return { texto: montarConfirmacao(p.interp, p.ambito), botoes: botoesPosMarcar(criado.eventId, p.ambito) };
+  return { texto: montarConfirmacao(p.interp, p.ambito, p.location), botoes: botoesPosMarcar(criado.eventId, p.ambito) };
+}
+
+// Resolve âmbito (IA já cravou, ou classificar() decide) + checa conflito —
+// e ou marca direto, ou guarda o pendente de conflito com os 3 botões.
+// Reusado tanto pelo fluxo normal (interpretar() deu confiança alta de
+// cara) quanto pela COMPLETUDE de um pendente "aguardando data/hora"
+// (2ª mensagem só com dia/hora completando um pedido anterior incompleto).
+async function processarCompromissoInterpretado(
+  deps: DepsAgenda, interp: Interpretacao, location?: string,
+): Promise<RespostaAgenda> {
+  const ambito = interp.ambito ?? classificar(interp.titulo, interp.inicioISO, await deps.nomesDeLeads());
+  const conflitos = await acharConflitos(deps.cal, interp.inicioISO, interp.fimISO);
+
+  if (conflitos.length === 0) {
+    return await marcarEResponder(deps, { interp, ambito, location });
+  }
+
+  estadoPendente.set(CHAVE_DONO, { interp, ambito, conflitos, location, em: Date.parse(deps.agoraISO()) });
+  const c = conflitos[0];
+  return {
+    texto: `⚠️ Você já tem ${c.titulo} ${faixaHorario(c.inicioISO, c.fimISO)}. O que faço?`,
+    botoes: [
+      { id: 'ag_junto', rotulo: 'Marcar junto' },
+      { id: 'ag_subst', rotulo: 'Substituir' },
+      { id: 'ag_sugerir', rotulo: 'Sugerir horário' },
+    ],
+  };
+}
+
+// Tenta completar um pendente "aguardando data/hora" com a mensagem SEGUINTE
+// do Junior, quando ela só traz dia/hora (ex.: "amanhã 9h") — sem precisar
+// chamar a IA de novo. Isso mata o loop de "Que dia e hora?" repetido: em vez
+// de reiniciar a pergunta, a Eva já completa o compromisso original. Só
+// completa quando dia E hora (ou dia sozinho pra dia inteiro) ficam
+// reconhecíveis nessa mensagem — senão devolve null e o fluxo normal segue
+// (pode ser um pedido totalmente novo, ou o Junior mudou de ideia).
+function tentarCompletarPendente(
+  pendente: PendenteAgenda, texto: string, agoraISO: string, location?: string,
+): { interp: Interpretacao; location?: string } | null {
+  const dataTentativa = resolverData(texto, agoraISO);
+  const horaTentativa = resolverHora(texto);
+  const base = pendente.interp;
+  if (!dataTentativa.confiavel || (!base.diaInteiro && !horaTentativa.confiavel)) return null;
+
+  let inicioISO: string;
+  let fimISO: string;
+  if (base.diaInteiro) {
+    inicioISO = construirISOLocal(dataTentativa.dateISO, 0, 0);
+    fimISO = construirISOLocal(dataTentativa.dateISO, 23, 59);
+  } else if (horaTentativa.fimHour !== undefined) {
+    inicioISO = construirISOLocal(dataTentativa.dateISO, horaTentativa.hour, horaTentativa.minute);
+    fimISO = construirISOLocal(dataTentativa.dateISO, horaTentativa.fimHour, horaTentativa.fimMinute ?? 0);
+  } else {
+    const duracaoMin = Math.max(1, Math.round((Date.parse(base.fimISO) - Date.parse(base.inicioISO)) / 60_000)) || 60;
+    inicioISO = construirISOLocal(dataTentativa.dateISO, horaTentativa.hour, horaTentativa.minute);
+    fimISO = construirISOLocal(dataTentativa.dateISO, horaTentativa.hour, horaTentativa.minute, duracaoMin);
+  }
+
+  return {
+    interp: { ...base, inicioISO, fimISO, confianca: 'alta' },
+    location: location ?? pendente.location,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +252,24 @@ export async function tratarMensagemAgenda(deps: DepsAgenda, texto: string, loca
   // o fluxo normal da Eva pra um texto que nem era pra ser dela.
   let intencaoAgenda = false;
   try {
+    // 0) Completar um pendente "aguardando data/hora" — a mensagem SEGUINTE
+    // do Junior pode ser só o dia/hora que faltou (ex.: "amanhã 9h"),
+    // completando o compromisso em vez de reiniciar a pergunta. Isso vem
+    // ANTES de consulta/interpretar pra não tratar "amanhã 9h" como uma
+    // pergunta de agenda nova (não bate no RE_CONSULTA mesmo, mas por
+    // clareza a prioridade é explícita).
+    const pendente = estadoPendente.get(CHAVE_DONO);
+    if (pendente?.aguardandoDataHora && !expirado(pendente, deps.agoraISO())) {
+      const completo = tentarCompletarPendente(pendente, texto, deps.agoraISO(), location);
+      if (completo) {
+        intencaoAgenda = true;
+        estadoPendente.delete(CHAVE_DONO);
+        return await processarCompromissoInterpretado(deps, completo.interp, completo.location);
+      }
+      // Não deu pra completar com essa mensagem — segue o fluxo normal
+      // (pode ser um pedido totalmente novo, ou o Junior mudou de ideia).
+    }
+
     const consulta = detectarConsulta(texto);
     if (consulta) {
       intencaoAgenda = true;
@@ -177,28 +281,18 @@ export async function tratarMensagemAgenda(deps: DepsAgenda, texto: string, loca
     intencaoAgenda = true;
 
     if (interp.confianca === 'baixa') {
-      return { texto: 'Que dia e hora? (ex.: quinta 9h)' };
+      estadoPendente.set(CHAVE_DONO, {
+        interp, ambito: null, conflitos: [], location, aguardandoDataHora: true, em: Date.parse(deps.agoraISO()),
+      });
+      const texto2 = interp.entendido
+        ? `Anotei "${interp.entendido}" 📝 — só me confirma o dia e a hora (ex.: amanhã 9h)`
+        : 'Não peguei bem o que é — me diz com o dia e a hora (ex.: visita amanhã 9h)';
+      return { texto: texto2 };
     }
 
-    const ambito = interp.ambito ?? classificar(interp.titulo, interp.inicioISO, await deps.nomesDeLeads());
-    const conflitos = await acharConflitos(deps.cal, interp.inicioISO, interp.fimISO);
-
-    if (conflitos.length === 0) {
-      return await marcarEResponder(deps, { interp, ambito, location });
-    }
-
-    estadoPendente.set(CHAVE_DONO, { interp, ambito, conflitos, location, em: Date.parse(deps.agoraISO()) });
-    const c = conflitos[0];
-    return {
-      texto: `⚠️ Você já tem ${c.titulo} ${faixaHorario(c.inicioISO, c.fimISO)}. O que faço?`,
-      botoes: [
-        { id: 'ag_junto', rotulo: 'Marcar junto' },
-        { id: 'ag_subst', rotulo: 'Substituir' },
-        { id: 'ag_sugerir', rotulo: 'Sugerir horário' },
-      ],
-    };
+    return await processarCompromissoInterpretado(deps, interp, location);
   } catch (err) {
-    console.error('[agenda]', err);
+    logErroAgenda('[agenda]', err);
     return intencaoAgenda ? { texto: MSG_ERRO } : null;
   }
 }
@@ -207,15 +301,32 @@ export async function tratarMensagemAgenda(deps: DepsAgenda, texto: string, loca
 // BOTÕES ag_*
 // ---------------------------------------------------------------------------
 
+// Extrai um id "ag_xxx_yyy" de dentro de texto decorado — fallback pro modo
+// numerado/texto puro do WhatsApp quando o botão não chega como o id puro
+// (ex.: "1. Desfazer (ag_desf_abc123)"). Restrito a letras/dígitos/hífen/
+// underscore pra não engolir parênteses/pontuação ao redor.
+const RE_AG_EMBUTIDO = /ag_[a-z]+_[A-Za-z0-9_-]+/i;
+
 export async function tratarBotaoAgenda(deps: DepsAgenda, botaoId: string): Promise<RespostaAgenda | null> {
-  const id = botaoId.trim();
+  let id = botaoId.trim();
+  if (!id.startsWith('ag_')) {
+    const m = id.match(RE_AG_EMBUTIDO);
+    if (m) id = m[0];
+  }
   try {
     // ag_desf_<eventId> — desfazer é sempre confiável: o eventId vem embutido
     // no próprio botão, não depende do estado pendente (nem do TTL).
+    // Idempotente: 404/410 (já tinha sido desfeito, ou apagado na mão) NÃO é
+    // erro — vira "Já estava desfeito ✔" em vez do aviso de erro genérico.
     const mDesf = id.match(/^ag_desf_(.+)$/);
     if (mDesf) {
-      await desfazer(deps.cal, mDesf[1]);
-      return { texto: 'Desfeito ✔' };
+      try {
+        const r = await desfazer(deps.cal, mDesf[1]);
+        return { texto: r.jaEstava ? 'Já estava desfeito ✔' : 'Desfeito ✔' };
+      } catch (err) {
+        logErroAgenda('[agenda] desfazer falhou:', err);
+        return { texto: MSG_DESFAZER_ERRO };
+      }
     }
 
     // ag_cor_<eventId> — recolorir precisa do interp original (título/horário),
@@ -225,7 +336,7 @@ export async function tratarBotaoAgenda(deps: DepsAgenda, botaoId: string): Prom
     if (mCor) {
       const eventId = mCor[1];
       const p = estadoPendente.get(CHAVE_DONO);
-      if (!p || expirado(p, deps.agoraISO()) || p.criadoEventId !== eventId) return { texto: MSG_EXPIROU };
+      if (!p || expirado(p, deps.agoraISO()) || p.criadoEventId !== eventId || p.ambito === null) return { texto: MSG_EXPIROU };
       const novoAmbito: 'empresa' | 'pessoal' = p.ambito === 'empresa' ? 'pessoal' : 'empresa';
       await desfazer(deps.cal, eventId);
       const criado = await marcar(deps.cal, p.interp, novoAmbito, p.location ? { location: p.location } : undefined);
@@ -237,7 +348,7 @@ export async function tratarBotaoAgenda(deps: DepsAgenda, botaoId: string): Prom
     if (!ACOES_PENDENTE.has(id)) return null; // não é um botão nosso.
 
     const p = estadoPendente.get(CHAVE_DONO);
-    if (!p || expirado(p, deps.agoraISO())) return { texto: MSG_EXPIROU };
+    if (!p || expirado(p, deps.agoraISO()) || p.ambito === null) return { texto: MSG_EXPIROU };
 
     if (id === 'ag_junto') {
       return await marcarEResponder(deps, { interp: p.interp, ambito: p.ambito, location: p.location });
@@ -245,9 +356,9 @@ export async function tratarBotaoAgenda(deps: DepsAgenda, botaoId: string): Prom
 
     if (id === 'ag_subst') {
       if (p.conflitos.length === 0) return { texto: MSG_EXPIROU };
-      const criado = await substituir(deps.cal, p.conflitos[0].id, p.interp, p.ambito);
+      const criado = await substituir(deps.cal, p.conflitos[0].id, p.interp, p.ambito, p.location ? { location: p.location } : undefined);
       estadoPendente.set(CHAVE_DONO, { ...p, conflitos: [], criadoEventId: criado.eventId, em: Date.parse(deps.agoraISO()) });
-      return { texto: montarConfirmacao(p.interp, p.ambito), botoes: botoesPosMarcar(criado.eventId, p.ambito) };
+      return { texto: montarConfirmacao(p.interp, p.ambito, p.location), botoes: botoesPosMarcar(criado.eventId, p.ambito) };
     }
 
     if (id === 'ag_sugerir') {
@@ -276,7 +387,7 @@ export async function tratarBotaoAgenda(deps: DepsAgenda, botaoId: string): Prom
     estadoPendente.delete(CHAVE_DONO);
     return { texto: 'Ok, me diga outro horário 👍' };
   } catch (err) {
-    console.error('[agenda]', err);
+    logErroAgenda('[agenda]', err);
     return { texto: MSG_ERRO };
   }
 }
