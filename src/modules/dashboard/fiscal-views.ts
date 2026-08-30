@@ -4,6 +4,10 @@ import { renderLayout } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { NotaLinha } from '../financeiro/fiscal/notas-repo.js';
 
+function escapeHtml(s: string | null | undefined): string {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
+
 const brl = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const STATUS: Record<string, string> = {
   rascunho: '📝 Rascunho', preparada: '🕐 Preparada (emitir no portal)', enviada: '📤 Enviada',
@@ -20,9 +24,9 @@ export function renderNotasPage(notas: NotaLinha[], config: ConfigInfo | null, u
     : '<div class="card" style="border:1px solid #fbbf24;border-radius:10px;padding:10px;margin-bottom:8px">ℹ️ Validade do certificado não cadastrada.</div>';
   const linhas = notas.map((n) => `
     <tr class="border-b border-gray-800">
-      <td class="p-2">${n.numero ?? '—'}</td>
+      <td class="p-2">${escapeHtml(n.numero ?? '—')}</td>
       <td class="p-2">${n.competencia.split('-').reverse().join('/')}</td>
-      <td class="p-2">${n.tomador.nome}</td>
+      <td class="p-2">${escapeHtml(n.tomador.nome)}</td>
       <td class="p-2 text-right">${brl(n.valorBruto)}</td>
       <td class="p-2 text-right">${n.issRetido ? brl(n.valorIss) : '—'}</td>
       <td class="p-2 text-right font-bold">${brl(n.valorLiquido)}</td>
@@ -42,18 +46,18 @@ ${alertaCert}
 }
 
 export function renderNovaNotaPage(servicos: ServicoOpt[], prefill: { nome?: string; doc?: string; valor?: number; fechamentoId?: string; leadId?: string; erro?: string }, user?: DashUser): string {
-  const opts = servicos.map((s) => `<option value="${s.id}" data-aliq="${s.aliquota_iss}" data-descr="${s.descricao_padrao.replace(/"/g, '&quot;')}">${s.nome} (${s.cod_trib_nacional})</option>`).join('');
+  const opts = servicos.map((s) => `<option value="${s.id}" data-aliq="${s.aliquota_iss}" data-descr="${escapeHtml(s.descricao_padrao)}">${escapeHtml(s.nome)} (${s.cod_trib_nacional})</option>`).join('');
   const body = `
 <div style="color:#d1d5db;max-width:640px">
 <h1 class="text-xl font-bold text-cyan-300 mb-4">🧾 Nova nota</h1>
-${prefill.erro ? `<div class="card" style="border:1px solid #f87171;border-radius:10px;padding:8px;margin-bottom:8px">${prefill.erro}</div>` : ''}
+${prefill.erro ? `<div class="card" style="border:1px solid #f87171;border-radius:10px;padding:8px;margin-bottom:8px">${escapeHtml(prefill.erro)}</div>` : ''}
 <form method="post" action="/dashboard/fiscal/nova" class="space-y-3">
   <input type="hidden" name="fechamento_id" value="${prefill.fechamentoId ?? ''}">
   <input type="hidden" name="lead_id" value="${prefill.leadId ?? ''}">
   <label class="block">Tomador é <select name="tipo" id="tipo" class="bg-gray-800 p-1 rounded"><option value="PJ">PJ (CNPJ)</option><option value="PF">PF (CPF)</option></select></label>
-  <label class="block">CNPJ/CPF <input name="doc" id="doc" value="${prefill.doc ?? ''}" class="bg-gray-800 p-1 rounded w-full" required>
+  <label class="block">CNPJ/CPF <input name="doc" id="doc" value="${escapeHtml(prefill.doc ?? '')}" class="bg-gray-800 p-1 rounded w-full" required>
     <button type="button" id="buscar" class="px-2 py-1 rounded bg-gray-700 mt-1">🔎 Buscar dados</button></label>
-  <label class="block">Nome/Razão social <input name="nome" id="nome" value="${prefill.nome ?? ''}" class="bg-gray-800 p-1 rounded w-full" required></label>
+  <label class="block">Nome/Razão social <input name="nome" id="nome" value="${escapeHtml(prefill.nome ?? '')}" class="bg-gray-800 p-1 rounded w-full" required></label>
   <label class="block">Inscrição municipal (se PJ do DF) <input name="im" id="im" class="bg-gray-800 p-1 rounded w-full"></label>
   <label class="block">Endereço <input name="endereco" id="endereco" class="bg-gray-800 p-1 rounded w-full"></label>
   <div class="grid grid-cols-2 gap-2">
@@ -69,7 +73,7 @@ ${prefill.erro ? `<div class="card" style="border:1px solid #f87171;border-radiu
   </div>
   <label class="block"><input type="checkbox" name="iss_retido" id="retido"> ISS retido pelo tomador (marca sozinho pra PJ do DF)</label>
   <div class="card" style="border:1px solid #1b2040;border-radius:10px;padding:10px" id="conta">
-    Bruto: <b id="c-bruto">—</b> · ISS 5%: <b id="c-iss">—</b> · líquido a receber: <b id="c-liq" class="text-emerald-300">—</b>
+    Bruto: <b id="c-bruto">—</b> · ISS <span id="c-aliq">5%</span>: <b id="c-iss">—</b> · líquido a receber: <b id="c-liq" class="text-emerald-300">—</b>
   </div>
   <button class="px-4 py-2 rounded bg-cyan-700 text-white">Preparar nota</button>
 </form></div>`;
@@ -78,10 +82,12 @@ ${prefill.erro ? `<div class="card" style="border:1px solid #f87171;border-radiu
 (function(){
   const $ = (id) => document.getElementById(id);
   function conta(){
-    const v = parseFloat(($('valor').value||'0').replace(/\\./g,'').replace(',','.'))||0;
+    const raw = ($('valor').value||'0').trim();
+    const v = parseFloat(raw.includes(',') ? raw.replace(/\\./g,'').replace(',','.') : raw)||0;
     const aliq = parseFloat($('servico').selectedOptions[0]?.dataset.aliq||'0.05');
     const iss = Math.round(v*aliq*100)/100, ret = $('retido').checked;
     $('c-bruto').textContent = v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+    $('c-aliq').textContent = 'ISS '+(aliq*100).toLocaleString('pt-BR')+'%';
     $('c-iss').textContent = iss.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) + (ret?' (retido)':' (você recolhe no DAS)');
     $('c-liq').textContent = (ret?v-iss:v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
   }
@@ -109,8 +115,8 @@ export function renderNotaDetalhe(n: NotaLinha, _config: ConfigInfo | null, user
   <div class="card" style="border:1px solid #1b2040;border-radius:10px;padding:12px;margin:10px 0">
     <b>1) Emitir no portal</b> — abra <a class="text-cyan-300" href="https://iss.fazenda.df.gov.br/online/" target="_blank">iss.fazenda.df.gov.br/online</a> e copie:
     <ul class="text-sm mt-2" style="line-height:1.8">
-      <li>Tomador: <code>${n.tomador.doc}</code> — ${n.tomador.nome}${n.tomador.im ? ` (IM ${n.tomador.im})` : ''}</li>
-      <li>Descrição: <code>${n.descricao}</code></li>
+      <li>Tomador: <code>${escapeHtml(n.tomador.doc)}</code> — ${escapeHtml(n.tomador.nome)}${n.tomador.im ? ` (IM ${escapeHtml(n.tomador.im)})` : ''}</li>
+      <li>Descrição: <code>${escapeHtml(n.descricao)}</code></li>
       <li>Valor: <code>${brl(n.valorBruto)}</code> · ISS ${n.issRetido ? '<b>Retido pelo Tomador</b>' : 'devido pelo prestador'}</li>
       <li>Competência: ${n.competencia.split('-').reverse().join('/')}</li>
     </ul>
@@ -123,12 +129,12 @@ export function renderNotaDetalhe(n: NotaLinha, _config: ConfigInfo | null, user
   </div>` : '';
   const body = `
 <div style="color:#d1d5db;max-width:640px">
-<h1 class="text-xl font-bold text-cyan-300 mb-2">🧾 Nota ${n.numero ? 'nº ' + n.numero : '(preparada)'}</h1>
-<p>${STATUS[n.status] ?? n.status} · ${n.tomador.nome} · ${brl(n.valorBruto)} → líquido <b>${brl(n.valorLiquido)}</b>${n.issRetido ? ` (ISS retido ${brl(n.valorIss)})` : ''}</p>
+<h1 class="text-xl font-bold text-cyan-300 mb-2">🧾 Nota ${n.numero ? 'nº ' + escapeHtml(n.numero) : '(preparada)'}</h1>
+<p>${STATUS[n.status] ?? n.status} · ${escapeHtml(n.tomador.nome)} · ${brl(n.valorBruto)} → líquido <b>${brl(n.valorLiquido)}</b>${n.issRetido ? ` (ISS retido ${brl(n.valorIss)})` : ''}</p>
 ${preparar}
 ${n.pdfStoragePath ? `<p><a class="text-cyan-300" href="/dashboard/fiscal/${n.id}/pdf">📄 Baixar PDF</a></p>` : ''}
 ${n.contaReceberId ? '<p class="text-emerald-300">✅ Conta a receber criada no caixa.</p>' : ''}
 <p class="mt-3"><a class="text-gray-400" href="/dashboard/fiscal">← todas as notas</a></p>
 </div>`;
-  return renderLayout({ active: 'fiscal', title: `Nota ${n.numero ?? ''}`, body, dark: true, user });
+  return renderLayout({ active: 'fiscal', title: `Nota ${escapeHtml(n.numero ?? '')}`, body, dark: true, user });
 }
