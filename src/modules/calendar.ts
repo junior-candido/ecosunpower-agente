@@ -158,9 +158,13 @@ export class CalendarService {
     return (res.data.items ?? []).map((e) => ({
       id: e.id ?? '',
       titulo: e.summary ?? '(sem título)',
-      // Evento de dia inteiro vem em `date` (YYYY-MM-DD), sem `dateTime`.
-      inicioISO: e.start?.dateTime ?? e.start?.date ?? '',
-      fimISO: e.end?.dateTime ?? e.end?.date ?? '',
+      // Evento de dia inteiro vem em `date` (YYYY-MM-DD), sem `dateTime` — e o
+      // `end.date` do Google é EXCLUSIVO (dia seguinte à meia-noite). Convertemos
+      // pra timestamp completo -03:00 aqui pra já sair coerente com a regra de
+      // sobreposição estrita usada em conflito.ts (bloqueia o dia inteiro, sem
+      // vazar pro dia seguinte).
+      inicioISO: e.start?.dateTime ?? (e.start?.date ? `${e.start.date}T00:00:00-03:00` : ''),
+      fimISO: e.end?.dateTime ?? (e.end?.date ? `${e.end.date}T00:00:00-03:00` : ''),
       colorId: e.colorId ?? undefined,
       criadoPelaEva: (e.description ?? '').includes('criado pela Eva'),
     }));

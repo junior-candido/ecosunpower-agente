@@ -17,6 +17,16 @@ export interface LeitorAgenda {
   listarEventos(inicioISO: string, fimISO: string): Promise<EventoAgenda[]>;
 }
 
+// Normalização defensiva: o Google Calendar manda evento de dia inteiro como
+// data pura ("2026-08-31", sem hora) — se algum LeitorAgenda repassar isso
+// direto (em vez de já converter, como calendar.ts faz), essa função completa
+// pra meia-noite -03:00 antes de qualquer comparação de timestamp. Belt and
+// suspenders: calendar.ts já normaliza na origem, isso aqui protege contra
+// qualquer outra fonte de LeitorAgenda que não normalize.
+function normalizarISO(s: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? `${s}T00:00:00-03:00` : s;
+}
+
 // Dois intervalos conflitam quando se sobrepõem de verdade — bordas
 // encostando (fim de um == início do outro) NÃO é conflito.
 function sobrepoe(existenteInicio: number, existenteFim: number, novoInicio: number, novoFim: number): boolean {
@@ -29,7 +39,12 @@ export async function acharConflitos(cal: LeitorAgenda, inicioISO: string, fimIS
   const novoInicio = new Date(inicioISO).getTime();
   const novoFim = new Date(fimISO).getTime();
   return eventos.filter((e) =>
-    sobrepoe(new Date(e.inicioISO).getTime(), new Date(e.fimISO).getTime(), novoInicio, novoFim),
+    sobrepoe(
+      new Date(normalizarISO(e.inicioISO)).getTime(),
+      new Date(normalizarISO(e.fimISO)).getTime(),
+      novoInicio,
+      novoFim,
+    ),
   );
 }
 
@@ -42,6 +57,21 @@ function construirISO(dataISO: string, hour: number, minute: number): string {
   return `${y}-${pad(m)}-${pad(d)}T${pad(hour)}:${pad(minute)}:00-03:00`;
 }
 
+// Lê os campos de calendário/relógio (dia local YYYY-MM-DD + hora/minuto) de
+// um instante ISO em America/Sao_Paulo, via Intl — não depende do TZ do host.
+// Mesma técnica usada em interpretar.ts/classificar.ts.
+function partsEmSaoPaulo(iso: string): { dataISO: string; hour: number; minute: number } {
+  const d = new Date(iso);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(d);
+  const o: Record<string, string> = {};
+  for (const p of parts) o[p.type] = p.value;
+  return { dataISO: `${o.year}-${o.month}-${o.day}`, hour: parseInt(o.hour, 10) % 24, minute: parseInt(o.minute, 10) };
+}
+
 const HORA_INICIO_VARREDURA = 7; // 07:00
 const HORA_FIM_VARREDURA = 20;   // 20:00 — nenhum slot pode terminar depois disso
 const PASSO_MIN = 30;
@@ -49,20 +79,34 @@ const PASSO_MIN = 30;
 // Acha o primeiro slot livre de `duracaoMin` minutos no dia `dataISO`
 // (YYYY-MM-DD), varrendo de 07:00 a 20:00 em passos de 30min. O slot
 // precisa TERMINAR até 20:00. Devolve null se nada couber no dia.
+// `agoraISO` (opcional): quando informado e cai no MESMO dia (fuso
+// America/Sao_Paulo) de `dataISO`, a varredura começa no primeiro múltiplo de
+// 30min ≥ agora — nunca sugere um horário que já passou. Em dia diferente (ou
+// sem agoraISO) o comportamento é o de sempre, varrendo desde as 07:00.
 export async function sugerirHorario(
   cal: LeitorAgenda,
   dataISO: string,
   duracaoMin: number,
+  agoraISO?: string,
 ): Promise<{ inicioISO: string; fimISO: string } | null> {
   const inicioDia = construirISO(dataISO, 0, 0);
   const fimDia = construirISO(dataISO, 23, 59);
   const eventos = await cal.listarEventos(inicioDia, fimDia);
   const ocupados = eventos.map((e) => ({
-    inicio: new Date(e.inicioISO).getTime(),
-    fim: new Date(e.fimISO).getTime(),
+    inicio: new Date(normalizarISO(e.inicioISO)).getTime(),
+    fim: new Date(normalizarISO(e.fimISO)).getTime(),
   }));
 
-  const minutoInicioVarredura = HORA_INICIO_VARREDURA * 60;
+  let minutoInicioVarredura = HORA_INICIO_VARREDURA * 60;
+  if (agoraISO) {
+    const agora = partsEmSaoPaulo(agoraISO);
+    if (agora.dataISO === dataISO) {
+      const minutosAgora = agora.hour * 60 + agora.minute;
+      const minutosAgoraArredondado = Math.ceil(minutosAgora / PASSO_MIN) * PASSO_MIN;
+      minutoInicioVarredura = Math.max(minutoInicioVarredura, minutosAgoraArredondado);
+    }
+  }
+
   const minutoFimVarredura = HORA_FIM_VARREDURA * 60; // 20:00 em minutos desde 00:00
   const fimVarreduraMs = new Date(construirISO(dataISO, HORA_FIM_VARREDURA, 0)).getTime();
 

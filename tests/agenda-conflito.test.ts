@@ -72,15 +72,40 @@ describe('agenda/conflito: acharConflitos()', () => {
     expect(r).toEqual([]);
   });
 
-  it('7) evento de dia inteiro conflita com qualquer horário daquele dia', async () => {
+  it('7) evento de dia inteiro (shape REAL do Google: date-only, fim EXCLUSIVO) conflita com qualquer horário daquele dia', async () => {
+    // Google devolve start.date='2026-08-31' / end.date='2026-09-01' (fim é o
+    // dia SEGUINTE à meia-noite, exclusivo) — sem normalização isso quebraria
+    // a comparação de sobreposição (que espera timestamps completos).
     const evento: EventoAgenda = {
       id: '6', titulo: 'Feriado',
-      inicioISO: '2026-08-31T00:00:00-03:00', fimISO: '2026-08-31T23:59:00-03:00',
+      inicioISO: '2026-08-31', fimISO: '2026-09-01',
       criadoPelaEva: false,
     };
     const cal = calendarioCom([evento]);
-    const r = await acharConflitos(cal, '2026-08-31T15:00:00-03:00', '2026-08-31T16:00:00-03:00');
+    const r = await acharConflitos(cal, '2026-08-31T22:00:00-03:00', '2026-08-31T23:00:00-03:00');
     expect(r).toEqual([evento]);
+  });
+
+  it('7b) evento de dia inteiro de 31/08 NÃO conflita com horário em 30/08 (dia anterior)', async () => {
+    const evento: EventoAgenda = {
+      id: '6', titulo: 'Feriado',
+      inicioISO: '2026-08-31', fimISO: '2026-09-01',
+      criadoPelaEva: false,
+    };
+    const cal = calendarioCom([evento]);
+    const r = await acharConflitos(cal, '2026-08-30T22:00:00-03:00', '2026-08-30T23:00:00-03:00');
+    expect(r).toEqual([]);
+  });
+
+  it('7c) evento de dia inteiro de 31/08 NÃO conflita com compromisso que começa 01/09T00:00 (fim exclusivo)', async () => {
+    const evento: EventoAgenda = {
+      id: '6', titulo: 'Feriado',
+      inicioISO: '2026-08-31', fimISO: '2026-09-01',
+      criadoPelaEva: false,
+    };
+    const cal = calendarioCom([evento]);
+    const r = await acharConflitos(cal, '2026-09-01T00:00:00-03:00', '2026-09-01T01:00:00-03:00');
+    expect(r).toEqual([]);
   });
 
   it('8) vários eventos → devolve só os que realmente conflitam', async () => {
@@ -155,5 +180,35 @@ describe('agenda/conflito: sugerirHorario()', () => {
     const cal = calendarioCom([antes, depois]);
     const r = await sugerirHorario(cal, '2026-08-31', 30);
     expect(r).toEqual({ inicioISO: '2026-08-31T09:00:00-03:00', fimISO: '2026-08-31T09:30:00-03:00' });
+  });
+
+  it('6) com agoraISO no MESMO dia (14:47), agenda vazia → primeira sugestão é 15:00 (arredonda pra cima)', async () => {
+    const cal = calendarioCom([]);
+    const r = await sugerirHorario(cal, '2026-08-31', 60, '2026-08-31T14:47:00-03:00');
+    expect(r).toEqual({ inicioISO: '2026-08-31T15:00:00-03:00', fimISO: '2026-08-31T16:00:00-03:00' });
+  });
+
+  it('7) com agoraISO no MESMO dia às 19:50, pedindo 60min → null (não cabe mais nada até 20h)', async () => {
+    const cal = calendarioCom([]);
+    const r = await sugerirHorario(cal, '2026-08-31', 60, '2026-08-31T19:50:00-03:00');
+    expect(r).toBeNull();
+  });
+
+  it('8) com agoraISO em dia DIFERENTE do dataISO → não afeta (varredura normal a partir das 07h)', async () => {
+    const cal = calendarioCom([]);
+    const r = await sugerirHorario(cal, '2026-08-31', 60, '2026-08-30T22:00:00-03:00');
+    expect(r).toEqual({ inicioISO: '2026-08-31T07:00:00-03:00', fimISO: '2026-08-31T08:00:00-03:00' });
+  });
+
+  it('9) sem agoraISO (omitido) → comportamento inalterado, varre desde 07h', async () => {
+    const cal = calendarioCom([]);
+    const r = await sugerirHorario(cal, '2026-08-31', 60);
+    expect(r).toEqual({ inicioISO: '2026-08-31T07:00:00-03:00', fimISO: '2026-08-31T08:00:00-03:00' });
+  });
+
+  it('10) agoraISO exatamente numa borda de 30min (14:30) → sugere a partir das 14:30 (sem arredondar à toa)', async () => {
+    const cal = calendarioCom([]);
+    const r = await sugerirHorario(cal, '2026-08-31', 30, '2026-08-31T14:30:00-03:00');
+    expect(r).toEqual({ inicioISO: '2026-08-31T14:30:00-03:00', fimISO: '2026-08-31T15:00:00-03:00' });
   });
 });
