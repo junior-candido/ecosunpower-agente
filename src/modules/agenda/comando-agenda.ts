@@ -19,7 +19,7 @@ import {
 import { classificar } from './classificar.js';
 import { acharConflitos, sugerirHorario, type EventoAgenda } from './conflito.js';
 import {
-  marcar, desfazer, substituir, listarDiaFormatado, listarSemanaFormatado,
+  marcar, desfazer, substituir, anexarLocalizacao, listarDiaFormatado, listarSemanaFormatado,
   type AgendaEscrita,
 } from './executor.js';
 
@@ -54,6 +54,13 @@ interface PendenteAgenda {
   conflitos: EventoAgenda[];
   location?: string;
   criadoEventId?: string;                                  // último evento criado (pra "É pessoal/empresa" recolorir)
+  // Último evento criado com sucesso (marcar/substituir/ag_sim/ag_junto/
+  // ag_cor) — usado pra "pin chegou DEPOIS do compromisso, anexa nele em vez
+  // de virar um compromisso novo" (ver tratarLocalizacaoAgenda). Mesmo TTL de
+  // 10min do resto do estado pendente (campo `em` próprio, mesmo relógio
+  // deps.agoraISO() — nunca Date.now() direto).
+  ultimoCriado?: { eventId: string; titulo: string; em: number };
+  localizacaoAnexoPendente?: string;                        // localização aguardando confirmação (Sim, anexar / É outro compromisso)
   sugestao?: { inicioISO: string; fimISO: string };         // resposta pendente de "Sugerir horário" (aguardando Sim/Não)
   aguardandoDataHora?: boolean;                             // true = pendente é a pergunta "que dia e hora?" (confiança baixa)
   em: number;                                               // epoch ms (via deps.agoraISO()) de quando foi guardado
@@ -61,9 +68,16 @@ interface PendenteAgenda {
 
 const estadoPendente = new Map<string, PendenteAgenda>();
 
+// Localização (pin) já recebida mas ainda sem compromisso pra grudar — vale
+// pro PRÓXIMO marcar (mesmo TTL/relógio do resto). Preenchido quando o pin
+// chega sem um `ultimoCriado` fresco pra oferecer (ou quando o Junior
+// responde "É outro compromisso" a essa oferta).
+let localizacaoProximoMarcar: { coords: string; em: number } | null = null;
+
 /** Só pra testes: zera o estado pendente entre casos (o Map é module-level). */
 export function resetEstadoAgenda(): void {
   estadoPendente.clear();
+  localizacaoProximoMarcar = null;
 }
 
 function expirado(p: PendenteAgenda, agoraISO: string): boolean {
@@ -139,9 +153,12 @@ async function marcarEResponder(
   p: { interp: Interpretacao; ambito: 'empresa' | 'pessoal'; location?: string },
 ): Promise<RespostaAgenda> {
   const criado = await marcar(deps.cal, p.interp, p.ambito, p.location ? { location: p.location } : undefined);
+  const agora = Date.parse(deps.agoraISO());
   estadoPendente.set(CHAVE_DONO, {
     interp: p.interp, ambito: p.ambito, conflitos: [], location: p.location,
-    criadoEventId: criado.eventId, em: Date.parse(deps.agoraISO()),
+    criadoEventId: criado.eventId,
+    ultimoCriado: { eventId: criado.eventId, titulo: p.interp.titulo, em: agora },
+    em: agora,
   });
   return { texto: montarConfirmacao(p.interp, p.ambito, p.location), botoes: botoesPosMarcar(criado.eventId, p.ambito) };
 }
@@ -322,6 +339,16 @@ export async function tratarMensagemAgenda(deps: DepsAgenda, texto: string, loca
   // o fluxo normal da Eva pra um texto que nem era pra ser dela.
   let intencaoAgenda = false;
   try {
+    const agoraISO = deps.agoraISO();
+    // Localização explícita no parâmetro sempre ganha; senão, cai no pin que
+    // ficou pendente pro PRÓXIMO marcar (ver localizacaoProximoMarcar/
+    // tratarLocalizacaoAgenda) se ainda estiver fresco (mesmo TTL).
+    const localizacaoEfetiva = location ?? (
+      localizacaoProximoMarcar && (Date.parse(agoraISO) - localizacaoProximoMarcar.em) <= TTL_MS
+        ? localizacaoProximoMarcar.coords
+        : undefined
+    );
+
     // 0) Completar um pendente "aguardando data/hora" — a mensagem SEGUINTE
     // do Junior pode ser só o dia/hora que faltou (ex.: "amanhã 9h"),
     // completando o compromisso em vez de reiniciar a pergunta. Isso vem
@@ -329,10 +356,11 @@ export async function tratarMensagemAgenda(deps: DepsAgenda, texto: string, loca
     // pergunta de agenda nova (não bate no RE_CONSULTA mesmo, mas por
     // clareza a prioridade é explícita).
     const pendente = estadoPendente.get(CHAVE_DONO);
-    if (pendente?.aguardandoDataHora && !expirado(pendente, deps.agoraISO())) {
-      const completo = tentarCompletarPendente(pendente, texto, deps.agoraISO(), location);
+    if (pendente?.aguardandoDataHora && !expirado(pendente, agoraISO)) {
+      const completo = tentarCompletarPendente(pendente, texto, agoraISO, localizacaoEfetiva);
       if (completo) {
         intencaoAgenda = true;
+        localizacaoProximoMarcar = null; // pin consumido (usado ou não) — não vale pra um 2º compromisso
         estadoPendente.delete(CHAVE_DONO);
         return await processarCompromissoInterpretado(deps, completo.interp, completo.location);
       }
@@ -343,16 +371,18 @@ export async function tratarMensagemAgenda(deps: DepsAgenda, texto: string, loca
     const consulta = detectarConsulta(texto);
     if (consulta) {
       intencaoAgenda = true;
+      localizacaoProximoMarcar = null;
       return await responderConsulta(deps, consulta);
     }
 
-    const interp = await interpretar(texto, deps.agoraISO(), deps.ia);
+    const interp = await interpretar(texto, agoraISO, deps.ia);
     if (!interp) return null; // não é assunto de agenda — outro fluxo da Eva cuida.
     intencaoAgenda = true;
+    localizacaoProximoMarcar = null;
 
     if (interp.confianca === 'baixa') {
       estadoPendente.set(CHAVE_DONO, {
-        interp, ambito: null, conflitos: [], location, aguardandoDataHora: true, em: Date.parse(deps.agoraISO()),
+        interp, ambito: null, conflitos: [], location: localizacaoEfetiva, aguardandoDataHora: true, em: Date.parse(agoraISO),
       });
       const texto2 = interp.entendido
         ? `Anotei "${interp.entendido}" 📝 — só me confirma o dia e a hora (ex.: amanhã 9h)`
@@ -360,11 +390,44 @@ export async function tratarMensagemAgenda(deps: DepsAgenda, texto: string, loca
       return { texto: texto2 };
     }
 
-    return await processarCompromissoInterpretado(deps, interp, location);
+    return await processarCompromissoInterpretado(deps, interp, localizacaoEfetiva);
   } catch (err) {
     logErroAgenda('[agenda]', err);
     return intencaoAgenda ? { texto: MSG_ERRO } : null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// LOCALIZAÇÃO (pin do WhatsApp) — chegou um pin AVULSO (não como 3º parâmetro
+// de tratarMensagemAgenda, que é o caso "pin + texto na mesma leva"). Decide
+// entre duas coisas:
+//   (a) tem um compromisso RECÉM-criado (ultimoCriado, ≤10min) → oferece
+//       anexar a localização NELE, em vez de deixar o pin virar sozinho um
+//       pedido de compromisso novo (era exatamente esse o bug ao vivo: pin
+//       após "visita" virava conflito → "Marcar junto" → visita duplicada).
+//   (b) sem compromisso recente → comportamento de sempre: guarda o pin pro
+//       PRÓXIMO marcar e pede o compromisso por texto.
+// ---------------------------------------------------------------------------
+
+const MSG_PEGUEI_LOCALIZACAO = '📍 Peguei a localização! Me diz o compromisso que eu já marco com esse endereço (ex.: "visita amanhã 9h")';
+
+export async function tratarLocalizacaoAgenda(deps: DepsAgenda, location: string): Promise<RespostaAgenda | null> {
+  const agoraISO = deps.agoraISO();
+  const p = estadoPendente.get(CHAVE_DONO);
+
+  if (p?.ultimoCriado && (Date.parse(agoraISO) - p.ultimoCriado.em) <= TTL_MS) {
+    estadoPendente.set(CHAVE_DONO, { ...p, localizacaoAnexoPendente: location, em: Date.parse(agoraISO) });
+    return {
+      texto: `📍 Anexo essa localização à "${p.ultimoCriado.titulo}"? `,
+      botoes: [
+        { id: 'ag_loc_sim', rotulo: 'Sim, anexar' },
+        { id: 'ag_loc_outro', rotulo: 'É outro compromisso' },
+      ],
+    };
+  }
+
+  localizacaoProximoMarcar = { coords: location, em: Date.parse(agoraISO) };
+  return { texto: MSG_PEGUEI_LOCALIZACAO };
 }
 
 // ---------------------------------------------------------------------------
@@ -410,8 +473,40 @@ export async function tratarBotaoAgenda(deps: DepsAgenda, botaoId: string): Prom
       const novoAmbito: 'empresa' | 'pessoal' = p.ambito === 'empresa' ? 'pessoal' : 'empresa';
       await desfazer(deps.cal, eventId);
       const criado = await marcar(deps.cal, p.interp, novoAmbito, p.location ? { location: p.location } : undefined);
-      estadoPendente.set(CHAVE_DONO, { ...p, ambito: novoAmbito, criadoEventId: criado.eventId, em: Date.parse(deps.agoraISO()) });
+      const agoraRecor = Date.parse(deps.agoraISO());
+      estadoPendente.set(CHAVE_DONO, {
+        ...p, ambito: novoAmbito, criadoEventId: criado.eventId,
+        ultimoCriado: { eventId: criado.eventId, titulo: p.interp.titulo, em: agoraRecor },
+        em: agoraRecor,
+      });
       return { texto: `Corrigido: agora é ${bolinhaAmbito(novoAmbito)}.` };
+    }
+
+    // ag_loc_sim / ag_loc_outro — resposta à pergunta de tratarLocalizacaoAgenda
+    // ("anexo essa localização à '<título>'?"), quando um pin chegou logo
+    // depois de um compromisso já criado.
+    if (id === 'ag_loc_sim' || id === 'ag_loc_outro') {
+      const p = estadoPendente.get(CHAVE_DONO);
+      if (!p || expirado(p, deps.agoraISO()) || !p.ultimoCriado || p.localizacaoAnexoPendente === undefined) {
+        return { texto: MSG_EXPIROU };
+      }
+      const localizacao = p.localizacaoAnexoPendente;
+
+      if (id === 'ag_loc_outro') {
+        localizacaoProximoMarcar = { coords: localizacao, em: Date.parse(deps.agoraISO()) };
+        estadoPendente.set(CHAVE_DONO, { ...p, localizacaoAnexoPendente: undefined, em: Date.parse(deps.agoraISO()) });
+        return { texto: MSG_PEGUEI_LOCALIZACAO };
+      }
+
+      // ag_loc_sim
+      try {
+        await anexarLocalizacao(deps.cal, p.ultimoCriado.eventId, localizacao);
+      } catch (err) {
+        logErroAgenda('[agenda] anexar localização falhou:', err);
+        return { texto: '❌ Não consegui anexar a localização — tenta de novo ou anexa na mão pela agenda.' };
+      }
+      estadoPendente.set(CHAVE_DONO, { ...p, localizacaoAnexoPendente: undefined, em: Date.parse(deps.agoraISO()) });
+      return { texto: `📍 Anexada à "${p.ultimoCriado.titulo}" ✔` };
     }
 
     const ACOES_PENDENTE = new Set(['ag_junto', 'ag_subst', 'ag_sugerir', 'ag_sim', 'ag_nao']);
@@ -427,7 +522,12 @@ export async function tratarBotaoAgenda(deps: DepsAgenda, botaoId: string): Prom
     if (id === 'ag_subst') {
       if (p.conflitos.length === 0) return { texto: MSG_EXPIROU };
       const criado = await substituir(deps.cal, p.conflitos[0].id, p.interp, p.ambito, p.location ? { location: p.location } : undefined);
-      estadoPendente.set(CHAVE_DONO, { ...p, conflitos: [], criadoEventId: criado.eventId, em: Date.parse(deps.agoraISO()) });
+      const agoraSubst = Date.parse(deps.agoraISO());
+      estadoPendente.set(CHAVE_DONO, {
+        ...p, conflitos: [], criadoEventId: criado.eventId,
+        ultimoCriado: { eventId: criado.eventId, titulo: p.interp.titulo, em: agoraSubst },
+        em: agoraSubst,
+      });
       return { texto: montarConfirmacao(p.interp, p.ambito, p.location), botoes: botoesPosMarcar(criado.eventId, p.ambito) };
     }
 
