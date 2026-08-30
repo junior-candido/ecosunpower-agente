@@ -366,3 +366,87 @@ describe('tratarBotaoAgenda: botão desconhecido', () => {
     expect(r).toBeNull();
   });
 });
+
+// -----------------------------------------------------------------------
+// REGRESSÃO: detectarConsulta ANCORADA — só é consulta quando a mensagem
+// INTEIRA é uma pergunta de agenda. Sem âncora, "agenda a visita da Cyntia
+// amanhã 9h" batia em \bagenda\b + \bamanhã\b e virava LISTAGEM em vez de
+// marcar — bug real encontrado em revisão.
+// -----------------------------------------------------------------------
+
+describe('tratarMensagemAgenda: consulta ancorada não sequestra marcar', () => {
+  it('23) "agenda a visita da Cyntia amanhã 9h" → vai pro MARCAR (interpretar chamado, não é listagem)', async () => {
+    let iaChamada = false;
+    const cal = mockCal([]);
+    const ia: ExtratorIA = {
+      async extrairAgenda(prompt: string) {
+        iaChamada = true;
+        return '```json\n' + JSON.stringify({
+          compromisso: true, titulo: 'Visita Cyntia', dataTexto: 'amanhã', horaTexto: '9h',
+          duracaoTexto: null, diaInteiro: false, ambito: 'empresa',
+        }) + '\n```';
+      },
+    };
+    const deps = depsBase({ cal, ia });
+    const r = await tratarMensagemAgenda(deps, 'agenda a visita da Cyntia amanhã 9h');
+    expect(iaChamada).toBe(true); // não foi tratado como consulta (regex barata) — passou pra IA
+    expect(cal.criados).toHaveLength(1); // marcou de verdade
+    expect(r!.texto).toContain('📅 Marquei: Visita Cyntia');
+    expect(r!.texto).not.toContain('Nada marcado');
+  });
+
+  it('24) "minha agenda de amanhã?" → consulta amanhã', async () => {
+    const deps = depsBase({ cal: mockCal([]), ia: iaNuncaChamada() });
+    const r = await tratarMensagemAgenda(deps, 'minha agenda de amanhã?');
+    expect(r!.texto).toContain('Amanhã');
+  });
+
+  it('25) "o que tenho essa semana" → consulta semana', async () => {
+    const deps = depsBase({ cal: mockCal([]), ia: iaNuncaChamada() });
+    const r = await tratarMensagemAgenda(deps, 'o que tenho essa semana');
+    expect(r!.texto).toContain('Nada marcado essa semana');
+  });
+
+  it('26) "agenda" pelado continua consulta hoje (regressão da âncora)', async () => {
+    const deps = depsBase({ cal: mockCal([]), ia: iaNuncaChamada() });
+    const r = await tratarMensagemAgenda(deps, 'agenda');
+    expect(r!.texto).toContain('Hoje');
+  });
+});
+
+// -----------------------------------------------------------------------
+// TRATAMENTO DE ERRO: qualquer exceção (IA, Google Calendar) vira resposta
+// amigável em vez de derrubar o handler — MAS só depois de sabermos que é
+// assunto de agenda (senão hijacka mensagem que nem era pra ela).
+// -----------------------------------------------------------------------
+
+describe('tratarMensagemAgenda: erro vira resposta amigável (não derruba)', () => {
+  it('27) ia.extrairAgenda lança exceção → null (não sequestra mensagem comum)', async () => {
+    const iaQuebrada: ExtratorIA = { async extrairAgenda() { throw new Error('Anthropic API fora do ar'); } };
+    // interpretar() já engole esse erro internamente e devolve null — o
+    // handler não deve virar erro amigável pra um texto que pode nem ser agenda.
+    const deps = depsBase({ ia: iaQuebrada });
+    const r = await tratarMensagemAgenda(deps, 'quanto vendi esse mês?');
+    expect(r).toBeNull();
+  });
+
+  it('28) cal.createEvent lança exceção depois de um interp bom → resposta de erro amigável (não lança)', async () => {
+    const cal = mockCal([]);
+    cal.createEvent = async () => { throw new Error('Google Calendar fora do ar'); };
+    const deps = depsBase({ cal });
+    const r = await tratarMensagemAgenda(deps, 'visita Cyntia amanhã 9h');
+    expect(r).not.toBeNull();
+    expect(r!.texto).toBe('❌ Deu ruim aqui na agenda agora — tenta de novo em instantes. Se repetir, me chama.');
+  });
+});
+
+describe('tratarBotaoAgenda: erro vira resposta amigável (não derruba)', () => {
+  it('29) cal.deleteEvent lança exceção → resposta de erro amigável (não lança)', async () => {
+    const cal = mockCal([]);
+    cal.deleteEvent = async () => { throw new Error('Google Calendar fora do ar'); };
+    const deps = depsBase({ cal });
+    const r = await tratarBotaoAgenda(deps, 'ag_desf_evt-1');
+    expect(r).not.toBeNull();
+    expect(r!.texto).toBe('❌ Deu ruim aqui na agenda agora — tenta de novo em instantes. Se repetir, me chama.');
+  });
+});
