@@ -727,7 +727,7 @@ b.onclick=async function(){
       res.type('html').send(renderNotasPage(notas, config, req.dashUser));
     } catch (err) {
       console.error('[fiscal]', err);
-      res.status(500).send(`Erro: ${(err as Error).message}`);
+      res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
   });
 
@@ -744,7 +744,7 @@ b.onclick=async function(){
       }, req.dashUser));
     } catch (err) {
       console.error('[fiscal/nova]', err);
-      res.status(500).send(`Erro: ${(err as Error).message}`);
+      res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
   });
 
@@ -816,12 +816,13 @@ b.onclick=async function(){
       res.type('html').send(renderNotaDetalhe(nota, config, req.dashUser));
     } catch (err) {
       console.error('[fiscal/:id]', err);
-      res.status(500).send(`Erro: ${(err as Error).message}`);
+      res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
   });
 
   router.post('/fiscal/:id/anexar', exigir('financeiro', 'editar'), uploadPdf.single('pdf'), async (req: AuthedRequest, res) => {
     const notaId = String(req.params.id);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(notaId)) { res.status(404).send('Nota não achada'); return; }
     try {
       const file = (req as unknown as { file?: Express.Multer.File }).file;
       const numero = String(req.body?.numero ?? '').trim();
@@ -846,7 +847,7 @@ b.onclick=async function(){
       res.redirect(`/dashboard/fiscal/${notaId}`);
     } catch (err) {
       console.error('[fiscal/anexar]', err);
-      res.status(500).send(`Erro: ${(err as Error).message}`);
+      res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
   });
 
@@ -860,7 +861,7 @@ b.onclick=async function(){
       res.redirect(data.signedUrl);
     } catch (err) {
       console.error('[fiscal/pdf]', err);
-      res.status(500).send(`Erro: ${(err as Error).message}`);
+      res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
   });
 
