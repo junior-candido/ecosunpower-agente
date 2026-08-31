@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { buildSystemBlocks } from './system-blocks.js';
 import { formatCacheUsage } from './cache-log.js';
 import { registrarUsoIa } from './custos/ia-metering.js';
-import { empresa, interpolarEmpresa } from './empresa-config.js';
+import { empresa, interpolarEmpresa, type EmpresaConfig } from './empresa-config.js';
 import { promptFileDoModo } from './eva-modo.js';
 
 // Client Supabase dedicado ao medidor de custos de IA. Lazy + memoizado:
@@ -66,6 +66,53 @@ export function toWhatsAppText(text: string): string {
   return t.replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/**
+ * Bloco de PÓS-VENDA por empresa. Só aparece pra quem configurou um canal
+ * separado de dúvida técnica (empresa_config.suporte_telefone) — a EcoSun não
+ * tem, e o prompt sai byte-idêntico ao de sempre (prompt caching preservado).
+ * Pedido da Jimena/Conquista Solar 31/08: quem já tem sistema e quer suporte
+ * não deve ser qualificado como lead, e sim mandado pro setor de engenharia.
+ */
+export function blocoSuportePosVenda(e: Readonly<EmpresaConfig>): string {
+  if (e.canaisAtendimento.length === 0) return '';
+  const lista = e.canaisAtendimento
+    .map((c) => `- **${c.assunto}** → ${c.rotulo}: ${c.telefone}`)
+    .join('\n');
+  return `
+
+## QUANDO NÃO É VENDA — ENCAMINHAR (regra da ${e.nomeFantasia})
+
+Nem todo mundo que chama quer comprar. Existem canais próprios pra estes assuntos:
+
+${lista}
+
+**⚠️ NÃO passe o número na primeira mensagem.** Quem já é cliente é a melhor
+chance de venda que existe (ampliação, bateria, limpeza, um segundo sistema) —
+e mandar embora na hora joga isso fora e soa como se você estivesse se livrando
+da pessoa.
+
+**A ordem é: entender → qualificar → só então encaminhar.**
+
+1. Acolha e entenda o que está acontecendo, com curiosidade de verdade.
+2. Aproveite pra conhecer a instalação: o que ela tem hoje, há quanto tempo,
+   como está a conta, se tem vontade de aumentar. É aqui que a venda aparece.
+3. **Depois disso**, encaminhe pro canal certo, confirmando antes:
+
+> "Ah, entendi — você quer <o que ela precisa>, confere? Então chama o pessoal
+> neste outro número, que eles vão te orientar 😊
+> <setor>: <telefone>"
+
+**Exceção — encaminhe NA HORA, sem qualificar**, quando a pessoa pedir o número
+direto, insistir, estiver com pressa, irritada ou for uma urgência (sistema
+parado, vazamento, algo sem funcionar). Nessas horas segurar a pessoa pra
+qualificar é o pior atendimento possível.
+
+Sempre:
+- Use EXATAMENTE o telefone da lista. NUNCA invente número nem mande pro canal errado.
+- Se for venda E dúvida ao mesmo tempo, atenda a venda e passe o número no fim.
+- Depois de encaminhar, encerre com cordialidade e fique à disposição.`;
+}
+
 export class Brain {
   private client: Anthropic;
   private systemPrompt: string;
@@ -100,7 +147,7 @@ export class Brain {
     const stableSystem = interpolarEmpresa(
       this.systemPrompt.replaceAll('{{review_link}}', this.reviewLink),
       emp,
-    );
+    ) + blocoSuportePosVenda(emp);
     const system = buildSystemBlocks({
       systemPrompt: stableSystem,
       knowledgeBase,

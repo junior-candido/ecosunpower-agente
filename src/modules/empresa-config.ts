@@ -6,6 +6,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
+/** Um destino de encaminhamento: "quando for X, manda pro telefone Y". */
+export interface CanalAtendimento {
+  /** Quando usar, em linguagem simples ("manutenção de aquecimento/piscina"). */
+  assunto: string;
+  /** Nome do setor que aparece pro cliente ("Setor de engenharia"). */
+  rotulo: string;
+  telefone: string;
+}
+
 export interface EmpresaConfig {
   /** Dono desta config. Deixa o resto do app perguntar "sou a EcoSun?" sem
    *  carregar o companyId à parte — usado pelo escopo da base de conhecimento. */
@@ -22,7 +31,16 @@ export interface EmpresaConfig {
    *  Sem valor no banco, cai no PRIMEIRO NOME do rtNome DO PRÓPRIO tenant
    *  (nunca no apelido de outra empresa — era o vazamento do prompt). */
   rtApelido: string;
+  /** Gênero de como se FALA de quem recebe o lead — define os artigos e
+   *  contrações do prompt: 'm' → o/do/pro/pelo Junior · 'f' → a/da/pra/pela
+   *  nossa equipe. Sem isso a assistente de uma empresa com vendedoras diria
+   *  "o Jimena", "pro nossa equipe". */
+  rtGenero: 'm' | 'f';
   pixChave: string | null;
+  /** Canais pra onde a assistente MANDA quem não é venda (pós-venda, suporte,
+   *  manutenção, financeiro). Lista vazia = fluxo normal (a EcoSun atende tudo
+   *  pelo mesmo número). Com canais, ela para de qualificar e encaminha. */
+  canaisAtendimento: CanalAtendimento[];
   criterioLeadValor: number; criterioLeadKwh: number;
   marcasPermitidas: string[]; marcasBloqueadas: string[];
   garantiaInstalacaoMeses: number; fatorPerdaPadrao: number; belenusAtivo: boolean;
@@ -56,9 +74,11 @@ export const EMPRESA_DEFAULTS: EmpresaConfig = {
   telefoneAtendente: '5561996978781',
   rtNome: 'ANTONIO CANDIDO RODRIGUES JUNIOR',
   rtApelido: 'Junior',
+  rtGenero: 'm',
   rtTitulo: 'Responsável Técnico CREA/CFT',
   rtCpf: '989.404.571-53', rtRg: '2.202.520 SSP-DF', rtRegistro: '98940457153',
   pixChave: '33.020.459/0001-06',
+  canaisAtendimento: [],
   criterioLeadValor: 700, criterioLeadKwh: 700,
   marcasPermitidas: ['Trina Solar','JA Solar','Risen','Jinko Solar','LONGi','Honor','SolarEdge','Deye','Sungrow','Huawei','Hoymiles','Enphase','FoxESS','NEP','Solis','SolaX'],
   marcasBloqueadas: ['Growatt'],
@@ -72,6 +92,18 @@ export const EMPRESA_DEFAULTS: EmpresaConfig = {
 Object.freeze(EMPRESA_DEFAULTS);
 Object.freeze(EMPRESA_DEFAULTS.marcasPermitidas);
 Object.freeze(EMPRESA_DEFAULTS.marcasBloqueadas);
+
+/** jsonb do banco → lista de canais. Descarta entrada sem telefone (o campo
+ *  vira texto de prompt: melhor não ter canal do que ter canal quebrado). */
+export function normalizarCanais(valor: unknown): CanalAtendimento[] {
+  if (!Array.isArray(valor)) return [];
+  const txt = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+  return valor
+    .filter((c): c is Record<string, unknown> => typeof c === 'object' && c !== null)
+    .map((c) => ({ assunto: txt(c.assunto).slice(0, 200), rotulo: txt(c.rotulo).slice(0, 60), telefone: txt(c.telefone).slice(0, 30) }))
+    .filter((c) => c.telefone !== '' && c.assunto !== '')
+    .slice(0, 6); // teto: prompt não vira lista telefônica
+}
 
 // Row snake_case do banco → EmpresaConfig; null/ausente cai no default (nunca
 // undefined chegando em template/prompt).
@@ -111,9 +143,12 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
     // ⚠️ fallback é o PRIMEIRO NOME do rtNome DESTA linha — nunca D.rtApelido,
     // senão a assistente de um tenant chamaria o dono de outro ("Junior").
     rtApelido: s(row.rt_apelido, primeiroNome(s(row.rt_nome, D.rtNome))).slice(0, 40),
+    rtGenero: row.rt_genero === 'f' ? 'f' : 'm',
     rtCpf: sn(row.rt_cpf) ?? D.rtCpf, rtRg: sn(row.rt_rg) ?? D.rtRg,
     rtRegistro: sn(row.rt_registro) ?? D.rtRegistro,
     pixChave: sn(row.pix_chave) ?? D.pixChave,
+    // Tenant sem canais fica com lista vazia (não herda nada da EcoSun).
+    canaisAtendimento: normalizarCanais(row.canais_atendimento),
     criterioLeadValor: n(row.criterio_lead_valor, D.criterioLeadValor),
     criterioLeadKwh: n(row.criterio_lead_kwh, D.criterioLeadKwh),
     marcasPermitidas: arr(row.marcas_permitidas, D.marcasPermitidas),
@@ -137,6 +172,10 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
 
 // Placeholders de empresa pra prompts/textos. Mantém desconhecidos intactos.
 export function interpolarEmpresa(texto: string, e: EmpresaConfig): string {
+  // Artigo/contração de quem recebe o lead. Sem isso o prompt (escrito no
+  // masculino) faria a assistente de uma empresa com vendedoras dizer
+  // "o Jimena", "pro nossa equipe".
+  const f = e.rtGenero === 'f';
   const mapa: Record<string, string> = {
     nome_atendente: e.nomeAtendente,
     empresa_nome: e.nomeFantasia,
@@ -151,7 +190,14 @@ export function interpolarEmpresa(texto: string, e: EmpresaConfig): string {
     link_pagamento: e.linkPagamento ?? '',
     rt_nome: nomeTituloCase(e.rtNome),
     rt_apelido: e.rtApelido,
+    rt_o: `${f ? 'a' : 'o'} ${e.rtApelido}`,
+    rt_O: `${f ? 'A' : 'O'} ${e.rtApelido}`,
+    rt_do: `${f ? 'da' : 'do'} ${e.rtApelido}`,
+    rt_pro: `${f ? 'pra' : 'pro'} ${e.rtApelido}`,
+    rt_pelo: `${f ? 'pela' : 'pelo'} ${e.rtApelido}`,
     rt_titulo: e.rtTitulo,
+    rt_nosso_titulo: `${f ? 'nossa' : 'nosso'} ${e.rtTitulo}`,
+    rt_O_titulo: `${f ? 'A' : 'O'} ${e.rtTitulo}`,
     criterio_lead_valor: String(e.criterioLeadValor),
     criterio_lead_kwh: String(e.criterioLeadKwh),
     marcas_texto: listaMarcasTexto(e),
