@@ -15,7 +15,14 @@ const STATUS: Record<string, string> = {
 };
 
 export interface ServicoOpt { id: string; nome: string; cod_trib_nacional: string; descricao_padrao: string; aliquota_iss: number }
-export interface ConfigInfo { cnpj: string; inscricao_municipal: string; razao_social: string; cert_validade: string | null }
+export interface ConfigInfo {
+  cnpj: string; inscricao_municipal: string; razao_social: string; cert_validade: string | null;
+  ambiente?: 'homologacao' | 'producao'; serie_dps?: string; proximo_ndps?: number; cert_storage_path?: string | null;
+}
+
+const badgeAmbiente = (ambiente: 'homologacao' | 'producao' | undefined) => ambiente === 'producao'
+  ? '<span style="background:#065f46;color:#a7f3d0;border-radius:6px;padding:2px 8px;font-size:12px">PRODUÇÃO</span>'
+  : '<span style="background:#78350f;color:#fde68a;border-radius:6px;padding:2px 8px;font-size:12px">HOMOLOGAÇÃO — teste</span>';
 
 export function renderNotasPage(notas: NotaLinha[], config: ConfigInfo | null, user?: DashUser): string {
   const alertaCert = config?.cert_validade
@@ -120,7 +127,45 @@ ${prefill.erro ? `<div class="card" style="border:1px solid #f87171;border-radiu
   return renderLayout({ active: 'fiscal', title: 'Nova nota', body, scripts, dark: true, user });
 }
 
-export function renderNotaDetalhe(n: NotaLinha, _config: ConfigInfo | null, user?: DashUser): string {
+export function renderNotaDetalhe(n: NotaLinha, config: ConfigInfo | null, user?: DashUser, aviso?: { tipo: 'ok' | 'erro'; texto: string }): string {
+  const temCert = Boolean(config?.cert_storage_path);
+  const avisoHtml = aviso
+    ? `<div class="card" style="border:1px solid ${aviso.tipo === 'ok' ? '#34d399' : '#f87171'};border-radius:10px;padding:10px;margin:8px 0">${escapeHtml(aviso.texto)}</div>`
+    : '';
+  const emitir = n.status === 'preparada' ? (temCert ? `
+  <div class="card" style="border:1px solid #0e7490;border-radius:10px;padding:12px;margin:10px 0">
+    <form method="post" action="/dashboard/fiscal/${n.id}/emitir" onsubmit="return confirm('Emitir esta NFS-e agora?')" style="display:inline">
+      <button class="px-4 py-2 rounded bg-cyan-600 text-white font-bold">⚡ Emitir agora</button>
+    </form>
+    ${badgeAmbiente(config?.ambiente)}
+    ${config?.ambiente !== 'producao' ? '<p class="text-sm mt-2" style="color:#fde68a">⚠️ Ambiente de TESTE — a nota emitida aqui não vale e não mexe no caixa.</p>' : ''}
+  </div>` : `
+  <div class="card" style="border:1px solid #1b2040;border-radius:10px;padding:12px;margin:10px 0">
+    ⚡ Pra emitir daqui direto, <a class="text-cyan-300" href="/dashboard/fiscal/config">cadastre o certificado A1</a>.
+  </div>`) : '';
+  const autorizada = n.status === 'autorizada' && n.chaveAcesso ? `
+  <div class="card" style="border:1px solid #065f46;border-radius:10px;padding:12px;margin:10px 0">
+    <b>✅ NFS-e emitida daqui</b> ${badgeAmbiente(n.ambienteEmissao ?? undefined)}
+    <ul class="text-sm mt-2" style="line-height:1.8">
+      ${n.numero ? `<li>Número: <code>${escapeHtml(n.numero)}</code></li>` : ''}
+      <li>Chave de acesso: <code style="word-break:break-all">${escapeHtml(n.chaveAcesso)}</code></li>
+    </ul>
+    <p class="mt-2"><a class="text-cyan-300" href="/dashboard/fiscal/${n.id}/xml">⬇️ Baixar XML</a></p>
+  </div>` : '';
+  const testeHomolog = n.status === 'preparada' && n.chaveAcesso && n.ambienteEmissao === 'homologacao' ? `
+  <div class="card" style="border:1px solid #78350f;border-radius:10px;padding:12px;margin:10px 0">
+    🧪 <b>Teste de homologação passou</b> — chave <code style="word-break:break-all">${escapeHtml(n.chaveAcesso)}</code>.
+    A nota continua <b>preparada</b> pra emissão de verdade (troque o ambiente pra produção na <a class="text-cyan-300" href="/dashboard/fiscal/config">configuração</a>).
+    <a class="text-cyan-300" href="/dashboard/fiscal/${n.id}/xml">⬇️ XML do teste</a>
+  </div>` : '';
+  const enviadaTravada = n.status === 'enviada' ? `
+  <div class="card" style="border:1px solid #f87171;border-radius:10px;padding:12px;margin:10px 0">
+    📤 <b>Enviada — aguardando confirmação.</b> A conexão pode ter caído no meio do envio.
+    <b>Confira no portal do ISS se a NFS-e saiu.</b> Se NÃO saiu, destrave pra tentar de novo:
+    <form method="post" action="/dashboard/fiscal/${n.id}/voltar" class="mt-2" onsubmit="return confirm('Conferiu no portal que a nota NÃO saiu? Se ela saiu e você emitir de novo, sai NOTA DUPLICADA.')">
+      <button class="px-3 py-2 rounded bg-gray-700 text-white">↩️ Voltar pra preparada (não saiu no portal)</button>
+    </form>
+  </div>` : '';
   const preparar = n.status === 'preparada' ? `
   <div class="card" style="border:1px solid #1b2040;border-radius:10px;padding:12px;margin:10px 0">
     <b>1) Emitir no portal</b> — abra <a class="text-cyan-300" href="https://iss.fazenda.df.gov.br/online/" target="_blank">iss.fazenda.df.gov.br/online</a> e copie:
@@ -148,11 +193,59 @@ export function renderNotaDetalhe(n: NotaLinha, _config: ConfigInfo | null, user
 <div style="color:#d1d5db;max-width:640px">
 <h1 class="text-xl font-bold text-cyan-300 mb-2">🧾 Nota ${n.numero ? 'nº ' + escapeHtml(n.numero) : '(preparada)'}</h1>
 <p>${STATUS[n.status] ?? n.status} · ${escapeHtml(n.tomador.nome)} · ${brl(n.valorBruto)} → líquido <b>${brl(n.valorLiquido)}</b>${n.issRetido ? ` (ISS retido ${brl(n.valorIss)})` : ''}</p>
+${avisoHtml}
 ${acoesPreparada}
+${testeHomolog}
+${enviadaTravada}
+${emitir}
+${autorizada}
 ${preparar}
 ${n.pdfStoragePath ? `<p><a class="text-cyan-300" href="/dashboard/fiscal/${n.id}/pdf">📄 Baixar PDF</a></p>` : ''}
 ${n.contaReceberId ? '<p class="text-emerald-300">✅ Conta a receber criada no caixa.</p>' : ''}
 <p class="mt-3"><a class="text-gray-400" href="/dashboard/fiscal">← todas as notas</a></p>
 </div>`;
   return renderLayout({ active: 'fiscal', title: `Nota ${escapeHtml(n.numero ?? '')}`, body, dark: true, user });
+}
+
+export function renderConfigFiscalPage(config: ConfigInfo | null, aviso?: { tipo: 'ok' | 'erro'; texto: string }, user?: DashUser): string {
+  const avisoHtml = aviso
+    ? `<div class="card" style="border:1px solid ${aviso.tipo === 'ok' ? '#34d399' : '#f87171'};border-radius:10px;padding:10px;margin-bottom:8px">${escapeHtml(aviso.texto)}</div>`
+    : '';
+  const cert = config?.cert_storage_path
+    ? `✅ Certificado cadastrado${config.cert_validade ? ` — vale até <b>${escapeHtml(config.cert_validade.split('-').reverse().join('/'))}</b>` : ''}`
+    : '❌ Certificado A1 <b>não cadastrado</b> — sem ele a emissão automática não funciona.';
+  const amb = config?.ambiente ?? 'homologacao';
+  const bannerTeste = amb !== 'producao'
+    ? '<div class="card" style="border:1px solid #fbbf24;border-radius:10px;padding:10px;margin-bottom:8px">⚠️ Ambiente de <b>TESTE</b> (homologação) — as notas emitidas aqui não valem e não mexem no caixa.</div>'
+    : '';
+  const body = `
+<div style="color:#d1d5db;max-width:640px">
+<h1 class="text-xl font-bold text-cyan-300 mb-4">⚙️ Configuração fiscal (emissão automática)</h1>
+${avisoHtml}
+${bannerTeste}
+<div class="card" style="border:1px solid #1b2040;border-radius:10px;padding:12px;margin-bottom:10px">
+  <ul class="text-sm" style="line-height:1.9">
+    <li>Razão social: <b>${escapeHtml(config?.razao_social ?? '—')}</b></li>
+    <li>CNPJ: <code>${escapeHtml(config?.cnpj ?? '—')}</code> · IM: <code>${escapeHtml(config?.inscricao_municipal ?? '—')}</code></li>
+    <li>Série da DPS: <code>${escapeHtml(config?.serie_dps ?? '1')}</code> · próximo nº: <code>${String(config?.proximo_ndps ?? 1)}</code></li>
+    <li>${cert}</li>
+  </ul>
+</div>
+<form method="post" action="/dashboard/fiscal/config" enctype="multipart/form-data" class="space-y-3">
+  <fieldset class="card" style="border:1px solid #1b2040;border-radius:10px;padding:12px">
+    <legend class="px-1">Ambiente de emissão</legend>
+    <label class="block"><input type="radio" name="ambiente" value="homologacao"${amb !== 'producao' ? ' checked' : ''}> Homologação (teste — nota sem valor)</label>
+    <label class="block"><input type="radio" name="ambiente" value="producao"${amb === 'producao' ? ' checked' : ''}> Produção (nota de verdade)</label>
+  </fieldset>
+  <fieldset class="card" style="border:1px solid #1b2040;border-radius:10px;padding:12px">
+    <legend class="px-1">Certificado A1 (.pfx)</legend>
+    <label class="block">Arquivo .pfx <input type="file" name="pfx" accept=".pfx,.p12" class="block mt-1"></label>
+    <label class="block mt-2">Senha do certificado <input type="password" name="senha" autocomplete="off" class="bg-gray-800 p-1 rounded w-full"></label>
+    <p class="text-sm text-gray-400 mt-2">A senha é guardada cifrada e usada só na hora de assinar. Deixe em branco pra manter o certificado atual.</p>
+  </fieldset>
+  <button class="px-4 py-2 rounded bg-cyan-700 text-white">Salvar</button>
+</form>
+<p class="mt-3"><a class="text-gray-400" href="/dashboard/fiscal">← todas as notas</a></p>
+</div>`;
+  return renderLayout({ active: 'fiscal', title: 'Configuração fiscal', body, dark: true, user });
 }
