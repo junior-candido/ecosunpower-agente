@@ -56,6 +56,7 @@ export interface NovaNotaPrefill {
   nome?: string; doc?: string; valor?: number; fechamentoId?: string; leadId?: string; erro?: string;
   notaId?: string; im?: string; endereco?: string; municipio?: string; uf?: string; email?: string;
   tipo?: 'PJ' | 'PF'; servicoId?: string; descricao?: string; competencia?: string; issRetido?: boolean;
+  cep?: string; logradouro?: string; numero?: string; bairro?: string; codMunIbge?: string;
 }
 
 export function renderNovaNotaPage(servicos: ServicoOpt[], prefill: NovaNotaPrefill, user?: DashUser): string {
@@ -76,7 +77,16 @@ ${prefill.erro ? `<div class="card" style="border:1px solid #f87171;border-radiu
     <button type="button" id="buscar" class="px-2 py-1 rounded bg-gray-700 mt-1">🔎 Buscar dados</button></label>
   <label class="block">Nome/Razão social <input name="nome" id="nome" value="${escapeHtml(prefill.nome ?? '')}" class="bg-gray-800 p-1 rounded w-full" required></label>
   <label class="block">Inscrição municipal (se PJ do DF) <input name="im" id="im" value="${escapeHtml(prefill.im ?? '')}" class="bg-gray-800 p-1 rounded w-full"></label>
-  <label class="block">Endereço <input name="endereco" id="endereco" value="${escapeHtml(prefill.endereco ?? '')}" class="bg-gray-800 p-1 rounded w-full"></label>
+  <div class="grid grid-cols-2 gap-2">
+    <label>Logradouro (rua) <input name="logradouro" id="logradouro" value="${escapeHtml(prefill.logradouro ?? prefill.endereco ?? '')}" class="bg-gray-800 p-1 rounded w-full"></label>
+    <label>Número <input name="numero" id="numero" value="${escapeHtml(prefill.numero ?? '')}" class="bg-gray-800 p-1 rounded w-full"></label>
+  </div>
+  <div class="grid grid-cols-2 gap-2">
+    <label>Bairro <input name="bairro" id="bairro" value="${escapeHtml(prefill.bairro ?? '')}" class="bg-gray-800 p-1 rounded w-full"></label>
+    <label>CEP <input name="cep" id="cep" value="${escapeHtml(prefill.cep ?? '')}" class="bg-gray-800 p-1 rounded w-full" inputmode="numeric"></label>
+  </div>
+  <p class="text-sm" style="color:#94a3b8">O fisco exige endereço completo quando o tomador é PJ ou o ISS é retido — o "Buscar dados" preenche sozinho.</p>
+  <input type="hidden" name="cod_mun_ibge" id="cod_mun_ibge" value="${escapeHtml(prefill.codMunIbge ?? '')}">
   <div class="grid grid-cols-2 gap-2">
     <label>Município <input name="municipio" id="municipio" value="${escapeHtml(prefill.municipio ?? 'Brasília')}" class="bg-gray-800 p-1 rounded w-full"></label>
     <label>UF <input name="uf" id="uf" value="${escapeHtml(prefill.uf ?? 'DF')}" class="bg-gray-800 p-1 rounded w-full" maxlength="2"></label>
@@ -118,7 +128,8 @@ ${prefill.erro ? `<div class="card" style="border:1px solid #f87171;border-radiu
     const r = await fetch('/dashboard/fiscal/cnpj/'+encodeURIComponent($('doc').value));
     if(!r.ok){ alert('Não achei — preenche à mão.'); return; }
     const d = await r.json();
-    $('nome').value=d.razaoSocial; $('endereco').value=d.endereco; $('municipio').value=d.municipio; $('uf').value=d.uf; if(d.email)$('email').value=d.email;
+    $('nome').value=d.razaoSocial; $('municipio').value=d.municipio; $('uf').value=d.uf; if(d.email)$('email').value=d.email;
+    $('logradouro').value=d.logradouro||d.endereco||''; $('numero').value=d.numero||''; $('bairro').value=d.bairro||''; $('cep').value=d.cep||''; $('cod_mun_ibge').value=d.codMunIbge||'';
     autoRetencao();
   });
   if (document.querySelector('form[data-edit="1"]')) { conta(); } else { autoRetencao(); }

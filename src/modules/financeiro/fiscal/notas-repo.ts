@@ -7,6 +7,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export interface Tomador {
   tipo: 'PJ' | 'PF'; doc: string; nome: string; im: string | null;
   endereco: string; email: string | null; municipio: string; uf: string;
+  // Endereço ESTRUTURADO — o fisco exige na DPS quando o tomador é PJ (E0235)
+  // ou o ISS é retido (E0237); vem do "Buscar dados" (CNPJ) ou digitado.
+  cep?: string | null; logradouro?: string | null; numero?: string | null;
+  bairro?: string | null; codMunIbge?: string | null;
 }
 export interface NovaNota {
   companyId: string; competencia: string; servicoId: string; descricao: string;

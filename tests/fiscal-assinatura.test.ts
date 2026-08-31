@@ -18,10 +18,12 @@ function parDeTeste() {
 
 const entrada = {
   ambiente: 'homologacao' as const, dhEmi: new Date(), serie: '1', nDps: 1,
-  competencia: '2026-08-31', codMunicipio: '5300108',
+  competencia: '2026-08-31', codMunicipio: '5300108', optanteSimples: false,
   prestador: { cnpj: '33020459000106', im: '0790506200159' },
-  tomador: { tipo: 'PJ' as const, doc: '13245160000142', nome: 'SPAZIO', cep: null, codMunicipio: '5300108', email: null },
+  tomador: { tipo: 'PJ' as const, doc: '13245160000142', nome: 'SPAZIO',
+    endereco: { cMun: '5300108', cep: '70000000', xLgr: 'Rua Teste', nro: '100', xBairro: 'Centro' }, email: null },
   servico: { codTribNacional: '31.01.02', codTribMunicipal: '1', descricao: 'teste' },
+  obra: null,
   valores: { vServ: 1, issRetido: true },
 };
 

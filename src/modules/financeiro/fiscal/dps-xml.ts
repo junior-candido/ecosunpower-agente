@@ -10,14 +10,31 @@ const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
 const dec2 = (n: number) => n.toFixed(2);
 const soDigitos = (s: string) => s.replace(/\D/g, '');
 
+export interface EnderecoNac { cMun: string; cep: string; xLgr: string; nro: string; xBairro: string }
+
 export interface EntradaDps {
   ambiente: 'homologacao' | 'producao';
   dhEmi: Date; serie: string; nDps: number; competencia: string; codMunicipio: string;
+  /** false na HOMOLOGAÇÃO: o cadastro de teste não conhece a opção pelo Simples
+   *  (E0160 manda usar opSimpNac=1 quando o CNPJ não consta no cadastro). */
+  optanteSimples: boolean;
   prestador: { cnpj: string; im: string };
-  tomador: { tipo: 'PJ' | 'PF'; doc: string; nome: string; cep: string | null; codMunicipio: string; email: string | null };
+  tomador: { tipo: 'PJ' | 'PF'; doc: string; nome: string; endereco: EnderecoNac | null; email: string | null };
   servico: { codTribNacional: string; codTribMunicipal: string; descricao: string };
+  /** Obrigatório quando o cTribNac é de obra (07.02.01, 07.02.02, 07.04.01, 07.05.01,
+   *  07.05.02, 07.06.01, 07.06.02, 07.07.01, 07.08.01, 07.17.01, 07.19.01) — E0370. */
+  obra: EnderecoNac | null;
   valores: { vServ: number; issRetido: boolean };
 }
+
+/** cTribNac (só dígitos) que exigem o grupo de obra na DPS (manual + E0370). */
+export const COD_TRIB_COM_OBRA = new Set([
+  '070201', '070202', '070401', '070501', '070502', '070601', '070602', '070701', '070801', '071701', '071901',
+]);
+
+const endNacXml = (e: EnderecoNac) =>
+  `<end><endNac><cMun>${soDigitos(e.cMun)}</cMun><CEP>${soDigitos(e.cep)}</CEP></endNac>` +
+  `<xLgr>${esc(norm(e.xLgr))}</xLgr><nro>${esc(norm(e.nro))}</nro><xBairro>${esc(norm(e.xBairro))}</xBairro></end>`;
 
 export function montarDpsXml(e: EntradaDps): { xml: string; idDps: string } {
   const tpAmb = e.ambiente === 'producao' ? '1' : '2';
@@ -33,10 +50,13 @@ export function montarDpsXml(e: EntradaDps): { xml: string; idDps: string } {
   const brasilia = new Date(e.dhEmi.getTime() - 3 * 3600 * 1000);
   const dhEmi = brasilia.toISOString().replace(/\.\d{3}Z$/, '') + '-03:00';
   const tpRet = e.valores.issRetido ? '2' : '1';
-  const endTomador = e.tomador.cep
-    ? `<end><endNac><cMun>${e.tomador.codMunicipio}</cMun><CEP>${soDigitos(e.tomador.cep)}</CEP></endNac></end>`
-    : '';
+  const endTomador = e.tomador.endereco ? endNacXml(e.tomador.endereco) : '';
   const email = e.tomador.email ? `<email>${esc(e.tomador.email)}</email>` : '';
+  // opSimpNac=3 exige regApTribSN; opSimpNac=1 PROÍBE (e também proíbe pAliq — E0617).
+  const regTrib = e.optanteSimples
+    ? '<regTrib><opSimpNac>3</opSimpNac><regApTribSN>1</regApTribSN><regEspTrib>0</regEspTrib></regTrib>'
+    : '<regTrib><opSimpNac>1</opSimpNac><regEspTrib>0</regEspTrib></regTrib>';
+  const obra = e.obra ? `<obra>${endNacXml(e.obra)}</obra>` : '';
   const xml =
 `<?xml version="1.0" encoding="UTF-8"?>
 <DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">
@@ -52,11 +72,7 @@ export function montarDpsXml(e: EntradaDps): { xml: string; idDps: string } {
 <prest>
 <CNPJ>${cnpj}</CNPJ>
 <IM>${esc(e.prestador.im)}</IM>
-<regTrib>
-<opSimpNac>3</opSimpNac>
-<regApTribSN>1</regApTribSN>
-<regEspTrib>0</regEspTrib>
-</regTrib>
+${regTrib}
 </prest>
 <toma>
 ${docTomador}
@@ -73,6 +89,7 @@ ${email}
 <cTribMun>${esc(e.servico.codTribMunicipal)}</cTribMun>
 <xDescServ>${esc(norm(e.servico.descricao))}</xDescServ>
 </cServ>
+${obra}
 </serv>
 <valores>
 <vServPrest>
