@@ -41,6 +41,10 @@ export interface EmpresaConfig {
    *  manutenção, financeiro). Lista vazia = fluxo normal (a EcoSun atende tudo
    *  pelo mesmo número). Com canais, ela para de qualificar e encaminha. */
   canaisAtendimento: CanalAtendimento[];
+  /** Texto livre da EMPRESA descrevendo QUEM chega no número dela e como
+   *  reconhecer cada tipo (parceria, produto A, produto B, cliente antigo...).
+   *  Cada empresa tem a sua realidade — modelar isso em código não escala. */
+  politicaTriagem: string | null;
   criterioLeadValor: number; criterioLeadKwh: number;
   marcasPermitidas: string[]; marcasBloqueadas: string[];
   garantiaInstalacaoMeses: number; fatorPerdaPadrao: number; belenusAtivo: boolean;
@@ -78,7 +82,7 @@ export const EMPRESA_DEFAULTS: EmpresaConfig = {
   rtTitulo: 'Responsável Técnico CREA/CFT',
   rtCpf: '989.404.571-53', rtRg: '2.202.520 SSP-DF', rtRegistro: '98940457153',
   pixChave: '33.020.459/0001-06',
-  canaisAtendimento: [],
+  canaisAtendimento: [], politicaTriagem: null,
   criterioLeadValor: 700, criterioLeadKwh: 700,
   marcasPermitidas: ['Trina Solar','JA Solar','Risen','Jinko Solar','LONGi','Honor','SolarEdge','Deye','Sungrow','Huawei','Hoymiles','Enphase','FoxESS','NEP','Solis','SolaX'],
   marcasBloqueadas: ['Growatt'],
@@ -149,6 +153,8 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
     pixChave: sn(row.pix_chave) ?? D.pixChave,
     // Tenant sem canais fica com lista vazia (não herda nada da EcoSun).
     canaisAtendimento: normalizarCanais(row.canais_atendimento),
+    // Texto vai direto pro prompt: cap defensivo pra não estourar o contexto.
+    politicaTriagem: sn(row.politica_triagem)?.slice(0, 3000) ?? null,
     criterioLeadValor: n(row.criterio_lead_valor, D.criterioLeadValor),
     criterioLeadKwh: n(row.criterio_lead_kwh, D.criterioLeadKwh),
     marcasPermitidas: arr(row.marcas_permitidas, D.marcasPermitidas),
