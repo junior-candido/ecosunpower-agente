@@ -8,7 +8,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizarEmpresaRow, interpolarEmpresa, primeiroNome, EMPRESA_DEFAULTS } from '../src/modules/empresa-config.js';
+import { normalizarEmpresaRow, interpolarEmpresa, primeiroNome, normalizarCanais, EMPRESA_DEFAULTS } from '../src/modules/empresa-config.js';
+import { blocoSuportePosVenda } from '../src/modules/brain.js';
 
 const promptsDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'prompts');
 const arquivos = readdirSync(promptsDir).filter((f) => f.endsWith('.md'));
@@ -52,5 +53,68 @@ describe('rt_apelido', () => {
   it('primeiroNome devolve Title Case', () => {
     expect(primeiroNome('MARIA JIMENA SOUZA')).toBe('Maria');
     expect(primeiroNome('  ')).toBe('');
+  });
+});
+
+describe('artigos e contrações por empresa (o/do/pro x a/da/pra)', () => {
+  const masc = { ...EMPRESA_DEFAULTS, rtApelido: 'Junior', rtGenero: 'm' as const, rtTitulo: 'Responsável Técnico' };
+  const fem = { ...EMPRESA_DEFAULTS, rtApelido: 'nossa equipe', rtGenero: 'f' as const, rtTitulo: 'equipe comercial' };
+  const molde = 'Deixa {{rt_o}} te mostrar. {{rt_O}} fecha. Fila {{rt_do}}. Passo {{rt_pro}}. Feito {{rt_pelo}}. É {{rt_nosso_titulo}}.';
+
+  it('masculino continua igual ao de hoje', () => {
+    expect(interpolarEmpresa(molde, masc)).toBe(
+      'Deixa o Junior te mostrar. O Junior fecha. Fila do Junior. Passo pro Junior. Feito pelo Junior. É nosso Responsável Técnico.');
+  });
+  it('feminino/equipe sai com a gramática certa (nunca "o Jimena")', () => {
+    expect(interpolarEmpresa(molde, fem)).toBe(
+      'Deixa a nossa equipe te mostrar. A nossa equipe fecha. Fila da nossa equipe. Passo pra nossa equipe. Feito pela nossa equipe. É nossa equipe comercial.');
+  });
+  it('nenhum prompt deixou artigo colado no apelido (o/do/pro {{rt_apelido}})', () => {
+    for (const arquivo of arquivos) {
+      const texto = readFileSync(join(promptsDir, arquivo), 'utf-8');
+      expect(texto, `${arquivo} tem artigo fixo antes de {{rt_apelido}} — use {{rt_o}}/{{rt_do}}/{{rt_pro}}/{{rt_pelo}}`)
+        .not.toMatch(/\b(o|O|do|pro|pelo)\s+\{\{rt_apelido\}\}/);
+    }
+  });
+});
+
+describe('canais de encaminhamento por empresa', () => {
+  const canais = [
+    { assunto: 'dúvida em sistema que já tem', rotulo: 'Setor de engenharia', telefone: '77988843303' },
+    { assunto: 'manutenção de aquecimento, banheiro ou piscina', rotulo: 'Financeiro/Serviços', telefone: '77999483357' },
+  ];
+  it('empresa SEM canais não ganha bloco (prompt da EcoSun idêntico)', () => {
+    expect(blocoSuportePosVenda(EMPRESA_DEFAULTS)).toBe('');
+  });
+  it('empresa COM canais lista todos, com telefone exato', () => {
+    const bloco = blocoSuportePosVenda({ ...EMPRESA_DEFAULTS, nomeFantasia: 'Conquista Solar', canaisAtendimento: canais });
+    expect(bloco).toContain('77988843303');
+    expect(bloco).toContain('77999483357');
+    expect(bloco).toContain('Setor de engenharia');
+    expect(bloco).toContain('Financeiro/Serviços');
+  });
+  it('manda QUALIFICAR antes de encaminhar, com exceção pra quem exige/urgência', () => {
+    const bloco = blocoSuportePosVenda({ ...EMPRESA_DEFAULTS, canaisAtendimento: canais });
+    expect(bloco).toContain('NÃO passe o número na primeira mensagem');
+    expect(bloco).toContain('entender → qualificar → só então encaminhar');
+    expect(bloco).toMatch(/pedir o número\s*\n?direto|insistir/);
+  });
+  it('canal sem telefone ou sem assunto é descartado (não vira prompt quebrado)', () => {
+    const lista = normalizarCanais([
+      { assunto: 'ok', rotulo: 'Setor', telefone: '77988843303' },
+      { assunto: 'sem telefone', rotulo: 'X', telefone: '' },
+      { assunto: '', rotulo: 'Y', telefone: '77999483357' },
+      'lixo', null, 42,
+    ]);
+    expect(lista).toHaveLength(1);
+    expect(lista[0].telefone).toBe('77988843303');
+  });
+  it('valor que não é lista vira lista vazia', () => {
+    expect(normalizarCanais(null)).toEqual([]);
+    expect(normalizarCanais('texto')).toEqual([]);
+  });
+  it('teto de 6 canais (prompt não vira lista telefônica)', () => {
+    const muitos = Array.from({ length: 12 }, (_, i) => ({ assunto: `a${i}`, rotulo: 'R', telefone: `7799000000${i}` }));
+    expect(normalizarCanais(muitos)).toHaveLength(6);
   });
 });
