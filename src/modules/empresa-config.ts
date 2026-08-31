@@ -14,6 +14,11 @@ export interface EmpresaConfig {
   descricaoCurta: string; regiaoAtuacao: string;
   nomeAtendente: string; telefoneAtendente: string | null;
   rtNome: string; rtTitulo: string; rtCpf: string | null; rtRg: string | null; rtRegistro: string | null;
+  /** Como a assistente CHAMA o dono na conversa ("Junior", "Dr. Paulo", "Jimena").
+   *  rtNome é o nome jurídico em caixa alta — ficaria formal demais no zap.
+   *  Sem valor no banco, cai no PRIMEIRO NOME do rtNome DO PRÓPRIO tenant
+   *  (nunca no apelido de outra empresa — era o vazamento do prompt). */
+  rtApelido: string;
   pixChave: string | null;
   criterioLeadValor: number; criterioLeadKwh: number;
   marcasPermitidas: string[]; marcasBloqueadas: string[];
@@ -46,6 +51,7 @@ export const EMPRESA_DEFAULTS: EmpresaConfig = {
   nomeAtendente: 'Eva',
   telefoneAtendente: '5561996978781',
   rtNome: 'ANTONIO CANDIDO RODRIGUES JUNIOR',
+  rtApelido: 'Junior',
   rtTitulo: 'Responsável Técnico CREA/CFT',
   rtCpf: '989.404.571-53', rtRg: '2.202.520 SSP-DF', rtRegistro: '98940457153',
   pixChave: '33.020.459/0001-06',
@@ -96,6 +102,9 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
     nomeAtendente: s(row.nome_atendente, D.nomeAtendente).slice(0, 40),
     telefoneAtendente: sn(row.telefone_atendente) ?? D.telefoneAtendente,
     rtNome: s(row.rt_nome, D.rtNome), rtTitulo: s(row.rt_titulo, D.rtTitulo).slice(0, 80),
+    // ⚠️ fallback é o PRIMEIRO NOME do rtNome DESTA linha — nunca D.rtApelido,
+    // senão a assistente de um tenant chamaria o dono de outro ("Junior").
+    rtApelido: s(row.rt_apelido, primeiroNome(s(row.rt_nome, D.rtNome))).slice(0, 40),
     rtCpf: sn(row.rt_cpf) ?? D.rtCpf, rtRg: sn(row.rt_rg) ?? D.rtRg,
     rtRegistro: sn(row.rt_registro) ?? D.rtRegistro,
     pixChave: sn(row.pix_chave) ?? D.pixChave,
@@ -135,6 +144,7 @@ export function interpolarEmpresa(texto: string, e: EmpresaConfig): string {
     empresa_desde: String(e.atuacaoDesde),
     link_pagamento: e.linkPagamento ?? '',
     rt_nome: nomeTituloCase(e.rtNome),
+    rt_apelido: e.rtApelido,
     rt_titulo: e.rtTitulo,
     criterio_lead_valor: String(e.criterioLeadValor),
     criterio_lead_kwh: String(e.criterioLeadKwh),
@@ -156,6 +166,13 @@ export function interpolarEmpresa(texto: string, e: EmpresaConfig): string {
 // Ex.: "ANTONIO CANDIDO RODRIGUES JUNIOR" -> "Antonio Candido Rodrigues Junior".
 export function nomeTituloCase(nome: string): string {
   return nome.toLowerCase().replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1));
+}
+
+/** Primeiro nome em Title Case — fallback do apelido do dono quando o tenant
+ *  não preencheu rt_apelido. "MARIA SILVA SANTOS" -> "Maria". */
+export function primeiroNome(nomeCompleto: string): string {
+  const primeiro = nomeCompleto.trim().split(/\s+/)[0] ?? '';
+  return primeiro ? nomeTituloCase(primeiro) : '';
 }
 
 export function listaMarcasTexto(e: EmpresaConfig): string {

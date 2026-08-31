@@ -96,14 +96,17 @@ export class Brain {
     // /recarregar-config surte efeito sem restart. Enquanto a config nao muda,
     // a string resultante e byte-identica entre chamadas, entao o prompt
     // caching da Anthropic continua valendo.
+    const emp = empresa();
     const stableSystem = interpolarEmpresa(
       this.systemPrompt.replaceAll('{{review_link}}', this.reviewLink),
-      empresa(),
+      emp,
     );
     const system = buildSystemBlocks({
       systemPrompt: stableSystem,
       knowledgeBase,
-      residencialPrompt: this.residencialPrompt,
+      // residencial.md também tem placeholders de empresa ({{rt_apelido}}): sem
+      // interpolar, o cliente veria "{{rt_apelido}}" cru na resposta.
+      residencialPrompt: interpolarEmpresa(this.residencialPrompt, emp),
       qualificationStep,
       summary,
       now: new Date(),
