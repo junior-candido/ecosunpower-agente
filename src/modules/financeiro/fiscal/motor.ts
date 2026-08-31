@@ -14,7 +14,7 @@ export interface DepsEmissao {
     ambiente: 'homologacao' | 'producao'; serie: string; codMunicipio: string;
     cnpj: string; im: string; certOk: boolean; certValidade: string | null;
   }>;
-  carregarServico: (companyId: string, servicoId: string) => Promise<{ codTribNacional: string }>;
+  carregarServico: (companyId: string, servicoId: string) => Promise<{ codTribNacional: string; codTribMunicipal: string | null }>;
   /** CAS preparada→enviada. false = outra emissão já travou (clique duplo). */
   travarParaEnvio: (companyId: string, notaId: string) => Promise<boolean>;
   proximoNdps: (companyId: string) => Promise<number>;
@@ -45,6 +45,9 @@ export async function emitirNota(deps: DepsEmissao, companyId: string, notaId: s
   }
   if (!nota.servicoId) throw new Error('A nota está sem serviço do catálogo.');
   const servico = await deps.carregarServico(companyId, nota.servicoId);
+  if (!servico.codTribMunicipal) {
+    throw new Error('O serviço do catálogo está sem o código de tributação municipal (cTribMun) — preencha na configuração fiscal. Esse código vem da tabela de correlação do ISS do seu município.');
+  }
   const travou = await deps.travarParaEnvio(companyId, notaId);
   if (!travou) throw new Error('Essa nota já está sendo emitida (ou já foi emitida) — recarregue a página antes de tentar de novo.');
   const nDps = await deps.proximoNdps(companyId);
@@ -54,7 +57,7 @@ export async function emitirNota(deps: DepsEmissao, companyId: string, notaId: s
     prestador: { cnpj: cfg.cnpj, im: cfg.im },
     tomador: { tipo: nota.tomador.tipo, doc: nota.tomador.doc, nome: nota.tomador.nome,
       cep: null, codMunicipio: cfg.codMunicipio, email: nota.tomador.email },
-    servico: { codTribNacional: servico.codTribNacional, descricao: nota.descricao },
+    servico: { codTribNacional: servico.codTribNacional, codTribMunicipal: servico.codTribMunicipal, descricao: nota.descricao },
     valores: { vServ: nota.valorBruto, issRetido: nota.issRetido },
   });
   const cert = await deps.carregarCert(companyId);
@@ -115,7 +118,7 @@ export function depsProducao(client: SupabaseClient, keyHex: string): DepsEmissa
       const servicos = await listarServicos(client, companyId);
       const s = servicos.find((x) => x.id === servicoId);
       if (!s) throw new Error('Serviço do catálogo não encontrado.');
-      return { codTribNacional: s.cod_trib_nacional };
+      return { codTribNacional: s.cod_trib_nacional, codTribMunicipal: s.cod_trib_municipal };
     },
     travarParaEnvio: async (companyId, notaId) => {
       const { data, error } = await client.from('fiscal_notas')

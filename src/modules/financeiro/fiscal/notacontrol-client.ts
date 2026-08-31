@@ -16,25 +16,24 @@ const NS_DSIG = 'http://www.w3.org/2000/09/xmldsig#';   // assinatura (mesmo pre
 const VERSAO = '1.00';                                  // 1.00 = SEM grupo IBS/CBS (fisco rejeita 1.01 sem ele: E183/E160).
 // ⚠️ A PARTIR DE 01/10/2026 o grupo IBS/CBS é OBRIGATÓRIO -> migrar p/ 1.01 + gerar o grupo (F3).
 
-const escXml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
 export function montarEnvelope(metodo: string, xmlAssinado: string): string {
   // A DPS assinada vem com a própria declaração <?xml ...?> (xml-crypto preserva) — tira.
   const semDeclaracao = xmlAssinado.replace(/^<\?xml[^?]*\?>\s*/, '');
-  // Estrutura CONFIRMADA pela imagem do manual v1.01 (pág. 107, print SoapUI do webservice):
+  // Estrutura CONFIRMADA contra o ValidarXml da homologação em 31/08 (S000):
   //   <soapenv:Envelope xmlns:nfse="http://www.sped.fazenda.gov.br/nfse">
-  //     <soapenv:Body>
-  //       <nfse:GerarNfse>
-  //         <nfseCabecMsg>…XML do cabecalho (escapado, parâmetro string)…</nfseCabecMsg>
-  //         <nfseDadosMsg>…XML do GerarNfseEnvio (escapado)…</nfseDadosMsg>
-  //       </nfse:GerarNfse>
+  //     <soapenv:Body><nfse:GerarNfse>
+  //       <nfseCabecMsg>…XML do cabecalho…</nfseCabecMsg>
+  //       <nfseDadosMsg>…XML do GerarNfseEnvio…</nfseDadosMsg>
+  // ⚠️ O XML vai INLINE, SEM escapar: o WSDL declara os parâmetros como xsd:string,
+  //    mas o serviço lê o innerXML cru — escapado, os dois campos chegam "vazios"
+  //    (E160 "Cabeçalho deve obedecer a um schema válido" + E232 "Operação não identificada").
   // O cabecalho vai em TODOS os métodos (manual, cap. 14).
   const cabecalho = `<cabecalho versao="${VERSAO}" xmlns="${NS}"><versaoDados>${VERSAO}</versaoDados></cabecalho>`;
   const dados = `<${metodo}Envio xmlns="${NS}" xmlns:ns2="${NS_DSIG}">${semDeclaracao}</${metodo}Envio>`;
   return `<?xml version="1.0" encoding="utf-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:nfse="${NS}">
 <soapenv:Header/>
-<soapenv:Body><nfse:${metodo}><nfseCabecMsg>${escXml(cabecalho)}</nfseCabecMsg><nfseDadosMsg>${escXml(dados)}</nfseDadosMsg></nfse:${metodo}></soapenv:Body>
+<soapenv:Body><nfse:${metodo}><nfseCabecMsg>${cabecalho}</nfseCabecMsg><nfseDadosMsg>${dados}</nfseDadosMsg></nfse:${metodo}></soapenv:Body>
 </soapenv:Envelope>`;
 }
 
