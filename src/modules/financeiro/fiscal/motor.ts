@@ -2,12 +2,13 @@
 // Orquestra a emissão: nota preparada → DPS assinada → GerarNfse → autorizada + ponte-caixa.
 // Deps injetadas (banco/rede/cert) pra testar sem tocar nada de verdade; a fábrica
 // `depsProducao` liga as deps reais (repo, certificado, client, ponte).
-import { montarDpsXml } from './dps-xml.js';
+import { montarDpsXml, COD_TRIB_COM_OBRA, type EnderecoNac } from './dps-xml.js';
 
 export interface DepsEmissao {
   carregarNota: (companyId: string, notaId: string) => Promise<{
     id: string; status: string; competencia: string; descricao: string;
-    tomador: { tipo: 'PJ' | 'PF'; doc: string; nome: string; email: string | null; municipio: string; uf: string };
+    tomador: { tipo: 'PJ' | 'PF'; doc: string; nome: string; email: string | null; municipio: string; uf: string;
+      cep?: string | null; logradouro?: string | null; numero?: string | null; bairro?: string | null; codMunIbge?: string | null };
     servicoId: string | null; valorBruto: number; valorIss: number; issRetido: boolean; valorLiquido: number;
   }>;
   carregarConfig: (companyId: string) => Promise<{
@@ -50,14 +51,34 @@ export async function emitirNota(deps: DepsEmissao, companyId: string, notaId: s
   }
   const travou = await deps.travarParaEnvio(companyId, notaId);
   if (!travou) throw new Error('Essa nota já está sendo emitida (ou já foi emitida) — recarregue a página antes de tentar de novo.');
+  // Endereço nacional do tomador: OBRIGATÓRIO quando o tomador é PJ (E0235) ou
+  // quando o ISS é retido (E0237). Sem os 4 campos, melhor travar aqui com
+  // mensagem clara do que levar rejeição do fisco.
+  const t = nota.tomador;
+  const temEndereco = Boolean(t.cep && t.logradouro && t.numero && t.bairro);
+  const enderecoTomador: EnderecoNac | null = temEndereco
+    ? { cMun: t.codMunIbge || cfg.codMunicipio, cep: t.cep!, xLgr: t.logradouro!, nro: t.numero!, xBairro: t.bairro! }
+    : null;
+  if ((t.tipo === 'PJ' || nota.issRetido) && !enderecoTomador) {
+    throw new Error('O fisco exige o endereço completo do tomador (CEP, logradouro, número e bairro) quando ele é PJ ou quando o ISS é retido. Edite a nota, use o "Buscar dados" ou preencha à mão.');
+  }
+  // Serviço de obra (07.02.xx etc.): o fisco exige o grupo de obra (E0370).
+  // Usamos o endereço do tomador como endereço da obra — na prática a instalação
+  // é no imóvel do cliente; quando não for, edite o endereço da nota.
+  const precisaObra = COD_TRIB_COM_OBRA.has(servico.codTribNacional.replace(/\D/g, ''));
+  if (precisaObra && !enderecoTomador) {
+    throw new Error('Esse serviço é de obra (item 07 da lista) e o fisco exige o endereço da obra. Preencha o endereço completo do tomador na nota.');
+  }
   const nDps = await deps.proximoNdps(companyId);
   const { xml, idDps } = montarDpsXml({
     ambiente: cfg.ambiente, dhEmi: new Date(), serie: cfg.serie, nDps,
     competencia: nota.competencia, codMunicipio: cfg.codMunicipio,
+    // Homologação: o cadastro de teste NÃO é optante do Simples (E0160) → opSimpNac=1.
+    optanteSimples: cfg.ambiente === 'producao',
     prestador: { cnpj: cfg.cnpj, im: cfg.im },
-    tomador: { tipo: nota.tomador.tipo, doc: nota.tomador.doc, nome: nota.tomador.nome,
-      cep: null, codMunicipio: cfg.codMunicipio, email: nota.tomador.email },
+    tomador: { tipo: t.tipo, doc: t.doc, nome: t.nome, endereco: enderecoTomador, email: t.email },
     servico: { codTribNacional: servico.codTribNacional, codTribMunicipal: servico.codTribMunicipal, descricao: nota.descricao },
+    obra: precisaObra ? enderecoTomador : null,
     valores: { vServ: nota.valorBruto, issRetido: nota.issRetido },
   });
   const cert = await deps.carregarCert(companyId);

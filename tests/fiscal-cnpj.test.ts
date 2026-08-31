@@ -8,12 +8,14 @@ describe('fiscal consultarCnpj', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ razao_social: 'COMERCIAL DE ALIMENTOS SUPERBOM LTDA', nome_fantasia: 'SUPERBOM',
-        logradouro: 'QS 314 CONJUNTO 7', numero: 'S/N', municipio: 'BRASILIA', uf: 'DF', cep: '71805511', email: null }),
+        logradouro: 'QS 314 CONJUNTO 7', numero: 'S/N', bairro: 'AREAL', municipio: 'BRASILIA', uf: 'DF',
+        cep: '71805511', email: null, codigo_municipio_ibge: 5300108 }),
     }));
     const r = await consultarCnpj('08.616.988/0001-20');
     expect(fetch).toHaveBeenCalledWith('https://brasilapi.com.br/api/cnpj/v1/08616988000120', expect.objectContaining({ signal: expect.anything() }));
     expect(r).toEqual({ razaoSocial: 'COMERCIAL DE ALIMENTOS SUPERBOM LTDA', fantasia: 'SUPERBOM',
-      endereco: 'QS 314 CONJUNTO 7, S/N', municipio: 'BRASILIA', uf: 'DF', cep: '71805511', email: null });
+      endereco: 'QS 314 CONJUNTO 7, S/N', municipio: 'BRASILIA', uf: 'DF', cep: '71805511', email: null,
+      logradouro: 'QS 314 CONJUNTO 7', numero: 'S/N', bairro: 'AREAL', codMunIbge: '5300108' });
   });
   it('CNPJ inválido (menos de 14 dígitos) → erro claro antes de chamar a rede', async () => {
     const f = vi.fn(); vi.stubGlobal('fetch', f);

@@ -2,16 +2,19 @@
 import { describe, it, expect } from 'vitest';
 import { montarDpsXml } from '../src/modules/financeiro/fiscal/dps-xml.js';
 
+const endereco = { cMun: '5300108', cep: '70000000', xLgr: 'Rua Teste', nro: '100', xBairro: 'Centro' };
 const entrada = {
   ambiente: 'homologacao' as const,
   dhEmi: new Date('2026-08-31T12:00:00-03:00'),
   serie: '1', nDps: 42,
   competencia: '2026-08-31',
   codMunicipio: '5300108',
+  optanteSimples: false,
   prestador: { cnpj: '33020459000106', im: '0790506200159' },
   tomador: { tipo: 'PJ' as const, doc: '13245160000142', nome: 'CONDOMINIO DO EDIFICIO SPAZIO VERDE',
-    cep: '70000000', codMunicipio: '5300108', email: null },
+    endereco, email: null },
   servico: { codTribNacional: '31.01.02', codTribMunicipal: '1', descricao: 'adequação do sistema de aterramento elétrico' },
+  obra: null,
   valores: { vServ: 1250.00, issRetido: true },
 };
 
@@ -33,13 +36,35 @@ describe('dps-xml', () => {
     expect(xml).toContain(`Id="${idDps}"`);
     expect(idDps.startsWith('DPS')).toBe(true);
   });
-  it('regTrib traz opSimpNac=3, regApTribSN=1 e regEspTrib=0 nessa ordem (exigência do manual v1.01)', () => {
-    const { xml } = montarDpsXml(entrada);
+  it('optante do Simples: regTrib traz opSimpNac=3 + regApTribSN=1 + regEspTrib=0 nessa ordem', () => {
+    const { xml } = montarDpsXml({ ...entrada, optanteSimples: true });
     expect(xml).toContain('<opSimpNac>3</opSimpNac>');
     expect(xml).toContain('<regApTribSN>1</regApTribSN>');         // obrigatório quando opSimpNac=3
     expect(xml).toContain('<regEspTrib>0</regEspTrib>');
     expect(xml.indexOf('<opSimpNac>')).toBeLessThan(xml.indexOf('<regApTribSN>'));
     expect(xml.indexOf('<regApTribSN>')).toBeLessThan(xml.indexOf('<regEspTrib>'));
+  });
+  it('NÃO optante (homologação): opSimpNac=1 e SEM regApTribSN (fisco proíbe — E0160)', () => {
+    const { xml } = montarDpsXml(entrada);
+    expect(xml).toContain('<opSimpNac>1</opSimpNac>');
+    expect(xml).not.toContain('<regApTribSN>');
+    expect(xml).toContain('<regEspTrib>0</regEspTrib>');
+  });
+  it('tomador PJ leva endereço nacional completo (E0235): endNac + xLgr + nro + xBairro', () => {
+    const { xml } = montarDpsXml(entrada);
+    const toma = xml.slice(xml.indexOf('<toma>'), xml.indexOf('</toma>'));
+    expect(toma).toContain('<endNac><cMun>5300108</cMun><CEP>70000000</CEP></endNac>');
+    expect(toma).toContain('<xLgr>Rua Teste</xLgr><nro>100</nro><xBairro>Centro</xBairro>');
+  });
+  it('serviço de obra: grupo <obra> com endereço entra depois do cServ (E0370)', () => {
+    const { xml } = montarDpsXml({ ...entrada, servico: { ...entrada.servico, codTribNacional: '07.02.02' }, obra: endereco });
+    expect(xml).toContain('<obra><end><endNac>');
+    expect(xml.indexOf('</cServ>')).toBeLessThan(xml.indexOf('<obra>'));
+    expect(xml.indexOf('<obra>')).toBeLessThan(xml.indexOf('</serv>'));
+  });
+  it('sem obra informada, não gera o grupo <obra> (proibido fora dos itens 07.x)', () => {
+    const { xml } = montarDpsXml(entrada);
+    expect(xml).not.toContain('<obra>');
   });
   it('prest é o emitente: sem xNome nem endereço no bloco do prestador', () => {
     const { xml } = montarDpsXml(entrada);

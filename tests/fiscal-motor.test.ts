@@ -7,7 +7,8 @@ function depsFake(overrides: Partial<Parameters<typeof emitirNota>[0]> = {}) {
   return {
     carregarNota: vi.fn(async () => ({
       id: 'n1', status: 'preparada', competencia: '2026-08-31',
-      tomador: { tipo: 'PJ' as const, doc: '13245160000142', nome: 'SPAZIO', email: null, municipio: 'Brasília', uf: 'DF' },
+      tomador: { tipo: 'PJ' as const, doc: '13245160000142', nome: 'SPAZIO', email: null, municipio: 'Brasília', uf: 'DF',
+        cep: '70000000', logradouro: 'Rua Teste', numero: '100', bairro: 'Centro', codMunIbge: '5300108' },
       servicoId: 's1', valorBruto: 1250, valorIss: 62.5, issRetido: true, valorLiquido: 1187.5, descricao: 'aterramento',
     })),
     carregarConfig: vi.fn(async () => ({

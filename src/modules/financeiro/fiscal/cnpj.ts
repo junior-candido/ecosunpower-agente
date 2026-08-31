@@ -6,6 +6,7 @@
 export interface DadosCnpj {
   razaoSocial: string; fantasia: string | null; endereco: string;
   municipio: string; uf: string; cep: string; email: string | null;
+  logradouro: string; numero: string; bairro: string; codMunIbge: string | null;
 }
 
 const FONTES = [
@@ -31,6 +32,9 @@ export async function consultarCnpj(cnpj: string): Promise<DadosCnpj | null> {
       endereco: [j.logradouro, j.numero].filter(Boolean).join(', '),
       municipio: String(j.municipio ?? ''), uf: String(j.uf ?? ''),
       cep: String(j.cep ?? '').replace(/\D/g, ''), email: j.email ? String(j.email) : null,
+      logradouro: String(j.logradouro ?? ''), numero: String(j.numero ?? ''),
+      bairro: String(j.bairro ?? ''),
+      codMunIbge: j.codigo_municipio_ibge ? String(j.codigo_municipio_ibge) : null,
     };
   }
   return null;
