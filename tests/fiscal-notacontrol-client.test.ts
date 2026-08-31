@@ -29,7 +29,9 @@ describe('notacontrol-client', () => {
     expect(env).toContain('<cabecalho versao="1.00"');
     expect(env).toContain('<versaoDados>1.00</versaoDados>');
     expect(env).toContain('<GerarNfseEnvio');
-    expect(env).toContain('xmlns:ns2="http://www.w3.org/2000/09/xmldsig#"');
+    // SEM xmlns:ns2 no wrapper: declaração no ancestral entra na c14n inclusiva
+    // do infDPS e invalida o digest da assinatura (E0714) — provado no .NET 31/08.
+    expect(env).not.toContain('xmlns:ns2');
     // cabecalho dentro do nfseCabecMsg; Envio+DPS dentro do nfseDadosMsg
     expect(env.indexOf('<cabecalho')).toBeGreaterThan(env.indexOf('<nfseCabecMsg>'));
     expect(env.indexOf('<cabecalho')).toBeLessThan(env.indexOf('</nfseCabecMsg>'));

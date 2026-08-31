@@ -12,7 +12,6 @@ export const ENDPOINTS = {
   producao: 'https://nfse.fazenda.df.gov.br/wsnfsenacional/nfse.asmx',
 } as const;
 const NS = 'http://www.sped.fazenda.gov.br/nfse';       // padrão nacional (manual v1.01)
-const NS_DSIG = 'http://www.w3.org/2000/09/xmldsig#';   // assinatura (mesmo prefixo ns2 do exemplo oficial)
 const VERSAO = '1.00';                                  // 1.00 = SEM grupo IBS/CBS (fisco rejeita 1.01 sem ele: E183/E160).
 // ⚠️ A PARTIR DE 01/10/2026 o grupo IBS/CBS é OBRIGATÓRIO -> migrar p/ 1.01 + gerar o grupo (F3).
 
@@ -29,7 +28,11 @@ export function montarEnvelope(metodo: string, xmlAssinado: string): string {
   //    (E160 "Cabeçalho deve obedecer a um schema válido" + E232 "Operação não identificada").
   // O cabecalho vai em TODOS os métodos (manual, cap. 14).
   const cabecalho = `<cabecalho versao="${VERSAO}" xmlns="${NS}"><versaoDados>${VERSAO}</versaoDados></cabecalho>`;
-  const dados = `<${metodo}Envio xmlns="${NS}" xmlns:ns2="${NS_DSIG}">${semDeclaracao}</${metodo}Envio>`;
+  // ⚠️ SEM xmlns:ns2 no wrapper (apesar de o exemplo oficial ter): declaração de
+  //    namespace no ANCESTRAL entra na canonicalização INCLUSIVA do infDPS e muda o
+  //    digest — assinatura vira E0714. Provado com SignedXml do .NET em 31/08:
+  //    com ns2 => False, sem ns2 => True. A Signature declara o próprio namespace.
+  const dados = `<${metodo}Envio xmlns="${NS}">${semDeclaracao}</${metodo}Envio>`;
   return `<?xml version="1.0" encoding="utf-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:nfse="${NS}">
 <soapenv:Header/>
