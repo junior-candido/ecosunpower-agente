@@ -36,6 +36,7 @@ export const COMUM_ESPECIALIZADO: ReadonlySet<string> = new Set([
   'solucoes-grupo-a-demanda-bess.md',
   'limpeza-manutencao-om.md',
   'armazenamento.md',
+  'aquecimento-solar-agua.md',   // térmico (banho/piscina) — produto da Conquista Solar
   'carros-eletricos.md',
   'canal-solar.md',
   'argumentos-equipamentos.md',

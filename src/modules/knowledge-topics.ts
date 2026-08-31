@@ -118,6 +118,18 @@ const SPECIALIZED_TOPICS: SpecializedTopic[] = [
     ],
   },
   {
+    // Aquecimento solar TÉRMICO (banho/piscina) — produto de tenants que vendem
+    // aquecimento além de fotovoltaico. Assunto e qualificação são outros.
+    file: 'aquecimento-solar-agua.md',
+    keywords: [
+      'aquecimento solar', 'aquecedor solar', 'aquecedor', 'agua quente', 'água quente',
+      'boiler', 'reservatorio termico', 'reservatório térmico', 'coletor solar',
+      'chuveiro', 'ducha', 'banho frio', 'banho quente', 'termossifao', 'termossifão',
+      'aquecer piscina', 'piscina aquecida', 'aquecimento de piscina', 'banheira',
+      'hidromassagem', 'placa de aquecimento', 'aquecimento a gas', 'aquecimento a gás',
+    ],
+  },
+  {
     file: 'carros-eletricos.md',
     keywords: [
       'carro eletrico', 'carro elétrico', ' ev ', 'veiculo eletrico', 'veículo elétrico',
