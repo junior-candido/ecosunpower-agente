@@ -1,6 +1,6 @@
 // src/modules/financeiro/fiscal/notacontrol-client.ts
 // Cliente SOAP do webservice NFS-e padrão nacional (NotaControl/ISSNet DF).
-// mTLS: o próprio A1 autentica o túnel (https.Agent com pfx).
+// mTLS: o próprio A1 autentica o túnel (https.Agent com key/cert PEM extraídos do A1).
 // Namespace/estrutura confirmados pelo Manual de Integração v1.01 e pelos
 // exemplos oficiais GerarNfseEnvio-exemplo.xml / GerarNfseResposta-exemplo.xml
 // (docs/fiscal). O namespace do padrão nacional é o SPED/Fazenda — NÃO o ABRASF.
@@ -73,11 +73,13 @@ export function interpretarResposta(soapXml: string): RespostaGerar {
 }
 
 export async function chamarGerarNfse(
-  ambiente: keyof typeof ENDPOINTS, dpsAssinada: string, pfx: Buffer, senhaPfx: string,
+  ambiente: keyof typeof ENDPOINTS, dpsAssinada: string, keyPem: string, certPem: string,
 ): Promise<RespostaGerar> {
   const corpo = montarEnvelope('GerarNfse', dpsAssinada);
   const url = new URL(ENDPOINTS[ambiente]);
-  const agent = new Agent({ pfx, passphrase: senhaPfx });
+  // key/cert em PEM (extraídos do .pfx pelo node-forge no carregarCertificado): o OpenSSL 3
+  // do Node recusa PFX RC2/3DES da Safeweb ("Unsupported PKCS12 PFX data") — PEM não tem esse limite.
+  const agent = new Agent({ key: keyPem, cert: certPem });
   const soapXml = await new Promise<string>((resolve, reject) => {
     const req = request({
       hostname: url.hostname, path: url.pathname, method: 'POST', agent, timeout: 60000,
