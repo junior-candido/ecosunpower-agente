@@ -116,6 +116,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { medirIa } from '../custos/ia-metering.js';
+import { empresa, interpolarEmpresa } from '../empresa-config.js';
 
 const __dirname_closing = dirname(fileURLToPath(import.meta.url));
 const SYSTEM_PROMPT_PATH = join(__dirname_closing, '..', '..', 'prompts', 'closing-system.md');
@@ -171,7 +172,10 @@ export function createAnthropicLlmCaller(apiKey: string): LlmCaller {
   const client = new Anthropic({ apiKey });
 
   return async (userMessage, currentData) => {
-    const systemPrompt = getSystemPrompt();
+    // Placeholders de empresa ({{rt_apelido}} etc.) interpolados por chamada: o
+    // ARQUIVO fica cacheado, mas quem é o dono depende do tenant.
+    const emp = empresa();
+    const systemPrompt = interpolarEmpresa(getSystemPrompt(), emp);
     const stateBlock = `Estado atual coletado (Partial<DadosFechamento>):\n${JSON.stringify(currentData, null, 2)}`;
 
     const res = await client.messages.create({
@@ -181,7 +185,7 @@ export function createAnthropicLlmCaller(apiKey: string): LlmCaller {
         { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
       ],
       messages: [
-        { role: 'user', content: `${stateBlock}\n\n---\nMensagem do Junior:\n${userMessage}` },
+        { role: 'user', content: `${stateBlock}\n\n---\nMensagem do ${emp.rtApelido}:\n${userMessage}` },
       ],
     });
     medirIa({ modelo: 'claude-sonnet-4-6', origem: 'closing', usage: res.usage });
