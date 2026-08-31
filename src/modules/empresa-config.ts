@@ -7,6 +7,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 export interface EmpresaConfig {
+  /** Dono desta config. Deixa o resto do app perguntar "sou a EcoSun?" sem
+   *  carregar o companyId à parte — usado pelo escopo da base de conhecimento. */
+  companyId: string;
   razaoSocial: string; nomeFantasia: string; cnpj: string;
   endereco: string; cidade: string; uf: string; cep: string | null;
   email: string; siteUrl: string; atuacaoDesde: number;
@@ -37,6 +40,7 @@ export interface EmpresaConfig {
 }
 
 export const EMPRESA_DEFAULTS: EmpresaConfig = {
+  companyId: '00000000-0000-0000-0000-000000000001',
   razaoSocial: 'ECOSUNPOWER ENERGIA SOLAR LTDA',
   nomeFantasia: 'EcoSunPower',
   cnpj: '33.020.459/0001-06',
@@ -87,6 +91,8 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
   const b = (v: unknown, d: boolean): boolean => (typeof v === 'boolean' ? v : d);
   const D = EMPRESA_DEFAULTS;
   const result: EmpresaConfig = {
+    // Linha histórica id=1 (pré-082) não tem company_id → é a EcoSun.
+    companyId: s(row.company_id, D.companyId),
     razaoSocial: s(row.razao_social, D.razaoSocial),
     nomeFantasia: s(row.nome_fantasia, D.nomeFantasia),
     cnpj: s(row.cnpj, D.cnpj),
@@ -203,6 +209,15 @@ const alsEmpresa = new AsyncLocalStorage<Readonly<EmpresaConfig>>();
 
 export function empresa(): Readonly<EmpresaConfig> {
   return alsEmpresa.getStore() ?? cache;
+}
+
+/**
+ * A empresa da vez é a EcoSunPower (dona da instalação)? Fora de contexto de
+ * tenant também é true — o comportamento histórico. Usado pelo escopo da base
+ * de conhecimento: tenant só enxerga o material técnico comum.
+ */
+export function ehEcosun(e: Readonly<EmpresaConfig> = empresa()): boolean {
+  return e.companyId === ECOSUN_COMPANY;
 }
 
 /**
