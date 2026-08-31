@@ -4,6 +4,9 @@
 // final é do validador oficial (homologação) na Task 11.
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+// Textos livres viram linha única: quebra de linha DENTRO de texto também sofre com o
+// tratamento de whitespace do parser do fisco (ver nota sobre XML compacto abaixo).
+const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
 const dec2 = (n: number) => n.toFixed(2);
 const soDigitos = (s: string) => s.replace(/\D/g, '');
 
@@ -57,7 +60,7 @@ export function montarDpsXml(e: EntradaDps): { xml: string; idDps: string } {
 </prest>
 <toma>
 ${docTomador}
-<xNome>${esc(e.tomador.nome)}</xNome>
+<xNome>${esc(norm(e.tomador.nome))}</xNome>
 ${endTomador}
 ${email}
 </toma>
@@ -68,7 +71,7 @@ ${email}
 <cServ>
 <cTribNac>${soDigitos(e.servico.codTribNacional)}</cTribNac>
 <cTribMun>${esc(e.servico.codTribMunicipal)}</cTribMun>
-<xDescServ>${esc(e.servico.descricao)}</xDescServ>
+<xDescServ>${esc(norm(e.servico.descricao))}</xDescServ>
 </cServ>
 </serv>
 <valores>
@@ -87,5 +90,9 @@ ${email}
 </valores>
 </infDPS>
 </DPS>`;
-  return { xml, idDps };
+  // COMPACTO, SEM quebra de linha entre tags: o parser do fisco (.NET) descarta
+  // whitespace "insignificante" ao extrair o XML do envelope — se assinarmos um XML
+  // com quebras, o digest não bate mais depois desse descarte (E0714 assinatura
+  // inválida, visto na homologação 31/08). Sem whitespace, nada se perde.
+  return { xml: xml.replace(/\n\s*/g, ''), idDps };
 }
