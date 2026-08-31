@@ -1,8 +1,9 @@
 // src/modules/financeiro/fiscal/notacontrol-client.ts
 // Cliente SOAP do webservice NFS-e padrão nacional (NotaControl/ISSNet DF).
 // mTLS: o próprio A1 autentica o túnel (https.Agent com pfx).
-// SOAPAction/namespace: WSDL devolve 403 sem mTLS (tentado 31/08) — usando o
-// padrão ABRASF como default; ⚠️ CONFERIR no 1º teste de homologação e ajustar NS se divergir.
+// Namespace/estrutura confirmados pelo Manual de Integração v1.01 e pelos
+// exemplos oficiais GerarNfseEnvio-exemplo.xml / GerarNfseResposta-exemplo.xml
+// (docs/fiscal). O namespace do padrão nacional é o SPED/Fazenda — NÃO o ABRASF.
 import { Agent, request } from 'node:https';
 import * as cheerio from 'cheerio';
 
@@ -10,15 +11,30 @@ export const ENDPOINTS = {
   homologacao: 'https://nfse.issnetonline.com.br/wsnfsenacional/homologacao/nfse.asmx',
   producao: 'https://nfse.fazenda.df.gov.br/wsnfsenacional/nfse.asmx',
 } as const;
-const NS = 'http://nfse.abrasf.org.br'; // ⚠️ conferir no WSDL quando o mTLS abrir o acesso
+const NS = 'http://www.sped.fazenda.gov.br/nfse';       // padrão nacional (manual v1.01)
+const NS_DSIG = 'http://www.w3.org/2000/09/xmldsig#';   // assinatura (mesmo prefixo ns2 do exemplo oficial)
+const VERSAO = '1.01';                                  // versão do leiaute (grupo IBS/CBS obrigatório na 1.01)
 
 export function montarEnvelope(metodo: string, xmlAssinado: string): string {
   // A DPS assinada vem com a própria declaração <?xml ...?> (xml-crypto preserva);
   // declaração no MEIO do envelope torna o SOAP inválido — tira antes de embutir.
   const semDeclaracao = xmlAssinado.replace(/^<\?xml[^?]*\?>\s*/, '');
+  // Estrutura do payload (manual §9.2.3 + GerarNfseEnvio-exemplo.xml):
+  //   <GerarNfse>                          ← método SOAP (wrapped, Document/Literal)
+  //     <cabecalho versao="1.01">…</cabecalho>   ← exigido em TODOS os métodos (manual, cap. 14)
+  //     <GerarNfseEnvio> <DPS assinada/> </GerarNfseEnvio>  ← DPS vai DENTRO do Envio
+  //   </GerarNfse>
+  // A DPS assinada mantém o próprio xmlns (padrão SPED) — redundante com o do
+  // GerarNfseEnvio, porém necessário para não invalidar a assinatura (a assinatura
+  // foi calculada sobre a DPS com o namespace declarado).
+  // ⚠️ CONFIRMAR no 1º teste real contra o webservice: o WSDL devolve 403 sem mTLS,
+  //    então o nome exato do wrapper do método e a POSIÇÃO do <cabecalho>
+  //    (filho de <GerarNfse> vs. parâmetro nfseCabecMsg/nfseDadosMsg) só dá pra
+  //    cravar com o WSDL/homologação aberta.
+  const cabecalho = `<cabecalho versao="${VERSAO}" xmlns="${NS}"><versaoDados>${VERSAO}</versaoDados></cabecalho>`;
   return `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-<soap:Body><${metodo} xmlns="${NS}">${semDeclaracao}</${metodo}></soap:Body>
+<soap:Body><${metodo} xmlns="${NS}">${cabecalho}<${metodo}Envio xmlns="${NS}" xmlns:ns2="${NS_DSIG}">${semDeclaracao}</${metodo}Envio></${metodo}></soap:Body>
 </soap:Envelope>`;
 }
 
@@ -39,10 +55,16 @@ export function interpretarResposta(soapXml: string): RespostaGerar {
   });
   const comp = $('CompNfse').first();
   if (comp.length > 0) {
+    // A chave de acesso da NFS-e é o atributo Id do infNFSe ("NFS" + 50 dígitos),
+    // conforme GerarNfseResposta-exemplo.xml (não existe elemento <chaveAcesso> no
+    // padrão nacional). Mantemos o fallback ao elemento por robustez.
+    const idNfse = (comp.find('infNFSe').first().attr('Id') || '').trim();
+    const chaveDoId = idNfse.replace(/^NFS/, '') || null;
+    const chaveElem = comp.find('chaveAcesso').first().text().trim() || null;
     return {
       ok: true,
       numero: comp.find('nNFSe').first().text().trim() || null,
-      chaveAcesso: comp.find('chaveAcesso').first().text().trim() || null,
+      chaveAcesso: chaveElem ?? chaveDoId,
       xmlNfse: $.xml(comp),
     };
   }
@@ -59,6 +81,8 @@ export async function chamarGerarNfse(
   const soapXml = await new Promise<string>((resolve, reject) => {
     const req = request({
       hostname: url.hostname, path: url.pathname, method: 'POST', agent, timeout: 60000,
+      // ⚠️ CONFIRMAR no 1º teste real contra o webservice: o valor exato do SOAPAction
+      //    vem do WSDL (403 sem mTLS). Assumido NS + "/GerarNfse", padrão .asmx.
       headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: `${NS}/GerarNfse` },
     }, (res) => {
       const status = res.statusCode ?? 0;

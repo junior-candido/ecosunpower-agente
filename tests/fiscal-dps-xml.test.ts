@@ -30,6 +30,26 @@ describe('dps-xml', () => {
     expect(xml).toContain(`Id="${idDps}"`);
     expect(idDps.startsWith('DPS')).toBe(true);
   });
+  it('regTrib traz opSimpNac=3, regApTribSN=1 e regEspTrib=0 nessa ordem (exigência do manual v1.01)', () => {
+    const { xml } = montarDpsXml(entrada);
+    expect(xml).toContain('<opSimpNac>3</opSimpNac>');
+    expect(xml).toContain('<regApTribSN>1</regApTribSN>');         // obrigatório quando opSimpNac=3
+    expect(xml).toContain('<regEspTrib>0</regEspTrib>');
+    expect(xml.indexOf('<opSimpNac>')).toBeLessThan(xml.indexOf('<regApTribSN>'));
+    expect(xml.indexOf('<regApTribSN>')).toBeLessThan(xml.indexOf('<regEspTrib>'));
+  });
+  it('prest é o emitente: sem xNome nem endereço no bloco do prestador', () => {
+    const { xml } = montarDpsXml(entrada);
+    const prest = xml.slice(xml.indexOf('<prest>'), xml.indexOf('</prest>'));
+    expect(prest).toContain('<CNPJ>');
+    expect(prest).toContain('<IM>');
+    expect(prest).not.toContain('<xNome>');
+    expect(prest).not.toContain('<end>');
+  });
+  it('id da DPS tem 45 caracteres (DPS + 7 + 1 + 14 + 5 + 15)', () => {
+    const { idDps } = montarDpsXml(entrada);
+    expect(idDps.length).toBe(45);
+  });
   it('sem retenção manda tpRetISSQN=1', () => {
     const { xml } = montarDpsXml({ ...entrada, valores: { ...entrada.valores, issRetido: false } });
     expect(xml).toContain('<tpRetISSQN>1</tpRetISSQN>');

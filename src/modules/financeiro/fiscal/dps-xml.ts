@@ -44,10 +44,14 @@ export function montarDpsXml(e: EntradaDps): { xml: string; idDps: string } {
 <tpEmit>1</tpEmit>
 <cLocEmi>${e.codMunicipio}</cLocEmi>
 <prest>
+<!-- prestador É o emitente: manual manda NÃO informar NIF/cNaoNIF/xNome/endereço -->
 <CNPJ>${cnpj}</CNPJ>
 <IM>${esc(e.prestador.im)}</IM>
 <regTrib>
+<!-- opSimpNac=3 (ME/EPP Simples); regApTribSN=1 (apuração de todos os tributos pelo SN),
+     obrigatório quando opSimpNac=3; regEspTrib=0 (nenhum regime especial municipal). -->
 <opSimpNac>3</opSimpNac>
+<regApTribSN>1</regApTribSN>
 <regEspTrib>0</regEspTrib>
 </regTrib>
 </prest>
