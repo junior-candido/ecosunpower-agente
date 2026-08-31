@@ -13,7 +13,7 @@ export interface EntradaDps {
   prestador: { cnpj: string; im: string };
   tomador: { tipo: 'PJ' | 'PF'; doc: string; nome: string; cep: string | null; codMunicipio: string; email: string | null };
   servico: { codTribNacional: string; descricao: string };
-  valores: { vServ: number; aliquotaIss: number; issRetido: boolean };
+  valores: { vServ: number; issRetido: boolean };
 }
 
 export function montarDpsXml(e: EntradaDps): { xml: string; idDps: string } {
@@ -38,7 +38,7 @@ export function montarDpsXml(e: EntradaDps): { xml: string; idDps: string } {
 <tpAmb>${tpAmb}</tpAmb>
 <dhEmi>${dhEmi}</dhEmi>
 <verAplic>EcoSunDash-F2</verAplic>
-<serie>${e.serie}</serie>
+<serie>${esc(e.serie)}</serie>
 <nDPS>${e.nDps}</nDPS>
 <dCompet>${e.competencia}</dCompet>
 <tpEmit>1</tpEmit>

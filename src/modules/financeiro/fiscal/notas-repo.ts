@@ -68,6 +68,15 @@ export async function atualizarNotaPreparada(client: SupabaseClient, companyId: 
   return (data ?? []).length === 1;
 }
 
+/** Destrava nota presa em 'enviada' (conexão caiu no envio) — SÓ depois de conferir no portal que a NFS-e não saiu. */
+export async function destravarNotaEnviada(client: SupabaseClient, companyId: string, notaId: string): Promise<boolean> {
+  const { data, error } = await client.from('fiscal_notas')
+    .update({ status: 'preparada', updated_at: new Date().toISOString() })
+    .eq('id', notaId).eq('company_id', companyId).eq('status', 'enviada').select('id');
+  if (error) throw new Error(`destravarNotaEnviada: ${error.message}`);
+  return (data ?? []).length === 1;
+}
+
 export async function excluirNotaPreparada(client: SupabaseClient, companyId: string, notaId: string): Promise<boolean> {
   const { data, error } = await client.from('fiscal_notas')
     .delete()

@@ -12,7 +12,7 @@ const entrada = {
   tomador: { tipo: 'PJ' as const, doc: '13245160000142', nome: 'CONDOMINIO DO EDIFICIO SPAZIO VERDE',
     cep: '70000000', codMunicipio: '5300108', email: null },
   servico: { codTribNacional: '31.01.02', descricao: 'adequação do sistema de aterramento elétrico' },
-  valores: { vServ: 1250.00, aliquotaIss: 0.05, issRetido: true },
+  valores: { vServ: 1250.00, issRetido: true },
 };
 
 describe('dps-xml', () => {

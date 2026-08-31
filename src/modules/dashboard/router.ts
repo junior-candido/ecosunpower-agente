@@ -782,6 +782,9 @@ b.onclick=async function(){
       const senha = String(req.body?.senha ?? '');
       const ambiente = req.body?.ambiente === 'producao' ? 'producao' : 'homologacao';
       const file = (req as unknown as { file?: Express.Multer.File }).file;
+      if (senha && !file?.buffer) {
+        res.redirect('/dashboard/fiscal/config?erro=' + encodeURIComponent('Você digitou a senha mas não anexou o arquivo .pfx — envie os dois juntos.')); return;
+      }
       if (file?.buffer) {
         const keyHex = process.env.FISCAL_CERT_KEY ?? '';
         if (!senha) {
@@ -931,7 +934,9 @@ b.onclick=async function(){
       const config = await getConfig(supabase, req.dashUser!.companyId);
       const q = req.query as Record<string, string | undefined>;
       const aviso = q.emitida !== undefined
-        ? { tipo: 'ok' as const, texto: `✅ NFS-e emitida${q.emitida ? ` — nº ${q.emitida}` : ''}.` }
+        ? { tipo: 'ok' as const, texto: q.amb === 'homologacao'
+            ? '🧪 Teste de homologação passou — a nota continua preparada pra emissão real.'
+            : `✅ NFS-e emitida${q.emitida ? ` — nº ${q.emitida}` : ''}.` }
         : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
       res.type('html').send(renderNotaDetalhe(nota, config, req.dashUser, aviso));
     } catch (err) {
@@ -949,13 +954,28 @@ b.onclick=async function(){
       const { emitirNota, depsProducao } = await import('../financeiro/fiscal/motor.js');
       const r = await emitirNota(depsProducao(supabase, keyHex), req.dashUser!.companyId, notaId);
       if (r.ok) {
-        res.redirect(`/dashboard/fiscal/${notaId}?emitida=${encodeURIComponent(r.numero ?? '')}`);
+        res.redirect(`/dashboard/fiscal/${notaId}?emitida=${encodeURIComponent(r.numero ?? '')}&amb=${encodeURIComponent(r.ambiente)}`);
       } else {
         const msg = r.erros.map((e) => `${e.codigo}: ${e.mensagem}${e.correcao ? ` → ${e.correcao}` : ''}`).join(' · ');
         res.redirect(`/dashboard/fiscal/${notaId}?erro=` + encodeURIComponent(msg));
       }
     } catch (err) {
       console.error('[fiscal/:id/emitir]', err);
+      res.redirect(`/dashboard/fiscal/${notaId}?erro=` + encodeURIComponent((err as Error).message));
+    }
+  });
+
+  // F2: destravar nota presa em "enviada" (conexão caiu; usuário conferiu no portal que NÃO saiu)
+  router.post('/fiscal/:id/voltar', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    const notaId = String(req.params.id);
+    if (!UUID_RE.test(notaId)) { res.status(404).send('Nota não achada'); return; }
+    try {
+      const { destravarNotaEnviada, registrarEvento } = await import('../financeiro/fiscal/notas-repo.js');
+      const ok = await destravarNotaEnviada(supabase, req.dashUser!.companyId, notaId);
+      if (ok) await registrarEvento(supabase, notaId, 'destravada', { por: req.dashUser!.id });
+      res.redirect(`/dashboard/fiscal/${notaId}`);
+    } catch (err) {
+      console.error('[fiscal/:id/voltar]', err);
       res.redirect(`/dashboard/fiscal/${notaId}?erro=` + encodeURIComponent((err as Error).message));
     }
   });

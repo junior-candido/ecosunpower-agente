@@ -9,6 +9,12 @@ describe('notacontrol-client', () => {
     expect(env).toContain('GerarNfse');
     expect(env).toContain('<DPS>x</DPS>');
   });
+  it('tira a declaração <?xml?> da DPS antes de embutir (declaração no meio quebra o SOAP)', () => {
+    const env = montarEnvelope('GerarNfse', '<?xml version="1.0" encoding="UTF-8"?>\n<DPS>x</DPS>');
+    expect(env.indexOf('<?xml')).toBe(0);            // só a do envelope
+    expect(env.lastIndexOf('<?xml')).toBe(0);        // nenhuma outra no meio
+    expect(env).toContain('<DPS>x</DPS>');
+  });
   it('resposta com NFS-e vira sucesso (numero + chave)', () => {
     const resp = `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body>
       <GerarNfseResponse><GerarNfseResult>

@@ -13,9 +13,12 @@ export const ENDPOINTS = {
 const NS = 'http://nfse.abrasf.org.br'; // ⚠️ conferir no WSDL quando o mTLS abrir o acesso
 
 export function montarEnvelope(metodo: string, xmlAssinado: string): string {
+  // A DPS assinada vem com a própria declaração <?xml ...?> (xml-crypto preserva);
+  // declaração no MEIO do envelope torna o SOAP inválido — tira antes de embutir.
+  const semDeclaracao = xmlAssinado.replace(/^<\?xml[^?]*\?>\s*/, '');
   return `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-<soap:Body><${metodo} xmlns="${NS}">${xmlAssinado}</${metodo}></soap:Body>
+<soap:Body><${metodo} xmlns="${NS}">${semDeclaracao}</${metodo}></soap:Body>
 </soap:Envelope>`;
 }
 
@@ -58,9 +61,17 @@ export async function chamarGerarNfse(
       hostname: url.hostname, path: url.pathname, method: 'POST', agent, timeout: 60000,
       headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: `${NS}/GerarNfse` },
     }, (res) => {
+      const status = res.statusCode ?? 0;
       const chunks: Buffer[] = [];
       res.on('data', (c) => chunks.push(c));
-      res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      res.on('error', (e) => reject(new Error(`Falha lendo a resposta do fisco (${ambiente}): ${e.message}`)));
+      res.on('end', () => {
+        if (status < 200 || status >= 300) {
+          reject(new Error(`O fisco respondeu HTTP ${status} (${ambiente}) — sem retorno SOAP. Confira credenciamento/certificado.`));
+          return;
+        }
+        resolve(Buffer.concat(chunks).toString('utf8'));
+      });
     });
     req.on('timeout', () => { req.destroy(new Error('timeout')); });
     req.on('error', (e) => reject(new Error(`Falha de conexão com o fisco (${ambiente}): ${e.message}`)));

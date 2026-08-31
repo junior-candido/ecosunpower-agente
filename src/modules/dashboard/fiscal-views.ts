@@ -152,6 +152,20 @@ export function renderNotaDetalhe(n: NotaLinha, config: ConfigInfo | null, user?
     </ul>
     <p class="mt-2"><a class="text-cyan-300" href="/dashboard/fiscal/${n.id}/xml">⬇️ Baixar XML</a></p>
   </div>` : '';
+  const testeHomolog = n.status === 'preparada' && n.chaveAcesso && n.ambienteEmissao === 'homologacao' ? `
+  <div class="card" style="border:1px solid #78350f;border-radius:10px;padding:12px;margin:10px 0">
+    🧪 <b>Teste de homologação passou</b> — chave <code style="word-break:break-all">${escapeHtml(n.chaveAcesso)}</code>.
+    A nota continua <b>preparada</b> pra emissão de verdade (troque o ambiente pra produção na <a class="text-cyan-300" href="/dashboard/fiscal/config">configuração</a>).
+    <a class="text-cyan-300" href="/dashboard/fiscal/${n.id}/xml">⬇️ XML do teste</a>
+  </div>` : '';
+  const enviadaTravada = n.status === 'enviada' ? `
+  <div class="card" style="border:1px solid #f87171;border-radius:10px;padding:12px;margin:10px 0">
+    📤 <b>Enviada — aguardando confirmação.</b> A conexão pode ter caído no meio do envio.
+    <b>Confira no portal do ISS se a NFS-e saiu.</b> Se NÃO saiu, destrave pra tentar de novo:
+    <form method="post" action="/dashboard/fiscal/${n.id}/voltar" class="mt-2" onsubmit="return confirm('Conferiu no portal que a nota NÃO saiu? Se ela saiu e você emitir de novo, sai NOTA DUPLICADA.')">
+      <button class="px-3 py-2 rounded bg-gray-700 text-white">↩️ Voltar pra preparada (não saiu no portal)</button>
+    </form>
+  </div>` : '';
   const preparar = n.status === 'preparada' ? `
   <div class="card" style="border:1px solid #1b2040;border-radius:10px;padding:12px;margin:10px 0">
     <b>1) Emitir no portal</b> — abra <a class="text-cyan-300" href="https://iss.fazenda.df.gov.br/online/" target="_blank">iss.fazenda.df.gov.br/online</a> e copie:
@@ -181,6 +195,8 @@ export function renderNotaDetalhe(n: NotaLinha, config: ConfigInfo | null, user?
 <p>${STATUS[n.status] ?? n.status} · ${escapeHtml(n.tomador.nome)} · ${brl(n.valorBruto)} → líquido <b>${brl(n.valorLiquido)}</b>${n.issRetido ? ` (ISS retido ${brl(n.valorIss)})` : ''}</p>
 ${avisoHtml}
 ${acoesPreparada}
+${testeHomolog}
+${enviadaTravada}
 ${emitir}
 ${autorizada}
 ${preparar}
@@ -196,7 +212,7 @@ export function renderConfigFiscalPage(config: ConfigInfo | null, aviso?: { tipo
     ? `<div class="card" style="border:1px solid ${aviso.tipo === 'ok' ? '#34d399' : '#f87171'};border-radius:10px;padding:10px;margin-bottom:8px">${escapeHtml(aviso.texto)}</div>`
     : '';
   const cert = config?.cert_storage_path
-    ? `✅ Certificado cadastrado${config.cert_validade ? ` — vale até <b>${config.cert_validade.split('-').reverse().join('/')}</b>` : ''}`
+    ? `✅ Certificado cadastrado${config.cert_validade ? ` — vale até <b>${escapeHtml(config.cert_validade.split('-').reverse().join('/'))}</b>` : ''}`
     : '❌ Certificado A1 <b>não cadastrado</b> — sem ele a emissão automática não funciona.';
   const amb = config?.ambiente ?? 'homologacao';
   const bannerTeste = amb !== 'producao'

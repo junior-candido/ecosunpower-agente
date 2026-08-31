@@ -22,7 +22,7 @@ const entrada = {
   prestador: { cnpj: '33020459000106', im: '0790506200159' },
   tomador: { tipo: 'PJ' as const, doc: '13245160000142', nome: 'SPAZIO', cep: null, codMunicipio: '5300108', email: null },
   servico: { codTribNacional: '31.01.02', descricao: 'teste' },
-  valores: { vServ: 1, aliquotaIss: 0.05, issRetido: true },
+  valores: { vServ: 1, issRetido: true },
 };
 
 describe('assinatura', () => {
