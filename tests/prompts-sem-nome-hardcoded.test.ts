@@ -119,6 +119,16 @@ describe('canais de encaminhamento por empresa', () => {
     expect(bloco).toContain('Quer comprar mais');
     expect(bloco).toContain('ISSO É VENDA E É SUA');
   });
+  it('apresentação é REGRA SEM EXCEÇÃO e traz nome da assistente + da empresa', () => {
+    const bloco = blocoSuportePosVenda({
+      ...EMPRESA_DEFAULTS, nomeAtendente: 'Clara', nomeFantasia: 'Conquista Solar', canaisAtendimento: canais,
+    });
+    expect(bloco).toContain('SEMPRE SE APRESENTE');
+    expect(bloco).toContain('"Clara, da Conquista Solar"');
+    expect(bloco).toContain('Sem exceção');
+    // o caso que falhou de verdade em 31/08: lead vindo de parceria
+    expect(bloco).toMatch(/parceria/);
+  });
   it('triagem: pergunta se é cliente ou novo', () => {
     const bloco = blocoSuportePosVenda({ ...EMPRESA_DEFAULTS, canaisAtendimento: canais });
     expect(bloco).toMatch(/já é nosso cliente ou está conhecendo/);
