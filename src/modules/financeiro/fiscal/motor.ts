@@ -20,7 +20,7 @@ export interface DepsEmissao {
   proximoNdps: (companyId: string) => Promise<number>;
   carregarCert: (companyId: string) => Promise<{ pfx: Buffer; senha: string; keyPem: string; certPem: string }>;
   assinar: (xml: string, idDps: string, keyPem: string, certPem: string) => string;
-  enviar: (ambiente: 'homologacao' | 'producao', dpsAssinada: string, pfx: Buffer, senha: string) =>
+  enviar: (ambiente: 'homologacao' | 'producao', dpsAssinada: string, keyPem: string, certPem: string) =>
     Promise<{ ok: true; numero: string | null; chaveAcesso: string | null; xmlNfse: string } | { ok: false; erros: Array<{ codigo: string; mensagem: string; correcao: string | null }> }>;
   salvarAutorizada: (d: { companyId: string; notaId: string; numero: string | null; chaveAcesso: string | null; xmlDps: string; xmlNfse: string; ambiente: string }) => Promise<void>;
   /** Homologação: guarda chave/XML do teste mas DEVOLVE a nota pra preparada (teste não queima a nota). */
@@ -62,7 +62,7 @@ export async function emitirNota(deps: DepsEmissao, companyId: string, notaId: s
   await deps.registrarEvento(notaId, 'envio', { ambiente: cfg.ambiente, nDps, idDps });
   let resp;
   try {
-    resp = await deps.enviar(cfg.ambiente, assinada, cert.pfx, cert.senha);
+    resp = await deps.enviar(cfg.ambiente, assinada, cert.keyPem, cert.certPem);
   } catch (err) {
     // NÃO destrava sozinho: a nota pode TER SAÍDO no fisco antes da conexão cair.
     await deps.registrarEvento(notaId, 'falha_conexao', { mensagem: (err as Error).message });
