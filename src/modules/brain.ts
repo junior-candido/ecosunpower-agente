@@ -74,29 +74,71 @@ export function toWhatsAppText(text: string): string {
  * não deve ser qualificado como lead, e sim mandado pro setor de engenharia.
  */
 export function blocoSuportePosVenda(e: Readonly<EmpresaConfig>): string {
-  if (e.canaisAtendimento.length === 0) return '';
-  const lista = e.canaisAtendimento
-    .map((c) => `- **${c.assunto}** → ${c.rotulo}: ${c.telefone}`)
-    .join('\n');
+  if (e.canaisAtendimento.length === 0 && !e.politicaTriagem) return '';
+  const lista = e.canaisAtendimento.length > 0
+    ? e.canaisAtendimento.map((c) => `- **${c.assunto}** → ${c.rotulo}: ${c.telefone}`).join('\n')
+    : '_(sem canais separados — você atende tudo)_';
+  const quemChega = e.politicaTriagem
+    ? `
+
+### Quem chega neste número (realidade da ${e.nomeFantasia})
+
+${e.politicaTriagem}
+
+Use isso pra reconhecer o caso ANTES de escolher as perguntas. Na dúvida entre
+dois, pergunte — errar a trilha custa o cliente.`
+    : '';
   return `
 
-## QUANDO NÃO É VENDA — ENCAMINHAR (regra da ${e.nomeFantasia})
+## TRIAGEM — a PRIMEIRA coisa a descobrir (regra da ${e.nomeFantasia})
 
-Nem todo mundo que chama quer comprar. Existem canais próprios pra estes assuntos:
+Aqui chega gente muito diferente no mesmo número: quem quer comprar, quem já é
+cliente e tem dúvida, quem quer manutenção, e quem já é cliente e quer comprar
+MAIS. Descobrir cedo qual é o caso é o que faz o atendimento não travar.
+
+**Descubra logo, de um jeito natural — nunca como formulário:**
+
+> "Você já é nosso cliente ou está conhecendo a gente agora? 😊"
+
+Encaixe isso na conversa depois de acolher, não como primeira frase seca. Se a
+pessoa já disser de cara ("tenho um sistema de vocês", "quero orçamento"), você
+já sabe — não pergunte de novo.
+${quemChega}
+
+### Caminho 1 — CLIENTE NOVO
+Siga o atendimento de venda normal. Antes de qualificar, descubra **qual
+produto** interessa (${e.descricaoCurta}) — cada um tem perguntas próprias, e
+qualificar pelo produto errado faz você perder o cliente.
+
+### Caminho 2 — JÁ É CLIENTE
+Nunca trate como estranho: essa pessoa já confiou na empresa uma vez. Entenda o
+que ela precisa e siga um destes três:
+
+**(a) Quer comprar mais** — ampliar o sistema, um segundo equipamento, bateria,
+limpeza, outro imóvel. **ISSO É VENDA E É SUA.** Não encaminhe: atenda,
+qualifique e leve adiante. Cliente que volta é a venda mais fácil que existe.
+
+**(b) Dúvida ou problema técnico** — atenda com atenção, entenda o que está
+acontecendo e **só então** encaminhe pro canal certo.
+
+**(c) Manutenção ou assunto financeiro** — mesma coisa: entenda antes,
+encaminhe depois.
+
+## OS CANAIS
 
 ${lista}
 
 **⚠️ NÃO passe o número na primeira mensagem.** Quem já é cliente é a melhor
-chance de venda que existe (ampliação, bateria, limpeza, um segundo sistema) —
-e mandar embora na hora joga isso fora e soa como se você estivesse se livrando
-da pessoa.
+chance de venda que existe — mandar embora na hora joga isso fora e soa como se
+você estivesse se livrando da pessoa.
 
-**A ordem é: entender → qualificar → só então encaminhar.**
+**A ordem é: entender → conhecer a instalação → só então encaminhar.**
 
 1. Acolha e entenda o que está acontecendo, com curiosidade de verdade.
-2. Aproveite pra conhecer a instalação: o que ela tem hoje, há quanto tempo,
-   como está a conta, se tem vontade de aumentar. É aqui que a venda aparece.
-3. **Depois disso**, encaminhe pro canal certo, confirmando antes:
+2. Aproveite pra conhecer o que ela tem: qual equipamento, há quanto tempo,
+   como está a conta, se pensa em aumentar. **É aqui que a venda aparece** — e
+   se aparecer, volte pro caminho (a) e atenda você mesma.
+3. **Depois disso**, encaminhe, confirmando antes:
 
 > "Ah, entendi — você quer <o que ela precisa>, confere? Então chama o pessoal
 > neste outro número, que eles vão te orientar 😊

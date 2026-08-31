@@ -96,7 +96,7 @@ describe('canais de encaminhamento por empresa', () => {
   it('manda QUALIFICAR antes de encaminhar, com exceção pra quem exige/urgência', () => {
     const bloco = blocoSuportePosVenda({ ...EMPRESA_DEFAULTS, canaisAtendimento: canais });
     expect(bloco).toContain('NÃO passe o número na primeira mensagem');
-    expect(bloco).toContain('entender → qualificar → só então encaminhar');
+    expect(bloco).toContain('entender → conhecer a instalação → só então encaminhar');
     expect(bloco).toMatch(/pedir o número\s*\n?direto|insistir/);
   });
   it('canal sem telefone ou sem assunto é descartado (não vira prompt quebrado)', () => {
@@ -108,6 +108,24 @@ describe('canais de encaminhamento por empresa', () => {
     ]);
     expect(lista).toHaveLength(1);
     expect(lista[0].telefone).toBe('77988843303');
+  });
+  it('triagem: empresa sem canais mas COM política ganha bloco', () => {
+    const bloco = blocoSuportePosVenda({ ...EMPRESA_DEFAULTS, politicaTriagem: '1. Lead da Fortlev...' });
+    expect(bloco).toContain('TRIAGEM');
+    expect(bloco).toContain('Lead da Fortlev');
+  });
+  it('triagem: manda ATENDER o cliente que quer ampliar, não encaminhar', () => {
+    const bloco = blocoSuportePosVenda({ ...EMPRESA_DEFAULTS, canaisAtendimento: canais });
+    expect(bloco).toContain('Quer comprar mais');
+    expect(bloco).toContain('ISSO É VENDA E É SUA');
+  });
+  it('triagem: pergunta se é cliente ou novo', () => {
+    const bloco = blocoSuportePosVenda({ ...EMPRESA_DEFAULTS, canaisAtendimento: canais });
+    expect(bloco).toMatch(/já é nosso cliente ou está conhecendo/);
+  });
+  it('política muito longa é cortada (não estoura o contexto)', () => {
+    const cfg = normalizarEmpresaRow({ politica_triagem: 'x'.repeat(5000) });
+    expect(cfg.politicaTriagem!.length).toBe(3000);
   });
   it('valor que não é lista vira lista vazia', () => {
     expect(normalizarCanais(null)).toEqual([]);
