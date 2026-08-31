@@ -33,7 +33,7 @@ export function montarDpsXml(e: EntradaDps): { xml: string; idDps: string } {
   const email = e.tomador.email ? `<email>${esc(e.tomador.email)}</email>` : '';
   const xml =
 `<?xml version="1.0" encoding="UTF-8"?>
-<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">
+<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">
 <infDPS Id="${idDps}">
 <tpAmb>${tpAmb}</tpAmb>
 <dhEmi>${dhEmi}</dhEmi>

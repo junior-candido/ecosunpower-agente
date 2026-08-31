@@ -20,12 +20,12 @@ describe('notacontrol-client', () => {
     expect(env).toContain('http://www.sped.fazenda.gov.br/nfse');
     expect(env).not.toContain('nfse.abrasf.org.br');
   });
-  it('envolve a DPS assinada em <GerarNfseEnvio> e inclui o cabecalho v1.01', () => {
+  it('envolve a DPS assinada em <GerarNfseEnvio> e inclui o cabecalho v1.00 (sem grupo IBS/CBS)', () => {
     const env = montarEnvelope('GerarNfse', '<DPS>x</DPS>');
     expect(env).toContain('<GerarNfseEnvio');
     expect(env).toContain('xmlns:ns2="http://www.w3.org/2000/09/xmldsig#"');
-    expect(env).toContain('<cabecalho versao="1.01"');
-    expect(env).toContain('<versaoDados>1.01</versaoDados>');
+    expect(env).toContain('<cabecalho versao="1.00"');
+    expect(env).toContain('<versaoDados>1.00</versaoDados>');
     // a DPS fica DENTRO do GerarNfseEnvio, e o cabecalho vem antes
     expect(env.indexOf('<cabecalho')).toBeLessThan(env.indexOf('<GerarNfseEnvio'));
     expect(env.indexOf('<GerarNfseEnvio')).toBeLessThan(env.indexOf('<DPS>x</DPS>'));

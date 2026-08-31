@@ -13,7 +13,8 @@ export const ENDPOINTS = {
 } as const;
 const NS = 'http://www.sped.fazenda.gov.br/nfse';       // padrão nacional (manual v1.01)
 const NS_DSIG = 'http://www.w3.org/2000/09/xmldsig#';   // assinatura (mesmo prefixo ns2 do exemplo oficial)
-const VERSAO = '1.01';                                  // versão do leiaute (grupo IBS/CBS obrigatório na 1.01)
+const VERSAO = '1.00';                                  // 1.00 = SEM grupo IBS/CBS (fisco rejeita 1.01 sem ele: E183/E160).
+// ⚠️ A PARTIR DE 01/10/2026 o grupo IBS/CBS é OBRIGATÓRIO -> migrar p/ 1.01 + gerar o grupo (F3).
 
 export function montarEnvelope(metodo: string, xmlAssinado: string): string {
   // A DPS assinada vem com a própria declaração <?xml ...?> (xml-crypto preserva);
