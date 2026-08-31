@@ -715,8 +715,9 @@ b.onclick=async function(){
     }
   });
 
-  // ── Fiscal (NFS-e) — F1: preparar + anexar ─────────────────────────────
+  // ── Fiscal (NFS-e) — F1: preparar + anexar · F2: config A1 + emitir ────
   const uploadPdf = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+  const uploadPfx = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
   router.get('/fiscal', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
     try {
@@ -756,6 +757,46 @@ b.onclick=async function(){
       res.json(dados);
     } catch (err) {
       res.status(400).json({ erro: (err as Error).message });
+    }
+  });
+
+  // F2: config do certificado A1 + ambiente (registrada ANTES de /fiscal/:id)
+  router.get('/fiscal/config', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    try {
+      const { getConfig } = await import('../financeiro/fiscal/notas-repo.js');
+      const { renderConfigFiscalPage } = await import('./fiscal-views.js');
+      const config = await getConfig(supabase, req.dashUser!.companyId);
+      const q = req.query as Record<string, string | undefined>;
+      const aviso = q.ok ? { tipo: 'ok' as const, texto: '✅ Configuração salva.' }
+        : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
+      res.type('html').send(renderConfigFiscalPage(config, aviso, req.dashUser));
+    } catch (err) {
+      console.error('[fiscal/config GET]', err);
+      res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+  });
+
+  router.post('/fiscal/config', exigir('financeiro', 'editar'), uploadPfx.single('pfx'), async (req: AuthedRequest, res) => {
+    try {
+      const companyId = req.dashUser!.companyId;
+      const senha = String(req.body?.senha ?? '');
+      const ambiente = req.body?.ambiente === 'producao' ? 'producao' : 'homologacao';
+      const file = (req as unknown as { file?: Express.Multer.File }).file;
+      if (file?.buffer) {
+        const keyHex = process.env.FISCAL_CERT_KEY ?? '';
+        if (!senha) {
+          res.redirect('/dashboard/fiscal/config?erro=' + encodeURIComponent('Informe a senha do certificado junto com o arquivo.')); return;
+        }
+        const { salvarCertificado } = await import('../financeiro/fiscal/certificado.js');
+        await salvarCertificado(supabase, companyId, file.buffer, senha, keyHex);
+      }
+      const { error } = await bancoDoOperador(req, supabase).from('fiscal_config')
+        .update({ ambiente, updated_at: new Date().toISOString() }).eq('company_id', companyId);
+      if (error) throw new Error(`salvar ambiente: ${error.message}`);
+      res.redirect('/dashboard/fiscal/config?ok=1');
+    } catch (err) {
+      console.error('[fiscal/config POST]', err);
+      res.redirect('/dashboard/fiscal/config?erro=' + encodeURIComponent((err as Error).message));
     }
   });
 
@@ -888,9 +929,49 @@ b.onclick=async function(){
       if (!nota) { res.status(404).send('Nota não achada'); return; }
       const { renderNotaDetalhe } = await import('./fiscal-views.js');
       const config = await getConfig(supabase, req.dashUser!.companyId);
-      res.type('html').send(renderNotaDetalhe(nota, config, req.dashUser));
+      const q = req.query as Record<string, string | undefined>;
+      const aviso = q.emitida !== undefined
+        ? { tipo: 'ok' as const, texto: `✅ NFS-e emitida${q.emitida ? ` — nº ${q.emitida}` : ''}.` }
+        : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
+      res.type('html').send(renderNotaDetalhe(nota, config, req.dashUser, aviso));
     } catch (err) {
       console.error('[fiscal/:id]', err);
+      res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+  });
+
+  // F2: emitir a NFS-e daqui (DPS assinada → webservice)
+  router.post('/fiscal/:id/emitir', exigir('financeiro', 'editar'), async (req: AuthedRequest, res) => {
+    const notaId = String(req.params.id);
+    if (!UUID_RE.test(notaId)) { res.status(404).send('Nota não achada'); return; }
+    try {
+      const keyHex = process.env.FISCAL_CERT_KEY ?? '';
+      const { emitirNota, depsProducao } = await import('../financeiro/fiscal/motor.js');
+      const r = await emitirNota(depsProducao(supabase, keyHex), req.dashUser!.companyId, notaId);
+      if (r.ok) {
+        res.redirect(`/dashboard/fiscal/${notaId}?emitida=${encodeURIComponent(r.numero ?? '')}`);
+      } else {
+        const msg = r.erros.map((e) => `${e.codigo}: ${e.mensagem}${e.correcao ? ` → ${e.correcao}` : ''}`).join(' · ');
+        res.redirect(`/dashboard/fiscal/${notaId}?erro=` + encodeURIComponent(msg));
+      }
+    } catch (err) {
+      console.error('[fiscal/:id/emitir]', err);
+      res.redirect(`/dashboard/fiscal/${notaId}?erro=` + encodeURIComponent((err as Error).message));
+    }
+  });
+
+  // F2: baixar o XML da NFS-e autorizada (escopo company_id — anti-IDOR)
+  router.get('/fiscal/:id/xml', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
+    const notaId = String(req.params.id);
+    if (!UUID_RE.test(notaId)) { res.status(404).send('Nota não achada'); return; }
+    try {
+      const { getNota } = await import('../financeiro/fiscal/notas-repo.js');
+      const nota = await getNota(supabase, req.dashUser!.companyId, notaId);
+      if (!nota?.xmlNfse) { res.status(404).send('Sem XML'); return; }
+      res.setHeader('Content-Disposition', `attachment; filename="nfse-${(nota.numero ?? nota.id).replace(/[^\w.-]/g, '_')}.xml"`);
+      res.type('text/xml').send(nota.xmlNfse);
+    } catch (err) {
+      console.error('[fiscal/:id/xml]', err);
       res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
   });

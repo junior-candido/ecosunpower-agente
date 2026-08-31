@@ -18,6 +18,7 @@ export interface NotaLinha {
   id: string; companyId: string; status: string; numero: string | null; competencia: string; descricao: string;
   tomador: Tomador; servicoId: string | null; valorBruto: number; valorIss: number; issRetido: boolean; valorLiquido: number;
   pdfStoragePath: string | null; contaReceberId: string | null;
+  chaveAcesso: string | null; ambienteEmissao: 'homologacao' | 'producao' | null; xmlNfse: string | null;
 }
 
 export function hashNota(companyId: string, doc: string, valorBruto: number, competencia: string): string {
@@ -77,7 +78,7 @@ export async function excluirNotaPreparada(client: SupabaseClient, companyId: st
 
 export async function listarNotas(client: SupabaseClient, companyId: string, limite = 100): Promise<NotaLinha[]> {
   const { data, error } = await client.from('fiscal_notas')
-    .select('id, company_id, status, numero, competencia, descricao, tomador, servico_id, valor_bruto, valor_iss, iss_retido, valor_liquido, pdf_storage_path, conta_receber_id')
+    .select('id, company_id, status, numero, competencia, descricao, tomador, servico_id, valor_bruto, valor_iss, iss_retido, valor_liquido, pdf_storage_path, conta_receber_id, chave_acesso, ambiente_emissao, xml_nfse')
     .eq('company_id', companyId).order('competencia', { ascending: false }).limit(limite);
   if (error) throw new Error(`listarNotas: ${error.message}`);
   return (data ?? []).map(mapearNota);
@@ -85,7 +86,7 @@ export async function listarNotas(client: SupabaseClient, companyId: string, lim
 
 export async function getNota(client: SupabaseClient, companyId: string, notaId: string): Promise<NotaLinha | null> {
   const { data, error } = await client.from('fiscal_notas')
-    .select('id, company_id, status, numero, competencia, descricao, tomador, servico_id, valor_bruto, valor_iss, iss_retido, valor_liquido, pdf_storage_path, conta_receber_id')
+    .select('id, company_id, status, numero, competencia, descricao, tomador, servico_id, valor_bruto, valor_iss, iss_retido, valor_liquido, pdf_storage_path, conta_receber_id, chave_acesso, ambiente_emissao, xml_nfse')
     .eq('id', notaId).eq('company_id', companyId).single();
   if (error) return null;
   return mapearNota(data as Record<string, unknown>);
@@ -99,6 +100,9 @@ function mapearNota(r: Record<string, unknown>): NotaLinha {
     valorBruto: Number(r.valor_bruto), valorIss: Number(r.valor_iss), issRetido: Boolean(r.iss_retido),
     valorLiquido: Number(r.valor_liquido), pdfStoragePath: (r.pdf_storage_path as string | null) ?? null,
     contaReceberId: (r.conta_receber_id as string | null) ?? null,
+    chaveAcesso: (r.chave_acesso as string | null) ?? null,
+    ambienteEmissao: (r.ambiente_emissao as 'homologacao' | 'producao' | null) ?? null,
+    xmlNfse: (r.xml_nfse as string | null) ?? null,
   };
 }
 
@@ -117,7 +121,11 @@ export async function listarServicos(client: SupabaseClient, companyId: string) 
 
 export async function getConfig(client: SupabaseClient, companyId: string) {
   const { data, error } = await client.from('fiscal_config')
-    .select('cnpj, inscricao_municipal, razao_social, cert_validade').eq('company_id', companyId).single();
+    .select('cnpj, inscricao_municipal, razao_social, cert_validade, ambiente, serie_dps, proximo_ndps, cert_storage_path')
+    .eq('company_id', companyId).single();
   if (error) return null;
-  return data as { cnpj: string; inscricao_municipal: string; razao_social: string; cert_validade: string | null };
+  return data as {
+    cnpj: string; inscricao_municipal: string; razao_social: string; cert_validade: string | null;
+    ambiente: 'homologacao' | 'producao'; serie_dps: string; proximo_ndps: number; cert_storage_path: string | null;
+  };
 }
