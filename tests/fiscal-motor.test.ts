@@ -14,7 +14,7 @@ function depsFake(overrides: Partial<Parameters<typeof emitirNota>[0]> = {}) {
       ambiente: 'producao' as const, serie: '1', codMunicipio: '5300108',
       cnpj: '33.020.459/0001-06', im: '0790506200159', certOk: true, certValidade: '2027-08-31',
     })),
-    carregarServico: vi.fn(async () => ({ codTribNacional: '31.01.02' })),
+    carregarServico: vi.fn(async () => ({ codTribNacional: '31.01.02', codTribMunicipal: '1' })),
     travarParaEnvio: vi.fn(async () => true),
     proximoNdps: vi.fn(async () => 7),
     carregarCert: vi.fn(async () => ({ pfx: Buffer.from('x'), senha: 's', keyPem: 'k', certPem: 'c' })),

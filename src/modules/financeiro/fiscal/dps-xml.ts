@@ -12,7 +12,7 @@ export interface EntradaDps {
   dhEmi: Date; serie: string; nDps: number; competencia: string; codMunicipio: string;
   prestador: { cnpj: string; im: string };
   tomador: { tipo: 'PJ' | 'PF'; doc: string; nome: string; cep: string | null; codMunicipio: string; email: string | null };
-  servico: { codTribNacional: string; descricao: string };
+  servico: { codTribNacional: string; codTribMunicipal: string; descricao: string };
   valores: { vServ: number; issRetido: boolean };
 }
 
@@ -25,7 +25,10 @@ export function montarDpsXml(e: EntradaDps): { xml: string; idDps: string } {
   const docTomador = e.tomador.tipo === 'PJ'
     ? `<CNPJ>${soDigitos(e.tomador.doc)}</CNPJ>`
     : `<CPF>${soDigitos(e.tomador.doc)}</CPF>`;
-  const dhEmi = e.dhEmi.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  // O tipo TS do schema NÃO aceita "Z": exige offset explícito (validador oficial, 31/08).
+  // Emitimos sempre no fuso de Brasília (-03:00).
+  const brasilia = new Date(e.dhEmi.getTime() - 3 * 3600 * 1000);
+  const dhEmi = brasilia.toISOString().replace(/\.\d{3}Z$/, '') + '-03:00';
   const tpRet = e.valores.issRetido ? '2' : '1';
   const endTomador = e.tomador.cep
     ? `<end><endNac><cMun>${e.tomador.codMunicipio}</cMun><CEP>${soDigitos(e.tomador.cep)}</CEP></endNac></end>`
@@ -44,12 +47,9 @@ export function montarDpsXml(e: EntradaDps): { xml: string; idDps: string } {
 <tpEmit>1</tpEmit>
 <cLocEmi>${e.codMunicipio}</cLocEmi>
 <prest>
-<!-- prestador É o emitente: manual manda NÃO informar NIF/cNaoNIF/xNome/endereço -->
 <CNPJ>${cnpj}</CNPJ>
 <IM>${esc(e.prestador.im)}</IM>
 <regTrib>
-<!-- opSimpNac=3 (ME/EPP Simples); regApTribSN=1 (apuração de todos os tributos pelo SN),
-     obrigatório quando opSimpNac=3; regEspTrib=0 (nenhum regime especial municipal). -->
 <opSimpNac>3</opSimpNac>
 <regApTribSN>1</regApTribSN>
 <regEspTrib>0</regEspTrib>
@@ -67,6 +67,7 @@ ${email}
 </locPrest>
 <cServ>
 <cTribNac>${soDigitos(e.servico.codTribNacional)}</cTribNac>
+<cTribMun>${esc(e.servico.codTribMunicipal)}</cTribMun>
 <xDescServ>${esc(e.servico.descricao)}</xDescServ>
 </cServ>
 </serv>

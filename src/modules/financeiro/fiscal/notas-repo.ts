@@ -122,10 +122,10 @@ export async function registrarEvento(client: SupabaseClient, notaId: string, ti
 
 export async function listarServicos(client: SupabaseClient, companyId: string) {
   const { data, error } = await client.from('fiscal_servicos')
-    .select('id, nome, cod_trib_nacional, descricao_padrao, aliquota_iss')
+    .select('id, nome, cod_trib_nacional, cod_trib_municipal, descricao_padrao, aliquota_iss')
     .eq('company_id', companyId).eq('ativo', true).order('nome');
   if (error) throw new Error(`listarServicos: ${error.message}`);
-  return (data ?? []) as Array<{ id: string; nome: string; cod_trib_nacional: string; descricao_padrao: string; aliquota_iss: number }>;
+  return (data ?? []) as Array<{ id: string; nome: string; cod_trib_nacional: string; cod_trib_municipal: string | null; descricao_padrao: string; aliquota_iss: number }>;
 }
 
 export async function getConfig(client: SupabaseClient, companyId: string) {
