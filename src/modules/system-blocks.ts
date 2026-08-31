@@ -18,13 +18,30 @@ export function buildSystemBlocks(input: {
   residencialPrompt: string;
   qualificationStep: string;
   summary: string | null;
+  /** FICHA do cliente: fatos permanentes já sabidos (o que tem instalado,
+   *  quando, atendimentos anteriores). Vem ANTES de tudo no bloco volátil —
+   *  a assistente precisa saber com quem fala antes da primeira palavra. */
+  ficha?: string | null;
   now: Date;
 }): Anthropic.TextBlockParam[] {
-  const { systemPrompt, knowledgeBase, residencialPrompt, qualificationStep, summary, now } = input;
+  const { systemPrompt, knowledgeBase, residencialPrompt, qualificationStep, summary, ficha, now } = input;
 
   // Bloco volátil: mesma ordem/texto que o buildSystemContent legado montava
   // a partir de "## Base de Conhecimento" em diante.
-  let volatile = '\n\n## Base de Conhecimento da Ecosunpower\n\n' + knowledgeBase;
+  // A ficha vem PRIMEIRO: é o que evita perguntar de novo o que já se sabe.
+  let volatile = '';
+  if (ficha && ficha.trim()) {
+    volatile += `\n\n## 📌 FICHA DESTA PESSOA — leia ANTES de responder
+
+${ficha.trim()}
+
+**Use isso.** NÃO pergunte de novo o que já está aqui. Se a ficha diz que ela é
+cliente, trate como cliente desde a primeira palavra — nada de "você já é nosso
+cliente?". Se algum dado mudou (mudou de endereço, trocou equipamento), atualize
+a ficha com a ação \`anotar_ficha\`.`;
+  }
+
+  volatile += '\n\n## Base de Conhecimento da Ecosunpower\n\n' + knowledgeBase;
 
   if (qualificationStep.includes('residencial') || qualificationStep === 'inicio') {
     volatile += '\n\n' + residencialPrompt;

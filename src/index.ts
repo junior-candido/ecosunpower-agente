@@ -5239,12 +5239,24 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         });
       }
 
+      // FICHA (migration 117): fatos permanentes desta pessoa. Vai no início do
+      // prompt pra assistente já saber com quem fala — sem isso ela repete
+      // "você já é nosso cliente?" pra quem comprou ano passado.
+      let fichaDoLead: string | null = null;
+      try {
+        const leadFicha = await db.getLeadByPhone(from);
+        fichaDoLead = (leadFicha as { ficha?: string | null } | null)?.ficha ?? null;
+      } catch (err) {
+        console.warn('[ficha] leitura falhou (segue sem):', (err as Error).message);
+      }
+
       const response = await brain.processMessage(
         text,
         history,
         knowledge,
         conversation.summary,
-        conversation.qualification_step
+        conversation.qualification_step,
+        fichaDoLead,
       );
 
       // TRAVA-NÚMERO: no fluxo novo a Eva NÃO crava preço/dimensionamento (faz handoff).
@@ -5374,6 +5386,31 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     db: SupabaseService = supabase,
   ) {
     switch (action.action) {
+      // FICHA (migration 117): a assistente anota o que descobriu sobre a
+      // pessoa pra saber NA PRÓXIMA VEZ. Append com data — histórico, não
+      // sobrescrita. Teto de 6.000 chars: corta as linhas mais ANTIGAS,
+      // porque o que importa é o que ficou sabido por último.
+      case 'anotar_ficha': {
+        const fato = String((action.data as { fato?: unknown }).fato ?? '').trim();
+        if (!fato) break;
+        const atual = await db.getLeadByPhone(from);
+        if (!atual) { console.warn('[ficha] lead não encontrado, nada anotado'); break; }
+        const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+        const anterior = ((atual as { ficha?: string | null }).ficha ?? '').trim();
+        const linhaNova = `- [${hoje}] ${fato.slice(0, 400)}`;
+        // Não duplica: se o mesmo fato já está lá (mesmo texto), ignora.
+        if (anterior.includes(fato.slice(0, 400))) { console.log('[ficha] fato repetido, ignorado'); break; }
+        let nova = anterior ? `${anterior}\n${linhaNova}` : linhaNova;
+        if (nova.length > 6000) {
+          const linhas = nova.split('\n');
+          while (linhas.join('\n').length > 6000 && linhas.length > 1) linhas.shift();
+          nova = linhas.join('\n');
+        }
+        await db.upsertLead({ phone: from, ficha: nova, company_id: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID } as unknown as Parameters<typeof db.upsertLead>[0]);
+        console.log(`[ficha] anotado pra ${from}: ${fato.slice(0, 60)}`);
+        break;
+      }
+
       case 'update_lead': {
         // Save ALL data from Claude, not just limited fields
         const leadUpdate: Record<string, unknown> = { phone: from };
