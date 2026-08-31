@@ -2,6 +2,8 @@ import { readdirSync, readFileSync, existsSync, statSync } from 'fs';
 import { join } from 'path';
 import chokidar from 'chokidar';
 import type { FSWatcher } from 'chokidar';
+import { ehComum } from './conhecimento-escopo.js';
+import { ehEcosun } from './empresa-config.js';
 
 /**
  * KnowledgeBase com 2 tiers:
@@ -21,6 +23,16 @@ export class KnowledgeBase {
   private coreTokenEstimate: number = 0;
   private specializedCache: Map<string, string> = new Map();
   private watcher: FSWatcher | null = null;
+  // [MULTI-TENANT] Recorte COMUM: só o material técnico que vale pra qualquer
+  // empresa (ver conhecimento-escopo.ts). A assistente de um tenant lê ISTO —
+  // sem os nossos preços, região, casos e processo. A EcoSun continua lendo tudo.
+  private coreComum: string = '';
+  private specializedComum: Map<string, string> = new Map();
+
+  /** Fora de contexto de tenant = EcoSun = base inteira (comportamento histórico). */
+  private soComum(): boolean {
+    return !ehEcosun();
+  }
 
   constructor(directory: string) {
     this.directory = directory;
@@ -45,14 +57,21 @@ export class KnowledgeBase {
 
     this.coreContent = sections.join('\n\n---\n\n');
     this.coreTokenEstimate = Math.ceil(this.coreContent.length / 4);
+    this.coreComum = files
+      .filter(f => ehComum(f, 'core'))
+      .map(f => `[${f.replace('.md', '')}]\n${readFileSync(join(this.directory, f), 'utf-8')}`)
+      .join('\n\n---\n\n');
 
     // Pre-carrega cache de especializados (file system rapido)
     this.specializedCache.clear();
+    this.specializedComum.clear();
     if (existsSync(this.specializedDir)) {
       const specFiles = readdirSync(this.specializedDir).filter(f => f.endsWith('.md'));
       for (const f of specFiles) {
         const content = readFileSync(join(this.specializedDir, f), 'utf-8');
-        this.specializedCache.set(f, `[${f.replace('.md', '')}]\n${content}`);
+        const secao = `[${f.replace('.md', '')}]\n${content}`;
+        this.specializedCache.set(f, secao);
+        if (ehComum(f, 'especializado')) this.specializedComum.set(f, secao);
       }
     }
   }
@@ -61,7 +80,7 @@ export class KnowledgeBase {
    * Conhecimento sempre injetado (core).
    */
   getCore(): string {
-    return this.coreContent;
+    return this.soComum() ? this.coreComum : this.coreContent;
   }
 
   /**
@@ -71,9 +90,10 @@ export class KnowledgeBase {
    */
   getSpecialized(filenames: string[]): string {
     if (!filenames || filenames.length === 0) return '';
+    const fonte = this.soComum() ? this.specializedComum : this.specializedCache;
     const sections: string[] = [];
     for (const f of filenames) {
-      const content = this.specializedCache.get(f);
+      const content = fonte.get(f);
       if (content) sections.push(content);
     }
     if (sections.length === 0) return '';
@@ -87,9 +107,11 @@ export class KnowledgeBase {
    * sempre que tiver texto do cliente disponivel.
    */
   getContent(): string {
-    if (this.specializedCache.size === 0) return this.coreContent;
-    const allSpecialized = Array.from(this.specializedCache.values()).join('\n\n---\n\n');
-    return this.coreContent + '\n\n---\n\n' + allSpecialized;
+    const core = this.getCore();
+    const fonte = this.soComum() ? this.specializedComum : this.specializedCache;
+    if (fonte.size === 0) return core;
+    const allSpecialized = Array.from(fonte.values()).join('\n\n---\n\n');
+    return core + '\n\n---\n\n' + allSpecialized;
   }
 
   getTokenEstimate(): number {
