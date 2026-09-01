@@ -721,6 +721,34 @@ b.onclick=async function(){
 
   // Recados de quem e DE DENTRO e escreveu no numero da assistente (migration 118).
   // A assistente nao trata como lead, mas nada se perde: cai aqui pra empresa ler.
+  // O que a assistente pode dizer sobre a propria empresa (migration 119).
+  // Cada empresa escreve a sua - mexer numa nao encosta na outra.
+  router.get('/conhecimento', exigir('leads', 'visualizar'), async (req: AuthedRequest, res) => {
+    try {
+      const { itensDaEmpresa } = await import('../conhecimento-empresa.js');
+      const { telaConhecimento } = await import('./conhecimento-views.js');
+      const { empresaDe } = await import('../empresa-config.js');
+      const companyId = req.dashUser!.companyId;
+      const aviso = typeof req.query.ok === 'string' ? 'Salvo. A assistente já está usando este texto.' : undefined;
+      res.type('html').send(telaConhecimento(itensDaEmpresa(companyId), empresaDe(companyId).nomeAtendente, req.dashUser, aviso));
+    } catch (err) {
+      console.error('[conhecimento]', err);
+      res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+  });
+
+  router.post('/conhecimento/:chave', exigir('leads', 'editar'), async (req: AuthedRequest, res) => {
+    try {
+      const { salvarConhecimento } = await import('../conhecimento-empresa.js');
+      const conteudo = typeof req.body?.conteudo === 'string' ? req.body.conteudo : '';
+      const r = await salvarConhecimento(supabase, req.dashUser!.companyId, String(req.params.chave), conteudo);
+      res.redirect(r.ok ? '/dashboard/conhecimento?ok=1' : '/dashboard/conhecimento');
+    } catch (err) {
+      console.error('[conhecimento]', err);
+      res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+  });
+
   router.get('/recados', exigir('leads', 'visualizar'), async (req: AuthedRequest, res) => {
     try {
       const { listarRecados } = await import('../contatos-internos.js');

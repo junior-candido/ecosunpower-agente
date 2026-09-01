@@ -85,7 +85,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 // =========================================================================
 
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'contratos' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'pastas' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'recados' | 'kanban' | 'clientes' | 'financeiro' | 'fiscal' | 'assinaturas' | 'minha_assinatura' | 'whatsapp' | 'servicos' | 'usuarios' | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro' | 'lojas' | 'predio';
+  active: 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'contratos' | 'manutencao' | 'monitoramento' | 'usinas_kanban' | 'pos_venda' | 'pastas' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'recados' | 'conhecimento' | 'kanban' | 'clientes' | 'financeiro' | 'fiscal' | 'assinaturas' | 'minha_assinatura' | 'whatsapp' | 'servicos' | 'usuarios' | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro' | 'lojas' | 'predio';
   title: string;
   body: string;
   scripts?: string;
@@ -138,6 +138,7 @@ const SIDEBAR_SETORES: SideSetor[] = [
       { href: '/dashboard/contratos', key: 'contratos', label: '📄 Contratos & Procurações' },
       { href: '/dashboard/leads', key: 'leads', label: '👥 Leads', area: 'leads' },
       { href: '/dashboard/recados', key: 'recados', label: '📥 Recados da equipe', area: 'leads' },
+      { href: '/dashboard/conhecimento', key: 'conhecimento', label: '🧠 O que a assistente sabe', area: 'leads' },
       { href: '/dashboard/leads/kanban', key: 'kanban', label: '📋 Funil (Kanban)', area: 'leads' },
       { href: '/dashboard/clientes', key: 'clientes', label: '🤝 Clientes', soEcosun: true },
       { href: '/dashboard/propostas', key: 'propostas', label: '📊 Propostas', area: 'propostas' },
