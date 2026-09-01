@@ -138,6 +138,7 @@ import { renderPastaHtml } from './modules/relatorios/pasta/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
 import { carregarEmpresaConfig, carregarKits, empresa, comEmpresaDe, listaMarcasTexto } from './modules/empresa-config.js';
 import { destinoAdminDaEmpresa, envioProibido } from './modules/tenant-admin-guard.js';
+import { travarMarcaAlheia } from './modules/trava-marca-alheia.js';
 import { montarHandoff } from './modules/handoff-transfer.js';
 import { mapResendEvento } from './modules/email/resend-events.js';
 import { EmailSequenceService } from './modules/email/email-sequence.js';
@@ -480,8 +481,16 @@ async function main() {
       );
       return;
     }
-    const delay = typingDelay(text);
-    const { messageId } = await messagingDaMensagem().sendText(to, text, delay);
+    // 🏷️ TRAVA DE MARCA (01/09/2026) — o cano, nao o buraco.
+    // A assistente de uma empresa nao pode citar outra. O nome da casa estava
+    // no codigo, nos prompts e em 50 arquivos da base — cacar um por um nao
+    // termina nunca e piora a cada cliente novo. Aqui a resposta e conferida
+    // ANTES de sair: citou alheio, vira mensagem neutra e fica no log.
+    // Custo zero (sem IA) e ~135 microssegundos, medido com 50 empresas.
+    const textoSeguro = travarMarcaAlheia(text);
+
+    const delay = typingDelay(textoSeguro);
+    const { messageId } = await messagingDaMensagem().sendText(to, textoSeguro, delay);
     if (messageId) await takeover.markBotSent(messageId);
   };
 

@@ -300,6 +300,15 @@ export function empresaDe(companyId?: string | null): Readonly<EmpresaConfig> {
  * pra tudo que rodar DENTRO (awaits inclusos, é AsyncLocalStorage). EcoSun ou
  * companyId ausente = mesmo cache global de sempre (byte-idêntico).
  */
+/**
+ * Todas as empresas que o boot carregou (a casa + os tenants). Usada pela
+ * trava-marca-alheia pra saber quem NAO pode ser citado numa conversa —
+ * assim cliente novo entra ja protegido, sem cadastrar nada.
+ */
+export function todasEmpresasConhecidas(): Readonly<EmpresaConfig>[] {
+  return [cache, ...cachePorEmpresa.values()];
+}
+
 export function comEmpresaDe<T>(companyId: string | null | undefined, fn: () => T): T {
   return alsEmpresa.run(empresaDe(companyId), fn);
 }
