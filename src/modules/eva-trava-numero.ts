@@ -11,14 +11,24 @@
 //   do cliente ("sua conta deu 850 kWh") é liberado.
 // - payback: só com contexto de retorno/pagamento.
 
+import { empresa, type EmpresaConfig } from './empresa-config.js';
+
 export interface ResultadoTrava {
   bloqueado: boolean;
   motivos: string[];
 }
 
-// Mensagem que substitui a resposta da Eva quando ela vaza um número proibido.
-export const MENSAGEM_HANDOFF_NUMERO =
-  'Pra te passar o número certo, o Junior (nosso Responsável Técnico) vê seu caso direitinho. Ele pode te atender agora — posso já chamar ele aqui? 😊';
+// Mensagem que substitui a resposta da assistente quando ela vaza um numero
+// proibido. E FUNCAO, nao constante: nome, artigo e titulo saem da EMPRESA em
+// contexto. Como texto fixo, dizia "o Junior" pro cliente de QUALQUER empresa —
+// a equipe da Conquista reclamou disso em 01/09/2026.
+export function mensagemHandoffNumero(e: EmpresaConfig = empresa()): string {
+  const f = e.rtGenero === 'f';
+  const artigo = f ? 'a' : 'o';
+  const pronome = f ? 'Ela' : 'Ele';
+  return `Pra te passar o número certo, ${artigo} ${e.rtApelido} (${f ? 'nossa' : 'nosso'} ${e.rtTitulo}) ` +
+    `vê seu caso direitinho. ${pronome} pode te atender agora — posso já chamar aqui? 😊`;
+}
 
 // Preço de sistema (proibido) começa bem acima de qualquer conta residencial.
 const LIMIAR_PRECO_SISTEMA = 6000;
@@ -55,11 +65,11 @@ export function detectarNumeroProibido(texto: string): ResultadoTrava {
 
 // Helper: devolve o texto seguro (o original, ou a mensagem de handoff se vazou número).
 // Loga o original pra revisão quando barra.
-export function travarTexto(texto: string, contexto = 'eva'): string {
+export function travarTexto(texto: string, contexto = 'eva', e: EmpresaConfig = empresa()): string {
   const r = detectarNumeroProibido(texto);
   if (r.bloqueado) {
     console.warn(`[trava-numero] (${contexto}) resposta barrada (${r.motivos.join(',')}): ${(texto ?? '').slice(0, 200)}`);
-    return MENSAGEM_HANDOFF_NUMERO;
+    return mensagemHandoffNumero(e);
   }
   return texto;
 }

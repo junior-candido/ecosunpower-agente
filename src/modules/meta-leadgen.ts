@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { medirIa } from './custos/ia-metering.js';
+import { empresa } from './empresa-config.js';
 
 const GRAPH_API = 'https://graph.facebook.com/v21.0';
 
@@ -251,7 +252,7 @@ export class MetaLeadgenService {
       .join('\n');
     const kbSnippet = knowledgeBase.slice(0, 2000); // primeiros chars pro contexto
 
-    const prompt = `Voce e o Junior da Ecosunpower Energia Solar (Brasilia/DF e Goias). Um contato acabou de preencher o formulario do ${adContext} no ${lead.source === 'ad_ig_leadform' ? 'Instagram' : 'Facebook'} e voce vai mandar a PRIMEIRA mensagem pelo WhatsApp.
+    const prompt = `Voce e ${empresa().rtApelido} da ${empresa().nomeFantasia} (${empresa().regiaoAtuacao}). Um contato acabou de preencher o formulario do ${adContext} no ${lead.source === 'ad_ig_leadform' ? 'Instagram' : 'Facebook'} e voce vai mandar a PRIMEIRA mensagem pelo WhatsApp.
 
 Dados do lead:
 - Nome: ${lead.name ?? 'nao informado'}
@@ -268,7 +269,7 @@ REGRAS ESTRITAS DE FORMATO:
   - Linha 2: reconhece o form de forma leve
   - Linha 3: UMA pergunta qualificadora direta
 
-- Tom: primeira pessoa, Junior falando com amigo no whatsapp
+- Tom: primeira pessoa, ${empresa().rtApelido} falando com amigo no whatsapp
 - Minusculas em tudo, pontuacao leve (virgula ok, ponto final SO se realmente precisar)
 
 PROIBIDO:

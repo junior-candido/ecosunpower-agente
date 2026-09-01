@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { registrarEvento } from './elo/eventos.js';
+import { empresa } from './empresa-config.js';
 
 // Enum de installation_status. Fonte unica — importe no endpoint pra
 // validacao, evita drift entre codigo e migration (CHECK constraint espelha
@@ -52,7 +53,7 @@ const TOPIC_GUIDE: Record<TouchStep['type'], string> = {
     '{{review_link}}. Pode mencionar que o cliente ja deve estar vendo ' +
     'economia na conta. Reconheca sutilmente que ja pediu antes (sem drama). ' +
     'Maximo 3 linhas. Se preferir, convide pra mandar audio ou escrever ' +
-    'aqui no whatsapp que o Junior organiza.',
+    'aqui no whatsapp mesmo, que a gente organiza.',
   indication_invite:
     'convite pro programa de indicacao da Ecosunpower: quem indica alguem e ' +
     'essa pessoa fecha contrato, ganha R$300 no PIX. Tom: amigavel, informal. ' +
@@ -259,7 +260,7 @@ export class PostInstallService {
     const firstName = (name ?? '').split(' ')[0] || 'tudo certo';
     const guide = TOPIC_GUIDE[type].replace('{{review_link}}', this.reviewLink);
 
-    const prompt = `Voce e o Junior Rodrigues, Responsavel Tecnico CREA/CFT da Ecosunpower Energia Solar (Brasilia/DF e Goias).
+    const prompt = `Voce e ${empresa().rtApelido}, ${empresa().rtTitulo} da ${empresa().nomeFantasia} (${empresa().regiaoAtuacao}).
 Esta mandando uma mensagem pessoal via WhatsApp pra um cliente que JA INSTALOU solar com voce.
 
 Contato: ${firstName}
@@ -269,7 +270,7 @@ Diretriz: ${guide}
 
 Regras estritas:
 - Maximo 3-4 linhas curtas
-- Primeira pessoa (Junior falando direto com o cliente)
+- Primeira pessoa (${empresa().rtApelido} falando direto com o cliente)
 - Tom: amigo reencontrando amigo, nunca vendedor
 - Sem emoji, sem asterisco, sem markdown
 - Use o primeiro nome naturalmente UMA vez

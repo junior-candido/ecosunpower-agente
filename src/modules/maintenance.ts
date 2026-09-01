@@ -116,7 +116,7 @@ export class MaintenanceService {
   private async generateIntroMessage(name: string | null): Promise<string> {
     const greeting = name ? `pra ${name}` : 'pro cliente (nome desconhecido)';
     const prompt = `Voce e a ${empresa().nomeAtendente}, consultora de energia solar da ${empresa().nomeFantasia}.
-O Junior (Responsavel Tecnico CREA/CFT) liberou o atendimento ${greeting} ha 2 horas e o
+${empresa().rtGenero === 'f' ? 'A' : 'O'} ${empresa().rtApelido} (${empresa().rtTitulo}) liberou o atendimento ${greeting} ha 2 horas e o
 cliente nao respondeu ainda. Escreva uma mensagem CURTA de apresentacao no
 WhatsApp pra abrir conversa, em 2 a 3 bolhas separadas por LINHA EM BRANCO.
 
