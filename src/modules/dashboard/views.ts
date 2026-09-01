@@ -5,6 +5,7 @@ import type { DashboardKpi, PropostaRow, ManutencaoRow, GraficoMensal, SistemaMo
 import type { DetalheCalendario } from '../monitoring/service.js';
 import type { IntradayPonto } from '../monitoring/types.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64, LOGO_ECOSUNPOWER_DARK_BASE64 } from '../proposal/assets/logo-base64.js';
+import { corDaMarca, logoDaEmpresa, LOGO_PADRAO_CASA } from './marca-empresa.js';
 import { formatPhoneBR, normalizeBrazilianPhone } from '../meta-leadgen.js';
 import { renderClienteSelector } from './proprietario.js';
 import { empresa } from '../empresa-config.js';
@@ -198,6 +199,15 @@ export function renderLayout(input: LayoutInput): string {
 
   // [Fase 2 A2] Marca do dashboard pelo company da SESSÃO: tenant vê o nome
   // dele; EcoSun (ou telas legadas sem user) vê o visual de sempre, byte a byte.
+  // MARCA DA EMPRESA (01/09/2026): o painel mostrava a logo da EcoSunPower pra
+  // todo mundo, e o tenant via so o nome escrito. Agora cada empresa entra com a
+  // propria logo e a propria cor — mesma ideia do resto do dia: nada da casa
+  // aparece na tela de outra empresa.
+  const _emp = empresa();
+  const corMarca = corDaMarca(_emp);
+  const logoEmpresa = logoDaEmpresa(_emp);
+  const temLogoPropria = logoEmpresa !== LOGO_PADRAO_CASA;
+
   const marcaTenant =
     user?.companyNome && user.companyId !== ECOSUN_COMPANY_ID ? user.companyNome : null;
 
@@ -218,7 +228,7 @@ export function renderLayout(input: LayoutInput): string {
 
   const linkClass = (key: string) =>
     active === key
-      ? 'bg-amber-400 text-slate-900 font-semibold shadow-md'
+      ? 'ecosun-ativo text-slate-900 font-semibold shadow-md'
       : 'text-sky-100 hover:bg-white/10 hover:text-white';
 
   // Monta cada setor recolhível (<details>). Setor só aparece se tiver ao
@@ -299,6 +309,13 @@ export function renderLayout(input: LayoutInput): string {
     background: linear-gradient(180deg, #0c4a6e 0%, #075985 55%, #0369a1 100%);
     width: 240px;
   }
+  /* Cor da MARCA da empresa em contexto (migration 120). Fica numa variavel
+     pra nao ter que trocar 68 classes Tailwind cravadas: o item ativo do menu
+     e os destaques leem daqui. Sem cor cadastrada, e o ambar de sempre. */
+  :root { --marca: ${corMarca}; }
+  .ecosun-ativo { background: var(--marca); }
+  .ecosun-marca-texto { color: var(--marca); }
+
   details > summary { list-style: none; }
   details > summary::-webkit-details-marker { display: none; }
   @media (max-width: 1023px) {
@@ -329,7 +346,9 @@ export function renderLayout(input: LayoutInput): string {
     <aside class="ecosun-sidebar text-white shadow-xl flex flex-col flex-shrink-0 lg:sticky lg:top-0 lg:h-screen">
       <div class="px-4 py-5 border-b border-white/10 text-center">
         <a href="/dashboard/home" title="Ir para a Home" class="inline-block">
-          ${marcaTenant
+          ${temLogoPropria
+            ? `<img src="${escapeHtml(logoEmpresa)}" alt="${escapeHtml(_emp.nomeFantasia)}" class="h-14 w-auto mx-auto">`
+            : marcaTenant
             ? `<div class="text-xl font-extrabold text-white leading-tight">${escapeHtml(marcaTenant)}</div>`
             : `<img src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="EcoSunPower" class="h-12 w-auto mx-auto">`}
         </a>
