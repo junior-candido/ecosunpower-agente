@@ -84,10 +84,18 @@ CREATE POLICY company_isolation ON public.recados_equipe
 -- Os 4 números que o Junior passou (Conquista Solar, 01/09/2026). Todos começam
 -- em 'anota': a assistente confirma o recebimento e cala a boca. Quem for subir
 -- pra 'atende' (consulta de trabalho) é decisão da fatia 2.
+-- Só cadastra se a empresa existir: em banco zerado (CI, dev dos filhos) a
+-- Conquista Solar não existe — ela foi criada à mão em produção, não por
+-- migration. Sem o WHERE EXISTS o seed quebra a chave estrangeira e derruba
+-- a migration inteira num banco novo.
 INSERT INTO contatos_internos (company_id, nome, telefone, setor, modo)
-VALUES
-  ('99fd46d7-60fc-49fe-918f-66587ffa3829', 'Lazaro',   '5577981660268', 'engenharia', 'anota'),
-  ('99fd46d7-60fc-49fe-918f-66587ffa3829', 'Nathalia', '5577988228385', NULL,         'anota'),
-  ('99fd46d7-60fc-49fe-918f-66587ffa3829', 'Angela',   '5577988434891', 'vendas',     'anota'),
-  ('99fd46d7-60fc-49fe-918f-66587ffa3829', 'Iuri',     '5577998395933', NULL,         'anota')
+SELECT c.id, v.nome, v.telefone, v.setor, v.modo
+  FROM companies c
+  CROSS JOIN (VALUES
+    ('Lazaro',   '5577981660268', 'engenharia'::text, 'anota'),
+    ('Nathalia', '5577988228385', NULL::text,         'anota'),
+    ('Angela',   '5577988434891', 'vendas'::text,     'anota'),
+    ('Iuri',     '5577998395933', NULL::text,         'anota')
+  ) AS v(nome, telefone, setor, modo)
+ WHERE c.id = '99fd46d7-60fc-49fe-918f-66587ffa3829'
 ON CONFLICT (company_id, telefone) DO NOTHING;

@@ -1,11 +1,11 @@
 // tests/contatos-internos.test.ts
 import { describe, it, expect, vi } from 'vitest';
-import { identificarInterno, salvarRecado, textoConfirmacao } from '../src/modules/contatos-internos.js';
+import { identificarInterno, salvarRecado, textoConfirmacao, listarRecados } from '../src/modules/contatos-internos.js';
 
 function chainMock(resultado: unknown = { data: [], error: null }) {
   const calls: Record<string, unknown[][]> = {};
   const chain: Record<string, unknown> = {};
-  for (const m of ['select', 'insert', 'eq', 'in', 'limit']) {
+  for (const m of ['select', 'insert', 'eq', 'in', 'limit', 'order']) {
     chain[m] = vi.fn((...a: unknown[]) => { (calls[m] ??= []).push(a); return chain; });
   }
   chain.then = (res: (v: unknown) => void) => res(resultado);
@@ -66,5 +66,33 @@ describe('contatos internos (gente de dentro no número da assistente)', () => {
     expect(t).toContain('Lazaro');
     expect(t).not.toMatch(/clara|ecosun|conquista/i);
     expect(t.length).toBeLessThan(140);
+  });
+  it('lista os recados da empresa, mais novo primeiro', async () => {
+    const { client, from, calls } = chainMock({
+      data: [{ id: 'r1', nome: 'Lazaro', telefone: '5577981660268', mensagem: 'indicacao', criado_em: '2026-09-01T18:00:00Z', lido_em: null }],
+      error: null,
+    });
+    const r = await listarRecados(client, 'emp1');
+    expect(from).toHaveBeenCalledWith('recados_equipe');
+    expect((calls.eq ?? []).map(a => `${a[0]}=${a[1]}`)).toContain('company_id=emp1');
+    expect(calls.order![0]).toEqual(['criado_em', { ascending: false }]);
+    expect(r[0].nome).toBe('Lazaro');
+  });
+});
+
+describe('tela de recados', () => {
+  it('escapa o texto do recado — mensagem de fora nao vira HTML', async () => {
+    const { linhasRecados } = await import('../src/modules/dashboard/recados-views.js');
+    const html = linhasRecados([{
+      id: 'r1', nome: '<img src=x onerror=alert(1)>', telefone: '5577981660268',
+      mensagem: '<script>roubar()</script>', criado_em: '2026-09-01T18:00:00Z', lido_em: null,
+    }]);
+    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('<img');
+    expect(html).toContain('&lt;script&gt;');
+  });
+  it('sem recado nenhum, explica o que a tela e', async () => {
+    const { linhasRecados } = await import('../src/modules/dashboard/recados-views.js');
+    expect(linhasRecados([])).toMatch(/nenhum recado/i);
   });
 });
