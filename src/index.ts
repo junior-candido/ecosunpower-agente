@@ -7445,6 +7445,49 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       return;
     }
 
+    // GRUPO: a assistente e MUDA por padrao — nao atende, nao qualifica, nao
+    // se mete em conversa da equipe. A UNICA coisa que ela faz e ANOTAR o que
+    // mandarem anotar ("Clara, anota: ..."), como uma estagiaria: ouve tudo,
+    // fala pouco, e so registra o que pediram. Achismo de grupo NAO entra:
+    // ela passaria a prometer aquilo pro cliente.
+    if (parsed.deGrupo) {
+      if (parsed.type !== 'text') { res.status(200).json({ status: 'grupo_ignorado' }); return; }
+      const empresaDoGrupo = companyIdDaInstancia ?? ECOSUN_COMPANY_ID;
+      const resultado = await comEmpresaDe(empresaDoGrupo, async () => {
+        const { lerPedidoDeAnotar, escolherAssunto } = await import('./modules/anotar-conhecimento.js');
+        const { itensDaEmpresa, salvarConhecimento } = await import('./modules/conhecimento-empresa.js');
+        const { identificarInterno } = await import('./modules/contatos-internos.js');
+        const pedido = lerPedidoDeAnotar(parsed.content, empresa().nomeAtendente);
+        if (!pedido) return { status: 'grupo_ignorado' as const, resposta: null };
+        // So gente DE DENTRO ensina a assistente. Cliente em grupo nao muda a base.
+        const interno = await identificarInterno(supabase.getClient(), empresaDoGrupo, parsed.from).catch(() => null);
+        if (!interno) return { status: 'grupo_anotar_negado' as const, resposta: null };
+        const assunto = escolherAssunto(pedido.assuntoDito, pedido.texto, itensDaEmpresa(empresaDoGrupo));
+        if (!assunto) {
+          const nomes = itensDaEmpresa(empresaDoGrupo).map((a) => a.titulo).join(", ");
+          return { status: 'grupo_anotar_sem_assunto' as const,
+            resposta: `Não tenho certeza de onde anotar isso. Me diz o assunto? Tenho: ${nomes}.` };
+        }
+        const item = itensDaEmpresa(empresaDoGrupo).find((a) => a.chave === assunto.chave);
+        const antes = item?.conteudo?.trim() ?? '';
+        // Acrescenta, nao substitui: o que ja estava escrito nao se perde.
+        const novo = antes ? `${antes}
+${pedido.texto}` : pedido.texto;
+        const r = await salvarConhecimento(supabase.getClient(), empresaDoGrupo, assunto.chave, novo);
+        return r.ok ? { status: 'grupo_anotado' as const, resposta: `Anotado em ${assunto.titulo} 👍` }
+                    : { status: 'grupo_anotar_falhou' as const, resposta: null };
+      });
+      if (resultado.resposta) {
+        const instancia = await evolutionTenant.instanciaDaEmpresa(companyIdDaInstancia).catch(() => undefined);
+        await comEmpresaDe(empresaDoGrupo, () => comCanal(
+          { companyId: empresaDoGrupo, evolutionInstance: instancia },
+          () => evolution.sendText(parsed.grupoId ?? parsed.from, resultado.resposta as string),
+        )).catch((e) => console.warn(`[grupo] resposta não saiu: ${(e as Error).message}`));
+      }
+      res.status(200).json({ status: resultado.status });
+      return;
+    }
+
     // Double check: ignore groups
     if (parsed.from.includes('-') || parsed.from.length > 15) {
       res.status(200).json({ status: 'ignored_group' });

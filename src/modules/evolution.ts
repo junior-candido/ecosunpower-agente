@@ -4,6 +4,11 @@ import type { Config } from '../config.js';
 export interface IncomingMessage {
   type: 'text' | 'audio' | 'image' | 'video' | 'location' | 'document';
   from: string;
+  /** Veio de grupo? O padrao continua sendo IGNORAR — quem decide o que fazer
+   *  e o webhook. Existe pra assistente poder APRENDER do grupo da equipe. */
+  deGrupo?: boolean;
+  /** JID do grupo (so quando deGrupo). Em grupo, `from` e a PESSOA que falou. */
+  grupoId?: string;
   content: string;
   timestamp: Date;
   messageId: string;
@@ -90,15 +95,19 @@ export class EvolutionService {
 
     if (!key || !message) return null;
 
-    // Ignorar mensagens de grupos (grupos terminam com @g.us)
-    if (key.remoteJid?.endsWith('@g.us')) return null;
+    // GRUPO: nao descarta mais aqui. Em grupo o remoteJid e o GRUPO e quem
+    // falou vem em key.participant — sem participante nao da pra saber se e
+    // gente da equipe, entao ai sim descarta.
+    const deGrupo = Boolean(key.remoteJid?.endsWith('@g.us'));
+    const grupoId = deGrupo ? key.remoteJid : undefined;
+    if (deGrupo && !key.participant) return null;
 
     const fromMe = Boolean(key.fromMe);
-    const from = key.remoteJid?.replace('@s.whatsapp.net', '') ?? '';
+    const from = (deGrupo ? key.participant : key.remoteJid)?.replace('@s.whatsapp.net', '') ?? '';
     const messageId = key.id ?? '';
     const pushName = (data.pushName as string) || undefined;
 
-    const base = { from, timestamp: new Date(timestamp * 1000), messageId, fromMe, pushName };
+    const base = { from, timestamp: new Date(timestamp * 1000), messageId, fromMe, pushName, deGrupo, grupoId };
 
     if (message.conversation || message.extendedTextMessage) {
       const text = (message.conversation as string)
