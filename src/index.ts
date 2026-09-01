@@ -7489,19 +7489,18 @@ ${pedido.texto}` : pedido.texto;
         return;
       }
 
-      // NAO e da equipe: e cliente ou lead. Uma linha no grupo (so na primeira
-      // vez, senao polui) e o atendimento SEGUE no privado logo abaixo.
-      const { deveAvisarNoGrupo } = await import('./modules/aviso-grupo.js');
-      if (parsed.grupoId && deveAvisarNoGrupo(parsed.grupoId, parsed.from)) {
-        const instancia = await evolutionTenant.instanciaDaEmpresa(companyIdDaInstancia).catch(() => undefined);
-        await comEmpresaDe(empresaDoGrupo, () => comCanal(
-          { companyId: empresaDoGrupo, evolutionInstance: instancia },
-          () => evolution.sendText(parsed.grupoId as string,
-            `Oi${parsed.pushName ? `, ${parsed.pushName}` : ''}! Vi sua mensagem 😊 Te chamei no particular pra ver seu caso direitinho.`),
-        )).catch((e) => console.warn(`[grupo] aviso não saiu: ${(e as Error).message}`));
-      }
-      console.log(`[evolution] lead no grupo (${parsed.from}) — atendendo no privado.`);
-      // sem return: cai no fluxo normal e atende no privado, com tudo que ela tem
+      // ⚠️ REVERTIDO 01/09/2026 18h45, com o sistema JA no ar.
+      // A Clara respondeu "te chamei no particular" pra JIMENA (dona) e pro IURI
+      // — e o Iuri ESTA cadastrado como interno. Ou seja: a identificacao de quem
+      // fala no grupo falhou, e ai TODO MUNDO virou lead.
+      // Suspeita: em grupo o WhatsApp manda o participante como LID (identificador
+      // interno novo), nao como telefone — o numero nao bate com contatos_internos.
+      // Enquanto nao confirmarmos o formato, no grupo ela NAO atende ninguem: so
+      // anota quando um interno mandar. Errar pra menos aqui incomoda; errar pra
+      // mais faz ela tratar a dona da empresa como lead na frente da equipe.
+      console.log(`[grupo] participante recebido: from="${parsed.from}" pushName="${parsed.pushName ?? ""}" grupo="${parsed.grupoId ?? ""}" interno=${Boolean(internoNoGrupo)}`);
+      res.status(200).json({ status: 'grupo_sem_atendimento' });
+      return;
     }
 
     // Double check: ignore groups
