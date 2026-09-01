@@ -88,3 +88,18 @@ export function escolherAssunto(
   const candidatos = disponiveis.filter((a) => PISTAS[a.chave]?.test(texto));
   return candidatos.length === 1 ? candidatos[0] : null;   // duas pistas = dúvida = pergunta
 }
+
+/**
+ * A mensagem CHAMA a assistente pelo nome? É a regra do grupo: ela só fala
+ * quando falam com ela.
+ *
+ * Precisa começar pelo nome. "a Clara respondeu bem hoje" fala DELA, não COM
+ * ela — e foi assim que em 01/09/2026 ela entrou numa conversa que não era sua,
+ * respondendo à dona da empresa e à equipe como se fossem clientes.
+ */
+export function chamouPeloNome(mensagem: string, nomeAssistente: string): boolean {
+  const texto = (mensagem ?? '').trim();
+  const nome = (nomeAssistente ?? '').trim();
+  if (!texto || !nome) return false;
+  return new RegExp(`^\\s*${nome}\\b`, 'i').test(texto);
+}

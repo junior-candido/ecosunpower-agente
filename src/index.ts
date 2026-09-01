@@ -7445,61 +7445,68 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       return;
     }
 
-    // GRUPO: quem decide o comportamento NAO e o canal, e QUEM FALOU.
-    //  - gente de dentro  -> ela nao atende, so ANOTA o que mandarem anotar
-    //  - qualquer outro   -> e cliente ou lead: ATENDE, e bem (Junior 01/09:
-    //    "cliente, lead, tudo isso ela deve atender e bem"). Avisa uma linha
-    //    no grupo e segue o atendimento no privado, com o cerebro de vendas
-    //    inteiro - qualificacao, proposta, follow-up.
+    // GRUPO — a regra e uma so: ELA SO FALA QUANDO CHAMAM PELO NOME.
+    //
+    // Foi isso que faltou em 01/09: ela respondeu a Jimena (dona) e ao Iuri sem
+    // ninguem ter falado com ela. Numa sala com a equipe, a vendedora nao entra
+    // na conversa dos outros — mas se alguem fala o nome dela, responde.
+    //
+    // O numero da assistente e o da Angela, que "fica por dentro de tudo" e esta
+    // em varios grupos (instaladores, equipe tecnica). Grupo e o espaco DELA;
+    // a assistente ali e ferramenta, nao participante. O trabalho da assistente
+    // e VENDER, e isso acontece no privado.
+    //
+    // Nao exigimos cadastro em contatos_internos pra anotar: a Jimena confirmou
+    // que TODOS os grupos desse numero sao internos, e a identificacao por
+    // telefone em grupo esta furada (o Iuri, cadastrado, nao foi reconhecido).
+    // Exigir cadastro ali nao protegeria nada e quebraria o unico uso que presta.
     if (parsed.deGrupo) {
       const empresaDoGrupo = companyIdDaInstancia ?? ECOSUN_COMPANY_ID;
-      const { identificarInterno } = await import('./modules/contatos-internos.js');
-      const internoNoGrupo = await identificarInterno(supabase.getClient(), empresaDoGrupo, parsed.from).catch(() => null);
+      if (parsed.type !== 'text') { res.status(200).json({ status: 'grupo_ignorado' }); return; }
 
-      if (internoNoGrupo) {
-        // Colega: ela e muda. A unica acao e anotar o que ensinarem.
-        if (parsed.type !== 'text') { res.status(200).json({ status: 'grupo_ignorado' }); return; }
-        const resultado = await comEmpresaDe(empresaDoGrupo, async () => {
-          const { lerPedidoDeAnotar, escolherAssunto } = await import('./modules/anotar-conhecimento.js');
-          const { itensDaEmpresa, salvarConhecimento } = await import('./modules/conhecimento-empresa.js');
-          const pedido = lerPedidoDeAnotar(parsed.content, empresa().nomeAtendente);
-          if (!pedido) return { status: 'grupo_ignorado' as const, resposta: null };
-          const assunto = escolherAssunto(pedido.assuntoDito, pedido.texto, itensDaEmpresa(empresaDoGrupo));
-          if (!assunto) {
-            const nomes = itensDaEmpresa(empresaDoGrupo).map((a) => a.titulo).join(", ");
-            return { status: 'grupo_anotar_sem_assunto' as const,
-              resposta: `Não tenho certeza de onde anotar isso. Me diz o assunto? Tenho: ${nomes}.` };
-          }
-          const item = itensDaEmpresa(empresaDoGrupo).find((a) => a.chave === assunto.chave);
-          const antes = item?.conteudo?.trim() ?? '';
-          const novoTexto = antes ? `${antes}
-${pedido.texto}` : pedido.texto;
-          const r = await salvarConhecimento(supabase.getClient(), empresaDoGrupo, assunto.chave, novoTexto);
-          return r.ok ? { status: 'grupo_anotado' as const, resposta: `Anotado em ${assunto.titulo} 👍` }
-                      : { status: 'grupo_anotar_falhou' as const, resposta: null };
-        });
-        if (resultado.resposta) {
-          const instancia = await evolutionTenant.instanciaDaEmpresa(companyIdDaInstancia).catch(() => undefined);
-          await comEmpresaDe(empresaDoGrupo, () => comCanal(
-            { companyId: empresaDoGrupo, evolutionInstance: instancia },
-            () => evolution.sendText(parsed.grupoId ?? parsed.from, resultado.resposta as string),
-          )).catch((e) => console.warn(`[grupo] resposta não saiu: ${(e as Error).message}`));
+      const resultado = await comEmpresaDe(empresaDoGrupo, async () => {
+        const { lerPedidoDeAnotar, escolherAssunto, chamouPeloNome } = await import('./modules/anotar-conhecimento.js');
+        const { itensDaEmpresa, salvarConhecimento } = await import('./modules/conhecimento-empresa.js');
+        const nome = empresa().nomeAtendente;
+
+        // Nao chamaram por ela: nem le. É conversa da equipe.
+        if (!chamouPeloNome(parsed.content, nome)) return { status: 'grupo_ignorado' as const, resposta: null };
+
+        const pedido = lerPedidoDeAnotar(parsed.content, nome);
+        if (!pedido) {
+          // Chamaram, mas nao e pedido de anotar. Diz o que sabe fazer aqui em vez
+          // de ficar muda — silencio depois de chamarem parece defeito.
+          return { status: 'grupo_chamada_sem_acao' as const,
+            resposta: `Por aqui eu só anoto o que vocês me ensinam 🙂 É só mandar assim:
+
+*${nome}, anota: a garantia da instalação é de 12 meses*
+
+Atendimento de cliente eu faço no particular.` };
         }
-        res.status(200).json({ status: resultado.status });
-        return;
-      }
 
-      // ⚠️ REVERTIDO 01/09/2026 18h45, com o sistema JA no ar.
-      // A Clara respondeu "te chamei no particular" pra JIMENA (dona) e pro IURI
-      // — e o Iuri ESTA cadastrado como interno. Ou seja: a identificacao de quem
-      // fala no grupo falhou, e ai TODO MUNDO virou lead.
-      // Suspeita: em grupo o WhatsApp manda o participante como LID (identificador
-      // interno novo), nao como telefone — o numero nao bate com contatos_internos.
-      // Enquanto nao confirmarmos o formato, no grupo ela NAO atende ninguem: so
-      // anota quando um interno mandar. Errar pra menos aqui incomoda; errar pra
-      // mais faz ela tratar a dona da empresa como lead na frente da equipe.
-      console.log(`[grupo] participante recebido: from="${parsed.from}" pushName="${parsed.pushName ?? ""}" grupo="${parsed.grupoId ?? ""}" interno=${Boolean(internoNoGrupo)}`);
-      res.status(200).json({ status: 'grupo_sem_atendimento' });
+        const assunto = escolherAssunto(pedido.assuntoDito, pedido.texto, itensDaEmpresa(empresaDoGrupo));
+        if (!assunto) {
+          const nomes = itensDaEmpresa(empresaDoGrupo).map((a) => a.titulo).join(", ");
+          return { status: 'grupo_anotar_sem_assunto' as const,
+            resposta: `Não sei onde guardar isso. Me diz o assunto? Sei falar de: ${nomes}.` };
+        }
+        const item = itensDaEmpresa(empresaDoGrupo).find((a) => a.chave === assunto.chave);
+        const antes = item?.conteudo?.trim() ?? '';
+        const novoTexto = antes ? `${antes}
+${pedido.texto}` : pedido.texto;
+        const r = await salvarConhecimento(supabase.getClient(), empresaDoGrupo, assunto.chave, novoTexto);
+        return r.ok ? { status: 'grupo_anotado' as const, resposta: `Anotado em ${assunto.titulo} 👍` }
+                    : { status: 'grupo_anotar_falhou' as const, resposta: null };
+      });
+
+      if (resultado.resposta) {
+        const instancia = await evolutionTenant.instanciaDaEmpresa(companyIdDaInstancia).catch(() => undefined);
+        await comEmpresaDe(empresaDoGrupo, () => comCanal(
+          { companyId: empresaDoGrupo, evolutionInstance: instancia },
+          () => evolution.sendText(parsed.grupoId ?? parsed.from, resultado.resposta as string),
+        )).catch((e) => console.warn(`[grupo] resposta não saiu: ${(e as Error).message}`));
+      }
+      res.status(200).json({ status: resultado.status });
       return;
     }
 
