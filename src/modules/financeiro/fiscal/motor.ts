@@ -7,7 +7,7 @@ import { montarDpsXml, COD_TRIB_COM_OBRA, type EnderecoNac } from './dps-xml.js'
 export interface DepsEmissao {
   carregarNota: (companyId: string, notaId: string) => Promise<{
     id: string; status: string; competencia: string; descricao: string;
-    tomador: { tipo: 'PJ' | 'PF'; doc: string; nome: string; email: string | null; municipio: string; uf: string;
+    tomador: { tipo: 'PJ' | 'PF'; doc: string; nome: string; im?: string | null; email: string | null; municipio: string; uf: string;
       cep?: string | null; logradouro?: string | null; numero?: string | null; bairro?: string | null; codMunIbge?: string | null };
     servicoId: string | null; valorBruto: number; valorIss: number; issRetido: boolean; valorLiquido: number;
   }>;
@@ -49,8 +49,6 @@ export async function emitirNota(deps: DepsEmissao, companyId: string, notaId: s
   if (!servico.codTribMunicipal) {
     throw new Error('O serviço do catálogo está sem o código de tributação municipal (cTribMun) — preencha na configuração fiscal. Esse código vem da tabela de correlação do ISS do seu município.');
   }
-  const travou = await deps.travarParaEnvio(companyId, notaId);
-  if (!travou) throw new Error('Essa nota já está sendo emitida (ou já foi emitida) — recarregue a página antes de tentar de novo.');
   // Endereço nacional do tomador: OBRIGATÓRIO quando o tomador é PJ (E0235) ou
   // quando o ISS é retido (E0237). Sem os 4 campos, melhor travar aqui com
   // mensagem clara do que levar rejeição do fisco.
@@ -69,6 +67,11 @@ export async function emitirNota(deps: DepsEmissao, companyId: string, notaId: s
   if (precisaObra && !enderecoTomador) {
     throw new Error('Esse serviço é de obra (item 07 da lista) e o fisco exige o endereço da obra. Preencha o endereço completo do tomador na nota.');
   }
+  // A trava (preparada->enviada) fica DEPOIS de toda conferência local: erro nosso
+  // (endereço/obra faltando) não pode deixar a nota presa em "Enviada" como se a
+  // conexão tivesse caído — nada saiu pro fisco. Corrigido 01/09/2026 (nota Spazio).
+  const travou = await deps.travarParaEnvio(companyId, notaId);
+  if (!travou) throw new Error('Essa nota já está sendo emitida (ou já foi emitida) — recarregue a página antes de tentar de novo.');
   const nDps = await deps.proximoNdps(companyId);
   const { xml, idDps } = montarDpsXml({
     ambiente: cfg.ambiente, dhEmi: new Date(), serie: cfg.serie, nDps,
@@ -76,7 +79,7 @@ export async function emitirNota(deps: DepsEmissao, companyId: string, notaId: s
     // Homologação: o cadastro de teste NÃO é optante do Simples (E0160) → opSimpNac=1.
     optanteSimples: cfg.ambiente === 'producao',
     prestador: { cnpj: cfg.cnpj, im: cfg.im },
-    tomador: { tipo: t.tipo, doc: t.doc, nome: t.nome, endereco: enderecoTomador, email: t.email },
+    tomador: { tipo: t.tipo, doc: t.doc, nome: t.nome, im: t.im, endereco: enderecoTomador, email: t.email },
     servico: { codTribNacional: servico.codTribNacional, codTribMunicipal: servico.codTribMunicipal, descricao: nota.descricao },
     obra: precisaObra ? enderecoTomador : null,
     valores: { vServ: nota.valorBruto, issRetido: nota.issRetido },

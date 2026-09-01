@@ -19,7 +19,9 @@ export interface EntradaDps {
    *  (E0160 manda usar opSimpNac=1 quando o CNPJ não consta no cadastro). */
   optanteSimples: boolean;
   prestador: { cnpj: string; im: string };
-  tomador: { tipo: 'PJ' | 'PF'; doc: string; nome: string; endereco: EnderecoNac | null; email: string | null };
+  /** im: inscricao municipal do TOMADOR (no DF, o CF/DF). Obrigatoria quando ele
+   *  retem o ISS — sem ela o fisco devolve EM057. Teste real 01/09/2026. */
+  tomador: { tipo: 'PJ' | 'PF'; doc: string; nome: string; im?: string | null; endereco: EnderecoNac | null; email: string | null };
   servico: { codTribNacional: string; codTribMunicipal: string; descricao: string };
   /** Obrigatório quando o cTribNac é de obra (07.02.01, 07.02.02, 07.04.01, 07.05.01,
    *  07.05.02, 07.06.01, 07.06.02, 07.07.01, 07.08.01, 07.17.01, 07.19.01) — E0370. */
@@ -50,6 +52,8 @@ export function montarDpsXml(e: EntradaDps): { xml: string; idDps: string } {
   const brasilia = new Date(e.dhEmi.getTime() - 3 * 3600 * 1000);
   const dhEmi = brasilia.toISOString().replace(/\.\d{3}Z$/, '') + '-03:00';
   const tpRet = e.valores.issRetido ? '2' : '1';
+  // Ordem do TCInfoPessoa (manual v1.01): CNPJ/CPF -> CAEPF -> IM -> xNome -> End -> Fone -> Email.
+  const imTomador = e.tomador.im ? `<IM>${esc(soDigitos(e.tomador.im))}</IM>` : '';
   const endTomador = e.tomador.endereco ? endNacXml(e.tomador.endereco) : '';
   const email = e.tomador.email ? `<email>${esc(e.tomador.email)}</email>` : '';
   // opSimpNac=3 exige regApTribSN; opSimpNac=1 PROÍBE (e também proíbe pAliq — E0617).
@@ -75,7 +79,7 @@ export function montarDpsXml(e: EntradaDps): { xml: string; idDps: string } {
 ${regTrib}
 </prest>
 <toma>
-${docTomador}
+${docTomador}${imTomador}
 <xNome>${esc(norm(e.tomador.nome))}</xNome>
 ${endTomador}
 ${email}

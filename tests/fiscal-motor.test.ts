@@ -78,4 +78,32 @@ describe('motor de emissão', () => {
     const deps = depsFake({ carregarConfig: vi.fn(async () => ({ certOk: false }) as never) });
     await expect(emitirNota(deps, 'c1', 'n1')).rejects.toThrow(/certificado/i);
   });
+  // BUG 01/09/2026 (teste real da nota Spazio): a trava preparada->enviada rodava
+  // ANTES da conferência do endereço. Como esse erro é SÓ NOSSO (nada chegou a sair
+  // pro fisco), a nota ficava presa em "Enviada — a conexão pode ter caído",
+  // sem botão de editar/emitir, e o Junior tinha que destravar na mão.
+  it('tomador PJ sem endereço: barra ANTES de travar — a nota continua preparada', async () => {
+    const deps = depsFake({ carregarNota: vi.fn(async () => ({
+      id: 'n1', status: 'preparada', competencia: '2026-08-31',
+      tomador: { tipo: 'PJ' as const, doc: '13245160000142', nome: 'SPAZIO', email: null, municipio: 'Brasilia', uf: 'DF',
+        cep: null, logradouro: null, numero: null, bairro: null, codMunIbge: null },
+      servicoId: 's1', valorBruto: 1250, valorIss: 25, issRetido: true, valorLiquido: 1225, descricao: 'instalacao',
+    }) as never) });
+    await expect(emitirNota(deps, 'c1', 'n1')).rejects.toThrow(/endereço completo do tomador/i);
+    expect(deps.travarParaEnvio).not.toHaveBeenCalled();
+    expect(deps.enviar).not.toHaveBeenCalled();
+  });
+  it('servico de obra sem endereco: barra ANTES de travar', async () => {
+    const deps = depsFake({
+      carregarServico: vi.fn(async () => ({ codTribNacional: '07.02.02', codTribMunicipal: '1' })),
+      carregarNota: vi.fn(async () => ({
+        id: 'n1', status: 'preparada', competencia: '2026-08-31',
+        tomador: { tipo: 'PF' as const, doc: '12345678901', nome: 'Fulano', email: null, municipio: 'Brasilia', uf: 'DF',
+          cep: null, logradouro: null, numero: null, bairro: null, codMunIbge: null },
+        servicoId: 's1', valorBruto: 1250, valorIss: 25, issRetido: false, valorLiquido: 1225, descricao: 'instalacao',
+      }) as never),
+    });
+    await expect(emitirNota(deps, 'c1', 'n1')).rejects.toThrow(/obra/i);
+    expect(deps.travarParaEnvio).not.toHaveBeenCalled();
+  });
 });

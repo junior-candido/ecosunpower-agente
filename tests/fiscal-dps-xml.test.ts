@@ -99,4 +99,21 @@ describe('dps-xml', () => {
     const { xml } = montarDpsXml({ ...entrada, servico: { ...entrada.servico, descricao: 'a & b < c' } });
     expect(xml).toContain('a &amp; b &lt; c');
   });
+  // EM057 (teste real 01/09/2026): "O responsável pela retenção não é Substituto
+  // Tributário OU a inscrição municipal não foi informada". O tomador que retém ISS
+  // precisa levar a própria inscrição (no DF, o CF/DF). O campo existia na tela e no
+  // banco, mas nunca chegava ao XML. Ordem do TCInfoPessoa (manual, p.3529):
+  // CNPJ/CPF -> CAEPF -> IM -> xNome -> End -> Fone -> Email.
+  it('tomador com inscrição municipal: <IM> sai entre o CNPJ e o xNome', () => {
+    const { xml } = montarDpsXml({ ...entrada, tomador: { ...entrada.tomador, im: '0730000100123' } });
+    expect(xml).toContain('<IM>0730000100123</IM>');
+    expect(xml.indexOf('<CNPJ>13245160000142</CNPJ>')).toBeLessThan(xml.indexOf('<IM>0730000100123</IM>'));
+    expect(xml.indexOf('<IM>0730000100123</IM>')).toBeLessThan(xml.indexOf('<xNome>'));
+  });
+  it('tomador sem inscrição: nao inventa tag IM vazia', () => {
+    const { xml } = montarDpsXml({ ...entrada, tomador: { ...entrada.tomador, im: null } });
+    expect(xml).not.toContain('<IM></IM>');
+    const toma = xml.slice(xml.indexOf('<toma>'), xml.indexOf('</toma>'));
+    expect(toma).not.toContain('<IM>');
+  });
 });
