@@ -3,8 +3,8 @@ import { join } from 'path';
 import chokidar from 'chokidar';
 import type { FSWatcher } from 'chokidar';
 import { ehComum } from './conhecimento-escopo.js';
-import { ehEcosun, empresa } from './empresa-config.js';
-import { higienizarParaTenant } from './conhecimento-higiene.js';
+import { ehEcosun } from './empresa-config.js';
+import { removerBlocosInternos } from './conhecimento-higiene.js';
 
 /**
  * KnowledgeBase com 2 tiers:
@@ -40,7 +40,7 @@ export class KnowledgeBase {
    *  Roda na ENTREGA (não no load) porque a empresa em contexto muda por mensagem. */
   private paraQuemLe(texto: string): string {
     if (!this.soComum() || !texto) return texto;
-    return higienizarParaTenant(texto, empresa());
+    return removerBlocosInternos(texto);
   }
 
   constructor(directory: string) {
