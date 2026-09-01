@@ -139,6 +139,7 @@ import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './
 import { carregarEmpresaConfig, carregarKits, empresa, comEmpresaDe, listaMarcasTexto } from './modules/empresa-config.js';
 import { destinoAdminDaEmpresa, envioProibido } from './modules/tenant-admin-guard.js';
 import { travarMarcaAlheia } from './modules/trava-marca-alheia.js';
+import { carregarConhecimentoEmpresas } from './modules/conhecimento-empresa.js';
 import { montarHandoff } from './modules/handoff-transfer.js';
 import { mapResendEvento } from './modules/email/resend-events.js';
 import { EmailSequenceService } from './modules/email/email-sequence.js';
@@ -321,6 +322,9 @@ async function main() {
   // hardcoded — banco sem a tabela continua funcionando com comportamento idêntico).
   // Ignora o retorno { ok, config } — falha no boot com defaults é aceitável.
   await carregarEmpresaConfig(supabase.getClient());
+  // Base que cada empresa tem sobre SI MESMA (migration 119). Vem junto da
+  // config porque a assistente lê nas duas a cada mensagem.
+  await carregarConhecimentoEmpresas(supabase.getClient());
 
   const brain = new Brain(config.anthropicApiKey, process.env.GOOGLE_REVIEW_URL ?? '');
   const vision = new VisionAnalyzer(config.anthropicApiKey);

@@ -5,6 +5,8 @@ import type { FSWatcher } from 'chokidar';
 import { ehComum } from './conhecimento-escopo.js';
 import { ehEcosun } from './empresa-config.js';
 import { removerBlocosInternos } from './conhecimento-higiene.js';
+import { conhecimentoDaEmpresa } from './conhecimento-empresa.js';
+import { empresa } from './empresa-config.js';
 
 /**
  * KnowledgeBase com 2 tiers:
@@ -89,7 +91,18 @@ export class KnowledgeBase {
    * Conhecimento sempre injetado (core).
    */
   getCore(): string {
-    return this.paraQuemLe(this.soComum() ? this.coreComum : this.coreContent);
+    const base = this.paraQuemLe(this.soComum() ? this.coreComum : this.coreContent);
+    if (!this.soComum()) return base;
+    // A empresa fala de SI MESMA com a base dela (migration 119) — o que ela
+    // vende, marcas, garantia, região. Vem PRIMEIRO: é o que responde
+    // "vocês trabalham com o quê?". O material compartilhado é só fato de
+    // equipamento, que vale pra qualquer empresa.
+    const propria = conhecimentoDaEmpresa(empresa().companyId);
+    return propria ? `${propria}
+
+---
+
+${base}` : base;
   }
 
   /**
