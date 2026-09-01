@@ -48,9 +48,20 @@ describe('escopo da base de conhecimento', () => {
   });
 
   it('o comum é material técnico de verdade (não ficou vazio)', () => {
-    expect(COMUM_ESPECIALIZADO.size).toBeGreaterThan(30);
+    expect(COMUM_ESPECIALIZADO.size).toBeGreaterThan(10);
     expect(ehComum('legislacao.md', 'especializado')).toBe(true);
     expect(ehComum('dimensionamento.md', 'especializado')).toBe(true);
-    expect(ehComum('modulo-jinko-tiger-neo.md', 'especializado')).toBe(true);
+    expect(ehComum('tarifacao.md', 'especializado')).toBe(true);
+  });
+
+  // Revisão 01/09/2026. Arquivo de marca não é técnico: é POSICIONAMENTO da
+  // EcoSunPower ("por que a EcoSunPower trabalha com Solis", "nossa garantia
+  // é 12 meses"). Entregar pro cliente do SaaS faz a assistente dele afirmar
+  // sobre ELE o que é verdade só sobre nós. Com que marcas cada empresa
+  // trabalha, ela escreve na base própria (migration 119).
+  it('NENHUM arquivo de marca entra no comum', () => {
+    const deMarca = [...COMUM_ESPECIALIZADO].filter((f) =>
+      /^(modulo|modulos|inversor|inversores|microinversor|bateria|baterias|hibrido|comparativo|compatibilidade)[-.]/.test(f));
+    expect(deMarca, `arquivo de marca no comum: ${deMarca.join(', ')}`).toEqual([]);
   });
 });

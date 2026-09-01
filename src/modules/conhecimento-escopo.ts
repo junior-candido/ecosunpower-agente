@@ -21,76 +21,43 @@ export const COMUM_CORE: ReadonlySet<string> = new Set([
 ]);
 
 /** Arquivos de conhecimento/especializado/ que valem pra qualquer empresa. */
+/** Arquivos de conhecimento/especializado/ que valem pra qualquer empresa.
+ *
+ * ⚠️ REVISADO 01/09/2026 — SEM ARQUIVO DE MARCA.
+ * A lista antiga tinha 68 arquivos, e 45 deles eram de marca específica
+ * (modulo-*, inversor-*, microinversor-*, bateria-*). Esses arquivos não são
+ * técnicos: são POSICIONAMENTO da EcoSunPower — "por que a EcoSunPower
+ * trabalha com Solis", "nossa garantia é 12 meses", "a Eva nunca passa preço,
+ * escalona pro Junior". Entregar isso pro cliente do SaaS faz a assistente
+ * dele afirmar sobre ELE o que é verdade só sobre nós — promete marca e
+ * garantia que talvez não sejam dele.
+ *
+ * Junior derrubou a ideia de só trocar os nomes: "isso não faz sentido".
+ * Está certo — trocar "EcoSunPower" por "Conquista Solar" numa frase dessas
+ * transforma vazamento de marca em afirmação falsa, que é pior.
+ *
+ * Sobra aqui o que é LEI, NORMA e FÍSICA: verdade pra qualquer empresa do
+ * país. Com que marcas a empresa trabalha, ela escreve na base própria
+ * (migration 119, assunto "marcas").
+ */
 export const COMUM_ESPECIALIZADO: ReadonlySet<string> = new Set([
-  // Normas, lei e conceitos
+  // Lei, norma e regra de mercado
   'legislacao.md',
   'modalidades-compensacao.md',
   'tarifacao.md',
   'certificacao-homologacao-inmetro.md',
   'mercado-livre.md',
-  // Engenharia
+  // Engenharia e dimensionamento (conta, não catálogo)
   'dimensionamento.md',
   'cenarios-dimensionamento.md',
   'estruturas-telhados.md',
   'apartamento-condominio.md',
   'solucoes-grupo-a-demanda-bess.md',
-  'limpeza-manutencao-om.md',
   'armazenamento.md',
-  'aquecimento-solar-agua.md',   // térmico (banho/piscina) — produto da Conquista Solar
+  // Serviços e produtos como CONCEITO (o que é, como funciona)
+  'limpeza-manutencao-om.md',
+  'aquecimento-solar-agua.md',
   'carros-eletricos.md',
-  'canal-solar.md',
-  'argumentos-equipamentos.md',
-  // Equipamento — datasheet é público do fabricante
-  'inversores-baterias.md',
-  'comparativo-baterias-compatibilidade.md',
-  'compatibilidade-inversores-baterias.md',
-  'modulos-especificacoes.md',
-  'modulos-dmegc.md',
-  'modulos-hanersun.md',
-  'modulo-astronergy.md',
-  'modulo-dah.md',
-  'modulo-hanersun-hn21n.md',
-  'modulo-jasolar-deepblue40pro.md',
-  'modulo-jinko-tiger-neo.md',
-  'modulo-leapton.md',
-  'modulo-longi-bc2.md',
-  'modulo-osda.md',
-  'modulo-risen-hjt.md',
-  'modulo-tcl-hsm-nd66.md',
-  'modulo-trina-vertex-n.md',
-  'modulo-tsun-rio.md',
-  'inversor-deye-string.md',
-  'inversor-foxess-string.md',
-  'inversor-fronius-sma.md',
-  'inversor-goodwe-xs-g3.md',
-  'inversor-huawei-fusionsolar.md',
-  'inversor-livoltek.md',
-  'inversor-sofar.md',
-  'inversor-solis-string.md',
-  'inversor-solplanet.md',
-  'inversor-sungrow-rsl.md',
-  'hibrido-foxess-h3pro-ep11.md',
-  'microinversor-apsystems.md',
-  'microinversor-deye.md',
-  'microinversor-enphase.md',
-  'microinversor-foxess.md',
-  'microinversor-goodwe-mis.md',
-  'microinversor-hoymiles.md',
-  'microinversor-nep.md',
-  'microinversor-solax.md',
-  'microinversor-sungrow-s2500sl.md',
-  'bateria-goodwe-lynx-a-g3.md',
-  'bateria-goodwe-lynx-f-g2-at.md',
-  'bateria-goodwe-lynx-u-g3.md',
-  'bateria-sofar-sf-5kwh.md',
-  'bateria-solax-tbat.md',
-  'bateria-soluna-huawei-luna2000.md',
-  'bateria-unipower.md',
-  'solaredge.md',
-  'goodwe-plus-modulo1.md',
-  'goodwe-armazenamento-ci-modulo2.md',
-  'goodwe-plus-modulo3-instalacao-comissionamento.md',
-  'shelly-automacao-gerenciamento-energia.md',
 ]);
 
 // Deixados PRIVADOS de propósito (não mexer sem pensar):
