@@ -87,3 +87,31 @@ export function textoConfirmacao(nomeCompleto: string): string {
   const primeiro = (nomeCompleto ?? '').trim().split(/\s+/)[0] || 'oi';
   return `Anotado, ${primeiro}! 📝 Deixei o recado com a equipe.`;
 }
+
+export interface Recado {
+  id: string;
+  nome: string;
+  telefone: string;
+  mensagem: string;
+  criado_em: string;
+  lido_em: string | null;
+}
+
+/** Recados da empresa, mais novo primeiro — alimenta a tela "Recados da equipe". */
+export async function listarRecados(
+  client: SupabaseClient,
+  companyId: string,
+  limite = 100,
+): Promise<Recado[]> {
+  const { data, error } = await client
+    .from('recados_equipe')
+    .select('id, nome, telefone, mensagem, criado_em, lido_em')
+    .eq('company_id', companyId)
+    .order('criado_em', { ascending: false })
+    .limit(limite);
+  if (error) {
+    console.warn(`[contatos-internos] não deu pra listar recados: ${error.message}`);
+    return [];
+  }
+  return (data as Recado[] | null) ?? [];
+}
