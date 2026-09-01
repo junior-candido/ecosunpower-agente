@@ -34,7 +34,7 @@ const SAUDACAO = (nomeCliente: string | undefined, economiaMensal?: number | nul
   return (
     `${ola}\n\n` +
     `Sou a ${empresa().nomeAtendente}, consultora da ${empresa().nomeFantasia} Energia Solar.\n\n` +
-    `Junior preparou uma proposta personalizada de energia solar pra você. ${linhaEconomia}` +
+    `${empresa().rtApelido} preparou uma proposta personalizada de energia solar pra você. ${linhaEconomia}` +
     `Vou te mandar agora — é só tocar no botão pra ver. Qualquer dúvida, é só me perguntar aqui mesmo. 😊`
   );
 };

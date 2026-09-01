@@ -5283,13 +5283,13 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       // TRAVA-NÚMERO: no fluxo novo a Eva NÃO crava preço/dimensionamento (faz handoff).
       // Se QUALQUER balão vazou um número desses, troca a resposta inteira por um único
       // balão de handoff e loga o original pra revisão. Rede de segurança caso o prompt falhe.
-      const { detectarNumeroProibido, MENSAGEM_HANDOFF_NUMERO } = await import('./modules/eva-trava-numero.js');
+      const { detectarNumeroProibido, mensagemHandoffNumero } = await import('./modules/eva-trava-numero.js');
       const motivosTrava = response.displayMessages
         .flatMap(p => detectarNumeroProibido(p).motivos);
       let baloesParaEnviar = response.displayMessages;
       if (motivosTrava.length > 0) {
         console.warn(`[trava-numero] resposta da Eva barrada (${motivosTrava.join(',')}) — substituída por handoff. Original: ${response.displayMessages.join(' | ').slice(0, 300)}`);
-        baloesParaEnviar = [MENSAGEM_HANDOFF_NUMERO];
+        baloesParaEnviar = [mensagemHandoffNumero()];
       }
 
       // Send response (possibly split across multiple WhatsApp messages)

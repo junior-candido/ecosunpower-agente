@@ -43,10 +43,10 @@ interface ParsedArticle {
 const STEP_GUIDANCE: Record<number, string> = {
   1: `Toque 1 — Apresentacao de retomada. NAO use conteudo do Canal Solar
   neste toque (e so apresentacao pessoal). Tom leve e proximo, como quem
-  se coloca a disposicao. Lembre: o cliente JA conhece o Junior pessoalmente,
+  se coloca a disposicao. Lembre: o cliente JA conhece {{rt_o}} pessoalmente,
   entao nao e um "novo lead" — e uma "ampliacao de atendimento". Mencione
-  que voce ({{nome_atendente}}) e a consultora da {{empresa_nome}} e tambem ficou de apoiar o
-  Junior no dia-a-dia. Mensagem curta (2-3 frases), sem pergunta obrigatoria,
+  que voce ({{nome_atendente}}) e a consultora da {{empresa_nome}} e tambem ficou de apoiar
+  {{rt_o}} no dia-a-dia. Mensagem curta (2-3 frases), sem pergunta obrigatoria,
   deixando a porta aberta.`,
 
   2: `Toque 2 — Despertar interesse pra QUEM AINDA NAO TEM SOLAR (15 dias
@@ -419,7 +419,7 @@ INSTRUCOES SOBRE O ARTIGO:
     // [ECOSOF] interpolarEmpresa resolve os {{...}} (inclusive os do
     // STEP_GUIDANCE) com a empresa() LIDA AGORA — runtime, não module-load.
     const systemPrompt = interpolarEmpresa(`Voce eh a {{nome_atendente}}, consultora de energia solar da {{empresa_nome}} ({{empresa_regiao}}).
-Seu papel: enviar UMA mensagem curta de reengajamento em WhatsApp pra um cliente que ja conhece o Junior pessoalmente
+Seu papel: enviar UMA mensagem curta de reengajamento em WhatsApp pra um cliente que ja conhece {{rt_o}} pessoalmente
 mas AINDA NAO COMPROU sistema solar com a {{empresa_nome}}. Objetivo: ajuda-lo a tomar a decisao de adquirir.
 
 REGRAS OBRIGATORIAS:
