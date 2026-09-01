@@ -126,31 +126,44 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
   const arr = (v: unknown, d: string[]): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : d);
   const b = (v: unknown, d: boolean): boolean => (typeof v === 'boolean' ? v : d);
   const D = EMPRESA_DEFAULTS;
+  // ⚖️ LGPD (31/08/2026) — IDENTIDADE NÃO SE HERDA.
+  // Cada empresa da plataforma é um CONTROLADOR de dados diferente. Antes, uma
+  // coluna vazia caía no default de código, que é o da EcoSunPower: um tenant
+  // sem telefone cadastrado ficava com o WhatsApp PESSOAL do Junior, e sem CNPJ
+  // ficava com o CNPJ e o CPF do RT dele — em proposta e contrato. Agora, campo
+  // de identidade vazio fica VAZIO pra quem não é a EcoSun.
+  const ehEcosun = s(row.company_id, D.companyId) === D.companyId;
+  /** Identidade (texto): tenant sem valor fica vazio; só a EcoSun usa o default. */
+  const sid = (v: unknown, d: string): string => (typeof v === 'string' && v.trim() ? v : ehEcosun ? d : '');
+  /** Identidade (opcional): tenant sem valor fica null; só a EcoSun usa o default. */
+  const sidn = (v: unknown, d: string | null): string | null => (typeof v === 'string' && v.trim() ? v : ehEcosun ? d : null);
   const result: EmpresaConfig = {
     // Linha histórica id=1 (pré-082) não tem company_id → é a EcoSun.
     companyId: s(row.company_id, D.companyId),
-    razaoSocial: s(row.razao_social, D.razaoSocial),
-    nomeFantasia: s(row.nome_fantasia, D.nomeFantasia),
-    cnpj: s(row.cnpj, D.cnpj),
-    endereco: s(row.endereco, D.endereco),
-    cidade: s(row.cidade, D.cidade), uf: s(row.uf, D.uf), cep: sn(row.cep) ?? D.cep,
-    email: s(row.email, D.email), siteUrl: s(row.site_url, D.siteUrl),
-    linkPagamento: sn(row.link_pagamento) ?? D.linkPagamento,
+    razaoSocial: sid(row.razao_social, D.razaoSocial),
+    nomeFantasia: sid(row.nome_fantasia, D.nomeFantasia),
+    cnpj: sid(row.cnpj, D.cnpj),
+    endereco: sid(row.endereco, D.endereco),
+    cidade: sid(row.cidade, D.cidade), uf: sid(row.uf, D.uf), cep: sidn(row.cep, D.cep),
+    email: sid(row.email, D.email), siteUrl: sid(row.site_url, D.siteUrl),
+    linkPagamento: sidn(row.link_pagamento, D.linkPagamento),
     atuacaoDesde: n(row.atuacao_desde, D.atuacaoDesde),
     // Campos que entram em prompt — cap defensivo (espelha os CHECKs da
     // migration 049; protege mesmo se a coluna for alterada via SQL Editor).
-    descricaoCurta: s(row.descricao_curta, D.descricaoCurta).slice(0, 500),
-    regiaoAtuacao: s(row.regiao_atuacao, D.regiaoAtuacao).slice(0, 500),
-    nomeAtendente: s(row.nome_atendente, D.nomeAtendente).slice(0, 40),
-    telefoneAtendente: sn(row.telefone_atendente) ?? D.telefoneAtendente,
-    rtNome: s(row.rt_nome, D.rtNome), rtTitulo: s(row.rt_titulo, D.rtTitulo).slice(0, 80),
+    descricaoCurta: sid(row.descricao_curta, D.descricaoCurta).slice(0, 500),
+    regiaoAtuacao: sid(row.regiao_atuacao, D.regiaoAtuacao).slice(0, 500),
+    // "Eva" é a marca da assistente da EcoSunPower. Tenant que não deu nome fica
+    // com o genérico — nunca com o nome da assistente de outra empresa.
+    nomeAtendente: s(row.nome_atendente, ehEcosun ? D.nomeAtendente : 'Assistente').slice(0, 40),
+    telefoneAtendente: sidn(row.telefone_atendente, D.telefoneAtendente),
+    rtNome: sid(row.rt_nome, D.rtNome), rtTitulo: s(row.rt_titulo, D.rtTitulo).slice(0, 80),
     // ⚠️ fallback é o PRIMEIRO NOME do rtNome DESTA linha — nunca D.rtApelido,
     // senão a assistente de um tenant chamaria o dono de outro ("Junior").
-    rtApelido: s(row.rt_apelido, primeiroNome(s(row.rt_nome, D.rtNome))).slice(0, 40),
+    rtApelido: s(row.rt_apelido, primeiroNome(sid(row.rt_nome, D.rtNome))).slice(0, 40),
     rtGenero: row.rt_genero === 'f' ? 'f' : 'm',
-    rtCpf: sn(row.rt_cpf) ?? D.rtCpf, rtRg: sn(row.rt_rg) ?? D.rtRg,
-    rtRegistro: sn(row.rt_registro) ?? D.rtRegistro,
-    pixChave: sn(row.pix_chave) ?? D.pixChave,
+    rtCpf: sidn(row.rt_cpf, D.rtCpf), rtRg: sidn(row.rt_rg, D.rtRg),
+    rtRegistro: sidn(row.rt_registro, D.rtRegistro),
+    pixChave: sidn(row.pix_chave, D.pixChave),
     // Tenant sem canais fica com lista vazia (não herda nada da EcoSun).
     canaisAtendimento: normalizarCanais(row.canais_atendimento),
     // Texto vai direto pro prompt: cap defensivo pra não estourar o contexto.

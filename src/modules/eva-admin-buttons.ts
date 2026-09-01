@@ -17,6 +17,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SupabaseService } from './supabase.js';
+import { empresa } from './empresa-config.js';
+import { avisoAdminPermitido } from './tenant-admin-guard.js';
 
 export interface MetaWabaLike {
   sendInteractiveButtons(
@@ -43,6 +45,16 @@ export async function sendAdminWithButtons(
   buttons: Array<{ id: string; title: string }>,
   footer?: string,
 ): Promise<void> {
+  // ⚖️ TRAVA LGPD (31/08/2026) — este é o canal dos avisos administrativos
+  // (lead novo, dossiê, handoff). Dentro do contexto de um tenant ele só pode
+  // sair pro telefone de atendimento DAQUELE tenant. O caminho WABA abaixo não
+  // passa pelo sendText, então a trava tem que estar aqui também.
+  if (!avisoAdminPermitido(to)) {
+    console.error(
+      `[lgpd] BLOQUEADO: aviso admin da empresa "${empresa().nomeFantasia}" (${empresa().companyId}) para um numero que nao e o telefone_atendente dela. Nada foi enviado.`,
+    );
+    return;
+  }
   if (ctx.metaWaba && buttons.length > 0 && buttons.length <= 3) {
     try {
       await ctx.metaWaba.sendInteractiveButtons(to, body, buttons, footer);

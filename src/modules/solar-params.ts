@@ -56,6 +56,15 @@ interface ParamsConcessionaria {
 // Tarifa/Fio B ficam no meio-termo quando nao da pra distinguir DF de GO.
 const DEFAULT_PARAMS: ParamsConcessionaria = { hsp: 5.40, tarifa: 1.03, tusdFioB: 0.29 };
 
+// ⚠️ "Neoenergia" SOZINHA NAO E BRASILIA (bug real, 31/08/2026).
+// A Neoenergia e um GRUPO: Coelba (BA), Celpe (PE), Cosern (RN), Elektro (SP/MS)
+// e Neoenergia Brasilia (DF). O lead Claudio, de Vitoria da Conquista-BA, caiu na
+// regra do DF por causa da palavra "Neoenergia" e recebeu HSP e tarifa de Brasilia.
+// Esta lista roda ANTES do mapa e tira a palavra do jogo quando a distribuidora
+// (ou a UF) e de outro estado — sem inventar numero pra essas regioes: cai no
+// ajuste da empresa (hsp_padrao/tarifa_kwh_padrao) e, na falta dele, no DEFAULT.
+const NEOENERGIA_FORA_DO_DF = /coelba|celpe|cosern|elektro|bahia|pernambuco|rio grande do norte|\b(ba|pe|rn|sp|ms)\b/i;
+
 // Reconhecimento por concessionaria OU cidade/UF (a Eva nem sempre tem a
 // concessionaria exata, mas tem a cidade). DF -> Neoenergia, GO -> Equatorial.
 const POR_CONCESSIONARIA: Array<{ match: RegExp; params: ParamsConcessionaria }> = [
@@ -68,22 +77,23 @@ const POR_CONCESSIONARIA: Array<{ match: RegExp; params: ParamsConcessionaria }>
   { match: /equatorial|\bcelg\b|goi[áa]s|\bgo\b/i, params: { hsp: 5.41, tarifa: 1.00, tusdFioB: 0.28 } },
 ];
 
-function resolver(concessionariaOuCidade?: string | null): ParamsConcessionaria {
-  if (concessionariaOuCidade) {
-    const hit = POR_CONCESSIONARIA.find(p => p.match.test(concessionariaOuCidade));
-    if (hit) return hit.params;
-  }
-  // [ECOSOF] Cidade/UF fora do mapa DF/GO: um clone de outra região pode
-  // definir hsp_padrao/tarifa_kwh_padrao na empresa_config (lidos em RUNTIME).
-  // EcoSun deixa os 2 como null no seed -> cai no DEFAULT_PARAMS de sempre
-  // (comportamento idêntico ao antigo).
-  const e = empresa();
+function resolver(concessionariaOuCidade?: string | null, e = empresa()): ParamsConcessionaria {
+  // [ECOSOF] O ajuste da EMPRESA vem PRIMEIRO (mudanca de 31/08/2026).
+  // Antes o mapa DF/GO casava antes e o clone de outra regiao nunca conseguia
+  // usar os proprios numeros: bastava a conversa citar "Neoenergia" pra Bahia
+  // virar Brasilia. Quem configurou hsp_padrao/tarifa_kwh_padrao esta dizendo
+  // "eu sei a minha regiao" — isso manda mais que o mapa, que e da EcoSun.
+  // EcoSun deixa os 2 como null no seed -> nada muda pra ela.
   if (e.hspPadrao != null || e.tarifaPadrao != null) {
     return {
       hsp: e.hspPadrao ?? DEFAULT_PARAMS.hsp,
       tarifa: e.tarifaPadrao ?? DEFAULT_PARAMS.tarifa,
       tusdFioB: DEFAULT_PARAMS.tusdFioB,
     };
+  }
+  if (concessionariaOuCidade && !NEOENERGIA_FORA_DO_DF.test(concessionariaOuCidade)) {
+    const hit = POR_CONCESSIONARIA.find(p => p.match.test(concessionariaOuCidade));
+    if (hit) return hit.params;
   }
   return DEFAULT_PARAMS;
 }
@@ -95,16 +105,18 @@ export function concessionariaPadraoEmpresa(): string | null {
   return empresa().concessionariaPadrao;
 }
 
-export function hspPorConcessionaria(concessionariaOuCidade?: string | null): number {
-  return resolver(concessionariaOuCidade).hsp;
+// O 2o parametro (config da empresa) e opcional e default = empresa() da
+// mensagem em curso; existe pra teste e pra quem ja tem a config na mao.
+export function hspPorConcessionaria(concessionariaOuCidade?: string | null, e = empresa()): number {
+  return resolver(concessionariaOuCidade, e).hsp;
 }
 
-export function tarifaPorConcessionaria(concessionariaOuCidade?: string | null): number {
-  return resolver(concessionariaOuCidade).tarifa;
+export function tarifaPorConcessionaria(concessionariaOuCidade?: string | null, e = empresa()): number {
+  return resolver(concessionariaOuCidade, e).tarifa;
 }
 
-export function tusdFioBPorConcessionaria(concessionariaOuCidade?: string | null): number {
-  return resolver(concessionariaOuCidade).tusdFioB;
+export function tusdFioBPorConcessionaria(concessionariaOuCidade?: string | null, e = empresa()): number {
+  return resolver(concessionariaOuCidade, e).tusdFioB;
 }
 
 // Percentual do Fio B vigente por ano (Lei 14.300/2022). 2026 = 60%.
