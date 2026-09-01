@@ -85,3 +85,28 @@ export function conhecimentoDaEmpresa(companyId: string | null | undefined): str
 export function faltaPreencher(companyId: string | null | undefined): string[] {
   return itensDaEmpresa(companyId).filter((i) => !i.conteudo.trim()).map((i) => i.titulo);
 }
+
+/**
+ * Grava o conteúdo de UM assunto da empresa e recarrega o cache na hora — quem
+ * salvou precisa ver o efeito na próxima mensagem, não no próximo boot.
+ *
+ * Só aceita assunto que já existe no cadastro daquela empresa: assim a tela (ou
+ * um POST forjado) não cria assunto solto nem grava na base de outra.
+ */
+export async function salvarConhecimento(
+  client: SupabaseClient,
+  companyId: string,
+  chave: string,
+  conteudo: string,
+): Promise<{ ok: boolean; motivo?: string }> {
+  const existe = itensDaEmpresa(companyId).some((i) => i.chave === chave);
+  if (!existe) return { ok: false, motivo: 'Assunto não existe no cadastro desta empresa.' };
+  const { error } = await client
+    .from('conhecimento_empresa')
+    .update({ conteudo: (conteudo ?? '').trim(), atualizado_em: new Date().toISOString() })
+    .eq('company_id', companyId)
+    .eq('chave', chave);
+  if (error) return { ok: false, motivo: error.message };
+  await carregarConhecimentoEmpresas(client);
+  return { ok: true };
+}

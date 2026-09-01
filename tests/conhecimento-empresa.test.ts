@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   carregarConhecimentoEmpresas, conhecimentoDaEmpresa, itensDaEmpresa,
-  faltaPreencher, _resetConhecimentoParaTeste,
+  faltaPreencher, salvarConhecimento, _resetConhecimentoParaTeste,
 } from '../src/modules/conhecimento-empresa.js';
 
 function clienteFake(linhas: unknown[]) {
@@ -66,5 +66,31 @@ describe('base de conhecimento por empresa', () => {
   it('itensDaEmpresa devolve tudo, inclusive o que está vazio (a tela precisa mostrar)', async () => {
     await carregarConhecimentoEmpresas(clienteFake(linhasConquista));
     expect(itensDaEmpresa('c1')).toHaveLength(3);
+  });
+
+  it('salvar grava o conteudo da empresa certa e atualiza o cache na hora', async () => {
+    const calls: Record<string, unknown[][]> = {};
+    const chain: Record<string, unknown> = {};
+    for (const m of ['update', 'eq', 'select', 'order']) {
+      chain[m] = vi.fn((...a: unknown[]) => { (calls[m] ??= []).push(a); return chain; });
+    }
+    chain.then = (res: (v: unknown) => void) => res({ data: linhasConquista, error: null });
+    const client = { from: vi.fn(() => chain) } as never;
+    await carregarConhecimentoEmpresas(clienteFake(linhasConquista));  // a empresa precisa estar carregada
+
+    const r = await salvarConhecimento(client, 'c1', 'garantia', '  12 meses de instalação.  ');
+    expect(r.ok).toBe(true);
+    const row = calls.update![0][0] as Record<string, unknown>;
+    expect(row.conteudo).toBe('12 meses de instalação.');   // sem espaço sobrando
+    const filtros = (calls.eq ?? []).map(a => `${a[0]}=${a[1]}`);
+    expect(filtros).toContain('company_id=c1');             // nunca mexe na base de outra
+    expect(filtros).toContain('chave=garantia');
+  });
+
+  it('assunto que nao existe no cadastro e recusado', async () => {
+    const client = { from: vi.fn() } as never;
+    const r = await salvarConhecimento(client, 'c1', 'inventado', 'texto');
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toMatch(/assunto/i);
   });
 });
