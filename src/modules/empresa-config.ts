@@ -49,6 +49,8 @@ export interface EmpresaConfig {
   marcasPermitidas: string[]; marcasBloqueadas: string[];
   garantiaInstalacaoMeses: number; fatorPerdaPadrao: number; belenusAtivo: boolean;
   logoStoragePath: string | null;
+  /** Cor da marca em hex (#RRGGBB) — painel e DANFSe. NULL = a da casa. */
+  corMarca: string | null;
   // Link "Pedir avaliações" do Google Meu Negócio — usado na Pasta Digital
   // do Cliente (página + mensagem do zap). null = blocos de avaliação somem.
   googleReviewUrl: string | null;
@@ -88,6 +90,7 @@ export const EMPRESA_DEFAULTS: EmpresaConfig = {
   marcasBloqueadas: ['Growatt'],
   garantiaInstalacaoMeses: 12, fatorPerdaPadrao: 0.78, belenusAtivo: true,
   logoStoragePath: null,
+  corMarca: null,
   googleReviewUrl: 'https://g.page/r/CWB5ipa57HzhEAI/review',
   hspPadrao: null, tarifaPadrao: null, concessionariaPadrao: null,
   reguaAtencaoPct: 70,
@@ -176,6 +179,7 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
     fatorPerdaPadrao: n(row.fator_perda_padrao, D.fatorPerdaPadrao),
     belenusAtivo: b(row.belenus_ativo, D.belenusAtivo),
     logoStoragePath: sn(row.logo_storage_path),
+    corMarca: sn(row.cor_marca),
     // Tenant sem link cai no null (não herda o da EcoSun — avaliação é da empresa dela);
     // a EcoSun (row sem a coluna OU singleton default) usa o default de código.
     googleReviewUrl: 'google_review_url' in row ? sn(row.google_review_url) : D.googleReviewUrl,
