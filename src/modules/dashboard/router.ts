@@ -719,6 +719,20 @@ b.onclick=async function(){
   const uploadPdf = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
   const uploadPfx = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
+  // Recados de quem e DE DENTRO e escreveu no numero da assistente (migration 118).
+  // A assistente nao trata como lead, mas nada se perde: cai aqui pra empresa ler.
+  router.get('/recados', exigir('leads', 'visualizar'), async (req: AuthedRequest, res) => {
+    try {
+      const { listarRecados } = await import('../contatos-internos.js');
+      const { telaRecados } = await import('./recados-views.js');
+      const recados = await listarRecados(supabase, req.dashUser!.companyId);
+      res.type('html').send(telaRecados(recados, req.dashUser));
+    } catch (err) {
+      console.error('[recados]', err);
+      res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+  });
+
   router.get('/fiscal', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
     try {
       const { listarNotas, getConfig } = await import('../financeiro/fiscal/notas-repo.js');
