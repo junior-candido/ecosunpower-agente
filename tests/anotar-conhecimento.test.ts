@@ -8,7 +8,7 @@
 // passagem — conversa de grupo é cheia de achismo, e aprender errado é pior que
 // não aprender: ela passaria a prometer isso pro cliente.
 import { describe, it, expect } from 'vitest';
-import { lerPedidoDeAnotar, escolherAssunto } from '../src/modules/anotar-conhecimento.js';
+import { lerPedidoDeAnotar, escolherAssunto, chamouPeloNome } from '../src/modules/anotar-conhecimento.js';
 
 const assuntos = [
   { chave: 'produto', titulo: 'O que a empresa vende' },
@@ -84,5 +84,35 @@ describe('escolha do assunto', () => {
   it('na dúvida devolve null — melhor perguntar do que gravar no lugar errado', () => {
     expect(escolherAssunto(null, 'o cliente ligou hoje de manhã', assuntos)).toBeNull();
     expect(escolherAssunto('inventado', 'texto', assuntos)).toBeNull();
+  });
+});
+
+describe('chamou pelo nome? (a regra do grupo)', () => {
+  it('reconhece quando falam com ela', () => {
+    for (const f of ['Clara, anota isso', 'clara me ajuda', 'Clara: bom dia', 'CLARA, ANOTA: x']) {
+      expect(chamouPeloNome(f, 'Clara'), f).toBe(true);
+    }
+  });
+
+  it('conversa da equipe não é chamada — foi o erro de 01/09', () => {
+    for (const f of [
+      'a Clara respondeu bem hoje',        // falou DELA, não COM ela
+      'Kkkkkkkk',
+      'Veja com graci se tem chave pix',
+      'Rivaldo esta como na coelba??',
+      'Pessoal, estamos com uma IA atendendo os clientes.. ela se chama Clara',
+    ]) {
+      expect(chamouPeloNome(f, 'Clara'), f).toBe(false);
+    }
+  });
+
+  it('cada empresa tem o nome da sua assistente', () => {
+    expect(chamouPeloNome('Eva, anota isso', 'Eva')).toBe(true);
+    expect(chamouPeloNome('Eva, anota isso', 'Clara')).toBe(false);
+  });
+
+  it('mensagem vazia não é chamada', () => {
+    expect(chamouPeloNome('', 'Clara')).toBe(false);
+    expect(chamouPeloNome('Clara', 'Clara')).toBe(true);   // só o nome já é chamar
   });
 });
