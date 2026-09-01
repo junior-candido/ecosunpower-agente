@@ -106,4 +106,38 @@ describe('motor de emissão', () => {
     await expect(emitirNota(deps, 'c1', 'n1')).rejects.toThrow(/obra/i);
     expect(deps.travarParaEnvio).not.toHaveBeenCalled();
   });
+  // EM029 (teste real 01/09/2026): "O campo Inscrição Municipal do tomador só
+  // deverá ser preenchido para tomadores estabelecidos NESTE município". Mandar a
+  // inscrição de um tomador de fora = rejeição na hora (EM028 + EM029). Regra:
+  // só vai a IM quando o município do tomador é o mesmo da prestação; na dúvida
+  // (tomador sem código IBGE) NÃO vai — falha fechado, que é o barato.
+  function notaComTomador(codMunIbge: string | null, im: string | null) {
+    return vi.fn(async () => ({
+      id: 'n1', status: 'preparada', competencia: '2026-08-31',
+      tomador: { tipo: 'PJ' as const, doc: '13245160000142', nome: 'SPAZIO', im, email: null,
+        municipio: 'Brasilia', uf: 'DF', cep: '71503508', logradouro: 'CA 08', numero: 'S/N',
+        bairro: 'Lago Norte', codMunIbge },
+      servicoId: 's1', valorBruto: 1250, valorIss: 25, issRetido: true, valorLiquido: 1225, descricao: 'instalacao',
+    }) as never);
+  }
+  it('tomador do MESMO municipio da prestacao: a inscricao vai no XML', async () => {
+    const deps = depsFake({ carregarNota: notaComTomador('5300108', '0815889100119') });
+    await emitirNota(deps, 'c1', 'n1');
+    const xmlAssinado = (deps.assinar as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(xmlAssinado).toContain('<IM>0815889100119</IM>');
+  });
+  it('tomador de OUTRO municipio: a inscricao NAO vai (EM029)', async () => {
+    const deps = depsFake({ carregarNota: notaComTomador('5002704', '0815889100119') });
+    await emitirNota(deps, 'c1', 'n1');
+    const xmlAssinado = (deps.assinar as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    const toma = xmlAssinado.slice(xmlAssinado.indexOf('<toma>'), xmlAssinado.indexOf('</toma>'));
+    expect(toma).not.toContain('<IM>');
+  });
+  it('tomador sem codigo IBGE: na duvida a inscricao NAO vai', async () => {
+    const deps = depsFake({ carregarNota: notaComTomador(null, '0815889100119') });
+    await emitirNota(deps, 'c1', 'n1');
+    const xmlAssinado = (deps.assinar as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    const toma = xmlAssinado.slice(xmlAssinado.indexOf('<toma>'), xmlAssinado.indexOf('</toma>'));
+    expect(toma).not.toContain('<IM>');
+  });
 });
