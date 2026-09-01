@@ -23,21 +23,24 @@ function ehEcosun(cfg: EmpresaConfig): boolean {
  * Pra onde vai um aviso ADMINISTRATIVO (lead novo, dossiê, alerta, handoff) da
  * empresa passada — por padrão a empresa da mensagem em curso.
  *
- * - EcoSunPower  → o telefone do Junior (`engineerPhone`), como sempre foi.
- * - Tenant       → o telefone de atendimento DELE.
- * - Tenant sem telefone (ou que cadastrou o do Junior por engano) → `null`:
- *   o aviso NÃO é enviado. Perder um aviso é problema operacional; mandar dado
- *   de cliente pro controlador errado é incidente de privacidade.
+ * - EcoSunPower → o telefone do Junior (`engineerPhone`), como sempre foi.
+ * - Tenant      → `null`. O lead fica no DASHBOARD e a equipe dele pega de lá.
+ *
+ * Por que null e não "o telefone do tenant": o único telefone que a empresa_config
+ * guarda hoje é o `telefone_atendente`, que é a linha PÚBLICA — o número onde a
+ * própria assistente atende os clientes (Clara = 5577999610038). Mandar o aviso
+ * pra lá faria o robô mandar mensagem pra ele mesmo. E o modelo combinado com a
+ * Jimena em 19/08 é justamente esse: "lead cai no dashboard central, a vendedora
+ * PEGA o lead — sem transferir pro zap pessoal".
+ *
+ * Se algum dia um tenant quiser aviso no zap, o caminho é uma coluna nova
+ * (`telefone_admin`), nunca reaproveitar a linha pública da assistente.
  */
 export function destinoAdminDaEmpresa(
   engineerPhone: string,
   cfg: EmpresaConfig = empresa(),
 ): string | null {
-  if (ehEcosun(cfg)) return engineerPhone;
-  const tel = soDigitos(cfg.telefoneAtendente);
-  if (!tel) return null;
-  if (tel === soDigitos(engineerPhone)) return null;
-  return cfg.telefoneAtendente;
+  return ehEcosun(cfg) ? engineerPhone : null;
 }
 
 /**
@@ -61,16 +64,14 @@ export function envioProibido(
  * Defesa em profundidade pro canal de avisos administrativos.
  *
  * `destinoAdminDaEmpresa` conserta os pontos que eu já achei. Esta função é pro
- * ponto que alguém escrever amanhã: um aviso administrativo dentro do contexto
- * de um tenant só pode ir pro telefone de atendimento DAQUELE tenant. Qualquer
- * outro número é recusado, inclusive (principalmente) o do dono da EcoSunPower.
+ * ponto que alguém escrever amanhã: dentro do contexto de um tenant, NENHUM
+ * número recebe aviso administrativo por zap — nem o do dono da EcoSunPower
+ * (vazamento entre controladores), nem a linha pública da própria assistente
+ * (o robô mandaria mensagem pra ele mesmo). O lead vive no dashboard.
  *
  * A EcoSunPower não é restringida: ela tem telefones admin extras configurados
  * por ambiente, e o número é dela mesma de qualquer forma.
  */
-export function avisoAdminPermitido(destino: string, cfg: EmpresaConfig = empresa()): boolean {
-  if (ehEcosun(cfg)) return true;
-  const proprio = soDigitos(cfg.telefoneAtendente);
-  if (!proprio) return false;
-  return soDigitos(destino) === proprio;
+export function avisoAdminPermitido(_destino: string, cfg: EmpresaConfig = empresa()): boolean {
+  return ehEcosun(cfg);
 }

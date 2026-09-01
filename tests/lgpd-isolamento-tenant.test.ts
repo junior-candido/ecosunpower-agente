@@ -60,16 +60,21 @@ describe('tenant NÃO herda a identidade da EcoSunPower', () => {
 });
 
 describe('destino do aviso administrativo (lead, dossiê, alerta)', () => {
-  it('lead do tenant vai pro telefone DELE', () => {
-    expect(destinoAdminDaEmpresa(JUNIOR, conquista)).toBe('5577999483357');
-  });
-
   it('lead da EcoSunPower continua indo pro Junior', () => {
     expect(destinoAdminDaEmpresa(JUNIOR, EMPRESA_DEFAULTS)).toBe(JUNIOR);
   });
 
-  it('tenant sem telefone não manda pra NINGUÉM — jamais pro Junior', () => {
+  // telefone_atendente é a linha PÚBLICA, onde a própria assistente atende os
+  // clientes (Clara = 5577999610038). Mandar o aviso de lead pra lá faria o robô
+  // mandar mensagem pra ele mesmo. E o modelo combinado com a Jimena em 19/08 é
+  // "lead cai no dashboard, sem transferir pro zap pessoal".
+  it('tenant NÃO recebe aviso por zap — o lead fica no dashboard', () => {
+    expect(destinoAdminDaEmpresa(JUNIOR, conquista)).toBeNull();
     expect(destinoAdminDaEmpresa(JUNIOR, tenantSemCadastro)).toBeNull();
+  });
+
+  it('nunca devolve a linha pública da assistente como destino de aviso', () => {
+    expect(destinoAdminDaEmpresa(JUNIOR, conquista)).not.toBe(conquista.telefoneAtendente);
   });
 
   it('tenant que cadastrou o número do Junior por engano também é bloqueado', () => {
@@ -97,22 +102,16 @@ describe('fail-closed: envio de tenant pro número do dono da EcoSun é proibido
 });
 
 describe('defesa em profundidade: aviso admin de um tenant só vai pro número DELE', () => {
-  it('permite o telefone de atendimento da própria empresa', () => {
-    expect(avisoAdminPermitido('5577999483357', conquista)).toBe(true);
-  });
-
-  it('recusa qualquer outro número — inclusive o do Junior', () => {
+  it('nenhum número é autorizado pra um tenant — nem o dele, nem o do Junior', () => {
     expect(avisoAdminPermitido(JUNIOR, conquista)).toBe(false);
     expect(avisoAdminPermitido('5511999999999', conquista)).toBe(false);
+    // a própria linha da Clara: mandaria o aviso pro robô dela mesma
+    expect(avisoAdminPermitido('5577999610038', conquista)).toBe(false);
+    expect(avisoAdminPermitido(conquista.telefoneAtendente ?? '', conquista)).toBe(false);
   });
 
-  it('aceita máscara diferente do mesmo número', () => {
-    expect(avisoAdminPermitido('+55 77 99948-3357', conquista)).toBe(true);
-  });
-
-  it('empresa sem telefone cadastrado não autoriza ninguém', () => {
+  it('empresa sem telefone cadastrado também não autoriza ninguém', () => {
     expect(avisoAdminPermitido(JUNIOR, tenantSemCadastro)).toBe(false);
-    expect(avisoAdminPermitido('5577999483357', tenantSemCadastro)).toBe(false);
   });
 
   it('a EcoSunPower não é restringida (ela tem telefones admin extras)', () => {
