@@ -7440,6 +7440,35 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
 
     // EQUIPE NUNCA é lead (B.O. 06/08) — telefone cadastrado em Usuários = interno.
     if (!parsed.fromMe) {
+      // GENTE DE DENTRO nunca e lead. Duas listas, nesta ordem:
+      //  1) contatos_internos - quem e DE DENTRO (por empresa), sem precisar de login;
+      //  2) dashboard_users   - quem tem ACESSO ao sistema (o gate logo abaixo).
+      // O caso que criou a lista 1 (Junior, 01/09/2026): a engenharia mandou uma
+      // indicacao de autoescola no numero da Clara e ela entrou na conversa querendo
+      // qualificar a autoescola como cliente.
+      const empresaDoCanal = companyIdDaInstancia ?? ECOSUN_COMPANY_ID;
+      const { identificarInterno, salvarRecado, textoConfirmacao } = await import('./modules/contatos-internos.js');
+      const interno = await identificarInterno(supabase.getClient(), empresaDoCanal, parsed.from).catch(() => null);
+      if (interno) {
+        // O recado NUNCA se perde, mesmo a assistente ficando muda: fica na tela
+        // "Recados da equipe" pra empresa ver.
+        const recado = parsed.type === 'text' ? parsed.content : `[${parsed.type}]`;
+        await salvarRecado(supabase.getClient(), {
+          companyId: empresaDoCanal, contatoId: interno.id, telefone: parsed.from,
+          nome: interno.nome, mensagem: recado,
+        }).catch(() => {});
+        if (interno.modo === 'anota') {
+          const instancia = await evolutionTenant.instanciaDaEmpresa(companyIdDaInstancia).catch(() => undefined);
+          await comEmpresaDe(empresaDoCanal, () => comCanal(
+            { companyId: empresaDoCanal, evolutionInstance: instancia },
+            () => evolution.sendText(parsed.from, textoConfirmacao(interno.nome)),
+          )).catch((e) => console.warn(`[interno] confirmacao nao saiu: ${(e as Error).message}`));
+        }
+        console.log(`[evolution] INTERNO ${interno.nome} (${interno.modo}) - recado guardado, NAO e lead.`);
+        res.status(200).json({ status: 'ignored_interno' });
+        return;
+      }
+
       const { ehTelefoneDaEquipe } = await import('./modules/dashboard/users-store.js');
       if (await ehTelefoneDaEquipe(supabase.getClient(), parsed.from).catch(() => false)) {
         console.log(`[evolution] Ignorada mensagem da EQUIPE (${parsed.from}) — não é lead.`);
