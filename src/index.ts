@@ -137,6 +137,8 @@ import { PastaService } from './modules/relatorios/pasta/service.js';
 import { renderPastaHtml } from './modules/relatorios/pasta/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
 import { carregarEmpresaConfig, carregarKits, empresa, comEmpresaDe, listaMarcasTexto } from './modules/empresa-config.js';
+import { destinoAdminDaEmpresa, envioProibido } from './modules/tenant-admin-guard.js';
+import { montarHandoff } from './modules/handoff-transfer.js';
 import { mapResendEvento } from './modules/email/resend-events.js';
 import { EmailSequenceService } from './modules/email/email-sequence.js';
 import { EmailSender } from './modules/email/resend-client.js';
@@ -466,6 +468,18 @@ async function main() {
   // Wrapped sendText: shows "digitando..." presence and tracks bot-sent IDs.
   // Roteia automaticamente WABA Cloud API ou Evolution conforme USE_WABA_CLOUD_API.
   const sendText = async (to: string, text: string): Promise<void> => {
+    // ⚖️ TRAVA LGPD (31/08/2026) — falha FECHADO.
+    // Existem ~93 pontos aqui que mandam aviso pro `config.engineerPhone`. Isso
+    // nasceu quando só existia a EcoSunPower. Com a plataforma multi-empresa,
+    // qualquer um deles vaza dado de cliente de OUTRO controlador no WhatsApp
+    // pessoal do Junior — foi o que aconteceu com o lead da Conquista Solar.
+    // Em vez de caçar os 93, a porta de saída pergunta antes de sair.
+    if (envioProibido(to, config.engineerPhone)) {
+      console.error(
+        `[lgpd] BLOQUEADO: envio da empresa "${empresa().nomeFantasia}" (${empresa().companyId}) pro telefone da EcoSunPower. Nenhum dado saiu. Confira telefone_atendente na empresa_config.`,
+      );
+      return;
+    }
     const delay = typingDelay(text);
     const { messageId } = await messagingDaMensagem().sendText(to, text, delay);
     if (messageId) await takeover.markBotSent(messageId);
@@ -680,8 +694,15 @@ async function main() {
     void (async () => {
       try {
         const { texto, botoes, footer } = montarAvisoConversaIniciada(l, previewResposta ?? null);
-        if (metaWaba) await metaWaba.sendInteractiveButtons(config.engineerPhone, texto, botoes, footer);
-        else await sendText(config.engineerPhone, texto);
+        // ⚖️ LGPD: "fulano comecou a conversar" carrega nome e previa da fala do
+        // cliente. Vai pra quem atende a empresa DELE, nunca pro telefone fixo.
+        const destinoConversa = destinoAdminDaEmpresa(config.engineerPhone);
+        if (!destinoConversa) {
+          console.error(`[lgpd] aviso de conversa iniciada NAO enviado: empresa "${empresa().nomeFantasia}" sem telefone_atendente valido.`);
+          return;
+        }
+        if (metaWaba) await metaWaba.sendInteractiveButtons(destinoConversa, texto, botoes, footer);
+        else await sendText(destinoConversa, texto);
       } catch (err) {
         console.warn('[conversa-iniciada] aviso pro Junior falhou:', (err as Error).message);
       }
@@ -5531,11 +5552,18 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             const prontidao = bill && bill >= 1500 ? '🔥 QUENTE'
               : bill && bill >= empresa().criterioLeadValor ? '🟠 MORNO'
               : '🔵 FRIO';
-            const dossierHeader = `📋 *Eva qualificou — ${lead.name ?? 'lead sem nome'}* ${prontidao}\n\n${dossierText}\n\n_Eva esta tentando fechar agendamento agora. Voce pode assumir se preferir._`;
-            if (metaWaba) {
+            // Nome da assistente vem da EMPRESA: "Eva" na EcoSun, "Clara" na
+            // Conquista Solar. Estava fixo e a Jimena recebia dossie citando Eva.
+            const assistente = empresa().nomeAtendente;
+            const dossierHeader = `📋 *${assistente} qualificou — ${lead.name ?? 'lead sem nome'}* ${prontidao}\n\n${dossierText}\n\n_A ${assistente} esta tentando fechar agendamento agora. Voce pode assumir se preferir._`;
+            // ⚖️ LGPD: dossie de lead é dado pessoal do cliente DAQUELA empresa.
+            const destinoDossie = destinoAdminDaEmpresa(config.engineerPhone);
+            if (!destinoDossie) {
+              console.error(`[lgpd] dossie NAO enviado: empresa "${empresa().nomeFantasia}" (${empresa().companyId}) sem telefone_atendente valido. Lead ${lead.id} esta no dashboard.`);
+            } else if (metaWaba) {
               try {
                 await metaWaba.sendInteractiveButtons(
-                  config.engineerPhone,
+                  destinoDossie,
                   dossierHeader.slice(0, 1024),
                   [
                     { id: `evabt:lead-view:${lead.id}`, title: '👤 Ver perfil' },
@@ -5545,10 +5573,10 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
                 );
               } catch (err) {
                 console.warn('[qualification_complete] botoes WABA falharam, fallback texto:', (err as Error).message);
-                await sendText(config.engineerPhone, dossierText);
+                await sendText(destinoDossie, dossierText);
               }
             } else {
-              await sendText(config.engineerPhone, dossierText);
+              await sendText(destinoDossie, dossierText);
             }
           } else {
             console.log(`[sandbox] Dossier for engineer:\n${dossierText}`);
@@ -5590,9 +5618,13 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           || contactType === 'parceiro'
           || contactType === 'spam';
 
-        // Estimativa DETERMINÍSTICA (calculadora) pro Junior já entrar com o número CERTO
-        // ao assumir — nunca o chute da Eva. Só quando a conta foi capturada e é lead (não comercial).
+        // Estimativa DETERMINÍSTICA (calculadora) pra quem assume já entrar com o
+        // número CERTO — nunca o chute da assistente. Só quando a conta foi
+        // capturada e é lead (não comercial).
+        // 31/08/2026 (caso Claudio-BA): passa o kWh REAL e a carga futura. Antes
+        // ia só o valor da conta e a calculadora chutava o consumo pela faixa.
         let estimativaMsg = '';
+        let avisoCargaFutura = '';
         {
           const ed = (lead?.energy_data ?? {}) as Record<string, unknown>;
           const contaMensal = typeof ed.monthly_bill === 'number'
@@ -5600,35 +5632,50 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             : Number(String(ed.monthly_bill ?? '').replace(',', '.')) || 0;
           if (!isContatoComercial && contaMensal > 0) {
             try {
-              const { estimarPorConta } = await import('./modules/proposal/lead-estimativa.js');
-              const e = estimarPorConta(contaMensal);
+              const { estimarLead } = await import('./modules/proposal/lead-estimativa.js');
+              const { cargaFuturaDe } = await import('./modules/vendas/sombra.js');
+              const futuroTexto = lead?.future_demand;
+              const cargaFuturaKwh = cargaFuturaDe(futuroTexto);
+              const e = estimarLead({
+                contaRs: contaMensal,
+                consumoKwh: ed.consumption_kwh as number | undefined,
+                cargaFuturaKwh,
+                regiao: (lead?.city as string | undefined) ?? empresa().cidade,
+              });
               const fmt = (n: number) => 'R$ ' + n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
-              estimativaMsg = `\n\n📐 Estimativa (calculadora · conta ${fmt(contaMensal)}): ~${e.paineis} painéis · ${e.kWp.toFixed(1)} kWp · ${fmt(e.precoRs)} · economia ~${fmt(e.economiaMensalRs)}/mês\n_(base sua pra fechar o valor exato)_`;
+              const origem = e.consumoOrigem === 'informado' ? 'informado' : 'estimado pela conta';
+              estimativaMsg = `\n\n📐 Estimativa (calculadora · conta ${fmt(contaMensal)} · ${e.consumoKwh} kWh ${origem}): ~${e.paineis} painéis · ${e.kWp.toFixed(1)} kWp · ${fmt(e.precoRs)} · economia ~${fmt(e.economiaMensalRs)}/mês (fatura fica ~${fmt(e.contaResidualRs)})\n_(base sua pra fechar o valor exato)_`;
+              if (e.precoForaDaTabela) {
+                estimativaMsg += `\n⚠️ Sistema menor que a menor faixa da tabela (3 kWp) — o preço acima é o do piso da tabela, NÃO o desse sistema. Confirme o valor antes de passar pro cliente.`;
+              }
+              // O cliente falou em carga nova mas não deu o kWh: a estimativa
+              // NÃO tem como somar isso. Melhor avisar do que mandar sistema
+              // pequeno pra quem já disse que vai gastar mais.
+              if (typeof futuroTexto === 'string' && futuroTexto.trim() && cargaFuturaKwh === null) {
+                avisoCargaFutura = `\n⚠️ O cliente falou em carga nova ("${futuroTexto.trim().slice(0, 120)}") sem dizer quantos kWh — a estimativa acima NÃO inclui isso. O sistema real tende a ser maior.`;
+              }
             } catch (err) {
               console.warn('[transfer] estimativa falhou:', (err as Error).message);
             }
           }
         }
 
-        let transferMsg: string;
-        let buttons: Array<{ id: string; title: string }>;
-        if (isContatoComercial) {
-          transferMsg = `🔔 CONTATO COMERCIAL${contactTypeLabel}\n\nContato: ${from}${nameLabel}\nFalar direto: wa.me/${from}\n\nMotivo:\n${reason}\n\nA Eva deu uma resposta curta e está em pausa nesse chat. O que você quer fazer?`;
-          buttons = [
-            { id: `evabt:lead-pause:${leadId}`, title: 'Responder' },
-            { id: `evabt:lead-optout:${leadId}`, title: 'Ignorar' },
-          ];
-        } else {
-          transferMsg = `🔔 TRANSFERENCIA DE ATENDIMENTO${contactTypeLabel}\n\nContato: ${from}${nameLabel}\nFalar direto: wa.me/${from}\n\nMotivo:\n${reason}${estimativaMsg}\n\nVocê pode assumir esse atendimento. A Eva fica em pausa nesse chat (se foi engano, é só Reativar).`;
-          buttons = [
-            { id: `evabt:lead-pause:${leadId}`, title: 'Assumir' },
-            { id: `evabt:lead-view:${leadId}`, title: 'Ver perfil' },
-            { id: `evabt:lead-resume:${leadId}`, title: '↩️ Reativar Eva' },
-          ];
-        }
+        const { texto: transferMsg, botoes: buttons } = montarHandoff({
+          from, leadId, leadName, contactType, reason,
+          nomeAtendente: empresa().nomeAtendente,
+          ehContatoComercial: isContatoComercial,
+          estimativaMsg, avisoCargaFutura,
+        });
 
-        if (!isSandbox) {
-          await sendAdminWithButtons({ metaWaba: metaWaba ?? null, sendText }, config.engineerPhone, transferMsg, buttons);
+        // ⚖️ LGPD: o aviso vai pra quem atende ESTA empresa, não pro telefone
+        // fixo do Junior. Empresa sem telefone cadastrado não manda pra ninguém
+        // — perder um aviso é problema operacional; mandar o dado do cliente pro
+        // controlador errado é incidente de privacidade.
+        const destinoAviso = destinoAdminDaEmpresa(config.engineerPhone);
+        if (!isSandbox && destinoAviso) {
+          await sendAdminWithButtons({ metaWaba: metaWaba ?? null, sendText }, destinoAviso, transferMsg, buttons);
+        } else if (!isSandbox) {
+          console.error(`[lgpd] transfer NAO enviado: empresa "${empresa().nomeFantasia}" (${empresa().companyId}) sem telefone_atendente valido. Lead ${leadId} esta no dashboard.`);
         } else {
           console.log(`[sandbox] Transfer to engineer:\n${transferMsg}\n[buttons] ${buttons.map(b => b.title).join(' | ')}`);
         }

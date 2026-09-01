@@ -10,7 +10,13 @@ describe('estimarPorConta — números vêm das tabelas vetadas, nunca de cabeç
     expect(e.paineis).toBeLessThanOrEqual(8);
     expect(e.precoRs).toBeGreaterThanOrEqual(9000);
     expect(e.precoRs).toBeLessThanOrEqual(15000);
-    expect(e.economiaMensalRs).toBeCloseTo(600 * 0.93, 0);
+    // 31/08/2026 — era `600 * 0.93` (economia de 93% da conta, fixo). Isso
+    // ignorava o Fio B da Lei 14.300 (60% em 2026) e a iluminação pública, e
+    // prometia ao cliente mais do que ele ia ver na fatura. Agora a economia sai
+    // da MESMA função da proposta formal: conta − conta residual.
+    expect(e.economiaMensalRs).toBeLessThan(600 * 0.93);
+    expect(e.economiaMensalRs + e.contaResidualRs).toBeCloseTo(600, 0);
+    expect(e.contaResidualRs).toBeGreaterThan(0);
   });
 
   it('preço interpola a tabela entre 4 e 5 kWp', () => {

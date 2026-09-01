@@ -145,8 +145,12 @@ describe('solar-params: fallback regional pela empresa_config (Step 1c)', () => 
     expect(hspPorConcessionaria('Uberlândia-MG')).toBe(4.8);
     expect(tarifaPorConcessionaria('Uberlândia-MG')).toBe(0.95);
     expect(concessionariaPadraoEmpresa()).toBe('CEMIG-MG');
-    // mapa DF/GO continua tendo prioridade sobre o fallback do clone
-    expect(tarifaPorConcessionaria('Brasília')).toBe(1.05);
+    // 31/08/2026 — INVERTIDO de propósito. Antes o mapa DF/GO passava na frente
+    // do ajuste do clone, e bastava a conversa citar "Brasília"/"Neoenergia" pra
+    // uma empresa de outro estado perder os próprios números (foi o que aconteceu
+    // com a Conquista Solar, na Bahia: "Neoenergia Coelba" virou Brasília).
+    // O mapa é a região da EcoSun; quem configurou hsp/tarifa sabe a região dele.
+    expect(tarifaPorConcessionaria('Brasília')).toBe(0.95);
 
     _resetEstadoParaTeste();
   });
