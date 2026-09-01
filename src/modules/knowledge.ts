@@ -3,7 +3,8 @@ import { join } from 'path';
 import chokidar from 'chokidar';
 import type { FSWatcher } from 'chokidar';
 import { ehComum } from './conhecimento-escopo.js';
-import { ehEcosun } from './empresa-config.js';
+import { ehEcosun, empresa } from './empresa-config.js';
+import { higienizarParaTenant } from './conhecimento-higiene.js';
 
 /**
  * KnowledgeBase com 2 tiers:
@@ -32,6 +33,14 @@ export class KnowledgeBase {
   /** Fora de contexto de tenant = EcoSun = base inteira (comportamento histórico). */
   private soComum(): boolean {
     return !ehEcosun();
+  }
+
+  /** Pro tenant, o texto sai sem os nomes da casa e sem os blocos internos.
+   *  Pra EcoSun passa intacto — a base é dela e está escrita com o nome dela.
+   *  Roda na ENTREGA (não no load) porque a empresa em contexto muda por mensagem. */
+  private paraQuemLe(texto: string): string {
+    if (!this.soComum() || !texto) return texto;
+    return higienizarParaTenant(texto, empresa());
   }
 
   constructor(directory: string) {
@@ -80,7 +89,7 @@ export class KnowledgeBase {
    * Conhecimento sempre injetado (core).
    */
   getCore(): string {
-    return this.soComum() ? this.coreComum : this.coreContent;
+    return this.paraQuemLe(this.soComum() ? this.coreComum : this.coreContent);
   }
 
   /**
@@ -97,7 +106,7 @@ export class KnowledgeBase {
       if (content) sections.push(content);
     }
     if (sections.length === 0) return '';
-    return '\n\n---\n\n' + sections.join('\n\n---\n\n');
+    return this.paraQuemLe('\n\n---\n\n' + sections.join('\n\n---\n\n'));
   }
 
   /**
@@ -110,7 +119,7 @@ export class KnowledgeBase {
     const core = this.getCore();
     const fonte = this.soComum() ? this.specializedComum : this.specializedCache;
     if (fonte.size === 0) return core;
-    const allSpecialized = Array.from(fonte.values()).join('\n\n---\n\n');
+    const allSpecialized = this.paraQuemLe(Array.from(fonte.values()).join('\n\n---\n\n'));
     return core + '\n\n---\n\n' + allSpecialized;
   }
 
