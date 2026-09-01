@@ -6,6 +6,7 @@ import type { DetalheCalendario } from '../monitoring/service.js';
 import type { IntradayPonto } from '../monitoring/types.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64, LOGO_ECOSUNPOWER_DARK_BASE64 } from '../proposal/assets/logo-base64.js';
 import { corDaMarca, logoDaEmpresa, LOGO_PADRAO_CASA } from './marca-empresa.js';
+import { estadoDoItem } from './vitrine-menu.js';
 import { formatPhoneBR, normalizeBrazilianPhone } from '../meta-leadgen.js';
 import { renderClienteSelector } from './proprietario.js';
 import { empresa } from '../empresa-config.js';
@@ -219,12 +220,14 @@ export function renderLayout(input: LayoutInput): string {
   // Manutenção...) é conveniência da casa EcoSun e vira poluição/vazamento
   // de UX na tela do tenant. Liberar módulo novo pro tenant = editar o
   // papel dele (cardápio modular), sem deploy.
-  const itemVisivel = (it: SideItem): boolean => {
-    if (it.soEcosun && user && user.companyId !== ECOSUN_COMPANY_ID) return false;
-    if (it.soTenant && (!user || user.companyId === ECOSUN_COMPANY_ID)) return false;
-    if (!it.area && user && user.companyId !== ECOSUN_COMPANY_ID) return false;
-    return !(it.area && user && !can(user, it.area, it.nivel ?? 'visualizar'));
-  };
+  // VITRINE (01/09/2026): antes, modulo que o papel nao permitia SUMIA — o
+  // cliente nao fazia ideia do tamanho do que existe, e o que ele nao ve, ele
+  // nao compra. Agora aparece apagado com cadeado e leva a apresentacao.
+  // A fechadura continua no servidor: o exigir(...) da rota barra do mesmo jeito.
+  const estadoDe = (it: SideItem) =>
+    estadoDoItem(it, user, ECOSUN_COMPANY_ID, (u, area, nivel) =>
+      can(u as never, area as never, (nivel ?? 'visualizar') as never));
+  const itemVisivel = (it: SideItem): boolean => estadoDe(it) !== 'escondido';
 
   const linkClass = (key: string) =>
     active === key
@@ -240,7 +243,10 @@ export function renderLayout(input: LayoutInput): string {
     const linksHtml = visiveis
       .map(
         (it) =>
-          `<a href="${it.href}" class="block px-3 py-2 rounded-lg text-sm transition ${linkClass(it.key)}">${it.label}</a>`,
+          estadoDe(it) === 'bloqueado'
+            ? `<a href="/dashboard/conhecer/${encodeURIComponent(it.key)}" title="Ainda não faz parte do seu plano — clique para conhecer"
+                 class="block px-3 py-2 rounded-lg text-sm transition text-sky-100/45 hover:text-white hover:bg-white/5">${it.label} <span class="opacity-70">🔒</span></a>`
+            : `<a href="${it.href}" class="block px-3 py-2 rounded-lg text-sm transition ${linkClass(it.key)}">${it.label}</a>`,
       )
       .join('\n          ');
     return `<details ${contemAtivo ? 'open' : ''} class="group">

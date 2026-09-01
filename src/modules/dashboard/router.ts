@@ -723,6 +723,38 @@ b.onclick=async function(){
   // A assistente nao trata como lead, mas nada se perde: cai aqui pra empresa ler.
   // O que a assistente pode dizer sobre a propria empresa (migration 119).
   // Cada empresa escreve a sua - mexer numa nao encosta na outra.
+  // VITRINE: modulo que ainda nao e do cliente. NAO exige permissao da area —
+  // e justamente quem NAO tem que abre. Nada aqui libera acesso: a tela so
+  // apresenta, e a rota do modulo continua barrada pelo exigir(...).
+  router.get('/conhecer/:chave', async (req: AuthedRequest, res) => {
+    try {
+      const { telaConhecer } = await import('./conhecer-views.js');
+      const { empresaDe } = await import('../empresa-config.js');
+      const companyId = req.dashUser!.companyId;
+      res.type('html').send(telaConhecer(String(req.params.chave), empresaDe(companyId).nomeFantasia, req.dashUser));
+    } catch (err) {
+      console.error('[conhecer]', err);
+      res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+  });
+
+  router.post('/conhecer/:chave', async (req: AuthedRequest, res) => {
+    try {
+      const { telaConhecerEnviado } = await import('./conhecer-views.js');
+      const chave = String(req.params.chave);
+      // Fica no log de auditoria (sem tabela nova): quem, de qual empresa, quando.
+      await audit(supabase, {
+        companyId: req.dashUser!.companyId, userId: req.dashUser!.id,
+        entidade: 'interesse_modulo', acao: chave,
+      }).catch(() => {});
+      console.log(`[vitrine] ${req.dashUser!.nome} (${req.dashUser!.companyId.slice(0, 8)}) quer conhecer: ${chave}`);
+      res.type('html').send(telaConhecerEnviado(chave, req.dashUser));
+    } catch (err) {
+      console.error('[conhecer]', err);
+      res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
+    }
+  });
+
   router.get('/conhecimento', exigir('leads', 'visualizar'), async (req: AuthedRequest, res) => {
     try {
       const { itensDaEmpresa } = await import('../conhecimento-empresa.js');

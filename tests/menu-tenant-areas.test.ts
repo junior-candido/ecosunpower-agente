@@ -47,10 +47,16 @@ describe('menu lateral — tenant só vê áreas explícitas do papel', () => {
     expect(html).not.toContain('Manutenção');
   });
 
-  it('tenant sem permissão de marketing não vê o setor Marketing', () => {
+  // MUDOU EM 01/09/2026 (vitrine, pedido do Junior): modulo que o tenant nao
+  // tem deixou de SUMIR e passou a aparecer APAGADO COM CADEADO, levando a uma
+  // apresentacao do modulo. "O que ele nao ve, ele nao compra." A trava de
+  // acesso continua no servidor — a vitrine e so a porta.
+  it('tenant sem marketing VÊ o item, mas bloqueado e sem link pra tela real', () => {
     const html = sidebarDe(THIAGO);
-    expect(html).not.toContain('Campanhas');
-    expect(html).not.toContain('E-mail Marketing');
+    expect(html).toContain('Campanhas');           // aparece
+    expect(html).toContain('🔒');                   // com cadeado
+    expect(html).toContain('/dashboard/conhecer/'); // leva à apresentação
+    expect(html).not.toContain('href="/dashboard/marketing"'); // NÃO leva à tela real
   });
 
   it('EcoSun continua vendo os itens soltos de sempre (nada muda pra casa)', () => {
