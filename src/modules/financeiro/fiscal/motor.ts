@@ -73,13 +73,17 @@ export async function emitirNota(deps: DepsEmissao, companyId: string, notaId: s
   const travou = await deps.travarParaEnvio(companyId, notaId);
   if (!travou) throw new Error('Essa nota já está sendo emitida (ou já foi emitida) — recarregue a página antes de tentar de novo.');
   const nDps = await deps.proximoNdps(companyId);
+  // EM029: a inscrição municipal do tomador só pode ir quando ele é estabelecido no
+  // MESMO município da prestação — pra tomador de fora o fisco PROÍBE o campo (EM028+EM029).
+  // Sem código IBGE do tomador não dá pra afirmar que é do mesmo município: não manda.
+  const imDoTomador = t.codMunIbge && t.codMunIbge === cfg.codMunicipio ? t.im : null;
   const { xml, idDps } = montarDpsXml({
     ambiente: cfg.ambiente, dhEmi: new Date(), serie: cfg.serie, nDps,
     competencia: nota.competencia, codMunicipio: cfg.codMunicipio,
     // Homologação: o cadastro de teste NÃO é optante do Simples (E0160) → opSimpNac=1.
     optanteSimples: cfg.ambiente === 'producao',
     prestador: { cnpj: cfg.cnpj, im: cfg.im },
-    tomador: { tipo: t.tipo, doc: t.doc, nome: t.nome, im: t.im, endereco: enderecoTomador, email: t.email },
+    tomador: { tipo: t.tipo, doc: t.doc, nome: t.nome, im: imDoTomador, endereco: enderecoTomador, email: t.email },
     servico: { codTribNacional: servico.codTribNacional, codTribMunicipal: servico.codTribMunicipal, descricao: nota.descricao },
     obra: precisaObra ? enderecoTomador : null,
     valores: { vServ: nota.valorBruto, issRetido: nota.issRetido },
