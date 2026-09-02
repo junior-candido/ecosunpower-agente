@@ -136,7 +136,7 @@ import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/tem
 import { PastaService } from './modules/relatorios/pasta/service.js';
 import { renderPastaHtml } from './modules/relatorios/pasta/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
-import { carregarEmpresaConfig, carregarKits, empresa, comEmpresaDe, listaMarcasTexto } from './modules/empresa-config.js';
+import { carregarEmpresaConfig, carregarKits, empresa, empresaDe, comEmpresaDe, listaMarcasTexto } from './modules/empresa-config.js';
 import { destinoAdminDaEmpresa, envioProibido } from './modules/tenant-admin-guard.js';
 import { travarMarcaAlheia } from './modules/trava-marca-alheia.js';
 import { carregarConhecimentoEmpresas } from './modules/conhecimento-empresa.js';
@@ -4820,6 +4820,42 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       if (lead && (lead as any).eva_active === false) {
         console.log(`[eva-active] Skipping message from ${from} — eva_active=false (Junior atende)`);
         return;
+      }
+
+      // 🚪 MENU DE ENTRADA (02/09/2026). Junior: "esse número não é uma boa
+      // para a Clara, ela fica perdida" / "tinha que ser muito ninja para
+      // entender tudo isso". A triagem da Conquista lista SEIS tipos de pessoa
+      // chegando na mesma linha; quando alguém escreve só "oi" não há o que
+      // deduzir, e a assistente chuta na frente do cliente.
+      //
+      // Aqui ela pergunta em vez de adivinhar — uma vez só, na primeira
+      // mensagem de quem ainda não é lead. Empresa sem menu configurado
+      // (menuEntrada vazio, que é o caso da EcoSunPower) não muda em nada.
+      if (!lead) {
+        const menuOpcoes = empresaDe(companyId).menuEntrada;
+        if (menuOpcoes.length > 0) {
+          const { montarMenuEntrada, lerEscolhaDoMenu } = await import('./modules/menu-entrada.js');
+          const escolha = lerEscolhaDoMenu(text, menuOpcoes);
+          if (escolha) {
+            // Respondeu o menu, ou já chegou dizendo o assunto. Se veio só o
+            // número, troca pelo rótulo: a IA lê "Energia solar — quero baixar
+            // minha conta de luz" em vez de um "1" solto. Só acontece com lead
+            // inexistente, então nunca pega um "2" que é resposta de pergunta.
+            if (/^[^\p{L}]*\d{1,2}[^\p{L}]*$/u.test(text.trim())) text = escolha.rotulo;
+            console.log(`[menu-entrada] ${from} escolheu "${escolha.chave}"`);
+          } else {
+            const menuTexto = montarMenuEntrada(
+              empresaDe(companyId).nomeAtendente,
+              empresaDe(companyId).nomeFantasia,
+              menuOpcoes,
+            );
+            if (menuTexto) {
+              await sendText(from, menuTexto);
+              console.log(`[menu-entrada] menu enviado pra ${from} (empresa=${companyId ?? 'ecosun'})`);
+              return;
+            }
+          }
+        }
       }
 
       // Se cliente respondeu antes do delay 2h da intro automatica, cancela a intro.
