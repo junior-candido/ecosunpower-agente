@@ -10153,7 +10153,10 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
         const { sweepStuckHotLeads } = await import('./modules/eva-alerts.js');
         const n = await sweepStuckHotLeads(
           { client: supabase.getClient(), engineerPhone: config.engineerPhone, sendText, metaWaba: metaWaba ?? null },
-          { staleMinutes: 45 },
+          // ⚖️ LGPD: a varredura alerta o zap do Junior, então lê SÓ a
+          // EcoSunPower. Tenant não recebe aviso de lead por zap — o lead dele
+          // fica no dashboard (decisão de 31/08, ver tenant-admin-guard).
+          { staleMinutes: 45, companyId: ECOSUN_COMPANY_ID },
         );
         if (n > 0) console.log(`[hotlead] varredura alertou ${n} lead(s) quente(s) parado(s)`);
       } catch (err) {
@@ -10171,7 +10174,16 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     const evaDigestScheduler = async () => {
       try {
         const { maybeRunDigest } = await import('./modules/eva-digest.js');
-        await maybeRunDigest(supabase.getClient(), config.engineerPhone, sendText, metaWaba ?? null);
+        // O resolver diz por qual instância Evolution a mensagem de cada
+        // empresa tem que sair — a Clara fala pelo número dela, nunca pelo
+        // da Eva (que seria uma empresa mandando mensagem em nome de outra).
+        await maybeRunDigest(
+          supabase.getClient(),
+          config.engineerPhone,
+          sendText,
+          metaWaba ?? null,
+          (companyId) => evolutionTenant.instanciaDaEmpresa(companyId),
+        );
       } catch (err) {
         console.error('[digest] scheduler error:', (err as Error).message);
       }

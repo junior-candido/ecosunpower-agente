@@ -671,17 +671,26 @@ export class SupabaseService {
    * lead novo seja esquecido. Apos 24h sem responder, Eva comeca a
    * arrochar via cadencia infinita.
    */
-  async getSilentLeadsWithoutCadence(hoursSilent: number = 24): Promise<Array<{
+  async getSilentLeadsWithoutCadence(
+    hoursSilent: number = 24,
+    companyId: string = '00000000-0000-0000-0000-000000000001',
+  ): Promise<Array<{
     id: string;
     phone: string;
     name: string | null;
     created_at: string;
   }>> {
+    // ⚖️ LGPD 02/09/2026: roda num relógio (1x/h), fora do contexto de mensagem.
+    // Sem o filtro de empresa lia a tabela de leads INTEIRA e enfileirava
+    // cadência de cliente de outra empresa. O disparo já era travado só na
+    // EcoSun, então nada saía — mas fila suja vira vazamento no dia em que o
+    // tenant ligar a WABA própria. Padrão = a casa.
     // Primeiro pega leads candidatos (criados ha > N horas, ativos, sem opt-out, status nao-terminal).
     const cutoff = new Date(Date.now() - hoursSilent * 60 * 60_000).toISOString();
     const { data: candidates, error } = await this.client
       .from('leads')
       .select('id, phone, name, created_at')
+      .eq('company_id', companyId)
       .eq('eva_active', true)
       .eq('opt_out', false)
       .in('status', ['novo', 'qualificando', 'qualificado'])
@@ -700,6 +709,7 @@ export class SupabaseService {
     const { data: withCadence } = await this.client
       .from('eva_cadence')
       .select('lead_id')
+      .eq('company_id', companyId)
       .in('lead_id', ids);
     const withCadenceSet = new Set((withCadence ?? []).map((r: any) => r.lead_id));
 

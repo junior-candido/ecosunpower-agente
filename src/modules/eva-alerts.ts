@@ -14,6 +14,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { sendAdminWithButtons, type MetaWabaLike } from './eva-admin-buttons.js';
 import { formatPhoneBR } from './meta-leadgen.js';
 import { empresa } from './empresa-config.js';
+import { ECOSUN_COMPANY_ID } from './tenant-resolver.js';
 
 type AlertKind =
   | 'cadence_replied'
@@ -424,15 +425,22 @@ export async function alertHotLeadBackstop(
  */
 export async function sweepStuckHotLeads(
   ctx: AlertContext,
-  opts?: { staleMinutes?: number },
+  opts?: { staleMinutes?: number; companyId?: string },
 ): Promise<number> {
   const staleMinutes = opts?.staleMinutes ?? 45;
+  // ⚖️ LGPD 02/09/2026: esta varredura roda num relógio, fora do contexto de
+  // qualquer mensagem — então `empresa()` cai no padrão (EcoSun) e a trava do
+  // tenant-admin-guard libera. Sem o filtro abaixo ela lia a tabela de leads
+  // INTEIRA e alertava o Junior sobre cliente de outra empresa. Padrão = a
+  // casa, pra quem chamar sem dizer nada não vazar.
+  const companyId = opts?.companyId ?? ECOSUN_COMPANY_ID;
   const cutoff = new Date(Date.now() - staleMinutes * 60 * 1000).toISOString();
 
   const LIMIT = 200;
   const { data, error } = await ctx.client
     .from('leads')
     .select('id, name, phone, energy_data, opt_out, updated_at')
+    .eq('company_id', companyId)
     .eq('status', 'qualificando')
     .not('opt_out', 'is', true) // exclui opt_out=true (mantem null/false)
     .lt('updated_at', cutoff)
