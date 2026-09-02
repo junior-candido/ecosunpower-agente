@@ -5,6 +5,7 @@
 // comportamento fica idêntico ao hardcode antigo.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { normalizarMenuEntrada, type OpcaoMenu } from './menu-entrada.js';
 
 /** Um destino de encaminhamento: "quando for X, manda pro telefone Y". */
 export interface CanalAtendimento {
@@ -45,6 +46,8 @@ export interface EmpresaConfig {
    *  reconhecer cada tipo (parceria, produto A, produto B, cliente antigo...).
    *  Cada empresa tem a sua realidade — modelar isso em código não escala. */
   politicaTriagem: string | null;
+  /** Menu da primeira mensagem. Lista vazia = empresa sem menu (deduz o assunto como antes). */
+  menuEntrada: OpcaoMenu[];
   criterioLeadValor: number; criterioLeadKwh: number;
   marcasPermitidas: string[]; marcasBloqueadas: string[];
   garantiaInstalacaoMeses: number; fatorPerdaPadrao: number; belenusAtivo: boolean;
@@ -84,7 +87,7 @@ export const EMPRESA_DEFAULTS: EmpresaConfig = {
   rtTitulo: 'Responsável Técnico CREA/CFT',
   rtCpf: '989.404.571-53', rtRg: '2.202.520 SSP-DF', rtRegistro: '98940457153',
   pixChave: '33.020.459/0001-06',
-  canaisAtendimento: [], politicaTriagem: null,
+  canaisAtendimento: [], politicaTriagem: null, menuEntrada: [],
   criterioLeadValor: 700, criterioLeadKwh: 700,
   marcasPermitidas: ['Trina Solar','JA Solar','Risen','Jinko Solar','LONGi','Honor','SolarEdge','Deye','Sungrow','Huawei','Hoymiles','Enphase','FoxESS','NEP','Solis','SolaX'],
   marcasBloqueadas: ['Growatt'],
@@ -171,6 +174,7 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
     canaisAtendimento: normalizarCanais(row.canais_atendimento),
     // Texto vai direto pro prompt: cap defensivo pra não estourar o contexto.
     politicaTriagem: sn(row.politica_triagem)?.slice(0, 3000) ?? null,
+    menuEntrada: normalizarMenuEntrada(row.menu_entrada),
     criterioLeadValor: n(row.criterio_lead_valor, D.criterioLeadValor),
     criterioLeadKwh: n(row.criterio_lead_kwh, D.criterioLeadKwh),
     marcasPermitidas: arr(row.marcas_permitidas, D.marcasPermitidas),
