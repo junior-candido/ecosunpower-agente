@@ -342,7 +342,7 @@ describe('PastaService.enviarPorWhatsApp', () => {
     expect(sendText).not.toHaveBeenCalled();
   });
 
-  it('opt_out NÃO envia', async () => {
+  it('opt_out NÃO envia por texto livre', async () => {
     const sb = fakeSupabase({
       getPastaClienteById: vi.fn().mockResolvedValue(publicada),
       getClienteByLeadId: vi.fn().mockResolvedValue({ id: 'lead-1', name: 'J', phone: '556111', opt_out: true }),
@@ -350,6 +350,39 @@ describe('PastaService.enviarPorWhatsApp', () => {
     const sendText = vi.fn();
     const svc = new PastaService(sb as any, semSistema);
     const r = await svc.enviarPorWhatsApp('pasta-1', sendText);
+    expect(r.reason).toBe('opt_out');
+    expect(sendText).not.toHaveBeenCalled();
+  });
+
+  // Template utility aprovado pela Meta = comunicacao de SERVICO do contrato
+  // (os documentos da usina que o cliente comprou), nao marketing. opt_out do
+  // atendimento nao pode barrar a entrega dos documentos dele.
+  it('opt_out NAO barra o template utility aprovado', async () => {
+    const sb = fakeSupabase({
+      getPastaClienteById: vi.fn().mockResolvedValue(publicada),
+      getClienteByLeadId: vi.fn().mockResolvedValue({ id: 'lead-1', name: 'Lucas Azevedo', phone: '556111', opt_out: true }),
+    });
+    const sendText = vi.fn();
+    const sendTemplate = vi.fn().mockResolvedValue(undefined);
+    const svc = new PastaService(sb as any, semSistema);
+    const r = await svc.enviarPorWhatsApp('pasta-1', sendText, sendTemplate);
+    expect(r.ok).toBe(true);
+    expect(sendTemplate).toHaveBeenCalledTimes(1);
+    expect(sendTemplate.mock.calls[0][1]).toBe('pasta_digital_v1');
+    expect(sendText).not.toHaveBeenCalled();
+    expect(sb.marcarPastaClienteEnviada).toHaveBeenCalledWith('pasta-1', '556111');
+  });
+
+  it('opt_out barra o texto livre quando o template falha', async () => {
+    const sb = fakeSupabase({
+      getPastaClienteById: vi.fn().mockResolvedValue(publicada),
+      getClienteByLeadId: vi.fn().mockResolvedValue({ id: 'lead-1', name: 'J', phone: '556111', opt_out: true }),
+    });
+    const sendText = vi.fn();
+    const sendTemplate = vi.fn().mockRejectedValue(new Error('template rejeitado'));
+    const svc = new PastaService(sb as any, semSistema);
+    const r = await svc.enviarPorWhatsApp('pasta-1', sendText, sendTemplate);
+    expect(r.ok).toBe(false);
     expect(r.reason).toBe('opt_out');
     expect(sendText).not.toHaveBeenCalled();
   });

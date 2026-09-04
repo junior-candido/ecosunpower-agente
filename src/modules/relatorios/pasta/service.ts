@@ -277,8 +277,11 @@ export class PastaService {
     if (pasta.enviado_em && !opts?.forcar) return { ok: false, reason: 'ja_enviada' };
     const lead = await this.supabase.getClienteByLeadId(pasta.lead_id);
     if (!lead) return { ok: false, reason: 'lead_not_found' };
-    if (lead.opt_out) return { ok: false, reason: 'opt_out' };
     if (!lead.phone) return { ok: false, reason: 'sem_phone' };
+    // opt_out NÃO é checado aqui de propósito: o template utility aprovado pela
+    // Meta é comunicação de SERVIÇO do contrato (os documentos da usina que o
+    // cliente comprou), não marketing. A trava desce pro texto livre, logo
+    // abaixo — esse sim é conversa/divulgação e respeita o opt_out.
 
     const primeiroNome = (lead.name ?? 'Olá').split(/\s+/)[0];
     const link = `${PUBLIC_BASE_URL}/pasta/${pasta.slug}`;
@@ -300,6 +303,9 @@ export class PastaService {
         }
       }
     }
+    // Daqui pra baixo é texto livre (conversa) — aqui o opt_out vale.
+    if (lead.opt_out) return { ok: false, reason: 'opt_out' };
+
     // Convite de avaliação junto da entrega (melhor momento) — some se não houver link.
     const reviewUrl = empresa().googleReviewUrl;
     const convite = reviewUrl
