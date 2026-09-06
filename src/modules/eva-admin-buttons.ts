@@ -147,9 +147,16 @@ export async function tryHandleEvaAdminButton(args: {
 
       case 'cad-force': {
         const r = await args.forceCadenceForSilentes();
+        // [06/09/2026] Zero deixou de ser uma resposta seca. Quando nao ha ninguem
+        // pra tocar isso quase sempre e BOA noticia (o relogio ja pegou todo mundo,
+        // ou os silentes ja estao com proposta no follow-up vivo) — mas a mensagem
+        // antiga fazia parecer defeito. Agora ela explica o porque.
         await args.sendText(
           args.from,
-          `📤 Cadência disparada pra ${r.acionados} lead(s) silente(s). Próximos toques chegam em até 1h.`,
+          r.acionados > 0
+            ? `📤 Toque forçado pra ${r.acionados} lead(s) silente(s). Sai na próxima janela (9h–20h).`
+            : '✅ Nenhum lead pra cutucar agora.\n\nOu o robô já tocou todos nas últimas 48h, ' +
+              'ou os silentes da lista já estão com proposta na mão — esses o follow-up cuida.',
         );
         return true;
       }

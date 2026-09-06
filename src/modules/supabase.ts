@@ -717,6 +717,67 @@ export class SupabaseService {
   }
 
   /**
+   * [06/09/2026] Leads que o botao "📤 Cadenciar" do digest deve realmente tocar.
+   *
+   * O botao usava `getSilentLeadsWithoutCadence`, que exige o lead NUNCA ter tido
+   * cadencia. So que o `autoCadenceScheduler` roda a cada 1h com a MESMA funcao e
+   * agenda pra todo mundo que ela devolve — entao quando o Junior clicava, nao
+   * sobrava ninguem e a resposta era sempre "Cadencia disparada pra 0 lead(s)".
+   * O botao era estruturalmente incapaz de achar alguem.
+   *
+   * O que o Junior quer ao clicar e forcar um toque em quem esta na LISTA do
+   * digest — silentes que ja tem cadencia e continuam calados. Entao aqui a busca
+   * espelha o criterio do digest (`updated_at`, nao `created_at`) e NAO exige
+   * ausencia de cadencia. Os freios que entram no lugar:
+   *   1. quem levou toque nas ultimas 48h fica de fora (nao vira spam);
+   *   2. quem ja tem proposta na mao fica de fora — o follow-up vivo cuida dele,
+   *      e seria vexame mandar "quer um estudo sem compromisso?" pra quem esta
+   *      com a proposta aberta na tela.
+   * `companyId` e explicito: o conserto nasce generico e serve a qualquer tenant.
+   */
+  async getSilentLeadsParaForcar(
+    hoursSilent: number = 24,
+    companyId: string = '00000000-0000-0000-0000-000000000001',
+  ): Promise<Array<{ id: string; phone: string; name: string | null }>> {
+    const cutoff = new Date(Date.now() - hoursSilent * 60 * 60_000).toISOString();
+    const { data: candidatos, error } = await this.client
+      .from('leads')
+      .select('id, phone, name, estado_venda')
+      .eq('company_id', companyId)
+      .eq('eva_active', true)
+      .eq('opt_out', false)
+      .in('status', ['novo', 'qualificando', 'qualificado'])
+      .lt('updated_at', cutoff)
+      .limit(200);
+
+    if (error) {
+      console.error('[supabase] getSilentLeadsParaForcar error:', error.message);
+      return [];
+    }
+    if (!candidatos || candidatos.length === 0) return [];
+
+    // Freio 2: quem ja avancou pra proposta pertence ao follow-up vivo.
+    const DONO_DO_FOLLOWUP = ['PROPOSTA_ENVIADA', 'FOLLOWUP_VIVO', 'AGENDADO', 'QUER_JUNIOR', 'FECHADO'];
+    const semProposta = candidatos.filter((c: any) => !DONO_DO_FOLLOWUP.includes(c.estado_venda ?? ''));
+    if (semProposta.length === 0) return [];
+
+    // Freio 1: silencio de 48h desde o ultimo toque enviado.
+    const desde48h = new Date(Date.now() - 48 * 60 * 60_000).toISOString();
+    const { data: tocadosAgora } = await this.client
+      .from('eva_cadence')
+      .select('lead_id')
+      .eq('company_id', companyId)
+      .in('lead_id', semProposta.map((c: any) => c.id))
+      .eq('status', 'sent')
+      .gte('sent_at', desde48h);
+    const quentes = new Set((tocadosAgora ?? []).map((r: any) => r.lead_id));
+
+    return semProposta
+      .filter((c: any) => !quentes.has(c.id))
+      .map((c: any) => ({ id: c.id, phone: c.phone, name: c.name }));
+  }
+
+  /**
    * Apos enviar o ultimo toque pendente, gera o proximo toque +1 ano a
    * frente. Mantem cadencia rodando indefinidamente ate cliente responder
    * ou pedir opt-out. Idempotente: se ja existe step > lastStep pendente,

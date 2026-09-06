@@ -242,12 +242,33 @@ describe('FollowupVivoService', () => {
     expect(db.tabelas.proposta_followup_vivo.every(r => r.status === 'cancelled' && r.cancelled_reason === 'proposta_revogada')).toBe(true);
   });
 
-  it('proposta sem telefone → cancela com sem_telefone', async () => {
+  it('proposta sem telefone E lead sem telefone → cancela com sem_telefone', async () => {
     const svc = mk(db);
     await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
     db.tabelas.propostas_publicas[0].cliente_telefone = null;
+    db.tabelas.leads[0].phone = null; // nem a reserva tem — aí sim não há como falar com ele
     expect(await svc.processarDevidos(T0 + 25 * 3_600_000)).toBe(0);
     expect(db.tabelas.proposta_followup_vivo.every(r => r.status === 'cancelled' && r.cancelled_reason === 'sem_telefone')).toBe(true);
+  });
+
+  // [06/09/2026] Auditoria: 184 propostas vivas, só 66 com `cliente_telefone`.
+  // Em 50 dos casos restantes a pessoa ESTAVA no sistema como lead, com telefone.
+  // O follow-up cancelava por 'sem_telefone' e o cliente sumia — tendo o número ali.
+  it('proposta sem telefone mas com lead → usa o telefone do lead e ENVIA', async () => {
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    db.tabelas.propostas_publicas[0].cliente_telefone = null; // proposta cega
+    // lead L1 continua com 5561999999999
+    expect(await svc.processarDevidos(T0 + 25 * 3_600_000)).toBe(1);
+    expect(db.tabelas.proposta_followup_vivo.some(r => r.cancelled_reason === 'sem_telefone')).toBe(false);
+  });
+
+  it('telefone impossível na proposta mas lead com número bom → usa o do lead', async () => {
+    const svc = mk(db);
+    await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    db.tabelas.propostas_publicas[0].cliente_telefone = '123'; // não normaliza
+    expect(await svc.processarDevidos(T0 + 25 * 3_600_000)).toBe(1);
+    expect(db.tabelas.proposta_followup_vivo.some(r => r.cancelled_reason === 'sem_telefone')).toBe(false);
   });
 
   it('agendarPosVisita sem leadId cai pro telefone e escolhe a proposta mais recente', async () => {
@@ -400,10 +421,11 @@ describe('FollowupVivoService', () => {
     expect((svc as any).deps.emTakeover).toHaveBeenCalledWith('5561999999999');
   });
 
-  it('telefone que não normaliza → cancela com sem_telefone', async () => {
+  it('telefone que não normaliza e sem reserva no lead → cancela com sem_telefone', async () => {
     db.tabelas.propostas_publicas[0].cliente_telefone = '1234';
     const svc = mk(db);
     await svc.agendarParaProposta({ slug: 'joel', leadId: 'L1', enviadaEmMs: T0 });
+    db.tabelas.leads[0].phone = null; // sem reserva
     expect(await svc.processarDevidos(T0 + 25 * 3_600_000)).toBe(0);
     expect(db.tabelas.proposta_followup_vivo.every(r => r.status === 'cancelled' && r.cancelled_reason === 'sem_telefone')).toBe(true);
   });
