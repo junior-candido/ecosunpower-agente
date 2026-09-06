@@ -25,6 +25,15 @@ export interface FollowupVivoDeps {
   validadeKitDias: number;
   templateFallback?: string; // default 'reativacao_lead_v1'
   loteMaximo?: number;       // default 30
+  /**
+   * [06/09/2026] Canal pra ERRO GRITAR. Nasceu do incidente em que a migration 101
+   * nunca foi aplicada em producao: a tabela `proposta_followup_vivo` nao existia,
+   * `processarDevidos` batia no erro, fazia console.error e devolvia 0 — calado.
+   * O relogio rodou a cada 15min por MESES sem mandar uma mensagem, e o boot ainda
+   * imprimia "Servico ativo". 184 propostas ficaram sem um unico toque.
+   * Motor que morre em silencio parece vivo. Agora ele avisa no zap.
+   */
+  avisarAdmin?: (msg: string) => Promise<void>;
 }
 
 const T = 'proposta_followup_vivo';
@@ -180,6 +189,22 @@ export class FollowupVivoService {
   }
 
   /** Chamado pelo cron. Devolve quantas etapas foram enviadas. */
+  /** Ultimo aviso de falha enviado (epoch ms). Throttle de 1h. */
+  private ultimoGritoMs = 0;
+
+  /**
+   * Avisa o Junior no zap que o motor caiu. Throttle de 1h: o relogio bate a cada
+   * 15min, entao sem isso um banco fora do ar viraria 4 mensagens por hora.
+   * Nunca deixa o erro do aviso derrubar o ciclo — se o zap falhar, so loga.
+   */
+  private async gritar(msg: string, agoraMs: number): Promise<void> {
+    if (!this.deps.avisarAdmin) return;
+    if (agoraMs - this.ultimoGritoMs < 3_600_000) return;
+    this.ultimoGritoMs = agoraMs;
+    try { await this.deps.avisarAdmin(msg); }
+    catch (err) { console.error('[followup-vivo] nao consegui nem avisar:', (err as Error).message); }
+  }
+
   async processarDevidos(agoraMs: number): Promise<number> {
     if (!dentroDoHorario(agoraMs)) return 0;
     // varredura: 'sending' preso (processo caiu no meio) vira failed — nunca pending, pra não entregar em dobro
@@ -192,7 +217,18 @@ export class FollowupVivoService {
       .select('id, proposta_slug, lead_id, etapa, scheduled_for')
       .eq('status', 'pending').lte('scheduled_for', new Date(agoraMs).toISOString())
       .order('scheduled_for', { ascending: true }).limit(this.deps.loteMaximo);
-    if (error) { console.error('[followup-vivo] busca falhou:', error.message); return 0; }
+    if (error) {
+      console.error('[followup-vivo] busca falhou:', error.message);
+      // GRITA. Antes isso morria num console.error que ninguem le. Throttle de 1h
+      // pra nao virar spam: o relogio bate a cada 15min, mas o aviso sai 1x/hora.
+      await this.gritar(
+        `🚨 *Follow-up vivo PAROU*\n\nA busca de toques falhou:\n_${error.message}_\n\n` +
+        `Nenhum cliente com proposta esta sendo acompanhado agora. ` +
+        `Se disser "does not exist", a migration nao foi aplicada em producao.`,
+        agoraMs,
+      );
+      return 0;
+    }
     let enviadas = 0;
     for (const row of (devidas ?? []) as EtapaRow[]) {
       try { if (await this.processarUma(row, agoraMs)) enviadas++; }
@@ -209,7 +245,21 @@ export class FollowupVivoService {
     const { data: prop } = await this.deps.client.from('propostas_publicas')
       .select('slug, cliente_nome, cliente_telefone, lead_id, created_at, dados_input, revoked, acessos')
       .eq('slug', row.proposta_slug).maybeSingle();
-    const to = prop?.cliente_telefone ? normalizeBrazilianPhone(String(prop.cliente_telefone)) : null;
+    // [06/09/2026] Telefone: a proposta e a PRIMEIRA fonte, o lead e a RESERVA.
+    // Auditoria de 06/09: das 184 propostas vivas, so 66 tinham `cliente_telefone`.
+    // As outras nasciam sem — e aqui o follow-up cancelava com 'sem_telefone' e
+    // o cliente nunca mais ouvia falar da gente. Mas em 50 desses casos a pessoa
+    // ESTAVA no sistema, com telefone, como lead: a proposta e que nao olhava pra la.
+    // Quem manda no dado e o lead; a proposta so guarda uma copia.
+    let to = prop?.cliente_telefone ? normalizeBrazilianPhone(String(prop.cliente_telefone)) : null;
+    if (!to && (prop?.lead_id ?? row.lead_id)) {
+      const { data: lead } = await this.deps.client.from('leads')
+        .select('phone').eq('id', prop?.lead_id ?? row.lead_id).maybeSingle();
+      if (lead?.phone) {
+        to = normalizeBrazilianPhone(String(lead.phone));
+        if (to) console.log(`[followup-vivo] telefone da proposta ${row.proposta_slug} veio do lead (reserva)`);
+      }
+    }
     if (!prop || prop.revoked || !to) {
       await this.cancelarPorSlug(row.proposta_slug, !prop ? 'proposta_inexistente' : prop.revoked ? 'proposta_revogada' : 'sem_telefone');
       return false;

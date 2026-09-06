@@ -790,6 +790,9 @@ async function main() {
     },
     proposalBaseUrl: `${config.publicProposalBaseUrl}/p`,
     validadeKitDias: 15,
+    // [06/09/2026] Se o motor cair, o Junior fica sabendo NA HORA. Antes o erro
+    // sumia num console.error e o follow-up ficou meses morto sem ninguem notar.
+    avisarAdmin: (msg: string) => sendText(config.engineerPhone, msg),
   });
   const visitas = new VisitasService({ client: supabase.getClient(), followupVivo });
   console.log('[followup-vivo] Servico ativo (ritmo de proposta sem fim + pos-visita 24h)');
@@ -4350,7 +4353,13 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
       const { tryHandleEvaAdminButton } = await import('./modules/eva-admin-buttons.js');
       const forceCadenceForSilentes = async (): Promise<{ acionados: number }> => {
-        const silentes = await supabase.getSilentLeadsWithoutCadence(24);
+        // [06/09/2026] Passou a usar getSilentLeadsParaForcar: o botao agora toca
+        // em quem ESTA na lista do digest (silente por `updated_at`), mesmo que ja
+        // tenha tido cadencia — que e o que o Junior espera ao clicar "Cadenciar".
+        // Antes usava getSilentLeadsWithoutCadence, que exigia zero cadencia; como
+        // o relogio de 1h ja tinha pego todos, dava sempre "0 lead(s)".
+        // Os freios (48h sem toque, e fora quem ja tem proposta) vivem la dentro.
+        const silentes = await supabase.getSilentLeadsParaForcar(24);
         let acionados = 0;
         for (const l of silentes) {
           try {
@@ -9110,8 +9119,13 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         .then((result) => {
           if (result) {
             proposalFollowup.triggerOnView(slug, result.acessosAntes, 'web');
-            // Primeira abertura: se ele ler e não responder, a Eva volta em 2h.
-            if (result.acessosAntes === 0) void followupVivo.agendarAbriuSemResposta(slug, Date.now());
+            // [06/09/2026] O toque A2H ("abriu e nao respondeu em 2h") foi DESLIGADO
+            // por decisao do Junior: "esse toque espiao mesmo". Reagir a abertura
+            // denuncia pro cliente que a gente sabe a hora que ele leu — soa a
+            // vigilancia e queima confianca. A regua do follow-up vivo passa a
+            // reagir SO a tempo decorrido, nunca a comportamento.
+            // A contagem de acessos continua (serve pro Junior priorizar quem
+            // esta quente), so nao dispara mensagem automatica.
           }
         })
         .catch((err) => {
