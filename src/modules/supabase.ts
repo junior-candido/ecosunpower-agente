@@ -1022,6 +1022,47 @@ export class SupabaseService {
   }
 
   /**
+   * Grava uma leitura do medidor Shelly (migration 123).
+   *
+   * Usa upsert com ignoreDuplicates na chave (device_id, canal, medido_em):
+   * o aparelho REENVIA quando fica na duvida da entrega, e sem isso a mesma
+   * leitura contaria duas vezes e falsearia a demanda do cliente.
+   */
+  async salvarMedicaoShelly(l: {
+    deviceId: string; apelido: string | null; canal: number; medidoEm: string;
+    tensao: number | null; corrente: number | null; potenciaW: number;
+    potenciaVa: number | null; fatorPotencia: number | null;
+    energiaWh: number | null; energiaDevolvidaWh: number | null;
+    companyId?: string | null; leadId?: string | null;
+  }): Promise<boolean> {
+    const { error } = await this.client
+      .from('medicoes_shelly')
+      .upsert(
+        {
+          device_id: l.deviceId,
+          apelido: l.apelido,
+          canal: l.canal,
+          medido_em: l.medidoEm,
+          tensao: l.tensao,
+          corrente: l.corrente,
+          potencia_w: l.potenciaW,
+          potencia_va: l.potenciaVa,
+          fator_potencia: l.fatorPotencia,
+          energia_wh: l.energiaWh,
+          energia_devolvida_wh: l.energiaDevolvidaWh,
+          ...(l.companyId ? { company_id: l.companyId } : {}),
+          ...(l.leadId ? { lead_id: l.leadId } : {}),
+        },
+        { onConflict: 'device_id,canal,medido_em', ignoreDuplicates: true },
+      );
+    if (error) {
+      console.warn('[shelly] salvarMedicaoShelly:', error.message);
+      return false;
+    }
+    return true;
+  }
+
+  /**
    * Acha o lead dono de um e-mail (case-insensitive). Usado quando o cliente
    * RESPONDE um e-mail da jornada: a Resend so nos entrega o endereco, e e por
    * ele que a resposta encontra a ficha certa.
