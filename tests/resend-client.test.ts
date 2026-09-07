@@ -22,9 +22,11 @@ describe('EmailSender — endereco de resposta', () => {
   beforeEach(() => {
     enviadoAoSdk.length = 0;
     delete process.env.EMAIL_REPLY_TO;
+    delete process.env.EMAIL_INBOUND_ADDRESS;
   });
   afterEach(() => {
     delete process.env.EMAIL_REPLY_TO;
+    delete process.env.EMAIL_INBOUND_ADDRESS;
   });
 
   // O motivo deste teste (auditoria de 07/09/2026): os 6 modelos da jornada
@@ -71,5 +73,27 @@ describe('EmailSender — endereco de resposta', () => {
       subject: 'Assunto',
       html: '<p>corpo</p>',
     });
+  });
+
+  // A caixa que a Resend RECEBE tem prioridade sobre a caixa humana: e ela que
+  // faz a resposta do cliente entrar no sistema (casa com o lead, avisa no zap)
+  // em vez de so cair no Gmail.
+  it('prefere EMAIL_INBOUND_ADDRESS sobre EMAIL_REPLY_TO', async () => {
+    process.env.EMAIL_REPLY_TO = 'junior@empresa.com.br';
+    process.env.EMAIL_INBOUND_ADDRESS = 'respostas@caixa.resend.app';
+    const sender = new EmailSender('key', 'Empresa <contato@news.empresa.com.br>');
+
+    await sender.enviar(ENVIO);
+
+    expect(enviadoAoSdk[0].replyTo).toBe('respostas@caixa.resend.app');
+  });
+
+  it('usa EMAIL_REPLY_TO quando nao ha caixa de recebimento configurada', async () => {
+    process.env.EMAIL_REPLY_TO = 'junior@empresa.com.br';
+    const sender = new EmailSender('key', 'Empresa <contato@news.empresa.com.br>');
+
+    await sender.enviar(ENVIO);
+
+    expect(enviadoAoSdk[0].replyTo).toBe('junior@empresa.com.br');
   });
 });

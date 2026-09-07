@@ -27,7 +27,16 @@ export class EmailSender {
 
   // devolve o id da mensagem no provider (para casar com os webhooks)
   async enviar(e: EnvioEmail): Promise<string> {
-    const responder = (this.replyTo ?? process.env.EMAIL_REPLY_TO ?? '').trim();
+    // Ordem de preferencia do endereco de resposta:
+    //   1) o que veio no construtor (usado pra encaminhar mantendo o remetente)
+    //   2) EMAIL_INBOUND_ADDRESS — caixa que a Resend RECEBE. A resposta do
+    //      cliente entra no sistema: casa com o lead, grava na ficha, avisa no
+    //      WhatsApp e ainda manda copia pro Gmail. Ver inbound-reply.ts.
+    //   3) EMAIL_REPLY_TO — a caixa humana. Sem a de cima, a resposta vai
+    //      direto pro Gmail: menos automatico, mas nunca se perde.
+    const responder = (
+      this.replyTo ?? process.env.EMAIL_INBOUND_ADDRESS ?? process.env.EMAIL_REPLY_TO ?? ''
+    ).trim();
     const { data, error } = await this.resend.emails.send({
       from: this.from,
       to: e.to,
