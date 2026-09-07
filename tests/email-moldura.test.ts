@@ -133,3 +133,88 @@ describe('assinatura do responsavel', () => {
     expect(html).toContain('https://wa.me/5561996978781');
   });
 });
+
+// Junior 07/09: "telefone, pode colocar, e com link para zap".
+describe('telefone escrito na assinatura', () => {
+  const base = { conteudoHtml: '<p>corpo</p>', linkDescadastro: 'https://x/d' };
+
+  it('escreve o numero formatado e ele e o proprio link do whatsapp', () => {
+    const html = montarMolduraEmail({
+      ...base,
+      assinatura: { nome: 'Junior', titulo: 'RT', whatsapp: '5561996978781' },
+    });
+    expect(html).toContain('(61) 99697-8781');
+    expect(html).toContain('https://wa.me/5561996978781');
+    expect(html).toContain('WhatsApp');
+  });
+
+  it('formata numero fixo de 8 digitos', () => {
+    const html = montarMolduraEmail({
+      ...base,
+      assinatura: { nome: 'Junior', titulo: 'RT', whatsapp: '556133214455' },
+    });
+    expect(html).toContain('(61) 3321-4455');
+  });
+
+  it('formata numero sem o 55 na frente', () => {
+    const html = montarMolduraEmail({
+      ...base,
+      assinatura: { nome: 'Junior', titulo: 'RT', whatsapp: '61996978781' },
+    });
+    expect(html).toContain('(61) 99697-8781');
+  });
+
+  it('numero fora do padrao brasileiro nao quebra: mostra os digitos', () => {
+    const html = montarMolduraEmail({
+      ...base,
+      assinatura: { nome: 'Junior', titulo: 'RT', whatsapp: '1555512345' },
+    });
+    expect(html).toContain('https://wa.me/1555512345');
+    expect(html).toContain('WhatsApp');
+  });
+});
+
+describe('formatarTelefoneBr', () => {
+  it('formata celular, fixo, com e sem DDI, e com mascara', async () => {
+    const { formatarTelefoneBr } = await import('../src/modules/email/email-moldura.js');
+    expect(formatarTelefoneBr('5561996978781')).toBe('(61) 99697-8781');
+    expect(formatarTelefoneBr('+55 (61) 99697-8781')).toBe('(61) 99697-8781');
+    expect(formatarTelefoneBr('61996978781')).toBe('(61) 99697-8781');
+    expect(formatarTelefoneBr('556133214455')).toBe('(61) 3321-4455');
+    expect(formatarTelefoneBr('6133214455')).toBe('(61) 3321-4455');
+  });
+
+  it('devolve null quando nao reconhece o formato', async () => {
+    const { formatarTelefoneBr } = await import('../src/modules/email/email-moldura.js');
+    expect(formatarTelefoneBr('123')).toBeNull();
+    expect(formatarTelefoneBr('')).toBeNull();
+  });
+});
+
+// Junior 07/09: "quando mandar artigos, queria que incentivasse ele a olhar o
+// blog" + "o site, os cases de sucesso".
+describe('convite pro blog e pros casos de sucesso', () => {
+  const base = { conteudoHtml: '<p>corpo</p>', linkDescadastro: 'https://x/d' };
+  const comNoticias = { ...base, noticias: [{ titulo: 'N1', link: 'https://x/1' }] };
+
+  it('convida a ver mais artigos e os casos de sucesso', () => {
+    const html = montarMolduraEmail(comNoticias);
+    expect(html).toContain('Ver todos os artigos');
+    expect(html).toContain('Ver casos de sucesso');
+    // Caminhos conferidos no site em 07/09/2026.
+    expect(html).toContain('https://www.ecosunpower.eng.br/blog');
+    expect(html).toContain('https://www.ecosunpower.eng.br/portfolio');
+  });
+
+  it('usa o site da empresa quando ela nao e a EcoSunPower', () => {
+    const html = montarMolduraEmail({ ...comNoticias, siteUrl: 'https://outra.com.br/' });
+    expect(html).toContain('https://outra.com.br/blog');
+    expect(html).toContain('https://outra.com.br/portfolio');
+    // sem barra dobrada
+    expect(html).not.toContain('https://outra.com.br//blog');
+  });
+
+  it('nao convida quando nao ha artigos pra mostrar', () => {
+    expect(montarMolduraEmail(base)).not.toContain('Ver casos de sucesso');
+  });
+});

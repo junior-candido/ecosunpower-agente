@@ -63,14 +63,37 @@ export function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * Escreve o telefone do jeito que o cliente le: (61) 99697-8781.
+ * A config guarda so digitos, com ou sem o 55 na frente. Devolve null quando
+ * nao reconhece o formato brasileiro — ai o chamador mostra o que puder em vez
+ * de inventar uma formatacao errada.
+ */
+export function formatarTelefoneBr(bruto: string): string | null {
+  let d = String(bruto ?? '').replace(/\D/g, '');
+  if (d.length === 13 || d.length === 12) {
+    if (!d.startsWith('55')) return null;
+    d = d.slice(2);
+  }
+  if (d.length !== 11 && d.length !== 10) return null;
+  const ddd = d.slice(0, 2);
+  const resto = d.slice(2);
+  const meio = resto.length === 9 ? resto.slice(0, 5) : resto.slice(0, 4);
+  return `(${ddd}) ${meio}-${resto.slice(-4)}`;
+}
+
 function secaoAssinatura(opts: MolduraOpts): string {
   const a = opts.assinatura;
   if (!a || opts.transacional) return '';
 
   // wa.me so aceita digitos — o telefone da config pode vir mascarado.
   const digitos = (a.whatsapp ?? '').replace(/\D/g, '');
+  // Junior 07/09: o numero tem que aparecer ESCRITO, e ser o proprio link do
+  // zap. Quem le no celular toca e abre a conversa; quem le no computador ja
+  // sai com o numero anotado.
+  const rotulo = formatarTelefoneBr(digitos) ?? digitos;
   const zap = digitos
-    ? `<p style="margin:6px 0 0; font-size:14px;"><a href="https://wa.me/${digitos}" style="color:${AMBAR}; text-decoration:none; font-weight:bold;">Falar no WhatsApp &rarr;</a></p>`
+    ? `<p style="margin:8px 0 0; font-size:15px;"><a href="https://wa.me/${digitos}" style="color:${AMBAR}; text-decoration:none; font-weight:bold;">${escapeHtml(rotulo)} &middot; WhatsApp &rarr;</a></p>`
     : '';
 
   return `
@@ -149,7 +172,7 @@ function secaoDica(opts: MolduraOpts): string {
             </tr>`;
 }
 
-function secaoNoticias(noticias: NoticiaBlog[]): string {
+function secaoNoticias(noticias: NoticiaBlog[], siteUrl?: string): string {
   if (noticias.length === 0) return '';
   const cards = noticias
     .slice(0, 3)
@@ -167,12 +190,26 @@ function secaoNoticias(noticias: NoticiaBlog[]): string {
     )
     .join('');
 
+  // Junior 07/09: quando manda artigo, tem que CONVIDAR o cliente a ir no
+  // blog e ver os casos de sucesso — nao so deixar 3 links soltos.
+  // Caminhos conferidos no site em 07/09: /blog e /portfolio existem.
+  const site = (siteUrl || SITE_PADRAO).replace(/\/+$/, '');
+  const convite = `
+                <p style="margin:14px 0 0; font-family:${FONTE}; font-size:14px; line-height:1.6; color:${TEXTO};">
+                  Tem mais leitura curta esperando por você — e obras de verdade, com foto e conta de luz.
+                </p>
+                <p style="margin:8px 0 0; font-family:${FONTE}; font-size:14px;">
+                  <a href="${escapeHtml(site)}/blog" style="color:${AMBAR}; text-decoration:none; font-weight:bold;">Ver todos os artigos &rarr;</a>
+                  <span style="color:#9aa4b0;"> &nbsp;·&nbsp; </span>
+                  <a href="${escapeHtml(site)}/portfolio" style="color:${AMBAR}; text-decoration:none; font-weight:bold;">Ver casos de sucesso &rarr;</a>
+                </p>`;
+
   return `
             <tr>
-              <td style="background:${FUNDO_BLOG}; padding:26px 40px 16px;">
+              <td style="background:${FUNDO_BLOG}; padding:26px 40px 22px;">
                 <p style="margin:0 0 14px; font-family:${FONTE}; font-size:13px; letter-spacing:1.5px; text-transform:uppercase; font-weight:bold; color:${NAVY};">📰 Do nosso blog</p>
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${cards}
-                </table>
+                </table>${convite}
               </td>
             </tr>`;
 }
@@ -200,7 +237,7 @@ export function montarMolduraEmail(opts: MolduraOpts): string {
               <td style="background:#ffffff; padding:20px 40px 8px; color:${TEXTO}; font-family:${FONTE}; font-size:16px; line-height:1.65;">
                 ${opts.conteudoHtml}
               </td>
-            </tr>${secaoAssinatura(opts)}${secaoDica(opts)}${secaoCta(opts)}${secaoNoticias(opts.noticias ?? [])}
+            </tr>${secaoAssinatura(opts)}${secaoDica(opts)}${secaoCta(opts)}${secaoNoticias(opts.noticias ?? [], siteUrl)}
             <tr>
               <td style="background:${NAVY}; padding:22px 40px; text-align:center; font-family:${FONTE};">
                 <p style="margin:0 0 6px; font-size:13px; color:#c9d2dc; font-weight:bold;">${escapeHtml(empresa)}${opts.transacional ? '' : ' — energia solar de ponta a ponta'}</p>

@@ -9324,15 +9324,27 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
           encaminhar: process.env.EMAIL_REPLY_TO && process.env.RESEND_API_KEY
             ? async (assunto, corpo, de) => {
                 const { EmailSender } = await import('./modules/email/resend-client.js');
+                const { montarMolduraEmail, escapeHtml } = await import('./modules/email/email-moldura.js');
+                // replyTo = o proprio cliente: responder essa copia no Gmail
+                // ja vai direto pra ele, sem copiar endereco na mao.
                 const sender = new EmailSender(process.env.RESEND_API_KEY!, process.env.EMAIL_FROM ?? '', de);
-                const escapa = (t: string) =>
-                  t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 await sender.enviar({
                   to: process.env.EMAIL_REPLY_TO!,
                   subject: `[resposta de cliente] ${assunto}`,
-                  html:
-                    `<p><strong>De:</strong> ${escapa(de)}</p>` +
-                    `<hr><div style="white-space:pre-wrap">${escapa(corpo)}</div>`,
+                  // Mesma moldura dos outros e-mails (logo, navy, filete ambar),
+                  // porem `transacional`: aviso interno nao leva "descadastrar",
+                  // nem assinatura, nem noticias do blog.
+                  html: montarMolduraEmail({
+                    transacional: true,
+                    empresa: empresa().nomeFantasia,
+                    kicker: 'Resposta de cliente',
+                    titulo: de,
+                    linkDescadastro: '',
+                    conteudoHtml:
+                      `<div style="white-space:pre-wrap">${escapeHtml(corpo)}</div>` +
+                      `<p style="margin:18px 0 0; font-size:13px; color:#6b7686;">` +
+                      `Respondendo este e-mail voce fala direto com ${escapeHtml(de)}.</p>`,
+                  }),
                 });
               }
             : undefined,
