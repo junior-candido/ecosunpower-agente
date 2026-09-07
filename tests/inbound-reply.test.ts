@@ -206,3 +206,75 @@ describe('processarRespostaEmail', () => {
     expect(deps.avisarAdmin).toHaveBeenCalledTimes(1);
   });
 });
+
+// BUG PEGO EM PRODUCAO (07/09/2026, teste ao vivo): o payload do webhook
+// `email.received` da Resend NAO traz o corpo — so from/subject/to/attachments.
+// O primeiro aviso chegou no WhatsApp do Junior sem o texto da mensagem.
+// O corpo tem que ser buscado com resend.emails.receiving.get(email_id).
+describe('corpo que nao vem no webhook', () => {
+  const SEM_CORPO = {
+    type: 'email.received',
+    data: {
+      email_id: 'in_sem_corpo',
+      from: 'joao@exemplo.com',
+      to: ['respostas@caixa.resend.app'],
+      subject: 'Re: Sua energia solar comeca aqui',
+      attachments: [],
+    },
+  };
+
+  it('busca o corpo quando o webhook nao traz, e corta a citacao', async () => {
+    const buscarCorpo = vi.fn().mockResolvedValue({
+      text: 'Pode me ligar amanha?\n\nEm seg., 7 de set. de 2026 as 18:00, EcoSunPower escreveu:\n> antigo',
+    });
+    const deps = fazDeps({ buscarCorpo });
+
+    const r = await processarRespostaEmail(deps as never, SEM_CORPO);
+
+    expect(r.tratado).toBe(true);
+    expect(buscarCorpo).toHaveBeenCalledWith('in_sem_corpo');
+    expect(deps.registrar.mock.calls[0][0].payload.texto).toBe('Pode me ligar amanha?');
+    expect(deps.avisarAdmin.mock.calls[0][0]).toContain('Pode me ligar amanha?');
+    expect(deps.avisarAdmin.mock.calls[0][0]).not.toContain('antigo');
+  });
+
+  it('cai pro html quando a busca so devolve html', async () => {
+    const buscarCorpo = vi.fn().mockResolvedValue({ html: '<p>Quero fechar!</p>' });
+    const deps = fazDeps({ buscarCorpo });
+
+    await processarRespostaEmail(deps as never, SEM_CORPO);
+
+    expect(deps.registrar.mock.calls[0][0].payload.texto).toBe('Quero fechar!');
+  });
+
+  it('nao busca de novo quando o webhook ja trouxe o texto', async () => {
+    const buscarCorpo = vi.fn();
+    const deps = fazDeps({ buscarCorpo });
+
+    await processarRespostaEmail(deps as never, PAYLOAD);
+
+    expect(buscarCorpo).not.toHaveBeenCalled();
+  });
+
+  // Mesmo sem conseguir o texto, o Junior precisa saber que responderam —
+  // ele abre o Gmail e le la. Sumir com o aviso e o pior desfecho.
+  it('avisa mesmo se a busca do corpo falhar, dizendo que o texto nao veio', async () => {
+    const deps = fazDeps({ buscarCorpo: vi.fn().mockRejectedValue(new Error('api fora')) });
+
+    const r = await processarRespostaEmail(deps as never, SEM_CORPO);
+
+    expect(r.tratado).toBe(true);
+    expect(deps.avisarAdmin).toHaveBeenCalledTimes(1);
+    expect(deps.avisarAdmin.mock.calls[0][0]).toContain('joao@exemplo.com');
+    expect(deps.avisarAdmin.mock.calls[0][0]).toContain('abra o e-mail');
+  });
+
+  it('avisa mesmo sem buscarCorpo configurado', async () => {
+    const deps = fazDeps({ buscarCorpo: undefined });
+
+    const r = await processarRespostaEmail(deps as never, SEM_CORPO);
+
+    expect(r.tratado).toBe(true);
+    expect(deps.avisarAdmin.mock.calls[0][0]).toContain('abra o e-mail');
+  });
+});
