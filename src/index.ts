@@ -143,6 +143,7 @@ import { carregarConhecimentoEmpresas } from './modules/conhecimento-empresa.js'
 import { montarHandoff } from './modules/handoff-transfer.js';
 import { mapResendEvento } from './modules/email/resend-events.js';
 import { processarRespostaEmail } from './modules/email/inbound-reply.js';
+import { capturarEmailDaConversa, extrairEmailDoTexto } from './modules/email/captura-email.js';
 import { EmailSequenceService } from './modules/email/email-sequence.js';
 import { EmailSender } from './modules/email/resend-client.js';
 import { CampanhaService, botoesPreviewCampanha, type CampanhaGerada } from './modules/email/campanha.js';
@@ -5330,6 +5331,25 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         console.warn('[ficha] leitura falhou (segue sem):', (err as Error).message);
       }
 
+      // CAPTURA DE E-MAIL (07/09/2026): 534 dos 705 leads nao tinham e-mail —
+      // a maquina de e-mail e boa mas so alcancava 1 em cada 4. Se a pessoa
+      // escrever um e-mail em qualquer momento da conversa, guarda e inscreve
+      // na jornada. Rede PASSIVA: nao depende da assistente lembrar de pedir.
+      // Best-effort: nunca derruba o atendimento (ver captura-email.ts).
+      void capturarEmailDaConversa(
+        {
+          leadJaTemEmail: async (id) => {
+            const l = await db.getLeadById(id).catch(() => null);
+            const e = (l as { email?: string | null } | null)?.email;
+            return !!(e && String(e).trim());
+          },
+          salvarEmail: (id, email, origem) => db.setLeadEmail(id, email, origem),
+          inscreverNaJornada: (id) => db.scheduleEmailSequence(id),
+          empresaDaJornada: ECOSUN_COMPANY_ID,
+        },
+        { leadId, texto: text, companyId: db.companyIdDaMensagem },
+      );
+
       const response = await brain.processMessage(
         text,
         history,
@@ -5498,6 +5518,10 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         if (d.name) leadUpdate.name = d.name;
         if (d.city) leadUpdate.city = d.city;
         if (d.profile) leadUpdate.profile = d.profile;
+        // E-mail coletado pela assistente. A captura passiva (captura-email.ts)
+        // ja pega quando a pessoa digita sozinha; aqui e quando a Eva PEDIU.
+        // Passa pelo mesmo extrator pra nao gravar "nao tenho" como e-mail.
+        const emailDito = d.email ? extrairEmailDoTexto(String(d.email)) : null;
         if (d.consent_given !== undefined) {
           leadUpdate.consent_given = d.consent_given;
           if (d.consent_given) leadUpdate.consent_date = new Date().toISOString();
@@ -5512,6 +5536,25 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
 
         await db.upsertLead(leadUpdate as unknown as Parameters<typeof db.upsertLead>[0]);
         console.log(`[action] Updated lead ${from}:`, Object.keys(leadUpdate).join(', '));
+
+        // E-mail que a assistente coletou: passa pela MESMA captura da rede
+        // passiva, entao herda a trava de empresa (lead de outro tenant tem o
+        // e-mail salvo mas NAO entra na jornada da EcoSun) e o nao-sobrescreve.
+        if (emailDito) {
+          await capturarEmailDaConversa(
+            {
+              leadJaTemEmail: async (id) => {
+                const l = await db.getLeadById(id).catch(() => null);
+                const e = (l as { email?: string | null } | null)?.email;
+                return !!(e && String(e).trim());
+              },
+              salvarEmail: (id, email, origem) => db.setLeadEmail(id, email, origem),
+              inscreverNaJornada: (id) => db.scheduleEmailSequence(id),
+              empresaDaJornada: ECOSUN_COMPANY_ID,
+            },
+            { leadId, texto: emailDito, companyId: db.companyIdDaMensagem },
+          );
+        }
 
         // Rede de proteção: se o lead acabou de cruzar o criterio minimo
         // (conta>=R$700 ou >=700 kWh), avisa o Junior NA HORA — independente
