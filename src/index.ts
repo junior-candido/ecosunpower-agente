@@ -144,6 +144,7 @@ import { montarHandoff } from './modules/handoff-transfer.js';
 import { mapResendEvento } from './modules/email/resend-events.js';
 import { processarRespostaEmail } from './modules/email/inbound-reply.js';
 import { capturarEmailDaConversa, extrairEmailDoTexto } from './modules/email/captura-email.js';
+import { receberLeituraShelly } from './modules/medicao/shelly-medicao.js';
 import { EmailSequenceService } from './modules/email/email-sequence.js';
 import { EmailSender } from './modules/email/resend-client.js';
 import { CampanhaService, botoesPreviewCampanha, type CampanhaGerada } from './modules/email/campanha.js';
@@ -9328,6 +9329,33 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // responde 200 (senao o Resend fica retentando infinitamente). O body ja
   // vem parseado pelo express.json() global (linha ~5717).
   // TODO (seguranca): validar assinatura svix do Resend antes de confiar no payload.
+  // ===== KIT DE MEDICAO — leitura do Shelly Pro 3EM =====
+  // O medidor fica na casa do CLIENTE e a plataforma fica aqui: nao existe rede
+  // local em comum, entao o aparelho EMPURRA a leitura pra ca (script mJS que
+  // roda dentro dele). Ver src/modules/medicao/shelly-medicao.ts.
+  //
+  // Aceita uma leitura ou um lote (aparelho que ficou sem rede e acumulou).
+  // Token obrigatorio: o endereco e publico, e medicao envenenada vira laudo
+  // errado assinado por um responsavel tecnico.
+  app.post('/webhooks/shelly', async (req, res) => {
+    const token = String(
+      req.header('x-shelly-token') ?? (req.query.token as string | undefined) ?? '',
+    );
+    const r = await receberLeituraShelly(
+      {
+        salvar: (l) => supabase.salvarMedicaoShelly(l),
+        tokenEsperado: process.env.SHELLY_INGEST_TOKEN ?? '',
+      },
+      req.body,
+      token,
+    );
+    if (r.aceito) { res.status(200).json({ ok: true, salvas: r.salvas, recusadas: r.recusadas }); return; }
+    // 401 quando e token; 400 quando o dado nao presta. O aparelho reenvia em
+    // qualquer erro 5xx, entao NUNCA devolver 5xx pra dado ruim — viraria loop.
+    const status = r.motivo === 'token' || r.motivo === 'sem_token_no_servidor' ? 401 : 400;
+    res.status(status).json({ ok: false, motivo: r.motivo });
+  });
+
   app.post('/webhooks/resend', async (req, res) => {
     try {
       // [07/09/2026] RESPOSTA DO CLIENTE (evento `email.received`).
