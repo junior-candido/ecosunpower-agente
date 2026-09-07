@@ -9985,6 +9985,22 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
       console.log('[tabela-viva] sem segredos de loja — scheduler não iniciado (no-op)');
     }
 
+    // [07/09/2026] O remetente (EMAIL_FROM) fica num subdominio de ENVIO da
+    // Resend (news.<dominio>), que assina e entrega mas NAO recebe — nao tem
+    // MX. Como os 6 modelos da jornada terminam pedindo "e so responder este
+    // e-mail", sem EMAIL_REPLY_TO toda resposta de cliente vira bounce e some
+    // em silencio. Foi assim com os primeiros 800 envios. Entao grita no boot.
+    if (!process.env.EMAIL_REPLY_TO) {
+      console.error(
+        '[email-seq] ATENCAO: EMAIL_REPLY_TO nao configurado. Os e-mails pedem ' +
+          '"e so responder este e-mail", mas o remetente ' +
+          `(${process.env.EMAIL_FROM || 'EMAIL_FROM vazio'}) nao recebe resposta — ` +
+          'toda resposta de cliente vai se perder. Configure EMAIL_REPLY_TO no EasyPanel.',
+      );
+    } else {
+      console.log(`[email-seq] respostas dos clientes vao para ${process.env.EMAIL_REPLY_TO}`);
+    }
+
     // Maquina de e-mail (Elo): espelha a cadencia de WhatsApp, so que pro
     // canal e-mail. Processa steps de email_sequencia vencidos a cada 15min,
     // respeita horario comercial 9h-20h BRT em dias uteis (podeEnviarAgora).
