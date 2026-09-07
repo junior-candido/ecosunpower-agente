@@ -1,4 +1,5 @@
 import { aplicarTravaPreco } from './price-lock.js';
+import { aplicarTravaPortugues } from './portugues.js';
 import { medirIa } from '../custos/ia-metering.js';
 
 export type WriterCtx = {
@@ -20,9 +21,15 @@ export async function gerarAssuntoAbertura(
   assuntoPadrao: string,
 ): Promise<{ assunto: string; abertura: string }> {
   const empresa = ctx.empresa && ctx.empresa.trim() ? ctx.empresa.trim() : 'a empresa de energia solar';
+  // [07/09/2026] Este prompt estava escrito SEM ACENTO ("Voce escreve e-mails...
+  // NUNCA cite preco"). O modelo espelha o estilo de quem pede, e o resultado
+  // era assunto ora certo ora torto. Escrito em português correto, e com a
+  // regra dita na cara, a saída vem certa — e a trava abaixo garante o resto.
   const system =
-    `Voce escreve e-mails curtos e humanos para ${empresa}. ` +
-    'NUNCA cite preco, valor em reais, parcelas ou numeros de economia. ' +
+    `Você escreve e-mails curtos e humanos para ${empresa}. ` +
+    'Escreva em português do Brasil CORRETO, com toda a acentuação ' +
+    '(não, você, três, dúvida, mês, história, própria). Texto sem acento é erro. ' +
+    'NUNCA cite preço, valor em reais, parcelas ou números de economia. ' +
     'O assunto deve ter entre 35 e 55 caracteres, direto e sem clickbait. ' +
     'Responda EXATAMENTE no formato:\nASSUNTO: <entre 35 e 55 caracteres>\nABERTURA: <1 frase>';
   const user =
@@ -51,6 +58,14 @@ export async function gerarAssuntoAbertura(
   // Trava de preco: se a IA cravou valor, cai pro seguro.
   assunto = aplicarTravaPreco(assunto, assuntoPadrao);
   abertura = aplicarTravaPreco(abertura, '');
+
+  // Trava de português: se a IA devolveu texto sem acento ou com lixo de
+  // codificação, descarta e usa a reserva. Antes disso, 289 dos 744 e-mails
+  // enviados saíram com assunto sem acento — a qualidade dependia de qual
+  // caminho rodou. Agora os dois obedecem à mesma regra, e uma falha da IA
+  // fica invisível pro cliente.
+  assunto = aplicarTravaPortugues(assunto, assuntoPadrao);
+  abertura = aplicarTravaPortugues(abertura, '');
 
   // Guarda pos-IA: pedimos 35-55 na instrucao, mas a IA pode ignorar. Se vier
   // longo demais, corta no limite das palavras (sem "..." — reticencias em
