@@ -9297,6 +9297,16 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
           registrar: (evento) => registrarEvento(supabase.getClient(), evento as never),
           cancelarJornada: (leadId, motivo) => supabase.cancelEmailSequence(leadId, motivo),
           jaProcessado: (mid) => supabase.respostaEmailJaRegistrada(mid),
+          // O webhook `email.received` avisa que chegou mas NAO manda o corpo
+          // (confirmado no payload real em 07/09/2026) — busca pelo email_id.
+          buscarCorpo: process.env.RESEND_API_KEY
+            ? async (emailId) => {
+                const { Resend } = await import('resend');
+                const { data, error } = await new Resend(process.env.RESEND_API_KEY!).emails.receiving.get(emailId);
+                if (error) throw new Error(error.message ?? 'resend receiving.get falhou');
+                return { text: data?.text ?? null, html: data?.html ?? null };
+              }
+            : undefined,
           avisarAdmin: async (texto, leadId) => {
             const { sendAdminWithButtons } = await import('./modules/eva-admin-buttons.js');
             const botoes = leadId

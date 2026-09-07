@@ -41,12 +41,24 @@ export type RespostaDeps = {
   encaminhar?: (assunto: string, corpo: string, de: string) => Promise<void>;
   /** Trava de idempotencia: a Resend reenvia o mesmo evento em caso de duvida. */
   jaProcessado: (messageId: string) => Promise<boolean>;
+  /**
+   * Busca o CORPO da mensagem (resend.emails.receiving.get).
+   *
+   * [BUG pego em producao 07/09/2026, no primeiro teste ao vivo] O payload do
+   * webhook `email.received` NAO traz o corpo — so from/subject/to/attachments.
+   * O primeiro aviso chegou no WhatsApp do Junior sem o texto da mensagem.
+   * A Resend so avisa que chegou; o conteudo se busca pelo email_id.
+   */
+  buscarCorpo?: (emailId: string) => Promise<{ text?: string | null; html?: string | null } | null>;
 };
+
+/** Texto usado quando nem o webhook nem a API entregaram o corpo. */
+export const SEM_TEXTO = '(nao consegui ler o texto — abra o e-mail para ver)';
 
 const RE_EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
 
 /** Tira as tags e devolve texto legivel (fallback quando so veio HTML). */
-function htmlParaTexto(html: string): string {
+export function htmlParaTexto(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
@@ -167,12 +179,14 @@ export function montarAvisoResposta(d: {
   trecho: string;
 }): string {
   const quem = d.nome ? `${d.nome}\n${d.de}` : d.de;
+  // Sem corpo, aspas vazias parecem defeito — diz o que houve.
+  const corpo = d.trecho.trim() ? `"${d.trecho}"` : `_${SEM_TEXTO}_`;
   return [
     '📧 *RESPONDERAM SEU E-MAIL*',
     '',
     quem,
     '',
-    `"${d.trecho}"`,
+    corpo,
     '',
     `_Assunto: ${d.assunto}_`,
   ].join('\n');
@@ -193,6 +207,18 @@ export async function processarRespostaEmail(
   if (r.messageId) {
     const repetido = await deps.jaProcessado(r.messageId).catch(() => false);
     if (repetido) return { tratado: false, motivo: 'duplicado' };
+  }
+
+  // O webhook nao traz o corpo (ver buscarCorpo). Busca antes de qualquer
+  // coisa, senao o aviso sai vazio — foi exatamente o que aconteceu no
+  // primeiro teste ao vivo.
+  if (!r.texto.trim() && r.messageId && deps.buscarCorpo) {
+    const corpo = await deps.buscarCorpo(r.messageId).catch((e) => {
+      console.warn('[resposta-email] nao consegui buscar o corpo:', (e as Error)?.message);
+      return null;
+    });
+    const bruto = corpo?.text?.trim() ? corpo.text : corpo?.html ? htmlParaTexto(corpo.html) : '';
+    if (bruto) r.texto = limparCitacao(bruto);
   }
 
   const lead = await deps.buscarLeadPorEmail(r.de).catch(() => null);
