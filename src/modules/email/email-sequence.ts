@@ -33,6 +33,8 @@ export type SeqOpts = {
   empresa?: string;              // CLONE-READY: nome da empresa vem da config
   now?: () => Date; batchLimit?: number;
   rssUrl?: string;                // feed do blog pra secao "Novidades" da moldura
+  // CLONE-READY: quem assina a carta vem da config da empresa, nunca fixo.
+  assinatura?: { nome: string; titulo: string; whatsapp?: string | null };
 };
 
 // Motor da sequencia de e-mail: espelha CadenceService.processCadence (src/modules/cadence.ts)
@@ -71,7 +73,8 @@ export class EmailSequenceService {
         const link = `${this.opts.baseUrl}/e/descadastro?lid=${lead.id}`;
         const conteudoHtml = (abertura ? `<p>${abertura}</p>` : '') +
           renderTemplate(modelo.corpo_html, { nome: lead.name, cidade: lead.city, o_que_pediu: lead.profile, link_descadastro: link });
-        const html = montarMolduraEmail({ conteudoHtml, linkDescadastro: link, noticias, empresa: this.opts.empresa, dica: dicaDoDia(now) });
+        const html = montarMolduraEmail({ conteudoHtml, linkDescadastro: link, noticias,
+          empresa: this.opts.empresa, dica: dicaDoDia(now), assinatura: this.opts.assinatura });
         const msgId = await this.sender.enviar({ to: lead.email, subject: assunto, html });
         await this.supa.markEmailSent(row.id, msgId, assunto);
         await registrarEvento(this.supa.getClient(), {
