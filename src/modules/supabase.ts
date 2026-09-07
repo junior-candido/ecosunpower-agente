@@ -1022,6 +1022,52 @@ export class SupabaseService {
   }
 
   /**
+   * Acha o lead dono de um e-mail (case-insensitive). Usado quando o cliente
+   * RESPONDE um e-mail da jornada: a Resend so nos entrega o endereco, e e por
+   * ele que a resposta encontra a ficha certa.
+   *
+   * Nao usa .single(): dois leads podem ter compartilhado o mesmo e-mail no
+   * passado (casal, empresa). Pega o mais recente e segue — melhor casar com um
+   * provavel do que perder a resposta.
+   */
+  async getLeadByEmail(email: string): Promise<{ id: string; name?: string | null } | null> {
+    const limpo = String(email ?? '').trim().toLowerCase();
+    if (!limpo) return null;
+    const { data, error } = await this.client
+      .from('leads')
+      .select('id, name, created_at')
+      .ilike('email', limpo)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (error) {
+      console.warn('[email] getLeadByEmail:', error.message);
+      return null;
+    }
+    return (data?.[0] as { id: string; name?: string | null }) ?? null;
+  }
+
+  /**
+   * Ja registramos esta resposta? A Resend reenvia o mesmo webhook quando fica
+   * na duvida sobre a entrega — sem esta trava o Junior levaria o mesmo aviso
+   * no WhatsApp varias vezes pela mesma mensagem.
+   */
+  async respostaEmailJaRegistrada(messageId: string): Promise<boolean> {
+    if (!messageId) return false;
+    const { data, error } = await this.client
+      .from('eventos_elo')
+      .select('id')
+      .eq('tipo', 'email_resposta')
+      .eq('payload->>provider_message_id', messageId)
+      .limit(1);
+    // Em erro, prefere NAO bloquear: repetir um aviso e menos grave que sumir com ele.
+    if (error) {
+      console.warn('[email] respostaEmailJaRegistrada:', error.message);
+      return false;
+    }
+    return Array.isArray(data) && data.length > 0;
+  }
+
+  /**
    * Grava email + origem no lead (intake — Meta Lead Ads, formulario do site
    * etc). Best-effort: nunca lanca, so avisa no console e retorna false. O
    * caller decide se prossegue com a matricula na sequencia de e-mail.

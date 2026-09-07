@@ -142,6 +142,7 @@ import { travarMarcaAlheia } from './modules/trava-marca-alheia.js';
 import { carregarConhecimentoEmpresas } from './modules/conhecimento-empresa.js';
 import { montarHandoff } from './modules/handoff-transfer.js';
 import { mapResendEvento } from './modules/email/resend-events.js';
+import { processarRespostaEmail } from './modules/email/inbound-reply.js';
 import { EmailSequenceService } from './modules/email/email-sequence.js';
 import { EmailSender } from './modules/email/resend-client.js';
 import { CampanhaService, botoesPreviewCampanha, type CampanhaGerada } from './modules/email/campanha.js';
@@ -9286,6 +9287,50 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // TODO (seguranca): validar assinatura svix do Resend antes de confiar no payload.
   app.post('/webhooks/resend', async (req, res) => {
     try {
+      // [07/09/2026] RESPOSTA DO CLIENTE (evento `email.received`).
+      // Vem antes do mapResendEvento porque e outro tipo de evento — o mapa
+      // so cobre entrega/abertura/clique/bounce/spam. Ver inbound-reply.ts
+      // pro historico de por que isso existe.
+      const resp = await processarRespostaEmail(
+        {
+          buscarLeadPorEmail: (e) => supabase.getLeadByEmail(e),
+          registrar: (evento) => registrarEvento(supabase.getClient(), evento as never),
+          cancelarJornada: (leadId, motivo) => supabase.cancelEmailSequence(leadId, motivo),
+          jaProcessado: (mid) => supabase.respostaEmailJaRegistrada(mid),
+          avisarAdmin: async (texto, leadId) => {
+            const { sendAdminWithButtons } = await import('./modules/eva-admin-buttons.js');
+            const botoes = leadId
+              ? [{ id: `evabt:lead-view:${leadId}`, title: 'Ver no painel' }]
+              : [];
+            await sendAdminWithButtons(
+              { metaWaba: metaWaba ?? null, sendText },
+              config.engineerPhone,
+              texto,
+              botoes,
+            );
+          },
+          // Copia pro Gmail de sempre: se o zap ou o banco falharem, a
+          // resposta do cliente ainda chega onde o Junior ja olha todo dia.
+          encaminhar: process.env.EMAIL_REPLY_TO && process.env.RESEND_API_KEY
+            ? async (assunto, corpo, de) => {
+                const { EmailSender } = await import('./modules/email/resend-client.js');
+                const sender = new EmailSender(process.env.RESEND_API_KEY!, process.env.EMAIL_FROM ?? '', de);
+                const escapa = (t: string) =>
+                  t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                await sender.enviar({
+                  to: process.env.EMAIL_REPLY_TO!,
+                  subject: `[resposta de cliente] ${assunto}`,
+                  html:
+                    `<p><strong>De:</strong> ${escapa(de)}</p>` +
+                    `<hr><div style="white-space:pre-wrap">${escapa(corpo)}</div>`,
+                });
+              }
+            : undefined,
+        },
+        req.body,
+      );
+      if (resp.tratado) { res.status(200).json({ ok: true }); return; }
+
       const ev = mapResendEvento(req.body);
       if (ev) {
         const mid = (ev.payload as any)?.provider_message_id;
@@ -9997,8 +10042,16 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
           `(${process.env.EMAIL_FROM || 'EMAIL_FROM vazio'}) nao recebe resposta — ` +
           'toda resposta de cliente vai se perder. Configure EMAIL_REPLY_TO no EasyPanel.',
       );
+    } else if (process.env.EMAIL_INBOUND_ADDRESS) {
+      console.log(
+        `[email-seq] respostas dos clientes entram por ${process.env.EMAIL_INBOUND_ADDRESS} ` +
+          `(automatico: casa com o lead, avisa no zap e copia pra ${process.env.EMAIL_REPLY_TO})`,
+      );
     } else {
-      console.log(`[email-seq] respostas dos clientes vao para ${process.env.EMAIL_REPLY_TO}`);
+      console.log(
+        `[email-seq] respostas dos clientes vao direto para ${process.env.EMAIL_REPLY_TO}. ` +
+          'Configure EMAIL_INBOUND_ADDRESS pra elas entrarem no CRM automaticamente.',
+      );
     }
 
     // Maquina de e-mail (Elo): espelha a cadencia de WhatsApp, so que pro
