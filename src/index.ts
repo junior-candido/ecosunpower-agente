@@ -10076,6 +10076,13 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
         baseUrl: config.publicProposalBaseUrl,
         hotOpens: Number(process.env.EMAIL_HOT_OPENS ?? 3),
         empresa: empresa().nomeFantasia,
+        // Assina a carta. Os textos sao em 1a pessoa e pedem resposta —
+        // sem isso o cliente lia carta pessoal sem remetente (Junior 07/09).
+        assinatura: {
+          nome: empresa().rtApelido,
+          titulo: empresa().rtTitulo,
+          whatsapp: empresa().telefoneAtendente,
+        },
       },
     );
     const runEmailSeq = async () => {

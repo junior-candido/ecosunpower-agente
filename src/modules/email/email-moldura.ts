@@ -33,6 +33,14 @@ export interface MolduraOpts {
   dica?: { titulo: string; texto: string };
   /** E-mail transacional (acesso/senha): rodapé sem 'descadastrar' nem texto de newsletter. */
   transacional?: boolean;
+  /**
+   * Assinatura do responsável técnico ao pé da carta (Junior 07/09).
+   * Os textos da jornada são em 1ª pessoa e terminam pedindo resposta — sem
+   * isso o cliente lia uma carta pessoal sem remetente. Vem de empresa-config
+   * (rtApelido/rtTitulo/telefone), nunca fixo aqui: cada empresa assina a sua.
+   * Ignorada em e-mail transacional, que não é carta pessoal.
+   */
+  assinatura?: { nome: string; titulo: string; whatsapp?: string | null };
 }
 
 const NAVY = '#0b1220';         // header/rodapé
@@ -53,6 +61,31 @@ export function escapeHtml(s: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function secaoAssinatura(opts: MolduraOpts): string {
+  const a = opts.assinatura;
+  if (!a || opts.transacional) return '';
+
+  // wa.me so aceita digitos — o telefone da config pode vir mascarado.
+  const digitos = (a.whatsapp ?? '').replace(/\D/g, '');
+  const zap = digitos
+    ? `<p style="margin:6px 0 0; font-size:14px;"><a href="https://wa.me/${digitos}" style="color:${AMBAR}; text-decoration:none; font-weight:bold;">Falar no WhatsApp &rarr;</a></p>`
+    : '';
+
+  return `
+            <tr>
+              <td style="background:#ffffff; padding:4px 40px 24px; font-family:${FONTE};">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                  <tr>
+                    <td style="border-top:1px solid #e4e9ee; padding-top:16px;">
+                      <p style="margin:0; font-size:16px; color:${TEXTO}; font-weight:bold;">${escapeHtml(a.nome)}</p>
+                      <p style="margin:2px 0 0; font-size:13px; color:#6b7686;">${escapeHtml(a.titulo)}</p>${zap}
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>`;
 }
 
 function secaoHero(opts: MolduraOpts): string {
@@ -167,7 +200,7 @@ export function montarMolduraEmail(opts: MolduraOpts): string {
               <td style="background:#ffffff; padding:20px 40px 8px; color:${TEXTO}; font-family:${FONTE}; font-size:16px; line-height:1.65;">
                 ${opts.conteudoHtml}
               </td>
-            </tr>${secaoDica(opts)}${secaoCta(opts)}${secaoNoticias(opts.noticias ?? [])}
+            </tr>${secaoAssinatura(opts)}${secaoDica(opts)}${secaoCta(opts)}${secaoNoticias(opts.noticias ?? [])}
             <tr>
               <td style="background:${NAVY}; padding:22px 40px; text-align:center; font-family:${FONTE};">
                 <p style="margin:0 0 6px; font-size:13px; color:#c9d2dc; font-weight:bold;">${escapeHtml(empresa)}${opts.transacional ? '' : ' — energia solar de ponta a ponta'}</p>
