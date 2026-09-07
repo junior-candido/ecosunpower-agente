@@ -72,3 +72,64 @@ describe('dica de ouro', () => {
     expect(dicaDoDia(amanha)).not.toEqual(dicaDoDia(d));
   });
 });
+
+// A ASSINATURA (07/09/2026). Os textos da jornada sao em 1a pessoa ("e assim
+// que eu gosto de trabalhar") e terminam pedindo resposta — mas ninguem
+// assinava embaixo. O cliente lia uma carta pessoal sem remetente.
+describe('assinatura do responsavel', () => {
+  const base = { conteudoHtml: '<p>corpo</p>', linkDescadastro: 'https://x/d' };
+
+  it('assina com nome, titulo e link do whatsapp', () => {
+    const html = montarMolduraEmail({
+      ...base,
+      assinatura: { nome: 'Junior', titulo: 'Responsável Técnico CREA/CFT', whatsapp: '5561996978781' },
+    });
+    expect(html).toContain('Junior');
+    expect(html).toContain('Responsável Técnico CREA/CFT');
+    expect(html).toContain('https://wa.me/5561996978781');
+  });
+
+  it('assina sem whatsapp quando o telefone nao vem', () => {
+    const html = montarMolduraEmail({
+      ...base,
+      assinatura: { nome: 'Maria', titulo: 'Responsável Técnica CREA/CFT' },
+    });
+    expect(html).toContain('Maria');
+    expect(html).toContain('Responsável Técnica CREA/CFT');
+    expect(html).not.toContain('wa.me');
+  });
+
+  it('nao assina quando nao ha assinatura', () => {
+    expect(montarMolduraEmail(base)).not.toContain('wa.me');
+  });
+
+  // E-mail de senha/acesso nao e carta pessoal — nao leva assinatura.
+  it('nao assina e-mail transacional, mesmo recebendo assinatura', () => {
+    const html = montarMolduraEmail({
+      ...base,
+      transacional: true,
+      assinatura: { nome: 'Junior', titulo: 'Responsável Técnico CREA/CFT', whatsapp: '5561996978781' },
+    });
+    expect(html).not.toContain('wa.me');
+    expect(html).not.toContain('Responsável Técnico CREA/CFT');
+  });
+
+  it('escapa HTML perigoso no nome e no titulo', () => {
+    const html = montarMolduraEmail({
+      ...base,
+      assinatura: { nome: '<script>alert(1)</script>', titulo: '<b>RT</b>' },
+    });
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+
+  // Numero vem de config e pode chegar com mascara. O link do WhatsApp so
+  // funciona com digitos.
+  it('limpa a mascara do telefone no link do whatsapp', () => {
+    const html = montarMolduraEmail({
+      ...base,
+      assinatura: { nome: 'Junior', titulo: 'RT', whatsapp: '+55 (61) 99697-8781' },
+    });
+    expect(html).toContain('https://wa.me/5561996978781');
+  });
+});
