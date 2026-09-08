@@ -138,6 +138,7 @@ import { renderPastaHtml } from './modules/relatorios/pasta/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
 import { carregarEmpresaConfig, carregarKits, empresa, empresaDe, comEmpresaDe, listaMarcasTexto } from './modules/empresa-config.js';
 import { agendaDaEmpresa, destinoAdminDaEmpresa, envioProibido } from './modules/tenant-admin-guard.js';
+import { variantesTelefone } from './modules/phone.js';
 import { travarMarcaAlheia } from './modules/trava-marca-alheia.js';
 import { carregarConhecimentoEmpresas } from './modules/conhecimento-empresa.js';
 import { montarHandoff } from './modules/handoff-transfer.js';
@@ -2723,11 +2724,16 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     if (!isOptOut) return false;
 
     // Busca lead pelo phone
-    const { data: lead } = await supabase.getClient()
+    // [09/2026] `.eq` exato NAO acha lead de DDD onde o WhatsApp usa o numero
+    // SEM o 9 extra (Bahia, DDD 77, entre outros). A leitura oficial
+    // (getLeadByPhone) ja usa variantes; aqui estava exato e o lead sumia.
+    const { data: leadRows } = await supabase.getClient()
       .from('leads')
       .select('id, name, opt_out')
-      .eq('phone', from)
-      .maybeSingle();
+      .in('phone', variantesTelefone(from))
+      .order('created_at', { ascending: true })
+      .limit(1);
+    const lead = leadRows?.[0];
     if (!lead) {
       // Nao tem lead cadastrado — ainda assim responde respeitoso
       await sendText(from, '✅ Tudo bem, vamos parar por aqui. Se mudar de ideia, é só mandar "oi". Obrigado!');
@@ -6005,7 +6011,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         const { data: optOutRows } = await db.getClient()
           .from('leads')
           .update({ opt_out: true, updated_at: new Date().toISOString() })
-          .eq('phone', from)
+          .in('phone', variantesTelefone(from))
           .select('id');
         if (!optOutRows?.length) console.warn(`[action][3e] opt_out atualizou 0 linhas pra ${from} — lead fora do tenant?`);
         // Also cancel any pending reengagement touches
@@ -6033,7 +6039,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         const { data: offTopicRows } = await db.getClient()
           .from('leads')
           .update({ opt_out: true, eva_active: false, status: 'perdido', updated_at: now })
-          .eq('phone', from)
+          .in('phone', variantesTelefone(from))
           .select('id');
         if (!offTopicRows?.length) console.warn(`[action][3e] mark_off_topic atualizou 0 linhas pra ${from} — lead fora do tenant?`);
         // Cancela cadencia/reengagement/postinstall pendente
@@ -6088,12 +6094,17 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
           reason: dqReason,
           leadName: dqLead?.name,
           phone: from,
+          nomeAtendente: empresa().nomeAtendente,
+          criterioValor: empresa().criterioLeadValor,
+          criterioKwh: empresa().criterioLeadKwh,
         });
-        const { data: dqRows } = await db.getClient()
-          .from('leads')
-          .update(leadPatch)
-          .eq('phone', from)
-          .select('id');
+        // Grava pelo ID quando a leitura achou o lead — e o caminho mais seguro:
+        // `getLeadByPhone` ja resolve as variantes do 9o digito, entao o id e a
+        // chave certa. Sem lead, cai nas variantes do telefone.
+        const dqQuery = db.getClient().from('leads').update(leadPatch);
+        const { data: dqRows } = await (dqLead?.id
+          ? dqQuery.eq('id', dqLead.id)
+          : dqQuery.in('phone', variantesTelefone(from))).select('id');
         if (!dqRows?.length) console.warn(`[action][3e] disqualify_lead atualizou 0 linhas pra ${from} — lead fora do tenant?`);
         await db.cancelCadence(leadId, 'disqualify_lead').catch(() => {});
         void followupVivo.cancelarPorLead(leadId, 'disqualify_lead');
@@ -6102,21 +6113,24 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         await reengagement.cancelAllTouches(leadId, db.getClient()).catch(() => 0);
         if (postInstall) await postInstall.cancelAll(leadId, db.getClient()).catch(() => 0);
         if (!isSandbox) {
-          if (metaWaba && dqLead?.id) {
-            try {
-              await metaWaba.sendInteractiveButtons(
-                config.engineerPhone,
-                notifyBody.slice(0, 1024),
-                [
+          // ⚖️ TRAVA LGPD — este bloco chamava o metaWaba CRU com engineerPhone
+          // fixo, igual ao schedule_visit do #289: em 08/09 dois leads da
+          // Conquista Solar cairam no zap do dono da EcoSunPower.
+          const dqDestino = destinoAdminDaEmpresa(config.engineerPhone);
+          if (!dqDestino) {
+            console.log(`[disqualify_lead] aviso por zap nao enviado: empresa "${empresa().nomeFantasia}" (${empresa().companyId}) sem telefone_admin. O lead esta no dashboard dela.`);
+          } else {
+            await sendAdminWithButtons(
+              { metaWaba, sendText: async (t: string, x: string) => { await sendText(t, x); } },
+              dqDestino,
+              notifyBody.slice(0, 1024),
+              dqLead?.id
+                ? [
                   { id: `evabt:lead-view:${dqLead.id}`, title: '👤 Ver perfil' },
                   { id: `evabt:lead-resume:${dqLead.id}`, title: '↩️ Desfazer' },
-                ],
-              );
-            } catch {
-              await sendText(config.engineerPhone, notifyBody);
-            }
-          } else {
-            await sendText(config.engineerPhone, notifyBody);
+                ]
+                : [],
+            );
           }
         }
         console.log(`[action] disqualify_lead registrado pra ${from}: ${dqReason}`);
@@ -6241,7 +6255,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       await db.getClient()
         .from('leads')
         .update({ contact_type: action.data.contact_type, updated_at: new Date().toISOString() })
-        .eq('phone', from);
+        .in('phone', variantesTelefone(from));
     }
 
     // Handle "perdido" status (bought from competitor)
@@ -6249,7 +6263,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       await db.getClient()
         .from('leads')
         .update({ status: 'inativo', contact_type: 'perdido', updated_at: new Date().toISOString() })
-        .eq('phone', from);
+        .in('phone', variantesTelefone(from));
       console.log(`[action] Lead ${from} marked as lost (bought from competitor)`);
     }
   }

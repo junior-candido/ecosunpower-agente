@@ -25,6 +25,12 @@ export function buildDisqualifyPlan(input: {
   leadName?: string | null;
   phone: string;
   now?: Date;
+  /** Nome da assistente DESTA empresa. Sem valor, texto neutro — nunca "Eva",
+   *  que e a assistente da EcoSunPower e vazaria pro tenant (08/09/2026). */
+  nomeAtendente?: string | null;
+  /** Criterio DESTA empresa. O texto tinha "R$700/700kWh" fixo, que e da EcoSun. */
+  criterioValor?: number | null;
+  criterioKwh?: number | null;
 }): DisqualifyPlan {
   const now = input.now ?? new Date();
   const name = input.leadName?.trim() || 'Sem nome';
@@ -37,14 +43,19 @@ export function buildDisqualifyPlan(input: {
     updated_at: now.toISOString(),
   };
 
+  const quem = input.nomeAtendente?.trim() || 'A assistente';
+  const criterio = input.criterioValor && input.criterioKwh
+    ? `R$${input.criterioValor}/${input.criterioKwh}kWh`
+    : 'do critério mínimo';
+
   const notifyBody = [
-    `🛑 *Eva encerrou lead inviável*`,
+    `🛑 *${quem} encerrou lead inviável*`,
     ``,
     `${name} — ${input.phone}`,
     `Motivo: ${input.reason}`,
     ``,
-    `Lead on-topic mas fora do critério (R$700/700kWh) ou em vulnerabilidade.`,
-    `Eva encerrou com dignidade e não fala mais com ele (sem queimar token).`,
+    `Lead on-topic mas fora ${criterio} ou em vulnerabilidade.`,
+    `${quem} encerrou com dignidade e não fala mais com ele (sem queimar token).`,
     `Se foi engano, clica em Desfazer.`,
   ].join('\n');
 
