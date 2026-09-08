@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { VisitasService, visitasPendentesDePosVisita } from '../src/modules/vendas/visitas.js';
+import { ECOSUN_COMPANY_ID } from '../src/modules/tenant-resolver.js';
 
 const T0 = Date.UTC(2026, 7, 24, 15, 0, 0); // seg 12:00 BRT
 const H = 3_600_000;
@@ -38,7 +39,7 @@ describe('VisitasService', () => {
 
   it('registrar grava a visita', async () => {
     const d = deps();
-    await d.svc.registrar({ leadId: 'L1', phone: '55', tipo: 'visita', inicioMs: T0, fimMs: T0 + 2 * H, calendarEventId: 'ev1' });
+    await d.svc.registrar({ leadId: 'L1', phone: '55', tipo: 'visita', inicioMs: T0, fimMs: T0 + 2 * H, calendarEventId: 'ev1', companyId: ECOSUN_COMPANY_ID });
     expect(d.rows[0]).toMatchObject({
       lead_id: 'L1', phone: '55', tipo: 'visita', calendar_event_id: 'ev1', resultado: null,
       inicio: new Date(T0).toISOString(), fim: new Date(T0 + 2 * H).toISOString(),
@@ -47,8 +48,8 @@ describe('VisitasService', () => {
 
   it('processarPosVisita dispara POS_VISITA 24h depois e marca followup_enviado', async () => {
     const d = deps();
-    await d.svc.registrar({ leadId: 'L1', phone: '55', tipo: 'visita', inicioMs: T0 - 26 * H, fimMs: T0 - 25 * H, calendarEventId: null });
-    await d.svc.registrar({ leadId: 'L2', phone: '56', tipo: 'meet', inicioMs: T0 - 3 * H, fimMs: T0 - 2 * H, calendarEventId: null });
+    await d.svc.registrar({ leadId: 'L1', phone: '55', tipo: 'visita', inicioMs: T0 - 26 * H, fimMs: T0 - 25 * H, calendarEventId: null, companyId: ECOSUN_COMPANY_ID });
+    await d.svc.registrar({ leadId: 'L2', phone: '56', tipo: 'meet', inicioMs: T0 - 3 * H, fimMs: T0 - 2 * H, calendarEventId: null, companyId: ECOSUN_COMPANY_ID });
     const n = await d.svc.processarPosVisita(T0);
     expect(n).toBe(1);
     expect(d.followup.agendarPosVisita).toHaveBeenCalledTimes(1);
@@ -62,7 +63,7 @@ describe('VisitasService', () => {
 
   it('marcarResultado grava fechou/cancelada pelo lead', async () => {
     const d = deps();
-    await d.svc.registrar({ leadId: 'L1', phone: '55', tipo: 'visita', inicioMs: T0 - 26 * H, fimMs: T0 - 25 * H, calendarEventId: null });
+    await d.svc.registrar({ leadId: 'L1', phone: '55', tipo: 'visita', inicioMs: T0 - 26 * H, fimMs: T0 - 25 * H, calendarEventId: null, companyId: ECOSUN_COMPANY_ID });
     await d.svc.marcarResultado('L1', 'fechou');
     expect(d.rows[0].resultado).toBe('fechou');
     expect(await d.svc.processarPosVisita(T0)).toBe(0);
@@ -70,8 +71,8 @@ describe('VisitasService', () => {
 
   it('marcarResultado não sobrescreve visita que já tem resultado', async () => {
     const d = deps();
-    await d.svc.registrar({ leadId: 'L1', phone: '55', tipo: 'visita', inicioMs: T0 - 50 * H, fimMs: T0 - 49 * H, calendarEventId: null });
-    await d.svc.registrar({ leadId: 'L1', phone: '55', tipo: 'visita', inicioMs: T0 - 3 * H, fimMs: T0 - 2 * H, calendarEventId: null });
+    await d.svc.registrar({ leadId: 'L1', phone: '55', tipo: 'visita', inicioMs: T0 - 50 * H, fimMs: T0 - 49 * H, calendarEventId: null, companyId: ECOSUN_COMPANY_ID });
+    await d.svc.registrar({ leadId: 'L1', phone: '55', tipo: 'visita', inicioMs: T0 - 3 * H, fimMs: T0 - 2 * H, calendarEventId: null, companyId: ECOSUN_COMPANY_ID });
     await d.svc.processarPosVisita(T0); // primeira vira followup_enviado
     await d.svc.marcarResultado('L1', 'fechou');
     expect(d.rows[0].resultado).toBe('followup_enviado');
