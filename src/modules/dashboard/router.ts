@@ -115,6 +115,8 @@ import type { AuthedRequest } from './auth.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
 import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } from './blog-views.js';
 import { renderEmailPage } from './email-views.js';
+import { renderMedicaoPage } from './medicao-views.js';
+import { listarAparelhos, resumoDoAparelho } from './medicao-queries.js';
 import { desempenhoPorStep } from './email-metricas.js';
 import { listarClientesPosVenda, listarAgendaPosVenda } from './pos-venda-queries.js';
 import { renderPosVendaPage } from './pos-venda-views.js';
@@ -791,6 +793,26 @@ b.onclick=async function(){
       console.error('[recados]', err);
       res.status(500).send(`Erro: ${escapeHtmlSimple((err as Error).message)}`);
     }
+  });
+
+  // MEDICAO (kit Shelly). O aparelho manda uma leitura por minuto; aqui o
+  // Junior e o cliente veem o que isso significa — principalmente a demanda de
+  // 15 minutos, que e a janela em que a distribuidora mede e o medidor dela
+  // alisa o pico.
+  router.get('/medicao', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    const client = supabaseService.getClient();
+    const aparelhos = await listarAparelhos(client);
+    const escolhido = String(req.query.device ?? '') || aparelhos[0]?.deviceId || '';
+    const horas = Math.min(Math.max(Number(req.query.horas ?? 24) || 24, 1), 168);
+    const resumo = escolhido
+      ? await resumoDoAparelho(client, escolhido, horas)
+      : { aparelho: null, agora: null, demanda: null, janelas: [], consumoDiaKwh: null, injecaoDiaKwh: null, minutosSemReceber: null };
+    res.type('text/html').send(renderLayout({
+      active: 'medicao',
+      title: 'Medição',
+      body: renderMedicaoPage(aparelhos, resumo, horas),
+      user: req.dashUser,
+    }));
   });
 
   router.get('/fiscal', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {

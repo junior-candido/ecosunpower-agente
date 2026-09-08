@@ -1,101 +1,86 @@
 // ===========================================================================
 // KIT DE MEDIÇÃO ECOSUNPOWER — script do Shelly Pro 3EM
+// Versão que FUNCIONA (validada em campo em 07/09/2026).
 //
-// COLE ESTE SCRIPT DENTRO DO APARELHO:
-//   App Shelly → o aparelho → ícone { }  →  "Criar novo roteiro"
-//   → cola → Salvar → Iniciar
-//   → ⚠️ LIGUE "Executar na inicialização"
+// COLE DENTRO DO APARELHO:
+//   App Shelly → o aparelho → ícone { } → "Criar novo roteiro"
+//   → cola → Salvar → Iniciar → LIGUE "Executar na inicialização"
 //
-// Aquele último passo é o que mais esquecem: sem ele o script morre na
-// primeira queda de energia e o cliente fica sem dado sem ninguém perceber.
-// Num serviço com mensalidade, isso é falha grave.
+// TROQUE A LINHA DO TOKEN pelo mesmo valor do SHELLY_INGEST_TOKEN do servidor.
+// A linha tem que ficar exatamente:   var TOKEN = "o-valor";
+// (com aspas e ponto-e-vírgula — colar a linha do EasyPanel inteira não funciona)
 //
 // ---------------------------------------------------------------------------
-// ANTES DE COLAR, TROQUE AS DUAS LINHAS MARCADAS COM  <<< TROCAR
-// ---------------------------------------------------------------------------
+// TRÊS ARMADILHAS QUE CUSTARAM UMA NOITE. Leia antes de mexer:
 //
-// Por que o aparelho manda em vez de a gente buscar: o medidor fica na casa do
-// cliente e a plataforma fica aqui. Não existe rede em comum — nem com IP fixo,
-// porque a faixa 192.168.x.x se repete em toda casa. Então ele empurra.
+// 1. HTTPS. `Shelly.call("HTTP.POST", ...)` para servidor HTTPS fica PENDURADO:
+//    não retorna sucesso nem erro, e o console só mostra a linha de início.
+//    Parece que travou tudo. A solução é `HTTP.Request` com `ssl_ca: "*"`,
+//    como está abaixo. ISSO VALE PRA TODA INSTALAÇÃO DO KIT.
 //
-// A linguagem aqui é mJS (subconjunto de JavaScript). Não tem template
-// literal, não tem toISOString, não tem async/await. Por isso o código é
-// propositalmente simples e em ES5.
+// 2. O COMPONENTE depende do perfil do aparelho:
+//      trifásico  →  "em:0"    e  "emdata:0"   (campos c_voltage, c_act_power…)
+//      monofásico →  "em1:N"   e  "em1data:N"  (N = 0 fase A, 1 fase B, 2 fase C)
+//    Pedir um componente que não existe faz o script MORRER CALADO.
+//    Confira o perfil no app antes: se a tela mostra "Fase A/B/C + Total",
+//    é trifásico. Este script está no trifásico, lendo a FASE C.
+//
+// 3. mJS não é JavaScript completo: sem template literal, sem toISOString,
+//    sem async. Por isso a hora vai como epoch em segundos (o servidor aceita).
 // ===========================================================================
 
 var URL   = "https://propostas.ecosunpower.eng.br/webhooks/shelly";
-var TOKEN = "COLE_AQUI_O_SHELLY_INGEST_TOKEN";   // <<< TROCAR (o mesmo do EasyPanel)
-var CANAL = 2;                                    // <<< TROCAR se o TC não estiver no C
-                                                  //     A=0  ·  B=1  ·  C=2
-var INTERVALO_MS = 60 * 1000;                     // uma leitura por minuto
+var TOKEN = "COLE_AQUI_O_SHELLY_INGEST_TOKEN";   // <<< TROCAR
 
-// Nome que aparece no painel. Deixe em branco pra usar o nome do aparelho.
-var APELIDO = "";
+// Trifásico lendo a fase C. Para monofásico, troque para "em1:2"/"em1data:2"
+// e os campos c_* por voltage/current/act_power/aprt_power/pf.
+var COMPONENTE = "em:0";
+var COMPONENTE_ENERGIA = "emdata:0";
+var CANAL = 2;
 
-// ---------------------------------------------------------------------------
+var INTERVALO_MS = 60 * 1000;
 
 var deviceId = "";
-var apelido = APELIDO;
-
-function iniciar() {
-  var info = Shelly.getDeviceInfo();
-  if (info) {
-    deviceId = info.id || "";
-    if (!apelido) apelido = info.name || "";
-  }
-  if (!deviceId) {
-    print("[ecosun] sem id do aparelho — script parado");
-    return;
-  }
-  print("[ecosun] enviando leitura do canal " + JSON.stringify(CANAL) +
-        " a cada " + JSON.stringify(INTERVALO_MS / 1000) + "s");
-  enviar();                                   // manda uma na hora, pra testar
-  Timer.set(INTERVALO_MS, true, enviar);
-}
+var apelido = "";
 
 function enviar() {
-  // em1 = medidas instantâneas · em1data = energia acumulada
-  var m = Shelly.getComponentStatus("em1:" + JSON.stringify(CANAL));
-  var e = Shelly.getComponentStatus("em1data:" + JSON.stringify(CANAL));
-
-  if (!m || m.act_power === undefined || m.act_power === null) {
-    print("[ecosun] sem leitura no canal " + JSON.stringify(CANAL) + " — pulando");
+  var m = Shelly.getComponentStatus(COMPONENTE);
+  var e = Shelly.getComponentStatus(COMPONENTE_ENERGIA);
+  if (!m) {
+    print("[ecosun] sem leitura em " + COMPONENTE);
     return;
   }
-
-  // Epoch em SEGUNDOS. O servidor aceita segundos ou milissegundos. Mandar a
-  // hora daqui faz o aparelho carimbar a própria leitura — importa se ele
-  // ficar sem rede e a mensagem sair atrasada.
-  var agora = Math.floor(Date.now() / 1000);
 
   var corpo = {
     device_id: deviceId,
     apelido: apelido,
     canal: CANAL,
-    medido_em: agora,
-    tensao: m.voltage === undefined ? null : m.voltage,
-    corrente: m.current === undefined ? null : m.current,
-    potencia_w: m.act_power,
-    potencia_va: m.aprt_power === undefined ? null : m.aprt_power,
-    fator_potencia: m.pf === undefined ? null : m.pf,
-    energia_wh: e && e.total_act_energy !== undefined ? e.total_act_energy : null,
-    energia_devolvida_wh: e && e.total_act_ret_energy !== undefined ? e.total_act_ret_energy : null
+    medido_em: Math.floor(Date.now() / 1000),
+    tensao: m.c_voltage,
+    corrente: m.c_current,
+    potencia_w: m.c_act_power,
+    potencia_va: m.c_aprt_power,
+    fator_potencia: m.c_pf,
+    energia_wh: e ? e.c_total_act_energy : null,
+    energia_devolvida_wh: e ? e.c_total_act_ret_energy : null
   };
 
   Shelly.call(
-    "HTTP.POST",
+    "HTTP.Request",
     {
+      method: "POST",
       url: URL,
       headers: { "Content-Type": "application/json", "x-shelly-token": TOKEN },
       body: JSON.stringify(corpo),
-      timeout: 15
+      timeout: 20,
+      ssl_ca: "*"          // <<< sem isto o envio fica pendurado em HTTPS
     },
-    function (resposta, erro) {
+    function (resposta, erro, msg) {
       if (erro !== 0) {
-        // Sem rede ou servidor fora: só avisa. NÃO tenta de novo agora —
-        // reenvio imediato em cima de servidor caído vira enxurrada, e a
-        // próxima leitura sai em 1 minuto de qualquer jeito.
-        print("[ecosun] falhou o envio (erro " + JSON.stringify(erro) + ")");
+        // Sem rede ou servidor fora: avisa e espera o próximo minuto. NÃO
+        // tenta de novo agora — reenvio imediato em cima de servidor caído
+        // vira enxurrada, e a próxima leitura sai em 1 minuto de qualquer jeito.
+        print("[ecosun] falhou " + JSON.stringify(erro) + " " + JSON.stringify(msg));
         return;
       }
       if (resposta && resposta.code === 401) {
@@ -103,11 +88,19 @@ function enviar() {
         return;
       }
       if (resposta && resposta.code !== 200) {
-        print("[ecosun] servidor respondeu " + JSON.stringify(resposta.code) +
-              ": " + JSON.stringify(resposta.body));
+        print("[ecosun] servidor respondeu " + JSON.stringify(resposta.code));
+        return;
       }
+      print("[ecosun] OK");
     }
   );
 }
 
-iniciar();
+var info = Shelly.getDeviceInfo();
+if (info) {
+  deviceId = info.id;
+  apelido = info.name;
+}
+print("[ecosun] iniciado — " + COMPONENTE);
+enviar();
+Timer.set(INTERVALO_MS, true, enviar);
