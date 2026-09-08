@@ -146,3 +146,46 @@ describe('canais de encaminhamento por empresa', () => {
     expect(normalizarCanais(muitos)).toHaveLength(6);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 08/09/2026 — a assistente não pode se colocar como quem VAI na visita.
+// Bug real: o passo de confirmar agendamento mandava responder "combinado, te
+// espero quinta as 14h". Na EcoSunPower funciona (o dono vai mesmo). Na Conquista
+// Solar quem vai são as vendedoras — a Clara dizia que esperava o cliente numa
+// visita que ela nunca faria. O texto tem que dizer QUEM vai, via {{rt_o}}.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('confirmação de visita diz quem vai, não "eu te espero"', () => {
+  for (const arquivo of arquivos) {
+    const texto = readFileSync(join(promptsDir, arquivo), 'utf-8');
+
+    it(`${arquivo} não promete presença da própria assistente`, () => {
+      // Linha a linha, pulando as que PROÍBEM a frase — senão o próprio aviso
+      // "NUNCA diga te espero" derrubaria o teste.
+      const proibicao = /nunca|proibido|não diga|nao diga|jamais/i;
+      const linhas = texto.split('\n').filter(l => !proibicao.test(l));
+      for (const frase of ['te espero', 'te aguardo la', 'estarei la', 'estarei lá']) {
+        const culpada = linhas.find(l => l.toLowerCase().includes(frase));
+        expect(culpada, `"${frase}" em ${arquivo}: quem vai na visita é {{rt_o}}, não a assistente`)
+          .toBeUndefined();
+      }
+    });
+  }
+
+  it('o passo de confirmar agendamento usa o marcador de quem vai', () => {
+    const sp = readFileSync(join(promptsDir, 'system-prompt.md'), 'utf-8');
+    const passo = sp.slice(sp.indexOf('### Passo 4 — Confirmar o agendamento'));
+    expect(passo.slice(0, 900)).toContain('{{rt_O}}');
+  });
+
+  it('interpolado, cada empresa diz a sua frase', () => {
+    const modelo = 'combinado! {{rt_O}} te espera quinta as 14h — ja estou avisando';
+    const conquista = normalizarEmpresaRow({
+      company_id: 'c1a2b3c4-0000-0000-0000-00000000aaaa',
+      nome_fantasia: 'Conquista Solar',
+      rt_nome: 'CONQUISTA SOLAR', rt_apelido: 'nossa equipe', rt_genero: 'f',
+    });
+    expect(interpolarEmpresa(modelo, EMPRESA_DEFAULTS)).toContain('O Junior te espera');
+    expect(interpolarEmpresa(modelo, conquista)).toContain('A nossa equipe te espera');
+    expect(interpolarEmpresa(modelo, conquista)).not.toContain('Junior');
+  });
+});
