@@ -58,6 +58,7 @@ describe('proposal-followup: abordagem via template', () => {
 function makeServiceReabertura(followupSentAt: string | null, telefone = '5561988887777') {
   const sendTemplate = vi.fn().mockResolvedValue({ messageId: 'm1' });
   const sendText = vi.fn().mockResolvedValue(undefined);
+  const sendInteractiveButtons = vi.fn().mockResolvedValue({ messageId: 'b1' });
   const proposta = {
     cliente_nome: 'João Silva',
     cliente_telefone: telefone,
@@ -79,7 +80,7 @@ function makeServiceReabertura(followupSentAt: string | null, telefone = '556198
   };
   const svc = new ProposalFollowupService({
     supabase: supabase as any,
-    metaService: { sendTemplate, sendText: vi.fn(), sendInteractiveButtons: vi.fn() } as any,
+    metaService: { sendTemplate, sendText: vi.fn(), sendInteractiveButtons } as any,
     sendText,
     engineerPhone: '5561999999999',
     proposalBaseUrl: 'https://x',
@@ -87,7 +88,7 @@ function makeServiceReabertura(followupSentAt: string | null, telefone = '556198
     delayMs: 0,
     templateAbordagem: 'eva_proposta_aberta_v1',
   });
-  return { svc, sendTemplate, sendText };
+  return { svc, sendTemplate, sendText, sendInteractiveButtons };
 }
 
 // Service pra testar a Parte B (reabordagem inteligente alternada): cliente JÁ
@@ -146,12 +147,16 @@ const mandouPraCliente = (sendText: any) =>
   sendText.mock.calls.some((c: any[]) => c[0] === '5561988887777');
 
 describe('proposal-followup: reabordagem inteligente alternada (Parte B)', () => {
-  it('janela aberta + contador ÍMPAR → Eva reaborda (gera + manda pro cliente + grava)', async () => {
+  // 08/09/2026 — TOQUE POR COMPORTAMENTO DESLIGADO. Antes, na vez ímpar a Eva
+  // reabordava sozinha quem reabriu o link. O Junior chamou de toque espião: a
+  // assistente reage a TEMPO, nunca a comportamento. Agora só notifica.
+  it('vez ÍMPAR NÃO reaborda mais sozinha — só notifica o Junior', async () => {
     const { svc, sendText, gerarAbordagemInteligente, updateConversation } = makeServiceReaberturaB({ contador: 1 });
     await (svc as any).runReaberturaAsync('slug1', 1);
-    expect(gerarAbordagemInteligente).toHaveBeenCalledTimes(1);
-    expect(mandouPraCliente(sendText)).toBe(true);
-    expect(updateConversation).toHaveBeenCalledTimes(1); // gravou no dashboard
+    expect(gerarAbordagemInteligente).not.toHaveBeenCalled();
+    expect(mandouPraCliente(sendText)).toBe(false);
+    expect(updateConversation).not.toHaveBeenCalled();
+    expect(sendText).toHaveBeenCalled(); // o Junior continua sabendo
   });
 
   it('janela aberta + contador PAR → NÃO reaborda, só notifica', async () => {
@@ -169,10 +174,10 @@ describe('proposal-followup: reabordagem inteligente alternada (Parte B)', () =>
     expect(mandouPraCliente(sendText)).toBe(false);
   });
 
-  it('gerador retorna null → cai no só-notifica (não manda vazio pro cliente)', async () => {
+  it('nem chega a gerar mensagem — o gerador nao e chamado na reabertura', async () => {
     const { svc, sendText, gerarAbordagemInteligente } = makeServiceReaberturaB({ contador: 1, msgGerada: null });
     await (svc as any).runReaberturaAsync('slug1', 1);
-    expect(gerarAbordagemInteligente).toHaveBeenCalledTimes(1);
+    expect(gerarAbordagemInteligente).not.toHaveBeenCalled();
     expect(mandouPraCliente(sendText)).toBe(false);
     expect(sendText).toHaveBeenCalled(); // notificou o Junior
   });
@@ -193,10 +198,20 @@ describe('proposal-followup: reabordagem inteligente alternada (Parte B)', () =>
 });
 
 describe('proposal-followup: reabertura aborda cliente antigo (opção a)', () => {
-  it('reabertura de cliente NUNCA abordado → Eva aborda (manda template)', async () => {
-    const { svc, sendTemplate } = makeServiceReabertura(null);
+  // 08/09/2026 — a 1a abertura tambem parou de abordar sozinha: agora PERGUNTA
+  // ao Junior com os botoes "Eva manda / Eu mando / Esperar 1h". O template so
+  // sai quando ele toca no botao (triggerEnvioPorBotao) ou no comando manual.
+  it('reabertura de cliente NUNCA abordado NAO manda template sozinha', async () => {
+    const { svc, sendTemplate, sendInteractiveButtons } = makeServiceReabertura(null);
     await (svc as any).runReaberturaAsync('slug1', 1);
-    expect(sendTemplate).toHaveBeenCalledTimes(1);
+    expect(sendTemplate).not.toHaveBeenCalled();       // o cliente nao recebe nada
+    expect(sendInteractiveButtons).toHaveBeenCalled(); // o Junior e perguntado
+    const [destino, corpo, botoes] = sendInteractiveButtons.mock.calls[0];
+    expect(destino).toBe('5561999999999');             // vai pro Junior, nao pro cliente
+    expect(corpo).toContain('abriu a proposta');
+    expect((botoes as Array<{ id: string }>).map(b => b.id)).toEqual([
+      'prop:fwup-eva:slug1', 'prop:fwup-junior:slug1', 'prop:fwup-esperar:slug1',
+    ]);
   });
 
   it('reabertura de cliente JÁ abordado → só notifica, NÃO manda template de novo', async () => {

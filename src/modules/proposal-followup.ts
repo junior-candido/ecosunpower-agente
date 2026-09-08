@@ -135,8 +135,15 @@ export class ProposalFollowupService {
     // (b) Reabordagem inteligente alternada. Só roda se: tem telefone + janela 24h
     // ABERTA (cliente respondeu → free text permitido) + gerador disponível. A
     // alternância é um contador Redis por slug: vez ÍMPAR reaborda, PAR só notifica.
+    // 🕵️ REABORDAGEM AUTOMÁTICA DESLIGADA (08/09/2026) — mesma decisão da 1ª
+    // abertura: reagir a comportamento (o cliente REABRIU o link) é o toque
+    // espião. Cai direto no (c): o Junior é avisado que o cliente voltou e
+    // decide. O gerador de mensagem e o teto/cooldown ficam de pé pro caminho
+    // manual (`abordarManual` / botão "Eva manda").
+    const REABORDAGEM_AUTOMATICA_LIGADA = false;
     const telefone = this.normalizarTelefone(proposta.cliente_telefone);
     if (
+      REABORDAGEM_AUTOMATICA_LIGADA &&
       telefone &&
       this.redis &&
       this.janela24hAberta &&
@@ -273,7 +280,17 @@ export class ProposalFollowupService {
       await this.markSkipped(slug, 'waba_indisponivel');
       return;
     }
-    await this.executarEnvio(slug, clienteNome, clienteTelefone, canal);
+    // 🕵️ TOQUE POR COMPORTAMENTO DESLIGADO (08/09/2026).
+    // Decisão do Junior: a assistente reage a TEMPO, nunca a comportamento. Ela
+    // abordava no segundo em que o cliente abria a proposta — o cliente percebe
+    // que está sendo vigiado. Em 06/09 o A2H saiu da régua pelo mesmo motivo
+    // (PR #277); este vivia noutro módulo e passou batido.
+    // O gatilho continua: agora ele PERGUNTA em vez de mandar. Junior responde
+    // "Eva manda" e o envio sai igual — decisão dele, caso a caso.
+    // Razão de fundo: o follow-up vivo voltou a funcionar (migrations 101/102
+    // aplicadas em 06/09), então a régua por tempo já cobre esse lead. O toque
+    // por abertura virou redundante — e invasivo.
+    await this.notifyJuniorComBotoes(clienteNome, clienteTelefone, slug);
   }
 
   // Executa o envio da abordagem (auto, na 1ª abertura) e avisa o Junior.
