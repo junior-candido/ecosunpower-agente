@@ -57,6 +57,23 @@ describe('extrairLeituraShelly', () => {
     expect(extrairLeituraShelly({ ...LEITURA, medido_em: 'nao-e-data' })).toBeNull();
   });
 
+  // O script roda em mJS dentro do aparelho, que nao tem toISOString(). Entao
+  // ele manda epoch em segundos — e o aparelho carimba a PROPRIA leitura, o que
+  // importa quando ele fica sem rede e reenvia o acumulado depois.
+  it('aceita epoch em segundos', () => {
+    const r = extrairLeituraShelly({ ...LEITURA, medido_em: 1788000000 });
+    expect(r!.medidoEm).toBe(new Date(1788000000 * 1000).toISOString());
+  });
+
+  it('aceita epoch em milissegundos', () => {
+    const r = extrairLeituraShelly({ ...LEITURA, medido_em: 1788000000000 });
+    expect(r!.medidoEm).toBe(new Date(1788000000000).toISOString());
+  });
+
+  it('epoch zerado (relogio do aparelho sem hora) e recusado', () => {
+    expect(extrairLeituraShelly({ ...LEITURA, medido_em: 0 })).toBeNull();
+  });
+
   it('canal ausente vira 0', () => {
     expect(extrairLeituraShelly({ ...LEITURA, canal: undefined })!.canal).toBe(0);
   });

@@ -48,13 +48,25 @@ export function extrairLeituraShelly(bruto: unknown): LeituraShelly | null {
   const potenciaW = num(b.potencia_w);
   if (potenciaW === null) return null;
 
-  // Data: o relógio do aparelho pode estar fora do ar depois de uma queda de
-  // energia, e aí ele manda 1970. Gravar isso arruinaria a série histórica.
+  // Data. Dois cuidados:
+  //
+  // 1) O script roda em mJS dentro do aparelho, que não tem toISOString().
+  //    Então ele manda EPOCH (segundos ou milissegundos). Aceitar os dois faz o
+  //    aparelho carimbar a própria leitura — o que importa quando ele fica sem
+  //    rede e reenvia o acumulado depois; sem isso, o lote inteiro chegaria com
+  //    a hora da reconexão e a série histórica sairia amassada.
+  //
+  // 2) Depois de uma queda de energia o relógio dele volta pra 1970. Gravar
+  //    isso arruinaria a série — melhor recusar a leitura.
   let medidoEm: string;
   if (b.medido_em === undefined || b.medido_em === null || b.medido_em === '') {
     medidoEm = new Date().toISOString();
   } else {
-    const d = new Date(String(b.medido_em));
+    const epoch = typeof b.medido_em === 'number' ? b.medido_em : null;
+    // Abaixo de 1e11 é segundos (até o ano 5138); acima, milissegundos.
+    const d = epoch !== null
+      ? new Date(Math.abs(epoch) < 1e11 ? epoch * 1000 : epoch)
+      : new Date(String(b.medido_em));
     if (Number.isNaN(d.getTime())) return null;
     const ano = d.getUTCFullYear();
     if (ano < 2020 || ano > 2100) return null;
