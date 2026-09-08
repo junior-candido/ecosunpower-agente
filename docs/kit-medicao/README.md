@@ -139,6 +139,29 @@ hora da instalação é prejuízo e cara feia.
 
 ---
 
+## ⚠️ As três armadilhas (custaram uma noite de campo, 07/09/2026)
+
+**1. HTTPS trava o envio sem dizer nada.**
+`Shelly.call("HTTP.POST", ...)` para servidor HTTPS fica **pendurado**: não retorna sucesso
+nem erro, e o console mostra só a linha de início. Parece que o script morreu.
+➡️ Use **`HTTP.Request` com `ssl_ca: "*"`**. Vale para toda instalação do kit.
+
+**2. O nome do componente depende do perfil do aparelho.**
+
+| Perfil | Componente | Campos |
+|---|---|---|
+| Trifásico | `em:0` e `emdata:0` | `c_voltage`, `c_act_power`, `c_pf`… |
+| Monofásico | `em1:N` e `em1data:N` | `voltage`, `act_power`, `pf`… |
+
+Pedir componente que não existe faz o script **morrer calado**. Confira no app antes: se a
+tela mostra *Fase A / Fase B / Fase C + Total*, é **trifásico**.
+
+**3. A linha do token tem que ser JavaScript, não a linha do EasyPanel.**
+Certo: `var TOKEN = "valor";` — com aspas e ponto-e-vírgula.
+Errado: colar `SHELLY_INGEST_TOKEN=valor` (nome errado, sem aspas → erro de sintaxe).
+
+---
+
 ## Ligar na plataforma
 
 O medidor fica na casa do cliente e a plataforma fica aqui — **não existe rede em comum**.
