@@ -39,28 +39,62 @@ function card(rotulo: string, valor: string, nota = '', destaque = false): strin
     </div>`;
 }
 
+/**
+ * Escala vertical do gráfico, com o zero no lugar certo.
+ *
+ * Casa com solar tem as duas metades: consumo pra cima, injeção pra baixo. Se
+ * o zero ficasse sempre na base, injeção viraria barra invisível — e o cliente
+ * que gera energia veria um gráfico mentindo pra ele.
+ *
+ * `alturaUtil` é a altura em pixels disponível para o desenho.
+ */
+export function escalaDoGrafico(valores: number[], alturaUtil: number) {
+  const maxCima = Math.max(0, ...valores.map((v) => (v > 0 ? v : 0)));
+  const maxBaixo = Math.max(0, ...valores.map((v) => (v < 0 ? -v : 0)));
+  const total = maxCima + maxBaixo;
+  // Sem amplitude nenhuma (tudo zero, ou lista vazia): zero na base, e nada a
+  // desenhar. Sem isso, dividir por zero geraria NaN em todas as coordenadas.
+  const yZero = total === 0 ? alturaUtil : (maxCima / total) * alturaUtil;
+  const yDe = (v: number) => (total === 0 ? alturaUtil : yZero - (v / total) * alturaUtil);
+  return { maxCima, maxBaixo, total, yZero, yDe };
+}
+
 /** Gráfico de barras das janelas de 15 min. SVG, sem biblioteca. */
 function grafico(janelas: ResumoMedicao['janelas']): string {
   if (janelas.length === 0) {
     return `<p style="color:#94a3b8;padding:20px 0">Ainda sem leitura suficiente para o gráfico.</p>`;
   }
-  const L = 900, A = 220, pad = { t: 14, r: 12, b: 26, l: 46 };
-  const maxV = Math.max(...janelas.map((j) => Math.max(j.picoW, j.mediaW)), 1);
+  const L = 900, A = 240, pad = { t: 14, r: 12, b: 26, l: 52 };
+  const util = A - pad.t - pad.b;
   const larg = (L - pad.l - pad.r) / janelas.length;
 
+  // A escala considera média E pico, pra nenhuma barra estourar a moldura.
+  const todos = janelas.flatMap((j) => [j.mediaW, j.picoW]);
+  const esc0 = escalaDoGrafico(todos, util);
+  const y = (v: number) => pad.t + esc0.yDe(v);
+  const yZero = pad.t + esc0.yZero;
+  const temInjecao = esc0.maxBaixo > 0;
+
+  const barra = (x: number, larguraB: number, valor: number, cor: string) => {
+    const yV = y(valor);
+    const topo = Math.min(yV, yZero);
+    const alt = Math.abs(yV - yZero);
+    if (alt < 0.4) return '';
+    return `<rect x="${x.toFixed(1)}" y="${topo.toFixed(1)}" width="${larguraB.toFixed(1)}" height="${alt.toFixed(1)}" fill="${cor}"/>`;
+  };
+
   const barras = janelas.map((j, i) => {
-    const x = pad.l + i * larg;
-    const hMed = ((A - pad.t - pad.b) * Math.max(j.mediaW, 0)) / maxV;
-    const hPic = ((A - pad.t - pad.b) * Math.max(j.picoW, 0)) / maxV;
-    const yMed = A - pad.b - hMed;
-    const yPic = A - pad.b - hPic;
-    return `
-      <rect x="${(x + larg * 0.12).toFixed(1)}" y="${yPic.toFixed(1)}" width="${(larg * 0.76).toFixed(1)}" height="${Math.max(hPic, 0).toFixed(1)}" fill="#dbeafe"/>
-      <rect x="${(x + larg * 0.12).toFixed(1)}" y="${yMed.toFixed(1)}" width="${(larg * 0.76).toFixed(1)}" height="${Math.max(hMed, 0).toFixed(1)}" fill="#2563eb"/>
-      <title>${esc(hora(j.inicio))} — média ${esc(w(j.mediaW))} · pico ${esc(w(j.picoW))}</title>`;
+    const x = pad.l + i * larg + larg * 0.12;
+    const lb = larg * 0.76;
+    // Consumo em azul, injeção em verde — cor de energia que volta pra rede.
+    const corPico = j.mediaW < 0 ? '#bbf7d0' : '#dbeafe';
+    const corMedia = j.mediaW < 0 ? '#16a34a' : '#2563eb';
+    return barra(x, lb, j.picoW, corPico) + barra(x, lb, j.mediaW, corMedia) +
+      `<rect x="${x.toFixed(1)}" y="${pad.t}" width="${lb.toFixed(1)}" height="${util}" fill="transparent">
+         <title>${esc(hora(j.inicio))} — média ${esc(w(j.mediaW))} · pico ${esc(w(j.picoW))}</title>
+       </rect>`;
   }).join('');
 
-  // Rótulos de hora a cada ~6 janelas (1h30) pra não embolar.
   const passo = Math.max(1, Math.ceil(janelas.length / 8));
   const rotulos = janelas.map((j, i) => {
     if (i % passo !== 0) return '';
@@ -68,23 +102,34 @@ function grafico(janelas: ResumoMedicao['janelas']): string {
     return `<text x="${x.toFixed(1)}" y="${A - 8}" font-size="10" fill="#94a3b8" text-anchor="middle">${esc(hora(j.inicio))}</text>`;
   }).join('');
 
-  const eixoY = [0, 0.5, 1].map((f) => {
-    const y = A - pad.b - (A - pad.t - pad.b) * f;
+  // Referências: topo (maior consumo), zero e fundo (maior injeção).
+  const refs = [
+    { v: esc0.maxCima, mostra: esc0.maxCima > 0 },
+    { v: 0, mostra: true },
+    { v: -esc0.maxBaixo, mostra: esc0.maxBaixo > 0 },
+  ].filter((r) => r.mostra).map((r) => {
+    const yy = y(r.v);
+    const zero = r.v === 0;
     return `
-      <line x1="${pad.l}" y1="${y.toFixed(1)}" x2="${L - pad.r}" y2="${y.toFixed(1)}" stroke="#eef2f6" stroke-width="1"/>
-      <text x="${pad.l - 6}" y="${(y + 3).toFixed(1)}" font-size="10" fill="#94a3b8" text-anchor="end">${esc(w(maxV * f))}</text>`;
+      <line x1="${pad.l}" y1="${yy.toFixed(1)}" x2="${L - pad.r}" y2="${yy.toFixed(1)}" stroke="${zero ? '#cbd5e1' : '#eef2f6'}" stroke-width="${zero ? 1.5 : 1}"/>
+      <text x="${pad.l - 6}" y="${(yy + 3).toFixed(1)}" font-size="10" fill="#94a3b8" text-anchor="end">${esc(w(r.v))}</text>`;
   }).join('');
+
+  const legenda = temInjecao
+    ? `<span><span style="display:inline-block;width:10px;height:10px;background:#2563eb;border-radius:2px;margin-right:5px"></span>consumo (média de 15 min)</span>
+       <span><span style="display:inline-block;width:10px;height:10px;background:#16a34a;border-radius:2px;margin-right:5px"></span>injetado na rede</span>
+       <span><span style="display:inline-block;width:10px;height:10px;background:#dbeafe;border-radius:2px;margin-right:5px"></span>pico instantâneo</span>`
+    : `<span><span style="display:inline-block;width:10px;height:10px;background:#2563eb;border-radius:2px;margin-right:5px"></span>média de 15 min <em>(o que a distribuidora mede)</em></span>
+       <span><span style="display:inline-block;width:10px;height:10px;background:#dbeafe;border-radius:2px;margin-right:5px"></span>pico instantâneo</span>`;
 
   return `
     <div style="overflow-x:auto">
       <svg viewBox="0 0 ${L} ${A}" style="width:100%;min-width:520px;height:auto">
-        ${eixoY}${barras}${rotulos}
+        ${refs}${barras}${rotulos}
       </svg>
     </div>
-    <div style="display:flex;gap:16px;font-size:12px;color:#64748b;margin-top:6px">
-      <span><span style="display:inline-block;width:10px;height:10px;background:#2563eb;border-radius:2px;margin-right:5px"></span>média de 15 min <em>(o que a distribuidora mede)</em></span>
-      <span><span style="display:inline-block;width:10px;height:10px;background:#dbeafe;border-radius:2px;margin-right:5px"></span>pico instantâneo</span>
-    </div>`;
+    <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#64748b;margin-top:6px">${legenda}</div>
+    ${temInjecao ? `<p style="font-size:12px;color:#16a34a;margin:8px 0 0">Abaixo da linha do zero é energia que <strong>saiu</strong> da casa para a rede.</p>` : ''}`;
 }
 
 export function renderMedicaoPage(
