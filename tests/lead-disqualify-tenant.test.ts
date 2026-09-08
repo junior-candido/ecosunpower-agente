@@ -91,3 +91,60 @@ describe('telefone do DDD 77 (sem o 9 extra) — leitura e escrita têm que casa
     expect(variantesTelefone('5561998805002')).toContain('556198805002');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 08/09/2026 — a empresa decide se a assistente pode descartar (migration 125).
+// Pedido da Conquista Solar: lead pequeno NAO se perde. A assistente argumenta;
+// se nao convencer, passa pra equipe. A decisao e de gente, nao do robo.
+// ─────────────────────────────────────────────────────────────────────────────
+import { buildHandoffEmVezDeDescarte } from '../src/modules/lead-disqualify.js';
+
+describe('permiteDescarteLead — a empresa decide', () => {
+  it('EcoSunPower continua podendo descartar (comportamento historico)', () => {
+    expect(EMPRESA_DEFAULTS.permiteDescarteLead).toBe(true);
+  });
+
+  it('coluna ausente (banco antigo, antes da migration 125) = pode descartar', () => {
+    const antiga = normalizarEmpresaRow({ company_id: TENANT_ID, nome_fantasia: 'Tenant' });
+    expect(antiga.permiteDescarteLead).toBe(true);
+  });
+
+  it('coluna nula tambem = pode descartar — so `false` explicito desliga', () => {
+    const nula = normalizarEmpresaRow({ company_id: TENANT_ID, permite_descarte_lead: null });
+    expect(nula.permiteDescarteLead).toBe(true);
+  });
+
+  it('false desliga o descarte', () => {
+    const conquista = normalizarEmpresaRow({
+      company_id: TENANT_ID, nome_fantasia: 'Conquista Solar', permite_descarte_lead: false,
+    });
+    expect(conquista.permiteDescarteLead).toBe(false);
+  });
+});
+
+describe('aviso de handoff no lugar do descarte', () => {
+  const body = buildHandoffEmVezDeDescarte({
+    reason: 'conta de R$150/mês', leadName: 'Diego Lima Moraes',
+    phone: '557799174347', nomeAtendente: 'Clara',
+  });
+
+  it('diz que foi passado pra equipe, nao que encerrou', () => {
+    expect(body).toContain('passado pra equipe');
+    expect(body).not.toContain('encerrou lead inviável');
+  });
+
+  it('deixa claro que o lead segue vivo', () => {
+    expect(body).toContain('O lead segue vivo');
+  });
+
+  it('usa o nome da assistente da empresa, nunca "Eva"', () => {
+    expect(body).toContain('Clara não encerrou');
+    expect(body).not.toContain('Eva');
+  });
+
+  it('sem nome configurado, fica neutro', () => {
+    const b = buildHandoffEmVezDeDescarte({ reason: 'x', leadName: 'y', phone: '55' });
+    expect(b).toContain('A assistente não encerrou');
+    expect(b).not.toContain('Eva');
+  });
+});

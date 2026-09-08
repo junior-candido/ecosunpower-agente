@@ -58,6 +58,9 @@ export interface EmpresaConfig {
   /** Menu da primeira mensagem. Lista vazia = empresa sem menu (deduz o assunto como antes). */
   menuEntrada: OpcaoMenu[];
   criterioLeadValor: number; criterioLeadKwh: number;
+  /** A assistente pode DESCARTAR lead inviavel? false = nunca descarta, o
+   *  disqualify_lead vira handoff pra equipe (migration 125). Padrao true. */
+  permiteDescarteLead: boolean;
   marcasPermitidas: string[]; marcasBloqueadas: string[];
   garantiaInstalacaoMeses: number; fatorPerdaPadrao: number; belenusAtivo: boolean;
   logoStoragePath: string | null;
@@ -102,6 +105,7 @@ export const EMPRESA_DEFAULTS: EmpresaConfig = {
   pixChave: '33.020.459/0001-06',
   canaisAtendimento: [], politicaTriagem: null, menuEntrada: [],
   criterioLeadValor: 700, criterioLeadKwh: 700,
+  permiteDescarteLead: true,
   marcasPermitidas: ['Trina Solar','JA Solar','Risen','Jinko Solar','LONGi','Honor','SolarEdge','Deye','Sungrow','Huawei','Hoymiles','Enphase','FoxESS','NEP','Solis','SolaX'],
   marcasBloqueadas: ['Growatt'],
   garantiaInstalacaoMeses: 12, fatorPerdaPadrao: 0.78, belenusAtivo: true,
@@ -195,6 +199,9 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
     menuEntrada: normalizarMenuEntrada(row.menu_entrada),
     criterioLeadValor: n(row.criterio_lead_valor, D.criterioLeadValor),
     criterioLeadKwh: n(row.criterio_lead_kwh, D.criterioLeadKwh),
+    // Só false explícito desliga o descarte. Coluna ausente (antes da migration
+    // 125) ou nula = true, que é o comportamento histórico.
+    permiteDescarteLead: row.permite_descarte_lead !== false,
     marcasPermitidas: arr(row.marcas_permitidas, D.marcasPermitidas),
     marcasBloqueadas: arr(row.marcas_bloqueadas, D.marcasBloqueadas),
     garantiaInstalacaoMeses: n(row.garantia_instalacao_meses, D.garantiaInstalacaoMeses),
