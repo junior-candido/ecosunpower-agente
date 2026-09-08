@@ -61,3 +61,28 @@ export function buildDisqualifyPlan(input: {
 
   return { leadPatch, notifyBody };
 }
+
+/**
+ * Empresa que NAO permite descarte (migration 125): a assistente pediu
+ * disqualify_lead, mas o lead nao pode morrer. Vira handoff — a equipe decide.
+ * O texto e o de um lead QUENTE que precisa de gente, nao o de um enterro.
+ */
+export function buildHandoffEmVezDeDescarte(input: {
+  reason: string;
+  leadName?: string | null;
+  phone: string;
+  nomeAtendente?: string | null;
+}): string {
+  const name = input.leadName?.trim() || 'Sem nome';
+  const quem = input.nomeAtendente?.trim() || 'A assistente';
+  return [
+    `🤝 *Lead abaixo do critério — passado pra equipe*`,
+    ``,
+    `${name} — ${input.phone}`,
+    `Motivo: ${input.reason}`,
+    ``,
+    `${quem} não encerrou: nesta empresa lead pequeno não se descarta.`,
+    `Ela argumentou, não fechou, e passou pra vocês. O lead segue vivo.`,
+    `A assistente ficou em pausa nesse chat — quem responder assume.`,
+  ].join('\n');
+}

@@ -6085,11 +6085,41 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         // isso status/contact_type/notificacao distintos do mark_off_topic.
         // Mesmo efeito funcional: eva_active=false (gate 2299 para a Eva) +
         // opt_out + cancela toques. Eva manda 1 msg digna e cala.
-        const { buildDisqualifyPlan } = await import('./modules/lead-disqualify.js');
+        const { buildDisqualifyPlan, buildHandoffEmVezDeDescarte } = await import('./modules/lead-disqualify.js');
         const dqReason = (action.data as Record<string, unknown> | undefined)?.reason as string | undefined ?? `lead fora do criterio (R$${empresa().criterioLeadValor}/${empresa().criterioLeadKwh}kWh) ou vulneravel`;
         // Fetch UMA vez (id imutavel) e reusa pra nome + botoes — parity com
         // mark_off_topic, sem round-trip extra de DB nesse path terminal.
         const dqLead = await db.getLeadByPhone(from);
+
+        // 🔒 TRAVA POR EMPRESA (migration 125). Empresa que nao permite descarte
+        // NUNCA perde o lead: a action vira handoff e a equipe decide. Nasce
+        // generica — quem liga/desliga e a coluna, nao um `if` por cliente.
+        if (!empresa().permiteDescarteLead) {
+          await db.upsertLead({ phone: from, status: 'transferido', company_id: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID }); // [3e]
+          await db.updateConversation(conversationId, { qualification_step: 'transferido', session_status: 'completed' });
+          await takeover.pauseFor(from).catch((err) =>
+            console.warn('[disqualify->handoff] pauseFor falhou:', (err as Error).message));
+          void estadoVenda.transicionar({ leadId, para: 'QUER_JUNIOR', motivo: 'descarte bloqueado pela empresa', autor: 'sistema', agoraMs: Date.now() });
+          const hoBody = buildHandoffEmVezDeDescarte({
+            reason: dqReason, leadName: dqLead?.name, phone: from,
+            nomeAtendente: empresa().nomeAtendente,
+          });
+          if (!isSandbox) {
+            const hoDestino = destinoAdminDaEmpresa(config.engineerPhone);
+            if (!hoDestino) {
+              console.log(`[disqualify->handoff] empresa "${empresa().nomeFantasia}" sem telefone_admin — lead esta no dashboard dela.`);
+            } else {
+              await sendAdminWithButtons(
+                { metaWaba, sendText: async (t: string, x: string) => { await sendText(t, x); } },
+                hoDestino, hoBody.slice(0, 1024),
+                dqLead?.id ? [{ id: `evabt:lead-view:${dqLead.id}`, title: '👤 Ver perfil' }] : [],
+              );
+            }
+          }
+          console.log(`[disqualify->handoff] ${from}: descarte bloqueado pela empresa, lead segue vivo. Motivo original: ${dqReason}`);
+          break;
+        }
+
         const { leadPatch, notifyBody } = buildDisqualifyPlan({
           reason: dqReason,
           leadName: dqLead?.name,
@@ -6102,10 +6132,19 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         // `getLeadByPhone` ja resolve as variantes do 9o digito, entao o id e a
         // chave certa. Sem lead, cai nas variantes do telefone.
         const dqQuery = db.getClient().from('leads').update(leadPatch);
-        const { data: dqRows } = await (dqLead?.id
+        const { data: dqRows, error: dqErr } = await (dqLead?.id
           ? dqQuery.eq('id', dqLead.id)
           : dqQuery.in('phone', variantesTelefone(from))).select('id');
-        if (!dqRows?.length) console.warn(`[action][3e] disqualify_lead atualizou 0 linhas pra ${from} — lead fora do tenant?`);
+        // 🔊 O erro tem que GRITAR. Este update falhava desde sempre porque
+        // 'descartado' nao existia no enum lead_status — e ninguem viu, porque
+        // o codigo so olhava `data` e logava um console.warn. A assistente
+        // avisava "encerrei" e o lead continuava vivo na cadencia.
+        if (dqErr) {
+          console.error(`[action][3e] disqualify_lead FALHOU pra ${from}: ${dqErr.message}`);
+          await db.logEvent('error', 'disqualify_lead', `update falhou: ${dqErr.message}`, { phone: from, lead_id: dqLead?.id ?? null }).catch(() => {});
+        } else if (!dqRows?.length) {
+          console.error(`[action][3e] disqualify_lead atualizou 0 linhas pra ${from} — lead fora do tenant?`);
+        }
         await db.cancelCadence(leadId, 'disqualify_lead').catch(() => {});
         void followupVivo.cancelarPorLead(leadId, 'disqualify_lead');
         // Fatia 2 — esteira de estado.
