@@ -17,7 +17,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SupabaseService } from './supabase.js';
-import { empresa } from './empresa-config.js';
+import { empresa, ehEcosun } from './empresa-config.js';
 import { avisoAdminPermitido } from './tenant-admin-guard.js';
 
 export interface MetaWabaLike {
@@ -55,7 +55,16 @@ export async function sendAdminWithButtons(
     );
     return;
   }
-  if (ctx.metaWaba && buttons.length > 0 && buttons.length <= 3) {
+  // 🏷️ CANAL DA EMPRESA (08/09/2026). O `sendText` é por tenant
+  // (`messagingDaMensagem()` → instância da empresa), mas o `metaWaba` é UM só,
+  // o número oficial da EcoSunPower. Enquanto o tenant nunca recebia aviso isso
+  // não aparecia; ao liberar o `telefone_admin` apareceu: o aviso da Conquista
+  // sairia do número da EcoSun pro celular da Jimena — quebra o white-label e
+  // leva lead de outro controlador por um canal nosso.
+  // Tenant vai por texto, pela instância dele. Botões WABA são só da EcoSun —
+  // e não fariam falta: o handler de botão exige remetente admin da EcoSun.
+  const podeUsarWaba = ctx.metaWaba && ehEcosun();
+  if (podeUsarWaba && ctx.metaWaba && buttons.length > 0 && buttons.length <= 3) {
     try {
       await ctx.metaWaba.sendInteractiveButtons(to, body, buttons, footer);
       return;
