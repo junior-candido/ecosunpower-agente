@@ -137,7 +137,7 @@ import { PastaService } from './modules/relatorios/pasta/service.js';
 import { renderPastaHtml } from './modules/relatorios/pasta/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
 import { carregarEmpresaConfig, carregarKits, empresa, empresaDe, comEmpresaDe, listaMarcasTexto } from './modules/empresa-config.js';
-import { destinoAdminDaEmpresa, envioProibido } from './modules/tenant-admin-guard.js';
+import { agendaDaEmpresa, destinoAdminDaEmpresa, envioProibido } from './modules/tenant-admin-guard.js';
 import { travarMarcaAlheia } from './modules/trava-marca-alheia.js';
 import { carregarConhecimentoEmpresas } from './modules/conhecimento-empresa.js';
 import { montarHandoff } from './modules/handoff-transfer.js';
@@ -5884,15 +5884,26 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             : (clientCoordinates
               ? (clientAddress ? `${clientAddress} (${clientCoordinates})` : clientCoordinates)
               : (clientAddress || undefined));
-          const event = await calendar.createEvent({
-            summary,
-            description,
-            startISO,
-            endISO,
-            location: eventLocation,
-            withMeet: isMeet,
-          });
-          console.log(`[calendar] Event created for ${from}: type=${visitType} ${event.htmlLink} meet=${event.meetLink ?? 'none'} location=${eventLocation ?? 'none'}`);
+          // ⚖️ Agenda da EMPRESA da mensagem, nunca a agenda global por default.
+          // Sem agenda configurada NÃO cria evento — o agendamento fica na tabela
+          // `visitas` e no dashboard do tenant (08/09/2026, ver tenant-admin-guard).
+          const agendaAlvo = agendaDaEmpresa(config.googleCalendarId ?? null);
+          const event = agendaAlvo
+            ? await calendar.createEvent({
+              summary,
+              description,
+              startISO,
+              endISO,
+              location: eventLocation,
+              withMeet: isMeet,
+              calendarId: agendaAlvo,
+            })
+            : { eventId: '', htmlLink: '', meetLink: undefined as string | undefined };
+          if (agendaAlvo) {
+            console.log(`[calendar] Event created for ${from}: type=${visitType} ${event.htmlLink} meet=${event.meetLink ?? 'none'} location=${eventLocation ?? 'none'}`);
+          } else {
+            console.log(`[calendar] evento NAO criado: empresa "${empresa().nomeFantasia}" (${empresa().companyId}) sem google_calendar_id. Agendamento registrado no dashboard dela.`);
+          }
 
           // Se Meet: manda link pro cliente no zap imediatamente.
           if (isMeet && event.meetLink && !isSandbox) {
@@ -5920,6 +5931,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
             inicioMs: Date.parse(startISO),
             fimMs: Date.parse(endISO),
             calendarEventId: event.eventId ?? null,
+            companyId: db.companyIdDaMensagem ?? ECOSUN_COMPANY_ID, // [3e]
           });
           // Fatia 2 — esteira de estado.
           void estadoVenda.transicionar({ leadId: lead?.id ?? leadId, para: 'AGENDADO', motivo: 'visita agendada', autor: 'eva', agoraMs: Date.now() });
@@ -5949,26 +5961,33 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
               `Eva fechou o agendamento. Calendar criado.`,
             ].filter(Boolean).join('\n');
 
-            // So usa botoes WABA se temos lead.id (botoes precisam do uuid).
-            // Sem lead, fallback texto puro pra nao silenciar — Junior vai
-            // abrir dashboard manualmente se precisar agir.
-            if (metaWaba && lead?.id) {
-              try {
-                await metaWaba.sendInteractiveButtons(
-                  config.engineerPhone,
-                  alertBody.slice(0, 1024),
-                  [
-                    { id: `evabt:lead-view:${lead.id}`, title: '👤 Ver perfil' },
-                    { id: `evabt:lead-pause:${lead.id}`, title: '✋ Assumir' },
-                  ],
-                  'Toque pra agir',
-                );
-              } catch (err) {
-                console.warn('[schedule_visit] botoes WABA falharam, fallback texto:', (err as Error).message);
-                await sendText(config.engineerPhone, alertBody);
-              }
+            // ⚖️ TRAVA LGPD (08/09/2026). Este bloco chamava o metaWaba CRU com
+            // `config.engineerPhone` fixo — o único ponto que escapou da trava de
+            // 31/08, que só cobria o sendText e o sendAdminWithButtons. Resultado:
+            // uma visita da Conquista Solar (lead da Bahia) caiu no zap do dono da
+            // EcoSunPower. Agora o destino vem do guard, e o envio passa pelo
+            // sendAdminWithButtons — que confere de novo antes de sair.
+            const destinoAviso = destinoAdminDaEmpresa(config.engineerPhone);
+            if (!destinoAviso) {
+              console.log(
+                `[schedule_visit] aviso por zap nao enviado: empresa "${empresa().nomeFantasia}" (${empresa().companyId}) sem telefone_admin. O agendamento esta no dashboard dela.`,
+              );
             } else {
-              await sendText(config.engineerPhone, alertBody);
+              // So usa botoes WABA se temos lead.id (botoes precisam do uuid).
+              // Sem lead, texto puro pra nao silenciar.
+              const botoes = lead?.id
+                ? [
+                  { id: `evabt:lead-view:${lead.id}`, title: '👤 Ver perfil' },
+                  { id: `evabt:lead-pause:${lead.id}`, title: '✋ Assumir' },
+                ]
+                : [];
+              await sendAdminWithButtons(
+                { metaWaba, sendText: async (t: string, x: string) => { await sendText(t, x); } },
+                destinoAviso,
+                alertBody.slice(0, 1024),
+                botoes,
+                'Toque pra agir',
+              );
             }
           }
         } catch (err) {

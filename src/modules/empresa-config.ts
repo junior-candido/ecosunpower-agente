@@ -26,6 +26,15 @@ export interface EmpresaConfig {
   linkPagamento: string | null; // EcoSof: link de pagamento recorrente ({{link_pagamento}})
   descricaoCurta: string; regiaoAtuacao: string;
   nomeAtendente: string; telefoneAtendente: string | null;
+  /** Zap PESSOAL de quem recebe aviso administrativo desta empresa (lead novo,
+   *  visita agendada, dossiê). NUNCA é o `telefoneAtendente`: aquele é a linha
+   *  PÚBLICA onde a própria assistente atende: mandar aviso pra lá faz o robô
+   *  mandar mensagem pra si mesmo. null = sem aviso por zap, o lead vive no
+   *  dashboard e a equipe pega de lá. Ver tenant-admin-guard.ts. */
+  telefoneAdmin: string | null;
+  /** Agenda Google desta empresa. null = NÃO cria evento — em vez de cair na
+   *  agenda global da EcoSun (era o vazamento de 08/09/2026). */
+  googleCalendarId: string | null;
   rtNome: string; rtTitulo: string; rtCpf: string | null; rtRg: string | null; rtRegistro: string | null;
   /** Como a assistente CHAMA o dono na conversa ("Junior", "Dr. Paulo", "Jimena").
    *  rtNome é o nome jurídico em caixa alta — ficaria formal demais no zap.
@@ -81,6 +90,10 @@ export const EMPRESA_DEFAULTS: EmpresaConfig = {
   regiaoAtuacao: 'Brasília e Entorno (DF) e cidades de Goiás até ~100 km (Águas Lindas, Valparaíso, Luziânia, Anápolis, Goiânia)',
   nomeAtendente: 'Eva',
   telefoneAtendente: '5561996978781',
+  // EcoSun resolve o destino admin pelo engineerPhone do ambiente; tenant só
+  // recebe aviso se preencher a coluna. Default null nos dois casos, de propósito.
+  telefoneAdmin: null,
+  googleCalendarId: null,
   rtNome: 'ANTONIO CANDIDO RODRIGUES JUNIOR',
   rtApelido: 'Junior',
   rtGenero: 'm',
@@ -162,6 +175,11 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
     // com o genérico — nunca com o nome da assistente de outra empresa.
     nomeAtendente: s(row.nome_atendente, ehEcosun ? D.nomeAtendente : 'Assistente').slice(0, 40),
     telefoneAtendente: sidn(row.telefone_atendente, D.telefoneAtendente),
+    // `sn` e não `sidn`: aqui NÃO existe default da EcoSun pra herdar. Um tenant
+    // que herdasse esses dois campos voltaria a mandar aviso pro zap do dono da
+    // EcoSun e a agendar na agenda dele — que é exatamente o bug que isso conserta.
+    telefoneAdmin: sn(row.telefone_admin),
+    googleCalendarId: sn(row.google_calendar_id),
     rtNome: sid(row.rt_nome, D.rtNome), rtTitulo: s(row.rt_titulo, D.rtTitulo).slice(0, 80),
     // ⚠️ fallback é o PRIMEIRO NOME do rtNome DESTA linha — nunca D.rtApelido,
     // senão a assistente de um tenant chamaria o dono de outro ("Junior").

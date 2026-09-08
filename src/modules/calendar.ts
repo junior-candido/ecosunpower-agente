@@ -53,7 +53,12 @@ export class CalendarService {
     return busy.length === 0;
   }
 
-  async createEvent(input: CreateEventInput & { withMeet?: boolean; colorId?: string }): Promise<CreateEventResult & { meetLink?: string }> {
+  /**
+   * `calendarId` (08/09/2026): o serviço nasce com UMA agenda, do env global —
+   * então toda empresa da plataforma agendava na agenda do dono da EcoSunPower.
+   * Quem chama passa a agenda da empresa; sem valor, mantém a de sempre.
+   */
+  async createEvent(input: CreateEventInput & { withMeet?: boolean; colorId?: string; calendarId?: string }): Promise<CreateEventResult & { meetLink?: string }> {
     const attendees = (input.attendeeEmails ?? [])
       .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
       .map((email) => ({
@@ -90,7 +95,7 @@ export class CalendarService {
     }
 
     const res = await this.calendar.events.insert({
-      calendarId: this.calendarId,
+      calendarId: input.calendarId ?? this.calendarId,
       sendUpdates: attendees.length > 0 ? 'all' : 'none',
       conferenceDataVersion: input.withMeet ? 1 : 0,
       requestBody,
