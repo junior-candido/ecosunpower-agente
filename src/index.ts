@@ -4547,9 +4547,26 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           // enviarPorWhatsApp não usa o resolver de sistema — instância leve aqui.
           const pastaSvc = new PastaService(supabase, async () => null);
           const r = await pastaSvc.enviarPorWhatsApp(pastaId, sendText, sendTemplateFn as any);
+
+          // E-MAIL JUNTO (09/09/2026). Junior: "quero enviar pelo zap e por
+          // email agora". Sai em paralelo e NUNCA derruba o envio do zap —
+          // sem e-mail cadastrado é o caso comum, não um erro.
+          let avisoEmail = '';
+          if (process.env.RESEND_API_KEY) {
+            const sender = new EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '');
+            const rEmail = await pastaSvc
+              .enviarPorEmail(pastaId, (e) => sender.enviar(e))
+              .catch((err) => ({ ok: false as const, reason: (err as Error).message }));
+            avisoEmail = rEmail.ok
+              ? `\n📧 E-mail enviado pra ${(rEmail as { para?: string }).para}.`
+              : rEmail.reason === 'sem_email'
+                ? '\n📧 E-mail não saiu: o cliente não tem e-mail cadastrado.'
+                : `\n📧 E-mail não saiu: ${rEmail.reason}.`;
+          }
+
           if (r.ok) {
             const p = await supabase.getPastaClienteById(pastaId);
-            await sendText(from, `✅ Pasta enviada pro cliente${p?.enviado_para_phone ? ` (${p.enviado_para_phone})` : ''}.`);
+            await sendText(from, `✅ Pasta enviada pro cliente${p?.enviado_para_phone ? ` (${p.enviado_para_phone})` : ''}.${avisoEmail}`);
           } else {
             const motivo: Record<string, string> = {
               nao_publicada: 'a pasta não está publicada', lead_not_found: 'cliente não encontrado',

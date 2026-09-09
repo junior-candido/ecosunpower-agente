@@ -34,6 +34,12 @@ export interface MolduraOpts {
   /** E-mail transacional (acesso/senha): rodapé sem 'descadastrar' nem texto de newsletter. */
   transacional?: boolean;
   /**
+   * Substitui a nota do rodapé transacional. O texto padrão fala de "acesso à
+   * plataforma", que serve pra senha e soa errado numa entrega de obra
+   * (Junior, 09/09/2026, vendo a prévia da pasta da Tatiane).
+   */
+  notaRodape?: string;
+  /**
    * Assinatura do responsável técnico ao pé da carta (Junior 07/09).
    * Os textos da jornada são em 1ª pessoa e terminam pedindo resposta — sem
    * isso o cliente lia uma carta pessoal sem remetente. Vem de empresa-config
@@ -206,7 +212,7 @@ export function montarMolduraEmail(opts: MolduraOpts): string {
                 <p style="margin:0 0 6px; font-size:13px; color:#c9d2dc; font-weight:bold;">${escapeHtml(empresa)}${opts.transacional ? '' : ' — energia solar de ponta a ponta'}</p>
                 <p style="margin:0 0 10px; font-size:12px;"><a href="${escapeHtml(siteUrl)}" style="color:${AMBAR}; text-decoration:none;">${escapeHtml(siteLabel)}</a></p>
                 ${opts.transacional
-                  ? `<p style="margin:0; font-size:11px; color:#6b7686;">E-mail automático de acesso à plataforma. Se você não pediu isso, pode ignorar.</p>`
+                  ? `<p style="margin:0; font-size:11px; color:#6b7686;">${escapeHtml(opts.notaRodape?.trim() || 'E-mail automático de acesso à plataforma. Se você não pediu isso, pode ignorar.')}</p>`
                   : `<p style="margin:0; font-size:11px; color:#6b7686;">Você recebe este e-mail porque conversou com a gente sobre energia solar.<br/>Não quer mais receber? <a href="${escapeHtml(opts.linkDescadastro)}" style="color:#8a94a3;">Descadastrar</a></p>`}
               </td>
             </tr>
