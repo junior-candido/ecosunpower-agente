@@ -314,8 +314,14 @@ export class PastaService {
       transacional: true,
     });
 
+    const assunto = assuntoDaPasta(nomeCompleto, e.nomeFantasia);
     try {
-      await enviarEmail({ to: para, subject: assuntoDaPasta(nomeCompleto, e.nomeFantasia), html });
+      const mid = await enviarEmail({ to: para, subject: assunto, html });
+      // Carimba pra o webhook saber de quem e quando ela abrir (migration 126).
+      await this.supabase.registrarEmailEnviado({
+        leadId: pasta.lead_id, providerMessageId: mid, para,
+        assunto, contexto: 'pasta_digital',
+      }).catch(() => {});
     } catch (err) {
       console.warn(`[pasta] e-mail nao saiu pra ${para}: ${(err as Error).message}`);
       return { ok: false, reason: 'falha_envio' };

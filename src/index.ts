@@ -9541,6 +9541,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
       if (ev) {
         const mid = (ev.payload as any)?.provider_message_id;
         let leadId: string | null = null;
+        // Carimbo generico do e-mail (migration 126) — assunto e contexto pro aviso.
+        let carimbo: Awaited<ReturnType<typeof supabase.emailEnviadoPorMessageId>> = null;
         if (mid) {
           const { data } = await supabase.getClient()
             .from('email_sequencia')
@@ -9548,10 +9550,57 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
             .eq('provider_message_id', mid)
             .limit(1);
           leadId = data?.[0]?.lead_id ?? null;
+          // Nao era da jornada de marketing? Procura no rastreio generico. Foi
+          // o buraco que deixou o e-mail da Pasta Digital orfao (09/09/2026):
+          // evento sem lead nao vira alerta nem aparece na ficha.
+          if (!leadId) {
+            carimbo = await supabase.emailEnviadoPorMessageId(mid).catch(() => null);
+            leadId = carimbo?.lead_id ?? null;
+          }
         }
         await registrarEvento(supabase.getClient(), { ...ev, leadId });
         if (ev.tipo === 'email_descadastro' && leadId) {
           await supabase.cancelEmailSequence(leadId, 'complaint');
+        }
+
+        // 📧 ABRIU / CLICOU → aviso no zap. Junior, 09/09/2026: "deve vim no
+        // zap cada vez que alguém abrir o email, igual a proposta".
+        // A trava importa: Gmail e Outlook disparam `opened` VARIAS vezes pelo
+        // proxy de imagem deles, as vezes sem ninguem ter aberto. Um aviso de
+        // abertura por e-mail; clique sempre avisa (nao da pra clicar sem abrir).
+        if (mid && (ev.tipo === 'email_aberto' || ev.tipo === 'email_clicado')) {
+          try {
+            const { decidirAlertaEmail, textoAlertaEmail } = await import('./modules/email/alerta-abertura.js');
+            // O evento atual JA foi gravado acima — mais de 1 significa que ja avisamos.
+            const [nAbriu, nClicou] = await Promise.all([
+              supabase.contarEventoEmailPorMensagem(mid, 'email_aberto'),
+              supabase.contarEventoEmailPorMensagem(mid, 'email_clicado'),
+            ]);
+            const deveAvisar = decidirAlertaEmail({
+              tipo: ev.tipo,
+              jaAvisouAbertura: ev.tipo === 'email_aberto' ? nAbriu > 1 : nAbriu > 0,
+              jaAvisouClique: ev.tipo === 'email_clicado' ? nClicou > 1 : nClicou > 0,
+            });
+            if (deveAvisar) {
+              const info = carimbo ?? (await supabase.emailEnviadoPorMessageId(mid).catch(() => null));
+              const lead = leadId ? await supabase.getLeadById(leadId).catch(() => null) : null;
+              const { sendAdminWithButtons } = await import('./modules/eva-admin-buttons.js');
+              await sendAdminWithButtons(
+                { metaWaba: metaWaba ?? null, sendText },
+                config.engineerPhone,
+                textoAlertaEmail({
+                  tipo: ev.tipo,
+                  nome: lead?.name ?? info?.para ?? '',
+                  assunto: info?.assunto ?? '',
+                  contexto: info?.contexto ?? 'outro',
+                }),
+                leadId ? [{ id: `evabt:lead-view:${leadId}`, title: 'Ver no painel' }] : [],
+              );
+            }
+          } catch (err) {
+            // Aviso nunca derruba o 200 do webhook — a Resend re-tentaria em loop.
+            console.warn('[email-alerta] não saiu:', (err as Error).message);
+          }
         }
         // 🔥 Reacao: abriu/clicou pode ter deixado o lead quente — checa e
         // alerta o admin (best-effort, nunca derruba o 200 do webhook).
