@@ -4,7 +4,7 @@ import { EvolutionService } from './modules/evolution.js';
 import { MessageQueue } from './modules/queue.js';
 import { criarTenantResolver, ECOSUN_COMPANY_ID } from './modules/tenant-resolver.js';
 import { criarEvolutionTenantResolver } from './modules/evolution-tenant.js';
-import { comCanal, canalExigeEvolution } from './modules/canal-contexto.js';
+import { comCanal, canalExigeEvolution, canalAtual } from './modules/canal-contexto.js';
 import { SupabaseService } from './modules/supabase.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { KnowledgeBase } from './modules/knowledge.js';
@@ -24,7 +24,9 @@ import { FollowupModule } from './modules/followup.js';
 import { MaintenanceService } from './modules/maintenance.js';
 import { CadenceService } from './modules/cadence.js';
 import { ingestCanalSolar } from './modules/canal-solar.js';
-import { TakeoverService } from './modules/takeover.js';
+import { TakeoverService, PAUSE_TTL_TENANT_SECONDS } from './modules/takeover.js';
+import { donoValeNesteCanal } from './modules/admin-canal.js';
+import { ehComandoRecarregar, textoDaRecarga } from './modules/comando-recarregar.js';
 import { CalendarService } from './modules/calendar.js';
 import { MetaService } from './modules/meta.js';
 import { ImageGenerator } from './modules/image-gen.js';
@@ -1014,7 +1016,14 @@ async function main() {
   function isAdminPhone(from: string): boolean {
     const fromNorm = normalizeBrazilianPhone(from);
     if (!fromNorm) return false;
-    return adminPhonesNormalized.includes(fromNorm);
+    if (!adminPhonesNormalized.includes(fromNorm)) return false;
+    // DONO É DONO NA PRÓPRIA CASA (09/09/2026). O número da assistente de um
+    // cliente é outra casa: ali o dono da EcoSunPower não é dono de nada.
+    // Sem esta linha, a Clara da Conquista respondeu ao Junior em tom de
+    // colega e ofereceu "monto uma mensagem pra você enviar pro cliente?" —
+    // a assistente do cliente saindo do papel na frente da marca do cliente.
+    // Um ponto só, em vez de espalhar a checagem pelos 56 gates de admin.
+    return donoValeNesteCanal(canalAtual()?.companyId, ECOSUN_COMPANY_ID);
   }
 
   // /imposto <valor> — Núcleo Financeiro: imposto por anexo + Fator R + salto de faixa
@@ -1102,15 +1111,23 @@ async function main() {
   // depois de editar a tabela no SQL Editor do Supabase.
   async function tryHandleRecarregarConfigCommand(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
-    const trimmed = text.trim().toLowerCase().replace(/^\//, '');
-    if (trimmed !== 'recarregar-config') return false;
+    if (!ehComandoRecarregar(text)) return false;
+
+    // AS DUAS COISAS, não só a config (09/09/2026). A base de conhecimento
+    // (`conhecimento_empresa`) vive num Map em memória e só era lida no boot —
+    // então `UPDATE` no SQL Editor não valia nada até reiniciar o serviço. Foi
+    // exatamente o que segurou a regra da Engenharia da Conquista Solar.
     const result = await carregarEmpresaConfig(supabase.getClient());
-    if (result.ok) {
-      await sendText(from, `⚙️ Config recarregada: ${result.config.nomeFantasia} (atendente: ${result.config.nomeAtendente})`);
-    } else {
-      const e = empresa();
-      await sendText(from, `⚠️ Erro ao recarregar — mantida a config anterior: ${e.nomeFantasia} (atendente: ${e.nomeAtendente})`);
-    }
+    const base = await carregarConhecimentoEmpresas(supabase.getClient());
+
+    const e = result.ok ? result.config : empresa();
+    await sendText(from, textoDaRecarga({
+      configOk: result.ok,
+      nomeFantasia: e.nomeFantasia,
+      nomeAtendente: e.nomeAtendente,
+      baseOk: base.ok,
+      empresasNaBase: base.empresas,
+    }));
     return true;
   }
 
@@ -7752,7 +7769,10 @@ ${pedido.texto}` : pedido.texto;
           res.status(200).json({ status: 'tenant_assistente_resumed' });
           return;
         }
-        await takeover.pauseFor(parsed.from);
+        // Pausa curta (2 h) porque neste número o celular é de uma PESSOA que
+        // digita o dia inteiro — 24 h aqui sequestrava a assistente até o dia
+        // seguinte. "clara on" devolve na hora. Ver takeover.ts.
+        await takeover.pauseFor(parsed.from, PAUSE_TTL_TENANT_SECONDS);
         res.status(200).json({ status: 'tenant_human_takeover' });
         return;
       }
