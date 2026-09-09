@@ -2072,6 +2072,53 @@ export class SupabaseService {
     return { ok: true };
   }
 
+  /**
+   * Carimba um e-mail que saiu (migration 126). Sem isso o evento de abertura
+   * chega orfao: o webhook nao sabe de quem e, nao vira alerta e nao aparece
+   * na ficha. Best-effort — nunca derruba o envio.
+   */
+  async registrarEmailEnviado(d: {
+    leadId: string | null; companyId?: string | null; providerMessageId: string;
+    para: string; assunto?: string | null; contexto?: string;
+  }): Promise<void> {
+    if (!d.providerMessageId) return;
+    const { error } = await this.client.from('emails_enviados').upsert({
+      lead_id: d.leadId, company_id: d.companyId ?? null,
+      provider_message_id: d.providerMessageId, para: d.para,
+      assunto: d.assunto ?? null, contexto: d.contexto ?? 'outro',
+    }, { onConflict: 'provider_message_id' });
+    if (error) console.warn('[emails_enviados] nao carimbou:', error.message);
+  }
+
+  /** De quem e este e-mail? Procura no rastreio generico (126). */
+  async emailEnviadoPorMessageId(mid: string): Promise<
+    { lead_id: string | null; assunto: string | null; contexto: string; para: string } | null
+  > {
+    if (!mid) return null;
+    const { data, error } = await this.client
+      .from('emails_enviados')
+      .select('lead_id, assunto, contexto, para')
+      .eq('provider_message_id', mid)
+      .maybeSingle();
+    if (error) { console.warn('[emails_enviados] consulta falhou:', error.message); return null; }
+    return (data as never) ?? null;
+  }
+
+  /**
+   * Quantas vezes ESTE e-mail ja gerou ESTE tipo de evento. E a trava
+   * anti-spam do alerta: o Gmail dispara `opened` varias vezes pelo proxy dele.
+   */
+  async contarEventoEmailPorMensagem(mid: string, tipo: string): Promise<number> {
+    if (!mid) return 0;
+    const { count, error } = await this.client
+      .from('eventos_elo')
+      .select('id', { count: 'exact', head: true })
+      .eq('tipo', tipo)
+      .eq('payload->>provider_message_id', mid);
+    if (error) { console.warn('[eventos_elo] contagem falhou:', error.message); return 0; }
+    return count ?? 0;
+  }
+
   async getClienteByLeadId(leadId: string): Promise<any | null> {
     const { data, error } = await this.client.from('leads').select('*').eq('id', leadId).single();
     if (error) {

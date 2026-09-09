@@ -5855,7 +5855,7 @@ b.onclick=async function(){
 
   // Upload de arquivos numa seção
   router.post('/pastas/:id/arquivos',
-    upload.array('arquivos', 20),
+    upload.array('arquivos', 60),   // era 20: entrega de obra com drone passa fácil disso
     async (req: Request, res: Response) => {
       const id = String(req.params.id ?? '');
       if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
@@ -5961,6 +5961,18 @@ b.onclick=async function(){
     const sendText = options.sendText;
     if (!sendText) return res.status(500).send('sendText não configurado neste ambiente.');
     const r = await pastaService.enviarPorWhatsApp(id, sendText, options.sendTemplate, { forcar: true });
+
+    // O e-mail vai JUNTO, igual ao botão do zap (09/09/2026). Ficou de fora no
+    // PR #296 e o Junior pegou: quem clicasse aqui receberia só o WhatsApp.
+    // Nunca derruba o envio — cliente sem e-mail é o caso comum, não erro.
+    if (process.env.RESEND_API_KEY) {
+      const { EmailSender } = await import('../email/resend-client.js');
+      const sender = new EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '');
+      await pastaService
+        .enviarPorEmail(id, (e) => sender.enviar(e))
+        .catch((err) => { console.warn('[pasta] e-mail do dashboard falhou:', (err as Error).message); });
+    }
+
     if (!r.ok) return res.status(400).send(`<h2>Não foi possível enviar: ${escapeHtmlSimple(r.reason ?? '')}</h2><a href="/dashboard/pastas/${id}">← voltar</a>`);
     res.redirect(303, `/dashboard/pastas/${id}`);
   });
