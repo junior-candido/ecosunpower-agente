@@ -9,6 +9,8 @@ import { empresa } from '../../empresa-config.js';
 import type { ResolverSistema } from '../pos-instalacao/service.js';
 import { SECOES } from './types.js';
 import { secoesFaltando, textoFaltando } from './completude.js';
+import { assuntoDaPasta, corpoDaPasta } from './email.js';
+import { montarMolduraEmail } from '../../email/email-moldura.js';
 import type { ArquivoPasta, PastaClienteRow, PastaView, SecaoId } from './types.js';
 
 const PUBLIC_BASE_URL = process.env.PROPOSAL_PUBLIC_BASE_URL ?? 'https://propostas.ecosunpower.eng.br';
@@ -254,6 +256,71 @@ export class PastaService {
       publico,
       gerado_em: pasta.updated_at,
     };
+  }
+
+  /**
+   * O par do `enviarPorWhatsApp`: a MESMA pasta, pelo e-mail.
+   *
+   * Junior, 09/09/2026, entregando a usina da Tatiane: "quero enviar pelo zap e
+   * por email agora". O zap ja levava o link num botao de template; o e-mail
+   * nao existia.
+   *
+   * NENHUM ANEXO de proposito. O material passa de 20 MB (projeto, TRT, parecer,
+   * fotos aereas, manuais) e anexo desse tamanho volta como bounce em boa parte
+   * dos provedores — silenciosamente. Vai o link, o mesmo do WhatsApp.
+   *
+   * NAO marca `enviado_em`: quem manda o e-mail e o WhatsApp sao caminhos
+   * independentes, e a trava de "ja enviada" e do zap (que custa template).
+   * Reenviar e-mail nao machuca ninguem.
+   */
+  async enviarPorEmail(
+    pastaId: string,
+    enviarEmail: (e: { to: string; subject: string; html: string }) => Promise<string>,
+  ): Promise<{ ok: boolean; reason?: string; para?: string }> {
+    const pasta = await this.supabase.getPastaClienteById(pastaId);
+    if (!pasta) return { ok: false, reason: 'pasta_not_found' };
+    if (pasta.status !== 'publicada') return { ok: false, reason: 'nao_publicada' };
+
+    const lead = await this.supabase.getClienteByLeadId(pasta.lead_id);
+    if (!lead) return { ok: false, reason: 'lead_not_found' };
+    const para = String(lead.email ?? '').trim();
+    if (!para || !para.includes('@')) return { ok: false, reason: 'sem_email' };
+
+    const e = empresa();
+    const link = `${PUBLIC_BASE_URL}/pasta/${pasta.slug}`;
+    const nomeCompleto = String(lead.name ?? '').trim();
+
+    const html = montarMolduraEmail({
+      conteudoHtml: corpoDaPasta({
+        primeiroNome: nomeCompleto.split(/\s+/)[0] ?? '',
+        link,
+        empresa: e.nomeFantasia,
+        telefoneAssistente: e.telefoneAtendente ?? undefined,
+        telefoneResponsavel: e.telefoneAdmin ?? undefined,
+        nomeResponsavel: e.rtApelido ?? undefined,
+        // Sem campo na empresa_config ainda: vem de env pra seguir clone-ready.
+        instagramUrl: process.env.EMPRESA_INSTAGRAM_URL?.trim() || undefined,
+        avaliacaoUrl: `${e.siteUrl.replace(/\/+$/, '')}/avaliar`,
+      }),
+      linkDescadastro: '',
+      empresa: e.nomeFantasia,
+      siteUrl: e.siteUrl,
+      kicker: 'Sua usina esta no ar',
+      titulo: 'O material completo da sua usina',
+      // O botao vive DENTRO do corpo, logo depois da lista do que tem la —
+      // no rodape da moldura ele caia depois do bloco de avaliacao.
+      notaRodape: 'Este e-mail traz o material da usina que voce contratou.',
+      // Entrega do que o cliente comprou: e servico, nao newsletter.
+      transacional: true,
+    });
+
+    try {
+      await enviarEmail({ to: para, subject: assuntoDaPasta(nomeCompleto, e.nomeFantasia), html });
+    } catch (err) {
+      console.warn(`[pasta] e-mail nao saiu pra ${para}: ${(err as Error).message}`);
+      return { ok: false, reason: 'falha_envio' };
+    }
+    return { ok: true, para };
   }
 
   async enviarPorWhatsApp(
