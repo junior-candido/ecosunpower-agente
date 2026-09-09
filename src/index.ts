@@ -4020,6 +4020,22 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return false;
   }
 
+  // ASSISTENTE PAUSADA (a equipe assumiu a conversa no celular): ela fica
+  // calada, mas o atendimento NÃO some do painel. Ver takeover-registro.ts —
+  // a pausa era conferida antes de o lead nascer, então a mensagem do cliente
+  // não era respondida E também não era registrada (Conquista Solar, 09/09/26).
+  async function registrarPausado(
+    db: import('./modules/takeover-registro.js').DepsRegistro,
+    from: string,
+    companyId: string | undefined,
+    tipo: import('./modules/takeover-registro.js').TipoDeEntrada,
+    texto: string,
+  ): Promise<void> {
+    const { registrarSemResponder } = await import('./modules/takeover-registro.js');
+    const r = await registrarSemResponder(db, { telefone: from, companyId, texto, tipo });
+    console.log(`[takeover] ${from} (${tipo}) — equipe atendendo: ${r}, sem resposta`);
+  }
+
   // Message handler
   async function handleTextMessage(
     from: string,
@@ -4827,7 +4843,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     }
 
     if (await takeover.isPaused(from)) {
-      console.log(`[takeover] Skipping message from ${from} — human takeover active`);
+      await registrarPausado(db, from, companyId, 'texto', text);
       return;
     }
     try {
@@ -6340,7 +6356,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
   async function handleAudioMessage(from: string, messageId: string, companyId?: string) {
     const db = supabase.paraMensagem(companyId); // EVA MT 3c: crachá nos cancelamentos
     if (await takeover.isPaused(from)) {
-      console.log(`[takeover] Skipping audio from ${from} — human takeover active`);
+      await registrarPausado(db, from, companyId, 'audio', '');
       return;
     }
     if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
@@ -6409,7 +6425,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     }
 
     if (await takeover.isPaused(from)) {
-      console.log(`[takeover] Skipping image from ${from} — human takeover active`);
+      await registrarPausado(db, from, companyId, 'imagem', caption ?? '');
       return;
     }
     if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
@@ -6493,7 +6509,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     if (await tryHandleProposalMedia(from, messageId, 'video')) return;
 
     if (await takeover.isPaused(from)) {
-      console.log(`[takeover] Skipping video from ${from} — human takeover active`);
+      await registrarPausado(db, from, companyId, 'video', caption ?? '');
       return;
     }
     if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
@@ -6620,7 +6636,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     }
 
     if (await takeover.isPaused(from)) {
-      console.log(`[takeover] Skipping document from ${from} — human takeover active`);
+      await registrarPausado(db, from, companyId, 'documento', '');
       return;
     }
     if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
