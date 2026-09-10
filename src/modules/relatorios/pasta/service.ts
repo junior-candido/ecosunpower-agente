@@ -5,11 +5,13 @@ import type { SupabaseService } from '../../supabase.js';
 import { uploadAnexo, deleteAnexoFile, getSignedUrls } from '../../anexos/storage.js';
 import { novoSlug } from '../slug.js';
 import { LOGO_PASTA_BASE64 } from './logo-pasta.js';
+import { LOGO_DOCUMENTO_DATA_URI } from './logo-documento.js';
 import { empresa } from '../../empresa-config.js';
 import type { ResolverSistema } from '../pos-instalacao/service.js';
 import { SECOES } from './types.js';
 import { secoesFaltando, textoFaltando } from './completude.js';
 import { assuntoDaPasta, corpoDaPasta } from './email.js';
+import { montarDeclaracaoHtml, camposFaltando, type DadosDeclaracao } from './declaracao.js';
 import { montarMolduraEmail } from '../../email/email-moldura.js';
 import type { ArquivoPasta, PastaClienteRow, PastaView, SecaoId } from './types.js';
 
@@ -273,6 +275,82 @@ export class PastaService {
    * independentes, e a trava de "ja enviada" e do zap (que custa template).
    * Reenviar e-mail nao machuca ninguem.
    */
+  /**
+   * DECLARACAO DE EXECUCAO — o atestado que o cliente assina depois da entrega.
+   *
+   * Junior, 10/09/2026: "vamos fazer isso virar rotina mesmo". Pra entrar em
+   * licitacao grande pedem atestado de capacidade tecnica COM ART; a TRT
+   * sempre existe (e obrigatoria pra homologar), o que falta e a declaracao do
+   * cliente — e ela so se consegue no calor da entrega.
+   *
+   * Monta o documento com o que JA se sabe (lead + sistema em monitoramento) e
+   * completa com os campos de papel guardados em `dados_declaracao`
+   * (migration 127). Gera o PDF e anexa na propria pasta, secao contrato — o
+   * cliente abre o link, imprime, assina e devolve.
+   */
+  async gerarDeclaracaoExecucao(
+    pastaId: string,
+    renderPdf: (html: string) => Promise<Buffer>,
+    logoDataUri: string = LOGO_DOCUMENTO_DATA_URI,
+  ): Promise<{ ok: boolean; error?: string; faltando?: string[] }> {
+    const pasta = await this.supabase.getPastaClienteById(pastaId);
+    if (!pasta) return { ok: false, error: 'Pasta não encontrada' };
+    const lead = await this.supabase.getClienteByLeadId(pasta.lead_id);
+    if (!lead) return { ok: false, error: 'Cliente não encontrado' };
+
+    const sis = await this.resolverSistema(pasta.lead_id).catch(() => null);
+    const extra = ((pasta as unknown as { dados_declaracao?: Record<string, string> })
+      .dados_declaracao) ?? {};
+    const e = empresa();
+
+    const modulos = sis?.qtd_paineis
+      ? `${sis.qtd_paineis} × ${[sis.painel_marca, sis.painel_modelo].filter(Boolean).join(' ')}`.trim()
+      : '';
+    const inversores = sis?.inversor_modelo
+      ? `${[sis.marca_inversor, sis.inversor_modelo].filter(Boolean).join(' ')}`.trim()
+      : '';
+
+    const dados: DadosDeclaracao = {
+      cliente: String(lead.name ?? '').trim(),
+      qualificacao: extra.qualificacao ?? '',
+      cpf: String(lead.cpf ?? extra.cpf ?? '').trim(),
+      endereco: String(lead.address ?? lead.endereco ?? extra.endereco ?? '').trim(),
+      empresaRazao: e.razaoSocial ?? e.nomeFantasia,
+      empresaCnpj: e.cnpj ?? '',
+      rtNome: e.rtNome,
+      rtRegistro: [e.rtTitulo, e.rtRegistro].filter(Boolean).join(' ').trim(),
+      potenciaKwp: Number(sis?.potencia_kwp ?? 0),
+      modulos,
+      inversores,
+      uc: extra.uc ?? '',
+      distribuidora: extra.distribuidora ?? '',
+      padraoEntrada: extra.padrao_entrada ?? '',
+      conclusaoEm: extra.conclusao_em ?? (pasta.data_entrega ?? ''),
+      parecer: extra.parecer ?? '',
+      parecerEm: extra.parecer_em ?? '',
+      trt: extra.trt ?? '',
+      cidade: String(lead.city ?? extra.cidade ?? 'Brasília/DF').trim(),
+      logoDataUri,
+    };
+
+    // Documento capenga nao serve como atestado — avisa em vez de gerar.
+    const faltando = camposFaltando(dados);
+    if (faltando.length) return { ok: false, error: 'Faltam dados', faltando };
+
+    let pdf: Buffer;
+    try {
+      pdf = await renderPdf(montarDeclaracaoHtml(dados));
+    } catch (err) {
+      return { ok: false, error: `PDF não gerou: ${(err as Error).message}` };
+    }
+
+    const primeiro = dados.cliente.split(/\s+/)[0] ?? 'cliente';
+    return this.adicionarArquivos(pastaId, 'contrato', [{
+      buffer: pdf, mimeType: 'application/pdf', ext: 'pdf',
+      nome: `Declaracao-de-Execucao-${primeiro}.pdf`,
+    }]);
+  }
+
   async enviarPorEmail(
     pastaId: string,
     enviarEmail: (e: { to: string; subject: string; html: string }) => Promise<string>,
