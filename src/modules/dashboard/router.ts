@@ -5955,6 +5955,39 @@ b.onclick=async function(){
   });
 
   // Enviar link pelo WhatsApp
+  // DECLARACAO DE EXECUCAO — o atestado que o cliente assina apos a entrega.
+  // Junior, 10/09/2026: "vamos fazer isso virar rotina mesmo". O documento sai
+  // preenchido com o lead + o sistema em monitoramento; os campos de papel
+  // (TRT, parecer, conclusao, padrao) vem do formulario e ficam guardados em
+  // pastas_cliente.dados_declaracao (migration 127) pra nao redigitar.
+  router.post('/pastas/:id/declaracao', async (req: Request, res: Response) => {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+
+    const campos = ['trt', 'parecer', 'parecer_em', 'conclusao_em', 'padrao_entrada',
+                    'uc', 'distribuidora', 'qualificacao', 'cidade'] as const;
+    const dados: Record<string, string> = {};
+    for (const c of campos) {
+      const v = String((req.body ?? {})[c] ?? '').trim();
+      if (v) dados[c] = v;
+    }
+    if (Object.keys(dados).length) {
+      await supabaseService.atualizarPastaCliente(id, { dados_declaracao: dados } as never);
+    }
+
+    const { renderHtmlToPdf } = await import('../closing/closing-render.js');
+    const r = await pastaService.gerarDeclaracaoExecucao(id, renderHtmlToPdf);
+    if (!r.ok) {
+      const detalhe = r.faltando?.length
+        ? `<p>Faltou preencher: <strong>${escapeHtmlSimple(r.faltando.join(', '))}</strong>.</p>`
+        : '';
+      return res.status(400).send(
+        `<h2>Não gerei a declaração: ${escapeHtmlSimple(r.error ?? '')}</h2>${detalhe}` +
+        `<a href="/dashboard/pastas/${id}">← voltar</a>`);
+    }
+    res.redirect(303, `/dashboard/pastas/${id}`);
+  });
+
   router.post('/pastas/:id/enviar', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
     if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');

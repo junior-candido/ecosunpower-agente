@@ -128,6 +128,7 @@ export function renderEditorPasta(input: {
             <button class="text-xs px-3 py-1.5 rounded-lg bg-violet-800/70 hover:bg-violet-700 text-violet-100">🔧 Puxar fotos dos Serviços/Visitas</button>
           </form>` : ''}
         </div>` : ''}
+        ${s.id === 'contrato' ? blocoDeclaracao(p) : ''}
       </div>`;
   }).join('');
 
@@ -212,4 +213,63 @@ export function renderPreviewPasta(input: {
     </div>
   `;
   return renderLayout({ active: 'pastas', title: 'Prévia da pasta', body, dark: true });
+}
+
+/**
+ * DECLARACAO DE EXECUCAO — o atestado que o cliente assina depois da entrega.
+ *
+ * Junior, 10/09/2026: "vamos fazer isso virar rotina mesmo". Fica na secao
+ * Contrato porque e ali que o documento vive depois de assinado.
+ *
+ * O que da pra saber sozinho (nome, CPF, endereco, potencia, modulos,
+ * inversores) o sistema ja preenche. O formulario pede so o que e do PAPEL da
+ * entrega — e o que for digitado uma vez fica guardado (migration 127), entao
+ * na segunda vez ja vem preenchido.
+ */
+function blocoDeclaracao(p: { id: string; dados_declaracao?: Record<string, string> | null }): string {
+  const d = p.dados_declaracao ?? {};
+  const campo = (nome: string, rotulo: string, ph = '', tipo = 'text') => `
+    <label class="flex flex-col gap-1">
+      <span class="text-[11px] uppercase tracking-wide text-slate-400">${escapeHtml(rotulo)}</span>
+      <input type="${tipo}" name="${nome}" value="${escapeHtml(d[nome] ?? '')}"
+             placeholder="${escapeHtml(ph)}"
+             class="px-2 py-1.5 rounded-md bg-slate-900 border border-slate-700 text-sm text-slate-100">
+    </label>`;
+
+  return `
+  <details class="mt-4 rounded-lg border border-slate-700 bg-slate-900/40">
+    <summary class="cursor-pointer px-3 py-2 text-sm font-semibold text-amber-200">
+      📜 Declaração de Execução — o atestado que o cliente assina
+    </summary>
+    <div class="px-3 pb-3">
+      <p class="text-xs text-slate-400 mb-3">
+        Peça a assinatura <strong>logo depois da troca do medidor</strong>, com o sistema gerando —
+        é quando o cliente assina sem pensar duas vezes. Junto com a TRT, vira o
+        <strong>atestado de capacidade técnica</strong> que licitação exige.
+      </p>
+      <form action="/dashboard/pastas/${escapeHtml(p.id)}/declaracao" method="post"
+            class="grid grid-cols-2 gap-2">
+        ${campo('trt', 'TRT / ART *', 'CFT2606128607')}
+        ${campo('conclusao_em', 'Conclusão da obra *', '', 'date')}
+        ${campo('uc', 'Unidade consumidora', '564611')}
+        ${campo('distribuidora', 'Distribuidora', 'Neoenergia Distribuição Brasília')}
+        ${campo('parecer', 'Parecer de acesso', '2608124961')}
+        ${campo('parecer_em', 'Aprovado em', '', 'date')}
+        ${campo('padrao_entrada', 'Padrão de entrada', 'Bifásico 127/220 V · disjuntor geral 50 A')}
+        ${campo('cidade', 'Cidade', 'Brasília/DF')}
+        <label class="flex flex-col gap-1 col-span-2">
+          <span class="text-[11px] uppercase tracking-wide text-slate-400">Qualificação do cliente (opcional)</span>
+          <input type="text" name="qualificacao" value="${escapeHtml(d.qualificacao ?? '')}"
+                 placeholder="brasileiro, advogado inscrito na OAB/DF sob o nº 20.702"
+                 class="px-2 py-1.5 rounded-md bg-slate-900 border border-slate-700 text-sm text-slate-100">
+        </label>
+        <div class="col-span-2 mt-1">
+          <button class="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold">
+            📜 Gerar declaração
+          </button>
+          <span class="ml-2 text-xs text-slate-500">O PDF entra nesta seção, pronto pra imprimir e assinar.</span>
+        </div>
+      </form>
+    </div>
+  </details>`;
 }
