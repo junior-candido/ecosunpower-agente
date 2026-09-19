@@ -43,9 +43,18 @@ describe('contatos internos (gente de dentro no número da assistente)', () => {
     expect(await identificarInterno(client, 'emp1', '5561999999999')).toBeNull();
   });
 
-  it('banco falhou: NA DUVIDA a pessoa é cliente (falha aberto, ninguem fica sem atendimento)', async () => {
+  // [19/09/2026] INVERSAO DELIBERADA. Este teste afirmava o contrario — "na
+  // duvida a pessoa e cliente, falha aberto, ninguem fica sem atendimento".
+  // A pratica derrubou a premissa: com a lista indisponivel, a assistente
+  // tratou a DONA da empresa como lead. O custo dos dois lados nao e igual:
+  //  - falha aberto: a assistente qualifica quem e de dentro. Constrange na
+  //    frente do cliente e mina a confianca de quem paga pelo sistema.
+  //  - falha fechado: a assistente fica muda por alguns minutos. A mensagem
+  //    NAO se perde — segue no WhatsApp, e uma pessoa responde.
+  // Silencio se conserta; atender errado, nao.
+  it('banco falhou: NA DUVIDA fica MUDA — erro sobe pra quem chama reter a mensagem', async () => {
     const { client } = chainMock({ data: null, error: { message: 'timeout' } });
-    expect(await identificarInterno(client, 'emp1', '5577981660268')).toBeNull();
+    await expect(identificarInterno(client, 'emp1', '5577981660268')).rejects.toThrow(/indisponivel/);
   });
 
   it('salva o recado amarrado na empresa e no contato', async () => {

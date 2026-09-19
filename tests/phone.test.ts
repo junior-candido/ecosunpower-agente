@@ -61,3 +61,28 @@ describe('telefoneParaEnvio', () => {
     expect(telefoneParaEnvio('123456789')).toBe('123456789');
   });
 });
+
+describe('variantesTelefone — formas SEM o 55 (regressao 19/09/2026)', () => {
+  // O WhatsApp entrega 5577999610038. O cadastro feito na mao guarda
+  // 77999610038, porque e assim que o numero aparece na tela. Sem a forma
+  // nacional, o freio de contato interno nunca encontrava quem e de dentro.
+  it('numero vindo com 55 tambem casa com o cadastro sem 55', () => {
+    const v = variantesTelefone('5577999610038');
+    expect(v).toContain('5577999610038');
+    expect(v).toContain('557799610038');
+    expect(v).toContain('77999610038');
+    expect(v).toContain('7799610038');
+  });
+
+  it('numero de 8 digitos gera as quatro formas', () => {
+    const v = variantesTelefone('557733334444');
+    expect(v).toEqual(expect.arrayContaining([
+      '557733334444', '5577933334444', '7733334444', '77933334444',
+    ]));
+  });
+
+  it('numero digitado sem o 55 casa com o que chega do WhatsApp', () => {
+    const v = variantesTelefone('77999610038');
+    expect(v).toContain('5577999610038');
+  });
+});
