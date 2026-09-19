@@ -138,6 +138,53 @@ describe('modo aviso — a origem tem que ser QUEM CHAMOU, nao o getClient', () 
   });
 });
 
+describe('modo aviso — cron anonimo tem que dar pra identificar', () => {
+  beforeEach(() => { vi.resetModules(); delete process.env.RLS_ESTRITO; });
+  afterEach(() => { delete process.env.RLS_ESTRITO; vi.restoreAllMocks(); });
+
+  it('quando o quadro e generico, leva contexto junto', async () => {
+    // [19/09/2026] Log real do modo aviso:
+    //   consulta sem dono (1x) — Timeout._onTimeout (.../index.js:11356:57)
+    // Cron escrito como setInterval(() => {...}) chega assim, e "Timeout._onTimeout"
+    // nao diz QUAL rotina consultou sem dono — o relatorio ficaria inutil pra
+    // metade dos crons.
+    process.env.RLS_ESTRITO = 'aviso';
+    const { SupabaseService, relatorioConsultasSemDono, limparRelatorioConsultasSemDono } =
+      await import('../src/modules/supabase.js');
+    limparRelatorioConsultasSemDono();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const sb = new SupabaseService(CFG);
+    // Simula o cron anonimo: a chamada nasce dentro de um callback sem nome.
+    await new Promise<void>((resolve) => {
+      setTimeout(() => { sb.getClient(); resolve(); }, 0);
+    });
+
+    const origem = relatorioConsultasSemDono()[0]?.origem ?? '';
+    // O que importa e ser IDENTIFICAVEL: mesmo com nome generico, o quadro tem
+    // que carregar arquivo e linha de quem chamou. Encadear so acontece quando
+    // ha mais quadro util na pilha — se o cron for o ultimo, ele sai sozinho.
+    expect(origem).not.toBe('origem desconhecida');
+    expect(origem).toMatch(/rls-estrito-modos/);
+    expect(origem).toMatch(/:\d+:\d+/);
+  });
+
+  it('quadro com nome proprio nao vira corrente — um nivel basta', async () => {
+    process.env.RLS_ESTRITO = 'aviso';
+    const { SupabaseService, relatorioConsultasSemDono, limparRelatorioConsultasSemDono } =
+      await import('../src/modules/supabase.js');
+    limparRelatorioConsultasSemDono();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    function rotinaComNome(sb: any) { sb.getClient(); }
+    rotinaComNome(new SupabaseService(CFG));
+
+    const origem = relatorioConsultasSemDono()[0]?.origem ?? '';
+    expect(origem).toContain('rotinaComNome');
+    expect(origem).not.toContain(' <- ');
+  });
+});
+
 describe('validarModoRls — nao subir fingindo que protege', () => {
   beforeEach(() => { vi.resetModules(); delete process.env.RLS_ESTRITO; });
   afterEach(() => { delete process.env.RLS_ESTRITO; });
