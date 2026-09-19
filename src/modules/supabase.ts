@@ -81,11 +81,22 @@ const NINGUEM = '00000000-0000-0000-0000-000000000000';
 /** Pontos ja avisados no modo `aviso`, pra nao inundar o log com o mesmo lugar. */
 const jaAvisados = new Map<string, number>();
 
-/** De onde partiu a consulta — o primeiro quadro da pilha fora deste arquivo. */
+/**
+ * De onde partiu a consulta — o primeiro quadro da pilha fora deste arquivo.
+ *
+ * [19/09/2026] O filtro olhava so por `supabase.ts` e `tenant-db.ts`. Em
+ * producao o codigo roda COMPILADO (`/app/dist/modules/supabase.js`): o nome
+ * nao casava e o relatorio apontava pro proprio getClient — inutil, que e o
+ * oposto do que a fatia 2 existe pra fazer. Agora casa com os dois modulos em
+ * qualquer extensao, e pula os quadros internos do Node.
+ */
+const ARQUIVOS_DESTE_MECANISMO = /(supabase|tenant-db)\.(ts|js|mjs|cjs)(:|$)/;
+
 function origemDaChamada(): string {
   const pilha = (new Error().stack ?? '').split('\n').slice(2);
   for (const linha of pilha) {
-    if (linha.includes('supabase.ts') || linha.includes('tenant-db.ts')) continue;
+    if (ARQUIVOS_DESTE_MECANISMO.test(linha)) continue;
+    if (linha.includes('node:internal')) continue;
     return linha.trim().replace(/^at\s+/, '').slice(0, 160);
   }
   return 'origem desconhecida';

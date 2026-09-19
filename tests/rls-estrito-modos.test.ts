@@ -111,6 +111,33 @@ describe('RLS estrito — os tres modos do getClient()', () => {
   });
 });
 
+describe('modo aviso — a origem tem que ser QUEM CHAMOU, nao o getClient', () => {
+  beforeEach(() => { vi.resetModules(); delete process.env.RLS_ESTRITO; });
+  afterEach(() => { delete process.env.RLS_ESTRITO; vi.restoreAllMocks(); });
+
+  it('nao reporta o proprio mecanismo — nem compilado em .js', async () => {
+    // [19/09/2026] No primeiro deploy do modo aviso o log saiu assim:
+    //   [rls][aviso] consulta sem dono (1x) — SupabaseService.getClient (.../supabase.js:79:32)
+    // Inutil: apontava pra si mesmo. O filtro so olhava por `supabase.ts`, e em
+    // producao o arquivo e `supabase.js`. Sem isso a fatia 2 nao colhe nada.
+    process.env.RLS_ESTRITO = 'aviso';
+    const { SupabaseService, relatorioConsultasSemDono, limparRelatorioConsultasSemDono } =
+      await import('../src/modules/supabase.js');
+    limparRelatorioConsultasSemDono();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    new SupabaseService(CFG).getClient();
+
+    const [primeiro] = relatorioConsultasSemDono();
+    expect(primeiro).toBeDefined();
+    expect(primeiro.origem).not.toMatch(/supabase\.(ts|js)/);
+    expect(primeiro.origem).not.toMatch(/tenant-db\.(ts|js)/);
+    expect(primeiro.origem).not.toBe('origem desconhecida');
+    // Tem que ser o arquivo de teste, que e quem de fato chamou.
+    expect(primeiro.origem).toMatch(/rls-estrito-modos/);
+  });
+});
+
 describe('validarModoRls — nao subir fingindo que protege', () => {
   beforeEach(() => { vi.resetModules(); delete process.env.RLS_ESTRITO; });
   afterEach(() => { delete process.env.RLS_ESTRITO; });
