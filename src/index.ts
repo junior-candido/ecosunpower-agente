@@ -140,6 +140,7 @@ import { renderPastaHtml } from './modules/relatorios/pasta/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
 import { carregarEmpresaConfig, carregarKits, empresa, empresaDe, comEmpresaDe, listaMarcasTexto } from './modules/empresa-config.js';
 import { agendaDaEmpresa, destinoAdminDaEmpresa, envioProibido } from './modules/tenant-admin-guard.js';
+import { validarModoRls, modoRls } from './modules/tenant-db.js';
 import { variantesTelefone } from './modules/phone.js';
 import { travarMarcaAlheia } from './modules/trava-marca-alheia.js';
 import { carregarConhecimentoEmpresas } from './modules/conhecimento-empresa.js';
@@ -323,6 +324,11 @@ async function main() {
   const anthropicCorretor = new Anthropic({ apiKey: config.anthropicApiKey });
   const corrigirTexto = (texto: string | null | undefined, opts?: { conservador?: boolean }) =>
     corrigirOrtografia(anthropicCorretor, texto, opts);
+
+  // [19/09/2026] Se alguem ligou RLS_ESTRITO=on sem as chaves, para aqui. Subir
+  // com a ilusao de protecao e pior do que nao ter ligado. Ver tenant-db.ts.
+  validarModoRls(config);
+  if (modoRls() !== 'off') console.log(`[rls] modo ${modoRls()}`);
 
   // EcoSof Kit Clone: carrega empresa_config no boot (fallback = defaults EcoSun
   // hardcoded — banco sem a tabela continua funcionando com comportamento idêntico).

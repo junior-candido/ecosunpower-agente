@@ -310,6 +310,20 @@ export function empresa(): Readonly<EmpresaConfig> {
 }
 
 /**
+ * [19/09/2026] Alguem DISSE de qual empresa e este trecho de execucao?
+ *
+ * `empresa()` sozinho nao responde isso: fora de contexto ele devolve a
+ * EcoSunPower (o comportamento historico), entao "e da EcoSun" e "ninguem
+ * disse de quem e" saem iguais. Pro RLS estrito essa diferenca e tudo —
+ * consulta sem dono tem que voltar VAZIA, nao com a base da casa.
+ *
+ * Ver src/modules/tenant-db.ts.
+ */
+export function temContextoDeEmpresa(): boolean {
+  return alsEmpresa.getStore() !== undefined;
+}
+
+/**
  * A empresa da vez é a EcoSunPower (dona da instalação)? Fora de contexto de
  * tenant também é true — o comportamento histórico. Usado pelo escopo da base
  * de conhecimento: tenant só enxerga o material técnico comum.
@@ -325,7 +339,14 @@ export function ehEcosun(e: Readonly<EmpresaConfig> = empresa()): boolean {
  */
 export function empresaDe(companyId?: string | null): Readonly<EmpresaConfig> {
   if (!companyId || companyId === ECOSUN_COMPANY) return cache;
-  return cachePorEmpresa.get(companyId) ?? EMPRESA_DEFAULTS;
+  const achada = cachePorEmpresa.get(companyId);
+  if (achada) return achada;
+  // [19/09/2026] Miss (tenant sem linha, cache do boot desatualizado) segue
+  // caindo nos DEFAULTS — nunca na linha de outro tenant. Mas a IDENTIDADE
+  // continua sendo a pedida: antes daqui o miss dizia que a empresa era a
+  // EcoSunPower, e com o RLS estrito isso mintaria um cracha da EcoSun para
+  // uma requisicao da Conquista. Textos podem cair no padrao; o dono, nunca.
+  return { ...EMPRESA_DEFAULTS, companyId };
 }
 
 /**

@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { Config } from '../config.js';
+import { empresa, temContextoDeEmpresa } from './empresa-config.js';
+import { modoRls, clientDaEmpresa, ehGlobalDeclarada, type ConfigTenantDb } from './tenant-db.js';
 import { proximaEtapaPorEvento, type EventoFunil } from './dashboard/pipeline.js';
 import { registrarAtividade } from './dashboard/atividades.js';
 import { criarTarefa, cancelarTarefasPendentesDoLead } from './dashboard/tarefas.js';
@@ -72,16 +74,105 @@ interface DossierData {
   company_id?: string;
 }
 
+/** Empresa nenhuma. Cracha com este dono nao casa com linha alguma — e como
+ *  a consulta sem contexto volta VAZIA em vez de voltar a base inteira. */
+const NINGUEM = '00000000-0000-0000-0000-000000000000';
+
+/** Pontos ja avisados no modo `aviso`, pra nao inundar o log com o mesmo lugar. */
+const jaAvisados = new Map<string, number>();
+
+/** De onde partiu a consulta — o primeiro quadro da pilha fora deste arquivo. */
+function origemDaChamada(): string {
+  const pilha = (new Error().stack ?? '').split('\n').slice(2);
+  for (const linha of pilha) {
+    if (linha.includes('supabase.ts') || linha.includes('tenant-db.ts')) continue;
+    return linha.trim().replace(/^at\s+/, '').slice(0, 160);
+  }
+  return 'origem desconhecida';
+}
+
+/** O que o modo `aviso` colheu. Serve pra fatia 3 saber o que mexer. */
+export function relatorioConsultasSemDono(): Array<{ origem: string; vezes: number }> {
+  return [...jaAvisados.entries()]
+    .map(([origem, vezes]) => ({ origem, vezes }))
+    .sort((a, b) => b.vezes - a.vezes);
+}
+
+export function limparRelatorioConsultasSemDono(): void {
+  jaAvisados.clear();
+}
+
 export class SupabaseService {
   private client: SupabaseClient;
-  private readonly configRef: Pick<Config, 'supabaseUrl' | 'supabaseServiceKey'>;
+  private readonly configRef: Pick<Config, 'supabaseUrl' | 'supabaseServiceKey'> & Partial<ConfigTenantDb>;
 
-  constructor(config: Pick<Config, 'supabaseUrl' | 'supabaseServiceKey'>, client?: SupabaseClient) {
+  constructor(
+    config: Pick<Config, 'supabaseUrl' | 'supabaseServiceKey'> & Partial<ConfigTenantDb>,
+    client?: SupabaseClient,
+  ) {
     this.configRef = config;
     this.client = client ?? createClient(config.supabaseUrl, config.supabaseServiceKey);
   }
 
+  /**
+   * O cliente do banco para ESTE trecho de execucao.
+   *
+   * [19/09/2026] Ate aqui devolvia sempre a chave mestra, que IGNORA RLS: as 95
+   * politicas que checam empresa nunca eram avaliadas, e esquecer o filtro numa
+   * das 929 consultas devolvia a base inteira. Agora o comportamento depende de
+   * RLS_ESTRITO (ver tenant-db.ts):
+   *
+   *   off   — como sempre foi. Padrao.
+   *   aviso — ainda a chave mestra, mas anota quem consultou sem dizer de qual
+   *           empresa. Nao muda nada pro usuario; so produz a lista.
+   *   on    — cracha da empresa do contexto. Sem contexto, cracha de NINGUEM:
+   *           a consulta volta vazia em vez de vazar.
+   *
+   * Quem PRECISA atravessar empresas usa `getClientGlobal(motivo)`, com o motivo
+   * declarado em ROTINAS_GLOBAIS.
+   */
   getClient(): SupabaseClient {
+    const modo = modoRls();
+    if (modo === 'off') return this.client;
+
+    const temDono = temContextoDeEmpresa();
+
+    if (modo === 'aviso') {
+      if (!temDono) {
+        const origem = origemDaChamada();
+        const vezes = (jaAvisados.get(origem) ?? 0) + 1;
+        jaAvisados.set(origem, vezes);
+        // So na primeira e depois de longe em longe: o log tem que caber na tela.
+        if (vezes === 1 || vezes % 200 === 0) {
+          console.warn(`[rls][aviso] consulta sem dono (${vezes}x) — ${origem}`);
+        }
+      }
+      return this.client;
+    }
+
+    // modo 'on'
+    const dono = temDono ? empresa().companyId : NINGUEM;
+    const comCracha = clientDaEmpresa(dono, this.configRef as ConfigTenantDb);
+    if (!comCracha) {
+      // Nao deveria acontecer: validarModoRls() barra o boot sem as chaves.
+      console.error('[rls] RLS_ESTRITO=on sem SUPABASE_ANON_KEY/SUPABASE_JWT_SECRET — caindo na chave mestra');
+      return this.client;
+    }
+    return comCracha;
+  }
+
+  /**
+   * A chave mestra, de propósito e com nome. Atravessa empresas — use SO no que
+   * esta declarado em ROTINAS_GLOBAIS (ingestao de noticia, telemetria da
+   * plataforma, limpeza, migrations). Nada que toque dado de cliente entra ai.
+   */
+  getClientGlobal(motivo: string): SupabaseClient {
+    if (!ehGlobalDeclarada(motivo)) {
+      console.error(
+        `[rls] getClientGlobal('${motivo}') NAO esta declarado em ROTINAS_GLOBAIS — ` +
+        'a chave mestra e excecao nomeada, nao atalho. Declare em tenant-db.ts ou use getClient().',
+      );
+    }
     return this.client;
   }
 
