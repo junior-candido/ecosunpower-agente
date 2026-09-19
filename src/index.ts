@@ -6058,9 +6058,13 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         // Client requested to stop receiving messages
         // [MT 3e] blindagem: sob crachá, 0 linhas = lead invisível pro tenant
         // (leitura errada a montante) — loga ALTO em vez de fingir sucesso.
+        // [19/09/2026] `.in('phone', ...)` sem dono escreve em TODOS os tenants
+        // que tiverem esse telefone. O opt-out de um cliente da Conquista nao
+        // pode desligar o homonimo da EcoSunPower.
         const { data: optOutRows } = await db.getClient()
           .from('leads')
           .update({ opt_out: true, updated_at: new Date().toISOString() })
+          .eq('company_id', empresa().companyId)
           .in('phone', variantesTelefone(from))
           .select('id');
         if (!optOutRows?.length) console.warn(`[action][3e] opt_out atualizou 0 linhas pra ${from} — lead fora do tenant?`);
@@ -6086,9 +6090,11 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         // com botoes pra ele confirmar/desfazer manualmente.
         const reason = (action.data as Record<string, unknown> | undefined)?.reason as string | undefined ?? 'tema fora do escopo';
         const now = new Date().toISOString();
+        // [19/09/2026] Idem opt_out: so mexe no lead da empresa do canal.
         const { data: offTopicRows } = await db.getClient()
           .from('leads')
           .update({ opt_out: true, eva_active: false, status: 'perdido', updated_at: now })
+          .eq('company_id', empresa().companyId)
           .in('phone', variantesTelefone(from))
           .select('id');
         if (!offTopicRows?.length) console.warn(`[action][3e] mark_off_topic atualizou 0 linhas pra ${from} — lead fora do tenant?`);
@@ -6097,21 +6103,32 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         void followupVivo.cancelarPorLead(leadId, 'off_topic');
         await reengagement.cancelAllTouches(leadId, db.getClient()).catch(() => 0);
         if (postInstall) await postInstall.cancelAll(leadId, db.getClient()).catch(() => 0);
-        // Notifica Junior com botoes pra desfazer se foi falso positivo
+        // [19/09/2026] O aviso vai pro dono do LEAD, com o nome da assistente
+        // DELE. Antes ia sempre pro telefone fixo do Junior, assinado "Eva":
+        // em 19/09 o lead Edvaldo (557788882827), da CONQUISTA SOLAR, foi
+        // descartado e quem recebeu o aviso foi o dono da EcoSunPower — a
+        // Jimena nunca soube que um lead dela tinha sido jogado fora.
         if (!isSandbox) {
           const lead = await db.getLeadByPhone(from);
+          const cfgEmpresa = empresa();
+          const assistente = cfgEmpresa.nomeAtendente;
+          const destino = destinoAdminDaEmpresa(config.engineerPhone, cfgEmpresa);
           const alertBody = [
-            `🚫 *Eva marcou contato fora de escopo*`,
+            `🚫 *${assistente} marcou contato fora de escopo*`,
             ``,
             `${lead?.name ?? 'Sem nome'} — ${from}`,
             `Motivo: ${reason}`,
             ``,
-            `Eva nao fala mais com ele. Se foi engano, clica em Desfazer.`,
+            `${assistente} nao fala mais com ele. Se foi engano, clica em Desfazer.`,
           ].join('\n');
-          if (metaWaba && lead?.id) {
+          if (!destino) {
+            // Empresa sem telefone_admin: o lead vive no dashboard e a equipe
+            // dela pega de la. Nunca cair no zap do dono da EcoSunPower.
+            console.log(`[action] mark_off_topic: ${cfgEmpresa.nomeFantasia} sem telefone_admin — aviso fica so no dashboard`);
+          } else if (metaWaba && lead?.id) {
             try {
               await metaWaba.sendInteractiveButtons(
-                config.engineerPhone,
+                destino,
                 alertBody.slice(0, 1024),
                 [
                   { id: `evabt:lead-view:${lead.id}`, title: '👤 Ver perfil' },
@@ -6119,10 +6136,10 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
                 ],
               );
             } catch {
-              await sendText(config.engineerPhone, alertBody);
+              await sendText(destino, alertBody);
             }
           } else {
-            await sendText(config.engineerPhone, alertBody);
+            await sendText(destino, alertBody);
           }
         }
         console.log(`[action] mark_off_topic registrado pra ${from}: ${reason}`);
