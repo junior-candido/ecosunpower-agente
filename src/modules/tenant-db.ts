@@ -129,3 +129,24 @@ export const ROTINAS_GLOBAIS = new Set<string>([
 export function ehGlobalDeclarada(motivo: string): boolean {
   return ROTINAS_GLOBAIS.has(motivo);
 }
+
+/**
+ * Barra o boot quando RLS_ESTRITO=on e faltam as chaves.
+ *
+ * Sem elas `clientDaEmpresa()` devolve null e o `getClient()` cairia de volta
+ * na chave mestra — ou seja, o operador ligaria o modo estrito e teria a
+ * ILUSAO de protecao, que e pior do que nao ter ligado. Melhor nao subir.
+ */
+export function validarModoRls(cfg: ConfigTenantDb): void {
+  if (modoRls() !== 'on') return;
+  const faltando: string[] = [];
+  if (!cfg.supabaseAnonKey) faltando.push('SUPABASE_ANON_KEY');
+  if (!cfg.supabaseJwtSecret) faltando.push('SUPABASE_JWT_SECRET');
+  if (faltando.length) {
+    throw new Error(
+      `RLS_ESTRITO=on exige ${faltando.join(' e ')}. ` +
+      'Pegue em Supabase > Settings > API e cadastre no EasyPanel. ' +
+      'Sem isso o modo estrito nao protege nada — o servico nao vai subir fingindo que protege.',
+    );
+  }
+}
