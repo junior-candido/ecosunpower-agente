@@ -131,6 +131,8 @@ describe('SupabaseService — metodos da sequencia de e-mail', () => {
 
   it('scheduleEmailSequence monta 6 linhas com steps 1..6 pro lead, via upsert idempotente', async () => {
     fromResults['email_sequencia'] = { data: null, error: null };
+    fromResults['leads'] = { data: { company_id: 'emp-1' }, error: null };
+    fromResults['empresa_modulos'] = { data: [{ company_id: 'emp-1' }], error: null };
     const { SupabaseService } = await import('../src/modules/supabase.js');
     const sb = new SupabaseService({ supabaseUrl: 'https://x.supabase.co', supabaseServiceKey: 'key' });
 
@@ -143,9 +145,44 @@ describe('SupabaseService — metodos da sequencia de e-mail', () => {
     expect(rows).toHaveLength(6);
     expect(rows.map((r: any) => r.step)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(rows.every((r: any) => r.lead_id === 'lead-1' && r.status === 'pending')).toBe(true);
+    expect(rows.every((r: any) => r.company_id === 'emp-1')).toBe(true);
     expect(rows.every((r: any) => typeof r.scheduled_for === 'string')).toBe(true);
 
     expect(upsertCall!.args[1]).toEqual({ onConflict: 'lead_id,step', ignoreDuplicates: true });
+  });
+
+  it('scheduleEmailSequence NAO inscreve lead de empresa que nao contratou o modulo de e-mail', async () => {
+    // Regressao do vazamento de 18/09/2026: 6 leads da Conquista Solar (que so
+    // contratou a Eva) receberam 16 e-mails com a marca EcoSunPower.
+    fromResults['email_sequencia'] = { data: null, error: null };
+    fromResults['leads'] = { data: { company_id: 'conquista' }, error: null };
+    fromResults['empresa_modulos'] = { data: [{ company_id: 'ecosun' }], error: null };
+    const { SupabaseService } = await import('../src/modules/supabase.js');
+    const sb = new SupabaseService({ supabaseUrl: 'https://x.supabase.co', supabaseServiceKey: 'key' });
+
+    await sb.scheduleEmailSequence('lead-da-conquista');
+
+    expect(callLog.find((c) => c.table === 'email_sequencia' && c.method === 'upsert')).toBeUndefined();
+  });
+
+  it('scheduleEmailSequence NAO inscreve lead sem dono (company_id nulo)', async () => {
+    fromResults['email_sequencia'] = { data: null, error: null };
+    fromResults['leads'] = { data: { company_id: null }, error: null };
+    fromResults['empresa_modulos'] = { data: [{ company_id: 'ecosun' }], error: null };
+    const { SupabaseService } = await import('../src/modules/supabase.js');
+    const sb = new SupabaseService({ supabaseUrl: 'https://x.supabase.co', supabaseServiceKey: 'key' });
+
+    await sb.scheduleEmailSequence('lead-orfao');
+
+    expect(callLog.find((c) => c.table === 'email_sequencia' && c.method === 'upsert')).toBeUndefined();
+  });
+
+  it('empresasComModulo devolve lista vazia quando a consulta falha — sem saber quem contratou, nao dispara', async () => {
+    fromResults['empresa_modulos'] = { data: null, error: { message: 'boom' } };
+    const { SupabaseService } = await import('../src/modules/supabase.js');
+    const sb = new SupabaseService({ supabaseUrl: 'https://x.supabase.co', supabaseServiceKey: 'key' });
+
+    expect(await sb.empresasComModulo('email')).toEqual([]);
   });
 
   it('contarEventosPorTipo faz um HEAD count exato por tipo (evita o teto de 1000 linhas do PostgREST)', async () => {

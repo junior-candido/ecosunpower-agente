@@ -950,11 +950,68 @@ export class SupabaseService {
   /** Intervalos em dias da sequencia de e-mail (toque 1 = imediato). */
   static readonly EMAIL_SEQUENCE_INTERVALS_DAYS = [0, 2, 5, 10, 18, 30];
 
-  async scheduleEmailSequence(leadId: string): Promise<void> {
+  /**
+   * Empresas que contrataram um modulo. Ausencia da linha = DESLIGADO.
+   *
+   * Existe por causa de 18/09/2026: a regua de e-mail varria `leads` sem
+   * filtro nenhum, pegou 6 leads da Conquista Solar — que contratou so a Eva —
+   * e mandou 16 e-mails com a marca da EcoSunPower. Ver migration 128.
+   *
+   * Em caso de erro devolve lista VAZIA de proposito: sem saber quem contratou,
+   * o certo e nao disparar pra ninguem, nao disparar pra todo mundo.
+   */
+  async empresasComModulo(modulo: string): Promise<string[]> {
+    const { data, error } = await this.client
+      .from('empresa_modulos')
+      .select('company_id')
+      .eq('modulo', modulo)
+      .eq('ativo', true);
+
+    if (error) {
+      console.warn(`[modulos] empresasComModulo('${modulo}') falhou — nada sera disparado:`, error.message);
+      return [];
+    }
+    return ((data ?? []) as Array<{ company_id: string }>).map((r) => r.company_id);
+  }
+
+  /**
+   * Inscreve o lead na jornada de e-mail.
+   *
+   * [18/09/2026] Antes daqui nao se perguntava de quem era o lead — e era assim
+   * que lead de outro tenant caia na jornada da EcoSun. Ver migration 128.
+   *
+   * `donoConhecido` e o company_id quando quem chama JA sabe de quem e o lead e
+   * JA conferiu o modulo (caso da inscricao automatica, que varre por empresa).
+   * Evita reconsultar `leads` e `empresa_modulos` uma vez por lead.
+   */
+  async scheduleEmailSequence(leadId: string, donoConhecido?: string): Promise<void> {
+    let companyId = donoConhecido ?? null;
+
+    if (!companyId) {
+      const { data: dono } = await this.client
+        .from('leads')
+        .select('company_id')
+        .eq('id', leadId)
+        .maybeSingle();
+
+      companyId = (dono as { company_id?: string } | null)?.company_id ?? null;
+      if (!companyId) {
+        console.warn(`[email-seq] lead ${leadId} sem company_id — nao inscrito`);
+        return;
+      }
+
+      const habilitadas = await this.empresasComModulo('email');
+      if (!habilitadas.includes(companyId)) {
+        console.warn(`[email-seq] empresa ${companyId} nao contratou o modulo de e-mail — lead ${leadId} nao inscrito`);
+        return;
+      }
+    }
+
     const dias = SupabaseService.EMAIL_SEQUENCE_INTERVALS_DAYS;
     const now = Date.now();
     const rows = dias.map((d, i) => ({
       lead_id: leadId,
+      company_id: companyId,
       step: i + 1,
       status: 'pending',
       scheduled_for: new Date(now + d * 24 * 60 * 60 * 1000).toISOString(),
@@ -967,10 +1024,21 @@ export class SupabaseService {
 
   async getDueEmailSteps(batchLimit: number = 50): Promise<any[]> {
     const lim = Math.min(Math.max(batchLimit, 1), 200);
+
+    // [18/09/2026] TRAVA DE SAIDA. Mesmo que algo entre torto na fila, daqui
+    // nao sai e-mail de empresa que nao contratou o modulo. E a camada que
+    // salva — igual a trava de LGPD dos avisos, que segurou quando precisou.
+    const habilitadas = await this.empresasComModulo('email');
+    if (habilitadas.length === 0) {
+      console.warn('[email-seq] nenhuma empresa com modulo de e-mail ativo — nada a enviar');
+      return [];
+    }
+
     const { data, error } = await this.client
       .from('email_sequencia')
-      .select('id, lead_id, step, leads!inner(id, name, city, email, email_opt_out, profile)')
+      .select('id, lead_id, step, company_id, leads!inner(id, name, city, email, email_opt_out, profile, company_id)')
       .eq('status', 'pending')
+      .in('leads.company_id', habilitadas)
       .lte('scheduled_for', new Date().toISOString())
       .limit(lim);
 
@@ -1212,9 +1280,18 @@ export class SupabaseService {
   async inscreverLeadsElegiveisEmail(max: number = 500): Promise<number> {
     const CLIENTE_STATUSES = ['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido'];
 
+    // [18/09/2026] Era aqui que vazava: varria `leads` da base inteira, sem
+    // perguntar de quem era, e inscrevia todo mundo na jornada da EcoSun.
+    const habilitadas = await this.empresasComModulo('email');
+    if (habilitadas.length === 0) {
+      console.warn('[email] inscricao automatica: nenhuma empresa com modulo de e-mail ativo');
+      return 0;
+    }
+
     const { data, error } = await this.client
       .from('leads')
-      .select('id, email, status, installation_status, archived_at, email_opt_out')
+      .select('id, email, status, installation_status, archived_at, email_opt_out, company_id')
+      .in('company_id', habilitadas)
       .not('email', 'is', null)
       .neq('email', '')
       .not('email_opt_out', 'is', true)
@@ -1250,7 +1327,7 @@ export class SupabaseService {
     let inscritos = 0;
     for (const lead of elegiveis) {
       try {
-        await this.scheduleEmailSequence(lead.id);
+        await this.scheduleEmailSequence(lead.id, lead.company_id);
         inscritos++;
       } catch (err) {
         console.error(`[email] inscreverLeadsElegiveisEmail: falhou pro lead ${lead.id}:`, (err as Error)?.message);
@@ -1277,9 +1354,19 @@ export class SupabaseService {
   async listarDestinatariosCampanha(max: number = 1000): Promise<Array<{ id: string; email: string; name: string }>> {
     const CLIENTE_STATUSES = ['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido'];
 
+    // [18/09/2026] Mesmo buraco da jornada, e pior: campanha e disparo unico
+    // de ate 5.000 destinatarios. Sem este filtro, um envio da EcoSun ia pra
+    // base inteira de todos os tenants. Ver migration 128.
+    const habilitadas = await this.empresasComModulo('email');
+    if (habilitadas.length === 0) {
+      console.warn('[campanha] nenhuma empresa com modulo de e-mail ativo — campanha sem destinatarios');
+      return [];
+    }
+
     const { data, error } = await this.client
       .from('leads')
-      .select('id, name, email, status, installation_status, archived_at, email_opt_out')
+      .select('id, name, email, status, installation_status, archived_at, email_opt_out, company_id')
+      .in('company_id', habilitadas)
       .not('email', 'is', null)
       .neq('email', '')
       .not('email_opt_out', 'is', true)
