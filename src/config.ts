@@ -13,6 +13,10 @@ const configSchema = z.object({
   anthropicApiKey: z.string().min(1),
   supabaseUrl: z.string().url(),
   supabaseServiceKey: z.string().min(1),
+  // [19/09/2026] Cracha por empresa — ver tenant-db.ts. Opcionais de proposito:
+  // enquanto RLS_ESTRITO=off (padrao) nada muda e o servico sobe sem eles.
+  supabaseAnonKey: z.string().optional(),
+  supabaseJwtSecret: z.string().optional(),
   redisHost: z.string().default('127.0.0.1'),
   redisPort: z.coerce.number().default(6379),
   redisPassword: z.string().optional(),
@@ -111,6 +115,8 @@ export function loadConfig(): Config {
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
     supabaseUrl: process.env.SUPABASE_URL,
     supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY,
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY || undefined,
+    supabaseJwtSecret: process.env.SUPABASE_JWT_SECRET || undefined,
     redisHost: process.env.REDIS_HOST,
     redisPort: process.env.REDIS_PORT,
     redisPassword: process.env.REDIS_PASSWORD || undefined,
