@@ -38,12 +38,21 @@ export function variantesTelefone(raw: string): string[] {
   if (com55.startsWith('55') && (com55.length === 12 || com55.length === 13)) {
     const ddd = com55.slice(2, 4);
     const local = com55.slice(4);
+    // [19/09/2026] Gera as QUATRO formas: com e sem o 55, com e sem o 9.
+    // Faltavam as sem o 55 — e e assim que o numero e cadastrado na mao, porque
+    // e assim que ele aparece na tela do WhatsApp. O freio de contato interno
+    // procurava "5577999610038" num cadastro gravado "77999610038", nao achava,
+    // e a assistente atendia a dona da empresa como se fosse lead.
     if (local.length === 9 && local.startsWith('9')) {
-      set.add('55' + ddd + local); // com 9 (canônico)
-      set.add('55' + ddd + local.slice(1)); // sem 9
+      set.add('55' + ddd + local); // com 55, com 9 (canonico)
+      set.add('55' + ddd + local.slice(1)); // com 55, sem 9
+      set.add(ddd + local); // sem 55, com 9
+      set.add(ddd + local.slice(1)); // sem 55, sem 9
     } else if (local.length === 8) {
-      set.add('55' + ddd + local); // sem 9
-      set.add('55' + ddd + '9' + local); // com 9
+      set.add('55' + ddd + local); // com 55, sem 9
+      set.add('55' + ddd + '9' + local); // com 55, com 9
+      set.add(ddd + local); // sem 55, sem 9
+      set.add(ddd + '9' + local); // sem 55, com 9
     }
   }
 

@@ -53,8 +53,13 @@ export async function identificarInterno(
     .in('telefone', variantes)
     .limit(1);
   if (error) {
-    console.warn(`[contatos-internos] consulta falhou (${telefone}): ${error.message} — seguindo como cliente`);
-    return null;
+    // [19/09/2026] FALHA-FECHADO. Antes daqui a consulta com erro devolvia
+    // null, e null quer dizer "nao e de dentro" — ou seja, tropeço de rede
+    // virava a assistente qualificando a dona da empresa como lead. Um freio
+    // que libera quando falha nao e freio. Agora o erro sobe e quem chama
+    // retem a mensagem, igual ja se faz com instancia nao mapeada.
+    console.error(`[contatos-internos] 🚨 consulta falhou (${telefone}): ${error.message} — mensagem sera RETIDA`);
+    throw new Error(`contatos_internos indisponivel: ${error.message}`);
   }
   const linha = (data as ContatoInterno[] | null)?.[0];
   return linha ?? null;

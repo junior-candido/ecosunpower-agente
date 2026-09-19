@@ -7738,7 +7738,16 @@ ${pedido.texto}` : pedido.texto;
       // qualificar a autoescola como cliente.
       const empresaDoCanal = companyIdDaInstancia ?? ECOSUN_COMPANY_ID;
       const { identificarInterno, salvarRecado, textoConfirmacao } = await import('./modules/contatos-internos.js');
-      const interno = await identificarInterno(supabase.getClient(), empresaDoCanal, parsed.from).catch(() => null);
+      // Nao engolir o erro: se a lista de gente de dentro esta indisponivel, a
+      // duvida se resolve pelo silencio, nunca atendendo. Ver contatos-internos.ts.
+      let interno: Awaited<ReturnType<typeof identificarInterno>>;
+      try {
+        interno = await identificarInterno(supabase.getClient(), empresaDoCanal, parsed.from);
+      } catch (e) {
+        console.error(`[evolution] 🚨 freio de contato interno indisponivel (${parsed.from}): ${(e as Error).message} — mensagem RETIDA`);
+        res.status(200).json({ status: 'freio_interno_indisponivel' });
+        return;
+      }
       if (interno) {
         // O recado NUNCA se perde, mesmo a assistente ficando muda: fica na tela
         // "Recados da equipe" pra empresa ver.
