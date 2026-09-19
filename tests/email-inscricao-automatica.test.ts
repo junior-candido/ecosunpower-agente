@@ -41,18 +41,19 @@ describe('SupabaseService.inscreverLeadsElegiveisEmail', () => {
   });
 
   it('inscreve so o lead aberto e elegivel, excluindo cliente/sem-email/ja-inscrito/descadastrado', async () => {
+    fromResults['empresa_modulos'] = { data: [{ company_id: 'emp-1' }], error: null };
     fromResults['leads'] = {
       data: [
         // A: lead aberto, com e-mail — deve ENTRAR
-        { id: 'A', email: 'a@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false },
+        { id: 'A', email: 'a@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false, company_id: 'emp-1' },
         // B: ja virou cliente (installation_status em CLIENTE_STATUSES) — NAO entra
-        { id: 'B', email: 'b@x.com', status: 'novo', installation_status: 'operando', archived_at: null, email_opt_out: false },
+        { id: 'B', email: 'b@x.com', status: 'novo', installation_status: 'operando', archived_at: null, email_opt_out: false, company_id: 'emp-1' },
         // C: sem e-mail — NAO entra
-        { id: 'C', email: null, status: 'novo', installation_status: null, archived_at: null, email_opt_out: false },
+        { id: 'C', email: null, status: 'novo', installation_status: null, archived_at: null, email_opt_out: false, company_id: 'emp-1' },
         // D: ja inscrito na sequencia — NAO entra (dedup contra email_sequencia)
-        { id: 'D', email: 'd@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false },
+        { id: 'D', email: 'd@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false, company_id: 'emp-1' },
         // E: descadastrado (email_descadastro) — NAO entra
-        { id: 'E', email: 'e@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false },
+        { id: 'E', email: 'e@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false, company_id: 'emp-1' },
       ],
       error: null,
     };
@@ -73,10 +74,11 @@ describe('SupabaseService.inscreverLeadsElegiveisEmail', () => {
   });
 
   it('nao explode e continua o sweep quando um lead falha ao agendar (try/catch por lead)', async () => {
+    fromResults['empresa_modulos'] = { data: [{ company_id: 'emp-1' }], error: null };
     fromResults['leads'] = {
       data: [
-        { id: 'A', email: 'a@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false },
-        { id: 'F', email: 'f@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false },
+        { id: 'A', email: 'a@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false, company_id: 'emp-1' },
+        { id: 'F', email: 'f@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false, company_id: 'emp-1' },
       ],
       error: null,
     };
@@ -101,11 +103,12 @@ describe('SupabaseService.inscreverLeadsElegiveisEmail', () => {
   });
 
   it('respeita o teto max de inscricoes por chamada', async () => {
+    fromResults['empresa_modulos'] = { data: [{ company_id: 'emp-1' }], error: null };
     fromResults['leads'] = {
       data: [
-        { id: 'A', email: 'a@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false },
-        { id: 'B', email: 'b@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false },
-        { id: 'C', email: 'c@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false },
+        { id: 'A', email: 'a@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false, company_id: 'emp-1' },
+        { id: 'B', email: 'b@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false, company_id: 'emp-1' },
+        { id: 'C', email: 'c@x.com', status: 'novo', installation_status: null, archived_at: null, email_opt_out: false, company_id: 'emp-1' },
       ],
       error: null,
     };
@@ -121,6 +124,7 @@ describe('SupabaseService.inscreverLeadsElegiveisEmail', () => {
   });
 
   it('retorna 0 sem quebrar quando a busca de leads falha', async () => {
+    fromResults['empresa_modulos'] = { data: [{ company_id: 'emp-1' }], error: null };
     fromResults['leads'] = { data: null, error: { message: 'boom' } };
 
     const { SupabaseService } = await import('../src/modules/supabase.js');
