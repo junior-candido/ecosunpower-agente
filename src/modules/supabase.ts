@@ -92,14 +92,29 @@ const jaAvisados = new Map<string, number>();
  */
 const ARQUIVOS_DESTE_MECANISMO = /(supabase|tenant-db)\.(ts|js|mjs|cjs)(:|$)/;
 
+/**
+ * Nomes que nao identificam rotina nenhuma. Cron escrito como
+ * `setInterval(() => {...})` chega na pilha assim — e o relatorio inteiro
+ * viraria "Timeout._onTimeout", que nao diz qual rotina consultou sem dono.
+ */
+const QUADRO_GENERICO = /^(Timeout\.[_a-zA-Z]*|Object\.<anonymous>|<anonymous>|async |process\.)/;
+
 function origemDaChamada(): string {
   const pilha = (new Error().stack ?? '').split('\n').slice(2);
+  const uteis: string[] = [];
+
   for (const linha of pilha) {
     if (ARQUIVOS_DESTE_MECANISMO.test(linha)) continue;
     if (linha.includes('node:internal')) continue;
-    return linha.trim().replace(/^at\s+/, '').slice(0, 160);
+    uteis.push(linha.trim().replace(/^at\s+/, ''));
+    // Um quadro basta quando ele ja diz o nome da rotina. Quando for generico
+    // (cron anonimo), leva mais dois de contexto pra dar pra identificar.
+    if (!QUADRO_GENERICO.test(uteis[0])) break;
+    if (uteis.length >= 3) break;
   }
-  return 'origem desconhecida';
+
+  if (uteis.length === 0) return 'origem desconhecida';
+  return uteis.join(' <- ').slice(0, 260);
 }
 
 /** O que o modo `aviso` colheu. Serve pra fatia 3 saber o que mexer. */
