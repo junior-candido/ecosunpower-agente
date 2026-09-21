@@ -1,0 +1,168 @@
+import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  ingerirDemonstrativo,
+  escolherPdf,
+  tratarConfirmacaoGmail,
+  type DepsIngestao,
+} from '../src/modules/gd/demonstrativo-ingestao.js';
+
+const TEXTO = readFileSync(join(__dirname, 'fixtures', 'gd', 'cliente-unico-2026-06.txt'), 'utf-8');
+const ASSUNTO = { referencia: '2026-06-01', nome: 'CLIENTE TESTE UM', codigoCliente: '100001', instalacao: '200002' };
+const PDF = { nome: 'RelatorioResumo.pdf', tipo: 'application/octet-stream', bytes: new Uint8Array([1, 2, 3]) };
+const PNG = { nome: 'Demonstrativo_Saida_202608.png', tipo: 'application/octet-stream', bytes: new Uint8Array([9]) };
+
+function deps(over: Partial<DepsIngestao> = {}): DepsIngestao & { avisos: string[]; salvos: any[] } {
+  const avisos: string[] = [];
+  const salvos: any[] = [];
+  return {
+    avisos,
+    salvos,
+    modoTeste: true,
+    jaProcessado: vi.fn(async () => false),
+    baixarAnexos: vi.fn(async () => [PNG, PDF]),
+    extrairTexto: vi.fn(async () => TEXTO),
+    buscarLeadPorUc: vi.fn(async () => ({ id: 'lead-1', nome: 'Cliente Um', companyId: 'emp-1' })),
+    buscarRateio: vi.fn(async () => []),
+    geracaoDoMes: vi.fn(async () => 1000),
+    salvar: vi.fn(async (r) => { salvos.push(r); }),
+    avisar: vi.fn(async (t) => { avisos.push(t); }),
+    ...over,
+  };
+}
+
+describe('escolherPdf', () => {
+  it('prefere o RelatorioResumo.pdf mesmo vindo como octet-stream, ignora o PNG', () => {
+    expect(escolherPdf([PNG, PDF])?.nome).toBe('RelatorioResumo.pdf');
+  });
+  it('aceita pelo content-type quando o nome nao ajuda', () => {
+    const a = { nome: 'arquivo', tipo: 'application/pdf', bytes: new Uint8Array() };
+    expect(escolherPdf([PNG, a])).toBe(a);
+  });
+  it('sem PDF devolve null', () => {
+    expect(escolherPdf([PNG])).toBeNull();
+  });
+});
+
+describe('ingerirDemonstrativo — caminho feliz', () => {
+  it('le, liga ao lead, cruza com a geracao, grava e avisa o Junior', async () => {
+    const d = deps();
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(r.status).toBe('gravado');
+    expect(d.buscarLeadPorUc).toHaveBeenCalledWith(['100001', '200002']);
+    expect(d.geracaoDoMes).toHaveBeenCalledWith('lead-1', '2026-06-01');
+    expect(d.salvos).toHaveLength(1);
+    const s = d.salvos[0];
+    expect(s.company_id).toBe('emp-1');
+    expect(s.lead_id).toBe('lead-1');
+    expect(s.instalacao).toBe('200002');
+    expect(s.referencia).toBe('2026-06-01');
+    expect(s.saldo_acumulado_kwh).toBe(10998.67);
+    expect(s.geracao_mes_kwh).toBe(1000);
+    expect(s.email_id).toBe('in_1');
+    expect(s.texto_bruto).toContain('Faturamento Microgera');
+    expect(s.alertas.some((a: any) => a.tipo === 'autoconsumo')).toBe(true);
+    expect(d.avisos).toHaveLength(1);
+    expect(d.avisos[0]).toContain('Cliente Um');
+    expect(d.avisos[0]).toMatch(/modo teste/i);
+  });
+
+  it('cliente sem monitoramento: grava sem geracao e sem inventar autoconsumo', async () => {
+    const d = deps({ geracaoDoMes: vi.fn(async () => null) });
+    await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(d.salvos[0].geracao_mes_kwh).toBeNull();
+    expect(d.salvos[0].alertas.some((a: any) => a.tipo === 'autoconsumo')).toBe(false);
+  });
+
+  it('usa o rateio cadastrado do lead gerador', async () => {
+    const d = deps({ buscarRateio: vi.fn(async () => [{ uc: '999999', nome: 'Filha', percentual: 30 }]) });
+    await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(d.buscarRateio).toHaveBeenCalledWith('lead-1');
+    expect(d.avisos[0]).toContain('Filha');
+  });
+});
+
+describe('ingerirDemonstrativo — o que pode dar errado (nunca lanca)', () => {
+  it('e-mail ja processado: nao baixa, nao grava, nao avisa', async () => {
+    const d = deps({ jaProcessado: vi.fn(async () => true) });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(r.status).toBe('duplicado');
+    expect(d.baixarAnexos).not.toHaveBeenCalled();
+    expect(d.salvos).toHaveLength(0);
+    expect(d.avisos).toHaveLength(0);
+  });
+
+  it('sem PDF anexo: avisa e nao grava', async () => {
+    const d = deps({ baixarAnexos: vi.fn(async () => [PNG]) });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(r.status).toBe('sem_anexo');
+    expect(d.salvos).toHaveLength(0);
+    expect(d.avisos[0]).toMatch(/sem o PDF|não veio o PDF/i);
+    expect(d.avisos[0]).toContain('CLIENTE TESTE UM');
+  });
+
+  it('PDF que nao e demonstrativo: avisa "nao consegui ler" e nao grava', async () => {
+    const d = deps({ extrairTexto: vi.fn(async () => 'Nota fiscal qualquer') });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(r.status).toBe('ilegivel');
+    expect(d.salvos).toHaveLength(0);
+    expect(d.avisos[0]).toMatch(/não consegui ler/i);
+  });
+
+  it('UC sem cliente cadastrado: grava na EcoSun sem lead e avisa pra vincular', async () => {
+    const d = deps({ buscarLeadPorUc: vi.fn(async () => null) });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(r.status).toBe('gravado');
+    expect(d.salvos[0].lead_id).toBeNull();
+    expect(d.salvos[0].company_id).toBe('00000000-0000-0000-0000-000000000001');
+    expect(d.geracaoDoMes).not.toHaveBeenCalled();
+    expect(d.avisos[0]).toMatch(/não achei o cliente|UC não encontrada/i);
+  });
+
+  it('assunto e PDF de instalacoes diferentes: grava pelo PDF e sinaliza', async () => {
+    const d = deps();
+    await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: { ...ASSUNTO, instalacao: '777777' } });
+    expect(d.salvos[0].instalacao).toBe('200002');
+    expect(d.salvos[0].inconsistencias.some((i: string) => i.includes('777777'))).toBe(true);
+  });
+
+  it('falha no download: avisa e devolve erro, sem lancar', async () => {
+    const d = deps({ baixarAnexos: vi.fn(async () => { throw new Error('resend 500'); }) });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(r.status).toBe('erro');
+    expect(d.avisos[0]).toContain('resend 500');
+  });
+
+  it('falha ao gravar: avisa e devolve erro, sem lancar', async () => {
+    const d = deps({ salvar: vi.fn(async () => { throw new Error('violates row-level security'); }) });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(r.status).toBe('erro');
+    expect(d.avisos.some((a) => a.includes('row-level security'))).toBe(true);
+  });
+
+  it('ate o aviso falhando nao derruba o webhook', async () => {
+    const d = deps({ avisar: vi.fn(async () => { throw new Error('zap fora'); }) });
+    await expect(ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO })).resolves.toMatchObject({ status: 'gravado' });
+  });
+
+  it('sem email_id (payload torto): segue sem checar duplicado', async () => {
+    const d = deps();
+    const r = await ingerirDemonstrativo(d, { emailId: null, assunto: null });
+    expect(r.status).toBe('erro');
+    expect(d.jaProcessado).not.toHaveBeenCalled();
+  });
+});
+
+describe('tratarConfirmacaoGmail', () => {
+  it('manda o codigo pro Junior', async () => {
+    const avisar = vi.fn(async () => {});
+    await tratarConfirmacaoGmail({ avisar }, { codigo: '123456789' });
+    expect(avisar.mock.calls[0][0]).toContain('123456789');
+  });
+  it('sem codigo ainda avisa pra olhar o e-mail', async () => {
+    const avisar = vi.fn(async () => {});
+    await tratarConfirmacaoGmail({ avisar }, { codigo: null });
+    expect(avisar).toHaveBeenCalled();
+  });
+});
