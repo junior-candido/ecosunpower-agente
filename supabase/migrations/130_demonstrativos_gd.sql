@@ -69,6 +69,28 @@ create index if not exists demonstrativos_gd_empresa_mes
 create index if not exists demonstrativos_gd_email
   on demonstrativos_gd (email_id) where email_id is not null;
 
+-- MÊS VERIFICADO NÃO VOLTA A SER "NÃO VERIFICADO". A aplicação já confere
+-- antes de gravar, mas dois e-mails do mesmo mês chegando juntos podem passar
+-- pela conferência ao mesmo tempo — o banco é quem garante. Um UPDATE que
+-- tentaria trocar um mês confirmado (DKIM da Neoenergia) por um sem prova
+-- é descartado em silêncio: fica o que está.
+create or replace function demonstrativos_gd_protege_verificado()
+returns trigger language plpgsql
+set search_path = public
+as $$
+begin
+  if old.origem_verificada and not new.origem_verificada then
+    return null;  -- mantém a linha verificada
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists demonstrativos_gd_protege_verificado on demonstrativos_gd;
+create trigger demonstrativos_gd_protege_verificado
+  before update on demonstrativos_gd
+  for each row execute function demonstrativos_gd_protege_verificado();
+
 -- ISOLAMENTO POR EMPRESA — mesmo padrão da 123.
 ALTER TABLE public.demonstrativos_gd ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.demonstrativos_gd FORCE ROW LEVEL SECURITY;

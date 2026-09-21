@@ -6,6 +6,8 @@ import type { AnexoMeta } from './demonstrativo-ingestao.js';
 import { interpretarDkim, type ResultadoDkim } from './demonstrativo-email.js';
 
 const TIMEOUT_MS = 20_000;
+// Demonstrativo tem ~550 KB. Acima disto nao e o e-mail que esperamos.
+const MAX_BRUTO_BYTES = 25 * 1024 * 1024;
 
 async function resend(apiKey: string) {
   const { Resend } = await import('resend');
@@ -42,7 +44,10 @@ export async function verificarOrigemResend(apiKey: string, emailId: string): Pr
   if (!url) return 'desconhecido';
   const resp = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
   if (!resp.ok) throw new Error(`download do e-mail bruto: HTTP ${resp.status}`);
+  const tamanho = Number(resp.headers.get('content-length') ?? 0);
+  if (tamanho > MAX_BRUTO_BYTES) return 'desconhecido';
   const bruto = Buffer.from(await resp.arrayBuffer());
+  if (bruto.byteLength > MAX_BRUTO_BYTES) return 'desconhecido';
   const { dkimVerify } = await import('mailauth');
   const res = await dkimVerify(bruto);
   return interpretarDkim(res.results);

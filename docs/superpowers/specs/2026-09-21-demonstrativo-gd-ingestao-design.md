@@ -34,10 +34,13 @@ remetente `@neoenergia.com`. Confirmação do Gmail = remetente `forwarding-nore
 A prova é o **DKIM conferido no e-mail bruto**: `receiving.get(id).raw.download_url` → `mailauth.dkimVerify`
 (busca a chave pública no DNS). O encaminhamento automático do Gmail preserva a assinatura original.
 - assinatura de `neoenergia.com` (ou subdomínio) que confere → `pass` → grava e pode atualizar o mês;
-- assinatura de `neoenergia.com` que **não** confere → `fail` → recusa sem baixar o PDF;
-- sem assinatura da Neoenergia / erro de DNS → `desconhecido` → grava marcado "remetente não verificado"
+- assinatura de `neoenergia.com` cuja conta sobre os **cabeçalhos** não fecha → `fail` → recusa sem baixar o PDF;
+- sem assinatura da Neoenergia, **corpo alterado** (mailauth dá `neutral: body hash did not verify` — PDF
+  trocado), chave ausente ou erro de DNS → `desconhecido` → grava marcado "remetente não verificado"
   e **nunca sobrescreve mês gravado com `origem_verificada = true`** (igual por igual pode atualizar;
-  verificado sempre vence não verificado).
+  verificado sempre vence não verificado). Assinatura com `l=` (corpo parcial) **nunca** vale `pass`.
+  A regra é garantida no banco por um gatilho (`demonstrativos_gd_protege_verificado`) — dois e-mails do
+  mesmo mês chegando juntos não furam. E-mail bruto acima de 25 MB → `desconhecido`.
 Consistência (não é prova de origem): assunto e PDF precisam ser da mesma instalação, senão recusa.
 Assinatura svix protege a rota do webhook, não a origem do e-mail.
 

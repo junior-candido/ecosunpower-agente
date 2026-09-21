@@ -83,8 +83,10 @@ export type ResultadoDkim = 'pass' | 'fail' | 'desconhecido';
 
 /** Resultado de UMA assinatura DKIM, no formato do mailauth (dkimVerify().results). */
 export interface AssinaturaDkim {
-  signingDomain: string;
-  status: { result: string };
+  signingDomain?: string;
+  status: { result: string; underSized?: number };
+  /** true quando a assinatura usa l= (so parte do corpo foi assinada). */
+  canonBodyLengthLimited?: boolean;
 }
 
 export function dominioNeoenergia(d: string): boolean {
@@ -96,13 +98,19 @@ export function dominioNeoenergia(d: string): boolean {
  * Interpreta a conferencia DKIM feita no E-MAIL BRUTO (mailauth consulta a
  * chave publica no DNS — nao da pra forjar escrevendo cabecalho).
  * O encaminhamento automatico do Gmail preserva a assinatura original.
- *   pass         — uma assinatura de neoenergia.com conferiu
- *   fail         — havia assinatura de neoenergia.com e ela NAO conferiu (adulterado/forjado)
- *   desconhecido — sem assinatura da Neoenergia (ou erro temporario de DNS): nao prova nada
+ *   pass         — uma assinatura de neoenergia.com conferiu cobrindo o corpo INTEIRO
+ *   fail         — havia assinatura de neoenergia.com e a conta sobre os CABECALHOS nao
+ *                  fechou (cabecalho assinado adulterado ou assinatura forjada)
+ *   desconhecido — sem assinatura da Neoenergia, corpo alterado (o mailauth devolve
+ *                  'neutral: body hash did not verify' — ex.: PDF trocado), chave ausente
+ *                  ou erro de DNS. Nao prova nada, mas tambem nao acusa golpe.
+ * Assinatura com l= (so parte do corpo assinada) NUNCA conta como pass: daria pra
+ * anexar outro PDF sem quebrar a assinatura.
  */
 export function interpretarDkim(resultados: AssinaturaDkim[] | null | undefined): ResultadoDkim {
-  const neo = (resultados ?? []).filter((r) => dominioNeoenergia(r.signingDomain));
-  if (neo.some((r) => r.status?.result === 'pass')) return 'pass';
+  const neo = (resultados ?? []).filter((r) => dominioNeoenergia(r.signingDomain ?? ''));
+  const corpoInteiro = (r: AssinaturaDkim) => !r.canonBodyLengthLimited && !r.status?.underSized;
+  if (neo.some((r) => r.status?.result === 'pass' && corpoInteiro(r))) return 'pass';
   if (neo.some((r) => r.status?.result === 'fail')) return 'fail';
   return 'desconhecido';
 }

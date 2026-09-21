@@ -104,6 +104,16 @@ describe('interpretarDkim (resultado do mailauth no e-mail bruto)', () => {
     expect(interpretarDkim(null)).toBe('desconhecido');
     expect(interpretarDkim([r('neoenergia.com', 'temperror')])).toBe('desconhecido');
   });
+  it('assinatura com l= (so parte do corpo) NUNCA vale como pass', () => {
+    expect(interpretarDkim([{ signingDomain: 'neoenergia.com', status: { result: 'pass' }, canonBodyLengthLimited: true }])).toBe('desconhecido');
+    expect(interpretarDkim([{ signingDomain: 'neoenergia.com', status: { result: 'pass', underSized: 120 } }])).toBe('desconhecido');
+  });
+  it('corpo alterado (PDF trocado) vem como neutral: desconhecido, nao pass', () => {
+    expect(interpretarDkim([r('neoenergia.com', 'neutral')])).toBe('desconhecido');
+  });
+  it('assinatura sem signingDomain (mensagem nao assinada) nao quebra', () => {
+    expect(interpretarDkim([{ status: { result: 'none' } }])).toBe('desconhecido');
+  });
   it('dominioNeoenergia nao aceita parecidos', () => {
     expect(dominioNeoenergia('neoenergia.com')).toBe(true);
     expect(dominioNeoenergia('NEOENERGIA.COM.')).toBe(true);
