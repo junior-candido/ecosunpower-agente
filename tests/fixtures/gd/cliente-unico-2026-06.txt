@@ -1,0 +1,73 @@
+-
+Faturamento Microgeração
+-
+Cliente: CLIENTE TESTE UM - 100001 - 200002
+Período: junho de 2026
+Potencia do Sistema Fotovoltaíco:
+-
+Injetado
+Descrição Medidor Instalação De Até Mês Injetado Saldo Mês Ant. Injetado Acum.
+Gerador 9000000001 200002 13780 14467 06/2026 687 10601,03 11572
+-
+Consumo
+Descrição Medidor Instalação De Até Consumo Saldo Utilizado
+Consumidor 9000000001 200002 4858 5220 362
+Mês Utiliz. Rest. Expira
+06/2026 289,36 397,64 06/2031
+-
+DADOS DOS ÚLTIMOS 13 MESES
+-
+SITUAÇÃO
+MENSAL
+CÓDIGO DO
+CLIENTE
+ENERGIA
+CONSUMIDA
+ENERGIA
+INJETADA
+ENERGIA
+FATURADA
+KWh
+Compensado CRÉDITO
+mai/2026 100001 357 664 100 283,97 380,03
+jun/2026 100001 362 687 100 289,36 397,64
+-
+TOTAL INJETADO TOTAL
+COMPENSADO SALDO
+ACUMULADO
+PRÓXIMO SALDO
+ACUMULADO A
+EXPIRAR
+CICLO DE
+FATURAMENTO A
+EXPIRAR
+TOTAL DE
+CRÉDITOS
+EXPIRADOS
+11572 573,33 10998,67 654 12/2029 0
+-
+RESUMO DO SALDO DE CRÉDITO POR UNIDADE
+CÓDIGO DO CLIENTE % DE COMPENSAÇÃO SALDO DE CRÉDITO ACUMULADO
+100001 100 % 10998,67
+-
+VOCÊ SABIA?
+1. Energia gerada é toda a energia produzida por meios de fontes renováveis. A energia gerada que é consumida de forma
+simultânea não é registrada na rede da concessionária. Essa é uma informação própria da instalação do consumidor e não
+está disponível para a concessionária.
+2. Consumo Instantâneo é a energia utilizada instantaneamente pela sua residência. Essa é uma informação própria da
+instalação do consumidor e não está disponível para a concessionária.
+3. Energia Injetada é aquela que não foi usada no consumo instantâneo.Ou seja, seu sistema gerou mais energia do que
+precisava e, assim, injetou energia na rede da concessionária. Essa energia é registrada na medição da concessionária.
+4. Energia Consumida é a energia usada pela unidade consumidora proveniente da rede da concessionária. Essa energia é
+registrada na medição da concessionária.
+5. Energia Faturada é a diferença entre a energia consumida e a energia compensada*, ressaltando que o valor mínimo a ser
+faturado será sempre custo de disponibilidade**.
+Energia compensada* é a energia elétrica ativa consumida da rede, compensada pela energia elétrica ativa injetada, pelo
+excedente de energia e pelo crédito de energia utilizados no faturamento de unidade consumidora participante do Sistema de
+Compensação de Energia Elétrica, limitada ao montante de energia consumida da rede no ciclo de faturamento e respeitando
+o limite do valor do custo de disponibilidade
+O que é custo de disponibilidade**? É uma referência mínima de cobrança, definida pela ANEEL. Para clientes de baixa
+tensão é o valor em moeda corrente equivalente a 30 kWh, se monofásico ou bifásico a dois condutores, 50 kWh, se bifásico a
+três condutores ou 100 kWh, se trifásico
+Crédito acumulado trata-se do saldo positivo de energia após todas as compensações – geradora e beneficiárias – que serão
+utilizadas nas faturas subsequentes. Os créditos permanecem válidos por 60 meses, a partir do mês de injeção.
