@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classificarEmailGd, dadosDoAssunto } from '../src/modules/gd/demonstrativo-email.js';
+import { classificarEmailGd, dadosDoAssunto, verificarDkimNeoenergia } from '../src/modules/gd/demonstrativo-email.js';
 
 // Assunto REAL (formato), com nome e codigos ficticios.
 const ASSUNTO =
@@ -37,13 +37,13 @@ describe('classificarEmailGd', () => {
     expect(r.assunto?.codigoCliente).toBe('2282817');
   });
 
-  it('demonstrativo encaminhado na mao pelo Junior para faturas@', () => {
+  it('assunto de demonstrativo com From de outra pessoa NAO e aceito, mesmo indo pra faturas@', () => {
     const r = classificarEmailGd(payload({
       from: 'Junior <junior@ecosunpower.eng.br>',
       to: ['faturas@woupri.resend.app'],
       subject: `Fwd: ${ASSUNTO}`,
     }));
-    expect(r?.tipo).toBe('demonstrativo');
+    expect(r).toBeNull();
   });
 
   it('confirmacao de encaminhamento do Gmail: pega o codigo do assunto', () => {
@@ -83,5 +83,31 @@ describe('classificarEmailGd', () => {
     expect(classificarEmailGd({ type: 'email.delivered', data: { subject: ASSUNTO } })).toBeNull();
     expect(classificarEmailGd(null)).toBeNull();
     expect(classificarEmailGd({ type: 'email.received' })).toBeNull();
+  });
+});
+
+describe('verificarDkimNeoenergia', () => {
+  it('dkim=pass do dominio da Neoenergia: pass', () => {
+    expect(verificarDkimNeoenergia({
+      'Authentication-Results': 'mx.resend.com; dkim=pass header.d=neoenergia.com header.s=sel1; spf=softfail',
+    })).toBe('pass');
+    expect(verificarDkimNeoenergia({
+      'authentication-results': ['x; spf=pass', 'y; dkim=pass header.i=@mail.neoenergia.com'],
+    })).toBe('pass');
+  });
+  it('dkim=pass de OUTRO dominio (golpista assinando o proprio): fail', () => {
+    expect(verificarDkimNeoenergia({
+      'Authentication-Results': 'mx; dkim=pass header.d=golpe.com; spf=pass',
+    })).toBe('fail');
+  });
+  it('neoenergia com dkim=fail: fail', () => {
+    expect(verificarDkimNeoenergia({ 'Authentication-Results': 'mx; dkim=fail header.d=neoenergia.com' })).toBe('fail');
+  });
+  it('dominio parecido nao engana (neoenergia.com.golpe.io)', () => {
+    expect(verificarDkimNeoenergia({ 'Authentication-Results': 'mx; dkim=pass header.d=neoenergia.com.golpe.io' })).toBe('fail');
+  });
+  it('sem cabecalho de autenticacao: desconhecido', () => {
+    expect(verificarDkimNeoenergia({ Subject: 'x' })).toBe('desconhecido');
+    expect(verificarDkimNeoenergia(null)).toBe('desconhecido');
   });
 });

@@ -82,14 +82,16 @@ describe('cruzarDemonstrativo — rateio', () => {
     expect(r?.texto).toContain('50');
   });
 
-  it('beneficiaria cadastrada que nao aparece no demonstrativo: alerta', () => {
+  it('beneficiaria que nao aparece (ficha pode ter a instalacao): informa, sem acusar erro', () => {
     const a = cruzarDemonstrativo({
       dados: comRateio(), geracaoMesKwh: null, inconsistencias: [],
       rateioCadastrado: [{ uc: '999999', nome: 'Filha', percentual: 20 }],
     });
     const r = a.find((x) => x.tipo === 'rateio_divergente');
+    expect(r?.gravidade).toBe('info');
     expect(r?.texto).toContain('Filha');
-    expect(r?.texto).toMatch(/n[aã]o aparece/i);
+    expect(r?.texto).toMatch(/não consegui conferir/i);
+    expect(r?.texto).toContain('300003');
   });
 
   it('beneficiaria sem percentual cadastrado nao gera alerta de diferenca', () => {

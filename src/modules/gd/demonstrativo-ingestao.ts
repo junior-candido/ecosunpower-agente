@@ -7,7 +7,7 @@
 // Ver docs/superpowers/specs/2026-09-21-demonstrativo-gd-ingestao-design.md.
 
 import { parseDemonstrativo } from './demonstrativo-parser.js';
-import type { DadosAssunto } from './demonstrativo-email.js';
+import { verificarDkimNeoenergia, type DadosAssunto, type ResultadoDkim } from './demonstrativo-email.js';
 import {
   cruzarDemonstrativo,
   montarResumoWhats,
@@ -15,12 +15,11 @@ import {
   type RateioCadastrado,
 } from './demonstrativo-cruzamento.js';
 
-const ECOSUN_COMPANY_ID = '00000000-0000-0000-0000-000000000001';
-
-export interface Anexo {
+/** Metadado do anexo (antes de baixar — assim so o PDF e baixado). */
+export interface AnexoMeta {
+  id: string;
   nome: string | null;
   tipo: string | null;
-  bytes: Uint8Array;
 }
 
 export interface LeadGd {
@@ -61,11 +60,18 @@ export interface RegistroDemonstrativo {
 
 export interface DepsIngestao {
   modoTeste: boolean;
+  /** Empresa dona da caixa que recebeu (hoje so a EcoSun encaminha). */
+  companyId: string;
   jaProcessado(emailId: string): Promise<boolean>;
-  baixarAnexos(emailId: string): Promise<Anexo[]>;
+  listarAnexos(emailId: string): Promise<AnexoMeta[]>;
+  baixarAnexo(emailId: string, anexo: AnexoMeta): Promise<Uint8Array>;
+  /** Cabecalhos do e-mail recebido (pra conferir o DKIM). null se nao der. */
+  buscarCabecalhos(emailId: string): Promise<Record<string, unknown> | null>;
   extrairTexto(bytes: Uint8Array): Promise<string>;
-  /** Procura o lead cujo uc_numero seja um destes (codigo do cliente ou instalacao). */
-  buscarLeadPorUc(ucs: string[]): Promise<LeadGd | null>;
+  /** Lead da empresa com essa UC — instalacao tem preferencia sobre o codigo do cliente. */
+  buscarLeadPorUc(instalacao: string, codigoCliente: string): Promise<LeadGd | null>;
+  /** Ja existe demonstrativo dessa instalacao nesse mes? */
+  existeRegistro(instalacao: string, referencia: string): Promise<boolean>;
   /** Beneficiarias do rateio cadastradas para o lead gerador. */
   buscarRateio(leadGeradorId: string): Promise<RateioCadastrado[]>;
   /** Soma da geracao_diaria do sistema do lead no mes; null se nao ha monitoramento. */
@@ -75,10 +81,10 @@ export interface DepsIngestao {
   log?(msg: string): void;
 }
 
-export type StatusIngestao = 'gravado' | 'duplicado' | 'sem_anexo' | 'ilegivel' | 'erro';
+export type StatusIngestao = 'gravado' | 'duplicado' | 'sem_anexo' | 'ilegivel' | 'recusado' | 'erro';
 
-export function escolherPdf(anexos: Anexo[]): Anexo | null {
-  const ehPdf = (a: Anexo) => /\.pdf$/i.test(a.nome ?? '') || /pdf/i.test(a.tipo ?? '');
+export function escolherPdf<T extends { nome: string | null; tipo: string | null }>(anexos: T[]): T | null {
+  const ehPdf = (a: T) => /\.pdf$/i.test(a.nome ?? '') || /pdf/i.test(a.tipo ?? '');
   return (
     anexos.find((a) => ehPdf(a) && /relatorio/i.test(a.nome ?? '')) ??
     anexos.find(ehPdf) ??
@@ -114,15 +120,31 @@ export async function ingerirDemonstrativo(
     etapa = 'checar duplicado';
     if (await deps.jaProcessado(emailId)) return { status: 'duplicado' };
 
+    etapa = 'conferir remetente';
+    let dkim: ResultadoDkim = 'desconhecido';
+    try {
+      dkim = verificarDkimNeoenergia(await deps.buscarCabecalhos(emailId));
+    } catch (e) {
+      deps.log?.(`[gd] cabecalhos indisponiveis: ${(e as Error).message}`);
+    }
+    if (dkim === 'fail') {
+      await avisoSeguro(
+        deps,
+        `🚫 Recusei um "demonstrativo" de ${quem(assunto)}: a assinatura do e-mail NÃO confere com a Neoenergia. Pode ser golpe — nada foi gravado.`,
+        null,
+      );
+      return { status: 'recusado', motivo: 'dkim nao confere' };
+    }
+
     etapa = 'baixar anexo';
-    const pdf = escolherPdf(await deps.baixarAnexos(emailId));
-    if (!pdf) {
+    const meta = escolherPdf(await deps.listarAnexos(emailId));
+    if (!meta) {
       await avisoSeguro(deps, `📄 Chegou o demonstrativo de ${quem(assunto)}, mas não veio o PDF anexo.`, null);
       return { status: 'sem_anexo' };
     }
 
     etapa = 'ler PDF';
-    const texto = await deps.extrairTexto(pdf.bytes);
+    const texto = await deps.extrairTexto(await deps.baixarAnexo(emailId, meta));
     const r = parseDemonstrativo(texto);
     if (!r.ok) {
       await avisoSeguro(
@@ -133,13 +155,30 @@ export async function ingerirDemonstrativo(
       return { status: 'ilegivel', motivo: r.motivo };
     }
     const d = r.dados;
-    const inconsistencias = [...r.inconsistencias];
     if (assunto && assunto.instalacao !== d.instalacao) {
-      inconsistencias.push(`o assunto do e-mail fala da instalação ${assunto.instalacao}, mas o PDF é da ${d.instalacao}`);
+      await avisoSeguro(
+        deps,
+        `🚫 Recusei o demonstrativo: o assunto do e-mail é da instalação ${assunto.instalacao}, mas o PDF é da ${d.instalacao}. Nada foi gravado.`,
+        null,
+      );
+      return { status: 'recusado', motivo: 'assunto e PDF de instalacoes diferentes' };
+    }
+    const inconsistencias = [...r.inconsistencias];
+    if (dkim === 'desconhecido') {
+      etapa = 'checar mes ja gravado';
+      if (await deps.existeRegistro(d.instalacao, d.referencia)) {
+        await avisoSeguro(
+          deps,
+          `⚠️ Chegou de novo o demonstrativo de ${quem(assunto)}, sem assinatura verificável — mantive o que já estava gravado.`,
+          null,
+        );
+        return { status: 'recusado', motivo: 'mes ja gravado e remetente nao verificado' };
+      }
+      inconsistencias.push('remetente não verificado (e-mail sem assinatura DKIM conferível)');
     }
 
     etapa = 'achar cliente';
-    const lead = await deps.buscarLeadPorUc([d.codigoCliente, d.instalacao]);
+    const lead = await deps.buscarLeadPorUc(d.instalacao, d.codigoCliente);
 
     etapa = 'cruzar';
     const rateio = lead ? await deps.buscarRateio(lead.id) : [];
@@ -148,7 +187,7 @@ export async function ingerirDemonstrativo(
 
     etapa = 'gravar';
     await deps.salvar({
-      company_id: lead?.companyId ?? ECOSUN_COMPANY_ID,
+      company_id: deps.companyId,
       lead_id: lead?.id ?? null,
       cliente_nome: d.clienteNome,
       codigo_cliente: d.codigoCliente,

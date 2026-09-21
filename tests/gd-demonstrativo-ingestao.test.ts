@@ -10,8 +10,10 @@ import {
 
 const TEXTO = readFileSync(join(__dirname, 'fixtures', 'gd', 'cliente-unico-2026-06.txt'), 'utf-8');
 const ASSUNTO = { referencia: '2026-06-01', nome: 'CLIENTE TESTE UM', codigoCliente: '100001', instalacao: '200002' };
-const PDF = { nome: 'RelatorioResumo.pdf', tipo: 'application/octet-stream', bytes: new Uint8Array([1, 2, 3]) };
-const PNG = { nome: 'Demonstrativo_Saida_202608.png', tipo: 'application/octet-stream', bytes: new Uint8Array([9]) };
+const PDF = { id: 'a-pdf', nome: 'RelatorioResumo.pdf', tipo: 'application/octet-stream' };
+const PNG = { id: 'a-png', nome: 'Demonstrativo_Saida_202608.png', tipo: 'application/octet-stream' };
+const DKIM_OK = { 'Authentication-Results': 'mx.google.com; dkim=pass header.i=@neoenergia.com' };
+const ECOSUN = '00000000-0000-0000-0000-000000000001';
 
 function deps(over: Partial<DepsIngestao> = {}): DepsIngestao & { avisos: string[]; salvos: any[] } {
   const avisos: string[] = [];
@@ -20,10 +22,14 @@ function deps(over: Partial<DepsIngestao> = {}): DepsIngestao & { avisos: string
     avisos,
     salvos,
     modoTeste: true,
+    companyId: ECOSUN,
     jaProcessado: vi.fn(async () => false),
-    baixarAnexos: vi.fn(async () => [PNG, PDF]),
+    listarAnexos: vi.fn(async () => [PNG, PDF]),
+    baixarAnexo: vi.fn(async () => new Uint8Array([1, 2, 3])),
+    buscarCabecalhos: vi.fn(async () => DKIM_OK),
     extrairTexto: vi.fn(async () => TEXTO),
-    buscarLeadPorUc: vi.fn(async () => ({ id: 'lead-1', nome: 'Cliente Um', companyId: 'emp-1' })),
+    buscarLeadPorUc: vi.fn(async () => ({ id: 'lead-1', nome: 'Cliente Um', companyId: ECOSUN })),
+    existeRegistro: vi.fn(async () => false),
     buscarRateio: vi.fn(async () => []),
     geracaoDoMes: vi.fn(async () => 1000),
     salvar: vi.fn(async (r) => { salvos.push(r); }),
@@ -37,7 +43,7 @@ describe('escolherPdf', () => {
     expect(escolherPdf([PNG, PDF])?.nome).toBe('RelatorioResumo.pdf');
   });
   it('aceita pelo content-type quando o nome nao ajuda', () => {
-    const a = { nome: 'arquivo', tipo: 'application/pdf', bytes: new Uint8Array() };
+    const a = { id: 'x', nome: 'arquivo', tipo: 'application/pdf' };
     expect(escolherPdf([PNG, a])).toBe(a);
   });
   it('sem PDF devolve null', () => {
@@ -50,11 +56,13 @@ describe('ingerirDemonstrativo — caminho feliz', () => {
     const d = deps();
     const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
     expect(r.status).toBe('gravado');
-    expect(d.buscarLeadPorUc).toHaveBeenCalledWith(['100001', '200002']);
+    expect(d.buscarLeadPorUc).toHaveBeenCalledWith('200002', '100001');
+    expect(d.baixarAnexo).toHaveBeenCalledTimes(1);
+    expect(d.baixarAnexo).toHaveBeenCalledWith('in_1', PDF); // so o PDF, nunca o PNG
     expect(d.geracaoDoMes).toHaveBeenCalledWith('lead-1', '2026-06-01');
     expect(d.salvos).toHaveLength(1);
     const s = d.salvos[0];
-    expect(s.company_id).toBe('emp-1');
+    expect(s.company_id).toBe(ECOSUN);
     expect(s.lead_id).toBe('lead-1');
     expect(s.instalacao).toBe('200002');
     expect(s.referencia).toBe('2026-06-01');
@@ -88,13 +96,13 @@ describe('ingerirDemonstrativo — o que pode dar errado (nunca lanca)', () => {
     const d = deps({ jaProcessado: vi.fn(async () => true) });
     const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
     expect(r.status).toBe('duplicado');
-    expect(d.baixarAnexos).not.toHaveBeenCalled();
+    expect(d.listarAnexos).not.toHaveBeenCalled();
     expect(d.salvos).toHaveLength(0);
     expect(d.avisos).toHaveLength(0);
   });
 
   it('sem PDF anexo: avisa e nao grava', async () => {
-    const d = deps({ baixarAnexos: vi.fn(async () => [PNG]) });
+    const d = deps({ listarAnexos: vi.fn(async () => [PNG]) });
     const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
     expect(r.status).toBe('sem_anexo');
     expect(d.salvos).toHaveLength(0);
@@ -115,20 +123,21 @@ describe('ingerirDemonstrativo — o que pode dar errado (nunca lanca)', () => {
     const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
     expect(r.status).toBe('gravado');
     expect(d.salvos[0].lead_id).toBeNull();
-    expect(d.salvos[0].company_id).toBe('00000000-0000-0000-0000-000000000001');
+    expect(d.salvos[0].company_id).toBe(ECOSUN);
     expect(d.geracaoDoMes).not.toHaveBeenCalled();
     expect(d.avisos[0]).toMatch(/não achei o cliente|UC não encontrada/i);
   });
 
-  it('assunto e PDF de instalacoes diferentes: grava pelo PDF e sinaliza', async () => {
+  it('assunto e PDF de instalacoes diferentes: recusa e nao grava', async () => {
     const d = deps();
-    await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: { ...ASSUNTO, instalacao: '777777' } });
-    expect(d.salvos[0].instalacao).toBe('200002');
-    expect(d.salvos[0].inconsistencias.some((i: string) => i.includes('777777'))).toBe(true);
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: { ...ASSUNTO, instalacao: '777777' } });
+    expect(r.status).toBe('recusado');
+    expect(d.salvos).toHaveLength(0);
+    expect(d.avisos[0]).toContain('777777');
   });
 
   it('falha no download: avisa e devolve erro, sem lancar', async () => {
-    const d = deps({ baixarAnexos: vi.fn(async () => { throw new Error('resend 500'); }) });
+    const d = deps({ baixarAnexo: vi.fn(async () => { throw new Error('resend 500'); }) });
     const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
     expect(r.status).toBe('erro');
     expect(d.avisos[0]).toContain('resend 500');
@@ -164,5 +173,45 @@ describe('tratarConfirmacaoGmail', () => {
     const avisar = vi.fn(async () => {});
     await tratarConfirmacaoGmail({ avisar }, { codigo: null });
     expect(avisar).toHaveBeenCalled();
+  });
+});
+
+describe('ingerirDemonstrativo — prova de que veio da Neoenergia (DKIM)', () => {
+  it('assinatura que NAO confere: recusa, nem baixa o anexo', async () => {
+    const d = deps({ buscarCabecalhos: vi.fn(async () => ({ 'Authentication-Results': 'mx; dkim=fail header.d=neoenergia.com' })) });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(r.status).toBe('recusado');
+    expect(d.listarAnexos).not.toHaveBeenCalled();
+    expect(d.salvos).toHaveLength(0);
+    expect(d.avisos[0]).toMatch(/golpe/i);
+  });
+
+  it('sem cabecalho de autenticacao e mes novo: grava, marcando remetente nao verificado', async () => {
+    const d = deps({ buscarCabecalhos: vi.fn(async () => null) });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(r.status).toBe('gravado');
+    expect(d.salvos[0].inconsistencias.some((i: string) => /não verificado/.test(i))).toBe(true);
+  });
+
+  it('sem cabecalho e mes JA gravado: nao sobrescreve (protege contra forjado)', async () => {
+    const d = deps({ buscarCabecalhos: vi.fn(async () => null), existeRegistro: vi.fn(async () => true) });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(r.status).toBe('recusado');
+    expect(d.salvos).toHaveLength(0);
+    expect(d.avisos[0]).toMatch(/mantive o que já estava/i);
+  });
+
+  it('assinatura confirmada e mes ja gravado: atualiza (reenvio legitimo da Neoenergia)', async () => {
+    const d = deps({ existeRegistro: vi.fn(async () => true) });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(r.status).toBe('gravado');
+    expect(d.existeRegistro).not.toHaveBeenCalled();
+  });
+
+  it('erro ao buscar cabecalhos nao derruba: segue como nao verificado', async () => {
+    const d = deps({ buscarCabecalhos: vi.fn(async () => { throw new Error('resend fora'); }) });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(r.status).toBe('gravado');
+    expect(d.salvos[0].inconsistencias.some((i: string) => /não verificado/.test(i))).toBe(true);
   });
 });

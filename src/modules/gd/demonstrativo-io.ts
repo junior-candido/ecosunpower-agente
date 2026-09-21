@@ -1,22 +1,38 @@
-// Entradas/saidas externas da ingestao do demonstrativo: baixar anexos do
-// e-mail recebido na Resend e extrair o texto do PDF (unpdf, JS puro — sem
+// Entradas/saidas externas da ingestao do demonstrativo: anexos e cabecalhos
+// do e-mail recebido na Resend, e o texto do PDF (unpdf, JS puro — sem
 // binario nativo, roda igual no Windows e no container do EasyPanel).
 
-import type { Anexo } from './demonstrativo-ingestao.js';
+import type { AnexoMeta } from './demonstrativo-ingestao.js';
 
-export async function baixarAnexosResend(apiKey: string, emailId: string): Promise<Anexo[]> {
+const TIMEOUT_MS = 20_000;
+
+async function resend(apiKey: string) {
   const { Resend } = await import('resend');
-  const resend = new Resend(apiKey);
-  const { data, error } = await resend.emails.receiving.attachments.list({ emailId });
+  return new Resend(apiKey);
+}
+
+/** So os metadados — o download fica pra depois de escolher o PDF. */
+export async function listarAnexosResend(apiKey: string, emailId: string): Promise<AnexoMeta[]> {
+  const r = await resend(apiKey);
+  const { data, error } = await r.emails.receiving.attachments.list({ emailId });
   if (error) throw new Error(`resend attachments.list: ${error.message ?? 'erro'}`);
-  const lista = data?.data ?? [];
-  const out: Anexo[] = [];
-  for (const a of lista) {
-    const r = await fetch(a.download_url);
-    if (!r.ok) throw new Error(`download do anexo ${a.filename ?? a.id}: HTTP ${r.status}`);
-    out.push({ nome: a.filename ?? null, tipo: a.content_type ?? null, bytes: new Uint8Array(await r.arrayBuffer()) });
-  }
-  return out;
+  return (data?.data ?? []).map((a) => ({ id: a.id, nome: a.filename ?? null, tipo: a.content_type ?? null }));
+}
+
+export async function baixarAnexoResend(apiKey: string, emailId: string, anexo: AnexoMeta): Promise<Uint8Array> {
+  const r = await resend(apiKey);
+  const { data, error } = await r.emails.receiving.attachments.get({ emailId, id: anexo.id });
+  if (error || !data) throw new Error(`resend attachments.get: ${error?.message ?? 'sem dados'}`);
+  const resp = await fetch(data.download_url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+  if (!resp.ok) throw new Error(`download do anexo ${anexo.nome ?? anexo.id}: HTTP ${resp.status}`);
+  return new Uint8Array(await resp.arrayBuffer());
+}
+
+export async function buscarCabecalhosResend(apiKey: string, emailId: string): Promise<Record<string, unknown> | null> {
+  const r = await resend(apiKey);
+  const { data, error } = await r.emails.receiving.get(emailId);
+  if (error) throw new Error(`resend receiving.get: ${error.message ?? 'erro'}`);
+  return (data?.headers as Record<string, unknown> | null) ?? null;
 }
 
 export async function extrairTextoPdf(bytes: Uint8Array): Promise<string> {

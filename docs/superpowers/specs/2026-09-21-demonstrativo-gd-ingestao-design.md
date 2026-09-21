@@ -26,9 +26,15 @@ Gmail (filtro r2d2.frms@neoenergia.com → encaminhar) → faturas@<dominio>.res
 O desvio acontece **antes** de `processarRespostaEmail`; hoje qualquer `email.received` vira "resposta de
 lead" e o demonstrativo geraria um aviso falso a cada mês.
 
-**Como reconhecer:** o encaminhamento automático do Gmail preserva o `From` e o assunto originais.
-Demonstrativo = assunto contém `Demonstrativo do Faturamento` **e** (remetente `@neoenergia.com` **ou**
-destinatário `faturas@`). Confirmação do Gmail = remetente `forwarding-noreply@google.com`.
+**Como reconhecer:** o encaminhamento automático do Gmail preserva o `From`, o `To` e o assunto originais
+(`faturas@` nem aparece no `To`). Demonstrativo = assunto contém `Demonstrativo do Faturamento` **e**
+remetente `@neoenergia.com`. Confirmação do Gmail = remetente `forwarding-noreply@google.com`.
+
+**Prova de origem (revisão de 21/09):** `From` é forjável. Camadas: (1) DKIM lido do
+`Authentication-Results` (`dkim=pass header.d=neoenergia.com`) — `fail` recusa sem baixar nada;
+(2) assunto e PDF precisam ser da mesma instalação, senão recusa; (3) sem DKIM conferível, grava mês
+novo marcado "remetente não verificado", mas **nunca sobrescreve** mês já gravado; (4) assinatura svix
+do webhook. Limite conhecido: cabeçalho é texto; prova forte = verificar DKIM no bruto (`raw.download_url`).
 
 ## Peças
 
@@ -66,9 +72,11 @@ Campo obrigatório ausente (código, instalação, referência) → `ok:false` (
 
 ### Ligação com o cliente
 
-`leads.uc_numero` pode ter sido cadastrado com o **código do cliente** ou com a **instalação** — o ingestor
-tenta os dois. Sem par → grava com `lead_id` nulo e alerta "UC não encontrada". `company_id` vem do lead
-achado; sem lead, EcoSun (única empresa com encaminhamento neste teste).
+`leads.uc_numero` pode ter sido cadastrado com o **código do cliente** ou com a **instalação**. Ordem:
+instalação exata → código exato → instalação por dígitos → código por dígitos (ILIKE `2%0%0…` + filtro
+fino), sempre **dentro da empresa** e do mais recente para o mais antigo. Sem par → grava com `lead_id`
+nulo e alerta. O processamento roda em `comEmpresaDe(EcoSun)` (única empresa com encaminhamento), então
+com `RLS_ESTRITO=on` o client usa o crachá certo; `company_id` é sempre o da empresa da caixa.
 
 ### Cruzamento e alertas
 
@@ -82,14 +90,17 @@ achado; sem lead, EcoSun (única empresa com encaminhamento neste teste).
 | Não consegui ler | parser `ok:false` |
 
 Geração mensal: soma de `geracao_diaria` do sistema do lead no mês de referência (`serieAnoMensal`).
-**Modo teste** (`DEMONSTRATIVO_MODO_TESTE`, padrão `on`): alertas só no WhatsApp do Junior
-(`sendAdminWithButtons`), um resumo por demonstrativo. Nada vai ao cliente.
+**Modo teste:** nesta fase é fixo — alertas só no WhatsApp do Junior (`sendAdminWithButtons`), um
+resumo por demonstrativo. Envio ao cliente é fatia futura. Beneficiária do rateio que não aparece entre
+os códigos do demonstrativo vira **informação** ("não consegui conferir"), não alerta — a ficha pode ter
+a instalação em vez do código.
 
 ## Erros
 
-O webhook **sempre** responde 200 (Resend retenta em loop). Qualquer falha de download/parse/gravação
-vira log + aviso "não consegui processar o demonstrativo de X" ao Junior. Deduplicação pelo `email_id`
-e pelo UNIQUE de UC+mês.
+O webhook responde 200 **antes** de processar (download/parse podem passar do tempo da Resend) e
+processa em seguida; um conjunto em memória impede dois processamentos simultâneos do mesmo e-mail.
+Só o PDF escolhido pelos metadados é baixado (timeout 20 s). Falhas viram log + aviso ao Junior.
+Deduplicação pelo `email_id` e pelo UNIQUE de UC+mês.
 
 ## Segurança
 

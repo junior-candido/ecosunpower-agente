@@ -62,17 +62,47 @@ export function classificarEmailGd(body: unknown): EmailGd | null {
   const d = b.data;
   const assunto = typeof d.subject === 'string' ? d.subject : '';
   const de = enderecos(d.from)[0] ?? '';
-  const para = enderecos(d.to);
   const emailId = typeof d.email_id === 'string' ? d.email_id : typeof d.id === 'string' ? d.id : null;
-  const paraFaturas = para.some((e) => e.startsWith('faturas@'));
 
   if (de === 'forwarding-noreply@google.com') {
     const cod = /\(#(\d+)\)/.exec(assunto);
     return { tipo: 'confirmacao_gmail', emailId, codigo: cod ? cod[1] : null };
   }
 
-  if (RE_DEMONSTRATIVO.test(assunto) && (de.endsWith('@neoenergia.com') || paraFaturas)) {
+  // So o remetente da Neoenergia. (O encaminhamento automatico do Gmail
+  // preserva From e To originais — o faturas@ nem aparece no To, entao aceitar
+  // "To: faturas@" so abria porta pra e-mail forjado.) O From ainda pode ser
+  // forjado: a prova de verdade e o DKIM, conferido na ingestao.
+  if (RE_DEMONSTRATIVO.test(assunto) && de.endsWith('@neoenergia.com')) {
     return { tipo: 'demonstrativo', emailId, assunto: dadosDoAssunto(assunto) };
   }
   return null;
+}
+
+export type ResultadoDkim = 'pass' | 'fail' | 'desconhecido';
+
+/**
+ * Le o Authentication-Results do e-mail recebido. O encaminhamento automatico
+ * do Gmail mantem a assinatura DKIM original da Neoenergia intacta, entao um
+ * "dkim=pass" com dominio neoenergia.com prova que o PDF veio dela.
+ *   pass         — assinatura da Neoenergia conferida
+ *   fail         — tem o cabecalho e a assinatura NAO confere (forjado)
+ *   desconhecido — sem cabecalho de autenticacao (nao da pra afirmar nada)
+ *
+ * LIMITE CONHECIDO: cabecalho de autenticacao e texto — quem manda o e-mail
+ * pode escrever um falso. Por isso isto e uma camada, nao a unica: o fluxo
+ * tambem exige From da Neoenergia, assunto e PDF da mesma instalacao, e nunca
+ * sobrescreve um mes ja gravado sem 'pass'. Prova forte = conferir o DKIM no
+ * e-mail bruto (raw.download_url da Resend) — proxima fatia se virar produto.
+ */
+export function verificarDkimNeoenergia(headers: Record<string, unknown> | null | undefined): ResultadoDkim {
+  if (!headers) return 'desconhecido';
+  const valores = Object.entries(headers)
+    .filter(([k]) => k.toLowerCase() === 'authentication-results' || k.toLowerCase() === 'arc-authentication-results')
+    .flatMap(([, v]) => (Array.isArray(v) ? v : [v]))
+    .map((v) => String(v ?? ''));
+  if (valores.length === 0) return 'desconhecido';
+  const tudo = valores.join(' ; ');
+  if (/dkim=pass[^;]*header\.(?:d|i)=@?(?:[\w-]+\.)*neoenergia\.com(?![\w.-])/i.test(tudo)) return 'pass';
+  return 'fail';
 }

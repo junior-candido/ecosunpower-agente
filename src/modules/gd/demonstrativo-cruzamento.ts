@@ -97,10 +97,15 @@ export function cruzarDemonstrativo(e: EntradaCruzamento): AlertaGd[] {
     const nome = b.nome ?? `UC ${b.uc}`;
     const u = d.unidades.find((x) => x.codigoCliente === b.uc);
     if (!u) {
+      // O demonstrativo lista o CODIGO DO CLIENTE de cada unidade; a ficha pode
+      // ter a INSTALACAO. Sem saber qual foi digitado, nao da pra afirmar que
+      // o rateio esta errado — so avisar que nao foi possivel conferir.
       out.push({
         tipo: 'rateio_divergente',
-        gravidade: 'atencao',
-        texto: `${nome} (UC ${b.uc}) está cadastrada no rateio mas não aparece no demonstrativo`,
+        gravidade: 'info',
+        texto:
+          `Não consegui conferir o rateio de ${nome} (UC ${b.uc}): ela não aparece entre os códigos do demonstrativo ` +
+          `(${d.unidades.map((x) => x.codigoCliente).join(', ') || 'nenhum'}). Se a ficha tem a instalação, troque pelo código do cliente`,
       });
       continue;
     }

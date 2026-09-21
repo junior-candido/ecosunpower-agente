@@ -8,7 +8,7 @@ import { join } from 'node:path';
 describe('rota /webhooks/resend', () => {
   const src = readFileSync(join(__dirname, '..', 'src', 'index.ts'), 'utf8');
   const ini = src.indexOf("app.post('/webhooks/resend'");
-  const rota = src.slice(ini, ini + 8000);
+  const rota = src.slice(ini, ini + 12000);
 
   it('existe', () => expect(ini).toBeGreaterThan(0));
   it('confere assinatura, depois desvia GD, depois resposta de cliente', () => {
@@ -18,6 +18,20 @@ describe('rota /webhooks/resend', () => {
     expect(a).toBeGreaterThan(0);
     expect(g).toBeGreaterThan(a);
     expect(r).toBeGreaterThan(g);
+  });
+  it('processa o demonstrativo DENTRO do contexto da EcoSun (RLS estrito) e com a empresa no repo', () => {
+    const g = rota.indexOf('classificarEmailGd(req.body)');
+    const r = rota.indexOf('processarRespostaEmail(');
+    const bloco = rota.slice(g, r);
+    expect(bloco).toMatch(/comEmpresaDe\(ECOSUN_COMPANY_ID/);
+    expect(bloco).toMatch(/criarRepoDemonstrativo\(supabase\.getClient\(\), ECOSUN_COMPANY_ID\)/);
+    // o client nasce dentro do callback, depois do comEmpresaDe
+    expect(bloco.indexOf('criarRepoDemonstrativo(')).toBeGreaterThan(bloco.indexOf('comEmpresaDe('));
+  });
+  it('responde 200 ANTES de processar (retry da Resend nao duplica)', () => {
+    const g = rota.indexOf('classificarEmailGd(req.body)');
+    const bloco = rota.slice(g);
+    expect(bloco.indexOf('res.status(200)')).toBeLessThan(bloco.indexOf('ingerirDemonstrativo('));
   });
   it('responde 200 e sai quando e demonstrativo (nao cai no fluxo de resposta)', () => {
     const g = rota.indexOf('classificarEmailGd(req.body)');
