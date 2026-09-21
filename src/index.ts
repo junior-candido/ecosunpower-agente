@@ -147,6 +147,11 @@ import { carregarConhecimentoEmpresas } from './modules/conhecimento-empresa.js'
 import { montarHandoff } from './modules/handoff-transfer.js';
 import { mapResendEvento } from './modules/email/resend-events.js';
 import { processarRespostaEmail } from './modules/email/inbound-reply.js';
+import { classificarEmailGd } from './modules/gd/demonstrativo-email.js';
+import { ingerirDemonstrativo, tratarConfirmacaoGmail } from './modules/gd/demonstrativo-ingestao.js';
+import { criarRepoDemonstrativo } from './modules/gd/demonstrativo-repo.js';
+import { baixarAnexosResend, extrairTextoPdf } from './modules/gd/demonstrativo-io.js';
+import { conferirAssinaturaResend } from './modules/email/resend-assinatura.js';
 import { capturarEmailDaConversa, extrairEmailDoTexto } from './modules/email/captura-email.js';
 import { receberLeituraShelly } from './modules/medicao/shelly-medicao.js';
 import { EmailSequenceService } from './modules/email/email-sequence.js';
@@ -9485,7 +9490,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // Sem auth — o Resend chama esse endpoint. Best-effort: NUNCA lanca, sempre
   // responde 200 (senao o Resend fica retentando infinitamente). O body ja
   // vem parseado pelo express.json() global (linha ~5717).
-  // TODO (seguranca): validar assinatura svix do Resend antes de confiar no payload.
+  // Assinatura svix conferida no inicio da rota (RESEND_WEBHOOK_SECRET).
   // ===== KIT DE MEDICAO — leitura do Shelly Pro 3EM =====
   // O medidor fica na casa do CLIENTE e a plataforma fica aqui: nao existe rede
   // local em comum, entao o aparelho EMPURRA a leitura pra ca (script mJS que
@@ -9515,6 +9520,60 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
 
   app.post('/webhooks/resend', async (req, res) => {
     try {
+      // [21/09/2026] Assinatura svix: so vale quando RESEND_WEBHOOK_SECRET
+      // estiver no EasyPanel (Resend → Webhooks → Signing secret). Sem ela,
+      // segue aceitando como antes.
+      const assinatura = conferirAssinaturaResend({
+        segredo: process.env.RESEND_WEBHOOK_SECRET,
+        corpoBruto: (req as unknown as { rawBody?: string }).rawBody,
+        headers: req.headers,
+      });
+      if (assinatura === 'invalida') {
+        console.warn('[resend] webhook com assinatura invalida — recusado');
+        res.status(401).json({ ok: false });
+        return;
+      }
+
+      // [21/09/2026] DEMONSTRATIVO DE GD DA NEOENERGIA e confirmacao de
+      // encaminhamento do Gmail chegam pelo mesmo `email.received`, mas NAO sao
+      // resposta de cliente — sem este desvio, cada demonstrativo viraria um
+      // aviso falso de "cliente respondeu". Ver
+      // docs/superpowers/specs/2026-09-21-demonstrativo-gd-ingestao-design.md.
+      const gd = classificarEmailGd(req.body);
+      if (gd) {
+        const avisarGd = async (texto: string, leadId: string | null) => {
+          const { sendAdminWithButtons } = await import('./modules/eva-admin-buttons.js');
+          await sendAdminWithButtons(
+            { metaWaba: metaWaba ?? null, sendText },
+            config.engineerPhone,
+            texto,
+            leadId ? [{ id: `evabt:lead-view:${leadId}`, title: 'Ver no painel' }] : [],
+          );
+        };
+        if (gd.tipo === 'confirmacao_gmail') {
+          await tratarConfirmacaoGmail({ avisar: avisarGd }, gd);
+        } else if (!process.env.RESEND_API_KEY) {
+          console.warn('[gd] demonstrativo recebido mas RESEND_API_KEY ausente — nao da pra baixar o anexo');
+        } else {
+          const apiKey = process.env.RESEND_API_KEY;
+          const repo = criarRepoDemonstrativo(supabase.getClient());
+          const r = await ingerirDemonstrativo(
+            {
+              ...repo,
+              modoTeste: process.env.DEMONSTRATIVO_MODO_TESTE !== 'off',
+              baixarAnexos: (id) => baixarAnexosResend(apiKey, id),
+              extrairTexto: extrairTextoPdf,
+              avisar: avisarGd,
+              log: (m) => console.warn(m),
+            },
+            gd,
+          );
+          console.log(`[gd] demonstrativo ${gd.emailId}: ${r.status}${r.motivo ? ` (${r.motivo})` : ''}`);
+        }
+        res.status(200).json({ ok: true, gd: gd.tipo });
+        return;
+      }
+
       // [07/09/2026] RESPOSTA DO CLIENTE (evento `email.received`).
       // Vem antes do mapResendEvento porque e outro tipo de evento — o mapa
       // so cobre entrega/abertura/clique/bounce/spam. Ver inbound-reply.ts
