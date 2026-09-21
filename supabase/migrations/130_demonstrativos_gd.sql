@@ -45,6 +45,10 @@ create table if not exists demonstrativos_gd (
   alertas                   jsonb not null default '[]'::jsonb,
   geracao_mes_kwh           numeric(12,2),          -- do monitoramento, no momento da leitura
 
+  -- DKIM da Neoenergia conferido no e-mail bruto (mailauth + DNS). Mes
+  -- verificado nunca e sobrescrito por e-mail sem prova de origem.
+  origem_verificada         boolean not null default false,
+
   email_id                  text,                   -- id do e-mail na Resend
   texto_bruto               text,                   -- texto extraído do PDF (reprocessar sem baixar de novo)
   recebido_em               timestamptz not null default now(),

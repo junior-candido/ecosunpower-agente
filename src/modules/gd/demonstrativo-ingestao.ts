@@ -7,7 +7,7 @@
 // Ver docs/superpowers/specs/2026-09-21-demonstrativo-gd-ingestao-design.md.
 
 import { parseDemonstrativo } from './demonstrativo-parser.js';
-import { verificarDkimNeoenergia, type DadosAssunto, type ResultadoDkim } from './demonstrativo-email.js';
+import type { DadosAssunto, ResultadoDkim } from './demonstrativo-email.js';
 import {
   cruzarDemonstrativo,
   montarResumoWhats,
@@ -56,6 +56,7 @@ export interface RegistroDemonstrativo {
   geracao_mes_kwh: number | null;
   email_id: string | null;
   texto_bruto: string;
+  origem_verificada: boolean;
 }
 
 export interface DepsIngestao {
@@ -65,13 +66,13 @@ export interface DepsIngestao {
   jaProcessado(emailId: string): Promise<boolean>;
   listarAnexos(emailId: string): Promise<AnexoMeta[]>;
   baixarAnexo(emailId: string, anexo: AnexoMeta): Promise<Uint8Array>;
-  /** Cabecalhos do e-mail recebido (pra conferir o DKIM). null se nao der. */
-  buscarCabecalhos(emailId: string): Promise<Record<string, unknown> | null>;
+  /** Confere o DKIM no e-mail BRUTO (mailauth + DNS). */
+  verificarOrigem(emailId: string): Promise<ResultadoDkim>;
   extrairTexto(bytes: Uint8Array): Promise<string>;
   /** Lead da empresa com essa UC — instalacao tem preferencia sobre o codigo do cliente. */
   buscarLeadPorUc(instalacao: string, codigoCliente: string): Promise<LeadGd | null>;
-  /** Ja existe demonstrativo dessa instalacao nesse mes? */
-  existeRegistro(instalacao: string, referencia: string): Promise<boolean>;
+  /** Demonstrativo ja gravado dessa instalacao nesse mes (e se a origem foi verificada). */
+  registroExistente(instalacao: string, referencia: string): Promise<{ verificado: boolean } | null>;
   /** Beneficiarias do rateio cadastradas para o lead gerador. */
   buscarRateio(leadGeradorId: string): Promise<RateioCadastrado[]>;
   /** Soma da geracao_diaria do sistema do lead no mes; null se nao ha monitoramento. */
@@ -123,9 +124,9 @@ export async function ingerirDemonstrativo(
     etapa = 'conferir remetente';
     let dkim: ResultadoDkim = 'desconhecido';
     try {
-      dkim = verificarDkimNeoenergia(await deps.buscarCabecalhos(emailId));
+      dkim = await deps.verificarOrigem(emailId);
     } catch (e) {
-      deps.log?.(`[gd] cabecalhos indisponiveis: ${(e as Error).message}`);
+      deps.log?.(`[gd] nao deu pra conferir o DKIM: ${(e as Error).message}`);
     }
     if (dkim === 'fail') {
       await avisoSeguro(
@@ -164,17 +165,21 @@ export async function ingerirDemonstrativo(
       return { status: 'recusado', motivo: 'assunto e PDF de instalacoes diferentes' };
     }
     const inconsistencias = [...r.inconsistencias];
-    if (dkim === 'desconhecido') {
+    if (dkim !== 'pass') {
+      // Sem prova de origem: nunca passa por cima de um mes que JA foi
+      // confirmado como vindo da Neoenergia. (Mes sem prova pode ser trocado
+      // por outro sem prova — os dois chegam como aviso pro Junior.)
       etapa = 'checar mes ja gravado';
-      if (await deps.existeRegistro(d.instalacao, d.referencia)) {
+      const existente = await deps.registroExistente(d.instalacao, d.referencia);
+      if (existente?.verificado) {
         await avisoSeguro(
           deps,
-          `⚠️ Chegou de novo o demonstrativo de ${quem(assunto)}, sem assinatura verificável — mantive o que já estava gravado.`,
+          `⚠️ Chegou outro demonstrativo de ${quem(assunto)} sem assinatura verificável — mantive o que já estava gravado (esse veio confirmado da Neoenergia).`,
           null,
         );
-        return { status: 'recusado', motivo: 'mes ja gravado e remetente nao verificado' };
+        return { status: 'recusado', motivo: 'mes ja gravado com origem verificada' };
       }
-      inconsistencias.push('remetente não verificado (e-mail sem assinatura DKIM conferível)');
+      inconsistencias.push('remetente não verificado (sem assinatura DKIM da Neoenergia que confira)');
     }
 
     etapa = 'achar cliente';
@@ -214,6 +219,7 @@ export async function ingerirDemonstrativo(
       geracao_mes_kwh: geracao,
       email_id: emailId,
       texto_bruto: texto,
+      origem_verificada: dkim === 'pass',
     });
 
     let resumo = montarResumoWhats({ dados: d, alertas, nomeCliente: lead?.nome ?? null, modoTeste: deps.modoTeste });

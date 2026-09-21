@@ -3,6 +3,7 @@
 // binario nativo, roda igual no Windows e no container do EasyPanel).
 
 import type { AnexoMeta } from './demonstrativo-ingestao.js';
+import { interpretarDkim, type ResultadoDkim } from './demonstrativo-email.js';
 
 const TIMEOUT_MS = 20_000;
 
@@ -28,11 +29,23 @@ export async function baixarAnexoResend(apiKey: string, emailId: string, anexo: 
   return new Uint8Array(await resp.arrayBuffer());
 }
 
-export async function buscarCabecalhosResend(apiKey: string, emailId: string): Promise<Record<string, unknown> | null> {
+/**
+ * Confere o DKIM no e-mail BRUTO: baixa o .eml pela Resend e o mailauth busca
+ * a chave publica no DNS do dominio que assinou. Cabecalho de texto se forja;
+ * isto nao. Sem bruto disponivel → 'desconhecido' (nao acusa golpe).
+ */
+export async function verificarOrigemResend(apiKey: string, emailId: string): Promise<ResultadoDkim> {
   const r = await resend(apiKey);
   const { data, error } = await r.emails.receiving.get(emailId);
   if (error) throw new Error(`resend receiving.get: ${error.message ?? 'erro'}`);
-  return (data?.headers as Record<string, unknown> | null) ?? null;
+  const url = data?.raw?.download_url;
+  if (!url) return 'desconhecido';
+  const resp = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+  if (!resp.ok) throw new Error(`download do e-mail bruto: HTTP ${resp.status}`);
+  const bruto = Buffer.from(await resp.arrayBuffer());
+  const { dkimVerify } = await import('mailauth');
+  const res = await dkimVerify(bruto);
+  return interpretarDkim(res.results);
 }
 
 export async function extrairTextoPdf(bytes: Uint8Array): Promise<string> {

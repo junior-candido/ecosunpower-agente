@@ -23,15 +23,15 @@ describe('rota /webhooks/resend', () => {
     const g = rota.indexOf('classificarEmailGd(req.body)');
     const r = rota.indexOf('processarRespostaEmail(');
     const bloco = rota.slice(g, r);
-    expect(bloco).toMatch(/comEmpresaDe\(ECOSUN_COMPANY_ID/);
-    expect(bloco).toMatch(/criarRepoDemonstrativo\(supabase\.getClient\(\), ECOSUN_COMPANY_ID\)/);
-    // o client nasce dentro do callback, depois do comEmpresaDe
-    expect(bloco.indexOf('criarRepoDemonstrativo(')).toBeGreaterThan(bloco.indexOf('comEmpresaDe('));
+    expect(bloco).toMatch(/rodarNaEmpresa: \(fn\) => comEmpresaDe\(ECOSUN_COMPANY_ID, fn\)/);
+    // o client nasce em montarDeps, que o processador chama DENTRO do contexto
+    // (comportamento coberto em gd-demonstrativo-webhook.test.ts)
+    expect(bloco).toMatch(/montarDeps: \(\) => \{[\s\S]*criarRepoDemonstrativo\(supabase\.getClient\(\), ECOSUN_COMPANY_ID\)/);
   });
   it('responde 200 ANTES de processar (retry da Resend nao duplica)', () => {
     const g = rota.indexOf('classificarEmailGd(req.body)');
     const bloco = rota.slice(g);
-    expect(bloco.indexOf('res.status(200)')).toBeLessThan(bloco.indexOf('ingerirDemonstrativo('));
+    expect(bloco.indexOf('res.status(200)')).toBeLessThan(bloco.indexOf('processarEmailGd('));
   });
   it('responde 200 e sai quando e demonstrativo (nao cai no fluxo de resposta)', () => {
     const g = rota.indexOf('classificarEmailGd(req.body)');

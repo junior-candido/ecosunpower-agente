@@ -30,11 +30,16 @@ lead" e o demonstrativo geraria um aviso falso a cada mês.
 (`faturas@` nem aparece no `To`). Demonstrativo = assunto contém `Demonstrativo do Faturamento` **e**
 remetente `@neoenergia.com`. Confirmação do Gmail = remetente `forwarding-noreply@google.com`.
 
-**Prova de origem (revisão de 21/09):** `From` é forjável. Camadas: (1) DKIM lido do
-`Authentication-Results` (`dkim=pass header.d=neoenergia.com`) — `fail` recusa sem baixar nada;
-(2) assunto e PDF precisam ser da mesma instalação, senão recusa; (3) sem DKIM conferível, grava mês
-novo marcado "remetente não verificado", mas **nunca sobrescreve** mês já gravado; (4) assinatura svix
-do webhook. Limite conhecido: cabeçalho é texto; prova forte = verificar DKIM no bruto (`raw.download_url`).
+**Prova de origem (2ª revisão de 21/09):** `From` e cabeçalhos de autenticação são texto — forjáveis.
+A prova é o **DKIM conferido no e-mail bruto**: `receiving.get(id).raw.download_url` → `mailauth.dkimVerify`
+(busca a chave pública no DNS). O encaminhamento automático do Gmail preserva a assinatura original.
+- assinatura de `neoenergia.com` (ou subdomínio) que confere → `pass` → grava e pode atualizar o mês;
+- assinatura de `neoenergia.com` que **não** confere → `fail` → recusa sem baixar o PDF;
+- sem assinatura da Neoenergia / erro de DNS → `desconhecido` → grava marcado "remetente não verificado"
+  e **nunca sobrescreve mês gravado com `origem_verificada = true`** (igual por igual pode atualizar;
+  verificado sempre vence não verificado).
+Consistência (não é prova de origem): assunto e PDF precisam ser da mesma instalação, senão recusa.
+Assinatura svix protege a rota do webhook, não a origem do e-mail.
 
 ## Peças
 
@@ -45,7 +50,9 @@ do webhook. Limite conhecido: cabeçalho é texto; prova forte = verificar DKIM 
 | `src/modules/gd/demonstrativo-cruzamento.ts` | **Pura.** Demonstrativo + geração mensal + rateio cadastrado → alertas | nada |
 | `src/modules/gd/demonstrativo-ingestao.ts` | Orquestra: baixa anexo (Resend), extrai texto (`unpdf`), chama parser, grava, cruza, avisa. **Nunca lança.** | deps injetadas |
 | `supabase/migrations/130_demonstrativos_gd.sql` | Tabela `demonstrativos_gd` | — |
-| `src/index.ts` (webhook) | Desvio antes do fluxo de resposta | ingestão |
+| `src/modules/gd/demonstrativo-webhook.ts` | Pós-200: trava contra processamento duplo, contexto da empresa, nunca lança | ingestão |
+| `src/modules/gd/demonstrativo-io.ts` | Resend (anexo, e-mail bruto), `mailauth` (DKIM), `unpdf` (texto) | — |
+| `src/index.ts` (webhook) | Assinatura svix → desvio GD → 200 → processa | webhook GD |
 
 ### Dados extraídos (`DemonstrativoGd`)
 
@@ -67,7 +74,7 @@ Campo obrigatório ausente (código, instalação, referência) → `ok:false` (
 
 `id`, `company_id` (not null, default EcoSun, FORCE RLS + policy `company_isolation` no padrão da 123),
 `lead_id` (nullable → leads), `codigo_cliente`, `instalacao`, `referencia date`, colunas numéricas acima,
-`historico jsonb`, `unidades jsonb`, `inconsistencias jsonb`, `email_id text`, `recebido_em`,
+`historico jsonb`, `unidades jsonb`, `inconsistencias jsonb`, `origem_verificada boolean`, `email_id text`, `recebido_em`,
 `texto_bruto text`. **UNIQUE (company_id, instalacao, referencia)** — reenvio do mesmo mês atualiza (upsert).
 
 ### Ligação com o cliente

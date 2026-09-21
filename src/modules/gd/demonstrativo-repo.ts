@@ -52,7 +52,7 @@ export function criarRepoDemonstrativo(db: SupabaseClient, companyId: string) {
       .eq('company_id', companyId)
       .ilike('uc_numero', padraoDigitos(alvo))
       .order('created_at', { ascending: false })
-      .limit(50);
+      .limit(200);
     if (error) throw new Error(`leads (uc por digitos): ${error.message}`);
     const l = (data ?? []).find((x) => soDigitos(x.uc_numero) === alvo);
     return l ? { id: l.id, nome: l.name ?? null, companyId: l.company_id ?? companyId } : null;
@@ -70,16 +70,17 @@ export function criarRepoDemonstrativo(db: SupabaseClient, companyId: string) {
       return (data ?? []).length > 0;
     },
 
-    async existeRegistro(instalacao: string, referencia: string): Promise<boolean> {
+    async registroExistente(instalacao: string, referencia: string): Promise<{ verificado: boolean } | null> {
       const { data, error } = await db
         .from('demonstrativos_gd')
-        .select('id')
+        .select('origem_verificada')
         .eq('company_id', companyId)
         .eq('instalacao', instalacao)
         .eq('referencia', referencia)
         .limit(1);
       if (error) throw new Error(`demonstrativos_gd (mes gravado): ${error.message}`);
-      return (data ?? []).length > 0;
+      const l = data?.[0];
+      return l ? { verificado: l.origem_verificada === true } : null;
     },
 
     /**

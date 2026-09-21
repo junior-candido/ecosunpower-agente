@@ -148,9 +148,9 @@ import { montarHandoff } from './modules/handoff-transfer.js';
 import { mapResendEvento } from './modules/email/resend-events.js';
 import { processarRespostaEmail } from './modules/email/inbound-reply.js';
 import { classificarEmailGd } from './modules/gd/demonstrativo-email.js';
-import { ingerirDemonstrativo, tratarConfirmacaoGmail } from './modules/gd/demonstrativo-ingestao.js';
+import { processarEmailGd } from './modules/gd/demonstrativo-webhook.js';
 import { criarRepoDemonstrativo } from './modules/gd/demonstrativo-repo.js';
-import { listarAnexosResend, baixarAnexoResend, buscarCabecalhosResend, extrairTextoPdf } from './modules/gd/demonstrativo-io.js';
+import { listarAnexosResend, baixarAnexoResend, verificarOrigemResend, extrairTextoPdf } from './modules/gd/demonstrativo-io.js';
 import { conferirAssinaturaResend } from './modules/email/resend-assinatura.js';
 import { capturarEmailDaConversa, extrairEmailDoTexto } from './modules/email/captura-email.js';
 import { receberLeituraShelly } from './modules/medicao/shelly-medicao.js';
@@ -9550,54 +9550,42 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         // Responde JA: o processamento (baixar PDF, ler, banco, zap) pode passar
         // do tempo da Resend, e ela reenviaria — virando aviso duplicado.
         res.status(200).json({ ok: true, gd: gd.tipo });
-        const chave = gd.emailId ?? '';
-        if (chave && gdEmProcesso.has(chave)) return;
-        if (chave) gdEmProcesso.add(chave);
+        const avisarGd = async (texto: string, leadId: string | null) => {
+          const { sendAdminWithButtons } = await import('./modules/eva-admin-buttons.js');
+          await sendAdminWithButtons(
+            { metaWaba: metaWaba ?? null, sendText },
+            config.engineerPhone,
+            texto,
+            leadId ? [{ id: `evabt:lead-view:${leadId}`, title: 'Ver no painel' }] : [],
+          );
+        };
         // So a EcoSun encaminha demonstrativos hoje. O contexto da empresa faz o
         // getClient() usar o cracha certo com RLS_ESTRITO=on (sem ele, NINGUEM).
-        void comEmpresaDe(ECOSUN_COMPANY_ID, async () => {
-          try {
-            const avisarGd = async (texto: string, leadId: string | null) => {
-              const { sendAdminWithButtons } = await import('./modules/eva-admin-buttons.js');
-              await sendAdminWithButtons(
-                { metaWaba: metaWaba ?? null, sendText },
-                config.engineerPhone,
-                texto,
-                leadId ? [{ id: `evabt:lead-view:${leadId}`, title: 'Ver no painel' }] : [],
-              );
-            };
-            if (gd.tipo === 'confirmacao_gmail') {
-              await tratarConfirmacaoGmail({ avisar: avisarGd }, gd);
-              return;
-            }
-            const apiKey = process.env.RESEND_API_KEY;
-            if (!apiKey) {
-              console.warn('[gd] demonstrativo recebido mas RESEND_API_KEY ausente — nao da pra baixar o anexo');
-              return;
-            }
-            const repo = criarRepoDemonstrativo(supabase.getClient(), ECOSUN_COMPANY_ID);
-            const r = await ingerirDemonstrativo(
-              {
-                ...repo,
+        void processarEmailGd(
+          {
+            rodarNaEmpresa: (fn) => comEmpresaDe(ECOSUN_COMPANY_ID, fn),
+            montarDeps: () => {
+              const apiKey = process.env.RESEND_API_KEY;
+              if (!apiKey) return null;
+              return {
+                ...criarRepoDemonstrativo(supabase.getClient(), ECOSUN_COMPANY_ID),
                 companyId: ECOSUN_COMPANY_ID,
                 // Nada vai ao cliente nesta fase: o resumo so chega pro Junior.
                 modoTeste: true,
                 listarAnexos: (id) => listarAnexosResend(apiKey, id),
                 baixarAnexo: (id, a) => baixarAnexoResend(apiKey, id, a),
-                buscarCabecalhos: (id) => buscarCabecalhosResend(apiKey, id),
+                verificarOrigem: (id) => verificarOrigemResend(apiKey, id),
                 extrairTexto: extrairTextoPdf,
                 avisar: avisarGd,
                 log: (m) => console.warn(m),
-              },
-              gd,
-            );
-            console.log(`[gd] demonstrativo ${gd.emailId}: ${r.status}${r.motivo ? ` (${r.motivo})` : ''}`);
-          } catch (e) {
-            console.error('[gd] falha inesperada:', (e as Error)?.message);
-          } finally {
-            if (chave) gdEmProcesso.delete(chave);
-          }
-        });
+              };
+            },
+            avisar: avisarGd,
+            emProcesso: gdEmProcesso,
+            log: (m) => console.log(m),
+          },
+          gd,
+        );
         return;
       }
 

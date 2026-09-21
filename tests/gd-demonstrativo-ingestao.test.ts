@@ -12,7 +12,6 @@ const TEXTO = readFileSync(join(__dirname, 'fixtures', 'gd', 'cliente-unico-2026
 const ASSUNTO = { referencia: '2026-06-01', nome: 'CLIENTE TESTE UM', codigoCliente: '100001', instalacao: '200002' };
 const PDF = { id: 'a-pdf', nome: 'RelatorioResumo.pdf', tipo: 'application/octet-stream' };
 const PNG = { id: 'a-png', nome: 'Demonstrativo_Saida_202608.png', tipo: 'application/octet-stream' };
-const DKIM_OK = { 'Authentication-Results': 'mx.google.com; dkim=pass header.i=@neoenergia.com' };
 const ECOSUN = '00000000-0000-0000-0000-000000000001';
 
 function deps(over: Partial<DepsIngestao> = {}): DepsIngestao & { avisos: string[]; salvos: any[] } {
@@ -26,10 +25,10 @@ function deps(over: Partial<DepsIngestao> = {}): DepsIngestao & { avisos: string
     jaProcessado: vi.fn(async () => false),
     listarAnexos: vi.fn(async () => [PNG, PDF]),
     baixarAnexo: vi.fn(async () => new Uint8Array([1, 2, 3])),
-    buscarCabecalhos: vi.fn(async () => DKIM_OK),
+    verificarOrigem: vi.fn(async () => 'pass' as const),
     extrairTexto: vi.fn(async () => TEXTO),
     buscarLeadPorUc: vi.fn(async () => ({ id: 'lead-1', nome: 'Cliente Um', companyId: ECOSUN })),
-    existeRegistro: vi.fn(async () => false),
+    registroExistente: vi.fn(async () => null),
     buscarRateio: vi.fn(async () => []),
     geracaoDoMes: vi.fn(async () => 1000),
     salvar: vi.fn(async (r) => { salvos.push(r); }),
@@ -176,9 +175,9 @@ describe('tratarConfirmacaoGmail', () => {
   });
 });
 
-describe('ingerirDemonstrativo — prova de que veio da Neoenergia (DKIM)', () => {
-  it('assinatura que NAO confere: recusa, nem baixa o anexo', async () => {
-    const d = deps({ buscarCabecalhos: vi.fn(async () => ({ 'Authentication-Results': 'mx; dkim=fail header.d=neoenergia.com' })) });
+describe('ingerirDemonstrativo — prova de que veio da Neoenergia (DKIM no e-mail bruto)', () => {
+  it('assinatura da Neoenergia que NAO confere: recusa, nem baixa o anexo', async () => {
+    const d = deps({ verificarOrigem: vi.fn(async () => 'fail' as const) });
     const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
     expect(r.status).toBe('recusado');
     expect(d.listarAnexos).not.toHaveBeenCalled();
@@ -186,32 +185,52 @@ describe('ingerirDemonstrativo — prova de que veio da Neoenergia (DKIM)', () =
     expect(d.avisos[0]).toMatch(/golpe/i);
   });
 
-  it('sem cabecalho de autenticacao e mes novo: grava, marcando remetente nao verificado', async () => {
-    const d = deps({ buscarCabecalhos: vi.fn(async () => null) });
+  it('verificado: grava com origem_verificada=true e sem nota de remetente', async () => {
+    const d = deps();
+    await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(d.salvos[0].origem_verificada).toBe(true);
+    expect(d.salvos[0].inconsistencias.some((i: string) => /não verificado/.test(i))).toBe(false);
+    expect(d.registroExistente).not.toHaveBeenCalled();
+  });
+
+  it('sem prova e mes novo: grava marcando nao verificado', async () => {
+    const d = deps({ verificarOrigem: vi.fn(async () => 'desconhecido' as const) });
     const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
     expect(r.status).toBe('gravado');
+    expect(d.salvos[0].origem_verificada).toBe(false);
     expect(d.salvos[0].inconsistencias.some((i: string) => /não verificado/.test(i))).toBe(true);
   });
 
-  it('sem cabecalho e mes JA gravado: nao sobrescreve (protege contra forjado)', async () => {
-    const d = deps({ buscarCabecalhos: vi.fn(async () => null), existeRegistro: vi.fn(async () => true) });
+  it('sem prova e mes JA gravado VERIFICADO: nao sobrescreve', async () => {
+    const d = deps({
+      verificarOrigem: vi.fn(async () => 'desconhecido' as const),
+      registroExistente: vi.fn(async () => ({ verificado: true })),
+    });
     const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
     expect(r.status).toBe('recusado');
     expect(d.salvos).toHaveLength(0);
     expect(d.avisos[0]).toMatch(/mantive o que já estava/i);
   });
 
-  it('assinatura confirmada e mes ja gravado: atualiza (reenvio legitimo da Neoenergia)', async () => {
-    const d = deps({ existeRegistro: vi.fn(async () => true) });
-    const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
-    expect(r.status).toBe('gravado');
-    expect(d.existeRegistro).not.toHaveBeenCalled();
+  it('sem prova e mes gravado tambem sem prova: atualiza (igual por igual)', async () => {
+    const d = deps({
+      verificarOrigem: vi.fn(async () => 'desconhecido' as const),
+      registroExistente: vi.fn(async () => ({ verificado: false })),
+    });
+    expect((await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO })).status).toBe('gravado');
   });
 
-  it('erro ao buscar cabecalhos nao derruba: segue como nao verificado', async () => {
-    const d = deps({ buscarCabecalhos: vi.fn(async () => { throw new Error('resend fora'); }) });
+  it('verificado passa por cima de mes gravado sem prova (o real vence o forjado)', async () => {
+    const d = deps({ registroExistente: vi.fn(async () => ({ verificado: false })) });
+    expect((await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO })).status).toBe('gravado');
+    expect(d.salvos[0].origem_verificada).toBe(true);
+  });
+
+  it('erro ao conferir (DNS fora): segue como nao verificado, sem acusar golpe', async () => {
+    const d = deps({ verificarOrigem: vi.fn(async () => { throw new Error('dns timeout'); }) });
     const r = await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
     expect(r.status).toBe('gravado');
-    expect(d.salvos[0].inconsistencias.some((i: string) => /não verificado/.test(i))).toBe(true);
+    expect(d.salvos[0].origem_verificada).toBe(false);
+    expect(d.avisos[0]).not.toMatch(/golpe/i);
   });
 });

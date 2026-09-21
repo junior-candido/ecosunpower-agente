@@ -72,7 +72,7 @@ export function classificarEmailGd(body: unknown): EmailGd | null {
   // So o remetente da Neoenergia. (O encaminhamento automatico do Gmail
   // preserva From e To originais — o faturas@ nem aparece no To, entao aceitar
   // "To: faturas@" so abria porta pra e-mail forjado.) O From ainda pode ser
-  // forjado: a prova de verdade e o DKIM, conferido na ingestao.
+  // forjado: a prova de verdade e o DKIM no e-mail bruto, conferido na ingestao.
   if (RE_DEMONSTRATIVO.test(assunto) && de.endsWith('@neoenergia.com')) {
     return { tipo: 'demonstrativo', emailId, assunto: dadosDoAssunto(assunto) };
   }
@@ -81,28 +81,28 @@ export function classificarEmailGd(body: unknown): EmailGd | null {
 
 export type ResultadoDkim = 'pass' | 'fail' | 'desconhecido';
 
+/** Resultado de UMA assinatura DKIM, no formato do mailauth (dkimVerify().results). */
+export interface AssinaturaDkim {
+  signingDomain: string;
+  status: { result: string };
+}
+
+export function dominioNeoenergia(d: string): boolean {
+  const x = (d ?? '').trim().toLowerCase().replace(/\.$/, '');
+  return x === 'neoenergia.com' || x.endsWith('.neoenergia.com');
+}
+
 /**
- * Le o Authentication-Results do e-mail recebido. O encaminhamento automatico
- * do Gmail mantem a assinatura DKIM original da Neoenergia intacta, entao um
- * "dkim=pass" com dominio neoenergia.com prova que o PDF veio dela.
- *   pass         — assinatura da Neoenergia conferida
- *   fail         — tem o cabecalho e a assinatura NAO confere (forjado)
- *   desconhecido — sem cabecalho de autenticacao (nao da pra afirmar nada)
- *
- * LIMITE CONHECIDO: cabecalho de autenticacao e texto — quem manda o e-mail
- * pode escrever um falso. Por isso isto e uma camada, nao a unica: o fluxo
- * tambem exige From da Neoenergia, assunto e PDF da mesma instalacao, e nunca
- * sobrescreve um mes ja gravado sem 'pass'. Prova forte = conferir o DKIM no
- * e-mail bruto (raw.download_url da Resend) — proxima fatia se virar produto.
+ * Interpreta a conferencia DKIM feita no E-MAIL BRUTO (mailauth consulta a
+ * chave publica no DNS — nao da pra forjar escrevendo cabecalho).
+ * O encaminhamento automatico do Gmail preserva a assinatura original.
+ *   pass         — uma assinatura de neoenergia.com conferiu
+ *   fail         — havia assinatura de neoenergia.com e ela NAO conferiu (adulterado/forjado)
+ *   desconhecido — sem assinatura da Neoenergia (ou erro temporario de DNS): nao prova nada
  */
-export function verificarDkimNeoenergia(headers: Record<string, unknown> | null | undefined): ResultadoDkim {
-  if (!headers) return 'desconhecido';
-  const valores = Object.entries(headers)
-    .filter(([k]) => k.toLowerCase() === 'authentication-results' || k.toLowerCase() === 'arc-authentication-results')
-    .flatMap(([, v]) => (Array.isArray(v) ? v : [v]))
-    .map((v) => String(v ?? ''));
-  if (valores.length === 0) return 'desconhecido';
-  const tudo = valores.join(' ; ');
-  if (/dkim=pass[^;]*header\.(?:d|i)=@?(?:[\w-]+\.)*neoenergia\.com(?![\w.-])/i.test(tudo)) return 'pass';
-  return 'fail';
+export function interpretarDkim(resultados: AssinaturaDkim[] | null | undefined): ResultadoDkim {
+  const neo = (resultados ?? []).filter((r) => dominioNeoenergia(r.signingDomain));
+  if (neo.some((r) => r.status?.result === 'pass')) return 'pass';
+  if (neo.some((r) => r.status?.result === 'fail')) return 'fail';
+  return 'desconhecido';
 }

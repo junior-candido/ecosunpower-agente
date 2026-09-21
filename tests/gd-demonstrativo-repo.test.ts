@@ -81,9 +81,14 @@ describe('criarRepoDemonstrativo', () => {
     expect(padraoDigitos('200.00-2')).toBe('2%0%0%0%0%2');
   });
 
-  it('existeRegistro filtra empresa, instalacao e mes', async () => {
-    const { db, chamadas } = fakeDb({ demonstrativos_gd: [{ data: [{ id: 'x' }], error: null }] });
-    expect(await criarRepoDemonstrativo(db, 'E1').existeRegistro('200002', '2026-06-01')).toBe(true);
+  it('registroExistente filtra empresa, instalacao e mes e diz se foi verificado', async () => {
+    const { db, chamadas } = fakeDb({ demonstrativos_gd: [
+      { data: [{ origem_verificada: true }], error: null },
+      { data: [], error: null },
+    ] });
+    const repo = criarRepoDemonstrativo(db, 'E1');
+    expect(await repo.registroExistente('200002', '2026-06-01')).toEqual({ verificado: true });
+    expect(await repo.registroExistente('200002', '2026-07-01')).toBeNull();
     expect(chamadas[0].ops).toContainEqual(['eq', ['company_id', 'E1']]);
     expect(chamadas[0].ops).toContainEqual(['eq', ['referencia', '2026-06-01']]);
   });
