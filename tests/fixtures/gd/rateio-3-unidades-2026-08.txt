@@ -1,0 +1,63 @@
+-
+Faturamento Microgeração
+-
+Cliente: CLIENTE TESTE RATEIO - 100001 - 200002
+Período: agosto de 2026
+Potencia do Sistema Fotovoltaíco:
+-
+Injetado
+Descrição Medidor Instalação De Até Mês Injetado Saldo Mês Ant. Injetado Acum.
+Gerador 9000000001 200002 5000 5500 08/2026 500 2000 3000
+-
+Consumo
+Descrição Medidor Instalação De Até Consumo Saldo Utilizado
+Consumidor 9000000001 200002 1000 1090 90
+Mês Utiliz. Rest. Expira
+08/2026 60 0 08/2031
+Descrição Medidor Instalação De Até Consumo Saldo Utilizado
+Consumidor 9000002 400004 20000 20110 110
+Mês Utiliz. Rest. Expira
+08/2026 80 220 08/2031
+Descrição Medidor Instalação De Até Consumo Saldo Utilizado
+Consumidor 9000003 600006 10000 10170 170
+Mês Utiliz. Rest. Expira
+08/2026 140 60 08/2031
+-
+DADOS DOS ÚLTIMOS 13 MESES
+-
+SITUAÇÃO
+MENSAL CÓDIGO DO
+CLIENTE ENERGIA
+CONSUMIDA ENERGIA
+INJETADA ENERGIA
+FATURADA KWh
+Compensado CRÉDITO
+jul/2026 100001 95 480 30 65 0
+jul/2026 300003 105 0 30 75 200
+jul/2026 500005 165 0 30 135 55
+ago/2026 100001 90 500 30 60 0
+ago/2026 300003 110 0 30 80 220
+ago/2026 500005 170 0 30 140 60
+-
+TOTAL INJETADO TOTAL
+COMPENSADO SALDO
+ACUMULADO
+PRÓXIMO SALDO
+ACUMULADO A
+EXPIRAR
+CICLO DE
+FATURAMENTO A
+EXPIRAR
+TOTAL DE
+CRÉDITOS
+EXPIRADOS
+3000 1000 2000 400 11/2030 0
+-
+RESUMO DO SALDO DE CRÉDITO POR UNIDADE
+CÓDIGO DO CLIENTE % DE COMPENSAÇÃO SALDO DE CRÉDITO ACUMULADO
+100001 0 % 400
+300003 60 % 1100
+500005 40 % 500
+-
+VOCÊ SABIA?
+1. Energia gerada é toda a energia produzida por meios de fontes renováveis.

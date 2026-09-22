@@ -126,6 +126,15 @@ describe('montarResumoWhats', () => {
     expect(t).toContain('⚠️');
     expect(t).toMatch(/teste/i);
   });
+  it('com rateio mostra cada unidade: %, quanto consumiu, quanto compensou e o saldo', () => {
+    const r = parseDemonstrativo(readFileSync(join(__dirname, 'fixtures', 'gd', 'rateio-3-unidades-2026-08.txt'), 'utf-8'));
+    if (!r.ok) throw new Error(r.motivo);
+    const t = montarResumoWhats({ dados: r.dados, alertas: [], nomeCliente: null, modoTeste: true });
+    expect(t).toContain('• 100001 (geradora) 0% — consumiu 90 · compensou 60 · saldo 400 kWh');
+    expect(t).toContain('• 300003 60% — consumiu 110 · compensou 80 · saldo 1.100 kWh');
+    expect(t).toContain('• 500005 40% — consumiu 170 · compensou 140 · saldo 500 kWh');
+    expect(t).toContain('Compensado no mês (todas as unidades): 280 kWh');
+  });
   it('sem alerta diz que esta tudo certo', () => {
     const d = base();
     const t = montarResumoWhats({ dados: d, alertas: [], nomeCliente: null, modoTeste: false });
