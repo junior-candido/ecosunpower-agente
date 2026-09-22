@@ -153,7 +153,7 @@ describe('parseDemonstrativo — quando nao da pra ler', () => {
     expect(r.ok).toBe(false);
   });
   it('sem a linha do cliente (codigo e instalacao sao obrigatorios)', () => {
-    const r = parseDemonstrativo(REAL.replace(/Cliente:.*\n/, ''));
+    const r = parseDemonstrativo(REAL.replace(/Cliente:.*\r?\n/, ''));
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.motivo).toMatch(/cliente/i);
