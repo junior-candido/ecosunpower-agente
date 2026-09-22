@@ -17,6 +17,8 @@ export interface DepsWebhookGd {
   /** Monta as deps da ingestao — chamado DENTRO do contexto da empresa. */
   montarDeps(): DepsIngestao | null;
   avisar(texto: string, leadId: string | null): Promise<void>;
+  /** Texto do e-mail recebido (o codigo do Gmail vem no corpo). */
+  buscarCorpo?(emailId: string): Promise<string | null>;
   emProcesso: Set<string>;
   log?(msg: string): void;
 }
@@ -30,7 +32,7 @@ export async function processarEmailGd(deps: DepsWebhookGd, gd: EmailGd): Promis
   try {
     return await deps.rodarNaEmpresa(async () => {
       if (gd.tipo === 'confirmacao_gmail') {
-        await tratarConfirmacaoGmail({ avisar: deps.avisar }, gd);
+        await tratarConfirmacaoGmail({ avisar: deps.avisar, buscarCorpo: deps.buscarCorpo }, gd);
         return 'confirmacao' as const;
       }
       const d = deps.montarDeps();
