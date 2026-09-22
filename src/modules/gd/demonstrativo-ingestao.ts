@@ -239,14 +239,19 @@ export async function ingerirDemonstrativo(
 /**
  * O Gmail em portugues NAO poe o codigo no assunto — vem so no corpo
  * ("Codigo de confirmacao: 123456789"), junto com um link que confirma direto.
- * Visto no 1o teste real (22/09/2026).
+ * Visto no 1o teste real (22/09/2026). No Google Workspace o e-mail vem SEM
+ * codigo nenhum, so o link — e em mail.google.com (com ou sem /u/N/), nao em
+ * mail-settings.google.com. O host tem que terminar ali (barra logo depois),
+ * pra "mail.google.com.golpe.io" nao passar.
  */
+const RE_LINK_CONFIRMACAO = /https:\/\/(?:mail-settings|mail)\.google\.com\/mail\/(?:u\/\d+\/)?vf-[^\s"'<>)]+/i;
+
 export function extrairConfirmacaoGmail(corpo: string | null | undefined): { codigo: string | null; link: string | null } {
   const t = corpo ?? '';
   const cod =
     /c[óo]digo\s+de\s+confirma[çc][ãa]o\s*:?\s*(\d{6,12})/i.exec(t) ??
     /confirmation\s+code\s*:?\s*(\d{6,12})/i.exec(t);
-  const link = /https:\/\/mail-settings\.google\.com\/mail\/vf-[^\s"'<>)]+/i.exec(t);
+  const link = RE_LINK_CONFIRMACAO.exec(t);
   return { codigo: cod ? cod[1] : null, link: link ? link[0].replace(/&amp;/g, '&') : null };
 }
 

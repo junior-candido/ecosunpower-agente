@@ -135,7 +135,19 @@ export function montarResumoWhats(p: {
   linhas.push(`Injetado ${n(d.injetadoKwh)} kWh · consumo ${n(d.consumoKwh)} kWh · compensado ${n(d.creditoUtilizadoKwh)} kWh`);
   linhas.push(`Saldo de créditos: ${n(d.saldoAcumuladoKwh)} kWh`);
   if (d.unidades.length > 1) {
-    linhas.push(`Rateio: ${d.unidades.map((u) => `${u.codigoCliente} ${fmt(u.percentual)}%`).join(' · ')}`);
+    // Com rateio, o bloco Consumo acima e so o da geradora — quem gasta os
+    // creditos sao as beneficiarias. O historico do mes traz cada unidade.
+    const doMes = d.historico.filter((h) => h.mes === d.referencia);
+    linhas.push('Rateio:');
+    for (const u of d.unidades) {
+      const h = doMes.find((x) => x.codigoCliente === u.codigoCliente);
+      const papel = u.codigoCliente === d.codigoCliente ? ' (geradora)' : '';
+      const mov = h ? ` — consumiu ${fmt(h.consumida)} · compensou ${fmt(h.compensado)}` : ' —';
+      linhas.push(`• ${u.codigoCliente}${papel} ${fmt(u.percentual)}%${mov} · saldo ${fmt(u.saldo)} kWh`);
+    }
+    if (doMes.length > 0) {
+      linhas.push(`Compensado no mês (todas as unidades): ${fmt(doMes.reduce((s, h) => s + h.compensado, 0))} kWh`);
+    }
   }
   const atencao = p.alertas.filter((a) => a.gravidade === 'atencao');
   const info = p.alertas.filter((a) => a.gravidade === 'info');

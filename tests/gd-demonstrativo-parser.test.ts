@@ -143,6 +143,43 @@ describe('parseDemonstrativo — conferencias', () => {
   });
 });
 
+// Layout do PDF real COM rateio (conferido 22/09/2026 num demonstrativo de
+// verdade, geradora + 2 beneficiarias); numeros todos inventados.
+const RATEIO = readFileSync(join(__dirname, 'fixtures', 'gd', 'rateio-3-unidades-2026-08.txt'), 'utf-8');
+
+describe('parseDemonstrativo — geradora com 2 beneficiarias', () => {
+  const r = parseDemonstrativo(RATEIO);
+
+  it('le sem inconsistencias (a geradora com 0% entra na soma)', () => {
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.inconsistencias).toEqual([]);
+    expect(r.dados.unidades).toEqual([
+      { codigoCliente: '100001', percentual: 0, saldo: 400 },
+      { codigoCliente: '300003', percentual: 60, saldo: 1100 },
+      { codigoCliente: '500005', percentual: 40, saldo: 500 },
+    ]);
+  });
+
+  it('o bloco Consumo e o da GERADORA, mesmo com outras unidades depois', () => {
+    if (!r.ok) throw new Error(r.motivo);
+    expect(r.dados.consumoKwh).toBe(90);
+    expect(r.dados.creditoUtilizadoKwh).toBe(60);
+    expect(r.dados.creditoRestanteKwh).toBe(0);
+  });
+
+  it('o historico traz as 3 unidades de cada mes', () => {
+    if (!r.ok) throw new Error(r.motivo);
+    const ago = r.dados.historico.filter((h) => h.mes === '2026-08-01');
+    expect(ago.map((h) => [h.codigoCliente, h.consumida, h.compensado])).toEqual([
+      ['100001', 90, 60],
+      ['300003', 110, 80],
+      ['500005', 170, 140],
+    ]);
+    expect(r.dados.historico).toHaveLength(6);
+  });
+});
+
 describe('parseDemonstrativo — quando nao da pra ler', () => {
   it('texto vazio', () => {
     const r = parseDemonstrativo('');
