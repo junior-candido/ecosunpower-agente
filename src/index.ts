@@ -9581,6 +9581,14 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
               };
             },
             avisar: avisarGd,
+            buscarCorpo: process.env.RESEND_API_KEY
+              ? async (id) => {
+                  const { Resend } = await import('resend');
+                  const { data, error } = await new Resend(process.env.RESEND_API_KEY!).emails.receiving.get(id);
+                  if (error) throw new Error(error.message ?? 'resend receiving.get falhou');
+                  return [data?.text ?? '', data?.html ?? ''].join(' ');
+                }
+              : undefined,
             emProcesso: gdEmProcesso,
             log: (m) => console.log(m),
           },

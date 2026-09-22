@@ -5,6 +5,7 @@ import {
   ingerirDemonstrativo,
   escolherPdf,
   tratarConfirmacaoGmail,
+  extrairConfirmacaoGmail,
   type DepsIngestao,
 } from '../src/modules/gd/demonstrativo-ingestao.js';
 
@@ -232,5 +233,39 @@ describe('ingerirDemonstrativo — prova de que veio da Neoenergia (DKIM no e-ma
     expect(r.status).toBe('gravado');
     expect(d.salvos[0].origem_verificada).toBe(false);
     expect(d.avisos[0]).not.toMatch(/golpe/i);
+  });
+});
+
+describe('extrairConfirmacaoGmail (o codigo vem no CORPO em portugues)', () => {
+  const CORPO_PT = `Você recebeu esta mensagem porque junior@ecosunpower.eng.br solicitou o recebimento de e-mails em faturas@woupri.resend.app.
+Código de confirmação: 987654321
+Para permitir, clique no link abaixo para confirmar a solicitação:
+https://mail-settings.google.com/mail/vf-%5BANGjdJ_abc%5D-9f8e7d
+Se você clicar no link e ele não funcionar...`;
+  it('pega codigo e link do texto em portugues', () => {
+    expect(extrairConfirmacaoGmail(CORPO_PT)).toEqual({
+      codigo: '987654321',
+      link: 'https://mail-settings.google.com/mail/vf-%5BANGjdJ_abc%5D-9f8e7d',
+    });
+  });
+  it('pega em ingles tambem, e desfaz &amp; do html', () => {
+    const r = extrairConfirmacaoGmail('Confirmation code: 123456789 <a href="https://mail-settings.google.com/mail/vf-x&amp;y">');
+    expect(r).toEqual({ codigo: '123456789', link: 'https://mail-settings.google.com/mail/vf-x&y' });
+  });
+  it('sem nada: nulos', () => {
+    expect(extrairConfirmacaoGmail('oi')).toEqual({ codigo: null, link: null });
+    expect(extrairConfirmacaoGmail(null)).toEqual({ codigo: null, link: null });
+  });
+  it('tratarConfirmacaoGmail busca o corpo quando o assunto nao tem codigo', async () => {
+    const avisar = vi.fn(async () => {});
+    await tratarConfirmacaoGmail({ avisar, buscarCorpo: async () => CORPO_PT }, { codigo: null, emailId: 'in_9' });
+    const msg = (avisar.mock.calls[0] as any)[0] as string;
+    expect(msg).toContain('987654321');
+    expect(msg).toContain('mail-settings.google.com');
+  });
+  it('falha ao buscar o corpo ainda avisa', async () => {
+    const avisar = vi.fn(async () => {});
+    await tratarConfirmacaoGmail({ avisar, buscarCorpo: async () => { throw new Error('x'); } }, { codigo: null, emailId: 'in_9' });
+    expect((avisar.mock.calls[0] as any)[0]).toMatch(/não achei o código/);
   });
 });

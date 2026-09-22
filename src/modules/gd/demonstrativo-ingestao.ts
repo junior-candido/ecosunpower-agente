@@ -236,13 +236,44 @@ export async function ingerirDemonstrativo(
   }
 }
 
+/**
+ * O Gmail em portugues NAO poe o codigo no assunto — vem so no corpo
+ * ("Codigo de confirmacao: 123456789"), junto com um link que confirma direto.
+ * Visto no 1o teste real (22/09/2026).
+ */
+export function extrairConfirmacaoGmail(corpo: string | null | undefined): { codigo: string | null; link: string | null } {
+  const t = corpo ?? '';
+  const cod =
+    /c[óo]digo\s+de\s+confirma[çc][ãa]o\s*:?\s*(\d{6,12})/i.exec(t) ??
+    /confirmation\s+code\s*:?\s*(\d{6,12})/i.exec(t);
+  const link = /https:\/\/mail-settings\.google\.com\/mail\/vf-[^\s"'<>)]+/i.exec(t);
+  return { codigo: cod ? cod[1] : null, link: link ? link[0].replace(/&amp;/g, '&') : null };
+}
+
 export async function tratarConfirmacaoGmail(
-  deps: Pick<DepsIngestao, 'avisar'>,
-  c: { codigo: string | null },
+  deps: Pick<DepsIngestao, 'avisar'> & { buscarCorpo?: (emailId: string) => Promise<string | null> },
+  c: { codigo: string | null; emailId?: string | null },
 ): Promise<void> {
-  const texto = c.codigo
-    ? `📬 Gmail pediu confirmação do encaminhamento para faturas@.\nCódigo: *${c.codigo}*\n(Configurações → Encaminhamento → Verificar)`
-    : `📬 Chegou a confirmação de encaminhamento do Gmail, mas sem código no assunto — abrir o e-mail em faturas@ pela Resend.`;
+  let codigo = c.codigo;
+  let link: string | null = null;
+  if (deps.buscarCorpo && c.emailId) {
+    try {
+      const x = extrairConfirmacaoGmail(await deps.buscarCorpo(c.emailId));
+      codigo = codigo ?? x.codigo;
+      link = x.link;
+    } catch {
+      /* segue com o que tiver */
+    }
+  }
+  const texto = codigo || link
+    ? `📬 Gmail pediu confirmação do encaminhamento para faturas@.` +
+      (codigo ? `
+Código: *${codigo}*` : '') +
+      (link ? `
+Ou confirme direto: ${link}` : '') +
+      `
+(Gmail → Configurações → Encaminhamento → Verificar)`
+    : `📬 Chegou a confirmação de encaminhamento do Gmail, mas não achei o código — abrir o e-mail em faturas@ pela Resend.`;
   try {
     await deps.avisar(texto, null);
   } catch {
