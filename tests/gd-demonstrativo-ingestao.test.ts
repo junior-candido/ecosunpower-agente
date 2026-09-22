@@ -252,6 +252,34 @@ Se você clicar no link e ele não funcionar...`;
     const r = extrairConfirmacaoGmail('Confirmation code: 123456789 <a href="https://mail-settings.google.com/mail/vf-x&amp;y">');
     expect(r).toEqual({ codigo: '123456789', link: 'https://mail-settings.google.com/mail/vf-x&y' });
   });
+  it('Workspace em portugues: SEM codigo, so o link em mail.google.com (visto no teste real 22/09)', () => {
+    const corpo = `Para permitir, clique no link abaixo:
+https://mail.google.com/mail/vf-%5BANGjdJ_xyz%5D-AbC123_d
+<a href="https://mail.google.com/mail/u/0/vf-%5BANGjdJ_xyz%5D-AbC123_d">`;
+    expect(extrairConfirmacaoGmail(corpo)).toEqual({
+      codigo: null,
+      link: 'https://mail.google.com/mail/vf-%5BANGjdJ_xyz%5D-AbC123_d',
+    });
+    expect(extrairConfirmacaoGmail('<a href="https://mail.google.com/mail/u/0/vf-k&amp;z">').link).toBe(
+      'https://mail.google.com/mail/u/0/vf-k&z',
+    );
+  });
+  it('nao aceita link de outro dominio disfarcado', () => {
+    expect(extrairConfirmacaoGmail('https://mail.google.com.golpe.io/mail/vf-x').link).toBeNull();
+    expect(extrairConfirmacaoGmail('https://evil.com/?u=https://mail.google.com/mail/vf-x').link).toBe(
+      'https://mail.google.com/mail/vf-x',
+    );
+  });
+  it('so o link (sem codigo) ja vira aviso com o link, nao "nao achei"', async () => {
+    const avisar = vi.fn(async () => {});
+    await tratarConfirmacaoGmail(
+      { avisar, buscarCorpo: async () => 'clique: https://mail.google.com/mail/vf-%5BA%5D-z' },
+      { codigo: null, emailId: 'in_10' },
+    );
+    const msg = (avisar.mock.calls[0] as any)[0] as string;
+    expect(msg).toContain('https://mail.google.com/mail/vf-%5BA%5D-z');
+    expect(msg).not.toMatch(/não achei/);
+  });
   it('sem nada: nulos', () => {
     expect(extrairConfirmacaoGmail('oi')).toEqual({ codigo: null, link: null });
     expect(extrairConfirmacaoGmail(null)).toEqual({ codigo: null, link: null });
