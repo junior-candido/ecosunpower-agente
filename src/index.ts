@@ -147,6 +147,11 @@ import { carregarConhecimentoEmpresas } from './modules/conhecimento-empresa.js'
 import { montarHandoff } from './modules/handoff-transfer.js';
 import { mapResendEvento } from './modules/email/resend-events.js';
 import { processarRespostaEmail } from './modules/email/inbound-reply.js';
+import { classificarEmailGd } from './modules/gd/demonstrativo-email.js';
+import { processarEmailGd } from './modules/gd/demonstrativo-webhook.js';
+import { criarRepoDemonstrativo } from './modules/gd/demonstrativo-repo.js';
+import { listarAnexosResend, baixarAnexoResend, verificarOrigemResend, extrairTextoPdf } from './modules/gd/demonstrativo-io.js';
+import { conferirAssinaturaResend } from './modules/email/resend-assinatura.js';
 import { capturarEmailDaConversa, extrairEmailDoTexto } from './modules/email/captura-email.js';
 import { receberLeituraShelly } from './modules/medicao/shelly-medicao.js';
 import { EmailSequenceService } from './modules/email/email-sequence.js';
@@ -9485,7 +9490,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // Sem auth — o Resend chama esse endpoint. Best-effort: NUNCA lanca, sempre
   // responde 200 (senao o Resend fica retentando infinitamente). O body ja
   // vem parseado pelo express.json() global (linha ~5717).
-  // TODO (seguranca): validar assinatura svix do Resend antes de confiar no payload.
+  // Assinatura svix conferida no inicio da rota (RESEND_WEBHOOK_SECRET).
   // ===== KIT DE MEDICAO — leitura do Shelly Pro 3EM =====
   // O medidor fica na casa do CLIENTE e a plataforma fica aqui: nao existe rede
   // local em comum, entao o aparelho EMPURRA a leitura pra ca (script mJS que
@@ -9513,8 +9518,77 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     res.status(status).json({ ok: false, motivo: r.motivo });
   });
 
+  // E-mails de demonstrativo sendo processados agora (retry da Resend em
+  // paralelo nao processa duas vezes o mesmo e-mail).
+  const gdEmProcesso = new Set<string>();
+  if (!process.env.RESEND_WEBHOOK_SECRET) {
+    console.warn('[resend] RESEND_WEBHOOK_SECRET ausente — webhook aceita chamada sem assinatura (configure no EasyPanel)');
+  }
   app.post('/webhooks/resend', async (req, res) => {
     try {
+      // [21/09/2026] Assinatura svix: so vale quando RESEND_WEBHOOK_SECRET
+      // estiver no EasyPanel (Resend → Webhooks → Signing secret). Sem ela,
+      // segue aceitando como antes.
+      const assinatura = conferirAssinaturaResend({
+        segredo: process.env.RESEND_WEBHOOK_SECRET,
+        corpoBruto: (req as unknown as { rawBody?: string }).rawBody,
+        headers: req.headers,
+      });
+      if (assinatura === 'invalida') {
+        console.warn('[resend] webhook com assinatura invalida — recusado');
+        res.status(401).json({ ok: false });
+        return;
+      }
+
+      // [21/09/2026] DEMONSTRATIVO DE GD DA NEOENERGIA e confirmacao de
+      // encaminhamento do Gmail chegam pelo mesmo `email.received`, mas NAO sao
+      // resposta de cliente — sem este desvio, cada demonstrativo viraria um
+      // aviso falso de "cliente respondeu". Ver
+      // docs/superpowers/specs/2026-09-21-demonstrativo-gd-ingestao-design.md.
+      const gd = classificarEmailGd(req.body);
+      if (gd) {
+        // Responde JA: o processamento (baixar PDF, ler, banco, zap) pode passar
+        // do tempo da Resend, e ela reenviaria — virando aviso duplicado.
+        res.status(200).json({ ok: true, gd: gd.tipo });
+        const avisarGd = async (texto: string, leadId: string | null) => {
+          const { sendAdminWithButtons } = await import('./modules/eva-admin-buttons.js');
+          await sendAdminWithButtons(
+            { metaWaba: metaWaba ?? null, sendText },
+            config.engineerPhone,
+            texto,
+            leadId ? [{ id: `evabt:lead-view:${leadId}`, title: 'Ver no painel' }] : [],
+          );
+        };
+        // So a EcoSun encaminha demonstrativos hoje. O contexto da empresa faz o
+        // getClient() usar o cracha certo com RLS_ESTRITO=on (sem ele, NINGUEM).
+        void processarEmailGd(
+          {
+            rodarNaEmpresa: (fn) => comEmpresaDe(ECOSUN_COMPANY_ID, fn),
+            montarDeps: () => {
+              const apiKey = process.env.RESEND_API_KEY;
+              if (!apiKey) return null;
+              return {
+                ...criarRepoDemonstrativo(supabase.getClient(), ECOSUN_COMPANY_ID),
+                companyId: ECOSUN_COMPANY_ID,
+                // Nada vai ao cliente nesta fase: o resumo so chega pro Junior.
+                modoTeste: true,
+                listarAnexos: (id) => listarAnexosResend(apiKey, id),
+                baixarAnexo: (id, a) => baixarAnexoResend(apiKey, id, a),
+                verificarOrigem: (id) => verificarOrigemResend(apiKey, id),
+                extrairTexto: extrairTextoPdf,
+                avisar: avisarGd,
+                log: (m) => console.warn(m),
+              };
+            },
+            avisar: avisarGd,
+            emProcesso: gdEmProcesso,
+            log: (m) => console.log(m),
+          },
+          gd,
+        );
+        return;
+      }
+
       // [07/09/2026] RESPOSTA DO CLIENTE (evento `email.received`).
       // Vem antes do mapResendEvento porque e outro tipo de evento — o mapa
       // so cobre entrega/abertura/clique/bounce/spam. Ver inbound-reply.ts
