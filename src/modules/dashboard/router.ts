@@ -5995,19 +5995,26 @@ b.onclick=async function(){
     if (!sendText) return res.status(500).send('sendText não configurado neste ambiente.');
     const r = await pastaService.enviarPorWhatsApp(id, sendText, options.sendTemplate, { forcar: true });
 
-    // O e-mail vai JUNTO, igual ao botão do zap (09/09/2026). Ficou de fora no
-    // PR #296 e o Junior pegou: quem clicasse aqui receberia só o WhatsApp.
-    // Nunca derruba o envio — cliente sem e-mail é o caso comum, não erro.
+    // O e-mail vai JUNTO, igual ao botão do zap (09/09/2026). Nunca derruba o
+    // envio do zap — mas o resultado APARECE na tela (23/09/2026): antes ele era
+    // engolido e a tela redirecionava como se o e-mail tivesse saído.
+    let email: { ok: boolean; reason?: string; para?: string } | null = null;
     if (process.env.RESEND_API_KEY) {
       const { EmailSender } = await import('../email/resend-client.js');
       const sender = new EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '');
-      await pastaService
+      email = await pastaService
         .enviarPorEmail(id, (e) => sender.enviar(e))
-        .catch((err) => { console.warn('[pasta] e-mail do dashboard falhou:', (err as Error).message); });
+        .catch((err) => ({ ok: false, reason: (err as Error).message }));
     }
 
-    if (!r.ok) return res.status(400).send(`<h2>Não foi possível enviar: ${escapeHtmlSimple(r.reason ?? '')}</h2><a href="/dashboard/pastas/${id}">← voltar</a>`);
-    res.redirect(303, `/dashboard/pastas/${id}`);
+    const pastaDepois = r.ok ? await supabaseService.getPastaClienteById(id).catch(() => null) : null;
+    console.log(`[pasta] envio dashboard ${id}: zap=${r.ok ? 'ok' : r.reason} email=${email ? (email.ok ? 'ok' : email.reason) : 'desligado'}`);
+    const { renderResultadoEnvioPasta } = await import('../relatorios/pasta/resultado-envio.js');
+    res.type('text/html').send(renderResultadoEnvioPasta({
+      pastaId: id,
+      zap: { ok: r.ok, reason: r.reason, para: pastaDepois?.enviado_para_phone ?? null },
+      email,
+    }));
   });
 
   // Excluir a pasta inteira (o link do cliente morre — confirmação forte na tela)
