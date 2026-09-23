@@ -4582,7 +4582,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
           } else {
             const motivo: Record<string, string> = {
               nao_publicada: 'a pasta não está publicada', lead_not_found: 'cliente não encontrado',
-              opt_out: 'cliente pediu pra não receber mensagens', sem_phone: 'cliente sem telefone', pasta_not_found: 'pasta não encontrada',
+              opt_out: 'cliente pediu pra não receber mensagens', sem_phone: 'cliente sem telefone', pasta_not_found: 'pasta não encontrada', telefone_invalido: 'telefone do cliente errado no cadastro',
               ja_enviada: 'essa pasta já foi enviada ao cliente (reenvio só pelo dashboard)',
             };
             await sendText(from, `❌ Não enviei: ${motivo[r.reason ?? ''] ?? r.reason}.\nhttps://dashboard.ecosunpower.eng.br/dashboard/pastas/${pastaId}`);

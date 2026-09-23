@@ -24,6 +24,7 @@ const MOTIVO_ZAP: Record<string, string> = {
   pasta_not_found: 'pasta não encontrada',
   opt_out: 'cliente pediu pra não receber mensagens',
   sem_phone: 'cliente sem telefone cadastrado',
+  telefone_invalido: 'o telefone do cliente está errado no cadastro (confira DDD e número)',
   ja_enviada: 'essa pasta já tinha sido enviada',
 };
 

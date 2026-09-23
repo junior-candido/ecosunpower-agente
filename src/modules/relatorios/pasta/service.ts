@@ -4,6 +4,7 @@
 import type { SupabaseService } from '../../supabase.js';
 import { uploadAnexo, deleteAnexoFile, getSignedUrls } from '../../anexos/storage.js';
 import { novoSlug } from '../slug.js';
+import { normalizeBrazilianPhone } from '../../meta-leadgen.js';
 import { LOGO_PASTA_BASE64 } from './logo-pasta.js';
 import { LOGO_DOCUMENTO_DATA_URI } from './logo-documento.js';
 import { empresa } from '../../empresa-config.js';
@@ -429,6 +430,11 @@ export class PastaService {
     const lead = await this.supabase.getClienteByLeadId(pasta.lead_id);
     if (!lead) return { ok: false, reason: 'lead_not_found' };
     if (!lead.phone) return { ok: false, reason: 'sem_phone' };
+    // 23/09/2026 (Nelson): cadastro "61991718505" ia cru pra Meta, que lê "61"
+    // como código de país — aceitava (✅ na tela) e a mensagem nunca chegava.
+    // Sempre 55DDNNNNNNNNN; número que não dá pra acertar não é enviado.
+    const fone = normalizeBrazilianPhone(String(lead.phone));
+    if (!fone) return { ok: false, reason: 'telefone_invalido' };
     // opt_out NÃO é checado aqui de propósito: o template utility aprovado pela
     // Meta é comunicação de SERVIÇO do contrato (os documentos da usina que o
     // cliente comprou), não marketing. A trava desce pro texto livre, logo
@@ -446,8 +452,8 @@ export class PastaService {
       // engano do seletor da Meta (print do Junior 06/08) — tenta BR e PT.
       for (const idioma of ['pt_BR', 'pt_PT'] as const) {
         try {
-          await sendTemplate(lead.phone, 'pasta_digital_v1', idioma, components);
-          await this.supabase.marcarPastaClienteEnviada(pastaId, lead.phone);
+          await sendTemplate(fone, 'pasta_digital_v1', idioma, components);
+          await this.supabase.marcarPastaClienteEnviada(pastaId, fone);
           return { ok: true };
         } catch (err) {
           console.warn(`[pasta] template ${idioma} falhou:`, (err as Error).message);
@@ -468,8 +474,8 @@ export class PastaService {
         `Fotos da obra, projeto e todos os seus documentos guardados num lugar só:\n${link}\n\n` +
         `Salve esse link — ele é seu. Qualquer dúvida, é só chamar a gente.${convite}`;
 
-    await sendText(lead.phone, body);
-    await this.supabase.marcarPastaClienteEnviada(pastaId, lead.phone);
+    await sendText(fone, body);
+    await this.supabase.marcarPastaClienteEnviada(pastaId, fone);
     return { ok: true };
   }
 }
