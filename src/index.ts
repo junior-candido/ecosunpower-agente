@@ -136,6 +136,7 @@ import { tickDetectarMedidor, criarDetectarMedidorDb, textoAvisoMedidor } from '
 import { PosInstalacaoService } from './modules/relatorios/pos-instalacao/service.js';
 import { renderPosInstalacaoHtml } from './modules/relatorios/pos-instalacao/template.js';
 import { PastaService } from './modules/relatorios/pasta/service.js';
+import { normalizarSlugPublico } from './modules/relatorios/slug.js';
 import { renderPastaHtml } from './modules/relatorios/pasta/template.js';
 import { buildCtwaPatch, shouldAttributeCtwa, resolveCampaignIdFromAd } from './modules/marketing/ctwa-attribution.js';
 import { carregarEmpresaConfig, carregarKits, empresa, empresaDe, comEmpresaDe, listaMarcasTexto } from './modules/empresa-config.js';
@@ -9407,8 +9408,9 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // Sem auth — cliente abre via link enviado no WhatsApp.
   // URL pública: https://propostas.ecosunpower.eng.br/r-pi/<slug>
   app.get('/r-pi/:slug', async (req, res) => {
-    const slug = String(req.params.slug ?? '');
-    if (!/^[a-z0-9]{6,20}$/.test(slug)) return res.status(400).send('Slug inválido');
+    // Maiúscula do celular / ponto final do WhatsApp não quebram mais o link (18/09, caso Hudson).
+    const slug = normalizarSlugPublico(req.params.slug);
+    if (!slug) return res.status(400).send('Slug inválido');
 
     const rel = await supabase.getRelatorioPosInstalacaoBySlug(slug);
     if (!rel) return res.status(404).type('text/html').send(`
@@ -9448,8 +9450,9 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // Sem auth — cliente abre via link secreto enviado no WhatsApp.
   // URL pública: https://propostas.ecosunpower.eng.br/pasta/<slug>
   app.get('/pasta/:slug', async (req, res) => {
-    const slug = String(req.params.slug ?? '');
-    if (!/^[a-z0-9]{6,20}$/.test(slug)) return res.status(400).send('Slug inválido');
+    // Maiúscula do celular / ponto final do WhatsApp não quebram mais o link (18/09, caso Hudson).
+    const slug = normalizarSlugPublico(req.params.slug);
+    if (!slug) return res.status(400).send('Slug inválido');
 
     const pasta = await supabase.getPastaClienteBySlug(slug);
     // Rascunho NÃO é público — só depois de publicar.
