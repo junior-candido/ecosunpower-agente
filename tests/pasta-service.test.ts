@@ -345,7 +345,7 @@ describe('PastaService.enviarPorWhatsApp', () => {
   it('opt_out NÃO envia por texto livre', async () => {
     const sb = fakeSupabase({
       getPastaClienteById: vi.fn().mockResolvedValue(publicada),
-      getClienteByLeadId: vi.fn().mockResolvedValue({ id: 'lead-1', name: 'J', phone: '556111', opt_out: true }),
+      getClienteByLeadId: vi.fn().mockResolvedValue({ id: 'lead-1', name: 'J', phone: '5561999990000', opt_out: true }),
     });
     const sendText = vi.fn();
     const svc = new PastaService(sb as any, semSistema);
@@ -360,7 +360,7 @@ describe('PastaService.enviarPorWhatsApp', () => {
   it('opt_out NAO barra o template utility aprovado', async () => {
     const sb = fakeSupabase({
       getPastaClienteById: vi.fn().mockResolvedValue(publicada),
-      getClienteByLeadId: vi.fn().mockResolvedValue({ id: 'lead-1', name: 'Lucas Azevedo', phone: '556111', opt_out: true }),
+      getClienteByLeadId: vi.fn().mockResolvedValue({ id: 'lead-1', name: 'Lucas Azevedo', phone: '5561999990000', opt_out: true }),
     });
     const sendText = vi.fn();
     const sendTemplate = vi.fn().mockResolvedValue(undefined);
@@ -370,13 +370,13 @@ describe('PastaService.enviarPorWhatsApp', () => {
     expect(sendTemplate).toHaveBeenCalledTimes(1);
     expect(sendTemplate.mock.calls[0][1]).toBe('pasta_digital_v1');
     expect(sendText).not.toHaveBeenCalled();
-    expect(sb.marcarPastaClienteEnviada).toHaveBeenCalledWith('pasta-1', '556111');
+    expect(sb.marcarPastaClienteEnviada).toHaveBeenCalledWith('pasta-1', '5561999990000');
   });
 
   it('opt_out barra o texto livre quando o template falha', async () => {
     const sb = fakeSupabase({
       getPastaClienteById: vi.fn().mockResolvedValue(publicada),
-      getClienteByLeadId: vi.fn().mockResolvedValue({ id: 'lead-1', name: 'J', phone: '556111', opt_out: true }),
+      getClienteByLeadId: vi.fn().mockResolvedValue({ id: 'lead-1', name: 'J', phone: '5561999990000', opt_out: true }),
     });
     const sendText = vi.fn();
     const sendTemplate = vi.fn().mockRejectedValue(new Error('template rejeitado'));
@@ -395,6 +395,48 @@ describe('PastaService.enviarPorWhatsApp', () => {
     expect(r.ok).toBe(true);
     expect(sendText.mock.calls[0][1]).toContain('/pasta/abcdefghjk');
     expect(sb.marcarPastaClienteEnviada).toHaveBeenCalledWith('pasta-1', '5561999990000');
+  });
+
+  // 23/09/2026 — Nelson: cadastro "61991718505" (sem o 55). Ia cru pra Meta,
+  // que le "61" como codigo de pais (Australia): aceitava o pedido (✅ na tela)
+  // e a mensagem nunca chegava. O telefone passa pelo normalizeBrazilianPhone.
+  it('telefone sem o 55 vai normalizado pra Meta (e grava o normalizado)', async () => {
+    const sb = fakeSupabase({
+      getPastaClienteById: vi.fn().mockResolvedValue(publicada),
+      getClienteByLeadId: vi.fn().mockResolvedValue({ id: 'lead-1', name: 'Nelson Pereira', phone: '61991718505', opt_out: false }),
+    });
+    const sendTemplate = vi.fn().mockResolvedValue({ messageId: 'm1' });
+    const svc = new PastaService(sb as any, semSistema);
+    const r = await svc.enviarPorWhatsApp('pasta-1', vi.fn(), sendTemplate);
+    expect(r.ok).toBe(true);
+    expect(sendTemplate.mock.calls[0][0]).toBe('5561991718505');
+    expect(sb.marcarPastaClienteEnviada).toHaveBeenCalledWith('pasta-1', '5561991718505');
+  });
+
+  it('telefone com máscara também normaliza (texto livre)', async () => {
+    const sb = fakeSupabase({
+      getPastaClienteById: vi.fn().mockResolvedValue(publicada),
+      getClienteByLeadId: vi.fn().mockResolvedValue({ id: 'lead-1', name: 'N', phone: '(61) 99171-8505', opt_out: false }),
+    });
+    const sendText = vi.fn().mockResolvedValue(undefined);
+    const svc = new PastaService(sb as any, semSistema);
+    await svc.enviarPorWhatsApp('pasta-1', sendText);
+    expect(sendText.mock.calls[0][0]).toBe('5561991718505');
+  });
+
+  it('telefone que não dá pra acertar NÃO envia e avisa telefone_invalido', async () => {
+    const sb = fakeSupabase({
+      getPastaClienteById: vi.fn().mockResolvedValue(publicada),
+      getClienteByLeadId: vi.fn().mockResolvedValue({ id: 'lead-1', name: 'N', phone: '556111', opt_out: false }),
+    });
+    const sendText = vi.fn();
+    const sendTemplate = vi.fn();
+    const svc = new PastaService(sb as any, semSistema);
+    const r = await svc.enviarPorWhatsApp('pasta-1', sendText, sendTemplate);
+    expect(r).toEqual({ ok: false, reason: 'telefone_invalido' });
+    expect(sendTemplate).not.toHaveBeenCalled();
+    expect(sendText).not.toHaveBeenCalled();
+    expect(sb.marcarPastaClienteEnviada).not.toHaveBeenCalled();
   });
 
   it('mensagem padrão convida pra avaliação no Google', async () => {

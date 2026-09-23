@@ -74,6 +74,11 @@ describe('renderResultadoEnvioPasta — a tela depois de clicar Enviar', () => {
     expect(h).toContain('x@y.com');
   });
 
+  it('telefone inválido aparece em português', () => {
+    const h = renderResultadoEnvioPasta({ ...base, zap: { ok: false, reason: 'telefone_invalido' }, email: null });
+    expect(h).toMatch(/telefone do cliente está errado/i);
+  });
+
   it('e-mail desligado no ambiente (sem RESEND) não finge que enviou', () => {
     const h = renderResultadoEnvioPasta({ ...base, zap: { ok: true }, email: null });
     expect(h).toMatch(/e-mail não está configurado/i);
