@@ -67,10 +67,10 @@ Rodam em código puro (`gd-validacao.ts`) antes de gravar e antes de gerar o PDF
 | Trava | Regra | Falha |
 |---|---|---|
 | Geração ≥ injetado | `geracao_mes ≥ injetado_mes` | 🔴 |
-| Geração plausível | entre 40 % e 160 % de `kWp × 3,75 kWh/kWp/dia × dias do mês` (sem kWp cadastrado: só avisa) | 🔴 |
+| Geração plausível | entre 40 % e 160 % do esperado pelo monitoramento (`esperadoDiaKwh(kWp, UF)` × dias do mês — mesma régua da tela de Monitoramento; só sistemas ativos; sem kWp: só avisa) | 🔴 |
 | Soma dos dias = mês | quando o print traz os dois, diferença ≤ 1 % | 🔴 |
 | Print × API | cliente com API: diferença ≤ 3 % | 🔴 |
-| Leitura do PDF | `inconsistencias` do parser vazia | 🔴 |
+| Leitura do PDF | `inconsistencias` da leitura vazia — exceto a nota "remetente não verificado" (DKIM), que só avisa | 🔴 |
 | Faltando dado | sem geração do mês, sem cliente ligado | 🟡 |
 
 Estados da linha: 🟢 pronto · 🟡 falta dado · 🔴 inconsistente · ⚪ sem cliente. **O botão "Gerar PDF"
@@ -90,7 +90,7 @@ fontes no rodapé.
   rateio; "de onde veio cada número"; botões [Gerar PDF] [Baixar].
 - **C — Conferência:** arquivo de um lado, números do outro, travas visíveis; Confirmar / Corrigir.
 
-Acesso por permissão nova `demonstrativos` (padrão das outras telas, `exigir(...)`). Tudo filtrado por
+Acesso pela área `usinas` (visualizar/editar — a mesma do Monitoramento; área nova exigiria mexer em todos os papéis). Tudo filtrado por
 `company_id` (multi-tenant).
 
 ## Relatório (PDF A4 em pé, 2 páginas)
