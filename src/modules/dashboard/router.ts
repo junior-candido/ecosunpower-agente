@@ -4594,7 +4594,7 @@ b.onclick=async function(){
       const texto = Buffer.from(String(req.body?.texto_b64 ?? ''), 'base64').toString('utf-8');
       const assinatura = String(req.body?.assinatura_texto ?? '');
       if (!conferirAssinaturaTexto(segredoDaSessao(), req.dashUser!.companyId, texto, assinatura)) {
-        recusar('conferência expirada ou alterada — envie o PDF de novo.'); return;
+        recusar('a conferência não bate com o PDF lido — envie o PDF de novo.'); return;
       }
       const r = parseDemonstrativo(texto);
       if (!r.ok) { recusar(r.motivo); return; }
