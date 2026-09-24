@@ -1634,13 +1634,13 @@ import {
     try {
       const { tela, ing } = await depsGd(req);
       const { validarMes } = await import('../gd/gd-validacao.js');
-      const { montarItem, filtrarItens } = await import('../gd/demonstrativos-tela.js');
+      const { montarItem, filtrarItens, hojeBrasilia } = await import('../gd/demonstrativos-tela.js');
       const meses = await tela.mesesDisponiveis();
       const pedido = typeof req.query.mes === 'string' && RE_MES.test(req.query.mes) ? req.query.mes : null;
       const mes = pedido && meses.includes(pedido) ? pedido : meses[0] ?? null;
       const linhas = mes ? await tela.listarDoMes(mes) : [];
-      const manuais = await tela.geracoesManuais(linhas.map((l) => l.instalacao));
-      const hoje = new Date().toISOString().slice(0, 10);
+      const manuais = mes ? await tela.geracoesManuais(linhas.map((l) => l.instalacao), mes) : new Map();
+      const hoje = hojeBrasilia();
       const itens = [];
       for (const l of linhas) {
         const sis = l.lead_id ? await tela.sistemaDoLead(l.lead_id) : { potenciaKwp: null, uf: null };
@@ -1741,13 +1741,13 @@ import {
       if (!RE_UC.test(inst)) { res.status(400).send('UC inválida'); return; }
       const { tela, ing } = await depsGd(req);
       const { validarMes } = await import('../gd/gd-validacao.js');
-      const { compensadoDoMes, economiaEstimadaRs, alertaVencimento, TARIFA_PADRAO_RS_KWH } = await import('../gd/demonstrativos-tela.js');
+      const { compensadoDoMes, economiaEstimadaRs, alertaVencimento, TARIFA_PADRAO_RS_KWH, hojeBrasilia } = await import('../gd/demonstrativos-tela.js');
       const hist = await tela.historicoDaInstalacao(inst);
       if (hist.length === 0) { res.status(404).send('<h2>Nenhum demonstrativo dessa UC</h2>'); return; }
       const meses = hist.map((h) => h.referencia);
       const pedido = typeof req.query.mes === 'string' ? req.query.mes : '';
       const l = hist.find((h) => h.referencia === pedido) ?? hist[0];
-      const manual = (await tela.geracoesManuais([inst])).get(`${inst}|${l.referencia}`)?.kwh ?? null;
+      const manual = (await tela.geracoesManuais([inst], l.referencia)).get(`${inst}|${l.referencia}`)?.kwh ?? null;
       const sis = l.lead_id ? await tela.sistemaDoLead(l.lead_id) : { potenciaKwp: null, uf: null };
       const api = l.lead_id ? await ing.geracaoDoMes(l.lead_id, l.referencia) : null;
       const validacao = validarMes({
@@ -1761,7 +1761,7 @@ import {
         instalacao: inst, clienteNome: l.cliente_nome, leadId: l.lead_id, meses, mes: l.referencia,
         consumoKwh: l.consumo_kwh, injetadoKwh: l.injetado_kwh, saldoKwh: l.saldo_acumulado_kwh,
         compensadoKwh: compensado, economiaRs: economiaEstimadaRs(compensado, TARIFA_PADRAO_RS_KWH),
-        proximoExpirar: alertaVencimento(l.proximo_expirar_kwh, l.ciclo_expirar, new Date().toISOString().slice(0, 10)),
+        proximoExpirar: alertaVencimento(l.proximo_expirar_kwh, l.ciclo_expirar, hojeBrasilia()),
         historico: l.historico.map((h) => ({ mes: h.mes, consumida: h.consumida, injetada: h.injetada, compensado: h.compensado })),
         unidades: l.unidades, origemDemonstrativo: l.origem, verificado: l.origem_verificada,
         validacao, candidatos, msg: typeof req.query.msg === 'string' ? req.query.msg : null,
