@@ -66,15 +66,28 @@ const TAMANHO_LOTE_UC = 200;
 async function paginarTudo<T>(
   montarConsulta: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
   contexto: string,
+  companyId: string,
 ): Promise<T[]> {
   const tudo: T[] = [];
+  let paginasLidas = 0;
+  let ultimaPaginaCheia = false;
   for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
     const de = pagina * TAMANHO_PAGINA;
     const { data, error } = await montarConsulta(de, de + TAMANHO_PAGINA - 1);
     if (error) throw new Error(`${contexto}: ${error.message}`);
     const linhas = data ?? [];
     tudo.push(...linhas);
-    if (linhas.length < TAMANHO_PAGINA) break;
+    paginasLidas++;
+    ultimaPaginaCheia = linhas.length === TAMANHO_PAGINA;
+    if (!ultimaPaginaCheia) break;
+  }
+  // Bateu no teto de seguranca com a ultima pagina ainda cheia: pode haver
+  // mais linhas que NAO foram lidas. Isso teria que virar um erro visivel em
+  // vez de sumir sozinho — por enquanto, ao menos aparece no log.
+  if (ultimaPaginaCheia && paginasLidas >= MAX_PAGINAS) {
+    console.warn(
+      `[gd] paginacao cortada em ${MAX_PAGINAS * TAMANHO_PAGINA} linhas — ${contexto} (empresa ${companyId}). Pode haver mais dados nao lidos.`,
+    );
   }
   return tudo;
 }
@@ -91,6 +104,7 @@ export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
             .order('referencia', { ascending: false })
             .range(de, ate),
         'demonstrativos_gd (meses)',
+        companyId,
       );
       return [...new Set(linhas.map((x) => String(x.referencia)))];
     },
@@ -104,8 +118,13 @@ export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
             .eq('company_id', companyId)
             .eq('referencia', referencia)
             .order('cliente_nome', { ascending: true })
+            // Paginacao por offset com ordem que repete valor (varios clientes
+            // com o mesmo nome, ou nome vazio) pode pular ou duplicar linha
+            // entre paginas — desempata por instalacao, que e unica no mes.
+            .order('instalacao', { ascending: true })
             .range(de, ate),
         'demonstrativos_gd (lista)',
+        companyId,
       );
       return linhas.map(normalizar);
     },
@@ -123,9 +142,11 @@ export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
     },
 
     /**
-     * Geração manual por `${instalacao}|${referencia}`. `referencia` filtra só um
-     * mês (a lista chama sem, o cliente com); UCs vão em lotes de 200 no `.in()`
-     * pra não estourar o tamanho da query com uma carteira grande.
+     * Geração manual por `${instalacao}|${referencia}`. A LISTA (tela principal)
+     * passa `referencia` pra trazer só o mês que está sendo exibido, pra todas
+     * as UCs; a tela do cliente pode passar `l.referencia` (um mês só) ou omitir
+     * (histórico inteiro da instalação). UCs vão em lotes de 200 no `.in()` pra
+     * não estourar o tamanho da query com uma carteira grande.
      */
     async geracoesManuais(instalacoes: string[], referencia?: string): Promise<Map<string, GeracaoManual>> {
       const mapa = new Map<string, GeracaoManual>();
@@ -140,9 +161,12 @@ export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
               .eq('company_id', companyId)
               .in('instalacao', lote);
             if (referencia) q = q.eq('referencia', referencia);
-            return q.range(de, ate);
+            // Mesmo motivo do listarDoMes: offset + ordem que repete valor
+            // pode pular/duplicar linha entre páginas.
+            return q.order('instalacao').order('referencia').range(de, ate);
           },
           'geracao_mensal_gd (ler)',
+          companyId,
         );
         for (const g of linhas) {
           mapa.set(`${g.instalacao}|${g.referencia}`, {

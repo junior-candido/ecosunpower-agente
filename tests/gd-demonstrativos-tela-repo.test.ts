@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { criarRepoTelaGd } from '../src/modules/gd/demonstrativos-tela-repo.js';
 
 function fakeDb(respostas: Record<string, Array<{ data: any; error: any }>>) {
@@ -54,6 +54,36 @@ describe('criarRepoTelaGd', () => {
     expect(chamadasTabela).toHaveLength(2);
     expect(chamadasTabela[0].ops).toContainEqual(['range', [0, 999]]);
     expect(chamadasTabela[1].ops).toContainEqual(['range', [1000, 1999]]);
+  });
+
+  it('listarDoMes ordena por instalacao alem do nome (paginacao por offset precisa de ordem estavel)', async () => {
+    const { db, chamadas } = fakeDb({ demonstrativos_gd: [{ data: [], error: null }] });
+    await criarRepoTelaGd(db, 'E1').listarDoMes('2026-08-01');
+    expect(chamadas[0].ops).toContainEqual(['order', ['cliente_nome', { ascending: true }]]);
+    expect(chamadas[0].ops).toContainEqual(['order', ['instalacao', { ascending: true }]]);
+  });
+
+  it('geracoesManuais ordena por instalacao e referencia (paginacao por offset precisa de ordem estavel)', async () => {
+    const { db, chamadas } = fakeDb({ geracao_mensal_gd: [{ data: [], error: null }] });
+    await criarRepoTelaGd(db, 'E1').geracoesManuais(['1']);
+    expect(chamadas[0].ops).toContainEqual(['order', ['instalacao']]);
+    expect(chamadas[0].ops).toContainEqual(['order', ['referencia']]);
+  });
+
+  it('avisa (console.warn) quando a paginacao bate no teto com a ultima pagina ainda cheia', async () => {
+    const paginaCheia = () => Array.from({ length: 1000 }, (_, i) => ({ instalacao: String(i) }));
+    const respostas = Array.from({ length: 20 }, () => ({ data: paginaCheia(), error: null }));
+    const { db } = fakeDb({ demonstrativos_gd: respostas });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const r = await criarRepoTelaGd(db, 'E1').listarDoMes('2026-08-01');
+      expect(r).toHaveLength(20000);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain('demonstrativos_gd');
+      expect(warn.mock.calls[0][0]).toContain('E1');
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('gravarManual nao passa por cima de mes que veio confirmado da concessionaria', async () => {
