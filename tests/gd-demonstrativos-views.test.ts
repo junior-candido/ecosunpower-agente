@@ -54,12 +54,13 @@ describe('renderDemonstrativoCliente', () => {
 describe('renderConferenciaPdf', () => {
   it('cada PDF lido vira um formulario de confirmacao com o texto; o ilegivel mostra o motivo', () => {
     const h = renderConferenciaPdf([
-      { arquivo: 'a.pdf', ok: true, textoB64: 'dGV4dG8=', clienteNome: 'JOAO', instalacao: '200002', referencia: '2026-08-01',
+      { arquivo: 'a.pdf', ok: true, textoB64: 'dGV4dG8=', assinatura: 'abc"<x', clienteNome: 'JOAO', instalacao: '200002', referencia: '2026-08-01',
         injetadoKwh: 222, consumoKwh: 480, saldoKwh: 1240, inconsistencias: [] },
       { arquivo: 'b.pdf', ok: false, motivo: 'nao parece um demonstrativo' },
     ]);
     expect(h).toContain('action="/dashboard/demonstrativos/confirmar"');
     expect(h).toContain('name="texto_b64" value="dGV4dG8="');
+    expect(h).toContain('name="assinatura_texto" value="abc&quot;&lt;x"');
     expect(h).toMatch(/nao parece um demonstrativo/);
   });
 });

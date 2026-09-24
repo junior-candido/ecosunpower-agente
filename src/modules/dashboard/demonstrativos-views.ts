@@ -159,7 +159,7 @@ new Chart(document.getElementById('g13'), { type: 'bar', data: {
 }
 
 export type ResultadoLeituraPdf =
-  | { arquivo: string; ok: true; textoB64: string; clienteNome: string; instalacao: string; referencia: string;
+  | { arquivo: string; ok: true; textoB64: string; assinatura: string; clienteNome: string; instalacao: string; referencia: string;
       injetadoKwh: number | null; consumoKwh: number | null; saldoKwh: number | null; inconsistencias: string[] }
   | { arquivo: string; ok: false; motivo: string };
 
@@ -183,6 +183,7 @@ export function renderConferenciaPdf(res: ResultadoLeituraPdf[], user?: DashUser
   ${r.inconsistencias.length ? `<ul class="text-sm" style="color:#ef4444">${r.inconsistencias.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
   <form method="post" action="/dashboard/demonstrativos/confirmar" class="mt-2">
     <input type="hidden" name="texto_b64" value="${esc(r.textoB64)}">
+    <input type="hidden" name="assinatura_texto" value="${esc(r.assinatura)}">
     <button class="px-3 py-1 rounded bg-emerald-700 text-white">Confirmo — gravar</button>
   </form>
 </div>` : `

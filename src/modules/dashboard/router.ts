@@ -38,6 +38,7 @@ import {
   criarSessionAuth,
   setSessionCookie,
   clearSessionCookie,
+  segredoDaSessao,
 } from './auth.js';
 import {
   fetchDashboardKpis,
@@ -4512,25 +4513,27 @@ b.onclick=async function(){
     try {
       const { tela, ing } = await depsGd(req);
       const { validarMes } = await import('../gd/gd-validacao.js');
-      const { montarItem, filtrarItens, hojeBrasilia } = await import('../gd/demonstrativos-tela.js');
+      const { montarItem, filtrarItens, hojeBrasilia, emLotes } = await import('../gd/demonstrativos-tela.js');
       const meses = await tela.mesesDisponiveis();
       const pedido = typeof req.query.mes === 'string' && RE_MES.test(req.query.mes) ? req.query.mes : null;
       const mes = pedido && meses.includes(pedido) ? pedido : meses[0] ?? null;
       const linhas = mes ? await tela.listarDoMes(mes) : [];
       const manuais = mes ? await tela.geracoesManuais(linhas.map((l) => l.instalacao), mes) : new Map();
       const hoje = hojeBrasilia();
-      const itens = [];
-      for (const l of linhas) {
-        const sis = l.lead_id ? await tela.sistemaDoLead(l.lead_id) : { potenciaKwp: null, uf: null };
-        const api = l.lead_id ? await ing.geracaoDoMes(l.lead_id, l.referencia) : null;
+      // Paliativo: 10 linhas em paralelo por vez (a consulta única em lote fica pra depois).
+      const itens = await emLotes(linhas, 10, async (l) => {
+        const [sis, api] = await Promise.all([
+          l.lead_id ? tela.sistemaDoLead(l.lead_id) : Promise.resolve({ potenciaKwp: null, uf: null }),
+          l.lead_id ? ing.geracaoDoMes(l.lead_id, l.referencia) : Promise.resolve(null),
+        ]);
         const v = validarMes({
           leadId: l.lead_id, referencia: l.referencia, injetadoKwh: l.injetado_kwh,
           inconsistenciasLeitura: l.inconsistencias,
           geracaoManualKwh: manuais.get(`${l.instalacao}|${l.referencia}`)?.kwh ?? null,
           geracaoApiKwh: api, potenciaKwp: sis.potenciaKwp, uf: sis.uf,
         });
-        itens.push(montarItem(l, v, hoje));
-      }
+        return montarItem(l, v, hoje);
+      });
       const filtro = {
         estado: typeof req.query.estado === 'string' ? req.query.estado : undefined,
         q: typeof req.query.q === 'string' ? req.query.q : undefined,
@@ -4551,6 +4554,9 @@ b.onclick=async function(){
     try {
       const { extrairTextoPdf } = await import('../gd/demonstrativo-io.js');
       const { parseDemonstrativo } = await import('../gd/demonstrativo-parser.js');
+      const { assinarTextoConferencia } = await import('../gd/demonstrativos-tela.js');
+      const segredo = segredoDaSessao();
+      const companyId = req.dashUser!.companyId;
       const arquivos = (req.files as Express.Multer.File[] | undefined) ?? [];
       const out: ResultadoLeituraPdf[] = [];
       for (const f of arquivos) {
@@ -4559,6 +4565,7 @@ b.onclick=async function(){
           const r = parseDemonstrativo(texto);
           out.push(r.ok
             ? { arquivo: f.originalname, ok: true, textoB64: Buffer.from(texto, 'utf-8').toString('base64'),
+                assinatura: assinarTextoConferencia(segredo, companyId, texto),
                 clienteNome: r.dados.clienteNome, instalacao: r.dados.instalacao, referencia: r.dados.referencia,
                 injetadoKwh: r.dados.injetadoKwh, consumoKwh: r.dados.consumoKwh, saldoKwh: r.dados.saldoAcumuladoKwh,
                 inconsistencias: r.inconsistencias }
@@ -4574,13 +4581,24 @@ b.onclick=async function(){
     }
   });
 
-  // Confirmação: o servidor LÊ DE NOVO o texto (nunca grava número vindo do navegador).
+  // Confirmação: o texto do PDF volta do navegador, mas só é aceito se a
+  // assinatura HMAC (segredo da sessão + empresa + texto, feita no /enviar-pdf)
+  // bater — ninguém troca o texto nem o reusa em outra empresa. Com o texto
+  // conferido, o servidor LÊ DE NOVO os números (nunca grava número do navegador).
   router.post('/demonstrativos/confirmar', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
     try {
       const { parseDemonstrativo } = await import('../gd/demonstrativo-parser.js');
+      const { conferirAssinaturaTexto } = await import('../gd/demonstrativos-tela.js');
+      const recusar = (motivo: string) =>
+        res.redirect('/dashboard/demonstrativos?msg=' + encodeURIComponent(`Não gravei: ${motivo}`));
       const texto = Buffer.from(String(req.body?.texto_b64 ?? ''), 'base64').toString('utf-8');
+      const assinatura = String(req.body?.assinatura_texto ?? '');
+      if (!conferirAssinaturaTexto(segredoDaSessao(), req.dashUser!.companyId, texto, assinatura)) {
+        recusar('conferência expirada ou alterada — envie o PDF de novo.'); return;
+      }
       const r = parseDemonstrativo(texto);
-      if (!r.ok) { res.redirect('/dashboard/demonstrativos?msg=' + encodeURIComponent(`Não gravei: ${r.motivo}`)); return; }
+      if (!r.ok) { recusar(r.motivo); return; }
+      if (!RE_UC.test(r.dados.instalacao)) { recusar(`número de instalação (UC) inválido: ${r.dados.instalacao}`); return; }
       const st = await gravarDemonstrativoTela(req, r.dados, r.inconsistencias, 'pdf_manual', texto);
       const msg = st === 'gravado'
         ? 'Demonstrativo gravado.'

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   alertaVencimento, compensadoDoMes, economiaEstimadaRs, montarItem, filtrarItens, TARIFA_PADRAO_RS_KWH,
-  hojeBrasilia,
+  hojeBrasilia, assinarTextoConferencia, conferirAssinaturaTexto, emLotes,
 } from '../src/modules/gd/demonstrativos-tela.js';
 import type { LinhaDemonstrativo } from '../src/modules/gd/demonstrativos-tela-repo.js';
 import type { ResultadoValidacao } from '../src/modules/gd/gd-validacao.js';
@@ -84,5 +84,45 @@ describe('hojeBrasilia', () => {
   });
   it('meio-dia UTC e o mesmo dia em Brasilia', () => {
     expect(hojeBrasilia(new Date('2026-09-30T15:00:00Z'))).toBe('2026-09-30');
+  });
+});
+
+describe('assinatura do texto da conferência (HMAC)', () => {
+  const seg = 'segredo-de-teste';
+  const a = assinarTextoConferencia(seg, 'C1', 'texto do pdf');
+  it('valida o que foi assinado', () => {
+    expect(a).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(conferirAssinaturaTexto(seg, 'C1', 'texto do pdf', a)).toBe(true);
+  });
+  it('recusa texto alterado', () => {
+    expect(conferirAssinaturaTexto(seg, 'C1', 'texto do pdf!', a)).toBe(false);
+  });
+  it('recusa outra empresa', () => {
+    expect(conferirAssinaturaTexto(seg, 'C2', 'texto do pdf', a)).toBe(false);
+  });
+  it('recusa outro segredo', () => {
+    expect(conferirAssinaturaTexto('outro', 'C1', 'texto do pdf', a)).toBe(false);
+  });
+  it('recusa assinatura de tamanho errado ou vazia (sem lançar)', () => {
+    expect(conferirAssinaturaTexto(seg, 'C1', 'texto do pdf', a.slice(0, -2))).toBe(false);
+    expect(conferirAssinaturaTexto(seg, 'C1', 'texto do pdf', '')).toBe(false);
+    expect(conferirAssinaturaTexto(seg, 'C1', 'texto do pdf', a + 'xx')).toBe(false);
+  });
+});
+
+describe('emLotes', () => {
+  it('processa em lotes de N e mantém a ordem', async () => {
+    let ativos = 0; let pico = 0;
+    const out = await emLotes([1, 2, 3, 4, 5, 6, 7], 3, async (n) => {
+      ativos++; pico = Math.max(pico, ativos);
+      await new Promise((r) => setTimeout(r, (8 - n) * 2));
+      ativos--;
+      return n * 10;
+    });
+    expect(out).toEqual([10, 20, 30, 40, 50, 60, 70]);
+    expect(pico).toBeLessThanOrEqual(3);
+  });
+  it('lista vazia', async () => {
+    expect(await emLotes([], 10, async (n: number) => n)).toEqual([]);
   });
 });

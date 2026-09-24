@@ -2,6 +2,7 @@
 // aparece na lista; alerta de crédito a vencer; compensado e economia
 // estimada do mês. Sem banco, sem HTML.
 
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { LinhaDemonstrativo } from './demonstrativos-tela-repo.js';
 import type { EstadoGd, ResultadoValidacao } from './gd-validacao.js';
 import { mesCurto } from './demonstrativo-cruzamento.js';
@@ -81,4 +82,30 @@ export function filtrarItens(itens: ItemLista[], f: { estado?: string; q?: strin
   return itens.filter((i) =>
     (!f.estado || i.estado === f.estado) &&
     (!q || semAcento(i.clienteNome.toLowerCase()).includes(q) || i.instalacao.includes(q)));
+}
+
+// ── Conferência do PDF enviado na tela: o texto lido vai ao navegador e volta
+// no "Confirmo — gravar". Assinamos (HMAC com o segredo da sessão do painel)
+// texto + empresa, pra que ninguém troque o texto nem o reuse em outra empresa.
+// O prefixo separa este uso do cookie de sessão (mesma chave, mensagens distintas).
+const PREFIXO_CONFERENCIA = 'gd-conferencia-pdf\n';
+
+export function assinarTextoConferencia(segredo: string, companyId: string, texto: string): string {
+  return createHmac('sha256', segredo).update(`${PREFIXO_CONFERENCIA}${companyId}\n${texto}`).digest('base64url');
+}
+
+export function conferirAssinaturaTexto(segredo: string, companyId: string, texto: string, assinatura: string): boolean {
+  const esperado = Buffer.from(assinarTextoConferencia(segredo, companyId, texto), 'utf-8');
+  const recebido = Buffer.from(String(assinatura ?? ''), 'utf-8');
+  if (recebido.length !== esperado.length) return false;
+  return timingSafeEqual(recebido, esperado);
+}
+
+/** Roda `fn` em lotes de `tamanho` em paralelo, mantendo a ordem do resultado. */
+export async function emLotes<T, R>(itens: T[], tamanho: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < itens.length; i += tamanho) {
+    out.push(...(await Promise.all(itens.slice(i, i + tamanho).map(fn))));
+  }
+  return out;
 }
