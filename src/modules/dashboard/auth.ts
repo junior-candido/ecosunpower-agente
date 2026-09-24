@@ -19,6 +19,11 @@ function getSecret(): string {
   return s;
 }
 
+/** Mesmo segredo da sessão, para outras assinaturas do painel (ex.: conferência do PDF de demonstrativo). */
+export function segredoDaSessao(): string {
+  return getSecret();
+}
+
 function assinar(payload: string): string {
   return crypto.createHmac('sha256', getSecret()).update(payload).digest('hex');
 }

@@ -38,6 +38,7 @@ import {
   criarSessionAuth,
   setSessionCookie,
   clearSessionCookie,
+  segredoDaSessao,
 } from './auth.js';
 import {
   fetchDashboardKpis,
@@ -116,6 +117,10 @@ import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
 import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } from './blog-views.js';
 import { renderEmailPage } from './email-views.js';
 import { renderMedicaoPage } from './medicao-views.js';
+import {
+  renderDemonstrativosLista, renderDemonstrativoCliente, renderConferenciaPdf, renderDigitar, renderEnviarPdf,
+  type ResultadoLeituraPdf,
+} from './demonstrativos-views.js';
 import { listarAparelhos, resumoDoAparelho } from './medicao-queries.js';
 import { desempenhoPorStep } from './email-metricas.js';
 import { listarClientesPosVenda, listarAgendaPosVenda } from './pos-venda-queries.js';
@@ -4469,6 +4474,233 @@ b.onclick=async function(){
     } catch (err) {
       console.error('[dashboard/monitoramento]', err);
       res.status(500).send(`<h2>Erro ao listar monitoramento</h2><pre>${(err as Error).message}</pre>`);
+    }
+  });
+
+  // ── Demonstrativos GD (fatia 1) — ver docs/superpowers/specs/2026-09-23-demonstrativos-tela-relatorio-design.md
+  const RE_UC = /^\d{3,15}$/;
+  const RE_MES = /^\d{4}-\d{2}-01$/;
+  async function depsGd(req: AuthedRequest) {
+    const companyId = req.dashUser!.companyId;
+    const db = bancoDoOperador(req, supabase);
+    const { criarRepoTelaGd } = await import('../gd/demonstrativos-tela-repo.js');
+    const { criarRepoDemonstrativo } = await import('../gd/demonstrativo-repo.js');
+    return { companyId, tela: criarRepoTelaGd(db, companyId), ing: criarRepoDemonstrativo(db, companyId) };
+  }
+
+  /** Grava um demonstrativo vindo da TELA (PDF enviado ou digitado): liga ao cliente, cruza, grava. */
+  async function gravarDemonstrativoTela(
+    req: AuthedRequest,
+    dados: import('../gd/demonstrativo-parser.js').DemonstrativoGd,
+    inconsistencias: string[],
+    origem: 'pdf_manual' | 'digitado',
+    texto: string,
+  ): Promise<'gravado' | 'mantido_verificado'> {
+    const { companyId, tela, ing } = await depsGd(req);
+    const { cruzarDemonstrativo } = await import('../gd/demonstrativo-cruzamento.js');
+    const { montarRegistro } = await import('../gd/demonstrativo-ingestao.js');
+    const lead = await ing.buscarLeadPorUc(dados.instalacao, dados.codigoCliente);
+    const rateio = lead ? await ing.buscarRateio(lead.id) : [];
+    const geracao = lead ? await ing.geracaoDoMes(lead.id, dados.referencia) : null;
+    const alertas = cruzarDemonstrativo({ dados, geracaoMesKwh: geracao, rateioCadastrado: rateio, inconsistencias });
+    return tela.gravarManual(montarRegistro(dados, {
+      companyId, leadId: lead?.id ?? null, inconsistencias, alertas, geracaoKwh: geracao,
+      emailId: null, textoBruto: texto, verificada: false, origem, conferidoPor: req.dashUser!.id,
+    }));
+  }
+
+  router.get('/demonstrativos', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const { tela, ing } = await depsGd(req);
+      const { validarMes } = await import('../gd/gd-validacao.js');
+      const { montarItem, filtrarItens, hojeBrasilia, emLotes } = await import('../gd/demonstrativos-tela.js');
+      const meses = await tela.mesesDisponiveis();
+      const pedido = typeof req.query.mes === 'string' && RE_MES.test(req.query.mes) ? req.query.mes : null;
+      const mes = pedido && meses.includes(pedido) ? pedido : meses[0] ?? null;
+      const linhas = mes ? await tela.listarDoMes(mes) : [];
+      const manuais = mes ? await tela.geracoesManuais(linhas.map((l) => l.instalacao), mes) : new Map();
+      const hoje = hojeBrasilia();
+      // Paliativo: 10 linhas em paralelo por vez (a consulta única em lote fica pra depois).
+      const itens = await emLotes(linhas, 10, async (l) => {
+        const [sis, api] = await Promise.all([
+          l.lead_id ? tela.sistemaDoLead(l.lead_id) : Promise.resolve({ potenciaKwp: null, uf: null }),
+          l.lead_id ? ing.geracaoDoMes(l.lead_id, l.referencia) : Promise.resolve(null),
+        ]);
+        const v = validarMes({
+          leadId: l.lead_id, referencia: l.referencia, injetadoKwh: l.injetado_kwh,
+          inconsistenciasLeitura: l.inconsistencias,
+          geracaoManualKwh: manuais.get(`${l.instalacao}|${l.referencia}`)?.kwh ?? null,
+          geracaoApiKwh: api, potenciaKwp: sis.potenciaKwp, uf: sis.uf,
+        });
+        return montarItem(l, v, hoje);
+      });
+      const filtro = {
+        estado: typeof req.query.estado === 'string' ? req.query.estado : undefined,
+        q: typeof req.query.q === 'string' ? req.query.q : undefined,
+      };
+      const msg = typeof req.query.msg === 'string' ? req.query.msg : null;
+      res.type('html').send(renderDemonstrativosLista({ itens: filtrarItens(itens, filtro), meses, mes, filtro, msg }, req.dashUser));
+    } catch (err) {
+      console.error('[demonstrativos]', err);
+      res.status(500).send(`<h2>Erro ao listar demonstrativos</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  router.get('/demonstrativos/enviar-pdf', exigir('usinas', 'editar'), (req: AuthedRequest, res: Response) => {
+    res.type('html').send(renderEnviarPdf(req.dashUser));
+  });
+
+  router.post('/demonstrativos/enviar-pdf', exigir('usinas', 'editar'), uploadPdf.array('pdfs', 20), async (req: AuthedRequest, res: Response) => {
+    try {
+      const { extrairTextoPdf } = await import('../gd/demonstrativo-io.js');
+      const { parseDemonstrativo } = await import('../gd/demonstrativo-parser.js');
+      const { assinarTextoConferencia } = await import('../gd/demonstrativos-tela.js');
+      const segredo = segredoDaSessao();
+      const companyId = req.dashUser!.companyId;
+      const arquivos = (req.files as Express.Multer.File[] | undefined) ?? [];
+      const out: ResultadoLeituraPdf[] = [];
+      for (const f of arquivos) {
+        try {
+          const texto = await extrairTextoPdf(new Uint8Array(f.buffer));
+          const r = parseDemonstrativo(texto);
+          out.push(r.ok
+            ? { arquivo: f.originalname, ok: true, textoB64: Buffer.from(texto, 'utf-8').toString('base64'),
+                assinatura: assinarTextoConferencia(segredo, companyId, texto),
+                clienteNome: r.dados.clienteNome, instalacao: r.dados.instalacao, referencia: r.dados.referencia,
+                injetadoKwh: r.dados.injetadoKwh, consumoKwh: r.dados.consumoKwh, saldoKwh: r.dados.saldoAcumuladoKwh,
+                inconsistencias: r.inconsistencias }
+            : { arquivo: f.originalname, ok: false, motivo: r.motivo });
+        } catch (e) {
+          out.push({ arquivo: f.originalname, ok: false, motivo: `PDF ilegível (${(e as Error).message})` });
+        }
+      }
+      res.type('html').send(renderConferenciaPdf(out, req.dashUser));
+    } catch (err) {
+      console.error('[demonstrativos/enviar-pdf]', err);
+      res.status(500).send(`<h2>Erro ao ler PDFs</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  // Confirmação: o texto do PDF volta do navegador, mas só é aceito se a
+  // assinatura HMAC (segredo da sessão + empresa + texto, feita no /enviar-pdf)
+  // bater — ninguém troca o texto nem o reusa em outra empresa. Com o texto
+  // conferido, o servidor LÊ DE NOVO os números (nunca grava número do navegador).
+  router.post('/demonstrativos/confirmar', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const { parseDemonstrativo } = await import('../gd/demonstrativo-parser.js');
+      const { conferirAssinaturaTexto } = await import('../gd/demonstrativos-tela.js');
+      const recusar = (motivo: string) =>
+        res.redirect('/dashboard/demonstrativos?msg=' + encodeURIComponent(`Não gravei: ${motivo}`));
+      const texto = Buffer.from(String(req.body?.texto_b64 ?? ''), 'base64').toString('utf-8');
+      const assinatura = String(req.body?.assinatura_texto ?? '');
+      if (!conferirAssinaturaTexto(segredoDaSessao(), req.dashUser!.companyId, texto, assinatura)) {
+        recusar('a conferência não bate com o PDF lido — envie o PDF de novo.'); return;
+      }
+      const r = parseDemonstrativo(texto);
+      if (!r.ok) { recusar(r.motivo); return; }
+      if (!RE_UC.test(r.dados.instalacao)) { recusar(`número de instalação (UC) inválido: ${r.dados.instalacao}`); return; }
+      const st = await gravarDemonstrativoTela(req, r.dados, r.inconsistencias, 'pdf_manual', texto);
+      const msg = st === 'gravado'
+        ? 'Demonstrativo gravado.'
+        : 'Esse mês já veio confirmado da concessionária por e-mail — mantive o que estava.';
+      res.redirect(`/dashboard/demonstrativos/${r.dados.instalacao}?mes=${r.dados.referencia}&msg=${encodeURIComponent(msg)}`);
+    } catch (err) {
+      console.error('[demonstrativos/confirmar]', err);
+      res.status(500).send(`<h2>Erro ao gravar</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  router.get('/demonstrativos/digitar', exigir('usinas', 'editar'), (req: AuthedRequest, res: Response) => {
+    res.type('html').send(renderDigitar({}, [], req.dashUser));
+  });
+
+  router.post('/demonstrativos/digitar', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const { montarDigitado } = await import('../gd/gd-formulario.js');
+      const campos = ['clienteNome', 'codigoCliente', 'instalacao', 'mes', 'injetado', 'consumo',
+        'creditoUtilizado', 'saldoAcumulado', 'proximoExpirar', 'cicloExpirar'] as const;
+      const v = Object.fromEntries(campos.map((c) => [c, String(req.body?.[c] ?? '')])) as Record<(typeof campos)[number], string>;
+      const r = montarDigitado(v);
+      if (!r.ok) { res.type('html').send(renderDigitar(v, r.erros, req.dashUser)); return; }
+      const st = await gravarDemonstrativoTela(req, r.dados, [], 'digitado', '');
+      const msg = st === 'gravado' ? 'Demonstrativo gravado.' : 'Esse mês já veio confirmado da concessionária — mantive o que estava.';
+      res.redirect(`/dashboard/demonstrativos/${r.dados.instalacao}?mes=${r.dados.referencia}&msg=${encodeURIComponent(msg)}`);
+    } catch (err) {
+      console.error('[demonstrativos/digitar]', err);
+      res.status(500).send(`<h2>Erro ao gravar</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  router.get('/demonstrativos/:instalacao', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const inst = String(req.params.instalacao);
+      if (!RE_UC.test(inst)) { res.status(400).send('UC inválida'); return; }
+      const { tela, ing } = await depsGd(req);
+      const { validarMes } = await import('../gd/gd-validacao.js');
+      const { compensadoDoMes, economiaEstimadaRs, alertaVencimento, TARIFA_PADRAO_RS_KWH, hojeBrasilia } = await import('../gd/demonstrativos-tela.js');
+      const hist = await tela.historicoDaInstalacao(inst);
+      if (hist.length === 0) { res.status(404).send('<h2>Nenhum demonstrativo dessa UC</h2>'); return; }
+      const meses = hist.map((h) => h.referencia);
+      const pedido = typeof req.query.mes === 'string' ? req.query.mes : '';
+      const l = hist.find((h) => h.referencia === pedido) ?? hist[0];
+      const manual = (await tela.geracoesManuais([inst], l.referencia)).get(`${inst}|${l.referencia}`)?.kwh ?? null;
+      const sis = l.lead_id ? await tela.sistemaDoLead(l.lead_id) : { potenciaKwp: null, uf: null };
+      const api = l.lead_id ? await ing.geracaoDoMes(l.lead_id, l.referencia) : null;
+      const validacao = validarMes({
+        leadId: l.lead_id, referencia: l.referencia, injetadoKwh: l.injetado_kwh, inconsistenciasLeitura: l.inconsistencias,
+        geracaoManualKwh: manual, geracaoApiKwh: api, potenciaKwp: sis.potenciaKwp, uf: sis.uf,
+      });
+      const compensado = compensadoDoMes(l);
+      const buscar = typeof req.query.buscar === 'string' ? req.query.buscar : '';
+      const candidatos = !l.lead_id && buscar ? await tela.buscarLeads(buscar) : [];
+      res.type('html').send(renderDemonstrativoCliente({
+        instalacao: inst, clienteNome: l.cliente_nome, leadId: l.lead_id, meses, mes: l.referencia,
+        consumoKwh: l.consumo_kwh, injetadoKwh: l.injetado_kwh, saldoKwh: l.saldo_acumulado_kwh,
+        compensadoKwh: compensado, economiaRs: economiaEstimadaRs(compensado, TARIFA_PADRAO_RS_KWH),
+        proximoExpirar: alertaVencimento(l.proximo_expirar_kwh, l.ciclo_expirar, hojeBrasilia()),
+        historico: l.historico.map((h) => ({ mes: h.mes, consumida: h.consumida, injetada: h.injetada, compensado: h.compensado })),
+        unidades: l.unidades, origemDemonstrativo: l.origem, verificado: l.origem_verificada,
+        validacao, candidatos, msg: typeof req.query.msg === 'string' ? req.query.msg : null,
+      }, req.dashUser));
+    } catch (err) {
+      console.error('[demonstrativos/cliente]', err);
+      res.status(500).send(`<h2>Erro ao abrir demonstrativo</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  router.post('/demonstrativos/:instalacao/geracao', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const inst = String(req.params.instalacao);
+      const ref = String(req.body?.referencia ?? '');
+      if (!RE_UC.test(inst) || !RE_MES.test(ref)) { res.status(400).send('Dados inválidos'); return; }
+      const { numeroForm } = await import('../gd/gd-formulario.js');
+      const kwhV = numeroForm(String(req.body?.kwh ?? ''));
+      const volta = (m: string) => res.redirect(`/dashboard/demonstrativos/${inst}?mes=${ref}&msg=${encodeURIComponent(m)}`);
+      if (kwhV === null) { volta('Geração inválida — use números, ex.: 612,4'); return; }
+      const { tela } = await depsGd(req);
+      const linha = (await tela.historicoDaInstalacao(inst)).find((h) => h.referencia === ref);
+      if (!linha) { res.status(404).send('Mês não encontrado'); return; }
+      await tela.salvarGeracaoManual({ leadId: linha.lead_id, instalacao: inst, referencia: ref, kwh: kwhV, conferidoPor: req.dashUser!.id });
+      volta('Geração salva.');
+    } catch (err) {
+      console.error('[demonstrativos/geracao]', err);
+      res.status(500).send(`<h2>Erro ao salvar geração</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  router.post('/demonstrativos/:instalacao/ligar', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const inst = String(req.params.instalacao);
+      const mes = String(req.body?.mes ?? '');
+      if (!RE_UC.test(inst)) { res.status(400).send('UC inválida'); return; }
+      const { tela } = await depsGd(req);
+      const lead = await tela.leadDaEmpresa(String(req.body?.lead_id ?? ''));
+      if (!lead) { res.status(404).send('Cliente não encontrado nesta empresa'); return; }
+      await tela.ligarLead(inst, lead.id);
+      res.redirect(`/dashboard/demonstrativos/${inst}?mes=${encodeURIComponent(mes)}&msg=${encodeURIComponent(`Ligado a ${lead.nome ?? 'cliente'}.`)}`);
+    } catch (err) {
+      console.error('[demonstrativos/ligar]', err);
+      res.status(500).send(`<h2>Erro ao ligar cliente</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
     }
   });
 

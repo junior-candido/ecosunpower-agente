@@ -83,6 +83,19 @@ export function criarRepoDemonstrativo(db: SupabaseClient, companyId: string) {
       return l ? { verificado: l.origem_verificada === true } : null;
     },
 
+    async assinaturaGravada(instalacao: string, referencia: string): Promise<{ assinatura: string; verificado: boolean } | null> {
+      const { data, error } = await db
+        .from('demonstrativos_gd')
+        .select('assinatura, origem_verificada')
+        .eq('company_id', companyId)
+        .eq('instalacao', instalacao)
+        .eq('referencia', referencia)
+        .limit(1);
+      if (error) throw new Error(`demonstrativos_gd (assinatura): ${error.message}`);
+      const l = data?.[0];
+      return l ? { assinatura: l.assinatura as string, verificado: l.origem_verificada === true } : null;
+    },
+
     /**
      * Codigo do cliente e instalacao sao series numericas diferentes e podem
      * coincidir entre clientes. Ordem de confianca: instalacao exata → codigo

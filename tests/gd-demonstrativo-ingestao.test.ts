@@ -6,8 +6,11 @@ import {
   escolherPdf,
   tratarConfirmacaoGmail,
   extrairConfirmacaoGmail,
+  assinaturaDemonstrativo,
+  montarRegistro,
   type DepsIngestao,
 } from '../src/modules/gd/demonstrativo-ingestao.js';
+import { parseDemonstrativo } from '../src/modules/gd/demonstrativo-parser.js';
 
 const TEXTO = readFileSync(join(__dirname, 'fixtures', 'gd', 'cliente-unico-2026-06.txt'), 'utf-8');
 const ASSUNTO = { referencia: '2026-06-01', nome: 'CLIENTE TESTE UM', codigoCliente: '100001', instalacao: '200002' };
@@ -295,5 +298,98 @@ https://mail.google.com/mail/vf-%5BANGjdJ_xyz%5D-AbC123_d
     const avisar = vi.fn(async () => {});
     await tratarConfirmacaoGmail({ avisar, buscarCorpo: async () => { throw new Error('x'); } }, { codigo: null, emailId: 'in_9' });
     expect((avisar.mock.calls[0] as any)[0]).toMatch(/não achei o código/);
+  });
+});
+
+describe('mes repetido com os mesmos numeros', () => {
+  it('mesmo conteudo JA verificado: repetido, mesmo com DKIM pass de novo', async () => {
+    const r0 = parseDemonstrativo(TEXTO);
+    if (!r0.ok) throw new Error('fixture');
+    const d = deps({ assinaturaGravada: vi.fn(async () => ({ assinatura: assinaturaDemonstrativo(r0.dados), verificado: true })) });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_2', assunto: ASSUNTO });
+    expect(r.status).toBe('repetido');
+    expect(d.salvos).toHaveLength(0);
+    expect(d.avisos).toHaveLength(0);
+  });
+
+  it('mesmo mes com numero diferente: grava e avisa', async () => {
+    const d = deps({ assinaturaGravada: vi.fn(async () => ({ assinatura: '["outra"]', verificado: false })) });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_2', assunto: ASSUNTO });
+    expect(r.status).toBe('gravado');
+    expect(d.avisos).toHaveLength(1);
+  });
+
+  it('grava origem email e a assinatura (igual a assinaturaDemonstrativo do lido)', async () => {
+    const r0 = parseDemonstrativo(TEXTO);
+    if (!r0.ok) throw new Error('fixture');
+    const d = deps();
+    await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(d.salvos[0].origem).toBe('email');
+    expect(d.salvos[0].assinatura).toBe(assinaturaDemonstrativo(r0.dados));
+  });
+
+  it('mesmo conteudo, gravado SEM prova, chega agora com DKIM pass: regrava marcando verificado, sem avisar de novo', async () => {
+    const r0 = parseDemonstrativo(TEXTO);
+    if (!r0.ok) throw new Error('fixture');
+    const d = deps({
+      registroExistente: vi.fn(async () => ({ verificado: false })),
+      assinaturaGravada: vi.fn(async () => ({ assinatura: assinaturaDemonstrativo(r0.dados), verificado: false })),
+    });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_2', assunto: ASSUNTO });
+    expect(r.status).toBe('gravado');
+    expect(d.salvos).toHaveLength(1);
+    expect(d.salvos[0].origem_verificada).toBe(true);
+    expect(d.avisos).toHaveLength(0);
+  });
+
+  it('mes verificado recebe os mesmos numeros sem prova: repetido (nao vira o aviso de "recusado")', async () => {
+    const r0 = parseDemonstrativo(TEXTO);
+    if (!r0.ok) throw new Error('fixture');
+    const d = deps({
+      verificarOrigem: vi.fn(async () => 'desconhecido' as const),
+      assinaturaGravada: vi.fn(async () => ({ assinatura: assinaturaDemonstrativo(r0.dados), verificado: true })),
+    });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_2', assunto: ASSUNTO });
+    expect(r.status).toBe('repetido');
+    expect(d.salvos).toHaveLength(0);
+    expect(d.avisos).toHaveLength(0);
+  });
+
+  it('mesmo conteudo, gravado SEM prova, chega de novo SEM prova: repetido, sem gravar de novo e sem avisar', async () => {
+    const r0 = parseDemonstrativo(TEXTO);
+    if (!r0.ok) throw new Error('fixture');
+    const d = deps({
+      verificarOrigem: vi.fn(async () => 'desconhecido' as const),
+      assinaturaGravada: vi.fn(async () => ({ assinatura: assinaturaDemonstrativo(r0.dados), verificado: false })),
+    });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_2', assunto: ASSUNTO });
+    expect(r.status).toBe('repetido');
+    expect(d.salvos).toHaveLength(0);
+    expect(d.avisos).toHaveLength(0);
+  });
+});
+
+describe('montarRegistro', () => {
+  it('converte o demonstrativo lido em linha da tabela', () => {
+    const r0 = parseDemonstrativo(TEXTO);
+    if (!r0.ok) throw new Error('fixture');
+    const reg = montarRegistro(r0.dados, {
+      companyId: ECOSUN, leadId: null, inconsistencias: [], alertas: [], geracaoKwh: null,
+      emailId: null, textoBruto: 'x', verificada: false, origem: 'pdf_manual', conferidoPor: 'u1',
+    });
+    expect(reg.origem).toBe('pdf_manual');
+    expect(reg.instalacao).toBe('200002');
+    expect(reg.conferido_por).toBe('u1');
+    expect(reg.conferido_em).not.toBeNull();
+    expect(reg.assinatura).toBe(assinaturaDemonstrativo(r0.dados));
+  });
+});
+
+describe('assinaturaDemonstrativo', () => {
+  it('nao muda se a ordem das unidades no PDF mudar', () => {
+    const r0 = parseDemonstrativo(TEXTO);
+    if (!r0.ok) throw new Error('fixture');
+    const invertido = { ...r0.dados, unidades: [...r0.dados.unidades].reverse() };
+    expect(assinaturaDemonstrativo(invertido)).toBe(assinaturaDemonstrativo(r0.dados));
   });
 });
