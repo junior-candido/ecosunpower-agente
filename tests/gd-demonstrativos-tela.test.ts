@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   alertaVencimento, compensadoDoMes, economiaEstimadaRs, montarItem, filtrarItens, TARIFA_PADRAO_RS_KWH,
+  hojeBrasilia,
 } from '../src/modules/gd/demonstrativos-tela.js';
 import type { LinhaDemonstrativo } from '../src/modules/gd/demonstrativos-tela-repo.js';
 import type { ResultadoValidacao } from '../src/modules/gd/gd-validacao.js';
@@ -27,12 +28,24 @@ describe('alertaVencimento', () => {
     expect(alertaVencimento(null, '2026-12-01', '2026-09-23')).toBeNull();
     expect(alertaVencimento(0, '2026-12-01', '2026-09-23')).toBeNull();
   });
+  it('bordas: mesmo mes entra, mes passado sai, exatamente 6 meses ainda entra', () => {
+    expect(alertaVencimento(100, '2026-09-01', '2026-09-23')).not.toBeNull();
+    expect(alertaVencimento(100, '2026-08-01', '2026-09-23')).toBeNull();
+    expect(alertaVencimento(100, '2027-03-01', '2026-09-23')).not.toBeNull();
+  });
 });
 
 describe('compensado e economia', () => {
   it('compensado vem da linha do historico do proprio mes', () => {
     expect(compensadoDoMes(linha())).toBe(380);
     expect(compensadoDoMes(linha({ historico: [] }))).toBeNull();
+  });
+  it('compensado null/undefined ou nao finito vira null (nao 0)', () => {
+    const hist = (compensado: unknown) => [{ mes: '2026-08-01', consumida: 480, injetada: 222, faturada: 100, compensado: compensado as number, credito: 0 }];
+    expect(compensadoDoMes(linha({ historico: hist(null) }))).toBeNull();
+    expect(compensadoDoMes(linha({ historico: hist(undefined) }))).toBeNull();
+    expect(compensadoDoMes(linha({ historico: hist(NaN) }))).toBeNull();
+    expect(compensadoDoMes(linha({ historico: hist(0) }))).toBe(0);
   });
   it('economia estimada = compensado x tarifa', () => {
     expect(economiaEstimadaRs(380, TARIFA_PADRAO_RS_KWH)).toBe(Math.round(380 * TARIFA_PADRAO_RS_KWH * 100) / 100);
@@ -56,5 +69,20 @@ describe('montarItem / filtrarItens', () => {
     expect(filtrarItens(itens, { q: 'joao' })).toHaveLength(1);
     expect(filtrarItens(itens, { q: '999' })).toHaveLength(1);
     expect(filtrarItens(itens, {})).toHaveLength(2);
+  });
+  it('busca ignora acento — "joão" bate com "JOAO" e vice-versa', () => {
+    const comAcento = [montarItem(linha({ cliente_nome: 'João Teste' }), val(), '2026-09-23')];
+    expect(filtrarItens(comAcento, { q: 'joao' })).toHaveLength(1);
+    const semAcento = [montarItem(linha({ cliente_nome: 'JOAO TESTE' }), val(), '2026-09-23')];
+    expect(filtrarItens(semAcento, { q: 'joão' })).toHaveLength(1);
+  });
+});
+
+describe('hojeBrasilia', () => {
+  it('21h-24h UTC do ultimo dia do mes ainda e o dia anterior em Brasilia (UTC-3)', () => {
+    expect(hojeBrasilia(new Date('2026-09-30T02:00:00Z'))).toBe('2026-09-29');
+  });
+  it('meio-dia UTC e o mesmo dia em Brasilia', () => {
+    expect(hojeBrasilia(new Date('2026-09-30T15:00:00Z'))).toBe('2026-09-30');
   });
 });

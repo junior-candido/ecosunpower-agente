@@ -37,9 +37,21 @@ export function alertaVencimento(kwh: number | null, ciclo: string | null, hojeI
   return `⏰ ${fmt(kwh)} kWh de crédito vencem em ${mesCurto(ciclo)}`;
 }
 
+/** 'YYYY-MM-DD' de hoje em Brasília (UTC-3) — não usa o fuso do servidor, pra não pular de dia perto da virada. */
+export function hojeBrasilia(agora: Date = new Date()): string {
+  const d = new Date(agora.getTime() - 3 * 60 * 60 * 1000);
+  const ano = d.getUTCFullYear();
+  const mes = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dia = String(d.getUTCDate()).padStart(2, '0');
+  return `${ano}-${mes}-${dia}`;
+}
+
+/** null quando o mês não tem linha, ou o compensado veio nulo/indefinido/não numérico — nunca vira 0 por acidente. */
 export function compensadoDoMes(l: LinhaDemonstrativo): number | null {
   const h = l.historico.find((x) => x.mes === l.referencia);
-  return h ? Number(h.compensado) : null;
+  if (!h || h.compensado === null || h.compensado === undefined) return null;
+  const v = Number(h.compensado);
+  return Number.isFinite(v) ? v : null;
 }
 
 export function economiaEstimadaRs(compensadoKwh: number | null, tarifa: number): number | null {
@@ -61,9 +73,12 @@ export function montarItem(l: LinhaDemonstrativo, v: ResultadoValidacao, hojeIso
   };
 }
 
+/** Remove acentos pra "joão" bater com "JOAO" na busca. */
+const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+
 export function filtrarItens(itens: ItemLista[], f: { estado?: string; q?: string }): ItemLista[] {
-  const q = (f.q ?? '').trim().toLowerCase();
+  const q = semAcento((f.q ?? '').trim().toLowerCase());
   return itens.filter((i) =>
     (!f.estado || i.estado === f.estado) &&
-    (!q || i.clienteNome.toLowerCase().includes(q) || i.instalacao.includes(q)));
+    (!q || semAcento(i.clienteNome.toLowerCase()).includes(q) || i.instalacao.includes(q)));
 }

@@ -56,29 +56,58 @@ function normalizar(r: any): LinhaDemonstrativo {
   };
 }
 
+// O PostgREST corta QUALQUER resposta em 1000 linhas, mesmo sem .limit() — uma
+// empresa com mais de 1000 demonstrativos/UCs perderia linhas em silêncio.
+// Pagina com .range() até vir página incompleta, com um teto de segurança.
+const TAMANHO_PAGINA = 1000;
+const MAX_PAGINAS = 20;
+const TAMANHO_LOTE_UC = 200;
+
+async function paginarTudo<T>(
+  montarConsulta: (de: number, ate: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  contexto: string,
+): Promise<T[]> {
+  const tudo: T[] = [];
+  for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
+    const de = pagina * TAMANHO_PAGINA;
+    const { data, error } = await montarConsulta(de, de + TAMANHO_PAGINA - 1);
+    if (error) throw new Error(`${contexto}: ${error.message}`);
+    const linhas = data ?? [];
+    tudo.push(...linhas);
+    if (linhas.length < TAMANHO_PAGINA) break;
+  }
+  return tudo;
+}
+
 export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
   return {
     async mesesDisponiveis(): Promise<string[]> {
-      const { data, error } = await db
-        .from('demonstrativos_gd')
-        .select('referencia')
-        .eq('company_id', companyId)
-        .order('referencia', { ascending: false })
-        .limit(1000);
-      if (error) throw new Error(`demonstrativos_gd (meses): ${error.message}`);
-      return [...new Set((data ?? []).map((x: any) => String(x.referencia)))];
+      const linhas = await paginarTudo<{ referencia: string }>(
+        (de, ate) =>
+          db
+            .from('demonstrativos_gd')
+            .select('referencia')
+            .eq('company_id', companyId)
+            .order('referencia', { ascending: false })
+            .range(de, ate),
+        'demonstrativos_gd (meses)',
+      );
+      return [...new Set(linhas.map((x) => String(x.referencia)))];
     },
 
     async listarDoMes(referencia: string): Promise<LinhaDemonstrativo[]> {
-      const { data, error } = await db
-        .from('demonstrativos_gd')
-        .select(COLUNAS)
-        .eq('company_id', companyId)
-        .eq('referencia', referencia)
-        .order('cliente_nome', { ascending: true })
-        .limit(1000);
-      if (error) throw new Error(`demonstrativos_gd (lista): ${error.message}`);
-      return (data ?? []).map(normalizar);
+      const linhas = await paginarTudo<any>(
+        (de, ate) =>
+          db
+            .from('demonstrativos_gd')
+            .select(COLUNAS)
+            .eq('company_id', companyId)
+            .eq('referencia', referencia)
+            .order('cliente_nome', { ascending: true })
+            .range(de, ate),
+        'demonstrativos_gd (lista)',
+      );
+      return linhas.map(normalizar);
     },
 
     async historicoDaInstalacao(instalacao: string): Promise<LinhaDemonstrativo[]> {
@@ -93,23 +122,35 @@ export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
       return (data ?? []).map(normalizar);
     },
 
-    /** Geração manual por `${instalacao}|${referencia}`. */
-    async geracoesManuais(instalacoes: string[]): Promise<Map<string, GeracaoManual>> {
+    /**
+     * Geração manual por `${instalacao}|${referencia}`. `referencia` filtra só um
+     * mês (a lista chama sem, o cliente com); UCs vão em lotes de 200 no `.in()`
+     * pra não estourar o tamanho da query com uma carteira grande.
+     */
+    async geracoesManuais(instalacoes: string[], referencia?: string): Promise<Map<string, GeracaoManual>> {
       const mapa = new Map<string, GeracaoManual>();
       if (instalacoes.length === 0) return mapa;
-      const { data, error } = await db
-        .from('geracao_mensal_gd')
-        .select('instalacao, referencia, kwh, origem, conferido_em')
-        .eq('company_id', companyId)
-        .in('instalacao', instalacoes)
-        .limit(5000);
-      if (error) throw new Error(`geracao_mensal_gd (ler): ${error.message}`);
-      for (const g of (data ?? []) as any[]) {
-        mapa.set(`${g.instalacao}|${g.referencia}`, {
-          kwh: Number(g.kwh),
-          origem: g.origem as 'print' | 'digitado',
-          conferido_em: g.conferido_em,
-        });
+      for (let i = 0; i < instalacoes.length; i += TAMANHO_LOTE_UC) {
+        const lote = instalacoes.slice(i, i + TAMANHO_LOTE_UC);
+        const linhas = await paginarTudo<any>(
+          (de, ate) => {
+            let q = db
+              .from('geracao_mensal_gd')
+              .select('instalacao, referencia, kwh, origem, conferido_em')
+              .eq('company_id', companyId)
+              .in('instalacao', lote);
+            if (referencia) q = q.eq('referencia', referencia);
+            return q.range(de, ate);
+          },
+          'geracao_mensal_gd (ler)',
+        );
+        for (const g of linhas) {
+          mapa.set(`${g.instalacao}|${g.referencia}`, {
+            kwh: Number(g.kwh),
+            origem: g.origem as 'print' | 'digitado',
+            conferido_em: g.conferido_em,
+          });
+        }
       }
       return mapa;
     },
@@ -134,16 +175,21 @@ export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
       if (error) throw new Error(`geracao_mensal_gd (gravar): ${error.message}`);
     },
 
+    /** Só sistemas ATIVOS contam pro kWp esperado — um sistema desativado não deveria puxar a média pra baixo. */
     async sistemaDoLead(leadId: string): Promise<{ potenciaKwp: number | null; uf: string | null }> {
       const { data, error } = await db
         .from('sistemas_clientes')
         .select('potencia_kwp, uf')
         .eq('company_id', companyId)
-        .eq('lead_id', leadId);
+        .eq('lead_id', leadId)
+        .eq('ativo', true);
       if (error) throw new Error(`sistemas_clientes (kwp): ${error.message}`);
       const linhas = (data ?? []) as any[];
       const soma = linhas.reduce((s: number, x: any) => s + Number(x.potencia_kwp ?? 0), 0);
-      return { potenciaKwp: soma > 0 ? Math.round(soma * 100) / 100 : null, uf: (linhas[0] as any)?.uf ?? null };
+      return {
+        potenciaKwp: soma > 0 ? Math.round(soma * 100) / 100 : null,
+        uf: linhas.find((x: any) => x.uf)?.uf ?? null,
+      };
     },
 
     async leadDaEmpresa(leadId: string): Promise<{ id: string; nome: string | null } | null> {
@@ -159,7 +205,7 @@ export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
     },
 
     async buscarLeads(q: string): Promise<Array<{ id: string; nome: string | null; uc: string | null }>> {
-      const termo = q.trim().replace(/[%_,()]/g, ' ');
+      const termo = q.trim().replace(/[%_,()*\\]/g, ' ');
       if (termo.length < 2) return [];
       const { data, error } = await db
         .from('leads')
@@ -172,7 +218,11 @@ export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
       return (data ?? []).map((l: any) => ({ id: l.id, nome: l.name ?? null, uc: l.uc_numero ?? null }));
     },
 
-    /** Liga todos os meses dessa UC (e a geração manual) ao cliente. */
+    /**
+     * Liga todos os meses dessa UC (e a geração manual) ao cliente.
+     * `leadId` deve vir de `leadDaEmpresa()` — este método não confere a
+     * empresa do lead, só filtra `company_id` do lado dos demonstrativos/geração.
+     */
     async ligarLead(instalacao: string, leadId: string): Promise<void> {
       const a = await db.from('demonstrativos_gd').update({ lead_id: leadId })
         .eq('company_id', companyId).eq('instalacao', instalacao);
@@ -197,10 +247,15 @@ export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
         .limit(1);
       if (atual.error) throw new Error(`demonstrativos_gd (conferir): ${atual.error.message}`);
       if ((atual.data?.[0] as any)?.origem_verificada === true) return 'mantido_verificado';
-      const { error } = await db
+      const { data, error } = await db
         .from('demonstrativos_gd')
-        .upsert({ ...r, company_id: companyId, atualizado_em: new Date().toISOString() }, { onConflict: 'company_id,instalacao,referencia' });
+        .upsert({ ...r, company_id: companyId, atualizado_em: new Date().toISOString() }, { onConflict: 'company_id,instalacao,referencia' })
+        .select('id');
       if (error) throw new Error(`demonstrativos_gd (gravar manual): ${error.message}`);
+      // O gatilho da 130 tambem descarta em silencio quando ja havia um mes
+      // verificado (corrida entre a tela e o e-mail); upsert sem linha
+      // devolvida = o gatilho manteve o que estava, nao o que a tela mandou.
+      if (!data || data.length === 0) return 'mantido_verificado';
       return 'gravado';
     },
   };
