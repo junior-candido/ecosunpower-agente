@@ -9,6 +9,8 @@ describe('numeroForm', () => {
     expect(numeroForm('1.234')).toBe(1234);      // ponto com 3 casas = milhar
     expect(numeroForm('12.345.678')).toBe(12345678);
     expect(numeroForm(' 700 ')).toBe(700);
+    expect(numeroForm('1.234,56')).toBe(1234.56);
+    expect(numeroForm('0,5')).toBe(0.5);
   });
   it('vazio ou lixo vira null', () => {
     expect(numeroForm('')).toBeNull();
@@ -17,6 +19,11 @@ describe('numeroForm', () => {
     expect(numeroForm('1.2.3')).toBeNull();
     expect(numeroForm('-5')).toBeNull();          // kWh não é negativo
   });
+  it('vírgula com pontos fora do lugar de milhar não adivinha — vira null', () => {
+    expect(numeroForm('1.2,5')).toBeNull();
+    expect(numeroForm('12.34,5')).toBeNull();
+    expect(numeroForm('1..2,5')).toBeNull();
+  });
 });
 
 describe('mesInput', () => {
@@ -24,6 +31,9 @@ describe('mesInput', () => {
     expect(mesInput('2026-08')).toBe('2026-08-01');
     expect(mesInput('2026-13')).toBeNull();
     expect(mesInput('')).toBeNull();
+  });
+  it('ano fora de 2000..2100 vira null', () => {
+    expect(mesInput('0000-01')).toBeNull();
   });
 });
 

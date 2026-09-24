@@ -24,6 +24,9 @@ describe('diasNoMes / esperadoMes', () => {
     expect(esperadoMes(null, 'DF', '2026-08-01')).toBeNull();
     expect(esperadoMes(0, 'DF', '2026-08-01')).toBeNull();
   });
+  it('referencia malformada não vira NaN — vira null', () => {
+    expect(esperadoMes(5, 'DF', 'lixo')).toBeNull();
+  });
 });
 
 describe('validarMes', () => {
@@ -75,6 +78,12 @@ describe('validarMes', () => {
   it('manual e API iguais dentro de 3% → pronto', () => {
     const p = plausivel();
     expect(validarMes({ ...base, geracaoManualKwh: p, geracaoApiKwh: p * 1.01 }).estado).toBe('pronto');
+  });
+
+  it('API zerada (inversor offline o mês todo) não compara manual x API', () => {
+    const p = plausivel();
+    const r = validarMes({ ...base, geracaoManualKwh: p, geracaoApiKwh: 0 });
+    expect(r.bloqueios.join(' ')).not.toMatch(/difere/);
   });
 
   it('inconsistência de leitura do PDF bloqueia; "remetente não verificado" só avisa', () => {

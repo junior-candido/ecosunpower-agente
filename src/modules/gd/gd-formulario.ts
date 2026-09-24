@@ -10,7 +10,7 @@ export function numeroForm(s: string | null | undefined): number | null {
   const t = (s ?? '').trim().replace(/\s/g, '');
   if (!t) return null;
   let v: number | null = null;
-  if (t.includes(',')) v = numeroBr(t);
+  if (t.includes(',')) v = /^(\d{1,3}(\.\d{3})+|\d+),\d+$/.test(t) ? numeroBr(t) : null;
   else if (/^\d+$/.test(t)) v = Number(t);
   else if (/^\d{1,3}(\.\d{3})+$/.test(t)) v = Number(t.replace(/\./g, '')); // 1.234 = milhar
   else if (/^\d+\.\d{1,2}$/.test(t)) v = Number(t);                         // 612.4 = decimal
@@ -21,8 +21,9 @@ export function numeroForm(s: string | null | undefined): number | null {
 export function mesInput(s: string | null | undefined): string | null {
   const m = /^(\d{4})-(\d{2})$/.exec((s ?? '').trim());
   if (!m) return null;
+  const ano = Number(m[1]);
   const mes = Number(m[2]);
-  return mes >= 1 && mes <= 12 ? `${m[1]}-${m[2]}-01` : null;
+  return ano >= 2000 && ano <= 2100 && mes >= 1 && mes <= 12 ? `${m[1]}-${m[2]}-01` : null;
 }
 
 export interface CamposDigitados {

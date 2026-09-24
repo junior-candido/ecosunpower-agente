@@ -52,7 +52,8 @@ export function diasNoMes(referencia: string): number {
 /** Geração esperada no mês pro tamanho da usina (mesma régua do monitoramento). */
 export function esperadoMes(potenciaKwp: number | null, uf: string | null, referencia: string): number | null {
   if (!potenciaKwp || potenciaKwp <= 0) return null;
-  return r2(esperadoDiaKwh(potenciaKwp, uf) * diasNoMes(referencia));
+  const v = r2(esperadoDiaKwh(potenciaKwp, uf) * diasNoMes(referencia));
+  return Number.isFinite(v) ? v : null;
 }
 
 export function validarMes(e: EntradaValidacao): ResultadoValidacao {
