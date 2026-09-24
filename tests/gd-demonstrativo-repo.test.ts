@@ -138,12 +138,16 @@ describe('criarRepoDemonstrativo', () => {
     await expect(criarRepoDemonstrativo(erro.db, 'E1').salvar({} as any)).rejects.toThrow('row-level security');
   });
 
-  it('assinaturaGravada filtra empresa, instalacao e mes', async () => {
-    const { db, chamadas } = fakeDb({ demonstrativos_gd: [{ data: [{ assinatura: 'A1' }], error: null }, { data: [], error: null }] });
+  it('assinaturaGravada filtra empresa, instalacao e mes, e devolve assinatura + verificado', async () => {
+    const { db, chamadas } = fakeDb({ demonstrativos_gd: [
+      { data: [{ assinatura: 'A1', origem_verificada: true }], error: null },
+      { data: [], error: null },
+    ] });
     const repo = criarRepoDemonstrativo(db, 'E1');
-    expect(await repo.assinaturaGravada('200002', '2026-06-01')).toBe('A1');
+    expect(await repo.assinaturaGravada('200002', '2026-06-01')).toEqual({ assinatura: 'A1', verificado: true });
     expect(await repo.assinaturaGravada('200002', '2026-07-01')).toBeNull();
     expect(chamadas[0].ops).toContainEqual(['eq', ['company_id', 'E1']]);
     expect(chamadas[0].ops).toContainEqual(['eq', ['instalacao', '200002']]);
+    expect(chamadas[0].ops).toContainEqual(['eq', ['referencia', '2026-06-01']]);
   });
 });

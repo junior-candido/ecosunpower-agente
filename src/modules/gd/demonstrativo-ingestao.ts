@@ -80,7 +80,7 @@ export interface DepsIngestao {
   /** Demonstrativo ja gravado dessa instalacao nesse mes (e se a origem foi verificada). */
   registroExistente(instalacao: string, referencia: string): Promise<{ verificado: boolean } | null>;
   /** Assinatura dos números já gravados desse mês (null = nada gravado). Opcional. */
-  assinaturaGravada?(instalacao: string, referencia: string): Promise<string | null>;
+  assinaturaGravada?(instalacao: string, referencia: string): Promise<{ assinatura: string; verificado: boolean } | null>;
   /** Beneficiarias do rateio cadastradas para o lead gerador. */
   buscarRateio(leadGeradorId: string): Promise<RateioCadastrado[]>;
   /** Soma da geracao_diaria do sistema do lead no mes; null se nao ha monitoramento. */
@@ -103,10 +103,13 @@ export function escolherPdf<T extends { nome: string | null; tipo: string | null
 
 /** Resumo dos números que importam. Mesmo mês com a mesma assinatura = nada mudou. */
 export function assinaturaDemonstrativo(d: DemonstrativoGd): string {
+  const unidades = [...d.unidades]
+    .sort((a, b) => a.codigoCliente.localeCompare(b.codigoCliente))
+    .map((u) => [u.codigoCliente, u.percentual, u.saldo]);
   return JSON.stringify([
     d.instalacao, d.referencia, d.injetadoKwh, d.consumoKwh, d.creditoUtilizadoKwh, d.creditoRestanteKwh,
     d.saldoAcumuladoKwh, d.proximoExpirarKwh, d.cicloExpirar, d.creditosExpiradosKwh,
-    d.unidades.map((u) => [u.codigoCliente, u.percentual, u.saldo]),
+    unidades,
   ]);
 }
 
@@ -232,6 +235,18 @@ export async function ingerirDemonstrativo(
       );
       return { status: 'recusado', motivo: 'assunto e PDF de instalacoes diferentes' };
     }
+
+    etapa = 'checar repetido';
+    const assinatura = assinaturaDemonstrativo(d);
+    const gravado = deps.assinaturaGravada ? await deps.assinaturaGravada(d.instalacao, d.referencia) : null;
+    const mesmoConteudo = gravado !== null && gravado.assinatura === assinatura;
+    if (mesmoConteudo && (gravado!.verificado || dkim !== 'pass')) {
+      deps.log?.(`[gd] ${d.instalacao} ${d.referencia}: mesmo conteudo ja gravado — sem aviso novo`);
+      return { status: 'repetido' };
+    }
+    // mesmo conteudo, agora COM prova e antes sem: regrava pra marcar verificado, sem avisar de novo
+    const soConfirmaOrigem = mesmoConteudo && dkim === 'pass';
+
     const inconsistencias = [...r.inconsistencias];
     if (dkim !== 'pass') {
       // Sem prova de origem: nunca passa por cima de um mes que JA foi
@@ -248,12 +263,6 @@ export async function ingerirDemonstrativo(
         return { status: 'recusado', motivo: 'mes ja gravado com origem verificada' };
       }
       inconsistencias.push('remetente não verificado (sem assinatura DKIM da Neoenergia que confira)');
-    }
-
-    etapa = 'checar repetido';
-    if (deps.assinaturaGravada && (await deps.assinaturaGravada(d.instalacao, d.referencia)) === assinaturaDemonstrativo(d)) {
-      deps.log?.(`[gd] ${d.instalacao} ${d.referencia}: mesmo conteudo ja gravado — sem aviso novo`);
-      return { status: 'repetido' };
     }
 
     etapa = 'achar cliente';
@@ -277,6 +286,8 @@ export async function ingerirDemonstrativo(
       origem: 'email',
       conferidoPor: null,
     }));
+
+    if (soConfirmaOrigem) return { status: 'gravado' };
 
     let resumo = montarResumoWhats({ dados: d, alertas, nomeCliente: lead?.nome ?? null, modoTeste: deps.modoTeste });
     if (!lead) {
