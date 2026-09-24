@@ -342,12 +342,25 @@ describe('mes repetido com os mesmos numeros', () => {
     expect(d.avisos).toHaveLength(0);
   });
 
-  it('mesmo conteudo, gravado SEM prova, chega de novo SEM prova: repetido (nao vira o aviso de "recusado")', async () => {
+  it('mes verificado recebe os mesmos numeros sem prova: repetido (nao vira o aviso de "recusado")', async () => {
     const r0 = parseDemonstrativo(TEXTO);
     if (!r0.ok) throw new Error('fixture');
     const d = deps({
       verificarOrigem: vi.fn(async () => 'desconhecido' as const),
       assinaturaGravada: vi.fn(async () => ({ assinatura: assinaturaDemonstrativo(r0.dados), verificado: true })),
+    });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_2', assunto: ASSUNTO });
+    expect(r.status).toBe('repetido');
+    expect(d.salvos).toHaveLength(0);
+    expect(d.avisos).toHaveLength(0);
+  });
+
+  it('mesmo conteudo, gravado SEM prova, chega de novo SEM prova: repetido, sem gravar de novo e sem avisar', async () => {
+    const r0 = parseDemonstrativo(TEXTO);
+    if (!r0.ok) throw new Error('fixture');
+    const d = deps({
+      verificarOrigem: vi.fn(async () => 'desconhecido' as const),
+      assinaturaGravada: vi.fn(async () => ({ assinatura: assinaturaDemonstrativo(r0.dados), verificado: false })),
     });
     const r = await ingerirDemonstrativo(d, { emailId: 'in_2', assunto: ASSUNTO });
     expect(r.status).toBe('repetido');
