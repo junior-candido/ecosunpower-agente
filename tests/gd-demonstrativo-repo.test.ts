@@ -137,4 +137,13 @@ describe('criarRepoDemonstrativo', () => {
     const erro = fakeDb({ demonstrativos_gd: [{ data: null, error: { message: 'violates row-level security' } }] });
     await expect(criarRepoDemonstrativo(erro.db, 'E1').salvar({} as any)).rejects.toThrow('row-level security');
   });
+
+  it('assinaturaGravada filtra empresa, instalacao e mes', async () => {
+    const { db, chamadas } = fakeDb({ demonstrativos_gd: [{ data: [{ assinatura: 'A1' }], error: null }, { data: [], error: null }] });
+    const repo = criarRepoDemonstrativo(db, 'E1');
+    expect(await repo.assinaturaGravada('200002', '2026-06-01')).toBe('A1');
+    expect(await repo.assinaturaGravada('200002', '2026-07-01')).toBeNull();
+    expect(chamadas[0].ops).toContainEqual(['eq', ['company_id', 'E1']]);
+    expect(chamadas[0].ops).toContainEqual(['eq', ['instalacao', '200002']]);
+  });
 });

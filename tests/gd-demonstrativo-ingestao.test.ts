@@ -6,8 +6,11 @@ import {
   escolherPdf,
   tratarConfirmacaoGmail,
   extrairConfirmacaoGmail,
+  assinaturaDemonstrativo,
+  montarRegistro,
   type DepsIngestao,
 } from '../src/modules/gd/demonstrativo-ingestao.js';
+import { parseDemonstrativo } from '../src/modules/gd/demonstrativo-parser.js';
 
 const TEXTO = readFileSync(join(__dirname, 'fixtures', 'gd', 'cliente-unico-2026-06.txt'), 'utf-8');
 const ASSUNTO = { referencia: '2026-06-01', nome: 'CLIENTE TESTE UM', codigoCliente: '100001', instalacao: '200002' };
@@ -295,5 +298,47 @@ https://mail.google.com/mail/vf-%5BANGjdJ_xyz%5D-AbC123_d
     const avisar = vi.fn(async () => {});
     await tratarConfirmacaoGmail({ avisar, buscarCorpo: async () => { throw new Error('x'); } }, { codigo: null, emailId: 'in_9' });
     expect((avisar.mock.calls[0] as any)[0]).toMatch(/não achei o código/);
+  });
+});
+
+describe('mes repetido com os mesmos numeros', () => {
+  it('nao grava de novo e nao avisa (status repetido)', async () => {
+    const r0 = parseDemonstrativo(TEXTO);
+    if (!r0.ok) throw new Error('fixture');
+    const d = deps({ assinaturaGravada: vi.fn(async () => assinaturaDemonstrativo(r0.dados)) });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_2', assunto: ASSUNTO });
+    expect(r.status).toBe('repetido');
+    expect(d.salvos).toHaveLength(0);
+    expect(d.avisos).toHaveLength(0);
+  });
+
+  it('mesmo mes com numero diferente: grava e avisa', async () => {
+    const d = deps({ assinaturaGravada: vi.fn(async () => '["outra"]') });
+    const r = await ingerirDemonstrativo(d, { emailId: 'in_2', assunto: ASSUNTO });
+    expect(r.status).toBe('gravado');
+    expect(d.avisos).toHaveLength(1);
+  });
+
+  it('grava origem email e a assinatura', async () => {
+    const d = deps();
+    await ingerirDemonstrativo(d, { emailId: 'in_1', assunto: ASSUNTO });
+    expect(d.salvos[0].origem).toBe('email');
+    expect(typeof d.salvos[0].assinatura).toBe('string');
+  });
+});
+
+describe('montarRegistro', () => {
+  it('converte o demonstrativo lido em linha da tabela', () => {
+    const r0 = parseDemonstrativo(TEXTO);
+    if (!r0.ok) throw new Error('fixture');
+    const reg = montarRegistro(r0.dados, {
+      companyId: ECOSUN, leadId: null, inconsistencias: [], alertas: [], geracaoKwh: null,
+      emailId: null, textoBruto: 'x', verificada: false, origem: 'pdf_manual', conferidoPor: 'u1',
+    });
+    expect(reg.origem).toBe('pdf_manual');
+    expect(reg.instalacao).toBe('200002');
+    expect(reg.conferido_por).toBe('u1');
+    expect(reg.conferido_em).not.toBeNull();
+    expect(reg.assinatura).toBe(assinaturaDemonstrativo(r0.dados));
   });
 });

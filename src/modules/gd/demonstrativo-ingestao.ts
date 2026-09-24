@@ -6,7 +6,7 @@
 // As dependencias sao injetadas pra testar sem banco, sem Resend e sem zap.
 // Ver docs/superpowers/specs/2026-09-21-demonstrativo-gd-ingestao-design.md.
 
-import { parseDemonstrativo } from './demonstrativo-parser.js';
+import { parseDemonstrativo, type DemonstrativoGd } from './demonstrativo-parser.js';
 import type { DadosAssunto, ResultadoDkim } from './demonstrativo-email.js';
 import {
   cruzarDemonstrativo,
@@ -27,6 +27,8 @@ export interface LeadGd {
   nome: string | null;
   companyId: string | null;
 }
+
+export type OrigemDemonstrativo = 'email' | 'pdf_manual' | 'digitado';
 
 export interface RegistroDemonstrativo {
   company_id: string;
@@ -57,6 +59,10 @@ export interface RegistroDemonstrativo {
   email_id: string | null;
   texto_bruto: string;
   origem_verificada: boolean;
+  origem: OrigemDemonstrativo;
+  assinatura: string;
+  conferido_por: string | null;
+  conferido_em: string | null;
 }
 
 export interface DepsIngestao {
@@ -73,6 +79,8 @@ export interface DepsIngestao {
   buscarLeadPorUc(instalacao: string, codigoCliente: string): Promise<LeadGd | null>;
   /** Demonstrativo ja gravado dessa instalacao nesse mes (e se a origem foi verificada). */
   registroExistente(instalacao: string, referencia: string): Promise<{ verificado: boolean } | null>;
+  /** Assinatura dos números já gravados desse mês (null = nada gravado). Opcional. */
+  assinaturaGravada?(instalacao: string, referencia: string): Promise<string | null>;
   /** Beneficiarias do rateio cadastradas para o lead gerador. */
   buscarRateio(leadGeradorId: string): Promise<RateioCadastrado[]>;
   /** Soma da geracao_diaria do sistema do lead no mes; null se nao ha monitoramento. */
@@ -82,7 +90,7 @@ export interface DepsIngestao {
   log?(msg: string): void;
 }
 
-export type StatusIngestao = 'gravado' | 'duplicado' | 'sem_anexo' | 'ilegivel' | 'recusado' | 'erro';
+export type StatusIngestao = 'gravado' | 'repetido' | 'duplicado' | 'sem_anexo' | 'ilegivel' | 'recusado' | 'erro';
 
 export function escolherPdf<T extends { nome: string | null; tipo: string | null }>(anexos: T[]): T | null {
   const ehPdf = (a: T) => /\.pdf$/i.test(a.nome ?? '') || /pdf/i.test(a.tipo ?? '');
@@ -91,6 +99,66 @@ export function escolherPdf<T extends { nome: string | null; tipo: string | null
     anexos.find(ehPdf) ??
     null
   );
+}
+
+/** Resumo dos números que importam. Mesmo mês com a mesma assinatura = nada mudou. */
+export function assinaturaDemonstrativo(d: DemonstrativoGd): string {
+  return JSON.stringify([
+    d.instalacao, d.referencia, d.injetadoKwh, d.consumoKwh, d.creditoUtilizadoKwh, d.creditoRestanteKwh,
+    d.saldoAcumuladoKwh, d.proximoExpirarKwh, d.cicloExpirar, d.creditosExpiradosKwh,
+    d.unidades.map((u) => [u.codigoCliente, u.percentual, u.saldo]),
+  ]);
+}
+
+export interface ExtrasRegistro {
+  companyId: string;
+  leadId: string | null;
+  inconsistencias: string[];
+  alertas: unknown[];
+  geracaoKwh: number | null;
+  emailId: string | null;
+  textoBruto: string;
+  verificada: boolean;
+  origem: OrigemDemonstrativo;
+  conferidoPor: string | null;
+}
+
+/** Uma função só monta a linha gravada — e-mail, PDF enviado e digitado. */
+export function montarRegistro(d: DemonstrativoGd, x: ExtrasRegistro): RegistroDemonstrativo {
+  return {
+    company_id: x.companyId,
+    lead_id: x.leadId,
+    cliente_nome: d.clienteNome,
+    codigo_cliente: d.codigoCliente,
+    instalacao: d.instalacao,
+    referencia: d.referencia,
+    medidor: d.medidor,
+    injetado_kwh: d.injetadoKwh,
+    saldo_mes_anterior_kwh: d.saldoMesAnteriorKwh,
+    injetado_acumulado_kwh: d.injetadoAcumuladoKwh,
+    consumo_kwh: d.consumoKwh,
+    credito_utilizado_kwh: d.creditoUtilizadoKwh,
+    credito_restante_kwh: d.creditoRestanteKwh,
+    credito_expira: d.creditoExpira,
+    total_injetado_kwh: d.totalInjetadoKwh,
+    total_compensado_kwh: d.totalCompensadoKwh,
+    saldo_acumulado_kwh: d.saldoAcumuladoKwh,
+    proximo_expirar_kwh: d.proximoExpirarKwh,
+    ciclo_expirar: d.cicloExpirar,
+    creditos_expirados_kwh: d.creditosExpiradosKwh,
+    historico: d.historico,
+    unidades: d.unidades,
+    inconsistencias: x.inconsistencias,
+    alertas: x.alertas,
+    geracao_mes_kwh: x.geracaoKwh,
+    email_id: x.emailId,
+    texto_bruto: x.textoBruto,
+    origem_verificada: x.verificada,
+    origem: x.origem,
+    assinatura: assinaturaDemonstrativo(d),
+    conferido_por: x.conferidoPor,
+    conferido_em: x.conferidoPor ? new Date().toISOString() : null,
+  };
 }
 
 async function avisoSeguro(deps: DepsIngestao, texto: string, leadId: string | null): Promise<void> {
@@ -182,6 +250,12 @@ export async function ingerirDemonstrativo(
       inconsistencias.push('remetente não verificado (sem assinatura DKIM da Neoenergia que confira)');
     }
 
+    etapa = 'checar repetido';
+    if (deps.assinaturaGravada && (await deps.assinaturaGravada(d.instalacao, d.referencia)) === assinaturaDemonstrativo(d)) {
+      deps.log?.(`[gd] ${d.instalacao} ${d.referencia}: mesmo conteudo ja gravado — sem aviso novo`);
+      return { status: 'repetido' };
+    }
+
     etapa = 'achar cliente';
     const lead = await deps.buscarLeadPorUc(d.instalacao, d.codigoCliente);
 
@@ -191,36 +265,18 @@ export async function ingerirDemonstrativo(
     const alertas = cruzarDemonstrativo({ dados: d, geracaoMesKwh: geracao, rateioCadastrado: rateio, inconsistencias });
 
     etapa = 'gravar';
-    await deps.salvar({
-      company_id: deps.companyId,
-      lead_id: lead?.id ?? null,
-      cliente_nome: d.clienteNome,
-      codigo_cliente: d.codigoCliente,
-      instalacao: d.instalacao,
-      referencia: d.referencia,
-      medidor: d.medidor,
-      injetado_kwh: d.injetadoKwh,
-      saldo_mes_anterior_kwh: d.saldoMesAnteriorKwh,
-      injetado_acumulado_kwh: d.injetadoAcumuladoKwh,
-      consumo_kwh: d.consumoKwh,
-      credito_utilizado_kwh: d.creditoUtilizadoKwh,
-      credito_restante_kwh: d.creditoRestanteKwh,
-      credito_expira: d.creditoExpira,
-      total_injetado_kwh: d.totalInjetadoKwh,
-      total_compensado_kwh: d.totalCompensadoKwh,
-      saldo_acumulado_kwh: d.saldoAcumuladoKwh,
-      proximo_expirar_kwh: d.proximoExpirarKwh,
-      ciclo_expirar: d.cicloExpirar,
-      creditos_expirados_kwh: d.creditosExpiradosKwh,
-      historico: d.historico,
-      unidades: d.unidades,
+    await deps.salvar(montarRegistro(d, {
+      companyId: deps.companyId,
+      leadId: lead?.id ?? null,
       inconsistencias,
       alertas,
-      geracao_mes_kwh: geracao,
-      email_id: emailId,
-      texto_bruto: texto,
-      origem_verificada: dkim === 'pass',
-    });
+      geracaoKwh: geracao,
+      emailId,
+      textoBruto: texto,
+      verificada: dkim === 'pass',
+      origem: 'email',
+      conferidoPor: null,
+    }));
 
     let resumo = montarResumoWhats({ dados: d, alertas, nomeCliente: lead?.nome ?? null, modoTeste: deps.modoTeste });
     if (!lead) {
