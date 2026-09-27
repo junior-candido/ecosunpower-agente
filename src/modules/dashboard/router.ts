@@ -4513,7 +4513,7 @@ b.onclick=async function(){
     try {
       const { tela, ing } = await depsGd(req);
       const { validarMes } = await import('../gd/gd-validacao.js');
-      const { montarItem, filtrarItens, hojeBrasilia, emLotes } = await import('../gd/demonstrativos-tela.js');
+      const { montarItem, filtrarItens, hojeBrasilia, emLotes, compensadoDoMes, consumoDoMes } = await import('../gd/demonstrativos-tela.js');
       const meses = await tela.mesesDisponiveis();
       const pedido = typeof req.query.mes === 'string' && RE_MES.test(req.query.mes) ? req.query.mes : null;
       const mes = pedido && meses.includes(pedido) ? pedido : meses[0] ?? null;
@@ -4531,6 +4531,7 @@ b.onclick=async function(){
           inconsistenciasLeitura: l.inconsistencias,
           geracaoManualKwh: manuais.get(`${l.instalacao}|${l.referencia}`)?.kwh ?? null,
           geracaoApiKwh: api, potenciaKwp: sis.potenciaKwp, uf: sis.uf,
+          compensadoKwh: compensadoDoMes(l), consumoKwh: consumoDoMes(l),
         });
         return montarItem(l, v, hoje);
       });
@@ -4649,6 +4650,7 @@ b.onclick=async function(){
       const validacao = validarMes({
         leadId: l.lead_id, referencia: l.referencia, injetadoKwh: l.injetado_kwh, inconsistenciasLeitura: l.inconsistencias,
         geracaoManualKwh: manual, geracaoApiKwh: api, potenciaKwp: sis.potenciaKwp, uf: sis.uf,
+        compensadoKwh: compensadoDoMes(l), consumoKwh: consumoDoMes(l),
       });
       const compensado = compensadoDoMes(l);
       const buscar = typeof req.query.buscar === 'string' ? req.query.buscar : '';

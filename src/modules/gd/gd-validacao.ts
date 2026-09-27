@@ -20,6 +20,10 @@ export interface EntradaValidacao {
   geracaoApiKwh: number | null;
   potenciaKwp: number | null;
   uf: string | null;
+  /** Créditos compensados no mês (soma das unidades) — ver compensadoDoMes. */
+  compensadoKwh?: number | null;
+  /** Consumo do mês (soma das unidades com rateio) — ver consumoDoMes. */
+  consumoKwh?: number | null;
 }
 
 export interface ResultadoValidacao {
@@ -62,6 +66,15 @@ export function validarMes(e: EntradaValidacao): ResultadoValidacao {
   const avisos: string[] = [];
 
   for (const i of e.inconsistenciasLeitura) (RE_REMETENTE.test(i) ? avisos : bloqueios).push(i);
+
+  // Não se abate mais crédito do que se consumiu no mês. Se isso aparecer, o
+  // número do compensado veio de lugar errado (ex.: o total acumulado do
+  // documento — bug de 27/09/2026) e o relatório não pode sair.
+  const comp = e.compensadoKwh ?? null;
+  const cons = e.consumoKwh ?? null;
+  if (comp !== null && cons !== null && comp > cons + 0.5) {
+    bloqueios.push(`créditos compensados ${fmt(comp)} kWh maior que o consumo do mês ${fmt(cons)} kWh — confira o demonstrativo`);
+  }
 
   const origemGeracao = e.geracaoManualKwh !== null ? 'manual' : e.geracaoApiKwh !== null ? 'api' : null;
   const geracaoKwh = e.geracaoManualKwh ?? e.geracaoApiKwh;
