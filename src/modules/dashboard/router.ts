@@ -113,7 +113,7 @@ import type { SugestaoIa } from '../closing/revisar-contrato.js';
 import { CLIENTE_STATUSES } from './clientes-queries.js';
 import { can, podeDispararMensagens, usinaPertenceAoOperador } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
-import { pastaDaEmpresa, filtrarPastasDaEmpresa } from './pasta-da-empresa.js';
+import { pastaDaEmpresa, listarPastasDaEmpresa } from './pasta-da-empresa.js';
 import { EMPRESA_CASA as EMPRESA_PADRAO_PASTA } from './canal-envio.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
 import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } from './blog-views.js';
@@ -6191,8 +6191,8 @@ b.onclick=async function(){
   // Lista + form "abrir pasta"
   router.get('/pastas', async (req: Request, res: Response) => {
     const companyId = empresaDoOperador(req);
-    const [todas, clientes, comServico] = await Promise.all([
-      supabaseService.listPastasCliente(400),   // filtra por empresa depois: folga pro tenant
+    const [rows, clientes, comServico] = await Promise.all([
+      listarPastasDaEmpresa(supabase, companyId, 400),   // empresa filtrada NA consulta
       supabaseService.listClientesByStatus(
         ['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido'],
         { ord: 'nome' }, 200, 0, true,
@@ -6206,8 +6206,7 @@ b.onclick=async function(){
     for (const s of comServico) {
       if (!porId.has(s.id)) porId.set(s.id, s);
     }
-    // Só pastas e clientes da empresa de quem está logado (27/09/2026).
-    const rows = filtrarPastasDaEmpresa(todas, companyId);
+    // Só clientes da empresa de quem está logado (27/09/2026).
     const idsCandidatos = [...porId.keys()];
     const idsDaEmpresa = new Set<string>();
     for (let i = 0; i < idsCandidatos.length; i += 100) {   // lotes: URL do PostgREST não estoura

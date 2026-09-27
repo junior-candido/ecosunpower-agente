@@ -39,3 +39,51 @@ export async function pastaDaEmpresa(
   const { leads: _lead, ...pasta } = data as Record<string, unknown>;
   return pasta;
 }
+
+const CAMPOS_LISTA =
+  'id, lead_id, company_id, slug, status, arquivos, acessos, ultimo_acesso_em, enviado_em, updated_at';
+
+async function consultaLista(q: PromiseLike<{ data: unknown; error: { message: string } | null }>): Promise<any[]> {
+  const { data, error } = await q;
+  if (error) {
+    console.warn('[pasta] lista da empresa:', error.message);
+    return [];
+  }
+  return (data as any[] | null) ?? [];
+}
+
+/**
+ * Lista de pastas da empresa, mais nova primeiro, até `limite`.
+ * 27/09/2026: antes era "as 400 mais novas da plataforma" + filtro em memória
+ * — pastas mais velhas do tenant sumiam. Agora a empresa entra na consulta:
+ *   - EcoSun: igual a sempre (as mais novas + filtro pelo dono);
+ *   - tenant: pastas com company_id dele + pastas com o company_id PADRÃO
+ *     (EcoSun, migration 098) cujo LEAD é dele.
+ */
+export async function listarPastasDaEmpresa(db: SupabaseClient, companyId: string, limite = 400): Promise<any[]> {
+  if (companyId === EMPRESA_CASA) {
+    const todas = await consultaLista(db.from('pastas_cliente')
+      .select(`${CAMPOS_LISTA}, leads(name, company_id)`)
+      .order('updated_at', { ascending: false })
+      .limit(limite));
+    return filtrarPastasDaEmpresa(todas, companyId);
+  }
+  const [proprias, peloLead] = await Promise.all([
+    consultaLista(db.from('pastas_cliente')
+      .select(`${CAMPOS_LISTA}, leads(name, company_id)`)
+      .eq('company_id', companyId)
+      .order('updated_at', { ascending: false })
+      .limit(limite)),
+    consultaLista(db.from('pastas_cliente')
+      .select(`${CAMPOS_LISTA}, leads!inner(name, company_id)`)
+      .eq('company_id', EMPRESA_CASA)
+      .eq('leads.company_id', companyId)
+      .order('updated_at', { ascending: false })
+      .limit(limite)),
+  ]);
+  const porId = new Map<string, any>();
+  for (const p of [...proprias, ...peloLead]) if (!porId.has(p.id)) porId.set(p.id, p);
+  return filtrarPastasDaEmpresa([...porId.values()], companyId)
+    .sort((a, b) => String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')))
+    .slice(0, limite);
+}
