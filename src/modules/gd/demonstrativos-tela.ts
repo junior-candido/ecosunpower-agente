@@ -146,13 +146,13 @@ export function consumoDoMes(l: LinhaDemonstrativo): number | null {
 }
 
 /**
- * Compensado do mês somando TODAS as unidades do rateio: o total do
- * demonstrativo quando veio; senão a soma das linhas do mês no histórico.
- * null quando não há de onde tirar — nunca vira 0 por acidente.
+ * Compensado do mês somando TODAS as unidades do rateio (linhas do mês no
+ * histórico). null quando não há de onde tirar — nunca vira 0 por acidente.
+ * NÃO usar `total_compensado_kwh`: é o ACUMULADO dos 13 meses do documento
+ * (o parser confere total injetado − total compensado = saldo acumulado).
+ * Usá-lo aqui inflou a economia em produção (27/09/2026).
  */
 export function compensadoDoMes(l: LinhaDemonstrativo): number | null {
-  const total = numOuNull(l.total_compensado_kwh);
-  if (total !== null) return total;
   return historicoDoMes(l)?.compensado ?? null;
 }
 

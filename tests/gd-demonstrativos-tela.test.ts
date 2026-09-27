@@ -55,9 +55,11 @@ describe('compensado e economia', () => {
     ];
     expect(compensadoDoMes(linha({ historico }))).toBe(350);
   });
-  it('total_compensado_kwh (coluna do demonstrativo) tem prioridade', () => {
-    expect(compensadoDoMes(linha({ total_compensado_kwh: 410 }))).toBe(410);
-    expect(compensadoDoMes(linha({ total_compensado_kwh: 0, historico: [] }))).toBe(0);
+  it('total_compensado_kwh e o ACUMULADO do demonstrativo (13 meses), nunca o do mes — e ignorado', () => {
+    // Bug em producao 27/09: economia do Joao Rangel saiu R$ 2.265 (2.288 kWh = soma de 13 meses).
+    const historico = [{ mes: '2026-08-01', codigoCliente: 'A', consumida: 495, injetada: 300, faturada: 0, compensado: 495, credito: 0 }];
+    expect(compensadoDoMes(linha({ total_compensado_kwh: 2288, historico }))).toBe(495);
+    expect(compensadoDoMes(linha({ total_compensado_kwh: 2288, historico: [] }))).toBeNull();
   });
   it('economia estimada = compensado x tarifa', () => {
     expect(economiaEstimadaRs(380, 0.99)).toBe(Math.round(380 * 0.99 * 100) / 100);

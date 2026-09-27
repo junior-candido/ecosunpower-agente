@@ -127,10 +127,10 @@ describe('montarRelatorio', () => {
     expect(r.meses[0]).toMatchObject({ consumo: null, injetado: 222, compensado: null });
   });
 
-  it('total_compensado_kwh do demonstrativo tem prioridade sobre o historico', () => {
-    const r = montarRelatorio(entrada({ linha: linha({ total_compensado_kwh: 500 }) }));
-    expect(r.compensadoKwh).toBe(500);
-    expect(r.economiaRs).toBe(495);
+  it('total_compensado_kwh (acumulado de 13 meses) NAO entra na economia do mes', () => {
+    const r = montarRelatorio(entrada({ linha: linha({ total_compensado_kwh: 2288 }) }));
+    expect(r.compensadoKwh).toBe(380);
+    expect(r.economiaRs).toBe(376.2);
   });
 });
 
