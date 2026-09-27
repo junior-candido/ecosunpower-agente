@@ -378,10 +378,29 @@ export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
         .eq('company_id', companyId)
         .eq('instalacao', instalacao)
         .eq('referencia', referencia)
+        // Relatório do PERÍODO também grava referencia = mês final: não conta como o do mês.
+        .is('numeros->periodo', null)
         .not('enviado_em', 'is', null)
         .order('enviado_em', { ascending: false })
         .limit(1);
       if (error) throw new Error(`relatorios_gd_gerados (último envio): ${error.message}`);
+      const r = data?.[0] as any;
+      return r ? { enviadoEm: r.enviado_em, zapPara: r.enviado_zap_para ?? null, emailPara: r.enviado_email_para ?? null } : null;
+    },
+
+    /** Último envio que SAIU do relatório do período (mesma UC, mesmo início e fim). */
+    async ultimoEnvioPeriodo(instalacao: string, inicio: string, fim: string): Promise<{ enviadoEm: string; zapPara: string | null; emailPara: string | null } | null> {
+      const { data, error } = await db
+        .from('relatorios_gd_gerados')
+        .select('enviado_em, enviado_zap_para, enviado_email_para')
+        .eq('company_id', companyId)
+        .eq('instalacao', instalacao)
+        .eq('referencia', fim)
+        .eq('numeros->periodo->>inicio', inicio)
+        .not('enviado_em', 'is', null)
+        .order('enviado_em', { ascending: false })
+        .limit(1);
+      if (error) throw new Error(`relatorios_gd_gerados (último envio do período): ${error.message}`);
       const r = data?.[0] as any;
       return r ? { enviadoEm: r.enviado_em, zapPara: r.enviado_zap_para ?? null, emailPara: r.enviado_email_para ?? null } : null;
     },

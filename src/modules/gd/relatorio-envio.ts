@@ -87,7 +87,10 @@ export function destinoDoEnvio(
 
 export interface MensagemRelatorio {
   nome: string;
+  /** Mês ("agosto de 2026") ou, no relatório do período, o período ("maio a agosto de 2026"). */
   mesExtenso: string;
+  /** true = relatório do período (muda só o título/chamada do e-mail). */
+  periodo?: boolean;
   token: string;
   link: string;
   pdf: Buffer | null;
@@ -169,7 +172,7 @@ export function logoEmailDaEmpresa(e: Readonly<EmpresaConfig>): { logoUrl?: stri
 }
 
 export function montarEmailRelatorio(
-  m: { nome: string; mesExtenso: string; link: string },
+  m: { nome: string; mesExtenso: string; link: string; periodo?: boolean },
   e: Readonly<EmpresaConfig>,
 ): { assunto: string; html: string } {
   // Defesa: quem chamar com o nome cru da conta ("JOÃO") ainda sai "João".
@@ -186,8 +189,8 @@ export function montarEmailRelatorio(
     empresa: e.nomeFantasia,
     siteUrl: e.siteUrl,
     ...logoEmailDaEmpresa(e),
-    kicker: 'Relatório mensal da usina',
-    titulo: `Sua usina em ${m.mesExtenso}`,
+    kicker: m.periodo ? 'Relatório do período da usina' : 'Relatório mensal da usina',
+    titulo: m.periodo ? `Sua usina de ${m.mesExtenso}` : `Sua usina em ${m.mesExtenso}`,
     ctaLabel: 'Ver meu relatório',
     ctaUrl: m.link,
     // Relatório do que o cliente contratou: serviço, não newsletter.
@@ -208,7 +211,7 @@ export interface DepsEmailRelatorio {
 /** Só o link, nenhum anexo (mesmo motivo da pasta: anexo grande vira bounce silencioso). */
 export async function enviarRelatorioEmail(
   dest: DestinoEnvio['email'],
-  m: { nome: string; mesExtenso: string; link: string },
+  m: { nome: string; mesExtenso: string; link: string; periodo?: boolean },
   alvo: { leadId: string; empresa: Readonly<EmpresaConfig> },
   d: DepsEmailRelatorio,
 ): Promise<ResultadoCanal | null> {
