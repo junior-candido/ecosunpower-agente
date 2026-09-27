@@ -152,3 +152,22 @@ describe('validarDocumento — outros tipos (aditivo)', () => {
     expect(validarDocumento({ tipo: 'aditivo', dados: d, html: '<p>data ____/____</p>' }).ok).toBe(false);
   });
 });
+
+describe('problemasSemDados — o que vai pro fluxo de eventos não leva CPF', () => {
+  it('troca "CPF … inválido (os dígitos não conferem: 123…)" pelo rótulo genérico', async () => {
+    const { problemasSemDados } = await import('../src/modules/closing/validar-documento.js');
+    const dados = clone(COMPLETO);
+    (dados.titular_uc as any).cpf = '123.456.789-00';
+    const r = validarDocumento({ tipo: 'fv', dados, html: renderContrato(dados) });
+    expect(r.problemas.join(' ')).toContain('123.456.789-00'); // a página de bloqueio pode mostrar
+    const rotulos = problemasSemDados(r.problemas);
+    expect(rotulos.join(' ')).not.toMatch(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/);
+    expect(rotulos).toContain('CPF do titular inválido');
+  });
+
+  it('rótulo sem dado passa igual; tira qualquer sequência longa de dígitos', async () => {
+    const { problemasSemDados } = await import('../src/modules/closing/validar-documento.js');
+    expect(problemasSemDados(['RG do titular', 'Valor total (R$)'])).toEqual(['RG do titular', 'Valor total (R$)']);
+    expect(problemasSemDados(['CPF de quem assina inválido (os dígitos não conferem: 12345678900)'])).toEqual(['CPF de quem assina inválido']);
+  });
+});

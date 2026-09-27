@@ -3357,9 +3357,12 @@ b.onclick=async function(){
     docs: Array<import('../closing/documento-final.js').DocumentoFinal>,
   ): Promise<void> {
     const bloqueados = docs.filter((d) => !d.ok);
+    // PII: o evento guarda só o rótulo genérico ("CPF do titular inválido"); o
+    // valor digitado aparece só na página, pro operador corrigir.
+    const { problemasSemDados } = await import('../closing/validar-documento.js');
     await eventoContrato(req, leadId, tipoForm, 'bloqueado', {
       acao,
-      problemas: bloqueados.flatMap((d) => d.problemas.map((p) => `${d.def.tipo}: ${p}`)),
+      problemas: bloqueados.flatMap((d) => problemasSemDados(d.problemas).map((p) => `${d.def.tipo}: ${p}`)),
     });
     res.status(422).send(renderDocBloqueadoPage({
       leadId,

@@ -162,3 +162,18 @@ export function validarDocumento(entrada: {
   const unicos = [...new Set(problemas)];
   return { ok: unicos.length === 0, problemas: unicos };
 }
+
+/**
+ * Os problemas SEM dado pessoal — pro que vai pro fluxo de eventos (Elo). A
+ * página de bloqueio pode mostrar "CPF inválido (os dígitos não conferem: …)" pro
+ * operador; o evento guarda só "CPF do titular inválido". Tira o detalhe entre
+ * parênteses que traz ":" (é onde o valor digitado aparece) e qualquer sequência
+ * longa de dígitos que tenha sobrado.
+ */
+export function problemasSemDados(problemas: string[]): string[] {
+  return problemas.map((p) => String(p ?? '')
+    .replace(/\s*\([^()]*:[^()]*\)/g, '')
+    .replace(/\d[\d.\-/]{6,}\d/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim());
+}
