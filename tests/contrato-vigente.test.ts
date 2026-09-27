@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { congelarContrato, contratoVigente } from '../src/modules/closing/contrato-vigente.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { congelarContrato, contratoVigente, contarVersoesCongeladas } from '../src/modules/closing/contrato-vigente.js';
 import { completarComPlaceholders } from '../src/modules/closing/fechamento-auto.js';
 
 // Sem isso não existe aditivo. Hoje a central monta o PDF na hora, toda vez, a
@@ -127,5 +127,69 @@ describe('contratoVigente — o que vale hoje', () => {
   it('banco fora do ar não derruba a tela — devolve null', async () => {
     const quebrado: any = { from() { throw new Error('sem banco'); } };
     expect(await contratoVigente(quebrado, 'L1')).toBeNull();
+  });
+});
+
+// A data do contrato congelado é a do CONGELAMENTO, em Brasília — e fica guardada
+// no retrato. Reimprimir no mês seguinte não pode mudar a data do contrato.
+describe('data fixa do contrato congelado', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('congelar às 22:30 de Brasília (servidor já no dia seguinte em UTC) guarda o dia de Brasília', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-14T01:30:00Z')); // 13/07 22:30 BRT
+    const estado = { linhas: [] as any[] };
+    await congelarContrato(fakeClient(estado), 'L1', DADOS, 'Junior');
+    expect(estado.linhas[0].dados_snapshot.data_documento).toBe('2026-07-13');
+  });
+
+  it('o vigente devolve a data guardada, mesmo lido dias depois', async () => {
+    const estado = { linhas: [] as any[] };
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-13T15:00:00Z'));
+    await congelarContrato(fakeClient(estado), 'L1', DADOS, 'Junior');
+    vi.setSystemTime(new Date('2026-08-20T15:00:00Z'));
+    const v = await contratoVigente(fakeClient(estado), 'L1');
+    expect(v!.dados.data_documento).toBe('2026-07-13');
+  });
+
+  it('retrato ANTIGO (sem data guardada) → usa a data do congelamento (created_at) em Brasília', async () => {
+    const estado = { linhas: [{ id: 'F1', lead_id: 'L1', status: 'aprovado_junior', created_by: 'J', created_at: '2026-07-14T01:30:00Z', dados_snapshot: DADOS }] };
+    const v = await contratoVigente(fakeClient(estado), 'L1');
+    expect(v!.dados.data_documento).toBe('2026-07-13');
+  });
+});
+
+describe('contarVersoesCongeladas — o número da versão (Drive)', () => {
+  function fakeCount(linhas: any[]) {
+    return {
+      from() {
+        const filtros: Record<string, unknown> = {};
+        const b: any = {
+          select: () => b,
+          eq: (c: string, v: unknown) => { filtros[c] = v; return b; },
+          then: (ok: any, err: any) => Promise.resolve({
+            count: linhas.filter((l) => Object.entries(filtros).every(([c, v]) => l[c] === v)).length,
+            error: null,
+          }).then(ok, err),
+        };
+        return b;
+      },
+    } as any;
+  }
+
+  it('conta só as versões congeladas DESTE cliente', async () => {
+    const sb = fakeCount([
+      { lead_id: 'L1', status: 'aprovado_junior' },
+      { lead_id: 'L1', status: 'aprovado_junior' },
+      { lead_id: 'L1', status: 'cancelado' },
+      { lead_id: 'L2', status: 'aprovado_junior' },
+    ]);
+    expect(await contarVersoesCongeladas(sb, 'L1')).toBe(2);
+  });
+
+  it('banco fora do ar → 1 (nunca derruba a entrega)', async () => {
+    const quebrado: any = { from() { throw new Error('sem banco'); } };
+    expect(await contarVersoesCongeladas(quebrado, 'L1')).toBe(1);
   });
 });

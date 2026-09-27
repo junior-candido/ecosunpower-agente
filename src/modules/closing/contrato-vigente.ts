@@ -13,6 +13,7 @@
 // Congelar de novo NÃO apaga o passado — cria a v2 apontando pra v1.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DadosFechamento } from './types.js';
+import { dataIsoEmBrasilia, hojeEmBrasilia } from './data-documento.js';
 
 export interface ContratoCongelado {
   id: string;
@@ -39,9 +40,14 @@ export async function contratoVigente(sb: SupabaseClient, leadId: string): Promi
     if (error || !data) return null;
     const linha = data as { id: string; dados_snapshot: DadosFechamento; created_at: string; created_by: string };
     if (!linha?.dados_snapshot) return null;
+    // A data impressa é a do CONGELAMENTO (guardada no retrato). Retrato antigo,
+    // de antes de guardar a data: usa o created_at, no calendário de Brasília.
+    const dataDocumento = linha.dados_snapshot.data_documento
+      || dataIsoEmBrasilia(linha.created_at)
+      || undefined;
     return {
       id: linha.id,
-      dados: linha.dados_snapshot,
+      dados: { ...linha.dados_snapshot, data_documento: dataDocumento },
       congeladoEm: linha.created_at,
       congeladoPor: linha.created_by,
     };
@@ -69,7 +75,9 @@ export async function congelarContrato(
       lead_id: leadId,
       proposta_publica_id: null,
       docs_pedidos: dados.docs_pedidos ?? ['contrato', 'procuracao'],
-      dados_snapshot: dados,
+      // A data do documento fica FIXA no retrato: reimprimir amanhã (ou mês que
+      // vem) não muda a data do contrato. Calendário de Brasília, não do servidor.
+      dados_snapshot: { ...dados, data_documento: hojeEmBrasilia() },
       status: 'aprovado_junior', // é O contrato, não um rascunho gerado
       created_by: quem,
       parent_id: anterior?.id ?? null,
@@ -78,4 +86,23 @@ export async function congelarContrato(
     .single();
   if (error) throw error;
   return (data as { id: string }).id;
+}
+
+/**
+ * Quantas versões congeladas o cliente tem (v1, v2...). É o número que vai no
+ * nome do arquivo do Drive — o fixo "v1" misturava versões diferentes com o mesmo
+ * nome. Best-effort: banco fora do ar → 1.
+ */
+export async function contarVersoesCongeladas(sb: SupabaseClient, leadId: string): Promise<number> {
+  try {
+    const { count, error } = await sb
+      .from('fechamentos')
+      .select('id', { count: 'exact', head: true })
+      .eq('lead_id', leadId)
+      .eq('status', 'aprovado_junior');
+    if (error || !count) return 1;
+    return count;
+  } catch {
+    return 1;
+  }
 }
