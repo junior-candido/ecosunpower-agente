@@ -5,6 +5,26 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RegistroDemonstrativo } from './demonstrativo-ingestao.js';
 
+// NOTA (27/09/2026): `LeadDestino`/`ResumoEnvio` estão definidos aqui, e não
+// importados de `gd/relatorio-envio.ts` (Task 6 do plano da fatia 3), porque
+// aquele arquivo ainda não existe nesta branch — depende de uma decisão do
+// dono que ainda não foi tomada. O formato é o mesmo que a Task 6 usa; quando
+// `relatorio-envio.ts` for criado, trocar por um import e remover a duplicata.
+export interface LeadDestino {
+  id: string;
+  nome: string | null;
+  phone: string | null;
+  email: string | null;
+  optOut: boolean;
+}
+
+export interface ResumoEnvio {
+  algumOk: boolean;
+  zapPara: string | null;
+  emailPara: string | null;
+  envio: Record<string, unknown>;
+}
+
 export interface LinhaDemonstrativo {
   id: string;
   lead_id: string | null;
@@ -297,6 +317,67 @@ export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
         numeros: p.numeros,
       });
       if (error) throw new Error(`relatorios_gd_gerados (gravar): ${error.message}`);
+    },
+
+    /** Relatório que VAI ser enviado: guarda cliente, token do link /rg/ e onde está o PDF. Devolve o id. */
+    async criarRelatorioParaEnvio(p: {
+      instalacao: string; referencia: string; geradoPor: string; numeros: Record<string, unknown>;
+      leadId: string; token: string; storagePath: string;
+    }): Promise<string> {
+      const { data, error } = await db.from('relatorios_gd_gerados').insert({
+        company_id: companyId,
+        instalacao: p.instalacao,
+        referencia: p.referencia,
+        gerado_por: p.geradoPor,
+        numeros: p.numeros,
+        lead_id: p.leadId,
+        token: p.token,
+        storage_path: p.storagePath,
+      }).select('id').single();
+      if (error) throw new Error(`relatorios_gd_gerados (criar p/ envio): ${error.message}`);
+      return String((data as any).id);
+    },
+
+    /** Resultado do envio. `enviado_em` só quando algum canal saiu de verdade. */
+    async marcarEnvio(id: string, r: ResumoEnvio): Promise<void> {
+      const { error } = await db.from('relatorios_gd_gerados').update({
+        enviado_em: r.algumOk ? new Date().toISOString() : null,
+        enviado_zap_para: r.zapPara,
+        enviado_email_para: r.emailPara,
+        envio: r.envio,
+      }).eq('company_id', companyId).eq('id', id);
+      if (error) throw new Error(`relatorios_gd_gerados (marcar envio): ${error.message}`);
+    },
+
+    /** Último envio que SAIU desse mês dessa UC — a tela mostra "✅ enviado em…" e pede confirmação pra reenviar. */
+    async ultimoEnvio(instalacao: string, referencia: string): Promise<{ enviadoEm: string; zapPara: string | null; emailPara: string | null } | null> {
+      const { data, error } = await db
+        .from('relatorios_gd_gerados')
+        .select('enviado_em, enviado_zap_para, enviado_email_para')
+        .eq('company_id', companyId)
+        .eq('instalacao', instalacao)
+        .eq('referencia', referencia)
+        .not('enviado_em', 'is', null)
+        .order('enviado_em', { ascending: false })
+        .limit(1);
+      if (error) throw new Error(`relatorios_gd_gerados (último envio): ${error.message}`);
+      const r = data?.[0] as any;
+      return r ? { enviadoEm: r.enviado_em, zapPara: r.enviado_zap_para ?? null, emailPara: r.enviado_email_para ?? null } : null;
+    },
+
+    /** Para quem mandar: só lead DESTA empresa. */
+    async destinoDoLead(leadId: string): Promise<LeadDestino | null> {
+      const { data, error } = await db
+        .from('leads')
+        .select('id, name, phone, email, opt_out')
+        .eq('company_id', companyId)
+        .eq('id', leadId)
+        .limit(1);
+      if (error) throw new Error(`leads (destino do envio): ${error.message}`);
+      const l = data?.[0] as any;
+      return l
+        ? { id: l.id, nome: l.name ?? null, phone: l.phone ?? null, email: l.email ?? null, optOut: l.opt_out === true }
+        : null;
     },
   };
 }
