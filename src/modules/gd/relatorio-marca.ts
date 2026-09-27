@@ -5,6 +5,7 @@
 import type { EmpresaConfig } from '../empresa-config.js';
 import { ehEcosun } from '../empresa-config.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.js';
+import { LOGO_PASTA_BASE64 } from '../relatorios/pasta/logo-pasta.js';
 
 export interface MarcaRelatorio {
   nomeFantasia: string;
@@ -15,6 +16,8 @@ export interface MarcaRelatorio {
   email: string;
   site: string;
   rodapeRt: string;
+  /** true = logo "ecosun png" (prata, feita pra fundo escuro) — não precisa de caixa branca. */
+  ehCasa?: boolean;
 }
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -40,10 +43,11 @@ export async function marcaDoRelatorio(
     logoSrc = caminho;
   } else if (caminho && !/^[a-z]+:/i.test(caminho)) {
     const baixada = await deps.baixarLogo(caminho);
-    // obterLogoBase64 devolve a logo da EcoSun quando falha: num tenant isso é vazamento.
-    logoSrc = baixada && (casa || baixada !== LOGO_ECOSUNPOWER_BRANCO_BASE64) ? baixada : null;
+    // obterLogoBase64 devolve logo da EcoSun (antiga ou nova) quando falha: num tenant isso é vazamento.
+    const ehLogoDaCasa = baixada === LOGO_ECOSUNPOWER_BRANCO_BASE64 || baixada === LOGO_PASTA_BASE64;
+    logoSrc = baixada && (casa || !ehLogoDaCasa) ? baixada : null;
   } else if (!caminho && casa) {
-    logoSrc = LOGO_ECOSUNPOWER_BRANCO_BASE64;
+    logoSrc = LOGO_PASTA_BASE64;
   }
   const cor = HEX.test((e.corMarca ?? '').trim()) ? (e.corMarca as string).trim() : COR_PADRAO;
   const rt = [e.rtNome, e.rtTitulo, e.rtRegistro ? `registro ${e.rtRegistro}` : null].filter(Boolean).join(' — ');
@@ -55,5 +59,6 @@ export async function marcaDoRelatorio(
     email: e.email,
     site: e.siteUrl.replace(/^https?:\/\//, ''),
     rodapeRt: rt,
+    ehCasa: casa,
   };
 }

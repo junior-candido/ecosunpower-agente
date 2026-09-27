@@ -17,9 +17,16 @@ const brl = (v: number | null) => (v === null ? '—' : v.toLocaleString('pt-BR'
 const jsonSeguro = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
 
 export function renderRelatorioHtml(r: RelatorioGd, m: MarcaRelatorio): string {
+  // Logo da casa (silver, feita pra fundo escuro) vai direto na faixa; logo de tenant
+  // (cores desconhecidas) entra numa caixa branca pra sempre ficar legível.
+  const logoHtml = m.logoSrc
+    ? (m.ehCasa
+        ? `<img class="logo" src="${esc(m.logoSrc)}" alt="${esc(m.nomeFantasia)}">`
+        : `<div class="logo-caixa"><img class="logo logo-tenant" src="${esc(m.logoSrc)}" alt="${esc(m.nomeFantasia)}"></div>`)
+    : `<div class="nome-empresa">${esc(m.nomeFantasia)}</div>`;
   const cab = `
 <header class="cab">
-  ${m.logoSrc ? `<img class="logo" src="${esc(m.logoSrc)}" alt="${esc(m.nomeFantasia)}">` : `<div class="nome-empresa">${esc(m.nomeFantasia)}</div>`}
+  ${logoHtml}
   <div class="cab-dir"><div class="titulo">Relatório da sua usina solar</div>
   <div class="sub">${esc(r.cliente)} · UC ${esc(r.instalacao)} · ${esc(r.mesExtenso)}</div></div>
 </header>`;
@@ -77,20 +84,23 @@ ${r.rateio.map((u) => `<tr><td>${esc(u.codigoCliente)}</td><td>${u.percentual}%<
 @page{size:A4;margin:0}
 *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#1f2937;font-size:15px}
-.pagina{width:210mm;height:297mm;padding:14mm 14mm 10mm;position:relative;overflow:hidden;page-break-after:always}
+.pagina{width:210mm;height:297mm;position:relative;overflow:hidden;page-break-after:always}
 .pagina:last-child{page-break-after:auto}
-.cab{display:flex;align-items:center;gap:16px;border-bottom:4px solid ${esc(m.cor)};padding-bottom:10px;margin-bottom:12px}
-.logo{max-height:70px;max-width:230px}
-.nome-empresa{font-size:26px;font-weight:bold;color:${esc(m.cor)}}
-.titulo{font-size:22px;font-weight:bold;color:${esc(m.cor)}}
-.sub{font-size:15px;color:#4b5563}
+.cab{display:flex;align-items:center;gap:18px;background:${esc(m.cor)};padding:14px 14mm;margin-bottom:12px}
+.logo{max-height:95px;max-width:300px;display:block}
+.logo-caixa{background:#fff;border-radius:10px;padding:8px 16px;display:flex;align-items:center}
+.logo-tenant{max-height:75px;max-width:260px;display:block}
+.nome-empresa{font-size:26px;font-weight:bold;color:#fff}
+.titulo{font-size:22px;font-weight:bold;color:#fff}
+.sub{font-size:15px;color:rgba(255,255,255,.88)}
+.conteudo{padding:0 14mm 22mm 14mm}
 .cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
 .card{border:1px solid #e5e7eb;border-left:6px solid ${esc(m.cor)};border-radius:8px;padding:10px 12px}
 .rot{font-size:14px;color:#6b7280}.valor{font-size:28px;font-weight:bold}
 .frase{font-size:17px;line-height:1.5;background:#f8fafc;border-radius:8px;padding:10px 14px;margin:8px 0}
 h2{font-size:18px;color:${esc(m.cor)};margin:10px 0 6px}
 .bloco{margin-bottom:8px}
-.grafico{height:300px}
+.grafico{height:400px}
 table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid #e5e7eb;padding:5px 8px;text-align:left}th{background:#f1f5f9}
 .alerta{font-size:16px;background:#fef3c7;border-left:6px solid #f59e0b;padding:8px 12px;border-radius:6px}
 .grande{font-size:16px}.nota{font-size:13px;color:#6b7280}
@@ -102,6 +112,7 @@ dl{margin:0;font-size:13.5px}dt{font-weight:bold;margin-top:4px}dd{margin:0 0 2p
 
 <div class="pagina">
 ${cab}
+<div class="conteudo">
 <div class="cards">
   ${card('☀', 'Sua usina gerou', kwh(r.gerouKwh))}
   ${card('🏠', 'Consumo medido pela concessionária', kwh(r.consumiuKwh))}
@@ -111,11 +122,13 @@ ${cab}
 <p class="frase">${esc(r.frase)}</p>
 <h2>Últimos meses</h2>
 ${temGrafico ? '<div class="grafico"><canvas id="g13"></canvas></div>' : '<p class="nota">Histórico dos meses não disponível neste demonstrativo.</p>'}
+</div>
 ${rodape(1)}
 </div>
 
 <div class="pagina">
 ${cab}
+<div class="conteudo">
 <section class="bloco"><h2>Seus créditos</h2>
 <table>
 <tr><th>Saldo de créditos</th><td>${kwh(r.creditos.saldoKwh)}</td></tr>
@@ -132,6 +145,7 @@ ${desempenho}
 <dt>Rateio</dt><dd>Divisão dos créditos entre as unidades cadastradas, em porcentagem.</dd>
 </dl></section>
 <div class="fontes"><b>De onde vêm os números:</b><br>${r.fontes.map(esc).join('<br>')}</div>
+</div>
 ${rodape(2)}
 </div>
 

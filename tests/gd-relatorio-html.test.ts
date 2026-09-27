@@ -36,6 +36,24 @@ describe('renderRelatorioHtml', () => {
     const h = renderRelatorioHtml(rel(), marca);
     expect(h).toContain('Conquista Solar');
     expect(h).not.toMatch(/ecosun/i);
+    expect(h).toContain('class="nome-empresa"');
+  });
+
+  it('cabecalho e uma faixa cheia com a cor da marca', () => {
+    const h = renderRelatorioHtml(rel(), marca);
+    expect(h).toContain(`background:${marca.cor}`);
+  });
+
+  it('logo de tenant entra numa caixa branca (cores da logo sao desconhecidas)', () => {
+    const h = renderRelatorioHtml(rel(), { ...marca, logoSrc: 'https://cdn.x/logo.png', ehCasa: false });
+    expect(h).toContain('<div class="logo-caixa">');
+    expect(h).toContain('class="logo logo-tenant"');
+  });
+
+  it('logo da casa (ehCasa) vai direto na faixa, sem caixa branca', () => {
+    const h = renderRelatorioHtml(rel(), { ...marca, nomeFantasia: 'EcoSunPower', logoSrc: 'data:image/png;base64,AAA', ehCasa: true });
+    expect(h).not.toContain('<div class="logo-caixa">');
+    expect(h).toContain('<img class="logo" ');
   });
   it('creditos a vencer em destaque; rateio so com mais de uma unidade', () => {
     expect(renderRelatorioHtml(rel(), marca)).toMatch(/vencem em <b>mar\/2027<\/b>/);

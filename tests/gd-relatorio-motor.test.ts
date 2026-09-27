@@ -148,6 +148,15 @@ describe('montarRelatorio — rateio (uma linha por unidade por mes)', () => {
     expect(r.fontes.join(' | ')).toContain('Consumo e créditos: soma das 2 unidades do rateio.');
   });
 
+  it('creditos.usadosNoMesKwh da pagina 2 bate com o compensado da pagina 1, nao com credito_utilizado_kwh da UC geradora', () => {
+    // credito_utilizado_kwh (default da fixture) fica em 380 — só da unidade geradora.
+    // Com rateio, o total do mês (soma das 2 unidades) é 350: as duas páginas têm que concordar em 350.
+    const r = montarRelatorio(entrada({ linha: linha({ unidades, historico: doisPorMes(12), consumo_kwh: 300 }) }));
+    expect(r.creditos.usadosNoMesKwh).toBe(350);
+    expect(r.creditos.usadosNoMesKwh).toBe(r.compensadoKwh);
+    expect(r.creditos.usadosNoMesKwh).not.toBe(linha().credito_utilizado_kwh);
+  });
+
   it('grafico: 13 meses DISTINTOS com os valores somados', () => {
     const r = montarRelatorio(entrada({ linha: linha({ unidades, historico: doisPorMes(15) }), geracaoPorMes: {} }));
     expect(r.meses).toHaveLength(13);

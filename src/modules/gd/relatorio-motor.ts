@@ -148,7 +148,9 @@ export function montarRelatorio(e: EntradaRelatorio): RelatorioGd {
     meses,
     creditos: {
       saldoKwh: l.saldo_acumulado_kwh,
-      usadosNoMesKwh: l.credito_utilizado_kwh,
+      // Mesmo valor da página 1 (frase/economia): total do mês, não só a UC geradora
+      // (com rateio, credito_utilizado_kwh é só da unidade geradora e destoa do total).
+      usadosNoMesKwh: compensadoKwh,
       aVencerKwh: l.proximo_expirar_kwh,
       venceEm: l.ciclo_expirar ? mesCurto(l.ciclo_expirar) : null,
     },
