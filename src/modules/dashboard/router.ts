@@ -4637,7 +4637,7 @@ b.onclick=async function(){
       if (!RE_UC.test(inst)) { res.status(400).send('UC inválida'); return; }
       const { tela, ing } = await depsGd(req);
       const { validarMes } = await import('../gd/gd-validacao.js');
-      const { compensadoDoMes, economiaEstimadaRs, alertaVencimento, hojeBrasilia } = await import('../gd/demonstrativos-tela.js');
+      const { compensadoDoMes, consumoDoMes, economiaEstimadaRs, alertaVencimento, hojeBrasilia } = await import('../gd/demonstrativos-tela.js');
       const hist = await tela.historicoDaInstalacao(inst);
       if (hist.length === 0) { res.status(404).send('<h2>Nenhum demonstrativo dessa UC</h2>'); return; }
       const meses = hist.map((h) => h.referencia);
@@ -4655,7 +4655,7 @@ b.onclick=async function(){
       const candidatos = !l.lead_id && buscar ? await tela.buscarLeads(buscar) : [];
       res.type('html').send(renderDemonstrativoCliente({
         instalacao: inst, clienteNome: l.cliente_nome, leadId: l.lead_id, meses, mes: l.referencia,
-        consumoKwh: l.consumo_kwh, injetadoKwh: l.injetado_kwh, saldoKwh: l.saldo_acumulado_kwh,
+        consumoKwh: consumoDoMes(l), injetadoKwh: l.injetado_kwh, saldoKwh: l.saldo_acumulado_kwh,
         compensadoKwh: compensado, economiaRs: economiaEstimadaRs(compensado, empresaDe(req.dashUser!.companyId).gdTarifaRsKwh),
         proximoExpirar: alertaVencimento(l.proximo_expirar_kwh, l.ciclo_expirar, hojeBrasilia()),
         historico: l.historico.map((h) => ({ mes: h.mes, consumida: h.consumida, injetada: h.injetada, compensado: h.compensado })),
@@ -4715,11 +4715,15 @@ b.onclick=async function(){
       if (!p) return;
       const { gerarRelatorioPdf, lerPdfUnpdf } = await import('../gd/relatorio-pdf.js');
       const { htmlToPdf } = await import('../proposal/pdf-generator.js');
-      const pdf = await gerarRelatorioPdf(p.html, { htmlToPdf, lerPdf: lerPdfUnpdf });
+      const pdf = await gerarRelatorioPdf(p.html, { htmlToPdf, lerPdf: lerPdfUnpdf }, { exigeGrafico: p.relatorio.meses.length > 0 });
       const r = p.relatorio;
       await p.tela.registrarRelatorio({
         instalacao: p.inst, referencia: p.mes, geradoPor: req.dashUser!.id,
-        numeros: { gerouKwh: r.gerouKwh, consumiuKwh: r.consumiuKwh, economiaRs: r.economiaRs, creditosKwh: r.creditosKwh, tarifaRsKwh: r.tarifaRsKwh },
+        numeros: {
+          gerouKwh: r.gerouKwh, consumiuKwh: r.consumiuKwh, economiaRs: r.economiaRs, creditosKwh: r.creditosKwh,
+          tarifaRsKwh: r.tarifaRsKwh, injetadoKwh: r.injetadoKwh, compensadoKwh: r.compensadoKwh,
+          usadosNoMesKwh: r.creditos.usadosNoMesKwh, origemGeracao: r.origemGeracao,
+        },
       });
       const nome = `relatorio-${p.inst}-${p.mes.slice(0, 7)}.pdf`;
       res.setHeader('Content-Type', 'application/pdf');

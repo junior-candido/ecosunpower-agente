@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderRelatorioHtml, RODAPE_CONFERENCIA } from '../src/modules/gd/relatorio-html.js';
+import { renderRelatorioHtml, RODAPE_CONFERENCIA, MARCA_GRAFICO_OK } from '../src/modules/gd/relatorio-html.js';
 import type { RelatorioGd } from '../src/modules/gd/relatorio-motor.js';
 import type { MarcaRelatorio } from '../src/modules/gd/relatorio-marca.js';
 
@@ -82,5 +82,27 @@ describe('renderRelatorioHtml', () => {
   it('mes sem numero sai como null no grafico (nao 0)', () => {
     const h = renderRelatorioHtml(rel({ meses: [{ mes: '2026-08-01', rotulo: 'ago/2026', geracao: null, consumo: null, injetado: 222, compensado: null }] }), marca);
     expect(h).toContain('"consumo":null');
+  });
+  it('com grafico: marca invisivel gravada no DOM so DEPOIS do new Chart(...) — se o CDN falhar, a marca nao aparece', () => {
+    const h = renderRelatorioHtml(rel(), marca);
+    const idxChart = h.indexOf('new Chart(');
+    const idxMarca = h.indexOf(MARCA_GRAFICO_OK);
+    expect(idxChart).toBeGreaterThan(-1);
+    expect(idxMarca).toBeGreaterThan(idxChart);
+    expect(h).toContain(`insertAdjacentHTML('afterend', '<span style="font-size:1px;color:#fff">${MARCA_GRAFICO_OK}</span>')`);
+    // nunca em document.body: la fora ela soma altura ao documento e estoura pra 3a pagina.
+    expect(h).not.toContain('document.body.insertAdjacentHTML');
+  });
+  it('sem grafico (sem meses): a marca nao aparece (nada pra conferir)', () => {
+    const h = renderRelatorioHtml(rel({ meses: [] }), marca);
+    expect(h).not.toContain(MARCA_GRAFICO_OK);
+  });
+  it('percentual do rateio escapado (nunca HTML cru)', () => {
+    const h = renderRelatorioHtml(rel({ rateio: [
+      { codigoCliente: 'A', percentual: '60<script>x</script>' as unknown as number, saldoKwh: 10 },
+      { codigoCliente: 'B', percentual: 40, saldoKwh: 5 },
+    ] }), marca);
+    expect(h).not.toContain('<script>x</script>');
+    expect(h).toContain('60&lt;script&gt;x&lt;/script&gt;');
   });
 });

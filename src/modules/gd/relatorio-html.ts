@@ -8,6 +8,14 @@ import type { MarcaRelatorio } from './relatorio-marca.js';
 
 /** Texto fixo do rodapé que o gerador de PDF procura pra saber que nada cortou. */
 export const RODAPE_CONFERENCIA = 'Relatório gerado a partir do demonstrativo da concessionária';
+/**
+ * Marca invisível gravada no DOM só DEPOIS que `new Chart(...)` roda sem
+ * lançar. O Chart.js vem de CDN: se o script não carregar (rede caiu,
+ * bloqueio, etc.), `Chart` fica indefinido, `new Chart(...)` lança e esta
+ * linha nunca executa — o gerador de PDF confere essa marca no texto
+ * extraído pra nunca entregar um PDF com o gráfico em branco sem avisar.
+ */
+export const MARCA_GRAFICO_OK = 'grafico-ok';
 
 const esc = (s: unknown) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -42,7 +50,7 @@ export function renderRelatorioHtml(r: RelatorioGd, m: MarcaRelatorio): string {
   const rateio = r.rateio.length > 1 ? `
 <section class="bloco"><h2>Rateio dos créditos</h2>
 <table><tr><th>Unidade (código do cliente)</th><th>Parte</th><th>Saldo</th></tr>
-${r.rateio.map((u) => `<tr><td>${esc(u.codigoCliente)}</td><td>${u.percentual}%</td><td>${kwh(u.saldoKwh)}</td></tr>`).join('')}
+${r.rateio.map((u) => `<tr><td>${esc(u.codigoCliente)}</td><td>${esc(u.percentual)}%</td><td>${kwh(u.saldoKwh)}</td></tr>`).join('')}
 </table></section>` : '';
 
   const venc = r.creditos.aVencerKwh && r.creditos.aVencerKwh > 0 && r.creditos.venceEm
@@ -75,6 +83,9 @@ ${r.rateio.map((u) => `<tr><td>${esc(u.codigoCliente)}</td><td>${u.percentual}%<
       plugins: { legend: { labels: { font: { size: 13 } } } },
       scales: { x: { ticks: { font: { size: 12 } } }, y: { beginAtZero: true, ticks: { font: { size: 12 } } } } }
   });
+  // Marca dentro da .pagina (altura FIXA, overflow:hidden) — nunca em document.body:
+  // lá fora ela somaria altura ao documento e o PDF sairia com 3 páginas.
+  document.getElementById('g13').insertAdjacentHTML('afterend', '<span style="font-size:1px;color:#fff">${MARCA_GRAFICO_OK}</span>');
 })();
 </script>
 ` : '';

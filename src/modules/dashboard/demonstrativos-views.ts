@@ -117,7 +117,7 @@ export function renderDemonstrativoCliente(d: DetalheCliente, user?: DashUser): 
   </form>`).join('')}
 </div>`;
   const rateio = d.unidades.length > 1
-    ? `<p class="mt-2">Rateio: ${d.unidades.map((u) => `${esc(u.codigoCliente)} ${u.percentual}%`).join(' · ')}</p>` : '';
+    ? `<p class="mt-2">Rateio: ${d.unidades.map((u) => `${esc(u.codigoCliente)} ${esc(u.percentual)}%`).join(' · ')}</p>` : '';
   const motivoFalta = v.bloqueios[0] ?? v.pendencias[0] ?? 'o mês ainda não está pronto';
   const botaoRelatorio = v.estado === 'pronto'
     ? `<div class="flex gap-2 mt-4">

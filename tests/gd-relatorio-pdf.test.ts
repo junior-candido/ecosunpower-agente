@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { gerarRelatorioPdf } from '../src/modules/gd/relatorio-pdf.js';
-import { RODAPE_CONFERENCIA } from '../src/modules/gd/relatorio-html.js';
+import { RODAPE_CONFERENCIA, MARCA_GRAFICO_OK } from '../src/modules/gd/relatorio-html.js';
 
 const pdf = Buffer.from('%PDF-fake');
 
@@ -20,5 +20,22 @@ describe('gerarRelatorioPdf', () => {
     const ler = vi.fn().mockResolvedValue({ paginas: 2, texto: 'sem rodape' });
     await expect(gerarRelatorioPdf('<html>', { htmlToPdf: vi.fn().mockResolvedValue(pdf), lerPdf: ler }))
       .rejects.toThrow(/rodapé/);
+  });
+
+  describe('exigeGrafico (mes com historico — o grafico do Chart.js tem que ter carregado)', () => {
+    it('marca presente: devolve o PDF normalmente', async () => {
+      const ler = vi.fn().mockResolvedValue({ paginas: 2, texto: `... ${RODAPE_CONFERENCIA} ... ${MARCA_GRAFICO_OK}` });
+      expect(await gerarRelatorioPdf('<html>', { htmlToPdf: vi.fn().mockResolvedValue(pdf), lerPdf: ler }, { exigeGrafico: true })).toBe(pdf);
+    });
+    it('marca ausente (CDN do Chart.js falhou) — recusa mesmo com 2 paginas e rodape certos', async () => {
+      const ler = vi.fn().mockResolvedValue({ paginas: 2, texto: RODAPE_CONFERENCIA });
+      await expect(gerarRelatorioPdf('<html>', { htmlToPdf: vi.fn().mockResolvedValue(pdf), lerPdf: ler }, { exigeGrafico: true }))
+        .rejects.toThrow(/o gráfico do relatório não carregou — tente de novo/);
+    });
+    it('exigeGrafico false (ou omitido): nao exige a marca', async () => {
+      const ler = vi.fn().mockResolvedValue({ paginas: 2, texto: RODAPE_CONFERENCIA });
+      expect(await gerarRelatorioPdf('<html>', { htmlToPdf: vi.fn().mockResolvedValue(pdf), lerPdf: ler }, { exigeGrafico: false })).toBe(pdf);
+      expect(await gerarRelatorioPdf('<html>', { htmlToPdf: vi.fn().mockResolvedValue(pdf), lerPdf: ler })).toBe(pdf);
+    });
   });
 });

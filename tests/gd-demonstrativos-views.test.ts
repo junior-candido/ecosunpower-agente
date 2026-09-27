@@ -75,6 +75,22 @@ describe('renderDemonstrativoCliente', () => {
     expect(falta).toMatch(/Gerar PDF.*falta a geração do mês/s);
   });
 
+  it('percentual do rateio escapado (nunca HTML cru)', () => {
+    const h = renderDemonstrativoCliente({
+      instalacao: '200002', clienteNome: 'JOAO', leadId: 'L1', meses: ['2026-08-01'], mes: '2026-08-01',
+      consumoKwh: 480, injetadoKwh: 222, saldoKwh: 1240, compensadoKwh: 380, economiaRs: 376.2, proximoExpirar: null,
+      historico: [], unidades: [
+        { codigoCliente: 'A', percentual: '60<script>x</script>' as unknown as number, saldo: 10 },
+        { codigoCliente: 'B', percentual: 40, saldo: 5 },
+      ],
+      origemDemonstrativo: 'email', verificado: true,
+      validacao: { estado: 'pronto', bloqueios: [], pendencias: [], avisos: [], geracaoKwh: 612, origemGeracao: 'api', esperadoMesKwh: 640 },
+      candidatos: [], msg: null,
+    });
+    expect(h).not.toContain('<script>x</script>');
+    expect(h).toContain('60&lt;script&gt;x&lt;/script&gt;');
+  });
+
   it('UC sem cliente mostra a busca de cliente', () => {
     const h = renderDemonstrativoCliente({
       instalacao: '999', clienteNome: 'X', leadId: null, meses: ['2026-08-01'], mes: '2026-08-01',

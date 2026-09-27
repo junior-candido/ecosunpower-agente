@@ -7,7 +7,7 @@
 
 import type { LinhaDemonstrativo } from './demonstrativos-tela-repo.js';
 import { mesCurto } from './demonstrativo-cruzamento.js';
-import { compensadoDoMes, historicoDoMes, historicoPorMes, numOuNull } from './demonstrativos-tela.js';
+import { compensadoDoMes, consumoDoMes, historicoDoMes, historicoPorMes, numOuNull } from './demonstrativos-tela.js';
 
 export interface EntradaRelatorio {
   /** Linha do mês do relatório (já validada 🟢 por quem chama). */
@@ -49,6 +49,7 @@ export interface RelatorioGd {
   desempenho: { esperadoKwh: number | null; percentual: number | null; potenciaKwp: number | null };
   fontes: string[];
   tarifaRsKwh: number;
+  origemGeracao: 'manual' | 'api';
 }
 
 const MESES_LONGOS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
@@ -85,7 +86,7 @@ export function montarRelatorio(e: EntradaRelatorio): RelatorioGd {
   // Demonstrativo digitado não tem histórico: usa os créditos usados no mês.
   const usouCreditosDigitados = compensadoKwh === null && l.credito_utilizado_kwh !== null;
   if (usouCreditosDigitados) compensadoKwh = numOuNull(l.credito_utilizado_kwh);
-  const consumiuKwh = somandoUnidades && doMes!.consumida !== null ? doMes!.consumida : l.consumo_kwh;
+  const consumiuKwh = consumoDoMes(l);
 
   const injetadoKwh = l.injetado_kwh;
   // Injetado maior que a geração = número incoerente; melhor não afirmar nada.
@@ -101,7 +102,7 @@ export function montarRelatorio(e: EntradaRelatorio): RelatorioGd {
     frase += ` Neste mês, ${fmt(compensadoKwh)} kWh de créditos abateram a sua conta.`;
   }
 
-  const meses: MesGrafico[] = historicoPorMes(l.historico, 13).map((h) => ({
+  const meses: MesGrafico[] = historicoPorMes(l.historico, 13, l.unidades.length).map((h) => ({
     mes: h.mes,
     rotulo: mesCurto(h.mes),
     geracao: numOuNull(e.geracaoPorMes[h.mes]),
@@ -158,5 +159,6 @@ export function montarRelatorio(e: EntradaRelatorio): RelatorioGd {
     desempenho: { esperadoKwh: e.esperadoMesKwh, percentual, potenciaKwp: e.potenciaKwp },
     fontes,
     tarifaRsKwh: e.tarifaRsKwh,
+    origemGeracao: e.origemGeracao,
   };
 }

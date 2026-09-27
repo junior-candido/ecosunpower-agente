@@ -78,6 +78,11 @@ describe('montarRelatorio', () => {
     ]);
   });
 
+  it('origemGeracao vai pro relatorio (pro registro de auditoria do PDF)', () => {
+    expect(montarRelatorio(entrada({ origemGeracao: 'api' })).origemGeracao).toBe('api');
+    expect(montarRelatorio(entrada({ origemGeracao: 'manual' })).origemGeracao).toBe('manual');
+  });
+
   it('desempenho = gerou / esperado', () => {
     expect(montarRelatorio(entrada()).desempenho).toEqual({ esperadoKwh: 640, percentual: 96, potenciaKwp: 5.5 });
     expect(montarRelatorio(entrada({ esperadoMesKwh: null, potenciaKwp: null })).desempenho)
