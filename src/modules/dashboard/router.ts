@@ -4676,36 +4676,116 @@ b.onclick=async function(){
     }
   });
 
-  /** Prepara o relatório (dados + marca). null = já respondeu erro. */
-  async function relatorioDaRequisicao(req: AuthedRequest, res: Response) {
-    const inst = String(req.params.instalacao);
-    const mes = typeof req.query.mes === 'string' ? req.query.mes : '';
-    if (!RE_UC.test(inst) || !RE_MES.test(mes)) { res.status(400).send('UC ou mês inválido'); return null; }
+  /** Dependências do serviço do relatório (mensal e do período) na empresa do operador. */
+  async function depsRelatorioGd(req: AuthedRequest) {
     const { companyId, tela, ing } = await depsGd(req);
     const cfg = empresaDe(companyId);
-    const { prepararRelatorio } = await import('../gd/relatorio-servico.js');
-    const r = await prepararRelatorio(inst, mes, {
+    const deps: import('../gd/relatorio-servico.js').DepsServicoRelatorio = {
       historicoDaInstalacao: (i) => tela.historicoDaInstalacao(i),
       geracoesManuais: (i, m) => tela.geracoesManuais(i, m),
       sistemaDoLead: (l) => tela.sistemaDoLead(l),
       geracaoApiDoMes: (l, m) => ing.geracaoDoMes(l, m),
       tarifaRsKwh: cfg.gdTarifaRsKwh,
-    });
-    if (!r.ok) {
-      res.redirect(`/dashboard/demonstrativos/${inst}?mes=${encodeURIComponent(mes)}&msg=${encodeURIComponent(`Relatório não gerado: ${r.motivo}`)}`);
-      return null;
-    }
+    };
+    return { companyId, tela, cfg, deps };
+  }
+
+  /** Marca da empresa do operador pro relatório (nunca a da EcoSun num tenant). */
+  async function marcaRelatorioGd(req: AuthedRequest, companyId: string, cfg: ReturnType<typeof empresaDe>) {
     const { marcaDoRelatorio } = await import('../gd/relatorio-marca.js');
     const { obterLogoBase64 } = await import('../proposal/assets/logo-base64.js');
     const { comEmpresaDe } = await import('../empresa-config.js');
     const db = bancoDoOperador(req, supabase);
-    const marca = await marcaDoRelatorio(cfg, {
+    return marcaDoRelatorio(cfg, {
       // obterLogoBase64 lê a empresa do CONTEXTO — roda dentro da empresa do operador.
       baixarLogo: () => comEmpresaDe(companyId, () => obterLogoBase64(db)),
     });
+  }
+
+  /** Prepara o relatório (dados + marca). null = já respondeu erro. */
+  async function relatorioDaRequisicao(req: AuthedRequest, res: Response) {
+    const inst = String(req.params.instalacao);
+    const mes = typeof req.query.mes === 'string' ? req.query.mes : '';
+    if (!RE_UC.test(inst) || !RE_MES.test(mes)) { res.status(400).send('UC ou mês inválido'); return null; }
+    const { companyId, tela, cfg, deps } = await depsRelatorioGd(req);
+    const { prepararRelatorio } = await import('../gd/relatorio-servico.js');
+    const r = await prepararRelatorio(inst, mes, deps);
+    if (!r.ok) {
+      res.redirect(`/dashboard/demonstrativos/${inst}?mes=${encodeURIComponent(mes)}&msg=${encodeURIComponent(`Relatório não gerado: ${r.motivo}`)}`);
+      return null;
+    }
+    const marca = await marcaRelatorioGd(req, companyId, cfg);
     const { renderRelatorioHtml } = await import('../gd/relatorio-html.js');
     return { inst, mes, tela, leadId: r.leadId, relatorio: r.relatorio, html: renderRelatorioHtml(r.relatorio, marca) };
   }
+
+  // ── Relatório do PERÍODO (ex.: maio a agosto) — vários meses 🟢 num relatório só.
+  /** ?de=&ate= conferidos (AAAA-MM-01, de ≤ até, no máximo 12 meses). */
+  async function periodoDaQuery(req: AuthedRequest): Promise<{ de: string; ate: string } | { erro: string }> {
+    const de = typeof req.query.de === 'string' ? req.query.de : '';
+    const ate = typeof req.query.ate === 'string' ? req.query.ate : '';
+    if (!RE_MES.test(de) || !RE_MES.test(ate)) return { erro: 'período inválido' };
+    const { erroDoPeriodo } = await import('../gd/relatorio-periodo-motor.js');
+    const erro = erroDoPeriodo(de, ate);
+    return erro ? { erro } : { de, ate };
+  }
+
+  /** Volta pra tela do cliente com um aviso (mês final do período aberto, quando válido). */
+  function voltarAoCliente(res: Response, inst: string, mes: string, msg: string) {
+    res.redirect(`/dashboard/demonstrativos/${RE_UC.test(inst) ? inst : ''}?mes=${encodeURIComponent(RE_MES.test(mes) ? mes : '')}&msg=${encodeURIComponent(msg)}`);
+  }
+
+  /** Prepara o relatório do período (dados + marca). null = já respondeu erro. */
+  async function relatorioPeriodoDaRequisicao(req: AuthedRequest, res: Response) {
+    const inst = String(req.params.instalacao);
+    if (!RE_UC.test(inst)) { res.status(400).send('UC inválida'); return null; }
+    const per = await periodoDaQuery(req);
+    const ateQ = typeof req.query.ate === 'string' ? req.query.ate : '';
+    if ('erro' in per) { voltarAoCliente(res, inst, ateQ, `Relatório do período não gerado: ${per.erro}`); return null; }
+    const { companyId, tela, cfg, deps } = await depsRelatorioGd(req);
+    const { prepararRelatorioPeriodo } = await import('../gd/relatorio-servico.js');
+    const r = await prepararRelatorioPeriodo(inst, per.de, per.ate, deps);
+    if (!r.ok) { voltarAoCliente(res, inst, per.ate, `Relatório do período não gerado: ${r.motivo}`); return null; }
+    const marca = await marcaRelatorioGd(req, companyId, cfg);
+    const { renderRelatorioPeriodoHtml } = await import('../gd/relatorio-periodo-html.js');
+    return {
+      inst, de: per.de, ate: per.ate, tela, leadId: r.leadId, relatorio: r.relatorio,
+      html: renderRelatorioPeriodoHtml(r.relatorio, marca),
+    };
+  }
+
+  router.get('/demonstrativos/:instalacao/periodo.html', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const p = await relatorioPeriodoDaRequisicao(req, res);
+      if (p) res.type('html').send(p.html);
+    } catch (err) {
+      console.error('[demonstrativos/periodo.html]', err);
+      res.status(500).send(`<h2>Erro ao montar o relatório do período</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  router.get('/demonstrativos/:instalacao/periodo.pdf', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const p = await relatorioPeriodoDaRequisicao(req, res);
+      if (!p) return;
+      const { gerarRelatorioPdf, lerPdfUnpdf } = await import('../gd/relatorio-pdf.js');
+      const { htmlToPdf } = await import('../proposal/pdf-generator.js');
+      const pdf = await gerarRelatorioPdf(p.html, { htmlToPdf, lerPdf: lerPdfUnpdf }, { exigeGrafico: p.relatorio.grafico.length > 0 });
+      const { numerosDoRelatorioPeriodo } = await import('../gd/relatorio-periodo-motor.js');
+      await p.tela.registrarRelatorio({
+        instalacao: p.inst, referencia: p.ate, geradoPor: req.dashUser!.id,
+        numeros: numerosDoRelatorioPeriodo(p.relatorio),
+      });
+      const { nomeArquivoRelatorioPeriodo } = await import('../gd/relatorio-envio-textos.js');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${nomeArquivoRelatorioPeriodo(p.inst, p.de, p.ate)}"`);
+      res.send(pdf);
+    } catch (err) {
+      console.error('[demonstrativos/periodo.pdf]', err);
+      const ateQ = typeof req.query.ate === 'string' ? req.query.ate : '';
+      if (!res.headersSent) voltarAoCliente(res, String(req.params.instalacao), ateQ, `Não consegui gerar o PDF do período: ${(err as Error).message}`);
+    }
+  });
 
   router.get('/demonstrativos/:instalacao/relatorio.html', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     try {
@@ -4744,10 +4824,8 @@ b.onclick=async function(){
   });
 
   // ── Enviar o relatório ao cliente pela Eva (fatia 3) — plano 2026-09-27-demonstrativos-enviar-relatorio-eva.md
-  /** Relatório 🟢 + cliente + canal + destino. null = já respondeu (redirect/404). */
-  async function envioRelatorioCtx(req: AuthedRequest, res: Response) {
-    const p = await relatorioDaRequisicao(req, res);
-    if (!p) return null;
+  /** Cliente + canal + destino do envio, na empresa do operador. null = já respondeu 404. */
+  async function destinoRelatorioGd(req: AuthedRequest, res: Response, p: { leadId: string; tela: import('../gd/demonstrativos-tela-repo.js').RepoTelaGd }) {
     const companyId = req.dashUser!.companyId;
     const lead = await p.tela.destinoDoLead(p.leadId);
     if (!lead) { res.status(404).send('Cliente não encontrado nesta empresa'); return null; }
@@ -4761,32 +4839,148 @@ b.onclick=async function(){
       canal,
       bloqueadoLgpd: (fone) => envioProibido(fone, options.engineerPhone ?? '', cfg),
     });
-    const ultimo = await p.tela.ultimoEnvio(p.inst, p.mes);
-    return { ...p, companyId, lead, instancia, canal, cfg, destino, ultimo };
+    return { companyId, lead, instancia, canal, cfg, destino };
+  }
+
+  /** O que a tela de confirmação e o envio precisam, igual pro mensal e pro período. */
+  interface CtxEnvioGd {
+    inst: string;
+    /** Mês do relatório; no do período, o mês final. */
+    referencia: string;
+    /** "agosto de 2026" ou "maio a agosto de 2026". */
+    rotulo: string;
+    periodo?: { de: string; ate: string };
+    leadId: string;
+    tela: import('../gd/demonstrativos-tela-repo.js').RepoTelaGd;
+    html: string;
+    exigeGrafico: boolean;
+    numeros: Record<string, unknown>;
+    clienteRelatorio: string;
+    ultimo: { enviadoEm: string; zapPara: string | null; emailPara: string | null } | null;
+    companyId: string;
+    lead: NonNullable<Awaited<ReturnType<import('../gd/demonstrativos-tela-repo.js').RepoTelaGd['destinoDoLead']>>>;
+    instancia: Awaited<ReturnType<typeof instanciaDoTenant>>;
+    canal: import('../gd/relatorio-envio.js').CanalZap;
+    cfg: ReturnType<typeof empresaDe>;
+    destino: import('../gd/relatorio-envio.js').DestinoEnvio;
+  }
+
+  /** Relatório do MÊS 🟢 + cliente + canal + destino. null = já respondeu (redirect/404). */
+  async function envioRelatorioCtx(req: AuthedRequest, res: Response): Promise<CtxEnvioGd | null> {
+    const p = await relatorioDaRequisicao(req, res);
+    if (!p) return null;
+    const d = await destinoRelatorioGd(req, res, p);
+    if (!d) return null;
+    const { numerosDoRelatorio } = await import('../gd/relatorio-motor.js');
+    return {
+      ...d, inst: p.inst, referencia: p.mes, rotulo: p.relatorio.mesExtenso, leadId: p.leadId, tela: p.tela, html: p.html,
+      exigeGrafico: p.relatorio.meses.length > 0, numeros: numerosDoRelatorio(p.relatorio), clienteRelatorio: p.relatorio.cliente,
+      ultimo: await p.tela.ultimoEnvio(p.inst, p.mes),
+    };
+  }
+
+  /** Relatório do PERÍODO (todos os meses 🟢) + cliente + canal + destino. null = já respondeu. */
+  async function envioRelatorioPeriodoCtx(req: AuthedRequest, res: Response): Promise<CtxEnvioGd | null> {
+    const p = await relatorioPeriodoDaRequisicao(req, res);
+    if (!p) return null;
+    const d = await destinoRelatorioGd(req, res, p);
+    if (!d) return null;
+    const { numerosDoRelatorioPeriodo } = await import('../gd/relatorio-periodo-motor.js');
+    return {
+      ...d, inst: p.inst, referencia: p.ate, rotulo: p.relatorio.periodoExtenso, periodo: { de: p.de, ate: p.ate },
+      leadId: p.leadId, tela: p.tela, html: p.html, exigeGrafico: p.relatorio.grafico.length > 0,
+      numeros: numerosDoRelatorioPeriodo(p.relatorio), clienteRelatorio: p.relatorio.cliente,
+      // "Já enviado" do período = mesmo início e fim (o mensal do mês final não conta).
+      ultimo: await p.tela.ultimoEnvioPeriodo(p.inst, p.de, p.ate),
+    };
+  }
+
+  /** Tela de confirmação (mensal ou período): o que vai sair, pra quem, e a prévia do e-mail. */
+  async function telaConfirmarEnvio(req: AuthedRequest, res: Response, c: CtxEnvioGd) {
+    const T = await import('../gd/relatorio-envio-textos.js');
+    const { montarEmailRelatorio } = await import('../gd/relatorio-envio.js');
+    const nome = T.primeiroNome(c.lead.nome);
+    const linkExemplo = T.linkPublicoRelatorio(T.basePublica(), '…');
+    const arquivo = c.periodo
+      ? T.nomeArquivoRelatorioPeriodo(c.inst, c.periodo.de, c.periodo.ate)
+      : T.nomeArquivoRelatorio(c.inst, c.referencia);
+    const textoZap = c.canal === 'evolution'
+      ? `${T.textoLivreRelatorio(nome, c.rotulo, linkExemplo)}\n\n📎 ${arquivo}`
+      : `${T.textoTemplateRelatorio(nome, c.rotulo)}\n\n[ botão: Ver meu relatório ]`;
+    const previa = montarEmailRelatorio({ nome, mesExtenso: c.rotulo, link: linkExemplo, periodo: Boolean(c.periodo) }, c.cfg);
+    res.type('html').send(renderConfirmarEnvioRelatorio({
+      instalacao: c.inst, mes: c.referencia, mesExtenso: c.rotulo, clienteNome: c.lead.nome ?? c.clienteRelatorio,
+      canal: c.canal,
+      zap: { para: c.destino.zap.fone, motivo: c.destino.zap.motivo, texto: textoZap },
+      email: process.env.RESEND_API_KEY
+        ? { para: c.destino.email.para, motivo: c.destino.email.motivo, assunto: previa.assunto, html: previa.html }
+        : null,
+      linkExemplo, ultimoEnvio: c.ultimo, periodo: c.periodo,
+    }, req.dashUser));
+  }
+
+  /** Envia (mensal ou período) pelo miolo testado executarEnvioRelatorio e mostra o resultado. */
+  async function executarEnvioDaTela(req: AuthedRequest, res: Response, c: CtxEnvioGd, volta: (m: string) => void) {
+    const { renderResultadoEnvio } = await import('../relatorios/pasta/resultado-envio.js');
+    const { executarEnvioRelatorio } = await import('../gd/relatorio-envio-executar.js');
+    const { gerarRelatorioPdf, lerPdfUnpdf } = await import('../gd/relatorio-pdf.js');
+    const { htmlToPdf } = await import('../proposal/pdf-generator.js');
+    const { uploadAnexo, deleteAnexoFile } = await import('../anexos/storage.js');
+    const T = await import('../gd/relatorio-envio-textos.js');
+    const E = await import('../gd/relatorio-envio.js');
+    const { noCanalDaEmpresa } = await import('./canal-envio.js');
+    const sender = process.env.RESEND_API_KEY
+      ? new (await import('../email/resend-client.js')).EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '')
+      : null;
+
+    const saida = await executarEnvioRelatorio({
+      basePublica: T.basePublica(),
+      gerarPdf: () => gerarRelatorioPdf(c.html, { htmlToPdf, lerPdf: lerPdfUnpdf }, { exigeGrafico: c.exigeGrafico }),
+      // PDF guardado com a chave-mestra (storage não passa pelo RLS do operador).
+      guardarPdf: (pdf) => uploadAnexo(supabase, c.leadId, 'relatorio-gd', pdf, 'application/pdf', 'pdf'),
+      apagarPdf: (path) => deleteAnexoFile(supabase, path),
+      gerarToken: T.gerarTokenRelatorio,
+      repo: c.tela,
+      noCanal: (fn) => noCanalDaEmpresa(c.companyId, c.instancia, fn),
+      sendText: options.sendText,
+      sendTemplate: options.sendTemplate,
+      sendDocument: options.sendDocumentEvolution,
+      enviarEmail: sender ? (e) => sender.enviar(e) : undefined,
+      registrarEmailEnviado: (d) => supabaseService.registrarEmailEnviado(d),
+      registrarConversa: (texto) =>
+        E.registrarEnvioNaConversa(supabaseService, c.leadId, c.companyId, c.rotulo, texto),
+    }, {
+      instalacao: c.inst, referencia: c.referencia, geradoPor: req.dashUser!.id, leadId: c.leadId,
+      nomeCliente: c.lead.nome, mesExtenso: c.rotulo, numeros: c.numeros,
+      canal: c.canal, empresa: c.cfg, destino: c.destino,
+      jaEnviado: Boolean(c.ultimo), reenviar: String(req.body?.reenviar ?? '') === '1',
+      periodo: c.periodo ? { inicio: c.periodo.de, fim: c.periodo.ate } : undefined,
+    });
+
+    if (saida.tipo === 'confirmar_reenvio') {
+      res.redirect(c.periodo
+        ? `/dashboard/demonstrativos/${c.inst}/periodo/enviar?de=${encodeURIComponent(c.periodo.de)}&ate=${encodeURIComponent(c.periodo.ate)}`
+        : `/dashboard/demonstrativos/${c.inst}/enviar?mes=${encodeURIComponent(c.referencia)}`);
+      return;
+    }
+    if (saida.tipo === 'em_andamento') {
+      volta('Esse relatório já está sendo enviado (clique duplo ou outra aba) — confira em instantes o "enviado em".');
+      return;
+    }
+    console.log(`[demonstrativos/enviar] UC ${c.inst} ${c.periodo ? `${c.periodo.de}..${c.periodo.ate}` : c.referencia} empresa ${c.companyId.slice(0, 8)} canal=${c.canal} zap=${saida.zap.ok ? 'ok' : saida.zap.reason} email=${saida.email ? (saida.email.ok ? 'ok' : saida.email.reason) : 'desligado'}`);
+    res.type('html').send(renderResultadoEnvio({
+      tituloOk: 'Relatório enviado', tituloConfira: 'Envio do relatório — confira',
+      voltarHref: `/dashboard/demonstrativos/${c.inst}?mes=${encodeURIComponent(c.referencia)}`,
+      voltarTexto: '← voltar para o cliente',
+      zap: saida.zap, email: saida.email, linkPublico: saida.linkPublico,
+    }));
   }
 
   router.get('/demonstrativos/:instalacao/enviar', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
     try {
       const c = await envioRelatorioCtx(req, res);
       if (!c) return;
-      const T = await import('../gd/relatorio-envio-textos.js');
-      const { montarEmailRelatorio } = await import('../gd/relatorio-envio.js');
-      const nome = T.primeiroNome(c.lead.nome);
-      const mesExt = c.relatorio.mesExtenso;
-      const linkExemplo = T.linkPublicoRelatorio(T.basePublica(), '…');
-      const textoZap = c.canal === 'evolution'
-        ? `${T.textoLivreRelatorio(nome, mesExt, linkExemplo)}\n\n📎 ${T.nomeArquivoRelatorio(c.inst, c.mes)}`
-        : `${T.textoTemplateRelatorio(nome, mesExt)}\n\n[ botão: Ver meu relatório ]`;
-      const previa = montarEmailRelatorio({ nome, mesExtenso: mesExt, link: linkExemplo }, c.cfg);
-      res.type('html').send(renderConfirmarEnvioRelatorio({
-        instalacao: c.inst, mes: c.mes, mesExtenso: mesExt, clienteNome: c.lead.nome ?? c.relatorio.cliente,
-        canal: c.canal,
-        zap: { para: c.destino.zap.fone, motivo: c.destino.zap.motivo, texto: textoZap },
-        email: process.env.RESEND_API_KEY
-          ? { para: c.destino.email.para, motivo: c.destino.email.motivo, assunto: previa.assunto, html: previa.html }
-          : null,
-        linkExemplo, ultimoEnvio: c.ultimo,
-      }, req.dashUser));
+      await telaConfirmarEnvio(req, res, c);
     } catch (err) {
       console.error('[demonstrativos/enviar GET]', err);
       res.status(500).send(`<h2>Erro ao preparar o envio</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -4802,59 +4996,35 @@ b.onclick=async function(){
       if (String(req.body?.confirmar ?? '') !== '1') { volta('Envio não confirmado — nada saiu.'); return; }
       const c = await envioRelatorioCtx(req, res);
       if (!c) return;
-      const { renderResultadoEnvio } = await import('../relatorios/pasta/resultado-envio.js');
-      const { executarEnvioRelatorio } = await import('../gd/relatorio-envio-executar.js');
-      const { gerarRelatorioPdf, lerPdfUnpdf } = await import('../gd/relatorio-pdf.js');
-      const { htmlToPdf } = await import('../proposal/pdf-generator.js');
-      const { uploadAnexo, deleteAnexoFile } = await import('../anexos/storage.js');
-      const T = await import('../gd/relatorio-envio-textos.js');
-      const E = await import('../gd/relatorio-envio.js');
-      const { numerosDoRelatorio } = await import('../gd/relatorio-motor.js');
-      const { noCanalDaEmpresa } = await import('./canal-envio.js');
-      const sender = process.env.RESEND_API_KEY
-        ? new (await import('../email/resend-client.js')).EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '')
-        : null;
-
-      const saida = await executarEnvioRelatorio({
-        basePublica: T.basePublica(),
-        gerarPdf: () => gerarRelatorioPdf(c.html, { htmlToPdf, lerPdf: lerPdfUnpdf }, { exigeGrafico: c.relatorio.meses.length > 0 }),
-        // PDF guardado com a chave-mestra (storage não passa pelo RLS do operador).
-        guardarPdf: (pdf) => uploadAnexo(supabase, c.leadId, 'relatorio-gd', pdf, 'application/pdf', 'pdf'),
-        apagarPdf: (path) => deleteAnexoFile(supabase, path),
-        gerarToken: T.gerarTokenRelatorio,
-        repo: c.tela,
-        noCanal: (fn) => noCanalDaEmpresa(c.companyId, c.instancia, fn),
-        sendText: options.sendText,
-        sendTemplate: options.sendTemplate,
-        sendDocument: options.sendDocumentEvolution,
-        enviarEmail: sender ? (e) => sender.enviar(e) : undefined,
-        registrarEmailEnviado: (d) => supabaseService.registrarEmailEnviado(d),
-        registrarConversa: (texto) =>
-          E.registrarEnvioNaConversa(supabaseService, c.leadId, c.companyId, c.relatorio.mesExtenso, texto),
-      }, {
-        instalacao: c.inst, referencia: c.mes, geradoPor: req.dashUser!.id, leadId: c.leadId,
-        nomeCliente: c.lead.nome, mesExtenso: c.relatorio.mesExtenso, numeros: numerosDoRelatorio(c.relatorio),
-        canal: c.canal, empresa: c.cfg, destino: c.destino,
-        jaEnviado: Boolean(c.ultimo), reenviar: String(req.body?.reenviar ?? '') === '1',
-      });
-
-      if (saida.tipo === 'confirmar_reenvio') {
-        res.redirect(`/dashboard/demonstrativos/${c.inst}/enviar?mes=${encodeURIComponent(c.mes)}`);
-        return;
-      }
-      if (saida.tipo === 'em_andamento') {
-        volta('Esse relatório já está sendo enviado (clique duplo ou outra aba) — confira em instantes o "enviado em".');
-        return;
-      }
-      console.log(`[demonstrativos/enviar] UC ${c.inst} ${c.mes} empresa ${c.companyId.slice(0, 8)} canal=${c.canal} zap=${saida.zap.ok ? 'ok' : saida.zap.reason} email=${saida.email ? (saida.email.ok ? 'ok' : saida.email.reason) : 'desligado'}`);
-      res.type('html').send(renderResultadoEnvio({
-        tituloOk: 'Relatório enviado', tituloConfira: 'Envio do relatório — confira',
-        voltarHref: `/dashboard/demonstrativos/${c.inst}?mes=${encodeURIComponent(c.mes)}`,
-        voltarTexto: '← voltar para o cliente',
-        zap: saida.zap, email: saida.email, linkPublico: saida.linkPublico,
-      }));
+      await executarEnvioDaTela(req, res, c, volta);
     } catch (err) {
       console.error('[demonstrativos/enviar POST]', err);
+      if (!res.headersSent) volta(`Não enviei: ${(err as Error).message}`);
+    }
+  });
+
+  router.get('/demonstrativos/:instalacao/periodo/enviar', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const c = await envioRelatorioPeriodoCtx(req, res);
+      if (!c) return;
+      await telaConfirmarEnvio(req, res, c);
+    } catch (err) {
+      console.error('[demonstrativos/periodo/enviar GET]', err);
+      res.status(500).send(`<h2>Erro ao preparar o envio do período</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  router.post('/demonstrativos/:instalacao/periodo/enviar', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    const inst = String(req.params.instalacao);
+    const ateQ = typeof req.query.ate === 'string' ? req.query.ate : '';
+    const volta = (m: string) => voltarAoCliente(res, inst, ateQ, m);
+    try {
+      if (String(req.body?.confirmar ?? '') !== '1') { volta('Envio não confirmado — nada saiu.'); return; }
+      const c = await envioRelatorioPeriodoCtx(req, res);
+      if (!c) return;
+      await executarEnvioDaTela(req, res, c, volta);
+    } catch (err) {
+      console.error('[demonstrativos/periodo/enviar POST]', err);
       if (!res.headersSent) volta(`Não enviei: ${(err as Error).message}`);
     }
   });
