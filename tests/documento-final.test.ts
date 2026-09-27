@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeAll, afterAll } from 'vitest';
-import { montarDocumentoFinal } from '../src/modules/closing/documento-final.js';
+import { montarDocumentoFinal, validarParaCongelar } from '../src/modules/closing/documento-final.js';
+import { completarComPlaceholders } from '../src/modules/closing/fechamento-auto.js';
 import { dadosFechamentoCamilaMesmaPessoa as CAMILA } from './fixtures/closing-camila.js';
 
 // O documento que SAI (PDF, zap, Drive): o congelado quando existe (com a data do
@@ -157,9 +158,38 @@ describe('montarDocumentoFinal', () => {
       expect(doc!.dados.aditivo?.contrato_data).toBe('2026-09-27');
     });
 
+    it('retrato com dados CRUS: o padrão do autopreenchimento ("Neoenergia-DF") não passa por dado', async () => {
+      const cru: any = JSON.parse(JSON.stringify({ ...snapshot }));
+      delete cru.concessionaria;
+      delete cru.data_documento;
+      const fx = [{ ...fechamentos[1], dados_snapshot: { ...snapshot, concessionaria: 'Neoenergia-DF', dados_crus: cru } }];
+      const doc = await montarDocumentoFinal(fakeDb({ leads: [leadMudado], fechamentos: fx }), 'L1', 'procuracao');
+      expect(doc!.ok).toBe(false);
+      expect(doc!.problemas.join(' ')).toContain('Concessionária');
+    });
+
     it('o ADITIVO não é o retrato: ele é montado agora (é o documento novo)', async () => {
       const doc = await montarDocumentoFinal(fakeDb({ leads: [leadMudado], fechamentos }), 'L1', 'aditivo');
       expect(doc!.congelado).toBeNull();
     });
+  });
+});
+
+describe('validarParaCongelar — só congela o que PODE sair', () => {
+  it('cru completo → ok', () => {
+    const r = validarParaCongelar({ cru: CAMILA, dados: completarComPlaceholders(CAMILA) });
+    expect(r.problemas).toEqual([]);
+    expect(r.ok).toBe(true);
+  });
+
+  it('cru sem concessionária/UF: os padrões ("Neoenergia-DF", "DF") NÃO contam como dado', () => {
+    const cru: any = JSON.parse(JSON.stringify(CAMILA));
+    delete cru.concessionaria;
+    delete cru.titular_uc.endereco.uf;
+    cru.contratante = cru.titular_uc;
+    const r = validarParaCongelar({ cru, dados: completarComPlaceholders(cru) });
+    expect(r.ok).toBe(false);
+    expect(r.problemas.join(' ')).toContain('Concessionária');
+    expect(r.problemas.join(' ')).toContain('UF');
   });
 });

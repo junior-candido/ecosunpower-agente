@@ -56,9 +56,10 @@ export async function montarDocumentoFinal(
         || dataIsoEmBrasilia(vigente.congeladoEm)
         || hojeEmBrasilia(),
     };
-    // O retrato já vem completado (com "____" onde faltava) — o validador trata
-    // "____" como vazio, então lacuna congelada continua travada.
-    paraValidar = dados;
+    // Valida o CRU guardado no congelamento (o completado traria os padrões
+    // "Neoenergia-DF"/"DF" passando por dado). Retrato antigo, sem cru: valida o
+    // completado — o validador trata "____" como vazio, lacuna continua travada.
+    paraValidar = vigente.cru ?? dados;
     congelado = { congeladoEm: vigente.congeladoEm, versao: await contarVersoesCongeladas(sb, leadId) };
   } else {
     dados = { ...r.dados, data_documento: hojeEmBrasilia() };
@@ -70,6 +71,17 @@ export async function montarDocumentoFinal(
   const html = def.render(dados);
   const { ok, problemas } = validarDocumento({ tipo: def.tipo, dados: paraValidar, html });
   return { def, dados, html, nome: r.nome || 'cliente', ok, problemas, congelado };
+}
+
+/**
+ * Pode CONGELAR? O retrato congelado é o que sai no PDF daqui pra frente — então
+ * só congela o que já poderia sair: valida o CRU (sem os padrões inventados pelo
+ * autopreenchimento) contra o contrato renderizado. Mesmo validador da saída.
+ */
+export function validarParaCongelar(r: { cru: Partial<DadosFechamento>; dados: DadosFechamento }): { ok: boolean; problemas: string[] } {
+  const def = getContrato('fv')!;
+  const html = def.render({ ...r.dados, data_documento: hojeEmBrasilia() });
+  return validarDocumento({ tipo: 'fv', dados: r.cru, html });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

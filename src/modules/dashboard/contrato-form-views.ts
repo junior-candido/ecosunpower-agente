@@ -531,7 +531,7 @@ export function renderContratoFormPage(page: ContratoFormInput): string {
 export interface DocBloqueadoInput {
   leadId: string;
   nome: string;
-  acao: 'pdf' | 'enviar' | 'drive';
+  acao: 'pdf' | 'enviar' | 'drive' | 'congelar';
   /** O tipo do formulário pra onde o link volta. */
   tipoForm: string;
   blocos: Array<{ documento: string; problemas: string[]; congeladoEm?: string | null }>;
@@ -542,6 +542,7 @@ const TITULO_BLOQUEIO: Record<DocBloqueadoInput['acao'], string> = {
   pdf: 'O PDF não foi gerado',
   enviar: 'O documento não foi enviado',
   drive: 'Nada foi salvo no Drive',
+  congelar: 'O contrato não foi congelado',
 };
 
 export function renderDocBloqueadoPage(page: DocBloqueadoInput): string {
@@ -563,7 +564,7 @@ export function renderDocBloqueadoPage(page: DocBloqueadoInput): string {
       <h1 class="text-lg font-bold text-red-800 mb-1">🚫 ${escapeHtml(titulo)} — ${escapeHtml(page.nome)}</h1>
       <p class="text-sm text-red-900 mb-4">
         O documento está incompleto ou com dado inválido. Pra não chegar no cliente com espaço em branco ou dado errado,
-        ${page.acao === 'drive' ? 'o documento não foi salvo no Drive' : page.acao === 'enviar' ? 'ele não foi enviado' : 'o PDF não foi gerado'}.
+        ${page.acao === 'drive' ? 'o documento não foi salvo no Drive' : page.acao === 'enviar' ? 'ele não foi enviado' : page.acao === 'congelar' ? 'ele não foi congelado (o congelado é o que sai no PDF daqui pra frente)' : 'o PDF não foi gerado'}.
         Corrija o que está abaixo e tente de novo:
       </p>
       ${blocos}

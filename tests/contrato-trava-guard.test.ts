@@ -62,3 +62,17 @@ describe('router — evento de bloqueio sem CPF', () => {
     expect(evento).toContain('problemasSemDados(');
   });
 });
+
+// Congelar só o que pode sair — e com os dados crus guardados junto.
+describe('router — congelar passa pela trava', () => {
+  const src = readFileSync(join(process.cwd(), 'src', 'modules', 'dashboard', 'router.ts'), 'utf-8');
+  it('valida o CRU antes de congelar e guarda o cru no retrato', () => {
+    const ini = src.indexOf("router.post('/leads/:id/contrato-congelar'");
+    expect(ini).toBeGreaterThan(0);
+    const corpo = src.slice(ini, src.indexOf('\n  });\n', ini));
+    const trava = corpo.indexOf('validarParaCongelar(');
+    expect(trava).toBeGreaterThan(0);
+    expect(trava).toBeLessThan(corpo.indexOf('congelarContrato('));
+    expect(corpo).toMatch(/congelarContrato\([^)]*r\.cru\)/);
+  });
+});

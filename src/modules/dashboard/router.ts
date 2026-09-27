@@ -3618,9 +3618,27 @@ b.onclick=async function(){
       const r = await montarFechamentoAuto(supabase, id, 'fv'); // o retrato é o do CONTRATO
       if (!r) return res.status(404).send('Lead não encontrado');
 
+      // 🚦 Só congela o que PODE sair: o retrato é o que vira PDF daqui pra frente.
+      // Valida o CRU — os padrões do autopreenchimento ("Neoenergia-DF", UF "DF",
+      // "SSP") não podem entrar no retrato passando por dado de verdade.
+      const { validarParaCongelar } = await import('../closing/documento-final.js');
+      const trava = validarParaCongelar(r);
+      if (!trava.ok) {
+        const { problemasSemDados } = await import('../closing/validar-documento.js');
+        await eventoContrato(req, id, def.tipo, 'bloqueado', { acao: 'congelar', problemas: problemasSemDados(trava.problemas) });
+        return res.status(422).send(renderDocBloqueadoPage({
+          leadId: id,
+          nome: r.nome,
+          acao: 'congelar',
+          tipoForm: def.tipo,
+          blocos: [{ documento: getContrato('fv')!.nome, problemas: trava.problemas }],
+          user: (req as AuthedRequest).dashUser,
+        }));
+      }
+
       const viewer = (req as AuthedRequest).dashUser;
       const { congelarContrato } = await import('../closing/contrato-vigente.js');
-      await congelarContrato(supabase, id, r.dados, viewer?.nome ?? 'dashboard');
+      await congelarContrato(supabase, id, r.dados, viewer?.nome ?? 'dashboard', r.cru);
 
       if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'contrato_congelado', valorNovo: String(r.dados.comercial.valor_total_brl) });
       await eventoContrato(req, id, def.tipo, 'congelado', {

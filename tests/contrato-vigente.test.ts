@@ -85,6 +85,25 @@ describe('congelarContrato — "este é o contrato que vale"', () => {
   });
 });
 
+describe('congelar guarda também os dados CRUS (sem os padrões do autopreenchimento)', () => {
+  it('o retrato leva dados_crus e o vigente devolve em `cru` (fora de `dados`)', async () => {
+    const estado = { linhas: [] as any[] };
+    const cru = { titular_uc: { tipo: 'PF', nome: 'Antonio Ricardo' } } as any;
+    await congelarContrato(fakeClient(estado), 'L1', DADOS, 'Junior', cru);
+    expect(estado.linhas[0].dados_snapshot.dados_crus).toEqual(cru);
+    const v = await contratoVigente(fakeClient(estado), 'L1');
+    expect(v!.cru).toEqual(cru);
+    expect((v!.dados as any).dados_crus).toBeUndefined();
+  });
+
+  it('retrato antigo (sem dados_crus) → cru null', async () => {
+    const estado = { linhas: [] as any[] };
+    await congelarContrato(fakeClient(estado), 'L1', DADOS, 'Junior');
+    const v = await contratoVigente(fakeClient(estado), 'L1');
+    expect(v!.cru).toBeNull();
+  });
+});
+
 describe('contratoVigente — o que vale hoje', () => {
   it('sem contrato congelado → null (e o aditivo tem que avisar isso)', async () => {
     expect(await contratoVigente(fakeClient({ linhas: [] }), 'L1')).toBeNull();

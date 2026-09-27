@@ -18,6 +18,12 @@ import { dataIsoEmBrasilia, hojeEmBrasilia } from './data-documento.js';
 export interface ContratoCongelado {
   id: string;
   dados: DadosFechamento;
+  /**
+   * Os dados CRUS de quando congelou (sem os padrões que o autopreenchimento
+   * inventa: "Neoenergia-DF", UF "DF", "SSP"). É o que a trava valida. Retrato
+   * antigo, de antes de guardar o cru → null (a trava valida o completado).
+   */
+  cru: Partial<DadosFechamento> | null;
   congeladoEm: string; // ISO
   congeladoPor: string;
 }
@@ -38,16 +44,21 @@ export async function contratoVigente(sb: SupabaseClient, leadId: string): Promi
       .limit(1)
       .maybeSingle();
     if (error || !data) return null;
-    const linha = data as { id: string; dados_snapshot: DadosFechamento; created_at: string; created_by: string };
+    const linha = data as { id: string; dados_snapshot: DadosFechamento & { dados_crus?: unknown }; created_at: string; created_by: string };
     if (!linha?.dados_snapshot) return null;
+    const { dados_crus, ...retrato } = linha.dados_snapshot;
+    const cru = dados_crus && typeof dados_crus === 'object' && !Array.isArray(dados_crus)
+      ? (dados_crus as Partial<DadosFechamento>)
+      : null;
     // A data impressa é a do CONGELAMENTO (guardada no retrato). Retrato antigo,
     // de antes de guardar a data: usa o created_at, no calendário de Brasília.
-    const dataDocumento = linha.dados_snapshot.data_documento
+    const dataDocumento = retrato.data_documento
       || dataIsoEmBrasilia(linha.created_at)
       || undefined;
     return {
       id: linha.id,
-      dados: { ...linha.dados_snapshot, data_documento: dataDocumento },
+      dados: { ...(retrato as DadosFechamento), data_documento: dataDocumento },
+      cru,
       congeladoEm: linha.created_at,
       congeladoPor: linha.created_by,
     };
@@ -66,6 +77,8 @@ export async function congelarContrato(
   leadId: string,
   dados: DadosFechamento,
   quem: string,
+  /** Os dados CRUS (antes do autopreenchimento) — vão junto, pra trava validar. */
+  cru?: Partial<DadosFechamento>,
 ): Promise<string> {
   const anterior = await contratoVigente(sb, leadId);
 
@@ -77,7 +90,7 @@ export async function congelarContrato(
       docs_pedidos: dados.docs_pedidos ?? ['contrato', 'procuracao'],
       // A data do documento fica FIXA no retrato: reimprimir amanhã (ou mês que
       // vem) não muda a data do contrato. Calendário de Brasília, não do servidor.
-      dados_snapshot: { ...dados, data_documento: hojeEmBrasilia() },
+      dados_snapshot: { ...dados, data_documento: hojeEmBrasilia(), ...(cru ? { dados_crus: cru } : {}) },
       status: 'aprovado_junior', // é O contrato, não um rascunho gerado
       created_by: quem,
       parent_id: anterior?.id ?? null,
