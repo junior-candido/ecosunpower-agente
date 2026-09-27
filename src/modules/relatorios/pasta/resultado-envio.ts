@@ -45,6 +45,7 @@ const MOTIVO_ZAP: Record<string, string> = {
   modelo_nao_aprovado: 'aguardando aprovação do modelo na Meta — e o cliente não falou com a gente nas últimas 24 horas, então a mensagem comum também não saiu',
   bloqueado_lgpd: 'esse número é de outra empresa da plataforma — bloqueado pela trava de privacidade (LGPD); confira o telefone do cliente',
   falha_envio: 'o WhatsApp recusou o envio',
+  pdf_grande_demais: 'o PDF ficou grande demais para mandar (mais de 10 MB) — o cliente abre pelo link',
 };
 
 const MOTIVO_EMAIL: Record<string, string> = {
@@ -55,6 +56,7 @@ const MOTIVO_EMAIL: Record<string, string> = {
   nao_publicada: 'a pasta ainda não está publicada',
   lead_not_found: 'cliente não encontrado',
   pasta_not_found: 'pasta não encontrada',
+  pdf_grande_demais: 'o PDF ficou grande demais para mandar (mais de 10 MB) — o cliente abre pelo link',
 };
 
 /** Motivo em português claro (SEM escapar — quem desenha escapa). Desconhecido volta cru. */

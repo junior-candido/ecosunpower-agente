@@ -35,6 +35,9 @@ export interface IncomingMessage {
   };
 }
 
+/** Maior documento (PDF) que mandamos pelo WhatsApp: 10 MB. */
+export const LIMITE_DOCUMENTO_BYTES = 10 * 1024 * 1024;
+
 export class EvolutionService {
   private baseUrl: string;
   private apiKey: string;
@@ -200,6 +203,11 @@ export class EvolutionService {
     caption: string,
     mimetype = 'application/pdf',
   ): Promise<{ messageId: string }> {
+    // PDF grande trava a Evolution/WhatsApp e some em silêncio: nem tenta.
+    const bytes = Buffer.byteLength(base64, 'base64');
+    if (bytes > LIMITE_DOCUMENTO_BYTES) {
+      throw new Error(`pdf_grande_demais: ${(bytes / 1024 / 1024).toFixed(1)} MB (limite 10 MB)`);
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60000);
     try {

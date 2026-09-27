@@ -225,3 +225,19 @@ describe('e-mail do tenant sem site cadastrado', () => {
     expect(html).not.toMatch(/ecosunpower/i);
   });
 });
+
+describe('PDF grande demais (> 10 MB)', () => {
+  it('tenant: o link sai, o anexo não é tentado e o aviso explica', async () => {
+    const sendText = vi.fn(async () => {});
+    const sendDocument = vi.fn(async () => {});
+    const r = await enviarRelatorioZap({ fone: '5561991718505', motivo: null },
+      { ...msg, pdf: Buffer.alloc(10 * 1024 * 1024 + 1) }, { canal: 'evolution', sendText, sendDocument });
+    expect(r.ok).toBe(true);
+    expect(sendDocument).not.toHaveBeenCalled();
+    expect(r.aviso).toMatch(/grande demais/);
+  });
+  it('pdf_grande_demais tem texto em português nos dois canais', () => {
+    expect(motivoEmPortugues('zap', 'pdf_grande_demais')).toMatch(/PDF.*grande demais/);
+    expect(motivoEmPortugues('email', 'pdf_grande_demais')).toMatch(/PDF.*grande demais/);
+  });
+});

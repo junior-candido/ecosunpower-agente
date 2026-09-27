@@ -8,12 +8,15 @@
 import { normalizeBrazilianPhone } from '../meta-leadgen.js';
 import { montarMolduraEmail, escapeHtml } from '../email/email-moldura.js';
 import { ehEcosun, type EmpresaConfig } from '../empresa-config.js';
-import type { ResultadoCanal } from '../relatorios/pasta/resultado-envio.js';
+import { motivoEmPortugues, type ResultadoCanal } from '../relatorios/pasta/resultado-envio.js';
 import type { SupabaseService } from '../supabase.js';
 import {
   TEMPLATE_RELATORIO, componentesTemplateRelatorio, textoLivreRelatorio, textoTemplateRelatorio,
   type ComponenteTemplate,
 } from './relatorio-envio-textos.js';
+
+/** Mesmo limite do EvolutionService.sendDocument (10 MB). */
+export const LIMITE_PDF_ZAP_BYTES = 10 * 1024 * 1024;
 
 /** casa = EcoSun (WABA/canal padrão) · evolution = instância própria do tenant · nenhum = tenant sem WhatsApp conectado. */
 export type CanalZap = 'casa' | 'evolution' | 'nenhum';
@@ -127,7 +130,9 @@ export async function enviarRelatorioZap(
       return { ok: false, reason: 'falha_envio', detalhe: (err as Error).message, para: fone };
     }
     let aviso: string | undefined;
-    if (d.sendDocument && m.pdf) {
+    if (d.sendDocument && m.pdf && m.pdf.length > LIMITE_PDF_ZAP_BYTES) {
+      aviso = `a mensagem com o link saiu, mas o PDF anexo não — ${motivoEmPortugues('zap', 'pdf_grande_demais')}`;
+    } else if (d.sendDocument && m.pdf) {
       try {
         await d.sendDocument(fone, m.pdf.toString('base64'), m.nomeArquivo, `Relatório de ${m.mesExtenso}`);
       } catch (err) {

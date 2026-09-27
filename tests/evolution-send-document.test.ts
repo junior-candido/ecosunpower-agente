@@ -26,4 +26,12 @@ describe('EvolutionService.sendDocument', () => {
     const s = new EvolutionService(cfg);
     await expect(s.sendDocument('5561991718505', 'JVBERg==', 'r.pdf', 'x')).rejects.toThrow(/sendDocument 400/);
   });
+  it('PDF acima de 10 MB não é enviado: erro claro pdf_grande_demais, sem chamar a Evolution', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const s = new EvolutionService(cfg);
+    const grande = Buffer.alloc(10 * 1024 * 1024 + 1).toString('base64');
+    await expect(s.sendDocument('5561991718505', grande, 'r.pdf', 'x')).rejects.toThrow(/pdf_grande_demais/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
