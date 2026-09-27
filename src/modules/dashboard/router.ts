@@ -6243,7 +6243,7 @@ b.onclick=async function(){
     const idsCandidatos = [...porId.keys()];
     const idsDaEmpresa = new Set<string>();
     for (let i = 0; i < idsCandidatos.length; i += 100) {   // lotes: URL do PostgREST não estoura
-      const { data } = await supabase.from('leads').select('id')
+      const { data } = await bancoDoOperador(req as AuthedRequest, supabase).from('leads').select('id')
         .in('id', idsCandidatos.slice(i, i + 100)).eq('company_id', companyId);
       for (const l of (data ?? []) as Array<{ id: string }>) idsDaEmpresa.add(l.id);
     }
@@ -6268,7 +6268,7 @@ b.onclick=async function(){
     const leadId = String(req.body?.lead_id ?? '');
     if (!UUID_RE.test(leadId)) return res.status(400).send('Escolha um cliente');
     // Só abre pasta de lead da própria empresa (27/09/2026).
-    const { data: leadDaEmpresa } = await supabase.from('leads').select('id')
+    const { data: leadDaEmpresa } = await bancoDoOperador(req as AuthedRequest, supabase).from('leads').select('id')
       .eq('id', leadId).eq('company_id', empresaDoOperador(req)).maybeSingle();
     if (!leadDaEmpresa) return res.status(404).send('Cliente não encontrado');
     // R3: pasta só pra cliente com venda registrada. Se não tem, oferece registrar
