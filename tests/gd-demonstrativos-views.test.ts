@@ -57,6 +57,24 @@ describe('renderDemonstrativoCliente', () => {
     expect(h).toContain('[210,222]');
     expect(h).toContain('[330,350]');
   });
+  it('mes 🟢 mostra Gerar PDF e Previa; fora disso o botao explica o que falta', () => {
+    const base = {
+      instalacao: '200002', clienteNome: 'JOAO', leadId: 'L1', meses: ['2026-08-01'], mes: '2026-08-01',
+      consumoKwh: 480, injetadoKwh: 222, saldoKwh: 1240, compensadoKwh: 380, economiaRs: 376.2,
+      proximoExpirar: null, historico: [], unidades: [], origemDemonstrativo: 'email', verificado: true,
+      candidatos: [], msg: null,
+    };
+    const pronto = renderDemonstrativoCliente({ ...base,
+      validacao: { estado: 'pronto', bloqueios: [], pendencias: [], avisos: [], geracaoKwh: 612, origemGeracao: 'api', esperadoMesKwh: 640 } });
+    expect(pronto).toContain('href="/dashboard/demonstrativos/200002/relatorio.pdf?mes=2026-08-01"');
+    expect(pronto).toContain('href="/dashboard/demonstrativos/200002/relatorio.html?mes=2026-08-01"');
+    expect(pronto).not.toMatch(/próxima entrega/);
+    const falta = renderDemonstrativoCliente({ ...base,
+      validacao: { estado: 'falta_dado', bloqueios: [], pendencias: ['falta a geração do mês'], avisos: [], geracaoKwh: null, origemGeracao: null, esperadoMesKwh: 640 } });
+    expect(falta).not.toContain('relatorio.pdf');
+    expect(falta).toMatch(/Gerar PDF.*falta a geração do mês/s);
+  });
+
   it('UC sem cliente mostra a busca de cliente', () => {
     const h = renderDemonstrativoCliente({
       instalacao: '999', clienteNome: 'X', leadId: null, meses: ['2026-08-01'], mes: '2026-08-01',
