@@ -190,6 +190,39 @@ export class EvolutionService {
     }
   }
 
+  // Arquivo (PDF) em base64 como DOCUMENTO — o relatório mensal da usina vai
+  // anexo pela instância do tenant (canal-contexto). Base64 no corpo: não
+  // depende de a Evolution conseguir baixar uma URL do nosso storage.
+  async sendDocument(
+    to: string,
+    base64: string,
+    fileName: string,
+    caption: string,
+    mimetype = 'application/pdf',
+  ): Promise<{ messageId: string }> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+    try {
+      const res = await fetch(`${this.baseUrl}/message/sendMedia/${this.instanciaAtual()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: this.apiKey },
+        body: JSON.stringify({ number: to, mediatype: 'document', mimetype, media: base64, fileName, caption }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Evolution sendDocument ${res.status}: ${err}`);
+      }
+      const data = await res.json() as Record<string, unknown>;
+      const key = (data.key ?? (data as { data?: { key?: Record<string, string> } }).data?.key) as
+        | Record<string, string>
+        | undefined;
+      return { messageId: key?.id ?? '' };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async getMediaBase64(messageId: string): Promise<{ base64: string; mimetype: string } | null> {
     try {
       const response = await fetch(
