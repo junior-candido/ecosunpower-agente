@@ -74,6 +74,15 @@ interface DossierData {
   company_id?: string;
 }
 
+/**
+ * Telefone que pode identificar um lead: tem dígito e não tem letra. Aceita
+ * formatado ('+55 (61) 99999-9999'); recusa '', espaços e BSUID ('BR.123…').
+ */
+function telefoneUtilizavel(phone: string | null | undefined): boolean {
+  if (typeof phone !== 'string') return false;
+  return /\d/.test(phone) && !/[a-z]/i.test(phone);
+}
+
 /** Empresa nenhuma. Cracha com este dono nao casa com linha alguma — e como
  *  a consulta sem contexto volta VAZIA em vez de voltar a base inteira. */
 const NINGUEM = '00000000-0000-0000-0000-000000000000';
@@ -227,6 +236,12 @@ export class SupabaseService {
   }
 
   async upsertLead(data: LeadData): Promise<{ id: string }> {
+    // [27/09/2026 BSUID] Telefone vazio/sem digitos NUNCA vira lead: o upsert
+    // por onConflict 'phone' juntava TODO MUNDO sem telefone num lead só
+    // (phone ''). Quem chama já trata erro (o update/upsert também lança).
+    if (!telefoneUtilizavel(data.phone)) {
+      throw new Error('upsertLead: telefone obrigatorio (vazio ou invalido)');
+    }
     // Dedup do 9º dígito: se já existe lead numa variante do telefone, ATUALIZA
     // ele (por id, preservando o telefone já salvo) em vez de inserir outro com
     // formato diferente — que era justamente o que recriava a duplicata.
@@ -276,6 +291,8 @@ export class SupabaseService {
     // Dedup do 9º dígito: procura por TODAS as variantes do número (com/sem o 9,
     // com/sem país 55). Casa o lead independente do formato em que foi salvo.
     // Se houver mais de um (duplicata legada), devolve o MAIS ANTIGO (o original).
+    // [BSUID] vazio/BSUID nunca casa lead nenhum (e nem vai ao banco).
+    if (!telefoneUtilizavel(phone)) return null;
     const variantes = variantesTelefone(phone);
     if (variantes.length === 0) return null;
     const { data, error } = await this.client
@@ -287,6 +304,73 @@ export class SupabaseService {
 
     if (error) throw new Error(`Failed to get lead: ${error.message}`);
     return ((data?.[0] as (LeadData & { id: string }) | undefined) ?? null);
+  }
+
+  /**
+   * [BSUID fase 1] Lead da empresa pelo BSUID do WhatsApp (leads.wa_user_id,
+   * migration 135). Ainda sem uso no fluxo — é a base da fase 2 (usuário sem
+   * telefone). Vazio → null sem consultar.
+   */
+  async getLeadByWaUserId(companyId: string, waUserId: string): Promise<(LeadData & { id: string }) | null> {
+    if (!companyId?.trim() || !waUserId?.trim()) return null;
+    const { data, error } = await this.client
+      .from('leads')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('wa_user_id', waUserId.trim())
+      .maybeSingle();
+    if (error) throw new Error(`Failed to get lead by wa_user_id: ${error.message}`);
+    return (data as (LeadData & { id: string }) | null) ?? null;
+  }
+
+  /**
+   * [BSUID fase 1] Backfill: guarda o BSUID (e o @username) no lead achado pelo
+   * TELEFONE, só dentro da empresa dona. BEST-EFFORT: nunca lança — quem chama
+   * já respondeu o cliente; erro aqui só vira log.
+   *
+   * BSUID diferente do salvo → troca e loga. (A Meta regenera o BSUID quando o
+   * usuário troca de número; como o lead é achado pelo telefone ATUAL, o ID que
+   * chegou agora é o vigente.)
+   */
+  async vincularWaUserId(
+    phone: string,
+    companyId: string,
+    waUserId: string,
+    username?: string,
+  ): Promise<'sem-dados' | 'sem-lead' | 'outra-empresa' | 'igual' | 'gravado' | 'trocado' | 'erro'> {
+    const uid = waUserId?.trim();
+    const user = username?.trim() || undefined;
+    if (!telefoneUtilizavel(phone) || !uid || !companyId) return 'sem-dados';
+    try {
+      const lead = await this.getLeadByPhone(phone) as (Record<string, unknown> & { id: string }) | null;
+      if (!lead) return 'sem-lead';
+      if (lead.company_id && lead.company_id !== companyId) return 'outra-empresa';
+
+      const atualUid = typeof lead.wa_user_id === 'string' ? lead.wa_user_id : null;
+      const atualUser = typeof lead.wa_username === 'string' ? lead.wa_username : null;
+      const patch: Record<string, string> = {};
+      if (atualUid !== uid) patch.wa_user_id = uid;
+      if (user && atualUser !== user) patch.wa_username = user;
+      if (Object.keys(patch).length === 0) return 'igual';
+
+      const { error } = await this.client
+        .from('leads')
+        .update(patch)
+        .eq('id', lead.id)
+        .eq('company_id', companyId);
+      if (error) {
+        console.warn(`[bsuid] falha ao gravar wa_user_id no lead ${lead.id}: ${error.message}`);
+        return 'erro';
+      }
+      if (atualUid && atualUid !== uid) {
+        console.warn(`[bsuid] lead ${lead.id} trocou de wa_user_id: ${atualUid} -> ${uid}`);
+        return 'trocado';
+      }
+      return 'gravado';
+    } catch (err) {
+      console.warn('[bsuid] vincularWaUserId falhou:', (err as Error).message);
+      return 'erro';
+    }
   }
 
   // ---- Copiloto de IA do lead (histórico salvo, migration 061) ----
@@ -1525,7 +1609,7 @@ export class SupabaseService {
   // com o tenant #2 um lead criado "no default" nasceria na empresa errada.
   // Quem sabe a empresa (webhook/rota) passa; ausente = EcoSun (compat).
   async getOrCreateLeadByPhone(phone: string, nameIfNew: string, companyId = '00000000-0000-0000-0000-000000000001'): Promise<string> {
-    if (!phone || !phone.trim()) {
+    if (!phone || !phone.trim() || !telefoneUtilizavel(phone)) {
       throw new Error('getOrCreateLeadByPhone: telefone obrigatorio');
     }
     const phoneClean = phone.replace(/\D+/g, '');
