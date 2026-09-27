@@ -24,7 +24,19 @@ export interface ContratoFormInput {
   tipos: Array<{ tipo: string; nome: string; emoji: string }>;
   valores: Record<string, string>;
   faltando: CampoContrato[];
+  /**
+   * Os problemas da TRAVA (montarDocumentoFinal(...).problemas) — o mesmo
+   * resultado que decide se Gerar PDF / Mandar / Drive saem. A caixa de status
+   * usa ISTO (não os campos vermelhos): formulário e trava nunca discordam.
+   */
+  problemas: string[];
   temProposta: boolean;
+  /** A proposta usada já venceu (ISO). Vale pro contrato, mas pede conferir os valores. */
+  propostaExpiradaEm?: string | null;
+  /** Propostas SEM lead, da mesma empresa, com nome parecido — pra vincular na mão. */
+  /** Resultado do "Vincular proposta" ('ok' | 'erro'). */
+  vinculoResultado?: string;
+  propostasOrfas?: Array<{ id: string; cliente_nome: string | null; numero_proposta?: string | null; created_at: string }>;
   salvo?: boolean;
   docsResultado?: string;
   envioResultado?: string;
@@ -176,6 +188,10 @@ function congelar(page: ContratoFormInput): string {
     <p class="text-sm text-emerald-900 mb-3">
       Valendo: <strong>${dinheiro(v.valor)}</strong> — ${escapeHtml(v.formaPagamento)}.
       Mudou alguma coisa? Faz um <strong>termo aditivo</strong> (lá em cima), que ele cita este contrato sozinho.
+    </p>
+    <p class="text-sm text-emerald-900 mb-3">
+      📄 Gerar PDF, Mandar e Salvar no Drive (contrato e procuração) usam a versão congelada, com a data do congelamento.
+      Corrigiu algum dado aqui? <strong>Congele de novo</strong> — senão sai a versão antiga.
     </p>
     ${botao('🔄 Congelar de novo (vira a versão seguinte)', 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50')}`);
 }
@@ -346,22 +362,71 @@ function avisos(page: ContratoFormInput): string {
       `<strong>⚠️ Forma de pagamento vazia.</strong> Do jeito que está, a cláusula de pagamento sai com uma linha em branco no contrato.` +
       (temCombinados ? ' Vi texto nos "Combinados à parte" — se o pagamento estiver lá, ele vai no campo <strong>Forma de pagamento</strong> (é ele que aparece na cláusula certa).' : ''));
   }
-  if (n > 0) {
+  const problemas = page.problemas ?? [];
+  if (n > 0 || problemas.length > 0) {
     const nomes = page.faltando.map((c) => escapeHtml(c.label)).join(' · ');
+    const titulo = n > 0
+      ? `<strong>${n} campo(s) em branco.</strong> Completa aqui embaixo (o vermelho) e salva.`
+      : '<strong>O documento ainda não pode sair.</strong>';
+    const lista = problemas.length
+      ? `<ul class="mt-1 ml-4 list-disc text-xs">${problemas.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`
+      : `<div class="mt-1 text-xs">${nomes}</div>`;
     out += box('bg-amber-50 border-amber-300 text-amber-800',
-      `<strong>${n} campo(s) em branco.</strong> Completa aqui embaixo (o vermelho) e salva. Se deixar assim, o PDF gera do mesmo jeito — só que com uma linha em branco pra preencher à mão.<div class="mt-1 text-xs">${nomes}</div>`);
+      `${titulo} Enquanto isso, <strong>Gerar PDF, Mandar e Salvar no Drive ficam travados</strong> — a prévia mostra o que falta.${lista}`);
   } else if (page.salvo) {
     out += box('bg-emerald-50 border-emerald-300 text-emerald-800', '✅ Salvo, e não falta nada. Pode gerar o PDF ou mandar no zap.');
   } else {
     out += box('bg-emerald-50 border-emerald-300 text-emerald-800', '✅ Está tudo preenchido. Pode gerar.');
   }
   if (page.salvo && n > 0) {
-    out += box('bg-slate-50 border-slate-300 text-slate-700', 'Salvei o que você preencheu. Os campos acima seguem em branco — pode gerar assim mesmo.');
+    out += box('bg-slate-50 border-slate-300 text-slate-700', 'Salvei o que você preencheu. Os campos acima seguem em branco — o documento só sai quando completar.');
+  }
+  if (page.vinculoResultado === 'ok') {
+    out += box('bg-emerald-50 border-emerald-300 text-emerald-800', '🔗 Proposta vinculada. Os dados da usina e o valor agora vêm dela.');
+  } else if (page.vinculoResultado === 'erro') {
+    out += box('bg-red-50 border-red-300 text-red-800', 'Não consegui vincular a proposta (ela pode já estar ligada a outro cliente). Nada mudou.');
+  }
+  if (page.propostaExpiradaEm) {
+    out += box('bg-amber-50 border-amber-300 text-amber-800',
+      `⏰ <strong>proposta expirada em ${escapeHtml(diaMesBR(page.propostaExpiradaEm))} — conferir valores.</strong> Os dados da usina e o valor vieram dela; se o preço mudou, corrige aqui antes de gerar.`);
   }
   if (!page.temProposta) {
     out += box('bg-slate-50 border-slate-300 text-slate-700', 'Esse cliente não tem proposta ligada — os dados da usina e o valor não vieram sozinhos. Preenche na mão aqui.');
+    out += vincularProposta(page);
   }
   return out;
+}
+
+/** "2026-08-10T12:00:00Z" → "10/08" (calendário de Brasília). */
+function diaMesBR(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+}
+
+/**
+ * Proposta salva sem telefone fica sem cliente (órfã). Mostra as da empresa com
+ * nome parecido e deixa o operador ligar UMA, explicitamente — nunca automático
+ * (nome repete).
+ */
+function vincularProposta(page: ContratoFormInput): string {
+  const orfas = page.propostasOrfas ?? [];
+  if (!orfas.length) return '';
+  const itens = orfas.map((p) => {
+    const quando = diaMesBR(p.created_at);
+    const rotulo = `${p.numero_proposta ? escapeHtml(p.numero_proposta) + ' · ' : ''}${escapeHtml(p.cliente_nome ?? '(sem nome)')} · ${escapeHtml(quando)}`;
+    return `<form method="POST" action="/dashboard/leads/${encodeURIComponent(page.leadId)}/contrato-vincular-proposta" class="flex items-center justify-between gap-2 py-1"
+        onsubmit="return confirm('Ligar esta proposta a este cliente? Os dados da usina e o valor passam a vir dela.')">
+        <input type="hidden" name="tipo" value="${escapeHtml(page.def.tipo)}" />
+        <input type="hidden" name="proposta_id" value="${escapeHtml(p.id)}" />
+        <span class="text-sm">${rotulo}</span>
+        <button class="px-3 py-1 rounded-lg text-xs bg-slate-900 text-white hover:bg-slate-700">🔗 Vincular proposta</button>
+      </form>`;
+  }).join('');
+  return `<div class="mb-4 text-sm px-4 py-3 rounded-lg border bg-white border-slate-300 text-slate-700">
+      <strong>Achei proposta(s) sem cliente com esse nome</strong> (salvas sem telefone). Se uma delas é deste cliente, vincula:
+      <div class="mt-2 divide-y divide-slate-100">${itens}</div>
+    </div>`;
 }
 
 function acoes(page: ContratoFormInput): string {
@@ -507,4 +572,52 @@ export function renderContratoFormPage(page: ContratoFormInput): string {
   </script>`;
 
   return renderLayout({ active: 'contratos', title: `${def.nome} — ${page.nome}`, body, scripts, user: page.user as any });
+}
+
+// 🚫 O documento NÃO saiu (PDF, zap ou Drive) porque está incompleto/inválido.
+// Nunca um envio mudo com "___": o operador vê O QUE falta e volta pro formulário.
+export interface DocBloqueadoInput {
+  leadId: string;
+  nome: string;
+  acao: 'pdf' | 'enviar' | 'drive' | 'congelar';
+  /** O tipo do formulário pra onde o link volta. */
+  tipoForm: string;
+  blocos: Array<{ documento: string; problemas: string[]; congeladoEm?: string | null }>;
+  user?: unknown;
+}
+
+const TITULO_BLOQUEIO: Record<DocBloqueadoInput['acao'], string> = {
+  pdf: 'O PDF não foi gerado',
+  enviar: 'O documento não foi enviado',
+  drive: 'Nada foi salvo no Drive',
+  congelar: 'O contrato não foi congelado',
+};
+
+export function renderDocBloqueadoPage(page: DocBloqueadoInput): string {
+  const voltar = `/dashboard/leads/${encodeURIComponent(page.leadId)}/contrato-form?tipo=${encodeURIComponent(page.tipoForm)}`;
+  const titulo = TITULO_BLOQUEIO[page.acao];
+  const blocos = page.blocos.map((b) => {
+    const itens = b.problemas.map((p) => `<li>${escapeHtml(p)}</li>`).join('');
+    const congelado = b.congeladoEm
+      ? `<p class="mt-2 text-xs text-slate-600">📌 Este documento sai da versão <strong>congelada em ${dataHoraBR(b.congeladoEm)}</strong>. Corrija no formulário e <strong>congele de novo</strong> — é a versão congelada que é impressa.</p>`
+      : '';
+    return `<div class="mb-4">
+        <div class="font-semibold text-slate-900">${escapeHtml(b.documento)}</div>
+        <ul class="list-disc ml-5 mt-1 text-sm text-red-800">${itens}</ul>
+        ${congelado}
+      </div>`;
+  }).join('');
+  const body = `<div class="max-w-2xl mx-auto">
+    <section class="rounded-xl border-2 border-red-300 bg-red-50 p-5 mb-4">
+      <h1 class="text-lg font-bold text-red-800 mb-1">🚫 ${escapeHtml(titulo)} — ${escapeHtml(page.nome)}</h1>
+      <p class="text-sm text-red-900 mb-4">
+        O documento está incompleto ou com dado inválido. Pra não chegar no cliente com espaço em branco ou dado errado,
+        ${page.acao === 'drive' ? 'o documento não foi salvo no Drive' : page.acao === 'enviar' ? 'ele não foi enviado' : page.acao === 'congelar' ? 'ele não foi congelado (o congelado é o que sai no PDF daqui pra frente)' : 'o PDF não foi gerado'}.
+        Corrija o que está abaixo e tente de novo:
+      </p>
+      ${blocos}
+      <a href="${voltar}" class="inline-block px-4 py-2 rounded-lg text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700">← Voltar pro formulário e completar</a>
+    </section>
+  </div>`;
+  return renderLayout({ active: 'contratos', title: `${titulo} — ${page.nome}`, body, user: page.user as any });
 }

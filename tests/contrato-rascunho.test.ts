@@ -14,6 +14,7 @@ function fakeClient(lead: any, proposta: any) {
       b.select = () => b;
       b.eq = () => b;
       b.or = () => b;
+      b.gt = () => b;
       b.order = () => b;
       b.limit = () => b;
       b.maybeSingle = async () => ({ data: table === 'leads' ? lead : proposta, error: null });

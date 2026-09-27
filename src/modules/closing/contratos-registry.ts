@@ -17,8 +17,10 @@
 //     combinados à parte) grava no rascunho `leads.contrato_dados[tipo]`, porque
 //     só faz sentido naquele documento.
 //
-// Regra de ouro da sessão: NUNCA trava. Campo vazio não impede nada — vira espaço
-// em branco no PDF (completarComPlaceholders) e aparece destacado na tela.
+// O FORMULÁRIO e a PRÉVIA nunca travam: campo vazio vira espaço em branco
+// (completarComPlaceholders) e aparece destacado na tela. Já a SAÍDA de verdade
+// (Gerar PDF, Mandar no zap, Salvar no Drive) é travada enquanto houver lacuna ou
+// dado inválido — ver validar-documento.ts e documento-final.ts.
 import type { Aditivo, DadosFechamento, Endereco, PessoaFisica } from './types.js';
 import { renderContrato } from './templates/contrato.html.js';
 import { renderProcuracao } from './templates/procuracao.html.js';
@@ -40,8 +42,13 @@ export interface CampoContrato {
   /** Atalhos de 'texto_sugerido': aparecem numa lista, mas não obrigam a nada. */
   sugestoes?: string[];
   dica?: string;
-  /** Obrigatório = se ficar vazio, sai em branco no PDF → destaca na tela. */
+  /** Obrigatório = se ficar vazio, destaca na tela e a saída (PDF/zap/Drive) trava. */
   obrigatorio?: boolean;
+  /**
+   * Obrigatório, MENOS quando isto for verdade (ex.: UC em pedido de ligação
+   * nova — ela ainda não existe). Mesma regra da trava (validar-documento.ts).
+   */
+  dispensadoQuando?: (d: Partial<DadosFechamento>) => boolean;
   /**
    * Coluna do lead onde esse campo mora. Quem tem coluna é dado de CADASTRO:
    * salvar aqui atualiza o cliente pro ecossistema inteiro, não só pro contrato.
@@ -229,7 +236,7 @@ const CAMPOS_ENDERECO: CampoContrato[] = [
   { id: 'end_bairro', label: 'Bairro', grupo: 'Endereço', tipo: 'texto', obrigatorio: true, coluna: 'neighborhood', ler: leEndereco('bairro'), gravar: gravaEndereco('bairro') },
   { id: 'end_cidade', label: 'Cidade', grupo: 'Endereço', tipo: 'texto', obrigatorio: true, coluna: 'city', ler: leEndereco('cidade'), gravar: gravaEndereco('cidade') },
   {
-    id: 'end_uf', label: 'UF', grupo: 'Endereço', tipo: 'select', coluna: 'uf',
+    id: 'end_uf', label: 'UF', grupo: 'Endereço', tipo: 'select', obrigatorio: true, coluna: 'uf',
     opcoes: [{ valor: 'DF', texto: 'DF' }, { valor: 'GO', texto: 'GO' }],
     ler: leEndereco('uf'), gravar: gravaEndereco('uf'),
   },
@@ -240,6 +247,8 @@ const CAMPOS_UC: CampoContrato[] = [
   {
     id: 'uc_numero', label: 'Unidade consumidora (nº da conta de luz)', grupo: 'Unidade consumidora', tipo: 'texto',
     obrigatorio: true, coluna: 'uc_numero',
+    // ligação nova: a UC ainda não existe (a procuração pede a ligação)
+    dispensadoQuando: (d) => !!d.ligacao_nova,
     ler: (d) => { const v = texto(d.uc_numero); return v === 'a confirmar' ? '' : v; },
     gravar: (out, v) => { out.uc_numero = v; },
   },
@@ -485,8 +494,23 @@ export function valoresDoFormulario(def: DefinicaoContrato, dados: Partial<Dados
 
 /** Os obrigatórios que ficaram vazios — vão sair em branco no PDF. */
 export function camposFaltando(def: DefinicaoContrato, dados: Partial<DadosFechamento>): CampoContrato[] {
-  const vals = valoresDoFormulario(def, dados);
-  return def.campos.filter((c) => c.obrigatorio && !vals[c.id]);
+  return camposFaltandoNaTela(def, valoresDoFormulario(def, dados), dados);
+}
+
+/** Igual a camposFaltando, mas sobre os valores que estão NA TELA (salvos + digitados). */
+export function camposFaltandoNaTela(
+  def: DefinicaoContrato,
+  valores: Record<string, string>,
+  dados: Partial<DadosFechamento>,
+): CampoContrato[] {
+  return def.campos.filter((c) => {
+    if (!c.obrigatorio || valores[c.id]) return false;
+    try {
+      return !c.dispensadoQuando?.(dados);
+    } catch {
+      return true; // na dúvida, cobra
+    }
+  });
 }
 
 /**

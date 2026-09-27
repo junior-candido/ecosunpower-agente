@@ -31,6 +31,7 @@ export function estadoCivilPorExtenso(raw: string | null | undefined): string | 
 
 export interface LeadRow {
   id: string;
+  company_id?: string | null;
   name: string;
   phone: string | null;
   email: string | null;
@@ -74,6 +75,8 @@ export interface PropostaPublicaRow {
     valor_total?: number;
   } | null;
   created_at: string;
+  /** Validade do LINK público. Vencida continua valendo pro contrato (a tela avisa). */
+  expires_at?: string | null;
 }
 
 export interface FetchResult {
@@ -87,10 +90,21 @@ export async function fetchByLeadId(sb: SupabaseClient, leadId: string): Promise
   const lead = leadRes.data as LeadRow | null;
   if (!lead) return { lead: null, proposta: null };
 
-  const propRes = await sb
+  // A proposta DESTE lead — pelo vínculo (lead_id), nunca por nome/telefone. A
+  // busca antiga (`telefone OU nome ilike %nome%`) entregava a proposta de um
+  // HOMÔNIMO ("Maria" pegava a da "Maria José") e o contrato saía com o sistema e
+  // o valor de outra cliente. Só vale proposta NÃO REVOGADA; a mais nova primeiro.
+  // Vencida VALE: a validade (expires_at) só controla o link público — o cliente
+  // que fecha depois de 60 dias não pode ficar sem contrato. A tela avisa pra
+  // conferir os valores. Sem proposta → null (o formulário pergunta).
+  let q = sb
     .from('propostas_publicas')
     .select('*')
-    .or(`cliente_telefone.eq.${lead.phone},cliente_nome.ilike.%${lead.name}%`)
+    .eq('lead_id', lead.id)
+    .eq('revoked', false);
+  // Mesma empresa do lead (defesa em profundidade: o lead_id já amarra).
+  if (lead.company_id) q = q.eq('company_id', lead.company_id);
+  const propRes = await q
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -98,14 +112,82 @@ export async function fetchByLeadId(sb: SupabaseClient, leadId: string): Promise
   return { lead, proposta: (propRes.data as PropostaPublicaRow | null) ?? null };
 }
 
+/** O que o usuário digitou vira TEXTO no ilike: % e _ não são curinga, \ não escapa. */
+export function escaparIlike(s: string): string {
+  return String(s ?? '').replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+export interface PropostaOrfa {
+  id: string;
+  cliente_nome: string | null;
+  numero_proposta?: string | null;
+  created_at: string;
+}
+
+/**
+ * Propostas SEM lead (salvas sem telefone) da MESMA empresa, com o nome do
+ * cliente parecido — pro operador VINCULAR na mão, explicitamente. Nunca liga
+ * sozinho: nome repete (homônimo). Sem empresa → nada (não busca em todas).
+ */
+export async function buscarPropostasOrfas(
+  sb: SupabaseClient,
+  companyId: string | null | undefined,
+  nome: string,
+): Promise<PropostaOrfa[]> {
+  const termo = String(nome ?? '').trim();
+  if (!companyId || !termo) return [];
+  const { data, error } = await sb
+    .from('propostas_publicas')
+    .select('id, cliente_nome, numero_proposta, created_at')
+    .eq('company_id', companyId)
+    .is('lead_id', null)
+    .eq('revoked', false)
+    .ilike('cliente_nome', `%${escaparIlike(termo)}%`)
+    .order('created_at', { ascending: false })
+    .limit(10);
+  if (error) throw error;
+  return (data as PropostaOrfa[] | null) ?? [];
+}
+
+/**
+ * Liga uma proposta órfã ao lead. Só se ela é da MESMA empresa e ainda não tem
+ * lead (não rouba proposta de outro cliente). true = vinculou.
+ */
+export async function vincularPropostaAoLead(
+  sb: SupabaseClient,
+  p: { propostaId: string; leadId: string; companyId: string | null | undefined },
+): Promise<boolean> {
+  if (!p.companyId) return false;
+  const { data, error } = await sb
+    .from('propostas_publicas')
+    .update({ lead_id: p.leadId })
+    .eq('id', p.propostaId)
+    .eq('company_id', p.companyId)
+    .is('lead_id', null)
+    .select('id');
+  if (error) throw error;
+  return Array.isArray(data) && data.length > 0;
+}
+
 // Normaliza nome pra comparar SEM acento/maiúscula ("Márcio" ~ "marcio").
 export function normalizarNomeBusca(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 }
 
-export async function searchLeadByName(sb: SupabaseClient, term: string): Promise<LeadRow[]> {
+export async function searchLeadByName(
+  sb: SupabaseClient,
+  term: string,
+  opts: { companyId?: string | null } = {},
+): Promise<LeadRow[]> {
   // Acha o lead por NOME ou TELEFONE, sem perder ninguém — é a MESMA porta que a
   // Eva /fechei usa, agora reusada pela Central de Contratos e pela tela "Fechou!".
+  //
+  // `companyId`: prende a busca à empresa de quem pediu (a Eva do admin passa a
+  // empresa do canal). Sem ele a busca é de todas as empresas — quem chama sem
+  // empresa TEM que filtrar o resultado (o dashboard filtra por company_id).
+  // (builder do PostgREST: tipado como any aqui pra não explodir a inferência)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const daEmpresa = (q: any): any => (opts.companyId ? q.eq('company_id', opts.companyId) : q);
   const encontrados = new Map<string, LeadRow>();
   const juntar = (rows: LeadRow[] | null | undefined) => {
     for (const r of rows ?? []) if (r?.id) encontrados.set(r.id, r);
@@ -117,9 +199,9 @@ export async function searchLeadByName(sb: SupabaseClient, term: string): Promis
   const naoInativo = 'status.is.null,status.neq.inativo';
 
   // 1) ilike direto no nome (rápido).
-  const direct = await sb
+  const direct = await daEmpresa(sb
     .from('leads')
-    .select('*')
+    .select('*'))
     .ilike('name', `%${term}%`)
     .or(naoInativo)
     .order('created_at', { ascending: false })
@@ -132,9 +214,9 @@ export async function searchLeadByName(sb: SupabaseClient, term: string): Promis
   // como número não some só por não bater o nome do perfil do WhatsApp.
   const digitos = term.replace(/\D/g, '');
   if (digitos.length >= 8) {
-    const porTelefone = await sb
+    const porTelefone = await daEmpresa(sb
       .from('leads')
-      .select('*')
+      .select('*'))
       .ilike('phone', `%${digitos.slice(-9)}`)
       .limit(10);
     if (porTelefone.error) throw porTelefone.error;
@@ -147,9 +229,9 @@ export async function searchLeadByName(sb: SupabaseClient, term: string): Promis
   // "Márcio"). Busca um lote recente e filtra no JS por nome normalizado.
   const termN = normalizarNomeBusca(term);
   if (!termN) return [];
-  const recent = await sb
+  const recent = await daEmpresa(sb
     .from('leads')
-    .select('*')
+    .select('*'))
     .or(naoInativo)
     .order('created_at', { ascending: false })
     .limit(400);
@@ -206,6 +288,13 @@ export function buildInitialData(
     concessionaria: (lead.concessionaria as Concessionaria) ?? inferConcessionaria(lead.uf),
     endereco_instalacao: endereco as Endereco,
   };
+
+  // A forma de pagamento mora na coluna do lead (é onde o formulário grava). Vale
+  // com ou sem proposta — sem isso, cliente sem proposta nunca tinha pagamento no
+  // contrato, por mais que o operador salvasse.
+  if (lead.forma_pagamento) {
+    partial.comercial = { valor_total_brl: 0, forma_pagamento: lead.forma_pagamento };
+  }
 
   if (proposta?.dados_input) {
     const d = proposta.dados_input;

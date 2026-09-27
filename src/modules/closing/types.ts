@@ -122,13 +122,23 @@ export interface DadosFechamento {
    */
   visita_tecnica_realizada?: boolean;
 
+  /**
+   * A data impressa no documento ("YYYY-MM-DD", calendário de Brasília). Documento
+   * congelado leva a data do congelamento (reimprimir não muda a data); sem ela, o
+   * template usa hoje em Brasília. Ver data-documento.ts.
+   */
+  data_documento?: string;
+
   docs_pedidos: DocPedido[];
 }
 
+// `lead_id`: o lead do CLIENTE quando o /fechar começou por um lead (botão ou
+// busca). Sem ele (cliente digitado na mão), o fechamento fica sem lead — nunca
+// no lead do telefone do admin.
 export type ClosingState =
-  | { stage: 'collecting'; data: Partial<DadosFechamento>; pending_questions: string[] }
-  | { stage: 'awaiting_confirm'; data: DadosFechamento }
-  | { stage: 'rendering'; data: DadosFechamento; fechamento_id: string };
+  | { stage: 'collecting'; data: Partial<DadosFechamento>; pending_questions: string[]; lead_id?: string }
+  | { stage: 'awaiting_confirm'; data: DadosFechamento; lead_id?: string }
+  | { stage: 'rendering'; data: DadosFechamento; fechamento_id: string; lead_id?: string };
 
 export interface FechamentoRow {
   id: string;

@@ -9,6 +9,7 @@
 import type { DadosFechamento, PessoaFisica, PessoaJuridica } from '../types.js';
 import { empresa } from '../../empresa-config.js';
 import { escaparDadosFechamento } from '../escapar-dados.js';
+import { dataPorExtenso, hojeEmBrasilia } from '../data-documento.js';
 
 // [ECOSOF] Dados da CONTRATADA vêm da empresa_config. Função (não const de
 // módulo) pra ler empresa() em RUNTIME — /recarregar-config vale sem restart.
@@ -53,11 +54,22 @@ function fmtPF(p: PessoaFisica): string {
   const profissao = p.profissao ? `${p.profissao}, ` : '';
   const nasc = p.data_nascimento ? `nascido(a) em ${formatDateBR(p.data_nascimento)}, ` : '';
   const enderecoStr = `${p.endereco.rua}, ${p.endereco.numero}${p.endereco.complemento ? ', ' + p.endereco.complemento : ''}, ${p.endereco.bairro}, ${p.endereco.cidade}-${p.endereco.uf}, CEP ${p.endereco.cep}`;
-  return `<strong>${p.nome}</strong>, ${p.nacionalidade}, ${estadoCivil}${profissao}${nasc}inscrito(a) no CPF/MF sob o nº ${p.cpf}, RG nº ${p.rg} ${p.orgao_emissor_rg}, residente e domiciliado(a) na ${enderecoStr}, e-mail ${p.email}, telefone ${p.telefone}`;
+  return `<strong>${p.nome}</strong>, ${p.nacionalidade}, ${estadoCivil}${profissao}${nasc}inscrito(a) no CPF/MF sob o nº ${p.cpf}, RG nº ${p.rg} ${p.orgao_emissor_rg}, residente e domiciliado(a) na ${enderecoStr}${contato(p)}`;
+}
+
+/**
+ * ", e-mail X, telefone Y" — só o que existe. E-mail e telefone são opcionais:
+ * cliente sem e-mail não pode ficar sem contrato (nem com "e-mail ____").
+ */
+function contato(p: { email?: string; telefone?: string }): string {
+  const partes: string[] = [];
+  if (String(p.email ?? '').trim()) partes.push(`e-mail ${p.email}`);
+  if (String(p.telefone ?? '').trim()) partes.push(`telefone ${p.telefone}`);
+  return partes.length ? `, ${partes.join(', ')}` : '';
 }
 
 function fmtPJ(p: PessoaJuridica): string {
-  return `<strong>${p.razao_social}</strong>, pessoa jurídica inscrita no CNPJ sob o nº ${p.cnpj}, com sede em ${p.endereco.rua}, ${p.endereco.numero}, ${p.endereco.bairro}, ${p.endereco.cidade}-${p.endereco.uf}, CEP ${p.endereco.cep}, neste ato representada por ${fmtPF(p.representante)}, e-mail ${p.email}, telefone ${p.telefone}`;
+  return `<strong>${p.razao_social}</strong>, pessoa jurídica inscrita no CNPJ sob o nº ${p.cnpj}, com sede em ${p.endereco.rua}, ${p.endereco.numero}, ${p.endereco.bairro}, ${p.endereco.cidade}-${p.endereco.uf}, CEP ${p.endereco.cep}, neste ato representada por ${fmtPF(p.representante)}${contato(p)}`;
 }
 
 function fmtPessoa(p: PessoaFisica | PessoaJuridica): string {
@@ -104,11 +116,9 @@ export function renderContrato(entrada: DadosFechamento): string {
   const sistema = dados.sistema;
   const cidade = dados.contratante.endereco.cidade;
   const uf = dados.contratante.endereco.uf;
-  const data = (() => {
-    const d = new Date();
-    const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
-    return `${cidade}-${uf}, ${d.getDate()} de ${meses[d.getMonth()]} de ${d.getFullYear()}.`;
-  })();
+  // Data de BRASÍLIA (o servidor roda em UTC) — e, se o contrato foi congelado,
+  // a data do congelamento: reimprimir não muda a data de um contrato.
+  const data = `${cidade}-${uf}, ${dataPorExtenso(dados.data_documento || hojeEmBrasilia())}.`;
 
   // Numeração SEQUENCIAL (1ª a 16ª/17ª). O template antigo pulava números
   // (6→8, 9→11, 12→14, 18→23) e o contrato emitido saía com buracos.
@@ -137,6 +147,14 @@ export function renderContrato(entrada: DadosFechamento): string {
 
   const nomeContratante = dados.contratante.tipo === 'PF' ? dados.contratante.nome : dados.contratante.razao_social;
   const cpfContratante = dados.contratante.tipo === 'PF' ? dados.contratante.cpf : dados.contratante.cnpj;
+
+  // Cláusula 15.1: só promete "WhatsApp e e-mail nos contatos do preâmbulo" quando
+  // o preâmbulo REALMENTE tem algum contato (e-mail ou telefone) da CONTRATANTE —
+  // senão fica prometendo um canal que o documento nunca informou.
+  const contratanteTemContato = !!(String(dados.contratante.email ?? '').trim() || String(dados.contratante.telefone ?? '').trim());
+  const canalComunicacao = contratanteTemContato
+    ? 'WhatsApp e e-mail nos contatos informados no preâmbulo deste contrato'
+    : 'pelos meios de contato que as partes informarem por escrito';
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -180,7 +198,7 @@ ${observacaoHtml}
 
 <p>1.1. Constitui objeto deste contrato a prestação dos seguintes serviços pela CONTRATADA:</p>
 <p>a) <strong>Elaboração de projeto elétrico</strong> de Sistema de Geração Distribuída Fotovoltaica de <strong>${sistema.kwp} kWp</strong>, sob modalidade de <strong>${modalidadeLabel(sistema.modalidade)}</strong>;</p>
-<p>b) <strong>Homologação</strong> do projeto junto à concessionária <strong>${dados.concessionaria}</strong> (Unidade Consumidora nº ${dados.uc_numero ?? '(a confirmar)'});</p>
+<p>b) <strong>Homologação</strong> do projeto junto à concessionária <strong>${dados.concessionaria}</strong> ${dados.ligacao_nova ? '(nova unidade consumidora — pedido de ligação nova junto à distribuidora)' : `(Unidade Consumidora nº ${dados.uc_numero})`};</p>
 <p>c) <strong>Fornecimento e instalação</strong> dos equipamentos descritos na Cláusula 9ª, no imóvel localizado em ${dados.endereco_instalacao.rua}, ${dados.endereco_instalacao.numero}, ${dados.endereco_instalacao.bairro}, ${dados.endereco_instalacao.cidade}-${dados.endereco_instalacao.uf}, CEP ${dados.endereco_instalacao.cep};</p>
 <p>d) <strong>Solicitação de vistoria, religação e ativação do sistema</strong> junto à concessionária, <strong>com acompanhamento até a efetiva troca do medidor</strong>;</p>
 <p>e) <strong>Anotação de Responsabilidade Técnica</strong> junto ao CREA/CFT, sob responsabilidade do Sr. ${CONTRATADA.representante_nome}, CREA/CFT nº ${CONTRATADA.representante_crea}.</p>
@@ -375,7 +393,7 @@ ${sistema.inversor.quantidade ? `<li><strong>Quantidade:</strong> ${sistema.inve
 
 <p>15.1. As comunicações entre as partes serão consideradas válidas e oficiais quando realizadas por:</p>
 <ul>
-<li>WhatsApp e e-mail nos contatos informados no preâmbulo deste contrato;</li>
+<li>${canalComunicacao};</li>
 <li>Carta com aviso de recebimento (AR) para os endereços indicados no preâmbulo.</li>
 </ul>
 <p>15.2. <strong>Aceites, aditivos e confirmações realizados via WhatsApp ou e-mail</strong> terão pleno valor probatório, conforme art. 10 da MP 2.200-2/2001 e art. 225 do Código Civil.</p>

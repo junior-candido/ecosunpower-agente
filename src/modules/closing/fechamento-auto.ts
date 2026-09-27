@@ -4,13 +4,15 @@
 // conversacional (que trava coletando dado por IA), aqui é determinístico:
 // pega o que já existe (proposta + cadastro do cliente via buildInitialData),
 // PREENCHE os buracos com espaços em branco, e SEMPRE devolve dados válidos
-// pra renderizar. Nunca falha por falta de dado — o que faltar vira uma linha
-// pra preencher à mão no PDF, e a lista `faltando` avisa o Junior.
+// pra renderizar. Nunca falha por falta de dado — o que faltar vira "____" na
+// PRÉVIA, e a lista `faltando` avisa o Junior. A saída de verdade (PDF, zap,
+// Drive) NÃO usa isto direto: passa por documento-final.ts, que trava lacuna.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DadosFechamento, PessoaFisica, Endereco, UF } from './types.js';
 import { fetchByLeadId, buildInitialData } from './closing-data-fetcher.js';
 import { deepMerge } from './closing-assistant.js';
 import { contratoVigente, type ContratoCongelado } from './contrato-vigente.js';
+import { dataIsoEmBrasilia } from './data-documento.js';
 
 const BRANCO = '_______________________';
 
@@ -35,11 +37,14 @@ function completarPessoa(x?: Partial<PessoaFisica>): PessoaFisica {
     orgao_emissor_rg: x?.orgao_emissor_rg || 'SSP',
     nacionalidade: x?.nacionalidade || 'Brasileiro(a)',
     estado_civil: x?.estado_civil || BRANCO,
-    profissao: x?.profissao || BRANCO,
+    // Opcionais (profissão, telefone, e-mail) ficam VAZIOS — nunca "____": o
+    // template só imprime o que existe, e o "____" travaria a saída de quem não
+    // tem e-mail, sem o formulário ter como avisar.
+    profissao: x?.profissao || undefined,
     data_nascimento: x?.data_nascimento,
     endereco: completarEndereco(x?.endereco),
-    telefone: x?.telefone || BRANCO,
-    email: x?.email || BRANCO,
+    telefone: x?.telefone || '',
+    email: x?.email || '',
   };
 }
 
@@ -111,6 +116,14 @@ export function listarFaltando(dados: DadosFechamento, temProposta: boolean): st
   return faltando;
 }
 
+/** A data de expiração, se já passou; senão null. */
+export function propostaVencida(expira: unknown, agora: Date = new Date()): string | null {
+  const s = String(expira ?? '').trim();
+  if (!s) return null;
+  const t = Date.parse(s);
+  return Number.isFinite(t) && t < agora.getTime() ? s : null;
+}
+
 export interface FechamentoAutoResult {
   /** Pronto pra virar PDF: completo, com brancos onde faltou. */
   dados: DadosFechamento;
@@ -119,6 +132,12 @@ export interface FechamentoAutoResult {
   faltando: string[];
   nome: string;
   temProposta: boolean;
+  /**
+   * A proposta usada já venceu (a validade é só do link público — ela continua
+   * valendo pro contrato)? Então, quando venceu (ISO), pra tela avisar "conferir
+   * valores". Null = no prazo ou sem proposta.
+   */
+  propostaExpiradaEm: string | null;
   /** O contrato congelado ("este é o contrato que vale"). Null = nunca congelaram. */
   vigente?: ContratoCongelado | null;
 }
@@ -162,9 +181,11 @@ export async function montarFechamentoAuto(
   const vigente = await contratoVigente(sb, leadId);
   if (tipo === 'aditivo' && vigente) {
     cru.aditivo = {
-      // sugestão: a data do congelamento (mas congelar não é o cliente ter
-      // assinado — por isso o campo é editável e o que o operador escrever VENCE)
-      contrato_data: vigente.congeladoEm.slice(0, 10),
+      // sugestão: a data do documento congelado (mas congelar não é o cliente ter
+      // assinado — por isso o campo é editável e o que o operador escrever VENCE).
+      // No calendário de BRASÍLIA: o slice(0,10) do timestamp UTC dava o dia
+      // seguinte pra quem congelou depois das 21h.
+      contrato_data: vigente.dados.data_documento ?? dataIsoEmBrasilia(vigente.congeladoEm) ?? undefined,
       ...(cru.aditivo ?? {}),
       // o valor e o pagamento "de antes" saem sempre do retrato congelado
       valor_anterior: vigente.dados.comercial?.valor_total_brl,
@@ -179,6 +200,7 @@ export async function montarFechamentoAuto(
     faltando: listarFaltando(dados, !!proposta),
     nome: lead.name || 'Cliente',
     temProposta: !!proposta,
+    propostaExpiradaEm: propostaVencida(proposta?.expires_at),
     vigente,
   };
 }

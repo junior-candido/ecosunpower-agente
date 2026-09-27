@@ -81,8 +81,6 @@ import {
   fetchByLeadId,
   searchLeadByName,
   buildInitialData,
-  renderContrato,
-  renderProcuracao,
   renderHtmlToPdf,
   findMissingRequired,
   humanizeMissing,
@@ -92,6 +90,7 @@ import {
   type DadosFechamento,
   type ClosingState,
 } from './modules/closing/index.js';
+import { prepararDocsFechar, leadIdDaSessao, manterLeadDaSessao } from './modules/closing/fechar-legado.js';
 import { google } from 'googleapis';
 import { templateParaAdMeta } from './modules/ctwa-template-mapping.js';
 import RedisModule from 'ioredis';
@@ -1039,6 +1038,12 @@ async function main() {
     return donoValeNesteCanal(canalAtual()?.companyId, ECOSUN_COMPANY_ID);
   }
 
+  // A empresa do admin = a empresa da Eva (canal) que recebeu o comando. O dono só
+  // é dono na própria casa (isAdminPhone), então sem canal é a EcoSun.
+  function empresaDoAdmin(): string {
+    return canalAtual()?.companyId ?? ECOSUN_COMPANY_ID;
+  }
+
   // /imposto <valor> — Núcleo Financeiro: imposto por anexo + Fator R + salto de faixa
   const tryHandleImpostoCommand = makeImpostoHandler(supabase.getClient(), isAdminPhone, sendText);
 
@@ -1439,6 +1444,14 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         await sendText(adminPhone, '⚠️ Lead não encontrado.');
         return;
       }
+      // 🔒 O leadId vem do ID do BOTÃO (evabt:fechar:<leadId>) — nunca confia nele
+      // sem conferir a empresa. Sem isto, um botão de outro tenant deixaria o
+      // admin de uma empresa fechar contrato pelo lead de outra.
+      const empresaLead = lead.company_id ?? ECOSUN_COMPANY_ID;
+      if (empresaLead !== empresaDoAdmin()) {
+        await sendText(adminPhone, '⚠️ Lead não encontrado.');
+        return;
+      }
       const initialData = buildInitialData(lead, proposta);
       initialData.docs_pedidos = docsPedidos;
       const missing = findMissingRequired(initialData);
@@ -1448,7 +1461,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         ? (docsPedidos[0] === 'procuracao' ? 'procuração' : 'contrato')
         : 'contrato + procuração';
       if (missing.length === 0) {
-        await setClosingState(adminPhone, { stage: 'awaiting_confirm', data: initialData as DadosFechamento });
+        await setClosingState(adminPhone, { stage: 'awaiting_confirm', data: initialData as DadosFechamento, lead_id: leadId });
         if (metaWaba) {
           try {
             await metaWaba.sendInteractiveButtons(
@@ -1467,7 +1480,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         }
         await sendText(adminPhone, `Bora fechar ${nome}. Já tenho tudo. Confirma "gerar" pra emitir ${docsLabel}.`);
       } else {
-        await setClosingState(adminPhone, { stage: 'collecting', data: initialData, pending_questions: missing });
+        await setClosingState(adminPhone, { stage: 'collecting', data: initialData, pending_questions: missing, lead_id: leadId });
         const bullets = humanizeMissing(missing);
         const corpo = `Bora fechar ${nome}. Achei os dados, falta:\n${bullets}\n\nPode mandar tudo junto.`;
         if (metaWaba) {
@@ -1505,9 +1518,36 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     try {
       const titularNome = dados.titular_uc.tipo === 'PF' ? dados.titular_uc.nome : dados.titular_uc.razao_social;
       const titularCpf = dados.titular_uc.tipo === 'PF' ? dados.titular_uc.cpf : dados.titular_uc.cnpj;
-      // descobrir leadId do estado se houver — buscar por telefone
-      const leadByPhone = await supabase.getLeadByPhone(adminPhone).catch(() => null);
-      const leadId = leadByPhone?.id ?? null;
+
+      // 🚦 A MESMA trava da central de contratos: incompleto/inválido não vira
+      // PDF, não sobe pro Drive e não grava fechamento. Volta pra coleta.
+      const preparado = prepararDocsFechar(dados);
+      if (!preparado.ok) {
+        await setClosingState(adminPhone, { stage: 'collecting', data: dados, pending_questions: [], ...(state.lead_id ? { lead_id: state.lead_id } : {}) });
+        const lista = preparado.problemas.map((p) => `• ${p}`).join('\n');
+        await sendText(adminPhone, `🚫 Não gerei — o documento está incompleto ou com dado inválido:\n${lista}\n\nManda o que falta (ex: "RG 1234567 SSP-DF") que eu refaço.`);
+        return;
+      }
+
+      // O lead do CLIENTE, guardado na sessão quando o /fechar começou por ele.
+      // Nunca o lead do telefone do admin: o "Aprovar" viraria "o contrato que
+      // vale" do admin. Sem lead na sessão → fechamento sem lead.
+      const leadId = leadIdDaSessao(state);
+
+      // Proposta vencida continua valendo pro contrato (a validade é só do link
+      // público) — mas quem recebe os links aqui pelo zap precisa do MESMO aviso
+      // que "contrato <nome>" e o dashboard já mostram: "conferir valores".
+      // Best-effort: nunca derruba a geração se essa checagem falhar.
+      let propostaExpiradaEm: string | null = null;
+      if (leadId) {
+        try {
+          const { proposta } = await fetchByLeadId(supabase.getClient(), leadId);
+          const { propostaVencida } = await import('./modules/closing/fechamento-auto.js');
+          propostaExpiradaEm = propostaVencida(proposta?.expires_at);
+        } catch (err) {
+          console.warn('[closing] checagem de proposta vencida falhou (ignorado):', (err as Error).message);
+        }
+      }
 
       const fechamentoId = await closingPersist.createFechamento({
         leadId,
@@ -1526,12 +1566,12 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       let procuracaoHtml: string | undefined;
       let procuracaoPdf: Buffer | undefined;
 
-      if (wantsContrato) {
-        contratoHtml = renderContrato(dados);
+      if (wantsContrato && preparado.contratoHtml) {
+        contratoHtml = preparado.contratoHtml;
         contratoPdf = await renderHtmlToPdf(contratoHtml);
       }
-      if (wantsProcuracao) {
-        procuracaoHtml = renderProcuracao(dados);
+      if (wantsProcuracao && preparado.procuracaoHtml) {
+        procuracaoHtml = preparado.procuracaoHtml;
         procuracaoPdf = await renderHtmlToPdf(procuracaoHtml);
       }
 
@@ -1562,6 +1602,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         links.contratoDriveLink ? `📄 Contrato: ${links.contratoDriveLink}` : null,
         links.procuracaoDriveLink ? `📄 Procuração: ${links.procuracaoDriveLink}` : null,
         `📁 Pasta: ${links.folderWebViewLink}`,
+        propostaExpiradaEm ? `⚠️ proposta expirada em ${diaMesBR(propostaExpiradaEm)} — conferir valores.` : null,
       ].filter(Boolean).join('\n');
 
       if (metaWaba) {
@@ -1613,11 +1654,24 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       await closingPersist.updateStatus(fechamentoId, 'aprovado_junior');
       // marca lead como 'cliente' (transferido) se houver lead vinculado
       const { data: fec } = await supabase.getClient()
-        .from('fechamentos').select('lead_id').eq('id', fechamentoId).maybeSingle();
+        .from('fechamentos').select('lead_id, dados_snapshot').eq('id', fechamentoId).maybeSingle();
       const leadId = (fec as any)?.lead_id as string | null | undefined;
       if (leadId) {
         await supabase.getClient()
           .from('leads').update({ status: 'transferido', updated_at: new Date().toISOString() }).eq('id', leadId);
+        // 🧭 O MESMO audit "contrato_congelado" que o congelamento do dashboard grava
+        // (router.ts, contrato-congelar) — reusa o helper, senão o "Aprovar" pelo
+        // zap fica invisível pra auditoria.
+        const dadosSnapshot = (fec as any)?.dados_snapshot as DadosFechamento | null | undefined;
+        const { audit } = await import('./modules/dashboard/audit.js');
+        await audit(supabase.getClient(), {
+          companyId: empresaDoAdmin(),
+          userId: null,
+          entidade: 'lead',
+          entidadeId: leadId,
+          acao: 'contrato_congelado',
+          valorNovo: dadosSnapshot ? String(dadosSnapshot.comercial?.valor_total_brl ?? '') : null,
+        });
       }
       await sendText(adminPhone, '✅ Marcado como fechado. Lead virou cliente. Pode mandar pro cliente quando quiser.');
     } catch (err) {
@@ -1649,7 +1703,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       return;
     }
     const data = (state as any).data ?? {};
-    await setClosingState(adminPhone, { stage: 'collecting', data, pending_questions: [] });
+    await setClosingState(adminPhone, { stage: 'collecting', data, pending_questions: [], ...(state.lead_id ? { lead_id: state.lead_id } : {}) });
     await sendText(adminPhone, '✏️ Beleza. Manda o que quer mudar (ex: "valor 42 mil", "RG 1234567 SSP-DF", "contrato no nome do marido").');
   }
 
@@ -1690,6 +1744,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     if (state) {
       try {
         const result = await closingAssistant.processMessage(t, state);
+        // o lead do cliente atravessa as trocas de etapa da conversa
+        result.newState = manterLeadDaSessao(result.newState, state);
         if (result.newState.stage === 'cancelled') {
           await clearClosingState(from);
           await sendText(from, result.replyText);
@@ -1735,7 +1791,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     try {
       const termoBusca = arg.split(/[,;]/)[0].trim();
-      const matches = await searchLeadByName(supabase.getClient(), termoBusca);
+      // só clientes da empresa da Eva que recebeu o comando (nunca de outra empresa)
+      const matches = await searchLeadByName(supabase.getClient(), termoBusca, { companyId: empresaDoAdmin() });
       const termoEhUmaPalavra = termoBusca.split(/\s+/).length === 1;
 
       if (matches.length === 0) {
@@ -2964,8 +3021,16 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
-  // "contrato <nome>" / "procuracao <nome>" — gera o PDF confiável (proposta +
-  // cadastro, preenche brancos onde faltar) e manda no zap do Junior. Nunca trava.
+  // "contrato <nome>" / "procuracao <nome>" — gera o PDF (o mesmo documento final
+  // da central: congelado vence) e manda no zap do Junior. Incompleto não sai.
+  // "2026-08-10T12:00:00Z" -> "10/08" (calendário de Brasília) — pro aviso de
+  // proposta vencida que a Eva manda junto com o contrato/procuração.
+  function diaMesBR(iso: string): string {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+  }
+
   async function tryHandleContratoRapido(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
     const m = text.trim().match(/^\/?(contrato|procuracao|procuração)\s+(.+)$/i);
@@ -2975,7 +3040,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     const rotulo = tipo === 'contrato' ? 'contrato' : 'procuração';
     try {
       const { searchLeadByName } = await import('./modules/closing/closing-data-fetcher.js');
-      const leads = await searchLeadByName(supabase.getClient(), nome);
+      // só clientes da empresa da Eva que recebeu o comando (nunca de outra empresa)
+      const leads = await searchLeadByName(supabase.getClient(), nome, { companyId: empresaDoAdmin() });
       if (leads.length === 0) {
         await sendText(from, `Não achei ninguém com "${nome}". Confere o nome e manda de novo.`);
         return true;
@@ -2987,27 +3053,45 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       }
       const lead = leads[0];
       await sendText(from, `Gerando ${rotulo} de *${lead.name}*... 📄`);
-      // Mesmo motor e mesmo registro da central de contratos do dashboard — a Eva
-      // não pode gerar de um jeito e a tela de outro (nem pegar o rascunho errado).
-      const { montarFechamentoAuto } = await import('./modules/closing/fechamento-auto.js');
-      const { getContrato } = await import('./modules/closing/contratos-registry.js');
-      const def = getContrato(tipo === 'contrato' ? 'fv' : 'procuracao')!;
-      const r = await montarFechamentoAuto(supabase.getClient(), lead.id, def.tipo);
-      if (!r) { await sendText(from, 'Não achei os dados desse cliente.'); return true; }
-      const { renderHtmlToPdf } = await import('./modules/closing/closing-render.js');
-      const pdf = await renderHtmlToPdf(def.render(r.dados));
-      const filename = `${def.arquivo}-${r.nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
+      // O MESMO documento final e a MESMA trava da central de contratos: congelado
+      // vence (com a data do congelamento) e documento incompleto/inválido NÃO vira
+      // PDF — a Eva manda só a lista do que falta, em texto.
+      const { montarDocumentoFinal } = await import('./modules/closing/documento-final.js');
+      const { problemasSemDados } = await import('./modules/closing/validar-documento.js');
+      const doc = await montarDocumentoFinal(supabase.getClient(), lead.id, tipo === 'contrato' ? 'fv' : 'procuracao');
+      if (!doc) { await sendText(from, 'Não achei os dados desse cliente.'); return true; }
+      if (!doc.ok) {
+        const lista = doc.problemas.map((p) => `• ${p}`).join('\n');
+        await sendText(from, `🚫 Não gerei ${rotulo} de *${doc.nome}* — está incompleto ou com dado inválido:\n${lista}\n\nCompleta na tela de Contratos e me pede de novo.`);
+        await registrarEvento(supabase.getClient(), {
+          tipo: 'comercial:contrato_bloqueado',
+          departamento: 'comercial',
+          canal: 'sistema',
+          origem: 'eva',
+          leadId: lead.id,
+          payload: { tipo_contrato: doc.def.tipo, acao: 'enviar', problemas: problemasSemDados(doc.problemas) },
+        });
+        return true;
+      }
       if (!metaWaba) { await sendText(from, 'Envio de documento indisponível agora.'); return true; }
+      const { renderHtmlToPdf } = await import('./modules/closing/closing-render.js');
+      const pdf = await renderHtmlToPdf(doc.html);
+      const filename = `${doc.def.arquivo}-${doc.nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
       const up = await metaWaba.uploadMedia(pdf, 'application/pdf', filename);
-      const falta = r.faltando.length ? `\n\n⚠️ Faltou preencher: ${r.faltando.join(', ')} — completa na tela de Contratos que refaço.` : '';
-      await metaWaba.sendDocumentById(from, up.mediaId, filename, `Segue ${rotulo} de ${r.nome}. 📄${falta}`);
+      // Proposta vencida continua valendo pro contrato (a validade é só do link
+      // público) — mas quem recebe o PDF pelo zap precisa do mesmo aviso que o
+      // dashboard já mostra na tela: "conferir valores".
+      const avisoProposta = doc.propostaExpiradaEm
+        ? `\n\n⚠️ proposta expirada em ${diaMesBR(doc.propostaExpiradaEm)} — conferir valores.`
+        : '';
+      await metaWaba.sendDocumentById(from, up.mediaId, filename, `Segue ${rotulo} de ${doc.nome}. 📄${avisoProposta}`);
       await registrarEvento(supabase.getClient(), {
         tipo: 'comercial:contrato_enviado',
         departamento: 'comercial',
         canal: 'whatsapp',
         origem: 'eva',
         leadId: lead.id,
-        payload: { tipo_contrato: def.tipo, destino: 'eu', campos_em_branco: r.faltando.length },
+        payload: { tipo_contrato: doc.def.tipo, destino: 'eu', congelado: !!doc.congelado, data_documento: doc.dados.data_documento },
       });
       return true;
     } catch (err) {
