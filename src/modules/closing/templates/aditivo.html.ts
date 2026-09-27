@@ -9,6 +9,7 @@
 import type { DadosFechamento, PessoaFisica, PessoaJuridica } from '../types.js';
 import { empresa } from '../../empresa-config.js';
 import { escaparDadosFechamento } from '../escapar-dados.js';
+import { dataCurtaBR, hojeEmBrasilia } from '../data-documento.js';
 
 // Mesma fonte do contrato (empresa-config em runtime) — nada de dado da empresa
 // chumbado em dois lugares.
@@ -123,7 +124,7 @@ export function renderAditivo(entrada: DadosFechamento): string {
   const d = escaparDadosFechamento(entrada);
   const C = contratada();
   const contratante = d.contratante ?? d.titular_uc;
-  const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const hoje = dataCurtaBR(d.data_documento || hojeEmBrasilia());
   // A cidade da assinatura vem de quem ASSINA (o contratante), igual no contrato —
   // e o placeholder "_____" é texto, então o `||` sozinho não o descartava: a
   // assinatura saía como "_______________________-DF".

@@ -122,6 +122,13 @@ export interface DadosFechamento {
    */
   visita_tecnica_realizada?: boolean;
 
+  /**
+   * A data impressa no documento ("YYYY-MM-DD", calendário de Brasília). Documento
+   * congelado leva a data do congelamento (reimprimir não muda a data); sem ela, o
+   * template usa hoje em Brasília. Ver data-documento.ts.
+   */
+  data_documento?: string;
+
   docs_pedidos: DocPedido[];
 }
 

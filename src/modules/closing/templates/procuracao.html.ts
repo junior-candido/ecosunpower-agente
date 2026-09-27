@@ -8,6 +8,7 @@
 import type { DadosFechamento, PessoaFisica, PessoaJuridica } from '../types.js';
 import { empresa } from '../../empresa-config.js';
 import { escaparDadosFechamento } from '../escapar-dados.js';
+import { dataPorExtenso, hojeEmBrasilia } from '../data-documento.js';
 
 // [ECOSOF] Dados do OUTORGADO vêm da empresa_config. Função (não const de
 // módulo) pra ler empresa() em RUNTIME — /recarregar-config vale sem restart.
@@ -59,11 +60,6 @@ function descreveTitular(p: PessoaFisica | PessoaJuridica): { nomeMaiusculo: str
   };
 }
 
-function hojeFormatado(): string {
-  const d = new Date();
-  const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
-  return `${d.getDate()} de ${meses[d.getMonth()]} de ${d.getFullYear()}`;
-}
 
 export function renderProcuracao(entrada: DadosFechamento): string {
   // Mesma blindagem do contrato: dado de fora não entra cru no HTML.
@@ -76,7 +72,8 @@ export function renderProcuracao(entrada: DadosFechamento): string {
     : 'EQUATORIAL ENERGIA GOIÁS S.A.';
   const cidade = dados.titular_uc.endereco.cidade;
   const uf = dados.titular_uc.endereco.uf;
-  const data = hojeFormatado();
+  // Data de BRASÍLIA (servidor em UTC); documento congelado leva a data do congelamento.
+  const data = dataPorExtenso(dados.data_documento || hojeEmBrasilia());
 
   // Ligação nova: a UC ainda não existe. A procuração precisa do poder explícito de
   // pedir a ligação nova / nova UC, senão a concessionária rejeita por incompleta.

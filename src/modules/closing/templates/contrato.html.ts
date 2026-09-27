@@ -9,6 +9,7 @@
 import type { DadosFechamento, PessoaFisica, PessoaJuridica } from '../types.js';
 import { empresa } from '../../empresa-config.js';
 import { escaparDadosFechamento } from '../escapar-dados.js';
+import { dataPorExtenso, hojeEmBrasilia } from '../data-documento.js';
 
 // [ECOSOF] Dados da CONTRATADA vêm da empresa_config. Função (não const de
 // módulo) pra ler empresa() em RUNTIME — /recarregar-config vale sem restart.
@@ -104,11 +105,9 @@ export function renderContrato(entrada: DadosFechamento): string {
   const sistema = dados.sistema;
   const cidade = dados.contratante.endereco.cidade;
   const uf = dados.contratante.endereco.uf;
-  const data = (() => {
-    const d = new Date();
-    const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
-    return `${cidade}-${uf}, ${d.getDate()} de ${meses[d.getMonth()]} de ${d.getFullYear()}.`;
-  })();
+  // Data de BRASÍLIA (o servidor roda em UTC) — e, se o contrato foi congelado,
+  // a data do congelamento: reimprimir não muda a data de um contrato.
+  const data = `${cidade}-${uf}, ${dataPorExtenso(dados.data_documento || hojeEmBrasilia())}.`;
 
   // Numeração SEQUENCIAL (1ª a 16ª/17ª). O template antigo pulava números
   // (6→8, 9→11, 12→14, 18→23) e o contrato emitido saía com buracos.
