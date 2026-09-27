@@ -8,6 +8,21 @@ import type { ItemLista } from '../gd/demonstrativos-tela.js';
 import { historicoPorMes } from '../gd/demonstrativos-tela.js';
 import type { EstadoGd, ResultadoValidacao } from '../gd/gd-validacao.js';
 import { mesCurto } from '../gd/demonstrativo-cruzamento.js';
+import { dataHoraBrasilia } from '../gd/relatorio-envio-textos.js';
+import { telefoneBonito } from '../gd/relatorio-marca.js';
+import { motivoEmPortugues } from '../relatorios/pasta/resultado-envio.js';
+
+export interface UltimoEnvioRelatorio {
+  enviadoEm: string;
+  zapPara: string | null;
+  emailPara: string | null;
+}
+
+/** "✅ enviado em 27/09 10:05 para (61) 99171-8505 e j@x.com" — SEM escapar (quem desenha escapa). */
+export function textoUltimoEnvio(u: UltimoEnvioRelatorio): string {
+  const para = [u.zapPara ? telefoneBonito(u.zapPara) : null, u.emailPara].filter(Boolean).join(' e ');
+  return `✅ enviado em ${dataHoraBrasilia(u.enviadoEm)}${para ? ` para ${para}` : ''}`;
+}
 
 function esc(s: unknown): string {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -84,6 +99,8 @@ export interface DetalheCliente {
   validacao: ResultadoValidacao;
   candidatos: Array<{ id: string; nome: string | null; uc: string | null }>;
   msg: string | null;
+  /** Último envio ao cliente deste mês (fatia 3); ausente/null = nunca enviado. */
+  ultimoEnvio?: UltimoEnvioRelatorio | null;
 }
 
 export function renderDemonstrativoCliente(d: DetalheCliente, user?: DashUser): string {
@@ -119,11 +136,13 @@ export function renderDemonstrativoCliente(d: DetalheCliente, user?: DashUser): 
   const rateio = d.unidades.length > 1
     ? `<p class="mt-2">Rateio: ${d.unidades.map((u) => `${esc(u.codigoCliente)} ${esc(u.percentual)}%`).join(' · ')}</p>` : '';
   const motivoFalta = v.bloqueios[0] ?? v.pendencias[0] ?? 'o mês ainda não está pronto';
+  const envioFeito = d.ultimoEnvio ? `<p class="text-emerald-300 mt-2">${esc(textoUltimoEnvio(d.ultimoEnvio))}</p>` : '';
   const botaoRelatorio = v.estado === 'pronto'
     ? `<div class="flex gap-2 mt-4">
   <a href="/dashboard/demonstrativos/${esc(d.instalacao)}/relatorio.pdf?mes=${esc(d.mes)}" class="px-4 py-2 rounded bg-emerald-700 text-white">📄 Gerar PDF</a>
   <a href="/dashboard/demonstrativos/${esc(d.instalacao)}/relatorio.html?mes=${esc(d.mes)}" target="_blank" class="px-4 py-2 rounded bg-slate-700 text-white">👁 Prévia</a>
-</div>`
+  <a href="/dashboard/demonstrativos/${esc(d.instalacao)}/enviar?mes=${esc(d.mes)}" class="px-4 py-2 rounded bg-cyan-700 text-white">📲 Enviar ao cliente pela Eva</a>
+</div>${envioFeito}`
     : `<p class="mt-4"><span class="px-4 py-2 rounded bg-slate-800 text-slate-500 cursor-not-allowed">📄 Gerar PDF</span>
   <span class="text-sm text-amber-300 ml-2">Só sai com tudo 🟢 — ${esc(motivoFalta)}</span></p>`;
   const body = `
@@ -226,4 +245,66 @@ ${erros.length ? `<ul class="rounded border border-red-700 p-2 mb-3" style="colo
   <button class="px-4 py-2 rounded bg-cyan-700 text-white">Conferir e gravar</button>
 </form></div>`;
   return renderLayout({ active: 'demonstrativos', title: 'Digitar demonstrativo', body, dark: true, user });
+}
+
+export interface ConfirmarEnvioRelatorio {
+  instalacao: string;
+  mes: string;
+  mesExtenso: string;
+  clienteNome: string;
+  canal: 'casa' | 'evolution' | 'nenhum';
+  zap: { para: string | null; motivo: string | null; texto: string };
+  /** null = e-mail não configurado neste ambiente. */
+  email: { para: string | null; motivo: string | null; assunto: string; html: string } | null;
+  linkExemplo: string;
+  ultimoEnvio: UltimoEnvioRelatorio | null;
+}
+
+export function renderConfirmarEnvioRelatorio(c: ConfirmarEnvioRelatorio, user?: DashUser): string {
+  const voltar = `/dashboard/demonstrativos/${esc(c.instalacao)}?mes=${esc(c.mes)}`;
+  const comoVai = c.canal === 'evolution'
+    ? 'Vai pelo WhatsApp da sua empresa: a mensagem com o link e o PDF anexo.'
+    : 'Vai pelo modelo aprovado da Meta ("relatorio_usina_v1"), com o botão "Ver meu relatório". Se o modelo ainda não estiver aprovado, tento como mensagem comum (só chega se o cliente falou com a gente nas últimas 24 horas).';
+  const blocoZap = c.zap.para
+    ? `<p>Para: <b>${esc(telefoneBonito(c.zap.para))}</b></p>
+<p class="text-sm text-slate-400">${esc(comoVai)}</p>
+<pre class="whitespace-pre-wrap rounded bg-slate-800 p-3 mt-2" style="font-family:inherit">${esc(c.zap.texto)}</pre>`
+    : `<p style="color:#ef4444">❌ Não vai sair — ${esc(motivoEmPortugues('zap', c.zap.motivo))}.</p>`;
+  let blocoEmail: string;
+  if (c.email === null) {
+    blocoEmail = '<p style="color:#eab308">⚠️ O e-mail não está configurado neste ambiente — só o WhatsApp será tentado.</p>';
+  } else if (c.email.para) {
+    blocoEmail = `<p>Para: <b>${esc(c.email.para)}</b> · Assunto: <b>${esc(c.email.assunto)}</b></p>
+<iframe title="Prévia do e-mail" sandbox="" srcdoc="${esc(c.email.html)}" style="width:100%;height:560px;background:#fff;border-radius:8px;margin-top:8px"></iframe>`;
+  } else {
+    blocoEmail = `<p style="color:#ef4444">❌ Não vai sair — ${esc(motivoEmPortugues('email', c.email.motivo))}.</p>`;
+  }
+  const podeEnviar = Boolean(c.zap.para) || Boolean(c.email?.para);
+  const jaEnviado = c.ultimoEnvio
+    ? `<div class="rounded border border-amber-500 p-3 my-3 text-amber-200">Este relatório já foi enviado: ${esc(textoUltimoEnvio(c.ultimoEnvio))}.<br>Enviar de novo manda outra mensagem para o cliente.</div>`
+    : '';
+  const form = podeEnviar
+    ? `<form method="post" action="/dashboard/demonstrativos/${esc(c.instalacao)}/enviar?mes=${esc(c.mes)}" class="flex flex-wrap gap-2 mt-4">
+  <input type="hidden" name="confirmar" value="1">
+  ${c.ultimoEnvio ? '<input type="hidden" name="reenviar" value="1">' : ''}
+  <button class="px-4 py-2 rounded bg-emerald-700 text-white">${c.ultimoEnvio ? '🔁 Enviar de novo' : '📲 Confirmar e enviar'}</button>
+  <a href="${voltar}" class="px-4 py-2 rounded bg-slate-700 text-white">Cancelar</a>
+</form>`
+    : `<p class="mt-4" style="color:#ef4444">Nada pode ser enviado — corrija o cadastro do cliente (telefone/e-mail) e tente de novo.</p>
+<a href="${voltar}" class="px-4 py-2 rounded bg-slate-700 text-white inline-block mt-2">← Voltar</a>`;
+  const body = `
+<div style="color:#d1d5db;max-width:900px">
+<a href="${voltar}" class="text-sm text-slate-400">← ${esc(c.clienteNome)}</a>
+<h1 class="text-xl font-bold text-cyan-300 mt-1">Enviar o relatório de ${esc(c.mesExtenso)} para ${esc(c.clienteNome)}</h1>
+${jaEnviado}
+<h2 class="font-bold mt-4">📲 WhatsApp</h2>
+${blocoZap}
+<h2 class="font-bold mt-4">✉️ E-mail</h2>
+${blocoEmail}
+<h2 class="font-bold mt-4">🔗 Link do relatório</h2>
+<p class="text-sm">O cliente recebe um link assim: <code>${esc(c.linkExemplo)}</code> — o endereço definitivo é criado na hora do envio e abre o PDF direto, sem senha.
+<a href="/dashboard/demonstrativos/${esc(c.instalacao)}/relatorio.html?mes=${esc(c.mes)}" target="_blank" class="underline text-cyan-300">👁 Ver o relatório</a></p>
+${form}
+</div>`;
+  return renderLayout({ active: 'demonstrativos', title: `Enviar relatório — ${c.clienteNome}`, body, dark: true, user });
 }
