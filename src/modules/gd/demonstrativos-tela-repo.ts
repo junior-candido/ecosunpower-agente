@@ -4,26 +4,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RegistroDemonstrativo } from './demonstrativo-ingestao.js';
+import type { LeadDestino, ResumoEnvio } from './relatorio-envio.js';
 
-// NOTA (27/09/2026): `LeadDestino`/`ResumoEnvio` estão definidos aqui, e não
-// importados de `gd/relatorio-envio.ts` (Task 6 do plano da fatia 3), porque
-// aquele arquivo ainda não existe nesta branch — depende de uma decisão do
-// dono que ainda não foi tomada. O formato é o mesmo que a Task 6 usa; quando
-// `relatorio-envio.ts` for criado, trocar por um import e remover a duplicata.
-export interface LeadDestino {
-  id: string;
-  nome: string | null;
-  phone: string | null;
-  email: string | null;
-  optOut: boolean;
-}
-
-export interface ResumoEnvio {
-  algumOk: boolean;
-  zapPara: string | null;
-  emailPara: string | null;
-  envio: Record<string, unknown>;
-}
+// Reexportados pra quem já importava daqui (tipos definidos em relatorio-envio.ts).
+export type { LeadDestino, ResumoEnvio };
 
 export interface LinhaDemonstrativo {
   id: string;

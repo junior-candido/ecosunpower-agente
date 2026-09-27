@@ -4,20 +4,15 @@
 // era a mensagem e um tenant (ex.: Conquista Solar) mandava a Pasta Digital
 // pelo número da EcoSunPower. Regra: tenant sem instância Evolution própria
 // NÃO manda zap — nunca pelo número de outra empresa.
-//
-// NOTA (27/09/2026): `CanalZap` está definido aqui, e não importado de
-// `gd/relatorio-envio.ts` (Task 6 do plano), porque aquele arquivo ainda não
-// existe nesta branch — a Task 6 depende de uma decisão do dono que ainda não
-// foi tomada. Quando `relatorio-envio.ts` for criado, considerar reexportar
-// o tipo de lá para não duplicar.
 
 import { comCanal } from '../canal-contexto.js';
 import { comEmpresaDe } from '../empresa-config.js';
+import type { CanalZap } from '../gd/relatorio-envio.js';
 
 export const EMPRESA_CASA = '00000000-0000-0000-0000-000000000001';
 
-/** casa = EcoSun (WABA/canal padrão) · evolution = instância própria do tenant · nenhum = tenant sem WhatsApp conectado. */
-export type CanalZap = 'casa' | 'evolution' | 'nenhum';
+// Tipo mora em gd/relatorio-envio.ts; reexportado aqui por conveniência (import só de tipo, sem ciclo).
+export type { CanalZap };
 
 export function canalZapDaEmpresa(companyId: string, instancia: string | null | undefined): CanalZap {
   if (instancia) return 'evolution';
