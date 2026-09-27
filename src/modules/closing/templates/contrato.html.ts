@@ -54,11 +54,22 @@ function fmtPF(p: PessoaFisica): string {
   const profissao = p.profissao ? `${p.profissao}, ` : '';
   const nasc = p.data_nascimento ? `nascido(a) em ${formatDateBR(p.data_nascimento)}, ` : '';
   const enderecoStr = `${p.endereco.rua}, ${p.endereco.numero}${p.endereco.complemento ? ', ' + p.endereco.complemento : ''}, ${p.endereco.bairro}, ${p.endereco.cidade}-${p.endereco.uf}, CEP ${p.endereco.cep}`;
-  return `<strong>${p.nome}</strong>, ${p.nacionalidade}, ${estadoCivil}${profissao}${nasc}inscrito(a) no CPF/MF sob o nº ${p.cpf}, RG nº ${p.rg} ${p.orgao_emissor_rg}, residente e domiciliado(a) na ${enderecoStr}, e-mail ${p.email}, telefone ${p.telefone}`;
+  return `<strong>${p.nome}</strong>, ${p.nacionalidade}, ${estadoCivil}${profissao}${nasc}inscrito(a) no CPF/MF sob o nº ${p.cpf}, RG nº ${p.rg} ${p.orgao_emissor_rg}, residente e domiciliado(a) na ${enderecoStr}${contato(p)}`;
+}
+
+/**
+ * ", e-mail X, telefone Y" — só o que existe. E-mail e telefone são opcionais:
+ * cliente sem e-mail não pode ficar sem contrato (nem com "e-mail ____").
+ */
+function contato(p: { email?: string; telefone?: string }): string {
+  const partes: string[] = [];
+  if (String(p.email ?? '').trim()) partes.push(`e-mail ${p.email}`);
+  if (String(p.telefone ?? '').trim()) partes.push(`telefone ${p.telefone}`);
+  return partes.length ? `, ${partes.join(', ')}` : '';
 }
 
 function fmtPJ(p: PessoaJuridica): string {
-  return `<strong>${p.razao_social}</strong>, pessoa jurídica inscrita no CNPJ sob o nº ${p.cnpj}, com sede em ${p.endereco.rua}, ${p.endereco.numero}, ${p.endereco.bairro}, ${p.endereco.cidade}-${p.endereco.uf}, CEP ${p.endereco.cep}, neste ato representada por ${fmtPF(p.representante)}, e-mail ${p.email}, telefone ${p.telefone}`;
+  return `<strong>${p.razao_social}</strong>, pessoa jurídica inscrita no CNPJ sob o nº ${p.cnpj}, com sede em ${p.endereco.rua}, ${p.endereco.numero}, ${p.endereco.bairro}, ${p.endereco.cidade}-${p.endereco.uf}, CEP ${p.endereco.cep}, neste ato representada por ${fmtPF(p.representante)}${contato(p)}`;
 }
 
 function fmtPessoa(p: PessoaFisica | PessoaJuridica): string {

@@ -487,8 +487,16 @@ export function valoresDoFormulario(def: DefinicaoContrato, dados: Partial<Dados
 
 /** Os obrigatórios que ficaram vazios — vão sair em branco no PDF. */
 export function camposFaltando(def: DefinicaoContrato, dados: Partial<DadosFechamento>): CampoContrato[] {
-  const vals = valoresDoFormulario(def, dados);
-  return def.campos.filter((c) => c.obrigatorio && !vals[c.id]);
+  return camposFaltandoNaTela(def, valoresDoFormulario(def, dados), dados);
+}
+
+/** Igual a camposFaltando, mas sobre os valores que estão NA TELA (salvos + digitados). */
+export function camposFaltandoNaTela(
+  def: DefinicaoContrato,
+  valores: Record<string, string>,
+  _dados: Partial<DadosFechamento>,
+): CampoContrato[] {
+  return def.campos.filter((c) => c.obrigatorio && !valores[c.id]);
 }
 
 /**

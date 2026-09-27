@@ -24,6 +24,12 @@ export interface ContratoFormInput {
   tipos: Array<{ tipo: string; nome: string; emoji: string }>;
   valores: Record<string, string>;
   faltando: CampoContrato[];
+  /**
+   * Os problemas da TRAVA (montarDocumentoFinal(...).problemas) — o mesmo
+   * resultado que decide se Gerar PDF / Mandar / Drive saem. A caixa de status
+   * usa ISTO (não os campos vermelhos): formulário e trava nunca discordam.
+   */
+  problemas: string[];
   temProposta: boolean;
   salvo?: boolean;
   docsResultado?: string;
@@ -350,10 +356,17 @@ function avisos(page: ContratoFormInput): string {
       `<strong>⚠️ Forma de pagamento vazia.</strong> Do jeito que está, a cláusula de pagamento sai com uma linha em branco no contrato.` +
       (temCombinados ? ' Vi texto nos "Combinados à parte" — se o pagamento estiver lá, ele vai no campo <strong>Forma de pagamento</strong> (é ele que aparece na cláusula certa).' : ''));
   }
-  if (n > 0) {
+  const problemas = page.problemas ?? [];
+  if (n > 0 || problemas.length > 0) {
     const nomes = page.faltando.map((c) => escapeHtml(c.label)).join(' · ');
+    const titulo = n > 0
+      ? `<strong>${n} campo(s) em branco.</strong> Completa aqui embaixo (o vermelho) e salva.`
+      : '<strong>O documento ainda não pode sair.</strong>';
+    const lista = problemas.length
+      ? `<ul class="mt-1 ml-4 list-disc text-xs">${problemas.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`
+      : `<div class="mt-1 text-xs">${nomes}</div>`;
     out += box('bg-amber-50 border-amber-300 text-amber-800',
-      `<strong>${n} campo(s) em branco.</strong> Completa aqui embaixo (o vermelho) e salva. Enquanto faltar, <strong>Gerar PDF, Mandar e Salvar no Drive ficam travados</strong> — a prévia mostra o que falta.<div class="mt-1 text-xs">${nomes}</div>`);
+      `${titulo} Enquanto isso, <strong>Gerar PDF, Mandar e Salvar no Drive ficam travados</strong> — a prévia mostra o que falta.${lista}`);
   } else if (page.salvo) {
     out += box('bg-emerald-50 border-emerald-300 text-emerald-800', '✅ Salvo, e não falta nada. Pode gerar o PDF ou mandar no zap.');
   } else {

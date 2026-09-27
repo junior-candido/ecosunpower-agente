@@ -3306,6 +3306,19 @@ b.onclick=async function(){
     }
     return valores;
   }
+  // A caixa de status do formulário usa O MESMO resultado da trava (o que decide
+  // se Gerar PDF / Mandar / Drive saem) — senão a tela dizia "✅ tudo preenchido"
+  // e o PDF travava. Best-effort: falhou → sem lista (a trava continua valendo).
+  async function problemasDaTrava(leadId: string, tipo: string): Promise<string[]> {
+    try {
+      const { montarDocumentoFinal } = await import('../closing/documento-final.js');
+      const doc = await montarDocumentoFinal(supabase, leadId, tipo);
+      return doc?.problemas ?? [];
+    } catch (err) {
+      console.warn('[dashboard/contrato-form] trava indisponível:', (err as Error).message);
+      return [];
+    }
+  }
   // O carimbo do contrato congelado, do jeito que a tela mostra.
   function vigenteDaTela(r: { vigente?: { congeladoEm: string; dados: { comercial: { valor_total_brl: number; forma_pagamento: string } } } | null }) {
     if (!r.vigente) return null;
@@ -3419,6 +3432,7 @@ b.onclick=async function(){
         tipos: CONTRATOS.map((c) => ({ tipo: c.tipo, nome: c.nome, emoji: c.emoji })),
         valores: valoresDoFormulario(def, r.cru),
         faltando: camposFaltando(def, r.cru),
+        problemas: await problemasDaTrava(id, def.tipo),
         temProposta: r.temProposta,
         salvo: req.query.salvo === '1',
         docsResultado: String(req.query.docs ?? ''),
@@ -3494,7 +3508,7 @@ b.onclick=async function(){
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-      const { CONTRATOS, getContrato, camposQueIaPodeSugerir } = await import('../closing/contratos-registry.js');
+      const { CONTRATOS, getContrato, camposQueIaPodeSugerir, camposFaltandoNaTela } = await import('../closing/contratos-registry.js');
       const def = getContrato(tipoDaCentral(req.body?.tipo));
       if (!def) return res.status(400).send('Tipo de contrato desconhecido');
       if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
@@ -3510,7 +3524,8 @@ b.onclick=async function(){
         leadId: id, nome: r.nome, def,
         tipos: CONTRATOS.map((c) => ({ tipo: c.tipo, nome: c.nome, emoji: c.emoji })),
         temProposta: r.temProposta,
-        faltando: def.campos.filter((c) => c.obrigatorio && !valores[c.id]),
+        faltando: camposFaltandoNaTela(def, valores, r.cru),
+        problemas: await problemasDaTrava(id, def.tipo),
         vigente: vigenteDaTela(r),
         user: (req as AuthedRequest).dashUser,
       };
@@ -3623,7 +3638,7 @@ b.onclick=async function(){
     try {
       const id = String(req.params.id);
       if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-      const { CONTRATOS, getContrato, numeroBR } = await import('../closing/contratos-registry.js');
+      const { CONTRATOS, getContrato, numeroBR, camposFaltandoNaTela } = await import('../closing/contratos-registry.js');
       const def = getContrato(tipoDaCentral(req.body?.tipo));
       if (!def) return res.status(400).send('Tipo de contrato desconhecido');
       if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
@@ -3645,7 +3660,8 @@ b.onclick=async function(){
         leadId: id, nome: r.nome, def,
         tipos: CONTRATOS.map((c) => ({ tipo: c.tipo, nome: c.nome, emoji: c.emoji })),
         temProposta: r.temProposta,
-        faltando: def.campos.filter((c) => c.obrigatorio && !valores[c.id]),
+        faltando: camposFaltandoNaTela(def, valores, r.cru),
+        problemas: await problemasDaTrava(id, def.tipo),
         valores,
         vigente: vigenteDaTela(r),
         user: (req as AuthedRequest).dashUser,

@@ -36,11 +36,14 @@ function completarPessoa(x?: Partial<PessoaFisica>): PessoaFisica {
     orgao_emissor_rg: x?.orgao_emissor_rg || 'SSP',
     nacionalidade: x?.nacionalidade || 'Brasileiro(a)',
     estado_civil: x?.estado_civil || BRANCO,
-    profissao: x?.profissao || BRANCO,
+    // Opcionais (profissão, telefone, e-mail) ficam VAZIOS — nunca "____": o
+    // template só imprime o que existe, e o "____" travaria a saída de quem não
+    // tem e-mail, sem o formulário ter como avisar.
+    profissao: x?.profissao || undefined,
     data_nascimento: x?.data_nascimento,
     endereco: completarEndereco(x?.endereco),
-    telefone: x?.telefone || BRANCO,
-    email: x?.email || BRANCO,
+    telefone: x?.telefone || '',
+    email: x?.email || '',
   };
 }
 
