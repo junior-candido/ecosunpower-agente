@@ -171,3 +171,35 @@ describe('problemasSemDados — o que vai pro fluxo de eventos não leva CPF', (
     expect(problemasSemDados(['CPF de quem assina inválido (os dígitos não conferem: 12345678900)'])).toEqual(['CPF de quem assina inválido']);
   });
 });
+
+describe('validarDocumento — PJ confere o REPRESENTANTE', () => {
+  const pj = (rep: any) => ({
+    ...clone(COMPLETO),
+    titular_uc: {
+      tipo: 'PJ', razao_social: 'Padaria Sol LTDA', cnpj: '11.222.333/0001-81',
+      endereco: (COMPLETO.titular_uc as any).endereco, telefone: '', email: '',
+      representante: rep,
+    },
+  }) as any;
+
+  it('representante sem nome/CPF/RG → bloqueia dizendo que é do representante', () => {
+    const d = pj({ tipo: 'PF', nome: '', cpf: '', rg: '' });
+    const r = validarDocumento({ tipo: 'procuracao', dados: d, html: '<p>ok</p>' });
+    const txt = r.problemas.join(' | ');
+    expect(txt).toContain('Nome do representante');
+    expect(txt).toContain('CPF do representante');
+    expect(txt).toContain('RG do representante');
+  });
+
+  it('representante com CPF de dígito errado → bloqueia', () => {
+    const d = pj({ tipo: 'PF', nome: 'João', cpf: '123.456.789-00', rg: '123' });
+    const r = validarDocumento({ tipo: 'fv', dados: d, html: '<p>ok</p>' });
+    expect(r.problemas.join(' ')).toContain('CPF do representante');
+  });
+
+  it('representante completo → a pessoa passa', () => {
+    const d = pj({ tipo: 'PF', nome: 'João', cpf: (COMPLETO.titular_uc as any).cpf, rg: '123' });
+    const r = validarDocumento({ tipo: 'procuracao', dados: d, html: '<p>ok</p>' });
+    expect(r.problemas.join(' ')).not.toMatch(/representante/);
+  });
+});

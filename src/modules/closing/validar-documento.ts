@@ -74,6 +74,12 @@ function faltasPessoa(p: Partial<PessoaFisica | PessoaJuridica> | undefined, que
     if (vazio(x.razao_social)) out.push(`Razão social ${quem}`);
     if (vazio(x.cnpj)) out.push(`CNPJ ${quem}`);
     else if (String(x.cnpj).replace(/\D/g, '').length !== 14) out.push(`CNPJ ${quem} inválido`);
+    // Quem ASSINA pela empresa: o documento imprime nome, CPF e RG dele.
+    const r = obj(x.representante);
+    if (vazio(r.nome)) out.push('Nome do representante da empresa');
+    if (vazio(r.cpf)) out.push('CPF do representante da empresa');
+    else if (!cpfDigitoConfere(String(r.cpf))) out.push(`CPF do representante da empresa inválido (os dígitos não conferem: ${String(r.cpf)})`);
+    if (vazio(r.rg)) out.push('RG do representante da empresa');
   } else {
     if (vazio(x.nome)) out.push(`Nome ${quem}`);
     if (vazio(x.cpf)) out.push(`CPF ${quem}`);

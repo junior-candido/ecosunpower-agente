@@ -184,11 +184,16 @@ describe('contarVersoesCongeladas — o número da versão (Drive)', () => {
     return {
       from() {
         const filtros: Record<string, unknown> = {};
+        const ins: Record<string, unknown[]> = {};
         const b: any = {
           select: () => b,
           eq: (c: string, v: unknown) => { filtros[c] = v; return b; },
+          in: (c: string, v: unknown[]) => { ins[c] = v; return b; },
           then: (ok: any, err: any) => Promise.resolve({
-            count: linhas.filter((l) => Object.entries(filtros).every(([c, v]) => l[c] === v)).length,
+            count: linhas
+              .filter((l) => Object.entries(filtros).every(([c, v]) => l[c] === v))
+              .filter((l) => Object.entries(ins).every(([c, v]) => v.includes(l[c])))
+              .length,
             error: null,
           }).then(ok, err),
         };
@@ -205,6 +210,17 @@ describe('contarVersoesCongeladas — o número da versão (Drive)', () => {
       { lead_id: 'L2', status: 'aprovado_junior' },
     ]);
     expect(await contarVersoesCongeladas(sb, 'L1')).toBe(2);
+  });
+
+  it('versão congelada que já foi ENVIADA ao cliente continua contando (só cancelada e rascunho "gerado" não)', async () => {
+    const sb = fakeCount([
+      { lead_id: 'L1', status: 'aprovado_junior' },
+      { lead_id: 'L1', status: 'enviado_cliente' },
+      { lead_id: 'L1', status: 'aprovado_junior' },
+      { lead_id: 'L1', status: 'cancelado' },
+      { lead_id: 'L1', status: 'gerado' },
+    ]);
+    expect(await contarVersoesCongeladas(sb, 'L1')).toBe(3);
   });
 
   it('banco fora do ar → 1 (nunca derruba a entrega)', async () => {

@@ -45,6 +45,11 @@ export interface CampoContrato {
   /** Obrigatório = se ficar vazio, destaca na tela e a saída (PDF/zap/Drive) trava. */
   obrigatorio?: boolean;
   /**
+   * Obrigatório, MENOS quando isto for verdade (ex.: UC em pedido de ligação
+   * nova — ela ainda não existe). Mesma regra da trava (validar-documento.ts).
+   */
+  dispensadoQuando?: (d: Partial<DadosFechamento>) => boolean;
+  /**
    * Coluna do lead onde esse campo mora. Quem tem coluna é dado de CADASTRO:
    * salvar aqui atualiza o cliente pro ecossistema inteiro, não só pro contrato.
    */
@@ -242,6 +247,8 @@ const CAMPOS_UC: CampoContrato[] = [
   {
     id: 'uc_numero', label: 'Unidade consumidora (nº da conta de luz)', grupo: 'Unidade consumidora', tipo: 'texto',
     obrigatorio: true, coluna: 'uc_numero',
+    // ligação nova: a UC ainda não existe (a procuração pede a ligação)
+    dispensadoQuando: (d) => !!d.ligacao_nova,
     ler: (d) => { const v = texto(d.uc_numero); return v === 'a confirmar' ? '' : v; },
     gravar: (out, v) => { out.uc_numero = v; },
   },
@@ -494,9 +501,16 @@ export function camposFaltando(def: DefinicaoContrato, dados: Partial<DadosFecha
 export function camposFaltandoNaTela(
   def: DefinicaoContrato,
   valores: Record<string, string>,
-  _dados: Partial<DadosFechamento>,
+  dados: Partial<DadosFechamento>,
 ): CampoContrato[] {
-  return def.campos.filter((c) => c.obrigatorio && !valores[c.id]);
+  return def.campos.filter((c) => {
+    if (!c.obrigatorio || valores[c.id]) return false;
+    try {
+      return !c.dispensadoQuando?.(dados);
+    } catch {
+      return true; // na dúvida, cobra
+    }
+  });
 }
 
 /**

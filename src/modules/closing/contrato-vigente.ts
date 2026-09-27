@@ -108,11 +108,14 @@ export async function congelarContrato(
  */
 export async function contarVersoesCongeladas(sb: SupabaseClient, leadId: string): Promise<number> {
   try {
+    // Toda versão congelada que não foi cancelada — inclusive a que já foi
+    // enviada ao cliente (senão o número da versão "voltava" depois do envio).
+    // Rascunho "gerado" do /fechar antigo não é versão congelada.
     const { count, error } = await sb
       .from('fechamentos')
       .select('id', { count: 'exact', head: true })
       .eq('lead_id', leadId)
-      .eq('status', 'aprovado_junior');
+      .in('status', ['aprovado_junior', 'enviado_cliente']);
     if (error || !count) return 1;
     return count;
   } catch {

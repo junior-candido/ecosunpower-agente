@@ -13,12 +13,14 @@ function fakeDb(tabelas: Record<string, any[]>) {
     from(tabela: string) {
       const eqs: Array<[string, unknown]> = [];
       const gts: Array<[string, string]> = [];
+      const ins: Array<[string, unknown[]]> = [];
       let ordem: { col: string; desc: boolean } | null = null;
       let limite = Infinity;
       let contar = false;
       const linhas = () => {
         let r = (tabelas[tabela] ?? [])
           .filter((l) => eqs.every(([c, v]) => l[c] === v))
+          .filter((l) => ins.every(([c, v]) => v.includes(l[c])))
           .filter((l) => gts.every(([c, v]) => String(l[c] ?? '') > v));
         if (ordem) {
           const { col, desc } = ordem;
@@ -30,6 +32,7 @@ function fakeDb(tabelas: Record<string, any[]>) {
         select: (_c?: string, o?: { count?: string }) => { if (o?.count) contar = true; return b; },
         eq: (c: string, v: unknown) => { eqs.push([c, v]); return b; },
         gt: (c: string, v: string) => { gts.push([c, v]); return b; },
+        in: (c: string, v: unknown[]) => { ins.push([c, v]); return b; },
         order: (col: string, o?: { ascending?: boolean }) => { ordem = { col, desc: o?.ascending === false }; return b; },
         limit: (n: number) => { limite = n; return b; },
         maybeSingle: async () => {

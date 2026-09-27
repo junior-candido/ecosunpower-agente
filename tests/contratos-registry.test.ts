@@ -119,6 +119,14 @@ describe('camposFaltando — os brancos que o Junior tem que completar', () => {
     } as any;
     expect(camposFaltando(fv, dados)).toEqual([]);
   });
+
+  it('ligação nova: a UC ainda não existe — não é cobrada (igual à trava)', () => {
+    for (const tipo of ['fv', 'procuracao']) {
+      const def = getContrato(tipo)!;
+      expect(camposFaltando(def, { ligacao_nova: true }).map((c) => c.id)).not.toContain('uc_numero');
+      expect(camposFaltando(def, {}).map((c) => c.id)).toContain('uc_numero');
+    }
+  });
 });
 
 describe('parseFormulario — dado de cadastro vai pro CLIENTE, dado do negócio vai pro contrato', () => {
