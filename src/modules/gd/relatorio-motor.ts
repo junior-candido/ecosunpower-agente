@@ -162,3 +162,12 @@ export function montarRelatorio(e: EntradaRelatorio): RelatorioGd {
     origemGeracao: e.origemGeracao,
   };
 }
+
+/** Os números que saíram no PDF — gravados em relatorios_gd_gerados.numeros (rastreio: "o que mandamos em agosto?"). */
+export function numerosDoRelatorio(r: RelatorioGd): Record<string, unknown> {
+  return {
+    gerouKwh: r.gerouKwh, consumiuKwh: r.consumiuKwh, economiaRs: r.economiaRs, creditosKwh: r.creditosKwh,
+    tarifaRsKwh: r.tarifaRsKwh, injetadoKwh: r.injetadoKwh, compensadoKwh: r.compensadoKwh,
+    usadosNoMesKwh: r.creditos.usadosNoMesKwh, origemGeracao: r.origemGeracao,
+  };
+}

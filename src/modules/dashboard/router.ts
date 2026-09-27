@@ -4698,7 +4698,7 @@ b.onclick=async function(){
       baixarLogo: () => comEmpresaDe(companyId, () => obterLogoBase64(db)),
     });
     const { renderRelatorioHtml } = await import('../gd/relatorio-html.js');
-    return { inst, mes, tela, relatorio: r.relatorio, html: renderRelatorioHtml(r.relatorio, marca) };
+    return { inst, mes, tela, leadId: r.leadId, relatorio: r.relatorio, html: renderRelatorioHtml(r.relatorio, marca) };
   }
 
   router.get('/demonstrativos/:instalacao/relatorio.html', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
@@ -4718,14 +4718,10 @@ b.onclick=async function(){
       const { gerarRelatorioPdf, lerPdfUnpdf } = await import('../gd/relatorio-pdf.js');
       const { htmlToPdf } = await import('../proposal/pdf-generator.js');
       const pdf = await gerarRelatorioPdf(p.html, { htmlToPdf, lerPdf: lerPdfUnpdf }, { exigeGrafico: p.relatorio.meses.length > 0 });
-      const r = p.relatorio;
+      const { numerosDoRelatorio } = await import('../gd/relatorio-motor.js');
       await p.tela.registrarRelatorio({
         instalacao: p.inst, referencia: p.mes, geradoPor: req.dashUser!.id,
-        numeros: {
-          gerouKwh: r.gerouKwh, consumiuKwh: r.consumiuKwh, economiaRs: r.economiaRs, creditosKwh: r.creditosKwh,
-          tarifaRsKwh: r.tarifaRsKwh, injetadoKwh: r.injetadoKwh, compensadoKwh: r.compensadoKwh,
-          usadosNoMesKwh: r.creditos.usadosNoMesKwh, origemGeracao: r.origemGeracao,
-        },
+        numeros: numerosDoRelatorio(p.relatorio),
       });
       const nome = `relatorio-${p.inst}-${p.mes.slice(0, 7)}.pdf`;
       res.setHeader('Content-Type', 'application/pdf');

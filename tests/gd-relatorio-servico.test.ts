@@ -87,3 +87,12 @@ describe('prepararRelatorio — trava compensado x consumo', () => {
     expect(r.motivo).toMatch(/maior que o consumo/);
   });
 });
+
+describe('prepararRelatorio — cliente do relatório', () => {
+  it('mês pronto devolve o lead (o envio ao cliente precisa dele)', async () => {
+    const r = await prepararRelatorio('351534', '2026-08-01', deps());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.leadId).toBe('L1');
+  });
+});

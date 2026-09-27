@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { montarRelatorio, mesExtenso, type EntradaRelatorio } from '../src/modules/gd/relatorio-motor.js';
+import { montarRelatorio, mesExtenso, numerosDoRelatorio, type EntradaRelatorio } from '../src/modules/gd/relatorio-motor.js';
 import type { LinhaDemonstrativo } from '../src/modules/gd/demonstrativos-tela-repo.js';
 
 const linha = (over: Partial<LinhaDemonstrativo> = {}): LinhaDemonstrativo => ({
@@ -191,5 +191,14 @@ describe('montarRelatorio — demonstrativo digitado (sem historico)', () => {
   it('sem creditos usados tambem: economia null', () => {
     const r = montarRelatorio(entrada({ linha: linha({ origem: 'digitado', historico: [], credito_utilizado_kwh: null }) }));
     expect(r.economiaRs).toBeNull();
+  });
+});
+
+describe('numerosDoRelatorio', () => {
+  it('traz os números que saíram no PDF (rastreio em relatorios_gd_gerados.numeros)', () => {
+    expect(numerosDoRelatorio(montarRelatorio(entrada()))).toEqual({
+      gerouKwh: 612, consumiuKwh: 480, economiaRs: 376.2, creditosKwh: 1240, tarifaRsKwh: 0.99,
+      injetadoKwh: 222, compensadoKwh: 380, usadosNoMesKwh: 380, origemGeracao: 'api',
+    });
   });
 });
