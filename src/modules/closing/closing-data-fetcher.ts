@@ -31,6 +31,7 @@ export function estadoCivilPorExtenso(raw: string | null | undefined): string | 
 
 export interface LeadRow {
   id: string;
+  company_id?: string | null;
   name: string;
   phone: string | null;
   email: string | null;
@@ -87,10 +88,20 @@ export async function fetchByLeadId(sb: SupabaseClient, leadId: string): Promise
   const lead = leadRes.data as LeadRow | null;
   if (!lead) return { lead: null, proposta: null };
 
-  const propRes = await sb
+  // A proposta DESTE lead — pelo vínculo (lead_id), nunca por nome/telefone. A
+  // busca antiga (`telefone OU nome ilike %nome%`) entregava a proposta de um
+  // HOMÔNIMO ("Maria" pegava a da "Maria José") e o contrato saía com o sistema e
+  // o valor de outra cliente. Só vale proposta não revogada e dentro da validade;
+  // a mais nova primeiro. Sem proposta válida → null (o formulário pergunta).
+  let q = sb
     .from('propostas_publicas')
     .select('*')
-    .or(`cliente_telefone.eq.${lead.phone},cliente_nome.ilike.%${lead.name}%`)
+    .eq('lead_id', lead.id)
+    .eq('revoked', false)
+    .gt('expires_at', new Date().toISOString());
+  // Mesma empresa do lead (defesa em profundidade: o lead_id já amarra).
+  if (lead.company_id) q = q.eq('company_id', lead.company_id);
+  const propRes = await q
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();

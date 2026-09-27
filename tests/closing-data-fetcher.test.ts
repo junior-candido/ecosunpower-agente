@@ -3,6 +3,38 @@ import { describe, it, expect, vi } from 'vitest';
 import { fetchByLeadId, searchLeadByName, buildInitialData, normalizarNomeBusca, normalizarModalidade } from '../src/modules/closing/closing-data-fetcher.js';
 import { leadCamilaRow, propostaPublicaCamilaRow } from './fixtures/closing-camila.js';
 
+// Fake HONESTO de propostas_publicas: aplica de verdade os filtros eq/gt, a
+// ordenação e o limit — e explode se alguém tentar o `.or()` com nome/telefone
+// (a busca antiga, que entregava a proposta de um HOMÔNIMO).
+function fakePropostas(linhas: any[]) {
+  const eqs: Array<[string, unknown]> = [];
+  const gts: Array<[string, string]> = [];
+  let ordem: { col: string; desc: boolean } | null = null;
+  let limite = Infinity;
+  const b: any = {
+    select: () => b,
+    eq: (col: string, v: unknown) => { eqs.push([col, v]); return b; },
+    gt: (col: string, v: string) => { gts.push([col, v]); return b; },
+    or: () => { throw new Error('busca por nome/telefone (.or) não pode mais existir'); },
+    ilike: () => { throw new Error('busca por nome (ilike) não pode mais existir'); },
+    order: (col: string, o?: { ascending?: boolean }) => { ordem = { col, desc: o?.ascending === false }; return b; },
+    limit: (n: number) => { limite = n; return b; },
+    maybeSingle: async () => {
+      let r = linhas
+        .filter((l) => eqs.every(([c, v]) => l[c] === v))
+        .filter((l) => gts.every(([c, v]) => String(l[c] ?? '') > v));
+      if (ordem) {
+        const { col, desc } = ordem;
+        r = [...r].sort((x, y) => String(x[col]).localeCompare(String(y[col])) * (desc ? -1 : 1));
+      }
+      r = r.slice(0, limite);
+      if (r.length > 1) return { data: null, error: { message: 'multiple rows returned' } };
+      return { data: r[0] ?? null, error: null };
+    },
+  };
+  return b;
+}
+
 function mockSupabase(opts: {
   leadById?: any;
   leadsByName?: any[];   // resultado do ilike no nome
@@ -33,32 +65,69 @@ function mockSupabase(opts: {
         };
         return b;
       }
-      if (table === 'propostas_publicas') {
-        return {
-          select: () => ({
-            or: () => ({
-              order: () => ({
-                limit: () => ({
-                  maybeSingle: async () => ({ data: opts.propostas?.[0] ?? null, error: null }),
-                }),
-              }),
-            }),
-          }),
-        };
-      }
+      if (table === 'propostas_publicas') return fakePropostas(opts.propostas ?? []);
       throw new Error(`tabela inesperada: ${table}`);
     },
   } as any;
 }
 
 describe('closing-data-fetcher', () => {
+  const FUTURO = '2999-01-01T00:00:00Z';
+  const propostaDaCamila = { ...propostaPublicaCamilaRow, lead_id: leadCamilaRow.id, revoked: false, expires_at: FUTURO };
+
   it('fetchByLeadId retorna lead + última proposta', async () => {
-    const sb = mockSupabase({ leadById: leadCamilaRow, propostas: [propostaPublicaCamilaRow] });
+    const sb = mockSupabase({ leadById: leadCamilaRow, propostas: [propostaDaCamila] });
     const res = await fetchByLeadId(sb, leadCamilaRow.id);
     expect(res.lead).toBeTruthy();
     expect(res.lead!.id).toBe(leadCamilaRow.id);
     expect(res.proposta).toBeTruthy();
     expect(res.proposta!.dados_input!.potencia_kwp).toBe(8.4);
+  });
+
+  // O bug da auditoria: a busca era `telefone OU nome ilike %nome%`. A "Maria"
+  // pegava a proposta da "Maria José" (ou de qualquer Maria) — e o contrato saía
+  // com o sistema e o valor de OUTRA cliente.
+  it('homônima: a lead "Maria" NUNCA pega a proposta de outra Maria', async () => {
+    const maria = { id: 'lead-maria', name: 'Maria', phone: '5561999990000', company_id: 'emp-1' };
+    const outraMaria = {
+      id: 'p-outra', lead_id: 'lead-maria-jose', company_id: 'emp-1', cliente_nome: 'Maria',
+      cliente_telefone: '5561999990000', revoked: false, expires_at: FUTURO,
+      created_at: '2026-09-01T10:00:00Z', dados_input: { potenciaKwp: 99 },
+    };
+    const sb = mockSupabase({ leadById: maria, propostas: [outraMaria] });
+    const res = await fetchByLeadId(sb, 'lead-maria');
+    expect(res.proposta).toBeNull();
+  });
+
+  it('pega a proposta pelo lead_id, a mais nova VÁLIDA (ignora revogada e vencida)', async () => {
+    const maria = { id: 'lead-maria', name: 'Maria', phone: null, company_id: 'emp-1' };
+    const base = { lead_id: 'lead-maria', company_id: 'emp-1', cliente_nome: 'Maria', dados_input: {} };
+    const sb = mockSupabase({
+      leadById: maria,
+      propostas: [
+        { ...base, id: 'antiga', revoked: false, expires_at: FUTURO, created_at: '2026-08-01T10:00:00Z' },
+        { ...base, id: 'revogada', revoked: true, expires_at: FUTURO, created_at: '2026-09-20T10:00:00Z' },
+        { ...base, id: 'vencida', revoked: false, expires_at: '2020-01-01T00:00:00Z', created_at: '2026-09-21T10:00:00Z' },
+        { ...base, id: 'boa', revoked: false, expires_at: FUTURO, created_at: '2026-09-10T10:00:00Z' },
+      ],
+    });
+    const res = await fetchByLeadId(sb, 'lead-maria');
+    expect(res.proposta?.id).toBe('boa');
+  });
+
+  it('não pega proposta de OUTRA empresa, mesmo com o mesmo lead_id', async () => {
+    const maria = { id: 'lead-maria', name: 'Maria', phone: null, company_id: 'emp-1' };
+    const sb = mockSupabase({
+      leadById: maria,
+      propostas: [{ id: 'x', lead_id: 'lead-maria', company_id: 'emp-2', revoked: false, expires_at: FUTURO, created_at: '2026-09-10T10:00:00Z' }],
+    });
+    expect((await fetchByLeadId(sb, 'lead-maria')).proposta).toBeNull();
+  });
+
+  it('nome com vírgula/parêntese não quebra nada (não vai mais pro filtro)', async () => {
+    const lead = { id: 'lead-x', name: 'Ana, (teste).*', phone: '1,2', company_id: 'emp-1' };
+    const sb = mockSupabase({ leadById: lead, propostas: [] });
+    await expect(fetchByLeadId(sb, 'lead-x')).resolves.toMatchObject({ proposta: null });
   });
 
   it('fetchByLeadId retorna proposta null quando não acha', async () => {
