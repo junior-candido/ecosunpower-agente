@@ -76,6 +76,10 @@ export interface EmpresaConfig {
   // 085: régua do aviso de geração baixa (% do esperado que acende o amarelo).
   // 70 = padrão histórico; tenant pode afrouxar (ex.: Sabion 60).
   reguaAtencaoPct: number;
+  /** 132: tarifa (R$/kWh) da "economia estimada" do relatório de GD =
+   *  compensado × tarifa. O demonstrativo não traz R$ e a Lei 14.300 cobra
+   *  parte do Fio B, por isso é "estimada" e configurável por empresa. */
+  gdTarifaRsKwh: number;
 }
 
 export const EMPRESA_DEFAULTS: EmpresaConfig = {
@@ -114,6 +118,7 @@ export const EMPRESA_DEFAULTS: EmpresaConfig = {
   googleReviewUrl: 'https://g.page/r/CWB5ipa57HzhEAI/review',
   hspPadrao: null, tarifaPadrao: null, concessionariaPadrao: null,
   reguaAtencaoPct: 70,
+  gdTarifaRsKwh: 0.99,
 };
 // Congelado: dezenas de call sites vão ler isto — mutação acidental corromperia a config global.
 Object.freeze(EMPRESA_DEFAULTS);
@@ -216,6 +221,11 @@ export function normalizarEmpresaRow(row: Record<string, unknown>): Readonly<Emp
     tarifaPadrao: nn(row.tarifa_kwh_padrao),
     concessionariaPadrao: sn(row.concessionaria_padrao),
     reguaAtencaoPct: n(row.regua_atencao_pct, D.reguaAtencaoPct),
+    gdTarifaRsKwh: (() => {
+      const v = Number(row.gd_tarifa_rs_kwh);
+      return row.gd_tarifa_rs_kwh !== null && row.gd_tarifa_rs_kwh !== undefined && Number.isFinite(v) && v > 0 && v < 10
+        ? v : D.gdTarifaRsKwh;
+    })(),
   };
   Object.freeze(result.marcasPermitidas);
   Object.freeze(result.marcasBloqueadas);
