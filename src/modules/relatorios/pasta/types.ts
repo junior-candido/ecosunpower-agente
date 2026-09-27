@@ -68,4 +68,6 @@ export interface PastaView {
   slug: string;
   publico: boolean;                 // false = banner PREVIEW
   gerado_em: string;
+  /** Relatórios mensais da usina já ENVIADOS ao cliente (mais novo primeiro, até 12). */
+  relatorios_usina?: Array<{ referencia: string; mesExtenso: string; url: string }>;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { abrirPdfPublico, listarRelatoriosEnviadosDoLead, relatoriosParaPasta } from '../src/modules/gd/relatorio-publico.js';
+import { abrirPdfPublico, listarRelatoriosDaPasta, listarRelatoriosEnviadosDoLead, relatoriosParaPasta } from '../src/modules/gd/relatorio-publico.js';
 
 function fakeClient(linhas: any[], arquivo: Blob | null) {
   const ops: Array<[string, any[]]> = [];
@@ -73,5 +73,36 @@ describe('relatórios da usina na Pasta Digital', () => {
     expect(f.ops).toContainEqual(['eq', ['lead_id', 'L1']]);
     expect(f.ops).toContainEqual(['not', ['enviado_em', 'is', null]]);
     expect(f.ops).toContainEqual(['not', ['token', 'is', null]]);
+  });
+});
+
+describe('listarRelatoriosDaPasta — só relatórios da MESMA empresa do lead', () => {
+  function fakePorTabela(porTabela: Record<string, any[]>) {
+    const ops: Array<[string, string, any[]]> = [];
+    const client: any = {
+      from: (t: string) => {
+        const q: any = new Proxy({}, {
+          get(_x, prop: string) {
+            if (prop === 'then') return (res: any) => Promise.resolve({ data: porTabela[t] ?? [], error: null }).then(res);
+            return (...a: any[]) => { ops.push([t, prop, a]); return q; };
+          },
+        });
+        return q;
+      },
+    };
+    return { client, ops };
+  }
+  it('filtra pela empresa dona do lead', async () => {
+    const f = fakePorTabela({ leads: [{ company_id: 'C1' }], relatorios_gd_gerados: [{ referencia: '2026-08-01', token: 'B' }] });
+    const r = await listarRelatoriosDaPasta(f.client, 'L1', 'https://p.x');
+    expect(r).toEqual([{ referencia: '2026-08-01', mesExtenso: 'agosto de 2026', url: 'https://p.x/rg/B' }]);
+    expect(f.ops).toContainEqual(['leads', 'eq', ['id', 'L1']]);
+    expect(f.ops).toContainEqual(['relatorios_gd_gerados', 'eq', ['lead_id', 'L1']]);
+    expect(f.ops).toContainEqual(['relatorios_gd_gerados', 'eq', ['company_id', 'C1']]);
+  });
+  it('lead não encontrado → lista vazia, sem consultar relatórios', async () => {
+    const f = fakePorTabela({ leads: [], relatorios_gd_gerados: [{ referencia: '2026-08-01', token: 'B' }] });
+    expect(await listarRelatoriosDaPasta(f.client, 'L1', 'https://p.x')).toEqual([]);
+    expect(f.ops.some((o) => o[0] === 'relatorios_gd_gerados')).toBe(false);
   });
 });

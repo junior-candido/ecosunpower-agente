@@ -585,3 +585,26 @@ describe('origem servico protege o bucket (arquivo pertence ao Diário de Servi�
     expect(storage.remove).toHaveBeenCalledWith(['lead-1/pasta/meu.jpg']);
   });
 });
+
+describe('PastaService.resolverView — relatórios da usina (fatia 3)', () => {
+  const publicada = { ...PASTA_BASE, status: 'publicada', arquivos: [] };
+  const lista = [{ referencia: '2026-08-01', mesExtenso: 'agosto de 2026', url: 'https://p.x/rg/T' }];
+
+  it('relatórios enviados do cliente entram na view', async () => {
+    const listar = vi.fn().mockResolvedValue(lista);
+    const svc = new PastaService(fakeSupabase() as any, semSistema, listar);
+    const v = await svc.resolverView(publicada as any, true);
+    expect(listar).toHaveBeenCalledWith('lead-1');
+    expect(v!.relatorios_usina).toEqual(lista);
+  });
+  it('falha ao listar não derruba a pasta (lista vazia)', async () => {
+    const svc = new PastaService(fakeSupabase() as any, semSistema, vi.fn().mockRejectedValue(new Error('133 não aplicada')));
+    const v = await svc.resolverView(publicada as any, true);
+    expect(v).not.toBeNull();
+    expect(v!.relatorios_usina).toEqual([]);
+  });
+  it('sem o listador (ex.: envio automático) → lista vazia', async () => {
+    const v = await new PastaService(fakeSupabase() as any, semSistema).resolverView(publicada as any, true);
+    expect(v!.relatorios_usina).toEqual([]);
+  });
+});

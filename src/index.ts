@@ -9480,6 +9480,11 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         painel_modelo: s.painel_modelo ?? null,
         inversor_modelo: s.inversor_modelo ?? null,
       };
+    }, async (leadId) => {
+      // Só relatórios ENVIADOS deste lead e da empresa dona dele.
+      const { listarRelatoriosDaPasta } = await import('./modules/gd/relatorio-publico.js');
+      const { basePublica } = await import('./modules/gd/relatorio-envio-textos.js');
+      return listarRelatoriosDaPasta(supabase.getClient(), leadId, basePublica());
     });
     const view = await pastaService.resolverView(pasta, true);
     if (!view) return res.status(500).send('Erro ao montar a pasta');

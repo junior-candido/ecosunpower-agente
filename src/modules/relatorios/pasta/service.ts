@@ -37,6 +37,9 @@ export class PastaService {
   constructor(
     private supabase: SupabaseService,
     private resolverSistema: ResolverSistema,
+    // Relatórios mensais já enviados (fatia 3 dos demonstrativos). Opcional:
+    // quem não passa (envio automático) só não mostra o bloco.
+    private listarRelatoriosUsina?: (leadId: string) => Promise<Array<{ referencia: string; mesExtenso: string; url: string }>>,
   ) {}
 
   // 1 pasta por lead: retorna a existente ou cria rascunho novo com slug.
@@ -245,6 +248,14 @@ export class PastaService {
     const capaPath =
       pasta.capa_storage_path ?? arquivos.find((a) => a.secao === 'fotos')?.storage_path ?? null;
 
+    // Nunca derruba a pasta: sem relatório (ou erro) = bloco some.
+    const relatorios_usina = this.listarRelatoriosUsina
+      ? await this.listarRelatoriosUsina(pasta.lead_id).catch((err) => {
+          console.warn('[pasta] relatórios da usina não listados:', (err as Error).message);
+          return [];
+        })
+      : [];
+
     return {
       cliente_nome: lead.name ?? 'Cliente',
       cliente_cidade: lead.city ?? null,
@@ -259,6 +270,7 @@ export class PastaService {
       slug: pasta.slug,
       publico,
       gerado_em: pasta.updated_at,
+      relatorios_usina,
     };
   }
 

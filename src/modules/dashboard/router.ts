@@ -6104,7 +6104,12 @@ b.onclick=async function(){
     };
   };
   const posInstService = new PosInstalacaoService(supabaseService, resolverSistemaFV);
-  const pastaService = new PastaService(supabaseService, resolverSistemaFV);
+  const pastaService = new PastaService(supabaseService, resolverSistemaFV, async (leadId) => {
+    // Só relatórios ENVIADOS deste lead e da empresa dona dele.
+    const { listarRelatoriosDaPasta } = await import('../gd/relatorio-publico.js');
+    const { basePublica } = await import('../gd/relatorio-envio-textos.js');
+    return listarRelatoriosDaPasta(supabase, leadId, basePublica());
+  });
 
   // GET form de novo relatório
   router.get('/clientes/:id/relatorio-pos-instalacao/novo', async (req: Request, res: Response) => {

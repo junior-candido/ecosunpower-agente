@@ -42,6 +42,21 @@ export function renderPastaHtml(v: PastaView): string {
       </div>
     </section>` : '';
 
+  // Relatórios mensais já enviados (fatia 3 dos demonstrativos). Não entram no ZIP.
+  const relatorios = v.relatorios_usina ?? [];
+  const relatoriosHtml = relatorios.length > 0 ? `
+    <section>
+      <h2>📊 Relatórios da sua usina</h2>
+      <div class="lista-docs">
+        ${relatorios.map((r) => `
+        <a class="doc" href="${escapeHtml(r.url)}" target="_blank" rel="noopener">
+          <span class="doc-ico">📊</span>
+          <span class="doc-nome">${escapeHtml(r.mesExtenso.charAt(0).toLocaleUpperCase('pt-BR') + r.mesExtenso.slice(1))}</span>
+          <span class="doc-acao">abrir ›</span>
+        </a>`).join('')}
+      </div>
+    </section>` : '';
+
   // Seções: fotos/monitoramento = galeria com lightbox (+ player pra vídeo);
   // demais = cartões "tocou, abriu".
   const secoesHtml = v.secoes.map((s) => {
@@ -183,6 +198,8 @@ ${previewBanner}
   </div>` : ''}
 
   ${sistemaHtml}
+
+  ${relatoriosHtml}
 
   ${secoesHtml}
 

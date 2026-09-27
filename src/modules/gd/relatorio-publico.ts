@@ -52,15 +52,35 @@ export function relatoriosParaPasta(
   return out;
 }
 
-export async function listarRelatoriosEnviadosDoLead(
+/**
+ * Porta da Pasta Digital pública: só relatórios do lead E da empresa dona do
+ * lead (nunca de outra empresa, mesmo que um registro aponte para o lead).
+ * Lead não encontrado → lista vazia.
+ */
+export async function listarRelatoriosDaPasta(
   db: SupabaseClient,
   leadId: string,
   base: string,
 ): Promise<RelatorioNaPasta[]> {
-  const { data, error } = await db
+  const { data, error } = await db.from('leads').select('company_id').eq('id', leadId).limit(1);
+  if (error) throw new Error(`leads (empresa do lead da pasta): ${error.message}`);
+  const companyId = (data ?? [])[0]?.company_id as string | undefined;
+  if (!companyId) return [];
+  return listarRelatoriosEnviadosDoLead(db, leadId, base, companyId);
+}
+
+export async function listarRelatoriosEnviadosDoLead(
+  db: SupabaseClient,
+  leadId: string,
+  base: string,
+  companyId?: string,
+): Promise<RelatorioNaPasta[]> {
+  let q = db
     .from('relatorios_gd_gerados')
     .select('referencia, token')
-    .eq('lead_id', leadId)
+    .eq('lead_id', leadId);
+  if (companyId) q = q.eq('company_id', companyId);
+  const { data, error } = await q
     .not('enviado_em', 'is', null)
     .not('token', 'is', null)
     .order('referencia', { ascending: false })
