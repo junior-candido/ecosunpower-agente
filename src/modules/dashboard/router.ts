@@ -6477,7 +6477,8 @@ b.onclick=async function(){
 
   router.post('/pastas/:id/enviar', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!(await pastaDoOperador(req, res))) return;
+    const pasta = await pastaDoOperador(req, res);
+    if (!pasta) return;
     const sendText = options.sendText;
     if (!sendText) return res.status(500).send('sendText não configurado neste ambiente.');
 
@@ -6485,16 +6486,23 @@ b.onclick=async function(){
     // LGPD, textos) e do canal dela. Antes rodava sem contexto e um tenant
     // (ex.: Conquista Solar) mandava a pasta pelo número da EcoSunPower.
     // Tenant sem WhatsApp próprio conectado não manda zap — nunca pelo número de outra empresa.
-    const { canalZapDaEmpresa, noCanalDaEmpresa, EMPRESA_CASA } = await import('./canal-envio.js');
+    const { canalZapDaEmpresa, noCanalDaEmpresa, bloqueioZapPasta, EMPRESA_CASA } = await import('./canal-envio.js');
     const companyId = (req as AuthedRequest).dashUser?.companyId ?? EMPRESA_CASA;
     const instancia = await instanciaDoTenant(req as AuthedRequest);
     const canal = canalZapDaEmpresa(companyId, instancia);
 
     const { r, email } = await noCanalDaEmpresa(companyId, instancia, async () => {
-      const r: { ok: boolean; reason?: string } = canal === 'nenhum'
-        ? { ok: false, reason: 'sem_canal' }
+      // A trava LGPD do sendText descarta em silêncio (a tela mostraria ✅):
+      // pergunta ANTES e, se barrar, nada sai e a tela mostra o motivo.
+      const leadDaPasta = canal === 'nenhum'
+        ? null
+        : await supabaseService.getClienteByLeadId(pasta.lead_id).catch(() => null);
+      const barrado = bloqueioZapPasta({
+        canal, phone: leadDaPasta?.phone ?? null, engineerPhone: options.engineerPhone ?? '', cfg: empresaDe(companyId),
+      });
+      const r: { ok: boolean; reason?: string } = barrado
         // Modelo (WABA) é só da EcoSun; tenant vai por texto na instância dele.
-        : await pastaService.enviarPorWhatsApp(id, sendText, canal === 'casa' ? options.sendTemplate : undefined, { forcar: true });
+        ?? await pastaService.enviarPorWhatsApp(id, sendText, canal === 'casa' ? options.sendTemplate : undefined, { forcar: true });
 
       // O e-mail vai JUNTO, igual ao botão do zap (09/09/2026). Nunca derruba o
       // envio do zap — mas o resultado APARECE na tela (23/09/2026): antes ele era

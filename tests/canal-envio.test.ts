@@ -28,3 +28,33 @@ describe('noCanalDaEmpresa', () => {
     expect(visto).toEqual({ exige: false, empresa: EMPRESA_CASA });
   });
 });
+
+import { bloqueioZapPasta } from '../src/modules/dashboard/canal-envio.js';
+import { normalizarEmpresaRow } from '../src/modules/empresa-config.js';
+
+// 27/09/2026: a trava LGPD do sendText descarta EM SILÊNCIO — a tela mostrava ✅.
+// O envio da pasta pergunta antes e mostra o motivo.
+describe('bloqueioZapPasta — decide antes de mandar a pasta', () => {
+  const tenant = normalizarEmpresaRow({ company_id: TENANT, nome_fantasia: 'Conquista Solar' });
+  const ecosun = normalizarEmpresaRow({ company_id: EMPRESA_CASA, nome_fantasia: 'EcoSunPower' });
+  const ENG = '5561999990000';
+
+  it('tenant sem WhatsApp → sem_canal', () => {
+    expect(bloqueioZapPasta({ canal: 'nenhum', phone: '61999991111', engineerPhone: ENG, cfg: tenant }))
+      .toEqual({ ok: false, reason: 'sem_canal' });
+  });
+  it('tenant mandando pro número da EcoSun (cadastro sem 55) → bloqueado_lgpd, sem enviar', () => {
+    expect(bloqueioZapPasta({ canal: 'evolution', phone: '(61) 99999-0000', engineerPhone: ENG, cfg: tenant }))
+      .toEqual({ ok: false, reason: 'bloqueado_lgpd' });
+  });
+  it('tenant pro cliente dele → segue (null)', () => {
+    expect(bloqueioZapPasta({ canal: 'evolution', phone: '61999991111', engineerPhone: ENG, cfg: tenant })).toBeNull();
+  });
+  it('EcoSun nunca é barrada pela trava', () => {
+    expect(bloqueioZapPasta({ canal: 'casa', phone: ENG, engineerPhone: ENG, cfg: ecosun })).toBeNull();
+  });
+  it('telefone vazio/inválido → segue (o serviço devolve sem_phone/telefone_invalido)', () => {
+    expect(bloqueioZapPasta({ canal: 'evolution', phone: null, engineerPhone: ENG, cfg: tenant })).toBeNull();
+    expect(bloqueioZapPasta({ canal: 'evolution', phone: '123', engineerPhone: ENG, cfg: tenant })).toBeNull();
+  });
+});
