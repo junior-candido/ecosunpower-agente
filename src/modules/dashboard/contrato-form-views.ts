@@ -528,12 +528,12 @@ export interface DocBloqueadoInput {
 const TITULO_BLOQUEIO: Record<DocBloqueadoInput['acao'], string> = {
   pdf: 'O PDF não foi gerado',
   enviar: 'O documento não foi enviado',
-  drive: 'Os documentos não foram salvos no Drive',
+  drive: 'Nada foi salvo no Drive',
 };
 
 export function renderDocBloqueadoPage(page: DocBloqueadoInput): string {
   const voltar = `/dashboard/leads/${encodeURIComponent(page.leadId)}/contrato-form?tipo=${encodeURIComponent(page.tipoForm)}`;
-  const titulo = page.acao === 'drive' ? 'Nada foi salvo no Drive' : TITULO_BLOQUEIO[page.acao];
+  const titulo = TITULO_BLOQUEIO[page.acao];
   const blocos = page.blocos.map((b) => {
     const itens = b.problemas.map((p) => `<li>${escapeHtml(p)}</li>`).join('');
     const congelado = b.congeladoEm
