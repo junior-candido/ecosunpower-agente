@@ -17,12 +17,16 @@ export async function abrirPdfPublico(
 ): Promise<{ pdf: Buffer; nomeArquivo: string } | null> {
   const { data, error } = await db
     .from('relatorios_gd_gerados')
-    .select('storage_path, instalacao, referencia')
+    .select('storage_path, instalacao, referencia, lead_id')
     .eq('token', token)
     .limit(1);
   if (error) throw new Error(`relatorios_gd_gerados (link público): ${error.message}`);
-  const r = (data ?? [])[0] as { storage_path: string | null; instalacao: string; referencia: string } | undefined;
+  const r = (data ?? [])[0] as
+    | { storage_path: string | null; instalacao: string; referencia: string; lead_id: string | null }
+    | undefined;
   if (!r?.storage_path) return null;
+  // LGPD: cliente apagado → a FK (migration 134) zera lead_id → o link morre.
+  if (!r.lead_id) return null;
   const pdf = await baixarAnexo(db, r.storage_path);
   if (!pdf) return null;
   return { pdf, nomeArquivo: nomeArquivoRelatorio(r.instalacao, r.referencia) };
@@ -73,14 +77,13 @@ export async function listarRelatoriosEnviadosDoLead(
   db: SupabaseClient,
   leadId: string,
   base: string,
-  companyId?: string,
+  companyId: string,
 ): Promise<RelatorioNaPasta[]> {
-  let q = db
+  const { data, error } = await db
     .from('relatorios_gd_gerados')
     .select('referencia, token')
-    .eq('lead_id', leadId);
-  if (companyId) q = q.eq('company_id', companyId);
-  const { data, error } = await q
+    .eq('lead_id', leadId)
+    .eq('company_id', companyId)
     .not('enviado_em', 'is', null)
     .not('token', 'is', null)
     .order('referencia', { ascending: false })

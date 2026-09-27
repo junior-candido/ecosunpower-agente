@@ -23,7 +23,7 @@ const TOKEN = 'T'.repeat(32);
 
 describe('abrirPdfPublico', () => {
   it('acha SÓ pelo token (nunca UC/empresa) e devolve o PDF guardado', async () => {
-    const f = fakeClient([{ storage_path: 'L1/relatorio-gd/a.pdf', instalacao: '351534', referencia: '2026-08-01' }], new Blob(['%PDF-1.4']));
+    const f = fakeClient([{ storage_path: 'L1/relatorio-gd/a.pdf', instalacao: '351534', referencia: '2026-08-01', lead_id: 'L1' }], new Blob(['%PDF-1.4']));
     const r = await abrirPdfPublico(f.client, TOKEN);
     expect(r!.pdf.toString()).toBe('%PDF-1.4');
     expect(r!.nomeArquivo).toBe('relatorio-351534-2026-08.pdf');
@@ -32,17 +32,22 @@ describe('abrirPdfPublico', () => {
     expect(f.buckets).toEqual(['client-attachments']);
     expect(f.download).toHaveBeenCalledWith('L1/relatorio-gd/a.pdf');
   });
+  it('cliente apagado (LGPD: lead_id virou NULL pela FK) → null, sem tocar no storage', async () => {
+    const f = fakeClient([{ storage_path: 'L1/relatorio-gd/a.pdf', instalacao: '1', referencia: '2026-08-01', lead_id: null }], new Blob(['x']));
+    expect(await abrirPdfPublico(f.client, TOKEN)).toBeNull();
+    expect(f.download).not.toHaveBeenCalled();
+  });
   it('token que não existe → null, sem tocar no storage', async () => {
     const f = fakeClient([], new Blob(['x']));
     expect(await abrirPdfPublico(f.client, TOKEN)).toBeNull();
     expect(f.download).not.toHaveBeenCalled();
   });
   it('registro sem PDF guardado → null', async () => {
-    const f = fakeClient([{ storage_path: null, instalacao: '1', referencia: '2026-08-01' }], new Blob(['x']));
+    const f = fakeClient([{ storage_path: null, instalacao: '1', referencia: '2026-08-01', lead_id: 'L1' }], new Blob(['x']));
     expect(await abrirPdfPublico(f.client, TOKEN)).toBeNull();
   });
   it('PDF sumiu do storage → null', async () => {
-    const f = fakeClient([{ storage_path: 'L1/relatorio-gd/a.pdf', instalacao: '1', referencia: '2026-08-01' }], null);
+    const f = fakeClient([{ storage_path: 'L1/relatorio-gd/a.pdf', instalacao: '1', referencia: '2026-08-01', lead_id: 'L1' }], null);
     expect(await abrirPdfPublico(f.client, TOKEN)).toBeNull();
   });
 });
@@ -66,9 +71,10 @@ describe('relatórios da usina na Pasta Digital', () => {
     expect(r[0].referencia).toBe('2024-01-01');
     expect(relatoriosParaPasta([{ referencia: '2026-08-01', token: null }], 'https://p.x')).toEqual([]);
   });
-  it('consulta só o lead da pasta, só enviados com token', async () => {
+  it('consulta só o lead da pasta e a empresa dele, só enviados com token', async () => {
     const f = fakeClient([{ referencia: '2026-08-01', token: 'B' }], null);
-    const r = await listarRelatoriosEnviadosDoLead(f.client, 'L1', 'https://p.x');
+    const r = await listarRelatoriosEnviadosDoLead(f.client, 'L1', 'https://p.x', 'C1');
+    expect(f.ops).toContainEqual(['eq', ['company_id', 'C1']]);
     expect(r).toEqual([{ referencia: '2026-08-01', mesExtenso: 'agosto de 2026', url: 'https://p.x/rg/B' }]);
     expect(f.ops).toContainEqual(['eq', ['lead_id', 'L1']]);
     expect(f.ops).toContainEqual(['not', ['enviado_em', 'is', null]]);
