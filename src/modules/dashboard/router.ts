@@ -4637,7 +4637,7 @@ b.onclick=async function(){
       if (!RE_UC.test(inst)) { res.status(400).send('UC inválida'); return; }
       const { tela, ing } = await depsGd(req);
       const { validarMes } = await import('../gd/gd-validacao.js');
-      const { compensadoDoMes, economiaEstimadaRs, alertaVencimento, TARIFA_PADRAO_RS_KWH, hojeBrasilia } = await import('../gd/demonstrativos-tela.js');
+      const { compensadoDoMes, consumoDoMes, economiaEstimadaRs, alertaVencimento, hojeBrasilia } = await import('../gd/demonstrativos-tela.js');
       const hist = await tela.historicoDaInstalacao(inst);
       if (hist.length === 0) { res.status(404).send('<h2>Nenhum demonstrativo dessa UC</h2>'); return; }
       const meses = hist.map((h) => h.referencia);
@@ -4655,8 +4655,8 @@ b.onclick=async function(){
       const candidatos = !l.lead_id && buscar ? await tela.buscarLeads(buscar) : [];
       res.type('html').send(renderDemonstrativoCliente({
         instalacao: inst, clienteNome: l.cliente_nome, leadId: l.lead_id, meses, mes: l.referencia,
-        consumoKwh: l.consumo_kwh, injetadoKwh: l.injetado_kwh, saldoKwh: l.saldo_acumulado_kwh,
-        compensadoKwh: compensado, economiaRs: economiaEstimadaRs(compensado, TARIFA_PADRAO_RS_KWH),
+        consumoKwh: consumoDoMes(l), injetadoKwh: l.injetado_kwh, saldoKwh: l.saldo_acumulado_kwh,
+        compensadoKwh: compensado, economiaRs: economiaEstimadaRs(compensado, empresaDe(req.dashUser!.companyId).gdTarifaRsKwh),
         proximoExpirar: alertaVencimento(l.proximo_expirar_kwh, l.ciclo_expirar, hojeBrasilia()),
         historico: l.historico.map((h) => ({ mes: h.mes, consumida: h.consumida, injetada: h.injetada, compensado: h.compensado })),
         unidades: l.unidades, origemDemonstrativo: l.origem, verificado: l.origem_verificada,
@@ -4665,6 +4665,77 @@ b.onclick=async function(){
     } catch (err) {
       console.error('[demonstrativos/cliente]', err);
       res.status(500).send(`<h2>Erro ao abrir demonstrativo</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  /** Prepara o relatório (dados + marca). null = já respondeu erro. */
+  async function relatorioDaRequisicao(req: AuthedRequest, res: Response) {
+    const inst = String(req.params.instalacao);
+    const mes = typeof req.query.mes === 'string' ? req.query.mes : '';
+    if (!RE_UC.test(inst) || !RE_MES.test(mes)) { res.status(400).send('UC ou mês inválido'); return null; }
+    const { companyId, tela, ing } = await depsGd(req);
+    const cfg = empresaDe(companyId);
+    const { prepararRelatorio } = await import('../gd/relatorio-servico.js');
+    const r = await prepararRelatorio(inst, mes, {
+      historicoDaInstalacao: (i) => tela.historicoDaInstalacao(i),
+      geracoesManuais: (i, m) => tela.geracoesManuais(i, m),
+      sistemaDoLead: (l) => tela.sistemaDoLead(l),
+      geracaoApiDoMes: (l, m) => ing.geracaoDoMes(l, m),
+      tarifaRsKwh: cfg.gdTarifaRsKwh,
+    });
+    if (!r.ok) {
+      res.redirect(`/dashboard/demonstrativos/${inst}?mes=${encodeURIComponent(mes)}&msg=${encodeURIComponent(`Relatório não gerado: ${r.motivo}`)}`);
+      return null;
+    }
+    const { marcaDoRelatorio } = await import('../gd/relatorio-marca.js');
+    const { obterLogoBase64 } = await import('../proposal/assets/logo-base64.js');
+    const { comEmpresaDe } = await import('../empresa-config.js');
+    const db = bancoDoOperador(req, supabase);
+    const marca = await marcaDoRelatorio(cfg, {
+      // obterLogoBase64 lê a empresa do CONTEXTO — roda dentro da empresa do operador.
+      baixarLogo: () => comEmpresaDe(companyId, () => obterLogoBase64(db)),
+    });
+    const { renderRelatorioHtml } = await import('../gd/relatorio-html.js');
+    return { inst, mes, tela, relatorio: r.relatorio, html: renderRelatorioHtml(r.relatorio, marca) };
+  }
+
+  router.get('/demonstrativos/:instalacao/relatorio.html', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const p = await relatorioDaRequisicao(req, res);
+      if (p) res.type('html').send(p.html);
+    } catch (err) {
+      console.error('[demonstrativos/relatorio.html]', err);
+      res.status(500).send(`<h2>Erro ao montar o relatório</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  router.get('/demonstrativos/:instalacao/relatorio.pdf', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const p = await relatorioDaRequisicao(req, res);
+      if (!p) return;
+      const { gerarRelatorioPdf, lerPdfUnpdf } = await import('../gd/relatorio-pdf.js');
+      const { htmlToPdf } = await import('../proposal/pdf-generator.js');
+      const pdf = await gerarRelatorioPdf(p.html, { htmlToPdf, lerPdf: lerPdfUnpdf }, { exigeGrafico: p.relatorio.meses.length > 0 });
+      const r = p.relatorio;
+      await p.tela.registrarRelatorio({
+        instalacao: p.inst, referencia: p.mes, geradoPor: req.dashUser!.id,
+        numeros: {
+          gerouKwh: r.gerouKwh, consumiuKwh: r.consumiuKwh, economiaRs: r.economiaRs, creditosKwh: r.creditosKwh,
+          tarifaRsKwh: r.tarifaRsKwh, injetadoKwh: r.injetadoKwh, compensadoKwh: r.compensadoKwh,
+          usadosNoMesKwh: r.creditos.usadosNoMesKwh, origemGeracao: r.origemGeracao,
+        },
+      });
+      const nome = `relatorio-${p.inst}-${p.mes.slice(0, 7)}.pdf`;
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${nome}"`);
+      res.send(pdf);
+    } catch (err) {
+      console.error('[demonstrativos/relatorio.pdf]', err);
+      const inst = String(req.params.instalacao);
+      const mes = typeof req.query.mes === 'string' ? req.query.mes : '';
+      if (!res.headersSent) {
+        res.redirect(`/dashboard/demonstrativos/${RE_UC.test(inst) ? inst : ''}?mes=${encodeURIComponent(mes)}&msg=${encodeURIComponent(`Não consegui gerar o PDF: ${(err as Error).message}`)}`);
+      }
     }
   });
 

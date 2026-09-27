@@ -5,6 +5,7 @@
 import { renderLayout } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { ItemLista } from '../gd/demonstrativos-tela.js';
+import { historicoPorMes } from '../gd/demonstrativos-tela.js';
 import type { EstadoGd, ResultadoValidacao } from '../gd/gd-validacao.js';
 import { mesCurto } from '../gd/demonstrativo-cruzamento.js';
 
@@ -116,7 +117,15 @@ export function renderDemonstrativoCliente(d: DetalheCliente, user?: DashUser): 
   </form>`).join('')}
 </div>`;
   const rateio = d.unidades.length > 1
-    ? `<p class="mt-2">Rateio: ${d.unidades.map((u) => `${esc(u.codigoCliente)} ${u.percentual}%`).join(' · ')}</p>` : '';
+    ? `<p class="mt-2">Rateio: ${d.unidades.map((u) => `${esc(u.codigoCliente)} ${esc(u.percentual)}%`).join(' · ')}</p>` : '';
+  const motivoFalta = v.bloqueios[0] ?? v.pendencias[0] ?? 'o mês ainda não está pronto';
+  const botaoRelatorio = v.estado === 'pronto'
+    ? `<div class="flex gap-2 mt-4">
+  <a href="/dashboard/demonstrativos/${esc(d.instalacao)}/relatorio.pdf?mes=${esc(d.mes)}" class="px-4 py-2 rounded bg-emerald-700 text-white">📄 Gerar PDF</a>
+  <a href="/dashboard/demonstrativos/${esc(d.instalacao)}/relatorio.html?mes=${esc(d.mes)}" target="_blank" class="px-4 py-2 rounded bg-slate-700 text-white">👁 Prévia</a>
+</div>`
+    : `<p class="mt-4"><span class="px-4 py-2 rounded bg-slate-800 text-slate-500 cursor-not-allowed">📄 Gerar PDF</span>
+  <span class="text-sm text-amber-300 ml-2">Só sai com tudo 🟢 — ${esc(motivoFalta)}</span></p>`;
   const body = `
 <div style="color:#d1d5db;max-width:900px">
 <a href="/dashboard/demonstrativos?mes=${esc(d.mes)}" class="text-sm text-slate-400">← Demonstrativos</a>
@@ -140,9 +149,10 @@ ${formLigar}
   <li>Geração → ${origemGeracao}</li>
   <li>Economia estimada = compensado ${kwh(d.compensadoKwh)} × tarifa média (Lei 14.300 cobra parte do Fio B)</li>
 </ul>
-<p class="text-sm text-slate-500 mt-3">O relatório em PDF para o cliente chega na próxima entrega (só com tudo 🟢).</p>
+${botaoRelatorio}
 </div>`;
-  const hist = [...d.historico].sort((a, b) => a.mes.localeCompare(b.mes)).slice(-13);
+  // Rateio: uma linha por unidade no mês — soma por mês (13 meses distintos).
+  const hist = historicoPorMes(d.historico, 13);
   const scripts = `
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>

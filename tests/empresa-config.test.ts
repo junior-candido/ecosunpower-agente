@@ -343,3 +343,16 @@ describe('empresa-config: B1b comEmpresaDe (contexto assincrono)', () => {
     expect(b).toBe('EcoSunPower');
   });
 });
+
+describe('gdTarifaRsKwh (tarifa da economia estimada do relatorio GD)', () => {
+  it('padrao 0,99 quando a coluna nao existe ou vem nula', () => {
+    expect(normalizarEmpresaRow({}).gdTarifaRsKwh).toBe(0.99);
+    expect(normalizarEmpresaRow({ gd_tarifa_rs_kwh: null }).gdTarifaRsKwh).toBe(0.99);
+  });
+  it('usa o valor da empresa quando vem numero valido (numeric chega como string)', () => {
+    expect(normalizarEmpresaRow({ gd_tarifa_rs_kwh: '1.05' }).gdTarifaRsKwh).toBe(1.05);
+  });
+  it('valor absurdo (<=0) cai no padrao', () => {
+    expect(normalizarEmpresaRow({ gd_tarifa_rs_kwh: 0 }).gdTarifaRsKwh).toBe(0.99);
+  });
+});

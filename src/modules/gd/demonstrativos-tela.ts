@@ -7,8 +7,6 @@ import type { LinhaDemonstrativo } from './demonstrativos-tela-repo.js';
 import type { EstadoGd, ResultadoValidacao } from './gd-validacao.js';
 import { mesCurto } from './demonstrativo-cruzamento.js';
 
-/** Tarifa média usada na economia estimada até existir config por empresa (fatia 2). */
-export const TARIFA_PADRAO_RS_KWH = 0.99;
 const MESES_ALERTA = 6;
 
 export interface ItemLista {
@@ -47,12 +45,115 @@ export function hojeBrasilia(agora: Date = new Date()): string {
   return `${ano}-${mes}-${dia}`;
 }
 
-/** null quando o mês não tem linha, ou o compensado veio nulo/indefinido/não numérico — nunca vira 0 por acidente. */
+/** Número finito ou null — null/undefined/texto nunca viram 0 por acidente. */
+export function numOuNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Soma os valores numéricos; null quando nenhum é número. */
+function somaOuNull(valores: unknown[]): number | null {
+  let soma: number | null = null;
+  for (const v of valores) {
+    const n = numOuNull(v);
+    if (n !== null) soma = (soma ?? 0) + n;
+  }
+  return soma === null ? null : Math.round(soma * 100) / 100;
+}
+
+export interface MesAgrupado {
+  mes: string;
+  consumida: number | null;
+  injetada: number | null;
+  compensado: number | null;
+  /** Quantas linhas (unidades do rateio) o mês tinha. */
+  unidades: number;
+}
+
+/**
+ * Remove linha repetida do mesmo mês antes de somar (ex.: reenvio do gatilho
+ * grava a mesma linha 2x). Com `codigoCliente`, a chave é o código — mantém a
+ * primeira de cada unidade. Sem `codigoCliente`, só colapsa pra 1 linha quando
+ * `unidadesCount` diz que a UC não tem rateio (≤1 unidade) — nesse caso
+ * qualquer repetição é claramente uma duplicata, nunca uma 2ª unidade de
+ * verdade. Sem essa informação (unidadesCount omitido), mantém como veio.
+ */
+function semLinhasDuplicadas<T extends { codigoCliente?: string }>(linhas: T[], unidadesCount?: number): T[] {
+  const vistos = new Set<string>();
+  let semCodigoJaTomado = false;
+  const out: T[] = [];
+  for (const l of linhas) {
+    if (l.codigoCliente) {
+      if (vistos.has(l.codigoCliente)) continue;
+      vistos.add(l.codigoCliente);
+      out.push(l);
+    } else {
+      if (unidadesCount !== undefined && unidadesCount <= 1) {
+        if (semCodigoJaTomado) continue;
+        semCodigoJaTomado = true;
+      }
+      out.push(l);
+    }
+  }
+  return out;
+}
+
+/**
+ * O histórico do demonstrativo tem UMA linha por unidade do rateio por mês.
+ * Agrupa por mês somando as unidades, em ordem, e devolve os últimos
+ * `maxMeses` meses DISTINTOS. Usado pela tela, pelo relatório e pelo serviço.
+ * `unidadesCount` (quando informado) é o `unidades.length` da linha do banco
+ * — usado só pra de-duplicar linha repetida sem `codigoCliente` (ver acima).
+ */
+export function historicoPorMes(
+  historico: ReadonlyArray<{ mes: string; codigoCliente?: string; consumida?: unknown; injetada?: unknown; compensado?: unknown }>,
+  maxMeses = 13,
+  unidadesCount?: number,
+): MesAgrupado[] {
+  const porMes = new Map<string, Array<{ codigoCliente?: string; consumida?: unknown; injetada?: unknown; compensado?: unknown }>>();
+  for (const h of historico) {
+    const lista = porMes.get(h.mes);
+    if (lista) lista.push(h); else porMes.set(h.mes, [h]);
+  }
+  return [...porMes.keys()].sort().slice(-maxMeses).map((mes) => {
+    const linhas = semLinhasDuplicadas(porMes.get(mes)!, unidadesCount);
+    return {
+      mes,
+      consumida: somaOuNull(linhas.map((x) => x.consumida)),
+      injetada: somaOuNull(linhas.map((x) => x.injetada)),
+      compensado: somaOuNull(linhas.map((x) => x.compensado)),
+      unidades: linhas.length,
+    };
+  });
+}
+
+/** O mês da referência já agrupado (todas as unidades somadas, sem duplicata), ou null se o histórico não tem o mês. */
+export function historicoDoMes(l: LinhaDemonstrativo): MesAgrupado | null {
+  return historicoPorMes(l.historico.filter((x) => x.mes === l.referencia), 1, l.unidades.length)[0] ?? null;
+}
+
+/**
+ * Consumo do mês: soma de todas as unidades do rateio quando o mês tem mais
+ * de uma (mesma regra do motor do relatório), senão o `consumo_kwh` da
+ * própria linha. Usada pela TELA e pelo motor do PDF — nunca duplicada — pra
+ * nunca mostrarem números diferentes pro mesmo mês.
+ */
+export function consumoDoMes(l: LinhaDemonstrativo): number | null {
+  const doMes = historicoDoMes(l);
+  const somandoUnidades = doMes !== null && doMes.unidades > 1;
+  return somandoUnidades && doMes!.consumida !== null ? doMes!.consumida : l.consumo_kwh;
+}
+
+/**
+ * Compensado do mês somando TODAS as unidades do rateio: o total do
+ * demonstrativo quando veio; senão a soma das linhas do mês no histórico.
+ * null quando não há de onde tirar — nunca vira 0 por acidente.
+ */
 export function compensadoDoMes(l: LinhaDemonstrativo): number | null {
-  const h = l.historico.find((x) => x.mes === l.referencia);
-  if (!h || h.compensado === null || h.compensado === undefined) return null;
-  const v = Number(h.compensado);
-  return Number.isFinite(v) ? v : null;
+  const total = numOuNull(l.total_compensado_kwh);
+  if (total !== null) return total;
+  return historicoDoMes(l)?.compensado ?? null;
 }
 
 export function economiaEstimadaRs(compensadoKwh: number | null, tarifa: number): number | null {

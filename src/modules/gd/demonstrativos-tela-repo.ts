@@ -17,9 +17,12 @@ export interface LinhaDemonstrativo {
   credito_utilizado_kwh: number | null;
   credito_restante_kwh: number | null;
   saldo_acumulado_kwh: number | null;
+  /** Total compensado no mês somando TODAS as unidades do rateio (bloco do demonstrativo). */
+  total_compensado_kwh: number | null;
   proximo_expirar_kwh: number | null;
   ciclo_expirar: string | null;
-  historico: Array<{ mes: string; consumida: number; injetada: number; faturada: number; compensado: number; credito: number }>;
+  /** UMA linha por unidade do rateio por mês (codigoCliente diz de qual unidade é). */
+  historico: Array<{ mes: string; codigoCliente?: string; consumida: number; injetada: number; faturada: number; compensado: number; credito: number }>;
   unidades: Array<{ codigoCliente: string; percentual: number; saldo: number }>;
   inconsistencias: string[];
   origem: 'email' | 'pdf_manual' | 'digitado';
@@ -36,7 +39,7 @@ export interface GeracaoManual {
 
 const COLUNAS =
   'id, lead_id, cliente_nome, codigo_cliente, instalacao, referencia, injetado_kwh, consumo_kwh, ' +
-  'credito_utilizado_kwh, credito_restante_kwh, saldo_acumulado_kwh, proximo_expirar_kwh, ciclo_expirar, ' +
+  'credito_utilizado_kwh, credito_restante_kwh, saldo_acumulado_kwh, total_compensado_kwh, proximo_expirar_kwh, ciclo_expirar, ' +
   'historico, unidades, inconsistencias, origem, origem_verificada, recebido_em, conferido_em';
 
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
@@ -49,6 +52,7 @@ function normalizar(r: any): LinhaDemonstrativo {
     credito_utilizado_kwh: num(r.credito_utilizado_kwh),
     credito_restante_kwh: num(r.credito_restante_kwh),
     saldo_acumulado_kwh: num(r.saldo_acumulado_kwh),
+    total_compensado_kwh: num(r.total_compensado_kwh),
     proximo_expirar_kwh: num(r.proximo_expirar_kwh),
     historico: Array.isArray(r.historico) ? r.historico : [],
     unidades: Array.isArray(r.unidades) ? r.unidades : [],
@@ -281,6 +285,18 @@ export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
       // devolvida = o gatilho manteve o que estava, nao o que a tela mandou.
       if (!data || data.length === 0) return 'mantido_verificado';
       return 'gravado';
+    },
+
+    /** Rastreio: cada PDF gerado fica registrado com os números que saíram nele. */
+    async registrarRelatorio(p: { instalacao: string; referencia: string; geradoPor: string; numeros: Record<string, unknown> }): Promise<void> {
+      const { error } = await db.from('relatorios_gd_gerados').insert({
+        company_id: companyId,
+        instalacao: p.instalacao,
+        referencia: p.referencia,
+        gerado_por: p.geradoPor,
+        numeros: p.numeros,
+      });
+      if (error) throw new Error(`relatorios_gd_gerados (gravar): ${error.message}`);
     },
   };
 }
