@@ -4,8 +4,9 @@
 // conversacional (que trava coletando dado por IA), aqui é determinístico:
 // pega o que já existe (proposta + cadastro do cliente via buildInitialData),
 // PREENCHE os buracos com espaços em branco, e SEMPRE devolve dados válidos
-// pra renderizar. Nunca falha por falta de dado — o que faltar vira uma linha
-// pra preencher à mão no PDF, e a lista `faltando` avisa o Junior.
+// pra renderizar. Nunca falha por falta de dado — o que faltar vira "____" na
+// PRÉVIA, e a lista `faltando` avisa o Junior. A saída de verdade (PDF, zap,
+// Drive) NÃO usa isto direto: passa por documento-final.ts, que trava lacuna.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DadosFechamento, PessoaFisica, Endereco, UF } from './types.js';
 import { fetchByLeadId, buildInitialData } from './closing-data-fetcher.js';

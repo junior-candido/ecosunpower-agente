@@ -3250,9 +3250,9 @@ b.onclick=async function(){
     }
   });
 
-  // 📄 Gerador CONFIÁVEL de contrato/procuração: monta os dados do cadastro +
-  // proposta (buildInitialData), preenche brancos onde faltar e gera o PDF na
-  // hora. Determinístico — SEMPRE gera, nunca trava por falta de dado.
+  // 📄 Gerador de contrato/procuração: monta os dados do cadastro + proposta
+  // (buildInitialData) — ou usa o retrato CONGELADO — e só gera o PDF/envia/salva
+  // quando o documento está completo (validar-documento.ts). A prévia nunca trava.
   // Pra onde voltar depois de ler/enviar doc: se veio da tela de Contratos
   // (next=contratos), volta pra ela com o CLIENTE ainda selecionado no dropdown
   // (?lead=<id>) e o mesmo TIPO (?tipo=); senão, volta pra tela do lead.

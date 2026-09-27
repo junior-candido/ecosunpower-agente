@@ -17,8 +17,10 @@
 //     combinados à parte) grava no rascunho `leads.contrato_dados[tipo]`, porque
 //     só faz sentido naquele documento.
 //
-// Regra de ouro da sessão: NUNCA trava. Campo vazio não impede nada — vira espaço
-// em branco no PDF (completarComPlaceholders) e aparece destacado na tela.
+// O FORMULÁRIO e a PRÉVIA nunca travam: campo vazio vira espaço em branco
+// (completarComPlaceholders) e aparece destacado na tela. Já a SAÍDA de verdade
+// (Gerar PDF, Mandar no zap, Salvar no Drive) é travada enquanto houver lacuna ou
+// dado inválido — ver validar-documento.ts e documento-final.ts.
 import type { Aditivo, DadosFechamento, Endereco, PessoaFisica } from './types.js';
 import { renderContrato } from './templates/contrato.html.js';
 import { renderProcuracao } from './templates/procuracao.html.js';
@@ -40,7 +42,7 @@ export interface CampoContrato {
   /** Atalhos de 'texto_sugerido': aparecem numa lista, mas não obrigam a nada. */
   sugestoes?: string[];
   dica?: string;
-  /** Obrigatório = se ficar vazio, sai em branco no PDF → destaca na tela. */
+  /** Obrigatório = se ficar vazio, destaca na tela e a saída (PDF/zap/Drive) trava. */
   obrigatorio?: boolean;
   /**
    * Coluna do lead onde esse campo mora. Quem tem coluna é dado de CADASTRO:
