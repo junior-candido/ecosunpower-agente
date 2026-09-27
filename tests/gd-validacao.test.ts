@@ -103,3 +103,18 @@ describe('validarMes', () => {
     expect(r.estado).toBe('inconsistente');
   });
 });
+
+describe('trava: compensado nao pode passar do consumo do mes', () => {
+  it('compensado maior que o consumo bloqueia (🔴) — nao abate mais do que se consumiu', () => {
+    const r = validarMes({ ...base, geracaoApiKwh: plausivel(), compensadoKwh: 2288, consumoKwh: 495 });
+    expect(r.estado).toBe('inconsistente');
+    expect(r.bloqueios.join(' ')).toMatch(/2\.288 kWh.*maior que o consumo.*495 kWh/);
+  });
+  it('compensado igual ou menor que o consumo passa', () => {
+    expect(validarMes({ ...base, geracaoApiKwh: plausivel(), compensadoKwh: 495, consumoKwh: 495 }).estado).toBe('pronto');
+    expect(validarMes({ ...base, geracaoApiKwh: plausivel(), compensadoKwh: 300, consumoKwh: 495 }).estado).toBe('pronto');
+  });
+  it('sem um dos dois numeros nao trava', () => {
+    expect(validarMes({ ...base, geracaoApiKwh: plausivel(), compensadoKwh: 2288, consumoKwh: null }).estado).toBe('pronto');
+  });
+});

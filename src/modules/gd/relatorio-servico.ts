@@ -4,7 +4,7 @@
 
 import type { LinhaDemonstrativo, GeracaoManual } from './demonstrativos-tela-repo.js';
 import { validarMes } from './gd-validacao.js';
-import { historicoPorMes } from './demonstrativos-tela.js';
+import { compensadoDoMes, consumoDoMes, historicoPorMes } from './demonstrativos-tela.js';
 import { montarRelatorio, type RelatorioGd } from './relatorio-motor.js';
 
 export interface DepsServicoRelatorio {
@@ -31,6 +31,8 @@ export async function prepararRelatorio(instalacao: string, referencia: string, 
   const v = validarMes({
     leadId: l.lead_id, referencia, injetadoKwh: l.injetado_kwh, inconsistenciasLeitura: l.inconsistencias,
     geracaoManualKwh: manualDoMes, geracaoApiKwh: apiDoMes, potenciaKwp: sis.potenciaKwp, uf: sis.uf,
+    // Mesmo compensado que o motor usa (digitado sem histórico cai no crédito utilizado).
+    compensadoKwh: compensadoDoMes(l) ?? l.credito_utilizado_kwh, consumoKwh: consumoDoMes(l),
   });
   if (v.estado !== 'pronto' || v.geracaoKwh === null || v.origemGeracao === null) {
     const motivo = [...v.bloqueios, ...v.pendencias][0] ?? 'o mês ainda não está pronto';

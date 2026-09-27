@@ -74,3 +74,16 @@ describe('prepararRelatorio', () => {
     expect(api.mock.calls.filter((c) => c[1] === '2026-07-01')).toHaveLength(1);
   });
 });
+
+describe('prepararRelatorio — trava compensado x consumo', () => {
+  it('compensado do mes maior que o consumo → 409, relatorio nao sai', async () => {
+    const hist = [{ mes: '2026-08-01', consumida: 100, injetada: 222, faturada: 0, compensado: 400, credito: 0 }];
+    const r = await prepararRelatorio('351534', '2026-08-01', deps({
+      historicoDaInstalacao: vi.fn().mockResolvedValue([linha({ consumo_kwh: 100, historico: hist })]),
+    }));
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.status).toBe(409);
+    expect(r.motivo).toMatch(/maior que o consumo/);
+  });
+});
