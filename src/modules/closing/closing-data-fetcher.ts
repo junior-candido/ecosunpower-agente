@@ -218,6 +218,13 @@ export function buildInitialData(
     endereco_instalacao: endereco as Endereco,
   };
 
+  // A forma de pagamento mora na coluna do lead (é onde o formulário grava). Vale
+  // com ou sem proposta — sem isso, cliente sem proposta nunca tinha pagamento no
+  // contrato, por mais que o operador salvasse.
+  if (lead.forma_pagamento) {
+    partial.comercial = { valor_total_brl: 0, forma_pagamento: lead.forma_pagamento };
+  }
+
   if (proposta?.dados_input) {
     const d = proposta.dados_input;
     // Lê o formato REAL salvo pela proposta (camelCase) com fallback pro legado (snake_case).

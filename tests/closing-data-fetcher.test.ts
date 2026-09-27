@@ -201,6 +201,14 @@ describe('closing-data-fetcher', () => {
     expect((partial.titular_uc as any)?.rg).toBeUndefined();
   });
 
+  // A forma de pagamento mora na COLUNA do lead (o formulário grava lá). Sem
+  // proposta ela sumia do contrato — e, com a trava da saída, o documento ficaria
+  // bloqueado pra sempre por "falta forma de pagamento" mesmo com ela salva.
+  it('buildInitialData: SEM proposta, a forma de pagamento do cadastro vai pro contrato', () => {
+    const partial = buildInitialData({ ...leadCamilaRow, forma_pagamento: 'À vista no PIX' } as any, null);
+    expect(partial.comercial?.forma_pagamento).toBe('À vista no PIX');
+  });
+
   it('buildInitialData infere concessionária pela UF se faltar', () => {
     const partial = buildInitialData({ ...leadCamilaRow, concessionaria: null, uf: 'DF' } as any, null);
     expect(partial.concessionaria).toBe('Neoenergia-DF');
