@@ -76,3 +76,38 @@ describe('trava de marca alheia (o cano, não o buraco)', () => {
     expect(MENSAGEM_MARCA_BARRADA.length).toBeLessThan(200);
   });
 });
+
+// 27/09/2026 (revisão final da fatia 3): o link PÚBLICO da plataforma
+// (https://propostas.ecosunpower.eng.br/rg/… e /pasta/…) tem "ecosunpower" no
+// domínio — os pontos são fronteira de palavra, então a trava engolia a
+// mensagem do tenant e o cliente nunca recebia o link (e a tela mostrava ✅).
+import { textoLivreRelatorio, linkPublicoRelatorio, basePublica } from '../src/modules/gd/relatorio-envio-textos.js';
+
+describe('trava de marca — links públicos da própria plataforma passam', () => {
+  it('relatório do tenant com o link /rg/ sai inteiro', () => {
+    const texto = textoLivreRelatorio('Ana', 'setembro de 2026', linkPublicoRelatorio(basePublica(), 'A'.repeat(32)));
+    expect(travarMarcaAlheia(texto, conquista, [ecosun, conquista])).toBe(texto);
+  });
+
+  it('pasta do tenant com o link /pasta/<slug> sai inteira', () => {
+    const link = `${basePublica()}/pasta/ana-silva-7f3k`;
+    const texto = `📁 Ana, sua usina agora tem uma pasta digital!\n\nFotos da obra, projeto e todos os seus documentos guardados num lugar só:\n${link}\n\nSalve esse link — ele é seu.`;
+    expect(travarMarcaAlheia(texto, conquista, [ecosun, conquista])).toBe(texto);
+  });
+
+  it('link com pontuação colada no fim também passa', () => {
+    const texto = `Veja aqui (${basePublica()}/rg/${'B'.repeat(32)}).`;
+    expect(travarMarcaAlheia(texto, conquista, [ecosun, conquista])).toBe(texto);
+  });
+
+  it('o link inteiro sai do teste, até o fim (caminho com letras e hífen)', () => {
+    const texto = `Sua pasta: ${basePublica()}/pasta/sss-ecosunpower-x`;
+    expect(travarMarcaAlheia(texto, conquista, [ecosun, conquista])).toBe(texto);
+  });
+
+  it('citar a EcoSunPower em texto corrido continua barrado, mesmo com o link junto', () => {
+    expect(travarMarcaAlheia('fale com a EcoSunPower', conquista, [ecosun, conquista])).toBe(MENSAGEM_MARCA_BARRADA);
+    const comLink = `fale com a EcoSunPower: ${basePublica()}/pasta/x`;
+    expect(travarMarcaAlheia(comLink, conquista, [ecosun, conquista])).toBe(MENSAGEM_MARCA_BARRADA);
+  });
+});

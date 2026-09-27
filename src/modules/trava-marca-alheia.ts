@@ -15,6 +15,7 @@
 // ESCALA SOZINHA: os termos proibidos saem da lista de empresas carregada no
 // boot. Cliente novo entra e já está protegido — nada pra cadastrar.
 import { empresa, todasEmpresasConhecidas, type EmpresaConfig } from './empresa-config.js';
+import { basePublica } from './gd/relatorio-envio-textos.js';
 
 /** Resposta quando a assistente citou quem não devia. Não promete nada e não
  *  cita ninguém — só devolve a conversa pro humano. */
@@ -85,14 +86,35 @@ export function termosProibidosPara(
   return { marcas, pessoas };
 }
 
+/**
+ * Tira do texto os links PÚBLICOS da própria plataforma (Pasta Digital
+ * /pasta/…, relatório /rg/…, propostas) antes de procurar marca alheia.
+ * 27/09/2026: o domínio público é propostas.ecosunpower.eng.br — os pontos
+ * são fronteira de palavra, então "ecosunpower" dentro do LINK barrava a
+ * mensagem do tenant e o cliente nunca recebia a pasta/relatório. O link é
+ * infraestrutura da plataforma, não a assistente citando outra empresa;
+ * menção em texto corrido continua barrada.
+ */
+export function semLinksDaPlataforma(texto: string, base: string = basePublica()): string {
+  let host: string;
+  try {
+    host = new URL(base).host;
+  } catch {
+    return texto;
+  }
+  if (!host) return texto;
+  const re = new RegExp(`(?:https?://)?${esc(host)}(?:[/?#]\\S*)?`, 'gi');
+  return texto.replace(re, ' ');
+}
+
 /** A resposta cita empresa que não é a dona da conversa? */
 export function citaEmpresaAlheia(
   texto: string,
   atual: EmpresaConfig = empresa(),
   outras?: readonly EmpresaConfig[],
 ): boolean {
-  const t = texto ?? '';
-  if (!t) return false;
+  const t = semLinksDaPlataforma(texto ?? '');
+  if (!t.trim()) return false;
   const { marcas, pessoas } = termosProibidosPara(atual, outras);
   return marcas.some((re) => re.test(t)) || pessoas.some((re) => re.test(t));
 }
