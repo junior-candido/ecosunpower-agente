@@ -5,6 +5,7 @@
 import { renderLayout } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { ItemLista } from '../gd/demonstrativos-tela.js';
+import { historicoPorMes } from '../gd/demonstrativos-tela.js';
 import type { EstadoGd, ResultadoValidacao } from '../gd/gd-validacao.js';
 import { mesCurto } from '../gd/demonstrativo-cruzamento.js';
 
@@ -142,7 +143,8 @@ ${formLigar}
 </ul>
 <p class="text-sm text-slate-500 mt-3">O relatório em PDF para o cliente chega na próxima entrega (só com tudo 🟢).</p>
 </div>`;
-  const hist = [...d.historico].sort((a, b) => a.mes.localeCompare(b.mes)).slice(-13);
+  // Rateio: uma linha por unidade no mês — soma por mês (13 meses distintos).
+  const hist = historicoPorMes(d.historico, 13);
   const scripts = `
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>

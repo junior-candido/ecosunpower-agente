@@ -47,12 +47,72 @@ export function hojeBrasilia(agora: Date = new Date()): string {
   return `${ano}-${mes}-${dia}`;
 }
 
-/** null quando o mês não tem linha, ou o compensado veio nulo/indefinido/não numérico — nunca vira 0 por acidente. */
+/** Número finito ou null — null/undefined/texto nunca viram 0 por acidente. */
+export function numOuNull(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Soma os valores numéricos; null quando nenhum é número. */
+function somaOuNull(valores: unknown[]): number | null {
+  let soma: number | null = null;
+  for (const v of valores) {
+    const n = numOuNull(v);
+    if (n !== null) soma = (soma ?? 0) + n;
+  }
+  return soma === null ? null : Math.round(soma * 100) / 100;
+}
+
+export interface MesAgrupado {
+  mes: string;
+  consumida: number | null;
+  injetada: number | null;
+  compensado: number | null;
+  /** Quantas linhas (unidades do rateio) o mês tinha. */
+  unidades: number;
+}
+
+/**
+ * O histórico do demonstrativo tem UMA linha por unidade do rateio por mês.
+ * Agrupa por mês somando as unidades, em ordem, e devolve os últimos
+ * `maxMeses` meses DISTINTOS. Usado pela tela, pelo relatório e pelo serviço.
+ */
+export function historicoPorMes(
+  historico: ReadonlyArray<{ mes: string; consumida?: unknown; injetada?: unknown; compensado?: unknown }>,
+  maxMeses = 13,
+): MesAgrupado[] {
+  const porMes = new Map<string, Array<{ consumida?: unknown; injetada?: unknown; compensado?: unknown }>>();
+  for (const h of historico) {
+    const lista = porMes.get(h.mes);
+    if (lista) lista.push(h); else porMes.set(h.mes, [h]);
+  }
+  return [...porMes.keys()].sort().slice(-maxMeses).map((mes) => {
+    const linhas = porMes.get(mes)!;
+    return {
+      mes,
+      consumida: somaOuNull(linhas.map((x) => x.consumida)),
+      injetada: somaOuNull(linhas.map((x) => x.injetada)),
+      compensado: somaOuNull(linhas.map((x) => x.compensado)),
+      unidades: linhas.length,
+    };
+  });
+}
+
+/** O mês da referência já agrupado (todas as unidades somadas), ou null se o histórico não tem o mês. */
+export function historicoDoMes(l: LinhaDemonstrativo): MesAgrupado | null {
+  return historicoPorMes(l.historico.filter((x) => x.mes === l.referencia), 1)[0] ?? null;
+}
+
+/**
+ * Compensado do mês somando TODAS as unidades do rateio: o total do
+ * demonstrativo quando veio; senão a soma das linhas do mês no histórico.
+ * null quando não há de onde tirar — nunca vira 0 por acidente.
+ */
 export function compensadoDoMes(l: LinhaDemonstrativo): number | null {
-  const h = l.historico.find((x) => x.mes === l.referencia);
-  if (!h || h.compensado === null || h.compensado === undefined) return null;
-  const v = Number(h.compensado);
-  return Number.isFinite(v) ? v : null;
+  const total = numOuNull(l.total_compensado_kwh);
+  if (total !== null) return total;
+  return historicoDoMes(l)?.compensado ?? null;
 }
 
 export function economiaEstimadaRs(compensadoKwh: number | null, tarifa: number): number | null {

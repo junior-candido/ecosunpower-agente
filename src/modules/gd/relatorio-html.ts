@@ -48,6 +48,30 @@ ${r.rateio.map((u) => `<tr><td>${esc(u.codigoCliente)}</td><td>${u.percentual}%<
 <p class="nota">O esperado considera o tamanho da usina, a média de sol da região e os dias do mês. Meses com mais chuva ficam abaixo; é normal variar.</p>
 </section>` : '';
 
+  // Demonstrativo digitado não traz histórico: sem meses, sem gráfico (nem Chart.js).
+  const temGrafico = r.meses.length > 0;
+  const grafico = temGrafico ? `<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  var meses = ${jsonSeguro(r.meses)};
+  new Chart(document.getElementById('g13'), {
+    type: 'bar',
+    data: {
+      labels: meses.map(function (m) { return m.rotulo; }),
+      datasets: [
+        { label: 'Geração (kWh)', data: meses.map(function (m) { return m.geracao; }), backgroundColor: '#f59e0b' },
+        { label: 'Consumo (kWh)', data: meses.map(function (m) { return m.consumo; }), backgroundColor: '#64748b' },
+        { label: 'Injetado (kWh)', data: meses.map(function (m) { return m.injetado; }), backgroundColor: '#22c55e' }
+      ]
+    },
+    options: { animation: false, responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { font: { size: 13 } } } },
+      scales: { x: { ticks: { font: { size: 12 } } }, y: { beginAtZero: true, ticks: { font: { size: 12 } } } } }
+  });
+})();
+</script>
+` : '';
+
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório ${esc(r.mesExtenso)}</title>
 <style>
 @page{size:A4;margin:0}
@@ -86,7 +110,7 @@ ${cab}
 </div>
 <p class="frase">${esc(r.frase)}</p>
 <h2>Últimos meses</h2>
-<div class="grafico"><canvas id="g13"></canvas></div>
+${temGrafico ? '<div class="grafico"><canvas id="g13"></canvas></div>' : '<p class="nota">Histórico dos meses não disponível neste demonstrativo.</p>'}
 ${rodape(1)}
 </div>
 
@@ -111,25 +135,5 @@ ${desempenho}
 ${rodape(2)}
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script>
-(function () {
-  var meses = ${jsonSeguro(r.meses)};
-  new Chart(document.getElementById('g13'), {
-    type: 'bar',
-    data: {
-      labels: meses.map(function (m) { return m.rotulo; }),
-      datasets: [
-        { label: 'Geração (kWh)', data: meses.map(function (m) { return m.geracao; }), backgroundColor: '#f59e0b' },
-        { label: 'Consumo (kWh)', data: meses.map(function (m) { return m.consumo; }), backgroundColor: '#64748b' },
-        { label: 'Injetado (kWh)', data: meses.map(function (m) { return m.injetado; }), backgroundColor: '#22c55e' }
-      ]
-    },
-    options: { animation: false, responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { labels: { font: { size: 13 } } } },
-      scales: { x: { ticks: { font: { size: 12 } } }, y: { beginAtZero: true, ticks: { font: { size: 12 } } } } }
-  });
-})();
-</script>
-</body></html>`;
+${grafico}</body></html>`;
 }

@@ -4,7 +4,7 @@ import type { LinhaDemonstrativo } from '../src/modules/gd/demonstrativos-tela-r
 
 const linha = (over: Partial<LinhaDemonstrativo> = {}): LinhaDemonstrativo => ({
   id: 'D1', lead_id: 'L1', cliente_nome: 'JOAO', codigo_cliente: '1', instalacao: '351534', referencia: '2026-08-01',
-  injetado_kwh: 222, consumo_kwh: 480, credito_utilizado_kwh: 380, credito_restante_kwh: 0, saldo_acumulado_kwh: 1240,
+  injetado_kwh: 222, consumo_kwh: 480, credito_utilizado_kwh: 380, credito_restante_kwh: 0, saldo_acumulado_kwh: 1240, total_compensado_kwh: null,
   proximo_expirar_kwh: null, ciclo_expirar: null,
   historico: [
     { mes: '2026-07-01', consumida: 500, injetada: 200, faturada: 0, compensado: 380, credito: 0 },
@@ -55,5 +55,22 @@ describe('prepararRelatorio', () => {
   it('UC sem cliente → 409', async () => {
     const r = await prepararRelatorio('351534', '2026-08-01', deps({ historicoDaInstalacao: vi.fn().mockResolvedValue([linha({ lead_id: null })]) }));
     expect(r.ok).toBe(false);
+  });
+  it('rateio: busca a geracao de cada mes uma vez so (meses distintos)', async () => {
+    const historico = [
+      { mes: '2026-07-01', codigoCliente: 'A', consumida: 300, injetada: 200, faturada: 0, compensado: 200, credito: 0 },
+      { mes: '2026-07-01', codigoCliente: 'B', consumida: 200, injetada: 0, faturada: 0, compensado: 180, credito: 0 },
+      { mes: '2026-08-01', codigoCliente: 'A', consumida: 300, injetada: 222, faturada: 0, compensado: 200, credito: 0 },
+      { mes: '2026-08-01', codigoCliente: 'B', consumida: 180, injetada: 0, faturada: 0, compensado: 150, credito: 0 },
+    ];
+    const api = vi.fn().mockImplementation(async (_l: string, ref: string) => (ref === '2026-08-01' ? 600 : 580));
+    const r = await prepararRelatorio('351534', '2026-08-01', deps({
+      historicoDaInstalacao: vi.fn().mockResolvedValue([linha({ historico })]), geracaoApiDoMes: api,
+    }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.relatorio.meses.map((m) => m.mes)).toEqual(['2026-07-01', '2026-08-01']);
+    expect(r.relatorio.meses.map((m) => m.geracao)).toEqual([580, 600]);
+    expect(api.mock.calls.filter((c) => c[1] === '2026-07-01')).toHaveLength(1);
   });
 });

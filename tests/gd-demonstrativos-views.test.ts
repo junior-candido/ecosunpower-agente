@@ -38,6 +38,25 @@ describe('renderDemonstrativoCliente', () => {
     expect(h).toContain('action="/dashboard/demonstrativos/200002/geracao"');
     expect(h).toMatch(/falta a geração/);
   });
+  it('grafico da tela soma as unidades do rateio por mes (um rotulo por mes)', () => {
+    const h = renderDemonstrativoCliente({
+      instalacao: '200002', clienteNome: 'JOAO', leadId: 'L1', meses: ['2026-08-01'], mes: '2026-08-01',
+      consumoKwh: 300, injetadoKwh: 222, saldoKwh: 1240, compensadoKwh: 350, economiaRs: 346.5, proximoExpirar: null,
+      historico: [
+        { mes: '2026-08-01', consumida: 300, injetada: 222, compensado: 200 },
+        { mes: '2026-07-01', consumida: 310, injetada: 210, compensado: 190 },
+        { mes: '2026-08-01', consumida: 180, injetada: 0, compensado: 150 },
+        { mes: '2026-07-01', consumida: 170, injetada: 0, compensado: 140 },
+      ],
+      unidades: [], origemDemonstrativo: 'email', verificado: true,
+      validacao: { estado: 'pronto', bloqueios: [], pendencias: [], avisos: [], geracaoKwh: 600, origemGeracao: 'api', esperadoMesKwh: 600 },
+      candidatos: [], msg: null,
+    });
+    expect(h).toContain('["jul/2026","ago/2026"]');
+    expect(h).toContain('[480,480]');
+    expect(h).toContain('[210,222]');
+    expect(h).toContain('[330,350]');
+  });
   it('UC sem cliente mostra a busca de cliente', () => {
     const h = renderDemonstrativoCliente({
       instalacao: '999', clienteNome: 'X', leadId: null, meses: ['2026-08-01'], mes: '2026-08-01',

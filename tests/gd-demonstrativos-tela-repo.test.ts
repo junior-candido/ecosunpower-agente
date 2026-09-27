@@ -194,4 +194,11 @@ describe('criarRepoTelaGd', () => {
     const ins = chamadas.find((c) => c.tabela === 'relatorios_gd_gerados')!.ops.find((o) => o[0] === 'insert')!;
     expect(ins[1][0]).toEqual({ company_id: 'E1', instalacao: '351534', referencia: '2026-08-01', gerado_por: 'U1', numeros: { gerouKwh: 612 } });
   });
+  it('historicoDaInstalacao le total_compensado_kwh e converte pra numero', async () => {
+    const { db, chamadas } = fakeDb({ demonstrativos_gd: [{ data: [{ instalacao: '1', total_compensado_kwh: '350.50' }, { instalacao: '1', total_compensado_kwh: null }], error: null }] });
+    const r = await criarRepoTelaGd(db, 'E1').historicoDaInstalacao('1');
+    expect(String(chamadas[0].ops.find((o) => o[0] === 'select')![1][0])).toContain('total_compensado_kwh');
+    expect(r[0].total_compensado_kwh).toBe(350.5);
+    expect(r[1].total_compensado_kwh).toBeNull();
+  });
 });

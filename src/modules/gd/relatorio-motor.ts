@@ -7,6 +7,7 @@
 
 import type { LinhaDemonstrativo } from './demonstrativos-tela-repo.js';
 import { mesCurto } from './demonstrativo-cruzamento.js';
+import { compensadoDoMes, historicoDoMes, historicoPorMes, numOuNull } from './demonstrativos-tela.js';
 
 export interface EntradaRelatorio {
   /** Linha do mês do relatório (já validada 🟢 por quem chama). */
@@ -24,9 +25,9 @@ export interface MesGrafico {
   mes: string;
   rotulo: string;
   geracao: number | null;
-  consumo: number;
-  injetado: number;
-  compensado: number;
+  consumo: number | null;
+  injetado: number | null;
+  compensado: number | null;
 }
 
 export interface RelatorioGd {
@@ -60,11 +61,7 @@ export function mesExtenso(iso: string): string {
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
 const r2 = (v: number) => Math.round(v * 100) / 100;
-const numOuNull = (v: unknown): number | null => {
-  if (v === null || v === undefined) return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-};
+const RE_REFERENCIA = /^\d{4}-\d{2}-01$/;
 
 const ORIGEM_DEMONSTRATIVO: Record<string, string> = {
   email: 'e-mail da concessionária',
@@ -74,10 +71,25 @@ const ORIGEM_DEMONSTRATIVO: Record<string, string> = {
 
 export function montarRelatorio(e: EntradaRelatorio): RelatorioGd {
   const l = e.linha;
-  const doMes = l.historico.find((h) => h.mes === l.referencia);
-  const compensadoKwh = doMes ? numOuNull(doMes.compensado) : null;
+  if (!RE_REFERENCIA.test(String(l.referencia ?? ''))) {
+    throw new Error(`relatório GD: referência inválida "${l.referencia}" (esperado AAAA-MM-01)`);
+  }
+  if (typeof e.geracaoKwh !== 'number' || !Number.isFinite(e.geracaoKwh) || e.geracaoKwh < 0) {
+    throw new Error(`relatório GD: geração inválida (${e.geracaoKwh})`);
+  }
+
+  // Com rateio, o histórico tem uma linha por unidade no mês: soma todas.
+  const doMes = historicoDoMes(l);
+  const somandoUnidades = doMes !== null && doMes.unidades > 1;
+  let compensadoKwh = compensadoDoMes(l);
+  // Demonstrativo digitado não tem histórico: usa os créditos usados no mês.
+  const usouCreditosDigitados = compensadoKwh === null && l.credito_utilizado_kwh !== null;
+  if (usouCreditosDigitados) compensadoKwh = numOuNull(l.credito_utilizado_kwh);
+  const consumiuKwh = somandoUnidades && doMes!.consumida !== null ? doMes!.consumida : l.consumo_kwh;
+
   const injetadoKwh = l.injetado_kwh;
-  const autoconsumoKwh = injetadoKwh === null ? null : r2(Math.max(0, e.geracaoKwh - injetadoKwh));
+  // Injetado maior que a geração = número incoerente; melhor não afirmar nada.
+  const autoconsumoKwh = injetadoKwh === null || injetadoKwh > e.geracaoKwh ? null : r2(e.geracaoKwh - injetadoKwh);
   const economiaRs = compensadoKwh === null ? null : r2(compensadoKwh * e.tarifaRsKwh);
   const mesTxt = mesExtenso(l.referencia);
 
@@ -89,17 +101,14 @@ export function montarRelatorio(e: EntradaRelatorio): RelatorioGd {
     frase += ` Neste mês, ${fmt(compensadoKwh)} kWh de créditos abateram a sua conta.`;
   }
 
-  const meses: MesGrafico[] = [...l.historico]
-    .sort((a, b) => a.mes.localeCompare(b.mes))
-    .slice(-13)
-    .map((h) => ({
-      mes: h.mes,
-      rotulo: mesCurto(h.mes),
-      geracao: numOuNull(e.geracaoPorMes[h.mes]),
-      consumo: Number(h.consumida) || 0,
-      injetado: Number(h.injetada) || 0,
-      compensado: Number(h.compensado) || 0,
-    }));
+  const meses: MesGrafico[] = historicoPorMes(l.historico, 13).map((h) => ({
+    mes: h.mes,
+    rotulo: mesCurto(h.mes),
+    geracao: numOuNull(e.geracaoPorMes[h.mes]),
+    consumo: h.consumida,
+    injetado: h.injetada,
+    compensado: h.compensado,
+  }));
 
   const rateio = l.unidades.length > 1
     ? l.unidades.map((u) => ({ codigoCliente: u.codigoCliente, percentual: u.percentual, saldoKwh: u.saldo }))
@@ -113,8 +122,15 @@ export function montarRelatorio(e: EntradaRelatorio): RelatorioGd {
     e.origemGeracao === 'api'
       ? 'Geração: monitoramento da usina (soma dos dias do mês).'
       : 'Geração: informada e conferida pela equipe.',
-    `Economia estimada = créditos compensados × R$ ${e.tarifaRsKwh.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/kWh (tarifa média; a Lei 14.300 cobra parte do Fio B, por isso é estimada).`,
+    `Economia estimada = ${usouCreditosDigitados ? 'créditos usados no mês' : 'créditos compensados'} × R$ ${e.tarifaRsKwh.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/kWh (tarifa média; a Lei 14.300 cobra parte do Fio B, por isso é estimada).`,
   ];
+  if (somandoUnidades) fontes.push(`Consumo e créditos: soma das ${doMes!.unidades} unidades do rateio.`);
+  if (usouCreditosDigitados) {
+    fontes.push(l.origem === 'digitado'
+      ? 'Economia calculada com os créditos usados no mês, digitados a partir do demonstrativo.'
+      : 'Economia calculada com os créditos usados no mês informados no demonstrativo.');
+  }
+  if (e.esperadoMesKwh !== null) fontes.push('Esperado = potência da usina × média de sol da região × dias do mês.');
 
   return {
     cliente: l.cliente_nome,
@@ -122,7 +138,7 @@ export function montarRelatorio(e: EntradaRelatorio): RelatorioGd {
     referencia: l.referencia,
     mesExtenso: mesTxt,
     gerouKwh: e.geracaoKwh,
-    consumiuKwh: l.consumo_kwh,
+    consumiuKwh,
     economiaRs,
     creditosKwh: l.saldo_acumulado_kwh,
     autoconsumoKwh,

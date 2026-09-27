@@ -55,4 +55,14 @@ describe('renderRelatorioHtml', () => {
     const h = renderRelatorioHtml(rel(), marca);
     for (const t of ['Injetado', 'Compensado', 'Crédito', 'Rateio']) expect(h).toContain(t);
   });
+  it('sem meses no historico: nota no lugar do grafico, sem Chart.js', () => {
+    const h = renderRelatorioHtml(rel({ meses: [] }), marca);
+    expect(h).toContain('Histórico dos meses não disponível neste demonstrativo.');
+    expect(h).not.toContain('chart.umd.min.js');
+    expect(h).not.toContain('<canvas');
+  });
+  it('mes sem numero sai como null no grafico (nao 0)', () => {
+    const h = renderRelatorioHtml(rel({ meses: [{ mes: '2026-08-01', rotulo: 'ago/2026', geracao: null, consumo: null, injetado: 222, compensado: null }] }), marca);
+    expect(h).toContain('"consumo":null');
+  });
 });

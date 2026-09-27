@@ -4,6 +4,7 @@
 
 import type { LinhaDemonstrativo, GeracaoManual } from './demonstrativos-tela-repo.js';
 import { validarMes } from './gd-validacao.js';
+import { historicoPorMes } from './demonstrativos-tela.js';
 import { montarRelatorio, type RelatorioGd } from './relatorio-motor.js';
 
 export interface DepsServicoRelatorio {
@@ -37,7 +38,8 @@ export async function prepararRelatorio(instalacao: string, referencia: string, 
   }
 
   const geracaoPorMes: Record<string, number | null> = {};
-  const mesesGrafico = [...l.historico].map((h) => h.mes).sort().slice(-13);
+  // Rateio: o histórico tem uma linha por unidade no mês — meses DISTINTOS.
+  const mesesGrafico = historicoPorMes(l.historico, 13).map((m) => m.mes);
   for (const mes of mesesGrafico) {
     if (mes === referencia) { geracaoPorMes[mes] = v.geracaoKwh; continue; }
     const manual = manuais.get(`${instalacao}|${mes}`)?.kwh;
