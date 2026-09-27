@@ -67,7 +67,8 @@ describe('montarRelatorio', () => {
 
   it('creditos: saldo, usados no mes e a vencer com mes', () => {
     const r = montarRelatorio(entrada());
-    expect(r.creditos).toEqual({ saldoKwh: 1240, usadosNoMesKwh: 380, aVencerKwh: 50, venceEm: 'mar/2027' });
+    // mar/2027 está a 7 meses de ago/2026 (mês do relatório) → só informa a validade.
+    expect(r.creditos).toEqual({ saldoKwh: 1240, usadosNoMesKwh: 380, aVencerKwh: 50, venceEm: 'mar/2027', avisoVencimento: 'validade' });
   });
 
   it('rateio so aparece com mais de uma unidade', () => {
@@ -200,5 +201,16 @@ describe('numerosDoRelatorio', () => {
       gerouKwh: 612, consumiuKwh: 480, economiaRs: 376.2, creditosKwh: 1240, tarifaRsKwh: 0.99,
       injetadoKwh: 222, compensadoKwh: 380, usadosNoMesKwh: 380, origemGeracao: 'api',
     });
+  });
+});
+
+describe('montarRelatorio — aviso de vencimento pelo mês do relatório', () => {
+  it('vence em até 6 meses do mês do relatório → alerta', () => {
+    const r = montarRelatorio(entrada({ linha: linha({ ciclo_expirar: '2027-01-01' }) }));
+    expect(r.creditos.avisoVencimento).toBe('alerta');
+  });
+  it('sem crédito a vencer → null', () => {
+    const r = montarRelatorio(entrada({ linha: linha({ proximo_expirar_kwh: null }) }));
+    expect(r.creditos.avisoVencimento).toBeNull();
   });
 });

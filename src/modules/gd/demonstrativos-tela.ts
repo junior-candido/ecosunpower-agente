@@ -29,11 +29,21 @@ function mesesEntre(deIso: string, ateIso: string): number {
   return (a2 - a1) * 12 + (m2 - m1);
 }
 
-export function alertaVencimento(kwh: number | null, ciclo: string | null, hojeIso: string): string | null {
+/**
+ * Regra ÚNICA do aviso de vencimento (tela e PDF): vence em até 6 meses da
+ * data-base → 'alerta'; mais longe → 'validade' (só informa); já vencido ou
+ * sem crédito → null. A tela usa hoje como base; o PDF usa o mês do relatório.
+ */
+export function tipoAvisoVencimento(kwh: number | null, ciclo: string | null, baseIso: string): 'alerta' | 'validade' | null {
   if (!kwh || kwh <= 0 || !ciclo) return null;
-  const faltam = mesesEntre(hojeIso, ciclo);
-  if (faltam < 0 || faltam > MESES_ALERTA) return null;
-  return `⏰ ${fmt(kwh)} kWh de crédito vencem em ${mesCurto(ciclo)}`;
+  const faltam = mesesEntre(baseIso, ciclo);
+  if (faltam < 0) return null;
+  return faltam <= MESES_ALERTA ? 'alerta' : 'validade';
+}
+
+export function alertaVencimento(kwh: number | null, ciclo: string | null, hojeIso: string): string | null {
+  if (tipoAvisoVencimento(kwh, ciclo, hojeIso) !== 'alerta') return null;
+  return `⏰ ${fmt(kwh as number)} kWh de crédito vencem em ${mesCurto(ciclo as string)}`;
 }
 
 /** 'YYYY-MM-DD' de hoje em Brasília (UTC-3) — não usa o fuso do servidor, pra não pular de dia perto da virada. */
