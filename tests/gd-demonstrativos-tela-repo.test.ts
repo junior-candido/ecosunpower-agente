@@ -187,4 +187,11 @@ describe('criarRepoTelaGd', () => {
     expect(chamadasIn[1].ops.find(([op]) => op === 'in')?.[1][1]).toHaveLength(200);
     expect(chamadasIn[2].ops.find(([op]) => op === 'in')?.[1][1]).toHaveLength(50);
   });
+
+  it('registrarRelatorio grava com a empresa da sessao e os numeros', async () => {
+    const { db, chamadas } = fakeDb({ relatorios_gd_gerados: [{ data: null, error: null }] });
+    await criarRepoTelaGd(db, 'E1').registrarRelatorio({ instalacao: '351534', referencia: '2026-08-01', geradoPor: 'U1', numeros: { gerouKwh: 612 } });
+    const ins = chamadas.find((c) => c.tabela === 'relatorios_gd_gerados')!.ops.find((o) => o[0] === 'insert')!;
+    expect(ins[1][0]).toEqual({ company_id: 'E1', instalacao: '351534', referencia: '2026-08-01', gerado_por: 'U1', numeros: { gerouKwh: 612 } });
+  });
 });

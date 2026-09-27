@@ -282,6 +282,18 @@ export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
       if (!data || data.length === 0) return 'mantido_verificado';
       return 'gravado';
     },
+
+    /** Rastreio: cada PDF gerado fica registrado com os números que saíram nele. */
+    async registrarRelatorio(p: { instalacao: string; referencia: string; geradoPor: string; numeros: Record<string, unknown> }): Promise<void> {
+      const { error } = await db.from('relatorios_gd_gerados').insert({
+        company_id: companyId,
+        instalacao: p.instalacao,
+        referencia: p.referencia,
+        gerado_por: p.geradoPor,
+        numeros: p.numeros,
+      });
+      if (error) throw new Error(`relatorios_gd_gerados (gravar): ${error.message}`);
+    },
   };
 }
 
