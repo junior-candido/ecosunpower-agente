@@ -189,10 +189,17 @@ function secaoNoticias(noticias: NoticiaBlog[]): string {
 }
 
 export function montarMolduraEmail(opts: MolduraOpts): string {
-  const empresa = opts.empresa?.trim() || 'EcoSunPower';
-  const siteUrl = opts.siteUrl?.trim() || SITE_PADRAO;
+  // semLogo = e-mail de tenant: NADA cai no padrão da EcoSun (nem nome, nem
+  // site). Sem site cadastrado, o link some; sem nome, o rodapé fica sem nome.
+  const empresa = opts.empresa?.trim() || (opts.semLogo ? '' : 'EcoSunPower');
+  const siteUrl = opts.siteUrl?.trim() || (opts.semLogo ? '' : SITE_PADRAO);
   const logoUrl = opts.logoUrl?.trim() || LOGO_PADRAO;
   const siteLabel = siteUrl.replace(/^https?:\/\//, '');
+  const linhaSite = siteUrl
+    ? `
+                <p style="margin:0 0 10px; font-size:12px;"><a href="${escapeHtml(siteUrl)}" style="color:${AMBAR}; text-decoration:none;">${escapeHtml(siteLabel)}</a></p>`
+    : '';
+  const copyright = empresa ? `© ${escapeHtml(empresa)} · Brasília-DF` : 'Brasília-DF';
   const cabecalho = opts.semLogo
     ? `<div style="font-family:${FONTE}; font-size:26px; font-weight:bold; color:#ffffff;">${escapeHtml(empresa)}</div>`
     : `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(empresa)}" width="210" style="display:block; margin:0 auto; border:0; max-width:210px; height:auto;" />`;
@@ -217,15 +224,14 @@ export function montarMolduraEmail(opts: MolduraOpts): string {
             </tr>${secaoAssinatura(opts)}${secaoDica(opts)}${secaoCta(opts)}${secaoNoticias(opts.noticias ?? [])}
             <tr>
               <td style="background:${NAVY}; padding:22px 40px; text-align:center; font-family:${FONTE};">
-                <p style="margin:0 0 6px; font-size:13px; color:#c9d2dc; font-weight:bold;">${escapeHtml(empresa)}${opts.transacional ? '' : ' — energia solar de ponta a ponta'}</p>
-                <p style="margin:0 0 10px; font-size:12px;"><a href="${escapeHtml(siteUrl)}" style="color:${AMBAR}; text-decoration:none;">${escapeHtml(siteLabel)}</a></p>
+                <p style="margin:0 0 6px; font-size:13px; color:#c9d2dc; font-weight:bold;">${escapeHtml(empresa)}${opts.transacional || !empresa ? '' : ' — energia solar de ponta a ponta'}</p>${linhaSite}
                 ${opts.transacional
                   ? `<p style="margin:0; font-size:11px; color:#6b7686;">${escapeHtml(opts.notaRodape?.trim() || 'E-mail automático de acesso à plataforma. Se você não pediu isso, pode ignorar.')}</p>`
                   : `<p style="margin:0; font-size:11px; color:#6b7686;">Você recebe este e-mail porque conversou com a gente sobre energia solar.<br/>Não quer mais receber? <a href="${escapeHtml(opts.linkDescadastro)}" style="color:#8a94a3;">Descadastrar</a></p>`}
               </td>
             </tr>
           </table>
-          <p style="margin:14px 0 0; font-family:${FONTE}; font-size:11px; color:#9aa4b0;">© ${escapeHtml(empresa)} · Brasília-DF</p>
+          <p style="margin:14px 0 0; font-family:${FONTE}; font-size:11px; color:#9aa4b0;">${copyright}</p>
         </td>
       </tr>
     </table>
