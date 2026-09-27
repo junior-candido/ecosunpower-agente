@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { montarRelatorio, mesExtenso, type EntradaRelatorio } from '../src/modules/gd/relatorio-motor.js';
+import { montarRelatorio, mesExtenso, numerosDoRelatorio, type EntradaRelatorio } from '../src/modules/gd/relatorio-motor.js';
 import type { LinhaDemonstrativo } from '../src/modules/gd/demonstrativos-tela-repo.js';
 
 const linha = (over: Partial<LinhaDemonstrativo> = {}): LinhaDemonstrativo => ({
@@ -67,7 +67,8 @@ describe('montarRelatorio', () => {
 
   it('creditos: saldo, usados no mes e a vencer com mes', () => {
     const r = montarRelatorio(entrada());
-    expect(r.creditos).toEqual({ saldoKwh: 1240, usadosNoMesKwh: 380, aVencerKwh: 50, venceEm: 'mar/2027' });
+    // mar/2027 está a 7 meses de ago/2026 (mês do relatório) → só informa a validade.
+    expect(r.creditos).toEqual({ saldoKwh: 1240, usadosNoMesKwh: 380, aVencerKwh: 50, venceEm: 'mar/2027', avisoVencimento: 'validade' });
   });
 
   it('rateio so aparece com mais de uma unidade', () => {
@@ -191,5 +192,25 @@ describe('montarRelatorio — demonstrativo digitado (sem historico)', () => {
   it('sem creditos usados tambem: economia null', () => {
     const r = montarRelatorio(entrada({ linha: linha({ origem: 'digitado', historico: [], credito_utilizado_kwh: null }) }));
     expect(r.economiaRs).toBeNull();
+  });
+});
+
+describe('numerosDoRelatorio', () => {
+  it('traz os números que saíram no PDF (rastreio em relatorios_gd_gerados.numeros)', () => {
+    expect(numerosDoRelatorio(montarRelatorio(entrada()))).toEqual({
+      gerouKwh: 612, consumiuKwh: 480, economiaRs: 376.2, creditosKwh: 1240, tarifaRsKwh: 0.99,
+      injetadoKwh: 222, compensadoKwh: 380, usadosNoMesKwh: 380, origemGeracao: 'api',
+    });
+  });
+});
+
+describe('montarRelatorio — aviso de vencimento pelo mês do relatório', () => {
+  it('vence em até 6 meses do mês do relatório → alerta', () => {
+    const r = montarRelatorio(entrada({ linha: linha({ ciclo_expirar: '2027-01-01' }) }));
+    expect(r.creditos.avisoVencimento).toBe('alerta');
+  });
+  it('sem crédito a vencer → null', () => {
+    const r = montarRelatorio(entrada({ linha: linha({ proximo_expirar_kwh: null }) }));
+    expect(r.creditos.avisoVencimento).toBeNull();
   });
 });

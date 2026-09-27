@@ -53,8 +53,15 @@ export function renderRelatorioHtml(r: RelatorioGd, m: MarcaRelatorio): string {
 ${r.rateio.map((u) => `<tr><td>${esc(u.codigoCliente)}</td><td>${esc(u.percentual)}%</td><td>${kwh(u.saldoKwh)}</td></tr>`).join('')}
 </table></section>` : '';
 
-  const venc = r.creditos.aVencerKwh && r.creditos.aVencerKwh > 0 && r.creditos.venceEm
-    ? `<p class="alerta">⏰ ${kwh(r.creditos.aVencerKwh)} de créditos vencem em <b>${esc(r.creditos.venceEm)}</b>. Use antes disso.</p>` : '';
+  // Alerta amarelo só quando vence em até 6 meses do mês do relatório (mesma
+  // regra da tela); mais longe, só informa a validade — sem assustar o cliente.
+  const temVencimento = Boolean(r.creditos.aVencerKwh && r.creditos.aVencerKwh > 0 && r.creditos.venceEm);
+  const venc = !temVencimento ? ''
+    : r.creditos.avisoVencimento === 'alerta'
+      ? `<p class="alerta">⏰ ${kwh(r.creditos.aVencerKwh)} de créditos vencem em <b>${esc(r.creditos.venceEm)}</b>. Use antes disso.</p>`
+      : r.creditos.avisoVencimento === 'validade'
+        ? `<p class="nota">Créditos válidos até <b>${esc(r.creditos.venceEm)}</b>.</p>`
+        : '';
 
   const desempenho = r.desempenho.percentual !== null ? `
 <section class="bloco"><h2>Desempenho da usina</h2>

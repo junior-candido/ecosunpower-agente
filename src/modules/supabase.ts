@@ -2841,7 +2841,7 @@ export class SupabaseService {
   async listPastasCliente(limit: number = 100): Promise<any[]> {
     const { data, error } = await this.client
       .from('pastas_cliente')
-      .select('id, lead_id, slug, status, arquivos, acessos, ultimo_acesso_em, enviado_em, updated_at, leads(name)')
+      .select('id, lead_id, company_id, slug, status, arquivos, acessos, ultimo_acesso_em, enviado_em, updated_at, leads(name, company_id)')
       .order('updated_at', { ascending: false })
       .limit(limit);
     if (error) {

@@ -9070,6 +9070,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     sendText,
     // Só a API oficial tem template; no Evolution o texto livre já chega sempre.
     sendTemplate: metaWaba ? (to, name, lang, components) => metaWaba!.sendTemplate(to, name, lang, components) : undefined,
+    // Relatório GD pro tenant: PDF anexo pela instância dele (roda dentro de comCanal na rota).
+    sendDocumentEvolution: async (to, b64, nome, legenda) => { await evolution.sendDocument(to, b64, nome, legenda); },
     proposalAssistant,
     metaService: metaWaba ?? undefined,
     engineerPhone: config.engineerPhone,
@@ -9478,6 +9480,11 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         painel_modelo: s.painel_modelo ?? null,
         inversor_modelo: s.inversor_modelo ?? null,
       };
+    }, async (leadId) => {
+      // Só relatórios ENVIADOS deste lead e da empresa dona dele.
+      const { listarRelatoriosDaPasta } = await import('./modules/gd/relatorio-publico.js');
+      const { basePublica } = await import('./modules/gd/relatorio-envio-textos.js');
+      return listarRelatoriosDaPasta(supabase.getClient(), leadId, basePublica());
     });
     const view = await pastaService.resolverView(pasta, true);
     if (!view) return res.status(500).send('Erro ao montar a pasta');
@@ -9487,6 +9494,35 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     );
 
     res.type('text/html').send(renderPastaHtml(view));
+  });
+
+  // ===== Relatório mensal da usina (GD) — link público (fatia 3) =====
+  // Sem login: o cliente abre pelo botão do WhatsApp/e-mail. Busca SÓ pelo
+  // token de 32 caracteres aleatórios (nunca por UC, cliente ou empresa) e
+  // devolve SÓ o PDF. /rg/ porque /r/:slug já é o relatório de acompanhamento.
+  // URL: https://propostas.ecosunpower.eng.br/rg/<token>
+  app.get('/rg/:token', async (req, res) => {
+    const naoAchei = () => res.status(404).type('text/html').send(`
+      <!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Não encontrado</title>
+      <style>body{font-family:sans-serif;text-align:center;padding:60px 20px;color:#444}</style></head>
+      <body><h1>📊 Relatório não encontrado</h1><p>O link que você acessou pode estar errado ou ter sido removido.</p></body></html>
+    `);
+    try {
+      const { normalizarTokenRelatorio } = await import('./modules/gd/relatorio-envio-textos.js');
+      const token = normalizarTokenRelatorio(req.params.token);
+      if (!token) return naoAchei();
+      const { abrirPdfPublico } = await import('./modules/gd/relatorio-publico.js');
+      const r = await abrirPdfPublico(supabase.getClient(), token);
+      if (!r) return naoAchei();
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${r.nomeArquivo}"`);
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      res.send(r.pdf);
+    } catch (err) {
+      console.error('[rg] relatório público:', (err as Error).message);
+      res.status(500).type('text/html').send('<h1>Não consegui abrir o relatório agora. Tente de novo em alguns minutos.</h1>');
+    }
   });
 
   // ===== Webhook do Resend (espinha do Elo) =====

@@ -15,6 +15,7 @@
 // ESCALA SOZINHA: os termos proibidos saem da lista de empresas carregada no
 // boot. Cliente novo entra e já está protegido — nada pra cadastrar.
 import { empresa, todasEmpresasConhecidas, type EmpresaConfig } from './empresa-config.js';
+import { basePublica } from './gd/relatorio-envio-textos.js';
 
 /** Resposta quando a assistente citou quem não devia. Não promete nada e não
  *  cita ninguém — só devolve a conversa pro humano. */
@@ -85,14 +86,61 @@ export function termosProibidosPara(
   return { marcas, pessoas };
 }
 
+/**
+ * Rotas PÚBLICAS reais deste domínio (propostas.ecosunpower.eng.br), com o
+ * alfabeto que o ID de cada uma realmente usa (ver src/index.ts e
+ * relatorios/slug.ts, gd/relatorio-envio-textos.ts): /rg/<token base64url>,
+ * /pasta/<slug>, /p/<slug> (a proposta, com ou sem ".pdf"), /r-pi/<slug>,
+ * /r/<slug>. "r-pi" tem que vir ANTES de "r" na alternativa — senão "r"
+ * casa sozinho e sobra "-pi/…" solto no texto.
+ */
+const ROTAS_PUBLICAS = ['rg', 'pasta', 'r-pi', 'r', 'p'] as const;
+/** Caractere de ID de rota pública: nunca inclui travessão/em-dash, espaço,
+ *  "?" ou qualquer coisa fora disso — é exatamente o alfabeto que essas rotas
+ *  geram (novoSlug, base64url). Nome de empresa colado no ID (com "—", por
+ *  exemplo) fica FORA do trecho engolido e continua visível pra checagem. */
+const ID_ROTA = '[A-Za-z0-9_-]+';
+
+/**
+ * Tira do texto os links PÚBLICOS da própria plataforma (Pasta Digital
+ * /pasta/…, relatório /rg/…, propostas /p/…) antes de procurar marca alheia.
+ * 27/09/2026: o domínio público é propostas.ecosunpower.eng.br — os pontos
+ * são fronteira de palavra, então "ecosunpower" dentro do LINK barrava a
+ * mensagem do tenant e o cliente nunca recebia a pasta/relatório. O link é
+ * infraestrutura da plataforma, não a assistente citando outra empresa;
+ * menção em texto corrido continua barrada.
+ *
+ * 27/09/2026 (revisão): `(?:[/?#]\S*)?` era GULOSO — engolia QUALQUER coisa
+ * colada depois do host, então uma marca colada no path
+ * ("…eng.br/rg/abc—EcoSunPower") ou numa query ("…eng.br/?ref=OutraMarca")
+ * escapava a trava. Agora só reconhece as rotas públicas reais desta lista, e
+ * só até onde o alfabeto do ID delas realmente vai — o resto (marca colada,
+ * query de terceiro) fica no texto e cai na checagem normal.
+ */
+export function semLinksDaPlataforma(texto: string, base: string = basePublica()): string {
+  let host: string;
+  try {
+    host = new URL(base).host;
+  } catch {
+    return texto;
+  }
+  if (!host) return texto;
+  const rotas = ROTAS_PUBLICAS.join('|');
+  const re = new RegExp(
+    `(?:https?://)?${esc(host)}(?:/(?:${rotas})/${ID_ROTA}(?:\\.pdf)?)?`,
+    'gi',
+  );
+  return texto.replace(re, ' ');
+}
+
 /** A resposta cita empresa que não é a dona da conversa? */
 export function citaEmpresaAlheia(
   texto: string,
   atual: EmpresaConfig = empresa(),
   outras?: readonly EmpresaConfig[],
 ): boolean {
-  const t = texto ?? '';
-  if (!t) return false;
+  const t = semLinksDaPlataforma(texto ?? '');
+  if (!t.trim()) return false;
   const { marcas, pessoas } = termosProibidosPara(atual, outras);
   return marcas.some((re) => re.test(t)) || pessoas.some((re) => re.test(t));
 }

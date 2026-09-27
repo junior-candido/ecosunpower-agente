@@ -8,7 +8,7 @@ const rel = (over: Partial<RelatorioGd> = {}): RelatorioGd => ({
   gerouKwh: 612, consumiuKwh: 480, economiaRs: 376.2, creditosKwh: 1240, autoconsumoKwh: 390, injetadoKwh: 222,
   compensadoKwh: 380, frase: 'Em agosto de 2026 sua usina gerou 612 kWh.',
   meses: [{ mes: '2026-08-01', rotulo: 'ago/2026', geracao: 612, consumo: 480, injetado: 222, compensado: 380 }],
-  creditos: { saldoKwh: 1240, usadosNoMesKwh: 380, aVencerKwh: 50, venceEm: 'mar/2027' },
+  creditos: { saldoKwh: 1240, usadosNoMesKwh: 380, aVencerKwh: 50, venceEm: 'mar/2027', avisoVencimento: 'alerta' },
   rateio: [], desempenho: { esperadoKwh: 640, percentual: 96, potenciaKwp: 5.5 },
   fontes: ['Geração: monitoramento da usina (soma dos dias do mês).'], tarifaRsKwh: 0.99, ...over,
 });
@@ -104,5 +104,24 @@ describe('renderRelatorioHtml', () => {
     ] }), marca);
     expect(h).not.toContain('<script>x</script>');
     expect(h).toContain('60&lt;script&gt;x&lt;/script&gt;');
+  });
+});
+
+describe('renderRelatorioHtml — vencimento dos créditos', () => {
+  const creditos = { saldoKwh: 1240, usadosNoMesKwh: 380, aVencerKwh: 50, venceEm: 'mar/2027' };
+  it('longe (mais de 6 meses): linha simples, sem o alerta amarelo', () => {
+    const h = renderRelatorioHtml(rel({ creditos: { ...creditos, avisoVencimento: 'validade' } }), marca);
+    expect(h).toContain('Créditos válidos até <b>mar/2027</b>.');
+    expect(h).not.toContain('Use antes disso');
+    expect(h).not.toContain('class="alerta"');
+  });
+  it('perto (até 6 meses): alerta amarelo', () => {
+    const h = renderRelatorioHtml(rel({ creditos: { ...creditos, avisoVencimento: 'alerta' } }), marca);
+    expect(h).toMatch(/class="alerta">⏰ .* vencem em <b>mar\/2027<\/b>\. Use antes disso\./);
+  });
+  it('sem aviso: nenhuma das duas linhas', () => {
+    const h = renderRelatorioHtml(rel({ creditos: { ...creditos, avisoVencimento: null } }), marca);
+    expect(h).not.toContain('Use antes disso');
+    expect(h).not.toContain('Créditos válidos até');
   });
 });

@@ -16,7 +16,7 @@ export interface DepsServicoRelatorio {
 }
 
 export type ResultadoPreparo =
-  | { ok: true; relatorio: RelatorioGd }
+  | { ok: true; relatorio: RelatorioGd; leadId: string }
   | { ok: false; status: 404 | 409; motivo: string };
 
 export async function prepararRelatorio(instalacao: string, referencia: string, d: DepsServicoRelatorio): Promise<ResultadoPreparo> {
@@ -38,6 +38,8 @@ export async function prepararRelatorio(instalacao: string, referencia: string, 
     const motivo = [...v.bloqueios, ...v.pendencias][0] ?? 'o mês ainda não está pronto';
     return { ok: false, status: 409, motivo };
   }
+  // 🟢 já exige cliente ligado; a checagem explícita deixa o tipo sem null.
+  if (!l.lead_id) return { ok: false, status: 409, motivo: 'UC sem cliente — ligue a um cliente cadastrado' };
 
   const geracaoPorMes: Record<string, number | null> = {};
   // Rateio: o histórico tem uma linha por unidade no mês — meses DISTINTOS.
@@ -50,6 +52,7 @@ export async function prepararRelatorio(instalacao: string, referencia: string, 
 
   return {
     ok: true,
+    leadId: l.lead_id,
     relatorio: montarRelatorio({
       linha: l, geracaoKwh: v.geracaoKwh, origemGeracao: v.origemGeracao, geracaoPorMes,
       potenciaKwp: sis.potenciaKwp, esperadoMesKwh: v.esperadoMesKwh, tarifaRsKwh: d.tarifaRsKwh,

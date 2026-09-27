@@ -43,3 +43,13 @@ export async function getSignedUrls(
   for (const r of data) if (r.signedUrl && r.path) out[r.path] = r.signedUrl;
   return out;
 }
+
+/** Baixa um arquivo do bucket. null = não achou / erro (loga o motivo). */
+export async function baixarAnexo(client: SupabaseClient, storagePath: string): Promise<Buffer | null> {
+  const { data, error } = await client.storage.from(BUCKET).download(storagePath);
+  if (error || !data) {
+    if (error) console.warn('[anexos] download falhou:', error.message);
+    return null;
+  }
+  return Buffer.from(await data.arrayBuffer());
+}

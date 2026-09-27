@@ -113,13 +113,15 @@ import type { SugestaoIa } from '../closing/revisar-contrato.js';
 import { CLIENTE_STATUSES } from './clientes-queries.js';
 import { can, podeDispararMensagens, usinaPertenceAoOperador } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
+import { pastaDaEmpresa, listarPastasDaEmpresa } from './pasta-da-empresa.js';
+import { EMPRESA_CASA as EMPRESA_PADRAO_PASTA } from './canal-envio.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
 import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } from './blog-views.js';
 import { renderEmailPage } from './email-views.js';
 import { renderMedicaoPage } from './medicao-views.js';
 import {
   renderDemonstrativosLista, renderDemonstrativoCliente, renderConferenciaPdf, renderDigitar, renderEnviarPdf,
-  type ResultadoLeituraPdf,
+  renderConfirmarEnvioRelatorio, type ResultadoLeituraPdf,
 } from './demonstrativos-views.js';
 import { listarAparelhos, resumoDoAparelho } from './medicao-queries.js';
 import { desempenhoPorStep } from './email-metricas.js';
@@ -201,6 +203,9 @@ export function createDashboardRouter(
         parameters: Array<{ type: 'text'; text: string }>;
       }>,
     ) => Promise<unknown>;
+    // Tenant com WhatsApp próprio (Evolution): PDF anexo pela instância em
+    // contexto (canal-contexto). Vem do index.ts (evolution.sendDocument).
+    sendDocumentEvolution?: (to: string, base64: string, fileName: string, caption: string) => Promise<void>;
     proposalAssistant?: ProposalAssistant;
     metaService?: MetaWhatsAppService;
     engineerPhone?: string; // telefone do Junior — recebe o aviso "cliente fechou"
@@ -4663,6 +4668,7 @@ b.onclick=async function(){
         historico: l.historico.map((h) => ({ mes: h.mes, consumida: h.consumida, injetada: h.injetada, compensado: h.compensado })),
         unidades: l.unidades, origemDemonstrativo: l.origem, verificado: l.origem_verificada,
         validacao, candidatos, msg: typeof req.query.msg === 'string' ? req.query.msg : null,
+        ultimoEnvio: await tela.ultimoEnvio(inst, l.referencia).catch(() => null),
       }, req.dashUser));
     } catch (err) {
       console.error('[demonstrativos/cliente]', err);
@@ -4698,7 +4704,7 @@ b.onclick=async function(){
       baixarLogo: () => comEmpresaDe(companyId, () => obterLogoBase64(db)),
     });
     const { renderRelatorioHtml } = await import('../gd/relatorio-html.js');
-    return { inst, mes, tela, relatorio: r.relatorio, html: renderRelatorioHtml(r.relatorio, marca) };
+    return { inst, mes, tela, leadId: r.leadId, relatorio: r.relatorio, html: renderRelatorioHtml(r.relatorio, marca) };
   }
 
   router.get('/demonstrativos/:instalacao/relatorio.html', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
@@ -4718,14 +4724,10 @@ b.onclick=async function(){
       const { gerarRelatorioPdf, lerPdfUnpdf } = await import('../gd/relatorio-pdf.js');
       const { htmlToPdf } = await import('../proposal/pdf-generator.js');
       const pdf = await gerarRelatorioPdf(p.html, { htmlToPdf, lerPdf: lerPdfUnpdf }, { exigeGrafico: p.relatorio.meses.length > 0 });
-      const r = p.relatorio;
+      const { numerosDoRelatorio } = await import('../gd/relatorio-motor.js');
       await p.tela.registrarRelatorio({
         instalacao: p.inst, referencia: p.mes, geradoPor: req.dashUser!.id,
-        numeros: {
-          gerouKwh: r.gerouKwh, consumiuKwh: r.consumiuKwh, economiaRs: r.economiaRs, creditosKwh: r.creditosKwh,
-          tarifaRsKwh: r.tarifaRsKwh, injetadoKwh: r.injetadoKwh, compensadoKwh: r.compensadoKwh,
-          usadosNoMesKwh: r.creditos.usadosNoMesKwh, origemGeracao: r.origemGeracao,
-        },
+        numeros: numerosDoRelatorio(p.relatorio),
       });
       const nome = `relatorio-${p.inst}-${p.mes.slice(0, 7)}.pdf`;
       res.setHeader('Content-Type', 'application/pdf');
@@ -4738,6 +4740,122 @@ b.onclick=async function(){
       if (!res.headersSent) {
         res.redirect(`/dashboard/demonstrativos/${RE_UC.test(inst) ? inst : ''}?mes=${encodeURIComponent(mes)}&msg=${encodeURIComponent(`Não consegui gerar o PDF: ${(err as Error).message}`)}`);
       }
+    }
+  });
+
+  // ── Enviar o relatório ao cliente pela Eva (fatia 3) — plano 2026-09-27-demonstrativos-enviar-relatorio-eva.md
+  /** Relatório 🟢 + cliente + canal + destino. null = já respondeu (redirect/404). */
+  async function envioRelatorioCtx(req: AuthedRequest, res: Response) {
+    const p = await relatorioDaRequisicao(req, res);
+    if (!p) return null;
+    const companyId = req.dashUser!.companyId;
+    const lead = await p.tela.destinoDoLead(p.leadId);
+    if (!lead) { res.status(404).send('Cliente não encontrado nesta empresa'); return null; }
+    const { canalZapDaEmpresa } = await import('./canal-envio.js');
+    const { destinoDoEnvio } = await import('../gd/relatorio-envio.js');
+    const { envioProibido } = await import('../tenant-admin-guard.js');
+    const instancia = await instanciaDoTenant(req);
+    const canal = canalZapDaEmpresa(companyId, instancia);
+    const cfg = empresaDe(companyId);
+    const destino = destinoDoEnvio(lead, {
+      canal,
+      bloqueadoLgpd: (fone) => envioProibido(fone, options.engineerPhone ?? '', cfg),
+    });
+    const ultimo = await p.tela.ultimoEnvio(p.inst, p.mes);
+    return { ...p, companyId, lead, instancia, canal, cfg, destino, ultimo };
+  }
+
+  router.get('/demonstrativos/:instalacao/enviar', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const c = await envioRelatorioCtx(req, res);
+      if (!c) return;
+      const T = await import('../gd/relatorio-envio-textos.js');
+      const { montarEmailRelatorio } = await import('../gd/relatorio-envio.js');
+      const nome = T.primeiroNome(c.lead.nome);
+      const mesExt = c.relatorio.mesExtenso;
+      const linkExemplo = T.linkPublicoRelatorio(T.basePublica(), '…');
+      const textoZap = c.canal === 'evolution'
+        ? `${T.textoLivreRelatorio(nome, mesExt, linkExemplo)}\n\n📎 ${T.nomeArquivoRelatorio(c.inst, c.mes)}`
+        : `${T.textoTemplateRelatorio(nome, mesExt)}\n\n[ botão: Ver meu relatório ]`;
+      const previa = montarEmailRelatorio({ nome, mesExtenso: mesExt, link: linkExemplo }, c.cfg);
+      res.type('html').send(renderConfirmarEnvioRelatorio({
+        instalacao: c.inst, mes: c.mes, mesExtenso: mesExt, clienteNome: c.lead.nome ?? c.relatorio.cliente,
+        canal: c.canal,
+        zap: { para: c.destino.zap.fone, motivo: c.destino.zap.motivo, texto: textoZap },
+        email: process.env.RESEND_API_KEY
+          ? { para: c.destino.email.para, motivo: c.destino.email.motivo, assunto: previa.assunto, html: previa.html }
+          : null,
+        linkExemplo, ultimoEnvio: c.ultimo,
+      }, req.dashUser));
+    } catch (err) {
+      console.error('[demonstrativos/enviar GET]', err);
+      res.status(500).send(`<h2>Erro ao preparar o envio</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  router.post('/demonstrativos/:instalacao/enviar', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    const inst = String(req.params.instalacao);
+    const mesQ = typeof req.query.mes === 'string' ? req.query.mes : '';
+    const volta = (m: string) =>
+      res.redirect(`/dashboard/demonstrativos/${RE_UC.test(inst) ? inst : ''}?mes=${encodeURIComponent(mesQ)}&msg=${encodeURIComponent(m)}`);
+    try {
+      if (String(req.body?.confirmar ?? '') !== '1') { volta('Envio não confirmado — nada saiu.'); return; }
+      const c = await envioRelatorioCtx(req, res);
+      if (!c) return;
+      const { renderResultadoEnvio } = await import('../relatorios/pasta/resultado-envio.js');
+      const { executarEnvioRelatorio } = await import('../gd/relatorio-envio-executar.js');
+      const { gerarRelatorioPdf, lerPdfUnpdf } = await import('../gd/relatorio-pdf.js');
+      const { htmlToPdf } = await import('../proposal/pdf-generator.js');
+      const { uploadAnexo, deleteAnexoFile } = await import('../anexos/storage.js');
+      const T = await import('../gd/relatorio-envio-textos.js');
+      const E = await import('../gd/relatorio-envio.js');
+      const { numerosDoRelatorio } = await import('../gd/relatorio-motor.js');
+      const { noCanalDaEmpresa } = await import('./canal-envio.js');
+      const sender = process.env.RESEND_API_KEY
+        ? new (await import('../email/resend-client.js')).EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '')
+        : null;
+
+      const saida = await executarEnvioRelatorio({
+        basePublica: T.basePublica(),
+        gerarPdf: () => gerarRelatorioPdf(c.html, { htmlToPdf, lerPdf: lerPdfUnpdf }, { exigeGrafico: c.relatorio.meses.length > 0 }),
+        // PDF guardado com a chave-mestra (storage não passa pelo RLS do operador).
+        guardarPdf: (pdf) => uploadAnexo(supabase, c.leadId, 'relatorio-gd', pdf, 'application/pdf', 'pdf'),
+        apagarPdf: (path) => deleteAnexoFile(supabase, path),
+        gerarToken: T.gerarTokenRelatorio,
+        repo: c.tela,
+        noCanal: (fn) => noCanalDaEmpresa(c.companyId, c.instancia, fn),
+        sendText: options.sendText,
+        sendTemplate: options.sendTemplate,
+        sendDocument: options.sendDocumentEvolution,
+        enviarEmail: sender ? (e) => sender.enviar(e) : undefined,
+        registrarEmailEnviado: (d) => supabaseService.registrarEmailEnviado(d),
+        registrarConversa: (texto) =>
+          E.registrarEnvioNaConversa(supabaseService, c.leadId, c.companyId, c.relatorio.mesExtenso, texto),
+      }, {
+        instalacao: c.inst, referencia: c.mes, geradoPor: req.dashUser!.id, leadId: c.leadId,
+        nomeCliente: c.lead.nome, mesExtenso: c.relatorio.mesExtenso, numeros: numerosDoRelatorio(c.relatorio),
+        canal: c.canal, empresa: c.cfg, destino: c.destino,
+        jaEnviado: Boolean(c.ultimo), reenviar: String(req.body?.reenviar ?? '') === '1',
+      });
+
+      if (saida.tipo === 'confirmar_reenvio') {
+        res.redirect(`/dashboard/demonstrativos/${c.inst}/enviar?mes=${encodeURIComponent(c.mes)}`);
+        return;
+      }
+      if (saida.tipo === 'em_andamento') {
+        volta('Esse relatório já está sendo enviado (clique duplo ou outra aba) — confira em instantes o "enviado em".');
+        return;
+      }
+      console.log(`[demonstrativos/enviar] UC ${c.inst} ${c.mes} empresa ${c.companyId.slice(0, 8)} canal=${c.canal} zap=${saida.zap.ok ? 'ok' : saida.zap.reason} email=${saida.email ? (saida.email.ok ? 'ok' : saida.email.reason) : 'desligado'}`);
+      res.type('html').send(renderResultadoEnvio({
+        tituloOk: 'Relatório enviado', tituloConfira: 'Envio do relatório — confira',
+        voltarHref: `/dashboard/demonstrativos/${c.inst}?mes=${encodeURIComponent(c.mes)}`,
+        voltarTexto: '← voltar para o cliente',
+        zap: saida.zap, email: saida.email, linkPublico: saida.linkPublico,
+      }));
+    } catch (err) {
+      console.error('[demonstrativos/enviar POST]', err);
+      if (!res.headersSent) volta(`Não enviei: ${(err as Error).message}`);
     }
   });
 
@@ -5956,7 +6074,12 @@ b.onclick=async function(){
     };
   };
   const posInstService = new PosInstalacaoService(supabaseService, resolverSistemaFV);
-  const pastaService = new PastaService(supabaseService, resolverSistemaFV);
+  const pastaService = new PastaService(supabaseService, resolverSistemaFV, async (leadId) => {
+    // Só relatórios ENVIADOS deste lead e da empresa dona dele.
+    const { listarRelatoriosDaPasta } = await import('../gd/relatorio-publico.js');
+    const { basePublica } = await import('../gd/relatorio-envio-textos.js');
+    return listarRelatoriosDaPasta(supabase, leadId, basePublica());
+  });
 
   // GET form de novo relatório
   router.get('/clientes/:id/relatorio-pos-instalacao/novo', async (req: Request, res: Response) => {
@@ -6053,10 +6176,23 @@ b.onclick=async function(){
   const PASTA_PUBLIC_BASE = process.env.PROPOSAL_PUBLIC_BASE_URL ?? 'https://propostas.ecosunpower.eng.br';
   const SECAO_IDS = new Set<string>(SECOES.map((s) => s.id));
 
+  // 27/09/2026: toda rota /pastas/:id confere se a pasta é da empresa de quem
+  // está logado. Alheia ou inexistente → o MESMO 404 (não revela que existe).
+  const empresaDoOperador = (req: Request): string =>
+    (req as AuthedRequest).dashUser?.companyId ?? EMPRESA_PADRAO_PASTA;
+  async function pastaDoOperador(req: Request, res: Response): Promise<any | null> {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) { res.status(400).send('UUID inválido'); return null; }
+    const pasta = await pastaDaEmpresa(supabase, id, empresaDoOperador(req));
+    if (!pasta) { res.status(404).send('Pasta não encontrada'); return null; }
+    return pasta;
+  }
+
   // Lista + form "abrir pasta"
-  router.get('/pastas', async (_req: Request, res: Response) => {
+  router.get('/pastas', async (req: Request, res: Response) => {
+    const companyId = empresaDoOperador(req);
     const [rows, clientes, comServico] = await Promise.all([
-      supabaseService.listPastasCliente(),
+      listarPastasDaEmpresa(supabase, companyId, 400),   // empresa filtrada NA consulta
       supabaseService.listClientesByStatus(
         ['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido'],
         { ord: 'nome' }, 200, 0, true,
@@ -6070,7 +6206,17 @@ b.onclick=async function(){
     for (const s of comServico) {
       if (!porId.has(s.id)) porId.set(s.id, s);
     }
-    const listaClientes = [...porId.values()].sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'pt-BR'));
+    // Só clientes da empresa de quem está logado (27/09/2026).
+    const idsCandidatos = [...porId.keys()];
+    const idsDaEmpresa = new Set<string>();
+    for (let i = 0; i < idsCandidatos.length; i += 100) {   // lotes: URL do PostgREST não estoura
+      const { data } = await bancoDoOperador(req as AuthedRequest, supabase).from('leads').select('id')
+        .in('id', idsCandidatos.slice(i, i + 100)).eq('company_id', companyId);
+      for (const l of (data ?? []) as Array<{ id: string }>) idsDaEmpresa.add(l.id);
+    }
+    const listaClientes = [...porId.values()]
+      .filter((c) => idsDaEmpresa.has(c.id))
+      .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'pt-BR'));
     const pastas = rows.map((r: any) => ({
       id: r.id, slug: r.slug, status: r.status, acessos: r.acessos,
       enviado_em: r.enviado_em, updated_at: r.updated_at,
@@ -6088,6 +6234,10 @@ b.onclick=async function(){
   router.post('/pastas', async (req: Request, res: Response) => {
     const leadId = String(req.body?.lead_id ?? '');
     if (!UUID_RE.test(leadId)) return res.status(400).send('Escolha um cliente');
+    // Só abre pasta de lead da própria empresa (27/09/2026).
+    const { data: leadDaEmpresa } = await bancoDoOperador(req as AuthedRequest, supabase).from('leads').select('id')
+      .eq('id', leadId).eq('company_id', empresaDoOperador(req)).maybeSingle();
+    if (!leadDaEmpresa) return res.status(404).send('Cliente não encontrado');
     // R3: pasta só pra cliente com venda registrada. Se não tem, oferece registrar
     // na hora (valor · kWp · data) — mesma registrarVenda da Eva/Fechou!.
     const leadAtual = await supabaseService.getClienteByLeadId(leadId);
@@ -6130,9 +6280,8 @@ b.onclick=async function(){
   // Editor
   router.get('/pastas/:id', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
-    const pasta = await supabaseService.getPastaClienteById(id);
-    if (!pasta) return res.status(404).send('Pasta não encontrada');
+    const pasta = await pastaDoOperador(req, res);
+    if (!pasta) return;
     const lead = await supabaseService.getClienteByLeadId(pasta.lead_id);
     const rels = await supabaseService.listRelatoriosPosInstalacaoByLead(pasta.lead_id, 1);
     const { servicosDoLead } = await import('./servicos-store.js');
@@ -6163,7 +6312,7 @@ b.onclick=async function(){
     upload.array('arquivos', 60),   // era 20: entrega de obra com drone passa fácil disso
     async (req: Request, res: Response) => {
       const id = String(req.params.id ?? '');
-      if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+      if (!(await pastaDoOperador(req, res))) return;
       const secao = String(req.body?.secao ?? '');
       if (!SECAO_IDS.has(secao)) return res.status(400).send('Seção inválida');
 
@@ -6192,7 +6341,7 @@ b.onclick=async function(){
   // Remover arquivo
   router.post('/pastas/:id/arquivos/remover', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
     const r = await pastaService.removerArquivo(id, String(req.body?.storage_path ?? ''));
     if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2>`);
     res.redirect(303, `/dashboard/pastas/${id}`);
@@ -6202,7 +6351,7 @@ b.onclick=async function(){
   // serviços do lead — mesmo bucket, só referencia, sem re-upload)
   router.post('/pastas/:id/puxar-servicos', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
     const r = await pastaService.puxarFotosDosServicos(id, async (leadId) => {
       const { servicosDoLead, midiasDoServico } = await import('./servicos-store.js');
       const servicos = await servicosDoLead(supabase, leadId);
@@ -6221,7 +6370,7 @@ b.onclick=async function(){
   // Puxar fotos do r-pi
   router.post('/pastas/:id/puxar-rpi', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
     const r = await pastaService.puxarFotosDoRelatorio(id);
     if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/pastas/${id}">← voltar</a>`);
     res.redirect(303, `/dashboard/pastas/${id}`);
@@ -6230,7 +6379,7 @@ b.onclick=async function(){
   // Definir capa
   router.post('/pastas/:id/capa', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
     const r = await pastaService.definirCapa(id, String(req.body?.storage_path ?? ''));
     if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2>`);
     res.redirect(303, `/dashboard/pastas/${id}`);
@@ -6239,7 +6388,7 @@ b.onclick=async function(){
   // Salvar data de entrega + mensagem do zap
   router.post('/pastas/:id/dados', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
     const dataRaw = req.body?.data_entrega ? String(req.body.data_entrega) : null;
     if (dataRaw && !/^\d{4}-\d{2}-\d{2}$/.test(dataRaw)) return res.status(400).send('Data inválida');
     const r = await pastaService.atualizarDados(id, {
@@ -6253,7 +6402,7 @@ b.onclick=async function(){
   // Publicar
   router.post('/pastas/:id/publicar', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
     const r = await pastaService.publicar(id);
     if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/pastas/${id}">← voltar</a>`);
     res.redirect(303, `/dashboard/pastas/${id}`);
@@ -6267,7 +6416,7 @@ b.onclick=async function(){
   // pastas_cliente.dados_declaracao (migration 127) pra nao redigitar.
   router.post('/pastas/:id/declaracao', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
 
     const campos = ['trt', 'parecer', 'parecer_em', 'conclusao_em', 'padrao_entrada',
                     'uc', 'distribuidora', 'qualificacao', 'cidade'] as const;
@@ -6295,22 +6444,52 @@ b.onclick=async function(){
 
   router.post('/pastas/:id/enviar', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    const pasta = await pastaDoOperador(req, res);
+    if (!pasta) return;
     const sendText = options.sendText;
     if (!sendText) return res.status(500).send('sendText não configurado neste ambiente.');
-    const r = await pastaService.enviarPorWhatsApp(id, sendText, options.sendTemplate, { forcar: true });
 
-    // O e-mail vai JUNTO, igual ao botão do zap (09/09/2026). Nunca derruba o
-    // envio do zap — mas o resultado APARECE na tela (23/09/2026): antes ele era
-    // engolido e a tela redirecionava como se o e-mail tivesse saído.
-    let email: { ok: boolean; reason?: string; para?: string } | null = null;
-    if (process.env.RESEND_API_KEY) {
-      const { EmailSender } = await import('../email/resend-client.js');
-      const sender = new EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '');
-      email = await pastaService
-        .enviarPorEmail(id, (e) => sender.enviar(e))
-        .catch((err) => ({ ok: false, reason: (err as Error).message }));
-    }
+    // 27/09/2026: o envio roda DENTRO da empresa de quem clicou (marca, trava
+    // LGPD, textos) e do canal dela. Antes rodava sem contexto e um tenant
+    // (ex.: Conquista Solar) mandava a pasta pelo número da EcoSunPower.
+    // Tenant sem WhatsApp próprio conectado não manda zap — nunca pelo número de outra empresa.
+    const { canalZapDaEmpresa, noCanalDaEmpresa, bloqueioZapPasta, EMPRESA_CASA } = await import('./canal-envio.js');
+    const companyId = (req as AuthedRequest).dashUser?.companyId ?? EMPRESA_CASA;
+    const instancia = await instanciaDoTenant(req as AuthedRequest);
+    const canal = canalZapDaEmpresa(companyId, instancia);
+
+    const { r, email } = await noCanalDaEmpresa(companyId, instancia, async () => {
+      // A trava LGPD do sendText descarta em silêncio (a tela mostraria ✅):
+      // pergunta ANTES e, se barrar, nada sai e a tela mostra o motivo.
+      // 27/09/2026 (review): .catch(() => null) sozinho fazia um ERRO de busca
+      // (rede/banco) parecer "cliente sem telefone" — e a trava LGPD nem rodava
+      // (falha ABERTA, mandava sem checar). Erro de busca é sinalizado à parte
+      // pra falha FECHADA: nada sai, mesmo sem saber o telefone.
+      let erroBuscaLead = false;
+      const leadDaPasta = canal === 'nenhum'
+        ? null
+        : await supabaseService.getClienteByLeadId(pasta.lead_id).catch(() => { erroBuscaLead = true; return null; });
+      const barrado = bloqueioZapPasta({
+        canal, phone: leadDaPasta?.phone ?? null, engineerPhone: options.engineerPhone ?? '', cfg: empresaDe(companyId),
+        erroBusca: erroBuscaLead,
+      });
+      const r: { ok: boolean; reason?: string } = barrado
+        // Modelo (WABA) é só da EcoSun; tenant vai por texto na instância dele.
+        ?? await pastaService.enviarPorWhatsApp(id, sendText, canal === 'casa' ? options.sendTemplate : undefined, { forcar: true });
+
+      // O e-mail vai JUNTO, igual ao botão do zap (09/09/2026). Nunca derruba o
+      // envio do zap — mas o resultado APARECE na tela (23/09/2026): antes ele era
+      // engolido e a tela redirecionava como se o e-mail tivesse saído.
+      let email: { ok: boolean; reason?: string; para?: string } | null = null;
+      if (process.env.RESEND_API_KEY) {
+        const { EmailSender } = await import('../email/resend-client.js');
+        const sender = new EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '');
+        email = await pastaService
+          .enviarPorEmail(id, (e) => sender.enviar(e))
+          .catch((err) => ({ ok: false, reason: (err as Error).message }));
+      }
+      return { r, email };
+    });
 
     const pastaDepois = r.ok ? await supabaseService.getPastaClienteById(id).catch(() => null) : null;
     console.log(`[pasta] envio dashboard ${id}: zap=${r.ok ? 'ok' : r.reason} email=${email ? (email.ok ? 'ok' : email.reason) : 'desligado'}`);
@@ -6325,7 +6504,7 @@ b.onclick=async function(){
   // Excluir a pasta inteira (o link do cliente morre — confirmação forte na tela)
   router.post('/pastas/:id/excluir', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
     const r = await pastaService.excluirPasta(id);
     if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/pastas">← voltar</a>`);
     res.redirect(303, '/dashboard/pastas');
@@ -6334,9 +6513,8 @@ b.onclick=async function(){
   // Prévia (iframe com o HTML público em modo preview)
   router.get('/pastas/:id/preview', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
-    const pasta = await supabaseService.getPastaClienteById(id);
-    if (!pasta) return res.status(404).send('Pasta não encontrada');
+    const pasta = await pastaDoOperador(req, res);
+    if (!pasta) return;
     const lead = await supabaseService.getClienteByLeadId(pasta.lead_id);
     const view = await pastaService.resolverView(pasta, false);
     if (!view) return res.status(500).send('Erro montando prévia');

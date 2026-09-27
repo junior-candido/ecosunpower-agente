@@ -4,6 +4,13 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RegistroDemonstrativo } from './demonstrativo-ingestao.js';
+import type { LeadDestino, ResumoEnvio } from './relatorio-envio.js';
+
+// Reexportados pra quem já importava daqui (tipos definidos em relatorio-envio.ts).
+export type { LeadDestino, ResumoEnvio };
+
+/** Reserva de envio do relatório vale 5 min; depois disso é tida como abandonada. */
+export const RESERVA_ENVIO_MS = 5 * 60 * 1000;
 
 export interface LinhaDemonstrativo {
   id: string;
@@ -297,6 +304,101 @@ export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
         numeros: p.numeros,
       });
       if (error) throw new Error(`relatorios_gd_gerados (gravar): ${error.message}`);
+    },
+
+    /**
+     * Reserva o envio do mês ANTES de gerar/mandar qualquer coisa (duplo clique,
+     * duas abas): cria a linha com `enviando_desde`; o índice único parcial da
+     * migration 134 deixa só UMA reserva viva por empresa+UC+mês. Outra em
+     * andamento → null. Reserva com mais de 5 min (servidor caiu no meio) é
+     * solta antes, pra não travar o mês pra sempre. Devolve o id da linha.
+     */
+    async reservarEnvio(p: {
+      instalacao: string; referencia: string; geradoPor: string; numeros: Record<string, unknown>; leadId: string;
+    }): Promise<string | null> {
+      const agora = Date.now();
+      const { error: eSolta } = await db.from('relatorios_gd_gerados')
+        .update({ enviando_desde: null })
+        .eq('company_id', companyId)
+        .eq('instalacao', p.instalacao)
+        .eq('referencia', p.referencia)
+        .lt('enviando_desde', new Date(agora - RESERVA_ENVIO_MS).toISOString());
+      if (eSolta) throw new Error(`relatorios_gd_gerados (reservar envio): ${eSolta.message}`);
+      const { data, error } = await db.from('relatorios_gd_gerados').insert({
+        company_id: companyId,
+        instalacao: p.instalacao,
+        referencia: p.referencia,
+        gerado_por: p.geradoPor,
+        numeros: p.numeros,
+        lead_id: p.leadId,
+        enviando_desde: new Date(agora).toISOString(),
+      }).select('id').single();
+      if (error) {
+        if ((error as { code?: string }).code === '23505') return null;
+        throw new Error(`relatorios_gd_gerados (reservar envio): ${error.message}`);
+      }
+      return String((data as any).id);
+    },
+
+    /** PDF guardado + token do link /rg/ na linha reservada. */
+    async anexarPdfEToken(id: string, p: { token: string; storagePath: string }): Promise<void> {
+      const { error } = await db.from('relatorios_gd_gerados')
+        .update({ token: p.token, storage_path: p.storagePath })
+        .eq('company_id', companyId).eq('id', id);
+      if (error) throw new Error(`relatorios_gd_gerados (anexar PDF): ${error.message}`);
+    },
+
+    /** Deu erro no meio: o link morre (token null), a reserva é solta e o motivo fica guardado. */
+    async cancelarEnvio(id: string, motivo: string): Promise<void> {
+      const { error } = await db.from('relatorios_gd_gerados')
+        .update({ token: null, enviando_desde: null, envio: { erro: motivo } })
+        .eq('company_id', companyId).eq('id', id);
+      if (error) throw new Error(`relatorios_gd_gerados (cancelar envio): ${error.message}`);
+    },
+
+    /** Resultado do envio. `enviado_em` só quando algum canal saiu de verdade;
+     *  nada saiu → o link morre (não fica valendo sem ter ido pra ninguém). */
+    async marcarEnvio(id: string, r: ResumoEnvio): Promise<void> {
+      const { error } = await db.from('relatorios_gd_gerados').update({
+        enviado_em: r.algumOk ? new Date().toISOString() : null,
+        enviado_zap_para: r.zapPara,
+        enviado_email_para: r.emailPara,
+        envio: r.envio,
+        enviando_desde: null,
+        ...(r.algumOk ? {} : { token: null }),
+      }).eq('company_id', companyId).eq('id', id);
+      if (error) throw new Error(`relatorios_gd_gerados (marcar envio): ${error.message}`);
+    },
+
+    /** Último envio que SAIU desse mês dessa UC — a tela mostra "✅ enviado em…" e pede confirmação pra reenviar. */
+    async ultimoEnvio(instalacao: string, referencia: string): Promise<{ enviadoEm: string; zapPara: string | null; emailPara: string | null } | null> {
+      const { data, error } = await db
+        .from('relatorios_gd_gerados')
+        .select('enviado_em, enviado_zap_para, enviado_email_para')
+        .eq('company_id', companyId)
+        .eq('instalacao', instalacao)
+        .eq('referencia', referencia)
+        .not('enviado_em', 'is', null)
+        .order('enviado_em', { ascending: false })
+        .limit(1);
+      if (error) throw new Error(`relatorios_gd_gerados (último envio): ${error.message}`);
+      const r = data?.[0] as any;
+      return r ? { enviadoEm: r.enviado_em, zapPara: r.enviado_zap_para ?? null, emailPara: r.enviado_email_para ?? null } : null;
+    },
+
+    /** Para quem mandar: só lead DESTA empresa. */
+    async destinoDoLead(leadId: string): Promise<LeadDestino | null> {
+      const { data, error } = await db
+        .from('leads')
+        .select('id, name, phone, email, opt_out')
+        .eq('company_id', companyId)
+        .eq('id', leadId)
+        .limit(1);
+      if (error) throw new Error(`leads (destino do envio): ${error.message}`);
+      const l = data?.[0] as any;
+      return l
+        ? { id: l.id, nome: l.name ?? null, phone: l.phone ?? null, email: l.email ?? null, optOut: l.opt_out === true }
+        : null;
     },
   };
 }

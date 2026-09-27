@@ -133,3 +133,43 @@ describe('assinatura do responsavel', () => {
     expect(html).toContain('https://wa.me/5561996978781');
   });
 });
+
+describe('montarMolduraEmail — semLogo (tenant sem logo https)', () => {
+  it('escreve o nome da empresa no lugar da imagem e nunca usa a logo padrão da EcoSun', () => {
+    const html = montarMolduraEmail({
+      conteudoHtml: '<p>oi</p>', linkDescadastro: '', empresa: 'Conquista Solar',
+      siteUrl: 'https://conquista.com', transacional: true, semLogo: true,
+    });
+    expect(html).toContain('Conquista Solar');
+    expect(html).not.toContain('logo-ecosun-ecossistema.png');
+    expect(html).not.toMatch(/<img /);
+  });
+});
+
+describe('montarMolduraEmail — semLogo nunca mostra a marca da EcoSun', () => {
+  it('tenant com empresa + site + semLogo: HTML inteiro sem "ecosunpower"', () => {
+    const html = montarMolduraEmail({
+      conteudoHtml: '<p>oi</p>', linkDescadastro: '', empresa: 'Conquista Solar',
+      siteUrl: 'https://conquista.com', transacional: true, semLogo: true,
+    });
+    expect(html).toContain('https://conquista.com');
+    expect(html).not.toMatch(/ecosunpower/i);
+  });
+  it('semLogo sem site: esconde o link do site em vez de cair no site da EcoSun', () => {
+    const html = montarMolduraEmail({
+      conteudoHtml: '<p>oi</p>', linkDescadastro: '', empresa: 'Conquista Solar', transacional: true, semLogo: true,
+    });
+    expect(html).toContain('Conquista Solar');
+    expect(html).not.toMatch(/ecosunpower/i);
+    expect(html).not.toMatch(/<a href="https?:/);
+  });
+  it('semLogo sem nome da empresa: rodapé não diz EcoSunPower', () => {
+    const html = montarMolduraEmail({ conteudoHtml: '<p>oi</p>', linkDescadastro: '', transacional: true, semLogo: true });
+    expect(html).not.toMatch(/ecosun/i);
+  });
+  it('sem semLogo continua igual (EcoSun: site e nome padrão)', () => {
+    const html = montarMolduraEmail({ conteudoHtml: '<p>oi</p>', linkDescadastro: '', transacional: true });
+    expect(html).toContain('www.ecosunpower.eng.br');
+    expect(html).toContain('EcoSunPower');
+  });
+});

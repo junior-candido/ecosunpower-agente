@@ -7,7 +7,7 @@
 
 import type { LinhaDemonstrativo } from './demonstrativos-tela-repo.js';
 import { mesCurto } from './demonstrativo-cruzamento.js';
-import { compensadoDoMes, consumoDoMes, historicoDoMes, historicoPorMes, numOuNull } from './demonstrativos-tela.js';
+import { compensadoDoMes, consumoDoMes, historicoDoMes, historicoPorMes, numOuNull, tipoAvisoVencimento } from './demonstrativos-tela.js';
 
 export interface EntradaRelatorio {
   /** Linha do mês do relatório (já validada 🟢 por quem chama). */
@@ -44,7 +44,11 @@ export interface RelatorioGd {
   compensadoKwh: number | null;
   frase: string;
   meses: MesGrafico[];
-  creditos: { saldoKwh: number | null; usadosNoMesKwh: number | null; aVencerKwh: number | null; venceEm: string | null };
+  creditos: {
+    saldoKwh: number | null; usadosNoMesKwh: number | null; aVencerKwh: number | null; venceEm: string | null;
+    /** 'alerta' = vence em até 6 meses do mês do relatório; 'validade' = só informa até quando vale. */
+    avisoVencimento: 'alerta' | 'validade' | null;
+  };
   rateio: Array<{ codigoCliente: string; percentual: number; saldoKwh: number }>;
   desempenho: { esperadoKwh: number | null; percentual: number | null; potenciaKwp: number | null };
   fontes: string[];
@@ -154,11 +158,21 @@ export function montarRelatorio(e: EntradaRelatorio): RelatorioGd {
       usadosNoMesKwh: compensadoKwh,
       aVencerKwh: l.proximo_expirar_kwh,
       venceEm: l.ciclo_expirar ? mesCurto(l.ciclo_expirar) : null,
+      avisoVencimento: tipoAvisoVencimento(l.proximo_expirar_kwh, l.ciclo_expirar, l.referencia),
     },
     rateio,
     desempenho: { esperadoKwh: e.esperadoMesKwh, percentual, potenciaKwp: e.potenciaKwp },
     fontes,
     tarifaRsKwh: e.tarifaRsKwh,
     origemGeracao: e.origemGeracao,
+  };
+}
+
+/** Os números que saíram no PDF — gravados em relatorios_gd_gerados.numeros (rastreio: "o que mandamos em agosto?"). */
+export function numerosDoRelatorio(r: RelatorioGd): Record<string, unknown> {
+  return {
+    gerouKwh: r.gerouKwh, consumiuKwh: r.consumiuKwh, economiaRs: r.economiaRs, creditosKwh: r.creditosKwh,
+    tarifaRsKwh: r.tarifaRsKwh, injetadoKwh: r.injetadoKwh, compensadoKwh: r.compensadoKwh,
+    usadosNoMesKwh: r.creditos.usadosNoMesKwh, origemGeracao: r.origemGeracao,
   };
 }

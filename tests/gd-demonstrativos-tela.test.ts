@@ -5,6 +5,7 @@ import {
 } from '../src/modules/gd/demonstrativos-tela.js';
 import type { LinhaDemonstrativo } from '../src/modules/gd/demonstrativos-tela-repo.js';
 import type { ResultadoValidacao } from '../src/modules/gd/gd-validacao.js';
+import { tipoAvisoVencimento } from '../src/modules/gd/demonstrativos-tela.js';
 
 const linha = (over: Partial<LinhaDemonstrativo> = {}): LinhaDemonstrativo => ({
   id: 'x', lead_id: 'L1', cliente_nome: 'JOAO TESTE', codigo_cliente: '100001', instalacao: '200002',
@@ -219,5 +220,17 @@ describe('historicoDoMes', () => {
     const un = [{ codigoCliente: 'A', percentual: 60, saldo: 10 }, { codigoCliente: 'B', percentual: 40, saldo: 5 }];
     expect(historicoDoMes(linha({ historico, unidades: un })))
       .toEqual({ mes: '2026-08-01', consumida: 480, injetada: 222, compensado: 350, unidades: 2 });
+  });
+});
+
+describe('tipoAvisoVencimento — mesma regra dos 6 meses do alerta da tela', () => {
+  it('até 6 meses da data-base = alerta; depois disso = validade; vencido/sem dado = null', () => {
+    expect(tipoAvisoVencimento(50, '2027-02-01', '2026-08-01')).toBe('alerta');
+    expect(tipoAvisoVencimento(50, '2026-08-01', '2026-08-01')).toBe('alerta');
+    expect(tipoAvisoVencimento(50, '2027-03-01', '2026-08-01')).toBe('validade');
+    expect(tipoAvisoVencimento(50, '2026-07-01', '2026-08-01')).toBeNull();
+    expect(tipoAvisoVencimento(0, '2027-02-01', '2026-08-01')).toBeNull();
+    expect(tipoAvisoVencimento(null, '2027-02-01', '2026-08-01')).toBeNull();
+    expect(tipoAvisoVencimento(50, null, '2026-08-01')).toBeNull();
   });
 });
