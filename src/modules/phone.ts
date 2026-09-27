@@ -21,7 +21,12 @@
  * e o aviso de serviço morria em silêncio.
  */
 export function telefoneParaEnvio(raw: string | null | undefined): string | null {
-  const d = (raw ?? '').replace(/\D/g, '');
+  const input = raw ?? '';
+  // Tem letra -> NUNCA é telefone (ex.: 'sem-telefone-<uuid>', migration 135).
+  // Sem esta trava, replace(/\D/g,'') sobrava com os dígitos do UUID e podia
+  // virar sem querer um "telefone" de 10/11 dígitos e mandar mensagem pro nada.
+  if (/[a-z]/i.test(input)) return null;
+  const d = input.replace(/\D/g, '');
   if (!d) return null;
   return d.length === 10 || d.length === 11 ? '55' + d : d;
 }

@@ -40,6 +40,9 @@ describe('normalizarTelefone', () => {
   it('vazio vira string vazia', () => {
     expect(normalizarTelefone('')).toBe('');
   });
+  it('valor com letra (sem-telefone-<uuid>, migration 135) → string vazia, nunca extrai digito do uuid', () => {
+    expect(normalizarTelefone('sem-telefone-123e4567-e89b-12d3-a456-426614174000')).toBe('');
+  });
 });
 
 describe('previaTemplate', () => {

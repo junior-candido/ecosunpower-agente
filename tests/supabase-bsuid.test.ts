@@ -78,6 +78,28 @@ describe('telefone vazio nunca vira lead', () => {
     expect(r.id).toBe('x');
     expect(chamadas.some((c) => c.op === 'upsert')).toBe(true);
   });
+
+  // Regressao: telefone FORMATADO (com +, espaco, parenteses, traco) e coisa
+  // corriqueira (usuario digita, formulario formata) — tem que continuar
+  // consultando/gravando igual ao telefone so-digitos.
+  it('upsertLead/getLeadByPhone com telefone formatado ("+55 (61) 99999-9999") ainda consulta e grava', async () => {
+    const s = await svc();
+    expect(await s.getLeadByPhone('+55 (61) 99999-9999')).toBeNull(); // sem lead existente, mas CONSULTOU
+    expect(chamadas.some((c) => c.op === 'in')).toBe(true);
+
+    chamadas = [];
+    const r = await s.upsertLead({ phone: '+55 (61) 99999-9999', status: 'novo' });
+    expect(r.id).toBe('x');
+    expect(chamadas.some((c) => c.op === 'upsert')).toBe(true);
+  });
+
+  // Documentado: JID do WhatsApp (com "@s.whatsapp.net") tem letra -> nao e
+  // telefone utilizavel. getLeadByPhone nao pode casar isso com ninguem.
+  it('getLeadByPhone com JID completo ("...@s.whatsapp.net") -> null sem consultar', async () => {
+    const s = await svc();
+    expect(await s.getLeadByPhone('5561999999999@s.whatsapp.net')).toBeNull();
+    expect(chamadas).toHaveLength(0);
+  });
 });
 
 describe('getLeadByWaUserId', () => {

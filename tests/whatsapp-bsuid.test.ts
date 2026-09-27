@@ -134,10 +134,23 @@ describe('processarMensagemSemTelefone', () => {
     expect(await processarMensagemSemTelefone(msg(), d)).toBe('erro');
   });
 
-  it('sem BSUID tambem trava (chave usa o messageId)', async () => {
+  it('sem BSUID cai pro username (nao pro messageId, que nao travaria nada)', async () => {
     const d = deps();
     await processarMensagemSemTelefone(msg({ fromUserId: undefined }), d);
-    expect(d.adquirirTrava).toHaveBeenCalledWith(expect.stringContaining('wamid.X'));
+    expect(d.adquirirTrava).toHaveBeenCalledWith(expect.stringContaining('@realsheena'));
+    expect(d.adquirirTrava).not.toHaveBeenCalledWith(expect.stringContaining('wamid.X'));
+  });
+
+  it('sem BSUID e sem username cai pro pushName', async () => {
+    const d = deps();
+    await processarMensagemSemTelefone(msg({ fromUserId: undefined, username: undefined }), d);
+    expect(d.adquirirTrava).toHaveBeenCalledWith(expect.stringContaining('Sheena Nelson'));
+  });
+
+  it('sem BSUID, username e pushName cai pro "anon" (ainda assim trava)', async () => {
+    const d = deps();
+    await processarMensagemSemTelefone(msg({ fromUserId: undefined, username: undefined, pushName: undefined }), d);
+    expect(d.adquirirTrava).toHaveBeenCalledWith(expect.stringContaining('_anon_'));
   });
 });
 

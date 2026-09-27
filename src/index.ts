@@ -7530,9 +7530,13 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         // docs/whatsapp-bsuid.md.
         if (!temTelefone(parsed.from)) {
           await processarMensagemSemTelefone(parsed, {
+            // Este alerta é caminho NOVO e isolado (nunca vira lead nem
+            // conversa): se `companyDoNumero` explodir, NÃO cai pro fallback
+            // de EcoSun do fluxo normal (isso mandaria texto de cliente de
+            // outro tenant pro admin errado) — só loga e não avisa ninguém.
             resolverEmpresa: async (pnid) => (await tenantResolver
               .companyDoNumero(pnid)
-              .catch(() => ({ companyId: ECOSUN_COMPANY_ID, motivo: 'erro' as const }))).companyId,
+              .catch(() => ({ companyId: null, motivo: 'erro' as const }))).companyId,
             destinoAdmin: (cid) => destinoAdminDaEmpresa(config.engineerPhone, empresaDe(cid)),
             nomeAssistente: (cid) => empresaDe(cid).nomeAtendente,
             adquirirTrava: async (chave) => {

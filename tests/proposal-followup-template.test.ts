@@ -294,6 +294,18 @@ describe('proposal-followup: abordar manual', () => {
     expect(msg).toContain('Me diz o nome');
   });
 
+  it('cliente_telefone com letra (sem-telefone-<uuid>, migration 135) → avisa, sem mandar template', async () => {
+    const { svc, sendTemplate } = makeServiceComBusca({
+      slug: 'slugX',
+      cliente_nome: 'Sem Telefone Real',
+      cliente_telefone: 'sem-telefone-123e4567-e89b-12d3-a456-426614174000',
+      dados_input: {},
+    });
+    const msg = await svc.abordarManual('sem telefone real');
+    expect(sendTemplate).not.toHaveBeenCalled();
+    expect(msg).toContain('não tem telefone');
+  });
+
   it('pega o telefone do dados_input quando o campo direto tá vazio', async () => {
     const { svc, sendTemplate } = makeServiceComBusca({
       slug: 'slugX',

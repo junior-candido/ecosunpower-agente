@@ -67,4 +67,9 @@ describe('normalizeBrazilianPhone (sanidade do nono digito)', () => {
   it('insere o 9 em celular BR de 12 digitos', () => {
     expect(normalizeBrazilianPhone('556193302673')).toBe('5561993302673');
   });
+
+  it('valor com letra (sem-telefone-<uuid>, migration 135) → null, nunca extrai digito do uuid', () => {
+    expect(normalizeBrazilianPhone('sem-telefone-123e4567-e89b-12d3-a456-426614174000')).toBeNull();
+    expect(normalizeBrazilianPhone('BR.13491208655302741918')).toBeNull();
+  });
 });

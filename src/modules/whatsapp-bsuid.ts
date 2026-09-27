@@ -94,7 +94,10 @@ export async function processarMensagemSemTelefone(
   parsed: IncomingMessage,
   deps: DepsSemTelefone,
 ): Promise<ResultadoSemTelefone> {
-  const quem = parsed.fromUserId || parsed.messageId;
+  // Chave da trava por PESSOA, não por mensagem — sem BSUID cai pro
+  // username/nome (não pro messageId, que é único por mensagem e nunca
+  // travaria: cada mensagem nova destravaria o aviso de novo).
+  const quem = parsed.fromUserId || parsed.username || parsed.pushName || 'anon';
   try {
     console.warn(
       `[waba][bsuid] mensagem SEM telefone (user_id=${parsed.fromUserId ?? '-'} username=${parsed.username ?? '-'} ` +

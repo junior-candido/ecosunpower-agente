@@ -27,8 +27,16 @@ e falhava.
 
 1. **Trava no webhook** (`src/index.ts` → `src/modules/whatsapp-bsuid.ts`): mensagem cujo `from`
    não é telefone (vazio / não numérico) **não entra na fila**. Loga e avisa o **admin da empresa
-   dona** (mesma regra LGPD dos outros avisos: `destinoAdminDaEmpresa`), 1x por hora por pessoa,
-   com nome, @username, BSUID e o começo da mensagem. A assistente NÃO responde.
+   dona** (mesma regra LGPD dos outros avisos: `destinoAdminDaEmpresa`), 1x por hora por pessoa
+   (chave da trava = BSUID, ou `username`/nome quando não vier BSUID — nunca o `messageId`, que é
+   único por mensagem e não travaria nada), com nome, @username, BSUID e o começo da mensagem. A
+   assistente NÃO responde.
+   - Esse aviso vai como **texto livre pela WABA** (`sendText`) — só entrega se o admin falou com
+     a Eva nas últimas 24h; fora da janela a Meta recusa e o envio fica **só logado** (o admin não
+     recebe nada). Fase 2 pode trocar por um **template aprovado** pra funcionar sempre.
+   - Se `companyDoNumero` (resolve o tenant dono do número) falhar, este caminho **não cai** no
+     fallback de EcoSun do fluxo normal — resolve para "sem empresa" e só loga, pra nunca mandar
+     texto de cliente de um tenant pro admin de outro.
 2. **Banco recusa telefone vazio**: `upsertLead` e `getOrCreateLeadByPhone` lançam erro com
    telefone vazio/sem dígito/com letra; `getLeadByPhone` devolve `null` sem consultar.
 3. **Parse**: `IncomingMessage` e `QueueMessage` ganharam `fromUserId`, `fromParentUserId`,
@@ -41,7 +49,18 @@ e falhava.
 5. **Migration 135** (`supabase/migrations/135_leads_whatsapp_bsuid.sql`): colunas
    `leads.wa_user_id` / `leads.wa_username`, índice único `(company_id, wa_user_id)` parcial,
    e `check (btrim(phone) <> '')`. Lead que já tinha `phone = ''` **não é apagado**: vira
-   `sem-telefone-<id>` (o código nunca casa isso com telefone de ninguém).
+   `sem-telefone-<id>` (o código nunca casa isso com telefone de ninguém). Antes do apelido, a
+   migration desliga `eva_active` desses leads e cancela (`status='cancelled'`) os toques JÁ
+   AGENDADOS neles em `eva_cadence` e `proposta_followup_vivo` — senão o cron da cadência ia tentar
+   mandar mensagem pro telefone inventado. Toda etapa nova é guardada com
+   `DO $$ ... exception when undefined_table or undefined_column then null; end $$` pra nunca
+   quebrar a migration num ambiente onde a tabela ainda não existe (pré-check SQL: ver "Ordem do
+   deploy" abaixo).
+6. **Telefone "sujo" nunca vira envio**: `normalizeBrazilianPhone` (`meta-leadgen.ts`),
+   `telefoneParaEnvio` (`phone.ts`) e os dois `normalizarTelefone` (`dashboard/pos-venda-envio.ts` e
+   o privado de `proposal-followup.ts`) recusam de cara qualquer valor com LETRA (ex.:
+   `sem-telefone-<uuid>`, BSUID `BR.123...`) — sem essa trava, o `replace(/\D/g,'')` de cada um
+   sobrava com os dígitos do meio do uuid/BSUID e podia virar sem querer um "telefone" válido.
 
 ## Ordem do deploy
 
