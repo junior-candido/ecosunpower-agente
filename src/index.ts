@@ -9491,6 +9491,35 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     res.type('text/html').send(renderPastaHtml(view));
   });
 
+  // ===== Relatório mensal da usina (GD) — link público (fatia 3) =====
+  // Sem login: o cliente abre pelo botão do WhatsApp/e-mail. Busca SÓ pelo
+  // token de 32 caracteres aleatórios (nunca por UC, cliente ou empresa) e
+  // devolve SÓ o PDF. /rg/ porque /r/:slug já é o relatório de acompanhamento.
+  // URL: https://propostas.ecosunpower.eng.br/rg/<token>
+  app.get('/rg/:token', async (req, res) => {
+    const naoAchei = () => res.status(404).type('text/html').send(`
+      <!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Não encontrado</title>
+      <style>body{font-family:sans-serif;text-align:center;padding:60px 20px;color:#444}</style></head>
+      <body><h1>📊 Relatório não encontrado</h1><p>O link que você acessou pode estar errado ou ter sido removido.</p></body></html>
+    `);
+    try {
+      const { normalizarTokenRelatorio } = await import('./modules/gd/relatorio-envio-textos.js');
+      const token = normalizarTokenRelatorio(req.params.token);
+      if (!token) return naoAchei();
+      const { abrirPdfPublico } = await import('./modules/gd/relatorio-publico.js');
+      const r = await abrirPdfPublico(supabase.getClient(), token);
+      if (!r) return naoAchei();
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${r.nomeArquivo}"`);
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      res.send(r.pdf);
+    } catch (err) {
+      console.error('[rg] relatório público:', (err as Error).message);
+      res.status(500).type('text/html').send('<h1>Não consegui abrir o relatório agora. Tente de novo em alguns minutos.</h1>');
+    }
+  });
+
   // ===== Webhook do Resend (espinha do Elo) =====
   // Sem auth — o Resend chama esse endpoint. Best-effort: NUNCA lanca, sempre
   // responde 200 (senao o Resend fica retentando infinitamente). O body ja
