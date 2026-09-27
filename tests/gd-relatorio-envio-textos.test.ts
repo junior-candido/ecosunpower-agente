@@ -43,6 +43,8 @@ describe('link e base pública', () => {
 describe('textos da mensagem', () => {
   it('primeiro nome bonito; sem nome vira "cliente"', () => {
     expect(primeiroNome('JOÃO DA SILVA')).toBe('João');
+    expect(primeiroNome('ÂNGELA MARIA')).toBe('Ângela');
+    expect(primeiroNome(' ÉRICA  SOUZA')).toBe('Érica');
     expect(primeiroNome('  maria  ')).toBe('Maria');
     expect(primeiroNome('')).toBe('cliente');
     expect(primeiroNome(null)).toBe('cliente');

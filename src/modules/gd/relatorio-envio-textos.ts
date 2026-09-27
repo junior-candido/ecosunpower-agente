@@ -4,6 +4,7 @@
 // Ver docs/whatsapp-templates/relatorio_usina_v1.md.
 
 import { randomBytes } from 'node:crypto';
+import { nomeTituloCase } from '../empresa-config.js';
 
 export const TEMPLATE_RELATORIO = 'relatorio_usina_v1';
 
@@ -30,10 +31,10 @@ export function linkPublicoRelatorio(base: string, token: string): string {
   return `${base.replace(/\/+$/, '')}/rg/${token}`;
 }
 
+/** Primeiro nome em Title Case: a conta de luz traz "JOÃO DA SILVA" → "João". */
 export function primeiroNome(nome: string | null | undefined): string {
   const p = String(nome ?? '').trim().split(/\s+/)[0] ?? '';
-  if (!p) return 'cliente';
-  return p.charAt(0).toLocaleUpperCase('pt-BR') + p.slice(1).toLocaleLowerCase('pt-BR');
+  return p ? nomeTituloCase(p) : 'cliente';
 }
 
 /** O corpo do modelo aprovado na Meta, com {{1}} = nome e {{2}} = mês por extenso. */

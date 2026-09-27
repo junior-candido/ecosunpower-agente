@@ -11,7 +11,7 @@ import { ehEcosun, type EmpresaConfig } from '../empresa-config.js';
 import { motivoEmPortugues, type ResultadoCanal } from '../relatorios/pasta/resultado-envio.js';
 import type { SupabaseService } from '../supabase.js';
 import {
-  TEMPLATE_RELATORIO, componentesTemplateRelatorio, textoLivreRelatorio, textoTemplateRelatorio,
+  TEMPLATE_RELATORIO, componentesTemplateRelatorio, primeiroNome, textoLivreRelatorio, textoTemplateRelatorio,
   type ComponenteTemplate,
 } from './relatorio-envio-textos.js';
 
@@ -172,6 +172,8 @@ export function montarEmailRelatorio(
   m: { nome: string; mesExtenso: string; link: string },
   e: Readonly<EmpresaConfig>,
 ): { assunto: string; html: string } {
+  // Defesa: quem chamar com o nome cru da conta ("JOÃO") ainda sai "João".
+  m = { ...m, nome: primeiroNome(m.nome) };
   const assunto = `${m.nome}, o relatório de ${m.mesExtenso} da sua usina solar`;
   const conteudoHtml =
     `<p>Olá, ${escapeHtml(m.nome)}!</p>` +

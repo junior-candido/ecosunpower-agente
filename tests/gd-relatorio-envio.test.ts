@@ -241,3 +241,12 @@ describe('PDF grande demais (> 10 MB)', () => {
     expect(motivoEmPortugues('email', 'pdf_grande_demais')).toMatch(/PDF.*grande demais/);
   });
 });
+
+describe('nome do cliente no e-mail (vem em CAIXA ALTA da conta de luz)', () => {
+  it('assunto e saudação em "João", nunca "JOÃO"', () => {
+    const { assunto, html } = montarEmailRelatorio({ nome: 'JOÃO', mesExtenso: 'agosto de 2026', link: 'https://p.x/rg/TTT' }, empresaDe(TENANT));
+    expect(assunto).toBe('João, o relatório de agosto de 2026 da sua usina solar');
+    expect(html).toContain('Olá, João!');
+    expect(html).not.toContain('JOÃO');
+  });
+});
