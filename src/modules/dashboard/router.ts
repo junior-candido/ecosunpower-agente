@@ -6446,19 +6446,35 @@ b.onclick=async function(){
     if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
     const sendText = options.sendText;
     if (!sendText) return res.status(500).send('sendText não configurado neste ambiente.');
-    const r = await pastaService.enviarPorWhatsApp(id, sendText, options.sendTemplate, { forcar: true });
 
-    // O e-mail vai JUNTO, igual ao botão do zap (09/09/2026). Nunca derruba o
-    // envio do zap — mas o resultado APARECE na tela (23/09/2026): antes ele era
-    // engolido e a tela redirecionava como se o e-mail tivesse saído.
-    let email: { ok: boolean; reason?: string; para?: string } | null = null;
-    if (process.env.RESEND_API_KEY) {
-      const { EmailSender } = await import('../email/resend-client.js');
-      const sender = new EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '');
-      email = await pastaService
-        .enviarPorEmail(id, (e) => sender.enviar(e))
-        .catch((err) => ({ ok: false, reason: (err as Error).message }));
-    }
+    // 27/09/2026: o envio roda DENTRO da empresa de quem clicou (marca, trava
+    // LGPD, textos) e do canal dela. Antes rodava sem contexto e um tenant
+    // (ex.: Conquista Solar) mandava a pasta pelo número da EcoSunPower.
+    // Tenant sem WhatsApp próprio conectado não manda zap — nunca pelo número de outra empresa.
+    const { canalZapDaEmpresa, noCanalDaEmpresa, EMPRESA_CASA } = await import('./canal-envio.js');
+    const companyId = (req as AuthedRequest).dashUser?.companyId ?? EMPRESA_CASA;
+    const instancia = await instanciaDoTenant(req as AuthedRequest);
+    const canal = canalZapDaEmpresa(companyId, instancia);
+
+    const { r, email } = await noCanalDaEmpresa(companyId, instancia, async () => {
+      const r: { ok: boolean; reason?: string } = canal === 'nenhum'
+        ? { ok: false, reason: 'sem_canal' }
+        // Modelo (WABA) é só da EcoSun; tenant vai por texto na instância dele.
+        : await pastaService.enviarPorWhatsApp(id, sendText, canal === 'casa' ? options.sendTemplate : undefined, { forcar: true });
+
+      // O e-mail vai JUNTO, igual ao botão do zap (09/09/2026). Nunca derruba o
+      // envio do zap — mas o resultado APARECE na tela (23/09/2026): antes ele era
+      // engolido e a tela redirecionava como se o e-mail tivesse saído.
+      let email: { ok: boolean; reason?: string; para?: string } | null = null;
+      if (process.env.RESEND_API_KEY) {
+        const { EmailSender } = await import('../email/resend-client.js');
+        const sender = new EmailSender(process.env.RESEND_API_KEY, process.env.EMAIL_FROM ?? '');
+        email = await pastaService
+          .enviarPorEmail(id, (e) => sender.enviar(e))
+          .catch((err) => ({ ok: false, reason: (err as Error).message }));
+      }
+      return { r, email };
+    });
 
     const pastaDepois = r.ok ? await supabaseService.getPastaClienteById(id).catch(() => null) : null;
     console.log(`[pasta] envio dashboard ${id}: zap=${r.ok ? 'ok' : r.reason} email=${email ? (email.ok ? 'ok' : email.reason) : 'desligado'}`);
