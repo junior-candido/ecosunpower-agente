@@ -174,9 +174,20 @@ export function normalizarNomeBusca(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 }
 
-export async function searchLeadByName(sb: SupabaseClient, term: string): Promise<LeadRow[]> {
+export async function searchLeadByName(
+  sb: SupabaseClient,
+  term: string,
+  opts: { companyId?: string | null } = {},
+): Promise<LeadRow[]> {
   // Acha o lead por NOME ou TELEFONE, sem perder ninguém — é a MESMA porta que a
   // Eva /fechei usa, agora reusada pela Central de Contratos e pela tela "Fechou!".
+  //
+  // `companyId`: prende a busca à empresa de quem pediu (a Eva do admin passa a
+  // empresa do canal). Sem ele a busca é de todas as empresas — quem chama sem
+  // empresa TEM que filtrar o resultado (o dashboard filtra por company_id).
+  // (builder do PostgREST: tipado como any aqui pra não explodir a inferência)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const daEmpresa = (q: any): any => (opts.companyId ? q.eq('company_id', opts.companyId) : q);
   const encontrados = new Map<string, LeadRow>();
   const juntar = (rows: LeadRow[] | null | undefined) => {
     for (const r of rows ?? []) if (r?.id) encontrados.set(r.id, r);
@@ -188,9 +199,9 @@ export async function searchLeadByName(sb: SupabaseClient, term: string): Promis
   const naoInativo = 'status.is.null,status.neq.inativo';
 
   // 1) ilike direto no nome (rápido).
-  const direct = await sb
+  const direct = await daEmpresa(sb
     .from('leads')
-    .select('*')
+    .select('*'))
     .ilike('name', `%${term}%`)
     .or(naoInativo)
     .order('created_at', { ascending: false })
@@ -203,9 +214,9 @@ export async function searchLeadByName(sb: SupabaseClient, term: string): Promis
   // como número não some só por não bater o nome do perfil do WhatsApp.
   const digitos = term.replace(/\D/g, '');
   if (digitos.length >= 8) {
-    const porTelefone = await sb
+    const porTelefone = await daEmpresa(sb
       .from('leads')
-      .select('*')
+      .select('*'))
       .ilike('phone', `%${digitos.slice(-9)}`)
       .limit(10);
     if (porTelefone.error) throw porTelefone.error;
@@ -218,9 +229,9 @@ export async function searchLeadByName(sb: SupabaseClient, term: string): Promis
   // "Márcio"). Busca um lote recente e filtra no JS por nome normalizado.
   const termN = normalizarNomeBusca(term);
   if (!termN) return [];
-  const recent = await sb
+  const recent = await daEmpresa(sb
     .from('leads')
-    .select('*')
+    .select('*'))
     .or(naoInativo)
     .order('created_at', { ascending: false })
     .limit(400);

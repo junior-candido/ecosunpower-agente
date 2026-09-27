@@ -1038,6 +1038,12 @@ async function main() {
     return donoValeNesteCanal(canalAtual()?.companyId, ECOSUN_COMPANY_ID);
   }
 
+  // A empresa do admin = a empresa da Eva (canal) que recebeu o comando. O dono só
+  // é dono na própria casa (isAdminPhone), então sem canal é a EcoSun.
+  function empresaDoAdmin(): string {
+    return canalAtual()?.companyId ?? ECOSUN_COMPANY_ID;
+  }
+
   // /imposto <valor> — Núcleo Financeiro: imposto por anexo + Fator R + salto de faixa
   const tryHandleImpostoCommand = makeImpostoHandler(supabase.getClient(), isAdminPhone, sendText);
 
@@ -1748,7 +1754,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
 
     try {
       const termoBusca = arg.split(/[,;]/)[0].trim();
-      const matches = await searchLeadByName(supabase.getClient(), termoBusca);
+      // só clientes da empresa da Eva que recebeu o comando (nunca de outra empresa)
+      const matches = await searchLeadByName(supabase.getClient(), termoBusca, { companyId: empresaDoAdmin() });
       const termoEhUmaPalavra = termoBusca.split(/\s+/).length === 1;
 
       if (matches.length === 0) {
@@ -2988,7 +2995,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     const rotulo = tipo === 'contrato' ? 'contrato' : 'procuração';
     try {
       const { searchLeadByName } = await import('./modules/closing/closing-data-fetcher.js');
-      const leads = await searchLeadByName(supabase.getClient(), nome);
+      // só clientes da empresa da Eva que recebeu o comando (nunca de outra empresa)
+      const leads = await searchLeadByName(supabase.getClient(), nome, { companyId: empresaDoAdmin() });
       if (leads.length === 0) {
         await sendText(from, `Não achei ninguém com "${nome}". Confere o nome e manda de novo.`);
         return true;
