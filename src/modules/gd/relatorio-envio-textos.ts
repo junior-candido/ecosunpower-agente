@@ -65,6 +65,11 @@ export function nomeArquivoRelatorio(instalacao: string, referencia: string): st
   return `relatorio-${instalacao}-${referencia.slice(0, 7)}.pdf`;
 }
 
+/** Relatório do período: relatorio-<uc>-<AAAA-MM início>-a-<AAAA-MM fim>.pdf */
+export function nomeArquivoRelatorioPeriodo(instalacao: string, inicio: string, fim: string): string {
+  return `relatorio-${instalacao}-${inicio.slice(0, 7)}-a-${fim.slice(0, 7)}.pdf`;
+}
+
 /** 'DD/MM HH:mm' no horário de Brasília (UTC-3), independente do fuso do servidor. Data vazia/inválida → '—'. */
 export function dataHoraBrasilia(iso: string): string {
   const d = new Date(new Date(iso).getTime() - 3 * 60 * 60 * 1000);

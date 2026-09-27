@@ -91,6 +91,25 @@ describe('renderDemonstrativoCliente', () => {
     expect(h).toContain('60&lt;script&gt;x&lt;/script&gt;');
   });
 
+  it('mostra o formulario do relatorio do periodo com o ultimo envio de periodo, quando existe', () => {
+    const base = {
+      instalacao: '200002', clienteNome: 'JOAO', leadId: 'L1', meses: ['2026-08-01', '2026-07-01', '2026-06-01', '2026-05-01'], mes: '2026-08-01',
+      consumoKwh: 480, injetadoKwh: 222, saldoKwh: 1240, compensadoKwh: 380, economiaRs: 376.2,
+      proximoExpirar: null, historico: [], unidades: [], origemDemonstrativo: 'email', verificado: true,
+      validacao: { estado: 'pronto', bloqueios: [], pendencias: [], avisos: [], geracaoKwh: 612, origemGeracao: 'api', esperadoMesKwh: 640 },
+      candidatos: [], msg: null,
+    };
+    const semEnvio = renderDemonstrativoCliente({ ...base, ultimoEnvioPeriodo: null });
+    expect(semEnvio).toContain('📊 Relatório do período:');
+    expect(semEnvio).not.toContain('período mai');
+
+    const comEnvio = renderDemonstrativoCliente({
+      ...base,
+      ultimoEnvioPeriodo: { enviadoEm: '2026-09-27T14:32:00Z', zapPara: '5561991718505', emailPara: null, inicio: '2026-05-01', fim: '2026-08-01' },
+    });
+    expect(comEnvio).toContain('✅ período mai–ago/2026 enviado em');
+  });
+
   it('UC sem cliente mostra a busca de cliente', () => {
     const h = renderDemonstrativoCliente({
       instalacao: '999', clienteNome: 'X', leadId: null, meses: ['2026-08-01'], mes: '2026-08-01',

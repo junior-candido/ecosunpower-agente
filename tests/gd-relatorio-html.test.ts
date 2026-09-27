@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderRelatorioHtml, RODAPE_CONFERENCIA, MARCA_GRAFICO_OK } from '../src/modules/gd/relatorio-html.js';
+import { renderRelatorioHtml, RODAPE_CONFERENCIA, MARCA_GRAFICO_OK, CONTEUDO_CORTADO_MARCA } from '../src/modules/gd/relatorio-html.js';
 import type { RelatorioGd } from '../src/modules/gd/relatorio-motor.js';
 import type { MarcaRelatorio } from '../src/modules/gd/relatorio-marca.js';
 
@@ -104,6 +104,29 @@ describe('renderRelatorioHtml', () => {
     ] }), marca);
     expect(h).not.toContain('<script>x</script>');
     expect(h).toContain('60&lt;script&gt;x&lt;/script&gt;');
+  });
+
+  it('leva o script de conferência de corte (sem Puppeteer) — confere .conteudo × .rod em toda .pagina', () => {
+    const h = renderRelatorioHtml(rel(), marca);
+    expect(h).toContain("querySelectorAll('.pagina')");
+    expect(h).toContain(CONTEUDO_CORTADO_MARCA);
+    expect(h).toContain("querySelector('.conteudo')");
+    expect(h).toContain("querySelector('.rod')");
+  });
+});
+
+describe('renderRelatorioHtml — golden (detecta mudança visual não intencional)', () => {
+  it('caso completo: rateio, vencimento em alerta, grafico com 13 meses', () => {
+    const h = renderRelatorioHtml(rel(), marca);
+    expect(h).toMatchSnapshot();
+  });
+  it('caso minimo: sem meses/grafico, sem rateio, sem vencimento, sem desempenho', () => {
+    const h = renderRelatorioHtml(rel({
+      meses: [], rateio: [],
+      creditos: { saldoKwh: 1240, usadosNoMesKwh: 380, aVencerKwh: null, venceEm: null, avisoVencimento: null },
+      desempenho: { esperadoKwh: null, percentual: null, potenciaKwp: null },
+    }), marca);
+    expect(h).toMatchSnapshot();
   });
 });
 

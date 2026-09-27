@@ -24,6 +24,28 @@ export function textoUltimoEnvio(u: UltimoEnvioRelatorio): string {
   return `✅ enviado em ${dataHoraBrasilia(u.enviadoEm)}${para ? ` para ${para}` : ''}`;
 }
 
+export interface UltimoEnvioPeriodo {
+  enviadoEm: string;
+  zapPara: string | null;
+  emailPara: string | null;
+  inicio: string;
+  fim: string;
+}
+
+/** "mai/2026" + "ago/2026" → "mai–ago/2026" (mesmo ano) ou "mai/2025–ago/2026" (anos diferentes). */
+function periodoAbreviado(inicio: string, fim: string): string {
+  const de = mesCurto(inicio);
+  const ate = mesCurto(fim);
+  const [deMes, deAno] = de.split('/');
+  const [ateMes, ateAno] = ate.split('/');
+  return deAno === ateAno ? `${deMes}–${ateMes}/${ateAno}` : `${de}–${ate}`;
+}
+
+/** "✅ período mai–ago/2026 enviado em 27/09 14:32" — SEM escapar (quem desenha escapa). */
+export function textoUltimoEnvioPeriodo(u: UltimoEnvioPeriodo): string {
+  return `✅ período ${periodoAbreviado(u.inicio, u.fim)} enviado em ${dataHoraBrasilia(u.enviadoEm)}`;
+}
+
 function esc(s: unknown): string {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
@@ -101,6 +123,38 @@ export interface DetalheCliente {
   msg: string | null;
   /** Último envio ao cliente deste mês (fatia 3); ausente/null = nunca enviado. */
   ultimoEnvio?: UltimoEnvioRelatorio | null;
+  /** Último envio de relatório do PERÍODO desta UC, qualquer intervalo; ausente/null = nunca enviado. */
+  ultimoEnvioPeriodo?: UltimoEnvioPeriodo | null;
+}
+
+/**
+ * "📊 Relatório do período: de [mês] até [mês]" — vários meses num relatório só
+ * (o dono manda a cada 4–5 meses, principalmente pra quem tem rateio). As
+ * opções são os meses que têm demonstrativo; quem confere se TODOS estão 🟢
+ * é o servidor (prepararRelatorioPeriodo), mês a mês.
+ */
+function formRelatorioPeriodo(d: DetalheCliente): string {
+  if (!d.leadId || d.meses.length < 2) return '';
+  const meses = [...d.meses].sort();
+  const ate = meses.includes(d.mes) ? d.mes : meses[meses.length - 1];
+  const i = meses.indexOf(ate);
+  const de = meses[Math.max(0, i - 3)];
+  const opcoes = (sel: string) => meses
+    .map((m) => `<option value="${esc(m)}"${m === sel ? ' selected' : ''}>${esc(mesCurto(m))}</option>`).join('');
+  const base = `/dashboard/demonstrativos/${esc(d.instalacao)}`;
+  const envioFeito = d.ultimoEnvioPeriodo
+    ? `<p class="text-emerald-300 w-full mb-1">${esc(textoUltimoEnvioPeriodo(d.ultimoEnvioPeriodo))}</p>` : '';
+  return `
+<form method="get" action="${base}/periodo.html" class="rounded border border-slate-600 p-3 mt-4 flex flex-wrap gap-2 items-center">
+  <b class="w-full">📊 Relatório do período:</b>
+  ${envioFeito}
+  <label>de <select name="de" class="bg-gray-800 p-1 rounded">${opcoes(de)}</select></label>
+  <label>até <select name="ate" class="bg-gray-800 p-1 rounded">${opcoes(ate)}</select></label>
+  <button type="submit" formaction="${base}/periodo.html" formtarget="_blank" class="px-3 py-1 rounded bg-slate-700 text-white">👁 Prévia</button>
+  <button type="submit" formaction="${base}/periodo.pdf" formtarget="_self" class="px-3 py-1 rounded bg-emerald-700 text-white">📄 Gerar PDF</button>
+  <button type="submit" formaction="${base}/periodo/enviar" formtarget="_self" class="px-3 py-1 rounded bg-cyan-700 text-white">📲 Enviar pela Eva</button>
+  <span class="text-xs text-slate-400 w-full">Até 12 meses. Só sai com todos os meses do período 🟢.</span>
+</form>`;
 }
 
 export function renderDemonstrativoCliente(d: DetalheCliente, user?: DashUser): string {
@@ -169,6 +223,7 @@ ${formLigar}
   <li>Economia estimada = compensado ${kwh(d.compensadoKwh)} × tarifa média (Lei 14.300 cobra parte do Fio B)</li>
 </ul>
 ${botaoRelatorio}
+${formRelatorioPeriodo(d)}
 </div>`;
   // Rateio: uma linha por unidade no mês — soma por mês (13 meses distintos).
   const hist = historicoPorMes(d.historico, 13);
@@ -258,10 +313,15 @@ export interface ConfirmarEnvioRelatorio {
   email: { para: string | null; motivo: string | null; assunto: string; html: string } | null;
   linkExemplo: string;
   ultimoEnvio: UltimoEnvioRelatorio | null;
+  /** Relatório do período (de/até = YYYY-MM-01); ausente = relatório do mês. */
+  periodo?: { de: string; ate: string };
 }
 
 export function renderConfirmarEnvioRelatorio(c: ConfirmarEnvioRelatorio, user?: DashUser): string {
   const voltar = `/dashboard/demonstrativos/${esc(c.instalacao)}?mes=${esc(c.mes)}`;
+  const qs = c.periodo ? esc(`?de=${c.periodo.de}&ate=${c.periodo.ate}`) : `?mes=${esc(c.mes)}`;
+  const acaoEnviar = `/dashboard/demonstrativos/${esc(c.instalacao)}/${c.periodo ? 'periodo/enviar' : 'enviar'}${qs}`;
+  const previaHref = `/dashboard/demonstrativos/${esc(c.instalacao)}/${c.periodo ? 'periodo.html' : 'relatorio.html'}${qs}`;
   const comoVai = c.canal === 'evolution'
     ? 'Vai pelo WhatsApp da sua empresa: a mensagem com o link e o PDF anexo.'
     : 'Vai pelo modelo aprovado da Meta ("relatorio_usina_v1"), com o botão "Ver meu relatório". Se o modelo ainda não estiver aprovado, tento como mensagem comum (só chega se o cliente falou com a gente nas últimas 24 horas).';
@@ -285,7 +345,7 @@ export function renderConfirmarEnvioRelatorio(c: ConfirmarEnvioRelatorio, user?:
     : '';
   const form = podeEnviar
     // Duplo clique: o botão trava no 1º envio (o servidor também reserva o mês).
-    ? `<form method="post" action="/dashboard/demonstrativos/${esc(c.instalacao)}/enviar?mes=${esc(c.mes)}" class="flex flex-wrap gap-2 mt-4" onsubmit="var b=this.querySelector('button[type=submit]');if(b){b.disabled=true;b.textContent='Enviando…';}">
+    ? `<form method="post" action="${acaoEnviar}" class="flex flex-wrap gap-2 mt-4" onsubmit="var b=this.querySelector('button[type=submit]');if(b){b.disabled=true;b.textContent='Enviando…';}">
   <input type="hidden" name="confirmar" value="1">
   ${c.ultimoEnvio ? '<input type="hidden" name="reenviar" value="1">' : ''}
   <button type="submit" class="px-4 py-2 rounded bg-emerald-700 text-white">${c.ultimoEnvio ? '🔁 Enviar de novo' : '📲 Confirmar e enviar'}</button>
@@ -304,7 +364,7 @@ ${blocoZap}
 ${blocoEmail}
 <h2 class="font-bold mt-4">🔗 Link do relatório</h2>
 <p class="text-sm">O cliente recebe um link assim: <code>${esc(c.linkExemplo)}</code> — o endereço definitivo é criado na hora do envio e abre o PDF direto, sem senha.
-<a href="/dashboard/demonstrativos/${esc(c.instalacao)}/relatorio.html?mes=${esc(c.mes)}" target="_blank" class="underline text-cyan-300">👁 Ver o relatório</a></p>
+<a href="${previaHref}" target="_blank" class="underline text-cyan-300">👁 Ver o relatório</a></p>
 ${form}
 </div>`;
   return renderLayout({ active: 'demonstrativos', title: `Enviar relatório — ${c.clienteNome}`, body, dark: true, user });

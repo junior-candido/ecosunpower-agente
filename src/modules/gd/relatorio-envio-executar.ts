@@ -17,15 +17,19 @@ import {
   type CanalZap, type DepsEmailRelatorio, type DepsZapRelatorio, type DestinoEnvio, type ResultadoZapRelatorio,
   type ResumoEnvio,
 } from './relatorio-envio.js';
-import { linkPublicoRelatorio, nomeArquivoRelatorio, primeiroNome } from './relatorio-envio-textos.js';
+import { linkPublicoRelatorio, nomeArquivoRelatorio, nomeArquivoRelatorioPeriodo, primeiroNome } from './relatorio-envio-textos.js';
 
 export interface EntradaExecutarEnvio {
   instalacao: string;
+  /** Mês do relatório; no do período, o mês FINAL (é o que vai em relatorios_gd_gerados.referencia). */
   referencia: string;
   geradoPor: string;
   leadId: string;
   nomeCliente: string | null;
+  /** Texto do mês ou do período ("maio a agosto de 2026") — vai no {{2}} do modelo e no e-mail. */
   mesExtenso: string;
+  /** Relatório do período: muda o nome do arquivo e o e-mail. `numeros` já traz o período. */
+  periodo?: { inicio: string; fim: string };
   numeros: Record<string, unknown>;
   canal: CanalZap;
   empresa: Readonly<EmpresaConfig>;
@@ -132,7 +136,10 @@ export async function executarEnvioRelatorio(
 
     const msg = {
       nome: primeiroNome(e.nomeCliente), mesExtenso: e.mesExtenso, token, link, pdf,
-      nomeArquivo: nomeArquivoRelatorio(e.instalacao, e.referencia),
+      nomeArquivo: e.periodo
+        ? nomeArquivoRelatorioPeriodo(e.instalacao, e.periodo.inicio, e.periodo.fim)
+        : nomeArquivoRelatorio(e.instalacao, e.referencia),
+      periodo: Boolean(e.periodo),
     };
 
     // 5. Manda — dentro da empresa e do canal de quem clicou.
