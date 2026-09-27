@@ -2964,8 +2964,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     return true;
   }
 
-  // "contrato <nome>" / "procuracao <nome>" — gera o PDF confiável (proposta +
-  // cadastro, preenche brancos onde faltar) e manda no zap do Junior. Nunca trava.
+  // "contrato <nome>" / "procuracao <nome>" — gera o PDF (o mesmo documento final
+  // da central: congelado vence) e manda no zap do Junior. Incompleto não sai.
   async function tryHandleContratoRapido(from: string, text: string): Promise<boolean> {
     if (!isAdminPhone(from)) return false;
     const m = text.trim().match(/^\/?(contrato|procuracao|procuração)\s+(.+)$/i);
@@ -2987,27 +2987,39 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       }
       const lead = leads[0];
       await sendText(from, `Gerando ${rotulo} de *${lead.name}*... 📄`);
-      // Mesmo motor e mesmo registro da central de contratos do dashboard — a Eva
-      // não pode gerar de um jeito e a tela de outro (nem pegar o rascunho errado).
-      const { montarFechamentoAuto } = await import('./modules/closing/fechamento-auto.js');
-      const { getContrato } = await import('./modules/closing/contratos-registry.js');
-      const def = getContrato(tipo === 'contrato' ? 'fv' : 'procuracao')!;
-      const r = await montarFechamentoAuto(supabase.getClient(), lead.id, def.tipo);
-      if (!r) { await sendText(from, 'Não achei os dados desse cliente.'); return true; }
-      const { renderHtmlToPdf } = await import('./modules/closing/closing-render.js');
-      const pdf = await renderHtmlToPdf(def.render(r.dados));
-      const filename = `${def.arquivo}-${r.nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
+      // O MESMO documento final e a MESMA trava da central de contratos: congelado
+      // vence (com a data do congelamento) e documento incompleto/inválido NÃO vira
+      // PDF — a Eva manda só a lista do que falta, em texto.
+      const { montarDocumentoFinal } = await import('./modules/closing/documento-final.js');
+      const { problemasSemDados } = await import('./modules/closing/validar-documento.js');
+      const doc = await montarDocumentoFinal(supabase.getClient(), lead.id, tipo === 'contrato' ? 'fv' : 'procuracao');
+      if (!doc) { await sendText(from, 'Não achei os dados desse cliente.'); return true; }
+      if (!doc.ok) {
+        const lista = doc.problemas.map((p) => `• ${p}`).join('\n');
+        await sendText(from, `🚫 Não gerei ${rotulo} de *${doc.nome}* — está incompleto ou com dado inválido:\n${lista}\n\nCompleta na tela de Contratos e me pede de novo.`);
+        await registrarEvento(supabase.getClient(), {
+          tipo: 'comercial:contrato_bloqueado',
+          departamento: 'comercial',
+          canal: 'sistema',
+          origem: 'eva',
+          leadId: lead.id,
+          payload: { tipo_contrato: doc.def.tipo, acao: 'enviar', problemas: problemasSemDados(doc.problemas) },
+        });
+        return true;
+      }
       if (!metaWaba) { await sendText(from, 'Envio de documento indisponível agora.'); return true; }
+      const { renderHtmlToPdf } = await import('./modules/closing/closing-render.js');
+      const pdf = await renderHtmlToPdf(doc.html);
+      const filename = `${doc.def.arquivo}-${doc.nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
       const up = await metaWaba.uploadMedia(pdf, 'application/pdf', filename);
-      const falta = r.faltando.length ? `\n\n⚠️ Faltou preencher: ${r.faltando.join(', ')} — completa na tela de Contratos que refaço.` : '';
-      await metaWaba.sendDocumentById(from, up.mediaId, filename, `Segue ${rotulo} de ${r.nome}. 📄${falta}`);
+      await metaWaba.sendDocumentById(from, up.mediaId, filename, `Segue ${rotulo} de ${doc.nome}. 📄`);
       await registrarEvento(supabase.getClient(), {
         tipo: 'comercial:contrato_enviado',
         departamento: 'comercial',
         canal: 'whatsapp',
         origem: 'eva',
         leadId: lead.id,
-        payload: { tipo_contrato: def.tipo, destino: 'eu', campos_em_branco: r.faltando.length },
+        payload: { tipo_contrato: doc.def.tipo, destino: 'eu', congelado: !!doc.congelado, data_documento: doc.dados.data_documento },
       });
       return true;
     } catch (err) {
