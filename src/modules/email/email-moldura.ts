@@ -19,6 +19,11 @@ export interface MolduraOpts {
   empresa?: string;
   siteUrl?: string;
   logoUrl?: string;
+  /**
+   * Sem imagem no topo: escreve o nome da empresa. Para tenant sem logo https —
+   * sem isso a moldura cairia na LOGO_PADRAO (EcoSun) = vazamento de marca.
+   */
+  semLogo?: boolean;
   /** Imagem grande logo abaixo do header (campanha: FLUX; jornada: opcional). */
   heroImageUrl?: string;
   heroImageAlt?: string;
@@ -188,6 +193,9 @@ export function montarMolduraEmail(opts: MolduraOpts): string {
   const siteUrl = opts.siteUrl?.trim() || SITE_PADRAO;
   const logoUrl = opts.logoUrl?.trim() || LOGO_PADRAO;
   const siteLabel = siteUrl.replace(/^https?:\/\//, '');
+  const cabecalho = opts.semLogo
+    ? `<div style="font-family:${FONTE}; font-size:26px; font-weight:bold; color:#ffffff;">${escapeHtml(empresa)}</div>`
+    : `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(empresa)}" width="210" style="display:block; margin:0 auto; border:0; max-width:210px; height:auto;" />`;
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -198,7 +206,7 @@ export function montarMolduraEmail(opts: MolduraOpts): string {
           <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px; max-width:100%; background:#ffffff; border-radius:12px; overflow:hidden;">
             <tr>
               <td style="background:${NAVY}; padding:26px 32px 22px; text-align:center;">
-                <img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(empresa)}" width="210" style="display:block; margin:0 auto; border:0; max-width:210px; height:auto;" />
+                ${cabecalho}
               </td>
             </tr>
             <tr><td style="background:${AMBAR}; height:4px; line-height:4px; font-size:0;">&nbsp;</td></tr>${secaoHero(opts)}${secaoTitulo(opts)}

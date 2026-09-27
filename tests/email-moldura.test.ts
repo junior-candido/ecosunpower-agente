@@ -133,3 +133,15 @@ describe('assinatura do responsavel', () => {
     expect(html).toContain('https://wa.me/5561996978781');
   });
 });
+
+describe('montarMolduraEmail — semLogo (tenant sem logo https)', () => {
+  it('escreve o nome da empresa no lugar da imagem e nunca usa a logo padrão da EcoSun', () => {
+    const html = montarMolduraEmail({
+      conteudoHtml: '<p>oi</p>', linkDescadastro: '', empresa: 'Conquista Solar',
+      siteUrl: 'https://conquista.com', transacional: true, semLogo: true,
+    });
+    expect(html).toContain('Conquista Solar');
+    expect(html).not.toContain('logo-ecosun-ecossistema.png');
+    expect(html).not.toMatch(/<img /);
+  });
+});
