@@ -69,4 +69,8 @@ describe('textos da mensagem', () => {
     expect(dataHoraBrasilia('2026-09-27T13:05:00Z')).toBe('27/09 10:05');
     expect(dataHoraBrasilia('2026-09-28T01:30:00Z')).toBe('27/09 22:30');
   });
+  it('data vazia ou inválida vira "—" (nunca "NaN/NaN NaN:NaN")', () => {
+    expect(dataHoraBrasilia('')).toBe('—');
+    expect(dataHoraBrasilia('não é data')).toBe('—');
+  });
 });

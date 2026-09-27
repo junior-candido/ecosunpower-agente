@@ -64,9 +64,10 @@ export function nomeArquivoRelatorio(instalacao: string, referencia: string): st
   return `relatorio-${instalacao}-${referencia.slice(0, 7)}.pdf`;
 }
 
-/** 'DD/MM HH:mm' no horário de Brasília (UTC-3), independente do fuso do servidor. */
+/** 'DD/MM HH:mm' no horário de Brasília (UTC-3), independente do fuso do servidor. Data vazia/inválida → '—'. */
 export function dataHoraBrasilia(iso: string): string {
   const d = new Date(new Date(iso).getTime() - 3 * 60 * 60 * 1000);
+  if (Number.isNaN(d.getTime())) return '—';
   const p = (n: number) => String(n).padStart(2, '0');
   return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
 }
