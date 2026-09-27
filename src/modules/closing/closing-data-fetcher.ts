@@ -75,6 +75,8 @@ export interface PropostaPublicaRow {
     valor_total?: number;
   } | null;
   created_at: string;
+  /** Validade do LINK público. Vencida continua valendo pro contrato (a tela avisa). */
+  expires_at?: string | null;
 }
 
 export interface FetchResult {
@@ -91,14 +93,15 @@ export async function fetchByLeadId(sb: SupabaseClient, leadId: string): Promise
   // A proposta DESTE lead — pelo vínculo (lead_id), nunca por nome/telefone. A
   // busca antiga (`telefone OU nome ilike %nome%`) entregava a proposta de um
   // HOMÔNIMO ("Maria" pegava a da "Maria José") e o contrato saía com o sistema e
-  // o valor de outra cliente. Só vale proposta não revogada e dentro da validade;
-  // a mais nova primeiro. Sem proposta válida → null (o formulário pergunta).
+  // o valor de outra cliente. Só vale proposta NÃO REVOGADA; a mais nova primeiro.
+  // Vencida VALE: a validade (expires_at) só controla o link público — o cliente
+  // que fecha depois de 60 dias não pode ficar sem contrato. A tela avisa pra
+  // conferir os valores. Sem proposta → null (o formulário pergunta).
   let q = sb
     .from('propostas_publicas')
     .select('*')
     .eq('lead_id', lead.id)
-    .eq('revoked', false)
-    .gt('expires_at', new Date().toISOString());
+    .eq('revoked', false);
   // Mesma empresa do lead (defesa em profundidade: o lead_id já amarra).
   if (lead.company_id) q = q.eq('company_id', lead.company_id);
   const propRes = await q
@@ -107,6 +110,63 @@ export async function fetchByLeadId(sb: SupabaseClient, leadId: string): Promise
     .maybeSingle();
   if (propRes.error) throw propRes.error;
   return { lead, proposta: (propRes.data as PropostaPublicaRow | null) ?? null };
+}
+
+/** O que o usuário digitou vira TEXTO no ilike: % e _ não são curinga, \ não escapa. */
+export function escaparIlike(s: string): string {
+  return String(s ?? '').replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+export interface PropostaOrfa {
+  id: string;
+  cliente_nome: string | null;
+  numero_proposta?: string | null;
+  created_at: string;
+}
+
+/**
+ * Propostas SEM lead (salvas sem telefone) da MESMA empresa, com o nome do
+ * cliente parecido — pro operador VINCULAR na mão, explicitamente. Nunca liga
+ * sozinho: nome repete (homônimo). Sem empresa → nada (não busca em todas).
+ */
+export async function buscarPropostasOrfas(
+  sb: SupabaseClient,
+  companyId: string | null | undefined,
+  nome: string,
+): Promise<PropostaOrfa[]> {
+  const termo = String(nome ?? '').trim();
+  if (!companyId || !termo) return [];
+  const { data, error } = await sb
+    .from('propostas_publicas')
+    .select('id, cliente_nome, numero_proposta, created_at')
+    .eq('company_id', companyId)
+    .is('lead_id', null)
+    .eq('revoked', false)
+    .ilike('cliente_nome', `%${escaparIlike(termo)}%`)
+    .order('created_at', { ascending: false })
+    .limit(10);
+  if (error) throw error;
+  return (data as PropostaOrfa[] | null) ?? [];
+}
+
+/**
+ * Liga uma proposta órfã ao lead. Só se ela é da MESMA empresa e ainda não tem
+ * lead (não rouba proposta de outro cliente). true = vinculou.
+ */
+export async function vincularPropostaAoLead(
+  sb: SupabaseClient,
+  p: { propostaId: string; leadId: string; companyId: string | null | undefined },
+): Promise<boolean> {
+  if (!p.companyId) return false;
+  const { data, error } = await sb
+    .from('propostas_publicas')
+    .update({ lead_id: p.leadId })
+    .eq('id', p.propostaId)
+    .eq('company_id', p.companyId)
+    .is('lead_id', null)
+    .select('id');
+  if (error) throw error;
+  return Array.isArray(data) && data.length > 0;
 }
 
 // Normaliza nome pra comparar SEM acento/maiúscula ("Márcio" ~ "marcio").

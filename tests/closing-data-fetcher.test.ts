@@ -99,7 +99,7 @@ describe('closing-data-fetcher', () => {
     expect(res.proposta).toBeNull();
   });
 
-  it('pega a proposta pelo lead_id, a mais nova VÁLIDA (ignora revogada e vencida)', async () => {
+  it('pega a proposta pelo lead_id, a mais nova NÃO REVOGADA — vencida vale (a validade é só do link público)', async () => {
     const maria = { id: 'lead-maria', name: 'Maria', phone: null, company_id: 'emp-1' };
     const base = { lead_id: 'lead-maria', company_id: 'emp-1', cliente_nome: 'Maria', dados_input: {} };
     const sb = mockSupabase({
@@ -112,7 +112,8 @@ describe('closing-data-fetcher', () => {
       ],
     });
     const res = await fetchByLeadId(sb, 'lead-maria');
-    expect(res.proposta?.id).toBe('boa');
+    expect(res.proposta?.id).toBe('vencida');
+    expect((res.proposta as any).expires_at).toBe('2020-01-01T00:00:00Z');
   });
 
   it('não pega proposta de OUTRA empresa, mesmo com o mesmo lead_id', async () => {

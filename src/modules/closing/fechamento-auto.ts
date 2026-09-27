@@ -116,6 +116,14 @@ export function listarFaltando(dados: DadosFechamento, temProposta: boolean): st
   return faltando;
 }
 
+/** A data de expiração, se já passou; senão null. */
+function propostaVencida(expira: unknown, agora: Date = new Date()): string | null {
+  const s = String(expira ?? '').trim();
+  if (!s) return null;
+  const t = Date.parse(s);
+  return Number.isFinite(t) && t < agora.getTime() ? s : null;
+}
+
 export interface FechamentoAutoResult {
   /** Pronto pra virar PDF: completo, com brancos onde faltou. */
   dados: DadosFechamento;
@@ -124,6 +132,12 @@ export interface FechamentoAutoResult {
   faltando: string[];
   nome: string;
   temProposta: boolean;
+  /**
+   * A proposta usada já venceu (a validade é só do link público — ela continua
+   * valendo pro contrato)? Então, quando venceu (ISO), pra tela avisar "conferir
+   * valores". Null = no prazo ou sem proposta.
+   */
+  propostaExpiradaEm: string | null;
   /** O contrato congelado ("este é o contrato que vale"). Null = nunca congelaram. */
   vigente?: ContratoCongelado | null;
 }
@@ -186,6 +200,7 @@ export async function montarFechamentoAuto(
     faltando: listarFaltando(dados, !!proposta),
     nome: lead.name || 'Cliente',
     temProposta: !!proposta,
+    propostaExpiradaEm: propostaVencida(proposta?.expires_at),
     vigente,
   };
 }

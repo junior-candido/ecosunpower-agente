@@ -31,6 +31,12 @@ export interface ContratoFormInput {
    */
   problemas: string[];
   temProposta: boolean;
+  /** A proposta usada já venceu (ISO). Vale pro contrato, mas pede conferir os valores. */
+  propostaExpiradaEm?: string | null;
+  /** Propostas SEM lead, da mesma empresa, com nome parecido — pra vincular na mão. */
+  /** Resultado do "Vincular proposta" ('ok' | 'erro'). */
+  vinculoResultado?: string;
+  propostasOrfas?: Array<{ id: string; cliente_nome: string | null; numero_proposta?: string | null; created_at: string }>;
   salvo?: boolean;
   docsResultado?: string;
   envioResultado?: string;
@@ -375,10 +381,52 @@ function avisos(page: ContratoFormInput): string {
   if (page.salvo && n > 0) {
     out += box('bg-slate-50 border-slate-300 text-slate-700', 'Salvei o que você preencheu. Os campos acima seguem em branco — o documento só sai quando completar.');
   }
+  if (page.vinculoResultado === 'ok') {
+    out += box('bg-emerald-50 border-emerald-300 text-emerald-800', '🔗 Proposta vinculada. Os dados da usina e o valor agora vêm dela.');
+  } else if (page.vinculoResultado === 'erro') {
+    out += box('bg-red-50 border-red-300 text-red-800', 'Não consegui vincular a proposta (ela pode já estar ligada a outro cliente). Nada mudou.');
+  }
+  if (page.propostaExpiradaEm) {
+    out += box('bg-amber-50 border-amber-300 text-amber-800',
+      `⏰ <strong>proposta expirada em ${escapeHtml(diaMesBR(page.propostaExpiradaEm))} — conferir valores.</strong> Os dados da usina e o valor vieram dela; se o preço mudou, corrige aqui antes de gerar.`);
+  }
   if (!page.temProposta) {
     out += box('bg-slate-50 border-slate-300 text-slate-700', 'Esse cliente não tem proposta ligada — os dados da usina e o valor não vieram sozinhos. Preenche na mão aqui.');
+    out += vincularProposta(page);
   }
   return out;
+}
+
+/** "2026-08-10T12:00:00Z" → "10/08" (calendário de Brasília). */
+function diaMesBR(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
+}
+
+/**
+ * Proposta salva sem telefone fica sem cliente (órfã). Mostra as da empresa com
+ * nome parecido e deixa o operador ligar UMA, explicitamente — nunca automático
+ * (nome repete).
+ */
+function vincularProposta(page: ContratoFormInput): string {
+  const orfas = page.propostasOrfas ?? [];
+  if (!orfas.length) return '';
+  const itens = orfas.map((p) => {
+    const quando = diaMesBR(p.created_at);
+    const rotulo = `${p.numero_proposta ? escapeHtml(p.numero_proposta) + ' · ' : ''}${escapeHtml(p.cliente_nome ?? '(sem nome)')} · ${escapeHtml(quando)}`;
+    return `<form method="POST" action="/dashboard/leads/${encodeURIComponent(page.leadId)}/contrato-vincular-proposta" class="flex items-center justify-between gap-2 py-1"
+        onsubmit="return confirm('Ligar esta proposta a este cliente? Os dados da usina e o valor passam a vir dela.')">
+        <input type="hidden" name="tipo" value="${escapeHtml(page.def.tipo)}" />
+        <input type="hidden" name="proposta_id" value="${escapeHtml(p.id)}" />
+        <span class="text-sm">${rotulo}</span>
+        <button class="px-3 py-1 rounded-lg text-xs bg-slate-900 text-white hover:bg-slate-700">🔗 Vincular proposta</button>
+      </form>`;
+  }).join('');
+  return `<div class="mb-4 text-sm px-4 py-3 rounded-lg border bg-white border-slate-300 text-slate-700">
+      <strong>Achei proposta(s) sem cliente com esse nome</strong> (salvas sem telefone). Se uma delas é deste cliente, vincula:
+      <div class="mt-2 divide-y divide-slate-100">${itens}</div>
+    </div>`;
 }
 
 function acoes(page: ContratoFormInput): string {

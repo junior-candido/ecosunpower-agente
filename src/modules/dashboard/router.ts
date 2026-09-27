@@ -3319,6 +3319,23 @@ b.onclick=async function(){
       return [];
     }
   }
+  // A empresa DONA do lead (a proposta órfã só pode vir da mesma empresa).
+  // Client-do-operador (strangler RLS): dado do tenant.
+  async function empresaDoLead(req: Request, leadId: string): Promise<string | null> {
+    const { data } = await bancoDoOperador(req as AuthedRequest, supabase).from('leads').select('company_id').eq('id', leadId).maybeSingle();
+    return (data as { company_id?: string | null } | null)?.company_id ?? null;
+  }
+  // Propostas salvas sem telefone (sem lead) com o nome deste cliente — pra
+  // vincular na mão. Best-effort: falhou → lista vazia.
+  async function propostasOrfasDoLead(req: Request, leadId: string, nome: string) {
+    try {
+      const { buscarPropostasOrfas } = await import('../closing/closing-data-fetcher.js');
+      return await buscarPropostasOrfas(bancoDoOperador(req as AuthedRequest, supabase), await empresaDoLead(req, leadId), nome);
+    } catch (err) {
+      console.warn('[dashboard/contrato-form] propostas órfãs:', (err as Error).message);
+      return [];
+    }
+  }
   // O carimbo do contrato congelado, do jeito que a tela mostra.
   function vigenteDaTela(r: { vigente?: { congeladoEm: string; dados: { comercial: { valor_total_brl: number; forma_pagamento: string } } } | null }) {
     if (!r.vigente) return null;
@@ -3437,6 +3454,9 @@ b.onclick=async function(){
         faltando: camposFaltando(def, r.cru),
         problemas: await problemasDaTrava(id, def.tipo),
         temProposta: r.temProposta,
+        propostaExpiradaEm: r.propostaExpiradaEm,
+        propostasOrfas: r.temProposta ? [] : await propostasOrfasDoLead(req, id, r.nome),
+        vinculoResultado: String(req.query.vinculo ?? ''),
         salvo: req.query.salvo === '1',
         docsResultado: String(req.query.docs ?? ''),
         envioResultado: String(req.query.envio ?? ''),
@@ -3527,6 +3547,7 @@ b.onclick=async function(){
         leadId: id, nome: r.nome, def,
         tipos: CONTRATOS.map((c) => ({ tipo: c.tipo, nome: c.nome, emoji: c.emoji })),
         temProposta: r.temProposta,
+        propostaExpiradaEm: r.propostaExpiradaEm,
         faltando: camposFaltandoNaTela(def, valores, r.cru),
         problemas: await problemasDaTrava(id, def.tipo),
         vigente: vigenteDaTela(r),
@@ -3652,6 +3673,27 @@ b.onclick=async function(){
     }
   });
 
+  // 🔗 Vincular uma proposta ÓRFÃ (salva sem telefone) a este cliente — o
+  // operador escolhe explicitamente. Só da mesma empresa e só se ainda não tem lead.
+  router.post('/leads/:id/contrato-vincular-proposta', exigir('propostas', 'editar'), async (req: Request, res: Response) => {
+    const id = String(req.params.id);
+    const tipo = tipoDaCentral(req.body?.tipo);
+    try {
+      if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+      const propostaId = String(req.body?.proposta_id ?? '').trim();
+      if (!UUID_RE.test(propostaId)) return res.status(400).send('proposta inválida');
+      if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
+      const { vincularPropostaAoLead } = await import('../closing/closing-data-fetcher.js');
+      const ok = await vincularPropostaAoLead(bancoDoOperador(req as AuthedRequest, supabase), { propostaId, leadId: id, companyId: await empresaDoLead(req, id) });
+      const viewer = (req as AuthedRequest).dashUser;
+      if (ok && viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'proposta_vinculada', valorNovo: propostaId });
+      res.redirect(`/dashboard/leads/${id}/contrato-form?tipo=${encodeURIComponent(tipo)}&vinculo=${ok ? 'ok' : 'erro'}`);
+    } catch (err) {
+      console.error('[dashboard/contrato-vincular-proposta]', err);
+      res.redirect(`/dashboard/leads/${id}/contrato-form?tipo=${encodeURIComponent(tipo)}&vinculo=erro`);
+    }
+  });
+
   // 💳 Calcula a tabela do cartão em cima do valor que está na tela. A conta é
   // feita AQUI (no servidor, pelo mesmo módulo dos testes) — nada de reescrever a
   // fórmula em JavaScript na página e ter duas verdades sobre dinheiro.
@@ -3681,6 +3723,7 @@ b.onclick=async function(){
         leadId: id, nome: r.nome, def,
         tipos: CONTRATOS.map((c) => ({ tipo: c.tipo, nome: c.nome, emoji: c.emoji })),
         temProposta: r.temProposta,
+        propostaExpiradaEm: r.propostaExpiradaEm,
         faltando: camposFaltandoNaTela(def, valores, r.cru),
         problemas: await problemasDaTrava(id, def.tipo),
         valores,
