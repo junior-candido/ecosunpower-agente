@@ -9070,6 +9070,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     sendText,
     // Só a API oficial tem template; no Evolution o texto livre já chega sempre.
     sendTemplate: metaWaba ? (to, name, lang, components) => metaWaba!.sendTemplate(to, name, lang, components) : undefined,
+    // Relatório GD pro tenant: PDF anexo pela instância dele (roda dentro de comCanal na rota).
+    sendDocumentEvolution: async (to, b64, nome, legenda) => { await evolution.sendDocument(to, b64, nome, legenda); },
     proposalAssistant,
     metaService: metaWaba ?? undefined,
     engineerPhone: config.engineerPhone,

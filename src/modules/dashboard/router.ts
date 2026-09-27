@@ -119,7 +119,7 @@ import { renderEmailPage } from './email-views.js';
 import { renderMedicaoPage } from './medicao-views.js';
 import {
   renderDemonstrativosLista, renderDemonstrativoCliente, renderConferenciaPdf, renderDigitar, renderEnviarPdf,
-  type ResultadoLeituraPdf,
+  renderConfirmarEnvioRelatorio, type ResultadoLeituraPdf,
 } from './demonstrativos-views.js';
 import { listarAparelhos, resumoDoAparelho } from './medicao-queries.js';
 import { desempenhoPorStep } from './email-metricas.js';
@@ -201,6 +201,9 @@ export function createDashboardRouter(
         parameters: Array<{ type: 'text'; text: string }>;
       }>,
     ) => Promise<unknown>;
+    // Tenant com WhatsApp próprio (Evolution): PDF anexo pela instância em
+    // contexto (canal-contexto). Vem do index.ts (evolution.sendDocument).
+    sendDocumentEvolution?: (to: string, base64: string, fileName: string, caption: string) => Promise<void>;
     proposalAssistant?: ProposalAssistant;
     metaService?: MetaWhatsAppService;
     engineerPhone?: string; // telefone do Junior — recebe o aviso "cliente fechou"
@@ -4663,6 +4666,7 @@ b.onclick=async function(){
         historico: l.historico.map((h) => ({ mes: h.mes, consumida: h.consumida, injetada: h.injetada, compensado: h.compensado })),
         unidades: l.unidades, origemDemonstrativo: l.origem, verificado: l.origem_verificada,
         validacao, candidatos, msg: typeof req.query.msg === 'string' ? req.query.msg : null,
+        ultimoEnvio: await tela.ultimoEnvio(inst, l.referencia).catch(() => null),
       }, req.dashUser));
     } catch (err) {
       console.error('[demonstrativos/cliente]', err);
@@ -4734,6 +4738,154 @@ b.onclick=async function(){
       if (!res.headersSent) {
         res.redirect(`/dashboard/demonstrativos/${RE_UC.test(inst) ? inst : ''}?mes=${encodeURIComponent(mes)}&msg=${encodeURIComponent(`Não consegui gerar o PDF: ${(err as Error).message}`)}`);
       }
+    }
+  });
+
+  // ── Enviar o relatório ao cliente pela Eva (fatia 3) — plano 2026-09-27-demonstrativos-enviar-relatorio-eva.md
+  /** Relatório 🟢 + cliente + canal + destino. null = já respondeu (redirect/404). */
+  async function envioRelatorioCtx(req: AuthedRequest, res: Response) {
+    const p = await relatorioDaRequisicao(req, res);
+    if (!p) return null;
+    const companyId = req.dashUser!.companyId;
+    const lead = await p.tela.destinoDoLead(p.leadId);
+    if (!lead) { res.status(404).send('Cliente não encontrado nesta empresa'); return null; }
+    const { canalZapDaEmpresa } = await import('./canal-envio.js');
+    const { destinoDoEnvio } = await import('../gd/relatorio-envio.js');
+    const { envioProibido } = await import('../tenant-admin-guard.js');
+    const instancia = await instanciaDoTenant(req);
+    const canal = canalZapDaEmpresa(companyId, instancia);
+    const cfg = empresaDe(companyId);
+    const destino = destinoDoEnvio(lead, {
+      canal,
+      bloqueadoLgpd: (fone) => envioProibido(fone, options.engineerPhone ?? '', cfg),
+    });
+    const ultimo = await p.tela.ultimoEnvio(p.inst, p.mes);
+    return { ...p, companyId, lead, instancia, canal, cfg, destino, ultimo };
+  }
+
+  router.get('/demonstrativos/:instalacao/enviar', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    try {
+      const c = await envioRelatorioCtx(req, res);
+      if (!c) return;
+      const T = await import('../gd/relatorio-envio-textos.js');
+      const { montarEmailRelatorio } = await import('../gd/relatorio-envio.js');
+      const nome = T.primeiroNome(c.lead.nome);
+      const mesExt = c.relatorio.mesExtenso;
+      const linkExemplo = T.linkPublicoRelatorio(T.basePublica(), '…');
+      const textoZap = c.canal === 'evolution'
+        ? `${T.textoLivreRelatorio(nome, mesExt, linkExemplo)}\n\n📎 ${T.nomeArquivoRelatorio(c.inst, c.mes)}`
+        : `${T.textoTemplateRelatorio(nome, mesExt)}\n\n[ botão: Ver meu relatório ]`;
+      const previa = montarEmailRelatorio({ nome, mesExtenso: mesExt, link: linkExemplo }, c.cfg);
+      res.type('html').send(renderConfirmarEnvioRelatorio({
+        instalacao: c.inst, mes: c.mes, mesExtenso: mesExt, clienteNome: c.lead.nome ?? c.relatorio.cliente,
+        canal: c.canal,
+        zap: { para: c.destino.zap.fone, motivo: c.destino.zap.motivo, texto: textoZap },
+        email: process.env.RESEND_API_KEY
+          ? { para: c.destino.email.para, motivo: c.destino.email.motivo, assunto: previa.assunto, html: previa.html }
+          : null,
+        linkExemplo, ultimoEnvio: c.ultimo,
+      }, req.dashUser));
+    } catch (err) {
+      console.error('[demonstrativos/enviar GET]', err);
+      res.status(500).send(`<h2>Erro ao preparar o envio</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
+  router.post('/demonstrativos/:instalacao/enviar', exigir('usinas', 'editar'), async (req: AuthedRequest, res: Response) => {
+    const inst = String(req.params.instalacao);
+    const mesQ = typeof req.query.mes === 'string' ? req.query.mes : '';
+    const volta = (m: string) =>
+      res.redirect(`/dashboard/demonstrativos/${RE_UC.test(inst) ? inst : ''}?mes=${encodeURIComponent(mesQ)}&msg=${encodeURIComponent(m)}`);
+    try {
+      if (String(req.body?.confirmar ?? '') !== '1') { volta('Envio não confirmado — nada saiu.'); return; }
+      const c = await envioRelatorioCtx(req, res);
+      if (!c) return;
+      // Já saiu antes: só com o "Enviar de novo" explícito da tela de confirmação.
+      if (c.ultimo && String(req.body?.reenviar ?? '') !== '1') {
+        res.redirect(`/dashboard/demonstrativos/${c.inst}/enviar?mes=${encodeURIComponent(c.mes)}`);
+        return;
+      }
+      const { renderResultadoEnvio } = await import('../relatorios/pasta/resultado-envio.js');
+      const voltarHref = `/dashboard/demonstrativos/${c.inst}?mes=${encodeURIComponent(c.mes)}`;
+      const emailLigado = Boolean(process.env.RESEND_API_KEY);
+
+      // Nenhum canal possível: explica sem gerar PDF nem link à toa.
+      // (Zap só conta se o envio de WhatsApp existe neste ambiente.)
+      const zapPossivel = Boolean(c.destino.zap.fone && options.sendText);
+      if (!zapPossivel && !(emailLigado && c.destino.email.para)) {
+        res.type('html').send(renderResultadoEnvio({
+          tituloOk: 'Relatório enviado', tituloConfira: 'Envio do relatório — confira',
+          voltarHref, voltarTexto: '← voltar para o cliente',
+          zap: c.destino.zap.fone
+            ? { ok: false, reason: 'falha_envio', detalhe: 'envio de WhatsApp não configurado neste ambiente' }
+            : { ok: false, reason: c.destino.zap.motivo ?? 'sem_phone' },
+          email: emailLigado ? { ok: false, reason: c.destino.email.motivo ?? 'sem_email' } : null,
+        }));
+        return;
+      }
+
+      const { gerarRelatorioPdf, lerPdfUnpdf } = await import('../gd/relatorio-pdf.js');
+      const { htmlToPdf } = await import('../proposal/pdf-generator.js');
+      const pdf = await gerarRelatorioPdf(c.html, { htmlToPdf, lerPdf: lerPdfUnpdf }, { exigeGrafico: c.relatorio.meses.length > 0 });
+
+      // PDF guardado com a chave-mestra (storage não passa pelo RLS do operador).
+      const { uploadAnexo } = await import('../anexos/storage.js');
+      const up = await uploadAnexo(supabase, c.leadId, 'relatorio-gd', pdf, 'application/pdf', 'pdf');
+      if (!up.ok || !up.storage_path) throw new Error(`não consegui guardar o PDF (${up.error ?? 'erro no armazenamento'})`);
+
+      const T = await import('../gd/relatorio-envio-textos.js');
+      const E = await import('../gd/relatorio-envio.js');
+      const { numerosDoRelatorio } = await import('../gd/relatorio-motor.js');
+      const token = T.gerarTokenRelatorio();
+      const link = T.linkPublicoRelatorio(T.basePublica(), token);
+      const idRel = await c.tela.criarRelatorioParaEnvio({
+        instalacao: c.inst, referencia: c.mes, geradoPor: req.dashUser!.id, numeros: numerosDoRelatorio(c.relatorio),
+        leadId: c.leadId, token, storagePath: up.storage_path,
+      });
+      const msg = {
+        nome: T.primeiroNome(c.lead.nome), mesExtenso: c.relatorio.mesExtenso, token, link, pdf,
+        nomeArquivo: T.nomeArquivoRelatorio(c.inst, c.mes),
+      };
+
+      const { noCanalDaEmpresa } = await import('./canal-envio.js');
+      const sendText = options.sendText;
+      const { zap, email } = await noCanalDaEmpresa(c.companyId, c.instancia, async () => {
+        const zap: import('../gd/relatorio-envio.js').ResultadoZapRelatorio = sendText
+          ? await E.enviarRelatorioZap(c.destino.zap, msg, {
+              canal: c.canal,
+              sendText,
+              // Modelo (WABA) é só da EcoSun; tenant NUNCA passa pela WABA da casa.
+              sendTemplate: c.canal === 'casa' ? options.sendTemplate : undefined,
+              sendDocument: c.canal === 'evolution' ? options.sendDocumentEvolution : undefined,
+            })
+          : { ok: false, reason: 'falha_envio', detalhe: 'envio de WhatsApp não configurado neste ambiente' };
+        let email: import('../relatorios/pasta/resultado-envio.js').ResultadoCanal | null = null;
+        if (emailLigado) {
+          const { EmailSender } = await import('../email/resend-client.js');
+          const sender = new EmailSender(process.env.RESEND_API_KEY ?? '', process.env.EMAIL_FROM ?? '');
+          email = await E.enviarRelatorioEmail(c.destino.email, msg, { leadId: c.leadId, empresa: c.cfg }, {
+            enviarEmail: (e) => sender.enviar(e),
+            registrarEmailEnviado: (d) => supabaseService.registrarEmailEnviado(d),
+          });
+        }
+        return { zap, email };
+      });
+
+      if (zap.ok && zap.textoEnviado) {
+        await E.registrarEnvioNaConversa(supabaseService, c.leadId, c.companyId, c.relatorio.mesExtenso, zap.textoEnviado)
+          .catch((err) => console.warn('[demonstrativos/enviar] conversa não registrada:', (err as Error).message));
+      }
+      await c.tela.marcarEnvio(idRel, E.resumoEnvio(zap, email));
+      console.log(`[demonstrativos/enviar] UC ${c.inst} ${c.mes} empresa ${c.companyId.slice(0, 8)} canal=${c.canal} zap=${zap.ok ? 'ok' : zap.reason} email=${email ? (email.ok ? 'ok' : email.reason) : 'desligado'}`);
+
+      res.type('html').send(renderResultadoEnvio({
+        tituloOk: 'Relatório enviado', tituloConfira: 'Envio do relatório — confira',
+        voltarHref, voltarTexto: '← voltar para o cliente',
+        zap, email, linkPublico: link,
+      }));
+    } catch (err) {
+      console.error('[demonstrativos/enviar POST]', err);
+      if (!res.headersSent) volta(`Não enviei: ${(err as Error).message}`);
     }
   });
 
