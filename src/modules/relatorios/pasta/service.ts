@@ -14,6 +14,7 @@ import { secoesFaltando, textoFaltando } from './completude.js';
 import { assuntoDaPasta, corpoDaPasta } from './email.js';
 import { montarDeclaracaoHtml, camposFaltando, type DadosDeclaracao } from './declaracao.js';
 import { montarMolduraEmail } from '../../email/email-moldura.js';
+import { logoEmailDaEmpresa } from '../../gd/relatorio-envio.js';
 import type { ArquivoPasta, PastaClienteRow, PastaView, SecaoId } from './types.js';
 
 const PUBLIC_BASE_URL = process.env.PROPOSAL_PUBLIC_BASE_URL ?? 'https://propostas.ecosunpower.eng.br';
@@ -379,11 +380,14 @@ export class PastaService {
         nomeResponsavel: e.rtApelido ?? undefined,
         // Sem campo na empresa_config ainda: vem de env pra seguir clone-ready.
         instagramUrl: process.env.EMPRESA_INSTAGRAM_URL?.trim() || undefined,
-        avaliacaoUrl: `${e.siteUrl.replace(/\/+$/, '')}/avaliar`,
+        // Tenant sem site: sem bloco de avaliação (antes virava link quebrado "/avaliar").
+        avaliacaoUrl: e.siteUrl.trim() ? `${e.siteUrl.replace(/\/+$/, '')}/avaliar` : undefined,
       }),
       linkDescadastro: '',
       empresa: e.nomeFantasia,
       siteUrl: e.siteUrl,
+      // Tenant: a logo https dele, ou semLogo (nome escrito) — nunca a da EcoSun (27/09/2026).
+      ...logoEmailDaEmpresa(e),
       kicker: 'Sua usina esta no ar',
       titulo: 'O material completo da sua usina',
       // O botao vive DENTRO do corpo, logo depois da lista do que tem la —
