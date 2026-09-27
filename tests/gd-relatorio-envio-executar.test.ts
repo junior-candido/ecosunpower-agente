@@ -191,4 +191,56 @@ describe('executarEnvioRelatorio', () => {
     expect(d.repo.cancelarEnvio).toHaveBeenCalledWith('R1', expect.stringContaining('contexto quebrou'));
     expect(d.repo.marcarEnvio).not.toHaveBeenCalled();
   });
+
+  // 27/09/2026 (review): quando o WhatsApp JÁ tinha saído e algo estourava
+  // DEPOIS (e-mail, ou o próprio `noCanal`), o catch único cancelava a reserva
+  // — apagando o token/link que o cliente já tinha recebido. Um erro depois da
+  // entrega não pode matar um link que já está na mão do cliente.
+  it('e-mail falha depois do WhatsApp já ter saído, e o canal ainda assim estoura → NÃO cancela, grava o parcial e mostra o resultado', async () => {
+    const d = deps({
+      enviarEmail: vi.fn(async () => { throw new Error('resend 500'); }),
+      // Simula o pior caso: o `fn` roda até o fim (zap manda, e-mail tenta e
+      // falha por dentro), mas o wrapper do canal ainda assim estoura depois.
+      noCanal: vi.fn(async (fn: () => Promise<void>) => {
+        await fn();
+        throw new Error('canal caiu logo depois de mandar');
+      }),
+    });
+    const r = await executarEnvioRelatorio(d, entrada());
+    expect(d.repo.cancelarEnvio).not.toHaveBeenCalled();
+    expect(d.repo.marcarEnvio).toHaveBeenCalledTimes(1);
+    const resumo = d.repo.marcarEnvio.mock.calls[0][1] as any;
+    expect(resumo.algumOk).toBe(true);
+    expect(resumo.emailPara).toBeNull();
+    expect(r).toMatchObject({
+      tipo: 'resultado', zap: { ok: true }, email: { ok: false, reason: 'falha_envio' },
+      linkPublico: 'https://p.x/rg/' + TOKEN,
+    });
+    // O que saiu pro cliente ainda vai pra conversa, mesmo com o estouro depois.
+    expect(d.registrarConversa).toHaveBeenCalled();
+  });
+
+  it('nada saiu ainda quando o canal estoura (zap e e-mail falharam) → cancela normalmente, como antes', async () => {
+    const d = deps({
+      sendText: vi.fn(async () => { throw new Error('evolution fora'); }),
+      enviarEmail: vi.fn(async () => { throw new Error('resend 500'); }),
+      noCanal: vi.fn(async (fn: () => Promise<void>) => {
+        await fn();
+        throw new Error('canal caiu depois, mas nada tinha saído');
+      }),
+    });
+    await expect(executarEnvioRelatorio(d, entrada())).rejects.toThrow(/nada tinha saído/);
+    expect(d.repo.cancelarEnvio).toHaveBeenCalledWith('R1', expect.stringContaining('nada tinha saído'));
+    expect(d.repo.marcarEnvio).not.toHaveBeenCalled();
+  });
+
+  it('enviarRelatorioEmail nunca joga erro pro catch de fora — falha do provedor vira {ok:false} normal', async () => {
+    const d = deps({ enviarEmail: vi.fn(async () => { throw new Error('domain not verified'); }) });
+    const r = await executarEnvioRelatorio(d, entrada());
+    expect(r.tipo).toBe('resultado');
+    if (r.tipo !== 'resultado') throw new Error();
+    expect(r.email).toMatchObject({ ok: false, reason: 'falha_envio', detalhe: 'domain not verified' });
+    expect(r.zap.ok).toBe(true);
+    expect(d.repo.cancelarEnvio).not.toHaveBeenCalled();
+  });
 });

@@ -9,8 +9,8 @@ import type { LeadDestino, ResumoEnvio } from './relatorio-envio.js';
 // Reexportados pra quem já importava daqui (tipos definidos em relatorio-envio.ts).
 export type { LeadDestino, ResumoEnvio };
 
-/** Reserva de envio do relatório vale 2 min; depois disso é tida como abandonada. */
-export const RESERVA_ENVIO_MS = 2 * 60 * 1000;
+/** Reserva de envio do relatório vale 5 min; depois disso é tida como abandonada. */
+export const RESERVA_ENVIO_MS = 5 * 60 * 1000;
 
 export interface LinhaDemonstrativo {
   id: string;
@@ -310,7 +310,7 @@ export function criarRepoTelaGd(db: SupabaseClient, companyId: string) {
      * Reserva o envio do mês ANTES de gerar/mandar qualquer coisa (duplo clique,
      * duas abas): cria a linha com `enviando_desde`; o índice único parcial da
      * migration 134 deixa só UMA reserva viva por empresa+UC+mês. Outra em
-     * andamento → null. Reserva com mais de 2 min (servidor caiu no meio) é
+     * andamento → null. Reserva com mais de 5 min (servidor caiu no meio) é
      * solta antes, pra não travar o mês pra sempre. Devolve o id da linha.
      */
     async reservarEnvio(p: {

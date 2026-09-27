@@ -106,9 +106,13 @@ export async function executarEnvioRelatorio(
   });
   if (!id) return { tipo: 'em_andamento' };
 
-  let zap: ResultadoZapRelatorio;
-  let email: ResultadoCanal | null;
-  let link: string;
+  // Capturados DENTRO do callback do noCanal, um a um, conforme cada canal
+  // termina — não só no `return` dele. Se algo estourar DEPOIS que um canal já
+  // entregou (o próprio noCanal, por exemplo), o que já saiu não se perde: o
+  // catch abaixo confere estas variáveis, não o retorno da promise.
+  let zap: ResultadoZapRelatorio | undefined;
+  let email: ResultadoCanal | null | undefined;
+  let link: string | undefined;
   try {
     // 4. PDF → storage → token na linha.
     const pdf = await d.gerarPdf();
@@ -133,8 +137,8 @@ export async function executarEnvioRelatorio(
 
     // 5. Manda — dentro da empresa e do canal de quem clicou.
     const sendText = d.sendText;
-    ({ zap, email } = await d.noCanal(async () => {
-      const zap: ResultadoZapRelatorio = sendText
+    await d.noCanal(async () => {
+      zap = sendText
         ? await enviarRelatorioZap(e.destino.zap, msg, {
             canal: e.canal,
             sendText,
@@ -143,30 +147,52 @@ export async function executarEnvioRelatorio(
             sendDocument: e.canal === 'evolution' ? d.sendDocument : undefined,
           })
         : { ok: false, reason: 'falha_envio', detalhe: SEM_ZAP_NO_AMBIENTE };
-      const email = emailLigado
+      // enviarRelatorioEmail já não joga erro pro catch de fora (provedor
+      // recusado vira {ok:false} normal) — mas se um dia jogar, o zap acima já
+      // está gravado na variável de fora e não se perde.
+      email = emailLigado
         ? await enviarRelatorioEmail(e.destino.email, msg, { leadId: e.leadId, empresa: e.empresa }, {
             enviarEmail: d.enviarEmail,
             registrarEmailEnviado: d.registrarEmailEnviado,
           })
         : null;
-      return { zap, email };
-    }));
+    });
   } catch (err) {
-    // O link não pode ficar valendo sem ter saído, e o mês não pode ficar travado.
+    if (zap?.ok || email?.ok) {
+      // Algo JÁ chegou no cliente antes do estouro (ex.: WhatsApp saiu e o
+      // e-mail, ou o próprio canal, quebrou depois) — cancelarEnvio mataria um
+      // link que o cliente já tem na mão. Registra o que deu, sem matar nada.
+      const zapFinal: ResultadoZapRelatorio = zap ?? { ok: false, reason: 'falha_envio', detalhe: msgErro(err) };
+      const emailFinal: ResultadoCanal | null = email !== undefined
+        ? email
+        : (emailLigado ? { ok: false, reason: 'falha_envio', detalhe: msgErro(err) } : null);
+      console.error(`[relatorio-gd] envio ${id} teve erro depois de já ter entregue algo (mantido): ${msgErro(err)}`);
+      if (zapFinal.ok && zapFinal.textoEnviado) {
+        await d.registrarConversa(zapFinal.textoEnviado)
+          .catch((errConv) => console.warn('[relatorio-gd] conversa não registrada:', msgErro(errConv)));
+      }
+      const resumoParcial = resumoEnvio(zapFinal, emailFinal);
+      await d.repo.marcarEnvio(id, resumoParcial).catch((errMarcar) =>
+        console.error(`[relatorio-gd] resultado parcial do envio ${id} não gravado: ${msgErro(errMarcar)}`));
+      return { tipo: 'resultado', zap: zapFinal, email: emailFinal, linkPublico: resumoParcial.algumOk ? (link ?? null) : null };
+    }
+    // Nada saiu ainda: o link não pode ficar valendo, e o mês não pode ficar travado.
     await d.repo.cancelarEnvio(id, msgErro(err)).catch((errCancel) =>
       console.error(`[relatorio-gd] envio ${id} não cancelado: ${msgErro(errCancel)}`));
     throw err;
   }
 
   // 6. Resultado.
-  if (zap.ok && zap.textoEnviado) {
-    await d.registrarConversa(zap.textoEnviado)
+  const zapFinal = zap as ResultadoZapRelatorio;
+  const emailFinal = (email ?? null) as ResultadoCanal | null;
+  if (zapFinal.ok && zapFinal.textoEnviado) {
+    await d.registrarConversa(zapFinal.textoEnviado)
       .catch((err) => console.warn('[relatorio-gd] conversa não registrada:', msgErro(err)));
   }
-  const resumo = resumoEnvio(zap, email);
+  const resumo = resumoEnvio(zapFinal, emailFinal);
   // O envio JÁ saiu: falha ao gravar o resultado não pode virar "não enviei" na
-  // tela (o operador reenviaria). Fica no log; a reserva expira sozinha em 2 min.
+  // tela (o operador reenviaria). Fica no log; a reserva expira sozinha em 5 min.
   await d.repo.marcarEnvio(id, resumo).catch((err) =>
     console.error(`[relatorio-gd] resultado do envio ${id} não gravado: ${msgErro(err)}`));
-  return { tipo: 'resultado', zap, email, linkPublico: resumo.algumOk ? link : null };
+  return { tipo: 'resultado', zap: zapFinal, email: emailFinal, linkPublico: resumo.algumOk ? (link as string) : null };
 }

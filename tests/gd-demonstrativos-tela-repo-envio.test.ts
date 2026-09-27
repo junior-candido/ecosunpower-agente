@@ -28,7 +28,7 @@ const RESERVA = {
 };
 
 describe('repo — envio do relatório (fatia 3)', () => {
-  it('reservarEnvio: solta reserva velha (> 2 min), cria a linha "enviando" com empresa e cliente e devolve o id', async () => {
+  it('reservarEnvio: solta reserva velha (> 5 min), cria a linha "enviando" com empresa e cliente e devolve o id', async () => {
     const { db, chamadas } = fakeDb({ relatorios_gd_gerados: [{ data: null, error: null }, { data: { id: 'R1' }, error: null }] });
     expect(await criarRepoTelaGd(db, 'E1').reservarEnvio(RESERVA)).toBe('R1');
     const solta = chamadas[0].ops;
@@ -39,8 +39,8 @@ describe('repo — envio do relatório (fatia 3)', () => {
     const lt = solta.find((o) => o[0] === 'lt')!;
     expect(lt[1][0]).toBe('enviando_desde');
     const limite = Date.parse(lt[1][1]);
-    expect(Date.now() - limite).toBeGreaterThanOrEqual(119_000);
-    expect(Date.now() - limite).toBeLessThan(125_000);
+    expect(Date.now() - limite).toBeGreaterThanOrEqual(299_000);
+    expect(Date.now() - limite).toBeLessThan(305_000);
     const ins = chamadas[1].ops.find((o) => o[0] === 'insert')![1][0];
     expect(ins).toMatchObject({
       company_id: 'E1', instalacao: '351534', referencia: '2026-08-01', gerado_por: 'U1', numeros: { gerouKwh: 612 }, lead_id: 'L1',

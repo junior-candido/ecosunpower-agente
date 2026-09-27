@@ -35,14 +35,22 @@ export function noCanalDaEmpresa<T>(
  * pra seguir. A trava LGPD do sendText (index.ts) descarta em silêncio — sem
  * esta pergunta a tela mostrava ✅ e nada saía. Telefone vazio/inválido segue:
  * o serviço da pasta devolve sem_phone/telefone_invalido.
+ *
+ * `erroBusca`: a rota buscava o telefone do cliente com
+ * `.catch(() => null)` — um erro de rede/banco virava "sem telefone" e a
+ * trava LGPD nem rodava (falha ABERTA: mandava sem checar). Quando a busca
+ * falhou de verdade (não "não achei o telefone"), o envio NÃO sai — falha
+ * FECHADA — e a tela mostra falha_envio, não um falso "sem_phone".
  */
 export function bloqueioZapPasta(p: {
   canal: CanalZap;
   phone: string | null | undefined;
   engineerPhone: string;
   cfg: EmpresaConfig;
-}): { ok: false; reason: 'sem_canal' | 'bloqueado_lgpd' } | null {
+  erroBusca?: boolean;
+}): { ok: false; reason: 'sem_canal' | 'bloqueado_lgpd' | 'falha_envio' } | null {
   if (p.canal === 'nenhum') return { ok: false, reason: 'sem_canal' };
+  if (p.erroBusca) return { ok: false, reason: 'falha_envio' };
   const fone = p.phone ? normalizeBrazilianPhone(String(p.phone)) : null;
   if (fone && envioProibido(fone, p.engineerPhone, p.cfg)) return { ok: false, reason: 'bloqueado_lgpd' };
   return null;

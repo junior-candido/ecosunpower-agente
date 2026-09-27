@@ -111,3 +111,34 @@ describe('trava de marca — links públicos da própria plataforma passam', () 
     expect(travarMarcaAlheia(comLink, conquista, [ecosun, conquista])).toBe(MENSAGEM_MARCA_BARRADA);
   });
 });
+
+// 27/09/2026 (code review): `(?:[/?#]\S*)?` era guloso — qualquer coisa colada
+// depois do host escapava a trava (marca grudada no fim do path, ou dentro da
+// query). Corrigido pra só engolir rotas públicas REAIS desse domínio
+// (/rg/<token>, /pasta/<slug>, /p/<slug>, /r/<slug>, /r-pi/<slug>) com o
+// alfabeto que elas realmente usam ([A-Za-z0-9_-]+). Fora disso, o texto
+// continua visível e cai na checagem normal.
+describe('trava de marca — link não vira porta de escape pra marca colada', () => {
+  it('marca colada no path com travessão (fora do alfabeto do token) → barrado', () => {
+    const texto = `Segue o relatório: ${basePublica()}/rg/abc—EcoSunPower`;
+    expect(travarMarcaAlheia(texto, conquista, [ecosun, conquista])).toBe(MENSAGEM_MARCA_BARRADA);
+  });
+
+  it('marca na query string (?ref=OutraMarca) → barrado', () => {
+    const outraMarca = normalizarEmpresaRow({
+      company_id: '33333333-3333-3333-3333-333333333333', nome_fantasia: 'OutraMarca',
+    });
+    const texto = `Confere aqui: ${basePublica()}/?ref=OutraMarca`;
+    expect(travarMarcaAlheia(texto, conquista, [ecosun, conquista, outraMarca])).toBe(MENSAGEM_MARCA_BARRADA);
+  });
+
+  it('mensagem normal com /rg/<token> passa inteira', () => {
+    const texto = `Segue o relatório: ${basePublica()}/rg/${'C'.repeat(32)}`;
+    expect(travarMarcaAlheia(texto, conquista, [ecosun, conquista])).toBe(texto);
+  });
+
+  it('mensagem normal com /pasta/<slug> passa inteira', () => {
+    const texto = `Sua pasta: ${basePublica()}/pasta/a1b2c3d4e5`;
+    expect(travarMarcaAlheia(texto, conquista, [ecosun, conquista])).toBe(texto);
+  });
+});

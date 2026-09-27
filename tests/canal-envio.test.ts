@@ -57,4 +57,18 @@ describe('bloqueioZapPasta — decide antes de mandar a pasta', () => {
     expect(bloqueioZapPasta({ canal: 'evolution', phone: null, engineerPhone: ENG, cfg: tenant })).toBeNull();
     expect(bloqueioZapPasta({ canal: 'evolution', phone: '123', engineerPhone: ENG, cfg: tenant })).toBeNull();
   });
+  // 27/09/2026 (review): getClienteByLeadId(...).catch(() => null) falhava
+  // ABERTO — erro de busca virava "sem telefone" e a trava LGPD nem rodava.
+  // erroBusca é o motivo de falha; nunca deve ser confundido com "sem telefone".
+  it('erro na busca do cliente → falha_envio, mesmo sem telefone (fecha, não abre)', () => {
+    expect(bloqueioZapPasta({ canal: 'evolution', phone: null, engineerPhone: ENG, cfg: tenant, erroBusca: true }))
+      .toEqual({ ok: false, reason: 'falha_envio' });
+  });
+  it('erro na busca do cliente prevalece mesmo com canal sem_canal (mensagem certa continua saindo)', () => {
+    expect(bloqueioZapPasta({ canal: 'nenhum', phone: null, engineerPhone: ENG, cfg: tenant, erroBusca: true }))
+      .toEqual({ ok: false, reason: 'sem_canal' });
+  });
+  it('sem erro de busca (default) → comportamento de antes, intacto', () => {
+    expect(bloqueioZapPasta({ canal: 'evolution', phone: '61999991111', engineerPhone: ENG, cfg: tenant })).toBeNull();
+  });
 });

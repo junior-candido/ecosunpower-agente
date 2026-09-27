@@ -6461,11 +6461,17 @@ b.onclick=async function(){
     const { r, email } = await noCanalDaEmpresa(companyId, instancia, async () => {
       // A trava LGPD do sendText descarta em silêncio (a tela mostraria ✅):
       // pergunta ANTES e, se barrar, nada sai e a tela mostra o motivo.
+      // 27/09/2026 (review): .catch(() => null) sozinho fazia um ERRO de busca
+      // (rede/banco) parecer "cliente sem telefone" — e a trava LGPD nem rodava
+      // (falha ABERTA, mandava sem checar). Erro de busca é sinalizado à parte
+      // pra falha FECHADA: nada sai, mesmo sem saber o telefone.
+      let erroBuscaLead = false;
       const leadDaPasta = canal === 'nenhum'
         ? null
-        : await supabaseService.getClienteByLeadId(pasta.lead_id).catch(() => null);
+        : await supabaseService.getClienteByLeadId(pasta.lead_id).catch(() => { erroBuscaLead = true; return null; });
       const barrado = bloqueioZapPasta({
         canal, phone: leadDaPasta?.phone ?? null, engineerPhone: options.engineerPhone ?? '', cfg: empresaDe(companyId),
+        erroBusca: erroBuscaLead,
       });
       const r: { ok: boolean; reason?: string } = barrado
         // Modelo (WABA) é só da EcoSun; tenant vai por texto na instância dele.
