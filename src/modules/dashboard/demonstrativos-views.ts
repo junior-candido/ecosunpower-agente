@@ -284,10 +284,11 @@ export function renderConfirmarEnvioRelatorio(c: ConfirmarEnvioRelatorio, user?:
     ? `<div class="rounded border border-amber-500 p-3 my-3 text-amber-200">Este relatório já foi enviado: ${esc(textoUltimoEnvio(c.ultimoEnvio))}.<br>Enviar de novo manda outra mensagem para o cliente.</div>`
     : '';
   const form = podeEnviar
-    ? `<form method="post" action="/dashboard/demonstrativos/${esc(c.instalacao)}/enviar?mes=${esc(c.mes)}" class="flex flex-wrap gap-2 mt-4">
+    // Duplo clique: o botão trava no 1º envio (o servidor também reserva o mês).
+    ? `<form method="post" action="/dashboard/demonstrativos/${esc(c.instalacao)}/enviar?mes=${esc(c.mes)}" class="flex flex-wrap gap-2 mt-4" onsubmit="var b=this.querySelector('button[type=submit]');if(b){b.disabled=true;b.textContent='Enviando…';}">
   <input type="hidden" name="confirmar" value="1">
   ${c.ultimoEnvio ? '<input type="hidden" name="reenviar" value="1">' : ''}
-  <button class="px-4 py-2 rounded bg-emerald-700 text-white">${c.ultimoEnvio ? '🔁 Enviar de novo' : '📲 Confirmar e enviar'}</button>
+  <button type="submit" class="px-4 py-2 rounded bg-emerald-700 text-white">${c.ultimoEnvio ? '🔁 Enviar de novo' : '📲 Confirmar e enviar'}</button>
   <a href="${voltar}" class="px-4 py-2 rounded bg-slate-700 text-white">Cancelar</a>
 </form>`
     : `<p class="mt-4" style="color:#ef4444">Nada pode ser enviado — corrija o cadastro do cliente (telefone/e-mail) e tente de novo.</p>

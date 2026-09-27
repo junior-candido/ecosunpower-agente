@@ -62,6 +62,13 @@ describe('renderConfirmarEnvioRelatorio', () => {
     expect(h).toMatch(/Não vai sair — cliente pediu pra não receber mensagens/);
     expect(h).toMatch(/e-mail não está configurado/);
   });
+  it('duplo clique: o botão trava no primeiro envio do formulário', () => {
+    const h = renderConfirmarEnvioRelatorio(confirmar());
+    const ini = h.indexOf('<form method="post" action="/dashboard/demonstrativos/');
+    const form = h.slice(ini, h.indexOf('</form>', ini));
+    expect(form).toMatch(/onsubmit="[^"]*disabled\s*=\s*true/);
+    expect(form).toContain('type="submit"');
+  });
   it('nada pode sair: sem formulário, explica o que corrigir', () => {
     const h = renderConfirmarEnvioRelatorio(confirmar({
       zap: { para: null, motivo: 'sem_phone', texto: '' }, email: { para: null, motivo: 'sem_email', assunto: '', html: '' },
