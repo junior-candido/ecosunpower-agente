@@ -127,7 +127,7 @@ export async function prepararRelatorioPeriodo(
   // Gráfico: 13 meses até o fim; no período, a geração já validada.
   const geracaoPorMes: Record<string, number | null> = {};
   const ultima = linhas[linhas.length - 1];
-  for (const { mes } of historicoPorMes(ultima.historico, 13)) {
+  for (const { mes } of historicoPorMes(ultima.historico, 13, ultima.unidades.length)) {
     const doPeriodo = entradas.find((x) => x.linha.referencia === mes);
     if (doPeriodo) { geracaoPorMes[mes] = doPeriodo.geracaoKwh; continue; }
     geracaoPorMes[mes] = manuais.get(`${instalacao}|${mes}`)?.kwh ?? await d.geracaoApiDoMes(leadFinal, mes);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { renderRelatorioPeriodoHtml } from '../src/modules/gd/relatorio-periodo-html.js';
-import { RODAPE_CONFERENCIA, MARCA_GRAFICO_OK } from '../src/modules/gd/relatorio-html.js';
+import { RODAPE_CONFERENCIA, MARCA_GRAFICO_OK, CONTEUDO_CORTADO_MARCA } from '../src/modules/gd/relatorio-html.js';
 import type { RelatorioPeriodoGd, MesDoPeriodo } from '../src/modules/gd/relatorio-periodo-motor.js';
 import type { MarcaRelatorio } from '../src/modules/gd/relatorio-marca.js';
 
@@ -120,5 +120,23 @@ describe('renderRelatorioPeriodoHtml', () => {
     const h = renderRelatorioPeriodoHtml(rel({ meses: muitos }), marca);
     expect(h).toContain('class="apertada"');
     expect(renderRelatorioPeriodoHtml(rel(), marca)).not.toContain('class="apertada"');
+  });
+
+  it('sem apertar: mantém o glossário na página 2', () => {
+    const h = renderRelatorioPeriodoHtml(rel(), marca);
+    for (const t of ['Injetado', 'Compensado', 'Crédito', 'Rateio']) expect(h).toContain(t);
+    expect(h).toContain('Para entender');
+  });
+
+  it('layout apertado (muitos meses/unidades): larga o glossário pra sobrar espaço na página 2', () => {
+    const muitos = Array.from({ length: 12 }, (_, i) => mes(`2026-${String(i + 1).padStart(2, '0')}-01`, `m${i}`, `m${i}`, 500));
+    const h = renderRelatorioPeriodoHtml(rel({ meses: muitos }), marca);
+    expect(h).not.toContain('Para entender');
+  });
+
+  it('leva o mesmo script de conferência de corte do mensal (sem Puppeteer)', () => {
+    const h = renderRelatorioPeriodoHtml(rel(), marca);
+    expect(h).toContain("querySelectorAll('.pagina')");
+    expect(h).toContain(CONTEUDO_CORTADO_MARCA);
   });
 });

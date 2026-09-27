@@ -17,6 +17,43 @@ export const RODAPE_CONFERENCIA = 'Relatório gerado a partir do demonstrativo d
  */
 export const MARCA_GRAFICO_OK = 'grafico-ok';
 
+/**
+ * Texto visível que a conferência de corte grava DENTRO de cada `.pagina` que
+ * transbordou (o `.conteudo` foi além do topo do `.rod`). `.pagina` tem
+ * `overflow:hidden`: sem essa marca, um bloco que não coube sai cortado em
+ * silêncio — com ela, o texto aparece na própria página (o Puppeteer captura)
+ * E entra no texto extraído do PDF, onde `gerarRelatorioPdf` confere.
+ */
+export const CONTEUDO_CORTADO_MARCA = 'CONTEUDO-CORTADO';
+
+/**
+ * Script sem Puppeteer que confere, DEPOIS do render, se algum `.conteudo`
+ * foi além do `.rod` (rodapé) dentro da sua `.pagina` — sinal de que algo não
+ * coube e `overflow:hidden` cortou em silêncio. Quando acontece, insere um
+ * texto visível (${CONTEUDO_CORTADO_MARCA}) logo no início da própria página,
+ * pra aparecer tanto na tela/PDF quanto no texto extraído (gerarRelatorioPdf
+ * recusa o PDF quando essa marca aparece). Roda em cada `.pagina` — mensal e
+ * do período compartilham este mesmo script; nunca muda nada visualmente
+ * quando tudo coube.
+ */
+export function scriptConferenciaCorte(): string {
+  return `<script>
+(function () {
+  document.querySelectorAll('.pagina').forEach(function (pag) {
+    var conteudo = pag.querySelector('.conteudo');
+    var rod = pag.querySelector('.rod');
+    if (!conteudo || !rod) return;
+    var fundoConteudo = conteudo.getBoundingClientRect().bottom;
+    var topoRodape = rod.getBoundingClientRect().top;
+    if (fundoConteudo > topoRodape) {
+      pag.insertAdjacentHTML('afterbegin', '<div style="color:red;font-size:10px">${CONTEUDO_CORTADO_MARCA}</div>');
+    }
+  });
+})();
+</script>
+`;
+}
+
 export const esc = (s: unknown) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 export const kwh = (v: number | null) => (v === null ? '—' : `${v.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} kWh`);
@@ -203,5 +240,5 @@ ${GLOSSARIO_HTML}
 ${rodape(2)}
 </div>
 
-${grafico}</body></html>`;
+${grafico}${scriptConferenciaCorte()}</body></html>`;
 }

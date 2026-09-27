@@ -125,6 +125,28 @@ describe('repo — "já enviado" do mês × do período', () => {
     expect(ops).toContainEqual(['eq', ['numeros->periodo->>inicio', '2026-05-01']]);
     expect(ops).toContainEqual(['not', ['enviado_em', 'is', null]]);
   });
+  it('ultimoEnvioPeriodoQualquer: o último envio de período desta UC, qualquer intervalo — pra mostrar na tela sem escolher de novo', async () => {
+    const { db, chamadas } = fakeDb({ relatorios_gd_gerados: [
+      { data: [{
+        enviado_em: '2026-09-27T14:32:00Z', enviado_zap_para: '5561991718505', enviado_email_para: null,
+        numeros: { periodo: { inicio: '2026-05-01', fim: '2026-08-01' } },
+      }], error: null },
+    ] });
+    const r = await criarRepoTelaGd(db, 'E1').ultimoEnvioPeriodoQualquer('351534');
+    expect(r).toEqual({
+      enviadoEm: '2026-09-27T14:32:00Z', zapPara: '5561991718505', emailPara: null,
+      inicio: '2026-05-01', fim: '2026-08-01',
+    });
+    const ops = chamadas[0].ops;
+    expect(ops).toContainEqual(['eq', ['company_id', 'E1']]);
+    expect(ops).toContainEqual(['eq', ['instalacao', '351534']]);
+    expect(ops).toContainEqual(['not', ['numeros->periodo', 'is', null]]);
+    expect(ops).toContainEqual(['not', ['enviado_em', 'is', null]]);
+  });
+  it('ultimoEnvioPeriodoQualquer: sem nenhum envio de período ainda — null', async () => {
+    const { db } = fakeDb({ relatorios_gd_gerados: [{ data: [], error: null }] });
+    expect(await criarRepoTelaGd(db, 'E1').ultimoEnvioPeriodoQualquer('351534')).toBeNull();
+  });
 });
 
 describe('link público e Pasta Digital com relatório do período', () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { gerarRelatorioPdf } from '../src/modules/gd/relatorio-pdf.js';
-import { RODAPE_CONFERENCIA, MARCA_GRAFICO_OK } from '../src/modules/gd/relatorio-html.js';
+import { RODAPE_CONFERENCIA, MARCA_GRAFICO_OK, CONTEUDO_CORTADO_MARCA } from '../src/modules/gd/relatorio-html.js';
 
 const pdf = Buffer.from('%PDF-fake');
 
@@ -20,6 +20,16 @@ describe('gerarRelatorioPdf', () => {
     const ler = vi.fn().mockResolvedValue({ paginas: 2, texto: 'sem rodape' });
     await expect(gerarRelatorioPdf('<html>', { htmlToPdf: vi.fn().mockResolvedValue(pdf), lerPdf: ler }))
       .rejects.toThrow(/rodapé/);
+  });
+
+  it('recusa PDF quando a marca CONTEUDO-CORTADO aparece (algo passou do rodapé e overflow:hidden cortou em silêncio)', async () => {
+    const ler = vi.fn().mockResolvedValue({ paginas: 2, texto: `... ${RODAPE_CONFERENCIA} ... ${CONTEUDO_CORTADO_MARCA} ...` });
+    await expect(gerarRelatorioPdf('<html>', { htmlToPdf: vi.fn().mockResolvedValue(pdf), lerPdf: ler }))
+      .rejects.toThrow(/não coube em 2 páginas/);
+  });
+  it('sem a marca CONTEUDO-CORTADO: devolve o PDF normalmente (2 páginas e rodapé certos)', async () => {
+    const ler = vi.fn().mockResolvedValue({ paginas: 2, texto: `... ${RODAPE_CONFERENCIA} ...` });
+    expect(await gerarRelatorioPdf('<html>', { htmlToPdf: vi.fn().mockResolvedValue(pdf), lerPdf: ler })).toBe(pdf);
   });
 
   describe('exigeGrafico (mes com historico — o grafico do Chart.js tem que ter carregado)', () => {

@@ -24,6 +24,28 @@ export function textoUltimoEnvio(u: UltimoEnvioRelatorio): string {
   return `✅ enviado em ${dataHoraBrasilia(u.enviadoEm)}${para ? ` para ${para}` : ''}`;
 }
 
+export interface UltimoEnvioPeriodo {
+  enviadoEm: string;
+  zapPara: string | null;
+  emailPara: string | null;
+  inicio: string;
+  fim: string;
+}
+
+/** "mai/2026" + "ago/2026" → "mai–ago/2026" (mesmo ano) ou "mai/2025–ago/2026" (anos diferentes). */
+function periodoAbreviado(inicio: string, fim: string): string {
+  const de = mesCurto(inicio);
+  const ate = mesCurto(fim);
+  const [deMes, deAno] = de.split('/');
+  const [ateMes, ateAno] = ate.split('/');
+  return deAno === ateAno ? `${deMes}–${ateMes}/${ateAno}` : `${de}–${ate}`;
+}
+
+/** "✅ período mai–ago/2026 enviado em 27/09 14:32" — SEM escapar (quem desenha escapa). */
+export function textoUltimoEnvioPeriodo(u: UltimoEnvioPeriodo): string {
+  return `✅ período ${periodoAbreviado(u.inicio, u.fim)} enviado em ${dataHoraBrasilia(u.enviadoEm)}`;
+}
+
 function esc(s: unknown): string {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
@@ -101,6 +123,8 @@ export interface DetalheCliente {
   msg: string | null;
   /** Último envio ao cliente deste mês (fatia 3); ausente/null = nunca enviado. */
   ultimoEnvio?: UltimoEnvioRelatorio | null;
+  /** Último envio de relatório do PERÍODO desta UC, qualquer intervalo; ausente/null = nunca enviado. */
+  ultimoEnvioPeriodo?: UltimoEnvioPeriodo | null;
 }
 
 /**
@@ -118,9 +142,12 @@ function formRelatorioPeriodo(d: DetalheCliente): string {
   const opcoes = (sel: string) => meses
     .map((m) => `<option value="${esc(m)}"${m === sel ? ' selected' : ''}>${esc(mesCurto(m))}</option>`).join('');
   const base = `/dashboard/demonstrativos/${esc(d.instalacao)}`;
+  const envioFeito = d.ultimoEnvioPeriodo
+    ? `<p class="text-emerald-300 w-full mb-1">${esc(textoUltimoEnvioPeriodo(d.ultimoEnvioPeriodo))}</p>` : '';
   return `
 <form method="get" action="${base}/periodo.html" class="rounded border border-slate-600 p-3 mt-4 flex flex-wrap gap-2 items-center">
-  <b>📊 Relatório do período:</b>
+  <b class="w-full">📊 Relatório do período:</b>
+  ${envioFeito}
   <label>de <select name="de" class="bg-gray-800 p-1 rounded">${opcoes(de)}</select></label>
   <label>até <select name="ate" class="bg-gray-800 p-1 rounded">${opcoes(ate)}</select></label>
   <button type="submit" formaction="${base}/periodo.html" formtarget="_blank" class="px-3 py-1 rounded bg-slate-700 text-white">👁 Prévia</button>

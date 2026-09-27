@@ -4669,6 +4669,7 @@ b.onclick=async function(){
         unidades: l.unidades, origemDemonstrativo: l.origem, verificado: l.origem_verificada,
         validacao, candidatos, msg: typeof req.query.msg === 'string' ? req.query.msg : null,
         ultimoEnvio: await tela.ultimoEnvio(inst, l.referencia).catch(() => null),
+        ultimoEnvioPeriodo: await tela.ultimoEnvioPeriodoQualquer(inst).catch(() => null),
       }, req.dashUser));
     } catch (err) {
       console.error('[demonstrativos/cliente]', err);
@@ -4964,7 +4965,7 @@ b.onclick=async function(){
       return;
     }
     if (saida.tipo === 'em_andamento') {
-      volta('Esse relatório já está sendo enviado (clique duplo ou outra aba) — confira em instantes o "enviado em".');
+      volta('Já existe um envio de relatório desta UC em andamento (mês ou período). Aguarde alguns minutos e tente de novo.');
       return;
     }
     console.log(`[demonstrativos/enviar] UC ${c.inst} ${c.periodo ? `${c.periodo.de}..${c.periodo.ate}` : c.referencia} empresa ${c.companyId.slice(0, 8)} canal=${c.canal} zap=${saida.zap.ok ? 'ok' : saida.zap.reason} email=${saida.email ? (saida.email.ok ? 'ok' : saida.email.reason) : 'desligado'}`);

@@ -8,7 +8,7 @@
 import type { RelatorioPeriodoGd } from './relatorio-periodo-motor.js';
 import type { MarcaRelatorio } from './relatorio-marca.js';
 import {
-  GLOSSARIO_HTML, brl, cabecalhoHtml, cardHtml, esc, estilosBase, kwh, rodapeHtml, scriptGrafico,
+  GLOSSARIO_HTML, brl, cabecalhoHtml, cardHtml, esc, estilosBase, kwh, rodapeHtml, scriptConferenciaCorte, scriptGrafico,
 } from './relatorio-html.js';
 
 /** A partir daqui as tabelas da página 2 usam letra menor (senão 12 meses + 6 unidades não cabem). */
@@ -103,11 +103,11 @@ ${tabelaMeses}
 ${rateio}
 ${creditos}
 ${desempenho}
-${GLOSSARIO_HTML}
+${apertada ? '' : GLOSSARIO_HTML}
 <div class="fontes"><b>De onde vêm os números:</b><br>${r.fontes.map(esc).join('<br>')}</div>
 </div>
 ${rodapeHtml(m, 2)}
 </div>
 
-${grafico}</body></html>`;
+${grafico}${scriptConferenciaCorte()}</body></html>`;
 }
