@@ -143,6 +143,20 @@ describe('montarDocumentoFinal', () => {
       expect(doc!.problemas.join(' ')).toContain('RG');
     });
 
+    it('ADITIVO: "contrato firmado em" = data do documento congelado (não o dia UTC)', async () => {
+      const fx = [{ ...fechamentos[1], dados_snapshot: { ...snapshot, data_documento: '2026-07-10' } }];
+      const doc = await montarDocumentoFinal(fakeDb({ leads: [leadMudado], fechamentos: fx }), 'L1', 'aditivo');
+      expect(doc!.dados.aditivo?.contrato_data).toBe('2026-07-10');
+    });
+
+    it('ADITIVO: retrato sem data, congelado às 22:30 BRT → o dia de Brasília (não o seguinte, em UTC)', async () => {
+      const semData: any = { ...snapshot };
+      delete semData.data_documento;
+      const fx = [{ ...fechamentos[1], created_at: '2026-09-28T01:30:00Z', dados_snapshot: semData }];
+      const doc = await montarDocumentoFinal(fakeDb({ leads: [leadMudado], fechamentos: fx }), 'L1', 'aditivo');
+      expect(doc!.dados.aditivo?.contrato_data).toBe('2026-09-27');
+    });
+
     it('o ADITIVO não é o retrato: ele é montado agora (é o documento novo)', async () => {
       const doc = await montarDocumentoFinal(fakeDb({ leads: [leadMudado], fechamentos }), 'L1', 'aditivo');
       expect(doc!.congelado).toBeNull();

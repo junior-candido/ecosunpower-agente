@@ -12,6 +12,7 @@ import type { DadosFechamento, PessoaFisica, Endereco, UF } from './types.js';
 import { fetchByLeadId, buildInitialData } from './closing-data-fetcher.js';
 import { deepMerge } from './closing-assistant.js';
 import { contratoVigente, type ContratoCongelado } from './contrato-vigente.js';
+import { dataIsoEmBrasilia } from './data-documento.js';
 
 const BRANCO = '_______________________';
 
@@ -166,9 +167,11 @@ export async function montarFechamentoAuto(
   const vigente = await contratoVigente(sb, leadId);
   if (tipo === 'aditivo' && vigente) {
     cru.aditivo = {
-      // sugestão: a data do congelamento (mas congelar não é o cliente ter
-      // assinado — por isso o campo é editável e o que o operador escrever VENCE)
-      contrato_data: vigente.congeladoEm.slice(0, 10),
+      // sugestão: a data do documento congelado (mas congelar não é o cliente ter
+      // assinado — por isso o campo é editável e o que o operador escrever VENCE).
+      // No calendário de BRASÍLIA: o slice(0,10) do timestamp UTC dava o dia
+      // seguinte pra quem congelou depois das 21h.
+      contrato_data: vigente.dados.data_documento ?? dataIsoEmBrasilia(vigente.congeladoEm) ?? undefined,
       ...(cru.aditivo ?? {}),
       // o valor e o pagamento "de antes" saem sempre do retrato congelado
       valor_anterior: vigente.dados.comercial?.valor_total_brl,
