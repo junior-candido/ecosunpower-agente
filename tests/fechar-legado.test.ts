@@ -63,7 +63,8 @@ describe('lead da sessão do /fechar', () => {
 });
 
 describe('index.ts — /fechar antigo passa pela trava e não usa o lead do admin', () => {
-  const src = readFileSync(join(process.cwd(), 'src', 'index.ts'), 'utf-8');
+  // Arquivo em CRLF (Windows) — normaliza pra "\n  }\n" achar o fim da função certo.
+  const src = readFileSync(join(process.cwd(), 'src', 'index.ts'), 'utf-8').replace(/\r\n/g, '\n');
   const ini = src.indexOf('async function handleFecharGenerate(');
   const corpo = src.slice(ini, src.indexOf('\n  }\n', ini));
 
@@ -80,5 +81,59 @@ describe('index.ts — /fechar antigo passa pela trava e não usa o lead do admi
   it('o lead vem da sessão, não do telefone do admin', () => {
     expect(corpo).not.toContain('getLeadByPhone(adminPhone)');
     expect(corpo).toContain('leadIdDaSessao(');
+  });
+
+  // Review: mesmo aviso que a Eva já manda em "contrato <nome>" — proposta vencida
+  // continua valendo pro contrato, mas quem recebe os links pelo zap tem que saber
+  // que precisa conferir os valores.
+  it('avisa "proposta expirada" na mensagem quando a proposta usada já venceu', () => {
+    expect(corpo).toMatch(/propostaVencida\(|propostaExpiradaEm/);
+    expect(corpo).toMatch(/proposta expirada/i);
+  });
+});
+
+// Review: o "Aprovar" do /fechar antigo (WhatsApp) marcava o lead como cliente
+// sem deixar rastro nenhum no audit_log — a MESMA ação, feita pela tela
+// (contrato-congelar em router.ts), grava `audit(...) { acao: 'contrato_congelado' }`.
+// Sem isso, quem fechava pelo zap ficava invisível pra auditoria.
+describe('index.ts — handleFecharApprove grava o MESMO audit "contrato_congelado" que o congelamento do dashboard', () => {
+  // Arquivo em CRLF (Windows) — normaliza pra "\n  }\n" achar o fim da função certo.
+  const src = readFileSync(join(process.cwd(), 'src', 'index.ts'), 'utf-8').replace(/\r\n/g, '\n');
+  const ini = src.indexOf('async function handleFecharApprove(');
+  const corpo = src.slice(ini, src.indexOf('\n  }\n', ini));
+
+  it('existe e reusa o helper audit() (mesmo de dashboard/audit.js)', () => {
+    expect(ini).toBeGreaterThan(0);
+    expect(corpo).toMatch(/import\(['"]\.\/modules\/dashboard\/audit\.js['"]\)/);
+    expect(corpo).toContain('audit(');
+  });
+
+  it('a ação gravada é a mesma da tela: "contrato_congelado", ligada ao lead', () => {
+    expect(corpo).toMatch(/acao:\s*['"]contrato_congelado['"]/);
+    expect(corpo).toMatch(/entidade:\s*['"]lead['"]/);
+  });
+});
+
+// Review: o botão "evabt:fechar:<leadId>" carrega o leadId no PRÓPRIO id do botão.
+// Sem conferir a empresa, um botão fabricado (ou reenviado) com o leadId de outro
+// tenant deixaria o admin de UMA empresa fechar contrato pelo lead de OUTRA.
+describe('index.ts — handleFecharStart só usa o lead se ele for da MESMA empresa do canal/admin', () => {
+  // Arquivo em CRLF (Windows) — normaliza pra "\n  }\n" achar o fim da função certo.
+  const src = readFileSync(join(process.cwd(), 'src', 'index.ts'), 'utf-8').replace(/\r\n/g, '\n');
+  const ini = src.indexOf('async function handleFecharStart(');
+  const corpo = src.slice(ini, src.indexOf('\n  }\n', ini));
+
+  it('existe e confere lead.company_id contra a empresa do admin/canal antes de seguir', () => {
+    expect(ini).toBeGreaterThan(0);
+    expect(corpo).toContain('empresaDoAdmin(');
+    expect(corpo).toMatch(/lead\.company_id/);
+  });
+
+  it('a checagem vem ANTES de montar os dados iniciais do fechamento', () => {
+    const checagem = corpo.search(/lead\.company_id/);
+    const monta = corpo.indexOf('buildInitialData(');
+    expect(checagem).toBeGreaterThan(0);
+    expect(monta).toBeGreaterThan(0);
+    expect(checagem).toBeLessThan(monta);
   });
 });

@@ -236,7 +236,7 @@ const CAMPOS_ENDERECO: CampoContrato[] = [
   { id: 'end_bairro', label: 'Bairro', grupo: 'Endereço', tipo: 'texto', obrigatorio: true, coluna: 'neighborhood', ler: leEndereco('bairro'), gravar: gravaEndereco('bairro') },
   { id: 'end_cidade', label: 'Cidade', grupo: 'Endereço', tipo: 'texto', obrigatorio: true, coluna: 'city', ler: leEndereco('cidade'), gravar: gravaEndereco('cidade') },
   {
-    id: 'end_uf', label: 'UF', grupo: 'Endereço', tipo: 'select', coluna: 'uf',
+    id: 'end_uf', label: 'UF', grupo: 'Endereço', tipo: 'select', obrigatorio: true, coluna: 'uf',
     opcoes: [{ valor: 'DF', texto: 'DF' }, { valor: 'GO', texto: 'GO' }],
     ler: leEndereco('uf'), gravar: gravaEndereco('uf'),
   },

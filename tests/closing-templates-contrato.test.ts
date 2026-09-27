@@ -196,3 +196,48 @@ describe('renderContrato — disposições especiais com texto literal', () => {
     expect(html).toMatch(/100\s*%\s*mao-de-obra/);
   });
 });
+
+// Item de revisão: "nova ligação" imprimia "Unidade Consumidora nº a confirmar"
+// (o autopreenchimento grava uc_numero:'a confirmar' quando falta e não olhava
+// pro ligacao_nova). NUNCA pode sair "a confirmar" no contrato.
+describe('cláusula 1(b) — Unidade Consumidora / ligação nova', () => {
+  it('UC normal: mostra "Unidade Consumidora nº <número>"', () => {
+    const html = renderContrato(dadosFechamentoCamilaMesmaPessoa);
+    expect(html).toContain('Unidade Consumidora nº 10005936703');
+    expect(html).not.toMatch(/a confirmar/i);
+  });
+
+  it('ligação nova: NUNCA mostra "a confirmar" — mostra o texto de pedido de ligação nova', () => {
+    const dados = { ...dadosFechamentoCamilaMesmaPessoa, ligacao_nova: true, uc_numero: 'a confirmar' };
+    const html = renderContrato(dados);
+    expect(html).not.toMatch(/a confirmar/i);
+    expect(html).toContain('nova unidade consumidora');
+    expect(html).toContain('pedido de ligação nova junto à distribuidora');
+  });
+
+  it('ligação nova mesmo sem uc_numero nenhum (undefined) — mesma coisa', () => {
+    const dados = { ...dadosFechamentoCamilaMesmaPessoa, ligacao_nova: true, uc_numero: undefined };
+    const html = renderContrato(dados);
+    expect(html).not.toMatch(/a confirmar/i);
+    expect(html).toContain('pedido de ligação nova junto à distribuidora');
+  });
+});
+
+// Item de revisão: a cláusula 15.1 prometia "WhatsApp e e-mail nos contatos
+// informados no preâmbulo" mesmo quando o preâmbulo não tinha e-mail nem
+// telefone nenhum da CONTRATANTE (campos opcionais — ver contato() acima).
+describe('cláusula 15.1 — comunicações eletrônicas (contato no preâmbulo)', () => {
+  it('CONTRATANTE com e-mail/telefone: promete WhatsApp e e-mail do preâmbulo', () => {
+    const html = renderContrato(dadosFechamentoCamilaMesmaPessoa);
+    expect(html).toContain('WhatsApp e e-mail nos contatos informados no preâmbulo deste contrato');
+  });
+
+  it('CONTRATANTE sem e-mail e sem telefone: usa a alternativa (não promete contato que não existe)', () => {
+    const dados = JSON.parse(JSON.stringify(dadosFechamentoCamilaMesmaPessoa));
+    dados.contratante.email = '';
+    dados.contratante.telefone = '';
+    const html = renderContrato(dados);
+    expect(html).not.toContain('WhatsApp e e-mail nos contatos informados no preâmbulo');
+    expect(html).toContain('pelos meios de contato que as partes informarem por escrito');
+  });
+});

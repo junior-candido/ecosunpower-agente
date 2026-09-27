@@ -148,6 +148,14 @@ export function renderContrato(entrada: DadosFechamento): string {
   const nomeContratante = dados.contratante.tipo === 'PF' ? dados.contratante.nome : dados.contratante.razao_social;
   const cpfContratante = dados.contratante.tipo === 'PF' ? dados.contratante.cpf : dados.contratante.cnpj;
 
+  // Cláusula 15.1: só promete "WhatsApp e e-mail nos contatos do preâmbulo" quando
+  // o preâmbulo REALMENTE tem algum contato (e-mail ou telefone) da CONTRATANTE —
+  // senão fica prometendo um canal que o documento nunca informou.
+  const contratanteTemContato = !!(String(dados.contratante.email ?? '').trim() || String(dados.contratante.telefone ?? '').trim());
+  const canalComunicacao = contratanteTemContato
+    ? 'WhatsApp e e-mail nos contatos informados no preâmbulo deste contrato'
+    : 'pelos meios de contato que as partes informarem por escrito';
+
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -190,7 +198,7 @@ ${observacaoHtml}
 
 <p>1.1. Constitui objeto deste contrato a prestação dos seguintes serviços pela CONTRATADA:</p>
 <p>a) <strong>Elaboração de projeto elétrico</strong> de Sistema de Geração Distribuída Fotovoltaica de <strong>${sistema.kwp} kWp</strong>, sob modalidade de <strong>${modalidadeLabel(sistema.modalidade)}</strong>;</p>
-<p>b) <strong>Homologação</strong> do projeto junto à concessionária <strong>${dados.concessionaria}</strong> (Unidade Consumidora nº ${dados.uc_numero ?? '(a confirmar)'});</p>
+<p>b) <strong>Homologação</strong> do projeto junto à concessionária <strong>${dados.concessionaria}</strong> ${dados.ligacao_nova ? '(nova unidade consumidora — pedido de ligação nova junto à distribuidora)' : `(Unidade Consumidora nº ${dados.uc_numero})`};</p>
 <p>c) <strong>Fornecimento e instalação</strong> dos equipamentos descritos na Cláusula 9ª, no imóvel localizado em ${dados.endereco_instalacao.rua}, ${dados.endereco_instalacao.numero}, ${dados.endereco_instalacao.bairro}, ${dados.endereco_instalacao.cidade}-${dados.endereco_instalacao.uf}, CEP ${dados.endereco_instalacao.cep};</p>
 <p>d) <strong>Solicitação de vistoria, religação e ativação do sistema</strong> junto à concessionária, <strong>com acompanhamento até a efetiva troca do medidor</strong>;</p>
 <p>e) <strong>Anotação de Responsabilidade Técnica</strong> junto ao CREA/CFT, sob responsabilidade do Sr. ${CONTRATADA.representante_nome}, CREA/CFT nº ${CONTRATADA.representante_crea}.</p>
@@ -385,7 +393,7 @@ ${sistema.inversor.quantidade ? `<li><strong>Quantidade:</strong> ${sistema.inve
 
 <p>15.1. As comunicações entre as partes serão consideradas válidas e oficiais quando realizadas por:</p>
 <ul>
-<li>WhatsApp e e-mail nos contatos informados no preâmbulo deste contrato;</li>
+<li>${canalComunicacao};</li>
 <li>Carta com aviso de recebimento (AR) para os endereços indicados no preâmbulo.</li>
 </ul>
 <p>15.2. <strong>Aceites, aditivos e confirmações realizados via WhatsApp ou e-mail</strong> terão pleno valor probatório, conforme art. 10 da MP 2.200-2/2001 e art. 225 do Código Civil.</p>

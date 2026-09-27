@@ -127,6 +127,13 @@ describe('camposFaltando — os brancos que o Junior tem que completar', () => {
       expect(camposFaltando(def, {}).map((c) => c.id)).toContain('uc_numero');
     }
   });
+
+  it('UF do endereço é obrigatória — mesmo padrão dos outros campos de endereço (rua, número, bairro, cidade, CEP)', () => {
+    const fv = getContrato('fv')!;
+    const campo = fv.campos.find((c) => c.id === 'end_uf');
+    expect(campo?.obrigatorio).toBe(true);
+    expect(camposFaltando(fv, {}).map((c) => c.id)).toContain('end_uf');
+  });
 });
 
 describe('parseFormulario — dado de cadastro vai pro CLIENTE, dado do negócio vai pro contrato', () => {

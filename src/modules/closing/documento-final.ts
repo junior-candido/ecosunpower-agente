@@ -31,6 +31,12 @@ export interface DocumentoFinal {
   problemas: string[];
   /** Saiu do retrato congelado? Então, de quando e qual versão. */
   congelado: { congeladoEm: string; versao: number } | null;
+  /**
+   * A proposta usada já venceu (ISO de quando)? Null = no prazo ou sem proposta.
+   * A validade é só do link público — o contrato continua valendo — mas quem
+   * manda o documento (Eva, dashboard) avisa "conferir valores".
+   */
+  propostaExpiradaEm: string | null;
 }
 
 export async function montarDocumentoFinal(
@@ -70,7 +76,7 @@ export async function montarDocumentoFinal(
 
   const html = def.render(dados);
   const { ok, problemas } = validarDocumento({ tipo: def.tipo, dados: paraValidar, html });
-  return { def, dados, html, nome: r.nome || 'cliente', ok, problemas, congelado };
+  return { def, dados, html, nome: r.nome || 'cliente', ok, problemas, congelado, propostaExpiradaEm: r.propostaExpiradaEm };
 }
 
 /**

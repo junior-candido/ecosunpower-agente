@@ -90,6 +90,23 @@ describe('montarDocumentoFinal', () => {
     expect(doc!.html).not.toContain('28 de setembro de 2026');
   });
 
+  it('propostaExpiradaEm: null quando a proposta está no prazo (ou não tem proposta)', async () => {
+    const doc = await montarDocumentoFinal(fakeDb({ leads: [LEAD_COMPLETO] }), 'L1', 'fv');
+    expect(doc!.propostaExpiradaEm).toBeNull();
+  });
+
+  it('propostaExpiradaEm: devolve a data ISO de quando venceu — a validade da proposta é do LINK, o contrato continua valendo', async () => {
+    const propostas = [{
+      id: 'P1', lead_id: 'L1', company_id: 'emp-1', revoked: false, created_at: '2026-04-01T00:00:00Z',
+      expires_at: '2026-08-10T12:00:00Z',
+      dados_input: { potenciaKwp: 8.4, modalidade: 'autoconsumo_local', modulo: { fabricante: 'Trina', potenciaW: 700, quantidade: 12 }, inversor: { fabricante: 'Sungrow', modelo: 'X', potencia_kw: 5 }, valorTotalRs: 38500 },
+    }];
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-27T15:00:00Z')); // depois do vencimento
+    const doc = await montarDocumentoFinal(fakeDb({ leads: [LEAD_COMPLETO], propostas_publicas: propostas }), 'L1', 'fv');
+    expect(doc!.propostaExpiradaEm).toBe('2026-08-10T12:00:00Z');
+  });
+
   it('faltando dado → não ok, lista o que falta, mas ainda devolve o HTML (pra prévia)', async () => {
     const lead = { ...LEAD_COMPLETO, cpf_cnpj: null, rg: null, contrato_dados: null, forma_pagamento: null };
     const doc = await montarDocumentoFinal(fakeDb({ leads: [lead] }), 'L1', 'fv');

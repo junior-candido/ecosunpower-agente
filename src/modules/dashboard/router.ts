@@ -3686,7 +3686,19 @@ b.onclick=async function(){
       const { vincularPropostaAoLead } = await import('../closing/closing-data-fetcher.js');
       const ok = await vincularPropostaAoLead(bancoDoOperador(req as AuthedRequest, supabase), { propostaId, leadId: id, companyId: await empresaDoLead(req, id) });
       const viewer = (req as AuthedRequest).dashUser;
-      if (ok && viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'proposta_vinculada', valorNovo: propostaId });
+      // Audita os dois casos — não só o sucesso. A rejeição carrega só o MOTIVO
+      // (texto genérico, sem dado pessoal): a proposta pode não existir, já estar
+      // vinculada a outro lead, ou ser de outra empresa — nunca dado do cliente.
+      if (viewer) {
+        await audit(supabase, {
+          companyId: viewer.companyId,
+          userId: viewer.id,
+          entidade: 'lead',
+          entidadeId: id,
+          acao: ok ? 'proposta_vinculada' : 'proposta_vinculacao_rejeitada',
+          valorNovo: ok ? propostaId : 'rejeitada: proposta não encontrada, já vinculada ou de outra empresa',
+        });
+      }
       res.redirect(`/dashboard/leads/${id}/contrato-form?tipo=${encodeURIComponent(tipo)}&vinculo=${ok ? 'ok' : 'erro'}`);
     } catch (err) {
       console.error('[dashboard/contrato-vincular-proposta]', err);

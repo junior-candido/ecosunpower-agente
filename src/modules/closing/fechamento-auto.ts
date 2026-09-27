@@ -117,7 +117,7 @@ export function listarFaltando(dados: DadosFechamento, temProposta: boolean): st
 }
 
 /** A data de expiração, se já passou; senão null. */
-function propostaVencida(expira: unknown, agora: Date = new Date()): string | null {
+export function propostaVencida(expira: unknown, agora: Date = new Date()): string | null {
   const s = String(expira ?? '').trim();
   if (!s) return null;
   const t = Date.parse(s);

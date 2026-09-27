@@ -29,7 +29,8 @@ describe('router — a saída de contrato passa sempre pela trava', () => {
 // A Eva também entrega contrato (comando de admin "contrato <nome>"): o mesmo
 // documento final, a mesma trava. Nada de PDF do autopreenchimento cru.
 describe('index.ts (Eva) — a saída de contrato passa sempre pela trava', () => {
-  const src = readFileSync(join(process.cwd(), 'src', 'index.ts'), 'utf-8');
+  // Arquivo em CRLF (Windows) — normaliza pra "\n  }\n" achar o fim da função certo.
+  const src = readFileSync(join(process.cwd(), 'src', 'index.ts'), 'utf-8').replace(/\r\n/g, '\n');
   const corpoDe = (assinatura: string) => {
     const ini = src.indexOf(assinatura);
     expect(ini).toBeGreaterThan(0);
@@ -48,6 +49,20 @@ describe('index.ts (Eva) — a saída de contrato passa sempre pela trava', () =
     expect(trava).toBeLessThan(corpo.indexOf('renderHtmlToPdf('));
     expect(corpo).toContain('renderHtmlToPdf(doc.html)');
   });
+
+  // Review: proposta vencida continua valendo pro contrato, mas quem manda o
+  // documento pelo zap tem que avisar "conferir valores" — o dashboard já mostra
+  // esse aviso na tela; a Eva não avisava nada na legenda do PDF.
+  it('"contrato <nome>": avisa "proposta expirada" na legenda quando doc.propostaExpiradaEm existe', () => {
+    const corpo = corpoDe('async function tryHandleContratoRapido(');
+    expect(corpo).toContain('doc.propostaExpiradaEm');
+    expect(corpo).toMatch(/proposta expirada/i);
+    // o aviso entra na MESMA chamada que manda a legenda do documento
+    const idxAviso = corpo.search(/proposta expirada/i);
+    const idxSend = corpo.indexOf('sendDocumentById(');
+    expect(idxAviso).toBeGreaterThan(0);
+    expect(idxAviso).toBeLessThan(idxSend + 400); // aviso é montado perto do envio
+  });
 });
 
 // PII: o evento "bloqueado" (vai pro Elo/fluxo de eventos) guarda só o rótulo
@@ -60,6 +75,39 @@ describe('router — evento de bloqueio sem CPF', () => {
     const corpo = src.slice(ini, src.indexOf('\n  }\n', ini));
     const evento = corpo.slice(corpo.indexOf("'bloqueado'"), corpo.indexOf('res.status(422)'));
     expect(evento).toContain('problemasSemDados(');
+  });
+});
+
+// Review: vincular proposta órfã só auditava o SUCESSO — uma tentativa rejeitada
+// (proposta já vinculada, de outra empresa, ou inexistente) não deixava rastro
+// nenhum no audit_log. Agora audita os dois casos, mas a rejeição carrega só o
+// MOTIVO (texto genérico) — nunca nome, CPF, e-mail ou qualquer dado do cliente.
+describe('router — vincular proposta audita sucesso E rejeição, sem dado pessoal', () => {
+  // Arquivo em CRLF (Windows) — normaliza pra "\n  });\n" achar o fim da rota certo.
+  const src = readFileSync(join(process.cwd(), 'src', 'modules', 'dashboard', 'router.ts'), 'utf-8').replace(/\r\n/g, '\n');
+  const ini = src.indexOf("router.post('/leads/:id/contrato-vincular-proposta'");
+  const corpo = src.slice(ini, src.indexOf('\n  });\n', ini));
+
+  it('a rota existe e chama vincularPropostaAoLead', () => {
+    expect(ini).toBeGreaterThan(0);
+    expect(corpo).toContain('vincularPropostaAoLead(');
+  });
+
+  it('audita tanto ok=true quanto ok=false (não só o sucesso)', () => {
+    // conta quantas vezes "audit(" aparece FORA de um "if (ok" isolado — a forma
+    // mais simples de garantir cobertura dos dois casos é: ou uma única chamada
+    // fora de "if (ok && viewer)", ou duas chamadas (uma por ramo).
+    const somenteSucesso = /if\s*\(\s*ok\s*&&\s*viewer\s*\)\s*await audit\(/.test(corpo);
+    expect(somenteSucesso).toBe(false);
+    expect(corpo).toMatch(/audit\(/);
+  });
+
+  it('a rejeição grava só o MOTIVO — nunca nome/e-mail/CPF do cliente ou da proposta', () => {
+    // nenhum dos campos de dado pessoal do lead/proposta aparece dentro do bloco da rota
+    expect(corpo).not.toMatch(/cliente_nome/);
+    expect(corpo).not.toMatch(/\bnome\b\s*[:,]/);
+    expect(corpo).not.toMatch(/\bcpf\b/i);
+    expect(corpo).not.toMatch(/\bemail\b/i);
   });
 });
 

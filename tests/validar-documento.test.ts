@@ -74,6 +74,17 @@ describe('validarDocumento — contrato (fv)', () => {
     expect(r.problemas.join(' ')).toContain('Unidade consumidora');
   });
 
+  it('defesa em profundidade: "a confirmar" sobrando no texto do CONTRATO bloqueia, mesmo com os campos "passando"', () => {
+    const d = clone(COMPLETO);
+    d.ligacao_nova = true; // dispensa uc_numero — faltasUc não acusaria sozinho
+    d.uc_numero = undefined;
+    // Simula uma regressão no template: o HTML final ainda traz "a confirmar".
+    const html = '<p>Homologação (Unidade Consumidora nº a confirmar)</p>';
+    const r = validarDocumento({ tipo: 'fv', dados: d, html });
+    expect(r.ok).toBe(false);
+    expect(r.problemas.join(' ')).toMatch(/a confirmar/i);
+  });
+
   it('ligação nova: UC ainda não existe → não é exigida', () => {
     const d = clone(COMPLETO);
     d.uc_numero = undefined;
@@ -141,6 +152,17 @@ describe('validarDocumento — procuração', () => {
     const r = validarDocumento({ tipo: 'procuracao', dados: d, html: '<p>ok</p>' });
     expect(r.problemas.join(' ')).toContain('RG');
     expect(r.problemas.join(' ')).toContain('Unidade consumidora');
+  });
+
+  it('procuração pode legitimamente mostrar "(a confirmar)" na UC quando falta (sem ligação nova) — a defesa do "a confirmar" é só do CONTRATO (fv)', () => {
+    const d = clone(COMPLETO);
+    d.uc_numero = '';
+    const html = renderProcuracao(d);
+    expect(html).toMatch(/a confirmar/i); // texto de propósito nesse caso, não é bug
+    const r = validarDocumento({ tipo: 'procuracao', dados: d, html });
+    // já bloqueia por UC faltando (faltasUc) — mas não pelo texto "a confirmar"
+    expect(r.problemas.join(' ')).toContain('Unidade consumidora');
+    expect(r.problemas).not.toContain('O contrato ainda mostra "a confirmar" na Unidade Consumidora');
   });
 });
 

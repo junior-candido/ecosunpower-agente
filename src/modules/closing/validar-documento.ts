@@ -156,6 +156,12 @@ export function validarDocumento(entrada: {
     if (d.contratante_eh_titular === false) problemas.push(...faltasPessoa(d.contratante, 'de quem assina'));
     problemas.push(...faltasUc(d));
     problemas.push(...faltasVenda(d));
+    // Defesa em profundidade: o CONTRATO nunca pode sair com "a confirmar" na UC
+    // (diferente da procuração, que usa esse texto de propósito em ligação nova).
+    // Se isto disparar, o template regrediu — os campos já deveriam ter barrado antes.
+    if (/a confirmar/i.test(textoVisivel(html))) {
+      problemas.push('O contrato ainda mostra "a confirmar" na Unidade Consumidora');
+    }
   } else if (tipo === 'procuracao') {
     problemas.push(...faltasPessoa(d.titular_uc, 'do titular'));
     problemas.push(...faltasUc(d));
