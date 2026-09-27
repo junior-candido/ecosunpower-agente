@@ -108,7 +108,7 @@ import { audit } from './audit.js';
 import { registrarVenda } from '../vendas/registrar-venda.js';
 import { renderFecharVendaPage, type PropostaAberta } from './vendas-views.js';
 import { renderContratosPage, type ContratoCliente } from './contratos-views.js';
-import { renderContratoFormPage } from './contrato-form-views.js';
+import { renderContratoFormPage, renderDocBloqueadoPage } from './contrato-form-views.js';
 import type { SugestaoIa } from '../closing/revisar-contrato.js';
 import { CLIENTE_STATUSES } from './clientes-queries.js';
 import { can, podeDispararMensagens, usinaPertenceAoOperador } from './permissions.js';
@@ -3320,20 +3320,42 @@ b.onclick=async function(){
   function nomeDoArquivo(arquivo: string, nome: string): string {
     return `${arquivo}-${nome.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
   }
+  // 🚦 O documento que SAI (PDF/zap/Drive) passa pela trava: congelado vence (com
+  // a data do congelamento), e documento com "___", CPF inválido ou campo
+  // obrigatório vazio NÃO vira PDF — `pdf` volta null e `doc.problemas` diz o quê.
   async function gerarDocBuffer(
     leadId: string,
     tipoContrato: string,
-  ): Promise<{ pdf: Buffer; nome: string; arquivo: string; faltando: number } | null> {
-    const tipo = tipoDaCentral(tipoContrato);
-    const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
-    const { getContrato } = await import('../closing/contratos-registry.js');
-    const def = getContrato(tipo);
-    if (!def) return null;
-    const r = await montarFechamentoAuto(supabase, leadId, tipo);
-    if (!r) return null;
+  ): Promise<{ doc: import('../closing/documento-final.js').DocumentoFinal; pdf: Buffer | null } | null> {
+    const { montarDocumentoFinal } = await import('../closing/documento-final.js');
+    const doc = await montarDocumentoFinal(supabase, leadId, tipoDaCentral(tipoContrato));
+    if (!doc) return null;
+    if (!doc.ok) return { doc, pdf: null };
     const { renderHtmlToPdf } = await import('../closing/closing-render.js');
-    const pdf = await renderHtmlToPdf(def.render(r.dados));
-    return { pdf, nome: r.nome || 'cliente', arquivo: def.arquivo, faltando: r.faltando.length };
+    return { doc, pdf: await renderHtmlToPdf(doc.html) };
+  }
+  // A página "não saiu — falta isto" (status 422). Nunca um envio mudo com "___".
+  async function responderBloqueado(
+    req: Request,
+    res: Response,
+    leadId: string,
+    acao: 'pdf' | 'enviar' | 'drive',
+    tipoForm: string,
+    docs: Array<import('../closing/documento-final.js').DocumentoFinal>,
+  ): Promise<void> {
+    const bloqueados = docs.filter((d) => !d.ok);
+    await eventoContrato(req, leadId, tipoForm, 'bloqueado', {
+      acao,
+      problemas: bloqueados.flatMap((d) => d.problemas.map((p) => `${d.def.tipo}: ${p}`)),
+    });
+    res.status(422).send(renderDocBloqueadoPage({
+      leadId,
+      nome: docs[0]?.nome ?? 'cliente',
+      acao,
+      tipoForm,
+      blocos: bloqueados.map((d) => ({ documento: d.def.nome, problemas: d.problemas, congeladoEm: d.congelado?.congeladoEm ?? null })),
+      user: (req as AuthedRequest).dashUser,
+    }));
   }
   // 🧠 O cérebro (Elo) tem que saber de tudo: contrato gerado, mandado no zap,
   // salvo no Drive — datado, ligado ao lead. Best-effort: nunca derruba o fluxo.
@@ -3341,7 +3363,7 @@ b.onclick=async function(){
     req: Request,
     leadId: string,
     tipo: string,
-    acao: 'gerado' | 'enviado' | 'no_drive' | 'dados_conferidos' | 'ia_revisou' | 'congelado',
+    acao: 'gerado' | 'enviado' | 'no_drive' | 'dados_conferidos' | 'ia_revisou' | 'congelado' | 'bloqueado',
     payload: Record<string, unknown> = {},
   ): Promise<void> {
     await registrarEvento(supabase, {
@@ -3359,12 +3381,14 @@ b.onclick=async function(){
       if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
       if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
       const tipo = tipoDaCentral(req.query.tipo ?? tipoPadrao);
-      const doc = await gerarDocBuffer(id, tipo);
-      if (!doc) return res.status(404).send('Lead não encontrado');
-      await eventoContrato(req, id, tipo, 'gerado', { campos_em_branco: doc.faltando });
+      const gerado = await gerarDocBuffer(id, tipo);
+      if (!gerado) return res.status(404).send('Lead não encontrado');
+      const { doc, pdf } = gerado;
+      if (!pdf) return responderBloqueado(req, res, id, 'pdf', doc.def.tipo, [doc]);
+      await eventoContrato(req, id, tipo, 'gerado', { congelado: !!doc.congelado, data_documento: doc.dados.data_documento });
       res.type('application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${nomeDoArquivo(doc.arquivo, doc.nome)}"`);
-      res.send(doc.pdf);
+      res.setHeader('Content-Disposition', `inline; filename="${nomeDoArquivo(doc.def.arquivo, doc.nome)}"`);
+      res.send(pdf);
     } catch (err) {
       console.error('[dashboard/doc-pdf]', err);
       res.status(500).send(`<h2>Erro ao gerar</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -3422,23 +3446,39 @@ b.onclick=async function(){
       if (!def) return res.status(400).send('Tipo de contrato desconhecido');
       if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
 
-      const { montarFechamentoAuto, completarComPlaceholders } = await import('../closing/fechamento-auto.js');
-      const { deepMerge } = await import('../closing/closing-assistant.js');
-      const r = await montarFechamentoAuto(supabase, id, def.tipo);
-      if (!r) return res.status(404).send('Lead não encontrado');
+      const { montarDocumentoFinal, inserirAvisoNaPrevia } = await import('../closing/documento-final.js');
+      const doc = await montarDocumentoFinal(supabase, id, def.tipo);
+      if (!doc) return res.status(404).send('Lead não encontrado');
 
-      let dados = r.dados;
+      // GET: EXATAMENTE o que sai no PDF (o congelado, se houver) + os problemas
+      // que travam a saída, numa faixa vermelha no topo. A prévia nunca trava.
+      let html = inserirAvisoNaPrevia(doc.html, { problemas: doc.problemas, congelado: doc.congelado });
       if (req.method === 'POST' && req.body) {
         // o que está DIGITADO na tela (mesmo sem salvar) entra por cima, só pra ver
-        const naTela = dadosDaTela(def, req.body);
-        dados = completarComPlaceholders(deepMerge(r.cru as any, naTela as any));
+        const { montarFechamentoAuto, completarComPlaceholders } = await import('../closing/fechamento-auto.js');
+        const { deepMerge } = await import('../closing/closing-assistant.js');
+        const { validarDocumento } = await import('../closing/validar-documento.js');
+        const { hojeEmBrasilia } = await import('../closing/data-documento.js');
+        const r = await montarFechamentoAuto(supabase, id, def.tipo);
+        if (!r) return res.status(404).send('Lead não encontrado');
+        const cruTela = deepMerge(r.cru as any, dadosDaTela(def, req.body) as any);
+        const dados = { ...completarComPlaceholders(cruTela), data_documento: hojeEmBrasilia() };
+        const htmlTela = def.render(dados);
+        const { problemas } = validarDocumento({ tipo: def.tipo, dados: cruTela, html: htmlTela });
+        html = inserirAvisoNaPrevia(htmlTela, {
+          problemas,
+          congelado: null,
+          aviso: doc.congelado
+            ? 'Isto é a prévia do que está DIGITADO. O que sai no PDF, no zap e no Drive é a versão congelada — pra valer o que está na tela, salve e congele de novo.'
+            : undefined,
+        });
       }
 
       // O documento vai dentro de um quadro no painel: mesmo com os dados já
       // escapados no template, o quadro é trancado (nada de script, nada de rede).
       res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:");
       res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.type('html').send(def.render(dados));
+      res.type('html').send(html);
     } catch (err) {
       console.error('[dashboard/contrato-preview]', err);
       res.status(500).send('<p>Não consegui montar a prévia agora.</p>');
@@ -3704,17 +3744,20 @@ b.onclick=async function(){
         to = (lead as { phone?: string } | null)?.phone ?? null;
       }
       if (!to) return res.redirect(voltarDoc(req, id, 'envio=semzap'));
-      const doc = await gerarDocBuffer(id, tipo);
-      if (!doc) return res.redirect(voltarDoc(req, id, 'envio=erro'));
-      const filename = nomeDoArquivo(doc.arquivo, doc.nome);
-      const up = await meta.uploadMedia(doc.pdf, 'application/pdf', filename);
+      const gerado = await gerarDocBuffer(id, tipo);
+      if (!gerado) return res.redirect(voltarDoc(req, id, 'envio=erro'));
+      const { doc, pdf } = gerado;
+      // 🚦 Incompleto/inválido NÃO vai pro zap (nem pro do cliente, nem pro meu).
+      if (!pdf) return responderBloqueado(req, res, id, 'enviar', doc.def.tipo, [doc]);
+      const filename = nomeDoArquivo(doc.def.arquivo, doc.nome);
+      const up = await meta.uploadMedia(pdf, 'application/pdf', filename);
       // A legenda sai do REGISTRO: o aditivo chegava no zap do cliente anunciado
       // como "Segue o contrato".
       const { getContrato } = await import('../closing/contratos-registry.js');
       const defEnvio = getContrato(tipo);
       const caption = defEnvio ? `${defEnvio.emoji} Segue ${defEnvio.nome.toLowerCase()}` : 'Segue o documento 📄';
       await meta.sendDocumentById(to, up.mediaId, filename, caption);
-      await eventoContrato(req, id, tipo, 'enviado', { destino, campos_em_branco: doc.faltando });
+      await eventoContrato(req, id, tipo, 'enviado', { destino, congelado: !!doc.congelado, data_documento: doc.dados.data_documento });
       res.redirect(voltarDoc(req, id, `envio=ok-${destino}`));
     } catch (err) {
       console.error('[dashboard/enviar-doc]', err);
@@ -3858,9 +3901,6 @@ b.onclick=async function(){
       if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
       if (!(await leadDaEmpresa(req, id))) return res.status(404).send('Lead não encontrado');
       if (!options.salvarContratoNoDrive) return res.redirect(voltarDoc(req, id, 'drive=off'));
-      const { montarFechamentoAuto } = await import('../closing/fechamento-auto.js');
-      const info = await montarFechamentoAuto(supabase, id);
-      if (!info) return res.redirect(voltarDoc(req, id, 'drive=erro'));
       // O tipo que está na tela vai junto: o ADITIVO nunca era arquivado (o botão
       // salvava contrato+procuração chumbados).
       const tipoTela = tipoDaCentral(req.body?.tipo_contrato);
@@ -3869,14 +3909,23 @@ b.onclick=async function(){
         gerarDocBuffer(id, 'procuracao'),
         tipoTela !== 'fv' && tipoTela !== 'procuracao' ? gerarDocBuffer(id, tipoTela) : Promise.resolve(null),
       ]);
+      if (!contrato || !procuracao) return res.redirect(voltarDoc(req, id, 'drive=erro'));
+      // 🚦 Tudo ou nada: se QUALQUER documento está incompleto, nada vai pro Drive
+      // (a pasta do cliente não pode guardar contrato com "___").
+      const gerados = [contrato, procuracao, ...(extra ? [extra] : [])];
+      if (gerados.some((g) => !g.pdf)) {
+        return responderBloqueado(req, res, id, 'drive', tipoTela, gerados.map((g) => g.doc));
+      }
       await options.salvarContratoNoDrive({
-        nomeTitular: info.nome,
-        cpfTitular: (info.dados.titular_uc as { cpf?: string }).cpf ?? '',
-        version: 1,
-        contratoPdf: contrato?.pdf,
-        procuracaoPdf: procuracao?.pdf,
-        extras: extra ? [{ nome: extra.arquivo, pdf: extra.pdf }] : undefined,
-        dadosInputJson: JSON.stringify(info.dados),
+        nomeTitular: contrato.doc.nome,
+        cpfTitular: (contrato.doc.dados.titular_uc as { cpf?: string }).cpf ?? '',
+        // A versão de verdade (v1, v2... do contrato congelado) — o "1" fixo dava o
+        // mesmo nome pra versões diferentes do contrato na pasta do cliente.
+        version: contrato.doc.congelado?.versao ?? 1,
+        contratoPdf: contrato.pdf ?? undefined,
+        procuracaoPdf: procuracao.pdf ?? undefined,
+        extras: extra?.pdf ? [{ nome: extra.doc.def.arquivo, pdf: extra.pdf }] : undefined,
+        dadosInputJson: JSON.stringify(contrato.doc.dados),
       });
       await eventoContrato(req, id, tipoDaCentral(req.body?.tipo_contrato), 'no_drive', {});
       res.redirect(voltarDoc(req, id, 'drive=ok'));

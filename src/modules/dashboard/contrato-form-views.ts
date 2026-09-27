@@ -177,6 +177,10 @@ function congelar(page: ContratoFormInput): string {
       Valendo: <strong>${dinheiro(v.valor)}</strong> — ${escapeHtml(v.formaPagamento)}.
       Mudou alguma coisa? Faz um <strong>termo aditivo</strong> (lá em cima), que ele cita este contrato sozinho.
     </p>
+    <p class="text-sm text-emerald-900 mb-3">
+      📄 Gerar PDF, Mandar e Salvar no Drive (contrato e procuração) usam a versão congelada, com a data do congelamento.
+      Corrigiu algum dado aqui? <strong>Congele de novo</strong> — senão sai a versão antiga.
+    </p>
     ${botao('🔄 Congelar de novo (vira a versão seguinte)', 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50')}`);
 }
 
@@ -349,14 +353,14 @@ function avisos(page: ContratoFormInput): string {
   if (n > 0) {
     const nomes = page.faltando.map((c) => escapeHtml(c.label)).join(' · ');
     out += box('bg-amber-50 border-amber-300 text-amber-800',
-      `<strong>${n} campo(s) em branco.</strong> Completa aqui embaixo (o vermelho) e salva. Se deixar assim, o PDF gera do mesmo jeito — só que com uma linha em branco pra preencher à mão.<div class="mt-1 text-xs">${nomes}</div>`);
+      `<strong>${n} campo(s) em branco.</strong> Completa aqui embaixo (o vermelho) e salva. Enquanto faltar, <strong>Gerar PDF, Mandar e Salvar no Drive ficam travados</strong> — a prévia mostra o que falta.<div class="mt-1 text-xs">${nomes}</div>`);
   } else if (page.salvo) {
     out += box('bg-emerald-50 border-emerald-300 text-emerald-800', '✅ Salvo, e não falta nada. Pode gerar o PDF ou mandar no zap.');
   } else {
     out += box('bg-emerald-50 border-emerald-300 text-emerald-800', '✅ Está tudo preenchido. Pode gerar.');
   }
   if (page.salvo && n > 0) {
-    out += box('bg-slate-50 border-slate-300 text-slate-700', 'Salvei o que você preencheu. Os campos acima seguem em branco — pode gerar assim mesmo.');
+    out += box('bg-slate-50 border-slate-300 text-slate-700', 'Salvei o que você preencheu. Os campos acima seguem em branco — o documento só sai quando completar.');
   }
   if (!page.temProposta) {
     out += box('bg-slate-50 border-slate-300 text-slate-700', 'Esse cliente não tem proposta ligada — os dados da usina e o valor não vieram sozinhos. Preenche na mão aqui.');
@@ -507,4 +511,51 @@ export function renderContratoFormPage(page: ContratoFormInput): string {
   </script>`;
 
   return renderLayout({ active: 'contratos', title: `${def.nome} — ${page.nome}`, body, scripts, user: page.user as any });
+}
+
+// 🚫 O documento NÃO saiu (PDF, zap ou Drive) porque está incompleto/inválido.
+// Nunca um envio mudo com "___": o operador vê O QUE falta e volta pro formulário.
+export interface DocBloqueadoInput {
+  leadId: string;
+  nome: string;
+  acao: 'pdf' | 'enviar' | 'drive';
+  /** O tipo do formulário pra onde o link volta. */
+  tipoForm: string;
+  blocos: Array<{ documento: string; problemas: string[]; congeladoEm?: string | null }>;
+  user?: unknown;
+}
+
+const TITULO_BLOQUEIO: Record<DocBloqueadoInput['acao'], string> = {
+  pdf: 'O PDF não foi gerado',
+  enviar: 'O documento não foi enviado',
+  drive: 'Os documentos não foram salvos no Drive',
+};
+
+export function renderDocBloqueadoPage(page: DocBloqueadoInput): string {
+  const voltar = `/dashboard/leads/${encodeURIComponent(page.leadId)}/contrato-form?tipo=${encodeURIComponent(page.tipoForm)}`;
+  const titulo = page.acao === 'drive' ? 'Nada foi salvo no Drive' : TITULO_BLOQUEIO[page.acao];
+  const blocos = page.blocos.map((b) => {
+    const itens = b.problemas.map((p) => `<li>${escapeHtml(p)}</li>`).join('');
+    const congelado = b.congeladoEm
+      ? `<p class="mt-2 text-xs text-slate-600">📌 Este documento sai da versão <strong>congelada em ${dataHoraBR(b.congeladoEm)}</strong>. Corrija no formulário e <strong>congele de novo</strong> — é a versão congelada que é impressa.</p>`
+      : '';
+    return `<div class="mb-4">
+        <div class="font-semibold text-slate-900">${escapeHtml(b.documento)}</div>
+        <ul class="list-disc ml-5 mt-1 text-sm text-red-800">${itens}</ul>
+        ${congelado}
+      </div>`;
+  }).join('');
+  const body = `<div class="max-w-2xl mx-auto">
+    <section class="rounded-xl border-2 border-red-300 bg-red-50 p-5 mb-4">
+      <h1 class="text-lg font-bold text-red-800 mb-1">🚫 ${escapeHtml(titulo)} — ${escapeHtml(page.nome)}</h1>
+      <p class="text-sm text-red-900 mb-4">
+        O documento está incompleto ou com dado inválido. Pra não chegar no cliente com espaço em branco ou dado errado,
+        ${page.acao === 'drive' ? 'o documento não foi salvo no Drive' : page.acao === 'enviar' ? 'ele não foi enviado' : 'o PDF não foi gerado'}.
+        Corrija o que está abaixo e tente de novo:
+      </p>
+      ${blocos}
+      <a href="${voltar}" class="inline-block px-4 py-2 rounded-lg text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700">← Voltar pro formulário e completar</a>
+    </section>
+  </div>`;
+  return renderLayout({ active: 'contratos', title: `${titulo} — ${page.nome}`, body, user: page.user as any });
 }
