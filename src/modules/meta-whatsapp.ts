@@ -26,9 +26,16 @@ export interface MetaStatusUpdate {
   messageId: string;       // wamid do Meta
   status: 'sent' | 'delivered' | 'read' | 'failed';
   timestamp: Date;
-  recipientPhone: string;  // E.164 sem +
+  recipientPhone: string;  // E.164 sem + ('' quando a Meta omite — usuario com @username)
+  /** BSUID do destinatario (statuses[].recipient_user_id), quando vier. */
+  recipientUserId?: string;
   errorCode?: number;
   errorTitle?: string;
+}
+
+/** String nao-vazia (trim) ou undefined — pra campos opcionais do webhook. */
+function texto(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim() ? v.trim() : undefined;
 }
 
 export class MetaWhatsAppService {
@@ -358,7 +365,16 @@ export class MetaWhatsAppService {
         // metadata.phone_number_id = ID do numero que RECEBEU a msg. Base do
         // multi-tenant (fatia 1). Ausente em payloads antigos → undefined.
         const metadata = value.metadata as { phone_number_id?: string } | undefined;
-        return this.parseMessage(msg, profile?.name, metadata?.phone_number_id);
+        const parsed = this.parseMessage(msg, profile?.name, metadata?.phone_number_id);
+        if (!parsed) return null;
+        // BSUID (ver docs/whatsapp-bsuid.md). Aditivo: payload antigo = undefined.
+        const fromUserId = texto(msg.from_user_id) ?? texto(contact?.user_id);
+        const fromParentUserId = texto(msg.from_parent_user_id) ?? texto(contact?.parent_user_id);
+        const username = texto(profile?.username);
+        if (fromUserId) parsed.fromUserId = fromUserId;
+        if (fromParentUserId) parsed.fromParentUserId = fromParentUserId;
+        if (username) parsed.username = username;
+        return parsed;
       }
     }
     return null;
@@ -484,6 +500,7 @@ export class MetaWhatsAppService {
             status: (s.status as MetaStatusUpdate['status']) ?? 'sent',
             timestamp: new Date(Number(s.timestamp ?? 0) * 1000),
             recipientPhone: (s.recipient_id as string) ?? '',
+            ...(texto(s.recipient_user_id) ? { recipientUserId: texto(s.recipient_user_id) } : {}),
             errorCode: firstErr ? Number(firstErr.code) : undefined,
             errorTitle: firstErr ? String(firstErr.title) : undefined,
           });

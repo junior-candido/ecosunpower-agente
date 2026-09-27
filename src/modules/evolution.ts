@@ -20,6 +20,14 @@ export interface IncomingMessage {
   // webhook WABA). Base do multi-tenant: mapeia pro company_id via companies.
   // waba_phone_number_id (migration 081). So o canal WABA preenche.
   phoneNumberId?: string;
+  // BSUID (business-scoped user ID) da Meta — so o canal WABA preenche.
+  // Formato 'BR.1234…' / 'US.1349…'. Quando o usuario esconde o telefone atras
+  // de um @username, a Meta OMITE `from`: ai `from` fica '' e so sobra isto.
+  // NUNCA copie o BSUID pra `from` (from e sempre telefone). Ver docs/whatsapp-bsuid.md.
+  fromUserId?: string;
+  fromParentUserId?: string;
+  /** @username do WhatsApp (contacts[0].profile.username), quando existe. */
+  username?: string;
   // Click-to-WhatsApp Ad (CTWA) referral. Presente APENAS na 1a msg do lead
   // que veio clicando num anuncio Meta. Permite mapping ad_id -> template
   // pra A/B test sem precisar de tag no body do anuncio.

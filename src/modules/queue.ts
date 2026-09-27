@@ -15,6 +15,11 @@ export interface QueueMessage {
   // partir do phone_number_id que recebeu a msg. Opcional: jobs antigos na
   // fila (sem esse campo) continuam parseando → o consumidor cai em EcoSun.
   companyId?: string;
+  // BSUID da Meta (so WABA). Opcionais: jobs antigos na fila seguem validos.
+  // `from` continua sendo SEMPRE telefone. Ver docs/whatsapp-bsuid.md.
+  fromUserId?: string;
+  fromParentUserId?: string;
+  username?: string;
   // CTWA referral (Click-to-WhatsApp Ad) — preenchido apenas na 1a msg do
   // lead que veio clicando num anuncio Meta. Permite mapping ad_id->template.
   referral?: {
