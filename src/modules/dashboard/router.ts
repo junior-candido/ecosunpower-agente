@@ -113,6 +113,8 @@ import type { SugestaoIa } from '../closing/revisar-contrato.js';
 import { CLIENTE_STATUSES } from './clientes-queries.js';
 import { can, podeDispararMensagens, usinaPertenceAoOperador } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
+import { pastaDaEmpresa, filtrarPastasDaEmpresa } from './pasta-da-empresa.js';
+import { EMPRESA_CASA as EMPRESA_PADRAO_PASTA } from './canal-envio.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
 import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } from './blog-views.js';
 import { renderEmailPage } from './email-views.js';
@@ -6206,10 +6208,23 @@ b.onclick=async function(){
   const PASTA_PUBLIC_BASE = process.env.PROPOSAL_PUBLIC_BASE_URL ?? 'https://propostas.ecosunpower.eng.br';
   const SECAO_IDS = new Set<string>(SECOES.map((s) => s.id));
 
+  // 27/09/2026: toda rota /pastas/:id confere se a pasta é da empresa de quem
+  // está logado. Alheia ou inexistente → o MESMO 404 (não revela que existe).
+  const empresaDoOperador = (req: Request): string =>
+    (req as AuthedRequest).dashUser?.companyId ?? EMPRESA_PADRAO_PASTA;
+  async function pastaDoOperador(req: Request, res: Response): Promise<any | null> {
+    const id = String(req.params.id ?? '');
+    if (!UUID_RE.test(id)) { res.status(400).send('UUID inválido'); return null; }
+    const pasta = await pastaDaEmpresa(supabase, id, empresaDoOperador(req));
+    if (!pasta) { res.status(404).send('Pasta não encontrada'); return null; }
+    return pasta;
+  }
+
   // Lista + form "abrir pasta"
-  router.get('/pastas', async (_req: Request, res: Response) => {
-    const [rows, clientes, comServico] = await Promise.all([
-      supabaseService.listPastasCliente(),
+  router.get('/pastas', async (req: Request, res: Response) => {
+    const companyId = empresaDoOperador(req);
+    const [todas, clientes, comServico] = await Promise.all([
+      supabaseService.listPastasCliente(400),   // filtra por empresa depois: folga pro tenant
       supabaseService.listClientesByStatus(
         ['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido'],
         { ord: 'nome' }, 200, 0, true,
@@ -6223,7 +6238,18 @@ b.onclick=async function(){
     for (const s of comServico) {
       if (!porId.has(s.id)) porId.set(s.id, s);
     }
-    const listaClientes = [...porId.values()].sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'pt-BR'));
+    // Só pastas e clientes da empresa de quem está logado (27/09/2026).
+    const rows = filtrarPastasDaEmpresa(todas, companyId);
+    const idsCandidatos = [...porId.keys()];
+    const idsDaEmpresa = new Set<string>();
+    for (let i = 0; i < idsCandidatos.length; i += 100) {   // lotes: URL do PostgREST não estoura
+      const { data } = await supabase.from('leads').select('id')
+        .in('id', idsCandidatos.slice(i, i + 100)).eq('company_id', companyId);
+      for (const l of (data ?? []) as Array<{ id: string }>) idsDaEmpresa.add(l.id);
+    }
+    const listaClientes = [...porId.values()]
+      .filter((c) => idsDaEmpresa.has(c.id))
+      .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '', 'pt-BR'));
     const pastas = rows.map((r: any) => ({
       id: r.id, slug: r.slug, status: r.status, acessos: r.acessos,
       enviado_em: r.enviado_em, updated_at: r.updated_at,
@@ -6241,6 +6267,10 @@ b.onclick=async function(){
   router.post('/pastas', async (req: Request, res: Response) => {
     const leadId = String(req.body?.lead_id ?? '');
     if (!UUID_RE.test(leadId)) return res.status(400).send('Escolha um cliente');
+    // Só abre pasta de lead da própria empresa (27/09/2026).
+    const { data: leadDaEmpresa } = await supabase.from('leads').select('id')
+      .eq('id', leadId).eq('company_id', empresaDoOperador(req)).maybeSingle();
+    if (!leadDaEmpresa) return res.status(404).send('Cliente não encontrado');
     // R3: pasta só pra cliente com venda registrada. Se não tem, oferece registrar
     // na hora (valor · kWp · data) — mesma registrarVenda da Eva/Fechou!.
     const leadAtual = await supabaseService.getClienteByLeadId(leadId);
@@ -6283,9 +6313,8 @@ b.onclick=async function(){
   // Editor
   router.get('/pastas/:id', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
-    const pasta = await supabaseService.getPastaClienteById(id);
-    if (!pasta) return res.status(404).send('Pasta não encontrada');
+    const pasta = await pastaDoOperador(req, res);
+    if (!pasta) return;
     const lead = await supabaseService.getClienteByLeadId(pasta.lead_id);
     const rels = await supabaseService.listRelatoriosPosInstalacaoByLead(pasta.lead_id, 1);
     const { servicosDoLead } = await import('./servicos-store.js');
@@ -6316,7 +6345,7 @@ b.onclick=async function(){
     upload.array('arquivos', 60),   // era 20: entrega de obra com drone passa fácil disso
     async (req: Request, res: Response) => {
       const id = String(req.params.id ?? '');
-      if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+      if (!(await pastaDoOperador(req, res))) return;
       const secao = String(req.body?.secao ?? '');
       if (!SECAO_IDS.has(secao)) return res.status(400).send('Seção inválida');
 
@@ -6345,7 +6374,7 @@ b.onclick=async function(){
   // Remover arquivo
   router.post('/pastas/:id/arquivos/remover', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
     const r = await pastaService.removerArquivo(id, String(req.body?.storage_path ?? ''));
     if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2>`);
     res.redirect(303, `/dashboard/pastas/${id}`);
@@ -6355,7 +6384,7 @@ b.onclick=async function(){
   // serviços do lead — mesmo bucket, só referencia, sem re-upload)
   router.post('/pastas/:id/puxar-servicos', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
     const r = await pastaService.puxarFotosDosServicos(id, async (leadId) => {
       const { servicosDoLead, midiasDoServico } = await import('./servicos-store.js');
       const servicos = await servicosDoLead(supabase, leadId);
@@ -6374,7 +6403,7 @@ b.onclick=async function(){
   // Puxar fotos do r-pi
   router.post('/pastas/:id/puxar-rpi', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
     const r = await pastaService.puxarFotosDoRelatorio(id);
     if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/pastas/${id}">← voltar</a>`);
     res.redirect(303, `/dashboard/pastas/${id}`);
@@ -6383,7 +6412,7 @@ b.onclick=async function(){
   // Definir capa
   router.post('/pastas/:id/capa', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
     const r = await pastaService.definirCapa(id, String(req.body?.storage_path ?? ''));
     if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2>`);
     res.redirect(303, `/dashboard/pastas/${id}`);
@@ -6392,7 +6421,7 @@ b.onclick=async function(){
   // Salvar data de entrega + mensagem do zap
   router.post('/pastas/:id/dados', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
     const dataRaw = req.body?.data_entrega ? String(req.body.data_entrega) : null;
     if (dataRaw && !/^\d{4}-\d{2}-\d{2}$/.test(dataRaw)) return res.status(400).send('Data inválida');
     const r = await pastaService.atualizarDados(id, {
@@ -6406,7 +6435,7 @@ b.onclick=async function(){
   // Publicar
   router.post('/pastas/:id/publicar', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
     const r = await pastaService.publicar(id);
     if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/pastas/${id}">← voltar</a>`);
     res.redirect(303, `/dashboard/pastas/${id}`);
@@ -6420,7 +6449,7 @@ b.onclick=async function(){
   // pastas_cliente.dados_declaracao (migration 127) pra nao redigitar.
   router.post('/pastas/:id/declaracao', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
 
     const campos = ['trt', 'parecer', 'parecer_em', 'conclusao_em', 'padrao_entrada',
                     'uc', 'distribuidora', 'qualificacao', 'cidade'] as const;
@@ -6448,7 +6477,7 @@ b.onclick=async function(){
 
   router.post('/pastas/:id/enviar', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
     const sendText = options.sendText;
     if (!sendText) return res.status(500).send('sendText não configurado neste ambiente.');
 
@@ -6494,7 +6523,7 @@ b.onclick=async function(){
   // Excluir a pasta inteira (o link do cliente morre — confirmação forte na tela)
   router.post('/pastas/:id/excluir', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
+    if (!(await pastaDoOperador(req, res))) return;
     const r = await pastaService.excluirPasta(id);
     if (!r.ok) return res.status(400).send(`<h2>${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/pastas">← voltar</a>`);
     res.redirect(303, '/dashboard/pastas');
@@ -6503,9 +6532,8 @@ b.onclick=async function(){
   // Prévia (iframe com o HTML público em modo preview)
   router.get('/pastas/:id/preview', async (req: Request, res: Response) => {
     const id = String(req.params.id ?? '');
-    if (!UUID_RE.test(id)) return res.status(400).send('UUID inválido');
-    const pasta = await supabaseService.getPastaClienteById(id);
-    if (!pasta) return res.status(404).send('Pasta não encontrada');
+    const pasta = await pastaDoOperador(req, res);
+    if (!pasta) return;
     const lead = await supabaseService.getClienteByLeadId(pasta.lead_id);
     const view = await pastaService.resolverView(pasta, false);
     if (!view) return res.status(500).send('Erro montando prévia');
