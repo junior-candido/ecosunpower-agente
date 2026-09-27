@@ -19,7 +19,15 @@ describe('marcaDoRelatorio', () => {
     expect(m.nomeFantasia).toBe('Conquista Solar');
     expect(m.cor).toBe('#112233');
   });
-  it('logo em URL http(s) vai direto; javascript: e recusado', async () => {
+  it('logo so em http:// (sem TLS) vira null — o Puppeteer busca a URL no servidor', async () => {
+    const baixar = vi.fn();
+    expect((await marcaDoRelatorio({ ...tenant, logoStoragePath: 'http://cdn.x/logo.png' } as any, { baixarLogo: baixar })).logoSrc)
+      .toBeNull();
+    expect((await marcaDoRelatorio({ ...ecosun, logoStoragePath: 'http://cdn.x/logo.png' } as any, { baixarLogo: baixar })).logoSrc)
+      .toBeNull();
+    expect(baixar).not.toHaveBeenCalled();
+  });
+  it('logo em URL https vai direto; javascript: e recusado', async () => {
     expect((await marcaDoRelatorio({ ...tenant, logoStoragePath: 'https://cdn.x/logo.png' } as any, { baixarLogo: vi.fn() })).logoSrc)
       .toBe('https://cdn.x/logo.png');
     const baixar = vi.fn().mockResolvedValue(null);

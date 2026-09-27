@@ -8,7 +8,7 @@ import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.j
 
 export interface MarcaRelatorio {
   nomeFantasia: string;
-  /** data: URI ou URL http(s); null = escrever o nome da empresa. */
+  /** data: URI ou URL https; null = escrever o nome da empresa. */
   logoSrc: string | null;
   cor: string;
   telefone: string | null;
@@ -35,7 +35,8 @@ export async function marcaDoRelatorio(
   const casa = ehEcosun(e);
   const caminho = (e.logoStoragePath ?? '').trim();
   let logoSrc: string | null = null;
-  if (/^https?:\/\//i.test(caminho)) {
+  // Só https: o Puppeteer busca a URL no servidor; http:// (sem TLS) fica sem logo.
+  if (/^https:\/\//i.test(caminho)) {
     logoSrc = caminho;
   } else if (caminho && !/^[a-z]+:/i.test(caminho)) {
     const baixada = await deps.baixarLogo(caminho);
