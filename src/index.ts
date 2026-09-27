@@ -81,8 +81,6 @@ import {
   fetchByLeadId,
   searchLeadByName,
   buildInitialData,
-  renderContrato,
-  renderProcuracao,
   renderHtmlToPdf,
   findMissingRequired,
   humanizeMissing,
@@ -92,6 +90,7 @@ import {
   type DadosFechamento,
   type ClosingState,
 } from './modules/closing/index.js';
+import { prepararDocsFechar, leadIdDaSessao, manterLeadDaSessao } from './modules/closing/fechar-legado.js';
 import { google } from 'googleapis';
 import { templateParaAdMeta } from './modules/ctwa-template-mapping.js';
 import RedisModule from 'ioredis';
@@ -1448,7 +1447,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         ? (docsPedidos[0] === 'procuracao' ? 'procuração' : 'contrato')
         : 'contrato + procuração';
       if (missing.length === 0) {
-        await setClosingState(adminPhone, { stage: 'awaiting_confirm', data: initialData as DadosFechamento });
+        await setClosingState(adminPhone, { stage: 'awaiting_confirm', data: initialData as DadosFechamento, lead_id: leadId });
         if (metaWaba) {
           try {
             await metaWaba.sendInteractiveButtons(
@@ -1467,7 +1466,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
         }
         await sendText(adminPhone, `Bora fechar ${nome}. Já tenho tudo. Confirma "gerar" pra emitir ${docsLabel}.`);
       } else {
-        await setClosingState(adminPhone, { stage: 'collecting', data: initialData, pending_questions: missing });
+        await setClosingState(adminPhone, { stage: 'collecting', data: initialData, pending_questions: missing, lead_id: leadId });
         const bullets = humanizeMissing(missing);
         const corpo = `Bora fechar ${nome}. Achei os dados, falta:\n${bullets}\n\nPode mandar tudo junto.`;
         if (metaWaba) {
@@ -1505,9 +1504,21 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     try {
       const titularNome = dados.titular_uc.tipo === 'PF' ? dados.titular_uc.nome : dados.titular_uc.razao_social;
       const titularCpf = dados.titular_uc.tipo === 'PF' ? dados.titular_uc.cpf : dados.titular_uc.cnpj;
-      // descobrir leadId do estado se houver — buscar por telefone
-      const leadByPhone = await supabase.getLeadByPhone(adminPhone).catch(() => null);
-      const leadId = leadByPhone?.id ?? null;
+
+      // 🚦 A MESMA trava da central de contratos: incompleto/inválido não vira
+      // PDF, não sobe pro Drive e não grava fechamento. Volta pra coleta.
+      const preparado = prepararDocsFechar(dados);
+      if (!preparado.ok) {
+        await setClosingState(adminPhone, { stage: 'collecting', data: dados, pending_questions: [], ...(state.lead_id ? { lead_id: state.lead_id } : {}) });
+        const lista = preparado.problemas.map((p) => `• ${p}`).join('\n');
+        await sendText(adminPhone, `🚫 Não gerei — o documento está incompleto ou com dado inválido:\n${lista}\n\nManda o que falta (ex: "RG 1234567 SSP-DF") que eu refaço.`);
+        return;
+      }
+
+      // O lead do CLIENTE, guardado na sessão quando o /fechar começou por ele.
+      // Nunca o lead do telefone do admin: o "Aprovar" viraria "o contrato que
+      // vale" do admin. Sem lead na sessão → fechamento sem lead.
+      const leadId = leadIdDaSessao(state);
 
       const fechamentoId = await closingPersist.createFechamento({
         leadId,
@@ -1526,12 +1537,12 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       let procuracaoHtml: string | undefined;
       let procuracaoPdf: Buffer | undefined;
 
-      if (wantsContrato) {
-        contratoHtml = renderContrato(dados);
+      if (wantsContrato && preparado.contratoHtml) {
+        contratoHtml = preparado.contratoHtml;
         contratoPdf = await renderHtmlToPdf(contratoHtml);
       }
-      if (wantsProcuracao) {
-        procuracaoHtml = renderProcuracao(dados);
+      if (wantsProcuracao && preparado.procuracaoHtml) {
+        procuracaoHtml = preparado.procuracaoHtml;
         procuracaoPdf = await renderHtmlToPdf(procuracaoHtml);
       }
 
@@ -1649,7 +1660,7 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       return;
     }
     const data = (state as any).data ?? {};
-    await setClosingState(adminPhone, { stage: 'collecting', data, pending_questions: [] });
+    await setClosingState(adminPhone, { stage: 'collecting', data, pending_questions: [], ...(state.lead_id ? { lead_id: state.lead_id } : {}) });
     await sendText(adminPhone, '✏️ Beleza. Manda o que quer mudar (ex: "valor 42 mil", "RG 1234567 SSP-DF", "contrato no nome do marido").');
   }
 
@@ -1690,6 +1701,8 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
     if (state) {
       try {
         const result = await closingAssistant.processMessage(t, state);
+        // o lead do cliente atravessa as trocas de etapa da conversa
+        result.newState = manterLeadDaSessao(result.newState, state);
         if (result.newState.stage === 'cancelled') {
           await clearClosingState(from);
           await sendText(from, result.replyText);
