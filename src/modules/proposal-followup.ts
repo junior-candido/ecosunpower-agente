@@ -564,6 +564,8 @@ export class ProposalFollowupService {
   // Devolve: "5561987654321"
   private normalizarTelefone(input: string | null | undefined): string | null {
     if (!input) return null;
+    // Tem letra -> NUNCA é telefone (ex.: 'sem-telefone-<uuid>', migration 135).
+    if (/[a-z]/i.test(input)) return null;
     let digits = input.replace(/\D/g, '');
     if (digits.length === 0) return null;
     // Adiciona DDI 55 se nao comecar com ele

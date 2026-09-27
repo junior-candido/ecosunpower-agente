@@ -2,6 +2,7 @@ import express from 'express';
 import { loadConfig } from './config.js';
 import { EvolutionService } from './modules/evolution.js';
 import { MessageQueue } from './modules/queue.js';
+import { temTelefone, montarJobDaFila, processarMensagemSemTelefone, backfillWaUserId } from './modules/whatsapp-bsuid.js';
 import { criarTenantResolver, ECOSUN_COMPANY_ID } from './modules/tenant-resolver.js';
 import { criarEvolutionTenantResolver } from './modules/evolution-tenant.js';
 import { comCanal, canalExigeEvolution, canalAtual } from './modules/canal-contexto.js';
@@ -6998,6 +6999,10 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       default:
         console.log(`[router] Unknown message type "${msg.type}" from ${msg.from}`);
     }
+
+    // [BSUID fase 1] Guarda o ID Meta (e @username) no lead achado pelo
+    // telefone — DEPOIS da resposta, best-effort (nunca lança, nunca bloqueia).
+    await backfillWaUserId(dbMsg, msg, companyId);
     })); // comCanal + comEmpresaDe
   }, config.redisPassword);
 
@@ -7508,15 +7513,40 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
         const statuses = metaWaba.parseStatusUpdates(req.body);
         for (const s of statuses) {
           if (s.status === 'failed') {
-            console.warn(`[waba-status] ❌ FALHOU msg=${s.messageId} to=${s.recipientPhone} err=${s.errorCode}: ${s.errorTitle}`);
+            console.warn(`[waba-status] ❌ FALHOU msg=${s.messageId} to=${s.recipientPhone || s.recipientUserId || "?"} err=${s.errorCode}: ${s.errorTitle}`);
           } else {
-            console.log(`[waba-status] ${s.status} msg=${s.messageId} to=${s.recipientPhone}`);
+            console.log(`[waba-status] ${s.status} msg=${s.messageId} to=${s.recipientPhone || s.recipientUserId || "?"}`);
           }
         }
 
         // Mensagens recebidas
         const parsed = metaWaba.parseWebhook(req.body);
         if (!parsed) return; // pode ser status only ou tipo nao suportado
+
+        // 🚨 BSUID fase 1 (27/09/2026): usuario que escondeu o telefone atras de
+        // @username chega SEM `from`. Antes, o '' passava por todos os filtros e
+        // TODO MUNDO sem telefone virava UM lead com phone '' (LGPD). Agora NAO
+        // entra no fluxo da Eva: loga e avisa o admin da empresa dona. Ver
+        // docs/whatsapp-bsuid.md.
+        if (!temTelefone(parsed.from)) {
+          await processarMensagemSemTelefone(parsed, {
+            // Este alerta é caminho NOVO e isolado (nunca vira lead nem
+            // conversa): se `companyDoNumero` explodir, NÃO cai pro fallback
+            // de EcoSun do fluxo normal (isso mandaria texto de cliente de
+            // outro tenant pro admin errado) — só loga e não avisa ninguém.
+            resolverEmpresa: async (pnid) => (await tenantResolver
+              .companyDoNumero(pnid)
+              .catch(() => ({ companyId: null, motivo: 'erro' as const }))).companyId,
+            destinoAdmin: (cid) => destinoAdminDaEmpresa(config.engineerPhone, empresaDe(cid)),
+            nomeAssistente: (cid) => empresaDe(cid).nomeAtendente,
+            adquirirTrava: async (chave) => {
+              const { acquireAlertLock } = await import('./modules/eva-alerts.js');
+              return acquireAlertLock(supabase.getClient(), chave);
+            },
+            enviar: (cid, to, texto) => comEmpresaDe(cid, () => comCanal({ companyId: cid }, () => sendText(to, texto))),
+          });
+          return;
+        }
 
         // Filtra grupos (numero >15 chars normalmente)
         if (parsed.from.includes('-') || parsed.from.length > 15) {
@@ -7560,18 +7590,8 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
 
         console.log(`[waba] 📥 Mensagem recebida de ${parsed.from} (${parsed.type}) empresa=${companyId.slice(0, 8)}: ${parsed.content.slice(0, 80)}`);
 
-        await queue.addMessage({
-          type: parsed.type,
-          from: parsed.from,
-          content: parsed.content,
-          timestamp: parsed.timestamp.toISOString(),
-          messageId: parsed.messageId,
-          pushName: parsed.pushName,
-          caption: parsed.caption,
-          mimeType: parsed.mimeType,
-          referral: parsed.referral,
-          companyId,
-        });
+        // Mesmos campos de sempre + BSUID/username (opcionais) pro backfill.
+        await queue.addMessage(montarJobDaFila(parsed, companyId));
       } catch (err) {
         console.error('[waba] Webhook processing error:', (err as Error).message);
       }

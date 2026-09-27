@@ -60,6 +60,10 @@ describe('telefoneParaEnvio', () => {
   it('formato não reconhecido volta só com os dígitos (não inventa)', () => {
     expect(telefoneParaEnvio('123456789')).toBe('123456789');
   });
+  it('valor com letra (sem-telefone-<uuid>, migration 135) → null, nunca extrai dígito do uuid', () => {
+    expect(telefoneParaEnvio('sem-telefone-123e4567-e89b-12d3-a456-426614174000')).toBeNull();
+    expect(telefoneParaEnvio('BR.13491208655302741918')).toBeNull();
+  });
 });
 
 describe('variantesTelefone — formas SEM o 55 (regressao 19/09/2026)', () => {

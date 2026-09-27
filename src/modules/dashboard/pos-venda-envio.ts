@@ -24,6 +24,10 @@ export function componenteNome(nome: string): TemplateComponent[] {
 
 /** Telefone no formato E.164 sem '+' (ex: 5561999990000). */
 export function normalizarTelefone(phone: string): string {
+  // Tem letra -> NUNCA é telefone (ex.: 'sem-telefone-<uuid>', migration 135).
+  // Sem esta trava, replace(/\D/g,'') sobrava com os dígitos do uuid e podia
+  // virar sem querer um "telefone" que passa no `if (!to)` do caller.
+  if (/[a-z]/i.test(phone || '')) return '';
   const d = (phone || '').replace(/\D/g, '');
   if (!d) return '';
   return d.startsWith('55') ? d : '55' + d;

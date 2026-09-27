@@ -348,7 +348,12 @@ export async function registrarEventosMinimos(
 // como esta. Resolve casos como "+55 61 98765-4321", "061 98765-4321",
 // "0061 98765-4321" e fixo "61 3321-4567".
 export function normalizeBrazilianPhone(raw: string): string | null {
-  const digits = raw.replace(/\D/g, '');
+  // Tem letra -> NUNCA é telefone (ex.: 'sem-telefone-<uuid>', migration 135,
+  // ou BSUID 'BR.1234...'). Sem esta trava, o replace(/\D/g,'') abaixo sobra
+  // com os dígitos do meio do uuid/BSUID e podia virar sem querer um
+  // "telefone" de 10-13 dígitos válido pro resto da função.
+  if (/[a-z]/i.test(raw ?? '')) return null;
+  const digits = (raw ?? '').replace(/\D/g, '');
   if (digits.length < 10) return null;
 
   let normalized = digits;
