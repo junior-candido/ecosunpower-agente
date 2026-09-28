@@ -1,12 +1,23 @@
 // kanban-views.ts
 // View do funil em kanban: colunas por etapa, cards arrastáveis (SortableJS via CDN).
 // Arrastar um card pra outra coluna dispara POST /dashboard/leads/:id/set-etapa.
+//
+// Renovação do miolo, R4 (28/09/2026): colunas e cartões no padrão do Command
+// Center (ui/kanban.ts). O que o Sortable procura continua igual: a lista tem
+// a classe `kanban-list` + data-etapa, o cartão tem `kanban-card` +
+// data-lead-id, o link do nome tem draggable="false" e o script é o mesmo.
+// Celular: colunas com rolagem horizontal e encaixe (D7 ainda não decidida →
+// sem o "Mover para…").
 
 import { renderLayout, escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { KanbanCard } from './leads-queries.js';
-import { ORDEM_ETAPAS, etapaLabel, etapaCor } from './pipeline.js';
+import { ORDEM_ETAPAS, etapaLabel } from './pipeline.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
+import { cabecalhoPagina, chip, pilulaStatus } from './ui/componentes.js';
+import { colunaKanban, cartaoKanban } from './ui/kanban.js';
+import { corEtapa } from './ui/etapas.js';
+import { temaDaTela } from './ui/tema.js';
 
 // "há X" desde a última atividade. Inline simples (mesmo formato do leads-views).
 function timeAgo(iso: string | null): string {
@@ -23,66 +34,58 @@ function timeAgo(iso: string | null): string {
   return `${months}mês`;
 }
 
-// SLA "que chama atenção": borda lateral colorida sempre + chip só quando precisa
-// (verde fica limpo). Vermelho ainda ganha o pulso (classe sla-urgent no card).
-const SLA_STYLE: Record<'verde' | 'ambar' | 'vermelho', { border: string; chip: string }> = {
-  verde:    { border: 'border-l-emerald-400', chip: '' },
-  ambar:    { border: 'border-l-amber-400',   chip: '<span class="inline-flex items-center gap-0.5 text-[9px] font-bold text-amber-700 bg-amber-100 rounded px-1 leading-tight flex-shrink-0">⏳ vence</span>' },
-  vermelho: { border: 'border-l-rose-500',    chip: '<span class="inline-flex items-center gap-0.5 text-[9px] font-bold text-rose-700 bg-rose-100 rounded px-1 leading-tight flex-shrink-0">⚠ vencida</span>' },
+// SLA: borda lateral colorida sempre + pílula só quando precisa (verde fica
+// limpo). Vermelho ainda ganha o pulso (classe sla-urgent no cartão).
+const SLA: Record<'verde' | 'ambar' | 'vermelho', { tom: 'ok' | 'atencao' | 'critico'; selo: string }> = {
+  verde:    { tom: 'ok', selo: '' },
+  ambar:    { tom: 'atencao', selo: pilulaStatus('atencao', 'vence') },
+  vermelho: { tom: 'critico', selo: pilulaStatus('critico', 'vencida') },
 };
 
 function renderCard(l: KanbanCard): string {
-  const nome = escapeHtml(l.name ?? 'Sem nome');
-  const phone = escapeHtml(formatPhoneBR(l.phone));
-  const sla = SLA_STYLE[l.seloSla] ?? SLA_STYLE.verde;
-  const urgente = l.seloSla === 'vermelho' ? ' sla-urgent' : '';
-  // Card COMPACTO (2 linhas). Borda esquerda = SLA. Chip de prazo só no âmbar/vermelho.
-  return `
-    <div class="kanban-card bg-white border border-slate-200 border-l-[3px] ${sla.border} rounded-md px-2 py-1.5 shadow-sm cursor-grab hover:shadow-md hover:border-indigo-300 transition${urgente}" data-lead-id="${escapeHtml(l.id)}" title="${nome} · ${phone}">
-      <div class="flex items-center gap-1.5">
-        <a href="/dashboard/leads/${escapeHtml(l.id)}" draggable="false" class="font-medium text-slate-800 hover:text-indigo-600 text-xs leading-tight truncate flex-1">${nome}</a>
-        <span class="text-[10px] text-slate-400 flex-shrink-0">${timeAgo(l.updated_at)}</span>
-      </div>
-      <div class="flex items-center justify-between gap-1 mt-0.5">
-        <span class="text-[10px] text-slate-400 truncate">${phone}</span>
-        ${sla.chip}
-      </div>
-    </div>`;
+  const nome = l.name ?? 'Sem nome';
+  const phone = formatPhoneBR(l.phone);
+  const sla = SLA[l.seloSla] ?? SLA.verde;
+  return cartaoKanban({
+    classe: `kanban-card${l.seloSla === 'vermelho' ? ' sla-urgent' : ''}`,
+    dados: { 'lead-id': l.id },
+    titulo: nome,
+    href: `/dashboard/leads/${l.id}`,
+    tom: sla.tom,
+    direita: timeAgo(l.updated_at),
+    metaHtml: `<span>${escapeHtml(phone)}</span>${sla.selo}`,
+    dica: `${nome} · ${phone}`,
+  });
 }
 
 export function renderKanbanPage(grupos: Record<string, KanbanCard[]>, user?: DashUser): string {
   const colunas = ORDEM_ETAPAS.map((etapa) => {
     const cards = grupos[etapa] ?? [];
-    const corCabecalho = etapaCor(etapa);
-    const cardsHtml = cards.map(renderCard).join('') || `<div class="text-[11px] text-slate-400 italic py-3 text-center">vazio</div>`;
-    // Coluna estreita; o cabeçalho fica "sticky" e a lista de cards rola DENTRO
-    // da coluna (max-height pela altura do monitor) — não estica a página.
-    return `
-      <div class="kanban-col flex-shrink-0 w-48 bg-slate-100 rounded-lg p-1.5 flex flex-col" data-etapa="${escapeHtml(etapa)}">
-        <div class="flex items-center justify-between mb-1.5 px-0.5 sticky top-0">
-          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${corCabecalho} truncate">${escapeHtml(etapaLabel(etapa))}</span>
-          <span class="text-[10px] font-bold text-slate-500 bg-white rounded-full px-1.5 py-0.5 flex-shrink-0">${cards.length}</span>
-        </div>
-        <div class="kanban-list flex flex-col gap-1.5 overflow-y-auto pr-0.5 min-h-[40px]" style="max-height: calc(100vh - 190px)" data-etapa="${escapeHtml(etapa)}">
-          ${cardsHtml}
-        </div>
-      </div>`;
+    return colunaKanban({
+      titulo: etapaLabel(etapa),
+      contagem: cards.length,
+      cor: corEtapa(etapa),
+      classeColuna: 'kanban-col',
+      dadosColuna: { etapa },
+      classeLista: 'kanban-list',
+      dados: { etapa },
+      cartoesHtml: cards.map(renderCard).join(''),
+      vazio: 'vazio',
+    });
   }).join('');
 
-  const body = `
-    <div class="w-full px-3 py-4">
-      <div class="flex items-center justify-between mb-3">
-        <div>
-          <h1 class="text-lg font-bold text-slate-900 leading-tight">Funil (Kanban)</h1>
-          <p class="text-[11px] text-slate-500">Arraste os cards entre as colunas. Os que <b class="text-rose-600">pulsam em vermelho</b> precisam de ação.</p>
-        </div>
-        <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
-          <a href="/dashboard/leads" class="px-3 py-1 bg-white text-slate-700 hover:bg-slate-50">Lista</a>
-          <a href="/dashboard/leads/kanban" class="px-3 py-1 bg-indigo-600 text-white">Kanban</a>
-        </div>
-      </div>
+  const total = ORDEM_ETAPAS.reduce((s, e) => s + (grupos[e]?.length ?? 0), 0);
+  const cabecalho = cabecalhoPagina({
+    trilha: [{ rotulo: 'Comercial' }, { rotulo: 'Funil' }],
+    titulo: 'Funil (Kanban)',
+    subtitulo: `${total} lead(s) no funil. Arraste os cartões entre as colunas. Os que pulsam em vermelho precisam de ação.`,
+    acoesHtml: `<div class="cc-chips">${chip({ rotulo: 'Lista', href: '/dashboard/leads' })}${chip({ rotulo: 'Kanban', href: '/dashboard/leads/kanban', ativo: true })}</div>`,
+  });
 
-      <div class="kanban-board flex gap-2 overflow-x-auto pb-2">
+  const body = `
+    <div class="cc-root cc-funil">
+      ${cabecalho}
+      <div class="cc-kb kanban-board">
         ${colunas}
       </div>
     </div>
@@ -94,6 +97,9 @@ export function renderKanbanPage(grupos: Record<string, KanbanCard[]>, user?: Da
       }
       .sla-urgent { animation: slaPulse 1.8s ease-in-out infinite; }
       @media (prefers-reduced-motion: reduce) { .sla-urgent { animation: none; box-shadow: 0 0 0 2px rgba(244,63,94,0.4); } }
+      .cc-funil .cc-kb-col{flex-basis:220px}
+      .cc-funil .cc-kb-card-m .cc-pill{padding:1px 7px;font-size:10.5px}
+      .cc-funil .sortable-ghost{opacity:.4}
     </style>
 
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"
@@ -122,5 +128,5 @@ export function renderKanbanPage(grupos: Record<string, KanbanCard[]>, user?: Da
       })();
     </script>`;
 
-  return renderLayout({ active: 'kanban', title: 'Funil (Kanban)', body, user });
+  return renderLayout({ active: 'kanban', title: 'Funil (Kanban)', body, user, dark: temaDaTela(user, 'claro') === 'escuro', largo: true });
 }

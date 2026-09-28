@@ -1,6 +1,7 @@
 import { renderLayout, escapeHtml, brl } from './views.js';
 import type { LeadCadenciaRow, CadenciaKpis, CadenciaStatus } from './cadencia-queries.js';
 import { normalizeBrazilianPhone } from '../meta-leadgen.js';
+import type { DashUser } from './permissions.js';
 
 const STATUS_LABELS: Record<CadenciaStatus, { label: string; color: string; bg: string }> = {
   aguardando:           { label: '⏳ Aguardando disparo', color: 'text-slate-700', bg: 'bg-slate-100' },
@@ -63,10 +64,12 @@ export interface CadenciaPageInput {
   rows: LeadCadenciaRow[];
   kpis: CadenciaKpis;
   filterStatus?: string;
+  /** R0: quem está vendo — a casca é a da empresa dele. */
+  user: DashUser | undefined;
 }
 
 export function renderCadenciaPage(input: CadenciaPageInput): string {
-  const { rows, kpis, filterStatus } = input;
+  const { rows, kpis, filterStatus, user } = input;
 
   const filtered = filterStatus
     ? rows.filter((r) => r.cadencia_status === filterStatus)
@@ -179,5 +182,5 @@ export function renderCadenciaPage(input: CadenciaPageInput): string {
     </div>
   `;
 
-  return renderLayout({ active: 'cadencia', title: 'Cadência', body });
+  return renderLayout({ active: 'cadencia', title: 'Cadência', body, user });
 }

@@ -135,6 +135,13 @@ export interface TabelaInput {
   linhas: Celula[][];
   hrefs?: Array<string | null | undefined>;
   vazio?: string;
+  /**
+   * Celular (renovação do miolo, R1): 'cartoes' vira cada linha num cartão
+   * (rótulo à esquerda, valor à direita; a 1ª coluna é o título do cartão);
+   * 'rolar' rola só a tabela, com a 1ª coluna fixa (tabelas técnicas largas).
+   * Sem a opção a saída é IDÊNTICA à de antes.
+   */
+  mobile?: 'cartoes' | 'rolar';
 }
 
 function celulaHtml(c: Celula, casas: number | undefined): string {
@@ -151,18 +158,23 @@ export function tabela(t: TabelaInput): string {
   const th = t.colunas
     .map((c) => `<th${c.alinhar === 'dir' ? ' class="cc-r"' : ''}>${escapeHtml(c.titulo)}</th>`)
     .join('');
+  const cartoes = t.mobile === 'cartoes';
   const tr = t.linhas.map((linha, i) => {
     const href = hrefSeguro(t.hrefs?.[i] ?? null);
     const tds = linha.map((cel, j) => {
       const col = t.colunas[j];
       const cls = [col?.alinhar === 'dir' ? 'cc-r' : '', col?.num ? 'cc-n' : ''].filter(Boolean).join(' ');
-      return `<td${cls ? ` class="${cls}"` : ''}>${celulaHtml(cel, col?.casas)}</td>`;
+      const rotulo = cartoes ? ` data-label="${escapeHtml(col?.titulo ?? '')}"` : '';
+      return `<td${cls ? ` class="${cls}"` : ''}${rotulo}>${celulaHtml(cel, col?.casas)}</td>`;
     }).join('');
     return href
       ? `<tr class="cc-tr-link" data-href="${escapeHtml(href)}" onclick="location.href=this.dataset.href">${tds}</tr>`
       : `<tr>${tds}</tr>`;
   }).join('');
-  return `<div class="cc-tbl-wrap"><table class="cc-tbl"><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table></div>`;
+  const wrap = t.mobile === 'cartoes' ? 'cc-tbl-wrap cc-tbl-cartoes'
+    : t.mobile === 'rolar' ? 'cc-tbl-wrap cc-tbl-rolar'
+    : 'cc-tbl-wrap';
+  return `<div class="${wrap}"><table class="cc-tbl"><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table></div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -232,7 +244,7 @@ export function estadoVazio(e: EstadoVazioInput = {}): string {
   const ic = e.icone ?? (tipo === 'construcao' ? 'hammer' : tipo === 'sem_dado' ? 'wifi-off' : 'check');
   return `<div class="cc-empty cc-empty-${tipo}${e.compacto ? ' cc-empty-sm' : ''}">
   <span class="cc-empty-ic">${icone(ic, 'sm')}</span>
-  <div><b>${escapeHtml(titulo)}</b>${e.texto ? `<p>${escapeHtml(e.texto)}</p>` : ''}</div>
+  <div><strong>${escapeHtml(titulo)}</strong>${e.texto ? `<p>${escapeHtml(e.texto)}</p>` : ''}</div>
 </div>`;
 }
 
@@ -280,4 +292,218 @@ export function cabecalhoPagina(c: CabecalhoInput): string {
 /** Filtro global (visual de "select"). Na fase A é só leitura: mostra o recorte real dos dados. */
 export function filtroGlobal(rotulo: string, valor: string, ic?: NomeIcone): string {
   return `<span class="cc-sel">${ic ? icone(ic, 'sm') : ''}<em>${escapeHtml(rotulo)}</em> ${escapeHtml(valor)}</span>`;
+}
+
+// ===========================================================================
+// Peças da RENOVAÇÃO DO MIOLO (R1, 28/09/2026). Mesma convenção: texto é
+// escapado aqui; campo `…Html` recebe HTML confiável (saída de componente ou
+// formulário montado pela própria tela).
+// ===========================================================================
+
+/** Nome de atributo aceito em `attrs`/`dados`: só letras, números e hífen. */
+const NOME_ATTR = /^[a-z][a-z0-9-]*$/i;
+
+function attrsHtml(attrs: Record<string, string | number | null | undefined> | undefined, prefixo = ''): string {
+  if (!attrs) return '';
+  return Object.entries(attrs)
+    .filter(([k, v]) => NOME_ATTR.test(k) && v !== null && v !== undefined)
+    .map(([k, v]) => ` ${prefixo}${k.toLowerCase()}="${escapeHtml(String(v))}"`)
+    .join('');
+}
+
+/** Link interno, âncora (#secao) ou http(s). O resto (javascript:, data:) some. */
+function hrefOuAncora(href: string | null | undefined): string | null {
+  if (href && /^#[\w-]*$/.test(href.trim())) return href.trim();
+  return hrefSeguro(href);
+}
+
+// ---------------------------------------------------------------------------
+// Botão
+// ---------------------------------------------------------------------------
+
+export interface BotaoInput {
+  rotulo: string;
+  /** Com href → <a>. Sem href → <button> (tipo padrão "button"). */
+  href?: string | null;
+  tipo?: 'submit' | 'button';
+  tom?: 'ouro' | 'normal' | 'critico' | 'fantasma';
+  tamanho?: 'sm';
+  icone?: NomeIcone;
+  /** name/value do <button> (ex.: name="modo" value="atualizar"). */
+  nome?: string;
+  valor?: string;
+  /** Atributos extras (onclick, title, disabled, form…) — valores escapados. */
+  attrs?: Record<string, string | number | null | undefined>;
+}
+
+/** Um jeito só de fazer botão. A ação principal da tela é o ÚNICO `tom:'ouro'`. */
+export function botao(b: BotaoInput): string {
+  const cls = ['cc-btn',
+    b.tom === 'ouro' ? 'cc-btn-gold' : b.tom === 'critico' ? 'cc-btn-crit' : b.tom === 'fantasma' ? 'cc-btn-ghost' : '',
+    b.tamanho === 'sm' ? 'cc-btn-sm' : '',
+  ].filter(Boolean).join(' ');
+  const conteudo = `${b.icone ? icone(b.icone, 'sm') : ''}${escapeHtml(b.rotulo)}`;
+  const extra = attrsHtml(b.attrs);
+  if (b.href !== undefined && b.href !== null) {
+    const href = hrefOuAncora(b.href);
+    return href
+      ? `<a class="${cls}" href="${escapeHtml(href)}"${extra}>${conteudo}</a>`
+      : `<span class="${cls}"${extra}>${conteudo}</span>`;
+  }
+  const nome = b.nome ? ` name="${escapeHtml(b.nome)}"` : '';
+  const valor = b.valor !== undefined ? ` value="${escapeHtml(b.valor)}"` : '';
+  return `<button type="${b.tipo === 'submit' ? 'submit' : 'button'}" class="${cls}"${nome}${valor}${extra}>${conteudo}</button>`;
+}
+
+// ---------------------------------------------------------------------------
+// Abas (links / âncoras — nunca rota nova)
+// ---------------------------------------------------------------------------
+
+export interface AbaItem { rotulo: string; href: string; ativo?: boolean; selo?: number | null }
+
+export function abas(a: { itens: AbaItem[]; rotuloNav?: string }): string {
+  const itens = a.itens.map((it) => {
+    const href = hrefOuAncora(it.href) ?? '#';
+    const on = it.ativo ? ' cc-aba-on' : '';
+    return `<a class="cc-aba${on}" href="${escapeHtml(href)}"${it.ativo ? ' aria-current="page"' : ''}>${escapeHtml(it.rotulo)}${selo(it.selo ?? null)}</a>`;
+  }).join('');
+  return `<nav class="cc-abas" aria-label="${escapeHtml(a.rotuloNav ?? 'Seções')}">${itens}</nav>`;
+}
+
+// ---------------------------------------------------------------------------
+// Chips de filtro (com contagem)
+// ---------------------------------------------------------------------------
+
+export interface ChipInput {
+  rotulo: string;
+  /** Contagem: 0 aparece ("0" é informação); null/undefined → sem número. */
+  valor?: number | null;
+  href?: string | null;
+  ativo?: boolean;
+  tom?: 'ok' | 'warn';
+}
+
+export function chip(c: ChipInput): string {
+  const cls = ['cc-chip', c.ativo ? 'cc-chip-on' : '', c.tom === 'ok' ? 'cc-chip-ok' : c.tom === 'warn' ? 'cc-chip-warn' : '']
+    .filter(Boolean).join(' ');
+  const num = temNumero(c.valor) ? ` <b>${escapeHtml(fmtNumero(c.valor))}</b>` : '';
+  const href = hrefSeguro(c.href);
+  const dentro = `${escapeHtml(c.rotulo)}${num}`;
+  return href
+    ? `<a class="${cls}" href="${escapeHtml(href)}"${c.ativo ? ' aria-current="true"' : ''}>${dentro}</a>`
+    : `<span class="${cls}">${dentro}</span>`;
+}
+
+/** Linha de chips (no celular rola na horizontal, numa linha só). */
+export function chipsFiltro(chips: ChipInput[]): string {
+  return `<div class="cc-chips cc-chips-rolar">${chips.map(chip).join('')}</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Célula com título + linha de baixo (cliente · cidade)
+// ---------------------------------------------------------------------------
+
+export function celulaDupla(titulo: string | null | undefined, sub?: string | null, href?: string | null): string {
+  const t = titulo && titulo.trim() ? escapeHtml(titulo) : SEM_DADO;
+  const h = hrefSeguro(href);
+  const topo = h ? `<a class="cc-dupla-t" href="${escapeHtml(h)}">${t}</a>` : `<span class="cc-dupla-t">${t}</span>`;
+  const baixo = sub && sub.trim() ? `<span class="cc-dupla-s">${escapeHtml(sub)}</span>` : '';
+  return `<div class="cc-dupla">${topo}${baixo}</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Barra de progresso (cc-bar) — 0 a 100 %, "—" sem dado
+// ---------------------------------------------------------------------------
+
+export function barra(pct: number | null | undefined, tom: 'ok' | 'warn' | 'crit' | 'ouro' = 'ok'): string {
+  if (!temNumero(pct)) return `<span class="cc-faint">${SEM_DADO}</span>`;
+  const v = Math.round(Math.max(0, Math.min(100, pct)));
+  const cls = tom === 'ok' ? 'cc-bar' : `cc-bar cc-bar-${tom}`;
+  return `<div class="${cls}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${v}"><i style="width:${v}%"></i></div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Aviso (?ok= / ?erro= depois de um POST)
+// ---------------------------------------------------------------------------
+
+export function aviso(a: { tom: 'ok' | 'erro' | 'info' | 'atencao'; texto: string }): string {
+  const ic: Record<typeof a.tom, NomeIcone> = { ok: 'check', erro: 'alert', info: 'bell', atencao: 'alert' };
+  return `<div class="cc-aviso cc-aviso-${a.tom}" role="${a.tom === 'erro' ? 'alert' : 'status'}">${icone(ic[a.tom], 'sm')}<span>${escapeHtml(a.texto)}</span></div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Paginação (mesmo limit/offset de hoje — quem monta a URL é o chamador)
+// ---------------------------------------------------------------------------
+
+export interface PaginacaoInput {
+  pagina: number;
+  totalPaginas: number;
+  limite: number;
+  /** Recebe o OFFSET da página de destino e devolve o href completo. */
+  hrefDe: (offset: number) => string;
+  /** Linha de contexto ("Mostrando 11–20 de 45"). */
+  resumo?: string;
+}
+
+export function paginacao(p: PaginacaoInput): string {
+  if (p.totalPaginas <= 1) return '';
+  const ant = p.pagina > 1 ? hrefSeguro(p.hrefDe((p.pagina - 2) * p.limite)) : null;
+  const prox = p.pagina < p.totalPaginas ? hrefSeguro(p.hrefDe(p.pagina * p.limite)) : null;
+  const link = (href: string | null, rel: 'prev' | 'next', txt: string) => href
+    ? `<a class="cc-btn cc-btn-sm" href="${escapeHtml(href)}" rel="${rel}">${txt}</a>`
+    : `<span class="cc-btn cc-btn-sm cc-btn-off" aria-disabled="true">${txt}</span>`;
+  return `<nav class="cc-pg" aria-label="Paginação">`
+    + `<span class="cc-pg-info">${p.resumo ? `${escapeHtml(p.resumo)} · ` : ''}Página ${p.pagina} de ${p.totalPaginas}</span>`
+    + `<span class="cc-sp"></span>${link(ant, 'prev', '← Anterior')}${link(prox, 'next', 'Próxima →')}</nav>`;
+}
+
+// ---------------------------------------------------------------------------
+// Linha de lista ("vence nos próximos dias", "hoje em campo")
+// ---------------------------------------------------------------------------
+
+export interface LinhaListaInput {
+  tom: Tom;
+  titulo: string;
+  meta?: string;
+  direitaHtml?: string;
+  href?: string | null;
+}
+
+export function linhaLista(l: LinhaListaInput): string {
+  const dentro = `${pontoStatus(l.tom)}<div class="cc-li-txt"><strong>${escapeHtml(l.titulo)}</strong>${l.meta ? `<small>${escapeHtml(l.meta)}</small>` : ''}</div>${l.direitaHtml ? `<div class="cc-li-d">${l.direitaHtml}</div>` : ''}`;
+  const href = hrefSeguro(l.href);
+  return href
+    ? `<a class="cc-li" href="${escapeHtml(href)}">${dentro}</a>`
+    : `<div class="cc-li">${dentro}</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// "⋯ Mais ações" — <details> sem JavaScript que GUARDA os formulários de hoje
+// ---------------------------------------------------------------------------
+
+export function menuAcoes(m: { rotulo?: string; itensHtml: string; alinhar?: 'dir' }): string {
+  return `<details class="cc-mais${m.alinhar === 'dir' ? ' cc-mais-dir' : ''}"><summary class="cc-btn">${escapeHtml(m.rotulo ?? '⋯ Mais ações')}</summary><div class="cc-mais-menu">${m.itensHtml}</div></details>`;
+}
+
+// ---------------------------------------------------------------------------
+// Avatar (bolinha dourada com a inicial)
+// ---------------------------------------------------------------------------
+
+export function avatar(nome: string | null | undefined): string {
+  const inicial = (nome ?? '').trim().charAt(0).toUpperCase() || '?';
+  return `<span class="cc-avatar" aria-hidden="true">${escapeHtml(inicial)}</span>`;
+}
+
+// ---------------------------------------------------------------------------
+// Trilha de etapas (bolinhas ligadas: Contrato → … → Monitoramento)
+// ---------------------------------------------------------------------------
+
+export function trilhaEtapas(etapas: string[], indiceAtual: number): string {
+  if (etapas.length === 0) return '';
+  const atual = Number.isFinite(indiceAtual) ? Math.trunc(indiceAtual) : -1;
+  const itens = etapas.map((e, i) => {
+    const cls = i < atual ? 'cc-trl-feita' : i === atual ? 'cc-trl-atual' : '';
+    return `<li${cls ? ` class="${cls}"` : ''}${i === atual ? ' aria-current="step"' : ''}><span>${escapeHtml(e)}</span></li>`;
+  }).join('');
+  return `<ol class="cc-trl">${itens}</ol>`;
 }

@@ -1,0 +1,1198 @@
+{
+ "normal": {
+  "formularios": [
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/arquivar",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/atividade",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "descricao",
+      "type": "text"
+     },
+     {
+      "name": "tipo",
+      "type": "select"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/delete",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/edit-name",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "name",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/fechou",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "data",
+      "type": "date"
+     },
+     {
+      "name": "tipo",
+      "type": "select"
+     },
+     {
+      "name": "valor",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/mark-lost",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "notes",
+      "type": "textarea"
+     },
+     {
+      "name": "reason",
+      "type": "select"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/opt-out",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/pause-eva",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/start-cadence",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "due_at",
+      "type": "datetime-local"
+     },
+     {
+      "name": "prioridade",
+      "type": "select"
+     },
+     {
+      "name": "titulo",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t1/adiar",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t1/concluir",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t2/adiar",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t2/concluir",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/logout",
+    "enctype": "",
+    "campos": []
+   }
+  ],
+  "fetches": [
+   "'/dashboard/leads/' + leadId + '/ia-copiloto'"
+  ],
+  "links": [
+   "/dashboard/assinaturas",
+   "/dashboard/atencao",
+   "/dashboard/cadencia",
+   "/dashboard/cerebro",
+   "/dashboard/clientes",
+   "/dashboard/clientes/11111111-1111-1111-1111-111111111111",
+   "/dashboard/cobrar",
+   "/dashboard/cockpit",
+   "/dashboard/command-center",
+   "/dashboard/conhecimento",
+   "/dashboard/contratos",
+   "/dashboard/demonstrativos",
+   "/dashboard/empresas",
+   "/dashboard/energia",
+   "/dashboard/financeiro",
+   "/dashboard/fiscal",
+   "/dashboard/home",
+   "/dashboard/leads",
+   "/dashboard/leads/11111111-1111-1111-1111-111111111111",
+   "/dashboard/leads/11111111-1111-1111-1111-111111111111/contrato-form?tipo=fv",
+   "/dashboard/leads/kanban",
+   "/dashboard/lojas",
+   "/dashboard/manutencao",
+   "/dashboard/marketing",
+   "/dashboard/marketing/blog",
+   "/dashboard/marketing/email",
+   "/dashboard/medicao",
+   "/dashboard/monitoramento",
+   "/dashboard/pastas",
+   "/dashboard/pos-venda",
+   "/dashboard/predio",
+   "/dashboard/propostas",
+   "/dashboard/propostas/novo?lead_id=11111111-1111-1111-1111-111111111111",
+   "/dashboard/recados",
+   "/dashboard/rh/busca",
+   "/dashboard/rh/candidatos",
+   "/dashboard/rh/vagas",
+   "/dashboard/servicos",
+   "/dashboard/servicos/s1",
+   "/dashboard/tv",
+   "/dashboard/usinas/kanban",
+   "/dashboard/usuarios",
+   "/dashboard/vendas/fechar"
+  ],
+  "ids": [
+   "cc-menu-btn",
+   "cc-sidebar",
+   "dash-root",
+   "ia-chat",
+   "ia-pergunta",
+   "modal-marcar-perdido"
+  ],
+  "idsAusentes": [],
+  "seletores": [
+   ".cc-nav a[href], .cc-nav summary",
+   "div"
+  ],
+  "dataAttrs": [],
+  "confirms": [
+   "'Arquivar este lead? Sai da lista ativa, mas o historico fica intacto e da pra restaurar a qualquer hora.'",
+   "'Marcar que esse contato pediu pra parar? A Eva nunca mais conversa com ele.'",
+   "'REMOVER PERMANENTEMENTE este lead? Esta acao nao pode ser desfeita.'"
+  ],
+  "scriptsExternos": [
+   "https://cdn.tailwindcss.com"
+  ]
+ },
+ "pausada": {
+  "formularios": [
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/atividade",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "descricao",
+      "type": "text"
+     },
+     {
+      "name": "tipo",
+      "type": "select"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/cancel-cadence",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/delete",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/desarquivar",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/edit-name",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "name",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/fechou",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "data",
+      "type": "date"
+     },
+     {
+      "name": "tipo",
+      "type": "select"
+     },
+     {
+      "name": "valor",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/mark-lost",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "notes",
+      "type": "textarea"
+     },
+     {
+      "name": "reason",
+      "type": "select"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/opt-in",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/resume-eva",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "due_at",
+      "type": "datetime-local"
+     },
+     {
+      "name": "prioridade",
+      "type": "select"
+     },
+     {
+      "name": "titulo",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t1/adiar",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t1/concluir",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t2/adiar",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t2/concluir",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/logout",
+    "enctype": "",
+    "campos": []
+   }
+  ],
+  "fetches": [
+   "'/dashboard/leads/' + leadId + '/ia-copiloto'"
+  ],
+  "links": [
+   "/dashboard/assinaturas",
+   "/dashboard/atencao",
+   "/dashboard/cadencia",
+   "/dashboard/cerebro",
+   "/dashboard/clientes",
+   "/dashboard/clientes/11111111-1111-1111-1111-111111111111",
+   "/dashboard/cobrar",
+   "/dashboard/cockpit",
+   "/dashboard/command-center",
+   "/dashboard/conhecimento",
+   "/dashboard/contratos",
+   "/dashboard/demonstrativos",
+   "/dashboard/empresas",
+   "/dashboard/energia",
+   "/dashboard/financeiro",
+   "/dashboard/fiscal",
+   "/dashboard/home",
+   "/dashboard/leads",
+   "/dashboard/leads/11111111-1111-1111-1111-111111111111",
+   "/dashboard/leads/11111111-1111-1111-1111-111111111111/contrato-form?tipo=fv",
+   "/dashboard/leads/kanban",
+   "/dashboard/lojas",
+   "/dashboard/manutencao",
+   "/dashboard/marketing",
+   "/dashboard/marketing/blog",
+   "/dashboard/marketing/email",
+   "/dashboard/medicao",
+   "/dashboard/monitoramento",
+   "/dashboard/pastas",
+   "/dashboard/pos-venda",
+   "/dashboard/predio",
+   "/dashboard/propostas",
+   "/dashboard/propostas/novo?lead_id=11111111-1111-1111-1111-111111111111",
+   "/dashboard/recados",
+   "/dashboard/rh/busca",
+   "/dashboard/rh/candidatos",
+   "/dashboard/rh/vagas",
+   "/dashboard/servicos",
+   "/dashboard/tv",
+   "/dashboard/usinas/kanban",
+   "/dashboard/usuarios",
+   "/dashboard/vendas/fechar"
+  ],
+  "ids": [
+   "cc-menu-btn",
+   "cc-sidebar",
+   "dash-root",
+   "ia-chat",
+   "ia-pergunta",
+   "modal-marcar-perdido"
+  ],
+  "idsAusentes": [],
+  "seletores": [
+   ".cc-nav a[href], .cc-nav summary",
+   "div"
+  ],
+  "dataAttrs": [],
+  "confirms": [
+   "'Cancelar todos os toques pendentes?'",
+   "'REMOVER PERMANENTEMENTE este lead? Esta acao nao pode ser desfeita.'"
+  ],
+  "scriptsExternos": [
+   "https://cdn.tailwindcss.com"
+  ]
+ },
+ "semCadencia": {
+  "formularios": [
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/arquivar",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/atividade",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "descricao",
+      "type": "text"
+     },
+     {
+      "name": "tipo",
+      "type": "select"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/delete",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/edit-name",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "name",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/fechou",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "data",
+      "type": "date"
+     },
+     {
+      "name": "tipo",
+      "type": "select"
+     },
+     {
+      "name": "valor",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/mark-lost",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "notes",
+      "type": "textarea"
+     },
+     {
+      "name": "reason",
+      "type": "select"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/opt-out",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/resume-eva",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/start-cadence",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "due_at",
+      "type": "datetime-local"
+     },
+     {
+      "name": "prioridade",
+      "type": "select"
+     },
+     {
+      "name": "titulo",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t1/adiar",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t1/concluir",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t2/adiar",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t2/concluir",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/logout",
+    "enctype": "",
+    "campos": []
+   }
+  ],
+  "fetches": [
+   "'/dashboard/leads/' + leadId + '/ia-copiloto'"
+  ],
+  "links": [
+   "/dashboard/assinaturas",
+   "/dashboard/atencao",
+   "/dashboard/cadencia",
+   "/dashboard/cerebro",
+   "/dashboard/clientes",
+   "/dashboard/clientes/11111111-1111-1111-1111-111111111111",
+   "/dashboard/cobrar",
+   "/dashboard/cockpit",
+   "/dashboard/command-center",
+   "/dashboard/conhecimento",
+   "/dashboard/contratos",
+   "/dashboard/demonstrativos",
+   "/dashboard/empresas",
+   "/dashboard/energia",
+   "/dashboard/financeiro",
+   "/dashboard/fiscal",
+   "/dashboard/home",
+   "/dashboard/leads",
+   "/dashboard/leads/11111111-1111-1111-1111-111111111111",
+   "/dashboard/leads/11111111-1111-1111-1111-111111111111/contrato-form?tipo=fv",
+   "/dashboard/leads/kanban",
+   "/dashboard/lojas",
+   "/dashboard/manutencao",
+   "/dashboard/marketing",
+   "/dashboard/marketing/blog",
+   "/dashboard/marketing/email",
+   "/dashboard/medicao",
+   "/dashboard/monitoramento",
+   "/dashboard/pastas",
+   "/dashboard/pos-venda",
+   "/dashboard/predio",
+   "/dashboard/propostas",
+   "/dashboard/propostas/novo?lead_id=11111111-1111-1111-1111-111111111111",
+   "/dashboard/recados",
+   "/dashboard/rh/busca",
+   "/dashboard/rh/candidatos",
+   "/dashboard/rh/vagas",
+   "/dashboard/servicos",
+   "/dashboard/tv",
+   "/dashboard/usinas/kanban",
+   "/dashboard/usuarios",
+   "/dashboard/vendas/fechar"
+  ],
+  "ids": [
+   "cc-menu-btn",
+   "cc-sidebar",
+   "dash-root",
+   "ia-chat",
+   "ia-pergunta",
+   "modal-marcar-perdido"
+  ],
+  "idsAusentes": [],
+  "seletores": [
+   ".cc-nav a[href], .cc-nav summary",
+   "div"
+  ],
+  "dataAttrs": [],
+  "confirms": [
+   "'Arquivar este lead? Sai da lista ativa, mas o historico fica intacto e da pra restaurar a qualquer hora.'",
+   "'Marcar que esse contato pediu pra parar? A Eva nunca mais conversa com ele.'",
+   "'REMOVER PERMANENTEMENTE este lead? Esta acao nao pode ser desfeita.'"
+  ],
+  "scriptsExternos": [
+   "https://cdn.tailwindcss.com"
+  ]
+ },
+ "perdido": {
+  "formularios": [
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/arquivar",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/atividade",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "descricao",
+      "type": "text"
+     },
+     {
+      "name": "tipo",
+      "type": "select"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/delete",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/edit-name",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "name",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/fechou",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "data",
+      "type": "date"
+     },
+     {
+      "name": "tipo",
+      "type": "select"
+     },
+     {
+      "name": "valor",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/opt-out",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/pause-eva",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/start-cadence",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "due_at",
+      "type": "datetime-local"
+     },
+     {
+      "name": "prioridade",
+      "type": "select"
+     },
+     {
+      "name": "titulo",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/unmark-lost",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/logout",
+    "enctype": "",
+    "campos": []
+   }
+  ],
+  "fetches": [
+   "'/dashboard/leads/' + leadId + '/ia-copiloto'"
+  ],
+  "links": [
+   "/dashboard/assinaturas",
+   "/dashboard/atencao",
+   "/dashboard/cadencia",
+   "/dashboard/cerebro",
+   "/dashboard/clientes",
+   "/dashboard/clientes/11111111-1111-1111-1111-111111111111",
+   "/dashboard/cobrar",
+   "/dashboard/cockpit",
+   "/dashboard/command-center",
+   "/dashboard/conhecimento",
+   "/dashboard/contratos",
+   "/dashboard/demonstrativos",
+   "/dashboard/empresas",
+   "/dashboard/energia",
+   "/dashboard/financeiro",
+   "/dashboard/fiscal",
+   "/dashboard/home",
+   "/dashboard/leads",
+   "/dashboard/leads/11111111-1111-1111-1111-111111111111",
+   "/dashboard/leads/11111111-1111-1111-1111-111111111111/contrato-form?tipo=fv",
+   "/dashboard/leads/kanban",
+   "/dashboard/lojas",
+   "/dashboard/manutencao",
+   "/dashboard/marketing",
+   "/dashboard/marketing/blog",
+   "/dashboard/marketing/email",
+   "/dashboard/medicao",
+   "/dashboard/monitoramento",
+   "/dashboard/pastas",
+   "/dashboard/pos-venda",
+   "/dashboard/predio",
+   "/dashboard/propostas",
+   "/dashboard/propostas/novo?lead_id=11111111-1111-1111-1111-111111111111",
+   "/dashboard/recados",
+   "/dashboard/rh/busca",
+   "/dashboard/rh/candidatos",
+   "/dashboard/rh/vagas",
+   "/dashboard/servicos",
+   "/dashboard/tv",
+   "/dashboard/usinas/kanban",
+   "/dashboard/usuarios",
+   "/dashboard/vendas/fechar"
+  ],
+  "ids": [
+   "cc-menu-btn",
+   "cc-sidebar",
+   "dash-root",
+   "ia-chat",
+   "ia-pergunta"
+  ],
+  "idsAusentes": [],
+  "seletores": [
+   ".cc-nav a[href], .cc-nav summary",
+   "div"
+  ],
+  "dataAttrs": [],
+  "confirms": [
+   "'Arquivar este lead? Sai da lista ativa, mas o historico fica intacto e da pra restaurar a qualquer hora.'",
+   "'Marcar que esse contato pediu pra parar? A Eva nunca mais conversa com ele.'",
+   "'REMOVER PERMANENTEMENTE este lead? Esta acao nao pode ser desfeita.'",
+   "'Reverter status de Perdido para Qualificando?'"
+  ],
+  "scriptsExternos": [
+   "https://cdn.tailwindcss.com"
+  ]
+ },
+ "venda": {
+  "formularios": [
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/arquivar",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/atividade",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "descricao",
+      "type": "text"
+     },
+     {
+      "name": "tipo",
+      "type": "select"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/delete",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/edit-name",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "name",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/mark-lost",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "notes",
+      "type": "textarea"
+     },
+     {
+      "name": "reason",
+      "type": "select"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/opt-out",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/pause-eva",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/start-cadence",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "due_at",
+      "type": "datetime-local"
+     },
+     {
+      "name": "prioridade",
+      "type": "select"
+     },
+     {
+      "name": "titulo",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t1/adiar",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t1/concluir",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t2/adiar",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa/t2/concluir",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/logout",
+    "enctype": "",
+    "campos": []
+   }
+  ],
+  "fetches": [
+   "'/dashboard/leads/' + leadId + '/ia-copiloto'"
+  ],
+  "links": [
+   "/dashboard/assinaturas",
+   "/dashboard/atencao",
+   "/dashboard/cadencia",
+   "/dashboard/cerebro",
+   "/dashboard/clientes",
+   "/dashboard/clientes/11111111-1111-1111-1111-111111111111",
+   "/dashboard/cobrar",
+   "/dashboard/cockpit",
+   "/dashboard/command-center",
+   "/dashboard/conhecimento",
+   "/dashboard/contratos",
+   "/dashboard/demonstrativos",
+   "/dashboard/empresas",
+   "/dashboard/energia",
+   "/dashboard/financeiro",
+   "/dashboard/fiscal",
+   "/dashboard/home",
+   "/dashboard/leads",
+   "/dashboard/leads/11111111-1111-1111-1111-111111111111",
+   "/dashboard/leads/11111111-1111-1111-1111-111111111111/contrato-form?tipo=fv",
+   "/dashboard/leads/kanban",
+   "/dashboard/lojas",
+   "/dashboard/manutencao",
+   "/dashboard/marketing",
+   "/dashboard/marketing/blog",
+   "/dashboard/marketing/email",
+   "/dashboard/medicao",
+   "/dashboard/monitoramento",
+   "/dashboard/pastas",
+   "/dashboard/pos-venda",
+   "/dashboard/predio",
+   "/dashboard/propostas",
+   "/dashboard/propostas/novo?lead_id=11111111-1111-1111-1111-111111111111",
+   "/dashboard/recados",
+   "/dashboard/rh/busca",
+   "/dashboard/rh/candidatos",
+   "/dashboard/rh/vagas",
+   "/dashboard/servicos",
+   "/dashboard/tv",
+   "/dashboard/usinas/kanban",
+   "/dashboard/usuarios",
+   "/dashboard/vendas/fechar"
+  ],
+  "ids": [
+   "cc-menu-btn",
+   "cc-sidebar",
+   "dash-root",
+   "ia-chat",
+   "ia-pergunta",
+   "modal-marcar-perdido"
+  ],
+  "idsAusentes": [],
+  "seletores": [
+   ".cc-nav a[href], .cc-nav summary",
+   "div"
+  ],
+  "dataAttrs": [],
+  "confirms": [
+   "'Arquivar este lead? Sai da lista ativa, mas o historico fica intacto e da pra restaurar a qualquer hora.'",
+   "'Marcar que esse contato pediu pra parar? A Eva nunca mais conversa com ele.'",
+   "'REMOVER PERMANENTEMENTE este lead? Esta acao nao pode ser desfeita.'"
+  ],
+  "scriptsExternos": [
+   "https://cdn.tailwindcss.com"
+  ]
+ },
+ "vazio": {
+  "formularios": [
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/arquivar",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/atividade",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "descricao",
+      "type": "text"
+     },
+     {
+      "name": "tipo",
+      "type": "select"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/delete",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/edit-name",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "name",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/fechou",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "data",
+      "type": "date"
+     },
+     {
+      "name": "tipo",
+      "type": "select"
+     },
+     {
+      "name": "valor",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/mark-lost",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "notes",
+      "type": "textarea"
+     },
+     {
+      "name": "reason",
+      "type": "select"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/opt-out",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/pause-eva",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/start-cadence",
+    "enctype": "",
+    "campos": []
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/leads/11111111-1111-1111-1111-111111111111/tarefa",
+    "enctype": "",
+    "campos": [
+     {
+      "name": "due_at",
+      "type": "datetime-local"
+     },
+     {
+      "name": "prioridade",
+      "type": "select"
+     },
+     {
+      "name": "titulo",
+      "type": "text"
+     }
+    ]
+   },
+   {
+    "method": "POST",
+    "action": "/dashboard/logout",
+    "enctype": "",
+    "campos": []
+   }
+  ],
+  "fetches": [
+   "'/dashboard/leads/' + leadId + '/ia-copiloto'"
+  ],
+  "links": [
+   "/dashboard/assinaturas",
+   "/dashboard/atencao",
+   "/dashboard/cadencia",
+   "/dashboard/cerebro",
+   "/dashboard/clientes",
+   "/dashboard/clientes/11111111-1111-1111-1111-111111111111",
+   "/dashboard/cobrar",
+   "/dashboard/cockpit",
+   "/dashboard/command-center",
+   "/dashboard/conhecimento",
+   "/dashboard/contratos",
+   "/dashboard/demonstrativos",
+   "/dashboard/empresas",
+   "/dashboard/energia",
+   "/dashboard/financeiro",
+   "/dashboard/fiscal",
+   "/dashboard/home",
+   "/dashboard/leads",
+   "/dashboard/leads/11111111-1111-1111-1111-111111111111",
+   "/dashboard/leads/11111111-1111-1111-1111-111111111111/contrato-form?tipo=fv",
+   "/dashboard/leads/kanban",
+   "/dashboard/lojas",
+   "/dashboard/manutencao",
+   "/dashboard/marketing",
+   "/dashboard/marketing/blog",
+   "/dashboard/marketing/email",
+   "/dashboard/medicao",
+   "/dashboard/monitoramento",
+   "/dashboard/pastas",
+   "/dashboard/pos-venda",
+   "/dashboard/predio",
+   "/dashboard/propostas",
+   "/dashboard/propostas/novo?lead_id=11111111-1111-1111-1111-111111111111",
+   "/dashboard/recados",
+   "/dashboard/rh/busca",
+   "/dashboard/rh/candidatos",
+   "/dashboard/rh/vagas",
+   "/dashboard/servicos",
+   "/dashboard/tv",
+   "/dashboard/usinas/kanban",
+   "/dashboard/usuarios",
+   "/dashboard/vendas/fechar"
+  ],
+  "ids": [
+   "cc-menu-btn",
+   "cc-sidebar",
+   "dash-root",
+   "ia-chat",
+   "ia-pergunta",
+   "modal-marcar-perdido"
+  ],
+  "idsAusentes": [],
+  "seletores": [
+   ".cc-nav a[href], .cc-nav summary",
+   "div"
+  ],
+  "dataAttrs": [],
+  "confirms": [
+   "'Arquivar este lead? Sai da lista ativa, mas o historico fica intacto e da pra restaurar a qualquer hora.'",
+   "'Marcar que esse contato pediu pra parar? A Eva nunca mais conversa com ele.'",
+   "'REMOVER PERMANENTEMENTE este lead? Esta acao nao pode ser desfeita.'"
+  ],
+  "scriptsExternos": [
+   "https://cdn.tailwindcss.com"
+  ]
+ }
+}

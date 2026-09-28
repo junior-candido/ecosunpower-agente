@@ -2128,7 +2128,7 @@ b.onclick=async function(){
         fetchPropostasPorMes(db),
         fetchVendasPorMes(db),
       ]);
-      res.send(renderHomePage(kpis, grafico, graficoVendas, mesLabel, mesValue));
+      res.send(renderHomePage(kpis, grafico, graficoVendas, mesLabel, mesValue, (req as AuthedRequest).dashUser));
     } catch (err) {
       console.error('[dashboard/home]', err);
       res.status(500).send(`<h2>Erro ao carregar dashboard</h2><pre>${(err as Error).message}</pre>`);
@@ -2282,7 +2282,7 @@ b.onclick=async function(){
       const rows = await listCadenciaLeads(db);
       const kpis = calcKpis(rows);
       const filterStatus = typeof req.query.status === 'string' ? req.query.status : undefined;
-      res.send(renderCadenciaPage({ rows, kpis, filterStatus }));
+      res.send(renderCadenciaPage({ rows, kpis, filterStatus, user: (req as AuthedRequest).dashUser }));
     } catch (err) {
       console.error('[dashboard/cadencia]', err);
       res.status(500).send(`<h2>Erro ao carregar cadência</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -2383,7 +2383,7 @@ b.onclick=async function(){
       const conversaIA = await supabaseService.getConversaIA(id);
       const { servicosDoLead } = await import('./servicos-store.js');
       const servicosDoCliente = await servicosDoLead(supabase, id).catch(() => []);
-      res.send(renderLeadDetailPage(lead, conversaIA, String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente));
+      res.send(renderLeadDetailPage(lead, conversaIA, String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);
       res.status(500).send(`<h2>Erro ao carregar lead</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -5232,8 +5232,8 @@ b.onclick=async function(){
   });
 
   // Importar sites em massa: form GET + POST.
-  router.get('/monitoramento/importar', (_req: Request, res: Response) => {
-    res.send(renderImportarSitesPage());
+  router.get('/monitoramento/importar', (req: Request, res: Response) => {
+    res.send(renderImportarSitesPage({ user: (req as AuthedRequest).dashUser }));
   });
 
   // AJAX: lista empresas/companies da conta Deye (pra Junior pegar o companyId
@@ -5258,6 +5258,7 @@ b.onclick=async function(){
     const marca = String(req.body?.marca ?? '').trim() as MarcaInversor;
     if (!marca) {
       return res.status(400).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
         errorMsg: 'Marca obrigatoria.',
       }));
     }
@@ -5268,6 +5269,7 @@ b.onclick=async function(){
       const apiKey = String(req.body?.api_key ?? '').trim();
       if (!apiKey) {
         return res.status(400).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
           errorMsg: 'API key obrigatoria pra SolarEdge.',
         }));
       }
@@ -5281,6 +5283,7 @@ b.onclick=async function(){
       const companyId = String(req.body?.companyId ?? '').trim();
       if (!appId || !appSecret || !email || !password) {
         return res.status(400).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
           errorMsg: 'AppId, AppSecret, email e senha obrigatorios pra Deye.',
         }));
       }
@@ -5297,6 +5300,7 @@ b.onclick=async function(){
         credenciais = { jwt };
       } else {
         return res.status(400).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
           errorMsg: 'NEP precisa de e-mail + senha (renova sozinho) ou um JWT direto.',
         }));
       }
@@ -5308,6 +5312,7 @@ b.onclick=async function(){
       const apiKey = String(req.body?.apiKey ?? '').trim();
       if (!userId || !password || !apiKey) {
         return res.status(400).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
           errorMsg: 'ABB precisa de e-mail, senha e API Key (vide instrucoes no form).',
         }));
       }
@@ -5318,6 +5323,7 @@ b.onclick=async function(){
       const apiKey = String(req.body?.foxess_api_key ?? '').trim();
       if (!apiKey) {
         return res.status(400).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
           errorMsg: 'API Key obrigatoria pra FoxESS (gere no app FoxESS Cloud → API Management).',
         }));
       }
@@ -5329,6 +5335,7 @@ b.onclick=async function(){
       const password = String(req.body?.goodwe_password ?? '').trim();
       if (!email || !password) {
         return res.status(400).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
           errorMsg: 'GoodWe precisa de e-mail e senha da conta SEMS Portal (login do instalador).',
         }));
       }
@@ -5339,6 +5346,7 @@ b.onclick=async function(){
       const apiUrl = String(req.body?.solis_api_url ?? '').trim();
       if (!keyId || !keySecret) {
         return res.status(400).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
           errorMsg: 'Solis precisa de KeyId e KeySecret (gere no app SolisCloud → Gerenciamento de API).',
         }));
       }
@@ -5355,6 +5363,7 @@ b.onclick=async function(){
       const code = String(req.body?.sungrow_code ?? '').trim();
       if (!appkey || !accessKey || !redirectUri || !code) {
         return res.status(400).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
           errorMsg: 'Sungrow precisa de Appkey, Secret key, a Redirect URL e o código de autorização (gere autorizando o app SÓ-Monitoring).',
         }));
       }
@@ -5366,12 +5375,14 @@ b.onclick=async function(){
       const password = String(req.body?.saj_password ?? '').trim();
       if (!username || !password) {
         return res.status(400).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
           errorMsg: 'SAJ precisa de usuário e senha do portal elekeeper/eSolar (login do instalador).',
         }));
       }
       credenciais = { username, password };
     } else {
       return res.status(400).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
         errorMsg: `Marca ${marca} ainda nao tem adapter implementado.`,
       }));
     }
@@ -5396,6 +5407,7 @@ b.onclick=async function(){
               ).catch(() => { /* best-effort */ });
             }
             return res.status(400).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
               errorMsg: `Seu plano vai até ${plano.limite} usinas (você já tem ${uso}). Fale com a EcoSun pra ampliar o plano — liberamos na hora.`,
             }));
           }
@@ -5405,10 +5417,12 @@ b.onclick=async function(){
       const result = await monitoringService.importarSitesEmMassa(marca, credenciais, companyDoOperador);
       if (!result.ok) {
         return res.status(400).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
           errorMsg: result.reason ?? 'Falha ao importar.',
         }));
       }
       res.send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
         successMsg: `Importacao concluida (${marca})`,
         novos: result.novos,
         atualizados: result.atualizados,
@@ -5418,6 +5432,7 @@ b.onclick=async function(){
     } catch (err) {
       console.error('[dashboard/importar]', err);
       res.status(500).send(renderImportarSitesPage({
+        user: (req as AuthedRequest).dashUser,
         errorMsg: `Erro inesperado: ${(err as Error).message}`,
       }));
     }
@@ -6131,7 +6146,7 @@ b.onclick=async function(){
         mostrarArquivados,
       };
       const { clientes, sistemasOrfaos, total } = await listClientes(supabaseService, filters);
-      res.type('text/html').send(renderClientesListPage(clientes as any, filters, sistemasOrfaos, { total, limit, offset, mostrarArquivados }));
+      res.type('text/html').send(renderClientesListPage(clientes as any, filters, sistemasOrfaos, { total, limit, offset, mostrarArquivados }, (req as AuthedRequest).dashUser));
     } catch (err) {
       console.error('[dashboard/clientes]', err);
       res.status(500).send(`<h2>Erro ao listar clientes</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -6164,8 +6179,8 @@ b.onclick=async function(){
   // DEVE vir ANTES de /clientes/:id pra Express não tentar casar "novo" como UUID.
   // ========================================================================
 
-  router.get('/clientes/novo', async (_req: Request, res: Response) => {
-    res.type('text/html').send(renderFormNovoCliente({}));
+  router.get('/clientes/novo', async (req: Request, res: Response) => {
+    res.type('text/html').send(renderFormNovoCliente({ user: (req as AuthedRequest).dashUser }));
   });
 
   router.post('/clientes/novo', async (req: Request, res: Response) => {
@@ -6188,6 +6203,7 @@ b.onclick=async function(){
 
     if (erros.length > 0) {
       return res.status(400).type('text/html').send(renderFormNovoCliente({
+        user: (req as AuthedRequest).dashUser,
         erros,
         values: {
           name, phone,
@@ -6214,6 +6230,7 @@ b.onclick=async function(){
 
     if (!r.ok) {
       return res.status(400).type('text/html').send(renderFormNovoCliente({
+        user: (req as AuthedRequest).dashUser,
         erros: [r.error ?? 'Falha ao criar cliente'],
         values: {
           name, phone,
@@ -6236,7 +6253,7 @@ b.onclick=async function(){
       const detail = await getClienteDetail(supabaseService, monitoringService, id);
       if (!detail) return res.status(404).send('<h2>Cliente não encontrado</h2><a href="/dashboard/clientes">← voltar</a>');
       const insights = getEvaInsights(detail as any, new Date());
-      res.type('text/html').send(renderClienteDetailPage(detail, insights));
+      res.type('text/html').send(renderClienteDetailPage(detail, insights, (req as AuthedRequest).dashUser));
     } catch (err) {
       console.error('[dashboard/clientes/detail]', err);
       res.status(500).send(`<h2>Erro</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -6424,6 +6441,7 @@ b.onclick=async function(){
     const lead = await supabaseService.getClienteByLeadId(id);
     if (!lead) return res.status(404).send('Cliente não encontrado');
     res.type('text/html').send(renderFormNovoRelatorio({
+      user: (req as AuthedRequest).dashUser,
       lead_id: id,
       cliente_nome: lead.name,
       data_instalacao_pre: lead.installed_at ? String(lead.installed_at).slice(0, 10) : null,
@@ -6484,6 +6502,7 @@ b.onclick=async function(){
     const htmlPreview = renderPosInstalacaoHtml(view);
 
     res.type('text/html').send(renderPreviewRelatorio({
+      user: (req as AuthedRequest).dashUser,
       lead_id: id,
       relatorio_id: rid,
       slug: rel.slug,
@@ -6560,6 +6579,7 @@ b.onclick=async function(){
       qtd_arquivos: (r.arquivos ?? []).length,
     }));
     res.type('text/html').send(renderListaPastas({
+      user: (req as AuthedRequest).dashUser,
       pastas,
       clientes: listaClientes,
       publicBase: PASTA_PUBLIC_BASE,
@@ -6633,6 +6653,7 @@ b.onclick=async function(){
     const { SECOES } = await import('../relatorios/pasta/types.js');
     const faltando = secoesFaltando(pasta.arquivos ?? []).map((id) => SECOES.find((s) => s.id === id)?.titulo ?? id);
     res.type('text/html').send(renderEditorPasta({
+      user: (req as AuthedRequest).dashUser,
       pasta,
       cliente_nome: lead?.name ?? null,
       tem_rpi: rels.length > 0,
@@ -6855,6 +6876,7 @@ b.onclick=async function(){
     const view = await pastaService.resolverView(pasta, false);
     if (!view) return res.status(500).send('Erro montando prévia');
     res.type('text/html').send(renderPreviewPasta({
+      user: (req as AuthedRequest).dashUser,
       pasta_id: id,
       cliente_nome: lead?.name ?? null,
       html_preview: renderPastaHtml(view),
@@ -7032,6 +7054,7 @@ b.onclick=async function(){
     if (!lead) return res.status(404).send('Cliente não encontrado');
 
     res.type('text/html').send(renderFormNovaProposta({
+      user: (req as AuthedRequest).dashUser,
       lead_id,
       lead: lead as any,
       erros: [],
@@ -7067,6 +7090,7 @@ b.onclick=async function(){
 
       if (parsed.erros.length > 0) {
         return res.status(400).type('text/html').send(renderFormNovaProposta({
+      user: (req as AuthedRequest).dashUser,
           lead_id,
           lead: lead as any,
           erros: parsed.erros,
@@ -7101,6 +7125,7 @@ b.onclick=async function(){
         const friendly = sanitizeProposalError(rawMsg);
         const isValidation = /Campo .* inválido|precisa da geração do estudo/.test(rawMsg);
         return res.status(isValidation ? 400 : 500).type('text/html').send(renderFormNovaProposta({
+      user: (req as AuthedRequest).dashUser,
           lead_id,
           lead: lead as any,
           erros: [`Erro ao gerar proposta: ${friendly}`],
@@ -7138,6 +7163,7 @@ b.onclick=async function(){
     const publicUrl = `${publicBase}/p/${slug}`;
 
     res.type('text/html').send(renderPreviewProposta({
+      user: (req as AuthedRequest).dashUser,
       slug,
       htmlPreview: result.html ?? '',
       publicUrl,
@@ -7206,7 +7232,7 @@ b.onclick=async function(){
       if (!prop) return res.status(404).type('text/html').send('<p>Proposta não encontrada (ou revogada).</p>');
       if (!prop.dadosInput) return res.status(404).type('text/html').send('<p>Essa proposta é antiga e não tem os dados salvos pra reabrir. Gere uma proposta nova pra esse cliente.</p>');
       const valoresIniciais = prefillFormFromDadosInput(prop.dadosInput as Record<string, any>);
-      res.type('text/html').send(renderFormNovaProposta({ lead_id: '', lead: null, valoresIniciais, reabrirSlug: slug }));
+      res.type('text/html').send(renderFormNovaProposta({ user: (req as AuthedRequest).dashUser, lead_id: '', lead: null, valoresIniciais, reabrirSlug: slug }));
     } catch (err) {
       res.status(500).type('text/html').send(`<p>Erro: ${escapeHtmlSimple((err as Error).message)}</p>`);
     }
@@ -7222,7 +7248,7 @@ b.onclick=async function(){
         const { prefillFormFromDadosInput } = await import('./proposta-prefill.js');
         // parsed.data tem o shape aninhado (modulo/inversor/estruturaFixacao) que o
         // prefill espera — req.body é achatado e perderia os equipamentos.
-        return res.status(400).type('text/html').send(renderFormNovaProposta({ lead_id: '', lead: null, erros: parsed.erros, reabrirSlug: slug, valoresIniciais: prefillFormFromDadosInput(parsed.data) }));
+        return res.status(400).type('text/html').send(renderFormNovaProposta({ user: (req as AuthedRequest).dashUser, lead_id: '', lead: null, erros: parsed.erros, reabrirSlug: slug, valoresIniciais: prefillFormFromDadosInput(parsed.data) }));
       }
       const attachments = parsed.attachments.length ? parsed.attachments : undefined;
       if (modo === 'nova') {

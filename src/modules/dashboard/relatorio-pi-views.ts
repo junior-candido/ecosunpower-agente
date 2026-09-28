@@ -3,6 +3,7 @@
 //   renderFormNovoRelatorio  → GET /dashboard/clientes/:id/relatorio-pos-instalacao/novo
 //   renderPreviewRelatorio   → GET /dashboard/clientes/:id/relatorio-pos-instalacao/:rid/preview
 import { renderLayout } from './views.js';
+import type { DashUser } from './permissions.js';
 
 function escapeHtml(s: string | null | undefined): string {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({
@@ -14,6 +15,7 @@ export function renderFormNovoRelatorio(input: {
   lead_id: string;
   cliente_nome: string | null;
   data_instalacao_pre: string | null;
+  user: DashUser | undefined;
 }): string {
   const body = `
     <div class="max-w-3xl mx-auto">
@@ -48,7 +50,7 @@ export function renderFormNovoRelatorio(input: {
       </form>
     </div>
   `;
-  return renderLayout({ active: 'clientes', title: 'Novo relatório pós-instalação', body, dark: true });
+  return renderLayout({ active: 'clientes', title: 'Novo relatório pós-instalação', body, dark: true, user: input.user });
 }
 
 export function renderPreviewRelatorio(input: {
@@ -58,6 +60,7 @@ export function renderPreviewRelatorio(input: {
   html_preview: string;        // HTML do template renderizado com publico=false
   ja_enviado: boolean;
   enviado_em: string | null;
+  user: DashUser | undefined;
 }): string {
   const body = `
     <div class="max-w-5xl mx-auto">
@@ -88,5 +91,5 @@ export function renderPreviewRelatorio(input: {
       </p>
     </div>
   `;
-  return renderLayout({ active: 'clientes', title: 'Preview relatório', body, dark: true });
+  return renderLayout({ active: 'clientes', title: 'Preview relatório', body, dark: true, user: input.user });
 }

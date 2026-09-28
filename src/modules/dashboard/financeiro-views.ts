@@ -20,7 +20,7 @@ export function renderFinanceiroPage(d: FinanceiroData, user?: DashUser): string
 @media (min-width:1280px){ .fin-root .big{font-size:1.4rem} }
 </style>
 <div class="fin-root">
-<h1 class="text-xl font-bold text-cyan-300 mb-4">💰 Financeiro · EcoSunPower</h1>
+<h1 class="text-xl font-bold text-cyan-300 mb-4">💰 Financeiro</h1>
 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-4">
   <div class="card"><div class="text-xs text-gray-400">Recebido no mês</div><div class="big">${brl(d.faturamentoMes)}</div></div>
   <div class="card"><div class="text-xs text-gray-400">RBT12 (faixa ${d.faixa})</div><div class="big">${brl(d.rbt12)}</div>

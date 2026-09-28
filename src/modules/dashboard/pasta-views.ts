@@ -4,6 +4,7 @@
 //   renderEditorPasta  → GET  /dashboard/pastas/:id
 //   renderPreviewPasta → GET  /dashboard/pastas/:id/preview
 import { renderLayout } from './views.js';
+import type { DashUser } from './permissions.js';
 import { SECOES } from '../relatorios/pasta/types.js';
 import type { ArquivoPasta, PastaClienteRow } from '../relatorios/pasta/types.js';
 
@@ -17,6 +18,7 @@ export function renderListaPastas(input: {
   pastas: Array<{ id: string; slug: string; status: string; acessos: number; enviado_em: string | null; updated_at: string; cliente_nome: string | null; qtd_arquivos: number }>;
   clientes: Array<{ id: string; name: string | null }>;
   publicBase: string;
+  user: DashUser | undefined;
 }): string {
   const linhas = input.pastas.map((p) => `
     <tr class="border-b border-slate-700/60 hover:bg-slate-800/40">
@@ -68,7 +70,7 @@ export function renderListaPastas(input: {
       </div>`}
     </div>
   `;
-  return renderLayout({ active: 'pastas', title: 'Pasta do Cliente', body, dark: true });
+  return renderLayout({ active: 'pastas', title: 'Pasta do Cliente', body, dark: true, user: input.user });
 }
 
 export function renderEditorPasta(input: {
@@ -79,6 +81,7 @@ export function renderEditorPasta(input: {
   fotos_urls: Record<string, string>;   // storage_path -> signed url (miniaturas das fotos)
   publicBase: string;
   faltando?: string[];                  // títulos das seções obrigatórias sem arquivo (R2) — trava o Publicar
+  user: DashUser | undefined;
 }): string {
   const p = input.pasta;
   const arquivos: ArquivoPasta[] = p.arquivos ?? [];
@@ -192,13 +195,14 @@ export function renderEditorPasta(input: {
       <div class="grid gap-4">${blocosSecoes}</div>
     </div>
   `;
-  return renderLayout({ active: 'pastas', title: `Pasta — ${input.cliente_nome ?? ''}`, body, dark: true });
+  return renderLayout({ active: 'pastas', title: `Pasta — ${input.cliente_nome ?? ''}`, body, dark: true, user: input.user });
 }
 
 export function renderPreviewPasta(input: {
   pasta_id: string;
   cliente_nome: string | null;
   html_preview: string;
+  user: DashUser | undefined;
 }): string {
   const body = `
     <div class="max-w-5xl mx-auto">
@@ -212,7 +216,7 @@ export function renderPreviewPasta(input: {
       </div>
     </div>
   `;
-  return renderLayout({ active: 'pastas', title: 'Prévia da pasta', body, dark: true });
+  return renderLayout({ active: 'pastas', title: 'Prévia da pasta', body, dark: true, user: input.user });
 }
 
 /**

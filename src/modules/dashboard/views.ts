@@ -17,6 +17,7 @@ import { renderClienteSelector } from './proprietario.js';
 import { empresa } from '../empresa-config.js';
 import { can, type DashUser } from './permissions.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
+import { linkDaLogo } from './entrada.js';
 
 // Escape único do painel: mora no design system (ui/html.ts) e é reexportado
 // aqui porque quase todas as telas importam `escapeHtml` de './views.js'.
@@ -109,15 +110,22 @@ interface LayoutInput {
   dark?: boolean;
   // Usuário logado pra condicionar o menu por permissão. COMPATIBILIDADE:
   // se undefined, mostra tudo que não é exclusivo de tenant.
-  user?: DashUser;
+  // R0 da renovação do miolo (28/09/2026): a CHAVE é obrigatória no tipo, pra
+  // o tsc apontar toda tela que esquecia de repassar o usuário (a casca da
+  // casa vazava pro tenant). O valor `undefined` continua aceito (telas
+  // legadas/testes) e se comporta como antes.
+  user: DashUser | undefined;
   // Telas do Command Center usam a largura toda (o resto fica em 80rem).
   largo?: boolean;
+  // Modo imersivo (renovação do miolo, R1 — uso no R23: Prédio Vivo e Cérebro):
+  // área de conteúdo sem padding, altura cheia e SEM rodapé. Menu continua.
+  imersivo?: boolean;
   // Selos de contagem por área no menu (fase B liga com número real).
   selos?: Partial<Record<IdGrupo, SeloGrupo>>;
 }
 
 export function renderLayout(input: LayoutInput): string {
-  const { active, title, body, scripts, dark, user, largo, selos } = input;
+  const { active, title, body, scripts, dark, user, largo, selos, imersivo } = input;
 
   // MARCA DA EMPRESA (01/09/2026): cada empresa entra com a própria logo e cor;
   // nada da casa aparece na tela de outra empresa. EcoSun (ou tela legada sem
@@ -212,7 +220,7 @@ ${CSS_DESIGN_SYSTEM}
 
     <!-- MENU LATERAL por área -->
     <aside class="cc-sb" id="cc-sidebar" aria-label="Menu principal">
-      <a href="/dashboard/home" class="cc-sb-logo" title="Ir para a Home">
+      <a href="${linkDaLogo(user)}" class="cc-sb-logo" title="Ir para o início">
         ${logoHtml}
         <small>${marcaTenant ? 'Painel de gestão' : 'Central de gestão'}</small>
       </a>
@@ -234,10 +242,10 @@ ${CSS_DESIGN_SYSTEM}
         <span class="cc-sp"></span>
       </header>
 
-      <main class="cc-main${largo ? ' cc-largo' : ''}">
+      <main class="cc-main${largo ? ' cc-largo' : ''}${imersivo ? ' cc-imersivo' : ''}">
         ${body}
       </main>
-
+${imersivo ? '' : `
       <footer class="cc-rodape">
         <div class="cc-row">
           ${marcaTenant
@@ -249,7 +257,7 @@ ${CSS_DESIGN_SYSTEM}
           <span class="hidden sm:inline">·</span>
           <span>Brasília-DF</span>`}
         </div>
-      </footer>
+      </footer>`}
     </div>
   </div>
 
@@ -399,7 +407,7 @@ export function renderLoginPage(input: LoginPageInput = {}): string {
 // HOME — KPIs + grafico
 // =========================================================================
 
-export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[], graficoVendas: GraficoMensal[] = [], mesLabel = 'Este mês', mesValue = ''): string {
+export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[], graficoVendas: GraficoMensal[] = [], mesLabel = 'Este mês', mesValue = '', user: DashUser | undefined): string {
   const card = (
     titulo: string,
     valor: string,
@@ -520,7 +528,7 @@ export function renderHomePage(kpis: DashboardKpi, grafico: GraficoMensal[], gra
   }
 </script>`;
 
-  return renderLayout({ active: 'home', title: 'Home', body, scripts });
+  return renderLayout({ active: 'home', title: 'Home', body, scripts, user });
 }
 
 // =========================================================================
@@ -1779,10 +1787,12 @@ interface ImportarPageInput {
   atualizados?: number;
   total?: number;
   sitesNomes?: string[];
+  /** Quem está vendo (R0): sem ele, o tenant via a casca da EcoSun. */
+  user: DashUser | undefined;
 }
 
-export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
-  const { errorMsg, successMsg, novos, atualizados, total, sitesNomes } = input;
+export function renderImportarSitesPage(input: ImportarPageInput): string {
+  const { errorMsg, successMsg, novos, atualizados, total, sitesNomes, user } = input;
 
   const erro = errorMsg
     ? `<div class="mb-4 px-4 py-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-sm">⚠️ ${escapeHtml(errorMsg)}</div>`
@@ -2181,14 +2191,16 @@ export function renderImportarSitesPage(input: ImportarPageInput = {}): string {
   })();
 </script>`;
 
-  return renderLayout({ active: 'monitoramento', title: 'Importar sites', body, scripts });
+  return renderLayout({ active: 'monitoramento', title: 'Importar sites', body, scripts, user });
 }
 
 // =========================================================================
 // MANUTENCAO — clientes com lembrete pendente
 // =========================================================================
 
-export function renderManutencaoPage(rows: ManutencaoRow[]): string {
+// Código morto (o router usa a de manutencao-views.ts) — sai no R13. Recebe
+// `user` só pra passar no teto do R0 (renderLayout sempre com user).
+export function renderManutencaoPage(rows: ManutencaoRow[], user?: DashUser): string {
   const linhas = rows.map(r => {
     const dias = Math.floor((new Date(r.scheduled_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
     const urgencia = dias < 0
@@ -2268,5 +2280,5 @@ export function renderManutencaoPage(rows: ManutencaoRow[]): string {
     </section>
   `;
 
-  return renderLayout({ active: 'manutencao', title: 'Manutenção', body });
+  return renderLayout({ active: 'manutencao', title: 'Manutenção', body, user });
 }
