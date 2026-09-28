@@ -6,7 +6,9 @@
 //   App Shelly → o aparelho → ícone { } → "Criar novo roteiro"
 //   → cola → Salvar → Iniciar → LIGUE "Executar na inicialização"
 //
-// TROQUE A LINHA DO TOKEN pelo mesmo valor do SHELLY_INGEST_TOKEN do servidor.
+// TROQUE A LINHA DO TOKEN pelo código do medidor que a plataforma mostra no
+// cadastro (Usinas → Energia da casa → o medidor → "Gerar código de envio").
+// (O token global SHELLY_INGEST_TOKEN só vale para o piloto, até ser trocado.)
 // A linha tem que ficar exatamente:   var TOKEN = "o-valor";
 // (com aspas e ponto-e-vírgula — colar a linha do EasyPanel inteira não funciona)
 //
@@ -30,7 +32,7 @@
 // ===========================================================================
 
 var URL   = "https://propostas.ecosunpower.eng.br/webhooks/shelly";
-var TOKEN = "COLE_AQUI_O_SHELLY_INGEST_TOKEN";   // <<< TROCAR
+var TOKEN = "COLE_AQUI_O_CODIGO_DO_MEDIDOR";   // <<< TROCAR
 
 // Trifásico lendo a fase C. Para monofásico, troque para "em1:2"/"em1data:2"
 // e os campos c_* por voltage/current/act_power/aprt_power/pf.
@@ -84,7 +86,7 @@ function enviar() {
         return;
       }
       if (resposta && resposta.code === 401) {
-        print("[ecosun] TOKEN RECUSADO — confira o SHELLY_INGEST_TOKEN");
+        print("[ecosun] TOKEN RECUSADO — confira o codigo do medidor na plataforma");
         return;
       }
       if (resposta && resposta.code !== 200) {

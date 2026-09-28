@@ -148,3 +148,12 @@ O dashboard e a Eva leem/escrevem o MESMO banco via `SupabaseService`.
 `src/modules/dashboard/senha-tokens.ts` + migration 108 `dashboard_senha_tokens`. Rotas públicas
 `/dashboard/definir-senha` e `/dashboard/esqueci-senha`. Empresas → Nova sem senha = convite por
 e-mail (72 h); reset = 2 h; ninguém vê senha de ninguém. Detalhes em `docs/ecosof/07-fase2-tenant2.md`.
+
+## Gestão de Energia — medidor Shelly por empresa (G1, 28/09/2026)
+`src/modules/energia/` (funções puras + `energia-service.ts` + `energia-repo.ts`) e telas em
+`dashboard/energia-rotas.ts` / `energia-views.ts` (`/dashboard/energia`, módulo `medicao`).
+Migrations 136 (`medidores_energia`, token por medidor, chave da nuvem cifrada com
+`ENERGIA_CRED_KEY`) e 137 (`energia_15min`, `energia_diaria`). O webhook `/webhooks/shelly`
+resolve empresa pelo token do medidor. Medidor de quadro **não** é inversor: registro
+irmão (`medidor-registry.ts`), nunca em `sistemas_clientes`. Spec e plano em
+`docs/superpowers/specs|plans/2026-09-28-gestao-de-energia*.md`.

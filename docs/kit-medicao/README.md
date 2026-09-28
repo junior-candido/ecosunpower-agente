@@ -172,12 +172,46 @@ diferentes.)
 Então o aparelho **empurra**: o script [`shelly-pro3em-envio.js`](./shelly-pro3em-envio.js)
 roda dentro dele e faz `POST` de minuto em minuto.
 
-1. No servidor: `SHELLY_INGEST_TOKEN` configurado e migration 123 aplicada
-2. No script: trocar `TOKEN` e, se o TC não estiver no canal C, o `CANAL`
-3. App → `{ }` → **Criar novo roteiro** → colar → Salvar → Iniciar
-4. **Ligar "Executar na inicialização"** — sem isso o script morre na primeira queda
+### Token por medidor (desde 28/09/2026 — Gestão de Energia G1)
+
+Cada medidor tem o **seu** código de envio (token). É ele que diz de qual empresa e de
+qual cliente é a leitura — o token global antigo (`SHELLY_INGEST_TOKEN`) só vale para o
+piloto (quadro da casa do Junior) até o script dele ser trocado.
+
+1. No painel: **Usinas → Energia da casa → Cadastrar medidor** (migrations 136/137
+   aplicadas). Preencha o código do aparelho, a usina do mesmo endereço, a UC e marque o
+   aceite do cliente (LGPD).
+2. A plataforma mostra **uma vez** a linha `var TOKEN = "…";`. Copie.
+3. No script ([`shelly-pro3em-envio.js`](./shelly-pro3em-envio.js)): troque a linha do
+   `TOKEN` por ela e, se o sensor do cabo da rede não estiver na entrada C, o `CANAL`.
+4. App → `{ }` → **Criar novo roteiro** → colar → Salvar → Iniciar
+5. **Ligar "Executar na inicialização"** — sem isso o script morre na primeira queda
    de energia e o cliente fica sem dado sem ninguém perceber
-5. Conferir no painel se a leitura chegou
+6. Em até 2 minutos a tela do medidor mostra **"Recebendo dado"**.
+
+Perdeu o código? Na tela do medidor, **Gerar código novo** (o antigo para de valer na hora).
+
+### Checklist de instalação
+
+- [ ] Wi-Fi **2,4 GHz** (ou cabo de rede)
+- [ ] Fuso **Brasília (UTC−3)** no aparelho
+- [ ] Aferição com carga **acima de 2 A** (alicate no mesmo fio)
+- [ ] Script salvo, iniciado e com **"Executar na inicialização"** ligado
+- [ ] Tela do medidor: "Recebendo dado" e usina ligada ao medidor
+
+### Modo nuvem (reserva)
+
+Quando o cliente não aceita script, ou como reserva do script: **Como o dado chega →
+"Script + nuvem Shelly de reserva"** (ou "Só pela nuvem").
+
+- No app Shelly: **Configurações do usuário → Authorization cloud key**. Ali estão a
+  **chave** e o **servidor** (ex.: `shelly-77-eu.shelly.cloud`).
+- Cole os dois **só no formulário da plataforma** e clique **Testar conexão**. Nunca pelo
+  WhatsApp nem por conversa — a chave dá controle total da conta (inclusive dos relés).
+- A chave fica cifrada (env `ENERGIA_CRED_KEY` no servidor) e nunca volta para a tela.
+- Trocou a senha da conta Shelly? A chave muda: a plataforma marca "Chave da nuvem
+  recusada" e avisa. Cole a chave nova na edição do medidor.
+- Pela nuvem o dado chega de 15 em 15 minutos e sem o detalhe de tensão do minuto a minuto.
 
 ---
 
