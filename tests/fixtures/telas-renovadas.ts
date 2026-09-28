@@ -15,6 +15,7 @@ import { renderMonitoramentoPage } from '../../src/modules/dashboard/views.js';
 import { CASOS_USINA } from './casos-usina.js';
 import { FIN_CHEIO } from './casos-financeiro.js';
 import { CASOS_DEMONSTRATIVOS } from './casos-demonstrativos.js';
+import { CASOS_PASTAS } from './casos-pastas.js';
 import { renderFinanceiroPage } from '../../src/modules/dashboard/financeiro-views.js';
 import { usina, ALERTAS_RESUMO, SPARK_7D, KPIS_EVA } from './casos-monitoramento.js';
 import { USER_CASA, leadRow, leadDetalhe, SERVICOS_LEAD, FILTROS_CHEIOS } from './miolo-leads.js';
@@ -85,7 +86,8 @@ function dadosCC(n: number): DadosCommandCenter {
 
 export type NomeTela = 'command-center' | 'central-atencao' | 'modo-tv' | 'leads' | 'quadro-vendas' | 'conversas' | 'ficha'
   | 'monitoramento' | 'usina' | 'usina-dados' | 'usina-editar' | 'usina-importar' | 'financeiro'
-  | 'gd-lista' | 'gd-cliente' | 'gd-conferencia' | 'gd-digitar' | 'gd-confirmar';
+  | 'gd-lista' | 'gd-cliente' | 'gd-conferencia' | 'gd-digitar' | 'gd-confirmar'
+  | 'pastas' | 'pasta-editor' | 'pasta-previa';
 
 const NIVEIS = ['urgente', 'aviso', 'info', 'ok', 'ok', 'ok'] as const;
 
@@ -115,6 +117,9 @@ export function telasRenovadas(n: number, user: DashUser = USER_CASA): Record<No
     'usina-editar': casa ? CASOS_USINA.editar() : CASOS_USINA['editar-sem-dono'](),
     'usina-importar': casa ? CASOS_USINA['importar-sucesso']() : CASOS_USINA['importar-tenant'](),
     financeiro: renderFinanceiroPage(FIN_CHEIO, user),
+    pastas: casa ? CASOS_PASTAS.lista() : CASOS_PASTAS['lista-tenant'](),
+    'pasta-editor': casa ? CASOS_PASTAS['editor-rascunho']() : CASOS_PASTAS['editor-tenant'](),
+    'pasta-previa': CASOS_PASTAS.preview(),
     'gd-lista': casa ? CASOS_DEMONSTRATIVOS.lista() : CASOS_DEMONSTRATIVOS['lista-tenant'](),
     'gd-cliente': casa ? CASOS_DEMONSTRATIVOS['cliente-sem-cliente']() : CASOS_DEMONSTRATIVOS['cliente-tenant'](),
     'gd-conferencia': CASOS_DEMONSTRATIVOS.conferencia(),
