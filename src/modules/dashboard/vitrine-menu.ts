@@ -27,10 +27,14 @@ export interface ItemDeMenu {
   /** Item sem área que o tenant TAMBÉM vê (Command Center, Central de Atenção):
    *  o dado já é escopado pela empresa e o que não foi contratado aparece trancado. */
   abertoATenant?: boolean;
+  /** Módulo que a empresa precisa ter contratado (mapa em modulos-contratados.ts). */
+  modulo?: string;
 }
 
 export interface UsuarioDoMenu {
   companyId: string;
+  /** Módulos contratados pela empresa. Ausente = não conferido (ver DashUser). */
+  modulosContratados?: readonly string[];
 }
 
 /**
@@ -57,6 +61,13 @@ export function estadoDoItem(
 
   // Sem usuário (tela de login): comportamento de sempre.
   if (!user) return 'visivel';
+
+  // Segundo portão (28/09/2026): a EMPRESA contratou o módulo? Não → vitrine,
+  // mesmo que o papel deixe (a Jimena é admin, mas a Conquista só tem a
+  // assistente). Só vale pro tenant — a EcoSun tem tudo.
+  if (ehTenant && item.modulo && user.modulosContratados && !user.modulosContratados.includes(item.modulo)) {
+    return 'bloqueado';
+  }
 
   if (podeNaArea(user as never, item.area, item.nivel)) return 'visivel';
 

@@ -9,8 +9,13 @@
 // O gating é o MESMO de antes: `estadoDoItem` da vitrine (visível / bloqueado
 // com cadeado / escondido) + soEcosun/soTenant. A fechadura de verdade continua
 // no servidor (`exigir(area, nivel)` de cada rota).
+//
+// 28/09/2026 — segundo portão: o MÓDULO contratado pela empresa. O módulo de
+// cada item vem do mapa único MODULO_DA_ROTA (modulos-contratados.ts), pelo
+// href; a mesma tabela trava a rota no servidor (criarTravaDeModulo).
 
 import { estadoDoItem, type EstadoItem } from './vitrine-menu.js';
+import { moduloDoCaminho } from './modulos-contratados.js';
 import type { Area, Nivel } from './permissions.js';
 import type { NomeIcone } from './ui/icones.js';
 import type { TomSelo } from './ui/componentes.js';
@@ -181,7 +186,9 @@ export function montarMenu(
   for (const g of MENU_AREAS) {
     const itens: ItemMontado[] = [];
     for (const it of g.itens) {
-      const estado = estadoDoItem(it, user, ecosunCompanyId, podeNaArea);
+      // Módulo do item sai do MESMO mapa da trava das rotas (pelo href).
+      const modulo = moduloDoCaminho(it.href)?.modulo;
+      const estado = estadoDoItem({ ...it, modulo }, user, ecosunCompanyId, podeNaArea);
       if (estado === 'escondido') continue;
       itens.push({ ...it, estado, ativo: it.key === ativo });
     }

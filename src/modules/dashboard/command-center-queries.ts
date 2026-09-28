@@ -28,7 +28,7 @@ import { statusAgendaItem } from './manutencao-motor.js';
 import { empresaDe } from '../empresa-config.js';
 import { tarifaPorConcessionaria } from '../solar-params.js';
 import { competenciaAtual } from '../financeiro/repo.js';
-import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
+import { lerModulosAtivos } from './modulos-contratados.js';
 import type { ContaAberta } from '../financeiro/alertas-vencimento.js';
 
 /** Blocos do Command Center. O&M e Instalações seguem `usinas` (mesmo papel, mesmo módulo). */
@@ -53,30 +53,21 @@ export function combinarAcesso(papel: PermissoesCC, contratados: PermissoesCC): 
   };
 }
 
+/** Módulos ativos da empresa → blocos do Command Center. */
+export function blocosContratados(ativos: ReadonlySet<string>): PermissoesCC {
+  const out = { ...NENHUM_MODULO };
+  for (const b of Object.keys(MODULO_DO_BLOCO) as BlocoCC[]) out[b] = ativos.has(MODULO_DO_BLOCO[b]);
+  return out;
+}
+
 /**
- * O que a empresa contratou — 1 leitura por requisição, escopada pela empresa.
- * Erro ou exceção → TUDO DESLIGADO (fail-closed), igual ao empresasComModulo:
- * sem saber o que foi contratado, não se mostra dado de ninguém.
+ * O que a empresa contratou, em blocos do Command Center. A regra (EcoSun tem
+ * tudo sem ler a tabela; erro/exceção → tudo desligado, fail-closed) mora em
+ * UM lugar só: lerModulosAtivos (modulos-contratados.ts), a mesma do menu e da
+ * trava das rotas.
  */
 export async function lerModulosContratados(db: SupabaseClient, companyId: string): Promise<PermissoesCC> {
-  // A casa é dona de todos os módulos: não depende de a migration 128 estar aplicada
-  // nem de a tabela responder (senão o Command Center da EcoSun ficaria todo trancado).
-  if (companyId === ECOSUN_COMPANY_ID) return { ...TODAS_PERMISSOES };
-  try {
-    const { data, error } = await db.from('empresa_modulos').select('modulo')
-      .eq('company_id', companyId).eq('ativo', true);
-    if (error) {
-      console.warn('[command-center] empresa_modulos falhou — tudo trancado:', error.message);
-      return { ...NENHUM_MODULO };
-    }
-    const ativos = new Set(((data ?? []) as Array<{ modulo?: unknown }>).map((r) => String(r.modulo ?? '')));
-    const out = { ...NENHUM_MODULO };
-    for (const b of Object.keys(MODULO_DO_BLOCO) as BlocoCC[]) out[b] = ativos.has(MODULO_DO_BLOCO[b]);
-    return out;
-  } catch (err) {
-    console.warn('[command-center] empresa_modulos lançou — tudo trancado:', (err as Error).message);
-    return { ...NENHUM_MODULO };
-  }
+  return blocosContratados(await lerModulosAtivos(db, companyId));
 }
 
 /** Fontes de aviso da Central de Atenção (painel "De onde vêm os avisos"). */
