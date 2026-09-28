@@ -1,10 +1,10 @@
-// Rotas /dashboard/command-center e /dashboard/tv (fase A): só EcoSun, e
-// contagem que falha vira "—" (nunca um 0 inventado). Testa os handlers que o
+// Rotas /dashboard/command-center, /dashboard/atencao e /dashboard/tv (fase B):
+// só EcoSun, escopo pela empresa da sessão, permissão por área e falha vira "—". Testa os handlers que o
 // router registra (command-center-rotas.ts) com req/res falsos.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { rotaCommandCenter, rotaModoTv } from '../src/modules/dashboard/command-center-rotas.js';
+import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv, CC_ABERTO_A_TENANTS } from '../src/modules/dashboard/command-center-rotas.js';
 import { fetchCommandCenterKpis } from '../src/modules/dashboard/queries.js';
 import type { DashUser } from '../src/modules/dashboard/permissions.js';
 
@@ -72,9 +72,33 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
+/** Supabase "de verdade" pra rota: responde qualquer tabela e guarda os filtros. */
+function dbCompleto(respostas: Record<string, { data?: unknown[]; count?: number } | Error> = {}) {
+  const chamadas: Array<{ tabela: string; filtros: Array<[string, string, unknown]> }> = [];
+  const from = vi.fn((tabela: string) => {
+    const reg = { tabela, filtros: [] as Array<[string, string, unknown]> };
+    chamadas.push(reg);
+    let head = false;
+    const q: Record<string, unknown> = {};
+    q.select = (_c?: string, o?: { head?: boolean }) => { head = !!o?.head; return q; };
+    for (const op of ['eq', 'gte', 'lt', 'lte', 'in', 'is', 'not']) q[op] = (c: string, v: unknown) => { reg.filtros.push([op, c, v]); return q; };
+    q.order = () => q; q.limit = () => q; q.range = () => q;
+    q.then = (ok: (r: unknown) => unknown, falha?: (e: unknown) => unknown) => {
+      const r = respostas[tabela];
+      if (r instanceof Error) return Promise.reject(r).then(ok, falha);
+      const dados = r?.data ?? [];
+      return Promise.resolve({ data: head ? null : dados, count: r?.count ?? dados.length, error: null }).then(ok, falha);
+    };
+    return q;
+  });
+  return { from, chamadas } as unknown as SupabaseClient & { from: typeof from; chamadas: typeof chamadas };
+}
+
+const vendedor: DashUser = { ...junior, id: 'v', nome: 'Rafael', isAdmin: false, permissoes: { leads: ['visualizar'], propostas: ['visualizar'] } };
+
 describe('GET /dashboard/command-center', () => {
   it('tenant é mandado pro Cockpit (a entrada dele), sem consultar nada', async () => {
-    const db = supabaseFalso(TUDO_OK);
+    const db = dbCompleto();
     const res = resFalso();
     await rotaCommandCenter(db)(reqDe(tenant), res as unknown as Response);
     expect(res.redirect).toHaveBeenCalledWith('/dashboard/cockpit');
@@ -84,63 +108,77 @@ describe('GET /dashboard/command-center', () => {
 
   it('sem sessão também vai pro Cockpit (nunca pra Home da casa)', async () => {
     const res = resFalso();
-    await rotaCommandCenter(supabaseFalso(TUDO_OK))(reqDe(undefined), res as unknown as Response);
+    await rotaCommandCenter(dbCompleto())(reqDe(undefined), res as unknown as Response);
     expect(res.redirect).toHaveBeenCalledWith('/dashboard/cockpit');
   });
 
-  it('EcoSun: mostra os contadores reais do mês', async () => {
+  it('abrir pro tenant é só a flag: hoje ela está desligada', () => {
+    expect(CC_ABERTO_A_TENANTS).toBe(false);
+  });
+
+  it('EcoSun: mostra os números reais', async () => {
     const res = resFalso();
-    await rotaCommandCenter(supabaseFalso(TUDO_OK), () => AGORA)(reqDe(junior), res as unknown as Response);
+    const db = dbCompleto({ leads: { data: [], count: 212 }, financeiro_recebimentos: { data: [{ valor: 1200 }] } });
+    await rotaCommandCenter(db, () => AGORA)(reqDe(junior), res as unknown as Response);
     expect(res.redirect).not.toHaveBeenCalled();
     const h = res.send.mock.calls[0][0] as string;
     expect(cartaoKpi(h, 'Leads do mês')).toContain('<div class="cc-val">212</div>');
-    expect(cartaoKpi(h, 'Vendas')).toContain('<div class="cc-val">9</div>');
+    expect(cartaoKpi(h, 'Faturamento')).toContain('1,2<small>mil</small>');
   });
 
-  it('contagem com erro vira "—" (nunca 0); as outras seguem com número', async () => {
+  it('TODA consulta vai escopada pela empresa da sessão', async () => {
+    const db = dbCompleto();
+    await rotaCommandCenter(db, () => AGORA)(reqDe(junior), resFalso() as unknown as Response);
+    expect(db.chamadas.length).toBeGreaterThan(10);
+    for (const c of db.chamadas) expect(c.filtros, c.tabela).toContainEqual(['eq', 'company_id', ECOSUN]);
+  });
+
+  it('usuário sem permissão de Financeiro/Usinas: nada dessas áreas é lido nem mostrado', async () => {
+    const db = dbCompleto({ financeiro_recebimentos: { data: [{ valor: 4321987 }] } });
     const res = resFalso();
-    const db = supabaseFalso({
-      ...TUDO_OK,
-      'leads:contract_signed_at': { count: null, error: { message: 'timeout' } },
-      'propostas_publicas:revoked': { count: 0, error: { message: 'permission denied' } },
-    });
-    await rotaCommandCenter(db, () => AGORA)(reqDe(junior), res as unknown as Response);
+    await rotaCommandCenter(db, () => AGORA)(reqDe(vendedor), res as unknown as Response);
+    const tabelas = db.chamadas.map((c) => c.tabela);
+    for (const t of ['financeiro_recebimentos', 'financeiro_contas_a_pagar', 'geracao_diaria', 'manutencoes', 'demonstrativos_gd']) expect(tabelas).not.toContain(t);
     const h = res.send.mock.calls[0][0] as string;
-    const vendas = cartaoKpi(h, 'Vendas');
-    expect(vendas).toContain('<div class="cc-val">—</div>');
-    expect(vendas).not.toContain('<div class="cc-val">0</div>');
-    expect(cartaoKpi(h, 'Propostas')).toContain('<div class="cc-val">—</div>');
-    expect(cartaoKpi(h, 'Leads do mês')).toContain('<div class="cc-val">212</div>');
-    // Resumo da Eva não cita número quando falta algum dos três.
-    expect(h).not.toContain('Neste mês entraram');
-    expect(h).not.toContain('0 vendas fechadas');
+    expect(h).not.toContain('4,32');
+    expect(cartaoKpi(h, 'Faturamento')).toContain('sem acesso');
   });
 
-  it('consulta só os dados da EcoSun (company_id em todas as 5 contagens)', async () => {
-    const db = supabaseFalso(TUDO_OK);
-    const res = resFalso();
-    await rotaCommandCenter(db, () => AGORA)(reqDe(junior), res as unknown as Response);
-    const escopo = db.chamadas.filter((c) => c.metodo === 'eq' && c.coluna === 'company_id');
-    expect(escopo).toHaveLength(4);
-    expect(escopo.every((c) => c.valor === ECOSUN)).toBe(true);
-  });
-
-  it('se a busca inteira lança, os 3 KPIs reais mostram "—" + "sem dado agora" (não "em construção")', async () => {
+  it('se tudo lança, os KPIs mostram "—" + "sem dado agora" (não "em construção")', async () => {
     const res = resFalso();
     const db = { from: vi.fn(() => { throw new Error('cliente quebrado'); }) } as unknown as SupabaseClient;
     await rotaCommandCenter(db, () => AGORA)(reqDe(junior), res as unknown as Response);
     const h = res.send.mock.calls[0][0] as string;
-    for (const rotulo of ['Leads do mês', 'Propostas', 'Vendas']) {
+    for (const rotulo of ['Leads do mês', 'Vendas', 'Energia hoje', 'Faturamento']) {
       const c = cartaoKpi(h, rotulo);
       expect(c, rotulo).toContain('<div class="cc-val">—</div>');
       expect(c, rotulo).toContain('sem dado agora');
-      expect(c, rotulo).not.toContain('em construção');
     }
+    expect(h).not.toContain('Tudo em dia');
+  });
+});
+
+describe('GET /dashboard/atencao', () => {
+  it('tenant vai pro Cockpit', async () => {
+    const res = resFalso();
+    await rotaCentralAtencao(dbCompleto())(reqDe(tenant), res as unknown as Response);
+    expect(res.redirect).toHaveBeenCalledWith('/dashboard/cockpit');
+  });
+
+  it('EcoSun vê a lista completa, com o filtro da URL', async () => {
+    const res = resFalso();
+    const db = dbCompleto({ manutencoes: { data: [{ id: 'm', data_agendada: '2026-09-01' }] } });
+    const req = { dashUser: junior, query: { area: 'om' } } as unknown as Request;
+    await rotaCentralAtencao(db, () => AGORA)(req, res as unknown as Response);
+    const h = res.send.mock.calls[0][0] as string;
+    expect(h).toContain('Central de Atenção');
+    expect(h).toContain('1 manutenção vencida');
+    expect(h).toContain('cc-chip cc-chip-on" href="/dashboard/atencao?area=om"');
   });
 });
 
 describe('GET /dashboard/tv', () => {
-  it('tenant é mandado pro Cockpit até a fase B', async () => {
+  it('tenant é mandado pro Cockpit', async () => {
     const res = resFalso();
     await rotaModoTv()(reqDe(tenant), res as unknown as Response);
     expect(res.redirect).toHaveBeenCalledWith('/dashboard/cockpit');

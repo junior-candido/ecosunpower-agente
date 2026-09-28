@@ -87,6 +87,12 @@ describe('MENU_AREAS — nada se perde', () => {
     expect(itens.some((i) => i.href === '/dashboard/command-center' && i.key === 'command_center')).toBe(true);
   });
 
+  it('inclui a Central de Atenção (fase B) no grupo Command Center', () => {
+    const cc = MENU_AREAS.find((g) => g.id === 'command_center')!;
+    expect(cc.itens.map((i) => i.key)).toEqual(['command_center', 'atencao', 'home', 'cockpit', 'predio']);
+    expect(cc.itens.find((i) => i.key === 'atencao')!.href).toBe('/dashboard/atencao');
+  });
+
   it('chaves e hrefs são únicos', () => {
     expect(new Set(itens.map((i) => i.key)).size).toBe(itens.length);
     expect(new Set(itens.map((i) => i.href)).size).toBe(itens.length);

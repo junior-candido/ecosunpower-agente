@@ -45,6 +45,7 @@ export const MENU_AREAS: GrupoMenu[] = [
     id: 'command_center', titulo: 'Command Center', icone: 'gauge',
     itens: [
       { href: '/dashboard/command-center', key: 'command_center', label: 'Command Center' },
+      { href: '/dashboard/atencao', key: 'atencao', label: 'Central de Atenção' },
       { href: '/dashboard/home', key: 'home', label: 'Visão geral' },
       { href: '/dashboard/cockpit', key: 'cockpit', label: 'Cockpit' },
       { href: '/dashboard/predio', key: 'predio', label: 'Prédio Vivo', soEcosun: true },
