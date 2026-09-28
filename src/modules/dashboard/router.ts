@@ -6116,15 +6116,15 @@ b.onclick=async function(){
     if (ids.length === 0) return res.status(400).json({ erro: 'nenhuma usina válida' });
     // Revisão R15: só move as usinas da empresa da SESSÃO (as de outra ficam de fora).
     const { moverObrasLote } = await import('./obras-store.js');
-    let movidas = 0;
+    let movidas: string[] = [];
     try { movidas = await moverObrasLote(bancoDoOperador(req, supabase), req.dashUser?.companyId, ids, etapa); }
     catch (e) { return res.status(500).json({ erro: (e as Error).message }); }
-    if (movidas === 0) return res.status(404).json({ erro: 'nenhuma usina encontrada' });
+    if (movidas.length === 0) return res.status(404).json({ erro: 'nenhuma usina encontrada' });
     const viewer = req.dashUser;
     if (viewer) {
-      await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'usina', entidadeId: ids.join(','), acao: 'etapa_obra_lote', valorNovo: etapa });
+      await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'usina', entidadeId: movidas.join(','), acao: 'etapa_obra_lote', valorNovo: etapa });
     }
-    res.json({ ok: true, movidas });
+    res.json({ ok: true, movidas: movidas.length });
   });
 
   router.post('/usinas/:sistemaId/leitura', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {

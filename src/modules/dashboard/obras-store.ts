@@ -50,15 +50,15 @@ export async function moverObra(db: SupabaseClient, companyId: Empresa, id: stri
   return ((data ?? []) as unknown[]).length > 0;
 }
 
-/** Move VÁRIAS obras; devolve quantas eram da empresa (e foram movidas). */
-export async function moverObrasLote(db: SupabaseClient, companyId: Empresa, ids: string[], etapa: string): Promise<number> {
-  if (!companyId || ids.length === 0) return 0;
+/** Move VÁRIAS obras; devolve os ids que eram da empresa (e foram movidos). */
+export async function moverObrasLote(db: SupabaseClient, companyId: Empresa, ids: string[], etapa: string): Promise<string[]> {
+  if (!companyId || ids.length === 0) return [];
   const q = db.from('sistemas_clientes')
     .update({ etapa_obra: etapa, etapa_obra_updated_at: new Date().toISOString() })
     .in('id', ids);
   const { data, error } = await daEmpresa(q as any, companyId).select('id');
   if (error) throw new Error(error.message);
-  return ((data ?? []) as unknown[]).length;
+  return ((data ?? []) as Array<{ id: string }>).map((l) => l.id);
 }
 
 export interface UsinaContatoLinha extends ObraLinha { uf: string | null; lead_id: string | null }

@@ -43,7 +43,7 @@ describe('obras-store — empresa da sessão em toda consulta', () => {
     const b = banco();
     expect(await listarObras(b.client, undefined)).toEqual([]);
     expect(await moverObra(b.client, undefined, T1, 'operacao')).toBe(false);
-    expect(await moverObrasLote(b.client, null, [T1], 'operacao')).toBe(0);
+    expect(await moverObrasLote(b.client, null, [T1], 'operacao')).toEqual([]);
     expect(await lerUsinaDoContato(b.client, undefined, T1)).toBeNull();
     expect(await listarUsinasSemCliente(b.client, undefined)).toEqual([]);
     expect(await vincularUsinaAoCliente(b.client, undefined, T1, 'L1')).toBe(false);
@@ -66,9 +66,9 @@ describe('obras-store — empresa da sessão em toda consulta', () => {
     expect(b.tabelas.sistemas_clientes.find((u) => u.id === T1)!.etapa_obra).toBe('projeto');
   });
 
-  it('moverObrasLote: ids de outra empresa ficam de fora (conta só as movidas)', async () => {
+  it('moverObrasLote: ids de outra empresa ficam de fora (devolve só os movidos)', async () => {
     const b = banco();
-    expect(await moverObrasLote(b.client, TENANT, [E1, E2, T1], 'instalacao')).toBe(1);
+    expect(await moverObrasLote(b.client, TENANT, [E1, E2, T1], 'instalacao')).toEqual([T1]);
     const et = Object.fromEntries(b.tabelas.sistemas_clientes.map((u) => [u.id, u.etapa_obra]));
     expect(et).toEqual({ [E1]: 'projeto', [E2]: 'projeto', [T1]: 'instalacao' });
   });
@@ -114,6 +114,11 @@ describe('rotas do Quadro de Obras usam o obras-store (empresa da sessão)', () 
       expect(r).not.toContain("from('sistemas_clientes')");
     });
   }
+  it('lote: a auditoria registra só os ids movidos (nunca id de outra empresa)', () => {
+    const r = rota("router.post('/usinas/set-etapa-obra-lote'");
+    expect(r).toContain("entidadeId: movidas.join(',')");
+    expect(r).not.toContain("ids.join(',')");
+  });
   it('mover sem achar a usina da empresa → 404 (não finge que moveu)', () => {
     expect(rota("router.post('/usinas/:id/set-etapa-obra'")).toMatch(/if \(!movida\)[^\n]*404/);
     expect(rota("router.get('/usinas/:id/contato'")).toMatch(/404/);

@@ -118,6 +118,7 @@ const CSS_OBRAS = `
 .cc-ob-link{display:inline-flex;margin-top:16px;color:var(--cc-gold-2);font-weight:600}
 .cc-ob-link:hover{text-decoration:underline}
 .cc-ob-erro{color:var(--cc-crit)}
+.cc-ob-lote.hidden{display:none!important}
 .cc-ob-lote{position:fixed;left:0;right:0;bottom:0;z-index:55;display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:10px 16px;background:var(--cc-surface-3);border-top:1px solid var(--cc-line-2);box-shadow:0 -8px 24px rgba(0,0,0,.35)}
 .cc-ob-lote-n{font-weight:600;color:var(--cc-text)}
 .cc-ob-lote select{height:36px;padding:0 10px;border:1px solid var(--cc-line-2);border-radius:10px;background:var(--cc-surface-2);color:var(--cc-text);font:inherit;font-size:14px;max-width:100%}
@@ -441,6 +442,8 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
         var limpar = document.getElementById('lote-limpar');
         var board  = document.querySelector('.kanban-board');
         if (!btn || !bar || !board) return;
+        // Barra fixa fora do <main> (contexto de empilhamento), como o painel.
+        (document.querySelector('.cc-shell') || document.body).appendChild(bar);
 
         function selecionados() {
           return Array.prototype.slice.call(document.querySelectorAll('.kanban-check:checked'));
