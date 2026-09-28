@@ -52,3 +52,39 @@ export const ENTRA_ALCAS: MudancaContrato = {
   motivo: 'Junior: poder aumentar/diminuir as colunas arrastando',
   entra: { seletores: ['.cc-at-alca', '.cc-at-grade'] },
 };
+
+// ---------------------------------------------------------------------------
+// Parte 2 (28/09/2026) — responder pelo painel.
+// ---------------------------------------------------------------------------
+
+/** Contato que pediu para PARAR: sem "Devolver para a Eva" (o servidor também recusa). */
+export const SAI_RETOMAR_OPT_OUT: MudancaContrato = {
+  motivo: 'LGPD: quem pediu para parar não volta a falar com a Eva — sem botão de devolver',
+  sai: { formularios: [{ method: 'POST', action: `/dashboard/leads/${ID}/resume-eva`, enctype: '', campos: [] }] },
+};
+
+/** Campo de resposta (janela aberta) + modelo aprovado + script (trava do 2º clique e prévia). */
+export const ENTRA_RESPONDER: MudancaContrato = {
+  motivo: 'Junior: responder o WhatsApp de dentro do painel (texto na janela de 24 h, modelo fora dela)',
+  entra: {
+    formularios: [
+      { method: 'POST', action: `/dashboard/leads/${ID}/responder`, enctype: '', campos: [{ name: 'chave', type: 'hidden' }, { name: 'texto', type: 'textarea' }] },
+      { method: 'POST', action: `/dashboard/leads/${ID}/responder-modelo`, enctype: '', campos: [{ name: 'chave', type: 'hidden' }, { name: 'modelo', type: 'select' }, { name: 'nome', type: 'text' }] },
+    ],
+    ids: ['cc-at-modelo-custo', 'cc-at-modelo-nome', 'cc-at-modelo-sel', 'cc-at-previa', 'cc-at-texto'],
+    seletores: ['button[type=submit]', 'form[data-envio]'],
+    dataAttrs: ['data-envio'],
+  },
+};
+
+/** Parte 2c: respostas prontas (chips que preenchem o campo ou escolhem o modelo). */
+export const ENTRA_RESPOSTAS_PRONTAS: MudancaContrato = {
+  motivo: 'Junior: respostas prontas (boas-vindas, conta de luz, proposta, visita, financiamento)',
+  entra: { seletores: ['[data-pronta]', 'details'], dataAttrs: ['data-pronta'] },
+};
+
+/** Parte 2b: o dono (admin da casa) liga o WhatsApp pessoal dele pela tela de Conversas. */
+export const ENTRA_MEU_WHATSAPP: MudancaContrato = {
+  motivo: 'Junior: o número pessoal dele (QR) entra no painel — atalho "👤 Conectar meu WhatsApp"',
+  entra: { links: ['/dashboard/whatsapp/pessoal'] },
+};

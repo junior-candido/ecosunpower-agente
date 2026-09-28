@@ -162,3 +162,21 @@ Migrations 136 (`medidores_energia`, token por medidor, chave da nuvem cifrada c
 resolve empresa pelo token do medidor. Medidor de quadro **não** é inversor: registro
 irmão (`medidor-registry.ts`), nunca em `sistemas_clientes`. Spec e plano em
 `docs/superpowers/specs|plans/2026-09-28-gestao-de-energia*.md`.
+
+## Atendimento — responder o WhatsApp pelo painel (Parte 2, 28/09/2026)
+Tela Leads › Conversas (`dashboard/atendimento-views.ts`). Rotas em `dashboard/atendimento-rotas.ts`
+(registradas no router DEPOIS da trava `/leads/:id`): `POST /leads/:id/responder` (texto — no número
+oficial da Eva só na janela de 24 h, conferida no servidor com 1 h de margem) e `/responder-modelo`
+(modelo aprovado, `dashboard/modelos-atendimento.ts`). **"Assumir" é um estado só** (`leads.eva_active`):
+o botão "✋ Assumir" do WhatsApp (`eva-admin-buttons.ts`), o topo do chat e o envio pelo painel chamam
+`assumir-atendimento.ts`; só "Devolver para a Eva" traz ela de volta. Histórico completo (envios com
+autor/canal + eventos assumiu/devolveu) na tabela `mensagens_whatsapp` (migration 138, `mensagens-whatsapp.ts`);
+a Eva continua com a memória curta em `conversations`. Com a Eva pausada a mensagem do cliente é gravada
+(sem resposta). Anti envio duplo = `chave_envio` única por empresa reservada antes de enviar.
+**Parte 2b — número PESSOAL do dono (QR/Evolution, só EcoSun):** tela `/dashboard/whatsapp/pessoal`
+(`dashboard/numero-pessoal-rotas.ts` + `whatsapp-pessoal-views.ts`) cria a instância na Evolution e guarda
+em `whatsapp_numeros_pessoais` (migration 139) quem conectou. O webhook `/webhook` desvia essa instância
+ANTES de tudo da Eva (`numero-pessoal.ts` → só grava, `visivel_so_para` = dono; a Eva nunca responde lá).
+Conversas de quem não é lead aparecem na lista com "Virar lead" (`?contato=`); mesmo telefone = um lead
+(variantes com 55, dentro da empresa). A resposta sai pelo número em que o cliente escreveu por último
+("Responder como 🤖 Eva / 👤 Junior").

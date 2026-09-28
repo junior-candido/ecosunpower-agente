@@ -14,15 +14,30 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DashUser } from './permissions.js';
+import { mensagensDoPainel, type LinhaMensagemWhatsapp } from '../mensagens-whatsapp.js';
+import { mensagensPessoais } from '../numero-pessoal.js';
+
+/** Canal da conversa: número da Eva (oficial), número pessoal (WhatsApp Business) ou assistente por QR (tenant). */
+export type CanalConversa = 'eva_oficial' | 'whatsapp_business' | 'qr_code';
 
 export interface MensagemChat {
-  role: 'user' | 'assistant' | string;
+  /** 'user' = cliente · 'assistant' = quem responde (Eva ou gente) · 'evento' = assumiu/devolveu. */
+  role: 'user' | 'assistant' | 'evento' | string;
   content: string;
   timestamp: string | null;
+  // ---- Parte 2 (histórico do painel, migration 138). Ausente = mensagem antiga da Eva. ----
+  autor?: 'cliente' | 'eva' | 'humano' | 'evento';
+  autorNome?: string | null;
+  canal?: CanalConversa | null;
+  /** Envio do painel: 'enviando' | 'enviada' | 'falhou'. */
+  status?: string | null;
+  evento?: 'assumiu' | 'devolveu' | null;
+  modelo?: string | null;
+  /** Mensagem do painel copiada na memória da Eva (conversations) — some na junção. */
+  painelId?: string | null;
+  /** De onde saiu a mensagem da equipe: 'painel' ou 'celular' (número pessoal). */
+  origem?: string | null;
 }
-
-/** Canal da conversa quando o dado existir (Parte 2 traz o 2º número). */
-export type CanalConversa = 'eva_oficial' | 'whatsapp_business' | 'qr_code';
 
 export interface ConversaResumo {
   leadId: string;
@@ -39,6 +54,8 @@ export interface ConversaResumo {
   /** O cliente falou por último (ninguém respondeu ainda). */
   aguardandoResposta: boolean;
   canal: CanalConversa | null;
+  /** Parte 2b: contato do número pessoal que AINDA NÃO é lead (leadId vazio). */
+  contato?: string | null;
 }
 
 export type FiltroConversa = 'todas' | 'aguardando' | 'meus';
@@ -83,11 +100,13 @@ export function normalizarMensagens(raw: unknown): MensagemChat[] {
     const o = m as Record<string, unknown>;
     const content = typeof o.content === 'string' ? o.content : typeof o.text === 'string' ? o.text : '';
     if (!content.trim()) continue;
-    out.push({
+    const saida: MensagemChat = {
       role: typeof o.role === 'string' ? o.role : 'user',
       content,
       timestamp: typeof o.timestamp === 'string' ? o.timestamp : null,
-    });
+    };
+    if (typeof o.painel_id === 'string' && o.painel_id) saida.painelId = o.painel_id;
+    out.push(saida);
   }
   return out;
 }
@@ -142,7 +161,12 @@ export function montarLista(
   leads: LinhaLead[],
   filtros: FiltrosConversa,
   viewerId: string,
+  /** Número por onde a conversa chegou quando a linha não diz (Parte 2: o da assistente da empresa). */
+  canalPadrao: CanalConversa | null = null,
+  /** Parte 2b: conversas do número pessoal de quem está vendo (resumosPessoais). */
+  pessoais: ConversaResumo[] = [],
 ): ListaConversas {
+  const t = (x: string | null | undefined) => { const n = Date.parse(x ?? ''); return Number.isFinite(n) ? n : 0; };
   const leadPorId = new Map(leads.map((l) => [l.id, l]));
   const vistos = new Set<string>();
   const todas: ConversaResumo[] = [];
@@ -158,11 +182,20 @@ export function montarLista(
       leadId, nome: lead.name, telefone: lead.phone, etapa: lead.status, cidade: lead.city,
       evaAtiva: !!lead.eva_active, optOut: !!lead.opt_out, dono: lead.claimed_by,
       ultimaEm: u.em ?? (typeof c.last_message_at === 'string' ? c.last_message_at : null),
-      ultimaTexto: u.texto, ultimaDe: u.de, aguardandoResposta: u.de === 'cliente',
-      canal: canalDaLinha(c),
+      ultimaTexto: u.texto, ultimaDe: u.de, aguardandoResposta: u.de === 'cliente' && !lead.opt_out,
+      canal: canalDaLinha(c) ?? canalPadrao,
     });
   }
-  todas.sort((a, b) => String(b.ultimaEm ?? '').localeCompare(String(a.ultimaEm ?? '')));
+  // Número pessoal: mesmo lead = um item só (vale a conversa mais recente e o número dela).
+  for (const p of pessoais) {
+    const i = p.leadId ? todas.findIndex((t) => t.leadId === p.leadId) : -1;
+    if (i === -1) { todas.push(p); continue; }
+    const atual = todas[i];
+    if (t(p.ultimaEm) > t(atual.ultimaEm)) {
+      todas[i] = { ...atual, ultimaEm: p.ultimaEm, ultimaTexto: p.ultimaTexto, ultimaDe: p.ultimaDe, aguardandoResposta: p.aguardandoResposta && !atual.optOut, canal: p.canal };
+    }
+  }
+  todas.sort((a, b) => t(b.ultimaEm) - t(a.ultimaEm));
 
   const q = (filtros.q ?? '').toLowerCase();
   const qDigitos = q.replace(/\D/g, '');
@@ -196,23 +229,50 @@ const LOTE_IDS = 100;
  * Lista de conversas da EMPRESA da sessão. Sem sessão com empresa → lista vazia
  * (falha fechada: nunca "todas as empresas").
  */
-export async function listarConversas(db: SupabaseClient, viewer: DashUser, filtros: FiltrosConversa): Promise<ListaConversas> {
-  const vazio: ListaConversas = { itens: [], contagem: { todas: 0, aguardando: 0, meus: 0, porEtapa: {} } };
-  const companyId = viewer?.companyId;
-  if (!companyId) return vazio;
+/**
+ * Conversas do número pessoal (linhas de mensagens_whatsapp do dono) → itens
+ * da lista. Uma por lead; quem não é lead, uma por telefone. PURA.
+ */
+export function resumosPessoais(rows: LinhaMensagemWhatsapp[], leads: LinhaLead[]): ConversaResumo[] {
+  const leadPorId = new Map(leads.map((l) => [l.id, l]));
+  const grupos = new Map<string, LinhaMensagemWhatsapp[]>();
+  // Agrupa pelo TELEFONE (um contato = um item), mesmo com linhas antigas sem lead.
+  for (const r of rows) {
+    if (r.direcao === 'evento' || !r.texto) continue;
+    const chave = r.contato_telefone ? `T:${r.contato_telefone}` : r.lead_id ? `L:${r.lead_id}` : '';
+    if (!chave) continue;
+    (grupos.get(chave) ?? grupos.set(chave, []).get(chave)!).push(r);
+  }
+  const out: ConversaResumo[] = [];
+  for (const [chave, g] of grupos) {
+    g.sort((a, b) => String(a.criado_em).localeCompare(String(b.criado_em)));
+    const u = g[g.length - 1];
+    const doCliente = u.direcao === 'entrada';
+    const base = {
+      ultimaEm: u.criado_em, ultimaTexto: (u.texto ?? '').replace(/\s+/g, ' ').trim().slice(0, 140),
+      ultimaDe: doCliente ? 'cliente' as const : 'assistente' as const, aguardandoResposta: doCliente, canal: 'whatsapp_business' as const,
+    };
+    const leadId = [...g].reverse().find((r) => r.lead_id)?.lead_id ?? null;
+    const lead = leadId ? leadPorId.get(leadId) : undefined;
+    if (leadId && !lead && chave.startsWith('L:')) continue;
+    if (lead) {
+      out.push({
+        leadId: lead.id, nome: lead.name, telefone: lead.phone, etapa: lead.status, cidade: lead.city,
+        evaAtiva: !!lead.eva_active, optOut: !!lead.opt_out, dono: lead.claimed_by, ...base,
+        aguardandoResposta: doCliente && !lead.opt_out,
+      });
+    } else {
+      const nome = [...g].reverse().find((r) => r.contato_nome)?.contato_nome ?? null;
+      out.push({
+        leadId: '', contato: u.contato_telefone, nome, telefone: u.contato_telefone ?? '', etapa: '', cidade: null,
+        evaAtiva: false, optOut: false, dono: null, ...base,
+      });
+    }
+  }
+  return out;
+}
 
-  const { data: convs, error } = await db
-    .from('conversations')
-    .select('lead_id, messages, last_message_at, created_at')
-    .eq('company_id', companyId)
-    .not('lead_id', 'is', null)
-    .order('last_message_at', { ascending: false })
-    .limit(LIMITE_CONVERSAS);
-  if (error) throw new Error(`Falha ao listar conversas: ${error.message}`);
-  const linhas = (convs ?? []) as Array<Record<string, unknown>>;
-  const ids = [...new Set(linhas.map((c) => String(c.lead_id ?? '')).filter(Boolean))];
-  if (ids.length === 0) return vazio;
-
+async function lerLeadsDaLista(db: SupabaseClient, viewer: DashUser, companyId: string, ids: string[]): Promise<LinhaLead[]> {
   const leads: LinhaLead[] = [];
   for (let i = 0; i < ids.length; i += LOTE_IDS) {
     let q = db
@@ -226,7 +286,34 @@ export async function listarConversas(db: SupabaseClient, viewer: DashUser, filt
     if (e2) throw new Error(`Falha ao ler leads das conversas: ${e2.message}`);
     leads.push(...((data ?? []) as LinhaLead[]));
   }
-  return montarLista(linhas, leads, filtros, viewer.id);
+  return leads;
+}
+
+export async function listarConversas(db: SupabaseClient, viewer: DashUser, filtros: FiltrosConversa, servico?: SupabaseClient): Promise<ListaConversas> {
+  const vazio: ListaConversas = { itens: [], contagem: { todas: 0, aguardando: 0, meus: 0, porEtapa: {} } };
+  const companyId = viewer?.companyId;
+  if (!companyId) return vazio;
+
+  // Parte 2b: conversas do número PESSOAL de quem está vendo (só a casa; só o dono).
+  const pessoaisRows = servico && companyId === CASA_ID ? await mensagensPessoais(servico, companyId, viewer.id, {}, 1000) : [];
+
+  const { data: convs, error } = await db
+    .from('conversations')
+    .select('lead_id, messages, last_message_at, created_at')
+    .eq('company_id', companyId)
+    .not('lead_id', 'is', null)
+    .order('last_message_at', { ascending: false })
+    .limit(LIMITE_CONVERSAS);
+  if (error) throw new Error(`Falha ao listar conversas: ${error.message}`);
+  const linhas = (convs ?? []) as Array<Record<string, unknown>>;
+  const ids = [...new Set([
+    ...linhas.map((c) => String(c.lead_id ?? '')),
+    ...pessoaisRows.map((r) => String(r.lead_id ?? '')),
+  ].filter(Boolean))];
+  if (ids.length === 0 && pessoaisRows.length === 0) return vazio;
+
+  const leads = ids.length ? await lerLeadsDaLista(db, viewer, companyId, ids) : [];
+  return montarLista(linhas, leads, filtros, viewer.id, canalDaAssistente(companyId), resumosPessoais(pessoaisRows, leads));
 }
 
 /** Todas as mensagens do lead (todas as linhas de `conversations` DA EMPRESA). */
@@ -240,4 +327,69 @@ export async function mensagensDoLead(db: SupabaseClient, leadId: string, compan
     .limit(50);
   if (error) throw new Error(`Falha ao ler a conversa: ${error.message}`);
   return juntarMensagens((data ?? []) as Array<{ messages: unknown; created_at?: string | null }>);
+}
+
+// ---------------------------------------------------------------------------
+// Parte 2 — junta a memória da Eva (conversations) com o histórico do painel
+// (mensagens_whatsapp: envios com autor/canal e eventos assumiu/devolveu).
+// ---------------------------------------------------------------------------
+
+/** Linha de mensagens_whatsapp → mensagem do chat. PURA. */
+export function linhaDoPainelParaChat(l: LinhaMensagemWhatsapp): MensagemChat | null {
+  if (l.direcao === 'evento') {
+    if (l.evento !== 'assumiu' && l.evento !== 'devolveu') return null;
+    return { role: 'evento', content: '', timestamp: l.criado_em, autor: 'evento', evento: l.evento, autorNome: l.autor_nome };
+  }
+  const texto = (l.texto ?? '').trim() || (l.modelo ? `[modelo ${l.modelo}]` : '');
+  if (!texto) return null;
+  if (l.direcao === 'entrada') {
+    return { role: 'user', content: texto, timestamp: l.criado_em, autor: 'cliente', canal: l.canal, autorNome: l.contato_nome };
+  }
+  // Reserva que ficou "enviando" (processo caiu no meio): não fica "enviando…" pra sempre.
+  const velha = l.status === 'enviando' && Date.now() - Date.parse(l.criado_em) > 5 * 60_000;
+  return {
+    role: 'assistant', content: texto, timestamp: l.enviada_em ?? l.criado_em,
+    autor: l.autor === 'eva' ? 'eva' : 'humano', autorNome: l.autor_nome, canal: l.canal,
+    status: velha ? 'sem_confirmacao' : l.status, modelo: l.modelo, painelId: l.id, origem: l.origem,
+  };
+}
+
+/**
+ * Memória da Eva + histórico do painel, em ordem de tempo. A cópia que o painel
+ * deixa na memória da Eva (painel_id) sai: vale a do painel, que tem autor e
+ * status. PURA.
+ */
+export function juntarComPainel(conversa: MensagemChat[], painel: LinhaMensagemWhatsapp[], canalDaEva: CanalConversa): MensagemChat[] {
+  const doPainel = painel.map(linhaDoPainelParaChat).filter((m): m is MensagemChat => !!m);
+  const idsPainel = new Set(painel.map((l) => l.id));
+  const daEva = conversa
+    .filter((m) => !(m.painelId && idsPainel.has(m.painelId)))
+    .map((m) => ({
+      ...m,
+      autor: m.autor ?? (m.role === 'assistant' ? (m.painelId ? 'humano' as const : 'eva' as const) : 'cliente' as const),
+      canal: m.canal ?? canalDaEva,
+    }));
+  const todas = [...daEva, ...doPainel].map((m, i) => ({ m, i }));
+  todas.sort((a, b) => {
+    const ta = a.m.timestamp ?? '';
+    const tb = b.m.timestamp ?? '';
+    if (ta && tb && ta !== tb) return Date.parse(ta) - Date.parse(tb) || ta.localeCompare(tb);
+    return a.i - b.i;
+  });
+  return todas.map((x) => x.m);
+}
+
+/** Canal do número da assistente desta empresa: a Eva (oficial) na casa, QR no tenant. */
+export function canalDaAssistente(companyId: string): CanalConversa {
+  return companyId === CASA_ID ? 'eva_oficial' : 'qr_code';
+}
+const CASA_ID = '00000000-0000-0000-0000-000000000001';
+
+/** Chat completo do lead: memória da Eva + painel (só o que o viewer pode ver). */
+export async function historicoDoLead(db: SupabaseClient, leadId: string, companyId: string, viewerId: string | null, servico?: SupabaseClient): Promise<MensagemChat[]> {
+  const [conversa, painel] = await Promise.all([
+    mensagensDoLead(db, leadId, companyId),
+    mensagensDoPainel(db, companyId, leadId, viewerId, 500, servico),
+  ]);
+  return juntarComPainel(conversa, painel, canalDaAssistente(companyId));
 }

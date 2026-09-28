@@ -85,3 +85,61 @@ export async function obterQrConexao(
   const pairingCode = typeof j?.pairingCode === 'string' && /^[A-Z0-9]{8}$/i.test(j.pairingCode) ? j.pairingCode.toUpperCase() : undefined;
   return { base64, pairingCode, estado: 'connecting' };
 }
+
+// ---------------------------------------------------------------------------
+// Atendimento P2b (28/09/2026): o WhatsApp PESSOAL do dono também entra por QR.
+// Aqui só se CRIA a instância na Evolution (e, se der, o webhook dela). O QR e
+// o estado usam as mesmas funções de cima. Nunca expõe a apikey.
+// ---------------------------------------------------------------------------
+
+export type ResultadoCriacao =
+  | { ok: true; jaExistia: boolean; webhook: 'ok' | 'falhou' | 'nao_pedido' }
+  | { ok: false; motivo: 'nome_invalido' | 'erro' };
+
+/**
+ * POST /instance/create (Evolution v2: integração Baileys + QR). Instância que
+ * já existe (403/409 "already in use") conta como pronta. Com `webhookUrl`,
+ * também aponta o webhook dela (POST /webhook/set) — se falhar, a tela avisa e
+ * vale o webhook global da Evolution (o mesmo das instâncias dos tenants).
+ */
+export async function criarInstancia(
+  deps: ConexaoEvolutionDeps,
+  instancia: string,
+  webhookUrl?: string,
+  webhookToken?: string,
+): Promise<ResultadoCriacao> {
+  if (!instanciaValida(instancia)) return { ok: false, motivo: 'nome_invalido' };
+  const f = deps.fetchImpl ?? fetch;
+  const base = deps.baseUrl.replace(/\/$/, '');
+  let jaExistia = false;
+  try {
+    const r = await f(`${base}/instance/create`, {
+      method: 'POST',
+      headers: { apikey: deps.apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instanceName: instancia, qrcode: true, integration: 'WHATSAPP-BAILEYS' }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      if ((r.status === 403 || r.status === 409) && /already|exist|in use/i.test(txt)) jaExistia = true;
+      else return { ok: false, motivo: 'erro' };
+    }
+  } catch {
+    return { ok: false, motivo: 'erro' };
+  }
+  if (!webhookUrl) return { ok: true, jaExistia, webhook: 'nao_pedido' };
+  try {
+    const w = await f(`${base}/webhook/set/${encodeURIComponent(instancia)}`, {
+      method: 'POST',
+      headers: { apikey: deps.apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhook: {
+        enabled: true, url: webhookUrl, byEvents: false, base64: false, events: ['MESSAGES_UPSERT'],
+        ...(webhookToken ? { headers: { 'x-webhook-token': webhookToken } } : {}),
+      } }),
+      signal: AbortSignal.timeout(15000),
+    });
+    return { ok: true, jaExistia, webhook: w.ok ? 'ok' : 'falhou' };
+  } catch {
+    return { ok: true, jaExistia, webhook: 'falhou' };
+  }
+}

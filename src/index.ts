@@ -323,6 +323,9 @@ async function main() {
   const tenantResolver = criarTenantResolver(supabase.getClient());
   // 107: instância Evolution ↔ empresa (tenant conectado por QR, ex.: Conquista Solar)
   const evolutionTenant = criarEvolutionTenantResolver(supabase.getClient());
+  // Atendimento P2b: instância do WhatsApp PESSOAL do dono (whatsapp_numeros_pessoais, migration 139).
+  // Mensagem dessa instância só é GRAVADA (só o dono vê) — a Eva nunca responde lá.
+  const numerosPessoais = (await import('./modules/numero-pessoal.js')).criarResolverNumeroPessoal(supabase.getClient());
 
   // [Corretor] Corretor de português compartilhado (1 cliente Anthropic) injetado
   // nos assistants que recebem texto livre do Junior (cases, fechamento). Corrige
@@ -4984,6 +4987,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       // Lead novo (lead == null) sempre passa — sera criado com eva_active=true (default).
       if (lead && (lead as any).eva_active === false) {
         console.log(`[eva-active] Skipping message from ${from} — eva_active=false (Junior atende)`);
+        // Atendimento Parte 2 (28/09): a Eva fica calada, mas a mensagem FICA na
+        // conversa — quem assumiu responde pela tela de Conversas e precisa ler.
+        await registrarPausado(db, from, companyId, 'texto', text);
         return;
       }
 
@@ -6509,6 +6515,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     }
     if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
       console.log(`[eva-active] Skipping audio from ${from} — eva_active=false`);
+      await registrarPausado(db, from, companyId, 'audio', ''); // fica na conversa (Atendimento P2)
       return;
     }
     await cancelIntroIfPending(from, db);
@@ -6578,6 +6585,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     }
     if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
       console.log(`[eva-active] Skipping image from ${from} — eva_active=false`);
+      await registrarPausado(db, from, companyId, 'imagem', caption ?? ''); // fica na conversa (Atendimento P2)
       return;
     }
     await cancelIntroIfPending(from, db);
@@ -6662,6 +6670,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     }
     if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
       console.log(`[eva-active] Skipping video from ${from} — eva_active=false`);
+      await registrarPausado(db, from, companyId, 'video', caption ?? ''); // fica na conversa (Atendimento P2)
       return;
     }
     await cancelIntroIfPending(from, db);
@@ -6789,6 +6798,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     }
     if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
       console.log(`[eva-active] Skipping document from ${from} — eva_active=false`);
+      await registrarPausado(db, from, companyId, 'documento', ''); // fica na conversa (Atendimento P2)
       return;
     }
     await cancelIntroIfPending(from, db);
@@ -7779,13 +7789,39 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     const instanciaOrigem = typeof (req.body as { instance?: unknown })?.instance === 'string'
       ? (req.body as { instance: string }).instance
       : undefined;
+    // Atendimento P2b — NÚMERO PESSOAL do dono (QR). Vem ANTES de tudo da Eva
+    // (grupo, fila, lead novo, takeover): ali ninguém responde por ele; a
+    // mensagem (dele ou do contato) só fica gravada pra ele ver no painel.
+    const pessoal = await numerosPessoais.porInstancia(instanciaOrigem);
+    if (pessoal === 'erro') {
+      // Banco não respondeu: NÃO confirma (a Evolution tenta de novo). Nada de
+      // telefone/texto no log — pode ser conversa pessoal do dono.
+      console.warn(`[numero-pessoal] banco indisponível ao conferir a instância "${instanciaOrigem}" — mensagem não confirmada`);
+      res.status(503).json({ status: 'numero_pessoal_indisponivel' });
+      return;
+    }
+    if (pessoal) {
+      // Nome de instância em DOIS cadastros (pessoal e assistente de tenant) seria
+      // conversa de cliente de outra empresa caindo na caixa pessoal: não grava nada.
+      if (await evolutionTenant.companyDaInstancia(instanciaOrigem)) {
+        console.error(`[numero-pessoal] 🚨 instância "${instanciaOrigem}" está como número pessoal E como assistente de empresa — mensagem RETIDA, nada gravado. Corrigir o cadastro.`);
+        res.status(200).json({ status: 'numero_pessoal_conflito' });
+        return;
+      }
+      if (!pessoal.ativo) { res.status(200).json({ status: 'numero_pessoal_desligado' }); return; }
+      const { receberNoNumeroPessoal } = await import('./modules/numero-pessoal.js');
+      const r = await receberNoNumeroPessoal(supabase.getClient(), pessoal, parsed);
+      res.status(200).json({ status: `numero_pessoal_${r}` });
+      return;
+    }
+
     const companyIdDaInstancia = await evolutionTenant.companyDaInstancia(instanciaOrigem);
     if (companyIdDaInstancia) {
       console.log(`[evolution] 📥 instância "${instanciaOrigem}" → empresa ${companyIdDaInstancia.slice(0, 8)} (${parsed.from}, ${parsed.type})`);
     } else if (instanciaOrigem && instanciaOrigem !== config.evolutionInstance) {
       // Falha-fechado: instância que NÃO é a da Eva e não está mapeada (typo,
       // cadastro faltando, empresa inativa, banco fora) NUNCA vira lead da EcoSun.
-      console.warn(`[evolution] ⚠️ instância "${instanciaOrigem}" não mapeada em companies.evolution_instance — mensagem de ${parsed.from} RETIDA`);
+      console.warn(`[evolution] ⚠️ instância "${instanciaOrigem}" não mapeada em companies.evolution_instance — mensagem de …${String(parsed.from).slice(-4)} RETIDA`);
       res.status(200).json({ status: 'instancia_nao_mapeada' });
       return;
     }
@@ -9179,6 +9215,15 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     proposalAssistant,
     metaService: metaWaba ?? undefined,
     engineerPhone: config.engineerPhone,
+    // Atendimento P2: "Devolver para a Eva" também limpa a pausa curta (Redis) do telefone.
+    retomarTakeover: (telefone) => takeover.resumeFor(telefone),
+    // Atendimento P2b: responder pelo WhatsApp PESSOAL do dono (instância QR dele) — sem
+    // passar pelo sendText da Eva (lá é outro número, outra marca, outra trava).
+    enviarPessoal: (instancia, to, text) => comEmpresaDe(ECOSUN_COMPANY_ID, () => comCanal({ companyId: ECOSUN_COMPANY_ID, evolutionInstance: instancia }, () => evolution.sendText(to, text))),
+    evolutionInstanciaEva: config.evolutionInstance,
+    // Token vai no CABEÇALHO (x-webhook-token), nunca na URL (log do proxy, tela da Evolution).
+    evolutionWebhookUrl: config.appBaseUrl ? `${config.appBaseUrl.replace(/\/$/, '')}/webhook` : undefined,
+    evolutionWebhookToken: config.webhookToken,
     infinitepayHandle: config.infinitepayHandle,
     calculadoraUrl: config.calculadoraUrl,
     evolutionConexao: { baseUrl: config.evolutionApiUrl, apiKey: config.evolutionApiKey, instanciaDaEmpresa: (cid) => evolutionTenant.instanciaDaEmpresa(cid) },

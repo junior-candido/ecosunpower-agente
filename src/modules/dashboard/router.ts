@@ -146,6 +146,8 @@ import { criarTravaDeModulo } from './modulos-contratados.js';
 import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
 import { criarTravaLeadDaEmpresa } from './trava-lead-empresa.js';
 import { criarTravaPropostaDaEmpresa, leadIdConferido } from './trava-proposta-empresa.js';
+import { criarRotasAtendimento } from './atendimento-rotas.js';
+import { criarRotasNumeroPessoal } from './numero-pessoal-rotas.js';
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
 // didApply=false: prévia + botão pra gravar. didApply=true: resultado da gravação.
@@ -217,6 +219,15 @@ export function createDashboardRouter(
     proposalAssistant?: ProposalAssistant;
     metaService?: MetaWhatsAppService;
     engineerPhone?: string; // telefone do Junior — recebe o aviso "cliente fechou"
+    // Atendimento P2: "Devolver para a Eva" limpa a pausa curta do Redis (takeover) do telefone.
+    retomarTakeover?: (telefone: string) => Promise<void>;
+    // Atendimento P2b: WhatsApp PESSOAL do dono (QR/Evolution) — envio pela instância dele.
+    enviarPessoal?: (instancia: string, to: string, text: string) => Promise<{ messageId?: string } | void>;
+    // EVOLUTION_INSTANCE (a da Eva): nunca pode virar número pessoal.
+    evolutionInstanciaEva?: string;
+    // URL do webhook desta plataforma (sem token) + token no cabeçalho, pra instância pessoal nova.
+    evolutionWebhookUrl?: string;
+    evolutionWebhookToken?: string;
     infinitepayHandle?: string; // InfiniteTag pra gerar link de cobrança (peça 1 pagamento)
     appBaseUrl?: string;        // URL pública do app (pro webhook_url da InfinitePay)
     calculadoraUrl?: string;        // ponte de acesso da calculadora (fatia 3a)
@@ -263,6 +274,36 @@ export function createDashboardRouter(
       res.status(403).send('<h2>Sem permissão</h2><p>Fale com o administrador.</p>');
     };
   }
+
+  // Atendimento Parte 2 — responder pelo painel + Assumir/Devolver (atendimento-rotas.ts).
+  const rotasAtendimento = criarRotasAtendimento({
+    supabase,
+    waba: options.metaService ?? null,
+    sendTextEvolution: options.sendText,
+    instanciaDaEmpresa: async (cid) => (await options.evolutionConexao?.instanciaDaEmpresa(cid).catch(() => undefined)) ?? null,
+    engineerPhone: options.engineerPhone ?? '',
+    retomarTakeover: options.retomarTakeover,
+    enviarPessoal: options.enviarPessoal,
+    copiarParaMemoria: async ({ leadId, companyId, texto, painelId }) => {
+      // Memória curta da Eva: quando ela voltar, sabe o que a equipe disse.
+      const conv = await supabaseService.getOrCreateConversation(leadId, companyId);
+      const nova = { role: 'assistant' as const, content: texto, timestamp: new Date().toISOString(), autor: 'humano', painel_id: painelId };
+      // SEM cortar em 20: com a Eva pausada as mensagens do cliente só existem aqui.
+      await supabaseService.updateConversation(conv.id, {
+        messages: [...(conv.messages ?? []), nova],
+        message_count: (conv.message_count ?? 0) + 1,
+      });
+    },
+  });
+
+  // Atendimento P2b — "Meu WhatsApp no painel" (QR do número pessoal do dono, só EcoSun).
+  const rotasNumeroPessoal = criarRotasNumeroPessoal({
+    supabase,
+    evolution: options.evolutionConexao ? { baseUrl: options.evolutionConexao.baseUrl, apiKey: options.evolutionConexao.apiKey } : undefined,
+    instanciaDaEva: options.evolutionInstanciaEva ?? '',
+    webhookUrl: options.evolutionWebhookUrl,
+    webhookToken: options.evolutionWebhookToken,
+  });
 
   // Parser dos forms internos (form-urlencoded). Limite maior porque a tela de
   // revisão do blog manda o markdown INTEIRO do post (acentos incham ~3x no
@@ -1535,6 +1576,14 @@ b.onclick=async function(){
     const inst = await options.evolutionConexao.instanciaDaEmpresa(cid).catch(() => undefined);
     return inst ?? null;
   }
+  // P2b — "Meu WhatsApp no painel": QR do número PESSOAL do dono (só EcoSun; 404 pro tenant).
+  router.get('/whatsapp/pessoal', exigir('usuarios', 'administrar'), rotasNumeroPessoal.pagina);
+  router.get('/whatsapp/pessoal/estado.json', exigir('usuarios', 'administrar'), rotasNumeroPessoal.estado);
+  router.get('/whatsapp/pessoal/qr.json', exigir('usuarios', 'administrar'), rotasNumeroPessoal.qr);
+  router.post('/whatsapp/pessoal/criar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.criar);
+  router.post('/whatsapp/pessoal/desligar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.desligar);
+  router.post('/whatsapp/pessoal/religar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.religar);
+
   router.get('/whatsapp', exigir('usuarios', 'administrar'), async (req: AuthedRequest, res) => {
     try {
       const { renderWhatsappPage } = await import('./whatsapp-views.js');
@@ -2381,9 +2430,13 @@ b.onclick=async function(){
       const { listarConversas, lerFiltros } = await import('./conversas-queries.js');
       const { renderAtendimentoPage } = await import('./atendimento-views.js');
       const filtros = lerFiltros(req.query as Record<string, unknown>);
+      // P2b: ?contato= abre a conversa do número PESSOAL com quem ainda não é lead (só o dono vê).
+      const ct = req.query.contato ? await rotasAtendimento.contatoDaTela(req as AuthedRequest) : null;
+      if (ct && 'leadId' in ct) return res.redirect(`/dashboard/leads/${ct.leadId}?canal=whatsapp_business`);
       // company_id sai SÓ da sessão (dentro de listarConversas, .eq explícito).
-      const lista = await listarConversas(bancoDoOperador(req as AuthedRequest, supabase), viewer, filtros);
-      res.type('text/html').send(renderAtendimentoPage({ user: viewer, lista, filtros, lead: null }));
+      const lista = await listarConversas(bancoDoOperador(req as AuthedRequest, supabase), viewer, filtros, supabase);
+      const donoPessoal = ct?.donoPessoal ?? await rotasAtendimento.nomeDoDonoPessoal(req as AuthedRequest);
+      res.type('text/html').send(renderAtendimentoPage({ user: viewer, lista, filtros, lead: null, contato: ct?.contato ?? null, donoPessoal }));
     } catch (err) {
       console.error('[dashboard/leads/conversas]', err);
       res.status(500).send(`<h2>Erro ao carregar conversas</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -2435,15 +2488,20 @@ b.onclick=async function(){
       // Atendimento: a ficha virou a tela de 3 colunas. O Copiloto IA saiu da
       // tela (decisão do Junior, 28/09) — a rota /ia-copiloto continua viva.
       const { servicosDoLead } = await import('./servicos-store.js');
-      const { listarConversas, mensagensDoLead, lerFiltros } = await import('./conversas-queries.js');
+      const { listarConversas, historicoDoLead, lerFiltros } = await import('./conversas-queries.js');
       const db = bancoDoOperador(req as AuthedRequest, supabase);
       const filtros = lerFiltros(req.query as Record<string, unknown>);
-      const [servicosDoCliente, lista, mensagens] = await Promise.all([
+      // Parte 2: o chat junta a memória da Eva com o histórico do painel
+      // (envios com autor/canal + "assumiu"/"devolveu") e traz o campo de resposta.
+      const [servicosDoCliente, lista, mensagens, donoPessoal] = await Promise.all([
         servicosDoLead(supabase, id).catch(() => []),
-        listarConversas(db, viewer, filtros),
-        mensagensDoLead(db, id, viewer.companyId).catch(() => undefined),
+        listarConversas(db, viewer, filtros, supabase),
+        historicoDoLead(db, id, viewer.companyId, viewer.id, supabase).catch(() => undefined),
+        rotasAtendimento.nomeDoDonoPessoal(req as AuthedRequest),
       ]);
-      res.send(renderLeadDetailPage(lead, [], String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer, { lista, filtros, mensagens }));
+      // Padrão da resposta = o número em que o cliente escreveu por último (P2b).
+      const envio = can(viewer, 'leads', 'editar') ? await rotasAtendimento.envioDaTela(req as AuthedRequest, lead, mensagens ?? []) : undefined;
+      res.send(renderLeadDetailPage(lead, [], String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer, { lista, filtros, mensagens, envio, donoPessoal }));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);
       res.status(500).send(`<h2>Erro ao carregar lead</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -2574,33 +2632,21 @@ b.onclick=async function(){
     }
   });
 
-  // Pausa Eva pra este lead (equivalente a /eva off no zap).
-  router.post('/leads/:id/pause-eva', async (req: Request, res: Response) => {
-    const id = String(req.params.id);
-    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
-    const db = bancoDoOperador(req as AuthedRequest, supabase);
-    const { error } = await db
-      .from('leads')
-      .update({ eva_active: false, updated_at: new Date().toISOString() })
-      .eq('id', id);
-    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
-    res.redirect(`/dashboard/leads/${id}`);
-  });
+  // "✋ Assumir" (Atendimento P2): o MESMO estado do botão do WhatsApp
+  // (leads.eva_active + cadência cancelada + evento na conversa). A Eva só volta
+  // quando alguém devolver — aqui ou no botão "↩️ Reativar" do zap.
+  router.post('/leads/:id/pause-eva', exigir('leads', 'editar'), rotasAtendimento.assumir);
 
-  // Reativa Eva (equivalente a /eva on no zap).
-  router.post('/leads/:id/resume-eva', async (req: Request, res: Response) => {
-    const id = String(req.params.id);
-    if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
-    // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
-    const db = bancoDoOperador(req as AuthedRequest, supabase);
-    const { error } = await db
-      .from('leads')
-      .update({ eva_active: true, updated_at: new Date().toISOString() })
-      .eq('id', id);
-    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
-    res.redirect(`/dashboard/leads/${id}`);
-  });
+  // "↩ Devolver para a Eva": o único jeito de ela voltar (contato que pediu pra parar não volta).
+  router.post('/leads/:id/resume-eva', exigir('leads', 'editar'), rotasAtendimento.devolver);
+
+  // Responder o WhatsApp pelo painel (texto na janela de 24 h / modelo aprovado fora dela).
+  router.post('/leads/:id/responder', exigir('leads', 'editar'), rotasAtendimento.responder);
+  router.post('/leads/:id/responder-modelo', exigir('leads', 'editar'), rotasAtendimento.responderModelo);
+
+  // P2b — número PESSOAL do dono: responder quem ainda não é lead e "virar lead".
+  router.post('/leads/conversas/contato/responder', exigir('leads', 'editar'), rotasAtendimento.responderContato);
+  router.post('/leads/conversas/contato/virar-lead', exigir('leads', 'criar'), rotasAtendimento.virarLeadDoContato);
 
   // Cancela TODOS os toques pendentes de cadencia deste lead.
   router.post('/leads/:id/cancel-cadence', async (req: Request, res: Response) => {

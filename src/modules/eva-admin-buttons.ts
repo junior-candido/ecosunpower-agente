@@ -19,6 +19,15 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { SupabaseService } from './supabase.js';
 import { empresa, ehEcosun } from './empresa-config.js';
 import { avisoAdminPermitido } from './tenant-admin-guard.js';
+import { assumirAtendimento, devolverParaEva } from './assumir-atendimento.js';
+
+/** Estes botões só existem para leads da casa (o handler exige remetente admin da EcoSun). */
+const ECOSUN_ID = '00000000-0000-0000-0000-000000000001';
+
+/** Quem aparece no evento "… assumiu" quando o toque vem do WhatsApp do dono. */
+function nomeDoDono(): string {
+  try { return empresa().rtApelido || 'Junior'; } catch { return 'Junior'; }
+}
 
 export interface MetaWabaLike {
   sendInteractiveButtons(
@@ -185,20 +194,20 @@ export async function tryHandleEvaAdminButton(args: {
           await args.sendText(args.from, '⚠️ Botão sem lead id.');
           return true;
         }
-        const { error } = await args.client
-          .from('leads')
-          .update({ eva_active: false, updated_at: new Date().toISOString() })
-          .eq('id', leadId);
-        if (error) throw new Error(error.message);
-        // Tambem cancela cadencia pendente pra Eva nao mandar toque por cima.
-        await args.client
-          .from('eva_cadence')
-          .update({ status: 'cancelled', cancelled_reason: 'admin_assumed' })
-          .eq('lead_id', leadId)
-          .eq('status', 'pending');
+        // Atendimento Parte 2 (28/09): o MESMO estado do "✋ Assumir" da tela de
+        // Conversas — assumir aqui aparece lá (com o evento na conversa) e só
+        // "Devolver para a Eva" (aqui ou lá) traz a Eva de volta.
+        const r = await assumirAtendimento(args.client, { leadId, companyId: ECOSUN_ID, origem: 'whatsapp', autorNome: nomeDoDono() });
+        if (!r.ok) {
+          if (r.motivo === 'erro') throw new Error('não consegui pausar a Eva');
+          await args.sendText(args.from, '⚠️ Não achei esse lead.');
+          return true;
+        }
         await args.sendText(
           args.from,
-          `✋ Eva pausada pra este lead e cadência cancelada. Você assume daqui. Pra retomar: /eva on neste número OU clique em retomar no dashboard.`,
+          r.jaEstava
+            ? `✋ Você já estava com esse cliente — a Eva já estava pausada. Pra devolver: botão "Devolver para a Eva" na tela de Conversas.`
+            : `✋ Eva pausada pra este lead e cadência cancelada. Você assume daqui. Ela só volta quando você devolver: "Devolver para a Eva" na tela de Conversas (ou o botão "↩️ Reativar" do aviso).`,
         );
         return true;
       }
@@ -208,11 +217,14 @@ export async function tryHandleEvaAdminButton(args: {
           await args.sendText(args.from, '⚠️ Botão sem lead id.');
           return true;
         }
-        const { error } = await args.client
-          .from('leads')
-          .update({ eva_active: true, updated_at: new Date().toISOString() })
-          .eq('id', leadId);
-        if (error) throw new Error(error.message);
+        const r = await devolverParaEva(args.client, { leadId, companyId: ECOSUN_ID, origem: 'whatsapp', autorNome: nomeDoDono() });
+        if (!r.ok) {
+          if (r.motivo === 'erro') throw new Error('não consegui reativar a Eva');
+          await args.sendText(args.from, r.motivo === 'opt_out'
+            ? '🚫 Esse contato pediu pra parar — a Eva não volta a falar com ele.'
+            : '⚠️ Não achei esse lead.');
+          return true;
+        }
         await args.sendText(args.from, `▶️ Eva retomou esse lead.`);
         return true;
       }
