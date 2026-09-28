@@ -60,6 +60,7 @@ export const TELAS_RENOVADAS: string[] = [
   'cadencia-views.ts',
 
   // R18 — RH
+  'rh-views.ts',
 
   // R19 — Configurações (usuários, empresas, WhatsApp, minha assinatura)
 
