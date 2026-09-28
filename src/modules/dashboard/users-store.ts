@@ -3,7 +3,7 @@
 // usado pelo auth e pelas telas de /usuarios.
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { telefoneParaEnvio } from '../phone.js';
-import type { DashUser, Permissoes } from './permissions.js';
+import { can, type Area, type DashUser, type Nivel, type Permissoes } from './permissions.js';
 
 export interface RoleRow {
   id: string;
@@ -121,17 +121,20 @@ export async function listRoles(client: SupabaseClient, companyId: string): Prom
 
 export interface UserListItem {
   id: string; nome: string; login: string; ativo: boolean; role_nome: string | null;
+  /** R19: papel (pra coluna "vê") e último acesso (last_login_at, gravado no login). */
+  role_id?: string | null; last_login_at?: string | null;
 }
 
 export async function listUsers(client: SupabaseClient, companyId: string): Promise<UserListItem[]> {
   const { data } = await client
     .from('dashboard_users')
-    .select('id, nome, login, ativo, dashboard_roles(nome)')
+    .select('id, nome, login, ativo, role_id, last_login_at, dashboard_roles(nome)')
     .eq('company_id', companyId)
     .order('nome');
   return (data ?? []).map((u: any) => ({
     id: u.id, nome: u.nome, login: u.login, ativo: u.ativo,
     role_nome: u.dashboard_roles?.nome ?? null,
+    role_id: u.role_id ?? null, last_login_at: u.last_login_at ?? null,
   }));
 }
 
@@ -150,10 +153,69 @@ export async function createUser(
   return { id: (data as { id: string }).id };
 }
 
+// ---------------------------------------------------------------------------
+// Trava de empresa das rotas /usuarios/:id* (revisão de segurança do R19,
+// 28/09/2026). As rotas rodam no client de SERVIÇO (sem RLS): sem isto, um
+// admin de tenant mexia em usuário de outra empresa só trocando o id.
+// ---------------------------------------------------------------------------
+
+/** O operador pode dar este papel? Só papel da empresa DELE; quem não é admin
+ *  não dá papel de admin nem área/nível que ele mesmo não tem. */
+export function papelCabeNoOperador(
+  role: Pick<RoleRow, 'company_id' | 'is_admin' | 'permissoes'>,
+  op: DashUser,
+): boolean {
+  if (role.company_id !== op.companyId) return false;
+  if (op.isAdmin) return true;
+  if (role.is_admin) return false;
+  return Object.entries(role.permissoes ?? {}).every(([area, niveis]) =>
+    (niveis ?? []).every((n) => can(op, area as Area, n as Nivel)));
+}
+
+/** Papel (por id) que o operador pode dar a alguém — ao criar ou editar usuário. */
+export async function conferirPapelParaDar(client: SupabaseClient, op: DashUser, roleId: string): Promise<boolean> {
+  const role = roleId ? await getRole(client, roleId) : null;
+  return !!role && papelCabeNoOperador(role, op);
+}
+
+/** Usuário alvo de editar/desativar/excluir: tem que ser da empresa da sessão
+ *  (senão 404 — nem existe pra quem pergunta) e, se o operador não é admin,
+ *  não pode ter papel acima do dele (403). */
+export async function conferirAlvoUsuario(
+  client: SupabaseClient,
+  op: DashUser,
+  userId: string,
+): Promise<{ ok: true } | { ok: false; status: 403 | 404; motivo: string }> {
+  const { data } = await client.from('dashboard_users')
+    .select('id, company_id, role_id').eq('id', userId).eq('company_id', op.companyId).maybeSingle();
+  const alvo = data as { id: string; company_id: string; role_id: string | null } | null;
+  if (!alvo) return { ok: false, status: 404, motivo: 'Usuário não encontrado' };
+  if (!op.isAdmin && alvo.role_id) {
+    const role = await getRole(client, alvo.role_id);
+    // Papel sumido (role_id órfão) conta como "acima": na dúvida, só o admin mexe.
+    if (!role || !papelCabeNoOperador(role, op)) return { ok: false, status: 403, motivo: 'Essa pessoa tem um papel acima do seu' };
+  }
+  return { ok: true };
+}
+
+/** Dados da tela de editar — só da empresa da sessão. */
+export async function usuarioParaEditar(
+  client: SupabaseClient,
+  id: string,
+  companyId: string,
+): Promise<{ id: string; nome: string; login: string; ativo: boolean; role_id: string | null; telefone: string | null; acesso_temporario: boolean; email: string | null } | null> {
+  const { data } = await client.from('dashboard_users')
+    .select('id, nome, login, ativo, role_id, telefone, acesso_temporario, email')
+    .eq('id', id).eq('company_id', companyId).maybeSingle();
+  return (data as any) ?? null;
+}
+
+/** `companyId` (opcional): só altera se o usuário for dessa empresa (rotas da tela de usuários). */
 export async function updateUser(
   client: SupabaseClient,
   id: string,
   patch: { nome?: string; roleId?: string; ativo?: boolean; senhaHash?: string; telefone?: string | null; acessoTemporario?: boolean; email?: string | null },
+  companyId?: string,
 ): Promise<void> {
   const upd: Record<string, unknown> = {};
   if (patch.nome !== undefined) upd.nome = patch.nome;
@@ -164,7 +226,8 @@ export async function updateUser(
   if (patch.acessoTemporario !== undefined) upd.acesso_temporario = patch.acessoTemporario;
   if (patch.email !== undefined) upd.email = patch.email;
   if (Object.keys(upd).length === 0) return;
-  await client.from('dashboard_users').update(upd).eq('id', id);
+  const q = client.from('dashboard_users').update(upd).eq('id', id);
+  await (companyId ? q.eq('company_id', companyId) : q);
 }
 
 /** Telefone (zap) do usuário — pro aviso de serviço atribuído. */
@@ -214,11 +277,14 @@ export async function excluirTransferindoHistorico(
   client: SupabaseClient,
   id: string,
   paraId: string,
+  /** Empresa da sessão (rota /usuarios/:id/excluir): a origem tem que ser dela. */
+  companyId?: string,
 ): Promise<{ ok: true } | { ok: false; motivo: string }> {
   if (!paraId) return { ok: false, motivo: 'escolha pra quem transferir o histórico' };
   if (paraId === id) return { ok: false, motivo: 'não dá pra transferir o histórico pra própria pessoa' };
   const { data: origem } = await client.from('dashboard_users').select('id, company_id').eq('id', id).maybeSingle();
   if (!origem) return { ok: false, motivo: 'usuário não encontrado' };
+  if (companyId && (origem as { company_id: string }).company_id !== companyId) return { ok: false, motivo: 'usuário não encontrado' };
   const { data: destino } = await client.from('dashboard_users').select('id, company_id').eq('id', paraId).maybeSingle();
   if (!destino) return { ok: false, motivo: 'destinatário não encontrado' };
   if ((destino as { company_id: string }).company_id !== (origem as { company_id: string }).company_id) {

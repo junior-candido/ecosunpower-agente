@@ -2,9 +2,46 @@
 // Tela "Conectar WhatsApp" do tenant: QR grande que se renova sozinho +
 // estado ao vivo. Feita pra cliente leigo fazer sem ninguém na linha
 // (lição Conquista Solar 28/08: código ditado por telefone não funciona).
-import { renderLayout, escapeHtml } from './views.js';
+// Renovação do miolo — R19 (28/09/2026): o MESMO polling (whatsapp/qr.json a
+// cada 20 s, whatsapp/estado.json a cada 5 s) e os mesmos ids; estado em pílula
+// (conectado / aguardando / caiu), QR em largura total no celular, sem Tailwind.
+import { escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { EstadoConexao } from '../evolution-conexao.js';
+import { cabecalhoPagina, cartaoSecao, estadoVazio, icone } from './ui/componentes.js';
+import { paginaConfiguracoes } from './configuracoes-casca.js';
+
+const CSS_WHATSAPP = `
+.cc-wa-grade{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;max-width:960px}
+.cc-cf .cc-wa-grade .cc-panel{margin:0}
+.cc-wa-qrp{text-align:center}
+.cc-cf-estado{font-size:13px;padding:6px 12px;margin-bottom:16px}
+.cc-cf-estado::before{display:none}
+.cc-cf-estado .cc-dot{width:9px;height:9px}
+.cc-wa-pulsa{animation:cc-wa-pulsa 1.4s ease-in-out infinite}
+@keyframes cc-wa-pulsa{50%{opacity:.35}}
+.cc-wa-qr img{display:block;margin:0 auto;width:288px;height:288px;max-width:100%;border-radius:14px;border:1px solid var(--cc-line-2);background:#fff;object-fit:contain}
+.cc-wa-aviso{margin:10px 0 0;font-size:12px;color:var(--cc-faint)}
+.cc-wa-erro{margin:12px 0 0;font-size:13.5px;color:var(--cc-crit)}
+.cc-wa-ok{padding:28px 0}
+.cc-wa-ok-ic{width:64px;height:64px;margin:0 auto;border-radius:50%;display:grid;place-items:center;color:var(--cc-ok);background:var(--cc-ok-soft)}
+.cc-wa-ok-ic .cc-i{width:30px;height:30px}
+.cc-wa-ok strong{display:block;margin-top:12px;font-size:17px;color:var(--cc-text)}
+.cc-wa-ok p{margin:6px 0 0;font-size:13px;color:var(--cc-muted)}
+.cc-wa-passos{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:9px;font-size:13.5px;color:var(--cc-text-2);line-height:1.5}
+.cc-wa-passos strong{color:var(--cc-text)}
+.cc-wa-inst{margin:18px 0 0;font-size:12px;color:var(--cc-faint)}
+.cc-wa-inst code{font-size:12px;color:var(--cc-text-2);overflow-wrap:anywhere}
+@media (max-width:1023px){.cc-wa-grade{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:760px){.cc-wa-qr img{width:100%;height:auto;aspect-ratio:1/1}}
+`;
+
+// Pílula do estado. O script troca estas MESMAS classes (CL_OK/CL_ESPERA/CL_CAIU).
+const PILULA = {
+  ok: { cl: 'cc-pill cc-s-ok cc-cf-estado', bol: 'cc-dot cc-d-ok', txt: 'Conectado' },
+  espera: { cl: 'cc-pill cc-s-warn cc-cf-estado', bol: 'cc-dot cc-d-warn cc-wa-pulsa', txt: 'Aguardando conexão' },
+  caiu: { cl: 'cc-pill cc-s-crit cc-cf-estado', bol: 'cc-dot cc-d-crit', txt: 'Caiu — leia o QR de novo' },
+} as const;
 
 export function renderWhatsappPage(input: {
   user: DashUser | undefined;
@@ -13,46 +50,46 @@ export function renderWhatsappPage(input: {
 }): string {
   const { user, instancia, estado } = input;
   const marca = escapeHtml(user?.companyNome ?? 'sua empresa');
+  const cabecalhoHtml = cabecalhoPagina({
+    trilha: [{ rotulo: 'Configurações' }, { rotulo: 'WhatsApp' }],
+    titulo: 'Conectar WhatsApp',
+    subtitulo: 'É o número que a sua assistente vai usar pra atender os clientes. Conecta uma vez; se cair, volta aqui.',
+  });
 
   let body: string;
   if (!instancia) {
-    body = `<div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">📱 Conectar WhatsApp</h1></div>
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 max-w-xl text-slate-600">
-      O WhatsApp de <b>${marca}</b> ainda não foi preparado pela EcoSunPower. Fale com a gente que ativamos em minutos.
-    </div>`;
+    body = cartaoSecao({ titulo: 'WhatsApp da empresa', corpoHtml: `${estadoVazio({ tipo: 'sem_dado', titulo: 'Ainda não preparado', icone: 'wa' })}
+      <p class="cc-cf-nota">O WhatsApp de <strong>${marca}</strong> ainda não foi preparado pelo suporte da plataforma. Fale com o suporte que ativamos em minutos.</p>` });
   } else {
+    // 'close' ao abrir a tela = instância nunca conectada OU desligada: igual a hoje, "Aguardando conexão".
+    // "Caiu" (vermelho) só quando cai com a tela aberta, depois de ter conectado (script).
+    const p = estado === 'open' ? PILULA.ok : PILULA.espera;
+    const aberto = estado === 'open';
     body = `
-<div class="mb-6"><h1 class="text-2xl font-bold text-slate-800">📱 Conectar WhatsApp</h1>
-<p class="text-slate-500 mt-1">É o número que a sua assistente vai usar pra atender os clientes. Conecta uma vez; se cair, volta aqui.</p></div>
-
-<div class="grid md:grid-cols-2 gap-6 max-w-4xl">
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 text-center">
-    <div id="estado" data-estado="${escapeHtml(estado)}" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold mb-4 ${estado === 'open' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">
-      <span id="estado-bolinha" class="w-2.5 h-2.5 rounded-full ${estado === 'open' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}"></span>
-      <span id="estado-texto">${estado === 'open' ? 'Conectado' : 'Aguardando conexão'}</span>
+<div class="cc-wa-grade">
+  ${cartaoSecao({ titulo: 'Conexão', classe: 'cc-wa-qrp', corpoHtml: `
+    <span id="estado" data-estado="${escapeHtml(estado)}" class="${p.cl}">
+      <span id="estado-bolinha" class="${p.bol}"></span>
+      <span id="estado-texto">${p.txt}</span>
+    </span>
+    <div id="qr-box" class="cc-wa-qr${aberto ? ' hidden' : ''}">
+      <img id="qr" alt="QR Code do WhatsApp">
+      <p id="qr-aviso" class="cc-wa-aviso">Gerando QR…</p>
+      <p id="qr-erro" class="cc-wa-erro hidden"></p>
     </div>
-    <div id="qr-box" class="${estado === 'open' ? 'hidden' : ''}">
-      <img id="qr" alt="QR Code do WhatsApp" class="mx-auto w-72 h-72 rounded-xl border border-slate-200 bg-slate-50 object-contain">
-      <p id="qr-aviso" class="text-xs text-slate-400 mt-2">Gerando QR…</p>
-      <p id="qr-erro" class="hidden text-sm text-rose-700 mt-3"></p>
-    </div>
-    <div id="ok-box" class="${estado === 'open' ? '' : 'hidden'} py-10">
-      <div class="text-6xl">✅</div>
-      <p class="text-lg font-semibold text-slate-800 mt-3">WhatsApp conectado!</p>
-      <p class="text-sm text-slate-500 mt-1">Manda um "oi" pro número de outro celular pra ver a assistente responder.</p>
-    </div>
-  </div>
-
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 text-slate-700">
-    <h2 class="font-bold text-slate-800 mb-3">Como conectar (1 minuto)</h2>
-    <ol class="list-decimal ml-5 space-y-2 text-sm">
-      <li>Pegue o <b>celular com o chip do WhatsApp da empresa</b>.</li>
-      <li>Abra o WhatsApp → toque nos <b>⋮ três pontinhos</b> (iPhone: <b>Configurações</b>).</li>
-      <li>Toque em <b>Aparelhos conectados</b> → <b>Conectar um aparelho</b>.</li>
-      <li>Aponte a câmera pro QR aqui ao lado. Pronto — a bolinha fica verde.</li>
+    <div id="ok-box" class="cc-wa-ok${aberto ? '' : ' hidden'}">
+      <div class="cc-wa-ok-ic">${icone('check')}</div>
+      <strong>WhatsApp conectado!</strong>
+      <p>Manda um "oi" pro número de outro celular pra ver a assistente responder.</p>
+    </div>` })}
+  ${cartaoSecao({ titulo: 'Como conectar (1 minuto)', corpoHtml: `
+    <ol class="cc-wa-passos">
+      <li>Pegue o <strong>celular com o chip do WhatsApp da empresa</strong>.</li>
+      <li>Abra o WhatsApp → toque nos <strong>⋮ três pontinhos</strong> (iPhone: <strong>Configurações</strong>).</li>
+      <li>Toque em <strong>Aparelhos conectados</strong> → <strong>Conectar um aparelho</strong>.</li>
+      <li>Aponte a câmera pro QR da conexão. Pronto — a bolinha fica verde.</li>
     </ol>
-    <p class="text-xs text-slate-400 mt-6">Instância: <code>${escapeHtml(instancia)}</code></p>
-  </div>
+    <p class="cc-wa-inst">Instância: <code>${escapeHtml(instancia)}</code></p>` })}
 </div>`;
   }
 
@@ -61,18 +98,25 @@ export function renderWhatsappPage(input: {
 (function(){
   var img=document.getElementById('qr'), estadoEl=document.getElementById('estado'), txt=document.getElementById('estado-texto'), bol=document.getElementById('estado-bolinha');
   var qrBox=document.getElementById('qr-box'), okBox=document.getElementById('ok-box'), aviso=document.getElementById('qr-aviso'), erro=document.getElementById('qr-erro');
-  var conectado=false, parado=false, seq=0, tQr=null, tEstado=null;
-  var CL_OK='inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold mb-4 bg-emerald-100 text-emerald-800';
-  var CL_ESPERA='inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold mb-4 bg-amber-100 text-amber-800';
+  var conectado=false, jaConectou=false, parado=false, seq=0, tQr=null, tEstado=null;
+  var CL_OK='${PILULA.ok.cl}', BOL_OK='${PILULA.ok.bol}';
+  var CL_ESPERA='${PILULA.espera.cl}', BOL_ESPERA='${PILULA.espera.bol}';
+  var CL_CAIU='${PILULA.caiu.cl}', BOL_CAIU='${PILULA.caiu.bol}';
   function parar(msg){ parado=true; clearInterval(tQr); clearInterval(tEstado); img.removeAttribute('src'); aviso.classList.add('hidden'); erro.textContent=msg; erro.classList.remove('hidden'); }
   function pintar(estado){
-    if(estado==='inexistente'){ parar('A conexão do WhatsApp da sua empresa não foi encontrada. Fale com a EcoSunPower.'); return; }
+    if(estado==='inexistente'){ parar('A conexão do WhatsApp da sua empresa não foi encontrada. Fale com o suporte.'); return; }
     if(estado==='erro'){ aviso.textContent='Sem resposta do servidor do WhatsApp. Tentando de novo…'; return; }
     if(estado==='desconhecido'){ return; } // falha passageira de leitura: não muda a tela
     if(estado==='open'){
-      if(!conectado){ conectado=true; qrBox.classList.add('hidden'); okBox.classList.remove('hidden'); estadoEl.className=CL_OK; bol.className='w-2.5 h-2.5 rounded-full bg-emerald-500'; txt.textContent='Conectado'; }
-    } else if(conectado){
-      conectado=false; okBox.classList.add('hidden'); qrBox.classList.remove('hidden'); estadoEl.className=CL_ESPERA; bol.className='w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse'; txt.textContent='Aguardando conexão'; img.removeAttribute('src'); aviso.textContent='Gerando QR…'; qr();
+      jaConectou=true;
+      if(!conectado){ conectado=true; qrBox.classList.add('hidden'); okBox.classList.remove('hidden'); }
+      estadoEl.className=CL_OK; bol.className=BOL_OK; txt.textContent='${PILULA.ok.txt}';
+      return;
+    }
+    var caiu=jaConectou&&estado==='close'; // nunca conectou nesta tela → "Aguardando", igual a hoje
+    estadoEl.className=caiu?CL_CAIU:CL_ESPERA; bol.className=caiu?BOL_CAIU:BOL_ESPERA; txt.textContent=caiu?'${PILULA.caiu.txt}':'${PILULA.espera.txt}';
+    if(conectado){
+      conectado=false; okBox.classList.add('hidden'); qrBox.classList.remove('hidden'); img.removeAttribute('src'); aviso.textContent='Gerando QR…'; qr();
     }
   }
   function qr(){
@@ -92,5 +136,8 @@ export function renderWhatsappPage(input: {
 })();
 </script>` : undefined;
 
-  return renderLayout({ active: 'whatsapp', title: 'Conectar WhatsApp', body, scripts, user });
+  return paginaConfiguracoes({
+    active: 'whatsapp', secao: 'whatsapp', title: 'Conectar WhatsApp', user, css: CSS_WHATSAPP, scripts,
+    cabecalhoHtml, corpoHtml: body,
+  });
 }

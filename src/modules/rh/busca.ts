@@ -4,6 +4,7 @@
 // candidatos guardados (resumos da triagem) e devolve quem encaixa + motivo.
 import type Anthropic from '@anthropic-ai/sdk';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { daEmpresa } from './store.js';
 
 const MODELO_FORTE = 'claude-opus-4-7';
 const MODELO_RAPIDO = 'claude-haiku-4-5-20251001';
@@ -83,13 +84,16 @@ export async function buscarNoBanco(
   anthropic: Anthropic,
   supabase: SupabaseClient,
   pergunta: string,
+  companyId: string,
 ): Promise<Array<EncontradoBusca & { candidato: CandidatoBusca }>> {
+  // Só o banco de talentos da empresa da SESSÃO (revisão de segurança R18):
+  // antes a IA recebia os perfis de todas as empresas.
   const [{ data: cands }, { data: vagas }] = await Promise.all([
-    supabase.from('rh_candidatos')
-      .select('id,nome,vaga_id,nota_ia,resumo_ia,alertas_ia,status')
+    daEmpresa(supabase.from('rh_candidatos')
+      .select('id,nome,vaga_id,nota_ia,resumo_ia,alertas_ia,status'), companyId)
       .order('created_at', { ascending: false })
       .limit(MAX_CANDIDATOS),
-    supabase.from('rh_vagas').select('id,titulo'),
+    daEmpresa(supabase.from('rh_vagas').select('id,titulo'), companyId),
   ]);
   const rows = (cands ?? []) as Array<{ id: string; nome: string; vaga_id: string | null; nota_ia: number | null; resumo_ia: string | null; alertas_ia: string | null; status: string }>;
   if (rows.length === 0) return [];

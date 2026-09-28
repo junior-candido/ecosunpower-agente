@@ -33,6 +33,42 @@ export const TELAS_RENOVADAS: string[] = [
   'demonstrativos-views.ts',
   // R12 — Pasta do Cliente (lista, editor, prévia)
   'pasta-views.ts',
+  // ── Onda 3 (R13–R19): cada fatia acrescenta SÓ debaixo do seu marcador ──
+  // R13 — Manutenção + OS
+  'manutencao-views.ts',
+  'os-views.ts',
+
+  // R14 — Serviços de campo (painel interno)
+  // (as 4 telas do painel; a página pública do link mágico fica de fora — não muda)
+  'servicos-views.ts#renderServicosPage',
+  'servicos-views.ts#renderNovoServicoPage',
+  'servicos-views.ts#renderDetalheServicoPage',
+  'servicos-views.ts#renderLixeiraServicosPage',
+
+  // R15 — Quadro de Obras + vincular + contato
+  'usinas-kanban-views.ts',
+  'vincular-usinas-views.ts',
+
+  // R16 — Clientes (lista, ficha, novo, relatório pós-instalação)
+  'clientes-views.ts',
+  'relatorio-pi-views.ts',
+
+  // R17 — Marketing (campanhas, blog, e-mail, cadência)
+  'marketing-views.ts',
+  'blog-views.ts',
+  'email-views.ts',
+  'cadencia-views.ts',
+
+  // R18 — RH
+  'rh-views.ts',
+
+  // R19 — Configurações (usuários, empresas, WhatsApp, minha assinatura)
+  'usuarios-views.ts',
+  'empresas-views.ts',
+  'whatsapp-views.ts',
+  'minha-assinatura-views.ts',
+  'configuracoes-casca.ts',
+
 ];
 
 export const RE_TAILWIND = /\b(bg|text|border|ring|from|to)-(white|black|slate|gray|zinc|sky|cyan|amber|emerald|rose|red|green|yellow|indigo|violet)(-\d{2,3})?\b|\b(p|px|py|m|mx|my|mt|mb|gap|space-[xy])-\d|\brounded(-\w+)?\b|\bgrid-cols-\d/;

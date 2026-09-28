@@ -9,6 +9,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { filtroEmpresa } from './filtro-empresa.js';
 
 export interface Insight {
   text: string;
@@ -16,7 +17,8 @@ export interface Insight {
   emoji: string;
 }
 
-export async function buildMarketingInsights(supabase: SupabaseClient): Promise<Insight[]> {
+/** R17: companyId da SESSÃO — cada empresa só vê o que é dela. */
+export async function buildMarketingInsights(supabase: SupabaseClient, companyId: string): Promise<Insight[]> {
   const insights: Insight[] = [];
 
   // 1) Campanhas pausadas há mais de 30 dias
@@ -24,6 +26,7 @@ export async function buildMarketingInsights(supabase: SupabaseClient): Promise<
   const { count: pausadasVelhas } = await supabase
     .from('marketing_campaigns')
     .select('id', { count: 'exact', head: true })
+    .or(filtroEmpresa(companyId))
     .eq('status', 'paused')
     .lt('last_synced_at', trintaDiasAtras);
 
@@ -40,6 +43,7 @@ export async function buildMarketingInsights(supabase: SupabaseClient): Promise<
   const { data: insightsCpl } = await supabase
     .from('meta_ads_insights')
     .select('campaign_id, spend_cents, leads')
+    .or(filtroEmpresa(companyId))
     .gte('date_start', seteDiasAtras);
 
   if (insightsCpl && insightsCpl.length > 0) {
@@ -55,6 +59,7 @@ export async function buildMarketingInsights(supabase: SupabaseClient): Promise<
       const { data: camps } = await supabase
         .from('marketing_campaigns')
         .select('id, name, status, cpl_alerta_brl, cpl_critico_brl')
+        .or(filtroEmpresa(companyId))
         .in('id', ids)
         .eq('status', 'active');
 
@@ -89,6 +94,7 @@ export async function buildMarketingInsights(supabase: SupabaseClient): Promise<
   const { count: criativosPendentes } = await supabase
     .from('marketing_creatives')
     .select('id', { count: 'exact', head: true })
+    .or(filtroEmpresa(companyId))
     .eq('status', 'pending');
 
   if ((criativosPendentes ?? 0) >= 1) {

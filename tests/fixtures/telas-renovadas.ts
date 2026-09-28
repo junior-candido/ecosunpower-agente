@@ -18,6 +18,7 @@ import { CASOS_DEMONSTRATIVOS } from './casos-demonstrativos.js';
 import { CASOS_PASTAS } from './casos-pastas.js';
 import { renderFinanceiroPage } from '../../src/modules/dashboard/financeiro-views.js';
 import { usina, ALERTAS_RESUMO, SPARK_7D, KPIS_EVA } from './casos-monitoramento.js';
+import { telasOnda3 } from './telas-onda3.js';
 import { USER_CASA, leadRow, leadDetalhe, SERVICOS_LEAD, FILTROS_CHEIOS } from './miolo-leads.js';
 
 const hora = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
@@ -101,7 +102,7 @@ export function frota(n: number): any[] {
 }
 
 /** Todas as telas renovadas, com n linhas/cartões/itens cada. */
-export function telasRenovadas(n: number, user: DashUser = USER_CASA): Record<NomeTela, string> {
+export function telasRenovadas(n: number, user: DashUser = USER_CASA): Record<NomeTela, string> & Record<string, string> {
   const lead = leadDetalhe({ conversation_messages: mensagens(Math.min(n, 120)) });
   const casa = user.companyId === USER_CASA.companyId;
   return {
@@ -126,5 +127,7 @@ export function telasRenovadas(n: number, user: DashUser = USER_CASA): Record<No
     'gd-digitar': CASOS_DEMONSTRATIVOS['digitar-erro'](),
     'gd-confirmar': casa ? CASOS_DEMONSTRATIVOS['confirmar-reenviar']() : CASOS_DEMONSTRATIVOS['confirmar-periodo'](),
     monitoramento: renderMonitoramentoPage(frota(n), {}, casa ? ALERTAS_RESUMO : undefined, casa ? SPARK_7D : undefined, casa ? KPIS_EVA : undefined, user),
+    // Onda 3 (R13–R19): cada fatia tem o seu arquivo tests/fixtures/telas-rNN.ts
+    ...telasOnda3(n, user),
   };
 }

@@ -1,7 +1,7 @@
 // Renderizacao HTML do dashboard — server-side. Sem framework, sem build step.
 // Tailwind via CDN + Chart.js via CDN. Identidade EcoSun: azul navy + amarelo solar.
 
-import type { DashboardKpi, PropostaRow, ManutencaoRow, GraficoMensal, SistemaMonitorRow } from './queries.js';
+import type { DashboardKpi, PropostaRow, GraficoMensal, SistemaMonitorRow } from './queries.js';
 import type { DetalheCalendario } from '../monitoring/service.js';
 import type { IntradayPonto } from '../monitoring/types.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.js';
@@ -17,7 +17,6 @@ import { temaDaTela } from './ui/tema.js';
 import { JS_TEMA_GRAFICOS } from './ui/graficos.js';
 import { montarMenu, type ItemMontado, type IdGrupo, type SeloGrupo } from './menu-areas.js';
 import { corDaMarca, logoDaEmpresa, LOGO_PADRAO_CASA } from './marca-empresa.js';
-import { formatPhoneBR, normalizeBrazilianPhone } from '../meta-leadgen.js';
 import { renderClienteSelector } from './proprietario.js';
 import { empresa } from '../empresa-config.js';
 import { can, type DashUser } from './permissions.js';
@@ -1948,93 +1947,4 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
     active: 'monitoramento', title: 'Importar sites', body, scripts, user,
     tailwind: false, dark: temaDaTela(user, 'claro') === 'escuro',
   });
-}
-
-// =========================================================================
-// MANUTENCAO — clientes com lembrete pendente
-// =========================================================================
-
-// Código morto (o router usa a de manutencao-views.ts) — sai no R13. Recebe
-// `user` só pra passar no teto do R0 (renderLayout sempre com user).
-export function renderManutencaoPage(rows: ManutencaoRow[], user?: DashUser): string {
-  const linhas = rows.map(r => {
-    const dias = Math.floor((new Date(r.scheduled_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    const urgencia = dias < 0
-      ? `<span class="text-red-600 font-semibold">Atrasada ${Math.abs(dias)}d</span>`
-      : dias === 0
-        ? '<span class="text-amber-600 font-semibold">HOJE</span>'
-        : `<span class="text-slate-700">em ${dias}d</span>`;
-    const topicLabel = r.topic === 'limpeza_maio'
-      ? '🌧 Limpeza pré-chuva (maio)'
-      : r.topic === 'limpeza_agosto'
-        ? '🌳 Limpeza pós-folhas (agosto)'
-        : escapeHtml(r.topic);
-
-    const whatsappLink = r.telefone
-      ? `https://wa.me/${normalizeBrazilianPhone(r.telefone) ?? r.telefone.replace(/\D/g, '')}`
-      : null;
-
-    return `
-      <tr class="hover:bg-slate-50">
-        <td class="px-4 py-3 text-sm">
-          <div class="font-medium text-slate-900">${escapeHtml(r.cliente_nome)}</div>
-          <div class="text-xs text-slate-500">${escapeHtml(formatPhoneBR(r.telefone ?? '')) || '—'}</div>
-        </td>
-        <td class="px-4 py-3 text-sm">${topicLabel}</td>
-        <td class="px-4 py-3 text-sm text-slate-700">${formatDate(r.scheduled_date)}</td>
-        <td class="px-4 py-3 text-sm">${urgencia}</td>
-        <td class="px-4 py-3 text-sm text-slate-600">${formatDate(r.installed_at)}</td>
-        <td class="px-4 py-3 text-right">
-          ${whatsappLink
-            ? `<a href="${whatsappLink}" target="_blank" class="inline-flex items-center px-3 py-1 rounded-md bg-green-100 text-green-700 hover:bg-green-200 text-xs font-medium">💬 WhatsApp</a>`
-            : '<span class="text-xs text-slate-400">sem fone</span>'}
-        </td>
-      </tr>`;
-  }).join('');
-
-  const body = `
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold text-slate-900">🔧 Manutenção pendente</h1>
-      <p class="text-slate-600 text-sm">Clientes com lembrete agendado nos próximos 30 dias (ou já atrasado).</p>
-    </div>
-
-    ${rows.length > 0 ? `
-    <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 flex items-start gap-3">
-      <div class="text-2xl">📌</div>
-      <div class="text-sm text-amber-900">
-        <div class="font-semibold">${rows.length} ${rows.length === 1 ? 'cliente' : 'clientes'} esperando contato.</div>
-        <div class="text-xs mt-1">Eva já tem cron diário pra disparar mensagens automaticamente, mas você pode contatar manualmente clicando no botão WhatsApp ao lado de cada linha.</div>
-      </div>
-    </div>
-    ` : ''}
-
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
-      <table class="w-full min-w-[800px]">
-        <thead class="bg-slate-100 border-b border-slate-200">
-          <tr class="text-left text-xs uppercase tracking-wider text-slate-500">
-            <th class="px-4 py-3 font-semibold">Cliente</th>
-            <th class="px-4 py-3 font-semibold">Tipo</th>
-            <th class="px-4 py-3 font-semibold">Data</th>
-            <th class="px-4 py-3 font-semibold">Status</th>
-            <th class="px-4 py-3 font-semibold">Instalado em</th>
-            <th class="px-4 py-3 font-semibold text-right">Ação</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
-          ${rows.length > 0 ? linhas : `
-            <tr>
-              <td colspan="6" class="px-4 py-12 text-center">
-                <div class="text-4xl mb-2">✨</div>
-                <div class="text-slate-700 font-medium">Nenhuma manutenção pendente nos próximos 30 dias.</div>
-                <div class="text-slate-500 text-sm mt-1">
-                  Pra criar lembretes, marque clientes como "manutenção" via comando <code class="bg-slate-100 px-1 rounded">/manutencao</code> na Eva.
-                </div>
-              </td>
-            </tr>`}
-        </tbody>
-      </table>
-    </section>
-  `;
-
-  return renderLayout({ active: 'manutencao', title: 'Manutenção', body, user });
 }
