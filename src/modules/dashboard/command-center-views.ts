@@ -236,8 +236,9 @@ function kpis(d: CommandCenterDados): string {
       semDadoTexto: f ? 'nenhuma usina monitorada' : semUsinas,
     },
     {
-      rotulo: 'Faturamento', valor: dd?.recebidoMes ?? null, prefixo: 'R$', compacto: true, href: '/dashboard/financeiro',
-      detalhe: 'recebido no mês', semDadoTexto: semTexto(p, 'financeiro'),
+      // Mesmo número e mesmo nome da tela Financeiro ("Recebido no mês"), pra não confundir com "faturado".
+      rotulo: 'Recebido no mês', valor: dd?.recebidoMes ?? null, prefixo: 'R$', compacto: true, href: '/dashboard/financeiro',
+      detalhe: 'faturamento que entrou', semDadoTexto: semTexto(p, 'financeiro'),
     },
     {
       rotulo: 'Leads do mês', valor: dd?.kpisMes.leads ?? null, href: '/dashboard/leads',
@@ -295,7 +296,11 @@ export function graficoCurva(curva: readonly PontoCurva[]): string {
   const linha = trechos.map((d) => `<path d="${d}" class="cc-linha-esp"/>`).join('');
   const grade = [0.25, 0.5, 0.75].map((f) => `<line x1="0" x2="${W}" y1="${(H * f).toFixed(1)}" y2="${(H * f).toFixed(1)}" class="cc-grade"/>`).join('');
 
-  const rotY = [1, 0.5, 0].map((f) => `<span style="top:${(1 - f) * 100}%">${escapeHtml(fmtNumero((topo * f) / divisor, divisor > 1 && topo / divisor < 10 ? 1 : 0))}</span>`).join('');
+  const casasY = (v: number) => (Number.isInteger(v) ? 0 : Number.isInteger(Math.round(v * 1000) / 100) ? 1 : 2);
+  const rotY = [1, 0.5, 0].map((f) => {
+    const v = (topo * f) / divisor;
+    return `<span style="top:${(1 - f) * 100}%">${escapeHtml(fmtNumero(v, casasY(v)))}</span>`;
+  }).join('');
   const marcas = [0, Math.floor((n - 1) / 3), Math.floor((2 * (n - 1)) / 3), n - 1]
     .filter((v, i, a) => a.indexOf(v) === i && curva[v])
     .map((i) => `<span style="left:${((i + 0.5) / n) * 100}%">${escapeHtml(dm(curva[i].data))}</span>`).join('');

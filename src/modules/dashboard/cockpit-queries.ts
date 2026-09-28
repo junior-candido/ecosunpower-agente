@@ -75,7 +75,7 @@ function isoNDaysAgo(days: number): string {
  *  do funil e ninguém mexeu nele há mais de 24 h. Regra ÚNICA — o Cockpit
  *  ("Silentes 24h+") e a Central de Atenção do Command Center usam esta. */
 export const CRITERIO_LEAD_ESPERANDO = {
-  status: ['novo', 'qualificando', 'qualificado'] as string[],
+  status: ['novo', 'qualificando', 'qualificado'],
   horas: 24,
 } as const;
 
@@ -106,7 +106,7 @@ export async function getCockpitData(client: SupabaseClient): Promise<CockpitDat
     client.from('leads')
       .select('id', { count: 'exact', head: true })
       .eq('eva_active', true).eq('opt_out', false)
-      .in('status', CRITERIO_LEAD_ESPERANDO.status)
+      .in('status', [...CRITERIO_LEAD_ESPERANDO.status])
       .lt('updated_at', desdeEsperando),
     client.from('leads').select('id', { count: 'exact', head: true })
       .eq('status', 'agendado').gte('updated_at', today0h),
@@ -131,7 +131,7 @@ export async function getCockpitData(client: SupabaseClient): Promise<CockpitDat
     client.from('leads')
       .select('id', { count: 'exact', head: true })
       .eq('eva_active', true).eq('opt_out', false)
-      .in('status', CRITERIO_LEAD_ESPERANDO.status)
+      .in('status', [...CRITERIO_LEAD_ESPERANDO.status])
       .lt('updated_at', desdeEsperando),
     client.from('marketing_alerts').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
   ]);

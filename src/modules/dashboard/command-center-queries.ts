@@ -144,7 +144,7 @@ export async function carregarCommandCenter(
 
   // --- Usinas (frota + telemetria) ---------------------------------------
   const frotaP = P.usinas ? tentar('usinas', async () => {
-    const [usinas, geracoes] = await Promise.all([
+    const [usinas, geracoes, telemetria] = await Promise.all([
       lerTudo<UsinaLinha>((de, ate) => db.from('sistemas_clientes')
         .select('id, apelido, potencia_kwp, cidade, uf, ativo, ultima_sincronizacao, ultimo_erro, status_inversor, acompanhamento')
         .eq('company_id', companyId).eq('ativo', true)
@@ -154,14 +154,14 @@ export async function carregarCommandCenter(
         .eq('company_id', companyId)
         .gte('data', j.inicioMes < j.ha30 ? j.inicioMes : j.ha30).lte('data', j.hoje)
         .order('sistema_id', { ascending: true }).order('data', { ascending: true }).range(de, ate), 'geracao_diaria'),
+      // Geração ao vivo é bônus: se a telemetria falhar, o resto da frota segue (e "Geração agora" fica "—").
+      tentar('telemetria', () => lerUma<TelemetriaLinha>(db.from('telemetria_medicoes')
+        .select('sistema_id, device_key, valor, ts')
+        .eq('company_id', companyId).eq('ponto', 'potencia')
+        .gte('ts', new Date(agoraMs - 30 * 60_000).toISOString())
+        .order('ts', { ascending: false }).limit(5000), 'telemetria_medicoes')),
     ]);
-    // Geração ao vivo é bônus: se a telemetria falhar, o resto da frota segue (e "Geração agora" fica "—").
-    const telemetria = await tentar('telemetria', () => lerUma<TelemetriaLinha>(db.from('telemetria_medicoes')
-      .select('sistema_id, device_key, valor, ts')
-      .eq('company_id', companyId).eq('ponto', 'potencia')
-      .gte('ts', new Date(agoraMs - 30 * 60_000).toISOString())
-      .order('ts', { ascending: false }).limit(5000), 'telemetria_medicoes')) ?? [];
-    return resumirFrota(usinas, geracoes, telemetria, { agora, corteAtencao: cfg.reguaAtencaoPct / 100 });
+    return resumirFrota(usinas, geracoes, telemetria ?? [], { agora, corteAtencao: cfg.reguaAtencaoPct / 100 });
   }) : Promise.resolve(null);
 
   // --- Comercial (contagens) -------------------------------------------
@@ -180,7 +180,7 @@ export async function carregarCommandCenter(
     const { data, count, error } = await db.from('leads')
       .select('updated_at', { count: 'exact' })
       .eq('company_id', companyId).eq('eva_active', true).eq('opt_out', false)
-      .in('status', CRITERIO_LEAD_ESPERANDO.status).lt('updated_at', desde)
+      .in('status', [...CRITERIO_LEAD_ESPERANDO.status]).lt('updated_at', desde)
       .order('updated_at', { ascending: true }).limit(1);
     if (error) throw new Error(error.message);
     if (typeof count !== 'number') throw new Error('contagem não veio');
@@ -289,7 +289,16 @@ export async function carregarCommandCenter(
   const propostasOk = propostas !== null && statusLead !== null;
   marcar('propostas', P.propostas, propostasOk);
   if (propostasOk) {
-    eventos.push(...eventosDePropostas(propostas.map((p): PropostaParaAtencao => ({
+    // Proposta refeita (reajuste, nova versão): vale só a MAIS RECENTE de cada lead —
+    // a antiga não está "parada" e não pode somar de novo no "R$ em jogo".
+    const vistos = new Set<string>();
+    const atuais = propostas.filter((p) => {
+      if (!p.lead_id) return true;
+      if (vistos.has(p.lead_id)) return false;
+      vistos.add(p.lead_id);
+      return true;
+    });
+    eventos.push(...eventosDePropostas(atuais.map((p): PropostaParaAtencao => ({
       id: p.id, created_at: p.created_at, sent_to_client_at: p.sent_to_client_at, ultimo_acesso_at: p.ultimo_acesso_at,
       cliente_respondeu_at: p.cliente_respondeu_at, revoked: p.revoked, expires_at: p.expires_at,
       valorTotal: extrairValorTotal(p.dados_input), leadEncerrado: encerrado(p.lead_id),

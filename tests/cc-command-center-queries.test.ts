@@ -141,6 +141,19 @@ describe('carregarCommandCenter — números e avisos', () => {
     expect(r.fontes.every((f) => f.estado === 'ok')).toBe(true);
   });
 
+  it('proposta refeita pro mesmo lead: só a mais recente conta (o R$ em jogo não dobra)', async () => {
+    const base = { sent_to_client_at: null, ultimo_acesso_at: null, cliente_respondeu_at: null, revoked: false, expires_at: '2026-11-09T12:00:00Z' };
+    const { client } = fakeDb({ ...DADOS, propostas_publicas: { data: [
+      { ...base, id: 'v2', lead_id: 'L2', created_at: '2026-09-15T12:00:00Z', dados_input: { investimento: { total: 28000 } } },
+      { ...base, id: 'v1', lead_id: 'L2', created_at: '2026-09-10T12:00:00Z', dados_input: { investimento: { total: 30000 } } },
+      { ...base, id: 'sem-lead', lead_id: null, created_at: '2026-09-11T12:00:00Z', dados_input: { investimento: { total: 5000 } } },
+    ] } });
+    const r = await carregarCommandCenter(client, ECOSUN, AGORA, TODAS_PERMISSOES);
+    const prop = r.eventos.find((e) => e.id === 'propostas:paradas-72h')!;
+    expect(prop.titulo).toMatch(/^2 propostas paradas/);
+    expect(prop.impactoTexto?.replace(/ /g, ' ')).toBe('R$ 33.000 em jogo');
+  });
+
   it('tarefa de SLA de lead já encerrado não conta', async () => {
     const { client } = fakeDb({ ...DADOS, lead_tarefas: { data: [{ id: 't1', lead_id: 'L1', due_at: '2026-09-25T12:00:00Z' }] } });
     const r = await carregarCommandCenter(client, ECOSUN, AGORA, TODAS_PERMISSOES);
