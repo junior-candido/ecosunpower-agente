@@ -139,7 +139,7 @@ export function renderFinanceiroPage(d: FinanceiroData, user?: DashUser): string
           { html: `${escapeHtml(brl(l.valor))}${l.tipo === 'entrada' && !l.tem_nota ? ` ${pilulaStatus('acompanhar', 'sem nota')}` : ''}` },
           l.contraparte ?? null,
           l.categoriaNome ?? null,
-          { html: l.pf_pj ? pilulaStatus(l.pf_pj === 'PJ' ? 'info' : 'oportunidade', l.pf_pj) : '—' },
+          { html: l.pf_pj ? pilulaStatus(l.pf_pj === 'PJ' ? 'info' : 'acompanhar', l.pf_pj) : '—' },
           { html: doc ? `<a class="cc-fin-doc" href="${escapeHtml(doc)}" target="_blank" rel="noopener" title="Abrir comprovante">📎</a>` : '—' },
         ];
       }),
@@ -167,25 +167,28 @@ ${JS_TEMA_GRAFICOS}
 <script>
   const T = window.ccTema || {};
   const d = JSON.parse(document.getElementById('fin-data').textContent);
+  const reais = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const celular = window.innerWidth < 760;
   // #graf sempre existe (igual a antes); sem dado fica escondido.
   const g = echarts.init(document.getElementById('graf'), 'cc');
   const meses = [...new Set([...d.faturamentoMensal.map(x=>x.competencia), ...d.despesasMensal.map(x=>x.competencia)])].sort();
   const entrou = meses.map(m => (d.faturamentoMensal.find(x=>x.competencia===m)?.receita) ?? 0);
   const saiu = meses.map(m => (d.despesasMensal.find(x=>x.competencia===m)?.total) ?? 0);
   const sobrou = meses.map((m, i) => Math.round((entrou[i] - saiu[i]) * 100) / 100);
-  g.setOption({ tooltip:{trigger:'axis'}, legend:{},
+  g.setOption({ tooltip:{trigger:'axis', valueFormatter: reais}, legend:{},
     grid:{left:8, right:8, top:36, bottom:8, containLabel:true},
-    xAxis:{type:'category', data:meses}, yAxis:{type:'value'},
+    xAxis:{type:'category', data:meses}, yAxis:{type:'value', axisLabel:{formatter: (v) => Math.abs(v) >= 1000 ? (v / 1000).toLocaleString('pt-BR') + ' mil' : String(v)}},
     series:[{name:'Entrou', type:'bar', data:entrou, itemStyle:{color:T.ok, borderRadius:[4,4,0,0]}},
             {name:'Saiu', type:'bar', data:saiu, itemStyle:{color:T.off, borderRadius:[4,4,0,0]}},
             {name:'Sobrou', type:'line', data:sobrou, smooth:true, symbolSize:6, itemStyle:{color:T.gold}, lineStyle:{color:T.gold, width:2}}] });
   window.addEventListener('resize', ()=>g.resize());
   ${d.caixa.pizzaCategorias.length > 0 ? `
   const p = echarts.init(document.getElementById('pizza'), 'cc');
-  p.setOption({ tooltip:{trigger:'item'},
-    series:[{type:'pie', radius:['40%','70%'],
+  p.setOption({ tooltip:{trigger:'item', valueFormatter: reais},
+    legend: celular ? { type:'scroll', bottom:0 } : { show:false },
+    series:[{type:'pie', radius: celular ? ['35%','60%'] : ['40%','70%'], avoidLabelOverlap:true,
       data:d.caixa.pizzaCategorias.map(x=>({name:x.categoria, value:x.total})),
-      label:{color:T.text}}] });
+      label: celular ? { show:false } : { color:T.text }}] });
   window.addEventListener('resize', ()=>p.resize());
   ` : ''}
 </script>`;
