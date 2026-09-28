@@ -31,7 +31,9 @@ function dbFalso(respostas: Record<string, unknown[] | { error: { code?: string;
     q.select = () => q;
     q.insert = (p: unknown) => { reg.op = 'insert'; reg.payload = p; return q; };
     q.update = (p: unknown) => { reg.op = 'update'; reg.payload = p; return q; };
+    q.delete = () => { reg.op = 'delete'; return q; };
     for (const op of ['eq', 'gte', 'lte', 'lt', 'in']) q[op] = (c: string, v: unknown) => { reg.filtros.push([op, c, v]); return q; };
+    q.or = (v: string) => { reg.filtros.push(['or', '', v]); return q; };
     q.order = () => q; q.limit = () => q; q.range = () => q;
     q.then = (ok: (r: unknown) => unknown) => {
       const r = respostas[tabela];
@@ -174,6 +176,39 @@ describe('cadastro', () => {
     expect(res.redirect).toHaveBeenCalledWith(`/dashboard/energia/${MID}`);
   });
 
+  it('aparelho já cadastrado em QUALQUER empresa: recusa com mensagem que não diz de quem é', async () => {
+    const db = dbFalso({ sistemas_clientes: [], medidores_energia: { error: { code: '23505', message: 'duplicate key value violates unique constraint "medidores_energia_device_global"' } } });
+    const res = resFalso();
+    await rotaCriarMedidor(db, deps())(req(tenant, { body: corpo }), res as unknown as Response);
+    expect(res.status).toHaveBeenCalledWith(400);
+    const h = html(res);
+    expect(h).toContain('Este aparelho já está cadastrado. Fale com o suporte.');
+    expect(h).not.toMatch(/EcoSun|medidores_energia_device_global|nesta empresa/);
+  });
+
+  it('edição que troca pra um aparelho já cadastrado: mesma mensagem', async () => {
+    const db = dbFalso({ medidores_energia: [MEDIDOR], sistemas_clientes: [] });
+    // select devolve o medidor; o update bate no índice único global.
+    const from = db.from as unknown as ReturnType<typeof vi.fn>;
+    const original = from.getMockImplementation()!;
+    from.mockImplementation((t: string) => {
+      const q = original(t) as Record<string, unknown>;
+      if (t === 'medidores_energia') {
+        const upd = q.update as (p: unknown) => Record<string, unknown>;
+        q.update = (p: unknown) => {
+          upd(p);
+          q.then = (ok: (r: unknown) => unknown) => Promise.resolve({ data: null, error: { code: '23505', message: 'duplicate key' } }).then(ok);
+          return q;
+        };
+      }
+      return q;
+    });
+    const res = resFalso();
+    await rotaSalvarMedidor(db, deps())(req(junior, { params: { id: MID }, body: { ...corpo, device_id: 'aabbccddee11' } }), res as unknown as Response);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(html(res)).toContain('Este aparelho já está cadastrado. Fale com o suporte.');
+  });
+
   it('edição: mostra só a máscara da chave guardada', async () => {
     const db = dbFalso({ medidores_energia: [MEDIDOR], sistemas_clientes: [] });
     const res = resFalso();
@@ -250,6 +285,21 @@ describe('portão do módulo e a aba Medição antiga', () => {
     const { moduloDoCaminho } = await import('../src/modules/dashboard/modulos-contratados.js');
     expect(moduloDoCaminho('/dashboard/energia')).toEqual({ modulo: 'medicao', chave: 'energia' });
     expect(moduloDoCaminho('/dashboard/energia/medidores/testar')).toEqual({ modulo: 'medicao', chave: 'energia' });
+  });
+
+  it('aba /medicao: o mesmo aparelho com e sem prefixo aparece UMA vez (linhas antigas continuam legíveis)', async () => {
+    const { listarAparelhos, resumoDoAparelho } = await import('../src/modules/dashboard/medicao-queries.js');
+    const db = dbFalso({ medicoes_shelly: [
+      { company_id: TENANT, device_id: '007007422d90', apelido: 'Quadro', medido_em: '2026-09-28T12:00:00Z' },
+      { company_id: TENANT, device_id: 'shellypro3em-007007422d90', apelido: 'Quadro', medido_em: '2026-09-27T12:00:00Z' },
+    ] });
+    const lista = await listarAparelhos(db, TENANT);
+    expect(lista).toHaveLength(1);
+    expect(lista[0]).toMatchObject({ deviceId: '007007422d90', leituras: 2 });
+    db.chamadas.length = 0;
+    await resumoDoAparelho(db, 'shellypro3em-007007422D90', TENANT, 24);
+    const f = db.chamadas[0].filtros;
+    expect(f).toContainEqual(['or', '', 'device_id.eq.007007422d90,device_id.ilike.shelly*-007007422d90']);
   });
 
   it('a aba /medicao agora lê só os aparelhos da empresa da sessão', async () => {

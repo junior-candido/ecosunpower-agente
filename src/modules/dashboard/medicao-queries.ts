@@ -9,6 +9,7 @@
 // ao lado do pico instantâneo é o que o cliente nunca viu na conta de luz.
 
 import { janelasDe15Minutos, demandaMaxima } from '../medicao/shelly-medicao.js';
+import { normalizarDeviceId } from '../energia/credenciais.js';
 
 export type Aparelho = {
   deviceId: string;
@@ -46,13 +47,16 @@ export async function listarAparelhos(client: any, companyId: string): Promise<A
     return [];
   }
   const mapa = new Map<string, Aparelho>();
+  // O mesmo aparelho pode ter linhas antigas com o id "cru" (shellypro3em-…)
+  // e novas com o id normalizado: aparece UMA vez, pelo id normalizado.
   for (const r of (data ?? []) as Array<{ device_id: string; apelido: string | null; medido_em: string }>) {
-    const atual = mapa.get(r.device_id);
+    const id = normalizarDeviceId(r.device_id);
+    const atual = mapa.get(id);
     if (atual) {
       atual.leituras += 1;
     } else {
-      mapa.set(r.device_id, {
-        deviceId: r.device_id,
+      mapa.set(id, {
+        deviceId: id,
         apelido: r.apelido,
         leituras: 1,
         ultimaEm: r.medido_em,
@@ -78,11 +82,14 @@ export async function resumoDoAparelho(
     consumoDiaKwh: null, injecaoDiaKwh: null, minutosSemReceber: null,
   };
   try {
+    // Id normalizado ou "cru" com prefixo do modelo (linhas antigas do piloto).
+    const id = normalizarDeviceId(deviceId);
+    if (!/^[a-z0-9]{1,64}$/.test(id)) return vazio;
     const desde = new Date(Date.now() - horas * 60 * 60 * 1000).toISOString();
     const { data, error } = await client
       .from('medicoes_shelly')
       .select('device_id, apelido, medido_em, potencia_w, tensao, corrente, fator_potencia, energia_wh, energia_devolvida_wh')
-      .eq('device_id', deviceId)
+      .or(`device_id.eq.${id},device_id.ilike.shelly*-${id}`)
       .eq('company_id', companyId)
       .gte('medido_em', desde)
       .order('medido_em', { ascending: true })
@@ -114,7 +121,7 @@ export async function resumoDoAparelho(
 
     return {
       aparelho: {
-        deviceId: ultima.device_id,
+        deviceId: normalizarDeviceId(ultima.device_id),
         apelido: ultima.apelido,
         leituras: linhas.length,
         ultimaEm: ultima.medido_em,

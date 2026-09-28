@@ -57,6 +57,12 @@ function resolver(d: DepsEnergia) {
 }
 
 const usuario = (req: Request) => (req as AuthedRequest).dashUser;
+
+/**
+ * Aparelho já cadastrado (índice único GLOBAL, migration 136). A mensagem é a
+ * mesma pra qualquer empresa e não diz de quem é — não vaza cliente de outro.
+ */
+export const MSG_APARELHO_JA_CADASTRADO = 'Este aparelho já está cadastrado. Fale com o suporte.';
 const corpo = (req: Request) => (req.body ?? {}) as Record<string, unknown>;
 
 function naoEncontrado(res: Response): void {
@@ -119,7 +125,7 @@ export function rotaCriarMedidor(supabase: SupabaseClient, d: DepsEnergia = {}):
     });
     if (!criado.ok) {
       refazer([criado.motivo === 'duplicado'
-        ? 'Este aparelho já está cadastrado nesta empresa.'
+        ? MSG_APARELHO_JA_CADASTRADO
         : criado.motivo === 'migration' ? 'As tabelas da Gestão de Energia ainda não foram aplicadas no banco (migrations 136 e 137).' : 'Não deu para gravar agora. Tente de novo.']);
       return;
     }
@@ -175,7 +181,7 @@ export function rotaSalvarMedidor(supabase: SupabaseClient, d: DepsEnergia = {})
       dados.ultimo_erro = null;
     }
     const ok = await atualizarMedidor(db, user.companyId, m.id, dados);
-    if (!ok.ok) { refazer([ok.motivo === 'duplicado' ? 'Já existe outro medidor com este código de aparelho.' : 'Não deu para gravar agora. Tente de novo.']); return; }
+    if (!ok.ok) { refazer([ok.motivo === 'duplicado' ? MSG_APARELHO_JA_CADASTRADO : 'Não deu para gravar agora. Tente de novo.']); return; }
     console.log(`[energia] medidor editado id=${m.id} empresa=${user.companyId}${dados.api_credentials_cifrado ? ' (chave da nuvem trocada)' : ''}`);
     res.redirect(`/dashboard/energia/${m.id}`);
   };
