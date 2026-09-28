@@ -148,6 +148,8 @@ export interface UsinaResumo {
   ultimaSincronizacao: string | null;
 }
 
+/** Um dia da curva. `realKwh` = todas as usinas que mandaram dado no dia.
+ *  `esperadoKwh` só existe quando TODAS elas têm kWp (senão a comparação mentiria). */
 export interface PontoCurva { data: string; realKwh: number | null; esperadoKwh: number | null }
 
 export interface ResumoFrota {
@@ -166,7 +168,7 @@ export interface ResumoFrota {
   energiaMesKwh: number | null;
   /** Soma da potência ao vivo (telemetria dos últimos 30 min). null = nenhuma leitura ao vivo. */
   geracaoAgora: { kw: number; usinas: number } | null;
-  /** 30 dias completos até ontem. Real e esperada das MESMAS usinas (com kWp, que mandaram dado no dia). */
+  /** 30 dias completos até ontem. Esperada só nos dias em que todas as usinas que mandaram dado têm kWp. */
   curva: PontoCurva[];
   porCidade: Array<{ cidade: string; total: number; pior: EstadoUsina }>;
 }
@@ -250,18 +252,20 @@ export function resumirFrota(
     ? { kw: r2([...ultimo.values()].reduce((s, x) => s + x.kw, 0)), usinas: new Set([...ultimo.values()].map((x) => x.sistema)).size }
     : null;
 
-  // Curva 30 dias (real × esperada das MESMAS usinas: com kWp e com dado no dia).
+  // Curva 30 dias: real de quem mandou dado; esperada das MESMAS usinas — e só
+  // quando todas elas têm kWp (uma usina sem kWp deixaria a esperada baixa demais).
   const curva: PontoCurva[] = [];
   const porId = new Map(usinas.map((u) => [u.id, u]));
   for (let d = j.ha30; d < j.hoje; d = somarDias(d, 1)) {
-    let real = 0; let esp = 0; let tem = false;
+    let real = 0; let esp = 0; let n = 0; let completo = true;
     for (const b of base) {
       const v = b.dias.get(d);
+      if (v === undefined) continue;
+      real += v; n += 1;
       const esperado = porId.get(b.u.id)?.esperadoDiaKwh ?? null;
-      if (v === undefined || esperado === null) continue;
-      real += v; esp += esperado; tem = true;
+      if (esperado === null) completo = false; else esp += esperado;
     }
-    curva.push({ data: d, realKwh: tem ? r2(real) : null, esperadoKwh: tem ? r2(esp) : null });
+    curva.push({ data: d, realKwh: n ? r2(real) : null, esperadoKwh: n && completo ? r2(esp) : null });
   }
 
   // Por cidade, pior estado primeiro.

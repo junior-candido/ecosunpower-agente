@@ -122,7 +122,7 @@ describe('resumirFrota', () => {
   it('geração agora: último valor de cada inversor nos últimos 30 min', () => {
     expect(r.geracaoAgora).toEqual({ kw: 4.3, usinas: 1 });
   });
-  it('curva: 30 dias até ontem; esperada só das usinas com kWp que mandaram dado no dia', () => {
+  it('curva: 30 dias até ontem; esperada das mesmas usinas que mandaram dado no dia', () => {
     expect(r.curva).toHaveLength(30);
     expect(r.curva[0].data).toBe('2026-08-28');
     expect(r.curva[29].data).toBe('2026-09-26');
@@ -131,6 +131,15 @@ describe('resumirFrota', () => {
     expect(ontem.esperadoKwh).toBeCloseTo(41.6 + 20.8);
     const semDado = r.curva.find((d) => d.data === '2026-09-10')!;
     expect(semDado).toEqual({ data: '2026-09-10', realKwh: null, esperadoKwh: null });
+  });
+  it('usina SEM kWp mandou dado no dia → real aparece, esperada não (não compara pela metade)', () => {
+    const v = resumirFrota(
+      [base, { ...base, id: 'nk', potencia_kwp: null }],
+      [ger('s1', '2026-09-26', 41), ger('nk', '2026-09-26', 7), ger('s1', '2026-09-25', 40)],
+      [], { agora: AGORA, corteAtencao: 0.7 },
+    );
+    expect(v.curva[29]).toEqual({ data: '2026-09-26', realKwh: 48, esperadoKwh: null });
+    expect(v.curva[28]).toEqual({ data: '2026-09-25', realKwh: 40, esperadoKwh: 41.6 });
   });
   it('por cidade, pior estado primeiro', () => {
     expect(r.porCidade[0]).toEqual({ cidade: 'Gama', total: 1, pior: 'sem_comunicacao' });
