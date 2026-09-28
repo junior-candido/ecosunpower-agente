@@ -380,10 +380,11 @@ function cartaoConciliacao(p: PainelEnergia, m: MedidorTela): string {
   const [ano, mes] = c.referencia.split('-').map(Number);
   const linhas = c.linhas.map((l) => {
     const t = TOM_VEREDITO[l.veredito];
-    return [l.grandeza === 'injetado' ? 'Devolvido × injetado' : 'Comprado × consumo', l.medidoKwh, l.distribuidoraKwh, l.difPct === null ? null : `${l.difPct > 0 ? '+' : ''}${fmtNumero(l.difPct, 1)}%`, { html: pilulaStatus(t.tom, t.texto) }];
+    const dif = l.difPct === null ? '' : ` <span class="cc-faint">${escapeHtml(`${l.difPct > 0 ? '+' : ''}${fmtNumero(l.difPct, 1)}%`)}</span>`;
+    return [l.grandeza === 'injetado' ? 'Devolvido' : 'Comprado', l.medidoKwh, l.distribuidoraKwh, { html: `${pilulaStatus(t.tom, t.texto)}${dif}` }];
   });
   const corpo = `${tabela({
-    colunas: [{ titulo: 'O quê' }, { titulo: 'Medidor (kWh)', alinhar: 'dir', num: true, casas: 0 }, { titulo: 'Neoenergia (kWh)', alinhar: 'dir', num: true, casas: 0 }, { titulo: 'Diferença', alinhar: 'dir' }, { titulo: 'Situação' }],
+    colunas: [{ titulo: 'kWh' }, { titulo: 'Medidor', alinhar: 'dir', num: true, casas: 0 }, { titulo: 'Neoenergia', alinhar: 'dir', num: true, casas: 0 }, { titulo: 'Situação' }],
     linhas,
   })}
   <p class="en-nota">${escapeHtml(`${MESES[mes - 1]} de ${ano} · medidor com dado em ${fmtNumero(c.coberturaPct, 0)}% do mês.`)} ${escapeHtml(c.linhas.find((l) => l.veredito === 'sem_dado')?.texto ?? 'O ciclo de leitura da Neoenergia não é o mês do calendário: diferença de alguns dias de leitura é normal. Bate = diferença até 5% (ou 10 kWh); acima de 15% = diferença grande.')}</p>`;
