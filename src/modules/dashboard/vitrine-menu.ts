@@ -24,6 +24,9 @@ export interface ItemDeMenu {
   nivel?: string;
   soEcosun?: boolean;
   soTenant?: boolean;
+  /** Item sem área que o tenant TAMBÉM vê (Command Center, Central de Atenção):
+   *  o dado já é escopado pela empresa e o que não foi contratado aparece trancado. */
+  abertoATenant?: boolean;
 }
 
 export interface UsuarioDoMenu {
@@ -50,7 +53,7 @@ export function estadoDoItem(
 
   // Item sem área é conveniência interna da EcoSun (Cockpit, Fechou!,
   // Contratos...). Não é módulo vendável — não entra na vitrine.
-  if (!item.area) return ehTenant ? 'escondido' : 'visivel';
+  if (!item.area) return ehTenant && !item.abertoATenant ? 'escondido' : 'visivel';
 
   // Sem usuário (tela de login): comportamento de sempre.
   if (!user) return 'visivel';

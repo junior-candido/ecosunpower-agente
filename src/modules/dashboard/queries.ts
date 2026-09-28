@@ -25,7 +25,7 @@ export interface DashboardKpi {
 
 // Funil real de venda fechada: a partir de contrato assinado. Mesmo critério
 // do /clientes (CLIENTE_STATUSES) — a fonte da verdade de "vendeu".
-const VENDA_STATUSES = ['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido'];
+export const VENDA_STATUSES = ['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido'];
 
 export interface PropostaRow {
   id: string;
@@ -101,10 +101,9 @@ export interface CommandCenterKpis {
   propostas: number | null;
   vendas: number | null;
   usinasNovas: number | null;
-  manutencoesPendentes: number | null;
 }
 
-/** Só as 5 contagens que o Command Center usa, em paralelo. O Supabase NÃO
+/** Só as 4 contagens do mês que o Command Center usa, em paralelo. O Supabase NÃO
  *  lança em erro de consulta (devolve `{ count, error }`), então cada uma é
  *  conferida: erro, count null ou exceção → null. Mesmas regras da Home.
  *
@@ -116,6 +115,8 @@ export async function fetchCommandCenterKpis(
   supabase: SupabaseClient,
   companyId: string,
   mesRef: Date = new Date(),
+  /** Quais contagens rodar (área sem acesso nem é consultada). Padrão: todas. */
+  quais: { leads?: boolean; propostas?: boolean; vendas?: boolean; usinasNovas?: boolean } = {},
 ): Promise<CommandCenterKpis> {
   const BRASILIA_MS = 3 * 60 * 60 * 1000;
   const refBrasilia = new Date(mesRef.getTime() - BRASILIA_MS); // campos UTC = relógio de Brasília
@@ -123,7 +124,6 @@ export async function fetchCommandCenterKpis(
   const mes = refBrasilia.getUTCMonth();
   const inicioMes = new Date(Date.UTC(ano, mes, 1, 3)).toISOString();
   const fimMes = new Date(Date.UTC(ano, mes + 1, 1, 3)).toISOString();
-  const proximos30 = new Date(refBrasilia.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   const contar = async (
     rotulo: string,
@@ -142,19 +142,18 @@ export async function fetchCommandCenterKpis(
     }
   };
 
-  const [leads, propostas, vendas, usinasNovas, manutencoesPendentes] = await Promise.all([
-    contar('leads', supabase.from('leads').select('id', { count: 'exact', head: true })
+  const pular = Promise.resolve(null);
+  const [leads, propostas, vendas, usinasNovas] = await Promise.all([
+    quais.leads === false ? pular : contar('leads', supabase.from('leads').select('id', { count: 'exact', head: true })
       .gte('created_at', inicioMes).lt('created_at', fimMes).eq('company_id', companyId)),
-    contar('propostas', supabase.from('propostas_publicas').select('id', { count: 'exact', head: true })
+    quais.propostas === false ? pular : contar('propostas', supabase.from('propostas_publicas').select('id', { count: 'exact', head: true })
       .eq('revoked', false).gte('created_at', inicioMes).lt('created_at', fimMes).eq('company_id', companyId)),
-    contar('vendas', supabase.from('leads').select('id', { count: 'exact', head: true })
+    quais.vendas === false ? pular : contar('vendas', supabase.from('leads').select('id', { count: 'exact', head: true })
       .gte('contract_signed_at', inicioMes).lt('contract_signed_at', fimMes).eq('company_id', companyId)),
-    contar('usinas', supabase.from('sistemas_clientes').select('id', { count: 'exact', head: true })
+    quais.usinasNovas === false ? pular : contar('usinas', supabase.from('sistemas_clientes').select('id', { count: 'exact', head: true })
       .gte('created_at', inicioMes).lt('created_at', fimMes).eq('company_id', companyId)),
-    contar('manutencoes', supabase.from('maintenance_reminders').select('id', { count: 'exact', head: true })
-      .eq('status', 'pending').lte('scheduled_date', proximos30).eq('company_id', companyId)),
   ]);
-  return { leads, propostas, vendas, usinasNovas, manutencoesPendentes };
+  return { leads, propostas, vendas, usinasNovas };
 }
 
 // =========================================================================
@@ -378,7 +377,7 @@ export async function listManutencaoPendente(supabase: SupabaseClient): Promise<
 // Helpers — extrair campos do JSONB dados_input das propostas
 // =========================================================================
 
-function extrairValorTotal(dados: any): number | null {
+export function extrairValorTotal(dados: any): number | null {
   if (!dados) return null;
   // dados_input pode ter formatos diversos. Tenta varios paths comuns.
   const candidatos = [

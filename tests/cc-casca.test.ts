@@ -197,13 +197,17 @@ describe('renderLayout — casca nova', () => {
     expect(renderLayout({ active: 'home', title: 'X', body: '' })).not.toContain('class="cc-main cc-largo"');
   });
 
-  it('tenant: cor da marca no item ativo, sem logo/CNPJ da EcoSun, sem Command Center da casa', () => {
+  it('tenant: cor da marca no item ativo, sem logo/CNPJ da EcoSun; Command Center dele sim, Modo TV/Prédio da casa não', () => {
     const h = renderLayout({ active: 'monitoramento', title: 'X', body: '', user: tenant });
     expect(h).toContain('--marca:');
     expect(h).not.toContain('alt="EcoSunPower"');
     expect(h).not.toContain('33.020.459');
     expect(h).toContain('Sabion Solar');
-    expect(h).not.toContain('href="/dashboard/command-center"');
+    // Aberto pro tenant em 28/09/2026 (dado escopado + vitrine). O resto do grupo segue da casa.
+    expect(h).toContain('href="/dashboard/command-center"');
+    expect(h).toContain('href="/dashboard/atencao"');
+    expect(h).not.toContain('href="/dashboard/tv"');
+    expect(h).not.toContain('href="/dashboard/predio"');
   });
 
   it('tenant: módulo não contratado aparece com cadeado e leva à vitrine', () => {
