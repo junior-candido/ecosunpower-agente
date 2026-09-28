@@ -3,17 +3,18 @@
 // decisão D4 do Junior: (a) todos escuros · (b) EcoSun escuro, tenant claro ·
 // (c) igual a hoje, tela por tela).
 //
-// ENQUANTO A D4 NÃO FOR DECIDIDA: devolve o `padrao` que cada tela já usa hoje
-// (opção c) — ninguém vê mudança de tema. Quando o Junior decidir, a regra muda
-// SÓ aqui e toda tela renovada acompanha.
+// 28/09/2026 — D4 DECIDIDA = (a): toda tela renovada abre ESCURA (tema do
+// Command Center), para a EcoSun e para o tenant. O `padrao` de cada tela fica
+// na assinatura só por compatibilidade (as telas já passam) — não manda mais.
+// Se um dia a regra mudar (ex.: tenant claro), muda SÓ aqui.
 
 import type { DashUser } from '../permissions.js';
 
 export type TemaTela = 'escuro' | 'claro';
 
-/** Regra da D4 em vigor. 'igual_hoje' = cada tela mantém o tema de antes. */
-export const REGRA_D4: 'igual_hoje' = 'igual_hoje';
+/** Regra da D4 em vigor. */
+export const REGRA_D4: 'todas_escuras' = 'todas_escuras';
 
-export function temaDaTela(_user: DashUser | undefined, padrao: TemaTela): TemaTela {
-  return padrao;
+export function temaDaTela(_user: DashUser | undefined, _padrao: TemaTela): TemaTela {
+  return 'escuro';
 }

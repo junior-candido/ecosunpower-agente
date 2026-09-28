@@ -48,7 +48,7 @@ export const CSS_CASCA = `
 /* <body> mantém as classes de sempre: ecosun-body (claro) e ecosun-body-dark (escuro). */
 body.ecosun-body{margin:0;font-family:var(--cc-f-text);-webkit-font-smoothing:antialiased;min-height:100vh;color:#0f172a;
   background:radial-gradient(ellipse at top left, rgba(14,165,233,.08), transparent 50%),radial-gradient(ellipse at bottom right, rgba(245,158,11,.05), transparent 50%),#f8fafc}
-body.ecosun-body.ecosun-body-dark{color:#EAF1F8;background:radial-gradient(900px 480px at 78% -8%, rgba(22,48,79,.95), transparent 70%),#0A1729}
+body.ecosun-body.ecosun-body-dark{color-scheme:dark;color:#EAF1F8;background:radial-gradient(900px 480px at 78% -8%, rgba(22,48,79,.95), transparent 70%),#0A1729}
 .cc-shell{display:flex;min-height:100vh}
 
 /* ---- Menu lateral ---- */
