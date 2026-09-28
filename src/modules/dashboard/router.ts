@@ -2347,7 +2347,7 @@ b.onclick=async function(){
       res.type('text/html').send(renderKanbanPage(grupos, viewer));
     } catch (err) {
       console.error('[dashboard/leads/kanban]', err);
-      res.status(500).send(`<h2>Erro ao carregar kanban</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+      res.status(500).send(`<h2>Erro ao carregar o Quadro de Vendas</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
     }
   });
 
@@ -2681,7 +2681,7 @@ b.onclick=async function(){
       try {
         await registrarAtividade(db, {
           company_id: viewer.companyId, lead_id: id, tipo: 'etapa_mudou',
-          titulo: `Etapa movida (kanban): → ${etapa}`, automatica: false, user_id: viewer.id,
+          titulo: `Etapa movida (quadro): → ${etapa}`, automatica: false, user_id: viewer.id,
         });
       } catch (err) {
         console.warn('[set-etapa] registrarAtividade falhou (segue):', (err as Error).message);
@@ -5884,7 +5884,7 @@ b.onclick=async function(){
       res.type('text/html').send(renderUsinasKanbanPage((data ?? []) as any, req.dashUser));
     } catch (err) {
       console.error('[dashboard/usinas/kanban]', err);
-      res.status(500).send(`<h2>Erro ao carregar kanban de obras</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+      res.status(500).send(`<h2>Erro ao carregar o Quadro de Obras</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
     }
   });
 

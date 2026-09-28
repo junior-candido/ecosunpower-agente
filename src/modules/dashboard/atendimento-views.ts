@@ -544,7 +544,7 @@ export function renderAtendimentoPage(p: AtendimentoInput): string {
   const mensagens = p.mensagens ?? lead?.conversation_messages?.map((m) => ({ role: m.role, content: m.content, timestamp: m.timestamp ?? null })) ?? [];
 
   const k = p.lista.contagem;
-  const visao = `<div class="cc-chips">${chip({ rotulo: 'Conversas', href: '/dashboard/leads/conversas', ativo: true })}${chip({ rotulo: 'Lista', href: '/dashboard/leads' })}${chip({ rotulo: 'Funil', href: '/dashboard/leads/kanban' })}</div>`;
+  const visao = `<div class="cc-chips">${chip({ rotulo: 'Conversas', href: '/dashboard/leads/conversas', ativo: true })}${chip({ rotulo: 'Lista', href: '/dashboard/leads' })}${chip({ rotulo: 'Quadro', href: '/dashboard/leads/kanban' })}</div>`;
   const cabecalho = cabecalhoPagina({
     trilha: [{ rotulo: 'Comercial' }, { rotulo: 'Leads', href: '/dashboard/leads' }, { rotulo: 'Conversas' }],
     titulo: 'Conversas',

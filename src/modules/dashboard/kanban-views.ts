@@ -76,10 +76,10 @@ export function renderKanbanPage(grupos: Record<string, KanbanCard[]>, user?: Da
 
   const total = ORDEM_ETAPAS.reduce((s, e) => s + (grupos[e]?.length ?? 0), 0);
   const cabecalho = cabecalhoPagina({
-    trilha: [{ rotulo: 'Comercial' }, { rotulo: 'Funil' }],
-    titulo: 'Funil (Kanban)',
+    trilha: [{ rotulo: 'Comercial' }, { rotulo: 'Quadro de Vendas' }],
+    titulo: 'Quadro de Vendas',
     subtitulo: `${total} lead(s) no funil. Arraste os cartões entre as colunas. Os que pulsam em vermelho precisam de ação.`,
-    acoesHtml: `<div class="cc-chips">${chip({ rotulo: 'Conversas', href: '/dashboard/leads/conversas' })}${chip({ rotulo: 'Lista', href: '/dashboard/leads' })}${chip({ rotulo: 'Kanban', href: '/dashboard/leads/kanban', ativo: true })}</div>`,
+    acoesHtml: `<div class="cc-chips">${chip({ rotulo: 'Conversas', href: '/dashboard/leads/conversas' })}${chip({ rotulo: 'Lista', href: '/dashboard/leads' })}${chip({ rotulo: 'Quadro', href: '/dashboard/leads/kanban', ativo: true })}</div>`,
   });
 
   const body = `
@@ -128,5 +128,5 @@ export function renderKanbanPage(grupos: Record<string, KanbanCard[]>, user?: Da
       })();
     </script>`;
 
-  return renderLayout({ active: 'kanban', title: 'Funil (Kanban)', body, user, dark: temaDaTela(user, 'claro') === 'escuro', largo: true });
+  return renderLayout({ active: 'kanban', title: 'Quadro de Vendas', body, user, dark: temaDaTela(user, 'claro') === 'escuro', largo: true });
 }

@@ -66,7 +66,7 @@ export const MENU_AREAS: GrupoMenu[] = [
       // Atendimento (28/09): conversas de WhatsApp + cockpit do lead, em 3 colunas.
       { href: '/dashboard/leads/conversas', key: 'conversas', label: 'Conversas', area: 'leads' },
       { href: '/dashboard/leads', key: 'leads', label: 'Leads', area: 'leads' },
-      { href: '/dashboard/leads/kanban', key: 'kanban', label: 'Funil (Kanban)', area: 'leads' },
+      { href: '/dashboard/leads/kanban', key: 'kanban', label: 'Quadro de Vendas', area: 'leads' },
       { href: '/dashboard/propostas', key: 'propostas', label: 'Propostas', area: 'propostas' },
       { href: '/dashboard/vendas/fechar', key: 'fechar_venda', label: 'Fechou! (registrar venda)' },
       { href: '/dashboard/contratos', key: 'contratos', label: 'Contratos & Procurações' },
@@ -96,7 +96,7 @@ export const MENU_AREAS: GrupoMenu[] = [
   {
     id: 'instalacoes', titulo: 'Instalações', icone: 'hammer',
     itens: [
-      { href: '/dashboard/usinas/kanban', key: 'usinas_kanban', label: 'Kanban de Obras', area: 'usinas' },
+      { href: '/dashboard/usinas/kanban', key: 'usinas_kanban', label: 'Quadro de Obras', area: 'usinas' },
     ],
   },
   {

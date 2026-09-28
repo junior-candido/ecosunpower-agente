@@ -84,7 +84,7 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
     <div class="w-full px-3 py-4">
       <div class="flex items-center justify-between mb-3">
         <div>
-          <h1 class="text-lg font-bold text-slate-900 leading-tight">Kanban de Obras</h1>
+          <h1 class="text-lg font-bold text-slate-900 leading-tight">Quadro de Obras</h1>
           <p class="text-[11px] text-slate-500">Arraste para mover entre etapas. Atualiza a cada 60s.</p>
         </div>
         <div class="flex items-center gap-3">
@@ -98,7 +98,7 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
           </a>
           <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
             <a href="/dashboard/monitoramento" class="px-3 py-1 bg-white text-slate-700 hover:bg-slate-50">Lista</a>
-            <a href="/dashboard/usinas/kanban" class="px-3 py-1 bg-indigo-600 text-white">Kanban</a>
+            <a href="/dashboard/usinas/kanban" class="px-3 py-1 bg-indigo-600 text-white">Quadro</a>
           </div>
         </div>
       </div>
@@ -391,5 +391,5 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
       })();
     </script>`;
 
-  return renderLayout({ active: 'usinas_kanban', title: 'Kanban de Obras', body, user });
+  return renderLayout({ active: 'usinas_kanban', title: 'Quadro de Obras', body, user });
 }

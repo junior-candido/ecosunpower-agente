@@ -153,7 +153,7 @@ export function renderLeadsListPage(
       ${search ? `<a class="cc-link" href="${escapeHtml(`/dashboard/leads${filters.status ? `?status=${filters.status}` : ''}`)}">limpar</a>` : ''}
     </form>`;
 
-  const visao = `<div class="cc-chips">${chip({ rotulo: 'Conversas', href: '/dashboard/leads/conversas' })}${chip({ rotulo: 'Lista', href: '/dashboard/leads', ativo: true })}${chip({ rotulo: 'Kanban', href: '/dashboard/leads/kanban' })}</div>`;
+  const visao = `<div class="cc-chips">${chip({ rotulo: 'Conversas', href: '/dashboard/leads/conversas' })}${chip({ rotulo: 'Lista', href: '/dashboard/leads', ativo: true })}${chip({ rotulo: 'Quadro', href: '/dashboard/leads/kanban' })}</div>`;
 
   const cabecalho = cabecalhoPagina({
     trilha: [{ rotulo: 'Comercial' }, { rotulo: 'Leads' }],

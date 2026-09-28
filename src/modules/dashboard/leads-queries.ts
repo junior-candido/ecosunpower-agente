@@ -451,7 +451,7 @@ export async function leadsParaKanban(
   }
 
   const { data: leads, error } = await q;
-  if (error) throw new Error(`Failed to load kanban: ${error.message}`);
+  if (error) throw new Error(`Falha ao carregar o Quadro de Vendas: ${error.message}`);
   const list = (leads ?? []) as Array<{
     id: string; name: string | null; phone: string; status: string;
     claimed_by: string | null; updated_at: string;
