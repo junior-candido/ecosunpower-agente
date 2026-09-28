@@ -8,7 +8,13 @@ import type { Atividade } from './atividades.js';
 import type { Tarefa } from './tarefas.js';
 import { seloSla } from './sla-rules.js';
 import { formatPhoneBR } from '../meta-leadgen.js';
-import { renderInsightsBanner } from './ai-summary.js';
+import {
+  cabecalhoPagina, faixaKpis, cartaoSecao, tabela, estadoVazio, pilulaStatus, icone,
+  botao, chip, chipsFiltro, celulaDupla, paginacao, type Tom,
+} from './ui/componentes.js';
+import { pilulaEtapa } from './ui/etapas.js';
+import { temaDaTela } from './ui/tema.js';
+import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 
 function formatPhone(phone: string): string {
   // Normaliza (wa_id BR vem sem o 9o digito) antes de formatar. Ver formatPhoneBR.
@@ -27,18 +33,6 @@ function timeAgo(iso: string | null): string {
   if (days < 30) return `${days}d`;
   const months = Math.floor(days / 30);
   return `${months}mês`;
-}
-
-function alertaBadge(a: LeadRow['alerta']): string {
-  const map: Record<LeadRow['alerta'], { label: string; cls: string }> = {
-    silente_sem_cadencia: { label: '🚨 Silente sem cadência', cls: 'bg-rose-100 text-rose-800' },
-    silente_com_cadencia: { label: '⚠️ Silente em cadência', cls: 'bg-amber-100 text-amber-800' },
-    cliente_respondeu:    { label: '🔥 Respondeu', cls: 'bg-emerald-100 text-emerald-800' },
-    novo:                 { label: '🆕 Novo', cls: 'bg-sky-100 text-sky-800' },
-    normal:               { label: '✅', cls: 'bg-slate-100 text-slate-700' },
-  };
-  const t = map[a];
-  return `<span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${t.cls}">${escapeHtml(t.label)}</span>`;
 }
 
 function statusBadge(s: string): string {
@@ -64,15 +58,49 @@ function evaBadge(active: boolean, optOut: boolean): string {
   return '<span class="inline-flex px-2 py-0.5 rounded-full text-xs bg-slate-200 text-slate-700">⏸️ pausada</span>';
 }
 
-// Pontinho de SLA: verde (em dia) / âmbar (vence em breve) / vermelho (vencida).
-function slaDot(selo: 'verde' | 'ambar' | 'vermelho'): string {
+// ---------------------------------------------------------------------------
+// Peças da LISTA no padrão cc- (renovação do miolo, R2)
+// ---------------------------------------------------------------------------
+
+/** Bolinha de SLA — mesmos textos (title) de antes. */
+function slaCc(selo: 'verde' | 'ambar' | 'vermelho'): string {
   const map = {
-    verde:    { cls: 'bg-emerald-500', t: 'Tarefas em dia' },
-    ambar:    { cls: 'bg-amber-500',   t: 'Tarefa vence em breve' },
-    vermelho: { cls: 'bg-rose-500',    t: 'Tarefa vencida' },
-  }[selo];
-  return `<span class="inline-block w-2.5 h-2.5 rounded-full ${map.cls}" title="${map.t}"></span>`;
+    verde:    { cls: 'cc-d-ok',   t: 'Tarefas em dia' },
+    ambar:    { cls: 'cc-d-warn', t: 'Tarefa vence em breve' },
+    vermelho: { cls: 'cc-d-crit', t: 'Tarefa vencida' },
+  }[selo] ?? { cls: 'cc-d-ok', t: 'Tarefas em dia' };
+  return `<span class="cc-dot ${map.cls}" title="${map.t}" role="img" aria-label="${map.t}"></span>`;
 }
+
+/** Situação da assistente no lead: ativa / pausada / o contato pediu para parar. */
+function evaCc(active: boolean, optOut: boolean): string {
+  if (optOut) return pilulaStatus('sem_dado', 'Parou');
+  if (active) return pilulaStatus('normal', 'ativa');
+  return pilulaStatus('acompanhar', 'pausada');
+}
+
+/** Alerta do lead (silente, respondeu, novo). */
+function alertaCc(a: LeadRow['alerta']): string {
+  const map: Record<LeadRow['alerta'], [Tom, string]> = {
+    silente_sem_cadencia: ['critico', 'Silente sem cadência'],
+    silente_com_cadencia: ['atencao', 'Silente em cadência'],
+    cliente_respondeu:    ['oportunidade', 'Respondeu'],
+    novo:                 ['info', 'Novo'],
+    normal:               ['normal', 'Em dia'],
+  };
+  const [tom, texto] = map[a] ?? map.normal;
+  return pilulaStatus(tom, texto);
+}
+
+const LOSS_REASON_LABELS: Record<string, string> = {
+  nao_atende: 'Não atende',
+  concorrente: 'Concorrente',
+  sem_orcamento: 'Sem orçamento',
+  fora_area: 'Fora da área',
+  sem_interesse: 'Sem interesse',
+  outro: 'Outro',
+};
+const CLIENTE_STATUSES_SET = new Set(['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido']);
 
 export function renderLeadsListPage(
   rows: LeadRow[],
@@ -98,38 +126,35 @@ export function renderLeadsListPage(
   const counts = filters.countByStatus ?? {};
   const pagina = Math.floor(offset / limit) + 1;
   const totalPaginas = Math.max(1, Math.ceil(total / limit));
-
-  const tab = (statusId: string | null, label: string, count: number | null, activeClass: string) => {
-    const isActive = (statusId === null && !filters.status && !filters.only_alerts)
-      || (statusId !== null && filters.status === statusId);
-    const cls = isActive
-      ? activeClass + ' text-white'
-      : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50';
-    const href = statusId === null ? '/dashboard/leads' : `/dashboard/leads?status=${statusId}`;
-    const finalHref = search ? `${href}${href.includes('?') ? '&' : '?'}q=${encodeURIComponent(search)}` : href;
-    const badge = count != null ? `<span class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] ${isActive ? 'bg-white/20' : 'bg-slate-200'}">${count}</span>` : '';
-    return `<a href="${finalHref}" class="px-3 py-1.5 rounded-lg text-sm inline-flex items-center ${cls}">${label}${badge}</a>`;
-  };
-
   const atencaoCount = filters.atencaoCount ?? 0;
-  const filterBar = `
-    <div class="flex flex-wrap gap-2 mb-4">
-      ${tab(null, 'Todos', counts.todos ?? null, 'bg-indigo-600')}
-      <a href="/dashboard/leads?only_alerts=1${search ? `&q=${encodeURIComponent(search)}` : ''}" class="px-3 py-1.5 rounded-lg text-sm inline-flex items-center ${filters.only_alerts ? 'bg-rose-600 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">🚨 Alertas <span class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] ${filters.only_alerts ? 'bg-white/20' : 'bg-slate-200'}">${alertasCount}</span></a>
-      <a href="/dashboard/leads?atencao=1${search ? `&q=${encodeURIComponent(search)}` : ''}" class="px-3 py-1.5 rounded-lg text-sm inline-flex items-center ${filters.atencao ? 'bg-rose-700 text-white' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}">⚠️ Precisam de atenção <span class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] ${filters.atencao ? 'bg-white/20' : 'bg-rose-100 text-rose-800'}">${atencaoCount}</span></a>
-      ${tab('novo', '🆕 Novos', counts.novo ?? null, 'bg-sky-600')}
-      ${tab('qualificando', '🎯 Qualificando', counts.qualificando ?? null, 'bg-violet-600')}
-      ${tab('qualificado', '⭐ Qualificados', counts.qualificado ?? null, 'bg-fuchsia-600')}
-      ${tab('proposta_enviada', '📄 Proposta enviada', counts.proposta_enviada ?? null, 'bg-blue-600')}
-      ${tab('negociacao', '🤝 Negociação', counts.negociacao ?? null, 'bg-amber-500')}
-      ${tab('agendado', '📅 Agendados', counts.agendado ?? null, 'bg-amber-600')}
-      ${tab('transferido', '➡️ Transferidos', counts.transferido ?? null, 'bg-emerald-600')}
-      ${tab('ganho', '✅ Ganho (funil)', counts.ganho ?? null, 'bg-green-600')}
-      <span class="text-slate-300 px-1 self-center">·</span>
-      ${tab('ganhos', '🏆 Ganhos', counts.ganhos ?? null, 'bg-green-700')}
-      ${tab('perdidos', '❌ Perdidos', counts.perdido ?? null, 'bg-slate-600')}
-    </div>
-  `;
+  // Nome da assistente: "Eva" é a da casa; o tenant vê um nome genérico.
+  const assistente = user && user.companyId !== ECOSUN_COMPANY_ID ? 'Assistente' : 'Eva';
+
+  // Chips de filtro — MESMOS links de antes (status / only_alerts / atencao + q).
+  const comBusca = (href: string) => search
+    ? `${href}${href.includes('?') ? '&' : '?'}q=${encodeURIComponent(search)}`
+    : href;
+  const chipStatus = (statusId: string | null, rotulo: string, valor: number | null) => {
+    const ativo = (statusId === null && !filters.status && !filters.only_alerts)
+      || (statusId !== null && filters.status === statusId);
+    const href = statusId === null ? '/dashboard/leads' : `/dashboard/leads?status=${statusId}`;
+    return { rotulo, valor, href: comBusca(href), ativo };
+  };
+  const chips = chipsFiltro([
+    chipStatus(null, 'Todos', counts.todos ?? null),
+    { rotulo: 'Alertas', valor: alertasCount, href: comBusca('/dashboard/leads?only_alerts=1'), ativo: !!filters.only_alerts, tom: alertasCount > 0 ? 'warn' : undefined },
+    { rotulo: 'Precisam de atenção', valor: atencaoCount, href: comBusca('/dashboard/leads?atencao=1'), ativo: !!filters.atencao, tom: atencaoCount > 0 ? 'warn' : undefined },
+    chipStatus('novo', 'Novos', counts.novo ?? null),
+    chipStatus('qualificando', 'Qualificando', counts.qualificando ?? null),
+    chipStatus('qualificado', 'Qualificados', counts.qualificado ?? null),
+    chipStatus('proposta_enviada', 'Proposta enviada', counts.proposta_enviada ?? null),
+    chipStatus('negociacao', 'Negociação', counts.negociacao ?? null),
+    chipStatus('agendado', 'Agendados', counts.agendado ?? null),
+    chipStatus('transferido', 'Transferidos', counts.transferido ?? null),
+    chipStatus('ganho', 'Ganho (funil)', counts.ganho ?? null),
+    chipStatus('ganhos', 'Ganhos', counts.ganhos ?? null),
+    chipStatus('perdidos', 'Perdidos', counts.perdido ?? null),
+  ]);
 
   const qsSemOffset = (extras: Record<string, string | number> = {}): string => {
     const params = new URLSearchParams();
@@ -141,121 +166,100 @@ export function renderLeadsListPage(
     return params.toString();
   };
 
-  const searchForm = `
-    <form action="/dashboard/leads" method="get" class="flex gap-2 items-center mb-4">
+  // Busca — mesmo GET /dashboard/leads com q (+ status / only_alerts escondidos).
+  const busca = `
+    <form class="cc-form cc-busca" action="/dashboard/leads" method="get">
       ${filters.status ? `<input type="hidden" name="status" value="${escapeHtml(filters.status)}">` : ''}
       ${filters.only_alerts ? `<input type="hidden" name="only_alerts" value="1">` : ''}
-      <input type="text" name="q" value="${escapeHtml(search)}" placeholder="🔎 Nome, telefone ou email..." class="px-3 py-1.5 border border-slate-300 rounded-md text-sm flex-1 max-w-md">
-      <button class="px-3 py-1.5 bg-sky-700 text-white rounded-md text-xs font-semibold hover:bg-sky-800">Buscar</button>
-      ${search ? `<a href="/dashboard/leads${filters.status ? `?status=${filters.status}` : ''}" class="text-xs text-slate-500 hover:underline">limpar</a>` : ''}
-    </form>
-  `;
+      <input type="text" name="q" value="${escapeHtml(search)}" placeholder="Nome, telefone ou e-mail" aria-label="Buscar lead">
+      ${botao({ rotulo: 'Buscar', tipo: 'submit', icone: 'search' })}
+      ${search ? `<a class="cc-link" href="${escapeHtml(`/dashboard/leads${filters.status ? `?status=${filters.status}` : ''}`)}">limpar</a>` : ''}
+    </form>`;
 
-  const paginationBlock = total > limit ? `
-    <div class="flex items-center justify-between mt-4 px-4 py-3 text-sm text-slate-600 border-t border-slate-200">
-      <div>Mostrando ${offset + 1}–${Math.min(offset + limit, total)} de ${total} · Página ${pagina} de ${totalPaginas}</div>
-      <div class="flex gap-2">
-        ${offset > 0
-          ? `<a href="/dashboard/leads?${qsSemOffset({ offset: Math.max(0, offset - limit) })}" class="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 rounded text-xs">← Anterior</a>`
-          : `<span class="px-3 py-1.5 text-slate-300 text-xs">← Anterior</span>`}
-        ${offset + limit < total
-          ? `<a href="/dashboard/leads?${qsSemOffset({ offset: offset + limit })}" class="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 rounded text-xs">Próxima →</a>`
-          : `<span class="px-3 py-1.5 text-slate-300 text-xs">Próxima →</span>`}
-      </div>
-    </div>` : '';
+  const visao = `<div class="cc-chips">${chip({ rotulo: 'Lista', href: '/dashboard/leads', ativo: true })}${chip({ rotulo: 'Kanban', href: '/dashboard/leads/kanban' })}</div>`;
 
-  const CLIENTE_STATUSES_SET = new Set(['contrato_assinado', 'instalado', 'medidor_trocado', 'operando', 'pos_venda_concluido']);
-  const LOSS_REASON_LABELS: Record<string, string> = {
-    nao_atende: 'Não atende',
-    concorrente: 'Concorrente',
-    sem_orcamento: 'Sem orçamento',
-    fora_area: 'Fora da área',
-    sem_interesse: 'Sem interesse',
-    outro: 'Outro',
-  };
+  const cabecalho = cabecalhoPagina({
+    trilha: [{ rotulo: 'Comercial' }, { rotulo: 'Leads' }],
+    titulo: 'Leads',
+    subtitulo: `${total} lead(s) no total · mostrando ${rows.length} · ordenado por última atividade`,
+    acoesHtml: visao,
+  });
 
-  const tableRows = rows
-    .map((l) => {
-      const nome = escapeHtml(l.name ?? 'Sem nome');
-      const phoneFmt = formatPhone(l.phone);
-      const origem = l.acquisition_source
-        ? escapeHtml(l.acquisition_source).replace('campanha_1_meta_lead_ads', 'Campanha Meta')
-        : '—';
-      // Ganho: linka pra cockpit completo (/clientes/:id) — onde tem todo histórico
-      const isGanho = l.installation_status && CLIENTE_STATUSES_SET.has(l.installation_status);
-      const perfilUrl = isGanho ? `/dashboard/clientes/${l.id}` : `/dashboard/leads/${l.id}`;
-      const isPerdido = l.status === 'perdido';
-      const rowOpacity = isPerdido ? 'opacity-70' : '';
-      // Coluna info contextual: motivo de perda se perdido; senão alerta normal
-      const colInfo = isPerdido && l.loss_reason
-        ? `<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-100 text-rose-800" title="${escapeHtml(l.loss_notes ?? '')}">${escapeHtml(LOSS_REASON_LABELS[l.loss_reason] ?? l.loss_reason)}</span>`
-        : alertaBadge(l.alerta);
-      return `
-        <tr class="border-t border-slate-200 hover:bg-slate-50 ${rowOpacity}">
-          <td class="px-3 py-3 text-center">${slaDot(l.seloSla)}</td>
-          <td class="px-4 py-3">${colInfo}</td>
-          <td class="px-4 py-3">
-            <a href="${perfilUrl}" class="font-medium text-slate-900 hover:text-indigo-600">${nome}${isGanho ? ' 🏆' : ''}</a>
-            <div class="text-xs text-slate-500">${phoneFmt}</div>
-          </td>
-          <td class="px-4 py-3">${statusBadge(l.status)}</td>
-          <td class="px-4 py-3 text-sm text-slate-600">${origem}</td>
-          <td class="px-4 py-3 text-sm text-slate-600">${evaBadge(l.eva_active, l.opt_out)}</td>
-          <td class="px-4 py-3 text-sm text-slate-600">${l.has_cadence_pending ? '📤 sim' : '—'}</td>
-          <td class="px-4 py-3 text-xs text-slate-500" title="${l.updated_at}">${timeAgo(l.updated_at)}</td>
-        </tr>`;
-    })
-    .join('');
+  const kpis = faixaKpis([
+    { rotulo: 'Leads', valor: total, detalhe: 'no filtro atual' },
+    { rotulo: 'Precisam de atenção', valor: atencaoCount, detalhe: 'tarefa vencida' },
+    { rotulo: 'Silentes sem cadência', valor: alertasCount, detalhe: 'nesta página' },
+    { rotulo: 'Novos', valor: counts.novo ?? null },
+    { rotulo: 'Proposta enviada', valor: counts.proposta_enviada ?? null },
+    { rotulo: 'Negociação', valor: counts.negociacao ?? null },
+  ]);
 
-  const body = `
-    <div class="max-w-7xl mx-auto px-4 py-6">
-      <div class="flex items-center justify-between mb-6">
-        <div>
-          <h1 class="text-2xl font-bold text-slate-900">Leads</h1>
-          <p class="text-sm text-slate-500 mt-1">${total} lead(s) no total · mostrando ${rows.length} · ordenado por última atividade</p>
-        </div>
-        <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden">
-          <a href="/dashboard/leads" class="px-3 py-1.5 text-sm bg-indigo-600 text-white">Lista</a>
-          <a href="/dashboard/leads/kanban" class="px-3 py-1.5 text-sm bg-white text-slate-700 hover:bg-slate-50">Kanban</a>
-        </div>
-      </div>
+  const insights = filters.insights ?? [];
+  const tomInsight: Record<string, string> = { critical: 'critico', warning: 'atencao', info: 'info' };
+  const painelInsights = insights.length === 0 ? '' : cartaoSecao({
+    titulo: `${assistente} está observando`,
+    corpoHtml: `<div class="cc-evs">${insights.map((i) => `<div class="cc-ev cc-ev-${tomInsight[i.severity] ?? 'info'}"><div class="cc-ev-t">${escapeHtml(`${i.emoji} ${i.text}`)}</div></div>`).join('')}</div>`,
+  });
 
-      ${renderInsightsBanner(filters.insights ?? [])}
+  const avisoAlertas = alertasCount > 0 && !filters.only_alerts
+    ? `<div class="cc-aviso cc-aviso-erro" role="status">${icone('alert', 'sm')}<span><strong>${alertasCount} lead(s)</strong> silentes sem cadência agendada. <a class="cc-link" href="/dashboard/leads?only_alerts=1">Ver alertas →</a></span></div>`
+    : '';
 
-      ${alertasCount > 0 && !filters.only_alerts ? `
-        <div class="bg-rose-50 border border-rose-200 rounded-lg p-4 mb-4">
-          <p class="text-sm text-rose-800">
-            <strong>${alertasCount} lead(s)</strong> silentes sem cadência agendada.
-            <a href="/dashboard/leads?only_alerts=1" class="underline font-medium">Ver alertas →</a>
-          </p>
-        </div>` : ''}
+  const linhas = rows.map((l) => {
+    const isGanho = !!l.installation_status && CLIENTE_STATUSES_SET.has(l.installation_status);
+    // Ganho: abre a ficha do cliente (/clientes/:id), onde tem todo o histórico.
+    const perfilUrl = isGanho ? `/dashboard/clientes/${l.id}` : `/dashboard/leads/${l.id}`;
+    const origem = l.acquisition_source
+      ? l.acquisition_source.replace('campanha_1_meta_lead_ads', 'Campanha Meta')
+      : null;
+    const situacao = l.status === 'perdido' && l.loss_reason
+      ? `<span class="cc-pill cc-s-crit" title="${escapeHtml(l.loss_notes ?? '')}">${escapeHtml(LOSS_REASON_LABELS[l.loss_reason] ?? l.loss_reason)}</span>`
+      : alertaCc(l.alerta);
+    return [
+      { html: celulaDupla(`${l.name ?? 'Sem nome'}${isGanho ? ' 🏆' : ''}`, formatPhone(l.phone), perfilUrl) },
+      { html: slaCc(l.seloSla) },
+      { html: situacao },
+      { html: pilulaEtapa(l.status) },
+      origem,
+      { html: evaCc(l.eva_active, l.opt_out) },
+      l.has_cadence_pending ? 'sim' : null,
+      { html: `<span class="cc-muted" title="${escapeHtml(l.updated_at)}">${escapeHtml(timeAgo(l.updated_at))}</span>` },
+    ];
+  });
 
-      ${searchForm}
-      ${filterBar}
+  const tabelaHtml = rows.length === 0
+    ? estadoVazio({ tipo: 'vazio', titulo: 'Nenhum lead por aqui', texto: search || filters.status || filters.only_alerts || filters.atencao ? 'Tente outro filtro ou limpe a busca.' : undefined })
+    : tabela({
+      mobile: 'cartoes',
+      colunas: [
+        { titulo: 'Lead' }, { titulo: 'SLA' }, { titulo: 'Situação' }, { titulo: 'Etapa' },
+        { titulo: 'Origem' }, { titulo: assistente }, { titulo: 'Cadência' }, { titulo: 'Última atividade' },
+      ],
+      linhas,
+    });
 
-      <div class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
-        <table class="w-full">
-          <thead class="bg-slate-50">
-            <tr>
-              <th class="px-3 py-3 text-center text-xs uppercase tracking-wider text-slate-500 font-semibold" title="SLA das tarefas">SLA</th>
-              <th class="px-4 py-3 text-left text-xs uppercase tracking-wider text-slate-500 font-semibold">Alerta</th>
-              <th class="px-4 py-3 text-left text-xs uppercase tracking-wider text-slate-500 font-semibold">Lead</th>
-              <th class="px-4 py-3 text-left text-xs uppercase tracking-wider text-slate-500 font-semibold">Status</th>
-              <th class="px-4 py-3 text-left text-xs uppercase tracking-wider text-slate-500 font-semibold">Origem</th>
-              <th class="px-4 py-3 text-left text-xs uppercase tracking-wider text-slate-500 font-semibold">Eva</th>
-              <th class="px-4 py-3 text-left text-xs uppercase tracking-wider text-slate-500 font-semibold">Cadência</th>
-              <th class="px-4 py-3 text-left text-xs uppercase tracking-wider text-slate-500 font-semibold">Última atividade</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${tableRows || '<tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">Nenhum lead encontrado</td></tr>'}
-          </tbody>
-        </table>
-        ${paginationBlock}
-      </div>
-    </div>
-  `;
-  return renderLayout({ active: 'leads', title: 'Leads', body, user });
+  const pag = total > limit ? paginacao({
+    pagina, totalPaginas, limite: limit,
+    hrefDe: (novoOffset) => `/dashboard/leads?${qsSemOffset({ offset: novoOffset })}`,
+    resumo: `Mostrando ${offset + 1}–${Math.min(offset + limit, total)} de ${total}`,
+  }) : '';
+
+  const body = `<div class="cc-root cc-leads">
+    ${cabecalho}
+    ${kpis}
+    <div class="cc-leads-gap"></div>
+    ${painelInsights}
+    ${avisoAlertas}
+    ${cartaoSecao({ titulo: 'Leads', dica: 'Filtre por etapa ou busque por nome', acoesHtml: busca, corpoHtml: `${chips}<div class="cc-leads-gap"></div>${tabelaHtml}${pag}` })}
+  </div>
+  <style>
+    .cc-leads .cc-leads-gap{height:16px}
+    .cc-leads .cc-panel+.cc-panel,.cc-leads .cc-aviso+.cc-panel,.cc-leads .cc-panel+.cc-aviso{margin-top:16px}
+    .cc-leads .cc-busca{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .cc-leads .cc-busca input[name=q]{width:260px}
+    @media (max-width:760px){ .cc-leads .cc-busca{width:100%} .cc-leads .cc-busca input[name=q]{flex:1;width:auto;min-width:0} }
+  </style>`;
+  return renderLayout({ active: 'leads', title: 'Leads', body, user, dark: temaDaTela(user, 'claro') === 'escuro', largo: true });
 }
 
 function renderAnexoCard(a: {

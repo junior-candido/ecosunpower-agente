@@ -6,41 +6,19 @@
 // Formato: 'arquivo.ts' (arquivo inteiro) ou 'arquivo.ts#funcao' (só o corpo
 // daquela função — para arquivos que têm telas renovadas e telas antigas).
 // Exceção só com comentário `// tailwind-ok: <motivo>` na MESMA linha
-// (ex.: classe que um teste antigo exige).
+// (ex.: classe que um teste antigo exige). Detector em helpers/teto-tailwind.ts.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { corpoDaFuncao, linhasComTailwind } from './helpers/teto-tailwind.js';
 
-export const TELAS_RENOVADAS: string[] = [
+const TELAS_RENOVADAS: string[] = [
+  // R2 — Leads (lista)
+  'leads-views.ts#renderLeadsListPage',
+  'leads-views.ts#slaCc',
+  'leads-views.ts#evaCc',
+  'leads-views.ts#alertaCc',
 ];
-
-export const RE_TAILWIND = /\b(bg|text|border|ring|from|to)-(white|black|slate|gray|zinc|sky|cyan|amber|emerald|rose|red|green|yellow|indigo|violet)(-\d{2,3})?\b|\b(p|px|py|m|mx|my|mt|mb|gap|space-[xy])-\d|\brounded(-\w+)?\b|\bgrid-cols-\d/;
-
-/** Corpo (texto) de uma função exportada/local `function nome(`, casando chaves. */
-export function corpoDaFuncao(fonte: string, nome: string): string {
-  const i = fonte.search(new RegExp(`function ${nome}\\s*[(<]`));
-  if (i === -1) throw new Error(`função ${nome} não encontrada`);
-  // Pula a assinatura inteira (casa os parênteses: parâmetro pode ter objeto
-  // literal e default com chamada). O corpo é o 1º "{" depois dela.
-  let p = 0; let j = fonte.indexOf('(', i);
-  for (; j < fonte.length; j++) { if (fonte[j] === '(') p++; else if (fonte[j] === ')') { p--; if (p === 0) break; } }
-  const abre = fonte.indexOf('{', j);
-  let prof = 0;
-  for (let k = abre; k < fonte.length; k++) {
-    if (fonte[k] === '{') prof++;
-    else if (fonte[k] === '}') { prof--; if (prof === 0) return fonte.slice(abre, k + 1); }
-  }
-  return fonte.slice(abre);
-}
-
-/** Linhas do trecho que têm utilitário Tailwind (fora as marcadas `tailwind-ok`). */
-export function linhasComTailwind(trecho: string): string[] {
-  return trecho.split('\n')
-    .filter((l) => !l.includes('tailwind-ok'))
-    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
-    .filter((l) => RE_TAILWIND.test(l))
-    .map((l) => l.trim().slice(0, 140));
-}
 
 describe('teto do Tailwind nas telas renovadas', () => {
   it('o detector pega utilitário Tailwind e deixa passar classe cc-', () => {
