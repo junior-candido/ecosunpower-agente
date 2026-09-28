@@ -424,4 +424,22 @@ describe('listSites (rede mockada)', () => {
       expect((r.sites[0].credenciais as any).site_id).toBe('1800490');
     }
   });
+  it('traz a posição (latitude/longitude) quando a Sungrow informa', async () => {
+    mockFetch({
+      '/openapi/apiManage/refreshToken': () => ({ result_code: '1', result_data: { access_token: 'AT', refresh_token: 'RT-ORIGINAL' } }),
+      '/openapi/platform/queryPowerStationList': () => ({
+        result_code: '1',
+        result_data: { rowCount: 2, pageList: [
+          { ps_id: 11, ps_name: 'Com ponto', latitude: '-15.8331', longitude: '-48.0561' },
+          { ps_id: 12, ps_name: 'Ponto lixo', latitude: 0, longitude: 0 },
+        ] },
+      }),
+    });
+    const r = await sungrowAdapter.listSites!(CONTA);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.sites[0]).toMatchObject({ lat: -15.8331, lng: -48.0561 });
+      expect(r.sites[1].lat ?? null).toBeNull();
+    }
+  });
 });

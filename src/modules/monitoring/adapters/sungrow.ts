@@ -42,6 +42,7 @@ import type {
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
 import { getOrFetch } from '../util/token-cache.js';
 import { retryTransient, isTransientFailure } from '../util/retry.js';
+import { pontoDaApi } from '../geocodificacao.js';
 
 export const DEFAULT_GATEWAY = 'https://gateway.isolarcloud.com.hk';
 const LANG = '_pt_BR';
@@ -506,6 +507,9 @@ interface StationListItem {
   ps_name?: string;
   ps_location?: string;
   install_date?: string;
+  // Posição da planta (quando o instalador marcou no iSolarCloud).
+  latitude?: number | string;
+  longitude?: number | string;
 }
 
 export const sungrowAdapter: MonitoringAdapter = {
@@ -618,6 +622,7 @@ export const sungrowAdapter: MonitoringAdapter = {
           cidade: p.ps_location ? String(p.ps_location).trim() : null,
           uf: normalizeUf(undefined),
           data_instalacao: dataInstalacaoParaIso(p.install_date),
+          ...(pontoDaApi(p.latitude, p.longitude) ?? {}),
           credenciais: buildSiteCredenciais(parsed, psId),
         });
       }

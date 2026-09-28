@@ -17,6 +17,7 @@ import { classificarSistema, esperadoDiaKwh, medianaEspecifica7d } from './class
 import { buscarPaginado } from './paginacao.js';
 import { empresaDe } from '../empresa-config.js';
 import { serieMesDiaria, serieAnoMensal, navegacao, type Vista } from './detalhe-series.js';
+import { gravarPosicaoDaApi } from './usinas-posicao.js';
 
 interface SyncResult {
   totalSistemas: number;
@@ -461,6 +462,13 @@ export class MonitoringService {
           });
         if (error) { erros++; console.warn(`[monitoring/import] insert ${marca} ${site.apelido} falhou: ${error.message}`); }
         else novos++;
+      }
+      // Mapa das Usinas: a marca informou a posição da planta → grava como
+      // geo_fonte='api' (melhor esforço; nunca por cima de ponto manual).
+      if (site.lat != null && site.lng != null) {
+        const alvo = ja ?? await this.buscarSistemaPorMarcaESiteId(marca, site.externalId);
+        const dono = (alvo?.company_id as string | null | undefined) ?? companyId ?? ECOSUN_COMPANY_ID_MONIT;
+        if (alvo) await gravarPosicaoDaApi(this.supabase.getClient(), dono, alvo.id, site.lat, site.lng);
       }
       nomes.push(site.apelido);
     }

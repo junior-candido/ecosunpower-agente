@@ -637,7 +637,7 @@ export function renderPropostasPage(input: PropostasPageInput, user?: DashUser):
 // MONITORAMENTO — sistemas FV com geracao em tempo real (via API inversor)
 // =========================================================================
 
-const MARCAS_LABEL: Record<string, string> = {
+export const MARCAS_LABEL: Record<string, string> = {
   solaredge: 'SolarEdge',
   sungrow: 'Sungrow',
   deye: 'Deye',
@@ -1088,6 +1088,9 @@ export function renderDetalheSistemaPage(
   // [Degustação Sabion 27/07] sem o user o layout montava o menu completo e a
   // marca EcoSun pro tenant (modo compat de tela antiga).
   user?: DashUser,
+  // Mapa das Usinas (28/09/2026): mini-mapa com alfinete arrastável
+  // (mapa-usinas-views.ts#blocoMiniMapaUsina), montado pelo router.
+  mapaHtml?: string,
 ): string {
   const s = d.sistema;
   const localizacao = [s.cidade, s.uf].filter(Boolean).join('/') || '—';
@@ -1234,6 +1237,8 @@ export function renderDetalheSistemaPage(
       </div>
     </div>
 
+    ${mapaHtml ?? ''}
+
     <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
       ${card(
         'Hoje',
@@ -1377,7 +1382,8 @@ export function renderDetalheSistemaPage(
 <script>
   // Auto-refresh 30s pra mostrar dado mais fresco do nosso banco.
   // NAO recarrega se cliente clicou em algum filtro/preset (preserva URL).
-  setTimeout(() => location.reload(), 30000);
+  // Recarrega a cada 30 s — menos enquanto alguém arrasta/salva o alfinete do mapa.
+  setInterval(() => { if (!window.ccSegurarRecarga) location.reload(); }, 30000);
 
   // Gráfico do meio na vista Mês/Ano: barras de kWh (por dia / por mês).
   const ctxPeriodo = document.getElementById('graficoPeriodo');

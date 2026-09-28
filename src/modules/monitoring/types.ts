@@ -46,6 +46,11 @@ export interface SistemaCliente {
   telhado_inclinacao_graus?: number | null;
   sombreamento_pct?: number | null;
   observacoes?: string | null;
+  // Mapa das Usinas (migration 145)
+  lat?: number | null;
+  lng?: number | null;
+  geo_fonte?: string | null;
+  geo_em?: string | null;
 }
 
 export interface GeracaoDiaria {
@@ -150,6 +155,10 @@ export interface SiteResumo {
   cidade: string | null;
   uf: string | null;
   data_instalacao: string | null;  // YYYY-MM-DD
+  // Posição informada pela marca (quando a API traz). Vai pro mapa com
+  // geo_fonte='api' — nunca por cima de um ponto ajustado à mão.
+  lat?: number | null;
+  lng?: number | null;
   // Credenciais especificas pra DEPOIS chamar fetchGeneration desse site.
   // Inclui externalId + secrets da conta.
   credenciais: Record<string, unknown>;

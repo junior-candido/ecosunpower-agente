@@ -37,6 +37,7 @@ import type { AdapterResult, IntradayPonto, IntradayResult, ListSitesResult, Mon
 import { fetchWithTimeout } from '../util/fetch-with-timeout.js';
 import { getOrFetch } from '../util/token-cache.js';
 import { retryTransient, isTransientFailure } from '../util/retry.js';
+import { pontoDaApi } from '../geocodificacao.js';
 
 function baseUrl(creds: ParsedCreds): string {
   return `https://${creds.dataCenter}-developer.deyecloud.com`;
@@ -580,6 +581,8 @@ export const deyeAdapter: MonitoringAdapter = {
         cidade,
         uf: null, // Deye nao retorna UF brasileira separado
         data_instalacao,
+        // Posição da planta (locationLat/locationLng da station/list), quando marcada.
+        ...(pontoDaApi(st.locationLat, st.locationLng) ?? {}),
         // Credenciais que ficam por planta. Usa 'site_id' (padrao do adapter
         // registry — service.ts faz upsert por api_credentials->>site_id).
         credenciais: {

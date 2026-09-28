@@ -257,13 +257,15 @@ describe('geração do portfólio e usinas agora', () => {
     expect(g).toContain('<title>26/09: real 40 kWh · esperada 42 kWh</title>');
     expect(g).toContain('class="cc-linha-esp"');
   });
-  it('usinas por estado e por cidade (pior estado primeiro); mapa segue "próxima entrega"', () => {
+  it('usinas por estado e por cidade (pior estado primeiro); link pro mapa das usinas', () => {
     const h = pagina(dados());
     const bloco = h.slice(h.indexOf('Usinas agora'), h.indexOf('cc-a-att'));
     expect(bloco).toMatch(/Sem comunicação<b>1<\/b>/);
     expect(bloco).toMatch(/Normal<b>1<\/b>/);
     expect(bloco.indexOf('Sobradinho')).toBeLessThan(bloco.indexOf('Gama'));
-    expect(bloco).toContain('Mapa por região: próxima entrega');
+    expect(bloco).not.toContain('Mapa por região: próxima entrega');
+    expect(bloco).toContain('href="#cc-mapa-usinas"');
+    expect(h).toContain('id="cc-mapa-usinas"');
   });
   it('sem acesso às usinas', () => {
     expect(pagina(dados({ frota: null, permissoes: { ...TODAS_PERMISSOES, usinas: false } }))).toContain('Sem acesso às usinas');

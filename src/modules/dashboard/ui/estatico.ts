@@ -16,6 +16,7 @@ import { createHash } from 'crypto';
 import type { Request, Response } from 'express';
 import { CSS_DESIGN_SYSTEM } from './estilo.js';
 import { LOGO_NEGATIVA_WIDE_BASE64 } from './logo-negativa-wide.js';
+import { CSS_MAPA_USINAS, JS_MAPA_USINAS, JS_MAPA_USINA } from './mapa-cliente.js';
 
 /** Classes que telas ANTIGAS ainda usam dentro do corpo (moravam no <style> do layout). */
 const CSS_LEGADO_LAYOUT = `
@@ -95,10 +96,16 @@ interface ArquivoEstatico {
   url: string;
 }
 
-function arquivo(nome: string, ext: 'css' | 'png', corpo: Buffer): ArquivoEstatico {
+const TIPO_DA_EXTENSAO = {
+  css: 'text/css; charset=utf-8',
+  js: 'text/javascript; charset=utf-8',
+  png: 'image/png',
+} as const;
+
+function arquivo(nome: string, ext: keyof typeof TIPO_DA_EXTENSAO, corpo: Buffer): ArquivoEstatico {
   const hash = createHash('sha256').update(corpo).digest('hex').slice(0, 10);
   return {
-    tipo: ext === 'css' ? 'text/css; charset=utf-8' : 'image/png',
+    tipo: TIPO_DA_EXTENSAO[ext],
     corpo,
     hash,
     url: `/dashboard/estatico/${nome}.${hash}.${ext}`,
@@ -109,14 +116,21 @@ const ARQUIVOS: ReadonlyMap<string, ArquivoEstatico> = new Map([
   ['painel.css', arquivo('painel', 'css', Buffer.from(CSS_PAINEL, 'utf-8'))],
   ['sem-tailwind.css', arquivo('sem-tailwind', 'css', Buffer.from(CSS_SEM_TAILWIND, 'utf-8'))],
   ['logo-casa.png', arquivo('logo-casa', 'png', Buffer.from(LOGO_NEGATIVA_WIDE_BASE64.slice(LOGO_NEGATIVA_WIDE_BASE64.indexOf(',') + 1), 'base64'))],
+  // Mapa das Usinas (Command Center + mini-mapa da usina)
+  ['mapa-usinas.css', arquivo('mapa-usinas', 'css', Buffer.from(CSS_MAPA_USINAS, 'utf-8'))],
+  ['mapa-usinas.js', arquivo('mapa-usinas', 'js', Buffer.from(JS_MAPA_USINAS, 'utf-8'))],
+  ['mapa-usina.js', arquivo('mapa-usina', 'js', Buffer.from(JS_MAPA_USINA, 'utf-8'))],
 ]);
 
 export const URL_CSS_PAINEL = ARQUIVOS.get('painel.css')!.url;
 export const URL_CSS_SEM_TAILWIND = ARQUIVOS.get('sem-tailwind.css')!.url;
 /** Logo OFICIAL da casa (negativa-wide) — só a EcoSun vê (views.ts decide). */
 export const URL_LOGO_CASA = ARQUIVOS.get('logo-casa.png')!.url;
+export const URL_CSS_MAPA_USINAS = ARQUIVOS.get('mapa-usinas.css')!.url;
+export const URL_JS_MAPA_USINAS = ARQUIVOS.get('mapa-usinas.js')!.url;
+export const URL_JS_MAPA_USINA = ARQUIVOS.get('mapa-usina.js')!.url;
 
-const NOME_ARQUIVO = /^([a-z-]+)\.([0-9a-f]{10})\.(css|png)$/;
+const NOME_ARQUIVO = /^([a-z-]+)\.([0-9a-f]{10})\.(css|js|png)$/;
 
 /**
  * GET /dashboard/estatico/:arquivo — PÚBLICA (a tela de login e o navegador

@@ -139,6 +139,8 @@ import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, 
 import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
 import { hidratarChecklist, resumoOS, type OSTipo } from './os-checklist.js';
 import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv } from './command-center-rotas.js';
+import { rotaMapaJson, rotaLocalizarPagina, rotaLocalizarUma, rotaSalvarPosicao } from './mapa-usinas-rotas.js';
+import { blocoMiniMapaUsina } from './mapa-usinas-views.js';
 import { montarRotasEnergia } from './energia-rotas.js';
 import { criarTravaDeModulo } from './modulos-contratados.js';
 import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
@@ -2011,6 +2013,14 @@ b.onclick=async function(){
   router.get('/command-center', rotaCommandCenter(supabase));
   router.get('/atencao', rotaCentralAtencao(supabase));
   router.get('/tv', rotaModoTv());
+
+  // Mapa das Usinas (28/09/2026): alfinetes em JSON (company_id da sessão, módulo
+  // + papel conferidos na rota), Localizar em lote e alfinete arrastável.
+  // ANTES de /monitoramento/:id (senão "localizar" cai como UUID inválido).
+  router.get('/command-center/mapa.json', rotaMapaJson(supabase));
+  router.get('/monitoramento/localizar', rotaLocalizarPagina(supabase));
+  router.post('/monitoramento/localizar/:id', rotaLocalizarUma(supabase));
+  router.post('/monitoramento/:id/posicao', rotaSalvarPosicao(supabase));
 
   // Cockpit: 1 tela dark neon com KPIs + gauges + funil + atividade + top leads.
   // Auto-refresh 30s (gauges) + 5min (page completa). ECharts via CDN.
@@ -5535,7 +5545,9 @@ b.onclick=async function(){
         getTimelineAbordagens(supabase, id).catch(() => [] as import('./queries.js').AbordagemTimelineRow[]),
         prontuarioUsina(supabase, id).catch(() => []),
       ]);
-      res.send(renderDetalheSistemaPage(detalhe, curvaDia, curvaMsg, donoRow ? { id: donoRow.id, name: donoRow.name } : null, timelineAbordagens, renderProntuario(prontuario), (req as AuthedRequest).dashUser));
+      const operador = (req as AuthedRequest).dashUser;
+      const mapaHtml = blocoMiniMapaUsina(detalhe.sistema, { podeEditar: can(operador, 'usinas', 'editar') });
+      res.send(renderDetalheSistemaPage(detalhe, curvaDia, curvaMsg, donoRow ? { id: donoRow.id, name: donoRow.name } : null, timelineAbordagens, renderProntuario(prontuario), operador, mapaHtml));
     } catch (err) {
       console.error('[dashboard/monitoramento/detalhe]', err);
       res.status(500).send(`<h2>Erro ao carregar detalhe</h2><pre>${(err as Error).message}</pre>`);
