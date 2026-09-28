@@ -126,6 +126,15 @@ export const R17_CADENCIA_CONFIRM: Record<string, MudancaContrato> = {
   ]),
 };
 
+// R17 — mudanças de COMPORTAMENTO nas rotas (não aparecem no contrato da tela;
+// todas de segurança, testadas em tests/marketing-empresa.test.ts):
+//  - consultas de /marketing e /cadencia filtram company_id da sessão;
+//  - GET /cadencia e POST /cadencia/fechou|optout agora pedem permissão de
+//    Marketing (visualizar/editar) — antes qualquer usuário logado abria;
+//  - POST /cadencia/fechou: aviso no zap do dono só para lead da casa;
+//  - Blog (publicar/descartar/revisar/editar/foto), E-mail (ligar/pausar) e
+//    POST /admin/backfill-channels: só a casa; o backfill também pede
+//    marketing:editar para a casa. Tenant vê Blog/E-mail "indisponível".
 /** Mudanças R17 por caso de tests/fixtures/casos-marketing.ts. */
 export const MUDANCAS_R17: Record<string, MudancaContrato[]> = {
   'campanhas-tenant': [R17_TENANT_SEM_BACKFILL],

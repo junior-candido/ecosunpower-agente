@@ -19,7 +19,7 @@ import type { GoogleAnalyticsSummary } from '../marketing/google-analytics/index
 import type { CampaignQualityReport } from '../marketing/campaign-quality.js';
 import {
   cabecalhoPagina, faixaKpis, cartaoSecao, tabela, estadoVazio, pilulaStatus, botao, chipsFiltro,
-  celulaDupla, barra, paginacao,
+  celulaDupla, barra,
 } from './ui/componentes.js';
 import type { Tom } from './ui/componentes.js';
 import { temaDaTela } from './ui/tema.js';
@@ -200,7 +200,9 @@ function renderGoogleAdsSection(s7d: GoogleAdsSummary | undefined, s30d: GoogleA
     })
     : `${periodo('Últimos 7 dias', s7d)}${periodo('Últimos 30 dias', s30d)}`;
 
-  return cartaoSecao({ titulo: 'Google Ads', dica: `sincroniza a cada 30 min · última: ${ultimaSync}`, corpoHtml: corpo });
+  // Tenant sem dado: sem a linha de sincronização (ele não tem sync ligado).
+  const dica = casa || has7d || has30d ? `sincroniza a cada 30 min · última: ${ultimaSync}` : undefined;
+  return cartaoSecao({ titulo: 'Google Ads', dica, corpoHtml: corpo });
 }
 
 const CHANNEL_LABELS: Record<string, string> = {
@@ -325,12 +327,16 @@ export function renderMarketingPage(input: MarketingPageInput, user?: DashUser):
       }),
     });
 
+  // Mesma regra de antes: Anterior = offset−limit (mín. 0) se offset > 0;
+  // Próxima = offset+limit se ainda houver (vale também p/ offset desalinhado).
   const pag = total > filters.limit
-    ? paginacao({
-      pagina, totalPaginas, limite: filters.limit,
-      hrefDe: (offset) => `/dashboard/marketing?${qsSemOffset({ offset })}`,
-      resumo: `Mostrando ${filters.offset + 1}–${Math.min(filters.offset + filters.limit, total)} de ${total}`,
-    })
+    ? (() => {
+      const link = (ok: boolean, offset: number, rel: 'prev' | 'next', txt: string) => ok
+        ? `<a class="cc-btn cc-btn-sm" href="/dashboard/marketing?${escapeHtml(qsSemOffset({ offset }))}" rel="${rel}">${txt}</a>`
+        : `<span class="cc-btn cc-btn-sm cc-btn-off" aria-disabled="true">${txt}</span>`;
+      return `<nav class="cc-pg" aria-label="Paginação"><span class="cc-pg-info">Mostrando ${filters.offset + 1}–${Math.min(filters.offset + filters.limit, total)} de ${total} · Página ${pagina} de ${totalPaginas}</span><span class="cc-sp"></span>`
+        + `${link(filters.offset > 0, Math.max(0, filters.offset - filters.limit), 'prev', '← Anterior')}${link(filters.offset + filters.limit < total, filters.offset + filters.limit, 'next', 'Próxima →')}</nav>`;
+    })()
     : '';
 
   const campanhas = cartaoSecao({
