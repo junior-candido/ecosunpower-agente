@@ -143,7 +143,8 @@ import { rotaMapaJson, rotaLocalizarPagina, rotaLocalizarUma, rotaSalvarPosicao 
 import { blocoMiniMapaUsina } from './mapa-usinas-views.js';
 import { montarRotasEnergia } from './energia-rotas.js';
 import { criarTravaDeModulo } from './modulos-contratados.js';
-import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
+import { bancoDoOperador } from '../tenant-client.js';
+import { guardaClienteDaEmpresa, clienteDaEmpresa, anexoDoCliente, sistemaDaEmpresa } from './clientes-guarda.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
 import { criarTravaLeadDaEmpresa } from './trava-lead-empresa.js';
 import { criarTravaPropostaDaEmpresa, leadIdConferido } from './trava-proposta-empresa.js';
 import { criarRotasAtendimento } from './atendimento-rotas.js';
@@ -6276,6 +6277,11 @@ b.onclick=async function(){
   };
   router.use('/clientes', soEcosunPorEnquanto);
   router.use('/cerebro', soEcosunPorEnquanto);
+  // [R16 28/09] toda rota /clientes/:id (ficha, edit, arquivar, excluir, anexos,
+  // relatório pós-instalação) só com cliente da empresa da sessão (senão 404).
+  const dbClientes = (req: Request) => bancoDoOperador(req as AuthedRequest, supabase);
+  const empresaDaSessao = (req: Request) => (req as AuthedRequest).dashUser?.companyId ?? null;
+  router.use('/clientes/:id', guardaClienteDaEmpresa(dbClientes));
 
   router.get('/clientes', async (req: Request, res: Response) => {
     try {
@@ -6290,6 +6296,7 @@ b.onclick=async function(){
         limit,
         offset,
         mostrarArquivados,
+        companyId: empresaDaSessao(req) ?? ECOSUN,   // [R16] só clientes da empresa da sessão
       };
       const { clientes, sistemasOrfaos, total } = await listClientes(supabaseService, filters);
       res.type('text/html').send(renderClientesListPage(clientes as any, filters, sistemasOrfaos, { total, limit, offset, mostrarArquivados }, (req as AuthedRequest).dashUser));
@@ -6372,6 +6379,7 @@ b.onclick=async function(){
       concessionaria: b.concessionaria || null,
       consumo_medio_kwh: consumo,
       profile: (b.profile as any) || 'indefinido',
+      companyId: empresaDaSessao(req),   // [R16] nasce na empresa de quem cadastrou
     });
 
     if (!r.ok) {
@@ -6489,6 +6497,7 @@ b.onclick=async function(){
       lead_id: id, tipo, descricao,
       storage_path: up.storage_path, mime_type: file.mimetype, size_bytes: file.size,
       created_by: 'junior',
+      ...(empresaDaSessao(req) ? { company_id: empresaDaSessao(req)! } : {}),   // [R16] carimbo da empresa
     });
     if (!ins.ok) {
       await deleteAnexoFile(supabaseService.getClient(), up.storage_path).catch(() => {});
@@ -6502,6 +6511,8 @@ b.onclick=async function(){
     const id = String(req.params.id ?? '');
     const anexoId = String(req.params.anexoId ?? '');
     if (!UUID_RE.test(id) || !UUID_RE.test(anexoId)) return res.status(400).send('UUID inválido');
+    // [R16] o anexo tem que ser DESTE cliente (antes apagava qualquer anexo pelo id).
+    if (!(await anexoDoCliente(dbClientes(req), anexoId, id))) return res.status(404).send('Anexo não encontrado');
     const r = await supabaseService.deleteAnexo(anexoId);
     if (r.ok && r.storage_path) {
       await deleteAnexoFile(supabaseService.getClient(), r.storage_path).catch((e) => console.warn('[clientes/anexos] storage cleanup falhou:', e));
@@ -6513,6 +6524,8 @@ b.onclick=async function(){
     const action = String(req.body?.action ?? '');
     const leadId = String(req.body?.lead_id ?? '');
     if (!UUID_RE.test(leadId)) return res.status(400).send('lead_id inválido');
+    // [R16] lead_id vem do formulário: tem que ser cliente da empresa da sessão.
+    if (!(await clienteDaEmpresa(dbClientes(req), leadId, empresaDaSessao(req)))) return res.status(404).send('Cliente não encontrado');
 
     let topic: string | null = null;
     if (action === 'eva_pedir_depoimento') topic = 'pedido_depoimento';
@@ -6535,10 +6548,13 @@ b.onclick=async function(){
   router.post('/clientes/vincular-sistema', async (req: Request, res: Response) => {
     const sistemaId = String(req.body?.sistema_id ?? '');
     if (!UUID_RE.test(sistemaId)) return res.status(400).send('Sistema inválido');
+    // [R16] a usina tem que ser da empresa da sessão.
+    if (!(await sistemaDaEmpresa(dbClientes(req), sistemaId, empresaDaSessao(req)))) return res.status(404).send('Sistema não encontrado');
 
     const leadId = String(req.body?.lead_id ?? '').trim();
     // Caminho 1: cliente existente escolhido no seletor
     if (UUID_RE.test(leadId)) {
+      if (!(await clienteDaEmpresa(dbClientes(req), leadId, empresaDaSessao(req)))) return res.status(404).send('Cliente não encontrado');
       const r = await supabaseService.vincularClienteExistente({ sistema_id: sistemaId, lead_id: leadId });
       if (!r.ok) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/clientes">← voltar</a>`);
       return res.redirect(303, `/dashboard/clientes/${leadId}`);
@@ -6549,7 +6565,7 @@ b.onclick=async function(){
     const phone = String(req.body?.novo_phone ?? '').replace(/\D/g, '');
     if (name.length < 2) return res.status(400).send('Escolha um cliente existente ou preencha nome (mín 2 chars)');
     if (phone.length < 10) return res.status(400).send('Telefone inválido — use formato 5561999990000');
-    const r = await supabaseService.vincularNovoLeadAoSistema({ sistema_id: sistemaId, name, phone });
+    const r = await supabaseService.vincularNovoLeadAoSistema({ sistema_id: sistemaId, name, phone, companyId: empresaDaSessao(req) });
     if (!r.ok) return res.status(500).send(`<h2>Erro: ${escapeHtmlSimple(r.error ?? '')}</h2><a href="/dashboard/clientes">← voltar</a>`);
     res.redirect(303, `/dashboard/clientes/${r.lead_id}`);
   });
@@ -6663,6 +6679,10 @@ b.onclick=async function(){
     const id = String(req.params.id ?? '');
     const rid = String(req.params.rid ?? '');
     if (!UUID_RE.test(id) || !UUID_RE.test(rid)) return res.status(400).send('UUID inválido');
+
+    // [R16] o relatório tem que ser DESTE cliente (antes enviava qualquer rid).
+    const relDoCliente = await supabaseService.getRelatorioPosInstalacaoById(rid);
+    if (!relDoCliente || relDoCliente.lead_id !== id) return res.status(404).send('Relatório não encontrado');
 
     const sendText = options.sendText;
     if (!sendText) return res.status(500).send('sendText não configurado neste ambiente.');
