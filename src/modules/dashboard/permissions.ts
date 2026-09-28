@@ -28,6 +28,10 @@ export interface DashUser {
   // [Fase 2 A2] Nome da empresa da sessão (companies.nome) — o layout usa pra
   // marcar o dashboard do tenant. Ausente/EcoSun = visual EcoSun de sempre.
   companyNome?: string;
+  // Módulos que a EMPRESA contratou (empresa_modulos). Preenchido por requisição
+  // pela trava de módulos (modulos-contratados.ts) só pro tenant; o menu tranca
+  // o que não está aqui. Ausente = não conferido (EcoSun, telas sem o router).
+  modulosContratados?: readonly string[];
 }
 
 export function can(user: DashUser | null | undefined, area: Area, nivel: Nivel): boolean {

@@ -17,9 +17,10 @@ import { can, type DashUser } from './permissions.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 import { bancoDoOperador } from '../tenant-client.js';
 import {
-  carregarCommandCenter, lerModulosContratados, NENHUM_MODULO,
+  carregarCommandCenter, blocosContratados, NENHUM_MODULO,
   type DadosCommandCenter, type PermissoesCC,
 } from './command-center-queries.js';
+import { modulosDaRequisicao } from './modulos-contratados.js';
 import { todasEmpresasConhecidas } from '../empresa-config.js';
 import { renderCommandCenterPage, renderCentralAtencaoPage, renderModoTvPage } from './command-center-views.js';
 
@@ -65,8 +66,9 @@ async function carregar(req: Request, supabase: SupabaseClient, user: DashUser, 
   let contratados: PermissoesCC = { ...NENHUM_MODULO };
   try {
     const db = bancoDoOperador(req as AuthedRequest, supabase);
-    // 1 leitura por requisição; erro = tudo trancado (fail-closed).
-    contratados = await lerModulosContratados(db, user.companyId);
+    // 1 leitura por requisição (a trava de módulos do router já leu e deixou
+    // no cache da requisição); erro = tudo trancado (fail-closed).
+    contratados = blocosContratados(await modulosDaRequisicao(req, db, user.companyId));
     // Cada fonte já se protege sozinha; aqui só pega o que escapar (ex.: cliente quebrado).
     const dados = await carregarCommandCenter(db, user.companyId, agora, permissoesDe(user), {
       contratados,

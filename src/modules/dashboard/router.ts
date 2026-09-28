@@ -138,6 +138,7 @@ import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, 
 import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
 import { hidratarChecklist, resumoOS, type OSTipo } from './os-checklist.js';
 import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv } from './command-center-rotas.js';
+import { criarTravaDeModulo } from './modulos-contratados.js';
 import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
@@ -421,6 +422,12 @@ export function createDashboardRouter(
   // ----------------------------------------------------------------------
 
   router.use(criarSessionAuth(supabase));
+
+  // Segundo portão, CENTRAL: módulo contratado pela EMPRESA (empresa_modulos).
+  // Tenant sem o módulo → vitrine /conhecer/<chave> (POST → 403). Lê 1x por
+  // requisição e deixa em req.dashUser.modulosContratados pro menu trancar.
+  // EcoSun passa direto. Mapa rota → módulo: modulos-contratados.ts.
+  router.use(criarTravaDeModulo(supabase));
 
   // Raiz redireciona pro cockpit (visao geral 1-tela). Era /home antes.
   router.get('/', (_req, res) => {
