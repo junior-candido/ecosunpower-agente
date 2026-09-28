@@ -718,6 +718,7 @@ function kwhCc(v: number | null | undefined, casas = 1): string {
 // e o layout procuram: coluna-status, card-usina, orbita-frota, ponto-usina).
 const CSS_MONITORAMENTO = `
 .cc-mon .cc-kstrip{margin-bottom:16px}
+.cc-mon .cc-mon-gap{height:12px}
 .cc-mon .cc-panel+.cc-panel,.cc-mon .cc-kstrip+.cc-panel{margin-top:16px}
 .cc-mon-filtro{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
 .cc-mon-filtro input[name=q]{width:220px}
@@ -746,6 +747,7 @@ const CSS_MONITORAMENTO = `
 .cc-mon-card-al{font-size:11.5px;line-height:1.35;margin-top:4px}
 .cc-mon-card-al.cc-mon-crit{color:var(--cc-crit)} .cc-mon-card-al.cc-mon-warn{color:var(--cc-warn)}
 .cc-mon-card-b{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px}
+.cc-mon-card-b .cc-kb-card-m{margin-top:0}
 .cc-mon-card-b b{font-family:var(--cc-f-num);color:var(--cc-gold-2);font-size:12px;white-space:nowrap}
 .cc-mon-card-acts{display:flex;gap:6px;margin-top:8px}
 .cc-mon-card-acts form{margin:0}
@@ -962,7 +964,7 @@ export function renderMonitoramentoPage(
     { rotulo: 'Geração hoje', valor: totalHoje, casas: 1, unidade: 'kWh', destaque: true },
     { rotulo: 'Geração no mês', valor: totalMes, casas: 0, unidade: 'kWh', detalhe: 'mês corrente' },
     { rotulo: 'Gerando OK', valor: saudaveis.length, detalhe: `saúde ${okCount}/${ativos.length}` },
-    { rotulo: 'Fora do normal', valor: problemas.length, detalhe: 'falha + atenção', href: problemas.length ? '/dashboard/monitoramento?painel=falha' : undefined },
+    { rotulo: 'Fora do normal', valor: problemas.length, detalhe: 'falha + atenção', href: falhas.length ? '/dashboard/monitoramento?painel=falha' : atencoes.length ? '/dashboard/monitoramento?painel=atencao' : undefined },
   ]);
 
   const alertasHtml = alertasResumo ? cartaoSecao({
@@ -1015,7 +1017,7 @@ export function renderMonitoramentoPage(
     ${operacao}
     ${carteira}
   </div>
-  <style>${CSS_MONITORAMENTO}.cc-mon .cc-mon-gap{height:12px}</style>`;
+  <style>${CSS_MONITORAMENTO}</style>`;
   const scripts = `<script>setTimeout(() => location.reload(), 30000);</script>`;
   return renderLayout({
     active: 'monitoramento', title: 'Monitoramento', body, scripts, user,

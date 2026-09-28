@@ -112,7 +112,7 @@ import { renderContratosPage, type ContratoCliente } from './contratos-views.js'
 import { renderContratoFormPage, renderDocBloqueadoPage } from './contrato-form-views.js';
 import type { SugestaoIa } from '../closing/revisar-contrato.js';
 import { CLIENTE_STATUSES } from './clientes-queries.js';
-import { can, podeDispararMensagens, usinaPertenceAoOperador } from './permissions.js';
+import { can, podeDispararMensagens, usinaPertenceAoOperador, escopoSyncTodos } from './permissions.js';
 import type { AuthedRequest } from './auth.js';
 import { pastaDaEmpresa, listarPastasDaEmpresa } from './pasta-da-empresa.js';
 import { EMPRESA_CASA as EMPRESA_PADRAO_PASTA } from './canal-envio.js';
@@ -5755,9 +5755,12 @@ b.onclick=async function(){
   // Sync manual de TODOS os sistemas (botao "Atualizar todas agora" no dashboard).
   // Importante: declarar antes da rota /:id/sync pra Express nao confundir
   // 'sync-todos' com um UUID.
-  router.post('/monitoramento/sync-todos', async (_req: Request, res: Response) => {
+  router.post('/monitoramento/sync-todos', async (req: Request, res: Response) => {
+    // Tenant sincroniza só a frota dele; EcoSun, tudo (revisão de segurança R8).
+    const escopo = escopoSyncTodos((req as AuthedRequest).dashUser?.companyId);
+    if (!escopo) return res.status(403).send('<h2>Sem empresa na sessão</h2><a href="/dashboard/monitoramento">← voltar</a>');
     try {
-      await monitoringService.syncAll();
+      await monitoringService.syncAll(escopo.companyId);
       res.redirect('/dashboard/monitoramento');
     } catch (err) {
       console.error('[dashboard/monitoramento/sync-todos]', err);
@@ -5789,8 +5792,15 @@ b.onclick=async function(){
   });
 
   router.post('/monitoramento/:id/excluir', async (req: Request, res: Response) => {
+    // Só a empresa dona apaga a usina (mesma trava do :id/sync — revisão R8).
+    const idExcluir = String(req.params.id ?? '');
+    if (!/^[0-9a-f-]{36}$/i.test(idExcluir)) return res.status(400).send('UUID invalido');
+    const sisExcluir = await supabaseService.getSistemaById(idExcluir);
+    if (!sisExcluir || !usinaPertenceAoOperador((sisExcluir.company_id as string | null) ?? null, (req as AuthedRequest).dashUser?.companyId)) {
+      return res.status(404).send('<h2>Sistema nao encontrado</h2><a href="/dashboard/monitoramento">← voltar</a>');
+    }
     try {
-      const r = await monitoringService.excluirSistema(String(req.params.id ?? ''));
+      const r = await monitoringService.excluirSistema(idExcluir);
       if (!r.ok) {
         return res.status(500).send(`<h2>Erro ao excluir</h2><pre>${r.reason ?? ''}</pre><a href="/dashboard/monitoramento">← voltar</a>`);
       }
