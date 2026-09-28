@@ -101,6 +101,9 @@ describe('lista e isolamento', () => {
     await rotaListaEnergia(db, deps())(req(junior), res as unknown as Response);
     expect(html(res)).toContain('Recebendo dado');
     expect(html(res)).toContain('Chave da nuvem recusada');
+    // As duas pílulas quebram linha no celular (390 px) em vez de vazar da célula.
+    expect(html(res)).toMatch(/<span class="en-pilulas">[\s\S]*Recebendo dado[\s\S]*Chave da nuvem recusada[\s\S]*<\/span>/);
+    expect(html(res)).toMatch(/\.en-pilulas\{[^}]*flex-wrap:wrap/);
   });
 
   it('migrations não aplicadas: a tela explica, não quebra', async () => {
@@ -212,7 +215,8 @@ describe('cadastro', () => {
   });
 
   it('edição que troca pra um aparelho já cadastrado: mesma mensagem', async () => {
-    const db = dbFalso({ medidores_energia: [MEDIDOR], sistemas_clientes: [] });
+    // Medidor que ainda não recebeu dado (trocar o aparelho é permitido).
+    const db = dbFalso({ medidores_energia: [{ ...MEDIDOR, ultima_leitura_em: null }], sistemas_clientes: [] });
     // select devolve o medidor; o update bate no índice único global.
     const from = db.from as unknown as ReturnType<typeof vi.fn>;
     const original = from.getMockImplementation()!;
@@ -232,6 +236,22 @@ describe('cadastro', () => {
     await rotaSalvarMedidor(db, deps())(req(junior, { params: { id: MID }, body: { ...corpo, device_id: 'aabbccddee11' } }), res as unknown as Response);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(html(res)).toContain('Este aparelho já está cadastrado. Fale com o suporte.');
+  });
+
+  it('trocar o aparelho de um medidor que JÁ recebeu dado: recusa e manda cadastrar um novo (nada gravado)', async () => {
+    const db = dbFalso({ medidores_energia: [MEDIDOR], sistemas_clientes: [] });
+    const res = resFalso();
+    await rotaSalvarMedidor(db, deps())(req(junior, { params: { id: MID }, body: { ...corpo, device_id: 'aabbccddee11', ativo: 'on' } }), res as unknown as Response);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(html(res)).toContain('Para trocar o aparelho, cadastre um medidor novo');
+    expect(db.chamadas.some((c) => c.op === 'update')).toBe(false);
+  });
+
+  it('mesmo aparelho escrito com o prefixo do modelo não conta como troca', async () => {
+    const db = dbFalso({ medidores_energia: [MEDIDOR], sistemas_clientes: [], audit_log: [] });
+    const res = resFalso();
+    await rotaSalvarMedidor(db, deps())(req(junior, { params: { id: MID }, body: { ...corpo, device_id: 'shellypro3em-007007422D90', ativo: 'on' } }), res as unknown as Response);
+    expect(res.redirect).toHaveBeenCalledWith(`/dashboard/energia/${MID}`);
   });
 
   it('edição: mostra só a máscara da chave guardada', async () => {

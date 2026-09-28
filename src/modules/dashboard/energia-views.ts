@@ -50,7 +50,9 @@ function nuvemRecusada(m: Pick<MedidorTela, 'modo_coleta' | 'nuvem_ok'>): boolea
 function pilulasSituacao(m: Pick<MedidorTela, 'status' | 'modo_coleta' | 'nuvem_ok' | 'ativo'>): string {
   if (m.ativo === false) return pilulaStatus('sem_dado', 'Desligado');
   const s = tomDoStatus(m.status);
-  return pilulaStatus(s.tom, s.texto) + (nuvemRecusada(m) ? ` ${pilulaStatus('atencao', 'Chave da nuvem recusada')}` : '');
+  if (!nuvemRecusada(m)) return pilulaStatus(s.tom, s.texto);
+  // Duas pílulas: quebram linha no celular (390 px) em vez de vazar da célula.
+  return `<span class="en-pilulas">${pilulaStatus(s.tom, s.texto)}${pilulaStatus('atencao', 'Chave da nuvem recusada')}</span>`;
 }
 
 const MODO_TEXTO: Record<string, string> = {
@@ -65,6 +67,8 @@ function avisoMigration(): string {
 }
 
 const CSS_ENERGIA = `
+.en-pilulas{display:inline-flex;flex-wrap:wrap;gap:4px;max-width:100%}
+.en-pilulas .cc-pill{white-space:normal;max-width:100%}
 .en-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin-top:18px}
 .en-full{grid-column:1/-1}
 .en-aviso{margin-top:14px}

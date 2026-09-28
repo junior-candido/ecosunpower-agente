@@ -65,6 +65,7 @@ const usuario = (req: Request) => (req as AuthedRequest).dashUser;
  * mesma pra qualquer empresa e não diz de quem é — não vaza cliente de outro.
  */
 export const MSG_APARELHO_JA_CADASTRADO = 'Este aparelho já está cadastrado. Fale com o suporte.';
+export const MSG_TROCA_DE_APARELHO = 'Para trocar o aparelho, cadastre um medidor novo. Este medidor já recebeu dado do aparelho atual.';
 const corpo = (req: Request) => (req.body ?? {}) as Record<string, unknown>;
 
 function naoEncontrado(res: Response): void {
@@ -178,6 +179,12 @@ export function rotaSalvarMedidor(supabase: SupabaseClient, d: DepsEnergia = {})
     };
     if (!v.ok) { refazer(v.erros); return; }
     const dados: Record<string, unknown> = { ...v.dados };
+    // Trocar o aparelho de um medidor que já recebeu dado misturaria duas
+    // séries (contadores diferentes) no mesmo histórico: medidor novo.
+    if (dados.device_id !== undefined && normalizarDeviceId(String(dados.device_id)) !== normalizarDeviceId(m.device_id) && m.ultima_leitura_em) {
+      refazer([MSG_TROCA_DE_APARELHO]);
+      return;
+    }
     // Chave da nuvem nova: a próxima coleta testa de novo (e avisa de novo se recusar).
     if (dados.api_credentials_cifrado) {
       dados.nuvem_ok = null;
