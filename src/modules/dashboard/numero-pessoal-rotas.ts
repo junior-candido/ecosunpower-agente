@@ -12,7 +12,8 @@ import type { Request, Response } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AuthedRequest } from './auth.js';
 import { numeroPessoalDoDono, instanciaLivreParaPessoal, nomeInstanciaPessoal, CASA } from '../numero-pessoal.js';
-import { estadoConexao, obterQrConexao, criarInstancia, type ConexaoEvolutionDeps, type QrConexao } from '../evolution-conexao.js';
+import { estadoConexao, obterQrConexao, criarInstancia, pedirHistoricoCompleto, type ConexaoEvolutionDeps, type QrConexao } from '../evolution-conexao.js';
+import { resumoDoPessoal, DIAS_HISTORICO, type ImportadorHistorico } from '../numero-pessoal-historico.js';
 import { mesmaOrigem } from './atendimento-rotas.js';
 import { renderWhatsappPessoalPage, resultadoWhatsappPessoal } from './whatsapp-pessoal-views.js';
 import { audit } from './audit.js';
@@ -26,12 +27,16 @@ export interface DepsNumeroPessoal {
   webhookUrl?: string;
   /** Token do webhook — vai no cabeçalho x-webhook-token. */
   webhookToken?: string;
+  /** Importador do histórico (o mesmo do webhook): progresso + puxar o que a Evolution guardou. */
+  historico?: Pick<ImportadorHistorico, 'progresso' | 'puxarDoServidor' | 'recomecar' | 'cancelar'>;
 }
 
 const primeiroNome = (s: string | null | undefined) => String(s ?? '').trim().split(/\s+/)[0] || null;
 
 export function criarRotasNumeroPessoal(deps: DepsNumeroPessoal) {
   const qrCache = new Map<string, { at: number; valor: QrConexao }>();
+  /** Totais do banco para o contador (3 leituras): no máximo 1 vez a cada 30 s por número. */
+  const resumoCache = new Map<string, { at: number; chave: string; valor: Awaited<ReturnType<typeof resumoDoPessoal>> }>();
 
   function daCasa(req: AuthedRequest, res: Response): req is AuthedRequest & { dashUser: NonNullable<AuthedRequest['dashUser']> } {
     if (req.dashUser?.companyId !== CASA) { res.status(404).send('Página não encontrada'); return false; }
@@ -42,11 +47,15 @@ export function criarRotasNumeroPessoal(deps: DepsNumeroPessoal) {
     const r = req as AuthedRequest;
     if (!daCasa(r, res)) return;
     const np = await numeroPessoalDoDono(deps.supabase, CASA, r.dashUser.id);
-    const estado = np && deps.evolution ? await estadoConexao(deps.evolution, np.instancia).catch(() => 'desconhecido' as const) : null;
+    const [estado, resumo] = await Promise.all([
+      np && deps.evolution ? estadoConexao(deps.evolution, np.instancia).catch(() => 'desconhecido' as const) : Promise.resolve(null),
+      np ? resumoDoPessoal(deps.supabase, np) : Promise.resolve(null),
+    ]);
     res.type('html').send(renderWhatsappPessoalPage({
       user: r.dashUser,
       numero: np ? { instancia: np.instancia, ativo: np.ativo, donoNome: np.dono_nome } : null,
       estado,
+      historico: np ? { resumo, progresso: deps.historico?.progresso(np.instancia) ?? null, dias: DIAS_HISTORICO, disponivel: !!deps.evolution && !!deps.historico } : undefined,
       resultado: resultadoWhatsappPessoal(r.query?.ok ?? r.query?.erro),
       sugestao: nomeInstanciaPessoal(r.dashUser.id),
     }));
@@ -88,6 +97,8 @@ export function criarRotasNumeroPessoal(deps: DepsNumeroPessoal) {
     if (!np) { res.redirect(303, '/dashboard/whatsapp/pessoal'); return; }
     await deps.supabase.from('whatsapp_numeros_pessoais').update({ ativo, atualizado_em: new Date().toISOString() })
       .eq('id', np.id).eq('company_id', CASA).eq('dono_user_id', r.dashUser.id);
+    // Desligou: o histórico que ainda estava na fila não é gravado.
+    if (!ativo) deps.historico?.cancelar(np.instancia);
     await audit(deps.supabase, { companyId: CASA, userId: r.dashUser.id, entidade: 'whatsapp_pessoal', acao: ativo ? 'religou' : 'desligou', valorNovo: np.instancia });
     res.redirect(303, `/dashboard/whatsapp/pessoal?ok=${ativo ? 'religado' : 'desligado'}`);
   }
@@ -118,8 +129,57 @@ export function criarRotasNumeroPessoal(deps: DepsNumeroPessoal) {
     }
   }
 
+  /**
+   * POST /whatsapp/pessoal/historico — "Buscar histórico (reconectar)": liga a
+   * sincronização completa, assina o evento do histórico e DESCONECTA (o dono
+   * lê o QR de novo uma vez; ao ler, o celular manda o histórico). Na mesma
+   * hora puxa o que a Evolution já guardou. Tudo em segundo plano.
+   */
+  async function buscarHistorico(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    if (!daCasa(r, res)) return;
+    if (!mesmaOrigem(r)) { res.status(403).send('origem não permitida'); return; }
+    const volta = (q: string) => res.redirect(303, `/dashboard/whatsapp/pessoal?${q}`);
+    const np = await numeroPessoalDoDono(deps.supabase, CASA, r.dashUser.id);
+    if (!np) { volta(''); return; }
+    if (!np.ativo) { volta('erro=historico_desligado'); return; }
+    if (!deps.evolution || !deps.historico) { volta('erro=evolution_falhou'); return; }
+    const x = await pedirHistoricoCompleto(deps.evolution, np.instancia, deps.webhookUrl, deps.webhookToken);
+    if (!x.ok) { volta('erro=historico_falhou'); return; }
+    qrCache.delete(np.instancia);
+    deps.historico.recomecar(np.instancia);
+    const evo = deps.evolution;
+    const hist = deps.historico;
+    void hist.puxarDoServidor(np, evo).catch((e) => console.warn(`[whatsapp-pessoal] puxar histórico falhou: ${(e as Error).message}`));
+    await audit(deps.supabase, { companyId: CASA, userId: r.dashUser.id, entidade: 'whatsapp_pessoal', acao: 'pediu_historico', valorNovo: np.instancia });
+    console.log(`[whatsapp-pessoal] histórico pedido para "${np.instancia}" (webhook ${x.webhook}, desconectou=${x.desconectou})`);
+    volta(x.webhook === 'falhou' ? 'ok=historico_sem_webhook' : 'ok=historico_pedido');
+  }
+
+  /** GET /whatsapp/pessoal/historico.json — progresso (só do número de quem está logado). */
+  async function historicoJson(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    res.setHeader('Cache-Control', 'no-store');
+    if (!daCasa(r, res)) return;
+    const np = await numeroPessoalDoDono(deps.supabase, CASA, r.dashUser.id);
+    if (!np) { res.json({ progresso: null }); return; }
+    const progresso = deps.historico?.progresso(np.instancia) ?? null;
+    // Total do banco: só com a busca parada, e no máximo 1 vez a cada 30 s (ou quando a busca avançou).
+    let resumo: Awaited<ReturnType<typeof resumoDoPessoal>> = null;
+    if (!progresso?.emAndamento) {
+      const chave = progresso?.atualizadoEm ?? '';
+      const c = resumoCache.get(np.instancia);
+      if (c && c.chave === chave && Date.now() - c.at < 30_000) resumo = c.valor;
+      else {
+        resumo = await resumoDoPessoal(deps.supabase, np);
+        resumoCache.set(np.instancia, { at: Date.now(), chave, valor: resumo });
+      }
+    }
+    res.json({ progresso, resumo });
+  }
+
   return {
-    pagina, criar, estado, qr,
+    pagina, criar, estado, qr, buscarHistorico, historicoJson,
     desligar: (req: Request, res: Response) => ligar(req, res, false),
     religar: (req: Request, res: Response) => ligar(req, res, true),
   };

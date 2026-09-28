@@ -8,6 +8,7 @@ import type { DashUser } from './permissions.js';
 import type { EstadoConexao } from '../evolution-conexao.js';
 import { cabecalhoPagina, aviso } from './ui/componentes.js';
 import { temaDaTela } from './ui/tema.js';
+import type { ProgressoHistorico } from '../numero-pessoal-historico.js';
 
 export interface WhatsappPessoalInput {
   user: DashUser | undefined;
@@ -18,6 +19,14 @@ export interface WhatsappPessoalInput {
   resultado?: { tom: 'ok' | 'erro' | 'atencao'; texto: string } | null;
   /** Sugestão de nome da instância. */
   sugestao?: string;
+  /** Histórico (últimos N dias): o que já está no painel + a busca em andamento. */
+  historico?: {
+    resumo: { mensagens: number; conversas: number; conversasMais: boolean; maisAntiga: string | null } | null;
+    progresso: ProgressoHistorico | null;
+    dias: number;
+    /** false = servidor sem a Evolution configurada (botão some). */
+    disponivel: boolean;
+  };
 }
 
 const RESULTADOS: Record<string, { tom: 'ok' | 'erro' | 'atencao'; texto: string }> = {
@@ -29,7 +38,32 @@ const RESULTADOS: Record<string, { tom: 'ok' | 'erro' | 'atencao'; texto: string
   erro_banco: { tom: 'erro', texto: 'Não consegui salvar. Tente de novo.' },
   desligado: { tom: 'ok', texto: 'Desligado: o painel parou de gravar as conversas deste número.' },
   religado: { tom: 'ok', texto: 'Religado: as conversas voltam a aparecer no painel.' },
+  historico_pedido: { tom: 'ok', texto: 'Pronto para buscar o histórico: seu número foi desconectado. Leia o QR abaixo com o celular UMA vez — as conversas vão chegando aos poucos (acompanhe o contador).' },
+  historico_sem_webhook: { tom: 'atencao', texto: 'Seu número foi desconectado para buscar o histórico, mas não consegui assinar o aviso do histórico nesta conexão. Leia o QR: o que o servidor já guardou entra; se o contador não subir depois, peça para ligar o evento MESSAGES_SET na Evolution.' },
+  historico_falhou: { tom: 'erro', texto: 'O servidor do WhatsApp (Evolution) não aceitou ligar a busca do histórico. Nada foi desconectado. Tente de novo em instantes.' },
+  historico_desligado: { tom: 'erro', texto: 'Religue o número no painel antes de buscar o histórico.' },
 };
+
+const FUSO = 'America/Sao_Paulo';
+const dataBR = (iso: string | null | undefined) => (iso && Number.isFinite(Date.parse(iso)) ? new Date(iso).toLocaleDateString('pt-BR', { timeZone: FUSO }) : null);
+const milhar = (n: number) => n.toLocaleString('pt-BR');
+
+/** "12 conversa(s) · 3.480 mensagem(ns) no painel · a mais antiga é de 01/07/2026". PURA. */
+export function textoTotaisHistorico(r: NonNullable<WhatsappPessoalInput['historico']>['resumo']): string {
+  if (!r) return 'Não consegui ler o total agora.';
+  if (r.mensagens === 0) return 'Nenhuma mensagem deste número no painel ainda.';
+  const antiga = dataBR(r.maisAntiga);
+  return `${milhar(r.conversas)}${r.conversasMais ? '+' : ''} conversa(s) · ${milhar(r.mensagens)} mensagem(ns) no painel${antiga ? ` · a mais antiga é de ${antiga}` : ''}`;
+}
+
+/** "Importando… 35 conversa(s) / 1.200 mensagem(ns) importada(s) (400 na fila)". PURA. */
+export function textoProgressoHistorico(p: ProgressoHistorico | null): string {
+  if (!p) return '';
+  const antiga = dataBR(p.maisAntiga);
+  const base = `${milhar(p.conversas)} conversa(s) / ${milhar(p.gravadas)} mensagem(ns) importada(s)${antiga ? ` · a mais antiga trazida é de ${antiga}` : ''}`;
+  if (p.emAndamento) return `Importando… ${base}${p.naFila ? ` (${milhar(p.naFila)} na fila)` : ''}`;
+  return `Última busca: ${base}${p.repetidas ? ` · ${milhar(p.repetidas)} já estavam no painel` : ''}${p.falhas ? ` · ${p.falhas} lote(s) falharam — busque de novo` : ''}`;
+}
 
 export function resultadoWhatsappPessoal(chave: unknown): WhatsappPessoalInput['resultado'] {
   return typeof chave === 'string' && Object.prototype.hasOwnProperty.call(RESULTADOS, chave) ? RESULTADOS[chave] : null;
@@ -69,6 +103,17 @@ export function renderWhatsappPessoalPage(p: WhatsappPessoalInput): string {
     const liga = p.numero.ativo
       ? `<form method="POST" action="/dashboard/whatsapp/pessoal/desligar" onsubmit="return confirm('Parar de gravar as conversas deste número no painel?')"><button type="submit" class="cc-btn cc-btn-sm cc-btn-ghost">Desligar do painel</button></form>`
       : `<form method="POST" action="/dashboard/whatsapp/pessoal/religar"><button type="submit" class="cc-btn cc-btn-sm">Religar no painel</button></form>`;
+    const h = p.historico;
+    const pediu = p.resultado === RESULTADOS.historico_pedido || p.resultado === RESULTADOS.historico_sem_webhook;
+    const vivo = !!h && (pediu || !!h.progresso?.emAndamento);
+    const cartaoHistorico = h ? `<section class="cc-panel cc-wp-card cc-wp-hist" id="wp-hist"${vivo ? ' data-vivo="1"' : ''}>
+        <h2>Histórico das conversas (últimos ${h.dias} dias)</h2>
+        <p class="cc-muted">Traz para o painel as conversas <strong>individuais</strong> dos últimos ${h.dias} dias do seu WhatsApp — sem grupos, sem status e sem os avisos da Eva ou da equipe. Fotos, áudios e arquivos antigos entram só como marcador (📷 foto, 🎤 áudio): nada é baixado. Continua só você vendo.</p>
+        <p class="cc-wp-hist-num" id="wp-hist-num">${escapeHtml(textoTotaisHistorico(h.resumo))}</p>
+        <p class="cc-wp-hist-prog" id="wp-hist-prog"${h.progresso ? '' : ' hidden'}>${escapeHtml(textoProgressoHistorico(h.progresso))}</p>
+        ${h.disponivel && p.numero.ativo ? `<form method="POST" action="/dashboard/whatsapp/pessoal/historico" onsubmit="return confirm('Para buscar o histórico, o WhatsApp precisa ser conectado de novo: o painel desconecta seu número e mostra o QR. Leia UMA vez com o celular. Continuar?')"><button type="submit" class="cc-btn cc-wp-ok">Buscar histórico (reconectar)</button></form>` : ''}
+        <p class="cc-hint">Por que reconectar: o WhatsApp só manda o histórico no momento em que o aparelho é conectado. Depois de ler o QR, deixe o celular ligado e com internet — as conversas chegam aos poucos (pode levar alguns minutos). Pode repetir quando quiser: nada é duplicado.</p>
+      </section>` : '';
     corpo = `<div class="cc-wp-grade">
       <section class="cc-panel cc-wp-card cc-wp-qr">
         <div id="wp-estado" class="cc-wp-estado ${aberto ? 'cc-wp-on' : ''}"><span class="cc-wp-bol"></span><span id="wp-estado-t">${aberto ? 'Conectado' : 'Aguardando conexão'}</span></div>
@@ -95,11 +140,12 @@ export function renderWhatsappPessoalPage(p: WhatsappPessoalInput): string {
         ${regras}
         <div class="cc-row cc-wp-rodape"><span class="cc-faint">Conexão: <code>${inst}</code></span><span class="cc-sp"></span>${liga}</div>
       </section>
+      ${cartaoHistorico}
     </div>`;
   }
 
   const body = `<div class="cc-root cc-wp">${cab}${res}${corpo}</div><style>${CSS_WP}</style>`;
-  const scripts = p.numero ? `<script>${SCRIPT_WP}</script>` : undefined;
+  const scripts = p.numero ? `<script>${SCRIPT_WP}</script>${p.historico ? `<script>${SCRIPT_HIST}</script>` : ''}` : undefined;
   return renderLayout({ active: 'conversas', title: 'Meu WhatsApp', body, scripts, user: p.user, tailwind: false, dark: temaDaTela(p.user, 'escuro') === 'escuro' });
 }
 
@@ -114,7 +160,31 @@ function estado(){if(parado)return;fetch('/dashboard/whatsapp/pessoal/estado.jso
 qr();setInterval(qr,20000);setInterval(estado,5000);
 })();`;
 
+/**
+ * Contador do histórico: pergunta o progresso a cada 5 s por até 30 min depois
+ * de pedir a busca (ou enquanto importa), só com a aba visível. Texto por
+ * textContent (nada vira HTML).
+ */
+export const SCRIPT_HIST = `(function(){
+var card=document.getElementById('wp-hist');if(!card||card.getAttribute('data-vivo')!=='1'||!window.fetch)return;
+var num=document.getElementById('wp-hist-num'),prog=document.getElementById('wp-hist-prog'),voltas=0,t=null;
+function milhar(n){return Number(n||0).toLocaleString('pt-BR');}
+function data(iso){if(!iso)return null;var d=new Date(iso);return isNaN(d.getTime())?null:d.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});}
+function totais(r){if(!r)return null;if(!r.mensagens)return 'Nenhuma mensagem deste número no painel ainda.';var a=data(r.maisAntiga);return milhar(r.conversas)+(r.conversasMais?'+':'')+' conversa(s) · '+milhar(r.mensagens)+' mensagem(ns) no painel'+(a?' · a mais antiga é de '+a:'');}
+function progresso(p){if(!p)return '';var a=data(p.maisAntiga),b=milhar(p.conversas)+' conversa(s) / '+milhar(p.gravadas)+' mensagem(ns) importada(s)'+(a?' · a mais antiga trazida é de '+a:'');
+if(p.emAndamento)return 'Importando… '+b+(p.naFila?' ('+milhar(p.naFila)+' na fila)':'');return 'Última busca: '+b+(p.repetidas?' · '+milhar(p.repetidas)+' já estavam no painel':'')+(p.falhas?' · '+p.falhas+' lote(s) falharam — busque de novo':'');}
+function tique(){if(document.hidden)return;voltas++;if(voltas>360){if(t)clearInterval(t);return;}
+fetch('/dashboard/whatsapp/pessoal/historico.json',{credentials:'same-origin',headers:{'Accept':'application/json'}}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(!j)return;
+if(j.progresso){prog.textContent=progresso(j.progresso);prog.hidden=false;}var tt=totais(j.resumo);if(tt)num.textContent=tt;}).catch(function(){});}
+t=setInterval(tique,5000);tique();
+})();`;
+
+
 const CSS_WP = `
+.cc-wp-hist{grid-column:1/-1}
+.cc-wp-hist-num{font-size:15px;font-weight:700;margin:0}
+.cc-wp-hist-prog{font-size:13.5px;color:var(--cc-text-2);margin:0}
+.cc-wp-hist form{margin:0}
 .cc-wp-grade{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;max-width:1000px;margin-top:12px}
 .cc-wp-card{padding:20px;display:flex;flex-direction:column;gap:10px}
 .cc-wp-card h2{font-size:16px;font-weight:700;margin:0}

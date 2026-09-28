@@ -326,6 +326,11 @@ async function main() {
   // Atendimento P2b: instância do WhatsApp PESSOAL do dono (whatsapp_numeros_pessoais, migration 139).
   // Mensagem dessa instância só é GRAVADA (só o dono vê) — a Eva nunca responde lá.
   const numerosPessoais = (await import('./modules/numero-pessoal.js')).criarResolverNumeroPessoal(supabase.getClient());
+  // Histórico do número pessoal (últimos 90 dias): o webhook só enfileira, grava em segundo plano.
+  const historicoPessoalMod = await import('./modules/numero-pessoal-historico.js');
+  const historicoPessoal = historicoPessoalMod.criarImportadorHistorico({ client: supabase.getClient() });
+  // Números da casa que NUNCA são conversa de cliente na caixa pessoal (avisos da Eva, o próprio dono, admins).
+  (await import('./modules/numero-pessoal.js')).definirNumerosInternos([config.businessPhone, config.engineerPhone, ...config.adminExtraPhones]);
 
   // [Corretor] Corretor de português compartilhado (1 cliente Anthropic) injetado
   // nos assistants que recebem texto livre do Junior (cases, fechamento). Corrige
@@ -7777,6 +7782,20 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       return;
     }
 
+    // HISTÓRICO do número pessoal (messages.set, ao ler o QR): enfileira e responde na hora.
+    // Instância da Eva / de tenant: ignorado (a Eva não importa histórico).
+    if (historicoPessoalMod.ehEventoDeHistorico(req.body)) {
+      const h = await historicoPessoalMod.receberHistoricoNoWebhook({
+        body: req.body,
+        porInstancia: (i) => numerosPessoais.porInstancia(i),
+        companyDaInstancia: (i) => evolutionTenant.companyDaInstancia(i),
+        importador: historicoPessoal,
+        instanciaDaEva: config.evolutionInstance,
+      });
+      res.status(h.http).json({ status: h.status });
+      return;
+    }
+
     const parsed = evolution.parseWebhook(req.body);
     if (!parsed) {
       res.status(200).json({ status: 'ignored' });
@@ -9221,6 +9240,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     // passar pelo sendText da Eva (lá é outro número, outra marca, outra trava).
     enviarPessoal: (instancia, to, text) => comEmpresaDe(ECOSUN_COMPANY_ID, () => comCanal({ companyId: ECOSUN_COMPANY_ID, evolutionInstance: instancia }, () => evolution.sendText(to, text))),
     evolutionInstanciaEva: config.evolutionInstance,
+    // Histórico do número pessoal: progresso na tela + puxar o que a Evolution já guardou.
+    historicoPessoal,
     // Token vai no CABEÇALHO (x-webhook-token), nunca na URL (log do proxy, tela da Evolution).
     evolutionWebhookUrl: config.appBaseUrl ? `${config.appBaseUrl.replace(/\/$/, '')}/webhook` : undefined,
     evolutionWebhookToken: config.webhookToken,

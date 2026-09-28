@@ -225,6 +225,8 @@ export function createDashboardRouter(
     enviarPessoal?: (instancia: string, to: string, text: string) => Promise<{ messageId?: string } | void>;
     // EVOLUTION_INSTANCE (a da Eva): nunca pode virar número pessoal.
     evolutionInstanciaEva?: string;
+    // Histórico do número pessoal (últimos 90 dias): progresso + puxar da Evolution (numero-pessoal-historico.ts).
+    historicoPessoal?: import('../numero-pessoal-historico.js').ImportadorHistorico;
     // URL do webhook desta plataforma (sem token) + token no cabeçalho, pra instância pessoal nova.
     evolutionWebhookUrl?: string;
     evolutionWebhookToken?: string;
@@ -303,6 +305,7 @@ export function createDashboardRouter(
     instanciaDaEva: options.evolutionInstanciaEva ?? '',
     webhookUrl: options.evolutionWebhookUrl,
     webhookToken: options.evolutionWebhookToken,
+    historico: options.historicoPessoal,
   });
 
   // Parser dos forms internos (form-urlencoded). Limite maior porque a tela de
@@ -1583,6 +1586,9 @@ b.onclick=async function(){
   router.post('/whatsapp/pessoal/criar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.criar);
   router.post('/whatsapp/pessoal/desligar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.desligar);
   router.post('/whatsapp/pessoal/religar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.religar);
+  // Buscar o histórico (últimos 90 dias): reconecta (QR de novo uma vez) + progresso.
+  router.post('/whatsapp/pessoal/historico', exigir('usuarios', 'administrar'), rotasNumeroPessoal.buscarHistorico);
+  router.get('/whatsapp/pessoal/historico.json', exigir('usuarios', 'administrar'), rotasNumeroPessoal.historicoJson);
 
   router.get('/whatsapp', exigir('usuarios', 'administrar'), async (req: AuthedRequest, res) => {
     try {
@@ -2424,6 +2430,8 @@ b.onclick=async function(){
   // Atendimento (28/09): Leads › Conversas — lista de conversas | chat | cockpit.
   // Sem lead escolhido: só a lista (no celular) / "escolha uma conversa" (computador).
   // Registrado ANTES de /leads/:id (conversas não é UUID).
+  // Sem recarregar (28/09): a conversa com quem não é lead se atualiza sozinha (só o dono do número vê).
+  router.get('/leads/conversas/contato.json', exigir('leads', 'visualizar'), rotasAtendimento.contatoJson);
   router.get('/leads/conversas', exigir('leads', 'visualizar'), async (req: Request, res: Response) => {
     try {
       const viewer = (req as AuthedRequest).dashUser!;
@@ -2641,6 +2649,8 @@ b.onclick=async function(){
   router.post('/leads/:id/resume-eva', exigir('leads', 'editar'), rotasAtendimento.devolver);
 
   // Responder o WhatsApp pelo painel (texto na janela de 24 h / modelo aprovado fora dela).
+  // Sem recarregar (28/09): balões, faixa "assumiu" e janela de 24 h da conversa aberta (JSON).
+  router.get('/leads/:id/conversa.json', exigir('leads', 'visualizar'), rotasAtendimento.conversaJson);
   router.post('/leads/:id/responder', exigir('leads', 'editar'), rotasAtendimento.responder);
   router.post('/leads/:id/responder-modelo', exigir('leads', 'editar'), rotasAtendimento.responderModelo);
 

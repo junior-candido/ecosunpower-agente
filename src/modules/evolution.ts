@@ -43,6 +43,79 @@ export interface IncomingMessage {
   };
 }
 
+/**
+ * Uma mensagem da Evolution (o `data` do messages.upsert, ou cada item do
+ * histórico messages.set / chat/findMessages — mesmo formato) → IncomingMessage.
+ * PURA. Tipo que não conhecemos (figurinha, reação, enquete…) → null.
+ */
+export function lerMensagemEvolution(data: Record<string, unknown> | undefined | null): IncomingMessage | null {
+  if (!data || typeof data !== 'object') return null;
+
+  const key = data.key as Record<string, string> | undefined;
+  const message = data.message as Record<string, unknown> | undefined;
+  const timestamp = data.messageTimestamp as number;
+
+  if (!key || !message) return null;
+
+  // GRUPO: nao descarta mais aqui. Em grupo o remoteJid e o GRUPO e quem
+  // falou vem em key.participant — sem participante nao da pra saber se e
+  // gente da equipe, entao ai sim descarta.
+  const deGrupo = Boolean(key.remoteJid?.endsWith('@g.us'));
+  const grupoId = deGrupo ? key.remoteJid : undefined;
+  if (deGrupo && !key.participant) return null;
+
+  const fromMe = Boolean(key.fromMe);
+  const from = (deGrupo ? key.participant : key.remoteJid)?.replace('@s.whatsapp.net', '') ?? '';
+  const messageId = key.id ?? '';
+  const pushName = (data.pushName as string) || undefined;
+
+  const base = { from, timestamp: new Date(timestamp * 1000), messageId, fromMe, pushName, deGrupo, grupoId };
+
+  if (message.conversation || message.extendedTextMessage) {
+    const text = (message.conversation as string)
+      ?? (message.extendedTextMessage as Record<string, string>)?.text
+      ?? '';
+    return { ...base, type: 'text', content: text };
+  }
+
+  if (message.audioMessage) {
+    const audio = message.audioMessage as Record<string, string>;
+    return { ...base, type: 'audio', content: audio.url ?? '' };
+  }
+
+  if (message.imageMessage) {
+    const image = message.imageMessage as Record<string, string>;
+    return {
+      ...base,
+      type: 'image',
+      content: image.url ?? '',
+      caption: image.caption ?? undefined,
+    };
+  }
+
+  if (message.videoMessage) {
+    const video = message.videoMessage as Record<string, string>;
+    return {
+      ...base,
+      type: 'video',
+      content: video.url ?? '',
+      caption: video.caption ?? undefined,
+    };
+  }
+
+  if (message.documentMessage) {
+    const doc = message.documentMessage as Record<string, string>;
+    return { ...base, type: 'document', content: doc.mimetype ?? '' };
+  }
+
+  if (message.locationMessage) {
+    const loc = message.locationMessage as Record<string, number>;
+    return { ...base, type: 'location', content: JSON.stringify({ lat: loc.degreesLatitude, lng: loc.degreesLongitude }) };
+  }
+
+  return null;
+}
+
 /** Maior documento (PDF) que mandamos pelo WhatsApp: 10 MB. */
 export const LIMITE_DOCUMENTO_BYTES = 10 * 1024 * 1024;
 
@@ -97,72 +170,7 @@ export class EvolutionService {
   }
 
   parseWebhook(payload: Record<string, unknown>): IncomingMessage | null {
-    const data = payload.data as Record<string, unknown> | undefined;
-    if (!data) return null;
-
-    const key = data.key as Record<string, string> | undefined;
-    const message = data.message as Record<string, unknown> | undefined;
-    const timestamp = data.messageTimestamp as number;
-
-    if (!key || !message) return null;
-
-    // GRUPO: nao descarta mais aqui. Em grupo o remoteJid e o GRUPO e quem
-    // falou vem em key.participant — sem participante nao da pra saber se e
-    // gente da equipe, entao ai sim descarta.
-    const deGrupo = Boolean(key.remoteJid?.endsWith('@g.us'));
-    const grupoId = deGrupo ? key.remoteJid : undefined;
-    if (deGrupo && !key.participant) return null;
-
-    const fromMe = Boolean(key.fromMe);
-    const from = (deGrupo ? key.participant : key.remoteJid)?.replace('@s.whatsapp.net', '') ?? '';
-    const messageId = key.id ?? '';
-    const pushName = (data.pushName as string) || undefined;
-
-    const base = { from, timestamp: new Date(timestamp * 1000), messageId, fromMe, pushName, deGrupo, grupoId };
-
-    if (message.conversation || message.extendedTextMessage) {
-      const text = (message.conversation as string)
-        ?? (message.extendedTextMessage as Record<string, string>)?.text
-        ?? '';
-      return { ...base, type: 'text', content: text };
-    }
-
-    if (message.audioMessage) {
-      const audio = message.audioMessage as Record<string, string>;
-      return { ...base, type: 'audio', content: audio.url ?? '' };
-    }
-
-    if (message.imageMessage) {
-      const image = message.imageMessage as Record<string, string>;
-      return {
-        ...base,
-        type: 'image',
-        content: image.url ?? '',
-        caption: image.caption ?? undefined,
-      };
-    }
-
-    if (message.videoMessage) {
-      const video = message.videoMessage as Record<string, string>;
-      return {
-        ...base,
-        type: 'video',
-        content: video.url ?? '',
-        caption: video.caption ?? undefined,
-      };
-    }
-
-    if (message.documentMessage) {
-      const doc = message.documentMessage as Record<string, string>;
-      return { ...base, type: 'document', content: doc.mimetype ?? '' };
-    }
-
-    if (message.locationMessage) {
-      const loc = message.locationMessage as Record<string, number>;
-      return { ...base, type: 'location', content: JSON.stringify({ lat: loc.degreesLatitude, lng: loc.degreesLongitude }) };
-    }
-
-    return null;
+    return lerMensagemEvolution(payload.data as Record<string, unknown> | undefined);
   }
 
   async sendMedia(to: string, mediaUrl: string, caption: string, mediatype: 'image' | 'video' = 'image'): Promise<{ messageId: string }> {

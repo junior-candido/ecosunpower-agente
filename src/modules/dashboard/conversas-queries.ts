@@ -15,7 +15,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DashUser } from './permissions.js';
 import { mensagensDoPainel, type LinhaMensagemWhatsapp } from '../mensagens-whatsapp.js';
-import { mensagensPessoais } from '../numero-pessoal.js';
+import { mensagensPessoais, telefonesOcultosDoPessoal, ehTelefoneOculto, numeroPessoalDoDono } from '../numero-pessoal.js';
 
 /** Canal da conversa: número da Eva (oficial), número pessoal (WhatsApp Business) ou assistente por QR (tenant). */
 export type CanalConversa = 'eva_oficial' | 'whatsapp_business' | 'qr_code';
@@ -223,6 +223,21 @@ export function montarLista(
 }
 
 const LIMITE_CONVERSAS = 400;
+
+/**
+ * Número pessoal na lista: UMA linha por contato (a última), pela função da
+ * migration 140 — o histórico importado tem dezenas de milhares de mensagens e
+ * as 1000 mais novas escondiam quem falou há mais tempo. Sem a 140 (ou erro):
+ * o modo antigo, das 1000 mensagens mais novas.
+ */
+export async function linhasPessoaisDaLista(servico: SupabaseClient, companyId: string, userId: string): Promise<LinhaMensagemWhatsapp[]> {
+  try {
+    const { data, error } = await servico.rpc('conversas_pessoais_recentes', { p_company: companyId, p_dono: userId, p_limite: LIMITE_CONVERSAS });
+    // Confere de novo empresa e dono (nunca confia só na função).
+    if (!error && Array.isArray(data)) return (data as LinhaMensagemWhatsapp[]).filter((r) => r.company_id === companyId && r.visivel_so_para === userId);
+  } catch { /* cai no modo antigo */ }
+  return mensagensPessoais(servico, companyId, userId, {}, 1000);
+}
 const LOTE_IDS = 100;
 
 /**
@@ -233,7 +248,10 @@ const LOTE_IDS = 100;
  * Conversas do número pessoal (linhas de mensagens_whatsapp do dono) → itens
  * da lista. Uma por lead; quem não é lead, uma por telefone. PURA.
  */
-export function resumosPessoais(rows: LinhaMensagemWhatsapp[], leads: LinhaLead[]): ConversaResumo[] {
+/** Número pessoal: "aguardando resposta" só se a última do contato é recente (o histórico importado traz 90 dias). */
+export const AGUARDANDO_PESSOAL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function resumosPessoais(rows: LinhaMensagemWhatsapp[], leads: LinhaLead[], agora = Date.now()): ConversaResumo[] {
   const leadPorId = new Map(leads.map((l) => [l.id, l]));
   const grupos = new Map<string, LinhaMensagemWhatsapp[]>();
   // Agrupa pelo TELEFONE (um contato = um item), mesmo com linhas antigas sem lead.
@@ -247,10 +265,12 @@ export function resumosPessoais(rows: LinhaMensagemWhatsapp[], leads: LinhaLead[
   for (const [chave, g] of grupos) {
     g.sort((a, b) => String(a.criado_em).localeCompare(String(b.criado_em)));
     const u = g[g.length - 1];
-    const doCliente = u.direcao === 'entrada';
+    // Conversa antiga (histórico) não fica "aguardando resposta" para sempre.
+    const daEntrada = u.direcao === 'entrada';
+    const doCliente = daEntrada && agora - (Date.parse(u.criado_em) || 0) < AGUARDANDO_PESSOAL_MS;
     const base = {
       ultimaEm: u.criado_em, ultimaTexto: (u.texto ?? '').replace(/\s+/g, ' ').trim().slice(0, 140),
-      ultimaDe: doCliente ? 'cliente' as const : 'assistente' as const, aguardandoResposta: doCliente, canal: 'whatsapp_business' as const,
+      ultimaDe: daEntrada ? 'cliente' as const : 'assistente' as const, aguardandoResposta: doCliente, canal: 'whatsapp_business' as const,
     };
     const leadId = [...g].reverse().find((r) => r.lead_id)?.lead_id ?? null;
     const lead = leadId ? leadPorId.get(leadId) : undefined;
@@ -295,7 +315,12 @@ export async function listarConversas(db: SupabaseClient, viewer: DashUser, filt
   if (!companyId) return vazio;
 
   // Parte 2b: conversas do número PESSOAL de quem está vendo (só a casa; só o dono).
-  const pessoaisRows = servico && companyId === CASA_ID ? await mensagensPessoais(servico, companyId, viewer.id, {}, 1000) : [];
+  const pessoaisTodas = servico && companyId === CASA_ID ? await linhasPessoaisDaLista(servico, companyId, viewer.id) : [];
+  // Avisos da Eva, o próprio dono e a equipe não são conversa (nem as que já estavam gravadas).
+  const ocultos = pessoaisTodas.length > 0 && servico
+    ? await telefonesOcultosDoPessoal(servico, companyId, await numeroPessoalDoDono(servico, companyId, viewer.id))
+    : new Set<string>();
+  const pessoaisRows = pessoaisTodas.filter((r) => !ehTelefoneOculto(ocultos, r.contato_telefone));
 
   const { data: convs, error } = await db
     .from('conversations')
