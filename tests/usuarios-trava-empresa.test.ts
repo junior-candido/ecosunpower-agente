@@ -71,6 +71,12 @@ describe('alvo das rotas /usuarios/:id*', () => {
     expect(await conferirAlvoUsuario(client, gerenteA, 'ua-adm')).toMatchObject({ ok: false, status: 403 });
     expect(await conferirAlvoUsuario(client, gerenteA, 'ua-com')).toMatchObject({ ok: true });
   });
+  it('alvo com papel que sumiu (role_id órfão): só o admin mexe', async () => {
+    const { client, tabelas } = banco();
+    tabelas.dashboard_users.push({ id: 'ua-orfao', company_id: A, nome: 'Órfão', login: 'o', ativo: true, role_id: 'papel-apagado' });
+    expect(await conferirAlvoUsuario(client, gerenteA, 'ua-orfao')).toMatchObject({ ok: false, status: 403 });
+    expect(await conferirAlvoUsuario(client, adminA, 'ua-orfao')).toMatchObject({ ok: true });
+  });
   it('papel a dar: da empresa e que caiba no operador', async () => {
     const { client } = banco();
     expect(await conferirPapelParaDar(client, adminA, 'rb-adm')).toBe(false);
@@ -115,6 +121,13 @@ describe('router: as rotas /usuarios/:id* usam a trava', () => {
     }
     expect(rota("router.post('/usuarios/:id/excluir',")).toContain('excluirTransferindoHistorico(supabase, userId, destino, req.dashUser!.companyId)');
     expect(rota("router.post('/usuarios/:id',")).toContain('req.dashUser!.companyId);');
+  });
+  it('editar: não se desativa pela tela de editar; papel vazio não é gravado; <select> só com papéis que pode dar', () => {
+    const r = rota("router.post('/usuarios/:id',");
+    expect(r).toContain("userId === req.dashUser!.id && !(ativo === 'on' || ativo === true)");
+    expect(r).toContain('roleId: role_id || undefined');
+    expect(rota("router.get('/usuarios/:id',")).toContain('papelCabeNoOperador(r, req.dashUser!)');
+    expect(rota("router.get('/usuarios',")).toContain('papelCabeNoOperador(r, req.dashUser!)');
   });
   it('papel novo (criar/editar) passa por conferirPapelParaDar', () => {
     expect(rota("router.post('/usuarios/novo',")).toContain('conferirPapelParaDar(');

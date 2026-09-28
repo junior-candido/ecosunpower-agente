@@ -59,7 +59,8 @@ export function ultimoAcesso(iso: string | null | undefined, agora: Date = new D
 /** Texto do confirm: sem aspas simples, barra ou quebra de linha (senão o JS do onsubmit não compila). */
 const paraConfirm = (s: string) => s.replace(/'/g, '’').replace(/[\\\r\n]/g, ' ');
 
-export function renderUsuariosListPage(users: UserListItem[], roles: RoleRow[], viewer?: DashUser): string {
+/** `papeisParaDar`: opções do <select> do novo usuário (padrão: todos os papéis). */
+export function renderUsuariosListPage(users: UserListItem[], roles: RoleRow[], viewer?: DashUser, papeisParaDar: RoleRow[] = roles): string {
   // Ativos primeiro; inativos vão pro fim, discretos.
   const ordenados = [...users].sort((a, b) => Number(b.ativo) - Number(a.ativo));
   const papelDe = (u: UserListItem) =>
@@ -95,7 +96,7 @@ export function renderUsuariosListPage(users: UserListItem[], roles: RoleRow[], 
   let n = 0;
   const tabelaMarcada = tabelaHtml.replace(/<tr>(?=<td)/g, () => (ordenados[n++]?.ativo === false ? '<tr class="cc-cf-inativo">' : '<tr>'));
 
-  const opcoesPapel = roles.map((r) => `<option value="${esc(r.id)}">${esc(r.nome)}</option>`).join('');
+  const opcoesPapel = papeisParaDar.map((r) => `<option value="${esc(r.id)}">${esc(r.nome)}</option>`).join('');
   const ativos = users.filter((u) => u.ativo).length;
 
   const novo = `<form method="POST" action="/dashboard/usuarios/novo" class="cc-form cc-cf-grade-form" id="cc-cf-novo">
@@ -131,7 +132,9 @@ export function renderUsuarioEditPage(
   roles: RoleRow[],
   viewer?: DashUser,
 ): string {
-  const opcoes = roles.map((r) => `<option value="${esc(r.id)}"${r.id === user.role_id ? ' selected' : ''}>${esc(r.nome)}</option>`).join('');
+  // Sem papel: opção vazia marcada (antes a 1ª opção — às vezes Administrador — vinha marcada e era gravada sem querer).
+  const opcoes = (user.role_id ? '' : '<option value="" selected>— sem papel —</option>')
+    + roles.map((r) => `<option value="${esc(r.id)}"${r.id === user.role_id ? ' selected' : ''}>${esc(r.nome)}</option>`).join('');
   const form = `<form method="POST" action="/dashboard/usuarios/${esc(user.id)}" class="cc-form cc-cf-grade-form">
     <label class="cc-campo"><span>Nome</span><input name="nome" value="${esc(user.nome)}" /></label>
     <label class="cc-campo"><span>Papel</span><select name="role_id">${opcoes}</select></label>

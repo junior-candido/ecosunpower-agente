@@ -1704,7 +1704,9 @@ b.onclick=async function(){
     if (!can(req.dashUser, 'usuarios', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
     const cid = req.dashUser!.companyId;
     const [users, roles] = await Promise.all([listUsers(supabase, cid), listRoles(supabase, cid)]);
-    res.type('html').send(renderUsuariosListPage(users, roles, req.dashUser));
+    const { papelCabeNoOperador } = await import('./users-store.js');
+    // Coluna "vê" usa todos os papéis; o <select> do novo usuário só os que este operador pode dar (R19).
+    res.type('html').send(renderUsuariosListPage(users, roles, req.dashUser, roles.filter((r) => papelCabeNoOperador(r, req.dashUser!))));
   });
 
   router.post('/usuarios/novo', async (req: AuthedRequest, res) => {
@@ -1798,7 +1800,8 @@ b.onclick=async function(){
     const { usuarioParaEditar } = await import('./users-store.js');
     const u = await usuarioParaEditar(supabase, userId, cid); // só da empresa da sessão (R19)
     if (!u) { res.status(404).send('Usuário não encontrado'); return; }
-    const roles = await listRoles(supabase, cid);
+    const { papelCabeNoOperador } = await import('./users-store.js');
+    const roles = (await listRoles(supabase, cid)).filter((r) => papelCabeNoOperador(r, req.dashUser!));
     res.type('html').send(renderUsuarioEditPage(u, roles, req.dashUser));
   });
 
@@ -1810,9 +1813,10 @@ b.onclick=async function(){
     const { conferirAlvoUsuario, conferirPapelParaDar } = await import('./users-store.js');
     const alvo = await conferirAlvoUsuario(supabase, req.dashUser!, userId);
     if (!alvo.ok) { res.status(alvo.status).send(alvo.motivo); return; }
+    if (userId === req.dashUser!.id && !(ativo === 'on' || ativo === true)) { res.status(400).send('Você não pode desativar a si mesmo.'); return; }
     if (role_id && !(await conferirPapelParaDar(supabase, req.dashUser!, String(role_id)))) { res.status(403).send('Papel não permitido'); return; }
     await updateUser(supabase, userId, {
-      nome, roleId: role_id, ativo: ativo === 'on' || ativo === true,
+      nome, roleId: role_id || undefined, ativo: ativo === 'on' || ativo === true,
       senhaHash: senha ? await hashSenha(senha) : undefined,
       telefone: telefone !== undefined ? (String(telefone).replace(/\D/g, '') || null) : undefined,
       acessoTemporario: acesso_temporario === 'on' || acesso_temporario === true,

@@ -61,7 +61,9 @@ export function renderWhatsappPage(input: {
     body = cartaoSecao({ titulo: 'WhatsApp da empresa', corpoHtml: `${estadoVazio({ tipo: 'sem_dado', titulo: 'Ainda não preparado', icone: 'wa' })}
       <p class="cc-cf-nota">O WhatsApp de <strong>${marca}</strong> ainda não foi preparado pelo suporte da plataforma. Fale com o suporte que ativamos em minutos.</p>` });
   } else {
-    const p = estado === 'open' ? PILULA.ok : estado === 'close' ? PILULA.caiu : PILULA.espera;
+    // 'close' ao abrir a tela = instância nunca conectada OU desligada: igual a hoje, "Aguardando conexão".
+    // "Caiu" (vermelho) só quando cai com a tela aberta, depois de ter conectado (script).
+    const p = estado === 'open' ? PILULA.ok : PILULA.espera;
     const aberto = estado === 'open';
     body = `
 <div class="cc-wa-grade">
@@ -96,7 +98,7 @@ export function renderWhatsappPage(input: {
 (function(){
   var img=document.getElementById('qr'), estadoEl=document.getElementById('estado'), txt=document.getElementById('estado-texto'), bol=document.getElementById('estado-bolinha');
   var qrBox=document.getElementById('qr-box'), okBox=document.getElementById('ok-box'), aviso=document.getElementById('qr-aviso'), erro=document.getElementById('qr-erro');
-  var conectado=false, parado=false, seq=0, tQr=null, tEstado=null;
+  var conectado=false, jaConectou=false, parado=false, seq=0, tQr=null, tEstado=null;
   var CL_OK='${PILULA.ok.cl}', BOL_OK='${PILULA.ok.bol}';
   var CL_ESPERA='${PILULA.espera.cl}', BOL_ESPERA='${PILULA.espera.bol}';
   var CL_CAIU='${PILULA.caiu.cl}', BOL_CAIU='${PILULA.caiu.bol}';
@@ -106,11 +108,12 @@ export function renderWhatsappPage(input: {
     if(estado==='erro'){ aviso.textContent='Sem resposta do servidor do WhatsApp. Tentando de novo…'; return; }
     if(estado==='desconhecido'){ return; } // falha passageira de leitura: não muda a tela
     if(estado==='open'){
+      jaConectou=true;
       if(!conectado){ conectado=true; qrBox.classList.add('hidden'); okBox.classList.remove('hidden'); }
       estadoEl.className=CL_OK; bol.className=BOL_OK; txt.textContent='${PILULA.ok.txt}';
       return;
     }
-    var caiu=estado==='close';
+    var caiu=jaConectou&&estado==='close'; // nunca conectou nesta tela → "Aguardando", igual a hoje
     estadoEl.className=caiu?CL_CAIU:CL_ESPERA; bol.className=caiu?BOL_CAIU:BOL_ESPERA; txt.textContent=caiu?'${PILULA.caiu.txt}':'${PILULA.espera.txt}';
     if(conectado){
       conectado=false; okBox.classList.add('hidden'); qrBox.classList.remove('hidden'); img.removeAttribute('src'); aviso.textContent='Gerando QR…'; qr();

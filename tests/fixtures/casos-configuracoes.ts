@@ -51,6 +51,7 @@ export const CASOS_CONFIGURACOES = {
   'usuarios-lista-vazia': () => renderUsuariosListPage([], [], USER_CASA),
   'usuarios-editar': () => renderUsuarioEditPage(EDITAR, PAPEIS, USER_CASA),
   'usuarios-editar-tenant': () => renderUsuarioEditPage({ ...EDITAR, acesso_temporario: false, ativo: false, telefone: null, email: null }, PAPEIS, USER_TENANT),
+  'usuarios-editar-sem-papel': () => renderUsuarioEditPage({ ...EDITAR, role_id: null }, PAPEIS, USER_CASA),
   // ── /empresas (só admin da EcoSun) ──
   'empresas': () => renderEmpresasPage(EMPRESAS, USER_CASA),
   'empresas-ok': () => renderEmpresasPage(EMPRESAS, USER_CASA, { tipo: 'ok', texto: 'Empresa criada! O administrador recebeu um e-mail para criar a própria senha (link vale 72 h).' }),

@@ -79,7 +79,7 @@ export function renderMinhaAssinaturaPage(
     }
 
     const pagarHtml = linkPagar
-      ? `<div class="cc-as-pagar">${botao({ rotulo: 'Pagar agora (Pix ou cartão)', href: linkPagar, tom: 'ouro', icone: 'wallet', attrs: { target: '_blank' } })}</div>`
+      ? `<div class="cc-as-pagar">${botao({ rotulo: 'Pagar agora (Pix ou cartão)', href: linkPagar, tom: 'ouro', icone: 'wallet', attrs: { target: '_blank', rel: 'noopener noreferrer' } })}</div>`
       : '';
 
     const zapHtml = a.zapConfirmado

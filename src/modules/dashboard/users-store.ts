@@ -192,7 +192,8 @@ export async function conferirAlvoUsuario(
   if (!alvo) return { ok: false, status: 404, motivo: 'Usuário não encontrado' };
   if (!op.isAdmin && alvo.role_id) {
     const role = await getRole(client, alvo.role_id);
-    if (role && !papelCabeNoOperador(role, op)) return { ok: false, status: 403, motivo: 'Essa pessoa tem um papel acima do seu' };
+    // Papel sumido (role_id órfão) conta como "acima": na dúvida, só o admin mexe.
+    if (!role || !papelCabeNoOperador(role, op)) return { ok: false, status: 403, motivo: 'Essa pessoa tem um papel acima do seu' };
   }
   return { ok: true };
 }

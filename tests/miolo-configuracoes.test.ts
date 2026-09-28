@@ -102,6 +102,11 @@ describe('Usuários — editar', () => {
   it('tenant: escuro, sem marca da casa', () => {
     semMarcaDaCasa(C['usuarios-editar-tenant']());
   });
+  it('usuário sem papel: opção vazia marcada (antes a 1ª opção — Administrador — vinha marcada)', () => {
+    const m = miolo(C['usuarios-editar-sem-papel']());
+    expect(m).toContain('<option value="" selected>— sem papel —</option>');
+    expect(m).not.toMatch(/<option value="r-adm" selected/);
+  });
 });
 
 describe('Empresas (só EcoSun)', () => {
@@ -143,13 +148,16 @@ describe('Conectar WhatsApp (tenant)', () => {
     expect(h).toContain("fetch('/dashboard/whatsapp/estado.json'");
     semMarcaDaCasa(h);
   });
-  it('conectado: pílula verde + "WhatsApp conectado!"; caiu: pílula vermelha', () => {
+  it('conectado: pílula verde + "WhatsApp conectado!"; "close" ao abrir = Aguardando (igual a hoje); Caiu vermelho só se cair com a tela aberta', () => {
     const ok = miolo(C['whatsapp-conectado']());
     expect(ok).toMatch(/id="estado"[^>]*class="cc-pill cc-s-ok/);
     expect(ok).toContain('WhatsApp conectado!');
-    const caiu = miolo(C['whatsapp-caiu']());
-    expect(caiu).toMatch(/id="estado"[^>]*class="cc-pill cc-s-crit/);
-    expect(caiu).toContain('Caiu');
+    const h = C['whatsapp-caiu']();
+    expect(miolo(h)).toMatch(/id="estado"[^>]*class="cc-pill cc-s-warn/);
+    expect(miolo(h)).toContain('Aguardando conexão');
+    expect(h).toContain("var caiu=jaConectou&&estado==='close'");
+    expect(h).toContain('cc-pill cc-s-crit cc-cf-estado');
+    expect(h).toContain('Caiu — leia o QR de novo');
   });
   it('o script compila e só troca classes cc- (nada de Tailwind no JS)', () => {
     const h = C['whatsapp-aguardando']();
@@ -179,6 +187,7 @@ describe('Minha assinatura (tenant)', () => {
     expect(ouros(m)).toBe(1);
     expect(m).toContain('Pagar agora');
     expect(m).toContain('https://checkout.exemplo.invalid/x?a=1&amp;b=2');
+    expect(m).toContain('rel="noopener noreferrer"');
     expect(m).toContain('cc-aviso cc-aviso-ok');
     expect(m).toMatch(/cc-pill[^>]*>vence em breve</);
   });
