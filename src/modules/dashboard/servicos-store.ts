@@ -3,6 +3,29 @@
 // usina opcional + fotos/vídeos (metadados; arquivos no bucket
 // client-attachments). Service-role; RLS da 092 protege a leitura.
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { usinaPertenceAoOperador } from './permissions.js';
+import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
+
+// ===== Empresa (multi-tenant) — revisão de segurança R14, 28/09/2026 =====
+// O router usa o service_role (RLS não vale): antes, a lista, a lixeira e
+// TODA rota /servicos/:id (detalhe, excluir, restaurar, reabrir, concluir,
+// uploads, confirmar-mídias, link de campo) abriam serviço de QUALQUER
+// empresa, e a busca de usina listava a frota inteira. Agora a empresa da
+// SESSÃO manda. Registro sem carimbo (company_id null) = legado da EcoSun
+// (mesma regra de usinaPertenceAoOperador). Sem empresa na sessão → nega.
+
+/** O registro (serviço, usina, lead, usuário) é da empresa do operador? */
+export function servicoPertenceAoOperador(companyDoRegistro: string | null | undefined, companyDoOperador: string | null | undefined): boolean {
+  return usinaPertenceAoOperador(companyDoRegistro, companyDoOperador);
+}
+
+/** Filtro de empresa numa consulta: EcoSun vê o dela + legado sem carimbo; tenant só o dele. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function daEmpresa(q: any, companyId: string): any {
+  return companyId === ECOSUN_COMPANY_ID
+    ? q.or(`company_id.eq.${companyId},company_id.is.null`)
+    : q.eq('company_id', companyId);
+}
 
 export interface TipoServico { id: string; nome: string }
 
@@ -79,7 +102,7 @@ export interface ServicoRow {
   campoExpiraEm?: string | null;
 }
 
-const CAMPOS = 'id, tipo_id, lead_id, sistema_id, observacoes, data_servico, criado_em, status, atribuido_a, campo_slug, campo_expira_em, campo_nome, servico_tipos(nome), leads(name), servico_fotos(tipo_midia), atribuido:dashboard_users!servicos_atribuido_a_fkey(nome)';
+const CAMPOS = 'id, company_id, tipo_id, lead_id, sistema_id, observacoes, data_servico, criado_em, status, atribuido_a, campo_slug, campo_expira_em, campo_nome, servico_tipos(nome), leads(name), servico_fotos(tipo_midia), atribuido:dashboard_users!servicos_atribuido_a_fkey(nome)';
 // Versão do LINK MÁGICO: mesmos campos + excluido_em (checagem de vencimento/lixeira).
 const CAMPOS_CAMPO = CAMPOS + ', excluido_em';
 
@@ -100,8 +123,11 @@ function paraRow(r: any): ServicoRow {
   };
 }
 
-export async function listarServicos(client: SupabaseClient, limite = 100, lixeira = false): Promise<ServicoRow[]> {
+/** `companyId` (a empresa da SESSÃO) filtra; `null` = sessão sem empresa → lista vazia. */
+export async function listarServicos(client: SupabaseClient, limite = 100, lixeira = false, companyId?: string | null): Promise<ServicoRow[]> {
+  if (companyId === null) return [];
   let q = client.from('servicos').select(CAMPOS);
+  if (companyId !== undefined) q = daEmpresa(q, companyId);
   // Lixeira (Junior 05/08): excluído some das listas mas é restaurável.
   q = lixeira ? q.not('excluido_em', 'is', null) : q.is('excluido_em', null);
   const { data, error } = await q.order('data_servico', { ascending: false }).limit(limite);
@@ -116,9 +142,41 @@ export async function servicosDoLead(client: SupabaseClient, leadId: string): Pr
   return (data ?? []).map(paraRow);
 }
 
-export async function getServico(client: SupabaseClient, id: string): Promise<ServicoRow | null> {
+/** Com `companyId` (3º argumento, a empresa da SESSÃO): serviço de outra empresa = não achado. */
+export async function getServico(client: SupabaseClient, id: string, ...empresa: [companyId: string | null | undefined] | []): Promise<ServicoRow | null> {
   const { data } = await client.from('servicos').select(CAMPOS).eq('id', id).maybeSingle();
-  return data ? paraRow(data) : null;
+  if (!data) return null;
+  if (empresa.length && !servicoPertenceAoOperador((data as { company_id?: string | null }).company_id ?? null, empresa[0])) return null;
+  return paraRow(data);
+}
+
+/** Busca de usina do "Novo registro": só usinas ATIVAS da empresa da sessão. */
+export async function buscarUsinasDaEmpresa(client: SupabaseClient, companyId: string | null | undefined, termo: string): Promise<{ id: string; nome: string }[]> {
+  if (!companyId) return [];
+  const { data } = await daEmpresa(client.from('sistemas_clientes').select('id, apelido'), companyId)
+    .ilike('apelido', `%${termo}%`).eq('ativo', true).limit(8);
+  return ((data ?? []) as { id: string; apelido: string }[]).map((s) => ({ id: s.id, nome: s.apelido }));
+}
+
+/** POST /servicos/nova: cliente, usina e "quem vai fazer" vindos do navegador
+ *  precisam ser da empresa da sessão. Devolve a mensagem de erro, ou null. */
+export async function conferirVinculosDoServico(
+  client: SupabaseClient,
+  companyId: string | null | undefined,
+  v: { leadId?: string | null; sistemaId?: string | null; atribuidoA?: string | null },
+): Promise<string | null> {
+  if (!companyId) return 'Sessão sem empresa.';
+  const dono = async (tabela: string, id: string) => {
+    const { data } = await client.from(tabela).select('id, company_id').eq('id', id).maybeSingle();
+    return data ? servicoPertenceAoOperador((data as { company_id?: string | null }).company_id ?? null, companyId) : false;
+  };
+  if (v.leadId && !(await dono('leads', v.leadId))) return 'Cliente não achado.';
+  if (v.sistemaId && !(await dono('sistemas_clientes', v.sistemaId))) return 'Usina não achada.';
+  if (v.atribuidoA) {
+    const { data } = await client.from('dashboard_users').select('id, company_id').eq('id', v.atribuidoA).maybeSingle();
+    if (!data || (data as { company_id?: string | null }).company_id !== companyId) return 'Pessoa não achada nesta empresa.';
+  }
+  return null;
 }
 
 /** Clientes (leads) que têm serviço registrado — a Pasta Digital lista eles

@@ -1272,7 +1272,7 @@ b.onclick=async function(){
       const { renderServicosPage } = await import('./servicos-views.js');
       const q = req.query as Record<string, string | undefined>;
       const aviso = q.ok ? { tipo: 'ok' as const, texto: q.ok } : q.erro ? { tipo: 'erro' as const, texto: q.erro } : undefined;
-      res.type('html').send(renderServicosPage(await listarServicos(supabase), req.dashUser, aviso));
+      res.type('html').send(renderServicosPage(await listarServicos(supabase, 100, false, req.dashUser!.companyId ?? null), req.dashUser, aviso));
     } catch (err) {
       console.error('[servicos]', err);
       res.status(500).send('Falha ao carregar os serviços. A migration 092 já foi aplicada?');
@@ -1284,7 +1284,7 @@ b.onclick=async function(){
     try {
       const { listarServicos } = await import('./servicos-store.js');
       const { renderLixeiraServicosPage } = await import('./servicos-views.js');
-      res.type('html').send(renderLixeiraServicosPage(await listarServicos(supabase, 100, true), req.dashUser));
+      res.type('html').send(renderLixeiraServicosPage(await listarServicos(supabase, 100, true, req.dashUser!.companyId ?? null), req.dashUser));
     } catch (err) {
       console.error('[servicos/lixeira]', err);
       res.status(500).send('Falha ao carregar a lixeira. A migration 099 já foi aplicada?');
@@ -1293,8 +1293,11 @@ b.onclick=async function(){
 
   router.post('/servicos/:id/excluir', exigir('servicos', 'editar'), async (req: AuthedRequest, res) => {
     try {
-      const { excluirServico } = await import('./servicos-store.js');
-      await excluirServico(supabase, String(req.params.id));
+      const { excluirServico, getServico } = await import('./servicos-store.js');
+      // Só serviço da empresa da sessão (revisão R14: antes excluía de qualquer empresa).
+      const s = await getServico(supabase, String(req.params.id), req.dashUser!.companyId);
+      if (!s) { res.redirect('/dashboard/servicos?erro=' + encodeURIComponent('Registro não achado.')); return; }
+      await excluirServico(supabase, s.id);
       res.redirect('/dashboard/servicos?ok=' + encodeURIComponent('🗑️ Foi pra Lixeira — dá pra restaurar quando quiser.'));
     } catch (err) {
       console.error('[servicos/excluir]', err);
@@ -1304,8 +1307,10 @@ b.onclick=async function(){
 
   router.post('/servicos/:id/restaurar', exigir('servicos', 'editar'), async (req: AuthedRequest, res) => {
     try {
-      const { restaurarServico } = await import('./servicos-store.js');
-      await restaurarServico(supabase, String(req.params.id));
+      const { restaurarServico, getServico } = await import('./servicos-store.js');
+      const s = await getServico(supabase, String(req.params.id), req.dashUser!.companyId);
+      if (!s) { res.redirect('/dashboard/servicos/lixeira'); return; }
+      await restaurarServico(supabase, s.id);
       res.redirect('/dashboard/servicos?ok=' + encodeURIComponent('♻️ Restaurado!'));
     } catch (err) {
       console.error('[servicos/restaurar]', err);
@@ -1337,10 +1342,9 @@ b.onclick=async function(){
   router.get('/servicos/buscar-usina', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
     const q = String(req.query.q ?? '').trim().replace(/[,%]/g, ' ');
     if (q.length < 2) { res.json({ usinas: [] }); return; }
-    const db = bancoDoOperador(req, supabase);
-    const { data } = await db.from('sistemas_clientes').select('id, apelido')
-      .ilike('apelido', `%${q}%`).eq('ativo', true).limit(8);
-    res.json({ usinas: (data ?? []).map((s: any) => ({ id: s.id, nome: s.apelido })) });
+    // Só usinas da empresa da sessão (revisão R14: antes listava a frota de todas).
+    const { buscarUsinasDaEmpresa } = await import('./servicos-store.js');
+    res.json({ usinas: await buscarUsinasDaEmpresa(bancoDoOperador(req, supabase), req.dashUser!.companyId, q) });
   });
 
   router.post('/servicos/nova', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
@@ -1365,10 +1369,15 @@ b.onclick=async function(){
         res.status(400).json({ ok: false, erro: 'Máximo de 2 vídeos por registro.' }); return;
       }
 
-      const { criarServico } = await import('./servicos-store.js');
+      const { criarServico, conferirVinculosDoServico } = await import('./servicos-store.js');
       const { randomUUID } = await import('crypto');
       // Atribuiu a alguém → nasce 🟡 pendente pra pessoa completar no campo.
       const atribuidoA = b.atribuidoA ? String(b.atribuidoA) : null;
+      // Cliente, usina e "quem faz" têm que ser da empresa da sessão (revisão R14).
+      const erroVinculo = await conferirVinculosDoServico(supabase, req.dashUser!.companyId, {
+        leadId, sistemaId: b.sistemaId ? String(b.sistemaId) : null, atribuidoA,
+      });
+      if (erroVinculo) { res.status(400).json({ ok: false, erro: erroVinculo }); return; }
       const servicoId = await criarServico(supabase, {
         companyId: req.dashUser!.companyId, tipoId: tipo, leadId,
         sistemaId: b.sistemaId ? String(b.sistemaId) : null,
@@ -1400,7 +1409,7 @@ b.onclick=async function(){
       const servicoId = String(req.params.id);
       const { getServico } = await import('./servicos-store.js');
       const { randomUUID } = await import('crypto');
-      const s = await getServico(supabase, servicoId);
+      const s = await getServico(supabase, servicoId, req.dashUser!.companyId);
       if (!s) { res.status(404).json({ ok: false, erro: 'Registro não achado.' }); return; }
       const midias = (Array.isArray(req.body?.midias) ? req.body.midias : []) as { tipoMidia?: string; contentType?: string }[];
       if (s.videos + midias.filter((m) => m.tipoMidia === 'video').length > 2) {
@@ -1425,7 +1434,7 @@ b.onclick=async function(){
     try {
       const servicoId = String(req.params.id);
       const { getServico, concluirServico } = await import('./servicos-store.js');
-      const antes = await getServico(supabase, servicoId);
+      const antes = await getServico(supabase, servicoId, req.dashUser!.companyId);
       if (!antes) { res.status(404).json({ ok: false, erro: 'Registro não achado.' }); return; }
       const obsFinais = String(req.body?.observacoes ?? '').trim();
       const observacoes = obsFinais
@@ -1470,7 +1479,7 @@ b.onclick=async function(){
     try {
       const servicoId = String(req.params.id);
       const { getServico, registrarMidias } = await import('./servicos-store.js');
-      const s = await getServico(supabase, servicoId);
+      const s = await getServico(supabase, servicoId, req.dashUser!.companyId);
       if (!s) { res.status(404).json({ ok: false, erro: 'Registro não achado.' }); return; }
       const prefixo = `${s.leadId}/servico/${servicoId}/`;
       const midias = ((Array.isArray(req.body?.midias) ? req.body.midias : []) as { path?: string; tipoMidia?: string }[])
@@ -1492,7 +1501,7 @@ b.onclick=async function(){
       const servicoId = String(req.params.id);
       const motivo = String(req.body?.motivo ?? '').trim();
       const { getServico, reabrirServico } = await import('./servicos-store.js');
-      const s = await getServico(supabase, servicoId);
+      const s = await getServico(supabase, servicoId, req.dashUser!.companyId);
       if (!s) { res.redirect('/dashboard/servicos?erro=' + encodeURIComponent('Registro não achado.')); return; }
       await reabrirServico(supabase, servicoId);
       if (s.atribuidoA) {
@@ -1524,7 +1533,7 @@ b.onclick=async function(){
   router.post('/servicos/:id/link-campo', exigir('servicos', 'editar'), async (req: AuthedRequest, res) => {
     try {
       const { getServico, gerarLinkCampo } = await import('./servicos-store.js');
-      const s = await getServico(supabase, String(req.params.id));
+      const s = await getServico(supabase, String(req.params.id), req.dashUser!.companyId);
       if (!s) { res.status(404).json({ ok: false, erro: 'Registro não achado.' }); return; }
       const nome = String(req.body?.nome ?? '').trim();
       if (!nome) { res.status(400).json({ ok: false, erro: 'Informe o nome de quem vai fazer.' }); return; }
@@ -1545,7 +1554,7 @@ b.onclick=async function(){
       const { getServico, midiasDoServico } = await import('./servicos-store.js');
       const { renderDetalheServicoPage } = await import('./servicos-views.js');
       const { getSignedUrls } = await import('../anexos/storage.js');
-      const s = await getServico(supabase, String(req.params.id));
+      const s = await getServico(supabase, String(req.params.id), req.dashUser!.companyId);
       if (!s) { res.status(404).send('Registro não achado.'); return; }
       const midias = await midiasDoServico(supabase, s.id);
       const urls = await getSignedUrls(supabase, midias.map((m) => m.path), 3600);
