@@ -46,3 +46,9 @@ export const entraScript = (comFechou: boolean): MudancaContrato => ({
   motivo: 'chat rola até o fim; "Fechou!" abre janelinha (antes o bloco ficava sempre aberto)',
   entra: { ids: comFechou ? ['cc-at-msgs', 'modal-fechou'] : ['cc-at-msgs'] },
 });
+
+/** Junior (28/09): lista estreita e filtros cortados → colunas ajustáveis arrastando a borda. */
+export const ENTRA_ALCAS: MudancaContrato = {
+  motivo: 'Junior: poder aumentar/diminuir as colunas arrastando',
+  entra: { seletores: ['.cc-at-alca', '.cc-at-grade'] },
+};
