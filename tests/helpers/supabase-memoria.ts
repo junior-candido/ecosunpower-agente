@@ -48,6 +48,7 @@ export function bancoMemoria(
       delete() { op = 'delete'; return q; },
       upsert(d: Linha | Linha[]) { op = 'insert'; payload = d; return q; },
       eq(c: string, v: unknown) { filtros.push((l) => l[c] === v); descr.push(`${c}=${String(v)}`); return q; },
+      ilike(c: string, v: string) { filtros.push((l) => String(l[c] ?? '').toLowerCase() === String(v).toLowerCase()); descr.push(`${c} ilike ${v}`); return q; },
       neq(c: string, v: unknown) { filtros.push((l) => l[c] !== v); descr.push(`${c}!=${String(v)}`); return q; },
       in(c: string, vs: unknown[]) { filtros.push((l) => vs.includes(l[c])); descr.push(`${c} in`); return q; },
       is(c: string, v: unknown) { filtros.push((l) => (l[c] ?? null) === v); descr.push(`${c} is ${String(v)}`); return q; },

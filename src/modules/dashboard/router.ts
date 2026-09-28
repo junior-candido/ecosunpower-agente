@@ -225,8 +225,9 @@ export function createDashboardRouter(
     enviarPessoal?: (instancia: string, to: string, text: string) => Promise<{ messageId?: string } | void>;
     // EVOLUTION_INSTANCE (a da Eva): nunca pode virar número pessoal.
     evolutionInstanciaEva?: string;
-    // URL do webhook desta plataforma (com token) pra apontar a instância pessoal nova.
+    // URL do webhook desta plataforma (sem token) + token no cabeçalho, pra instância pessoal nova.
     evolutionWebhookUrl?: string;
+    evolutionWebhookToken?: string;
     infinitepayHandle?: string; // InfiniteTag pra gerar link de cobrança (peça 1 pagamento)
     appBaseUrl?: string;        // URL pública do app (pro webhook_url da InfinitePay)
     calculadoraUrl?: string;        // ponte de acesso da calculadora (fatia 3a)
@@ -301,6 +302,7 @@ export function createDashboardRouter(
     evolution: options.evolutionConexao ? { baseUrl: options.evolutionConexao.baseUrl, apiKey: options.evolutionConexao.apiKey } : undefined,
     instanciaDaEva: options.evolutionInstanciaEva ?? '',
     webhookUrl: options.evolutionWebhookUrl,
+    webhookToken: options.evolutionWebhookToken,
   });
 
   // Parser dos forms internos (form-urlencoded). Limite maior porque a tela de

@@ -52,6 +52,13 @@ function res() {
 const q = (r: any, k: string) => new URL(`http://x${r.destino}`).searchParams.get(k);
 
 describe('responder um LEAD pelo número pessoal', () => {
+  it('a linha do tempo da EMPRESA não leva o texto do que saiu pelo pessoal', async () => {
+    const c = cenario();
+    await c.rotas.responder(req({ params: { id: LEAD }, body: { chave: CHAVE, texto: 'segredo pessoal', canal: 'whatsapp_business' } }), res());
+    expect(c.b.tabelas.lead_atividades[0]).toMatchObject({ titulo: 'Mensagem enviada pelo WhatsApp pessoal' });
+    expect(JSON.stringify(c.b.tabelas.lead_atividades)).not.toContain('segredo pessoal');
+  });
+
   it('canal=whatsapp_business: sai pela instância do dono, só o dono vê, NÃO entra na memória da Eva, e assume', async () => {
     const c = cenario();
     const r = res();
@@ -154,7 +161,7 @@ describe('Meu WhatsApp no painel (QR)', () => {
   function qr(extra: Record<string, any[]> = {}, fetchImpl?: any) {
     const b = bancoMemoria({ whatsapp_numeros_pessoais: [], companies: [{ id: TENANT, evolution_instance: 'solar-aurora' }], audit_log: [], ...extra });
     const f = fetchImpl ?? vi.fn(async () => new Response('{}', { status: 201 }));
-    const rotas = criarRotasNumeroPessoal({ supabase: b.client, evolution: { baseUrl: 'https://evo.exemplo', apiKey: 'k', fetchImpl: f }, instanciaDaEva: 'eva-principal', webhookUrl: 'https://painel.exemplo/webhook?token=t' });
+    const rotas = criarRotasNumeroPessoal({ supabase: b.client, evolution: { baseUrl: 'https://evo.exemplo', apiKey: 'k', fetchImpl: f }, instanciaDaEva: 'eva-principal', webhookUrl: 'https://painel.exemplo/webhook', webhookToken: 'tok' });
     return { b, rotas, f };
   }
   it('tenant: 404 (só a EcoSun tem número pessoal)', async () => {
@@ -166,22 +173,36 @@ describe('Meu WhatsApp no painel (QR)', () => {
   it('preparar: cria a instância na Evolution + webhook e guarda o número como DE QUEM CONECTOU', async () => {
     const { b, rotas, f } = qr();
     const r = res();
-    await rotas.criar(req({ body: { instancia: 'junior-business' } }), r);
+    await rotas.criar(req({ body: { instancia: 'qualquer-coisa-digitada' } }), r);
     expect(r.destino).toBe('/dashboard/whatsapp/pessoal?ok=criada');
     expect(f.mock.calls[0][0]).toBe('https://evo.exemplo/instance/create');
-    expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({ instanceName: 'junior-business', qrcode: true, integration: 'WHATSAPP-BAILEYS' });
-    expect(f.mock.calls[1][0]).toBe('https://evo.exemplo/webhook/set/junior-business');
-    expect(b.tabelas.whatsapp_numeros_pessoais[0]).toMatchObject({ company_id: CASA, dono_user_id: 'u-junior', dono_nome: 'Junior', instancia: 'junior-business', ativo: true });
+    // nome escolhido pelo SERVIDOR (nunca o digitado)
+    expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({ instanceName: 'pessoal-ujunior', qrcode: true, integration: 'WHATSAPP-BAILEYS' });
+    expect(f.mock.calls[1][0]).toBe('https://evo.exemplo/webhook/set/pessoal-ujunior');
+    // token no cabeçalho, nunca na URL
+    const wh = JSON.parse(f.mock.calls[1][1].body).webhook;
+    expect(wh.url).toBe('https://painel.exemplo/webhook');
+    expect(wh.headers).toEqual({ 'x-webhook-token': 'tok' });
+    expect(b.tabelas.whatsapp_numeros_pessoais[0]).toMatchObject({ company_id: CASA, dono_user_id: 'u-junior', dono_nome: 'Junior', instancia: 'pessoal-ujunior', ativo: true });
   });
-  it('não aceita a instância da Eva, a de um tenant, nem nome inválido — e nada é criado', async () => {
-    const { b, rotas, f } = qr();
-    for (const [inst, erro] of [['eva-principal', 'instancia_ocupada'], ['solar-aurora', 'instancia_ocupada'], ['a b', 'nome_invalido']]) {
-      const r = res();
-      await rotas.criar(req({ body: { instancia: inst } }), r);
-      expect(r.destino).toBe(`/dashboard/whatsapp/pessoal?erro=${erro}`);
-    }
+  it('não "adota" instância de outro: nome já de um tenant (maiúsculas não enganam) ou já existente na Evolution', async () => {
+    const t = qr({ companies: [{ id: TENANT, evolution_instance: 'PESSOAL-UJUNIOR' }] });
+    const r1 = res();
+    await t.rotas.criar(req({}), r1);
+    expect(r1.destino).toBe('/dashboard/whatsapp/pessoal?erro=instancia_ocupada');
+    expect(t.f).not.toHaveBeenCalled();
+    const e = qr({}, vi.fn(async () => new Response('{"error":"This name is already in use"}', { status: 403 })));
+    const r2 = res();
+    await e.rotas.criar(req({}), r2);
+    expect(r2.destino).toBe('/dashboard/whatsapp/pessoal?erro=instancia_ocupada');
+    expect(e.b.tabelas.whatsapp_numeros_pessoais).toHaveLength(0);
+  });
+  it('Origin de outro site: recusa', async () => {
+    const { rotas, f } = qr();
+    const r = res();
+    await rotas.criar(req({ headers: { origin: 'https://mau.exemplo', host: 'painel.exemplo' } }), r);
+    expect(r.statusCode).toBe(403);
     expect(f).not.toHaveBeenCalled();
-    expect(b.tabelas.whatsapp_numeros_pessoais).toHaveLength(0);
   });
   it('QR e estado são SEMPRE do número de quem está logado', async () => {
     const f = vi.fn(async (url: string) => new Response(JSON.stringify(url.includes('connectionState') ? { instance: { state: 'connecting' } } : { base64: 'data:image/png;base64,AAAA' }), { status: 200 }));
@@ -254,6 +275,10 @@ describe('webhook da Evolution', () => {
     for (const depois of ['evolutionTenant.companyDaInstancia(instanciaOrigem)', 'if (parsed.deGrupo)', 'if (parsed.fromMe)', 'await queue.addMessage(']) {
       expect(trecho.indexOf(depois), depois).toBeGreaterThan(desvio);
     }
-    expect(trecho.slice(desvio, desvio + 600)).toMatch(/receberNoNumeroPessoal[\s\S]*return;/);
+    const bloco = trecho.slice(desvio, desvio + 2000);
+    expect(bloco).toMatch(/pessoal === 'erro'[\s\S]*status\(503\)/);
+    expect(bloco).toMatch(/!pessoal\.ativo[\s\S]*numero_pessoal_desligado/);
+    expect(bloco).toMatch(/numero_pessoal_conflito/);
+    expect(bloco).toMatch(/receberNoNumeroPessoal[\s\S]*return;/);
   });
 });

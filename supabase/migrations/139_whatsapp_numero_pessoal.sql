@@ -47,3 +47,40 @@ CREATE POLICY company_isolation ON public.whatsapp_numeros_pessoais
   WITH CHECK (company_id = (SELECT coalesce(
       nullif(current_setting('app.company_id', true), '')::uuid,
       (auth.jwt() ->> 'company_id')::uuid)));
+
+-- SÓ O DONO (restritiva, junto com a da empresa): pelo crachá, cada pessoa só
+-- enxerga o próprio número pessoal. O servidor usa a chave de serviço + filtro.
+DROP POLICY IF EXISTS so_o_dono ON public.whatsapp_numeros_pessoais;
+CREATE POLICY so_o_dono ON public.whatsapp_numeros_pessoais
+  AS RESTRICTIVE FOR ALL
+  USING (dono_user_id::text = coalesce(nullif(current_setting('app.user_id', true), ''), auth.jwt() ->> 'user_id'))
+  WITH CHECK (dono_user_id::text = coalesce(nullif(current_setting('app.user_id', true), ''), auth.jwt() ->> 'user_id'));
+
+-- UM NOME, UM DONO: a mesma instância nunca pode ser número pessoal E assistente
+-- de empresa (companies.evolution_instance) — senão conversa de cliente de outra
+-- empresa cairia na caixa pessoal. Vale nos dois sentidos, sem diferenciar maiúsculas.
+create unique index if not exists whatsapp_numeros_pessoais_instancia_lower on whatsapp_numeros_pessoais (lower(instancia));
+
+create or replace function trava_instancia_pessoal() returns trigger language plpgsql as $$
+begin
+  if exists (select 1 from companies c where lower(c.evolution_instance) = lower(new.instancia)) then
+    raise exception 'instancia % ja e de uma assistente (companies.evolution_instance)', new.instancia;
+  end if;
+  return new;
+end $$;
+drop trigger if exists trava_instancia_pessoal on whatsapp_numeros_pessoais;
+create trigger trava_instancia_pessoal before insert or update of instancia on whatsapp_numeros_pessoais
+  for each row execute function trava_instancia_pessoal();
+
+create or replace function trava_instancia_assistente() returns trigger language plpgsql as $$
+begin
+  if new.evolution_instance is not null and exists (
+    select 1 from whatsapp_numeros_pessoais w where lower(w.instancia) = lower(new.evolution_instance)
+  ) then
+    raise exception 'instancia % ja e um numero pessoal (whatsapp_numeros_pessoais)', new.evolution_instance;
+  end if;
+  return new;
+end $$;
+drop trigger if exists trava_instancia_assistente on companies;
+create trigger trava_instancia_assistente before insert or update of evolution_instance on companies
+  for each row execute function trava_instancia_assistente();

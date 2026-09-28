@@ -105,6 +105,12 @@ export async function concluirEnvio(
       })
       .eq('id', id)
       .eq('company_id', companyId);
+    if (error?.code === '23505' && r.wamid) {
+      // O eco do celular já gravou este id do WhatsApp: fecha o envio sem ele.
+      await client.from('mensagens_whatsapp').update({ status: r.status, enviada_em: new Date().toISOString() })
+        .eq('id', id).eq('company_id', companyId);
+      return;
+    }
     if (error) console.warn(`[mensagens-whatsapp] concluir ${id} falhou: ${error.message}`);
   } catch (err) {
     console.warn(`[mensagens-whatsapp] concluir ${id} falhou: ${(err as Error).message}`);

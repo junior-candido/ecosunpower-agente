@@ -54,7 +54,8 @@ describe('receberNoNumeroPessoal', () => {
 
   it('o dono digitou no celular para um lead: grava como dele e ASSUME (mesmo estado do botão)', async () => {
     const b = banco();
-    expect(await receberNoNumeroPessoal(b.client, NP, msg({ fromMe: true, content: 'Oi Ana, tudo certo?', messageId: 'W2' }))).toBe('gravada');
+    const logo = Date.parse('2026-09-28T15:01:00Z');
+    expect(await receberNoNumeroPessoal(b.client, NP, msg({ fromMe: true, content: 'Oi Ana, tudo certo?', messageId: 'W2' }), logo)).toBe('gravada');
     const saida = b.tabelas.mensagens_whatsapp.find((m) => m.direcao === 'saida')!;
     expect(saida).toMatchObject({ autor: 'humano', user_id: 'u-junior', autor_nome: 'Junior', origem: 'celular', status: 'enviada', visivel_so_para: 'u-junior' });
     expect(b.tabelas.leads[0].eva_active).toBe(false);
@@ -65,8 +66,8 @@ describe('receberNoNumeroPessoal', () => {
 
   it('eco do que o PAINEL mandou não duplica (pelo wamid ou pelo texto recente sem wamid)', async () => {
     const b = banco({ mensagens_whatsapp: [
-      { id: 'p1', company_id: CASA, contato_telefone: '5561999990001', origem: 'painel', canal: 'whatsapp_business', texto: 'Mandei pelo painel', wamid: 'W9', criado_em: new Date().toISOString() },
-      { id: 'p2', company_id: CASA, contato_telefone: '5561999990001', origem: 'painel', canal: 'whatsapp_business', texto: 'Ainda sem id', wamid: null, criado_em: new Date().toISOString() },
+      { id: 'p1', company_id: CASA, contato_telefone: '5561999990001', origem: 'painel', canal: 'whatsapp_business', numero: 'junior-business', visivel_so_para: 'u-junior', texto: 'Mandei pelo painel', wamid: 'W9', criado_em: new Date().toISOString() },
+      { id: 'p2', company_id: CASA, contato_telefone: '5561999990001', origem: 'painel', canal: 'whatsapp_business', numero: 'junior-business', visivel_so_para: 'u-junior', texto: 'Ainda sem id\r\n', wamid: null, criado_em: new Date().toISOString() },
     ] });
     expect(await receberNoNumeroPessoal(b.client, NP, msg({ fromMe: true, messageId: 'W9', content: 'Mandei pelo painel' }))).toBe('eco');
     expect(await receberNoNumeroPessoal(b.client, NP, msg({ fromMe: true, messageId: 'W10', content: 'Ainda sem id' }))).toBe('eco');
@@ -152,5 +153,33 @@ describe('leitura e cadastro', () => {
     expect(await instanciaLivreParaPessoal(b.client, 'junior-business', 'eva-principal')).toBe(true);
     expect(await instanciaLivreParaPessoal(b.client, 'solar-aurora', 'eva-principal')).toBe(false);
     expect(await instanciaLivreParaPessoal(b.client, 'eva-principal', 'eva-principal')).toBe(false);
+  });
+});
+
+describe('achados da revisão (2b)', () => {
+  it('mensagem ANTIGA do dono (reentregue ao reconectar) não pausa a Eva', async () => {
+    const b = banco();
+    await receberNoNumeroPessoal(b.client, NP, msg({ fromMe: true, content: 'antiga', messageId: 'W7' }), Date.parse('2026-09-29T15:00:00Z'));
+    expect(b.tabelas.leads[0].eva_active).toBe(true);
+  });
+  it('quando o contato já é lead, as mensagens antigas dele (sem lead) passam pro lead', async () => {
+    const b = banco({ mensagens_whatsapp: [{ id: 'v', company_id: CASA, lead_id: null, contato_telefone: '5561999990001', visivel_so_para: 'u-junior', texto: 'antes', criado_em: '2026-09-01' }] });
+    await receberNoNumeroPessoal(b.client, NP, msg());
+    expect(b.tabelas.mensagens_whatsapp.every((m) => m.lead_id === 'L-ana')).toBe(true);
+  });
+  it('resolver: número DESLIGADO volta (o webhook ignora calado); tabela inexistente = não é pessoal; erro de banco = "erro"', async () => {
+    const b = banco({ whatsapp_numeros_pessoais: [{ ...NP, ativo: false }] });
+    expect((await criarResolverNumeroPessoal(b.client).porInstancia('junior-business')) as any).toMatchObject({ ativo: false });
+    const c = banco();
+    c.falharEm('whatsapp_numeros_pessoais', 'relation "whatsapp_numeros_pessoais" does not exist', '42P01');
+    expect(await criarResolverNumeroPessoal(c.client).porInstancia('junior-business')).toBeNull();
+    const d = banco();
+    d.falharEm('whatsapp_numeros_pessoais', 'timeout', '57014');
+    expect(await criarResolverNumeroPessoal(d.client).porInstancia('junior-business')).toBe('erro');
+  });
+  it('virar lead de telefone que já é lead de OUTRA empresa: motivo claro', async () => {
+    const b = bancoMemoria({ leads: [], mensagens_whatsapp: [{ id: 'm', company_id: CASA, visivel_so_para: 'u-junior', contato_telefone: '5561977776666', criado_em: '1' }] }, { leads: [['phone']] });
+    b.tabelas.leads.push({ id: 'LT', company_id: TENANT, phone: '5561977776666' });
+    expect(await virarLead(b.client, { companyId: CASA, userId: 'u-junior', userNome: 'Junior', telefone: '5561977776666' })).toEqual({ ok: false, motivo: 'telefone_de_outra_empresa' });
   });
 });

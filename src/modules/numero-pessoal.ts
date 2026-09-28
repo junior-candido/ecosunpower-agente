@@ -41,24 +41,32 @@ export interface NumeroPessoal {
 
 const COLUNAS = 'id, company_id, dono_user_id, dono_nome, instancia, numero, ativo';
 
-/** Instância → número pessoal (cache de 1 min; erro = "não é pessoal", nunca derruba o webhook). */
+/**
+ * Instância → número pessoal (cache de 1 min). Devolve também o DESLIGADO
+ * (ativo=false: o webhook ignora calado) e 'erro' quando o banco não
+ * respondeu — aí o webhook NÃO confirma (a Evolution tenta de novo) e nada
+ * de conversa pessoal cai em log. Tabela ainda inexistente (42P01) = não é pessoal.
+ */
 export function criarResolverNumeroPessoal(client: SupabaseClient) {
   const cache = new Map<string, { at: number; valor: NumeroPessoal | null }>();
   return {
-    async porInstancia(instancia: string | undefined): Promise<NumeroPessoal | null> {
+    async porInstancia(instancia: string | undefined): Promise<NumeroPessoal | null | 'erro'> {
       const chave = (instancia ?? '').trim();
       if (!chave || !NOME_INSTANCIA_OK.test(chave)) return null;
       const c = cache.get(chave);
       if (c && Date.now() - c.at < TTL_MS) return c.valor;
       try {
         const { data, error } = await client.from('whatsapp_numeros_pessoais')
-          .select(COLUNAS).eq('instancia', chave).eq('ativo', true).maybeSingle();
-        if (error) { cache.set(chave, { at: Date.now(), valor: null }); return null; }
+          .select(COLUNAS).ilike('instancia', chave).maybeSingle();
+        if (error) {
+          if (error.code === '42P01' || /does not exist/i.test(error.message ?? '')) { cache.set(chave, { at: Date.now(), valor: null }); return null; }
+          return 'erro';
+        }
         const v = (data as NumeroPessoal | null) ?? null;
         cache.set(chave, { at: Date.now(), valor: v });
         return v;
       } catch {
-        return null;
+        return 'erro';
       }
     },
     limpar() { cache.clear(); },
@@ -138,13 +146,17 @@ export async function receberNoNumeroPessoal(
       // Eco que chegou ANTES de o painel gravar o wamid: mesmo contato, mesmo
       // texto, saído do painel há menos de 2 min, ainda sem wamid.
       const desde = new Date(agora - 2 * 60_000).toISOString();
-      const { data: recentes } = await client.from('mensagens_whatsapp').select('id, texto, wamid')
+      const { data: recentes } = await client.from('mensagens_whatsapp').select('id, texto, wamid, criado_em')
         .eq('company_id', np.company_id).eq('contato_telefone', telefone).eq('origem', 'painel')
-        .eq('canal', 'whatsapp_business').gte('criado_em', desde).limit(20);
-      const doPainel = ((recentes ?? []) as Array<{ id: string; texto: string | null; wamid: string | null }>)
-        .find((r) => !r.wamid && (r.texto ?? '').trim() === texto);
+        .eq('canal', 'whatsapp_business').eq('numero', np.instancia).eq('visivel_so_para', np.dono_user_id)
+        .gte('criado_em', desde).limit(20);
+      const norm = (t: string | null) => (t ?? '').replace(/\r\n/g, '\n').trim();
+      const doPainel = ((recentes ?? []) as Array<{ id: string; texto: string | null; wamid: string | null; criado_em?: string }>)
+        .filter((r) => !r.wamid && norm(r.texto) === norm(texto))
+        .sort((a, b) => String(a.criado_em ?? '').localeCompare(String(b.criado_em ?? '')))[0];
       if (doPainel) {
-        await client.from('mensagens_whatsapp').update({ wamid: msg.messageId }).eq('id', doPainel.id).eq('company_id', np.company_id);
+        await client.from('mensagens_whatsapp').update({ wamid: msg.messageId })
+          .eq('id', doPainel.id).eq('company_id', np.company_id).eq('visivel_so_para', np.dono_user_id);
         return 'eco';
       }
     }
@@ -171,8 +183,15 @@ export async function receberNoNumeroPessoal(
     });
     if (!r.ok) return 'falhou';
     if (r.duplicada) return 'duplicada';
-    // O dono respondeu um LEAD pelo celular: ele assumiu esse cliente.
-    if (msg.fromMe && lead && lead.eva_active !== false && !lead.opt_out) {
+    // Mensagens antigas deste contato (de antes de ele virar lead) passam pro lead.
+    if (lead) {
+      await client.from('mensagens_whatsapp').update({ lead_id: lead.id })
+        .eq('company_id', np.company_id).eq('contato_telefone', telefone).eq('visivel_so_para', np.dono_user_id).is('lead_id', null);
+    }
+    // O dono respondeu um LEAD pelo celular: ele assumiu esse cliente. Só mensagem
+    // RECENTE — ao reconectar, a Evolution reentrega histórico e isso pausaria a Eva em massa.
+    const idadeMs = agora - new Date(msg.timestamp ?? agora).getTime();
+    if (msg.fromMe && lead && lead.eva_active !== false && !lead.opt_out && idadeMs < 5 * 60_000) {
       await assumirAtendimento(client, { leadId: lead.id, companyId: np.company_id, origem: 'celular', userId: np.dono_user_id, autorNome: np.dono_nome ?? 'Equipe' });
     }
     return 'gravada';
@@ -217,7 +236,7 @@ export async function mensagensPessoais(
 export async function virarLead(
   servico: SupabaseClient,
   p: { companyId: string; userId: string; userNome: string; telefone: string; nome?: string | null },
-): Promise<{ ok: true; leadId: string; criado: boolean } | { ok: false; motivo: 'telefone_invalido' | 'sem_conversa' | 'erro' }> {
+): Promise<{ ok: true; leadId: string; criado: boolean } | { ok: false; motivo: 'telefone_invalido' | 'sem_conversa' | 'telefone_de_outra_empresa' | 'erro' }> {
   const telefone = normalizeBrazilianPhone(p.telefone ?? '');
   if (!telefone) return { ok: false, motivo: 'telefone_invalido' };
   try {
@@ -237,6 +256,7 @@ export async function virarLead(
         acquisition_source: 'whatsapp_pessoal', eva_active: false,
         updated_at: new Date().toISOString(),
       }).select('id').single();
+      if (error?.code === '23505') return { ok: false, motivo: 'telefone_de_outra_empresa' };
       if (error || !data) return { ok: false, motivo: 'erro' };
       leadId = String((data as { id: string }).id);
       criado = true;
@@ -246,7 +266,7 @@ export async function virarLead(
       });
     }
     await servico.from('mensagens_whatsapp').update({ lead_id: leadId })
-      .eq('company_id', p.companyId).eq('contato_telefone', telefone).is('lead_id', null);
+      .eq('company_id', p.companyId).eq('contato_telefone', telefone).eq('visivel_so_para', p.userId).is('lead_id', null);
     return { ok: true, leadId, criado };
   } catch (err) {
     console.warn(`[numero-pessoal] virar lead falhou: ${(err as Error).message}`);
@@ -254,11 +274,20 @@ export async function virarLead(
   }
 }
 
-/** A instância pode ser o número pessoal? (não pode ser número de assistente de tenant). */
+/**
+ * Nome da instância do número pessoal: escolhido pelo SERVIDOR (nunca digitado),
+ * pra ninguém "adotar" uma instância que já existe na Evolution (de um tenant
+ * em implantação, de outro produto…). PURA.
+ */
+export function nomeInstanciaPessoal(userId: string): string {
+  return `pessoal-${String(userId).replace(/[^a-zA-Z0-9]/g, '').slice(0, 12).toLowerCase()}`;
+}
+
+/** A instância pode ser o número pessoal? (não pode ser a da Eva nem a de assistente de tenant; sem diferenciar maiúsculas). */
 export async function instanciaLivreParaPessoal(servico: SupabaseClient, instancia: string, instanciaDaEva: string): Promise<boolean> {
   if (!NOME_INSTANCIA_OK.test(instancia)) return false;
-  if (instancia === instanciaDaEva) return false;
-  const { data, error } = await servico.from('companies').select('id').eq('evolution_instance', instancia).limit(1);
+  if (instancia.toLowerCase() === (instanciaDaEva ?? '').toLowerCase()) return false;
+  const { data, error } = await servico.from('companies').select('id').ilike('evolution_instance', instancia).limit(1);
   if (error) return false;
   return !Array.isArray(data) || data.length === 0;
 }

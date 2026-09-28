@@ -11,8 +11,9 @@
 import type { Request, Response } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AuthedRequest } from './auth.js';
-import { numeroPessoalDoDono, instanciaLivreParaPessoal, CASA } from '../numero-pessoal.js';
-import { estadoConexao, obterQrConexao, criarInstancia, instanciaValida, type ConexaoEvolutionDeps, type QrConexao } from '../evolution-conexao.js';
+import { numeroPessoalDoDono, instanciaLivreParaPessoal, nomeInstanciaPessoal, CASA } from '../numero-pessoal.js';
+import { estadoConexao, obterQrConexao, criarInstancia, type ConexaoEvolutionDeps, type QrConexao } from '../evolution-conexao.js';
+import { mesmaOrigem } from './atendimento-rotas.js';
 import { renderWhatsappPessoalPage, resultadoWhatsappPessoal } from './whatsapp-pessoal-views.js';
 import { audit } from './audit.js';
 
@@ -21,8 +22,10 @@ export interface DepsNumeroPessoal {
   evolution?: ConexaoEvolutionDeps;
   /** EVOLUTION_INSTANCE (a da Eva) — nunca pode virar número pessoal. */
   instanciaDaEva: string;
-  /** URL do webhook desta plataforma (com o token), pra apontar a instância nova. */
+  /** URL do webhook desta plataforma (sem token), pra apontar a instância nova. */
   webhookUrl?: string;
+  /** Token do webhook — vai no cabeçalho x-webhook-token. */
+  webhookToken?: string;
 }
 
 const primeiroNome = (s: string | null | undefined) => String(s ?? '').trim().split(/\s+/)[0] || null;
@@ -45,7 +48,7 @@ export function criarRotasNumeroPessoal(deps: DepsNumeroPessoal) {
       numero: np ? { instancia: np.instancia, ativo: np.ativo, donoNome: np.dono_nome } : null,
       estado,
       resultado: resultadoWhatsappPessoal(r.query?.ok ?? r.query?.erro),
-      sugestao: `${(primeiroNome(r.dashUser.nome) ?? 'meu').toLowerCase().normalize('NFD').replace(/[^a-z0-9]/g, '') || 'meu'}-business`,
+      sugestao: nomeInstanciaPessoal(r.dashUser.id),
     }));
   }
 
@@ -53,21 +56,22 @@ export function criarRotasNumeroPessoal(deps: DepsNumeroPessoal) {
     const r = req as AuthedRequest;
     if (!daCasa(r, res)) return;
     const volta = (q: string) => res.redirect(303, `/dashboard/whatsapp/pessoal?${q}`);
-    const instancia = String(r.body?.instancia ?? '').trim();
-    if (!instanciaValida(instancia)) { volta('erro=nome_invalido'); return; }
-    if (!(await instanciaLivreParaPessoal(deps.supabase, instancia, deps.instanciaDaEva))) { volta('erro=instancia_ocupada'); return; }
-    // Instância de OUTRA pessoa já cadastrada como pessoal: não toma.
-    const { data: outro } = await deps.supabase.from('whatsapp_numeros_pessoais').select('dono_user_id').eq('instancia', instancia).maybeSingle();
-    if (outro && (outro as { dono_user_id: string }).dono_user_id !== r.dashUser.id) { volta('erro=instancia_ocupada'); return; }
-    if (!deps.evolution) { volta('erro=evolution_falhou'); return; }
-    const c = await criarInstancia(deps.evolution, instancia, deps.webhookUrl);
-    if (!c.ok) { volta(c.motivo === 'nome_invalido' ? 'erro=nome_invalido' : 'erro=evolution_falhou'); return; }
-
+    if (!mesmaOrigem(r)) { res.status(403).send('origem não permitida'); return; }
+    // Nome escolhido pelo SERVIDOR: ninguém "adota" uma instância que já existe na
+    // Evolution (tenant em implantação, outro produto). Um número por pessoa, sem troca de nome.
     const atual = await numeroPessoalDoDono(deps.supabase, CASA, r.dashUser.id);
+    const instancia = atual?.instancia ?? nomeInstanciaPessoal(r.dashUser.id);
+    if (!(await instanciaLivreParaPessoal(deps.supabase, instancia, deps.instanciaDaEva))) { volta('erro=instancia_ocupada'); return; }
+    if (!deps.evolution) { volta('erro=evolution_falhou'); return; }
+    const c = await criarInstancia(deps.evolution, instancia, deps.webhookUrl, deps.webhookToken);
+    if (!c.ok) { volta('erro=evolution_falhou'); return; }
+    // Já existia na Evolution e NÃO é deste dono (nome derivado do id, então só por acaso/ataque): recusa.
+    if (c.jaExistia && !atual) { volta('erro=instancia_ocupada'); return; }
+
     const agoraIso = new Date().toISOString();
     const { error } = atual
-      ? await deps.supabase.from('whatsapp_numeros_pessoais').update({ instancia, ativo: true, atualizado_em: agoraIso })
-        .eq('id', atual.id).eq('company_id', CASA)
+      ? await deps.supabase.from('whatsapp_numeros_pessoais').update({ ativo: true, atualizado_em: agoraIso })
+        .eq('id', atual.id).eq('company_id', CASA).eq('dono_user_id', r.dashUser.id)
       : await deps.supabase.from('whatsapp_numeros_pessoais').insert({
         company_id: CASA, dono_user_id: r.dashUser.id, dono_nome: primeiroNome(r.dashUser.nome), instancia, ativo: true,
       });
@@ -79,6 +83,7 @@ export function criarRotasNumeroPessoal(deps: DepsNumeroPessoal) {
   async function ligar(req: Request, res: Response, ativo: boolean): Promise<void> {
     const r = req as AuthedRequest;
     if (!daCasa(r, res)) return;
+    if (!mesmaOrigem(r)) { res.status(403).send('origem não permitida'); return; }
     const np = await numeroPessoalDoDono(deps.supabase, CASA, r.dashUser.id);
     if (!np) { res.redirect(303, '/dashboard/whatsapp/pessoal'); return; }
     await deps.supabase.from('whatsapp_numeros_pessoais').update({ ativo, atualizado_em: new Date().toISOString() })

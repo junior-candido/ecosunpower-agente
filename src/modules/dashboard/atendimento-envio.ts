@@ -118,6 +118,7 @@ export const RESULTADO_ENVIO: Record<string, { tom: 'ok' | 'erro' | 'aviso'; tex
   bloqueado_lgpd: { tom: 'erro', texto: 'Envio bloqueado: este número não pode receber mensagem por este canal.' },
   janela_fechada: { tom: 'erro', texto: 'A janela de 24 h fechou. Use um modelo aprovado.' },
   modelo_so_no_oficial: { tom: 'erro', texto: 'Modelo só existe no número oficial.' },
+  telefone_de_outra_empresa: { tom: 'erro', texto: 'Este telefone já é lead de outra empresa na plataforma. Não dá para criar aqui.' },
   assumiu: { tom: 'ok', texto: 'Você assumiu a conversa. A assistente fica pausada até você devolver.' },
   devolveu: { tom: 'ok', texto: 'Conversa devolvida para a assistente.' },
 };

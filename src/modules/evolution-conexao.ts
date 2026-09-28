@@ -106,6 +106,7 @@ export async function criarInstancia(
   deps: ConexaoEvolutionDeps,
   instancia: string,
   webhookUrl?: string,
+  webhookToken?: string,
 ): Promise<ResultadoCriacao> {
   if (!instanciaValida(instancia)) return { ok: false, motivo: 'nome_invalido' };
   const f = deps.fetchImpl ?? fetch;
@@ -131,7 +132,10 @@ export async function criarInstancia(
     const w = await f(`${base}/webhook/set/${encodeURIComponent(instancia)}`, {
       method: 'POST',
       headers: { apikey: deps.apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ webhook: { enabled: true, url: webhookUrl, byEvents: false, base64: false, events: ['MESSAGES_UPSERT'] } }),
+      body: JSON.stringify({ webhook: {
+        enabled: true, url: webhookUrl, byEvents: false, base64: false, events: ['MESSAGES_UPSERT'],
+        ...(webhookToken ? { headers: { 'x-webhook-token': webhookToken } } : {}),
+      } }),
       signal: AbortSignal.timeout(15000),
     });
     return { ok: true, jaExistia, webhook: w.ok ? 'ok' : 'falhou' };

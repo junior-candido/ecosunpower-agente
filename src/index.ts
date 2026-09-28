@@ -7793,7 +7793,22 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     // (grupo, fila, lead novo, takeover): ali ninguém responde por ele; a
     // mensagem (dele ou do contato) só fica gravada pra ele ver no painel.
     const pessoal = await numerosPessoais.porInstancia(instanciaOrigem);
+    if (pessoal === 'erro') {
+      // Banco não respondeu: NÃO confirma (a Evolution tenta de novo). Nada de
+      // telefone/texto no log — pode ser conversa pessoal do dono.
+      console.warn(`[numero-pessoal] banco indisponível ao conferir a instância "${instanciaOrigem}" — mensagem não confirmada`);
+      res.status(503).json({ status: 'numero_pessoal_indisponivel' });
+      return;
+    }
     if (pessoal) {
+      // Nome de instância em DOIS cadastros (pessoal e assistente de tenant) seria
+      // conversa de cliente de outra empresa caindo na caixa pessoal: não grava nada.
+      if (await evolutionTenant.companyDaInstancia(instanciaOrigem)) {
+        console.error(`[numero-pessoal] 🚨 instância "${instanciaOrigem}" está como número pessoal E como assistente de empresa — mensagem RETIDA, nada gravado. Corrigir o cadastro.`);
+        res.status(200).json({ status: 'numero_pessoal_conflito' });
+        return;
+      }
+      if (!pessoal.ativo) { res.status(200).json({ status: 'numero_pessoal_desligado' }); return; }
       const { receberNoNumeroPessoal } = await import('./modules/numero-pessoal.js');
       const r = await receberNoNumeroPessoal(supabase.getClient(), pessoal, parsed);
       res.status(200).json({ status: `numero_pessoal_${r}` });
@@ -7806,7 +7821,7 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     } else if (instanciaOrigem && instanciaOrigem !== config.evolutionInstance) {
       // Falha-fechado: instância que NÃO é a da Eva e não está mapeada (typo,
       // cadastro faltando, empresa inativa, banco fora) NUNCA vira lead da EcoSun.
-      console.warn(`[evolution] ⚠️ instância "${instanciaOrigem}" não mapeada em companies.evolution_instance — mensagem de ${parsed.from} RETIDA`);
+      console.warn(`[evolution] ⚠️ instância "${instanciaOrigem}" não mapeada em companies.evolution_instance — mensagem de …${String(parsed.from).slice(-4)} RETIDA`);
       res.status(200).json({ status: 'instancia_nao_mapeada' });
       return;
     }
@@ -9206,7 +9221,9 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     // passar pelo sendText da Eva (lá é outro número, outra marca, outra trava).
     enviarPessoal: (instancia, to, text) => comEmpresaDe(ECOSUN_COMPANY_ID, () => comCanal({ companyId: ECOSUN_COMPANY_ID, evolutionInstance: instancia }, () => evolution.sendText(to, text))),
     evolutionInstanciaEva: config.evolutionInstance,
-    evolutionWebhookUrl: config.appBaseUrl ? `${config.appBaseUrl.replace(/\/$/, '')}/webhook?token=${encodeURIComponent(config.webhookToken)}` : undefined,
+    // Token vai no CABEÇALHO (x-webhook-token), nunca na URL (log do proxy, tela da Evolution).
+    evolutionWebhookUrl: config.appBaseUrl ? `${config.appBaseUrl.replace(/\/$/, '')}/webhook` : undefined,
+    evolutionWebhookToken: config.webhookToken,
     infinitepayHandle: config.infinitepayHandle,
     calculadoraUrl: config.calculadoraUrl,
     evolutionConexao: { baseUrl: config.evolutionApiUrl, apiKey: config.evolutionApiKey, instanciaDaEmpresa: (cid) => evolutionTenant.instanciaDaEmpresa(cid) },

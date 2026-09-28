@@ -166,6 +166,7 @@ export function montarLista(
   /** Parte 2b: conversas do número pessoal de quem está vendo (resumosPessoais). */
   pessoais: ConversaResumo[] = [],
 ): ListaConversas {
+  const t = (x: string | null | undefined) => { const n = Date.parse(x ?? ''); return Number.isFinite(n) ? n : 0; };
   const leadPorId = new Map(leads.map((l) => [l.id, l]));
   const vistos = new Set<string>();
   const todas: ConversaResumo[] = [];
@@ -189,12 +190,12 @@ export function montarLista(
   for (const p of pessoais) {
     const i = p.leadId ? todas.findIndex((t) => t.leadId === p.leadId) : -1;
     if (i === -1) { todas.push(p); continue; }
-    const t = todas[i];
-    if (Date.parse(p.ultimaEm ?? '') > Date.parse(t.ultimaEm ?? '')) {
-      todas[i] = { ...t, ultimaEm: p.ultimaEm, ultimaTexto: p.ultimaTexto, ultimaDe: p.ultimaDe, aguardandoResposta: p.aguardandoResposta && !t.optOut, canal: p.canal };
+    const atual = todas[i];
+    if (t(p.ultimaEm) > t(atual.ultimaEm)) {
+      todas[i] = { ...atual, ultimaEm: p.ultimaEm, ultimaTexto: p.ultimaTexto, ultimaDe: p.ultimaDe, aguardandoResposta: p.aguardandoResposta && !atual.optOut, canal: p.canal };
     }
   }
-  todas.sort((a, b) => String(b.ultimaEm ?? '').localeCompare(String(a.ultimaEm ?? '')));
+  todas.sort((a, b) => t(b.ultimaEm) - t(a.ultimaEm));
 
   const q = (filtros.q ?? '').toLowerCase();
   const qDigitos = q.replace(/\D/g, '');
@@ -235,9 +236,10 @@ const LOTE_IDS = 100;
 export function resumosPessoais(rows: LinhaMensagemWhatsapp[], leads: LinhaLead[]): ConversaResumo[] {
   const leadPorId = new Map(leads.map((l) => [l.id, l]));
   const grupos = new Map<string, LinhaMensagemWhatsapp[]>();
+  // Agrupa pelo TELEFONE (um contato = um item), mesmo com linhas antigas sem lead.
   for (const r of rows) {
     if (r.direcao === 'evento' || !r.texto) continue;
-    const chave = r.lead_id ? `L:${r.lead_id}` : r.contato_telefone ? `T:${r.contato_telefone}` : '';
+    const chave = r.contato_telefone ? `T:${r.contato_telefone}` : r.lead_id ? `L:${r.lead_id}` : '';
     if (!chave) continue;
     (grupos.get(chave) ?? grupos.set(chave, []).get(chave)!).push(r);
   }
@@ -250,9 +252,10 @@ export function resumosPessoais(rows: LinhaMensagemWhatsapp[], leads: LinhaLead[
       ultimaEm: u.criado_em, ultimaTexto: (u.texto ?? '').replace(/\s+/g, ' ').trim().slice(0, 140),
       ultimaDe: doCliente ? 'cliente' as const : 'assistente' as const, aguardandoResposta: doCliente, canal: 'whatsapp_business' as const,
     };
-    if (chave.startsWith('L:')) {
-      const lead = leadPorId.get(u.lead_id!);
-      if (!lead) continue; // arquivado / de outro vendedor / fora da empresa: não aparece
+    const leadId = [...g].reverse().find((r) => r.lead_id)?.lead_id ?? null;
+    const lead = leadId ? leadPorId.get(leadId) : undefined;
+    if (leadId && !lead && chave.startsWith('L:')) continue;
+    if (lead) {
       out.push({
         leadId: lead.id, nome: lead.name, telefone: lead.phone, etapa: lead.status, cidade: lead.city,
         evaAtiva: !!lead.eva_active, optOut: !!lead.opt_out, dono: lead.claimed_by, ...base,

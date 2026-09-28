@@ -24,7 +24,7 @@ const RESULTADOS: Record<string, { tom: 'ok' | 'erro' | 'atencao'; texto: string
   criada: { tom: 'ok', texto: 'Conexão preparada. Agora leia o QR com o seu WhatsApp Business.' },
   webhook_falhou: { tom: 'atencao', texto: 'Conexão preparada, mas não consegui apontar o aviso de mensagens desta instância. Se as conversas não aparecerem, peça pra configurar o webhook dela na Evolution.' },
   nome_invalido: { tom: 'erro', texto: 'Nome inválido: use só letras, números, - ou _.' },
-  instancia_ocupada: { tom: 'erro', texto: 'Esse nome já é o número de uma assistente (da Eva ou de um cliente). Escolha outro.' },
+  instancia_ocupada: { tom: 'erro', texto: 'Essa conexão já existe no servidor do WhatsApp e não é sua. Fale com o suporte.' },
   evolution_falhou: { tom: 'erro', texto: 'O servidor do WhatsApp (Evolution) não respondeu. Tente de novo em instantes.' },
   erro_banco: { tom: 'erro', texto: 'Não consegui salvar. Tente de novo.' },
   desligado: { tom: 'ok', texto: 'Desligado: o painel parou de gravar as conversas deste número.' },
@@ -57,7 +57,7 @@ export function renderWhatsappPessoalPage(p: WhatsappPessoalInput): string {
         <h2>Preparar a conexão</h2>
         <p class="cc-muted">Cria a conexão do seu número no servidor do WhatsApp. Depois aparece o QR para você ler com o celular.</p>
         <form class="cc-form cc-wp-form" method="POST" action="/dashboard/whatsapp/pessoal/criar">
-          <label class="cc-campo"><span>Nome da conexão</span><input type="text" name="instancia" value="${escapeHtml(p.sugestao ?? 'junior-business')}" pattern="[A-Za-z0-9_-]{1,64}" maxlength="64" required></label>
+          <p class="cc-faint">Nome da conexão: <code>${escapeHtml(p.sugestao ?? '')}</code></p>
           <button type="submit" class="cc-btn cc-wp-ok">Preparar e mostrar o QR</button>
         </form>
       </section>

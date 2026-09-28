@@ -37,7 +37,7 @@ import { registrarAtividade } from './atividades.js';
 import { audit } from './audit.js';
 import type { CompositorInput, ContatoPessoalTela } from './atendimento-views.js';
 import { linhaDoPainelParaChat } from './conversas-queries.js';
-import { numeroPessoalDoDono, mensagensPessoais, virarLead, CASA as CASA_ID, type NumeroPessoal } from '../numero-pessoal.js';
+import { numeroPessoalDoDono, mensagensPessoais, virarLead, leadDoTelefoneNaEmpresa, CASA as CASA_ID, type NumeroPessoal } from '../numero-pessoal.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CACHE_MODELOS_MS = 10 * 60 * 1000;
@@ -184,14 +184,17 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     if (bloqueio === 'sem_canal' && motivo) bloqueio = motivo;
     if (bloqueio) { voltar(res, leadId, bloqueio, canal); return null; }
     // Clique repetido responde "já enviada" (não "espere") — confere a chave antes do freio.
-    const jaUsada = await statusDaChave(db, companyId, chave);
+    const jaUsada = await statusDaChave(np ? deps.supabase : db, companyId, chave);
     if (jaUsada) { voltar(res, leadId, jaUsada === 'falhou' ? 'ja_falhou' : 'duplicado', canal); return null; }
     if (!limite.permitir(viewer.id, `${companyId}:${leadId}`, agora())) { voltar(res, leadId, 'limite', canal); return null; }
     return { leadId, viewer, companyId, chave, db, lead, canal, via, instancia, telefone: telefone!, np };
   }
 
   function depsComuns(ctx: NonNullable<Awaited<ReturnType<typeof preparar>>>, extra: { texto: string; modelo?: string }) {
-    const { db, companyId, leadId, viewer, canal } = ctx;
+    const { companyId, leadId, viewer, canal } = ctx;
+    // Número pessoal: a linha é privada (visivel_so_para) e a RLS restritiva da
+    // 138 esconde do crachá — grava/fecha com o client de serviço + filtro explícito.
+    const db = ctx.np ? deps.supabase : ctx.db;
     return {
       reservar: () => reservarEnvio(db, {
         company_id: companyId, lead_id: leadId, contato_telefone: ctx.telefone, contato_nome: ctx.lead.name,
@@ -209,6 +212,15 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
         ? (painelId: string) => deps.copiarParaMemoria!({ leadId, companyId, texto: extra.texto, painelId })
         : undefined,
       registrar: async () => {
+        // Número pessoal: a linha do tempo é da empresa toda — registra SÓ o fato, nunca o texto.
+        if (ctx.np) {
+          await registrarAtividade(ctx.db, {
+            company_id: companyId, lead_id: leadId, tipo: 'whatsapp',
+            titulo: 'Mensagem enviada pelo WhatsApp pessoal', automatica: false, user_id: viewer.id,
+          });
+          await audit(ctx.db, { companyId, userId: viewer.id, entidade: 'lead', entidadeId: leadId, acao: 'whatsapp_enviado', campo: canal, valorNovo: 'texto' });
+          return;
+        }
         await registrarAtividade(db, {
           company_id: companyId, lead_id: leadId, tipo: 'whatsapp',
           titulo: extra.modelo ? `Modelo enviado pelo painel (${extra.modelo})` : 'Mensagem enviada pelo painel',
@@ -324,7 +336,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
         modelos: via === 'waba' && !pessoal ? await modelos() : [],
         chave: randomUUID(),
         resultado: resp,
-        lgpdBloqueado: !pessoal && !!telefone && envioProibido(telefone, deps.engineerPhone, empresaDe(companyId)),
+        lgpdBloqueado: !!telefone && envioProibido(telefone, deps.engineerPhone, empresaDe(companyId)),
         empresaNome: empresaDe(companyId).nomeFantasia,
         euNome: req.dashUser?.nome ?? '',
         agora: agora(),
@@ -401,9 +413,10 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     const jaUsada = await statusDaChave(deps.supabase, companyId, chave);
     if (jaUsada) { voltarContato(res, telefone, jaUsada === 'falhou' ? 'ja_falhou' : 'duplicado'); return; }
     if (!limite.permitir(viewer.id, `${companyId}:${telefone}`, agora())) { voltarContato(res, telefone, 'limite'); return; }
+    const leadDoContato = await leadDoTelefoneNaEmpresa(deps.supabase, companyId, telefone).catch(() => null);
     const s = await enviarDoPainel({
       reservar: () => reservarEnvio(deps.supabase, {
-        company_id: companyId, lead_id: null, contato_telefone: telefone, contato_nome: conversa[0]?.contato_nome ?? null,
+        company_id: companyId, lead_id: leadDoContato?.id ?? null, contato_telefone: telefone, contato_nome: conversa[0]?.contato_nome ?? null,
         direcao: 'saida', autor: 'humano', user_id: viewer.id, autor_nome: (viewer.nome || '').slice(0, 80),
         canal: 'whatsapp_business', numero: np.instancia, tipo: 'texto', texto: v.texto,
         origem: 'painel', chave_envio: chave, visivel_so_para: viewer.id,
@@ -426,6 +439,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     const x = await virarLead(deps.supabase, { companyId: viewer.companyId, userId: viewer.id, userNome: viewer.nome ?? '', telefone });
     if (!x.ok) {
       if (x.motivo === 'sem_conversa' || x.motivo === 'telefone_invalido') { res.status(404).send('conversa não encontrada'); return; }
+      if (x.motivo === 'telefone_de_outra_empresa') { voltarContato(res, telefone, 'telefone_de_outra_empresa'); return; }
       voltarContato(res, telefone, 'erro_banco');
       return;
     }

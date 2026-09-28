@@ -66,8 +66,9 @@ export function respostasProntas(p: { nomeCliente: string | null | undefined; eu
   const nome = primeiro(p.nomeCliente);
   const eu = primeiro(p.eu) || 'a equipe';
   return RESPOSTAS_PRONTAS.map((r) => {
-    let t = r.texto.replace(/\{eu\}/g, eu).replace(/\{empresa\}/g, p.empresa || 'nossa empresa');
-    if (nome) t = t.replace(/\{nome\}/g, nome);
+    // Função como substituto: "$&"/"$'" num nome nunca vira padrão de troca.
+    let t = r.texto.replace(/\{eu\}/g, () => eu).replace(/\{empresa\}/g, () => p.empresa || 'nossa empresa');
+    if (nome) t = t.replace(/\{nome\}/g, () => nome);
     else t = t.replace(/^Oi, \{nome\}!/, 'Oi!').replace(/^\{nome\}, (.)/, (_, c: string) => c.toUpperCase()).replace(/\{nome\}/g, '');
     return { id: r.id, rotulo: r.rotulo, texto: t, modelo: r.modelos.find((m) => p.modelosAprovados.includes(m)) ?? null };
   });

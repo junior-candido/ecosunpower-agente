@@ -97,5 +97,5 @@ export function parametroNome(bruto: string | null | undefined): string {
 /** Texto que o cliente vai ler (prévia e histórico). */
 export function previaDoModelo(m: Pick<ModeloAtendimento, 'nome' | 'texto'>, nome: string): string {
   const n = parametroNome(nome);
-  return m.texto ? m.texto.replace(/\{nome\}/g, n) : `[modelo ${m.nome} · nome: ${n}]`;
+  return m.texto ? m.texto.replace(/\{nome\}/g, () => n) : `[modelo ${m.nome} · nome: ${n}]`;
 }
