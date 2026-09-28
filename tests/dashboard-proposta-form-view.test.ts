@@ -35,7 +35,8 @@ describe('renderFormNovaProposta', () => {
     expect(html).toContain('1000');
     expect(html).toContain('Trina');
     expect(html).toContain('Sungrow');
-    expect(html).toContain('action="/dashboard/propostas/novo"');
+    // AP0: lead_id na URL — o portão de empresa confere antes do upload multipart.
+    expect(html).toContain('action="/dashboard/propostas/novo?lead_id=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"');
     expect(html).toContain('enctype="multipart/form-data"');
   });
 
