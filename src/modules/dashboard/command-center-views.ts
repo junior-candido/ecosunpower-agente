@@ -75,6 +75,10 @@ const TOM_DA_SEVERIDADE: Record<Severidade, Tom> = {
   critico: 'critico', atencao: 'atencao', acompanhar: 'acompanhar', oportunidade: 'oportunidade', info: 'info',
 };
 
+/** Níveis que alguma fonte ligada já produz. Os outros (oportunidade: garantias,
+ *  campanhas; info: certificado A1) ainda não têm fonte → "—", nunca 0. */
+const SEVERIDADES_LIGADAS: ReadonlySet<Severidade> = new Set<Severidade>(['critico', 'atencao', 'acompanhar']);
+
 const ROTULO_AREA: Record<AreaEvento, string> = {
   usinas: 'Usinas', comercial: 'Comercial', marketing: 'Marketing', instalacoes: 'Instalações',
   om: 'O&M', financeiro: 'Financeiro', clientes: 'Clientes',
@@ -166,7 +170,8 @@ function acoesHtml(dd: DadosCommandCenter | null): string {
       <span class="cc-act-n">${i + 1}</span>
       <div>${i === 0 ? '<span class="cc-act-tag">Próxima ação mais importante</span>' : ''}<b>${escapeHtml(e.titulo)}</b><small>${escapeHtml([e.impactoTexto, e.detalhe ?? e.contexto].filter(Boolean).join(' · '))}</small></div>
       <a class="cc-btn cc-btn-sm${i === 0 ? ' cc-btn-gold' : ''}" href="${escapeHtml(hrefAcao(e))}">${escapeHtml(e.acao.rotulo)}</a>
-    </div>`).join('');
+    </div>`).join('')
+    + (fontesComFalha(dd.fontes).length ? '<p class="cc-nota">Parte dos avisos não carregou agora — a ordem pode mudar quando voltar.</p>' : '');
 }
 
 function hero(d: CommandCenterDados): string {
@@ -207,12 +212,12 @@ function kpis(d: CommandCenterDados): string {
   const lista: KpiInput[] = [
     {
       rotulo: 'Geração agora', valor: f?.geracaoAgora?.kw ?? null, casas: 1, unidade: 'kW', href: '/dashboard/monitoramento',
-      detalhe: f?.geracaoAgora ? `ao vivo em ${f.geracaoAgora.usinas} de ${f.monitoradas} usinas` : undefined,
+      detalhe: f?.geracaoAgora ? `${plural(f.geracaoAgora.usinas, 'usina', 'usinas')} ao vivo` : undefined,
       semDadoTexto: f ? 'sem leitura ao vivo agora' : semUsinas,
     },
     {
       rotulo: 'Energia hoje', valor: hoje.valor, casas: hoje.casas, unidade: hoje.unidade, href: '/dashboard/monitoramento',
-      detalhe: f ? `até agora · ${plural(f.usinasComDadoHoje, 'usina', 'usinas')}` : undefined,
+      detalhe: f ? 'até agora' : undefined,
       semDadoTexto: f ? 'sem leitura hoje ainda' : semUsinas,
     },
     {
@@ -220,14 +225,14 @@ function kpis(d: CommandCenterDados): string {
       detalhe: 'desde o dia 1º', semDadoTexto: f ? 'sem leitura no mês' : semUsinas,
     },
     {
-      rotulo: 'Potência instalada', valor: potMw ? (pot as number) / 1000 : pot, casas: potMw ? 2 : 1, unidade: potMw ? 'MWp' : 'kWp',
+      rotulo: 'Potência total', valor: potMw ? (pot as number) / 1000 : pot, casas: potMw ? 2 : 1, unidade: potMw ? 'MWp' : 'kWp',
       href: '/dashboard/monitoramento', detalhe: f ? plural(f.total, 'usina ativa', 'usinas ativas') : undefined,
       semDadoTexto: f ? 'sem potência cadastrada' : semUsinas,
     },
     {
-      rotulo: 'Usinas comunicando', valor: f && f.monitoradas > 0 ? f.comunicando : null, unidade: f ? `/ ${fmtNumero(f.monitoradas)}` : undefined,
+      rotulo: 'Usinas no ar', valor: f && f.monitoradas > 0 ? f.comunicando : null, unidade: f ? `/ ${fmtNumero(f.monitoradas)}` : undefined,
       href: '/dashboard/monitoramento',
-      detalhe: f ? (f.porEstado.sem_comunicacao ? `${plural(f.porEstado.sem_comunicacao, 'sem comunicação', 'sem comunicação')}` : 'todas comunicando') : undefined,
+      detalhe: f ? (f.porEstado.sem_comunicacao ? `${fmtNumero(f.porEstado.sem_comunicacao)} sem sinal` : 'todas com sinal') : undefined,
       semDadoTexto: f ? 'nenhuma usina monitorada' : semUsinas,
     },
     {
@@ -240,7 +245,7 @@ function kpis(d: CommandCenterDados): string {
     },
     {
       rotulo: 'Vendas', valor: dd?.kpisMes.vendas ?? null, href: '/dashboard/leads/kanban', destaque: true,
-      detalhe: temNumero(dd?.kpisMes.propostas) ? `${plural(dd!.kpisMes.propostas as number, 'proposta', 'propostas')} no mês` : 'fechadas no mês',
+      detalhe: temNumero(dd?.kpisMes.propostas) ? plural(dd!.kpisMes.propostas as number, 'proposta', 'propostas') : 'fechadas no mês',
       semDadoTexto: semTexto(p, 'leads'),
     },
   ];
@@ -331,7 +336,7 @@ function geracao(d: CommandCenterDados): string {
   const desvio = temEsperada ? Math.round(((real - esp) / esp) * 1000) / 10 : null;
   const desvioHtml = `<div><span class="cc-lbl-s">Desvio</span><div class="cc-big${desvio === null ? ' cc-faint' : desvio < -10 ? ' cc-txt-crit' : desvio < 0 ? ' cc-txt-warn' : ' cc-txt-ok'}">${desvio === null ? SEM_DADO : `${desvio > 0 ? '+' : ''}${escapeHtml(fmtNumero(desvio, 1))}%`}</div></div>`;
 
-  const legenda = `<div class="cc-chart-leg"><span><i class="cc-sw-real"></i>Real</span>${temEsperada ? '<span><i class="cc-sw-esp"></i>Esperada (média de sol da região)</span>' : ''}<span class="cc-sp"></span><span class="cc-faint">Passe o mouse numa barra para ver o dia</span></div>`;
+  const legenda = `<div class="cc-chart-leg"><span><i class="cc-sw-real"></i>Real</span>${temEsperada ? '<span><i class="cc-sw-esp"></i>Esperada (média de sol da região)</span>' : ''}<span class="cc-sp"></span><span class="cc-faint cc-hide-m">Passe o mouse numa barra para ver o dia</span></div>`;
   const nota = temEsperada
     ? (completos.length < comReal.length ? '<p class="cc-nota">A esperada só aparece nos dias em que todas as usinas que mandaram dado têm a potência cadastrada.</p>' : '')
     : '<p class="cc-nota">Só a geração real: falta a potência (kWp) de alguma usina no cadastro, então a esperada ficaria errada.</p>';
@@ -419,8 +424,9 @@ function legendaSeveridades(eventos: readonly EventoAtencao[] | null, linkar: bo
   const c = eventos ? contarPorSeveridade(eventos) : null;
   return `<div class="cc-sevs">${ORDEM_SEVERIDADE.map((s) => {
     const tom = TONS[TOM_DA_SEVERIDADE[s]];
-    const inner = `<span class="cc-dot ${tom.ponto}"></span>${escapeHtml(tom.rotulo)} <b>${c ? escapeHtml(fmtNumero(c[s])) : SEM_DADO}</b>`;
-    return linkar && c ? `<a class="cc-sev" href="/dashboard/atencao?severidade=${s}">${inner}</a>` : `<span class="cc-sev">${inner}</span>`;
+    const ligada = SEVERIDADES_LIGADAS.has(s);
+    const inner = `<span class="cc-dot ${tom.ponto}"></span>${escapeHtml(tom.rotulo)} <b>${c && ligada ? escapeHtml(fmtNumero(c[s])) : SEM_DADO}</b>`;
+    return linkar && c && ligada ? `<a class="cc-sev" href="/dashboard/atencao?severidade=${s}">${inner}</a>` : `<span class="cc-sev">${inner}</span>`;
   }).join('')}</div>`;
 }
 
@@ -597,10 +603,10 @@ export function renderCentralAtencaoPage(c: CentralAtencaoDados, user?: DashUser
 
   const faixa = faixaKpis(ORDEM_SEVERIDADE.map((s): KpiInput => ({
     rotulo: TONS[TOM_DA_SEVERIDADE[s]].rotulo,
-    valor: dd ? cont[s] : null,
+    valor: dd && SEVERIDADES_LIGADAS.has(s) ? cont[s] : null,
     detalhe: TEXTO_SEVERIDADE[s],
-    href: hrefFiltro(area, sev === s ? null : s),
-    semDadoTexto: SEM_DADO_AGORA,
+    href: SEVERIDADES_LIGADAS.has(s) ? hrefFiltro(area, sev === s ? null : s) : undefined,
+    semDadoTexto: SEVERIDADES_LIGADAS.has(s) ? SEM_DADO_AGORA : EM_CONSTRUCAO,
   })), { classe: 'cc-kstrip-sev' });
 
   const areasComAviso = AREAS_EVENTO.filter((a) => todos.some((e) => e.area === a));
@@ -689,7 +695,8 @@ const CSS_COMMAND_CENTER = `
 .cc-cc .cc-hh{display:flex;align-items:center;gap:10px;margin-bottom:2px}
 .cc-cc .cc-hero-r .cc-empty{flex:1;align-items:center}
 
-.cc-cc .cc-board{display:grid;grid-template-columns:minmax(0,1fr) 452px;grid-template-areas:"gen att" "map att";gap:18px;margin-top:18px;align-items:start}
+/* linha 1 = altura da curva; a sobra da coluna da Central vai pra linha 2 (sem buraco entre os painéis) */
+.cc-cc .cc-board{display:grid;grid-template-columns:minmax(0,1fr) 452px;grid-template-rows:auto 1fr;grid-template-areas:"gen att" "map att";gap:18px;margin-top:18px;align-items:start}
 .cc-cc .cc-a-gen{grid-area:gen}.cc-cc .cc-a-map{grid-area:map}
 .cc-cc .cc-a-att{grid-area:att;background:linear-gradient(180deg,#132b47 0%,#0f2138 60%);border-color:rgba(150,185,225,.16);box-shadow:0 18px 44px rgba(0,0,0,.25);display:flex;flex-direction:column}
 .cc-cc .cc-a-att .cc-ph h3{font-size:18px}

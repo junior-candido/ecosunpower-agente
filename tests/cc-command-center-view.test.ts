@@ -115,21 +115,21 @@ describe('KPIs com dado real', () => {
   const h = pagina(dados());
   it('geração agora (telemetria), energia hoje e potência', () => {
     expect(cartaoKpi(h, 'Geração agora')).toContain('<div class="cc-val">4,3<small>kW</small></div>');
-    expect(cartaoKpi(h, 'Geração agora')).toContain('ao vivo em 1 de 2 usinas');
+    expect(cartaoKpi(h, 'Geração agora')).toContain('1 usina ao vivo');
     expect(cartaoKpi(h, 'Energia hoje')).toContain('<div class="cc-val">22<small>kWh</small></div>');
-    expect(cartaoKpi(h, 'Potência instalada')).toContain('<div class="cc-val">20,0<small>kWp</small></div>');
+    expect(cartaoKpi(h, 'Potência total')).toContain('<div class="cc-val">20,0<small>kWp</small></div>');
   });
-  it('usinas comunicando / monitoradas, com quantas estão sem comunicação', () => {
-    const c = cartaoKpi(h, 'Usinas comunicando');
+  it('usinas no ar / monitoradas, com quantas estão sem sinal', () => {
+    const c = cartaoKpi(h, 'Usinas no ar');
     expect(c).toContain('<div class="cc-val">1<small>/ 2</small></div>');
-    expect(c).toContain('1 sem comunicação');
+    expect(c).toContain('1 sem sinal');
   });
   it('faturamento recebido, leads e vendas do mês', () => {
     expect(cartaoKpi(h, 'Faturamento')).toContain('3,5<small>mil</small>');
     expect(cartaoKpi(h, 'Leads do mês')).toContain('<div class="cc-val">212</div>');
     expect(cartaoKpi(h, 'Leads do mês')).toContain('+14 desde ontem');
     expect(cartaoKpi(h, 'Vendas')).toContain('<div class="cc-val">9</div>');
-    expect(cartaoKpi(h, 'Vendas')).toContain('47 propostas no mês');
+    expect(cartaoKpi(h, 'Vendas')).toContain('47 propostas');
   });
   it('sem permissão de Financeiro → "—" + "sem acesso" (nunca 0)', () => {
     const s = pagina(dados({ permissoes: { ...TODAS_PERMISSOES, financeiro: false }, recebidoMes: null }));
@@ -192,6 +192,9 @@ describe('Central de Atenção (Home)', () => {
     expect(h).toMatch(/Crítico <b>1<\/b>/);
     expect(h).toMatch(/Atenção <b>1<\/b>/);
     expect(h).toMatch(/Acompanhar <b>1<\/b>/);
+    // nível que nenhuma fonte produz ainda: "—", nunca 0
+    expect(h).toMatch(/Oportunidade <b>—<\/b>/);
+    expect(h).toMatch(/Info <b>—<\/b>/);
     expect(h).toContain('cc-ev cc-ev-critico');
     expect(h).toContain('Perda estimada R$ 43/dia');
     expect(h).toContain('R$ 61 mil em jogo');
@@ -213,6 +216,11 @@ describe('Central de Atenção (Home)', () => {
     expect(h).toContain(ROTULO_FONTE.usinas.toLowerCase());
     expect(h).not.toContain('Tudo em dia');
     expect(h).not.toContain('Nada urgente agora');
+  });
+  it('ações com fonte faltando avisam que a ordem pode mudar', () => {
+    const falhou = fontesOk().map((f) => (f.id === 'usinas' ? { ...f, estado: 'falhou' as const } : f));
+    expect(pagina(dados({ fontes: falhou }))).toContain('a ordem pode mudar');
+    expect(pagina(dados())).not.toContain('a ordem pode mudar');
   });
   it('texto do aviso é escapado; link que não é interno cai na Central', () => {
     const h = cartaoEvento(ev({ titulo: '<img src=x onerror=alert(1)>', acao: { rotulo: 'Ver', href: 'javascript:alert(1)' } }));
@@ -292,6 +300,12 @@ describe('renderCentralAtencaoPage (/dashboard/atencao)', () => {
     expect(h).toMatch(/<a href="\/dashboard\/atencao" class="cc-on"/);
     expect(h.match(/class="cc-ev cc-ev-/g)).toHaveLength(3);
     expect(h.indexOf('Usina Z está sem gerar')).toBeLessThan(h.indexOf('3 propostas paradas'));
+  });
+  it('Oportunidade e Info ainda sem fonte: "—" + "em construção" na faixa', () => {
+    const h = pag();
+    const i = h.indexOf('<div class="cc-lbl">Oportunidade</div>');
+    expect(h.slice(i, i + 200)).toContain('<div class="cc-val">—</div>');
+    expect(h.slice(i, i + 300)).toContain('em construção');
   });
   it('filtro por área e severidade', () => {
     expect(pag({ area: 'usinas' }).match(/class="cc-ev cc-ev-/g)).toHaveLength(1);
