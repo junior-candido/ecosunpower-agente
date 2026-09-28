@@ -2,10 +2,10 @@
 //
 // Ciclos da Gestão de Energia (spec §4.2–4.6), rodados pelos crons do index.ts:
 //   agregar            — bruto (1 min / fotos da nuvem) → energia_15min → energia_diaria
-//   fecharDiasRecentes — refaz ontem e anteontem (geração que chegou atrasada)
+//   fecharDiasRecentes — refaz os últimos 7 dias + dia antigo cujas janelas mudaram (backfill)
 //   coletarNuvem       — leitor RESERVA pela nuvem Shelly (D1)
 //   vigiar             — vigia de silêncio: 1 aviso ao admin por mudança de status
-//   reter              — bruto 90 dias, 15 min 25 meses (D4)
+//   reter              — bruto 90 dias, 15 min 25 meses (D4); todos os medidores + bruto órfão
 //
 // Multi-tenant: o cron roda com service role (todas as empresas), mas TODA
 // escrita/leitura leva o company_id do próprio medidor (o repo filtra por ele).
@@ -67,9 +67,23 @@ export type Fonte = 'push' | 'nuvem' | 'backfill';
 /** Tudo que o serviço precisa do banco. Toda função recebe o medidor → filtra pelo company_id DELE. */
 export interface EnergiaDb {
   medidoresAtivos(): Promise<MedidorRow[]>;
+  /** Todos, inclusive os desligados (a retenção LGPD vale pra todos). */
+  todosMedidores(): Promise<MedidorRow[]>;
+  /**
+   * Liga ao medidor o bruto do aparelho dele que ficou sem medidor_id (gravado
+   * pelo código antigo entre aplicar a migration 136 e o Implantar, ou pelo
+   * token global antes de o aparelho ser cadastrado). Só da empresa do medidor,
+   * no máximo um lote por ciclo. `restam` = o lote encheu (pode haver mais).
+   */
+  vincularBrutoOrfao(m: MedidorRow): Promise<{ vinculadas: number; maisAntiga: string | null; restam: boolean }>;
+  /** Dias com janela de 15 min mexida desde `desdeIso` DEPOIS do fechamento do dia (ou dia nunca fechado). */
+  diasAlteradosDepoisDeFechar(m: MedidorRow, desdeIso: string): Promise<string[]>;
+  /** Bruto sem medidor (aparelho nunca cadastrado) mais velho que `iso`. Um lote por chamada. */
+  apagarBrutoOrfaoAntesDe(iso: string): Promise<number>;
   brutoEntre(m: MedidorRow, desdeIso: string, ateIso: string): Promise<LeituraBruta[]>;
   primeiraLeitura(m: MedidorRow): Promise<string | null>;
   proximaLeitura(m: MedidorRow, aposIso: string): Promise<string | null>;
+  /** Última janela AGREGADA do bruto (push/nuvem). Janela de backfill não conta: o cursor não pula bruto. */
   ultimaJanela(m: MedidorRow): Promise<string | null>;
   gravarJanelas(m: MedidorRow, js: Janela15[], fonte: Fonte): Promise<void>;
   janelasDoDia(m: MedidorRow, dia: string): Promise<Janela15[]>;
@@ -101,6 +115,10 @@ export const COBERTURA_DIA_COMPLETO_PCT = 95;
 const NUVEM_RESERVA_APOS_MS = 20 * 60_000;
 /** Quantos dias o fechamento da madrugada refaz (96 janelas por dia por medidor: barato). */
 export const DIAS_REFEITOS_A_NOITE = 7;
+/** Dias antigos (janela mexida depois de fechar, ex.: backfill colado) refeitos por medidor por noite. */
+export const MAX_DIAS_ALTERADOS_POR_NOITE = 62;
+/** refazerDias à mão: teto do intervalo (o 15 min guarda 25 meses). */
+const MAX_DIAS_REFAZER = 400;
 const RETENCAO_BRUTO_DIAS = 90;
 const RETENCAO_15MIN_MESES = 25;
 
@@ -119,10 +137,10 @@ export class EnergiaService {
     this.adapterDe = o.adapter ?? getMedidorAdapter;
   }
 
-  /** Medidores ativos; tabela ausente (migration não aplicada) → lista vazia + aviso único. */
-  private async medidores(onde: string): Promise<MedidorRow[] | null> {
+  /** Medidores ativos (ou todos); tabela ausente (migration não aplicada) → null + aviso único. */
+  private async medidores(onde: string, todos = false): Promise<MedidorRow[] | null> {
     try {
-      return await this.db.medidoresAtivos();
+      return todos ? await this.db.todosMedidores() : await this.db.medidoresAtivos();
     } catch (err) {
       if (tabelaAusente(err as { code?: string; message?: string })) { avisarMigrationAusente(onde); return null; }
       throw err;
@@ -154,6 +172,12 @@ export class EnergiaService {
 
   private async agregarMedidor(m: MedidorRow, agora: Date): Promise<{ janelas: number; dias: number }> {
     const fechadaAte = inicioJanela(agora.getTime()); // só janela FECHADA
+    // 1º liga o bruto órfão do aparelho (senão ele nunca seria agregado).
+    const orfao = await this.db.vincularBrutoOrfao(m);
+    if (orfao.vinculadas > 0) console.log(`[energia] ${orfao.vinculadas} leitura(s) solta(s) ligada(s) ao medidor=${m.id}`);
+    // Lote cheio: pode haver mais órfão. Agregar agora faria o cursor passar por
+    // cima dele; o próximo ciclo liga o resto e aí agrega.
+    if (orfao.restam) return { janelas: 0, dias: 0 };
     const ultima = await this.db.ultimaJanela(m);
     let cursor: number;
     if (ultima) cursor = Date.parse(ultima); // refaz a última (podia estar parcial)
@@ -162,6 +186,8 @@ export class EnergiaService {
       if (!primeira) return { janelas: 0, dias: 0 };
       cursor = inicioJanela(Date.parse(primeira));
     }
+    // Órfão mais velho que o cursor: volta até ele (refazer janela é upsert).
+    if (orfao.maisAntiga) cursor = Math.min(cursor, inicioJanela(Date.parse(orfao.maisAntiga)));
 
     const diasTocados = new Set<string>();
     let total = 0;
@@ -205,15 +231,30 @@ export class EnergiaService {
     return true;
   }
 
-  /** 00h–01h de Brasília: refaz os últimos 7 dias (geração que chegou atrasada e backfill da memória do aparelho). */
+  /**
+   * 00h–01h de Brasília: refaz os últimos 7 dias (geração que chegou atrasada)
+   * e, além deles, todo dia cujas janelas de 15 min mudaram DEPOIS de o dia ser
+   * fechado (backfill colado no SQL Editor, bruto órfão ligado) — até
+   * MAX_DIAS_ALTERADOS_POR_NOITE por medidor; o resto fica pra noite seguinte.
+   */
   async fecharDiasRecentes(agora: Date): Promise<{ medidores: number; dias: number }> {
     const out = { medidores: 0, dias: 0 };
     const ms = await this.medidores('fechamento');
     if (!ms) return out;
     const hoje = diaBrt(agora);
+    const desde = new Date(agora.getTime() - DIAS_REFEITOS_A_NOITE * DIA_MS).toISOString();
     for (const m of ms) {
       out.medidores++;
-      for (const dia of Array.from({ length: DIAS_REFEITOS_A_NOITE }, (_, i) => somarDias(hoje, -(i + 1)))) {
+      const recentes = Array.from({ length: DIAS_REFEITOS_A_NOITE }, (_, i) => somarDias(hoje, -(i + 1)));
+      let alterados: string[] = [];
+      try {
+        alterados = (await this.db.diasAlteradosDepoisDeFechar(m, desde))
+          .filter((d) => d < hoje && !recentes.includes(d))
+          .slice(0, MAX_DIAS_ALTERADOS_POR_NOITE);
+      } catch (err) {
+        console.warn(`[energia] fechamento: busca de dias mexidos falhou medidor=${m.id}: ${erroCurto(err)}`);
+      }
+      for (const dia of [...recentes, ...alterados]) {
         try {
           if (await this.fecharDia(m, dia)) out.dias++;
         } catch (err) {
@@ -223,6 +264,24 @@ export class EnergiaService {
     }
     console.log(`[energia] fechamento: ${out.dias} dia(s) de ${out.medidores} medidor(es)`);
     return out;
+  }
+
+  /**
+   * Refaz à mão o resumo de cada dia de `de` a `ate` (inclusive) — usado pelo
+   * scripts/energia-refazer-dias.ts. A madrugada já faz isso sozinha pros dias
+   * mexidos nos últimos 7 dias; este é o caminho pra um intervalo maior.
+   */
+  async refazerDias(m: MedidorRow, de: string, ate: string): Promise<number> {
+    const data = /^\d{4}-\d{2}-\d{2}$/;
+    if (!data.test(de) || !data.test(ate) || de > ate) throw new Error('intervalo inválido (use AAAA-MM-DD, com o início antes do fim)');
+    const dias: string[] = [];
+    for (let d = de; d <= ate; d = somarDias(d, 1)) {
+      dias.push(d);
+      if (dias.length > MAX_DIAS_REFAZER) throw new Error(`intervalo grande demais (máximo ${MAX_DIAS_REFAZER} dias)`);
+    }
+    let feitos = 0;
+    for (const dia of dias) if (await this.fecharDia(m, dia)) feitos++;
+    return feitos;
   }
 
   // -------------------------------------------------------------------------
@@ -402,25 +461,39 @@ export class EnergiaService {
   // Retenção (D4)
   // -------------------------------------------------------------------------
 
+  /**
+   * Retenção (LGPD): TODOS os medidores, inclusive os desligados, e o bruto
+   * órfão (aparelho que mandou dado e nunca foi cadastrado).
+   */
   async reter(agora: Date): Promise<{ bruto: number; janelas: number }> {
     const out = { bruto: 0, janelas: 0 };
-    const ms = await this.medidores('retencao');
+    const ms = await this.medidores('retencao', true);
     if (!ms) return out;
     const corteBruto = agora.getTime() - RETENCAO_BRUTO_DIAS * DIA_MS;
     const c15 = new Date(agora.getTime());
     c15.setUTCMonth(c15.getUTCMonth() - RETENCAO_15MIN_MESES);
     for (const m of ms) {
       try {
-        // Bruto só sai depois de virar 15 min: nunca apaga além da última janela agregada.
-        const ultima = await this.db.ultimaJanela(m);
-        if (ultima) {
-          const corte = Math.min(corteBruto, Date.parse(ultima));
-          out.bruto += await this.db.apagarBrutoAntesDe(m, new Date(corte).toISOString());
+        if (m.ativo === false) {
+          // Desligado não agrega mais: o bruto sai aos 90 dias, sem esperar janela.
+          out.bruto += await this.db.apagarBrutoAntesDe(m, new Date(corteBruto).toISOString());
+        } else {
+          // Bruto só sai depois de virar 15 min: nunca apaga além da última janela agregada.
+          const ultima = await this.db.ultimaJanela(m);
+          if (ultima) {
+            const corte = Math.min(corteBruto, Date.parse(ultima));
+            out.bruto += await this.db.apagarBrutoAntesDe(m, new Date(corte).toISOString());
+          }
         }
         out.janelas += await this.db.apagar15minAntesDe(m, c15.toISOString());
       } catch (err) {
         console.warn(`[energia] retencao falhou medidor=${m.id}: ${erroCurto(err)}`);
       }
+    }
+    try {
+      out.bruto += await this.db.apagarBrutoOrfaoAntesDe(new Date(corteBruto).toISOString());
+    } catch (err) {
+      console.warn(`[energia] retencao do bruto orfao falhou: ${erroCurto(err)}`);
     }
     if (out.bruto > 0 || out.janelas > 0) console.log(`[energia] retencao: ${out.bruto} leitura(s) bruta(s) e ${out.janelas} janela(s) apagada(s)`);
     return out;

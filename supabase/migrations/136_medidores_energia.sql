@@ -95,11 +95,30 @@ create index if not exists medidores_energia_empresa
   on medidores_energia (company_id);
 
 -- Vínculo do bruto (1 min) com o medidor. Apagar o medidor apaga o bruto dele.
--- Leituras antigas ganham o vínculo no bloco do piloto, lá embaixo.
-alter table medicoes_shelly add column if not exists medidor_id uuid references medidores_energia(id) on delete cascade;
+-- Leituras antigas ganham o vínculo no bloco do piloto, lá embaixo; as que
+-- chegarem entre aplicar este arquivo e o Implantar são ligadas pelo próprio
+-- servidor no 1º ciclo de agregação (vincularBrutoOrfao).
+alter table medicoes_shelly add column if not exists medidor_id uuid;
+-- FK COMPOSTA (medidor_id, company_id): a leitura é do medidor E da empresa
+-- dele — nunca aponta pra medidor de outra empresa. Linha sem medidor
+-- (medidor_id null) não é conferida. Versões anteriores deste arquivo criavam
+-- uma FK simples (medicoes_shelly_medidor_id_fkey): sai e entra a composta.
+alter table medicoes_shelly drop constraint if exists medicoes_shelly_medidor_id_fkey;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'medicoes_shelly_medidor_fk') then
+    alter table medicoes_shelly
+      add constraint medicoes_shelly_medidor_fk foreign key (medidor_id, company_id)
+      references medidores_energia (id, company_id) on delete cascade;
+  end if;
+end $$;
 -- A agregação lê por (medidor, canal, período).
 drop index if exists medicoes_shelly_medidor_tempo;
 create index if not exists medicoes_shelly_medidor_canal_tempo on medicoes_shelly (medidor_id, canal, medido_em);
+-- Leituras SEM medidor (órfãs): o servidor procura a cada 15 min pra ligar ao
+-- medidor e apaga as de mais de 90 dias. Índice parcial: fica minúsculo.
+create index if not exists medicoes_shelly_orfas
+  on medicoes_shelly (company_id, device_id, medido_em) where medidor_id is null;
 
 -- ISOLAMENTO POR EMPRESA (mesmo texto da 123 / 129).
 ALTER TABLE public.medidores_energia ENABLE ROW LEVEL SECURITY;

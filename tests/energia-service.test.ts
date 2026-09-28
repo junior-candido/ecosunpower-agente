@@ -36,7 +36,8 @@ function repoFalso(ms: MedidorRow[], bruto: Record<string, LeituraBruta[]> = {})
     brutoEntre: vi.fn(async (m, desde, ate) => (bruto[m.id] ?? []).filter((l) => l.medidoEm >= desde && l.medidoEm < ate)),
     primeiraLeitura: vi.fn(async (m) => (bruto[m.id] ?? [])[0]?.medidoEm ?? null),
     proximaLeitura: vi.fn(async (m, apos) => (bruto[m.id] ?? []).find((l) => l.medidoEm >= apos)?.medidoEm ?? null),
-    ultimaJanela: vi.fn(async (m) => [...janelas.values()].filter((j) => j.inicio && janelas.has(`${m.id}|${j.inicio}`)).map((j) => j.inicio).sort().pop() ?? null),
+    // Contrato do repo: janela de backfill NÃO conta como "já agregado" (o cursor não pula bruto).
+    ultimaJanela: vi.fn(async (m) => [...janelas.entries()].filter(([k, j]) => k.startsWith(`${m.id}|`) && j.fonte !== 'backfill').map(([, j]) => j.inicio).sort().pop() ?? null),
     gravarJanelas: vi.fn(async (m, js, fonte) => { for (const j of js) janelas.set(`${m.id}|${j.inicio}`, { ...j, fonte, company: m.company_id }); }),
     janelasDoDia: vi.fn(async (m) => [...janelas.entries()].filter(([k]) => k.startsWith(`${m.id}|`)).map(([, j]) => j)),
     geracaoDoDia: vi.fn(async () => 27),
@@ -45,6 +46,10 @@ function repoFalso(ms: MedidorRow[], bruto: Record<string, LeituraBruta[]> = {})
     atualizarStatus: vi.fn(async (m, p) => { status.push([m.id, p as Record<string, unknown>]); }),
     apagarBrutoAntesDe: vi.fn(async () => 0),
     apagar15minAntesDe: vi.fn(async () => 0),
+    todosMedidores: vi.fn(async () => ms),
+    vincularBrutoOrfao: vi.fn(async () => ({ vinculadas: 0, maisAntiga: null, restam: false })),
+    diasAlteradosDepoisDeFechar: vi.fn(async () => [] as string[]),
+    apagarBrutoOrfaoAntesDe: vi.fn(async () => 0),
   };
   return { db, janelas, dias, status, sinteticas };
 }
@@ -384,5 +389,102 @@ describe('reter', () => {
     const r = repoFalso([medidor()]);
     await new EnergiaService(r.db).reter(new Date('2026-09-28T12:00:00Z'));
     expect(r.db.apagarBrutoAntesDe).not.toHaveBeenCalled();
+  });
+});
+
+describe('bruto órfão (gravado entre a migration 136 e o Implantar)', () => {
+  it('liga o bruto órfão do aparelho ANTES de agregar e volta o cursor até ele', async () => {
+    const m = medidor();
+    const r = repoFalso([m], { m1: brutoMinutos('2026-09-08T03:00:00Z', 170) });
+    // Já existe janela de push às 05:00: sem voltar o cursor, 03:00–04:45 ficaria de fora.
+    r.janelas.set('m1|2026-09-08T05:00:00.000Z', { ...(null as unknown as Janela15), inicio: '2026-09-08T05:00:00.000Z', importadoWh: 1, exportadoWh: 0, potenciaMaxW: null, tensaoMinV: null, tensaoMaxV: null, tensaoMedV: null, fpMedio: null, minTensaoPrecaria: 0, minTensaoCritica: 0, minAcima242: 0, segundosCobertos: 900, fonte: 'push', company: EMPRESA_A });
+    (r.db.vincularBrutoOrfao as ReturnType<typeof vi.fn>).mockResolvedValue({ vinculadas: 120, maisAntiga: '2026-09-08T03:00:00.000Z', restam: false });
+    await new EnergiaService(r.db).agregar(new Date('2026-09-08T05:50:30Z'));
+    const vinc = (r.db.vincularBrutoOrfao as ReturnType<typeof vi.fn>).mock;
+    const ult = (r.db.ultimaJanela as ReturnType<typeof vi.fn>).mock;
+    expect(vinc.calls[0][0]).toMatchObject({ id: 'm1', company_id: EMPRESA_A });
+    expect(vinc.invocationCallOrder[0]).toBeLessThan(ult.invocationCallOrder[0]);
+    expect(r.janelas.get('m1|2026-09-08T03:00:00.000Z')?.segundosCobertos).toBe(900);
+    expect(r.janelas.get('m1|2026-09-08T04:45:00.000Z')?.segundosCobertos).toBe(900);
+  });
+
+  it('ainda sobrou órfão (passou do limite do ciclo): não agrega esse medidor agora (o cursor não passa por cima)', async () => {
+    const m = medidor();
+    const r = repoFalso([m], { m1: brutoMinutos('2026-09-08T03:00:00Z', 50) });
+    (r.db.vincularBrutoOrfao as ReturnType<typeof vi.fn>).mockResolvedValue({ vinculadas: 5000, maisAntiga: '2026-09-08T03:00:00.000Z', restam: true });
+    const out = await new EnergiaService(r.db).agregar(new Date('2026-09-08T03:50:30Z'));
+    expect(out.janelas).toBe(0);
+    expect(r.db.brutoEntre).not.toHaveBeenCalled();
+  });
+
+  it('janela de backfill mais nova que o bruto não faz o cursor pular o bruto', async () => {
+    const m = medidor();
+    const r = repoFalso([m], { m1: brutoMinutos('2026-09-08T03:00:00Z', 50) });
+    r.janelas.set('m1|2026-09-08T10:00:00.000Z', { inicio: '2026-09-08T10:00:00.000Z', importadoWh: 1, exportadoWh: 0, potenciaMaxW: null, tensaoMinV: null, tensaoMaxV: null, tensaoMedV: null, fpMedio: null, minTensaoPrecaria: 0, minTensaoCritica: 0, minAcima242: 0, segundosCobertos: 900, fonte: 'backfill', company: EMPRESA_A });
+    await new EnergiaService(r.db).agregar(new Date('2026-09-08T11:00:00Z'));
+    expect(r.janelas.get('m1|2026-09-08T03:15:00.000Z')?.fonte).toBe('push');
+  });
+});
+
+describe('dias refeitos depois de fechados (backfill colado)', () => {
+  const diasFechados = (r: ReturnType<typeof repoFalso>) => (r.db.janelasDoDia as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1] as string);
+
+  it('a madrugada refaz também o dia antigo cujas janelas mudaram depois do fechamento (sem repetir os 7 dias)', async () => {
+    const r = repoFalso([medidor()]);
+    (r.db.diasAlteradosDepoisDeFechar as ReturnType<typeof vi.fn>).mockResolvedValue(['2026-08-01', '2026-09-25']);
+    const agora = new Date('2026-09-28T03:30:00Z'); // 00h30 BRT
+    await new EnergiaService(r.db).fecharDiasRecentes(agora);
+    const [m, desde] = (r.db.diasAlteradosDepoisDeFechar as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(m).toMatchObject({ id: 'm1', company_id: EMPRESA_A });
+    expect(desde).toBe('2026-09-21T03:30:00.000Z'); // olha as janelas mexidas nos últimos 7 dias
+    const dias = diasFechados(r);
+    expect(dias).toContain('2026-08-01');
+    expect(dias.filter((d) => d === '2026-09-25')).toHaveLength(1);
+  });
+
+  it('limite por noite: no máximo 62 dias antigos por medidor (o resto fica pra noite seguinte)', async () => {
+    const r = repoFalso([medidor()]);
+    const muitos = Array.from({ length: 100 }, (_, i) => new Date(Date.parse('2026-05-01T12:00:00Z') + i * 86_400_000).toISOString().slice(0, 10));
+    (r.db.diasAlteradosDepoisDeFechar as ReturnType<typeof vi.fn>).mockResolvedValue(muitos);
+    await new EnergiaService(r.db).fecharDiasRecentes(new Date('2026-09-28T03:30:00Z'));
+    expect(diasFechados(r)).toHaveLength(7 + 62);
+  });
+
+  it('se a busca dos dias mexidos falhar, os 7 dias de sempre são refeitos', async () => {
+    const r = repoFalso([medidor()]);
+    (r.db.diasAlteradosDepoisDeFechar as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('boom'));
+    await new EnergiaService(r.db).fecharDiasRecentes(new Date('2026-09-28T03:30:00Z'));
+    expect(diasFechados(r)).toHaveLength(7);
+  });
+
+  it('refazerDias: refaz cada dia do intervalo (inclusive) e recusa intervalo invertido ou grande demais', async () => {
+    const r = repoFalso([medidor()]);
+    const s = new EnergiaService(r.db);
+    await s.refazerDias(medidor(), '2026-09-01', '2026-09-03');
+    expect(diasFechados(r)).toEqual(['2026-09-01', '2026-09-02', '2026-09-03']);
+    await expect(s.refazerDias(medidor(), '2026-09-03', '2026-09-01')).rejects.toThrow();
+    await expect(s.refazerDias(medidor(), '2025-01-01', '2026-09-01')).rejects.toThrow();
+  });
+});
+
+describe('reter — todos os medidores e órfãos (LGPD 90 dias)', () => {
+  it('medidor DESLIGADO também perde o bruto de mais de 90 dias (mesmo sem janela agregada)', async () => {
+    const ativo = medidor({ id: 'a' });
+    const desligado = medidor({ id: 'd', ativo: false });
+    const r = repoFalso([ativo]);
+    (r.db.todosMedidores as ReturnType<typeof vi.fn>).mockResolvedValue([ativo, desligado]);
+    await new EnergiaService(r.db).reter(new Date('2026-09-28T12:00:00Z'));
+    const calls = (r.db.apagarBrutoAntesDe as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls).toEqual([[expect.objectContaining({ id: 'd' }), '2026-06-30T12:00:00.000Z']]);
+    const c15 = (r.db.apagar15minAntesDe as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0].id);
+    expect(c15).toEqual(['a', 'd']);
+  });
+
+  it('apaga o bruto ÓRFÃO (sem medidor) de mais de 90 dias', async () => {
+    const r = repoFalso([]);
+    (r.db.apagarBrutoOrfaoAntesDe as ReturnType<typeof vi.fn>).mockResolvedValue(3);
+    const out = await new EnergiaService(r.db).reter(new Date('2026-09-28T12:00:00Z'));
+    expect(r.db.apagarBrutoOrfaoAntesDe).toHaveBeenCalledWith('2026-06-30T12:00:00.000Z');
+    expect(out.bruto).toBe(3);
   });
 });

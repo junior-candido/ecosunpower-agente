@@ -9,10 +9,29 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { EnergiaDb, MedidorRow, DiaParaGravar, Fonte } from './energia-service.js';
 import type { Janela15, LeituraBruta } from './agregacao.js';
 import type { LeituraMedidor } from './types.js';
-import { inicioDoDiaBrtIso, limitarAoAgora, somarDias } from './tempo.js';
+import { diaBrt, inicioDoDiaBrtIso, limitarAoAgora, somarDias } from './tempo.js';
+import { normalizarDeviceId } from './credenciais.js';
 
 const PAGINA = 1000;
 const LIMITE_PAGINAS = 60; // 60 mil linhas por chamada: teto de segurança (1 dia = 1.440)
+/** Bruto órfão ligado/apagado por chamada (o resto fica pro ciclo seguinte). */
+const LOTE_ORFAOS = 5000;
+/** Ids por update/delete (vai na URL do PostgREST: 250 uuids ≈ 9 kB). */
+const PEDACO_IDS = 250;
+
+/**
+ * Como o device_id pode estar gravado no bruto antigo: com ou sem o prefixo do
+ * modelo, e com o código em minúsculas ou maiúsculas (o código antigo gravava
+ * o que o aparelho mandava). O novo grava sempre normalizado.
+ */
+export function formasDoDeviceId(deviceId: string): string[] {
+  const dev = normalizarDeviceId(deviceId);
+  const out = new Set<string>();
+  for (const cod of [dev, dev.toUpperCase()]) {
+    for (const prefixo of ['', 'shellypro3em-', 'ShellyPro3EM-', 'shellyproem50-']) out.add(prefixo + cod);
+  }
+  return [...out];
+}
 
 export const COLUNAS_MEDIDOR =
   'id, company_id, lead_id, sistema_id, apelido, device_id, modo_coleta, perfil, canais, tensao_nominal_v, api_credentials_cifrado, ativo, status, status_desde, ultima_leitura_em, ultimo_erro, nuvem_ok, nuvem_desde, nuvem_avisado_em, aviso_dia, avisos_no_dia';
@@ -69,6 +88,69 @@ export function criarEnergiaRepo(client: SupabaseClient): EnergiaDb {
       return (data ?? []) as unknown as MedidorRow[];
     },
 
+    async todosMedidores() {
+      const { data, error } = await client.from('medidores_energia').select(COLUNAS_MEDIDOR).limit(5000);
+      if (error) falhou('medidores_energia', error);
+      return (data ?? []) as unknown as MedidorRow[];
+    },
+
+    async vincularBrutoOrfao(m) {
+      // Índice parcial medicoes_shelly_orfas (136): sem órfão, a busca é de graça.
+      const { data, error } = await client.from('medicoes_shelly').select('id, medido_em')
+        .eq('company_id', m.company_id).is('medidor_id', null).in('device_id', formasDoDeviceId(m.device_id))
+        .order('medido_em', { ascending: true }).limit(LOTE_ORFAOS);
+      if (error) falhou('medicoes_shelly', error);
+      const linhas = (data ?? []) as Array<{ id: string; medido_em: string }>;
+      if (linhas.length === 0) return { vinculadas: 0, maisAntiga: null, restam: false };
+      for (let i = 0; i < linhas.length; i += PEDACO_IDS) {
+        const ids = linhas.slice(i, i + PEDACO_IDS).map((l) => l.id);
+        // `is null` de novo: rodar duas vezes (ou em paralelo) não troca o dono de nada.
+        const { error: e2 } = await client.from('medicoes_shelly').update({ medidor_id: m.id })
+          .eq('company_id', m.company_id).is('medidor_id', null).in('id', ids);
+        if (e2) falhou('medicoes_shelly', e2);
+      }
+      return { vinculadas: linhas.length, maisAntiga: new Date(linhas[0].medido_em).toISOString(), restam: linhas.length >= LOTE_ORFAOS };
+    },
+
+    async diasAlteradosDepoisDeFechar(m, desde) {
+      const linhas = await paginar<{ inicio: string; atualizado_em: string }>((de, a) => client.from('energia_15min')
+        .select('inicio, atualizado_em')
+        .eq('company_id', m.company_id).eq('medidor_id', m.id).eq('papel', 'rede').eq('canal', canalRede(m))
+        .gte('atualizado_em', desde)
+        .order('inicio', { ascending: true }).range(de, a), 'energia_15min');
+      const mexidoEm = new Map<string, number>();
+      for (const l of linhas) {
+        const dia = diaBrt(l.inicio);
+        mexidoEm.set(dia, Math.max(mexidoEm.get(dia) ?? 0, Date.parse(l.atualizado_em)));
+      }
+      const dias = [...mexidoEm.keys()].sort();
+      const fechadoEm = new Map<string, number>();
+      for (let i = 0; i < dias.length; i += 100) {
+        const { data, error } = await client.from('energia_diaria').select('dia, fechado_em')
+          .eq('company_id', m.company_id).eq('medidor_id', m.id).in('dia', dias.slice(i, i + 100));
+        if (error) falhou('energia_diaria', error);
+        for (const r of (data ?? []) as Array<{ dia: string; fechado_em: string }>) fechadoEm.set(String(r.dia).slice(0, 10), Date.parse(r.fechado_em));
+      }
+      return dias.filter((d) => !fechadoEm.has(d) || fechadoEm.get(d)! < mexidoEm.get(d)!);
+    },
+
+    async apagarBrutoOrfaoAntesDe(iso) {
+      // Sem company_id de propósito: é a limpeza do cron (service role) do bruto
+      // que NÃO é de medidor nenhum. Um lote por dia; o índice parcial das órfãs acha rápido.
+      const { data, error } = await client.from('medicoes_shelly').select('id')
+        .is('medidor_id', null).lt('medido_em', iso).limit(LOTE_ORFAOS);
+      if (error) falhou('medicoes_shelly', error);
+      const ids = ((data ?? []) as Array<{ id: string }>).map((r) => r.id);
+      let apagadas = 0;
+      for (let i = 0; i < ids.length; i += PEDACO_IDS) {
+        const { count, error: e2 } = await client.from('medicoes_shelly').delete({ count: 'exact' })
+          .is('medidor_id', null).in('id', ids.slice(i, i + PEDACO_IDS));
+        if (e2) falhou('medicoes_shelly', e2);
+        apagadas += count ?? 0;
+      }
+      return apagadas;
+    },
+
     async brutoEntre(m, desde, ate) {
       const linhas = await paginar<Record<string, unknown>>((de, a) => client.from('medicoes_shelly')
         .select('medido_em, potencia_w, tensao, fator_potencia, energia_wh, energia_devolvida_wh')
@@ -102,6 +184,9 @@ export function criarEnergiaRepo(client: SupabaseClient): EnergiaDb {
     async ultimaJanela(m) {
       const { data, error } = await client.from('energia_15min').select('inicio')
         .eq('company_id', m.company_id).eq('medidor_id', m.id).eq('papel', 'rede').eq('canal', canalRede(m))
+        // Backfill (colado à mão) não é "já agregado": se contasse, o cursor
+        // pularia o bruto que ainda não virou 15 min.
+        .neq('fonte', 'backfill')
         .order('inicio', { ascending: false }).limit(1);
       if (error) falhou('energia_15min', error);
       const v = (data?.[0] as { inicio?: string } | undefined)?.inicio;

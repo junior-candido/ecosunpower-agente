@@ -22,7 +22,7 @@ function clienteFalso(respostaLinhas: unknown[] = []) {
     q.upsert = (p: unknown) => { reg.op = 'upsert'; reg.payload = p; return q; };
     q.update = (p: unknown) => { reg.op = 'update'; reg.payload = p; return q; };
     q.delete = () => { reg.op = 'delete'; return q; };
-    for (const f of ['eq', 'gte', 'lt']) q[f] = (c: string, v: unknown) => { reg.filtros.push([c, v]); return q; };
+    for (const f of ['eq', 'neq', 'gte', 'lt']) q[f] = (c: string, v: unknown) => { reg.filtros.push([c, v]); return q; };
     q.order = () => q; q.limit = () => q; q.range = () => q;
     q.then = (ok: (r: unknown) => unknown) => Promise.resolve({ data: respostaLinhas, error: null, count: 0 }).then(ok);
     return q;
@@ -91,5 +91,93 @@ describe('energia-repo: company_id do medidor em toda operação', () => {
     const { client, chamadas } = clienteFalso();
     await criarEnergiaRepo(client).medidoresAtivos();
     expect(chamadas[0].filtros).toContainEqual(['ativo', true]);
+  });
+});
+
+/** Cliente falso que responde por tabela e guarda o tipo de cada filtro. */
+function clientePorTabela(resp: Record<string, unknown[]> = {}) {
+  const chamadas: Array<{ tabela: string; op: string; filtros: Array<[string, string, unknown]>; payload?: unknown; limite?: number }> = [];
+  const from = vi.fn((tabela: string) => {
+    const reg = { tabela, op: 'select', filtros: [] as Array<[string, string, unknown]>, payload: undefined as unknown, limite: undefined as number | undefined };
+    chamadas.push(reg);
+    const q: Record<string, unknown> = {};
+    q.select = () => q;
+    q.update = (p: unknown) => { reg.op = 'update'; reg.payload = p; return q; };
+    q.delete = () => { reg.op = 'delete'; return q; };
+    for (const f of ['eq', 'neq', 'gte', 'lt', 'in', 'is']) q[f] = (c: string, v: unknown) => { reg.filtros.push([f, c, v]); return q; };
+    q.order = () => q; q.range = () => q;
+    q.limit = (n: number) => { reg.limite = n; return q; };
+    q.then = (ok: (r: unknown) => unknown) => Promise.resolve({ data: reg.op === 'select' ? (resp[tabela] ?? []) : null, error: null, count: 0 }).then(ok);
+    return q;
+  });
+  return { client: { from } as unknown as SupabaseClient, chamadas };
+}
+
+describe('energia-repo: G1 revisão 2', () => {
+  const MP: MedidorRow = { ...M, device_id: '007007422d90' };
+
+  it('ultimaJanela ignora janela de backfill (o cursor não pula bruto)', async () => {
+    const { client, chamadas } = clientePorTabela();
+    await criarEnergiaRepo(client).ultimaJanela(MP);
+    expect(chamadas[0].filtros).toContainEqual(['neq', 'fonte', 'backfill']);
+  });
+
+  it('todosMedidores inclui os desligados (sem filtro de ativo)', async () => {
+    const { client, chamadas } = clientePorTabela();
+    await criarEnergiaRepo(client).todosMedidores();
+    expect(chamadas[0].filtros.some((f) => f[1] === 'ativo')).toBe(false);
+  });
+
+  it('vincularBrutoOrfao: só órfão da empresa do medidor, com e sem prefixo do modelo, em lote limitado e idempotente', async () => {
+    const linhas = [{ id: 'r1', medido_em: '2026-09-28T10:00:00+00:00' }, { id: 'r2', medido_em: '2026-09-28T10:01:00+00:00' }];
+    const { client, chamadas } = clientePorTabela({ medicoes_shelly: linhas });
+    const r = await criarEnergiaRepo(client).vincularBrutoOrfao(MP);
+    expect(r).toEqual({ vinculadas: 2, maisAntiga: '2026-09-28T10:00:00.000Z', restam: false });
+    const sel = chamadas[0];
+    expect(sel.filtros).toContainEqual(['eq', 'company_id', 'empresa-X']);
+    expect(sel.filtros).toContainEqual(['is', 'medidor_id', null]);
+    const formas = sel.filtros.find((f) => f[0] === 'in' && f[1] === 'device_id')![2] as string[];
+    expect(formas).toEqual(expect.arrayContaining(['007007422d90', 'shellypro3em-007007422d90', 'shellypro3em-007007422D90']));
+    expect(sel.limite).toBeGreaterThan(0);
+    const upd = chamadas.find((c) => c.op === 'update')!;
+    expect(upd.payload).toEqual({ medidor_id: 'm1' });
+    expect(upd.filtros).toContainEqual(['eq', 'company_id', 'empresa-X']);
+    expect(upd.filtros).toContainEqual(['is', 'medidor_id', null]); // idempotente: não rouba linha já ligada
+    expect(upd.filtros).toContainEqual(['in', 'id', ['r1', 'r2']]);
+  });
+
+  it('vincularBrutoOrfao sem órfão: não faz update', async () => {
+    const { client, chamadas } = clientePorTabela();
+    const r = await criarEnergiaRepo(client).vincularBrutoOrfao(MP);
+    expect(r).toEqual({ vinculadas: 0, maisAntiga: null, restam: false });
+    expect(chamadas.some((c) => c.op === 'update')).toBe(false);
+  });
+
+  it('diasAlteradosDepoisDeFechar: dia com janela mexida depois do fechamento, ou nunca fechado', async () => {
+    const { client, chamadas } = clientePorTabela({
+      energia_15min: [
+        { inicio: '2026-09-08T03:00:00+00:00', atualizado_em: '2026-09-28T10:00:00+00:00' }, // dia 08, fechado depois → não
+        { inicio: '2026-09-09T03:00:00+00:00', atualizado_em: '2026-09-28T10:00:00+00:00' }, // dia 09, fechado antes → sim
+        { inicio: '2026-09-10T02:45:00+00:00', atualizado_em: '2026-09-28T10:00:00+00:00' }, // 23h45 BRT do dia 09
+        { inicio: '2026-09-10T03:00:00+00:00', atualizado_em: '2026-09-28T10:00:00+00:00' }, // dia 10, sem dia → sim
+      ],
+      energia_diaria: [
+        { dia: '2026-09-08', fechado_em: '2026-09-28T11:00:00+00:00' },
+        { dia: '2026-09-09', fechado_em: '2026-09-20T00:00:00+00:00' },
+      ],
+    });
+    const dias = await criarEnergiaRepo(client).diasAlteradosDepoisDeFechar(MP, '2026-09-21T00:00:00.000Z');
+    expect(dias).toEqual(['2026-09-09', '2026-09-10']);
+    for (const c of chamadas) expect(c.filtros, c.tabela).toContainEqual(['eq', 'company_id', 'empresa-X']);
+    expect(chamadas[0].filtros).toContainEqual(['gte', 'atualizado_em', '2026-09-21T00:00:00.000Z']);
+  });
+
+  it('apagarBrutoOrfaoAntesDe: só linha SEM medidor e mais velha que o corte, em lote', async () => {
+    const { client, chamadas } = clientePorTabela({ medicoes_shelly: [{ id: 'x1' }, { id: 'x2' }] });
+    await criarEnergiaRepo(client).apagarBrutoOrfaoAntesDe('2026-06-30T12:00:00.000Z');
+    expect(chamadas[0].filtros).toEqual(expect.arrayContaining([['is', 'medidor_id', null], ['lt', 'medido_em', '2026-06-30T12:00:00.000Z']]));
+    expect(chamadas[0].limite).toBeGreaterThan(0);
+    const del = chamadas.find((c) => c.op === 'delete')!;
+    expect(del.filtros).toEqual(expect.arrayContaining([['is', 'medidor_id', null], ['in', 'id', ['x1', 'x2']]]));
   });
 });

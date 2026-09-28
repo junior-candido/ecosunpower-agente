@@ -20,10 +20,12 @@
 //   --saida     arquivo .sql (padrão: backfill-<device>-<de>-<ate>.sql na pasta atual)
 //
 // Depois: abrir o .sql, conferir as primeiras linhas, colar no SQL Editor do
-// Supabase e rodar. O resumo do DIA (energia_diaria) é refeito pelo fechamento
-// da madrugada (00h de Brasília), que refaz os últimos 7 dias — por isso o
-// backfill serve para buracos da última semana. Buraco mais antigo entra no
-// 15 min, mas o gráfico diário daquele dia só muda se o dia for refeito.
+// Supabase e rodar — SÓ DEPOIS do Implantar (o servidor novo é que sabe que
+// janela de backfill não conta como "já agregado"). O resumo do DIA
+// (energia_diaria) é refeito sozinho na madrugada seguinte (00h de Brasília):
+// ela refaz todo dia cuja janela de 15 min mudou depois de o dia ser fechado
+// (até 62 dias por noite). Pra não esperar, ou pra mais de 62 dias:
+//   npx tsx scripts/energia-refazer-dias.ts --device <código> --refazer-de <dia> --refazer-ate <dia>
 
 import { writeFileSync } from 'node:fs';
 import { parseEmdataCsv, janelasDoEmdata, sqlBackfill } from '../src/modules/energia/backfill-emdata.js';
@@ -49,9 +51,6 @@ async function main(): Promise<void> {
   const tensao = Number(arg('tensao', '220')) as 127 | 220 | 380;
   const saida = arg('saida', `backfill-${device}-${de}-${ate}.sql`)!;
 
-  if (de < somarDias(hoje, -7)) {
-    console.warn('Atenção: o fechamento da madrugada refaz só os últimos 7 dias. Dias mais antigos entram no 15 min, mas o resumo diário deles não é refeito sozinho.');
-  }
   const ts = Math.floor(Date.parse(inicioDoDiaBrtIso(de)) / 1000);
   const endTs = Math.floor(Date.parse(inicioDoDiaBrtIso(somarDias(ate, 1))) / 1000) - 1;
   const url = `http://${ip}/emdata/0/data.csv?add_keys=true&ts=${ts}&end_ts=${endTs}`;
@@ -67,7 +66,7 @@ async function main(): Promise<void> {
   const cobertas = js.filter((j) => j.segundosCobertos > 0).length;
   const possiveis = Math.round((endTs + 1 - ts) / 900);
   console.log(`${regs.length} registros de 1 min → ${cobertas} janelas de 15 min (de ${possiveis} possíveis). Arquivo: ${saida}`);
-  console.log('Revise o arquivo e cole no SQL Editor. Nada foi gravado no banco.');
+  console.log('Revise o arquivo e cole no SQL Editor. Nada foi gravado no banco. O resumo de cada dia é refeito sozinho na madrugada seguinte.');
 }
 
 main().catch((e) => {

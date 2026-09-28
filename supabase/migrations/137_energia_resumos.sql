@@ -46,6 +46,9 @@ comment on table energia_15min is
   'Energia por janela de 15 min (diferença de contadores). Janela sem dado não existe — nunca zero inventado.';
 
 create index if not exists energia_15min_empresa_inicio on energia_15min (company_id, inicio);
+-- O fechamento da madrugada procura janela mexida DEPOIS de o dia fechar
+-- (backfill colado à mão) pra refazer aquele dia.
+create index if not exists energia_15min_medidor_atualizado on energia_15min (medidor_id, atualizado_em);
 
 create table if not exists energia_diaria (
   medidor_id            uuid not null,
