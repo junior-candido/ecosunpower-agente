@@ -174,7 +174,7 @@ export function montarLista(
       leadId, nome: lead.name, telefone: lead.phone, etapa: lead.status, cidade: lead.city,
       evaAtiva: !!lead.eva_active, optOut: !!lead.opt_out, dono: lead.claimed_by,
       ultimaEm: u.em ?? (typeof c.last_message_at === 'string' ? c.last_message_at : null),
-      ultimaTexto: u.texto, ultimaDe: u.de, aguardandoResposta: u.de === 'cliente',
+      ultimaTexto: u.texto, ultimaDe: u.de, aguardandoResposta: u.de === 'cliente' && !lead.opt_out,
       canal: canalDaLinha(c) ?? canalPadrao,
     });
   }
@@ -274,10 +274,12 @@ export function linhaDoPainelParaChat(l: LinhaMensagemWhatsapp): MensagemChat | 
   if (l.direcao === 'entrada') {
     return { role: 'user', content: texto, timestamp: l.criado_em, autor: 'cliente', canal: l.canal, autorNome: l.contato_nome };
   }
+  // Reserva que ficou "enviando" (processo caiu no meio): não fica "enviando…" pra sempre.
+  const velha = l.status === 'enviando' && Date.now() - Date.parse(l.criado_em) > 5 * 60_000;
   return {
     role: 'assistant', content: texto, timestamp: l.enviada_em ?? l.criado_em,
     autor: l.autor === 'eva' ? 'eva' : 'humano', autorNome: l.autor_nome, canal: l.canal,
-    status: l.status, modelo: l.modelo, painelId: l.id,
+    status: velha ? 'sem_confirmacao' : l.status, modelo: l.modelo, painelId: l.id,
   };
 }
 
@@ -313,10 +315,10 @@ export function canalDaAssistente(companyId: string): CanalConversa {
 const CASA_ID = '00000000-0000-0000-0000-000000000001';
 
 /** Chat completo do lead: memória da Eva + painel (só o que o viewer pode ver). */
-export async function historicoDoLead(db: SupabaseClient, leadId: string, companyId: string, viewerId: string | null): Promise<MensagemChat[]> {
+export async function historicoDoLead(db: SupabaseClient, leadId: string, companyId: string, viewerId: string | null, servico?: SupabaseClient): Promise<MensagemChat[]> {
   const [conversa, painel] = await Promise.all([
     mensagensDoLead(db, leadId, companyId),
-    mensagensDoPainel(db, companyId, leadId, viewerId),
+    mensagensDoPainel(db, companyId, leadId, viewerId, 500, servico),
   ]);
   return juntarComPainel(conversa, painel, canalDaAssistente(companyId));
 }

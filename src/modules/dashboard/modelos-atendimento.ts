@@ -89,7 +89,8 @@ export function modelosDaTela(daMeta: ModeloDaMeta[] | null): ModeloAtendimento[
 
 /** Primeiro nome para o {{1}} (a Meta recusa parâmetro com quebra de linha ou tab). */
 export function parametroNome(bruto: string | null | undefined): string {
-  const limpo = String(bruto ?? '').replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 60);
+  // Só nome de gente: letras, espaço, hífen, apóstrofo e ponto (nada de link/número no {{1}}).
+  const limpo = String(bruto ?? '').replace(/[^\p{L}\p{M} '.-]+/gu, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 60);
   return limpo || 'tudo bem';
 }
 

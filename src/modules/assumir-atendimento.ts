@@ -73,6 +73,15 @@ async function gravarEvento(client: SupabaseClient, lead: LeadEstado, p: PedidoA
   }
 }
 
+/** UPDATE do lead na empresa DELE (legado sem company_id = null, não "casa"). Devolve quantas linhas mudaram. */
+async function atualizarLead(client: SupabaseClient, lead: LeadEstado, campos: Record<string, unknown>): Promise<number | null> {
+  const base = client.from('leads').update(campos).eq('id', lead.id);
+  const q = lead.company_id ? base.eq('company_id', lead.company_id) : base.is('company_id', null);
+  const { data, error } = await q.select('id');
+  if (error) return null;
+  return Array.isArray(data) ? data.length : 0;
+}
+
 /** Humano assume a conversa: a Eva fica pausada ATÉ alguém devolver. */
 export async function assumirAtendimento(client: SupabaseClient, p: PedidoAtendimento): Promise<ResultadoAtendimento> {
   let lead: LeadEstado | null;
@@ -80,16 +89,15 @@ export async function assumirAtendimento(client: SupabaseClient, p: PedidoAtendi
   if (!lead) return { ok: false, motivo: 'nao_encontrado' };
   const jaEstava = lead.eva_active === false;
 
-  const { error } = await client.from('leads')
-    .update({ eva_active: false, updated_at: new Date().toISOString() })
-    .eq('id', lead.id)
-    .eq('company_id', lead.company_id ?? CASA);
-  if (error) return { ok: false, motivo: 'erro' };
+  // Nenhuma linha mudou (RLS, corrida) = NÃO pausou: não diz que pausou.
+  const mudou = await atualizarLead(client, lead, { eva_active: false, updated_at: new Date().toISOString() });
+  if (!mudou) return { ok: false, motivo: 'erro' };
   // Igual ao botão do zap: cadência pendente sai, senão a Eva manda toque por cima.
-  await client.from('eva_cadence')
+  const { error: eCad } = await client.from('eva_cadence')
     .update({ status: 'cancelled', cancelled_reason: 'admin_assumed' })
     .eq('lead_id', lead.id)
     .eq('status', 'pending');
+  if (eCad) console.warn(`[atendimento] cadência do lead ${lead.id.slice(0, 8)} não cancelou: ${eCad.message}`);
   if (!jaEstava) await gravarEvento(client, lead, p, 'assumiu');
   return { ok: true, jaEstava };
 }
@@ -102,7 +110,7 @@ export async function assumirAtendimento(client: SupabaseClient, p: PedidoAtendi
 export async function devolverParaEva(
   client: SupabaseClient,
   p: PedidoAtendimento,
-  retomarTakeover?: (telefone: string) => Promise<void>,
+  retomarTakeover?: (telefone: string, companyId: string) => Promise<void>,
 ): Promise<ResultadoAtendimento> {
   let lead: LeadEstado | null;
   try { lead = await lerLead(client, p); } catch { return { ok: false, motivo: 'erro' }; }
@@ -110,13 +118,10 @@ export async function devolverParaEva(
   if (lead.opt_out) return { ok: false, motivo: 'opt_out' };
   const jaEstava = lead.eva_active !== false;
 
-  const { error } = await client.from('leads')
-    .update({ eva_active: true, updated_at: new Date().toISOString() })
-    .eq('id', lead.id)
-    .eq('company_id', lead.company_id ?? CASA);
-  if (error) return { ok: false, motivo: 'erro' };
+  const mudou = await atualizarLead(client, lead, { eva_active: true, updated_at: new Date().toISOString() });
+  if (!mudou) return { ok: false, motivo: 'erro' };
   if (retomarTakeover && lead.phone) {
-    await retomarTakeover(lead.phone).catch((e) => console.warn(`[atendimento] takeover não limpou: ${(e as Error).message}`));
+    await retomarTakeover(lead.phone, lead.company_id ?? CASA).catch((e) => console.warn(`[atendimento] takeover não limpou: ${(e as Error).message}`));
   }
   if (!jaEstava) await gravarEvento(client, lead, p, 'devolveu');
   return { ok: true, jaEstava };

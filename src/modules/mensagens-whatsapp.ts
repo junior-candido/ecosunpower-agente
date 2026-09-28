@@ -51,20 +51,41 @@ const COLUNAS = 'id, company_id, lead_id, contato_telefone, contato_nome, direca
 export async function reservarEnvio(
   client: SupabaseClient,
   linha: NovaMensagem & { chave_envio: string },
-): Promise<{ ok: true; id: string } | { ok: false; motivo: 'duplicado' | 'erro'; erro?: string }> {
+): Promise<{ ok: true; id: string } | { ok: false; motivo: 'duplicado' | 'ja_falhou' | 'erro'; erro?: string }> {
   try {
     const { data, error } = await client.from('mensagens_whatsapp')
       .insert({ ...linha, status: 'enviando' })
       .select('id')
       .single();
     if (error) {
-      if (error.code === '23505') return { ok: false, motivo: 'duplicado' };
+      if (error.code === '23505') {
+        // Mesmo clique de novo. Se o 1º tinha falhado, diz isso (não "já enviada").
+        const status = await statusDaChave(client, linha.company_id, linha.chave_envio);
+        return { ok: false, motivo: status === 'falhou' ? 'ja_falhou' : 'duplicado' };
+      }
       return { ok: false, motivo: 'erro', erro: error.message };
     }
     return { ok: true, id: String((data as { id: string }).id) };
   } catch (err) {
     return { ok: false, motivo: 'erro', erro: (err as Error).message };
   }
+}
+
+/** Status do envio desta chave (null = chave nunca usada / erro). */
+export async function statusDaChave(client: SupabaseClient, companyId: string, chave: string): Promise<LinhaMensagemWhatsapp['status'] | null> {
+  try {
+    const { data, error } = await client.from('mensagens_whatsapp').select('status')
+      .eq('company_id', companyId).eq('chave_envio', chave).maybeSingle();
+    if (error || !data) return null;
+    return (data as { status: LinhaMensagemWhatsapp['status'] }).status;
+  } catch {
+    return null;
+  }
+}
+
+/** Erro da Meta/Evolution pode trazer o número do cliente: some antes de gravar/logar. PURA. */
+export function semTelefone(texto: string): string {
+  return texto.replace(/\d[\d\s().-]{8,}\d/g, '[número]');
 }
 
 /** Fecha a reserva: saiu (com o id do WhatsApp) ou falhou (com o motivo). */
@@ -79,7 +100,7 @@ export async function concluirEnvio(
       .update({
         status: r.status,
         wamid: r.wamid || null,
-        erro: r.erro ? r.erro.slice(0, 500) : null,
+        erro: r.erro ? semTelefone(r.erro).slice(0, 500) : null,
         enviada_em: r.status === 'enviada' ? new Date().toISOString() : null,
       })
       .eq('id', id)
@@ -112,9 +133,12 @@ export function linhaVisivelPara(l: Pick<LinhaMensagemWhatsapp, 'visivel_so_para
 }
 
 /**
- * Histórico do painel para um lead, DA EMPRESA, só o que o viewer pode ver.
- * Erro (ex.: migration 138 ainda não aplicada) → lista vazia: o chat mostra o
- * que a Eva guardou, como antes.
+ * Histórico do painel para um lead, DA EMPRESA. As linhas da empresa toda
+ * (visivel_so_para null) vêm pelo `client` (o do operador: a RLS da 138 filtra);
+ * as PESSOAIS de quem está vendo (número pessoal, Parte 2b) só vêm quando o
+ * chamador passa o client de serviço em `privado` — com o filtro do dono
+ * explícito. As mais NOVAS primeiro no corte, depois em ordem de tempo.
+ * Erro (ex.: migration 138 ainda não aplicada) → lista vazia.
  */
 export async function mensagensDoPainel(
   client: SupabaseClient,
@@ -122,18 +146,27 @@ export async function mensagensDoPainel(
   leadId: string,
   viewerId: string | null,
   limite = 500,
+  privado?: SupabaseClient,
 ): Promise<LinhaMensagemWhatsapp[]> {
   if (!companyId || !leadId) return [];
-  try {
-    const { data, error } = await client.from('mensagens_whatsapp')
-      .select(COLUNAS)
-      .eq('company_id', companyId)
-      .eq('lead_id', leadId)
-      .order('criado_em', { ascending: true })
-      .limit(limite);
-    if (error) return [];
-    return ((data ?? []) as LinhaMensagemWhatsapp[]).filter((l) => linhaVisivelPara(l, viewerId));
-  } catch {
-    return [];
-  }
+  const ler = async (c: SupabaseClient, dono: string | null): Promise<LinhaMensagemWhatsapp[]> => {
+    try {
+      let q = c.from('mensagens_whatsapp').select(COLUNAS)
+        .eq('company_id', companyId)
+        .eq('lead_id', leadId);
+      q = dono ? q.eq('visivel_so_para', dono) : q.is('visivel_so_para', null);
+      const { data, error } = await q.order('criado_em', { ascending: false }).limit(limite);
+      if (error) return [];
+      return (data ?? []) as LinhaMensagemWhatsapp[];
+    } catch {
+      return [];
+    }
+  };
+  const [daEmpresa, pessoais] = await Promise.all([
+    ler(client, null),
+    privado && viewerId ? ler(privado, viewerId) : Promise.resolve([] as LinhaMensagemWhatsapp[]),
+  ]);
+  return [...daEmpresa, ...pessoais]
+    .filter((l) => linhaVisivelPara(l, viewerId))
+    .sort((a, b) => String(a.criado_em).localeCompare(String(b.criado_em)));
 }

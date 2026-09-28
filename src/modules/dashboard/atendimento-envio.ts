@@ -103,7 +103,8 @@ export function motivoBloqueio(p: {
 export const RESULTADO_ENVIO: Record<string, { tom: 'ok' | 'erro' | 'aviso'; texto: string }> = {
   enviada: { tom: 'ok', texto: 'Mensagem enviada. Você assumiu a conversa.' },
   duplicado: { tom: 'aviso', texto: 'Essa mensagem já tinha sido enviada (clique repetido) — não mandei de novo.' },
-  falhou: { tom: 'erro', texto: 'O WhatsApp recusou o envio. Tente de novo em instantes.' },
+  falhou: { tom: 'erro', texto: 'O WhatsApp recusou o envio. Você continua com a conversa (a assistente segue pausada). Tente de novo em instantes.' },
+  ja_falhou: { tom: 'aviso', texto: 'Esse envio já tinha falhado. A página foi recarregada: tente de novo.' },
   erro_banco: { tom: 'erro', texto: 'Não consegui registrar o envio, então não enviei. Tente de novo.' },
   vazio: { tom: 'erro', texto: 'Escreva a mensagem antes de enviar.' },
   longo: { tom: 'erro', texto: `Mensagem longa demais (máximo ${LIMITE_TEXTO} letras).` },
@@ -113,12 +114,12 @@ export const RESULTADO_ENVIO: Record<string, { tom: 'ok' | 'erro' | 'aviso'; tex
   opt_out: { tom: 'erro', texto: 'Este contato pediu para parar. Envio bloqueado.' },
   sem_telefone: { tom: 'erro', texto: 'Este lead não tem telefone de WhatsApp.' },
   sem_canal: { tom: 'erro', texto: 'Conecte o WhatsApp da empresa para responder por aqui.' },
-  whatsapp_nao_configurado: { tom: 'erro', texto: 'O número oficial da Eva não está configurado neste servidor.' },
+  whatsapp_nao_configurado: { tom: 'erro', texto: 'O número oficial não está configurado neste servidor.' },
   bloqueado_lgpd: { tom: 'erro', texto: 'Envio bloqueado: este número não pode receber mensagem por este canal.' },
   janela_fechada: { tom: 'erro', texto: 'A janela de 24 h fechou. Use um modelo aprovado.' },
-  modelo_so_no_oficial: { tom: 'erro', texto: 'Modelo só existe no número oficial da Eva.' },
-  assumiu: { tom: 'ok', texto: 'Você assumiu a conversa. A Eva fica pausada até você devolver.' },
-  devolveu: { tom: 'ok', texto: 'Conversa devolvida para a Eva.' },
+  modelo_so_no_oficial: { tom: 'erro', texto: 'Modelo só existe no número oficial.' },
+  assumiu: { tom: 'ok', texto: 'Você assumiu a conversa. A assistente fica pausada até você devolver.' },
+  devolveu: { tom: 'ok', texto: 'Conversa devolvida para a assistente.' },
 };
 
 /** Texto livre: sem espaço sobrando nas pontas; vazio/longo recusado. PURA. */
@@ -151,6 +152,7 @@ export class LimiteDeEnvio {
     this.porUsuario.set(userId, lista);
     this.porContato.set(contato, agora);
     if (this.porContato.size > 5000) this.porContato.clear();
+    if (this.porUsuario.size > 5000) this.porUsuario.clear();
     return true;
   }
 }
@@ -159,11 +161,11 @@ export class LimiteDeEnvio {
 // Orquestração do envio (dependências injetadas)
 // ---------------------------------------------------------------------------
 
-export type ResultadoEnvio = 'enviada' | 'duplicado' | 'falhou' | 'erro_banco';
+export type ResultadoEnvio = 'enviada' | 'duplicado' | 'ja_falhou' | 'falhou' | 'erro_banco';
 
 export interface DepsEnvio {
   /** Reserva a chave no banco (status 'enviando'). */
-  reservar(): Promise<{ ok: true; id: string } | { ok: false; motivo: 'duplicado' | 'erro' }>;
+  reservar(): Promise<{ ok: true; id: string } | { ok: false; motivo: 'duplicado' | 'ja_falhou' | 'erro' }>;
   concluir(id: string, r: { status: 'enviada' | 'falhou'; wamid?: string | null; erro?: string | null }): Promise<void>;
   /** Assume a conversa (pausa a Eva) — ANTES de enviar, pra ela não responder por cima. */
   assumir?: () => Promise<unknown>;
@@ -176,7 +178,7 @@ export interface DepsEnvio {
 
 export async function enviarDoPainel(deps: DepsEnvio): Promise<{ resultado: ResultadoEnvio; id?: string; erro?: string }> {
   const r = await deps.reservar();
-  if (!r.ok) return { resultado: r.motivo === 'duplicado' ? 'duplicado' : 'erro_banco' };
+  if (!r.ok) return { resultado: r.motivo === 'erro' ? 'erro_banco' : r.motivo };
   if (deps.assumir) {
     try { await deps.assumir(); } catch (e) { console.warn(`[atendimento] assumir falhou (segue o envio): ${(e as Error).message}`); }
   }

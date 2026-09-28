@@ -81,3 +81,18 @@ CREATE POLICY company_isolation ON public.mensagens_whatsapp
   WITH CHECK (company_id = (SELECT coalesce(
       nullif(current_setting('app.company_id', true), '')::uuid,
       (auth.jwt() ->> 'company_id')::uuid)));
+
+-- CONVERSA PESSOAL (Parte 2b): linha com visivel_so_para só aparece pra quem
+-- é o dono dela. RESTRITIVA = vale JUNTO com o isolamento por empresa. O
+-- crachá do operador (JWT) ainda não leva o id da pessoa, então pelo crachá
+-- NINGUÉM lê linha pessoal; o servidor lê com a chave de serviço e filtra o
+-- dono explicitamente (numero-pessoal.ts / mensagens-whatsapp.ts).
+DROP POLICY IF EXISTS so_o_dono_ve_pessoal ON public.mensagens_whatsapp;
+CREATE POLICY so_o_dono_ve_pessoal ON public.mensagens_whatsapp
+  AS RESTRICTIVE FOR ALL
+  USING (visivel_so_para IS NULL OR visivel_so_para::text = coalesce(
+      nullif(current_setting('app.user_id', true), ''),
+      auth.jwt() ->> 'user_id'))
+  WITH CHECK (visivel_so_para IS NULL OR visivel_so_para::text = coalesce(
+      nullif(current_setting('app.user_id', true), ''),
+      auth.jwt() ->> 'user_id'));

@@ -65,7 +65,7 @@ describe('devolverParaEva', () => {
     const r = await devolverParaEva(b.client, { leadId: LEAD, companyId: CASA, origem: 'painel', userId: 'u-1', autorNome: 'Junior' }, retomar);
     expect(r).toEqual({ ok: true, jaEstava: false });
     expect(b.tabelas.leads[0].eva_active).toBe(true);
-    expect(retomar).toHaveBeenCalledWith('5561999990001');
+    expect(retomar).toHaveBeenCalledWith('5561999990001', CASA);
     expect(b.tabelas.mensagens_whatsapp[0]).toMatchObject({ evento: 'devolveu', autor_nome: 'Junior' });
   });
 

@@ -144,3 +144,13 @@ describe('balões novos', () => {
     expect(rotuloCanal('whatsapp_business', 'Eva', 'Junior')).toBe('👤 Junior');
   });
 });
+
+describe('permissão', () => {
+  it('quem só VISUALIZA leads não vê Assumir/Devolver (a rota exige editar)', () => {
+    const leitor = { ...USER_CASA, id: 'u-leitor', isAdmin: false, permissoes: { leads: ['visualizar'] } } as any;
+    expect(tela({}, undefined, leitor)).not.toContain('/pause-eva"');
+    const pausada = tela({ eva_active: false }, undefined, leitor);
+    expect(pausada).toContain('pausada até alguém devolver');
+    expect(pausada).not.toContain('/resume-eva"');
+  });
+});

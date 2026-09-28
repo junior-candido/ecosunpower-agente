@@ -25,7 +25,8 @@ import { envioProibido } from '../tenant-admin-guard.js';
 import { normalizeBrazilianPhone } from '../meta-leadgen.js';
 import { noCanalDaEmpresa, EMPRESA_CASA } from './canal-envio.js';
 import { assumirAtendimento, devolverParaEva } from '../assumir-atendimento.js';
-import { reservarEnvio, concluirEnvio } from '../mensagens-whatsapp.js';
+import { reservarEnvio, concluirEnvio, statusDaChave, semTelefone } from '../mensagens-whatsapp.js';
+import { variantesTelefone } from '../phone.js';
 import { historicoDoLead, canalDaAssistente, type CanalConversa, type MensagemChat } from './conversas-queries.js';
 import {
   ultimaDoCliente, janelaAtendimento, motivoBloqueio, validarTexto, chaveValida, enviarDoPainel,
@@ -38,6 +39,10 @@ import type { CompositorInput } from './atendimento-views.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CACHE_MODELOS_MS = 10 * 60 * 1000;
+/** Meta fora do ar: tenta de novo logo (a lista local vale só por 30 s). */
+const CACHE_MODELOS_FALHA_MS = 30 * 1000;
+/** A tela do lead nunca espera a Meta mais que isto. */
+const TEMPO_MAX_META_MS = 3000;
 
 /** Só o pedaço do serviço oficial (Meta) que o painel usa. */
 export interface WabaPainel {
@@ -66,25 +71,43 @@ export interface DepsAtendimento {
   banco?: (req: AuthedRequest) => SupabaseClient;
 }
 
+/**
+ * Defesa extra contra envio forjado de outro site: quando o navegador manda
+ * Origin, ela tem que ser o próprio painel. (O cookie já é SameSite=Strict.)
+ */
+export function mesmaOrigem(req: Pick<Request, 'headers'>): boolean {
+  const origin = String(req.headers?.origin ?? '');
+  if (!origin) return true;
+  if (origin === 'null') return false;
+  const host = String(req.headers?.['x-forwarded-host'] ?? req.headers?.host ?? '').split(',')[0].trim();
+  try { return new URL(origin).host === host; } catch { return false; }
+}
+
 interface LeadEnvio { id: string; name: string | null; phone: string | null; opt_out: boolean | null; eva_active: boolean | null; company_id: string | null }
 
 export function criarRotasAtendimento(deps: DepsAtendimento) {
   const limite = deps.limite ?? new LimiteDeEnvio();
   const agora = deps.agora ?? (() => Date.now());
   const banco = deps.banco ?? ((req: AuthedRequest) => bancoDoOperador(req, deps.supabase));
-  let cacheModelos: { at: number; lista: ModeloAtendimento[] } | null = null;
+  let cacheModelos: { at: number; lista: ModeloAtendimento[]; validade: number } | null = null;
 
   async function modelos(): Promise<ModeloAtendimento[]> {
-    if (cacheModelos && agora() - cacheModelos.at < CACHE_MODELOS_MS) return cacheModelos.lista;
+    if (cacheModelos && agora() - cacheModelos.at < cacheModelos.validade) return cacheModelos.lista;
     let daMeta: ModeloDaMeta[] | null = null;
     if (deps.waba?.listTemplates) {
-      daMeta = await deps.waba.listTemplates().catch((e) => {
-        console.warn(`[atendimento] modelos da Meta indisponíveis (usa a cópia local): ${(e as Error).message}`);
-        return null;
-      });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const limite = new Promise<null>((ok) => { timer = setTimeout(() => ok(null), TEMPO_MAX_META_MS); });
+      daMeta = await Promise.race([
+        deps.waba.listTemplates().catch((e) => {
+          console.warn(`[atendimento] modelos da Meta indisponíveis (usa a cópia local): ${(e as Error).message}`);
+          return null;
+        }),
+        limite,
+      ]);
+      if (timer) clearTimeout(timer);
     }
     const lista = modelosDaTela(daMeta);
-    cacheModelos = { at: agora(), lista };
+    cacheModelos = { at: agora(), lista, validade: daMeta ? CACHE_MODELOS_MS : CACHE_MODELOS_FALHA_MS };
     return lista;
   }
 
@@ -98,11 +121,12 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
   }
 
   async function lerLead(db: SupabaseClient, leadId: string, companyId: string): Promise<LeadEnvio | null> {
-    const { data, error } = await db.from('leads')
+    const base = db.from('leads')
       .select('id, name, phone, opt_out, eva_active, company_id')
-      .eq('id', leadId)
-      .eq('company_id', companyId)
-      .maybeSingle();
+      .eq('id', leadId);
+    // Lead legado sem company_id é da casa (mesma regra da trava /leads/:id).
+    const q = companyId === EMPRESA_CASA ? base.or(`company_id.eq.${EMPRESA_CASA},company_id.is.null`) : base.eq('company_id', companyId);
+    const { data, error } = await q.maybeSingle();
     if (error) throw new Error(error.message);
     return (data as LeadEnvio | null) ?? null;
   }
@@ -119,6 +143,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     const viewer = req.dashUser;
     if (!viewer?.companyId) { res.status(404).send('lead não encontrado'); return null; }
     const companyId = viewer.companyId;
+    if (!mesmaOrigem(req)) { res.status(403).send('origem não permitida'); return null; }
     if (!chaveValida(req.body?.chave)) { voltar(res, leadId, 'chave_invalida'); return null; }
     const chave = String(req.body.chave);
     const db = banco(req);
@@ -141,6 +166,9 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     });
     if (bloqueio === 'sem_canal' && motivo) bloqueio = motivo;
     if (bloqueio) { voltar(res, leadId, bloqueio); return null; }
+    // Clique repetido responde "já enviada" (não "espere") — confere a chave antes do freio.
+    const jaUsada = await statusDaChave(db, companyId, chave);
+    if (jaUsada) { voltar(res, leadId, jaUsada === 'falhou' ? 'ja_falhou' : 'duplicado'); return null; }
     if (!limite.permitir(viewer.id, `${companyId}:${leadId}`, agora())) { voltar(res, leadId, 'limite'); return null; }
     return { leadId, viewer, companyId, chave, db, lead, canal, via, instancia, telefone: telefone! };
   }
@@ -185,7 +213,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
         ? deps.waba!.sendText(ctx.telefone, v.texto)
         : noCanalDaEmpresa(ctx.companyId, ctx.instancia, () => deps.sendTextEvolution!(ctx.telefone, v.texto)).then(() => undefined),
     });
-    console.log(`[atendimento] resposta ${ctx.leadId.slice(0, 8)} por ${ctx.via} (${ctx.viewer.id.slice(0, 8)}): ${s.resultado}${s.erro ? ` — ${s.erro}` : ''}`);
+    console.log(`[atendimento] resposta ${ctx.leadId.slice(0, 8)} por ${ctx.via} (${ctx.viewer.id.slice(0, 8)}): ${s.resultado}${s.erro ? ` — ${semTelefone(s.erro)}` : ''}`);
     voltar(res, ctx.leadId, s.resultado);
   }
 
@@ -203,7 +231,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
       ...depsComuns(ctx, { texto, modelo: modelo.nome }),
       enviar: () => deps.waba!.sendTemplate(ctx.telefone, modelo.nome, 'pt_BR', [{ type: 'body', parameters: [{ type: 'text', text: nome }] }]),
     });
-    console.log(`[atendimento] modelo ${modelo.nome} ${ctx.leadId.slice(0, 8)}: ${s.resultado}${s.erro ? ` — ${s.erro}` : ''}`);
+    console.log(`[atendimento] modelo ${modelo.nome} ${ctx.leadId.slice(0, 8)}: ${s.resultado}${s.erro ? ` — ${semTelefone(s.erro)}` : ''}`);
     voltar(res, ctx.leadId, s.resultado);
   }
 
@@ -227,7 +255,15 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     if (!UUID_RE.test(leadId)) { res.status(400).send('id inválido'); return; }
     const viewer = r.dashUser;
     if (!viewer?.companyId) { res.status(404).send('lead não encontrado'); return; }
-    const x = await devolverParaEva(banco(r), { leadId, companyId: viewer.companyId, origem: 'painel', userId: viewer.id, autorNome: viewer.nome }, deps.retomarTakeover);
+    // A pausa curta do Redis tem chave SÓ pelo telefone (sem empresa): só a casa
+    // limpa — senão um tenant apagaria a pausa de outra empresa no mesmo número.
+    const retomar = deps.retomarTakeover
+      ? async (tel: string, cid: string) => {
+        if (cid !== EMPRESA_CASA) return;
+        await Promise.all(variantesTelefone(tel).map((v) => deps.retomarTakeover!(v)));
+      }
+      : undefined;
+    const x = await devolverParaEva(banco(r), { leadId, companyId: viewer.companyId, origem: 'painel', userId: viewer.id, autorNome: viewer.nome }, retomar);
     if (!x.ok) {
       if (x.motivo === 'opt_out') { voltar(res, leadId, 'opt_out'); return; }
       res.status(x.motivo === 'nao_encontrado' ? 404 : 500).send(x.motivo === 'nao_encontrado' ? 'lead não encontrado' : 'erro ao devolver');

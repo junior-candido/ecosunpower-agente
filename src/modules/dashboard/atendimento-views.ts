@@ -12,7 +12,7 @@
 // aba "Resumo" (âncora #resumo) mostra o cockpit. Sem JavaScript para navegar.
 
 import { renderLayout, escapeHtml } from './views.js';
-import type { DashUser } from './permissions.js';
+import { can, type DashUser } from './permissions.js';
 import type { LeadDetail } from './leads-queries.js';
 import type { Atividade } from './atividades.js';
 import type { Tarefa } from './tarefas.js';
@@ -205,7 +205,8 @@ function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, t
   const hora = horaDe(m.timestamp);
   const quem = humano ? `${m.autorNome || 'Equipe'} · pelo painel` : daAssistente ? rotuloAssistente : nomeCliente;
   const canal = mostrarCanal && m.canal ? `<span class="cc-at-msg-canal">${escapeHtml(rotuloCanal(m.canal, rotuloAssistente, donoPessoal))}</span>` : '';
-  const falhou = humano && m.status === 'falhou' ? `<div class="cc-at-msg-falha">⚠ não saiu — o WhatsApp recusou</div>` : '';
+  const falhou = humano && m.status === 'falhou' ? `<div class="cc-at-msg-falha">⚠ não saiu — o WhatsApp recusou</div>`
+    : humano && m.status === 'sem_confirmacao' ? `<div class="cc-at-msg-falha">⚠ envio não confirmado — confira no WhatsApp</div>` : '';
   const enviando = humano && m.status === 'enviando' ? ' · enviando…' : '';
   const classe = humano ? 'cc-at-msg-eva cc-at-msg-hum' : daAssistente ? 'cc-at-msg-eva' : 'cc-at-msg-cli';
   return `<div class="cc-at-msg ${classe}">
@@ -331,10 +332,11 @@ function compositor(lead: LeadDetail, mensagens: MensagemChat[], c: CompositorIn
 }
 
 /** Quem está com a conversa + Assumir / Devolver (o MESMO estado do botão do WhatsApp). */
-function faixaAssumir(lead: LeadDetail, mensagens: MensagemChat[], assistente: string, assistenteMin: string): string {
+function faixaAssumir(lead: LeadDetail, mensagens: MensagemChat[], assistente: string, assistenteMin: string, podeEditar: boolean): string {
   if (lead.opt_out) return '';
   const id = escapeHtml(lead.id);
   if (lead.eva_active) {
+    if (!podeEditar) return '';
     return `<form class="cc-at-assumir" method="POST" action="/dashboard/leads/${id}/pause-eva"><button type="submit" class="cc-btn cc-btn-sm cc-at-btn-assumir" title="A ${escapeHtml(assistenteMin)} para de responder este cliente até você devolver">✋ Assumir</button></form>`;
   }
   const ev = ultimoEventoDeAtendimento(mensagens);
@@ -343,11 +345,11 @@ function faixaAssumir(lead: LeadDetail, mensagens: MensagemChat[], assistente: s
     : 'Atendimento com a equipe';
   return `<div class="cc-at-assumido" role="status">
       <span class="cc-at-assumido-t">✋ <strong>${escapeHtml(quem)}</strong> · ${escapeHtml(assistente)} pausada até alguém devolver</span>
-      <form method="POST" action="/dashboard/leads/${id}/resume-eva"><button type="submit" class="cc-btn cc-btn-sm cc-at-btn-devolver">↩ Devolver para a ${escapeHtml(assistente)}</button></form>
+      ${podeEditar ? `<form method="POST" action="/dashboard/leads/${id}/resume-eva"><button type="submit" class="cc-btn cc-btn-sm cc-at-btn-devolver">↩ Devolver para a ${escapeHtml(assistente)}</button></form>` : ''}
     </div>`;
 }
 
-function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: string, assistenteMin: string, envio: CompositorInput | undefined, donoPessoal: string | null): string {
+function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: string, assistenteMin: string, envio: CompositorInput | undefined, donoPessoal: string | null, podeEditar: boolean): string {
   const nome = lead.name ?? 'Sem nome';
   const temArquivos = (lead.anexos ?? []).length > 0;
   const canais = new Set(mensagens.map((m) => m.canal).filter(Boolean));
@@ -383,9 +385,9 @@ function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: str
         <div class="cc-at-chat-nome"><strong>${escapeHtml(nome)}</strong>${pilulaEtapa(lead.status)}${eva}${canalChip}</div>
         <div class="cc-at-chat-sub">${escapeHtml(sub.join(' · '))}</div>
       </div>
-      ${lead.eva_active ? faixaAssumir(lead, mensagens, assistente, assistenteMin) : ''}
+      ${lead.eva_active ? faixaAssumir(lead, mensagens, assistente, assistenteMin, podeEditar) : ''}
     </header>
-    ${!lead.eva_active ? faixaAssumir(lead, mensagens, assistente, assistenteMin) : ''}
+    ${!lead.eva_active ? faixaAssumir(lead, mensagens, assistente, assistenteMin, podeEditar) : ''}
     <div class="cc-at-msgs" id="cc-at-msgs" role="log" aria-label="Mensagens">${corpo}</div>
     ${compositor(lead, mensagens, envio, assistente)}
   </section>`;
@@ -725,7 +727,7 @@ export function renderAtendimentoPage(p: AtendimentoInput): string {
     ${cabecalho}
     <div class="cc-at-grade">
       ${colunaLista(p.lista, p.filtros, lead?.id ?? null, assistente)}
-      ${lead ? colunaChat(lead, mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null) : chatSemLead()}
+      ${lead ? colunaChat(lead, mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar')) : chatSemLead()}
       ${lead ? colunaCockpit(lead, p.servicos ?? [], assistente, assistenteMin) : cockpitSemLead()}
     </div>
     ${lead && !CLIENTE_STATUSES.includes(String(lead.installation_status ?? '')) ? modalFechou(lead) : ''}

@@ -279,8 +279,9 @@ export function createDashboardRouter(
       // Memória curta da Eva: quando ela voltar, sabe o que a equipe disse.
       const conv = await supabaseService.getOrCreateConversation(leadId, companyId);
       const nova = { role: 'assistant' as const, content: texto, timestamp: new Date().toISOString(), autor: 'humano', painel_id: painelId };
+      // SEM cortar em 20: com a Eva pausada as mensagens do cliente só existem aqui.
       await supabaseService.updateConversation(conv.id, {
-        messages: [...(conv.messages ?? []), nova].slice(-20),
+        messages: [...(conv.messages ?? []), nova],
         message_count: (conv.message_count ?? 0) + 1,
       });
     },
@@ -2465,7 +2466,7 @@ b.onclick=async function(){
       const [servicosDoCliente, lista, mensagens, envio] = await Promise.all([
         servicosDoLead(supabase, id).catch(() => []),
         listarConversas(db, viewer, filtros),
-        historicoDoLead(db, id, viewer.companyId, viewer.id).catch(() => undefined),
+        historicoDoLead(db, id, viewer.companyId, viewer.id, supabase).catch(() => undefined),
         can(viewer, 'leads', 'editar') ? rotasAtendimento.envioDaTela(req as AuthedRequest, lead) : Promise.resolve(undefined),
       ]);
       res.send(renderLeadDetailPage(lead, [], String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer, { lista, filtros, mensagens, envio }));

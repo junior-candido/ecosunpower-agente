@@ -611,6 +611,7 @@ export class MetaWhatsAppService {
     const url = `${GRAPH_API}/${this.businessAccountId}/message_templates?limit=100&fields=name,status,language,category,components`;
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${this.accessToken}` },
+      signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) {
       throw new Error(`listTemplates ${res.status}: ${await res.text()}`);

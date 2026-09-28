@@ -21,6 +21,9 @@ import { empresa, ehEcosun } from './empresa-config.js';
 import { avisoAdminPermitido } from './tenant-admin-guard.js';
 import { assumirAtendimento, devolverParaEva } from './assumir-atendimento.js';
 
+/** Estes botões só existem para leads da casa (o handler exige remetente admin da EcoSun). */
+const ECOSUN_ID = '00000000-0000-0000-0000-000000000001';
+
 /** Quem aparece no evento "… assumiu" quando o toque vem do WhatsApp do dono. */
 function nomeDoDono(): string {
   try { return empresa().rtApelido || 'Junior'; } catch { return 'Junior'; }
@@ -194,7 +197,7 @@ export async function tryHandleEvaAdminButton(args: {
         // Atendimento Parte 2 (28/09): o MESMO estado do "✋ Assumir" da tela de
         // Conversas — assumir aqui aparece lá (com o evento na conversa) e só
         // "Devolver para a Eva" (aqui ou lá) traz a Eva de volta.
-        const r = await assumirAtendimento(args.client, { leadId, origem: 'whatsapp', autorNome: nomeDoDono() });
+        const r = await assumirAtendimento(args.client, { leadId, companyId: ECOSUN_ID, origem: 'whatsapp', autorNome: nomeDoDono() });
         if (!r.ok) {
           if (r.motivo === 'erro') throw new Error('não consegui pausar a Eva');
           await args.sendText(args.from, '⚠️ Não achei esse lead.');
@@ -214,7 +217,7 @@ export async function tryHandleEvaAdminButton(args: {
           await args.sendText(args.from, '⚠️ Botão sem lead id.');
           return true;
         }
-        const r = await devolverParaEva(args.client, { leadId, origem: 'whatsapp', autorNome: nomeDoDono() });
+        const r = await devolverParaEva(args.client, { leadId, companyId: ECOSUN_ID, origem: 'whatsapp', autorNome: nomeDoDono() });
         if (!r.ok) {
           if (r.motivo === 'erro') throw new Error('não consegui reativar a Eva');
           await args.sendText(args.from, r.motivo === 'opt_out'
