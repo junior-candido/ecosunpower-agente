@@ -1711,6 +1711,9 @@ b.onclick=async function(){
     if (!can(req.dashUser, 'usuarios', 'criar')) { res.status(403).send('Sem permissão'); return; }
     const { nome, login, senha, role_id, telefone, acesso_temporario, email } = req.body ?? {};
     if (!nome || !login || !senha || !role_id) { res.status(400).send('Campos obrigatórios'); return; }
+    // Segurança (R19): papel só da empresa da sessão e nunca acima de quem cria.
+    const { conferirPapelParaDar } = await import('./users-store.js');
+    if (!(await conferirPapelParaDar(supabase, req.dashUser!, String(role_id)))) { res.status(403).send('Papel não permitido'); return; }
     const emailLimpo = String(email ?? '').trim().toLowerCase() || null;
     const r = await createUser(supabase, {
       companyId: req.dashUser!.companyId, nome, login,
@@ -1761,7 +1764,10 @@ b.onclick=async function(){
     if (!can(req.dashUser, 'usuarios', 'editar')) { res.status(403).send('Sem permissão'); return; }
     const userId = String(req.params.id);
     if (userId === req.dashUser!.id) { res.status(400).send('Você não pode desativar a si mesmo.'); return; }
-    await updateUser(supabase, userId, { ativo: String(req.body?.valor) === 'sim' });
+    const { conferirAlvoUsuario } = await import('./users-store.js');
+    const alvo = await conferirAlvoUsuario(supabase, req.dashUser!, userId);
+    if (!alvo.ok) { res.status(alvo.status).send(alvo.motivo); return; }
+    await updateUser(supabase, userId, { ativo: String(req.body?.valor) === 'sim' }, req.dashUser!.companyId);
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: String(req.body?.valor) === 'sim' ? 'reativou' : 'desativou' });
     res.redirect('/dashboard/usuarios');
   });
@@ -1776,8 +1782,10 @@ b.onclick=async function(){
     // pode ou não, e não o sistema". Histórico (serviços/leads) transfere
     // automaticamente pra quem excluiu (ou pro transferir_para, se vier).
     const destino = String((req.body as Record<string, unknown> | undefined)?.transferir_para ?? '').trim() || req.dashUser!.id;
-    const { excluirTransferindoHistorico } = await import('./users-store.js');
-    const rt = await excluirTransferindoHistorico(supabase, userId, destino);
+    const { excluirTransferindoHistorico, conferirAlvoUsuario } = await import('./users-store.js');
+    const alvo = await conferirAlvoUsuario(supabase, req.dashUser!, userId);
+    if (!alvo.ok) { res.status(alvo.status).send(alvo.motivo); return; }
+    const rt = await excluirTransferindoHistorico(supabase, userId, destino, req.dashUser!.companyId);
     if (!rt.ok) { res.status(400).send(`Não deu pra excluir: ${rt.motivo}. <a href="/dashboard/usuarios">← voltar</a>`); return; }
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: 'excluiu_transferindo', valorNovo: destino });
     res.redirect('/dashboard/usuarios');
@@ -1787,24 +1795,29 @@ b.onclick=async function(){
     if (!can(req.dashUser, 'usuarios', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
     const cid = req.dashUser!.companyId;
     const userId = String(req.params.id);
-    const { data: u } = await supabase.from('dashboard_users')
-      .select('id, nome, login, ativo, role_id, telefone, acesso_temporario, email').eq('id', userId).maybeSingle();
+    const { usuarioParaEditar } = await import('./users-store.js');
+    const u = await usuarioParaEditar(supabase, userId, cid); // só da empresa da sessão (R19)
     if (!u) { res.status(404).send('Usuário não encontrado'); return; }
     const roles = await listRoles(supabase, cid);
-    res.type('html').send(renderUsuarioEditPage(u as any, roles, req.dashUser));
+    res.type('html').send(renderUsuarioEditPage(u, roles, req.dashUser));
   });
 
   router.post('/usuarios/:id', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'usuarios', 'editar')) { res.status(403).send('Sem permissão'); return; }
     const userId = String(req.params.id);
     const { nome, role_id, senha, ativo, telefone, acesso_temporario, email } = req.body ?? {};
+    // Segurança (R19): alvo da empresa da sessão, não acima de quem edita; papel idem.
+    const { conferirAlvoUsuario, conferirPapelParaDar } = await import('./users-store.js');
+    const alvo = await conferirAlvoUsuario(supabase, req.dashUser!, userId);
+    if (!alvo.ok) { res.status(alvo.status).send(alvo.motivo); return; }
+    if (role_id && !(await conferirPapelParaDar(supabase, req.dashUser!, String(role_id)))) { res.status(403).send('Papel não permitido'); return; }
     await updateUser(supabase, userId, {
       nome, roleId: role_id, ativo: ativo === 'on' || ativo === true,
       senhaHash: senha ? await hashSenha(senha) : undefined,
       telefone: telefone !== undefined ? (String(telefone).replace(/\D/g, '') || null) : undefined,
       acessoTemporario: acesso_temporario === 'on' || acesso_temporario === true,
       email: email !== undefined ? (String(email).trim().toLowerCase() || null) : undefined,
-    });
+    }, req.dashUser!.companyId);
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'usuario', entidadeId: userId, acao: 'editar' });
     res.redirect('/dashboard/usuarios');
   });
