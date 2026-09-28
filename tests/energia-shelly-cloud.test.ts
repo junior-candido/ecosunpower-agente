@@ -132,3 +132,19 @@ describe('registro de medidores (irmão do adapter-registry)', () => {
     expect(getMedidorAdapter('xyz')).toBeNull();
   });
 });
+
+describe('fila por chave não cresce sem fim', () => {
+  it('muitas chaves diferentes ao longo do tempo: os mapas internos ficam limitados', async () => {
+    let agora = 0;
+    const c = criarClienteShellyCloud({ fetch: (async () => new Response('[]')) as never, agora: () => agora, dormir: async (ms: number) => { agora += ms; } });
+    for (let i = 0; i < 500; i++) {
+      await c.buscarStatus({ server_uri: 'https://x.shelly.cloud', auth_key: `chave-${i}` }, ['a']);
+      agora += 5_000; // a chave anterior já não precisa de espaçamento
+    }
+    await new Promise((ok) => setTimeout(ok, 0));
+    const t = c._tamanhos();
+    expect(t.ultimas).toBeLessThanOrEqual(2);
+    expect(t.filas).toBeLessThanOrEqual(2);
+  });
+});
+

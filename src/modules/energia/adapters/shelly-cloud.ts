@@ -82,7 +82,14 @@ export function criarClienteShellyCloud(d: DepsCliente) {
   // Fila POR CHAVE: uma promessa encadeada garante o espaçamento mesmo com
   // chamadas concorrentes (dois ciclos se sobrepondo não furam o limite).
   const filaPorChave = new Map<string, Promise<void>>();
+  // Limpeza (o processo vive meses e cada conta Shelly é uma chave): o
+  // horário da última chamada só importa por ESPACO_MS; a fila, até andar.
+  function limparMapas(): void {
+    const agora = d.agora();
+    for (const [k, t] of ultimaPorChave) if (agora - t > ESPACO_MS && !filaPorChave.has(k)) ultimaPorChave.delete(k);
+  }
   function vez(chave: string): Promise<void> {
+    limparMapas();
     const anterior = filaPorChave.get(chave) ?? Promise.resolve();
     const minha = anterior.then(async () => {
       const ult = ultimaPorChave.get(chave);
@@ -92,11 +99,16 @@ export function criarClienteShellyCloud(d: DepsCliente) {
       }
       ultimaPorChave.set(chave, d.agora());
     });
-    filaPorChave.set(chave, minha.catch(() => undefined));
+    const cauda = minha.catch(() => undefined);
+    filaPorChave.set(chave, cauda);
+    // Fila vazia (ninguém entrou atrás): sai do mapa.
+    void cauda.then(() => { if (filaPorChave.get(chave) === cauda) filaPorChave.delete(chave); });
     return minha;
   }
 
   return {
+    /** Só pra teste: tamanho dos mapas internos. */
+    _tamanhos: () => ({ ultimas: ultimaPorChave.size, filas: filaPorChave.size }),
     async buscarStatus(cred: CredShelly, ids: string[]): Promise<StatusResult> {
       const devices: DeviceNuvem[] = [];
       for (let i = 0; i < ids.length; i += LOTE) {
