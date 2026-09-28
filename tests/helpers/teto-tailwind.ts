@@ -29,6 +29,8 @@ export const TELAS_RENOVADAS: string[] = [
   'views.ts#renderImportarSitesPage',
   // R10 — Financeiro (visão)
   'financeiro-views.ts',
+  // R11 — Demonstrativos GD (6 telas)
+  'demonstrativos-views.ts',
 ];
 
 export const RE_TAILWIND = /\b(bg|text|border|ring|from|to)-(white|black|slate|gray|zinc|sky|cyan|amber|emerald|rose|red|green|yellow|indigo|violet)(-\d{2,3})?\b|\b(p|px|py|m|mx|my|mt|mb|gap|space-[xy])-\d|\brounded(-\w+)?\b|\bgrid-cols-\d/;

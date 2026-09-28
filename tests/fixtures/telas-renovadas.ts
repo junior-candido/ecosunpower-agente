@@ -14,6 +14,7 @@ import type { DashUser } from '../../src/modules/dashboard/permissions.js';
 import { renderMonitoramentoPage } from '../../src/modules/dashboard/views.js';
 import { CASOS_USINA } from './casos-usina.js';
 import { FIN_CHEIO } from './casos-financeiro.js';
+import { CASOS_DEMONSTRATIVOS } from './casos-demonstrativos.js';
 import { renderFinanceiroPage } from '../../src/modules/dashboard/financeiro-views.js';
 import { usina, ALERTAS_RESUMO, SPARK_7D, KPIS_EVA } from './casos-monitoramento.js';
 import { USER_CASA, leadRow, leadDetalhe, SERVICOS_LEAD, FILTROS_CHEIOS } from './miolo-leads.js';
@@ -83,7 +84,8 @@ function dadosCC(n: number): DadosCommandCenter {
 }
 
 export type NomeTela = 'command-center' | 'central-atencao' | 'modo-tv' | 'leads' | 'quadro-vendas' | 'conversas' | 'ficha'
-  | 'monitoramento' | 'usina' | 'usina-dados' | 'usina-editar' | 'usina-importar' | 'financeiro';
+  | 'monitoramento' | 'usina' | 'usina-dados' | 'usina-editar' | 'usina-importar' | 'financeiro'
+  | 'gd-lista' | 'gd-cliente' | 'gd-conferencia' | 'gd-digitar' | 'gd-confirmar';
 
 const NIVEIS = ['urgente', 'aviso', 'info', 'ok', 'ok', 'ok'] as const;
 
@@ -113,6 +115,11 @@ export function telasRenovadas(n: number, user: DashUser = USER_CASA): Record<No
     'usina-editar': casa ? CASOS_USINA.editar() : CASOS_USINA['editar-sem-dono'](),
     'usina-importar': casa ? CASOS_USINA['importar-sucesso']() : CASOS_USINA['importar-tenant'](),
     financeiro: renderFinanceiroPage(FIN_CHEIO, user),
+    'gd-lista': casa ? CASOS_DEMONSTRATIVOS.lista() : CASOS_DEMONSTRATIVOS['lista-tenant'](),
+    'gd-cliente': casa ? CASOS_DEMONSTRATIVOS['cliente-sem-cliente']() : CASOS_DEMONSTRATIVOS['cliente-tenant'](),
+    'gd-conferencia': CASOS_DEMONSTRATIVOS.conferencia(),
+    'gd-digitar': CASOS_DEMONSTRATIVOS['digitar-erro'](),
+    'gd-confirmar': casa ? CASOS_DEMONSTRATIVOS['confirmar-reenviar']() : CASOS_DEMONSTRATIVOS['confirmar-periodo'](),
     monitoramento: renderMonitoramentoPage(frota(n), {}, casa ? ALERTAS_RESUMO : undefined, casa ? SPARK_7D : undefined, casa ? KPIS_EVA : undefined, user),
   };
 }
