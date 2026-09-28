@@ -15,6 +15,7 @@
 // nunca volta (nem no HTML, nem no JSON do "Testar conexão", nem no log). O
 // token do medidor aparece UMA vez (resposta com no-store) e só o hash fica.
 
+import { randomUUID } from 'node:crypto';
 import type { Request, Response, Router, RequestHandler } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AuthedRequest } from './auth.js';
@@ -70,11 +71,11 @@ function naoEncontrado(res: Response): void {
 }
 
 /** Máscara da chave guardada (só os 4 últimos), se der pra abrir. Nunca a chave. */
-function mascaraGuardada(m: MedidorTela, keyHex: string | undefined): { mascara: string | null; server: string | null } {
+function mascaraGuardada(m: MedidorTela, keyHex: string | undefined, companyId: string): { mascara: string | null; server: string | null } {
   if (!m.api_credentials_cifrado) return { mascara: null, server: null };
   if (!chaveEnergiaValida(keyHex)) return { mascara: '•••• (guardada)', server: null };
   try {
-    const c = decifrarCred(m.api_credentials_cifrado, keyHex);
+    const c = decifrarCred(m.api_credentials_cifrado, keyHex, { medidorId: m.id, companyId });
     return { mascara: mascarar(c.auth_key), server: c.server_uri.replace(/^https:\/\//, '') };
   } catch {
     return { mascara: '•••• (não abre com a chave atual)', server: null };
@@ -112,7 +113,9 @@ export function rotaCriarMedidor(supabase: SupabaseClient, d: DepsEnergia = {}):
     const db = bancoDoOperador(req as AuthedRequest, supabase);
     const usinas = await listarUsinas(db, user.companyId);
     const keyHex = r.keyHex();
-    const v = validarFormMedidor(corpo(req), { usinas, keyHex, temCredencialGuardada: false, novo: true });
+    // O id nasce aqui (não no banco) pra chave da nuvem já sair cifrada amarrada a ele.
+    const novoId = randomUUID();
+    const v = validarFormMedidor(corpo(req), { usinas, keyHex, temCredencialGuardada: false, novo: true, medidorId: novoId, companyId: user.companyId });
     const refazer = (erros: string[]) => res.status(400).type('text/html').send(renderFormMedidor({
       modo: 'novo', usinas, valores: v.valores, erros, cifraConfigurada: chaveEnergiaValida(keyHex),
     }, user));
@@ -121,7 +124,7 @@ export function rotaCriarMedidor(supabase: SupabaseClient, d: DepsEnergia = {}):
     const usaPush = v.dados.modo_coleta !== 'nuvem';
     const token = usaPush ? novoTokenMedidor() : null;
     const criado = await criarMedidor(db, user.companyId, {
-      ...v.dados, status: 'aguardando', ...(token ? { token_ingest_hash: hashToken(token) } : {}),
+      ...v.dados, id: novoId, status: 'aguardando', ...(token ? { token_ingest_hash: hashToken(token) } : {}),
     });
     if (!criado.ok) {
       refazer([criado.motivo === 'duplicado'
@@ -148,7 +151,7 @@ export function rotaEditarMedidor(supabase: SupabaseClient, d: DepsEnergia = {})
     if (!c.ok || !c.medidor) { naoEncontrado(res); return; }
     const usinas = await listarUsinas(db, user.companyId);
     const keyHex = r.keyHex();
-    const g = mascaraGuardada(c.medidor, keyHex);
+    const g = mascaraGuardada(c.medidor, keyHex, user.companyId);
     res.type('text/html').send(renderFormMedidor({
       modo: 'editar', medidor: c.medidor, usinas, chaveMascarada: g.mascara, serverUriGuardado: g.server, cifraConfigurada: chaveEnergiaValida(keyHex),
     }, user));
@@ -165,9 +168,9 @@ export function rotaSalvarMedidor(supabase: SupabaseClient, d: DepsEnergia = {})
     const m = c.medidor;
     const usinas = await listarUsinas(db, user.companyId);
     const keyHex = r.keyHex();
-    const v = validarFormMedidor(corpo(req), { usinas, keyHex, temCredencialGuardada: !!m.api_credentials_cifrado, novo: false });
+    const v = validarFormMedidor(corpo(req), { usinas, keyHex, temCredencialGuardada: !!m.api_credentials_cifrado, novo: false, medidorId: m.id, companyId: user.companyId });
     const refazer = (erros: string[]) => {
-      const g = mascaraGuardada(m, keyHex);
+      const g = mascaraGuardada(m, keyHex, user.companyId);
       res.status(400).type('text/html').send(renderFormMedidor({
         modo: 'editar', medidor: m, usinas, valores: v.valores, erros, chaveMascarada: g.mascara, serverUriGuardado: g.server, cifraConfigurada: chaveEnergiaValida(keyHex),
       }, user));
@@ -233,7 +236,7 @@ export function rotaTestarConexao(supabase: SupabaseClient, d: DepsEnergia = {})
       const keyHex = r.keyHex();
       if (!c.medidor.api_credentials_cifrado) { responder(false, 'Este medidor ainda não tem chave da nuvem guardada. Cole a chave para testar.'); return; }
       if (!chaveEnergiaValida(keyHex)) { responder(false, 'O servidor está sem a ENERGIA_CRED_KEY — não dá para abrir a chave guardada.'); return; }
-      try { cred = decifrarCred(c.medidor.api_credentials_cifrado, keyHex); } catch { responder(false, 'A chave guardada não abre com a ENERGIA_CRED_KEY atual. Cole a chave de novo.'); return; }
+      try { cred = decifrarCred(c.medidor.api_credentials_cifrado, keyHex, { medidorId: c.medidor.id, companyId: user.companyId }); } catch { responder(false, 'A chave guardada não abre com a ENERGIA_CRED_KEY atual. Cole a chave de novo.'); return; }
     } else {
       responder(false, 'Cole a "Authorization cloud key" e o servidor para testar.');
       return;

@@ -5,21 +5,22 @@ import {
 } from '../src/modules/energia/credenciais.js';
 
 const KEY = 'a'.repeat(64);
+const CTX = { medidorId: '11111111-2222-3333-4444-555555555555', companyId: '00000000-0000-0000-0000-000000000001' };
 
 describe('credenciais da nuvem Shelly (cifradas)', () => {
   it('cifrar → decifrar devolve o que entrou', () => {
     const c = { server_uri: 'https://shelly-77-eu.shelly.cloud', auth_key: 'MzE2YWJjZGVm-segredo' };
-    const s = cifrarCred(c, KEY);
-    expect(decifrarCred(s, KEY)).toEqual(c);
+    const s = cifrarCred(c, KEY, CTX);
+    expect(decifrarCred(s, KEY, CTX)).toEqual(c);
   });
   it('o texto cifrado não contém a chave', () => {
-    const s = cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'CHAVE-SUPER-SECRETA' }, KEY);
+    const s = cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'CHAVE-SUPER-SECRETA' }, KEY, CTX);
     expect(s).not.toContain('CHAVE-SUPER-SECRETA');
     expect(Buffer.from(s, 'base64').toString('utf8')).not.toContain('CHAVE-SUPER-SECRETA');
   });
   it('chave de ambiente inválida lança com mensagem da ENERGIA_CRED_KEY (e sem ecoar a chave)', () => {
-    expect(() => cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k' }, 'curta-demais')).toThrow(/ENERGIA_CRED_KEY/);
-    try { cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k' }, 'curta-demais'); } catch (e) {
+    expect(() => cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k' }, 'curta-demais', CTX)).toThrow(/ENERGIA_CRED_KEY/);
+    try { cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k' }, 'curta-demais', CTX); } catch (e) {
       expect((e as Error).message).not.toContain('curta-demais');
     }
   });
@@ -28,9 +29,22 @@ describe('credenciais da nuvem Shelly (cifradas)', () => {
     expect(chaveEnergiaValida(undefined)).toBe(false);
     expect(chaveEnergiaValida('zz')).toBe(false);
   });
+  it('a cifra é amarrada ao medidor E à empresa (AAD): copiar pra outro medidor/empresa não abre', () => {
+    const s = cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k' }, KEY, CTX);
+    expect(() => decifrarCred(s, KEY, { ...CTX, medidorId: '99999999-2222-3333-4444-555555555555' })).toThrow();
+    expect(() => decifrarCred(s, KEY, { ...CTX, companyId: 'bbbbbbbb-0000-0000-0000-000000000002' })).toThrow();
+  });
+  it('etiqueta de autenticação fixa em 16 bytes (etiqueta cortada não abre)', () => {
+    const s = cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k' }, KEY, CTX);
+    const [pre, b64] = s.split('.');
+    const tudo = Buffer.from(b64, 'base64');
+    // iv (12) + etiqueta cortada pra 4 bytes + corpo
+    const cortado = Buffer.concat([tudo.subarray(0, 12), tudo.subarray(12, 16), tudo.subarray(28)]).toString('base64');
+    expect(() => decifrarCred(`${pre}.${cortado}`, KEY, CTX)).toThrow();
+  });
   it('decifrar com a chave errada lança', () => {
-    const s = cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k' }, KEY);
-    expect(() => decifrarCred(s, 'b'.repeat(64))).toThrow();
+    const s = cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k' }, KEY, CTX);
+    expect(() => decifrarCred(s, 'b'.repeat(64), CTX)).toThrow();
   });
 });
 

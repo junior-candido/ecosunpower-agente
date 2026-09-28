@@ -5,7 +5,8 @@ import { decifrarCred } from '../src/modules/energia/credenciais.js';
 const KEY = 'd'.repeat(64);
 const USINAS = [{ id: 'u1', lead_id: 'l1' }];
 const base = { apelido: 'Quadro', device_id: 'shellypro3em-007007422D90', perfil: 'triphase', canal: '2', modo_coleta: 'push', consentimento: 'on' };
-const ctx = (o = {}) => ({ usinas: USINAS, keyHex: KEY, temCredencialGuardada: false, novo: true, ...o });
+const AMARRA = { medidorId: '11111111-2222-3333-4444-555555555555', companyId: '00000000-0000-0000-0000-000000000001' };
+const ctx = (o = {}) => ({ usinas: USINAS, keyHex: KEY, temCredencialGuardada: false, novo: true, ...AMARRA, ...o });
 
 describe('validarFormMedidor', () => {
   it('push simples: normaliza o id, liga usina e lead DA EMPRESA, carimba consentimento', () => {
@@ -32,7 +33,7 @@ describe('validarFormMedidor', () => {
     if (r.ok) {
       expect(JSON.stringify(r.valores)).not.toContain('SEGREDO-XYZ');
       expect(String(r.dados.api_credentials_cifrado)).not.toContain('SEGREDO-XYZ');
-      expect(decifrarCred(String(r.dados.api_credentials_cifrado), KEY)).toEqual({ server_uri: 'https://shelly-77-eu.shelly.cloud', auth_key: 'SEGREDO-XYZ' });
+      expect(decifrarCred(String(r.dados.api_credentials_cifrado), KEY, AMARRA)).toEqual({ server_uri: 'https://shelly-77-eu.shelly.cloud', auth_key: 'SEGREDO-XYZ' });
     }
   });
   it('nuvem com erro: a chave não volta pra tela', () => {

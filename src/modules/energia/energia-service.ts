@@ -260,7 +260,7 @@ export class EnergiaService {
     for (const m of elegiveis) {
       let cred: CredShelly;
       try {
-        cred = decifrarCred(m.api_credentials_cifrado!, keyHex);
+        cred = decifrarCred(m.api_credentials_cifrado!, keyHex, { medidorId: m.id, companyId: m.company_id });
       } catch {
         out.falhas++;
         await chaveRuim(m, 'a chave guardada não abre (ENERGIA_CRED_KEY mudou?) — cole a chave de novo');

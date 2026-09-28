@@ -2,14 +2,14 @@
 //
 // Segredos da Gestão de Energia:
 //  - chave da nuvem Shelly (auth_key + server_uri): dá CONTROLE TOTAL da conta
-//    (inclusive dos relés). Fica CIFRADA (AES-256-GCM) com a env ENERGIA_CRED_KEY,
-//    reusando a cifra do fiscal (financeiro/fiscal/crypto-cert.ts). Entra só pelo
-//    formulário da plataforma, nunca volta pra tela, nunca vai pro log.
+//    (inclusive dos relés). Fica CIFRADA (AES-256-GCM, etiqueta de 16 bytes)
+//    com a env ENERGIA_CRED_KEY e AMARRADA ao medidor e à empresa (AAD): o
+//    texto cifrado copiado pra outro medidor ou outra empresa não abre. Entra
+//    só pelo formulário da plataforma, nunca volta pra tela, nunca vai pro log.
 //  - token do medidor: o script do aparelho manda no cabeçalho x-shelly-token.
 //    No banco fica só o SHA-256; o token claro aparece UMA vez na tela.
 
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { cifrar, decifrar } from '../financeiro/fiscal/crypto-cert.js';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 export interface CredShelly { server_uri: string; auth_key: string }
 
@@ -25,14 +25,37 @@ function exigirChave(keyHex: string): void {
   if (!chaveEnergiaValida(keyHex)) throw new Error('ENERGIA_CRED_KEY inválida: precisa de 64 caracteres hex (32 bytes).');
 }
 
-export function cifrarCred(c: CredShelly, keyHex: string): string {
+/** A que medidor e empresa a chave cifrada pertence (vira o AAD do GCM). */
+export interface AmarraCred { medidorId: string; companyId: string }
+
+const PREFIXO = 'v2.';
+const IV_BYTES = 12;
+const TAG_BYTES = 16;
+const aad = (a: AmarraCred): Buffer => {
+  if (!a?.medidorId || !a?.companyId) throw new Error('credencial da nuvem sem medidor/empresa para amarrar');
+  return Buffer.from(`medidor:${a.medidorId}|empresa:${a.companyId}`, 'utf8');
+};
+
+/** Formato: "v2." + base64(iv 12 | etiqueta 16 | dados). */
+export function cifrarCred(c: CredShelly, keyHex: string, amarra: AmarraCred): string {
   exigirChave(keyHex);
-  return cifrar(Buffer.from(JSON.stringify({ server_uri: c.server_uri, auth_key: c.auth_key }), 'utf8'), keyHex);
+  const iv = randomBytes(IV_BYTES);
+  const cf = createCipheriv('aes-256-gcm', Buffer.from(keyHex, 'hex'), iv, { authTagLength: TAG_BYTES });
+  cf.setAAD(aad(amarra));
+  const corpo = Buffer.concat([cf.update(JSON.stringify({ server_uri: c.server_uri, auth_key: c.auth_key }), 'utf8'), cf.final()]);
+  return PREFIXO + Buffer.concat([iv, cf.getAuthTag(), corpo]).toString('base64');
 }
 
-export function decifrarCred(s: string, keyHex: string): CredShelly {
+export function decifrarCred(s: string, keyHex: string, amarra: AmarraCred): CredShelly {
   exigirChave(keyHex);
-  const o = JSON.parse(decifrar(s, keyHex).toString('utf8')) as Partial<CredShelly>;
+  if (typeof s !== 'string' || !s.startsWith(PREFIXO)) throw new Error('credencial cifrada em formato inesperado');
+  const tudo = Buffer.from(s.slice(PREFIXO.length), 'base64');
+  if (tudo.length <= IV_BYTES + TAG_BYTES) throw new Error('credencial cifrada em formato inesperado');
+  const df = createDecipheriv('aes-256-gcm', Buffer.from(keyHex, 'hex'), tudo.subarray(0, IV_BYTES), { authTagLength: TAG_BYTES });
+  df.setAAD(aad(amarra));
+  df.setAuthTag(tudo.subarray(IV_BYTES, IV_BYTES + TAG_BYTES));
+  const claro = Buffer.concat([df.update(tudo.subarray(IV_BYTES + TAG_BYTES)), df.final()]).toString('utf8');
+  const o = JSON.parse(claro) as Partial<CredShelly>;
   if (typeof o.server_uri !== 'string' || typeof o.auth_key !== 'string') throw new Error('credencial cifrada em formato inesperado');
   return { server_uri: o.server_uri, auth_key: o.auth_key };
 }

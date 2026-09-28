@@ -13,6 +13,9 @@ export interface ContextoForm {
   /** Edição: já existe chave guardada (campo em branco = mantém). */
   temCredencialGuardada: boolean;
   novo: boolean;
+  /** A chave da nuvem é cifrada amarrada a ESTE medidor e ESTA empresa (AAD). */
+  medidorId: string;
+  companyId: string;
 }
 
 export interface ValoresForm {
@@ -85,7 +88,7 @@ export function validarFormMedidor(corpo: Record<string, unknown>, ctx: Contexto
       if (!authKey) erros.push('Para ler pela nuvem, cole a "Authorization cloud key" do app Shelly.');
       if (!server) erros.push('O endereço do servidor da nuvem tem que terminar em ".shelly.cloud" (ex.: shelly-77-eu.shelly.cloud).');
       if (!chaveEnergiaValida(ctx.keyHex)) erros.push('O servidor ainda não tem a chave de cifra (ENERGIA_CRED_KEY) — peça para configurar antes de guardar a chave da nuvem.');
-      if (authKey && server && chaveEnergiaValida(ctx.keyHex)) credCifrada = cifrarCred({ server_uri: server, auth_key: authKey }, ctx.keyHex);
+      if (authKey && server && chaveEnergiaValida(ctx.keyHex)) credCifrada = cifrarCred({ server_uri: server, auth_key: authKey }, ctx.keyHex, { medidorId: ctx.medidorId, companyId: ctx.companyId });
     }
   } else if (authKey) {
     erros.push('A chave da nuvem só é usada quando o dado chega pela nuvem. Escolha "pela nuvem" ou apague a chave.');

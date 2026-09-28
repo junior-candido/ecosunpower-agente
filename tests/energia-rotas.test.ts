@@ -6,7 +6,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   rotaListaEnergia, rotaCriarMedidor, rotaSalvarMedidor, rotaNovoToken, rotaTestarConexao, rotaEnergiaDaCasa, rotaEditarMedidor,
 } from '../src/modules/dashboard/energia-rotas.js';
-import { cifrarCred, hashToken } from '../src/modules/energia/credenciais.js';
+import { cifrarCred, decifrarCred, hashToken } from '../src/modules/energia/credenciais.js';
 import type { DashUser } from '../src/modules/dashboard/permissions.js';
 import type { MedidorAdapter } from '../src/modules/energia/types.js';
 
@@ -64,7 +64,7 @@ const MEDIDOR = {
   perfil: 'triphase', canais: { rede: 2 }, ligacao: 'mono', tensao_nominal_v: 220, concessionaria: 'Neoenergia', uc_instalacao: '123456',
   codigo_cliente: null, grupo_gd: 'gd1', sistema_id: 'sis-1', lead_id: null, status: 'ok', status_desde: null,
   ultima_leitura_em: '2026-09-28T14:59:00Z', ultimo_erro: null, consentimento_em: null, ativo: true,
-  api_credentials_cifrado: cifrarCred({ server_uri: 'https://shelly-77-eu.shelly.cloud', auth_key: 'CHAVE-QUE-NAO-PODE-VAZAR-9z8y' }, KEY),
+  api_credentials_cifrado: cifrarCred({ server_uri: 'https://shelly-77-eu.shelly.cloud', auth_key: 'CHAVE-QUE-NAO-PODE-VAZAR-9z8y' }, KEY, { medidorId: MID, companyId: ECOSUN }),
   token_ingest_hash: 'ab'.repeat(32),
 };
 
@@ -181,6 +181,9 @@ describe('cadastro', () => {
     const p = db.chamadas.find((c) => c.op === 'insert')!.payload as Record<string, unknown>;
     expect(JSON.stringify(p)).not.toContain('SEGREDO-2');
     expect(p.api_credentials_cifrado).toBeTruthy();
+    // cifrada amarrada ao id que o próprio insert leva e à empresa da sessão
+    expect(String(p.id)).toMatch(/^[0-9a-f-]{36}$/);
+    expect(decifrarCred(String(p.api_credentials_cifrado), KEY, { medidorId: String(p.id), companyId: ECOSUN }).auth_key).toBe('SEGREDO-2');
     expect(res.redirect).toHaveBeenCalledWith(`/dashboard/energia/${MID}`);
   });
 

@@ -180,15 +180,17 @@ describe('fecharDiasRecentes', () => {
 describe('coletarNuvem', () => {
   const TRI = { 'em:0': { c_voltage: 227, c_current: 5, c_act_power: 1100, c_aprt_power: 1200, c_pf: 0.9 }, 'emdata:0': { c_total_act_energy: 5000, c_total_act_ret_energy: 10 } };
 
+  /** Chave cifrada amarrada ao medidor (AAD = medidor + empresa). */
+  const credDe = (id: string, empresa = EMPRESA_A) => cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k1' }, KEY, { medidorId: id, companyId: empresa });
+
   function adapterFalso(res: Awaited<ReturnType<MedidorAdapter['buscarStatus']>>) {
     return { fabricante: 'shelly', buscarStatus: vi.fn(async () => res), lerCanal: (st: Record<string, unknown>) => (st['em:0'] ? { tensao: 227, corrente: 5, potenciaW: 1100, potenciaVa: 1200, fatorPotencia: 0.9, energiaWh: 5000, energiaDevolvidaWh: 10 } : null) } as unknown as MedidorAdapter & { buscarStatus: ReturnType<typeof vi.fn> };
   }
 
   it('agrupa medidores pela chave (decifra 1x) e grava leitura sintética', async () => {
-    const cred = cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k1' }, KEY);
     const ms = [
-      medidor({ id: 'a', device_id: 'aaa', modo_coleta: 'nuvem', api_credentials_cifrado: cred }),
-      medidor({ id: 'b', device_id: 'bbb', modo_coleta: 'nuvem', api_credentials_cifrado: cred }),
+      medidor({ id: 'a', device_id: 'aaa', modo_coleta: 'nuvem', api_credentials_cifrado: credDe('a') }),
+      medidor({ id: 'b', device_id: 'bbb', modo_coleta: 'nuvem', api_credentials_cifrado: credDe('b') }),
       medidor({ id: 'c', device_id: 'ccc', modo_coleta: 'push' }),
     ];
     const r = repoFalso(ms);
@@ -201,11 +203,10 @@ describe('coletarNuvem', () => {
   });
 
   it('push_nuvem só usa a nuvem quando o push está calado há mais de 20 min', async () => {
-    const cred = cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k1' }, KEY);
     const agora = new Date('2026-09-08T12:00:00Z');
     const ms = [
-      medidor({ id: 'vivo', device_id: 'v', modo_coleta: 'push_nuvem', api_credentials_cifrado: cred, ultima_leitura_em: '2026-09-08T11:55:00Z' }),
-      medidor({ id: 'calado', device_id: 'c', modo_coleta: 'push_nuvem', api_credentials_cifrado: cred, ultima_leitura_em: '2026-09-08T11:00:00Z' }),
+      medidor({ id: 'vivo', device_id: 'v', modo_coleta: 'push_nuvem', api_credentials_cifrado: credDe('vivo'), ultima_leitura_em: '2026-09-08T11:55:00Z' }),
+      medidor({ id: 'calado', device_id: 'c', modo_coleta: 'push_nuvem', api_credentials_cifrado: credDe('calado'), ultima_leitura_em: '2026-09-08T11:00:00Z' }),
     ];
     const ad = adapterFalso({ ok: true, devices: [] });
     await new EnergiaService(repoFalso(ms).db, { adapter: () => ad }).coletarNuvem(agora, KEY);
@@ -213,7 +214,7 @@ describe('coletarNuvem', () => {
   });
 
   it('chave recusada → nuvem_ok=false (status do dado intocado) e não tenta de novo', async () => {
-    const cred = cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k1' }, KEY);
+    const cred = credDe('a');
     const ms = [medidor({ id: 'a', device_id: 'aaa', modo_coleta: 'nuvem', api_credentials_cifrado: cred })];
     const r = repoFalso(ms);
     const ad = adapterFalso({ ok: false, reason: 'nuvem Shelly recusou a chave (401)', invalidCredentials: true });
@@ -228,17 +229,25 @@ describe('coletarNuvem', () => {
   });
 
   it('chave aceita de novo (colada na edição) limpa o problema antigo', async () => {
-    const cred = cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k1' }, KEY);
+    const cred = credDe('a');
     const r = repoFalso([medidor({ id: 'a', device_id: 'aaa', modo_coleta: 'nuvem', api_credentials_cifrado: cred, nuvem_ok: null, ultimo_erro: 'velho' })]);
     await new EnergiaService(r.db, { adapter: () => adapterFalso({ ok: true, devices: [] }) }).coletarNuvem(new Date(), KEY);
     expect(r.status[0][1]).toMatchObject({ nuvem_ok: true, ultimo_erro: null });
   });
 
   it('falha passageira da nuvem (rede) não marca a chave como ruim', async () => {
-    const cred = cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k1' }, KEY);
+    const cred = credDe('a');
     const r = repoFalso([medidor({ id: 'a', device_id: 'aaa', modo_coleta: 'nuvem', api_credentials_cifrado: cred })]);
     await new EnergiaService(r.db, { adapter: () => adapterFalso({ ok: false, reason: 'nuvem Shelly: tempo esgotado' }) }).coletarNuvem(new Date(), KEY);
     expect(r.status[0][1]).toEqual({ ultimo_erro: 'nuvem Shelly: tempo esgotado' });
+  });
+
+  it('chave cifrada de OUTRA empresa (copiada no banco) não abre: nuvem_ok=false, nada é chamado', async () => {
+    const ad = adapterFalso({ ok: true, devices: [] });
+    const r = repoFalso([medidor({ id: 'a', device_id: 'aaa', modo_coleta: 'nuvem', api_credentials_cifrado: credDe('a', EMPRESA_B) })]);
+    await new EnergiaService(r.db, { adapter: () => ad }).coletarNuvem(new Date(), KEY);
+    expect(ad.buscarStatus).not.toHaveBeenCalled();
+    expect(r.status[0][1]).toMatchObject({ nuvem_ok: false });
   });
 
   it('sem ENERGIA_CRED_KEY não faz nada', async () => {
