@@ -148,6 +148,9 @@ export const MUDANCAS_R17: Record<string, MudancaContrato[]> = {
 // R18 — RH
 // ════════════════════════════════════════════════════════════════════════
 
+/** R18 — trocas de contrato por caso de tests/fixtures/casos-rh.ts. */
+export const MUDANCAS_R18: Record<string, MudancaContrato[]> = {};
+
 
 // ════════════════════════════════════════════════════════════════════════
 // R19 — Configurações
