@@ -1,0 +1,2010 @@
+{
+  "lista": {
+    "formularios": [
+      {
+        "method": "GET",
+        "action": "/dashboard/clientes",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "cidade",
+            "type": "select"
+          },
+          {
+            "name": "concessionaria",
+            "type": "select"
+          },
+          {
+            "name": "ord",
+            "type": "select"
+          },
+          {
+            "name": "q",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/vincular-sistema",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "lead_id",
+            "type": "hidden"
+          },
+          {
+            "name": "novo_name",
+            "type": "text"
+          },
+          {
+            "name": "novo_phone",
+            "type": "text"
+          },
+          {
+            "name": "sistema_id",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'/dashboard/api/clientes/search?q='+encodeURIComponent(q)"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111",
+      "/dashboard/clientes/22222222-aaaa-4aaa-8aaa-222222222222",
+      "/dashboard/clientes/33333333-aaaa-4aaa-8aaa-333333333333",
+      "/dashboard/clientes/44444444-aaaa-4aaa-8aaa-444444444444",
+      "/dashboard/clientes/novo",
+      "/dashboard/clientes?show=arquivados",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "modal-sistema-apelido",
+      "modal-sistema-id",
+      "modal-vinculo",
+      "orf-busca",
+      "orf-drop",
+      "orf-escolhido",
+      "orf-lead-id"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      "[data-id]"
+    ],
+    "dataAttrs": [
+      "data-id"
+    ],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "lista-filtrada-paginada": {
+    "formularios": [
+      {
+        "method": "GET",
+        "action": "/dashboard/clientes",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "cidade",
+            "type": "select"
+          },
+          {
+            "name": "concessionaria",
+            "type": "select"
+          },
+          {
+            "name": "ord",
+            "type": "select"
+          },
+          {
+            "name": "q",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111",
+      "/dashboard/clientes/22222222-aaaa-4aaa-8aaa-222222222222",
+      "/dashboard/clientes/33333333-aaaa-4aaa-8aaa-333333333333",
+      "/dashboard/clientes/44444444-aaaa-4aaa-8aaa-444444444444",
+      "/dashboard/clientes/novo",
+      "/dashboard/clientes?offset=0&q=ana%20%26%20%22cia%22&concessionaria=neoenergia-df&cidade=Gama&ord=nome",
+      "/dashboard/clientes?offset=100&q=ana%20%26%20%22cia%22&concessionaria=neoenergia-df&cidade=Gama&ord=nome",
+      "/dashboard/clientes?show=arquivados",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "lista-arquivados": {
+    "formularios": [
+      {
+        "method": "GET",
+        "action": "/dashboard/clientes",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "cidade",
+            "type": "select"
+          },
+          {
+            "name": "concessionaria",
+            "type": "select"
+          },
+          {
+            "name": "ord",
+            "type": "select"
+          },
+          {
+            "name": "q",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "lista-vazia": {
+    "formularios": [
+      {
+        "method": "GET",
+        "action": "/dashboard/clientes",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "cidade",
+            "type": "select"
+          },
+          {
+            "name": "concessionaria",
+            "type": "select"
+          },
+          {
+            "name": "ord",
+            "type": "select"
+          },
+          {
+            "name": "q",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/clientes/novo",
+      "/dashboard/clientes?show=arquivados",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "lista-tenant": {
+    "formularios": [
+      {
+        "method": "GET",
+        "action": "/dashboard/clientes",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "cidade",
+            "type": "select"
+          },
+          {
+            "name": "concessionaria",
+            "type": "select"
+          },
+          {
+            "name": "ord",
+            "type": "select"
+          },
+          {
+            "name": "q",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/vincular-sistema",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "lead_id",
+            "type": "hidden"
+          },
+          {
+            "name": "novo_name",
+            "type": "text"
+          },
+          {
+            "name": "novo_phone",
+            "type": "text"
+          },
+          {
+            "name": "sistema_id",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'/dashboard/api/clientes/search?q='+encodeURIComponent(q)"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/clientes",
+      "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111",
+      "/dashboard/clientes/22222222-aaaa-4aaa-8aaa-222222222222",
+      "/dashboard/clientes/33333333-aaaa-4aaa-8aaa-333333333333",
+      "/dashboard/clientes/44444444-aaaa-4aaa-8aaa-444444444444",
+      "/dashboard/clientes/novo",
+      "/dashboard/clientes?show=arquivados",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "modal-sistema-apelido",
+      "modal-sistema-id",
+      "modal-vinculo",
+      "orf-busca",
+      "orf-drop",
+      "orf-escolhido",
+      "orf-lead-id"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      "[data-id]"
+    ],
+    "dataAttrs": [
+      "data-id"
+    ],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "ficha": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/anexos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "descricao",
+            "type": "text"
+          },
+          {
+            "name": "file",
+            "type": "file"
+          },
+          {
+            "name": "tipo",
+            "type": "select"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/anexos/88888888-aaaa-4aaa-8aaa-888888888888",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "_method",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/anexos/99999999-aaaa-4aaa-8aaa-999999999999",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "_method",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/arquivar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/edit",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "banco_financiamento",
+            "type": "select"
+          },
+          {
+            "name": "cep",
+            "type": "text"
+          },
+          {
+            "name": "city",
+            "type": "text"
+          },
+          {
+            "name": "concessionaria",
+            "type": "select"
+          },
+          {
+            "name": "consumo_medio_kwh",
+            "type": "text"
+          },
+          {
+            "name": "conta_media_brl",
+            "type": "text"
+          },
+          {
+            "name": "cpf_cnpj",
+            "type": "text"
+          },
+          {
+            "name": "credito_esperado_kwh",
+            "type": "text"
+          },
+          {
+            "name": "data_nascimento",
+            "type": "date"
+          },
+          {
+            "name": "eh_consumidor_rateio",
+            "type": "checkbox"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "endereco_complemento",
+            "type": "text"
+          },
+          {
+            "name": "endereco_numero",
+            "type": "text"
+          },
+          {
+            "name": "endereco_rua",
+            "type": "text"
+          },
+          {
+            "name": "estado_civil",
+            "type": "select"
+          },
+          {
+            "name": "forma_pagamento",
+            "type": "select"
+          },
+          {
+            "name": "installation_status",
+            "type": "select"
+          },
+          {
+            "name": "lead_source",
+            "type": "text"
+          },
+          {
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "name": "neighborhood",
+            "type": "text"
+          },
+          {
+            "name": "observacoes_perfil",
+            "type": "textarea"
+          },
+          {
+            "name": "percentual_rateio",
+            "type": "text"
+          },
+          {
+            "name": "phone",
+            "type": "text"
+          },
+          {
+            "name": "profile",
+            "type": "select"
+          },
+          {
+            "name": "tarifa_classe",
+            "type": "select"
+          },
+          {
+            "name": "tarifa_modalidade",
+            "type": "select"
+          },
+          {
+            "name": "uc_geradora_lead_id",
+            "type": "text"
+          },
+          {
+            "name": "uc_numero",
+            "type": "text"
+          },
+          {
+            "name": "uf",
+            "type": "text"
+          },
+          {
+            "name": "vendedor_responsavel",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/eva-action",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "action",
+            "type": "hidden"
+          },
+          {
+            "name": "extra",
+            "type": "hidden"
+          },
+          {
+            "name": "lead_id",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/eva-action",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "action",
+            "type": "hidden"
+          },
+          {
+            "name": "extra",
+            "type": "hidden"
+          },
+          {
+            "name": "lead_id",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'https://viacep.com.br/ws/' + raw + '/json/'"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/relatorio-pos-instalacao/novo",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/11111111-aaaa-4aaa-8aaa-111111111111",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/propostas/ana-exemplo-p1/preview",
+      "/dashboard/propostas/ana-exemplo-p2/preview",
+      "/dashboard/propostas/novo?lead_id=11111111-aaaa-4aaa-8aaa-111111111111",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "abas",
+      "anexo_file",
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      "#abas a",
+      ".cc-nav a[href], .cc-nav summary",
+      ".js-num",
+      "[id$=\"-content\"]",
+      "[name=\"city\"]",
+      "[name=\"uf\"]",
+      "form",
+      "input[name=\"cep\"]"
+    ],
+    "dataAttrs": [
+      "data-nome"
+    ],
+    "confirms": [
+      "'Arquivar ' + this.dataset.nome + '? Sai da lista ativa, mas historico fica intacto e da pra restaurar a qualquer hora.'",
+      "'Excluir ' + this.dataset.nome + ' PERMANENTEMENTE? Isso apaga propostas, conversas e anexos vinculados. Não dá pra desfazer.'",
+      "'Remover este anexo?'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "ficha-arquivada-sem-dados": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/anexos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "descricao",
+            "type": "text"
+          },
+          {
+            "name": "file",
+            "type": "file"
+          },
+          {
+            "name": "tipo",
+            "type": "select"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/desarquivar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/edit",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "banco_financiamento",
+            "type": "select"
+          },
+          {
+            "name": "cep",
+            "type": "text"
+          },
+          {
+            "name": "city",
+            "type": "text"
+          },
+          {
+            "name": "concessionaria",
+            "type": "select"
+          },
+          {
+            "name": "consumo_medio_kwh",
+            "type": "text"
+          },
+          {
+            "name": "conta_media_brl",
+            "type": "text"
+          },
+          {
+            "name": "cpf_cnpj",
+            "type": "text"
+          },
+          {
+            "name": "credito_esperado_kwh",
+            "type": "text"
+          },
+          {
+            "name": "data_nascimento",
+            "type": "date"
+          },
+          {
+            "name": "eh_consumidor_rateio",
+            "type": "checkbox"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "endereco_complemento",
+            "type": "text"
+          },
+          {
+            "name": "endereco_numero",
+            "type": "text"
+          },
+          {
+            "name": "endereco_rua",
+            "type": "text"
+          },
+          {
+            "name": "estado_civil",
+            "type": "select"
+          },
+          {
+            "name": "forma_pagamento",
+            "type": "select"
+          },
+          {
+            "name": "installation_status",
+            "type": "select"
+          },
+          {
+            "name": "lead_source",
+            "type": "text"
+          },
+          {
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "name": "neighborhood",
+            "type": "text"
+          },
+          {
+            "name": "observacoes_perfil",
+            "type": "textarea"
+          },
+          {
+            "name": "percentual_rateio",
+            "type": "text"
+          },
+          {
+            "name": "phone",
+            "type": "text"
+          },
+          {
+            "name": "profile",
+            "type": "select"
+          },
+          {
+            "name": "tarifa_classe",
+            "type": "select"
+          },
+          {
+            "name": "tarifa_modalidade",
+            "type": "select"
+          },
+          {
+            "name": "uc_geradora_lead_id",
+            "type": "text"
+          },
+          {
+            "name": "uc_numero",
+            "type": "text"
+          },
+          {
+            "name": "uf",
+            "type": "text"
+          },
+          {
+            "name": "vendedor_responsavel",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'https://viacep.com.br/ws/' + raw + '/json/'"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/relatorio-pos-instalacao/novo",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/propostas/novo?lead_id=11111111-aaaa-4aaa-8aaa-111111111111",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "abas",
+      "anexo_file",
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      "#abas a",
+      ".cc-nav a[href], .cc-nav summary",
+      ".js-num",
+      "[id$=\"-content\"]",
+      "[name=\"city\"]",
+      "[name=\"uf\"]",
+      "form",
+      "input[name=\"cep\"]"
+    ],
+    "dataAttrs": [
+      "data-nome"
+    ],
+    "confirms": [
+      "'Excluir ' + this.dataset.nome + ' PERMANENTEMENTE? Isso apaga propostas, conversas e anexos vinculados. Não dá pra desfazer.'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "ficha-tenant": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/anexos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "descricao",
+            "type": "text"
+          },
+          {
+            "name": "file",
+            "type": "file"
+          },
+          {
+            "name": "tipo",
+            "type": "select"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/anexos/88888888-aaaa-4aaa-8aaa-888888888888",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "_method",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/anexos/99999999-aaaa-4aaa-8aaa-999999999999",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "_method",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/arquivar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/edit",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "banco_financiamento",
+            "type": "select"
+          },
+          {
+            "name": "cep",
+            "type": "text"
+          },
+          {
+            "name": "city",
+            "type": "text"
+          },
+          {
+            "name": "concessionaria",
+            "type": "select"
+          },
+          {
+            "name": "consumo_medio_kwh",
+            "type": "text"
+          },
+          {
+            "name": "conta_media_brl",
+            "type": "text"
+          },
+          {
+            "name": "cpf_cnpj",
+            "type": "text"
+          },
+          {
+            "name": "credito_esperado_kwh",
+            "type": "text"
+          },
+          {
+            "name": "data_nascimento",
+            "type": "date"
+          },
+          {
+            "name": "eh_consumidor_rateio",
+            "type": "checkbox"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "endereco_complemento",
+            "type": "text"
+          },
+          {
+            "name": "endereco_numero",
+            "type": "text"
+          },
+          {
+            "name": "endereco_rua",
+            "type": "text"
+          },
+          {
+            "name": "estado_civil",
+            "type": "select"
+          },
+          {
+            "name": "forma_pagamento",
+            "type": "select"
+          },
+          {
+            "name": "installation_status",
+            "type": "select"
+          },
+          {
+            "name": "lead_source",
+            "type": "text"
+          },
+          {
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "name": "neighborhood",
+            "type": "text"
+          },
+          {
+            "name": "observacoes_perfil",
+            "type": "textarea"
+          },
+          {
+            "name": "percentual_rateio",
+            "type": "text"
+          },
+          {
+            "name": "phone",
+            "type": "text"
+          },
+          {
+            "name": "profile",
+            "type": "select"
+          },
+          {
+            "name": "tarifa_classe",
+            "type": "select"
+          },
+          {
+            "name": "tarifa_modalidade",
+            "type": "select"
+          },
+          {
+            "name": "uc_geradora_lead_id",
+            "type": "text"
+          },
+          {
+            "name": "uc_numero",
+            "type": "text"
+          },
+          {
+            "name": "uf",
+            "type": "text"
+          },
+          {
+            "name": "vendedor_responsavel",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/eva-action",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "action",
+            "type": "hidden"
+          },
+          {
+            "name": "extra",
+            "type": "hidden"
+          },
+          {
+            "name": "lead_id",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/eva-action",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "action",
+            "type": "hidden"
+          },
+          {
+            "name": "extra",
+            "type": "hidden"
+          },
+          {
+            "name": "lead_id",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'https://viacep.com.br/ws/' + raw + '/json/'"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/relatorio-pos-instalacao/novo",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/11111111-aaaa-4aaa-8aaa-111111111111",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/propostas/ana-exemplo-p1/preview",
+      "/dashboard/propostas/ana-exemplo-p2/preview",
+      "/dashboard/propostas/novo?lead_id=11111111-aaaa-4aaa-8aaa-111111111111",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "abas",
+      "anexo_file",
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      "#abas a",
+      ".cc-nav a[href], .cc-nav summary",
+      ".js-num",
+      "[id$=\"-content\"]",
+      "[name=\"city\"]",
+      "[name=\"uf\"]",
+      "form",
+      "input[name=\"cep\"]"
+    ],
+    "dataAttrs": [
+      "data-nome"
+    ],
+    "confirms": [
+      "'Arquivar ' + this.dataset.nome + '? Sai da lista ativa, mas historico fica intacto e da pra restaurar a qualquer hora.'",
+      "'Excluir ' + this.dataset.nome + ' PERMANENTEMENTE? Isso apaga propostas, conversas e anexos vinculados. Não dá pra desfazer.'",
+      "'Remover este anexo?'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "novo": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/novo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "city",
+            "type": "text"
+          },
+          {
+            "name": "concessionaria",
+            "type": "select"
+          },
+          {
+            "name": "consumo_medio_kwh",
+            "type": "number"
+          },
+          {
+            "name": "cpf_cnpj",
+            "type": "text"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "name": "phone",
+            "type": "text"
+          },
+          {
+            "name": "profile",
+            "type": "select"
+          },
+          {
+            "name": "uf",
+            "type": "select"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "novo-erros": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/novo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "city",
+            "type": "text"
+          },
+          {
+            "name": "concessionaria",
+            "type": "select"
+          },
+          {
+            "name": "consumo_medio_kwh",
+            "type": "number"
+          },
+          {
+            "name": "cpf_cnpj",
+            "type": "text"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "name": "phone",
+            "type": "text"
+          },
+          {
+            "name": "profile",
+            "type": "select"
+          },
+          {
+            "name": "uf",
+            "type": "select"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "novo-tenant": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/novo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "city",
+            "type": "text"
+          },
+          {
+            "name": "concessionaria",
+            "type": "select"
+          },
+          {
+            "name": "consumo_medio_kwh",
+            "type": "number"
+          },
+          {
+            "name": "cpf_cnpj",
+            "type": "text"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "name",
+            "type": "text"
+          },
+          {
+            "name": "phone",
+            "type": "text"
+          },
+          {
+            "name": "profile",
+            "type": "select"
+          },
+          {
+            "name": "uf",
+            "type": "select"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "rpi-novo": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/relatorio-pos-instalacao",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "data_instalacao",
+            "type": "date"
+          },
+          {
+            "name": "fotos",
+            "type": "file"
+          },
+          {
+            "name": "mensagem_personalizada",
+            "type": "textarea"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "rp_fotos"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "rpi-novo-sem-nome": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/relatorio-pos-instalacao",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "data_instalacao",
+            "type": "date"
+          },
+          {
+            "name": "fotos",
+            "type": "file"
+          },
+          {
+            "name": "mensagem_personalizada",
+            "type": "textarea"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "rp_fotos"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "rpi-previa": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/relatorio-pos-instalacao/r-1/enviar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111",
+      "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/relatorio-pos-instalacao/novo",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'Enviar relatório pelo WhatsApp do cliente agora?'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "rpi-previa-enviada": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111",
+      "/dashboard/clientes/11111111-aaaa-4aaa-8aaa-111111111111/relatorio-pos-instalacao/novo",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  }
+}
