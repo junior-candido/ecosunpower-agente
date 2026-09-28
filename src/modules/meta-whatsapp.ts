@@ -282,12 +282,22 @@ export class MetaWhatsAppService {
     to: string,
     tipo: 'image' | 'video' | 'audio' | 'document',
     mediaId: string,
-    opts: { caption?: string; filename?: string } = {},
+    opts: { caption?: string; filename?: string; contextId?: string } = {},
   ): Promise<{ messageId: string }> {
     const obj: Record<string, unknown> = { id: mediaId };
     if (tipo !== 'audio' && opts.caption) obj.caption = opts.caption;
     if (tipo === 'document' && opts.filename) obj.filename = opts.filename;
-    return this.postMessage({ messaging_product: 'whatsapp', to, type: tipo, [tipo]: obj });
+    return this.postMessage({ messaging_product: 'whatsapp', to, type: tipo, [tipo]: obj, ...(opts.contextId ? { context: { message_id: opts.contextId } } : {}) });
+  }
+
+  /** W2 — texto RESPONDENDO outra mensagem (aparece citada no WhatsApp do cliente). */
+  async sendTextReply(to: string, text: string, contextMessageId: string): Promise<{ messageId: string }> {
+    return this.postMessage({ messaging_product: 'whatsapp', to, type: 'text', text: { body: text, preview_url: false }, context: { message_id: contextMessageId } });
+  }
+
+  /** W2 — reagir a uma mensagem (emoji vazio tira a reação). */
+  async sendReaction(to: string, messageId: string, emoji: string): Promise<{ messageId: string }> {
+    return this.postMessage({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'reaction', reaction: { message_id: messageId, emoji } });
   }
 
   async sendAudio(to: string, mediaUrl: string): Promise<{ messageId: string }> {
@@ -423,7 +433,9 @@ export class MetaWhatsAppService {
       };
     }
 
-    const base = { from, timestamp, messageId, fromMe: false, pushName, referral, phoneNumberId };
+    // W2: resposta a outra mensagem (context.id).
+    const ctxId = (msg.context as { id?: string } | undefined)?.id;
+    const base = { from, timestamp, messageId, fromMe: false, pushName, referral, phoneNumberId, ...(typeof ctxId === 'string' && ctxId ? { citandoId: ctxId } : {}) };
 
     switch (type) {
       case 'text': {
@@ -498,6 +510,25 @@ export class MetaWhatsAppService {
       default:
         return null;
     }
+  }
+
+  /** W2 — reações recebidas (type=reaction). Emoji vazio = o cliente tirou a reação. Nunca vão para a Eva. */
+  parseReacoes(payload: Record<string, unknown>): Array<{ from: string; wamid: string; alvo: string; emoji: string; phoneNumberId?: string; timestamp: Date }> {
+    const out: Array<{ from: string; wamid: string; alvo: string; emoji: string; phoneNumberId?: string; timestamp: Date }> = [];
+    for (const e of (payload.entry as Array<Record<string, unknown>> | undefined) ?? []) {
+      for (const ch of (e.changes as Array<Record<string, unknown>> | undefined) ?? []) {
+        if (ch.field !== 'messages') continue;
+        const value = ch.value as Record<string, unknown> | undefined;
+        const pnid = (value?.metadata as { phone_number_id?: string } | undefined)?.phone_number_id;
+        for (const m of (value?.messages as Array<Record<string, unknown>> | undefined) ?? []) {
+          if (m.type !== 'reaction') continue;
+          const r = m.reaction as { message_id?: string; emoji?: string } | undefined;
+          if (!r?.message_id) continue;
+          out.push({ from: String(m.from ?? ''), wamid: String(m.id ?? ''), alvo: r.message_id, emoji: typeof r.emoji === 'string' ? r.emoji : '', ...(pnid ? { phoneNumberId: pnid } : {}), timestamp: new Date(Number(m.timestamp ?? 0) * 1000) });
+        }
+      }
+    }
+    return out;
   }
 
   // Parse separado pra status updates (sent/delivered/read/failed). Util pra

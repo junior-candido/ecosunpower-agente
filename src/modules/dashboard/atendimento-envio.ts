@@ -127,6 +127,11 @@ export const RESULTADO_ENVIO: Record<string, { tom: 'ok' | 'erro' | 'aviso'; tex
   erro_arquivo: { tom: 'erro', texto: 'Não consegui guardar o arquivo, então não enviei. Tente de novo em instantes.' },
   audio_invalido: { tom: 'erro', texto: 'Não consegui preparar a gravação para o WhatsApp. Grave de novo ou envie um arquivo de áudio.' },
   legenda_longa: { tom: 'erro', texto: 'Legenda longa demais (máximo 1024 letras).' },
+  // W2 — citar e reagir
+  citacao_invalida: { tom: 'erro', texto: 'Não achei a mensagem que você quis responder. Recarregue e tente de novo.' },
+  citacao_outro_numero: { tom: 'erro', texto: 'A mensagem citada chegou pelo outro número. Troque o "Responder como" ou envie sem citar.' },
+  reacao_enviada: { tom: 'ok', texto: 'Reação enviada.' },
+  reacao_invalida: { tom: 'erro', texto: 'Escolha um dos emojis da lista.' },
   devolveu: { tom: 'ok', texto: 'Conversa devolvida para a assistente.' },
 };
 

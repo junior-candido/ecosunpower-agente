@@ -15,6 +15,8 @@ export interface QueueMessage {
   nomeArquivo?: string;
   /** W1: tamanho do arquivo, quando o WhatsApp manda (Evolution). */
   tamanhoBytes?: number;
+  /** W2: a mensagem responde outra (id do WhatsApp da citada). */
+  citandoId?: string;
   // Empresa dona da mensagem (multi-tenant fatia 1). Resolvida no webhook a
   // partir do phone_number_id que recebeu a msg. Opcional: jobs antigos na
   // fila (sem esse campo) continuam parseando → o consumidor cai em EcoSun.

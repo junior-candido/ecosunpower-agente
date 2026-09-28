@@ -222,7 +222,10 @@ export function createDashboardRouter(
     // Atendimento P2: "Devolver para a Eva" limpa a pausa curta do Redis (takeover) do telefone.
     retomarTakeover?: (telefone: string) => Promise<void>;
     // Atendimento P2b: WhatsApp PESSOAL do dono (QR/Evolution) — envio pela instância dele.
-    enviarPessoal?: (instancia: string, to: string, text: string) => Promise<{ messageId?: string } | void>;
+    enviarPessoal?: import('./atendimento-rotas.js').DepsAtendimento['enviarPessoal'];
+    // W2 — responder citando (QR do tenant) e reagir pela Evolution.
+    sendTextEvolutionCitando?: import('./atendimento-rotas.js').DepsAtendimento['sendTextEvolutionCitando'];
+    reagirEvolution?: import('./atendimento-rotas.js').DepsAtendimento['reagirEvolution'];
     // W1 — mídia pela Evolution (instância do dono ou do tenant) e gravação WebM → OGG.
     enviarMidiaEvolution?: import('./atendimento-rotas.js').DepsAtendimento['enviarMidiaEvolution'];
     converterAudio?: (webm: Buffer) => Promise<Buffer>;
@@ -291,6 +294,8 @@ export function createDashboardRouter(
     retomarTakeover: options.retomarTakeover,
     enviarPessoal: options.enviarPessoal,
     enviarMidiaEvolution: options.enviarMidiaEvolution,
+    sendTextEvolutionCitando: options.sendTextEvolutionCitando,
+    reagirEvolution: options.reagirEvolution,
     converterAudio: options.converterAudio,
     converterImagemJpeg: options.converterImagemJpeg,
     copiarParaMemoria: async ({ leadId, companyId, texto, painelId }) => {
@@ -2664,10 +2669,13 @@ b.onclick=async function(){
   router.post('/leads/:id/responder-modelo', exigir('leads', 'editar'), rotasAtendimento.responderModelo);
   // W1 — foto, PDF/documento, áudio e vídeo (multipart; a permissão e a trava de empresa vêm ANTES do upload).
   router.post('/leads/:id/responder-midia', exigir('leads', 'editar'), rotasAtendimento.comArquivo(rotasAtendimento.responderMidia));
+  // W2 — reagir com emoji a uma mensagem da conversa (mesmo número da mensagem reagida).
+  router.post('/leads/:id/reagir', exigir('leads', 'editar'), rotasAtendimento.reagir);
 
   // P2b — número PESSOAL do dono: responder quem ainda não é lead e "virar lead".
   router.post('/leads/conversas/contato/responder', exigir('leads', 'editar'), rotasAtendimento.responderContato);
   router.post('/leads/conversas/contato/responder-midia', exigir('leads', 'editar'), rotasAtendimento.comArquivo(rotasAtendimento.responderContatoMidia));
+  router.post('/leads/conversas/contato/reagir', exigir('leads', 'editar'), rotasAtendimento.reagirContato);
   router.post('/leads/conversas/contato/virar-lead', exigir('leads', 'criar'), rotasAtendimento.virarLeadDoContato);
 
   // Cancela TODOS os toques pendentes de cadencia deste lead.

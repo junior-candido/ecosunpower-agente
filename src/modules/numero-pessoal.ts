@@ -207,6 +207,8 @@ export async function receberNoNumeroPessoal(
       texto: texto.slice(0, 4096),
       origem: msg.fromMe ? 'celular' : 'webhook',
       wamid: msg.messageId || null,
+      // W2: resposta citando outra mensagem.
+      ...(msg.citandoId ? { citando_wamid: msg.citandoId, ...(msg.citandoTexto ? { citando_texto: msg.citandoTexto.slice(0, 300) } : {}) } : {}),
       status: msg.fromMe ? 'enviada' : 'recebida',
       visivel_so_para: np.dono_user_id,
       enviada_em: msg.fromMe ? new Date(msg.timestamp ?? agora).toISOString() : null,

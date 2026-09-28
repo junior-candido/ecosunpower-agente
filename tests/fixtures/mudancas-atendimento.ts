@@ -131,3 +131,35 @@ export const ENTRA_MIDIA: MudancaContrato = {
     dataAttrs: ['data-envio-midia'],
   },
 };
+
+// ---------------------------------------------------------------------------
+// W2 (28/09/2026) — responder CITANDO e REAGIR com emoji.
+// ---------------------------------------------------------------------------
+
+/**
+ * Cada mensagem com id do WhatsApp ganha "⋯" (Responder / reagir 👍❤️😂😮😢🙏);
+ * "Responder" põe "Respondendo a …" em cima do campo e o id da citada no
+ * campo oculto `citando` (texto e arquivo). Reações e citações aparecem no balão.
+ */
+export const ENTRA_CITAR_REAGIR: MudancaContrato = {
+  motivo: 'Junior: responder citando uma mensagem e reagir com emoji',
+  sai: {
+    formularios: [
+      { method: 'POST', action: `/dashboard/leads/${ID}/responder`, enctype: '', campos: [{ name: 'chave', type: 'hidden' }, { name: 'texto', type: 'textarea' }] },
+      { method: 'POST', action: `/dashboard/leads/${ID}/responder-midia`, enctype: 'multipart/form-data', campos: [{ name: 'arquivo', type: 'file' }, { name: 'chave', type: 'hidden' }, { name: 'legenda', type: 'text' }] },
+    ],
+  },
+  entra: {
+    formularios: [
+      { method: 'POST', action: `/dashboard/leads/${ID}/responder`, enctype: '', campos: [{ name: 'chave', type: 'hidden' }, { name: 'citando', type: 'hidden' }, { name: 'texto', type: 'textarea' }] },
+      { method: 'POST', action: `/dashboard/leads/${ID}/responder-midia`, enctype: 'multipart/form-data', campos: [{ name: 'arquivo', type: 'file' }, { name: 'chave', type: 'hidden' }, { name: 'citando', type: 'hidden' }, { name: 'legenda', type: 'text' }] },
+    ],
+    fetches: ['URLR'],
+    ids: ['cc-at-citando', 'cc-at-citando-txt'],
+    dataAttrs: ['data-acoes', 'data-msg', 'data-tirar-citacao'],
+    seletores: [
+      '.cc-at-foto', '.cc-at-menu-msg', '.cc-at-midia,.cc-at-doc-txt strong', '.cc-at-msg-q', '.cc-at-msg-t', '.cc-at-reacoes',
+      '[data-acoes]', '[data-msg]', '[data-tirar-citacao]', 'audio', 'input[name=citando]', 'video',
+    ],
+  },
+};

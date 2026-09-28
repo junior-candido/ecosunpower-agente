@@ -44,6 +44,7 @@ import { podeVerLead, type LeadDetail } from './leads-queries.js';
 import { linhaDoPainelParaChat } from './conversas-queries.js';
 import { numeroPessoalDoDono, mensagensPessoais, virarLead, leadDoTelefoneNaEmpresa, CASA as CASA_ID, type NumeroPessoal } from '../numero-pessoal.js';
 import { linhaVisivelPara } from '../mensagens-whatsapp.js';
+import { gravarReacao, emojiDeReacaoValido } from '../reacoes-citacoes.js';
 import {
   validarArquivo, guardarMidia, apagarMidia, urlDaMidia, textoDaMidia, caminhoDaEmpresa, LIMITE_LEGENDA, LIMITE_MIDIA_BYTES,
   type TipoMidia, type ArquivoValidado,
@@ -59,10 +60,14 @@ const TEMPO_MAX_META_MS = 3000;
 /** Só o pedaço do serviço oficial (Meta) que o painel usa. */
 export interface WabaPainel {
   sendText(to: string, text: string): Promise<{ messageId: string }>;
+  /** W2: texto respondendo (citando) outra mensagem. */
+  sendTextReply?(to: string, text: string, contextMessageId: string): Promise<{ messageId: string }>;
+  /** W2: reação com emoji (vazio = tirar). */
+  sendReaction?(to: string, messageId: string, emoji: string): Promise<{ messageId: string }>;
   /** W1: sobe o arquivo na Meta (devolve o media_id). */
   uploadMedia?(buffer: Buffer, mimeType: string, filename: string): Promise<{ mediaId: string }>;
   /** W1: manda a mídia já enviada à Meta. */
-  sendMediaById?(to: string, tipo: 'image' | 'video' | 'audio' | 'document', mediaId: string, opts?: { caption?: string; filename?: string }): Promise<{ messageId: string }>;
+  sendMediaById?(to: string, tipo: 'image' | 'video' | 'audio' | 'document', mediaId: string, opts?: { caption?: string; filename?: string; contextId?: string }): Promise<{ messageId: string }>;
   sendTemplate(to: string, name: string, lang: string, components: Array<{ type: 'body'; parameters: Array<{ type: 'text'; text: string }> }>): Promise<{ messageId: string }>;
   listTemplates?(): Promise<ModeloDaMeta[]>;
 }
@@ -86,7 +91,11 @@ export interface DepsAtendimento {
   /** Troca o banco do operador nos testes. */
   banco?: (req: AuthedRequest) => SupabaseClient;
   /** Parte 2b: envio pelo WhatsApp PESSOAL do dono (instância QR dele). */
-  enviarPessoal?: (instancia: string, to: string, text: string) => Promise<{ messageId?: string } | void>;
+  enviarPessoal?: (instancia: string, to: string, text: string, citada?: Citada) => Promise<{ messageId?: string } | void>;
+  /** W2: texto citando pela instância QR do TENANT (roda dentro de noCanalDaEmpresa). */
+  sendTextEvolutionCitando?: (to: string, text: string, citada: Citada) => Promise<unknown>;
+  /** W2: reação pela Evolution (número pessoal do dono ou tenant). */
+  reagirEvolution?: (instancia: string, companyId: string, to: string, alvo: { id: string; fromMe: boolean }, emoji: string) => Promise<{ messageId?: string } | void>;
   /** Parte 2b: número pessoal de quem está logado (padrão: whatsapp_numeros_pessoais). */
   numeroPessoal?: (companyId: string, userId: string) => Promise<NumeroPessoal | null>;
   /**
@@ -102,7 +111,10 @@ export interface DepsAtendimento {
 }
 
 /** Arquivo pronto para sair (já conferido e guardado). */
-export interface MidiaParaEnviar { tipo: TipoMidia; mime: string; nome: string; base64: string; legenda: string }
+export interface MidiaParaEnviar { tipo: TipoMidia; mime: string; nome: string; base64: string; legenda: string; citada?: Citada }
+
+/** W2: a mensagem que a resposta cita (id do WhatsApp + um pedaço do texto). */
+export interface Citada { id: string; texto: string | null; fromMe: boolean }
 
 const TIPO_META: Record<TipoMidia, 'image' | 'video' | 'audio' | 'document'> = { imagem: 'image', video: 'video', audio: 'audio', documento: 'document' };
 
@@ -187,6 +199,35 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     return lista;
   }
 
+  /**
+   * W2 — a mensagem citada (body.citando = id da linha em mensagens_whatsapp).
+   * Tem que ser DESTA conversa (lead da empresa, ou o contato do número pessoal
+   * do dono), visível para quem envia, com id do WhatsApp e do MESMO número
+   * por onde a resposta vai sair. Sem citação → null.
+   */
+  async function citadaDoPedido(
+    req: AuthedRequest,
+    alvo: { companyId: string; viewerId: string; leadId?: string; telefone?: string; canal: CanalConversa },
+  ): Promise<{ ok: true; citada: Citada | null } | { ok: false; motivo: 'citacao_invalida' | 'citacao_outro_numero' }> {
+    const id = String(req.body?.citando ?? '').trim();
+    if (!id) return { ok: true, citada: null };
+    if (!UUID_RE.test(id)) return { ok: false, motivo: 'citacao_invalida' };
+    try {
+      const { data, error } = await deps.supabase.from('mensagens_whatsapp')
+        .select('id, company_id, lead_id, contato_telefone, visivel_so_para, wamid, texto, tipo, canal, direcao')
+        .eq('id', id).eq('company_id', alvo.companyId).maybeSingle();
+      const l = data as { lead_id: string | null; contato_telefone: string | null; visivel_so_para: string | null; wamid: string | null; texto: string | null; tipo: string; canal: string | null; direcao: string } | null;
+      if (error || !l || !l.wamid || l.tipo === 'reacao' || l.direcao === 'evento' || !linhaVisivelPara(l, alvo.viewerId)) return { ok: false, motivo: 'citacao_invalida' };
+      if (alvo.leadId ? l.lead_id !== alvo.leadId : (l.contato_telefone !== alvo.telefone || l.visivel_so_para !== alvo.viewerId)) return { ok: false, motivo: 'citacao_invalida' };
+      const canalDaCitada = l.canal === 'whatsapp_business' ? 'whatsapp_business' : 'assistente';
+      const canalDaResposta = alvo.canal === 'whatsapp_business' ? 'whatsapp_business' : 'assistente';
+      if (canalDaCitada !== canalDaResposta) return { ok: false, motivo: 'citacao_outro_numero' };
+      return { ok: true, citada: { id: l.wamid, texto: (l.texto ?? '').slice(0, 300) || null, fromMe: l.direcao === 'saida' } };
+    } catch {
+      return { ok: false, motivo: 'citacao_invalida' };
+    }
+  }
+
   /** Por onde sai a resposta desta EMPRESA (nunca pelo número de outra). */
   async function viaDaEmpresa(companyId: string): Promise<{ via: ViaEnvio; instancia: string | null; motivo?: MotivoBloqueio }> {
     if (companyId === EMPRESA_CASA) {
@@ -255,7 +296,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     return { leadId, viewer, companyId, chave, db, lead, canal, via, instancia, telefone: telefone!, np };
   }
 
-  function depsComuns(ctx: NonNullable<Awaited<ReturnType<typeof preparar>>>, extra: { texto: string; modelo?: string; midia?: { tipo: TipoMidia; caminho: string; mime: string; nome: string; bytes: number } }) {
+  function depsComuns(ctx: NonNullable<Awaited<ReturnType<typeof preparar>>>, extra: { texto: string; modelo?: string; midia?: { tipo: TipoMidia; caminho: string; mime: string; nome: string; bytes: number }; citada?: Citada | null }) {
     const { companyId, leadId, viewer, canal } = ctx;
     // Número pessoal: a linha é privada (visivel_so_para) e a RLS restritiva da
     // 138 esconde do crachá — grava/fecha com o client de serviço + filtro explícito.
@@ -267,6 +308,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
         canal, numero: ctx.via === 'evolution' ? ctx.instancia : null,
         tipo: extra.midia ? extra.midia.tipo : extra.modelo ? 'modelo' : 'texto', texto: extra.texto, modelo: extra.modelo ?? null,
         ...(extra.midia ? { midia_caminho: extra.midia.caminho, midia_mime: extra.midia.mime, midia_nome: extra.midia.nome, midia_bytes: extra.midia.bytes } : {}),
+        ...(extra.citada ? { citando_wamid: extra.citada.id, citando_texto: extra.citada.texto } : {}),
         origem: 'painel', chave_envio: ctx.chave,
         // Número pessoal: só o dono vê o que ele mandou por lá.
         ...(ctx.np ? { visivel_so_para: viewer.id } : {}),
@@ -305,13 +347,18 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     if (!v.ok) { if (UUID_RE.test(leadId)) voltar(res, leadId, v.motivo); else falha(res, 400, 'id inválido'); return; }
     const ctx = await preparar(r, res, 'texto');
     if (!ctx) return;
+    const cit = await citadaDoPedido(r, { companyId: ctx.companyId, viewerId: ctx.viewer.id, leadId: ctx.leadId, canal: ctx.canal });
+    if (!cit.ok) { voltar(res, ctx.leadId, cit.motivo, ctx.canal); return; }
+    const citada = cit.citada;
     const s = await enviarDoPainel({
-      ...depsComuns(ctx, { texto: v.texto }),
+      ...depsComuns(ctx, { texto: v.texto, citada }),
       enviar: () => ctx.np
-        ? deps.enviarPessoal!(ctx.np.instancia, ctx.telefone, v.texto)
+        ? (citada ? deps.enviarPessoal!(ctx.np.instancia, ctx.telefone, v.texto, citada) : deps.enviarPessoal!(ctx.np.instancia, ctx.telefone, v.texto))
         : ctx.via === 'waba'
-          ? deps.waba!.sendText(ctx.telefone, v.texto)
-          : noCanalDaEmpresa(ctx.companyId, ctx.instancia, () => deps.sendTextEvolution!(ctx.telefone, v.texto)).then(() => undefined),
+          ? (citada && deps.waba!.sendTextReply ? deps.waba!.sendTextReply(ctx.telefone, v.texto, citada.id) : deps.waba!.sendText(ctx.telefone, v.texto))
+          : noCanalDaEmpresa(ctx.companyId, ctx.instancia, () => (citada && deps.sendTextEvolutionCitando
+            ? deps.sendTextEvolutionCitando(ctx.telefone, v.texto, citada)
+            : deps.sendTextEvolution!(ctx.telefone, v.texto))).then(() => undefined),
     });
     console.log(`[atendimento] resposta ${ctx.leadId.slice(0, 8)} por ${ctx.np ? 'numero_pessoal' : ctx.via} (${ctx.viewer.id.slice(0, 8)}): ${s.resultado}${s.erro ? ` — ${semTelefone(s.erro)}` : ''}`);
     voltar(res, ctx.leadId, s.resultado, ctx.canal);
@@ -388,17 +435,17 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
   }
 
   /** Manda o arquivo pelo canal certo (Meta por id / Evolution em base64). */
-  function enviarArquivo(p: { via: ViaEnvio; instancia: string | null; companyId: string; telefone: string; pessoal: boolean }, arq: ArquivoValidado, dados: Buffer, legenda: string): Promise<{ messageId?: string } | void> {
+  function enviarArquivo(p: { via: ViaEnvio; instancia: string | null; companyId: string; telefone: string; pessoal: boolean }, arq: ArquivoValidado, dados: Buffer, legenda: string, citada?: Citada | null): Promise<{ messageId?: string } | void> {
     if (p.via === 'waba' && !p.pessoal) {
       const w = deps.waba;
       if (!w?.uploadMedia || !w.sendMediaById) return Promise.reject(new Error('envio de mídia pela Meta não configurado'));
       return w.uploadMedia(dados, arq.mime, arq.nome)
-        .then(({ mediaId }) => w.sendMediaById!(p.telefone, TIPO_META[arq.tipo], mediaId, { caption: legenda || undefined, filename: arq.nome }));
+        .then(({ mediaId }) => w.sendMediaById!(p.telefone, TIPO_META[arq.tipo], mediaId, { caption: legenda || undefined, filename: arq.nome, ...(citada ? { contextId: citada.id } : {}) }));
     }
     const inst = p.instancia;
     const enviar = deps.enviarMidiaEvolution;
     if (!enviar || !inst) return Promise.reject(new Error('envio de mídia pela Evolution não configurado'));
-    const m: MidiaParaEnviar = { tipo: arq.tipo, mime: arq.mime, nome: arq.nome, base64: dados.toString('base64'), legenda };
+    const m: MidiaParaEnviar = { tipo: arq.tipo, mime: arq.mime, nome: arq.nome, base64: dados.toString('base64'), legenda, ...(citada ? { citada } : {}) };
     // Tenant: dentro do canal DA EMPRESA (nunca pelo número de outra). Pessoal: o index roda na instância do dono.
     return p.pessoal
       ? enviar(inst, p.companyId, p.telefone, m)
@@ -458,11 +505,13 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     const g = await guardarMidia(deps.supabase, { companyId: ctx.companyId, dados, mime: arq.mime, ext: arq.ext });
     if (!g.ok) { console.warn(`[atendimento] arquivo não guardado: ${g.erro}`); voltar(res, leadId, 'erro_arquivo', ctx.canal); return; }
     const texto = textoDaMidia(arq.tipo, a.legenda, arq.nome);
+    const cit = await citadaDoPedido(r, { companyId: ctx.companyId, viewerId: ctx.viewer.id, leadId: ctx.leadId, canal: ctx.canal });
+    if (!cit.ok) { await apagarMidia(deps.supabase, g.caminho); voltar(res, ctx.leadId, cit.motivo, ctx.canal); return; }
     let s: Awaited<ReturnType<typeof enviarDoPainel>>;
     try {
       s = await enviarDoPainel({
-        ...depsComuns(ctx, { texto, midia: { tipo: arq.tipo, caminho: g.caminho, mime: arq.mime, nome: arq.nome, bytes: arq.bytes } }),
-        enviar: () => enviarArquivo({ via: ctx.via, instancia: ctx.instancia, companyId: ctx.companyId, telefone: ctx.telefone, pessoal: !!ctx.np }, arq, dados, a.legenda),
+        ...depsComuns(ctx, { texto, midia: { tipo: arq.tipo, caminho: g.caminho, mime: arq.mime, nome: arq.nome, bytes: arq.bytes }, citada: cit.citada }),
+        enviar: () => enviarArquivo({ via: ctx.via, instancia: ctx.instancia, companyId: ctx.companyId, telefone: ctx.telefone, pessoal: !!ctx.np }, arq, dados, a.legenda, cit.citada),
       });
     } catch (e) {
       await apagarMidia(deps.supabase, g.caminho);
@@ -498,6 +547,8 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     const { arq, dados } = pronto;
     const g = await guardarMidia(deps.supabase, { companyId, dados, mime: arq.mime, ext: arq.ext });
     if (!g.ok) { voltarContato(res, telefone, 'erro_arquivo'); return; }
+    const cit = await citadaDoPedido(r, { companyId, viewerId: viewer.id, telefone, canal: 'whatsapp_business' });
+    if (!cit.ok) { await apagarMidia(deps.supabase, g.caminho); voltarContato(res, telefone, cit.motivo); return; }
     const leadDoContato = await leadDoTelefoneNaEmpresa(deps.supabase, companyId, telefone).catch(() => null);
     const s = await enviarDoPainel({
       reservar: () => reservarEnvio(deps.supabase, {
@@ -505,10 +556,11 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
         direcao: 'saida', autor: 'humano', user_id: viewer.id, autor_nome: (viewer.nome || '').slice(0, 80),
         canal: 'whatsapp_business', numero: np.instancia, tipo: arq.tipo, texto: textoDaMidia(arq.tipo, a.legenda, arq.nome),
         midia_caminho: g.caminho, midia_mime: arq.mime, midia_nome: arq.nome, midia_bytes: arq.bytes,
+        ...(cit.citada ? { citando_wamid: cit.citada.id, citando_texto: cit.citada.texto } : {}),
         origem: 'painel', chave_envio: chave, visivel_so_para: viewer.id,
       }),
       concluir: (id, x) => concluirEnvio(deps.supabase, id, companyId, x),
-      enviar: () => enviarArquivo({ via: 'evolution', instancia: np.instancia, companyId, telefone, pessoal: true }, arq, dados, a.legenda),
+      enviar: () => enviarArquivo({ via: 'evolution', instancia: np.instancia, companyId, telefone, pessoal: true }, arq, dados, a.legenda, cit.citada),
     });
     if (naoSaiu(s.resultado)) await apagarMidia(deps.supabase, g.caminho);
     console.log(`[atendimento] numero pessoal → contato, arquivo ${arq.tipo} (${viewer.id.slice(0, 8)}): ${s.resultado}${s.erro ? ` — ${semTelefone(s.erro)}` : ''}`);
@@ -555,6 +607,105 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
       console.warn(`[atendimento] mídia ${id.slice(0, 8)} falhou: ${(e as Error).message}`);
       res.status(500).send('erro ao abrir o arquivo');
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // W2 — REAGIR com emoji (não assume a conversa: não é resposta com texto)
+  // -------------------------------------------------------------------------
+
+  /** A mensagem reagida: desta conversa, visível, com id do WhatsApp. */
+  async function alvoDaReacao(companyId: string, viewerId: string, id: string, conversa: { leadId?: string; telefone?: string }) {
+    if (!UUID_RE.test(id)) return null;
+    const { data, error } = await deps.supabase.from('mensagens_whatsapp')
+      .select('id, company_id, lead_id, contato_telefone, visivel_so_para, wamid, tipo, canal, numero, direcao')
+      .eq('id', id).eq('company_id', companyId).maybeSingle();
+    const l = data as { lead_id: string | null; contato_telefone: string | null; visivel_so_para: string | null; wamid: string | null; tipo: string; canal: CanalConversa | null; numero: string | null; direcao: string } | null;
+    if (error || !l || !l.wamid || l.tipo === 'reacao' || l.direcao === 'evento' || !linhaVisivelPara(l, viewerId)) return null;
+    if (conversa.leadId ? l.lead_id !== conversa.leadId : (l.contato_telefone !== conversa.telefone || l.visivel_so_para !== viewerId)) return null;
+    return l;
+  }
+
+  function voltarReacao(res: Response, destino: string, resultado: string): void {
+    if (emJson.has(res)) { const j = respostaDoEnvio(resultado); res.json({ ...j, ok: resultado === 'reacao_enviada' }); return; }
+    res.redirect(303, destino);
+  }
+
+  /** Envia a reação pelo MESMO número da mensagem reagida e grava. */
+  async function mandarReacao(p: {
+    companyId: string; viewer: { id: string; nome?: string | null }; telefone: string; leadId: string | null; contatoNome: string | null;
+    alvo: { wamid: string; canal: CanalConversa | null; direcao: string; visivel_so_para: string | null }; emoji: string;
+  }): Promise<string> {
+    const pessoal = p.alvo.canal === 'whatsapp_business';
+    const np = pessoal ? await pessoalDe(p.companyId, p.viewer.id) : null;
+    if (pessoal && (!np || p.alvo.visivel_so_para !== p.viewer.id)) return 'sem_canal';
+    const { via, instancia, motivo } = pessoal ? { via: 'evolution' as ViaEnvio, instancia: np!.instancia, motivo: undefined } : await viaDaEmpresa(p.companyId);
+    if (via === 'nenhum') return motivo ?? 'sem_canal';
+    if (envioProibido(p.telefone, deps.engineerPhone, empresaDe(p.companyId))) return 'bloqueado_lgpd';
+    if (via === 'waba') {
+      // Reação é mensagem livre: na Meta, só com a janela de 24 h aberta.
+      const msgs: MensagemChat[] = p.leadId ? await historicoDoLead(deps.supabase, p.leadId, p.companyId, p.viewer.id).catch(() => []) : [];
+      if (!janelaAtendimento(ultimaDoCliente(msgs, canalDaAssistente(p.companyId)), agora()).aberta) return 'janela_fechada';
+    }
+    if (!limite.permitir(p.viewer.id, `${p.companyId}:${p.telefone}:reacao`, agora())) return 'limite';
+    const alvoWa = { id: p.alvo.wamid, fromMe: p.alvo.direcao === 'saida' };
+    try {
+      const s = via === 'waba'
+        ? (deps.waba?.sendReaction ? await deps.waba.sendReaction(p.telefone, p.alvo.wamid, p.emoji) : await Promise.reject(new Error('reação pela Meta não configurada')))
+        : !deps.reagirEvolution || !instancia
+          ? await Promise.reject(new Error('reação pela Evolution não configurada'))
+          : pessoal
+            ? await deps.reagirEvolution(instancia, p.companyId, p.telefone, alvoWa, p.emoji)
+            : await noCanalDaEmpresa(p.companyId, instancia, () => deps.reagirEvolution!(instancia, p.companyId, p.telefone, alvoWa, p.emoji));
+      await gravarReacao(deps.supabase, {
+        companyId: p.companyId, leadId: p.leadId, telefone: p.telefone, alvoWamid: p.alvo.wamid, emoji: p.emoji, de: 'humano',
+        userId: p.viewer.id, autorNome: (p.viewer.nome || '').slice(0, 80) || null, canal: (p.alvo.canal ?? canalDaAssistente(p.companyId)) as CanalConversa,
+        numero: via === 'evolution' ? instancia : null, visivelSoPara: pessoal ? p.viewer.id : null,
+        wamid: (s && typeof s === 'object' && 'messageId' in s ? (s as { messageId?: string }).messageId : null) || null, contatoNome: p.contatoNome,
+      });
+      return 'reacao_enviada';
+    } catch (e) {
+      console.warn(`[atendimento] reação não saiu: ${semTelefone((e as Error).message)}`);
+      return 'falhou';
+    }
+  }
+
+  /** POST /leads/:id/reagir — { alvo: id da mensagem, emoji } (emoji vazio = tirar). */
+  async function reagir(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    const leadId = String(r.params.id ?? '');
+    if (!UUID_RE.test(leadId)) { falha(res, 400, 'id inválido'); return; }
+    const viewer = r.dashUser;
+    if (!viewer?.companyId) { falha(res, 404, 'lead não encontrado'); return; }
+    if (!mesmaOrigem(r)) { falha(res, 403, 'origem não permitida'); return; }
+    const destino = `/dashboard/leads/${leadId}#conversa`;
+    const emoji = r.body?.emoji ?? '';
+    if (!emojiDeReacaoValido(emoji)) { voltarReacao(res, destino, 'reacao_invalida'); return; }
+    let lead: LeadEnvio | null;
+    try { lead = await lerLead(banco(r), leadId, viewer.companyId); } catch { voltarReacao(res, destino, 'erro_banco'); return; }
+    if (!lead) { falha(res, 404, 'lead não encontrado'); return; }
+    if (lead.opt_out) { voltarReacao(res, destino, 'opt_out'); return; }
+    const telefone = normalizeBrazilianPhone(lead.phone ?? '');
+    if (!telefone) { voltarReacao(res, destino, 'sem_telefone'); return; }
+    const alvo = await alvoDaReacao(viewer.companyId, viewer.id, String(r.body?.alvo ?? ''), { leadId }).catch(() => null);
+    if (!alvo) { falha(res, 404, 'mensagem não encontrada'); return; }
+    const x = await mandarReacao({ companyId: viewer.companyId, viewer, telefone, leadId, contatoNome: lead.name, alvo: { ...alvo, wamid: alvo.wamid! }, emoji });
+    voltarReacao(res, destino, x);
+  }
+
+  /** POST /leads/conversas/contato/reagir — número pessoal, com quem ainda não é lead (só o dono). */
+  async function reagirContato(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    const viewer = r.dashUser;
+    const telefone = normalizeBrazilianPhone(String(r.body?.telefone ?? ''));
+    if (!viewer?.companyId || !telefone) { falha(res, 404, 'conversa não encontrada'); return; }
+    if (!mesmaOrigem(r)) { falha(res, 403, 'origem não permitida'); return; }
+    const destino = `/dashboard/leads/conversas?contato=${encodeURIComponent(telefone)}`;
+    const emoji = r.body?.emoji ?? '';
+    if (!emojiDeReacaoValido(emoji)) { voltarReacao(res, destino, 'reacao_invalida'); return; }
+    const alvo = await alvoDaReacao(viewer.companyId, viewer.id, String(r.body?.alvo ?? ''), { telefone }).catch(() => null);
+    if (!alvo || alvo.canal !== 'whatsapp_business') { falha(res, 404, 'mensagem não encontrada'); return; }
+    const x = await mandarReacao({ companyId: viewer.companyId, viewer, telefone, leadId: alvo.lead_id, contatoNome: null, alvo: { ...alvo, wamid: alvo.wamid! }, emoji });
+    voltarReacao(res, destino, x);
   }
 
   /** POST /leads/:id/pause-eva — "✋ Assumir" (o mesmo estado do botão do WhatsApp). */
@@ -702,16 +853,19 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     const jaUsada = await statusDaChave(deps.supabase, companyId, chave);
     if (jaUsada) { voltarContato(res, telefone, jaUsada === 'falhou' ? 'ja_falhou' : 'duplicado'); return; }
     if (!limite.permitir(viewer.id, `${companyId}:${telefone}`, agora())) { voltarContato(res, telefone, 'limite'); return; }
+    const cit = await citadaDoPedido(r, { companyId, viewerId: viewer.id, telefone, canal: 'whatsapp_business' });
+    if (!cit.ok) { voltarContato(res, telefone, cit.motivo); return; }
     const leadDoContato = await leadDoTelefoneNaEmpresa(deps.supabase, companyId, telefone).catch(() => null);
     const s = await enviarDoPainel({
       reservar: () => reservarEnvio(deps.supabase, {
         company_id: companyId, lead_id: leadDoContato?.id ?? null, contato_telefone: telefone, contato_nome: conversa[0]?.contato_nome ?? null,
         direcao: 'saida', autor: 'humano', user_id: viewer.id, autor_nome: (viewer.nome || '').slice(0, 80),
         canal: 'whatsapp_business', numero: np.instancia, tipo: 'texto', texto: v.texto,
+        ...(cit.citada ? { citando_wamid: cit.citada.id, citando_texto: cit.citada.texto } : {}),
         origem: 'painel', chave_envio: chave, visivel_so_para: viewer.id,
       }),
       concluir: (id, x) => concluirEnvio(deps.supabase, id, companyId, x),
-      enviar: () => deps.enviarPessoal!(np.instancia, telefone, v.texto),
+      enviar: () => (cit.citada ? deps.enviarPessoal!(np.instancia, telefone, v.texto, cit.citada) : deps.enviarPessoal!(np.instancia, telefone, v.texto)),
     });
     console.log(`[atendimento] numero pessoal → contato (${viewer.id.slice(0, 8)}): ${s.resultado}${s.erro ? ` — ${semTelefone(s.erro)}` : ''}`);
     voltarContato(res, telefone, s.resultado);
@@ -811,5 +965,6 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     responderMidia: comJson(responderMidia), responderContatoMidia: comJson(responderContatoMidia), midia,
     /** Para o router: multer + handler (o arquivo chega em req.file). */
     comArquivo,
+    reagir: comJson(reagir), reagirContato: comJson(reagirContato),
   };
 }

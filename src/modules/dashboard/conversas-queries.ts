@@ -16,12 +16,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DashUser } from './permissions.js';
 import { mensagensDoPainel, type LinhaMensagemWhatsapp } from '../mensagens-whatsapp.js';
 import { mensagensPessoais, telefonesOcultosDoPessoal, ehTelefoneOculto, numeroPessoalDoDono } from '../numero-pessoal.js';
+import { anexarReacoesECitacoes } from '../reacoes-citacoes.js';
 
 /** Canal da conversa: número da Eva (oficial), número pessoal (WhatsApp Business) ou assistente por QR (tenant). */
 export type CanalConversa = 'eva_oficial' | 'whatsapp_business' | 'qr_code';
 
 export interface MensagemChat {
-  /** 'user' = cliente · 'assistant' = quem responde (Eva ou gente) · 'evento' = assumiu/devolveu. */
+  /** 'user' = cliente · 'assistant' = quem responde (Eva ou gente) · 'evento' = assumiu/devolveu/reagiu · 'reacao' = linha de reação (vai para baixo da mensagem reagida). */
   role: 'user' | 'assistant' | 'evento' | string;
   content: string;
   timestamp: string | null;
@@ -31,7 +32,7 @@ export interface MensagemChat {
   canal?: CanalConversa | null;
   /** Envio do painel: 'enviando' | 'enviada' | 'falhou'. */
   status?: string | null;
-  evento?: 'assumiu' | 'devolveu' | null;
+  evento?: 'assumiu' | 'devolveu' | 'reagiu' | null;
   modelo?: string | null;
   /** Mensagem do painel copiada na memória da Eva (conversations) — some na junção. */
   painelId?: string | null;
@@ -41,6 +42,12 @@ export interface MensagemChat {
   midia?: MidiaChat;
   /** W1: áudio — o que a IA entendeu (fica embaixo do player). */
   transcricao?: string | null;
+  /** W2: id da mensagem no WhatsApp (dá para citar/reagir). */
+  wamid?: string | null;
+  /** W2: esta mensagem responde outra. */
+  citando?: { wamid: string; texto?: string | null; autor?: string | null };
+  /** W2: reações embaixo do balão (uma por pessoa). */
+  reacoes?: Array<{ emoji: string; de: 'cliente' | 'equipe'; nome?: string | null }>;
 }
 
 export interface MidiaChat { id: string; tipo: 'imagem' | 'video' | 'audio' | 'documento'; mime: string | null; nome: string | null; bytes: number | null }
@@ -274,7 +281,7 @@ export function resumosPessoais(rows: LinhaMensagemWhatsapp[], leads: LinhaLead[
   const grupos = new Map<string, LinhaMensagemWhatsapp[]>();
   // Agrupa pelo TELEFONE (um contato = um item), mesmo com linhas antigas sem lead.
   for (const r of rows) {
-    if (r.direcao === 'evento' || !r.texto) continue;
+    if (r.direcao === 'evento' || !r.texto || r.tipo === 'reacao') continue;
     const chave = r.contato_telefone ? `T:${r.contato_telefone}` : r.lead_id ? `L:${r.lead_id}` : '';
     if (!chave) continue;
     (grupos.get(chave) ?? grupos.set(chave, []).get(chave)!).push(r);
@@ -385,8 +392,16 @@ export function linhaDoPainelParaChat(l: LinhaMensagemWhatsapp): MensagemChat | 
   }
   const texto = (l.texto ?? '').trim() || (l.modelo ? `[modelo ${l.modelo}]` : '');
   if (!texto) return null;
+  if (l.tipo === 'reacao') {
+    if (!l.citando_wamid) return null;
+    return {
+      role: 'reacao', content: texto, timestamp: l.criado_em, autor: l.direcao === 'entrada' ? 'cliente' : 'humano',
+      autorNome: l.direcao === 'entrada' ? l.contato_nome : l.autor_nome, citando: { wamid: l.citando_wamid }, canal: l.canal,
+    };
+  }
+  const w2 = { ...(l.wamid ? { wamid: l.wamid } : {}), ...(l.citando_wamid ? { citando: { wamid: l.citando_wamid, texto: l.citando_texto ?? null } } : {}) };
   if (l.direcao === 'entrada') {
-    return { role: 'user', content: texto, timestamp: l.criado_em, autor: 'cliente', canal: l.canal, autorNome: l.contato_nome, ...midiaDaLinha(l) };
+    return { role: 'user', content: texto, timestamp: l.criado_em, autor: 'cliente', canal: l.canal, autorNome: l.contato_nome, painelId: l.id, ...midiaDaLinha(l), ...w2 };
   }
   // Reserva que ficou "enviando" (processo caiu no meio): não fica "enviando…" pra sempre.
   const velha = l.status === 'enviando' && Date.now() - Date.parse(l.criado_em) > 5 * 60_000;
@@ -394,7 +409,7 @@ export function linhaDoPainelParaChat(l: LinhaMensagemWhatsapp): MensagemChat | 
     role: 'assistant', content: texto, timestamp: l.enviada_em ?? l.criado_em,
     autor: l.autor === 'eva' ? 'eva' : 'humano', autorNome: l.autor_nome, canal: l.canal,
     status: velha ? 'sem_confirmacao' : l.status, modelo: l.modelo, painelId: l.id, origem: l.origem,
-    ...midiaDaLinha(l),
+    ...midiaDaLinha(l), ...w2,
   };
 }
 
@@ -415,7 +430,7 @@ const JANELA_COPIA_MS = 10 * 60_000;
  */
 export function semCopiaDaMidia(conversa: MensagemChat[], painel: LinhaMensagemWhatsapp[]): MensagemChat[] {
   const midias = painel
-    .filter((l) => l.direcao === 'entrada' && l.canal !== 'whatsapp_business' && TIPOS_MIDIA.has(l.tipo))
+    .filter((l) => l.direcao === 'entrada' && l.canal !== 'whatsapp_business' && (TIPOS_MIDIA.has(l.tipo) || l.tipo === 'texto'))
     .sort((a, b) => String(a.criado_em).localeCompare(String(b.criado_em)));
   if (midias.length === 0) return conversa;
   const tirar = new Set<number>();
@@ -428,6 +443,8 @@ export function semCopiaDaMidia(conversa: MensagemChat[], painel: LinhaMensagemW
       const t = Date.parse(m.timestamp);
       if (!Number.isFinite(t) || t < t0 - 60_000 || t > t0 + JANELA_COPIA_MS) return false;
       const c = m.content.trim();
+      // W2: texto do cliente registrado no painel (com o id do WhatsApp) = a mesma frase na memória da Eva.
+      if (l.tipo === 'texto') return c === (l.texto ?? '').trim();
       return (COPIA_DE_MIDIA[l.tipo]?.test(c) ?? false) || (!!transc && c === transc);
     });
     if (i >= 0) tirar.add(i);
@@ -457,7 +474,7 @@ export function juntarComPainel(conversa: MensagemChat[], painel: LinhaMensagemW
     if (ta && tb && ta !== tb) return Date.parse(ta) - Date.parse(tb) || ta.localeCompare(tb);
     return a.i - b.i;
   });
-  return todas.map((x) => x.m);
+  return anexarReacoesECitacoes(todas.map((x) => x.m));
 }
 
 /** Canal do número da assistente desta empresa: a Eva (oficial) na casa, QR no tenant. */

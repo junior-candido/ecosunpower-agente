@@ -225,17 +225,33 @@ function horaDe(iso: string | null): string {
 }
 
 /** Evento no meio da conversa: "✋ Junior assumiu às 14:32" / "↩ Devolvido para a Eva às 15:10". PURA. */
-export function textoDoEvento(m: Pick<MensagemChat, 'evento' | 'autorNome' | 'timestamp'>, assistente: string): string {
+export function textoDoEvento(m: Pick<MensagemChat, 'evento' | 'autorNome' | 'timestamp'> & { content?: string }, assistente: string): string {
   const quem = (m.autorNome ?? '').trim();
   const h = horaDe(m.timestamp);
   const as = h ? ` às ${h}` : '';
   if (m.evento === 'assumiu') return `✋ ${quem || 'Alguém da equipe'} assumiu${as}`;
+  if (m.evento === 'reagiu') return `${quem || 'O cliente'} reagiu ${m.content || ''} a uma mensagem${as}`;
   return `↩ Devolvido para a ${assistente}${as}${quem ? ` (por ${quem})` : ''}`;
 }
 
-function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, temArquivos: boolean, mostrarCanal: boolean, donoPessoal: string | null): string {
+const ID_MSG_OK = /^[0-9a-fA-F-]{36}$/;
+
+/** W2: a mensagem citada, dentro do balão (texto escapado; sem ela no chat, só "mensagem anterior"). PURA. */
+export function blocoCitacao(c: NonNullable<MensagemChat['citando']>): string {
+  const texto = (c.texto ?? '').replace(/^\[[^\]]*\]\s*/, (x) => x.trim() + ' ').trim();
+  return `<div class="cc-at-cita"><strong>${escapeHtml(c.autor || 'Mensagem anterior')}</strong><span>${escapeHtml(texto.slice(0, 160) || 'mensagem anterior')}</span></div>`;
+}
+
+/** W2: reações embaixo do balão ("👍 ❤️ 2"). PURA. */
+export function blocoReacoes(rs: NonNullable<MensagemChat['reacoes']>): string {
+  if (!rs.length) return '';
+  const titulo = rs.map((r) => `${r.nome || (r.de === 'cliente' ? 'Cliente' : 'Equipe')}: ${r.emoji}`).join(' · ');
+  return `<div class="cc-at-reacoes" title="${escapeHtml(titulo)}">${rs.map((r) => `<span>${escapeHtml(r.emoji)}</span>`).join('')}${rs.length > 1 ? `<small>${rs.length}</small>` : ''}</div>`;
+}
+
+function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, temArquivos: boolean, mostrarCanal: boolean, donoPessoal: string | null, acoes = false): string {
   if (m.role === 'evento' || m.autor === 'evento') {
-    return `<div class="cc-at-evento cc-at-evento-${m.evento === 'assumiu' ? 'assumiu' : 'devolveu'}" role="note">${escapeHtml(textoDoEvento(m, rotuloAssistente))}</div>`;
+    return `<div class="cc-at-evento cc-at-evento-${m.evento === 'assumiu' ? 'assumiu' : m.evento === 'reagiu' ? 'reagiu' : 'devolveu'}" role="note">${escapeHtml(textoDoEvento(m, rotuloAssistente))}</div>`;
   }
   const daAssistente = m.role === 'assistant';
   const humano = daAssistente && m.autor === 'humano';
@@ -246,11 +262,16 @@ function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, t
     : humano && m.status === 'sem_confirmacao' ? `<div class="cc-at-msg-falha">⚠ envio não confirmado — confira no WhatsApp</div>` : '';
   const enviando = humano && m.status === 'enviando' ? ' · enviando…' : '';
   const classe = humano ? 'cc-at-msg-eva cc-at-msg-hum' : daAssistente ? 'cc-at-msg-eva' : 'cc-at-msg-cli';
-  return `<div class="cc-at-msg ${classe}">
-      <div class="cc-at-msg-q">${escapeHtml(quem)}${canal}</div>
+  // W2: só dá para citar/reagir o que tem id do WhatsApp (e quem pode responder).
+  const podeAgir = acoes && !!m.wamid && !!m.painelId && ID_MSG_OK.test(m.painelId) && m.status !== 'falhou';
+  const reacoes = m.reacoes?.length ? blocoReacoes(m.reacoes) : '';
+  return `<div class="cc-at-msg ${classe}${reacoes ? ' cc-at-com-reacao' : ''}"${podeAgir ? ` data-msg="${m.painelId}"` : ''}>
+      <div class="cc-at-msg-q">${escapeHtml(quem)}${canal}${podeAgir ? `<button type="button" class="cc-at-acoes-btn" data-acoes aria-label="Responder ou reagir" title="Responder ou reagir">⋯</button>` : ''}</div>
+      ${m.citando ? blocoCitacao(m.citando) : ''}
       ${m.midia ? corpoDaMidia(m) : corpoDaMensagem(m.content, temArquivos)}${!m.midia && m.transcricao ? `<div class="cc-at-transc"><span>Transcrição</span>${escapeHtml(m.transcricao)}</div>` : ''}
       ${falhou}
       ${hora ? `<div class="cc-at-msg-h">${escapeHtml(hora + enviando)}</div>` : ''}
+      ${reacoes}
     </div>`;
 }
 
@@ -323,9 +344,12 @@ const TEXTO_BLOQUEIO: Record<MotivoBloqueio, string> = {
  * multipart normal). Com JavaScript: 📎/arrastar/colar → prévia antes de
  * enviar → sai sem recarregar. Os mesmos limites do servidor.
  */
+/** W2: "Respondendo a …" em cima do campo (o script preenche; ✕ tira). */
+const CAIXA_CITANDO = `<div class="cc-at-citando" id="cc-at-citando" hidden><div class="cc-at-cita"><strong>Respondendo a</strong><span id="cc-at-citando-txt"></span></div><button type="button" class="cc-ibtn cc-at-citando-x" data-tirar-citacao aria-label="Não citar">×</button></div>`;
+
 function formAnexo(action: string, chave: string, ocultos: string): string {
   return `<form class="cc-form cc-at-anexo" method="POST" action="${escapeHtml(action)}" enctype="multipart/form-data" data-envio-midia data-max-foto="${LIMITE_IMAGEM_BYTES}" data-max="${LIMITE_MIDIA_BYTES}">
-        <input type="hidden" name="chave" value="${escapeHtml(chave)}">${ocultos}
+        <input type="hidden" name="chave" value="${escapeHtml(chave)}">${ocultos}<input type="hidden" name="citando" value="">
         <div class="cc-at-anexo-prev" id="cc-at-anexo-prev" hidden></div>
         <div class="cc-at-anexo-lin">
           <label class="cc-btn cc-btn-sm cc-at-clipe" title="Foto até 5 MB · PDF, Word, Excel, áudio e vídeo até 16 MB">📎 Anexar<input type="file" name="arquivo" id="cc-at-arquivo" accept="${escapeHtml(ACEITA_NO_SELETOR)}"></label>
@@ -412,7 +436,7 @@ function compositor(lead: LeadDetail, mensagens: MensagemChat[], c: CompositorIn
 
   const formTexto = !bloqueioTexto
     ? `<form class="cc-form cc-at-resp" method="POST" action="/dashboard/leads/${escapeHtml(lead.id)}/responder" data-envio>
-        <input type="hidden" name="chave" value="${escapeHtml(c.chave)}">${campoCanal}
+        <input type="hidden" name="chave" value="${escapeHtml(c.chave)}">${campoCanal}<input type="hidden" name="citando" value="">
         <textarea name="texto" id="cc-at-texto" rows="2" maxlength="${LIMITE_TEXTO}" required placeholder="Escreva sua resposta…" aria-label="Sua resposta"></textarea>
         <button type="submit" class="cc-btn cc-at-enviar">Enviar</button>
       </form>`
@@ -427,6 +451,7 @@ function compositor(lead: LeadDetail, mensagens: MensagemChat[], c: CompositorIn
       ${trocaNumero}
       ${faixaJanela}
       ${prontas}
+      ${formTexto ? CAIXA_CITANDO : ''}
       ${formTexto}
       ${anexo}
       ${modelo}
@@ -453,7 +478,7 @@ function faixaAssumir(lead: LeadDetail, mensagens: MensagemChat[], assistente: s
 }
 
 /** Os balões da conversa (com a divisória de cada dia). Usado na página E no "sem recarregar". */
-export function blocoMensagens(mensagens: MensagemChat[], assistente: string, nomeCliente: string, temArquivos: boolean, donoPessoal: string | null, soDono = false): string {
+export function blocoMensagens(mensagens: MensagemChat[], assistente: string, nomeCliente: string, temArquivos: boolean, donoPessoal: string | null, soDono = false, acoes = false): string {
   if (mensagens.length === 0) {
     return soDono
       ? `<div class="cc-at-vazio">${estadoVazio({ tipo: 'vazio', titulo: 'Nenhuma mensagem ainda.', compacto: true })}</div>`
@@ -470,7 +495,7 @@ export function blocoMensagens(mensagens: MensagemChat[], assistente: string, no
     }
     // Conversa do número pessoal com quem não é lead: quem responde é o dono (nunca a assistente).
     const mm = soDono && m.role === 'assistant' && m.autor !== 'humano' ? { ...m, autor: 'humano' as const, autorNome: m.autorNome ?? donoPessoal } : m;
-    return sep + balao(mm, assistente, nomeCliente, temArquivos, mostrarCanal, donoPessoal);
+    return sep + balao(mm, assistente, nomeCliente, temArquivos, mostrarCanal, donoPessoal, acoes);
   }).join('');
 }
 
@@ -500,6 +525,11 @@ function topoDoChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: str
     </div>`;
 }
 
+/** W2: citar/reagir aparece para quem pode responder por algum número. */
+function podeAgirNoChat(envio: CompositorInput | undefined): boolean {
+  return !!envio && envio.via !== 'nenhum';
+}
+
 /** Nome da assistente na tela: "Eva" na casa, "Assistente" no tenant. */
 export function nomesDaAssistente(user: DashUser | undefined): { assistente: string; assistenteMin: string } {
   const ehTenant = !!user && user.companyId !== ECOSUN_COMPANY_ID;
@@ -519,7 +549,7 @@ export function pedacosDaConversa(p: {
   const temArquivos = (p.lead.anexos ?? []).length > 0;
   return {
     topo: topoDoChat(p.lead, p.mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar')),
-    msgs: blocoMensagens(p.mensagens, assistente, p.lead.name ?? 'Sem nome', temArquivos, p.donoPessoal ?? null),
+    msgs: blocoMensagens(p.mensagens, assistente, p.lead.name ?? 'Sem nome', temArquivos, p.donoPessoal ?? null, false, podeAgirNoChat(p.envio)),
     compor: compositor(p.lead, p.mensagens, p.envio, assistente),
     estado: estadoDoCompositor(p.lead, p.mensagens, p.envio),
   };
@@ -548,12 +578,12 @@ export function estadoDoCompositor(lead: Pick<LeadDetail, 'opt_out' | 'phone'>, 
 function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: string, assistenteMin: string, envio: CompositorInput | undefined, donoPessoal: string | null, podeEditar: boolean): string {
   const nome = lead.name ?? 'Sem nome';
   const temArquivos = (lead.anexos ?? []).length > 0;
-  const corpo = blocoMensagens(mensagens, assistente, nome, temArquivos, donoPessoal);
+  const corpo = blocoMensagens(mensagens, assistente, nome, temArquivos, donoPessoal, false, podeAgirNoChat(envio));
   const topo = topoDoChat(lead, mensagens, assistente, assistenteMin, envio, donoPessoal, podeEditar);
   // Sem recarregar: o script busca os pedaços desta conversa (mesmo número da resposta).
   const estado = envio ? estadoDoCompositor(lead, mensagens, envio) : '';
   const vivo = envio
-    ? ` data-conversa="/dashboard/leads/${escapeHtml(lead.id)}/conversa.json?canal=${escapeHtml(envio.canal)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ topo, msgs: corpo, estado })}"`
+    ? ` data-conversa="/dashboard/leads/${escapeHtml(lead.id)}/conversa.json?canal=${escapeHtml(envio.canal)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ topo, msgs: corpo, estado })}"${podeAgirNoChat(envio) ? ` data-reagir="/dashboard/leads/${escapeHtml(lead.id)}/reagir"` : ''}`
     : '';
   return `<section class="cc-at-col cc-at-chat" id="conversa" aria-label="Conversa"${vivo}>
     <nav class="cc-at-abas-cel" aria-label="Navegação do atendimento">
@@ -911,8 +941,9 @@ function compositorContato(ct: ContatoPessoalTela, donoPessoal: string | null, a
       ${banner}
       <div class="cc-at-janela"><span class="cc-at-via">sai pelo ${escapeHtml(rotuloCanal('whatsapp_business', assistente, donoPessoal))}</span>${linkZap}</div>
       ${prontas}
+      ${CAIXA_CITANDO}
       <form class="cc-form cc-at-resp" method="POST" action="/dashboard/leads/conversas/contato/responder" data-envio>
-        <input type="hidden" name="chave" value="${escapeHtml(c.chave)}">
+        <input type="hidden" name="chave" value="${escapeHtml(c.chave)}"><input type="hidden" name="citando" value="">
         <input type="hidden" name="telefone" value="${escapeHtml(ct.telefone)}">
         <textarea name="texto" id="cc-at-texto" rows="2" maxlength="${LIMITE_TEXTO}" required placeholder="Escreva sua resposta…" aria-label="Sua resposta"></textarea>
         <button type="submit" class="cc-btn cc-at-enviar">Enviar</button>
@@ -928,7 +959,7 @@ export function pedacosDoContato(p: { user: DashUser | undefined; contato: Conta
   const { assistente } = nomesDaAssistente(p.user);
   const nome = p.contato.nome || formatPhoneBR(p.contato.telefone);
   return {
-    msgs: blocoMensagens(p.contato.mensagens, assistente, nome, false, p.donoPessoal ?? null, true),
+    msgs: blocoMensagens(p.contato.mensagens, assistente, nome, false, p.donoPessoal ?? null, true, p.contato.envio?.via === 'evolution'),
     compor: compositorContato(p.contato, p.donoPessoal ?? null, assistente),
     estado: p.contato.envio?.via === 'evolution' ? 'pessoal|livre' : 'pessoal|desconectado',
   };
@@ -936,9 +967,9 @@ export function pedacosDoContato(p: { user: DashUser | undefined; contato: Conta
 
 function colunaChatContato(ct: ContatoPessoalTela, donoPessoal: string | null, assistente: string): string {
   const nome = ct.nome || formatPhoneBR(ct.telefone);
-  const corpo = blocoMensagens(ct.mensagens, assistente, nome, false, donoPessoal, true);
+  const corpo = blocoMensagens(ct.mensagens, assistente, nome, false, donoPessoal, true, ct.envio?.via === 'evolution');
   const estado = ct.envio?.via === 'evolution' ? 'pessoal|livre' : 'pessoal|desconectado';
-  const vivo = ct.envio ? ` data-conversa="/dashboard/leads/conversas/contato.json?contato=${encodeURIComponent(ct.telefone)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ msgs: corpo, estado })}"` : '';
+  const vivo = ct.envio ? ` data-conversa="/dashboard/leads/conversas/contato.json?contato=${encodeURIComponent(ct.telefone)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ msgs: corpo, estado })}"${ct.envio.via === 'evolution' ? ` data-reagir="/dashboard/leads/conversas/contato/reagir" data-telefone="${escapeHtml(ct.telefone)}"` : ''}` : '';
   return `<section class="cc-at-col cc-at-chat" id="conversa" aria-label="Conversa"${vivo}>
     <nav class="cc-at-abas-cel" aria-label="Navegação do atendimento">
       <a class="cc-at-voltar" href="/dashboard/leads/conversas" aria-label="Voltar para a lista">${icone('chev', 'sm')}Conversas</a>
@@ -1099,7 +1130,7 @@ var corpo=new URLSearchParams(new FormData(f)).toString();
 var d=balao(texto);aviso('');if(ta){ta.value='';ta.focus();}
 return fetch(f.getAttribute('action'),{method:'POST',credentials:'same-origin',headers:{'Accept':'application/json','Content-Type':'application/x-www-form-urlencoded'},body:corpo})
 .then(function(r){return r.json().catch(function(){return {ok:false,texto:'resposta inesperada do servidor. Recarregue a página.'};});})
-.then(function(j){novaChave(j.chave);var jaFoi=j.resultado==='duplicado';marcar(d,!!j.ok||jaFoi,j.texto);if(jaFoi){aviso(j.avisoHtml||'');}
+.then(function(j){novaChave(j.chave);var jaFoi=j.resultado==='duplicado';marcar(d,!!j.ok||jaFoi,j.texto);if(j.ok||jaFoi)tirarCitacao();if(jaFoi){aviso(j.avisoHtml||'');}
 else if(!j.ok){aviso(j.avisoHtml||'');if(ta&&!ta.value)ta.value=texto;}
 if(j.ok||jaFoi||j.resultado==='falhou'){assin=null;buscando=false;geracao++;buscar(true);}})
 .catch(function(){marcar(d,false,'sem conexão com o painel. Confira a internet e tente de novo.');if(ta&&!ta.value)ta.value=texto;})
@@ -1159,10 +1190,33 @@ var d=balao(ic+(file.name||'arquivo')+(leg?'\\n'+leg:''));aviso('');
 return fetch(f.getAttribute('action'),{method:'POST',credentials:'same-origin',headers:{'Accept':'application/json'},body:fd})
 .then(function(r){return r.json().catch(function(){return {ok:false,texto:'resposta inesperada do servidor. Recarregue a página.'};});})
 .then(function(j){novaChave(j.chave);var jaFoi=j.resultado==='duplicado';marcar(d,!!j.ok||jaFoi,j.texto);
-if(j.ok||jaFoi){i.value='';if(lg)lg.value='';limparPrev();}else{aviso(j.avisoHtml||'');}
+if(j.ok||jaFoi){i.value='';if(lg)lg.value='';limparPrev();tirarCitacao();}else{aviso(j.avisoHtml||'');}
 if(j.ok||jaFoi||j.resultado==='falhou'){assin=null;buscando=false;geracao++;buscar(true);}})
 .catch(function(){marcar(d,false,'sem conexão com o painel. Confira a internet e tente de novo.');})
 .then(function(){enviando=false;if(b&&document.body.contains(b)){b.disabled=false;b.textContent=rot||'Enviar arquivo';}});});
+var URLR=chat?chat.getAttribute('data-reagir'):null,TELR=chat?chat.getAttribute('data-telefone'):null,menuAc=null,EMOJIS=['👍','❤️','😂','😮','😢','🙏'];
+function fecharMenu(){if(menuAc){menuAc.remove();menuAc=null;}}
+function textoDoBalao(b){var t=b.querySelector('.cc-at-msg-t'),m=b.querySelector('.cc-at-midia,.cc-at-doc-txt strong');var s=(t&&t.textContent)||(b.querySelector('.cc-at-foto')?'📷 Foto':b.querySelector('audio')?'🎤 Áudio':b.querySelector('video')?'🎬 Vídeo':(m&&m.textContent)||'mensagem');return s.trim().slice(0,160);}
+function citar(b){var id=b.getAttribute('data-msg');if(!id)return;var f=document.getElementById('responder');if(!f)return;f.querySelectorAll('input[name=citando]').forEach(function(i){i.value=id;});
+var cx=document.getElementById('cc-at-citando'),tx=document.getElementById('cc-at-citando-txt');if(cx&&tx){var q=b.querySelector('.cc-at-msg-q');var quem=q?(q.firstChild&&q.firstChild.textContent||'').trim():'';tx.textContent=(quem?quem+': ':'')+textoDoBalao(b);cx.hidden=false;}
+var ta=document.getElementById('cc-at-texto');if(ta)ta.focus();}
+function tirarCitacao(){var f=document.getElementById('responder');if(f)f.querySelectorAll('input[name=citando]').forEach(function(i){i.value='';});var cx=document.getElementById('cc-at-citando');if(cx)cx.hidden=true;}
+function reagir(b,emoji){if(!URLR||!window.fetch)return;var id=b.getAttribute('data-msg');if(!id)return;var p=new URLSearchParams();p.set('alvo',id);p.set('emoji',emoji);if(TELR)p.set('telefone',TELR);
+fetch(URLR,{method:'POST',credentials:'same-origin',headers:{'Accept':'application/json','Content-Type':'application/x-www-form-urlencoded'},body:p.toString()})
+.then(function(r){return r.json().catch(function(){return {ok:false};});}).then(function(j){if(j&&j.ok){assin=null;buscando=false;geracao++;buscar(true);}else{aviso((j&&j.avisoHtml)||'<div class="cc-aviso cc-aviso-erro">A reação não saiu. Tente de novo.</div>');}})
+.catch(function(){aviso('<div class="cc-aviso cc-aviso-erro">Sem conexão com o painel.</div>');});}
+function abrirMenu(b,ancora){fecharMenu();var m=document.createElement('div');m.className='cc-at-menu-msg';m.setAttribute('role','menu');
+var r=document.createElement('button');r.type='button';r.className='cc-at-menu-resp';r.setAttribute('role','menuitem');r.textContent='↩ Responder';r.addEventListener('click',function(){fecharMenu();citar(b);});m.appendChild(r);
+var linha=document.createElement('div');linha.className='cc-at-menu-emojis';EMOJIS.forEach(function(em){var e=document.createElement('button');e.type='button';e.setAttribute('role','menuitem');e.setAttribute('aria-label','Reagir '+em);e.textContent=em;e.addEventListener('click',function(){fecharMenu();reagir(b,em);});linha.appendChild(e);});
+m.appendChild(linha);
+if(b.querySelector('.cc-at-reacoes')){var t=document.createElement('button');t.type='button';t.className='cc-at-menu-tirar';t.textContent='Tirar minha reação';t.addEventListener('click',function(){fecharMenu();reagir(b,'');});m.appendChild(t);}
+document.body.appendChild(m);var rr=(ancora||b).getBoundingClientRect(),w=m.offsetWidth||240,h=m.offsetHeight||90;
+var x=Math.max(8,Math.min(window.innerWidth-w-8,rr.right-w)),y=rr.bottom+6;if(y+h>window.innerHeight-8)y=Math.max(8,rr.top-h-6);m.style.left=x+'px';m.style.top=y+'px';menuAc=m;var pb=m.querySelector('button');if(pb)pb.focus();}
+document.addEventListener('click',function(e){var t=e.target;if(!t||!t.closest)return;
+if(t.closest('[data-tirar-citacao]')){tirarCitacao();return;}
+var bt=t.closest('[data-acoes]');if(bt){e.preventDefault();var b=bt.closest('[data-msg]');if(b)abrirMenu(b,bt);return;}
+if(menuAc&&!t.closest('.cc-at-menu-msg'))fecharMenu();});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')fecharMenu();});
 if(URLC&&window.fetch){setInterval(function(){tiques++;if(document.hidden||enviando)return;if(parados>=4&&tiques%3!==0)return;buscar(false);},8000);document.addEventListener('visibilitychange',function(){if(!document.hidden)buscar(false);});}
 })();`;
 
@@ -1335,6 +1389,30 @@ export const CSS_ATENDIMENTO = `
 .cc-at-luz.cc-on{display:flex}
 .cc-at-luz img{max-width:100%;max-height:100%;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
 .cc-at-luz-x{position:absolute;top:14px;right:14px;width:40px;height:40px;font-size:24px;background:var(--cc-surface-2);color:var(--cc-text)}
+/* W2 — citar e reagir */
+.cc-at-msg{position:relative}
+.cc-at-acoes-btn{margin-left:auto;float:right;border:0;background:transparent;color:var(--cc-muted);font-size:16px;line-height:1;padding:0 2px 0 8px;cursor:pointer;opacity:.55}
+.cc-at-msg:hover .cc-at-acoes-btn,.cc-at-acoes-btn:focus-visible{opacity:1;color:var(--cc-text)}
+.cc-at-cita{display:flex;flex-direction:column;gap:1px;margin:2px 0 6px;padding:5px 9px;border-left:3px solid var(--cc-gold-2);border-radius:6px;background:var(--cc-surface-2);font-size:12px;min-width:0}
+.cc-at-cita strong{font-size:11px;color:var(--cc-gold-2);font-weight:700}
+.cc-at-cita span{color:var(--cc-text-2);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.cc-at-com-reacao{margin-bottom:12px}
+.cc-at-reacoes{position:absolute;bottom:-13px;left:10px;display:inline-flex;align-items:center;gap:1px;padding:1px 6px;border-radius:99px;background:var(--cc-surface-3);border:1px solid var(--cc-line-2);font-size:13px;line-height:18px}
+.cc-at-msg-eva .cc-at-reacoes{left:auto;right:10px}
+.cc-at-reacoes small{font-size:10.5px;color:var(--cc-muted);margin-left:3px}
+.cc-at-evento-reagiu{border-style:dotted}
+.cc-at-citando{display:flex;align-items:flex-start;gap:8px}
+.cc-at-citando[hidden]{display:none}
+.cc-at-citando .cc-at-cita{flex:1;margin:0}
+.cc-at-citando-x{width:28px;height:28px;flex:none}
+.cc-at-menu-msg{position:fixed;z-index:70;min-width:220px;padding:6px;border-radius:12px;background:var(--cc-surface);border:1px solid var(--cc-line-2);box-shadow:0 14px 34px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:4px}
+.cc-at-menu-msg button{font:inherit;cursor:pointer;border:0;background:transparent;color:var(--cc-text);border-radius:8px}
+.cc-at-menu-resp,.cc-at-menu-tirar{text-align:left;padding:7px 10px;font-size:13px;font-weight:600}
+.cc-at-menu-resp:hover,.cc-at-menu-tirar:hover{background:var(--cc-surface-2)}
+.cc-at-menu-tirar{color:var(--cc-muted);font-weight:500}
+.cc-at-menu-emojis{display:flex;gap:2px;padding:2px}
+.cc-at-menu-emojis button{font-size:20px;width:36px;height:36px}
+.cc-at-menu-emojis button:hover{background:var(--cc-surface-2)}
 /* cockpit */
 .cc-at-cockpit{overflow-y:auto;padding:16px;gap:14px;scroll-margin-top:84px}
 .cc-at-cockpit-vazio{justify-content:center;align-items:center}

@@ -21,6 +21,10 @@ export interface IncomingMessage {
   nomeArquivo?: string;
   /** Tamanho do arquivo (bytes), quando o WhatsApp manda — W1: não baixa o que passa do limite. */
   tamanhoBytes?: number;
+  /** W2: esta mensagem RESPONDE outra (id do WhatsApp da citada). */
+  citandoId?: string;
+  /** W2: pedacinho do texto citado, quando o WhatsApp manda junto (Evolution). */
+  citandoTexto?: string;
   // ID do NÚMERO que RECEBEU a mensagem (value.metadata.phone_number_id no
   // webhook WABA). Base do multi-tenant: mapeia pro company_id via companies.
   // waba_phone_number_id (migration 081). So o canal WABA preenche.
@@ -74,7 +78,9 @@ export function lerMensagemEvolution(data: Record<string, unknown> | undefined |
   const messageId = key.id ?? '';
   const pushName = (data.pushName as string) || undefined;
 
-  const base = { from, timestamp: new Date(timestamp * 1000), messageId, fromMe, pushName, deGrupo, grupoId };
+  // W2: mensagem que responde outra (contextInfo em qualquer tipo de mensagem).
+  const cit = citacaoEvolution(message, data);
+  const base = { from, timestamp: new Date(timestamp * 1000), messageId, fromMe, pushName, deGrupo, grupoId, ...cit };
 
   if (message.conversation || message.extendedTextMessage) {
     const text = (message.conversation as string)
@@ -133,6 +139,49 @@ export function lerMensagemEvolution(data: Record<string, unknown> | undefined |
   }
 
   return null;
+}
+
+/** Texto de uma mensagem citada (quotedMessage) — só texto/legenda, curto. PURA. */
+function textoCitado(q: Record<string, unknown> | undefined): string | undefined {
+  if (!q) return undefined;
+  const t = (q.conversation as string | undefined)
+    ?? (q.extendedTextMessage as { text?: string } | undefined)?.text
+    ?? (q.imageMessage as { caption?: string } | undefined)?.caption
+    ?? (q.videoMessage as { caption?: string } | undefined)?.caption
+    ?? (q.documentMessage as { fileName?: string } | undefined)?.fileName
+    ?? (q.audioMessage ? '[áudio]' : q.imageMessage ? '[imagem]' : q.videoMessage ? '[vídeo]' : undefined);
+  return typeof t === 'string' && t.trim() ? t.trim().slice(0, 300) : undefined;
+}
+
+/** W2: { citandoId, citandoTexto } quando a mensagem responde outra. PURA. */
+function citacaoEvolution(message: Record<string, unknown>, data: Record<string, unknown>): { citandoId?: string; citandoTexto?: string } {
+  let ctx: Record<string, unknown> | undefined = data.contextInfo as Record<string, unknown> | undefined;
+  if (!ctx?.stanzaId) {
+    for (const v of Object.values(message)) {
+      const c = v && typeof v === 'object' ? (v as { contextInfo?: Record<string, unknown> }).contextInfo : undefined;
+      if (c?.stanzaId) { ctx = c; break; }
+    }
+  }
+  const id = typeof ctx?.stanzaId === 'string' ? ctx.stanzaId : '';
+  if (!id) return {};
+  const texto = textoCitado(ctx?.quotedMessage as Record<string, unknown> | undefined);
+  return { citandoId: id, ...(texto ? { citandoTexto: texto } : {}) };
+}
+
+/** W2: reação recebida (reactionMessage) — emoji vazio = a pessoa tirou a reação. PURA. */
+export interface ReacaoRecebida { from: string; fromMe: boolean; alvo: string; emoji: string; wamid: string; timestamp: Date; deGrupo: boolean }
+export function lerReacaoEvolution(data: Record<string, unknown> | undefined | null): ReacaoRecebida | null {
+  if (!data || typeof data !== 'object') return null;
+  const key = data.key as Record<string, unknown> | undefined;
+  const r = (data.message as Record<string, unknown> | undefined)?.reactionMessage as { key?: { id?: string }; text?: string } | undefined;
+  if (!key || !r?.key?.id) return null;
+  const remote = String(key.remoteJid ?? '');
+  const deGrupo = remote.endsWith('@g.us');
+  return {
+    from: remote.replace('@s.whatsapp.net', ''), fromMe: Boolean(key.fromMe), alvo: String(r.key.id),
+    emoji: typeof r.text === 'string' ? r.text : '', wamid: String(key.id ?? ''),
+    timestamp: new Date(Number(data.messageTimestamp ?? 0) * 1000), deGrupo,
+  };
 }
 
 /** fileLength do Baileys: número, texto ou Long ({low, high}). PURA. */
@@ -284,18 +333,50 @@ export class EvolutionService {
    */
   async sendMediaBase64(
     to: string,
-    m: { mediatype: 'image' | 'video' | 'document'; mimetype: string; base64: string; fileName: string; caption?: string },
+    m: { mediatype: 'image' | 'video' | 'document'; mimetype: string; base64: string; fileName: string; caption?: string; citada?: { id: string; texto?: string | null } },
   ): Promise<{ messageId: string }> {
-    const body = { number: to, mediatype: m.mediatype, mimetype: m.mimetype, media: m.base64, fileName: m.fileName, caption: m.caption ?? '' };
+    const body: Record<string, unknown> = { number: to, mediatype: m.mediatype, mimetype: m.mimetype, media: m.base64, fileName: m.fileName, caption: m.caption ?? '' };
+    if (m.citada) body.quoted = { key: { id: m.citada.id }, message: { conversation: (m.citada.texto ?? '').slice(0, 300) } };
     return this.postarMidia('sendMedia', body);
   }
 
-  /** W1 — áudio como MENSAGEM DE VOZ (a Evolution converte para o formato do WhatsApp). */
-  async sendWhatsAppAudio(to: string, base64: string): Promise<{ messageId: string }> {
-    return this.postarMidia('sendWhatsAppAudio', { number: to, audio: base64 });
+  /** W2 — texto RESPONDENDO outra mensagem (quoted). */
+  async sendTextQuoted(to: string, text: string, citada: { id: string; texto?: string | null }): Promise<{ messageId: string }> {
+    return this.postarMidia('sendText', { number: to, text, quoted: { key: { id: citada.id }, message: { conversation: (citada.texto ?? '').slice(0, 300) } } });
   }
 
-  private async postarMidia(rota: 'sendMedia' | 'sendWhatsAppAudio', body: Record<string, unknown>): Promise<{ messageId: string }> {
+  /**
+   * W2 — reagir a uma mensagem. A reação precisa do JID exato da conversa
+   * (o 9º dígito do celular varia): pergunta à Evolution qual é.
+   */
+  async sendReactionTo(to: string, alvo: { id: string; fromMe: boolean }, emoji: string): Promise<{ messageId: string }> {
+    const jid = await this.jidDoNumero(to);
+    if (!jid) throw new Error('numero_sem_whatsapp');
+    return this.postarMidia('sendReaction', { key: { remoteJid: jid, fromMe: alvo.fromMe, id: alvo.id }, reaction: emoji });
+  }
+
+  /** JID do WhatsApp para este número (null = não tem WhatsApp / erro). */
+  async jidDoNumero(to: string): Promise<string | null> {
+    try {
+      const res = await fetch(`${this.baseUrl}/chat/whatsappNumbers/${this.instanciaAtual()}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', apikey: this.apiKey },
+        body: JSON.stringify({ numbers: [to] }), signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) return null;
+      const lista = await res.json() as Array<{ exists?: boolean; jid?: string }>;
+      const r = Array.isArray(lista) ? lista[0] : null;
+      return r?.exists && typeof r.jid === 'string' ? r.jid : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** W1 — áudio como MENSAGEM DE VOZ (a Evolution converte para o formato do WhatsApp). */
+  async sendWhatsAppAudio(to: string, base64: string, citada?: { id: string; texto?: string | null }): Promise<{ messageId: string }> {
+    return this.postarMidia('sendWhatsAppAudio', { number: to, audio: base64, ...(citada ? { quoted: { key: { id: citada.id }, message: { conversation: (citada.texto ?? '').slice(0, 300) } } } : {}) });
+  }
+
+  private async postarMidia(rota: 'sendMedia' | 'sendWhatsAppAudio' | 'sendText' | 'sendReaction', body: Record<string, unknown>): Promise<{ messageId: string }> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60000);
     try {
