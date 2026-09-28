@@ -106,11 +106,24 @@ export interface CommandCenterKpis {
 
 /** Só as 5 contagens que o Command Center usa, em paralelo. O Supabase NÃO
  *  lança em erro de consulta (devolve `{ count, error }`), então cada uma é
- *  conferida: erro, count null ou exceção → null. Mesmas regras da Home. */
-export async function fetchCommandCenterKpis(supabase: SupabaseClient, mesRef: Date = new Date()): Promise<CommandCenterKpis> {
-  const inicioMes = new Date(mesRef.getFullYear(), mesRef.getMonth(), 1).toISOString();
-  const fimMes = new Date(mesRef.getFullYear(), mesRef.getMonth() + 1, 1).toISOString();
-  const proximos30 = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+ *  conferida: erro, count null ou exceção → null. Mesmas regras da Home.
+ *
+ *  Escopo EXPLÍCITO por company_id (não confia no RLS do bancoDoOperador, que
+ *  pode estar desligado e devolver o cliente de serviço).
+ *  Mês = mês civil de Brasília (UTC-3, sem horário de verão), não o fuso do
+ *  servidor: 30/09 às 22h em Brasília (01/10 01:00Z) ainda conta setembro. */
+export async function fetchCommandCenterKpis(
+  supabase: SupabaseClient,
+  companyId: string,
+  mesRef: Date = new Date(),
+): Promise<CommandCenterKpis> {
+  const BRASILIA_MS = 3 * 60 * 60 * 1000;
+  const refBrasilia = new Date(mesRef.getTime() - BRASILIA_MS); // campos UTC = relógio de Brasília
+  const ano = refBrasilia.getUTCFullYear();
+  const mes = refBrasilia.getUTCMonth();
+  const inicioMes = new Date(Date.UTC(ano, mes, 1, 3)).toISOString();
+  const fimMes = new Date(Date.UTC(ano, mes + 1, 1, 3)).toISOString();
+  const proximos30 = new Date(refBrasilia.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   const contar = async (
     rotulo: string,
@@ -131,15 +144,15 @@ export async function fetchCommandCenterKpis(supabase: SupabaseClient, mesRef: D
 
   const [leads, propostas, vendas, usinasNovas, manutencoesPendentes] = await Promise.all([
     contar('leads', supabase.from('leads').select('id', { count: 'exact', head: true })
-      .gte('created_at', inicioMes).lt('created_at', fimMes)),
+      .gte('created_at', inicioMes).lt('created_at', fimMes).eq('company_id', companyId)),
     contar('propostas', supabase.from('propostas_publicas').select('id', { count: 'exact', head: true })
-      .eq('revoked', false).gte('created_at', inicioMes).lt('created_at', fimMes)),
+      .eq('revoked', false).gte('created_at', inicioMes).lt('created_at', fimMes).eq('company_id', companyId)),
     contar('vendas', supabase.from('leads').select('id', { count: 'exact', head: true })
-      .gte('contract_signed_at', inicioMes).lt('contract_signed_at', fimMes)),
+      .gte('contract_signed_at', inicioMes).lt('contract_signed_at', fimMes).eq('company_id', companyId)),
     contar('usinas', supabase.from('sistemas_clientes').select('id', { count: 'exact', head: true })
-      .gte('created_at', inicioMes).lt('created_at', fimMes)),
+      .gte('created_at', inicioMes).lt('created_at', fimMes).eq('company_id', companyId)),
     contar('manutencoes', supabase.from('maintenance_reminders').select('id', { count: 'exact', head: true })
-      .eq('status', 'pending').lte('scheduled_date', proximos30)),
+      .eq('status', 'pending').lte('scheduled_date', proximos30).eq('company_id', companyId)),
   ]);
   return { leads, propostas, vendas, usinasNovas, manutencoesPendentes };
 }

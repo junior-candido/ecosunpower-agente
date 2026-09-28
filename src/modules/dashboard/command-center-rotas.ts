@@ -3,10 +3,10 @@
 // Ficam fora do router.ts pra poderem ser testados direto (req/res falsos),
 // sem subir o router inteiro com sessão.
 //
-// SÓ ECOSUN nesta fase: as consultas ainda não filtram company_id no código
-// (dependem do RLS do bancoDoOperador, que pode estar desligado) e as telas
-// apontam pra telas da casa (Cockpit, Financeiro). A fase B abre pro tenant
-// com consultas escopadas explicitamente.
+// SÓ ECOSUN nesta fase: as telas apontam pra telas da casa (Financeiro etc.).
+// As contagens já vão escopadas por company_id (ECOSUN_COMPANY_ID), sem
+// depender do RLS. Quem não é EcoSun (tenant ou sem sessão) vai pro Cockpit —
+// a entrada do tenant —, nunca pra /home (casca e KPIs da casa).
 
 import type { Request, Response } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -26,16 +26,19 @@ export function rotaCommandCenter(supabase: SupabaseClient, agoraFn: () => Date 
   return async (req, res) => {
     const user = (req as AuthedRequest).dashUser;
     if (!ehEcosun(req)) {
-      res.redirect('/dashboard/home');
+      res.redirect('/dashboard/cockpit');
       return;
     }
     const agora = agoraFn();
-    let kpisMes: CommandCenterKpis | null = null;
+    let kpisMes: CommandCenterKpis;
     try {
       // Cada contagem que falhar vem null → "—" na tela, nunca número inventado.
-      kpisMes = await fetchCommandCenterKpis(bancoDoOperador(req as AuthedRequest, supabase), agora);
+      kpisMes = await fetchCommandCenterKpis(bancoDoOperador(req as AuthedRequest, supabase), ECOSUN_COMPANY_ID, agora);
     } catch (err) {
       console.error('[dashboard/command-center] kpis', err);
+      // Falha geral = tudo "sem dado agora" ("em construção" é só pra KPI que
+      // ainda não existe).
+      kpisMes = { leads: null, propostas: null, vendas: null, usinasNovas: null, manutencoesPendentes: null };
     }
     res.type('text/html').send(renderCommandCenterPage({ agora, nomeUsuario: user?.nome ?? null, kpisMes }, user));
   };
@@ -46,7 +49,7 @@ export function rotaCommandCenter(supabase: SupabaseClient, agoraFn: () => Date 
 export function rotaModoTv(): Handler {
   return async (req, res) => {
     if (!ehEcosun(req)) {
-      res.redirect('/dashboard/home');
+      res.redirect('/dashboard/cockpit');
       return;
     }
     res.type('text/html').send(renderModoTvPage((req as AuthedRequest).dashUser));

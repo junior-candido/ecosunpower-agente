@@ -84,6 +84,78 @@ describe('renderLayout — casca nova', () => {
     expect(h).toContain('btn.focus()');
   });
 
+  describe('gaveta: foco ao abrir e ao fechar (roda o script num DOM falso)', () => {
+    type ElFalso = { id: string; focado: boolean; attrs: Record<string, string>; classes: Set<string>; focus(): void; setAttribute(k: string, v: string): void; classList: { contains(c: string): boolean; toggle(c: string, on?: boolean): boolean }; querySelector(sel: string): ElFalso | null };
+    function montar() {
+      let ativo: ElFalso | null = null;
+      const el = (id: string): ElFalso => {
+        const e: ElFalso = {
+          id, focado: false, attrs: {}, classes: new Set(),
+          focus() { ativo = e; },
+          setAttribute(k, v) { e.attrs[k] = v; },
+          classList: {
+            contains: (c) => e.classes.has(c),
+            toggle: (c, on) => { const v = on ?? !e.classes.has(c); if (v) e.classes.add(c); else e.classes.delete(c); return v; },
+          },
+          querySelector: () => null,
+        };
+        return e;
+      };
+      const root = el('dash-root');
+      const btn = el('cc-menu-btn');
+      const sidebar = el('cc-sidebar');
+      const primeiroLink = el('link-1');
+      sidebar.querySelector = (sel: string) => (sel.includes('a') ? primeiroLink : null);
+      const els: Record<string, ElFalso> = { 'dash-root': root, 'cc-menu-btn': btn, 'cc-sidebar': sidebar };
+      const ouvintes: Array<(e: { key: string }) => void> = [];
+      const document = {
+        getElementById: (id: string) => els[id] ?? null,
+        addEventListener: (_t: string, fn: (e: { key: string }) => void) => { ouvintes.push(fn); },
+      };
+      const h = renderLayout({ active: 'home', title: 'X', body: '', user: junior });
+      const script = h.match(/<script id="cc-gaveta-js">([\s\S]*?)<\/script>/)![1];
+      const ccMenu = new Function('document', `${script}; return ccMenu;`)(document) as (abrir?: boolean) => boolean;
+      return { ccMenu, root, btn, primeiroLink, ativo: () => ativo, tecla: (key: string) => ouvintes.forEach((f) => f({ key })) };
+    }
+
+    it('abrir pelo botão foca o primeiro link do menu', () => {
+      const g = montar();
+      g.btn.focus();
+      g.ccMenu();
+      expect(g.root.classes.has('sidebar-open')).toBe(true);
+      expect(g.ativo()).toBe(g.primeiroLink);
+    });
+
+    it('fechar pelo botão devolve o foco pro botão', () => {
+      const g = montar();
+      g.ccMenu();
+      g.ccMenu();
+      expect(g.root.classes.has('sidebar-open')).toBe(false);
+      expect(g.ativo()).toBe(g.btn);
+    });
+
+    it('fechar pelo fundo escuro (ccMenu(false)) devolve o foco pro botão', () => {
+      const g = montar();
+      g.ccMenu();
+      g.ccMenu(false);
+      expect(g.ativo()).toBe(g.btn);
+      expect(g.btn.attrs['aria-expanded']).toBe('false');
+    });
+
+    it('Esc fecha e devolve o foco pro botão', () => {
+      const g = montar();
+      g.ccMenu();
+      g.tecla('Escape');
+      expect(g.root.classes.has('sidebar-open')).toBe(false);
+      expect(g.ativo()).toBe(g.btn);
+    });
+  });
+
+  it('rodapé acompanha a tela larga (sem o limite de 80rem)', async () => {
+    const { CSS_DESIGN_SYSTEM } = await import('../src/modules/dashboard/ui/estilo.js');
+    expect(CSS_DESIGN_SYSTEM).toMatch(/\.cc-main\.cc-largo ?~ ?\.cc-rodape\{[^}]*max-width:none/);
+  });
+
   it('gaveta fechada some também pra leitor de tela/teclado (visibility), aberta volta', async () => {
     const { CSS_DESIGN_SYSTEM } = await import('../src/modules/dashboard/ui/estilo.js');
     const bloco = CSS_DESIGN_SYSTEM.slice(CSS_DESIGN_SYSTEM.indexOf('@media (max-width:1023px)'));

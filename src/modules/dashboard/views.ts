@@ -254,14 +254,23 @@ ${CSS_DESIGN_SYSTEM}
   </div>
 
   <script id="cc-gaveta-js">
-    // Gaveta do menu no celular: abre/fecha, aria-expanded no botão, Esc fecha
-    // e devolve o foco pro botão.
+    // Gaveta do menu no celular: abre/fecha, aria-expanded no botão. Ao abrir,
+    // o foco vai pro 1º link do menu; ao fechar (botão, fundo escuro ou Esc),
+    // volta pro botão.
     function ccMenu(abrir) {
       var root = document.getElementById('dash-root');
       var btn = document.getElementById('cc-menu-btn');
-      var aberto = typeof abrir === 'boolean' ? abrir : !root.classList.contains('sidebar-open');
+      var estava = root.classList.contains('sidebar-open');
+      var aberto = typeof abrir === 'boolean' ? abrir : !estava;
       root.classList.toggle('sidebar-open', aberto);
       if (btn) btn.setAttribute('aria-expanded', aberto ? 'true' : 'false');
+      if (aberto && !estava) {
+        var sb = document.getElementById('cc-sidebar');
+        var primeiro = sb && sb.querySelector('a[href]');
+        if (primeiro) primeiro.focus();
+      } else if (!aberto && estava && btn) {
+        btn.focus();
+      }
       return aberto;
     }
     document.addEventListener('keydown', function (e) {

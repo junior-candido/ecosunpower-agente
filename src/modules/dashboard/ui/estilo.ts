@@ -106,6 +106,7 @@ body.ecosun-body.ecosun-body-dark{color:#EAF1F8;background:radial-gradient(900px
 .cc-main{flex:1;width:100%;margin:0 auto;padding:32px 24px;position:relative;z-index:0;max-width:80rem}
 .cc-main.cc-largo{max-width:none;padding:26px 34px 40px}
 .cc-rodape{width:100%;max-width:80rem;margin:24px auto 0;padding:20px 24px;font-size:12px;text-align:center;border-top:1px solid var(--cc-line-2);color:#64748b}
+.cc-main.cc-largo~.cc-rodape{max-width:none}
 .cc-escuro .cc-rodape{color:var(--cc-faint)}
 .cc-claro .cc-rodape{border-color:#e2e8f0}
 .cc-rodape .cc-row{justify-content:center;flex-wrap:wrap;gap:8px}
