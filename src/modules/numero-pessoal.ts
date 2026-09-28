@@ -40,9 +40,12 @@ export interface NumeroPessoal {
   instancia: string;
   numero: string | null;
   ativo: boolean;
+  /** W3 (migration 143): abrir a conversa marca como lida no WhatsApp. Sem a 143 = ligado. */
+  marcar_lida_ao_abrir?: boolean | null;
 }
 
-const COLUNAS = 'id, company_id, dono_user_id, dono_nome, instancia, numero, ativo';
+// '*': a coluna da 143 é opcional — sem a migration a leitura não quebra.
+const COLUNAS = '*';
 
 /**
  * Instância → número pessoal (cache de 1 min). Devolve também o DESLIGADO

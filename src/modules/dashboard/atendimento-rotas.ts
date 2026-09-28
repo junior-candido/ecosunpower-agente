@@ -45,6 +45,7 @@ import { linhaDoPainelParaChat } from './conversas-queries.js';
 import { numeroPessoalDoDono, mensagensPessoais, virarLead, leadDoTelefoneNaEmpresa, CASA as CASA_ID, type NumeroPessoal } from '../numero-pessoal.js';
 import { linhaVisivelPara } from '../mensagens-whatsapp.js';
 import { gravarReacao, emojiDeReacaoValido } from '../reacoes-citacoes.js';
+import { estaDigitando, marcarLidasAoAbrir } from '../status-whatsapp.js';
 import {
   validarArquivo, guardarMidia, apagarMidia, urlDaMidia, textoDaMidia, caminhoDaEmpresa, LIMITE_LEGENDA, LIMITE_MIDIA_BYTES,
   type TipoMidia, type ArquivoValidado,
@@ -94,6 +95,8 @@ export interface DepsAtendimento {
   enviarPessoal?: (instancia: string, to: string, text: string, citada?: Citada) => Promise<{ messageId?: string } | void>;
   /** W2: texto citando pela instância QR do TENANT (roda dentro de noCanalDaEmpresa). */
   sendTextEvolutionCitando?: (to: string, text: string, citada: Citada) => Promise<unknown>;
+  /** W3: marcar como LIDAS no WhatsApp (instância do dono) — "marcar como lida ao abrir". */
+  marcarLidasEvolution?: (instancia: string, companyId: string, to: string, wamids: string[]) => Promise<unknown>;
   /** W2: reação pela Evolution (número pessoal do dono ou tenant). */
   reagirEvolution?: (instancia: string, companyId: string, to: string, alvo: { id: string; fromMe: boolean }, emoji: string) => Promise<{ messageId?: string } | void>;
   /** Parte 2b: número pessoal de quem está logado (padrão: whatsapp_numeros_pessoais). */
@@ -814,6 +817,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     if (rows.length === 0) return null;
     const comLead = [...rows].reverse().find((r) => r.lead_id);
     if (comLead?.lead_id) return { leadId: comLead.lead_id };
+    aoAbrirConversa(req, { telefone });
     const podeEnviar = !!(await pessoalDe(viewer.companyId, viewer.id));
     const resp = typeof req.query?.resp === 'string' && Object.prototype.hasOwnProperty.call(RESULTADO_ENVIO, req.query.resp) ? req.query.resp : null;
     return {
@@ -894,6 +898,33 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     res.redirect(303, `/dashboard/leads/${x.leadId}?canal=whatsapp_business#responder`);
   }
 
+  /**
+   * W3: "digitando…" desta conversa — a do número pessoal só para o DONO; a da
+   * assistente por QR (tenant) para a empresa. (A Meta não avisa quando o
+   * cliente digita no número oficial.)
+   */
+  async function digitandoAgora(companyId: string, viewerId: string, telefone: string | null | undefined): Promise<'digitando' | 'gravando' | null> {
+    const t = normalizeBrazilianPhone(telefone ?? '');
+    if (!t) return null;
+    const tels = variantesTelefone(t);
+    const dono = await donoDoNumero(companyId, viewerId).catch(() => null);
+    return (dono ? estaDigitando(companyId, viewerId, tels) : null) ?? estaDigitando(companyId, null, tels);
+  }
+
+  /**
+   * W3: abriu a conversa → marca como lida no WhatsApp as recebidas pelo número
+   * pessoal (só o dono, só com a opção ligada). Não segura a tela: roda por fora.
+   */
+  function aoAbrirConversa(req: AuthedRequest, alvo: { leadId?: string | null; telefone?: string | null }): void {
+    const v = req.dashUser;
+    if (!v?.companyId || !deps.marcarLidasEvolution) return;
+    void (async () => {
+      const np = await pessoalDe(v.companyId, v.id);
+      if (!np) return;
+      await marcarLidasAoAbrir(deps.supabase, { np, viewerId: v.id, leadId: alvo.leadId ?? null, telefone: alvo.telefone ?? null }, deps.marcarLidasEvolution!);
+    })().catch((e) => console.warn(`[lido] marcar como lida falhou: ${(e as Error).message}`));
+  }
+
   /** Nome do dono do número pessoal quando QUEM ESTÁ VENDO é o dono (rótulo "👤 Junior"). Nunca lança. */
   async function nomeDoDonoPessoal(req: AuthedRequest): Promise<string | null> {
     const v = req.dashUser;
@@ -935,7 +966,9 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
         nomeDoDonoPessoal(r),
       ]);
       const envio = can(viewer, 'leads', 'editar') ? await envioDaTela(r, lead, mensagens) : undefined;
-      const p = pedacosDaConversa({ user: viewer, lead: { ...lead, anexos } as unknown as LeadDetail, mensagens, envio, donoPessoal });
+      const digitando = await digitandoAgora(companyId, viewer.id, lead.phone);
+      aoAbrirConversa(r, { leadId });
+      const p = pedacosDaConversa({ user: viewer, lead: { ...lead, anexos } as unknown as LeadDetail, mensagens, envio, donoPessoal, digitando });
       const assinatura = assinaturaDaConversa(p);
       if (String(r.query?.assinatura ?? '') === assinatura) { res.json({ igual: true, assinatura }); return; }
       res.json({ assinatura, ...p });
@@ -953,7 +986,8 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
       const x = await contatoDaTela(r);
       if (!x) { res.status(404).json({ erro: 'conversa não encontrada' }); return; }
       if ('leadId' in x) { res.json({ irPara: `/dashboard/leads/${x.leadId}?canal=whatsapp_business` }); return; }
-      const p = pedacosDoContato({ user: r.dashUser, contato: x.contato, donoPessoal: x.donoPessoal });
+      const digitando = r.dashUser?.companyId ? await digitandoAgora(r.dashUser.companyId, r.dashUser.id, x.contato.telefone) : null;
+      const p = pedacosDoContato({ user: r.dashUser, contato: x.contato, donoPessoal: x.donoPessoal, digitando });
       const assinatura = assinaturaDaConversa(p);
       if (String(r.query?.assinatura ?? '') === assinatura) { res.json({ igual: true, assinatura }); return; }
       res.json({ assinatura, ...p });
@@ -970,5 +1004,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     /** Para o router: multer + handler (o arquivo chega em req.file). */
     comArquivo,
     reagir: comJson(reagir), reagirContato: comJson(reagirContato),
+    /** W3: a página do lead chama ao abrir (marca como lida no número pessoal). */
+    aoAbrirConversa,
   };
 }

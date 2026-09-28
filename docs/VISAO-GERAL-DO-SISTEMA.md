@@ -202,3 +202,8 @@ URL assinada de 2 min. Apagar o lead apaga os arquivos dele do bucket.
 `citando` (id da linha) nos formulários de resposta. Meta: `sendTextReply`/`sendReaction`/`context`; Evolution:
 `sendTextQuoted`/`sendReactionTo` (JID via `/chat/whatsappNumbers`). O texto do cliente no número da assistente
 entra em `mensagens_whatsapp` com o wamid (`registrarTextoDaAssistente`); a cópia da memória da Eva sai do chat.
+**Lido / digitando (W3):** `status-whatsapp.ts` + migration 143 (status `entregue`/`lida`, `entregue_em`/`lida_em`,
+`whatsapp_numeros_pessoais.marcar_lida_ao_abrir`). Meta `statuses` e Evolution `messages.update` → ✓/✓✓/✓✓ azul
+(nunca volta); `presence.update` → "digitando…" em memória (só o dono vê o do número pessoal). Abrir a conversa marca
+como lida no número pessoal (`marcarLidasAoAbrir`, opção em Meu WhatsApp). Instância pessoal assina MESSAGES_UPDATE e
+PRESENCE_UPDATE (reapontado ao salvar a opção).

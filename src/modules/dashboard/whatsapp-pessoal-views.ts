@@ -13,7 +13,7 @@ import type { ProgressoHistorico } from '../numero-pessoal-historico.js';
 export interface WhatsappPessoalInput {
   user: DashUser | undefined;
   /** null = ainda não preparado. */
-  numero: { instancia: string; ativo: boolean; donoNome: string | null } | null;
+  numero: { instancia: string; ativo: boolean; donoNome: string | null; marcarLida?: boolean } | null;
   estado: EstadoConexao | null;
   /** Mensagem depois de uma ação (?ok=… / ?erro=…), já traduzida. */
   resultado?: { tom: 'ok' | 'erro' | 'atencao'; texto: string } | null;
@@ -42,6 +42,9 @@ const RESULTADOS: Record<string, { tom: 'ok' | 'erro' | 'atencao'; texto: string
   historico_sem_webhook: { tom: 'atencao', texto: 'Seu número foi desconectado para buscar o histórico, mas não consegui assinar o aviso do histórico nesta conexão. Leia o QR: o que o servidor já guardou entra; se o contador não subir depois, peça para ligar o evento MESSAGES_SET na Evolution.' },
   historico_falhou: { tom: 'erro', texto: 'O servidor do WhatsApp (Evolution) não aceitou ligar a busca do histórico. Nada foi desconectado. Tente de novo em instantes.' },
   historico_desligado: { tom: 'erro', texto: 'Religue o número no painel antes de buscar o histórico.' },
+  leitura_ligada: { tom: 'ok', texto: 'Pronto: abrir a conversa no painel marca como lida no WhatsApp (✓✓ azul para o cliente).' },
+  leitura_desligada: { tom: 'ok', texto: 'Pronto: abrir a conversa no painel NÃO marca mais como lida. Só o celular marca.' },
+  leitura_sem_migration: { tom: 'erro', texto: 'Não consegui salvar a opção (falta atualizar o banco — migration 143).' },
 };
 
 const FUSO = 'America/Sao_Paulo';
@@ -63,6 +66,18 @@ export function textoProgressoHistorico(p: ProgressoHistorico | null): string {
   const base = `${milhar(p.conversas)} conversa(s) / ${milhar(p.gravadas)} mensagem(ns) importada(s)${antiga ? ` · a mais antiga trazida é de ${antiga}` : ''}`;
   if (p.emAndamento) return `Importando… ${base}${p.naFila ? ` (${milhar(p.naFila)} na fila)` : ''}`;
   return `Última busca: ${base}${p.repetidas ? ` · ${milhar(p.repetidas)} já estavam no painel` : ''}${p.falhas ? ` · ${p.falhas} lote(s) falharam — busque de novo` : ''}`;
+}
+
+/** W3 — confirmação de leitura: a opção do dono (e o que o painel mostra). PURA. */
+export function cartaoLeitura(ligado: boolean): string {
+  return `<section class="cc-panel cc-wp-card cc-wp-leitura" id="wp-leitura">
+        <h2>Confirmação de leitura</h2>
+        <p class="cc-muted">${ligado
+    ? '<strong>Ligada:</strong> quando você abre uma conversa deste número no painel, as mensagens recebidas ficam como <strong>lidas</strong> no WhatsApp (o cliente vê ✓✓ azul) — igual a abrir no celular.'
+    : '<strong>Desligada:</strong> abrir a conversa no painel não avisa o cliente. As mensagens só ficam lidas quando você abre no celular.'}</p>
+        <form method="POST" action="/dashboard/whatsapp/pessoal/leitura"><input type="hidden" name="marcar" value="${ligado ? '0' : '1'}"><button type="submit" class="cc-btn cc-btn-sm${ligado ? ' cc-btn-ghost' : ' cc-wp-ok'}">${ligado ? 'Desligar a confirmação de leitura' : 'Ligar a confirmação de leitura'}</button></form>
+        <p class="cc-hint">Nas conversas aparecem os risquinhos do que você manda (✓ enviada · ✓✓ entregue · <span class="cc-wp-azul">✓✓</span> lida) e o "digitando…" do cliente, quando o WhatsApp avisa.</p>
+      </section>`;
 }
 
 export function resultadoWhatsappPessoal(chave: unknown): WhatsappPessoalInput['resultado'] {
@@ -141,6 +156,7 @@ export function renderWhatsappPessoalPage(p: WhatsappPessoalInput): string {
         <div class="cc-row cc-wp-rodape"><span class="cc-faint">Conexão: <code>${inst}</code></span><span class="cc-sp"></span>${liga}</div>
       </section>
       ${cartaoHistorico}
+      ${cartaoLeitura(p.numero.marcarLida !== false)}
     </div>`;
   }
 
@@ -182,6 +198,8 @@ t=setInterval(tique,5000);tique();
 
 const CSS_WP = `
 .cc-wp-hist{grid-column:1/-1}
+.cc-wp-leitura form{margin:0}
+.cc-wp-azul{color:#53bdeb;font-weight:700}
 .cc-wp-hist-num{font-size:15px;font-weight:700;margin:0}
 .cc-wp-hist-prog{font-size:13.5px;color:var(--cc-text-2);margin:0}
 .cc-wp-hist form{margin:0}

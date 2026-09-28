@@ -32,7 +32,7 @@ export interface LinhaMensagemWhatsapp {
   evento: 'assumiu' | 'devolveu' | null;
   origem: string | null;
   wamid: string | null;
-  status: 'enviando' | 'enviada' | 'falhou' | 'recebida' | 'registrada';
+  status: 'enviando' | 'enviada' | 'entregue' | 'lida' | 'falhou' | 'recebida' | 'registrada';
   erro: string | null;
   visivel_so_para: string | null;
   criado_em: string;
@@ -47,6 +47,9 @@ export interface LinhaMensagemWhatsapp {
   // ---- W2 (migration 142): resposta citando / reação ----
   citando_wamid?: string | null;
   citando_texto?: string | null;
+  // ---- W3 (migration 143): entregue / lida ----
+  entregue_em?: string | null;
+  lida_em?: string | null;
 }
 
 export type NovaMensagem = Partial<Omit<LinhaMensagemWhatsapp, 'id' | 'criado_em'>> &
@@ -70,7 +73,7 @@ export function semColunasNovas<T extends Record<string, unknown>>(linha: T): T 
   return c as T;
 }
 /** Outras colunas de migrations posteriores (W2/W3) registradas aqui para o mesmo recuo. */
-export const COLUNAS_EXTRAS: string[] = ['citando_wamid', 'citando_texto'];
+export const COLUNAS_EXTRAS: string[] = ['citando_wamid', 'citando_texto', 'entregue_em', 'lida_em'];
 
 /** Qual coluna faltou, pela mensagem do banco/PostgREST (null = não deu para saber). PURA. */
 export function colunaQueFaltou(error: { message?: string } | null | undefined): string | null {
@@ -226,8 +229,9 @@ export async function mensagensDoPainel(
       return q.order('criado_em', { ascending: false }).limit(limite);
     };
     try {
-      // Sem a 142 tenta com a 141; sem a 141, só as da 138.
+      // Migration nova ainda não aplicada: tenta sem as colunas dela (143 → 142 → 141 → 138).
       let { data, error } = await consulta(colunasAtuais());
+      if (error && ehColunaFaltando(error)) ({ data, error } = await consulta(`${COLUNAS}, citando_wamid, citando_texto`));
       if (error && ehColunaFaltando(error)) ({ data, error } = await consulta(COLUNAS));
       if (error && ehColunaFaltando(error)) ({ data, error } = await consulta(COLUNAS_138));
       if (error) return [];

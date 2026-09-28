@@ -12,7 +12,7 @@ import type { Request, Response } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AuthedRequest } from './auth.js';
 import { numeroPessoalDoDono, instanciaLivreParaPessoal, nomeInstanciaPessoal, CASA } from '../numero-pessoal.js';
-import { estadoConexao, obterQrConexao, criarInstancia, pedirHistoricoCompleto, type ConexaoEvolutionDeps, type QrConexao } from '../evolution-conexao.js';
+import { estadoConexao, obterQrConexao, criarInstancia, pedirHistoricoCompleto, apontarWebhook, type ConexaoEvolutionDeps, type QrConexao } from '../evolution-conexao.js';
 import { resumoDoPessoal, DIAS_HISTORICO, type ImportadorHistorico } from '../numero-pessoal-historico.js';
 import { mesmaOrigem } from './atendimento-rotas.js';
 import { renderWhatsappPessoalPage, resultadoWhatsappPessoal } from './whatsapp-pessoal-views.js';
@@ -53,7 +53,7 @@ export function criarRotasNumeroPessoal(deps: DepsNumeroPessoal) {
     ]);
     res.type('html').send(renderWhatsappPessoalPage({
       user: r.dashUser,
-      numero: np ? { instancia: np.instancia, ativo: np.ativo, donoNome: np.dono_nome } : null,
+      numero: np ? { instancia: np.instancia, ativo: np.ativo, donoNome: np.dono_nome, marcarLida: np.marcar_lida_ao_abrir !== false } : null,
       estado,
       historico: np ? { resumo, progresso: deps.historico?.progresso(np.instancia) ?? null, dias: DIAS_HISTORICO, disponivel: !!deps.evolution && !!deps.historico } : undefined,
       resultado: resultadoWhatsappPessoal(r.query?.ok ?? r.query?.erro),
@@ -101,6 +101,26 @@ export function criarRotasNumeroPessoal(deps: DepsNumeroPessoal) {
     if (!ativo) deps.historico?.cancelar(np.instancia);
     await audit(deps.supabase, { companyId: CASA, userId: r.dashUser.id, entidade: 'whatsapp_pessoal', acao: ativo ? 'religou' : 'desligou', valorNovo: np.instancia });
     res.redirect(303, `/dashboard/whatsapp/pessoal?ok=${ativo ? 'religado' : 'desligado'}`);
+  }
+
+  /**
+   * W3 — POST /whatsapp/pessoal/leitura { marcar: '1' | '0' }: liga/desliga o
+   * "marcar como lida ao abrir" (só o dono). Aproveita e reaponta os avisos da
+   * instância (✓✓ e "digitando…" precisam dos eventos novos).
+   */
+  async function leitura(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    if (!daCasa(r, res)) return;
+    if (!mesmaOrigem(r)) { res.status(403).send('origem não permitida'); return; }
+    const np = await numeroPessoalDoDono(deps.supabase, CASA, r.dashUser.id);
+    if (!np) { res.redirect(303, '/dashboard/whatsapp/pessoal'); return; }
+    const marcar = String(r.body?.marcar ?? '') === '1';
+    const { error } = await deps.supabase.from('whatsapp_numeros_pessoais').update({ marcar_lida_ao_abrir: marcar, atualizado_em: new Date().toISOString() })
+      .eq('id', np.id).eq('company_id', CASA).eq('dono_user_id', r.dashUser.id);
+    if (error) { res.redirect(303, '/dashboard/whatsapp/pessoal?erro=leitura_sem_migration'); return; }
+    if (deps.evolution && deps.webhookUrl) await apontarWebhook(deps.evolution, np.instancia, deps.webhookUrl, deps.webhookToken).catch(() => 'falhou');
+    await audit(deps.supabase, { companyId: CASA, userId: r.dashUser.id, entidade: 'whatsapp_pessoal', acao: marcar ? 'leitura_ligada' : 'leitura_desligada', valorNovo: np.instancia });
+    res.redirect(303, `/dashboard/whatsapp/pessoal?ok=${marcar ? 'leitura_ligada' : 'leitura_desligada'}`);
   }
 
   async function estado(req: Request, res: Response): Promise<void> {
@@ -179,6 +199,7 @@ export function criarRotasNumeroPessoal(deps: DepsNumeroPessoal) {
   }
 
   return {
+    leitura,
     pagina, criar, estado, qr, buscarHistorico, historicoJson,
     desligar: (req: Request, res: Response) => ligar(req, res, false),
     religar: (req: Request, res: Response) => ligar(req, res, true),

@@ -236,6 +236,14 @@ export function textoDoEvento(m: Pick<MensagemChat, 'evento' | 'autorNome' | 'ti
 
 const ID_MSG_OK = /^[0-9a-fA-F-]{36}$/;
 
+/** W3: ✓ enviada · ✓✓ entregue · ✓✓ azul lida (o que o WhatsApp avisou). PURA. */
+export function tique(status: string | null | undefined): string {
+  if (status === 'enviada') return ` <span class="cc-at-tick" title="Enviada">✓</span>`;
+  if (status === 'entregue') return ` <span class="cc-at-tick" title="Entregue">✓✓</span>`;
+  if (status === 'lida') return ` <span class="cc-at-tick cc-at-tick-lida" title="Lida">✓✓</span>`;
+  return '';
+}
+
 /** W2: a mensagem citada, dentro do balão (texto escapado; sem ela no chat, só "mensagem anterior"). PURA. */
 export function blocoCitacao(c: NonNullable<MensagemChat['citando']>): string {
   const texto = (c.texto ?? '').replace(/^\[[^\]]*\]\s*/, (x) => x.trim() + ' ').trim();
@@ -270,7 +278,7 @@ function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, t
       ${m.citando ? blocoCitacao(m.citando) : ''}
       ${m.midia ? corpoDaMidia(m) : corpoDaMensagem(m.content, temArquivos)}${!m.midia && m.transcricao ? `<div class="cc-at-transc"><span>Transcrição</span>${escapeHtml(m.transcricao)}</div>` : ''}
       ${falhou}
-      ${hora ? `<div class="cc-at-msg-h">${escapeHtml(hora + enviando)}</div>` : ''}
+      ${hora ? `<div class="cc-at-msg-h">${escapeHtml(hora + enviando)}${humano ? tique(m.status) : ''}</div>` : ''}
       ${reacoes}
     </div>`;
 }
@@ -478,7 +486,10 @@ function faixaAssumir(lead: LeadDetail, mensagens: MensagemChat[], assistente: s
 }
 
 /** Os balões da conversa (com a divisória de cada dia). Usado na página E no "sem recarregar". */
-export function blocoMensagens(mensagens: MensagemChat[], assistente: string, nomeCliente: string, temArquivos: boolean, donoPessoal: string | null, soDono = false, acoes = false): string {
+export function blocoMensagens(mensagens: MensagemChat[], assistente: string, nomeCliente: string, temArquivos: boolean, donoPessoal: string | null, soDono = false, acoes = false, digitando: 'digitando' | 'gravando' | null = null): string {
+  // W3: "digitando…" / "gravando áudio…" no fim da conversa (quando o WhatsApp avisa).
+  const dig = digitando ? `<div class="cc-at-digitando" role="status" aria-live="polite"><span class="cc-at-dig-pts" aria-hidden="true"><i></i><i></i><i></i></span>${escapeHtml(nomeCliente)} está ${digitando === 'gravando' ? 'gravando áudio…' : 'digitando…'}</div>` : '';
+  if (mensagens.length === 0 && dig) return dig;
   if (mensagens.length === 0) {
     return soDono
       ? `<div class="cc-at-vazio">${estadoVazio({ tipo: 'vazio', titulo: 'Nenhuma mensagem ainda.', compacto: true })}</div>`
@@ -496,7 +507,7 @@ export function blocoMensagens(mensagens: MensagemChat[], assistente: string, no
     // Conversa do número pessoal com quem não é lead: quem responde é o dono (nunca a assistente).
     const mm = soDono && m.role === 'assistant' && m.autor !== 'humano' ? { ...m, autor: 'humano' as const, autorNome: m.autorNome ?? donoPessoal } : m;
     return sep + balao(mm, assistente, nomeCliente, temArquivos, mostrarCanal, donoPessoal, acoes);
-  }).join('');
+  }).join('') + dig;
 }
 
 /**
@@ -544,12 +555,14 @@ export function nomesDaAssistente(user: DashUser | undefined): { assistente: str
  */
 export function pedacosDaConversa(p: {
   user: DashUser | undefined; lead: LeadDetail; mensagens: MensagemChat[]; envio?: CompositorInput; donoPessoal?: string | null;
+  /** W3: o cliente está digitando / gravando agora (aviso do WhatsApp). */
+  digitando?: 'digitando' | 'gravando' | null;
 }): { topo: string; msgs: string; compor: string; estado: string } {
   const { assistente, assistenteMin } = nomesDaAssistente(p.user);
   const temArquivos = (p.lead.anexos ?? []).length > 0;
   return {
     topo: topoDoChat(p.lead, p.mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar')),
-    msgs: blocoMensagens(p.mensagens, assistente, p.lead.name ?? 'Sem nome', temArquivos, p.donoPessoal ?? null, false, podeAgirNoChat(p.envio)),
+    msgs: blocoMensagens(p.mensagens, assistente, p.lead.name ?? 'Sem nome', temArquivos, p.donoPessoal ?? null, false, podeAgirNoChat(p.envio), p.digitando ?? null),
     compor: compositor(p.lead, p.mensagens, p.envio, assistente),
     estado: estadoDoCompositor(p.lead, p.mensagens, p.envio),
   };
@@ -955,11 +968,11 @@ function compositorContato(ct: ContatoPessoalTela, donoPessoal: string | null, a
 }
 
 /** Pedaços da conversa com quem não é lead, pra trocar sem recarregar. */
-export function pedacosDoContato(p: { user: DashUser | undefined; contato: ContatoPessoalTela; donoPessoal?: string | null }): { msgs: string; compor: string; estado: string } {
+export function pedacosDoContato(p: { user: DashUser | undefined; contato: ContatoPessoalTela; donoPessoal?: string | null; digitando?: 'digitando' | 'gravando' | null }): { msgs: string; compor: string; estado: string } {
   const { assistente } = nomesDaAssistente(p.user);
   const nome = p.contato.nome || formatPhoneBR(p.contato.telefone);
   return {
-    msgs: blocoMensagens(p.contato.mensagens, assistente, nome, false, p.donoPessoal ?? null, true, p.contato.envio?.via === 'evolution'),
+    msgs: blocoMensagens(p.contato.mensagens, assistente, nome, false, p.donoPessoal ?? null, true, p.contato.envio?.via === 'evolution', p.digitando ?? null),
     compor: compositorContato(p.contato, p.donoPessoal ?? null, assistente),
     estado: p.contato.envio?.via === 'evolution' ? 'pessoal|livre' : 'pessoal|desconectado',
   };
@@ -1118,6 +1131,7 @@ if(!j||g!==geracao)return;if(j.irPara){location.href=j.irPara;return;}if(j.igual
 var c=document.getElementById('cc-at-msgs');if(c&&typeof j.msgs==='string'){var fim=depoisDeEnviar||noFim(c);c.innerHTML=j.msgs;if(fim)rolar();}
 if(typeof j.topo==='string'){var t=document.getElementById('cc-at-topo'),n=pedaco(j.topo).querySelector('#cc-at-topo');if(t&&n)t.parentNode.replaceChild(n,t);}
 trocarRodape(j.compor,j.estado);
+if(typeof j.msgs==='string'&&j.msgs.indexOf('cc-at-digitando')>=0){setTimeout(function(){if(!document.hidden)buscar(false);},3000);}
 }).catch(function(){}).then(function(){buscando=false;});}
 document.addEventListener('submit',function(e){var f=e.target&&e.target.closest?e.target.closest('form[data-envio]'):null;if(!f)return;
 var b=f.querySelector('button[type=submit]');
@@ -1389,6 +1403,16 @@ export const CSS_ATENDIMENTO = `
 .cc-at-luz.cc-on{display:flex}
 .cc-at-luz img{max-width:100%;max-height:100%;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
 .cc-at-luz-x{position:absolute;top:14px;right:14px;width:40px;height:40px;font-size:24px;background:var(--cc-surface-2);color:var(--cc-text)}
+/* W3 — risquinhos e digitando */
+.cc-at-tick{font-size:11px;letter-spacing:-2px;margin-left:3px;color:var(--cc-muted)}
+.cc-at-tick-lida{color:#53bdeb}
+.cc-at-digitando{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--cc-text-2);padding:6px 12px;border-radius:14px;background:var(--cc-surface-3);border:1px solid var(--cc-line-2)}
+.cc-at-dig-pts{display:inline-flex;gap:3px}
+.cc-at-dig-pts i{width:6px;height:6px;border-radius:50%;background:var(--cc-muted);animation:ccDig 1.2s infinite ease-in-out}
+.cc-at-dig-pts i:nth-child(2){animation-delay:.15s}
+.cc-at-dig-pts i:nth-child(3){animation-delay:.3s}
+@keyframes ccDig{0%,80%,100%{opacity:.3;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
+@media (prefers-reduced-motion:reduce){.cc-at-dig-pts i{animation:none}}
 /* W2 — citar e reagir */
 .cc-at-msg{position:relative}
 .cc-at-acoes-btn{margin-left:auto;float:right;border:0;background:transparent;color:var(--cc-muted);font-size:16px;line-height:1;padding:0 2px 0 8px;cursor:pointer;opacity:.55}

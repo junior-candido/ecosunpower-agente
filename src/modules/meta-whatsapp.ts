@@ -32,6 +32,8 @@ export interface MetaStatusUpdate {
   recipientUserId?: string;
   errorCode?: number;
   errorTitle?: string;
+  /** W3: número (phone_number_id) que ENVIOU — resolve a empresa. */
+  phoneNumberId?: string;
 }
 
 /** String nao-vazia (trim) ou undefined — pra campos opcionais do webhook. */
@@ -543,6 +545,7 @@ export class MetaWhatsAppService {
         if (ch.field !== 'messages') continue;
         const value = ch.value as Record<string, unknown> | undefined;
         const statuses = (value?.statuses as Array<Record<string, unknown>> | undefined) ?? [];
+        const pnidStatus = (value?.metadata as { phone_number_id?: string } | undefined)?.phone_number_id;
         for (const s of statuses) {
           const errors = (s.errors as Array<Record<string, unknown>> | undefined) ?? [];
           const firstErr = errors[0];
@@ -554,6 +557,7 @@ export class MetaWhatsAppService {
             ...(texto(s.recipient_user_id) ? { recipientUserId: texto(s.recipient_user_id) } : {}),
             errorCode: firstErr ? Number(firstErr.code) : undefined,
             errorTitle: firstErr ? String(firstErr.title) : undefined,
+            ...(pnidStatus ? { phoneNumberId: pnidStatus } : {}),
           });
         }
       }

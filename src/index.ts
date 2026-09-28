@@ -21,6 +21,7 @@ import { Transcriber } from './modules/transcriber.js';
 import { arquivarMidiaDaAssistente, TIPO_DA_ENTRADA, LIMITE_MIDIA_BYTES } from './modules/midia-whatsapp.js';
 import { leadDoTelefoneNaEmpresa } from './modules/numero-pessoal.js';
 import { registrarTextoDaAssistente, gravarReacao } from './modules/reacoes-citacoes.js';
+import { statusDaMeta, aplicarStatus, lerStatusEvolution, lerPresencaEvolution, marcarPresenca } from './modules/status-whatsapp.js';
 import { VisionAnalyzer } from './modules/vision.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { LearningModule } from './modules/learning.js';
@@ -7649,6 +7650,13 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       try {
         // Status updates (sent/delivered/read/failed) — log e prossegue
         const statuses = metaWaba.parseStatusUpdates(req.body);
+        // W3: ✓✓ entregue / ✓✓ azul lida nas mensagens que a equipe mandou pelo painel.
+        for (const s of statuses) {
+          const st = statusDaMeta(s.status);
+          if (!st || !s.messageId) continue;
+          const emp = await tenantResolver.companyDoNumero(s.phoneNumberId).catch(() => ({ companyId: null }));
+          if (emp.companyId) await aplicarStatus(supabase.getClient(), emp.companyId, { wamid: s.messageId, status: st, em: s.timestamp, erro: s.errorTitle ?? null });
+        }
         for (const s of statuses) {
           if (s.status === 'failed') {
             console.warn(`[waba-status] ❌ FALHOU msg=${s.messageId} to=${s.recipientPhone || s.recipientUserId || "?"} err=${s.errorCode}: ${s.errorTitle}`);
@@ -7888,6 +7896,27 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       });
       res.status(h.http).json({ status: h.status });
       return;
+    }
+
+    // W3: risquinhos (messages.update) e "digitando…" (presence.update) — só para o painel.
+    {
+      const inst = typeof (req.body as { instance?: unknown })?.instance === 'string' ? (req.body as { instance: string }).instance : undefined;
+      const atualiz = lerStatusEvolution(req.body as Record<string, unknown>);
+      const presencas = lerPresencaEvolution(req.body as Record<string, unknown>);
+      if (atualiz.length || presencas.length) {
+        const pessoal = await numerosPessoais.porInstancia(inst);
+        if (pessoal === 'erro') { res.status(503).json({ status: 'numero_pessoal_indisponivel' }); return; }
+        const cid = pessoal && pessoal.ativo ? pessoal.company_id : await evolutionTenant.companyDaInstancia(inst) ?? (!inst || inst === config.evolutionInstance ? ECOSUN_COMPANY_ID : null);
+        if (cid) {
+          for (const a of atualiz) if (a.fromMe !== false) await aplicarStatus(supabase.getClient(), cid, a);
+          for (const pr of presencas) {
+            const tel = normalizeBrazilianPhone(pr.jid.replace(/@.*/, ''));
+            if (tel) marcarPresenca(cid, pessoal && pessoal.ativo ? pessoal.dono_user_id : null, tel, pr.presenca);
+          }
+        }
+        res.status(200).json({ status: 'atualizado' });
+        return;
+      }
     }
 
     // W2: reação (👍 numa mensagem) — só vai para o painel; ninguém responde.
@@ -9350,6 +9379,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     // W2: responder citando pelo QR do tenant (a rota já roda dentro do canal da empresa) e reagir pela Evolution.
     sendTextEvolutionCitando: (to, text, citada) => evolution.sendTextQuoted(to, text, citada),
     reagirEvolution: (instancia, companyId, to, alvo, emoji) => comEmpresaDe(companyId, () => comCanal({ companyId, evolutionInstance: instancia }, () => evolution.sendReactionTo(to, alvo, emoji))),
+    // W3: marcar como lida (✓✓ azul) pela instância do dono.
+    marcarLidasEvolution: (instancia, companyId, to, wamids) => comEmpresaDe(companyId, () => comCanal({ companyId, evolutionInstance: instancia }, () => evolution.marcarComoLidas(to, wamids))),
     // W1 — mídia pela Evolution: número pessoal do dono ou assistente do tenant (instância já conferida na rota).
     enviarMidiaEvolution: (instancia, companyId, to, m) => comEmpresaDe(companyId, () => comCanal({ companyId, evolutionInstance: instancia }, () => (m.tipo === 'audio'
       ? evolution.sendWhatsAppAudio(to, m.base64, m.citada)

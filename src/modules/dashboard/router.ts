@@ -226,6 +226,7 @@ export function createDashboardRouter(
     // W2 — responder citando (QR do tenant) e reagir pela Evolution.
     sendTextEvolutionCitando?: import('./atendimento-rotas.js').DepsAtendimento['sendTextEvolutionCitando'];
     reagirEvolution?: import('./atendimento-rotas.js').DepsAtendimento['reagirEvolution'];
+    marcarLidasEvolution?: import('./atendimento-rotas.js').DepsAtendimento['marcarLidasEvolution'];
     // W1 — mídia pela Evolution (instância do dono ou do tenant) e gravação WebM → OGG.
     enviarMidiaEvolution?: import('./atendimento-rotas.js').DepsAtendimento['enviarMidiaEvolution'];
     converterAudio?: (webm: Buffer) => Promise<Buffer>;
@@ -296,6 +297,7 @@ export function createDashboardRouter(
     enviarMidiaEvolution: options.enviarMidiaEvolution,
     sendTextEvolutionCitando: options.sendTextEvolutionCitando,
     reagirEvolution: options.reagirEvolution,
+    marcarLidasEvolution: options.marcarLidasEvolution,
     converterAudio: options.converterAudio,
     converterImagemJpeg: options.converterImagemJpeg,
     copiarParaMemoria: async ({ leadId, companyId, texto, painelId }) => {
@@ -1598,6 +1600,8 @@ b.onclick=async function(){
   router.post('/whatsapp/pessoal/criar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.criar);
   router.post('/whatsapp/pessoal/desligar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.desligar);
   router.post('/whatsapp/pessoal/religar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.religar);
+  // W3: "marcar como lida ao abrir" (liga/desliga) + reaponta os avisos (✓✓ e digitando).
+  router.post('/whatsapp/pessoal/leitura', exigir('usuarios', 'administrar'), rotasNumeroPessoal.leitura);
   // Buscar o histórico (últimos 90 dias): reconecta (QR de novo uma vez) + progresso.
   router.post('/whatsapp/pessoal/historico', exigir('usuarios', 'administrar'), rotasNumeroPessoal.buscarHistorico);
   router.get('/whatsapp/pessoal/historico.json', exigir('usuarios', 'administrar'), rotasNumeroPessoal.historicoJson);
@@ -2523,6 +2527,8 @@ b.onclick=async function(){
       ]);
       // Padrão da resposta = o número em que o cliente escreveu por último (P2b).
       const envio = can(viewer, 'leads', 'editar') ? await rotasAtendimento.envioDaTela(req as AuthedRequest, lead, mensagens ?? []) : undefined;
+      // W3: abriu a conversa → marca como lida no WhatsApp pessoal (só o dono, com a opção ligada).
+      rotasAtendimento.aoAbrirConversa(req as AuthedRequest, { leadId: id });
       res.send(renderLeadDetailPage(lead, [], String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer, { lista, filtros, mensagens, envio, donoPessoal }));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);

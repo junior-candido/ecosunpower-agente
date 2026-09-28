@@ -367,6 +367,19 @@ export class EvolutionService {
     return this.postarMidia('sendReaction', { key: { remoteJid: jid, fromMe: alvo.fromMe, id: alvo.id }, reaction: emoji });
   }
 
+  /** W3 — marca como LIDAS (✓✓ azul para o cliente) as mensagens recebidas deste número. */
+  async marcarComoLidas(to: string, wamids: string[]): Promise<void> {
+    if (wamids.length === 0) return;
+    const jid = await this.jidDoNumero(to);
+    if (!jid) throw new Error('numero_sem_whatsapp');
+    const res = await fetch(`${this.baseUrl}/chat/markMessageAsRead/${this.instanciaAtual()}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: this.apiKey },
+      body: JSON.stringify({ readMessages: wamids.map((id) => ({ remoteJid: jid, fromMe: false, id })) }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) throw new Error(`Evolution markMessageAsRead ${res.status}`);
+  }
+
   /** JID do WhatsApp para este número (null = não tem WhatsApp / erro). */
   async jidDoNumero(to: string): Promise<string | null> {
     try {
