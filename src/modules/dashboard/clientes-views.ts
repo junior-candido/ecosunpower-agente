@@ -366,6 +366,8 @@ function renderInsights(insights: InsightCard[], nomeAssistente: string): string
   if (insights.length === 0) {
     return estadoVazio({ tipo: 'vazio', titulo: 'Cliente em ordem — nada urgente agora.', icone: 'check', compacto: true });
   }
+  // O rótulo do botão vem de insights.ts ("▶ Eva pedir"): tenant vê "assistente".
+  const rotulo = (t: string) => nomeAssistente === 'Eva' ? t : t.replace(/\bEva\b/g, 'assistente');
   const card = (c: InsightCard) => `
     <div>
       <p>${escapeHtml(c.texto)}</p>
@@ -374,7 +376,7 @@ function renderInsights(insights: InsightCard[], nomeAssistente: string): string
              <input type="hidden" name="action" value="${escapeHtml(c.cta.action)}">
              <input type="hidden" name="lead_id" value="${escapeHtml(String(c.cta.params?.lead_id ?? ''))}">
              <input type="hidden" name="extra" value="${escapeHtml(JSON.stringify(c.cta.params))}">
-             <button class="cc-btn cc-btn-sm">${escapeHtml(c.cta.label)}</button>
+             <button class="cc-btn cc-btn-sm">${escapeHtml(rotulo(c.cta.label))}</button>
            </form>`
         : `<small>Ação indisponível: o cliente pediu pra não receber mensagens.</small>`}
     </div>`;
@@ -641,7 +643,7 @@ export function renderClienteDetailPage(d: ClienteDetail, insights: InsightCard[
   const concNome = d.concessionaria ? getConcessionariaById(d.concessionaria)?.nome ?? d.concessionaria : '—';
   const phoneClean = d.phone.replace(/\D/g, '');
   // Tenant nunca vê o nome da assistente da casa.
-  const nomeAssistente = user && user.companyId !== ECOSUN_COMPANY_ID ? 'Assistente' : 'Eva';
+  const nomeAssistente = user?.companyId === ECOSUN_COMPANY_ID ? 'Eva' : 'Assistente';
   const nomeCliente = d.name || 'Sem nome';
 
   const acoesSecundarias = `

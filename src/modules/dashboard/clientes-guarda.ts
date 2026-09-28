@@ -10,14 +10,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Request, Response, NextFunction } from 'express';
 import { usinaPertenceAoOperador } from './permissions.js';
+import { leadEhDaEmpresa } from './trava-lead-empresa.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** O lead (cliente) é da empresa? */
+/** O lead (cliente) é da empresa? Lead legado sem company_id = da casa (mesma regra de /leads/:id). */
 export async function clienteDaEmpresa(db: SupabaseClient, leadId: string, companyId: string | null | undefined): Promise<boolean> {
   if (!companyId || !UUID_RE.test(leadId)) return false;
-  const { data, error } = await db.from('leads').select('id').eq('id', leadId).eq('company_id', companyId).maybeSingle();
-  return !error && !!data;
+  const { data, error } = await db.from('leads').select('id, company_id').eq('id', leadId).maybeSingle();
+  return !error && !!data && leadEhDaEmpresa(data as { company_id?: string | null }, companyId);
 }
 
 /** O anexo é DESTE cliente? (o remover apagava qualquer anexo pelo id). */

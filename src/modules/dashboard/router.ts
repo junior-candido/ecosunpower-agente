@@ -143,8 +143,8 @@ import { rotaMapaJson, rotaLocalizarPagina, rotaLocalizarUma, rotaSalvarPosicao 
 import { blocoMiniMapaUsina } from './mapa-usinas-views.js';
 import { montarRotasEnergia } from './energia-rotas.js';
 import { criarTravaDeModulo } from './modulos-contratados.js';
-import { bancoDoOperador } from '../tenant-client.js';
-import { guardaClienteDaEmpresa, clienteDaEmpresa, anexoDoCliente, sistemaDaEmpresa } from './clientes-guarda.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
+import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
+import { guardaClienteDaEmpresa, clienteDaEmpresa, anexoDoCliente, sistemaDaEmpresa } from './clientes-guarda.js';   // R16: /clientes presa à empresa da sessão
 import { criarTravaLeadDaEmpresa } from './trava-lead-empresa.js';
 import { criarTravaPropostaDaEmpresa, leadIdConferido } from './trava-proposta-empresa.js';
 import { criarRotasAtendimento } from './atendimento-rotas.js';

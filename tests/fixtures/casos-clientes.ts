@@ -67,7 +67,7 @@ export function detalhe(over: Partial<ClienteDetail> = {}): ClienteDetail {
 }
 
 export const INSIGHTS: InsightCard[] = [
-  { id: 'depoimento', texto: 'Cliente satisfeito há 6 meses — bom momento pra pedir depoimento.', cta: { label: 'Pedir depoimento', action: 'eva_pedir_depoimento', params: {} } },
+  { id: 'depoimento', texto: 'Cliente satisfeito há 6 meses — bom momento pra pedir depoimento.', cta: { label: '▶ Eva pedir', action: 'eva_pedir_depoimento', params: {} } },
   { id: 'aniversario', texto: "1 ano de usina — agendar revisão <b>d'aniversário</b>.", cta: { label: 'Agendar revisão', action: 'agendar_revisao_aniversario', params: { anos: 1 } } },
   { id: 'upgrade', texto: 'Consumo subiu 30% — talvez ampliar.', cta: null },
 ];

@@ -7,6 +7,7 @@ import { proximaEtapaPorEvento, type EventoFunil } from './dashboard/pipeline.js
 import { registrarAtividade } from './dashboard/atividades.js';
 import { criarTarefa, cancelarTarefasPendentesDoLead } from './dashboard/tarefas.js';
 import { variantesTelefone } from './phone.js';
+import { ECOSUN_COMPANY_ID } from './tenant-resolver.js';
 import { registrarEvento } from './elo/eventos.js';
 import { clientDaMensagem } from './tenant-client.js';
 
@@ -2318,7 +2319,7 @@ export class SupabaseService {
     // [R16 28/09] /clientes presa à empresa de quem está logado (antes a EcoSun
     // via os clientes de TODAS as empresas). Sem companyId = comportamento antigo
     // (outros chamadores filtram depois, ex.: /pastas).
-    if (filters.companyId) q = q.eq('company_id', filters.companyId);
+    if (filters.companyId) q = this.filtroEmpresaComLegado(q, filters.companyId);
 
     // /clientes mostra: fechados (status em CLIENTE_STATUSES) OR cadastros manuais
     // do Junior (acquisition_source='manual_dashboard'). Leads vindos da Eva ficam
@@ -2352,7 +2353,7 @@ export class SupabaseService {
 
   async countClientesByStatus(statuses: string[], filters: { q?: string; concessionaria?: string; cidade?: string; mostrarArquivados?: boolean; companyId?: string | null } = {}, incluirManuaisDashboard: boolean = false): Promise<number> {
     let q = this.client.from('leads').select('id', { count: 'exact', head: true });
-    if (filters.companyId) q = q.eq('company_id', filters.companyId);   // [R16] igual à lista
+    if (filters.companyId) q = this.filtroEmpresaComLegado(q, filters.companyId);   // [R16] igual à lista
 
     if (statuses.length > 0 && incluirManuaisDashboard) {
       q = q.or(`installation_status.in.(${statuses.join(',')}),acquisition_source.eq.manual_dashboard`);
@@ -2602,6 +2603,14 @@ export class SupabaseService {
   }
 
   // Sistemas ativos sem lead vinculado — aparecem em /clientes como "vincular"
+  /** [R16 28/09] Filtro de empresa que respeita o legado: linha sem company_id
+   *  é da casa (EcoSun), igual a leadEhDaEmpresa/usinaPertenceAoOperador. */
+  private filtroEmpresaComLegado<Q extends { eq: (c: string, v: string) => Q; or: (f: string) => Q }>(q: Q, companyId: string): Q {
+    return companyId === ECOSUN_COMPANY_ID
+      ? q.or(`company_id.is.null,company_id.eq.${companyId}`)
+      : q.eq('company_id', companyId);
+  }
+
   async listSistemasOrfaos(companyId?: string | null): Promise<any[]> {
     let q = this.client
       .from('sistemas_clientes')
@@ -2610,11 +2619,7 @@ export class SupabaseService {
       .eq('ativo', true);
     // [R16 28/09] só as usinas da empresa (company_id nulo = legado da EcoSun,
     // mesma regra do usinaPertenceAoOperador). Sem companyId = antigo.
-    if (companyId) {
-      q = companyId === '00000000-0000-0000-0000-000000000001'
-        ? q.or(`company_id.is.null,company_id.eq.${companyId}`)
-        : q.eq('company_id', companyId);
-    }
+    if (companyId) q = this.filtroEmpresaComLegado(q, companyId);
     const { data, error } = await q.order('apelido', { ascending: true });
     if (error) {
       console.error('[supabase] listSistemasOrfaos:', error.message);
@@ -2668,7 +2673,7 @@ export class SupabaseService {
       .from('leads')
       .select('id, name')
       .eq('phone', input.phone);
-    if (input.companyId) buscaTel = buscaTel.eq('company_id', input.companyId);
+    if (input.companyId) buscaTel = this.filtroEmpresaComLegado(buscaTel, input.companyId);
     const { data: existente } = await buscaTel.maybeSingle();
     if (existente) {
       const v = await vincular(existente.id);
@@ -2703,7 +2708,7 @@ export class SupabaseService {
       // Cai no mesmo tratamento de reuso em vez de devolver erro cru do banco.
       if (lErr?.code === '23505') {
         let buscaAgora = this.client.from('leads').select('id, name').eq('phone', input.phone);
-        if (input.companyId) buscaAgora = buscaAgora.eq('company_id', input.companyId);
+        if (input.companyId) buscaAgora = this.filtroEmpresaComLegado(buscaAgora, input.companyId);
         const { data: agora } = await buscaAgora.maybeSingle();
         if (agora) {
           const v = await vincular(agora.id);

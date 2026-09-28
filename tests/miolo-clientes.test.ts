@@ -144,6 +144,9 @@ describe('Clientes — ficha', () => {
     expect(t).toContain('<div class="cc-shell cc-escuro">');
     expect(miolo(t)).not.toContain('Eva');
     expect(miolo(t)).toContain('Assistente sugere');
+    // rótulo de botão vindo de insights.ts ("▶ Eva pedir") também troca
+    expect(miolo(t)).toContain('▶ assistente pedir');
+    expect(m).toContain('▶ Eva pedir');
     expect(t).not.toContain('EcoSunPower');
     expect(t).not.toContain('33.020');
   });

@@ -29,10 +29,11 @@ const A_CASA = '33333333-3333-4333-8333-333333333333';
 const A_OUTRA = '44444444-4444-4444-8444-444444444444';
 const S_LEGADO = '55555555-5555-4555-8555-555555555555';
 const S_OUTRA = '66666666-6666-4666-8666-666666666666';
+const L_LEGADO = '77777777-7777-4777-8777-777777777777';
 
 function banco() {
   return bancoFalso({
-    leads: [{ id: L_CASA, company_id: ECOSUN }, { id: L_OUTRA, company_id: OUTRA }],
+    leads: [{ id: L_CASA, company_id: ECOSUN }, { id: L_OUTRA, company_id: OUTRA }, { id: L_LEGADO, company_id: null }],
     lead_anexos: [{ id: A_CASA, lead_id: L_CASA }, { id: A_OUTRA, lead_id: L_OUTRA }],
     sistemas_clientes: [{ id: S_LEGADO, company_id: null }, { id: S_OUTRA, company_id: OUTRA }],
   }).client;
@@ -46,6 +47,11 @@ describe('clienteDaEmpresa / anexoDoCliente / sistemaDaEmpresa', () => {
     expect(await clienteDaEmpresa(db, L_OUTRA, OUTRA)).toBe(true);
     expect(await clienteDaEmpresa(db, L_CASA, null)).toBe(false);
     expect(await clienteDaEmpresa(db, 'novo', ECOSUN)).toBe(false);
+  });
+  it('lead legado sem company_id = da casa (igual a /leads/:id): EcoSun passa, tenant não', async () => {
+    const db = banco();
+    expect(await clienteDaEmpresa(db, L_LEGADO, ECOSUN)).toBe(true);
+    expect(await clienteDaEmpresa(db, L_LEGADO, OUTRA)).toBe(false);
   });
   it('anexo tem que ser do cliente da URL', async () => {
     const db = banco();
@@ -126,6 +132,15 @@ describe('SupabaseService — lista de clientes e órfãos presas à empresa', (
     await g.svc.countClientesByStatus(['operando'], { companyId: OUTRA }, true);
     expect(g.chamadas.filter((c) => c[0] === 'eq' && c[1] === 'company_id' && c[2] === OUTRA).length).toBe(2);
   });
+  it('EcoSun: lista e contagem incluem o legado sem company_id (o or de situação continua junto)', async () => {
+    const g = gravador();
+    await g.svc.listClientesByStatus(['operando'], { companyId: ECOSUN, q: 'ana' }, 50, 0, true);
+    await g.svc.countClientesByStatus(['operando'], { companyId: ECOSUN }, true);
+    const ors = g.chamadas.filter((c) => c[0] === 'or').map((c) => String(c[1]));
+    expect(ors.filter((o) => o === `company_id.is.null,company_id.eq.${ECOSUN}`).length).toBe(2);
+    expect(ors.some((o) => o.startsWith('installation_status.in.'))).toBe(true);
+    expect(g.chamadas.some((c) => c[0] === 'eq' && c[1] === 'company_id')).toBe(false);
+  });
   it('sem companyId: igual a antes (quem chama filtra depois)', async () => {
     const g = gravador();
     await g.svc.listClientesByStatus(['operando'], {}, 50, 0, true);
@@ -144,6 +159,12 @@ describe('SupabaseService — lista de clientes e órfãos presas à empresa', (
     await g.svc.vincularNovoLeadAoSistema({ sistema_id: S_LEGADO, name: 'Fulano', phone: '5561999990000', companyId: OUTRA });
     const i = g.chamadas.findIndex((c) => c[0] === 'eq' && c[1] === 'phone');
     expect(g.chamadas.slice(i, i + 2)).toContainEqual(['eq', 'company_id', OUTRA]);
+  });
+  it('vincularNovoLeadAoSistema da EcoSun: reuso por telefone acha também o lead legado (sem company_id)', async () => {
+    const g = gravador({ data: { id: S_LEGADO, lead_id: null, data_instalacao: null }, error: null });
+    await g.svc.vincularNovoLeadAoSistema({ sistema_id: S_LEGADO, name: 'Fulano', phone: '5561999990000', companyId: ECOSUN });
+    const i = g.chamadas.findIndex((c) => c[0] === 'eq' && c[1] === 'phone');
+    expect(g.chamadas.slice(i, i + 2)).toContainEqual(['or', `company_id.is.null,company_id.eq.${ECOSUN}`]);
   });
 });
 
