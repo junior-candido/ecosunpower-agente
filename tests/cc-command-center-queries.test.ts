@@ -360,4 +360,9 @@ describe('lerModulosContratados', () => {
     const quebrado = { from() { throw new Error('caiu'); } } as unknown as SupabaseClient;
     expect(await lerModulosContratados(quebrado, 'x')).toEqual(nada);
   });
+  it('EcoSun (a casa) tem tudo liberado sem depender da tabela — nem lê empresa_modulos', async () => {
+    const { client, chamadas } = fakeDb({ empresa_modulos: { error: { message: 'relation does not exist' } } });
+    expect(await lerModulosContratados(client, '00000000-0000-0000-0000-000000000001')).toEqual(TODAS_PERMISSOES);
+    expect(chamadas).toHaveLength(0);
+  });
 });

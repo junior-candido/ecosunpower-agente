@@ -28,6 +28,7 @@ import { statusAgendaItem } from './manutencao-motor.js';
 import { empresaDe } from '../empresa-config.js';
 import { tarifaPorConcessionaria } from '../solar-params.js';
 import { competenciaAtual } from '../financeiro/repo.js';
+import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 import type { ContaAberta } from '../financeiro/alertas-vencimento.js';
 
 /** Blocos do Command Center. O&M e Instalações seguem `usinas` (mesmo papel, mesmo módulo). */
@@ -58,6 +59,9 @@ export function combinarAcesso(papel: PermissoesCC, contratados: PermissoesCC): 
  * sem saber o que foi contratado, não se mostra dado de ninguém.
  */
 export async function lerModulosContratados(db: SupabaseClient, companyId: string): Promise<PermissoesCC> {
+  // A casa é dona de todos os módulos: não depende de a migration 128 estar aplicada
+  // nem de a tabela responder (senão o Command Center da EcoSun ficaria todo trancado).
+  if (companyId === ECOSUN_COMPANY_ID) return { ...TODAS_PERMISSOES };
   try {
     const { data, error } = await db.from('empresa_modulos').select('modulo')
       .eq('company_id', companyId).eq('ativo', true);
