@@ -172,3 +172,12 @@ describe('router: toda rota /servicos* do painel passa a empresa da sessão', ()
     expect(trecho).toContain('conferirVinculosDoServico(supabase, req.dashUser!.companyId');
   });
 });
+
+describe('serviço concluído/reaberto só liga/desliga usuário da empresa da sessão (Onda 3, depois do R19)', () => {
+  const fonte = readFileSync(join(process.cwd(), 'src', 'modules', 'dashboard', 'router.ts'), 'utf-8');
+  it('toda chamada updateUser(..., { ativo }) nas rotas de serviço passa req.dashUser!.companyId', () => {
+    const chamadas = fonte.match(/updateUser\(supabase, (?:antes|s)\.atribuidoA,[^\n]*/g) ?? [];
+    expect(chamadas).toHaveLength(2);
+    for (const c of chamadas) expect(c).toContain('req.dashUser!.companyId');
+  });
+});

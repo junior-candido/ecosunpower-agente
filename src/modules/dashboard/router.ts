@@ -1462,7 +1462,7 @@ b.onclick=async function(){
           const { updateUser, dadosAcessoUsuario } = await import('./users-store.js');
           const u = await dadosAcessoUsuario(supabase, antes.atribuidoA);
           if (u?.acessoTemporario && u.ativo && (await contarPendentesDoUsuario(supabase, antes.atribuidoA)) === 0) {
-            await updateUser(supabase, antes.atribuidoA, { ativo: false });
+            await updateUser(supabase, antes.atribuidoA, { ativo: false }, req.dashUser!.companyId);
             if (options.sendText && options.engineerPhone) {
               options.sendText(options.engineerPhone,
                 `🔒 Acesso temporário de ${u.nome} expirou (serviços concluídos). Pra chamar de novo: reabra um serviço ou atribua um novo — reativa sozinho.`,
@@ -1511,7 +1511,7 @@ b.onclick=async function(){
       await reabrirServico(supabase, servicoId);
       if (s.atribuidoA) {
         const { updateUser, telefoneDoUsuario } = await import('./users-store.js');
-        await updateUser(supabase, s.atribuidoA, { ativo: true }); // reativa (temporário ou não)
+        await updateUser(supabase, s.atribuidoA, { ativo: true }, req.dashUser!.companyId); // reativa (temporário ou não) — só usuário da empresa da sessão
         if (options.sendText) {
           const tel = await telefoneDoUsuario(supabase, s.atribuidoA);
           if (tel) {
