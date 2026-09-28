@@ -138,6 +138,7 @@ import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, 
 import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
 import { hidratarChecklist, resumoOS, type OSTipo } from './os-checklist.js';
 import { rotaCommandCenter, rotaCentralAtencao, rotaModoTv } from './command-center-rotas.js';
+import { montarRotasEnergia } from './energia-rotas.js';
 import { criarTravaDeModulo } from './modulos-contratados.js';
 import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
 
@@ -818,12 +819,15 @@ b.onclick=async function(){
   // 15 minutos, que e a janela em que a distribuidora mede e o medidor dela
   // alisa o pico.
   router.get('/medicao', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
-    const client = supabaseService.getClient();
-    const aparelhos = await listarAparelhos(client);
+    // Escopado pela empresa da SESSÃO (antes lia os medidores de todas as
+    // empresas — consumo é dado pessoal).
+    const client = bancoDoOperador(req, supabase);
+    const companyId = req.dashUser!.companyId;
+    const aparelhos = await listarAparelhos(client, companyId);
     const escolhido = String(req.query.device ?? '') || aparelhos[0]?.deviceId || '';
     const horas = Math.min(Math.max(Number(req.query.horas ?? 24) || 24, 1), 168);
     const resumo = escolhido
-      ? await resumoDoAparelho(client, escolhido, horas)
+      ? await resumoDoAparelho(client, escolhido, companyId, horas)
       : { aparelho: null, agora: null, demanda: null, janelas: [], consumoDiaKwh: null, injecaoDiaKwh: null, minutosSemReceber: null };
     res.type('text/html').send(renderLayout({
       active: 'medicao',
@@ -832,6 +836,10 @@ b.onclick=async function(){
       user: req.dashUser,
     }));
   });
+
+  // GESTÃO DE ENERGIA G1 (energia-rotas.ts): lista, cadastro do medidor, "Energia
+  // da casa". Módulo 'medicao' (MODULO_DA_ROTA) + papel usinas + company_id da sessão.
+  montarRotasEnergia(router, supabase, exigir);
 
   router.get('/fiscal', exigir('financeiro', 'visualizar'), async (req: AuthedRequest, res) => {
     try {

@@ -96,7 +96,7 @@ export type ChaveAtiva =
   | 'email' | 'cadencia' | 'leads' | 'recados' | 'conhecimento' | 'kanban' | 'clientes' | 'financeiro'
   | 'fiscal' | 'cobrar' | 'assinaturas' | 'minha_assinatura' | 'whatsapp' | 'servicos' | 'usuarios'
   | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro' | 'lojas' | 'predio'
-  | 'demonstrativos' | 'tv' | 'atencao';
+  | 'demonstrativos' | 'tv' | 'atencao' | 'energia';
 
 interface LayoutInput {
   active: ChaveAtiva;

@@ -34,10 +34,11 @@ export type ResumoMedicao = {
 };
 
 /** Aparelhos que já mandaram alguma leitura, o mais recente primeiro. */
-export async function listarAparelhos(client: any): Promise<Aparelho[]> {
+export async function listarAparelhos(client: any, companyId: string): Promise<Aparelho[]> {
   const { data, error } = await client
     .from('medicoes_shelly')
     .select('device_id, apelido, medido_em')
+    .eq('company_id', companyId)
     .order('medido_em', { ascending: false })
     .limit(3000);
   if (error) {
@@ -69,6 +70,7 @@ export async function listarAparelhos(client: any): Promise<Aparelho[]> {
 export async function resumoDoAparelho(
   client: any,
   deviceId: string,
+  companyId: string,
   horas = 24,
 ): Promise<ResumoMedicao> {
   const vazio: ResumoMedicao = {
@@ -81,6 +83,7 @@ export async function resumoDoAparelho(
       .from('medicoes_shelly')
       .select('device_id, apelido, medido_em, potencia_w, tensao, corrente, fator_potencia, energia_wh, energia_devolvida_wh')
       .eq('device_id', deviceId)
+      .eq('company_id', companyId)
       .gte('medido_em', desde)
       .order('medido_em', { ascending: true })
       .limit(5000);

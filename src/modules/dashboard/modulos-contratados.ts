@@ -50,6 +50,7 @@ export const MODULO_DA_ROTA: readonly RotaDeModulo[] = [
   { prefixo: '/servicos', modulo: 'monitoramento', chave: 'servicos' },
   { prefixo: '/pos-venda', modulo: 'monitoramento', chave: 'pos_venda' },
   { prefixo: '/medicao', modulo: 'medicao', chave: 'medicao' },
+  { prefixo: '/energia', modulo: 'medicao', chave: 'energia' },
   { prefixo: '/pastas', modulo: 'pasta_digital', chave: 'pastas' },
   // Financeiro / fiscal
   { prefixo: '/financeiro', modulo: 'financeiro', chave: 'financeiro' },
