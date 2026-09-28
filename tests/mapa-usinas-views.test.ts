@@ -125,3 +125,35 @@ describe('página "Localizar usinas sem posição"', () => {
     expect(h).not.toContain('data-acao="localizar-todas"');
   });
 });
+
+describe('tela da usina (detalhe) e rotas no router', () => {
+  it('o mini-mapa entra no detalhe e o recarregamento automático respeita o alfinete sendo arrastado', async () => {
+    const { renderDetalheSistemaPage } = await import('../src/modules/dashboard/views.js');
+    const sistema = {
+      id: '11111111-2222-3333-4444-555555555555', company_id: junior.companyId, lead_id: null, apelido: 'Casa Silva', marca_inversor: 'deye' as const,
+      api_credentials: {}, potencia_kwp: 8, data_instalacao: null, cidade: 'Gama', uf: 'DF', ativo: true, ultima_sincronizacao: null, ultimo_erro: null,
+      lat: -16.02, lng: -48.06, geo_fonte: 'endereco',
+    };
+    const d = {
+      sistema, kpis: { hojeKwh: 10, mesKwh: 100, anoKwh: 1000, totalKwh: 2000, esperadoDiaKwh: 30, ratioUltimos7: 1, medianaCarteira7d: null },
+      alertas: [], vista: 'mes' as const, ref: '2026-09-28', nav: { anterior: '2026-08-28', proximo: null, label: 'set/2026' },
+      serie: [{ x: '2026-09-01', kwh: 30 }], totalDiaKwh: null, serieMensalCompleta: [],
+    };
+    const mapa = blocoMiniMapaUsina(sistema, { podeEditar: true });
+    const h = renderDetalheSistemaPage(d as never, null, null, null, [], '', junior, mapa);
+    expect(h).toContain('id="mu-mapa-usina"');
+    expect(h).toContain('if (!window.ccSegurarRecarga) location.reload()');
+    expect(h).not.toContain('setTimeout(() => location.reload(), 30000)');
+  });
+
+  it('as rotas do mapa ficam ANTES de /monitoramento/:id (senão "localizar" vira UUID inválido)', async () => {
+    const { readFileSync } = await import('fs');
+    const fonte = readFileSync('src/modules/dashboard/router.ts', 'utf-8');
+    const idDetalhe = fonte.indexOf("router.get('/monitoramento/:id',");
+    for (const r of ["router.get('/command-center/mapa.json'", "router.get('/monitoramento/localizar'", "router.post('/monitoramento/localizar/:id'", "router.post('/monitoramento/:id/posicao'"]) {
+      const i = fonte.indexOf(r);
+      expect(i, r).toBeGreaterThan(0);
+      expect(i, r).toBeLessThan(idDetalhe);
+    }
+  });
+});
