@@ -134,9 +134,9 @@ const PAGINAS_EM_PARALELO = 5;
 const IDS_POR_LOTE = 150;
 export const LIMITE_TELEMETRIA = 5000;
 
-type Consulta<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
-type ConsultaContagem = PromiseLike<{ data?: unknown; count: number | null; error: { message: string } | null }>;
-const CONTAGEM = { count: 'exact' as const, head: true };
+export type Consulta<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
+export type ConsultaContagem = PromiseLike<{ data?: unknown; count: number | null; error: { message: string } | null }>;
+export const CONTAGEM = { count: 'exact' as const, head: true };
 
 /** Roda as tarefas em ondas de `n` ao mesmo tempo (não derruba o banco com 40 consultas juntas). */
 async function emOndas<T>(tarefas: Array<() => Promise<T>>, n: number): Promise<T[]> {
@@ -150,7 +150,7 @@ async function emOndas<T>(tarefas: Array<() => Promise<T>>, n: number): Promise<
  * paralelas. Erro em QUALQUER página lança: soma parcial nunca vira número.
  * Acima de MAX_LINHAS lança também (a fonte vira "não carregou").
  */
-async function lerTudo<T>(
+export async function lerTudo<T>(
   l: { contar: () => ConsultaContagem; pagina: (de: number, ate: number) => Consulta<T> },
   contexto: string,
 ): Promise<T[]> {

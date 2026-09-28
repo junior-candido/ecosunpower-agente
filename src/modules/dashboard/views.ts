@@ -637,7 +637,7 @@ export function renderPropostasPage(input: PropostasPageInput, user?: DashUser):
 // MONITORAMENTO — sistemas FV com geracao em tempo real (via API inversor)
 // =========================================================================
 
-const MARCAS_LABEL: Record<string, string> = {
+export const MARCAS_LABEL: Record<string, string> = {
   solaredge: 'SolarEdge',
   sungrow: 'Sungrow',
   deye: 'Deye',
