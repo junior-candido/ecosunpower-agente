@@ -58,7 +58,10 @@ export function eventosDeUsinas(
     if (u.estado !== 'critico' && u.estado !== 'atencao') continue;
     const tarifa = o.tarifaRsKwh(u);
     const perdaKwhDia = u.esperadoDiaKwh !== null ? Math.max(0, u.esperadoDiaKwh - u.real7Kwh / 7) : null;
-    const impacto = perdaKwhDia !== null && tarifa !== null && tarifa > 0 ? Math.round(perdaKwhDia * tarifa) : null;
+    // Perda que arredonda pra zero (ex.: régua da carteira acusou, mas a média de sol
+    // da região não) não vira "R$ 0/dia" — fica sem número.
+    const bruto = perdaKwhDia !== null && tarifa !== null && tarifa > 0 ? Math.round(perdaKwhDia * tarifa) : null;
+    const impacto = bruto !== null && bruto > 0 ? bruto : null;
     const critico = u.estado === 'critico';
     out.push({
       id: `usina:${u.id}`,
@@ -252,9 +255,10 @@ export function eventosDeContas(contas: readonly ContaAberta[], hojeIso: string)
   const porId = new Map(contas.map((c) => [c.id, c]));
   return alertasDoDia(semLembrete, hojeIso).map((a) => {
     const c = porId.get(a.contaId) as ContaAberta;
+    const nome = c.descricao?.trim() || 'Conta sem descrição';
     const titulo = a.tipo === 'atraso'
-      ? `${c.descricao} atrasada há ${plural(a.dias, 'dia', 'dias')}`
-      : a.tipo === 'hoje' ? `${c.descricao} vence hoje` : `${c.descricao} vence em 3 dias`;
+      ? `${nome} atrasada há ${plural(a.dias, 'dia', 'dias')}`
+      : a.tipo === 'hoje' ? `${nome} vence hoje` : `${nome} vence em 3 dias`;
     const valor = Number.isFinite(c.valor) ? c.valor : null;
     return {
       id: `conta:${a.contaId}`,

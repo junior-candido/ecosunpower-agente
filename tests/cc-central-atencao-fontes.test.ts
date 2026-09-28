@@ -47,6 +47,12 @@ describe('usinas', () => {
     expect(semTarifa.impactoRs).toBeNull();
   });
 
+  it('perda que dá zero (régua da carteira acusou, média de sol não) fica sem número — nunca "R$ 0/dia"', () => {
+    const [e] = eventosDeUsinas([usina({ estado: 'atencao', real7Kwh: 7 * 45 })], { tarifaRsKwh: tarifa });
+    expect(e.impactoRs).toBeNull();
+    expect(e.impactoTexto).toBeUndefined();
+  });
+
   it('sem comunicação: UM aviso agrupado, com os nomes e o link da frota', () => {
     const r = eventosDeUsinas([
       usina({ id: 'g', apelido: 'Gama', estado: 'sem_comunicacao', ultimaSincronizacao: '2026-09-26T10:00:00Z' }),
@@ -165,6 +171,9 @@ describe('contas a pagar (alertasDoDia)', () => {
     expect(sp(r[0].impactoTexto)).toBe('R$ 2.418,00');
     expect(r[1].titulo).toBe('Conta y vence hoje');
     expect(r[2].titulo).toBe('Conta z vence em 3 dias');
+  });
+  it('conta sem descrição não vira título quebrado', () => {
+    expect(eventosDeContas([{ ...conta('x', '2026-09-27'), descricao: '  ' }], '2026-09-27')[0].titulo).toBe('Conta sem descrição vence hoje');
   });
   it('atrasada há 1 dia: singular', () => {
     expect(eventosDeContas([conta('x', '2026-09-26')], '2026-09-27')[0].titulo).toBe('Conta x atrasada há 1 dia');

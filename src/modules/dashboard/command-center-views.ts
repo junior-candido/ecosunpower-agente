@@ -237,8 +237,8 @@ function kpis(d: CommandCenterDados): string {
     },
     {
       // Mesmo número e mesmo nome da tela Financeiro ("Recebido no mês"), pra não confundir com "faturado".
-      rotulo: 'Recebido no mês', valor: dd?.recebidoMes ?? null, prefixo: 'R$', compacto: true, href: '/dashboard/financeiro',
-      detalhe: 'faturamento que entrou', semDadoTexto: semTexto(p, 'financeiro'),
+      rotulo: 'Recebido', valor: dd?.recebidoMes ?? null, prefixo: 'R$', compacto: true, href: '/dashboard/financeiro',
+      detalhe: 'no mês', semDadoTexto: semTexto(p, 'financeiro'),
     },
     {
       rotulo: 'Leads do mês', valor: dd?.kpisMes.leads ?? null, href: '/dashboard/leads',

@@ -123,7 +123,7 @@ describe('GET /dashboard/command-center', () => {
     expect(res.redirect).not.toHaveBeenCalled();
     const h = res.send.mock.calls[0][0] as string;
     expect(cartaoKpi(h, 'Leads do mês')).toContain('<div class="cc-val">212</div>');
-    expect(cartaoKpi(h, 'Recebido no mês')).toContain('1,2<small>mil</small>');
+    expect(cartaoKpi(h, 'Recebido')).toContain('1,2<small>mil</small>');
   });
 
   it('TODA consulta vai escopada pela empresa da sessão', async () => {
@@ -141,7 +141,7 @@ describe('GET /dashboard/command-center', () => {
     for (const t of ['financeiro_recebimentos', 'financeiro_contas_a_pagar', 'geracao_diaria', 'manutencoes', 'demonstrativos_gd']) expect(tabelas).not.toContain(t);
     const h = res.send.mock.calls[0][0] as string;
     expect(h).not.toContain('4,32');
-    expect(cartaoKpi(h, 'Recebido no mês')).toContain('sem acesso');
+    expect(cartaoKpi(h, 'Recebido')).toContain('sem acesso');
   });
 
   it('se tudo lança, os KPIs mostram "—" + "sem dado agora" (não "em construção")', async () => {
@@ -149,7 +149,7 @@ describe('GET /dashboard/command-center', () => {
     const db = { from: vi.fn(() => { throw new Error('cliente quebrado'); }) } as unknown as SupabaseClient;
     await rotaCommandCenter(db, () => AGORA)(reqDe(junior), res as unknown as Response);
     const h = res.send.mock.calls[0][0] as string;
-    for (const rotulo of ['Leads do mês', 'Vendas', 'Energia hoje', 'Recebido no mês']) {
+    for (const rotulo of ['Leads do mês', 'Vendas', 'Energia hoje', 'Recebido']) {
       const c = cartaoKpi(h, rotulo);
       expect(c, rotulo).toContain('<div class="cc-val">—</div>');
       expect(c, rotulo).toContain('sem dado agora');

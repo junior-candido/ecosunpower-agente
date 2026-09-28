@@ -125,7 +125,7 @@ describe('KPIs com dado real', () => {
     expect(c).toContain('1 sem sinal');
   });
   it('faturamento recebido, leads e vendas do mês', () => {
-    expect(cartaoKpi(h, 'Recebido no mês')).toContain('3,5<small>mil</small>');
+    expect(cartaoKpi(h, 'Recebido')).toContain('3,5<small>mil</small>');
     expect(cartaoKpi(h, 'Leads do mês')).toContain('<div class="cc-val">212</div>');
     expect(cartaoKpi(h, 'Leads do mês')).toContain('+14 desde ontem');
     expect(cartaoKpi(h, 'Vendas')).toContain('<div class="cc-val">9</div>');
@@ -133,7 +133,7 @@ describe('KPIs com dado real', () => {
   });
   it('sem permissão de Financeiro → "—" + "sem acesso" (nunca 0)', () => {
     const s = pagina(dados({ permissoes: { ...TODAS_PERMISSOES, financeiro: false }, recebidoMes: null }));
-    const c = cartaoKpi(s, 'Recebido no mês');
+    const c = cartaoKpi(s, 'Recebido');
     expect(c).toContain('<div class="cc-val">—</div>');
     expect(c).toContain('sem acesso');
   });
