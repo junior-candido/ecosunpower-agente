@@ -17,7 +17,8 @@ const OGG = Buffer.concat([Buffer.from('OggS'), Buffer.alloc(200, 1)]);
 const WEBM = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(200, 1)]);
 const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypmp42'), Buffer.alloc(200, 1)]);
 const EXE = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(200, 1)]);
-const DOCX = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(200, 1)]);
+const DOCX = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('[Content_Types].xml'), Buffer.alloc(200, 1)]);
+const ZIP = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('programa.exe'), Buffer.alloc(200, 1)]);
 
 describe('validarArquivo', () => {
   it('foto JPEG e PNG, PDF, áudio OGG, vídeo MP4, planilha/Word: aceitos com o tipo certo', () => {
@@ -39,6 +40,12 @@ describe('validarArquivo', () => {
     expect(validarArquivo({ nome: 'conta.pdf.exe', mime: 'application/pdf', dados: PDF })).toMatchObject({ ok: false, motivo: 'tipo_nao_permitido' });
     expect(validarArquivo({ nome: 'pagina.html', mime: 'text/html', dados: Buffer.from('<script>x</script>') })).toMatchObject({ ok: false, motivo: 'tipo_nao_permitido' });
     expect(validarArquivo({ nome: 'desenho.svg', mime: 'image/svg+xml', dados: Buffer.from('<svg onload=x>') })).toMatchObject({ ok: false, motivo: 'tipo_nao_permitido' });
+  });
+
+  it('zip qualquer declarado como Word (ex.: com .exe dentro) não passa; o nome que fica leva a extensão CONFERIDA', () => {
+    expect(validarArquivo({ nome: 'boleto.docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', dados: ZIP })).toMatchObject({ ok: false, motivo: 'conteudo_nao_confere' });
+    expect(validarArquivo({ nome: 'update.msp', mime: 'application/msword', dados: Buffer.concat([Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), Buffer.alloc(100)]) })).toMatchObject({ ok: true, nome: 'update.doc' });
+    expect(validarArquivo({ nome: 'foto.jfif', mime: 'image/jpeg', dados: JPG })).toMatchObject({ ok: true, nome: 'foto.jpg' });
   });
 
   it('conteúdo que não bate com o tipo declarado é recusado (PDF que é imagem)', () => {
@@ -149,10 +156,64 @@ describe('arquivarMidiaRecebida', () => {
     expect(Object.keys(b.arquivos)).toHaveLength(0);
   });
 
+  it('arquivo acima do limite (tamanho informado pelo WhatsApp): nem baixa, só o marcador', async () => {
+    const b = bancoMemoria({ mensagens_whatsapp: [] });
+    let baixou = false;
+    const r = await arquivarMidiaRecebida(b.client, { baixar: async () => { baixou = true; return null; }, linha: { ...base, tipo: 'video' }, legenda: 'obra', tamanhoBytes: 2_000_000_000 });
+    expect(r).toBe('sem_arquivo');
+    expect(baixou).toBe(false);
+  });
+
+  it('webhook repetido (wamid já gravado): nem baixa de novo', async () => {
+    const b = bancoMemoria({ mensagens_whatsapp: [{ id: 'x', company_id: CASA, wamid: 'wamid.A' }] });
+    let baixou = false;
+    expect(await arquivarMidiaRecebida(b.client, { baixar: async () => { baixou = true; return null; }, linha: { ...base, tipo: 'imagem' } })).toBe('duplicada');
+    expect(baixou).toBe(false);
+  });
+
+  it('áudio: transcreve só depois de conferir o arquivo (conteúdo estranho não vai para a IA)', async () => {
+    const b = bancoMemoria({ mensagens_whatsapp: [] });
+    let chamou = false;
+    await arquivarMidiaRecebida(b.client, { baixar: async () => ({ base64: EXE.toString('base64'), mimetype: 'audio/ogg' }), linha: { ...base, tipo: 'audio' }, transcrever: async () => { chamou = true; return 'x'; } });
+    expect(chamou).toBe(false);
+  });
+
   it('download falhou: grava só o marcador (o histórico não perde a mensagem)', async () => {
     const b = bancoMemoria({ mensagens_whatsapp: [] });
     expect(await arquivarMidiaRecebida(b.client, { baixar: async () => null, linha: { ...base, tipo: 'imagem' }, legenda: 'telhado' })).toBe('sem_arquivo');
     expect(b.tabelas.mensagens_whatsapp[0]).toMatchObject({ texto: '[imagem] telhado' });
+  });
+});
+
+describe('LGPD: apagar o lead tira os arquivos do bucket', () => {
+  it('só os da empresa e do lead', async () => {
+    const { apagarMidiasDoLead } = await import('../src/modules/midia-whatsapp.js');
+    const T = 'aaaa1111-2222-3333-4444-555566667777';
+    const b = bancoMemoria({ mensagens_whatsapp: [
+      { id: '1', company_id: CASA, lead_id: 'L1', midia_caminho: `${CASA}/2026/09/a.jpg` },
+      { id: '2', company_id: CASA, lead_id: 'L1', midia_caminho: null },
+      { id: '3', company_id: CASA, lead_id: 'L2', midia_caminho: `${CASA}/2026/09/b.jpg` },
+      { id: '4', company_id: T, lead_id: 'L1', midia_caminho: `${T}/2026/09/c.jpg` },
+    ] });
+    for (const c of [`${CASA}/2026/09/a.jpg`, `${CASA}/2026/09/b.jpg`, `${T}/2026/09/c.jpg`]) b.arquivos[`${BUCKET_MIDIA}/${c}`] = { dados: JPG };
+    expect(await apagarMidiasDoLead(b.client, CASA, 'L1')).toBe(1);
+    expect(Object.keys(b.arquivos).sort()).toEqual([`${BUCKET_MIDIA}/${CASA}/2026/09/b.jpg`, `${BUCKET_MIDIA}/${T}/2026/09/c.jpg`]);
+  });
+});
+
+describe('download com limite (http-limite)', () => {
+  it('para no limite pelo content-length e pelo que chega', async () => {
+    const { lerCorpoComLimite } = await import('../src/modules/http-limite.js');
+    expect(await lerCorpoComLimite(new Response('x'.repeat(100), { headers: { 'content-length': '100' } }), 50)).toBeNull();
+    expect(await lerCorpoComLimite(new Response('x'.repeat(100)), 50)).toBeNull();
+    expect((await lerCorpoComLimite(new Response('abc'), 50))!.toString()).toBe('abc');
+  });
+  it('tamanho do arquivo do Baileys (número, texto ou Long)', async () => {
+    const { tamanhoDoArquivo } = await import('../src/modules/evolution.js');
+    expect(tamanhoDoArquivo(10)).toBe(10);
+    expect(tamanhoDoArquivo('2048')).toBe(2048);
+    expect(tamanhoDoArquivo({ low: 5, high: 1 })).toBe(4294967301);
+    expect(tamanhoDoArquivo(undefined)).toBeNull();
   });
 });
 
@@ -186,6 +247,27 @@ describe('número pessoal: mídia recebida é baixada e guardada (W1)', () => {
     expect(await receberNoNumeroPessoal(b.client, NP, velha, agora, { baixarMidia: baixar })).toBe('gravada');
     expect(b.tabelas.mensagens_whatsapp[1].midia_caminho).toBeUndefined();
     expect(Object.keys(b.arquivos)).toHaveLength(1);
+  });
+
+  it('webhook: grava o marcador NA HORA e o arquivo completa depois (segundo plano); amigo que não é lead não tem áudio transcrito', async () => {
+    const { receberNoNumeroPessoal } = await import('../src/modules/numero-pessoal.js');
+    const NP = { id: 'np1', company_id: CASA, dono_user_id: 'u-junior', dono_nome: 'Junior', instancia: 'pessoal-j', numero: '5561998805002', ativo: true };
+    const b = bancoMemoria({ leads: [], mensagens_whatsapp: [], contatos_internos: [] }, { mensagens_whatsapp: [['company_id', 'wamid']] });
+    let tarefa: Promise<unknown> | null = null;
+    let transcreveu = false;
+    const agora = Date.parse('2026-09-28T15:01:00Z');
+    const msg = { type: 'audio', from: '5561977776666', content: '', timestamp: new Date('2026-09-28T15:00:00Z'), messageId: 'A1', fromMe: false } as any;
+    const r = await receberNoNumeroPessoal(b.client, NP, msg, agora, {
+      baixarMidia: async () => ({ base64: OGG.toString('base64'), mimetype: 'audio/ogg' }),
+      transcrever: async () => { transcreveu = true; return 'x'; },
+      emSegundoPlano: (t) => { tarefa = t; },
+    });
+    expect(r).toBe('gravada');
+    expect(b.tabelas.mensagens_whatsapp[0]).toMatchObject({ texto: '[áudio]', tipo: 'audio' });
+    expect(b.tabelas.mensagens_whatsapp[0].midia_caminho).toBeUndefined();
+    await tarefa;
+    expect(String(b.tabelas.mensagens_whatsapp[0].midia_caminho).startsWith(`${CASA}/`)).toBe(true);
+    expect(transcreveu).toBe(false);
   });
 
   it('documento sem legenda: o texto leva o nome do arquivo (o eco do painel casa com o que foi enviado)', async () => {

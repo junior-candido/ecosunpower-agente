@@ -1,4 +1,5 @@
 import { instanciaEvolutionAtual } from './canal-contexto.js';
+import { lerCorpoComLimite } from './http-limite.js';
 import type { Config } from '../config.js';
 
 export interface IncomingMessage {
@@ -18,6 +19,8 @@ export interface IncomingMessage {
   mimeType?: string; // mime do anexo (preenchido em document; tambem populado em image/video se vier no payload)
   /** Nome do arquivo (documento), quando o WhatsApp manda. W1 mídia no painel. */
   nomeArquivo?: string;
+  /** Tamanho do arquivo (bytes), quando o WhatsApp manda — W1: não baixa o que passa do limite. */
+  tamanhoBytes?: number;
   // ID do NÚMERO que RECEBEU a mensagem (value.metadata.phone_number_id no
   // webhook WABA). Base do multi-tenant: mapeia pro company_id via companies.
   // waba_phone_number_id (migration 081). So o canal WABA preenche.
@@ -81,7 +84,10 @@ export function lerMensagemEvolution(data: Record<string, unknown> | undefined |
   }
 
   // mimetype só entra quando vem (mensagem antiga/teste sem ele fica igual).
-  const mime = (m: Record<string, string>) => (typeof m.mimetype === 'string' && m.mimetype ? { mimeType: m.mimetype } : {});
+  const mime = (m: Record<string, unknown>) => ({
+    ...(typeof m.mimetype === 'string' && m.mimetype ? { mimeType: m.mimetype } : {}),
+    ...(tamanhoDoArquivo(m.fileLength) ? { tamanhoBytes: tamanhoDoArquivo(m.fileLength)! } : {}),
+  });
 
   if (message.audioMessage) {
     const audio = message.audioMessage as Record<string, string>;
@@ -126,6 +132,17 @@ export function lerMensagemEvolution(data: Record<string, unknown> | undefined |
     return { ...base, type: 'location', content: JSON.stringify({ lat: loc.degreesLatitude, lng: loc.degreesLongitude }) };
   }
 
+  return null;
+}
+
+/** fileLength do Baileys: número, texto ou Long ({low, high}). PURA. */
+export function tamanhoDoArquivo(v: unknown): number | null {
+  if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v;
+  if (typeof v === 'string' && /^\d+$/.test(v)) return Number(v);
+  if (v && typeof v === 'object' && typeof (v as { low?: unknown }).low === 'number') {
+    const { low, high } = v as { low: number; high?: number };
+    return (high ?? 0) * 4294967296 + (low >>> 0);
+  }
   return null;
 }
 
@@ -300,7 +317,13 @@ export class EvolutionService {
     }
   }
 
-  async getMediaBase64(messageId: string): Promise<{ base64: string; mimetype: string } | null> {
+  /**
+   * `limiteBytes` (W1): tamanho máximo do ARQUIVO; a resposta (base64 em JSON)
+   * é lida só até ~4/3 disso + folga, com prazo — mídia gigante não derruba o processo.
+   */
+  async getMediaBase64(messageId: string, opts: { limiteBytes?: number; tempoMaxMs?: number } = {}): Promise<{ base64: string; mimetype: string } | null> {
+    const controller = new AbortController();
+    const timer = opts.tempoMaxMs || opts.limiteBytes ? setTimeout(() => controller.abort(), opts.tempoMaxMs ?? 45_000) : null;
     try {
       const response = await fetch(
         `${this.baseUrl}/chat/getBase64FromMediaMessage/${this.instanciaAtual()}`,
@@ -314,6 +337,7 @@ export class EvolutionService {
             message: { key: { id: messageId } },
             convertToMp4: false,
           }),
+          signal: controller.signal,
         }
       );
 
@@ -322,11 +346,18 @@ export class EvolutionService {
         return null;
       }
 
+      if (opts.limiteBytes) {
+        const corpo = await lerCorpoComLimite(response, Math.ceil(opts.limiteBytes * 4 / 3) + 64 * 1024);
+        if (!corpo) { console.warn('[evolution] getMediaBase64: arquivo acima do limite — não baixado'); return null; }
+        return JSON.parse(corpo.toString('utf-8')) as { base64: string; mimetype: string };
+      }
       const data = await response.json() as { base64: string; mimetype: string };
       return data;
     } catch (error) {
-      console.error('[evolution] getMediaBase64 error:', error);
+      console.error('[evolution] getMediaBase64 error:', (error as Error).message);
       return null;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 

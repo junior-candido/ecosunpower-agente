@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import type { Config } from '../config.js';
 import type { IncomingMessage } from './evolution.js';
+import { lerCorpoComLimite } from './http-limite.js';
 
 const GRAPH_API = 'https://graph.facebook.com/v21.0';
 
@@ -231,6 +232,7 @@ export class MetaWhatsAppService {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.accessToken}` },
       body: form,
+      signal: AbortSignal.timeout(60_000),
     });
 
     if (!resp.ok) {
@@ -533,7 +535,7 @@ export class MetaWhatsAppService {
   // Baixa midia recebida em base64. Espelha a interface do EvolutionService
   // pra os modulos que ja usam (transcriber, vision) nao precisarem mudar.
   // Implementacao WABA: 2 chamadas (GET /v21.0/{media-id} → URL; depois GET na URL).
-  async getMediaBase64(mediaId: string): Promise<{ base64: string; mimetype: string } | null> {
+  async getMediaBase64(mediaId: string, opts: { limiteBytes?: number } = {}): Promise<{ base64: string; mimetype: string } | null> {
     try {
       // Passo 1: pegar URL temporaria da midia
       // Nota: tentamos primeiro SEM phone_number_id (formato padrao v18+);
@@ -547,7 +549,12 @@ export class MetaWhatsAppService {
         console.error(`[meta-whatsapp] getMediaBase64 metadata failed: ${metaRes.status} url=${metaUrl} body=${errBody.slice(0, 500)}`);
         return null;
       }
-      const meta = await metaRes.json() as { url?: string; mime_type?: string };
+      const meta = await metaRes.json() as { url?: string; mime_type?: string; file_size?: number };
+      // W1: a Meta diz o tamanho antes — acima do limite nem baixa.
+      if (opts.limiteBytes && Number(meta.file_size) > opts.limiteBytes) {
+        console.warn('[meta-whatsapp] getMediaBase64: arquivo acima do limite — não baixado');
+        return null;
+      }
       if (!meta.url || !meta.mime_type) {
         console.error('[meta-whatsapp] getMediaBase64: metadata sem url/mime_type');
         return null;
@@ -561,7 +568,8 @@ export class MetaWhatsAppService {
         console.error(`[meta-whatsapp] getMediaBase64 download failed: ${binRes.status} body=${errBody.slice(0, 500)}`);
         return null;
       }
-      const buf = Buffer.from(await binRes.arrayBuffer());
+      const buf = opts.limiteBytes ? await lerCorpoComLimite(binRes, opts.limiteBytes) : Buffer.from(await binRes.arrayBuffer());
+      if (!buf) { console.warn('[meta-whatsapp] getMediaBase64: arquivo acima do limite — não baixado'); return null; }
       return { base64: buf.toString('base64'), mimetype: meta.mime_type };
     } catch (error) {
       console.error('[meta-whatsapp] getMediaBase64 error:', error);

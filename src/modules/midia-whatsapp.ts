@@ -46,6 +46,8 @@ const comeca = (b: Buffer, bytes: number[], desloc = 0) => b.length >= desloc + 
 const comecaTexto = (b: Buffer, t: string, desloc = 0) => comeca(b, [...Buffer.from(t, 'latin1')], desloc);
 const ehFtyp = (b: Buffer) => comecaTexto(b, 'ftyp', 4);
 const ehZip = (b: Buffer) => comeca(b, [0x50, 0x4b, 0x03, 0x04]);
+/** Word/Excel/PowerPoint novo: zip que lista [Content_Types].xml (zip qualquer, com .exe dentro, não passa). */
+const ehOoxml = (b: Buffer) => ehZip(b) && b.includes('[Content_Types].xml', 0, 'latin1');
 const ehOle = (b: Buffer) => comeca(b, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
 const ehTextoSimples = (b: Buffer) => !b.subarray(0, 8192).includes(0) && !comecaTexto(b, 'MZ') && !comeca(b, [0x7f, 0x45, 0x4c, 0x46]);
 const ehMp3 = (b: Buffer) => comecaTexto(b, 'ID3') || (b.length > 1 && b[0] === 0xff && (b[1] & 0xe0) === 0xe0);
@@ -64,9 +66,9 @@ const TIPOS: TipoPermitido[] = [
   { mime: 'audio/amr', ext: ['amr'], tipo: 'audio', confere: (b) => comecaTexto(b, '#!AMR') },
   { mime: 'audio/webm', ext: ['webm'], tipo: 'audio', confere: (b) => comeca(b, [0x1a, 0x45, 0xdf, 0xa3]), precisaConverter: true },
   { mime: 'application/pdf', ext: ['pdf'], tipo: 'documento', confere: (b) => comecaTexto(b, '%PDF') },
-  { mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ext: ['docx'], tipo: 'documento', confere: ehZip },
-  { mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: ['xlsx'], tipo: 'documento', confere: ehZip },
-  { mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', ext: ['pptx'], tipo: 'documento', confere: ehZip },
+  { mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', ext: ['docx'], tipo: 'documento', confere: ehOoxml },
+  { mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ext: ['xlsx'], tipo: 'documento', confere: ehOoxml },
+  { mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', ext: ['pptx'], tipo: 'documento', confere: ehOoxml },
   { mime: 'application/msword', ext: ['doc'], tipo: 'documento', confere: ehOle },
   { mime: 'application/vnd.ms-excel', ext: ['xls'], tipo: 'documento', confere: ehOle },
   { mime: 'text/plain', ext: ['txt'], tipo: 'documento', confere: ehTextoSimples },
@@ -76,7 +78,7 @@ const TIPOS: TipoPermitido[] = [
 /** Nomes que o navegador/celular às vezes manda para o mesmo tipo. */
 const APELIDOS: Record<string, string> = {
   'image/jpg': 'image/jpeg', 'image/pjpeg': 'image/jpeg', 'audio/mp3': 'audio/mpeg', 'audio/x-m4a': 'audio/mp4',
-  'audio/opus': 'audio/ogg', 'video/webm': 'audio/webm', 'application/x-pdf': 'application/pdf',
+  'audio/opus': 'audio/ogg', 'application/x-pdf': 'application/pdf',
 };
 
 /** Extensões que NUNCA passam (mesmo no fim de um nome duplo tipo "conta.pdf.exe"). */
@@ -119,7 +121,10 @@ export function validarArquivo(a: { nome?: string | null; mime?: string | null; 
   const limite = t.tipo === 'imagem' ? LIMITE_IMAGEM_BYTES : LIMITE_MIDIA_BYTES;
   if (a.dados.length > limite) return { ok: false, motivo: 'grande_demais' };
   const extFinal = t.ext.includes(ext) ? ext : t.ext[0];
-  return { ok: true, tipo: t.tipo, mime: t.mime, ext: extFinal, nome, bytes: a.dados.length, precisaConverter: !!t.precisaConverter };
+  // O nome que fica (e que o "Baixar" usa) leva a extensão CONFERIDA — nunca a que o remetente escolheu.
+  const semExt = nome.includes('.') ? nome.slice(0, nome.lastIndexOf('.')) : nome;
+  const nomeFinal = nomeSeguro(`${semExt || 'arquivo'}.${extFinal}`);
+  return { ok: true, tipo: t.tipo, mime: t.mime, ext: extFinal, nome: nomeFinal, bytes: a.dados.length, precisaConverter: !!t.precisaConverter };
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -203,6 +208,47 @@ export const TIPO_DA_ENTRADA: Record<string, TipoMidia | undefined> = { image: '
 
 export type ResultadoArquivar = 'gravada' | 'sem_arquivo' | 'duplicada' | 'falhou';
 
+async function jaGravada(servico: SupabaseClient, companyId: string, wamid: string): Promise<boolean> {
+  try {
+    const { data } = await servico.from('mensagens_whatsapp').select('id').eq('company_id', companyId).eq('wamid', wamid).limit(1);
+    return Array.isArray(data) && data.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * LGPD — apagar o lead apaga as mensagens (cascade da 138), mas o ARQUIVO no
+ * bucket não some sozinho: esta função tira do bucket todos os arquivos das
+ * mensagens do lead, da empresa. Chamar ANTES de apagar o lead. Nunca lança.
+ */
+export async function apagarMidiasDoLead(servico: SupabaseClient, companyId: string, leadId: string): Promise<number> {
+  const caminhos = await midiasDoLead(servico, companyId, leadId);
+  await apagarCaminhos(servico, caminhos);
+  return caminhos.length;
+}
+
+/** Caminhos dos arquivos das mensagens do lead, DA EMPRESA (ler ANTES de apagar o lead). */
+export async function midiasDoLead(servico: SupabaseClient, companyId: string, leadId: string): Promise<string[]> {
+  try {
+    const { data, error } = await servico.from('mensagens_whatsapp').select('midia_caminho')
+      .eq('company_id', companyId).eq('lead_id', leadId).not('midia_caminho', 'is', null).limit(5000);
+    if (error || !Array.isArray(data)) return [];
+    return (data as Array<{ midia_caminho: string | null }>).map((r) => r.midia_caminho)
+      .filter((c): c is string => caminhoDaEmpresa(c, companyId));
+  } catch {
+    return [];
+  }
+}
+
+export async function apagarCaminhos(servico: SupabaseClient, caminhos: string[]): Promise<void> {
+  try {
+    for (let i = 0; i < caminhos.length; i += 100) await servico.storage.from(BUCKET_MIDIA).remove(caminhos.slice(i, i + 100));
+  } catch (e) {
+    console.warn(`[midia] apagar arquivos falhou: ${(e as Error).message}`);
+  }
+}
+
 /**
  * Mídia que CHEGOU (cliente → número da Eva ou número pessoal; ou o dono pelo
  * celular): baixa, confere, guarda e grava a mensagem ligada ao arquivo.
@@ -217,8 +263,10 @@ export async function arquivarMidiaRecebida(
     legenda?: string | null;
     nomeArquivo?: string | null;
     transcricao?: string | null;
-    /** Áudio sem transcrição (ex.: Eva pausada): transcreve com o arquivo já baixado. */
+    /** Áudio sem transcrição (ex.: Eva pausada): transcreve com o arquivo já baixado (e conferido). */
     transcrever?: (base64: string, mime: string) => Promise<string | null>;
+    /** Tamanho que o WhatsApp informou: acima do limite nem baixa. */
+    tamanhoBytes?: number | null;
   },
 ): Promise<ResultadoArquivar> {
   const tipo = p.linha.tipo;
@@ -227,19 +275,23 @@ export async function arquivarMidiaRecebida(
   let midia: Partial<NovaMensagem> = {};
   let caminho: string | null = null;
   let transcricaoNova: string | null = null;
+  // Webhook repetido (mesmo id do WhatsApp): nem baixa de novo.
+  if (p.linha.wamid && await jaGravada(servico, p.linha.company_id, p.linha.wamid)) return 'duplicada';
+  const grandeDemais = !!p.tamanhoBytes && p.tamanhoBytes > (tipo === 'imagem' ? LIMITE_IMAGEM_BYTES : LIMITE_MIDIA_BYTES);
   try {
-    const bruto = await p.baixar().catch(() => null);
-    if (bruto?.base64 && tipo === 'audio' && !p.transcricao && p.transcrever) {
-      transcricaoNova = await p.transcrever(bruto.base64, bruto.mimetype).catch(() => null);
-    }
+    const bruto = grandeDemais ? null : await p.baixar().catch(() => null);
+    if (grandeDemais) console.warn(`[midia] arquivo recebido grande demais (${tipo}) — só o marcador`);
     if (bruto?.base64) {
       const dados = Buffer.from(bruto.base64, 'base64');
       const v = validarArquivo({ nome: nome ?? `recebido.${tipo}`, mime: bruto.mimetype, dados });
+      if (v.ok && tipo === 'audio' && !p.transcricao && p.transcrever) {
+        transcricaoNova = await p.transcrever(bruto.base64, v.mime).catch(() => null);
+      }
       if (v.ok) {
         const g = await guardarMidia(servico, { companyId: p.linha.company_id, dados, mime: v.mime, ext: v.ext });
         if (g.ok) {
           caminho = g.caminho;
-          midia = { midia_caminho: g.caminho, midia_mime: v.mime, midia_nome: nome ?? null, midia_bytes: v.bytes };
+          midia = { midia_caminho: g.caminho, midia_mime: v.mime, midia_nome: nome ? v.nome : null, midia_bytes: v.bytes };
         } else {
           console.warn(`[midia] arquivo recebido não guardado (${tipo}): ${g.erro}`);
         }
@@ -263,6 +315,43 @@ export async function arquivarMidiaRecebida(
   return caminho ? 'gravada' : 'sem_arquivo';
 }
 
+/**
+ * Completa uma mensagem JÁ gravada (marcador) com o arquivo: baixa, confere,
+ * guarda e atualiza a linha (empresa + wamid). Usado pelo webhook do número
+ * pessoal em segundo plano. Nunca lança; falhou → a linha fica com o marcador.
+ */
+export async function completarMidiaRecebida(
+  servico: SupabaseClient,
+  p: {
+    companyId: string; wamid: string; tipo: TipoMidia;
+    baixar: () => Promise<{ base64: string; mimetype: string } | null>;
+    nomeArquivo?: string | null;
+    transcrever?: (base64: string, mime: string) => Promise<string | null>;
+    tamanhoBytes?: number | null;
+  },
+): Promise<'completa' | 'sem_arquivo'> {
+  if (p.tamanhoBytes && p.tamanhoBytes > (p.tipo === 'imagem' ? LIMITE_IMAGEM_BYTES : LIMITE_MIDIA_BYTES)) return 'sem_arquivo';
+  try {
+    const bruto = await p.baixar().catch(() => null);
+    if (!bruto?.base64) return 'sem_arquivo';
+    const nome = p.nomeArquivo ? nomeSeguro(p.nomeArquivo) : null;
+    const dados = Buffer.from(bruto.base64, 'base64');
+    const v = validarArquivo({ nome: nome ?? `recebido.${p.tipo}`, mime: bruto.mimetype, dados });
+    if (!v.ok) { console.warn(`[midia] arquivo recebido recusado (${p.tipo}): ${v.motivo}`); return 'sem_arquivo'; }
+    const g = await guardarMidia(servico, { companyId: p.companyId, dados, mime: v.mime, ext: v.ext });
+    if (!g.ok) { console.warn(`[midia] arquivo recebido não guardado (${p.tipo}): ${g.erro}`); return 'sem_arquivo'; }
+    const transcricao = p.tipo === 'audio' && p.transcrever ? String(await p.transcrever(bruto.base64, v.mime).catch(() => null) ?? '').trim().slice(0, 4000) : '';
+    const { error } = await servico.from('mensagens_whatsapp')
+      .update({ midia_caminho: g.caminho, midia_mime: v.mime, midia_nome: nome ? v.nome : null, midia_bytes: v.bytes, ...(transcricao ? { transcricao } : {}) })
+      .eq('company_id', p.companyId).eq('wamid', p.wamid);
+    if (error) { await apagarMidia(servico, g.caminho); return 'sem_arquivo'; }
+    return 'completa';
+  } catch (e) {
+    console.warn(`[midia] completar falhou (${p.tipo}): ${(e as Error).message}`);
+    return 'sem_arquivo';
+  }
+}
+
 const CASA = '00000000-0000-0000-0000-000000000001';
 
 /**
@@ -278,6 +367,7 @@ export async function arquivarMidiaDaAssistente(
     telefone: string;
     lead: { id: string; company_id?: string | null } | null;
     tipoEntrada: string;
+    tamanhoBytes?: number | null;
     wamid: string | null;
     recebidaEm: string | null;
     legenda?: string | null;
@@ -304,6 +394,7 @@ export async function arquivarMidiaDaAssistente(
         ...(quando ? { criado_em: quando } : {}),
       },
       legenda: p.legenda, nomeArquivo: p.nomeArquivo, transcricao: p.transcricao, transcrever: p.transcrever,
+      tamanhoBytes: p.tamanhoBytes ?? null,
     });
   } catch (e) {
     console.warn(`[midia] assistente: ${(e as Error).message}`);

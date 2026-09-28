@@ -18,7 +18,8 @@ import { DossierBuilder } from './modules/dossier.js';
 import { calculateSolarEstimate, formatEstimateForPrompt } from './modules/solar.js';
 import { archiveInboundMedia } from './modules/inbound-media.js';
 import { Transcriber } from './modules/transcriber.js';
-import { arquivarMidiaDaAssistente, TIPO_DA_ENTRADA } from './modules/midia-whatsapp.js';
+import { arquivarMidiaDaAssistente, TIPO_DA_ENTRADA, LIMITE_MIDIA_BYTES } from './modules/midia-whatsapp.js';
+import { leadDoTelefoneNaEmpresa } from './modules/numero-pessoal.js';
 import { VisionAnalyzer } from './modules/vision.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { LearningModule } from './modules/learning.js';
@@ -6532,6 +6533,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       return null;
     }
 
+    let transcrito: string | null = null;
     try {
       if (!isSandbox) await sendText(from, 'Ouvindo seu audio... 🎧');
 
@@ -6554,14 +6556,15 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
         return null;
       }
 
-      console.log(`[audio] Transcribed from ${from}: "${text.substring(0, 80)}..."`);
+      console.log(`[audio] Transcrito (…${from.slice(-4)}, ${text.length} letras)`);
+      transcrito = text;
       await handleTextMessage(from, text, undefined, companyId);
       return text;
     } catch (error) {
       console.error(`[audio] Error processing audio from ${from}:`, error);
       const msg = 'Nao consegui processar o audio. Pode me enviar por texto? 😊';
       if (!isSandbox) await sendText(from, msg);
-      return null;
+      return transcrito;
     }
   }
 
@@ -7109,15 +7112,16 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       await arquivarMidiaDaAssistente(supabase.getClient(), {
         companyId,
         telefone: msg.from,
-        lead: await dbMsg.getLeadByPhone(msg.from).catch(() => null),
+        lead: await leadDoTelefoneNaEmpresa(supabase.getClient(), companyId, msg.from).then((l) => (l ? { id: l.id, company_id: companyId } : null)).catch(() => null),
         tipoEntrada: msg.type,
+        tamanhoBytes: msg.tamanhoBytes ?? null,
         wamid: msg.messageId || null,
         recebidaEm: msg.timestamp ?? null,
         legenda: msg.type === 'document' ? (msg.caption && msg.caption !== msg.nomeArquivo ? msg.caption : '') : msg.caption,
         nomeArquivo: msg.nomeArquivo ?? (msg.type === 'document' ? msg.caption : null) ?? null,
         contatoNome: msg.pushName ?? null,
         transcricao: transcricaoDoAudio,
-        baixar: () => messagingDaMensagem().getMediaBase64(mediaRef(msg.content, msg.messageId)),
+        baixar: () => messagingDaMensagem().getMediaBase64(mediaRef(msg.content, msg.messageId), { limiteBytes: LIMITE_MIDIA_BYTES }),
         transcrever: transcriber ? (b64, mime) => transcriber.transcribeFromBase64(b64, mime) : undefined,
       }).catch((e) => console.warn(`[midia] arquivar falhou: ${(e as Error).message}`));
     }
@@ -7854,8 +7858,9 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       const { receberNoNumeroPessoal } = await import('./modules/numero-pessoal.js');
       // W1: mídia recente é baixada PELA INSTÂNCIA DO DONO e guardada (só ele vê); áudio transcrito.
       const r = await receberNoNumeroPessoal(supabase.getClient(), pessoal, parsed, Date.now(), {
-        baixarMidia: (m) => comCanal({ companyId: pessoal.company_id, evolutionInstance: pessoal.instancia }, () => evolution.getMediaBase64(m.messageId)),
+        baixarMidia: (m) => comCanal({ companyId: pessoal.company_id, evolutionInstance: pessoal.instancia }, () => evolution.getMediaBase64(m.messageId, { limiteBytes: LIMITE_MIDIA_BYTES })),
         transcrever: transcriber ? (b64, mime) => transcriber.transcribeFromBase64(b64, mime) : undefined,
+        emSegundoPlano: (tarefa) => { void tarefa.catch((e) => console.warn(`[numero-pessoal] mídia não completou: ${(e as Error).message}`)); },
       });
       res.status(200).json({ status: `numero_pessoal_${r}` });
       return;
@@ -9271,6 +9276,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
       ? evolution.sendWhatsAppAudio(to, m.base64)
       : evolution.sendMediaBase64(to, { mediatype: m.tipo === 'imagem' ? 'image' : m.tipo === 'video' ? 'video' : 'document', mimetype: m.mime, base64: m.base64, fileName: m.nome, caption: m.legenda })))),
     converterAudio: async (webm) => (await import('./modules/audio-ogg.js')).webmParaOgg(webm),
+    // A Meta só aceita foto JPEG/PNG (WebP é figurinha): converte antes de sair pelo número da Eva.
+    converterImagemJpeg: async (img) => { const sharp = (await import('sharp')).default; return sharp(img).rotate().jpeg({ quality: 85 }).toBuffer(); },
     evolutionInstanciaEva: config.evolutionInstance,
     // Histórico do número pessoal: progresso na tela + puxar o que a Evolution já guardou.
     historicoPessoal,

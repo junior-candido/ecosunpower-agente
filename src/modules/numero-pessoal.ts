@@ -24,7 +24,7 @@ import { normalizeBrazilianPhone } from './meta-leadgen.js';
 import { variantesTelefone } from './phone.js';
 import { gravarMensagem, type LinhaMensagemWhatsapp, type NovaMensagem } from './mensagens-whatsapp.js';
 import { assumirAtendimento } from './assumir-atendimento.js';
-import { arquivarMidiaRecebida, TIPO_DA_ENTRADA } from './midia-whatsapp.js';
+import { completarMidiaRecebida, TIPO_DA_ENTRADA } from './midia-whatsapp.js';
 
 export const CASA = '00000000-0000-0000-0000-000000000001';
 const TTL_MS = 60_000;
@@ -139,6 +139,12 @@ export interface OpcoesPessoal {
   baixarMidia?: (msg: IncomingMessage) => Promise<{ base64: string; mimetype: string } | null>;
   /** Transcreve o áudio (fica embaixo do player). */
   transcrever?: (base64: string, mime: string) => Promise<string | null>;
+  /**
+   * Webhook: a mensagem é gravada NA HORA (com o marcador) e o arquivo
+   * (download + bucket + transcrição) completa depois, sem segurar a Evolution.
+   * Ausente = completa antes de devolver (testes / importação).
+   */
+  emSegundoPlano?: (tarefa: Promise<unknown>) => void;
 }
 
 /**
@@ -212,14 +218,19 @@ export async function receberNoNumeroPessoal(
     const tipoMidia = TIPO_DA_ENTRADA[msg.type];
     const recente = agora - new Date(msg.timestamp ?? agora).getTime() < JANELA_BAIXAR_MIDIA_MS;
     let r: { ok: boolean; duplicada?: boolean };
-    if (tipoMidia && recente && opcoes.baixarMidia) {
-      const a = await arquivarMidiaRecebida(client, {
-        baixar: () => opcoes.baixarMidia!(msg),
-        linha: { ...linha, tipo: tipoMidia },
-        legenda: msg.caption ?? '', nomeArquivo: msg.nomeArquivo ?? null,
-        transcrever: opcoes.transcrever,
-      });
-      r = { ok: a !== 'falhou', duplicada: a === 'duplicada' };
+    if (tipoMidia && recente && opcoes.baixarMidia && msg.messageId) {
+      // 1) a mensagem entra já (marcador + legenda); 2) o arquivo completa a linha pelo wamid.
+      r = await gravarMensagem(client, linha);
+      if (r.ok && !r.duplicada) {
+        const tarefa = completarMidiaRecebida(client, {
+          companyId: np.company_id, wamid: msg.messageId, tipo: tipoMidia,
+          baixar: () => opcoes.baixarMidia!(msg), nomeArquivo: msg.nomeArquivo ?? null,
+          // LGPD: áudio de amigo/família (quem não é lead) não vai para a IA de transcrição.
+          transcrever: lead ? opcoes.transcrever : undefined,
+          tamanhoBytes: msg.tamanhoBytes ?? null,
+        });
+        if (opcoes.emSegundoPlano) opcoes.emSegundoPlano(tarefa); else await tarefa;
+      }
     } else {
       r = await gravarMensagem(client, linha);
     }

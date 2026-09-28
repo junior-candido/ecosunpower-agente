@@ -148,12 +148,51 @@ describe('POST /leads/:id/responder-midia — número da Eva (WABA)', () => {
     expect(r2.corpo).toMatchObject({ ok: false, resultado: 'audio_invalido' });
   });
 
+  it('áudio: a legenda não é gravada (o WhatsApp não manda legenda em áudio)', async () => {
+    const c = cenario();
+    const r = res();
+    await c.rotas.responderMidia(req({ chave: CHAVE, legenda: 'ouve isso' }, arquivo(OGG, 'recado.ogg', 'audio/ogg')), r);
+    expect(r.corpo).toMatchObject({ ok: true });
+    expect(c.b.tabelas.mensagens_whatsapp[0].texto).toBe('[áudio]');
+  });
+
+  it('foto WebP pela Meta: vira JPEG antes; sem conversor, recusa (a Meta só aceita JPEG/PNG)', async () => {
+    const WEBP = Buffer.concat([Buffer.from('RIFF'), Buffer.from([0, 0, 0, 0]), Buffer.from('WEBP'), Buffer.alloc(100, 1)]);
+    const sem = cenario();
+    const r1 = res();
+    await sem.rotas.responderMidia(req({ chave: CHAVE }, arquivo(WEBP, 'f.webp', 'image/webp')), r1);
+    expect(r1.corpo).toMatchObject({ ok: false, resultado: 'arquivo_invalido' });
+  });
+
+  it('CSV pela Meta sobe como texto simples', async () => {
+    const c = cenario();
+    const r = res();
+    await c.rotas.responderMidia(req({ chave: CHAVE }, arquivo(Buffer.from('a;b\n1;2\n'), 'lista.csv', 'text/csv')), r);
+    expect(r.corpo).toMatchObject({ ok: true });
+    expect(c.waba.uploadMedia).toHaveBeenCalledWith(expect.any(Buffer), 'text/plain', 'lista.csv');
+  });
+
   it('lead de OUTRA empresa: 404 e nada acontece', async () => {
     const c = cenario({ company: TENANT });
     const r = res();
     await c.rotas.responderMidia(req({ chave: CHAVE }, arquivo(JPG, 'a.jpg', 'image/jpeg')), r);
     expect(r.statusCode).toBe(404);
     expect(Object.keys(c.b.arquivos)).toHaveLength(0);
+  });
+});
+
+describe('upload: arquivo grande pelo cabeçalho é recusado sem ler o corpo', () => {
+  it('content-length acima de 16 MB → "arquivo grande", nada guardado nem enviado', async () => {
+    const c = cenario();
+    const r = res();
+    await new Promise<void>((ok) => {
+      const q = { params: { id: LEAD }, body: {}, query: {}, dashUser: junior, headers: { accept: 'application/json', 'content-length': String(40 * 1024 * 1024) } } as any;
+      const orig = r.json; r.json = (x: unknown) => { orig(x); ok(); return r; };
+      c.rotas.comArquivo(c.rotas.responderMidia)(q, r);
+    });
+    expect(r.corpo).toMatchObject({ ok: false, resultado: 'arquivo_grande' });
+    expect(Object.keys(c.b.arquivos)).toHaveLength(0);
+    expect(c.waba.uploadMedia).not.toHaveBeenCalled();
   });
 });
 
@@ -249,6 +288,12 @@ describe('GET /leads/midia/:id — ver/baixar (LGPD: só quem vê a conversa)', 
     const r = res();
     await c.rotas.midia(pedir(vendedor), r);
     expect(r.statusCode).toBe(404);
+  });
+  it('conversa PESSOAL do vendedor com lead de outro vendedor: o dono do número vê o arquivo dele', async () => {
+    const c = comMidia({ visivel_so_para: 'u-vend' }, { claimed_by: 'u-outro' });
+    const r = res();
+    await c.rotas.midia(pedir(vendedor), r);
+    expect(r.statusCode).toBe(302);
   });
   it('caminho que não é da empresa (dado adulterado): 404', async () => {
     const c = comMidia({ midia_caminho: `${TENANT}/2026/09/y.pdf` });

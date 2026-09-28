@@ -226,6 +226,7 @@ export function createDashboardRouter(
     // W1 — mídia pela Evolution (instância do dono ou do tenant) e gravação WebM → OGG.
     enviarMidiaEvolution?: import('./atendimento-rotas.js').DepsAtendimento['enviarMidiaEvolution'];
     converterAudio?: (webm: Buffer) => Promise<Buffer>;
+    converterImagemJpeg?: (img: Buffer) => Promise<Buffer>;
     // EVOLUTION_INSTANCE (a da Eva): nunca pode virar número pessoal.
     evolutionInstanciaEva?: string;
     // Histórico do número pessoal (últimos 90 dias): progresso + puxar da Evolution (numero-pessoal-historico.ts).
@@ -291,6 +292,7 @@ export function createDashboardRouter(
     enviarPessoal: options.enviarPessoal,
     enviarMidiaEvolution: options.enviarMidiaEvolution,
     converterAudio: options.converterAudio,
+    converterImagemJpeg: options.converterImagemJpeg,
     copiarParaMemoria: async ({ leadId, companyId, texto, painelId }) => {
       // Memória curta da Eva: quando ela voltar, sabe o que a equipe disse.
       const conv = await supabaseService.getOrCreateConversation(leadId, companyId);
@@ -2921,7 +2923,13 @@ b.onclick=async function(){
   router.post('/leads/:id/delete', exigir('leads', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
+    // W1/LGPD: os arquivos do WhatsApp do lead saem do bucket (as mensagens caem junto com o lead).
+    // Lê os caminhos ANTES (depois o cascade apaga as linhas) e só apaga se o lead saiu.
+    const dono = (req as AuthedRequest).dashUser;
+    const midia = await import('../midia-whatsapp.js');
+    const arquivos = dono?.companyId ? await midia.midiasDoLead(supabase, dono.companyId, id) : [];
     const r = await supabaseService.excluirLead(id);
+    if (r.ok && arquivos.length) await midia.apagarCaminhos(supabase, arquivos);
     if (!r.ok) {
       return res.status(400).send(
         `<h2>Não foi possível excluir</h2><p>${escapeHtmlSimple(r.error ?? '')}</p><a href="/dashboard/leads/${id}">← voltar</a>`,

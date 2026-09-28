@@ -398,8 +398,13 @@ export function linhaDoPainelParaChat(l: LinhaMensagemWhatsapp): MensagemChat | 
   };
 }
 
-/** Como a Eva registra a mídia na memória dela ("[Enviou uma foto]", "[áudio] …", o vídeo longo). */
-const COPIA_DE_MIDIA = /^\[(Enviou uma foto|Enviou um PDF|imagem|áudio|audio|vídeo|video|documento|Cliente enviou um V[IÍ]DEO)/i;
+/** Como a Eva registra cada tipo de mídia na memória dela ("[Enviou uma foto]", "[áudio] …", o vídeo longo). */
+const COPIA_DE_MIDIA: Record<string, RegExp> = {
+  imagem: /^\[(Enviou uma foto|imagem)\]/i,
+  documento: /^\[(Enviou um PDF|documento)\]/i,
+  video: /^\[(vídeo|video)\]|^\[Cliente enviou um V[IÍ]DEO/i,
+  audio: /^\[(áudio|audio)\]/i,
+};
 const JANELA_COPIA_MS = 10 * 60_000;
 
 /**
@@ -423,7 +428,7 @@ export function semCopiaDaMidia(conversa: MensagemChat[], painel: LinhaMensagemW
       const t = Date.parse(m.timestamp);
       if (!Number.isFinite(t) || t < t0 - 60_000 || t > t0 + JANELA_COPIA_MS) return false;
       const c = m.content.trim();
-      return COPIA_DE_MIDIA.test(c) || (!!transc && c === transc);
+      return (COPIA_DE_MIDIA[l.tipo]?.test(c) ?? false) || (!!transc && c === transc);
     });
     if (i >= 0) tirar.add(i);
   }

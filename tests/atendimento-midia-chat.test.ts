@@ -46,6 +46,11 @@ describe('juntarComPainel: a cópia da memória da Eva some quando a mídia est�
     const pessoal = [linha({ tipo: 'imagem', texto: '[imagem]', canal: 'whatsapp_business', visivel_so_para: 'u1', midia_caminho: `${CASA}/p.jpg`, criado_em: t(0) })];
     expect(juntarComPainel(conversa, pessoal, 'eva_oficial')).toHaveLength(3);
   });
+  it('a cópia tem que ser do MESMO tipo: áudio sem transcrição não apaga o "[Enviou uma foto]" de outra mensagem', () => {
+    const conversa: MensagemChat[] = [{ role: 'user', content: '[Enviou uma foto]', timestamp: t(0.5) }];
+    const painel = [linha({ tipo: 'audio', texto: '[áudio]', midia_caminho: `${CASA}/x.ogg`, criado_em: t(0) })];
+    expect(juntarComPainel(conversa, painel, 'eva_oficial')).toHaveLength(2);
+  });
   it('cópia longe no tempo (mais de 10 min) não é confundida', () => {
     const conversa: MensagemChat[] = [{ role: 'user', content: '[Enviou uma foto]', timestamp: t(30) }];
     const painel = [linha({ tipo: 'imagem', texto: '[imagem]', midia_caminho: `${CASA}/x.jpg`, criado_em: t(0) })];

@@ -1129,6 +1129,7 @@ var info=document.createElement('div');info.className='cc-at-anexo-info';var n=d
 if(erro){var e2=document.createElement('div');e2.className='cc-at-msg-falha';e2.textContent='⚠ '+erro;info.appendChild(e2);}
 var x=document.createElement('button');x.type='button';x.className='cc-ibtn cc-at-anexo-x';x.setAttribute('aria-label','Tirar o arquivo');x.textContent='×';x.addEventListener('click',function(){var i=inArq();if(i)i.value='';limparPrev();});
 p.appendChild(el);p.appendChild(info);p.appendChild(x);p.hidden=false;f.classList.add('cc-at-tem');
+if(/^audio\\//.test(file.type))f.classList.add('cc-at-sem-legenda');else f.classList.remove('cc-at-sem-legenda');
 var b=f.querySelector('button[type=submit]');if(b)b.disabled=!!erro;var lg=document.getElementById('cc-at-legenda');if(lg&&!erro)lg.focus();}
 function porArquivo(file){var i=inArq();if(!i||!file)return;try{var dt=new DataTransfer();dt.items.add(file);i.files=dt.files;}catch(x){aviso('<div class="cc-aviso cc-aviso-atencao">Este navegador não deixa colar/arrastar arquivo. Use o botão 📎 Anexar.</div>');return;}mostrarPrev(file);}
 document.addEventListener('change',function(e){if(e.target&&e.target.id==='cc-at-arquivo'){var fl=e.target.files&&e.target.files[0];if(fl)mostrarPrev(fl);else limparPrev();}});
@@ -1136,8 +1137,9 @@ function noChat(e){return !!(chat&&e.target&&e.target.closest&&e.target.closest(
 ['dragenter','dragover'].forEach(function(ev){document.addEventListener(ev,function(e){if(!noChat(e)||!inArq()||!e.dataTransfer)return;var ts=e.dataTransfer.types||[];if(Array.prototype.indexOf.call(ts,'Files')<0)return;e.preventDefault();chat.classList.add('cc-at-soltar');});});
 document.addEventListener('dragleave',function(e){if(chat&&(!e.relatedTarget||!chat.contains(e.relatedTarget)))chat.classList.remove('cc-at-soltar');});
 document.addEventListener('drop',function(e){if(!noChat(e))return;chat.classList.remove('cc-at-soltar');var fs=e.dataTransfer&&e.dataTransfer.files;if(!inArq()||!fs||!fs[0])return;e.preventDefault();porArquivo(fs[0]);});
-document.addEventListener('paste',function(e){var t=e.target;if(!inArq()||!t||(t.id!=='cc-at-texto'&&t.id!=='cc-at-legenda'))return;var fs=e.clipboardData&&e.clipboardData.files;if(fs&&fs[0]){e.preventDefault();porArquivo(fs[0]);}});
-document.addEventListener('click',function(e){var g=e.target&&e.target.closest?e.target.closest('#cc-at-gravar'):null;if(!g)return;if(grav){grav.parar();return;}
+document.addEventListener('paste',function(e){var t=e.target;if(!inArq()||!t||(t.id!=='cc-at-texto'&&t.id!=='cc-at-legenda'))return;var cd=e.clipboardData,fs=cd&&cd.files;if(!fs||!fs[0])return;if(cd.getData&&cd.getData('text'))return;e.preventDefault();porArquivo(fs[0]);});
+document.addEventListener('click',function(e){var g=e.target&&e.target.closest?e.target.closest('#cc-at-gravar'):null;if(!g)return;if(grav){if(grav.parar)grav.parar();return;}
+grav={pendente:true};
 navigator.mediaDevices.getUserMedia({audio:true}).then(function(st){
 var tipos=['audio/ogg;codecs=opus','audio/webm;codecs=opus','audio/webm','audio/mp4'],tipo='';for(var k=0;k<tipos.length;k++){if(MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(tipos[k])){tipo=tipos[k];break;}}
 var mr=tipo?new MediaRecorder(st,{mimeType:tipo}):new MediaRecorder(st),partes=[],ini=Date.now(),tm=null;
@@ -1146,7 +1148,7 @@ mr.onstop=function(){if(tm)clearInterval(tm);st.getTracks().forEach(function(x){
 var mt=(mr.mimeType||tipo||'audio/webm').split(';')[0],ext=mt.indexOf('ogg')>=0?'ogg':mt.indexOf('mp4')>=0?'m4a':'webm';if(partes.length)porArquivo(new File(partes,'gravacao.'+ext,{type:mt}));};
 function rel(){var s=Math.floor((Date.now()-ini)/1000),bt=document.getElementById('cc-at-gravar');if(bt)bt.textContent='⏹ Parar ('+Math.floor(s/60)+':'+('0'+(s%60)).slice(-2)+')';if(s>=300&&mr.state!=='inactive')mr.stop();}
 grav={parar:function(){if(mr.state!=='inactive')mr.stop();}};mr.start(1000);g.classList.add('cc-at-gravando');rel();tm=setInterval(rel,500);
-}).catch(function(){aviso('<div class="cc-aviso cc-aviso-erro">Não consegui usar o microfone. Libere o microfone no navegador ou anexe um arquivo de áudio.</div>');});});
+}).catch(function(){grav=null;aviso('<div class="cc-aviso cc-aviso-erro">Não consegui usar o microfone. Libere o microfone no navegador ou anexe um arquivo de áudio.</div>');});});
 document.addEventListener('submit',function(e){var f=e.target&&e.target.closest?e.target.closest('form[data-envio-midia]'):null;if(!f)return;
 var i=inArq();if(!i||!i.files||!i.files[0]){e.preventDefault();if(i)i.click();return;}
 if(!podeFetch)return;e.preventDefault();if(enviando)return;
@@ -1302,10 +1304,11 @@ export const CSS_ATENDIMENTO = `
 .cc-at-video{display:block;width:280px;max-width:100%;max-height:220px;border-radius:10px;background:#000;margin:2px 0}
 .cc-at-transc{margin-top:4px;padding:6px 9px;border-radius:8px;background:var(--cc-surface-2);font-size:12.5px;color:var(--cc-text-2);white-space:pre-wrap;word-break:break-word}
 .cc-at-transc span{display:block;font-size:10.5px;font-weight:700;color:var(--cc-muted);margin-bottom:1px}
-.cc-at-doc{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:var(--cc-surface-2);border:1px solid var(--cc-line);margin:2px 0 4px;min-width:0}
+.cc-at-doc{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:var(--cc-surface-2);border:1px solid var(--cc-line);margin:2px 0 4px;min-width:min(250px,100%);flex-wrap:wrap}
 .cc-at-doc-ic{font-size:22px;flex:none}
 .cc-at-doc-txt{flex:1;min-width:0;display:flex;flex-direction:column}
-.cc-at-doc-txt strong{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cc-at-doc-txt{flex:1 1 120px}
+.cc-at-doc-txt strong{font-size:13px;font-weight:600;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .cc-at-doc-txt small{font-size:11px;color:var(--cc-muted)}
 .cc-at-doc .cc-link{font-size:12px;font-weight:600;flex:none}
 .cc-at-anexo{display:flex;flex-direction:column;gap:6px;margin:0}
@@ -1315,6 +1318,8 @@ export const CSS_ATENDIMENTO = `
 .cc-at-legenda{flex:1 1 180px;min-width:0}
 .cc-at-js .cc-at-anexo:not(.cc-at-tem) .cc-at-legenda,.cc-at-js .cc-at-anexo:not(.cc-at-tem) .cc-at-enviar-arq{display:none}
 .cc-btn.cc-at-enviar-arq{height:36px;padding:0 14px}
+.cc-at-anexo.cc-at-sem-legenda .cc-at-legenda{display:none}
+#responder:has(.cc-at-anexo.cc-at-tem) .cc-at-prontas{display:none}
 .cc-at-pode-gravar .cc-at-gravar{display:inline-flex}
 .cc-btn.cc-at-gravando{border-color:var(--cc-crit);color:var(--cc-crit);font-weight:700}
 .cc-at-anexo-prev{display:flex;align-items:center;gap:10px;padding:8px;border-radius:12px;border:1px dashed var(--cc-line-2);background:var(--cc-surface-2)}

@@ -35,6 +35,7 @@ export function montarJobDaFila(parsed: IncomingMessage, companyId: string): Que
     ...(parsed.fromParentUserId ? { fromParentUserId: parsed.fromParentUserId } : {}),
     ...(parsed.username ? { username: parsed.username } : {}),
     ...(parsed.nomeArquivo ? { nomeArquivo: parsed.nomeArquivo } : {}),
+    ...(parsed.tamanhoBytes ? { tamanhoBytes: parsed.tamanhoBytes } : {}),
   };
 }
 
