@@ -74,7 +74,9 @@ export const MODULO_DA_ROTA: readonly RotaDeModulo[] = [
 
 /** Qual módulo (e vitrine) uma página exige. Aceita com ou sem o "/dashboard". null = sempre aberta. */
 export function moduloDoCaminho(caminho: string): { modulo: Modulo; chave: string } | null {
-  let p = caminho.split('?')[0] ?? '';
+  // O router do Express casa rota SEM diferenciar maiúscula (/Financeiro abre
+  // /financeiro): a trava normaliza igual, senão vira porta dos fundos.
+  let p = (caminho.split('?')[0] ?? '').toLowerCase().replace(/\/{2,}/g, '/');
   if (p === '/dashboard' || p.startsWith('/dashboard/')) p = p.slice('/dashboard'.length);
   let achado: RotaDeModulo | null = null;
   for (const r of MODULO_DA_ROTA) {

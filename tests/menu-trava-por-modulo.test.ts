@@ -112,6 +112,13 @@ describe('mapa rota → módulo (um lugar só)', () => {
     expect(moduloDoCaminho('/fiscal')?.modulo).toBe('fiscal'); // sem o /dashboard também
   });
 
+  it('maiúscula e barra dobrada não furam a trava (o Express casa rota sem diferenciar)', () => {
+    expect(moduloDoCaminho('/Financeiro')?.modulo).toBe('financeiro');
+    expect(moduloDoCaminho('/MONITORAMENTO/u1')?.modulo).toBe('monitoramento');
+    expect(moduloDoCaminho('/financeiro/')?.modulo).toBe('financeiro');
+    expect(moduloDoCaminho('//marketing')?.modulo).toBe('marketing');
+  });
+
   it('a chave da vitrine é uma chave do menu', () => {
     const chaves = new Set(MENU_AREAS.flatMap((g) => g.itens.map((i) => i.key)));
     for (const r of MODULO_DA_ROTA) expect(chaves.has(r.chave), r.prefixo).toBe(true);
