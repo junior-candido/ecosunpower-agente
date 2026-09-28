@@ -173,3 +173,10 @@ o botão "✋ Assumir" do WhatsApp (`eva-admin-buttons.ts`), o topo do chat e o 
 autor/canal + eventos assumiu/devolveu) na tabela `mensagens_whatsapp` (migration 138, `mensagens-whatsapp.ts`);
 a Eva continua com a memória curta em `conversations`. Com a Eva pausada a mensagem do cliente é gravada
 (sem resposta). Anti envio duplo = `chave_envio` única por empresa reservada antes de enviar.
+**Parte 2b — número PESSOAL do dono (QR/Evolution, só EcoSun):** tela `/dashboard/whatsapp/pessoal`
+(`dashboard/numero-pessoal-rotas.ts` + `whatsapp-pessoal-views.ts`) cria a instância na Evolution e guarda
+em `whatsapp_numeros_pessoais` (migration 139) quem conectou. O webhook `/webhook` desvia essa instância
+ANTES de tudo da Eva (`numero-pessoal.ts` → só grava, `visivel_so_para` = dono; a Eva nunca responde lá).
+Conversas de quem não é lead aparecem na lista com "Virar lead" (`?contato=`); mesmo telefone = um lead
+(variantes com 55, dentro da empresa). A resposta sai pelo número em que o cliente escreveu por último
+("Responder como 🤖 Eva / 👤 Junior").

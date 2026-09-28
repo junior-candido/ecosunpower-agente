@@ -128,15 +128,18 @@ function qsFiltros(f: FiltrosConversa, extra: Partial<FiltrosConversa> = {}): st
 // Coluna 1 — lista de conversas
 // ---------------------------------------------------------------------------
 
-function itemConversa(c: ConversaResumo, ativo: boolean, filtros: FiltrosConversa, assistente: string): string {
-  const quem = c.ultimaDe === 'assistente' ? `${assistente}: ` : '';
+function itemConversa(c: ConversaResumo, ativo: boolean, filtros: FiltrosConversa, assistente: string, donoPessoal: string | null = null): string {
+  const quem = c.ultimaDe === 'assistente' ? `${c.canal === 'whatsapp_business' ? (donoPessoal || 'Você') : assistente}: ` : '';
   const previa = c.ultimaTexto ? `${quem}${c.ultimaTexto}` : 'Sem mensagens';
+  const href = c.leadId
+    ? `/dashboard/leads/${c.leadId}${qsFiltros(filtros)}`
+    : `/dashboard/leads/conversas?contato=${encodeURIComponent(c.contato ?? '')}`;
   const sinais = [
-    pilulaEtapa(c.etapa),
-    c.optOut ? pilulaStatus('sem_dado', 'Parou') : !c.evaAtiva ? pilulaStatus('acompanhar', `${assistente} pausada`) : '',
-    c.canal ? `<span class="cc-at-canal cc-at-canal-${escapeHtml(c.canal)}">${escapeHtml(rotuloCanal(c.canal, assistente))}</span>` : '',
+    c.leadId ? pilulaEtapa(c.etapa) : `<span class="cc-at-naolead">Não é lead</span>`,
+    !c.leadId ? '' : c.optOut ? pilulaStatus('sem_dado', 'Parou') : !c.evaAtiva ? pilulaStatus('acompanhar', `${assistente} pausada`) : '',
+    c.canal ? `<span class="cc-at-canal cc-at-canal-${escapeHtml(c.canal)}">${escapeHtml(rotuloCanal(c.canal, assistente, donoPessoal))}</span>` : '',
   ].filter(Boolean).join('');
-  return `<a class="cc-at-item${ativo ? ' cc-on' : ''}" href="/dashboard/leads/${escapeHtml(c.leadId)}${escapeHtml(qsFiltros(filtros))}"${ativo ? ' aria-current="true"' : ''}>
+  return `<a class="cc-at-item${ativo ? ' cc-on' : ''}" href="${escapeHtml(href)}"${ativo ? ' aria-current="true"' : ''}>
     ${avatarAt(c.nome, c.telefone)}
     <span class="cc-at-item-txt">
       <span class="cc-at-l1"><strong>${escapeHtml(c.nome ?? formatPhoneBR(c.telefone))}</strong><time>${escapeHtml(horaCurta(c.ultimaEm))}</time></span>
@@ -146,7 +149,7 @@ function itemConversa(c: ConversaResumo, ativo: boolean, filtros: FiltrosConvers
   </a>`;
 }
 
-function colunaLista(lista: ListaConversas, filtros: FiltrosConversa, leadAtivo: string | null, assistente: string): string {
+function colunaLista(lista: ListaConversas, filtros: FiltrosConversa, leadAtivo: string | null, assistente: string, contatoAtivo: string | null = null, donoPessoal: string | null = null): string {
   const base = '/dashboard/leads/conversas';
   const k = lista.contagem;
   const chipsFiltro = [
@@ -166,7 +169,7 @@ function colunaLista(lista: ListaConversas, filtros: FiltrosConversa, leadAtivo:
     </form>`;
   const itens = lista.itens.length === 0
     ? estadoVazio({ tipo: 'vazio', titulo: filtros.q || filtros.etapa || (filtros.filtro && filtros.filtro !== 'todas') ? 'Nenhuma conversa neste filtro' : 'Nenhuma conversa ainda', texto: filtros.q ? 'Tente outro nome ou limpe a busca.' : undefined, compacto: true })
-    : lista.itens.map((c) => itemConversa(c, c.leadId === leadAtivo, filtros, assistente)).join('');
+    : lista.itens.map((c) => itemConversa(c, c.leadId ? c.leadId === leadAtivo : !!contatoAtivo && c.contato === contatoAtivo, filtros, assistente, donoPessoal)).join('');
   return `<aside class="cc-at-col cc-at-lista" aria-label="Conversas">
     <div class="cc-at-alca cc-at-alca-l" data-lado="l" role="separator" aria-orientation="vertical" aria-label="Arrastar para mudar a largura da lista de conversas" tabindex="0"></div>
     <div class="cc-at-lista-topo">
@@ -204,7 +207,7 @@ function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, t
   const daAssistente = m.role === 'assistant';
   const humano = daAssistente && m.autor === 'humano';
   const hora = horaDe(m.timestamp);
-  const quem = humano ? `${m.autorNome || 'Equipe'} · pelo painel` : daAssistente ? rotuloAssistente : nomeCliente;
+  const quem = humano ? `${m.autorNome || 'Equipe'} · ${m.origem === 'celular' ? 'pelo celular' : 'pelo painel'}` : daAssistente ? rotuloAssistente : nomeCliente;
   const canal = mostrarCanal && m.canal ? `<span class="cc-at-msg-canal">${escapeHtml(rotuloCanal(m.canal, rotuloAssistente, donoPessoal))}</span>` : '';
   const falhou = humano && m.status === 'falhou' ? `<div class="cc-at-msg-falha">⚠ não saiu — o WhatsApp recusou</div>`
     : humano && m.status === 'sem_confirmacao' ? `<div class="cc-at-msg-falha">⚠ envio não confirmado — confira no WhatsApp</div>` : '';
@@ -238,6 +241,10 @@ export interface CompositorInput {
   resultado?: string | null;
   /** Trava LGPD: este telefone não pode receber por este canal. */
   lgpdBloqueado?: boolean;
+  /** Parte 2b: trocar o número da resposta (🤖 Eva / 👤 dono). Ausente = só um número. */
+  alternativas?: Array<{ canal: CanalConversa; ativo: boolean; href: string }>;
+  /** Parte 2b: nome do dono do número pessoal ("Junior"). */
+  donoPessoal?: string | null;
   /** Nome da empresa nas respostas prontas (Parte 2c). */
   empresaNome?: string;
   /** Quem está escrevendo (1º nome vai nas respostas prontas). */
@@ -320,13 +327,24 @@ function compositor(lead: LeadDetail, mensagens: MensagemChat[], c: CompositorIn
   if (bloqueioTexto === 'sem_canal' && c.semCanalMotivo) bloqueioTexto = c.semCanalMotivo;
   const bloqueioModelo = c.via === 'waba' ? motivoBloqueio({ ...base, tipo: 'modelo', janelaAberta: !!janela?.aberta }) : 'modelo_so_no_oficial';
   const linkZap = zap ? `<a class="cc-link cc-at-zap-link" href="${escapeHtml(zap)}" target="_blank" rel="noopener">${icone('wa', 'xs')}Abrir no WhatsApp</a>` : '';
-  const numero = `<span class="cc-at-via">sai pelo ${escapeHtml(rotuloCanal(c.canal, assistente))}</span>${linkZap}`;
+  const numero = `<span class="cc-at-via">sai pelo ${escapeHtml(rotuloCanal(c.canal, assistente, c.donoPessoal))}</span>${linkZap}`;
+  // Parte 2b: responder como 🤖 Eva / 👤 dono (padrão = onde o cliente escreveu por último).
+  const trocaNumero = c.alternativas && c.alternativas.length > 1
+    ? `<div class="cc-at-como" role="group" aria-label="Responder por qual número"><span class="cc-at-prontas-t">Responder como</span>${c.alternativas.map((a) =>
+      `<a class="cc-chip${a.ativo ? ' cc-chip-on' : ''}" href="${escapeHtml(a.href)}"${a.ativo ? ' aria-current="true"' : ''}>${escapeHtml(rotuloCanal(a.canal, assistente, c.donoPessoal))}</a>`).join('')}</div>`
+    : '';
+  const campoCanal = c.canal === 'whatsapp_business' ? `<input type="hidden" name="canal" value="whatsapp_business">` : '';
 
   // Nada pode sair (opt-out, sem canal, sem telefone, LGPD): campo desligado com o motivo.
   if (bloqueioTexto && bloqueioTexto !== 'janela_fechada') {
     const link = bloqueioTexto === 'sem_canal' ? ` <a class="cc-link" href="/dashboard/whatsapp">Conectar WhatsApp</a>` : '';
-    return `<footer class="cc-at-compor" id="responder">
+    const trocaBloq = c.alternativas && c.alternativas.length > 1 && bloqueioTexto !== 'opt_out'
+      ? `<div class="cc-at-como" role="group" aria-label="Responder por qual número"><span class="cc-at-prontas-t">Responder como</span>${c.alternativas.map((a) =>
+        `<a class="cc-chip${a.ativo ? ' cc-chip-on' : ''}" href="${escapeHtml(a.href)}">${escapeHtml(rotuloCanal(a.canal, assistente, c.donoPessoal))}</a>`).join('')}</div>`
+      : '';
+    return `<footer class="cc-at-compor cc-at-compor-on" id="responder">
       ${banner}
+      ${trocaBloq}
       <div class="cc-at-compor-campo cc-at-bloq" aria-disabled="true">${icone('alert', 'xs')}<span>${escapeHtml(TEXTO_BLOQUEIO[bloqueioTexto])}${link}</span></div>
       ${abrirZap}
     </footer>`;
@@ -342,7 +360,7 @@ function compositor(lead: LeadDetail, mensagens: MensagemChat[], c: CompositorIn
 
   const formTexto = !bloqueioTexto
     ? `<form class="cc-form cc-at-resp" method="POST" action="/dashboard/leads/${escapeHtml(lead.id)}/responder" data-envio>
-        <input type="hidden" name="chave" value="${escapeHtml(c.chave)}">
+        <input type="hidden" name="chave" value="${escapeHtml(c.chave)}">${campoCanal}
         <textarea name="texto" id="cc-at-texto" rows="2" maxlength="${LIMITE_TEXTO}" required placeholder="Escreva sua resposta…" aria-label="Sua resposta"></textarea>
         <button type="submit" class="cc-btn cc-at-enviar">Enviar</button>
       </form>`
@@ -352,6 +370,7 @@ function compositor(lead: LeadDetail, mensagens: MensagemChat[], c: CompositorIn
 
   return `<footer class="cc-at-compor cc-at-compor-on" id="responder">
       ${banner}
+      ${trocaNumero}
       ${faixaJanela}
       ${prontas}
       ${formTexto}
@@ -734,6 +753,95 @@ export interface AtendimentoInput {
   envio?: CompositorInput;
   /** Parte 2b: nome do dono do número pessoal (só quando quem vê é o dono). */
   donoPessoal?: string | null;
+  /** Parte 2b: conversa do número pessoal com quem AINDA NÃO é lead (sem lead aberto). */
+  contato?: ContatoPessoalTela | null;
+}
+
+export interface ContatoPessoalTela {
+  telefone: string;
+  nome: string | null;
+  mensagens: MensagemChat[];
+  envio?: CompositorInput;
+}
+
+// ---------------------------------------------------------------------------
+// Parte 2b — conversa do número pessoal com quem ainda não é lead
+// ---------------------------------------------------------------------------
+
+function formVirarLead(telefone: string, classe = 'cc-btn cc-btn-sm cc-at-btn-virar'): string {
+  return `<form class="cc-at-virar" method="POST" action="/dashboard/leads/conversas/contato/virar-lead"><input type="hidden" name="telefone" value="${escapeHtml(telefone)}"><button type="submit" class="${classe}">➕ Virar lead</button></form>`;
+}
+
+function colunaChatContato(ct: ContatoPessoalTela, donoPessoal: string | null, assistente: string): string {
+  const nome = ct.nome || formatPhoneBR(ct.telefone);
+  const corpo = ct.mensagens.length === 0
+    ? `<div class="cc-at-vazio">${estadoVazio({ tipo: 'vazio', titulo: 'Nenhuma mensagem ainda.', compacto: true })}</div>`
+    : (() => {
+      let diaAnterior = '';
+      return ct.mensagens.map((m) => {
+        let sep = '';
+        if (m.timestamp && Number.isFinite(Date.parse(m.timestamp))) {
+          const dia = rotuloDia(m.timestamp);
+          if (dia !== diaAnterior) { sep = `<div class="cc-at-dia"><span>${escapeHtml(dia)}</span></div>`; diaAnterior = dia; }
+        }
+        // Aqui quem responde é o dono (nunca a assistente).
+        const mm = m.role === 'assistant' && m.autor !== 'humano' ? { ...m, autor: 'humano' as const, autorNome: m.autorNome ?? donoPessoal } : m;
+        return sep + balao(mm, assistente, nome, false, false, donoPessoal);
+      }).join('');
+    })();
+  const c = ct.envio;
+  const res = c?.resultado ? RESULTADO_ENVIO[c.resultado] : undefined;
+  const banner = res ? aviso({ tom: res.tom === 'ok' ? 'ok' : res.tom === 'erro' ? 'erro' : 'atencao', texto: res.texto }) : '';
+  const zap = linkWhatsApp(ct.telefone);
+  const linkZap = zap ? `<a class="cc-link cc-at-zap-link" href="${escapeHtml(zap)}" target="_blank" rel="noopener">${icone('wa', 'xs')}Abrir no WhatsApp</a>` : '';
+  const prontas = c && c.via === 'evolution' ? chipsProntas(c, ct.nome, false) : '';
+  const compor = c && c.via === 'evolution'
+    ? `<footer class="cc-at-compor cc-at-compor-on" id="responder">
+      ${banner}
+      <div class="cc-at-janela"><span class="cc-at-via">sai pelo ${escapeHtml(rotuloCanal('whatsapp_business', assistente, donoPessoal))}</span>${linkZap}</div>
+      ${prontas}
+      <form class="cc-form cc-at-resp" method="POST" action="/dashboard/leads/conversas/contato/responder" data-envio>
+        <input type="hidden" name="chave" value="${escapeHtml(c.chave)}">
+        <input type="hidden" name="telefone" value="${escapeHtml(ct.telefone)}">
+        <textarea name="texto" id="cc-at-texto" rows="2" maxlength="${LIMITE_TEXTO}" required placeholder="Escreva sua resposta…" aria-label="Sua resposta"></textarea>
+        <button type="submit" class="cc-btn cc-at-enviar">Enviar</button>
+      </form>
+      <p class="cc-at-nota">Conversa do seu WhatsApp: só você vê. A ${escapeHtml(assistente)} não responde aqui.</p>
+    </footer>`
+    : `<footer class="cc-at-compor cc-at-compor-on" id="responder">${banner}<div class="cc-at-compor-campo cc-at-bloq" aria-disabled="true">${icone('alert', 'xs')}<span>Seu WhatsApp não está conectado agora. <a class="cc-link" href="/dashboard/whatsapp/pessoal">Conectar</a></span></div>${linkZap}</footer>`;
+  return `<section class="cc-at-col cc-at-chat" id="conversa" aria-label="Conversa">
+    <nav class="cc-at-abas-cel" aria-label="Navegação do atendimento">
+      <a class="cc-at-voltar" href="/dashboard/leads/conversas" aria-label="Voltar para a lista">${icone('chev', 'sm')}Conversas</a>
+    </nav>
+    <header class="cc-at-chat-topo">
+      ${avatarAt(ct.nome, ct.telefone)}
+      <div class="cc-at-chat-id">
+        <div class="cc-at-chat-nome"><strong>${escapeHtml(nome)}</strong><span class="cc-at-naolead">Não é lead</span><span class="cc-at-canal cc-at-canal-whatsapp_business">${escapeHtml(rotuloCanal('whatsapp_business', assistente, donoPessoal))}</span></div>
+        <div class="cc-at-chat-sub">${escapeHtml(formatPhoneBR(ct.telefone))} · só você vê esta conversa</div>
+      </div>
+      ${formVirarLead(ct.telefone)}
+    </header>
+    <div class="cc-at-msgs" id="cc-at-msgs" role="log" aria-label="Mensagens">${corpo}</div>
+    ${compor}
+  </section>`;
+}
+
+function cockpitContato(ct: ContatoPessoalTela, donoPessoal: string | null): string {
+  return `<aside class="cc-at-col cc-at-cockpit" id="resumo" aria-label="Contato">
+    <div class="cc-at-alca cc-at-alca-r" data-lado="r" role="separator" aria-orientation="vertical" aria-label="Arrastar para mudar a largura do resumo do lead" tabindex="0"></div>
+    <div class="cc-at-idt">
+      ${avatarAt(ct.nome, ct.telefone, true)}
+      <div class="cc-at-idt-txt">
+        <div class="cc-at-nome"><h2>${escapeHtml(ct.nome || formatPhoneBR(ct.telefone))}</h2></div>
+        <div class="cc-at-idt-sub">${icone('phone', 'xs')}<span>${escapeHtml(formatPhoneBR(ct.telefone))}</span></div>
+        <div class="cc-at-pills"><span class="cc-at-naolead">Não é lead</span></div>
+      </div>
+    </div>
+    <section class="cc-at-sec"><h3>Contato do ${escapeHtml(donoPessoal ? `WhatsApp de ${donoPessoal}` : 'seu WhatsApp')}</h3>
+      <p class="cc-at-nada">Esta pessoa falou com você no seu número. Se virar cliente, toque em <strong>Virar lead</strong>: ela entra no funil (com a assistente pausada, porque você já está conversando) e a conversa passa para o lead.</p>
+      <div class="cc-at-virar-bloco">${formVirarLead(ct.telefone, 'cc-btn cc-at-cad')}</div>
+    </section>
+  </aside>`;
 }
 
 export function renderAtendimentoPage(p: AtendimentoInput): string {
@@ -744,7 +852,11 @@ export function renderAtendimentoPage(p: AtendimentoInput): string {
   const mensagens = p.mensagens ?? lead?.conversation_messages?.map((m) => ({ role: m.role, content: m.content, timestamp: m.timestamp ?? null })) ?? [];
 
   const k = p.lista.contagem;
-  const visao = `<div class="cc-chips">${chip({ rotulo: 'Conversas', href: '/dashboard/leads/conversas', ativo: true })}${chip({ rotulo: 'Lista', href: '/dashboard/leads' })}${chip({ rotulo: 'Quadro', href: '/dashboard/leads/kanban' })}</div>`;
+  // P2b: o dono (admin da casa) liga o WhatsApp pessoal dele aqui.
+  const meuZap = !ehTenant && p.user?.isAdmin
+    ? chip({ rotulo: p.donoPessoal ? `👤 ${p.donoPessoal}` : '👤 Conectar meu WhatsApp', href: '/dashboard/whatsapp/pessoal' })
+    : '';
+  const visao = `<div class="cc-chips">${meuZap}${chip({ rotulo: 'Conversas', href: '/dashboard/leads/conversas', ativo: true })}${chip({ rotulo: 'Lista', href: '/dashboard/leads' })}${chip({ rotulo: 'Quadro', href: '/dashboard/leads/kanban' })}</div>`;
   const cabecalho = cabecalhoPagina({
     trilha: [{ rotulo: 'Comercial' }, { rotulo: 'Leads', href: '/dashboard/leads' }, { rotulo: 'Conversas' }],
     titulo: 'Conversas',
@@ -752,12 +864,13 @@ export function renderAtendimentoPage(p: AtendimentoInput): string {
     acoesHtml: visao,
   });
 
-  const body = `<div class="cc-root cc-at${lead ? ' cc-at-com-lead' : ''}">
+  const ct = !lead ? p.contato ?? null : null;
+  const body = `<div class="cc-root cc-at${lead || ct ? ' cc-at-com-lead' : ''}">
     ${cabecalho}
     <div class="cc-at-grade">
-      ${colunaLista(p.lista, p.filtros, lead?.id ?? null, assistente)}
-      ${lead ? colunaChat(lead, mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar')) : chatSemLead()}
-      ${lead ? colunaCockpit(lead, p.servicos ?? [], assistente, assistenteMin) : cockpitSemLead()}
+      ${colunaLista(p.lista, p.filtros, lead?.id ?? null, assistente, ct?.telefone ?? null, p.donoPessoal ?? null)}
+      ${lead ? colunaChat(lead, mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar')) : ct ? colunaChatContato(ct, p.donoPessoal ?? null, assistente) : chatSemLead()}
+      ${lead ? colunaCockpit(lead, p.servicos ?? [], assistente, assistenteMin) : ct ? cockpitContato(ct, p.donoPessoal ?? null) : cockpitSemLead()}
     </div>
     ${lead && !CLIENTE_STATUSES.includes(String(lead.installation_status ?? '')) ? modalFechou(lead) : ''}
     ${lead && lead.status !== 'perdido' ? modalPerdido(lead, assistente) : ''}
@@ -765,10 +878,10 @@ export function renderAtendimentoPage(p: AtendimentoInput): string {
   <style>${CSS_ATENDIMENTO}</style>`;
 
   // Alças das colunas (sempre) + rolar o chat até a última mensagem (com lead).
-  const script = `<script>${SCRIPT_COLUNAS}</script>` + (lead ? `<script>(function(){function fim(){var c=document.getElementById('cc-at-msgs');if(c){c.scrollTop=c.scrollHeight;}}fim();window.addEventListener('load',fim);})();</script>` : '')
-    + (lead && p.envio ? `<script>${SCRIPT_RESPONDER}</script>` : '');
+  const script = `<script>${SCRIPT_COLUNAS}</script>` + (lead || ct ? `<script>(function(){function fim(){var c=document.getElementById('cc-at-msgs');if(c){c.scrollTop=c.scrollHeight;}}fim();window.addEventListener('load',fim);})();</script>` : '')
+    + ((lead && p.envio) || ct?.envio ? `<script>${SCRIPT_RESPONDER}</script>` : '');
 
-  const titulo = lead ? `Conversa: ${lead.name ?? 'Sem nome'}` : 'Conversas';
+  const titulo = lead ? `Conversa: ${lead.name ?? 'Sem nome'}` : ct ? `Conversa: ${ct.nome || formatPhoneBR(ct.telefone)}` : 'Conversas';
   return renderLayout({ active: 'conversas', title: titulo, body: body + script, user: p.user, tailwind: false, dark: temaDaTela(p.user, 'escuro') === 'escuro', largo: true });
 }
 
@@ -923,10 +1036,15 @@ export const CSS_ATENDIMENTO = `
 .cc-at-nota{margin:0;font-size:11px;color:var(--cc-faint);line-height:1.35}
 .cc-at-custo-aviso{color:var(--cc-muted)}
 .cc-at-bloq{gap:8px;color:var(--cc-text-2);border-style:solid}
-.cc-at-prontas{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.cc-at-prontas,.cc-at-como{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.cc-at-como .cc-chip{min-height:26px;padding:3px 10px;font-size:12px}
 .cc-at-prontas-t{font-size:11px;color:var(--cc-muted);margin-right:2px}
 .cc-chip.cc-at-pronta{min-height:26px;padding:3px 10px;font-size:12px;cursor:pointer}
 .cc-chip.cc-at-pronta:disabled{opacity:.45;cursor:not-allowed}
+.cc-at-naolead{font-size:10.5px;color:var(--cc-muted);border:1px dashed var(--cc-line-2);border-radius:99px;padding:0 7px}
+.cc-at-virar{margin:0;flex:none}
+.cc-btn.cc-at-btn-virar{border-color:rgba(251,191,36,.55);color:var(--cc-gold-2);font-weight:700}
+.cc-at-virar-bloco{margin-top:10px}
 .cc-at-canal-whatsapp_business{color:var(--cc-gold-2);border-color:rgba(251,191,36,.45)}
 .cc-at-vazio,.cc-at-chat-vazio{justify-content:center}
 .cc-at-chat-vazio .cc-empty,.cc-at-vazio{margin:auto;max-width:360px;text-align:center}

@@ -82,3 +82,9 @@ export const ENTRA_RESPOSTAS_PRONTAS: MudancaContrato = {
   motivo: 'Junior: respostas prontas (boas-vindas, conta de luz, proposta, visita, financiamento)',
   entra: { seletores: ['[data-pronta]', 'details'], dataAttrs: ['data-pronta'] },
 };
+
+/** Parte 2b: o dono (admin da casa) liga o WhatsApp pessoal dele pela tela de Conversas. */
+export const ENTRA_MEU_WHATSAPP: MudancaContrato = {
+  motivo: 'Junior: o número pessoal dele (QR) entra no painel — atalho "👤 Conectar meu WhatsApp"',
+  entra: { links: ['/dashboard/whatsapp/pessoal'] },
+};

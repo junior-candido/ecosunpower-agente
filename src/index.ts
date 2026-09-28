@@ -323,6 +323,9 @@ async function main() {
   const tenantResolver = criarTenantResolver(supabase.getClient());
   // 107: instância Evolution ↔ empresa (tenant conectado por QR, ex.: Conquista Solar)
   const evolutionTenant = criarEvolutionTenantResolver(supabase.getClient());
+  // Atendimento P2b: instância do WhatsApp PESSOAL do dono (whatsapp_numeros_pessoais, migration 139).
+  // Mensagem dessa instância só é GRAVADA (só o dono vê) — a Eva nunca responde lá.
+  const numerosPessoais = (await import('./modules/numero-pessoal.js')).criarResolverNumeroPessoal(supabase.getClient());
 
   // [Corretor] Corretor de português compartilhado (1 cliente Anthropic) injetado
   // nos assistants que recebem texto livre do Junior (cases, fechamento). Corrige
@@ -7786,6 +7789,17 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     const instanciaOrigem = typeof (req.body as { instance?: unknown })?.instance === 'string'
       ? (req.body as { instance: string }).instance
       : undefined;
+    // Atendimento P2b — NÚMERO PESSOAL do dono (QR). Vem ANTES de tudo da Eva
+    // (grupo, fila, lead novo, takeover): ali ninguém responde por ele; a
+    // mensagem (dele ou do contato) só fica gravada pra ele ver no painel.
+    const pessoal = await numerosPessoais.porInstancia(instanciaOrigem);
+    if (pessoal) {
+      const { receberNoNumeroPessoal } = await import('./modules/numero-pessoal.js');
+      const r = await receberNoNumeroPessoal(supabase.getClient(), pessoal, parsed);
+      res.status(200).json({ status: `numero_pessoal_${r}` });
+      return;
+    }
+
     const companyIdDaInstancia = await evolutionTenant.companyDaInstancia(instanciaOrigem);
     if (companyIdDaInstancia) {
       console.log(`[evolution] 📥 instância "${instanciaOrigem}" → empresa ${companyIdDaInstancia.slice(0, 8)} (${parsed.from}, ${parsed.type})`);
@@ -9188,6 +9202,11 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     engineerPhone: config.engineerPhone,
     // Atendimento P2: "Devolver para a Eva" também limpa a pausa curta (Redis) do telefone.
     retomarTakeover: (telefone) => takeover.resumeFor(telefone),
+    // Atendimento P2b: responder pelo WhatsApp PESSOAL do dono (instância QR dele) — sem
+    // passar pelo sendText da Eva (lá é outro número, outra marca, outra trava).
+    enviarPessoal: (instancia, to, text) => comEmpresaDe(ECOSUN_COMPANY_ID, () => comCanal({ companyId: ECOSUN_COMPANY_ID, evolutionInstance: instancia }, () => evolution.sendText(to, text))),
+    evolutionInstanciaEva: config.evolutionInstance,
+    evolutionWebhookUrl: config.appBaseUrl ? `${config.appBaseUrl.replace(/\/$/, '')}/webhook?token=${encodeURIComponent(config.webhookToken)}` : undefined,
     infinitepayHandle: config.infinitepayHandle,
     calculadoraUrl: config.calculadoraUrl,
     evolutionConexao: { baseUrl: config.evolutionApiUrl, apiKey: config.evolutionApiKey, instanciaDaEmpresa: (cid) => evolutionTenant.instanciaDaEmpresa(cid) },

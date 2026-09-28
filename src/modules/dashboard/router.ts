@@ -147,6 +147,7 @@ import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B
 import { criarTravaLeadDaEmpresa } from './trava-lead-empresa.js';
 import { criarTravaPropostaDaEmpresa, leadIdConferido } from './trava-proposta-empresa.js';
 import { criarRotasAtendimento } from './atendimento-rotas.js';
+import { criarRotasNumeroPessoal } from './numero-pessoal-rotas.js';
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
 // didApply=false: prévia + botão pra gravar. didApply=true: resultado da gravação.
@@ -220,6 +221,12 @@ export function createDashboardRouter(
     engineerPhone?: string; // telefone do Junior — recebe o aviso "cliente fechou"
     // Atendimento P2: "Devolver para a Eva" limpa a pausa curta do Redis (takeover) do telefone.
     retomarTakeover?: (telefone: string) => Promise<void>;
+    // Atendimento P2b: WhatsApp PESSOAL do dono (QR/Evolution) — envio pela instância dele.
+    enviarPessoal?: (instancia: string, to: string, text: string) => Promise<{ messageId?: string } | void>;
+    // EVOLUTION_INSTANCE (a da Eva): nunca pode virar número pessoal.
+    evolutionInstanciaEva?: string;
+    // URL do webhook desta plataforma (com token) pra apontar a instância pessoal nova.
+    evolutionWebhookUrl?: string;
     infinitepayHandle?: string; // InfiniteTag pra gerar link de cobrança (peça 1 pagamento)
     appBaseUrl?: string;        // URL pública do app (pro webhook_url da InfinitePay)
     calculadoraUrl?: string;        // ponte de acesso da calculadora (fatia 3a)
@@ -275,6 +282,7 @@ export function createDashboardRouter(
     instanciaDaEmpresa: async (cid) => (await options.evolutionConexao?.instanciaDaEmpresa(cid).catch(() => undefined)) ?? null,
     engineerPhone: options.engineerPhone ?? '',
     retomarTakeover: options.retomarTakeover,
+    enviarPessoal: options.enviarPessoal,
     copiarParaMemoria: async ({ leadId, companyId, texto, painelId }) => {
       // Memória curta da Eva: quando ela voltar, sabe o que a equipe disse.
       const conv = await supabaseService.getOrCreateConversation(leadId, companyId);
@@ -285,6 +293,14 @@ export function createDashboardRouter(
         message_count: (conv.message_count ?? 0) + 1,
       });
     },
+  });
+
+  // Atendimento P2b — "Meu WhatsApp no painel" (QR do número pessoal do dono, só EcoSun).
+  const rotasNumeroPessoal = criarRotasNumeroPessoal({
+    supabase,
+    evolution: options.evolutionConexao ? { baseUrl: options.evolutionConexao.baseUrl, apiKey: options.evolutionConexao.apiKey } : undefined,
+    instanciaDaEva: options.evolutionInstanciaEva ?? '',
+    webhookUrl: options.evolutionWebhookUrl,
   });
 
   // Parser dos forms internos (form-urlencoded). Limite maior porque a tela de
@@ -1558,6 +1574,14 @@ b.onclick=async function(){
     const inst = await options.evolutionConexao.instanciaDaEmpresa(cid).catch(() => undefined);
     return inst ?? null;
   }
+  // P2b — "Meu WhatsApp no painel": QR do número PESSOAL do dono (só EcoSun; 404 pro tenant).
+  router.get('/whatsapp/pessoal', exigir('usuarios', 'administrar'), rotasNumeroPessoal.pagina);
+  router.get('/whatsapp/pessoal/estado.json', exigir('usuarios', 'administrar'), rotasNumeroPessoal.estado);
+  router.get('/whatsapp/pessoal/qr.json', exigir('usuarios', 'administrar'), rotasNumeroPessoal.qr);
+  router.post('/whatsapp/pessoal/criar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.criar);
+  router.post('/whatsapp/pessoal/desligar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.desligar);
+  router.post('/whatsapp/pessoal/religar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.religar);
+
   router.get('/whatsapp', exigir('usuarios', 'administrar'), async (req: AuthedRequest, res) => {
     try {
       const { renderWhatsappPage } = await import('./whatsapp-views.js');
@@ -2404,9 +2428,13 @@ b.onclick=async function(){
       const { listarConversas, lerFiltros } = await import('./conversas-queries.js');
       const { renderAtendimentoPage } = await import('./atendimento-views.js');
       const filtros = lerFiltros(req.query as Record<string, unknown>);
+      // P2b: ?contato= abre a conversa do número PESSOAL com quem ainda não é lead (só o dono vê).
+      const ct = req.query.contato ? await rotasAtendimento.contatoDaTela(req as AuthedRequest) : null;
+      if (ct && 'leadId' in ct) return res.redirect(`/dashboard/leads/${ct.leadId}?canal=whatsapp_business`);
       // company_id sai SÓ da sessão (dentro de listarConversas, .eq explícito).
-      const lista = await listarConversas(bancoDoOperador(req as AuthedRequest, supabase), viewer, filtros);
-      res.type('text/html').send(renderAtendimentoPage({ user: viewer, lista, filtros, lead: null }));
+      const lista = await listarConversas(bancoDoOperador(req as AuthedRequest, supabase), viewer, filtros, supabase);
+      const donoPessoal = ct?.donoPessoal ?? await rotasAtendimento.nomeDoDonoPessoal(req as AuthedRequest);
+      res.type('text/html').send(renderAtendimentoPage({ user: viewer, lista, filtros, lead: null, contato: ct?.contato ?? null, donoPessoal }));
     } catch (err) {
       console.error('[dashboard/leads/conversas]', err);
       res.status(500).send(`<h2>Erro ao carregar conversas</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -2463,13 +2491,15 @@ b.onclick=async function(){
       const filtros = lerFiltros(req.query as Record<string, unknown>);
       // Parte 2: o chat junta a memória da Eva com o histórico do painel
       // (envios com autor/canal + "assumiu"/"devolveu") e traz o campo de resposta.
-      const [servicosDoCliente, lista, mensagens, envio] = await Promise.all([
+      const [servicosDoCliente, lista, mensagens, donoPessoal] = await Promise.all([
         servicosDoLead(supabase, id).catch(() => []),
-        listarConversas(db, viewer, filtros),
+        listarConversas(db, viewer, filtros, supabase),
         historicoDoLead(db, id, viewer.companyId, viewer.id, supabase).catch(() => undefined),
-        can(viewer, 'leads', 'editar') ? rotasAtendimento.envioDaTela(req as AuthedRequest, lead) : Promise.resolve(undefined),
+        rotasAtendimento.nomeDoDonoPessoal(req as AuthedRequest),
       ]);
-      res.send(renderLeadDetailPage(lead, [], String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer, { lista, filtros, mensagens, envio }));
+      // Padrão da resposta = o número em que o cliente escreveu por último (P2b).
+      const envio = can(viewer, 'leads', 'editar') ? await rotasAtendimento.envioDaTela(req as AuthedRequest, lead, mensagens ?? []) : undefined;
+      res.send(renderLeadDetailPage(lead, [], String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer, { lista, filtros, mensagens, envio, donoPessoal }));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);
       res.status(500).send(`<h2>Erro ao carregar lead</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -2611,6 +2641,10 @@ b.onclick=async function(){
   // Responder o WhatsApp pelo painel (texto na janela de 24 h / modelo aprovado fora dela).
   router.post('/leads/:id/responder', exigir('leads', 'editar'), rotasAtendimento.responder);
   router.post('/leads/:id/responder-modelo', exigir('leads', 'editar'), rotasAtendimento.responderModelo);
+
+  // P2b — número PESSOAL do dono: responder quem ainda não é lead e "virar lead".
+  router.post('/leads/conversas/contato/responder', exigir('leads', 'editar'), rotasAtendimento.responderContato);
+  router.post('/leads/conversas/contato/virar-lead', exigir('leads', 'criar'), rotasAtendimento.virarLeadDoContato);
 
   // Cancela TODOS os toques pendentes de cadencia deste lead.
   router.post('/leads/:id/cancel-cadence', async (req: Request, res: Response) => {
