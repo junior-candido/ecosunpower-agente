@@ -1,0 +1,1715 @@
+{
+  "detalhe-mes": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/backfill",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/sync",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/clientes/lead-1",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/dados",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/editar",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=ano&ref=2026-09-28",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=dia&ref=2026-09-28",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=mes&ref=2026-08-28",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=mes&ref=2026-09-28",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "graficoDia",
+      "graficoMensal",
+      "graficoPeriodo"
+    ],
+    "idsAusentes": [
+      "graficoDia"
+    ],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'Vai puxar TODO o histórico desde a instalação do sistema (até 10 anos se não tiver data cadastrada). Pode demorar 30s-2min dependendo do volume. Continuar?'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js",
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "detalhe-dia": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/backfill",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/sync",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/dados",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/editar",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=ano&ref=2026-09-28",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=dia&ref=2026-09-27",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=dia&ref=2026-09-28",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=mes&ref=2026-09-28",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "graficoDia",
+      "graficoMensal",
+      "graficoPeriodo"
+    ],
+    "idsAusentes": [
+      "graficoPeriodo"
+    ],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'Vai puxar TODO o histórico desde a instalação do sistema (até 10 anos se não tiver data cadastrada). Pode demorar 30s-2min dependendo do volume. Continuar?'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js",
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "detalhe-dia-sem-curva": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/backfill",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/sync",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/dados",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/editar",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=ano&ref=2026-09-28",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=dia&ref=2026-08-28",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=dia&ref=2026-09-28",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=mes&ref=2026-09-28",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "graficoDia",
+      "graficoMensal",
+      "graficoPeriodo"
+    ],
+    "idsAusentes": [
+      "graficoDia",
+      "graficoPeriodo"
+    ],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'Vai puxar TODO o histórico desde a instalação do sistema (até 10 anos se não tiver data cadastrada). Pode demorar 30s-2min dependendo do volume. Continuar?'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js",
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "detalhe-sem-dado": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/backfill",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/sync",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/dados",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/editar",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=ano&ref=2026-09-28",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=dia&ref=2026-09-28",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=mes&ref=2026-08-28",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=mes&ref=2026-09-28",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "graficoDia",
+      "graficoMensal",
+      "graficoPeriodo"
+    ],
+    "idsAusentes": [
+      "graficoDia",
+      "graficoMensal",
+      "graficoPeriodo"
+    ],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'Vai puxar TODO o histórico desde a instalação do sistema (até 10 anos se não tiver data cadastrada). Pode demorar 30s-2min dependendo do volume. Continuar?'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js",
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "detalhe-tenant": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/backfill",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/sync",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/dados",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/editar",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=ano&ref=2026-09-28",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=dia&ref=2026-09-28",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=mes&ref=2026-08-28",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222?vista=mes&ref=2026-09-28",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "graficoDia",
+      "graficoMensal",
+      "graficoPeriodo"
+    ],
+    "idsAusentes": [
+      "graficoDia"
+    ],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'Vai puxar TODO o histórico desde a instalação do sistema (até 10 anos se não tiver data cadastrada). Pode demorar 30s-2min dependendo do volume. Continuar?'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js",
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "dados": {
+    "formularios": [
+      {
+        "method": "GET",
+        "action": "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/dados",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "device",
+            "type": "select"
+          },
+          {
+            "name": "periodo",
+            "type": "select"
+          },
+          {
+            "name": "ponto",
+            "type": "select"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "form-telemetria",
+      "graficoTelemetria"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js",
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "dados-vazio": {
+    "formularios": [
+      {
+        "method": "GET",
+        "action": "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/dados",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "device",
+            "type": "select"
+          },
+          {
+            "name": "periodo",
+            "type": "select"
+          },
+          {
+            "name": "ponto",
+            "type": "select"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "form-telemetria"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "editar": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/editar",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "apelido",
+            "type": "text"
+          },
+          {
+            "name": "ativo",
+            "type": "select"
+          },
+          {
+            "name": "cidade",
+            "type": "text"
+          },
+          {
+            "name": "data_instalacao",
+            "type": "date"
+          },
+          {
+            "name": "desvincular",
+            "type": "button:submit=1"
+          },
+          {
+            "name": "inversor_modelo",
+            "type": "text"
+          },
+          {
+            "name": "lead_id",
+            "type": "hidden"
+          },
+          {
+            "name": "novo_name",
+            "type": "text"
+          },
+          {
+            "name": "novo_phone",
+            "type": "text"
+          },
+          {
+            "name": "observacoes",
+            "type": "textarea"
+          },
+          {
+            "name": "painel_marca",
+            "type": "text"
+          },
+          {
+            "name": "painel_modelo",
+            "type": "text"
+          },
+          {
+            "name": "potencia_kwp",
+            "type": "number"
+          },
+          {
+            "name": "qtd_paineis",
+            "type": "number"
+          },
+          {
+            "name": "sombreamento_pct",
+            "type": "number"
+          },
+          {
+            "name": "telhado_inclinacao_graus",
+            "type": "number"
+          },
+          {
+            "name": "telhado_orientacao",
+            "type": "select"
+          },
+          {
+            "name": "telhado_tipo",
+            "type": "select"
+          },
+          {
+            "name": "uf",
+            "type": "text"
+          }
+        ]
+      }
+    ],
+    "fetches": [
+      "'/dashboard/api/clientes/search?q='+encodeURIComponent(q)"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/clientes/lead-1",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "prop-busca",
+      "prop-drop",
+      "prop-escolhido",
+      "prop-lead-id"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      "[data-id]"
+    ],
+    "dataAttrs": [
+      "data-id"
+    ],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "editar-sem-dono": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222/editar",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "apelido",
+            "type": "text"
+          },
+          {
+            "name": "ativo",
+            "type": "select"
+          },
+          {
+            "name": "cidade",
+            "type": "text"
+          },
+          {
+            "name": "data_instalacao",
+            "type": "date"
+          },
+          {
+            "name": "inversor_modelo",
+            "type": "text"
+          },
+          {
+            "name": "lead_id",
+            "type": "hidden"
+          },
+          {
+            "name": "novo_name",
+            "type": "text"
+          },
+          {
+            "name": "novo_phone",
+            "type": "text"
+          },
+          {
+            "name": "observacoes",
+            "type": "textarea"
+          },
+          {
+            "name": "painel_marca",
+            "type": "text"
+          },
+          {
+            "name": "painel_modelo",
+            "type": "text"
+          },
+          {
+            "name": "potencia_kwp",
+            "type": "number"
+          },
+          {
+            "name": "qtd_paineis",
+            "type": "number"
+          },
+          {
+            "name": "sombreamento_pct",
+            "type": "number"
+          },
+          {
+            "name": "telhado_inclinacao_graus",
+            "type": "number"
+          },
+          {
+            "name": "telhado_orientacao",
+            "type": "select"
+          },
+          {
+            "name": "telhado_tipo",
+            "type": "select"
+          },
+          {
+            "name": "uf",
+            "type": "text"
+          }
+        ]
+      }
+    ],
+    "fetches": [
+      "'/dashboard/api/clientes/search?q='+encodeURIComponent(q)"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/monitoramento/99999999-2222-4222-8222-222222222222",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "prop-busca",
+      "prop-drop",
+      "prop-escolhido",
+      "prop-lead-id"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      "[data-id]"
+    ],
+    "dataAttrs": [
+      "data-id"
+    ],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "importar": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/importar",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "abb_password",
+            "type": "password"
+          },
+          {
+            "name": "api_key",
+            "type": "text"
+          },
+          {
+            "name": "apiKey",
+            "type": "text"
+          },
+          {
+            "name": "appId",
+            "type": "text"
+          },
+          {
+            "name": "appSecret",
+            "type": "password"
+          },
+          {
+            "name": "companyId",
+            "type": "text"
+          },
+          {
+            "name": "dataCenter",
+            "type": "select"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "foxess_api_key",
+            "type": "text"
+          },
+          {
+            "name": "goodwe_email",
+            "type": "email"
+          },
+          {
+            "name": "goodwe_password",
+            "type": "password"
+          },
+          {
+            "name": "jwt",
+            "type": "textarea"
+          },
+          {
+            "name": "marca",
+            "type": "select"
+          },
+          {
+            "name": "nep_email",
+            "type": "email"
+          },
+          {
+            "name": "nep_password",
+            "type": "password"
+          },
+          {
+            "name": "password",
+            "type": "password"
+          },
+          {
+            "name": "saj_password",
+            "type": "password"
+          },
+          {
+            "name": "saj_username",
+            "type": "text"
+          },
+          {
+            "name": "solis_api_url",
+            "type": "text"
+          },
+          {
+            "name": "solis_key_id",
+            "type": "text"
+          },
+          {
+            "name": "solis_key_secret",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_app_id",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_appkey",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_code",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_redirect",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_secret",
+            "type": "text"
+          },
+          {
+            "name": "userId",
+            "type": "email"
+          }
+        ]
+      }
+    ],
+    "fetches": [
+      "'/dashboard/monitoramento/buscar-empresas-deye'"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "deye-buscar-empresas",
+      "deye-companyId",
+      "deye-empresas-result",
+      "marca",
+      "sungrow-auth-link",
+      "sungrow_redirect"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      "[name=\"'+name+'\"]",
+      "button[data-id]"
+    ],
+    "dataAttrs": [
+      "data-id"
+    ],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "importar-erro": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/importar",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "abb_password",
+            "type": "password"
+          },
+          {
+            "name": "api_key",
+            "type": "text"
+          },
+          {
+            "name": "apiKey",
+            "type": "text"
+          },
+          {
+            "name": "appId",
+            "type": "text"
+          },
+          {
+            "name": "appSecret",
+            "type": "password"
+          },
+          {
+            "name": "companyId",
+            "type": "text"
+          },
+          {
+            "name": "dataCenter",
+            "type": "select"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "foxess_api_key",
+            "type": "text"
+          },
+          {
+            "name": "goodwe_email",
+            "type": "email"
+          },
+          {
+            "name": "goodwe_password",
+            "type": "password"
+          },
+          {
+            "name": "jwt",
+            "type": "textarea"
+          },
+          {
+            "name": "marca",
+            "type": "select"
+          },
+          {
+            "name": "nep_email",
+            "type": "email"
+          },
+          {
+            "name": "nep_password",
+            "type": "password"
+          },
+          {
+            "name": "password",
+            "type": "password"
+          },
+          {
+            "name": "saj_password",
+            "type": "password"
+          },
+          {
+            "name": "saj_username",
+            "type": "text"
+          },
+          {
+            "name": "solis_api_url",
+            "type": "text"
+          },
+          {
+            "name": "solis_key_id",
+            "type": "text"
+          },
+          {
+            "name": "solis_key_secret",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_app_id",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_appkey",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_code",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_redirect",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_secret",
+            "type": "text"
+          },
+          {
+            "name": "userId",
+            "type": "email"
+          }
+        ]
+      }
+    ],
+    "fetches": [
+      "'/dashboard/monitoramento/buscar-empresas-deye'"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "deye-buscar-empresas",
+      "deye-companyId",
+      "deye-empresas-result",
+      "marca",
+      "sungrow-auth-link",
+      "sungrow_redirect"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      "[name=\"'+name+'\"]",
+      "button[data-id]"
+    ],
+    "dataAttrs": [
+      "data-id"
+    ],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "importar-sucesso": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/importar",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "abb_password",
+            "type": "password"
+          },
+          {
+            "name": "api_key",
+            "type": "text"
+          },
+          {
+            "name": "apiKey",
+            "type": "text"
+          },
+          {
+            "name": "appId",
+            "type": "text"
+          },
+          {
+            "name": "appSecret",
+            "type": "password"
+          },
+          {
+            "name": "companyId",
+            "type": "text"
+          },
+          {
+            "name": "dataCenter",
+            "type": "select"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "foxess_api_key",
+            "type": "text"
+          },
+          {
+            "name": "goodwe_email",
+            "type": "email"
+          },
+          {
+            "name": "goodwe_password",
+            "type": "password"
+          },
+          {
+            "name": "jwt",
+            "type": "textarea"
+          },
+          {
+            "name": "marca",
+            "type": "select"
+          },
+          {
+            "name": "nep_email",
+            "type": "email"
+          },
+          {
+            "name": "nep_password",
+            "type": "password"
+          },
+          {
+            "name": "password",
+            "type": "password"
+          },
+          {
+            "name": "saj_password",
+            "type": "password"
+          },
+          {
+            "name": "saj_username",
+            "type": "text"
+          },
+          {
+            "name": "solis_api_url",
+            "type": "text"
+          },
+          {
+            "name": "solis_key_id",
+            "type": "text"
+          },
+          {
+            "name": "solis_key_secret",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_app_id",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_appkey",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_code",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_redirect",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_secret",
+            "type": "text"
+          },
+          {
+            "name": "userId",
+            "type": "email"
+          }
+        ]
+      }
+    ],
+    "fetches": [
+      "'/dashboard/monitoramento/buscar-empresas-deye'"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "deye-buscar-empresas",
+      "deye-companyId",
+      "deye-empresas-result",
+      "marca",
+      "sungrow-auth-link",
+      "sungrow_redirect"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      "[name=\"'+name+'\"]",
+      "button[data-id]"
+    ],
+    "dataAttrs": [
+      "data-id"
+    ],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "importar-tenant": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/monitoramento/importar",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "abb_password",
+            "type": "password"
+          },
+          {
+            "name": "api_key",
+            "type": "text"
+          },
+          {
+            "name": "apiKey",
+            "type": "text"
+          },
+          {
+            "name": "appId",
+            "type": "text"
+          },
+          {
+            "name": "appSecret",
+            "type": "password"
+          },
+          {
+            "name": "companyId",
+            "type": "text"
+          },
+          {
+            "name": "dataCenter",
+            "type": "select"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "foxess_api_key",
+            "type": "text"
+          },
+          {
+            "name": "goodwe_email",
+            "type": "email"
+          },
+          {
+            "name": "goodwe_password",
+            "type": "password"
+          },
+          {
+            "name": "jwt",
+            "type": "textarea"
+          },
+          {
+            "name": "marca",
+            "type": "select"
+          },
+          {
+            "name": "nep_email",
+            "type": "email"
+          },
+          {
+            "name": "nep_password",
+            "type": "password"
+          },
+          {
+            "name": "password",
+            "type": "password"
+          },
+          {
+            "name": "saj_password",
+            "type": "password"
+          },
+          {
+            "name": "saj_username",
+            "type": "text"
+          },
+          {
+            "name": "solis_api_url",
+            "type": "text"
+          },
+          {
+            "name": "solis_key_id",
+            "type": "text"
+          },
+          {
+            "name": "solis_key_secret",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_app_id",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_appkey",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_code",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_redirect",
+            "type": "text"
+          },
+          {
+            "name": "sungrow_secret",
+            "type": "text"
+          },
+          {
+            "name": "userId",
+            "type": "email"
+          }
+        ]
+      }
+    ],
+    "fetches": [
+      "'/dashboard/monitoramento/buscar-empresas-deye'"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "deye-buscar-empresas",
+      "deye-companyId",
+      "deye-empresas-result",
+      "marca",
+      "sungrow-auth-link",
+      "sungrow_redirect"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      "[name=\"'+name+'\"]",
+      "button[data-id]"
+    ],
+    "dataAttrs": [
+      "data-id"
+    ],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  }
+}
