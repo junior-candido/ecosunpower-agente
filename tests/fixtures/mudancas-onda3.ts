@@ -19,6 +19,8 @@ export const MUDANCAS_R13: Record<string, MudancaContrato[]> = {};
 // ════════════════════════════════════════════════════════════════════════
 // R14 — Serviços de campo (painel interno)
 // ════════════════════════════════════════════════════════════════════════
+/** Por caso de tests/fixtures/casos-servicos.ts: trocas deliberadas além de TELAS_LEVES. */
+export const MUDANCAS_R14: Record<string, MudancaContrato[]> = {};
 
 
 // ════════════════════════════════════════════════════════════════════════
