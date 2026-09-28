@@ -9,6 +9,7 @@ const M: MedidorRow = {
   id: 'm1', company_id: 'empresa-X', lead_id: null, sistema_id: 's1', apelido: 'A', device_id: 'd', modo_coleta: 'push',
   perfil: 'triphase', canais: { rede: 2 }, tensao_nominal_v: 220, api_credentials_cifrado: null, ativo: true, status: 'ok',
   status_desde: null, ultima_leitura_em: null, ultimo_erro: null,
+  nuvem_ok: null, nuvem_desde: null, nuvem_avisado_em: null, aviso_dia: null, avisos_no_dia: 0,
 };
 
 function clienteFalso(respostaLinhas: unknown[] = []) {

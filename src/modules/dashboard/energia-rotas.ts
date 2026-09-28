@@ -174,10 +174,11 @@ export function rotaSalvarMedidor(supabase: SupabaseClient, d: DepsEnergia = {})
     };
     if (!v.ok) { refazer(v.erros); return; }
     const dados: Record<string, unknown> = { ...v.dados };
-    // Chave nova ou cadastro corrigido: o medidor volta a ser vigiado do zero.
-    if (dados.api_credentials_cifrado || m.status === 'erro' || m.status === 'credencial_invalida') {
-      dados.status = m.ultima_leitura_em ? 'ok' : 'aguardando';
-      dados.status_desde = r.agora().toISOString();
+    // Chave da nuvem nova: a próxima coleta testa de novo (e avisa de novo se recusar).
+    if (dados.api_credentials_cifrado) {
+      dados.nuvem_ok = null;
+      dados.nuvem_desde = null;
+      dados.nuvem_avisado_em = null;
       dados.ultimo_erro = null;
     }
     const ok = await atualizarMedidor(db, user.companyId, m.id, dados);

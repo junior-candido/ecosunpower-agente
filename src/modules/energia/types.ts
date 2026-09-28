@@ -12,7 +12,8 @@ import type { CredShelly } from './credenciais.js';
 export type FabricanteMedidor = 'shelly';
 export type PerfilMedidor = 'triphase' | 'monophase';
 export type ModoColeta = 'push' | 'nuvem' | 'push_nuvem';
-export type StatusMedidor = 'aguardando' | 'ok' | 'mudo' | 'erro' | 'credencial_invalida';
+/** Chegada de dado. A chave da nuvem tem campos próprios (nuvem_ok), fora daqui. */
+export type StatusMedidor = 'aguardando' | 'ok' | 'mudo';
 
 export interface LeituraMedidor {
   tensao: number | null;

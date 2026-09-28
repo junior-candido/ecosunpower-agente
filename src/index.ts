@@ -10989,24 +10989,18 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
       const { dentroDaJanela } = await import('./modules/monitoring/proactive-alerts/janela.js');
       const { lerModulosAtivos } = await import('./modules/dashboard/modulos-contratados.js');
       const { horaBrt } = await import('./modules/energia/tempo.js');
+      const { criarAvisoMedidor } = await import('./modules/energia/aviso-medidor.js');
       const energiaService = new EnergiaService(criarEnergiaRepo(supabase.getClient()));
 
-      // Aviso do vigia: só pra empresa que contratou o módulo "medicao", pro
-      // admin DELA (destinoAdminDaEmpresa — trava LGPD entre controladores).
-      const avisarMedidor = async (m: { company_id: string }, texto: string): Promise<boolean> => {
-        const ativos = await lerModulosAtivos(supabase.getClient(), m.company_id);
-        if (!ativos.has('medicao')) return false;
-        return comEmpresaDe(m.company_id, async () => {
-          const to = destinoAdminDaEmpresa(config.engineerPhone);
-          if (!to) return false;
-          if (process.env.PROACTIVE_ALERTS_DRY_RUN === '1') {
-            console.log('[energia] vigia (dry-run): aviso não enviado');
-            return false;
-          }
-          await sendAdminWithButtons({ metaWaba, sendText }, to, texto, []);
-          return true;
-        });
-      };
+      // Aviso do vigia ("parou", "voltou", "começou", chave da nuvem recusada):
+      // só pra empresa com o módulo "medicao", pro admin DELA (nunca o zap do
+      // dono da EcoSun pra medidor de tenant). Ver aviso-medidor.ts.
+      const avisarMedidor = criarAvisoMedidor({
+        modulosAtivos: (cid) => lerModulosAtivos(supabase.getClient(), cid),
+        engineerPhone: config.engineerPhone,
+        enviar: async (to, texto) => { await sendAdminWithButtons({ metaWaba, sendText }, to, texto, []); },
+        dryRun: () => process.env.PROACTIVE_ALERTS_DRY_RUN === '1',
+      });
 
       const agregarEnergia = async () => {
         try {

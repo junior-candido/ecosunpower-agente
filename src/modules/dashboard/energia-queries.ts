@@ -42,6 +42,8 @@ export interface MedidorTela {
   status_desde: string | null;
   ultima_leitura_em: string | null;
   ultimo_erro: string | null;
+  /** Chave da nuvem: null = não testada, false = recusada/não abre. */
+  nuvem_ok: boolean | null;
   consentimento_em: string | null;
   ativo: boolean;
   /** Fica no servidor (mascarar/testar). Nunca vai pro HTML. */
@@ -49,7 +51,7 @@ export interface MedidorTela {
   tem_token: boolean;
 }
 
-const COLUNAS = 'id, apelido, device_id, modelo, modo_coleta, perfil, canais, ligacao, tensao_nominal_v, concessionaria, uc_instalacao, codigo_cliente, grupo_gd, sistema_id, lead_id, status, status_desde, ultima_leitura_em, ultimo_erro, consentimento_em, ativo, api_credentials_cifrado, token_ingest_hash';
+const COLUNAS = 'id, apelido, device_id, modelo, modo_coleta, perfil, canais, ligacao, tensao_nominal_v, concessionaria, uc_instalacao, codigo_cliente, grupo_gd, sistema_id, lead_id, status, status_desde, ultima_leitura_em, ultimo_erro, nuvem_ok, consentimento_em, ativo, api_credentials_cifrado, token_ingest_hash';
 
 function paraTela(r: Record<string, unknown>): MedidorTela {
   const { token_ingest_hash, ...resto } = r;

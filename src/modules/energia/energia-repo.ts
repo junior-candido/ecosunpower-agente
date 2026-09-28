@@ -15,7 +15,7 @@ const PAGINA = 1000;
 const LIMITE_PAGINAS = 60; // 60 mil linhas por chamada: teto de segurança (1 dia = 1.440)
 
 export const COLUNAS_MEDIDOR =
-  'id, company_id, lead_id, sistema_id, apelido, device_id, modo_coleta, perfil, canais, tensao_nominal_v, api_credentials_cifrado, ativo, status, status_desde, ultima_leitura_em, ultimo_erro';
+  'id, company_id, lead_id, sistema_id, apelido, device_id, modo_coleta, perfil, canais, tensao_nominal_v, api_credentials_cifrado, ativo, status, status_desde, ultima_leitura_em, ultimo_erro, nuvem_ok, nuvem_desde, nuvem_avisado_em, aviso_dia, avisos_no_dia';
 
 type Erro = { code?: string; message: string } | null;
 function falhou(onde: string, error: Erro): never {

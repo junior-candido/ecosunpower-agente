@@ -93,6 +93,14 @@ describe('lista e isolamento', () => {
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
+  it('chave da nuvem recusada aparece à parte do "Recebendo dado" do script', async () => {
+    const db = dbFalso({ medidores_energia: [{ ...MEDIDOR, modo_coleta: 'push_nuvem', status: 'ok', nuvem_ok: false }] });
+    const res = resFalso();
+    await rotaListaEnergia(db, deps())(req(junior), res as unknown as Response);
+    expect(html(res)).toContain('Recebendo dado');
+    expect(html(res)).toContain('Chave da nuvem recusada');
+  });
+
   it('migrations não aplicadas: a tela explica, não quebra', async () => {
     const db = dbFalso({ medidores_energia: { error: { code: '42P01', message: 'relation "medidores_energia" does not exist' } } });
     const res = resFalso();
@@ -216,6 +224,16 @@ describe('cadastro', () => {
     const h = html(res);
     expect(h).toContain('••••9z8y');
     expect(h).not.toContain('CHAVE-QUE-NAO-PODE-VAZAR');
+  });
+
+  it('edição com chave nova da nuvem: zera o problema da chave (a próxima coleta testa de novo)', async () => {
+    const db = dbFalso({ medidores_energia: [{ ...MEDIDOR, modo_coleta: 'push_nuvem', nuvem_ok: false }], sistemas_clientes: [] });
+    const res = resFalso();
+    await rotaSalvarMedidor(db, deps())(req(junior, { params: { id: MID }, body: { apelido: 'Casa', device_id: '007007422d90', perfil: 'triphase', canal: '2', modo_coleta: 'push_nuvem', server_uri: 'shelly-77-eu.shelly.cloud', auth_key: 'NOVA-CHAVE', ativo: 'on' } }), res as unknown as Response);
+    const up = db.chamadas.find((c) => c.op === 'update')!.payload as Record<string, unknown>;
+    expect(up).toMatchObject({ nuvem_ok: null, nuvem_avisado_em: null, ultimo_erro: null });
+    expect(up).not.toHaveProperty('status');
+    expect(JSON.stringify(up)).not.toContain('NOVA-CHAVE');
   });
 
   it('edição de medidor de outra empresa → 404, nada gravado', async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { EnergiaService, type EnergiaDb, type MedidorRow } from '../src/modules/energia/energia-service.js';
+import { EnergiaService, type EnergiaDb, type MedidorRow, type ResultadoAviso } from '../src/modules/energia/energia-service.js';
 import type { LeituraBruta, Janela15 } from '../src/modules/energia/agregacao.js';
 import { cifrarCred } from '../src/modules/energia/credenciais.js';
 import type { MedidorAdapter } from '../src/modules/energia/types.js';
@@ -12,7 +12,8 @@ function medidor(o: Partial<MedidorRow> = {}): MedidorRow {
   return {
     id: 'm1', company_id: EMPRESA_A, lead_id: null, sistema_id: 's1', apelido: 'Medidor Quadro', device_id: '007007422d90',
     modo_coleta: 'push', perfil: 'triphase', canais: { rede: 2 }, tensao_nominal_v: 220, api_credentials_cifrado: null,
-    ativo: true, status: 'ok', status_desde: '2026-09-01T00:00:00Z', ultima_leitura_em: null, ultimo_erro: null, ...o,
+    ativo: true, status: 'ok', status_desde: '2026-09-01T00:00:00Z', ultima_leitura_em: null, ultimo_erro: null,
+    nuvem_ok: null, nuvem_desde: null, nuvem_avisado_em: null, aviso_dia: null, avisos_no_dia: 0, ...o,
   };
 }
 
@@ -211,7 +212,7 @@ describe('coletarNuvem', () => {
     expect(ad.buscarStatus.mock.calls[0][1]).toEqual(['c']);
   });
 
-  it('chave recusada → credencial_invalida e não tenta de novo', async () => {
+  it('chave recusada → nuvem_ok=false (status do dado intocado) e não tenta de novo', async () => {
     const cred = cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k1' }, KEY);
     const ms = [medidor({ id: 'a', device_id: 'aaa', modo_coleta: 'nuvem', api_credentials_cifrado: cred })];
     const r = repoFalso(ms);
@@ -219,10 +220,25 @@ describe('coletarNuvem', () => {
     const s = new EnergiaService(r.db, { adapter: () => ad });
     const out = await s.coletarNuvem(new Date(), KEY);
     expect(out.credencial).toBe(1);
-    expect(r.status[0]).toEqual(['a', expect.objectContaining({ status: 'credencial_invalida' })]);
-    ms[0].status = 'credencial_invalida';
+    expect(r.status[0]).toEqual(['a', expect.objectContaining({ nuvem_ok: false, nuvem_avisado_em: null })]);
+    expect(r.status[0][1]).not.toHaveProperty('status');
+    ms[0].nuvem_ok = false;
     await s.coletarNuvem(new Date(), KEY);
     expect(ad.buscarStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('chave aceita de novo (colada na edição) limpa o problema antigo', async () => {
+    const cred = cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k1' }, KEY);
+    const r = repoFalso([medidor({ id: 'a', device_id: 'aaa', modo_coleta: 'nuvem', api_credentials_cifrado: cred, nuvem_ok: null, ultimo_erro: 'velho' })]);
+    await new EnergiaService(r.db, { adapter: () => adapterFalso({ ok: true, devices: [] }) }).coletarNuvem(new Date(), KEY);
+    expect(r.status[0][1]).toMatchObject({ nuvem_ok: true, ultimo_erro: null });
+  });
+
+  it('falha passageira da nuvem (rede) não marca a chave como ruim', async () => {
+    const cred = cifrarCred({ server_uri: 'https://x.shelly.cloud', auth_key: 'k1' }, KEY);
+    const r = repoFalso([medidor({ id: 'a', device_id: 'aaa', modo_coleta: 'nuvem', api_credentials_cifrado: cred })]);
+    await new EnergiaService(r.db, { adapter: () => adapterFalso({ ok: false, reason: 'nuvem Shelly: tempo esgotado' }) }).coletarNuvem(new Date(), KEY);
+    expect(r.status[0][1]).toEqual({ ultimo_erro: 'nuvem Shelly: tempo esgotado' });
   });
 
   it('sem ENERGIA_CRED_KEY não faz nada', async () => {
@@ -236,27 +252,36 @@ describe('coletarNuvem', () => {
     const r = repoFalso([medidor({ id: 'a', modo_coleta: 'nuvem', api_credentials_cifrado: 'lixo' })]);
     const out = await new EnergiaService(r.db, { adapter: () => adapterFalso({ ok: true, devices: [] }) }).coletarNuvem(new Date(), KEY);
     expect(out.falhas).toBe(1);
-    expect(r.status[0][1]).toMatchObject({ status: 'erro' });
+    expect(r.status[0][1]).toMatchObject({ nuvem_ok: false });
+    expect(r.status[0][1]).not.toHaveProperty('status');
   });
 });
 
 describe('vigiar', () => {
   const AGORA = new Date('2026-09-28T15:00:00Z'); // segunda, 12h BRT
+  const enviado = () => vi.fn(async (): Promise<ResultadoAviso> => 'enviado');
 
-  it('1 aviso por transição, grava o status novo', async () => {
+  it('1 aviso por transição, grava o status novo e conta no freio do dia', async () => {
     const ms = [medidor({ id: 'a', status: 'ok', ultima_leitura_em: '2026-09-28T14:00:00Z' }), medidor({ id: 'b', status: 'ok', ultima_leitura_em: '2026-09-28T14:59:00Z' })];
     const r = repoFalso(ms);
-    const avisar = vi.fn(async () => true);
+    const avisar = enviado();
     const out = await new EnergiaService(r.db).vigiar(AGORA, avisar, () => true);
     expect(avisar).toHaveBeenCalledTimes(1);
     expect(avisar.mock.calls[0][0]).toMatchObject({ id: 'a', company_id: EMPRESA_A });
-    expect(r.status).toEqual([['a', expect.objectContaining({ status: 'mudo', status_desde: AGORA.toISOString() })]]);
+    expect(r.status).toEqual([['a', expect.objectContaining({ status: 'mudo', status_desde: AGORA.toISOString(), aviso_dia: '2026-09-28', avisos_no_dia: 1 })]]);
     expect(out.transicoes).toBe(1);
+  });
+
+  it('1º dado de medidor novo: "começou a mandar dado"', async () => {
+    const r = repoFalso([medidor({ status: 'aguardando', ultima_leitura_em: '2026-09-28T14:59:00Z' })]);
+    const avisar = enviado();
+    await new EnergiaService(r.db).vigiar(AGORA, avisar, () => true);
+    expect(String(avisar.mock.calls[0][1])).toMatch(/começou a mandar dado/);
   });
 
   it('fora da janela de horário: não avisa e não grava (a transição fica pro próximo ciclo)', async () => {
     const r = repoFalso([medidor({ status: 'ok', ultima_leitura_em: '2026-09-28T10:00:00Z' })]);
-    const avisar = vi.fn(async () => true);
+    const avisar = enviado();
     await new EnergiaService(r.db).vigiar(AGORA, avisar, () => false);
     expect(avisar).not.toHaveBeenCalled();
     expect(r.status).toEqual([]);
@@ -264,8 +289,72 @@ describe('vigiar', () => {
 
   it('aviso que falha não grava (tenta de novo no próximo ciclo)', async () => {
     const r = repoFalso([medidor({ status: 'ok', ultima_leitura_em: '2026-09-28T10:00:00Z' })]);
-    await new EnergiaService(r.db).vigiar(AGORA, vi.fn(async () => { throw new Error('zap fora'); }), () => true);
+    await new EnergiaService(r.db).vigiar(AGORA, vi.fn(async (): Promise<ResultadoAviso> => { throw new Error('zap fora'); }), () => true);
     expect(r.status).toEqual([]);
+  });
+
+  it('dry-run: não grava a transição como avisada', async () => {
+    const r = repoFalso([medidor({ status: 'ok', ultima_leitura_em: '2026-09-28T10:00:00Z' })]);
+    await new EnergiaService(r.db).vigiar(AGORA, vi.fn(async (): Promise<ResultadoAviso> => 'dry_run'), () => true);
+    expect(r.status).toEqual([]);
+  });
+
+  it('sem destino (empresa sem admin ou sem o módulo): grava sem contar aviso', async () => {
+    const r = repoFalso([medidor({ status: 'ok', ultima_leitura_em: '2026-09-28T10:00:00Z' })]);
+    const out = await new EnergiaService(r.db).vigiar(AGORA, vi.fn(async (): Promise<ResultadoAviso> => 'sem_destino'), () => true);
+    expect(r.status[0][1]).toMatchObject({ status: 'mudo', avisos_no_dia: 0 });
+    expect(out.avisos).toBe(0);
+  });
+
+  it('mensagem saiu mas a gravação falhou: no ciclo seguinte NÃO repete o zap, só grava', async () => {
+    const m = medidor({ status: 'ok', ultima_leitura_em: '2026-09-28T10:00:00Z' });
+    const r = repoFalso([m]);
+    const avisar = enviado();
+    const s = new EnergiaService(r.db);
+    (r.db.atualizarStatus as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('banco fora'));
+    await s.vigiar(AGORA, avisar, () => true);
+    expect(avisar).toHaveBeenCalledTimes(1);
+    expect(r.status).toEqual([]);
+    await s.vigiar(new Date(AGORA.getTime() + 15 * 60_000), avisar, () => true);
+    expect(avisar).toHaveBeenCalledTimes(1);
+    expect(r.status[0][1]).toMatchObject({ status: 'mudo', avisos_no_dia: 1 });
+  });
+
+  it('freio: no máximo 4 mensagens por medidor por dia; passou disso grava sem mensagem', async () => {
+    const r = repoFalso([medidor({ status: 'ok', ultima_leitura_em: '2026-09-28T10:00:00Z', aviso_dia: '2026-09-28', avisos_no_dia: 4 })]);
+    const avisar = enviado();
+    await new EnergiaService(r.db).vigiar(AGORA, avisar, () => true);
+    expect(avisar).not.toHaveBeenCalled();
+    expect(r.status[0][1]).toMatchObject({ status: 'mudo', avisos_no_dia: 4 });
+  });
+
+  it('o freio zera no dia seguinte', async () => {
+    const r = repoFalso([medidor({ status: 'ok', ultima_leitura_em: '2026-09-28T10:00:00Z', aviso_dia: '2026-09-27', avisos_no_dia: 4 })]);
+    const avisar = enviado();
+    await new EnergiaService(r.db).vigiar(AGORA, avisar, () => true);
+    expect(avisar).toHaveBeenCalledTimes(1);
+    expect(r.status[0][1]).toMatchObject({ avisos_no_dia: 1, aviso_dia: '2026-09-28' });
+  });
+
+  it('chave da nuvem recusada: UM aviso pelo mesmo avisar, e o vigia do script segue funcionando', async () => {
+    // push_nuvem com a chave recusada, e o script voltou a mandar dado.
+    const m = medidor({ id: 'pn', modo_coleta: 'push_nuvem', api_credentials_cifrado: 'x', status: 'mudo', ultima_leitura_em: '2026-09-28T14:59:00Z', nuvem_ok: false, nuvem_desde: '2026-09-28T14:00:00Z' });
+    const r = repoFalso([m]);
+    const avisar = enviado();
+    await new EnergiaService(r.db).vigiar(AGORA, avisar, () => true);
+    const textos = avisar.mock.calls.map((c) => String(c[1]));
+    expect(textos).toHaveLength(2);
+    expect(textos[0]).toMatch(/voltou/);
+    expect(textos[1]).toMatch(/recusou a chave/);
+    expect(r.status.map((x) => x[1])).toEqual([
+      expect.objectContaining({ status: 'ok' }),
+      expect.objectContaining({ nuvem_avisado_em: AGORA.toISOString(), avisos_no_dia: 2 }),
+    ]);
+    // já avisado: não repete
+    const r2 = repoFalso([{ ...m, status: 'ok', nuvem_avisado_em: AGORA.toISOString() }]);
+    const avisar2 = enviado();
+    await new EnergiaService(r2.db).vigiar(AGORA, avisar2, () => true);
+    expect(avisar2).not.toHaveBeenCalled();
   });
 });
 

@@ -38,10 +38,19 @@ export function tomDoStatus(status: string): { tom: Tom; texto: string } {
   switch (status) {
     case 'ok': return { tom: 'normal', texto: 'Recebendo dado' };
     case 'mudo': return { tom: 'critico', texto: 'Sem dado' };
-    case 'credencial_invalida': return { tom: 'atencao', texto: 'Chave da nuvem recusada' };
-    case 'erro': return { tom: 'atencao', texto: 'Erro na coleta' };
     default: return { tom: 'info', texto: 'Aguardando o 1º dado' };
   }
+}
+
+/** A chave da nuvem Shelly, separada da chegada de dado (só pra quem usa a nuvem). */
+function nuvemRecusada(m: Pick<MedidorTela, 'modo_coleta' | 'nuvem_ok'>): boolean {
+  return m.modo_coleta !== 'push' && m.nuvem_ok === false;
+}
+
+function pilulasSituacao(m: Pick<MedidorTela, 'status' | 'modo_coleta' | 'nuvem_ok' | 'ativo'>): string {
+  if (m.ativo === false) return pilulaStatus('sem_dado', 'Desligado');
+  const s = tomDoStatus(m.status);
+  return pilulaStatus(s.tom, s.texto) + (nuvemRecusada(m) ? ` ${pilulaStatus('atencao', 'Chave da nuvem recusada')}` : '');
 }
 
 const MODO_TEXTO: Record<string, string> = {
@@ -118,8 +127,7 @@ export function renderListaMedidores(
     corpo = tabela({
       colunas: [{ titulo: 'Medidor' }, { titulo: 'Cliente' }, { titulo: 'Usina' }, { titulo: 'Situação' }, { titulo: 'Último dado' }, { titulo: 'Como chega' }],
       linhas: r.itens.map((i) => {
-        const s = tomDoStatus(i.medidor.status);
-        return [i.medidor.apelido, i.cliente, i.usina, { html: pilulaStatus(s.tom, s.texto) }, quando(i.medidor.ultima_leitura_em, agora), MODO_TEXTO[i.medidor.modo_coleta] ?? i.medidor.modo_coleta];
+        return [i.medidor.apelido, i.cliente, i.usina, { html: pilulasSituacao(i.medidor) }, quando(i.medidor.ultima_leitura_em, agora), MODO_TEXTO[i.medidor.modo_coleta] ?? i.medidor.modo_coleta];
       }),
       hrefs: r.itens.map((i) => `/dashboard/energia/${i.medidor.id}`),
       vazio: 'Nenhum medidor cadastrado ainda',
@@ -393,17 +401,18 @@ function cartaoConciliacao(p: PainelEnergia, m: MedidorTela): string {
 
 function cartaoSaude(i: EnergiaCasaInput): string {
   const m = i.medidor;
-  const s = tomDoStatus(m.status);
   const p = i.painel;
   const itens = [
-    `<div class="en-num"><span>Situação</span><b style="font-size:15px">${pilulaStatus(s.tom, s.texto)}</b></div>`,
+    `<div class="en-num"><span>Situação</span><b style="font-size:15px">${pilulasSituacao(m)}</b></div>`,
     `<div class="en-num"><span>Último dado</span><b style="font-size:15px">${escapeHtml(quando(m.ultima_leitura_em, i.agora))}</b></div>`,
     `<div class="en-num"><span>Dias com dado (30)</span><b>${p ? escapeHtml(`${p.periodo.diasComDado} · ${p.periodo.diasCompletos} completos`) : SEM_DADO}</b></div>`,
     `<div class="en-num"><span>Como chega</span><b style="font-size:15px">${escapeHtml(MODO_TEXTO[m.modo_coleta] ?? m.modo_coleta)}</b></div>`,
     `<div class="en-num"><span>Carga ligada de madrugada</span><b>${p && temNumero(p.baseNoturnaW) ? `${escapeHtml(fmtNumero(p.baseNoturnaW / 1000, 2))} kW` : SEM_DADO}</b></div>`,
     `<div class="en-num"><span>Maior média de 15 min</span><b>${p && temNumero(p.demandaMaxW) ? `${escapeHtml(fmtNumero(p.demandaMaxW / 1000, 2))} kW` : SEM_DADO}</b></div>`,
   ].join('');
-  const erro = m.ultimo_erro && m.status !== 'ok' ? `<p class="en-nota">Último erro: ${escapeHtml(m.ultimo_erro)}</p>` : '';
+  const erro = nuvemRecusada(m)
+    ? `<p class="en-nota">A nuvem Shelly não aceitou a chave guardada${m.ultimo_erro ? ` (${escapeHtml(m.ultimo_erro)})` : ''}. Em "Editar medidor", cole a chave nova.${m.modo_coleta === 'push_nuvem' ? ' O script continua sendo vigiado normalmente.' : ''}</p>`
+    : m.ultimo_erro && m.status !== 'ok' ? `<p class="en-nota">Último erro: ${escapeHtml(m.ultimo_erro)}</p>` : '';
   const nota = '<p class="en-nota">Carga de madrugada = mediana da potência entre 0h e 5h nos dias completos. Medição indicativa (Shelly, ±1% de 2 a 120 A) — não é laudo de qualidade de energia.</p>';
   return cartaoSecao({ titulo: 'Saúde do medidor', corpoHtml: `<div class="en-nums">${itens}</div>${erro}${nota}` });
 }
@@ -411,7 +420,6 @@ function cartaoSaude(i: EnergiaCasaInput): string {
 export function renderEnergiaDaCasa(i: EnergiaCasaInput, user: DashUser | undefined): string {
   const m = i.medidor;
   const temUsina = !!m.sistema_id;
-  const s = tomDoStatus(m.status);
   const acoes = i.podeEditar
     ? `<a class="cc-btn" href="/dashboard/energia/medidores/${encodeURIComponent(m.id)}/editar">${icone('cog', 'sm')}Editar medidor</a>`
       + (m.modo_coleta !== 'nuvem' ? `<form method="post" action="/dashboard/energia/medidores/${encodeURIComponent(m.id)}/token" style="display:inline" onsubmit="return confirm('Gerar um código novo? O código atual do aparelho para de valer na hora.')"><button class="cc-btn" type="submit">${m.tem_token ? 'Gerar código novo' : 'Gerar código de envio'}</button></form>` : '')
@@ -420,7 +428,7 @@ export function renderEnergiaDaCasa(i: EnergiaCasaInput, user: DashUser | undefi
     titulo: 'Energia da casa',
     trilha: [{ rotulo: 'Usinas', href: '/dashboard/monitoramento' }, { rotulo: 'Energia', href: '/dashboard/energia' }, { rotulo: m.apelido }],
     subtitulo: `${m.apelido} · ${temUsina ? `usina: ${i.usinaNome ?? 'ligada'}` : 'sem usina ligada'} · últimos 30 dias`,
-    seloHtml: pilulaStatus(s.tom, s.texto),
+    seloHtml: pilulasSituacao(m),
     acoesHtml: acoes,
   });
 
