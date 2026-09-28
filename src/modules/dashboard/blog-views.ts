@@ -1,10 +1,46 @@
 // src/modules/dashboard/blog-views.ts
-// View da aba Blog (sob o setor Marketing). Renderiza o BODY com os drafts
-// pendentes pra aprovar/publicar/descartar pelo dashboard — sem depender do
-// WhatsApp. O wrapper renderLayout({ active:'blog', ... }) fica no router.
+// Marketing › Blog: rascunhos pra aprovar/publicar/descartar pelo painel (sem
+// depender do WhatsApp) e a tela de revisar (ler, editar, foto, publicar).
+// renderBlogDraftsPage / renderBlogRevisarPage / renderBlogIndisponivel
+// devolvem o CORPO; renderBlogLayout envolve na casca (o router chama).
+// Renovação do miolo — R17 (28/09/2026): mesmos formulários (publicar,
+// descartar com confirm, editar, foto, publicar agora com confirm) e links;
+// visual cc- do Command Center, tema escuro (D4), sem Tailwind.
+// O blog é o do site da casa: tenant vê renderBlogIndisponivel('empresa').
 
 import type { BlogDraft } from '../blog-generator.js';
-import { escapeHtml } from './views.js';
+import { renderLayout, escapeHtml } from './views.js';
+import type { DashUser } from './permissions.js';
+import { cabecalhoPagina, cartaoSecao, estadoVazio, aviso, botao, chip } from './ui/componentes.js';
+import { temaDaTela } from './ui/tema.js';
+
+const CSS_BLOG = `
+.cc-bl>*+*{margin-top:16px}
+.cc-bl-lista{display:grid;gap:16px}
+.cc-bl-post{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
+.cc-bl-foto{width:260px;max-width:100%;height:160px;object-fit:cover;border-radius:12px;flex:none;background:var(--cc-surface-3)}
+.cc-bl-sem-foto{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--cc-faint);font-size:13px;text-align:center;padding:10px}
+.cc-bl-txt{flex:1 1 260px;min-width:0}
+.cc-bl-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;color:var(--cc-muted);margin-bottom:8px}
+.cc-bl-meta code{color:var(--cc-faint);overflow-wrap:anywhere}
+.cc-bl-titulo{font-size:18px;font-weight:700;line-height:1.3;color:var(--cc-text);overflow-wrap:anywhere}
+.cc-bl-desc{color:var(--cc-text-2);margin:8px 0 0;line-height:1.5;overflow-wrap:anywhere}
+.cc-bl-tags{margin-top:10px}
+.cc-bl-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center}
+.cc-bl-acoes form{margin:0}
+.cc-bl-rev{max-width:860px}
+.cc-bl-rev .cc-bl-foto{width:440px;height:230px}
+.cc-bl-rev form{margin:0}
+.cc-bl-campos{display:grid;gap:14px}
+.cc-bl-campos textarea{width:100%}
+.cc-bl-campos textarea[name=contentMd]{font-family:ui-monospace,monospace;font-size:13px;line-height:1.5;min-height:420px}
+.cc-bl-campos input{width:100%}
+@media (max-width:760px){
+  .cc-bl-foto,.cc-bl-rev .cc-bl-foto{width:100%;height:190px}
+  .cc-bl-acoes form,.cc-bl-acoes>.cc-btn{flex:1 1 auto}
+  .cc-bl-acoes .cc-btn{width:100%;justify-content:center}
+}
+`;
 
 const CATEGORIA_LABEL: Record<BlogDraft['category'], string> = {
   tecnico: 'Técnico',
@@ -15,189 +51,162 @@ const CATEGORIA_LABEL: Record<BlogDraft['category'], string> = {
   tutorial: 'Tutorial',
 };
 
-/**
- * Banner de sucesso/erro no topo, a partir dos query params ?ok / ?erro.
- * Retorna '' quando não há nada a mostrar.
- */
-function renderBanner(flags: { ok?: boolean; erro?: string }): string {
-  if (flags.ok) {
-    return `<div style="background:#064e3b;border:1px solid #34d399;border-radius:12px;padding:14px 18px;margin-bottom:20px;color:#d1fae5">
-      ✅ <strong>Pronto!</strong> O post foi publicado. O Cloudflare Pages atualiza o site em ~2 min.
-    </div>`;
-  }
-  if (flags.erro) {
-    return `<div style="background:#450a0a;border:1px solid #f87171;border-radius:12px;padding:14px 18px;margin-bottom:20px;color:#fecaca">
-      ❌ <strong>Não deu certo:</strong> ${escapeHtml(flags.erro)}
-    </div>`;
-  }
+/** Casca da aba Blog (o router passa o corpo pronto). */
+export function renderBlogLayout(input: { title: string; body: string; user: DashUser | undefined }): string {
+  return renderLayout({
+    active: 'blog', title: input.title, user: input.user,
+    body: `<div class="cc-root cc-bl">${input.body}</div><style>${CSS_BLOG}</style>`,
+    tailwind: false, dark: temaDaTela(input.user, 'escuro') === 'escuro', largo: true,
+  });
+}
+
+/** Aviso de sucesso/erro no topo, a partir dos query params ?ok / ?erro. */
+function renderBanner(flags: { ok?: boolean; erro?: string }, okTexto = 'Pronto! O post foi publicado. O site atualiza em uns 2 minutos.'): string {
+  if (flags.ok) return aviso({ tom: 'ok', texto: okTexto });
+  if (flags.erro) return aviso({ tom: 'erro', texto: `Não deu certo: ${flags.erro}` });
   return '';
 }
 
-/** Aviso amigável quando o gerador de blog não está disponível. */
-export function renderBlogIndisponivel(): string {
-  return `
-  <div style="max-width:760px;margin:0 auto">
-    <h1 style="font-size:24px;font-weight:700;color:#0f172a;margin-bottom:6px">📝 Blog — aprovar posts</h1>
-    <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:12px;padding:18px;color:#92400e;margin-top:16px">
-      ⚠️ <strong>O gerador de blog não está disponível agora.</strong>
-      <p style="margin:8px 0 0">Isso costuma acontecer quando o serviço subiu sem as configurações do blog.
-      A fila de posts segue funcionando pelo WhatsApp normalmente.</p>
-    </div>
-  </div>`;
+const TRILHA = [{ rotulo: 'Marketing', href: '/dashboard/marketing' }, { rotulo: 'Blog', href: '/dashboard/marketing/blog' }];
+
+/**
+ * Aviso quando o blog não abre: 'config' = o gerador não subiu neste servidor;
+ * 'empresa' = o blog é o do site da casa (tenant ainda não tem o dele).
+ */
+export function renderBlogIndisponivel(motivo: 'config' | 'empresa' = 'config'): string {
+  const cab = cabecalhoPagina({ trilha: TRILHA, titulo: 'Blog — aprovar posts' });
+  if (motivo === 'empresa') {
+    return `${cab}${estadoVazio({
+      tipo: 'construcao', titulo: 'O blog ainda não está disponível para a sua empresa.',
+      texto: 'Quando o blog do seu site estiver ligado ao painel, os rascunhos para aprovar aparecem aqui.', icone: 'doc-check',
+    })}`;
+  }
+  return `${cab}${aviso({ tom: 'atencao', texto: 'O gerador de blog não está disponível agora.' })}
+    ${estadoVazio({
+      tipo: 'sem_dado', titulo: 'Blog fora do ar neste servidor',
+      texto: 'Isso costuma acontecer quando o serviço subiu sem as configurações do blog. A fila de posts segue funcionando pelo WhatsApp normalmente.',
+    })}`;
 }
 
 /**
- * BODY da página de drafts. Cada draft vira um card com foto do hero, título,
- * descrição, categoria/tempo/slug e dois botões (Publicar / Descartar).
+ * CORPO da página de rascunhos. Cada rascunho vira um cartão com foto, título,
+ * resumo, categoria/tempo/endereço e os botões Revisar / Publicar / Descartar.
  */
 export function renderBlogDraftsPage(
   drafts: BlogDraft[],
   flags: { ok?: boolean; erro?: string; avisoLeitura?: string } = {},
 ): string {
-  const banner = renderBanner(flags);
-
   const avisoLeitura = flags.avisoLeitura
-    ? `<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:12px;padding:14px 18px;margin-bottom:20px;color:#92400e">
-         ⚠️ Não consegui ler a fila de posts agora (${escapeHtml(flags.avisoLeitura)}). Tente recarregar em instantes.
-       </div>`
+    ? aviso({ tom: 'atencao', texto: `Não consegui ler a fila de posts agora (${flags.avisoLeitura}). Tente recarregar em instantes.` })
     : '';
 
   const corpo = drafts.length === 0
-    ? `<div style="background:#f8fafc;border:1px dashed #cbd5e1;border-radius:14px;padding:40px 24px;text-align:center;color:#64748b;margin-top:8px">
-         <div style="font-size:34px;margin-bottom:8px">📭</div>
-         <div style="font-size:17px;font-weight:600;color:#334155">Nenhum post esperando aprovação</div>
-         <div style="margin-top:6px">O sistema gera 1 por dia. Volte aqui quando houver um rascunho novo.</div>
-       </div>`
-    : `<div style="display:grid;gap:18px;margin-top:8px">${drafts.map(renderDraftCard).join('')}</div>`;
+    ? estadoVazio({ tipo: 'vazio', titulo: 'Nenhum post esperando aprovação', texto: 'O sistema gera 1 por dia. Volte aqui quando houver um rascunho novo.', icone: 'doc-check' })
+    : `<div class="cc-bl-lista">${drafts.map((d, i) => renderDraftCard(d, i === 0)).join('')}</div>`;
 
   return `
-  <div style="max-width:920px;margin:0 auto">
-    <h1 style="font-size:24px;font-weight:700;color:#0f172a;margin-bottom:6px">📝 Blog — aprovar posts</h1>
-    <p style="color:#64748b;margin-bottom:20px">Aprove e publique os rascunhos direto por aqui — não precisa do WhatsApp.
-      Publicar manda o post pro site (sai do ar em ~2 min via Cloudflare).</p>
-    ${banner}
+    ${cabecalhoPagina({
+      trilha: TRILHA,
+      titulo: 'Blog — aprovar posts',
+      subtitulo: 'Revise e publique os rascunhos direto por aqui — não precisa do WhatsApp. Publicar manda o post pro site (fica no ar em uns 2 minutos).',
+    })}
+    ${renderBanner(flags)}
     ${avisoLeitura}
-    ${corpo}
-  </div>`;
+    ${corpo}`;
 }
 
-function renderDraftCard(draft: BlogDraft): string {
+function fotoHtml(draft: BlogDraft, semFotoTexto: string): string {
+  return draft.heroImageUrl
+    ? `<img class="cc-bl-foto" src="${escapeHtml(draft.heroImageUrl)}" alt="${escapeHtml(draft.heroImageAlt ?? draft.title)}">`
+    : `<div class="cc-bl-foto cc-bl-sem-foto"><span aria-hidden="true">🖼️</span><span>${escapeHtml(semFotoTexto)}</span></div>`;
+}
+
+/** Cartão de um rascunho. O 1º da fila leva o "Revisar" dourado (ação principal da tela). */
+function renderDraftCard(draft: BlogDraft, primeiro: boolean): string {
   const id = encodeURIComponent(draft.id);
-  const categoria = CATEGORIA_LABEL[draft.category] ?? escapeHtml(draft.category);
-  const tempo = `${draft.readingTime} min de leitura`;
-
-  const hero = draft.heroImageUrl
-    ? `<img src="${escapeHtml(draft.heroImageUrl)}" alt="${escapeHtml(draft.heroImageAlt ?? draft.title)}"
-         style="width:100%;max-width:260px;height:160px;object-fit:cover;border-radius:12px;flex-shrink:0;background:#e2e8f0">`
-    : `<div style="width:100%;max-width:260px;height:160px;border-radius:12px;flex-shrink:0;background:#e2e8f0;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:34px">🖼️</div>`;
-
+  const categoria = CATEGORIA_LABEL[draft.category] ?? draft.category;
   const tags = draft.tags && draft.tags.length
-    ? `<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">${draft.tags.slice(0, 6).map((t) =>
-        `<span style="background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;border-radius:999px;padding:2px 10px;font-size:12px">${escapeHtml(t)}</span>`,
-      ).join('')}</div>`
+    ? `<div class="cc-chips cc-bl-tags">${draft.tags.slice(0, 6).map((t) => chip({ rotulo: t })).join('')}</div>`
     : '';
 
-  return `
-  <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.04)">
-    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">
-      ${hero}
-      <div style="flex:1;min-width:240px">
-        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;color:#64748b;margin-bottom:8px">
-          <span style="background:#1e293b;color:#fff;border-radius:6px;padding:2px 8px;font-weight:600">${categoria}</span>
-          <span>⏱️ ${escapeHtml(tempo)}</span>
-          <span style="color:#94a3b8">/blog/${escapeHtml(draft.slug)}</span>
-        </div>
-        <div style="font-size:18px;font-weight:700;color:#0f172a;line-height:1.3">${escapeHtml(draft.title)}</div>
-        <p style="color:#475569;margin:8px 0 0;line-height:1.5">${escapeHtml(draft.description)}</p>
+  return cartaoSecao({
+    titulo: categoria,
+    dica: `${draft.readingTime} min de leitura`,
+    classe: 'cc-bl-card',
+    corpoHtml: `<div class="cc-bl-post">
+      ${fotoHtml(draft, 'Sem foto ainda')}
+      <div class="cc-bl-txt">
+        <div class="cc-bl-meta"><code>/blog/${escapeHtml(draft.slug)}</code></div>
+        <div class="cc-bl-titulo">${escapeHtml(draft.title)}</div>
+        <p class="cc-bl-desc">${escapeHtml(draft.description)}</p>
         ${tags}
-        <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
-          <a href="/dashboard/marketing/blog/${id}/revisar"
-            style="background:#1e293b;color:#fff;border-radius:10px;padding:10px 18px;font-weight:700;font-size:14px;text-decoration:none;display:inline-block">
-            ✏️ Revisar / editar
-          </a>
-          <form method="POST" action="/dashboard/marketing/blog/${id}/publicar" style="margin:0">
-            <button type="submit"
-              style="background:#16a34a;color:#fff;border:0;border-radius:10px;padding:10px 18px;font-weight:700;font-size:14px;cursor:pointer">
-              📤 Publicar
-            </button>
+        <div class="cc-bl-acoes">
+          ${botao({ rotulo: 'Revisar / editar', href: `/dashboard/marketing/blog/${id}/revisar`, tom: primeiro ? 'ouro' : 'normal', icone: 'eye' })}
+          <form method="POST" action="/dashboard/marketing/blog/${id}/publicar">
+            ${botao({ rotulo: 'Publicar', tipo: 'submit', icone: 'send' })}
           </form>
-          <form method="POST" action="/dashboard/marketing/blog/${id}/descartar" style="margin:0"
+          <form method="POST" action="/dashboard/marketing/blog/${id}/descartar"
             onsubmit="return confirm('Descartar este rascunho? Ele não vai pro site.')">
-            <button type="submit"
-              style="background:#fff;color:#b91c1c;border:1px solid #fecaca;border-radius:10px;padding:10px 18px;font-weight:600;font-size:14px;cursor:pointer">
-              🗑️ Descartar
-            </button>
+            ${botao({ rotulo: 'Descartar', tipo: 'submit', tom: 'fantasma' })}
           </form>
         </div>
       </div>
-    </div>
-  </div>`;
+    </div>`,
+  });
 }
 
 /**
- * Página de REVISÃO de um rascunho: lê o conteúdo inteiro, edita título/resumo/
- * texto, vê (ou busca) a foto do hero e publica. Resolve "publicar no escuro" +
- * "post sem foto". É o BODY; o router envolve no renderLayout({ active:'blog' }).
+ * CORPO da REVISÃO de um rascunho: lê o conteúdo inteiro, edita título/resumo/
+ * texto, vê (ou busca) a foto e publica. Resolve "publicar no escuro" + "post
+ * sem foto". O router envolve com renderBlogLayout.
  */
 export function renderBlogRevisarPage(
   draft: BlogDraft,
   flags: { ok?: boolean; erro?: string; fotoOk?: boolean } = {},
 ): string {
   const id = encodeURIComponent(draft.id);
-  const banner = renderBanner(flags);
-  const fotoBanner = flags.fotoOk
-    ? `<div style="background:#064e3b;border:1px solid #34d399;border-radius:12px;padding:12px 16px;margin-bottom:16px;color:#d1fae5">🖼️ Foto atualizada!</div>`
-    : '';
+  const fotoBanner = flags.fotoOk ? aviso({ tom: 'ok', texto: 'Foto atualizada!' }) : '';
 
-  const hero = draft.heroImageUrl
-    ? `<img src="${escapeHtml(draft.heroImageUrl)}" alt="${escapeHtml(draft.heroImageAlt ?? draft.title)}"
-         style="width:100%;max-width:440px;height:230px;object-fit:cover;border-radius:12px;background:#e2e8f0">`
-    : `<div style="width:100%;max-width:440px;height:230px;border-radius:12px;background:#e2e8f0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#94a3b8;gap:6px">
-         <div style="font-size:34px">🖼️</div><div style="font-size:13px">Sem foto ainda — busque uma abaixo</div>
-       </div>`;
+  const foto = cartaoSecao({
+    titulo: 'Foto do post',
+    corpoHtml: `${fotoHtml(draft, 'Sem foto ainda — busque uma abaixo')}
+      <form method="POST" action="/dashboard/marketing/blog/${id}/foto" style="margin-top:12px">
+        ${botao({ rotulo: draft.heroImageUrl ? 'Trocar foto' : 'Buscar foto', tipo: 'submit', icone: 'search' })}
+      </form>`,
+  });
 
-  return `
-  <div style="max-width:820px;margin:0 auto">
-    <a href="/dashboard/marketing/blog" style="color:#2563eb;text-decoration:none;font-size:14px">← Voltar pros rascunhos</a>
-    <h1 style="font-size:24px;font-weight:700;color:#0f172a;margin:8px 0 4px">✏️ Revisar rascunho</h1>
-    <p style="color:#64748b;margin-bottom:18px">Leia, ajuste o que quiser e confira a foto. Só publique quando estiver do seu jeito.</p>
-    ${banner}
-    ${fotoBanner}
+  const editar = cartaoSecao({
+    titulo: 'Texto do post',
+    corpoHtml: `<form method="POST" action="/dashboard/marketing/blog/${id}/editar" class="cc-form cc-bl-campos">
+      <label class="cc-campo"><span>Título</span>
+        <input name="title" value="${escapeHtml(draft.title)}">
+      </label>
+      <label class="cc-campo"><span>Resumo</span>
+        <textarea name="description" rows="2">${escapeHtml(draft.description)}</textarea>
+      </label>
+      <label class="cc-campo"><span>Conteúdo (texto do post)</span>
+        <textarea name="contentMd" rows="22">${escapeHtml(draft.contentMd)}</textarea>
+      </label>
+      <div>${botao({ rotulo: 'Salvar alterações', tipo: 'submit', icone: 'check' })}</div>
+    </form>`,
+  });
 
-    <!-- FOTO -->
-    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:18px;margin-bottom:16px">
-      <div style="font-weight:600;color:#334155;margin-bottom:10px">Foto do post</div>
-      ${hero}
-      <form method="POST" action="/dashboard/marketing/blog/${id}/foto" style="margin:12px 0 0">
-        <button type="submit" style="background:#0ea5e9;color:#fff;border:0;border-radius:10px;padding:9px 16px;font-weight:600;font-size:14px;cursor:pointer">
-          🔄 ${draft.heroImageUrl ? 'Trocar foto' : 'Buscar foto'}
-        </button>
-      </form>
-    </div>
-
-    <!-- EDITAR -->
-    <form method="POST" action="/dashboard/marketing/blog/${id}/editar"
-      style="background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:18px;margin-bottom:16px">
-      <label style="display:block;font-weight:600;color:#334155;margin-bottom:6px">Título</label>
-      <input name="title" value="${escapeHtml(draft.title)}"
-        style="width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:15px;margin-bottom:14px">
-      <label style="display:block;font-weight:600;color:#334155;margin-bottom:6px">Resumo</label>
-      <textarea name="description" rows="2"
-        style="width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;margin-bottom:14px">${escapeHtml(draft.description)}</textarea>
-      <label style="display:block;font-weight:600;color:#334155;margin-bottom:6px">Conteúdo (texto do post)</label>
-      <textarea name="contentMd" rows="22"
-        style="width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:10px;font-size:13px;font-family:ui-monospace,monospace;line-height:1.5">${escapeHtml(draft.contentMd)}</textarea>
-      <button type="submit" style="background:#475569;color:#fff;border:0;border-radius:10px;padding:10px 18px;font-weight:700;font-size:14px;cursor:pointer;margin-top:14px">
-        💾 Salvar alterações
-      </button>
-    </form>
-
-    <!-- PUBLICAR -->
-    <form method="POST" action="/dashboard/marketing/blog/${id}/publicar" style="margin:0"
+  const publicar = `<form method="POST" action="/dashboard/marketing/blog/${id}/publicar"
       onsubmit="return confirm('Publicar este post no site agora?')">
-      <button type="submit" style="background:#16a34a;color:#fff;border:0;border-radius:10px;padding:12px 22px;font-weight:700;font-size:15px;cursor:pointer">
-        📤 Publicar agora
-      </button>
-    </form>
+      ${botao({ rotulo: 'Publicar agora', tipo: 'submit', tom: 'ouro', icone: 'send' })}
+    </form>`;
+
+  return `<div class="cc-bl-rev">
+    ${cabecalhoPagina({
+      trilha: [...TRILHA, { rotulo: 'Revisar rascunho' }],
+      titulo: 'Revisar rascunho',
+      subtitulo: 'Leia, ajuste o que quiser e confira a foto. Só publique quando estiver do seu jeito.',
+      acoesHtml: `${botao({ rotulo: '← Voltar pros rascunhos', href: '/dashboard/marketing/blog', tom: 'fantasma', tamanho: 'sm' })}`,
+    })}
+    ${renderBanner(flags, 'Alterações salvas.')}
+    ${fotoBanner}
+    ${foto}
+    ${editar}
+    <div class="cc-bl-acoes">${publicar}</div>
   </div>`;
 }

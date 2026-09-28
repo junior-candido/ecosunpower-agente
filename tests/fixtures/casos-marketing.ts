@@ -1,11 +1,11 @@
 // Casos do Marketing (renovação do miolo, R17) — 4 telas: Campanhas
 // (/marketing), Blog (/marketing/blog + revisar), E-mail (/marketing/email) e
 // Cadência (/cadencia). Dados FICTÍCIOS: nomes inventados, nunca cliente real.
-// Blog e E-mail: o router envolve o corpo no renderLayout — aqui é igual.
-import { renderLayout } from '../../src/modules/dashboard/views.js';
+// Blog e E-mail: o router envolve o corpo na casca (renderBlogLayout /
+// renderEmailLayout; antes da R17 era o renderLayout direto no router).
 import { renderMarketingPage } from '../../src/modules/dashboard/marketing-views.js';
-import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } from '../../src/modules/dashboard/blog-views.js';
-import { renderEmailPage } from '../../src/modules/dashboard/email-views.js';
+import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage, renderBlogLayout } from '../../src/modules/dashboard/blog-views.js';
+import { renderEmailPage, renderEmailLayout, renderEmailIndisponivel } from '../../src/modules/dashboard/email-views.js';
 import { renderCadenciaPage } from '../../src/modules/dashboard/cadencia-views.js';
 import { calcKpis } from '../../src/modules/dashboard/cadencia-queries.js';
 import type { LeadCadenciaRow } from '../../src/modules/dashboard/cadencia-queries.js';
@@ -118,7 +118,7 @@ const DRAFT_SEM_FOTO: BlogDraft = {
   tags: [], heroImageUrl: undefined, heroImageAlt: undefined, readingTime: 3,
 };
 
-const telaBlog = (body: string, title: string, user: DashUser) => renderLayout({ active: 'blog', title, body, user });
+const telaBlog = (body: string, title: string, user: DashUser) => renderBlogLayout({ title, body, user });
 
 // ─── E-mail ─────────────────────────────────────────────────────────────────
 const METRICAS = { enviados: 120, abertos: 54, clicados: 9, quentes: 3, descadastros: 1 };
@@ -127,7 +127,7 @@ const DESEMPENHO = [
   { step: 2, nome: 'Como funciona a conta', enviados: 40, abertos: 18, clicados: 3, taxaAbertura: 45, taxaClique: 8 },
   { step: 3, nome: 'Casos reais', enviados: 20, abertos: 6, clicados: 1, taxaAbertura: 30, taxaClique: 5 },
 ];
-const telaEmail = (body: string, user: DashUser) => renderLayout({ active: 'email', title: 'E-mail Marketing', body, user });
+const telaEmail = (body: string, user: DashUser) => renderEmailLayout({ body, user });
 
 // ─── Cadência ───────────────────────────────────────────────────────────────
 const lc = (id: string, over: Partial<LeadCadenciaRow> = {}): LeadCadenciaRow => ({
@@ -167,4 +167,12 @@ export const CASOS_MARKETING = {
   'cadencia-filtro': () => renderCadenciaPage({ rows: LINHAS_CADENCIA, kpis: calcKpis(LINHAS_CADENCIA), filterStatus: 'enviado_sem_resposta', user: USER_CASA }),
   'cadencia-vazia': () => renderCadenciaPage({ rows: [], kpis: calcKpis([]), user: USER_CASA }),
   'cadencia-tenant': () => renderCadenciaPage({ rows: LINHAS_CADENCIA.slice(0, 3), kpis: calcKpis(LINHAS_CADENCIA.slice(0, 3)), user: USER_TENANT }),
+};
+
+/** Casos que só existem na tela nova (não têm contrato antigo): visão de tenant
+ *  do Blog e do E-mail (antes o tenant via os da casa) e campanhas vazias. */
+export const CASOS_MARKETING_NOVOS = {
+  'campanhas-tenant-vazia': () => renderMarketingPage(SEM_NADA, USER_TENANT),
+  'blog-tenant': () => telaBlog(renderBlogIndisponivel('empresa'), 'Blog — aprovar posts', USER_TENANT),
+  'email-tenant': () => telaEmail(renderEmailIndisponivel(), USER_TENANT),
 };

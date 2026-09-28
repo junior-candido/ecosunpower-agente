@@ -54,6 +54,10 @@ export const TELAS_RENOVADAS: string[] = [
   'relatorio-pi-views.ts',
 
   // R17 — Marketing (campanhas, blog, e-mail, cadência)
+  'marketing-views.ts',
+  'blog-views.ts',
+  'email-views.ts',
+  'cadencia-views.ts',
 
   // R18 — RH
 

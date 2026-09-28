@@ -117,8 +117,8 @@ import type { AuthedRequest } from './auth.js';
 import { pastaDaEmpresa, listarPastasDaEmpresa } from './pasta-da-empresa.js';
 import { EMPRESA_CASA as EMPRESA_PADRAO_PASTA } from './canal-envio.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
-import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage } from './blog-views.js';
-import { renderEmailPage } from './email-views.js';
+import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage, renderBlogLayout } from './blog-views.js';
+import { renderEmailPage, renderEmailLayout } from './email-views.js';
 import { renderMedicaoPage } from './medicao-views.js';
 import {
   renderDemonstrativosLista, renderDemonstrativoCliente, renderConferenciaPdf, renderDigitar, renderEnviarPdf,
@@ -3078,8 +3078,8 @@ b.onclick=async function(){
   router.get('/marketing/blog', exigir('marketing', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     const user = req.dashUser;
     if (!options.blogGenerator) {
-      res.type('text/html').send(renderLayout({
-        active: 'blog', title: 'Blog — aprovar posts', body: renderBlogIndisponivel(), user,
+      res.type('text/html').send(renderBlogLayout({
+        title: 'Blog — aprovar posts', body: renderBlogIndisponivel(), user,
       }));
       return;
     }
@@ -3094,8 +3094,7 @@ b.onclick=async function(){
     }
     const ok = req.query.ok === '1';
     const erro = typeof req.query.erro === 'string' ? req.query.erro : undefined;
-    res.type('text/html').send(renderLayout({
-      active: 'blog',
+    res.type('text/html').send(renderBlogLayout({
       title: 'Blog — aprovar posts',
       body: renderBlogDraftsPage(drafts, { ok, erro, avisoLeitura }),
       user,
@@ -3162,8 +3161,8 @@ b.onclick=async function(){
     const ok = req.query.ok === '1';
     const fotoOk = req.query.foto === '1';
     const erro = typeof req.query.erro === 'string' ? req.query.erro : undefined;
-    res.type('text/html').send(renderLayout({
-      active: 'blog', title: 'Revisar rascunho', body: renderBlogRevisarPage(draft, { ok, erro, fotoOk }), user: req.dashUser,
+    res.type('text/html').send(renderBlogLayout({
+      title: 'Revisar rascunho', body: renderBlogRevisarPage(draft, { ok, erro, fotoOk }), user: req.dashUser,
     }));
   });
 
@@ -3241,9 +3240,7 @@ b.onclick=async function(){
       console.warn('[dashboard/email] falha ao montar desempenho por step (segue vazio):', (err as Error).message);
     }
     const ligado = (await supabaseService.getFlag('email_seq_ligado')) ?? true;
-    res.type('text/html').send(renderLayout({
-      active: 'email',
-      title: 'E-mail Marketing',
+    res.type('text/html').send(renderEmailLayout({
       body: renderEmailPage(metricas, ligado, desempenho),
       user: req.dashUser,
     }));

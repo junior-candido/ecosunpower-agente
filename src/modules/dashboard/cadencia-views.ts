@@ -1,27 +1,42 @@
-import { renderLayout, escapeHtml, brl } from './views.js';
+// src/modules/dashboard/cadencia-views.ts
+// Marketing › Cadência de reativação (/dashboard/cadencia).
+// Renovação do miolo — R17 (28/09/2026): mesmos formulários (fechou/optout com
+// id escondido e confirm), mesmos links de filtro (?status=); visual cc- do
+// Command Center, tema escuro (D4), sem Tailwind. A tabela vira cartão no
+// celular. CONSERTO: o confirm com apóstrofo no nome ("D'Ávila") não compilava
+// e o formulário ia SEM perguntar — agora o nome vai escapado para JS.
+// Tenant: sem a dica do comando /reativar-base (é do WhatsApp do dono).
+import { renderLayout, escapeHtml } from './views.js';
 import type { LeadCadenciaRow, CadenciaKpis, CadenciaStatus } from './cadencia-queries.js';
 import { normalizeBrazilianPhone } from '../meta-leadgen.js';
 import type { DashUser } from './permissions.js';
+import { cabecalhoPagina, faixaKpis, cartaoSecao, tabela, estadoVazio, pilulaStatus, botao, chipsFiltro, celulaDupla } from './ui/componentes.js';
+import type { Tom } from './ui/componentes.js';
+import { temaDaTela } from './ui/tema.js';
+import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 
-const STATUS_LABELS: Record<CadenciaStatus, { label: string; color: string; bg: string }> = {
-  aguardando:           { label: '⏳ Aguardando disparo', color: 'text-slate-700', bg: 'bg-slate-100' },
-  enviado_sem_resposta: { label: '📤 Enviado, sem resposta', color: 'text-sky-800',   bg: 'bg-sky-100' },
-  respondeu:            { label: '💬 Respondeu',         color: 'text-emerald-800', bg: 'bg-emerald-100' },
-  qualificando:         { label: '🎯 Qualificando',      color: 'text-violet-800', bg: 'bg-violet-100' },
-  proposta_enviada:     { label: '📋 Proposta enviada',  color: 'text-amber-800', bg: 'bg-amber-100' },
-  cliente:              { label: '✅ Cliente',           color: 'text-emerald-900', bg: 'bg-emerald-200' },
-  sem_resposta_7d:      { label: '⚠️ Sem resposta 7d+',  color: 'text-rose-800',  bg: 'bg-rose-100' },
-  opt_out:              { label: '🚪 Pediu pra parar',           color: 'text-slate-500', bg: 'bg-slate-50' },
+const CSS_CADENCIA = `
+.cc-cd>*+*{margin-top:16px}
+.cc-cd-acoes{display:flex;gap:6px;flex-wrap:wrap}
+.cc-cd-acoes form{margin:0}
+.cc-cd-mail{display:block;font-size:12px;color:var(--cc-info);overflow-wrap:anywhere}
+.cc-cd-mail.cc-cd-sem{color:var(--cc-faint)}
+.cc-cd-hist{font-size:12px;color:var(--cc-muted);line-height:1.5}
+.cc-cd-motivo{font-size:12px;color:var(--cc-muted);overflow-wrap:anywhere}
+.cc-cd-dica{margin:0;font-size:12.5px;color:var(--cc-muted)}
+.cc-cd-dica code{padding:1px 6px;border-radius:6px;background:var(--cc-surface-3);color:var(--cc-text-2)}
+`;
+
+const STATUS_LABELS: Record<CadenciaStatus, { label: string; tom: Tom; chip: string }> = {
+  aguardando:           { label: 'Aguardando disparo',     tom: 'sem_dado',    chip: 'Aguardando' },
+  enviado_sem_resposta: { label: 'Enviado, sem resposta',  tom: 'info',        chip: 'Enviado' },
+  respondeu:            { label: 'Respondeu',              tom: 'normal',      chip: 'Respondeu' },
+  qualificando:         { label: 'Qualificando',           tom: 'oportunidade', chip: 'Qualificando' },
+  proposta_enviada:     { label: 'Proposta enviada',       tom: 'acompanhar',  chip: 'Proposta' },
+  cliente:              { label: 'Cliente',                tom: 'normal',      chip: 'Cliente' },
+  sem_resposta_7d:      { label: 'Sem resposta 7d+',       tom: 'critico',     chip: 'Sem resposta 7d+' },
+  opt_out:              { label: 'Pediu pra parar',        tom: 'sem_dado',    chip: 'Pediu pra parar' },
 };
-
-function card(titulo: string, valor: string, sub: string, accent: 'amber' | 'sky' | 'emerald' | 'violet' | 'rose' | 'indigo', valorCor = 'text-slate-900'): string {
-  return `
-    <div class="bg-white rounded-xl shadow-md hover:shadow-lg transition border border-slate-200 accent-${accent} p-5">
-      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">${escapeHtml(titulo)}</div>
-      <div class="text-3xl font-bold ${valorCor} mt-2">${escapeHtml(valor)}</div>
-      ${sub ? `<div class="text-xs text-slate-500 mt-1">${escapeHtml(sub)}</div>` : ''}
-    </div>`;
-}
 
 function timeAgo(iso: string | null): string {
   if (!iso) return '—';
@@ -37,27 +52,18 @@ function timeAgo(iso: string | null): string {
   return `${months}mês`;
 }
 
-function statusBadge(s: CadenciaStatus): string {
-  const t = STATUS_LABELS[s];
-  return `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${t.bg} ${t.color}">${escapeHtml(t.label)}</span>`;
-}
-
-function tempBadge(temp: string | null): string {
-  if (!temp) return '<span class="text-slate-400 text-xs">—</span>';
-  const map: Record<string, { icon: string; class: string }> = {
-    quente: { icon: '🔥', class: 'bg-rose-100 text-rose-800' },
-    morno:  { icon: '🌡️', class: 'bg-amber-100 text-amber-800' },
-    frio:   { icon: '🥶', class: 'bg-sky-100 text-sky-800' },
-  };
-  const t = map[temp] ?? { icon: '', class: 'bg-slate-100 text-slate-700' };
-  return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${t.class}">${t.icon} ${escapeHtml(temp)}</span>`;
-}
+const TEMP: Record<string, Tom> = { quente: 'critico', morno: 'atencao', frio: 'info' };
 
 export function maskPhone(phone: string): string {
   // Normaliza ANTES (wa_id BR vem sem o 9o digito) -> +55 61 99880-5002
   const n = normalizeBrazilianPhone(phone) ?? (phone ?? '').replace(/\D/g, '');
   if (n.length < 10) return phone;
   return `+${n.slice(0, 2)} ${n.slice(2, 4)} ${n.slice(4, -4)}-${n.slice(-4)}`;
+}
+
+/** Texto dentro de uma string JS de aspas simples, num atributo HTML (onsubmit). */
+function jsStr(s: string): string {
+  return escapeHtml(s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/[\r\n]+/g, ' '));
 }
 
 export interface CadenciaPageInput {
@@ -70,54 +76,49 @@ export interface CadenciaPageInput {
 
 export function renderCadenciaPage(input: CadenciaPageInput): string {
   const { rows, kpis, filterStatus, user } = input;
+  const casa = !user || user.companyId === ECOSUN_COMPANY_ID;
 
   const filtered = filterStatus
     ? rows.filter((r) => r.cadencia_status === filterStatus)
     : rows;
 
-  const tableRows = filtered.length === 0
-    ? `<tr><td colspan="7" class="text-center text-slate-500 py-8">Nenhum lead encontrado${filterStatus ? ' nesse status' : ''}.</td></tr>`
-    : filtered.map((r) => `
-        <tr class="border-t border-slate-100 hover:bg-slate-50">
-          <td class="px-4 py-3">
-            <div class="font-medium text-slate-900">${escapeHtml(r.name)}</div>
-            <div class="text-xs text-slate-500">${escapeHtml(maskPhone(r.phone))}</div>
-            ${r.email ? `<div class="text-xs text-sky-700 mt-0.5">✉️ ${escapeHtml(r.email)}</div>` : '<div class="text-xs text-slate-300 mt-0.5">✉️ sem email</div>'}
-          </td>
-          <td class="px-4 py-3">${statusBadge(r.cadencia_status)}</td>
-          <td class="px-4 py-3">${tempBadge(r.temperatura_anterior)}</td>
-          <td class="px-4 py-3 text-xs text-slate-700">
-            ${r.ultima_etapa_anterior ? escapeHtml(r.ultima_etapa_anterior) : '—'}
-            ${r.atendente_anterior ? `<div class="text-slate-500">com ${escapeHtml(r.atendente_anterior)}</div>` : ''}
-          </td>
-          <td class="px-4 py-3 text-sm">
-            ${r.consumo_kwh ? `${r.consumo_kwh.toLocaleString('pt-BR')} kWh/mês` : '—'}
-          </td>
-          <td class="px-4 py-3 text-xs text-slate-600">
-            <div>Última abertura: ${timeAgo(r.last_reactivation_sent_at)}</div>
-            <div>Última msg: ${timeAgo(r.last_message_at)}</div>
-          </td>
-          <td class="px-4 py-3 text-xs text-slate-500">
-            ${r.motivo_perda_anterior ? escapeHtml(r.motivo_perda_anterior).slice(0, 60) : '—'}
-          </td>
-          <td class="px-4 py-3">
-            ${r.cadencia_status === 'cliente' || r.cadencia_status === 'opt_out'
-              ? '<span class="text-xs text-slate-400">—</span>'
-              : `<form method="POST" action="/dashboard/cadencia/fechou" class="inline" onsubmit="return confirm('Marcar ${escapeHtml(r.name).replace(/'/g, "\\'")}  como cliente fechado? Remove da cadência.')">
-                  <input type="hidden" name="id" value="${escapeHtml(r.id)}">
-                  <button type="submit" class="text-xs px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition font-medium">✅ Fechou</button>
-                </form>
-                <form method="POST" action="/dashboard/cadencia/optout" class="inline ml-1" onsubmit="return confirm('Marcar que ${escapeHtml(r.name).replace(/'/g, "\\'")}  pediu pra parar? Para de receber mensagens.')">
-                  <input type="hidden" name="id" value="${escapeHtml(r.id)}">
-                  <button type="submit" class="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition font-medium">🚪 Pediu pra parar</button>
-                </form>`}
-          </td>
-        </tr>`).join('');
+  const acoes = (r: LeadCadenciaRow): string => (r.cadencia_status === 'cliente' || r.cadencia_status === 'opt_out')
+    ? '<span class="cc-faint">—</span>'
+    : `<div class="cc-cd-acoes">
+        <form method="POST" action="/dashboard/cadencia/fechou" onsubmit="return confirm('Marcar ${jsStr(r.name)} como cliente fechado? Remove da cadência.')">
+          <input type="hidden" name="id" value="${escapeHtml(r.id)}">
+          ${botao({ rotulo: 'Fechou', tipo: 'submit', tamanho: 'sm', icone: 'check' })}
+        </form>
+        <form method="POST" action="/dashboard/cadencia/optout" onsubmit="return confirm('Marcar que ${jsStr(r.name)} pediu pra parar? Para de receber mensagens.')">
+          <input type="hidden" name="id" value="${escapeHtml(r.id)}">
+          ${botao({ rotulo: 'Pediu pra parar', tipo: 'submit', tamanho: 'sm', tom: 'fantasma' })}
+        </form>
+      </div>`;
 
-  const statusFilter = (status: string, label: string, count: number) => {
-    const active = filterStatus === status;
-    return `<a href="/dashboard/cadencia${active ? '' : `?status=${status}`}" class="px-3 py-1.5 rounded-full text-xs font-medium transition ${active ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}">${escapeHtml(label)} ${count > 0 ? `<span class="ml-1 opacity-70">${count}</span>` : ''}</a>`;
-  };
+  const tabelaHtml = filtered.length === 0
+    ? estadoVazio({ tipo: 'vazio', titulo: `Nenhum lead encontrado${filterStatus ? ' nesse status' : ''}.`, icone: 'users' })
+    : tabela({
+      mobile: 'cartoes',
+      colunas: [{ titulo: 'Lead' }, { titulo: 'Status' }, { titulo: 'Temperatura' }, { titulo: 'Etapa anterior' }, { titulo: 'Consumo', alinhar: 'dir', num: true }, { titulo: 'Histórico' }, { titulo: 'Motivo da perda anterior' }, { titulo: 'Ações' }],
+      linhas: filtered.map((r) => {
+        const st = STATUS_LABELS[r.cadencia_status];
+        const email = r.email
+          ? `<span class="cc-cd-mail">${escapeHtml(r.email)}</span>`
+          : '<span class="cc-cd-mail cc-cd-sem">sem e-mail</span>';
+        return [
+          { html: `${celulaDupla(r.name, maskPhone(r.phone))}${email}` },
+          { html: pilulaStatus(st.tom, st.label) },
+          r.temperatura_anterior ? { html: pilulaStatus(TEMP[r.temperatura_anterior] ?? 'sem_dado', r.temperatura_anterior) } : null,
+          r.ultima_etapa_anterior || r.atendente_anterior
+            ? { html: celulaDupla(r.ultima_etapa_anterior, r.atendente_anterior ? `com ${r.atendente_anterior}` : null) }
+            : null,
+          r.consumo_kwh ? `${r.consumo_kwh.toLocaleString('pt-BR')} kWh/mês` : null,
+          { html: `<div class="cc-cd-hist">Última abertura: ${escapeHtml(timeAgo(r.last_reactivation_sent_at))}<br>Última msg: ${escapeHtml(timeAgo(r.last_message_at))}</div>` },
+          r.motivo_perda_anterior ? { html: `<span class="cc-cd-motivo">${escapeHtml(r.motivo_perda_anterior.slice(0, 60))}</span>` } : null,
+          { html: acoes(r) },
+        ];
+      }),
+    });
 
   const counts: Record<CadenciaStatus, number> = {
     aguardando: 0, enviado_sem_resposta: 0, respondeu: 0, qualificando: 0,
@@ -125,62 +126,50 @@ export function renderCadenciaPage(input: CadenciaPageInput): string {
   };
   for (const r of rows) counts[r.cadencia_status]++;
 
+  // Mesmos links de antes: o chip ativo volta pra /cadencia; os outros ?status=<x>.
+  const filtro = (status: string, rotulo: string, valor: number) => {
+    const ativo = filterStatus === status;
+    return { rotulo, valor: valor > 0 ? valor : null, ativo, href: `/dashboard/cadencia${ativo ? '' : `?status=${status}`}` };
+  };
+
+  const pct = (v: number | null, txt: string) => (v != null ? `${v.toFixed(1).replace('.', ',')}% ${txt}` : '');
+
   const body = `
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold text-slate-900">🔄 Cadência de Reativação</h1>
-      <p class="text-slate-600 text-sm">Leads da base recuperada (comercial terceirizado) — acompanhe a abertura enviada, respostas e funil até proposta.</p>
-    </div>
-
-    <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-      ${card('Total leads', String(kpis.total_leads), 'base terceirizada', 'indigo')}
-      ${card('Aberturas enviadas', String(kpis.templates_disparados), kpis.total_leads > 0 ? `${((kpis.templates_disparados / kpis.total_leads) * 100).toFixed(0)}% da base` : '', 'sky', 'text-sky-700')}
-      ${card('Responderam', String(kpis.responderam), kpis.taxa_resposta_pct != null ? `${kpis.taxa_resposta_pct.toFixed(1)}% taxa resposta` : '', 'emerald', 'text-emerald-700')}
-      ${card('Clientes novos', String(kpis.clientes), 'fechados via reativação', 'amber', 'text-amber-700')}
-    </section>
-
-    <section class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-      ${card('Qualificando', String(kpis.qualificando), kpis.taxa_qualificacao_pct != null ? `${kpis.taxa_qualificacao_pct.toFixed(1)}% dos que responderam` : '', 'violet')}
-      ${card('Proposta enviada', String(kpis.proposta_enviada), kpis.taxa_proposta_pct != null ? `${kpis.taxa_proposta_pct.toFixed(1)}% dos qualificando` : '', 'amber')}
-      ${card('Sem resposta 7d+', String(counts.sem_resposta_7d), 'follow-up necessário', counts.sem_resposta_7d > 0 ? 'rose' : 'sky', counts.sem_resposta_7d > 0 ? 'text-rose-600' : 'text-slate-900')}
-    </section>
-
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-4">
-      <h2 class="text-lg font-semibold text-slate-900 mb-3">Filtrar por status</h2>
-      <div class="flex flex-wrap gap-2">
-        ${statusFilter('', 'Todos', rows.length)}
-        ${statusFilter('aguardando', '⏳ Aguardando', counts.aguardando)}
-        ${statusFilter('enviado_sem_resposta', '📤 Enviado', counts.enviado_sem_resposta)}
-        ${statusFilter('respondeu', '💬 Respondeu', counts.respondeu)}
-        ${statusFilter('qualificando', '🎯 Qualificando', counts.qualificando)}
-        ${statusFilter('proposta_enviada', '📋 Proposta', counts.proposta_enviada)}
-        ${statusFilter('cliente', '✅ Cliente', counts.cliente)}
-        ${statusFilter('sem_resposta_7d', '⚠️ Sem resposta 7d+', counts.sem_resposta_7d)}
-        ${statusFilter('opt_out', '🚪 Pediu pra parar', counts.opt_out)}
-      </div>
-    </section>
-
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
-      <table class="w-full text-left">
-        <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-          <tr>
-            <th class="px-4 py-3">Lead</th>
-            <th class="px-4 py-3">Status</th>
-            <th class="px-4 py-3">Temp</th>
-            <th class="px-4 py-3">Etapa anterior</th>
-            <th class="px-4 py-3">Consumo</th>
-            <th class="px-4 py-3">Histórico</th>
-            <th class="px-4 py-3">Motivo perda anterior</th>
-            <th class="px-4 py-3">Ações</th>
-          </tr>
-        </thead>
-        <tbody>${tableRows}</tbody>
-      </table>
-    </section>
-
-    <div class="mt-6 text-xs text-slate-500">
-      💡 Pra disparar template pros leads aguardando: manda <code class="bg-slate-100 px-1.5 py-0.5 rounded">/reativar-base N</code> no WhatsApp (default N=10). Delay 30-90s entre cada.
-    </div>
+    ${cabecalhoPagina({
+      trilha: [{ rotulo: 'Marketing', href: '/dashboard/marketing' }, { rotulo: 'Cadência', href: '/dashboard/cadencia' }],
+      titulo: 'Cadência de reativação',
+      subtitulo: 'Leads da base recuperada (comercial terceirizado) — acompanhe a abertura enviada, as respostas e o funil até a proposta.',
+    })}
+    ${faixaKpis([
+      { rotulo: 'Total de leads', valor: kpis.total_leads, detalhe: 'base terceirizada', destaque: true },
+      { rotulo: 'Aberturas enviadas', valor: kpis.templates_disparados, detalhe: kpis.total_leads > 0 ? `${((kpis.templates_disparados / kpis.total_leads) * 100).toFixed(0)}% da base` : '' },
+      { rotulo: 'Responderam', valor: kpis.responderam, detalhe: pct(kpis.taxa_resposta_pct, 'de resposta') },
+      { rotulo: 'Clientes novos', valor: kpis.clientes, detalhe: 'fechados via reativação' },
+      { rotulo: 'Qualificando', valor: kpis.qualificando, detalhe: pct(kpis.taxa_qualificacao_pct, 'dos que responderam') },
+      { rotulo: 'Proposta enviada', valor: kpis.proposta_enviada, detalhe: pct(kpis.taxa_proposta_pct, 'dos qualificando') },
+      { rotulo: 'Sem resposta 7d+', valor: counts.sem_resposta_7d, detalhe: 'precisa de acompanhamento' },
+    ])}
+    ${cartaoSecao({
+      titulo: 'Leads da cadência',
+      dica: `${filtered.length} de ${rows.length}`,
+      corpoHtml: `<div style="margin-bottom:12px">${chipsFiltro([
+        filtro('', 'Todos', rows.length),
+        filtro('aguardando', STATUS_LABELS.aguardando.chip, counts.aguardando),
+        filtro('enviado_sem_resposta', STATUS_LABELS.enviado_sem_resposta.chip, counts.enviado_sem_resposta),
+        filtro('respondeu', STATUS_LABELS.respondeu.chip, counts.respondeu),
+        filtro('qualificando', STATUS_LABELS.qualificando.chip, counts.qualificando),
+        filtro('proposta_enviada', STATUS_LABELS.proposta_enviada.chip, counts.proposta_enviada),
+        filtro('cliente', STATUS_LABELS.cliente.chip, counts.cliente),
+        filtro('sem_resposta_7d', STATUS_LABELS.sem_resposta_7d.chip, counts.sem_resposta_7d),
+        filtro('opt_out', STATUS_LABELS.opt_out.chip, counts.opt_out),
+      ])}</div>${tabelaHtml}`,
+    })}
+    ${casa ? `<p class="cc-cd-dica">Pra disparar a mensagem de abertura pros leads aguardando: mande <code>/reativar-base N</code> no WhatsApp (padrão N=10). Espera de 30 a 90 s entre cada um.</p>` : ''}
   `;
 
-  return renderLayout({ active: 'cadencia', title: 'Cadência', body, user });
+  return renderLayout({
+    active: 'cadencia', title: 'Cadência', user,
+    body: `<div class="cc-root cc-cd">${body}</div><style>${CSS_CADENCIA}</style>`,
+    tailwind: false, dark: temaDaTela(user, 'escuro') === 'escuro', largo: true,
+  });
 }
