@@ -151,7 +151,7 @@ export const JS_MAPA_USINAS = String.raw`(function () {
     if (!legEl) return;
     legEl.textContent = '';
     ORDEM.forEach(function (e) {
-      var n = (d.porEstado && d.porEstado[e]) || 0;
+      var n = ((d.porEstadoNoMapa || d.porEstado) || {})[e] || 0;
       if (!n && (e === 'sem_monitoramento' || e === 'critico')) return;
       var c = el('span', 'cc-mapa-chip');
       var i = el('i'); i.style.background = CORES[e]; c.appendChild(i);
@@ -220,6 +220,8 @@ export const JS_MAPA_USINAS = String.raw`(function () {
     pinta('water', 'fill-color', '#0A2A4A');
     pinta('landuse_residential', 'fill-color', '#13294A');
     pinta('landuse_residential', 'fill-opacity', 0.55);
+    pinta('park', 'fill-opacity', 0.12);
+    pinta('landcover_wood', 'fill-opacity', 0.35);
     pinta('boundary_state', 'line-color', 'rgba(251,191,36,.55)');
     pinta('boundary_state', 'line-width', 1.4);
     var nomePt = ['coalesce', ['get', 'name:pt'], ['get', 'name']];
@@ -255,8 +257,8 @@ export const JS_MAPA_USINAS = String.raw`(function () {
     item('Potência', u.kwp === null ? '—' : num(u.kwp, u.kwp < 100 ? 2 : 1) + ' kWp');
     item('Hoje', energia(u.hojeKwh));
     item('No mês', energia(u.mesKwh));
-    item('Do esperado (7 dias)', u.pctEsperado === null ? '—' : num(u.pctEsperado) + '%');
-    item('Última comunicação', quando(u.ultimaComunicacao));
+    item('Do esperado', u.pctEsperado === null ? '—' : num(u.pctEsperado) + '% (7 dias)');
+    item('Último sinal', quando(u.ultimaComunicacao));
     item('Inversor', u.marca || '—');
     c.appendChild(g);
     if (u.alerta && u.estado !== 'normal') c.appendChild(el('div', 'cc-mp-al', u.alerta));
@@ -287,9 +289,14 @@ export const JS_MAPA_USINAS = String.raw`(function () {
         'NavigationControl.ZoomOut': 'Afastar',
       },
     });
+    raiz.ccMapa = mapa; // acesso pra depuração/tela do escritório
     mapa.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
     if (!TV) mapa.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     mapa.touchZoomRotate.disableRotation();
+    // Ícone do estilo que não veio no sprite: vira transparente (sem aviso no console).
+    mapa.on('styleimagemissing', function (e) {
+      if (!mapa.hasImage(e.id)) mapa.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) });
+    });
     mapa.on('error', function (e) { if (window.console) console.warn('[mapa]', e && e.error ? e.error.message : e); });
     mapa.on('load', function () {
       status('');
@@ -327,17 +334,24 @@ export const JS_MAPA_USINAS = String.raw`(function () {
         layout: { 'text-field': ['get', 'nome'], 'text-font': ['Noto Sans Regular'], 'text-size': 11.5, 'text-offset': [0, 0.6], 'text-anchor': 'top', 'text-optional': true, 'text-max-width': 12 },
         paint: { 'text-color': '#EAF1F8', 'text-halo-color': 'rgba(8,18,32,.92)', 'text-halo-width': 1.4 } });
 
-      mapa.on('click', 'grupo', function (e) {
-        var f = e.features && e.features[0]; if (!f) return;
-        var p = mapa.getSource('usinas').getClusterExpansionZoom(f.properties.cluster_id);
-        var ir = function (z) { mapa.easeTo({ center: f.geometry.coordinates, zoom: Math.min(z + 0.3, 16) }); };
-        if (p && p.then) p.then(ir); else if (typeof p === 'number') ir(p);
-      });
-      mapa.on('click', 'usina', function (e) {
-        var f = e.features && e.features[0]; if (!f) return;
+      // Um clique só no mapa, com folga de ~14 px (dedo no celular não é mira).
+      mapa.on('click', function (e) {
+        var p = e.point;
+        var achados = mapa.queryRenderedFeatures([[p.x - 14, p.y - 14], [p.x + 14, p.y + 14]], { layers: ['usina', 'grupo'] });
+        var f = achados.filter(function (x) { return x.layer.id === 'usina'; })[0] || achados[0];
+        if (!f) return;
+        if (f.layer.id === 'grupo') {
+          var z = mapa.getSource('usinas').getClusterExpansionZoom(f.properties.cluster_id);
+          var ir = function (zz) { mapa.easeTo({ center: f.geometry.coordinates, zoom: Math.min(zz + 0.3, 16) }); };
+          if (z && z.then) z.then(ir); else if (typeof z === 'number') ir(z);
+          return;
+        }
         var u; try { u = JSON.parse(f.properties.u); } catch (x) { return; }
         if (popup) popup.remove();
-        popup = new maplibregl.Popup({ offset: [0, -36], maxWidth: '300px', focusAfterOpen: false })
+        // Cartão sempre ACIMA do alfinete: desce o mapa pra o alfinete ficar perto da borda de baixo.
+        var alt = mapa.getContainer().clientHeight;
+        mapa.easeTo({ center: f.geometry.coordinates, offset: [0, Math.max(0, alt / 2 - 34)], duration: 350 });
+        popup = new maplibregl.Popup({ anchor: 'bottom', offset: [0, -40], maxWidth: '300px', focusAfterOpen: false })
           .setLngLat(f.geometry.coordinates).setDOMContent(cartao(u)).addTo(mapa);
       });
       ['grupo', 'usina'].forEach(function (id) {

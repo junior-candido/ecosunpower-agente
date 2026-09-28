@@ -134,6 +134,8 @@ const CSS_LOCALIZAR = `
 .cc-loc .cc-loc-lista li[data-r="aprox"] small{color:var(--cc-warn)}
 .cc-loc .cc-loc-lista li[data-r="erro"] small{color:var(--cc-crit)}
 .cc-loc .cc-loc-acoes{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+.cc-loc .cc-nota{font-size:12.5px;line-height:1.5;color:var(--cc-muted);margin:16px 0 0;max-width:90ch}
+.cc-loc .cc-nota b{color:var(--cc-text-2)}
 `;
 
 export function renderLocalizarUsinasPage(p: LocalizarPageInput): string {

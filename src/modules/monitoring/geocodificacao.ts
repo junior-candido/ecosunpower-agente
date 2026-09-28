@@ -90,7 +90,7 @@ export function ehGeoFonte(v: unknown): v is GeoFonte {
 
 type Centro = { uf: string; lat: number; lng: number; nomes: string[] };
 
-/** Centros aproximados (praça/centro comercial). Nome em minúsculas, sem acento. */
+/** Centros aproximados (conferidos com o OpenStreetMap em 28/09/2026). Nome em minúsculas, sem acento. */
 const CENTROS: Centro[] = [
   // Distrito Federal (regiões administrativas e bairros que o cliente escreve como "cidade")
   { uf: 'DF', lat: -15.7939, lng: -47.8828, nomes: ['brasilia', 'plano piloto', 'distrito federal'] },
@@ -101,21 +101,21 @@ const CENTROS: Centro[] = [
   { uf: 'DF', lat: -15.7917, lng: -47.9383, nomes: ['cruzeiro', 'cruzeiro novo', 'cruzeiro velho'] },
   { uf: 'DF', lat: -15.8333, lng: -48.0564, nomes: ['taguatinga', 'taguatinga norte', 'taguatinga sul'] },
   { uf: 'DF', lat: -15.8190, lng: -48.1080, nomes: ['ceilandia', 'ceilandia norte', 'ceilandia sul'] },
-  { uf: 'DF', lat: -15.8250, lng: -48.1350, nomes: ['sol nascente', 'por do sol', 'sol nascente/por do sol'] },
+  { uf: 'DF', lat: -15.8350, lng: -48.1360, nomes: ['sol nascente', 'por do sol', 'sol nascente/por do sol'] },
   { uf: 'DF', lat: -16.0190, lng: -48.0660, nomes: ['gama', 'setor leste gama', 'gama leste', 'gama oeste'] },
   { uf: 'DF', lat: -15.6530, lng: -47.7910, nomes: ['sobradinho', 'sobradinho i'] },
   { uf: 'DF', lat: -15.6370, lng: -47.8270, nomes: ['sobradinho ii', 'sobradinho 2'] },
   { uf: 'DF', lat: -15.6200, lng: -47.6520, nomes: ['planaltina', 'planaltina df', 'arapoanga', 'vale do amanhecer'] },
-  { uf: 'DF', lat: -15.8400, lng: -47.8640, nomes: ['lago sul', 'setor de mansoes dom bosco', 'smdb'] },
+  { uf: 'DF', lat: -15.8392, lng: -47.8755, nomes: ['lago sul', 'setor de mansoes dom bosco', 'smdb'] },
   { uf: 'DF', lat: -15.7350, lng: -47.8600, nomes: ['lago norte'] },
   { uf: 'DF', lat: -15.8340, lng: -48.0260, nomes: ['aguas claras'] },
   { uf: 'DF', lat: -15.8580, lng: -48.0050, nomes: ['arniqueira', 'arniqueiras'] },
-  { uf: 'DF', lat: -15.8030, lng: -48.0280, nomes: ['vicente pires'] },
+  { uf: 'DF', lat: -15.8136, lng: -48.0156, nomes: ['vicente pires'] },
   { uf: 'DF', lat: -15.8760, lng: -48.0870, nomes: ['samambaia', 'samambaia norte', 'samambaia sul'] },
   { uf: 'DF', lat: -15.9050, lng: -48.0640, nomes: ['recanto das emas'] },
   { uf: 'DF', lat: -16.0200, lng: -48.0120, nomes: ['santa maria'] },
   { uf: 'DF', lat: -15.9030, lng: -47.7780, nomes: ['sao sebastiao'] },
-  { uf: 'DF', lat: -15.8700, lng: -47.8000, nomes: ['jardim botanico'] },
+  { uf: 'DF', lat: -15.8639, lng: -47.7885, nomes: ['jardim botanico'] },
   { uf: 'DF', lat: -15.7760, lng: -47.7800, nomes: ['paranoa'] },
   { uf: 'DF', lat: -15.7480, lng: -47.7700, nomes: ['itapoa'] },
   { uf: 'DF', lat: -15.8230, lng: -47.9770, nomes: ['guara', 'guara i', 'guara ii'] },
@@ -128,14 +128,14 @@ const CENTROS: Centro[] = [
   { uf: 'DF', lat: -15.7100, lng: -47.8770, nomes: ['varjao'] },
   { uf: 'DF', lat: -15.7830, lng: -47.9950, nomes: ['estrutural', 'scia', 'scia/estrutural', 'cidade estrutural'] },
   { uf: 'DF', lat: -15.6000, lng: -47.8700, nomes: ['fercal'] },
-  { uf: 'DF', lat: -15.7880, lng: -47.9500, nomes: ['sia', 'setor de industria e abastecimento'] },
+  { uf: 'DF', lat: -15.8062, lng: -47.9592, nomes: ['sia', 'setor de industria e abastecimento'] },
   // Entorno (Goiás) e cidades próximas
   { uf: 'GO', lat: -16.0680, lng: -47.9760, nomes: ['valparaiso', 'valparaiso de goias'] },
   { uf: 'GO', lat: -16.2530, lng: -47.9500, nomes: ['luziania'] },
-  { uf: 'GO', lat: -15.5370, lng: -47.3340, nomes: ['formosa'] },
-  { uf: 'GO', lat: -16.0760, lng: -47.9250, nomes: ['cidade ocidental'] },
-  { uf: 'GO', lat: -16.0590, lng: -48.0420, nomes: ['novo gama'] },
-  { uf: 'GO', lat: -15.7620, lng: -48.2810, nomes: ['aguas lindas', 'aguas lindas de goias'] },
+  { uf: 'GO', lat: -15.5492, lng: -47.3301, nomes: ['formosa'] },
+  { uf: 'GO', lat: -16.1001, lng: -47.9445, nomes: ['cidade ocidental'] },
+  { uf: 'GO', lat: -16.0501, lng: -48.0308, nomes: ['novo gama'] },
+  { uf: 'GO', lat: -15.7392, lng: -48.2793, nomes: ['aguas lindas', 'aguas lindas de goias'] },
   { uf: 'GO', lat: -15.1600, lng: -48.2830, nomes: ['padre bernardo'] },
   { uf: 'GO', lat: -15.8520, lng: -48.9590, nomes: ['pirenopolis'] },
   { uf: 'GO', lat: -15.9410, lng: -48.2570, nomes: ['santo antonio do descoberto'] },
@@ -143,12 +143,12 @@ const CENTROS: Centro[] = [
   { uf: 'GO', lat: -16.0830, lng: -48.5070, nomes: ['alexania'] },
   { uf: 'GO', lat: -16.7680, lng: -47.6130, nomes: ['cristalina'] },
   { uf: 'GO', lat: -15.7920, lng: -48.7750, nomes: ['cocalzinho', 'cocalzinho de goias'] },
-  { uf: 'GO', lat: -15.3130, lng: -48.6200, nomes: ['mimoso de goias'] },
+  { uf: 'GO', lat: -15.0585, lng: -48.1616, nomes: ['mimoso de goias'] },
   { uf: 'GO', lat: -16.3280, lng: -48.9530, nomes: ['anapolis'] },
   { uf: 'GO', lat: -16.6800, lng: -49.2530, nomes: ['goiania'] },
   { uf: 'GO', lat: -14.1330, lng: -47.5100, nomes: ['alto paraiso', 'alto paraiso de goias'] },
-  { uf: 'GO', lat: -14.2000, lng: -47.7800, nomes: ['sao joao d alianca', "sao joao d'alianca"] },
-  { uf: 'GO', lat: -15.3250, lng: -49.1170, nomes: ['jaragua'] },
+  { uf: 'GO', lat: -14.7043, lng: -47.5207, nomes: ['sao joao d alianca', "sao joao d'alianca"] },
+  { uf: 'GO', lat: -15.7529, lng: -49.3344, nomes: ['jaragua'] },
   { uf: 'MG', lat: -16.3570, lng: -46.9060, nomes: ['unai'] },
 ];
 

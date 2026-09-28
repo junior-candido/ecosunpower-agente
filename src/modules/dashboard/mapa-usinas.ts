@@ -55,6 +55,8 @@ export interface DadosMapa {
   /** Usinas ativas da empresa (com e sem posição). */
   total: number;
   porEstado: Record<EstadoUsina, number>;
+  /** Só as que têm alfinete (a legenda do mapa conta o que se vê). */
+  porEstadoNoMapa: Record<EstadoUsina, number>;
   usinas: PinoUsina[];
   semPosicao: number;
   /** Até 5 nomes, pro aviso. */
@@ -129,10 +131,14 @@ export function montarDadosMapa(
     });
   }
 
+  const porEstadoNoMapa: Record<EstadoUsina, number> = { normal: 0, atencao: 0, critico: 0, sem_comunicacao: 0, sem_monitoramento: 0 };
+  for (const u of usinas) porEstadoNoMapa[u.estado] += 1;
+
   return {
     geradoEm: o.agora.toISOString(),
     total: frota.total,
     porEstado: frota.porEstado,
+    porEstadoNoMapa,
     usinas,
     semPosicao,
     semPosicaoNomes,

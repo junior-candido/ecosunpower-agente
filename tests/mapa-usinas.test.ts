@@ -35,6 +35,9 @@ describe('montarDadosMapa', () => {
     expect(d.usinas.map((u) => u.id)).toEqual(['a']);
     expect(d.semPosicao).toBe(1);
     expect(d.semPosicaoNomes).toEqual(['Sem ponto']);
+    // A legenda do mapa conta só o que tem alfinete; a frota inteira fica em porEstado.
+    expect(d.porEstado.normal).toBe(2);
+    expect(d.porEstadoNoMapa.normal).toBe(1);
   });
 
   it('cartão: nome, cliente, cidade, kWp, hoje, mês, % do esperado (7 dias), última comunicação, marca e link', () => {
