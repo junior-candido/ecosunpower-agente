@@ -225,6 +225,8 @@ export function createDashboardRouter(
     enviarPessoal?: (instancia: string, to: string, text: string) => Promise<{ messageId?: string } | void>;
     // EVOLUTION_INSTANCE (a da Eva): nunca pode virar número pessoal.
     evolutionInstanciaEva?: string;
+    // Histórico do número pessoal (últimos 90 dias): progresso + puxar da Evolution (numero-pessoal-historico.ts).
+    historicoPessoal?: import('../numero-pessoal-historico.js').ImportadorHistorico;
     // URL do webhook desta plataforma (sem token) + token no cabeçalho, pra instância pessoal nova.
     evolutionWebhookUrl?: string;
     evolutionWebhookToken?: string;
@@ -303,6 +305,7 @@ export function createDashboardRouter(
     instanciaDaEva: options.evolutionInstanciaEva ?? '',
     webhookUrl: options.evolutionWebhookUrl,
     webhookToken: options.evolutionWebhookToken,
+    historico: options.historicoPessoal,
   });
 
   // Parser dos forms internos (form-urlencoded). Limite maior porque a tela de
@@ -1583,6 +1586,9 @@ b.onclick=async function(){
   router.post('/whatsapp/pessoal/criar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.criar);
   router.post('/whatsapp/pessoal/desligar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.desligar);
   router.post('/whatsapp/pessoal/religar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.religar);
+  // Buscar o histórico (últimos 90 dias): reconecta (QR de novo uma vez) + progresso.
+  router.post('/whatsapp/pessoal/historico', exigir('usuarios', 'administrar'), rotasNumeroPessoal.buscarHistorico);
+  router.get('/whatsapp/pessoal/historico.json', exigir('usuarios', 'administrar'), rotasNumeroPessoal.historicoJson);
 
   router.get('/whatsapp', exigir('usuarios', 'administrar'), async (req: AuthedRequest, res) => {
     try {

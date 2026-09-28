@@ -180,3 +180,12 @@ ANTES de tudo da Eva (`numero-pessoal.ts` → só grava, `visivel_so_para` = don
 Conversas de quem não é lead aparecem na lista com "Virar lead" (`?contato=`); mesmo telefone = um lead
 (variantes com 55, dentro da empresa). A resposta sai pelo número em que o cliente escreveu por último
 ("Responder como 🤖 Eva / 👤 Junior").
+**Sem recarregar:** com `Accept: application/json` as rotas de envio devolvem JSON (balão otimista no
+script); `GET /leads/:id/conversa.json` e `/leads/conversas/contato.json` devolvem os pedaços da tela
+(`pedacosDaConversa`/`pedacosDoContato` + `assinaturaDaConversa`) — o chat se atualiza a cada 8 s.
+**Histórico do pessoal (90 dias):** `numero-pessoal-historico.ts` — o webhook `messages.set` só enfileira
+(importador em memória, lotes de 200, anti-duplicado pelo `wamid`); "Buscar histórico (reconectar)" em
+`/dashboard/whatsapp/pessoal` liga `syncFullHistory`, assina `MESSAGES_SET`, desconecta (QR de novo) e
+puxa o que a Evolution já guardou (`/chat/findMessages`). Eva/dono/equipe (`definirNumerosInternos` +
+`contatos_internos`) ficam fora da caixa pessoal. A lista pessoal usa `conversas_pessoais_recentes`
+(migration 140: uma linha por contato; sem ela, cai nas 1000 mensagens mais novas).

@@ -116,7 +116,9 @@ export async function criarInstancia(
     const r = await f(`${base}/instance/create`, {
       method: 'POST',
       headers: { apikey: deps.apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ instanceName: instancia, qrcode: true, integration: 'WHATSAPP-BAILEYS' }),
+      // syncFullHistory: ao ler o QR o celular manda o histórico (messages.set) —
+      // o número pessoal importa os últimos 90 dias (numero-pessoal-historico.ts).
+      body: JSON.stringify({ instanceName: instancia, qrcode: true, integration: 'WHATSAPP-BAILEYS', syncFullHistory: true }),
       signal: AbortSignal.timeout(15000),
     });
     if (!r.ok) {
@@ -128,18 +130,122 @@ export async function criarInstancia(
     return { ok: false, motivo: 'erro' };
   }
   if (!webhookUrl) return { ok: true, jaExistia, webhook: 'nao_pedido' };
+  return { ok: true, jaExistia, webhook: await apontarWebhook(deps, instancia, webhookUrl, webhookToken) };
+}
+
+/** Eventos que o número pessoal assina: mensagem nova + o HISTÓRICO que chega ao ler o QR. */
+export const EVENTOS_PESSOAL = ['MESSAGES_UPSERT', 'MESSAGES_SET'] as const;
+
+/** POST /webhook/set — token no CABEÇALHO (nunca na URL: log do proxy, tela da Evolution). */
+export async function apontarWebhook(deps: ConexaoEvolutionDeps, instancia: string, webhookUrl: string, webhookToken?: string): Promise<'ok' | 'falhou'> {
+  if (!instanciaValida(instancia)) return 'falhou';
+  const f = deps.fetchImpl ?? fetch;
   try {
-    const w = await f(`${base}/webhook/set/${encodeURIComponent(instancia)}`, {
+    const w = await f(`${deps.baseUrl.replace(/\/$/, '')}/webhook/set/${encodeURIComponent(instancia)}`, {
       method: 'POST',
       headers: { apikey: deps.apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({ webhook: {
-        enabled: true, url: webhookUrl, byEvents: false, base64: false, events: ['MESSAGES_UPSERT'],
+        enabled: true, url: webhookUrl, byEvents: false, base64: false, events: [...EVENTOS_PESSOAL],
         ...(webhookToken ? { headers: { 'x-webhook-token': webhookToken } } : {}),
       } }),
       signal: AbortSignal.timeout(15000),
     });
-    return { ok: true, jaExistia, webhook: w.ok ? 'ok' : 'falhou' };
+    return w.ok ? 'ok' : 'falhou';
   } catch {
-    return { ok: true, jaExistia, webhook: 'falhou' };
+    return 'falhou';
   }
 }
+
+// ---------------------------------------------------------------------------
+// Histórico do número pessoal (28/09/2026). O WhatsApp só manda o histórico
+// quando o aparelho é CONECTADO (leitura do QR) com a sincronização completa
+// ligada. Então "Buscar histórico" = ligar a opção, assinar o evento e
+// desconectar — o dono lê o QR de novo UMA vez. Evolution v2:
+//   POST /settings/set/{inst}   (todos os campos obrigatórios: lê os atuais antes)
+//   POST /webhook/set/{inst}    (MESSAGES_UPSERT + MESSAGES_SET)
+//   DELETE /instance/logout/{inst}
+// ---------------------------------------------------------------------------
+
+export type ResultadoPedidoHistorico =
+  | { ok: true; webhook: 'ok' | 'falhou' | 'nao_pedido'; desconectou: boolean }
+  | { ok: false; motivo: 'nome_invalido' | 'config_falhou' };
+
+const AJUSTES_PADRAO = { rejectCall: false, groupsIgnore: false, alwaysOnline: false, readMessages: false, readStatus: false };
+
+export async function pedirHistoricoCompleto(
+  deps: ConexaoEvolutionDeps,
+  instancia: string,
+  webhookUrl?: string,
+  webhookToken?: string,
+): Promise<ResultadoPedidoHistorico> {
+  if (!instanciaValida(instancia)) return { ok: false, motivo: 'nome_invalido' };
+  const f = deps.fetchImpl ?? fetch;
+  const base = deps.baseUrl.replace(/\/$/, '');
+  const inst = encodeURIComponent(instancia);
+  // 1) Liga a sincronização completa SEM mexer nos outros ajustes do dono (o
+  //    schema da v2 exige todos: lê os atuais; sem leitura, valores neutros —
+  //    readMessages=false: nunca marca como lida no celular dele).
+  let atuais: Record<string, unknown> = {};
+  try {
+    const r = await f(`${base}/settings/find/${inst}`, { headers: { apikey: deps.apiKey }, signal: AbortSignal.timeout(8000) });
+    if (r.ok) atuais = ((await r.json().catch(() => null)) as Record<string, unknown> | null) ?? {};
+  } catch { /* segue com o padrão */ }
+  const bool = (k: keyof typeof AJUSTES_PADRAO) => (typeof atuais[k] === 'boolean' ? atuais[k] as boolean : AJUSTES_PADRAO[k]);
+  const ajustes: Record<string, unknown> = {
+    rejectCall: bool('rejectCall'), groupsIgnore: bool('groupsIgnore'), alwaysOnline: bool('alwaysOnline'),
+    readMessages: bool('readMessages'), readStatus: bool('readStatus'), syncFullHistory: true,
+  };
+  if (typeof atuais.msgCall === 'string' && atuais.msgCall) ajustes.msgCall = atuais.msgCall;
+  try {
+    const r = await f(`${base}/settings/set/${inst}`, {
+      method: 'POST',
+      headers: { apikey: deps.apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(ajustes),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!r.ok) return { ok: false, motivo: 'config_falhou' };
+  } catch {
+    return { ok: false, motivo: 'config_falhou' };
+  }
+  // 2) Assina o evento do histórico.
+  const webhook = webhookUrl ? await apontarWebhook(deps, instancia, webhookUrl, webhookToken) : 'nao_pedido' as const;
+  // 3) Desconecta: o QR aparece de novo e, ao ler, o celular manda o histórico.
+  let desconectou = false;
+  try {
+    const r = await f(`${base}/instance/logout/${inst}`, { method: 'DELETE', headers: { apikey: deps.apiKey }, signal: AbortSignal.timeout(15000) });
+    // Já desconectada também serve (a Evolution responde 4xx "not connected").
+    desconectou = r.ok || r.status === 400 || r.status === 404;
+  } catch { /* a tela mostra o estado real */ }
+  return { ok: true, webhook, desconectou };
+}
+
+/**
+ * Mensagens que a Evolution JÁ GUARDOU desta instância (POST /chat/findMessages,
+ * paginado; mais novas primeiro). Traz o que chegou antes de o webhook assinar o
+ * histórico — a Evolution NÃO reenvia no messages.set o que ela já guardou.
+ * `null` = a Evolution não respondeu.
+ */
+export async function mensagensGuardadas(
+  deps: ConexaoEvolutionDeps,
+  instancia: string,
+  p: { desdeIso: string; ateIso: string; pagina: number; porPagina: number },
+): Promise<{ registros: Array<Record<string, unknown>>; paginas: number } | null> {
+  if (!instanciaValida(instancia)) return null;
+  const f = deps.fetchImpl ?? fetch;
+  try {
+    const r = await f(`${deps.baseUrl.replace(/\/$/, '')}/chat/findMessages/${encodeURIComponent(instancia)}`, {
+      method: 'POST',
+      headers: { apikey: deps.apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ where: { messageTimestamp: { gte: p.desdeIso, lte: p.ateIso } }, page: p.pagina, offset: p.porPagina }),
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!r.ok) return null;
+    const j = (await r.json().catch(() => null)) as { messages?: { pages?: unknown; records?: unknown } } | null;
+    const registros = Array.isArray(j?.messages?.records) ? (j!.messages!.records as Array<Record<string, unknown>>) : [];
+    const paginas = typeof j?.messages?.pages === 'number' ? j.messages.pages : 0;
+    return { registros, paginas };
+  } catch {
+    return null;
+  }
+}
+

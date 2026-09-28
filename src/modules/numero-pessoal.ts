@@ -28,6 +28,8 @@ import { assumirAtendimento } from './assumir-atendimento.js';
 export const CASA = '00000000-0000-0000-0000-000000000001';
 const TTL_MS = 60_000;
 const NOME_INSTANCIA_OK = /^[a-zA-Z0-9_-]{1,64}$/;
+/** ILIKE sem curinga: "_" e "%" viram letra (senão "pessoal_x" casaria com "pessoalAx"). */
+const semCuringa = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 export interface NumeroPessoal {
   id: string;
@@ -57,7 +59,7 @@ export function criarResolverNumeroPessoal(client: SupabaseClient) {
       if (c && Date.now() - c.at < TTL_MS) return c.valor;
       try {
         const { data, error } = await client.from('whatsapp_numeros_pessoais')
-          .select(COLUNAS).ilike('instancia', chave).maybeSingle();
+          .select(COLUNAS).ilike('instancia', semCuringa(chave)).maybeSingle();
         if (error) {
           if (error.code === '42P01' || /does not exist/i.test(error.message ?? '')) { cache.set(chave, { at: Date.now(), valor: null }); return null; }
           return 'erro';
@@ -118,6 +120,13 @@ export function textoDaEntrada(msg: Pick<IncomingMessage, 'type' | 'content' | '
   return legenda ? `${marcador} ${legenda}` : marcador;
 }
 
+/** Hora da mensagem (ISO) quando válida e não no futuro; senão null (vale a do banco). PURA. */
+export function horaDaMensagem(ts: Date | undefined, agora = Date.now()): string | null {
+  const t = ts instanceof Date ? ts.getTime() : NaN;
+  if (!Number.isFinite(t) || t <= 0 || t > agora + 60_000) return null;
+  return new Date(Math.min(t, agora)).toISOString();
+}
+
 export type ResultadoPessoal = 'gravada' | 'eco' | 'duplicada' | 'ignorada' | 'falhou';
 
 /**
@@ -139,6 +148,8 @@ export async function receberNoNumeroPessoal(
   const texto = textoDaEntrada(msg);
   if (!texto) return 'ignorada';
   try {
+    // Eva, o próprio dono, a equipe: não é conversa de cliente (não grava).
+    if (ehTelefoneOculto(await telefonesOcultosDoPessoal(client, np.company_id, np), telefone)) return 'ignorada';
     if (msg.fromMe && msg.messageId) {
       const { data: igual } = await client.from('mensagens_whatsapp').select('id')
         .eq('company_id', np.company_id).eq('wamid', msg.messageId).limit(1);
@@ -180,6 +191,9 @@ export async function receberNoNumeroPessoal(
       status: msg.fromMe ? 'enviada' : 'recebida',
       visivel_so_para: np.dono_user_id,
       enviada_em: msg.fromMe ? new Date(msg.timestamp ?? agora).toISOString() : null,
+      // Hora da MENSAGEM (não a da gravação): ao reconectar, o WhatsApp reentrega
+      // mensagens antigas pelo tempo real — elas ficam na ordem certa.
+      ...(horaDaMensagem(msg.timestamp, agora) ? { criado_em: horaDaMensagem(msg.timestamp, agora)! } : {}),
     });
     if (!r.ok) return 'falhou';
     if (r.duplicada) return 'duplicada';
@@ -287,7 +301,60 @@ export function nomeInstanciaPessoal(userId: string): string {
 export async function instanciaLivreParaPessoal(servico: SupabaseClient, instancia: string, instanciaDaEva: string): Promise<boolean> {
   if (!NOME_INSTANCIA_OK.test(instancia)) return false;
   if (instancia.toLowerCase() === (instanciaDaEva ?? '').toLowerCase()) return false;
-  const { data, error } = await servico.from('companies').select('id').ilike('evolution_instance', instancia).limit(1);
+  const { data, error } = await servico.from('companies').select('id').ilike('evolution_instance', semCuringa(instancia)).limit(1);
   if (error) return false;
   return !Array.isArray(data) || data.length === 0;
 }
+
+// ---------------------------------------------------------------------------
+// Números que NÃO são conversa de cliente no número pessoal (28/09/2026):
+// o número da Eva (os avisos dela chegam no celular do dono e apareciam como
+// "Não é lead"), o próprio dono e os números da empresa (config) + a equipe
+// cadastrada em contatos_internos. Não são gravados e somem da lista.
+// ---------------------------------------------------------------------------
+
+let numerosDaCasa: string[] = [];
+
+/** Números fixos da empresa (Eva/negócio, dono, admins extras) — o index.ts define no boot. */
+export function definirNumerosInternos(lista: Array<string | null | undefined>): void {
+  numerosDaCasa = lista.map((n) => String(n ?? '').trim()).filter(Boolean);
+}
+
+const cacheInternos = new Map<string, { at: number; valor: Set<string> }>();
+const TTL_INTERNOS_MS = 5 * 60_000;
+
+/**
+ * Telefones (todas as variantes: com/sem 55, com/sem 9) que ficam FORA da caixa
+ * pessoal desta empresa. Banco fora → só os fixos (esconder é o que falha
+ * menos: a conversa, no máximo, aparece para o próprio dono).
+ */
+export async function telefonesOcultosDoPessoal(client: SupabaseClient, companyId: string, np?: Pick<NumeroPessoal, 'numero'> | null): Promise<Set<string>> {
+  const c = cacheInternos.get(companyId);
+  let base: Set<string>;
+  if (c && Date.now() - c.at < TTL_INTERNOS_MS) {
+    base = c.valor;
+  } else {
+    base = new Set<string>();
+    for (const n of numerosDaCasa) for (const v of variantesTelefone(n)) base.add(v);
+    try {
+      const { data, error } = await client.from('contatos_internos').select('telefone')
+        .eq('company_id', companyId).eq('ativo', true).limit(1000);
+      if (!error) for (const l of (data ?? []) as Array<{ telefone: string | null }>) for (const v of variantesTelefone(l.telefone ?? '')) base.add(v);
+    } catch { /* só os fixos */ }
+    // Guarda mesmo com o banco fora (só os fixos): não martela o banco a cada lote.
+    cacheInternos.set(companyId, { at: Date.now(), valor: base });
+  }
+  if (!np?.numero) return base;
+  const comDono = new Set(base);
+  for (const v of variantesTelefone(np.numero)) comDono.add(v);
+  return comDono;
+}
+
+/** Este telefone está na lista de ocultos? PURA. */
+export function ehTelefoneOculto(ocultos: Set<string>, telefone: string | null | undefined): boolean {
+  if (!telefone || ocultos.size === 0) return false;
+  return variantesTelefone(telefone).some((v) => ocultos.has(v));
+}
+
+/** Só para os testes: esquece o cache. */
+export function limparCacheInternos(): void { cacheInternos.clear(); }
