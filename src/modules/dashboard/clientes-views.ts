@@ -1,5 +1,6 @@
 // src/modules/dashboard/clientes-views.ts
 import { renderLayout } from './views.js';
+import type { DashUser } from './permissions.js';
 import { renderClienteSelector } from './proprietario.js';
 import { statusLabel, statusCorChip } from '../clientes/mappers.js';
 import { CONCESSIONARIAS_BR, getConcessionariaById } from '../concessionarias.js';
@@ -62,6 +63,8 @@ export function renderClientesListPage(
   filters: { q?: string; concessionaria?: string; cidade?: string; ord?: string },
   sistemasOrfaos: SistemaOrfaoCard[] = [],
   pagination: { total: number; limit: number; offset: number; mostrarArquivados?: boolean } = { total: rows.length, limit: 50, offset: 0 },
+  // R0: quem está vendo — a casca (menu, rodapé) é a da empresa dele.
+  user: DashUser | undefined,
 ): string {
   const { total, limit, offset } = pagination;
   const mostrarArquivados = pagination.mostrarArquivados === true;
@@ -219,7 +222,7 @@ export function renderClientesListPage(
     </script>` : ''}
   `;
 
-  return renderLayout({ active: 'clientes', title: 'Clientes', body, dark: true });
+  return renderLayout({ active: 'clientes', title: 'Clientes', body, dark: true, user });
 }
 
 // ============================================================
@@ -559,7 +562,7 @@ function renderAbaConversa(d: ClienteDetail): string {
   return `<div class="space-y-2">${items}</div><a href="/dashboard/leads/${escapeHtml(d.id)}" class="inline-block mt-3 text-xs text-cyan-300 underline">Ver conversa completa em /leads</a>`;
 }
 
-export function renderClienteDetailPage(d: ClienteDetail, insights: InsightCard[]): string {
+export function renderClienteDetailPage(d: ClienteDetail, insights: InsightCard[], user: DashUser | undefined): string {
   const concNome = d.concessionaria ? getConcessionariaById(d.concessionaria)?.nome ?? d.concessionaria : '—';
   const phoneClean = d.phone.replace(/\D/g, '');
 
@@ -640,7 +643,7 @@ export function renderClienteDetailPage(d: ClienteDetail, insights: InsightCard[
     ${CIDADES_DATALIST_HTML}
   `;
 
-  return renderLayout({ active: 'clientes', title: `Cliente — ${d.name ?? '?'}`, body, scripts, dark: true });
+  return renderLayout({ active: 'clientes', title: `Cliente — ${d.name ?? '?'}`, body, scripts, dark: true, user });
 }
 
 // ============================================================
@@ -660,6 +663,7 @@ export function renderFormNovoCliente(input: {
     consumo_medio_kwh?: string;
     profile?: string;
   };
+  user: DashUser | undefined;
 }): string {
   const v = input.values ?? {};
   const errosHtml = (input.erros ?? []).length > 0
@@ -738,5 +742,5 @@ export function renderFormNovoCliente(input: {
       </form>
     </div>
   `;
-  return renderLayout({ active: 'clientes', title: 'Novo cliente', body, dark: true });
+  return renderLayout({ active: 'clientes', title: 'Novo cliente', body, dark: true, user: input.user });
 }

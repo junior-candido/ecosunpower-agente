@@ -3,6 +3,7 @@
 //   renderFormNovaProposta  → GET /dashboard/propostas/novo?lead_id=:id
 //   renderPreviewProposta   → GET /dashboard/propostas/:slug/preview
 import { renderLayout } from './views.js';
+import type { DashUser } from './permissions.js';
 import type { ClienteDetail } from '../clientes/types.js';
 
 function escapeHtml(s: string | number | null | undefined): string {
@@ -53,6 +54,7 @@ export function renderFormNovaProposta(input: {
   erros?: string[];
   valoresIniciais?: Record<string, string | number>; // do dados_input ao reabrir
   reabrirSlug?: string; // quando setado, é reabertura (muda action + botões)
+  user: DashUser | undefined; // R0: casca da empresa de quem está vendo
 }): string {
   const c = input.lead;
   const vi = input.valoresIniciais ?? {};
@@ -298,7 +300,7 @@ export function renderFormNovaProposta(input: {
       </form>
     </div>
   `;
-  return renderLayout({ active: 'propostas', title: tituloPagina, body, dark: true });
+  return renderLayout({ active: 'propostas', title: tituloPagina, body, dark: true, user: input.user });
 }
 
 export function renderPreviewProposta(input: {
@@ -311,6 +313,7 @@ export function renderPreviewProposta(input: {
   jaEnviado: boolean;
   canEnviar: boolean;
   reasonNaoEnviar: string | null;
+  user: DashUser | undefined;
 }): string {
   const enviarBtn = input.canEnviar && !input.jaEnviado
     ? `<form action="/dashboard/propostas/${escapeHtml(input.slug)}/enviar" method="post" data-nome="${escapeHtml(input.clienteNome)}" onsubmit="return confirm('Enviar proposta pra ' + this.dataset.nome + ' no WhatsApp agora?')">
@@ -358,5 +361,5 @@ export function renderPreviewProposta(input: {
       </p>
     </div>
   `;
-  return renderLayout({ active: 'propostas', title: 'Preview proposta', body, dark: true });
+  return renderLayout({ active: 'propostas', title: 'Preview proposta', body, dark: true, user: input.user });
 }

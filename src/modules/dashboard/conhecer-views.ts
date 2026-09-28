@@ -9,6 +9,13 @@
 // a confiança pro resto.
 import { renderLayout, escapeHtml, type ChaveAtiva } from './views.js';
 import { ehChaveDeMenu } from './menu-areas.js';
+import { paginaInicialDe } from './entrada.js';
+import type { DashUser } from './permissions.js';
+
+/** Título da vitrine (R0, B2): texto na cor do tema, com filete à esquerda na
+ *  cor da marca. Antes o texto inteiro era pintado com a marca — marca
+ *  azul-escura sumia no fundo navy. */
+const ESTILO_TITULO = 'color:var(--cc-text);border-left:4px solid var(--marca);padding-left:12px';
 
 /** A vitrine acende no menu o próprio módulo que está sendo apresentado
  *  (antes acendia "Visão geral", que o tenant nem vê). Chave desconhecida → home. */
@@ -183,7 +190,7 @@ export function telaConhecer(chave: string, empresaNome: string, user?: unknown)
 </style>
 <div style="color:#d1d5db;max-width:720px">
   <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#9ca3af">Ainda não faz parte do seu plano</div>
-  <h1 class="text-2xl font-bold mb-1" style="color:var(--marca)">${escapeHtml(m.titulo)}</h1>
+  <h1 class="text-2xl font-bold mb-1" style="${ESTILO_TITULO}">${escapeHtml(m.titulo)}</h1>
   <p style="font-size:16px;line-height:1.6;margin:6px 0 0;max-width:60ch">${escapeHtml(m.resumo)}</p>
   ${lista}
   ${amostra}
@@ -193,12 +200,12 @@ export function telaConhecer(chave: string, empresaNome: string, user?: unknown)
       A gente mostra funcionando com os dados da ${escapeHtml(empresaNome)} e explica como fica no seu dia a dia.
     </p>
     <form method="post" action="/dashboard/conhecer/${encodeURIComponent(chave)}">
-      <button type="submit" class="px-4 py-2 rounded font-semibold" style="background:var(--marca);color:#0b1220">
+      <button type="submit" class="cc-btn cc-btn-gold">
         Quero conhecer
       </button>
     </form>
   </div>
-  <p style="margin-top:16px"><a href="/dashboard/home" style="color:#9ca3af;font-size:13px">← voltar</a></p>
+  <p style="margin-top:16px"><a href="${escapeHtml(paginaInicialDe(user as DashUser | undefined))}" style="color:#9ca3af;font-size:13px">← voltar</a></p>
 </div>`;
   return renderLayout({ active: chaveAtiva(chave), title: m.titulo, body, dark: true, user: user as never });
 }
@@ -207,11 +214,11 @@ export function telaConhecerEnviado(chave: string, user?: unknown): string {
   const m = MODULOS[chave] ?? fallback(chave);
   const body = `
 <div style="color:#d1d5db;max-width:640px">
-  <h1 class="text-2xl font-bold mb-2" style="color:var(--marca)">Anotado 👍</h1>
+  <h1 class="text-2xl font-bold mb-2" style="${ESTILO_TITULO}">Anotado 👍</h1>
   <p style="font-size:16px;line-height:1.6">
     Recebemos seu interesse em <b>${escapeHtml(m.titulo)}</b>. Alguém vai te procurar para mostrar funcionando.
   </p>
-  <p style="margin-top:18px"><a href="/dashboard/home" style="color:#9ca3af;font-size:13px">← voltar pro início</a></p>
+  <p style="margin-top:18px"><a href="${escapeHtml(paginaInicialDe(user as DashUser | undefined))}" style="color:#9ca3af;font-size:13px">← voltar pro início</a></p>
 </div>`;
   return renderLayout({ active: chaveAtiva(chave), title: 'Interesse registrado', body, dark: true, user: user as never });
 }

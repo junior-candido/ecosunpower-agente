@@ -464,6 +464,8 @@ export function renderLeadDetailPage(
   envioResultado = '',
   // [Diário de Serviços F1] registros de campo do cliente (visita, instalação…)
   servicos: { id: string; tipoNome: string; dataServico: string; fotos: number; videos: number }[] = [],
+  // R0: quem está vendo — sem ele o tenant via o menu e o rodapé da EcoSun.
+  user: DashUser | undefined,
 ): string {
   const phoneFmt = formatPhone(lead.phone);
   const nome = escapeHtml(lead.name ?? 'Sem nome');
@@ -808,5 +810,5 @@ export function renderLeadDetailPage(
     </script>
   `;
 
-  return renderLayout({ active: 'leads', title: `Lead: ${nome}`, body: body + scriptIA });
+  return renderLayout({ active: 'leads', title: `Lead: ${nome}`, body: body + scriptIA, user });
 }
