@@ -15,6 +15,8 @@ import { corpoDaFuncao, linhasComTailwind } from './helpers/teto-tailwind.js';
 const TELAS_RENOVADAS: string[] = [
   // R2 (lista) + R3 (ficha): leads-views.ts inteiro no padrão cc-
   'leads-views.ts',
+  // R4 — Funil (Kanban)
+  'kanban-views.ts',
 ];
 
 describe('teto do Tailwind nas telas renovadas', () => {
