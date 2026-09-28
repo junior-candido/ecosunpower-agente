@@ -333,16 +333,28 @@ export class EvolutionService {
    */
   async sendMediaBase64(
     to: string,
-    m: { mediatype: 'image' | 'video' | 'document'; mimetype: string; base64: string; fileName: string; caption?: string; citada?: { id: string; texto?: string | null } },
+    m: { mediatype: 'image' | 'video' | 'document'; mimetype: string; base64: string; fileName: string; caption?: string; citada?: { id: string; texto?: string | null; fromMe?: boolean } },
   ): Promise<{ messageId: string }> {
     const body: Record<string, unknown> = { number: to, mediatype: m.mediatype, mimetype: m.mimetype, media: m.base64, fileName: m.fileName, caption: m.caption ?? '' };
-    if (m.citada) body.quoted = { key: { id: m.citada.id }, message: { conversation: (m.citada.texto ?? '').slice(0, 300) } };
+    if (m.citada) body.quoted = await this.citacao(to, m.citada);
     return this.postarMidia('sendMedia', body);
   }
 
   /** W2 — texto RESPONDENDO outra mensagem (quoted). */
-  async sendTextQuoted(to: string, text: string, citada: { id: string; texto?: string | null }): Promise<{ messageId: string }> {
-    return this.postarMidia('sendText', { number: to, text, quoted: { key: { id: citada.id }, message: { conversation: (citada.texto ?? '').slice(0, 300) } } });
+  async sendTextQuoted(to: string, text: string, citada: { id: string; texto?: string | null; fromMe?: boolean }): Promise<{ messageId: string }> {
+    return this.postarMidia('sendText', { number: to, text, quoted: await this.citacao(to, citada) });
+  }
+
+  /**
+   * `quoted` da Evolution: o WhatsApp mostra QUEM foi citado pelo remoteJid +
+   * fromMe da chave (sem eles a citação sai sem autor). JID não achado → só o id.
+   */
+  private async citacao(to: string, c: { id: string; texto?: string | null; fromMe?: boolean }): Promise<Record<string, unknown>> {
+    const jid = await this.jidDoNumero(to);
+    return {
+      key: { id: c.id, ...(jid ? { remoteJid: jid } : {}), ...(typeof c.fromMe === 'boolean' ? { fromMe: c.fromMe } : {}) },
+      message: { conversation: (c.texto ?? '').slice(0, 300) },
+    };
   }
 
   /**
@@ -372,8 +384,8 @@ export class EvolutionService {
   }
 
   /** W1 — áudio como MENSAGEM DE VOZ (a Evolution converte para o formato do WhatsApp). */
-  async sendWhatsAppAudio(to: string, base64: string, citada?: { id: string; texto?: string | null }): Promise<{ messageId: string }> {
-    return this.postarMidia('sendWhatsAppAudio', { number: to, audio: base64, ...(citada ? { quoted: { key: { id: citada.id }, message: { conversation: (citada.texto ?? '').slice(0, 300) } } } : {}) });
+  async sendWhatsAppAudio(to: string, base64: string, citada?: { id: string; texto?: string | null; fromMe?: boolean }): Promise<{ messageId: string }> {
+    return this.postarMidia('sendWhatsAppAudio', { number: to, audio: base64, ...(citada ? { quoted: await this.citacao(to, citada) } : {}) });
   }
 
   private async postarMidia(rota: 'sendMedia' | 'sendWhatsAppAudio' | 'sendText' | 'sendReaction', body: Record<string, unknown>): Promise<{ messageId: string }> {

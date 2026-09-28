@@ -441,7 +441,8 @@ export function semCopiaDaMidia(conversa: MensagemChat[], painel: LinhaMensagemW
     const i = conversa.findIndex((m, k) => {
       if (tirar.has(k) || m.role !== 'user' || !m.timestamp) return false;
       const t = Date.parse(m.timestamp);
-      if (!Number.isFinite(t) || t < t0 - 60_000 || t > t0 + JANELA_COPIA_MS) return false;
+      // Texto: a fila da Eva pode atrasar (até 30 min); mídia: 10 min.
+      if (!Number.isFinite(t) || t < t0 - 60_000 || t > t0 + (l.tipo === 'texto' ? 3 * JANELA_COPIA_MS : JANELA_COPIA_MS)) return false;
       const c = m.content.trim();
       // W2: texto do cliente registrado no painel (com o id do WhatsApp) = a mesma frase na memória da Eva.
       if (l.tipo === 'texto') return c === (l.texto ?? '').trim();

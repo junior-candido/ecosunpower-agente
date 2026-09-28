@@ -166,6 +166,18 @@ describe('REAGIR', () => {
     await t.rotas.reagir(req({ alvo: M_EVA, emoji: '👍' }), r2);
     expect(r2.statusCode).toBe(404);
   });
+  it('vendedor não reage nem responde lead de OUTRO vendedor (403)', async () => {
+    const c = cenario();
+    c.b.tabelas.leads[0].claimed_by = 'u-outro';
+    const r = res();
+    await c.rotas.reagir(req({ alvo: M_EVA, emoji: '👍' }, vendedor), r);
+    expect(r.statusCode).toBe(403);
+    const r2 = res();
+    await c.rotas.responder(req({ chave: CHAVE, texto: 'oi', citando: M_EVA }, vendedor), r2);
+    expect(r2.statusCode).toBe(403);
+    expect(c.waba.sendReaction).not.toHaveBeenCalled();
+    expect(c.waba.sendTextReply).not.toHaveBeenCalled();
+  });
   it('emoji vazio TIRA a reação', async () => {
     const c = cenario();
     await c.rotas.reagir(req({ alvo: M_EVA, emoji: '👍' }), res());

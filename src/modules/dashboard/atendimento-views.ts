@@ -1403,6 +1403,7 @@ export const CSS_ATENDIMENTO = `
 .cc-at-evento-reagiu{border-style:dotted}
 .cc-at-citando{display:flex;align-items:flex-start;gap:8px}
 .cc-at-citando[hidden]{display:none}
+#responder:has(#cc-at-citando:not([hidden])) .cc-at-prontas{display:none}
 .cc-at-citando .cc-at-cita{flex:1;margin:0}
 .cc-at-citando-x{width:28px;height:28px;flex:none}
 .cc-at-menu-msg{position:fixed;z-index:70;min-width:220px;padding:6px;border-radius:12px;background:var(--cc-surface);border:1px solid var(--cc-line-2);box-shadow:0 14px 34px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:4px}

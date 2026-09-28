@@ -54,19 +54,21 @@ describe('Evolution: citação e reação', () => {
     expect(lerMensagemEvolution(d)).toBeNull();
     expect(lerReacaoEvolution(d)).toMatchObject({ from: '556199990001', fromMe: false, alvo: 'ORIG', emoji: '😂', wamid: 'E1' });
   });
-  it('enviar citando (quoted) e reagir (key com o jid do WhatsApp)', async () => {
+  it('enviar citando (quoted com remoteJid + fromMe, para o WhatsApp mostrar o autor) e reagir (key com o jid do WhatsApp)', async () => {
+    const jid = { ok: true, json: async () => ([{ exists: true, jid: '556199990001@s.whatsapp.net', number: '5561999990001' }]) };
     const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jid)
       .mockResolvedValueOnce({ ok: true, json: async () => ({ key: { id: 'S1' } }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ([{ exists: true, jid: '556199990001@s.whatsapp.net', number: '5561999990001' }]) })
+      .mockResolvedValueOnce(jid)
       .mockResolvedValueOnce({ ok: true, json: async () => ({ key: { id: 'R1' } }) });
     vi.stubGlobal('fetch', fetchMock);
     const s = new EvolutionService(cfgEvo);
-    await s.sendTextQuoted('5561999990001', 'sim', { id: 'ORIG', texto: 'Pode ser sábado?' });
+    await s.sendTextQuoted('5561999990001', 'sim', { id: 'ORIG', texto: 'Pode ser sábado?', fromMe: true });
     await s.sendReactionTo('5561999990001', { id: 'ORIG', fromMe: false }, '👍');
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ number: '5561999990001', text: 'sim', quoted: { key: { id: 'ORIG' }, message: { conversation: 'Pode ser sábado?' } } });
-    expect(fetchMock.mock.calls[1][0]).toBe('http://evo:8080/chat/whatsappNumbers/eva');
-    expect(fetchMock.mock.calls[2][0]).toBe('http://evo:8080/message/sendReaction/eva');
-    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ key: { remoteJid: '556199990001@s.whatsapp.net', fromMe: false, id: 'ORIG' }, reaction: '👍' });
+    expect(fetchMock.mock.calls[0][0]).toBe('http://evo:8080/chat/whatsappNumbers/eva');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ number: '5561999990001', text: 'sim', quoted: { key: { id: 'ORIG', remoteJid: '556199990001@s.whatsapp.net', fromMe: true }, message: { conversation: 'Pode ser sábado?' } } });
+    expect(fetchMock.mock.calls[3][0]).toBe('http://evo:8080/message/sendReaction/eva');
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ key: { remoteJid: '556199990001@s.whatsapp.net', fromMe: false, id: 'ORIG' }, reaction: '👍' });
   });
 });
 
@@ -83,6 +85,15 @@ describe('gravarReacao — uma por pessoa por mensagem', () => {
     await gravarReacao(b.client, { ...r, emoji: '', de: 'cliente', wamid: 'w4' });
     expect(b.tabelas.mensagens_whatsapp).toHaveLength(1);
     expect(b.tabelas.mensagens_whatsapp[0]).toMatchObject({ autor: 'humano', texto: '👍' });
+  });
+  it('reação recebida: só emoji curto (texto disfarçado não grava); sem telefone não grava', async () => {
+    const { emojiRecebidoValido } = await import('../src/modules/reacoes-citacoes.js');
+    expect(emojiRecebidoValido('👍🏽')).toBe(true);
+    expect(emojiRecebidoValido('oi <b>')).toBe(false);
+    const b = bancoMemoria({ mensagens_whatsapp: [] });
+    expect(await gravarReacao(b.client, { ...r, telefone: null, emoji: '👍', de: 'cliente' })).toBe(false);
+    expect(await gravarReacao(b.client, { ...r, emoji: 'texto qualquer', de: 'cliente' })).toBe(false);
+    expect(b.tabelas.mensagens_whatsapp).toHaveLength(0);
   });
   it('só emojis da lista (nada de texto disfarçado de reação)', () => {
     expect(EMOJIS_REACAO).toContain('👍');

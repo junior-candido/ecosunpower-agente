@@ -197,3 +197,8 @@ migration 141). Enviar: `POST /leads/:id/responder-midia` e `/leads/conversas/co
 número da assistente (`arquivarMidiaDaAssistente`) e o webhook do número pessoal completa o arquivo em segundo
 plano (`completarMidiaRecebida`). Ver: `GET /leads/midia/:id` confere empresa/dono/vendedor e redireciona para
 URL assinada de 2 min. Apagar o lead apaga os arquivos dele do bucket.
+**Citar e reagir (W2):** `reacoes-citacoes.ts` + migration 142 (`citando_wamid`/`citando_texto`; reação = linha
+`tipo='reacao'`, uma por pessoa por mensagem). Rotas `POST /leads/:id/reagir` e `/leads/conversas/contato/reagir`;
+`citando` (id da linha) nos formulários de resposta. Meta: `sendTextReply`/`sendReaction`/`context`; Evolution:
+`sendTextQuoted`/`sendReactionTo` (JID via `/chat/whatsappNumbers`). O texto do cliente no número da assistente
+entra em `mensagens_whatsapp` com o wamid (`registrarTextoDaAssistente`); a cópia da memória da Eva sai do chat.

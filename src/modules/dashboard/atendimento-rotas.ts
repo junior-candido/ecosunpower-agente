@@ -153,7 +153,7 @@ export function respostaDoEnvio(resultado: string): { ok: boolean; resultado: st
   };
 }
 
-interface LeadEnvio { id: string; name: string | null; phone: string | null; opt_out: boolean | null; eva_active: boolean | null; company_id: string | null }
+interface LeadEnvio { id: string; name: string | null; phone: string | null; opt_out: boolean | null; eva_active: boolean | null; company_id: string | null; claimed_by?: string | null }
 
 export function criarRotasAtendimento(deps: DepsAtendimento) {
   const limite = deps.limite ?? new LimiteDeEnvio();
@@ -239,7 +239,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
 
   async function lerLead(db: SupabaseClient, leadId: string, companyId: string): Promise<LeadEnvio | null> {
     const base = db.from('leads')
-      .select('id, name, phone, opt_out, eva_active, company_id')
+      .select('id, name, phone, opt_out, eva_active, company_id, claimed_by')
       .eq('id', leadId);
     // Lead legado sem company_id é da casa (mesma regra da trava /leads/:id).
     const q = companyId === EMPRESA_CASA ? base.or(`company_id.eq.${EMPRESA_CASA},company_id.is.null`) : base.eq('company_id', companyId);
@@ -269,6 +269,8 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     let lead: LeadEnvio | null;
     try { lead = await lerLead(db, leadId, companyId); } catch { voltar(res, leadId, 'erro_banco'); return null; }
     if (!lead) { falha(res, 404, 'lead não encontrado'); return null; }
+    // Vendedor só responde o lead dele ou do balcão (mesma regra da tela do lead).
+    if (!podeVerLead(viewer, { claimed_by: lead.claimed_by ?? null })) { falha(res, 403, 'lead de outro vendedor'); return null; }
 
     // Por qual número responder: o da assistente (padrão) ou o PESSOAL do dono (2b).
     const pedePessoal = req.body?.canal === 'whatsapp_business';
@@ -626,7 +628,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
   }
 
   function voltarReacao(res: Response, destino: string, resultado: string): void {
-    if (emJson.has(res)) { const j = respostaDoEnvio(resultado); res.json({ ...j, ok: resultado === 'reacao_enviada' }); return; }
+    if (emJson.has(res)) { const j = respostaDoEnvio(resultado); res.json({ ...j, ok: resultado === 'reacao_enviada' || resultado === 'reacao_nao_gravada' }); return; }
     res.redirect(303, destino);
   }
 
@@ -656,13 +658,14 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
           : pessoal
             ? await deps.reagirEvolution(instancia, p.companyId, p.telefone, alvoWa, p.emoji)
             : await noCanalDaEmpresa(p.companyId, instancia, () => deps.reagirEvolution!(instancia, p.companyId, p.telefone, alvoWa, p.emoji));
-      await gravarReacao(deps.supabase, {
+      const gravou = await gravarReacao(deps.supabase, {
         companyId: p.companyId, leadId: p.leadId, telefone: p.telefone, alvoWamid: p.alvo.wamid, emoji: p.emoji, de: 'humano',
         userId: p.viewer.id, autorNome: (p.viewer.nome || '').slice(0, 80) || null, canal: (p.alvo.canal ?? canalDaAssistente(p.companyId)) as CanalConversa,
         numero: via === 'evolution' ? instancia : null, visivelSoPara: pessoal ? p.viewer.id : null,
         wamid: (s && typeof s === 'object' && 'messageId' in s ? (s as { messageId?: string }).messageId : null) || null, contatoNome: p.contatoNome,
       });
-      return 'reacao_enviada';
+      // Saiu no WhatsApp, mas não ficou no painel (ex.: migration 142 ainda não aplicada).
+      return gravou ? 'reacao_enviada' : 'reacao_nao_gravada';
     } catch (e) {
       console.warn(`[atendimento] reação não saiu: ${semTelefone((e as Error).message)}`);
       return 'falhou';
@@ -683,6 +686,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     let lead: LeadEnvio | null;
     try { lead = await lerLead(banco(r), leadId, viewer.companyId); } catch { voltarReacao(res, destino, 'erro_banco'); return; }
     if (!lead) { falha(res, 404, 'lead não encontrado'); return; }
+    if (!podeVerLead(viewer, { claimed_by: lead.claimed_by ?? null })) { falha(res, 403, 'lead de outro vendedor'); return; }
     if (lead.opt_out) { voltarReacao(res, destino, 'opt_out'); return; }
     const telefone = normalizeBrazilianPhone(lead.phone ?? '');
     if (!telefone) { voltarReacao(res, destino, 'sem_telefone'); return; }

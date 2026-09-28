@@ -20,6 +20,11 @@ export function emojiDeReacaoValido(e: unknown): e is string {
   return typeof e === 'string' && (e === '' || (EMOJIS_REACAO as readonly string[]).includes(e));
 }
 
+/** Reação que CHEGOU: vazio (tirou) ou um emoji curto (nada de texto disfarçado). PURA. */
+export function emojiRecebidoValido(e: unknown): e is string {
+  return typeof e === 'string' && (e === '' || (e.length <= 16 && /\p{Extended_Pictographic}/u.test(e) && !/[A-Za-z0-9<>&"'\s]/.test(e)));
+}
+
 /**
  * Grava (ou troca, ou tira) a reação de UMA pessoa a UMA mensagem. "Pessoa" =
  * o cliente (entrada) ou a equipe (saída, pelo número em que a reação saiu).
@@ -34,14 +39,15 @@ export async function gravarReacao(
     contatoNome?: string | null; origem?: 'painel' | 'celular' | 'webhook'; status?: 'enviada' | 'recebida' | 'enviando';
   },
 ): Promise<boolean> {
-  if (!r.companyId || !r.alvoWamid) return false;
+  // Sem telefone o "apagar a anterior" pegaria a reação de todo mundo: não grava.
+  if (!r.companyId || !r.alvoWamid || !r.telefone || !emojiRecebidoValido(r.emoji)) return false;
   const direcao = r.de === 'cliente' ? 'entrada' : 'saida';
   try {
     // A reação anterior desta pessoa a esta mensagem sai (troca ou tira).
     let q = servico.from('mensagens_whatsapp').delete()
       .eq('company_id', r.companyId).eq('tipo', 'reacao').eq('citando_wamid', r.alvoWamid).eq('direcao', direcao);
     q = r.visivelSoPara ? q.eq('visivel_so_para', r.visivelSoPara) : q.is('visivel_so_para', null);
-    if (r.telefone) q = q.eq('contato_telefone', r.telefone);
+    q = q.eq('contato_telefone', r.telefone);
     const { error } = await q;
     if (error) { console.warn(`[reacao] não troquei a reação: ${error.message}`); return false; }
     if (!r.emoji) return true;

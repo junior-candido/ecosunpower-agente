@@ -132,6 +132,7 @@ export const RESULTADO_ENVIO: Record<string, { tom: 'ok' | 'erro' | 'aviso'; tex
   citacao_outro_numero: { tom: 'erro', texto: 'A mensagem citada chegou pelo outro número. Troque o "Responder como" ou envie sem citar.' },
   reacao_enviada: { tom: 'ok', texto: 'Reação enviada.' },
   reacao_invalida: { tom: 'erro', texto: 'Escolha um dos emojis da lista.' },
+  reacao_nao_gravada: { tom: 'aviso', texto: 'A reação saiu no WhatsApp, mas não ficou registrada no painel.' },
   devolveu: { tom: 'ok', texto: 'Conversa devolvida para a assistente.' },
 };
 

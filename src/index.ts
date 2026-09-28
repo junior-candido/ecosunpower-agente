@@ -6989,14 +6989,17 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     let transcricaoDoAudio: string | null = null;
     switch (msg.type) {
       case 'text':
-        await handleTextMessage(msg.from, msg.content, msg.referral, companyId);
-        // W2: a mensagem entra no painel com o id do WhatsApp (dá para citar/reagir).
+        try {
+          await handleTextMessage(msg.from, msg.content, msg.referral, companyId);
+        } finally {
+        // W2: a mensagem entra no painel com o id do WhatsApp (dá para citar/reagir) — mesmo se a Eva falhar.
         if (!isAdminPhone(msg.from)) {
           await registrarTextoDaAssistente(supabase.getClient(), {
             companyId, telefone: msg.from, wamid: msg.messageId || null, texto: msg.content, recebidaEm: msg.timestamp ?? null,
             citandoId: msg.citandoId ?? null, contatoNome: msg.pushName ?? null,
             lead: await leadDoTelefoneNaEmpresa(supabase.getClient(), companyId, msg.from).catch(() => null),
           }).catch((e) => console.warn(`[painel] texto não registrado: ${(e as Error).message}`));
+        }
         }
         break;
       case 'audio':
@@ -7829,6 +7832,10 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     if (pessoal === 'erro') return 'erro';
     if (pessoal) {
       if (!pessoal.ativo || await evolutionTenant.companyDaInstancia(inst)) return 'ignorada';
+      if (rc.fromMe && rc.wamid) {
+        const { data: ja } = await supabase.getClient().from('mensagens_whatsapp').select('id').eq('company_id', pessoal.company_id).eq('wamid', rc.wamid).limit(1);
+        if (Array.isArray(ja) && ja.length) return 'ignorada';
+      }
       const { telefonesOcultosDoPessoal, ehTelefoneOculto } = await import('./modules/numero-pessoal.js');
       if (ehTelefoneOculto(await telefonesOcultosDoPessoal(supabase.getClient(), pessoal.company_id, pessoal), telefone)) return 'ignorada';
       const lead = await leadDoTelefoneNaEmpresa(supabase.getClient(), pessoal.company_id, telefone).catch(() => null);
@@ -7843,6 +7850,12 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     const cid = await evolutionTenant.companyDaInstancia(inst);
     if (!cid && inst && inst !== config.evolutionInstance) return 'ignorada';
     const companyId = cid ?? ECOSUN_COMPANY_ID;
+    if (companyId === ECOSUN_COMPANY_ID && isAdminPhone(telefone)) return 'ignorada';
+    // Eco da reação que a equipe mandou pelo painel (já gravada com quem reagiu).
+    if (rc.fromMe && rc.wamid) {
+      const { data: ja } = await supabase.getClient().from('mensagens_whatsapp').select('id').eq('company_id', companyId).eq('wamid', rc.wamid).limit(1);
+      if (Array.isArray(ja) && ja.length) return 'ignorada';
+    }
     const lead = await leadDoTelefoneNaEmpresa(supabase.getClient(), companyId, telefone).catch(() => null);
     if (!lead) return 'ignorada';
     const ok = await gravarReacao(supabase.getClient(), {
