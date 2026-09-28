@@ -10,7 +10,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { contratoDaTela, aplicarMudancas } from './helpers/contrato-tela.js';
 import { CASOS_FICHA } from './fixtures/casos-ficha-lead.js';
-import { MENU_CONVERSAS, SAI_COPILOTO, SAI_COCKPIT_COMPLETO, ENTRA_LISTA, entraScript } from './fixtures/mudancas-atendimento.js';
+import { MENU_CONVERSAS, SAI_COPILOTO, SAI_COCKPIT_COMPLETO, ENTRA_LISTA, ENTRA_ALCAS, entraScript } from './fixtures/mudancas-atendimento.js';
 
 const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contrato-ficha-lead.json'), 'utf-8'));
 
@@ -18,7 +18,7 @@ describe('Ficha do lead → Atendimento — contrato só muda no que o Junior ma
   for (const [nome, render] of Object.entries(CASOS_FICHA)) {
     it(`contrato: ${nome}`, () => {
       const esperado = aplicarMudancas(CONTRATO[nome],
-        MENU_CONVERSAS, SAI_COPILOTO, SAI_COCKPIT_COMPLETO, ENTRA_LISTA, entraScript(nome !== 'venda'));
+        MENU_CONVERSAS, SAI_COPILOTO, SAI_COCKPIT_COMPLETO, ENTRA_LISTA, ENTRA_ALCAS, entraScript(nome !== 'venda'));
       expect(contratoDaTela(render())).toEqual(esperado);
     });
   }
