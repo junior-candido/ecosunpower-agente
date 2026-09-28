@@ -18,6 +18,8 @@ export interface EventoAtencao {
   titulo: string;
   /** "Usinas · monitoramento" */
   contexto: string;
+  /** Uma linha a mais de explicação (ex.: o motivo que o Monitoramento deu). */
+  detalhe?: string;
   /** Perda/ganho em R$ (ordena dentro da severidade). null = sem número honesto. */
   impactoRs?: number | null;
   /** Linha do impacto, já com a palavra "estimada" quando for estimativa. */
