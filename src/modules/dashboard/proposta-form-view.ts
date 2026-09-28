@@ -298,7 +298,7 @@ export function renderFormNovaProposta(input: {
       </form>
     </div>
   `;
-  return renderLayout({ active: 'clientes', title: tituloPagina, body, dark: true });
+  return renderLayout({ active: 'propostas', title: tituloPagina, body, dark: true });
 }
 
 export function renderPreviewProposta(input: {
@@ -358,5 +358,5 @@ export function renderPreviewProposta(input: {
       </p>
     </div>
   `;
-  return renderLayout({ active: 'clientes', title: 'Preview proposta', body, dark: true });
+  return renderLayout({ active: 'propostas', title: 'Preview proposta', body, dark: true });
 }

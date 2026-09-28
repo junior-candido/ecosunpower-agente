@@ -137,6 +137,7 @@ import type { ManutencaoTipo } from './manutencao-motor.js';
 import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, fotoCountsPorItem, concluirOS } from './os-queries.js';
 import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
 import { hidratarChecklist, resumoOS, type OSTipo } from './os-checklist.js';
+import { rotaCommandCenter, rotaModoTv } from './command-center-rotas.js';
 import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
@@ -1970,6 +1971,12 @@ b.onclick=async function(){
       res.status(500).type('text/html').send(`<p>Erro ao importar: ${escapeHtmlSimple((err as Error).message)}</p>`);
     }
   });
+
+  // Energy Command Center — FASE A (spec 2026-09-27-command-center-design.md).
+  // Layout novo com número real só onde já existe (contadores do mês).
+  // SÓ ECOSUN nesta fase (Command Center e Modo TV) — ver command-center-rotas.ts.
+  router.get('/command-center', rotaCommandCenter(supabase));
+  router.get('/tv', rotaModoTv());
 
   // Cockpit: 1 tela dark neon com KPIs + gauges + funil + atividade + top leads.
   // Auto-refresh 30s (gauges) + 5min (page completa). ECharts via CDN.
