@@ -18,6 +18,7 @@ import {
   type ProposalInput,
 } from './proposal/calculator.js';
 import { corrigirOrtografia } from './corretor-ortografico.js';
+import { canalAtual } from './canal-contexto.js';
 import {
   FATOR_PERDA_CONSERVADOR,
   hspPorConcessionaria,
@@ -1782,6 +1783,9 @@ export class ProposalAssistant {
         data, modoEnvio, tipo, attachments,
         reopenSlug: sessionState.reopenedSlug,
         numeroProposta: sessionState.reopenedNumero,
+        // AP0: nasce na empresa DONA do número que recebeu a mensagem (o job da
+        // fila roda em comCanal({ companyId })). Fora de canal = null = EcoSun.
+        companyId: canalAtual()?.companyId ?? null,
       });
 
       await this.redis.setex(

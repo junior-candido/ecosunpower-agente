@@ -143,6 +143,7 @@ import { montarRotasEnergia } from './energia-rotas.js';
 import { criarTravaDeModulo } from './modulos-contratados.js';
 import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
 import { criarTravaLeadDaEmpresa } from './trava-lead-empresa.js';
+import { criarTravaPropostaDaEmpresa, leadIdConferido } from './trava-proposta-empresa.js';
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
 // didApply=false: prévia + botão pra gravar. didApply=true: resultado da gravação.
@@ -440,6 +441,11 @@ export function createDashboardRouter(
   // empresa da sessão — antes de qualquer efeito, inclusive o claim automático.
   // Outra empresa → 404. Ver trava-lead-empresa.ts e tests/leads-trava-empresa.test.ts.
   router.use('/leads/:id', criarTravaLeadDaEmpresa(supabase));
+
+  // Quarto portão (AP0, 28/09): TODA rota /propostas/… só age em proposta (slug)
+  // e lead (lead_id) da empresa da sessão — antes de qualquer efeito. Outra
+  // empresa → 404. Ver trava-proposta-empresa.ts e tests/propostas-trava-empresa.test.ts.
+  router.use('/propostas', criarTravaPropostaDaEmpresa(supabase));
 
   // Raiz redireciona pro cockpit (visao geral 1-tela). Era /home antes.
   router.get('/', (_req, res) => {
@@ -4150,7 +4156,7 @@ b.onclick=async function(){
 
   // Visualizacoes detalhadas de UMA proposta (timeline + KPIs).
   // ?preview=1 inclui aberturas preview admin no timeline (default: exclui).
-  router.get('/propostas/:slug/visualizacoes', async (req: Request, res: Response) => {
+  router.get('/propostas/:slug/visualizacoes', exigir('propostas', 'visualizar'), async (req: Request, res: Response) => {
     try {
       const slug = String(req.params.slug ?? '');
       if (!/^[A-Za-z0-9_-]{8,64}$/.test(slug)) {
@@ -4177,7 +4183,7 @@ b.onclick=async function(){
   });
 
   // Export CSV das visualizacoes (mesmo filtro do HTML acima).
-  router.get('/propostas/:slug/visualizacoes.csv', async (req: Request, res: Response) => {
+  router.get('/propostas/:slug/visualizacoes.csv', exigir('propostas', 'visualizar'), async (req: Request, res: Response) => {
     try {
       const slug = String(req.params.slug ?? '');
       if (!/^[A-Za-z0-9_-]{8,64}$/.test(slug)) {
@@ -7085,7 +7091,7 @@ b.onclick=async function(){
     return { data, attachments, tipo, erros };
   }
 
-  router.get('/propostas/novo', async (req: Request, res: Response) => {
+  router.get('/propostas/novo', exigir('propostas', 'criar'), async (req: Request, res: Response) => {
     const lead_id = String(req.query.lead_id ?? '');
     if (!lead_id) {
       return res.status(400).send('Parâmetro <code>lead_id</code> obrigatório. Abra esta tela pelo botão "Nova proposta" no perfil de um cliente.');
@@ -7112,6 +7118,7 @@ b.onclick=async function(){
   });
 
   router.post('/propostas/novo',
+    exigir('propostas', 'criar'),
     uploadProposta.fields([
       { name: 'foto1', maxCount: 1 },
       { name: 'foto2', maxCount: 1 },
@@ -7119,8 +7126,11 @@ b.onclick=async function(){
       { name: 'video', maxCount: 1 },
     ]),
     async (req: Request, res: Response) => {
-      const lead_id = String(req.body.lead_id ?? '');
+      // AP0: o lead vale só se o portão conferiu (vem na URL do form). O lead_id
+      // do corpo multipart chega depois do portão — tem de bater com o conferido.
+      const lead_id = leadIdConferido(req, res) ?? '';
       if (!UUID_RE.test(lead_id)) return res.status(400).send('UUID inválido');
+      if (String(req.body?.lead_id ?? lead_id) !== lead_id) return res.status(404).send('Cliente não encontrado');
       if (!options.proposalAssistant) {
         return res.status(500).send('ProposalAssistant não injetado');
       }
@@ -7178,7 +7188,7 @@ b.onclick=async function(){
     },
   );
 
-  router.get('/propostas/:slug/preview', async (req: Request, res: Response) => {
+  router.get('/propostas/:slug/preview', exigir('propostas', 'visualizar'), async (req: Request, res: Response) => {
     const slug = String(req.params.slug ?? '');
     if (!/^[A-Za-z0-9_-]{16,32}$/.test(slug)) return res.status(400).send('Slug inválido');
 
@@ -7192,7 +7202,10 @@ b.onclick=async function(){
 
     let canEnviar = true;
     let reasonNaoEnviar: string | null = null;
-    if (!options.metaService) {
+    if (!podeDispararMensagens((req as AuthedRequest).dashUser?.companyId)) {
+      canEnviar = false;
+      reasonNaoEnviar = 'Envio pelo WhatsApp ainda não disponível pra sua empresa';
+    } else if (!options.metaService) {
       canEnviar = false;
       reasonNaoEnviar = 'MetaWhatsApp não configurado';
     } else if (!extras.cliente_telefone) {
@@ -7220,9 +7233,11 @@ b.onclick=async function(){
     }));
   });
 
-  router.post('/propostas/:slug/enviar', async (req: Request, res: Response) => {
+  router.post('/propostas/:slug/enviar', exigir('propostas', 'editar'), async (req: Request, res: Response) => {
     const slug = String(req.params.slug ?? '');
     if (!/^[A-Za-z0-9_-]{16,32}$/.test(slug)) return res.status(400).send('Slug inválido');
+    // [Gate B5] o envio sai pelo número da casa — exclusivo EcoSun até o tenant ter o seu.
+    if (!podeDispararMensagens((req as AuthedRequest).dashUser?.companyId)) return res.status(403).send('Envio pelo WhatsApp ainda não está disponível pra sua empresa.');
     if (!options.metaService) return res.status(500).send('MetaWhatsApp não configurado');
 
     const result = await supabaseService.getPropostaPublicaBySlug(slug);
@@ -7267,7 +7282,7 @@ b.onclick=async function(){
   // Reabrir / ajustar uma proposta — recarrega o form pré-preenchido com os
   // dados_input salvos e permite (a) atualizar o MESMO slug ou (b) gerar nova versão.
   // ========================================================================
-  router.get('/propostas/:slug/reabrir', async (req: Request, res: Response) => {
+  router.get('/propostas/:slug/reabrir', exigir('propostas', 'editar'), async (req: Request, res: Response) => {
     try {
       const slug = String(req.params.slug);
       if (!/^[A-Za-z0-9_-]{16,32}$/.test(slug)) return res.status(400).type('text/html').send('<p>Link inválido.</p>');
@@ -7282,7 +7297,7 @@ b.onclick=async function(){
     }
   });
 
-  router.post('/propostas/:slug/reabrir', uploadProposta.fields([{ name: 'foto1', maxCount: 1 }, { name: 'foto2', maxCount: 1 }, { name: 'foto3', maxCount: 1 }, { name: 'video', maxCount: 1 }]), async (req: Request, res: Response) => {
+  router.post('/propostas/:slug/reabrir', exigir('propostas', 'editar'), uploadProposta.fields([{ name: 'foto1', maxCount: 1 }, { name: 'foto2', maxCount: 1 }, { name: 'foto3', maxCount: 1 }, { name: 'video', maxCount: 1 }]), async (req: Request, res: Response) => {
     try {
       if (!options.proposalAssistant) return res.status(503).type('text/html').send('<p>ProposalAssistant não disponível neste ambiente.</p>');
       const slug = String(req.params.slug);

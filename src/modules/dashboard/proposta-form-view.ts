@@ -86,7 +86,8 @@ export function renderFormNovaProposta(input: {
   const inversorFabSel = String(vi.inversorFabricante ?? '');
   const formAction = input.reabrirSlug
     ? `/dashboard/propostas/${escapeHtml(input.reabrirSlug)}/reabrir`
-    : '/dashboard/propostas/novo';
+    // AP0: lead_id na URL — o portão de empresa confere ANTES do upload multipart.
+    : `/dashboard/propostas/novo?lead_id=${encodeURIComponent(input.lead_id)}`;
   const tituloPagina = input.reabrirSlug ? 'Reabrir proposta' : 'Nova proposta';
   const tituloH1 = input.reabrirSlug ? '🔁 Reabrir proposta' : '📄 Nova proposta';
 
