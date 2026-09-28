@@ -142,10 +142,13 @@ export function renderListaMedidores(
     corpo = r.motivo === 'migration' ? avisoMigration() : estadoVazio({ tipo: 'sem_dado', titulo: 'Não deu para carregar os medidores agora', texto: 'Tente de novo em alguns minutos.' });
   } else {
     corpo = tabela({
-      colunas: [{ titulo: 'Medidor' }, { titulo: 'Cliente' }, { titulo: 'Usina' }, { titulo: 'Situação' }, { titulo: 'Último dado' }, { titulo: 'Como chega' }],
-      linhas: r.itens.map((i) => {
-        return [i.medidor.apelido, i.cliente, i.usina, { html: pilulasSituacao(i.medidor) }, quando(i.medidor.ultima_leitura_em, agora), MODO_TEXTO[i.medidor.modo_coleta] ?? i.medidor.modo_coleta];
-      }),
+      // Situação logo depois do nome: no celular a tabela rola de lado e o que
+      // importa (recebendo dado ou não) tem que aparecer sem rolar.
+      colunas: [{ titulo: 'Medidor' }, { titulo: 'Situação' }, { titulo: 'Último dado' }, { titulo: 'Cliente' }, { titulo: 'Usina' }, { titulo: 'Como chega' }],
+      linhas: r.itens.map((i) => [
+        i.medidor.apelido, { html: pilulasSituacao(i.medidor) }, quando(i.medidor.ultima_leitura_em, agora), i.cliente, i.usina,
+        MODO_TEXTO[i.medidor.modo_coleta] ?? i.medidor.modo_coleta,
+      ]),
       hrefs: r.itens.map((i) => `/dashboard/energia/${i.medidor.id}`),
       vazio: 'Nenhum medidor cadastrado ainda',
     });
