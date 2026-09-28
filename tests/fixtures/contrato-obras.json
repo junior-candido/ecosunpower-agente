@@ -1,0 +1,547 @@
+{
+  "quadro": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'/dashboard/usinas/' + id + '/contato'",
+      "'/dashboard/usinas/' + id + '/set-etapa-obra'",
+      "'/dashboard/usinas/set-etapa-obra-lote'"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/monitoramento/11111111-1111-4111-8111-000000000001",
+      "/dashboard/monitoramento/11111111-1111-4111-8111-000000000002",
+      "/dashboard/monitoramento/11111111-1111-4111-8111-000000000003",
+      "/dashboard/monitoramento/11111111-1111-4111-8111-000000000004",
+      "/dashboard/monitoramento/11111111-1111-4111-8111-000000000005",
+      "/dashboard/monitoramento/11111111-1111-4111-8111-000000000006",
+      "/dashboard/monitoramento/11111111-1111-4111-8111-000000000007",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usinas/vincular",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "btn-selecionar",
+      "cc-menu-btn",
+      "cc-sidebar",
+      "contato-corpo",
+      "contato-drawer",
+      "contato-fechar",
+      "contato-overlay",
+      "contato-titulo",
+      "dash-root",
+      "filtro-kanban",
+      "lote-bar",
+      "lote-count",
+      "lote-etapa",
+      "lote-limpar",
+      "lote-mover"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      ".contato-copiar",
+      ".kanban-board",
+      ".kanban-card",
+      ".kanban-check",
+      ".kanban-check:checked",
+      ".kanban-col",
+      ".kanban-count",
+      ".kanban-info",
+      ".kanban-list",
+      ".sel-todas",
+      "draggable:.kanban-card",
+      "filter:.kanban-info, .kanban-check"
+    ],
+    "dataAttrs": [
+      "data-apelido",
+      "data-busca",
+      "data-etapa",
+      "data-ordem",
+      "data-usina-id",
+      "data-valor"
+    ],
+    "confirms": [
+      "'Mover ' + ids.length + ' usina(s) para \"' + label + '\"?'",
+      "'Voltar \"' + nome + '\" para uma etapa anterior?'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js",
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "quadro-vazio": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'/dashboard/usinas/' + id + '/contato'",
+      "'/dashboard/usinas/' + id + '/set-etapa-obra'",
+      "'/dashboard/usinas/set-etapa-obra-lote'"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usinas/vincular",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "btn-selecionar",
+      "cc-menu-btn",
+      "cc-sidebar",
+      "contato-corpo",
+      "contato-drawer",
+      "contato-fechar",
+      "contato-overlay",
+      "contato-titulo",
+      "dash-root",
+      "filtro-kanban",
+      "lote-bar",
+      "lote-count",
+      "lote-etapa",
+      "lote-limpar",
+      "lote-mover"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      ".contato-copiar",
+      ".kanban-board",
+      ".kanban-card",
+      ".kanban-check",
+      ".kanban-check:checked",
+      ".kanban-col",
+      ".kanban-count",
+      ".kanban-info",
+      ".kanban-list",
+      ".sel-todas",
+      "draggable:.kanban-card",
+      "filter:.kanban-info, .kanban-check"
+    ],
+    "dataAttrs": [
+      "data-apelido",
+      "data-busca",
+      "data-etapa",
+      "data-ordem",
+      "data-usina-id",
+      "data-valor"
+    ],
+    "confirms": [
+      "'Mover ' + ids.length + ' usina(s) para \"' + label + '\"?'",
+      "'Voltar \"' + nome + '\" para uma etapa anterior?'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js",
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "quadro-tenant": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'/dashboard/usinas/' + id + '/contato'",
+      "'/dashboard/usinas/' + id + '/set-etapa-obra'",
+      "'/dashboard/usinas/set-etapa-obra-lote'"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/monitoramento/11111111-1111-4111-8111-000000000001",
+      "/dashboard/monitoramento/11111111-1111-4111-8111-000000000002",
+      "/dashboard/monitoramento/11111111-1111-4111-8111-000000000003",
+      "/dashboard/monitoramento/11111111-1111-4111-8111-000000000004",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usinas/vincular",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "btn-selecionar",
+      "cc-menu-btn",
+      "cc-sidebar",
+      "contato-corpo",
+      "contato-drawer",
+      "contato-fechar",
+      "contato-overlay",
+      "contato-titulo",
+      "dash-root",
+      "filtro-kanban",
+      "lote-bar",
+      "lote-count",
+      "lote-etapa",
+      "lote-limpar",
+      "lote-mover"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary",
+      ".contato-copiar",
+      ".kanban-board",
+      ".kanban-card",
+      ".kanban-check",
+      ".kanban-check:checked",
+      ".kanban-col",
+      ".kanban-count",
+      ".kanban-info",
+      ".kanban-list",
+      ".sel-todas",
+      "draggable:.kanban-card",
+      "filter:.kanban-info, .kanban-check"
+    ],
+    "dataAttrs": [
+      "data-apelido",
+      "data-busca",
+      "data-etapa",
+      "data-ordem",
+      "data-usina-id",
+      "data-valor"
+    ],
+    "confirms": [
+      "'Mover ' + ids.length + ' usina(s) para \"' + label + '\"?'",
+      "'Voltar \"' + nome + '\" para uma etapa anterior?'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js",
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "vincular": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usinas/vincular",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "U1",
+            "type": "select"
+          },
+          {
+            "name": "U2",
+            "type": "select"
+          },
+          {
+            "name": "U3",
+            "type": "select"
+          }
+        ]
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "vincular-vazio": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "vincular-tenant": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usinas/vincular",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "U1",
+            "type": "select"
+          }
+        ]
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  }
+}

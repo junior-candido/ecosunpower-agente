@@ -27,6 +27,9 @@ export const MUDANCAS_R14: Record<string, MudancaContrato[]> = {};
 // R15 — Quadro de Obras + vincular + contato
 // ════════════════════════════════════════════════════════════════════════
 
+/** R15: trocas por caso de tests/fixtures/casos-obras.ts (vazio = contrato idêntico). */
+export const MUDANCAS_R15: Record<string, MudancaContrato[]> = {};
+
 
 // ════════════════════════════════════════════════════════════════════════
 // R16 — Clientes
