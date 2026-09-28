@@ -36,6 +36,10 @@ import { modelosDaTela, parametroNome, previaDoModelo, type ModeloDaMeta, type M
 import { registrarAtividade } from './atividades.js';
 import { audit } from './audit.js';
 import type { CompositorInput, ContatoPessoalTela } from './atendimento-views.js';
+import { pedacosDaConversa, pedacosDoContato, assinaturaDaConversa } from './atendimento-views.js';
+import { aviso } from './ui/componentes.js';
+import { can } from './permissions.js';
+import { podeVerLead, type LeadDetail } from './leads-queries.js';
 import { linhaDoPainelParaChat } from './conversas-queries.js';
 import { numeroPessoalDoDono, mensagensPessoais, virarLead, leadDoTelefoneNaEmpresa, CASA as CASA_ID, type NumeroPessoal } from '../numero-pessoal.js';
 
@@ -89,12 +93,43 @@ export function mesmaOrigem(req: Pick<Request, 'headers'>): boolean {
   try { return new URL(origin).host === host; } catch { return false; }
 }
 
+/**
+ * O navegador pediu JSON? (envio SEM recarregar a página — o script do
+ * responder manda `Accept: application/json`). Sem JS o formulário faz o
+ * POST normal e recebe o redirect de sempre.
+ */
+export function querJson(req: Pick<Request, 'headers'>): boolean {
+  return /application\/json/i.test(String(req.headers?.accept ?? ''));
+}
+
+/** Resposta JSON de um envio: o resultado já traduzido + a chave do PRÓXIMO clique. */
+export function respostaDoEnvio(resultado: string): { ok: boolean; resultado: string; tom: 'ok' | 'erro' | 'aviso'; texto: string; avisoHtml: string; chave: string } {
+  const r = Object.prototype.hasOwnProperty.call(RESULTADO_ENVIO, resultado) ? resultado : 'falhou';
+  const info = RESULTADO_ENVIO[r];
+  return {
+    ok: r === 'enviada', resultado: r, tom: info.tom, texto: info.texto,
+    avisoHtml: aviso({ tom: info.tom === 'ok' ? 'ok' : info.tom === 'erro' ? 'erro' : 'atencao', texto: info.texto }),
+    chave: randomUUID(),
+  };
+}
+
 interface LeadEnvio { id: string; name: string | null; phone: string | null; opt_out: boolean | null; eva_active: boolean | null; company_id: string | null }
 
 export function criarRotasAtendimento(deps: DepsAtendimento) {
   const limite = deps.limite ?? new LimiteDeEnvio();
   const agora = deps.agora ?? (() => Date.now());
   const banco = deps.banco ?? ((req: AuthedRequest) => bancoDoOperador(req, deps.supabase));
+  /** Respostas desta requisição saem em JSON (envio sem recarregar). */
+  const emJson = new WeakSet<object>();
+  const comJson = (fn: (req: Request, res: Response) => Promise<void>) => async (req: Request, res: Response): Promise<void> => {
+    if (querJson(req)) emJson.add(res);
+    await fn(req, res);
+  };
+  /** Erro "de verdade" (400/403/404): texto no POST normal, JSON no envio sem recarregar. */
+  const falha = (res: Response, status: number, texto: string): void => {
+    if (emJson.has(res)) { res.status(status).json({ ok: false, resultado: 'erro', tom: 'erro', texto, avisoHtml: aviso({ tom: 'erro', texto }), chave: null }); return; }
+    res.status(status).send(texto);
+  };
   /** Só a casa tem número pessoal (decisão do dono); e só o DONO dele usa. */
   const pessoalDe = async (companyId: string, userId: string): Promise<NumeroPessoal | null> => {
     if (companyId !== CASA_ID || !userId || !deps.enviarPessoal) return null;
@@ -144,6 +179,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
   }
 
   function voltar(res: Response, leadId: string, resultado: string, canal?: CanalConversa): void {
+    if (emJson.has(res)) { res.json(respostaDoEnvio(resultado)); return; }
     const r = Object.prototype.hasOwnProperty.call(RESULTADO_ENVIO, resultado) ? resultado : 'falhou';
     const c = canal === 'whatsapp_business' ? '&canal=whatsapp_business' : '';
     res.redirect(303, `/dashboard/leads/${leadId}?resp=${encodeURIComponent(r)}${c}#responder`);
@@ -152,17 +188,17 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
   /** Conferências comuns ao texto e ao modelo. Devolve o contexto ou já respondeu. */
   async function preparar(req: AuthedRequest, res: Response, tipo: 'texto' | 'modelo') {
     const leadId = String(req.params.id ?? '');
-    if (!UUID_RE.test(leadId)) { res.status(400).send('id inválido'); return null; }
+    if (!UUID_RE.test(leadId)) { falha(res, 400, 'id inválido'); return null; }
     const viewer = req.dashUser;
-    if (!viewer?.companyId) { res.status(404).send('lead não encontrado'); return null; }
+    if (!viewer?.companyId) { falha(res, 404, 'lead não encontrado'); return null; }
     const companyId = viewer.companyId;
-    if (!mesmaOrigem(req)) { res.status(403).send('origem não permitida'); return null; }
+    if (!mesmaOrigem(req)) { falha(res, 403, 'origem não permitida'); return null; }
     if (!chaveValida(req.body?.chave)) { voltar(res, leadId, 'chave_invalida'); return null; }
     const chave = String(req.body.chave);
     const db = banco(req);
     let lead: LeadEnvio | null;
     try { lead = await lerLead(db, leadId, companyId); } catch { voltar(res, leadId, 'erro_banco'); return null; }
-    if (!lead) { res.status(404).send('lead não encontrado'); return null; }
+    if (!lead) { falha(res, 404, 'lead não encontrado'); return null; }
 
     // Por qual número responder: o da assistente (padrão) ou o PESSOAL do dono (2b).
     const pedePessoal = req.body?.canal === 'whatsapp_business';
@@ -236,7 +272,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     const r = req as AuthedRequest;
     const leadId = String(r.params.id ?? '');
     const v = validarTexto(r.body?.texto);
-    if (!v.ok) { if (UUID_RE.test(leadId)) voltar(res, leadId, v.motivo); else res.status(400).send('id inválido'); return; }
+    if (!v.ok) { if (UUID_RE.test(leadId)) voltar(res, leadId, v.motivo); else falha(res, 400, 'id inválido'); return; }
     const ctx = await preparar(r, res, 'texto');
     if (!ctx) return;
     const s = await enviarDoPainel({
@@ -389,6 +425,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
   }
 
   function voltarContato(res: Response, telefone: string, resultado: string): void {
+    if (emJson.has(res)) { res.json(respostaDoEnvio(resultado)); return; }
     const r = Object.prototype.hasOwnProperty.call(RESULTADO_ENVIO, resultado) ? resultado : 'falhou';
     res.redirect(303, `/dashboard/leads/conversas?contato=${encodeURIComponent(telefone)}&resp=${encodeURIComponent(r)}#responder`);
   }
@@ -398,8 +435,8 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     const r = req as AuthedRequest;
     const viewer = r.dashUser;
     const telefone = normalizeBrazilianPhone(String(r.body?.telefone ?? ''));
-    if (!viewer?.companyId || !telefone) { res.status(404).send('conversa não encontrada'); return; }
-    if (!mesmaOrigem(r)) { res.status(403).send('origem não permitida'); return; }
+    if (!viewer?.companyId || !telefone) { falha(res, 404, 'conversa não encontrada'); return; }
+    if (!mesmaOrigem(r)) { falha(res, 403, 'origem não permitida'); return; }
     const companyId = viewer.companyId;
     if (!chaveValida(r.body?.chave)) { voltarContato(res, telefone, 'chave_invalida'); return; }
     const v = validarTexto(r.body?.texto);
@@ -408,7 +445,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     if (!np) { voltarContato(res, telefone, 'sem_canal'); return; }
     // Só responde quem já conversou com ESTE dono no número pessoal.
     const conversa = await mensagensPessoais(deps.supabase, companyId, viewer.id, { telefone }, 1);
-    if (conversa.length === 0) { res.status(404).send('conversa não encontrada'); return; }
+    if (conversa.length === 0) { falha(res, 404, 'conversa não encontrada'); return; }
     const chave = String(r.body.chave);
     const jaUsada = await statusDaChave(deps.supabase, companyId, chave);
     if (jaUsada) { voltarContato(res, telefone, jaUsada === 'falhou' ? 'ja_falhou' : 'duplicado'); return; }
@@ -455,5 +492,70 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     return np ? (np.dono_nome || 'Meu WhatsApp') : null;
   }
 
-  return { responder, responderModelo, assumir, devolver, envioDaTela, modelos, contatoDaTela, responderContato, virarLeadDoContato, nomeDoDonoPessoal };
+  // -------------------------------------------------------------------------
+  // Conversa aberta SEM recarregar (Junior 28/09: "demora e dá um toque na tela
+  // inteira"): o script pede os pedaços da conversa a cada poucos segundos (só
+  // com a aba visível) e logo depois de cada envio. Mesmo HTML da página; a
+  // `assinatura` evita mandar tudo de novo quando nada mudou.
+  // -------------------------------------------------------------------------
+
+  const semCache = (res: Response) => { if (typeof res.setHeader === 'function') res.setHeader('Cache-Control', 'no-store'); };
+
+  /** GET /leads/:id/conversa.json — mesmos portões da tela do lead (trava de empresa no router + aqui). */
+  async function conversaJson(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    semCache(res);
+    const leadId = String(r.params?.id ?? '');
+    if (!UUID_RE.test(leadId)) { res.status(400).json({ erro: 'id inválido' }); return; }
+    const viewer = r.dashUser;
+    if (!viewer?.companyId) { res.status(404).json({ erro: 'lead não encontrado' }); return; }
+    const companyId = viewer.companyId;
+    const db = banco(r);
+    try {
+      const base = db.from('leads')
+        .select('id, name, phone, status, eva_active, opt_out, city, uf, created_at, claimed_by, company_id, installation_status')
+        .eq('id', leadId);
+      const { data, error } = await (companyId === EMPRESA_CASA ? base.or(`company_id.eq.${EMPRESA_CASA},company_id.is.null`) : base.eq('company_id', companyId)).maybeSingle();
+      if (error) { res.status(503).json({ erro: 'banco indisponível' }); return; }
+      const lead = data as (LeadDetail & { claimed_by: string | null }) | null;
+      if (!lead) { res.status(404).json({ erro: 'lead não encontrado' }); return; }
+      if (!podeVerLead(viewer, lead)) { res.status(403).json({ erro: 'lead de outro vendedor' }); return; }
+      const [mensagens, anexos, donoPessoal] = await Promise.all([
+        historicoDoLead(db, leadId, companyId, viewer.id, deps.supabase).catch(() => [] as MensagemChat[]),
+        Promise.resolve(db.from('lead_anexos').select('id').eq('lead_id', leadId).limit(1)).then((x) => (x.data ?? []) as unknown[]).catch(() => [] as unknown[]),
+        nomeDoDonoPessoal(r),
+      ]);
+      const envio = can(viewer, 'leads', 'editar') ? await envioDaTela(r, lead, mensagens) : undefined;
+      const p = pedacosDaConversa({ user: viewer, lead: { ...lead, anexos } as unknown as LeadDetail, mensagens, envio, donoPessoal });
+      const assinatura = assinaturaDaConversa(p);
+      if (String(r.query?.assinatura ?? '') === assinatura) { res.json({ igual: true, assinatura }); return; }
+      res.json({ assinatura, ...p });
+    } catch (e) {
+      console.warn(`[atendimento] conversa.json ${leadId.slice(0, 8)} falhou: ${(e as Error).message}`);
+      res.status(500).json({ erro: 'falhou' });
+    }
+  }
+
+  /** GET /leads/conversas/contato.json?contato= — conversa do número pessoal com quem não é lead (só o dono). */
+  async function contatoJson(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    semCache(res);
+    try {
+      const x = await contatoDaTela(r);
+      if (!x) { res.status(404).json({ erro: 'conversa não encontrada' }); return; }
+      if ('leadId' in x) { res.json({ irPara: `/dashboard/leads/${x.leadId}?canal=whatsapp_business` }); return; }
+      const p = pedacosDoContato({ user: r.dashUser, contato: x.contato, donoPessoal: x.donoPessoal });
+      const assinatura = assinaturaDaConversa(p);
+      if (String(r.query?.assinatura ?? '') === assinatura) { res.json({ igual: true, assinatura }); return; }
+      res.json({ assinatura, ...p });
+    } catch (e) {
+      console.warn(`[atendimento] contato.json falhou: ${(e as Error).message}`);
+      res.status(500).json({ erro: 'falhou' });
+    }
+  }
+
+  return {
+    responder: comJson(responder), responderModelo: comJson(responderModelo), assumir, devolver, envioDaTela, modelos, contatoDaTela,
+    responderContato: comJson(responderContato), virarLeadDoContato, nomeDoDonoPessoal, conversaJson, contatoJson,
+  };
 }

@@ -11,6 +11,7 @@
 // Celular: /leads/conversas mostra só a lista; tocar num lead abre o chat, e a
 // aba "Resumo" (âncora #resumo) mostra o cockpit. Sem JavaScript para navegar.
 
+import { createHash } from 'node:crypto';
 import { renderLayout, escapeHtml } from './views.js';
 import { can, type DashUser } from './permissions.js';
 import type { LeadDetail } from './leads-queries.js';
@@ -397,36 +398,42 @@ function faixaAssumir(lead: LeadDetail, mensagens: MensagemChat[], assistente: s
     </div>`;
 }
 
-function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: string, assistenteMin: string, envio: CompositorInput | undefined, donoPessoal: string | null, podeEditar: boolean): string {
-  const nome = lead.name ?? 'Sem nome';
-  const temArquivos = (lead.anexos ?? []).length > 0;
+/** Os balões da conversa (com a divisória de cada dia). Usado na página E no "sem recarregar". */
+export function blocoMensagens(mensagens: MensagemChat[], assistente: string, nomeCliente: string, temArquivos: boolean, donoPessoal: string | null, soDono = false): string {
+  if (mensagens.length === 0) {
+    return soDono
+      ? `<div class="cc-at-vazio">${estadoVazio({ tipo: 'vazio', titulo: 'Nenhuma mensagem ainda.', compacto: true })}</div>`
+      : `<div class="cc-at-vazio">${estadoVazio({ tipo: 'vazio', titulo: 'Nenhuma mensagem ainda.', texto: `Quando o cliente escrever no WhatsApp, a conversa aparece aqui.`, compacto: true })}</div>`;
+  }
   const canais = new Set(mensagens.map((m) => m.canal).filter(Boolean));
-  const mostrarCanal = canais.size > 1;
+  const mostrarCanal = !soDono && canais.size > 1;
   let diaAnterior = '';
-  const corpo = mensagens.length === 0
-    ? `<div class="cc-at-vazio">${estadoVazio({ tipo: 'vazio', titulo: 'Nenhuma mensagem ainda.', texto: `Quando o cliente escrever no WhatsApp, a conversa aparece aqui.`, compacto: true })}</div>`
-    : mensagens.map((m) => {
-      let sep = '';
-      if (m.timestamp && Number.isFinite(Date.parse(m.timestamp))) {
-        const dia = rotuloDia(m.timestamp);
-        if (dia !== diaAnterior) { sep = `<div class="cc-at-dia"><span>${escapeHtml(dia)}</span></div>`; diaAnterior = dia; }
-      }
-      return sep + balao(m, assistente, nome, temArquivos, mostrarCanal, donoPessoal);
-    }).join('');
+  return mensagens.map((m) => {
+    let sep = '';
+    if (m.timestamp && Number.isFinite(Date.parse(m.timestamp))) {
+      const dia = rotuloDia(m.timestamp);
+      if (dia !== diaAnterior) { sep = `<div class="cc-at-dia"><span>${escapeHtml(dia)}</span></div>`; diaAnterior = dia; }
+    }
+    // Conversa do número pessoal com quem não é lead: quem responde é o dono (nunca a assistente).
+    const mm = soDono && m.role === 'assistant' && m.autor !== 'humano' ? { ...m, autor: 'humano' as const, autorNome: m.autorNome ?? donoPessoal } : m;
+    return sep + balao(mm, assistente, nomeCliente, temArquivos, mostrarCanal, donoPessoal);
+  }).join('');
+}
 
+/**
+ * Topo do chat (nome, etapa, Eva ativa/pausada, Assumir) + a faixa "fulano
+ * assumiu". Embrulhado em #cc-at-topo (display: contents — não muda o layout)
+ * pra ser trocado inteiro sem recarregar a página.
+ */
+function topoDoChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: string, assistenteMin: string, envio: CompositorInput | undefined, donoPessoal: string | null, podeEditar: boolean): string {
+  const nome = lead.name ?? 'Sem nome';
   const desde = lead.created_at && Number.isFinite(Date.parse(lead.created_at)) ? `Lead desde ${diaDe(lead.created_at)}` : '';
   const sub = [formatPhoneBR(lead.phone), [lead.city, lead.uf].filter(Boolean).join('/'), desde].filter(Boolean);
   const eva = lead.opt_out
     ? pilulaStatus('sem_dado', `${assistente}: parou`)
     : lead.eva_active ? pilulaStatus('normal', `${assistente} ativa`) : pilulaStatus('acompanhar', `${assistente} pausada`);
   const canalChip = envio ? `<span class="cc-at-canal cc-at-canal-${escapeHtml(envio.canal)}">${escapeHtml(rotuloCanal(envio.canal, assistente, donoPessoal))}</span>` : '';
-
-  return `<section class="cc-at-col cc-at-chat" id="conversa" aria-label="Conversa">
-    <nav class="cc-at-abas-cel" aria-label="Navegação do atendimento">
-      <a class="cc-at-voltar" href="/dashboard/leads/conversas" aria-label="Voltar para a lista">${icone('chev', 'sm')}Conversas</a>
-      <a class="cc-at-aba cc-at-aba-conversa" href="/dashboard/leads/${escapeHtml(lead.id)}">Conversa</a>
-      <a class="cc-at-aba cc-at-aba-resumo" href="#resumo">Resumo</a>
-    </nav>
+  return `<div class="cc-at-topo" id="cc-at-topo">
     <header class="cc-at-chat-topo">
       ${avatarAt(lead.name, lead.phone)}
       <div class="cc-at-chat-id">
@@ -436,6 +443,71 @@ function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: str
       ${lead.eva_active ? faixaAssumir(lead, mensagens, assistente, assistenteMin, podeEditar) : ''}
     </header>
     ${!lead.eva_active ? faixaAssumir(lead, mensagens, assistente, assistenteMin, podeEditar) : ''}
+    </div>`;
+}
+
+/** Nome da assistente na tela: "Eva" na casa, "Assistente" no tenant. */
+export function nomesDaAssistente(user: DashUser | undefined): { assistente: string; assistenteMin: string } {
+  const ehTenant = !!user && user.companyId !== ECOSUN_COMPANY_ID;
+  return ehTenant ? { assistente: 'Assistente', assistenteMin: 'assistente' } : { assistente: 'Eva', assistenteMin: 'Eva' };
+}
+
+/**
+ * Pedaços da conversa aberta para trocar SEM recarregar (envio pelo painel e
+ * mensagens novas do cliente): o mesmo HTML que a página desenha. `estado`
+ * muda quando o campo de resposta muda de forma (janela abriu/fechou, bloqueio,
+ * número) — aí o rodapé é trocado inteiro; senão só a faixa da janela.
+ */
+export function pedacosDaConversa(p: {
+  user: DashUser | undefined; lead: LeadDetail; mensagens: MensagemChat[]; envio?: CompositorInput; donoPessoal?: string | null;
+}): { topo: string; msgs: string; compor: string; estado: string } {
+  const { assistente, assistenteMin } = nomesDaAssistente(p.user);
+  const temArquivos = (p.lead.anexos ?? []).length > 0;
+  return {
+    topo: topoDoChat(p.lead, p.mensagens, assistente, assistenteMin, p.envio, p.donoPessoal ?? null, can(p.user, 'leads', 'editar')),
+    msgs: blocoMensagens(p.mensagens, assistente, p.lead.name ?? 'Sem nome', temArquivos, p.donoPessoal ?? null),
+    compor: compositor(p.lead, p.mensagens, p.envio, assistente),
+    estado: estadoDoCompositor(p.lead, p.mensagens, p.envio),
+  };
+}
+
+/**
+ * "Nada mudou?" — resumo do que o cliente veria de diferente (topo, balões e a
+ * forma do campo). O campo em si não entra: ele traz a chave nova de cada
+ * desenho. PURA.
+ */
+export function assinaturaDaConversa(p: { topo?: string; msgs: string; estado: string }): string {
+  return createHash('sha1').update(`${p.topo ?? ''}|${p.msgs}|${p.estado}`).digest('base64url').slice(0, 20);
+}
+
+/** Forma do campo de resposta (não o conteúdo): muda → o rodapé é redesenhado. PURA. */
+export function estadoDoCompositor(lead: Pick<LeadDetail, 'opt_out' | 'phone'>, mensagens: MensagemChat[], c: CompositorInput | undefined): string {
+  if (!c) return 'sem_envio';
+  const telefone = normalizeBrazilianPhone(lead.phone ?? '') ?? null;
+  const janela = c.via === 'waba' ? janelaAtendimento(ultimaDoCliente(mensagens, c.canal), c.agora ?? Date.now()) : null;
+  const base = { optOut: !!lead.opt_out, telefone, via: c.via, lgpdBloqueado: !!c.lgpdBloqueado };
+  const t = motivoBloqueio({ ...base, tipo: 'texto', janelaAberta: !!janela?.aberta }) ?? 'livre';
+  const m = c.via === 'waba' ? motivoBloqueio({ ...base, tipo: 'modelo', janelaAberta: !!janela?.aberta }) ?? 'livre' : 'sem_modelo';
+  return `${c.canal}|${t}|${m}|${c.modelos.length}`;
+}
+
+function colunaChat(lead: LeadDetail, mensagens: MensagemChat[], assistente: string, assistenteMin: string, envio: CompositorInput | undefined, donoPessoal: string | null, podeEditar: boolean): string {
+  const nome = lead.name ?? 'Sem nome';
+  const temArquivos = (lead.anexos ?? []).length > 0;
+  const corpo = blocoMensagens(mensagens, assistente, nome, temArquivos, donoPessoal);
+  const topo = topoDoChat(lead, mensagens, assistente, assistenteMin, envio, donoPessoal, podeEditar);
+  // Sem recarregar: o script busca os pedaços desta conversa (mesmo número da resposta).
+  const estado = envio ? estadoDoCompositor(lead, mensagens, envio) : '';
+  const vivo = envio
+    ? ` data-conversa="/dashboard/leads/${escapeHtml(lead.id)}/conversa.json?canal=${escapeHtml(envio.canal)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ topo, msgs: corpo, estado })}"`
+    : '';
+  return `<section class="cc-at-col cc-at-chat" id="conversa" aria-label="Conversa"${vivo}>
+    <nav class="cc-at-abas-cel" aria-label="Navegação do atendimento">
+      <a class="cc-at-voltar" href="/dashboard/leads/conversas" aria-label="Voltar para a lista">${icone('chev', 'sm')}Conversas</a>
+      <a class="cc-at-aba cc-at-aba-conversa" href="/dashboard/leads/${escapeHtml(lead.id)}">Conversa</a>
+      <a class="cc-at-aba cc-at-aba-resumo" href="#resumo">Resumo</a>
+    </nav>
+    ${topo}
     <div class="cc-at-msgs" id="cc-at-msgs" role="log" aria-label="Mensagens">${corpo}</div>
     ${compositor(lead, mensagens, envio, assistente)}
   </section>`;
@@ -772,30 +844,15 @@ function formVirarLead(telefone: string, classe = 'cc-btn cc-btn-sm cc-at-btn-vi
   return `<form class="cc-at-virar" method="POST" action="/dashboard/leads/conversas/contato/virar-lead"><input type="hidden" name="telefone" value="${escapeHtml(telefone)}"><button type="submit" class="${classe}">➕ Virar lead</button></form>`;
 }
 
-function colunaChatContato(ct: ContatoPessoalTela, donoPessoal: string | null, assistente: string): string {
-  const nome = ct.nome || formatPhoneBR(ct.telefone);
-  const corpo = ct.mensagens.length === 0
-    ? `<div class="cc-at-vazio">${estadoVazio({ tipo: 'vazio', titulo: 'Nenhuma mensagem ainda.', compacto: true })}</div>`
-    : (() => {
-      let diaAnterior = '';
-      return ct.mensagens.map((m) => {
-        let sep = '';
-        if (m.timestamp && Number.isFinite(Date.parse(m.timestamp))) {
-          const dia = rotuloDia(m.timestamp);
-          if (dia !== diaAnterior) { sep = `<div class="cc-at-dia"><span>${escapeHtml(dia)}</span></div>`; diaAnterior = dia; }
-        }
-        // Aqui quem responde é o dono (nunca a assistente).
-        const mm = m.role === 'assistant' && m.autor !== 'humano' ? { ...m, autor: 'humano' as const, autorNome: m.autorNome ?? donoPessoal } : m;
-        return sep + balao(mm, assistente, nome, false, false, donoPessoal);
-      }).join('');
-    })();
+/** Rodapé de resposta da conversa com quem ainda não é lead (só pelo número pessoal). */
+function compositorContato(ct: ContatoPessoalTela, donoPessoal: string | null, assistente: string): string {
   const c = ct.envio;
   const res = c?.resultado ? RESULTADO_ENVIO[c.resultado] : undefined;
   const banner = res ? aviso({ tom: res.tom === 'ok' ? 'ok' : res.tom === 'erro' ? 'erro' : 'atencao', texto: res.texto }) : '';
   const zap = linkWhatsApp(ct.telefone);
   const linkZap = zap ? `<a class="cc-link cc-at-zap-link" href="${escapeHtml(zap)}" target="_blank" rel="noopener">${icone('wa', 'xs')}Abrir no WhatsApp</a>` : '';
   const prontas = c && c.via === 'evolution' ? chipsProntas(c, ct.nome, false) : '';
-  const compor = c && c.via === 'evolution'
+  return c && c.via === 'evolution'
     ? `<footer class="cc-at-compor cc-at-compor-on" id="responder">
       ${banner}
       <div class="cc-at-janela"><span class="cc-at-via">sai pelo ${escapeHtml(rotuloCanal('whatsapp_business', assistente, donoPessoal))}</span>${linkZap}</div>
@@ -809,7 +866,25 @@ function colunaChatContato(ct: ContatoPessoalTela, donoPessoal: string | null, a
       <p class="cc-at-nota">Conversa do seu WhatsApp: só você vê. A ${escapeHtml(assistente)} não responde aqui.</p>
     </footer>`
     : `<footer class="cc-at-compor cc-at-compor-on" id="responder">${banner}<div class="cc-at-compor-campo cc-at-bloq" aria-disabled="true">${icone('alert', 'xs')}<span>Seu WhatsApp não está conectado agora. <a class="cc-link" href="/dashboard/whatsapp/pessoal">Conectar</a></span></div>${linkZap}</footer>`;
-  return `<section class="cc-at-col cc-at-chat" id="conversa" aria-label="Conversa">
+}
+
+/** Pedaços da conversa com quem não é lead, pra trocar sem recarregar. */
+export function pedacosDoContato(p: { user: DashUser | undefined; contato: ContatoPessoalTela; donoPessoal?: string | null }): { msgs: string; compor: string; estado: string } {
+  const { assistente } = nomesDaAssistente(p.user);
+  const nome = p.contato.nome || formatPhoneBR(p.contato.telefone);
+  return {
+    msgs: blocoMensagens(p.contato.mensagens, assistente, nome, false, p.donoPessoal ?? null, true),
+    compor: compositorContato(p.contato, p.donoPessoal ?? null, assistente),
+    estado: p.contato.envio?.via === 'evolution' ? 'pessoal|livre' : 'pessoal|desconectado',
+  };
+}
+
+function colunaChatContato(ct: ContatoPessoalTela, donoPessoal: string | null, assistente: string): string {
+  const nome = ct.nome || formatPhoneBR(ct.telefone);
+  const corpo = blocoMensagens(ct.mensagens, assistente, nome, false, donoPessoal, true);
+  const estado = ct.envio?.via === 'evolution' ? 'pessoal|livre' : 'pessoal|desconectado';
+  const vivo = ct.envio ? ` data-conversa="/dashboard/leads/conversas/contato.json?contato=${encodeURIComponent(ct.telefone)}" data-estado="${escapeHtml(estado)}" data-assinatura="${assinaturaDaConversa({ msgs: corpo, estado })}"` : '';
+  return `<section class="cc-at-col cc-at-chat" id="conversa" aria-label="Conversa"${vivo}>
     <nav class="cc-at-abas-cel" aria-label="Navegação do atendimento">
       <a class="cc-at-voltar" href="/dashboard/leads/conversas" aria-label="Voltar para a lista">${icone('chev', 'sm')}Conversas</a>
     </nav>
@@ -822,7 +897,7 @@ function colunaChatContato(ct: ContatoPessoalTela, donoPessoal: string | null, a
       ${formVirarLead(ct.telefone)}
     </header>
     <div class="cc-at-msgs" id="cc-at-msgs" role="log" aria-label="Mensagens">${corpo}</div>
-    ${compor}
+    ${compositorContato(ct, donoPessoal, assistente)}
   </section>`;
 }
 
@@ -846,8 +921,7 @@ function cockpitContato(ct: ContatoPessoalTela, donoPessoal: string | null): str
 
 export function renderAtendimentoPage(p: AtendimentoInput): string {
   const ehTenant = !!p.user && p.user.companyId !== ECOSUN_COMPANY_ID;
-  const assistente = ehTenant ? 'Assistente' : 'Eva';
-  const assistenteMin = ehTenant ? 'assistente' : 'Eva';
+  const { assistente, assistenteMin } = nomesDaAssistente(p.user);
   const lead = p.lead;
   const mensagens = p.mensagens ?? lead?.conversation_messages?.map((m) => ({ role: m.role, content: m.content, timestamp: m.timestamp ?? null })) ?? [];
 
@@ -918,27 +992,76 @@ g.querySelectorAll('.cc-at-alca').forEach(function(a){
 })();`;
 
 /**
- * Responder (Parte 2): (1) o botão Enviar trava no 1º clique — o 2º nem sai do
- * navegador (o servidor também barra pela chave); (2) a prévia do modelo
- * acompanha o modelo e o nome (textContent: nada vira HTML).
+ * Responder (Parte 2) — SEM RECARREGAR a página (Junior 28/09: "não sai suave,
+ * dá um toque na tela inteira"):
+ *  - o envio (texto, modelo, resposta pronta) vai por fetch pedindo JSON; o
+ *    balão aparece NA HORA como "enviando…" e vira "✓ enviado" ou "⚠ não saiu"
+ *    com o motivo; o campo limpa e fica com o foco; o texto volta se falhar;
+ *  - botão travado enquanto envia (o servidor também barra pela chave; a
+ *    resposta traz a chave do PRÓXIMO clique; sem resposta, a chave fica — o
+ *    reenvio vira "já enviada", nunca mensagem dupla);
+ *  - a conversa aberta se atualiza sozinha a cada 8 s (só com a aba visível) e
+ *    logo depois de cada envio: balões, faixa "assumiu" e a janela de 24 h;
+ *  - sem fetch (navegador muito velho) o formulário faz o POST normal;
+ *  - prévia do modelo e respostas prontas (textContent: nada vira HTML).
  */
-const SCRIPT_RESPONDER = `(function(){
-document.querySelectorAll('form[data-envio]').forEach(function(f){
-  f.addEventListener('submit',function(){var b=f.querySelector('button[type=submit]');if(b){if(b.disabled)return;setTimeout(function(){b.disabled=true;b.textContent='Enviando…';},0);}});
-});
-var sel=document.getElementById('cc-at-modelo-sel'),nome=document.getElementById('cc-at-modelo-nome'),prev=document.getElementById('cc-at-previa'),custo=document.getElementById('cc-at-modelo-custo');
-function atualizar(){if(!sel||!prev)return;var o=sel.options[sel.selectedIndex];if(!o)return;var n=(nome&&nome.value.trim())||'tudo bem';var t=o.getAttribute('data-texto')||'';prev.textContent=t?t.split('{nome}').join(n):'O texto deste modelo está na Meta (nome: '+n+').';if(custo)custo.textContent=o.getAttribute('data-custo')||'';}
-if(sel)sel.addEventListener('change',atualizar);if(nome)nome.addEventListener('input',atualizar);
-var t=document.getElementById('cc-at-texto');
-document.querySelectorAll('[data-pronta]').forEach(function(b){b.addEventListener('click',function(){
-  if(t){t.value=b.getAttribute('data-texto')||'';t.focus();try{t.setSelectionRange(t.value.length,t.value.length);}catch(e){}return;}
-  var m=b.getAttribute('data-modelo');if(sel&&m){sel.value=m;atualizar();var d=sel.closest('details');if(d)d.open=true;sel.focus();}
-});});
-if(t)t.addEventListener('keydown',function(e){if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();var f=t.form;if(f){if(f.requestSubmit)f.requestSubmit();else f.submit();}}});
+export const SCRIPT_RESPONDER = `(function(){
+var chat=document.getElementById('conversa'),URLC=chat?chat.getAttribute('data-conversa'):null,assin=chat?chat.getAttribute('data-assinatura'):null,enviando=false,buscando=false;
+var podeFetch=!!(window.fetch&&window.FormData&&window.URLSearchParams);
+function rolar(){var c=document.getElementById('cc-at-msgs');if(c)c.scrollTop=c.scrollHeight;}
+function noFim(c){return c.scrollHeight-c.scrollTop-c.clientHeight<120;}
+function pedaco(html){var t=document.createElement('template');t.innerHTML=html;return t.content;}
+function aviso(html){var f=document.getElementById('responder');if(!f)return;f.querySelectorAll('.cc-at-aviso-envio').forEach(function(x){x.remove();});if(!html)return;var d=document.createElement('div');d.className='cc-at-aviso-envio';d.setAttribute('role','status');d.innerHTML=html;f.insertBefore(d,f.firstChild);}
+function balao(texto){var c=document.getElementById('cc-at-msgs');if(!c)return null;var v=c.querySelector('.cc-at-vazio');if(v)v.remove();
+var d=document.createElement('div');d.className='cc-at-msg cc-at-msg-eva cc-at-msg-hum cc-at-msg-otimista';
+var q=document.createElement('div');q.className='cc-at-msg-q';q.textContent='Você · pelo painel';
+var t=document.createElement('div');t.className='cc-at-msg-t';t.textContent=texto;
+var h=document.createElement('div');h.className='cc-at-msg-h';h.textContent='enviando…';
+d.appendChild(q);d.appendChild(t);d.appendChild(h);c.appendChild(d);rolar();return d;}
+function marcar(d,ok,motivo){if(!d)return;var h=d.querySelector('.cc-at-msg-h');if(ok){h.textContent='✓ enviado';return;}
+var f=document.createElement('div');f.className='cc-at-msg-falha';f.textContent='⚠ não saiu — '+(motivo||'tente de novo.');d.insertBefore(f,h);h.textContent='';}
+function novaChave(k){if(!k)return;var f=document.getElementById('responder');if(f)f.querySelectorAll('input[name=chave]').forEach(function(i){i.value=k;});}
+function trocarRodape(html,estado){var f=document.getElementById('responder');if(!f||typeof html!=='string')return;var novo=pedaco(html).querySelector('#responder');if(!novo)return;
+if(estado&&chat.getAttribute('data-estado')!==estado){var ta=document.getElementById('cc-at-texto'),txt=ta?ta.value:'',foco=document.activeElement===ta;f.parentNode.replaceChild(novo,f);chat.setAttribute('data-estado',estado);var nt=document.getElementById('cc-at-texto');if(nt&&txt){nt.value=txt;}if(nt&&foco)nt.focus();atualizarPrevia();return;}
+var jv=f.querySelector('.cc-at-janela'),jn=novo.querySelector('.cc-at-janela');if(jv&&jn)jv.parentNode.replaceChild(jn,jv);}
+function buscar(depoisDeEnviar){if(!URLC||buscando||!window.fetch)return;buscando=true;
+var u=URLC+(URLC.indexOf('?')>=0?'&':'?')+'assinatura='+encodeURIComponent(assin||'');
+return fetch(u,{credentials:'same-origin',headers:{'Accept':'application/json'}}).then(function(r){return r.ok?r.json():null;}).then(function(j){
+if(!j)return;if(j.irPara){location.href=j.irPara;return;}if(j.igual)return;assin=j.assinatura||null;
+var c=document.getElementById('cc-at-msgs');if(c&&typeof j.msgs==='string'){var fim=depoisDeEnviar||noFim(c);c.innerHTML=j.msgs;if(fim)rolar();}
+if(typeof j.topo==='string'){var t=document.getElementById('cc-at-topo'),n=pedaco(j.topo).querySelector('#cc-at-topo');if(t&&n)t.parentNode.replaceChild(n,t);}
+trocarRodape(j.compor,j.estado);
+}).catch(function(){}).then(function(){buscando=false;});}
+document.addEventListener('submit',function(e){var f=e.target&&e.target.closest?e.target.closest('form[data-envio]'):null;if(!f)return;
+var b=f.querySelector('button[type=submit]');
+if(!podeFetch){if(b){if(b.disabled){e.preventDefault();return;}setTimeout(function(){b.disabled=true;b.textContent='Enviando…';},0);}return;}
+e.preventDefault();if(enviando)return;
+var ta=f.querySelector('textarea[name=texto]'),pv=document.getElementById('cc-at-previa');
+var texto=ta?ta.value.trim():(pv?pv.textContent:'');if(ta&&!texto){ta.focus();return;}
+enviando=true;var rot=b?b.textContent:'';if(b){b.disabled=true;b.textContent='Enviando…';}
+var corpo=new URLSearchParams(new FormData(f)).toString();
+var d=balao(texto);aviso('');if(ta){ta.value='';ta.focus();}
+return fetch(f.getAttribute('action'),{method:'POST',credentials:'same-origin',headers:{'Accept':'application/json','Content-Type':'application/x-www-form-urlencoded'},body:corpo})
+.then(function(r){return r.json().catch(function(){return {ok:false,texto:'resposta inesperada do servidor. Recarregue a página.'};});})
+.then(function(j){novaChave(j.chave);marcar(d,!!j.ok,j.texto);if(!j.ok){aviso(j.avisoHtml||'');if(ta&&!ta.value)ta.value=texto;}
+if(j.ok||j.resultado==='falhou'){assin=null;buscando=false;buscar(true);}})
+.catch(function(){marcar(d,false,'sem conexão com o painel. Confira a internet e tente de novo.');if(ta&&!ta.value)ta.value=texto;})
+.then(function(){enviando=false;if(b&&document.body.contains(b)){b.disabled=false;b.textContent=rot||'Enviar';}});});
+function atualizarPrevia(){var sel=document.getElementById('cc-at-modelo-sel'),nome=document.getElementById('cc-at-modelo-nome'),prev=document.getElementById('cc-at-previa'),custo=document.getElementById('cc-at-modelo-custo');if(!sel||!prev)return;var o=sel.options[sel.selectedIndex];if(!o)return;var n=(nome&&nome.value.trim())||'tudo bem';var t=o.getAttribute('data-texto')||'';prev.textContent=t?t.split('{nome}').join(n):'O texto deste modelo está na Meta (nome: '+n+').';if(custo)custo.textContent=o.getAttribute('data-custo')||'';}
+document.addEventListener('change',function(e){if(e.target&&e.target.id==='cc-at-modelo-sel')atualizarPrevia();});
+document.addEventListener('input',function(e){if(e.target&&e.target.id==='cc-at-modelo-nome')atualizarPrevia();});
+document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('[data-pronta]'):null;if(!b||b.disabled)return;
+var t=document.getElementById('cc-at-texto');if(t){t.value=b.getAttribute('data-texto')||'';t.focus();try{t.setSelectionRange(t.value.length,t.value.length);}catch(x){}return;}
+var m=b.getAttribute('data-modelo'),sel=document.getElementById('cc-at-modelo-sel');if(sel&&m){sel.value=m;atualizarPrevia();var d=sel.closest('details');if(d)d.open=true;sel.focus();}});
+document.addEventListener('keydown',function(e){var t=e.target;if(!t||t.id!=='cc-at-texto')return;if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();var f=t.form;if(f){if(f.requestSubmit)f.requestSubmit();else f.submit();}}});
+if(URLC&&window.fetch){setInterval(function(){if(!document.hidden&&!enviando)buscar(false);},8000);document.addEventListener('visibilitychange',function(){if(!document.hidden)buscar(false);});}
 })();`;
 
 /** CSS só do Atendimento (tokens cc- → funciona nos dois temas). */
 export const CSS_ATENDIMENTO = `
+.cc-at-topo{display:contents}
+.cc-at-msg-otimista .cc-at-msg-h{opacity:.85}
+.cc-at-aviso-envio{margin-bottom:6px}
 .cc-at .cc-top{margin-bottom:14px}
 .cc-at .cc-root h1,.cc-at h1{font-size:24px}
 .cc-at-grade{display:grid;grid-template-columns:var(--at-l,minmax(300px,360px)) minmax(0,1fr) var(--at-r,minmax(300px,340px));gap:12px;height:calc(100vh - 168px);min-height:560px}

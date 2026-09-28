@@ -88,3 +88,18 @@ export const ENTRA_MEU_WHATSAPP: MudancaContrato = {
   motivo: 'Junior: o número pessoal dele (QR) entra no painel — atalho "👤 Conectar meu WhatsApp"',
   entra: { links: ['/dashboard/whatsapp/pessoal'] },
 };
+
+/**
+ * Junior (28/09): "quando envio não sai suave, demora e dá um toque na tela
+ * inteira". O envio vai por fetch (JSON) SEM recarregar; a conversa aberta se
+ * atualiza sozinha (balões, faixa "assumiu", janela de 24 h). Os formulários
+ * POST continuam iguais (sem JS funciona como antes).
+ */
+export const ENTRA_SEM_RECARREGAR: MudancaContrato = {
+  motivo: 'Junior: responder sem recarregar a página + mensagens novas aparecem sozinhas',
+  entra: {
+    fetches: ["f.getAttribute('action')", 'u'],
+    ids: ['cc-at-topo', 'conversa', 'responder'],
+    seletores: ['#cc-at-topo', '#responder', '.cc-at-aviso-envio', '.cc-at-janela', '.cc-at-msg-h', '.cc-at-vazio', 'input[name=chave]', 'textarea[name=texto]'],
+  },
+};

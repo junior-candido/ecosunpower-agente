@@ -2424,6 +2424,8 @@ b.onclick=async function(){
   // Atendimento (28/09): Leads › Conversas — lista de conversas | chat | cockpit.
   // Sem lead escolhido: só a lista (no celular) / "escolha uma conversa" (computador).
   // Registrado ANTES de /leads/:id (conversas não é UUID).
+  // Sem recarregar (28/09): a conversa com quem não é lead se atualiza sozinha (só o dono do número vê).
+  router.get('/leads/conversas/contato.json', exigir('leads', 'visualizar'), rotasAtendimento.contatoJson);
   router.get('/leads/conversas', exigir('leads', 'visualizar'), async (req: Request, res: Response) => {
     try {
       const viewer = (req as AuthedRequest).dashUser!;
@@ -2641,6 +2643,8 @@ b.onclick=async function(){
   router.post('/leads/:id/resume-eva', exigir('leads', 'editar'), rotasAtendimento.devolver);
 
   // Responder o WhatsApp pelo painel (texto na janela de 24 h / modelo aprovado fora dela).
+  // Sem recarregar (28/09): balões, faixa "assumiu" e janela de 24 h da conversa aberta (JSON).
+  router.get('/leads/:id/conversa.json', exigir('leads', 'visualizar'), rotasAtendimento.conversaJson);
   router.post('/leads/:id/responder', exigir('leads', 'editar'), rotasAtendimento.responder);
   router.post('/leads/:id/responder-modelo', exigir('leads', 'editar'), rotasAtendimento.responderModelo);
 
