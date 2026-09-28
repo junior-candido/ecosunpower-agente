@@ -58,6 +58,35 @@ export function criarRepoDemonstrativo(db: SupabaseClient, companyId: string) {
     return l ? { id: l.id, nome: l.name ?? null, companyId: l.company_id ?? companyId } : null;
   }
 
+  /**
+   * Cadastro sem a UC, mas alguem ja ligou essa UC a um cliente na tela
+   * ("Ligar a..."): sem isso, regravar o mes (ou o mes seguinte chegar por
+   * e-mail) gravava lead_id null por cima e desligava o cliente.
+   * Confere que o lead ainda existe e e da empresa.
+   */
+  async function leadJaLigado(instalacao: string): Promise<LeadGd | null> {
+    const { data, error } = await db
+      .from('demonstrativos_gd')
+      .select('lead_id')
+      .eq('company_id', companyId)
+      .eq('instalacao', instalacao)
+      .not('lead_id', 'is', null)
+      .order('referencia', { ascending: false })
+      .limit(1);
+    if (error) throw new Error(`demonstrativos_gd (cliente ja ligado): ${error.message}`);
+    const leadId = data?.[0]?.lead_id;
+    if (!leadId) return null;
+    const { data: l, error: e2 } = await db
+      .from('leads')
+      .select('id, name, company_id')
+      .eq('company_id', companyId)
+      .eq('id', leadId)
+      .limit(1);
+    if (e2) throw new Error(`leads (cliente ja ligado): ${e2.message}`);
+    const x = l?.[0];
+    return x ? { id: x.id, nome: x.name ?? null, companyId: x.company_id ?? companyId } : null;
+  }
+
   return {
     async jaProcessado(emailId: string): Promise<boolean> {
       const { data, error } = await db
@@ -106,7 +135,8 @@ export function criarRepoDemonstrativo(db: SupabaseClient, companyId: string) {
         (await leadPorUcExata(instalacao)) ??
         (await leadPorUcExata(codigoCliente)) ??
         (await leadPorUcDigitos(instalacao)) ??
-        (await leadPorUcDigitos(codigoCliente))
+        (await leadPorUcDigitos(codigoCliente)) ??
+        (await leadJaLigado(instalacao))
       );
     },
 
