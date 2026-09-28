@@ -1302,7 +1302,7 @@ export class SupabaseService {
     tensao: number | null; corrente: number | null; potenciaW: number;
     potenciaVa: number | null; fatorPotencia: number | null;
     energiaWh: number | null; energiaDevolvidaWh: number | null;
-    companyId?: string | null; leadId?: string | null;
+    companyId?: string | null; leadId?: string | null; medidorId?: string | null;
   }): Promise<boolean> {
     const { error } = await this.client
       .from('medicoes_shelly')
@@ -1321,6 +1321,9 @@ export class SupabaseService {
           energia_devolvida_wh: l.energiaDevolvidaWh,
           ...(l.companyId ? { company_id: l.companyId } : {}),
           ...(l.leadId ? { lead_id: l.leadId } : {}),
+          // Só manda a coluna quando há medidor: sem a migration 136 o caminho
+          // legado do piloto continua gravando como antes.
+          ...(l.medidorId ? { medidor_id: l.medidorId } : {}),
         },
         { onConflict: 'device_id,canal,medido_em', ignoreDuplicates: true },
       );
@@ -1329,6 +1332,62 @@ export class SupabaseService {
       return false;
     }
     return true;
+  }
+
+  /**
+   * GESTÃO DE ENERGIA — token do script do aparelho → medidor e empresa DELE.
+   * Rota pública (sem sessão): o hash SHA-256 do token é a chave. Service role
+   * porque ainda não se sabe de qual empresa é — é justamente o que se descobre.
+   * Erro (ex.: migration 136 não aplicada) → null, e o webhook segue pro legado.
+   */
+  async resolverMedidorPorToken(token: string): Promise<{ medidorId: string; companyId: string; leadId: string | null; deviceId: string } | null> {
+    const { hashToken, tokenConfere, normalizarDeviceId } = await import('./energia/credenciais.js');
+    if (!token) return null;
+    const hash = hashToken(token);
+    const { data, error } = await this.client
+      .from('medidores_energia')
+      .select('id, company_id, lead_id, device_id, token_ingest_hash')
+      .eq('token_ingest_hash', hash)
+      .eq('ativo', true)
+      .limit(1);
+    if (error) {
+      const { tabelaAusente, avisarMigrationAusente } = await import('./energia/db-erros.js');
+      if (tabelaAusente(error)) { avisarMigrationAusente('webhook'); return null; }
+      throw new Error(`medidores_energia: ${error.message}`);
+    }
+    const r = (data?.[0] ?? null) as { id: string; company_id: string; lead_id: string | null; device_id: string; token_ingest_hash: string } | null;
+    if (!r || !tokenConfere(token, r.token_ingest_hash)) return null;
+    return { medidorId: r.id, companyId: r.company_id, leadId: r.lead_id, deviceId: normalizarDeviceId(r.device_id) };
+  }
+
+  /** Caminho do token legado: o medidor cadastrado do piloto, SÓ na EcoSun. */
+  async resolverMedidorLegado(deviceId: string): Promise<{ medidorId: string; companyId: string; leadId: string | null; deviceId: string } | null> {
+    const { ECOSUN_COMPANY_ID } = await import('./tenant-resolver.js');
+    const { data, error } = await this.client
+      .from('medidores_energia')
+      .select('id, company_id, lead_id, device_id')
+      .eq('company_id', ECOSUN_COMPANY_ID)
+      .eq('device_id', deviceId)
+      .eq('ativo', true)
+      .limit(1);
+    if (error) {
+      const { tabelaAusente, avisarMigrationAusente } = await import('./energia/db-erros.js');
+      if (tabelaAusente(error)) { avisarMigrationAusente('webhook legado'); return null; }
+      throw new Error(`medidores_energia: ${error.message}`);
+    }
+    const r = (data?.[0] ?? null) as { id: string; company_id: string; lead_id: string | null; device_id: string } | null;
+    return r ? { medidorId: r.id, companyId: r.company_id, leadId: r.lead_id, deviceId: r.device_id } : null;
+  }
+
+  /** Última leitura recebida do medidor (o vigia de silêncio olha isso). 1 update por lote. */
+  async marcarLeituraMedidor(medidorId: string, companyId: string, ultimaIso: string): Promise<void> {
+    const { error } = await this.client
+      .from('medidores_energia')
+      .update({ ultima_leitura_em: ultimaIso })
+      .eq('id', medidorId)
+      .eq('company_id', companyId)
+      .or(`ultima_leitura_em.is.null,ultima_leitura_em.lt."${ultimaIso}"`);
+    if (error) console.warn('[energia] marcarLeituraMedidor:', error.message);
   }
 
   /**

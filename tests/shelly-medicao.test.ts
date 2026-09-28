@@ -4,6 +4,7 @@ import {
   janelasDe15Minutos,
   demandaMaxima,
   receberLeituraShelly,
+  _zerarAvisoLegadoParaTeste,
 } from '../src/modules/medicao/shelly-medicao.js';
 
 // Formato que o script mJS do aparelho envia. Nós escrevemos os DOIS lados —
@@ -238,5 +239,95 @@ describe('receberLeituraShelly', () => {
     expect(r.aceito).toBe(true);
     expect(r.salvas).toBe(2);
     expect(r.recusadas).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gestão de Energia G1 — token POR MEDIDOR (multi-tenant). Cada token resolve
+// um medidor e a empresa DELE. O token global antigo só vale pro piloto.
+// ---------------------------------------------------------------------------
+describe('receberLeituraShelly — token por medidor', () => {
+  const MEDIDOR = { medidorId: 'm1', companyId: 'empresa-B', leadId: 'l1', deviceId: '007007422d90' };
+
+  it('token do medidor grava com a empresa DO MEDIDOR', async () => {
+    const salvar = vi.fn(async () => true);
+    const aoReceber = vi.fn(async () => {});
+    const r = await receberLeituraShelly(
+      { salvar, tokenEsperado: '', resolverToken: async (t) => (t === 'tok-B' ? MEDIDOR : null), aoReceber },
+      LEITURA, 'tok-B',
+    );
+    expect(r.aceito).toBe(true);
+    expect(salvar).toHaveBeenCalledWith(expect.objectContaining({ companyId: 'empresa-B', medidorId: 'm1', leadId: 'l1' }));
+    expect(aoReceber).toHaveBeenCalledWith('m1', 'empresa-B', '2026-09-07T23:15:00.000Z');
+  });
+
+  it('aceita o id com prefixo do modelo (shellypro3em-...)', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: '', resolverToken: async () => MEDIDOR },
+      { ...LEITURA, device_id: 'shellypro3em-007007422D90' }, 'tok-B');
+    expect(r.aceito).toBe(true);
+  });
+
+  it('token de um medidor não grava leitura de OUTRO aparelho', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: '', resolverToken: async () => MEDIDOR }, { ...LEITURA, device_id: 'outro' }, 'tok-B');
+    expect(r).toMatchObject({ aceito: false, motivo: 'leitura_invalida' });
+    expect(salvar).not.toHaveBeenCalled();
+  });
+
+  it('o token do medidor tem prioridade: nunca cai no carimbo padrão da EcoSun', async () => {
+    const salvar = vi.fn(async () => true);
+    await receberLeituraShelly({ salvar, tokenEsperado: 'tok-B', resolverToken: async () => MEDIDOR }, LEITURA, 'tok-B');
+    expect(salvar).toHaveBeenCalledWith(expect.objectContaining({ companyId: 'empresa-B' }));
+  });
+
+  it('token desconhecido e diferente do legado → 401', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'legado', resolverToken: async () => null }, LEITURA, 'chute');
+    expect(r).toMatchObject({ aceito: false, motivo: 'token' });
+    expect(salvar).not.toHaveBeenCalled();
+  });
+
+  it('só resolver (sem token global) também funciona e recusa token vazio', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: '', resolverToken: async () => MEDIDOR }, LEITURA, '');
+    expect(r).toMatchObject({ aceito: false, motivo: 'token' });
+  });
+
+  it('resolver que falha (migration não aplicada) cai no legado sem derrubar', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({
+      salvar, tokenEsperado: 'segredo-do-junior', resolverToken: async () => { throw new Error('relation does not exist'); },
+    }, LEITURA, 'segredo-do-junior');
+    expect(r.aceito).toBe(true);
+  });
+});
+
+describe('receberLeituraShelly — token global legado (só o piloto)', () => {
+  it('continua valendo pro piloto, com aviso de token legado e vínculo do medidor quando existe', async () => {
+    _zerarAvisoLegadoParaTeste();
+    const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const salvar = vi.fn(async () => true);
+    const resolverLegado = vi.fn(async () => ({ medidorId: 'piloto', companyId: '00000000-0000-0000-0000-000000000001', leadId: null, deviceId: '007007422d90' }));
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior', resolverLegado }, { ...LEITURA, device_id: 'shellypro3em-007007422d90' }, 'segredo-do-junior');
+    expect(r.aceito).toBe(true);
+    expect(salvar).toHaveBeenCalledWith(expect.objectContaining({ medidorId: 'piloto', companyId: '00000000-0000-0000-0000-000000000001' }));
+    expect(aviso.mock.calls.some((c) => String(c[0]).includes('[energia] token legado'))).toBe(true);
+    expect(aviso.mock.calls.every((c) => !String(c.join(' ')).includes('segredo-do-junior'))).toBe(true);
+    aviso.mockRestore();
+  });
+
+  it('sem medidor cadastrado (migration não aplicada): grava como hoje, sem vínculo', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior', resolverLegado: async () => { throw new Error('x'); } }, LEITURA, 'segredo-do-junior');
+    expect(r.aceito).toBe(true);
+    expect((salvar.mock.calls[0] as unknown[])[0]).not.toHaveProperty('medidorId');
+  });
+
+  it('token global NÃO grava aparelho que não é o piloto', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior' }, { ...LEITURA, device_id: 'shellypro3em-aabbccddeeff' }, 'segredo-do-junior');
+    expect(r).toMatchObject({ aceito: false, motivo: 'leitura_invalida' });
+    expect(salvar).not.toHaveBeenCalled();
   });
 });

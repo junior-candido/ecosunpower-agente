@@ -14,6 +14,8 @@
 // pico. Guardando de 1 em 1 minuto, mostramos o pico que o cliente paga e não
 // enxerga. É também o que transforma uma medição em laudo.
 
+import { createHash, timingSafeEqual } from 'node:crypto';
+
 export type LeituraShelly = {
   deviceId: string;
   apelido: string | null;
@@ -158,10 +160,40 @@ export function demandaMaxima(
   };
 }
 
+/** Medidor dono de um token (tabela medidores_energia, migration 136). */
+export type MedidorDoToken = {
+  medidorId: string;
+  companyId: string;
+  leadId: string | null;
+  /** Sem o prefixo do modelo, minúsculo (ver normalizarDeviceIdShelly). */
+  deviceId: string;
+};
+
+export type LeituraParaGravar = LeituraShelly & {
+  companyId?: string;
+  leadId?: string | null;
+  medidorId?: string;
+};
+
+/**
+ * Aparelhos que ainda podem usar o token GLOBAL (SHELLY_INGEST_TOKEN). Só o
+ * piloto (quadro da casa do Junior) — ele manda dado desde 07/09 com esse token.
+ * Quando o script do piloto for trocado pro token do medidor, esvaziar esta
+ * lista e tirar a env do EasyPanel.
+ */
+export const DEVICES_TOKEN_LEGADO: readonly string[] = ['007007422d90'];
+
 export type RecebimentoDeps = {
-  salvar: (l: LeituraShelly) => Promise<boolean>;
-  /** Token configurado no servidor (env SHELLY_INGEST_TOKEN). */
+  salvar: (l: LeituraParaGravar) => Promise<boolean>;
+  /** Token global legado (env SHELLY_INGEST_TOKEN). Só vale pro piloto. */
   tokenEsperado: string;
+  /** Token do medidor → medidor/empresa (hash SHA-256 em medidores_energia). */
+  resolverToken?: (token: string) => Promise<MedidorDoToken | null>;
+  /** Caminho legado: acha o medidor cadastrado do piloto (pra carimbar medidor_id). */
+  resolverLegado?: (deviceId: string) => Promise<MedidorDoToken | null>;
+  /** Depois de gravar: atualiza a última leitura do medidor (1 vez por lote). */
+  aoReceber?: (medidorId: string, companyId: string, ultimaIso: string) => Promise<void>;
+  devicesLegados?: readonly string[];
 };
 
 export type ResultadoRecebimento = {
@@ -171,13 +203,34 @@ export type ResultadoRecebimento = {
   motivo?: 'token' | 'sem_token_no_servidor' | 'leitura_invalida' | 'erro';
 };
 
+/** "shellypro3em-007007422D90" → "007007422d90". */
+export function normalizarDeviceIdShelly(id: string | null | undefined): string {
+  return String(id ?? '').trim().toLowerCase().replace(/^shelly[a-z0-9]*-/, '');
+}
+
+/** Compara segredos em tempo constante (hash dos dois → mesmo tamanho). Vazio nunca confere. */
+function iguaisTempoConstante(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const ha = createHash('sha256').update(a, 'utf8').digest();
+  const hb = createHash('sha256').update(b, 'utf8').digest();
+  return timingSafeEqual(ha, hb);
+}
+
+// O aviso de token legado sai no máximo 1x por hora (o aparelho manda 1x/min).
+let ultimoAvisoLegadoMs = 0;
+/** Só pra teste: libera o próximo aviso de token legado. */
+export function _zerarAvisoLegadoParaTeste(): void { ultimoAvisoLegadoMs = 0; }
+
 /**
  * Recebe uma leitura (ou um lote, quando o aparelho ficou sem rede e acumulou).
  *
  * 🔒 O endereço é PÚBLICO. Sem token, qualquer um envenena a base de medição de
  * um cliente — e medição envenenada vira laudo errado, assinado por um
- * responsável técnico. Por isso: sem token no servidor, recusa TUDO e grita no
- * log, em vez de ficar aberto em silêncio.
+ * responsável técnico. Ordem:
+ *   1) token do MEDIDOR (hash no banco) → grava com a empresa DELE, e só a
+ *      leitura do próprio aparelho (um token não grava em outro aparelho);
+ *   2) token GLOBAL legado (comparação em tempo constante) → só o piloto;
+ *   3) nada disso → 401. Sem nenhum dos dois configurados, recusa TUDO.
  *
  * Nunca lança: o aparelho manda de minuto em minuto e reenviaria em loop.
  */
@@ -187,31 +240,81 @@ export async function receberLeituraShelly(
   tokenRecebido: string,
 ): Promise<ResultadoRecebimento> {
   try {
-    if (!deps.tokenEsperado) {
+    if (!deps.tokenEsperado && !deps.resolverToken) {
       console.error(
         '[shelly] SHELLY_INGEST_TOKEN nao configurado — recusando TODA leitura. ' +
           'Sem token o endereco fica aberto pra qualquer um gravar medicao.',
       );
       return { aceito: false, motivo: 'sem_token_no_servidor' };
     }
-    if (!tokenRecebido || tokenRecebido !== deps.tokenEsperado) {
-      return { aceito: false, motivo: 'token' };
+    if (!tokenRecebido) return { aceito: false, motivo: 'token' };
+
+    // 1) Token do medidor.
+    let medidor: MedidorDoToken | null = null;
+    if (deps.resolverToken) {
+      medidor = await deps.resolverToken(tokenRecebido).catch((e) => {
+        console.warn('[energia] resolver token do medidor falhou (segue pro legado):', (e as Error)?.message);
+        return null;
+      });
     }
+
+    // 2) Token global legado (só o piloto).
+    let legado = false;
+    if (!medidor) {
+      if (!iguaisTempoConstante(tokenRecebido, deps.tokenEsperado)) return { aceito: false, motivo: 'token' };
+      legado = true;
+    }
+    const legados = new Set((deps.devicesLegados ?? DEVICES_TOKEN_LEGADO).map(normalizarDeviceIdShelly));
+    const medidorLegadoPorDevice = new Map<string, MedidorDoToken | null>();
 
     const lote = Array.isArray(corpo) ? corpo : [corpo];
     let salvas = 0;
     let invalidas = 0;        // o aparelho mandou algo que não dá pra usar
     let falhasDeGravacao = 0; // a leitura era boa, o banco é que não aceitou
+    const ultimaPorMedidor = new Map<string, { companyId: string; iso: string }>();
 
     for (const item of lote) {
       const leitura = extrairLeituraShelly(item);
       if (!leitura) { invalidas++; continue; }
+      const dev = normalizarDeviceIdShelly(leitura.deviceId);
+      let gravar: LeituraParaGravar;
+      if (medidor) {
+        // Um token não grava em outro aparelho.
+        if (dev !== medidor.deviceId) { invalidas++; continue; }
+        gravar = { ...leitura, companyId: medidor.companyId, leadId: medidor.leadId, medidorId: medidor.medidorId };
+      } else {
+        if (!legados.has(dev)) { invalidas++; continue; }
+        if (!medidorLegadoPorDevice.has(dev)) {
+          const m = deps.resolverLegado ? await deps.resolverLegado(dev).catch(() => null) : null;
+          medidorLegadoPorDevice.set(dev, m);
+        }
+        const m = medidorLegadoPorDevice.get(dev) ?? null;
+        gravar = m ? { ...leitura, companyId: m.companyId, medidorId: m.medidorId } : { ...leitura };
+      }
       // Uma leitura ruim no meio do lote não pode derrubar as boas.
-      const ok = await deps.salvar(leitura).catch((e) => {
+      const ok = await deps.salvar(gravar).catch((e) => {
         console.warn('[shelly] nao gravou uma leitura:', (e as Error)?.message);
         return false;
       });
-      if (ok) salvas++; else falhasDeGravacao++;
+      if (ok) {
+        salvas++;
+        if (gravar.medidorId && gravar.companyId) {
+          const atual = ultimaPorMedidor.get(gravar.medidorId);
+          if (!atual || gravar.medidoEm > atual.iso) ultimaPorMedidor.set(gravar.medidorId, { companyId: gravar.companyId, iso: gravar.medidoEm });
+        }
+      } else {
+        falhasDeGravacao++;
+      }
+    }
+
+    if (legado && salvas > 0 && Date.now() - ultimoAvisoLegadoMs > 3_600_000) {
+      ultimoAvisoLegadoMs = Date.now();
+      console.warn(`[energia] token legado (SHELLY_INGEST_TOKEN) ainda em uso — device=${[...medidorLegadoPorDevice.keys()].join(',')}. Troque pelo token do medidor.`);
+    }
+    if (deps.aoReceber) {
+      for (const [id, u] of ultimaPorMedidor) {
+        await deps.aoReceber(id, u.companyId, u.iso).catch((e) => console.warn('[energia] ultima_leitura_em falhou:', (e as Error)?.message));
+      }
     }
 
     const recusadas = invalidas + falhasDeGravacao;

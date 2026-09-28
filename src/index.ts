@@ -9646,10 +9646,16 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     const token = String(
       req.header('x-shelly-token') ?? (req.query.token as string | undefined) ?? '',
     );
+    // Gestão de Energia G1: cada medidor tem o SEU token (medidores_energia,
+    // migration 136) e grava com a empresa DELE. O token global antigo só vale
+    // pro piloto até o script dele ser trocado (log "[energia] token legado").
     const r = await receberLeituraShelly(
       {
         salvar: (l) => supabase.salvarMedicaoShelly(l),
         tokenEsperado: process.env.SHELLY_INGEST_TOKEN ?? '',
+        resolverToken: (t) => supabase.resolverMedidorPorToken(t),
+        resolverLegado: (d) => supabase.resolverMedidorLegado(d),
+        aoReceber: (id, companyId, iso) => supabase.marcarLeituraMedidor(id, companyId, iso),
       },
       req.body,
       token,
