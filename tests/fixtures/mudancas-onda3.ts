@@ -12,6 +12,9 @@ export type { MudancaContrato };
 // R13 — Manutenção + OS
 // ════════════════════════════════════════════════════════════════════════
 
+/** R13: mudanças deliberadas por caso de tests/fixtures/casos-manutencao.ts. */
+export const MUDANCAS_R13: Record<string, MudancaContrato[]> = {};
+
 
 // ════════════════════════════════════════════════════════════════════════
 // R14 — Serviços de campo (painel interno)
