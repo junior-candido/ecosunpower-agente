@@ -157,6 +157,7 @@ function colunaLista(lista: ListaConversas, filtros: FiltrosConversa, leadAtivo:
     ? estadoVazio({ tipo: 'vazio', titulo: filtros.q || filtros.etapa || (filtros.filtro && filtros.filtro !== 'todas') ? 'Nenhuma conversa neste filtro' : 'Nenhuma conversa ainda', texto: filtros.q ? 'Tente outro nome ou limpe a busca.' : undefined, compacto: true })
     : lista.itens.map((c) => itemConversa(c, c.leadId === leadAtivo, filtros, assistente)).join('');
   return `<aside class="cc-at-col cc-at-lista" aria-label="Conversas">
+    <div class="cc-at-alca cc-at-alca-l" data-lado="l" role="separator" aria-orientation="vertical" aria-label="Arrastar para mudar a largura da lista de conversas" tabindex="0"></div>
     <div class="cc-at-lista-topo">
       ${busca}
       <div class="cc-chips cc-at-chips">${chipsFiltro}</div>
@@ -435,6 +436,7 @@ function colunaCockpit(lead: LeadDetail, servicos: ServicoDoLead[], assistente: 
     </nav>`;
 
   return `<aside class="cc-at-col cc-at-cockpit" id="resumo" aria-label="Cockpit do lead">
+    <div class="cc-at-alca cc-at-alca-r" data-lado="r" role="separator" aria-orientation="vertical" aria-label="Arrastar para mudar a largura do resumo do lead" tabindex="0"></div>
     ${abasCel}
     ${identidade}
     ${acoes}
@@ -450,7 +452,7 @@ function colunaCockpit(lead: LeadDetail, servicos: ServicoDoLead[], assistente: 
 }
 
 function cockpitSemLead(): string {
-  return `<aside class="cc-at-col cc-at-cockpit cc-at-cockpit-vazio" aria-label="Cockpit do lead"><p class="cc-at-nada">O resumo do lead aparece aqui.</p></aside>`;
+  return `<aside class="cc-at-col cc-at-cockpit cc-at-cockpit-vazio" aria-label="Cockpit do lead"><div class="cc-at-alca cc-at-alca-r" data-lado="r" role="separator" aria-orientation="vertical" aria-label="Arrastar para mudar a largura do resumo do lead" tabindex="0"></div><p class="cc-at-nada">O resumo do lead aparece aqui.</p></aside>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -564,24 +566,64 @@ export function renderAtendimentoPage(p: AtendimentoInput): string {
   </div>
   <style>${CSS_ATENDIMENTO}</style>`;
 
-  // Rola o chat até a última mensagem (única linha de script da tela).
-  const script = lead ? `<script>(function(){function fim(){var c=document.getElementById('cc-at-msgs');if(c){c.scrollTop=c.scrollHeight;}}fim();window.addEventListener('load',fim);})();</script>` : '';
+  // Alças das colunas (sempre) + rolar o chat até a última mensagem (com lead).
+  const script = `<script>${SCRIPT_COLUNAS}</script>` + (lead ? `<script>(function(){function fim(){var c=document.getElementById('cc-at-msgs');if(c){c.scrollTop=c.scrollHeight;}}fim();window.addEventListener('load',fim);})();</script>` : '');
 
   const titulo = lead ? `Conversa: ${lead.name ?? 'Sem nome'}` : 'Conversas';
   return renderLayout({ active: 'conversas', title: titulo, body: body + script, user: p.user, dark: temaDaTela(p.user, 'escuro') === 'escuro', largo: true });
 }
 
+/**
+ * Arrastar as bordas das colunas (lista à esquerda, resumo à direita).
+ * Largura guardada no navegador ('cc-at-larguras'); duplo clique volta ao
+ * padrão; setas do teclado ajustam de 20 em 20 px. Sem armazenamento → só não lembra.
+ */
+const SCRIPT_COLUNAS = `(function(){
+var g=document.querySelector('.cc-at-grade');if(!g)return;
+var CHAVE='cc-at-larguras',LIM={l:[240,560],r:[260,560]};
+function ler(){try{return JSON.parse(localStorage.getItem(CHAVE)||'{}')||{};}catch(e){return {};}}
+function gravar(v){try{localStorage.setItem(CHAVE,JSON.stringify(v));}catch(e){}}
+var w=ler();
+function aplicar(){['l','r'].forEach(function(k){if(w[k])g.style.setProperty('--at-'+k,w[k]+'px');else g.style.removeProperty('--at-'+k);});}
+function limitar(k,v){return Math.max(LIM[k][0],Math.min(LIM[k][1],Math.round(v)));}
+aplicar();
+g.querySelectorAll('.cc-at-alca').forEach(function(a){
+  var k=a.getAttribute('data-lado'),col=a.parentElement;
+  a.addEventListener('pointerdown',function(ev){
+    ev.preventDefault();var x0=ev.clientX,l0=col.getBoundingClientRect().width;
+    a.setPointerCapture(ev.pointerId);document.body.classList.add('cc-at-arrastando');
+    function mover(e){var d=e.clientX-x0;w[k]=limitar(k,k==='l'?l0+d:l0-d);aplicar();}
+    function soltar(){a.removeEventListener('pointermove',mover);a.removeEventListener('pointerup',soltar);a.removeEventListener('pointercancel',soltar);document.body.classList.remove('cc-at-arrastando');gravar(w);}
+    a.addEventListener('pointermove',mover);a.addEventListener('pointerup',soltar);a.addEventListener('pointercancel',soltar);
+  });
+  a.addEventListener('dblclick',function(){delete w[k];aplicar();gravar(w);});
+  a.addEventListener('keydown',function(e){
+    if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;e.preventDefault();
+    var atual=w[k]||col.getBoundingClientRect().width,passo=e.key==='ArrowRight'?20:-20;
+    w[k]=limitar(k,k==='l'?atual+passo:atual-passo);aplicar();gravar(w);
+  });
+});
+})();`;
+
 /** CSS só do Atendimento (tokens cc- → funciona nos dois temas). */
 export const CSS_ATENDIMENTO = `
 .cc-at .cc-top{margin-bottom:14px}
 .cc-at .cc-root h1,.cc-at h1{font-size:24px}
-.cc-at-grade{display:grid;grid-template-columns:minmax(250px,290px) minmax(0,1fr) minmax(300px,340px);gap:12px;height:calc(100vh - 168px);min-height:560px}
+.cc-at-grade{display:grid;grid-template-columns:var(--at-l,minmax(300px,360px)) minmax(0,1fr) var(--at-r,minmax(300px,340px));gap:12px;height:calc(100vh - 168px);min-height:560px}
 .cc-at-col{min-width:0;min-height:0;display:flex;flex-direction:column;background:linear-gradient(180deg,var(--cc-panel-top) 0%,var(--cc-panel-bot) 100%);border:1px solid var(--cc-line);border-radius:var(--cc-r);overflow:hidden}
+/* alças de arrastar entre as colunas (só no computador) */
+.cc-at-lista,.cc-at-cockpit{position:relative}
+.cc-at-alca{position:absolute;top:0;bottom:0;width:10px;z-index:3;cursor:col-resize;touch-action:none;outline:none}
+.cc-at-alca::after{content:"";position:absolute;top:50%;left:4px;width:2px;height:42px;margin-top:-21px;border-radius:2px;background:var(--cc-line-2);opacity:.6;transition:opacity .15s,background .15s}
+.cc-at-alca:hover::after,.cc-at-alca:focus-visible::after,.cc-at-arrastando .cc-at-alca::after{opacity:1;background:var(--cc-gold-2)}
+.cc-at-alca-l{right:0}
+.cc-at-alca-r{left:0}
+.cc-at-arrastando{cursor:col-resize;user-select:none}
 /* lista */
 .cc-at-lista-topo{padding:12px;border-bottom:1px solid var(--cc-line);display:flex;flex-direction:column;gap:8px}
 .cc-at-busca{display:flex;gap:6px}
 .cc-at-busca input[type=search]{flex:1;min-width:0}
-.cc-at-chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:6px}
+.cc-at-chips{flex-wrap:wrap;gap:6px}
 .cc-at-chips .cc-chip{min-height:26px;padding:3px 9px;font-size:12px}
 .cc-at-itens{flex:1;overflow-y:auto;padding:6px}
 .cc-at-item{display:flex;gap:10px;padding:10px;border-radius:12px;border:1px solid transparent}
@@ -709,7 +751,8 @@ export const CSS_ATENDIMENTO = `
   .cc-at-com-lead .cc-at-lista{display:none}
   .cc-at-com-lead .cc-at-abas-cel{display:flex}
   .cc-at-com-lead .cc-at-aba{display:none}
-  .cc-at-grade{grid-template-columns:minmax(240px,300px) minmax(0,1fr)}
+  .cc-at-grade{grid-template-columns:minmax(280px,340px) minmax(0,1fr)}
+  .cc-at-alca{display:none}
   .cc-at:not(.cc-at-com-lead) .cc-at-cockpit{display:none}
 }
 .cc-at-abas-cel{align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--cc-line)}
