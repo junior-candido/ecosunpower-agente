@@ -118,7 +118,7 @@ import { pastaDaEmpresa, listarPastasDaEmpresa } from './pasta-da-empresa.js';
 import { EMPRESA_CASA as EMPRESA_PADRAO_PASTA } from './canal-envio.js';
 import type { BlogGenerator, BlogDraft } from '../blog-generator.js';
 import { renderBlogDraftsPage, renderBlogIndisponivel, renderBlogRevisarPage, renderBlogLayout } from './blog-views.js';
-import { renderEmailPage, renderEmailLayout } from './email-views.js';
+import { renderEmailPage, renderEmailLayout, renderEmailIndisponivel } from './email-views.js';
 import { renderMedicaoPage } from './medicao-views.js';
 import {
   renderDemonstrativosLista, renderDemonstrativoCliente, renderConferenciaPdf, renderDigitar, renderEnviarPdf,
@@ -276,6 +276,13 @@ export function createDashboardRouter(
       if (can(req.dashUser, area, nivel)) { next(); return; }
       res.status(403).send('<h2>Sem permissão</h2><p>Fale com o administrador.</p>');
     };
+  }
+
+  // R17 (segurança): o que é SÓ da casa (blog do site da EcoSun, jornada de
+  // e-mail com flag global, recálculo de canais de todos os leads). Tenant → 403.
+  function soDaCasa(req: AuthedRequest, res: Response, next: import('express').NextFunction) {
+    if (req.dashUser?.companyId === ECOSUN) { next(); return; }
+    res.status(403).send('<h2>Sem permissão</h2><p>Esta ação é só da empresa dona do painel.</p>');
   }
 
   // Atendimento Parte 2 — responder pelo painel + Assumir/Devolver (atendimento-rotas.ts).
@@ -2226,23 +2233,23 @@ b.onclick=async function(){
 
   // POST /cadencia/fechou — marca lead como cliente (status=transferido + opt_out=true).
   // Remove da cadência automaticamente.
-  router.post('/cadencia/fechou', async (req: Request, res: Response) => {
+  router.post('/cadencia/fechou', exigir('marketing', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.body?.id ?? '').trim();
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    // R17: presa à empresa da SESSÃO (id de lead de outra empresa não mexe em nada).
     const db = bancoDoOperador(req as AuthedRequest, supabase);
-    const { data: leadRow, error } = await db
-      .from('leads')
-      .update({ status: 'transferido', opt_out: true, updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .select('name')
-      .maybeSingle();
-    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    const companyId = (req as AuthedRequest).dashUser!.companyId;
+    const { fecharLeadCadencia } = await import('./cadencia-queries.js');
+    const r = await fecharLeadCadencia(db, companyId, id);
+    if (!r.ok) return res.status(500).send(`erro: ${escapeHtmlSimple(r.erro)}`);
+    const leadRow = r.lead;
 
     // Avisa o Junior no zap e já oferece gerar os documentos (botões disparam o
     // fluxo /fechar existente via evabt:fechar-doc:<cmd>:<leadId>). Best-effort:
     // falha no WhatsApp NÃO quebra o "Fechou" do dashboard.
-    if (leadRow && options.metaService && options.engineerPhone) {
+    // R17: o zap é o do DONO da casa — lead de tenant não vai pra ele.
+    if (leadRow && companyId === ECOSUN && options.metaService && options.engineerPhone) {
       const nome = leadRow?.name ?? 'Cliente';
       try {
         await options.metaService.sendInteractiveButtons(
@@ -2262,16 +2269,15 @@ b.onclick=async function(){
   });
 
   // POST /cadencia/optout — marca lead como opt_out (não atende mais).
-  router.post('/cadencia/optout', async (req: Request, res: Response) => {
+  router.post('/cadencia/optout', exigir('marketing', 'editar'), async (req: Request, res: Response) => {
     const id = String(req.body?.id ?? '').trim();
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     // Fatia 4 (strangler RLS): escrita de dado do tenant no client-do-operador.
+    // R17: presa à empresa da SESSÃO.
     const db = bancoDoOperador(req as AuthedRequest, supabase);
-    const { error } = await db
-      .from('leads')
-      .update({ opt_out: true, eva_active: false, updated_at: new Date().toISOString() })
-      .eq('id', id);
-    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    const { optoutLeadCadencia } = await import('./cadencia-queries.js');
+    const r = await optoutLeadCadencia(db, (req as AuthedRequest).dashUser!.companyId, id);
+    if (!r.ok) return res.status(500).send(`erro: ${escapeHtmlSimple(r.erro)}`);
     res.redirect('/dashboard/cadencia');
   });
 
@@ -2362,13 +2368,13 @@ b.onclick=async function(){
   });
 
   // Cadência: acompanhamento da reativação de leads da base terceirizada.
-  router.get('/cadencia', async (req: Request, res: Response) => {
+  router.get('/cadencia', exigir('marketing', 'visualizar'), async (req: Request, res: Response) => {
     try {
       const { listCadenciaLeads, calcKpis } = await import('./cadencia-queries.js');
       const { renderCadenciaPage } = await import('./cadencia-views.js');
       // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
       const db = bancoDoOperador(req as AuthedRequest, supabase);
-      const rows = await listCadenciaLeads(db);
+      const rows = await listCadenciaLeads(db, (req as AuthedRequest).dashUser!.companyId);
       const kpis = calcKpis(rows);
       const filterStatus = typeof req.query.status === 'string' ? req.query.status : undefined;
       res.send(renderCadenciaPage({ rows, kpis, filterStatus, user: (req as AuthedRequest).dashUser }));
@@ -3026,26 +3032,30 @@ b.onclick=async function(){
       const { fetchGoogleAnalyticsSummary } = await import('../marketing/google-analytics/index.js');
       // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
       const db = bancoDoOperador(req as AuthedRequest, supabase);
+      // R17 (segurança): toda consulta presa à empresa da SESSÃO. O Analytics é o
+      // do site da CASA (propriedade na env) — tenant nem busca.
+      const companyId = (req as AuthedRequest).dashUser!.companyId;
+      const ehCasa = companyId === ECOSUN;
       const [kpis, campaignsResult, creatives, alerts, channels, insights, googleAds7d, googleAds30d, ga4_30d] = await Promise.all([
-        fetchMarketingKpis(db),
-        listActiveCampaigns(db, { status, search, limit, offset }),
-        listRecentCreatives(db, 8),
-        listPendingAlerts(db),
-        fetchChannelFunnel(db, periodo),
-        buildMarketingInsights(db),
-        fetchGoogleAdsSummary(db, 7),
-        fetchGoogleAdsSummary(db, 30),
-        fetchGoogleAnalyticsSummary(30).catch((err) => ({
+        fetchMarketingKpis(db, companyId),
+        listActiveCampaigns(db, companyId, { status, search, limit, offset }),
+        listRecentCreatives(db, companyId, 8),
+        listPendingAlerts(db, companyId),
+        fetchChannelFunnel(db, companyId, periodo),
+        buildMarketingInsights(db, companyId),
+        fetchGoogleAdsSummary(db, 7, companyId),
+        fetchGoogleAdsSummary(db, 30, companyId),
+        ehCasa ? fetchGoogleAnalyticsSummary(30).catch((err) => ({
           sessions: 0, users: 0, pageviews: 0, dias_com_dado: 0, channels: [], top_pages: [],
           error: (err as Error).message,
-        })),
+        })) : Promise.resolve(undefined),
       ]);
       // Qualidade por campanha: janela 14 dias. Falha silenciosa — não quebra a página.
       let campaignQuality: import('../marketing/campaign-quality.js').CampaignQualityReport | undefined;
       try {
         const { fetchCampaignQualityInputs } = await import('../marketing/campaign-quality-data.js');
         const { analyzeCampaignQuality } = await import('../marketing/campaign-quality.js');
-        const inputs = await fetchCampaignQualityInputs(db, 14);
+        const inputs = await fetchCampaignQualityInputs(db, 14, new Date(), companyId);
         campaignQuality = analyzeCampaignQuality(inputs.spends, inputs.leads);
       } catch (err) {
         console.warn('[dashboard/marketing] campaignQuality falhou (segue sem):', (err as Error).message);
@@ -3077,6 +3087,13 @@ b.onclick=async function(){
   // ----------------------------------------------------------------------
   router.get('/marketing/blog', exigir('marketing', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     const user = req.dashUser;
+    // R17: o blog é o do site da CASA — tenant não vê nem mexe nos rascunhos dela.
+    if (user?.companyId !== ECOSUN) {
+      res.type('text/html').send(renderBlogLayout({
+        title: 'Blog — aprovar posts', body: renderBlogIndisponivel('empresa'), user,
+      }));
+      return;
+    }
     if (!options.blogGenerator) {
       res.type('text/html').send(renderBlogLayout({
         title: 'Blog — aprovar posts', body: renderBlogIndisponivel(), user,
@@ -3101,7 +3118,7 @@ b.onclick=async function(){
     }));
   });
 
-  router.post('/marketing/blog/:id/publicar', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+  router.post('/marketing/blog/:id/publicar', exigir('marketing', 'editar'), soDaCasa, async (req: AuthedRequest, res: Response) => {
     const id = String(req.params.id);
     if (!options.blogGenerator || !options.publicarDraft) {
       res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Publicação não está configurada neste servidor.'));
@@ -3126,7 +3143,7 @@ b.onclick=async function(){
     }
   });
 
-  router.post('/marketing/blog/:id/descartar', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+  router.post('/marketing/blog/:id/descartar', exigir('marketing', 'editar'), soDaCasa, async (req: AuthedRequest, res: Response) => {
     const id = String(req.params.id);
     if (!options.blogGenerator) {
       res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Blog não está configurado neste servidor.'));
@@ -3147,7 +3164,7 @@ b.onclick=async function(){
   });
 
   // Tela de revisão: lê o post inteiro, edita e confere a foto antes de publicar.
-  router.get('/marketing/blog/:id/revisar', exigir('marketing', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+  router.get('/marketing/blog/:id/revisar', exigir('marketing', 'visualizar'), soDaCasa, async (req: AuthedRequest, res: Response) => {
     const id = String(req.params.id);
     if (!options.blogGenerator) {
       res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Blog não está configurado neste servidor.'));
@@ -3167,7 +3184,7 @@ b.onclick=async function(){
   });
 
   // Salva a edição (título/resumo/conteúdo) do rascunho.
-  router.post('/marketing/blog/:id/editar', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+  router.post('/marketing/blog/:id/editar', exigir('marketing', 'editar'), soDaCasa, async (req: AuthedRequest, res: Response) => {
     const id = String(req.params.id);
     if (!options.blogGenerator) {
       res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Blog não está configurado neste servidor.'));
@@ -3192,7 +3209,7 @@ b.onclick=async function(){
   });
 
   // Busca/troca a foto do hero (Pexels) no rascunho.
-  router.post('/marketing/blog/:id/foto', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+  router.post('/marketing/blog/:id/foto', exigir('marketing', 'editar'), soDaCasa, async (req: AuthedRequest, res: Response) => {
     const id = String(req.params.id);
     if (!options.blogGenerator) {
       res.redirect('/dashboard/marketing/blog?erro=' + encodeURIComponent('Blog não está configurado neste servidor.'));
@@ -3218,6 +3235,11 @@ b.onclick=async function(){
   // checa a flag 'email_seq_ligado' em app_flags antes de mandar.
   // ----------------------------------------------------------------------
   router.get('/marketing/email', exigir('marketing', 'visualizar'), async (req: AuthedRequest, res: Response) => {
+    // R17: a jornada de e-mail (números e flag global) é a da CASA.
+    if (req.dashUser?.companyId !== ECOSUN) {
+      res.type('text/html').send(renderEmailLayout({ body: renderEmailIndisponivel(), user: req.dashUser }));
+      return;
+    }
     let metricas = { enviados: 0, abertos: 0, clicados: 0, quentes: 0, descadastros: 0 };
     try {
       const counts = await supabaseService.contarEventosPorTipo([
@@ -3246,7 +3268,7 @@ b.onclick=async function(){
     }));
   });
 
-  router.post('/marketing/email/ligar', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+  router.post('/marketing/email/ligar', exigir('marketing', 'editar'), soDaCasa, async (req: AuthedRequest, res: Response) => {
     await supabaseService.setFlag('email_seq_ligado', true);
     await audit(supabase, {
       companyId: req.dashUser!.companyId, userId: req.dashUser!.id,
@@ -3255,7 +3277,7 @@ b.onclick=async function(){
     res.redirect('/dashboard/marketing/email?ok=1');
   });
 
-  router.post('/marketing/email/pausar', exigir('marketing', 'editar'), async (req: AuthedRequest, res: Response) => {
+  router.post('/marketing/email/pausar', exigir('marketing', 'editar'), soDaCasa, async (req: AuthedRequest, res: Response) => {
     await supabaseService.setFlag('email_seq_ligado', false);
     await audit(supabase, {
       companyId: req.dashUser!.companyId, userId: req.dashUser!.id,
@@ -3266,7 +3288,9 @@ b.onclick=async function(){
 
   // Backfill manual de leads.channel — alternativa ao CLI quando Easypanel não
   // expoe shell. Botao chamando esta rota fica na secao Canais.
-  router.post('/admin/backfill-channels', async (req: Request, res: Response) => {
+  // R17 (segurança): mexe em TODOS os leads de TODAS as empresas (banco de
+  // serviço) — só a casa, com permissão de editar Marketing.
+  router.post('/admin/backfill-channels', exigir('marketing', 'editar'), soDaCasa, async (req: Request, res: Response) => {
     try {
       const { runBackfillChannels } = await import('./backfill-channel-runner.js');
       const recomputaTodos = req.query.all === '1';

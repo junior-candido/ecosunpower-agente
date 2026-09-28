@@ -8,18 +8,22 @@ export async function fetchCampaignQualityInputs(
   client: SupabaseClient,
   janelaDias: number,
   agora: Date = new Date(),
+  /** Empresa da sessão (painel, R17). Sem ela = comportamento antigo (rotina do dono). */
+  companyId?: string,
 ): Promise<{ spends: CampaignSpend[]; leads: CampaignLeads[] }> {
   const desde = new Date(agora.getTime() - janelaDias * MS_DIA).toISOString();
   const corte48h = new Date(agora.getTime() - 2 * MS_DIA).toISOString();
 
-  const { data: camps } = await client
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const daEmpresa = (q: any): any => (companyId ? q.eq('company_id', companyId) : q);
+  const { data: camps } = await daEmpresa(client
     .from('marketing_campaigns')
-    .select('id, meta_campaign_id, name');
-  const campById = new Map((camps ?? []).map((c: any) => [c.id, { metaId: c.meta_campaign_id as string, name: c.name as string }]));
+    .select('id, meta_campaign_id, name'));
+  const campById = new Map<unknown, { metaId: string; name: string }>((camps ?? []).map((c: any) => [c.id, { metaId: c.meta_campaign_id as string, name: c.name as string }]));
 
-  const { data: insights } = await client
+  const { data: insights } = await daEmpresa(client
     .from('meta_ads_insights')
-    .select('campaign_id, spend_cents, date_start')
+    .select('campaign_id, spend_cents, date_start'))
     .gte('date_start', desde.slice(0, 10));
   const spendByMetaId = new Map<string, { name: string; cents: number }>();
   for (const row of (insights ?? []) as any[]) {
@@ -33,9 +37,9 @@ export async function fetchCampaignQualityInputs(
     campaignId, name: v.name, spendBrl: v.cents / 100,
   }));
 
-  const { data: leadsRows } = await client
+  const { data: leadsRows } = await daEmpresa(client
     .from('leads')
-    .select('ad_campaign_id, status, created_at')
+    .select('ad_campaign_id, status, created_at'))
     .gte('created_at', desde)
     .not('ad_campaign_id', 'is', null);
   const leadAgg = new Map<string, { qualified: number; totalLeads: number }>();

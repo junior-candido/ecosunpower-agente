@@ -53,13 +53,15 @@ interface LeadJoined {
   opt_out: boolean | null;
 }
 
-export async function listCadenciaLeads(supabase: SupabaseClient): Promise<LeadCadenciaRow[]> {
+/** R17 (segurança): só os leads da empresa da SESSÃO. */
+export async function listCadenciaLeads(supabase: SupabaseClient, companyId: string): Promise<LeadCadenciaRow[]> {
   const { data: leads, error } = await supabase
     .from('leads')
     .select(`
       id, name, phone, email, status, opportunities, energy_data, opt_out,
       conversations:conversations(last_message_at, messages)
     `)
+    .eq('company_id', companyId)
     .eq('acquisition_source', 'terceirizada_recovered')
     .order('updated_at', { ascending: false });
 
@@ -122,6 +124,40 @@ export async function listCadenciaLeads(supabase: SupabaseClient): Promise<LeadC
       has_inbound_after_template,
     };
   });
+}
+
+/**
+ * "Fechou" da Cadência: marca o lead como cliente (status=transferido +
+ * opt_out). Preso à empresa da SESSÃO (R17): id de lead de outra empresa não
+ * mexe em nada e devolve lead=null (o aviso no zap do dono não sai).
+ */
+export async function fecharLeadCadencia(
+  db: SupabaseClient, companyId: string, id: string,
+): Promise<{ ok: true; lead: { name: string | null } | null } | { ok: false; erro: string }> {
+  const { data, error } = await db
+    .from('leads')
+    .update({ status: 'transferido', opt_out: true, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('company_id', companyId)
+    .select('name')
+    .maybeSingle();
+  if (error) return { ok: false, erro: error.message };
+  const lead = data as { name?: string | null } | null;
+  return { ok: true, lead: lead ? { name: lead.name ?? null } : null };
+}
+
+/** "Pediu pra parar" da Cadência (opt_out + assistente desligada), preso à empresa da SESSÃO. */
+export async function optoutLeadCadencia(
+  db: SupabaseClient, companyId: string, id: string,
+): Promise<{ ok: true; alterou: boolean } | { ok: false; erro: string }> {
+  const { data, error } = await db
+    .from('leads')
+    .update({ opt_out: true, eva_active: false, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('company_id', companyId)
+    .select('id');
+  if (error) return { ok: false, erro: error.message };
+  return { ok: true, alterou: Array.isArray(data) && data.length > 0 };
 }
 
 export function calcKpis(rows: LeadCadenciaRow[]): CadenciaKpis {
