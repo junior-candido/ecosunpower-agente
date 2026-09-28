@@ -5,33 +5,143 @@
 // arquivos) → volta {id, uploads:[{url}]}; 2) navegador sobe cada arquivo
 // DIRETO pro Storage (PUT na URL assinada — vídeo não passa pelo Express);
 // 3) POST /servicos/:id/confirmar-midias com o que subiu → lista.
+//
+// Renovação do miolo — R14 (28/09/2026): lista, novo, detalhe e lixeira no
+// padrão cc- do Command Center, tema ESCURO (decisão do dono p/ todas as telas
+// renovadas; contraste alto pro sol), sem Tailwind. Mesmos fetch, ids, names,
+// forms e confirm. "Tirar foto" virou botão grande (≥ 48 px no celular).
+// Conserto: o resultado da busca de cliente/usina era montado com innerHTML
+// usando o NOME do lead cru (lead vem do WhatsApp) — agora é DOM + textContent.
+// A página PÚBLICA do link mágico (renderCampoPublicoPage) NÃO muda.
 import { renderLayout, escapeHtml } from './views.js';
 import { LOGO_PASTA_BASE64 } from '../relatorios/pasta/logo-pasta.js';
 import type { DashUser } from './permissions.js';
 import type { ServicoRow, TipoServico } from './servicos-store.js';
+import {
+  cabecalhoPagina, cartaoSecao, tabela, estadoVazio, botao, menuAcoes, celulaDupla, aviso as avisoCc, icone,
+} from './ui/componentes.js';
+import { temaDaTela } from './ui/tema.js';
 
 const dataBr = (iso: string) => iso.split('-').reverse().join('/');
 
-function cardServico(s: ServicoRow): string {
-  const midias = [
+/** CSS das telas de Serviços (classes cc-sv-*). Exportado pro teste do tamanho do botão de foto. */
+export const CSS_SERVICOS = `
+.cc-sv .cc-panel+.cc-panel,.cc-sv .cc-aviso+.cc-panel,.cc-sv .cc-panel+.cc-aviso,.cc-sv .cc-aviso+.cc-aviso{margin-top:16px}
+.cc-sv-col{max-width:760px}
+.cc-sv-form{display:flex;flex-direction:column;gap:16px}
+.cc-sv-form .cc-campo input,.cc-sv-form .cc-campo select,.cc-sv-form .cc-campo textarea{width:100%}
+.cc-sv-dica{font-size:12.5px;color:var(--cc-muted);line-height:1.45}
+.cc-sv-par{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
+.cc-sv-par input{width:100%}
+.cc-sv-opcoes{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.cc-sv-opcoes:empty{display:none}
+.cc-sv-opcao{display:block;width:100%;text-align:left;min-height:44px;padding:10px 12px;border:1px solid var(--cc-line-2);border-radius:10px;background:var(--cc-surface-2);color:var(--cc-text);font:inherit;font-size:14px;cursor:pointer}
+.cc-sv-opcao:hover,.cc-sv-opcao:focus{border-color:var(--cc-gold);outline:none}
+.cc-sv-escolhido{margin-top:8px;padding:10px 12px;border-radius:10px;background:var(--cc-ok-soft);color:var(--cc-ok);font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.cc-sv-escolhido-usina{background:var(--cc-info-soft);color:var(--cc-info)}
+.cc-sv-novo-cli{margin-top:8px}
+.cc-sv-guia{margin-top:8px;padding:12px 14px;border:1px solid var(--cc-line-2);border-radius:12px;background:var(--cc-info-soft)}
+.cc-sv-guia p{margin:0 0 6px;font-size:13.5px;font-weight:600;color:var(--cc-info)}
+.cc-sv-guia ol{margin:0;padding-left:20px;font-size:14px;color:var(--cc-text);line-height:1.55}
+.cc-sv-fotos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.cc-sv-foto{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:64px;padding:10px 6px;border:2px dashed var(--cc-line-2);border-radius:12px;background:var(--cc-surface-2);color:var(--cc-text);font-size:14px;font-weight:600;text-align:center;cursor:pointer;line-height:1.25;user-select:none}
+.cc-sv-foto:hover{border-color:var(--cc-gold)}
+.cc-sv-foto-cam{border-style:solid;border-color:var(--cc-gold);background:var(--cc-gold-soft);color:var(--cc-gold-2)}
+.cc-sv-foto .cc-sv-emo{font-size:22px;line-height:1}
+.cc-sv-anexos{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+.cc-sv-anexos:empty{display:none}
+.cc-sv-mini{display:block;width:100%;height:84px;object-fit:cover;border-radius:10px;cursor:pointer}
+.cc-sv-mini-vid{display:flex;align-items:center;justify-content:center;text-align:center;padding:4px;background:var(--cc-surface-3);color:var(--cc-text);font-size:12px}
+.cc-sv-grande{height:auto;min-height:52px;font-size:16px;width:100%;justify-content:center}
+.cc-sv-progresso{text-align:center;font-size:13px;color:var(--cc-muted);min-height:18px;margin-top:8px}
+.cc-sv-dl{display:grid;grid-template-columns:140px minmax(0,1fr);gap:8px 14px;margin:0;font-size:14px}
+.cc-sv-dl dt{color:var(--cc-muted);font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding-top:2px}
+.cc-sv-dl dd{margin:0;color:var(--cc-text);overflow-wrap:anywhere;white-space:pre-wrap}
+.cc-sv-galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.cc-sv-galeria a{display:block}
+.cc-sv-galeria img{display:block;width:100%;height:150px;object-fit:cover;border-radius:10px}
+.cc-sv-video{display:block;width:100%;max-height:420px;border-radius:10px;margin-top:10px;background:#000}
+.cc-sv-trab textarea{width:100%;margin-top:12px}
+.cc-sv-trab .cc-sv-grande{margin-top:12px}
+.cc-sv-linha{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cc-sv-codigo{flex:1 1 200px;min-width:0;font-size:12.5px;padding:8px 10px;border-radius:8px;background:var(--cc-surface-3);color:var(--cc-info);overflow-wrap:anywhere}
+.cc-sv-modal{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+.cc-sv-modal.hidden{display:none}
+.cc-sv-modal input#l_nome{width:100%}
+.cc-sv-dias{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--cc-muted)}
+.cc-sv-dias input{width:76px;text-align:center}
+.cc-sv-reabrir>summary{cursor:pointer;font-size:14px;font-weight:600;color:var(--cc-gold-2);padding:4px 0}
+.cc-sv-reabrir form{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.cc-sv-reabrir form input{flex:1 1 220px;min-width:0}
+.cc-sv-quem{margin:10px 0 0;font-size:13px;color:var(--cc-muted)}
+.cc-sv .cc-mais-menu form{margin:0}
+@media (max-width:760px){
+  .cc-sv-foto{min-height:72px;font-size:15px}
+  .cc-sv-fotos{gap:8px}
+  .cc-sv-par{grid-template-columns:minmax(0,1fr)}
+  .cc-sv-dl{grid-template-columns:minmax(0,1fr);gap:2px}
+  .cc-sv-dl dd{margin-bottom:8px}
+  .cc-sv-galeria{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cc-sv-galeria img{height:130px}
+  .cc-sv .cc-tools{width:100%}
+  .cc-sv .cc-tools>.cc-btn{flex:1 1 auto;justify-content:center}
+  .cc-sv-reabrir form .cc-btn{width:100%;justify-content:center}
+}
+`;
+
+const layout = (title: string, body: string, user: DashUser | undefined, largo: boolean) => renderLayout({
+  active: 'servicos', title, body: `<div class="cc-root cc-sv">${body}</div><style>${CSS_SERVICOS}</style>`, user,
+  tailwind: false, dark: temaDaTela(user, 'escuro') === 'escuro', largo,
+});
+
+const TRILHA = [{ rotulo: 'O&M' }, { rotulo: 'Serviços de campo', href: '/dashboard/servicos' }];
+
+/** Pílula do status. O title guarda o rótulo com a bolinha de antes (🟡 pendente / 🟢 concluído). */
+function pilulaServico(status: ServicoRow['status']): string {
+  return status === 'atribuido'
+    ? '<span class="cc-pill cc-s-watch" title="🟡 pendente">pendente</span>'
+    : '<span class="cc-pill cc-s-ok" title="🟢 concluído">concluído</span>';
+}
+
+function midiasTexto(s: ServicoRow): string | null {
+  const t = [
     s.fotos ? `${s.fotos} foto${s.fotos > 1 ? 's' : ''}` : '',
     s.videos ? `${s.videos} vídeo${s.videos > 1 ? 's' : ''}` : '',
   ].filter(Boolean).join(' · ');
-  const badge = s.status === 'atribuido'
-    ? '<span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">🟡 pendente</span>'
-    : '<span class="px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-700">🟢 concluído</span>';
-  return `<a href="/dashboard/servicos/${s.id}" class="block bg-white rounded-2xl shadow-sm border border-slate-200 p-4 hover:border-sky-400 transition">
-    <div class="flex items-center justify-between">
-      <span class="font-semibold text-slate-800">${escapeHtml(s.tipoNome)}</span>
-      <span class="text-sm text-slate-500">${dataBr(s.dataServico)}</span>
-    </div>
-    <div class="flex items-center justify-between mt-1">
-      <span class="text-sm text-slate-600">👤 ${escapeHtml(s.clienteNome)}</span>
-      ${badge}
-    </div>
-    ${s.atribuidoNome ? `<div class="text-xs text-slate-400 mt-1">🛠️ ${escapeHtml(s.atribuidoNome)}</div>` : ''}
-    ${midias ? `<div class="text-xs text-slate-400 mt-1">📎 ${midias}</div>` : ''}
-  </a>`;
+  return t || null;
+}
+
+function tabelaServicos(lista: ServicoRow[]): string {
+  return tabela({
+    mobile: 'cartoes',
+    colunas: [{ titulo: 'Serviço' }, { titulo: 'Data' }, { titulo: 'Status' }, { titulo: 'Quem faz' }, { titulo: 'Mídias' }],
+    linhas: lista.map((s) => [
+      { html: celulaDupla(s.tipoNome, s.clienteNome, `/dashboard/servicos/${s.id}`) },
+      dataBr(s.dataServico),
+      { html: pilulaServico(s.status) },
+      s.atribuidoNome,
+      midiasTexto(s),
+    ]),
+  });
+}
+
+/** Os 3 botões de anexo (câmera, galeria, vídeo) — mesmos inputs de antes. */
+function botoesFoto(): string {
+  return `<div class="cc-sv-fotos">
+      <label class="cc-sv-foto cc-sv-foto-cam"><span class="cc-sv-emo" aria-hidden="true">📷</span>Tirar foto
+        <input type="file" accept="image/*" capture="environment" style="display:none" onchange="addFotos(this)"></label>
+      <label class="cc-sv-foto"><span class="cc-sv-emo" aria-hidden="true">🖼️</span>Galeria
+        <input type="file" accept="image/*" multiple style="display:none" onchange="addFotos(this)"></label>
+      <label class="cc-sv-foto"><span class="cc-sv-emo" aria-hidden="true">🎥</span>Vídeo (máx 2)
+        <input type="file" accept="video/*" style="display:none" onchange="addVideo(this)"></label>
+    </div>`;
+}
+
+function guiaHtml(itens: string[], extra = ''): string {
+  return `<div class="cc-sv-guia${extra ? ` ${extra}` : ''}">
+      <p>📷 Fotos pra tirar neste serviço:</p>
+      <ol>${itens.map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</ol>
+    </div>`;
 }
 
 export function renderServicosPage(
@@ -39,31 +149,29 @@ export function renderServicosPage(
   user: DashUser | undefined,
   aviso?: { tipo: 'ok' | 'erro'; texto: string },
 ): string {
-  const avisoHtml = aviso
-    ? `<div class="mb-4 px-4 py-3 rounded-xl text-sm ${aviso.tipo === 'ok' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'}">${escapeHtml(aviso.texto)}</div>`
-    : '';
   // Os SEUS pendentes vêm primeiro — é o que o instalador abre no campo.
   const meusPendentes = servicos.filter((s) => s.status === 'atribuido' && user && s.atribuidoA === user.id);
   const resto = servicos.filter((s) => !meusPendentes.includes(s));
-  const secaoPendentes = meusPendentes.length
-    ? `<div class="max-w-xl mb-6">
-        <h2 class="text-sm font-bold text-amber-700 uppercase tracking-wide mb-2">🟡 Seus serviços pendentes</h2>
-        <div class="space-y-3">${meusPendentes.map(cardServico).join('\n')}</div>
-      </div>`
-    : '';
 
+  const acoes = `${botao({ rotulo: 'Novo registro', href: '/dashboard/servicos/novo', tom: 'ouro', icone: 'plus' })}${botao({ rotulo: 'Lixeira', href: '/dashboard/servicos/lixeira', tom: 'fantasma' })}`;
   const body = `
-  <div class="flex items-center justify-between mb-6">
-    <div><h1 class="text-2xl font-bold text-slate-800">🔧 Serviços</h1>
-    <p class="text-sm text-slate-500 mt-1">Registro de campo: visita, instalação, manutenção — tudo gravado no cliente.</p></div>
-    <a href="/dashboard/servicos/lixeira" class="text-sm text-slate-400 hover:text-slate-600 hover:underline">🗑️ Lixeira</a>
-  </div>
-  ${avisoHtml}
-  <a href="/dashboard/servicos/novo" class="block w-full max-w-xl text-center px-5 py-4 mb-6 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-900 text-lg font-bold shadow">➕ Novo registro</a>
-  ${secaoPendentes}
-  <div class="space-y-3 max-w-xl">${resto.map(cardServico).join('\n') || (meusPendentes.length ? '' : '<p class="text-slate-400 py-8 text-center">Nenhum serviço registrado ainda.</p>')}</div>`;
+${cabecalhoPagina({
+    trilha: [{ rotulo: 'O&M' }, { rotulo: 'Serviços de campo' }],
+    titulo: 'Serviços de campo',
+    subtitulo: 'Registro de campo: visita, instalação, manutenção — tudo gravado no cliente.',
+    acoesHtml: acoes,
+  })}
+${aviso ? avisoCc({ tom: aviso.tipo, texto: aviso.texto }) : ''}
+${meusPendentes.length ? cartaoSecao({ titulo: 'Seus serviços pendentes', dica: `${meusPendentes.length} pra fazer`, corpoHtml: tabelaServicos(meusPendentes) }) : ''}
+${resto.length || !meusPendentes.length ? cartaoSecao({
+    titulo: meusPendentes.length ? 'Outros registros' : 'Registros',
+    dica: `${resto.length} registro(s)`,
+    corpoHtml: resto.length
+      ? tabelaServicos(resto)
+      : estadoVazio({ tipo: 'vazio', titulo: 'Nenhum serviço registrado ainda.', texto: 'Toque em "Novo registro" pra registrar o primeiro.', icone: 'wrench' }),
+  }) : ''}`;
 
-  return renderLayout({ active: 'servicos', title: 'Serviços', body, user });
+  return layout('Serviços', body, user, true);
 }
 
 export function renderDetalheServicoPage(
@@ -74,34 +182,19 @@ export function renderDetalheServicoPage(
   linkCampo?: { pode: boolean; criadoAgora?: boolean },
 ): string {
   const fotos = midias.filter((m) => m.tipoMidia === 'foto')
-    .map((m) => `<a href="${escapeHtml(m.url)}" target="_blank"><img src="${escapeHtml(m.url)}" class="w-full h-36 object-cover rounded-xl"></a>`).join('');
+    .map((m) => `<a href="${escapeHtml(m.url)}" target="_blank" rel="noopener"><img src="${escapeHtml(m.url)}" alt="Foto do serviço" loading="lazy"></a>`).join('');
   const videos = midias.filter((m) => m.tipoMidia === 'video')
-    .map((m) => `<video src="${escapeHtml(m.url)}" controls preload="metadata" class="w-full rounded-xl mt-3"></video>`).join('');
-  const badge = s.status === 'atribuido'
-    ? '<span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">🟡 pendente</span>'
-    : '<span class="px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-700">🟢 concluído</span>';
+    .map((m) => `<video src="${escapeHtml(m.url)}" controls preload="metadata" class="cc-sv-video"></video>`).join('');
 
   // Pendente? Vira a tela de TRABALHO do instalador: guia + anexos + concluir.
-  const guia = s.status === 'atribuido' && GUIAS_FOTOS[s.tipoId]
-    ? `<div class="mt-4 px-4 py-3 rounded-xl bg-sky-50 border border-sky-200">
-        <p class="text-sm font-semibold text-sky-900 mb-1">📷 Fotos pra tirar neste serviço:</p>
-        <ol class="text-sm text-sky-800 list-decimal ml-5 space-y-0.5">${GUIAS_FOTOS[s.tipoId]!.map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</ol>
-      </div>`
-    : '';
+  const guia = s.status === 'atribuido' && GUIAS_FOTOS[s.tipoId] ? guiaHtml(GUIAS_FOTOS[s.tipoId]!) : '';
   const completar = s.status === 'atribuido'
-    ? `${guia}
-    <div class="mt-4 grid grid-cols-3 gap-2">
-      <label class="block text-center px-2 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">📷 Tirar foto
-        <input type="file" accept="image/*" capture="environment" style="display:none" onchange="addFotos(this)"></label>
-      <label class="block text-center px-2 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">🖼️ Galeria
-        <input type="file" accept="image/*" multiple style="display:none" onchange="addFotos(this)"></label>
-      <label class="block text-center px-2 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">🎥 Vídeo (máx 2)
-        <input type="file" accept="video/*" style="display:none" onchange="addVideo(this)"></label>
-    </div>
-    <div id="anexos" class="grid grid-cols-3 gap-2 mt-2"></div>
-    <textarea id="f_obs_final" rows="2" placeholder="Observações finais…" class="mt-3 w-full border border-slate-300 rounded-xl px-4 py-3 text-base"></textarea>
-    <button id="concluir" onclick="concluir()" class="mt-3 w-full px-5 py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-lg font-bold shadow">✅ Concluir serviço</button>
-    <div id="progresso" class="text-sm text-slate-500 text-center mt-2"></div>
+    ? cartaoSecao({ titulo: 'Anexar e concluir', classe: 'cc-sv-trab cc-form', corpoHtml: `${guia}
+    <div style="margin-top:12px">${botoesFoto()}</div>
+    <div id="anexos" class="cc-sv-anexos"></div>
+    <textarea id="f_obs_final" rows="2" placeholder="Observações finais…" class="cc-sv-obs"></textarea>
+    <button id="concluir" onclick="concluir()" class="cc-btn cc-btn-gold cc-sv-grande">✅ Concluir serviço</button>
+    <div id="progresso" class="cc-sv-progresso"></div>
     <script>
     var MAX_VIDEOS=2, MAX_VIDEO_MB=180, SID='${escapeHtml(s.id)}';
     var estado={fotos:[],videos:[]};
@@ -115,9 +208,9 @@ export function renderDetalheServicoPage(
     function pintaAnexos(){
      var d=document.getElementById('anexos');d.innerHTML='';
      estado.fotos.forEach(function(b,i){var img=document.createElement('img');img.src=URL.createObjectURL(b);
-      img.className='w-full h-20 object-cover rounded-lg';img.onclick=function(){estado.fotos.splice(i,1);pintaAnexos()};d.appendChild(img)});
+      img.className='cc-sv-mini';img.alt='Foto '+(i+1)+' (toque pra tirar)';img.onclick=function(){estado.fotos.splice(i,1);pintaAnexos()};d.appendChild(img)});
      estado.videos.forEach(function(f,i){var v=document.createElement('div');
-      v.className='w-full h-20 rounded-lg bg-slate-800 text-white flex items-center justify-center text-xs';
+      v.className='cc-sv-mini cc-sv-mini-vid';
       v.textContent='🎥 '+Math.round(f.size/1048576)+'MB';
       v.onclick=function(){estado.videos.splice(i,1);pintaAnexos()};d.appendChild(v)})}
     function addFotos(inp){var fs=Array.prototype.slice.call(inp.files||[]);inp.value='';
@@ -154,7 +247,7 @@ export function renderDetalheServicoPage(
         body:JSON.stringify({observacoes:document.getElementById('f_obs_final').value.trim()})})})
       .then(function(){window.location='/dashboard/servicos?ok='+encodeURIComponent('✅ Serviço concluído!')})})
      .catch(function(e){alert('Falha: '+e.message);btn.disabled=false;btn.textContent='✅ Concluir serviço'})}
-    </script>`
+    </script>` })
     : '';
 
   // 🪄 Gerar link de campo (quem pode editar): o serviço vai pro campo por
@@ -162,24 +255,24 @@ export function renderDetalheServicoPage(
   // zap: o escritório copia o link e manda pelo zap pessoal (Junior 06/08 —
   // o template de aviso saiu: caía no login e ainda custava por envio).
   const faixaCriado = linkCampo?.criadoAgora
-    ? `<div class="mb-4 px-4 py-3 rounded-xl text-sm bg-emerald-50 text-emerald-800 border border-emerald-200">✅ Serviço criado!${linkCampo.pode ? ' Gere o link de campo aqui embaixo e mande pelo seu zap pra quem vai fazer.' : ''}</div>`
+    ? avisoCc({ tom: 'ok', texto: `Serviço criado!${linkCampo.pode ? ' Gere o link de campo aqui embaixo e mande pelo seu zap pra quem vai fazer.' : ''}` })
     : '';
-  const linkCampoHtml = linkCampo?.pode ? `
-    <button onclick="document.getElementById('link_modal').classList.remove('hidden')" class="mt-4 w-full px-5 py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold shadow">🪄 Gerar link de campo</button>
-    <div id="link_modal" class="hidden mt-3 bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-3">
-      <p class="text-sm text-slate-600">O link abre o serviço direto — sem senha, sem cadastro. Copie e mande pelo seu zap.</p>
-      <input id="l_nome" placeholder="Nome de quem vai fazer" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm">
-      <div class="flex items-center gap-2 text-xs text-slate-500">link vale por
-        <input id="l_dias" type="number" min="1" max="60" value="7" class="w-14 border border-slate-300 rounded-lg px-2 py-1 text-sm text-center"> dias
+  const linkCampoHtml = linkCampo?.pode ? cartaoSecao({ titulo: 'Link de campo', dica: 'sem senha, sem cadastro', corpoHtml: `
+    <button type="button" onclick="document.getElementById('link_modal').classList.remove('hidden')" class="cc-btn cc-sv-grande">🪄 Gerar link de campo</button>
+    <div id="link_modal" class="hidden cc-sv-modal cc-form">
+      <p class="cc-sv-dica">O link abre o serviço direto — sem senha, sem cadastro. Copie e mande pelo seu zap.</p>
+      <input id="l_nome" placeholder="Nome de quem vai fazer" aria-label="Nome de quem vai fazer">
+      <div class="cc-sv-dias">link vale por
+        <input id="l_dias" type="number" min="1" max="60" value="7" aria-label="Dias de validade"> dias
       </div>
-      <button id="l_gerar" onclick="gerarLinkCampo()" class="w-full px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">🪄 Gerar link</button>
+      <button type="button" id="l_gerar" onclick="gerarLinkCampo()" class="cc-btn cc-sv-grande">🪄 Gerar link</button>
       <div id="l_pronto" class="hidden">
-        <div class="flex items-center gap-2">
-          <code id="l_link" class="flex-1 text-xs bg-white border border-cyan-200 rounded-lg px-2 py-1.5 text-cyan-900 break-all"></code>
-          <button onclick="copiarLinkCampo(this)" class="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-semibold whitespace-nowrap">📋 copiar</button>
+        <div class="cc-sv-linha">
+          <code id="l_link" class="cc-sv-codigo"></code>
+          <button type="button" onclick="copiarLinkCampo(this)" class="cc-btn cc-btn-sm">📋 copiar</button>
         </div>
       </div>
-      <div id="l_status" class="text-sm text-center text-slate-500"></div>
+      <div id="l_status" class="cc-sv-progresso"></div>
     </div>
     <script>
     function gerarLinkCampo(){
@@ -199,85 +292,106 @@ export function renderDetalheServicoPage(
      .catch(function(e){btn.disabled=false;btn.textContent='🪄 Gerar link';
       document.getElementById('l_status').textContent='❌ '+e.message})}
     function copiarLinkCampo(btn){navigator.clipboard.writeText(document.getElementById('l_link').textContent).then(function(){btn.textContent='✅ copiado'})}
-    </script>` : '';
+    </script>` }) : '';
+
+  // Link atual (válido ou vencido) — só pra quem pode editar.
+  let linkAtual = '';
+  if (podeReabrir && s.campoSlug) {
+    const vencido = s.campoExpiraEm ? new Date(s.campoExpiraEm).getTime() < Date.now() : false;
+    const venceBr = s.campoExpiraEm ? new Date(s.campoExpiraEm).toLocaleDateString('pt-BR') : '';
+    linkAtual = vencido
+      ? `<div class="cc-aviso cc-aviso-atencao" role="status">${icone('clock', 'sm')}<span>
+             O link de campo${s.campoNome ? ` do(a) <b>${escapeHtml(s.campoNome)}</b>` : ''} <b>venceu</b> (${escapeHtml(venceBr)}) — gere um novo no 🪄 aqui em cima.
+           </span></div>`
+      : cartaoSecao({
+        titulo: `Link de campo${s.campoNome ? ` — ${s.campoNome}` : ''}`,
+        dica: `vale até ${venceBr}`,
+        corpoHtml: `<div class="cc-sv-linha">
+               <code id="linkCampo" class="cc-sv-codigo"></code>
+               <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('linkCampo').textContent).then(()=>{this.textContent='✅'})" class="cc-btn cc-btn-sm">📋 copiar</button>
+             </div>
+             <p class="cc-sv-dica" style="margin:8px 0 0">Manda pelo seu zap — quem tocar trabalha direto, sem senha.</p>
+             <script>document.getElementById('linkCampo').textContent = window.location.origin + '/dashboard/servicos/campo-${escapeHtml(s.campoSlug)}';</script>`,
+      });
+  }
+
+  const reabrir = s.status === 'concluido' && podeReabrir ? cartaoSecao({ titulo: 'Faltou algo?', corpoHtml: `
+    <details class="cc-sv-reabrir"><summary>🔄 Reabrir o serviço</summary>
+      <form method="post" action="/dashboard/servicos/${s.id}/reabrir" class="cc-form">
+        <input name="motivo" placeholder="O que faltou? (vai no zap do instalador)" aria-label="O que faltou">
+        <button class="cc-btn">Reabrir</button>
+      </form>
+      <p class="cc-sv-dica" style="margin:8px 0 0">Reabrir reativa o acesso do instalador (se temporário) e avisa ele no zap; ao concluir de novo, expira de novo.</p>
+    </details>` }) : '';
+
+  const excluir = podeReabrir ? `
+    <form method="post" action="/dashboard/servicos/${s.id}/excluir"
+      onsubmit="return confirm('Mover este serviço pra Lixeira? Dá pra restaurar quando quiser (nada é apagado).')">
+      <button class="cc-btn cc-btn-crit">🗑️ Excluir (vai pra Lixeira, dá pra desfazer)</button>
+    </form>` : '';
+
+  const registro = cartaoSecao({ titulo: 'Registro', corpoHtml: `
+    <dl class="cc-sv-dl">
+      <dt>Cliente</dt><dd>${escapeHtml(s.clienteNome)}</dd>
+      <dt>Data</dt><dd>${dataBr(s.dataServico)}</dd>
+      <dt>Observações</dt><dd>${s.observacoes ? escapeHtml(s.observacoes) : '—'}</dd>
+    </dl>
+    ${s.atribuidoNome ? `<p class="cc-sv-quem">🛠️ Atribuído a ${escapeHtml(s.atribuidoNome)}</p>` : ''}` });
+
+  const midiasHtml = fotos || videos
+    ? cartaoSecao({ titulo: 'Fotos e vídeos', dica: midiasTexto(s) ?? undefined, corpoHtml: `${fotos ? `<div class="cc-sv-galeria">${fotos}</div>` : ''}${videos}` })
+    : s.status === 'concluido'
+      ? cartaoSecao({ titulo: 'Fotos e vídeos', corpoHtml: estadoVazio({ tipo: 'vazio', titulo: 'Nenhuma foto neste registro.', icone: 'eye', compacto: true }) })
+      : '';
 
   const body = `
-  <a href="/dashboard/servicos" class="text-sm text-slate-600 hover:underline">← Voltar</a>
-  <div class="max-w-xl mt-3">
-    ${faixaCriado}
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-      <div class="flex items-center justify-between">
-        <span class="text-lg font-bold text-slate-800">${escapeHtml(s.tipoNome)}</span>
-        <span class="text-sm text-slate-500">${dataBr(s.dataServico)}</span>
-      </div>
-      <div class="flex items-center justify-between mt-1">
-        <span class="text-sm text-slate-600">👤 ${escapeHtml(s.clienteNome)}</span>
-        ${badge}
-      </div>
-      ${s.atribuidoNome ? `<div class="text-xs text-slate-400 mt-1">🛠️ Atribuído a ${escapeHtml(s.atribuidoNome)}</div>` : ''}
-      ${s.observacoes ? `<p class="text-sm text-slate-700 mt-3 whitespace-pre-wrap">${escapeHtml(s.observacoes)}</p>` : ''}
-    </div>
-    ${fotos ? `<div class="grid grid-cols-2 gap-2 mt-4">${fotos}</div>` : ''}
-    ${videos}
-    ${completar}
-    ${linkCampoHtml}
-    ${s.status === 'concluido' && podeReabrir ? `
-    <details class="mt-5"><summary class="text-sm text-amber-700 cursor-pointer select-none">🔄 Faltou algo? Reabrir o serviço</summary>
-      <form method="post" action="/dashboard/servicos/${s.id}/reabrir" class="mt-2 flex gap-2">
-        <input name="motivo" placeholder="O que faltou? (vai no zap do instalador)" class="flex-1 border border-slate-300 rounded-xl px-4 py-2 text-sm">
-        <button class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold">Reabrir</button>
-      </form>
-      <p class="text-xs text-slate-500 mt-1">Reabrir reativa o acesso do instalador (se temporário) e avisa ele no zap; ao concluir de novo, expira de novo.</p>
-    </details>` : ''}
-    ${podeReabrir && s.campoSlug ? (() => {
-      const vencido = s.campoExpiraEm ? new Date(s.campoExpiraEm).getTime() < Date.now() : false;
-      const venceBr = s.campoExpiraEm ? new Date(s.campoExpiraEm).toLocaleDateString('pt-BR') : '';
-      return vencido
-        ? `<div class="mt-4 bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-800">
-             🕰 O link de campo${s.campoNome ? ` do(a) <b>${escapeHtml(s.campoNome)}</b>` : ''} <b>venceu</b> (${escapeHtml(venceBr)}) — gere um novo no 🪄 aqui em cima.
-           </div>`
-        : `<div class="mt-4 bg-cyan-50 border border-cyan-200 rounded-2xl p-4">
-             <div class="text-xs font-bold text-cyan-800 uppercase tracking-wide mb-1">🪄 Link de campo${s.campoNome ? ` — ${escapeHtml(s.campoNome)}` : ''} <span class="font-normal normal-case text-cyan-600">(vale até ${escapeHtml(venceBr)})</span></div>
-             <div class="flex items-center gap-2">
-               <code id="linkCampo" class="flex-1 text-xs bg-white border border-cyan-200 rounded-lg px-2 py-1.5 text-cyan-900 break-all"></code>
-               <button onclick="navigator.clipboard.writeText(document.getElementById('linkCampo').textContent).then(()=>{this.textContent='✅'})" class="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-semibold whitespace-nowrap">📋 copiar</button>
-             </div>
-             <p class="text-xs text-cyan-700 mt-1">Manda pelo seu zap — quem tocar trabalha direto, sem senha.</p>
-             <script>document.getElementById('linkCampo').textContent = window.location.origin + '/dashboard/servicos/campo-${escapeHtml(s.campoSlug)}';</script>
-           </div>`;
-    })() : ''}
-    ${podeReabrir ? `
-    <form method="post" action="/dashboard/servicos/${s.id}/excluir" class="mt-4 text-right"
-      onsubmit="return confirm('Mover este serviço pra Lixeira? Dá pra restaurar quando quiser (nada é apagado).')">
-      <button class="text-xs text-slate-400 hover:text-rose-600 hover:underline">🗑️ Excluir (vai pra Lixeira, dá pra desfazer)</button>
-    </form>` : ''}
-  </div>`;
-  return renderLayout({ active: 'servicos', title: s.tipoNome, body, user });
+${cabecalhoPagina({
+    trilha: [...TRILHA, { rotulo: s.tipoNome }],
+    titulo: s.tipoNome,
+    seloHtml: pilulaServico(s.status),
+    subtitulo: `${s.clienteNome} · ${dataBr(s.dataServico)}`,
+    acoesHtml: `${botao({ rotulo: '← Voltar', href: '/dashboard/servicos', tom: 'fantasma' })}${excluir ? menuAcoes({ alinhar: 'dir', itensHtml: excluir }) : ''}`,
+  })}
+<div class="cc-sv-col">
+${faixaCriado}
+${registro}
+${midiasHtml}
+${completar}
+${linkCampoHtml}
+${linkAtual}
+${reabrir}
+</div>`;
+  return layout(s.tipoNome, body, user, false);
 }
 
 // Lixeira: excluído some da lista mas volta com 1 clique (Junior 05/08:
 // "excluir sempre com opção de desfazer").
 export function renderLixeiraServicosPage(servicos: ServicoRow[], user: DashUser | undefined): string {
-  const linhas = servicos.map((s) => `
-    <div class="bg-white border border-slate-200 rounded-2xl p-4 flex items-center justify-between gap-3">
-      <div>
-        <div class="font-semibold text-slate-700">${escapeHtml(s.tipoNome)} — ${escapeHtml(s.clienteNome)}</div>
-        <div class="text-xs text-slate-400">dia ${escapeHtml(s.dataServico.split('-').reverse().join('/'))}</div>
-      </div>
-      <form method="post" action="/dashboard/servicos/${s.id}/restaurar">
-        <button class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">♻️ Restaurar</button>
-      </form>
-    </div>`).join('\n');
+  const lista = servicos.length === 0
+    ? estadoVazio({ tipo: 'vazio', titulo: 'Lixeira vazia.', texto: 'Nada aqui foi apagado — o que for excluído aparece aqui e volta com 1 clique.', icone: 'check' })
+    : tabela({
+      mobile: 'cartoes',
+      colunas: [{ titulo: 'Serviço' }, { titulo: 'Data' }, { titulo: '' }],
+      linhas: servicos.map((s) => [
+        { html: celulaDupla(s.tipoNome, s.clienteNome) },
+        dataBr(s.dataServico),
+        { html: `<form method="post" action="/dashboard/servicos/${s.id}/restaurar">
+        <button class="cc-btn cc-btn-sm">♻️ Restaurar</button>
+      </form>` },
+      ]),
+    });
 
   const body = `
-  <div class="mb-6">
-    <a href="/dashboard/servicos" class="text-sky-600 text-sm hover:underline">← Voltar aos serviços</a>
-    <h1 class="text-2xl font-bold text-slate-800 mt-2">🗑️ Lixeira de serviços</h1>
-    <p class="text-sm text-slate-500 mt-1">Nada aqui foi apagado — restaure quando quiser.</p>
-  </div>
-  <div class="space-y-3 max-w-xl">${linhas || '<p class="text-slate-400 py-8 text-center">Lixeira vazia. 🌱</p>'}</div>`;
-  return renderLayout({ active: 'servicos', title: 'Lixeira de serviços', body, user });
+${cabecalhoPagina({
+    trilha: [...TRILHA, { rotulo: 'Lixeira' }],
+    titulo: 'Lixeira de serviços',
+    subtitulo: 'Nada aqui foi apagado — restaure quando quiser.',
+    acoesHtml: botao({ rotulo: '← Voltar aos serviços', href: '/dashboard/servicos', tom: 'fantasma' }),
+  })}
+${cartaoSecao({ titulo: 'Na lixeira', dica: `${servicos.length} registro(s)`, corpoHtml: lista })}`;
+  return layout('Lixeira de serviços', body, user, true);
 }
+
 
 // Guia de fotos por tipo de serviço (pedido do Junior 29/07: "um guia escrito
 // das fotos a serem enviadas"). Rascunho do Claude — o Junior ajusta o texto.
@@ -321,6 +435,7 @@ export const GUIAS_FOTOS: Record<string, string[]> = {
   ],
 };
 
+
 export function renderNovoServicoPage(
   tipos: TipoServico[],
   user: DashUser | undefined,
@@ -329,62 +444,70 @@ export function renderNovoServicoPage(
   const opcoes = tipos.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.nome)}</option>`).join('');
   const opcoesUsuarios = usuarios.map((u) => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.nome)}</option>`).join('');
   const hoje = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  // A classe guia-fotos é o gancho do mostraGuia() (querySelectorAll('.guia-fotos')).
   const guias = Object.entries(GUIAS_FOTOS).map(([tipo, itens]) =>
-    `<div class="guia-fotos hidden mt-2 px-4 py-3 rounded-xl bg-sky-50 border border-sky-200" data-tipo="${escapeHtml(tipo)}">
-      <p class="text-sm font-semibold text-sky-900 mb-1">📷 Fotos pra tirar neste serviço:</p>
-      <ol class="text-sm text-sky-800 list-decimal ml-5 space-y-0.5">${itens.map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</ol>
+    `<div class="guia-fotos hidden cc-sv-guia" data-tipo="${escapeHtml(tipo)}">
+      <p>📷 Fotos pra tirar neste serviço:</p>
+      <ol>${itens.map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</ol>
     </div>`).join('');
 
-  const body = `
-  <div class="mb-5"><h1 class="text-2xl font-bold text-slate-800">➕ Novo registro</h1></div>
-  <div class="max-w-xl space-y-4" id="form">
-    <label class="block"><span class="text-sm font-medium text-slate-700">Tipo de serviço</span>
-      <select id="f_tipo" onchange="mostraGuia()" class="mt-1 w-full border border-slate-300 rounded-xl px-4 py-3 text-base">${opcoes}</select></label>
+  // O "formulário" é um <div class="cc-form"> (como antes, não é <form>: quem
+  // envia é o salvar() por fetch JSON). O .cc-form só pinta os campos.
+  const campos = `
+  <div class="cc-form cc-sv-form" id="form">
+    <label class="cc-campo"><span>Tipo de serviço</span>
+      <select id="f_tipo" onchange="mostraGuia()">${opcoes}</select></label>
     ${guias}
 
-    <div class="block"><span class="text-sm font-medium text-slate-700">Cliente</span>
-      <input id="f_busca" placeholder="Busque por nome ou telefone…" autocomplete="off" class="mt-1 w-full border border-slate-300 rounded-xl px-4 py-3 text-base">
-      <div id="resultados" class="mt-1 space-y-1"></div>
-      <div id="escolhido" class="hidden mt-2 px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm"></div>
-      <button type="button" onclick="clienteNovo()" class="mt-2 text-sm text-sky-700 underline">➕ Cliente novo (nome + telefone)</button>
-      <div id="novo_cliente" class="hidden mt-2 grid grid-cols-2 gap-2">
-        <input id="f_nome_novo" placeholder="Nome" class="border border-slate-300 rounded-xl px-3 py-3">
-        <input id="f_tel_novo" placeholder="Telefone (zap)" inputmode="tel" class="border border-slate-300 rounded-xl px-3 py-3">
+    <div class="cc-campo"><span>Cliente</span>
+      <input id="f_busca" placeholder="Busque por nome ou telefone…" autocomplete="off" aria-label="Buscar cliente">
+      <div id="resultados" class="cc-sv-opcoes"></div>
+      <div id="escolhido" class="hidden cc-sv-escolhido"></div>
+      <div><button type="button" onclick="clienteNovo()" class="cc-btn cc-btn-sm cc-btn-ghost">➕ Cliente novo (nome + telefone)</button></div>
+      <div id="novo_cliente" class="hidden cc-sv-par">
+        <input id="f_nome_novo" placeholder="Nome" aria-label="Nome do cliente novo">
+        <input id="f_tel_novo" placeholder="Telefone (zap)" inputmode="tel" aria-label="Telefone do cliente novo">
       </div>
     </div>
 
-    <div class="block"><span class="text-sm font-medium text-slate-700">Usina (opcional)</span>
-      <input id="f_busca_usina" placeholder="Busque a usina, se for o caso…" autocomplete="off" class="mt-1 w-full border border-slate-300 rounded-xl px-4 py-3 text-base">
-      <div id="resultados_usina" class="mt-1 space-y-1"></div>
-      <div id="usina_escolhida" class="hidden mt-2 px-4 py-3 rounded-xl bg-sky-50 border border-sky-200 text-sky-800 text-sm"></div>
+    <div class="cc-campo"><span>Usina (opcional)</span>
+      <input id="f_busca_usina" placeholder="Busque a usina, se for o caso…" autocomplete="off" aria-label="Buscar usina">
+      <div id="resultados_usina" class="cc-sv-opcoes"></div>
+      <div id="usina_escolhida" class="hidden cc-sv-escolhido cc-sv-escolhido-usina"></div>
     </div>
 
-    <label class="block"><span class="text-sm font-medium text-slate-700">Atribuir a (quem vai fazer)</span>
-      <select id="f_atribuido" name="atribuido" class="mt-1 w-full border border-slate-300 rounded-xl px-4 py-3 text-base">
+    <label class="cc-campo"><span>Atribuir a (quem vai fazer)</span>
+      <select id="f_atribuido" name="atribuido">
         <option value="">— eu mesmo, registro pronto —</option>
         ${opcoesUsuarios}
       </select>
-      <span class="text-xs text-slate-500">Atribuiu a alguém? O serviço fica 🟡 pendente pra ele — as fotos podem ficar por conta dele na hora da obra.</span></label>
+      <small class="cc-sv-dica">Atribuiu a alguém? O serviço fica 🟡 pendente pra ele — as fotos podem ficar por conta dele na hora da obra.</small></label>
 
-    <label class="block"><span class="text-sm font-medium text-slate-700">Data do serviço</span>
-      <input type="date" name="data" id="f_data" value="${hoje}" class="mt-1 w-full border border-slate-300 rounded-xl px-4 py-3 text-base"></label>
+    <label class="cc-campo"><span>Data do serviço</span>
+      <input type="date" name="data" id="f_data" value="${hoje}"></label>
 
-    <label class="block"><span class="text-sm font-medium text-slate-700">Observações</span>
-      <textarea id="f_observacoes" name="observacoes" rows="3" placeholder="O que foi visto/feito…" class="mt-1 w-full border border-slate-300 rounded-xl px-4 py-3 text-base"></textarea></label>
+    <label class="cc-campo"><span>Observações</span>
+      <textarea id="f_observacoes" name="observacoes" rows="3" placeholder="O que foi visto/feito…"></textarea></label>
 
-    <div class="grid grid-cols-3 gap-2">
-      <label class="block text-center px-2 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">📷 Tirar foto
-        <input type="file" accept="image/*" capture="environment" style="display:none" onchange="addFotos(this)"></label>
-      <label class="block text-center px-2 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">🖼️ Galeria
-        <input type="file" accept="image/*" multiple style="display:none" onchange="addFotos(this)"></label>
-      <label class="block text-center px-2 py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-600 cursor-pointer">🎥 Vídeo (máx 2)
-        <input type="file" accept="video/*" style="display:none" onchange="addVideo(this)"></label>
+    <div class="cc-campo"><span>Fotos e vídeos</span>
+      ${botoesFoto()}
+      <div id="anexos" class="cc-sv-anexos"></div>
     </div>
-    <div id="anexos" class="grid grid-cols-3 gap-2"></div>
 
-    <button id="salvar" onclick="salvar()" class="w-full px-5 py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-lg font-bold shadow">💾 Salvar registro</button>
-    <div id="progresso" class="text-sm text-slate-500 text-center"></div>
-  </div>
+    <button id="salvar" onclick="salvar()" class="cc-btn cc-btn-gold cc-sv-grande">💾 Salvar registro</button>
+    <div id="progresso" class="cc-sv-progresso"></div>
+  </div>`;
+
+  const body = `
+${cabecalhoPagina({
+    trilha: [...TRILHA, { rotulo: 'Novo registro' }],
+    titulo: 'Novo registro',
+    subtitulo: 'Tipo, cliente, fotos — o registro fica gravado no cliente.',
+    acoesHtml: botao({ rotulo: '← Voltar', href: '/dashboard/servicos', tom: 'fantasma' }),
+  })}
+<div class="cc-sv-col">
+${cartaoSecao({ titulo: 'Registro de campo', corpoHtml: campos })}
+</div>
 
   <script>
   var MAX_VIDEOS=2, MAX_VIDEO_MB=180;
@@ -398,12 +521,18 @@ export function renderNovoServicoPage(
 
   function debounce(f,ms){var t;return function(){var a=arguments;clearTimeout(t);t=setTimeout(function(){f.apply(null,a)},ms)}}
 
+  // Resultado da busca: montado com DOM + textContent (nome do lead vem de fora
+  // — WhatsApp —, nunca vai cru pro innerHTML).
+  function opcao(rotulo,aoEscolher){var b=document.createElement('button');b.type='button';
+   b.className='cc-sv-opcao';b.textContent=rotulo;b.onclick=function(){aoEscolher(b.textContent)};return b}
+  function lista(id,itens){var d=document.getElementById(id);d.innerHTML='';itens.forEach(function(el){d.appendChild(el)})}
+
   document.getElementById('f_busca').addEventListener('input',debounce(function(e){
     var q=e.target.value.trim();if(q.length<2){document.getElementById('resultados').innerHTML='';return}
     fetch('/dashboard/servicos/buscar-cliente?q='+encodeURIComponent(q),{headers:{'Accept':'application/json'}})
      .then(function(r){return r.json()}).then(function(j){
-      document.getElementById('resultados').innerHTML=(j.clientes||[]).map(function(c){
-       return '<button type="button" onclick="escolheCliente(\\''+c.id+'\\',this.textContent)" class="block w-full text-left px-4 py-2 rounded-lg bg-slate-50 hover:bg-sky-50 border border-slate-200 text-sm">'+c.nome+(c.telefone?' · '+c.telefone:'')+'</button>'}).join('')})
+      lista('resultados',(j.clientes||[]).map(function(c){
+       return opcao(String(c.nome)+(c.telefone?' · '+c.telefone:''),function(rot){escolheCliente(String(c.id),rot)})}))})
   },300));
   function escolheCliente(id,rotulo){estado.leadId=id;
    document.getElementById('escolhido').textContent='✅ '+rotulo;
@@ -418,8 +547,8 @@ export function renderNovoServicoPage(
     var q=e.target.value.trim();if(q.length<2){document.getElementById('resultados_usina').innerHTML='';return}
     fetch('/dashboard/servicos/buscar-usina?q='+encodeURIComponent(q),{headers:{'Accept':'application/json'}})
      .then(function(r){return r.json()}).then(function(j){
-      document.getElementById('resultados_usina').innerHTML=(j.usinas||[]).map(function(u){
-       return '<button type="button" onclick="escolheUsina(\\''+u.id+'\\',this.textContent)" class="block w-full text-left px-4 py-2 rounded-lg bg-slate-50 hover:bg-sky-50 border border-slate-200 text-sm">'+u.nome+'</button>'}).join('')})
+      lista('resultados_usina',(j.usinas||[]).map(function(u){
+       return opcao(String(u.nome),function(rot){escolheUsina(String(u.id),rot)})}))})
   },300));
   function escolheUsina(id,rotulo){estado.sistemaId=id;
    document.getElementById('usina_escolhida').textContent='⚡ '+rotulo;
@@ -437,9 +566,9 @@ export function renderNovoServicoPage(
   function pintaAnexos(){
    var d=document.getElementById('anexos');d.innerHTML='';
    estado.fotos.forEach(function(b,i){var img=document.createElement('img');img.src=URL.createObjectURL(b);
-    img.className='w-full h-20 object-cover rounded-lg';img.onclick=function(){estado.fotos.splice(i,1);pintaAnexos()};d.appendChild(img)});
+    img.className='cc-sv-mini';img.alt='Foto '+(i+1)+' (toque pra tirar)';img.onclick=function(){estado.fotos.splice(i,1);pintaAnexos()};d.appendChild(img)});
    estado.videos.forEach(function(f,i){var v=document.createElement('div');
-    v.className='w-full h-20 rounded-lg bg-slate-800 text-white flex items-center justify-center text-xs';
+    v.className='cc-sv-mini cc-sv-mini-vid';
     v.textContent='🎥 '+Math.round(f.size/1048576)+'MB (toque pra tirar)';
     v.onclick=function(){estado.videos.splice(i,1);pintaAnexos()};d.appendChild(v)})}
 
@@ -485,8 +614,9 @@ export function renderNovoServicoPage(
    .catch(function(e){alert('Falha ao salvar: '+e.message);btn.disabled=false;btn.textContent='💾 Salvar registro'})}
   </script>`;
 
-  return renderLayout({ active: 'servicos', title: 'Novo serviço', body, user });
+  return layout('Novo serviço', body, user, false);
 }
+
 
 // ===== PÁGINA PÚBLICA DO LINK MÁGICO (Junior 06/08) =====
 // Quem recebe o link trabalha DIRETO: sem login, sem senha, sem usuário.

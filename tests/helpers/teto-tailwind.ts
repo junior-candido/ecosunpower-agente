@@ -39,6 +39,11 @@ export const TELAS_RENOVADAS: string[] = [
   'os-views.ts',
 
   // R14 — Serviços de campo (painel interno)
+  // (as 4 telas do painel; a página pública do link mágico fica de fora — não muda)
+  'servicos-views.ts#renderServicosPage',
+  'servicos-views.ts#renderNovoServicoPage',
+  'servicos-views.ts#renderDetalheServicoPage',
+  'servicos-views.ts#renderLixeiraServicosPage',
 
   // R15 — Quadro de Obras + vincular + contato
 
