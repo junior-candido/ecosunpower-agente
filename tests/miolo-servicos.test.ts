@@ -87,6 +87,10 @@ describe('Serviços — novo registro (a tela mais usada em campo)', () => {
     expect(h).toContain('b.textContent=rotulo');
     expect(h).not.toMatch(/className='[^']*rounded/);
   });
+  it('"hidden" do JS esconde de verdade (vence o display:grid do bloco do cliente novo)', () => {
+    expect(CSS_SERVICOS).toContain('.cc-sv .hidden{display:none!important}');
+    expect(m).toContain('id="novo_cliente" class="hidden cc-sv-par"');
+  });
   it('usuários e tipos escapados', () => {
     expect(m).toContain('Jó &lt;script&gt;x&lt;/script&gt;');
     expect(m).toContain('Manutenção &lt;b&gt;corretiva&lt;/b&gt;');

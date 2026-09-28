@@ -28,6 +28,8 @@ const dataBr = (iso: string) => iso.split('-').reverse().join('/');
 export const CSS_SERVICOS = `
 .cc-sv .cc-panel+.cc-panel,.cc-sv .cc-aviso+.cc-panel,.cc-sv .cc-panel+.cc-aviso,.cc-sv .cc-aviso+.cc-aviso{margin-top:16px}
 .cc-sv-col{max-width:760px}
+/* .hidden (liga/desliga pelo JS) vence o display dos blocos cc-sv (ex.: .cc-sv-par é grid) */
+.cc-sv .hidden{display:none!important}
 .cc-sv-form{display:flex;flex-direction:column;gap:16px}
 .cc-sv-form .cc-campo input,.cc-sv-form .cc-campo select,.cc-sv-form .cc-campo textarea{width:100%}
 .cc-sv-dica{font-size:12.5px;color:var(--cc-muted);line-height:1.45}
@@ -66,7 +68,6 @@ export const CSS_SERVICOS = `
 .cc-sv-linha{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .cc-sv-codigo{flex:1 1 200px;min-width:0;font-size:12.5px;padding:8px 10px;border-radius:8px;background:var(--cc-surface-3);color:var(--cc-info);overflow-wrap:anywhere}
 .cc-sv-modal{margin-top:12px;display:flex;flex-direction:column;gap:10px}
-.cc-sv-modal.hidden{display:none}
 .cc-sv-modal input#l_nome{width:100%}
 .cc-sv-dias{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--cc-muted)}
 .cc-sv-dias input{width:76px;text-align:center}
