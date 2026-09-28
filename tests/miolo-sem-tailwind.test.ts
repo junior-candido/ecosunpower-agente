@@ -13,11 +13,8 @@ import { join } from 'path';
 import { corpoDaFuncao, linhasComTailwind } from './helpers/teto-tailwind.js';
 
 const TELAS_RENOVADAS: string[] = [
-  // R2 — Leads (lista)
-  'leads-views.ts#renderLeadsListPage',
-  'leads-views.ts#slaCc',
-  'leads-views.ts#evaCc',
-  'leads-views.ts#alertaCc',
+  // R2 (lista) + R3 (ficha): leads-views.ts inteiro no padrão cc-
+  'leads-views.ts',
 ];
 
 describe('teto do Tailwind nas telas renovadas', () => {

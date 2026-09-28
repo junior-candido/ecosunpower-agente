@@ -244,7 +244,7 @@ export function estadoVazio(e: EstadoVazioInput = {}): string {
   const ic = e.icone ?? (tipo === 'construcao' ? 'hammer' : tipo === 'sem_dado' ? 'wifi-off' : 'check');
   return `<div class="cc-empty cc-empty-${tipo}${e.compacto ? ' cc-empty-sm' : ''}">
   <span class="cc-empty-ic">${icone(ic, 'sm')}</span>
-  <div><b>${escapeHtml(titulo)}</b>${e.texto ? `<p>${escapeHtml(e.texto)}</p>` : ''}</div>
+  <div><strong>${escapeHtml(titulo)}</strong>${e.texto ? `<p>${escapeHtml(e.texto)}</p>` : ''}</div>
 </div>`;
 }
 
@@ -470,7 +470,7 @@ export interface LinhaListaInput {
 }
 
 export function linhaLista(l: LinhaListaInput): string {
-  const dentro = `${pontoStatus(l.tom)}<div class="cc-li-txt"><b>${escapeHtml(l.titulo)}</b>${l.meta ? `<small>${escapeHtml(l.meta)}</small>` : ''}</div>${l.direitaHtml ? `<div class="cc-li-d">${l.direitaHtml}</div>` : ''}`;
+  const dentro = `${pontoStatus(l.tom)}<div class="cc-li-txt"><strong>${escapeHtml(l.titulo)}</strong>${l.meta ? `<small>${escapeHtml(l.meta)}</small>` : ''}</div>${l.direitaHtml ? `<div class="cc-li-d">${l.direitaHtml}</div>` : ''}`;
   const href = hrefSeguro(l.href);
   return href
     ? `<a class="cc-li" href="${escapeHtml(href)}">${dentro}</a>`
