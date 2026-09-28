@@ -4,6 +4,11 @@ import {
   janelasDe15Minutos,
   demandaMaxima,
   receberLeituraShelly,
+  _zerarAvisoLegadoParaTeste,
+  lerDevicesLegados,
+  statusHttpDoRecebimento,
+  criarLimitePorIp,
+  ipDaRequisicao,
 } from '../src/modules/medicao/shelly-medicao.js';
 
 // Formato que o script mJS do aparelho envia. Nós escrevemos os DOIS lados —
@@ -72,6 +77,18 @@ describe('extrairLeituraShelly', () => {
 
   it('epoch zerado (relogio do aparelho sem hora) e recusado', () => {
     expect(extrairLeituraShelly({ ...LEITURA, medido_em: 0 })).toBeNull();
+  });
+
+  it('recusa leitura mais de 5 min no FUTURO (relógio do aparelho adiantado)', () => {
+    const agora = new Date('2026-09-07T23:15:00Z');
+    expect(extrairLeituraShelly({ ...LEITURA, medido_em: '2026-09-07T23:19:59Z' }, agora)).not.toBeNull();
+    expect(extrairLeituraShelly({ ...LEITURA, medido_em: '2026-09-07T23:20:01Z' }, agora)).toBeNull();
+    expect(extrairLeituraShelly({ ...LEITURA, medido_em: Math.floor(Date.parse('2026-09-08T10:00:00Z') / 1000) }, agora)).toBeNull();
+  });
+
+  it('sem data, carimba o agora recebido', () => {
+    const agora = new Date('2026-09-07T23:15:00Z');
+    expect(extrairLeituraShelly({ ...LEITURA, medido_em: undefined }, agora)!.medidoEm).toBe('2026-09-07T23:15:00.000Z');
   });
 
   it('canal ausente vira 0', () => {
@@ -181,6 +198,12 @@ describe('receberLeituraShelly', () => {
 
   // 🔒 O endereco e PUBLICO. Sem token, qualquer um envenena a base de medicao
   // do cliente — e medicao envenenada vira laudo errado.
+  it('leitura do lote com hora no futuro é recusada, as outras entram', async () => {
+    const deps = fazDeps({ agora: () => new Date('2026-09-07T23:16:00Z') });
+    const r = await receberLeituraShelly(deps as never, [LEITURA, { ...LEITURA, medido_em: '2026-09-08T05:00:00Z' }], 'segredo-do-junior');
+    expect(r).toMatchObject({ aceito: true, salvas: 1, recusadas: 1 });
+  });
+
   it('recusa sem token e nao salva nada', async () => {
     const deps = fazDeps();
     const r = await receberLeituraShelly(deps as never, LEITURA, '');
@@ -238,5 +261,203 @@ describe('receberLeituraShelly', () => {
     expect(r.aceito).toBe(true);
     expect(r.salvas).toBe(2);
     expect(r.recusadas).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gestão de Energia G1 — token POR MEDIDOR (multi-tenant). Cada token resolve
+// um medidor e a empresa DELE. O token global antigo só vale pro piloto.
+// ---------------------------------------------------------------------------
+describe('receberLeituraShelly — token por medidor', () => {
+  const MEDIDOR = { medidorId: 'm1', companyId: 'empresa-B', leadId: 'l1', deviceId: '007007422d90' };
+  // Formato real do token do medidor: 32 bytes em base64url = 43 caracteres.
+  const TOK_B = 'B'.repeat(40) + '-_9';
+
+  it('token do medidor grava com a empresa DO MEDIDOR', async () => {
+    const salvar = vi.fn(async () => true);
+    const aoReceber = vi.fn(async () => {});
+    const r = await receberLeituraShelly(
+      { salvar, tokenEsperado: '', resolverToken: async (t) => (t === TOK_B ? MEDIDOR : null), aoReceber },
+      LEITURA, TOK_B,
+    );
+    expect(r.aceito).toBe(true);
+    expect(salvar).toHaveBeenCalledWith(expect.objectContaining({ companyId: 'empresa-B', medidorId: 'm1', leadId: 'l1' }));
+    expect(aoReceber).toHaveBeenCalledWith('m1', 'empresa-B', '2026-09-07T23:15:00.000Z');
+  });
+
+  it('aceita o id com prefixo do modelo (shellypro3em-...)', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: '', resolverToken: async () => MEDIDOR },
+      { ...LEITURA, device_id: 'shellypro3em-007007422D90' }, TOK_B);
+    expect(r.aceito).toBe(true);
+  });
+
+  it('token de um medidor não grava leitura de OUTRO aparelho', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: '', resolverToken: async () => MEDIDOR }, { ...LEITURA, device_id: 'outro' }, TOK_B);
+    expect(r).toMatchObject({ aceito: false, motivo: 'leitura_invalida' });
+    expect(salvar).not.toHaveBeenCalled();
+  });
+
+  it('o token do medidor tem prioridade: nunca cai no carimbo padrão da EcoSun', async () => {
+    const salvar = vi.fn(async () => true);
+    await receberLeituraShelly({ salvar, tokenEsperado: TOK_B, resolverToken: async () => MEDIDOR }, LEITURA, TOK_B);
+    expect(salvar).toHaveBeenCalledWith(expect.objectContaining({ companyId: 'empresa-B' }));
+  });
+
+  it('token desconhecido e diferente do legado → 401', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'legado', resolverToken: async () => null }, LEITURA, 'chute');
+    expect(r).toMatchObject({ aceito: false, motivo: 'token' });
+    expect(salvar).not.toHaveBeenCalled();
+  });
+
+  it('só resolver (sem token global) também funciona e recusa token vazio', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: '', resolverToken: async () => MEDIDOR }, LEITURA, '');
+    expect(r).toMatchObject({ aceito: false, motivo: 'token' });
+  });
+
+  it('token fora do formato nem consulta o banco (e o legado segue valendo)', async () => {
+    const salvar = vi.fn(async () => true);
+    const resolverToken = vi.fn(async () => MEDIDOR);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior', resolverToken }, LEITURA, 'segredo-do-junior');
+    expect(resolverToken).not.toHaveBeenCalled();
+    expect(r.aceito).toBe(true);
+    const r2 = await receberLeituraShelly({ salvar, tokenEsperado: '', resolverToken }, LEITURA, 'x'.repeat(44));
+    expect(resolverToken).not.toHaveBeenCalled();
+    expect(r2).toMatchObject({ aceito: false, motivo: 'token' });
+  });
+
+  it('banco fora do ar ao resolver o token → indisponível (503, o aparelho tenta de novo), nunca 401', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({
+      salvar, tokenEsperado: 'segredo-do-junior', resolverToken: async () => { throw new Error('fetch failed'); },
+    }, LEITURA, TOK_B);
+    expect(r).toMatchObject({ aceito: false, motivo: 'indisponivel' });
+    expect(statusHttpDoRecebimento(r.motivo)).toBe(503);
+    expect(salvar).not.toHaveBeenCalled();
+  });
+
+  it('banco fora do ar, mas o token é o GLOBAL (com cara de token de medidor): vale o legado, não 503', async () => {
+    const salvar = vi.fn(async () => true);
+    const global43 = 'G'.repeat(43); // SHELLY_INGEST_TOKEN no mesmo formato do token do medidor
+    const r = await receberLeituraShelly({
+      salvar, tokenEsperado: global43, resolverToken: async () => { throw new Error('fetch failed'); },
+    }, LEITURA, global43);
+    expect(r).toMatchObject({ aceito: true, salvas: 1 });
+    expect(salvar).toHaveBeenCalledTimes(1);
+  });
+
+  it('token do medidor pela URL (?token=) não vale — só pelo cabeçalho', async () => {
+    const salvar = vi.fn(async () => true);
+    const resolverToken = vi.fn(async () => MEDIDOR);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior', resolverToken }, LEITURA, TOK_B, 'query');
+    expect(resolverToken).not.toHaveBeenCalled();
+    expect(r).toMatchObject({ aceito: false, motivo: 'token' });
+  });
+
+  it('o token global do piloto ainda vale pela URL (transição)', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior' }, LEITURA, 'segredo-do-junior', 'query');
+    expect(r.aceito).toBe(true);
+  });
+
+  it('medidor DESLIGADO na plataforma: recusa com 410 e não grava', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior', resolverToken: async () => ({ ...MEDIDOR, ativo: false }) }, LEITURA, TOK_B);
+    expect(r).toMatchObject({ aceito: false, motivo: 'desativado' });
+    expect(statusHttpDoRecebimento(r.motivo)).toBe(410);
+    expect(salvar).not.toHaveBeenCalled();
+  });
+
+  it('grava o device_id normalizado (sem prefixo, minúsculo)', async () => {
+    const salvar = vi.fn(async () => true);
+    await receberLeituraShelly({ salvar, tokenEsperado: '', resolverToken: async () => MEDIDOR }, { ...LEITURA, device_id: 'shellypro3em-007007422D90' }, TOK_B);
+    expect(salvar).toHaveBeenCalledWith(expect.objectContaining({ deviceId: '007007422d90' }));
+  });
+});
+
+describe('receberLeituraShelly — token global legado (só o piloto)', () => {
+  it('continua valendo pro piloto, com aviso de token legado e vínculo do medidor quando existe', async () => {
+    _zerarAvisoLegadoParaTeste();
+    const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const salvar = vi.fn(async () => true);
+    const resolverLegado = vi.fn(async () => ({ medidorId: 'piloto', companyId: '00000000-0000-0000-0000-000000000001', leadId: null, deviceId: '007007422d90' }));
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior', resolverLegado }, { ...LEITURA, device_id: 'shellypro3em-007007422d90' }, 'segredo-do-junior');
+    expect(r.aceito).toBe(true);
+    expect(salvar).toHaveBeenCalledWith(expect.objectContaining({ medidorId: 'piloto', companyId: '00000000-0000-0000-0000-000000000001' }));
+    expect(aviso.mock.calls.some((c) => String(c[0]).includes('[energia] token legado'))).toBe(true);
+    expect(aviso.mock.calls.every((c) => !String(c.join(' ')).includes('segredo-do-junior'))).toBe(true);
+    aviso.mockRestore();
+  });
+
+  it('sem medidor cadastrado (migration não aplicada): grava como hoje, sem vínculo', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior', resolverLegado: async () => { throw new Error('x'); } }, LEITURA, 'segredo-do-junior');
+    expect(r.aceito).toBe(true);
+    expect((salvar.mock.calls[0] as unknown[])[0]).not.toHaveProperty('medidorId');
+  });
+
+  it('piloto desligado na plataforma: o token global também é recusado', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({
+      salvar, tokenEsperado: 'segredo-do-junior',
+      resolverLegado: async () => ({ medidorId: 'piloto', companyId: '00000000-0000-0000-0000-000000000001', leadId: null, deviceId: '007007422d90', ativo: false }),
+    }, LEITURA, 'segredo-do-junior');
+    expect(r).toMatchObject({ aceito: false, motivo: 'desativado' });
+    expect(salvar).not.toHaveBeenCalled();
+  });
+
+  it('SHELLY_LEGADO_DEVICES libera outro aparelho sem deploy', async () => {
+    const salvar = vi.fn(async () => true);
+    const devicesLegados = lerDevicesLegados(' shellypro3em-AABBCCDDEEFF , 007007422d90');
+    expect(devicesLegados).toEqual(['aabbccddeeff', '007007422d90']);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior', devicesLegados }, { ...LEITURA, device_id: 'shellypro3em-aabbccddeeff' }, 'segredo-do-junior');
+    expect(r.aceito).toBe(true);
+    expect(salvar).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'aabbccddeeff' }));
+  });
+
+  it('SHELLY_LEGADO_DEVICES vazia ou lixo → só o piloto', () => {
+    expect(lerDevicesLegados(undefined)).toEqual(['007007422d90']);
+    expect(lerDevicesLegados(' , <x>')).toEqual(['007007422d90']);
+  });
+
+  it('token global NÃO grava aparelho que não é o piloto', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior' }, { ...LEITURA, device_id: 'shellypro3em-aabbccddeeff' }, 'segredo-do-junior');
+    expect(r).toMatchObject({ aceito: false, motivo: 'leitura_invalida' });
+    expect(salvar).not.toHaveBeenCalled();
+  });
+});
+
+describe('webhook: limite por IP e código HTTP', () => {
+  it('120 por minuto por IP; o minuto seguinte libera; outro IP não é afetado', () => {
+    const l = criarLimitePorIp({ max: 120, janelaMs: 60_000 });
+    const t0 = 1_000_000;
+    for (let i = 0; i < 120; i++) expect(l.estourou('1.1.1.1', t0 + i)).toBe(false);
+    expect(l.estourou('1.1.1.1', t0 + 200)).toBe(true);
+    expect(l.estourou('2.2.2.2', t0 + 200)).toBe(false);
+    expect(l.estourou('1.1.1.1', t0 + 60_001)).toBe(false);
+  });
+
+  it('o mapa de IPs é limitado (não cresce sem fim)', () => {
+    const l = criarLimitePorIp({ max: 1, janelaMs: 60_000, maxChaves: 50 });
+    for (let i = 0; i < 500; i++) l.estourou(`10.0.0.${i}`, 1000);
+    expect(l.tamanho).toBeLessThanOrEqual(50);
+  });
+
+  it('IP real = o último do X-Forwarded-For (o primeiro o cliente forja)', () => {
+    expect(ipDaRequisicao('6.6.6.6, 200.1.2.3', '10.0.0.1')).toBe('200.1.2.3');
+    expect(ipDaRequisicao(undefined, '10.0.0.1')).toBe('10.0.0.1');
+  });
+
+  it('códigos: token 401, desligado 410, banco fora 503, dado ruim 400', () => {
+    expect(statusHttpDoRecebimento('token')).toBe(401);
+    expect(statusHttpDoRecebimento('sem_token_no_servidor')).toBe(401);
+    expect(statusHttpDoRecebimento('desativado')).toBe(410);
+    expect(statusHttpDoRecebimento('indisponivel')).toBe(503);
+    expect(statusHttpDoRecebimento('leitura_invalida')).toBe(400);
+    expect(statusHttpDoRecebimento('erro')).toBe(400);
   });
 });

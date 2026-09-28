@@ -6,7 +6,9 @@
 //   App Shelly → o aparelho → ícone { } → "Criar novo roteiro"
 //   → cola → Salvar → Iniciar → LIGUE "Executar na inicialização"
 //
-// TROQUE A LINHA DO TOKEN pelo mesmo valor do SHELLY_INGEST_TOKEN do servidor.
+// TROQUE A LINHA DO TOKEN pelo código do medidor que a plataforma mostra no
+// cadastro (Usinas → Energia da casa → o medidor → "Gerar código de envio").
+// (O token global SHELLY_INGEST_TOKEN só vale para o piloto, até ser trocado.)
 // A linha tem que ficar exatamente:   var TOKEN = "o-valor";
 // (com aspas e ponto-e-vírgula — colar a linha do EasyPanel inteira não funciona)
 //
@@ -17,6 +19,16 @@
 //    não retorna sucesso nem erro, e o console só mostra a linha de início.
 //    Parece que travou tudo. A solução é `HTTP.Request` com `ssl_ca: "*"`,
 //    como está abaixo. ISSO VALE PRA TODA INSTALAÇÃO DO KIT.
+//
+//    ⚠️ O QUE O ssl_ca: "*" SIGNIFICA: o aparelho NÃO confere se do outro
+//    lado está mesmo o nosso servidor. Quem mandar na rede da casa (roteador
+//    invadido, Wi-Fi de vizinho clonado) poderia se passar pelo servidor e
+//    copiar o código do medidor. O dado continua indo cifrado, mas sem essa
+//    conferência. O melhor, quando der, é APAGAR a linha ssl_ca: o aparelho
+//    passa a usar a lista de certificados que vem dentro dele e confere o
+//    servidor (o nosso usa Let's Encrypt). Teste assim: apague a linha, salve,
+//    reinicie o script e veja se aparece "[ecosun] OK" no console em até
+//    2 minutos. Se ficar pendurado, volte o ssl_ca: "*".
 //
 // 2. O COMPONENTE depende do perfil do aparelho:
 //      trifásico  →  "em:0"    e  "emdata:0"   (campos c_voltage, c_act_power…)
@@ -30,7 +42,7 @@
 // ===========================================================================
 
 var URL   = "https://propostas.ecosunpower.eng.br/webhooks/shelly";
-var TOKEN = "COLE_AQUI_O_SHELLY_INGEST_TOKEN";   // <<< TROCAR
+var TOKEN = "COLE_AQUI_O_CODIGO_DO_MEDIDOR";   // <<< TROCAR
 
 // Trifásico lendo a fase C. Para monofásico, troque para "em1:2"/"em1data:2"
 // e os campos c_* por voltage/current/act_power/aprt_power/pf.
@@ -84,7 +96,11 @@ function enviar() {
         return;
       }
       if (resposta && resposta.code === 401) {
-        print("[ecosun] TOKEN RECUSADO — confira o SHELLY_INGEST_TOKEN");
+        print("[ecosun] TOKEN RECUSADO — confira o codigo do medidor na plataforma");
+        return;
+      }
+      if (resposta && resposta.code === 410) {
+        print("[ecosun] MEDIDOR DESLIGADO na plataforma — nada e gravado ate religar");
         return;
       }
       if (resposta && resposta.code !== 200) {

@@ -81,6 +81,25 @@ export const MODULOS: Record<string, ModuloVitrine> = {
       'Relatório mensal pro cliente, automático',
     ],
   },
+  energia: {
+    titulo: '⚡ Energia da casa',
+    resumo: 'Um medidor no quadro do cliente mostra o que a casa compra, devolve e consome de verdade — junto com a usina.',
+    ganhos: [
+      'Gerado, comprado, devolvido e consumido, dia a dia',
+      'Quanto do sol a casa usa na hora (autoconsumo)',
+      'Conferência com o demonstrativo da distribuidora',
+      'Aviso quando o medidor para de mandar dado',
+    ],
+  },
+  medicao: {
+    titulo: '📏 Medição',
+    resumo: 'A leitura minuto a minuto do medidor no quadro, com o pico de 15 minutos que a distribuidora cobra.',
+    ganhos: [
+      'Potência, tensão e corrente de agora',
+      'A maior média de 15 minutos do dia',
+      'O que foi comprado e devolvido à rede',
+    ],
+  },
   servicos: {
     titulo: '🔧 Serviços em campo',
     resumo: 'A equipe na rua sabendo o que fazer, e você sabendo o que foi feito.',

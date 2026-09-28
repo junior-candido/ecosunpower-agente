@@ -119,12 +119,15 @@ export function tusdFioBPorConcessionaria(concessionariaOuCidade?: string | null
   return resolver(concessionariaOuCidade, e).tusdFioB;
 }
 
-// Percentual do Fio B vigente por ano (Lei 14.300/2022). 2026 = 60%.
+// Percentual do Fio B vigente por ano (Lei 14.300/2022, art. 27). 2026 = 60%.
+// 2023 = 15% (antes daqui devolvia 30%, que é o de 2024). 2029+ = 100%: a regra
+// pós-2029 depende da metodologia da ANEEL; 100% é o teto conservador (mesmo
+// valor de percentualFioBPorAno no calculator).
 export function percentualFioBVigente(ano: number): number {
   const cronograma: Record<number, number> = {
-    2024: 0.30, 2025: 0.45, 2026: 0.60, 2027: 0.75, 2028: 0.90,
+    2023: 0.15, 2024: 0.30, 2025: 0.45, 2026: 0.60, 2027: 0.75, 2028: 0.90,
   };
-  if (ano <= 2023) return 0.30;
+  if (ano <= 2023) return 0.15;
   if (ano >= 2029) return 1.0;
   return cronograma[ano] ?? 0.60;
 }

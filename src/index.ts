@@ -154,7 +154,7 @@ import { criarRepoDemonstrativo } from './modules/gd/demonstrativo-repo.js';
 import { listarAnexosResend, baixarAnexoResend, verificarOrigemResend, extrairTextoPdf } from './modules/gd/demonstrativo-io.js';
 import { conferirAssinaturaResend } from './modules/email/resend-assinatura.js';
 import { capturarEmailDaConversa, extrairEmailDoTexto } from './modules/email/captura-email.js';
-import { receberLeituraShelly } from './modules/medicao/shelly-medicao.js';
+import { receberLeituraShelly, criarLimitePorIp, ipDaRequisicao, lerDevicesLegados, statusHttpDoRecebimento } from './modules/medicao/shelly-medicao.js';
 import { EmailSequenceService } from './modules/email/email-sequence.js';
 import { EmailSender } from './modules/email/resend-client.js';
 import { CampanhaService, botoesPreviewCampanha, type CampanhaGerada } from './modules/email/campanha.js';
@@ -9642,23 +9642,40 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // Aceita uma leitura ou um lote (aparelho que ficou sem rede e acumulou).
   // Token obrigatorio: o endereco e publico, e medicao envenenada vira laudo
   // errado assinado por um responsavel tecnico.
+  // Limite por IP (120/min, em memória): o endereço é público.
+  const limiteShelly = criarLimitePorIp({ max: 120, janelaMs: 60_000 });
+  // Aparelhos que ainda usam o token global (env SHELLY_LEGADO_DEVICES; padrão: o piloto).
+  // SOMENTE aparelhos da EcoSun: pelo token global a leitura grava na EcoSun.
+  const devicesLegadosShelly = lerDevicesLegados(process.env.SHELLY_LEGADO_DEVICES);
   app.post('/webhooks/shelly', async (req, res) => {
-    const token = String(
-      req.header('x-shelly-token') ?? (req.query.token as string | undefined) ?? '',
-    );
+    if (limiteShelly.estourou(ipDaRequisicao(req.headers['x-forwarded-for'], req.socket.remoteAddress))) {
+      res.status(429).json({ ok: false, motivo: 'limite' });
+      return;
+    }
+    // Token do medidor SÓ pelo cabeçalho (URL vai parar em log de proxy). O
+    // ?token= na URL ainda vale pro token global do piloto, na transição.
+    const tokenCabecalho = String(req.header('x-shelly-token') ?? '');
+    const tokenQuery = typeof req.query.token === 'string' ? req.query.token : '';
+    // Gestão de Energia G1: cada medidor tem o SEU token (medidores_energia,
+    // migration 136) e grava com a empresa DELE. O token global antigo só vale
+    // pros aparelhos liberados até o script ser trocado (log "[energia] token legado").
     const r = await receberLeituraShelly(
       {
         salvar: (l) => supabase.salvarMedicaoShelly(l),
         tokenEsperado: process.env.SHELLY_INGEST_TOKEN ?? '',
+        resolverToken: (t) => supabase.resolverMedidorPorToken(t),
+        resolverLegado: (d) => supabase.resolverMedidorLegado(d),
+        aoReceber: (id, companyId, iso) => supabase.marcarLeituraMedidor(id, companyId, iso),
+        devicesLegados: devicesLegadosShelly,
       },
       req.body,
-      token,
+      tokenCabecalho || tokenQuery,
+      tokenCabecalho ? 'cabecalho' : 'query',
     );
     if (r.aceito) { res.status(200).json({ ok: true, salvas: r.salvas, recusadas: r.recusadas }); return; }
-    // 401 quando e token; 400 quando o dado nao presta. O aparelho reenvia em
-    // qualquer erro 5xx, entao NUNCA devolver 5xx pra dado ruim — viraria loop.
-    const status = r.motivo === 'token' || r.motivo === 'sem_token_no_servidor' ? 401 : 400;
-    res.status(status).json({ ok: false, motivo: r.motivo });
+    // 401 token; 410 medidor desligado; 503 banco fora (tentar de novo é o
+    // certo); 400 dado que não presta — nunca 5xx pra dado ruim (viraria loop).
+    res.status(statusHttpDoRecebimento(r.motivo)).json({ ok: false, motivo: r.motivo });
   });
 
   // E-mails de demonstrativo sendo processados agora (retry da Resend em
@@ -10962,6 +10979,84 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setInterval(resumirTelemetria, 24 * 60 * 60 * 1000);  // 1x/dia
     setTimeout(resumirTelemetria, 20 * 60 * 1000);        // 20min apos start
     console.log('[telemetria] Cron de retenção started (1x/dia)');
+
+    // GESTÃO DE ENERGIA G1 (docs/superpowers/specs/2026-09-28-gestao-de-energia-design.md).
+    // Medidores Shelly por empresa: bruto 1 min → 15 min → dia, nuvem como
+    // reserva, vigia de silêncio e retenção. Sem as migrations 136/137 cada
+    // ciclo só avisa (1x/hora) e sai. Logs sem valor de consumo (LGPD).
+    {
+      const { EnergiaService } = await import('./modules/energia/energia-service.js');
+      const { criarEnergiaRepo } = await import('./modules/energia/energia-repo.js');
+      const { dentroDaJanela } = await import('./modules/monitoring/proactive-alerts/janela.js');
+      const { lerModulosAtivos } = await import('./modules/dashboard/modulos-contratados.js');
+      const { horaBrt } = await import('./modules/energia/tempo.js');
+      const { criarAvisoMedidor } = await import('./modules/energia/aviso-medidor.js');
+      const energiaService = new EnergiaService(criarEnergiaRepo(supabase.getClient()));
+
+      // Aviso do vigia ("parou", "voltou", "começou", chave da nuvem recusada):
+      // só pra empresa com o módulo "medicao", pro admin DELA (nunca o zap do
+      // dono da EcoSun pra medidor de tenant). Ver aviso-medidor.ts.
+      const avisarMedidor = criarAvisoMedidor({
+        modulosAtivos: (cid) => lerModulosAtivos(supabase.getClient(), cid),
+        engineerPhone: config.engineerPhone,
+        enviar: async (to, texto) => { await sendAdminWithButtons({ metaWaba, sendText }, to, texto, []); },
+        dryRun: () => process.env.PROACTIVE_ALERTS_DRY_RUN === '1',
+      });
+
+      const agregarEnergia = async () => {
+        try {
+          await energiaService.agregar(new Date());
+        } catch (err) {
+          console.error('[energia] agregacao falhou:', (err as Error).message);
+        }
+        try {
+          await energiaService.vigiar(new Date(), avisarMedidor, (d) => dentroDaJanela(d));
+        } catch (err) {
+          console.error('[energia] vigia falhou:', (err as Error).message);
+        }
+      };
+      setInterval(agregarEnergia, 15 * 60 * 1000);
+      setTimeout(agregarEnergia, 4 * 60 * 1000);
+      console.log('[energia] Cron de agregacao + vigia started (a cada 15min)');
+
+      if (!process.env.ENERGIA_CRED_KEY) {
+        console.warn('[energia] ENERGIA_CRED_KEY ausente — coleta pela nuvem Shelly desligada (o push segue normal)');
+      } else {
+        const coletarNuvemShelly = async () => {
+          try {
+            await energiaService.coletarNuvem(new Date(), process.env.ENERGIA_CRED_KEY);
+          } catch (err) {
+            console.error('[energia] coleta nuvem falhou:', (err as Error).message);
+          }
+        };
+        setInterval(coletarNuvemShelly, 15 * 60 * 1000);
+        setTimeout(coletarNuvemShelly, 5 * 60 * 1000);
+        console.log('[energia] Cron de coleta pela nuvem started (a cada 15min)');
+      }
+
+      // Fechamento: de hora em hora, age só entre 00h e 01h de Brasília.
+      const fecharDiaEnergia = async () => {
+        if (horaBrt(new Date()) !== 0) return;
+        try {
+          await energiaService.fecharDiasRecentes(new Date());
+        } catch (err) {
+          console.error('[energia] fechamento falhou:', (err as Error).message);
+        }
+      };
+      setInterval(fecharDiaEnergia, 60 * 60 * 1000);
+      console.log('[energia] Cron de fechamento diario started (1x/hora, age 00h-01h BRT)');
+
+      const reterEnergia = async () => {
+        try {
+          await energiaService.reter(new Date());
+        } catch (err) {
+          console.error('[energia] retencao falhou:', (err as Error).message);
+        }
+      };
+      setInterval(reterEnergia, 24 * 60 * 60 * 1000);
+      setTimeout(reterEnergia, 30 * 60 * 1000);
+      console.log('[energia] Cron de retencao started (1x/dia: bruto 90 dias, 15 min 25 meses)');
+    }
 
     // RH — retenção LGPD: currículos/candidatos com mais de 12 meses são apagados.
     const limparRh = async () => {
