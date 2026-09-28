@@ -27,7 +27,7 @@ export const AGENDA: AgendaItem[] = [
   item({ id: M(3), sistemaId: S(3), apelido: 'Padaria Pão Quente', clienteNome: null, tipo: 'revisao_eletrica', data_agendada: diaRelativo(4) }),
   item({ id: M(4), sistemaId: S(4), apelido: 'Chácara Recanto', clienteNome: 'Carla Exemplo', tipo: 'inspecao', origem: 'manual', data_agendada: diaRelativo(25), semApi: true }),
   item({ id: M(5), sistemaId: S(5), apelido: 'Oficina Motor Bom', clienteNome: 'Davi Exemplo', tipo: 'corretiva', origem: 'manual', data_agendada: diaRelativo(80) }),
-  item({ id: M(6), sistemaId: S(6), apelido: 'Casa sem data', clienteNome: 'Eva Lima', tipo: 'limpeza', data_agendada: null }),
+  item({ id: M(6), sistemaId: S(6), apelido: 'Casa sem data', clienteNome: 'Elaine Lima', tipo: 'limpeza', data_agendada: null }),
 ];
 
 export const LEITURAS: LeituraPendente[] = [

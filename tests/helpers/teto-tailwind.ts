@@ -35,6 +35,8 @@ export const TELAS_RENOVADAS: string[] = [
   'pasta-views.ts',
   // ── Onda 3 (R13–R19): cada fatia acrescenta SÓ debaixo do seu marcador ──
   // R13 — Manutenção + OS
+  'manutencao-views.ts',
+  'os-views.ts',
 
   // R14 — Serviços de campo (painel interno)
 
