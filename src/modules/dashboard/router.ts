@@ -5975,15 +5975,12 @@ b.onclick=async function(){
   router.get('/usinas/kanban', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
     try {
       // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+      // Revisão R15: só as obras da empresa da SESSÃO (antes listava todas).
       const db = bancoDoOperador(req, supabase);
-      const { data, error } = await db
-        .from('sistemas_clientes')
-        .select('id, apelido, cidade, potencia_kwp, etapa_obra, etapa_obra_updated_at')
-        .eq('ativo', true)
-        .order('apelido', { ascending: true });
-      if (error) throw new Error(`usinas/kanban: ${error.message}`);
+      const { listarObras } = await import('./obras-store.js');
+      const data = await listarObras(db, req.dashUser?.companyId);
       const { renderUsinasKanbanPage } = await import('./usinas-kanban-views.js');
-      res.type('text/html').send(renderUsinasKanbanPage((data ?? []) as any, req.dashUser));
+      res.type('text/html').send(renderUsinasKanbanPage(data, req.dashUser));
     } catch (err) {
       console.error('[dashboard/usinas/kanban]', err);
       res.status(500).send(`<h2>Erro ao carregar o Quadro de Obras</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
@@ -5996,18 +5993,18 @@ b.onclick=async function(){
       const companyId = req.dashUser!.companyId;
       // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
       const db = bancoDoOperador(req, supabase);
-      const [usinasRes, leadsRes] = await Promise.all([
-        db.from('sistemas_clientes')
-          .select('id, apelido').eq('ativo', true).is('lead_id', null).order('apelido'),
+      // Revisão R15: só usinas sem cliente da empresa da SESSÃO (req.dashUser.companyId).
+      const { listarUsinasSemCliente } = await import('./obras-store.js');
+      const [usinasSem, leadsRes] = await Promise.all([
+        listarUsinasSemCliente(db, companyId),
         db.from('leads')
           .select('id, name').eq('company_id', companyId).order('name'),
       ]);
-      if (usinasRes.error) throw new Error(usinasRes.error.message);
       if (leadsRes.error) throw new Error(leadsRes.error.message);
       const { sugerirVinculos } = await import('./vincular-usinas.js');
       const { renderVincularUsinasPage } = await import('./vincular-usinas-views.js');
       const leads = (leadsRes.data ?? []) as Array<{ id: string; name: string | null }>;
-      const usinas = (usinasRes.data ?? []) as Array<{ id: string; apelido: string | null }>;
+      const usinas = usinasSem;
       const sugestoes = sugerirVinculos(usinas, leads);
       res.type('text/html').send(renderVincularUsinasPage({ sugestoes, leads, user: req.dashUser }));
     } catch (err) {
@@ -6025,8 +6022,8 @@ b.onclick=async function(){
       const viewer = req.dashUser!;
       // Fatia 4 (strangler RLS): dado do tenant no client-do-operador.
       const db = bancoDoOperador(req, supabase);
-      // Defesa multi-empresa: só aceita vincular a leads da própria company.
-      // (sistemas_clientes não tem company_id; o vínculo é o que define a dona.)
+      // Defesa multi-empresa: só aceita vincular a leads da própria company E
+      // usinas da própria company (revisão R15: antes a usina não era conferida).
       const leadIds = [...new Set(pares.map((p) => p.leadId))];
       const { data: leadsValidos } = leadIds.length
         ? await db.from('leads').select('id').eq('company_id', viewer.companyId).in('id', leadIds)
@@ -6034,11 +6031,12 @@ b.onclick=async function(){
       const idsValidos = new Set((leadsValidos ?? []).map((l: any) => l.id));
       const paresOk = pares.filter((p) => idsValidos.has(p.leadId));
       let aplicados = 0;
+      const { vincularUsinaAoCliente } = await import('./obras-store.js');
       for (const { usinaId, leadId } of paresOk) {
-        const { error } = await db.from('sistemas_clientes')
-          .update({ lead_id: leadId, etapa_obra: 'pos_venda', etapa_obra_updated_at: new Date().toISOString() })
-          .eq('id', usinaId).eq('ativo', true);
-        if (error) { console.warn(`[usinas/vincular] ${usinaId} falhou: ${error.message}`); continue; }
+        let ok = false;
+        try { ok = await vincularUsinaAoCliente(db, req.dashUser?.companyId, usinaId, leadId); }
+        catch (e) { console.warn(`[usinas/vincular] ${usinaId} falhou: ${(e as Error).message}`); continue; }
+        if (!ok) { console.warn(`[usinas/vincular] ${usinaId} não é da empresa (ou inativa) — ignorada`); continue; }
         aplicados++;
         await audit(supabase, {
           companyId: viewer.companyId, userId: viewer.id, entidade: 'usina',
@@ -6070,11 +6068,12 @@ b.onclick=async function(){
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     const etapa = String(req.body?.etapa ?? '').trim();
     if (!ETAPAS_USINA.some((e) => e.slug === etapa)) return res.status(400).send('etapa inválida');
-    const { error } = await supabase
-      .from('sistemas_clientes')
-      .update({ etapa_obra: etapa, etapa_obra_updated_at: new Date().toISOString() })
-      .eq('id', id);
-    if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
+    // Revisão R15: só move usina da empresa da SESSÃO (antes movia qualquer id).
+    const { moverObra } = await import('./obras-store.js');
+    let movida = false;
+    try { movida = await moverObra(bancoDoOperador(req, supabase), req.dashUser?.companyId, id, etapa); }
+    catch (e) { return res.status(500).send(`erro: ${escapeHtmlSimple((e as Error).message)}`); }
+    if (!movida) return res.status(404).send('usina não encontrada');
     const viewer = req.dashUser;
     if (viewer) {
       await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'usina', entidadeId: id, acao: 'etapa_obra', valorNovo: etapa });
@@ -6089,12 +6088,9 @@ b.onclick=async function(){
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).json({ erro: 'id inválido' });
     try {
-      const { data: usina, error } = await supabase
-        .from('sistemas_clientes')
-        .select('id, apelido, cidade, uf, potencia_kwp, etapa_obra, etapa_obra_updated_at, lead_id')
-        .eq('id', id)
-        .maybeSingle();
-      if (error) throw new Error(error.message);
+      // Revisão R15: só a usina (e o cliente) da empresa da SESSÃO.
+      const { lerUsinaDoContato } = await import('./obras-store.js');
+      const usina = await lerUsinaDoContato(bancoDoOperador(req, supabase), req.dashUser?.companyId, id);
       if (!usina) return res.status(404).json({ erro: 'usina não encontrada' });
       const u = usina as any;
       const lead = u.lead_id ? await supabaseService.getClienteByLeadId(u.lead_id) : null;
@@ -6118,16 +6114,17 @@ b.onclick=async function(){
     const { etapaValida, ids } = sanitizarMoverLote(idsRaw, etapa);
     if (!etapaValida) return res.status(400).json({ erro: 'etapa inválida' });
     if (ids.length === 0) return res.status(400).json({ erro: 'nenhuma usina válida' });
-    const { error } = await supabase
-      .from('sistemas_clientes')
-      .update({ etapa_obra: etapa, etapa_obra_updated_at: new Date().toISOString() })
-      .in('id', ids);
-    if (error) return res.status(500).json({ erro: error.message });
+    // Revisão R15: só move as usinas da empresa da SESSÃO (as de outra ficam de fora).
+    const { moverObrasLote } = await import('./obras-store.js');
+    let movidas = 0;
+    try { movidas = await moverObrasLote(bancoDoOperador(req, supabase), req.dashUser?.companyId, ids, etapa); }
+    catch (e) { return res.status(500).json({ erro: (e as Error).message }); }
+    if (movidas === 0) return res.status(404).json({ erro: 'nenhuma usina encontrada' });
     const viewer = req.dashUser;
     if (viewer) {
       await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'usina', entidadeId: ids.join(','), acao: 'etapa_obra_lote', valorNovo: etapa });
     }
-    res.json({ ok: true, movidas: ids.length });
+    res.json({ ok: true, movidas });
   });
 
   router.post('/usinas/:sistemaId/leitura', exigir('usinas', 'visualizar'), async (req: AuthedRequest, res: Response) => {
