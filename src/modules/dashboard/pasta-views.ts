@@ -48,7 +48,8 @@ const CSS_PASTAS = `
 .cc-pa-up{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
 .cc-pa-up input[type=file]{flex:1 1 180px;min-width:0}
 .cc-pa-puxar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-.cc-pa-puxar form{margin:0}
+.cc-pa-puxar form{margin:0;max-width:100%}
+.cc-pa-puxar .cc-btn{white-space:normal;height:auto;min-height:32px;text-align:left}
 .cc-pa-vazio{margin:0 0 4px;font-size:12.5px;color:var(--cc-faint)}
 .cc-pa-decl{margin-top:14px;border:1px solid var(--cc-line-2);border-radius:12px;background:rgba(255,255,255,.02)}
 .cc-pa-decl>summary{cursor:pointer;padding:10px 12px;font-size:13.5px;font-weight:600;color:var(--cc-gold-2)}
@@ -76,6 +77,9 @@ const layout = (title: string, body: string, user: DashUser | undefined, largo =
   active: 'pastas', title, body: `<div class="cc-root cc-pa">${body}</div><style>${CSS_PASTAS}</style>`, user,
   tailwind: false, dark: temaDaTela(user, 'escuro') === 'escuro', largo,
 });
+
+/** Título sem o emoji do começo (SECOES serve também a página do cliente, que mantém o emoji). */
+const semEmoji = (t: string) => t.replace(/^\p{Extended_Pictographic}️?\s*/u, '');
 
 const TRILHA = [{ rotulo: 'Clientes' }, { rotulo: 'Pasta do Cliente', href: '/dashboard/pastas' }];
 
@@ -180,7 +184,7 @@ export function renderEditorPasta(input: {
           </form>` : ''}
         </div>` : ''}
         ${s.id === 'contrato' ? blocoDeclaracao(p) : ''}`;
-    return cartaoSecao({ titulo: `${s.titulo} (${doSecao.length})`, corpoHtml: corpo });
+    return cartaoSecao({ titulo: `${semEmoji(s.titulo)} (${doSecao.length})`, corpoHtml: corpo });
   }).join('');
 
   const publicUrl = `${input.publicBase}/pasta/${p.slug}`;
@@ -195,7 +199,7 @@ export function renderEditorPasta(input: {
       <button type="submit" class="cc-btn cc-btn-gold">${icone('send', 'sm')}Enviar no zap</button>
     </form>` : '';
   const excluir = `<form action="/dashboard/pastas/${escapeHtml(p.id)}/excluir" method="post"
-      onsubmit="return confirm('EXCLUIR a pasta inteira de ${escapeHtml((input.cliente_nome ?? 'este cliente').replace(/'/g, ''))}?\\n\\nTodos os arquivos enviados somem e o link do cliente PARA DE FUNCIONAR. Não tem volta.')">
+      onsubmit="return confirm('EXCLUIR a pasta inteira de ${escapeHtml((input.cliente_nome ?? 'este cliente').replace(/'/g, '').replace(/[\r\n\\]/g, ' '))}?\\n\\nTodos os arquivos enviados somem e o link do cliente PARA DE FUNCIONAR. Não tem volta.')">
       <button type="submit" class="cc-btn cc-btn-crit">🗑️ Excluir pasta inteira</button>
     </form>`;
   const acoes = `<div class="cc-pa-acoes">
@@ -245,8 +249,8 @@ export function renderPreviewPasta(input: {
 }): string {
   const body = `
 ${cabecalhoPagina({
-    trilha: [...TRILHA, { rotulo: input.cliente_nome ?? '', href: `/dashboard/pastas/${input.pasta_id}` }, { rotulo: 'Prévia' }],
-    titulo: `Prévia — pasta de ${input.cliente_nome ?? ''}`,
+    trilha: [...TRILHA, { rotulo: input.cliente_nome ?? 'sem nome', href: `/dashboard/pastas/${input.pasta_id}` }, { rotulo: 'Prévia' }],
+    titulo: `Prévia — pasta de ${input.cliente_nome ?? 'sem nome'}`,
     subtitulo: 'É exatamente isso que o cliente vai ver (menos o banner amarelo).',
     acoesHtml: botao({ rotulo: '← Voltar ao editor', href: `/dashboard/pastas/${input.pasta_id}` }),
   })}
@@ -278,7 +282,7 @@ function blocoDeclaracao(p: { id: string; dados_declaracao?: Record<string, stri
 
   return `
   <details class="cc-pa-decl">
-    <summary>📜 Declaração de Execução — o atestado que o cliente assina</summary>
+    <summary>Declaração de Execução — o atestado que o cliente assina</summary>
     <div>
       <p>
         Peça a assinatura <strong>logo depois da troca do medidor</strong>, com o sistema gerando —
