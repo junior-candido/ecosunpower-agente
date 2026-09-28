@@ -782,7 +782,7 @@ export function proximoStatus(m: { status: string; modo_coleta: keyof typeof MUD
 
 - **Bruto órfão** (gravado pelo código antigo entre aplicar a 136 e o Implantar, sem `medidor_id`):
   a cada ciclo de agregação o servidor liga o bruto órfão do aparelho ao medidor
-  (`vincularBrutoOrfao`: mesma empresa, device com/sem prefixo, lote de 5.000, `is null` → idempotente,
+  (`vincularBrutoOrfao`: mesma empresa, device com/sem prefixo, lote de 1.000 (teto do PostgREST), `is null` → idempotente,
   índice parcial `medicoes_shelly_orfas`) e volta o cursor até o órfão mais velho. Lote cheio → não
   agrega aquele medidor no ciclo (o cursor não passa por cima). Ninguém precisa rodar SQL de conserto.
 - **Backfill**: `ultimaJanela` ignora `fonte='backfill'` (o cursor não pula bruto). A madrugada refaz,

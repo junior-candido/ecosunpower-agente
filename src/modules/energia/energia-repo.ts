@@ -15,7 +15,9 @@ import { normalizarDeviceId } from './credenciais.js';
 const PAGINA = 1000;
 const LIMITE_PAGINAS = 60; // 60 mil linhas por chamada: teto de segurança (1 dia = 1.440)
 /** Bruto órfão ligado/apagado por chamada (o resto fica pro ciclo seguinte). */
-const LOTE_ORFAOS = 5000;
+// PostgREST devolve no máximo 1000 linhas por select — lote maior é cortado calado.
+const LOTE_ORFAOS = 1000;
+const MAX_LOTES_PODA = 20;
 /** Ids por update/delete (vai na URL do PostgREST: 250 uuids ≈ 9 kB). */
 const PEDACO_IDS = 250;
 
@@ -137,16 +139,19 @@ export function criarEnergiaRepo(client: SupabaseClient): EnergiaDb {
     async apagarBrutoOrfaoAntesDe(iso) {
       // Sem company_id de propósito: é a limpeza do cron (service role) do bruto
       // que NÃO é de medidor nenhum. Um lote por dia; o índice parcial das órfãs acha rápido.
-      const { data, error } = await client.from('medicoes_shelly').select('id')
-        .is('medidor_id', null).lt('medido_em', iso).limit(LOTE_ORFAOS);
-      if (error) falhou('medicoes_shelly', error);
-      const ids = ((data ?? []) as Array<{ id: string }>).map((r) => r.id);
       let apagadas = 0;
-      for (let i = 0; i < ids.length; i += PEDACO_IDS) {
-        const { count, error: e2 } = await client.from('medicoes_shelly').delete({ count: 'exact' })
-          .is('medidor_id', null).in('id', ids.slice(i, i + PEDACO_IDS));
-        if (e2) falhou('medicoes_shelly', e2);
-        apagadas += count ?? 0;
+      for (let lote = 0; lote < MAX_LOTES_PODA; lote++) {
+        const { data, error } = await client.from('medicoes_shelly').select('id')
+          .is('medidor_id', null).lt('medido_em', iso).limit(LOTE_ORFAOS);
+        if (error) falhou('medicoes_shelly', error);
+        const ids = ((data ?? []) as Array<{ id: string }>).map((r) => r.id);
+        for (let i = 0; i < ids.length; i += PEDACO_IDS) {
+          const { count, error: e2 } = await client.from('medicoes_shelly').delete({ count: 'exact' })
+            .is('medidor_id', null).in('id', ids.slice(i, i + PEDACO_IDS));
+          if (e2) falhou('medicoes_shelly', e2);
+          apagadas += count ?? 0;
+        }
+        if (ids.length < LOTE_ORFAOS) break;
       }
       return apagadas;
     },
