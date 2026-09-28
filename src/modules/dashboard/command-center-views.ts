@@ -31,6 +31,8 @@ import {
 } from './command-center-queries.js';
 import { MODULOS } from './conhecer-views.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
+import { can } from './permissions.js';
+import { blocoMapaUsinas } from './mapa-usinas-views.js';
 
 export interface CommandCenterDados {
   agora: Date;
@@ -521,7 +523,7 @@ function geracao(d: CommandCenterDados): string {
 }
 
 // ---------------------------------------------------------------------------
-// Usinas agora: estados reais + por cidade (mapa: próxima entrega)
+// Usinas agora: estados reais + por cidade (o mapa fica logo abaixo do quadro)
 // ---------------------------------------------------------------------------
 
 const TOM_DO_ESTADO: Record<EstadoUsina, Tom> = {
@@ -561,7 +563,7 @@ function usinasAgora(d: CommandCenterDados): string {
     acoesHtml: acoes,
     corpoHtml: `<div class="cc-mapwrap">
         <div><span class="cc-lbl-s">Por cidade · cor do pior estado</span><ul class="cc-cidades">${cidades}${resto}</ul>
-          <p class="cc-nota">Mapa por região: próxima entrega.</p></div>
+          <p class="cc-nota"><a class="cc-link" href="#cc-mapa-usinas">Ver no mapa ${icone('right', 'xs')}</a></p></div>
         <div class="cc-mleg">
           ${leg('normal')}${leg('atencao')}${leg('critico')}${leg('sem_comunicacao')}
           <hr>
@@ -722,6 +724,10 @@ export function renderCommandCenterPage(d: CommandCenterDados, user?: DashUser):
       comGanhos: true, classe: 'cc-a-genmap',
     });
 
+  // Mapa das usinas: módulo contratado E papel que vê usinas (a rota mapa.json confere de novo).
+  const veUsinas = d.dados ? d.dados.permissoes.usinas : !user || can(user, 'usinas', 'visualizar');
+  const mapa = c.usinas && veUsinas ? blocoMapaUsinas({ podeLocalizar: !user || can(user, 'usinas', 'editar') }) : '';
+
   const body = `<div class="cc-root cc-cc">
   ${cab}
   <div class="cc-wrap">
@@ -731,6 +737,7 @@ export function renderCommandCenterPage(d: CommandCenterDados, user?: DashUser):
       ${quadroUsinas}
       ${centralAtencao(d)}
     </div>
+    ${mapa}
     ${departamentos(d)}
     <div class="cc-foot">${casa ? `${icone('tv', 'sm')}Modo TV: a tela do escritório vai girar entre visão geral, usinas e comercial. ` : ''}<span class="cc-sp"></span>Todo número é clicável e leva ao detalhe.</div>
   </div>
@@ -918,6 +925,7 @@ const CSS_COMMAND_CENTER = `
 .cc-cc a.cc-sev:hover{border-color:rgba(251,191,36,.4)}
 .cc-cc .cc-sev b{font-family:var(--cc-f-num);color:var(--cc-text)}
 
+.cc-cc .cc-a-mapa{margin-top:18px}
 .cc-cc .cc-depts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-top:18px}
 .cc-cc .cc-dept{padding:16px 16px 12px;border-radius:14px;background:var(--cc-surface);border:1px solid var(--cc-line);display:flex;flex-direction:column;transition:border-color .15s,transform .15s}
 .cc-cc .cc-dept:hover{border-color:rgba(251,191,36,.35);transform:translateY(-1px)}
@@ -985,7 +993,7 @@ const CSS_COMMAND_CENTER = `
   .cc-cc:not(.cc-att-page) .cc-wrap>*{margin:0!important}
   .cc-cc .cc-board{display:contents}
   .cc-cc .cc-hero{order:1} .cc-cc .cc-a-att{order:2} .cc-cc .cc-kstrip-cc{order:3} .cc-cc .cc-a-gen{order:4}
-  .cc-cc .cc-a-map{order:5} .cc-cc .cc-a-genmap{order:4} .cc-cc .cc-depts{order:6} .cc-cc .cc-foot{order:7}
+  .cc-cc .cc-a-map{order:5} .cc-cc .cc-a-genmap{order:4} .cc-cc .cc-a-mapa{order:6} .cc-cc .cc-depts{order:7} .cc-cc .cc-foot{order:8}
   .cc-cc .cc-hero{grid-template-columns:minmax(0,1fr)} .cc-cc .cc-hero-r{border-left:0;border-top:1px solid var(--cc-line)}
   .cc-cc .cc-hero-l{padding:20px} .cc-cc .cc-hero-l h2{font-size:24px}
   .cc-cc .cc-gsum{grid-template-columns:repeat(2,minmax(0,1fr))}
