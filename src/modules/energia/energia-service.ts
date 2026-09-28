@@ -74,6 +74,8 @@ const DIAS_POR_CICLO = 8;
 export const COBERTURA_DIA_COMPLETO_PCT = 95;
 /** push_nuvem: a nuvem só entra quando o push está calado há mais disto. */
 const NUVEM_RESERVA_APOS_MS = 20 * 60_000;
+/** Quantos dias o fechamento da madrugada refaz (96 janelas por dia por medidor: barato). */
+export const DIAS_REFEITOS_A_NOITE = 7;
 const RETENCAO_BRUTO_DIAS = 90;
 const RETENCAO_15MIN_MESES = 25;
 
@@ -176,7 +178,7 @@ export class EnergiaService {
     return true;
   }
 
-  /** 00h–01h de Brasília: refaz ontem e anteontem (geração e backfill atrasados). */
+  /** 00h–01h de Brasília: refaz os últimos 7 dias (geração que chegou atrasada e backfill da memória do aparelho). */
   async fecharDiasRecentes(agora: Date): Promise<{ medidores: number; dias: number }> {
     const out = { medidores: 0, dias: 0 };
     const ms = await this.medidores('fechamento');
@@ -184,7 +186,7 @@ export class EnergiaService {
     const hoje = diaBrt(agora);
     for (const m of ms) {
       out.medidores++;
-      for (const dia of [somarDias(hoje, -1), somarDias(hoje, -2)]) {
+      for (const dia of Array.from({ length: DIAS_REFEITOS_A_NOITE }, (_, i) => somarDias(hoje, -(i + 1)))) {
         try {
           if (await this.fecharDia(m, dia)) out.dias++;
         } catch (err) {
