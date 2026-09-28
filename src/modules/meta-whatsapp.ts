@@ -272,6 +272,22 @@ export class MetaWhatsAppService {
     return this.postMessage(body);
   }
 
+  /**
+   * W1 — mídia do painel já enviada à Meta (uploadMedia → media_id). Áudio não
+   * leva legenda (a Cloud API recusa); documento leva o nome do arquivo.
+   */
+  async sendMediaById(
+    to: string,
+    tipo: 'image' | 'video' | 'audio' | 'document',
+    mediaId: string,
+    opts: { caption?: string; filename?: string } = {},
+  ): Promise<{ messageId: string }> {
+    const obj: Record<string, unknown> = { id: mediaId };
+    if (tipo !== 'audio' && opts.caption) obj.caption = opts.caption;
+    if (tipo === 'document' && opts.filename) obj.filename = opts.filename;
+    return this.postMessage({ messaging_product: 'whatsapp', to, type: tipo, [tipo]: obj });
+  }
+
   async sendAudio(to: string, mediaUrl: string): Promise<{ messageId: string }> {
     const body = {
       messaging_product: 'whatsapp',
@@ -413,9 +429,10 @@ export class MetaWhatsAppService {
         return { ...base, type: 'text', content: text };
       }
       case 'image': {
-        const img = msg.image as { id?: string; caption?: string } | undefined;
+        const img = msg.image as { id?: string; caption?: string; mime_type?: string } | undefined;
         return {
           ...base,
+          ...(img?.mime_type ? { mimeType: img.mime_type } : {}),
           type: 'image',
           // No WABA o conteudo e media_id (nao URL direta). Pra baixar chamar
           // getMediaBase64(media_id) — ele faz GET /v21.0/{media-id} e depois
@@ -446,6 +463,7 @@ export class MetaWhatsAppService {
           content: doc?.id ?? '',
           caption: doc?.filename,
           mimeType: doc?.mime_type,
+          ...(doc?.filename ? { nomeArquivo: doc.filename } : {}),
         };
       }
       case 'location': {

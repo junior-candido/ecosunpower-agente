@@ -17,6 +17,10 @@ export interface BancoMemoria {
   client: any;
   /** Faz a próxima operação na tabela falhar com esta mensagem. */
   falharEm(tabela: string, mensagem: string, codigo?: string): void;
+  /** Storage em memória (W1 mídia): "bucket/caminho" → arquivo. */
+  arquivos: Record<string, { dados: Buffer; contentType?: string }>;
+  /** Faz a próxima operação do storage falhar com esta mensagem. */
+  falharStorage(mensagem: string): void;
 }
 
 let seq = 0;
@@ -118,10 +122,45 @@ export function bancoMemoria(
     return q;
   }
 
+  const arquivos: Record<string, { dados: Buffer; contentType?: string }> = {};
+  let falhaStorage: string | null = null;
+  const erroStorage = () => { const m = falhaStorage; falhaStorage = null; return m ? { message: m } : null; };
+  const storage = {
+    from(bucket: string) {
+      return {
+        async upload(caminho: string, dados: Buffer, o?: { contentType?: string; upsert?: boolean }) {
+          const e = erroStorage(); if (e) return { data: null, error: e };
+          const k = `${bucket}/${caminho}`;
+          if (arquivos[k] && !o?.upsert) return { data: null, error: { message: 'The resource already exists' } };
+          arquivos[k] = { dados: Buffer.from(dados), contentType: o?.contentType };
+          return { data: { path: caminho }, error: null };
+        },
+        async remove(caminhos: string[]) {
+          const e = erroStorage(); if (e) return { data: null, error: e };
+          for (const c of caminhos) delete arquivos[`${bucket}/${c}`];
+          return { data: [], error: null };
+        },
+        async createSignedUrl(caminho: string, ttl: number, o?: { download?: string | boolean }) {
+          const e = erroStorage(); if (e) return { data: null, error: e };
+          if (!arquivos[`${bucket}/${caminho}`]) return { data: null, error: { message: 'Object not found' } };
+          const dl = o?.download ? `&download=${typeof o.download === 'string' ? o.download : ''}` : '';
+          return { data: { signedUrl: `https://storage.test/${bucket}/${caminho}?ttl=${ttl}${dl}` }, error: null };
+        },
+        async download(caminho: string) {
+          const e = erroStorage(); if (e) return { data: null, error: e };
+          const a = arquivos[`${bucket}/${caminho}`];
+          return a ? { data: new Blob([new Uint8Array(a.dados)]), error: null } : { data: null, error: { message: 'Object not found' } };
+        },
+      };
+    },
+  };
+
   return {
     tabelas,
     escritas,
-    client: { from: (t: string) => consulta(t) },
+    client: { from: (t: string) => consulta(t), storage },
     falharEm(tabela, message, code) { falhas.set(tabela, { message, code }); },
+    arquivos,
+    falharStorage(m: string) { falhaStorage = m; },
   };
 }

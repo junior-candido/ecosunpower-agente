@@ -33,6 +33,7 @@ import {
 } from './atendimento-envio.js';
 import { parametroNome, type ModeloAtendimento } from './modelos-atendimento.js';
 import { respostasProntas } from './respostas-prontas.js';
+import { tamanhoLegivel, ACEITA_NO_SELETOR, LIMITE_IMAGEM_BYTES, LIMITE_MIDIA_BYTES, LIMITE_LEGENDA } from '../midia-whatsapp.js';
 
 const FUSO = 'America/Sao_Paulo';
 
@@ -113,6 +114,37 @@ export function corpoDaMensagem(conteudo: string, temArquivos: boolean): string 
     }
   }
   return `<div class="cc-at-msg-t">${escapeHtml(conteudo)}</div>`;
+}
+
+const ID_MIDIA_OK = /^[0-9a-zA-Z-]{1,64}$/;
+const ICONE_DOC: Array<[RegExp, string]> = [[/pdf/, '📕'], [/sheet|excel|csv/, '📗'], [/word|msword/, '📘'], [/presentation/, '📙']];
+
+/**
+ * W1 — balão com o ARQUIVO: foto (miniatura que amplia), vídeo curto e áudio
+ * com player (a transcrição embaixo), documento com ícone + abrir/baixar. O
+ * endereço é SEMPRE a rota protegida /dashboard/leads/midia/:id (confere quem
+ * vê e só então redireciona para uma URL assinada de 2 min) — nada de URL do
+ * storage no HTML (e a "assinatura" da conversa não muda a cada 8 s). PURA.
+ */
+export function corpoDaMidia(m: Pick<MensagemChat, 'content' | 'midia' | 'transcricao'>): string {
+  const md = m.midia!;
+  const legenda = m.content.replace(/^\[[^\]]*\]\s*/, '').trim();
+  const semNomeRepetido = md.tipo === 'documento' && md.nome && legenda === md.nome ? '' : legenda;
+  const txt = semNomeRepetido ? `<div class="cc-at-msg-t">${escapeHtml(semNomeRepetido)}</div>` : '';
+  const transc = m.transcricao ? `<div class="cc-at-transc"><span>Transcrição</span>${escapeHtml(m.transcricao)}</div>` : '';
+  if (!ID_MIDIA_OK.test(md.id)) return `<span class="cc-at-midia">📎 Arquivo</span>${txt}${transc}`;
+  const url = `/dashboard/leads/midia/${md.id}`;
+  if (md.tipo === 'imagem') {
+    return `<a class="cc-at-foto" href="${url}" target="_blank" rel="noopener" data-ampliar aria-label="Ampliar foto"><img src="${url}" alt="Foto enviada na conversa" loading="lazy" decoding="async"></a>${txt}`;
+  }
+  if (md.tipo === 'audio') return `<audio controls preload="none" src="${url}" class="cc-at-audio"></audio>${txt}${transc}`;
+  if (md.tipo === 'video') return `<video controls preload="none" src="${url}" class="cc-at-video" playsinline></video>${txt}${transc}`;
+  const mime = (md.mime ?? '').toLowerCase();
+  const ic = ICONE_DOC.find(([re]) => re.test(mime))?.[1] ?? '📄';
+  const nome = md.nome || 'Documento';
+  const tam = tamanhoLegivel(md.bytes);
+  return `<div class="cc-at-doc"><span class="cc-at-doc-ic" aria-hidden="true">${ic}</span><span class="cc-at-doc-txt"><strong>${escapeHtml(nome)}</strong>${tam ? `<small>${escapeHtml(tam)}</small>` : ''}</span>
+      <a class="cc-link" href="${url}" target="_blank" rel="noopener">Abrir</a><a class="cc-link" href="${url}?baixar=1">Baixar</a></div>${txt}`;
 }
 
 function qsFiltros(f: FiltrosConversa, extra: Partial<FiltrosConversa> = {}): string {
@@ -216,7 +248,7 @@ function balao(m: MensagemChat, rotuloAssistente: string, nomeCliente: string, t
   const classe = humano ? 'cc-at-msg-eva cc-at-msg-hum' : daAssistente ? 'cc-at-msg-eva' : 'cc-at-msg-cli';
   return `<div class="cc-at-msg ${classe}">
       <div class="cc-at-msg-q">${escapeHtml(quem)}${canal}</div>
-      ${corpoDaMensagem(m.content, temArquivos)}
+      ${m.midia ? corpoDaMidia(m) : corpoDaMensagem(m.content, temArquivos)}${!m.midia && m.transcricao ? `<div class="cc-at-transc"><span>Transcrição</span>${escapeHtml(m.transcricao)}</div>` : ''}
       ${falhou}
       ${hora ? `<div class="cc-at-msg-h">${escapeHtml(hora + enviando)}</div>` : ''}
     </div>`;
@@ -284,6 +316,25 @@ const TEXTO_BLOQUEIO: Record<MotivoBloqueio, string> = {
   janela_fechada: 'Janela de 24 h fechada — use um modelo aprovado.',
   modelo_so_no_oficial: 'Modelo só existe no número oficial.',
 };
+
+/**
+ * W1 — anexar foto, PDF/documento, áudio (arquivo ou gravado aqui) e vídeo
+ * curto. Sem JavaScript: escolher o arquivo + legenda + "Enviar arquivo" (POST
+ * multipart normal). Com JavaScript: 📎/arrastar/colar → prévia antes de
+ * enviar → sai sem recarregar. Os mesmos limites do servidor.
+ */
+function formAnexo(action: string, chave: string, ocultos: string): string {
+  return `<form class="cc-form cc-at-anexo" method="POST" action="${escapeHtml(action)}" enctype="multipart/form-data" data-envio-midia data-max-foto="${LIMITE_IMAGEM_BYTES}" data-max="${LIMITE_MIDIA_BYTES}">
+        <input type="hidden" name="chave" value="${escapeHtml(chave)}">${ocultos}
+        <div class="cc-at-anexo-prev" id="cc-at-anexo-prev" hidden></div>
+        <div class="cc-at-anexo-lin">
+          <label class="cc-btn cc-btn-sm cc-at-clipe" title="Foto até 5 MB · PDF, Word, Excel, áudio e vídeo até 16 MB">📎 Anexar<input type="file" name="arquivo" id="cc-at-arquivo" accept="${escapeHtml(ACEITA_NO_SELETOR)}"></label>
+          <button type="button" class="cc-btn cc-btn-sm cc-at-gravar" id="cc-at-gravar" hidden>🎤 Gravar áudio</button>
+          <input type="text" name="legenda" id="cc-at-legenda" class="cc-at-legenda" maxlength="${LIMITE_LEGENDA}" placeholder="Legenda (opcional)" aria-label="Legenda do arquivo">
+          <button type="submit" class="cc-btn cc-at-enviar cc-at-enviar-arq">Enviar arquivo</button>
+        </div>
+      </form>`;
+}
 
 function formModelo(leadId: string, c: CompositorInput, nomeCliente: string, aberto: boolean): string {
   if (c.via !== 'waba') return '';
@@ -366,6 +417,8 @@ function compositor(lead: LeadDetail, mensagens: MensagemChat[], c: CompositorIn
         <button type="submit" class="cc-btn cc-at-enviar">Enviar</button>
       </form>`
     : '';
+  // Arquivo: as mesmas regras do texto (no número da Eva, só dentro da janela de 24 h).
+  const anexo = !bloqueioTexto ? formAnexo(`/dashboard/leads/${lead.id}/responder-midia`, c.chave, campoCanal) : '';
   const modelo = bloqueioModelo ? '' : formModelo(lead.id, c, lead.name ?? '', !!bloqueioTexto);
   const prontas = !bloqueioTexto || !bloqueioModelo ? chipsProntas(c, lead.name, !!bloqueioTexto) : '';
 
@@ -375,6 +428,7 @@ function compositor(lead: LeadDetail, mensagens: MensagemChat[], c: CompositorIn
       ${faixaJanela}
       ${prontas}
       ${formTexto}
+      ${anexo}
       ${modelo}
       ${rodape}
     </footer>`;
@@ -863,6 +917,7 @@ function compositorContato(ct: ContatoPessoalTela, donoPessoal: string | null, a
         <textarea name="texto" id="cc-at-texto" rows="2" maxlength="${LIMITE_TEXTO}" required placeholder="Escreva sua resposta…" aria-label="Sua resposta"></textarea>
         <button type="submit" class="cc-btn cc-at-enviar">Enviar</button>
       </form>
+      ${formAnexo('/dashboard/leads/conversas/contato/responder-midia', c.chave, `<input type="hidden" name="telefone" value="${escapeHtml(ct.telefone)}">`)}
       <p class="cc-at-nota">Conversa do seu WhatsApp: só você vê. A ${escapeHtml(assistente)} não responde aqui.</p>
     </footer>`
     : `<footer class="cc-at-compor cc-at-compor-on" id="responder">${banner}<div class="cc-at-compor-campo cc-at-bloq" aria-disabled="true">${icone('alert', 'xs')}<span>Seu WhatsApp não está conectado agora. <a class="cc-link" href="/dashboard/whatsapp/pessoal">Conectar</a></span></div>${linkZap}</footer>`;
@@ -952,7 +1007,7 @@ export function renderAtendimentoPage(p: AtendimentoInput): string {
   <style>${CSS_ATENDIMENTO}</style>`;
 
   // Alças das colunas (sempre) + rolar o chat até a última mensagem (com lead).
-  const script = `<script>${SCRIPT_COLUNAS}</script>` + (lead || ct ? `<script>(function(){function fim(){var c=document.getElementById('cc-at-msgs');if(c){c.scrollTop=c.scrollHeight;}}fim();window.addEventListener('load',fim);})();</script>` : '')
+  const script = `<script>${SCRIPT_COLUNAS}</script>` + (lead || ct ? `<script>(function(){function fim(){var c=document.getElementById('cc-at-msgs');if(c){c.scrollTop=c.scrollHeight;}}fim();window.addEventListener('load',fim);})();</script><script>${SCRIPT_AMPLIAR}</script>` : '')
     + ((lead && p.envio) || ct?.envio ? `<script>${SCRIPT_RESPONDER}</script>` : '');
 
   const titulo = lead ? `Conversa: ${lead.name ?? 'Sem nome'}` : ct ? `Conversa: ${ct.nome || formatPhoneBR(ct.telefone)}` : 'Conversas';
@@ -1022,6 +1077,7 @@ function marcar(d,ok,motivo){if(!d)return;var h=d.querySelector('.cc-at-msg-h');
 var f=document.createElement('div');f.className='cc-at-msg-falha';f.textContent='⚠ não saiu — '+(motivo||'tente de novo.');d.insertBefore(f,h);h.textContent='';}
 function novaChave(k){if(!k)return;var f=document.getElementById('responder');if(f)f.querySelectorAll('input[name=chave]').forEach(function(i){i.value=k;});}
 function trocarRodape(html,estado){var f=document.getElementById('responder');if(!f||typeof html!=='string')return;var novo=pedaco(html).querySelector('#responder');if(!novo)return;
+var ia=document.getElementById('cc-at-arquivo');if(grav||(ia&&ia.files&&ia.files.length))estado=null;
 if(estado&&chat.getAttribute('data-estado')!==estado){var ta=document.getElementById('cc-at-texto'),txt=ta?ta.value:'',foco=document.activeElement===ta;f.parentNode.replaceChild(novo,f);chat.setAttribute('data-estado',estado);var nt=document.getElementById('cc-at-texto');if(nt&&txt){nt.value=txt;}if(nt&&foco)nt.focus();atualizarPrevia();return;}
 var jv=f.querySelector('.cc-at-janela'),jn=novo.querySelector('.cc-at-janela');if(jv&&jn)jv.parentNode.replaceChild(jn,jv);}
 function buscar(depoisDeEnviar){if(!URLC||buscando||!window.fetch)return;buscando=true;var g=geracao;
@@ -1055,7 +1111,74 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
 var t=document.getElementById('cc-at-texto');if(t){t.value=b.getAttribute('data-texto')||'';t.focus();try{t.setSelectionRange(t.value.length,t.value.length);}catch(x){}return;}
 var m=b.getAttribute('data-modelo'),sel=document.getElementById('cc-at-modelo-sel');if(sel&&m){sel.value=m;atualizarPrevia();var d=sel.closest('details');if(d)d.open=true;sel.focus();}});
 document.addEventListener('keydown',function(e){var t=e.target;if(!t||t.id!=='cc-at-texto')return;if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();var f=t.form;if(f){if(f.requestSubmit)f.requestSubmit();else f.submit();}}});
+var grav=null,urlPrev=null;
+if(chat){chat.classList.add('cc-at-js');if(window.MediaRecorder&&navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)chat.classList.add('cc-at-pode-gravar');}
+function formArq(){return document.querySelector('form[data-envio-midia]');}
+function inArq(){return document.getElementById('cc-at-arquivo');}
+function tamanho(b){return b<1024?b+' B':b<1048576?Math.round(b/1024)+' KB':(b/1048576).toFixed(1).replace('.',',')+' MB';}
+function limparPrev(){var p=document.getElementById('cc-at-anexo-prev');if(p){p.innerHTML='';p.hidden=true;}if(urlPrev){try{URL.revokeObjectURL(urlPrev);}catch(x){}urlPrev=null;}var f=formArq();if(f)f.classList.remove('cc-at-tem');}
+function mostrarPrev(file){var f=formArq(),p=document.getElementById('cc-at-anexo-prev');if(!f||!p)return;limparPrev();
+var ehFoto=/^image\\//.test(file.type),lim=Number(f.getAttribute(ehFoto?'data-max-foto':'data-max'))||0;
+var erro=lim&&file.size>lim?'Arquivo grande demais ('+tamanho(file.size)+'). '+(ehFoto?'Foto até 5 MB.':'Até 16 MB.'):'';
+var el;if(window.URL&&URL.createObjectURL&&/^(image|audio|video)\\//.test(file.type)){urlPrev=URL.createObjectURL(file);}
+if(ehFoto&&urlPrev){el=document.createElement('img');el.src=urlPrev;el.alt='Prévia da foto';}
+else if(/^audio\\//.test(file.type)&&urlPrev){el=document.createElement('audio');el.controls=true;el.src=urlPrev;}
+else if(/^video\\//.test(file.type)&&urlPrev){el=document.createElement('video');el.controls=true;el.muted=true;el.src=urlPrev;}
+else{el=document.createElement('span');el.className='cc-at-anexo-ic';el.textContent='📄';}
+var info=document.createElement('div');info.className='cc-at-anexo-info';var n=document.createElement('strong');n.textContent=file.name||'arquivo';var t=document.createElement('small');t.textContent=tamanho(file.size)+' · confira antes de enviar';info.appendChild(n);info.appendChild(t);
+if(erro){var e2=document.createElement('div');e2.className='cc-at-msg-falha';e2.textContent='⚠ '+erro;info.appendChild(e2);}
+var x=document.createElement('button');x.type='button';x.className='cc-ibtn cc-at-anexo-x';x.setAttribute('aria-label','Tirar o arquivo');x.textContent='×';x.addEventListener('click',function(){var i=inArq();if(i)i.value='';limparPrev();});
+p.appendChild(el);p.appendChild(info);p.appendChild(x);p.hidden=false;f.classList.add('cc-at-tem');
+var b=f.querySelector('button[type=submit]');if(b)b.disabled=!!erro;var lg=document.getElementById('cc-at-legenda');if(lg&&!erro)lg.focus();}
+function porArquivo(file){var i=inArq();if(!i||!file)return;try{var dt=new DataTransfer();dt.items.add(file);i.files=dt.files;}catch(x){aviso('<div class="cc-aviso cc-aviso-atencao">Este navegador não deixa colar/arrastar arquivo. Use o botão 📎 Anexar.</div>');return;}mostrarPrev(file);}
+document.addEventListener('change',function(e){if(e.target&&e.target.id==='cc-at-arquivo'){var fl=e.target.files&&e.target.files[0];if(fl)mostrarPrev(fl);else limparPrev();}});
+function noChat(e){return !!(chat&&e.target&&e.target.closest&&e.target.closest('#conversa'));}
+['dragenter','dragover'].forEach(function(ev){document.addEventListener(ev,function(e){if(!noChat(e)||!inArq()||!e.dataTransfer)return;var ts=e.dataTransfer.types||[];if(Array.prototype.indexOf.call(ts,'Files')<0)return;e.preventDefault();chat.classList.add('cc-at-soltar');});});
+document.addEventListener('dragleave',function(e){if(chat&&(!e.relatedTarget||!chat.contains(e.relatedTarget)))chat.classList.remove('cc-at-soltar');});
+document.addEventListener('drop',function(e){if(!noChat(e))return;chat.classList.remove('cc-at-soltar');var fs=e.dataTransfer&&e.dataTransfer.files;if(!inArq()||!fs||!fs[0])return;e.preventDefault();porArquivo(fs[0]);});
+document.addEventListener('paste',function(e){var t=e.target;if(!inArq()||!t||(t.id!=='cc-at-texto'&&t.id!=='cc-at-legenda'))return;var fs=e.clipboardData&&e.clipboardData.files;if(fs&&fs[0]){e.preventDefault();porArquivo(fs[0]);}});
+document.addEventListener('click',function(e){var g=e.target&&e.target.closest?e.target.closest('#cc-at-gravar'):null;if(!g)return;if(grav){grav.parar();return;}
+navigator.mediaDevices.getUserMedia({audio:true}).then(function(st){
+var tipos=['audio/ogg;codecs=opus','audio/webm;codecs=opus','audio/webm','audio/mp4'],tipo='';for(var k=0;k<tipos.length;k++){if(MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(tipos[k])){tipo=tipos[k];break;}}
+var mr=tipo?new MediaRecorder(st,{mimeType:tipo}):new MediaRecorder(st),partes=[],ini=Date.now(),tm=null;
+mr.ondataavailable=function(ev){if(ev.data&&ev.data.size)partes.push(ev.data);};
+mr.onstop=function(){if(tm)clearInterval(tm);st.getTracks().forEach(function(x){x.stop();});grav=null;var bt=document.getElementById('cc-at-gravar');if(bt){bt.textContent='🎤 Gravar áudio';bt.classList.remove('cc-at-gravando');}
+var mt=(mr.mimeType||tipo||'audio/webm').split(';')[0],ext=mt.indexOf('ogg')>=0?'ogg':mt.indexOf('mp4')>=0?'m4a':'webm';if(partes.length)porArquivo(new File(partes,'gravacao.'+ext,{type:mt}));};
+function rel(){var s=Math.floor((Date.now()-ini)/1000),bt=document.getElementById('cc-at-gravar');if(bt)bt.textContent='⏹ Parar ('+Math.floor(s/60)+':'+('0'+(s%60)).slice(-2)+')';if(s>=300&&mr.state!=='inactive')mr.stop();}
+grav={parar:function(){if(mr.state!=='inactive')mr.stop();}};mr.start(1000);g.classList.add('cc-at-gravando');rel();tm=setInterval(rel,500);
+}).catch(function(){aviso('<div class="cc-aviso cc-aviso-erro">Não consegui usar o microfone. Libere o microfone no navegador ou anexe um arquivo de áudio.</div>');});});
+document.addEventListener('submit',function(e){var f=e.target&&e.target.closest?e.target.closest('form[data-envio-midia]'):null;if(!f)return;
+var i=inArq();if(!i||!i.files||!i.files[0]){e.preventDefault();if(i)i.click();return;}
+if(!podeFetch)return;e.preventDefault();if(enviando)return;
+var b=f.querySelector('button[type=submit]'),file=i.files[0],lg=document.getElementById('cc-at-legenda'),leg=lg?lg.value.trim():'';
+enviando=true;geracao++;parados=0;var rot=b?b.textContent:'';if(b){b.disabled=true;b.textContent='Enviando…';}
+var fd=new FormData(f),ic=/^image\\//.test(file.type)?'📷 ':/^audio\\//.test(file.type)?'🎤 ':/^video\\//.test(file.type)?'🎬 ':'📄 ';
+var d=balao(ic+(file.name||'arquivo')+(leg?'\\n'+leg:''));aviso('');
+return fetch(f.getAttribute('action'),{method:'POST',credentials:'same-origin',headers:{'Accept':'application/json'},body:fd})
+.then(function(r){return r.json().catch(function(){return {ok:false,texto:'resposta inesperada do servidor. Recarregue a página.'};});})
+.then(function(j){novaChave(j.chave);var jaFoi=j.resultado==='duplicado';marcar(d,!!j.ok||jaFoi,j.texto);
+if(j.ok||jaFoi){i.value='';if(lg)lg.value='';limparPrev();}else{aviso(j.avisoHtml||'');}
+if(j.ok||jaFoi||j.resultado==='falhou'){assin=null;buscando=false;geracao++;buscar(true);}})
+.catch(function(){marcar(d,false,'sem conexão com o painel. Confira a internet e tente de novo.');})
+.then(function(){enviando=false;if(b&&document.body.contains(b)){b.disabled=false;b.textContent=rot||'Enviar arquivo';}});});
 if(URLC&&window.fetch){setInterval(function(){tiques++;if(document.hidden||enviando)return;if(parados>=4&&tiques%3!==0)return;buscar(false);},8000);document.addEventListener('visibilitychange',function(){if(!document.hidden)buscar(false);});}
+})();`;
+
+/**
+ * W1 — foto do chat: tocar amplia na própria tela (janelinha escura; Esc,
+ * toque fora ou ✕ fecha). Sem JavaScript o link abre a foto numa aba nova.
+ * A janelinha é criada pelo script (nada novo no HTML da página).
+ */
+export const SCRIPT_AMPLIAR = `(function(){
+var dlg=null;
+function fechar(){if(dlg){dlg.classList.remove('cc-on');var i=dlg.querySelector('img');if(i)i.removeAttribute('src');}}
+function abrir(src){if(!dlg){dlg=document.createElement('div');dlg.className='cc-at-luz';dlg.setAttribute('role','dialog');dlg.setAttribute('aria-modal','true');dlg.setAttribute('aria-label','Foto ampliada');
+var b=document.createElement('button');b.type='button';b.className='cc-ibtn cc-at-luz-x';b.setAttribute('aria-label','Fechar');b.textContent='×';
+var im=document.createElement('img');im.alt='Foto ampliada';dlg.appendChild(b);dlg.appendChild(im);document.body.appendChild(dlg);
+dlg.addEventListener('click',function(e){if(e.target!==im)fechar();});}
+dlg.querySelector('img').setAttribute('src',src);dlg.classList.add('cc-on');dlg.querySelector('button').focus();}
+document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('[data-ampliar]'):null;if(!a)return;if(e.ctrlKey||e.metaKey||e.shiftKey)return;e.preventDefault();abrir(a.getAttribute('href'));});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')fechar();});
 })();`;
 
 /** CSS só do Atendimento (tokens cc- → funciona nos dois temas). */
@@ -1172,6 +1295,41 @@ export const CSS_ATENDIMENTO = `
 .cc-at-canal-whatsapp_business{color:var(--cc-gold-2);border-color:rgba(251,191,36,.45)}
 .cc-at-vazio,.cc-at-chat-vazio{justify-content:center}
 .cc-at-chat-vazio .cc-empty,.cc-at-vazio{margin:auto;max-width:360px;text-align:center}
+/* W1 — mídia no balão e anexar */
+.cc-at-foto{display:block;margin:2px 0 4px;border-radius:10px;overflow:hidden;max-width:260px;background:var(--cc-surface-2)}
+.cc-at-foto img{display:block;width:100%;height:auto;max-height:260px;object-fit:cover}
+.cc-at-audio{display:block;width:260px;max-width:100%;height:40px;margin:2px 0}
+.cc-at-video{display:block;width:280px;max-width:100%;max-height:220px;border-radius:10px;background:#000;margin:2px 0}
+.cc-at-transc{margin-top:4px;padding:6px 9px;border-radius:8px;background:var(--cc-surface-2);font-size:12.5px;color:var(--cc-text-2);white-space:pre-wrap;word-break:break-word}
+.cc-at-transc span{display:block;font-size:10.5px;font-weight:700;color:var(--cc-muted);margin-bottom:1px}
+.cc-at-doc{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:var(--cc-surface-2);border:1px solid var(--cc-line);margin:2px 0 4px;min-width:0}
+.cc-at-doc-ic{font-size:22px;flex:none}
+.cc-at-doc-txt{flex:1;min-width:0;display:flex;flex-direction:column}
+.cc-at-doc-txt strong{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cc-at-doc-txt small{font-size:11px;color:var(--cc-muted)}
+.cc-at-doc .cc-link{font-size:12px;font-weight:600;flex:none}
+.cc-at-anexo{display:flex;flex-direction:column;gap:6px;margin:0}
+.cc-at-anexo-lin{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cc-at-clipe{position:relative;cursor:pointer}
+.cc-at-js .cc-at-clipe input[type=file]{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none}
+.cc-at-legenda{flex:1 1 180px;min-width:0}
+.cc-at-js .cc-at-anexo:not(.cc-at-tem) .cc-at-legenda,.cc-at-js .cc-at-anexo:not(.cc-at-tem) .cc-at-enviar-arq{display:none}
+.cc-btn.cc-at-enviar-arq{height:36px;padding:0 14px}
+.cc-at-pode-gravar .cc-at-gravar{display:inline-flex}
+.cc-btn.cc-at-gravando{border-color:var(--cc-crit);color:var(--cc-crit);font-weight:700}
+.cc-at-anexo-prev{display:flex;align-items:center;gap:10px;padding:8px;border-radius:12px;border:1px dashed var(--cc-line-2);background:var(--cc-surface-2)}
+.cc-at-anexo-prev[hidden]{display:none}
+.cc-at-anexo-prev img,.cc-at-anexo-prev video{width:72px;height:72px;object-fit:cover;border-radius:8px;flex:none;background:#000}
+.cc-at-anexo-prev audio{width:220px;max-width:50%;flex:none}
+.cc-at-anexo-ic{font-size:30px;flex:none}
+.cc-at-anexo-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.cc-at-anexo-info strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cc-at-anexo-info small{font-size:11px;color:var(--cc-muted)}
+.cc-at-soltar .cc-at-msgs{outline:2px dashed var(--cc-gold-2);outline-offset:-8px;background:var(--cc-gold-soft)}
+.cc-at-luz{position:fixed;inset:0;z-index:80;background:rgba(2,6,23,.88);display:none;align-items:center;justify-content:center;padding:24px}
+.cc-at-luz.cc-on{display:flex}
+.cc-at-luz img{max-width:100%;max-height:100%;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.cc-at-luz-x{position:absolute;top:14px;right:14px;width:40px;height:40px;font-size:24px;background:var(--cc-surface-2);color:var(--cc-text)}
 /* cockpit */
 .cc-at-cockpit{overflow-y:auto;padding:16px;gap:14px;scroll-margin-top:84px}
 .cc-at-cockpit-vazio{justify-content:center;align-items:center}

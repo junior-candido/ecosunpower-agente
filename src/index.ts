@@ -18,6 +18,7 @@ import { DossierBuilder } from './modules/dossier.js';
 import { calculateSolarEstimate, formatEstimateForPrompt } from './modules/solar.js';
 import { archiveInboundMedia } from './modules/inbound-media.js';
 import { Transcriber } from './modules/transcriber.js';
+import { arquivarMidiaDaAssistente, TIPO_DA_ENTRADA } from './modules/midia-whatsapp.js';
 import { VisionAnalyzer } from './modules/vision.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { LearningModule } from './modules/learning.js';
@@ -6512,22 +6513,23 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
   }
 
   // Handle audio messages
-  async function handleAudioMessage(from: string, messageId: string, companyId?: string) {
+  /** Devolve a transcrição (W1: fica embaixo do player no painel) ou null. */
+  async function handleAudioMessage(from: string, messageId: string, companyId?: string): Promise<string | null> {
     const db = supabase.paraMensagem(companyId); // EVA MT 3c: crachá nos cancelamentos
     if (await takeover.isPaused(from)) {
       await registrarPausado(db, from, companyId, 'audio', '');
-      return;
+      return null;
     }
     if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
       console.log(`[eva-active] Skipping audio from ${from} — eva_active=false`);
       await registrarPausado(db, from, companyId, 'audio', ''); // fica na conversa (Atendimento P2)
-      return;
+      return null;
     }
     await cancelIntroIfPending(from, db);
     if (!transcriber) {
       const msg = 'Nao consegui ouvir o audio. Pode me enviar por texto, por favor? 😊';
       if (!isSandbox) await sendText(from, msg);
-      return;
+      return null;
     }
 
     try {
@@ -6538,7 +6540,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       if (!media) {
         const msg = 'Nao consegui baixar o audio. Pode mandar de novo? 😊';
         if (!isSandbox) await sendText(from, msg);
-        return;
+        return null;
       }
 
       // Arquiva o audio original no cofre do lead (Junior quer TUDO em maos)
@@ -6549,15 +6551,17 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
       if (!text) {
         const msg = 'O audio ficou um pouco dificil de entender. Pode mandar de novo ou escrever por texto? 😊';
         if (!isSandbox) await sendText(from, msg);
-        return;
+        return null;
       }
 
       console.log(`[audio] Transcribed from ${from}: "${text.substring(0, 80)}..."`);
       await handleTextMessage(from, text, undefined, companyId);
+      return text;
     } catch (error) {
       console.error(`[audio] Error processing audio from ${from}:`, error);
       const msg = 'Nao consegui processar o audio. Pode me enviar por texto? 😊';
       if (!isSandbox) await sendText(from, msg);
+      return null;
     }
   }
 
@@ -6977,12 +6981,14 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
     const mediaRef = (mediaContent: string, fallbackId: string) =>
       (metaWaba && !canalExigeEvolution()) ? mediaContent : fallbackId;
 
+    // W1 — o painel mostra a mídia: guarda o arquivo ligado à mensagem (depois do atendimento da Eva).
+    let transcricaoDoAudio: string | null = null;
     switch (msg.type) {
       case 'text':
         await handleTextMessage(msg.from, msg.content, msg.referral, companyId);
         break;
       case 'audio':
-        await handleAudioMessage(msg.from, mediaRef(msg.content, msg.messageId), companyId);
+        transcricaoDoAudio = await handleAudioMessage(msg.from, mediaRef(msg.content, msg.messageId), companyId);
         break;
       case 'image':
         await handleImageMessage(msg.from, mediaRef(msg.content, msg.messageId), companyId, msg.caption);
@@ -7097,6 +7103,23 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       }
       default:
         console.log(`[router] Unknown message type "${msg.type}" from ${msg.from}`);
+    }
+
+    if (TIPO_DA_ENTRADA[msg.type] && !isAdminPhone(msg.from)) {
+      await arquivarMidiaDaAssistente(supabase.getClient(), {
+        companyId,
+        telefone: msg.from,
+        lead: await dbMsg.getLeadByPhone(msg.from).catch(() => null),
+        tipoEntrada: msg.type,
+        wamid: msg.messageId || null,
+        recebidaEm: msg.timestamp ?? null,
+        legenda: msg.type === 'document' ? (msg.caption && msg.caption !== msg.nomeArquivo ? msg.caption : '') : msg.caption,
+        nomeArquivo: msg.nomeArquivo ?? (msg.type === 'document' ? msg.caption : null) ?? null,
+        contatoNome: msg.pushName ?? null,
+        transcricao: transcricaoDoAudio,
+        baixar: () => messagingDaMensagem().getMediaBase64(mediaRef(msg.content, msg.messageId)),
+        transcrever: transcriber ? (b64, mime) => transcriber.transcribeFromBase64(b64, mime) : undefined,
+      }).catch((e) => console.warn(`[midia] arquivar falhou: ${(e as Error).message}`));
     }
 
     // [BSUID fase 1] Guarda o ID Meta (e @username) no lead achado pelo
@@ -7829,7 +7852,11 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       }
       if (!pessoal.ativo) { res.status(200).json({ status: 'numero_pessoal_desligado' }); return; }
       const { receberNoNumeroPessoal } = await import('./modules/numero-pessoal.js');
-      const r = await receberNoNumeroPessoal(supabase.getClient(), pessoal, parsed);
+      // W1: mídia recente é baixada PELA INSTÂNCIA DO DONO e guardada (só ele vê); áudio transcrito.
+      const r = await receberNoNumeroPessoal(supabase.getClient(), pessoal, parsed, Date.now(), {
+        baixarMidia: (m) => comCanal({ companyId: pessoal.company_id, evolutionInstance: pessoal.instancia }, () => evolution.getMediaBase64(m.messageId)),
+        transcrever: transcriber ? (b64, mime) => transcriber.transcribeFromBase64(b64, mime) : undefined,
+      });
       res.status(200).json({ status: `numero_pessoal_${r}` });
       return;
     }
@@ -9239,6 +9266,11 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     // Atendimento P2b: responder pelo WhatsApp PESSOAL do dono (instância QR dele) — sem
     // passar pelo sendText da Eva (lá é outro número, outra marca, outra trava).
     enviarPessoal: (instancia, to, text) => comEmpresaDe(ECOSUN_COMPANY_ID, () => comCanal({ companyId: ECOSUN_COMPANY_ID, evolutionInstance: instancia }, () => evolution.sendText(to, text))),
+    // W1 — mídia pela Evolution: número pessoal do dono ou assistente do tenant (instância já conferida na rota).
+    enviarMidiaEvolution: (instancia, companyId, to, m) => comEmpresaDe(companyId, () => comCanal({ companyId, evolutionInstance: instancia }, () => (m.tipo === 'audio'
+      ? evolution.sendWhatsAppAudio(to, m.base64)
+      : evolution.sendMediaBase64(to, { mediatype: m.tipo === 'imagem' ? 'image' : m.tipo === 'video' ? 'video' : 'document', mimetype: m.mime, base64: m.base64, fileName: m.nome, caption: m.legenda })))),
+    converterAudio: async (webm) => (await import('./modules/audio-ogg.js')).webmParaOgg(webm),
     evolutionInstanciaEva: config.evolutionInstance,
     // Histórico do número pessoal: progresso na tela + puxar o que a Evolution já guardou.
     historicoPessoal,

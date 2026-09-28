@@ -16,6 +16,8 @@ export interface IncomingMessage {
   pushName?: string;
   caption?: string; // legenda em imagem/video
   mimeType?: string; // mime do anexo (preenchido em document; tambem populado em image/video se vier no payload)
+  /** Nome do arquivo (documento), quando o WhatsApp manda. W1 mídia no painel. */
+  nomeArquivo?: string;
   // ID do NÚMERO que RECEBEU a mensagem (value.metadata.phone_number_id no
   // webhook WABA). Base do multi-tenant: mapeia pro company_id via companies.
   // waba_phone_number_id (migration 081). So o canal WABA preenche.
@@ -78,9 +80,12 @@ export function lerMensagemEvolution(data: Record<string, unknown> | undefined |
     return { ...base, type: 'text', content: text };
   }
 
+  // mimetype só entra quando vem (mensagem antiga/teste sem ele fica igual).
+  const mime = (m: Record<string, string>) => (typeof m.mimetype === 'string' && m.mimetype ? { mimeType: m.mimetype } : {});
+
   if (message.audioMessage) {
     const audio = message.audioMessage as Record<string, string>;
-    return { ...base, type: 'audio', content: audio.url ?? '' };
+    return { ...base, type: 'audio', content: audio.url ?? '', ...mime(audio) };
   }
 
   if (message.imageMessage) {
@@ -90,6 +95,7 @@ export function lerMensagemEvolution(data: Record<string, unknown> | undefined |
       type: 'image',
       content: image.url ?? '',
       caption: image.caption ?? undefined,
+      ...mime(image),
     };
   }
 
@@ -100,12 +106,19 @@ export function lerMensagemEvolution(data: Record<string, unknown> | undefined |
       type: 'video',
       content: video.url ?? '',
       caption: video.caption ?? undefined,
+      ...mime(video),
     };
   }
 
-  if (message.documentMessage) {
-    const doc = message.documentMessage as Record<string, string>;
-    return { ...base, type: 'document', content: doc.mimetype ?? '' };
+  // Documento com legenda chega como documentWithCaptionMessage.message.documentMessage.
+  const docComLegenda = (message.documentWithCaptionMessage as { message?: { documentMessage?: Record<string, string> } } | undefined)?.message?.documentMessage;
+  if (message.documentMessage || docComLegenda) {
+    const doc = (message.documentMessage ?? docComLegenda) as Record<string, string>;
+    return {
+      ...base, type: 'document', content: doc.mimetype ?? '', ...mime(doc),
+      ...(doc.fileName ? { nomeArquivo: doc.fileName } : {}),
+      ...(doc.caption ? { caption: doc.caption } : {}),
+    };
   }
 
   if (message.locationMessage) {
@@ -241,6 +254,46 @@ export class EvolutionService {
       const key = (data.key ?? (data as { data?: { key?: Record<string, string> } }).data?.key) as
         | Record<string, string>
         | undefined;
+      return { messageId: key?.id ?? '' };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * W1 — mídia do painel (foto, vídeo, documento) em base64 pela instância em
+   * contexto (número pessoal do dono ou assistente do tenant). Base64 no corpo:
+   * não depende de a Evolution alcançar o nosso storage.
+   */
+  async sendMediaBase64(
+    to: string,
+    m: { mediatype: 'image' | 'video' | 'document'; mimetype: string; base64: string; fileName: string; caption?: string },
+  ): Promise<{ messageId: string }> {
+    const body = { number: to, mediatype: m.mediatype, mimetype: m.mimetype, media: m.base64, fileName: m.fileName, caption: m.caption ?? '' };
+    return this.postarMidia('sendMedia', body);
+  }
+
+  /** W1 — áudio como MENSAGEM DE VOZ (a Evolution converte para o formato do WhatsApp). */
+  async sendWhatsAppAudio(to: string, base64: string): Promise<{ messageId: string }> {
+    return this.postarMidia('sendWhatsAppAudio', { number: to, audio: base64 });
+  }
+
+  private async postarMidia(rota: 'sendMedia' | 'sendWhatsAppAudio', body: Record<string, unknown>): Promise<{ messageId: string }> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+    try {
+      const res = await fetch(`${this.baseUrl}/message/${rota}/${this.instanciaAtual()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: this.apiKey },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const err = await res.text().catch(() => '');
+        throw new Error(`Evolution ${rota} ${res.status}: ${err.slice(0, 300)}`);
+      }
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+      const key = (data.key ?? (data as { data?: { key?: Record<string, string> } }).data?.key) as Record<string, string> | undefined;
       return { messageId: key?.id ?? '' };
     } finally {
       clearTimeout(timer);

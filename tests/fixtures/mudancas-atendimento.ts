@@ -103,3 +103,31 @@ export const ENTRA_SEM_RECARREGAR: MudancaContrato = {
     seletores: ['#cc-at-topo', '#responder', '.cc-at-aviso-envio', '.cc-at-janela', '.cc-at-msg-h', '.cc-at-vazio', 'input[name=chave]', 'textarea[name=texto]'],
   },
 };
+
+// ---------------------------------------------------------------------------
+// W1 (28/09/2026) — mídia no WhatsApp: foto, PDF/documento, áudio e vídeo.
+// ---------------------------------------------------------------------------
+
+/** Foto do chat amplia na própria tela (a janelinha é criada pelo script). */
+export const ENTRA_AMPLIAR: MudancaContrato = {
+  motivo: 'Junior: foto em miniatura que amplia no chat',
+  entra: { dataAttrs: ['data-ampliar'], seletores: ['[data-ampliar]', 'button', 'img'] },
+};
+
+/**
+ * Anexar foto, PDF/documento, áudio (arquivo ou gravado) e vídeo — com prévia
+ * antes de enviar, legenda, arrastar/colar e envio sem recarregar. Mesmas
+ * regras do texto (no número da Eva, só dentro da janela de 24 h).
+ */
+export const ENTRA_MIDIA: MudancaContrato = {
+  motivo: 'Junior: enviar foto, PDF, áudio e vídeo pelo painel (prévia + legenda)',
+  entra: {
+    formularios: [{
+      method: 'POST', action: `/dashboard/leads/${ID}/responder-midia`, enctype: 'multipart/form-data',
+      campos: [{ name: 'arquivo', type: 'file' }, { name: 'chave', type: 'hidden' }, { name: 'legenda', type: 'text' }],
+    }],
+    ids: ['cc-at-anexo-prev', 'cc-at-arquivo', 'cc-at-gravar', 'cc-at-legenda'],
+    seletores: ['#cc-at-gravar', '#conversa', 'form[data-envio-midia]'],
+    dataAttrs: ['data-envio-midia'],
+  },
+};

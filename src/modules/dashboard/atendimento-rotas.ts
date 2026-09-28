@@ -16,6 +16,7 @@
 // Nenhum envio de verdade nos testes: `DepsAtendimento` recebe dublês.
 
 import { randomUUID } from 'node:crypto';
+import multer from 'multer';
 import type { Request, Response } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AuthedRequest } from './auth.js';
@@ -42,6 +43,11 @@ import { can } from './permissions.js';
 import { podeVerLead, type LeadDetail } from './leads-queries.js';
 import { linhaDoPainelParaChat } from './conversas-queries.js';
 import { numeroPessoalDoDono, mensagensPessoais, virarLead, leadDoTelefoneNaEmpresa, CASA as CASA_ID, type NumeroPessoal } from '../numero-pessoal.js';
+import { linhaVisivelPara } from '../mensagens-whatsapp.js';
+import {
+  validarArquivo, guardarMidia, apagarMidia, urlDaMidia, textoDaMidia, caminhoDaEmpresa, LIMITE_LEGENDA, LIMITE_MIDIA_BYTES,
+  type TipoMidia, type ArquivoValidado,
+} from '../midia-whatsapp.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CACHE_MODELOS_MS = 10 * 60 * 1000;
@@ -53,6 +59,10 @@ const TEMPO_MAX_META_MS = 3000;
 /** Só o pedaço do serviço oficial (Meta) que o painel usa. */
 export interface WabaPainel {
   sendText(to: string, text: string): Promise<{ messageId: string }>;
+  /** W1: sobe o arquivo na Meta (devolve o media_id). */
+  uploadMedia?(buffer: Buffer, mimeType: string, filename: string): Promise<{ mediaId: string }>;
+  /** W1: manda a mídia já enviada à Meta. */
+  sendMediaById?(to: string, tipo: 'image' | 'video' | 'audio' | 'document', mediaId: string, opts?: { caption?: string; filename?: string }): Promise<{ messageId: string }>;
   sendTemplate(to: string, name: string, lang: string, components: Array<{ type: 'body'; parameters: Array<{ type: 'text'; text: string }> }>): Promise<{ messageId: string }>;
   listTemplates?(): Promise<ModeloDaMeta[]>;
 }
@@ -79,7 +89,23 @@ export interface DepsAtendimento {
   enviarPessoal?: (instancia: string, to: string, text: string) => Promise<{ messageId?: string } | void>;
   /** Parte 2b: número pessoal de quem está logado (padrão: whatsapp_numeros_pessoais). */
   numeroPessoal?: (companyId: string, userId: string) => Promise<NumeroPessoal | null>;
+  /**
+   * W1: mídia pela Evolution — instância do dono (número pessoal) ou do tenant.
+   * O index.ts roda dentro da empresa/canal da instância (sendMediaBase64 /
+   * sendWhatsAppAudio).
+   */
+  enviarMidiaEvolution?: (instancia: string, companyId: string, to: string, m: MidiaParaEnviar) => Promise<{ messageId?: string } | void>;
+  /** W1: gravação do navegador (WebM) → OGG/Opus (ffmpeg). Ausente = gravação recusada. */
+  converterAudio?: (webm: Buffer) => Promise<Buffer>;
 }
+
+/** Arquivo pronto para sair (já conferido e guardado). */
+export interface MidiaParaEnviar { tipo: TipoMidia; mime: string; nome: string; base64: string; legenda: string }
+
+const TIPO_META: Record<TipoMidia, 'image' | 'video' | 'audio' | 'document'> = { imagem: 'image', video: 'video', audio: 'audio', documento: 'document' };
+
+/** Arquivo que o multer deixou em req.file. */
+interface ArquivoRecebido { buffer: Buffer; originalname?: string; mimetype?: string; size?: number }
 
 /**
  * Defesa extra contra envio forjado de outro site: quando o navegador manda
@@ -117,6 +143,7 @@ interface LeadEnvio { id: string; name: string | null; phone: string | null; opt
 
 export function criarRotasAtendimento(deps: DepsAtendimento) {
   const limite = deps.limite ?? new LimiteDeEnvio();
+  const semCache = (res: Response) => { if (typeof res.setHeader === 'function') res.setHeader('Cache-Control', 'private, no-store'); };
   const agora = deps.agora ?? (() => Date.now());
   const banco = deps.banco ?? ((req: AuthedRequest) => bancoDoOperador(req, deps.supabase));
   /** Respostas desta requisição saem em JSON (envio sem recarregar). */
@@ -226,7 +253,7 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     return { leadId, viewer, companyId, chave, db, lead, canal, via, instancia, telefone: telefone!, np };
   }
 
-  function depsComuns(ctx: NonNullable<Awaited<ReturnType<typeof preparar>>>, extra: { texto: string; modelo?: string }) {
+  function depsComuns(ctx: NonNullable<Awaited<ReturnType<typeof preparar>>>, extra: { texto: string; modelo?: string; midia?: { tipo: TipoMidia; caminho: string; mime: string; nome: string; bytes: number } }) {
     const { companyId, leadId, viewer, canal } = ctx;
     // Número pessoal: a linha é privada (visivel_so_para) e a RLS restritiva da
     // 138 esconde do crachá — grava/fecha com o client de serviço + filtro explícito.
@@ -236,7 +263,8 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
         company_id: companyId, lead_id: leadId, contato_telefone: ctx.telefone, contato_nome: ctx.lead.name,
         direcao: 'saida', autor: 'humano', user_id: viewer.id, autor_nome: (viewer.nome || '').slice(0, 80),
         canal, numero: ctx.via === 'evolution' ? ctx.instancia : null,
-        tipo: extra.modelo ? 'modelo' : 'texto', texto: extra.texto, modelo: extra.modelo ?? null,
+        tipo: extra.midia ? extra.midia.tipo : extra.modelo ? 'modelo' : 'texto', texto: extra.texto, modelo: extra.modelo ?? null,
+        ...(extra.midia ? { midia_caminho: extra.midia.caminho, midia_mime: extra.midia.mime, midia_nome: extra.midia.nome, midia_bytes: extra.midia.bytes } : {}),
         origem: 'painel', chave_envio: ctx.chave,
         // Número pessoal: só o dono vê o que ele mandou por lá.
         ...(ctx.np ? { visivel_so_para: viewer.id } : {}),
@@ -252,17 +280,17 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
         if (ctx.np) {
           await registrarAtividade(ctx.db, {
             company_id: companyId, lead_id: leadId, tipo: 'whatsapp',
-            titulo: 'Mensagem enviada pelo WhatsApp pessoal', automatica: false, user_id: viewer.id,
+            titulo: extra.midia ? 'Arquivo enviado pelo WhatsApp pessoal' : 'Mensagem enviada pelo WhatsApp pessoal', automatica: false, user_id: viewer.id,
           });
-          await audit(ctx.db, { companyId, userId: viewer.id, entidade: 'lead', entidadeId: leadId, acao: 'whatsapp_enviado', campo: canal, valorNovo: 'texto' });
+          await audit(ctx.db, { companyId, userId: viewer.id, entidade: 'lead', entidadeId: leadId, acao: 'whatsapp_enviado', campo: canal, valorNovo: extra.midia ? extra.midia.tipo : 'texto' });
           return;
         }
         await registrarAtividade(db, {
           company_id: companyId, lead_id: leadId, tipo: 'whatsapp',
-          titulo: extra.modelo ? `Modelo enviado pelo painel (${extra.modelo})` : 'Mensagem enviada pelo painel',
+          titulo: extra.midia ? `Arquivo enviado pelo painel (${extra.midia.tipo})` : extra.modelo ? `Modelo enviado pelo painel (${extra.modelo})` : 'Mensagem enviada pelo painel',
           descricao: extra.texto.slice(0, 1000), automatica: false, user_id: viewer.id,
         });
-        await audit(db, { companyId, userId: viewer.id, entidade: 'lead', entidadeId: leadId, acao: 'whatsapp_enviado', campo: canal, valorNovo: extra.modelo ?? 'texto' });
+        await audit(db, { companyId, userId: viewer.id, entidade: 'lead', entidadeId: leadId, acao: 'whatsapp_enviado', campo: canal, valorNovo: extra.midia?.tipo ?? extra.modelo ?? 'texto' });
       },
     };
   }
@@ -303,6 +331,185 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     });
     console.log(`[atendimento] modelo ${modelo.nome} ${ctx.leadId.slice(0, 8)}: ${s.resultado}${s.erro ? ` — ${semTelefone(s.erro)}` : ''}`);
     voltar(res, ctx.leadId, s.resultado);
+  }
+
+  // -------------------------------------------------------------------------
+  // W1 — MÍDIA: enviar foto, PDF/documento, áudio e vídeo pelo painel
+  // -------------------------------------------------------------------------
+
+  /** Arquivo + legenda conferidos (antes de qualquer outra coisa). */
+  function lerArquivo(req: AuthedRequest): { ok: true; arq: ArquivoValidado; dados: Buffer; legenda: string } | { ok: false; motivo: string } {
+    const erroUpload = (req as unknown as { erroArquivo?: string }).erroArquivo;
+    if (erroUpload) return { ok: false, motivo: erroUpload };
+    const f = (req as unknown as { file?: ArquivoRecebido }).file;
+    if (!f || !Buffer.isBuffer(f.buffer) || f.buffer.length === 0) return { ok: false, motivo: 'sem_arquivo' };
+    const legenda = String(req.body?.legenda ?? '').replace(/\r\n/g, '\n').trim();
+    if (legenda.length > LIMITE_LEGENDA) return { ok: false, motivo: 'legenda_longa' };
+    const v = validarArquivo({ nome: f.originalname, mime: f.mimetype, dados: f.buffer });
+    if (!v.ok) return { ok: false, motivo: v.motivo === 'grande_demais' ? 'arquivo_grande' : v.motivo === 'vazio' ? 'sem_arquivo' : 'arquivo_invalido' };
+    return { ok: true, arq: v, dados: f.buffer, legenda };
+  }
+
+  /** Gravação do navegador (WebM) → OGG/Opus. Falhou/sem conversor → null. */
+  async function prepararAudio(a: ArquivoValidado, dados: Buffer): Promise<{ arq: ArquivoValidado; dados: Buffer } | null> {
+    if (!a.precisaConverter) return { arq: a, dados };
+    if (!deps.converterAudio) return null;
+    try {
+      const ogg = await deps.converterAudio(dados);
+      const nome = a.nome.replace(/\.[^.]+$/, '') + '.ogg';
+      const v = validarArquivo({ nome, mime: 'audio/ogg', dados: ogg });
+      return v.ok ? { arq: v, dados: ogg } : null;
+    } catch (e) {
+      console.warn(`[atendimento] gravação não converteu: ${(e as Error).message}`);
+      return null;
+    }
+  }
+
+  /** Manda o arquivo pelo canal certo (Meta por id / Evolution em base64). */
+  function enviarArquivo(p: { via: ViaEnvio; instancia: string | null; companyId: string; telefone: string; pessoal: boolean }, arq: ArquivoValidado, dados: Buffer, legenda: string): Promise<{ messageId?: string } | void> {
+    if (p.via === 'waba' && !p.pessoal) {
+      const w = deps.waba;
+      if (!w?.uploadMedia || !w.sendMediaById) return Promise.reject(new Error('envio de mídia pela Meta não configurado'));
+      return w.uploadMedia(dados, arq.mime, arq.nome)
+        .then(({ mediaId }) => w.sendMediaById!(p.telefone, TIPO_META[arq.tipo], mediaId, { caption: legenda || undefined, filename: arq.nome }));
+    }
+    const inst = p.instancia;
+    const enviar = deps.enviarMidiaEvolution;
+    if (!enviar || !inst) return Promise.reject(new Error('envio de mídia pela Evolution não configurado'));
+    const m: MidiaParaEnviar = { tipo: arq.tipo, mime: arq.mime, nome: arq.nome, base64: dados.toString('base64'), legenda };
+    // Tenant: dentro do canal DA EMPRESA (nunca pelo número de outra). Pessoal: o index roda na instância do dono.
+    return p.pessoal
+      ? enviar(inst, p.companyId, p.telefone, m)
+      : noCanalDaEmpresa(p.companyId, inst, () => enviar(inst, p.companyId, p.telefone, m));
+  }
+
+  /**
+   * Multipart do painel: UM arquivo, em memória, até 16 MB (+ folga). Erro do
+   * upload (grande demais, campo a mais) não derruba: vira o motivo e a rota
+   * responde como qualquer outro envio recusado.
+   */
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: LIMITE_MIDIA_BYTES + 1024, files: 1, fields: 8, fieldSize: 8 * 1024 } }).single('arquivo');
+  const comArquivo = (fn: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response): void => {
+    upload(req, res, (err?: unknown) => {
+      if (err) {
+        const code = (err as { code?: string }).code;
+        (req as unknown as { erroArquivo?: string }).erroArquivo = code === 'LIMIT_FILE_SIZE' ? 'arquivo_grande' : 'arquivo_invalido';
+      }
+      void fn(req, res).catch((e) => {
+        console.warn(`[atendimento] envio de arquivo quebrou: ${(e as Error).message}`);
+        if (!res.headersSent) falha(res, 500, 'erro ao enviar o arquivo');
+      });
+    });
+  };
+
+  /** Envio que não chegou a sair por causa da chave/banco: o arquivo guardado à toa sai do bucket. */
+  const naoSaiu = (resultado: string) => resultado === 'duplicado' || resultado === 'ja_falhou' || resultado === 'erro_banco';
+
+  /** POST /leads/:id/responder-midia — arquivo (multipart). Número da Eva: só na janela de 24 h. */
+  async function responderMidia(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    const leadId = String(r.params.id ?? '');
+    if (!UUID_RE.test(leadId)) { falha(res, 400, 'id inválido'); return; }
+    const a = lerArquivo(r);
+    if (!a.ok) { voltar(res, leadId, a.motivo); return; }
+    const ctx = await preparar(r, res, 'texto');
+    if (!ctx) return;
+    const pronto = await prepararAudio(a.arq, a.dados);
+    if (!pronto) { voltar(res, leadId, 'audio_invalido', ctx.canal); return; }
+    const { arq, dados } = pronto;
+    // Sem guardar, não sai: o arquivo fica no bucket privado ANTES do envio.
+    const g = await guardarMidia(deps.supabase, { companyId: ctx.companyId, dados, mime: arq.mime, ext: arq.ext });
+    if (!g.ok) { console.warn(`[atendimento] arquivo não guardado: ${g.erro}`); voltar(res, leadId, 'erro_arquivo', ctx.canal); return; }
+    const texto = textoDaMidia(arq.tipo, a.legenda, arq.nome);
+    const s = await enviarDoPainel({
+      ...depsComuns(ctx, { texto, midia: { tipo: arq.tipo, caminho: g.caminho, mime: arq.mime, nome: arq.nome, bytes: arq.bytes } }),
+      enviar: () => enviarArquivo({ via: ctx.via, instancia: ctx.instancia, companyId: ctx.companyId, telefone: ctx.telefone, pessoal: !!ctx.np }, arq, dados, a.legenda),
+    });
+    if (naoSaiu(s.resultado)) await apagarMidia(deps.supabase, g.caminho);
+    console.log(`[atendimento] arquivo (${arq.tipo}) ${ctx.leadId.slice(0, 8)} por ${ctx.np ? 'numero_pessoal' : ctx.via} (${ctx.viewer.id.slice(0, 8)}): ${s.resultado}${s.erro ? ` — ${semTelefone(s.erro)}` : ''}`);
+    voltar(res, ctx.leadId, s.resultado, ctx.canal);
+  }
+
+  /** POST /leads/conversas/contato/responder-midia — arquivo pelo número pessoal, pra quem ainda não é lead. */
+  async function responderContatoMidia(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    const viewer = r.dashUser;
+    const telefone = normalizeBrazilianPhone(String(r.body?.telefone ?? ''));
+    if (!viewer?.companyId || !telefone) { falha(res, 404, 'conversa não encontrada'); return; }
+    if (!mesmaOrigem(r)) { falha(res, 403, 'origem não permitida'); return; }
+    const companyId = viewer.companyId;
+    if (!chaveValida(r.body?.chave)) { voltarContato(res, telefone, 'chave_invalida'); return; }
+    const a = lerArquivo(r);
+    if (!a.ok) { voltarContato(res, telefone, a.motivo); return; }
+    const np = await pessoalDe(companyId, viewer.id);
+    if (!np) { voltarContato(res, telefone, 'sem_canal'); return; }
+    // Só responde quem já conversou com ESTE dono no número pessoal.
+    const conversa = await mensagensPessoais(deps.supabase, companyId, viewer.id, { telefone }, 1);
+    if (conversa.length === 0) { falha(res, 404, 'conversa não encontrada'); return; }
+    const chave = String(r.body.chave);
+    const jaUsada = await statusDaChave(deps.supabase, companyId, chave);
+    if (jaUsada) { voltarContato(res, telefone, jaUsada === 'falhou' ? 'ja_falhou' : 'duplicado'); return; }
+    if (!limite.permitir(viewer.id, `${companyId}:${telefone}`, agora())) { voltarContato(res, telefone, 'limite'); return; }
+    const pronto = await prepararAudio(a.arq, a.dados);
+    if (!pronto) { voltarContato(res, telefone, 'audio_invalido'); return; }
+    const { arq, dados } = pronto;
+    const g = await guardarMidia(deps.supabase, { companyId, dados, mime: arq.mime, ext: arq.ext });
+    if (!g.ok) { voltarContato(res, telefone, 'erro_arquivo'); return; }
+    const leadDoContato = await leadDoTelefoneNaEmpresa(deps.supabase, companyId, telefone).catch(() => null);
+    const s = await enviarDoPainel({
+      reservar: () => reservarEnvio(deps.supabase, {
+        company_id: companyId, lead_id: leadDoContato?.id ?? null, contato_telefone: telefone, contato_nome: conversa[0]?.contato_nome ?? null,
+        direcao: 'saida', autor: 'humano', user_id: viewer.id, autor_nome: (viewer.nome || '').slice(0, 80),
+        canal: 'whatsapp_business', numero: np.instancia, tipo: arq.tipo, texto: textoDaMidia(arq.tipo, a.legenda, arq.nome),
+        midia_caminho: g.caminho, midia_mime: arq.mime, midia_nome: arq.nome, midia_bytes: arq.bytes,
+        origem: 'painel', chave_envio: chave, visivel_so_para: viewer.id,
+      }),
+      concluir: (id, x) => concluirEnvio(deps.supabase, id, companyId, x),
+      enviar: () => enviarArquivo({ via: 'evolution', instancia: np.instancia, companyId, telefone, pessoal: true }, arq, dados, a.legenda),
+    });
+    if (naoSaiu(s.resultado)) await apagarMidia(deps.supabase, g.caminho);
+    console.log(`[atendimento] numero pessoal → contato, arquivo ${arq.tipo} (${viewer.id.slice(0, 8)}): ${s.resultado}${s.erro ? ` — ${semTelefone(s.erro)}` : ''}`);
+    voltarContato(res, telefone, s.resultado);
+  }
+
+  /**
+   * GET /leads/midia/:id — ver/baixar o arquivo de uma mensagem. LGPD: só quem
+   * vê a conversa (empresa da sessão; conversa pessoal só o dono; lead de outro
+   * vendedor não). Responde com um redirecionamento para URL assinada de 2 min.
+   */
+  async function midia(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    semCache(res);
+    const id = String(r.params?.id ?? '');
+    if (!UUID_RE.test(id)) { res.status(400).send('id inválido'); return; }
+    const viewer = r.dashUser;
+    if (!viewer?.companyId) { res.status(404).send('arquivo não encontrado'); return; }
+    const companyId = viewer.companyId;
+    try {
+      const { data, error } = await deps.supabase.from('mensagens_whatsapp')
+        .select('id, company_id, lead_id, visivel_so_para, tipo, midia_caminho, midia_nome')
+        .eq('id', id).eq('company_id', companyId).maybeSingle();
+      const l = data as { lead_id: string | null; visivel_so_para: string | null; tipo: string; midia_caminho: string | null; midia_nome: string | null } | null;
+      if (error || !l || !l.midia_caminho || !linhaVisivelPara(l, viewer.id) || !caminhoDaEmpresa(l.midia_caminho, companyId)) {
+        res.status(404).send('arquivo não encontrado'); return;
+      }
+      if (l.lead_id) {
+        const base = deps.supabase.from('leads').select('id, claimed_by, company_id').eq('id', l.lead_id);
+        const { data: lead } = await (companyId === EMPRESA_CASA ? base.or(`company_id.eq.${EMPRESA_CASA},company_id.is.null`) : base.eq('company_id', companyId)).maybeSingle();
+        if (!lead || !podeVerLead(viewer, lead as { claimed_by: string | null })) { res.status(404).send('arquivo não encontrado'); return; }
+      } else if (!l.visivel_so_para) {
+        res.status(404).send('arquivo não encontrado'); return;
+      }
+      const baixar = String(r.query?.baixar ?? '') === '1';
+      const ext = l.midia_caminho.split('.').pop() ?? 'bin';
+      const url = await urlDaMidia(deps.supabase, l.midia_caminho, baixar ? { baixarComo: l.midia_nome || `arquivo.${ext}` } : {});
+      if (!url) { res.status(404).send('arquivo não encontrado'); return; }
+      if (typeof res.setHeader === 'function') res.setHeader('Referrer-Policy', 'no-referrer');
+      res.redirect(302, url);
+    } catch (e) {
+      console.warn(`[atendimento] mídia ${id.slice(0, 8)} falhou: ${(e as Error).message}`);
+      res.status(500).send('erro ao abrir o arquivo');
+    }
   }
 
   /** POST /leads/:id/pause-eva — "✋ Assumir" (o mesmo estado do botão do WhatsApp). */
@@ -499,7 +706,6 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
   // `assinatura` evita mandar tudo de novo quando nada mudou.
   // -------------------------------------------------------------------------
 
-  const semCache = (res: Response) => { if (typeof res.setHeader === 'function') res.setHeader('Cache-Control', 'no-store'); };
 
   /** GET /leads/:id/conversa.json — mesmos portões da tela do lead (trava de empresa no router + aqui). */
   async function conversaJson(req: Request, res: Response): Promise<void> {
@@ -557,5 +763,8 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
   return {
     responder: comJson(responder), responderModelo: comJson(responderModelo), assumir, devolver, envioDaTela, modelos, contatoDaTela,
     responderContato: comJson(responderContato), virarLeadDoContato, nomeDoDonoPessoal, conversaJson, contatoJson,
+    responderMidia: comJson(responderMidia), responderContatoMidia: comJson(responderContatoMidia), midia,
+    /** Para o router: multer + handler (o arquivo chega em req.file). */
+    comArquivo,
   };
 }

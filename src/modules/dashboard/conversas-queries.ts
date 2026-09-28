@@ -37,6 +37,24 @@ export interface MensagemChat {
   painelId?: string | null;
   /** De onde saiu a mensagem da equipe: 'painel' ou 'celular' (número pessoal). */
   origem?: string | null;
+  /** W1: arquivo guardado (id = linha de mensagens_whatsapp; a tela pede /leads/midia/:id). */
+  midia?: MidiaChat;
+  /** W1: áudio — o que a IA entendeu (fica embaixo do player). */
+  transcricao?: string | null;
+}
+
+export interface MidiaChat { id: string; tipo: 'imagem' | 'video' | 'audio' | 'documento'; mime: string | null; nome: string | null; bytes: number | null }
+
+const TIPOS_MIDIA = new Set(['imagem', 'video', 'audio', 'documento']);
+
+/** Arquivo da linha (só quando foi guardado). PURA. */
+function midiaDaLinha(l: LinhaMensagemWhatsapp): Pick<MensagemChat, 'midia' | 'transcricao'> {
+  const out: Pick<MensagemChat, 'midia' | 'transcricao'> = {};
+  if (l.midia_caminho && TIPOS_MIDIA.has(l.tipo)) {
+    out.midia = { id: l.id, tipo: l.tipo as MidiaChat['tipo'], mime: l.midia_mime ?? null, nome: l.midia_nome ?? null, bytes: l.midia_bytes ?? null };
+  }
+  if (l.transcricao) out.transcricao = l.transcricao;
+  return out;
 }
 
 export interface ConversaResumo {
@@ -368,7 +386,7 @@ export function linhaDoPainelParaChat(l: LinhaMensagemWhatsapp): MensagemChat | 
   const texto = (l.texto ?? '').trim() || (l.modelo ? `[modelo ${l.modelo}]` : '');
   if (!texto) return null;
   if (l.direcao === 'entrada') {
-    return { role: 'user', content: texto, timestamp: l.criado_em, autor: 'cliente', canal: l.canal, autorNome: l.contato_nome };
+    return { role: 'user', content: texto, timestamp: l.criado_em, autor: 'cliente', canal: l.canal, autorNome: l.contato_nome, ...midiaDaLinha(l) };
   }
   // Reserva que ficou "enviando" (processo caiu no meio): não fica "enviando…" pra sempre.
   const velha = l.status === 'enviando' && Date.now() - Date.parse(l.criado_em) > 5 * 60_000;
@@ -376,7 +394,40 @@ export function linhaDoPainelParaChat(l: LinhaMensagemWhatsapp): MensagemChat | 
     role: 'assistant', content: texto, timestamp: l.enviada_em ?? l.criado_em,
     autor: l.autor === 'eva' ? 'eva' : 'humano', autorNome: l.autor_nome, canal: l.canal,
     status: velha ? 'sem_confirmacao' : l.status, modelo: l.modelo, painelId: l.id, origem: l.origem,
+    ...midiaDaLinha(l),
   };
+}
+
+/** Como a Eva registra a mídia na memória dela ("[Enviou uma foto]", "[áudio] …", o vídeo longo). */
+const COPIA_DE_MIDIA = /^\[(Enviou uma foto|Enviou um PDF|imagem|áudio|audio|vídeo|video|documento|Cliente enviou um V[IÍ]DEO)/i;
+const JANELA_COPIA_MS = 10 * 60_000;
+
+/**
+ * Mídia que chegou no número da ASSISTENTE fica em mensagens_whatsapp (com o
+ * arquivo) E na memória da Eva (marcador ou a transcrição do áudio, como texto
+ * do cliente). No chat vale a do painel: some a cópia da Eva — a 1ª mensagem do
+ * cliente logo depois (até 10 min) que é marcador ou a mesma transcrição. PURA.
+ */
+export function semCopiaDaMidia(conversa: MensagemChat[], painel: LinhaMensagemWhatsapp[]): MensagemChat[] {
+  const midias = painel
+    .filter((l) => l.direcao === 'entrada' && l.canal !== 'whatsapp_business' && TIPOS_MIDIA.has(l.tipo))
+    .sort((a, b) => String(a.criado_em).localeCompare(String(b.criado_em)));
+  if (midias.length === 0) return conversa;
+  const tirar = new Set<number>();
+  for (const l of midias) {
+    const t0 = Date.parse(l.criado_em);
+    if (!Number.isFinite(t0)) continue;
+    const transc = (l.transcricao ?? '').trim();
+    const i = conversa.findIndex((m, k) => {
+      if (tirar.has(k) || m.role !== 'user' || !m.timestamp) return false;
+      const t = Date.parse(m.timestamp);
+      if (!Number.isFinite(t) || t < t0 - 60_000 || t > t0 + JANELA_COPIA_MS) return false;
+      const c = m.content.trim();
+      return COPIA_DE_MIDIA.test(c) || (!!transc && c === transc);
+    });
+    if (i >= 0) tirar.add(i);
+  }
+  return tirar.size ? conversa.filter((_, k) => !tirar.has(k)) : conversa;
 }
 
 /**
@@ -387,7 +438,7 @@ export function linhaDoPainelParaChat(l: LinhaMensagemWhatsapp): MensagemChat | 
 export function juntarComPainel(conversa: MensagemChat[], painel: LinhaMensagemWhatsapp[], canalDaEva: CanalConversa): MensagemChat[] {
   const doPainel = painel.map(linhaDoPainelParaChat).filter((m): m is MensagemChat => !!m);
   const idsPainel = new Set(painel.map((l) => l.id));
-  const daEva = conversa
+  const daEva = semCopiaDaMidia(conversa, painel)
     .filter((m) => !(m.painelId && idsPainel.has(m.painelId)))
     .map((m) => ({
       ...m,

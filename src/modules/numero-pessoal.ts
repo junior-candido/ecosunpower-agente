@@ -22,8 +22,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { IncomingMessage } from './evolution.js';
 import { normalizeBrazilianPhone } from './meta-leadgen.js';
 import { variantesTelefone } from './phone.js';
-import { gravarMensagem, type LinhaMensagemWhatsapp } from './mensagens-whatsapp.js';
+import { gravarMensagem, type LinhaMensagemWhatsapp, type NovaMensagem } from './mensagens-whatsapp.js';
 import { assumirAtendimento } from './assumir-atendimento.js';
+import { arquivarMidiaRecebida, TIPO_DA_ENTRADA } from './midia-whatsapp.js';
 
 export const CASA = '00000000-0000-0000-0000-000000000001';
 const TTL_MS = 60_000;
@@ -113,10 +114,11 @@ const MARCADOR: Partial<Record<IncomingMessage['type'], string>> = {
 };
 
 /** O que fica escrito no histórico. Mídia vira marcador (+ legenda). PURA. */
-export function textoDaEntrada(msg: Pick<IncomingMessage, 'type' | 'content' | 'caption'>): string {
+export function textoDaEntrada(msg: Pick<IncomingMessage, 'type' | 'content' | 'caption'> & { nomeArquivo?: string }): string {
   if (msg.type === 'text') return (msg.content ?? '').trim();
   const marcador = MARCADOR[msg.type] ?? '';
-  const legenda = (msg.caption ?? '').trim();
+  // Documento sem legenda: o nome do arquivo (igual ao que o painel grava ao enviar).
+  const legenda = (msg.caption ?? '').trim() || (msg.type === 'document' ? (msg.nomeArquivo ?? '').trim() : '');
   return legenda ? `${marcador} ${legenda}` : marcador;
 }
 
@@ -128,6 +130,16 @@ export function horaDaMensagem(ts: Date | undefined, agora = Date.now()): string
 }
 
 export type ResultadoPessoal = 'gravada' | 'eco' | 'duplicada' | 'ignorada' | 'falhou';
+
+/** W1: só baixa mídia recente (ao reconectar, a Evolution reentrega dias de mensagens). */
+export const JANELA_BAIXAR_MIDIA_MS = 24 * 60 * 60 * 1000;
+
+export interface OpcoesPessoal {
+  /** Baixa a mídia desta mensagem pela instância do dono (Evolution). Ausente = só o marcador. */
+  baixarMidia?: (msg: IncomingMessage) => Promise<{ base64: string; mimetype: string } | null>;
+  /** Transcreve o áudio (fica embaixo do player). */
+  transcrever?: (base64: string, mime: string) => Promise<string | null>;
+}
 
 /**
  * Mensagem que chegou (ou saiu do celular) no número pessoal: GRAVA e pronto.
@@ -141,6 +153,7 @@ export async function receberNoNumeroPessoal(
   np: NumeroPessoal,
   msg: IncomingMessage,
   agora = Date.now(),
+  opcoes: OpcoesPessoal = {},
 ): Promise<ResultadoPessoal> {
   if (msg.deGrupo) return 'ignorada';
   const telefone = normalizeBrazilianPhone(msg.from ?? '');
@@ -173,7 +186,7 @@ export async function receberNoNumeroPessoal(
     }
 
     const lead = await leadDoTelefoneNaEmpresa(client, np.company_id, telefone).catch(() => null);
-    const r = await gravarMensagem(client, {
+    const linha: NovaMensagem & { criado_em?: string } = {
       company_id: np.company_id,
       lead_id: lead?.id ?? null,
       contato_telefone: telefone,
@@ -194,7 +207,22 @@ export async function receberNoNumeroPessoal(
       // Hora da MENSAGEM (não a da gravação): ao reconectar, o WhatsApp reentrega
       // mensagens antigas pelo tempo real — elas ficam na ordem certa.
       ...(horaDaMensagem(msg.timestamp, agora) ? { criado_em: horaDaMensagem(msg.timestamp, agora)! } : {}),
-    });
+    };
+    // W1: foto/áudio/vídeo/documento RECENTE → o arquivo vai para o bucket (só o dono vê).
+    const tipoMidia = TIPO_DA_ENTRADA[msg.type];
+    const recente = agora - new Date(msg.timestamp ?? agora).getTime() < JANELA_BAIXAR_MIDIA_MS;
+    let r: { ok: boolean; duplicada?: boolean };
+    if (tipoMidia && recente && opcoes.baixarMidia) {
+      const a = await arquivarMidiaRecebida(client, {
+        baixar: () => opcoes.baixarMidia!(msg),
+        linha: { ...linha, tipo: tipoMidia },
+        legenda: msg.caption ?? '', nomeArquivo: msg.nomeArquivo ?? null,
+        transcrever: opcoes.transcrever,
+      });
+      r = { ok: a !== 'falhou', duplicada: a === 'duplicada' };
+    } else {
+      r = await gravarMensagem(client, linha);
+    }
     if (!r.ok) return 'falhou';
     if (r.duplicada) return 'duplicada';
     // Mensagens antigas deste contato (de antes de ele virar lead) passam pro lead.
