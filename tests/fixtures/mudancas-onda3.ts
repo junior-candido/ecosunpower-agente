@@ -51,6 +51,32 @@ export const MUDANCAS_R15: Record<string, MudancaContrato[]> = {
 // R16 — Clientes
 // ════════════════════════════════════════════════════════════════════════
 
+/** CONSERTO (R16): o botão "Vincular cliente" (sistemas sem cliente) montava
+ *  onclick="abrirVinculo('id','apelido')" com o apelido escapado para HTML —
+ *  o navegador desfaz o &#39; e um apóstrofo no nome da usina quebrava o JS
+ *  (e um nome malicioso rodava código). Agora id e nome vão em data-sistema /
+ *  data-apelido e o onclick lê this.dataset. Mesma função, mesmo modal. */
+export const R16_VINCULO_POR_DATASET: MudancaContrato = {
+  motivo: 'conserto: onclick do Vincular cliente quebrava com apóstrofo no nome da usina (e permitia injetar JS)',
+  entra: { dataAttrs: ['data-apelido', 'data-sistema'] },
+};
+
+/** Ficha do cliente: as abas viraram ÂNCORAS (todas as seções na página, em
+ *  duas colunas) — sai o script que escondia/mostrava "#abas a" e
+ *  "[id$=-content]". Bônus: os redirects do servidor (#dados, #anexos) agora
+ *  caem na seção certa (antes a aba Anexos ficava escondida). */
+export const R16_ABAS_POR_ANCORA: MudancaContrato = {
+  motivo: 'ficha do cliente com abas por âncora (sem o JS de esconder abas)',
+  sai: { ids: ['abas'], seletores: ['#abas a', '[id$="-content"]'] },
+};
+
+/** Ficha do cliente (tenant): a trilha "Clientes › nome" ganha link de volta
+ *  pra lista (a EcoSun já tinha o link no menu). */
+export const R16_TRILHA_LISTA: MudancaContrato = {
+  motivo: 'trilha da ficha com link de volta pra lista de clientes',
+  entra: { links: ['/dashboard/clientes'] },
+};
+
 
 // ════════════════════════════════════════════════════════════════════════
 // R17 — Marketing

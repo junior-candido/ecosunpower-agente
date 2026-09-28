@@ -50,6 +50,8 @@ export const TELAS_RENOVADAS: string[] = [
   'vincular-usinas-views.ts',
 
   // R16 — Clientes (lista, ficha, novo, relatório pós-instalação)
+  'clientes-views.ts',
+  'relatorio-pi-views.ts',
 
   // R17 — Marketing (campanhas, blog, e-mail, cadência)
 
