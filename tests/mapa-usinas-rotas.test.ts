@@ -148,6 +148,15 @@ describe('Localizar usinas sem posição', () => {
     expect(r2.statusCode).toBe(403);
   });
 
+  it('lista não carregou: diz "sem dado", nunca "todas no mapa"', async () => {
+    const { client } = bancoFalso(banco(), { erroEm: { sistemas_clientes: 'timeout' } });
+    const res = resFalso();
+    await rotaLocalizarPagina(client)(req(junior), res as unknown as Response);
+    expect(res.statusCode).toBe(503);
+    expect(String(res.corpo)).toContain('Sem dado agora');
+    expect(String(res.corpo)).not.toContain('já estão no mapa');
+  });
+
   it('POST por usina: grava e responde JSON; usina de outra empresa = 404', async () => {
     const b = banco();
     const { client } = bancoFalso(b);

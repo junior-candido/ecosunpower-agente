@@ -117,6 +117,8 @@ export interface LocalizarPageInput {
   user: DashUser | undefined;
   /** Colunas do mapa ainda não existem no banco. */
   migracaoPendente?: boolean;
+  /** A lista não carregou (nunca dizer "todas no mapa" sem ter conferido). */
+  falhou?: boolean;
 }
 
 const CSS_LOCALIZAR = `
@@ -149,6 +151,8 @@ export function renderLocalizarUsinasPage(p: LocalizarPageInput): string {
   let corpo: string;
   if (p.migracaoPendente) {
     corpo = estadoVazio({ tipo: 'sem_dado', titulo: 'Falta uma atualização do banco', texto: 'O banco ainda não tem onde guardar a posição das usinas (migration 145). Fale com o suporte.' });
+  } else if (p.falhou) {
+    corpo = estadoVazio({ tipo: 'sem_dado', titulo: 'Sem dado agora', texto: 'Não consegui ler a lista de usinas. Tente de novo em alguns minutos.' });
   } else if (!n) {
     corpo = estadoVazio({ tipo: 'vazio', titulo: 'Todas as usinas ativas já estão no mapa', texto: 'Se algum alfinete estiver no lugar errado, abra a usina e arraste o alfinete.' });
   } else {
@@ -166,7 +170,7 @@ export function renderLocalizarUsinasPage(p: LocalizarPageInput): string {
 
   const nota = `<p class="cc-nota">Como funciona: primeiro tenta o endereço do cliente (rua e número); se não achar, usa o centro da cidade e marca como <b>aproximada</b> — aí é só abrir a usina e arrastar o alfinete. A busca usa o OpenStreetMap (Nominatim), gratuito e com limite de uso: por isso vai devagar. Endereço de condomínio/chácara costuma cair no centro do bairro.</p>`;
 
-  const script = n && !p.migracaoPendente ? `<script>
+  const script = n && !p.migracaoPendente && !p.falhou ? `<script>
 (function () {
   var btn = document.querySelector('[data-acao="localizar-todas"]');
   var bar = document.querySelector('.cc-loc-bar i');

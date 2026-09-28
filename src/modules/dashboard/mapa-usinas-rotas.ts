@@ -95,7 +95,7 @@ export function rotaLocalizarPagina(supabase: SupabaseClient): Handler {
     } catch (err) {
       const faltaColuna = ehColunaFaltando({ message: (err as Error).message });
       if (!faltaColuna) console.error('[dashboard/mapa/localizar] lista falhou:', (err as Error).message);
-      res.status(faltaColuna ? 200 : 503).type('text/html').send(renderLocalizarUsinasPage({ pendentes: [], user, migracaoPendente: faltaColuna }));
+      res.status(faltaColuna ? 200 : 503).type('text/html').send(renderLocalizarUsinasPage({ pendentes: [], user, migracaoPendente: faltaColuna, falhou: !faltaColuna }));
     }
   };
 }
