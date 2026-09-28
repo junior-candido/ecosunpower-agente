@@ -33,6 +33,14 @@ export interface ContratoTela {
 
 const unicos = (xs: string[]): string[] => [...new Set(xs)].sort();
 
+/** O navegador decodifica entidades nos atributos: `&amp;` e `&` são o mesmo link. */
+export function decodificar(s: string): string {
+  return s.replace(/&(amp|quot|lt|gt|#0*39|#x0*27);/gi, (_, e: string) => {
+    const k = e.toLowerCase();
+    return k === 'amp' ? '&' : k === 'quot' ? '"' : k === 'lt' ? '<' : k === 'gt' ? '>' : "'";
+  });
+}
+
 /** Atributos de uma tag de abertura: nome (minúsculo) → valor (sem aspas). */
 export function atributosDe(tag: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -41,7 +49,7 @@ export function atributosDe(tag: string): Record<string, string> {
   let m: RegExpExecArray | null;
   while ((m = re.exec(corpo))) {
     const nome = m[1].toLowerCase();
-    if (!(nome in out)) out[nome] = m[2] ?? m[3] ?? m[4] ?? '';
+    if (!(nome in out)) out[nome] = decodificar(m[2] ?? m[3] ?? m[4] ?? '');
   }
   return out;
 }
@@ -110,7 +118,7 @@ export function contratoDaTela(html: string): ContratoTela {
     else if (!/application\/(ld\+)?json/i.test(a.type ?? '')) scripts.push(m[2]);
   }
   const reOn = /\son[a-z]+\s*=\s*("([^"]*)"|'([^']*)')/gi;
-  while ((m = reOn.exec(html))) scripts.push(m[2] ?? m[3] ?? '');
+  while ((m = reOn.exec(html))) scripts.push(decodificar(m[2] ?? m[3] ?? ''));
   const codigo = scripts.join('\n');
 
   const fetches: string[] = [];
@@ -144,7 +152,7 @@ export function contratoDaTela(html: string): ContratoTela {
 
   const links: string[] = [];
   const reHref = /href\s*=\s*["'](\/dashboard[^"']*)["']/g;
-  while ((m = reHref.exec(html))) links.push(m[1]);
+  while ((m = reHref.exec(html))) links.push(decodificar(m[1]));
 
   const idsU = unicos(ids);
   return {

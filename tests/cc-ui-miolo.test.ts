@@ -357,6 +357,12 @@ describe('contratoDaTela', () => {
     expect(contratoDaTela(trocada)).toEqual(contratoDaTela(pagina));
   });
 
+  it('entidade HTML no atributo (&amp;) é o mesmo link que & cru', () => {
+    const cru = contratoDaTela('<a href="/dashboard/leads?status=novo&q=a">x</a><button onclick="return confirm(\'Tem certeza?\')">y</button>');
+    const esc = contratoDaTela('<a href="/dashboard/leads?status=novo&amp;q=a">x</a><button onclick="return confirm(&#039;Tem certeza?&#039;)">y</button>');
+    expect(esc).toEqual(cru);
+  });
+
   it('mudar name, action ou confirm muda o contrato', () => {
     expect(contratoDaTela(pagina.replace('name="titulo"', 'name="title"'))).not.toEqual(contratoDaTela(pagina));
     expect(contratoDaTela(pagina.replace('/1/delete', '/1/apagar'))).not.toEqual(contratoDaTela(pagina));
