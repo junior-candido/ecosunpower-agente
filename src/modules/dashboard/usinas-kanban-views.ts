@@ -1,11 +1,29 @@
 // usinas-kanban-views.ts
-// Kanban de etapas da obra: colunas por etapa, cards arrastáveis (SortableJS via CDN).
+// Quadro de Obras: colunas por etapa, cards arrastáveis (SortableJS via CDN).
 // Arrastar um card pra outra coluna dispara POST /dashboard/usinas/:id/set-etapa-obra.
+//
+// Renovação do miolo, R15 (28/09/2026): colunas e cartões no padrão do Command
+// Center (ui/kanban.ts), tema escuro (D4), sem Tailwind. Faixa "Pipeline
+// técnico" com a contagem por etapa que o quadro já agrupa (+ média de dias na
+// etapa, feita com o mesmo número que o cartão já mostrava). Cartão com trilha
+// de etapas em miniatura e "dias na etapa" em atenção quando passa da média da
+// etapa (nenhum prazo novo — prazo é da fase F).
+// O que os scripts procuram continua igual: lista `.kanban-list` com data-etapa
+// + data-ordem, cartão `.kanban-card` com data-usina-id/data-apelido/data-busca,
+// `.kanban-check`, `.kanban-info`, `.kanban-count`, `.sel-todas`, os ids do
+// painel de contato (contato-…) e da barra de lote (lote-…), os 3 fetch e o CDN
+// pinado do Sortable. Celular: colunas com rolagem horizontal e encaixe (D7
+// ainda não decidida → sem "Mover para…" no cartão) e o painel de contato em
+// tela cheia.
 
 import { renderLayout, escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
 import { ETAPAS_USINA, ordemEtapa, type EtapaUsinaSlug } from '../usina-etapas.js';
 import { agruparUsinasPorEtapaObra } from '../monitoring/usinas-queries.js';
+import { cabecalhoPagina, cartaoSecao, faixaKpis, chip, botao, icone, estadoVazio, trilhaEtapas } from './ui/componentes.js';
+import { colunaKanban, cartaoKanban } from './ui/kanban.js';
+import { fmtNumero } from './ui/html.js';
+import { temaDaTela } from './ui/tema.js';
 
 export interface UsinaKanbanCard {
   id: string;
@@ -16,125 +34,216 @@ export interface UsinaKanbanCard {
   etapa_obra_updated_at: string | null;
 }
 
+/** Cor (token) de cada etapa da obra — a mesma das pílulas (ui/etapas.ts). */
 const COR_ETAPA: Record<EtapaUsinaSlug, string> = {
-  projeto:     'bg-sky-100 text-sky-800',
-  aprovacao:   'bg-violet-100 text-violet-800',
-  instalacao:  'bg-amber-100 text-amber-800',
-  vistoria:    'bg-orange-100 text-orange-800',
-  homologacao: 'bg-fuchsia-100 text-fuchsia-800',
-  operacao:    'bg-emerald-200 text-emerald-900',
+  projeto:     'var(--cc-info)',
+  aprovacao:   'var(--cc-et-qualificando)',
+  instalacao:  'var(--cc-warn)',
+  vistoria:    'var(--cc-watch)',
+  homologacao: 'var(--cc-et-qualificado)',
+  operacao:    'var(--cc-ok)',
 };
 
-function diasNaEtapa(updatedAt: string | null): string {
-  if (!updatedAt) return '';
-  const dias = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86_400_000);
-  if (dias === 0) return 'hoje';
-  if (dias === 1) return 'há 1 dia';
-  return `há ${dias} dias`;
+const ULTIMA_ETAPA = ETAPAS_USINA[ETAPAS_USINA.length - 1].slug;
+const ROTULOS_ETAPAS = ETAPAS_USINA.map((e) => e.label);
+
+/** Dias inteiros desde a última troca de etapa (null = sem data). */
+function diasNaEtapa(updatedAt: string | null): number | null {
+  if (!updatedAt) return null;
+  const t = new Date(updatedAt).getTime();
+  if (!Number.isFinite(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
 }
 
-function renderCard(u: UsinaKanbanCard): string {
-  const apelido = escapeHtml(u.apelido ?? 'Sem apelido');
-  const cidade = escapeHtml(u.cidade ?? '—');
-  const kwp = u.potencia_kwp != null ? `${u.potencia_kwp} kWp` : '—';
+function textoDias(d: number | null): string {
+  if (d === null) return '—';
+  return d === 0 ? 'hoje' : `${d} d`;
+}
+
+/** Casas decimais do kWp: as que o número tem (até 2) — 6,3 · 10,08 · 75. */
+function casasKwp(v: number): number {
+  if (Number.isInteger(v)) return 0;
+  return Math.abs(v * 10 - Math.round(v * 10)) < 1e-9 ? 1 : 2;
+}
+
+/** Média (arredondada) dos dias na etapa das obras que têm data; null se nenhuma. */
+function mediaDias(cards: UsinaKanbanCard[]): number | null {
+  const ds = cards.map((c) => diasNaEtapa(c.etapa_obra_updated_at)).filter((d): d is number => d !== null);
+  if (ds.length === 0) return null;
+  return Math.round(ds.reduce((s, d) => s + d, 0) / ds.length);
+}
+
+const CSS_OBRAS = `
+.cc-ob .cc-panel{margin-bottom:16px}
+.cc-ob .cc-ob-pipe .cc-kstrip{border:0;border-radius:0;background:transparent}
+.cc-ob-busca{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 10px;border:1px solid var(--cc-line-2);border-radius:10px;background:var(--cc-surface-2);color:var(--cc-muted)}
+.cc-ob-busca input{border:0;background:transparent;color:var(--cc-text);font:inherit;font-size:13px;width:180px;min-width:0;outline:none}
+.cc-ob-busca input::placeholder{color:var(--cc-faint)}
+.cc-ob-busca:focus-within{border-color:var(--cc-gold);box-shadow:0 0 0 3px var(--cc-gold-soft)}
+#btn-selecionar.cc-ob-on{background:var(--cc-gold-soft);border-color:var(--cc-gold);color:var(--cc-gold-2)}
+.cc-ob .cc-kb-col{--kb:var(--cc-off)}
+@media (min-width:761px){.cc-ob .cc-kb{gap:10px}.cc-ob .cc-kb-col{flex:1 1 0;min-width:158px}}
+.cc-ob .cc-kb-card-m{display:block}
+.cc-ob-l1{display:flex;align-items:center;gap:6px;min-width:0}
+.cc-ob-loc{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cc-ob-dias{flex:none;font-family:var(--cc-f-num);font-size:11px;color:var(--cc-faint)}
+.cc-ob-dias.cc-ob-parada{color:var(--cc-warn);font-weight:700}
+.cc-ob-info{flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:1px solid var(--cc-line);border-radius:8px;background:transparent;color:var(--cc-muted);cursor:pointer;padding:0}
+.cc-ob-info:hover{color:var(--cc-gold-2);border-color:var(--cc-gold)}
+.cc-ob-info svg{pointer-events:none}
+.cc-ob .kanban-check{display:none;flex:none;margin:0;accent-color:var(--cc-gold);width:16px;height:16px}
+.modo-selecao .cc-ob .kanban-check{display:inline-block}
+.cc-ob .sel-todas{display:none;border:0;background:transparent;color:var(--cc-gold-2);font-size:11px;cursor:pointer;padding:0 2px}
+.modo-selecao .cc-ob .sel-todas{display:inline}
+.cc-ob-l2{display:flex;align-items:center;gap:8px;margin-top:6px}
+.cc-ob-trl{flex:1;min-width:0}
+.cc-ob-trl .cc-trl li{padding-top:0;height:9px;font-size:0}
+.cc-ob-trl .cc-trl li::before{top:0;width:7px;height:7px;border-width:1px}
+.cc-ob-trl .cc-trl li::after{top:3px;height:1.5px}
+.cc-ob-trl .cc-trl li.cc-trl-atual::before{box-shadow:0 0 0 2px var(--cc-gold-soft)}
+.cc-ob-trl .cc-trl span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.cc-ob .sortable-ghost{opacity:.4}
+.cc-ob .hidden,.cc-ob-overlay.hidden,.cc-ob-drawer.hidden{display:none!important}
+.cc-ob-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60}
+.cc-ob-drawer{position:fixed;top:0;right:0;height:100%;width:340px;max-width:92vw;z-index:61;display:flex;flex-direction:column;background:var(--cc-surface);border-left:1px solid var(--cc-line-2);box-shadow:-12px 0 32px rgba(0,0,0,.35)}
+.cc-ob-drawer-h{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--cc-line)}
+.cc-ob-drawer-h h2{flex:1;min-width:0;font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cc-ob-fechar{border:0;background:transparent;color:var(--cc-muted);font-size:26px;line-height:1;cursor:pointer;padding:0 4px}
+.cc-ob-fechar:hover{color:var(--cc-text)}
+.cc-ob-corpo{padding:16px;overflow-y:auto;flex:1;font-size:13.5px;color:var(--cc-text-2)}
+.cc-ob-campo{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--cc-line)}
+.cc-ob-rot{flex:none;width:72px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--cc-faint);font-weight:600}
+.cc-ob-val{flex:1;min-width:0;overflow-wrap:anywhere;color:var(--cc-text)}
+.cc-ob-nada{color:var(--cc-muted);font-style:italic;padding:8px 0}
+.cc-ob-link{display:inline-flex;margin-top:16px;color:var(--cc-gold-2);font-weight:600}
+.cc-ob-link:hover{text-decoration:underline}
+.cc-ob-erro{color:var(--cc-crit)}
+.cc-ob-lote{position:fixed;left:0;right:0;bottom:0;z-index:55;display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:10px 16px;background:var(--cc-surface-3);border-top:1px solid var(--cc-line-2);box-shadow:0 -8px 24px rgba(0,0,0,.35)}
+.cc-ob-lote-n{font-weight:600;color:var(--cc-text)}
+.cc-ob-lote select{height:36px;padding:0 10px;border:1px solid var(--cc-line-2);border-radius:10px;background:var(--cc-surface-2);color:var(--cc-text);font:inherit;font-size:14px;max-width:100%}
+@media (max-width:760px){
+  .cc-ob-busca{width:100%}
+  .cc-ob-busca input{width:100%;font-size:16px}
+  .cc-ob-drawer{width:100%;max-width:100%;border-left:0}
+  .cc-ob-lote select{flex:1 1 100%;font-size:16px;height:44px}
+}
+`;
+
+function renderCard(u: UsinaKanbanCard, media: number | null): string {
+  const apelido = u.apelido ?? 'Sem apelido';
+  const cidade = u.cidade ?? '—';
+  const kwp = u.potencia_kwp != null ? `${fmtNumero(u.potencia_kwp, casasKwp(u.potencia_kwp))} kWp` : '—';
   const dias = diasNaEtapa(u.etapa_obra_updated_at);
-  const busca = escapeHtml(`${u.apelido ?? ''} ${u.cidade ?? ''}`.toLowerCase());
-  return `
-    <div class="kanban-card bg-white border border-slate-200 rounded-md px-2 py-1.5 shadow-sm cursor-grab hover:shadow-md hover:border-indigo-300 transition"
-         data-usina-id="${escapeHtml(u.id)}" data-apelido="${apelido}" data-busca="${busca}" title="${apelido} · ${cidade}">
-      <div class="flex items-center justify-between gap-1">
-        <input type="checkbox" title="Selecionar" data-usina-id="${escapeHtml(u.id)}"
-               class="kanban-check hidden flex-shrink-0 accent-indigo-600">
-        <a href="/dashboard/monitoramento/${escapeHtml(u.id)}" draggable="false"
-           class="font-medium text-slate-800 hover:text-indigo-600 text-xs leading-tight truncate flex-1">${apelido}</a>
-        <button type="button" draggable="false" title="Ver contato"
-                class="kanban-info flex-shrink-0 text-slate-400 hover:text-indigo-600 text-xs leading-none px-0.5"
-                data-usina-id="${escapeHtml(u.id)}" data-apelido="${apelido}">ℹ️</button>
-        ${dias ? `<span class="text-[9px] text-slate-400 flex-shrink-0">${dias}</span>` : ''}
-      </div>
-      <div class="text-[10px] text-slate-400 mt-0.5">${cidade} · ${kwp}</div>
-    </div>`;
+  // "Parada": passou da média da etapa (a mesma do Pipeline técnico). A última
+  // etapa (Operação) não é obra parada. Nenhum prazo novo.
+  const parada = dias !== null && media !== null && dias > media && u.etapa_obra !== ULTIMA_ETAPA;
+  const id = escapeHtml(u.id);
+  const indice = ETAPAS_USINA.findIndex((e) => e.slug === u.etapa_obra);
+  const meta = `<div class="cc-ob-l1">`
+    + `<input type="checkbox" title="Selecionar" class="kanban-check" data-usina-id="${id}">`
+    + `<span class="cc-ob-loc">${escapeHtml(cidade)} · ${escapeHtml(kwp)}</span>`
+    + `<span class="cc-ob-dias${parada ? ' cc-ob-parada' : ''}" title="dias nesta etapa">${escapeHtml(textoDias(dias))}</span>`
+    + `</div>`
+    + `<div class="cc-ob-l2"><div class="cc-ob-trl">${trilhaEtapas(ROTULOS_ETAPAS, indice)}</div>`
+    + `<button type="button" draggable="false" title="Ver contato" aria-label="Ver contato" class="cc-ob-info kanban-info" data-usina-id="${id}" data-apelido="${escapeHtml(apelido)}">${icone('contact', 'xs')}</button>`
+    + `</div>`;
+  return cartaoKanban({
+    classe: 'kanban-card',
+    dados: { 'usina-id': u.id, apelido, busca: `${u.apelido ?? ''} ${u.cidade ?? ''}`.toLowerCase() },
+    titulo: apelido,
+    href: `/dashboard/monitoramento/${u.id}`,
+    tom: parada ? 'atencao' : undefined,
+    metaHtml: meta,
+    dica: `${apelido} · ${cidade}`,
+  });
+}
+
+/** Coluna do quadro: a de ui/kanban.ts + os ganchos do script (contagem e "todas"). */
+function colunaObra(etapa: (typeof ETAPAS_USINA)[number], cards: UsinaKanbanCard[], media: number | null): string {
+  const html = colunaKanban({
+    titulo: etapa.label,
+    contagem: cards.length,
+    cor: COR_ETAPA[etapa.slug],
+    classeColuna: 'kanban-col',
+    dadosColuna: { etapa: etapa.slug },
+    classeLista: 'kanban-list',
+    dados: { etapa: etapa.slug, ordem: ordemEtapa(etapa.slug) },
+    cartoesHtml: cards.map((c) => renderCard(c, media)).join(''),
+    vazio: 'vazio',
+  });
+  const todas = `<button type="button" class="sel-todas" data-etapa="${escapeHtml(etapa.slug)}">todas</button>`;
+  return html.replace('<span class="cc-kb-n">', `${todas}<span class="cc-kb-n kanban-count">`);
 }
 
 export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUser): string {
   const grupos = agruparUsinasPorEtapaObra(usinas);
+  const medias = Object.fromEntries(ETAPAS_USINA.map((e) => [e.slug, mediaDias(grupos[e.slug])])) as Record<EtapaUsinaSlug, number | null>;
 
-  const colunas = ETAPAS_USINA.map((etapa) => {
-    const cards = grupos[etapa.slug];
-    const cor = COR_ETAPA[etapa.slug];
-    const cardsHtml = cards.map(renderCard).join('')
-      || `<div class="text-[11px] text-slate-400 italic py-3 text-center">vazio</div>`;
-    return `
-      <div class="kanban-col flex-shrink-0 w-48 bg-slate-100 rounded-lg p-1.5 flex flex-col" data-etapa="${escapeHtml(etapa.slug)}">
-        <div class="flex items-center justify-between mb-1.5 px-0.5 sticky top-0">
-          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${cor} truncate">${escapeHtml(etapa.label)}</span>
-          <span class="flex items-center gap-1 flex-shrink-0">
-            <button type="button" class="sel-todas hidden text-[9px] text-indigo-600 hover:underline" data-etapa="${escapeHtml(etapa.slug)}">todas</button>
-            <span class="kanban-count text-[10px] font-bold text-slate-500 bg-white rounded-full px-1.5 py-0.5">${cards.length}</span>
-          </span>
-        </div>
-        <div class="kanban-list flex flex-col gap-1.5 overflow-y-auto pr-0.5 min-h-[40px]"
-             style="max-height: calc(100vh - 230px)" data-etapa="${escapeHtml(etapa.slug)}" data-ordem="${ordemEtapa(etapa.slug)}">
-          ${cardsHtml}
-        </div>
-      </div>`;
-  }).join('');
+  const noQuadro = ETAPAS_USINA.flatMap((e) => grupos[e.slug]);
+  const kwpTotal = noQuadro.reduce((s, u) => s + (u.potencia_kwp ?? 0), 0);
+
+  const pipeline = cartaoSecao({
+    titulo: 'Pipeline técnico',
+    dica: 'quantas obras em cada etapa · tempo médio na etapa',
+    classe: 'cc-ob-pipe',
+    corpoHtml: faixaKpis(ETAPAS_USINA.map((e) => {
+      const n = grupos[e.slug].length;
+      const m = medias[e.slug];
+      return {
+        rotulo: e.label,
+        valor: n,
+        detalhe: n === 0 ? 'nenhuma obra' : m === null ? 'sem data' : `média ${m} ${m === 1 ? 'dia' : 'dias'}`,
+      };
+    })),
+  });
+
+  const colunas = ETAPAS_USINA.map((e) => colunaObra(e, grupos[e.slug], medias[e.slug])).join('');
+
+  const cabecalho = cabecalhoPagina({
+    trilha: [{ rotulo: 'Instalações' }, { rotulo: 'Quadro de Obras' }],
+    titulo: 'Quadro de Obras',
+    subtitulo: `${noQuadro.length} obra(s) · ${fmtNumero(kwpTotal, 1)} kWp. Arraste o cartão para mudar de etapa. Em laranja: parada há mais tempo que a média da etapa. Atualiza a cada 60s.`,
+    filtrosHtml: `<label class="cc-ob-busca">${icone('search', 'sm')}<input id="filtro-kanban" type="text" placeholder="Buscar nome ou cidade…" aria-label="Buscar nome ou cidade"></label>`,
+    acoesHtml: `<div class="cc-chips">${chip({ rotulo: 'Lista', href: '/dashboard/monitoramento' })}${chip({ rotulo: 'Quadro', href: '/dashboard/usinas/kanban', ativo: true })}</div>`
+      + botao({ rotulo: 'Selecionar', icone: 'check', attrs: { id: 'btn-selecionar' } })
+      + botao({ rotulo: 'Vincular usinas sem cliente', href: '/dashboard/usinas/vincular', tom: 'ouro', icone: 'plug' }),
+  });
+
+  const vazio = noQuadro.length === 0
+    ? estadoVazio({ titulo: 'Nenhuma obra no quadro', texto: 'As usinas aparecem aqui conforme a etapa da obra.', compacto: true })
+    : '';
 
   const body = `
-    <div class="w-full px-3 py-4">
-      <div class="flex items-center justify-between mb-3">
-        <div>
-          <h1 class="text-lg font-bold text-slate-900 leading-tight">Quadro de Obras</h1>
-          <p class="text-[11px] text-slate-500">Arraste para mover entre etapas. Atualiza a cada 60s.</p>
-        </div>
-        <div class="flex items-center gap-3">
-          <input id="filtro-kanban" type="text" placeholder="Buscar nome ou cidade…"
-                 class="border border-slate-300 rounded px-2 py-1 text-xs w-44 focus:outline-none focus:ring-2 focus:ring-indigo-300">
-          <button id="btn-selecionar" type="button"
-                  class="border border-slate-300 rounded px-3 py-1 text-xs text-slate-700 hover:bg-slate-50">☑️ Selecionar</button>
-          <a href="/dashboard/usinas/vincular"
-             class="text-sm bg-amber-100 text-amber-800 px-3 py-1.5 rounded hover:bg-amber-200">
-            🔗 Vincular usinas sem cliente
-          </a>
-          <div class="inline-flex rounded-lg border border-slate-300 overflow-hidden text-sm">
-            <a href="/dashboard/monitoramento" class="px-3 py-1 bg-white text-slate-700 hover:bg-slate-50">Lista</a>
-            <a href="/dashboard/usinas/kanban" class="px-3 py-1 bg-indigo-600 text-white">Quadro</a>
-          </div>
-        </div>
-      </div>
-
-      <div class="kanban-board flex gap-2 overflow-x-auto pb-2">
+    <div class="cc-root cc-ob">
+      ${cabecalho}
+      ${pipeline}
+      ${vazio}
+      <div class="cc-kb kanban-board">
         ${colunas}
       </div>
-    </div>
 
-    <!-- Painel de contato (drawer): preenchido por fetch ao clicar no ℹ️ do card -->
-    <div id="contato-overlay" class="hidden fixed inset-0 bg-black/20 z-40"></div>
-    <aside id="contato-drawer" class="hidden fixed top-0 right-0 h-full w-80 max-w-[90vw] bg-white shadow-xl z-50 flex flex-col">
-      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-        <h2 id="contato-titulo" class="font-bold text-slate-800 text-sm truncate">Usina</h2>
-        <button id="contato-fechar" type="button" title="Fechar"
-                class="text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
+      <!-- Painel de contato: preenchido por fetch ao clicar no botão de contato do cartão -->
+      <div id="contato-overlay" class="hidden cc-ob-overlay"></div>
+      <aside id="contato-drawer" class="hidden cc-root cc-ob-drawer" aria-labelledby="contato-titulo">
+        <div class="cc-ob-drawer-h">
+          <h2 id="contato-titulo">Usina</h2>
+          <button id="contato-fechar" type="button" title="Fechar" aria-label="Fechar" class="cc-ob-fechar">&times;</button>
+        </div>
+        <div id="contato-corpo" class="cc-ob-corpo"></div>
+      </aside>
+
+      <!-- Barra de mover em lote (aparece no modo seleção com 1+ marcada) -->
+      <div id="lote-bar" class="hidden cc-ob-lote">
+        <span id="lote-count" class="cc-ob-lote-n">0 selecionadas</span>
+        <select id="lote-etapa" aria-label="Etapa de destino">
+          <option value="">Mover para…</option>
+          ${ETAPAS_USINA.map((e) => `<option value="${escapeHtml(e.slug)}">${escapeHtml(e.label)}</option>`).join('')}
+        </select>
+        ${botao({ rotulo: 'Mover', attrs: { id: 'lote-mover' } })}
+        ${botao({ rotulo: 'Limpar', tom: 'fantasma', attrs: { id: 'lote-limpar' } })}
       </div>
-      <div id="contato-corpo" class="p-4 text-sm text-slate-700 overflow-y-auto flex-1"></div>
-    </aside>
-
-    <!-- Modo seleção: caixinhas e "todas" só aparecem com o modo ligado -->
-    <style>
-      .modo-selecao .kanban-check { display: inline-block; }
-      .modo-selecao .sel-todas { display: inline; }
-    </style>
-
-    <!-- Barra de mover em lote (aparece no modo seleção com 1+ marcada) -->
-    <div id="lote-bar" class="hidden fixed bottom-0 left-0 right-0 bg-slate-800 text-white px-4 py-2 flex items-center gap-3 z-40 shadow-lg">
-      <span id="lote-count" class="text-sm font-medium">0 selecionadas</span>
-      <select id="lote-etapa" class="text-slate-800 rounded px-2 py-1 text-sm">
-        <option value="">Mover para…</option>
-        ${ETAPAS_USINA.map((e) => `<option value="${escapeHtml(e.slug)}">${escapeHtml(e.label)}</option>`).join('')}
-      </select>
-      <button id="lote-mover" type="button" class="bg-indigo-500 hover:bg-indigo-400 rounded px-3 py-1 text-sm font-medium">Mover</button>
-      <button id="lote-limpar" type="button" class="text-slate-300 hover:text-white text-sm">Limpar</button>
     </div>
+    <style>${CSS_OBRAS}</style>
 
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"
             integrity="sha384-HZZ/fukV+9G8gwTNjN7zQDG0Sp7MsZy5DDN6VfY3Be7V9dvQpEpR2jF2HlyFUUjU"
@@ -185,7 +294,7 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
             group: 'obras',
             animation: 150,
             draggable: '.kanban-card',
-            filter: '.kanban-info, .kanban-check', // clicar no ℹ️/caixinha não arrasta
+            filter: '.kanban-info, .kanban-check', // clicar no contato/caixinha não arrasta
             preventOnFilter: false,                // ...mas o clique ainda dispara
             onEnd: function (evt) {
               resetTimer();
@@ -242,6 +351,12 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
         var fechar  = document.getElementById('contato-fechar');
         var board   = document.querySelector('.kanban-board');
         if (!drawer || !board) return;
+        // O <main> é um contexto de empilhamento (z-index 0): dentro dele o
+        // painel ficaria atrás da barra de cima no celular. Sobe o painel e o
+        // fundo escuro para a casca, pra cobrir a tela inteira.
+        var casca = document.querySelector('.cc-shell') || document.body;
+        casca.appendChild(overlay);
+        casca.appendChild(drawer);
 
         // Anti-XSS: todo dado vindo do servidor (nome/email/etc.) passa por aqui
         // antes de ir pro innerHTML. Cobre texto e atributo com aspas duplas.
@@ -251,12 +366,13 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
           });
         }
 
-        function campo(icone, valor) {
+        function campo(rotulo, valor) {
           var copiavel = valor && valor !== 'não cadastrado';
-          return '<div class="flex items-center justify-between gap-2 mb-2">' +
-                   '<span class="truncate">' + icone + ' ' + esc(valor) + '</span>' +
+          return '<div class="cc-ob-campo">' +
+                   '<span class="cc-ob-rot">' + rotulo + '</span>' +
+                   '<span class="cc-ob-val">' + esc(valor) + '</span>' +
                    (copiavel
-                     ? '<button type="button" class="contato-copiar text-[11px] text-indigo-600 hover:underline flex-shrink-0" data-valor="' + esc(valor) + '">copiar</button>'
+                     ? '<button type="button" class="contato-copiar cc-btn cc-btn-sm" data-valor="' + esc(valor) + '">copiar</button>'
                      : '') +
                  '</div>';
         }
@@ -264,29 +380,29 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
         function preencher(c) {
           var h = '';
           if (c.cliente) {
-            h += campo('👤', c.cliente.nome);
-            h += campo('📱', c.cliente.telefone);
-            h += campo('✉️', c.cliente.email);
+            h += campo('Cliente', c.cliente.nome);
+            h += campo('Telefone', c.cliente.telefone);
+            h += campo('E-mail', c.cliente.email);
           } else {
-            h += '<div class="mb-2 text-slate-500 italic">Cliente não cadastrado</div>';
+            h += '<div class="cc-ob-nada">Cliente não cadastrado</div>';
           }
-          h += '<hr class="my-3 border-slate-100">';
-          h += '<div class="mb-1 text-slate-600">📍 ' + esc(c.localizacao) + ' · ' + esc(c.potencia) + '</div>';
-          h += '<div class="mb-3 text-slate-600">🏗️ ' + esc(c.etapa) + (c.diasNaEtapa ? ' · ' + esc(c.diasNaEtapa) : '') + '</div>';
-          h += '<a href="' + esc(c.detalheUrl) + '" class="inline-block text-indigo-600 hover:underline text-sm">abrir detalhe completo →</a>';
+          h += '<div class="cc-ob-campo"><span class="cc-ob-rot">Local</span><span class="cc-ob-val">' + esc(c.localizacao) + '</span></div>';
+          h += '<div class="cc-ob-campo"><span class="cc-ob-rot">Potência</span><span class="cc-ob-val">' + esc(c.potencia) + '</span></div>';
+          h += '<div class="cc-ob-campo"><span class="cc-ob-rot">Etapa</span><span class="cc-ob-val">' + esc(c.etapa) + (c.diasNaEtapa ? ' · ' + esc(c.diasNaEtapa) : '') + '</span></div>';
+          h += '<a href="' + esc(c.detalheUrl) + '" class="cc-ob-link">abrir detalhe completo →</a>';
           corpo.innerHTML = h;
         }
 
         function abrir(id, apelido) {
           titulo.textContent = apelido || 'Usina';
-          corpo.innerHTML = '<div class="text-slate-400 italic">carregando…</div>';
+          corpo.innerHTML = '<div class="cc-ob-nada">carregando…</div>';
           overlay.classList.remove('hidden');
           drawer.classList.remove('hidden');
           fetch('/dashboard/usinas/' + id + '/contato')
             .then(function (res) { if (!res.ok) throw new Error(res.status); return res.json(); })
             .then(preencher)
             .catch(function () {
-              corpo.innerHTML = '<div class="text-rose-600">Não foi possível carregar o contato.</div>';
+              corpo.innerHTML = '<div class="cc-ob-erro">Não foi possível carregar o contato.</div>';
             });
         }
 
@@ -346,8 +462,8 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
         btn.addEventListener('click', function () {
           var ligado = document.body.classList.toggle('modo-selecao');
           setArrasteDesabilitado(ligado);
-          btn.classList.toggle('bg-indigo-600', ligado);
-          btn.classList.toggle('text-white', ligado);
+          btn.classList.toggle('cc-ob-on', ligado);
+          btn.setAttribute('aria-pressed', ligado ? 'true' : 'false');
           if (!ligado) limparSelecao();
         });
 
@@ -391,5 +507,8 @@ export function renderUsinasKanbanPage(usinas: UsinaKanbanCard[], user?: DashUse
       })();
     </script>`;
 
-  return renderLayout({ active: 'usinas_kanban', title: 'Quadro de Obras', body, user });
+  return renderLayout({
+    active: 'usinas_kanban', title: 'Quadro de Obras', body, user,
+    tailwind: false, dark: temaDaTela(user, 'escuro') === 'escuro', largo: true,
+  });
 }

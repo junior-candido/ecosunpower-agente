@@ -1,16 +1,30 @@
 // src/modules/dashboard/vincular-usinas-views.ts
 // Tela do mutirão: lista usinas sem cliente, com a sugestão por nome
 // pré-selecionada num <select>. O Junior confere e confirma em lote.
+//
+// Renovação do miolo, R15 (28/09/2026): padrão cc- do Command Center, tema
+// escuro (D4), sem Tailwind. O formulário é o MESMO (POST
+// /dashboard/usinas/vincular, um <select name="<usinaId>"> por usina).
 
 import { renderLayout, escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { SugestaoVinculo, LeadOpcao } from './vincular-usinas.js';
+import { cabecalhoPagina, cartaoSecao, tabela, estadoVazio, botao } from './ui/componentes.js';
+import { temaDaTela } from './ui/tema.js';
 
 export interface VincularUsinasPageData {
   sugestoes: SugestaoVinculo[];
   leads: LeadOpcao[];
   user?: DashUser;
 }
+
+const CSS_VINCULAR = `
+.cc-vu .cc-panel{margin-bottom:16px}
+.cc-vu .cc-tbl td{white-space:normal}
+.cc-vu select{width:100%;min-width:0;max-width:420px}
+.cc-vu-rodape{display:flex;justify-content:flex-end}
+@media (max-width:760px){.cc-vu select{max-width:none}.cc-vu-rodape .cc-btn{width:100%;justify-content:center;height:44px}}
+`;
 
 function optionsLeads(leads: LeadOpcao[], selecionado: string | null): string {
   const vazio = `<option value="">— deixar sem cliente —</option>`;
@@ -21,36 +35,38 @@ function optionsLeads(leads: LeadOpcao[], selecionado: string | null): string {
   return vazio + opts.join('');
 }
 
+function layout(body: string, user: DashUser | undefined): string {
+  return renderLayout({
+    active: 'usinas_kanban', title: 'Vincular usinas', user,
+    body: `<div class="cc-root cc-vu">${body}</div><style>${CSS_VINCULAR}</style>`,
+    tailwind: false, dark: temaDaTela(user, 'escuro') === 'escuro',
+  });
+}
+
 export function renderVincularUsinasPage(data: VincularUsinasPageData): string {
+  const cabecalho = (sub?: string) => cabecalhoPagina({
+    trilha: [{ rotulo: 'Instalações' }, { rotulo: 'Quadro de Obras', href: '/dashboard/usinas/kanban' }, { rotulo: 'Vincular usinas' }],
+    titulo: 'Vincular usinas ao cliente',
+    subtitulo: sub,
+    acoesHtml: botao({ rotulo: 'Voltar ao Quadro de Obras', href: '/dashboard/usinas/kanban', tom: 'fantasma' }),
+  });
+
   if (data.sugestoes.length === 0) {
-    return renderLayout({ active: 'usinas_kanban', title: 'Vincular usinas', user: data.user, body: `
-      <h1 class="text-xl font-semibold mb-4">Vincular usinas ao cliente</h1>
-      <p class="text-slate-500">Nenhuma usina pendente de vínculo. 🎉</p>` });
+    return layout(`${cabecalho()}${estadoVazio({ titulo: 'Nenhuma usina pendente de vínculo.', texto: 'Todas as usinas ativas já têm cliente.', icone: 'check' })}`, data.user);
   }
-  const linhas = data.sugestoes.map((s) => `
-    <tr class="border-b border-slate-100">
-      <td class="py-2 px-2 text-sm text-slate-800">${escapeHtml(s.apelido ?? 'Sem apelido')}</td>
-      <td class="py-2 px-2">
-        <select name="${escapeHtml(s.usinaId)}" class="border border-slate-300 rounded px-2 py-1 text-sm w-full">
-          ${optionsLeads(data.leads, s.leadSugeridoId)}
-        </select>
-      </td>
-    </tr>`).join('');
-  return renderLayout({ active: 'usinas_kanban', title: 'Vincular usinas', user: data.user, body: `
-    <h1 class="text-xl font-semibold mb-2">Vincular usinas ao cliente</h1>
-    <p class="text-slate-500 text-sm mb-4">
-      As usinas abaixo já operam mas não têm cliente. A sugestão (por nome) já vem marcada —
-      confira, ajuste se precisar e confirme. Ao confirmar, elas vão pro <strong>Pós-venda</strong>
-      e somem do Quadro de Obras.</p>
-    <form method="post" action="/dashboard/usinas/vincular">
-      <table class="w-full border border-slate-200 rounded">
-        <thead><tr class="bg-slate-50 text-left text-xs text-slate-500">
-          <th class="py-2 px-2">Usina (apelido)</th><th class="py-2 px-2">Cliente</th>
-        </tr></thead>
-        <tbody>${linhas}</tbody>
-      </table>
-      <button type="submit" class="mt-4 bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">
-        Confirmar vínculos
-      </button>
-    </form>` });
+
+  const lista = tabela({
+    colunas: [{ titulo: 'Usina (apelido)' }, { titulo: 'Cliente' }],
+    linhas: data.sugestoes.map((s) => [
+      s.apelido ?? 'Sem apelido',
+      { html: `<select name="${escapeHtml(s.usinaId)}" aria-label="Cliente da usina ${escapeHtml(s.apelido ?? 'sem apelido')}">${optionsLeads(data.leads, s.leadSugeridoId)}</select>` },
+    ]),
+    mobile: 'cartoes',
+  });
+
+  return layout(`${cabecalho('As usinas abaixo já operam mas não têm cliente. A sugestão (por nome) já vem marcada — confira, ajuste se precisar e confirme. Ao confirmar, elas vão pro Pós-venda e somem do Quadro de Obras.')}
+    <form method="post" action="/dashboard/usinas/vincular" class="cc-form">
+      ${cartaoSecao({ titulo: 'Usinas sem cliente', dica: `${data.sugestoes.length} para conferir`, corpoHtml: lista })}
+      <div class="cc-vu-rodape">${botao({ rotulo: 'Confirmar vínculos', tipo: 'submit', tom: 'ouro' })}</div>
+    </form>`, data.user);
 }

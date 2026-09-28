@@ -46,6 +46,8 @@ export const TELAS_RENOVADAS: string[] = [
   'servicos-views.ts#renderLixeiraServicosPage',
 
   // R15 — Quadro de Obras + vincular + contato
+  'usinas-kanban-views.ts',
+  'vincular-usinas-views.ts',
 
   // R16 — Clientes (lista, ficha, novo, relatório pós-instalação)
 

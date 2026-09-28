@@ -35,3 +35,13 @@ export const CASOS_OBRAS: Record<string, () => string> = {
   'vincular-vazio': () => renderVincularUsinasPage({ sugestoes: [], leads: LEADS as any, user: USER_CASA }),
   'vincular-tenant': () => renderVincularUsinasPage({ sugestoes: SUGESTOES.slice(0, 1) as any, leads: LEADS as any, user: USER_TENANT }),
 };
+
+// Só para os PRINTS (fora do contrato): o quadro com o modo seleção ligado e 2
+// obras marcadas, e com o painel de contato aberto (fetch falso, dado fictício).
+const aoCarregar = (html: string, js: string) => html.replace('</body>', `<script>window.addEventListener('load',function(){setTimeout(function(){${js}},300)})</script></body>`);
+const CONTATO_FALSO = JSON.stringify({ apelido: 'Usina Ana Exemplo', localizacao: 'Cidade Exemplo-DF', potencia: '6.3 kWp', etapa: 'Projeto', diasNaEtapa: 'há 2 dias', detalheUrl: '/dashboard/monitoramento/x', cliente: { nome: 'Ana <b>Exemplo</b>', telefone: '(61) 99999-0000', email: 'nao cadastrado' } });
+export const CASOS_OBRAS_PRINTS: Record<string, () => string> = {
+  ...CASOS_OBRAS,
+  'quadro-lote': () => aoCarregar(CASOS_OBRAS.quadro(), `document.getElementById('btn-selecionar').click();var cs=document.querySelectorAll('.kanban-check');cs[0].click();cs[3].click();`),
+  'quadro-contato': () => aoCarregar(CASOS_OBRAS.quadro(), `window.fetch=function(){return Promise.resolve({ok:true,json:function(){return Promise.resolve(${CONTATO_FALSO})}})};document.querySelector('.kanban-info').click();`),
+};
