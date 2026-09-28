@@ -3,7 +3,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   Geocodificador, centroDaCidade, podeSobrescrever, pontoValido, deslocarAproximado,
-  normalizarTexto, consultasDoEndereco,
+  normalizarTexto, consultasDoEndereco, pontoDaApi,
 } from '../src/modules/monitoring/geocodificacao.js';
 
 function respostaJson(corpo: unknown, status = 200): Response {
@@ -33,6 +33,14 @@ describe('regras puras', () => {
     expect(pontoValido(-95, 10)).toBe(false);
     expect(pontoValido(Number.NaN, 10)).toBe(false);
     expect(pontoValido(null, -47)).toBe(false);
+  });
+
+  it('coordenada da API da marca: aceita número ou texto, recusa lixo e fora do Brasil', () => {
+    expect(pontoDaApi('-15.83', -48.05)).toEqual({ lat: -15.83, lng: -48.05 });
+    expect(pontoDaApi(0, 0)).toBeNull();
+    expect(pontoDaApi('', '')).toBeNull();
+    expect(pontoDaApi(undefined, null)).toBeNull();
+    expect(pontoDaApi(48.85, 2.35)).toBeNull();
   });
 
   it('manual nunca é sobrescrito por localização automática', () => {

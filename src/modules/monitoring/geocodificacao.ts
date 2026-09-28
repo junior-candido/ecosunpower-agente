@@ -57,6 +57,14 @@ export function pontoNoBrasil(lat: number, lng: number): boolean {
   return pontoValido(lat, lng) && lat >= -34.5 && lat <= 6 && lng >= -74.5 && lng <= -28.5;
 }
 
+/** Coordenada vinda da API de uma marca (número ou texto). null = ausente/lixo/fora do Brasil. */
+export function pontoDaApi(lat: unknown, lng: unknown): Ponto | null {
+  const num = (v: unknown) => (typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
+  const la = num(lat);
+  const ln = num(lng);
+  return pontoNoBrasil(la, ln) ? { lat: la, lng: ln } : null;
+}
+
 /** Quanto mais alto, mais confiável. Manual é do dono e manda sempre. */
 const PESO: Record<GeoFonte, number> = { cidade: 1, endereco: 2, api: 3, manual: 9 };
 

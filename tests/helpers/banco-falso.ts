@@ -44,6 +44,7 @@ export function bancoFalso(tabelas: Record<string, Linha[]>, opcoes: { erroEm?: 
       const q: Record<string, unknown> = {
         select: (c?: string, o?: { head?: boolean; count?: string }) => { head = !!o?.head; comContagem = !!o?.count; colunasPedidas = c ?? '*'; return q; },
         update: (patch: Linha) => { op.tipo = 'update'; op.patch = patch; return q; },
+        insert: (linha: Linha) => { op.tipo = 'insert'; op.patch = linha; base.push({ id: `novo-${base.length + 1}`, ...linha }); return q; },
         eq: filtro('eq', (c, v) => (l) => l[c] === v),
         neq: filtro('neq', (c, v) => (l) => l[c] !== v),
         gte: filtro('gte', (c, v) => (l) => l[c] != null && cmp(l[c], v) >= 0),
@@ -66,6 +67,7 @@ export function bancoFalso(tabelas: Record<string, Linha[]>, opcoes: { erroEm?: 
           if (cf && cf.tabela === tabela && (pedeColuna(colunasPedidas) || (op.patch && cf.coluna in op.patch))) {
             return Promise.resolve({ data: null, count: null, error: { message: `column ${tabela}.${cf.coluna} does not exist`, code: '42703' } }).then(ok, falha);
           }
+          if (op.tipo === 'insert') return Promise.resolve({ data: null, count: null, error: null }).then(ok, falha);
           let linhas = base.filter((l) => preds.every((p) => p(l)));
           if (op.tipo === 'update') {
             for (const l of linhas) Object.assign(l, op.patch);
