@@ -778,7 +778,26 @@ export function proximoStatus(m: { status: string; modo_coleta: keyof typeof MUD
 - [ ] Após Implantar: 7 dias de `energia_diaria` do piloto vs análise de 28/09 (import ≈ 21, export ≈ 14,5 kWh/dia; 76% fora-ponta; base 0,8–1,2 kW) — diferença ≤ 3%.
 - [ ] Conciliação: primeiro mês com demonstrativo + ≥ 97% de cobertura mostra veredito coerente.
 
-### Passos de deploy (atualizados na revisão 1, 28/09)
+### Revisão 2 (28/09) — o que o código resolve sozinho no deploy
+
+- **Bruto órfão** (gravado pelo código antigo entre aplicar a 136 e o Implantar, sem `medidor_id`):
+  a cada ciclo de agregação o servidor liga o bruto órfão do aparelho ao medidor
+  (`vincularBrutoOrfao`: mesma empresa, device com/sem prefixo, lote de 5.000, `is null` → idempotente,
+  índice parcial `medicoes_shelly_orfas`) e volta o cursor até o órfão mais velho. Lote cheio → não
+  agrega aquele medidor no ciclo (o cursor não passa por cima). Ninguém precisa rodar SQL de conserto.
+- **Backfill**: `ultimaJanela` ignora `fonte='backfill'` (o cursor não pula bruto). A madrugada refaz,
+  além dos 7 dias, todo dia cuja janela de 15 min mudou depois do fechamento
+  (`max(energia_15min.atualizado_em) > energia_diaria.fechado_em`, janelas mexidas nos últimos 7 dias,
+  até 62 dias por medidor por noite). À mão: `scripts/energia-refazer-dias.ts --refazer-de/--refazer-ate`.
+- **Retenção** anda em TODOS os medidores (desligado perde o bruto aos 90 dias sem esperar janela) e
+  apaga o bruto órfão (`medidor_id is null`) de mais de 90 dias, em lote.
+- `medicoes_shelly.medidor_id` com FK composta `(medidor_id, company_id)` → `medidores_energia` (cascata).
+- Webhook: se o `SHELLY_INGEST_TOKEN` tiver o formato do token do medidor e o banco cair, o token global
+  ainda vale pelo caminho legado (não 503).
+- Trocar o aparelho de medidor que já recebeu dado: bloqueado ("Para trocar o aparelho, cadastre um medidor novo").
+- `SHELLY_LEGADO_DEVICES`: **somente aparelhos da EcoSun** (o token global grava na EcoSun).
+
+### Passos de deploy (atualizados na revisão 2, 28/09)
 
 1. **Antes do merge/Implantar**, o Junior roda no SQL Editor (produção) o arquivo do Desktop
    `SQL-migrations-136-137-gestao-energia.sql` (136 + 137, idempotente; confere no fim).
@@ -790,14 +809,19 @@ export function proximoStatus(m: { status: string; modo_coleta: keyof typeof MUD
     where medido_em > now() - interval '7 days'
     group by 1 order by 3 desc;
    ```
-   Se aparecer outro aparelho além de `007007422d90` que ainda usa o `SHELLY_INGEST_TOKEN`,
+   Se aparecer outro aparelho **da EcoSun** além de `007007422d90` que ainda usa o `SHELLY_INGEST_TOKEN`,
    pôr no EasyPanel `SHELLY_LEGADO_DEVICES=007007422d90,<outro>` (ids sem o prefixo, por vírgula).
-   Sem a env, só o piloto passa pelo token global (o resto recebe 401).
+   Somente aparelhos da EcoSun (o token global grava na EcoSun). Sem a env, só o piloto passa
+   pelo token global (o resto recebe 401). `teste-diagnostico` é lixo de teste: apagar (linha
+   comentada no fim do SQL do Desktop).
 3. Envs no EasyPanel: `ENERGIA_CRED_KEY` (64 hex; sem ela a nuvem fica desligada e o push segue),
    `SHELLY_INGEST_TOKEN` (só enquanto o piloto não trocar o script), `SHELLY_LEGADO_DEVICES` (opcional).
 4. Push da branch (pedir antes), PR com o comando de merge pronto, **Implantar**.
 5. Depois: gerar o código do "Medidor Quadro", trocar no script do piloto (cabeçalho `x-shelly-token`),
    confirmar leituras com `medidor_id`; então tirar `SHELLY_INGEST_TOKEN` do EasyPanel.
+   (O bruto que chegou entre o SQL e o Implantar é ligado sozinho no 1º ciclo — nada a fazer.)
+5b. Backfill (opcional, só DEPOIS do Implantar): gerar o `.sql` com `scripts/energia-backfill-emdata.ts`
+   e colar no SQL Editor. O resumo de cada dia é refeito na madrugada seguinte (até 62 dias por noite).
 6. Opcional (segurança): testar o script do piloto **sem** a linha `ssl_ca: "*"` (confere o certificado
    do servidor); se ficar pendurado, voltar a linha (ver README do kit).
 7. Webhook responde 401 (código errado), 410 (medidor desligado), 429 (> 120/min por IP),

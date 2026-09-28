@@ -189,6 +189,18 @@ qual cliente é a leitura — o token global antigo (`SHELLY_INGEST_TOKEN`) só 
 piloto (quadro da casa do Junior) até o script dele ser trocado. A lista de aparelhos
 que ainda podem usar o token global fica na env `SHELLY_LEGADO_DEVICES` (ids separados
 por vírgula, sem o prefixo `shellypro3em-`; vazia = só o piloto `007007422d90`).
+**Somente aparelhos da EcoSun** nessa lista: pelo token global a leitura grava na
+empresa EcoSun. Aparelho de cliente de outra empresa entra sempre com o token do medidor.
+
+Trocar o aparelho de um medidor que já recebeu dado não é permitido (a tela diz "Para
+trocar o aparelho, cadastre um medidor novo"): contadores de aparelhos diferentes não
+podem se misturar no mesmo histórico.
+
+**Backfill (memória do aparelho):** `scripts/energia-backfill-emdata.ts` lê a memória do
+Shelly (~60 dias, na mesma rede dele) e gera um `.sql` pra colar no SQL Editor — **só
+depois do Implantar**. O resumo de cada dia é refeito sozinho na madrugada seguinte; pra
+não esperar (ou pra mais de 62 dias): `scripts/energia-refazer-dias.ts --device <código>
+--refazer-de <dia> --refazer-ate <dia>`.
 
 Um aparelho só pode estar cadastrado **uma vez na plataforma inteira**. Se o formulário
 disser "Este aparelho já está cadastrado. Fale com o suporte.", ele já está em algum
