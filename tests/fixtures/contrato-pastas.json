@@ -1,0 +1,1371 @@
+{
+  "lista": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "lead_id",
+            "type": "select"
+          }
+        ]
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pastas/p1",
+      "/dashboard/pastas/p2",
+      "/dashboard/pastas/p3",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "lista-vazia": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "lead_id",
+            "type": "select"
+          }
+        ]
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "lista-tenant": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "lead_id",
+            "type": "select"
+          }
+        ]
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pastas/p1",
+      "/dashboard/pastas/p2",
+      "/dashboard/pastas/p3",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "editor-rascunho": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/capa",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/capa",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/dados",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "data_entrega",
+            "type": "date"
+          },
+          {
+            "name": "mensagem_zap",
+            "type": "textarea"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/declaracao",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "cidade",
+            "type": "text"
+          },
+          {
+            "name": "conclusao_em",
+            "type": "date"
+          },
+          {
+            "name": "distribuidora",
+            "type": "text"
+          },
+          {
+            "name": "padrao_entrada",
+            "type": "text"
+          },
+          {
+            "name": "parecer_em",
+            "type": "date"
+          },
+          {
+            "name": "parecer",
+            "type": "text"
+          },
+          {
+            "name": "qualificacao",
+            "type": "text"
+          },
+          {
+            "name": "trt",
+            "type": "text"
+          },
+          {
+            "name": "uc",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/publicar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/puxar-rpi",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/puxar-servicos",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pastas/p1/preview",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'EXCLUIR a pasta inteira de Ana DÁvila <b>x</b>? Todos os arquivos enviados somem e o link do cliente PARA DE FUNCIONAR. Não tem volta.'",
+      "'Tirar este arquivo da pasta?'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "editor-publicada": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/capa",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/capa",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/dados",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "data_entrega",
+            "type": "date"
+          },
+          {
+            "name": "mensagem_zap",
+            "type": "textarea"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/declaracao",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "cidade",
+            "type": "text"
+          },
+          {
+            "name": "conclusao_em",
+            "type": "date"
+          },
+          {
+            "name": "distribuidora",
+            "type": "text"
+          },
+          {
+            "name": "padrao_entrada",
+            "type": "text"
+          },
+          {
+            "name": "parecer_em",
+            "type": "date"
+          },
+          {
+            "name": "parecer",
+            "type": "text"
+          },
+          {
+            "name": "qualificacao",
+            "type": "text"
+          },
+          {
+            "name": "trt",
+            "type": "text"
+          },
+          {
+            "name": "uc",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/enviar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/publicar",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pastas/p1/preview",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'EXCLUIR a pasta inteira de Ana Exemplo? Todos os arquivos enviados somem e o link do cliente PARA DE FUNCIONAR. Não tem volta.'",
+      "'Enviar o link da pasta pelo WhatsApp do cliente agora?'",
+      "'Tirar este arquivo da pasta?'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "editor-tenant": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos",
+        "enctype": "multipart/form-data",
+        "campos": [
+          {
+            "name": "arquivos",
+            "type": "file"
+          },
+          {
+            "name": "secao",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/arquivos/remover",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/capa",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/capa",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "storage_path",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/dados",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "data_entrega",
+            "type": "date"
+          },
+          {
+            "name": "mensagem_zap",
+            "type": "textarea"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/declaracao",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "cidade",
+            "type": "text"
+          },
+          {
+            "name": "conclusao_em",
+            "type": "date"
+          },
+          {
+            "name": "distribuidora",
+            "type": "text"
+          },
+          {
+            "name": "padrao_entrada",
+            "type": "text"
+          },
+          {
+            "name": "parecer_em",
+            "type": "date"
+          },
+          {
+            "name": "parecer",
+            "type": "text"
+          },
+          {
+            "name": "qualificacao",
+            "type": "text"
+          },
+          {
+            "name": "trt",
+            "type": "text"
+          },
+          {
+            "name": "uc",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/enviar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/publicar",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/pastas/p1/puxar-servicos",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pastas/p1/preview",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'EXCLUIR a pasta inteira de Ana Exemplo? Todos os arquivos enviados somem e o link do cliente PARA DE FUNCIONAR. Não tem volta.'",
+      "'Enviar o link da pasta pelo WhatsApp do cliente agora?'",
+      "'Tirar este arquivo da pasta?'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "preview": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pastas/p1",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  }
+}
