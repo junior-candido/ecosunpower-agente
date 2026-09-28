@@ -56,6 +56,11 @@ describe('conciliarComDemonstrativo', () => {
       expect(l.texto).toMatch(/80%/);
     }
   });
+  it('veredito só com 97% do mês ou mais (96% → sem dado)', () => {
+    const d = { exportadoMesKwh: 430, importadoMesKwh: 630, demonstrativo: { injetado_kwh: 430, consumo_kwh: 630 } };
+    expect(conciliarComDemonstrativo({ ...base, ...d, coberturaMesPct: 96 }).every((l) => l.veredito === 'sem_dado')).toBe(true);
+    expect(conciliarComDemonstrativo({ ...base, ...d, coberturaMesPct: 97 }).every((l) => l.veredito === 'bate')).toBe(true);
+  });
   it('(e) demonstrativo com injetado nulo → linha sem_dado', () => {
     const r = conciliarComDemonstrativo({ ...base, exportadoMesKwh: 430, importadoMesKwh: 630, demonstrativo: { injetado_kwh: null, consumo_kwh: 630 } });
     expect(linha(r, 'injetado').veredito).toBe('sem_dado');

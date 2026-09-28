@@ -96,6 +96,22 @@ const CSS_ENERGIA = `
 .en-passos{margin:8px 0 0 18px;padding:0;line-height:1.7;color:var(--cc-text-2);font-size:13.5px}
 .en-teste{font-size:13px;margin-top:10px;color:var(--cc-text-2)}
 .en-perigo{margin-top:18px;border-color:rgba(228,87,75,.35)}
+.en-conc table{width:100%;border-collapse:collapse;font-size:13px}
+.en-conc th{text-align:left;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--cc-faint);font-weight:600;padding:10px;border-bottom:1px solid var(--cc-line-2);background:rgba(0,0,0,.08)}
+.en-conc td{padding:11px 10px;border-bottom:1px solid var(--cc-line);vertical-align:middle}
+.en-conc tr:last-child td{border-bottom:0}
+.en-conc .en-conc-num{text-align:right;font-family:var(--cc-f-num);font-variant-numeric:tabular-nums;white-space:nowrap}
+.en-conc .en-conc-sit{white-space:normal}
+.en-conc .en-conc-sit .cc-pill{white-space:nowrap}
+.en-conc .en-apagado{color:var(--cc-faint);opacity:.6}
+@media (max-width:520px){
+  .en-conc thead .en-conc-sit{display:none}
+  .en-conc tbody tr{display:grid;grid-template-columns:1fr auto auto;border-bottom:1px solid var(--cc-line)}
+  .en-conc tbody tr:last-child{border-bottom:0}
+  .en-conc tbody td{border-bottom:0}
+  .en-conc tbody .en-conc-sit{grid-column:1/-1;padding-top:0}
+  .en-conc thead tr{display:grid;grid-template-columns:1fr auto auto}
+}
 @media (max-width:900px){.en-grid{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:760px){.en-form{grid-template-columns:minmax(0,1fr)}.en-nums{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
 `;
@@ -400,16 +416,24 @@ function cartaoConciliacao(p: PainelEnergia, m: MedidorTela): string {
     return cartaoSecao({ titulo: 'Conferência com a Neoenergia', dica, corpoHtml: estadoVazio({ compacto: true, titulo: 'Ainda não chegou demonstrativo desta UC', texto: `Assim que o demonstrativo da instalação ${m.uc_instalacao} chegar, a comparação aparece aqui.` }) });
   }
   const [ano, mes] = c.referencia.split('-').map(Number);
+  // Tabela própria (não a genérica): a coluna "Situação" quebra linha e, no
+  // celular, desce pra baixo dos números — nada sai da tela em 390 px.
+  const semVeredito = c.linhas.every((l) => l.veredito === 'sem_dado');
+  const num = (v: number | null, apagado: boolean) =>
+    `<td class="en-conc-num${apagado ? ' en-apagado' : ''}"${apagado ? ' title="Só para referência — sem veredito"' : ''}>${temNumero(v) ? escapeHtml(fmtNumero(v, 0)) : SEM_DADO}</td>`;
   const linhas = c.linhas.map((l) => {
     const t = TOM_VEREDITO[l.veredito];
+    const sem = l.veredito === 'sem_dado';
     const dif = l.difPct === null ? '' : ` <span class="cc-faint">${escapeHtml(`${l.difPct > 0 ? '+' : ''}${fmtNumero(l.difPct, 1)}%`)}</span>`;
-    return [l.grandeza === 'injetado' ? 'Devolvido' : 'Comprado', l.medidoKwh, l.distribuidoraKwh, { html: `${pilulaStatus(t.tom, t.texto)}${dif}` }];
-  });
-  const corpo = `${tabela({
-    colunas: [{ titulo: 'kWh' }, { titulo: 'Medidor', alinhar: 'dir', num: true, casas: 0 }, { titulo: 'Neoenergia', alinhar: 'dir', num: true, casas: 0 }, { titulo: 'Situação' }],
-    linhas,
-  })}
-  <p class="en-nota">${escapeHtml(`${MESES[mes - 1]} de ${ano} · medidor com dado em ${fmtNumero(c.coberturaPct, 0)}% do mês.`)} ${escapeHtml(c.linhas.find((l) => l.veredito === 'sem_dado')?.texto ?? 'O ciclo de leitura da Neoenergia não é o mês do calendário: diferença de alguns dias de leitura é normal. Bate = diferença até 5% (ou 10 kWh); acima de 15% = diferença grande.')}</p>`;
+    return `<tr><td class="en-conc-g">${l.grandeza === 'injetado' ? 'Devolvido' : 'Comprado'}</td>${num(l.medidoKwh, sem)}${num(l.distribuidoraKwh, sem)}<td class="en-conc-sit">${pilulaStatus(t.tom, t.texto)}${dif}</td></tr>`;
+  }).join('');
+  const tabelaConc = `<div class="en-conc"><table><thead><tr><th>kWh</th><th class="en-conc-num">Medidor</th><th class="en-conc-num">Neoenergia</th><th class="en-conc-sit">Situação</th></tr></thead><tbody>${linhas}</tbody></table></div>`;
+  const motivo = c.linhas.find((l) => l.veredito === 'sem_dado')?.texto;
+  const nota = semVeredito
+    ? `${motivo ?? 'Sem dado para comparar.'} Os números acima, apagados, são só para referência — sem veredito.`
+    : motivo ?? 'O ciclo de leitura da Neoenergia não é o mês do calendário: diferença de alguns dias de leitura é normal. Bate = diferença até 5% (ou 10 kWh); acima de 15% = diferença grande.';
+  const corpo = `${tabelaConc}
+  <p class="en-nota">${escapeHtml(`${MESES[mes - 1]} de ${ano} · medidor com dado em ${fmtNumero(c.coberturaPct, 0)}% do mês.`)} ${escapeHtml(nota)}</p>`;
   return cartaoSecao({ titulo: 'Conferência com a Neoenergia', dica, corpoHtml: corpo });
 }
 

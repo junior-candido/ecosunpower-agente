@@ -9,7 +9,9 @@
 //   bate     → |dif| ≤ max(5% do faturado, 10 kWh)
 //   atenção  → até 15%
 //   diverge  → acima de 15%
-//   sem dado → cobertura do mês < 90% ou valor ausente de um dos lados
+//   sem dado → cobertura do mês < 97% ou valor ausente de um dos lados
+//              (com pouco dado o "bate"/"diverge" seria chute — a tela
+//              mostra os números apagados, só de referência)
 
 export type Veredito = 'bate' | 'atencao' | 'diverge' | 'sem_dado';
 
@@ -22,7 +24,7 @@ export interface LinhaConciliacao {
   texto: string;
 }
 
-export const COBERTURA_MINIMA_MES_PCT = 90;
+export const COBERTURA_MINIMA_MES_PCT = 97;
 const AVISO_CICLO = 'A diferença pode ser o dia de leitura da Neoenergia (o ciclo de leitura dela não é o mês do calendário).';
 
 const fmt = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 0 });

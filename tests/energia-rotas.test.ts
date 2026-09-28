@@ -133,6 +133,18 @@ describe('Energia da casa', () => {
     expect(db.chamadas.find((c) => c.tabela === 'energia_15min')!.filtros).toContainEqual(['eq', 'canal', 2]);
   });
 
+  it('conferência sem veredito (mês com pouco dado): números apagados e nota, nada de "Bate"', async () => {
+    const db = dbFalso({ medidores_energia: [MEDIDOR], energia_diaria: diaria, geracao_diaria: geracao, energia_15min: [], demonstrativos_gd: [{ company_id: ECOSUN, referencia: '2026-09-01', injetado_kwh: 318, consumo_kwh: 471 }] });
+    const res = resFalso();
+    await rotaEnergiaDaCasa(db, deps())(req(junior, { params: { id: MID } }), res as unknown as Response);
+    const h = html(res);
+    const conc = h.slice(h.indexOf('Conferência com a Neoenergia'));
+    expect(conc).toContain('Sem dado para comparar');
+    expect(conc).toMatch(/class="en-conc-num en-apagado"[^>]*>318/);
+    expect(conc).toMatch(/só para referência/);
+    expect(conc).not.toMatch(/>Bate</);
+  });
+
   it('sem usina: pede para ligar a usina e não inventa consumo', async () => {
     const db = dbFalso({ medidores_energia: [{ ...MEDIDOR, sistema_id: null }], energia_diaria: diaria, energia_15min: [], demonstrativos_gd: [] });
     const res = resFalso();
