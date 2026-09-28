@@ -75,6 +75,18 @@ describe('extrairLeituraShelly', () => {
     expect(extrairLeituraShelly({ ...LEITURA, medido_em: 0 })).toBeNull();
   });
 
+  it('recusa leitura mais de 5 min no FUTURO (relógio do aparelho adiantado)', () => {
+    const agora = new Date('2026-09-07T23:15:00Z');
+    expect(extrairLeituraShelly({ ...LEITURA, medido_em: '2026-09-07T23:19:59Z' }, agora)).not.toBeNull();
+    expect(extrairLeituraShelly({ ...LEITURA, medido_em: '2026-09-07T23:20:01Z' }, agora)).toBeNull();
+    expect(extrairLeituraShelly({ ...LEITURA, medido_em: Math.floor(Date.parse('2026-09-08T10:00:00Z') / 1000) }, agora)).toBeNull();
+  });
+
+  it('sem data, carimba o agora recebido', () => {
+    const agora = new Date('2026-09-07T23:15:00Z');
+    expect(extrairLeituraShelly({ ...LEITURA, medido_em: undefined }, agora)!.medidoEm).toBe('2026-09-07T23:15:00.000Z');
+  });
+
   it('canal ausente vira 0', () => {
     expect(extrairLeituraShelly({ ...LEITURA, canal: undefined })!.canal).toBe(0);
   });
@@ -182,6 +194,12 @@ describe('receberLeituraShelly', () => {
 
   // 🔒 O endereco e PUBLICO. Sem token, qualquer um envenena a base de medicao
   // do cliente — e medicao envenenada vira laudo errado.
+  it('leitura do lote com hora no futuro é recusada, as outras entram', async () => {
+    const deps = fazDeps({ agora: () => new Date('2026-09-07T23:16:00Z') });
+    const r = await receberLeituraShelly(deps as never, [LEITURA, { ...LEITURA, medido_em: '2026-09-08T05:00:00Z' }], 'segredo-do-junior');
+    expect(r).toMatchObject({ aceito: true, salvas: 1, recusadas: 1 });
+  });
+
   it('recusa sem token e nao salva nada', async () => {
     const deps = fazDeps();
     const r = await receberLeituraShelly(deps as never, LEITURA, '');

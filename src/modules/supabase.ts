@@ -1380,7 +1380,10 @@ export class SupabaseService {
   }
 
   /** Última leitura recebida do medidor (o vigia de silêncio olha isso). 1 update por lote. */
-  async marcarLeituraMedidor(medidorId: string, companyId: string, ultimaIso: string): Promise<void> {
+  async marcarLeituraMedidor(medidorId: string, companyId: string, ultimaIsoBruta: string): Promise<void> {
+    // Nunca no futuro: relógio do aparelho adiantado enganaria o vigia por horas.
+    const { limitarAoAgora } = await import('./energia/tempo.js');
+    const ultimaIso = limitarAoAgora(ultimaIsoBruta);
     const { error } = await this.client
       .from('medidores_energia')
       .update({ ultima_leitura_em: ultimaIso })

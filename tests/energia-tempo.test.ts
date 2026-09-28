@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { limitarAoAgora } from '../src/modules/energia/tempo.js';
 import { diaBrt, horaBrt, minutoDoDiaBrt, feriadosNacionais, postoTarifario, inicioDoDiaBrtIso, somarDias } from '../src/modules/energia/tempo.js';
 
 describe('tempo BRT', () => {
@@ -36,4 +37,10 @@ describe('postoTarifario (Neoenergia Brasília: ponta 18–21h)', () => {
   it('terça 22h BRT = fora de ponta', () => expect(postoTarifario('2026-09-09T01:00:00Z')).toBe('fora_ponta'));
   it('sábado 19h = fora de ponta', () => expect(postoTarifario('2026-09-12T22:00:00Z')).toBe('fora_ponta'));
   it('feriado 07/09 19h = fora de ponta', () => expect(postoTarifario('2026-09-07T22:00:00Z')).toBe('fora_ponta'));
+});
+
+describe('limitarAoAgora (relógio do aparelho adiantado não empurra a última leitura pro futuro)', () => {
+  const AGORA = new Date('2026-09-28T15:00:00Z');
+  it('instante no passado fica como está', () => expect(limitarAoAgora('2026-09-28T14:59:00Z', AGORA)).toBe('2026-09-28T14:59:00.000Z'));
+  it('instante no futuro vira agora', () => expect(limitarAoAgora('2026-09-28T15:04:00Z', AGORA)).toBe('2026-09-28T15:00:00.000Z'));
 });

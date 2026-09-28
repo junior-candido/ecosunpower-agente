@@ -74,4 +74,15 @@ describe('energia-repo: company_id do medidor em toda operação', () => {
     await repo.brutoEntre({ ...M, canais: null }, '2026-09-08T00:00:00Z', '2026-09-09T00:00:00Z');
     expect(chamadas[0].filtros).toContainEqual(['canal', 2]); // padrão: fase C
   });
+
+  it('leitura sintética com hora no futuro é gravada com o agora (não empurra ultima_leitura_em)', async () => {
+    const { client, chamadas } = clienteFalso();
+    const repo = criarEnergiaRepo(client);
+    const futuro = new Date(Date.now() + 3_600_000).toISOString();
+    await repo.gravarLeituraSintetica(M, { tensao: 1, corrente: 1, potenciaW: 1, potenciaVa: 1, fatorPotencia: 1, energiaWh: 1, energiaDevolvidaWh: 1 }, futuro);
+    const up = chamadas.find((c) => c.op === 'upsert')!.payload as { medido_em: string };
+    const upd = chamadas.find((c) => c.op === 'update')!.payload as { ultima_leitura_em: string };
+    expect(Date.parse(up.medido_em)).toBeLessThanOrEqual(Date.now());
+    expect(Date.parse(upd.ultima_leitura_em)).toBeLessThanOrEqual(Date.now());
+  });
 });

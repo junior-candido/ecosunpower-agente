@@ -11,6 +11,14 @@ const DIA_MS = 86_400_000;
 /** "Relógio de parede" de Brasília guardado num Date (ler só com getUTC*). */
 const local = (iso: string | number | Date): Date => new Date(new Date(iso).getTime() - OFFSET_MS);
 
+/**
+ * O instante, mas nunca depois de `agora`. Relógio do aparelho adiantado não
+ * pode empurrar ultima_leitura_em pro futuro (o vigia acharia que está tudo
+ * bem por horas enquanto o medidor está calado).
+ */
+export const limitarAoAgora = (iso: string, agora: Date = new Date()): string =>
+  new Date(Math.min(Date.parse(iso), agora.getTime())).toISOString();
+
 /** Dia de Brasília (YYYY-MM-DD) de um instante. */
 export const diaBrt = (iso: string | number | Date): string => local(iso).toISOString().slice(0, 10);
 

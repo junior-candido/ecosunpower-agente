@@ -9,7 +9,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { EnergiaDb, MedidorRow, DiaParaGravar, Fonte } from './energia-service.js';
 import type { Janela15, LeituraBruta } from './agregacao.js';
 import type { LeituraMedidor } from './types.js';
-import { inicioDoDiaBrtIso, somarDias } from './tempo.js';
+import { inicioDoDiaBrtIso, limitarAoAgora, somarDias } from './tempo.js';
 
 const PAGINA = 1000;
 const LIMITE_PAGINAS = 60; // 60 mil linhas por chamada: teto de segurança (1 dia = 1.440)
@@ -152,7 +152,8 @@ export function criarEnergiaRepo(client: SupabaseClient): EnergiaDb {
       if (error) falhou('energia_diaria', error);
     },
 
-    async gravarLeituraSintetica(m, l: LeituraMedidor, medidoEm) {
+    async gravarLeituraSintetica(m, l: LeituraMedidor, medidoEmBruto) {
+      const medidoEm = limitarAoAgora(medidoEmBruto); // relógio do aparelho adiantado não vai pro futuro
       const { error } = await client.from('medicoes_shelly').upsert({
         company_id: m.company_id, medidor_id: m.id, lead_id: m.lead_id, device_id: m.device_id, apelido: m.apelido,
         canal: canalRede(m), medido_em: medidoEm,

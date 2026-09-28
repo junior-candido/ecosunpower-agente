@@ -40,7 +40,10 @@ function num(v: unknown): number | null {
  * Lê uma leitura vinda do aparelho. Devolve null quando não dá pra confiar —
  * é melhor descartar do que gravar lixo: medição envenenada vira laudo errado.
  */
-export function extrairLeituraShelly(bruto: unknown): LeituraShelly | null {
+/** Leitura com hora mais adiantada que isto (relógio do aparelho errado) é recusada. */
+export const TOLERANCIA_FUTURO_MS = 5 * 60_000;
+
+export function extrairLeituraShelly(bruto: unknown, agora: Date = new Date()): LeituraShelly | null {
   const b = (bruto ?? {}) as Record<string, unknown>;
 
   const deviceId = String(b.device_id ?? '').trim();
@@ -60,9 +63,12 @@ export function extrairLeituraShelly(bruto: unknown): LeituraShelly | null {
   //
   // 2) Depois de uma queda de energia o relógio dele volta pra 1970. Gravar
   //    isso arruinaria a série — melhor recusar a leitura.
+  //
+  // 3) Relógio ADIANTADO (mais de 5 min à frente do servidor) também é
+  //    recusado: leitura no futuro faria o vigia achar que está tudo bem.
   let medidoEm: string;
   if (b.medido_em === undefined || b.medido_em === null || b.medido_em === '') {
-    medidoEm = new Date().toISOString();
+    medidoEm = agora.toISOString();
   } else {
     const epoch = typeof b.medido_em === 'number' ? b.medido_em : null;
     // Abaixo de 1e11 é segundos (até o ano 5138); acima, milissegundos.
@@ -72,6 +78,7 @@ export function extrairLeituraShelly(bruto: unknown): LeituraShelly | null {
     if (Number.isNaN(d.getTime())) return null;
     const ano = d.getUTCFullYear();
     if (ano < 2020 || ano > 2100) return null;
+    if (d.getTime() > agora.getTime() + TOLERANCIA_FUTURO_MS) return null;
     medidoEm = d.toISOString();
   }
 
@@ -194,6 +201,8 @@ export type RecebimentoDeps = {
   /** Depois de gravar: atualiza a última leitura do medidor (1 vez por lote). */
   aoReceber?: (medidorId: string, companyId: string, ultimaIso: string) => Promise<void>;
   devicesLegados?: readonly string[];
+  /** Relógio do servidor (teste injeta). Leitura > 5 min no futuro é recusada. */
+  agora?: () => Date;
 };
 
 export type ResultadoRecebimento = {
@@ -268,13 +277,14 @@ export async function receberLeituraShelly(
     const medidorLegadoPorDevice = new Map<string, MedidorDoToken | null>();
 
     const lote = Array.isArray(corpo) ? corpo : [corpo];
+    const agora = (deps.agora ?? (() => new Date()))();
     let salvas = 0;
     let invalidas = 0;        // o aparelho mandou algo que não dá pra usar
     let falhasDeGravacao = 0; // a leitura era boa, o banco é que não aceitou
     const ultimaPorMedidor = new Map<string, { companyId: string; iso: string }>();
 
     for (const item of lote) {
-      const leitura = extrairLeituraShelly(item);
+      const leitura = extrairLeituraShelly(item, agora);
       if (!leitura) { invalidas++; continue; }
       const dev = normalizarDeviceIdShelly(leitura.deviceId);
       let gravar: LeituraParaGravar;
