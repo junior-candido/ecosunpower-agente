@@ -17,6 +17,8 @@ const TELAS_RENOVADAS: string[] = [
   'leads-views.ts',
   // R4 — Funil (Kanban)
   'kanban-views.ts',
+  // Atendimento (Leads › Conversas, 28/09) — nasceu no padrão cc-
+  'atendimento-views.ts',
 ];
 
 describe('teto do Tailwind nas telas renovadas', () => {

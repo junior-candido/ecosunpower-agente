@@ -63,6 +63,8 @@ export const MENU_AREAS: GrupoMenu[] = [
   {
     id: 'comercial', titulo: 'Comercial / CRM', icone: 'users',
     itens: [
+      // Atendimento (28/09): conversas de WhatsApp + cockpit do lead, em 3 colunas.
+      { href: '/dashboard/leads/conversas', key: 'conversas', label: 'Conversas', area: 'leads' },
       { href: '/dashboard/leads', key: 'leads', label: 'Leads', area: 'leads' },
       { href: '/dashboard/leads/kanban', key: 'kanban', label: 'Funil (Kanban)', area: 'leads' },
       { href: '/dashboard/propostas', key: 'propostas', label: 'Propostas', area: 'propostas' },

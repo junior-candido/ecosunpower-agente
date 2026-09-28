@@ -10,6 +10,7 @@ import type { Tarefa } from './tarefas.js';
 import { tarefasPendentes } from './tarefas.js';
 import { seloSla } from './sla-rules.js';
 import { ORDEM_ETAPAS } from './pipeline.js';
+import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 
 export interface LeadRow {
   id: string;
@@ -45,6 +46,14 @@ export interface LeadDetail extends LeadRow {
   anexos: Array<{ id: string; tipo: string; descricao: string | null; url: string; mime_type: string | null; created_by: string; created_at: string }>;
   timeline: Atividade[];
   tarefas: Tarefa[];
+  // Tela de Atendimento (28/09): empresa do lead (a rota confere com a sessão)
+  // e colunas do cadastro (migration 033) mostradas em português no cockpit.
+  company_id?: string | null;
+  uf?: string | null;
+  concessionaria?: string | null;
+  consumo_medio_kwh?: number | null;
+  conta_media_brl?: number | null;
+  contract_signed_at?: string | null;
 }
 
 // Statuses que indicam "já virou cliente" — esses NÃO aparecem em /leads.
@@ -370,7 +379,21 @@ export async function getLeadDetail(client: SupabaseClient, id: string): Promise
     anexos,
     timeline,
     tarefas,
+    company_id: lead.company_id ?? null,
+    uf: lead.uf ?? null,
+    concessionaria: lead.concessionaria ?? null,
+    consumo_medio_kwh: lead.consumo_medio_kwh ?? null,
+    conta_media_brl: lead.conta_media_brl ?? null,
+    contract_signed_at: lead.contract_signed_at ?? null,
   };
+}
+
+// O lead é da EMPRESA da sessão? (Atendimento, 28/09.) Lead sem company_id é
+// legado da casa (a coluna nasceu com default EcoSun, migration 077). Sem
+// empresa na sessão → false (falha fechada).
+export function leadDaSessao(lead: { company_id?: string | null }, viewer: { companyId?: string } | undefined): boolean {
+  if (!viewer?.companyId) return false;
+  return (lead.company_id ?? ECOSUN_COMPANY_ID) === viewer.companyId;
 }
 
 // Pode o usuário ver este lead? Admin vê tudo; vendedor vê balcão (sem dono) ou os seus.

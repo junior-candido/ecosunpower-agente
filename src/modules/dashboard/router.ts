@@ -2351,17 +2351,42 @@ b.onclick=async function(){
     }
   });
 
+  // Atendimento (28/09): Leads › Conversas — lista de conversas | chat | cockpit.
+  // Sem lead escolhido: só a lista (no celular) / "escolha uma conversa" (computador).
+  // Registrado ANTES de /leads/:id (conversas não é UUID).
+  router.get('/leads/conversas', exigir('leads', 'visualizar'), async (req: Request, res: Response) => {
+    try {
+      const viewer = (req as AuthedRequest).dashUser!;
+      const { listarConversas, lerFiltros } = await import('./conversas-queries.js');
+      const { renderAtendimentoPage } = await import('./atendimento-views.js');
+      const filtros = lerFiltros(req.query as Record<string, unknown>);
+      // company_id sai SÓ da sessão (dentro de listarConversas, .eq explícito).
+      const lista = await listarConversas(bancoDoOperador(req as AuthedRequest, supabase), viewer, filtros);
+      res.type('text/html').send(renderAtendimentoPage({ user: viewer, lista, filtros, lead: null }));
+    } catch (err) {
+      console.error('[dashboard/leads/conversas]', err);
+      res.status(500).send(`<h2>Erro ao carregar conversas</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);
+    }
+  });
+
   router.get('/leads/:id', exigir('leads', 'visualizar'), async (req: Request, res: Response) => {
     const id = String(req.params.id);
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     try {
-      const { getLeadDetail } = await import('./leads-queries.js');
+      const { getLeadDetail, leadDaSessao } = await import('./leads-queries.js');
       const { renderLeadDetailPage } = await import('./leads-views.js');
       const lead = await getLeadDetail(supabase, id);
       if (!lead) return res.status(404).send('lead não encontrado');
 
-      // Claim automático: vendedor (não-admin) que abre um lead do balcão vira dono.
       const viewer = (req as AuthedRequest).dashUser!;
+      // Multi-tenant (Atendimento, 28/09): o lead TEM que ser da empresa da sessão.
+      // Antes da trava, qualquer operador abria (e "capturava") lead de outra
+      // empresa sabendo o id. Confere ANTES do claim automático, que grava.
+      if (!leadDaSessao(lead, viewer)) {
+        return res.status(404).send('lead não encontrado');
+      }
+
+      // Claim automático: vendedor (não-admin) que abre um lead do balcão vira dono.
       if (!viewer.isAdmin && lead.claimed_by == null && can(viewer, 'leads', 'editar')) {
         const captured = await claimLead(supabase, id, viewer.id);
         if (captured) {
@@ -2386,10 +2411,18 @@ b.onclick=async function(){
         return res.status(403).send('<h2>Lead de outro vendedor</h2>');
       }
 
-      const conversaIA = await supabaseService.getConversaIA(id);
+      // Atendimento: a ficha virou a tela de 3 colunas. O Copiloto IA saiu da
+      // tela (decisão do Junior, 28/09) — a rota /ia-copiloto continua viva.
       const { servicosDoLead } = await import('./servicos-store.js');
-      const servicosDoCliente = await servicosDoLead(supabase, id).catch(() => []);
-      res.send(renderLeadDetailPage(lead, conversaIA, String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer));
+      const { listarConversas, mensagensDoLead, lerFiltros } = await import('./conversas-queries.js');
+      const db = bancoDoOperador(req as AuthedRequest, supabase);
+      const filtros = lerFiltros(req.query as Record<string, unknown>);
+      const [servicosDoCliente, lista, mensagens] = await Promise.all([
+        servicosDoLead(supabase, id).catch(() => []),
+        listarConversas(db, viewer, filtros),
+        mensagensDoLead(db, id, viewer.companyId).catch(() => undefined),
+      ]);
+      res.send(renderLeadDetailPage(lead, [], String(req.query.docs ?? ''), String(req.query.envio ?? ''), servicosDoCliente, viewer, { lista, filtros, mensagens }));
     } catch (err) {
       console.error('[dashboard/leads/:id]', err);
       res.status(500).send(`<h2>Erro ao carregar lead</h2><pre>${escapeHtmlSimple((err as Error).message)}</pre>`);

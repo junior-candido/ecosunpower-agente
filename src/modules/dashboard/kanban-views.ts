@@ -79,7 +79,7 @@ export function renderKanbanPage(grupos: Record<string, KanbanCard[]>, user?: Da
     trilha: [{ rotulo: 'Comercial' }, { rotulo: 'Funil' }],
     titulo: 'Funil (Kanban)',
     subtitulo: `${total} lead(s) no funil. Arraste os cartões entre as colunas. Os que pulsam em vermelho precisam de ação.`,
-    acoesHtml: `<div class="cc-chips">${chip({ rotulo: 'Lista', href: '/dashboard/leads' })}${chip({ rotulo: 'Kanban', href: '/dashboard/leads/kanban', ativo: true })}</div>`,
+    acoesHtml: `<div class="cc-chips">${chip({ rotulo: 'Conversas', href: '/dashboard/leads/conversas' })}${chip({ rotulo: 'Lista', href: '/dashboard/leads' })}${chip({ rotulo: 'Kanban', href: '/dashboard/leads/kanban', ativo: true })}</div>`,
   });
 
   const body = `
