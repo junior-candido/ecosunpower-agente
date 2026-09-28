@@ -1922,14 +1922,23 @@ b.onclick=async function(){
 
   // ----- RH (Trabalhe Conosco): vagas + funil de candidatos -----
   router.get('/rh', (_req: AuthedRequest, res) => { res.redirect('/dashboard/rh/candidatos'); });
+  // Empresa da SESSÃO pra toda consulta/escrita do RH (revisão de segurança R18):
+  // as escritas usam o client de serviço — sem o company_id, um tenant com o
+  // módulo RH mexia (status, editar, excluir, currículo) em linha de outra empresa.
+  const empresaRh = (req: AuthedRequest, res: Response): string | null => {
+    const c = req.dashUser?.companyId;
+    if (!c) { res.status(403).send('Sem empresa na sessão'); return null; }
+    return c;
+  };
 
   router.get('/rh/vagas', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
     const { listarVagas } = await import('../rh/store.js');
     const { renderVagasPage } = await import('./rh-views.js');
     // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const db = bancoDoOperador(req, supabase);
-    res.type('html').send(renderVagasPage(await listarVagas(db), req.dashUser));
+    res.type('html').send(renderVagasPage(await listarVagas(db, empresa), req.dashUser));
   });
 
   router.get('/rh/vagas/nova', async (req: AuthedRequest, res) => {
@@ -1940,9 +1949,10 @@ b.onclick=async function(){
 
   router.post('/rh/vagas', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'criar')) { res.status(403).send('Sem permissão'); return; }
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const b = req.body ?? {};
     const { criarVaga } = await import('../rh/store.js');
-    const r = await criarVaga(supabase, {
+    const r = await criarVaga(supabase, empresa, {
       titulo: String(b.titulo ?? ''), descricao: String(b.descricao ?? ''),
       requisitos: String(b.requisitos ?? ''), cidade: String(b.cidade ?? 'Brasília-DF'),
       tipo: String(b.tipo ?? 'CLT'),
@@ -1957,8 +1967,9 @@ b.onclick=async function(){
     const { getVaga } = await import('../rh/store.js');
     const { renderVagaFormPage } = await import('./rh-views.js');
     // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const db = bancoDoOperador(req, supabase);
-    const vaga = await getVaga(db, String(req.params.id));
+    const vaga = await getVaga(db, empresa, String(req.params.id));
     if (!vaga) { res.status(404).send('Vaga não encontrada'); return; }
     res.type('html').send(renderVagaFormPage(vaga, req.dashUser));
   });
@@ -1967,12 +1978,14 @@ b.onclick=async function(){
     if (!can(req.dashUser, 'rh', 'editar')) { res.status(403).send('Sem permissão'); return; }
     const b = req.body ?? {};
     if (!String(b.titulo ?? '').trim()) { res.status(400).send('Título da vaga é obrigatório.'); return; }
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const { atualizarVaga } = await import('../rh/store.js');
-    await atualizarVaga(supabase, String(req.params.id), {
+    const r = await atualizarVaga(supabase, empresa, String(req.params.id), {
       titulo: String(b.titulo ?? ''), descricao: String(b.descricao ?? ''),
       requisitos: String(b.requisitos ?? ''), cidade: String(b.cidade ?? ''),
       tipo: String(b.tipo ?? 'CLT'),
     });
+    if (!r.ok) { res.status(r.error === 'vaga não encontrada' ? 404 : 400).send(r.error ?? 'Erro ao salvar vaga'); return; }
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_vaga', entidadeId: String(req.params.id), acao: 'editar' });
     res.redirect('/dashboard/rh/vagas');
   });
@@ -1980,8 +1993,10 @@ b.onclick=async function(){
   router.post('/rh/vagas/:id/status', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'editar')) { res.status(403).send('Sem permissão'); return; }
     const status = req.body?.status === 'fechada' ? 'fechada' as const : 'aberta' as const;
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const { atualizarVaga } = await import('../rh/store.js');
-    await atualizarVaga(supabase, String(req.params.id), { status });
+    const r = await atualizarVaga(supabase, empresa, String(req.params.id), { status });
+    if (!r.ok) { res.status(r.error === 'vaga não encontrada' ? 404 : 400).send(r.error ?? 'Erro ao mudar a vaga'); return; }
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_vaga', entidadeId: String(req.params.id), acao: status === 'fechada' ? 'fechou' : 'reabriu' });
     res.redirect('/dashboard/rh/vagas');
   });
@@ -1996,16 +2011,18 @@ b.onclick=async function(){
       q: typeof req.query.q === 'string' && req.query.q ? req.query.q : undefined,
     };
     // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const db = bancoDoOperador(req, supabase);
-    const [candidatos, vagas] = await Promise.all([listarCandidatos(db, filtros), listarVagas(db)]);
+    const [candidatos, vagas] = await Promise.all([listarCandidatos(db, empresa, filtros), listarVagas(db, empresa)]);
     res.type('html').send(renderCandidatosPage(candidatos, vagas, filtros, req.dashUser));
   });
 
   router.post('/rh/candidatos/:id/status', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'editar')) { res.status(403).send('Sem permissão'); return; }
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const { mudarStatus } = await import('../rh/store.js');
     const novoStatus = String(req.body?.status ?? '');
-    const r = await mudarStatus(supabase, String(req.params.id), novoStatus, req.dashUser?.nome ?? '?');
+    const r = await mudarStatus(supabase, empresa, String(req.params.id), novoStatus, req.dashUser?.nome ?? '?');
     if (!r.ok) { res.status(400).send(r.error ?? 'Erro'); return; }
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_candidato', entidadeId: String(req.params.id), acao: `status:${novoStatus}` });
     res.redirect('/dashboard/rh/candidatos');
@@ -2015,9 +2032,10 @@ b.onclick=async function(){
     if (!can(req.dashUser, 'rh', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
     const { urlCurriculoDoCandidato } = await import('../rh/store.js');
     // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const db = bancoDoOperador(req, supabase);
-    // Tabela via crachá (RLS); URL assinada via SERVIÇO (storage fica fora da 079).
-    const url = await urlCurriculoDoCandidato(db, String(req.params.id), supabase);
+    // Tabela via crachá (RLS) + filtro da empresa; URL assinada via SERVIÇO (storage fica fora da 079).
+    const url = await urlCurriculoDoCandidato(db, String(req.params.id), supabase, empresa);
     if (!url) { res.status(404).send('Currículo não encontrado — tenta de novo em instantes.'); return; }
     res.redirect(url);
   });
@@ -2025,6 +2043,7 @@ b.onclick=async function(){
   router.get('/rh/busca', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'visualizar')) { res.status(403).send('Sem permissão'); return; }
     const { renderBuscaPage } = await import('./rh-views.js');
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const pergunta = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     if (!pergunta) { res.type('html').send(renderBuscaPage('', null, req.dashUser)); return; }
     if (!options.anthropicApiKey) {
@@ -2037,7 +2056,7 @@ b.onclick=async function(){
       const anthropic = new Anthropic({ apiKey: options.anthropicApiKey });
       // Fatia 4 (strangler RLS): rota de leitura no client-do-operador.
       const db = bancoDoOperador(req, supabase);
-      const resultados = await buscarNoBanco(anthropic, db, pergunta);
+      const resultados = await buscarNoBanco(anthropic, db, pergunta, empresa);
       res.type('html').send(renderBuscaPage(pergunta, resultados, req.dashUser));
     } catch (err) {
       console.warn('[rh-busca]', (err as Error).message);
@@ -2047,8 +2066,9 @@ b.onclick=async function(){
 
   router.post('/rh/candidatos/:id/excluir', async (req: AuthedRequest, res) => {
     if (!can(req.dashUser, 'rh', 'excluir')) { res.status(403).send('Sem permissão'); return; }
+    const empresa = empresaRh(req, res); if (!empresa) return;
     const { excluirCandidato } = await import('../rh/store.js');
-    const r = await excluirCandidato(supabase, String(req.params.id));
+    const r = await excluirCandidato(supabase, empresa, String(req.params.id));
     if (!r.ok) { res.status(400).send(r.error ?? 'Erro ao excluir'); return; }
     await audit(supabase, { companyId: req.dashUser!.companyId, userId: req.dashUser!.id, entidade: 'rh_candidato', entidadeId: String(req.params.id), acao: 'excluiu' });
     res.redirect('/dashboard/rh/candidatos');

@@ -4,6 +4,7 @@
 import { randomUUID } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CandidaturaValidada } from './validacao.js';
+import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 
 const BUCKET = 'curriculos';
 
@@ -36,6 +37,30 @@ export interface CandidatoRow {
   created_at: string;
 }
 
+// ---------------------------------------------------------------------------
+// EMPRESA (multi-tenant) — revisão de segurança R18, 28/09/2026.
+// As rotas do painel escrevem com o client de SERVIÇO (bypassa o RLS) e, com a
+// flag RLS_TENANT_ROTAS desligada, até as leituras usam o serviço. Por isso
+// TODA função do painel recebe o company_id da SESSÃO e filtra explicitamente.
+// Linha com company_id nulo (anterior à 077) é da casa (EcoSun), como em
+// usinaPertenceAoOperador. Sem empresa → erro (falha fechada, nunca "tudo").
+// ---------------------------------------------------------------------------
+
+/** Filtro PostgREST da empresa: EcoSun também enxerga company_id nulo. */
+export function filtroEmpresa(companyId: string): { tipo: 'eq'; valor: string } | { tipo: 'or'; valor: string } {
+  if (!companyId) throw new Error('RH: sem empresa na sessão — não consulto sem company_id');
+  return companyId === ECOSUN_COMPANY_ID
+    ? { tipo: 'or', valor: `company_id.is.null,company_id.eq.${ECOSUN_COMPANY_ID}` }
+    : { tipo: 'eq', valor: companyId };
+}
+
+/** Aplica o filtro da empresa numa consulta (select/update/delete). */
+export function daEmpresa<Q>(q: Q, companyId: string): Q {
+  const f = filtroEmpresa(companyId);
+  const b = q as unknown as { eq: (c: string, v: string) => unknown; or: (x: string) => unknown };
+  return (f.tipo === 'eq' ? b.eq('company_id', f.valor) : b.or(f.valor)) as Q;
+}
+
 // Caminho do PDF no bucket: pasta da vaga (ou banco-talentos) + uuid.
 export function montarPathCurriculo(vagaId: string | null): string {
   return `${vagaId ?? 'banco-talentos'}/${randomUUID()}.pdf`;
@@ -50,44 +75,52 @@ export function corteRetencao(agoraMs: number): string {
 // VAGAS
 // ---------------------------------------------------------------------------
 
-export async function listarVagasAbertas(client: SupabaseClient): Promise<Array<Pick<VagaRow, 'id' | 'titulo' | 'descricao' | 'requisitos' | 'cidade' | 'tipo'>>> {
-  const { data, error } = await client
+// Página pública Trabalhe Conosco (site da EcoSun): só as vagas da CASA — vaga
+// de tenant nunca aparece no site da EcoSun.
+export async function listarVagasAbertas(client: SupabaseClient, companyId: string = ECOSUN_COMPANY_ID): Promise<Array<Pick<VagaRow, 'id' | 'titulo' | 'descricao' | 'requisitos' | 'cidade' | 'tipo'>>> {
+  const { data, error } = await daEmpresa(client
     .from('rh_vagas')
     .select('id,titulo,descricao,requisitos,cidade,tipo')
-    .eq('status', 'aberta')
+    .eq('status', 'aberta'), companyId)
     .order('created_at', { ascending: false });
   if (error) { console.warn('[rh] listarVagasAbertas:', error.message); return []; }
   return (data ?? []) as Array<Pick<VagaRow, 'id' | 'titulo' | 'descricao' | 'requisitos' | 'cidade' | 'tipo'>>;
 }
 
-export async function listarVagas(client: SupabaseClient): Promise<VagaRow[]> {
-  const { data, error } = await client.from('rh_vagas').select('*').order('created_at', { ascending: false });
+export async function listarVagas(client: SupabaseClient, companyId: string): Promise<VagaRow[]> {
+  const { data, error } = await daEmpresa(client.from('rh_vagas').select('*'), companyId).order('created_at', { ascending: false });
   if (error) { console.warn('[rh] listarVagas:', error.message); return []; }
   return (data ?? []) as VagaRow[];
 }
 
-export async function getVaga(client: SupabaseClient, id: string): Promise<VagaRow | null> {
-  const { data } = await client.from('rh_vagas').select('*').eq('id', id).maybeSingle();
+export async function getVaga(client: SupabaseClient, companyId: string, id: string): Promise<VagaRow | null> {
+  const { data } = await daEmpresa(client.from('rh_vagas').select('*').eq('id', id), companyId).maybeSingle();
   return (data as VagaRow) ?? null;
 }
 
 export async function criarVaga(
   client: SupabaseClient,
+  companyId: string,
   v: { titulo: string; descricao: string; requisitos: string; cidade: string; tipo: string },
 ): Promise<{ ok: boolean; id?: string; error?: string }> {
   if (!v.titulo.trim()) return { ok: false, error: 'Título da vaga é obrigatório.' };
-  const { data, error } = await client.from('rh_vagas').insert({ ...v, titulo: v.titulo.trim() }).select('id').single();
+  filtroEmpresa(companyId); // sem empresa → erro
+  // company_id explícito: sem ele a vaga nascia com o DEFAULT da 077 (a EcoSun)
+  // e a vaga do tenant ia parar no site e na lista da EcoSun.
+  const { data, error } = await client.from('rh_vagas').insert({ ...v, titulo: v.titulo.trim(), company_id: companyId }).select('id').single();
   if (error) return { ok: false, error: error.message };
   return { ok: true, id: (data as { id: string }).id };
 }
 
 export async function atualizarVaga(
   client: SupabaseClient,
+  companyId: string,
   id: string,
   campos: Partial<{ titulo: string; descricao: string; requisitos: string; cidade: string; tipo: string; status: 'aberta' | 'fechada' }>,
 ): Promise<{ ok: boolean; error?: string }> {
-  const { error } = await client.from('rh_vagas').update(campos).eq('id', id);
+  const { data, error } = await daEmpresa(client.from('rh_vagas').update(campos).eq('id', id), companyId).select('id');
   if (error) return { ok: false, error: error.message };
+  if ((data ?? []).length === 0) return { ok: false, error: 'vaga não encontrada' };
   return { ok: true };
 }
 
@@ -122,9 +155,9 @@ export async function salvarCandidatura(
 
 export interface FiltrosCandidatos { vagaId?: string; status?: string; q?: string }
 
-export async function listarCandidatos(client: SupabaseClient, filtros: FiltrosCandidatos): Promise<CandidatoRow[]> {
+export async function listarCandidatos(client: SupabaseClient, companyId: string, filtros: FiltrosCandidatos): Promise<CandidatoRow[]> {
   // Melhor nota primeiro (quem ainda não foi triado vai pro fim); empate = mais novo primeiro.
-  let query = client.from('rh_candidatos').select('*')
+  let query = daEmpresa(client.from('rh_candidatos').select('*'), companyId)
     .order('nota_ia', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
     .limit(500);
@@ -139,6 +172,7 @@ export async function listarCandidatos(client: SupabaseClient, filtros: FiltrosC
 
 export async function mudarStatus(
   client: SupabaseClient,
+  companyId: string,
   id: string,
   novoStatus: string,
   quem: string,
@@ -150,16 +184,16 @@ export async function mudarStatus(
   // que a gente leu (.eq status). Dois usuários mexendo juntos não apagam a
   // entrada de histórico um do outro — o segundo relê e tenta de novo.
   for (let tentativa = 0; tentativa < 3; tentativa++) {
-    const { data: atual } = await client.from('rh_candidatos').select('status,historico').eq('id', id).maybeSingle();
+    const { data: atual } = await daEmpresa(client.from('rh_candidatos').select('status,historico').eq('id', id), companyId).maybeSingle();
     if (!atual) return { ok: false, error: 'candidato não encontrado' };
     const statusLido = (atual as { status: string }).status;
     const historico = Array.isArray((atual as { historico: unknown }).historico) ? (atual as CandidatoRow).historico : [];
     historico.push({ de: statusLido, para: novoStatus, quem, quando: new Date().toISOString() });
-    const { data: gravadas, error } = await client
+    const { data: gravadas, error } = await daEmpresa(client
       .from('rh_candidatos')
       .update({ status: novoStatus, historico })
       .eq('id', id)
-      .eq('status', statusLido)
+      .eq('status', statusLido), companyId)
       .select('id');
     if (error) return { ok: false, error: error.message };
     if ((gravadas ?? []).length > 0) return { ok: true };
@@ -181,8 +215,12 @@ export async function urlCurriculo(client: SupabaseClient, path: string): Promis
 // a assinatura falharia. A LEITURA da tabela usa `client` (isolada pelo RLS); a
 // assinatura usa o client de SERVIÇO. Sem vazamento: o path vem da linha que o
 // próprio RLS liberou. Ausente = usa o mesmo client (comportamento antigo).
-export async function urlCurriculoDoCandidato(client: SupabaseClient, candidatoId: string, storageClient?: SupabaseClient): Promise<string | null> {
-  const { data } = await client.from('rh_candidatos').select('curriculo_path').eq('id', candidatoId).maybeSingle();
+// `companyId` (a rota do painel SEMPRE passa): o candidato tem que ser da
+// empresa da sessão — sem isso, com o banco de serviço (flag RLS desligada),
+// qualquer logado abria o currículo de outra empresa pelo id.
+export async function urlCurriculoDoCandidato(client: SupabaseClient, candidatoId: string, storageClient?: SupabaseClient, companyId?: string): Promise<string | null> {
+  const base = client.from('rh_candidatos').select('curriculo_path').eq('id', candidatoId);
+  const { data } = await (companyId !== undefined ? daEmpresa(base, companyId) : base).maybeSingle();
   const path = (data as { curriculo_path?: string } | null)?.curriculo_path;
   if (!path) return null;
   return urlCurriculo(storageClient ?? client, path);
@@ -191,15 +229,15 @@ export async function urlCurriculoDoCandidato(client: SupabaseClient, candidatoI
 // Exclusão manual de 1 candidato (botão do dashboard / pedido LGPD do titular).
 // PDF primeiro, linha depois — mesma regra da retenção: Storage falhou, a linha
 // fica e o botão avisa (sem PDF órfão perdido no bucket).
-export async function excluirCandidato(client: SupabaseClient, id: string): Promise<{ ok: boolean; error?: string }> {
-  const { data } = await client.from('rh_candidatos').select('curriculo_path').eq('id', id).maybeSingle();
+export async function excluirCandidato(client: SupabaseClient, companyId: string, id: string): Promise<{ ok: boolean; error?: string }> {
+  const { data } = await daEmpresa(client.from('rh_candidatos').select('curriculo_path').eq('id', id), companyId).maybeSingle();
   if (!data) return { ok: false, error: 'candidato não encontrado' };
   const path = (data as { curriculo_path: string }).curriculo_path;
   if (path) {
     const rm = await client.storage.from(BUCKET).remove([path]);
     if (rm.error) return { ok: false, error: `não consegui apagar o PDF agora (${rm.error.message}) — tenta de novo` };
   }
-  const del = await client.from('rh_candidatos').delete().eq('id', id);
+  const del = await daEmpresa(client.from('rh_candidatos').delete().eq('id', id), companyId);
   if (del.error) return { ok: false, error: del.error.message };
   return { ok: true };
 }

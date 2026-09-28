@@ -8,6 +8,7 @@ import multer from 'multer';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { validarCandidatura, CURRICULO_MAX_BYTES } from './validacao.js';
 import { getVaga, listarVagasAbertas, salvarCandidatura } from './store.js';
+import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 
 const ORIGENS_PERMITIDAS = new Set([
   'https://ecosunpower.eng.br',
@@ -99,7 +100,8 @@ export function criarRhRoutesPublicas(
     // Vaga do formulário: se não existe mais ou já fechou, vai pro Banco de
     // Talentos em vez de perder a candidatura (ou aceitar em vaga encerrada).
     if (r.dados.vagaId) {
-      const vaga = await getVaga(client, r.dados.vagaId);
+      // Site da EcoSun: só aceita vaga da CASA (vaga de tenant vai pro Banco de Talentos).
+      const vaga = await getVaga(client, ECOSUN_COMPANY_ID, r.dados.vagaId);
       if (!vaga || vaga.status !== 'aberta') r.dados.vagaId = null;
     }
     const salvo = await salvarCandidatura(client, r.dados, req.file!.buffer);
