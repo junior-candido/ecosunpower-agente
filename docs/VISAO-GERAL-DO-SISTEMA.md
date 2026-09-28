@@ -189,3 +189,11 @@ script); `GET /leads/:id/conversa.json` e `/leads/conversas/contato.json` devolv
 puxa o que a Evolution já guardou (`/chat/findMessages`). Eva/dono/equipe (`definirNumerosInternos` +
 `contatos_internos`) ficam fora da caixa pessoal. A lista pessoal usa `conversas_pessoais_recentes`
 (migration 140: uma linha por contato; sem ela, cai nas 1000 mensagens mais novas).
+**Mídia no chat (W1, 28/09/2026):** `midia-whatsapp.ts` (lista branca de tipos com conferência dos primeiros bytes,
+foto 5 MB / resto 16 MB, bucket privado `whatsapp-midia` com caminho `<company_id>/<ano>/<mês>/<uuid>.<ext>`,
+migration 141). Enviar: `POST /leads/:id/responder-midia` e `/leads/conversas/contato/responder-midia`
+(multipart, mesmas travas do texto; Meta = upload + `sendMediaById`; Evolution = `sendMediaBase64` /
+`sendWhatsAppAudio`; gravação WebM → OGG em `audio-ogg.ts`). Receber: o consumidor da fila guarda a mídia do
+número da assistente (`arquivarMidiaDaAssistente`) e o webhook do número pessoal completa o arquivo em segundo
+plano (`completarMidiaRecebida`). Ver: `GET /leads/midia/:id` confere empresa/dono/vendedor e redireciona para
+URL assinada de 2 min. Apagar o lead apaga os arquivos dele do bucket.
