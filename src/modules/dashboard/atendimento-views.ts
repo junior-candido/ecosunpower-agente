@@ -31,6 +31,7 @@ import {
   RESULTADO_ENVIO, LIMITE_TEXTO, type ViaEnvio, type MotivoBloqueio,
 } from './atendimento-envio.js';
 import { parametroNome, type ModeloAtendimento } from './modelos-atendimento.js';
+import { respostasProntas } from './respostas-prontas.js';
 
 const FUSO = 'America/Sao_Paulo';
 
@@ -237,7 +238,33 @@ export interface CompositorInput {
   resultado?: string | null;
   /** Trava LGPD: este telefone não pode receber por este canal. */
   lgpdBloqueado?: boolean;
+  /** Nome da empresa nas respostas prontas (Parte 2c). */
+  empresaNome?: string;
+  /** Quem está escrevendo (1º nome vai nas respostas prontas). */
+  euNome?: string;
   agora?: number;
+}
+
+/**
+ * Respostas prontas (Parte 2c): o texto entra no campo e dá pra editar antes de
+ * enviar. Com a janela fechada no número da Eva, cada uma escolhe o MODELO
+ * aprovado correspondente (a que não tem modelo fica desligada).
+ */
+function chipsProntas(c: CompositorInput, nomeCliente: string | null, janelaFechada: boolean): string {
+  const lista = respostasProntas({
+    nomeCliente, eu: c.euNome, empresa: c.empresaNome ?? '',
+    modelosAprovados: c.via === 'waba' ? c.modelos.map((m) => m.nome) : [],
+  });
+  const rotuloModelo = (nome: string | null) => c.modelos.find((m) => m.nome === nome)?.rotulo ?? nome ?? '';
+  const chips = lista.map((r) => {
+    if (janelaFechada) {
+      return r.modelo
+        ? `<button type="button" class="cc-chip cc-at-pronta" data-pronta="${escapeHtml(r.id)}" data-modelo="${escapeHtml(r.modelo)}" title="${escapeHtml(`Janela fechada: vira o modelo "${rotuloModelo(r.modelo)}"`)}">${escapeHtml(r.rotulo)}</button>`
+        : `<button type="button" class="cc-chip cc-at-pronta" disabled title="Sem modelo aprovado para esta resposta">${escapeHtml(r.rotulo)}</button>`;
+    }
+    return `<button type="button" class="cc-chip cc-at-pronta" data-pronta="${escapeHtml(r.id)}" data-texto="${escapeHtml(r.texto)}" title="Coloca o texto no campo — dá pra editar antes de enviar">${escapeHtml(r.rotulo)}</button>`;
+  }).join('');
+  return `<div class="cc-at-prontas" role="group" aria-label="Respostas prontas"><span class="cc-at-prontas-t">${janelaFechada ? 'Respostas prontas (viram modelo)' : 'Respostas prontas'}</span>${chips}</div>`;
 }
 
 const TEXTO_BLOQUEIO: Record<MotivoBloqueio, string> = {
@@ -321,10 +348,12 @@ function compositor(lead: LeadDetail, mensagens: MensagemChat[], c: CompositorIn
       </form>`
     : '';
   const modelo = bloqueioModelo ? '' : formModelo(lead.id, c, lead.name ?? '', !!bloqueioTexto);
+  const prontas = !bloqueioTexto || !bloqueioModelo ? chipsProntas(c, lead.name, !!bloqueioTexto) : '';
 
   return `<footer class="cc-at-compor cc-at-compor-on" id="responder">
       ${banner}
       ${faixaJanela}
+      ${prontas}
       ${formTexto}
       ${modelo}
       ${rodape}
@@ -787,7 +816,12 @@ document.querySelectorAll('form[data-envio]').forEach(function(f){
 var sel=document.getElementById('cc-at-modelo-sel'),nome=document.getElementById('cc-at-modelo-nome'),prev=document.getElementById('cc-at-previa'),custo=document.getElementById('cc-at-modelo-custo');
 function atualizar(){if(!sel||!prev)return;var o=sel.options[sel.selectedIndex];if(!o)return;var n=(nome&&nome.value.trim())||'tudo bem';var t=o.getAttribute('data-texto')||'';prev.textContent=t?t.split('{nome}').join(n):'O texto deste modelo está na Meta (nome: '+n+').';if(custo)custo.textContent=o.getAttribute('data-custo')||'';}
 if(sel)sel.addEventListener('change',atualizar);if(nome)nome.addEventListener('input',atualizar);
-var t=document.getElementById('cc-at-texto');if(t)t.addEventListener('keydown',function(e){if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();var f=t.form;if(f){if(f.requestSubmit)f.requestSubmit();else f.submit();}}});
+var t=document.getElementById('cc-at-texto');
+document.querySelectorAll('[data-pronta]').forEach(function(b){b.addEventListener('click',function(){
+  if(t){t.value=b.getAttribute('data-texto')||'';t.focus();try{t.setSelectionRange(t.value.length,t.value.length);}catch(e){}return;}
+  var m=b.getAttribute('data-modelo');if(sel&&m){sel.value=m;atualizar();var d=sel.closest('details');if(d)d.open=true;sel.focus();}
+});});
+if(t)t.addEventListener('keydown',function(e){if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();var f=t.form;if(f){if(f.requestSubmit)f.requestSubmit();else f.submit();}}});
 })();`;
 
 /** CSS só do Atendimento (tokens cc- → funciona nos dois temas). */
@@ -889,6 +923,10 @@ export const CSS_ATENDIMENTO = `
 .cc-at-nota{margin:0;font-size:11px;color:var(--cc-faint);line-height:1.35}
 .cc-at-custo-aviso{color:var(--cc-muted)}
 .cc-at-bloq{gap:8px;color:var(--cc-text-2);border-style:solid}
+.cc-at-prontas{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.cc-at-prontas-t{font-size:11px;color:var(--cc-muted);margin-right:2px}
+.cc-chip.cc-at-pronta{min-height:26px;padding:3px 10px;font-size:12px;cursor:pointer}
+.cc-chip.cc-at-pronta:disabled{opacity:.45;cursor:not-allowed}
 .cc-at-canal-whatsapp_business{color:var(--cc-gold-2);border-color:rgba(251,191,36,.45)}
 .cc-at-vazio,.cc-at-chat-vazio{justify-content:center}
 .cc-at-chat-vazio .cc-empty,.cc-at-vazio{margin:auto;max-width:360px;text-align:center}

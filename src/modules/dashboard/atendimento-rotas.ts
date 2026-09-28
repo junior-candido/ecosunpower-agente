@@ -289,6 +289,8 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
         chave: randomUUID(),
         resultado: resp,
         lgpdBloqueado: !!telefone && envioProibido(telefone, deps.engineerPhone, empresaDe(companyId)),
+        empresaNome: empresaDe(companyId).nomeFantasia,
+        euNome: req.dashUser?.nome ?? '',
         agora: agora(),
       };
     } catch (e) {

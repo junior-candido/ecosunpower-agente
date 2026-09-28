@@ -253,7 +253,8 @@ describe('envioDaTela (o que o campo de resposta mostra)', () => {
   it('casa: número oficial, modelos conferidos na Meta, chave nova a cada tela, resultado só se conhecido', async () => {
     const c = cenario();
     const e = await c.rotas.envioDaTela({ ...req({}), query: { resp: 'enviada' } }, { phone: '61999990001' });
-    expect(e).toMatchObject({ via: 'waba', canal: 'eva_oficial', resultado: 'enviada', lgpdBloqueado: false });
+    expect(e).toMatchObject({ via: 'waba', canal: 'eva_oficial', resultado: 'enviada', lgpdBloqueado: false, euNome: 'Junior' });
+    expect(e!.empresaNome).toBeTruthy();
     expect(e!.modelos.map((m) => m.nome)).toEqual(['reativacao_lead_v1']);
     const e2 = await c.rotas.envioDaTela({ ...req({}), query: { resp: '<script>' } }, { phone: '61999990001' });
     expect(e2!.resultado).toBeNull();

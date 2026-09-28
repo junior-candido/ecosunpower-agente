@@ -154,3 +154,30 @@ describe('permissão', () => {
     expect(pausada).not.toContain('/resume-eva"');
   });
 });
+
+describe('respostas prontas (Parte 2c)', () => {
+  const env = (o: Partial<CompositorInput> = {}) => envio({ empresaNome: 'EcoSunPower', euNome: 'Junior Silva', ...o });
+  it('janela aberta: 5 chips que colocam o texto (com nomes) no campo — editável antes de enviar', () => {
+    const c = compor(tela({ name: 'Ana Souza', conversation_messages: msgsCliente(2) }, env()));
+    expect((c.match(/data-pronta="/g) ?? []).length).toBe(5);
+    expect(c).toContain('data-texto="Oi, Ana! Aqui é Junior, da EcoSunPower.');
+    expect(c).not.toContain('data-modelo=');
+    expect(c).toContain('>Pedir conta de luz</button>');
+  });
+  it('janela fechada: cada chip escolhe o MODELO correspondente; sem modelo aprovado fica desligado', () => {
+    const c = compor(tela({ conversation_messages: msgsCliente(30) }, env()));
+    expect(c).toContain('Respostas prontas (viram modelo)');
+    expect(c).toContain('data-pronta="pedir_conta" data-modelo="reativacao_lead_v1"');
+    expect(c).not.toContain('data-texto="Oi,');
+    const sem = compor(tela({ conversation_messages: msgsCliente(30) }, env({ modelos: [MODELOS[1]] })));
+    expect(sem).toContain('<button type="button" class="cc-chip cc-at-pronta" disabled title="Sem modelo aprovado para esta resposta">Boas-vindas</button>');
+  });
+  it('tenant (QR): texto com o nome da empresa dele, nunca "EcoSunPower"', () => {
+    const c = compor(tela({ conversation_messages: msgsCliente(40) }, env({ via: 'evolution', canal: 'qr_code', modelos: [], empresaNome: 'Solar Aurora Teste', euNome: 'Bia' }), USER_TENANT));
+    expect(c).toContain('Aqui é Bia, da Solar Aurora Teste');
+    expect(c).not.toContain('EcoSunPower');
+  });
+  it('bloqueado (opt-out): sem respostas prontas', () => {
+    expect(compor(tela({ opt_out: true, eva_active: false, conversation_messages: msgsCliente(2) }, env()))).not.toContain('data-pronta');
+  });
+});

@@ -76,3 +76,9 @@ export const ENTRA_RESPONDER: MudancaContrato = {
     dataAttrs: ['data-envio'],
   },
 };
+
+/** Parte 2c: respostas prontas (chips que preenchem o campo ou escolhem o modelo). */
+export const ENTRA_RESPOSTAS_PRONTAS: MudancaContrato = {
+  motivo: 'Junior: respostas prontas (boas-vindas, conta de luz, proposta, visita, financiamento)',
+  entra: { seletores: ['[data-pronta]', 'details'], dataAttrs: ['data-pronta'] },
+};
