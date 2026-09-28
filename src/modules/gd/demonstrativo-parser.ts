@@ -145,8 +145,9 @@ export function parseDemonstrativo(texto: string): ResultadoParse {
 
   // Totais — linha logo depois de "EXPIRADOS":
   // "<total inj> <total comp> <saldo> <prox a expirar> <ciclo mm/aaaa | -> <expirados>"
+  // Com saldo zerado a Neoenergia deixa o ciclo em branco (nem "-"): "1485 1485 0 0 0".
   const tot = new RegExp(
-    String.raw`EXPIRADOS\s*\n\s*(${N})\s+(${N})\s+(${N})\s+(${N})\s+(${MES_NUM}|-)\s+(${N})\s*$`,
+    String.raw`EXPIRADOS\s*\n\s*(${N})\s+(${N})\s+(${N})\s+(${N})(?:\s+(${MES_NUM}|-))?\s+(${N})\s*$`,
     'm',
   ).exec(t);
 
@@ -181,7 +182,7 @@ export function parseDemonstrativo(texto: string): ResultadoParse {
     totalCompensadoKwh: num(tot?.[2]),
     saldoAcumuladoKwh: num(tot?.[3]),
     proximoExpirarKwh: num(tot?.[4]),
-    cicloExpirar: tot && tot[5] !== '-' ? mesParaData(tot[5]) : null,
+    cicloExpirar: tot?.[5] && tot[5] !== '-' ? mesParaData(tot[5]) : null,
     creditosExpiradosKwh: num(tot?.[6]),
     unidades,
   };
