@@ -11,11 +11,13 @@
 -- (ou fica com segundos_cobertos < 900) — nunca vira zero inventado.
 --
 -- Dia = dia local de Brasília (UTC−3), igual geracao_diaria.data.
--- Consumo é dado pessoal: RLS FORCE por company_id nas duas tabelas.
+-- Consumo é dado pessoal: RLS FORCE por company_id nas duas tabelas, e FK
+-- composta (medidor_id, company_id) → medidores_energia com ON DELETE CASCADE:
+-- "apagar medidor e todos os dados" leva as janelas e os dias junto.
 -- Idempotente: pode rodar de novo sem estragar nada.
 
 create table if not exists energia_15min (
-  medidor_id          uuid not null references medidores_energia(id) on delete cascade,
+  medidor_id          uuid not null,
   company_id          uuid not null,
   papel               text not null default 'rede' check (papel in ('rede', 'geracao', 'carga')),
   canal               smallint not null default 0,
@@ -33,7 +35,11 @@ create table if not exists energia_15min (
   segundos_cobertos   smallint not null default 0 check (segundos_cobertos between 0 and 900),
   fonte               text not null check (fonte in ('push', 'nuvem', 'backfill')),
   atualizado_em       timestamptz not null default now(),
-  primary key (medidor_id, papel, canal, inicio)
+  primary key (medidor_id, papel, canal, inicio),
+  -- FK composta: a linha é do medidor E da empresa dele. Apagar o medidor
+  -- apaga as janelas (LGPD).
+  constraint energia_15min_medidor_fk foreign key (medidor_id, company_id)
+    references medidores_energia (id, company_id) on delete cascade
 );
 
 comment on table energia_15min is
@@ -42,7 +48,7 @@ comment on table energia_15min is
 create index if not exists energia_15min_empresa_inicio on energia_15min (company_id, inicio);
 
 create table if not exists energia_diaria (
-  medidor_id            uuid not null references medidores_energia(id) on delete cascade,
+  medidor_id            uuid not null,
   company_id            uuid not null,
   dia                   date not null,                         -- dia local de Brasília
   importado_kwh         numeric(10,3),
@@ -61,7 +67,9 @@ create table if not exists energia_diaria (
   min_critica           integer,
   cobertura_pct         numeric(5,2) not null,                 -- % do dia com dado
   fechado_em            timestamptz not null default now(),
-  primary key (medidor_id, dia)
+  primary key (medidor_id, dia),
+  constraint energia_diaria_medidor_fk foreign key (medidor_id, company_id)
+    references medidores_energia (id, company_id) on delete cascade
 );
 
 comment on table energia_diaria is
