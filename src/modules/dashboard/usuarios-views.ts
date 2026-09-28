@@ -53,7 +53,7 @@ export function renderUsuariosListPage(users: UserListItem[], roles: RoleRow[], 
     </tr></thead>
     <tbody>${linhas || '<tr><td class="px-3 py-4 text-slate-400" colspan="5">Nenhum usuário</td></tr>'}</tbody>
   </table>`;
-  return renderLayout({ active: 'home', title: 'Usuários', body, user: viewer });
+  return renderLayout({ active: 'usuarios', title: 'Usuários', body, user: viewer });
 }
 
 export function renderUsuarioEditPage(
@@ -89,5 +89,5 @@ export function renderUsuarioEditPage(
     </label>
     <button class="bg-sky-600 hover:bg-sky-700 text-white rounded-md px-4 py-2 w-fit">Salvar</button>
   </form>`;
-  return renderLayout({ active: 'home', title: 'Editar usuário', body, user: viewer });
+  return renderLayout({ active: 'usuarios', title: 'Editar usuário', body, user: viewer });
 }

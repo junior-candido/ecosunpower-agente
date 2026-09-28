@@ -7,7 +7,14 @@
 // A régua aqui é honestidade: mostrar o que o módulo FAZ, com as palavras de
 // quem usa, sem número inventado. Vitrine com dado falso vende uma vez e queima
 // a confiança pro resto.
-import { renderLayout, escapeHtml } from './views.js';
+import { renderLayout, escapeHtml, type ChaveAtiva } from './views.js';
+import { ehChaveDeMenu } from './menu-areas.js';
+
+/** A vitrine acende no menu o próprio módulo que está sendo apresentado
+ *  (antes acendia "Visão geral", que o tenant nem vê). Chave desconhecida → home. */
+function chaveAtiva(chave: string): ChaveAtiva {
+  return ehChaveDeMenu(chave) ? (chave as ChaveAtiva) : 'home';
+}
 
 export interface ModuloVitrine {
   titulo: string;
@@ -156,7 +163,7 @@ export function telaConhecer(chave: string, empresaNome: string, user?: unknown)
   </div>
   <p style="margin-top:16px"><a href="/dashboard/home" style="color:#9ca3af;font-size:13px">← voltar</a></p>
 </div>`;
-  return renderLayout({ active: 'home', title: m.titulo, body, dark: true, user: user as never });
+  return renderLayout({ active: chaveAtiva(chave), title: m.titulo, body, dark: true, user: user as never });
 }
 
 export function telaConhecerEnviado(chave: string, user?: unknown): string {
@@ -169,5 +176,5 @@ export function telaConhecerEnviado(chave: string, user?: unknown): string {
   </p>
   <p style="margin-top:18px"><a href="/dashboard/home" style="color:#9ca3af;font-size:13px">← voltar pro início</a></p>
 </div>`;
-  return renderLayout({ active: 'home', title: 'Interesse registrado', body, dark: true, user: user as never });
+  return renderLayout({ active: chaveAtiva(chave), title: 'Interesse registrado', body, dark: true, user: user as never });
 }

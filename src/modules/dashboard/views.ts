@@ -4,24 +4,23 @@
 import type { DashboardKpi, PropostaRow, ManutencaoRow, GraficoMensal, SistemaMonitorRow } from './queries.js';
 import type { DetalheCalendario } from '../monitoring/service.js';
 import type { IntradayPonto } from '../monitoring/types.js';
-import { LOGO_ECOSUNPOWER_BRANCO_BASE64, LOGO_ECOSUNPOWER_DARK_BASE64 } from '../proposal/assets/logo-base64.js';
+import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.js';
+import { escapeHtml } from './ui/html.js';
+import { LOGO_NEGATIVA_WIDE_BASE64 } from './ui/logo-negativa-wide.js';
+import { SPRITE_ICONES } from './ui/icones.js';
+import { CSS_DESIGN_SYSTEM, FONTES_HEAD } from './ui/estilo.js';
+import { icone, selo } from './ui/componentes.js';
+import { montarMenu, type ItemMontado, type IdGrupo, type SeloGrupo } from './menu-areas.js';
 import { corDaMarca, logoDaEmpresa, LOGO_PADRAO_CASA } from './marca-empresa.js';
-import { estadoDoItem } from './vitrine-menu.js';
 import { formatPhoneBR, normalizeBrazilianPhone } from '../meta-leadgen.js';
 import { renderClienteSelector } from './proprietario.js';
 import { empresa } from '../empresa-config.js';
-import { can, type Area, type Nivel, type DashUser } from './permissions.js';
+import { can, type DashUser } from './permissions.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 
-export function escapeHtml(s: string | null | undefined): string {
-  if (s === null || s === undefined) return '';
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
+// Escape único do painel: mora no design system (ui/html.ts) e é reexportado
+// aqui porque quase todas as telas importam `escapeHtml` de './views.js'.
+export { escapeHtml };
 
 export function brl(v: number | null | undefined): string {
   if (typeof v !== 'number' || !Number.isFinite(v)) return '—';
@@ -83,129 +82,46 @@ function formatStatusFollowup(p: PropostaRow): string {
 }
 
 // =========================================================================
-// LAYOUT (wrapper comum)
+// LAYOUT (wrapper comum) — casca do Energy Command Center (fase A, 27/09/2026)
+// Spec: docs/superpowers/specs/2026-09-27-command-center-design.md
+// Menu por ÁREA (menu-areas.ts), logo negativa-wide GRANDE, cartão do usuário,
+// Modo TV, gaveta no celular. Área principal navy escura nas telas desenhadas
+// pro escuro (`dark: true`) e clara nas demais (ninguém quebra).
 // =========================================================================
 
+/** Chave do item ativo no menu (ver MENU_AREAS). */
+export type ChaveAtiva =
+  | 'command_center' | 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'contratos' | 'manutencao'
+  | 'monitoramento' | 'medicao' | 'usinas_kanban' | 'pos_venda' | 'pastas' | 'marketing' | 'blog'
+  | 'email' | 'cadencia' | 'leads' | 'recados' | 'conhecimento' | 'kanban' | 'clientes' | 'financeiro'
+  | 'fiscal' | 'cobrar' | 'assinaturas' | 'minha_assinatura' | 'whatsapp' | 'servicos' | 'usuarios'
+  | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro' | 'lojas' | 'predio'
+  | 'demonstrativos' | 'tv';
+
 interface LayoutInput {
-  active: 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'contratos' | 'manutencao' | 'monitoramento' | 'medicao' | 'usinas_kanban' | 'pos_venda' | 'pastas' | 'marketing' | 'blog' | 'email' | 'cadencia' | 'leads' | 'recados' | 'conhecimento' | 'kanban' | 'clientes' | 'financeiro' | 'fiscal' | 'assinaturas' | 'minha_assinatura' | 'whatsapp' | 'servicos' | 'usuarios' | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro' | 'lojas' | 'predio' | 'demonstrativos';
+  active: ChaveAtiva;
   title: string;
   body: string;
   scripts?: string;
-  // Tema escuro escopado: só quem foi desenhado pra dark liga (hoje só o
-  // Painel de Triagem). Default claro = não quebra as telas não adaptadas.
+  // Tema: `dark: true` = tela desenhada pro escuro → área principal navy do
+  // Command Center. Sem `dark` = área clara de sempre (telas ainda claras e o
+  // tenant que pediu tema claro).
   dark?: boolean;
   // Usuário logado pra condicionar o menu por permissão. COMPATIBILIDADE:
-  // se undefined, mostra TUDO (não quebra telas ainda não migradas).
+  // se undefined, mostra tudo que não é exclusivo de tenant.
   user?: DashUser;
+  // Telas do Command Center usam a largura toda (o resto fica em 80rem).
+  largo?: boolean;
+  // Selos de contagem por área no menu (fase B liga com número real).
+  selos?: Partial<Record<IdGrupo, SeloGrupo>>;
 }
-
-// Estrutura de um item do sidebar.
-interface SideItem {
-  href: string;
-  key: string;
-  label: string;
-  area?: Area;
-  nivel?: Nivel;
-  // [Fase 2 A1] item exclusivo da EcoSun (gestão de tenants): some pro
-  // usuário de outra empresa mesmo sendo admin (a rota também barra).
-  soEcosun?: boolean;
-  // [Fatia 4 assinaturas] item exclusivo do TENANT (ex: Minha assinatura):
-  // some pra EcoSun e pra telas sem usuário.
-  soTenant?: boolean;
-}
-// Estrutura de um setor (departamento) do sidebar.
-interface SideSetor {
-  titulo: string; // já inclui ícone
-  itens: SideItem[];
-}
-
-// Setores e itens do menu lateral (departamentos). Gating por permissão
-// reusa exatamente a mesma checagem do navItem antigo: item com área só
-// aparece se can(user, area, nivel). Item sem área = sempre visível. Sem
-// usuário (telas não migradas) = mostra tudo (compatibilidade).
-const SIDEBAR_SETORES: SideSetor[] = [
-  {
-    titulo: '📊 Visão geral',
-    itens: [
-      { href: '/dashboard/home', key: 'home', label: '📊 Visão geral' },
-      { href: '/dashboard/cockpit', key: 'cockpit', label: '⚡ Cockpit' },
-      { href: '/dashboard/cerebro', key: 'cerebro', label: '🧠 Cérebro', area: 'relatorios', soEcosun: true },
-      { href: '/dashboard/predio', key: 'predio', label: '🏢 Prédio Vivo', soEcosun: true },
-    ],
-  },
-  {
-    titulo: '💼 Comercial',
-    itens: [
-      { href: '/dashboard/vendas/fechar', key: 'fechar_venda', label: '💰 Fechou! (registrar venda)' },
-      { href: '/dashboard/contratos', key: 'contratos', label: '📄 Contratos & Procurações' },
-      { href: '/dashboard/leads', key: 'leads', label: '👥 Leads', area: 'leads' },
-      { href: '/dashboard/recados', key: 'recados', label: '📥 Recados da equipe', area: 'leads' },
-      { href: '/dashboard/conhecimento', key: 'conhecimento', label: '🧠 O que a assistente sabe', area: 'leads' },
-      { href: '/dashboard/leads/kanban', key: 'kanban', label: '📋 Funil (Kanban)', area: 'leads' },
-      { href: '/dashboard/clientes', key: 'clientes', label: '🤝 Clientes', soEcosun: true },
-      { href: '/dashboard/propostas', key: 'propostas', label: '📊 Propostas', area: 'propostas' },
-      { href: '/dashboard/lojas', key: 'lojas', label: '🏪 Comparador de Lojas' },
-    ],
-  },
-  {
-    titulo: '📣 Marketing',
-    itens: [
-      { href: '/dashboard/marketing', key: 'marketing', label: '📣 Campanhas', area: 'marketing' },
-      { href: '/dashboard/marketing/blog', key: 'blog', label: '📝 Blog', area: 'marketing' },
-      { href: '/dashboard/marketing/email', key: 'email', label: '✉️ E-mail Marketing', area: 'marketing' },
-      { href: '/dashboard/cadencia', key: 'cadencia', label: '🔄 Cadência', area: 'marketing' },
-    ],
-  },
-  {
-    titulo: '⚡ Operação',
-    itens: [
-      { href: '/dashboard/monitoramento', key: 'monitoramento', label: '⚡ Monitoramento', area: 'usinas' },
-      { href: '/dashboard/demonstrativos', key: 'demonstrativos', label: '📄 Demonstrativos GD', area: 'usinas' },
-      { href: '/dashboard/medicao', key: 'medicao', label: '🔌 Medição', area: 'usinas' },
-      { href: '/dashboard/minha-assinatura', key: 'minha_assinatura', label: '📆 Minha assinatura', area: 'usinas', soTenant: true },
-      { href: '/dashboard/usinas/kanban', key: 'usinas_kanban', label: '🏗️ Kanban de Obras', area: 'usinas' },
-      { href: '/dashboard/pos-venda', key: 'pos_venda', label: '❤️ Pós-venda', area: 'usinas' },
-      { href: '/dashboard/pastas', key: 'pastas', label: '📁 Pasta do Cliente', area: 'usinas' },
-      { href: '/dashboard/servicos', key: 'servicos', label: '🔧 Serviços (campo)', area: 'servicos' },
-      { href: '/dashboard/manutencao', key: 'manutencao', label: '🔧 Manutenção' },
-    ],
-  },
-  {
-    titulo: '💰 Financeiro',
-    itens: [
-      { href: '/dashboard/financeiro', key: 'financeiro', label: '💰 Financeiro', area: 'financeiro' },
-      { href: '/dashboard/fiscal', key: 'fiscal', label: '🧾 Notas', area: 'financeiro' },
-      { href: '/dashboard/cobrar', key: 'cobrar', label: '💳 Cobrar cliente', area: 'financeiro' },
-      { href: '/dashboard/assinaturas', key: 'assinaturas', label: '📆 Assinaturas', area: 'financeiro' },
-    ],
-  },
-  {
-    titulo: '👥 RH',
-    itens: [
-      { href: '/dashboard/rh/candidatos', key: 'rh_candidatos', label: '📋 Candidatos', area: 'rh' },
-      { href: '/dashboard/rh/vagas', key: 'rh_vagas', label: '📢 Vagas', area: 'rh' },
-      { href: '/dashboard/rh/busca', key: 'rh_busca', label: '🔎 Busca IA', area: 'rh' },
-    ],
-  },
-  {
-    titulo: '⚙️ Configurações',
-    itens: [
-      { href: '/dashboard/usuarios', key: 'usuarios', label: '👤 Usuários', area: 'usuarios' },
-      { href: '/dashboard/whatsapp', key: 'whatsapp', label: '📱 Conectar WhatsApp', area: 'usuarios', nivel: 'administrar', soTenant: true },
-      { href: '/dashboard/empresas', key: 'empresas', label: '🏢 Empresas (tenants)', area: 'usuarios', nivel: 'administrar', soEcosun: true },
-    ],
-  },
-];
 
 export function renderLayout(input: LayoutInput): string {
-  const { active, title, body, scripts, dark, user } = input;
+  const { active, title, body, scripts, dark, user, largo, selos } = input;
 
-  // [Fase 2 A2] Marca do dashboard pelo company da SESSÃO: tenant vê o nome
-  // dele; EcoSun (ou telas legadas sem user) vê o visual de sempre, byte a byte.
-  // MARCA DA EMPRESA (01/09/2026): o painel mostrava a logo da EcoSunPower pra
-  // todo mundo, e o tenant via so o nome escrito. Agora cada empresa entra com a
-  // propria logo e a propria cor — mesma ideia do resto do dia: nada da casa
-  // aparece na tela de outra empresa.
+  // MARCA DA EMPRESA (01/09/2026): cada empresa entra com a própria logo e cor;
+  // nada da casa aparece na tela de outra empresa. EcoSun (ou tela legada sem
+  // user) vê a logo oficial negativa-wide.
   const _emp = empresa();
   const corMarca = corDaMarca(_emp);
   const logoEmpresa = logoDaEmpresa(_emp);
@@ -214,55 +130,50 @@ export function renderLayout(input: LayoutInput): string {
   const marcaTenant =
     user?.companyNome && user.companyId !== ECOSUN_COMPANY_ID ? user.companyNome : null;
 
-  // Mesmo gate do navItem antigo: área presente + usuário presente e sem
-  // permissão → esconde. Sem área ou sem usuário → mostra. Item soEcosun
-  // some pra usuário de outra empresa (gestão de tenants é da EcoSun).
-  // [Degustação Sabion 27/07] TENANT só vê item com ÁREA explícita que o
-  // papel permite — item "solto" (sem area: Cockpit, Fechou!, Contratos,
-  // Manutenção...) é conveniência da casa EcoSun e vira poluição/vazamento
-  // de UX na tela do tenant. Liberar módulo novo pro tenant = editar o
-  // papel dele (cardápio modular), sem deploy.
-  // VITRINE (01/09/2026): antes, modulo que o papel nao permitia SUMIA — o
-  // cliente nao fazia ideia do tamanho do que existe, e o que ele nao ve, ele
-  // nao compra. Agora aparece apagado com cadeado e leva a apresentacao.
-  // A fechadura continua no servidor: o exigir(...) da rota barra do mesmo jeito.
-  const estadoDe = (it: SideItem) =>
-    estadoDoItem(it, user, ECOSUN_COMPANY_ID, (u, area, nivel) =>
-      can(u as never, area as never, (nivel ?? 'visualizar') as never));
-  const itemVisivel = (it: SideItem): boolean => estadoDe(it) !== 'escondido';
+  // Gating idêntico ao de antes (vitrine-menu.ts): visível / bloqueado 🔒 /
+  // escondido. A fechadura continua no servidor (exigir(...) de cada rota).
+  const grupos = montarMenu(user, active, ECOSUN_COMPANY_ID, (u, area, nivel) =>
+    can(u as never, area as never, (nivel ?? 'visualizar') as never), selos ?? {});
 
-  const linkClass = (key: string) =>
-    active === key
-      ? 'ecosun-ativo text-slate-900 font-semibold shadow-md'
-      : 'text-sky-100 hover:bg-white/10 hover:text-white';
+  const cadeado = '<span class="cc-cadeado" aria-hidden="true">🔒</span>';
+  const itemHtml = (it: ItemMontado): string =>
+    it.estado === 'bloqueado'
+      ? `<a href="/dashboard/conhecer/${encodeURIComponent(it.key)}" class="cc-lock${it.ativo ? ' cc-on' : ''}" title="Ainda não faz parte do seu plano — clique para conhecer">${escapeHtml(it.label)}${cadeado}</a>`
+      : `<a href="${it.href}"${it.ativo ? ' class="cc-on" aria-current="page"' : ''}>${escapeHtml(it.label)}</a>`;
 
-  // Monta cada setor recolhível (<details>). Setor só aparece se tiver ao
-  // menos 1 item visível. O setor que contém o item ativo vem aberto.
-  const sidebarHtml = SIDEBAR_SETORES.map((setor) => {
-    const visiveis = setor.itens.filter(itemVisivel);
-    if (visiveis.length === 0) return '';
-    const contemAtivo = visiveis.some((it) => it.key === active);
-    const linksHtml = visiveis
-      .map(
-        (it) =>
-          estadoDe(it) === 'bloqueado'
-            ? `<a href="/dashboard/conhecer/${encodeURIComponent(it.key)}" title="Ainda não faz parte do seu plano — clique para conhecer"
-                 class="block px-3 py-2 rounded-lg text-sm transition text-sky-100/45 hover:text-white hover:bg-white/5">${it.label} <span class="opacity-70">🔒</span></a>`
-            : `<a href="${it.href}" class="block px-3 py-2 rounded-lg text-sm transition ${linkClass(it.key)}">${it.label}</a>`,
-      )
-      .join('\n          ');
-    return `<details ${contemAtivo ? 'open' : ''} class="group">
-        <summary class="flex items-center justify-between cursor-pointer select-none px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wide text-sky-300 hover:text-white">
-          <span>${setor.titulo}</span>
-          <span class="text-sky-400 transition-transform group-open:rotate-90">▸</span>
-        </summary>
-        <div class="mt-1 mb-2 flex flex-col gap-0.5 pl-1">
-          ${linksHtml}
-        </div>
+  const menuHtml = grupos.map((g) => {
+    const seloHtml = g.selo ? selo(g.selo.valor, g.selo.tom) : '';
+    const cls = `cc-top-item${g.ativo ? ' cc-on' : ''}${g.trancado ? ' cc-trancado' : ''}`;
+    return `${g.separarAntes ? '<div class="cc-sep"></div>' : ''}<details class="cc-grp"${g.aberto ? ' open' : ''}>
+        <summary class="${cls}">${icone(g.icone)}${escapeHtml(g.titulo)}${seloHtml}${g.trancado ? cadeado : ''}<svg class="cc-i cc-i-xs cc-chev" aria-hidden="true"><use href="#cc-i-chev"/></svg></summary>
+        <div class="cc-sub">${g.itens.map(itemHtml).join('')}</div>
       </details>`;
-  })
-    .filter(Boolean)
-    .join('\n      ');
+  }).join('\n      ');
+
+  const logoHtml = temLogoPropria
+    ? `<img src="${escapeHtml(logoEmpresa)}" alt="${escapeHtml(_emp.nomeFantasia)}">`
+    : marcaTenant
+    ? `<div class="cc-sb-nome">${escapeHtml(marcaTenant)}</div>`
+    : `<img src="${LOGO_NEGATIVA_WIDE_BASE64}" alt="EcoSunPower">`;
+
+  const logoMobile = temLogoPropria
+    ? `<img src="${escapeHtml(logoEmpresa)}" alt="">`
+    : marcaTenant
+    ? `<span class="cc-mtop-nome">${escapeHtml(marcaTenant)}</span>`
+    : `<img src="${LOGO_NEGATIVA_WIDE_BASE64}" alt="">`;
+
+  const inicial = (user?.nome ?? '').trim().charAt(0).toUpperCase() || '?';
+  const cartaoUsuario = user
+    ? `<div class="cc-me"><div class="cc-av">${escapeHtml(inicial)}</div><div class="cc-me-txt"><strong>${escapeHtml(user.nome)}</strong><span>${escapeHtml(user.roleNome || marcaTenant || 'EcoSunPower')}</span></div>
+          <form action="/dashboard/logout" method="post"><button type="submit" class="cc-sair" title="Sair" aria-label="Sair">${icone('ext', 'sm')}</button></form></div>`
+    : `<form action="/dashboard/logout" method="post"><button type="submit" class="cc-tvcard" style="width:100%;cursor:pointer" title="Sair">${icone('ext', 'sm')}<span><strong>Sair</strong></span></button></form>`;
+
+  // Classes do <body> iguais às de antes (telas antigas e testes contam com
+  // elas). O tema do design system (cc-escuro / cc-claro) vai na casca.
+  const classeBody = dark
+    ? 'ecosun-body ecosun-body-dark bg-slate-950 text-slate-100'
+    : 'ecosun-body';
+  const tema = dark ? 'cc-escuro' : 'cc-claro';
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -271,130 +182,69 @@ export function renderLayout(input: LayoutInput): string {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escapeHtml(title)} · ${marcaTenant ? `${escapeHtml(marcaTenant)} Dashboard` : 'EcoSun Dashboard'}</title>
 <script src="https://cdn.tailwindcss.com"></script>
+${FONTES_HEAD}
 <style>
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  .ecosun-header {
-    background: linear-gradient(135deg, #0c4a6e 0%, #075985 50%, #0369a1 100%);
-    position: relative;
-    overflow: hidden;
-  }
-  .ecosun-header::after {
-    content: '';
-    position: absolute;
-    top: -40px;
-    right: -60px;
-    width: 220px;
-    height: 220px;
-    background: radial-gradient(circle, rgba(245, 158, 11, 0.25), transparent 70%);
-    pointer-events: none;
-  }
-  .ecosun-body {
-    background:
-      radial-gradient(ellipse at top left, rgba(14, 165, 233, 0.08), transparent 50%),
-      radial-gradient(ellipse at bottom right, rgba(245, 158, 11, 0.05), transparent 50%),
-      #f8fafc;
-    min-height: 100vh;
-  }
-  /* Tema escuro ESCOPADO: aplicado só quando o caller pede (input.dark),
-     hoje só a tela Painel de Triagem. Demais telas seguem claras até serem
-     adaptadas (follow-up). Evita texto escuro sumindo em fundo escuro. */
-  .ecosun-body-dark {
-    background:
-      radial-gradient(1200px 600px at 50% -10%, rgba(56, 189, 248, 0.10), transparent 60%),
-      radial-gradient(ellipse at bottom right, rgba(245, 158, 11, 0.06), transparent 50%),
-      #020617;
-    color: #e2e8f0;
-  }
+${CSS_DESIGN_SYSTEM}
+  /* Cor da MARCA da empresa em contexto (migration 120). Item ativo do menu e
+     destaques leem daqui. Sem cor cadastrada, é o âmbar de sempre. */
+  :root { --marca: ${corMarca}; }
+  .ecosun-ativo { background: var(--marca); }
+  .ecosun-marca-texto { color: var(--marca); }
+  /* Classes que telas antigas ainda usam dentro do corpo. */
+  .ecosun-header { background: linear-gradient(135deg, #0c4a6e 0%, #075985 50%, #0369a1 100%); position: relative; overflow: hidden; }
   .accent-amber { border-left: 4px solid #f59e0b; }
   .accent-sky { border-left: 4px solid #0ea5e9; }
   .accent-emerald { border-left: 4px solid #10b981; }
   .accent-violet { border-left: 4px solid #8b5cf6; }
   .accent-rose { border-left: 4px solid #f43f5e; }
   .accent-indigo { border-left: 4px solid #6366f1; }
-  /* Sidebar (menu lateral por setores). Em telas grandes fica fixo à
-     esquerda; no mobile abre/fecha por um botão ☰ (alterna .sidebar-open). */
-  .ecosun-sidebar {
-    background: linear-gradient(180deg, #0c4a6e 0%, #075985 55%, #0369a1 100%);
-    width: 240px;
-  }
-  /* Cor da MARCA da empresa em contexto (migration 120). Fica numa variavel
-     pra nao ter que trocar 68 classes Tailwind cravadas: o item ativo do menu
-     e os destaques leem daqui. Sem cor cadastrada, e o ambar de sempre. */
-  :root { --marca: ${corMarca}; }
-  .ecosun-ativo { background: var(--marca); }
-  .ecosun-marca-texto { color: var(--marca); }
-
   details > summary { list-style: none; }
   details > summary::-webkit-details-marker { display: none; }
-  @media (max-width: 1023px) {
-    .ecosun-sidebar {
-      position: fixed;
-      top: 0; left: 0; bottom: 0;
-      transform: translateX(-100%);
-      transition: transform 0.25s ease;
-      z-index: 40;
-    }
-    .sidebar-open .ecosun-sidebar { transform: translateX(0); }
-    .sidebar-backdrop { display: none; }
-    .sidebar-open .sidebar-backdrop {
-      display: block;
-      position: fixed; inset: 0;
-      background: rgba(2, 6, 23, 0.5);
-      z-index: 30;
-    }
-  }
 </style>
 </head>
-<body class="ecosun-body${dark ? ' ecosun-body-dark bg-slate-950 text-slate-100' : ''}" id="dash-root">
-  <div class="lg:flex min-h-screen">
-    <!-- Backdrop do menu mobile (clicável pra fechar) -->
-    <div class="sidebar-backdrop" onclick="document.getElementById('dash-root').classList.remove('sidebar-open')"></div>
+<body class="${classeBody}" id="dash-root">
+  ${SPRITE_ICONES}
+  <div class="cc-shell ${tema}">
+    <!-- Fundo escuro do menu no celular (clique fecha) -->
+    <div class="cc-backdrop" onclick="document.getElementById('dash-root').classList.remove('sidebar-open')"></div>
 
-    <!-- SIDEBAR: menu lateral por setores -->
-    <aside class="ecosun-sidebar text-white shadow-xl flex flex-col flex-shrink-0 lg:sticky lg:top-0 lg:h-screen">
-      <div class="px-4 py-5 border-b border-white/10 text-center">
-        <a href="/dashboard/home" title="Ir para a Home" class="inline-block">
-          ${temLogoPropria
-            ? `<img src="${escapeHtml(logoEmpresa)}" alt="${escapeHtml(_emp.nomeFantasia)}" class="h-14 w-auto mx-auto">`
-            : marcaTenant
-            ? `<div class="text-xl font-extrabold text-white leading-tight">${escapeHtml(marcaTenant)}</div>`
-            : `<img src="${LOGO_ECOSUNPOWER_DARK_BASE64}" alt="EcoSunPower" class="h-12 w-auto mx-auto">`}
-        </a>
-        <div class="text-[11px] text-sky-200 mt-2 tracking-[0.18em] uppercase">Dashboard interno</div>
-      </div>
-      <nav class="flex-1 overflow-y-auto px-2 py-3 space-y-1">
-      ${sidebarHtml}
+    <!-- MENU LATERAL por área -->
+    <aside class="cc-sb" aria-label="Menu principal">
+      <a href="/dashboard/home" class="cc-sb-logo" title="Ir para a Home">
+        ${logoHtml}
+        <small>${marcaTenant ? 'Painel de gestão' : 'Central de gestão'}</small>
+      </a>
+      <nav class="cc-nav">
+      ${menuHtml}
       </nav>
-      <div class="px-3 py-3 border-t border-white/10">
-        <form action="/dashboard/logout" method="post">
-          <button type="submit" class="w-full px-3 py-2 rounded-lg text-sky-200 hover:bg-white/10 hover:text-white transition text-sm text-left" title="Sair">🚪 Sair</button>
-        </form>
+      <div class="cc-sb-foot">
+        <a class="cc-tvcard" href="/dashboard/tv">${icone('tv')}<span><strong>Modo TV</strong> · tela do escritório</span></a>
+        ${cartaoUsuario}
       </div>
     </aside>
 
-    <!-- COLUNA DE CONTEÚDO -->
-    <div class="flex-1 min-w-0 flex flex-col">
-      <!-- Barra superior só no mobile: botão ☰ -->
-      <div class="lg:hidden ecosun-header text-white shadow-md flex items-center gap-3 px-4 py-3 sticky top-0 z-20">
-        <button type="button" aria-label="Abrir menu"
-          onclick="document.getElementById('dash-root').classList.toggle('sidebar-open')"
-          class="text-2xl leading-none px-2 py-1 rounded-lg hover:bg-white/10">☰</button>
-        <span class="font-semibold tracking-tight">${marcaTenant ? escapeHtml(marcaTenant) : 'EcoSunPower'}</span>
-      </div>
+    <!-- CONTEÚDO -->
+    <div class="cc-col">
+      <header class="cc-mtop">
+        <button type="button" class="cc-ibtn" aria-label="Abrir menu"
+          onclick="document.getElementById('dash-root').classList.toggle('sidebar-open')">${icone('menu')}</button>
+        ${logoMobile}
+        <span class="cc-sp"></span>
+      </header>
 
-      <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8 relative z-0">
+      <main class="cc-main${largo ? ' cc-largo' : ''}">
         ${body}
       </main>
 
-      <footer class="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 text-xs text-slate-500 text-center border-t border-slate-200 mt-8">
-        <div class="flex items-center justify-center gap-2 flex-wrap">
+      <footer class="cc-rodape">
+        <div class="cc-row">
           ${marcaTenant
             ? `<span>☀</span><span>${escapeHtml(marcaTenant)}</span>`
             : `<span>☀</span>
           <span>EcoSunPower Energia Solar</span>
-          <span class="text-slate-300 hidden sm:inline">·</span>
+          <span class="hidden sm:inline">·</span>
           <span>CNPJ 33.020.459/0001-06</span>
-          <span class="text-slate-300 hidden sm:inline">·</span>
+          <span class="hidden sm:inline">·</span>
           <span>Brasília-DF</span>`}
         </div>
       </footer>

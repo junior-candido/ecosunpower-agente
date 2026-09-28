@@ -179,5 +179,5 @@ export function renderCadenciaPage(input: CadenciaPageInput): string {
     </div>
   `;
 
-  return renderLayout({ active: 'marketing', title: 'Cadência', body });
+  return renderLayout({ active: 'cadencia', title: 'Cadência', body });
 }
