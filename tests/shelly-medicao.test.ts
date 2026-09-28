@@ -339,6 +339,16 @@ describe('receberLeituraShelly — token por medidor', () => {
     expect(salvar).not.toHaveBeenCalled();
   });
 
+  it('banco fora do ar, mas o token é o GLOBAL (com cara de token de medidor): vale o legado, não 503', async () => {
+    const salvar = vi.fn(async () => true);
+    const global43 = 'G'.repeat(43); // SHELLY_INGEST_TOKEN no mesmo formato do token do medidor
+    const r = await receberLeituraShelly({
+      salvar, tokenEsperado: global43, resolverToken: async () => { throw new Error('fetch failed'); },
+    }, LEITURA, global43);
+    expect(r).toMatchObject({ aceito: true, salvas: 1 });
+    expect(salvar).toHaveBeenCalledTimes(1);
+  });
+
   it('token do medidor pela URL (?token=) não vale — só pelo cabeçalho', async () => {
     const salvar = vi.fn(async () => true);
     const resolverToken = vi.fn(async () => MEDIDOR);

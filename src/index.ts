@@ -9645,6 +9645,7 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // Limite por IP (120/min, em memória): o endereço é público.
   const limiteShelly = criarLimitePorIp({ max: 120, janelaMs: 60_000 });
   // Aparelhos que ainda usam o token global (env SHELLY_LEGADO_DEVICES; padrão: o piloto).
+  // SOMENTE aparelhos da EcoSun: pelo token global a leitura grava na EcoSun.
   const devicesLegadosShelly = lerDevicesLegados(process.env.SHELLY_LEGADO_DEVICES);
   app.post('/webhooks/shelly', async (req, res) => {
     if (limiteShelly.estourou(ipDaRequisicao(req.headers['x-forwarded-for'], req.socket.remoteAddress))) {

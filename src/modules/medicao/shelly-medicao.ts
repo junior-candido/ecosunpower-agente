@@ -190,6 +190,8 @@ export type LeituraParaGravar = LeituraShelly & {
  * só o piloto (quadro da casa do Junior), que manda dado desde 07/09 com esse
  * token. A lista vem da env SHELLY_LEGADO_DEVICES (ids separados por vírgula,
  * sem o prefixo "shellypro3em-") — liberar outro aparelho não exige deploy.
+ * SOMENTE aparelhos da EcoSun: pelo token global a leitura grava na EcoSun
+ * (empresa padrão). Aparelho de outra empresa entra com o token do medidor.
  * Quando o script do piloto for trocado pro token do medidor, tirar
  * SHELLY_INGEST_TOKEN do EasyPanel.
  */
@@ -283,8 +285,12 @@ export async function receberLeituraShelly(
       try {
         medidor = await deps.resolverToken(tokenRecebido);
       } catch (e) {
-        console.warn('[energia] resolver token do medidor falhou (503, o aparelho tenta de novo):', (e as Error)?.message);
-        return { aceito: false, motivo: 'indisponivel' };
+        // O token global (SHELLY_INGEST_TOKEN) pode ter o mesmo formato: aí ele
+        // ainda vale pelo caminho legado, sem depender do banco pra resolver.
+        if (!iguaisTempoConstante(tokenRecebido, deps.tokenEsperado)) {
+          console.warn('[energia] resolver token do medidor falhou (503, o aparelho tenta de novo):', (e as Error)?.message);
+          return { aceito: false, motivo: 'indisponivel' };
+        }
       }
     }
     if (medidor && medidor.ativo === false) return { aceito: false, motivo: 'desativado' };
@@ -417,7 +423,13 @@ export function criarLimitePorIp(o: { max?: number; janelaMs?: number; maxChaves
   };
 }
 
-/** IP real atrás do proxy: o ÚLTIMO do X-Forwarded-For (o primeiro o cliente forja). */
+/**
+ * IP real atrás do proxy: o ÚLTIMO do X-Forwarded-For (o primeiro o cliente forja).
+ * Vale enquanto o único proxy é o Traefik do EasyPanel. Se um dia o proxy da
+ * Cloudflare (nuvem laranja) for ligado no domínio, o último do XFF passa a ser
+ * o IP da Cloudflare (todo mundo cai no mesmo limite): trocar para o cabeçalho
+ * CF-Connecting-IP.
+ */
 export function ipDaRequisicao(xff: string | string[] | undefined, remoto: string | undefined): string {
   const v = Array.isArray(xff) ? xff.join(',') : String(xff ?? '');
   return (v.split(',').pop() ?? '').trim() || String(remoto ?? '?');
