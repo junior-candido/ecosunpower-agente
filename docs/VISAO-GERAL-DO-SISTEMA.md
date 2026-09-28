@@ -207,3 +207,7 @@ entra em `mensagens_whatsapp` com o wamid (`registrarTextoDaAssistente`); a cóp
 (nunca volta); `presence.update` → "digitando…" em memória (só o dono vê o do número pessoal). Abrir a conversa marca
 como lida no número pessoal (`marcarLidasAoAbrir`, opção em Meu WhatsApp). Instância pessoal assina MESSAGES_UPDATE e
 PRESENCE_UPDATE (reapontado ao salvar a opção).
+**Etiquetas × funil (W4):** `etiquetas-funil.ts` + migration 144 (`whatsapp_etiquetas_funil`: etapa ↔ etiqueta do
+WhatsApp Business por número pessoal). Painel → celular: `set-status`/`set-etapa`/`mark-lost`/`unmark-lost` chamam
+`sincronizarEtiquetas` (handleLabel na instância do dono; só lead que já conversou no número pessoal). Celular → painel:
+webhook `labels.association` (add) → `etiquetaParaEtapa` (só quem é lead; eco = mesma etapa, nada). Mapeamento em Meu WhatsApp.

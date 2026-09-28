@@ -9,6 +9,7 @@ import type { EstadoConexao } from '../evolution-conexao.js';
 import { cabecalhoPagina, aviso } from './ui/componentes.js';
 import { temaDaTela } from './ui/tema.js';
 import type { ProgressoHistorico } from '../numero-pessoal-historico.js';
+import { ETAPAS_ETIQUETA, type EtiquetaWhatsapp, type MapeamentoEtiqueta } from '../etiquetas-funil.js';
 
 export interface WhatsappPessoalInput {
   user: DashUser | undefined;
@@ -17,6 +18,8 @@ export interface WhatsappPessoalInput {
   estado: EstadoConexao | null;
   /** Mensagem depois de uma ação (?ok=… / ?erro=…), já traduzida. */
   resultado?: { tom: 'ok' | 'erro' | 'atencao'; texto: string } | null;
+  /** W4: etiquetas do WhatsApp (null = não consegui ler) e o mapeamento salvo. */
+  etiquetas?: { disponiveis: EtiquetaWhatsapp[] | null; mapeamento: MapeamentoEtiqueta[] };
   /** Sugestão de nome da instância. */
   sugestao?: string;
   /** Histórico (últimos N dias): o que já está no painel + a busca em andamento. */
@@ -45,6 +48,9 @@ const RESULTADOS: Record<string, { tom: 'ok' | 'erro' | 'atencao'; texto: string
   leitura_ligada: { tom: 'ok', texto: 'Pronto: abrir a conversa no painel marca como lida no WhatsApp (✓✓ azul para o cliente).' },
   leitura_desligada: { tom: 'ok', texto: 'Pronto: abrir a conversa no painel NÃO marca mais como lida. Só o celular marca.' },
   leitura_sem_migration: { tom: 'erro', texto: 'Não consegui salvar a opção (falta atualizar o banco — migration 143).' },
+  etiquetas_salvas: { tom: 'ok', texto: 'Etiquetas salvas: mudar a etapa no painel troca a etiqueta no celular, e o contrário também.' },
+  etiquetas_sem_whatsapp: { tom: 'erro', texto: 'Não consegui ler as etiquetas do seu WhatsApp agora. Confira se ele está conectado e tente de novo.' },
+  etiquetas_sem_migration: { tom: 'erro', texto: 'Não consegui salvar as etiquetas (falta atualizar o banco — migration 144).' },
 };
 
 const FUSO = 'America/Sao_Paulo';
@@ -66,6 +72,31 @@ export function textoProgressoHistorico(p: ProgressoHistorico | null): string {
   const base = `${milhar(p.conversas)} conversa(s) / ${milhar(p.gravadas)} mensagem(ns) importada(s)${antiga ? ` · a mais antiga trazida é de ${antiga}` : ''}`;
   if (p.emAndamento) return `Importando… ${base}${p.naFila ? ` (${milhar(p.naFila)} na fila)` : ''}`;
   return `Última busca: ${base}${p.repetidas ? ` · ${milhar(p.repetidas)} já estavam no painel` : ''}${p.falhas ? ` · ${p.falhas} lote(s) falharam — busque de novo` : ''}`;
+}
+
+/** W4 — etiqueta do WhatsApp Business para cada etapa do funil. PURA. */
+export function cartaoEtiquetas(e: NonNullable<WhatsappPessoalInput['etiquetas']>): string {
+  const cab = `<h2>Etiquetas do WhatsApp × etapas do funil</h2>
+        <p class="cc-muted">Escolha a etiqueta do seu WhatsApp Business para cada etapa. <strong>Mudar a etapa no painel</strong> troca a etiqueta da conversa no celular; <strong>pôr a etiqueta no celular</strong> muda a etapa do lead no painel. Só vale para quem <strong>já é lead</strong> e já conversou com você neste número.</p>`;
+  if (!e.disponiveis) {
+    return `<section class="cc-panel cc-wp-card cc-wp-etq" id="wp-etiquetas">${cab}<p class="cc-wp-erro">Não consegui ler as etiquetas do seu WhatsApp agora (ele está conectado?).</p></section>`;
+  }
+  if (e.disponiveis.length === 0) {
+    return `<section class="cc-panel cc-wp-card cc-wp-etq" id="wp-etiquetas">${cab}<p class="cc-hint">Seu WhatsApp Business ainda não tem etiquetas. Crie no celular (Ferramentas comerciais → Etiquetas) e volte aqui.</p></section>`;
+  }
+  const atual = new Map(e.mapeamento.map((m) => [m.etapa, m.label_id]));
+  const linhas = ETAPAS_ETIQUETA.map((et) => {
+    const sel = atual.get(et.id) ?? '';
+    const opcoes = [`<option value="">— sem etiqueta —</option>`, ...e.disponiveis!.map((l) => `<option value="${escapeHtml(l.id)}"${l.id === sel ? ' selected' : ''}>${escapeHtml(l.nome)}</option>`)].join('');
+    return `<label class="cc-campo cc-wp-etq-lin"><span>${escapeHtml(et.rotulo)}</span><select name="etapa_${escapeHtml(et.id)}">${opcoes}</select></label>`;
+  }).join('');
+  return `<section class="cc-panel cc-wp-card cc-wp-etq" id="wp-etiquetas">${cab}
+        <form class="cc-form cc-wp-etq-form" method="POST" action="/dashboard/whatsapp/pessoal/etiquetas">
+          <div class="cc-wp-etq-grade">${linhas}</div>
+          <button type="submit" class="cc-btn cc-wp-ok">Salvar etiquetas</button>
+        </form>
+        <p class="cc-hint">Cada etiqueta vale para uma etapa só. Tirar a etiqueta no celular não muda a etapa.</p>
+      </section>`;
 }
 
 /** W3 — confirmação de leitura: a opção do dono (e o que o painel mostra). PURA. */
@@ -157,6 +188,7 @@ export function renderWhatsappPessoalPage(p: WhatsappPessoalInput): string {
       </section>
       ${cartaoHistorico}
       ${cartaoLeitura(p.numero.marcarLida !== false)}
+      ${p.etiquetas ? cartaoEtiquetas(p.etiquetas) : ''}
     </div>`;
   }
 
@@ -199,6 +231,11 @@ t=setInterval(tique,5000);tique();
 const CSS_WP = `
 .cc-wp-hist{grid-column:1/-1}
 .cc-wp-leitura form{margin:0}
+.cc-wp-etq{grid-column:1/-1}
+.cc-wp-etq-form{display:flex;flex-direction:column;gap:12px;margin:0}
+.cc-wp-etq-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.cc-wp-etq-lin select{width:100%}
+.cc-wp-etq-form .cc-btn{align-self:flex-start}
 .cc-wp-azul{color:#53bdeb;font-weight:700}
 .cc-wp-hist-num{font-size:15px;font-weight:700;margin:0}
 .cc-wp-hist-prog{font-size:13.5px;color:var(--cc-text-2);margin:0}

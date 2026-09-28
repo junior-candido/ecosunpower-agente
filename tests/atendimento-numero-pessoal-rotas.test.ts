@@ -182,7 +182,7 @@ describe('Meu WhatsApp no painel (QR)', () => {
     expect(f.mock.calls[1][0]).toBe('https://evo.exemplo/webhook/set/pessoal-ujunior');
     // token no cabeçalho, nunca na URL; assina a mensagem nova E o histórico
     const wh = JSON.parse(f.mock.calls[1][1].body).webhook;
-    expect(wh.events).toEqual(['MESSAGES_UPSERT', 'MESSAGES_SET', 'MESSAGES_UPDATE', 'PRESENCE_UPDATE']);
+    expect(wh.events).toEqual(['MESSAGES_UPSERT', 'MESSAGES_SET', 'MESSAGES_UPDATE', 'PRESENCE_UPDATE', 'LABELS_ASSOCIATION', 'LABELS_EDIT']);
     expect(wh.url).toBe('https://painel.exemplo/webhook');
     expect(wh.headers).toEqual({ 'x-webhook-token': 'tok' });
     expect(b.tabelas.whatsapp_numeros_pessoais[0]).toMatchObject({ company_id: CASA, dono_user_id: 'u-junior', dono_nome: 'Junior', instancia: 'pessoal-ujunior', ativo: true });

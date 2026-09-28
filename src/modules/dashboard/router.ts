@@ -227,6 +227,10 @@ export function createDashboardRouter(
     sendTextEvolutionCitando?: import('./atendimento-rotas.js').DepsAtendimento['sendTextEvolutionCitando'];
     reagirEvolution?: import('./atendimento-rotas.js').DepsAtendimento['reagirEvolution'];
     marcarLidasEvolution?: import('./atendimento-rotas.js').DepsAtendimento['marcarLidasEvolution'];
+    // W4 — etiquetas do WhatsApp Business (número pessoal) ↔ etapa do funil.
+    etiquetasDaInstancia?: (instancia: string) => Promise<import('../etiquetas-funil.js').EtiquetaWhatsapp[]>;
+    /** Etapa do lead mudou no painel → troca a etiqueta no celular (por fora; nunca lança). */
+    sincronizarEtiquetas?: (companyId: string, leadId: string, etapa: string) => void;
     // W1 — mídia pela Evolution (instância do dono ou do tenant) e gravação WebM → OGG.
     enviarMidiaEvolution?: import('./atendimento-rotas.js').DepsAtendimento['enviarMidiaEvolution'];
     converterAudio?: (webm: Buffer) => Promise<Buffer>;
@@ -320,6 +324,7 @@ export function createDashboardRouter(
     webhookUrl: options.evolutionWebhookUrl,
     webhookToken: options.evolutionWebhookToken,
     historico: options.historicoPessoal,
+    etiquetasDaInstancia: options.etiquetasDaInstancia,
   });
 
   // Parser dos forms internos (form-urlencoded). Limite maior porque a tela de
@@ -1602,6 +1607,8 @@ b.onclick=async function(){
   router.post('/whatsapp/pessoal/religar', exigir('usuarios', 'administrar'), rotasNumeroPessoal.religar);
   // W3: "marcar como lida ao abrir" (liga/desliga) + reaponta os avisos (✓✓ e digitando).
   router.post('/whatsapp/pessoal/leitura', exigir('usuarios', 'administrar'), rotasNumeroPessoal.leitura);
+  // W4: etiqueta do WhatsApp para cada etapa do funil.
+  router.post('/whatsapp/pessoal/etiquetas', exigir('usuarios', 'administrar'), rotasNumeroPessoal.etiquetas);
   // Buscar o histórico (últimos 90 dias): reconecta (QR de novo uma vez) + progresso.
   router.post('/whatsapp/pessoal/historico', exigir('usuarios', 'administrar'), rotasNumeroPessoal.buscarHistorico);
   router.get('/whatsapp/pessoal/historico.json', exigir('usuarios', 'administrar'), rotasNumeroPessoal.historicoJson);
@@ -2754,6 +2761,8 @@ b.onclick=async function(){
     if (error) return res.status(500).send(`erro: ${escapeHtmlSimple(error.message)}`);
     const viewer = (req as AuthedRequest).dashUser;
     if (viewer) await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'etapa', valorNovo: status });
+    // W4: a etiqueta da conversa no WhatsApp pessoal acompanha a etapa.
+    if (viewer) options.sincronizarEtiquetas?.(viewer.companyId, id, status);
     res.redirect(`/dashboard/leads/${id}`);
   });
 
@@ -2790,6 +2799,7 @@ b.onclick=async function(){
         console.warn('[set-etapa] registrarAtividade falhou (segue):', (err as Error).message);
       }
       await audit(supabase, { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: id, acao: 'etapa', valorNovo: etapa });
+      options.sincronizarEtiquetas?.(viewer.companyId, id, etapa);
     }
     res.status(200).send('ok');
   });
@@ -2984,6 +2994,7 @@ b.onclick=async function(){
     const db = bancoDoOperador(req as AuthedRequest, supabase);
     // Lead virou terminal (perdido): cancela tarefas pendentes pra não alertar SLA-fantasma.
     try { await cancelarTarefasPendentesDoLead(db, id); } catch (e) { console.warn('[mark-lost] cancelar tarefas falhou (segue):', (e as Error).message); }
+    if (viewer) options.sincronizarEtiquetas?.(viewer.companyId, id, 'perdido');
     res.redirect(`/dashboard/leads/${id}`);
   });
 
@@ -2992,6 +3003,8 @@ b.onclick=async function(){
     if (!UUID_RE.test(id)) return res.status(400).send('id inválido');
     const r = await supabaseService.desmarcarLeadPerdido(id);
     if (!r.ok) return res.status(500).send(`erro: ${escapeHtmlSimple(r.error ?? '')}`);
+    const quem = (req as AuthedRequest).dashUser;
+    if (quem) options.sincronizarEtiquetas?.(quem.companyId, id, 'qualificando');
     res.redirect(`/dashboard/leads/${id}`);
   });
 

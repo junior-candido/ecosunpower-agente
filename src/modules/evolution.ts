@@ -380,6 +380,24 @@ export class EvolutionService {
     if (!res.ok) throw new Error(`Evolution markMessageAsRead ${res.status}`);
   }
 
+  /** W4 — etiquetas do WhatsApp Business desta instância (findLabels). */
+  async listarEtiquetas(): Promise<unknown> {
+    const res = await fetch(`${this.baseUrl}/label/findLabels/${this.instanciaAtual()}`, {
+      headers: { apikey: this.apiKey }, signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) throw new Error(`Evolution findLabels ${res.status}`);
+    return res.json();
+  }
+
+  /** W4 — põe/tira uma etiqueta da conversa deste número (handleLabel). */
+  async etiquetar(to: string, labelId: string, acao: 'add' | 'remove'): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/label/handleLabel/${this.instanciaAtual()}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', apikey: this.apiKey },
+      body: JSON.stringify({ number: to, labelId, action: acao }), signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) throw new Error(`Evolution handleLabel ${res.status}`);
+  }
+
   /** JID do WhatsApp para este número (null = não tem WhatsApp / erro). */
   async jidDoNumero(to: string): Promise<string | null> {
     try {
