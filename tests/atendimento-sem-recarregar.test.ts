@@ -385,6 +385,46 @@ describe('script do responder — sem recarregar', () => {
     expect(t.btn.disabled).toBe(false);
   });
 
+  it('"duplicado" (a 1ª já tinha saído): NÃO devolve o texto pro campo (3º clique não manda de novo) e atualiza a conversa', async () => {
+    const t = montarTela();
+    const fetchImpl = vi.fn((_u: string, init?: any) => init?.method === 'POST'
+      ? respostaJson({ ok: false, resultado: 'duplicado', texto: 'Essa mensagem já tinha sido enviada', avisoHtml: '<div>já</div>', chave: 'k3' })
+      : respostaJson({ igual: true }));
+    rodarScript(t, fetchImpl);
+    t.ta.value = 'Oi';
+    t.doc.disparar('submit', { target: t.form });
+    await esperar();
+    expect(t.ta.value).toBe('');
+    expect(t.msgs.querySelector('.cc-at-msg-h')!.textContent).toBe('✓ enviado');
+    expect(fetchImpl.mock.calls.some((c) => !(c[1] as any)?.method)).toBe(true);
+  });
+
+  it('busca que já estava no ar quando o envio começou NÃO apaga o balão "enviando…"', async () => {
+    const t = montarTela();
+    let soltarGet!: (v: unknown) => void;
+    const fetchImpl = vi.fn((_u: string, init?: any) => init?.method === 'POST'
+      ? new Promise(() => {})
+      : new Promise((ok) => { soltarGet = ok; }));
+    const s = rodarScript(t, fetchImpl);
+    s.tique();
+    t.ta.value = 'Oi';
+    t.doc.disparar('submit', { target: t.form });
+    soltarGet({ ok: true, json: () => Promise.resolve({ assinatura: 'A9', msgs: '<div>velho</div>', estado: 'x', compor: '' }) });
+    await esperar();
+    expect(t.msgs.querySelector('.cc-at-msg-otimista')).not.toBeNull();
+    expect(t.msgs.innerHTML).toBe('');
+  });
+
+  it('conversa parada: depois de 4 respostas "igual" busca 1 a cada 3 tiques (≈ 24 s)', async () => {
+    const t = montarTela();
+    const fetchImpl = vi.fn(() => respostaJson({ igual: true }));
+    const s = rodarScript(t, fetchImpl);
+    for (let i = 0; i < 4; i++) { s.tique(); await esperar(); }
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    for (let i = 0; i < 6; i++) { s.tique(); await esperar(); }
+    expect(fetchImpl).toHaveBeenCalledTimes(6);
+  });
+
   it('campo vazio: nada sai', () => {
     const t = montarTela();
     const fetchImpl = vi.fn(() => respostaJson({}));
