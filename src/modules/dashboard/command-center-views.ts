@@ -738,7 +738,7 @@ export function renderCommandCenterPage(d: CommandCenterDados, user?: DashUser):
 <style>${CSS_COMMAND_CENTER}</style>`;
 
   return renderLayout({
-    active: 'command_center', title: 'Command Center', body, dark: true, largo: true, user,
+    active: 'command_center', title: 'Command Center', body, dark: true, largo: true, user, tailwind: false,
     selos: d.dados ? selosDoMenu(d.dados.eventos, d.dados.fontes) : undefined,
   });
 }
@@ -846,7 +846,7 @@ export function renderCentralAtencaoPage(c: CentralAtencaoDados, user?: DashUser
 <style>${CSS_COMMAND_CENTER}</style>`;
 
   return renderLayout({
-    active: 'atencao', title: 'Central de Atenção', body, dark: true, largo: true, user,
+    active: 'atencao', title: 'Central de Atenção', body, dark: true, largo: true, user, tailwind: false,
     selos: dd ? selosDoMenu(dd.eventos, dd.fontes) : undefined,
   });
 }
@@ -861,7 +861,7 @@ export function renderModoTvPage(user?: DashUser): string {
   })}
   ${estadoVazio({ tipo: 'construcao', texto: 'O Modo TV entra depois que o Command Center estiver com todos os números reais (assim a TV nunca mostra número de enfeite).' })}
 </div>`;
-  return renderLayout({ active: 'tv', title: 'Modo TV', body, dark: true, largo: true, user });
+  return renderLayout({ active: 'tv', title: 'Modo TV', body, dark: true, largo: true, user, tailwind: false });
 }
 
 // CSS específico das páginas (o resto vem do design system em ui/estilo.ts).

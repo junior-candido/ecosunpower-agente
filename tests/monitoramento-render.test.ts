@@ -1,6 +1,7 @@
 // tests/monitoramento-render.test.ts
 import { describe, it, expect } from 'vitest';
 import { renderMonitoramentoPage, renderLayout } from '../src/modules/dashboard/views.js';
+import { CSS_PAINEL, URL_CSS_PAINEL } from '../src/modules/dashboard/ui/estatico.js';
 
 const rows = [
   { id: '1', apelido: 'Casa Silva', cidade: 'Brasília', uf: 'DF', marca_inversor: 'deye',
@@ -70,7 +71,9 @@ describe('renderLayout tema escuro ESCOPADO (regressão fix)', () => {
     const html = renderLayout({ active: 'leads', title: 'Leads', body: '<p>oi</p>' } as any);
     const bodyClass = (html.match(/<body class="([^"]*)"/) ?? [])[1] ?? '';
     expect(bodyClass).toBe('ecosun-body'); // sem dark, sem bg-slate-950
-    expect(html).toContain('#f8fafc'); // CSS claro presente
+    // CSS claro presente — agora no arquivo do painel, ligado por <link> (perf/telas-leves)
+    expect(CSS_PAINEL).toContain('#f8fafc');
+    expect(html).toContain(`<link rel="stylesheet" href="${URL_CSS_PAINEL}">`);
     expect(html).toContain('<p>oi</p>');
   });
 

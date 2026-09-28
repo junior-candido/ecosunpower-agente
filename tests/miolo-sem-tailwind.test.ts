@@ -10,16 +10,10 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { corpoDaFuncao, linhasComTailwind } from './helpers/teto-tailwind.js';
+import { corpoDaFuncao, linhasComTailwind, TELAS_RENOVADAS } from './helpers/teto-tailwind.js';
 
-const TELAS_RENOVADAS: string[] = [
-  // R2 (lista) + R3 (ficha): leads-views.ts inteiro no padrão cc-
-  'leads-views.ts',
-  // R4 — Funil (Kanban)
-  'kanban-views.ts',
-  // Atendimento (Leads › Conversas, 28/09) — nasceu no padrão cc-
-  'atendimento-views.ts',
-];
+// A lista TELAS_RENOVADAS mora em helpers/teto-tailwind.ts (também decide
+// quais telas deixam de carregar o Tailwind do CDN — telas-leves.test.ts).
 
 describe('teto do Tailwind nas telas renovadas', () => {
   it('o detector pega utilitário Tailwind e deixa passar classe cc-', () => {

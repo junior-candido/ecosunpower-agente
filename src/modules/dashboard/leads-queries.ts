@@ -122,7 +122,9 @@ export async function listLeads(
   // leads movidos pelo kanban pra essas etapas sumiriam da contagem e da tab "Todos".
   const countByStatus: Record<string, number> = {};
   const statusNormais = STATUS_FUNIL;
-  const countQueries = await Promise.all([
+  // perf/telas-leves (28/09): as contagens e a lista principal são independentes —
+  // vão ao banco na MESMA rodada (antes: contagens → lista → cadência → tarefas).
+  const countQueriesP = Promise.all([
     // Por status do funil (exclui clientes fechados via baseFilter)
     ...statusNormais.map((s) => {
       let cq = client.from('leads')
@@ -152,12 +154,6 @@ export async function listLeads(
       return cq;
     })(),
   ]);
-  statusNormais.forEach((s, i) => {
-    countByStatus[s] = countQueries[i].count ?? 0;
-  });
-  countByStatus.perdido = countQueries[statusNormais.length].count ?? 0;
-  countByStatus.ganhos = countQueries[statusNormais.length + 1].count ?? 0;
-  countByStatus.todos = statusNormais.reduce((sum, s) => sum + (countByStatus[s] ?? 0), 0);
 
   // Query principal — depende da tab selecionada
   let q = client
@@ -197,36 +193,48 @@ export async function listLeads(
     q = q.limit(500);
   }
 
-  const { data: leads, error, count: total } = await q;
+  const [countQueries, { data: leads, error, count: total }] = await Promise.all([countQueriesP, q]);
+  statusNormais.forEach((s, i) => {
+    countByStatus[s] = countQueries[i].count ?? 0;
+  });
+  countByStatus.perdido = countQueries[statusNormais.length].count ?? 0;
+  countByStatus.ganhos = countQueries[statusNormais.length + 1].count ?? 0;
+  countByStatus.todos = statusNormais.reduce((sum, s) => sum + (countByStatus[s] ?? 0), 0);
+
   if (error) throw new Error(`Failed to list leads: ${error.message}`);
   if (!leads || leads.length === 0) return { rows: [], total: total ?? 0, countByStatus, atencaoCount: 0 };
 
-  // Cruza com eva_cadence pra saber quem tem toques pendentes
+  // Cruza com eva_cadence (quem tem toques pendentes) e, na MESMA rodada, UMA
+  // query nas tarefas pendentes dos leads da página → agrupa em memória pra
+  // calcular seloSla por lead sem N queries. Tarefas é best-effort.
   const ids = leads.map((l) => l.id);
-  const { data: cads } = await client
-    .from('eva_cadence')
-    .select('lead_id')
-    .in('lead_id', ids)
-    .eq('status', 'pending');
+  const [{ data: cads }, tars] = await Promise.all([
+    client
+      .from('eva_cadence')
+      .select('lead_id')
+      .in('lead_id', ids)
+      .eq('status', 'pending'),
+    (async () => {
+      try {
+        const { data } = await client
+          .from('lead_tarefas')
+          .select('lead_id, due_at, status')
+          .in('lead_id', ids)
+          .eq('status', 'pendente');
+        return (data ?? []) as Array<{ lead_id: string; due_at: string | null; status: string }>;
+      } catch {
+        return []; // silencia: sem tarefas, selo verde
+      }
+    })(),
+  ]);
   const pendingSet = new Set((cads ?? []).map((c: any) => c.lead_id));
 
-  // UMA query nas tarefas pendentes dos leads da página → agrupa em memória
-  // pra calcular seloSla por lead sem N queries. Best-effort.
   const now = Date.now();
   const tarefasPorLead = new Map<string, Array<{ due_at: string | null; status: string }>>();
-  try {
-    const { data: tars } = await client
-      .from('lead_tarefas')
-      .select('lead_id, due_at, status')
-      .in('lead_id', ids)
-      .eq('status', 'pendente');
-    for (const t of (tars ?? []) as Array<{ lead_id: string; due_at: string | null; status: string }>) {
-      const arr = tarefasPorLead.get(t.lead_id) ?? [];
-      arr.push({ due_at: t.due_at, status: t.status });
-      tarefasPorLead.set(t.lead_id, arr);
-    }
-  } catch {
-    // silencia: sem tarefas, selo verde
+  for (const t of tars) {
+    const arr = tarefasPorLead.get(t.lead_id) ?? [];
+    arr.push({ due_at: t.due_at, status: t.status });
+    tarefasPorLead.set(t.lead_id, arr);
   }
   const temVencida = (leadId: string): boolean =>
     (tarefasPorLead.get(leadId) ?? []).some((t) => t.due_at && Date.parse(t.due_at) < now);

@@ -6,9 +6,9 @@ import type { DetalheCalendario } from '../monitoring/service.js';
 import type { IntradayPonto } from '../monitoring/types.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.js';
 import { escapeHtml } from './ui/html.js';
-import { LOGO_NEGATIVA_WIDE_BASE64 } from './ui/logo-negativa-wide.js';
 import { SPRITE_ICONES } from './ui/icones.js';
-import { CSS_DESIGN_SYSTEM, FONTES_HEAD } from './ui/estilo.js';
+import { FONTES_HEAD } from './ui/estilo.js';
+import { URL_CSS_PAINEL, URL_CSS_SEM_TAILWIND, URL_LOGO_CASA } from './ui/estatico.js';
 import { icone, selo } from './ui/componentes.js';
 import { montarMenu, type ItemMontado, type IdGrupo, type SeloGrupo } from './menu-areas.js';
 import { corDaMarca, logoDaEmpresa, LOGO_PADRAO_CASA } from './marca-empresa.js';
@@ -122,10 +122,17 @@ interface LayoutInput {
   imersivo?: boolean;
   // Selos de contagem por área no menu (fase B liga com número real).
   selos?: Partial<Record<IdGrupo, SeloGrupo>>;
+  // Tailwind do CDN (~400 KB de JS que compila no navegador). Padrão: carrega
+  // (telas antigas dependem dele). `false` SÓ nas telas renovadas — as da lista
+  // TELAS_RENOVADAS do teto do Tailwind (tests/helpers/teto-tailwind.ts), cujo
+  // miolo não tem utilitário Tailwind. No lugar entra o reset de base servido
+  // por arquivo (ui/estatico.ts). perf/telas-leves, 28/09/2026.
+  tailwind?: boolean;
 }
 
 export function renderLayout(input: LayoutInput): string {
   const { active, title, body, scripts, dark, user, largo, selos, imersivo } = input;
+  const comTailwind = input.tailwind !== false;
 
   // MARCA DA EMPRESA (01/09/2026): cada empresa entra com a própria logo e cor;
   // nada da casa aparece na tela de outra empresa. EcoSun (ou tela legada sem
@@ -162,13 +169,13 @@ export function renderLayout(input: LayoutInput): string {
     ? `<img src="${escapeHtml(logoEmpresa)}" alt="${escapeHtml(_emp.nomeFantasia)}">`
     : marcaTenant
     ? `<div class="cc-sb-nome">${escapeHtml(marcaTenant)}</div>`
-    : `<img src="${LOGO_NEGATIVA_WIDE_BASE64}" alt="EcoSunPower">`;
+    : `<img src="${URL_LOGO_CASA}" alt="EcoSunPower">`;
 
   const logoMobile = temLogoPropria
     ? `<img src="${escapeHtml(logoEmpresa)}" alt="">`
     : marcaTenant
     ? `<span class="cc-mtop-nome">${escapeHtml(marcaTenant)}</span>`
-    : `<img src="${LOGO_NEGATIVA_WIDE_BASE64}" alt="">`;
+    : `<img src="${URL_LOGO_CASA}" alt="">`;
 
   const ehCasa = user?.companyId === ECOSUN_COMPANY_ID;
   const inicial = (user?.nome ?? '').trim().charAt(0).toUpperCase() || '?';
@@ -185,32 +192,26 @@ export function renderLayout(input: LayoutInput): string {
     : 'ecosun-body';
   const tema = dark ? 'cc-escuro' : 'cc-claro';
 
+  // <head>: CSS comum (design system + classes antigas) por ARQUIVO com hash no
+  // nome — o navegador baixa uma vez e guarda (ui/estatico.ts). Inline só a cor
+  // da MARCA da empresa em contexto (migration 120; sem cor cadastrada, âmbar).
+  // Tela renovada (tailwind:false): sem o Tailwind do CDN e com o reset de base
+  // no lugar, DEPOIS do CSS do painel (onde o Tailwind injetava o dele).
+  const cabecaEstilos = [
+    comTailwind ? '<script src="https://cdn.tailwindcss.com"></script>' : '',
+    FONTES_HEAD,
+    `<link rel="stylesheet" href="${URL_CSS_PAINEL}">`,
+    comTailwind ? '' : `<link rel="stylesheet" href="${URL_CSS_SEM_TAILWIND}">`,
+    `<style>\n  :root { --marca: ${corMarca}; }\n</style>`,
+  ].filter(Boolean).join('\n');
+
   return `<!doctype html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escapeHtml(title)} · ${marcaTenant ? `${escapeHtml(marcaTenant)} Dashboard` : 'EcoSun Dashboard'}</title>
-<script src="https://cdn.tailwindcss.com"></script>
-${FONTES_HEAD}
-<style>
-${CSS_DESIGN_SYSTEM}
-  /* Cor da MARCA da empresa em contexto (migration 120). Item ativo do menu e
-     destaques leem daqui. Sem cor cadastrada, é o âmbar de sempre. */
-  :root { --marca: ${corMarca}; }
-  .ecosun-ativo { background: var(--marca); }
-  .ecosun-marca-texto { color: var(--marca); }
-  /* Classes que telas antigas ainda usam dentro do corpo. */
-  .ecosun-header { background: linear-gradient(135deg, #0c4a6e 0%, #075985 50%, #0369a1 100%); position: relative; overflow: hidden; }
-  .accent-amber { border-left: 4px solid #f59e0b; }
-  .accent-sky { border-left: 4px solid #0ea5e9; }
-  .accent-emerald { border-left: 4px solid #10b981; }
-  .accent-violet { border-left: 4px solid #8b5cf6; }
-  .accent-rose { border-left: 4px solid #f43f5e; }
-  .accent-indigo { border-left: 4px solid #6366f1; }
-  details > summary { list-style: none; }
-  details > summary::-webkit-details-marker { display: none; }
-</style>
+${cabecaEstilos}
 </head>
 <body class="${classeBody}" id="dash-root">
   ${SPRITE_ICONES}

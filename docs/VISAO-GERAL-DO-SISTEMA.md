@@ -60,6 +60,11 @@ Deploy: EasyPanel publica a `main` — **só o Junior Implanta** (portão de pro
 - **Texto do Junior:** `corretor-ortografico.ts` (corrige português sem mudar número/nome).
 - **Tela do dashboard:** funções em `dashboard/*-views.ts` que devolvem string HTML.
   Layout/sidebar em `dashboard/views.ts` (`renderLayout`). Permissões em `dashboard/permissions.ts`.
+  CSS comum do design system e logo da casa são **arquivos** com hash no nome
+  (`dashboard/ui/estatico.ts`, rota pública `/dashboard/estatico/…`, cache de 1 ano) — não
+  embutir base64/CSS grande no HTML. Tela nova no padrão `cc-` (sem Tailwind): entra em
+  `TELAS_RENOVADAS` (`tests/helpers/teto-tailwind.ts`) e chama `renderLayout({ …, tailwind: false })`.
+  Peso das telas: `npx tsx scripts/medir-telas-leves.ts` (Chrome headless, dados fictícios).
 
 ### Tabelas principais do banco
 `leads` (o lead/cliente) · `propostas_publicas` · `sistemas_clientes` (usinas) + `geracao_diaria`

@@ -91,12 +91,17 @@ export function renderKanbanPage(grupos: Record<string, KanbanCard[]>, user?: Da
     </div>
 
     <style>
+      /* Pulso do SLA vermelho: o anel fica FIXO num ::after e só a opacidade
+         pulsa — animar box-shadow repintava o quadro inteiro a cada quadro
+         (com 200 cartões: ~1,5 s de CPU a cada 2 s, parado). perf/telas-leves. */
       @keyframes slaPulse {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
-        50%      { box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.35); }
+        0%, 100% { opacity: 0; }
+        50%      { opacity: 1; }
       }
-      .sla-urgent { animation: slaPulse 1.8s ease-in-out infinite; }
-      @media (prefers-reduced-motion: reduce) { .sla-urgent { animation: none; box-shadow: 0 0 0 2px rgba(244,63,94,0.4); } }
+      .sla-urgent { position: relative; }
+      .sla-urgent::after { content: ""; position: absolute; inset: -1px -1px -1px -3px; border-radius: inherit; pointer-events: none;
+        box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.35); opacity: 0; animation: slaPulse 1.8s ease-in-out infinite; }
+      @media (prefers-reduced-motion: reduce) { .sla-urgent::after { animation: none; opacity: 1; box-shadow: 0 0 0 2px rgba(244,63,94,0.4); } }
       .cc-funil .cc-kb-col{flex-basis:220px}
       .cc-funil .cc-kb-card-m .cc-pill{padding:1px 7px;font-size:10.5px}
       .cc-funil .sortable-ghost{opacity:.4}
@@ -128,5 +133,5 @@ export function renderKanbanPage(grupos: Record<string, KanbanCard[]>, user?: Da
       })();
     </script>`;
 
-  return renderLayout({ active: 'kanban', title: 'Quadro de Vendas', body, user, dark: temaDaTela(user, 'claro') === 'escuro', largo: true });
+  return renderLayout({ active: 'kanban', title: 'Quadro de Vendas', body, user, tailwind: false, dark: temaDaTela(user, 'claro') === 'escuro', largo: true });
 }
