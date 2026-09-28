@@ -5,6 +5,10 @@ import {
   demandaMaxima,
   receberLeituraShelly,
   _zerarAvisoLegadoParaTeste,
+  lerDevicesLegados,
+  statusHttpDoRecebimento,
+  criarLimitePorIp,
+  ipDaRequisicao,
 } from '../src/modules/medicao/shelly-medicao.js';
 
 // Formato que o script mJS do aparelho envia. Nós escrevemos os DOIS lados —
@@ -266,13 +270,15 @@ describe('receberLeituraShelly', () => {
 // ---------------------------------------------------------------------------
 describe('receberLeituraShelly — token por medidor', () => {
   const MEDIDOR = { medidorId: 'm1', companyId: 'empresa-B', leadId: 'l1', deviceId: '007007422d90' };
+  // Formato real do token do medidor: 32 bytes em base64url = 43 caracteres.
+  const TOK_B = 'B'.repeat(40) + '-_9';
 
   it('token do medidor grava com a empresa DO MEDIDOR', async () => {
     const salvar = vi.fn(async () => true);
     const aoReceber = vi.fn(async () => {});
     const r = await receberLeituraShelly(
-      { salvar, tokenEsperado: '', resolverToken: async (t) => (t === 'tok-B' ? MEDIDOR : null), aoReceber },
-      LEITURA, 'tok-B',
+      { salvar, tokenEsperado: '', resolverToken: async (t) => (t === TOK_B ? MEDIDOR : null), aoReceber },
+      LEITURA, TOK_B,
     );
     expect(r.aceito).toBe(true);
     expect(salvar).toHaveBeenCalledWith(expect.objectContaining({ companyId: 'empresa-B', medidorId: 'm1', leadId: 'l1' }));
@@ -282,20 +288,20 @@ describe('receberLeituraShelly — token por medidor', () => {
   it('aceita o id com prefixo do modelo (shellypro3em-...)', async () => {
     const salvar = vi.fn(async () => true);
     const r = await receberLeituraShelly({ salvar, tokenEsperado: '', resolverToken: async () => MEDIDOR },
-      { ...LEITURA, device_id: 'shellypro3em-007007422D90' }, 'tok-B');
+      { ...LEITURA, device_id: 'shellypro3em-007007422D90' }, TOK_B);
     expect(r.aceito).toBe(true);
   });
 
   it('token de um medidor não grava leitura de OUTRO aparelho', async () => {
     const salvar = vi.fn(async () => true);
-    const r = await receberLeituraShelly({ salvar, tokenEsperado: '', resolverToken: async () => MEDIDOR }, { ...LEITURA, device_id: 'outro' }, 'tok-B');
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: '', resolverToken: async () => MEDIDOR }, { ...LEITURA, device_id: 'outro' }, TOK_B);
     expect(r).toMatchObject({ aceito: false, motivo: 'leitura_invalida' });
     expect(salvar).not.toHaveBeenCalled();
   });
 
   it('o token do medidor tem prioridade: nunca cai no carimbo padrão da EcoSun', async () => {
     const salvar = vi.fn(async () => true);
-    await receberLeituraShelly({ salvar, tokenEsperado: 'tok-B', resolverToken: async () => MEDIDOR }, LEITURA, 'tok-B');
+    await receberLeituraShelly({ salvar, tokenEsperado: TOK_B, resolverToken: async () => MEDIDOR }, LEITURA, TOK_B);
     expect(salvar).toHaveBeenCalledWith(expect.objectContaining({ companyId: 'empresa-B' }));
   });
 
@@ -312,12 +318,53 @@ describe('receberLeituraShelly — token por medidor', () => {
     expect(r).toMatchObject({ aceito: false, motivo: 'token' });
   });
 
-  it('resolver que falha (migration não aplicada) cai no legado sem derrubar', async () => {
+  it('token fora do formato nem consulta o banco (e o legado segue valendo)', async () => {
+    const salvar = vi.fn(async () => true);
+    const resolverToken = vi.fn(async () => MEDIDOR);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior', resolverToken }, LEITURA, 'segredo-do-junior');
+    expect(resolverToken).not.toHaveBeenCalled();
+    expect(r.aceito).toBe(true);
+    const r2 = await receberLeituraShelly({ salvar, tokenEsperado: '', resolverToken }, LEITURA, 'x'.repeat(44));
+    expect(resolverToken).not.toHaveBeenCalled();
+    expect(r2).toMatchObject({ aceito: false, motivo: 'token' });
+  });
+
+  it('banco fora do ar ao resolver o token → indisponível (503, o aparelho tenta de novo), nunca 401', async () => {
     const salvar = vi.fn(async () => true);
     const r = await receberLeituraShelly({
-      salvar, tokenEsperado: 'segredo-do-junior', resolverToken: async () => { throw new Error('relation does not exist'); },
-    }, LEITURA, 'segredo-do-junior');
+      salvar, tokenEsperado: 'segredo-do-junior', resolverToken: async () => { throw new Error('fetch failed'); },
+    }, LEITURA, TOK_B);
+    expect(r).toMatchObject({ aceito: false, motivo: 'indisponivel' });
+    expect(statusHttpDoRecebimento(r.motivo)).toBe(503);
+    expect(salvar).not.toHaveBeenCalled();
+  });
+
+  it('token do medidor pela URL (?token=) não vale — só pelo cabeçalho', async () => {
+    const salvar = vi.fn(async () => true);
+    const resolverToken = vi.fn(async () => MEDIDOR);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior', resolverToken }, LEITURA, TOK_B, 'query');
+    expect(resolverToken).not.toHaveBeenCalled();
+    expect(r).toMatchObject({ aceito: false, motivo: 'token' });
+  });
+
+  it('o token global do piloto ainda vale pela URL (transição)', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior' }, LEITURA, 'segredo-do-junior', 'query');
     expect(r.aceito).toBe(true);
+  });
+
+  it('medidor DESLIGADO na plataforma: recusa com 410 e não grava', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior', resolverToken: async () => ({ ...MEDIDOR, ativo: false }) }, LEITURA, TOK_B);
+    expect(r).toMatchObject({ aceito: false, motivo: 'desativado' });
+    expect(statusHttpDoRecebimento(r.motivo)).toBe(410);
+    expect(salvar).not.toHaveBeenCalled();
+  });
+
+  it('grava o device_id normalizado (sem prefixo, minúsculo)', async () => {
+    const salvar = vi.fn(async () => true);
+    await receberLeituraShelly({ salvar, tokenEsperado: '', resolverToken: async () => MEDIDOR }, { ...LEITURA, device_id: 'shellypro3em-007007422D90' }, TOK_B);
+    expect(salvar).toHaveBeenCalledWith(expect.objectContaining({ deviceId: '007007422d90' }));
   });
 });
 
@@ -342,10 +389,65 @@ describe('receberLeituraShelly — token global legado (só o piloto)', () => {
     expect((salvar.mock.calls[0] as unknown[])[0]).not.toHaveProperty('medidorId');
   });
 
+  it('piloto desligado na plataforma: o token global também é recusado', async () => {
+    const salvar = vi.fn(async () => true);
+    const r = await receberLeituraShelly({
+      salvar, tokenEsperado: 'segredo-do-junior',
+      resolverLegado: async () => ({ medidorId: 'piloto', companyId: '00000000-0000-0000-0000-000000000001', leadId: null, deviceId: '007007422d90', ativo: false }),
+    }, LEITURA, 'segredo-do-junior');
+    expect(r).toMatchObject({ aceito: false, motivo: 'desativado' });
+    expect(salvar).not.toHaveBeenCalled();
+  });
+
+  it('SHELLY_LEGADO_DEVICES libera outro aparelho sem deploy', async () => {
+    const salvar = vi.fn(async () => true);
+    const devicesLegados = lerDevicesLegados(' shellypro3em-AABBCCDDEEFF , 007007422d90');
+    expect(devicesLegados).toEqual(['aabbccddeeff', '007007422d90']);
+    const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior', devicesLegados }, { ...LEITURA, device_id: 'shellypro3em-aabbccddeeff' }, 'segredo-do-junior');
+    expect(r.aceito).toBe(true);
+    expect(salvar).toHaveBeenCalledWith(expect.objectContaining({ deviceId: 'aabbccddeeff' }));
+  });
+
+  it('SHELLY_LEGADO_DEVICES vazia ou lixo → só o piloto', () => {
+    expect(lerDevicesLegados(undefined)).toEqual(['007007422d90']);
+    expect(lerDevicesLegados(' , <x>')).toEqual(['007007422d90']);
+  });
+
   it('token global NÃO grava aparelho que não é o piloto', async () => {
     const salvar = vi.fn(async () => true);
     const r = await receberLeituraShelly({ salvar, tokenEsperado: 'segredo-do-junior' }, { ...LEITURA, device_id: 'shellypro3em-aabbccddeeff' }, 'segredo-do-junior');
     expect(r).toMatchObject({ aceito: false, motivo: 'leitura_invalida' });
     expect(salvar).not.toHaveBeenCalled();
+  });
+});
+
+describe('webhook: limite por IP e código HTTP', () => {
+  it('120 por minuto por IP; o minuto seguinte libera; outro IP não é afetado', () => {
+    const l = criarLimitePorIp({ max: 120, janelaMs: 60_000 });
+    const t0 = 1_000_000;
+    for (let i = 0; i < 120; i++) expect(l.estourou('1.1.1.1', t0 + i)).toBe(false);
+    expect(l.estourou('1.1.1.1', t0 + 200)).toBe(true);
+    expect(l.estourou('2.2.2.2', t0 + 200)).toBe(false);
+    expect(l.estourou('1.1.1.1', t0 + 60_001)).toBe(false);
+  });
+
+  it('o mapa de IPs é limitado (não cresce sem fim)', () => {
+    const l = criarLimitePorIp({ max: 1, janelaMs: 60_000, maxChaves: 50 });
+    for (let i = 0; i < 500; i++) l.estourou(`10.0.0.${i}`, 1000);
+    expect(l.tamanho).toBeLessThanOrEqual(50);
+  });
+
+  it('IP real = o último do X-Forwarded-For (o primeiro o cliente forja)', () => {
+    expect(ipDaRequisicao('6.6.6.6, 200.1.2.3', '10.0.0.1')).toBe('200.1.2.3');
+    expect(ipDaRequisicao(undefined, '10.0.0.1')).toBe('10.0.0.1');
+  });
+
+  it('códigos: token 401, desligado 410, banco fora 503, dado ruim 400', () => {
+    expect(statusHttpDoRecebimento('token')).toBe(401);
+    expect(statusHttpDoRecebimento('sem_token_no_servidor')).toBe(401);
+    expect(statusHttpDoRecebimento('desativado')).toBe(410);
+    expect(statusHttpDoRecebimento('indisponivel')).toBe(503);
+    expect(statusHttpDoRecebimento('leitura_invalida')).toBe(400);
+    expect(statusHttpDoRecebimento('erro')).toBe(400);
   });
 });

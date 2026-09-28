@@ -20,6 +20,16 @@
 //    Parece que travou tudo. A solução é `HTTP.Request` com `ssl_ca: "*"`,
 //    como está abaixo. ISSO VALE PRA TODA INSTALAÇÃO DO KIT.
 //
+//    ⚠️ O QUE O ssl_ca: "*" SIGNIFICA: o aparelho NÃO confere se do outro
+//    lado está mesmo o nosso servidor. Quem mandar na rede da casa (roteador
+//    invadido, Wi-Fi de vizinho clonado) poderia se passar pelo servidor e
+//    copiar o código do medidor. O dado continua indo cifrado, mas sem essa
+//    conferência. O melhor, quando der, é APAGAR a linha ssl_ca: o aparelho
+//    passa a usar a lista de certificados que vem dentro dele e confere o
+//    servidor (o nosso usa Let's Encrypt). Teste assim: apague a linha, salve,
+//    reinicie o script e veja se aparece "[ecosun] OK" no console em até
+//    2 minutos. Se ficar pendurado, volte o ssl_ca: "*".
+//
 // 2. O COMPONENTE depende do perfil do aparelho:
 //      trifásico  →  "em:0"    e  "emdata:0"   (campos c_voltage, c_act_power…)
 //      monofásico →  "em1:N"   e  "em1data:N"  (N = 0 fase A, 1 fase B, 2 fase C)
@@ -87,6 +97,10 @@ function enviar() {
       }
       if (resposta && resposta.code === 401) {
         print("[ecosun] TOKEN RECUSADO — confira o codigo do medidor na plataforma");
+        return;
+      }
+      if (resposta && resposta.code === 410) {
+        print("[ecosun] MEDIDOR DESLIGADO na plataforma — nada e gravado ate religar");
         return;
       }
       if (resposta && resposta.code !== 200) {

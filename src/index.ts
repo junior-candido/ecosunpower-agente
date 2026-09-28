@@ -154,7 +154,7 @@ import { criarRepoDemonstrativo } from './modules/gd/demonstrativo-repo.js';
 import { listarAnexosResend, baixarAnexoResend, verificarOrigemResend, extrairTextoPdf } from './modules/gd/demonstrativo-io.js';
 import { conferirAssinaturaResend } from './modules/email/resend-assinatura.js';
 import { capturarEmailDaConversa, extrairEmailDoTexto } from './modules/email/captura-email.js';
-import { receberLeituraShelly } from './modules/medicao/shelly-medicao.js';
+import { receberLeituraShelly, criarLimitePorIp, ipDaRequisicao, lerDevicesLegados, statusHttpDoRecebimento } from './modules/medicao/shelly-medicao.js';
 import { EmailSequenceService } from './modules/email/email-sequence.js';
 import { EmailSender } from './modules/email/resend-client.js';
 import { CampanhaService, botoesPreviewCampanha, type CampanhaGerada } from './modules/email/campanha.js';
@@ -9642,13 +9642,22 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
   // Aceita uma leitura ou um lote (aparelho que ficou sem rede e acumulou).
   // Token obrigatorio: o endereco e publico, e medicao envenenada vira laudo
   // errado assinado por um responsavel tecnico.
+  // Limite por IP (120/min, em memória): o endereço é público.
+  const limiteShelly = criarLimitePorIp({ max: 120, janelaMs: 60_000 });
+  // Aparelhos que ainda usam o token global (env SHELLY_LEGADO_DEVICES; padrão: o piloto).
+  const devicesLegadosShelly = lerDevicesLegados(process.env.SHELLY_LEGADO_DEVICES);
   app.post('/webhooks/shelly', async (req, res) => {
-    const token = String(
-      req.header('x-shelly-token') ?? (req.query.token as string | undefined) ?? '',
-    );
+    if (limiteShelly.estourou(ipDaRequisicao(req.headers['x-forwarded-for'], req.socket.remoteAddress))) {
+      res.status(429).json({ ok: false, motivo: 'limite' });
+      return;
+    }
+    // Token do medidor SÓ pelo cabeçalho (URL vai parar em log de proxy). O
+    // ?token= na URL ainda vale pro token global do piloto, na transição.
+    const tokenCabecalho = String(req.header('x-shelly-token') ?? '');
+    const tokenQuery = typeof req.query.token === 'string' ? req.query.token : '';
     // Gestão de Energia G1: cada medidor tem o SEU token (medidores_energia,
     // migration 136) e grava com a empresa DELE. O token global antigo só vale
-    // pro piloto até o script dele ser trocado (log "[energia] token legado").
+    // pros aparelhos liberados até o script ser trocado (log "[energia] token legado").
     const r = await receberLeituraShelly(
       {
         salvar: (l) => supabase.salvarMedicaoShelly(l),
@@ -9656,15 +9665,16 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
         resolverToken: (t) => supabase.resolverMedidorPorToken(t),
         resolverLegado: (d) => supabase.resolverMedidorLegado(d),
         aoReceber: (id, companyId, iso) => supabase.marcarLeituraMedidor(id, companyId, iso),
+        devicesLegados: devicesLegadosShelly,
       },
       req.body,
-      token,
+      tokenCabecalho || tokenQuery,
+      tokenCabecalho ? 'cabecalho' : 'query',
     );
     if (r.aceito) { res.status(200).json({ ok: true, salvas: r.salvas, recusadas: r.recusadas }); return; }
-    // 401 quando e token; 400 quando o dado nao presta. O aparelho reenvia em
-    // qualquer erro 5xx, entao NUNCA devolver 5xx pra dado ruim — viraria loop.
-    const status = r.motivo === 'token' || r.motivo === 'sem_token_no_servidor' ? 401 : 400;
-    res.status(status).json({ ok: false, motivo: r.motivo });
+    // 401 token; 410 medidor desligado; 503 banco fora (tentar de novo é o
+    // certo); 400 dado que não presta — nunca 5xx pra dado ruim (viraria loop).
+    res.status(statusHttpDoRecebimento(r.motivo)).json({ ok: false, motivo: r.motivo });
   });
 
   // E-mails de demonstrativo sendo processados agora (retry da Resend em

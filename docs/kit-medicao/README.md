@@ -146,6 +146,16 @@ hora da instalação é prejuízo e cara feia.
 nem erro, e o console mostra só a linha de início. Parece que o script morreu.
 ➡️ Use **`HTTP.Request` com `ssl_ca: "*"`**. Vale para toda instalação do kit.
 
+⚠️ **O risco do `ssl_ca: "*"`, em palavras simples:** o aparelho deixa de conferir se do
+outro lado está mesmo o nosso servidor. Quem controlar a rede da casa (roteador invadido,
+Wi-Fi clonado) poderia se passar pelo servidor e copiar o código do medidor — e aí mandar
+leitura falsa em nome dele. O dado continua cifrado, só perde essa conferência.
+**O melhor, quando der:** apagar a linha `ssl_ca` do script. O aparelho passa a usar a lista
+de certificados que vem dentro dele e confere o servidor (o nosso usa Let's Encrypt).
+Teste: apague a linha, salve, reinicie o script e veja "[ecosun] OK" no console em até
+2 minutos. Se ficar pendurado, volte o `ssl_ca: "*"` — e, se algum dia desconfiar que
+o código vazou, **Gerar código novo** na tela do medidor.
+
 **2. O nome do componente depende do perfil do aparelho.**
 
 | Perfil | Componente | Campos |
@@ -176,7 +186,13 @@ roda dentro dele e faz `POST` de minuto em minuto.
 
 Cada medidor tem o **seu** código de envio (token). É ele que diz de qual empresa e de
 qual cliente é a leitura — o token global antigo (`SHELLY_INGEST_TOKEN`) só vale para o
-piloto (quadro da casa do Junior) até o script dele ser trocado.
+piloto (quadro da casa do Junior) até o script dele ser trocado. A lista de aparelhos
+que ainda podem usar o token global fica na env `SHELLY_LEGADO_DEVICES` (ids separados
+por vírgula, sem o prefixo `shellypro3em-`; vazia = só o piloto `007007422d90`).
+
+Um aparelho só pode estar cadastrado **uma vez na plataforma inteira**. Se o formulário
+disser "Este aparelho já está cadastrado. Fale com o suporte.", ele já está em algum
+cadastro (a tela não diz de quem, de propósito).
 
 1. No painel: **Usinas → Energia da casa → Cadastrar medidor** (migrations 136/137
    aplicadas). Preencha o código do aparelho, a usina do mesmo endereço, a UC e marque o
@@ -190,6 +206,28 @@ piloto (quadro da casa do Junior) até o script dele ser trocado.
 6. Em até 2 minutos a tela do medidor mostra **"Recebendo dado"**.
 
 Perdeu o código? Na tela do medidor, **Gerar código novo** (o antigo para de valer na hora).
+
+O código do medidor vai **só no cabeçalho** `x-shelly-token` (como o script já faz). Na
+URL (`?token=`) ele não vale — URL fica gravada em log de proxy.
+
+O que o servidor responde (aparece no console do script):
+
+| Código | Quer dizer |
+|---|---|
+| 200 | gravou |
+| 401 | código errado (ou de outro aparelho) |
+| 410 | medidor **desligado** na plataforma (Editar medidor → "Medidor ligado") |
+| 429 | muitas chamadas do mesmo endereço (mais de 120 por minuto) |
+| 503 | o nosso banco está fora do ar — o próximo envio tenta de novo |
+
+### Desligar ou apagar (LGPD)
+
+- **Desligar:** Editar medidor → desmarque "Medidor ligado". O servidor recusa o que o
+  aparelho mandar (410) e a plataforma para de agregar e de vigiar. Os dados já
+  guardados ficam.
+- **Apagar tudo:** Editar medidor → "Apagar medidor e todos os dados" → digite o nome do
+  medidor. Some o cadastro, as leituras de 1 minuto, as janelas de 15 minutos e os
+  resumos por dia. Não tem volta. Fica registrado quem apagou e quando (sem consumo).
 
 ### Checklist de instalação
 
@@ -210,7 +248,8 @@ Quando o cliente não aceita script, ou como reserva do script: **Como o dado ch
   WhatsApp nem por conversa — a chave dá controle total da conta (inclusive dos relés).
 - A chave fica cifrada (env `ENERGIA_CRED_KEY` no servidor) e nunca volta para a tela.
 - Trocou a senha da conta Shelly? A chave muda: a plataforma marca "Chave da nuvem
-  recusada" e avisa. Cole a chave nova na edição do medidor.
+  recusada" e avisa o admin da empresa (uma vez). Cole a chave nova na edição do medidor.
+  O aviso de "parou/voltou" do script continua funcionando nesse meio-tempo.
 - Pela nuvem o dado chega de 15 em 15 minutos e sem o detalhe de tensão do minuto a minuto.
 
 ---
