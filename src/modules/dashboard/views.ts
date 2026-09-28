@@ -117,12 +117,15 @@ interface LayoutInput {
   user: DashUser | undefined;
   // Telas do Command Center usam a largura toda (o resto fica em 80rem).
   largo?: boolean;
+  // Modo imersivo (renovação do miolo, R1 — uso no R23: Prédio Vivo e Cérebro):
+  // área de conteúdo sem padding, altura cheia e SEM rodapé. Menu continua.
+  imersivo?: boolean;
   // Selos de contagem por área no menu (fase B liga com número real).
   selos?: Partial<Record<IdGrupo, SeloGrupo>>;
 }
 
 export function renderLayout(input: LayoutInput): string {
-  const { active, title, body, scripts, dark, user, largo, selos } = input;
+  const { active, title, body, scripts, dark, user, largo, selos, imersivo } = input;
 
   // MARCA DA EMPRESA (01/09/2026): cada empresa entra com a própria logo e cor;
   // nada da casa aparece na tela de outra empresa. EcoSun (ou tela legada sem
@@ -239,10 +242,10 @@ ${CSS_DESIGN_SYSTEM}
         <span class="cc-sp"></span>
       </header>
 
-      <main class="cc-main${largo ? ' cc-largo' : ''}">
+      <main class="cc-main${largo ? ' cc-largo' : ''}${imersivo ? ' cc-imersivo' : ''}">
         ${body}
       </main>
-
+${imersivo ? '' : `
       <footer class="cc-rodape">
         <div class="cc-row">
           ${marcaTenant
@@ -254,7 +257,7 @@ ${CSS_DESIGN_SYSTEM}
           <span class="hidden sm:inline">·</span>
           <span>Brasília-DF</span>`}
         </div>
-      </footer>
+      </footer>`}
     </div>
   </div>
 

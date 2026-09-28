@@ -307,5 +307,163 @@ a.cc-chip:hover{border-color:rgba(251,191,36,.5)}
 }
 `;
 
+// ===========================================================================
+// RENOVAÇÃO DO MIOLO (R1, 28/09/2026): peças novas (componentes.ts, etapas.ts,
+// kanban.ts). Tudo `cc-`, lendo os mesmos tokens → funciona no escuro e no claro.
+// ===========================================================================
+
+/** Botões extras, abas, chips roláveis, célula dupla, barra, aviso, paginação,
+ *  linha de lista, "mais ações", avatar e trilha de etapas. */
+export const CSS_PECAS = `
+button.cc-btn{font-family:inherit}
+.cc-btn-ghost{background:transparent}
+.cc-btn-off{opacity:.45;cursor:default}
+.cc-btn-off:hover{border-color:var(--cc-line-2)}
+.cc-abas{display:flex;gap:2px;border-bottom:1px solid var(--cc-line-2);margin:0 0 18px;overflow-x:auto;scrollbar-width:none}
+.cc-aba{display:inline-flex;align-items:center;gap:6px;padding:10px 14px;font-size:13px;font-weight:600;color:var(--cc-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.cc-aba:hover{color:var(--cc-text)}
+.cc-aba-on{color:var(--cc-gold-2);border-bottom-color:var(--cc-gold)}
+.cc-aba .cc-bdg{background:var(--cc-surface-3);color:var(--cc-text-2)}
+.cc-dupla{display:flex;flex-direction:column;min-width:0;line-height:1.3}
+.cc-dupla-t{font-weight:600;color:var(--cc-text);overflow:hidden;text-overflow:ellipsis}
+a.cc-dupla-t:hover{color:var(--cc-gold-2)}
+.cc-dupla-s{font-size:12px;color:var(--cc-muted);overflow:hidden;text-overflow:ellipsis}
+.cc-bar-warn i{background:var(--cc-warn)} .cc-bar-crit i{background:var(--cc-crit)} .cc-bar-ouro i{background:var(--cc-gold)}
+.cc-claro .cc-bar{background:rgba(15,23,42,.08)}
+.cc-aviso{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-radius:12px;font-size:13.5px;line-height:1.45;margin-bottom:16px;border:1px solid var(--cc-line-2);color:var(--cc-text)}
+.cc-aviso svg{margin-top:2px}
+.cc-aviso-ok{background:var(--cc-ok-soft);border-color:rgba(61,187,110,.4)} .cc-aviso-ok svg{color:var(--cc-ok)}
+.cc-aviso-erro{background:var(--cc-crit-soft);border-color:rgba(228,87,75,.45)} .cc-aviso-erro svg{color:var(--cc-crit)}
+.cc-aviso-info{background:var(--cc-info-soft);border-color:rgba(56,189,248,.4)} .cc-aviso-info svg{color:var(--cc-info)}
+.cc-aviso-atencao{background:var(--cc-warn-soft);border-color:rgba(242,134,46,.45)} .cc-aviso-atencao svg{color:var(--cc-warn)}
+.cc-pg{display:flex;align-items:center;gap:8px;padding-top:14px;flex-wrap:wrap}
+.cc-pg-info{font-size:12.5px;color:var(--cc-muted)}
+.cc-li{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;border:1px solid var(--cc-line);background:rgba(255,255,255,.02)}
+a.cc-li:hover{border-color:rgba(251,191,36,.35)}
+.cc-li-txt{flex:1;min-width:0}
+.cc-li-txt b{display:block;font-size:13.5px;font-weight:600;color:var(--cc-text)}
+.cc-li-txt small{display:block;font-size:12px;color:var(--cc-muted);margin-top:1px}
+.cc-li-d{flex:none;text-align:right}
+.cc-mais{position:relative;display:inline-block}
+.cc-mais>summary{list-style:none}
+.cc-mais>summary::-webkit-details-marker{display:none}
+.cc-mais-menu{position:absolute;z-index:30;top:calc(100% + 6px);left:0;min-width:250px;padding:8px;border-radius:12px;background:var(--cc-surface-2);border:1px solid var(--cc-line-2);box-shadow:0 14px 34px rgba(0,0,0,.35);display:flex;flex-direction:column;gap:6px}
+.cc-mais-dir .cc-mais-menu{left:auto;right:0}
+.cc-mais-menu form{margin:0}
+.cc-mais-menu .cc-btn{width:100%;justify-content:flex-start}
+.cc-avatar{width:30px;height:30px;border-radius:50%;display:inline-grid;place-items:center;font-family:var(--cc-f-num);font-weight:700;font-size:13px;color:#16304F;background:linear-gradient(135deg,#fbbf24,#F0A500);flex:none}
+.cc-trl{display:flex;list-style:none;margin:0;padding:0}
+.cc-trl li{flex:1;position:relative;padding-top:18px;font-size:10.5px;color:var(--cc-faint);text-align:center;min-width:0}
+.cc-trl li::before{content:"";position:absolute;top:2px;left:50%;transform:translateX(-50%);width:10px;height:10px;border-radius:50%;background:var(--cc-surface-3);border:2px solid var(--cc-line-2);z-index:1}
+.cc-trl li::after{content:"";position:absolute;top:8px;left:-50%;width:100%;height:2px;background:var(--cc-line-2)}
+.cc-trl li:first-child::after{display:none}
+.cc-trl li.cc-trl-feita::before{background:var(--cc-ok);border-color:var(--cc-ok)}
+.cc-trl li.cc-trl-feita::after,.cc-trl li.cc-trl-atual::after{background:var(--cc-ok)}
+.cc-trl li.cc-trl-atual::before{background:var(--cc-gold);border-color:var(--cc-gold);box-shadow:0 0 0 3px var(--cc-gold-soft)}
+.cc-trl li.cc-trl-atual{color:var(--cc-text-2);font-weight:600}
+.cc-trl span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px}
+@media (max-width:760px){
+  .cc-chips-rolar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+  .cc-mais-menu{position:fixed;left:12px;right:12px;top:auto;bottom:12px;min-width:0;max-height:70vh;overflow-y:auto}
+}
+`;
+
+/** Pílula de etapa: funil de leads (pipeline.ts) e obra (usina-etapas.ts). */
+export const CSS_ETAPAS = `
+:root{
+  --cc-et-novo:#38BDF8; --cc-et-qualificando:#a78bfa; --cc-et-qualificado:#e879f9; --cc-et-proposta_enviada:#60a5fa;
+  --cc-et-negociacao:#fbbf24; --cc-et-agendado:#fb923c; --cc-et-transferido:#34d399; --cc-et-ganho:#3DBB6E; --cc-et-perdido:#f87171;
+}
+.cc-claro{
+  --cc-et-novo:#0284c7; --cc-et-qualificando:#7c3aed; --cc-et-qualificado:#c026d3; --cc-et-proposta_enviada:#2563eb;
+  --cc-et-negociacao:#b45309; --cc-et-agendado:#c2410c; --cc-et-transferido:#059669; --cc-et-ganho:#15803d; --cc-et-perdido:#dc2626;
+}
+.cc-et{--et:var(--cc-off);color:var(--et);background:color-mix(in srgb,var(--et) 15%,transparent)}
+.cc-et-novo{--et:var(--cc-et-novo)}
+.cc-et-qualificando{--et:var(--cc-et-qualificando)}
+.cc-et-qualificado{--et:var(--cc-et-qualificado)}
+.cc-et-proposta_enviada{--et:var(--cc-et-proposta_enviada)}
+.cc-et-negociacao{--et:var(--cc-et-negociacao)}
+.cc-et-agendado{--et:var(--cc-et-agendado)}
+.cc-et-transferido{--et:var(--cc-et-transferido)}
+.cc-et-ganho{--et:var(--cc-et-ganho)}
+.cc-et-perdido{--et:var(--cc-et-perdido)}
+.cc-et-outra{--et:var(--cc-off)}
+.cc-eo-projeto{--et:var(--cc-info)}
+.cc-eo-aprovacao{--et:var(--cc-et-qualificando)}
+.cc-eo-instalacao{--et:var(--cc-warn)}
+.cc-eo-vistoria{--et:var(--cc-watch)}
+.cc-eo-homologacao{--et:var(--cc-et-qualificado)}
+.cc-eo-operacao{--et:var(--cc-ok)}
+`;
+
+/** Tabela que vira cartão no celular / tabela que rola sozinha. */
+export const CSS_TABELA_MOBILE = `
+.cc-tbl-rolar{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.cc-tbl-rolar th:first-child,.cc-tbl-rolar td:first-child{position:sticky;left:0;z-index:1;background:var(--cc-surface)}
+@media (max-width:760px){
+  .cc-tbl-cartoes{overflow:visible}
+  .cc-tbl-cartoes table,.cc-tbl-cartoes tbody,.cc-tbl-cartoes tr,.cc-tbl-cartoes td{display:block;width:100%}
+  .cc-tbl-cartoes thead{display:none}
+  .cc-tbl-cartoes tr{border:1px solid var(--cc-line);border-radius:12px;padding:10px 12px;margin-bottom:10px;background:var(--cc-surface)}
+  .cc-tbl-cartoes tbody tr:hover td{background:transparent}
+  .cc-tbl-cartoes td{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:5px 0;border:0;white-space:normal;text-align:right;min-height:30px}
+  .cc-tbl-cartoes td::before{content:attr(data-label);flex:none;text-align:left;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--cc-faint);font-weight:600}
+  .cc-tbl-cartoes td:first-child{justify-content:flex-start;text-align:left;font-size:14px;padding-top:0;border-bottom:1px solid var(--cc-line);padding-bottom:8px;margin-bottom:4px}
+  .cc-tbl-cartoes td:first-child::before,.cc-tbl-cartoes td[data-label=""]::before{display:none}
+  .cc-tbl-cartoes td>.cc-bar{flex:0 0 55%}
+}
+`;
+
+/** Kanban (Funil e Obras): colunas lado a lado, encaixe no celular. */
+export const CSS_KANBAN = `
+.cc-kb{display:flex;gap:12px;overflow-x:auto;padding-bottom:10px;align-items:flex-start;-webkit-overflow-scrolling:touch}
+.cc-kb-col{--kb:var(--cc-off);flex:0 0 248px;min-width:0;background:var(--cc-surface);border:1px solid var(--cc-line);border-radius:14px;display:flex;flex-direction:column;max-height:calc(100vh - 220px)}
+.cc-kb-h{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:12px 12px 10px;border-bottom:1px solid var(--cc-line);border-top:3px solid var(--kb);border-radius:14px 14px 0 0}
+.cc-kb-cor{width:8px;height:8px;border-radius:50%;background:var(--kb);flex:none}
+.cc-kb-h h3{flex:1;min-width:0;font-size:13px;font-weight:600;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cc-kb-n{font-family:var(--cc-f-num);font-size:12px;font-weight:700;padding:1px 8px;border-radius:99px;background:var(--cc-surface-3);color:var(--cc-text-2)}
+.cc-kb-sub{width:100%;font-size:11.5px;color:var(--cc-muted)}
+.cc-kb-lista{display:flex;flex-direction:column;gap:8px;padding:10px;overflow-y:auto;min-height:64px;flex:1}
+.cc-kb-card{background:var(--cc-surface-2);border:1px solid var(--cc-line);border-left:3px solid var(--cc-line-2);border-radius:10px;padding:9px 10px;cursor:grab;min-width:0}
+.cc-kb-card:hover{border-color:rgba(251,191,36,.35)}
+.cc-kb-ok{border-left-color:var(--cc-ok)} .cc-kb-warn{border-left-color:var(--cc-warn)} .cc-kb-crit{border-left-color:var(--cc-crit)}
+.cc-kb-card-l{display:flex;align-items:baseline;gap:8px;min-width:0}
+.cc-kb-card-t{flex:1;min-width:0;font-weight:600;font-size:13px;color:var(--cc-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+a.cc-kb-card-t:hover{color:var(--cc-gold-2)}
+.cc-kb-card-d{flex:none;font-family:var(--cc-f-num);font-size:11px;color:var(--cc-faint)}
+.cc-kb-card-m{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:5px;font-size:11.5px;color:var(--cc-muted)}
+.cc-kb-vazio{margin:6px 0;text-align:center;font-size:12px;color:var(--cc-faint)}
+@media (max-width:760px){
+  .cc-kb{scroll-snap-type:x mandatory;gap:10px}
+  .cc-kb-col{flex-basis:85%;scroll-snap-align:start;max-height:none}
+}
+`;
+
+/** Formulário: basta `class="cc-form"` no <form> — o HTML dos campos não muda. */
+export const CSS_FORMULARIO = `
+.cc-form label{color:var(--cc-text-2)}
+.cc-form input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]),.cc-form select,.cc-form textarea{
+  min-height:40px;padding:8px 12px;border-radius:10px;border:1px solid var(--cc-line-2);background:var(--cc-surface);color:var(--cc-text);font-family:inherit;font-size:14px;line-height:1.4;box-sizing:border-box;max-width:100%}
+.cc-form textarea{min-height:88px}
+.cc-form input:focus,.cc-form select:focus,.cc-form textarea:focus{outline:none;border-color:var(--cc-gold);box-shadow:0 0 0 3px var(--cc-gold-soft)}
+.cc-form input::placeholder,.cc-form textarea::placeholder{color:var(--cc-faint)}
+.cc-form input[type=file]{font-size:13px;color:var(--cc-text-2);max-width:100%}
+.cc-form .cc-campo{display:flex;flex-direction:column;gap:6px;min-width:0}
+.cc-form .cc-campo>span,.cc-form .cc-rot{font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--cc-muted)}
+/* form celular */
+@media (max-width:760px){
+  .cc-form input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]),.cc-form select,.cc-form textarea{min-height:44px;font-size:16px}
+  .cc-form .cc-btn-gold[type=submit]{width:100%;justify-content:center;height:44px}
+}
+`;
+
+/** Modo imersivo (Prédio Vivo, Cérebro): área cheia, sem padding nem rodapé. */
+export const CSS_IMERSIVO = `
+.cc-main.cc-imersivo{padding:0;max-width:none;min-height:100vh;display:flex;flex-direction:column}
+@media (max-width:1023px){ .cc-main.cc-imersivo{min-height:calc(100vh - 64px)} }
+`;
+
 /** Todo o CSS do design system, pronto para ir num <style>. */
-export const CSS_DESIGN_SYSTEM = CSS_TOKENS + CSS_CASCA + CSS_COMPONENTES;
+export const CSS_DESIGN_SYSTEM = CSS_TOKENS + CSS_CASCA + CSS_COMPONENTES
+  + CSS_PECAS + CSS_ETAPAS + CSS_TABELA_MOBILE + CSS_KANBAN + CSS_FORMULARIO + CSS_IMERSIVO;
