@@ -44,7 +44,7 @@ const CSS_RH = `
 .cc-rh-acoes form{margin:0}
 .cc-rh-st{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
 .cc-rh-st form{margin:0}
-.cc-rh-st select{min-height:30px;padding:4px 8px;border-radius:8px;border:1px solid var(--cc-line-2);background:var(--cc-surface);color:var(--cc-text-2);font:inherit;font-size:12.5px;max-width:100%}
+.cc-rh-st select{min-height:36px;padding:4px 8px;border-radius:8px;border:1px solid var(--cc-line-2);background:var(--cc-surface);color:var(--cc-text-2);font:inherit;font-size:12.5px;max-width:100%}
 .cc-rh-ia{display:block;font-size:12px;color:var(--cc-muted);margin-top:4px;max-width:420px;overflow-wrap:anywhere}
 .cc-rh-nomecel{display:block;min-width:0}
 .cc-rh-alerta{color:var(--cc-warn,#f59e0b)}
@@ -128,7 +128,7 @@ export function renderVagasPage(vagas: VagaRow[], viewer?: DashUser): string {
 
   const recado = ehCasa(viewer)
     ? `<div class="cc-aviso cc-aviso-info" role="status"><span>Vaga <strong>aberta</strong> aparece na página <a href="https://ecosunpower.eng.br/trabalhe-conosco" target="_blank" rel="noopener">Trabalhe Conosco</a> do site na hora. Fechou, some na hora.</span></div>`
-    : aviso({ tom: 'info', texto: 'Vaga aberta está recebendo candidatos; fechada, sai da lista de vagas abertas.' });
+    : aviso({ tom: 'info', texto: 'Vaga aberta fica registrada aqui para organizar a seleção; fechada, sai da lista de abertas. Ainda não há página pública de candidatura para a sua empresa.' });
 
   const body = `
 ${cabecalhoPagina({
@@ -138,7 +138,7 @@ ${cabecalhoPagina({
     acoesHtml: botao({ rotulo: 'Nova vaga', href: '/dashboard/rh/vagas/nova', tom: 'ouro', icone: 'plus' }),
   })}
 ${recado}
-${cartaoSecao({ titulo: 'Vagas', dica: `${vagas.length} vaga(s)`, corpoHtml: lista })}`;
+${cartaoSecao({ titulo: 'Vagas', dica: `${vagas.length} ${vagas.length === 1 ? 'vaga' : 'vagas'}`, corpoHtml: lista })}`;
   return layout('rh_vagas', 'RH · Vagas', body, viewer);
 }
 
@@ -212,17 +212,17 @@ export function renderBuscaPage(
       placeholder='pergunte como quiser — ex.: "quem tem NR-35 e experiência em telhado?"'>
     ${botao({ rotulo: 'Buscar', tipo: 'submit', tom: 'ouro', icone: 'search' })}
   </form>
-  <p class="cc-rh-ajuda">A IA vasculha os perfis de todos os candidatos guardados (os resumos que a triagem fez de cada currículo) e devolve quem encaixa, com o motivo. Quanto mais currículos triados, melhor ela acha.</p>`;
+  <p class="cc-rh-ajuda">A IA vasculha os perfis de todos os candidatos guardados da empresa (os resumos que a triagem fez de cada currículo) e devolve quem encaixa, com o motivo. Quanto mais currículos triados, melhor ela acha.</p>`;
 
   const resultado = resultados === null ? ''
     : resultados.length === 0
-      ? cartaoSecao({ titulo: 'Resultado', corpoHtml: estadoVazio({ tipo: 'vazio', titulo: 'Ninguém no banco encaixa nessa pergunta ainda.', texto: 'Tenta reformular ou amplia o critério.', icone: 'search' }) })
+      ? cartaoSecao({ titulo: 'Resultado', corpoHtml: estadoVazio({ tipo: 'vazio', titulo: 'Ninguém no banco encaixa nessa pergunta ainda.', texto: 'Tente reformular ou ampliar o critério.', icone: 'search' }) })
       : `<div class="cc-rh-grade">${cards}</div>`;
 
   const body = `
 ${cabecalhoPagina({
     trilha: [AREA, { rotulo: 'Busca IA' }],
-    titulo: 'Busca no banco de talentos',
+    titulo: 'Busca no Banco de Talentos',
     subtitulo: 'Pergunte em português e a IA acha quem encaixa.',
     acoesHtml: botao({ rotulo: 'Candidatos', href: '/dashboard/rh/candidatos', icone: 'users' }),
   })}
@@ -302,6 +302,6 @@ ${cabecalhoPagina({
     subtitulo: 'Triagem de quem se candidatou: nota da IA, status, currículo.',
     acoesHtml: botao({ rotulo: 'Gerenciar vagas', href: '/dashboard/rh/vagas', icone: 'contact' }),
   })}
-${cartaoSecao({ titulo: 'Candidatos', dica: `${candidatos.length} candidato(s)`, corpoHtml: `${filtro}${lista}<p class="cc-rh-nota-rodape">Currículos ficam guardados por 12 meses (LGPD) e abrem por link temporário seguro.</p>` })}`;
+${cartaoSecao({ titulo: 'Candidatos', dica: `${candidatos.length} ${candidatos.length === 1 ? 'candidato' : 'candidatos'}`, corpoHtml: `${filtro}${lista}<p class="cc-rh-nota-rodape">Currículos ficam guardados por 12 meses (LGPD) e abrem por link temporário seguro.</p>` })}`;
   return layout('rh_candidatos', 'RH · Candidatos', body, viewer);
 }

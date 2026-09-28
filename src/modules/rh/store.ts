@@ -144,6 +144,7 @@ export async function salvarCandidatura(
     curriculo_path: path,
     consentimento_em: new Date().toISOString(),
     origem: 'site',
+    company_id: ECOSUN_COMPANY_ID, // site Trabalhe Conosco é da casa (explícito, sem depender do DEFAULT da 077)
     status: 'novo',
   });
   if (error) {
