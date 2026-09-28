@@ -85,7 +85,11 @@ describe('lista e isolamento', () => {
     await rotaListaEnergia(db, deps())(req(tenant), res as unknown as Response);
     expect(db.chamadas.length).toBeGreaterThan(0);
     for (const c of db.chamadas) expect(c.filtros, c.tabela).toContainEqual(['eq', 'company_id', TENANT]);
-    expect(html(res)).not.toContain('Quadro'); // o medidor é da EcoSun
+    // o medidor é da EcoSun. (28/09: o menu passou a ter "Quadro de Vendas"/"Quadro
+    // de Obras" — a asserção olha o APELIDO do medidor, não a palavra solta.)
+    expect(html(res)).not.toContain('Quadro &lt;script');
+    expect(html(res)).not.toContain('Quadro <script');
+    expect(html(res)).not.toContain('007007422d90');
   });
 
   it('medidor de outra empresa → 404 (não vaza que existe)', async () => {

@@ -41,7 +41,7 @@ export function renderVincularUsinasPage(data: VincularUsinasPageData): string {
     <p class="text-slate-500 text-sm mb-4">
       As usinas abaixo já operam mas não têm cliente. A sugestão (por nome) já vem marcada —
       confira, ajuste se precisar e confirme. Ao confirmar, elas vão pro <strong>Pós-venda</strong>
-      e somem do kanban de obras.</p>
+      e somem do Quadro de Obras.</p>
     <form method="post" action="/dashboard/usinas/vincular">
       <table class="w-full border border-slate-200 rounded">
         <thead><tr class="bg-slate-50 text-left text-xs text-slate-500">

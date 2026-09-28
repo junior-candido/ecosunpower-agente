@@ -291,14 +291,19 @@ describe('JS_TEMA_GRAFICOS', () => {
   });
 });
 
-describe('temaDaTela (D4 ainda não decidida → devolve o de hoje)', () => {
+// TROCA DELIBERADA (28/09, decisão D4 do Junior = (a) "todas escuras", junto
+// com a tela de Atendimento): antes a D4 estava em aberto e temaDaTela devolvia
+// o padrão de cada tela ('claro' em Leads/ficha/Funil). Agora toda tela
+// renovada abre ESCURA, EcoSun e tenant (o padrão da tela não manda mais).
+describe('temaDaTela (D4 decidida = (a): todas escuras)', () => {
   const casa: DashUser = { id: '1', companyId: '00000000-0000-0000-0000-000000000001', nome: 'J', login: 'j', isAdmin: true, roleNome: '', permissoes: {} };
   const tenant: DashUser = { ...casa, id: '2', companyId: 'aaaa1111-2222-3333-4444-555566667777' };
-  it('EcoSun e tenant recebem o padrão da tela', () => {
+  it('EcoSun, tenant e tela sem usuário recebem o tema escuro', () => {
     expect(temaDaTela(casa, 'escuro')).toBe('escuro');
+    expect(temaDaTela(casa, 'claro')).toBe('escuro');
     expect(temaDaTela(tenant, 'escuro')).toBe('escuro');
-    expect(temaDaTela(tenant, 'claro')).toBe('claro');
-    expect(temaDaTela(undefined, 'claro')).toBe('claro');
+    expect(temaDaTela(tenant, 'claro')).toBe('escuro');
+    expect(temaDaTela(undefined, 'claro')).toBe('escuro');
   });
 });
 

@@ -167,3 +167,46 @@ export function contratoDaTela(html: string): ContratoTela {
     scriptsExternos: unicos(externos),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Mudança DELIBERADA de contrato (decisão do Junior), escrita às claras.
+// O JSON gravado da tela antiga NÃO é regravado: o teste aplica aqui o que
+// saiu e o que entrou, item por item — quem revisa vê exatamente a troca.
+// ---------------------------------------------------------------------------
+export interface MudancaContrato {
+  /** Por quê (vai na mensagem do teste). */
+  motivo: string;
+  sai?: Partial<Record<Exclude<keyof ContratoTela, 'formularios'>, string[]>> & { formularios?: FormContrato[] };
+  entra?: Partial<Record<Exclude<keyof ContratoTela, 'formularios'>, string[]>> & { formularios?: FormContrato[] };
+}
+
+export function aplicarMudancas(base: ContratoTela, ...mudancas: MudancaContrato[]): ContratoTela {
+  const out: ContratoTela = JSON.parse(JSON.stringify(base));
+  const chaveForm = (f: FormContrato) => JSON.stringify(f);
+  for (const m of mudancas) {
+    for (const [k, v] of Object.entries(m.sai ?? {})) {
+      if (k === 'formularios') {
+        const tira = new Set((v as FormContrato[]).map(chaveForm));
+        for (const f of v as FormContrato[]) {
+          if (!out.formularios.some((x) => chaveForm(x) === chaveForm(f))) throw new Error(`[${m.motivo}] formulário que devia sair não existia: ${chaveForm(f)}`);
+        }
+        out.formularios = out.formularios.filter((x) => !tira.has(chaveForm(x)));
+      } else {
+        const lista = (out as any)[k] as string[];
+        for (const item of v as string[]) {
+          if (!lista.includes(item)) throw new Error(`[${m.motivo}] "${item}" devia sair de ${k}, mas não existia`);
+        }
+        (out as any)[k] = lista.filter((x) => !(v as string[]).includes(x));
+      }
+    }
+    for (const [k, v] of Object.entries(m.entra ?? {})) {
+      if (k === 'formularios') {
+        out.formularios = [...out.formularios, ...(v as FormContrato[])]
+          .sort((x, y) => JSON.stringify(x).localeCompare(JSON.stringify(y)));
+      } else {
+        (out as any)[k] = unicos([...(out as any)[k], ...(v as string[])]);
+      }
+    }
+  }
+  return out;
+}

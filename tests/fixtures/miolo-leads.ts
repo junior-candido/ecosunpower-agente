@@ -83,3 +83,18 @@ export const CONVERSA_COPILOTO = [
 
 export const FILTROS_ALERTAS = { only_alerts: true, total: 4, countByStatus: { todos: 4 }, atencaoCount: 0 };
 export const FILTROS_ATENCAO = { atencao: true, total: 4, atencaoCount: 2 };
+
+// ---- Atendimento (Leads › Conversas, 28/09) — lista de conversas fictícia ----
+const conversa = (over: Record<string, unknown>) => ({
+  leadId: ID, nome: 'Ana Exemplo', telefone: '5561999990001', etapa: 'negociacao', cidade: 'Cidade Exemplo',
+  evaAtiva: true, optOut: false, dono: null, ultimaEm: hora(0.5), ultimaTexto: 'Mandei a foto. A conta vem uns R$ 780.',
+  ultimaDe: 'cliente', aguardandoResposta: true, canal: null, ...over,
+});
+export const LISTA_CONVERSAS: any = {
+  itens: [
+    conversa({}),
+    conversa({ leadId: '22222222-2222-2222-2222-222222222222', nome: 'Bruno <script>alert(1)</script>', telefone: '5561988887777', etapa: 'proposta_enviada', ultimaEm: hora(3), ultimaTexto: 'Posso te mandar a proposta?', ultimaDe: 'assistente', aguardandoResposta: false, evaAtiva: false, dono: 'u-casa' }),
+    conversa({ leadId: '33333333-3333-3333-3333-333333333333', nome: 'Carla Fictícia', etapa: 'perdido', ultimaEm: hora(50), ultimaTexto: 'Obrigada, fechei com outro.', optOut: true, canal: 'eva_oficial' }),
+  ],
+  contagem: { todas: 3, aguardando: 2, meus: 1, porEtapa: { novo: 0, qualificando: 0, proposta: 1, negociacao: 1, ganho: 0, perdido: 1 } },
+};

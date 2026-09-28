@@ -5,7 +5,9 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { contratoDaTela } from './helpers/contrato-tela.js';
+import { contratoDaTela, aplicarMudancas } from './helpers/contrato-tela.js';
+// 28/09 (Atendimento): item "Conversas" novo no menu e no atalho de visão — única mudança.
+import { MENU_CONVERSAS } from './fixtures/mudancas-atendimento.js';
 import { CASOS_FUNIL } from './fixtures/casos-funil.js';
 
 const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contrato-funil.json'), 'utf-8'));
@@ -13,7 +15,7 @@ const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures'
 describe('Funil (Kanban) — contrato da tela não muda', () => {
   for (const [nome, render] of Object.entries(CASOS_FUNIL)) {
     it(`contrato: ${nome}`, () => {
-      expect(contratoDaTela(render())).toEqual(CONTRATO[nome]);
+      expect(contratoDaTela(render())).toEqual(aplicarMudancas(CONTRATO[nome], MENU_CONVERSAS));
     });
   }
 });

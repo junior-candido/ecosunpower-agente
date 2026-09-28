@@ -94,7 +94,7 @@ function formatStatusFollowup(p: PropostaRow): string {
 export type ChaveAtiva =
   | 'command_center' | 'cockpit' | 'home' | 'propostas' | 'fechar_venda' | 'contratos' | 'manutencao'
   | 'monitoramento' | 'medicao' | 'usinas_kanban' | 'pos_venda' | 'pastas' | 'marketing' | 'blog'
-  | 'email' | 'cadencia' | 'leads' | 'recados' | 'conhecimento' | 'kanban' | 'clientes' | 'financeiro'
+  | 'email' | 'cadencia' | 'leads' | 'conversas' | 'recados' | 'conhecimento' | 'kanban' | 'clientes' | 'financeiro'
   | 'fiscal' | 'cobrar' | 'assinaturas' | 'minha_assinatura' | 'whatsapp' | 'servicos' | 'usuarios'
   | 'empresas' | 'rh_candidatos' | 'rh_vagas' | 'rh_busca' | 'cerebro' | 'lojas' | 'predio'
   | 'demonstrativos' | 'tv' | 'atencao' | 'energia';

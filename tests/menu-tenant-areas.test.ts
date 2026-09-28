@@ -36,7 +36,7 @@ describe('menu lateral — tenant só vê áreas explícitas do papel', () => {
     const html = sidebarDe(THIAGO);
     expect(html).toContain('Monitoramento');
     expect(html).toContain('Pós-venda');
-    expect(html).toContain('Kanban de Obras');
+    expect(html).toContain('Quadro de Obras'); // 28/09: "Kanban" saiu do texto visível (Junior)
   });
 
   it('tenant NÃO vê itens soltos (sem área) da casa', () => {
