@@ -1125,7 +1125,7 @@ var ia=document.getElementById('cc-at-arquivo');if(grav||(ia&&ia.files&&ia.files
 if(estado&&chat.getAttribute('data-estado')!==estado){var ta=document.getElementById('cc-at-texto'),txt=ta?ta.value:'',foco=document.activeElement===ta;f.parentNode.replaceChild(novo,f);chat.setAttribute('data-estado',estado);var nt=document.getElementById('cc-at-texto');if(nt&&txt){nt.value=txt;}if(nt&&foco)nt.focus();atualizarPrevia();return;}
 var jv=f.querySelector('.cc-at-janela'),jn=novo.querySelector('.cc-at-janela');if(jv&&jn)jv.parentNode.replaceChild(jn,jv);}
 function buscar(depoisDeEnviar){if(!URLC||buscando||!window.fetch)return;buscando=true;var g=geracao;
-var u=URLC+(URLC.indexOf('?')>=0?'&':'?')+'assinatura='+encodeURIComponent(assin||'');
+var u=URLC+(URLC.indexOf('?')>=0?'&':'?')+'assinatura='+encodeURIComponent(assin||'')+(document.hasFocus&&document.hasFocus()?'&foco=1':'');
 return fetch(u,{credentials:'same-origin',headers:{'Accept':'application/json'}}).then(function(r){return r.ok?r.json():null;}).then(function(j){
 if(!j||g!==geracao)return;if(j.irPara){location.href=j.irPara;return;}if(j.igual){parados++;return;}parados=0;assin=j.assinatura||null;
 var c=document.getElementById('cc-at-msgs');if(c&&typeof j.msgs==='string'){var fim=depoisDeEnviar||noFim(c);c.innerHTML=j.msgs;if(fim)rolar();}
@@ -1404,7 +1404,7 @@ export const CSS_ATENDIMENTO = `
 .cc-at-luz img{max-width:100%;max-height:100%;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
 .cc-at-luz-x{position:absolute;top:14px;right:14px;width:40px;height:40px;font-size:24px;background:var(--cc-surface-2);color:var(--cc-text)}
 /* W3 — risquinhos e digitando */
-.cc-at-tick{font-size:11px;letter-spacing:-2px;margin-left:3px;color:var(--cc-muted)}
+.cc-at-tick{font-size:12.5px;font-weight:700;letter-spacing:-3px;margin-left:4px;color:var(--cc-muted)}
 .cc-at-tick-lida{color:#53bdeb}
 .cc-at-digitando{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--cc-text-2);padding:6px 12px;border-radius:14px;background:var(--cc-surface-3);border:1px solid var(--cc-line-2)}
 .cc-at-dig-pts{display:inline-flex;gap:3px}

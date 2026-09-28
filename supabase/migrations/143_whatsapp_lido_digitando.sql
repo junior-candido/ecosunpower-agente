@@ -17,7 +17,8 @@
 
 alter table mensagens_whatsapp drop constraint if exists mensagens_whatsapp_status_check;
 alter table mensagens_whatsapp add constraint mensagens_whatsapp_status_check
-  check (status in ('enviando', 'enviada', 'entregue', 'lida', 'falhou', 'recebida', 'registrada'));
+  check (status in ('enviando', 'enviada', 'entregue', 'lida', 'falhou', 'recebida', 'registrada')) not valid;
+alter table mensagens_whatsapp validate constraint mensagens_whatsapp_status_check;
 
 alter table mensagens_whatsapp add column if not exists entregue_em timestamptz;
 alter table mensagens_whatsapp add column if not exists lida_em     timestamptz;
@@ -27,7 +28,7 @@ comment on column mensagens_whatsapp.lida_em is
 
 -- Recebidas ainda não lidas do número pessoal (marcar como lida ao abrir).
 create index if not exists mensagens_whatsapp_nao_lidas
-  on mensagens_whatsapp (company_id, visivel_so_para, contato_telefone)
+  on mensagens_whatsapp (company_id, visivel_so_para, lead_id, criado_em desc)
   where direcao = 'entrada' and lida_em is null and visivel_so_para is not null;
 
 alter table whatsapp_numeros_pessoais add column if not exists marcar_lida_ao_abrir boolean not null default true;

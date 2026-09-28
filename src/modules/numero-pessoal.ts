@@ -44,8 +44,10 @@ export interface NumeroPessoal {
   marcar_lida_ao_abrir?: boolean | null;
 }
 
-// '*': a coluna da 143 é opcional — sem a migration a leitura não quebra.
-const COLUNAS = '*';
+const COLUNAS_139 = 'id, company_id, dono_user_id, dono_nome, instancia, numero, ativo';
+/** Com a coluna da 143; sem a migration, a leitura cai nas da 139 (ver `lerNumero`). */
+const COLUNAS = `${COLUNAS_139}, marcar_lida_ao_abrir`;
+const colunaFaltou = (e: { code?: string; message?: string } | null) => !!e && (e.code === '42703' || e.code === 'PGRST204' || /column .* does not exist|could not find/i.test(e.message ?? ''));
 
 /**
  * Instância → número pessoal (cache de 1 min). Devolve também o DESLIGADO
@@ -62,8 +64,10 @@ export function criarResolverNumeroPessoal(client: SupabaseClient) {
       const c = cache.get(chave);
       if (c && Date.now() - c.at < TTL_MS) return c.valor;
       try {
-        const { data, error } = await client.from('whatsapp_numeros_pessoais')
+        let { data, error } = await client.from('whatsapp_numeros_pessoais')
           .select(COLUNAS).ilike('instancia', semCuringa(chave)).maybeSingle();
+        if (colunaFaltou(error)) ({ data, error } = await client.from('whatsapp_numeros_pessoais')
+          .select(COLUNAS_139).ilike('instancia', semCuringa(chave)).maybeSingle());
         if (error) {
           if (error.code === '42P01' || /does not exist/i.test(error.message ?? '')) { cache.set(chave, { at: Date.now(), valor: null }); return null; }
           return 'erro';
@@ -83,8 +87,10 @@ export function criarResolverNumeroPessoal(client: SupabaseClient) {
 export async function numeroPessoalDoDono(client: SupabaseClient, companyId: string, userId: string): Promise<NumeroPessoal | null> {
   if (!companyId || !userId) return null;
   try {
-    const { data, error } = await client.from('whatsapp_numeros_pessoais')
+    let { data, error } = await client.from('whatsapp_numeros_pessoais')
       .select(COLUNAS).eq('company_id', companyId).eq('dono_user_id', userId).maybeSingle();
+    if (colunaFaltou(error)) ({ data, error } = await client.from('whatsapp_numeros_pessoais')
+      .select(COLUNAS_139).eq('company_id', companyId).eq('dono_user_id', userId).maybeSingle());
     if (error) return null;
     return (data as NumeroPessoal | null) ?? null;
   } catch {

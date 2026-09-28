@@ -48,13 +48,14 @@ export interface AtualizacaoStatus { wamid: string; status: StatusSaida; em: Dat
  * lista, com keyId/messageId ou key.id, e o status em texto ou número. PURA.
  */
 export function lerStatusEvolution(body: Record<string, unknown> | null | undefined): AtualizacaoStatus[] {
-  const ev = String(body?.event ?? '').toLowerCase().replace('_', '.');
+  const ev = String(body?.event ?? '').toLowerCase().replace(/_/g, '.');
   if (ev !== 'messages.update') return [];
   const lista = Array.isArray(body?.data) ? body!.data as Array<Record<string, unknown>> : body?.data ? [body.data as Record<string, unknown>] : [];
   const out: AtualizacaoStatus[] = [];
   for (const d of lista) {
     const key = d.key as Record<string, unknown> | undefined;
-    const wamid = String(d.keyId ?? key?.id ?? d.messageId ?? '');
+    // messageId, na v2, é o id do BANCO da Evolution (não o do WhatsApp): não serve.
+    const wamid = String(d.keyId ?? key?.id ?? '');
     const upd = d.update as Record<string, unknown> | undefined;
     const st = statusDaEvolution(d.status ?? upd?.status);
     if (!wamid || !st) continue;
@@ -72,18 +73,24 @@ export function lerStatusEvolution(body: Record<string, unknown> | null | undefi
 export async function aplicarStatus(servico: SupabaseClient, companyId: string, a: AtualizacaoStatus): Promise<boolean> {
   if (!companyId || !a.wamid) return false;
   try {
-    const { data, error } = await servico.from('mensagens_whatsapp').select('id, status, direcao')
-      .eq('company_id', companyId).eq('wamid', a.wamid).maybeSingle();
-    const l = data as { id: string; status: string; direcao: string } | null;
-    if (error || !l || l.direcao !== 'saida' || !statusAvanca(l.status, a.status)) return false;
-    const quando = a.em.toISOString();
-    const patch: Record<string, unknown> = { status: a.status };
-    if (a.status === 'entregue') patch.entregue_em = quando;
-    if (a.status === 'lida') patch.lida_em = quando;
-    if (a.status === 'falhou') patch.erro = semTelefone(a.erro ?? 'O WhatsApp não entregou').slice(0, 500);
-    const { error: e2 } = await servico.from('mensagens_whatsapp').update(patch)
-      .eq('id', l.id).eq('company_id', companyId).eq('status', l.status);
-    return !e2;
+    // "entregue" e "lida" chegam quase juntos: a troca é condicional ao status lido
+    // (ninguém sobrescreve o outro); se outro aviso mudou antes, relê e tenta de novo.
+    for (let tentativa = 0; tentativa < 3; tentativa++) {
+      const { data, error } = await servico.from('mensagens_whatsapp').select('id, status, direcao, entregue_em')
+        .eq('company_id', companyId).eq('wamid', a.wamid).maybeSingle();
+      const l = data as { id: string; status: string; direcao: string; entregue_em?: string | null } | null;
+      if (error || !l || l.direcao !== 'saida' || !statusAvanca(l.status, a.status)) return false;
+      const quando = a.em.toISOString();
+      const patch: Record<string, unknown> = { status: a.status };
+      if (a.status === 'entregue') patch.entregue_em = quando;
+      if (a.status === 'lida') { patch.lida_em = quando; if (!l.entregue_em) patch.entregue_em = quando; }
+      if (a.status === 'falhou') patch.erro = semTelefone(a.erro ?? 'O WhatsApp não entregou').slice(0, 500);
+      const { data: mudou, error: e2 } = await servico.from('mensagens_whatsapp').update(patch)
+        .eq('id', l.id).eq('company_id', companyId).eq('status', l.status).select('id');
+      if (e2) return false;
+      if (Array.isArray(mudou) && mudou.length > 0) return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -125,16 +132,21 @@ export function limparDigitando(): void { digitando.clear(); }
  * `presences: { '<jid>': { lastKnownPresence } }`. Grupos ficam de fora. PURA.
  */
 export function lerPresencaEvolution(body: Record<string, unknown> | null | undefined): Array<{ jid: string; presenca: string }> {
-  const ev = String(body?.event ?? '').toLowerCase().replace('_', '.');
+  const ev = String(body?.event ?? '').toLowerCase().replace(/_/g, '.');
   if (ev !== 'presence.update') return [];
   const d = body?.data as { id?: string; presences?: Record<string, { lastKnownPresence?: string }> } | undefined;
   const out: Array<{ jid: string; presenca: string }> = [];
   for (const [jid, p] of Object.entries(d?.presences ?? {})) {
-    if (!jid || jid.endsWith('@g.us') || typeof p?.lastKnownPresence !== 'string') continue;
+    // Grupo e @lid (id escondido, não é telefone) ficam de fora.
+    if (!jid || !jid.endsWith('@s.whatsapp.net') || typeof p?.lastKnownPresence !== 'string') continue;
     out.push({ jid, presenca: p.lastKnownPresence });
   }
   return out;
 }
+
+const freioLidas = new Map<string, number>();
+/** Só para os testes. */
+export function limparFreioLidas(): void { freioLidas.clear(); }
 
 /**
  * Marcar como LIDA ao abrir a conversa — só no número PESSOAL, só para o
@@ -153,6 +165,13 @@ export async function marcarLidasAoAbrir(
   const { np } = p;
   if (!np.ativo || np.marcar_lida_ao_abrir === false || p.viewerId !== np.dono_user_id) return 0;
   if (!p.leadId && !p.telefone) return 0;
+  // Freio: no máximo 1 vez a cada 10 s por conversa; o WhatsApp falhou → pausa de 60 s.
+  const k = `${np.dono_user_id}|${p.leadId ?? p.telefone}`;
+  const agoraMs = Date.now();
+  const ate = freioLidas.get(k) ?? 0;
+  if (agoraMs < ate) return 0;
+  freioLidas.set(k, agoraMs + 10_000);
+  if (freioLidas.size > 5000) for (const [kk, v] of freioLidas) if (v < agoraMs) freioLidas.delete(kk);
   try {
     let q = servico.from('mensagens_whatsapp').select('id, wamid, contato_telefone')
       .eq('company_id', np.company_id).eq('visivel_so_para', np.dono_user_id).eq('direcao', 'entrada')
@@ -175,6 +194,7 @@ export async function marcarLidasAoAbrir(
         await ler(np.instancia, np.company_id, tel, ls.map((l) => l.wamid));
       } catch (e) {
         console.warn(`[lido] WhatsApp não marcou como lida: ${semTelefone((e as Error).message)}`);
+        freioLidas.set(k, Date.now() + 60_000);
         continue;
       }
       const agora = new Date().toISOString();

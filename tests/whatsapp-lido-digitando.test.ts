@@ -210,3 +210,30 @@ describe('conversa aberta: "digitando…" só para quem pode ver', async () => {
     expect(r2.corpo.msgs).not.toContain('digitando');
   });
 });
+
+describe('revisão W3', () => {
+  it('"entregue" e "lida" chegando juntos: fica "lida" (ninguém sobrescreve o outro)', async () => {
+    const b = bancoMemoria({ mensagens_whatsapp: [{ id: 'm1', company_id: CASA, wamid: 'wamid.1', direcao: 'saida', status: 'enviada' }] });
+    await Promise.all([
+      aplicarStatus(b.client, CASA, { wamid: 'wamid.1', status: 'entregue', em: new Date() }),
+      aplicarStatus(b.client, CASA, { wamid: 'wamid.1', status: 'lida', em: new Date() }),
+    ]);
+    expect(b.tabelas.mensagens_whatsapp[0].status).toBe('lida');
+    expect(b.tabelas.mensagens_whatsapp[0].entregue_em).toBeTruthy();
+  });
+  it('presença de @lid (sem telefone) é ignorada; evento com _ também é lido', () => {
+    expect(lerPresencaEvolution({ event: 'PRESENCE_UPDATE', data: { presences: { '123@lid': { lastKnownPresence: 'composing' }, '556199990001@s.whatsapp.net': { lastKnownPresence: 'composing' } } } }))
+      .toEqual([{ jid: '556199990001@s.whatsapp.net', presenca: 'composing' }]);
+  });
+  it('marcar como lida tem freio (10 s por conversa)', async () => {
+    const { limparFreioLidas } = await import('../src/modules/status-whatsapp.js');
+    limparFreioLidas();
+    const NP = { id: 'np1', company_id: CASA, dono_user_id: 'u-junior', instancia: 'p', ativo: true };
+    const b = bancoMemoria({ mensagens_whatsapp: [{ id: 'e1', company_id: CASA, lead_id: 'LX', contato_telefone: '5561999990001', direcao: 'entrada', canal: 'whatsapp_business', visivel_so_para: 'u-junior', wamid: 'W1', lida_em: null, criado_em: new Date().toISOString() }] });
+    const ler = vi.fn(async () => {});
+    await marcarLidasAoAbrir(b.client, { np: NP, viewerId: 'u-junior', leadId: 'LX' }, ler);
+    b.tabelas.mensagens_whatsapp[0].lida_em = null;
+    await marcarLidasAoAbrir(b.client, { np: NP, viewerId: 'u-junior', leadId: 'LX' }, ler);
+    expect(ler).toHaveBeenCalledTimes(1);
+  });
+});

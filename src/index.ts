@@ -7906,10 +7906,12 @@ Responda CURTO, no maximo 2 paragrafos, tom de WhatsApp. Nunca escreva laudo/tit
       if (atualiz.length || presencas.length) {
         const pessoal = await numerosPessoais.porInstancia(inst);
         if (pessoal === 'erro') { res.status(503).json({ status: 'numero_pessoal_indisponivel' }); return; }
+        // Mesma trava do caminho das mensagens: instância em DOIS cadastros não grava nada.
+        if (pessoal && await evolutionTenant.companyDaInstancia(inst)) { res.status(200).json({ status: 'numero_pessoal_conflito' }); return; }
         const cid = pessoal && pessoal.ativo ? pessoal.company_id : await evolutionTenant.companyDaInstancia(inst) ?? (!inst || inst === config.evolutionInstance ? ECOSUN_COMPANY_ID : null);
         if (cid) {
           for (const a of atualiz) if (a.fromMe !== false) await aplicarStatus(supabase.getClient(), cid, a);
-          for (const pr of presencas) {
+          for (const pr of (inst ? presencas : [])) {
             const tel = normalizeBrazilianPhone(pr.jid.replace(/@.*/, ''));
             if (tel) marcarPresenca(cid, pessoal && pessoal.ativo ? pessoal.dono_user_id : null, tel, pr.presenca);
           }

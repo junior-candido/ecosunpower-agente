@@ -817,7 +817,8 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
     if (rows.length === 0) return null;
     const comLead = [...rows].reverse().find((r) => r.lead_id);
     if (comLead?.lead_id) return { leadId: comLead.lead_id };
-    aoAbrirConversa(req, { telefone });
+    // Página aberta (sem ?assinatura=) ou atualização com a aba em foco.
+    if (req.query?.assinatura === undefined || String(req.query?.foco ?? '') === '1') aoAbrirConversa(req, { telefone });
     const podeEnviar = !!(await pessoalDe(viewer.companyId, viewer.id));
     const resp = typeof req.query?.resp === 'string' && Object.prototype.hasOwnProperty.call(RESULTADO_ENVIO, req.query.resp) ? req.query.resp : null;
     return {
@@ -967,7 +968,8 @@ export function criarRotasAtendimento(deps: DepsAtendimento) {
       ]);
       const envio = can(viewer, 'leads', 'editar') ? await envioDaTela(r, lead, mensagens) : undefined;
       const digitando = await digitandoAgora(companyId, viewer.id, lead.phone);
-      aoAbrirConversa(r, { leadId });
+      // Atualização automática: só marca como lida se a aba está EM FOCO (como o WhatsApp Web).
+      if (String(r.query?.foco ?? '') === '1') aoAbrirConversa(r, { leadId });
       const p = pedacosDaConversa({ user: viewer, lead: { ...lead, anexos } as unknown as LeadDetail, mensagens, envio, donoPessoal, digitando });
       const assinatura = assinaturaDaConversa(p);
       if (String(r.query?.assinatura ?? '') === assinatura) { res.json({ igual: true, assinatura }); return; }
