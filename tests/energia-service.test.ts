@@ -302,9 +302,11 @@ describe('vigiar', () => {
     expect(r.status).toEqual([]);
   });
 
-  it('dry-run: não grava a transição como avisada', async () => {
-    const r = repoFalso([medidor({ status: 'ok', ultima_leitura_em: '2026-09-28T10:00:00Z' })]);
-    await new EnergiaService(r.db).vigiar(AGORA, vi.fn(async (): Promise<ResultadoAviso> => 'dry_run'), () => true);
+  it('dry-run: não grava a transição como avisada (nem a da chave da nuvem)', async () => {
+    const r = repoFalso([medidor({ status: 'ok', ultima_leitura_em: '2026-09-28T10:00:00Z', modo_coleta: 'push_nuvem', api_credentials_cifrado: 'x', nuvem_ok: false })]);
+    const avisar = vi.fn(async (): Promise<ResultadoAviso> => 'dry_run');
+    await new EnergiaService(r.db).vigiar(AGORA, avisar, () => true);
+    expect(avisar).toHaveBeenCalledTimes(2); // o dry-run do "parou" não pula o da chave
     expect(r.status).toEqual([]);
   });
 

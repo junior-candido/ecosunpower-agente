@@ -362,12 +362,13 @@ export class EnergiaService {
           if (pendente?.chave === chave) { r = 'ja_avisado'; usados = Math.max(usados, pendente.usados); }
           else if (usados >= MAX_AVISOS_POR_DIA) r = 'freio';
           else r = await avisar(m, textoAvisoStatus({ apelido: m.apelido, status: p.status, anterior: m.status, ultima_leitura_em: m.ultima_leitura_em }, agora));
-          if (r === 'dry_run') continue;
-          if (r === 'enviado') { usados++; out.avisos++; this.avisadosSemGravar.set(m.id, { chave, usados }); }
-          if (r === 'freio') console.log(`[energia] vigia: freio diario atingido medidor=${m.id} (transicao gravada sem mensagem)`);
-          await this.db.atualizarStatus(m, { status: p.status, status_desde: agora.toISOString(), aviso_dia: hoje, avisos_no_dia: usados });
-          this.avisadosSemGravar.delete(m.id);
-          out.transicoes++;
+          if (r !== 'dry_run') { // dry-run: não grava (e segue pro aviso da nuvem)
+            if (r === 'enviado') { usados++; out.avisos++; this.avisadosSemGravar.set(m.id, { chave, usados }); }
+            if (r === 'freio') console.log(`[energia] vigia: freio diario atingido medidor=${m.id} (transicao gravada sem mensagem)`);
+            await this.db.atualizarStatus(m, { status: p.status, status_desde: agora.toISOString(), aviso_dia: hoje, avisos_no_dia: usados });
+            this.avisadosSemGravar.delete(m.id);
+            out.transicoes++;
+          }
         } catch (err) {
           console.warn(`[energia] vigia: aviso ou gravacao falhou medidor=${m.id}: ${erroCurto(err)}`);
         }
