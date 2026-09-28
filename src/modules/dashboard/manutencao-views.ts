@@ -157,3 +157,21 @@ export function renderProntuario(itens: ProntuarioManutencao[]): string {
     <th>Tipo</th><th>Quando</th><th>Status</th><th>Notas</th></tr></thead>
     <tbody>${itens.map(linha).join('')}</tbody></table>`;
 }
+
+/**
+ * Prontuário da usina no padrão cc- (renovação do miolo, R9 — tela da usina).
+ * Mesmos itens e textos do `renderProntuario`; a tabela vira cartão no celular.
+ */
+export function renderProntuarioCc(itens: ProntuarioManutencao[]): string {
+  if (!itens.length) return '<p class="cc-muted cc-us-vazio">Sem manutenções registradas ainda.</p>';
+  const ROT = ['Tipo', 'Quando', 'Status', 'Notas'];
+  const td = (i: number, html: string) => `<td data-label="${ROT[i]}">${html}</td>`;
+  const linha = (m: ProntuarioManutencao) => {
+    const quando = m.status === 'feita' ? m.feita_em : m.data_agendada;
+    const tom = m.status === 'feita' ? 'cc-s-ok' : m.status === 'cancelada' ? 'cc-s-off' : 'cc-s-info';
+    return `<tr>${td(0, TIPO_LABEL[m.tipo] ?? escapeHtml(m.tipo))}${td(1, `<span class="cc-num">${dataBR(quando)}</span>`)}`
+      + `${td(2, `<span class="cc-pill ${tom}">${escapeHtml(m.status)}</span>`)}${td(3, `<span class="cc-muted">${escapeHtml(m.notas ?? '') || '—'}</span>`)}</tr>`;
+  };
+  return `<div class="cc-tbl-wrap cc-tbl-cartoes"><table class="cc-tbl"><thead><tr>${ROT.map((r) => `<th>${r}</th>`).join('')}</tr></thead>`
+    + `<tbody>${itens.map(linha).join('')}</tbody></table></div>`;
+}

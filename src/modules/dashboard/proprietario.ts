@@ -54,6 +54,12 @@ export interface ClienteSelectorOpts {
   idPrefix: string;
   /** tema escuro (página Clientes) ou claro (editar usina) */
   dark: boolean;
+  /**
+   * Padrão cc- do design system (renovação do miolo, R9 — editar usina): os
+   * campos herdam o estilo do `<form class="cc-form">` pai e a lista usa só
+   * classes cc-. Mesmos ids, names, fetch e comportamento.
+   */
+  cc?: boolean;
   /** rótulo do botão de submit do form pai, se houver (apenas informativo) */
 }
 
@@ -78,22 +84,30 @@ export function renderClienteSelector(opts: ClienteSelectorOpts): string {
     ? 'px-3 py-2 text-sm text-slate-100 hover:bg-slate-700 cursor-pointer'
     : 'px-3 py-2 text-sm text-slate-800 hover:bg-slate-100 cursor-pointer';
   const mutedCls = opts.dark ? 'text-xs text-slate-400' : 'text-xs text-slate-500';
+  const cc = !!opts.cc;
+  const C = cc ? {
+    raiz: 'cc-us-sel', rel: 'cc-us-sel-busca', input: 'cc-us-sel-in', drop: 'cc-us-sel-drop hidden', item: 'cc-us-sel-item',
+    muted: 'cc-muted', det: '', resumo: '', novo: 'cc-us-sel-novo', sub: 'cc-muted', tit: 'cc-us-sel-t',
+  } : {
+    raiz: 'space-y-2', rel: 'relative', input: inputCls, drop: dropCls, item: itemCls,
+    muted: mutedCls, det: 'mt-1', resumo: `${mutedCls} cursor-pointer select-none`, novo: 'mt-2 space-y-2', sub: 'opacity-70', tit: 'font-semibold',
+  };
 
   return `
-    <div class="space-y-2">
+    <div class="${C.raiz}">
       <input type="hidden" name="lead_id" id="${p}-lead-id">
-      <div class="relative">
-        <input id="${p}-busca" type="text" autocomplete="off" placeholder="Buscar cliente por nome ou telefone…" class="${inputCls}">
-        <div id="${p}-drop" class="${dropCls}"></div>
+      <div class="${C.rel}">
+        <input id="${p}-busca" type="text" autocomplete="off" placeholder="Buscar cliente por nome ou telefone…" class="${C.input}">
+        <div id="${p}-drop" class="${C.drop}"></div>
       </div>
-      <div id="${p}-escolhido" class="hidden ${mutedCls}"></div>
+      <div id="${p}-escolhido" class="hidden ${C.muted}"></div>
 
-      <details id="${p}-novo-wrap" class="mt-1">
-        <summary class="${mutedCls} cursor-pointer select-none">+ Criar novo cliente</summary>
-        <div class="mt-2 space-y-2">
-          <input name="novo_name" placeholder="Nome completo" class="${inputCls}">
-          <input name="novo_phone" placeholder="WhatsApp (ex: 5561999990000)" class="${inputCls}">
-          <p class="${mutedCls}">Use só se o cliente ainda não existe. Telefone com DDI 55, sem +.</p>
+      <details id="${p}-novo-wrap"${C.det ? ` class="${C.det}"` : ''}>
+        <summary${C.resumo ? ` class="${C.resumo}"` : ''}>+ Criar novo cliente</summary>
+        <div class="${C.novo}">
+          <input name="novo_name" placeholder="Nome completo" class="${C.input}">
+          <input name="novo_phone" placeholder="WhatsApp (ex: 5561999990000)" class="${C.input}">
+          <p class="${C.muted}">Use só se o cliente ainda não existe. Telefone com DDI 55, sem +.</p>
         </div>
       </details>
     </div>
@@ -116,12 +130,12 @@ export function renderClienteSelector(opts: ClienteSelectorOpts): string {
           fetch('/dashboard/api/clientes/search?q='+encodeURIComponent(q))
             .then(function(r){ return r.json(); })
             .then(function(rows){
-              if (!rows || !rows.length){ drop.innerHTML='<div class="${itemCls}">Nenhum cliente encontrado</div>'; drop.classList.remove('hidden'); return; }
+              if (!rows || !rows.length){ drop.innerHTML='<div class="${C.item}">Nenhum cliente encontrado</div>'; drop.classList.remove('hidden'); return; }
               drop.innerHTML = rows.map(function(c){
                 var sub = [c.phone, c.city].filter(Boolean).join(' · ');
-                return '<div class="${itemCls}" data-id="'+esc(c.id)+'" data-label="'+esc(c.name||'')+'">'+
-                  '<div class="font-semibold">'+esc(c.name||'(sem nome)')+'</div>'+
-                  '<div class="opacity-70">'+esc(sub)+'</div></div>';
+                return '<div class="${C.item}" data-id="'+esc(c.id)+'" data-label="'+esc(c.name||'')+'">'+
+                  '<div class="${C.tit}">'+esc(c.name||'(sem nome)')+'</div>'+
+                  '<div class="${C.sub}">'+esc(sub)+'</div></div>';
               }).join('');
               drop.classList.remove('hidden');
               Array.prototype.forEach.call(drop.querySelectorAll('[data-id]'), function(el){

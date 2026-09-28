@@ -12,6 +12,7 @@ import type { EventoAtencao } from '../../src/modules/dashboard/central-atencao.
 import { ORDEM_ETAPAS } from '../../src/modules/dashboard/pipeline.js';
 import type { DashUser } from '../../src/modules/dashboard/permissions.js';
 import { renderMonitoramentoPage } from '../../src/modules/dashboard/views.js';
+import { CASOS_USINA } from './casos-usina.js';
 import { usina, ALERTAS_RESUMO, SPARK_7D, KPIS_EVA } from './casos-monitoramento.js';
 import { USER_CASA, leadRow, leadDetalhe, SERVICOS_LEAD, FILTROS_CHEIOS } from './miolo-leads.js';
 
@@ -80,7 +81,7 @@ function dadosCC(n: number): DadosCommandCenter {
 }
 
 export type NomeTela = 'command-center' | 'central-atencao' | 'modo-tv' | 'leads' | 'quadro-vendas' | 'conversas' | 'ficha'
-  | 'monitoramento';
+  | 'monitoramento' | 'usina' | 'usina-dados' | 'usina-editar' | 'usina-importar';
 
 const NIVEIS = ['urgente', 'aviso', 'info', 'ok', 'ok', 'ok'] as const;
 
@@ -105,6 +106,10 @@ export function telasRenovadas(n: number, user: DashUser = USER_CASA): Record<No
     'quadro-vendas': renderKanbanPage(gruposQuadro(n) as any, user),
     conversas: renderAtendimentoPage({ user, lista: listaConversas(n), filtros: {}, lead: null }),
     ficha: renderLeadDetailPage(lead, [], '', '', SERVICOS_LEAD, user, { lista: listaConversas(n), filtros: {} }),
+    usina: casa ? CASOS_USINA['detalhe-mes']() : CASOS_USINA['detalhe-tenant'](),
+    'usina-dados': CASOS_USINA.dados(),
+    'usina-editar': casa ? CASOS_USINA.editar() : CASOS_USINA['editar-sem-dono'](),
+    'usina-importar': casa ? CASOS_USINA['importar-sucesso']() : CASOS_USINA['importar-tenant'](),
     monitoramento: renderMonitoramentoPage(frota(n), {}, casa ? ALERTAS_RESUMO : undefined, casa ? SPARK_7D : undefined, casa ? KPIS_EVA : undefined, user),
   };
 }

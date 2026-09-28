@@ -133,7 +133,7 @@ import { snoozeAte } from './pos-venda-sugestao-memoria.js';
 import { registrarAbordagemManual } from '../monitoring/abordagem/abordagens-repo.js';
 import { numerosMes } from '../monitoring/abordagem/numeros-usina.js';
 import { listarAgenda, prontuarioUsina, listarLeiturasPendentes, criarManutencao, marcarManutencaoFeita, reagendarManutencao, registrarLeituraManual } from './manutencao-queries.js';
-import { renderManutencaoPage, renderProntuario } from './manutencao-views.js';
+import { renderManutencaoPage, renderProntuarioCc } from './manutencao-views.js';
 import type { ManutencaoTipo } from './manutencao-motor.js';
 import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, fotoCountsPorItem, concluirOS } from './os-queries.js';
 import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
@@ -5593,7 +5593,7 @@ b.onclick=async function(){
       ]);
       const operador = (req as AuthedRequest).dashUser;
       const mapaHtml = blocoMiniMapaUsina(detalhe.sistema, { podeEditar: can(operador, 'usinas', 'editar') });
-      res.send(renderDetalheSistemaPage(detalhe, curvaDia, curvaMsg, donoRow ? { id: donoRow.id, name: donoRow.name } : null, timelineAbordagens, renderProntuario(prontuario), operador, mapaHtml));
+      res.send(renderDetalheSistemaPage(detalhe, curvaDia, curvaMsg, donoRow ? { id: donoRow.id, name: donoRow.name } : null, timelineAbordagens, renderProntuarioCc(prontuario), operador, mapaHtml));
     } catch (err) {
       console.error('[dashboard/monitoramento/detalhe]', err);
       res.status(500).send(`<h2>Erro ao carregar detalhe</h2><pre>${(err as Error).message}</pre>`);

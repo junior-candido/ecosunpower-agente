@@ -3,7 +3,8 @@
 import {
   renderDetalheSistemaPage, renderTelemetriaPage, renderEditarSistemaPage, renderImportarSitesPage,
 } from '../../src/modules/dashboard/views.js';
-import { renderProntuario } from '../../src/modules/dashboard/manutencao-views.js';
+import { blocoMiniMapaUsina } from '../../src/modules/dashboard/mapa-usinas-views.js';
+import { renderProntuarioCc } from '../../src/modules/dashboard/manutencao-views.js';
 import { USER_CASA, USER_TENANT } from './miolo-leads.js';
 
 export const SISTEMA: any = {
@@ -14,7 +15,11 @@ export const SISTEMA: any = {
   painel_marca: 'Trina Solar', painel_modelo: 'TSM-NEG21C.20-700', qtd_paineis: 12, inversor_modelo: 'GoodWe GW5K-DT',
   telhado_tipo: 'ceramica', telhado_orientacao: 'N', telhado_inclinacao_graus: 20, sombreamento_pct: 5,
   observacoes: 'Troca de string box em 2026.',
+  lat: -16.0187, lng: -48.0612, geo_fonte: 'cidade',
 };
+
+/** Mini-mapa da usina (#330), como a rota monta. */
+export const mapaDa = (s: any, podeEditar: boolean) => blocoMiniMapaUsina(s, { podeEditar });
 
 const kpis = (over: Record<string, unknown> = {}) => ({
   hojeKwh: 28.4, mesKwh: 812, anoKwh: 7650, totalKwh: 14200, esperadoDiaKwh: 32.1,
@@ -51,7 +56,7 @@ export const PRONTUARIO: any[] = [
 ];
 
 /** O mesmo que a rota faz com o prontuário (HTML pronto que a tela embute). */
-export const prontuarioHtml = (itens: any[]) => renderProntuario(itens);
+export const prontuarioHtml = (itens: any[]) => renderProntuarioCc(itens);
 
 export const DEVICES = ['GW5K-DT-001', 'GW5K-DT-002'];
 export const GRANDEZAS = [
@@ -63,11 +68,11 @@ export const SERIE_T = Array.from({ length: 24 }, (_, i) => ({ ts: `2026-09-28T$
 const DONO = { id: 'lead-1', name: 'Ana Exemplo', phone: '5561999990001' };
 
 export const CASOS_USINA = {
-  'detalhe-mes': () => renderDetalheSistemaPage(detalhe(), null, null, { id: 'lead-1', name: 'Ana Exemplo' }, TIMELINE, prontuarioHtml(PRONTUARIO), USER_CASA),
+  'detalhe-mes': () => renderDetalheSistemaPage(detalhe(), null, null, { id: 'lead-1', name: 'Ana Exemplo' }, TIMELINE, prontuarioHtml(PRONTUARIO), USER_CASA, mapaDa(SISTEMA, true)),
   'detalhe-dia': () => renderDetalheSistemaPage(detalhe({ vista: 'dia', serie: [], nav: { anterior: '2026-09-27', proximo: null, label: '28/09/2026' } }), CURVA_DIA, null, null, [], prontuarioHtml([]), USER_CASA),
   'detalhe-dia-sem-curva': () => renderDetalheSistemaPage(detalhe({ vista: 'dia', serie: [], totalDiaKwh: 21.3 }), null, 'Curva minuto a minuto não disponível para este inversor.', null, [], '', USER_CASA),
   'detalhe-sem-dado': () => renderDetalheSistemaPage(detalhe({ kpis: kpis({ hojeKwh: null, mesKwh: 0, anoKwh: 0, totalKwh: 0, ratioUltimos7: 0 }), alertas: [], serie: serieMes.map((p) => ({ ...p, kwh: 0 })), serieMensalCompleta: [], sistema: { ...SISTEMA, potencia_kwp: null, data_instalacao: null, ultimo_erro: 'Token expirado (401)' } }), null, null, null, [], '', USER_CASA),
-  'detalhe-tenant': () => renderDetalheSistemaPage(detalhe({ kpis: kpis({ medianaCarteira7d: 3.1 }) }), null, null, null, TIMELINE, prontuarioHtml(PRONTUARIO), USER_TENANT),
+  'detalhe-tenant': () => renderDetalheSistemaPage(detalhe({ kpis: kpis({ medianaCarteira7d: 3.1 }) }), null, null, null, TIMELINE, prontuarioHtml(PRONTUARIO), USER_TENANT, mapaDa({ ...SISTEMA, geo_fonte: 'manual' }, false)),
   'dados': () => renderTelemetriaPage(SISTEMA, DEVICES, GRANDEZAS, { device: DEVICES[0], ponto: 'pac', periodo: 'dia' }, SERIE_T, USER_CASA),
   'dados-vazio': () => renderTelemetriaPage(SISTEMA, [], [], { device: '', ponto: 'pac', periodo: 'semana' }, [], USER_CASA),
   'editar': () => renderEditarSistemaPage(SISTEMA, DONO, USER_CASA),

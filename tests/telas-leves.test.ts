@@ -181,10 +181,11 @@ describe('telas renovadas não carregam o Tailwind (e não precisam dele)', () =
           // (coluna-status, card-usina) e a Órbita (SVG com CSS da própria tela).
           'coluna-status', 'card-usina', 'orbita-frota', 'ponto-usina', 'sol-pulso', 'sol-central', 'anel',
         ]);
+        // mu-* = Mapa das Usinas (#330): CSS próprio por arquivo (ui/mapa-cliente.ts).
         const corpo = h.slice(h.indexOf('<body'));
         const estranhas = new Set<string>();
         for (const m of corpo.matchAll(/class="([^"]*)"/g)) {
-          for (const c of m[1].split(/\s+/)) if (c && !c.startsWith('cc-') && !CONHECIDAS.has(c)) estranhas.add(c);
+          for (const c of m[1].split(/\s+/)) if (c && !c.startsWith('cc-') && !c.startsWith('mu-') && !CONHECIDAS.has(c)) estranhas.add(c);
         }
         // classList mexido pelo JS da tela também precisa existir sem Tailwind.
         for (const m of corpo.matchAll(/classList\.(?:add|remove|toggle)\('([^']+)'/g)) {

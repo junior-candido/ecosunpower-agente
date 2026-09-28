@@ -22,6 +22,11 @@ export const TELAS_RENOVADAS: string[] = [
   'whatsapp-pessoal-views.ts',
   // R8 — Monitoramento (frota): só a função da tela (views.ts tem telas antigas)
   'views.ts#renderMonitoramentoPage',
+  // R9 — Usina: detalhe, dados do inversor, editar e importar
+  'views.ts#renderDetalheSistemaPage',
+  'views.ts#renderTelemetriaPage',
+  'views.ts#renderEditarSistemaPage',
+  'views.ts#renderImportarSitesPage',
 ];
 
 export const RE_TAILWIND = /\b(bg|text|border|ring|from|to)-(white|black|slate|gray|zinc|sky|cyan|amber|emerald|rose|red|green|yellow|indigo|violet)(-\d{2,3})?\b|\b(p|px|py|m|mx|my|mt|mb|gap|space-[xy])-\d|\brounded(-\w+)?\b|\bgrid-cols-\d/;
