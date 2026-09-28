@@ -57,7 +57,9 @@ export interface ClienteSelectorOpts {
   /**
    * Padrão cc- do design system (renovação do miolo, R9 — editar usina): os
    * campos herdam o estilo do `<form class="cc-form">` pai e a lista usa só
-   * classes cc-. Mesmos ids, names, fetch e comportamento.
+   * classes cc-. Mesmos ids, names, fetch e comportamento. O CSS das classes
+   * cc-us-sel-* mora em CSS_USINA (views.ts) — outra tela que usar `cc: true`
+   * precisa incluir esse CSS.
    */
   cc?: boolean;
   /** rótulo do botão de submit do form pai, se houver (apenas informativo) */

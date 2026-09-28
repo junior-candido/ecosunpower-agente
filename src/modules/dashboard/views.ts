@@ -1716,7 +1716,7 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
   // Sungrow: o endereço de retorno é o do APP de quem autoriza. O da EcoSun
   // só vem preenchido para a EcoSun (tenant não vê a marca da casa).
   const redirectPadrao = ehTenant ? '' : 'https://www.ecosunpowerenergia.com.br';
-  const exemploRetorno = ehTenant ? 'o seu endereço de retorno' : '...ecosunpowerenergia.com.br';
+  
 
   const form = `
       <form action="/dashboard/monitoramento/importar" method="post" class="cc-form cc-us-imp" id="form-importar">
@@ -1850,9 +1850,9 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
           <div class="cc-us-campos">
             ${campo('Appkey do app iSolarCloud', '<input name="sungrow_appkey" type="text" class="cc-us-mono" placeholder="ex.: 42A190E0D6873F64206A3AC1498A29EB">')}
             ${campo('Secret key (x-access-key)', '<input name="sungrow_secret" type="text" class="cc-us-mono" placeholder="cola aqui a Secret key do app">')}
+            ${campo('Redirect URL (a mesma cadastrada no app)', `<input id="sungrow_redirect" name="sungrow_redirect" type="text" class="cc-us-mono" value="${escapeHtml(redirectPadrao)}" placeholder="https://… (a mesma cadastrada no seu app)">`)}
             ${campo('Application ID', `<input id="sungrow_app_id" name="sungrow_app_id" type="text" class="cc-us-mono" placeholder="ex.: 3229"
                      oninput="var b=document.getElementById('sungrow-auth-link');var id=this.value.trim();var rd=encodeURIComponent((document.getElementById('sungrow_redirect')||{}).value||'');b.href=id?('https://web3.isolarcloud.com.hk/#/authorized-app?cloudId=2&applicationId='+id+'&redirectUrl='+rd):'#';b.style.pointerEvents=id?'auto':'none';b.style.opacity=id?'1':'0.5';">`)}
-            ${campo('Redirect URL (igual à cadastrada no app)', `<input id="sungrow_redirect" name="sungrow_redirect" type="text" class="cc-us-mono" value="${escapeHtml(redirectPadrao)}" placeholder="https://… (a mesma cadastrada no seu app)">`)}
             ${campo('Código de autorização', '<input name="sungrow_code" type="text" class="cc-us-mono" placeholder="o code que aparece na URL depois de autorizar">')}
           </div>
           ${nota('atencao', `<strong>Como pegar o código (só na 1ª vez):</strong>
@@ -1860,7 +1860,7 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
               <li>Preencha o <strong>Application ID</strong> acima e clique em
                 <a id="sungrow-auth-link" href="#" target="_blank" rel="noopener" style="pointer-events:none;opacity:0.5">Abrir a tela de autorização →</a></li>
               <li>Logado como dono das usinas, <strong>selecione as usinas</strong>, aceite e clique em <strong>"Concordar e autorizar"</strong>.</li>
-              <li>A página vai redirecionar pra <code>${escapeHtml(exemploRetorno)}/?code=<strong>XXXXXX</strong></code>. Copie o valor do <strong>code</strong> e cole aqui.</li>
+              <li>A página vai redirecionar pra ${ehTenant ? 'o seu endereço de retorno, com <code>?code=<strong>XXXXXX</strong></code> no fim' : '<code>...ecosunpowerenergia.com.br/?code=<strong>XXXXXX</strong></code>'}. Copie o valor do <strong>code</strong> e cole aqui.</li>
             </ol>`)}
           ${nota('ok', `<strong>Depois disso, renova sozinho:</strong> o código é trocado por um token que o
             sistema renova automaticamente. Você só repete se revogar o acesso. Use um app
