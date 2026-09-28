@@ -75,6 +75,7 @@ const CSS_MANUTENCAO = `
 .cc-om-form .cc-campo select,.cc-om-form .cc-campo input{width:100%}
 .cc-om-modal{position:fixed;inset:0;z-index:50;padding:16px;background:rgba(2,6,23,.7);align-items:center;justify-content:center}
 .cc-om-modal:not(.hidden){display:flex}
+.cc-om-modal.hidden{display:none}
 .cc-om-modal form{width:100%;max-width:380px;background:var(--cc-surface);border:1px solid var(--cc-line-2);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:10px}
 .cc-om-modal .cc-om-mt{font-size:15px;font-weight:700;color:var(--cc-text)}
 .cc-om-modal input{width:100%}

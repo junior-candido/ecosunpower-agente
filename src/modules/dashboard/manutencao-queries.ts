@@ -20,6 +20,12 @@ const HSP_PADRAO = 5.2; // DF/GO (kWh/m²/dia) — esperado da leitura manual
 // tenant mostravam as usinas de TODAS as empresas, e um POST com o :id de outra
 // empresa marcava feita/abria OS/salvava checklist. Agora toda leitura filtra
 // o company_id da SESSÃO e toda escrita por :id confere o dono antes.
+// O DONO é a empresa da USINA (sistemas_clientes.company_id), não o company_id
+// gravado na manutenção/OS: as linhas criadas antes deste conserto nasceram
+// com o DEFAULT EcoSun (077) mesmo sendo de usina de tenant.
+
+/** Empresa dona da usina embutida (sistemas_clientes) — null/ausente = EcoSun. */
+const donoDaUsina = (r: any): string | null => r?.sistemas_clientes?.company_id ?? null;
 
 /** Filtro da empresa: a EcoSun também vê as linhas antigas sem company_id. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- builder do PostgREST (tipo profundo demais pro tsc)
@@ -39,9 +45,9 @@ export async function sistemaDoOperador(client: SupabaseClient, sistemaId: strin
 
 /** Manutenção da empresa da sessão — null se não existe ou é de outra empresa. */
 export async function manutencaoDoOperador(client: SupabaseClient, id: string, companyId: string): Promise<{ leadId: string | null; tipo: ManutencaoTipo } | null> {
-  const { data } = await client.from('manutencoes').select('id, lead_id, tipo, company_id').eq('id', id).maybeSingle();
-  const r = data as { lead_id?: string | null; tipo: ManutencaoTipo; company_id?: string | null } | null;
-  if (!r || !usinaPertenceAoOperador(r.company_id ?? null, companyId)) return null;
+  const { data } = await client.from('manutencoes').select('id, lead_id, tipo, sistemas_clientes(company_id)').eq('id', id).maybeSingle();
+  const r = data as { lead_id?: string | null; tipo: ManutencaoTipo } | null;
+  if (!r || !usinaPertenceAoOperador(donoDaUsina(r), companyId)) return null;
   return { leadId: r.lead_id ?? null, tipo: r.tipo };
 }
 
@@ -66,12 +72,16 @@ export interface AgendaItem {
 
 // Agenda: manutenções agendadas (vencidas + próximas), guiada por atenção.
 export async function listarAgenda(client: SupabaseClient, companyId: string): Promise<AgendaItem[]> {
-  const { data, error } = await daEmpresa(client.from('manutencoes')
-    .select('id, sistema_id, lead_id, tipo, origem, data_agendada, sistemas_clientes!inner(apelido, acompanhamento, api_credentials, leads(name))')
-    .eq('status', 'agendada'), companyId)
-    .limit(500);
+  // Filtra pela empresa da USINA (embutida com !inner). Tenant: filtro no banco;
+  // EcoSun: a usina dela pode ter company_id nulo (linha antiga), então a
+  // conferência final é aqui no código — vale pros dois.
+  let q = client.from('manutencoes')
+    .select('id, sistema_id, lead_id, tipo, origem, data_agendada, sistemas_clientes!inner(apelido, acompanhamento, api_credentials, company_id, leads(name))')
+    .eq('status', 'agendada');
+  if (companyId !== ECOSUN_COMPANY_ID) q = q.eq('sistemas_clientes.company_id', companyId);
+  const { data, error } = await q.limit(500);
   if (error) throw new Error(`listarAgenda: ${error.message}`);
-  const itens: AgendaItem[] = (data ?? []).map((m: any) => ({
+  const itens: AgendaItem[] = (data ?? []).filter((m: any) => usinaPertenceAoOperador(donoDaUsina(m), companyId)).map((m: any) => ({
     id: m.id, sistemaId: m.sistema_id, leadId: m.lead_id,
     apelido: m.sistemas_clientes?.apelido ?? '(usina)',
     clienteNome: m.sistemas_clientes?.leads?.name ?? null,
@@ -143,7 +153,7 @@ export async function marcarManutencaoFeita(client: SupabaseClient, id: string, 
   feitaEm: string; feitoPor: string; notas?: string;
 }): Promise<void> {
   const { data: m, error } = await client.from('manutencoes')
-    .select('id, sistema_id, lead_id, tipo, alerta_id, company_id, sistemas_clientes(manutencao_cadencia)')
+    .select('id, sistema_id, lead_id, tipo, alerta_id, sistemas_clientes(manutencao_cadencia, company_id)')
     .eq('id', id).maybeSingle();
   if (error) throw new Error(`marcarManutencaoFeita/get: ${error.message}`);
   if (!m) throw new Error('marcarManutencaoFeita: manutenção não encontrada');
@@ -161,7 +171,7 @@ export async function marcarManutencaoFeita(client: SupabaseClient, id: string, 
     await criarManutencao(client, {
       sistemaId: row.sistema_id, leadId: row.lead_id, tipo: row.tipo,
       origem: 'regra', dataAgendada: prox.toISOString().slice(0, 10),
-      companyId: row.company_id ?? ECOSUN_COMPANY_ID,
+      companyId: donoDaUsina(row) ?? ECOSUN_COMPANY_ID,
     });
   }
   // resolve alerta manutencao_devida aberto da usina

@@ -19,24 +19,31 @@ const OUTRA = 'bbbb1111-2222-3333-4444-555566667777';
 
 const sis = (id: string, company_id: string | null, extra: Record<string, unknown> = {}) =>
   ({ id, apelido: `Usina ${id}`, lead_id: `l-${id}`, company_id, ativo: true, acompanhamento: 'manual', api_credentials: null, leads: { name: `Cliente ${id}` }, ...extra });
-const manut = (id: string, company_id: string | null) =>
-  ({ id, sistema_id: `s-${id}`, lead_id: `l-${id}`, tipo: 'limpeza', origem: 'regra', status: 'agendada', data_agendada: '2026-10-01', company_id, sistemas_clientes: { apelido: `Usina ${id}`, acompanhamento: null, api_credentials: { k: 1 }, leads: { name: 'x' } } });
+// `company_id` = o gravado na manutenção; `dono` = a empresa da USINA (quem manda).
+// A chave achatada 'sistemas_clientes.company_id' imita o filtro do PostgREST na embutida.
+const manut = (id: string, company_id: string | null, dono: string | null = company_id) =>
+  ({ id, sistema_id: `s-${id}`, lead_id: `l-${id}`, tipo: 'limpeza', origem: 'regra', status: 'agendada', data_agendada: '2026-10-01', company_id,
+    'sistemas_clientes.company_id': dono,
+    sistemas_clientes: { apelido: `Usina ${id}`, acompanhamento: null, api_credentials: { k: 1 }, company_id: dono, leads: { name: 'x' } } });
 
 function banco() {
   return bancoFalso({
     sistemas_clientes: [sis('s-eco', ECOSUN), sis('s-velha', null), sis('s-aur', AURORA), sis('s-out', OUTRA)],
-    manutencoes: [manut('m-eco', ECOSUN), manut('m-velha', null), manut('m-aur', AURORA), manut('m-out', OUTRA)],
+    manutencoes: [manut('m-eco', ECOSUN), manut('m-velha', null), manut('m-aur', AURORA), manut('m-out', OUTRA),
+      // criada ANTES do conserto: gravada EcoSun (DEFAULT 077), mas a usina é da Aurora
+      manut('m-legado', ECOSUN, AURORA)],
     geracao_diaria: [],
     ordens_servico: [
-      { id: 'os-aur', sistema_id: 's-aur', lead_id: null, manutencao_id: null, tipo: 'limpeza', status: 'aberta', checklist: {}, observacoes: null, executor: null, aberta_em: '2026-09-01', concluida_em: null, company_id: AURORA },
-      { id: 'os-velha', sistema_id: 's-velha', lead_id: null, manutencao_id: null, tipo: 'limpeza', status: 'aberta', checklist: {}, observacoes: null, executor: null, aberta_em: '2026-09-01', concluida_em: null, company_id: null },
+      { id: 'os-aur', sistema_id: 's-aur', lead_id: null, manutencao_id: null, tipo: 'limpeza', status: 'aberta', checklist: {}, observacoes: null, executor: null, aberta_em: '2026-09-01', concluida_em: null, company_id: AURORA, sistemas_clientes: { apelido: 'A', company_id: AURORA } },
+      { id: 'os-velha', sistema_id: 's-velha', lead_id: null, manutencao_id: null, tipo: 'limpeza', status: 'aberta', checklist: {}, observacoes: null, executor: null, aberta_em: '2026-09-01', concluida_em: null, company_id: null, sistemas_clientes: { apelido: 'V', company_id: null } },
+      { id: 'os-legado', sistema_id: 's-aur', lead_id: null, manutencao_id: null, tipo: 'limpeza', status: 'aberta', checklist: {}, observacoes: null, executor: null, aberta_em: '2026-09-01', concluida_em: null, company_id: ECOSUN, sistemas_clientes: { apelido: 'A', company_id: AURORA } },
     ],
   });
 }
 
 describe('leituras do /manutencao filtradas pela empresa da sessão', () => {
   it('agenda: tenant vê só a dele; EcoSun vê a dela + as antigas sem company_id', async () => {
-    expect((await listarAgenda(banco().client, AURORA)).map((i) => i.id)).toEqual(['m-aur']);
+    expect((await listarAgenda(banco().client, AURORA)).map((i) => i.id).sort()).toEqual(['m-aur', 'm-legado']);
     expect((await listarAgenda(banco().client, ECOSUN)).map((i) => i.id).sort()).toEqual(['m-eco', 'm-velha']);
   });
   it('leituras pendentes: só usinas sem API da empresa', async () => {
@@ -59,6 +66,9 @@ describe('dono do :id antes de escrever', () => {
   });
   it('manutencaoDoOperador: de outra empresa → null', async () => {
     expect(await manutencaoDoOperador(banco().client, 'm-out', AURORA)).toBeNull();
+    // legado gravado EcoSun: o dono é a empresa da USINA
+    expect(await manutencaoDoOperador(banco().client, 'm-legado', ECOSUN)).toBeNull();
+    expect(await manutencaoDoOperador(banco().client, 'm-legado', AURORA)).not.toBeNull();
     expect(await manutencaoDoOperador(banco().client, 'm-aur', AURORA)).toEqual({ leadId: 'l-m-aur', tipo: 'limpeza' });
   });
   it('getOS: OS de outra empresa → null (tela, salvar, foto, concluir e laudo dão 404)', async () => {
@@ -66,6 +76,8 @@ describe('dono do :id antes de escrever', () => {
     expect(await getOS(banco().client, 'os-velha', AURORA)).toBeNull();
     expect((await getOS(banco().client, 'os-aur', AURORA))?.id).toBe('os-aur');
     expect((await getOS(banco().client, 'os-velha', ECOSUN))?.id).toBe('os-velha');
+    expect(await getOS(banco().client, 'os-legado', ECOSUN)).toBeNull();
+    expect((await getOS(banco().client, 'os-legado', AURORA))?.company_id).toBe(AURORA);
   });
 });
 
@@ -98,10 +110,11 @@ describe('o que nasce leva a empresa dona (não o DEFAULT EcoSun)', () => {
     expect(inserts[0]).toMatchObject({ tabela: 'ordens_servico', linha: { company_id: AURORA } });
   });
   it('abrirOSDeManutencao: de outra empresa não cria nada; da empresa carimba a dona', async () => {
-    const outra = clientDeInsert({ manutencoes: { sistema_id: 's-out', lead_id: null, tipo: 'limpeza', company_id: OUTRA } });
+    const outra = clientDeInsert({ manutencoes: { sistema_id: 's-out', lead_id: null, tipo: 'limpeza', company_id: OUTRA, sistemas_clientes: { company_id: OUTRA } } });
     expect(await abrirOSDeManutencao(outra.client, 'm-out', AURORA)).toBeNull();
     expect(outra.inserts).toEqual([]);
-    const dela = clientDeInsert({ manutencoes: { sistema_id: 's-aur', lead_id: null, tipo: 'limpeza', company_id: AURORA } });
+    // legado gravado EcoSun em usina da Aurora: a OS nasce com a dona da USINA
+    const dela = clientDeInsert({ manutencoes: { sistema_id: 's-aur', lead_id: null, tipo: 'limpeza', company_id: ECOSUN, sistemas_clientes: { company_id: AURORA } } });
     expect(await abrirOSDeManutencao(dela.client, 'm-aur', AURORA)).toBe('novo');
     expect(dela.inserts[0]).toMatchObject({ tabela: 'ordens_servico', linha: { company_id: AURORA, manutencao_id: 'm-aur' } });
   });

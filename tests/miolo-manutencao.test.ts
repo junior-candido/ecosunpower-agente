@@ -71,6 +71,7 @@ describe('Manutenção — agenda', () => {
     expect(m).toMatch(/<form method="post" action="\/dashboard\/os\/nova" class="cc-form/);
     expect(h).toMatch(/<div id="leitura-modal" class="cc-om-modal hidden"/);
     expect(h).not.toContain("classList.add('flex')");
+    expect(h).toContain('.cc-om-modal.hidden{display:none}');
   });
 
   it('vazia → estado vazio, sem painel de leituras', () => {
