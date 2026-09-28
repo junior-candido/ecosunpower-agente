@@ -4984,6 +4984,9 @@ Cloudflare Pages publica em ~2 min. Commit: ${commitSha.slice(0, 7)}.`);
       // Lead novo (lead == null) sempre passa — sera criado com eva_active=true (default).
       if (lead && (lead as any).eva_active === false) {
         console.log(`[eva-active] Skipping message from ${from} — eva_active=false (Junior atende)`);
+        // Atendimento Parte 2 (28/09): a Eva fica calada, mas a mensagem FICA na
+        // conversa — quem assumiu responde pela tela de Conversas e precisa ler.
+        await registrarPausado(db, from, companyId, 'texto', text);
         return;
       }
 
@@ -6509,6 +6512,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     }
     if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
       console.log(`[eva-active] Skipping audio from ${from} — eva_active=false`);
+      await registrarPausado(db, from, companyId, 'audio', ''); // fica na conversa (Atendimento P2)
       return;
     }
     await cancelIntroIfPending(from, db);
@@ -6578,6 +6582,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     }
     if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
       console.log(`[eva-active] Skipping image from ${from} — eva_active=false`);
+      await registrarPausado(db, from, companyId, 'imagem', caption ?? ''); // fica na conversa (Atendimento P2)
       return;
     }
     await cancelIntroIfPending(from, db);
@@ -6662,6 +6667,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     }
     if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
       console.log(`[eva-active] Skipping video from ${from} — eva_active=false`);
+      await registrarPausado(db, from, companyId, 'video', caption ?? ''); // fica na conversa (Atendimento P2)
       return;
     }
     await cancelIntroIfPending(from, db);
@@ -6789,6 +6795,7 @@ Este cliente VIU UM ANUNCIO PAGO e clicou — interesse confirmado, esta em modo
     }
     if (!(await db.isEvaActiveForPhone(from))) { // [3e] gate pelo crachá
       console.log(`[eva-active] Skipping document from ${from} — eva_active=false`);
+      await registrarPausado(db, from, companyId, 'documento', ''); // fica na conversa (Atendimento P2)
       return;
     }
     await cancelIntroIfPending(from, db);
@@ -9179,6 +9186,8 @@ Saida: JSON estrito { messages: string[] } na mesma ordem dos names. Nada alem d
     proposalAssistant,
     metaService: metaWaba ?? undefined,
     engineerPhone: config.engineerPhone,
+    // Atendimento P2: "Devolver para a Eva" também limpa a pausa curta (Redis) do telefone.
+    retomarTakeover: (telefone) => takeover.resumeFor(telefone),
     infinitepayHandle: config.infinitepayHandle,
     calculadoraUrl: config.calculadoraUrl,
     evolutionConexao: { baseUrl: config.evolutionApiUrl, apiKey: config.evolutionApiKey, instanciaDaEmpresa: (cid) => evolutionTenant.instanciaDaEmpresa(cid) },

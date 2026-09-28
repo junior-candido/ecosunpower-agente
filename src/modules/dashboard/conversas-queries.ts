@@ -14,15 +14,27 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DashUser } from './permissions.js';
+import { mensagensDoPainel, type LinhaMensagemWhatsapp } from '../mensagens-whatsapp.js';
+
+/** Canal da conversa: número da Eva (oficial), número pessoal (WhatsApp Business) ou assistente por QR (tenant). */
+export type CanalConversa = 'eva_oficial' | 'whatsapp_business' | 'qr_code';
 
 export interface MensagemChat {
-  role: 'user' | 'assistant' | string;
+  /** 'user' = cliente · 'assistant' = quem responde (Eva ou gente) · 'evento' = assumiu/devolveu. */
+  role: 'user' | 'assistant' | 'evento' | string;
   content: string;
   timestamp: string | null;
+  // ---- Parte 2 (histórico do painel, migration 138). Ausente = mensagem antiga da Eva. ----
+  autor?: 'cliente' | 'eva' | 'humano' | 'evento';
+  autorNome?: string | null;
+  canal?: CanalConversa | null;
+  /** Envio do painel: 'enviando' | 'enviada' | 'falhou'. */
+  status?: string | null;
+  evento?: 'assumiu' | 'devolveu' | null;
+  modelo?: string | null;
+  /** Mensagem do painel copiada na memória da Eva (conversations) — some na junção. */
+  painelId?: string | null;
 }
-
-/** Canal da conversa quando o dado existir (Parte 2 traz o 2º número). */
-export type CanalConversa = 'eva_oficial' | 'whatsapp_business' | 'qr_code';
 
 export interface ConversaResumo {
   leadId: string;
@@ -83,11 +95,13 @@ export function normalizarMensagens(raw: unknown): MensagemChat[] {
     const o = m as Record<string, unknown>;
     const content = typeof o.content === 'string' ? o.content : typeof o.text === 'string' ? o.text : '';
     if (!content.trim()) continue;
-    out.push({
+    const saida: MensagemChat = {
       role: typeof o.role === 'string' ? o.role : 'user',
       content,
       timestamp: typeof o.timestamp === 'string' ? o.timestamp : null,
-    });
+    };
+    if (typeof o.painel_id === 'string' && o.painel_id) saida.painelId = o.painel_id;
+    out.push(saida);
   }
   return out;
 }
@@ -142,6 +156,8 @@ export function montarLista(
   leads: LinhaLead[],
   filtros: FiltrosConversa,
   viewerId: string,
+  /** Número por onde a conversa chegou quando a linha não diz (Parte 2: o da assistente da empresa). */
+  canalPadrao: CanalConversa | null = null,
 ): ListaConversas {
   const leadPorId = new Map(leads.map((l) => [l.id, l]));
   const vistos = new Set<string>();
@@ -159,7 +175,7 @@ export function montarLista(
       evaAtiva: !!lead.eva_active, optOut: !!lead.opt_out, dono: lead.claimed_by,
       ultimaEm: u.em ?? (typeof c.last_message_at === 'string' ? c.last_message_at : null),
       ultimaTexto: u.texto, ultimaDe: u.de, aguardandoResposta: u.de === 'cliente',
-      canal: canalDaLinha(c),
+      canal: canalDaLinha(c) ?? canalPadrao,
     });
   }
   todas.sort((a, b) => String(b.ultimaEm ?? '').localeCompare(String(a.ultimaEm ?? '')));
@@ -226,7 +242,7 @@ export async function listarConversas(db: SupabaseClient, viewer: DashUser, filt
     if (e2) throw new Error(`Falha ao ler leads das conversas: ${e2.message}`);
     leads.push(...((data ?? []) as LinhaLead[]));
   }
-  return montarLista(linhas, leads, filtros, viewer.id);
+  return montarLista(linhas, leads, filtros, viewer.id, canalDaAssistente(companyId));
 }
 
 /** Todas as mensagens do lead (todas as linhas de `conversations` DA EMPRESA). */
@@ -240,4 +256,67 @@ export async function mensagensDoLead(db: SupabaseClient, leadId: string, compan
     .limit(50);
   if (error) throw new Error(`Falha ao ler a conversa: ${error.message}`);
   return juntarMensagens((data ?? []) as Array<{ messages: unknown; created_at?: string | null }>);
+}
+
+// ---------------------------------------------------------------------------
+// Parte 2 — junta a memória da Eva (conversations) com o histórico do painel
+// (mensagens_whatsapp: envios com autor/canal e eventos assumiu/devolveu).
+// ---------------------------------------------------------------------------
+
+/** Linha de mensagens_whatsapp → mensagem do chat. PURA. */
+export function linhaDoPainelParaChat(l: LinhaMensagemWhatsapp): MensagemChat | null {
+  if (l.direcao === 'evento') {
+    if (l.evento !== 'assumiu' && l.evento !== 'devolveu') return null;
+    return { role: 'evento', content: '', timestamp: l.criado_em, autor: 'evento', evento: l.evento, autorNome: l.autor_nome };
+  }
+  const texto = (l.texto ?? '').trim() || (l.modelo ? `[modelo ${l.modelo}]` : '');
+  if (!texto) return null;
+  if (l.direcao === 'entrada') {
+    return { role: 'user', content: texto, timestamp: l.criado_em, autor: 'cliente', canal: l.canal, autorNome: l.contato_nome };
+  }
+  return {
+    role: 'assistant', content: texto, timestamp: l.enviada_em ?? l.criado_em,
+    autor: l.autor === 'eva' ? 'eva' : 'humano', autorNome: l.autor_nome, canal: l.canal,
+    status: l.status, modelo: l.modelo, painelId: l.id,
+  };
+}
+
+/**
+ * Memória da Eva + histórico do painel, em ordem de tempo. A cópia que o painel
+ * deixa na memória da Eva (painel_id) sai: vale a do painel, que tem autor e
+ * status. PURA.
+ */
+export function juntarComPainel(conversa: MensagemChat[], painel: LinhaMensagemWhatsapp[], canalDaEva: CanalConversa): MensagemChat[] {
+  const doPainel = painel.map(linhaDoPainelParaChat).filter((m): m is MensagemChat => !!m);
+  const idsPainel = new Set(painel.map((l) => l.id));
+  const daEva = conversa
+    .filter((m) => !(m.painelId && idsPainel.has(m.painelId)))
+    .map((m) => ({
+      ...m,
+      autor: m.autor ?? (m.role === 'assistant' ? (m.painelId ? 'humano' as const : 'eva' as const) : 'cliente' as const),
+      canal: m.canal ?? canalDaEva,
+    }));
+  const todas = [...daEva, ...doPainel].map((m, i) => ({ m, i }));
+  todas.sort((a, b) => {
+    const ta = a.m.timestamp ?? '';
+    const tb = b.m.timestamp ?? '';
+    if (ta && tb && ta !== tb) return Date.parse(ta) - Date.parse(tb) || ta.localeCompare(tb);
+    return a.i - b.i;
+  });
+  return todas.map((x) => x.m);
+}
+
+/** Canal do número da assistente desta empresa: a Eva (oficial) na casa, QR no tenant. */
+export function canalDaAssistente(companyId: string): CanalConversa {
+  return companyId === CASA_ID ? 'eva_oficial' : 'qr_code';
+}
+const CASA_ID = '00000000-0000-0000-0000-000000000001';
+
+/** Chat completo do lead: memória da Eva + painel (só o que o viewer pode ver). */
+export async function historicoDoLead(db: SupabaseClient, leadId: string, companyId: string, viewerId: string | null): Promise<MensagemChat[]> {
+  const [conversa, painel] = await Promise.all([
+    mensagensDoLead(db, leadId, companyId),
+    mensagensDoPainel(db, companyId, leadId, viewerId),
+  ]);
+  return juntarComPainel(conversa, painel, canalDaAssistente(companyId));
 }

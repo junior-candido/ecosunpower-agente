@@ -73,13 +73,19 @@ describe('Atendimento — lead aberto (substitui a ficha)', () => {
     expect(p).toContain('aria-disabled="true"');
   });
 
-  it('⋯ Mais: pausar/retomar, nova proposta, contrato, perdido, arquivar, opt-out, excluir (MESMOS forms)', () => {
+  it('⋯ Mais: nova proposta, contrato, perdido, arquivar, opt-out, excluir (MESMOS forms); pausar/retomar subiu pro chat', () => {
     const m = maisAcoes(h);
-    for (const a of ['/pause-eva"', 'propostas/novo?lead_id=', '/contrato-form?tipo=fv', '/opt-out"', '/arquivar"', '/delete"']) expect(m).toContain(a);
+    for (const a of ['propostas/novo?lead_id=', '/contrato-form?tipo=fv', '/opt-out"', '/arquivar"', '/delete"']) expect(m).toContain(a);
     expect(m).toContain("document.getElementById('modal-marcar-perdido')");
+    // Parte 2 (28/09): "✋ Assumir" / "↩ Devolver" no topo do chat — mesmo form de sempre.
+    expect(m).not.toContain('/pause-eva"');
+    expect(h).toMatch(/<form class="cc-at-assumir" method="POST" action="\/dashboard\/leads\/[^"]+\/pause-eva">/);
     const pm = maisAcoes(miolo(CASOS_FICHA.pausada()));
-    for (const a of ['/resume-eva"', '/cancel-cadence"', '/desarquivar"', '/opt-in"']) expect(pm).toContain(a);
+    for (const a of ['/cancel-cadence"', '/desarquivar"', '/opt-in"']) expect(pm).toContain(a);
     expect(pm).not.toContain('/pause-eva"');
+    // Pediu pra parar (opt-out): a Eva NÃO volta — sem "Devolver" (o servidor também recusa).
+    expect(miolo(CASOS_FICHA.pausada())).not.toContain('/resume-eva"');
+    expect(miolo(CASOS_FICHA.semCadencia())).toContain('/resume-eva"');
     expect(m).not.toContain('/dashboard/clientes/');
   });
 
@@ -159,8 +165,8 @@ describe('Atendimento — lead aberto (substitui a ficha)', () => {
     const pagina = renderLeadDetailPage(leadDetalhe(), [], '', '', [], USER_TENANT, { lista: LISTA_CONVERSAS });
     const t = miolo(pagina);
     expect(t).not.toContain('EcoSunPower');
-    expect(t).toContain('Pausar assistente');
-    expect(t).not.toContain('Pausar Eva');
+    expect(t).toContain('A assistente para de responder');
+    expect(t).not.toContain('A Eva para de responder');
     expect(t).not.toMatch(/>Eva</);
     expect(pagina).not.toContain('33.020.459');
   });
@@ -179,7 +185,7 @@ describe('Atendimento — lista de conversas (coluna 1)', () => {
     expect((h.match(/class="cc-at-espera"/g) ?? []).length).toBe(2);
     expect(h).toContain('cc-et-proposta_enviada');
     expect(h).toContain('Eva pausada');
-    expect(h).toContain('WhatsApp oficial');
+    expect(h).toContain('🤖 Eva');
   });
 
   it('nome com <script> escapado', () => {

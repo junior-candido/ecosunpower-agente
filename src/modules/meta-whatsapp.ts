@@ -602,11 +602,13 @@ export class MetaWhatsAppService {
 
   // Lista templates aprovados na WABA. Usar em scripts/admin pra ver o que
   // ja ta liberado pra envio. Requer business account ID configurado.
-  async listTemplates(): Promise<Array<{ name: string; status: string; language: string; category: string }>> {
+  // `components` (corpo do modelo) alimenta a PRÉVIA da tela de Conversas
+  // (Atendimento Parte 2): o texto de verdade mora na Meta.
+  async listTemplates(): Promise<Array<{ name: string; status: string; language: string; category: string; components?: Array<{ type?: string; text?: string }> }>> {
     if (!this.businessAccountId) {
       throw new Error('META_WABA_BUSINESS_ACCOUNT_ID nao configurado — necessario pra listar templates');
     }
-    const url = `${GRAPH_API}/${this.businessAccountId}/message_templates?limit=100`;
+    const url = `${GRAPH_API}/${this.businessAccountId}/message_templates?limit=100&fields=name,status,language,category,components`;
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${this.accessToken}` },
     });
@@ -614,7 +616,7 @@ export class MetaWhatsAppService {
       throw new Error(`listTemplates ${res.status}: ${await res.text()}`);
     }
     const data = await res.json() as {
-      data?: Array<{ name: string; status: string; language: string; category: string }>;
+      data?: Array<{ name: string; status: string; language: string; category: string; components?: Array<{ type?: string; text?: string }> }>;
     };
     return data.data ?? [];
   }

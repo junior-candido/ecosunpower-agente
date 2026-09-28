@@ -1,0 +1,265 @@
+// src/modules/dashboard/atendimento-rotas.ts
+//
+// Rotas do "responder pelo painel" (Atendimento Parte 2, 28/09/2026). Ficam
+// fora do router.ts pra serem testadas com req/res falsos; o router.ts só
+// registra (DEPOIS do portão /leads/:id — trava de empresa do #325).
+//
+// Portões, em ordem, em TODO envio:
+//  1. sessão + exigir('leads','editar') (no router) + trava /leads/:id (#325);
+//  2. o lead é relido aqui com .eq('company_id', <sessão>) — nunca da URL;
+//  3. canal da EMPRESA: casa → número oficial da Eva (WABA); tenant → a
+//     instância QR dele (noCanalDaEmpresa); sem canal → não envia;
+//  4. opt-out / LGPD (envioProibido) / janela de 24 h (no servidor) bloqueiam;
+//  5. freio (LimiteDeEnvio) + chave única por clique reservada no banco;
+//  6. envia, grava (mensagens_whatsapp) e ASSUME (mesmo estado do WhatsApp).
+//
+// Nenhum envio de verdade nos testes: `DepsAtendimento` recebe dublês.
+
+import { randomUUID } from 'node:crypto';
+import type { Request, Response } from 'express';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { AuthedRequest } from './auth.js';
+import { bancoDoOperador } from '../tenant-client.js';
+import { empresaDe } from '../empresa-config.js';
+import { envioProibido } from '../tenant-admin-guard.js';
+import { normalizeBrazilianPhone } from '../meta-leadgen.js';
+import { noCanalDaEmpresa, EMPRESA_CASA } from './canal-envio.js';
+import { assumirAtendimento, devolverParaEva } from '../assumir-atendimento.js';
+import { reservarEnvio, concluirEnvio } from '../mensagens-whatsapp.js';
+import { historicoDoLead, canalDaAssistente, type CanalConversa, type MensagemChat } from './conversas-queries.js';
+import {
+  ultimaDoCliente, janelaAtendimento, motivoBloqueio, validarTexto, chaveValida, enviarDoPainel,
+  LimiteDeEnvio, RESULTADO_ENVIO, type ViaEnvio, type MotivoBloqueio,
+} from './atendimento-envio.js';
+import { modelosDaTela, parametroNome, previaDoModelo, type ModeloDaMeta, type ModeloAtendimento } from './modelos-atendimento.js';
+import { registrarAtividade } from './atividades.js';
+import { audit } from './audit.js';
+import type { CompositorInput } from './atendimento-views.js';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CACHE_MODELOS_MS = 10 * 60 * 1000;
+
+/** Só o pedaço do serviço oficial (Meta) que o painel usa. */
+export interface WabaPainel {
+  sendText(to: string, text: string): Promise<{ messageId: string }>;
+  sendTemplate(to: string, name: string, lang: string, components: Array<{ type: 'body'; parameters: Array<{ type: 'text'; text: string }> }>): Promise<{ messageId: string }>;
+  listTemplates?(): Promise<ModeloDaMeta[]>;
+}
+
+export interface DepsAtendimento {
+  /** Client de serviço (o banco do operador é derivado da requisição). */
+  supabase: SupabaseClient;
+  /** Número oficial da Eva (só existe na casa). */
+  waba?: WabaPainel | null;
+  /** Envio pela instância QR da empresa (index.ts sendText, dentro de noCanalDaEmpresa). */
+  sendTextEvolution?: (to: string, text: string) => Promise<unknown>;
+  /** Instância Evolution do tenant da sessão (null = sem). */
+  instanciaDaEmpresa: (companyId: string) => Promise<string | null>;
+  engineerPhone: string;
+  /** Limpa a pausa curta do Redis do telefone (devolver = a Eva volta já). */
+  retomarTakeover?: (telefone: string) => Promise<void>;
+  /** Cópia na memória da Eva (conversations), pra ela saber o que foi dito. */
+  copiarParaMemoria?: (p: { leadId: string; companyId: string; texto: string; painelId: string }) => Promise<void>;
+  limite?: LimiteDeEnvio;
+  agora?: () => number;
+  /** Troca o banco do operador nos testes. */
+  banco?: (req: AuthedRequest) => SupabaseClient;
+}
+
+interface LeadEnvio { id: string; name: string | null; phone: string | null; opt_out: boolean | null; eva_active: boolean | null; company_id: string | null }
+
+export function criarRotasAtendimento(deps: DepsAtendimento) {
+  const limite = deps.limite ?? new LimiteDeEnvio();
+  const agora = deps.agora ?? (() => Date.now());
+  const banco = deps.banco ?? ((req: AuthedRequest) => bancoDoOperador(req, deps.supabase));
+  let cacheModelos: { at: number; lista: ModeloAtendimento[] } | null = null;
+
+  async function modelos(): Promise<ModeloAtendimento[]> {
+    if (cacheModelos && agora() - cacheModelos.at < CACHE_MODELOS_MS) return cacheModelos.lista;
+    let daMeta: ModeloDaMeta[] | null = null;
+    if (deps.waba?.listTemplates) {
+      daMeta = await deps.waba.listTemplates().catch((e) => {
+        console.warn(`[atendimento] modelos da Meta indisponíveis (usa a cópia local): ${(e as Error).message}`);
+        return null;
+      });
+    }
+    const lista = modelosDaTela(daMeta);
+    cacheModelos = { at: agora(), lista };
+    return lista;
+  }
+
+  /** Por onde sai a resposta desta EMPRESA (nunca pelo número de outra). */
+  async function viaDaEmpresa(companyId: string): Promise<{ via: ViaEnvio; instancia: string | null; motivo?: MotivoBloqueio }> {
+    if (companyId === EMPRESA_CASA) {
+      return deps.waba ? { via: 'waba', instancia: null } : { via: 'nenhum', instancia: null, motivo: 'whatsapp_nao_configurado' };
+    }
+    const inst = await deps.instanciaDaEmpresa(companyId).catch(() => null);
+    return inst && deps.sendTextEvolution ? { via: 'evolution', instancia: inst } : { via: 'nenhum', instancia: null, motivo: 'sem_canal' };
+  }
+
+  async function lerLead(db: SupabaseClient, leadId: string, companyId: string): Promise<LeadEnvio | null> {
+    const { data, error } = await db.from('leads')
+      .select('id, name, phone, opt_out, eva_active, company_id')
+      .eq('id', leadId)
+      .eq('company_id', companyId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data as LeadEnvio | null) ?? null;
+  }
+
+  function voltar(res: Response, leadId: string, resultado: string): void {
+    const r = Object.prototype.hasOwnProperty.call(RESULTADO_ENVIO, resultado) ? resultado : 'falhou';
+    res.redirect(303, `/dashboard/leads/${leadId}?resp=${encodeURIComponent(r)}#responder`);
+  }
+
+  /** Conferências comuns ao texto e ao modelo. Devolve o contexto ou já respondeu. */
+  async function preparar(req: AuthedRequest, res: Response, tipo: 'texto' | 'modelo') {
+    const leadId = String(req.params.id ?? '');
+    if (!UUID_RE.test(leadId)) { res.status(400).send('id inválido'); return null; }
+    const viewer = req.dashUser;
+    if (!viewer?.companyId) { res.status(404).send('lead não encontrado'); return null; }
+    const companyId = viewer.companyId;
+    if (!chaveValida(req.body?.chave)) { voltar(res, leadId, 'chave_invalida'); return null; }
+    const chave = String(req.body.chave);
+    const db = banco(req);
+    let lead: LeadEnvio | null;
+    try { lead = await lerLead(db, leadId, companyId); } catch { voltar(res, leadId, 'erro_banco'); return null; }
+    if (!lead) { res.status(404).send('lead não encontrado'); return null; }
+
+    const canal: CanalConversa = canalDaAssistente(companyId);
+    const { via, instancia, motivo } = await viaDaEmpresa(companyId);
+    const telefone = normalizeBrazilianPhone(lead.phone ?? '') ?? null;
+    let janelaAberta = false;
+    if (via === 'waba' && tipo === 'texto') {
+      const msgs: MensagemChat[] = await historicoDoLead(db, leadId, companyId, viewer.id).catch(() => []);
+      janelaAberta = janelaAtendimento(ultimaDoCliente(msgs, canal), agora()).aberta;
+    }
+    let bloqueio = motivoBloqueio({
+      optOut: !!lead.opt_out, telefone, via,
+      lgpdBloqueado: !!telefone && envioProibido(telefone, deps.engineerPhone, empresaDe(companyId)),
+      tipo, janelaAberta,
+    });
+    if (bloqueio === 'sem_canal' && motivo) bloqueio = motivo;
+    if (bloqueio) { voltar(res, leadId, bloqueio); return null; }
+    if (!limite.permitir(viewer.id, `${companyId}:${leadId}`, agora())) { voltar(res, leadId, 'limite'); return null; }
+    return { leadId, viewer, companyId, chave, db, lead, canal, via, instancia, telefone: telefone! };
+  }
+
+  function depsComuns(ctx: NonNullable<Awaited<ReturnType<typeof preparar>>>, extra: { texto: string; modelo?: string }) {
+    const { db, companyId, leadId, viewer, canal } = ctx;
+    return {
+      reservar: () => reservarEnvio(db, {
+        company_id: companyId, lead_id: leadId, contato_telefone: ctx.telefone, contato_nome: ctx.lead.name,
+        direcao: 'saida', autor: 'humano', user_id: viewer.id, autor_nome: (viewer.nome || '').slice(0, 80),
+        canal, numero: ctx.via === 'evolution' ? ctx.instancia : null,
+        tipo: extra.modelo ? 'modelo' : 'texto', texto: extra.texto, modelo: extra.modelo ?? null,
+        origem: 'painel', chave_envio: ctx.chave,
+      }),
+      concluir: (id: string, r: { status: 'enviada' | 'falhou'; wamid?: string | null; erro?: string | null }) => concluirEnvio(db, id, companyId, r),
+      assumir: () => assumirAtendimento(db, { leadId, companyId, origem: 'painel', userId: viewer.id, autorNome: viewer.nome }),
+      copiarParaMemoria: deps.copiarParaMemoria
+        ? (painelId: string) => deps.copiarParaMemoria!({ leadId, companyId, texto: extra.texto, painelId })
+        : undefined,
+      registrar: async () => {
+        await registrarAtividade(db, {
+          company_id: companyId, lead_id: leadId, tipo: 'whatsapp',
+          titulo: extra.modelo ? `Modelo enviado pelo painel (${extra.modelo})` : 'Mensagem enviada pelo painel',
+          descricao: extra.texto.slice(0, 1000), automatica: false, user_id: viewer.id,
+        });
+        await audit(db, { companyId, userId: viewer.id, entidade: 'lead', entidadeId: leadId, acao: 'whatsapp_enviado', campo: canal, valorNovo: extra.modelo ?? 'texto' });
+      },
+    };
+  }
+
+  /** POST /leads/:id/responder — texto livre (número da Eva: só na janela de 24 h). */
+  async function responder(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    const leadId = String(r.params.id ?? '');
+    const v = validarTexto(r.body?.texto);
+    if (!v.ok) { if (UUID_RE.test(leadId)) voltar(res, leadId, v.motivo); else res.status(400).send('id inválido'); return; }
+    const ctx = await preparar(r, res, 'texto');
+    if (!ctx) return;
+    const s = await enviarDoPainel({
+      ...depsComuns(ctx, { texto: v.texto }),
+      enviar: () => ctx.via === 'waba'
+        ? deps.waba!.sendText(ctx.telefone, v.texto)
+        : noCanalDaEmpresa(ctx.companyId, ctx.instancia, () => deps.sendTextEvolution!(ctx.telefone, v.texto)).then(() => undefined),
+    });
+    console.log(`[atendimento] resposta ${ctx.leadId.slice(0, 8)} por ${ctx.via} (${ctx.viewer.id.slice(0, 8)}): ${s.resultado}${s.erro ? ` — ${s.erro}` : ''}`);
+    voltar(res, ctx.leadId, s.resultado);
+  }
+
+  /** POST /leads/:id/responder-modelo — modelo aprovado (só o número oficial). */
+  async function responderModelo(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    const ctx = await preparar(r, res, 'modelo');
+    if (!ctx) return;
+    const lista = await modelos();
+    const modelo = lista.find((m) => m.nome === String(r.body?.modelo ?? ''));
+    if (!modelo) { voltar(res, ctx.leadId, 'modelo_invalido'); return; }
+    const nome = parametroNome(r.body?.nome);
+    const texto = previaDoModelo(modelo, nome);
+    const s = await enviarDoPainel({
+      ...depsComuns(ctx, { texto, modelo: modelo.nome }),
+      enviar: () => deps.waba!.sendTemplate(ctx.telefone, modelo.nome, 'pt_BR', [{ type: 'body', parameters: [{ type: 'text', text: nome }] }]),
+    });
+    console.log(`[atendimento] modelo ${modelo.nome} ${ctx.leadId.slice(0, 8)}: ${s.resultado}${s.erro ? ` — ${s.erro}` : ''}`);
+    voltar(res, ctx.leadId, s.resultado);
+  }
+
+  /** POST /leads/:id/pause-eva — "✋ Assumir" (o mesmo estado do botão do WhatsApp). */
+  async function assumir(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    const leadId = String(r.params.id ?? '');
+    if (!UUID_RE.test(leadId)) { res.status(400).send('id inválido'); return; }
+    const viewer = r.dashUser;
+    if (!viewer?.companyId) { res.status(404).send('lead não encontrado'); return; }
+    const x = await assumirAtendimento(banco(r), { leadId, companyId: viewer.companyId, origem: 'painel', userId: viewer.id, autorNome: viewer.nome });
+    if (!x.ok) { res.status(x.motivo === 'nao_encontrado' ? 404 : 500).send(x.motivo === 'nao_encontrado' ? 'lead não encontrado' : 'erro ao assumir'); return; }
+    if (!x.jaEstava) await audit(banco(r), { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: leadId, acao: 'assumiu' });
+    res.redirect(`/dashboard/leads/${leadId}`);
+  }
+
+  /** POST /leads/:id/resume-eva — "↩ Devolver para a Eva": o ÚNICO jeito de ela voltar. */
+  async function devolver(req: Request, res: Response): Promise<void> {
+    const r = req as AuthedRequest;
+    const leadId = String(r.params.id ?? '');
+    if (!UUID_RE.test(leadId)) { res.status(400).send('id inválido'); return; }
+    const viewer = r.dashUser;
+    if (!viewer?.companyId) { res.status(404).send('lead não encontrado'); return; }
+    const x = await devolverParaEva(banco(r), { leadId, companyId: viewer.companyId, origem: 'painel', userId: viewer.id, autorNome: viewer.nome }, deps.retomarTakeover);
+    if (!x.ok) {
+      if (x.motivo === 'opt_out') { voltar(res, leadId, 'opt_out'); return; }
+      res.status(x.motivo === 'nao_encontrado' ? 404 : 500).send(x.motivo === 'nao_encontrado' ? 'lead não encontrado' : 'erro ao devolver');
+      return;
+    }
+    if (!x.jaEstava) await audit(banco(r), { companyId: viewer.companyId, userId: viewer.id, entidade: 'lead', entidadeId: leadId, acao: 'devolveu_para_eva' });
+    res.redirect(`/dashboard/leads/${leadId}`);
+  }
+
+  /** O que a tela precisa pra desenhar o campo de resposta. Nunca lança. */
+  async function envioDaTela(req: AuthedRequest, lead: { phone?: string | null }): Promise<CompositorInput | undefined> {
+    const companyId = req.dashUser?.companyId;
+    if (!companyId) return undefined;
+    try {
+      const { via, motivo } = await viaDaEmpresa(companyId);
+      const telefone = normalizeBrazilianPhone(lead.phone ?? '') ?? '';
+      const resp = typeof req.query?.resp === 'string' && Object.prototype.hasOwnProperty.call(RESULTADO_ENVIO, req.query.resp) ? req.query.resp : null;
+      return {
+        via,
+        semCanalMotivo: motivo ?? null,
+        canal: canalDaAssistente(companyId),
+        modelos: via === 'waba' ? await modelos() : [],
+        chave: randomUUID(),
+        resultado: resp,
+        lgpdBloqueado: !!telefone && envioProibido(telefone, deps.engineerPhone, empresaDe(companyId)),
+        agora: agora(),
+      };
+    } catch (e) {
+      console.warn(`[atendimento] estado do envio indisponível: ${(e as Error).message}`);
+      return undefined;
+    }
+  }
+
+  return { responder, responderModelo, assumir, devolver, envioDaTela, modelos };
+}
