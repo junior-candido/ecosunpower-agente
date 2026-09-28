@@ -207,6 +207,19 @@ Hoje o `/webhooks/shelly` usa **um token global** (`SHELLY_INGEST_TOKEN`) e grav
 - `device_id` do corpo tem que bater com o do medidor (evita um token gravar em outro aparelho);
 - o token global continua aceito **só** para os `device_id` já existentes da EcoSun (piloto),
   com log `[energia] token legado` — some quando o script do piloto for trocado (tarefa G1).
+  A lista vem da env `SHELLY_LEGADO_DEVICES` (padrão: o piloto `007007422d90`).
+- (revisão 28/09) token do medidor: formato (43 base64url) conferido **antes** do banco; só no
+  cabeçalho (o `?token=` na URL vale só pro token global, na transição); banco fora ao resolver o
+  token → **503**; medidor desligado → **410**; limite de 120 chamadas/min por IP; `device_id`
+  gravado sempre normalizado (sem `shellypro3em-`, minúsculo); leitura > 5 min no futuro recusada.
+- (revisão 28/09) um aparelho existe **uma vez na plataforma inteira** (índice único global na
+  forma normalizada) — o mesmo Shelly nunca manda dado pra duas empresas.
+
+**Portão de tenant (decisão do dono, 28/09):** o Command Center abre pra tenants com isolamento
+estrito. Na G1 a Gestão de Energia é travada **só pelo módulo contratado `medicao`** (sem flag
+`ENERGIA_ABERTO_A_TENANTS`). Tenant **sem** o módulo `medicao` vê a vitrine da Energia no lugar
+das telas. Tenant **com** o módulo usa as telas com os dados só da empresa dele, e o aviso do
+vigia vai só pro `telefone_admin` DELE (nunca pro zap do dono da EcoSun; sem admin, ninguém).
 
 ### 3. Banco de dados — migrations propostas
 
@@ -238,14 +251,20 @@ create table if not exists medidores_energia (
   api_credentials_cifrado text,                              -- AES-256-GCM (auth_key, server_uri)
   token_ingest_hash     text,                                -- sha256 do token do script
   ativo                 boolean not null default true,
-  status                text not null default 'aguardando' check (status in ('aguardando','ok','mudo','erro','credencial_invalida')),
+  status                text not null default 'aguardando' check (status in ('aguardando','ok','mudo')), -- só chegada de dado
+  nuvem_ok              boolean,                             -- chave da nuvem: null não testada / false recusada (separado do status)
+  nuvem_desde           timestamptz,
+  nuvem_avisado_em      timestamptz,
+  aviso_dia             date,                                -- freio: até 4 avisos por medidor por dia
+  avisos_no_dia         smallint not null default 0,
   status_desde          timestamptz not null default now(),
   ultima_leitura_em     timestamptz,
   ultimo_erro           text,
   consentimento_em      timestamptz,                         -- LGPD: aceite do titular
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now(),
-  constraint medidores_energia_device_unico unique (company_id, device_id)
+  -- company_id references companies(id); device_id único no GLOBAL (índice na forma normalizada);
+  -- índice único (id, company_id) = alvo das FKs compostas de energia_15min/energia_diaria (on delete cascade)
 );
 create unique index if not exists medidores_energia_token on medidores_energia (token_ingest_hash) where token_ingest_hash is not null;
 create index if not exists medidores_energia_lead on medidores_energia (lead_id) where lead_id is not null;
@@ -361,7 +380,8 @@ mês a mês. Compara Shelly exportado × `injetado_kwh` e Shelly importado × `c
 Limitação: o ciclo de leitura da Neoenergia **não é o mês civil** e o parser hoje não extrai as
 datas de leitura (os campos "de/até" da linha Gerador são leituras do medidor, não datas) → a
 conciliação usa o mês civil e a tolerância é larga: **bate** se |dif| ≤ max(5%, 10 kWh);
-**atenção** entre isso e 15%; **diverge** acima de 15%; **sem dado** se cobertura do mês < 90%.
+**atenção** entre isso e 15%; **diverge** acima de 15%; **sem dado** se cobertura do mês < 97% (sem veredito, a tela mostra os números apagados, só de
+referência).
 Texto sempre explica: "diferença pode ser o dia de leitura da Neoenergia (ciclo ≠ mês)".
 Evolução: extrair datas de leitura da fatura (tarefa futura no `gd/`).
 
@@ -374,9 +394,11 @@ Evolução: extrair datas de leitura da fatura (tarefa futura no `gd/`).
   `ultimo_erro`) — o **vigia de silêncio** olha a *chegada de dado*, não o "online" da nuvem
   (lição da memória: "não vigiar Conectado"). `ok → mudo` após 30 min sem leitura (push) ou 45 min
   (nuvem); volta a `ok` na primeira leitura.
-- Na G1 a transição `ok → mudo/erro/credencial_invalida` manda **uma** mensagem ao admin da
-  empresa (mesmo `sendAdminWithButtons` do dispatcher, 1 por transição, janela de horário
-  `dentroDaJanela`). Alerta ao cliente e fila com re-envio ficam para a G3.
+- Na G1 a transição `ok ↔ mudo` manda **uma** mensagem ao admin da empresa (mesmo
+  `sendAdminWithButtons` do dispatcher, 1 por transição, janela de horário `dentroDaJanela`);
+  o 1º dado de um medidor novo é "começou a mandar dado"; no máximo 4 mensagens por medidor por
+  dia; em dry-run a transição não é gravada. Chave da nuvem recusada fica em `nuvem_ok` (não no
+  `status`) e gera **um** aviso pelo mesmo caminho — o vigia do script segue funcionando. Alerta ao cliente e fila com re-envio ficam para a G3.
 - Quando a fase B do Command Center estiver na `main`: medidor `mudo` > 2 h entra como evento
   na Central de Atenção (1 função de mapeamento).
 
@@ -542,10 +564,22 @@ número; nenhum crava preço (regra "Eva nunca crava preço").
 
 | # | Risco | Mitigação |
 |---|---|---|
-| R1 | Cliente troca a senha da conta Shelly → chave muda → nuvem para | status `credencial_invalida` + aviso; push não é afetado |
+| R1 | Cliente troca a senha da conta Shelly → chave muda → nuvem para | `nuvem_ok = false` + um aviso; push (e o vigia dele) não é afetado |
 | R2 | Script morre após queda de energia ("Executar na inicialização" desligado) | vigia de silêncio; checklist de instalação; nuvem como reserva |
 | R3 | Volume do bruto com muitos medidores | retenção 90 dias; particionar por mês acima de 150 medidores |
 | R4 | TC invertido / na fase errada → balanço absurdo | validação no cadastro (P ≈ V×I, sinal no meio-dia) e regra "G < E → conferir cadastro" |
 | R5 | Conflito com a fase B do Command Center (router/views) | G1 começa **depois** do merge da fase B; rotas em `energia-rotas.ts`; 1 linha no router |
 | R6 | Leitura regulatória errada (faixas/limites) | tabela citada + "conferir na revisão vigente" + texto de limitação no PDF |
 | R7 | Endpoint v2 da nuvem é "beta" | adapter com fallback v1 (`/device/status`) |
+
+### Revisão 1 (28/09/2026) — o que mudou depois da primeira revisão de código
+
+- Agregação: folga da leitura do bruto = maior intervalo aceito entre contadores (nuvem: 30 min),
+  e toda consulta filtra o **canal** da rede (não mistura fases; usa a ordem da chave primária).
+- Hora do aparelho > 5 min no futuro é recusada; `ultima_leitura_em` nunca vai pro futuro.
+- Aparelho único na plataforma; formulário diz só "Este aparelho já está cadastrado. Fale com o suporte."
+- LGPD: "Medidor ligado" na edição (desligado → 410 no webhook, crons pulam) e "Apagar medidor e
+  todos os dados" com o nome digitado (cascata: bruto, 15 min, dia; registro sem consumo).
+- Chave da nuvem cifrada com etiqueta de 16 bytes e AAD = medidor + empresa.
+- Conferência com a Neoenergia: veredito só com ≥ 97% do mês.
+

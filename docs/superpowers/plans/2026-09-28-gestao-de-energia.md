@@ -83,7 +83,7 @@ CREATE POLICY company_isolation ON public.medidores_energia
 -- Piloto: o medidor da casa do Junior já manda dado. Cadastra e liga o bruto existente.
 insert into medidores_energia (company_id, apelido, device_id, modo_coleta, perfil, canais, ligacao, tensao_nominal_v, concessionaria, grupo_gd, status)
 values ('00000000-0000-0000-0000-000000000001', 'Medidor Quadro', '007007422d90', 'push', 'triphase', '{"rede": 2}', 'mono', 220, 'Neoenergia Brasília', 'gd1', 'ok')
-on conflict (company_id, device_id) do nothing;
+on conflict do nothing; -- (revisão 1: device_id único no global)
 update medicoes_shelly m set medidor_id = e.id
   from medidores_energia e
  where m.medidor_id is null and m.device_id = e.device_id and m.company_id = e.company_id;
@@ -736,7 +736,12 @@ export function proximoStatus(m: { status: string; modo_coleta: keyof typeof MUD
 **Arquivos:** `src/modules/dashboard/energia-rotas.ts`, `src/modules/dashboard/energia-views.ts`,
 `tests/energia-rotas.test.ts`, `tests/energia-views.test.ts`; `router.ts` (montagem).
 
-- [ ] Rotas (todas `bancoDoOperador(req, supabase)` + `.eq('company_id', req.dashUser.companyId)` explícito; só EcoSun na G1 — flag `ENERGIA_ABERTO_A_TENANTS = false`, igual ao `CC_ABERTO_A_TENANTS`):
+- [ ] Rotas (todas `bancoDoOperador(req, supabase)` + `.eq('company_id', req.dashUser.companyId)` explícito).
+      **Portão (decisão do dono, 28/09):** o Command Center abriu pra tenants com isolamento estrito;
+      a Energia fica travada **só pelo módulo contratado `medicao`** (`MODULO_DA_ROTA '/energia'`,
+      trava central do router) — **sem** flag `ENERGIA_ABERTO_A_TENANTS`. Tenant sem o módulo
+      `medicao` vê a vitrine da Energia no lugar das telas; tenant com o módulo vê só os medidores
+      da empresa dele, e o aviso do vigia vai só pro admin dele (`energia/aviso-medidor.ts`):
   - `GET  /energia` — lista de medidores (status com `pilulaStatus`, última leitura, cliente, usina) — `exigir('usinas','visualizar')`
   - `GET  /energia/medidores/novo` e `POST /energia/medidores` — cadastro — `exigir('usinas','editar')`
   - `POST /energia/medidores/:id/testar` — chama `buscarStatus` com a credencial **do formulário ou a gravada**; devolve online/modelo/perfil detectado; nunca ecoa a chave
@@ -771,7 +776,32 @@ export function proximoStatus(m: { status: string; modo_coleta: keyof typeof MUD
 - [ ] Code review do diff (regra "Review 3×"): tenant (toda query com `company_id`), segredos (nenhum log com chave/token/consumo), escape HTML.
 - [ ] Junior aplica EN1 e EN2 no SQL Editor **antes** do deploy; push da branch; PR com o comando de merge pronto (**pedir antes de push**).
 - [ ] Após Implantar: 7 dias de `energia_diaria` do piloto vs análise de 28/09 (import ≈ 21, export ≈ 14,5 kWh/dia; 76% fora-ponta; base 0,8–1,2 kW) — diferença ≤ 3%.
-- [ ] Conciliação: primeiro mês com demonstrativo + ≥ 90% de cobertura mostra veredito coerente.
+- [ ] Conciliação: primeiro mês com demonstrativo + ≥ 97% de cobertura mostra veredito coerente.
+
+### Passos de deploy (atualizados na revisão 1, 28/09)
+
+1. **Antes do merge/Implantar**, o Junior roda no SQL Editor (produção) o arquivo do Desktop
+   `SQL-migrations-136-137-gestao-energia.sql` (136 + 137, idempotente; confere no fim).
+2. **Conferir quem ainda manda pelo token global** (rodar em produção, só leitura):
+   ```sql
+   select lower(regexp_replace(device_id, '^shelly[a-z0-9]*-', '', 'i')) as aparelho,
+          count(*) as leituras_7_dias, max(medido_em) as ultima
+     from medicoes_shelly
+    where medido_em > now() - interval '7 days'
+    group by 1 order by 3 desc;
+   ```
+   Se aparecer outro aparelho além de `007007422d90` que ainda usa o `SHELLY_INGEST_TOKEN`,
+   pôr no EasyPanel `SHELLY_LEGADO_DEVICES=007007422d90,<outro>` (ids sem o prefixo, por vírgula).
+   Sem a env, só o piloto passa pelo token global (o resto recebe 401).
+3. Envs no EasyPanel: `ENERGIA_CRED_KEY` (64 hex; sem ela a nuvem fica desligada e o push segue),
+   `SHELLY_INGEST_TOKEN` (só enquanto o piloto não trocar o script), `SHELLY_LEGADO_DEVICES` (opcional).
+4. Push da branch (pedir antes), PR com o comando de merge pronto, **Implantar**.
+5. Depois: gerar o código do "Medidor Quadro", trocar no script do piloto (cabeçalho `x-shelly-token`),
+   confirmar leituras com `medidor_id`; então tirar `SHELLY_INGEST_TOKEN` do EasyPanel.
+6. Opcional (segurança): testar o script do piloto **sem** a linha `ssl_ca: "*"` (confere o certificado
+   do servidor); se ficar pendurado, voltar a linha (ver README do kit).
+7. Webhook responde 401 (código errado), 410 (medidor desligado), 429 (> 120/min por IP),
+   503 (banco fora — o aparelho tenta de novo no minuto seguinte).
 
 ---
 
