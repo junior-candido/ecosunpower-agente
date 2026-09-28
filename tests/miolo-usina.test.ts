@@ -72,6 +72,14 @@ describe('Usina — detalhe', () => {
     expect(v).toContain('Sistema operando normalmente');
   });
 
+  it('mini-mapa da main (#330) continua na tela, na aba Dados, com o painel no tema do Command Center', () => {
+    const dados = m.slice(m.indexOf('id="dados"'));
+    expect(dados).toContain('id="mu-mapa-usina"');
+    expect(dados).toContain('data-acao="localizar"');
+    expect(h).toContain('.cc-us .mu-box{');
+    expect(h).toContain('if (!window.ccSegurarRecarga) location.reload()');
+  });
+
   it('tenant: escuro, sem "Eva" e sem nada da casa', () => {
     const t = CASOS_USINA['detalhe-tenant']();
     expect(t).toContain('<div class="cc-shell cc-escuro">');
