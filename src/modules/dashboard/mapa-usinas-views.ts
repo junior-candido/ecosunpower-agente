@@ -180,12 +180,18 @@ export function renderLocalizarUsinasPage(p: LocalizarPageInput): string {
   function marcar(li, r, txt) { li.setAttribute('data-r', r); li.querySelector('small').textContent = txt; }
   btn.addEventListener('click', function () {
     btn.disabled = true;
-    var feitos = 0, achados = 0, aprox = 0, falhas = 0, i = 0;
+    var feitos = 0, achados = 0, aprox = 0, falhas = 0, i = 0, pausou = false;
+    function restantes() { return itens.filter(function (li) { var r = li.getAttribute('data-r'); return r !== 'ok' && r !== 'aprox'; }); }
     function proximo() {
+      if (pausou) {
+        btn.disabled = false; btn.lastChild.textContent = 'Continuar';
+        itens = restantes();
+        return;
+      }
       if (i >= itens.length) {
         st.textContent = 'Pronto: ' + achados + ' pelo endereço, ' + aprox + ' aproximadas (centro da cidade), ' + falhas + ' sem posição.';
         btn.disabled = false; btn.lastChild.textContent = 'Tentar de novo as que faltaram';
-        itens = itens.filter(function (li) { return li.getAttribute('data-r') === 'erro'; });
+        itens = restantes();
         return;
       }
       var li = itens[i++];
@@ -197,10 +203,10 @@ export function renderLocalizarUsinasPage(p: LocalizarPageInput): string {
           if (j.ok && j.pulada) { marcar(li, 'ok', 'mantida (' + (j.motivo || 'já tinha posição') + ')'); achados++; }
           else if (j.ok && j.fonte === 'cidade') { marcar(li, 'aprox', 'aproximada — centro da cidade'); aprox++; }
           else if (j.ok) { marcar(li, 'ok', j.fonte === 'api' ? 'pela marca do inversor' : 'pelo endereço ✓'); achados++; }
-          else { marcar(li, 'erro', j.motivo || 'não achei'); falhas++; if (j.limite) { i = itens.length; st.textContent = 'O serviço de endereços pediu uma pausa. Tente de novo em alguns minutos.'; } }
+          else { marcar(li, 'erro', j.motivo || 'não achei'); falhas++; if (j.limite) { pausou = true; st.textContent = 'O serviço de endereços pediu uma pausa. Clique em "Continuar" daqui a alguns minutos.'; } }
         })
         .catch(function () { marcar(li, 'erro', 'sem resposta do servidor'); falhas++; })
-        .then(function () { feitos++; bar.style.width = Math.round((feitos / itens.length) * 100) + '%'; proximo(); });
+        .then(function () { feitos++; if (pausou) { proximo(); return; } bar.style.width = Math.round((feitos / itens.length) * 100) + '%'; proximo(); });
     }
     proximo();
   });

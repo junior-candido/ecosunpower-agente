@@ -32,7 +32,8 @@ BEGIN
       ADD CONSTRAINT sistemas_clientes_lat_lng_check
       CHECK (
         (lat IS NULL AND lng IS NULL)
-        OR (lat BETWEEN -90 AND 90 AND lng BETWEEN -180 AND 180)
+        OR (lat IS NOT NULL AND lng IS NOT NULL
+            AND lat BETWEEN -90 AND 90 AND lng BETWEEN -180 AND 180)
       );
   END IF;
 END $$;

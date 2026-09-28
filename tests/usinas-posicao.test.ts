@@ -86,6 +86,18 @@ describe('localizarUsina', () => {
     for (const c of fetchFalso.mock.calls) expect(String((c as unknown[])[0])).not.toContain('Secreta');
   });
 
+  it('autoconsumo remoto: dono mora em OUTRA cidade → não usa a rua dele (vai pra cidade da usina)', async () => {
+    const { client, tabelas } = bancoFalso({
+      sistemas_clientes: [usina('a', ECOSUN, { lead_id: 'L1', cidade: 'Ceilândia' })],
+      leads: [{ id: 'L1', company_id: ECOSUN, endereco_rua: 'Rua 12 Chácara 5', endereco_numero: '3', city: 'Vicente Pires', uf: 'DF' }],
+    });
+    const { g, fetchFalso } = geoFalso();
+    const r = await localizarUsina(client, ECOSUN, 'a', g);
+    expect(r).toMatchObject({ ok: true, fonte: 'cidade' });
+    for (const c of fetchFalso.mock.calls) expect(String((c as unknown[])[0])).not.toContain('Chácara');
+    expect(Math.abs((tabelas.sistemas_clientes[0].lat as number) - -15.819)).toBeLessThan(0.01);
+  });
+
   it('ponto MANUAL não é tocado pela localização automática', async () => {
     const { client, tabelas } = bancoFalso({ sistemas_clientes: [usina('a', ECOSUN, { lat: -15.1, lng: -47.1, geo_fonte: 'manual' })] });
     const { g, fetchFalso } = geoFalso();

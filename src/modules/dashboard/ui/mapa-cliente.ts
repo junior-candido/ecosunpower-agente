@@ -297,9 +297,14 @@ export const JS_MAPA_USINAS = String.raw`(function () {
     mapa.on('styleimagemissing', function (e) {
       if (!mapa.hasImage(e.id)) mapa.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) });
     });
-    mapa.on('error', function (e) { if (window.console) console.warn('[mapa]', e && e.error ? e.error.message : e); });
+    mapa.on('error', function (e) {
+      if (window.console) console.warn('[mapa]', e && e.error ? e.error.message : e);
+      if (!carregou) status('Não consegui baixar o desenho do mapa agora. Tente de novo em alguns minutos.');
+    });
+    var carregou = false;
     mapa.on('load', function () {
-      status('');
+      carregou = true;
+      if ((d.usinas || []).length) status('');
       tingir(mapa);
       Object.keys(CORES).forEach(function (k) {
         var p = imagemPino(CORES[k]);
@@ -428,6 +433,7 @@ export const JS_MAPA_USINA = String.raw`(function () {
   var fonteEl = raiz.querySelector('.mu-fonte');
   var btnLoc = raiz.querySelector('[data-acao="localizar"]');
   var pode = cfg.podeEditar === '1';
+  var marcador = null, salvo = null;
 
   function st(txt, tipo) { if (!stEl) return; stEl.textContent = txt; stEl.className = 'mu-st' + (tipo ? ' mu-st-' + tipo : ''); }
   function webgl() { try { var c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } }
@@ -456,8 +462,12 @@ export const JS_MAPA_USINA = String.raw`(function () {
     var corpo = new URLSearchParams(); corpo.set('lat', ll.lat.toFixed(6)); corpo.set('lng', ll.lng.toFixed(6));
     return fetch(cfg.urlSalvar, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' }, body: corpo })
       .then(function (r) { return r.json().catch(function () { return { ok: false }; }).then(function (j) { if (!r.ok || !j.ok) throw new Error(j.motivo || 'erro'); return j; }); })
-      .then(function () { st('Posição salva. Ela não será trocada pela localização automática.', 'ok'); marcarFonte('Ajustada à mão', 'mu-fonte-manual'); })
-      .catch(function (e) { st('Não consegui salvar: ' + e.message + '.', 'erro'); })
+      .then(function () {
+        salvo = [ll.lng, ll.lat];
+        st('Posição salva. Ela não será trocada pela localização automática.', 'ok'); marcarFonte('Ajustada à mão', 'mu-fonte-manual');
+        if (btnLoc && btnLoc.parentNode) { btnLoc.parentNode.removeChild(btnLoc); btnLoc = null; }
+      })
+      .catch(function (e) { if (marcador && salvo) marcador.setLngLat(salvo); st('Não consegui salvar: ' + e.message + '. O alfinete voltou pro lugar salvo.', 'erro'); })
       .then(function () { window.ccSegurarRecarga = false; });
   }
 
@@ -478,6 +488,13 @@ export const JS_MAPA_USINA = String.raw`(function () {
     mapa.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
     mapa.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     var m = new maplibregl.Marker({ element: pino(tem ? '#16a34a' : '#f59e0b'), anchor: 'bottom', draggable: pode }).setLngLat(centro).addTo(mapa);
+    marcador = m; salvo = centro;
+    // Mexendo no mapa: segura o recarregamento automático da página por 2 min.
+    var soltar = null;
+    mapa.on('movestart', function () {
+      window.ccSegurarRecarga = true;
+      clearTimeout(soltar); soltar = setTimeout(function () { window.ccSegurarRecarga = false; }, 120000);
+    });
     if (pode) {
       m.on('dragstart', function () { window.ccSegurarRecarga = true; });
       m.on('dragend', function () { salvar(m.getLngLat()); });
@@ -488,8 +505,9 @@ export const JS_MAPA_USINA = String.raw`(function () {
         fetch(cfg.urlLocalizar, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' } })
           .then(function (r) { return r.json(); })
           .then(function (j) {
-            if (j.ok && !j.pulada && isFinite(j.lat)) {
-              m.setLngLat([j.lng, j.lat]); mapa.easeTo({ center: [j.lng, j.lat], zoom: j.fonte === 'cidade' ? 13 : 17 });
+            if (j.ok && j.pulada) { st('Posição mantida: ' + (j.motivo || 'já ajustada à mão') + '.'); }
+            else if (j.ok && isFinite(j.lat)) {
+              m.setLngLat([j.lng, j.lat]); salvo = [j.lng, j.lat]; mapa.easeTo({ center: [j.lng, j.lat], zoom: j.fonte === 'cidade' ? 13 : 17 });
               if (j.fonte === 'cidade') { st('Achei só a cidade: o ponto é aproximado. Arraste até a usina para corrigir.'); marcarFonte('Aproximada (centro da cidade)', 'mu-fonte-cidade'); }
               else { st('Achei pelo endereço. Confira e, se precisar, arraste o alfinete.', 'ok'); marcarFonte('Pelo endereço', ''); }
             } else {

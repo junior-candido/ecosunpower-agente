@@ -11,7 +11,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  deslocarAproximado, podeSobrescrever, pontoNoBrasil, ehGeoFonte,
+  deslocarAproximado, podeSobrescrever, pontoNoBrasil, ehGeoFonte, normalizarTexto,
   type Geocodificador, type EnderecoUsina, type GeoFonte,
 } from './geocodificacao.js';
 
@@ -50,16 +50,24 @@ interface LinhaUsina {
 }
 interface LinhaLead { endereco_rua: string | null; endereco_numero: string | null; cep: string | null; city: string | null; uf: string | null }
 
-/** Monta o endereço: rua do dono + a cidade DELE (casam entre si); sem rua, a cidade da usina. */
+/**
+ * Monta o endereço. A rua do dono só vale quando a cidade DELE é a mesma da
+ * usina (ou a usina não tem cidade): no autoconsumo remoto a usina fica em
+ * outro lugar (ex.: casa dos pais) e o endereço do dono levaria o alfinete
+ * pro lugar errado — aí usa só a cidade da usina (aproximado).
+ */
 export function enderecoDaUsina(u: Pick<LinhaUsina, 'cidade' | 'uf'>, lead: LinhaLead | null): EnderecoUsina {
   const rua = lead?.endereco_rua?.trim() || null;
-  if (rua && (lead?.city?.trim() || u.cidade?.trim())) {
+  const cidUsina = u.cidade?.trim() || null;
+  const cidLead = lead?.city?.trim() || null;
+  const mesmaCidade = !cidUsina || (!!cidLead && normalizarTexto(cidLead) === normalizarTexto(cidUsina));
+  if (rua && (cidLead || cidUsina) && mesmaCidade) {
     return {
       rua, numero: lead?.endereco_numero ?? null, cep: lead?.cep ?? null,
-      cidade: lead?.city?.trim() || u.cidade, uf: lead?.uf?.trim() || u.uf,
+      cidade: cidLead || cidUsina, uf: lead?.uf?.trim() || u.uf,
     };
   }
-  return { cidade: u.cidade?.trim() || lead?.city?.trim() || null, uf: u.uf?.trim() || lead?.uf?.trim() || null };
+  return { cidade: cidUsina || cidLead, uf: u.uf?.trim() || lead?.uf?.trim() || null };
 }
 
 /**
@@ -96,10 +104,12 @@ export async function localizarUsina(
     if (!podeSobrescrever(atual, r.fonte)) return { ok: true, pulada: true, motivo: 'já tem uma posição melhor' };
 
     const ponto = r.fonte === 'cidade' ? deslocarAproximado(r, usina.id) : { lat: r.lat, lng: r.lng };
-    const { error: e2 } = await db.from('sistemas_clientes')
+    const { data: gravadas, error: e2 } = await db.from('sistemas_clientes')
       .update({ lat: ponto.lat, lng: ponto.lng, geo_fonte: r.fonte, geo_em: agora().toISOString() })
-      .eq('id', usina.id).eq('company_id', companyId).or(FILTRO_NAO_MANUAL);
+      .eq('id', usina.id).eq('company_id', companyId).or(FILTRO_NAO_MANUAL).select('id');
     if (e2) return { ok: false, motivo: e2.message };
+    // Alguém ajustou à mão no meio do caminho: o filtro barrou — nada foi gravado.
+    if (Array.isArray(gravadas) && gravadas.length === 0) return { ok: true, pulada: true, motivo: 'posição ajustada à mão — mantida' };
     return { ok: true, fonte: r.fonte, lat: ponto.lat, lng: ponto.lng };
   } catch (err) {
     console.error('[mapa] localizarUsina falhou:', (err as Error).message);
