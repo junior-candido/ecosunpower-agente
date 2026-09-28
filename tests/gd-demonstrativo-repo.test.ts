@@ -77,6 +77,36 @@ describe('criarRepoDemonstrativo', () => {
     expect(await criarRepoDemonstrativo(db, 'E1').buscarLeadPorUc('1', '2')).toBeNull();
   });
 
+  it('cadastro sem a UC: usa o cliente ja ligado a essa UC na tela (regravar nao desliga)', async () => {
+    const { db, chamadas } = fakeDb({
+      leads: [
+        { data: [], error: null }, { data: [], error: null }, { data: [], error: null }, { data: [], error: null },
+        { data: [{ id: 'L9', name: 'Junior', company_id: 'E1' }], error: null },
+      ],
+      demonstrativos_gd: [{ data: [{ lead_id: 'L9' }], error: null }],
+    });
+    const r = await criarRepoDemonstrativo(db, 'E1').buscarLeadPorUc('842315', '950948');
+    expect(r).toEqual({ id: 'L9', nome: 'Junior', companyId: 'E1' });
+    const dem = chamadas.find((c) => c.tabela === 'demonstrativos_gd')!.ops;
+    expect(dem).toContainEqual(['eq', ['company_id', 'E1']]);
+    expect(dem).toContainEqual(['eq', ['instalacao', '842315']]);
+    expect(dem).toContainEqual(['not', ['lead_id', 'is', null]]);
+    const conf = chamadas.filter((c) => c.tabela === 'leads').at(-1)!.ops;
+    expect(conf).toContainEqual(['eq', ['company_id', 'E1']]);
+    expect(conf).toContainEqual(['eq', ['id', 'L9']]);
+  });
+
+  it('cliente ligado antes mas ja apagado/de outra empresa: devolve null', async () => {
+    const { db } = fakeDb({
+      leads: [
+        { data: [], error: null }, { data: [], error: null }, { data: [], error: null }, { data: [], error: null },
+        { data: [], error: null },
+      ],
+      demonstrativos_gd: [{ data: [{ lead_id: 'L9' }], error: null }],
+    });
+    expect(await criarRepoDemonstrativo(db, 'E1').buscarLeadPorUc('842315', '950948')).toBeNull();
+  });
+
   it('padraoDigitos', () => {
     expect(padraoDigitos('200.00-2')).toBe('2%0%0%0%0%2');
   });
