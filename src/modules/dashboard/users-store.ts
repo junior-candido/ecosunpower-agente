@@ -121,17 +121,20 @@ export async function listRoles(client: SupabaseClient, companyId: string): Prom
 
 export interface UserListItem {
   id: string; nome: string; login: string; ativo: boolean; role_nome: string | null;
+  /** R19: papel (pra coluna "vê") e último acesso (last_login_at, gravado no login). */
+  role_id?: string | null; last_login_at?: string | null;
 }
 
 export async function listUsers(client: SupabaseClient, companyId: string): Promise<UserListItem[]> {
   const { data } = await client
     .from('dashboard_users')
-    .select('id, nome, login, ativo, dashboard_roles(nome)')
+    .select('id, nome, login, ativo, role_id, last_login_at, dashboard_roles(nome)')
     .eq('company_id', companyId)
     .order('nome');
   return (data ?? []).map((u: any) => ({
     id: u.id, nome: u.nome, login: u.login, ativo: u.ativo,
     role_nome: u.dashboard_roles?.nome ?? null,
+    role_id: u.role_id ?? null, last_login_at: u.last_login_at ?? null,
   }));
 }
 

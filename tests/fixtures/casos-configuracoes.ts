@@ -38,7 +38,7 @@ const EMPRESAS = [
 const ASSINATURA: AssinaturaRow = {
   id: 'as-1', produtoId: 'monitoramento', produtoNome: 'Monitoramento de Usinas', nome: 'Solar Aurora Teste',
   email: 'contato@exemplo.invalid', telefone: '5561988887777', zapConfirmado: false,
-  valorCentavos: 29700, limite: 110, venceEm: '2026-10-05', status: 'ativa', companyId: USER_TENANT.companyId,
+  valorCentavos: 29700, limite: 110, venceEm: '2026-10-28', status: 'ativa', companyId: USER_TENANT.companyId,
 };
 
 const USER_TENANT_COMUM = { ...USER_TENANT, id: 'u-ten-2', isAdmin: false, roleNome: 'Comercial', permissoes: { usuarios: ['visualizar'] } };
@@ -62,8 +62,8 @@ export const CASOS_CONFIGURACOES = {
   'whatsapp-caiu': () => renderWhatsappPage({ user: USER_TENANT, instancia: 'solar-aurora', estado: 'close' }),
   // ── /minha-assinatura (tenant) ──
   'assinatura-ativa': () => renderMinhaAssinaturaPage(ASSINATURA, '2026-09-28', 87, null, USER_TENANT),
-  'assinatura-vencendo-pagar': () => renderMinhaAssinaturaPage(ASSINATURA, '2026-10-01', 104, 'https://checkout.exemplo.invalid/x?a=1&b=2', USER_TENANT, { tipo: 'ok', texto: 'Código enviado no seu WhatsApp — digite ele aqui embaixo.' }),
-  'assinatura-travada': () => renderMinhaAssinaturaPage({ ...ASSINATURA, status: 'travada', zapConfirmado: true, produtoNome: 'Plano <b>Pro</b>' }, '2026-10-20', 110, 'https://checkout.exemplo.invalid/y', USER_TENANT, { tipo: 'erro', texto: 'Código errado ou vencido — peça um novo.' }),
+  'assinatura-vencendo-pagar': () => renderMinhaAssinaturaPage(ASSINATURA, '2026-10-24', 104, 'https://checkout.exemplo.invalid/x?a=1&b=2', USER_TENANT, { tipo: 'ok', texto: 'Código enviado no seu WhatsApp — digite ele aqui embaixo.' }),
+  'assinatura-travada': () => renderMinhaAssinaturaPage({ ...ASSINATURA, status: 'travada', zapConfirmado: true, produtoNome: 'Plano <b>Pro</b>' }, '2026-11-15', 110, 'https://checkout.exemplo.invalid/y', USER_TENANT, { tipo: 'erro', texto: 'Código errado ou vencido — peça um novo.' }),
   'assinatura-sem-limite': () => renderMinhaAssinaturaPage({ ...ASSINATURA, limite: null, telefone: null }, '2026-09-28', null, null, USER_TENANT),
   'assinatura-vazia': () => renderMinhaAssinaturaPage(null, '2026-09-28', null, null, USER_TENANT),
 };

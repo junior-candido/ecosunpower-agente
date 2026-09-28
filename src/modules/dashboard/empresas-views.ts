@@ -1,83 +1,67 @@
 // src/modules/dashboard/empresas-views.ts
 // Tela "Empresas (tenants)" — só admin da EcoSun (gate no router). Lista as
 // empresas do prédio + formulário de provisionar (empresa + 1º admin).
-import { renderLayout, escapeHtml } from './views.js';
+// Renovação do miolo — R19 (28/09/2026): mesmos formulários (empresas/nova e
+// empresas/:id/convite), visual cc- (tabela com status em pílula), sem Tailwind.
+import { escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
 import type { EmpresaListItem } from './empresas-store.js';
+import { cabecalhoPagina, cartaoSecao, tabela, pilulaStatus, botao, avatar, celulaDupla, aviso as avisoCc } from './ui/componentes.js';
+import { paginaConfiguracoes } from './configuracoes-casca.js';
+
+const CSS_EMPRESAS = `
+.cc-em-form{max-width:640px;margin-top:16px}
+.cc-em-form .cc-cf-nota{margin-bottom:14px}
+.cc-em-form .cc-cf-grade-form{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (max-width:760px){.cc-em-form .cc-cf-grade-form{grid-template-columns:minmax(0,1fr)}}
+`;
+
+const dataBr = (iso: string | null | undefined) => {
+  const d = (iso ?? '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d.split('-').reverse().join('/') : null;
+};
 
 export function renderEmpresasPage(
   empresas: EmpresaListItem[],
   user: DashUser | undefined,
   aviso?: { tipo: 'ok' | 'erro'; texto: string },
 ): string {
-  const linhas = empresas
-    .map(
-      (e) => `<tr class="border-b border-slate-100 hover:bg-slate-50">
-        <td class="px-4 py-3 font-medium">${escapeHtml(e.nome)}</td>
-        <td class="px-4 py-3 text-sm text-slate-500 font-mono">${escapeHtml(e.id)}</td>
-        <td class="px-4 py-3 text-center">${e.usuarios}</td>
-        <td class="px-4 py-3 text-center">${e.ativo ? '<span class="text-emerald-600">ativa</span>' : '<span class="text-rose-600">inativa</span>'}</td>
-        <td class="px-4 py-3 text-sm text-slate-500">${escapeHtml((e.createdAt ?? '').slice(0, 10))}</td>
-        <td class="px-4 py-3 text-right"><form method="post" action="/dashboard/empresas/${escapeHtml(e.id)}/convite" class="inline"><button type="submit" class="text-xs px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100" title="Manda um novo link de criar senha pro administrador (e-mail cadastrado)">✉️ Reenviar convite</button></form></td>
-      </tr>`,
-    )
-    .join('\n');
+  const lista = tabela({
+    mobile: 'cartoes',
+    colunas: [{ titulo: 'Empresa' }, { titulo: 'Usuários', alinhar: 'dir', num: true }, { titulo: 'Status' }, { titulo: 'Criada em' }, { titulo: '' }],
+    linhas: empresas.map((e) => [
+      { html: `<div class="cc-cf-pessoa">${avatar(e.nome)}<div class="cc-dupla"><span class="cc-dupla-t">${escapeHtml(e.nome)}</span><span class="cc-cf-mono">${escapeHtml(e.id)}</span></div></div>` },
+      e.usuarios,
+      { html: e.ativo ? pilulaStatus('normal', 'ativa') : pilulaStatus('critico', 'inativa') },
+      dataBr(e.createdAt),
+      { html: `<div class="cc-cf-acoes"><form method="post" action="/dashboard/empresas/${escapeHtml(e.id)}/convite"><button type="submit" class="cc-btn cc-btn-sm" title="Manda um novo link de criar senha pro administrador (e-mail cadastrado)">Reenviar convite</button></form></div>` },
+    ]),
+    vazio: 'Nenhuma empresa ainda',
+  });
 
-  const avisoHtml = aviso
-    ? `<div class="mb-4 px-4 py-3 rounded-xl text-sm ${aviso.tipo === 'ok' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'}">${escapeHtml(aviso.texto)}</div>`
-    : '';
+  const form = `<form method="post" action="/dashboard/empresas/nova" class="cc-form cc-cf-grade-form" id="cc-cf-nova">
+    <label class="cc-campo cc-cf-cheia"><span>Nome da empresa</span><input name="nome" required maxlength="80" placeholder="Ex.: Solar Exemplo"></label>
+    <label class="cc-campo cc-cf-cheia"><span>Nome do administrador</span><input name="admin_nome" required maxlength="80" placeholder="Ex.: Maria Exemplo"></label>
+    <label class="cc-campo"><span>Login</span><input name="admin_login" required maxlength="60" autocomplete="off" placeholder="ex.: maria"></label>
+    <label class="cc-campo"><span>Senha inicial (opcional)</span><input name="admin_senha" type="password" minlength="8" autocomplete="new-password" placeholder="vazio = convite por e-mail"></label>
+    <label class="cc-campo cc-cf-cheia"><span>E-mail do administrador</span><input name="admin_email" type="email" maxlength="120" autocomplete="off" placeholder="ex.: maria@empresa.com.br (recebe o convite)"></label>
+    <div class="cc-cf-cheia">${botao({ rotulo: 'Criar empresa', tipo: 'submit', tom: 'ouro', icone: 'plus' })}</div>
+  </form>`;
 
-  const body = `
-  <div class="mb-6">
-    <h1 class="text-2xl font-bold text-slate-800">🏢 Empresas (tenants)</h1>
-    <p class="text-sm text-slate-500 mt-1">Cada empresa é um prédio isolado: usuários, leads e usinas só dela (RLS). Provisionar cria a empresa + o papel Administrador + o 1º usuário.</p>
-  </div>
-  ${avisoHtml}
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto mb-8">
-    <table class="w-full text-left">
-      <thead class="text-xs uppercase tracking-wide text-slate-500 bg-slate-50">
-        <tr>
-          <th class="px-4 py-3">Empresa</th>
-          <th class="px-4 py-3">ID</th>
-          <th class="px-4 py-3 text-center">Usuários</th>
-          <th class="px-4 py-3 text-center">Status</th>
-          <th class="px-4 py-3">Criada em</th>
-          <th class="px-4 py-3"></th>
-        </tr>
-      </thead>
-      <tbody>${linhas}</tbody>
-    </table>
-  </div>
+  const corpo = `
+${aviso ? avisoCc({ tom: aviso.tipo, texto: aviso.texto }) : ''}
+${cartaoSecao({ titulo: 'Empresas do prédio', dica: `${empresas.length} empresa${empresas.length === 1 ? '' : 's'}`, acoesHtml: botao({ rotulo: 'Nova empresa', href: '#cc-cf-nova', tamanho: 'sm', icone: 'plus' }), corpoHtml: lista })}
+<div class="cc-em-form">${cartaoSecao({ titulo: 'Provisionar nova empresa', corpoHtml: `
+  <p class="cc-cf-nota">Login e e-mail do PRIMEIRO administrador do tenant. <strong>Deixe a senha vazia</strong> pra ele receber um <strong>convite por e-mail</strong> e criar a própria senha (ninguém vê a senha de ninguém). Só preencha a senha inicial se não houver e-mail.</p>
+  ${form}` })}</div>`;
 
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 max-w-xl accent-amber">
-    <h2 class="text-lg font-semibold text-slate-800 mb-1">➕ Provisionar nova empresa</h2>
-    <p class="text-xs text-slate-500 mb-4">Login e e-mail do PRIMEIRO administrador do tenant. <b>Deixe a senha vazia</b> pra ele receber um <b>convite por e-mail</b> e criar a própria senha (ninguém vê a senha de ninguém). Só preencha a senha inicial se não houver e-mail.</p>
-    <form method="post" action="/dashboard/empresas/nova" class="space-y-3">
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1">Nome da empresa</label>
-        <input name="nome" required maxlength="80" class="w-full border border-slate-300 rounded-lg px-3 py-2" placeholder="Ex.: Sabion Solar">
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1">Nome do administrador</label>
-        <input name="admin_nome" required maxlength="80" class="w-full border border-slate-300 rounded-lg px-3 py-2" placeholder="Ex.: Thiago Sabino">
-      </div>
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">Login</label>
-          <input name="admin_login" required maxlength="60" autocomplete="off" class="w-full border border-slate-300 rounded-lg px-3 py-2" placeholder="ex.: thiago">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">Senha inicial (opcional)</label>
-          <input name="admin_senha" type="password" minlength="8" autocomplete="new-password" class="w-full border border-slate-300 rounded-lg px-3 py-2" placeholder="vazio = convite por e-mail">
-        </div>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1">E-mail do administrador</label>
-        <input name="admin_email" type="email" maxlength="120" autocomplete="off" class="w-full border border-slate-300 rounded-lg px-3 py-2" placeholder="ex.: jimena@empresa.com.br (recebe o convite)">
-      </div>
-      <button type="submit" class="px-4 py-2 rounded-lg bg-amber-400 text-slate-900 font-semibold hover:bg-amber-300 transition">Criar empresa</button>
-    </form>
-  </div>`;
-
-  return renderLayout({ active: 'empresas', title: 'Empresas', body, user });
+  return paginaConfiguracoes({
+    active: 'empresas', secao: 'empresas', title: 'Empresas', user, css: CSS_EMPRESAS,
+    cabecalhoHtml: cabecalhoPagina({
+      trilha: [{ rotulo: 'Configurações' }, { rotulo: 'Empresas' }],
+      titulo: 'Empresas',
+      subtitulo: 'Cada empresa é um prédio isolado: usuários, leads e usinas só dela. Provisionar cria a empresa + o papel Administrador + o 1º usuário.',
+    }),
+    corpoHtml: corpo,
+  });
 }

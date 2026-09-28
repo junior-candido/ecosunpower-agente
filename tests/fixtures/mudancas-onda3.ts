@@ -156,5 +156,23 @@ export const MUDANCAS_R18: Record<string, MudancaContrato[]> = {};
 // R19 — Configurações
 // ════════════════════════════════════════════════════════════════════════
 
-/** R19: trocas por caso de tests/fixtures/casos-configuracoes.ts (vazio = contrato igual ao da tela antiga). */
-export const MUDANCAS_R19: Record<string, MudancaContrato[]> = {};
+/** As duas quebras do texto do confirm, como ficam escritas no JS (barra + n). */
+const NN = String.raw`\n\n`;
+const TEXTO_EXCLUIR ='Os registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.';
+/** CONSERTO (R19): o confirm do "excluir" usuário levava o nome com aspas simples
+ *  (escapadas como &#39;, que o navegador decodifica de volta) — com um nome como
+ *  "Ana D'Ávila" o JS do onsubmit não compilava e a pessoa era EXCLUÍDA SEM
+ *  PERGUNTAR (a única exclusão sem desfazer do sistema). Agora o apóstrofo vira ’. */
+const CONFIRM_EXCLUIR_ANA: MudancaContrato = {
+  motivo: 'conserto: confirm do Excluir usuário não compilava com apóstrofo no nome',
+  sai: { confirms: [`'Excluir Ana D'Ávila?${NN}${TEXTO_EXCLUIR}') return confirm('Excluir Bruno <script>alert(1)</script>?${NN}${TEXTO_EXCLUIR}') return confirm('Excluir Carla Fictícia?${NN}${TEXTO_EXCLUIR}')`] },
+  entra: { confirms: [`'Excluir Ana D’Ávila?${NN}${TEXTO_EXCLUIR}'`] },
+};
+
+/** R19: trocas por caso de tests/fixtures/casos-configuracoes.ts (a troca comum
+ *  TELAS_LEVES — sai o Tailwind do CDN — o teste aplica em todos). */
+export const MUDANCAS_R19: Record<string, MudancaContrato[]> = {
+  'usuarios-lista': [CONFIRM_EXCLUIR_ANA],
+  'usuarios-lista-tenant': [CONFIRM_EXCLUIR_ANA],
+  'usuarios-lista-tenant-comum': [CONFIRM_EXCLUIR_ANA],
+};

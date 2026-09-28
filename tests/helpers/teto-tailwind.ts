@@ -63,6 +63,11 @@ export const TELAS_RENOVADAS: string[] = [
   'rh-views.ts',
 
   // R19 — Configurações (usuários, empresas, WhatsApp, minha assinatura)
+  'usuarios-views.ts',
+  'empresas-views.ts',
+  'whatsapp-views.ts',
+  'minha-assinatura-views.ts',
+  'configuracoes-casca.ts',
 
 ];
 
