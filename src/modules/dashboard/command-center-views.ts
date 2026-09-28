@@ -16,20 +16,16 @@ import {
 } from './ui/componentes.js';
 import { fmtNumero, temNumero, SEM_DADO } from './ui/html.js';
 import type { NomeIcone } from './ui/icones.js';
+import type { CommandCenterKpis } from './queries.js';
 
 export interface CommandCenterDados {
   agora: Date;
   nomeUsuario: string | null;
-  /** Contadores do mês (fetchDashboardKpis). null = sem dado (falha na consulta).
+  /** Contadores do mês (fetchCommandCenterKpis). null (inteiro ou por campo) =
+   *  sem dado (a contagem falhou) → a tela mostra "—", nunca 0 inventado.
    *  usinasNovas = sistemas cadastrados no mês; manutencoesPendentes = lembretes
    *  pendentes com data até 30 dias à frente (mesma regra do card da Home). */
-  kpisMes: {
-    leads: number;
-    propostas: number;
-    vendas: number;
-    usinasNovas: number;
-    manutencoesPendentes: number;
-  } | null;
+  kpisMes: CommandCenterKpis | null;
 }
 
 const TZ = 'America/Sao_Paulo';
@@ -63,7 +59,8 @@ const EM_CONSTRUCAO = 'em construção';
 function hero(d: CommandCenterDados): string {
   const nome = (d.nomeUsuario ?? '').trim().split(/\s+/)[0] ?? '';
   const k = d.kpisMes;
-  const resumo = k
+  // Resumo com número só se as 3 contagens vieram; qualquer falha → texto sem número.
+  const resumo = k && temNumero(k.leads) && temNumero(k.propostas) && temNumero(k.vendas)
     ? `<p>Neste mês entraram <b>${escapeHtml(fmtNumero(k.leads))} leads</b>, saíram <b>${escapeHtml(fmtNumero(k.propostas))} propostas</b> e <b>${escapeHtml(fmtNumero(k.vendas))} ${k.vendas === 1 ? 'venda fechou' : 'vendas fecharam'}</b>. O resumo completo da Eva — usinas, obras e dinheiro — chega nas próximas entregas.</p>`
     : `<p>O resumo do dia da Eva — usinas, vendas, obras e dinheiro, com a próxima ação mais importante — chega nas próximas entregas.</p>`;
   return `<section class="cc-hero">
@@ -85,15 +82,17 @@ function hero(d: CommandCenterDados): string {
 function kpis(d: CommandCenterDados): string {
   const k = d.kpisMes;
   const obra = (rotulo: string, unidade?: string): KpiInput => ({ rotulo, valor: null, unidade, semDadoTexto: EM_CONSTRUCAO });
+  // Contagem que falhou mostra "—" + "sem dado agora" (não "em construção").
+  const semDado = k ? 'sem dado agora' : EM_CONSTRUCAO;
   const lista: KpiInput[] = [
     obra('Geração agora', 'kW'),
     obra('Energia hoje', 'MWh'),
     obra('Energia no mês', 'MWh'),
     obra('Usinas ativas'),
     obra('Faturamento'),
-    { rotulo: 'Leads do mês', valor: k?.leads ?? null, detalhe: 'ver leads', href: '/dashboard/leads', semDadoTexto: EM_CONSTRUCAO },
-    { rotulo: 'Propostas', valor: k?.propostas ?? null, detalhe: 'no mês', href: '/dashboard/propostas', semDadoTexto: EM_CONSTRUCAO },
-    { rotulo: 'Vendas', valor: k?.vendas ?? null, detalhe: 'fechadas no mês', href: '/dashboard/leads/kanban', destaque: true, semDadoTexto: EM_CONSTRUCAO },
+    { rotulo: 'Leads do mês', valor: k?.leads ?? null, detalhe: 'ver leads', href: '/dashboard/leads', semDadoTexto: semDado },
+    { rotulo: 'Propostas', valor: k?.propostas ?? null, detalhe: 'no mês', href: '/dashboard/propostas', semDadoTexto: semDado },
+    { rotulo: 'Vendas', valor: k?.vendas ?? null, detalhe: 'fechadas no mês', href: '/dashboard/leads/kanban', destaque: true, semDadoTexto: semDado },
   ];
   return faixaKpis(lista, { classe: 'cc-kstrip-cc' });
 }
@@ -165,7 +164,7 @@ function dept(x: DeptInput): string {
 function departamentos(d: CommandCenterDados): string {
   const k = d.kpisMes;
   return `<section class="cc-depts">
-    ${dept({ titulo: 'Comercial', icone: 'users', href: '/dashboard/leads/kanban', valor: k?.propostas ?? null, legenda: 'propostas no mês', linha: k ? `${fmtNumero(k.vendas)} vendas fechadas no mês` : 'Pipeline e conversão: próxima entrega' })}
+    ${dept({ titulo: 'Comercial', icone: 'users', href: '/dashboard/leads/kanban', valor: k?.propostas ?? null, legenda: 'propostas no mês', linha: temNumero(k?.vendas) ? `${fmtNumero(k?.vendas ?? null)} vendas fechadas no mês` : 'Pipeline e conversão: próxima entrega' })}
     ${dept({ titulo: 'Marketing', icone: 'mega', href: '/dashboard/marketing', valor: k?.leads ?? null, legenda: 'leads no mês', linha: 'Investimento e custo por lead: próxima entrega' })}
     ${dept({ titulo: 'Instalações', icone: 'hammer', href: '/dashboard/usinas/kanban', valor: k?.usinasNovas ?? null, legenda: 'usinas cadastradas no mês', linha: 'Obras por etapa e atrasos: próxima entrega' })}
     ${dept({ titulo: 'O&M', icone: 'wrench', href: '/dashboard/manutencao', valor: k?.manutencoesPendentes ?? null, legenda: 'manutenções em até 30 dias', linha: 'Alarmes e disponibilidade: próxima entrega' })}

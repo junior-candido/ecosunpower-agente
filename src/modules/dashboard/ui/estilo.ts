@@ -113,8 +113,8 @@ body.ecosun-body.ecosun-body-dark{color:#EAF1F8;background:radial-gradient(900px
 
 @media (max-width:1180px){ :root{--cc-sb-w:240px} .cc-main.cc-largo{padding:22px 24px 34px} }
 @media (max-width:1023px){
-  .cc-sb{position:fixed;top:0;left:0;bottom:0;height:auto;transform:translateX(-100%);transition:transform .25s ease;width:280px}
-  .sidebar-open .cc-sb{transform:translateX(0)}
+  .cc-sb{position:fixed;top:0;left:0;bottom:0;height:auto;transform:translateX(-100%);visibility:hidden;transition:transform .25s ease,visibility 0s linear .25s;width:280px}
+  .sidebar-open .cc-sb{transform:translateX(0);visibility:visible;transition:transform .25s ease,visibility 0s}
   .sidebar-open .cc-backdrop{display:block;position:fixed;inset:0;background:rgba(2,6,23,.55);z-index:30}
   .cc-mtop{display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:20;padding:10px 16px;
     background:linear-gradient(90deg,#0c4a6e,#075985 55%,#0369a1);box-shadow:0 6px 20px rgba(0,0,0,.3);color:#fff}

@@ -9,17 +9,47 @@ import { MENU_AREAS, montarMenu, ehChaveDeMenu } from '../src/modules/dashboard/
 const ECOSUN = '00000000-0000-0000-0000-000000000001';
 const TENANT = 'aaaa1111-2222-3333-4444-555566667777';
 
-// Todas as rotas que estavam no menu antigo (SIDEBAR_SETORES até 27/09/2026).
-const HREFS_ANTIGOS = [
-  '/dashboard/home', '/dashboard/cockpit', '/dashboard/cerebro', '/dashboard/predio',
-  '/dashboard/vendas/fechar', '/dashboard/contratos', '/dashboard/leads', '/dashboard/recados',
-  '/dashboard/conhecimento', '/dashboard/leads/kanban', '/dashboard/clientes', '/dashboard/propostas',
-  '/dashboard/lojas', '/dashboard/marketing', '/dashboard/marketing/blog', '/dashboard/marketing/email',
-  '/dashboard/cadencia', '/dashboard/monitoramento', '/dashboard/demonstrativos', '/dashboard/medicao',
-  '/dashboard/minha-assinatura', '/dashboard/usinas/kanban', '/dashboard/pos-venda', '/dashboard/pastas',
-  '/dashboard/servicos', '/dashboard/manutencao', '/dashboard/financeiro', '/dashboard/fiscal',
-  '/dashboard/cobrar', '/dashboard/assinaturas', '/dashboard/rh/candidatos', '/dashboard/rh/vagas',
-  '/dashboard/rh/busca', '/dashboard/usuarios', '/dashboard/whatsapp', '/dashboard/empresas',
+// Todas as rotas que estavam no menu antigo (SIDEBAR_SETORES até 27/09/2026),
+// com o gating de cada uma copiado de lá (git show main:src/modules/dashboard/views.ts).
+// O menu novo pode mudar rótulo e grupo, mas NÃO o gating.
+interface Legado { href: string; key: string; area?: string; nivel?: string; soEcosun?: boolean; soTenant?: boolean }
+const ITENS_ANTIGOS: Legado[] = [
+  { href: '/dashboard/home', key: 'home' },
+  { href: '/dashboard/cockpit', key: 'cockpit' },
+  { href: '/dashboard/cerebro', key: 'cerebro', area: 'relatorios', soEcosun: true },
+  { href: '/dashboard/predio', key: 'predio', soEcosun: true },
+  { href: '/dashboard/vendas/fechar', key: 'fechar_venda' },
+  { href: '/dashboard/contratos', key: 'contratos' },
+  { href: '/dashboard/leads', key: 'leads', area: 'leads' },
+  { href: '/dashboard/recados', key: 'recados', area: 'leads' },
+  { href: '/dashboard/conhecimento', key: 'conhecimento', area: 'leads' },
+  { href: '/dashboard/leads/kanban', key: 'kanban', area: 'leads' },
+  { href: '/dashboard/clientes', key: 'clientes', soEcosun: true },
+  { href: '/dashboard/propostas', key: 'propostas', area: 'propostas' },
+  { href: '/dashboard/lojas', key: 'lojas' },
+  { href: '/dashboard/marketing', key: 'marketing', area: 'marketing' },
+  { href: '/dashboard/marketing/blog', key: 'blog', area: 'marketing' },
+  { href: '/dashboard/marketing/email', key: 'email', area: 'marketing' },
+  { href: '/dashboard/cadencia', key: 'cadencia', area: 'marketing' },
+  { href: '/dashboard/monitoramento', key: 'monitoramento', area: 'usinas' },
+  { href: '/dashboard/demonstrativos', key: 'demonstrativos', area: 'usinas' },
+  { href: '/dashboard/medicao', key: 'medicao', area: 'usinas' },
+  { href: '/dashboard/minha-assinatura', key: 'minha_assinatura', area: 'usinas', soTenant: true },
+  { href: '/dashboard/usinas/kanban', key: 'usinas_kanban', area: 'usinas' },
+  { href: '/dashboard/pos-venda', key: 'pos_venda', area: 'usinas' },
+  { href: '/dashboard/pastas', key: 'pastas', area: 'usinas' },
+  { href: '/dashboard/servicos', key: 'servicos', area: 'servicos' },
+  { href: '/dashboard/manutencao', key: 'manutencao' },
+  { href: '/dashboard/financeiro', key: 'financeiro', area: 'financeiro' },
+  { href: '/dashboard/fiscal', key: 'fiscal', area: 'financeiro' },
+  { href: '/dashboard/cobrar', key: 'cobrar', area: 'financeiro' },
+  { href: '/dashboard/assinaturas', key: 'assinaturas', area: 'financeiro' },
+  { href: '/dashboard/rh/candidatos', key: 'rh_candidatos', area: 'rh' },
+  { href: '/dashboard/rh/vagas', key: 'rh_vagas', area: 'rh' },
+  { href: '/dashboard/rh/busca', key: 'rh_busca', area: 'rh' },
+  { href: '/dashboard/usuarios', key: 'usuarios', area: 'usuarios' },
+  { href: '/dashboard/whatsapp', key: 'whatsapp', area: 'usuarios', nivel: 'administrar', soTenant: true },
+  { href: '/dashboard/empresas', key: 'empresas', area: 'usuarios', nivel: 'administrar', soEcosun: true },
 ];
 
 // can() simplificado: admin pode tudo; senão olha as permissões.
@@ -36,7 +66,21 @@ describe('MENU_AREAS — nada se perde', () => {
 
   it('todas as rotas do menu antigo continuam no menu novo', () => {
     const hrefs = new Set(itens.map((i) => i.href));
-    for (const h of HREFS_ANTIGOS) expect(hrefs.has(h), h).toBe(true);
+    for (const { href } of ITENS_ANTIGOS) expect(hrefs.has(href), href).toBe(true);
+  });
+
+  it('cada item antigo mantém chave e gating idênticos (area, nivel, soEcosun, soTenant)', () => {
+    for (const antigo of ITENS_ANTIGOS) {
+      const novo = itens.find((i) => i.href === antigo.href);
+      expect(novo, antigo.href).toBeDefined();
+      expect({
+        href: novo!.href, key: novo!.key, area: novo!.area, nivel: novo!.nivel,
+        soEcosun: Boolean(novo!.soEcosun), soTenant: Boolean(novo!.soTenant),
+      }, antigo.href).toEqual({
+        href: antigo.href, key: antigo.key, area: antigo.area, nivel: antigo.nivel,
+        soEcosun: Boolean(antigo.soEcosun), soTenant: Boolean(antigo.soTenant),
+      });
+    }
   });
 
   it('inclui o Command Center novo', () => {

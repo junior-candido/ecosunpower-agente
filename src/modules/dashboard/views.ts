@@ -162,9 +162,11 @@ export function renderLayout(input: LayoutInput): string {
     ? `<span class="cc-mtop-nome">${escapeHtml(marcaTenant)}</span>`
     : `<img src="${LOGO_NEGATIVA_WIDE_BASE64}" alt="">`;
 
+  const ehCasa = user?.companyId === ECOSUN_COMPANY_ID;
   const inicial = (user?.nome ?? '').trim().charAt(0).toUpperCase() || '?';
+  // Nome da casa só pra quem é da casa — tenant sem cargo nem marca fica em branco.
   const cartaoUsuario = user
-    ? `<div class="cc-me"><div class="cc-av">${escapeHtml(inicial)}</div><div class="cc-me-txt"><strong>${escapeHtml(user.nome)}</strong><span>${escapeHtml(user.roleNome || marcaTenant || 'EcoSunPower')}</span></div>
+    ? `<div class="cc-me"><div class="cc-av">${escapeHtml(inicial)}</div><div class="cc-me-txt"><strong>${escapeHtml(user.nome)}</strong><span>${escapeHtml(user.roleNome || marcaTenant || (ehCasa ? 'EcoSunPower' : ''))}</span></div>
           <form action="/dashboard/logout" method="post"><button type="submit" class="cc-sair" title="Sair" aria-label="Sair">${icone('ext', 'sm')}</button></form></div>`
     : `<form action="/dashboard/logout" method="post"><button type="submit" class="cc-tvcard" style="width:100%;cursor:pointer" title="Sair">${icone('ext', 'sm')}<span><strong>Sair</strong></span></button></form>`;
 
@@ -206,10 +208,10 @@ ${CSS_DESIGN_SYSTEM}
   ${SPRITE_ICONES}
   <div class="cc-shell ${tema}">
     <!-- Fundo escuro do menu no celular (clique fecha) -->
-    <div class="cc-backdrop" onclick="document.getElementById('dash-root').classList.remove('sidebar-open')"></div>
+    <div class="cc-backdrop" onclick="ccMenu(false)"></div>
 
     <!-- MENU LATERAL por área -->
-    <aside class="cc-sb" aria-label="Menu principal">
+    <aside class="cc-sb" id="cc-sidebar" aria-label="Menu principal">
       <a href="/dashboard/home" class="cc-sb-logo" title="Ir para a Home">
         ${logoHtml}
         <small>${marcaTenant ? 'Painel de gestão' : 'Central de gestão'}</small>
@@ -218,7 +220,7 @@ ${CSS_DESIGN_SYSTEM}
       ${menuHtml}
       </nav>
       <div class="cc-sb-foot">
-        <a class="cc-tvcard" href="/dashboard/tv">${icone('tv')}<span><strong>Modo TV</strong> · tela do escritório</span></a>
+        ${ehCasa ? `<a class="cc-tvcard" href="/dashboard/tv">${icone('tv')}<span><strong>Modo TV</strong> · tela do escritório</span></a>` : ''}
         ${cartaoUsuario}
       </div>
     </aside>
@@ -226,8 +228,8 @@ ${CSS_DESIGN_SYSTEM}
     <!-- CONTEÚDO -->
     <div class="cc-col">
       <header class="cc-mtop">
-        <button type="button" class="cc-ibtn" aria-label="Abrir menu"
-          onclick="document.getElementById('dash-root').classList.toggle('sidebar-open')">${icone('menu')}</button>
+        <button type="button" class="cc-ibtn" id="cc-menu-btn" aria-label="Abrir menu"
+          aria-controls="cc-sidebar" aria-expanded="false" onclick="ccMenu()">${icone('menu')}</button>
         ${logoMobile}
         <span class="cc-sp"></span>
       </header>
@@ -251,6 +253,24 @@ ${CSS_DESIGN_SYSTEM}
     </div>
   </div>
 
+  <script id="cc-gaveta-js">
+    // Gaveta do menu no celular: abre/fecha, aria-expanded no botão, Esc fecha
+    // e devolve o foco pro botão.
+    function ccMenu(abrir) {
+      var root = document.getElementById('dash-root');
+      var btn = document.getElementById('cc-menu-btn');
+      var aberto = typeof abrir === 'boolean' ? abrir : !root.classList.contains('sidebar-open');
+      root.classList.toggle('sidebar-open', aberto);
+      if (btn) btn.setAttribute('aria-expanded', aberto ? 'true' : 'false');
+      return aberto;
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape' || !document.getElementById('dash-root').classList.contains('sidebar-open')) return;
+      ccMenu(false);
+      var btn = document.getElementById('cc-menu-btn');
+      if (btn) btn.focus();
+    });
+  </script>
   ${scripts ?? ''}
 </body>
 </html>`;

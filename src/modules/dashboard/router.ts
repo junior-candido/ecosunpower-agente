@@ -138,6 +138,7 @@ import { criarOS, abrirOSDeManutencao, getOS, salvarOS, addFotoOS, listFotosOS, 
 import { renderOSPage, renderOSLaudoHtml } from './os-views.js';
 import { hidratarChecklist, resumoOS, type OSTipo } from './os-checklist.js';
 import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
+import { rotaCommandCenter, rotaModoTv } from './command-center-rotas.js';
 import { bancoDoOperador } from '../tenant-client.js';   // strangler RLS Fase B (flag RLS_TENANT_ROTAS)
 
 // Página do botão de importação dos leads da campanha Meta junho/2026.
@@ -1974,40 +1975,9 @@ b.onclick=async function(){
 
   // Energy Command Center — FASE A (spec 2026-09-27-command-center-design.md).
   // Layout novo com número real só onde já existe (contadores do mês).
-  // SÓ ECOSUN nesta fase: a consulta ainda não filtra company_id no código
-  // (depende do RLS do bancoDoOperador, que pode estar desligado) e a tela
-  // aponta pra telas da casa (Cockpit, Financeiro). O item do menu também é só
-  // da casa. A fase B abre pro tenant com consultas escopadas explicitamente.
-  router.get('/command-center', async (req: Request, res: Response) => {
-    const user = (req as AuthedRequest).dashUser;
-    if (user?.companyId !== ECOSUN_COMPANY_ID) {
-      res.redirect('/dashboard/home');
-      return;
-    }
-    const agora = new Date();
-    let kpisMes: import('./command-center-views.js').CommandCenterDados['kpisMes'] = null;
-    try {
-      const k = await fetchDashboardKpis(bancoDoOperador(req as AuthedRequest, supabase), agora);
-      kpisMes = {
-        leads: k.leadsMesAtual,
-        propostas: k.propostasMesAtual,
-        vendas: k.vendasMesAtual,
-        usinasNovas: k.usinasMesAtual,
-        manutencoesPendentes: k.manutencaoPendente,
-      };
-    } catch (err) {
-      // Sem dado → a tela mostra "—", nunca número inventado.
-      console.error('[dashboard/command-center] kpis', err);
-    }
-    const { renderCommandCenterPage } = await import('./command-center-views.js');
-    res.type('text/html').send(renderCommandCenterPage({ agora, nomeUsuario: user?.nome ?? null, kpisMes }, user));
-  });
-
-  // Modo TV — fase I. Por enquanto a página explica o que vem (sem número).
-  router.get('/tv', async (req: Request, res: Response) => {
-    const { renderModoTvPage } = await import('./command-center-views.js');
-    res.type('text/html').send(renderModoTvPage((req as AuthedRequest).dashUser));
-  });
+  // SÓ ECOSUN nesta fase (Command Center e Modo TV) — ver command-center-rotas.ts.
+  router.get('/command-center', rotaCommandCenter(supabase));
+  router.get('/tv', rotaModoTv());
 
   // Cockpit: 1 tela dark neon com KPIs + gauges + funil + atividade + top leads.
   // Auto-refresh 30s (gauges) + 5min (page completa). ECharts via CDN.

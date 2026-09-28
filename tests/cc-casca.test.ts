@@ -69,8 +69,42 @@ describe('renderLayout — casca nova', () => {
   it('celular: barra com botão que abre a gaveta', () => {
     const h = renderLayout({ active: 'home', title: 'X', body: '', user: junior });
     expect(h).toContain('cc-mtop');
-    expect(h).toContain("classList.toggle('sidebar-open')");
+    expect(h).toContain("classList.toggle('sidebar-open'");
     expect(h).toContain('aria-label="Abrir menu"');
+  });
+
+  it('gaveta acessível: aria-controls aponta o menu, aria-expanded muda, Esc fecha e devolve o foco', () => {
+    const h = renderLayout({ active: 'home', title: 'X', body: '', user: junior });
+    expect(h).toContain('<aside class="cc-sb" id="cc-sidebar"');
+    const btn = h.match(/<button[^>]*id="cc-menu-btn"[^>]*>/)![0];
+    expect(btn).toContain('aria-controls="cc-sidebar"');
+    expect(btn).toContain('aria-expanded="false"');
+    expect(h).toContain("setAttribute('aria-expanded'");
+    expect(h).toContain("e.key !== 'Escape'");
+    expect(h).toContain('btn.focus()');
+  });
+
+  it('gaveta fechada some também pra leitor de tela/teclado (visibility), aberta volta', async () => {
+    const { CSS_DESIGN_SYSTEM } = await import('../src/modules/dashboard/ui/estilo.js');
+    const bloco = CSS_DESIGN_SYSTEM.slice(CSS_DESIGN_SYSTEM.indexOf('@media (max-width:1023px)'));
+    expect(bloco).toMatch(/\.cc-sb\{[^}]*transform:translateX\(-100%\);visibility:hidden/);
+    expect(bloco).toMatch(/\.sidebar-open \.cc-sb\{[^}]*visibility:visible/);
+  });
+
+  it('tenant: sem Modo TV (fica pra fase B)', () => {
+    const h = renderLayout({ active: 'monitoramento', title: 'X', body: '', user: tenant });
+    expect(h).not.toContain('href="/dashboard/tv"');
+    expect(h).not.toContain('<strong>Modo TV</strong>');
+  });
+
+  it('cartão do usuário: tenant sem cargo nem marca não mostra o nome da EcoSun', () => {
+    const semNada: DashUser = { ...tenant, roleNome: '', companyNome: undefined };
+    const h = renderLayout({ active: 'monitoramento', title: 'X', body: '', user: semNada });
+    const cartao = h.slice(h.indexOf('class="cc-me"'), h.indexOf('</form>', h.indexOf('class="cc-me"')));
+    expect(cartao).not.toContain('EcoSunPower');
+    const hCasa = renderLayout({ active: 'home', title: 'X', body: '', user: { ...junior, roleNome: '' } });
+    const cartaoCasa = hCasa.slice(hCasa.indexOf('class="cc-me"'), hCasa.indexOf('</form>', hCasa.indexOf('class="cc-me"')));
+    expect(cartaoCasa).toContain('EcoSunPower');
   });
 
   it('selos (badges) aparecem no grupo', () => {
