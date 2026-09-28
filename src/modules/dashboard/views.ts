@@ -5,11 +5,16 @@ import type { DashboardKpi, PropostaRow, ManutencaoRow, GraficoMensal, SistemaMo
 import type { DetalheCalendario } from '../monitoring/service.js';
 import type { IntradayPonto } from '../monitoring/types.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.js';
-import { escapeHtml } from './ui/html.js';
+import { escapeHtml, fmtNumero } from './ui/html.js';
 import { SPRITE_ICONES } from './ui/icones.js';
 import { FONTES_HEAD } from './ui/estilo.js';
 import { URL_CSS_PAINEL, URL_CSS_SEM_TAILWIND, URL_LOGO_CASA } from './ui/estatico.js';
-import { icone, selo } from './ui/componentes.js';
+import {
+  icone, selo, cabecalhoPagina, faixaKpis, cartaoSecao, chipsFiltro, celulaDupla, pilulaStatus, estadoVazio, botao,
+  aviso, linhaLista, tabela, abas, menuAcoes, barra, type Tom,
+} from './ui/componentes.js';
+import { temaDaTela } from './ui/tema.js';
+import { JS_TEMA_GRAFICOS } from './ui/graficos.js';
 import { montarMenu, type ItemMontado, type IdGrupo, type SeloGrupo } from './menu-areas.js';
 import { corDaMarca, logoDaEmpresa, LOGO_PADRAO_CASA } from './marca-empresa.js';
 import { formatPhoneBR, normalizeBrazilianPhone } from '../meta-leadgen.js';
@@ -666,26 +671,6 @@ const MARCAS_LOGO_URL: Record<string, string> = {
   solis:     'https://ecosunpower.eng.br/logos/solis.png',
 };
 
-// Gera badge visual da marca usando as logos oficiais do site.
-// Compact = só a logo (pra header). Default = logo + nome ao lado (pra tabela).
-function marcaBadge(marca: string, options: { compact?: boolean; size?: number } = {}): string {
-  const url = MARCAS_LOGO_URL[marca];
-  const label = MARCAS_LABEL[marca] ?? marca;
-  const tam = options.size ?? (options.compact ? 32 : 22);
-
-  if (!url) {
-    // Fallback texto quando nao tem logo (marca nova, etc)
-    return `<span class="inline-block px-2 py-1 rounded text-xs bg-slate-100 text-slate-700 font-medium">${escapeHtml(label)}</span>`;
-  }
-
-  const img = `<img src="${url}" alt="${escapeHtml(label)}" loading="lazy" style="height:${tam}px;width:auto;max-width:${tam * 3}px;object-fit:contain;display:inline-block;vertical-align:middle">`;
-
-  if (options.compact) {
-    return `<span class="inline-flex items-center justify-center bg-white rounded-md border border-slate-200 px-2 py-1" title="${escapeHtml(label)}">${img}</span>`;
-  }
-  return `<span class="inline-flex items-center gap-2 px-2 py-1 rounded-md bg-white border border-slate-200">${img}<span class="text-xs font-medium text-slate-800">${escapeHtml(label)}</span></span>`;
-}
-
 export interface KPIsAbordagemMes {
   enviadas: number;
   resolvidoSozinhoCount: number;
@@ -693,6 +678,81 @@ export interface KPIsAbordagemMes {
   semRespostaCount: number;
   resolvidoSozinhoPct: number;
 }
+
+/** Marca do inversor no padrão cc- (logo oficial num fundo claro + nome). */
+function marcaCc(marca: string, soLogo = false): string {
+  const url = MARCAS_LOGO_URL[marca];
+  const label = MARCAS_LABEL[marca] ?? marca;
+  if (!url) return `<span class="cc-marca cc-marca-txt">${escapeHtml(label)}</span>`;
+  const img = `<img src="${url}" alt="${escapeHtml(label)}" loading="lazy">`;
+  return soLogo
+    ? `<span class="cc-marca" title="${escapeHtml(label)}">${img}</span>`
+    : `<span class="cc-marca">${img}<span>${escapeHtml(label)}</span></span>`;
+}
+
+/** CSS da marca do inversor (frota e usina). */
+const CSS_MARCA = `
+.cc-marca{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--cc-text-2);white-space:nowrap}
+.cc-marca img{display:inline-block;height:18px;width:auto;max-width:64px;object-fit:contain;background:#fff;border-radius:5px;padding:2px 4px;box-sizing:content-box}
+.cc-marca-txt{padding:2px 8px;border-radius:99px;background:var(--cc-surface-3)}
+`;
+
+/** kWh com 1 casa no formato brasileiro; sem dado → "—". */
+function kwhCc(v: number | null | undefined, casas = 1): string {
+  return v === null || v === undefined || !Number.isFinite(v) ? '—' : `${fmtNumero(v, casas)} kWh`;
+}
+
+// CSS da tela da frota (só classes cc-mon-* e os ganchos antigos que os testes
+// e o layout procuram: coluna-status, card-usina, orbita-frota, ponto-usina).
+const CSS_MONITORAMENTO = `
+.cc-mon .cc-kstrip{margin-bottom:16px}
+.cc-mon .cc-mon-gap{height:12px}
+.cc-mon .cc-panel+.cc-panel,.cc-mon .cc-kstrip+.cc-panel{margin-top:16px}
+.cc-mon-filtro{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+.cc-mon-filtro input[name=q]{width:220px}
+.cc-mon-acoes{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.cc-mon-acoes form{margin:0}
+.orbita-frota .cc-mon-orb{display:flex;align-items:center;gap:22px}
+.orbita-frota svg{width:200px;height:200px;flex:none}
+.orbita-frota .cc-mon-orb-txt{flex:1;min-width:0}
+.orbita-frota .cc-mon-orb-res{font-size:13px;color:var(--cc-muted);margin:4px 0 10px}
+.orbita-frota .cc-mon-orb-res b{font-family:var(--cc-f-num);color:var(--cc-text)}
+.orbita-frota .anel{animation:orbita-giro 90s linear infinite;transform-origin:170px 170px}
+.orbita-frota .sol-pulso{animation:sol-pulsa 3.2s ease-in-out infinite;transform-origin:170px 170px}
+@keyframes orbita-giro{to{transform:rotate(360deg)}}
+@keyframes sol-pulsa{0%,100%{opacity:.45}50%{opacity:.85}}
+@media (prefers-reduced-motion: reduce){.orbita-frota .anel,.orbita-frota .sol-pulso{animation:none}}
+.orbita-frota .ponto-usina circle{cursor:pointer}
+.orbita-frota .ponto-usina:hover circle,.orbita-frota .ponto-usina:focus circle{stroke:var(--cc-text);stroke-width:2.5}
+.cc-mon-trilho{stroke:var(--cc-line-2)}
+.cc-mon-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:start}
+.cc-mon-board.cc-mon-um{grid-template-columns:minmax(0,1fr)}
+.cc-mon-board .cc-kb-col{max-height:none}
+.cc-mon-board .cc-kb-h a{display:flex;align-items:center;gap:8px;flex:1;min-width:0;color:var(--cc-text)}
+.cc-mon-board .cc-kb-h a:hover h3{color:var(--cc-gold-2)}
+.cc-mon-board .cc-kb-lista{max-height:560px}
+.cc-mon-board .card-usina{cursor:pointer}
+.cc-mon-card-al{font-size:11.5px;line-height:1.35;margin-top:4px}
+.cc-mon-card-al.cc-mon-crit{color:var(--cc-crit)} .cc-mon-card-al.cc-mon-warn{color:var(--cc-warn)}
+.cc-mon-card-b{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px}
+.cc-mon-card-b .cc-kb-card-m{margin-top:0}
+.cc-mon-card-b b{font-family:var(--cc-f-num);color:var(--cc-gold-2);font-size:12px;white-space:nowrap}
+.cc-mon-card-acts{display:flex;gap:6px;margin-top:8px}
+.cc-mon-card-acts form{margin:0}
+.cc-mon-pausadas{margin-top:10px;font-size:12px;color:var(--cc-muted)}
+.cc-mon-tbl td form{margin:0}
+.cc-mon-exc{color:var(--cc-crit)}
+.cc-mon-exc:hover{border-color:var(--cc-crit);background:var(--cc-crit-soft)}
+.cc-mon-nota{margin-top:12px;font-size:12px;color:var(--cc-faint);text-align:center}
+@media (max-width:1180px){.cc-mon-board{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:760px){
+  .cc-mon-filtro input[name=q]{flex:1 1 100%;width:100%}
+  .cc-mon-filtro select{flex:1 1 40%;min-width:0;width:auto}
+  .orbita-frota .cc-mon-orb{flex-direction:column;align-items:stretch}
+  .orbita-frota svg{align-self:center;width:180px;height:180px}
+  .cc-mon-board{grid-template-columns:minmax(0,1fr)}
+}
+`;
 
 export function renderMonitoramentoPage(
   rows: SistemaMonitorRow[],
@@ -702,6 +762,9 @@ export function renderMonitoramentoPage(
   kpisEva?: KPIsAbordagemMes,
   user?: DashUser,
 ): string {
+  // Renovação do miolo — R8 (28/09/2026): mesma tela, mesmos números, mesmas
+  // rotas e formulários; visual no padrão cc- (tema escuro do Command Center
+  // para todos — decisão D4 do Junior, em ui/tema.ts).
   const ativos = rows.filter((r) => r.ativo);
   const totalKwp = ativos.reduce((s, r) => s + (r.potencia_kwp ?? 0), 0);
   const totalHoje = rows.reduce((s, r) => s + (r.geracao_hoje_kwh ?? 0), 0);
@@ -710,84 +773,8 @@ export function renderMonitoramentoPage(
   const marcas = new Set(rows.map((r) => r.marca_inversor)).size;
   const problemas = rows.filter((r) => r.nivel === 'urgente' || r.nivel === 'aviso');
 
-  // [Tema claro do tenant — pedido do Thiago 27/07] O TENANT vê o painel no
-  // tema CLARO (mesma cara da página de detalhe que ele aprovou); a EcoSun
-  // segue no escuro de sempre, byte a byte (as strings do ramo escuro são as
-  // originais, intocadas — teste garante).
-  const claro = !!user && user.companyId !== ECOSUN_COMPANY_ID;
-  const P = claro ? {
-    kpiCard: 'bg-white rounded-xl border border-slate-200 p-5 shadow-sm',
-    kpiLabel: 'text-xs uppercase tracking-wider text-slate-500 font-semibold',
-    corKpi: { amber: 'text-amber-600', sky: 'text-sky-700', emerald: 'text-emerald-600', violet: 'text-violet-600' },
-    saudeOk: 'text-emerald-600', saudeRuim: 'text-rose-600', saudeMeia: 'text-amber-600',
-    cardUrgente: 'border-rose-300 bg-rose-50', cardAviso: 'border-amber-300 bg-amber-50',
-    linkUsina: 'text-sky-700', textoUrgente: 'text-rose-700', textoAviso: 'text-amber-700',
-    mutedCard: 'text-slate-500',
-    btnDetalhe: 'bg-slate-200 hover:bg-slate-300 text-slate-800',
-    pillPausado: 'bg-slate-200 text-slate-500', pillUrgente: 'bg-rose-100 text-rose-700',
-    pillAviso: 'bg-amber-100 text-amber-700', pillInfo: 'bg-sky-100 text-sky-700',
-    pillOk: 'bg-emerald-100 text-emerald-700',
-    linhaHover: 'hover:bg-slate-50', tdTexto: 'text-slate-700', tdHoje: 'text-amber-600', tdMes: 'text-emerald-600', tdIdade: 'text-slate-500',
-    h1: 'text-slate-900', sub: 'text-slate-600',
-    input: 'px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-800 text-sm',
-    btnLimpar: 'px-3 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm',
-    h2Acao: 'text-slate-800', vazioOk: 'rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-emerald-700 text-center font-medium',
-    tabelaWrap: 'bg-white rounded-xl border border-slate-200 overflow-x-auto',
-    thead: 'bg-slate-100 border-b border-slate-200', theadTexto: 'text-slate-500', tbodyDivide: 'divide-y divide-slate-100',
-    vazioWrap: 'bg-white rounded-xl border border-slate-200 p-8 text-center', vazioTexto: 'text-slate-800',
-  } : {
-    kpiCard: 'bg-slate-800/60 backdrop-blur rounded-xl border border-slate-700 p-5 shadow-lg',
-    kpiLabel: 'text-xs uppercase tracking-wider text-slate-400 font-semibold',
-    corKpi: { amber: 'text-amber-400', sky: 'text-sky-300', emerald: 'text-emerald-300', violet: 'text-violet-300' },
-    saudeOk: 'text-emerald-400', saudeRuim: 'text-rose-400', saudeMeia: 'text-amber-400',
-    cardUrgente: 'border-rose-500/60 bg-rose-500/10', cardAviso: 'border-amber-500/60 bg-amber-500/10',
-    linkUsina: 'text-sky-300', textoUrgente: 'text-rose-300', textoAviso: 'text-amber-300',
-    mutedCard: 'text-slate-400',
-    btnDetalhe: 'bg-slate-700 hover:bg-slate-600 text-slate-100',
-    pillPausado: 'bg-slate-700 text-slate-400', pillUrgente: 'bg-rose-500/20 text-rose-300',
-    pillAviso: 'bg-amber-500/20 text-amber-300', pillInfo: 'bg-sky-500/20 text-sky-300',
-    pillOk: 'bg-emerald-500/20 text-emerald-300',
-    linhaHover: 'hover:bg-slate-800/50', tdTexto: 'text-slate-300', tdHoje: 'text-amber-300', tdMes: 'text-emerald-300', tdIdade: 'text-slate-400',
-    h1: 'text-slate-100', sub: 'text-slate-400',
-    input: 'px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm',
-    btnLimpar: 'px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm',
-    h2Acao: 'text-slate-200', vazioOk: 'rounded-xl border border-emerald-600/40 bg-emerald-500/10 p-6 text-emerald-300 text-center font-medium',
-    tabelaWrap: 'bg-slate-800/60 rounded-xl border border-slate-700 overflow-x-auto',
-    thead: 'bg-slate-900/80 border-b border-slate-700', theadTexto: 'text-slate-400', tbodyDivide: 'divide-y divide-slate-800',
-    vazioWrap: 'bg-slate-800/60 rounded-xl border border-slate-700 p-8 text-center', vazioTexto: 'text-slate-200',
-  };
-
-  const kpi = (t: string, v: string, sub: string, cor: string) => `
-    <div class="${P.kpiCard}">
-      <div class="${P.kpiLabel}">${escapeHtml(t)}</div>
-      <div class="text-3xl font-bold ${cor} mt-2">${escapeHtml(v)}</div>
-      <div class="text-xs text-slate-500 mt-1">${escapeHtml(sub)}</div>
-    </div>`;
-
-  const saudeCor = okCount === ativos.length ? P.saudeOk
-    : problemas.some((p) => p.nivel === 'urgente') ? P.saudeRuim : P.saudeMeia;
-
   const sincOk = (r: SistemaMonitorRow) => r.ultima_sincronizacao
     && (Date.now() - new Date(r.ultima_sincronizacao).getTime() < 36 * 60 * 60 * 1000);
-
-  // [Painel de Operação em COLUNAS — referência do Thiago 27/07; "vamos fazer
-  // algo melhor" — Junior]. 4 grupos por status com contagem + kWp somado no
-  // cabeçalho; mini-card clicável com marca, kWp e GERAÇÃO DE HOJE (a
-  // referência só mostrava potência) + ações rápidas (sync/relatório).
-  const cardUsina = (r: SistemaMonitorRow) => `
-    <div class="card-usina rounded-lg border ${claro ? 'bg-white border-slate-200 shadow-sm hover:shadow' : 'bg-slate-800/70 border-slate-700 hover:border-slate-500'} p-3 cursor-pointer" onclick="window.location='/dashboard/monitoramento/${escapeHtml(r.id)}'">
-      <div class="font-semibold text-sm ${P.linkUsina} leading-tight">${escapeHtml(r.apelido)}</div>
-      <div class="text-[11px] ${P.mutedCard} mb-1">${escapeHtml([r.cidade, r.uf].filter(Boolean).join('/') || '—')}</div>
-      ${r.alertaTexto ? `<div class="text-[11px] ${r.nivel === 'urgente' ? P.textoUrgente : P.textoAviso} mb-1 leading-snug">${escapeHtml(r.alertaTexto)}</div>` : ''}
-      <div class="flex items-center justify-between gap-2 mt-1">
-        <span class="flex items-center gap-2">${marcaBadge(r.marca_inversor)}<span class="text-[11px] ${P.tdTexto}">${r.potencia_kwp ? `${r.potencia_kwp.toFixed(1)} kWp` : '—'}</span></span>
-        <span class="text-[11px] font-bold ${P.tdHoje}">${r.geracao_hoje_kwh !== null ? `☀️ ${r.geracao_hoje_kwh.toFixed(1)} kWh` : '—'}</span>
-      </div>
-      <div class="flex gap-1.5 mt-2" onclick="event.stopPropagation()">
-        <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/sync" method="post"><button title="Sincronizar" class="px-2 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white text-[11px]">🔄</button></form>
-        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}/relatorio" title="Gerar relatório" class="px-2 py-1 rounded bg-violet-600 hover:bg-violet-700 text-white text-[11px]">📄</a>
-      </div>
-    </div>`;
 
   const falhas = ativos.filter((r) => r.nivel === 'urgente');
   const atencoes = ativos.filter((r) => r.nivel === 'aviso');
@@ -795,64 +782,73 @@ export function renderMonitoramentoPage(
   const aguardando = ativos.filter((r) => (r.nivel === 'ok' || r.nivel === 'info') && !sincOk(r));
   const pausadas = rows.filter((r) => !r.ativo);
 
-  // [Filtro do board — pedido do Thiago 28/07: "ao clicar, entra somente no
-  // status"]. Cabeçalho vira link ?painel=<chave>; com filtro ativo só a
-  // coluna escolhida aparece e o cabeçalho ganha "✕ ver tudo". A Órbita segue
-  // mostrando a frota inteira (é o mapa geral) — só o board filtra.
-  const CORES_HEAD: Record<string, string> = {
-    falha: claro ? 'bg-rose-600 text-white' : 'bg-rose-700 text-white',
-    atencao: claro ? 'bg-amber-500 text-white' : 'bg-amber-600 text-white',
-    ok: claro ? 'bg-emerald-600 text-white' : 'bg-emerald-700 text-white',
-    aguardando: claro ? 'bg-slate-600 text-white' : 'bg-slate-700 text-white',
-  };
-  const PAINEIS: Record<string, { titulo: string; icone: string; lista: SistemaMonitorRow[] }> = {
-    falha: { titulo: 'Falha', icone: '🔴', lista: falhas },
-    atencao: { titulo: 'Atenção', icone: '🟡', lista: atencoes },
-    ok: { titulo: 'Gerando OK', icone: '🟢', lista: saudaveis },
-    aguardando: { titulo: 'Aguardando dados', icone: '⚪', lista: aguardando },
-  };
-  const painelAtivo = q.painel && q.painel in PAINEIS ? q.painel : null;
+  // Status de cada usina — MESMA regra de antes (nivel + sinal recente).
+  const statusDe = (r: SistemaMonitorRow): [Tom, string] => !r.ativo ? ['sem_dado', 'Pausada']
+    : r.nivel === 'urgente' ? ['critico', 'Falha']
+      : r.nivel === 'aviso' ? ['atencao', 'Atenção']
+        : r.nivel === 'info' ? ['oportunidade', 'Acima do esperado']
+          : sincOk(r) ? ['normal', 'Gerando OK'] : ['sem_dado', 'Sem sinal'];
 
-  const colunaStatus = (chave: string) => {
-    const { titulo, icone, lista } = PAINEIS[chave];
-    const ativa = painelAtivo === chave;
-    const href = ativa ? '/dashboard/monitoramento' : `/dashboard/monitoramento?painel=${chave}`;
+  // [Painel de Operação em COLUNAS — referência do Thiago 27/07] 4 grupos por
+  // status, contagem + kWp no cabeçalho; cabeçalho leva ao ?painel= (só aquele
+  // status, com "✕ ver tudo"). Mini-card clicável com marca, kWp e geração de hoje.
+  const cardUsina = (r: SistemaMonitorRow) => {
+    const tom = r.nivel === 'urgente' ? ' cc-kb-crit' : r.nivel === 'aviso' ? ' cc-kb-warn' : sincOk(r) ? ' cc-kb-ok' : '';
+    const hoje = r.geracao_hoje_kwh;
     return `
-    <div class="coluna-status">
-      <a href="${href}" class="flex items-center justify-between rounded-t-lg px-3 py-2 ${CORES_HEAD[chave]}" title="${ativa ? 'Voltar a ver todos os status' : 'Ver só este status'}">
-        <span class="text-sm font-bold">${icone} ${escapeHtml(titulo)}${ativa ? ' <span class="font-normal opacity-80">· ✕ ver tudo</span>' : ''}</span>
-        <span class="text-sm font-bold">${lista.length}</span>
-      </a>
-      <div class="text-[11px] ${P.mutedCard} px-3 py-1 ${claro ? 'bg-slate-100' : 'bg-slate-900/60'} rounded-b-none">${lista.reduce((s, r) => s + (r.potencia_kwp ?? 0), 0).toFixed(1)} kWp</div>
-      <div class="flex flex-col gap-2 p-2 rounded-b-lg ${claro ? 'bg-slate-50 border border-t-0 border-slate-200' : 'bg-slate-900/40 border border-t-0 border-slate-800'} min-h-[80px]">
-        ${lista.length ? lista.map(cardUsina).join('') : `<div class="text-xs ${P.mutedCard} text-center py-4">— nenhuma —</div>`}
+    <div class="cc-kb-card${tom} card-usina" onclick="window.location='/dashboard/monitoramento/${escapeHtml(r.id)}'"${hoje !== null ? ` data-kwh-hoje="${hoje.toFixed(1)}"` : ''}>
+      <div class="cc-kb-card-l"><span class="cc-kb-card-t">${escapeHtml(r.apelido)}</span></div>
+      <div class="cc-kb-card-m">${escapeHtml([r.cidade, r.uf].filter(Boolean).join('/') || '—')}</div>
+      ${r.alertaTexto ? `<div class="cc-mon-card-al ${r.nivel === 'urgente' ? 'cc-mon-crit' : 'cc-mon-warn'}">${escapeHtml(r.alertaTexto)}</div>` : ''}
+      <div class="cc-mon-card-b"><span class="cc-kb-card-m">${marcaCc(r.marca_inversor, true)}${r.potencia_kwp ? `${escapeHtml(fmtNumero(r.potencia_kwp, 1))} kWp` : '—'}</span><b>${hoje !== null ? `☀ ${escapeHtml(kwhCc(hoje))}` : '—'}</b></div>
+      <div class="cc-mon-card-acts" onclick="event.stopPropagation()">
+        <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/sync" method="post"><button type="submit" title="Sincronizar" class="cc-btn cc-btn-sm">${icone('zap', 'xs')}Sincronizar</button></form>
+        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}/relatorio" title="Gerar relatório" class="cc-btn cc-btn-sm">${icone('file', 'xs')}Relatório</a>
       </div>
     </div>`;
   };
 
-  const boardHtml = painelAtivo ? `
-    <div class="grid grid-cols-1 gap-4">
-      ${colunaStatus(painelAtivo)}
-    </div>` : `
-    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-      ${colunaStatus('falha')}
-      ${colunaStatus('atencao')}
-      ${colunaStatus('ok')}
-      ${colunaStatus('aguardando')}
-    </div>
-    ${pausadas.length ? `<div class="mt-2 text-xs ${P.mutedCard}">⏸ ${pausadas.length} usina(s) pausada(s) — aparecem só na tabela abaixo.</div>` : ''}`;
+  const PAINEIS: Record<string, { titulo: string; icone: string; cor: string; lista: SistemaMonitorRow[] }> = {
+    falha: { titulo: 'Falha', icone: '🔴', cor: 'var(--cc-crit)', lista: falhas },
+    atencao: { titulo: 'Atenção', icone: '🟡', cor: 'var(--cc-warn)', lista: atencoes },
+    ok: { titulo: 'Gerando OK', icone: '🟢', cor: 'var(--cc-ok)', lista: saudaveis },
+    aguardando: { titulo: 'Aguardando dados', icone: '⚪', cor: 'var(--cc-off)', lista: aguardando },
+  };
+  const painelAtivo = q.painel && q.painel in PAINEIS ? q.painel : null;
 
-  // [ÓRBITA DA FROTA — assinatura futurista, pedido do Junior 27/07 ("quero
-  // algo futurista e único")]. A carteira como SISTEMA SOLAR: sol central =
-  // geração de HOJE pulsando; um ponto em órbita por usina ativa, ordenados
-  // por status (os arcos coloridos são a saúde da frota num relance). Clique
-  // no ponto abre a usina; hover destaca e mostra o nome. Anel gira devagar
-  // (90s/volta); quem desativa movimento no sistema vê tudo parado.
+  const colunaStatus = (chave: string) => {
+    const { titulo, icone: ic, cor, lista } = PAINEIS[chave];
+    const ativa = painelAtivo === chave;
+    const href = ativa ? '/dashboard/monitoramento' : `/dashboard/monitoramento?painel=${chave}`;
+    const kwp = lista.reduce((s, r) => s + (r.potencia_kwp ?? 0), 0);
+    return `
+    <div class="coluna-status">
+      <section class="cc-kb-col" style="--kb:${cor}">
+        <header class="cc-kb-h"><a href="${href}" title="${ativa ? 'Voltar a ver todos os status' : 'Ver só este status'}"><h3>${ic} ${escapeHtml(titulo)}${ativa ? ' · ✕ ver tudo' : ''}</h3></a><span class="cc-kb-n">${lista.length}</span><small class="cc-kb-sub">${escapeHtml(fmtNumero(kwp, 1))} kWp</small></header>
+        <div class="cc-kb-lista">${lista.length ? lista.map(cardUsina).join('') : '<p class="cc-kb-vazio">— nenhuma —</p>'}</div>
+      </section>
+    </div>`;
+  };
+
+  const boardHtml = painelAtivo
+    ? `<div class="cc-mon-board cc-mon-um">${colunaStatus(painelAtivo)}</div>`
+    : `<div class="cc-mon-board">${colunaStatus('falha')}${colunaStatus('atencao')}${colunaStatus('ok')}${colunaStatus('aguardando')}</div>
+      ${pausadas.length ? `<div class="cc-mon-pausadas">${pausadas.length} usina(s) pausada(s) — aparecem só na carteira abaixo.</div>` : ''}`;
+
+  // Chips de status com contagem — os MESMOS destinos ?painel= de antes.
+  const chips = chipsFiltro([
+    { rotulo: 'Todos', valor: ativos.length, href: '/dashboard/monitoramento', ativo: !painelAtivo },
+    { rotulo: 'Falha', valor: falhas.length, href: '/dashboard/monitoramento?painel=falha', ativo: painelAtivo === 'falha', tom: falhas.length ? 'warn' : undefined },
+    { rotulo: 'Atenção', valor: atencoes.length, href: '/dashboard/monitoramento?painel=atencao', ativo: painelAtivo === 'atencao', tom: atencoes.length ? 'warn' : undefined },
+    { rotulo: 'Gerando OK', valor: saudaveis.length, href: '/dashboard/monitoramento?painel=ok', ativo: painelAtivo === 'ok', tom: 'ok' },
+    { rotulo: 'Aguardando', valor: aguardando.length, href: '/dashboard/monitoramento?painel=aguardando', ativo: painelAtivo === 'aguardando' },
+  ]);
+
+  // [ÓRBITA DA FROTA — pedido do Junior 27/07] a carteira como sistema solar:
+  // sol = geração de HOJE; um ponto por usina ativa, ordenado por status.
   const orbitaOrdem = [...falhas, ...atencoes, ...aguardando, ...saudaveis];
   const corPonto = (r: SistemaMonitorRow) =>
-    r.nivel === 'urgente' ? '#F43F5E'
-      : r.nivel === 'aviso' ? '#F59E0B'
-        : sincOk(r) ? '#10B981' : '#94A3B8';
+    r.nivel === 'urgente' ? '#E4574B' : r.nivel === 'aviso' ? '#F2862E' : sincOk(r) ? '#3DBB6E' : '#7F90A6';
   const N_ORB = orbitaOrdem.length;
   const RAIO_ORB = 132;
   const CENTRO_ORB = 170;
@@ -861,207 +857,157 @@ export function renderMonitoramentoPage(
     const ang = (i / Math.max(N_ORB, 1)) * 2 * Math.PI - Math.PI / 2;
     const x = (CENTRO_ORB + RAIO_ORB * Math.cos(ang)).toFixed(1);
     const y = (CENTRO_ORB + RAIO_ORB * Math.sin(ang)).toFixed(1);
-    return `<a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="ponto-usina"><circle cx="${x}" cy="${y}" r="${rPonto}" fill="${corPonto(r)}"><title>${escapeHtml(r.apelido)} · ${r.geracao_hoje_kwh !== null ? `${r.geracao_hoje_kwh.toFixed(1)} kWh hoje` : 'sem dados hoje'}</title></circle></a>`;
+    return `<a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="ponto-usina"><circle cx="${x}" cy="${y}" r="${rPonto}" fill="${corPonto(r)}"><title>${escapeHtml(r.apelido)} · ${r.geracao_hoje_kwh !== null ? `${escapeHtml(kwhCc(r.geracao_hoje_kwh))} hoje` : 'sem dados hoje'}</title></circle></a>`;
   }).join('');
 
-  // Chip clicável: leva pro board filtrado do status (mesmo destino dos
-  // cabeçalhos das colunas — pedido do Thiago 28/07).
-  const chipOrbita = (cor: string, label: string, lista: SistemaMonitorRow[], chave: string) => `
-    <a href="/dashboard/monitoramento?painel=${chave}" class="rounded-xl ${claro ? 'bg-white/70 border border-slate-200 hover:border-slate-400' : 'bg-slate-800/50 border border-slate-700 hover:border-slate-500'} backdrop-blur-sm px-3 py-2 flex items-center gap-2" title="Ver só ${escapeHtml(label)}">
-      <span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${cor}"></span>
-      <span class="text-xs ${P.mutedCard}">${escapeHtml(label)}</span>
-      <span class="ml-auto text-base font-bold ${P.h1}" style="font-family:'Space Grotesk',ui-sans-serif,system-ui">${lista.length}</span>
-    </a>`;
-
-  // Compacta ("cresce muito pra baixo" — Junior): a Órbita é uma FAIXA baixa
-  // que SUBSTITUI a fileira de KPIs — tudo que os 5 cartões mostravam está
-  // nela (hoje/usinas no sol, status nos chips, mês/kWp/marcas/saúde na
-  // linha-resumo). Página fica mais curta do que era ANTES da órbita.
-  const orbitaHtml = N_ORB === 0 ? '' : `
-    <section class="orbita-frota mb-6 rounded-2xl ${claro ? 'bg-gradient-to-r from-sky-50 via-white to-amber-50/40 border border-slate-200' : 'border border-slate-800'} p-3 md:p-4 relative overflow-hidden"${claro ? '' : ' style="background:radial-gradient(900px 300px at 25% -10%, rgba(14,165,233,.12), transparent), linear-gradient(180deg, #0B1220 0%, #070B14 100%)"'}>
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap');
-        .orbita-frota .anel { animation: orbita-giro 90s linear infinite; transform-origin: ${CENTRO_ORB}px ${CENTRO_ORB}px; }
-        .orbita-frota .sol-pulso { animation: sol-pulsa 3.2s ease-in-out infinite; transform-origin: ${CENTRO_ORB}px ${CENTRO_ORB}px; }
-        @keyframes orbita-giro { to { transform: rotate(360deg); } }
-        @keyframes sol-pulsa { 0%,100% { opacity: .45 } 50% { opacity: .85 } }
-        @media (prefers-reduced-motion: reduce) { .orbita-frota .anel, .orbita-frota .sol-pulso { animation: none } }
-        .orbita-frota .ponto-usina circle { cursor: pointer; }
-        .orbita-frota .ponto-usina:hover circle, .orbita-frota .ponto-usina:focus circle { stroke: ${claro ? '#0F172A' : '#F8FAFC'}; stroke-width: 2.5; }
-      </style>
-      <div class="flex flex-col md:flex-row items-center gap-4 md:gap-6">
-        <svg viewBox="0 0 340 340" class="w-[190px] h-[190px] md:w-[210px] md:h-[210px] shrink-0" role="img" aria-label="Órbita da frota: cada ponto é uma usina, a cor é o status">
-          <defs>
-            <radialGradient id="grad-sol" cx="50%" cy="42%">
-              <stop offset="0%" stop-color="#FDE68A"/><stop offset="55%" stop-color="#F59E0B"/><stop offset="100%" stop-color="#D97706"/>
-            </radialGradient>
-          </defs>
-          <circle cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="${RAIO_ORB}" fill="none" stroke="${claro ? '#CBD5E1' : '#1E293B'}" stroke-width="1" stroke-dasharray="2 7"/>
+  const orbitaHtml = N_ORB === 0 ? '' : cartaoSecao({
+    titulo: 'Órbita da Frota',
+    dica: 'Cada ponto é uma usina — a cor é o status. Clique pra abrir.',
+    classe: 'orbita-frota',
+    corpoHtml: `<div class="cc-mon-orb">
+        <svg viewBox="0 0 340 340" role="img" aria-label="Órbita da frota: cada ponto é uma usina, a cor é o status">
+          <defs><radialGradient id="grad-sol" cx="50%" cy="42%"><stop offset="0%" stop-color="#FDE68A"/><stop offset="55%" stop-color="#F59E0B"/><stop offset="100%" stop-color="#D97706"/></radialGradient></defs>
+          <circle class="cc-mon-trilho" cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="${RAIO_ORB}" fill="none" stroke-width="1" stroke-dasharray="2 7"/>
           <circle class="sol-pulso" cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="82" fill="url(#grad-sol)" opacity=".45"/>
-          <circle class="sol-central" cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="66" fill="url(#grad-sol)"/>
-          <text x="${CENTRO_ORB}" y="${CENTRO_ORB - 4}" text-anchor="middle" font-size="30" font-weight="700" fill="#3B2300" style="font-family:'Space Grotesk',ui-sans-serif,system-ui">${totalHoje.toFixed(1)}</text>
+          <circle class="sol-central" cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="66" fill="url(#grad-sol)" data-kwh-hoje="${totalHoje.toFixed(1)}"/>
+          <text x="${CENTRO_ORB}" y="${CENTRO_ORB - 4}" text-anchor="middle" font-size="30" font-weight="700" fill="#3B2300" style="font-family:var(--cc-f-num)">${escapeHtml(fmtNumero(totalHoje, 1))}</text>
           <text x="${CENTRO_ORB}" y="${CENTRO_ORB + 17}" text-anchor="middle" font-size="12" font-weight="500" fill="#5A3E00">kWh hoje</text>
-          <text x="${CENTRO_ORB}" y="${CENTRO_ORB + 34}" text-anchor="middle" font-size="11" fill="#5A3E00">${ativos.length} usinas ☀️</text>
+          <text x="${CENTRO_ORB}" y="${CENTRO_ORB + 34}" text-anchor="middle" font-size="11" fill="#5A3E00">${ativos.length} usinas</text>
           <g class="anel">${pontosOrbita}</g>
         </svg>
-        <div class="flex-1 w-full min-w-0">
-          <div class="flex flex-wrap items-baseline gap-x-3">
-            <span class="text-lg font-bold ${P.h1}" style="font-family:'Space Grotesk',ui-sans-serif,system-ui">Órbita da Frota</span>
-            <span class="text-[11px] ${P.mutedCard}">Cada ponto é uma usina — a cor é o status. Clique pra abrir.</span>
-          </div>
-          <div class="text-xs ${P.mutedCard} mt-0.5 mb-2">
-            Mês: <b class="${P.tdMes}">${totalMes.toFixed(0)} kWh</b> · ${totalKwp.toFixed(1)} kWp · ${marcas} marca(s) · Saúde <b class="${saudeCor}">${okCount}/${ativos.length}</b>
-          </div>
-          <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
-            ${chipOrbita('#F43F5E', 'Falha', falhas, 'falha')}
-            ${chipOrbita('#F59E0B', 'Atenção', atencoes, 'atencao')}
-            ${chipOrbita('#10B981', 'Gerando OK', saudaveis, 'ok')}
-            ${chipOrbita('#94A3B8', 'Aguardando dados', aguardando, 'aguardando')}
-          </div>
+        <div class="cc-mon-orb-txt">
+          <div class="cc-mon-orb-res">Mês: <b>${escapeHtml(fmtNumero(totalMes, 0))} kWh</b> · ${escapeHtml(fmtNumero(totalKwp, 1))} kWp · ${marcas} marca(s) · Saúde <b>${okCount}/${ativos.length}</b></div>
+          ${chipsFiltro([
+            { rotulo: 'Falha', valor: falhas.length, href: '/dashboard/monitoramento?painel=falha' },
+            { rotulo: 'Atenção', valor: atencoes.length, href: '/dashboard/monitoramento?painel=atencao' },
+            { rotulo: 'Gerando OK', valor: saudaveis.length, href: '/dashboard/monitoramento?painel=ok' },
+            { rotulo: 'Aguardando dados', valor: aguardando.length, href: '/dashboard/monitoramento?painel=aguardando' },
+          ])}
         </div>
-      </div>
-    </section>`;
-  const statusPill = (r: SistemaMonitorRow) => !r.ativo
-    ? `<span class="px-2 py-1 rounded text-xs ${P.pillPausado}">⏸ Pausado</span>`
-    : r.nivel === 'urgente'
-      ? `<span class="px-2 py-1 rounded text-xs ${P.pillUrgente}">⚠️ Urgente</span>`
-      : r.nivel === 'aviso'
-        ? `<span class="px-2 py-1 rounded text-xs ${P.pillAviso}">⚠️ Atenção</span>`
-        : r.nivel === 'info'
-          ? `<span class="px-2 py-1 rounded text-xs ${P.pillInfo}">🌟 Acima</span>`
-          : sincOk(r)
-            ? `<span class="px-2 py-1 rounded text-xs ${P.pillOk}">✅ OK</span>`
-            : `<span class="px-2 py-1 rounded text-xs ${P.pillAviso}">⏳ Aguardando</span>`;
+      </div>`,
+  });
 
-  const linha = (r: SistemaMonitorRow) => `
-    <tr class="${P.linhaHover} cursor-pointer" onclick="window.location='/dashboard/monitoramento/${escapeHtml(r.id)}'">
-      <td class="px-4 py-3 text-sm">
-        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="font-medium ${P.linkUsina} hover:underline">${escapeHtml(r.apelido)}</a>
-        <div class="text-xs text-slate-500">${escapeHtml([r.cidade, r.uf].filter(Boolean).join('/') || '—')}</div>
-      </td>
-      <td class="px-4 py-3 text-sm">${marcaBadge(r.marca_inversor)}</td>
-      <td class="px-4 py-3 text-sm ${P.tdTexto}">${r.potencia_kwp ? `${r.potencia_kwp.toFixed(2)} kWp` : '—'}</td>
-      <td class="px-4 py-3 text-sm ${P.tdHoje} font-bold">${r.geracao_hoje_kwh !== null ? `${r.geracao_hoje_kwh.toFixed(1)} kWh` : '—'}</td>
-      <td class="px-4 py-3 text-sm ${P.tdMes}">${r.geracao_mes_kwh > 0 ? `${r.geracao_mes_kwh.toFixed(0)} kWh` : '—'}</td>
-      <td class="px-4 py-3 text-sm">${statusPill(r)}</td>
-      <td class="px-4 py-3 text-xs ${P.tdIdade}">⏱ ${escapeHtml(r.garantiaIdade)}</td>
-      <td class="px-4 py-3 text-right whitespace-nowrap" onclick="event.stopPropagation()">
-        <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/excluir" method="post" class="inline" onsubmit="return confirm('EXCLUIR esta usina de vez? Apaga todo o histórico. Sem volta.') && confirm('Confirma de novo: excluir esta usina permanentemente?')">
-          <button class="px-2.5 py-1.5 rounded-md bg-rose-700 hover:bg-rose-800 text-white text-xs">🗑</button>
-        </form>
-      </td>
-    </tr>`;
+  // Carteira inteira: tabela cc- que vira cartão no celular. A linha continua
+  // clicável (mesmo onclick de antes) e o excluir tem os MESMOS dois confirm().
+  const COLS = ['Usina', 'Marca', 'Potência', 'Hoje', 'Mês', 'Status', 'Sinal', 'Idade', ''];
+  const td = (i: number, html: string, cls = '') =>
+    `<td${cls ? ` class="${cls}"` : ''} data-label="${escapeHtml(COLS[i])}">${html}</td>`;
+  const linha = (r: SistemaMonitorRow) => {
+    const [tom, texto] = statusDe(r);
+    return `<tr class="cc-tr-link" onclick="window.location='/dashboard/monitoramento/${escapeHtml(r.id)}'">`
+      + td(0, celulaDupla(r.apelido, [r.cidade, r.uf].filter(Boolean).join('/') || '—', `/dashboard/monitoramento/${r.id}`))
+      + td(1, marcaCc(r.marca_inversor))
+      + td(2, r.potencia_kwp ? `${escapeHtml(fmtNumero(r.potencia_kwp, 2))} kWp` : '—', 'cc-r cc-n')
+      + td(3, escapeHtml(kwhCc(r.geracao_hoje_kwh)), 'cc-r cc-n')
+      + td(4, r.geracao_mes_kwh > 0 ? escapeHtml(kwhCc(r.geracao_mes_kwh, 0)) : '—', 'cc-r cc-n')
+      + td(5, pilulaStatus(tom, texto))
+      + td(6, `<span class="cc-muted">${escapeHtml(relativeTime(r.ultima_sincronizacao))}</span>`)
+      + td(7, `<span class="cc-muted">${escapeHtml(r.garantiaIdade)}</span>`)
+      + `<td class="cc-r" data-label="" onclick="event.stopPropagation()">
+          <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/excluir" method="post" onsubmit="return confirm('EXCLUIR esta usina de vez? Apaga todo o histórico. Sem volta.') && confirm('Confirma de novo: excluir esta usina permanentemente?')">
+            <button type="submit" class="cc-btn cc-btn-sm cc-mon-exc" title="Excluir usina" aria-label="Excluir usina">Excluir</button>
+          </form>
+        </td></tr>`;
+  };
+  const tabelaHtml = `<div class="cc-tbl-wrap cc-tbl-cartoes cc-mon-tbl"><table class="cc-tbl"><thead><tr>${COLS.map((c, i) => `<th${[2, 3, 4, 8].includes(i) ? ' class="cc-r"' : ''}>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(linha).join('')}</tbody></table></div>`;
 
   const opt = (v: string, label: string, sel?: string) =>
     `<option value="${escapeHtml(v)}" ${sel === v ? 'selected' : ''}>${escapeHtml(label)}</option>`;
   const marcasUnicas = [...new Set(rows.map((r) => r.marca_inversor))].sort();
   const cidadesUnicas = [...new Set(rows.map((r) => r.cidade).filter(Boolean) as string[])].sort();
+  const ROTULO_STATUS: Record<string, string> = { urgente: 'Falha', aviso: 'Atenção', info: 'Acima do esperado', ok: 'OK' };
 
-  const body = `
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold ${P.h1}">⚡ Painel de Triagem — Usinas</h1>
-      <p class="${P.sub} text-sm">Primeiro o que precisa de ação. Depois a carteira inteira, filtrável.</p>
-    </div>
+  // Filtro: MESMO GET /dashboard/monitoramento com q/marca/cidade/status/ord.
+  // "Atualizar todas" (POST sync-todos) sai de DENTRO deste form: formulário
+  // dentro de formulário não existe no HTML — o botão acabava enviando o filtro.
+  const filtro = `
+    <form class="cc-form cc-mon-filtro" method="get" action="/dashboard/monitoramento">
+      <input name="q" value="${escapeHtml(q.q ?? '')}" placeholder="Cliente ou cidade" aria-label="Buscar usina">
+      <select name="marca" aria-label="Marca">${opt('', 'Todas as marcas', q.marca)}${marcasUnicas.map((m) => opt(m, MARCAS_LABEL[m] ?? m, q.marca)).join('')}</select>
+      <select name="cidade" aria-label="Cidade">${opt('', 'Todas as cidades', q.cidade)}${cidadesUnicas.map((c) => opt(c, c, q.cidade)).join('')}</select>
+      <select name="status" aria-label="Status">${opt('', 'Todos os status', q.status)}${['urgente', 'aviso', 'info', 'ok'].map((s) => opt(s, ROTULO_STATUS[s], q.status)).join('')}</select>
+      <select name="ord" aria-label="Ordenar">${opt('severidade', 'Ordenar: severidade', q.ord)}${opt('geracao_desc', 'Ordenar: geração ↓', q.ord)}${opt('nome', 'Ordenar: nome', q.ord)}</select>
+      ${botao({ rotulo: 'Filtrar', tipo: 'submit', icone: 'filter' })}
+      <a href="/dashboard/monitoramento" class="cc-link">limpar</a>
+    </form>`;
 
-    <form method="get" action="/dashboard/monitoramento" class="mb-6 flex flex-wrap gap-2 items-center">
-      <input name="q" value="${escapeHtml(q.q ?? '')}" placeholder="🔎 cliente ou cidade" class="${P.input}">
-      <select name="marca" class="${P.input}">${opt('', 'Todas as marcas', q.marca)}${marcasUnicas.map((m) => opt(m, m, q.marca)).join('')}</select>
-      <select name="cidade" class="${P.input}">${opt('', 'Todas as cidades', q.cidade)}${cidadesUnicas.map((c) => opt(c, c, q.cidade)).join('')}</select>
-      <select name="status" class="${P.input}">${opt('', 'Todos os status', q.status)}${['urgente', 'aviso', 'info', 'ok'].map((s) => opt(s, s, q.status)).join('')}</select>
-      <select name="ord" class="${P.input}">${opt('severidade', 'Ordenar: severidade', q.ord)}${opt('geracao_desc', 'Ordenar: geração ↓', q.ord)}${opt('nome', 'Ordenar: nome', q.ord)}</select>
-      <button class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold">Filtrar</button>
-      <a href="/dashboard/monitoramento" class="${P.btnLimpar}">Limpar</a>
-      <span class="ml-auto flex gap-2">
-        <a href="/dashboard/monitoramento/importar" class="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold">📥 Importar</a>
-        ${rows.length ? `<form action="/dashboard/monitoramento/sync-todos" method="post"><button class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold">🔄 Atualizar todas</button></form>` : ''}
-      </span>
-    </form>
+  const acoes = `<div class="cc-mon-acoes">
+      ${botao({ rotulo: '📥 Importar', href: '/dashboard/monitoramento/importar', tom: 'ouro' })}
+      ${rows.length ? `<form action="/dashboard/monitoramento/sync-todos" method="post">${botao({ rotulo: 'Atualizar todas', tipo: 'submit', icone: 'zap' })}</form>` : ''}
+    </div>`;
 
-    ${orbitaHtml || `
-    <section class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-      ${kpi('Usinas ativas', String(ativos.length), `${totalKwp.toFixed(1)} kWp total`, P.corKpi.amber)}
-      ${kpi('Geração hoje', `${totalHoje.toFixed(1)} kWh`, 'somatório', P.corKpi.sky)}
-      ${kpi('Geração mês', `${totalMes.toFixed(0)} kWh`, 'mês corrente', P.corKpi.emerald)}
-      ${kpi('Saúde da frota', `${okCount}/${ativos.length}`, 'usinas OK', saudeCor)}
-      ${kpi('Marcas', String(marcas), 'integradas', P.corKpi.violet)}
-    </section>`}
+  const cabecalho = cabecalhoPagina({
+    trilha: [{ rotulo: 'Usinas' }, { rotulo: 'Monitoramento' }],
+    titulo: 'Painel de Triagem — Usinas',
+    subtitulo: 'Primeiro o que precisa de ação. Depois a carteira inteira, filtrável.',
+    acoesHtml: acoes,
+  });
 
-    ${alertasResumo ? `
-    <section class="mb-8">
-      <h2 class="text-sm uppercase tracking-wider text-slate-400 font-semibold mb-3">🔔 Alertas proativos</h2>
-      <div class="grid grid-cols-3 gap-4">
-        <div class="rounded-xl border border-rose-600/40 bg-rose-500/10 p-4">
-          <div class="text-xs text-rose-300/70 font-semibold uppercase">Urgente</div>
-          <div class="text-3xl font-bold text-rose-300 mt-1">${alertasResumo.urgente}</div>
-        </div>
-        <div class="rounded-xl border border-amber-600/40 bg-amber-500/10 p-4">
-          <div class="text-xs text-amber-300/70 font-semibold uppercase">Aviso</div>
-          <div class="text-3xl font-bold text-amber-300 mt-1">${alertasResumo.aviso}</div>
-        </div>
-        <div class="rounded-xl border border-emerald-600/40 bg-emerald-500/10 p-4">
-          <div class="text-xs text-emerald-300/70 font-semibold uppercase">Bombando</div>
-          <div class="text-3xl font-bold text-emerald-300 mt-1">${alertasResumo.info}</div>
-        </div>
-      </div>
-      ${sparkline7d && sparkline7d.length ? `
-      <div class="mt-3 text-xs text-slate-500">
-        Enviados nos últimos 7d: <span class="text-slate-300 font-mono">${sparkline7d.map((d) => d.enviados).join(' · ')}</span>
-        <span class="text-slate-600 ml-2">(${sparkline7d.map((d) => d.dia.slice(5)).join(' · ')})</span>
-      </div>` : ''}
-    </section>` : ''}
+  const kpis = faixaKpis([
+    { rotulo: 'Usinas ativas', valor: ativos.length, detalhe: `${marcas} marca(s)` },
+    { rotulo: 'Potência instalada', valor: totalKwp, casas: 1, unidade: 'kWp' },
+    { rotulo: 'Geração hoje', valor: totalHoje, casas: 1, unidade: 'kWh', destaque: true },
+    { rotulo: 'Geração no mês', valor: totalMes, casas: 0, unidade: 'kWh', detalhe: 'mês corrente' },
+    { rotulo: 'Gerando OK', valor: saudaveis.length, detalhe: `saúde ${okCount}/${ativos.length}` },
+    { rotulo: 'Fora do normal', valor: problemas.length, detalhe: 'falha + atenção', href: falhas.length ? '/dashboard/monitoramento?painel=falha' : atencoes.length ? '/dashboard/monitoramento?painel=atencao' : undefined },
+  ]);
 
-    ${kpisEva ? `
-    <section class="mb-8">
-      <h2 class="text-sm uppercase tracking-wider text-slate-400 font-semibold mb-3">🤖 Eva no mês</h2>
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div class="rounded-xl border border-sky-600/40 bg-sky-500/10 p-4">
-          <div class="text-xs text-sky-300/70 font-semibold uppercase">Abordagens enviadas</div>
-          <div class="text-3xl font-bold text-sky-300 mt-1">${escapeHtml(String(kpisEva.enviadas))}</div>
-        </div>
-        <div class="rounded-xl border border-emerald-600/40 bg-emerald-500/10 p-4">
-          <div class="text-xs text-emerald-300/70 font-semibold uppercase">Resolvido sozinho</div>
-          <div class="text-3xl font-bold text-emerald-300 mt-1">${escapeHtml(String(kpisEva.resolvidoSozinhoPct))}%</div>
-          <div class="text-xs text-emerald-400/60 mt-1">${escapeHtml(String(kpisEva.resolvidoSozinhoCount))} ocorrências</div>
-        </div>
-        <div class="rounded-xl border border-violet-600/40 bg-violet-500/10 p-4">
-          <div class="text-xs text-violet-300/70 font-semibold uppercase">Limpezas fechadas</div>
-          <div class="text-3xl font-bold text-violet-300 mt-1">${escapeHtml(String(kpisEva.limpezasFechadasCount))}</div>
-        </div>
-        <div class="rounded-xl border border-slate-600/40 bg-slate-700/40 p-4">
-          <div class="text-xs text-slate-400/70 font-semibold uppercase">Sem resposta</div>
-          <div class="text-3xl font-bold text-slate-300 mt-1">${escapeHtml(String(kpisEva.semRespostaCount))}</div>
-        </div>
-      </div>
-    </section>` : ''}
+  const alertasHtml = alertasResumo ? cartaoSecao({
+    titulo: 'Alertas proativos',
+    dica: sparkline7d && sparkline7d.length
+      ? `Enviados nos últimos 7 dias: ${sparkline7d.map((d) => d.enviados).join(' · ')} (${sparkline7d.map((d) => d.dia.slice(5)).join(' · ')})`
+      : undefined,
+    corpoHtml: faixaKpis([
+      { rotulo: 'Urgente', valor: alertasResumo.urgente },
+      { rotulo: 'Aviso', valor: alertasResumo.aviso },
+      { rotulo: 'Bombando', valor: alertasResumo.info },
+    ]),
+  }) : '';
 
-    <section class="mb-8">
-      <h2 class="text-lg font-bold ${P.h2Acao} mb-3">🗂 Painel de Operação ${problemas.length ? `<span class="text-rose-400">(${problemas.length} precisam de ação)</span>` : ''}</h2>
-      ${boardHtml}
-    </section>
+  const evaHtml = kpisEva ? cartaoSecao({
+    titulo: 'Eva no mês',
+    corpoHtml: faixaKpis([
+      { rotulo: 'Abordagens enviadas', valor: kpisEva.enviadas },
+      { rotulo: 'Resolvido sozinho', valor: kpisEva.resolvidoSozinhoPct, unidade: '%', detalhe: `${kpisEva.resolvidoSozinhoCount} ocorrências` },
+      { rotulo: 'Limpezas fechadas', valor: kpisEva.limpezasFechadasCount },
+      { rotulo: 'Sem resposta', valor: kpisEva.semRespostaCount },
+    ]),
+  }) : '';
 
-    ${rows.length === 0 ? `
-    <section class="${P.vazioWrap}">
-      <div class="text-5xl mb-3">⚡</div>
-      <div class="${P.vazioTexto} font-medium mb-2">Nenhum sistema cadastrado ainda.</div>
-      <a href="/dashboard/monitoramento/importar" class="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 text-white font-semibold">📥 Importar agora</a>
-    </section>` : `
-    <section class="${P.tabelaWrap}">
-      <table class="w-full min-w-[820px]">
-        <thead class="${P.thead}">
-          <tr class="text-left text-xs uppercase tracking-wider ${P.theadTexto}">
-            <th class="px-4 py-3 font-semibold">Sistema</th><th class="px-4 py-3 font-semibold">Marca</th>
-            <th class="px-4 py-3 font-semibold">Potência</th><th class="px-4 py-3 font-semibold">Hoje</th>
-            <th class="px-4 py-3 font-semibold">Mês</th><th class="px-4 py-3 font-semibold">Status</th>
-            <th class="px-4 py-3 font-semibold">Idade</th><th class="px-4 py-3 font-semibold text-right">Excluir</th>
-          </tr>
-        </thead>
-        <tbody class="${P.tbodyDivide}">${rows.map(linha).join('')}</tbody>
-      </table>
-    </section>
-    <div class="mt-4 text-xs text-slate-500 text-center">💡 Sincronização automática a cada <strong>15 min</strong>. Página atualiza sozinha a cada <strong>30s</strong>.</div>`}
-  `;
+  const operacao = cartaoSecao({
+    titulo: 'Painel de Operação',
+    dica: problemas.length ? `${problemas.length} precisam de ação` : 'nada pedindo ação agora',
+    corpoHtml: `${chips}<div class="cc-mon-gap"></div>${boardHtml}`,
+  });
+
+  const carteira = rows.length === 0
+    ? cartaoSecao({
+      titulo: 'Carteira',
+      corpoHtml: `${estadoVazio({ tipo: 'vazio', titulo: 'Nenhum sistema cadastrado ainda.', texto: 'Importe a lista de usinas do portal do inversor para começar.', icone: 'sun' })}
+        <p class="cc-mon-nota">${botao({ rotulo: 'Importar agora', href: '/dashboard/monitoramento/importar', icone: 'download' })}</p>`,
+    })
+    : cartaoSecao({
+      titulo: 'Carteira',
+      dica: `${rows.length} usina(s)`,
+      corpoHtml: `${tabelaHtml}<div class="cc-mon-nota">Sincronização automática a cada 15 min. Página atualiza sozinha a cada 30 s.</div>`,
+    });
+
+  const body = `<div class="cc-root cc-mon">
+    ${cabecalho}
+    ${filtro}
+    ${kpis}
+    ${orbitaHtml}
+    ${alertasHtml}
+    ${evaHtml}
+    ${operacao}
+    ${carteira}
+  </div>
+  <style>${CSS_MONITORAMENTO}${CSS_MARCA}</style>`;
   const scripts = `<script>setTimeout(() => location.reload(), 30000);</script>`;
-  return renderLayout({ active: 'monitoramento', title: 'Monitoramento', body, scripts, dark: !claro, user });
+  return renderLayout({
+    active: 'monitoramento', title: 'Monitoramento', body, scripts, user,
+    tailwind: false, dark: temaDaTela(user, 'escuro') === 'escuro', largo: true,
+  });
 }
 
 // =========================================================================
@@ -1078,6 +1024,100 @@ export interface AbordagemTimelineRow {
   nota_junior: string | null;
 }
 
+// CSS das telas da USINA (detalhe, dados, editar, importar) — renovação do
+// miolo R9. Só classes cc-us-*; o resto vem do design system.
+const CSS_USINA = `
+.cc-us .cc-panel+.cc-panel,.cc-us .cc-kstrip+.cc-panel,.cc-us .cc-panel+.cc-kstrip,.cc-us .cc-aviso+.cc-panel{margin-top:16px}
+.cc-us .cc-abas{margin-top:4px}
+.cc-us-acoes{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.cc-us-acoes form{margin:0}
+.cc-us-sub{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13px;color:var(--cc-muted);margin-top:6px}
+.cc-us-sub a{color:var(--cc-gold-2);font-weight:600}
+.cc-us-sec{scroll-margin-top:16px}
+.cc-us-sec+.cc-us-sec{margin-top:22px}
+.cc-us-lista{display:flex;flex-direction:column;gap:8px}
+.cc-us-nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.cc-us-nav .cc-us-per{font-family:var(--cc-f-num);font-size:13px;font-weight:600;color:var(--cc-text-2);min-width:9rem;text-align:center}
+.cc-us-graf{position:relative;height:300px}
+.cc-us-nota{font-size:12px;color:var(--cc-faint);margin-top:10px}
+.cc-us-vazio{margin:0;font-size:13px}
+.cc-us-perf{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.cc-us-perf .cc-big{font-size:34px;font-weight:700}
+.cc-us-perf .cc-bar{flex:1 1 200px}
+.cc-us-perf-crit .cc-big{color:var(--cc-crit)} .cc-us-perf-ok .cc-big{color:var(--cc-ok)} .cc-us-perf-info .cc-big{color:var(--cc-info)}
+.cc-us-dados{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.cc-us-dados div{padding:10px 12px;border:1px solid var(--cc-line);border-radius:10px;background:rgba(255,255,255,.02)}
+.cc-us-dados small{display:block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--cc-faint);font-weight:600;margin-bottom:3px}
+.cc-us-dados span{font-size:13.5px;color:var(--cc-text)}
+.cc-us-erro{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;word-break:break-word}
+.cc-us-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.cc-us-grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.cc-us-grid .cc-us-2col{grid-column:span 2}
+.cc-us-form .cc-campo input,.cc-us-form .cc-campo select,.cc-us-form .cc-campo textarea{width:100%}
+.cc-us-form textarea{width:100%}
+.cc-us-dono{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid var(--cc-line);border-radius:12px;margin-bottom:12px}
+.cc-us-dono strong{display:block;color:var(--cc-text)}
+.cc-us-dono small{display:block;color:var(--cc-muted);font-size:12px}
+.cc-us-dica{font-size:12.5px;color:var(--cc-muted);margin:0 0 10px}
+.cc-us-rodape{position:sticky;bottom:12px;display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;padding:12px;border-radius:14px;background:var(--cc-surface-2);border:1px solid var(--cc-line-2);box-shadow:0 10px 26px rgba(0,0,0,.3)}
+.cc-us-rodape .cc-btn{flex:1 1 180px;justify-content:center}
+.cc-us-sel{display:flex;flex-direction:column;gap:8px}
+.cc-us-sel-busca{position:relative}
+.cc-us-sel-drop{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);max-height:14rem;overflow:auto;border-radius:10px;background:var(--cc-surface-2);border:1px solid var(--cc-line-2);box-shadow:0 12px 28px rgba(0,0,0,.35)}
+.cc-us-sel-item{padding:8px 12px;font-size:13px;color:var(--cc-text);cursor:pointer}
+.cc-us-sel-item:hover{background:var(--cc-surface-3)}
+.cc-us-sel-item .cc-muted{font-size:12px}
+.cc-us-sel-in,.cc-us-sel-novo input{width:100%}
+.cc-us-sel-t{font-weight:600}
+.cc-us-sel summary{cursor:pointer;font-size:12.5px;color:var(--cc-muted)}
+.cc-us-sel-novo{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.cc-us .mu-box{background:var(--cc-surface);border:1px solid var(--cc-line);border-radius:var(--cc-r);box-shadow:none;margin:0 0 16px}
+.cc-us .mu-h b{color:var(--cc-text);font-size:15px}
+.cc-us .mu-fonte{background:var(--cc-surface-3);color:var(--cc-text-2);border-color:var(--cc-line-2)}
+.cc-us .mu-fonte-manual{background:var(--cc-ok-soft);color:var(--cc-ok);border-color:transparent}
+.cc-us .mu-fonte-cidade,.cc-us .mu-fonte-nada{background:var(--cc-warn-soft);color:var(--cc-warn);border-color:transparent}
+.cc-us .mu-map{border-color:var(--cc-line-2)}
+.cc-us .mu-rod{color:var(--cc-muted)}
+.cc-us .mu-st-ok{color:var(--cc-ok)} .cc-us .mu-st-erro{color:var(--cc-crit)}
+.cc-us .mu-btn{background:var(--cc-surface-2);border-color:var(--cc-line-2);color:var(--cc-text);border-radius:10px}
+.cc-us .mu-btn:hover{background:var(--cc-surface-3)}
+.cc-us-imp{max-width:46rem}
+.cc-us-imp fieldset{border:0;padding:0;margin:0}
+.cc-us-imp fieldset>.cc-campo+.cc-campo,.cc-us-imp .cc-us-campos>.cc-campo+.cc-campo{margin-top:12px}
+.cc-us-imp .cc-aviso{margin:12px 0 0}
+.cc-us-imp .cc-aviso ol{margin:6px 0 0;padding-left:18px;list-style:decimal}
+.cc-us-imp .cc-aviso a{text-decoration:underline;font-weight:600}
+.cc-us-imp code{font-size:12px;padding:1px 4px;border-radius:4px;background:var(--cc-surface-3)}
+.cc-us-imp .cc-us-linha{display:flex;gap:8px}
+.cc-us-imp .cc-us-linha input{flex:1;min-width:0}
+.cc-us-imp .cc-us-enviar{width:100%;justify-content:center;margin-top:16px;height:44px}
+.cc-us-mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+.cc-us-como p{margin:0 0 8px;font-size:12.5px;color:var(--cc-muted)}
+.cc-us-deye-res{margin-top:8px;font-size:12.5px}
+.cc-us-deye-res .cc-aviso{margin:0}
+.cc-us-deye-res button{display:block;width:100%;text-align:left;padding:6px 8px;border-radius:8px;color:var(--cc-text);font-size:12.5px}
+.cc-us-deye-res button:hover{background:var(--cc-surface-3)}
+@media (max-width:760px){
+  .cc-us-grid,.cc-us-grid-3{grid-template-columns:minmax(0,1fr)}
+  .cc-us-grid .cc-us-2col{grid-column:auto}
+  .cc-us-graf{height:220px}
+  .cc-us-acoes{width:100%}
+  .cc-us-nav{width:100%;justify-content:space-between}
+  .cc-us-dono{flex-direction:column;align-items:flex-start}
+}
+`;
+
+/** Trilha comum das telas da usina. */
+function trilhaUsina(s: { id: string; apelido: string }, final?: string): Array<{ rotulo: string; href?: string }> {
+  const t: Array<{ rotulo: string; href?: string }> = [
+    { rotulo: 'Usinas' },
+    { rotulo: 'Monitoramento', href: '/dashboard/monitoramento' },
+    { rotulo: s.apelido, href: final ? `/dashboard/monitoramento/${s.id}` : undefined },
+  ];
+  if (final) t.push({ rotulo: final });
+  return t;
+}
+
 export function renderDetalheSistemaPage(
   d: DetalheCalendario,
   curvaDia?: IntradayPonto[] | null,
@@ -1092,43 +1132,29 @@ export function renderDetalheSistemaPage(
   // (mapa-usinas-views.ts#blocoMiniMapaUsina), montado pelo router.
   mapaHtml?: string,
 ): string {
+  // Renovação do miolo — R9 (28/09/2026): mesmos dados, rotas e gráficos;
+  // visual cc- com abas por âncora (#visao · #geracao · #manutencao · #dados).
   const s = d.sistema;
   const localizacao = [s.cidade, s.uf].filter(Boolean).join('/') || '—';
+  const assistente = user && user.companyId !== ECOSUN_COMPANY_ID ? 'assistente' : 'Eva';
+  const sid = escapeHtml(s.id);
 
-  // Card de KPI com border-left colorido
-  const card = (
-    titulo: string,
-    valor: string,
-    sub: string,
-    accent: 'amber' | 'sky' | 'emerald' | 'violet' | 'rose' | 'indigo',
-    valorCor: string,
-  ) => `
-    <div class="bg-white rounded-xl shadow-md border border-slate-200 accent-${accent} p-5">
-      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold">${escapeHtml(titulo)}</div>
-      <div class="text-3xl font-bold ${valorCor} mt-2">${escapeHtml(valor)}</div>
-      <div class="text-xs text-slate-500 mt-1">${escapeHtml(sub)}</div>
-    </div>`;
+  // Status da usina no cabeçalho — pela pior severidade dos alertas de hoje.
+  const pior = d.alertas.some((a) => a.severidade === 'urgente') ? 'urgente'
+    : d.alertas.some((a) => a.severidade === 'aviso') ? 'aviso' : null;
+  const seloStatus = !s.ativo ? pilulaStatus('sem_dado', 'Pausada')
+    : pior === 'urgente' ? pilulaStatus('critico', 'Falha')
+      : pior === 'aviso' ? pilulaStatus('atencao', 'Atenção')
+        : pilulaStatus('normal', 'Operando');
 
   // Alertas
+  const tomAlerta: Record<string, Tom> = { urgente: 'critico', aviso: 'atencao', info: 'info' };
   const alertasHtml = d.alertas.length === 0
-    ? '<div class="px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">✅ Sistema operando normalmente, sem alertas.</div>'
-    : d.alertas.map((a) => {
-        const cor = a.severidade === 'urgente'
-          ? 'bg-rose-50 border-rose-200 text-rose-800'
-          : a.severidade === 'aviso'
-            ? 'bg-amber-50 border-amber-200 text-amber-900'
-            : 'bg-sky-50 border-sky-200 text-sky-900';
-        const icone = a.severidade === 'urgente' ? '🚨' : a.severidade === 'aviso' ? '⚠️' : 'ℹ️';
-        return `<div class="px-4 py-3 rounded-lg border ${cor} text-sm mb-2">${icone} ${escapeHtml(a.texto)}</div>`;
-      }).join('');
+    ? aviso({ tom: 'ok', texto: 'Sistema operando normalmente, sem alertas.' })
+    : `<div class="cc-us-lista">${d.alertas.map((a) => linhaLista({ tom: tomAlerta[a.severidade] ?? 'info', titulo: a.texto })).join('')}</div>`;
 
-  // Dados pros graficos (Chart.js)
+  // Dados pros graficos (Chart.js) — os MESMOS arrays de antes.
   const meses = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-
-  // Serie do periodo selecionado, por vista:
-  //  - mes: um ponto por dia do mes (rotulo = dia)
-  //  - ano: um ponto por mes do ano (rotulo = mes abreviado)
-  //  - dia: curva de potencia (kW) ao vivo — labels = horas, dados = kW
   const labelsPeriodo = d.serie.map((p) => {
     if (d.vista === 'ano') {
       const m = p.x.split('-')[1];
@@ -1139,8 +1165,6 @@ export function renderDetalheSistemaPage(
   const valoresPeriodo = d.serie.map((p) => Number(p.kwh.toFixed(1)));
   const serieToda0 = d.serie.length > 0 && d.serie.every((p) => p.kwh === 0);
 
-  // Curva do Dia (ao vivo): potência (kW) sempre; energia acumulada (kWh) quando
-  // a marca fornece (campo opcional kwh no ponto).
   const labelsDia = (curvaDia ?? []).map((p) => p.hora);
   const valoresDia = (curvaDia ?? []).map((p) => Number(p.kw.toFixed(3)));
   const temEnergiaDia = (curvaDia ?? []).some((p) => typeof p.kwh === 'number');
@@ -1161,7 +1185,6 @@ export function renderDetalheSistemaPage(
     });
   }
 
-  // Serie mensal completa (overview de TODA a vida do sistema)
   const labelsMensal = d.serieMensalCompleta.map((p) => {
     const [y, m] = p.mes.split('-');
     return `${meses[parseInt(m, 10) - 1]}/${y.slice(2)}`;
@@ -1169,221 +1192,169 @@ export function renderDetalheSistemaPage(
   const valoresMensal = d.serieMensalCompleta.map((p) => Math.round(p.kwh));
   const esperadoMensal = d.serieMensalCompleta.map((p) => Math.round(p.esperado));
 
-  // Performance 7d na MESMA régua da seção de alertas logo abaixo (29/07):
-  // relativa à mediana da carteira quando existe; absoluta (HSP) senão.
-  // Sem isso a mesma página se contradizia (card vermelho, alertas OK).
+  // Performance 7d na MESMA régua da seção de alertas (29/07): relativa à
+  // mediana da carteira quando existe; absoluta (HSP) senão.
   const esperado7Card = d.kpis.esperadoDiaKwh * 7;
   const real7Card = d.kpis.ratioUltimos7 * esperado7Card;
   const kwpCard = Number(s.potencia_kwp ?? 0);
   const medianaCard = d.kpis.medianaCarteira7d;
   const cardRelativo = medianaCard != null && medianaCard > 0 && kwpCard > 0 && real7Card > 0;
   const ratioPct = Math.round((cardRelativo ? (real7Card / kwpCard) / medianaCard : d.kpis.ratioUltimos7) * 100);
-  const ratioCorClass = ratioPct < 70 ? 'text-rose-600' : ratioPct > 110 ? 'text-emerald-600' : 'text-sky-700';
+  const perfCls = ratioPct < 70 ? 'cc-us-perf-crit' : ratioPct > 110 ? 'cc-us-perf-ok' : 'cc-us-perf-info';
 
-  // Abas Dia/Mês/Ano + setas de navegação (◀▶) por calendário.
+  // Dia/Mês/Ano + setas (◀▶) por calendário — MESMOS links de antes.
   const tab = (v: 'dia' | 'mes' | 'ano', txt: string) =>
-    `<a href="/dashboard/monitoramento/${escapeHtml(s.id)}?vista=${v}&ref=${escapeHtml(d.ref)}" class="px-3 py-1.5 rounded-md text-sm ${d.vista === v ? 'bg-sky-700 text-white font-semibold' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}">${txt}</a>`;
-  const seta = (destino: string | null, simbolo: string) =>
+    `<a href="/dashboard/monitoramento/${sid}?vista=${v}&ref=${escapeHtml(d.ref)}" class="cc-chip${d.vista === v ? ' cc-chip-on' : ''}"${d.vista === v ? ' aria-current="true"' : ''}>${txt}</a>`;
+  const seta = (destino: string | null, simbolo: string, rotulo: string) =>
     destino
-      ? `<a href="/dashboard/monitoramento/${escapeHtml(s.id)}?vista=${d.vista}&ref=${destino}" class="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700">${simbolo}</a>`
-      : `<span class="px-2 py-1 rounded bg-slate-50 text-slate-300">${simbolo}</span>`;
+      ? `<a href="/dashboard/monitoramento/${sid}?vista=${d.vista}&ref=${destino}" class="cc-btn cc-btn-sm" aria-label="${rotulo}">${simbolo}</a>`
+      : `<span class="cc-btn cc-btn-sm cc-btn-off" aria-disabled="true">${simbolo}</span>`;
+  const navGrafico = `<div class="cc-us-nav"><div class="cc-chips">${tab('dia', 'Dia')}${tab('mes', 'Mês')}${tab('ano', 'Ano')}</div>
+      ${seta(d.nav.anterior, '◀', 'Período anterior')}<span class="cc-us-per">${escapeHtml(d.nav.label)}</span>${seta(d.nav.proximo, '▶', 'Próximo período')}</div>`;
 
-  // Título do gráfico do meio + gráfico por vista.
   const graficoMeio = d.vista === 'dia'
     ? (curvaDia && curvaDia.length > 0
-        ? `${totalEnergiaDia !== null ? `<div class="text-sm text-slate-900 font-semibold mb-2">Geração do dia: ${totalEnergiaDia.toFixed(1)} kWh</div>` : ''}
-           <div style="height:300px;position:relative"><canvas id="graficoDia"></canvas></div>`
-        : `<div class="text-sm text-slate-600">
-             ${escapeHtml(curvaMsg ?? 'Curva do dia indisponível.')}
-             <div class="mt-2 text-slate-900 font-semibold">Geração do dia: ${d.totalDiaKwh !== null ? `${d.totalDiaKwh.toFixed(1)} kWh` : '—'}</div>
-           </div>`)
+        ? `${totalEnergiaDia !== null ? `<p class="cc-us-dica">Geração do dia: <b class="cc-num">${escapeHtml(fmtNumero(totalEnergiaDia, 1))} kWh</b></p>` : ''}
+           <div class="cc-us-graf"><canvas id="graficoDia"></canvas></div>`
+        : `${estadoVazio({ tipo: 'sem_dado', titulo: curvaMsg ?? 'Curva do dia indisponível.', texto: `Geração do dia: ${d.totalDiaKwh !== null ? `${fmtNumero(d.totalDiaKwh, 1)} kWh` : '—'}`, compacto: true })}`)
     : (serieToda0
-        ? `<div class="text-sm text-slate-500">Sem geração registrada nesse período.</div>`
-        : `<div style="height:300px;position:relative"><canvas id="graficoPeriodo"></canvas></div>`);
+        ? estadoVazio({ tipo: 'sem_dado', titulo: 'Sem geração registrada nesse período.', compacto: true })
+        : `<div class="cc-us-graf"><canvas id="graficoPeriodo"></canvas></div>`);
 
-  const body = `
-    <div class="mb-4">
-      <a href="/dashboard/monitoramento" class="text-sm text-slate-600 hover:underline">← Voltar pra lista</a>
-    </div>
-
-    <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
-      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-        <div class="flex items-start gap-4">
-          ${marcaBadge(s.marca_inversor, { compact: true, size: 48 })}
-          <div>
-            <h1 class="text-2xl font-bold text-slate-900">${escapeHtml(s.apelido)}</h1>
-            <div class="text-sm mt-1">
-              ${dono
-                ? `<a href="/dashboard/clientes/${escapeHtml(dono.id)}" class="text-sky-600 hover:underline">👤 ${escapeHtml(dono.name ?? 'cliente')}</a>`
-                : `<a href="/dashboard/monitoramento/${escapeHtml(s.id)}/editar" class="text-amber-600 hover:underline">⚠️ Sem proprietário — definir</a>`}
-            </div>
-            <div class="text-slate-600 text-sm mt-1 flex flex-wrap gap-3 items-center">
-              <span><span class="text-slate-400">📍</span> ${escapeHtml(localizacao)}</span>
-              <span><span class="text-slate-400">⚡</span> ${s.potencia_kwp ? `${Number(s.potencia_kwp).toFixed(2)} kWp` : 'sem potência'}</span>
-              ${s.data_instalacao ? `<span><span class="text-slate-400">📅</span> Instalado ${formatDate(s.data_instalacao)}</span>` : ''}
-            </div>
-          </div>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <a href="/dashboard/monitoramento/${escapeHtml(s.id)}/editar" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm rounded-lg font-medium">✏️ Editar</a>
-          <a href="/dashboard/monitoramento/${escapeHtml(s.id)}/dados" class="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-sm rounded-lg font-medium">📈 Dados</a>
-          <form action="/dashboard/monitoramento/${escapeHtml(s.id)}/sync" method="post" class="inline">
-            <button class="px-4 py-2 bg-sky-700 hover:bg-sky-800 text-white text-sm rounded-lg font-medium">🔄 Atualizar</button>
-          </form>
-          <form action="/dashboard/monitoramento/${escapeHtml(s.id)}/backfill" method="post" class="inline" onsubmit="return confirm('Vai puxar TODO o histórico desde a instalação do sistema (até 10 anos se não tiver data cadastrada). Pode demorar 30s-2min dependendo do volume. Continuar?')">
-            <button class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm rounded-lg font-medium">📅 Carregar histórico completo</button>
-          </form>
-        </div>
-      </div>
-    </div>
-
-    ${mapaHtml ?? ''}
-
-    <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-      ${card(
-        'Hoje',
-        d.kpis.hojeKwh !== null ? `${d.kpis.hojeKwh.toFixed(1)} kWh` : '—',
-        d.kpis.hojeKwh !== null ? `de ${d.kpis.esperadoDiaKwh.toFixed(1)} esperado` : 'sem dados ainda',
-        'amber',
-        'text-amber-600',
-      )}
-      ${card('Mês', `${d.kpis.mesKwh.toFixed(0)} kWh`, 'mês corrente', 'sky', 'text-sky-700')}
-      ${card('Ano', `${d.kpis.anoKwh.toFixed(0)} kWh`, 'desde 1º jan', 'emerald', 'text-emerald-700')}
-      ${card('Total monitorado', `${d.kpis.totalKwh.toFixed(0)} kWh`, 'desde início do tracking', 'indigo', 'text-indigo-700')}
-    </section>
-
-    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6 ${ratioPct < 70 ? 'accent-rose' : ratioPct > 110 ? 'accent-emerald' : 'accent-sky'}">
-      <div class="flex items-center justify-between mb-2">
-        <h2 class="text-base font-semibold text-slate-900">Performance últimos 7 dias</h2>
-        <span class="text-3xl font-bold ${ratioCorClass}">${ratioPct}%</span>
-      </div>
-      <div class="text-sm text-slate-600">
-        ${cardRelativo
-          ? 'Comparação com a média da carteira (kWh por kWp, últimos 7 dias completos) — clima afeta todo mundo junto, só destoa quem tem problema.'
-          : 'Comparação geração real vs esperada (kWp × HSP regional × fator 0.80).'}
-        ${ratioPct < 70 ? '⚠️ <strong class="text-rose-600">Performance baixa</strong> — possível sujeira/sombreamento.' : ratioPct > 110 ? `✨ <strong class="text-emerald-600">${cardRelativo ? 'Acima da média da carteira' : 'Acima do esperado'}</strong> — condições ótimas.` : '✅ Dentro da faixa normal de operação.'}
-      </div>
-    </section>
-
-    <section class="mb-6">
-      <h2 class="text-base font-semibold text-slate-900 mb-3">Status & Alertas</h2>
-      ${alertasHtml}
-    </section>
-
-    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
-      <div class="flex flex-wrap items-center gap-2">
-        <div class="flex items-center gap-2">
-          ${tab('dia', 'Dia')} ${tab('mes', 'Mês')} ${tab('ano', 'Ano')}
-        </div>
-        <div class="flex items-center gap-2 ml-auto">
-          ${seta(d.nav.anterior, '◀')}
-          <span class="text-sm font-semibold text-slate-700 min-w-[9rem] text-center">${escapeHtml(d.nav.label)}</span>
-          ${seta(d.nav.proximo, '▶')}
-        </div>
-      </div>
-    </section>
-
-    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-base font-semibold text-slate-900">Geração — ${escapeHtml(d.nav.label)}</h2>
-        <span class="text-xs text-slate-500">${d.vista === 'dia' ? 'potência (kW) ao vivo' : d.vista === 'ano' ? 'kWh por mês' : 'kWh por dia'}</span>
-      </div>
-      ${graficoMeio}
-    </section>
-
-    ${d.serieMensalCompleta.length > 1 ? `
-    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
-      <h2 class="text-base font-semibold text-slate-900 mb-4">📊 Histórico mensal completo</h2>
-      <div style="height:300px;position:relative">
-        <canvas id="graficoMensal"></canvas>
-      </div>
-      <p class="text-xs text-slate-500 mt-2">Todos os meses desde o início do tracking. Use pra ver sazonalidade e degradação ano sobre ano.</p>
-    </section>` : ''}
-
-    ${(() => {
-      const TIPO_EMOJI: Record<string, string> = {
-        parabens: '☀️',
-        depoimento: '⭐',
-        queda: '📉',
-        offline: '🔌',
-      };
-      const DESFECHO_LABEL: Record<string, string> = {
-        resolvido_sozinho: 'resolvido sozinho ✅',
-        limpeza_fechada: 'limpeza fechada 🧽',
-        visita_agendada: 'visita agendada 🚗',
-        transferido_junior: 'transferido 📞',
-        sem_resposta: 'sem resposta 😶',
-        descartada_junior: 'descartada —',
-        em_andamento: 'em andamento 🔄',
-      };
-      const NOTA_LABEL: Record<string, string> = { boa: '👍', errou: '👎' };
-
-      if (!timelineAbordagens || timelineAbordagens.length === 0) {
-        return `
-    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
-      <h2 class="text-base font-semibold text-slate-900 mb-3">🤖 Abordagens da Eva</h2>
-      <div class="text-sm text-slate-500">Nenhuma abordagem ainda.</div>
-    </section>`;
-      }
-
-      const linhas = timelineAbordagens.map((a) => {
+  // Abordagens da assistente (timeline)
+  const TIPO_EMOJI: Record<string, string> = { parabens: '☀️', depoimento: '⭐', queda: '📉', offline: '🔌' };
+  const DESFECHO_LABEL: Record<string, string> = {
+    resolvido_sozinho: 'resolvido sozinho ✅', limpeza_fechada: 'limpeza fechada 🧽', visita_agendada: 'visita agendada 🚗',
+    transferido_junior: 'transferido 📞', sem_resposta: 'sem resposta 😶', descartada_junior: 'descartada —', em_andamento: 'em andamento 🔄',
+  };
+  const NOTA_LABEL: Record<string, string> = { boa: '👍', errou: '👎' };
+  const abordagensHtml = !timelineAbordagens || timelineAbordagens.length === 0
+    ? '<p class="cc-muted cc-us-vazio">Nenhuma abordagem ainda.</p>'
+    : tabela({
+      mobile: 'cartoes',
+      colunas: [{ titulo: 'Data' }, { titulo: 'Tipo' }, { titulo: 'Mensagem' }, { titulo: 'Desfecho' }, { titulo: 'Nota' }],
+      linhas: timelineAbordagens.map((a) => {
         const [, mm, dd] = a.created_at.slice(0, 10).split('-');
-        const data = `${dd}/${mm}`;
-        const emoji = TIPO_EMOJI[a.tipo] ?? '🤖';
-        const primeiraLinha = a.mensagem_enviada
-          ? escapeHtml(a.mensagem_enviada.split('\n')[0].slice(0, 80) + (a.mensagem_enviada.length > 80 ? '…' : ''))
-          : '<span class="text-slate-400">—</span>';
-        const desfecho = a.desfecho ? escapeHtml(DESFECHO_LABEL[a.desfecho] ?? a.desfecho) : '<span class="text-slate-400">—</span>';
-        const nota = a.nota_junior ? escapeHtml(NOTA_LABEL[a.nota_junior] ?? '') : '';
-        return `<tr class="border-t border-slate-100">
-          <td class="px-3 py-2 text-xs text-slate-500 whitespace-nowrap">${escapeHtml(data)}</td>
-          <td class="px-3 py-2 text-sm">${emoji}</td>
-          <td class="px-3 py-2 text-sm text-slate-700">${primeiraLinha}</td>
-          <td class="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">${desfecho}</td>
-          <td class="px-3 py-2 text-xs whitespace-nowrap">${nota}</td>
-        </tr>`;
-      }).join('');
+        const msg = a.mensagem_enviada
+          ? a.mensagem_enviada.split('\n')[0].slice(0, 80) + (a.mensagem_enviada.length > 80 ? '…' : '')
+          : null;
+        return [
+          { html: `<span class="cc-num">${escapeHtml(`${dd}/${mm}`)}</span>` },
+          TIPO_EMOJI[a.tipo] ?? '🤖',
+          msg,
+          a.desfecho ? (DESFECHO_LABEL[a.desfecho] ?? a.desfecho) : null,
+          a.nota_junior ? (NOTA_LABEL[a.nota_junior] ?? '') : '',
+        ];
+      }),
+    });
 
-      return `
-    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
-      <h2 class="text-base font-semibold text-slate-900 mb-3">🤖 Abordagens da Eva</h2>
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="text-left text-xs uppercase tracking-wider text-slate-400">
-              <th class="px-3 py-2 font-semibold">Data</th>
-              <th class="px-3 py-2 font-semibold">Tipo</th>
-              <th class="px-3 py-2 font-semibold">Mensagem</th>
-              <th class="px-3 py-2 font-semibold">Desfecho</th>
-              <th class="px-3 py-2 font-semibold">Nota</th>
-            </tr>
-          </thead>
-          <tbody>${linhas}</tbody>
-        </table>
-      </div>
-    </section>`;
-    })()}
+  const acoes = `<div class="cc-us-acoes">
+      <form action="/dashboard/monitoramento/${sid}/sync" method="post">${botao({ rotulo: 'Atualizar agora', tipo: 'submit', tom: 'ouro', icone: 'zap' })}</form>
+      ${botao({ rotulo: 'Relatório', href: `/dashboard/monitoramento/${s.id}/relatorio`, icone: 'file' })}
+      ${botao({ rotulo: 'Editar', href: `/dashboard/monitoramento/${s.id}/editar`, icone: 'cog' })}
+      ${menuAcoes({ alinhar: 'dir', itensHtml: `
+        ${botao({ rotulo: 'Dados do inversor', href: `/dashboard/monitoramento/${s.id}/dados`, icone: 'trend' })}
+        <form action="/dashboard/monitoramento/${sid}/backfill" method="post" onsubmit="return confirm('Vai puxar TODO o histórico desde a instalação do sistema (até 10 anos se não tiver data cadastrada). Pode demorar 30s-2min dependendo do volume. Continuar?')">
+          ${botao({ rotulo: 'Carregar histórico completo', tipo: 'submit', icone: 'cal' })}
+        </form>` })}
+    </div>`;
 
-    ${s.ultimo_erro ? `
-    <section class="bg-rose-50 border border-rose-200 rounded-xl p-4 mb-6 text-sm">
-      <div class="font-semibold text-rose-800 mb-1">⚠️ Último erro de sincronização:</div>
-      <div class="text-rose-700 font-mono text-xs">${escapeHtml(s.ultimo_erro)}</div>
-    </section>` : ''}
+  const donoHtml = dono
+    ? `<a href="/dashboard/clientes/${escapeHtml(dono.id)}">${escapeHtml(dono.name ?? 'cliente')}</a>`
+    : `<a href="/dashboard/monitoramento/${sid}/editar">Sem proprietário — definir</a>`;
 
-    ${prontuarioHtml ? `
-    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-6">
-      <h2 class="text-base font-semibold text-slate-900 mb-4">🔧 Prontuário de manutenção</h2>
-      ${prontuarioHtml}
-    </section>` : ''}
-  `;
+  const cabecalho = `${cabecalhoPagina({
+    trilha: trilhaUsina(s),
+    titulo: s.apelido,
+    seloHtml: `${marcaCc(s.marca_inversor, true)}${seloStatus}`,
+    acoesHtml: acoes,
+  })}
+    <div class="cc-us-sub">${donoHtml}<span>${escapeHtml(localizacao)}</span><span>${s.potencia_kwp ? `${escapeHtml(fmtNumero(Number(s.potencia_kwp), 2))} kWp` : 'sem potência'}</span>${s.data_instalacao ? `<span>Instalada em ${escapeHtml(formatDate(s.data_instalacao))}</span>` : ''}</div>`;
 
+  const kpis = faixaKpis([
+    { rotulo: 'Hoje', valor: d.kpis.hojeKwh, casas: 1, unidade: 'kWh', destaque: true, detalhe: `de ${fmtNumero(d.kpis.esperadoDiaKwh, 1)} esperado`, semDadoTexto: 'sem dados ainda' },
+    { rotulo: 'Mês', valor: d.kpis.mesKwh, casas: 0, unidade: 'kWh', detalhe: 'mês corrente' },
+    { rotulo: 'Ano', valor: d.kpis.anoKwh, casas: 0, unidade: 'kWh', detalhe: 'desde 1º de janeiro' },
+    { rotulo: 'Total monitorado', valor: d.kpis.totalKwh, casas: 0, unidade: 'kWh', detalhe: 'desde o início do acompanhamento' },
+  ]);
+
+  const perf = cartaoSecao({
+    titulo: 'Performance dos últimos 7 dias',
+    dica: cardRelativo ? 'comparada com a média da carteira (kWh por kWp)' : 'real × esperado (kWp × HSP regional × 0,80)',
+    corpoHtml: `<div class="cc-us-perf ${perfCls}"><span class="cc-big">${ratioPct}%</span>${barra(ratioPct, ratioPct < 70 ? 'crit' : ratioPct > 110 ? 'ok' : 'ouro')}</div>
+      <p class="cc-us-nota">${cardRelativo
+        ? 'Clima afeta todo mundo junto — só destoa quem tem problema. '
+        : ''}${ratioPct < 70 ? 'Performance baixa — possível sujeira ou sombreamento.' : ratioPct > 110 ? `${cardRelativo ? 'Acima da média da carteira' : 'Acima do esperado'} — condições ótimas.` : 'Dentro da faixa normal de operação.'}</p>`,
+  });
+
+  const dadoSis = (rot: string, val: string | null | undefined) =>
+    `<div><small>${escapeHtml(rot)}</small><span>${val && String(val).trim() ? escapeHtml(String(val)) : '—'}</span></div>`;
+
+  const body = `<div class="cc-root cc-us">
+    ${cabecalho}
+    ${abas({ rotuloNav: 'Seções da usina', itens: [
+      { rotulo: 'Visão geral', href: '#visao', ativo: true },
+      { rotulo: 'Geração', href: '#geracao' },
+      { rotulo: 'Manutenção', href: '#manutencao' },
+      { rotulo: 'Dados', href: '#dados' },
+    ] })}
+
+    <div id="visao" class="cc-us-sec">
+      ${kpis}
+      ${perf}
+      ${cartaoSecao({ titulo: 'Status e alertas', corpoHtml: alertasHtml })}
+    </div>
+
+    <div id="geracao" class="cc-us-sec">
+      ${cartaoSecao({
+        titulo: `Geração — ${d.nav.label}`,
+        dica: d.vista === 'dia' ? 'potência (kW) ao vivo' : d.vista === 'ano' ? 'kWh por mês' : 'kWh por dia',
+        acoesHtml: navGrafico,
+        corpoHtml: graficoMeio,
+      })}
+      ${d.serieMensalCompleta.length > 1 ? cartaoSecao({
+        titulo: 'Histórico mensal completo',
+        dica: 'real × esperado',
+        corpoHtml: `<div class="cc-us-graf"><canvas id="graficoMensal"></canvas></div>
+          <p class="cc-us-nota">Todos os meses desde o início do acompanhamento. Use pra ver sazonalidade e degradação ano sobre ano.</p>`,
+      }) : ''}
+    </div>
+
+    <div id="manutencao" class="cc-us-sec">
+      ${prontuarioHtml ? cartaoSecao({ titulo: 'Prontuário de manutenção', corpoHtml: prontuarioHtml }) : ''}
+      ${cartaoSecao({ titulo: `Abordagens da ${assistente}`, corpoHtml: abordagensHtml })}
+    </div>
+
+    <div id="dados" class="cc-us-sec">
+      ${mapaHtml ?? ''}
+      ${s.ultimo_erro ? `<div class="cc-aviso cc-aviso-erro" role="alert">${icone('alert', 'sm')}<span><strong>Último erro de sincronização:</strong> <span class="cc-us-erro">${escapeHtml(s.ultimo_erro)}</span></span></div>` : ''}
+      ${cartaoSecao({
+        titulo: 'Dados do sistema',
+        acoesHtml: botao({ rotulo: 'Editar dados', href: `/dashboard/monitoramento/${s.id}/editar`, tamanho: 'sm' }),
+        corpoHtml: `<div class="cc-us-dados">
+          ${dadoSis('Marca do inversor', MARCAS_LABEL[s.marca_inversor] ?? s.marca_inversor)}
+          ${dadoSis('Modelo do inversor', s.inversor_modelo)}
+          ${dadoSis('Potência', s.potencia_kwp ? `${fmtNumero(Number(s.potencia_kwp), 2)} kWp` : null)}
+          ${dadoSis('Painéis', [s.qtd_paineis ? `${s.qtd_paineis}×` : '', s.painel_marca ?? '', s.painel_modelo ?? ''].filter(Boolean).join(' '))}
+          ${dadoSis('Local', localizacao === '—' ? null : localizacao)}
+          ${dadoSis('Instalação', s.data_instalacao ? formatDate(s.data_instalacao) : null)}
+        </div>
+        <p class="cc-us-nota">Tensão, corrente e temperatura ao longo do dia: ${botao({ rotulo: 'Dados do inversor', href: `/dashboard/monitoramento/${s.id}/dados`, tamanho: 'sm', icone: 'trend' })}</p>`,
+      })}
+    </div>
+  </div>
+  <style>${CSS_USINA}${CSS_MARCA}</style>`;
+
+  // Gráficos: os MESMOS arrays de antes; as cores vêm dos tokens (JS_TEMA_GRAFICOS).
   const scripts = `
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+${JS_TEMA_GRAFICOS}
 <script>
   // Auto-refresh 30s pra mostrar dado mais fresco do nosso banco.
-  // NAO recarrega se cliente clicou em algum filtro/preset (preserva URL).
   // Recarrega a cada 30 s — menos enquanto alguém arrasta/salva o alfinete do mapa.
   setInterval(() => { if (!window.ccSegurarRecarga) location.reload(); }, 30000);
+  var T = window.ccTema || {};
+  function alfa(cor, a) { return /^#[0-9a-f]{6}$/i.test(cor || '') ? cor + Math.round(a * 255).toString(16).padStart(2, '0') : cor; }
 
   // Gráfico do meio na vista Mês/Ano: barras de kWh (por dia / por mês).
   const ctxPeriodo = document.getElementById('graficoPeriodo');
@@ -1393,17 +1364,11 @@ export function renderDetalheSistemaPage(
       data: {
         labels: ${JSON.stringify(labelsPeriodo)},
         datasets: [
-          {
-            label: 'Geração (kWh)',
-            data: ${JSON.stringify(valoresPeriodo)},
-            backgroundColor: '#f59e0b',
-            borderRadius: 4,
-          },
+          { label: 'Geração (kWh)', data: ${JSON.stringify(valoresPeriodo)}, backgroundColor: T.gold || '#f59e0b', borderRadius: 4 },
         ],
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
         plugins: { legend: { position: 'top' } },
         scales: {
           y: { beginAtZero: true, title: { display: true, text: 'kWh' } },
@@ -1416,15 +1381,14 @@ export function renderDetalheSistemaPage(
   // Gráfico do meio na vista Dia: curva de potência (kW) ao vivo.
   const ctxDia = document.getElementById('graficoDia');
   if (ctxDia) {
+    var dsDia = ${JSON.stringify(datasetsDia)};
+    if (T.gold) { dsDia[0].borderColor = T.gold; dsDia[0].backgroundColor = alfa(T.gold, 0.15); }
+    if (dsDia[1] && T.info) { dsDia[1].borderColor = T.info; dsDia[1].backgroundColor = alfa(T.info, 0.1); }
     new Chart(ctxDia, {
       type: 'line',
-      data: {
-        labels: ${JSON.stringify(labelsDia)},
-        datasets: ${JSON.stringify(datasetsDia)},
-      },
+      data: { labels: ${JSON.stringify(labelsDia)}, datasets: dsDia },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: { legend: { position: 'top' } },
         scales: {
@@ -1443,39 +1407,22 @@ export function renderDetalheSistemaPage(
       data: {
         labels: ${JSON.stringify(labelsMensal)},
         datasets: [
-          {
-            label: 'Real (kWh)',
-            data: ${JSON.stringify(valoresMensal)},
-            backgroundColor: '#10b981',
-            borderRadius: 6,
-          },
-          {
-            label: 'Esperado (kWh)',
-            data: ${JSON.stringify(esperadoMensal)},
-            backgroundColor: '#cbd5e1',
-            borderRadius: 6,
-          },
+          { label: 'Real (kWh)', data: ${JSON.stringify(valoresMensal)}, backgroundColor: T.ok || '#10b981', borderRadius: 6 },
+          { label: 'Esperado (kWh)', data: ${JSON.stringify(esperadoMensal)}, backgroundColor: alfa(T.off, 0.55) || '#cbd5e1', borderRadius: 6 },
         ],
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
         plugins: { legend: { position: 'top' } },
-        scales: {
-          y: { beginAtZero: true, title: { display: true, text: 'kWh' } },
-          x: { grid: { display: false } }
-        }
+        scales: { y: { beginAtZero: true, title: { display: true, text: 'kWh' } }, x: { grid: { display: false } } }
       }
     });
   }
 </script>`;
 
   return renderLayout({
-    active: 'monitoramento',
-    title: s.apelido,
-    body,
-    scripts,
-    user,
+    active: 'monitoramento', title: s.apelido, body, scripts, user,
+    tailwind: false, dark: temaDaTela(user, 'claro') === 'escuro', largo: true,
   });
 }
 
@@ -1490,6 +1437,7 @@ export function renderTelemetriaPage(
   serie: Array<{ ts: string; valor: number }>,
   user?: DashUser,
 ): string {
+  // Renovação do miolo — R9: mesmo GET (device/ponto/periodo) e mesmo gráfico.
   const g = grandezas.find((x) => x.ponto === sel.ponto);
   const unidade = g?.unidade ?? '';
   const rotulo = g?.rotulo ?? sel.ponto;
@@ -1507,42 +1455,36 @@ export function renderTelemetriaPage(
   const selPeriodo = periodos.map(([v, t]) => opt(v, t, sel.periodo)).join('');
 
   const base = `/dashboard/monitoramento/${escapeHtml(sistema.id)}/dados`;
-  const inputCls = 'px-3 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500';
 
   const grafico = devices.length === 0
-    ? `<div class="text-sm text-slate-600">Ainda não há telemetria coletada para esta usina. O coletor roda a cada 15 min — volte em alguns minutos.</div>`
+    ? estadoVazio({ tipo: 'sem_dado', titulo: 'Ainda não há dados do inversor para esta usina.', texto: 'A coleta roda a cada 15 min — volte em alguns minutos.' })
     : serie.length === 0
-      ? `<div class="text-sm text-slate-600">Sem dados de "${escapeHtml(rotulo)}" nesse período.</div>`
-      : `<div style="height:340px;position:relative"><canvas id="graficoTelemetria"></canvas></div>`;
+      ? estadoVazio({ tipo: 'sem_dado', titulo: `Sem dados de "${rotulo}" nesse período.`, compacto: true })
+      : `<div class="cc-us-graf cc-us-graf-t"><canvas id="graficoTelemetria"></canvas></div>`;
 
-  const body = `
-    <div class="mb-4">
-      <a href="/dashboard/monitoramento/${escapeHtml(sistema.id)}" class="text-sm text-slate-600 hover:underline">← Voltar pra usina</a>
-    </div>
-    <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6">
-      <h1 class="text-2xl font-bold text-slate-900 mb-1">${escapeHtml(sistema.apelido)}</h1>
-      <p class="text-slate-500 text-sm mb-4">Dados detalhados do inversor (tensão, corrente, potência, temperatura…) ao longo do tempo.</p>
-      <form method="get" action="${base}" class="flex flex-wrap gap-3 items-end mb-6" id="form-telemetria">
-        <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">Inversor</label>
-          <select name="device" class="${inputCls}" onchange="document.getElementById('form-telemetria').submit()">${selDevice || '<option>—</option>'}</select>
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">Grandeza</label>
-          <select name="ponto" class="${inputCls}" onchange="document.getElementById('form-telemetria').submit()">${selGrandeza}</select>
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">Período</label>
-          <select name="periodo" class="${inputCls}" onchange="document.getElementById('form-telemetria').submit()">${selPeriodo}</select>
-        </div>
-      </form>
-      ${grafico}
-    </div>
-  `;
+  const filtro = `<form method="get" action="${base}" class="cc-form cc-us-grid cc-us-grid-3" id="form-telemetria">
+      <label class="cc-campo"><span>Inversor</span><select name="device" onchange="document.getElementById('form-telemetria').submit()">${selDevice || '<option>—</option>'}</select></label>
+      <label class="cc-campo"><span>Grandeza</span><select name="ponto" onchange="document.getElementById('form-telemetria').submit()">${selGrandeza}</select></label>
+      <label class="cc-campo"><span>Período</span><select name="periodo" onchange="document.getElementById('form-telemetria').submit()">${selPeriodo}</select></label>
+    </form>`;
+
+  const body = `<div class="cc-root cc-us">
+    ${cabecalhoPagina({
+      trilha: trilhaUsina(sistema, 'Dados do inversor'),
+      titulo: sistema.apelido,
+      subtitulo: 'Dados detalhados do inversor (tensão, corrente, potência, temperatura…) ao longo do tempo.',
+      acoesHtml: botao({ rotulo: '← Voltar pra usina', href: `/dashboard/monitoramento/${sistema.id}` }),
+    })}
+    ${cartaoSecao({ titulo: 'O que ver', corpoHtml: filtro })}
+    ${cartaoSecao({ titulo: g ? `${rotulo} (${unidade})` : 'Gráfico', corpoHtml: grafico })}
+  </div>
+  <style>${CSS_USINA}.cc-us-graf-t{height:340px}@media (max-width:760px){.cc-us-graf-t{height:240px}}</style>`;
 
   const scripts = serie.length > 0 ? `
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+${JS_TEMA_GRAFICOS}
 <script>
+    var T = window.ccTema || {};
     const ctxT = document.getElementById('graficoTelemetria');
     if (ctxT) {
       new Chart(ctxT, {
@@ -1550,10 +1492,10 @@ export function renderTelemetriaPage(
         data: {
           labels: ${JSON.stringify(labels)},
           datasets: [{
-            label: ${JSON.stringify(`${rotulo} (${unidade})`)},
+            label: ${jsonNoScript(`${rotulo} (${unidade})`)},
             data: ${JSON.stringify(valores)},
-            borderColor: '#0ea5e9',
-            backgroundColor: 'rgba(14,165,233,0.12)',
+            borderColor: T.info || '#0ea5e9',
+            backgroundColor: 'rgba(56,189,248,0.12)',
             borderWidth: 2, fill: true, pointRadius: 0, tension: 0.25,
           }],
         },
@@ -1561,7 +1503,7 @@ export function renderTelemetriaPage(
           responsive: true, maintainAspectRatio: false,
           plugins: { legend: { position: 'top' } },
           scales: {
-            y: { title: { display: true, text: ${JSON.stringify(unidade)} } },
+            y: { title: { display: true, text: ${jsonNoScript(unidade)} } },
             x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } }
           }
         }
@@ -1570,7 +1512,15 @@ export function renderTelemetriaPage(
 </script>
   ` : '';
 
-  return renderLayout({ active: 'monitoramento', title: `Dados — ${sistema.apelido}`, body, scripts, user });
+  return renderLayout({
+    active: 'monitoramento', title: `Dados — ${sistema.apelido}`, body, scripts, user,
+    tailwind: false, dark: temaDaTela(user, 'claro') === 'escuro', largo: true,
+  });
+}
+
+/** JSON dentro de <script>: "<" vira < (um rótulo com "</script>" não fecha o bloco). */
+function jsonNoScript(v: unknown): string {
+  return JSON.stringify(v).replace(/</g, '\\u003c');
 }
 
 // =========================================================================
@@ -1621,11 +1571,10 @@ export function renderEditarSistemaPage(
   dono?: { id: string; name: string | null; phone: string | null } | null,
   user?: DashUser,
 ): string {
+  // Renovação do miolo — R9: MESMO POST /:id/editar com os mesmos campos; o
+  // formulário ganha class="cc-form" e cada bloco vira um painel.
   const dl = (id: string, items: string[]) =>
     `<datalist id="${id}">${items.map(i => `<option value="${escapeHtml(i)}"></option>`).join('')}</datalist>`;
-
-  const inputClass = 'w-full px-4 py-2 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 transition';
-  const selectClass = inputClass;
 
   const orientacoes: Array<{ v: string; l: string }> = [
     { v: '', l: '— escolha —' },
@@ -1644,143 +1593,83 @@ export function renderEditarSistemaPage(
     { v: 'solo', l: 'Solo (usina)' },
     { v: 'outro', l: 'Outro' },
   ];
+  const campo = (rot: string, html: string, cls = '') => `<label class="cc-campo${cls ? ` ${cls}` : ''}"><span>${escapeHtml(rot)}</span>${html}</label>`;
 
-  const body = `
-    <div class="mb-4">
-      <a href="/dashboard/monitoramento/${escapeHtml(s.id)}" class="text-sm text-slate-600 hover:underline">← Voltar pra ${escapeHtml(s.apelido)}</a>
-    </div>
+  const proprietario = `${dono ? `
+      <div class="cc-us-dono">
+        <div>
+          <strong>${escapeHtml(dono.name ?? '(sem nome)')}</strong>
+          <small>${escapeHtml(dono.phone ?? '')}</small>
+          <a href="/dashboard/clientes/${escapeHtml(dono.id)}" class="cc-link">ver cliente →</a>
+        </div>
+        <button type="submit" name="desvincular" value="1" class="cc-btn cc-btn-sm cc-btn-crit">Desvincular</button>
+      </div>
+      <p class="cc-us-dica">Trocar de proprietário? Busque outro cliente abaixo.</p>` : `
+      <p class="cc-us-dica">Esta usina ainda não tem proprietário. Vincule um cliente:</p>`}
+      ${renderClienteSelector({ idPrefix: 'prop', dark: false, cc: true })}`;
 
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold text-slate-900">✏️ Editar dados do sistema</h1>
-      <p class="text-slate-600 text-sm">Quanto mais detalhe, mais precisa fica a análise (PR, ranking, calibragem de propostas).</p>
-    </div>
+  const body = `<div class="cc-root cc-us">
+    ${cabecalhoPagina({
+      trilha: trilhaUsina(s, 'Editar'),
+      titulo: 'Editar dados do sistema',
+      subtitulo: 'Quanto mais detalhe, mais precisa fica a análise (PR, ranking, calibragem de propostas).',
+      acoesHtml: botao({ rotulo: `← Voltar pra ${s.apelido}`, href: `/dashboard/monitoramento/${s.id}` }),
+    })}
 
-    <form action="/dashboard/monitoramento/${escapeHtml(s.id)}/editar" method="post" class="space-y-6">
+    <form action="/dashboard/monitoramento/${escapeHtml(s.id)}/editar" method="post" class="cc-form cc-us-form">
       ${dl('paineis-marcas', PAINEIS_SUGESTOES)}
       ${dl('paineis-modelos', PAINEIS_MODELOS_SUGESTOES)}
       ${dl('inversores-modelos', INVERSORES_MODELOS_SUGESTOES)}
 
-      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h2 class="font-semibold text-slate-900 mb-4">📌 Identificação</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-semibold text-slate-700 mb-1">Apelido</label>
-            <input name="apelido" type="text" value="${escapeHtml(s.apelido)}" required class="${inputClass}">
-          </div>
-          <div>
-            <label class="block text-sm font-semibold text-slate-700 mb-1">Potência (kWp)</label>
-            <input name="potencia_kwp" type="number" step="0.01" value="${s.potencia_kwp ?? ''}" class="${inputClass}">
-          </div>
-          <div>
-            <label class="block text-sm font-semibold text-slate-700 mb-1">Cidade</label>
-            <input name="cidade" type="text" value="${escapeHtml(s.cidade ?? '')}" class="${inputClass}">
-          </div>
-          <div>
-            <label class="block text-sm font-semibold text-slate-700 mb-1">UF</label>
-            <input name="uf" type="text" maxlength="2" value="${escapeHtml(s.uf ?? '')}" class="${inputClass} uppercase">
-          </div>
-          <div>
-            <label class="block text-sm font-semibold text-slate-700 mb-1">Data instalação</label>
-            <input name="data_instalacao" type="date" value="${s.data_instalacao ?? ''}" class="${inputClass}">
-          </div>
-          <div>
-            <label class="block text-sm font-semibold text-slate-700 mb-1">Ativo</label>
-            <select name="ativo" class="${selectClass}">
-              <option value="true" ${s.ativo ? 'selected' : ''}>Sim</option>
-              <option value="false" ${!s.ativo ? 'selected' : ''}>Não (pausar monitoramento)</option>
-            </select>
-          </div>
-        </div>
-      </section>
+      ${cartaoSecao({ titulo: 'Identificação', corpoHtml: `<div class="cc-us-grid">
+        ${campo('Apelido', `<input name="apelido" type="text" value="${escapeHtml(s.apelido)}" required>`)}
+        ${campo('Potência (kWp)', `<input name="potencia_kwp" type="number" step="0.01" value="${s.potencia_kwp ?? ''}">`)}
+        ${campo('Cidade', `<input name="cidade" type="text" value="${escapeHtml(s.cidade ?? '')}">`)}
+        ${campo('UF', `<input name="uf" type="text" maxlength="2" value="${escapeHtml(s.uf ?? '')}" style="text-transform:uppercase">`)}
+        ${campo('Data de instalação', `<input name="data_instalacao" type="date" value="${escapeHtml(s.data_instalacao ?? '')}">`)}
+        ${campo('Ativo', `<select name="ativo">
+            <option value="true" ${s.ativo ? 'selected' : ''}>Sim</option>
+            <option value="false" ${!s.ativo ? 'selected' : ''}>Não (pausar monitoramento)</option>
+          </select>`)}
+      </div>` })}
 
-      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h2 class="font-semibold text-slate-900 mb-4">👤 Proprietário</h2>
-        ${dono ? `
-          <div class="flex items-center justify-between gap-3 mb-4 p-3 rounded-lg bg-slate-50 border border-slate-200">
-            <div>
-              <div class="font-semibold text-slate-800">${escapeHtml(dono.name ?? '(sem nome)')}</div>
-              <div class="text-xs text-slate-500">${escapeHtml(dono.phone ?? '')}</div>
-              <a href="/dashboard/clientes/${escapeHtml(dono.id)}" class="text-xs text-sky-600 hover:underline">ver cliente →</a>
-            </div>
-            <button type="submit" name="desvincular" value="1" class="px-3 py-1.5 rounded-lg border-2 border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold">Desvincular</button>
-          </div>
-          <p class="text-sm text-slate-600 mb-2">Trocar de proprietário? Busque outro cliente abaixo.</p>
-        ` : `
-          <p class="text-sm text-slate-600 mb-2">Esta usina ainda não tem proprietário. Vincule um cliente:</p>
-        `}
-        ${renderClienteSelector({ idPrefix: 'prop', dark: false })}
-      </section>
+      ${cartaoSecao({ titulo: 'Proprietário', corpoHtml: proprietario })}
 
-      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h2 class="font-semibold text-slate-900 mb-4">☀ Painéis solares</h2>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label class="block text-sm font-semibold text-slate-700 mb-1">Marca</label>
-            <input name="painel_marca" type="text" list="paineis-marcas" value="${escapeHtml(s.painel_marca ?? '')}" placeholder="Ex: Trina Solar" class="${inputClass}">
-          </div>
-          <div class="md:col-span-2">
-            <label class="block text-sm font-semibold text-slate-700 mb-1">Modelo</label>
-            <input name="painel_modelo" type="text" list="paineis-modelos" value="${escapeHtml(s.painel_modelo ?? '')}" placeholder="Ex: TSM-NEG21C.20-700" class="${inputClass}">
-          </div>
-          <div>
-            <label class="block text-sm font-semibold text-slate-700 mb-1">Quantidade</label>
-            <input name="qtd_paineis" type="number" min="1" value="${s.qtd_paineis ?? ''}" placeholder="Ex: 12" class="${inputClass}">
-          </div>
-        </div>
-      </section>
+      ${cartaoSecao({ titulo: 'Painéis solares', corpoHtml: `<div class="cc-us-grid cc-us-grid-3">
+        ${campo('Marca', `<input name="painel_marca" type="text" list="paineis-marcas" value="${escapeHtml(s.painel_marca ?? '')}" placeholder="Ex: Trina Solar">`)}
+        ${campo('Modelo', `<input name="painel_modelo" type="text" list="paineis-modelos" value="${escapeHtml(s.painel_modelo ?? '')}" placeholder="Ex: TSM-NEG21C.20-700">`, 'cc-us-2col')}
+        ${campo('Quantidade', `<input name="qtd_paineis" type="number" min="1" value="${s.qtd_paineis ?? ''}" placeholder="Ex: 12">`)}
+      </div>` })}
 
-      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h2 class="font-semibold text-slate-900 mb-4">⚡ Inversor (modelo específico)</h2>
-        <div>
-          <label class="block text-sm font-semibold text-slate-700 mb-1">Modelo</label>
-          <input name="inversor_modelo" type="text" list="inversores-modelos" value="${escapeHtml(s.inversor_modelo ?? '')}" placeholder="Ex: Sungrow SG5.0RS-L" class="${inputClass}">
-          <p class="text-xs text-slate-500 mt-1">Marca já é <strong>${escapeHtml(MARCAS_LABEL[s.marca_inversor] ?? s.marca_inversor)}</strong> (vinda da API). Aqui é o modelo específico.</p>
-        </div>
-      </section>
+      ${cartaoSecao({ titulo: 'Inversor (modelo específico)', corpoHtml: `
+        ${campo('Modelo', `<input name="inversor_modelo" type="text" list="inversores-modelos" value="${escapeHtml(s.inversor_modelo ?? '')}" placeholder="Ex: Sungrow SG5.0RS-L">`)}
+        <p class="cc-us-nota">Marca já é <strong>${escapeHtml(MARCAS_LABEL[s.marca_inversor] ?? s.marca_inversor)}</strong> (vinda da API). Aqui é o modelo específico.</p>` })}
 
-      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h2 class="font-semibold text-slate-900 mb-4">🏠 Telhado</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-sm font-semibold text-slate-700 mb-1">Tipo</label>
-            <select name="telhado_tipo" class="${selectClass}">
-              ${tiposTelhado.map(t => `<option value="${t.v}" ${s.telhado_tipo === t.v ? 'selected' : ''}>${escapeHtml(t.l)}</option>`).join('')}
-            </select>
-          </div>
-          <div>
-            <label class="block text-sm font-semibold text-slate-700 mb-1">Orientação predominante</label>
-            <select name="telhado_orientacao" class="${selectClass}">
-              ${orientacoes.map(o => `<option value="${o.v}" ${s.telhado_orientacao === o.v ? 'selected' : ''}>${escapeHtml(o.l)}</option>`).join('')}
-            </select>
-          </div>
-          <div>
-            <label class="block text-sm font-semibold text-slate-700 mb-1">Inclinação (graus)</label>
-            <input name="telhado_inclinacao_graus" type="number" min="0" max="90" value="${s.telhado_inclinacao_graus ?? ''}" placeholder="Ex: 23" class="${inputClass}">
-          </div>
-          <div>
-            <label class="block text-sm font-semibold text-slate-700 mb-1">Sombreamento estimado (%)</label>
-            <input name="sombreamento_pct" type="number" min="0" max="100" value="${s.sombreamento_pct ?? ''}" placeholder="0=sem sombra" class="${inputClass}">
-          </div>
-        </div>
-      </section>
+      ${cartaoSecao({ titulo: 'Telhado', corpoHtml: `<div class="cc-us-grid">
+        ${campo('Tipo', `<select name="telhado_tipo">
+            ${tiposTelhado.map(t => `<option value="${t.v}" ${s.telhado_tipo === t.v ? 'selected' : ''}>${escapeHtml(t.l)}</option>`).join('')}
+          </select>`)}
+        ${campo('Orientação predominante', `<select name="telhado_orientacao">
+            ${orientacoes.map(o => `<option value="${o.v}" ${s.telhado_orientacao === o.v ? 'selected' : ''}>${escapeHtml(o.l)}</option>`).join('')}
+          </select>`)}
+        ${campo('Inclinação (graus)', `<input name="telhado_inclinacao_graus" type="number" min="0" max="90" value="${s.telhado_inclinacao_graus ?? ''}" placeholder="Ex: 23">`)}
+        ${campo('Sombreamento estimado (%)', `<input name="sombreamento_pct" type="number" min="0" max="100" value="${s.sombreamento_pct ?? ''}" placeholder="0 = sem sombra">`)}
+      </div>` })}
 
-      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h2 class="font-semibold text-slate-900 mb-4">📝 Observações</h2>
-        <textarea name="observacoes" rows="3" class="${inputClass}" placeholder="Manutenções, situações especiais, troca de equipamento, etc.">${escapeHtml(s.observacoes ?? '')}</textarea>
-      </section>
+      ${cartaoSecao({ titulo: 'Observações', corpoHtml: `<textarea name="observacoes" rows="3" placeholder="Manutenções, situações especiais, troca de equipamento, etc." aria-label="Observações">${escapeHtml(s.observacoes ?? '')}</textarea>` })}
 
-      <div class="flex flex-col sm:flex-row gap-3 sticky bottom-4">
-        <button type="submit" class="flex-1 bg-gradient-to-r from-sky-700 to-sky-600 hover:from-sky-800 hover:to-sky-700 text-white font-semibold py-3 rounded-xl shadow-lg transition">
-          💾 Salvar alterações
-        </button>
-        <a href="/dashboard/monitoramento/${escapeHtml(s.id)}" class="flex-1 bg-white border-2 border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold py-3 rounded-xl text-center transition">
-          Cancelar
-        </a>
+      <div class="cc-us-rodape">
+        ${botao({ rotulo: 'Salvar alterações', tipo: 'submit', tom: 'ouro', icone: 'check' })}
+        ${botao({ rotulo: 'Cancelar', href: `/dashboard/monitoramento/${s.id}` })}
       </div>
     </form>
-  `;
+  </div>
+  <style>${CSS_USINA}</style>`;
 
-  return renderLayout({ active: 'monitoramento', title: `Editar ${s.apelido}`, body, user });
+  return renderLayout({
+    active: 'monitoramento', title: `Editar ${s.apelido}`, body, user,
+    tailwind: false, dark: temaDaTela(user, 'claro') === 'escuro',
+  });
 }
 
 // =========================================================================
@@ -1800,41 +1689,39 @@ interface ImportarPageInput {
 
 export function renderImportarSitesPage(input: ImportarPageInput): string {
   const { errorMsg, successMsg, novos, atualizados, total, sitesNomes, user } = input;
+  // Renovação do miolo — R9: MESMO POST /monitoramento/importar com os mesmos
+  // campos de todas as marcas; as 15 mensagens de erro da rota aparecem num
+  // aviso de erro com o mesmo texto.
+  const ehTenant = !!user && user.companyId !== ECOSUN_COMPANY_ID;
 
-  const erro = errorMsg
-    ? `<div class="mb-4 px-4 py-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-sm">⚠️ ${escapeHtml(errorMsg)}</div>`
-    : '';
+  const erro = errorMsg ? aviso({ tom: 'erro', texto: errorMsg }) : '';
 
   const sucesso = successMsg
-    ? `<div class="mb-4 px-4 py-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900">
-        <div class="font-semibold mb-2">✅ ${escapeHtml(successMsg)}</div>
-        <div class="text-sm">${total} sites encontrados — ${novos} novos cadastrados, ${atualizados} atualizados.</div>
+    ? `<div class="cc-aviso cc-aviso-ok" role="status">${icone('check', 'sm')}<div>
+        <strong>${escapeHtml(successMsg)}</strong>
+        <div>${escapeHtml(String(total ?? 0))} sites encontrados — ${escapeHtml(String(novos ?? 0))} novos cadastrados, ${escapeHtml(String(atualizados ?? 0))} atualizados.</div>
         ${sitesNomes && sitesNomes.length > 0 ? `
-          <details class="mt-2">
-            <summary class="text-xs cursor-pointer hover:underline">Ver lista de sites</summary>
-            <ul class="text-xs mt-2 space-y-1 ml-4 list-disc">
-              ${sitesNomes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}
-            </ul>
+          <details class="cc-us-sites">
+            <summary class="cc-link">Ver lista de sites</summary>
+            <ul>${sitesNomes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul>
           </details>` : ''}
-      </div>`
+      </div></div>`
     : '';
 
-  const body = `
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold text-slate-900">📥 Importar sistemas em massa</h1>
-      <p class="text-slate-600 text-sm">Cole a API key da conta e o sistema cadastra todos os sites automaticamente.</p>
-    </div>
+  const campo = (rot: string, html: string, dica?: string) =>
+    `<div class="cc-campo"><span class="cc-rot">${rot}</span>${html}${dica ? `<small class="cc-us-dica">${dica}</small>` : ''}</div>`;
+  const nota = (tom: 'info' | 'ok' | 'atencao', html: string) =>
+    `<div class="cc-aviso cc-aviso-${tom}">${icone(tom === 'ok' ? 'check' : tom === 'info' ? 'bell' : 'alert', 'sm')}<div>${html}</div></div>`;
 
-    ${erro}
-    ${sucesso}
+  // Sungrow: o endereço de retorno é o do APP de quem autoriza. O da EcoSun
+  // só vem preenchido para a EcoSun (tenant não vê a marca da casa).
+  const redirectPadrao = ehTenant ? '' : 'https://www.ecosunpowerenergia.com.br';
+  
 
-    <section class="bg-white rounded-xl shadow-md border border-slate-200 p-6 max-w-2xl">
-      <form action="/dashboard/monitoramento/importar" method="post" class="space-y-4" id="form-importar">
-        <div>
-          <label for="marca" class="block text-sm font-semibold text-slate-700 mb-2">Marca do inversor</label>
-          <select name="marca" id="marca" required
-                  onchange="['solaredge','deye','nep','abb','foxess','goodwe','solis','sungrow','saj'].forEach(function(m){var el=document.getElementById('campos-'+m);if(!el)return;var ativo=document.getElementById('marca').value===m;el.style.display=ativo?'block':'none';el.disabled=!ativo;});"
-                  class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition">
+  const form = `
+      <form action="/dashboard/monitoramento/importar" method="post" class="cc-form cc-us-imp" id="form-importar">
+        ${campo('<label for="marca">Marca do inversor</label>', `<select name="marca" id="marca" required
+                  onchange="['solaredge','deye','nep','abb','foxess','goodwe','solis','sungrow','saj'].forEach(function(m){var el=document.getElementById('campos-'+m);if(!el)return;var ativo=document.getElementById('marca').value===m;el.style.display=ativo?'block':'none';el.disabled=!ativo;});">
             <option value="solaredge">SolarEdge</option>
             <option value="deye">Deye Cloud</option>
             <option value="nep">NEP (microinversores BDM)</option>
@@ -1846,308 +1733,165 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
             <option value="saj">SAJ (elekeeper / eSolar)</option>
             <option value="hoymiles" disabled>Hoymiles (em breve)</option>
             <option value="huawei" disabled>Huawei (em breve)</option>
-          </select>
-        </div>
+          </select>`)}
 
-        <fieldset id="campos-solaredge" class="border-0 p-0 m-0">
-          <label for="api_key" class="block text-sm font-semibold text-slate-700 mb-2">API Key da conta SolarEdge</label>
-          <input
-            id="api_key"
-            name="api_key"
-            type="text"
-            placeholder="cola aqui a API key gerada no painel SolarEdge"
-            class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition font-mono text-sm">
-          <p class="text-xs text-slate-500 mt-2">
-            Pega em: monitoring.solaredge.com → Admin → Site Access → API Access.
-          </p>
+        <fieldset id="campos-solaredge">
+          ${campo('<label for="api_key">API Key da conta SolarEdge</label>', `<input id="api_key" name="api_key" type="text" class="cc-us-mono" placeholder="cola aqui a API key gerada no painel SolarEdge">`,
+            'Pega em: monitoring.solaredge.com → Admin → Site Access → API Access.')}
         </fieldset>
 
-        <fieldset id="campos-deye" style="display:none" disabled class="border-0 p-0 m-0">
-          <div class="space-y-3">
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Data Center</label>
-              <select name="dataCenter" class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
+        <fieldset id="campos-deye" style="display:none" disabled>
+          <div class="cc-us-campos">
+            ${campo('Data Center', `<select name="dataCenter">
                 <option value="us1">US1 (Americas — recomendado pra Brasil)</option>
                 <option value="eu1">EU1 (Europa)</option>
-              </select>
-              <p class="text-xs text-slate-500 mt-1">Mesmo que o portal mostre "AMEA", a API real fica em US1 ou EU1.</p>
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">AppId</label>
-              <input name="appId" type="text" placeholder="Ex: 202601151929002"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-sm focus:outline-none focus:border-amber-500">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">AppSecret</label>
-              <input name="appSecret" type="password" placeholder="cola o AppSecret do portal Deye"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-sm focus:outline-none focus:border-amber-500">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">E-mail da conta master Deye</label>
-              <input name="email" type="email" placeholder="seu email Deye"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Senha da conta Deye</label>
-              <input name="password" type="password" placeholder="senha Deye"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
-            </div>
-            <div class="md:col-span-2">
-              <label class="block text-sm font-semibold text-slate-700 mb-1">
-                Company ID <span class="text-slate-400 font-normal">(opcional)</span>
-              </label>
-              <div class="flex gap-2">
-                <input id="deye-companyId" name="companyId" type="text" placeholder="vazio = perfil pessoal · clique 🔍 pra listar empresas"
-                       class="flex-1 px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-sm focus:outline-none focus:border-amber-500">
-                <button type="button" id="deye-buscar-empresas"
-                        class="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold whitespace-nowrap">
-                  🔍 Buscar empresas
-                </button>
+              </select>`, 'Mesmo que o portal mostre "AMEA", a API real fica em US1 ou EU1.')}
+            ${campo('AppId', '<input name="appId" type="text" class="cc-us-mono" placeholder="Ex: 202601151929002">')}
+            ${campo('AppSecret', '<input name="appSecret" type="password" class="cc-us-mono" placeholder="cola o AppSecret do portal Deye">')}
+            ${campo('E-mail da conta master Deye', '<input name="email" type="email" placeholder="seu email Deye">')}
+            ${campo('Senha da conta Deye', '<input name="password" type="password" placeholder="senha Deye">')}
+            ${campo('Company ID <span class="cc-faint">(opcional)</span>', `<div class="cc-us-linha">
+                <input id="deye-companyId" name="companyId" type="text" class="cc-us-mono" placeholder="vazio = perfil pessoal · clique pra listar empresas">
+                <button type="button" id="deye-buscar-empresas" class="cc-btn">🔍 Buscar empresas</button>
               </div>
-              <div id="deye-empresas-result" class="mt-2 text-xs"></div>
-            </div>
+              <div id="deye-empresas-result" class="cc-us-deye-res"></div>`)}
           </div>
-          <div class="mt-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
-            <strong>📋 Onde achar:</strong> developer.deyecloud.com → Application →
+          ${nota('atencao', `<strong>Onde achar:</strong> developer.deyecloud.com → Application →
             AppId visível, AppSecret oculto (clica no olho). E-mail/senha são da conta
             Deye master que vê todas as plantas. Company ID aparece no app/portal Deye
-            ao trocar entre Personal e empresas (super admin).
-          </div>
+            ao trocar entre Personal e empresas (super admin).`)}
         </fieldset>
 
-        <fieldset id="campos-nep" style="display:none" disabled class="border-0 p-0 m-0">
-          <div class="space-y-3">
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">E-mail da conta NEPViewer</label>
-              <input name="nep_email" type="email" placeholder="email do instalador NEPViewer"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Senha da conta NEPViewer</label>
-              <input name="nep_password" type="password" placeholder="senha NEPViewer"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
-            </div>
+        <fieldset id="campos-nep" style="display:none" disabled>
+          <div class="cc-us-campos">
+            ${campo('E-mail da conta NEPViewer', '<input name="nep_email" type="email" placeholder="email do instalador NEPViewer">')}
+            ${campo('Senha da conta NEPViewer', '<input name="nep_password" type="password" placeholder="senha NEPViewer">')}
           </div>
-          <div class="mt-3 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs">
-            ✅ <strong>Renovação automática (recomendado):</strong> com e-mail e senha, o sistema
+          ${nota('ok', `<strong>Renovação automática (recomendado):</strong> com e-mail e senha, o sistema
             <strong>loga sozinho e renova o token quando expira</strong> — você <strong>nunca mais</strong>
-            precisa mexer. Igual ABB/Deye.
-          </div>
-
-          <details class="mt-3">
-            <summary class="text-xs text-slate-500 cursor-pointer hover:underline">Alternativa avançada: colar um token (JWT) direto</summary>
-            <div class="mt-2">
-              <textarea
-                id="nep_jwt"
-                name="jwt"
-                rows="2"
-                placeholder="opcional — cola um JWT do localStorage do NEPViewer (expira em ~30 dias, sem renovação automática)"
-                class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-amber-500 transition font-mono text-xs"></textarea>
-              <p class="text-xs text-slate-500 mt-1">Use só se preferir não guardar a senha. Captura: F12 → Console → <code>copy(JSON.parse(localStorage.getItem('userInfo')).token)</code>. ⚠️ Esse jeito expira em ~30 dias e precisa renovar na mão.</p>
-            </div>
+            precisa mexer. Igual ABB/Deye.`)}
+          <details class="cc-us-sites">
+            <summary class="cc-link">Alternativa avançada: colar um token (JWT) direto</summary>
+            <textarea id="nep_jwt" name="jwt" rows="2" class="cc-us-mono"
+              placeholder="opcional — cola um JWT do localStorage do NEPViewer (expira em ~30 dias, sem renovação automática)"></textarea>
+            <small class="cc-us-dica">Use só se preferir não guardar a senha. Captura: F12 → Console → <code>copy(JSON.parse(localStorage.getItem('userInfo')).token)</code>. Esse jeito expira em ~30 dias e precisa renovar na mão.</small>
           </details>
         </fieldset>
 
-        <fieldset id="campos-abb" style="display:none" disabled class="border-0 p-0 m-0">
-          <div class="space-y-3">
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">E-mail (UserID Aurora Vision)</label>
-              <input name="userId" type="email" placeholder="email da conta instalador"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Senha Aurora Vision</label>
-              <input name="abb_password" type="password" placeholder="senha"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">API Key</label>
-              <input name="apiKey" type="text" placeholder="X-AuroraVision-ApiKey"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:border-amber-500">
-            </div>
+        <fieldset id="campos-abb" style="display:none" disabled>
+          <div class="cc-us-campos">
+            ${campo('E-mail (UserID Aurora Vision)', '<input name="userId" type="email" placeholder="email da conta instalador">')}
+            ${campo('Senha Aurora Vision', '<input name="abb_password" type="password" placeholder="senha">')}
+            ${campo('API Key', '<input name="apiKey" type="text" class="cc-us-mono" placeholder="X-AuroraVision-ApiKey">')}
           </div>
-          <div class="mt-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
-            <strong>📋 Como pegar a API Key:</strong>
-            <ol class="list-decimal ml-5 mt-2 space-y-1">
-              <li>Loga em <a href="https://www.auroravision.net/" target="_blank" rel="noopener" class="underline font-semibold">auroravision.net</a> com a conta de instalador</li>
+          ${nota('atencao', `<strong>Como pegar a API Key:</strong>
+            <ol>
+              <li>Loga em <a href="https://www.auroravision.net/" target="_blank" rel="noopener">auroravision.net</a> com a conta de instalador</li>
               <li>Menu superior → <strong>Account</strong> → <strong>API Access</strong> (ou Settings → Developer)</li>
               <li>Gera/copia a <strong>API Key</strong> (campo "X-AuroraVision-ApiKey")</li>
               <li>Cola aqui junto com seu e-mail e senha de login do portal</li>
-            </ol>
-          </div>
-          <div class="mt-3 px-4 py-3 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-xs">
-            🔑 <strong>Renovação automática:</strong> diferente do NEP, o adapter ABB faz o login
-            sozinho usando o e-mail e senha. Token interno renova a cada 50 minutos sem você fazer nada.
-          </div>
+            </ol>`)}
+          ${nota('info', `<strong>Renovação automática:</strong> diferente do NEP, o adapter ABB faz o login
+            sozinho usando o e-mail e senha. Token interno renova a cada 50 minutos sem você fazer nada.`)}
         </fieldset>
 
-        <fieldset id="campos-foxess" style="display:none" disabled class="border-0 p-0 m-0">
-          <div>
-            <label for="foxess_api_key" class="block text-sm font-semibold text-slate-700 mb-2">API Key da conta FoxESS</label>
-            <input
-              id="foxess_api_key"
-              name="foxess_api_key"
-              type="text"
-              placeholder="cola aqui a API Key gerada no FoxESS Cloud"
-              class="w-full px-4 py-3 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition font-mono text-sm">
-          </div>
-          <div class="mt-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
-            <strong>📋 Como pegar a API Key (1 minuto):</strong>
-            <ol class="list-decimal ml-5 mt-2 space-y-1">
-              <li>Acessa <a href="https://www.foxesscloud.com" target="_blank" rel="noopener" class="underline font-semibold">www.foxesscloud.com</a> (com o <strong>www.</strong>) e faz login</li>
+        <fieldset id="campos-foxess" style="display:none" disabled>
+          ${campo('<label for="foxess_api_key">API Key da conta FoxESS</label>', '<input id="foxess_api_key" name="foxess_api_key" type="text" class="cc-us-mono" placeholder="cola aqui a API Key gerada no FoxESS Cloud">')}
+          ${nota('atencao', `<strong>Como pegar a API Key (1 minuto):</strong>
+            <ol>
+              <li>Acessa <a href="https://www.foxesscloud.com" target="_blank" rel="noopener">www.foxesscloud.com</a> (com o <strong>www.</strong>) e faz login</li>
               <li>Canto superior direito → seu perfil → <strong>API Management</strong></li>
               <li>Clica em <strong>Generate API Key</strong> e <strong>copia na hora</strong> (só aparece uma vez)</li>
               <li>Cola aqui. A mesma chave lista todos os inversores da conta.</li>
-            </ol>
-          </div>
-          <div class="mt-3 px-4 py-3 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-xs">
-            🔑 <strong>Sem expiração / sem login:</strong> a API Key já é o acesso — o adapter usa
+            </ol>`)}
+          ${nota('info', `<strong>Sem expiração / sem login:</strong> a API Key já é o acesso — o adapter usa
             ela direto (assinatura por chamada). Limite de ~1440 chamadas/dia por inversor, de sobra
-            pro monitoramento diário.
-          </div>
+            pro monitoramento diário.`)}
         </fieldset>
 
-        <fieldset id="campos-goodwe" style="display:none" disabled class="border-0 p-0 m-0">
-          <div class="space-y-3">
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">E-mail da conta SEMS Portal</label>
-              <input name="goodwe_email" type="email" placeholder="e-mail do instalador SEMS"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Senha da conta SEMS Portal</label>
-              <input name="goodwe_password" type="password" placeholder="senha SEMS"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
-            </div>
+        <fieldset id="campos-goodwe" style="display:none" disabled>
+          <div class="cc-us-campos">
+            ${campo('E-mail da conta SEMS Portal', '<input name="goodwe_email" type="email" placeholder="e-mail do instalador SEMS">')}
+            ${campo('Senha da conta SEMS Portal', '<input name="goodwe_password" type="password" placeholder="senha SEMS">')}
           </div>
-          <div class="mt-3 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs">
-            ✅ <strong>Renovação automática:</strong> com e-mail e senha do SEMS Portal, o adapter
+          ${nota('ok', `<strong>Renovação automática:</strong> com e-mail e senha do SEMS Portal, o adapter
             <strong>loga sozinho e renova o token quando expira</strong> — você não mexe mais. A mesma
-            conta de instalador lista <strong>todas as usinas</strong> (as novas aparecem sozinhas).
-          </div>
+            conta de instalador lista <strong>todas as usinas</strong> (as novas aparecem sozinhas).`)}
         </fieldset>
 
-        <fieldset id="campos-saj" style="display:none" disabled class="border-0 p-0 m-0">
-          <div class="space-y-3">
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Usuário do portal elekeeper/eSolar</label>
-              <input name="saj_username" type="text" placeholder="login do instalador no portal SAJ"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Senha do portal elekeeper/eSolar</label>
-              <input name="saj_password" type="password" placeholder="senha do portal SAJ"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-amber-500">
-            </div>
+        <fieldset id="campos-saj" style="display:none" disabled>
+          <div class="cc-us-campos">
+            ${campo('Usuário do portal elekeeper/eSolar', '<input name="saj_username" type="text" placeholder="login do instalador no portal SAJ">')}
+            ${campo('Senha do portal elekeeper/eSolar', '<input name="saj_password" type="password" placeholder="senha do portal SAJ">')}
           </div>
-          <div class="mt-3 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs">
-            ✅ <strong>Renovação automática:</strong> com usuário e senha do portal, o adapter
+          ${nota('ok', `<strong>Renovação automática:</strong> com usuário e senha do portal, o adapter
             <strong>loga sozinho e renova o token quando expira</strong>. A mesma conta de
-            instalador lista <strong>todas as usinas</strong> (as novas aparecem sozinhas).
-          </div>
+            instalador lista <strong>todas as usinas</strong> (as novas aparecem sozinhas).`)}
         </fieldset>
 
-        <fieldset id="campos-solis" style="display:none" disabled class="border-0 p-0 m-0">
-          <div class="space-y-3">
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">KeyId da API SolisCloud</label>
-              <input name="solis_key_id" type="text" placeholder="ex.: 1300386381676633638"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:border-amber-500">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">KeySecret da API SolisCloud</label>
-              <input name="solis_key_secret" type="text" placeholder="cola aqui o KeySecret"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:border-amber-500">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">API URL (opcional)</label>
-              <input name="solis_api_url" type="text" value="https://www.soliscloud.com:13333"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:border-amber-500">
-            </div>
+        <fieldset id="campos-solis" style="display:none" disabled>
+          <div class="cc-us-campos">
+            ${campo('KeyId da API SolisCloud', '<input name="solis_key_id" type="text" class="cc-us-mono" placeholder="ex.: 1300386381676633638">')}
+            ${campo('KeySecret da API SolisCloud', '<input name="solis_key_secret" type="text" class="cc-us-mono" placeholder="cola aqui o KeySecret">')}
+            ${campo('API URL (opcional)', '<input name="solis_api_url" type="text" class="cc-us-mono" value="https://www.soliscloud.com:13333">')}
           </div>
-          <div class="mt-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
-            <strong>📋 Como pegar (1 minuto):</strong>
-            <ol class="list-decimal ml-5 mt-2 space-y-1">
+          ${nota('atencao', `<strong>Como pegar (1 minuto):</strong>
+            <ol>
               <li>No app <strong>SolisCloud</strong> (ou soliscloud.com) logado como instalador</li>
               <li>Menu <strong>Serviço → Gerenciamento de API</strong>, aceita os termos</li>
               <li>Gera e copia o <strong>KeyId</strong> e o <strong>KeySecret</strong></li>
               <li>A mesma chave lista <strong>todas as usinas</strong> da conta (as novas aparecem sozinhas).</li>
-            </ol>
-          </div>
-          <div class="mt-3 px-4 py-3 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-xs">
-            🔑 <strong>API oficial:</strong> a chave já é o acesso (assinatura por chamada, sem login).
-            Limite de ~1 chamada/segundo — o sistema respeita o ritmo sozinho.
-          </div>
+            </ol>`)}
+          ${nota('info', `<strong>API oficial:</strong> a chave já é o acesso (assinatura por chamada, sem login).
+            Limite de ~1 chamada/segundo — o sistema respeita o ritmo sozinho.`)}
         </fieldset>
 
-        <fieldset id="campos-sungrow" style="display:none" disabled class="border-0 p-0 m-0">
-          <div class="space-y-3">
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Appkey do app iSolarCloud</label>
-              <input name="sungrow_appkey" type="text" placeholder="ex.: 42A190E0D6873F64206A3AC1498A29EB"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:border-amber-500">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Secret key (x-access-key)</label>
-              <input name="sungrow_secret" type="text" placeholder="cola aqui a Secret key do app"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:border-amber-500">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Application ID</label>
-              <input id="sungrow_app_id" name="sungrow_app_id" type="text" placeholder="ex.: 3229"
-                     oninput="var b=document.getElementById('sungrow-auth-link');var id=this.value.trim();var rd=encodeURIComponent((document.getElementById('sungrow_redirect')||{}).value||'');b.href=id?('https://web3.isolarcloud.com.hk/#/authorized-app?cloudId=2&applicationId='+id+'&redirectUrl='+rd):'#';b.style.pointerEvents=id?'auto':'none';b.style.opacity=id?'1':'0.5';"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:border-amber-500">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Redirect URL (igual à cadastrada no app)</label>
-              <input id="sungrow_redirect" name="sungrow_redirect" type="text" value="https://www.ecosunpowerenergia.com.br"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:border-amber-500">
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-slate-700 mb-1">Código de autorização</label>
-              <input name="sungrow_code" type="text" placeholder="o code que aparece na URL depois de autorizar"
-                     class="w-full px-4 py-2 border-2 border-slate-200 rounded-xl font-mono text-xs focus:outline-none focus:border-amber-500">
-            </div>
+        <fieldset id="campos-sungrow" style="display:none" disabled>
+          <div class="cc-us-campos">
+            ${campo('Appkey do app iSolarCloud', '<input name="sungrow_appkey" type="text" class="cc-us-mono" placeholder="ex.: 42A190E0D6873F64206A3AC1498A29EB">')}
+            ${campo('Secret key (x-access-key)', '<input name="sungrow_secret" type="text" class="cc-us-mono" placeholder="cola aqui a Secret key do app">')}
+            ${campo('Redirect URL (a mesma cadastrada no app)', `<input id="sungrow_redirect" name="sungrow_redirect" type="text" class="cc-us-mono" value="${escapeHtml(redirectPadrao)}" placeholder="https://… (a mesma cadastrada no seu app)">`)}
+            ${campo('Application ID', `<input id="sungrow_app_id" name="sungrow_app_id" type="text" class="cc-us-mono" placeholder="ex.: 3229"
+                     oninput="var b=document.getElementById('sungrow-auth-link');var id=this.value.trim();var rd=encodeURIComponent((document.getElementById('sungrow_redirect')||{}).value||'');b.href=id?('https://web3.isolarcloud.com.hk/#/authorized-app?cloudId=2&applicationId='+id+'&redirectUrl='+rd):'#';b.style.pointerEvents=id?'auto':'none';b.style.opacity=id?'1':'0.5';">`)}
+            ${campo('Código de autorização', '<input name="sungrow_code" type="text" class="cc-us-mono" placeholder="o code que aparece na URL depois de autorizar">')}
           </div>
-          <div class="mt-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
-            <strong>📋 Como pegar o código (só na 1ª vez):</strong>
-            <ol class="list-decimal ml-5 mt-2 space-y-1">
+          ${nota('atencao', `<strong>Como pegar o código (só na 1ª vez):</strong>
+            <ol>
               <li>Preencha o <strong>Application ID</strong> acima e clique em
-                <a id="sungrow-auth-link" href="#" target="_blank" rel="noopener" style="pointer-events:none;opacity:0.5" class="underline font-semibold text-amber-900">Abrir a tela de autorização →</a></li>
+                <a id="sungrow-auth-link" href="#" target="_blank" rel="noopener" style="pointer-events:none;opacity:0.5">Abrir a tela de autorização →</a></li>
               <li>Logado como dono das usinas, <strong>selecione as usinas</strong>, aceite e clique em <strong>"Concordar e autorizar"</strong>.</li>
-              <li>A página vai redirecionar pra <code>...ecosunpowerenergia.com.br/?code=<strong>XXXXXX</strong></code>. Copie o valor do <strong>code</strong> e cole aqui.</li>
-            </ol>
-          </div>
-          <div class="mt-3 px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs">
-            ✅ <strong>Depois disso, renova sozinho:</strong> o código é trocado por um token que o
+              <li>A página vai redirecionar pra ${ehTenant ? 'o seu endereço de retorno, com <code>?code=<strong>XXXXXX</strong></code> no fim' : '<code>...ecosunpowerenergia.com.br/?code=<strong>XXXXXX</strong></code>'}. Copie o valor do <strong>code</strong> e cole aqui.</li>
+            </ol>`)}
+          ${nota('ok', `<strong>Depois disso, renova sozinho:</strong> o código é trocado por um token que o
             sistema renova automaticamente. Você só repete se revogar o acesso. Use um app
-            <strong>só de Monitoring</strong> (com "Grid control" a autorização falha).
-          </div>
+            <strong>só de Monitoring</strong> (com "Grid control" a autorização falha).`)}
         </fieldset>
 
-        <button type="submit"
-                class="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold py-3 rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-0.5">
-          📥 Importar agora
-        </button>
-      </form>
+        <button type="submit" class="cc-btn cc-btn-gold cc-us-enviar">📥 Importar agora</button>
+      </form>`;
 
-      <div class="mt-6 pt-6 border-t border-slate-100 text-xs text-slate-500 space-y-2">
-        <p>💡 <strong>Como funciona:</strong> chamamos a API da marca selecionada com as suas credenciais,
-        recebemos todos os sites associados, e cadastramos cada um em
-        <code class="bg-slate-100 px-1 rounded">sistemas_clientes</code>.</p>
-        <p>🔄 <strong>Atualização automática:</strong> de hora em hora o sistema re-consulta a API e
-        cadastra plantas novas que apareceram no painel da marca — sem você fazer nada.</p>
-        <p>🔁 <strong>Re-importar:</strong> rodar de novo é seguro — sites que já existem só são atualizados (apelido, potência, etc).</p>
-      </div>
-    </section>
-
-    <div class="mt-4">
-      <a href="/dashboard/monitoramento" class="text-sm text-slate-600 hover:underline">← Voltar pro monitoramento</a>
-    </div>
-  `;
+  const body = `<div class="cc-root cc-us">
+    ${cabecalhoPagina({
+      trilha: [{ rotulo: 'Usinas' }, { rotulo: 'Monitoramento', href: '/dashboard/monitoramento' }, { rotulo: 'Importar' }],
+      titulo: 'Importar sistemas em massa',
+      subtitulo: 'Cole a chave de acesso da conta e o sistema cadastra todas as usinas automaticamente.',
+      acoesHtml: botao({ rotulo: '← Voltar pro monitoramento', href: '/dashboard/monitoramento' }),
+    })}
+    ${erro}
+    ${sucesso}
+    ${cartaoSecao({ titulo: 'Conta do portal do inversor', corpoHtml: form, classe: 'cc-us-imp' })}
+    ${cartaoSecao({ titulo: 'Como funciona', classe: 'cc-us-imp cc-us-como', corpoHtml: `
+      <p><strong>Importar:</strong> chamamos a API da marca selecionada com as suas credenciais,
+      recebemos todas as usinas da conta e cadastramos cada uma no monitoramento.</p>
+      <p><strong>Atualização automática:</strong> de hora em hora o sistema re-consulta a API e
+      cadastra usinas novas que apareceram no painel da marca — sem você fazer nada.</p>
+      <p><strong>Re-importar:</strong> rodar de novo é seguro — usinas que já existem só são atualizadas (apelido, potência, etc).</p>` })}
+  </div>
+  <style>${CSS_USINA}.cc-us-sites{margin-top:8px}.cc-us-sites ul{margin:6px 0 0;padding-left:18px;list-style:disc;font-size:12.5px}.cc-us-sites textarea{margin-top:8px;width:100%}</style>`;
 
   // JS pro botao "Buscar empresas Deye" — chama o endpoint AJAX, mostra a
   // lista de companyId / companyName, ao clicar numa preenche o input.
+  // Tudo que vem da API é escapado antes de ir pro innerHTML.
   const scripts = `
 <script>
   (function(){
@@ -2155,11 +1899,13 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
     if (!btn) return;
     var resultDiv = document.getElementById('deye-empresas-result');
     var inputId = document.getElementById('deye-companyId');
+    function esc(s){ var d=document.createElement('div'); d.appendChild(document.createTextNode(s==null?'':String(s))); return d.innerHTML; }
+    function aviso(tom, html){ return '<div class="cc-aviso cc-aviso-'+tom+'">'+html+'</div>'; }
     btn.addEventListener('click', async function(){
       function v(name){ var el = document.querySelector('[name="'+name+'"]'); return el ? el.value : ''; }
       var creds = { appId: v('appId'), appSecret: v('appSecret'), email: v('email'), password: v('password'), dataCenter: v('dataCenter') };
       if (!creds.appId || !creds.appSecret || !creds.email || !creds.password) {
-        resultDiv.innerHTML = '<div class="p-2 rounded bg-rose-50 text-rose-700">Preenche AppId, AppSecret, e-mail e senha primeiro.</div>';
+        resultDiv.innerHTML = aviso('erro', 'Preenche AppId, AppSecret, e-mail e senha primeiro.');
         return;
       }
       btn.disabled = true; btn.textContent = '⏳ Buscando...';
@@ -2173,24 +1919,24 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
         var data = await resp.json();
         if (!data.ok) throw new Error(data.error || 'erro');
         if (!data.empresas || data.empresas.length === 0) {
-          resultDiv.innerHTML = '<div class="p-2 rounded bg-amber-50 text-amber-800">Nenhuma empresa encontrada.</div>';
+          resultDiv.innerHTML = aviso('atencao', 'Nenhuma empresa encontrada.');
         } else {
-          var html = '<div class="p-2 rounded bg-emerald-50 border border-emerald-200"><div class="font-semibold text-emerald-900 mb-1">Empresas encontradas — clica pra usar:</div><div class="space-y-1">';
+          var html = '<div class="cc-aviso cc-aviso-ok"><div><strong>Empresas encontradas — clica pra usar:</strong>';
           for (var i = 0; i < data.empresas.length; i++) {
             var e = data.empresas[i];
-            html += '<button type="button" data-id="'+e.companyId+'" class="block w-full text-left px-2 py-1 rounded hover:bg-emerald-100 text-emerald-900 font-mono text-xs"><strong>'+e.companyId+'</strong> · '+e.companyName+' <span class="text-emerald-600">('+e.roleName+')</span></button>';
+            html += '<button type="button" data-id="'+esc(e.companyId)+'" class="cc-us-mono"><strong>'+esc(e.companyId)+'</strong> · '+esc(e.companyName)+' <span class="cc-muted">('+esc(e.roleName)+')</span></button>';
           }
           html += '</div></div>';
           resultDiv.innerHTML = html;
           resultDiv.querySelectorAll('button[data-id]').forEach(function(b){
             b.addEventListener('click', function(){
               inputId.value = b.getAttribute('data-id');
-              resultDiv.innerHTML = '<div class="p-2 rounded bg-emerald-100 text-emerald-900">✅ Company ID '+inputId.value+' selecionado. Clica em "Importar agora".</div>';
+              resultDiv.innerHTML = aviso('ok', 'Company ID '+esc(inputId.value)+' selecionado. Clica em "Importar agora".');
             });
           });
         }
       } catch(err) {
-        resultDiv.innerHTML = '<div class="p-2 rounded bg-rose-50 text-rose-700">Erro: '+(err.message || err)+'</div>';
+        resultDiv.innerHTML = aviso('erro', 'Erro: '+esc(err.message || err));
       } finally {
         btn.disabled = false; btn.textContent = '🔍 Buscar empresas';
       }
@@ -2198,7 +1944,10 @@ export function renderImportarSitesPage(input: ImportarPageInput): string {
   })();
 </script>`;
 
-  return renderLayout({ active: 'monitoramento', title: 'Importar sites', body, scripts, user });
+  return renderLayout({
+    active: 'monitoramento', title: 'Importar sites', body, scripts, user,
+    tailwind: false, dark: temaDaTela(user, 'claro') === 'escuro',
+  });
 }
 
 // =========================================================================

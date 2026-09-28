@@ -11,6 +11,13 @@ import { ROTULO_FONTE, TODAS_PERMISSOES, type DadosCommandCenter, type FonteAvis
 import type { EventoAtencao } from '../../src/modules/dashboard/central-atencao.js';
 import { ORDEM_ETAPAS } from '../../src/modules/dashboard/pipeline.js';
 import type { DashUser } from '../../src/modules/dashboard/permissions.js';
+import { renderMonitoramentoPage } from '../../src/modules/dashboard/views.js';
+import { CASOS_USINA } from './casos-usina.js';
+import { FIN_CHEIO } from './casos-financeiro.js';
+import { CASOS_DEMONSTRATIVOS } from './casos-demonstrativos.js';
+import { CASOS_PASTAS } from './casos-pastas.js';
+import { renderFinanceiroPage } from '../../src/modules/dashboard/financeiro-views.js';
+import { usina, ALERTAS_RESUMO, SPARK_7D, KPIS_EVA } from './casos-monitoramento.js';
 import { USER_CASA, leadRow, leadDetalhe, SERVICOS_LEAD, FILTROS_CHEIOS } from './miolo-leads.js';
 
 const hora = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
@@ -77,11 +84,26 @@ function dadosCC(n: number): DadosCommandCenter {
   };
 }
 
-export type NomeTela = 'command-center' | 'central-atencao' | 'modo-tv' | 'leads' | 'quadro-vendas' | 'conversas' | 'ficha';
+export type NomeTela = 'command-center' | 'central-atencao' | 'modo-tv' | 'leads' | 'quadro-vendas' | 'conversas' | 'ficha'
+  | 'monitoramento' | 'usina' | 'usina-dados' | 'usina-editar' | 'usina-importar' | 'financeiro'
+  | 'gd-lista' | 'gd-cliente' | 'gd-conferencia' | 'gd-digitar' | 'gd-confirmar'
+  | 'pastas' | 'pasta-editor' | 'pasta-previa';
+
+const NIVEIS = ['urgente', 'aviso', 'info', 'ok', 'ok', 'ok'] as const;
+
+/** n usinas da frota, em todos os estados. */
+export function frota(n: number): any[] {
+  return Array.from({ length: n }, (_, i) => usina(i, {
+    apelido: `Usina Fictícia ${i}`, nivel: NIVEIS[i % NIVEIS.length], ativo: i % 17 !== 16,
+    alertaTexto: i % 6 < 2 ? 'Alerta fictício de geração.' : null,
+    ultima_sincronizacao: i % 9 === 8 ? null : new Date().toISOString(),
+  }));
+}
 
 /** Todas as telas renovadas, com n linhas/cartões/itens cada. */
 export function telasRenovadas(n: number, user: DashUser = USER_CASA): Record<NomeTela, string> {
   const lead = leadDetalhe({ conversation_messages: mensagens(Math.min(n, 120)) });
+  const casa = user.companyId === USER_CASA.companyId;
   return {
     'command-center': renderCommandCenterPage({ agora: new Date(), nomeUsuario: user.nome, dados: dadosCC(n) }, user),
     'central-atencao': renderCentralAtencaoPage({ agora: new Date(), dados: dadosCC(n), filtro: {} }, user),
@@ -90,5 +112,19 @@ export function telasRenovadas(n: number, user: DashUser = USER_CASA): Record<No
     'quadro-vendas': renderKanbanPage(gruposQuadro(n) as any, user),
     conversas: renderAtendimentoPage({ user, lista: listaConversas(n), filtros: {}, lead: null }),
     ficha: renderLeadDetailPage(lead, [], '', '', SERVICOS_LEAD, user, { lista: listaConversas(n), filtros: {} }),
+    usina: casa ? CASOS_USINA['detalhe-mes']() : CASOS_USINA['detalhe-tenant'](),
+    'usina-dados': CASOS_USINA.dados(),
+    'usina-editar': casa ? CASOS_USINA.editar() : CASOS_USINA['editar-sem-dono'](),
+    'usina-importar': casa ? CASOS_USINA['importar-sucesso']() : CASOS_USINA['importar-tenant'](),
+    financeiro: renderFinanceiroPage(FIN_CHEIO, user),
+    pastas: casa ? CASOS_PASTAS.lista() : CASOS_PASTAS['lista-tenant'](),
+    'pasta-editor': casa ? CASOS_PASTAS['editor-rascunho']() : CASOS_PASTAS['editor-tenant'](),
+    'pasta-previa': CASOS_PASTAS.preview(),
+    'gd-lista': casa ? CASOS_DEMONSTRATIVOS.lista() : CASOS_DEMONSTRATIVOS['lista-tenant'](),
+    'gd-cliente': casa ? CASOS_DEMONSTRATIVOS['cliente-sem-cliente']() : CASOS_DEMONSTRATIVOS['cliente-tenant'](),
+    'gd-conferencia': CASOS_DEMONSTRATIVOS.conferencia(),
+    'gd-digitar': CASOS_DEMONSTRATIVOS['digitar-erro'](),
+    'gd-confirmar': casa ? CASOS_DEMONSTRATIVOS['confirmar-reenviar']() : CASOS_DEMONSTRATIVOS['confirmar-periodo'](),
+    monitoramento: renderMonitoramentoPage(frota(n), {}, casa ? ALERTAS_RESUMO : undefined, casa ? SPARK_7D : undefined, casa ? KPIS_EVA : undefined, user),
   };
 }

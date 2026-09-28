@@ -97,14 +97,16 @@ export class MonitoringService {
   constructor(private supabase: SupabaseService) {}
 
   // Executa sincronizacao de todos os sistemas ativos.
-  async syncAll(): Promise<SyncResult> {
+  // companyId (opcional): só as usinas daquela empresa — usado pelo botão
+  // "Atualizar todas" do tenant. Sem ele, a frota inteira (cron / EcoSun).
+  async syncAll(companyId?: string | null): Promise<SyncResult> {
     const marcas = marcasSuportadas();
     if (marcas.length === 0) {
       console.warn('[monitoring] Nenhum adapter registrado, skip syncAll');
       return { totalSistemas: 0, sucessos: 0, falhas: 0, marcasSemAdapter: 0 };
     }
 
-    const sistemas = await this.listarSistemasAtivos();
+    const sistemas = await this.listarSistemasAtivos(companyId);
     let sucessos = 0;
     let falhas = 0;
     let marcasSemAdapter = 0;

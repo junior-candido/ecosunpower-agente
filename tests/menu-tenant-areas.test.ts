@@ -67,15 +67,23 @@ describe('menu lateral — tenant só vê áreas explícitas do papel', () => {
   });
 });
 
-describe('painel de triagem — TEMA CLARO pro tenant (pedido do Thiago 27/07)', () => {
-  it('tenant: tela clara (cards brancos), sem o fundo escuro', () => {
+// TROCA DELIBERADA (renovação do miolo R8, 28/09/2026 — precisa do ok do Junior
+// no PR): o Junior decidiu a D4 = TEMA ESCURO do Command Center em TODAS as
+// telas renovadas, inclusive para o tenant. O pedido do Thiago (27/07, tenant
+// claro) deixa de valer aqui. E a tela saiu do Tailwind: as classes
+// 'bg-white' / 'bg-slate-800/60' não existem mais — o tema é o da casca.
+// Antes: tenant → 'bg-white' e sem 'bg-slate-800/60'; EcoSun → 'bg-slate-800/60'.
+describe('painel de triagem — tema escuro do Command Center para todos (D4)', () => {
+  it('tenant: tela escura (D4), sem os cartões brancos do tema claro antigo', () => {
     const html = sidebarDe(THIAGO);
-    expect(html).toContain('bg-white');
+    expect(html).toContain('<div class="cc-shell cc-escuro">');
+    expect(html).not.toContain('bg-white');
     expect(html).not.toContain('bg-slate-800/60');
   });
 
-  it('EcoSun: tela escura de sempre, byte a byte', () => {
+  it('EcoSun: tela escura de sempre', () => {
     const html = sidebarDe(ECOSUN_OPERADOR);
-    expect(html).toContain('bg-slate-800/60');
+    expect(html).toContain('<div class="cc-shell cc-escuro">');
+    expect(html).toContain('ecosun-body-dark');
   });
 });

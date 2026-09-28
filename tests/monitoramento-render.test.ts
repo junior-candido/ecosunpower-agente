@@ -30,7 +30,10 @@ describe('renderMonitoramentoPage (smoke)', () => {
     expect(html).toContain('Saúde');
     expect(html).toContain('/dashboard/monitoramento/1/excluir');
     expect(html).toContain('1 ano 2 meses');
-    expect(html).toContain('bg-slate-900');
+    // TROCA DELIBERADA (miolo R8, 28/09 — ok do Junior no PR): a tela saiu do
+    // Tailwind; o tema escuro agora é o da casca do Command Center (D4).
+    // Antes: expect(html).toContain('bg-slate-900');
+    expect(html).toContain('<div class="cc-shell cc-escuro">');
   });
   it('lista vazia -> estado vazio', () => {
     expect(renderMonitoramentoPage([], {})).toContain('Nenhum sistema');

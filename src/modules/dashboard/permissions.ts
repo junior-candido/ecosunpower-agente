@@ -55,6 +55,16 @@ export function podeDispararMensagens(companyId: string | null | undefined): boo
 // [Degustação Sabion 27/07] Usina só abre pra EMPRESA dona. Usina sem carimbo
 // (company_id null) é legado pré-multi-tenant = EcoSun. Operador sem empresa
 // na sessão → nega (fail-closed). Usado nas rotas /monitoramento/:id*.
+// "Atualizar todas" (POST /monitoramento/sync-todos): a EcoSun sincroniza a
+// frota inteira (igual ao cron); tenant só as usinas da empresa dele; sem
+// empresa na sessão → null (nega). Revisão de segurança do R8, 28/09/2026.
+export function escopoSyncTodos(
+  companyDoOperador: string | null | undefined,
+): { tudo: true; companyId?: undefined } | { companyId: string; tudo?: undefined } | null {
+  if (!companyDoOperador) return null;
+  return companyDoOperador === ECOSUN_DISPARO ? { tudo: true } : { companyId: companyDoOperador };
+}
+
 export function usinaPertenceAoOperador(
   companyDaUsina: string | null | undefined,
   companyDoOperador: string | null | undefined,

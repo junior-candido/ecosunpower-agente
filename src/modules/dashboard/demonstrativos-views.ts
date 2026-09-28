@@ -1,8 +1,17 @@
 // Telas do módulo Demonstrativos GD (fatia 1): lista, cliente, conferência do
 // PDF enviado e digitação. Só desenham — regra fica em src/modules/gd/.
+// Renovação do miolo — R11 (28/09/2026): mesmas rotas, formulários e gráfico;
+// visual no padrão cc- do Command Center, tema escuro (D4), sem Tailwind.
 // Ver docs/superpowers/specs/2026-09-23-demonstrativos-tela-relatorio-design.md.
 
 import { renderLayout } from './views.js';
+import {
+  cabecalhoPagina, faixaKpis, cartaoSecao, tabela, estadoVazio, pilulaStatus, botao, celulaDupla, linhaLista, aviso, icone,
+  type Tom,
+} from './ui/componentes.js';
+import { JS_TEMA_GRAFICOS } from './ui/graficos.js';
+import { temaDaTela } from './ui/tema.js';
+import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 import type { DashUser } from './permissions.js';
 import type { ItemLista } from '../gd/demonstrativos-tela.js';
 import { historicoPorMes } from '../gd/demonstrativos-tela.js';
@@ -53,53 +62,132 @@ const kwh = (v: number | null | undefined) =>
   v === null || v === undefined ? '—' : `${v.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} kWh`;
 const brl = (v: number | null) => (v === null ? '—' : v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
 
-const ESTADO: Record<EstadoGd, { cor: string; txt: string }> = {
-  pronto: { cor: '#22c55e', txt: '🟢 Pronto' },
-  falta_dado: { cor: '#eab308', txt: '🟡 Falta dado' },
-  inconsistente: { cor: '#ef4444', txt: '🔴 Número não bate' },
-  sem_cliente: { cor: '#94a3b8', txt: '⚪ Sem cliente' },
+/** Status do mês — MESMA regra de antes (estado da validação), em pílula cc-. */
+const ESTADO: Record<EstadoGd, { tom: Tom; txt: string; filtro: string }> = {
+  pronto: { tom: 'normal', txt: 'Pronto', filtro: 'Pronto' },
+  falta_dado: { tom: 'atencao', txt: 'Falta dado', filtro: 'Falta dado' },
+  inconsistente: { tom: 'critico', txt: 'Número não bate', filtro: 'Número não bate' },
+  sem_cliente: { tom: 'sem_dado', txt: 'Sem cliente', filtro: 'Sem cliente' },
 };
+const pilulaEstado = (e: EstadoGd) => pilulaStatus(ESTADO[e]?.tom ?? 'info', ESTADO[e]?.txt ?? e);
 const ORIGEM: Record<string, string> = {
   email: 'e-mail da concessionária',
   pdf_manual: 'PDF enviado na tela',
   digitado: 'digitado na tela',
 };
 
-const botoesEntrada = `
-<div class="flex flex-wrap gap-2 my-3">
-  <a href="/dashboard/demonstrativos/enviar-pdf" class="px-3 py-2 rounded bg-cyan-700 text-white">+ Enviar PDF</a>
-  <a href="/dashboard/demonstrativos/digitar" class="px-3 py-2 rounded bg-slate-700 text-white">✎ Digitar demonstrativo</a>
-</div>`;
+/** "Eva" é a assistente da casa; o tenant vê um nome genérico. */
+const nomeAssistente = (user?: DashUser) => (user && user.companyId !== ECOSUN_COMPANY_ID ? 'assistente' : 'Eva');
+
+const CSS_GD = `
+.cc-gd .cc-panel+.cc-panel,.cc-gd .cc-kstrip+.cc-panel,.cc-gd .cc-aviso+.cc-panel,.cc-gd .cc-panel+.cc-aviso,.cc-gd .cc-kstrip+.cc-aviso{margin-top:16px}
+.cc-gd .cc-kstrip{margin-bottom:0}
+.cc-gd-acoes{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.cc-gd-acoes form{margin:0}
+.cc-gd-filtro{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.cc-gd-filtro input[name=q]{width:220px}
+.cc-gd-nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 16px}
+.cc-gd-nav .cc-gd-mes{font-family:var(--cc-f-num);font-weight:700;color:var(--cc-text);min-width:6.5rem;text-align:center}
+.cc-gd-graf{position:relative;height:260px}
+.cc-gd-lista{display:flex;flex-direction:column;gap:8px}
+.cc-gd-nota{margin:10px 0 0;font-size:12.5px;color:var(--cc-muted)}
+.cc-gd-nota b{color:var(--cc-text)}
+.cc-gd-ok{color:var(--cc-ok);font-size:13px;margin:10px 0 0}
+.cc-gd-origem{margin:0;padding-left:18px;list-style:disc;font-size:13px;color:var(--cc-text-2);display:flex;flex-direction:column;gap:4px}
+.cc-gd-form{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.cc-gd-form .cc-campo{min-width:160px}
+.cc-gd-grade{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.cc-gd-grade .cc-gd-cheia{grid-column:1/-1}
+.cc-gd-grade input{width:100%}
+.cc-gd-per{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.cc-gd-per>b,.cc-gd-per>p{width:100%;color:var(--cc-text)}
+.cc-gd-per>p.cc-gd-ok{color:var(--cc-ok);margin:0}
+.cc-gd-per .cc-gd-dica{width:100%;font-size:12px;color:var(--cc-faint)}
+.cc-gd-cand{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.cc-gd-cand form{margin:0}
+.cc-gd-zap{white-space:pre-wrap;font-family:inherit;margin:8px 0 0;padding:12px;border-radius:10px;background:var(--cc-surface-2);border:1px solid var(--cc-line);color:var(--cc-text);font-size:13.5px}
+.cc-gd-email{width:100%;height:560px;background:#fff;border:0;border-radius:10px;margin-top:8px}
+.cc-gd-para{margin:0;font-size:13.5px;color:var(--cc-text-2)}
+.cc-gd-para b{color:var(--cc-text)}
+.cc-gd-erro{color:var(--cc-crit);margin:0}
+.cc-gd-envio{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.cc-gd .cc-us-link{color:var(--cc-gold-2);text-decoration:underline}
+.cc-gd code{font-size:12px;padding:1px 5px;border-radius:5px;background:var(--cc-surface-3)}
+.cc-gd-conf .cc-gd-nums{font-size:13.5px;color:var(--cc-text-2);margin:0 0 10px}
+.cc-gd-limite{max-width:46rem}
+.cc-gd .cc-ph h3,.cc-gd code,.cc-gd .cc-dupla-t{overflow-wrap:anywhere}
+.cc-gd .cc-tbl .cc-pill{white-space:normal;height:auto;min-height:22px;line-height:1.3;padding-top:3px;padding-bottom:3px}
+@media (max-width:760px){
+  .cc-gd-filtro input[name=q],.cc-gd-filtro select{flex:1 1 100%;width:100%}
+  .cc-gd-grade{grid-template-columns:minmax(0,1fr)}
+  .cc-gd-graf{height:220px}
+  .cc-gd-acoes{width:100%}
+  .cc-gd-acoes .cc-btn,.cc-gd-envio .cc-btn{flex:1 1 auto;justify-content:center}
+  .cc-gd-email{height:420px}
+}
+`;
+
+const layout = (title: string, body: string, user: DashUser | undefined, scripts?: string, largo = true) => renderLayout({
+  active: 'demonstrativos', title, body: `<div class="cc-root cc-gd">${body}</div><style>${CSS_GD}</style>`, scripts, user,
+  tailwind: false, dark: temaDaTela(user, 'escuro') === 'escuro', largo,
+});
+
+const TRILHA_GD = { rotulo: 'Demonstrativos GD', href: '/dashboard/demonstrativos' };
 
 export function renderDemonstrativosLista(p: {
   itens: ItemLista[]; meses: string[]; mes: string | null; filtro: { estado?: string; q?: string }; msg?: string | null;
 }, user?: DashUser): string {
-  const opcMes = p.meses.map((m) => `<option value="${esc(m)}"${m === p.mes ? ' selected' : ''}>${mesCurto(m)}</option>`).join('');
+  const opcMes = p.meses.map((m) => `<option value="${esc(m)}"${m === p.mes ? ' selected' : ''}>${esc(mesCurto(m))}</option>`).join('');
   const opcEstado = ['', 'pronto', 'falta_dado', 'inconsistente', 'sem_cliente']
-    .map((e) => `<option value="${e}"${(p.filtro.estado ?? '') === e ? ' selected' : ''}>${e ? ESTADO[e as EstadoGd].txt : 'Todas'}</option>`).join('');
-  const linhas = p.itens.map((i) => `
-    <a href="/dashboard/demonstrativos/${esc(i.instalacao)}?mes=${esc(i.referencia)}" class="block rounded-lg border border-slate-700 hover:border-slate-500 p-3 mb-2">
-      <div class="flex justify-between gap-2">
-        <b>${esc(i.clienteNome)}</b><span style="color:${ESTADO[i.estado].cor}">${ESTADO[i.estado].txt}</span>
-      </div>
-      <div class="text-sm text-slate-400">UC ${esc(i.instalacao)} · ${mesCurto(i.referencia)} · gerou ${kwh(i.geracaoKwh)} · créditos ${kwh(i.saldoKwh)}</div>
-      ${i.motivo ? `<div class="text-sm" style="color:${ESTADO[i.estado].cor}">${esc(i.motivo)}</div>` : ''}
-      ${i.alertaVencimento ? `<div class="text-sm text-amber-300">${esc(i.alertaVencimento)}</div>` : ''}
-    </a>`).join('');
+    .map((e) => `<option value="${e}"${(p.filtro.estado ?? '') === e ? ' selected' : ''}>${e ? ESTADO[e as EstadoGd].filtro : 'Todas'}</option>`).join('');
+  const conta = (e: EstadoGd) => p.itens.filter((i) => i.estado === e).length;
+  // Com filtro ligado a lista já vem recortada — a faixa diz isso (não é o total do mês).
+  const filtrada = !!(p.filtro.estado || p.filtro.q);
+  const det = filtrada ? 'neste filtro' : undefined;
+
+  const acoes = `<div class="cc-gd-acoes">
+    ${botao({ rotulo: '+ Enviar PDF', href: '/dashboard/demonstrativos/enviar-pdf', tom: 'ouro' })}
+    ${botao({ rotulo: '✎ Digitar demonstrativo', href: '/dashboard/demonstrativos/digitar' })}
+  </div>`;
+
+  const filtro = `<form method="get" action="/dashboard/demonstrativos" class="cc-form cc-gd-filtro">
+    <select name="mes" aria-label="Mês">${opcMes}</select>
+    <select name="estado" aria-label="Situação">${opcEstado}</select>
+    <input name="q" value="${esc(p.filtro.q ?? '')}" placeholder="buscar cliente ou UC" aria-label="Buscar">
+    ${botao({ rotulo: 'Filtrar', tipo: 'submit', icone: 'filter' })}
+  </form>`;
+
+  const lista = p.itens.length === 0
+    ? estadoVazio({ tipo: 'vazio', titulo: 'Nenhum demonstrativo neste filtro.', texto: 'Eles chegam sozinhos pelo e-mail da concessionária — ou use "+ Enviar PDF".' })
+    : tabela({
+      mobile: 'cartoes',
+      colunas: [{ titulo: 'Cliente' }, { titulo: 'Mês' }, { titulo: 'Gerou', alinhar: 'dir', num: true }, { titulo: 'Créditos', alinhar: 'dir', num: true }, { titulo: 'Situação' }, { titulo: 'Créditos a vencer' }],
+      linhas: p.itens.map((i) => [
+        { html: celulaDupla(i.clienteNome, `UC ${i.instalacao}`, `/dashboard/demonstrativos/${i.instalacao}?mes=${i.referencia}`) },
+        mesCurto(i.referencia),
+        kwh(i.geracaoKwh),
+        kwh(i.saldoKwh),
+        { html: `${pilulaEstado(i.estado)}${i.motivo ? `<div class="cc-dupla-s">${esc(i.motivo)}</div>` : ''}` },
+        { html: i.alertaVencimento ? pilulaStatus('acompanhar', i.alertaVencimento) : '—' },
+      ]),
+    });
+
   const body = `
-<div style="color:#d1d5db;max-width:900px">
-<h1 class="text-xl font-bold text-cyan-300 mb-2">📄 Demonstrativos de GD</h1>
-${p.msg ? `<div class="rounded border border-emerald-600 p-2 mb-2">${esc(p.msg)}</div>` : ''}
-${botoesEntrada}
-<form method="get" action="/dashboard/demonstrativos" class="flex flex-wrap gap-2 mb-3">
-  <select name="mes" class="bg-gray-800 p-1 rounded">${opcMes}</select>
-  <select name="estado" class="bg-gray-800 p-1 rounded">${opcEstado}</select>
-  <input name="q" value="${esc(p.filtro.q ?? '')}" placeholder="buscar cliente ou UC" class="bg-gray-800 p-1 rounded">
-  <button class="px-3 py-1 rounded bg-slate-700">Filtrar</button>
-</form>
-${linhas || '<p class="text-slate-500">Nenhum demonstrativo neste filtro. Eles chegam sozinhos pelo e-mail da concessionária — ou use "+ Enviar PDF".</p>'}
-</div>`;
-  return renderLayout({ active: 'demonstrativos', title: 'Demonstrativos', body, dark: true, user });
+${cabecalhoPagina({
+    trilha: [{ rotulo: 'Usinas' }, { rotulo: 'Demonstrativos GD' }],
+    titulo: 'Demonstrativos de GD',
+    subtitulo: 'O demonstrativo de cada UC no mês: pronto, falta dado ou número que não bate.',
+    acoesHtml: acoes,
+  })}
+${p.msg ? aviso({ tom: 'ok', texto: p.msg }) : ''}
+${faixaKpis([
+    { rotulo: 'Prontos', valor: conta('pronto'), detalhe: det },
+    { rotulo: 'Falta dado', valor: conta('falta_dado'), detalhe: det },
+    { rotulo: 'Número não bate', valor: conta('inconsistente'), detalhe: det },
+    { rotulo: 'Sem cliente', valor: conta('sem_cliente'), detalhe: det },
+  ])}
+${cartaoSecao({ titulo: p.mes ? `Demonstrativos de ${mesCurto(p.mes)}` : 'Demonstrativos', dica: `${p.itens.length} UC(s)`, corpoHtml: `${filtro}${lista}` })}`;
+  return layout('Demonstrativos', body, user);
 }
 
 export interface DetalheCliente {
@@ -133,7 +221,7 @@ export interface DetalheCliente {
  * opções são os meses que têm demonstrativo; quem confere se TODOS estão 🟢
  * é o servidor (prepararRelatorioPeriodo), mês a mês.
  */
-function formRelatorioPeriodo(d: DetalheCliente): string {
+function formRelatorioPeriodo(d: DetalheCliente, assistente: string): string {
   if (!d.leadId || d.meses.length < 2) return '';
   const meses = [...d.meses].sort();
   const ate = meses.includes(d.mes) ? d.mes : meses[meses.length - 1];
@@ -143,103 +231,119 @@ function formRelatorioPeriodo(d: DetalheCliente): string {
     .map((m) => `<option value="${esc(m)}"${m === sel ? ' selected' : ''}>${esc(mesCurto(m))}</option>`).join('');
   const base = `/dashboard/demonstrativos/${esc(d.instalacao)}`;
   const envioFeito = d.ultimoEnvioPeriodo
-    ? `<p class="text-emerald-300 w-full mb-1">${esc(textoUltimoEnvioPeriodo(d.ultimoEnvioPeriodo))}</p>` : '';
-  return `
-<form method="get" action="${base}/periodo.html" class="rounded border border-slate-600 p-3 mt-4 flex flex-wrap gap-2 items-center">
-  <b class="w-full">📊 Relatório do período:</b>
+    ? `<p class="cc-gd-ok">${esc(textoUltimoEnvioPeriodo(d.ultimoEnvioPeriodo))}</p>` : '';
+  return cartaoSecao({ titulo: 'Relatório de vários meses', corpoHtml: `
+<form method="get" action="${base}/periodo.html" class="cc-form cc-gd-per">
+  <b>📊 Relatório do período:</b>
   ${envioFeito}
-  <label>de <select name="de" class="bg-gray-800 p-1 rounded">${opcoes(de)}</select></label>
-  <label>até <select name="ate" class="bg-gray-800 p-1 rounded">${opcoes(ate)}</select></label>
-  <button type="submit" formaction="${base}/periodo.html" formtarget="_blank" class="px-3 py-1 rounded bg-slate-700 text-white">👁 Prévia</button>
-  <button type="submit" formaction="${base}/periodo.pdf" formtarget="_self" class="px-3 py-1 rounded bg-emerald-700 text-white">📄 Gerar PDF</button>
-  <button type="submit" formaction="${base}/periodo/enviar" formtarget="_self" class="px-3 py-1 rounded bg-cyan-700 text-white">📲 Enviar pela Eva</button>
-  <span class="text-xs text-slate-400 w-full">Até 12 meses. Só sai com todos os meses do período 🟢.</span>
-</form>`;
+  <label class="cc-campo"><span>de</span><select name="de">${opcoes(de)}</select></label>
+  <label class="cc-campo"><span>até</span><select name="ate">${opcoes(ate)}</select></label>
+  <button type="submit" formaction="${base}/periodo.html" formtarget="_blank" class="cc-btn">👁 Prévia</button>
+  <button type="submit" formaction="${base}/periodo.pdf" formtarget="_self" class="cc-btn">📄 Gerar PDF</button>
+  <button type="submit" formaction="${base}/periodo/enviar" formtarget="_self" class="cc-btn">📲 Enviar pela ${assistente}</button>
+  <span class="cc-gd-dica">Até 12 meses. Só sai com todos os meses do período 🟢.</span>
+</form>` });
 }
 
 export function renderDemonstrativoCliente(d: DetalheCliente, user?: DashUser): string {
+  const assistente = nomeAssistente(user);
   const i = d.meses.indexOf(d.mes);
   const anterior = d.meses[i + 1];
   const proximo = i > 0 ? d.meses[i - 1] : undefined;
-  const nav = (m: string | undefined, s: string) => m
-    ? `<a class="px-2 py-1 rounded bg-slate-700" href="/dashboard/demonstrativos/${esc(d.instalacao)}?mes=${esc(m)}">${s}</a>` : '';
+  const nav = (m: string | undefined, s: string, rot: string) => m
+    ? `<a class="cc-btn cc-btn-sm" aria-label="${rot}" href="/dashboard/demonstrativos/${esc(d.instalacao)}?mes=${esc(m)}">${s}</a>`
+    : `<span class="cc-btn cc-btn-sm cc-btn-off" aria-disabled="true">${s}</span>`;
   const v = d.validacao;
-  const card = (t: string, valor: string) =>
-    `<div class="rounded-lg bg-slate-800 p-3"><div class="text-xs text-slate-400">${t}</div><div class="text-2xl font-bold">${valor}</div></div>`;
-  const lista = (itens: string[], cor: string) => itens.map((x) => `<li style="color:${cor}">${esc(x)}</li>`).join('');
   const origemGeracao = v.origemGeracao === 'manual' ? 'digitada na tela' : v.origemGeracao === 'api' ? 'monitoramento (API)' : '—';
+
+  const checklist = [
+    ...v.bloqueios.map((x) => linhaLista({ tom: 'critico', titulo: x })),
+    ...v.pendencias.map((x) => linhaLista({ tom: 'atencao', titulo: x })),
+    ...v.avisos.map((x) => linhaLista({ tom: 'info', titulo: x })),
+  ].join('');
+
   const formGeracao = `
-<form method="post" action="/dashboard/demonstrativos/${esc(d.instalacao)}/geracao" class="flex flex-wrap gap-2 items-end mt-2">
+<form method="post" action="/dashboard/demonstrativos/${esc(d.instalacao)}/geracao" class="cc-form cc-gd-form">
   <input type="hidden" name="referencia" value="${esc(d.mes)}">
-  <label>Geração de ${mesCurto(d.mes)} (kWh) <input name="kwh" inputmode="decimal" class="bg-gray-800 p-1 rounded" required></label>
-  <button class="px-3 py-1 rounded bg-cyan-700 text-white">Salvar geração</button>
+  <label class="cc-campo"><span>Geração de ${esc(mesCurto(d.mes))} (kWh)</span><input name="kwh" inputmode="decimal" required></label>
+  ${botao({ rotulo: 'Salvar geração', tipo: 'submit', icone: 'check' })}
 </form>`;
-  const formLigar = d.leadId ? '' : `
-<div class="rounded border border-slate-600 p-3 mt-3">
-  <b>Ligar esta UC a um cliente</b>
-  <form method="get" action="/dashboard/demonstrativos/${esc(d.instalacao)}" class="flex gap-2 mt-2">
+  const formLigar = d.leadId ? '' : cartaoSecao({ titulo: 'Ligar esta UC a um cliente', corpoHtml: `
+  <form method="get" action="/dashboard/demonstrativos/${esc(d.instalacao)}" class="cc-form cc-gd-form">
     <input type="hidden" name="mes" value="${esc(d.mes)}">
-    <input name="buscar" placeholder="nome do cliente" class="bg-gray-800 p-1 rounded"><button class="px-3 py-1 rounded bg-slate-700">Buscar</button>
+    <label class="cc-campo"><span>Nome do cliente</span><input name="buscar" placeholder="nome do cliente"></label>${botao({ rotulo: 'Buscar', tipo: 'submit', icone: 'search' })}
   </form>
-  ${d.candidatos.map((c) => `
-  <form method="post" action="/dashboard/demonstrativos/${esc(d.instalacao)}/ligar" class="mt-1">
+  <div class="cc-gd-cand">${d.candidatos.map((c) => `
+  <form method="post" action="/dashboard/demonstrativos/${esc(d.instalacao)}/ligar">
     <input type="hidden" name="lead_id" value="${esc(c.id)}"><input type="hidden" name="mes" value="${esc(d.mes)}">
-    <button class="px-2 py-1 rounded bg-emerald-700 text-white">Ligar a ${esc(c.nome ?? 'sem nome')}${c.uc ? ` (UC ${esc(c.uc)})` : ''}</button>
-  </form>`).join('')}
-</div>`;
+    ${botao({ rotulo: `Ligar a ${c.nome ?? 'sem nome'}${c.uc ? ` (UC ${c.uc})` : ''}`, tipo: 'submit', icone: 'plug' })}
+  </form>`).join('')}</div>` });
   const rateio = d.unidades.length > 1
-    ? `<p class="mt-2">Rateio: ${d.unidades.map((u) => `${esc(u.codigoCliente)} ${esc(u.percentual)}%`).join(' · ')}</p>` : '';
+    ? `<p class="cc-gd-nota">Rateio: ${d.unidades.map((u) => `<b>${esc(u.codigoCliente)}</b> ${esc(u.percentual)}%`).join(' · ')}</p>` : '';
   const motivoFalta = v.bloqueios[0] ?? v.pendencias[0] ?? 'o mês ainda não está pronto';
-  const envioFeito = d.ultimoEnvio ? `<p class="text-emerald-300 mt-2">${esc(textoUltimoEnvio(d.ultimoEnvio))}</p>` : '';
+  const envioFeito = d.ultimoEnvio ? `<p class="cc-gd-ok">${esc(textoUltimoEnvio(d.ultimoEnvio))}</p>` : '';
   const botaoRelatorio = v.estado === 'pronto'
-    ? `<div class="flex gap-2 mt-4">
-  <a href="/dashboard/demonstrativos/${esc(d.instalacao)}/relatorio.pdf?mes=${esc(d.mes)}" class="px-4 py-2 rounded bg-emerald-700 text-white">📄 Gerar PDF</a>
-  <a href="/dashboard/demonstrativos/${esc(d.instalacao)}/relatorio.html?mes=${esc(d.mes)}" target="_blank" class="px-4 py-2 rounded bg-slate-700 text-white">👁 Prévia</a>
-  <a href="/dashboard/demonstrativos/${esc(d.instalacao)}/enviar?mes=${esc(d.mes)}" class="px-4 py-2 rounded bg-cyan-700 text-white">📲 Enviar ao cliente pela Eva</a>
+    ? `<div class="cc-gd-acoes">
+  ${botao({ rotulo: `📲 Enviar ao cliente pela ${assistente}`, href: `/dashboard/demonstrativos/${d.instalacao}/enviar?mes=${d.mes}`, tom: 'ouro' })}
+  <a href="/dashboard/demonstrativos/${esc(d.instalacao)}/relatorio.pdf?mes=${esc(d.mes)}" class="cc-btn">📄 Gerar PDF</a>
+  <a href="/dashboard/demonstrativos/${esc(d.instalacao)}/relatorio.html?mes=${esc(d.mes)}" target="_blank" class="cc-btn">👁 Prévia</a>
 </div>${envioFeito}`
-    : `<p class="mt-4"><span class="px-4 py-2 rounded bg-slate-800 text-slate-500 cursor-not-allowed">📄 Gerar PDF</span>
-  <span class="text-sm text-amber-300 ml-2">Só sai com tudo 🟢 — ${esc(motivoFalta)}</span></p>`;
+    : `<div class="cc-gd-acoes"><span class="cc-btn cc-btn-off" aria-disabled="true">📄 Gerar PDF</span>
+  <span class="cc-gd-nota">Só sai com tudo 🟢 — ${esc(motivoFalta)}</span></div>`;
+
+  const cabecalho = cabecalhoPagina({
+    trilha: [{ rotulo: 'Usinas' }, { rotulo: 'Demonstrativos GD', href: `/dashboard/demonstrativos?mes=${d.mes}` }, { rotulo: `UC ${d.instalacao}` }],
+    titulo: `${d.clienteNome} · UC ${d.instalacao}`,
+    seloHtml: pilulaEstado(v.estado),
+  });
+
   const body = `
-<div style="color:#d1d5db;max-width:900px">
-<a href="/dashboard/demonstrativos?mes=${esc(d.mes)}" class="text-sm text-slate-400">← Demonstrativos</a>
-<h1 class="text-xl font-bold text-cyan-300 mt-1">${esc(d.clienteNome)} · UC ${esc(d.instalacao)}</h1>
-${d.msg ? `<div class="rounded border border-emerald-600 p-2 my-2">${esc(d.msg)}</div>` : ''}
-<div class="flex items-center gap-2 my-2">${nav(anterior, '◄')}<b>${mesCurto(d.mes)}</b>${nav(proximo, '►')}
-  <span style="color:${ESTADO[v.estado].cor}" class="ml-3">${ESTADO[v.estado].txt}</span></div>
-<div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-  ${card('☀ Gerou', kwh(v.geracaoKwh))}${card('🏠 Consumiu', kwh(d.consumoKwh))}
-  ${card('💰 Economia estimada', brl(d.economiaRs))}${card('🔋 Saldo de créditos', kwh(d.saldoKwh))}
-</div>
-${d.proximoExpirar ? `<p class="text-amber-300 mt-2">${esc(d.proximoExpirar)}</p>` : ''}
-${rateio}
-<canvas id="g13" height="110" class="mt-3"></canvas>
-<ul class="mt-3 text-sm">${lista(v.bloqueios, '#ef4444')}${lista(v.pendencias, '#eab308')}${lista(v.avisos, '#94a3b8')}</ul>
-${v.geracaoKwh === null || v.origemGeracao === 'manual' ? formGeracao : ''}
+${cabecalho}
+<div class="cc-gd-nav">${nav(anterior, '◀', 'Mês anterior')}<span class="cc-gd-mes">${esc(mesCurto(d.mes))}</span>${nav(proximo, '▶', 'Próximo mês')}</div>
+${d.msg ? aviso({ tom: 'ok', texto: d.msg }) : ''}
+${faixaKpis([
+    { rotulo: 'Gerou', valor: v.geracaoKwh, casas: 1, unidade: 'kWh', destaque: true },
+    { rotulo: 'Consumiu', valor: d.consumoKwh, casas: 1, unidade: 'kWh' },
+    { rotulo: 'Economia estimada', valor: d.economiaRs, casas: 2, prefixo: 'R$' },
+    { rotulo: 'Saldo de créditos', valor: d.saldoKwh, casas: 1, unidade: 'kWh' },
+  ])}
+${d.proximoExpirar ? aviso({ tom: 'atencao', texto: d.proximoExpirar }) : ''}
+${cartaoSecao({ titulo: 'Relatório do mês', corpoHtml: botaoRelatorio })}
+${cartaoSecao({
+    titulo: 'Consumo, injetado e compensado', dica: 'últimos 13 meses',
+    corpoHtml: `<div class="cc-gd-graf"><canvas id="g13"></canvas></div>${rateio}`,
+  })}
+${checklist || v.geracaoKwh === null || v.origemGeracao === 'manual' ? cartaoSecao({
+    titulo: 'Conferência do mês',
+    corpoHtml: `${checklist ? `<div class="cc-gd-lista">${checklist}</div>` : ''}${v.geracaoKwh === null || v.origemGeracao === 'manual' ? formGeracao : ''}`,
+  }) : ''}
 ${formLigar}
-<h2 class="font-bold mt-4">De onde veio cada número</h2>
-<ul class="text-sm text-slate-400">
+${cartaoSecao({ titulo: 'De onde veio cada número', corpoHtml: `<ul class="cc-gd-origem">
   <li>Consumo, injetado e créditos → ${esc(ORIGEM[d.origemDemonstrativo] ?? d.origemDemonstrativo)}${d.verificado ? ' ✓ (assinatura da concessionária conferida)' : ''}</li>
   <li>Geração → ${origemGeracao}</li>
   <li>Economia estimada = compensado ${kwh(d.compensadoKwh)} × tarifa média (Lei 14.300 cobra parte do Fio B)</li>
-</ul>
-${botaoRelatorio}
-${formRelatorioPeriodo(d)}
-</div>`;
+</ul>` })}
+${formRelatorioPeriodo(d, assistente)}`;
   // Rateio: uma linha por unidade no mês — soma por mês (13 meses distintos).
+  // Gráfico: os MESMOS arrays de antes; só as cores vêm do tema (JS_TEMA_GRAFICOS).
   const hist = historicoPorMes(d.historico, 13);
   const scripts = `
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+${JS_TEMA_GRAFICOS}
 <script>
+(function () {
+var T = window.ccTema || {};
 new Chart(document.getElementById('g13'), { type: 'bar', data: {
   labels: ${JSON.stringify(hist.map((h) => mesCurto(h.mes)))},
   datasets: [
-    { label: 'Consumo (kWh)', data: ${JSON.stringify(hist.map((h) => h.consumida))}, backgroundColor: '#f59e0b' },
-    { label: 'Injetado (kWh)', data: ${JSON.stringify(hist.map((h) => h.injetada))}, backgroundColor: '#22d3ee' },
-    { label: 'Compensado (kWh)', data: ${JSON.stringify(hist.map((h) => h.compensado))}, backgroundColor: '#22c55e' },
-  ] }, options: { plugins: { legend: { labels: { color: '#cbd5e1' } } },
-  scales: { x: { ticks: { color: '#94a3b8' } }, y: { ticks: { color: '#94a3b8' } } } } });
+    { label: 'Consumo (kWh)', data: ${JSON.stringify(hist.map((h) => h.consumida))}, backgroundColor: T.gold, borderRadius: 4 },
+    { label: 'Injetado (kWh)', data: ${JSON.stringify(hist.map((h) => h.injetada))}, backgroundColor: T.info, borderRadius: 4 },
+    { label: 'Compensado (kWh)', data: ${JSON.stringify(hist.map((h) => h.compensado))}, backgroundColor: T.ok, borderRadius: 4 },
+  ] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } },
+  scales: { x: { grid: { display: false } }, y: { beginAtZero: true } } } });
+})();
 </script>`;
-  return renderLayout({ active: 'demonstrativos', title: d.clienteNome, body, scripts, dark: true, user });
+  return layout(d.clienteNome, body, user, scripts);
 }
 
 export type ResultadoLeituraPdf =
@@ -249,57 +353,60 @@ export type ResultadoLeituraPdf =
 
 export function renderEnviarPdf(user?: DashUser): string {
   const body = `
-<div style="color:#d1d5db;max-width:640px">
-<h1 class="text-xl font-bold text-cyan-300 mb-3">+ Enviar PDF do demonstrativo</h1>
-<form method="post" action="/dashboard/demonstrativos/enviar-pdf" enctype="multipart/form-data" class="space-y-3">
-  <input type="file" name="pdfs" accept="application/pdf" multiple required>
-  <p class="text-sm text-slate-400">Pode escolher vários de uma vez. Nada é gravado antes de você conferir.</p>
-  <button class="px-4 py-2 rounded bg-cyan-700 text-white">Ler PDFs</button>
-</form></div>`;
-  return renderLayout({ active: 'demonstrativos', title: 'Enviar PDF', body, dark: true, user });
+${cabecalhoPagina({ trilha: [{ rotulo: 'Usinas' }, TRILHA_GD, { rotulo: 'Enviar PDF' }], titulo: 'Enviar PDF do demonstrativo' })}
+<div class="cc-gd-limite">
+${cartaoSecao({ titulo: 'PDFs da concessionária', corpoHtml: `
+<form method="post" action="/dashboard/demonstrativos/enviar-pdf" enctype="multipart/form-data" class="cc-form cc-gd-form">
+  <label class="cc-campo cc-gd-cheia"><span>Arquivos PDF</span><input type="file" name="pdfs" accept="application/pdf" multiple required></label>
+  <p class="cc-gd-nota">Pode escolher vários de uma vez. Nada é gravado antes de você conferir.</p>
+  ${botao({ rotulo: 'Ler PDFs', tipo: 'submit', tom: 'ouro', icone: 'file' })}
+</form>` })}
+</div>`;
+  return layout('Enviar PDF', body, user, undefined, false);
 }
 
 export function renderConferenciaPdf(res: ResultadoLeituraPdf[], user?: DashUser): string {
-  const blocos = res.map((r) => r.ok ? `
-<div class="rounded-lg border border-slate-600 p-3 mb-3">
-  <b>${esc(r.arquivo)}</b> — ${esc(r.clienteNome)} · UC ${esc(r.instalacao)} · ${mesCurto(r.referencia)}
-  <div class="text-sm mt-1">Injetado ${kwh(r.injetadoKwh)} · Consumo ${kwh(r.consumoKwh)} · Saldo ${kwh(r.saldoKwh)}</div>
-  ${r.inconsistencias.length ? `<ul class="text-sm" style="color:#ef4444">${r.inconsistencias.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-  <form method="post" action="/dashboard/demonstrativos/confirmar" class="mt-2">
+  const blocos = res.map((r) => r.ok
+    ? cartaoSecao({ titulo: r.arquivo, dica: `${r.clienteNome} · UC ${r.instalacao} · ${mesCurto(r.referencia)}`, classe: 'cc-gd-conf', corpoHtml: `
+  <p class="cc-gd-nums">Injetado <b>${kwh(r.injetadoKwh)}</b> · Consumo <b>${kwh(r.consumoKwh)}</b> · Saldo <b>${kwh(r.saldoKwh)}</b></p>
+  ${r.inconsistencias.length ? `<div class="cc-gd-lista">${r.inconsistencias.map((x) => linhaLista({ tom: 'critico', titulo: x })).join('')}</div>` : ''}
+  <form method="post" action="/dashboard/demonstrativos/confirmar" class="cc-gd-envio">
     <input type="hidden" name="texto_b64" value="${esc(r.textoB64)}">
     <input type="hidden" name="assinatura_texto" value="${esc(r.assinatura)}">
-    <button class="px-3 py-1 rounded bg-emerald-700 text-white">Confirmo — gravar</button>
-  </form>
-</div>` : `
-<div class="rounded-lg border border-red-700 p-3 mb-3"><b>${esc(r.arquivo)}</b> — não deu pra ler: ${esc(r.motivo)}.
-  Confira se é o demonstrativo de microgeração, ou use "✎ Digitar demonstrativo".</div>`).join('');
+    ${botao({ rotulo: 'Confirmo — gravar', tipo: 'submit', icone: 'check' })}
+  </form>` })
+    : `<div class="cc-aviso cc-aviso-erro" role="alert">${icone('alert', 'sm')}<span><strong>${esc(r.arquivo)}</strong> — não deu pra ler: ${esc(r.motivo)}.
+  Confira se é o demonstrativo de microgeração, ou use "✎ Digitar demonstrativo".</span></div>`).join('');
   const body = `
-<div style="color:#d1d5db;max-width:900px">
-<h1 class="text-xl font-bold text-cyan-300 mb-3">Conferência</h1>
-<p class="text-sm text-slate-400 mb-3">Confira os números de cada PDF antes de gravar.</p>
-${blocos}
-<a href="/dashboard/demonstrativos" class="text-sm text-slate-400">← voltar</a>
-</div>`;
-  return renderLayout({ active: 'demonstrativos', title: 'Conferência', body, dark: true, user });
+${cabecalhoPagina({
+    trilha: [{ rotulo: 'Usinas' }, TRILHA_GD, { rotulo: 'Conferência' }],
+    titulo: 'Conferência',
+    subtitulo: 'Confira os números de cada PDF antes de gravar.',
+    acoesHtml: botao({ rotulo: '← voltar', href: '/dashboard/demonstrativos' }),
+  })}
+${blocos}`;
+  return layout('Conferência', body, user);
 }
 
 export function renderDigitar(v: Record<string, string>, erros: string[], user?: DashUser): string {
-  const campo = (nome: string, rotulo: string, extra = '') =>
-    `<label class="block">${rotulo} <input name="${nome}" value="${esc(v[nome] ?? '')}" class="bg-gray-800 p-1 rounded w-full" ${extra}></label>`;
+  const campo = (nome: string, rotulo: string, extra = '', cls = '') =>
+    `<label class="cc-campo${cls ? ` ${cls}` : ''}"><span>${rotulo}</span><input name="${nome}" value="${esc(v[nome] ?? '')}" ${extra}></label>`;
   const body = `
-<div style="color:#d1d5db;max-width:640px">
-<h1 class="text-xl font-bold text-cyan-300 mb-3">✎ Digitar demonstrativo</h1>
-${erros.length ? `<ul class="rounded border border-red-700 p-2 mb-3" style="color:#fca5a5">${erros.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
-<form method="post" action="/dashboard/demonstrativos/digitar" class="space-y-2">
-  ${campo('clienteNome', 'Nome do cliente', 'required')}
-  <div class="grid grid-cols-2 gap-2">${campo('instalacao', 'Instalação (UC)', 'inputmode="numeric" required')}${campo('codigoCliente', 'Código do cliente (se tiver)', 'inputmode="numeric"')}</div>
-  ${campo('mes', 'Mês de referência', 'type="month" required')}
-  <div class="grid grid-cols-2 gap-2">${campo('injetado', 'Injetado no mês (kWh)', 'inputmode="decimal" required')}${campo('consumo', 'Consumo do mês (kWh)', 'inputmode="decimal" required')}</div>
-  <div class="grid grid-cols-2 gap-2">${campo('creditoUtilizado', 'Crédito utilizado (kWh)', 'inputmode="decimal" required')}${campo('saldoAcumulado', 'Saldo acumulado (kWh)', 'inputmode="decimal" required')}</div>
-  <div class="grid grid-cols-2 gap-2">${campo('proximoExpirar', 'Crédito a expirar (kWh, se tiver)', 'inputmode="decimal"')}${campo('cicloExpirar', 'Expira em', 'type="month"')}</div>
-  <button class="px-4 py-2 rounded bg-cyan-700 text-white">Conferir e gravar</button>
-</form></div>`;
-  return renderLayout({ active: 'demonstrativos', title: 'Digitar demonstrativo', body, dark: true, user });
+${cabecalhoPagina({ trilha: [{ rotulo: 'Usinas' }, TRILHA_GD, { rotulo: 'Digitar' }], titulo: 'Digitar demonstrativo' })}
+<div class="cc-gd-limite">
+${erros.length ? `<div class="cc-aviso cc-aviso-erro" role="alert">${icone('alert', 'sm')}<ul class="cc-gd-origem">${erros.map((e) => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
+${cartaoSecao({ titulo: 'Números do demonstrativo', corpoHtml: `
+<form method="post" action="/dashboard/demonstrativos/digitar" class="cc-form cc-gd-grade">
+  ${campo('clienteNome', 'Nome do cliente', 'required', 'cc-gd-cheia')}
+  ${campo('instalacao', 'Instalação (UC)', 'inputmode="numeric" required')}${campo('codigoCliente', 'Código do cliente (se tiver)', 'inputmode="numeric"')}
+  ${campo('mes', 'Mês de referência', 'type="month" required', 'cc-gd-cheia')}
+  ${campo('injetado', 'Injetado no mês (kWh)', 'inputmode="decimal" required')}${campo('consumo', 'Consumo do mês (kWh)', 'inputmode="decimal" required')}
+  ${campo('creditoUtilizado', 'Crédito utilizado (kWh)', 'inputmode="decimal" required')}${campo('saldoAcumulado', 'Saldo acumulado (kWh)', 'inputmode="decimal" required')}
+  ${campo('proximoExpirar', 'Crédito a expirar (kWh, se tiver)', 'inputmode="decimal"')}${campo('cicloExpirar', 'Expira em', 'type="month"')}
+  <div class="cc-gd-cheia">${botao({ rotulo: 'Conferir e gravar', tipo: 'submit', tom: 'ouro', icone: 'check' })}</div>
+</form>` })}
+</div>`;
+  return layout('Digitar demonstrativo', body, user, undefined, false);
 }
 
 export interface ConfirmarEnvioRelatorio {
@@ -326,46 +433,45 @@ export function renderConfirmarEnvioRelatorio(c: ConfirmarEnvioRelatorio, user?:
     ? 'Vai pelo WhatsApp da sua empresa: a mensagem com o link e o PDF anexo.'
     : 'Vai pelo modelo aprovado da Meta ("relatorio_usina_v1"), com o botão "Ver meu relatório". Se o modelo ainda não estiver aprovado, tento como mensagem comum (só chega se o cliente falou com a gente nas últimas 24 horas).';
   const blocoZap = c.zap.para
-    ? `<p>Para: <b>${esc(telefoneBonito(c.zap.para))}</b></p>
-<p class="text-sm text-slate-400">${esc(comoVai)}</p>
-<pre class="whitespace-pre-wrap rounded bg-slate-800 p-3 mt-2" style="font-family:inherit">${esc(c.zap.texto)}</pre>`
-    : `<p style="color:#ef4444">❌ Não vai sair — ${esc(motivoEmPortugues('zap', c.zap.motivo))}.</p>`;
+    ? `<p class="cc-gd-para">Para: <b>${esc(telefoneBonito(c.zap.para))}</b></p>
+<p class="cc-gd-nota">${esc(comoVai)}</p>
+<pre class="cc-gd-zap">${esc(c.zap.texto)}</pre>`
+    : `<p class="cc-gd-erro">❌ Não vai sair — ${esc(motivoEmPortugues('zap', c.zap.motivo))}.</p>`;
   let blocoEmail: string;
   if (c.email === null) {
-    blocoEmail = '<p style="color:#eab308">⚠️ O e-mail não está configurado neste ambiente — só o WhatsApp será tentado.</p>';
+    blocoEmail = aviso({ tom: 'atencao', texto: 'O e-mail não está configurado neste ambiente — só o WhatsApp será tentado.' });
   } else if (c.email.para) {
-    blocoEmail = `<p>Para: <b>${esc(c.email.para)}</b> · Assunto: <b>${esc(c.email.assunto)}</b></p>
-<iframe title="Prévia do e-mail" sandbox="" srcdoc="${esc(c.email.html)}" style="width:100%;height:560px;background:#fff;border-radius:8px;margin-top:8px"></iframe>`;
+    blocoEmail = `<p class="cc-gd-para">Para: <b>${esc(c.email.para)}</b> · Assunto: <b>${esc(c.email.assunto)}</b></p>
+<iframe title="Prévia do e-mail" sandbox="" srcdoc="${esc(c.email.html)}" class="cc-gd-email"></iframe>`;
   } else {
-    blocoEmail = `<p style="color:#ef4444">❌ Não vai sair — ${esc(motivoEmPortugues('email', c.email.motivo))}.</p>`;
+    blocoEmail = `<p class="cc-gd-erro">❌ Não vai sair — ${esc(motivoEmPortugues('email', c.email.motivo))}.</p>`;
   }
   const podeEnviar = Boolean(c.zap.para) || Boolean(c.email?.para);
   const jaEnviado = c.ultimoEnvio
-    ? `<div class="rounded border border-amber-500 p-3 my-3 text-amber-200">Este relatório já foi enviado: ${esc(textoUltimoEnvio(c.ultimoEnvio))}.<br>Enviar de novo manda outra mensagem para o cliente.</div>`
+    ? `<div class="cc-aviso cc-aviso-atencao" role="status">${icone('alert', 'sm')}<span>Este relatório já foi enviado: ${esc(textoUltimoEnvio(c.ultimoEnvio))}.<br>Enviar de novo manda outra mensagem para o cliente.</span></div>`
     : '';
   const form = podeEnviar
     // Duplo clique: o botão trava no 1º envio (o servidor também reserva o mês).
-    ? `<form method="post" action="${acaoEnviar}" class="flex flex-wrap gap-2 mt-4" onsubmit="var b=this.querySelector('button[type=submit]');if(b){b.disabled=true;b.textContent='Enviando…';}">
+    ? `<form method="post" action="${acaoEnviar}" class="cc-gd-envio" onsubmit="var b=this.querySelector('button[type=submit]');if(b){b.disabled=true;b.textContent='Enviando…';}">
   <input type="hidden" name="confirmar" value="1">
   ${c.ultimoEnvio ? '<input type="hidden" name="reenviar" value="1">' : ''}
-  <button type="submit" class="px-4 py-2 rounded bg-emerald-700 text-white">${c.ultimoEnvio ? '🔁 Enviar de novo' : '📲 Confirmar e enviar'}</button>
-  <a href="${voltar}" class="px-4 py-2 rounded bg-slate-700 text-white">Cancelar</a>
+  <button type="submit" class="cc-btn cc-btn-gold">${c.ultimoEnvio ? '🔁 Enviar de novo' : '📲 Confirmar e enviar'}</button>
+  <a href="${voltar}" class="cc-btn">Cancelar</a>
 </form>`
-    : `<p class="mt-4" style="color:#ef4444">Nada pode ser enviado — corrija o cadastro do cliente (telefone/e-mail) e tente de novo.</p>
-<a href="${voltar}" class="px-4 py-2 rounded bg-slate-700 text-white inline-block mt-2">← Voltar</a>`;
+    : `<div class="cc-aviso cc-aviso-erro" role="alert">${icone('alert', 'sm')}<span>Nada pode ser enviado — corrija o cadastro do cliente (telefone/e-mail) e tente de novo.</span></div>
+<div class="cc-gd-envio"><a href="${voltar}" class="cc-btn">← Voltar</a></div>`;
   const body = `
-<div style="color:#d1d5db;max-width:900px">
-<a href="${voltar}" class="text-sm text-slate-400">← ${esc(c.clienteNome)}</a>
-<h1 class="text-xl font-bold text-cyan-300 mt-1">Enviar o relatório de ${esc(c.mesExtenso)} para ${esc(c.clienteNome)}</h1>
+${cabecalhoPagina({
+    trilha: [{ rotulo: 'Usinas' }, TRILHA_GD, { rotulo: c.clienteNome, href: `/dashboard/demonstrativos/${c.instalacao}?mes=${c.mes}` }, { rotulo: 'Enviar' }],
+    titulo: `Enviar o relatório de ${c.mesExtenso} para ${c.clienteNome}`,
+  })}
+<div class="cc-gd-limite">
 ${jaEnviado}
-<h2 class="font-bold mt-4">📲 WhatsApp</h2>
-${blocoZap}
-<h2 class="font-bold mt-4">✉️ E-mail</h2>
-${blocoEmail}
-<h2 class="font-bold mt-4">🔗 Link do relatório</h2>
-<p class="text-sm">O cliente recebe um link assim: <code>${esc(c.linkExemplo)}</code> — o endereço definitivo é criado na hora do envio e abre o PDF direto, sem senha.
-<a href="${previaHref}" target="_blank" class="underline text-cyan-300">👁 Ver o relatório</a></p>
+${cartaoSecao({ titulo: 'WhatsApp', corpoHtml: blocoZap })}
+${cartaoSecao({ titulo: 'E-mail', corpoHtml: blocoEmail })}
+${cartaoSecao({ titulo: 'Link do relatório', corpoHtml: `<p class="cc-gd-nota">O cliente recebe um link assim: <code>${esc(c.linkExemplo)}</code> — o endereço definitivo é criado na hora do envio e abre o PDF direto, sem senha.
+<a href="${previaHref}" target="_blank" class="cc-us-link">👁 Ver o relatório</a></p>` })}
 ${form}
 </div>`;
-  return renderLayout({ active: 'demonstrativos', title: `Enviar relatório — ${c.clienteNome}`, body, dark: true, user });
+  return layout(`Enviar relatório — ${c.clienteNome}`, body, user, undefined, false);
 }
