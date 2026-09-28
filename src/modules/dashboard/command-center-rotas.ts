@@ -38,7 +38,7 @@ export function rotaCommandCenter(supabase: SupabaseClient, agoraFn: () => Date 
       console.error('[dashboard/command-center] kpis', err);
       // Falha geral = tudo "sem dado agora" ("em construção" é só pra KPI que
       // ainda não existe).
-      kpisMes = { leads: null, propostas: null, vendas: null, usinasNovas: null, manutencoesPendentes: null };
+      kpisMes = { leads: null, propostas: null, vendas: null, usinasNovas: null };
     }
     res.type('text/html').send(renderCommandCenterPage({ agora, nomeUsuario: user?.nome ?? null, kpisMes }, user));
   };

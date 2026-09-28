@@ -71,9 +71,18 @@ function isoNDaysAgo(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Lead "esperando resposta": a Eva está ativa, o lead não saiu, está no começo
+ *  do funil e ninguém mexeu nele há mais de 24 h. Regra ÚNICA — o Cockpit
+ *  ("Silentes 24h+") e a Central de Atenção do Command Center usam esta. */
+export const CRITERIO_LEAD_ESPERANDO = {
+  status: ['novo', 'qualificando', 'qualificado'] as string[],
+  horas: 24,
+} as const;
+
 export async function getCockpitData(client: SupabaseClient): Promise<CockpitData> {
   const today0h = brtTodayMidnightUtc();
   const since24h = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+  const desdeEsperando = new Date(Date.now() - CRITERIO_LEAD_ESPERANDO.horas * 60 * 60_000).toISOString();
   const since30d = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
   const since7d = isoNDaysAgo(7);
 
@@ -97,8 +106,8 @@ export async function getCockpitData(client: SupabaseClient): Promise<CockpitDat
     client.from('leads')
       .select('id', { count: 'exact', head: true })
       .eq('eva_active', true).eq('opt_out', false)
-      .in('status', ['novo', 'qualificando', 'qualificado'])
-      .lt('updated_at', since24h),
+      .in('status', CRITERIO_LEAD_ESPERANDO.status)
+      .lt('updated_at', desdeEsperando),
     client.from('leads').select('id', { count: 'exact', head: true })
       .eq('status', 'agendado').gte('updated_at', today0h),
     client.from('eva_cadence').select('id', { count: 'exact', head: true })
@@ -122,8 +131,8 @@ export async function getCockpitData(client: SupabaseClient): Promise<CockpitDat
     client.from('leads')
       .select('id', { count: 'exact', head: true })
       .eq('eva_active', true).eq('opt_out', false)
-      .in('status', ['novo', 'qualificando', 'qualificado'])
-      .lt('updated_at', since24h),
+      .in('status', CRITERIO_LEAD_ESPERANDO.status)
+      .lt('updated_at', desdeEsperando),
     client.from('marketing_alerts').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
   ]);
 

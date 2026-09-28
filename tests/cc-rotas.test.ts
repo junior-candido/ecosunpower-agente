@@ -51,7 +51,6 @@ const TUDO_OK: Record<string, Resultado> = {
   'propostas_publicas:revoked': { count: 47, error: null },
   'leads:contract_signed_at': { count: 9, error: null },
   'sistemas_clientes:created_at': { count: 3, error: null },
-  'maintenance_reminders:status': { count: 5, error: null },
 };
 
 function resFalso() {
@@ -122,7 +121,7 @@ describe('GET /dashboard/command-center', () => {
     const res = resFalso();
     await rotaCommandCenter(db, () => AGORA)(reqDe(junior), res as unknown as Response);
     const escopo = db.chamadas.filter((c) => c.metodo === 'eq' && c.coluna === 'company_id');
-    expect(escopo).toHaveLength(5);
+    expect(escopo).toHaveLength(4);
     expect(escopo.every((c) => c.valor === ECOSUN)).toBe(true);
   });
 
@@ -162,10 +161,9 @@ describe('fetchCommandCenterKpis', () => {
       ...TUDO_OK,
       'leads:created_at': { count: null, error: null },
       'sistemas_clientes:created_at': new Error('rede caiu'),
-      'maintenance_reminders:status': { count: 0, error: null },
     });
     expect(await fetchCommandCenterKpis(db, ECOSUN, AGORA)).toEqual({
-      leads: null, propostas: 47, vendas: 9, usinasNovas: null, manutencoesPendentes: 0,
+      leads: null, propostas: 47, vendas: 9, usinasNovas: null,
     });
   });
 
@@ -174,7 +172,7 @@ describe('fetchCommandCenterKpis', () => {
     await fetchCommandCenterKpis(db, 'empresa-x', AGORA);
     const porTabela = db.chamadas.filter((c) => c.metodo === 'eq' && c.coluna === 'company_id');
     expect(porTabela.map((c) => c.tabela).sort()).toEqual(
-      ['leads', 'leads', 'maintenance_reminders', 'propostas_publicas', 'sistemas_clientes'],
+      ['leads', 'leads', 'propostas_publicas', 'sistemas_clientes'],
     );
     expect(porTabela.every((c) => c.valor === 'empresa-x')).toBe(true);
   });
@@ -188,9 +186,6 @@ describe('fetchCommandCenterKpis', () => {
     const leadsLt = db.chamadas.find((c) => c.tabela === 'leads' && c.metodo === 'lt' && c.coluna === 'created_at')!;
     expect(leadsGte.valor).toBe('2026-09-01T03:00:00.000Z');
     expect(leadsLt.valor).toBe('2026-10-01T03:00:00.000Z');
-    // Janela de manutenção sai da data de referência, não do relógio do servidor.
-    const manut = db.chamadas.find((c) => c.tabela === 'maintenance_reminders' && c.metodo === 'lte')!;
-    expect(manut.valor).toBe('2026-10-30');
   });
 
   it('virada de ano em Brasília: 31/12 às 23h fica em dezembro', async () => {

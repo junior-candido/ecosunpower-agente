@@ -167,7 +167,7 @@ function departamentos(d: CommandCenterDados): string {
     ${dept({ titulo: 'Comercial', icone: 'users', href: '/dashboard/leads/kanban', valor: k?.propostas ?? null, legenda: 'propostas no mês', linha: temNumero(k?.vendas) ? `${fmtNumero(k?.vendas ?? null)} ${k?.vendas === 1 ? 'venda fechada' : 'vendas fechadas'} no mês` : 'Pipeline e conversão: próxima entrega' })}
     ${dept({ titulo: 'Marketing', icone: 'mega', href: '/dashboard/marketing', valor: k?.leads ?? null, legenda: 'leads no mês', linha: 'Investimento e custo por lead: próxima entrega' })}
     ${dept({ titulo: 'Instalações', icone: 'hammer', href: '/dashboard/usinas/kanban', valor: k?.usinasNovas ?? null, legenda: 'usinas cadastradas no mês', linha: 'Obras por etapa e atrasos: próxima entrega' })}
-    ${dept({ titulo: 'O&M', icone: 'wrench', href: '/dashboard/manutencao', valor: k?.manutencoesPendentes ?? null, legenda: 'manutenções em até 30 dias', linha: 'Alarmes e disponibilidade: próxima entrega' })}
+    ${dept({ titulo: 'O&M', icone: 'wrench', href: '/dashboard/manutencao', valor: null, legenda: 'manutenções em até 30 dias', linha: 'Alarmes e disponibilidade: próxima entrega' })}
     ${dept({ titulo: 'Financeiro', icone: 'wallet', href: '/dashboard/financeiro', valor: null, legenda: 'faturamento', linha: 'Margem e a receber: próxima entrega' })}
   </section>`;
 }

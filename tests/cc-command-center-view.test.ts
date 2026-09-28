@@ -15,7 +15,7 @@ const AGORA = new Date('2026-09-27T14:42:00Z');
 const comDados: CommandCenterDados = {
   agora: AGORA,
   nomeUsuario: 'Junior',
-  kpisMes: { leads: 212, propostas: 47, vendas: 9, usinasNovas: 3, manutencoesPendentes: 5 },
+  kpisMes: { leads: 212, propostas: 47, vendas: 9, usinasNovas: 3 },
 };
 const semDados: CommandCenterDados = { agora: AGORA, nomeUsuario: 'Thiago', kpisMes: null };
 
