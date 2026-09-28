@@ -33,6 +33,21 @@ export const TELAS_RENOVADAS: string[] = [
   'demonstrativos-views.ts',
   // R12 — Pasta do Cliente (lista, editor, prévia)
   'pasta-views.ts',
+  // ── Onda 3 (R13–R19): cada fatia acrescenta SÓ debaixo do seu marcador ──
+  // R13 — Manutenção + OS
+
+  // R14 — Serviços de campo (painel interno)
+
+  // R15 — Quadro de Obras + vincular + contato
+
+  // R16 — Clientes (lista, ficha, novo, relatório pós-instalação)
+
+  // R17 — Marketing (campanhas, blog, e-mail, cadência)
+
+  // R18 — RH
+
+  // R19 — Configurações (usuários, empresas, WhatsApp, minha assinatura)
+
 ];
 
 export const RE_TAILWIND = /\b(bg|text|border|ring|from|to)-(white|black|slate|gray|zinc|sky|cyan|amber|emerald|rose|red|green|yellow|indigo|violet)(-\d{2,3})?\b|\b(p|px|py|m|mx|my|mt|mb|gap|space-[xy])-\d|\brounded(-\w+)?\b|\bgrid-cols-\d/;

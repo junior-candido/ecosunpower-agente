@@ -21,6 +21,7 @@ import { LOGO_NEGATIVA_WIDE_BASE64 } from '../src/modules/dashboard/ui/logo-nega
 import { carregarEmpresaConfig, comEmpresaDe, _resetEstadoParaTeste } from '../src/modules/empresa-config.js';
 import { TELAS_RENOVADAS } from './helpers/teto-tailwind.js';
 import { telasRenovadas } from './fixtures/telas-renovadas.js';
+import { CLASSES_ONDA3 } from './fixtures/telas-onda3.js';
 import { USER_CASA, USER_TENANT } from './fixtures/miolo-leads.js';
 
 const TAILWIND = 'cdn.tailwindcss.com';
@@ -180,6 +181,8 @@ describe('telas renovadas não carregam o Tailwind (e não precisam dele)', () =
           // Monitoramento (R8): ganchos da frota que os testes antigos procuram
           // (coluna-status, card-usina) e a Órbita (SVG com CSS da própria tela).
           'coluna-status', 'card-usina', 'orbita-frota', 'ponto-usina', 'sol-pulso', 'sol-central', 'anel',
+          // Onda 3 (R13–R19): ganchos de JS/teste antigo de cada fatia (tests/fixtures/telas-rNN.ts)
+          ...CLASSES_ONDA3,
         ]);
         // mu-* = Mapa das Usinas (#330): CSS próprio por arquivo (ui/mapa-cliente.ts).
         const corpo = h.slice(h.indexOf('<body'));
