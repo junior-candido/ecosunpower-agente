@@ -141,6 +141,23 @@ describe('parseDemonstrativo — conferencias', () => {
     expect(r.dados.cicloExpirar).toBeNull();
     expect(r.dados.saldoAcumuladoKwh).toBe(10998.67);
   });
+
+  it('saldo zerado: a Neoenergia deixa o ciclo EM BRANCO (sem "-") e ainda assim le os totais', () => {
+    // PDF real de ago/2026 (UC monofasica, tudo compensado): "1485 1485 0 0 0"
+    const t = REAL
+      .replace('11572 573,33 10998,67 654 12/2029 0', '573,33 573,33 0 0 0')
+      .replace('100001 100 % 10998,67', '100001 100 % 0');
+    const r = parseDemonstrativo(t);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.dados.totalInjetadoKwh).toBe(573.33);
+    expect(r.dados.totalCompensadoKwh).toBe(573.33);
+    expect(r.dados.saldoAcumuladoKwh).toBe(0);
+    expect(r.dados.proximoExpirarKwh).toBe(0);
+    expect(r.dados.cicloExpirar).toBeNull();
+    expect(r.dados.creditosExpiradosKwh).toBe(0);
+    expect(r.inconsistencias.some((i) => i.includes('totais'))).toBe(false);
+  });
 });
 
 // Layout do PDF real COM rateio (conferido 22/09/2026 num demonstrativo de
