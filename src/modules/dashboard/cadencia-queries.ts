@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { filtroEmpresa } from './filtro-empresa.js';
 
 export type CadenciaStatus =
   | 'aguardando'
@@ -61,7 +62,7 @@ export async function listCadenciaLeads(supabase: SupabaseClient, companyId: str
       id, name, phone, email, status, opportunities, energy_data, opt_out,
       conversations:conversations(last_message_at, messages)
     `)
-    .eq('company_id', companyId)
+    .or(filtroEmpresa(companyId))
     .eq('acquisition_source', 'terceirizada_recovered')
     .order('updated_at', { ascending: false });
 
@@ -138,7 +139,7 @@ export async function fecharLeadCadencia(
     .from('leads')
     .update({ status: 'transferido', opt_out: true, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('company_id', companyId)
+    .or(filtroEmpresa(companyId))
     .select('name')
     .maybeSingle();
   if (error) return { ok: false, erro: error.message };
@@ -154,7 +155,7 @@ export async function optoutLeadCadencia(
     .from('leads')
     .update({ opt_out: true, eva_active: false, updated_at: new Date().toISOString() })
     .eq('id', id)
-    .eq('company_id', companyId)
+    .or(filtroEmpresa(companyId))
     .select('id');
   if (error) return { ok: false, erro: error.message };
   return { ok: true, alterou: Array.isArray(data) && data.length > 0 };

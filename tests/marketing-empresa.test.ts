@@ -17,6 +17,7 @@ import {
 import { buildMarketingInsights } from '../src/modules/dashboard/ai-summary.js';
 import { fetchCampaignQualityInputs } from '../src/modules/marketing/campaign-quality-data.js';
 import { listCadenciaLeads, fecharLeadCadencia, optoutLeadCadencia } from '../src/modules/dashboard/cadencia-queries.js';
+import { filtroEmpresa, EMPRESA_NENHUMA } from '../src/modules/dashboard/filtro-empresa.js';
 
 const CASA = '00000000-0000-0000-0000-000000000001';
 const OUTRA = 'aaaa1111-2222-3333-4444-555566667777';
@@ -96,14 +97,14 @@ describe('Marketing — toda consulta filtra a empresa da sessão', () => {
         const q: any = new Proxy({}, {
           get(_a, p) {
             if (p === 'then') return (ok: (r: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(ok);
-            return (...args: unknown[]) => { if (p === 'eq') filtros.push([tabela, String(args[0]), args[1]]); return q; };
+            return (...args: unknown[]) => { if (p === 'or') filtros.push([tabela, 'or', args[0]]); return q; };
           },
         });
         return q;
       },
     };
     await fetchCampaignQualityInputs(fake as never, 14, new Date(), CASA);
-    for (const t of ['marketing_campaigns', 'meta_ads_insights', 'leads']) expect(filtros).toContainEqual([t, 'company_id', CASA]);
+    for (const t of ['marketing_campaigns', 'meta_ads_insights', 'leads']) expect(filtros).toContainEqual([t, 'or', filtroEmpresa(CASA)]);
   });
 });
 
@@ -180,5 +181,71 @@ describe('router — rotas do Marketing (teste estático)', () => {
     expect(o).toContain("exigir('marketing', 'editar')");
     expect(o).toContain('optoutLeadCadencia(db, (req as AuthedRequest).dashUser!.companyId, id)');
     expect(f + o).not.toMatch(/\.from\('leads'\)/);
+  });
+});
+
+// Regra comum das fatias (usinaPertenceAoOperador / leadEhDaEmpresa): para a
+// casa, linha com company_id NULL (antiga, sem empresa) conta como da casa;
+// tenant nunca vê linha sem empresa; sem empresa na sessão → nada.
+describe('company_id NULL conta como da casa (e só da casa)', () => {
+  it('filtroEmpresa: casa = casa OU null; tenant = só dele; sem empresa / valor estranho = nada', () => {
+    expect(filtroEmpresa(CASA)).toBe(`company_id.eq.${CASA},company_id.is.null`);
+    expect(filtroEmpresa(OUTRA)).toBe(`company_id.eq.${OUTRA}`);
+    for (const x of [undefined, null, '', 'x,company_id.is.null', EMPRESA_NENHUMA]) expect(filtroEmpresa(x)).toBe(`company_id.eq.${EMPRESA_NENHUMA}`);
+  });
+
+  function comNulo() {
+    return bancoFalso({
+      meta_ads_insights: [{ company_id: null, campaign_id: 9, spend_cents: 5000, leads: 2, impressions: 100, clicks: 1, date_start: hoje }],
+      marketing_campaigns: [{ company_id: null, id: 9, name: 'Antiga sem empresa', status: 'active', codigo_portfolio: 'C9', last_synced_at: agoraIso }],
+      marketing_creatives: [{ company_id: null, id: 9, briefing: 'antigo', status: 'em_uso', created_at: agoraIso }],
+      marketing_alerts: [{ company_id: null, id: 9, subject: 'antigo', status: 'pending', created_at: agoraIso }],
+      channel_daily_metrics: [{ company_id: null, channel: 'google', date: hoje, spend_cents: 300, clicks: 3, impressions: 30, updated_at: agoraIso }],
+      leads: [{ company_id: null, id: 'L9', channel: 'meta', status: 'novo', created_at: agoraIso, name: 'Lead antigo', phone: '5561999990009', acquisition_source: 'terceirizada_recovered', opt_out: false }],
+    });
+  }
+
+  it('a casa vê as linhas sem empresa em todas as consultas', async () => {
+    const { client } = comNulo();
+    const k = await fetchMarketingKpis(client, CASA);
+    expect(k.spend7d_brl).toBe(50);
+    expect([k.activeCampaigns, k.creativesEmUso, k.alertasPendentes]).toEqual([1, 1, 1]);
+    expect((await listActiveCampaigns(client, CASA)).rows[0]).toMatchObject({ name: 'Antiga sem empresa', spend7d_brl: 50 });
+    expect(await listRecentCreatives(client, CASA)).toHaveLength(1);
+    expect(await listPendingAlerts(client, CASA)).toHaveLength(1);
+    expect((await fetchChannelFunnel(client, CASA, { start: hoje, end: hoje })).find((c) => c.channel === 'meta')?.total).toBe(1);
+    expect((await fetchGoogleAdsSummary(client, 7, CASA)).spend_cents).toBe(300);
+    expect((await listCadenciaLeads(client, CASA)).map((l) => l.name)).toEqual(['Lead antigo']);
+  });
+
+  it('o tenant NÃO vê as linhas sem empresa', async () => {
+    const { client } = comNulo();
+    const k = await fetchMarketingKpis(client, OUTRA);
+    expect([k.spend7d_brl, k.activeCampaigns, k.creativesEmUso, k.alertasPendentes]).toEqual([0, 0, 0, 0]);
+    expect((await listActiveCampaigns(client, OUTRA)).rows).toEqual([]);
+    expect(await listRecentCreatives(client, OUTRA)).toEqual([]);
+    expect(await listPendingAlerts(client, OUTRA)).toEqual([]);
+    expect((await fetchChannelFunnel(client, OUTRA, { start: hoje, end: hoje })).every((c) => c.total === 0 && c.spend_cents === 0)).toBe(true);
+    expect((await fetchGoogleAdsSummary(client, 7, OUTRA)).spend_cents).toBe(0);
+    expect(await listCadenciaLeads(client, OUTRA)).toEqual([]);
+    expect(await buildMarketingInsights(client, OUTRA)).toEqual([]);
+  });
+
+  it('sem empresa na sessão: nada', async () => {
+    const { client } = comNulo();
+    expect(await listCadenciaLeads(client, '')).toEqual([]);
+    expect((await fetchMarketingKpis(client, '')).activeCampaigns).toBe(0);
+  });
+
+  it('Fechou / Pediu pra parar: a casa mexe no lead sem empresa; o tenant não', async () => {
+    const t = comNulo();
+    expect(await fecharLeadCadencia(t.client, OUTRA, 'L9')).toEqual({ ok: true, lead: null });
+    expect(await optoutLeadCadencia(t.client, OUTRA, 'L9')).toEqual({ ok: true, alterou: false });
+    expect(t.tabelas.leads[0]).toMatchObject({ status: 'novo', opt_out: false });
+    const c = comNulo();
+    expect(await fecharLeadCadencia(c.client, CASA, 'L9')).toEqual({ ok: true, lead: { name: 'Lead antigo' } });
+    expect(c.tabelas.leads[0]).toMatchObject({ status: 'transferido', opt_out: true });
+    const o = comNulo();
+    expect(await optoutLeadCadencia(o.client, CASA, 'L9')).toEqual({ ok: true, alterou: true });
   });
 });

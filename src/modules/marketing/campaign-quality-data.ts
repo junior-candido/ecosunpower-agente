@@ -1,6 +1,7 @@
 // src/modules/marketing/campaign-quality-data.ts
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CampaignSpend, CampaignLeads } from './campaign-quality.js';
+import { filtroEmpresa } from '../dashboard/filtro-empresa.js';
 
 const MS_DIA = 24 * 60 * 60 * 1000;
 
@@ -15,7 +16,7 @@ export async function fetchCampaignQualityInputs(
   const corte48h = new Date(agora.getTime() - 2 * MS_DIA).toISOString();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const daEmpresa = (q: any): any => (companyId ? q.eq('company_id', companyId) : q);
+  const daEmpresa = (q: any): any => (companyId ? q.or(filtroEmpresa(companyId)) : q);
   const { data: camps } = await daEmpresa(client
     .from('marketing_campaigns')
     .select('id, meta_campaign_id, name'));
