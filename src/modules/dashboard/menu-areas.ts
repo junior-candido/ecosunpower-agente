@@ -25,6 +25,8 @@ export interface ItemMenu {
   soEcosun?: boolean;
   /** Item exclusivo do TENANT (ex.: Minha assinatura): some pra EcoSun e telas sem usuário. */
   soTenant?: boolean;
+  /** Item sem área aberto ao tenant (ver vitrine-menu.ts). */
+  abertoATenant?: boolean;
 }
 
 export type IdGrupo =
@@ -38,14 +40,16 @@ export interface GrupoMenu {
   itens: ItemMenu[];
   /** Linha divisória antes do grupo (IA/Config ficam separados, como no protótipo). */
   separarAntes?: boolean;
+  /** Título pro tenant quando o da casa leva marca da EcoSun (ex.: "Eva"). */
+  tituloTenant?: string;
 }
 
 export const MENU_AREAS: GrupoMenu[] = [
   {
     id: 'command_center', titulo: 'Command Center', icone: 'gauge',
     itens: [
-      { href: '/dashboard/command-center', key: 'command_center', label: 'Command Center' },
-      { href: '/dashboard/atencao', key: 'atencao', label: 'Central de Atenção' },
+      { href: '/dashboard/command-center', key: 'command_center', label: 'Command Center', abertoATenant: true },
+      { href: '/dashboard/atencao', key: 'atencao', label: 'Central de Atenção', abertoATenant: true },
       { href: '/dashboard/home', key: 'home', label: 'Visão geral' },
       { href: '/dashboard/cockpit', key: 'cockpit', label: 'Cockpit' },
       { href: '/dashboard/predio', key: 'predio', label: 'Prédio Vivo', soEcosun: true },
@@ -115,7 +119,7 @@ export const MENU_AREAS: GrupoMenu[] = [
   // grupo não aparece — nada de link morto.
   { id: 'relatorios', titulo: 'Relatórios', icone: 'file', itens: [] },
   {
-    id: 'ia', titulo: 'IA · Eva', icone: 'spark', separarAntes: true,
+    id: 'ia', titulo: 'IA · Eva', tituloTenant: 'IA · Assistente', icone: 'spark', separarAntes: true,
     itens: [
       { href: '/dashboard/conhecimento', key: 'conhecimento', label: 'O que a assistente sabe', area: 'leads' },
       { href: '/dashboard/cerebro', key: 'cerebro', label: 'Cérebro', area: 'relatorios', soEcosun: true },
@@ -183,9 +187,10 @@ export function montarMenu(
     }
     if (itens.length === 0) continue;
     const temAtivo = itens.some((i) => i.ativo);
+    const ehTenant = !!user && user.companyId !== ecosunCompanyId;
     out.push({
       id: g.id,
-      titulo: g.titulo,
+      titulo: ehTenant && g.tituloTenant ? g.tituloTenant : g.titulo,
       icone: g.icone,
       separarAntes: g.separarAntes,
       itens,

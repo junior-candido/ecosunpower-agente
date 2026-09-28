@@ -139,8 +139,33 @@ describe('montarMenu — permissões e estado', () => {
     expect(todos.find((i) => i.key === 'clientes')).toBeUndefined(); // soEcosun
     expect(todos.find((i) => i.key === 'monitoramento')!.estado).toBe('visivel');
     expect(todos.find((i) => i.key === 'marketing')!.estado).toBe('bloqueado');
-    // grupo Command Center inteiro é conveniência da casa → some pro tenant
-    expect(m.find((g) => g.id === 'command_center')).toBeUndefined();
+    // Command Center e Central de Atenção abriram pro tenant (dado escopado + vitrine);
+    // o resto do grupo (Visão geral, Cockpit, Prédio Vivo) continua da casa.
+    expect(m.find((g) => g.id === 'command_center')!.itens.map((i) => i.key)).toEqual(['command_center', 'atencao']);
+  });
+
+  it('abertoATenant: Command Center e Central visíveis pro tenant, sem área falsa', () => {
+    const itens = MENU_AREAS.flatMap((g) => g.itens);
+    for (const k of ['command_center', 'atencao']) {
+      const it = itens.find((i) => i.key === k)!;
+      expect(it.abertoATenant, k).toBe(true);
+      expect(it.area, k).toBeUndefined();
+    }
+    // Só esses dois: Modo TV/Cockpit/Visão geral seguem da casa.
+    expect(itens.filter((i) => i.abertoATenant).map((i) => i.key)).toEqual(['command_center', 'atencao']);
+    const semNada = { companyId: TENANT, isAdmin: false, permissoes: {} };
+    const m = montarMenu(semNada, 'command_center', ECOSUN, pode);
+    const cc = m.find((g) => g.id === 'command_center')!;
+    expect(cc.itens.every((i) => i.estado === 'visivel')).toBe(true);
+    expect(cc.trancado).toBe(false);
+    // EcoSun continua vendo tudo do grupo
+    expect(montarMenu(adminEcosun, 'home', ECOSUN, pode).find((g) => g.id === 'command_center')!.itens).toHaveLength(5);
+  });
+
+  it('tenant não vê o nome da assistente da casa no menu', () => {
+    const tit = (u: typeof thiago | typeof adminEcosun) => montarMenu(u, 'home', ECOSUN, pode).find((g) => g.id === 'ia')?.titulo;
+    expect(tit(adminEcosun)).toBe('IA · Eva');
+    expect(tit({ ...thiago, permissoes: { leads: ['visualizar'] } })).toBe('IA · Assistente');
   });
 
   it('grupo em que tudo está bloqueado fica marcado como trancado', () => {
