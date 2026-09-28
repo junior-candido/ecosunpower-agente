@@ -10969,6 +10969,90 @@ Veja tambem: <a href="/privacidade">Politica de Privacidade</a> | <a href="/term
     setTimeout(resumirTelemetria, 20 * 60 * 1000);        // 20min apos start
     console.log('[telemetria] Cron de retenção started (1x/dia)');
 
+    // GESTÃO DE ENERGIA G1 (docs/superpowers/specs/2026-09-28-gestao-de-energia-design.md).
+    // Medidores Shelly por empresa: bruto 1 min → 15 min → dia, nuvem como
+    // reserva, vigia de silêncio e retenção. Sem as migrations 136/137 cada
+    // ciclo só avisa (1x/hora) e sai. Logs sem valor de consumo (LGPD).
+    {
+      const { EnergiaService } = await import('./modules/energia/energia-service.js');
+      const { criarEnergiaRepo } = await import('./modules/energia/energia-repo.js');
+      const { dentroDaJanela } = await import('./modules/monitoring/proactive-alerts/janela.js');
+      const { lerModulosAtivos } = await import('./modules/dashboard/modulos-contratados.js');
+      const { horaBrt } = await import('./modules/energia/tempo.js');
+      const energiaService = new EnergiaService(criarEnergiaRepo(supabase.getClient()));
+
+      // Aviso do vigia: só pra empresa que contratou o módulo "medicao", pro
+      // admin DELA (destinoAdminDaEmpresa — trava LGPD entre controladores).
+      const avisarMedidor = async (m: { company_id: string }, texto: string): Promise<boolean> => {
+        const ativos = await lerModulosAtivos(supabase.getClient(), m.company_id);
+        if (!ativos.has('medicao')) return false;
+        return comEmpresaDe(m.company_id, async () => {
+          const to = destinoAdminDaEmpresa(config.engineerPhone);
+          if (!to) return false;
+          if (process.env.PROACTIVE_ALERTS_DRY_RUN === '1') {
+            console.log('[energia] vigia (dry-run): aviso não enviado');
+            return false;
+          }
+          await sendAdminWithButtons({ metaWaba, sendText }, to, texto, []);
+          return true;
+        });
+      };
+
+      const agregarEnergia = async () => {
+        try {
+          await energiaService.agregar(new Date());
+        } catch (err) {
+          console.error('[energia] agregacao falhou:', (err as Error).message);
+        }
+        try {
+          await energiaService.vigiar(new Date(), avisarMedidor, (d) => dentroDaJanela(d));
+        } catch (err) {
+          console.error('[energia] vigia falhou:', (err as Error).message);
+        }
+      };
+      setInterval(agregarEnergia, 15 * 60 * 1000);
+      setTimeout(agregarEnergia, 4 * 60 * 1000);
+      console.log('[energia] Cron de agregacao + vigia started (a cada 15min)');
+
+      if (!process.env.ENERGIA_CRED_KEY) {
+        console.warn('[energia] ENERGIA_CRED_KEY ausente — coleta pela nuvem Shelly desligada (o push segue normal)');
+      } else {
+        const coletarNuvemShelly = async () => {
+          try {
+            await energiaService.coletarNuvem(new Date(), process.env.ENERGIA_CRED_KEY);
+          } catch (err) {
+            console.error('[energia] coleta nuvem falhou:', (err as Error).message);
+          }
+        };
+        setInterval(coletarNuvemShelly, 15 * 60 * 1000);
+        setTimeout(coletarNuvemShelly, 5 * 60 * 1000);
+        console.log('[energia] Cron de coleta pela nuvem started (a cada 15min)');
+      }
+
+      // Fechamento: de hora em hora, age só entre 00h e 01h de Brasília.
+      const fecharDiaEnergia = async () => {
+        if (horaBrt(new Date()) !== 0) return;
+        try {
+          await energiaService.fecharDiasRecentes(new Date());
+        } catch (err) {
+          console.error('[energia] fechamento falhou:', (err as Error).message);
+        }
+      };
+      setInterval(fecharDiaEnergia, 60 * 60 * 1000);
+      console.log('[energia] Cron de fechamento diario started (1x/hora, age 00h-01h BRT)');
+
+      const reterEnergia = async () => {
+        try {
+          await energiaService.reter(new Date());
+        } catch (err) {
+          console.error('[energia] retencao falhou:', (err as Error).message);
+        }
+      };
+      setInterval(reterEnergia, 24 * 60 * 60 * 1000);
+      setTimeout(reterEnergia, 30 * 60 * 1000);
+      console.log('[energia] Cron de retencao started (1x/dia: bruto 90 dias, 15 min 25 meses)');
+    }
+
     // RH — retenção LGPD: currículos/candidatos com mais de 12 meses são apagados.
     const limparRh = async () => {
       try {
