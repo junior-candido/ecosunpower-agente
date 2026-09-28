@@ -1329,14 +1329,11 @@ b.onclick=async function(){
   });
 
   router.get('/servicos/buscar-cliente', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
-    const q = String(req.query.q ?? '').trim().replace(/[,%]/g, ' ');
+    // Parênteses/aspas quebravam o filtro `or` do PostgREST (busca voltava vazia).
+    const q = String(req.query.q ?? '').trim().replace(/[,%()"]/g, ' ');
     if (q.length < 2) { res.json({ clientes: [] }); return; }
-    const db = bancoDoOperador(req, supabase);
-    const { data } = await db.from('leads').select('id, name, phone')
-      .eq('company_id', req.dashUser!.companyId)
-      .or(`name.ilike.%${q}%,phone.ilike.%${q}%`)
-      .limit(8);
-    res.json({ clientes: (data ?? []).map((l: any) => ({ id: l.id, nome: l.name ?? '(sem nome)', telefone: l.phone ?? '' })) });
+    const { buscarClientesDaEmpresa } = await import('./servicos-store.js');
+    res.json({ clientes: await buscarClientesDaEmpresa(bancoDoOperador(req, supabase), req.dashUser!.companyId, q) });
   });
 
   router.get('/servicos/buscar-usina', exigir('servicos', 'criar'), async (req: AuthedRequest, res) => {
@@ -1442,7 +1439,7 @@ b.onclick=async function(){
         : null;
       await concluirServico(supabase, servicoId, observacoes);
       if (options.sendText && options.engineerPhone) {
-        const depois = await getServico(supabase, servicoId);
+        const depois = await getServico(supabase, servicoId, req.dashUser!.companyId);
         options.sendText(options.engineerPhone,
           `✅ Serviço concluído: ${antes.tipoNome} — ${antes.clienteNome}` +
           ` (${depois?.fotos ?? 0} fotos, ${depois?.videos ?? 0} vídeo${(depois?.videos ?? 0) === 1 ? '' : 's'})` +

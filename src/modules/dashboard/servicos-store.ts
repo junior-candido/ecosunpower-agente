@@ -150,6 +150,17 @@ export async function getServico(client: SupabaseClient, id: string, ...empresa:
   return paraRow(data);
 }
 
+/** Busca de cliente do "Novo registro": leads da empresa da sessão (EcoSun + legado sem carimbo). */
+export async function buscarClientesDaEmpresa(client: SupabaseClient, companyId: string | null | undefined, termo: string): Promise<{ id: string; nome: string; telefone: string }[]> {
+  if (!companyId) return [];
+  const t = termo.replace(/[,%()"]/g, ' ').trim();
+  if (t.length < 2) return [];
+  const { data } = await daEmpresa(client.from('leads').select('id, name, phone'), companyId)
+    .or(`name.ilike.%${t}%,phone.ilike.%${t}%`).limit(8);
+  return ((data ?? []) as { id: string; name: string | null; phone: string | null }[])
+    .map((l) => ({ id: l.id, nome: l.name ?? '(sem nome)', telefone: l.phone ?? '' }));
+}
+
 /** Busca de usina do "Novo registro": só usinas ATIVAS da empresa da sessão. */
 export async function buscarUsinasDaEmpresa(client: SupabaseClient, companyId: string | null | undefined, termo: string): Promise<{ id: string; nome: string }[]> {
   if (!companyId) return [];

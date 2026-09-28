@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
-  listarServicos, getServico, buscarUsinasDaEmpresa, conferirVinculosDoServico, servicoPertenceAoOperador,
+  listarServicos, getServico, buscarUsinasDaEmpresa, buscarClientesDaEmpresa, conferirVinculosDoServico, servicoPertenceAoOperador,
 } from '../src/modules/dashboard/servicos-store.js';
 
 const CASA = '00000000-0000-0000-0000-000000000001';
@@ -33,7 +33,9 @@ function banco(tabelas: Record<string, Linha[]>) {
         or: (expr: string) => {
           preds.push((l) => expr.split(',').some((p) => {
             const [c, op, ...r] = p.split('.'); const v = r.join('.');
-            return op === 'is' ? (l[c] ?? null) === null : String(l[c]) === v;
+            if (op === 'is') return (l[c] ?? null) === null;
+            if (op === 'ilike') return String(l[c] ?? '').toLowerCase().includes(v.replace(/%/g, '').toLowerCase());
+            return String(l[c]) === v;
           }));
           return q;
         },
@@ -61,7 +63,12 @@ const DB = () => banco({
     { id: 'u3', apelido: 'Usina Sol Tenant', ativo: true, company_id: TEN },
     { id: 'u4', apelido: 'Usina Sol Outra', ativo: true, company_id: OUTRA },
   ],
-  leads: [{ id: 'l-ten', company_id: TEN }, { id: 'l-outra', company_id: OUTRA }],
+  leads: [
+    { id: 'l-ten', company_id: TEN, name: 'Ana Tenant', phone: '5561900000001' },
+    { id: 'l-outra', company_id: OUTRA, name: 'Ana Outra', phone: '5561900000002' },
+    { id: 'l-casa', company_id: CASA, name: 'Ana Casa', phone: '5561900000003' },
+    { id: 'l-legado', company_id: null, name: 'Ana Legado', phone: null },
+  ],
   dashboard_users: [{ id: 'p-ten', company_id: TEN }, { id: 'p-casa', company_id: CASA }],
 });
 
@@ -110,6 +117,18 @@ describe('busca de usina do "Novo registro"', () => {
   });
 });
 
+describe('busca de cliente do "Novo registro"', () => {
+  it('tenant só acha os leads dele; EcoSun acha os dela + legado sem carimbo', async () => {
+    expect((await buscarClientesDaEmpresa(DB(), TEN, 'ana')).map((c) => c.id)).toEqual(['l-ten']);
+    expect((await buscarClientesDaEmpresa(DB(), CASA, 'ana')).map((c) => c.id).sort()).toEqual(['l-casa', 'l-legado']);
+    expect((await buscarClientesDaEmpresa(DB(), CASA, 'legado'))[0]).toEqual({ id: 'l-legado', nome: 'Ana Legado', telefone: '' });
+  });
+  it('sem empresa → nada; parênteses/aspas não vão pro filtro `or`', async () => {
+    expect(await buscarClientesDaEmpresa(DB(), null, 'ana')).toEqual([]);
+    expect((await buscarClientesDaEmpresa(DB(), TEN, '(ana"')).map((c) => c.id)).toEqual(['l-ten']);
+  });
+});
+
 describe('POST /servicos/nova: vínculos têm que ser da empresa', () => {
   it('lead, usina ou pessoa de outra empresa → erro', async () => {
     expect(await conferirVinculosDoServico(DB(), TEN, { leadId: 'l-outra' })).toBe('Cliente não achado.');
@@ -132,11 +151,11 @@ describe('router: toda rota /servicos* do painel passa a empresa da sessão', ()
     expect(chamadas.length).toBe(2);
     for (const c of chamadas) expect(c).toContain('req.dashUser!.companyId');
   });
-  it('todo getServico que decide acesso leva a empresa (só o recarregar depois do check fica sem)', () => {
+  it('todo getServico leva a empresa da sessão', () => {
     const chamadas = (trecho.match(/getServico\(supabase, .*?\);/g) ?? []).map((c) => c.slice(0, -1));
     const sem = chamadas.filter((c) => !c.includes('req.dashUser!.companyId'));
     expect(chamadas.length).toBeGreaterThanOrEqual(9);
-    expect(sem).toEqual(['getServico(supabase, servicoId)']); // `depois`, no concluir, já checado por `antes`
+    expect(sem).toEqual([]);
   });
   it('excluir e restaurar conferem o dono ANTES de mexer', () => {
     for (const rota of ['excluir', 'restaurar']) {
@@ -149,6 +168,7 @@ describe('router: toda rota /servicos* do painel passa a empresa da sessão', ()
   it('busca de usina pela função com empresa; nova confere os vínculos', () => {
     expect(trecho).toContain('buscarUsinasDaEmpresa(bancoDoOperador(req, supabase), req.dashUser!.companyId, q)');
     expect(trecho).not.toContain("db.from('sistemas_clientes')");
+    expect(trecho).toContain('buscarClientesDaEmpresa(bancoDoOperador(req, supabase), req.dashUser!.companyId, q)');
     expect(trecho).toContain('conferirVinculosDoServico(supabase, req.dashUser!.companyId');
   });
 });
