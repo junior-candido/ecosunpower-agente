@@ -13,8 +13,8 @@
 import { renderLayout, escapeHtml } from './views.js';
 import type { DashUser } from './permissions.js';
 import {
-  faixaKpis, cartaoSecao, estadoVazio, cabecalhoPagina, icone, tabela,
-  TONS, type KpiInput, type Tom,
+  faixaKpis, kpiCard, cartaoSecao, estadoVazio, cabecalhoPagina, icone, tabela,
+  TONS, type KpiInput, type Tom, type TomSelo,
 } from './ui/componentes.js';
 import { fmtNumero, fmtCompacto, temNumero, hrefSeguro, SEM_DADO } from './ui/html.js';
 import type { NomeIcone } from './ui/icones.js';
@@ -25,13 +25,32 @@ import {
   type EventoAtencao, type Severidade, type AreaEvento,
 } from './central-atencao.js';
 import { energiaLegivel, mudancasDesdeOntem, pctDoEsperado, type EstadoUsina, type PontoCurva } from './command-center-calc.js';
-import type { DadosCommandCenter, FonteAviso, PermissoesCC } from './command-center-queries.js';
+import {
+  TODAS_PERMISSOES, NOME_CURTO_FONTE,
+  type DadosCommandCenter, type FonteAviso, type PermissoesCC, type IdFonte,
+} from './command-center-queries.js';
+import { MODULOS } from './conhecer-views.js';
+import { ECOSUN_COMPANY_ID } from '../tenant-resolver.js';
 
 export interface CommandCenterDados {
   agora: Date;
   nomeUsuario: string | null;
   /** null = a carga inteira falhou (a tela mostra "—" em tudo). */
   dados: DadosCommandCenter | null;
+  /** Módulos contratados pela empresa (o resto vira vitrine com cadeado).
+   *  Ausente = o que veio em `dados` (ou tudo, pra quem chama sem saber). */
+  contratados?: PermissoesCC;
+  /** Nome da assistente DESTA empresa (campo real do cadastro). null = só "Resumo do dia". */
+  nomeAssistente?: string | null;
+}
+
+function contratadosDe(d: { contratados?: PermissoesCC; dados: DadosCommandCenter | null }): PermissoesCC {
+  return d.contratados ?? d.dados?.contratados ?? TODAS_PERMISSOES;
+}
+
+/** Tela da casa (EcoSun) ou legada sem usuário: Modo TV aparece. Tenant, não. */
+function ehDaCasa(user?: DashUser): boolean {
+  return !user || user.companyId === ECOSUN_COMPANY_ID;
 }
 
 const TZ = 'America/Sao_Paulo';
@@ -84,15 +103,103 @@ const ROTULO_AREA: Record<AreaEvento, string> = {
   om: 'O&M', financeiro: 'Financeiro', clientes: 'Clientes',
 };
 
-/** Selos do menu com a contagem real de avisos crítico + atenção por área. */
-export function selosDoMenu(eventos: readonly EventoAtencao[]): Partial<Record<IdGrupo, SeloGrupo>> {
+/** Em qual área do menu cai o aviso de cada fonte. */
+const AREA_DA_FONTE: Record<IdFonte, AreaEvento> = {
+  usinas: 'usinas', leads_esperando: 'comercial', sla: 'comercial', propostas: 'comercial', gd: 'clientes', manutencao: 'om', contas: 'financeiro',
+};
+
+/** Alguma fonte não carregou → toda contagem é "pelo menos". */
+function ehParcial(fontes: readonly FonteAviso[] | undefined): boolean {
+  return !!fontes?.some((f) => f.estado === 'falhou');
+}
+
+/** Texto de uma contagem: exata, "≥ N" (faltou fonte) ou "?" (faltou fonte e nada apareceu). */
+export function textoContagem(n: number, parcial: boolean): string {
+  if (!parcial) return fmtNumero(n);
+  return n > 0 ? `≥ ${fmtNumero(n)}` : '?';
+}
+
+/** Selos do menu com a contagem real de avisos crítico + atenção por área.
+ *  Área cuja fonte não carregou não some: mostra "≥ N" ou "?". */
+export function selosDoMenu(eventos: readonly EventoAtencao[], fontes: readonly FonteAviso[] = []): Partial<Record<IdGrupo, SeloGrupo>> {
   const out: Partial<Record<IdGrupo, SeloGrupo>> = {};
   for (const area of AREAS_EVENTO) {
     const daArea = eventos.filter((e) => e.area === area && (e.severidade === 'critico' || e.severidade === 'atencao'));
-    if (!daArea.length) continue;
-    out[area as IdGrupo] = { valor: daArea.length, tom: daArea.some((e) => e.severidade === 'critico') ? 'critico' : 'dourado' };
+    const falhou = fontes.some((f) => f.estado === 'falhou' && AREA_DA_FONTE[f.id] === area);
+    if (!daArea.length && !falhou) continue;
+    const tom: TomSelo = daArea.some((e) => e.severidade === 'critico') ? 'critico' : daArea.length ? 'dourado' : 'neutro';
+    out[area as IdGrupo] = { valor: falhou ? textoContagem(daArea.length, true) : daArea.length, tom };
   }
   return out;
+}
+
+/** "usinas, propostas e contas a pagar" — só as fontes que carregaram. null = nenhuma ligada. */
+function fontesLigadasTexto(fontes: readonly FonteAviso[]): string | null {
+  const ok = fontes.filter((f) => f.estado === 'ok').map((f) => NOME_CURTO_FONTE[f.id]);
+  if (!ok.length) return null;
+  return ok.length === 1 ? ok[0] : `${ok.slice(0, -1).join(', ')} e ${ok[ok.length - 1]}`;
+}
+
+const todasLigadas = (fontes: readonly FonteAviso[]) => fontes.length > 0 && fontes.every((f) => f.estado === 'ok');
+
+/** Nenhuma fonte de aviso liberada pra este usuário (não contratado / sem acesso): vitrine, não "tudo em dia". */
+function semFonteLiberada(): string {
+  return estadoVazio({
+    tipo: 'vazio', icone: 'lock', titulo: 'Os avisos aparecem quando o módulo estiver liberado',
+    texto: 'Nenhuma fonte de avisos está liberada para você agora. Os blocos com cadeado mostram o que cada módulo traz.',
+  });
+}
+
+/** "Tudo em dia" que nomeia SÓ o que foi conferido. */
+function tudoEmDia(fontes: readonly FonteAviso[]): string {
+  const lig = fontesLigadasTexto(fontes);
+  if (!lig) return semFonteLiberada();
+  return estadoVazio({ tipo: 'vazio', titulo: 'Tudo em dia por aqui', texto: `Nenhum aviso de ${lig}.` });
+}
+
+// ---------------------------------------------------------------------------
+// Vitrine: bloco de módulo que a empresa não contratou
+// ---------------------------------------------------------------------------
+
+/** Uma linha, em português simples, do que cada módulo faz (sem número nenhum). */
+export const FRASE_VITRINE = {
+  monitoramento: 'Veja as usinas dos seus clientes numa tela só e saiba na hora quando uma para de gerar.',
+  manutencao: 'Agenda de manutenção das usinas, com aviso do que já venceu.',
+  usinas_kanban: 'Cada obra numa etapa, da homologação à ligação, sem ninguém perguntar como está.',
+  financeiro: 'O que entra, o que sai e o que vence, numa tela só.',
+  propostas: 'Proposta pronta em minutos e aviso de quem parou de responder.',
+  leads: 'Os contatos que chegam pela assistente, com aviso de quem está esperando resposta.',
+  marketing: 'Anúncio, blog e e-mail saindo do mesmo lugar em que os leads chegam.',
+} as const;
+export type ChaveVitrine = keyof typeof FRASE_VITRINE;
+
+export interface BlocoTrancadoInput {
+  titulo: string;
+  chave: ChaveVitrine;
+  frase: string;
+  /** Onde o bloco entra: painel grande, célula da faixa de KPIs ou cartão de área. */
+  variante?: 'painel' | 'kpi' | 'dept';
+  classe?: string;
+  /** Painel grande: lista "o que você ganha" da vitrine (/conhecer). */
+  comGanhos?: boolean;
+}
+
+/**
+ * Bloco trancado (vitrine). Cadeado + título + uma frase + botão pra conhecer.
+ * NUNCA mostra número, "—" ou "sem acesso": o módulo não é da empresa, então
+ * não há o que medir — só o que ele faria.
+ */
+export function blocoTrancado(b: BlocoTrancadoInput): string {
+  const v = b.variante ?? 'painel';
+  const raiz = v === 'kpi' ? 'cc-kpi cc-kpi-tranc' : v === 'dept' ? 'cc-dept cc-dept-tranc' : 'cc-panel cc-panel-tranc';
+  const ganhos = b.comGanhos ? (MODULOS[b.chave]?.ganhos ?? []) : [];
+  const tag = v === 'painel' ? 'section' : 'div';
+  return `<${tag} class="${raiz} cc-tranc${b.classe ? ` ${escapeHtml(b.classe)}` : ''}" data-trancado="${escapeHtml(b.chave)}">
+    <div class="cc-tranc-h"><span class="cc-tranc-ic">${icone('lock', 'sm')}</span><b>${escapeHtml(b.titulo)}</b><span class="cc-tranc-tag">Fora do seu plano</span></div>
+    <p>${escapeHtml(b.frase)}</p>
+    ${ganhos.length ? `<ul class="cc-tranc-g">${ganhos.map((g) => `<li>${icone('check', 'xs')}${escapeHtml(g)}</li>`).join('')}</ul>` : ''}
+    <a class="cc-btn cc-btn-sm cc-btn-tranc" href="/dashboard/conhecer/${encodeURIComponent(b.chave)}">Quero liberar / falar com o suporte</a>
+  </${tag}>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,17 +244,28 @@ function frasesResumo(dd: DadosCommandCenter): string[] {
     if (pct !== null) out.push(`Ontem o portfólio gerou <b>${escapeHtml(fmtNumero(pct))}% do esperado</b>.`);
   }
   const k = dd.kpisMes;
-  if (temNumero(k.leads) && temNumero(k.propostas) && temNumero(k.vendas)) {
-    out.push(`Neste mês entraram <b>${escapeHtml(plural(k.leads, 'lead', 'leads'))}</b>, saíram <b>${escapeHtml(plural(k.propostas, 'proposta', 'propostas'))}</b> e <b>${escapeHtml(plural(k.vendas, 'venda fechou', 'vendas fecharam'))}</b>.`);
+  // leads do mês pode vir só pelo Marketing: a frase do funil exige a permissão de leads.
+  if (dd.permissoes.leads && temNumero(k.leads) && temNumero(k.propostas) && temNumero(k.vendas)) {
+    out.push(`Neste mês entraram <b>${escapeHtml(plural(k.leads, 'lead', 'leads'))}</b>, foram feitas <b>${escapeHtml(plural(k.propostas, 'proposta', 'propostas'))}</b> e <b>${escapeHtml(plural(k.vendas, 'venda fechou', 'vendas fecharam'))}</b>.`);
   }
   const crit = contarPorSeveridade(dd.eventos).critico;
   const falhou = fontesComFalha(dd.fontes).length > 0;
-  if (crit > 0) out.push(`Há <b>${escapeHtml(plural(crit, 'aviso crítico', 'avisos críticos'))}</b> pedindo você agora.`);
-  else if (!falhou) out.push('Nenhum aviso crítico agora.');
+  if (crit > 0) {
+    out.push(`Há <b>${falhou ? 'pelo menos ' : ''}${escapeHtml(plural(crit, 'aviso crítico', 'avisos críticos'))}</b> pedindo você agora.`);
+  } else if (!falhou) {
+    // Só afirma sobre o que foi conferido de verdade.
+    const lig = fontesLigadasTexto(dd.fontes);
+    if (todasLigadas(dd.fontes)) out.push('Nenhum aviso crítico agora.');
+    else if (lig) out.push(`Nenhum aviso crítico em ${escapeHtml(lig)} agora.`);
+  }
   return out;
 }
 
+/** Nenhum bloco liberado pra este usuário (nada contratado, ou papel sem acesso a nada). */
+const nadaLiberado = (dd: DadosCommandCenter) => !Object.values(dd.permissoes).some(Boolean);
+
 function chipsMudancas(dd: DadosCommandCenter | null): string {
+  if (dd && nadaLiberado(dd)) return estadoVazio({ tipo: 'vazio', icone: 'lock', compacto: true, titulo: 'Nada liberado para comparar ainda' });
   if (!dd) return estadoVazio({ tipo: 'sem_dado', compacto: true, titulo: 'Sem dado agora', texto: 'Não consegui comparar com ontem. Tente de novo em alguns minutos.' });
   const m = mudancasDesdeOntem({
     leads: dd.mudancas24h.leads, propostas: dd.mudancas24h.propostas, vendas: dd.mudancas24h.vendas,
@@ -162,9 +280,17 @@ function acoesHtml(dd: DadosCommandCenter | null): string {
   if (!dd) return estadoVazio({ tipo: 'sem_dado', titulo: 'Sem dado agora', texto: 'Não consegui ler os avisos. Tente de novo em alguns minutos.' });
   const acoes = acoesRecomendadas(dd.eventos, 3);
   if (!acoes.length) {
-    return fontesComFalha(dd.fontes).length
-      ? estadoVazio({ tipo: 'sem_dado', titulo: 'Parte dos avisos não carregou', texto: 'Sem essas fontes não dá pra dizer qual é a próxima ação. Veja a Central de Atenção.' })
-      : estadoVazio({ tipo: 'vazio', titulo: 'Nada urgente agora', texto: 'Nenhum aviso pedindo ação. O que está só em acompanhamento fica na Central de Atenção.' });
+    if (fontesComFalha(dd.fontes).length) {
+      return estadoVazio({ tipo: 'sem_dado', titulo: 'Parte dos avisos não carregou', texto: 'Sem essas fontes não dá pra dizer qual é a próxima ação. Veja a Central de Atenção.' });
+    }
+    const lig = fontesLigadasTexto(dd.fontes);
+    if (!lig) return semFonteLiberada();
+    return estadoVazio({
+      tipo: 'vazio', titulo: 'Nada urgente agora',
+      texto: todasLigadas(dd.fontes)
+        ? 'Nenhum aviso pedindo ação. O que está só em acompanhamento fica na Central de Atenção.'
+        : `Nenhum aviso pedindo ação em ${lig}.`,
+    });
   }
   return acoes.map((e, i) => `<div class="cc-act${i === 0 ? ' cc-act-1' : ''}">
       <span class="cc-act-n">${i + 1}</span>
@@ -179,10 +305,12 @@ function hero(d: CommandCenterDados): string {
   const frases = d.dados ? frasesResumo(d.dados) : [];
   const resumo = frases.length
     ? `<p>${frases.join(' ')}</p>`
-    : '<p>Ainda não consegui ler os números agora. Tente de novo em alguns minutos — nada aqui é chute.</p>';
+    : d.dados && nadaLiberado(d.dados)
+      ? '<p>Os números aparecem aqui quando um módulo estiver liberado. Os blocos com cadeado mostram o que cada um traz.</p>'
+      : '<p>Ainda não consegui ler os números agora. Tente de novo em alguns minutos — nada aqui é chute.</p>';
   return `<section class="cc-hero">
     <div class="cc-hero-l">
-      <div class="cc-who"><div class="cc-eva-av">${icone('spark')}</div><div><span class="cc-lbl-s cc-gold">Eva · resumo do dia</span><div class="cc-faint" style="font-size:12px">${escapeHtml(carimboAoVivo(d.agora))}</div></div></div>
+      <div class="cc-who"><div class="cc-eva-av">${icone('spark')}</div><div><span class="cc-lbl-s cc-gold">${escapeHtml(d.nomeAssistente ? `${d.nomeAssistente} · resumo do dia` : 'Resumo do dia')}</span><div class="cc-faint" style="font-size:12px">${escapeHtml(carimboAoVivo(d.agora))}</div></div></div>
       <h2>${escapeHtml(saudacao(d.agora))}${nome ? `, ${escapeHtml(nome)}` : ''}.</h2>
       ${resumo}
       <div class="cc-changed"><span class="cc-lbl-s">O que mudou desde ontem</span>${chipsMudancas(d.dados)}</div>
@@ -201,6 +329,7 @@ function hero(d: CommandCenterDados): string {
 function kpis(d: CommandCenterDados): string {
   const dd = d.dados;
   const p = dd?.permissoes;
+  const c = contratadosDe(d);
   const f = dd?.frota ?? null;
   const semUsinas = semTexto(p, 'usinas');
 
@@ -209,48 +338,70 @@ function kpis(d: CommandCenterDados): string {
   const pot = f?.potenciaKwp ?? null;
   const potMw = temNumero(pot) && pot >= 1000;
 
-  const lista: KpiInput[] = [
-    {
-      rotulo: 'Geração agora', valor: f?.geracaoAgora?.kw ?? null, casas: 1, unidade: 'kW', href: '/dashboard/monitoramento',
-      detalhe: f?.geracaoAgora ? `${plural(f.geracaoAgora.usinas, 'usina', 'usinas')} ao vivo` : undefined,
-      semDadoTexto: f ? 'sem leitura ao vivo agora' : semUsinas,
-    },
-    {
-      rotulo: 'Energia hoje', valor: hoje.valor, casas: hoje.casas, unidade: hoje.unidade, href: '/dashboard/monitoramento',
-      detalhe: f ? 'até agora' : undefined,
-      semDadoTexto: f ? 'sem leitura hoje ainda' : semUsinas,
-    },
-    {
-      rotulo: 'Energia no mês', valor: mes.valor, casas: mes.casas, unidade: mes.unidade, href: '/dashboard/monitoramento',
-      detalhe: 'desde o dia 1º', semDadoTexto: f ? 'sem leitura no mês' : semUsinas,
-    },
-    {
-      rotulo: 'Potência total', valor: potMw ? (pot as number) / 1000 : pot, casas: potMw ? 2 : 1, unidade: potMw ? 'MWp' : 'kWp',
-      href: '/dashboard/monitoramento', detalhe: f ? plural(f.total, 'usina ativa', 'usinas ativas') : undefined,
-      semDadoTexto: f ? 'sem potência cadastrada' : semUsinas,
-    },
-    {
-      rotulo: 'Usinas no ar', valor: f && f.monitoradas > 0 ? f.comunicando : null, unidade: f ? `/ ${fmtNumero(f.monitoradas)}` : undefined,
-      href: '/dashboard/monitoramento',
-      detalhe: f ? (f.porEstado.sem_comunicacao ? `${fmtNumero(f.porEstado.sem_comunicacao)} sem sinal` : 'todas com sinal') : undefined,
-      semDadoTexto: f ? 'nenhuma usina monitorada' : semUsinas,
-    },
-    {
-      // Mesmo número e mesmo nome da tela Financeiro ("Recebido no mês"), pra não confundir com "faturado".
+  const celulas: string[] = [];
+  const trancadas: BlocoTrancadoInput[] = [];
+  if (c.usinas) {
+    const usinas: KpiInput[] = [
+      {
+        rotulo: 'Geração agora', valor: f?.geracaoAgora?.kw ?? null, casas: 1, unidade: 'kW', href: '/dashboard/monitoramento',
+        detalhe: f?.geracaoAgora ? `${plural(f.geracaoAgora.usinas, 'usina', 'usinas')} ao vivo${dd?.telemetriaCortada ? ' (parcial)' : ''}` : undefined,
+        semDadoTexto: f ? 'sem leitura ao vivo agora' : semUsinas,
+      },
+      {
+        rotulo: 'Energia hoje', valor: hoje.valor, casas: hoje.casas, unidade: hoje.unidade, href: '/dashboard/monitoramento',
+        detalhe: f ? 'até agora' : undefined,
+        semDadoTexto: f ? 'sem leitura hoje ainda' : semUsinas,
+      },
+      {
+        rotulo: 'Energia no mês', valor: mes.valor, casas: mes.casas, unidade: mes.unidade, href: '/dashboard/monitoramento',
+        detalhe: 'desde o dia 1º', semDadoTexto: f ? 'sem leitura no mês' : semUsinas,
+      },
+      {
+        rotulo: 'Potência total', valor: potMw ? (pot as number) / 1000 : pot, casas: potMw ? 2 : 1, unidade: potMw ? 'MWp' : 'kWp',
+        href: '/dashboard/monitoramento', detalhe: f ? plural(f.total, 'usina ativa', 'usinas ativas') : undefined,
+        semDadoTexto: f ? 'sem potência cadastrada' : semUsinas,
+      },
+      {
+        rotulo: 'Usinas no ar', valor: f && f.monitoradas > 0 ? f.comunicando : null, unidade: f ? `/ ${fmtNumero(f.monitoradas)}` : undefined,
+        href: '/dashboard/monitoramento',
+        detalhe: f ? (f.porEstado.sem_comunicacao ? `${fmtNumero(f.porEstado.sem_comunicacao)} sem sinal` : 'todas com sinal') : undefined,
+        semDadoTexto: f ? 'nenhuma usina monitorada' : semUsinas,
+      },
+    ];
+    celulas.push(...usinas.map(kpiCard));
+  } else {
+    trancadas.push({ titulo: 'Usinas', chave: 'monitoramento', frase: FRASE_VITRINE.monitoramento, variante: 'kpi' });
+  }
+  if (c.financeiro) {
+    // Mesmo número e mesmo nome da tela Financeiro ("Recebido no mês"), pra não confundir com "faturado".
+    celulas.push(kpiCard({
       rotulo: 'Recebido', valor: dd?.recebidoMes ?? null, prefixo: 'R$', compacto: true, href: '/dashboard/financeiro',
       detalhe: 'no mês', semDadoTexto: semTexto(p, 'financeiro'),
-    },
-    {
-      rotulo: 'Leads do mês', valor: dd?.kpisMes.leads ?? null, href: '/dashboard/leads',
+    }));
+  } else {
+    trancadas.push({ titulo: 'Financeiro', chave: 'financeiro', frase: FRASE_VITRINE.financeiro, variante: 'kpi' });
+  }
+  if (c.leads) {
+    // kpisMes.leads pode ter vindo só pelo Marketing: aqui vale a permissão de leads.
+    const leadsMes = p && !p.leads ? null : dd?.kpisMes.leads ?? null;
+    celulas.push(kpiCard({
+      rotulo: 'Leads do mês', valor: leadsMes, href: '/dashboard/leads',
       detalhe: temNumero(dd?.mudancas24h.leads) ? `+${fmtNumero(dd!.mudancas24h.leads)} desde ontem` : 'ver leads', semDadoTexto: semTexto(p, 'leads'),
-    },
-    {
+    }));
+    celulas.push(kpiCard({
       rotulo: 'Vendas', valor: dd?.kpisMes.vendas ?? null, href: '/dashboard/leads/kanban', destaque: true,
       detalhe: temNumero(dd?.kpisMes.propostas) ? plural(dd!.kpisMes.propostas as number, 'proposta', 'propostas') : 'fechadas no mês',
       semDadoTexto: semTexto(p, 'leads'),
-    },
-  ];
-  return faixaKpis(lista, { classe: 'cc-kstrip-cc' });
+    }));
+  } else {
+    trancadas.push({ titulo: 'Leads e vendas', chave: 'leads', frase: FRASE_VITRINE.leads, variante: 'kpi' });
+  }
+  // Célula trancada ocupa 2 colunas (a frase e o botão não cabem numa coluna de KPI).
+  // Faixa cheia (passaria de 8 colunas): a trancada vira uma linha inteira embaixo.
+  const emLinha = celulas.length + trancadas.length * 2 > 8;
+  const n = emLinha ? celulas.length : celulas.length + trancadas.length * 2;
+  const tr = trancadas.map((t) => blocoTrancado({ ...t, classe: emLinha ? 'cc-tranc-linha' : undefined }));
+  return `<section class="cc-kstrip cc-kstrip-cc" style="--n:${Math.max(1, n)}">${emLinha ? celulas.join('') + tr.join('') : tr.join('') + celulas.join('')}</section>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -425,12 +576,12 @@ function usinasAgora(d: CommandCenterDados): string {
 // Central de Atenção (topo da Home)
 // ---------------------------------------------------------------------------
 
-function legendaSeveridades(eventos: readonly EventoAtencao[] | null, linkar: boolean): string {
+function legendaSeveridades(eventos: readonly EventoAtencao[] | null, linkar: boolean, parcial = false): string {
   const c = eventos ? contarPorSeveridade(eventos) : null;
   return `<div class="cc-sevs">${ORDEM_SEVERIDADE.map((s) => {
     const tom = TONS[TOM_DA_SEVERIDADE[s]];
     const ligada = SEVERIDADES_LIGADAS.has(s);
-    const inner = `<span class="cc-dot ${tom.ponto}"></span>${escapeHtml(tom.rotulo)} <b>${c && ligada ? escapeHtml(fmtNumero(c[s])) : SEM_DADO}</b>`;
+    const inner = `<span class="cc-dot ${tom.ponto}"></span>${escapeHtml(tom.rotulo)} <b>${c && ligada ? escapeHtml(textoContagem(c[s], parcial)) : SEM_DADO}</b>`;
     return linkar && c && ligada ? `<a class="cc-sev" href="/dashboard/atencao?severidade=${s}">${inner}</a>` : `<span class="cc-sev">${inner}</span>`;
   }).join('')}</div>`;
 }
@@ -448,12 +599,12 @@ function centralAtencao(d: CommandCenterDados): string {
   const falha = avisoFalha(dd.fontes);
   const lista = top.length
     ? `<div class="cc-evs">${top.map(cartaoEvento).join('')}</div>`
-    : falha ? '' : estadoVazio({ tipo: 'vazio', titulo: 'Tudo em dia por aqui', texto: 'Nenhum aviso de usinas, leads, propostas, créditos GD, manutenção ou contas.' });
+    : falha ? '' : tudoEmDia(dd.fontes);
   return cartaoSecao({
     titulo: 'Central de Atenção',
     classe: 'cc-a-att',
     acoesHtml: `<a class="cc-link" href="/dashboard/atencao">${todos.length > top.length ? `Ver os ${escapeHtml(fmtNumero(todos.length))}` : 'Ver todos'} ${icone('right', 'xs')}</a>`,
-    corpoHtml: `${legendaSeveridades(todos, true)}${falha}${lista}`,
+    corpoHtml: `${legendaSeveridades(todos, true, ehParcial(dd.fontes))}${falha}${lista}`,
   });
 }
 
@@ -501,31 +652,39 @@ function departamentos(d: CommandCenterDados): string {
   const avisosDe = (area: AreaEvento, fontes: string[]): EventoAtencao[] | null => {
     if (!dd) return null;
     const fs = estadoFonte(fontes);
-    if (fs.every((f) => f.estado === 'sem_acesso')) return null;
+    if (fs.every((f) => f.estado === 'sem_acesso' || f.estado === 'nao_contratado')) return null;
     const lista = dd.eventos.filter((e) => e.area === area);
     // Fonte da área falhou e nada apareceu: não dá pra dizer "nada pedindo atenção".
     if (!lista.length && fs.some((f) => f.estado === 'falhou')) return null;
     return lista;
   };
   const m = dd?.manutencao ?? null;
+  const c = contratadosDe(d);
+  const tranca = (titulo: string, chave: ChaveVitrine) => blocoTrancado({ titulo, chave, frase: FRASE_VITRINE[chave], variante: 'dept' });
   return `<section class="cc-depts">
-    ${dept({
+    ${c.leads ? dept({
       titulo: 'Comercial', icone: 'users', href: '/dashboard/leads/kanban', valor: k?.propostas ?? null, legenda: 'propostas no mês', semTexto: semTexto(p, 'propostas'),
       linha: temNumero(k?.vendas) ? `${plural(k!.vendas as number, 'venda fechada', 'vendas fechadas')} no mês` : 'Pipeline e conversão: próxima entrega',
       avisos: avisosDe('comercial', ['leads_esperando', 'sla', 'propostas']),
-    })}
-    ${dept({ titulo: 'Marketing', icone: 'mega', href: '/dashboard/marketing', valor: k?.leads ?? null, legenda: 'leads no mês', semTexto: semTexto(p, 'leads'), linha: 'Investimento e custo por lead: próxima entrega' })}
-    ${dept({ titulo: 'Instalações', icone: 'hammer', href: '/dashboard/usinas/kanban', valor: k?.usinasNovas ?? null, legenda: 'usinas cadastradas no mês', semTexto: semTexto(p, 'usinas'), linha: 'Obras por etapa e atrasos: próxima entrega' })}
-    ${dept({
-      titulo: 'O&M', icone: 'wrench', href: '/dashboard/manutencao', valor: m?.vencidas ?? null, legenda: m?.vencidas === 1 ? 'manutenção vencida' : 'manutenções vencidas', semTexto: semTexto(p, 'usinas'),
-      linha: m ? `${plural(m.proximas30, 'agendada', 'agendadas')} para os próximos 30 dias` : 'Agenda de manutenção',
+    }) : tranca('Comercial', 'leads')}
+    ${c.marketing ? dept({
+      titulo: 'Marketing', icone: 'mega', href: '/dashboard/marketing', valor: p && !p.marketing ? null : k?.leads ?? null, legenda: 'leads no mês',
+      semTexto: semTexto(p, 'marketing'), linha: 'Investimento e custo por lead: próxima entrega',
+    }) : tranca('Marketing', 'marketing')}
+    ${c.usinas ? dept({
+      titulo: 'Instalações', icone: 'hammer', href: '/dashboard/usinas/kanban', valor: k?.usinasNovas ?? null, legenda: 'usinas novas', semTexto: semTexto(p, 'usinas'),
+      linha: 'Cadastradas no mês · obras por etapa: próxima entrega',
+    }) : tranca('Instalações', 'usinas_kanban')}
+    ${c.usinas ? dept({
+      titulo: 'O&M', icone: 'wrench', href: '/dashboard/manutencao', valor: m?.vencidas ?? null, legenda: m?.vencidas === 1 ? 'vencida' : 'vencidas', semTexto: semTexto(p, 'usinas'),
+      linha: m ? `Manutenções · ${plural(m.proximas30, 'agendada', 'agendadas')} nos próximos 30 dias` : 'Agenda de manutenção',
       avisos: avisosDe('om', ['manutencao']),
-    })}
-    ${dept({
-      titulo: 'Financeiro', icone: 'wallet', href: '/dashboard/financeiro', valor: dd?.recebidoMes ?? null, dinheiro: true, legenda: 'recebido no mês', semTexto: semTexto(p, 'financeiro'),
-      linha: 'Margem e a receber: próxima entrega',
+    }) : tranca('O&M', 'manutencao')}
+    ${c.financeiro ? dept({
+      titulo: 'Financeiro', icone: 'wallet', href: '/dashboard/financeiro', valor: dd?.recebidoMes ?? null, dinheiro: true, legenda: 'recebido', semTexto: semTexto(p, 'financeiro'),
+      linha: 'No mês · margem e a receber: próxima entrega',
       avisos: avisosDe('financeiro', ['contas']),
-    })}
+    }) : tranca('Financeiro', 'financeiro')}
   </section>`;
 }
 
@@ -533,15 +692,35 @@ function departamentos(d: CommandCenterDados): string {
 // Página: Command Center
 // ---------------------------------------------------------------------------
 
+/** Selo do botão "Central de Atenção": nº de críticos; com fonte faltando, "≥ N" ou "?" (nunca some). */
+function seloCriticos(dd: DadosCommandCenter | null): string {
+  if (!dd) return '';
+  const crit = contarPorSeveridade(dd.eventos).critico;
+  const parcial = ehParcial(dd.fontes);
+  if (!crit && !parcial) return '';
+  const titulo = parcial ? ' title="Parte dos avisos não carregou: pode haver mais"' : '';
+  return `<span class="cc-bdg${crit ? ' cc-bdg-r' : ''}"${titulo}>${escapeHtml(textoContagem(crit, parcial))}</span>`;
+}
+
 export function renderCommandCenterPage(d: CommandCenterDados, user?: DashUser): string {
-  const crit = d.dados ? contarPorSeveridade(d.dados.eventos).critico : 0;
+  const casa = ehDaCasa(user);
+  const c = contratadosDe(d);
   const cab = cabecalhoPagina({
     titulo: 'Command Center',
     aoVivo: carimboAoVivo(d.agora),
     subtitulo: 'Como está a empresa agora, o que mudou e qual é a próxima ação mais importante.',
-    acoesHtml: `<a class="cc-btn" href="/dashboard/atencao">${icone('bell', 'sm')}Central de Atenção${crit ? `<span class="cc-bdg cc-bdg-r">${escapeHtml(fmtNumero(crit))}</span>` : ''}</a>`
-      + `<a class="cc-btn" href="/dashboard/tv">${icone('tv', 'sm')}Modo TV</a>`,
+    acoesHtml: `<a class="cc-btn" href="/dashboard/atencao">${icone('bell', 'sm')}Central de Atenção${seloCriticos(d.dados)}</a>`
+      // Modo TV é só da casa (a rota manda o tenant pro Cockpit).
+      + (casa ? `<a class="cc-btn" href="/dashboard/tv">${icone('tv', 'sm')}Modo TV</a>` : ''),
   });
+  // Monitoramento não contratado: um bloco trancado no lugar da curva e do "Usinas agora".
+  const quadroUsinas = c.usinas
+    ? `${geracao(d)}
+      ${usinasAgora(d)}`
+    : blocoTrancado({
+      titulo: 'Usinas: geração e estado agora', chave: 'monitoramento', frase: FRASE_VITRINE.monitoramento,
+      comGanhos: true, classe: 'cc-a-genmap',
+    });
 
   const body = `<div class="cc-root cc-cc">
   ${cab}
@@ -549,19 +728,18 @@ export function renderCommandCenterPage(d: CommandCenterDados, user?: DashUser):
     ${hero(d)}
     ${kpis(d)}
     <div class="cc-board">
-      ${geracao(d)}
-      ${usinasAgora(d)}
+      ${quadroUsinas}
       ${centralAtencao(d)}
     </div>
     ${departamentos(d)}
-    <div class="cc-foot">${icone('tv', 'sm')}Modo TV: a tela do escritório vai girar entre visão geral, usinas e comercial. <span class="cc-sp"></span>Todo número é clicável e leva ao detalhe.</div>
+    <div class="cc-foot">${casa ? `${icone('tv', 'sm')}Modo TV: a tela do escritório vai girar entre visão geral, usinas e comercial. ` : ''}<span class="cc-sp"></span>Todo número é clicável e leva ao detalhe.</div>
   </div>
 </div>
 <style>${CSS_COMMAND_CENTER}</style>`;
 
   return renderLayout({
     active: 'command_center', title: 'Command Center', body, dark: true, largo: true, user,
-    selos: d.dados ? selosDoMenu(d.dados.eventos) : undefined,
+    selos: d.dados ? selosDoMenu(d.dados.eventos, d.dados.fontes) : undefined,
   });
 }
 
@@ -598,6 +776,7 @@ export function renderCentralAtencaoPage(c: CentralAtencaoDados, user?: DashUser
   const todos = dd ? priorizar(dd.eventos) : [];
   const filtrados = filtrarEventos(todos, { area, severidade: sev });
   const cont = contarPorSeveridade(todos);
+  const parcial = ehParcial(dd?.fontes);
 
   const cab = cabecalhoPagina({
     titulo: 'Central de Atenção',
@@ -609,7 +788,9 @@ export function renderCentralAtencaoPage(c: CentralAtencaoDados, user?: DashUser
   const faixa = faixaKpis(ORDEM_SEVERIDADE.map((s): KpiInput => ({
     rotulo: TONS[TOM_DA_SEVERIDADE[s]].rotulo,
     valor: dd && SEVERIDADES_LIGADAS.has(s) ? cont[s] : null,
-    detalhe: TEXTO_SEVERIDADE[s],
+    // Fonte faltando: "≥ N" — pode haver mais do que isso.
+    prefixo: parcial && SEVERIDADES_LIGADAS.has(s) ? '≥' : undefined,
+    detalhe: parcial && SEVERIDADES_LIGADAS.has(s) ? `${TEXTO_SEVERIDADE[s]} (parcial)` : TEXTO_SEVERIDADE[s],
     href: SEVERIDADES_LIGADAS.has(s) ? hrefFiltro(area, sev === s ? null : s) : undefined,
     semDadoTexto: SEVERIDADES_LIGADAS.has(s) ? SEM_DADO_AGORA : EM_CONSTRUCAO,
   })), { classe: 'cc-kstrip-sev' });
@@ -629,7 +810,7 @@ export function renderCentralAtencaoPage(c: CentralAtencaoDados, user?: DashUser
       ? estadoVazio({ tipo: 'vazio', titulo: 'Nenhum aviso com esse filtro' })
       : fontesComFalha(dd.fontes).length
         ? ''
-        : estadoVazio({ tipo: 'vazio', titulo: 'Tudo em dia por aqui', texto: 'Nenhum aviso de usinas, leads, propostas, créditos GD, manutenção ou contas.' });
+        : tudoEmDia(dd.fontes);
   } else {
     lista = ORDEM_SEVERIDADE.map((s) => {
       const doGrupo = filtrados.filter((e) => e.severidade === s);
@@ -639,8 +820,8 @@ export function renderCentralAtencaoPage(c: CentralAtencaoDados, user?: DashUser
     }).join('');
   }
 
-  const ROTULO_ESTADO_FONTE = { ok: 'ligada', falhou: 'não carregou', sem_acesso: 'sem acesso' } as const;
-  const TOM_ESTADO_FONTE = { ok: 'normal', falhou: 'critico', sem_acesso: 'sem_dado' } as const;
+  const ROTULO_ESTADO_FONTE = { ok: 'ligada', falhou: 'não carregou', sem_acesso: 'sem acesso', nao_contratado: 'não contratado' } as const;
+  const TOM_ESTADO_FONTE = { ok: 'normal', falhou: 'critico', sem_acesso: 'sem_dado', nao_contratado: 'sem_dado' } as const;
   const fontes = dd
     ? dd.fontes.map((f) => `<li><span class="cc-dot ${TONS[TOM_ESTADO_FONTE[f.estado]].ponto}"></span><span>${escapeHtml(f.rotulo)}</span><span class="cc-pill ${TONS[TOM_ESTADO_FONTE[f.estado]].classe}">${ROTULO_ESTADO_FONTE[f.estado]}</span></li>`).join('')
     : '';
@@ -666,7 +847,7 @@ export function renderCentralAtencaoPage(c: CentralAtencaoDados, user?: DashUser
 
   return renderLayout({
     active: 'atencao', title: 'Central de Atenção', body, dark: true, largo: true, user,
-    selos: dd ? selosDoMenu(dd.eventos) : undefined,
+    selos: dd ? selosDoMenu(dd.eventos, dd.fontes) : undefined,
   });
 }
 
@@ -704,6 +885,11 @@ const CSS_COMMAND_CENTER = `
 .cc-cc .cc-board{display:grid;grid-template-columns:minmax(0,1fr) 452px;grid-template-rows:auto 1fr;grid-template-areas:"gen att" "map att";gap:18px;margin-top:18px;align-items:start}
 .cc-cc .cc-a-gen{grid-area:gen}.cc-cc .cc-a-map{grid-area:map}
 .cc-cc .cc-a-att{grid-area:att;background:linear-gradient(180deg,#132b47 0%,#0f2138 60%);border-color:rgba(150,185,225,.16);box-shadow:0 18px 44px rgba(0,0,0,.25);display:flex;flex-direction:column}
+/* A Central não empurra a altura do quadro: acompanha a coluna da esquerda (mín. 560 px) e rola por dentro. */
+.cc-cc .cc-board .cc-a-att{contain:size;min-height:560px;align-self:stretch}
+.cc-cc .cc-board .cc-a-att .cc-evs{flex:1;min-height:0;overflow:auto;padding-right:4px;margin-right:-4px}
+.cc-cc .cc-a-genmap{grid-column:1;grid-row:1/span 2;align-self:stretch;justify-content:center;padding:32px 40px}
+.cc-cc .cc-a-genmap .cc-btn-tranc{margin-top:10px}
 .cc-cc .cc-a-att .cc-ph h3{font-size:18px}
 .cc-cc .cc-gsum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
 .cc-cc .cc-gsum>div{padding:10px 12px;border-radius:10px;background:rgba(0,0,0,.16);border:1px solid var(--cc-line)}
@@ -738,7 +924,7 @@ const CSS_COMMAND_CENTER = `
 .cc-cc .cc-dh{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13.5px;color:var(--cc-text-2)}
 .cc-cc .cc-dh .cc-ic{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--cc-surface-3);color:var(--cc-gold-2)}
 .cc-cc .cc-dh .cc-go{margin-left:auto;color:var(--cc-faint)}
-.cc-cc .cc-dept .cc-big{font-size:26px;margin-top:12px;line-height:1.15}
+.cc-cc .cc-dept .cc-big{font-size:26px;margin-top:12px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cc-cc .cc-dept .cc-big small{font-size:13px;color:var(--cc-muted);font-weight:500;font-family:var(--cc-f-text)}
 .cc-cc .cc-dept .cc-big small.cc-pre{font-size:15px;color:var(--cc-text-2);margin-right:2px}
 .cc-cc .cc-s1{font-size:12.5px;color:var(--cc-muted);margin-top:6px;min-height:36px}
@@ -746,6 +932,27 @@ const CSS_COMMAND_CENTER = `
 .cc-cc .cc-st .cc-dot{flex:none}
 .cc-cc .cc-st-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cc-cc .cc-foot{margin-top:26px;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--cc-faint)}
+
+/* Vitrine: bloco de módulo fora do plano (cadeado, sem número) */
+.cc-cc .cc-tranc{display:flex;flex-direction:column;gap:9px;align-items:flex-start;border-style:dashed;border-color:rgba(251,191,36,.28)}
+.cc-cc .cc-tranc-h{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:13.5px;color:var(--cc-text)}
+.cc-cc .cc-tranc-h b{font-weight:600}
+.cc-cc .cc-tranc-ic{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;flex:none;background:rgba(251,191,36,.10);color:var(--cc-gold-2)}
+.cc-cc .cc-tranc-tag{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--cc-faint)}
+.cc-cc .cc-tranc p{margin:0;font-size:12.5px;line-height:1.45;color:var(--cc-muted);max-width:52ch}
+.cc-cc .cc-tranc-g{list-style:none;margin:2px 0 4px;padding:0;display:flex;flex-direction:column;gap:7px;font-size:13px;color:var(--cc-text-2)}
+.cc-cc .cc-tranc-g li{display:flex;align-items:center;gap:8px}
+.cc-cc .cc-tranc-g .cc-i{color:var(--cc-ok);flex:none}
+.cc-cc .cc-btn-tranc{white-space:normal;height:auto;min-height:32px;padding:6px 12px;line-height:1.25;margin-top:auto}
+.cc-cc .cc-kpi.cc-kpi-tranc{grid-column:span 2;border-top:0;border-bottom:0;border-right:0;border-left:1px dashed var(--cc-line-2);background:rgba(251,191,36,.03)}
+.cc-cc .cc-kpi.cc-kpi-tranc:first-child{border-left:0}
+.cc-cc .cc-kpi.cc-tranc-linha{grid-column:1/-1;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px 16px;border-left:0;border-top:1px dashed var(--cc-line-2);padding:12px 18px}
+.cc-cc .cc-kpi.cc-tranc-linha p{flex:1;min-width:220px;max-width:none}
+.cc-cc .cc-kpi.cc-tranc-linha .cc-btn-tranc{margin-top:0}
+.cc-cc .cc-dept.cc-dept-tranc{background:rgba(251,191,36,.03)}
+.cc-cc .cc-dept.cc-dept-tranc:hover{transform:none}
+.cc-cc .cc-panel-tranc{padding:26px 28px}
+.cc-cc .cc-panel-tranc .cc-tranc-h{font-size:17px}
 
 /* Central de Atenção — página */
 .cc-att-page .cc-kstrip-sev{margin-bottom:18px}
@@ -767,21 +974,25 @@ const CSS_COMMAND_CENTER = `
 }
 @media (max-width:980px){
   .cc-cc .cc-board{grid-template-columns:minmax(0,1fr);grid-template-areas:"att" "gen" "map"}
+  .cc-cc .cc-board .cc-a-att{contain:none;min-height:0}
+  .cc-cc .cc-board .cc-a-att .cc-evs{overflow:visible;padding-right:0;margin-right:0}
+  .cc-cc .cc-a-genmap{grid-column:auto;grid-row:auto}
   .cc-att-page .cc-att-grid{grid-template-columns:minmax(0,1fr)}
 }
 @media (max-width:760px){
-  /* Celular: a Central de Atenção sobe logo depois do resumo da Eva (spec §16). */
+  /* Celular: a Central de Atenção sobe logo depois do resumo do dia (spec §16). */
   .cc-cc:not(.cc-att-page) .cc-wrap{display:flex;flex-direction:column;gap:16px}
   .cc-cc:not(.cc-att-page) .cc-wrap>*{margin:0!important}
   .cc-cc .cc-board{display:contents}
   .cc-cc .cc-hero{order:1} .cc-cc .cc-a-att{order:2} .cc-cc .cc-kstrip-cc{order:3} .cc-cc .cc-a-gen{order:4}
-  .cc-cc .cc-a-map{order:5} .cc-cc .cc-depts{order:6} .cc-cc .cc-foot{order:7}
+  .cc-cc .cc-a-map{order:5} .cc-cc .cc-a-genmap{order:4} .cc-cc .cc-depts{order:6} .cc-cc .cc-foot{order:7}
   .cc-cc .cc-hero{grid-template-columns:minmax(0,1fr)} .cc-cc .cc-hero-r{border-left:0;border-top:1px solid var(--cc-line)}
   .cc-cc .cc-hero-l{padding:20px} .cc-cc .cc-hero-l h2{font-size:24px}
   .cc-cc .cc-gsum{grid-template-columns:repeat(2,minmax(0,1fr))}
   .cc-cc .cc-mapwrap{grid-template-columns:minmax(0,1fr)}
   .cc-cc .cc-depts{grid-template-columns:repeat(2,minmax(0,1fr))}
   .cc-cc .cc-depts .cc-dept:last-child{grid-column:1/-1}
+  .cc-cc .cc-dept .cc-big{white-space:normal}
   .cc-cc .cc-foot{display:none}
 }
 `;

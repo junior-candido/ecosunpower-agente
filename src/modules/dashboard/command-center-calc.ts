@@ -314,7 +314,7 @@ export function mudancasDesdeOntem(i: {
   const chips: ChipMudanca[] = [];
   const n = (v: number | null): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
   if (n(i.leads)) chips.push({ texto: `+${i.leads} ${i.leads === 1 ? 'lead novo' : 'leads novos'}`, tom: 'neutro' });
-  if (n(i.propostas)) chips.push({ texto: `${i.propostas} ${i.propostas === 1 ? 'proposta enviada' : 'propostas enviadas'}`, tom: 'neutro' });
+  if (n(i.propostas)) chips.push({ texto: `${i.propostas} ${i.propostas === 1 ? 'proposta feita' : 'propostas feitas'}`, tom: 'neutro' });
   if (n(i.vendas)) chips.push({ texto: `${i.vendas} ${i.vendas === 1 ? 'venda fechada' : 'vendas fechadas'}`, tom: 'ok' });
   if (typeof i.geracaoOntemPct === 'number' && Number.isFinite(i.geracaoOntemPct)) {
     chips.push({ texto: `Ontem: ${i.geracaoOntemPct}% do esperado`, tom: i.geracaoOntemPct >= 90 ? 'ok' : 'warn' });

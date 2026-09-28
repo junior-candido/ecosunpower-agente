@@ -1974,7 +1974,8 @@ b.onclick=async function(){
 
   // Energy Command Center (spec 2026-09-27-command-center-design.md) — fase B:
   // dado real + Central de Atenção, escopados pela empresa da sessão.
-  // SÓ ECOSUN por enquanto (flag CC_ABERTO_A_TENANTS em command-center-rotas.ts).
+  // Aberto pro tenant (flag CC_ABERTO_A_TENANTS): dado escopado pela empresa da sessão,
+  // módulo não contratado aparece trancado. Modo TV segue só da casa.
   router.get('/command-center', rotaCommandCenter(supabase));
   router.get('/atencao', rotaCentralAtencao(supabase));
   router.get('/tv', rotaModoTv());

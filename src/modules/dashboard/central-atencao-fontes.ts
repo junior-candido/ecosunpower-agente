@@ -269,7 +269,8 @@ export function eventosDeContas(contas: readonly ContaAberta[], hojeIso: string)
       detalhe: `Vencimento ${dataBr(c.vencimento)}`,
       impactoRs: valor,
       impactoTexto: valor !== null ? brl2(valor) : undefined,
-      acao: { rotulo: 'Pagar', href: '/dashboard/financeiro' },
+      // Não existe tela que liste as contas a pagar: o botão diz o que ele faz (abre o Financeiro).
+      acao: { rotulo: 'Ver financeiro', href: '/dashboard/financeiro' },
       desde: `${c.vencimento}T12:00:00Z`,
     } satisfies EventoAtencao;
   });

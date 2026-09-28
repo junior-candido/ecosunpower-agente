@@ -90,6 +90,24 @@ export const MODULOS: Record<string, ModuloVitrine> = {
       'Histórico de tudo que já foi feito em cada cliente',
     ],
   },
+  leads: {
+    titulo: '💬 Leads e atendimento',
+    resumo: 'Os contatos que chegam pela assistente, organizados, com aviso de quem está esperando resposta.',
+    ganhos: [
+      'A assistente atende e qualifica o contato na hora, no WhatsApp',
+      'Funil com cada lead na sua etapa',
+      'Aviso de quem está esperando resposta há mais de um dia',
+    ],
+  },
+  manutencao: {
+    titulo: '🧰 Manutenção (O&M)',
+    resumo: 'A agenda de manutenção das usinas dos seus clientes, sem esquecer nenhuma.',
+    ganhos: [
+      'Limpeza e revisão agendadas por usina',
+      'Aviso do que já venceu e do que vem nos próximos dias',
+      'Relatório do serviço feito, com foto, pro cliente',
+    ],
+  },
   usinas_kanban: {
     titulo: '🏗️ Obras',
     resumo: 'Cada obra numa etapa, sem ninguém perguntar "como está aquela lá?".',

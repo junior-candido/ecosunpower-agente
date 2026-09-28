@@ -3,7 +3,7 @@
 // (nunca 0) e área sem permissão nem é consultada.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { carregarCommandCenter, TODAS_PERMISSOES } from '../src/modules/dashboard/command-center-queries.js';
+import { carregarCommandCenter, lerModulosContratados, TODAS_PERMISSOES } from '../src/modules/dashboard/command-center-queries.js';
 
 const ECOSUN = '00000000-0000-0000-0000-000000000001';
 const AGORA = new Date('2026-09-27T14:42:00Z'); // 11:42 em Brasília
@@ -183,7 +183,7 @@ describe('carregarCommandCenter — falhas', () => {
     const muitas = Array.from({ length: 1500 }, (_, i) => ({ sistema_id: 'a', data: '2026-09-27', geracao_kwh: i < 1000 ? 1 : 0 }));
     const { client, chamadas } = fakeDb({ ...DADOS, geracao_diaria: { data: muitas } });
     const r = await carregarCommandCenter(client, ECOSUN, AGORA, TODAS_PERMISSOES);
-    expect(chamadas.filter((c) => c.tabela === 'geracao_diaria')).toHaveLength(2);
+    expect(chamadas.filter((c) => c.tabela === 'geracao_diaria' && !c.head)).toHaveLength(2);
     expect(r.frota?.energiaHojeKwh).toBe(1000);
   });
 
@@ -196,5 +196,168 @@ describe('carregarCommandCenter — falhas', () => {
     expect(r.mudancas24h).toEqual({ leads: null, propostas: null, vendas: null });
     expect(r.eventos).toEqual([]);
     expect(r.fontes.every((f) => f.estado === 'falhou')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Revisão 3 + abertura pro tenant
+// ---------------------------------------------------------------------------
+
+/** Igual ao fakeDb, mas cada resposta demora um tique e mede quantas páginas da geração estão no ar juntas. */
+function fakeDbLento(respostas: Record<string, Resposta>) {
+  const base = fakeDb(respostas);
+  let noAr = 0;
+  const pico = { max: 0 };
+  const client = {
+    from(tabela: string) {
+      const q = (base.client as unknown as { from: (t: string) => Record<string, unknown> }).from(tabela);
+      const thenOriginal = q.then as (ok: (r: unknown) => unknown, falha?: (e: unknown) => unknown) => Promise<unknown>;
+      q.then = (ok: (r: unknown) => unknown, falha?: (e: unknown) => unknown) => {
+        const conta = tabela === 'geracao_diaria';
+        if (conta) { noAr++; pico.max = Math.max(pico.max, noAr); }
+        return new Promise((r) => setTimeout(r, 1)).then(() => { if (conta) noAr--; return thenOriginal(ok, falha); });
+      };
+      return q;
+    },
+  };
+  return { client: client as unknown as SupabaseClient, chamadas: base.chamadas, pico };
+}
+
+describe('I1 — contas PF só pro admin', () => {
+  it('por padrão a consulta de contas leva mundo = PJ', async () => {
+    const { client, chamadas } = fakeDb(DADOS);
+    await carregarCommandCenter(client, ECOSUN, AGORA, TODAS_PERMISSOES);
+    expect(chamadas.find((c) => c.tabela === 'financeiro_contas_a_pagar')!.filtros).toContainEqual(['eq', 'mundo', 'PJ']);
+  });
+  it('admin (verContasPF) lê PJ e PF', async () => {
+    const { client, chamadas } = fakeDb(DADOS);
+    await carregarCommandCenter(client, ECOSUN, AGORA, TODAS_PERMISSOES, { verContasPF: true });
+    const f = chamadas.find((c) => c.tabela === 'financeiro_contas_a_pagar')!.filtros;
+    expect(f.some((x) => x[1] === 'mundo')).toBe(false);
+  });
+  it('o botão da conta leva a uma tela que existe, com rótulo honesto', async () => {
+    const { client } = fakeDb(DADOS);
+    const r = await carregarCommandCenter(client, ECOSUN, AGORA, TODAS_PERMISSOES);
+    const conta = r.eventos.find((e) => e.id === 'conta:c1')!;
+    expect(conta.acao).toEqual({ rotulo: 'Ver financeiro', href: '/dashboard/financeiro' });
+  });
+});
+
+describe('I2 — proposta refeita que o cliente respondeu', () => {
+  const base = { sent_to_client_at: null, ultimo_acesso_at: null, revoked: false, expires_at: '2026-11-09T12:00:00Z', dados_input: { investimento: { total: 30000 } } };
+  it('A (antiga, sem resposta) + B (nova, respondida) do mesmo lead → nenhum aviso', async () => {
+    const { client, chamadas } = fakeDb({ ...DADOS, propostas_publicas: { data: [
+      { ...base, id: 'B', lead_id: 'L2', created_at: '2026-09-15T12:00:00Z', cliente_respondeu_at: '2026-09-16T12:00:00Z' },
+      { ...base, id: 'A', lead_id: 'L2', created_at: '2026-09-10T12:00:00Z', cliente_respondeu_at: null },
+    ] } });
+    const r = await carregarCommandCenter(client, ECOSUN, AGORA, TODAS_PERMISSOES);
+    expect(r.eventos.find((e) => e.id === 'propostas:paradas-72h')).toBeUndefined();
+    const f = chamadas.find((c) => c.tabela === 'propostas_publicas' && !c.head)!.filtros;
+    expect(f.some((x) => x[1] === 'revoked' || x[1] === 'cliente_respondeu_at')).toBe(false);
+  });
+});
+
+describe('I3 — escala da geração (sem migration)', () => {
+  it('45 mil linhas: conta antes, lê em lotes paralelos (no máximo 5 no ar) e soma tudo', async () => {
+    const linhas = Array.from({ length: 45_000 }, (_, i) => ({ sistema_id: 'a', data: '2026-09-27', geracao_kwh: i % 2 }));
+    const { client, chamadas, pico } = fakeDbLento({ ...DADOS, geracao_diaria: { data: linhas } });
+    const r = await carregarCommandCenter(client, ECOSUN, AGORA, TODAS_PERMISSOES);
+    const g = chamadas.filter((c) => c.tabela === 'geracao_diaria');
+    expect(g.filter((c) => c.head)).toHaveLength(1);
+    expect(g.filter((c) => !c.head)).toHaveLength(45);
+    expect(r.frota?.energiaHojeKwh).toBe(22_500);
+    expect(pico.max).toBeGreaterThan(1);
+    expect(pico.max).toBeLessThanOrEqual(5);
+  });
+  it('acima do teto (200 mil linhas): não soma nada e a fonte vira "não carregou"', async () => {
+    const { client, chamadas } = fakeDb({ ...DADOS, geracao_diaria: { data: [], count: 200_001 } });
+    const r = await carregarCommandCenter(client, ECOSUN, AGORA, TODAS_PERMISSOES);
+    expect(r.frota).toBeNull();
+    expect(r.fontes.find((f) => f.id === 'usinas')?.estado).toBe('falhou');
+    expect(chamadas.filter((c) => c.tabela === 'geracao_diaria' && !c.head)).toHaveLength(0);
+  });
+});
+
+describe('I4 — telemetria pelo índice (sistema_id)', () => {
+  it('filtra pelas usinas ativas, em lotes de até 150 ids', async () => {
+    const muitas = Array.from({ length: 400 }, (_, i) => usina(`s${i}`));
+    const { client, chamadas } = fakeDb({ ...DADOS, sistemas_clientes: { data: muitas } });
+    await carregarCommandCenter(client, ECOSUN, AGORA, TODAS_PERMISSOES);
+    const t = chamadas.filter((c) => c.tabela === 'telemetria_medicoes');
+    expect(t).toHaveLength(3);
+    const ids = t.flatMap((c) => (c.filtros.find((f) => f[0] === 'in' && f[1] === 'sistema_id')![2] as string[]));
+    expect(ids).toHaveLength(400);
+    expect(new Set(ids).size).toBe(400);
+    for (const c of t) expect((c.filtros.find((f) => f[0] === 'in')![2] as string[]).length).toBeLessThanOrEqual(150);
+  });
+  it('lote que bate o limite de 5000 linhas fica marcado (Geração agora pode estar incompleta)', async () => {
+    const cheio = Array.from({ length: 5000 }, (_, i) => ({ sistema_id: 'a', device_key: `d${i}`, valor: 0.001, ts: '2026-09-27T14:35:00Z' }));
+    const { client } = fakeDb({ ...DADOS, telemetria_medicoes: { data: cheio } });
+    const r = await carregarCommandCenter(client, ECOSUN, AGORA, TODAS_PERMISSOES);
+    expect(r.telemetriaCortada).toBe(true);
+    const { client: c2 } = fakeDb(DADOS);
+    expect((await carregarCommandCenter(c2, ECOSUN, AGORA, TODAS_PERMISSOES)).telemetriaCortada).toBe(false);
+  });
+  it('sem usina ativa, nem consulta a telemetria', async () => {
+    const { client, chamadas } = fakeDb({ ...DADOS, sistemas_clientes: { data: [] } });
+    await carregarCommandCenter(client, ECOSUN, AGORA, TODAS_PERMISSOES);
+    expect(chamadas.some((c) => c.tabela === 'telemetria_medicoes')).toBe(false);
+  });
+});
+
+describe('M4 — tarefas de SLA sem teto de 1000', () => {
+  it('conta exata antes e lê todas as páginas', async () => {
+    const tarefas = Array.from({ length: 1500 }, (_, i) => ({ id: `t${i}`, lead_id: 'L2', due_at: '2026-09-25T12:00:00Z' }));
+    const { client, chamadas } = fakeDb({ ...DADOS, lead_tarefas: { data: tarefas } });
+    const r = await carregarCommandCenter(client, ECOSUN, AGORA, TODAS_PERMISSOES);
+    expect(chamadas.filter((c) => c.tabela === 'lead_tarefas' && c.head)).toHaveLength(1);
+    expect(r.eventos.find((e) => e.id === 'leads:sla-vencido')!.titulo).toMatch(/^1500 tarefas/);
+  });
+});
+
+describe('T3 — módulo contratado + permissão', () => {
+  const NADA = { usinas: false, leads: false, propostas: false, financeiro: false, marketing: false };
+  it('nenhum módulo contratado: ZERO leitura de dado de negócio; fontes "não contratado"', async () => {
+    const { client, chamadas } = fakeDb(DADOS);
+    const r = await carregarCommandCenter(client, ECOSUN, AGORA, TODAS_PERMISSOES, { contratados: NADA });
+    const proibidas = ['sistemas_clientes', 'geracao_diaria', 'telemetria_medicoes', 'demonstrativos_gd', 'manutencoes',
+      'financeiro_recebimentos', 'financeiro_contas_a_pagar', 'propostas_publicas', 'leads', 'lead_tarefas'];
+    for (const t of proibidas) expect(chamadas.map((c) => c.tabela), t).not.toContain(t);
+    expect(r.fontes.every((f) => f.estado === 'nao_contratado')).toBe(true);
+    expect(r.eventos).toEqual([]);
+    expect(r.contratados).toEqual(NADA);
+  });
+  it('contratou, mas o papel não deixa → "sem acesso" (não "não contratado")', async () => {
+    const { client } = fakeDb(DADOS);
+    const r = await carregarCommandCenter(client, ECOSUN, AGORA, { ...TODAS_PERMISSOES, financeiro: false });
+    expect(r.fontes.find((f) => f.id === 'contas')?.estado).toBe('sem_acesso');
+  });
+  it('status dos leads só é consultado quando leads é permitido', async () => {
+    const { client, chamadas } = fakeDb(DADOS);
+    await carregarCommandCenter(client, ECOSUN, AGORA, { ...TODAS_PERMISSOES, leads: false, marketing: false });
+    expect(chamadas.some((c) => c.tabela === 'leads')).toBe(false);
+  });
+  it('só marketing (sem leads): conta os leads do mês pro cartão de Marketing, sem ler a lista', async () => {
+    const { client, chamadas } = fakeDb(DADOS);
+    const r = await carregarCommandCenter(client, ECOSUN, AGORA, { ...NADA, marketing: true });
+    expect(chamadas.filter((c) => c.tabela === 'leads').every((c) => c.head)).toBe(true);
+    expect(r.kpisMes.leads).toBe(4);
+    expect(r.kpisMes.vendas).toBeNull();
+  });
+});
+
+describe('lerModulosContratados', () => {
+  it('lê empresa_modulos da empresa (ativo) e mapeia bloco → módulo', async () => {
+    const { client, chamadas } = fakeDb({ empresa_modulos: { data: [{ modulo: 'eva' }, { modulo: 'email' }] } });
+    expect(await lerModulosContratados(client, 'emp-x')).toEqual({ usinas: false, leads: true, propostas: true, financeiro: false, marketing: false });
+    expect(chamadas[0].filtros).toContainEqual(['eq', 'company_id', 'emp-x']);
+    expect(chamadas[0].filtros).toContainEqual(['eq', 'ativo', true]);
+  });
+  it('erro ou exceção → tudo desligado (fail-closed)', async () => {
+    const { client } = fakeDb({ empresa_modulos: { error: { message: 'relation does not exist' } } });
+    const nada = { usinas: false, leads: false, propostas: false, financeiro: false, marketing: false };
+    expect(await lerModulosContratados(client, 'x')).toEqual(nada);
+    const quebrado = { from() { throw new Error('caiu'); } } as unknown as SupabaseClient;
+    expect(await lerModulosContratados(quebrado, 'x')).toEqual(nada);
   });
 });

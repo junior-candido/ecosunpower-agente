@@ -115,6 +115,8 @@ export async function fetchCommandCenterKpis(
   supabase: SupabaseClient,
   companyId: string,
   mesRef: Date = new Date(),
+  /** Quais contagens rodar (área sem acesso nem é consultada). Padrão: todas. */
+  quais: { leads?: boolean; propostas?: boolean; vendas?: boolean; usinasNovas?: boolean } = {},
 ): Promise<CommandCenterKpis> {
   const BRASILIA_MS = 3 * 60 * 60 * 1000;
   const refBrasilia = new Date(mesRef.getTime() - BRASILIA_MS); // campos UTC = relógio de Brasília
@@ -140,14 +142,15 @@ export async function fetchCommandCenterKpis(
     }
   };
 
+  const pular = Promise.resolve(null);
   const [leads, propostas, vendas, usinasNovas] = await Promise.all([
-    contar('leads', supabase.from('leads').select('id', { count: 'exact', head: true })
+    quais.leads === false ? pular : contar('leads', supabase.from('leads').select('id', { count: 'exact', head: true })
       .gte('created_at', inicioMes).lt('created_at', fimMes).eq('company_id', companyId)),
-    contar('propostas', supabase.from('propostas_publicas').select('id', { count: 'exact', head: true })
+    quais.propostas === false ? pular : contar('propostas', supabase.from('propostas_publicas').select('id', { count: 'exact', head: true })
       .eq('revoked', false).gte('created_at', inicioMes).lt('created_at', fimMes).eq('company_id', companyId)),
-    contar('vendas', supabase.from('leads').select('id', { count: 'exact', head: true })
+    quais.vendas === false ? pular : contar('vendas', supabase.from('leads').select('id', { count: 'exact', head: true })
       .gte('contract_signed_at', inicioMes).lt('contract_signed_at', fimMes).eq('company_id', companyId)),
-    contar('usinas', supabase.from('sistemas_clientes').select('id', { count: 'exact', head: true })
+    quais.usinasNovas === false ? pular : contar('usinas', supabase.from('sistemas_clientes').select('id', { count: 'exact', head: true })
       .gte('created_at', inicioMes).lt('created_at', fimMes).eq('company_id', companyId)),
   ]);
   return { leads, propostas, vendas, usinasNovas };

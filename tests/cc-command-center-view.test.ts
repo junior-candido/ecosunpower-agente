@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   renderCommandCenterPage, renderCentralAtencaoPage, saudacao, carimboAoVivo, graficoCurva, selosDoMenu, cartaoEvento,
+  blocoTrancado, FRASE_VITRINE,
   type CommandCenterDados,
 } from '../src/modules/dashboard/command-center-views.js';
 import { resumirFrota, type UsinaLinha, type GeracaoLinha } from '../src/modules/dashboard/command-center-calc.js';
@@ -51,7 +52,9 @@ function dados(extra: Partial<DadosCommandCenter> = {}): DadosCommandCenter {
   return {
     agora: AGORA,
     permissoes: { ...TODAS_PERMISSOES },
+    contratados: { ...TODAS_PERMISSOES },
     frota,
+    telemetriaCortada: false,
     kpisMes: { leads: 212, propostas: 47, vendas: 9, usinasNovas: 3 },
     mudancas24h: { leads: 14, propostas: 2, vendas: 1 },
     recebidoMes: 3500,
@@ -151,7 +154,7 @@ describe('hero da Eva: resumo, o que mudou e ações recomendadas', () => {
     const h = pagina(dados());
     expect(h).toContain('<b>1 de 2 usinas</b> está gerando normalmente.');
     expect(h).toContain('Ontem o portfólio gerou <b>96% do esperado</b>.');
-    expect(h).toContain('Neste mês entraram <b>212 leads</b>, saíram <b>47 propostas</b> e <b>9 vendas fecharam</b>.');
+    expect(h).toContain('Neste mês entraram <b>212 leads</b>, foram feitas <b>47 propostas</b> e <b>9 vendas fecharam</b>.');
     expect(h).toContain('Há <b>1 aviso crítico</b> pedindo você agora.');
   });
   it('sem uma das contagens do comercial, a frase do mês não sai (não inventa)', () => {
@@ -167,7 +170,7 @@ describe('hero da Eva: resumo, o que mudou e ações recomendadas', () => {
   it('chips do que mudou desde ontem', () => {
     const h = pagina(dados());
     expect(h).toContain('+14 leads novos');
-    expect(h).toContain('2 propostas enviadas');
+    expect(h).toContain('2 propostas feitas');
     expect(h).toContain('1 venda fechada');
     expect(h).toContain('Ontem: 96% do esperado');
   });
@@ -275,8 +278,8 @@ describe('cartões por área', () => {
     }
     const depts = h.slice(h.indexOf('cc-depts'));
     expect(depts).toContain('3 propostas paradas há mais de 72 h'); // aviso do Comercial
-    expect(depts).toContain('2 <small>manutenções vencidas</small>');
-    expect(depts).toContain('5 agendadas para os próximos 30 dias');
+    expect(depts).toContain('2 <small>vencidas</small>');
+    expect(depts).toContain('5 agendadas nos próximos 30 dias');
   });
 });
 
@@ -330,5 +333,169 @@ describe('renderCentralAtencaoPage (/dashboard/atencao)', () => {
     const h = pag({}, null);
     expect(h).toContain('Sem dado agora');
     expect(h).not.toContain('Tudo em dia');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Revisão 3 + abertura pro tenant
+// ---------------------------------------------------------------------------
+
+const TENANT = 'aaaa1111-2222-3333-4444-555566667777';
+const jimena: DashUser = { id: 'j', companyId: TENANT, nome: 'Jimena', login: 'jimena', isAdmin: true, roleNome: 'Admin', permissoes: {}, companyNome: 'Conquista Solar' };
+const falhaEm = (id: string) => fontesOk().map((f) => (f.id === id ? { ...f, estado: 'falhou' as const } : f));
+const estadoEm = (ids: string[], estado: FonteAviso['estado']) => fontesOk().map((f) => (ids.includes(f.id) ? { ...f, estado } : f));
+const soTexto = (html: string) => html.replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, ' ');
+
+describe('M1 — contagem parcial quando alguma fonte falhou', () => {
+  it('legenda da Central: "≥ N" nas severidades ligadas', () => {
+    const h = pagina(dados({ fontes: falhaEm('contas') }));
+    expect(h).toMatch(/Crítico <b>≥ 1<\/b>/);
+    expect(h).toMatch(/Atenção <b>≥ 1<\/b>/);
+    expect(h).toMatch(/Oportunidade <b>—<\/b>/);
+  });
+  it('selo do botão Central de Atenção: "≥ N", e "?" quando nada crítico apareceu (não some)', () => {
+    const h = pagina(dados({ fontes: falhaEm('contas') }));
+    expect(h).toMatch(/Central de Atenção<span class="cc-bdg cc-bdg-r"[^>]*>≥ 1<\/span>/);
+    const semCrit = pagina(dados({ eventos: EVENTOS.filter((e) => e.severidade !== 'critico'), fontes: falhaEm('contas') }));
+    expect(semCrit).toMatch(/Central de Atenção<span class="cc-bdg"[^>]*>\?<\/span>/);
+    // tudo carregado e nada crítico: sem selo
+    expect(pagina(dados({ eventos: [] }))).not.toMatch(/Central de Atenção<span class="cc-bdg/);
+  });
+  it('selos do menu: área com fonte falha mostra "≥ N" ou "?"', () => {
+    expect(selosDoMenu(EVENTOS, falhaEm('usinas')).usinas).toEqual({ valor: '≥ 1', tom: 'critico' });
+    expect(selosDoMenu([], falhaEm('contas')).financeiro).toEqual({ valor: '?', tom: 'neutro' });
+    expect(selosDoMenu([], fontesOk())).toEqual({});
+  });
+  it('/atencao: faixa de severidade com "≥" e "(parcial)"', () => {
+    const h = renderCentralAtencaoPage({ agora: AGORA, dados: dados({ fontes: falhaEm('gd') }), filtro: {} }, junior);
+    const i = h.indexOf('<div class="cc-lbl">Crítico</div>');
+    expect(h.slice(i, i + 300)).toContain('<small class="cc-pre">≥</small>1');
+    expect(h.slice(i, i + 400)).toContain('(parcial)');
+  });
+});
+
+describe('M2 — "tudo em dia" só fala do que foi conferido', () => {
+  it('nomeia só as fontes ligadas', () => {
+    const fontes = estadoEm(['usinas', 'gd', 'manutencao', 'contas'], 'nao_contratado');
+    const h = pagina(dados({ eventos: [], fontes }));
+    expect(h).toContain('Nenhum aviso de leads esperando, prazos dos leads e propostas.');
+    expect(h).toContain('Nenhum aviso crítico em leads esperando, prazos dos leads e propostas agora.');
+    expect(h).not.toMatch(/Nenhum aviso de[^.]*usinas/);
+  });
+  it('nenhuma fonte ligada → mensagem de vitrine, nunca "tudo em dia"', () => {
+    const fontes = estadoEm(Object.keys(ROTULO_FONTE), 'nao_contratado');
+    const h = pagina(dados({ eventos: [], fontes }));
+    expect(h).not.toContain('Tudo em dia');
+    expect(h).not.toContain('Nenhum aviso crítico');
+    expect(h).not.toContain('Nada urgente agora');
+    expect(h).toContain('Os avisos aparecem quando o módulo estiver liberado');
+    const a = renderCentralAtencaoPage({ agora: AGORA, dados: dados({ eventos: [], fontes }), filtro: {} }, junior);
+    expect(a).toContain('Os avisos aparecem quando o módulo estiver liberado');
+    expect(a).toContain('não contratado');
+  });
+});
+
+describe('M5 — Marketing pelo módulo/permissão de marketing', () => {
+  it('sem permissão de marketing, o cartão não mostra os leads', () => {
+    const h = pagina(dados({ permissoes: { ...TODAS_PERMISSOES, marketing: false } }));
+    const i = h.indexOf('href="/dashboard/marketing"', h.indexOf('cc-depts'));
+    const cartao = h.slice(i, h.indexOf('</a>', i));
+    expect(cartao).toContain('sem acesso');
+    expect(cartao).not.toContain('212');
+  });
+  it('marketing sem leads: Leads do mês na faixa fica "sem acesso"', () => {
+    const h = pagina(dados({ permissoes: { ...TODAS_PERMISSOES, leads: false } }));
+    expect(cartaoKpi(h, 'Leads do mês')).toContain('sem acesso');
+  });
+});
+
+describe('T2 — marca: nada da EcoSun na tela do tenant', () => {
+  it('"Resumo do dia"; com o nome da assistente só se a empresa tiver um', () => {
+    const base = { agora: AGORA, nomeUsuario: 'Jimena', dados: dados() };
+    const sem = renderCommandCenterPage(base, jimena);
+    expect(sem).toContain('>Resumo do dia<');
+    expect(sem).not.toContain('Eva');
+    expect(renderCommandCenterPage({ ...base, nomeAssistente: 'Clara' }, jimena)).toContain('Clara · resumo do dia');
+  });
+  it('tenant não vê Modo TV (é só da casa); EcoSun vê', () => {
+    const t = renderCommandCenterPage({ agora: AGORA, nomeUsuario: 'Jimena', dados: dados() }, jimena);
+    expect(t).not.toContain('/dashboard/tv');
+    expect(t).not.toContain('Modo TV');
+    expect(pagina(dados())).toContain('href="/dashboard/tv"');
+  });
+});
+
+describe('T4 — blocos trancados (vitrine)', () => {
+  const soEva = { usinas: false, leads: true, propostas: true, financeiro: false, marketing: false };
+  /** [html do bloco, chave] de cada bloco trancado (até o fim do botão). */
+  const tranc = (h: string) => [...h.matchAll(/data-trancado="([a-z_]+)">[\s\S]*?Quero liberar \/ falar com o suporte<\/a>/g)]
+    .map((m) => [m[0], m[1]] as const);
+
+  it('blocoTrancado: cadeado, título, frase e o link pra conhecer — sem número', () => {
+    const b = blocoTrancado({ titulo: 'Financeiro', chave: 'financeiro', frase: FRASE_VITRINE.financeiro });
+    expect(b).toContain('#cc-i-lock');
+    expect(b).toContain('href="/dashboard/conhecer/financeiro"');
+    expect(b).toContain('Quero liberar / falar com o suporte');
+    expect(soTexto(b)).not.toMatch(/\d|—|sem acesso/);
+  });
+
+  it('Conquista (só a assistente): usinas, financeiro, marketing, O&M e Instalações trancados; leads e propostas abertos', () => {
+    const h = renderCommandCenterPage({ agora: AGORA, nomeUsuario: 'Jimena', contratados: soEva, dados: dados({
+      contratados: soEva, permissoes: soEva, frota: null, recebidoMes: null, manutencao: null,
+      kpisMes: { leads: 38, propostas: 11, vendas: 2, usinasNovas: null },
+      eventos: EVENTOS.filter((e) => e.area === 'comercial'),
+      fontes: estadoEm(['usinas', 'gd', 'manutencao', 'contas'], 'nao_contratado'),
+    }) }, jimena);
+    const chaves = tranc(h).map((m) => m[1]);
+    expect(chaves.sort()).toEqual(['financeiro', 'financeiro', 'manutencao', 'marketing', 'monitoramento', 'monitoramento', 'usinas_kanban'].sort());
+    for (const m of tranc(h)) {
+      expect(m[0]).toContain(`href="/dashboard/conhecer/${m[1]}"`);
+      expect(soTexto(m[0].slice(m[0].indexOf('>') + 1)), m[1]).not.toMatch(/\d|—|sem acesso|sem dado/);
+    }
+    // o que é dela aparece com número
+    expect(cartaoKpi(h, 'Leads do mês')).toContain('<div class="cc-val">38</div>');
+    expect(h).not.toContain('Geração do portfólio');
+    expect(h).not.toContain('Geração agora');
+    expect(h).not.toContain('Perda estimada');
+  });
+
+  it('sem nenhum módulo: tudo trancado (inclui leads e vendas) e nenhuma contagem', () => {
+    const nada = { usinas: false, leads: false, propostas: false, financeiro: false, marketing: false };
+    const h = renderCommandCenterPage({ agora: AGORA, nomeUsuario: 'X', contratados: nada, dados: null }, jimena);
+    expect(tranc(h).map((m) => m[1])).toContain('leads');
+    expect(kstrip(h)).not.toMatch(/cc-val">/);
+  });
+
+  it('EcoSun (tudo contratado) não vê cadeado nenhum', () => {
+    expect(tranc(pagina(dados()))).toHaveLength(0);
+  });
+
+  it('entrada MODULOS de leads e manutencao existe (a vitrine tem texto de verdade)', async () => {
+    const { MODULOS } = await import('../src/modules/dashboard/conhecer-views.js');
+    for (const k of ['leads', 'manutencao', 'monitoramento', 'financeiro', 'marketing', 'propostas', 'usinas_kanban']) {
+      expect(MODULOS[k], k).toBeDefined();
+      expect(MODULOS[k].ganhos.length, k).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('Geração agora com telemetria cortada', () => {
+  it('avisa "(parcial)"', () => {
+    expect(cartaoKpi(pagina(dados({ telemetriaCortada: true })), 'Geração agora')).toContain('ao vivo (parcial)');
+  });
+});
+
+describe('hero sem nenhum bloco liberado (revisão)', () => {
+  it('não diz "não consegui ler" nem "sem dado agora": diz que nada foi liberado', () => {
+    const nada = { usinas: false, leads: false, propostas: false, financeiro: false, marketing: false };
+    const h = renderCommandCenterPage({ agora: AGORA, nomeUsuario: 'X', contratados: nada, dados: dados({
+      permissoes: nada, contratados: nada, frota: null, recebidoMes: null, manutencao: null, eventos: [],
+      kpisMes: { leads: null, propostas: null, vendas: null, usinasNovas: null }, mudancas24h: { leads: null, propostas: null, vendas: null },
+      fontes: fontesOk().map((f) => ({ ...f, estado: 'nao_contratado' as const })),
+    }) }, jimena);
+    const hero = h.slice(h.indexOf('<section class="cc-hero'), h.indexOf('<section class="cc-kstrip'));
+    expect(hero).not.toContain('não consegui ler');
+    expect(hero).not.toContain('Sem dado agora');
+    expect(hero).toContain('Os números aparecem aqui quando um módulo estiver liberado');
   });
 });

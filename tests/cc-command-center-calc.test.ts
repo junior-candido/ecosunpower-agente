@@ -168,7 +168,7 @@ describe('mudancasDesdeOntem', () => {
   });
   it('singular', () => {
     expect(mudancasDesdeOntem({ leads: 1, propostas: 1, vendas: 1, geracaoOntemPct: null }).chips.map((c) => c.texto))
-      .toEqual(['+1 lead novo', '1 proposta enviada', '1 venda fechada']);
+      .toEqual(['+1 lead novo', '1 proposta feita', '1 venda fechada']);
   });
   it('tudo zero = nada de novo; tudo null = sem dado', () => {
     expect(mudancasDesdeOntem({ leads: 0, propostas: 0, vendas: 0, geracaoOntemPct: null })).toEqual({ chips: [], semDado: false });
