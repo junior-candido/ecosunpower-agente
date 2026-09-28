@@ -43,6 +43,9 @@ export function linhaParaJanela(r: Record<string, unknown>): Janela15 {
   };
 }
 
+/** Canal (entrada A/B/C) onde está o sensor do cabo da rede. Padrão: C (2). */
+export const canalRede = (m: Pick<MedidorRow, 'canais'>): number => m.canais?.rede ?? 2;
+
 const r3 = (v: number | null) => (v === null ? null : Math.round(v * 1000) / 1000);
 const r2 = (v: number | null) => (v === null ? null : Math.round(v * 100) / 100);
 
@@ -69,7 +72,7 @@ export function criarEnergiaRepo(client: SupabaseClient): EnergiaDb {
     async brutoEntre(m, desde, ate) {
       const linhas = await paginar<Record<string, unknown>>((de, a) => client.from('medicoes_shelly')
         .select('medido_em, potencia_w, tensao, fator_potencia, energia_wh, energia_devolvida_wh')
-        .eq('company_id', m.company_id).eq('medidor_id', m.id)
+        .eq('company_id', m.company_id).eq('medidor_id', m.id).eq('canal', canalRede(m))
         .gte('medido_em', desde).lt('medido_em', ate)
         .order('medido_em', { ascending: true }).range(de, a), 'medicoes_shelly');
       return linhas.map((r): LeituraBruta => ({
@@ -84,28 +87,29 @@ export function criarEnergiaRepo(client: SupabaseClient): EnergiaDb {
 
     async primeiraLeitura(m) {
       const { data, error } = await client.from('medicoes_shelly').select('medido_em')
-        .eq('company_id', m.company_id).eq('medidor_id', m.id).order('medido_em', { ascending: true }).limit(1);
+        .eq('company_id', m.company_id).eq('medidor_id', m.id).eq('canal', canalRede(m)).order('medido_em', { ascending: true }).limit(1);
       if (error) falhou('medicoes_shelly', error);
       return (data?.[0] as { medido_em?: string } | undefined)?.medido_em ?? null;
     },
 
     async proximaLeitura(m, apos) {
       const { data, error } = await client.from('medicoes_shelly').select('medido_em')
-        .eq('company_id', m.company_id).eq('medidor_id', m.id).gte('medido_em', apos).order('medido_em', { ascending: true }).limit(1);
+        .eq('company_id', m.company_id).eq('medidor_id', m.id).eq('canal', canalRede(m)).gte('medido_em', apos).order('medido_em', { ascending: true }).limit(1);
       if (error) falhou('medicoes_shelly', error);
       return (data?.[0] as { medido_em?: string } | undefined)?.medido_em ?? null;
     },
 
     async ultimaJanela(m) {
       const { data, error } = await client.from('energia_15min').select('inicio')
-        .eq('company_id', m.company_id).eq('medidor_id', m.id).eq('papel', 'rede').order('inicio', { ascending: false }).limit(1);
+        .eq('company_id', m.company_id).eq('medidor_id', m.id).eq('papel', 'rede').eq('canal', canalRede(m))
+        .order('inicio', { ascending: false }).limit(1);
       if (error) falhou('energia_15min', error);
       const v = (data?.[0] as { inicio?: string } | undefined)?.inicio;
       return v ? new Date(v).toISOString() : null;
     },
 
     async gravarJanelas(m, js, fonte: Fonte) {
-      const canal = m.canais?.rede ?? 2;
+      const canal = canalRede(m);
       for (let i = 0; i < js.length; i += 500) {
         const linhas = js.slice(i, i + 500).map((j) => ({
           medidor_id: m.id, company_id: m.company_id, papel: 'rede', canal, inicio: j.inicio,
@@ -121,7 +125,7 @@ export function criarEnergiaRepo(client: SupabaseClient): EnergiaDb {
 
     async janelasDoDia(m, dia) {
       const linhas = await paginar<Record<string, unknown>>((de, a) => client.from('energia_15min').select('*')
-        .eq('company_id', m.company_id).eq('medidor_id', m.id).eq('papel', 'rede')
+        .eq('company_id', m.company_id).eq('medidor_id', m.id).eq('papel', 'rede').eq('canal', canalRede(m))
         .gte('inicio', inicioDoDiaBrtIso(dia)).lt('inicio', inicioDoDiaBrtIso(somarDias(dia, 1)))
         .order('inicio', { ascending: true }).range(de, a), 'energia_15min');
       return linhas.map(linhaParaJanela);
@@ -151,7 +155,7 @@ export function criarEnergiaRepo(client: SupabaseClient): EnergiaDb {
     async gravarLeituraSintetica(m, l: LeituraMedidor, medidoEm) {
       const { error } = await client.from('medicoes_shelly').upsert({
         company_id: m.company_id, medidor_id: m.id, lead_id: m.lead_id, device_id: m.device_id, apelido: m.apelido,
-        canal: m.canais?.rede ?? 2, medido_em: medidoEm,
+        canal: canalRede(m), medido_em: medidoEm,
         tensao: l.tensao, corrente: l.corrente, potencia_w: l.potenciaW, potencia_va: l.potenciaVa,
         fator_potencia: l.fatorPotencia, energia_wh: l.energiaWh, energia_devolvida_wh: l.energiaDevolvidaWh,
       }, { onConflict: 'device_id,canal,medido_em', ignoreDuplicates: true });

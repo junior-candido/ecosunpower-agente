@@ -117,6 +117,8 @@ describe('Energia da casa', () => {
     expect(h).not.toContain('CHAVE-QUE-NAO-PODE-VAZAR');
     expect(h).not.toContain(MEDIDOR.api_credentials_cifrado);
     for (const c of db.chamadas) expect(c.filtros, c.tabela).toContainEqual(['eq', 'company_id', ECOSUN]);
+    // 15 min só do canal da rede (usa a ordem da chave primária, não mistura fases)
+    expect(db.chamadas.find((c) => c.tabela === 'energia_15min')!.filtros).toContainEqual(['eq', 'canal', 2]);
   });
 
   it('sem usina: pede para ligar a usina e não inventa consumo', async () => {

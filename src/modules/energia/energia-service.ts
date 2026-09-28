@@ -66,8 +66,13 @@ export interface OpcoesServico {
 }
 
 const DIA_MS = 86_400_000;
-/** Folga pra trás ao reprocessar: pega o intervalo que atravessa a fronteira da 1ª janela. */
-const FOLGA_MS = 10 * 60_000;
+/**
+ * Folga dos dois lados ao ler o bruto: pega o intervalo que atravessa a
+ * fronteira da 1ª e da última janela. Nunca menor que o maior intervalo aceito
+ * entre contadores (nuvem: 30 min) — senão a leitura de antes do cursor fica de
+ * fora e a janela refeita perde minutos (e energia).
+ */
+const FOLGA_MIN_MS = 10 * 60_000;
 /** Até quantos dias de bruto um medidor anda por ciclo (o 1º ciclo alcança o histórico aos poucos). */
 const DIAS_POR_CICLO = 8;
 /** Dia "completo" o bastante pra calcular consumo (gerado + comprado − devolvido). */
@@ -81,6 +86,7 @@ const RETENCAO_15MIN_MESES = 25;
 
 const tensaoNominal = (v: number | null): TensaoNominal | null => (v === 127 || v === 220 || v === 380 ? v : null);
 const gapContador = (m: MedidorRow) => (m.modo_coleta === 'push' ? 600 : 1800);
+const folgaMs = (m: MedidorRow) => Math.max(FOLGA_MIN_MS, gapContador(m) * 1000);
 
 function erroCurto(e: unknown): string {
   return String((e as Error)?.message ?? e).slice(0, 160);
@@ -142,7 +148,8 @@ export class EnergiaService {
     for (let passo = 0; passo < DIAS_POR_CICLO && cursor < fechadaAte; passo++) {
       const ate = Math.min(cursor + DIA_MS, fechadaAte);
       // Folga dos dois lados: o intervalo que atravessa a fronteira entra inteiro.
-      const bruto = await this.db.brutoEntre(m, new Date(cursor - FOLGA_MS).toISOString(), new Date(ate + FOLGA_MS).toISOString());
+      const folga = folgaMs(m);
+      const bruto = await this.db.brutoEntre(m, new Date(cursor - folga).toISOString(), new Date(ate + folga).toISOString());
       const js = agregar15min(bruto, { tensaoNominal: tensaoNominal(m.tensao_nominal_v), gapMaxContadorS: gapContador(m) })
         .filter((j) => {
           const t = Date.parse(j.inicio);

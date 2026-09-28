@@ -84,6 +84,37 @@ describe('agregar', () => {
     expect(ultimaChamada[1]).toBe('2026-09-08T03:05:00.000Z'); // 03:15 − 10 min
   });
 
+  it('nuvem (foto a cada 15 min, 12 min antes da fronteira): toda janela fecha com 900 s', async () => {
+    // Leituras em :03 :18 :33 :48. Ao refazer a última janela (ex.: 04:15), a
+    // leitura anterior (04:03) está 12 min antes do cursor: com folga de 10 min
+    // ela ficava de fora e a janela perdia 3 dos 15 min (~20% da energia).
+    const m = medidor({ modo_coleta: 'nuvem' });
+    const t0 = Date.parse('2026-09-08T03:03:00Z');
+    const todas: LeituraBruta[] = Array.from({ length: 13 }, (_, i) => ({
+      medidoEm: new Date(t0 + i * 900_000).toISOString(), potenciaW: 1000, tensao: 225, fatorPotencia: 0.9,
+      energiaWh: 1000 + i * 250, energiaDevolvidaWh: 0,
+    }));
+    const bruto: LeituraBruta[] = [];
+    const r = repoFalso([m], { m1: bruto });
+    const s = new EnergiaService(r.db);
+    const ciclo = async (agoraIso: string) => {
+      bruto.length = 0;
+      bruto.push(...todas.filter((l) => l.medidoEm <= agoraIso));
+      await s.agregar(new Date(agoraIso));
+    };
+    for (const hora of ['03:40', '03:55', '04:10', '04:25', '04:40', '04:55', '05:10', '05:25', '05:40', '05:55', '06:10']) await ciclo(`2026-09-08T${hora}:00.000Z`);
+    const js = [...r.janelas.values()].sort((a, b) => a.inicio.localeCompare(b.inicio));
+    // A 1ª janela (03:00) começa na 1ª leitura (03:03): 720 s. As outras, até a
+    // última fechada com leitura depois dela, cheias.
+    expect(js[0].segundosCobertos).toBe(720);
+    const cheias = js.filter((j) => j.inicio >= '2026-09-08T03:15' && j.inicio < '2026-09-08T05:46');
+    expect(cheias.length).toBe(11); // 03:15 … 05:45
+    for (const j of cheias) {
+      expect(j.segundosCobertos, j.inicio).toBe(900);
+      expect(j.importadoWh, j.inicio).toBeCloseTo(250, 6);
+    }
+  });
+
   it('pula buraco longo sem travar o cursor', async () => {
     const m = medidor();
     const bruto = [...brutoMinutos('2026-09-01T03:00:00Z', 20), ...brutoMinutos('2026-09-05T03:00:00Z', 20)];

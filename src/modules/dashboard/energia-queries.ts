@@ -154,7 +154,7 @@ export async function carregarDadosCasa(
   const desdeIso = inicioDoDiaBrtIso(de);
   for (let p = 0; p < 10; p++) {
     const { data, error } = await db.from('energia_15min').select('inicio, importado_wh, exportado_wh, segundos_cobertos')
-      .eq('company_id', companyId).eq('medidor_id', m.id).eq('papel', 'rede').gte('inicio', desdeIso)
+      .eq('company_id', companyId).eq('medidor_id', m.id).eq('papel', 'rede').eq('canal', m.canais?.rede ?? 2).gte('inicio', desdeIso)
       .order('inicio', { ascending: true }).range(p * 1000, p * 1000 + 999);
     if (error) return falha(error, 'energia_15min');
     const linhas = (data ?? []) as Array<Record<string, unknown>>;

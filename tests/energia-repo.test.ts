@@ -58,4 +58,20 @@ describe('energia-repo: company_id do medidor em toda operação', () => {
     expect((ups[0].payload as Array<{ company_id: string }>)[0].company_id).toBe('empresa-X');
     expect((ups[1].payload as { company_id: string }).company_id).toBe('empresa-X');
   });
+
+  it('bruto e 15 min filtram o CANAL da rede do medidor (não mistura as fases)', async () => {
+    const { client, chamadas } = clienteFalso();
+    const repo = criarEnergiaRepo(client);
+    const m0: MedidorRow = { ...M, canais: { rede: 0 } };
+    await repo.brutoEntre(m0, '2026-09-08T00:00:00Z', '2026-09-09T00:00:00Z');
+    await repo.primeiraLeitura(m0);
+    await repo.proximaLeitura(m0, '2026-09-08T00:00:00Z');
+    await repo.ultimaJanela(m0);
+    await repo.janelasDoDia(m0, '2026-09-08');
+    expect(chamadas).toHaveLength(5);
+    for (const c of chamadas) expect(c.filtros, c.tabela).toContainEqual(['canal', 0]);
+    chamadas.length = 0;
+    await repo.brutoEntre({ ...M, canais: null }, '2026-09-08T00:00:00Z', '2026-09-09T00:00:00Z');
+    expect(chamadas[0].filtros).toContainEqual(['canal', 2]); // padrão: fase C
+  });
 });
