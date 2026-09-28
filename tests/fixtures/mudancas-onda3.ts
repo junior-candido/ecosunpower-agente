@@ -155,3 +155,6 @@ export const MUDANCAS_R18: Record<string, MudancaContrato[]> = {};
 // ════════════════════════════════════════════════════════════════════════
 // R19 — Configurações
 // ════════════════════════════════════════════════════════════════════════
+
+/** R19: trocas por caso de tests/fixtures/casos-configuracoes.ts (vazio = contrato igual ao da tela antiga). */
+export const MUDANCAS_R19: Record<string, MudancaContrato[]> = {};

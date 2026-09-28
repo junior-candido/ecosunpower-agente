@@ -1,0 +1,1721 @@
+{
+  "usuarios-lista": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/novo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "acesso_temporario",
+            "type": "checkbox"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "login",
+            "type": "text"
+          },
+          {
+            "name": "nome",
+            "type": "text"
+          },
+          {
+            "name": "role_id",
+            "type": "select"
+          },
+          {
+            "name": "senha",
+            "type": "password"
+          },
+          {
+            "name": "telefone",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-ana/ativo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "valor",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-ana/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-bru/ativo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "valor",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-bru/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-car/ativo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "valor",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-car/excluir",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/usuarios/u-ana",
+      "/dashboard/usuarios/u-bru",
+      "/dashboard/usuarios/u-car",
+      "/dashboard/usuarios/u-casa",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'Excluir Ana D'Ávila?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.') return confirm('Excluir Bruno <script>alert(1)</script>?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.') return confirm('Excluir Carla Fictícia?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.')",
+      "'Excluir Bruno <script>alert(1)</script>?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.'",
+      "'Excluir Carla Fictícia?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "usuarios-lista-tenant": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/novo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "acesso_temporario",
+            "type": "checkbox"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "login",
+            "type": "text"
+          },
+          {
+            "name": "nome",
+            "type": "text"
+          },
+          {
+            "name": "role_id",
+            "type": "select"
+          },
+          {
+            "name": "senha",
+            "type": "password"
+          },
+          {
+            "name": "telefone",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-ana/ativo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "valor",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-ana/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-bru/ativo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "valor",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-bru/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-car/ativo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "valor",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-car/excluir",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/usuarios/u-ana",
+      "/dashboard/usuarios/u-bru",
+      "/dashboard/usuarios/u-car",
+      "/dashboard/usuarios/u-ten",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'Excluir Ana D'Ávila?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.') return confirm('Excluir Bruno <script>alert(1)</script>?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.') return confirm('Excluir Carla Fictícia?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.')",
+      "'Excluir Bruno <script>alert(1)</script>?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.'",
+      "'Excluir Carla Fictícia?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "usuarios-lista-tenant-comum": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/novo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "acesso_temporario",
+            "type": "checkbox"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "login",
+            "type": "text"
+          },
+          {
+            "name": "nome",
+            "type": "text"
+          },
+          {
+            "name": "role_id",
+            "type": "select"
+          },
+          {
+            "name": "senha",
+            "type": "password"
+          },
+          {
+            "name": "telefone",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-ana/ativo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "valor",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-ana/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-bru/ativo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "valor",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-bru/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-car/ativo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "valor",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-car/excluir",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-casa/ativo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "valor",
+            "type": "hidden"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-casa/excluir",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/atencao",
+      "/dashboard/command-center",
+      "/dashboard/conhecer/assinaturas",
+      "/dashboard/conhecer/blog",
+      "/dashboard/conhecer/cadencia",
+      "/dashboard/conhecer/cobrar",
+      "/dashboard/conhecer/conhecimento",
+      "/dashboard/conhecer/conversas",
+      "/dashboard/conhecer/demonstrativos",
+      "/dashboard/conhecer/email",
+      "/dashboard/conhecer/energia",
+      "/dashboard/conhecer/financeiro",
+      "/dashboard/conhecer/fiscal",
+      "/dashboard/conhecer/kanban",
+      "/dashboard/conhecer/leads",
+      "/dashboard/conhecer/marketing",
+      "/dashboard/conhecer/medicao",
+      "/dashboard/conhecer/minha_assinatura",
+      "/dashboard/conhecer/monitoramento",
+      "/dashboard/conhecer/pastas",
+      "/dashboard/conhecer/pos_venda",
+      "/dashboard/conhecer/propostas",
+      "/dashboard/conhecer/recados",
+      "/dashboard/conhecer/rh_busca",
+      "/dashboard/conhecer/rh_candidatos",
+      "/dashboard/conhecer/rh_vagas",
+      "/dashboard/conhecer/servicos",
+      "/dashboard/conhecer/usinas_kanban",
+      "/dashboard/conhecer/whatsapp",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/usuarios",
+      "/dashboard/usuarios/u-ana",
+      "/dashboard/usuarios/u-bru",
+      "/dashboard/usuarios/u-car",
+      "/dashboard/usuarios/u-casa"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [
+      "'Excluir Ana D'Ávila?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.') return confirm('Excluir Bruno <script>alert(1)</script>?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.') return confirm('Excluir Carla Fictícia?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.')",
+      "'Excluir Bruno <script>alert(1)</script>?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.'",
+      "'Excluir Carla Fictícia?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.'",
+      "'Excluir Junior?\\n\\nOs registros amarrados (serviços, leads) passam pra você. Essa é a única exclusão SEM desfazer do sistema.'"
+    ],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "usuarios-lista-vazia": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/novo",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "acesso_temporario",
+            "type": "checkbox"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "login",
+            "type": "text"
+          },
+          {
+            "name": "nome",
+            "type": "text"
+          },
+          {
+            "name": "role_id",
+            "type": "select"
+          },
+          {
+            "name": "senha",
+            "type": "password"
+          },
+          {
+            "name": "telefone",
+            "type": "text"
+          }
+        ]
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "usuarios-editar": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-ana",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "acesso_temporario",
+            "type": "checkbox"
+          },
+          {
+            "name": "ativo",
+            "type": "checkbox"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "nome",
+            "type": "text"
+          },
+          {
+            "name": "role_id",
+            "type": "select"
+          },
+          {
+            "name": "senha",
+            "type": "password"
+          },
+          {
+            "name": "telefone",
+            "type": "text"
+          }
+        ]
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "usuarios-editar-tenant": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/usuarios/u-ana",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "acesso_temporario",
+            "type": "checkbox"
+          },
+          {
+            "name": "ativo",
+            "type": "checkbox"
+          },
+          {
+            "name": "email",
+            "type": "email"
+          },
+          {
+            "name": "nome",
+            "type": "text"
+          },
+          {
+            "name": "role_id",
+            "type": "select"
+          },
+          {
+            "name": "senha",
+            "type": "password"
+          },
+          {
+            "name": "telefone",
+            "type": "text"
+          }
+        ]
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "empresas": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/empresas/00000000-0000-0000-0000-000000000001/convite",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/empresas/aaaa1111-2222-3333-4444-555566667777/convite",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/empresas/bbbb1111-2222-3333-4444-555566667777/convite",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/empresas/nova",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "admin_email",
+            "type": "email"
+          },
+          {
+            "name": "admin_login",
+            "type": "text"
+          },
+          {
+            "name": "admin_nome",
+            "type": "text"
+          },
+          {
+            "name": "admin_senha",
+            "type": "password"
+          },
+          {
+            "name": "nome",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "empresas-ok": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/empresas/00000000-0000-0000-0000-000000000001/convite",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/empresas/aaaa1111-2222-3333-4444-555566667777/convite",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/empresas/bbbb1111-2222-3333-4444-555566667777/convite",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/empresas/nova",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "admin_email",
+            "type": "email"
+          },
+          {
+            "name": "admin_login",
+            "type": "text"
+          },
+          {
+            "name": "admin_nome",
+            "type": "text"
+          },
+          {
+            "name": "admin_senha",
+            "type": "password"
+          },
+          {
+            "name": "nome",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "empresas-erro": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/empresas/nova",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "admin_email",
+            "type": "email"
+          },
+          {
+            "name": "admin_login",
+            "type": "text"
+          },
+          {
+            "name": "admin_nome",
+            "type": "text"
+          },
+          {
+            "name": "admin_senha",
+            "type": "password"
+          },
+          {
+            "name": "nome",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cerebro",
+      "/dashboard/clientes",
+      "/dashboard/cobrar",
+      "/dashboard/cockpit",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/contratos",
+      "/dashboard/demonstrativos",
+      "/dashboard/empresas",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/home",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/lojas",
+      "/dashboard/manutencao",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/predio",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/tv",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/vendas/fechar"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "whatsapp-sem-instancia": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "whatsapp-aguardando": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'/dashboard/whatsapp/estado.json'",
+      "'/dashboard/whatsapp/qr.json'"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "estado",
+      "estado-bolinha",
+      "estado-texto",
+      "ok-box",
+      "qr",
+      "qr-aviso",
+      "qr-box",
+      "qr-erro"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "whatsapp-conectado": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'/dashboard/whatsapp/estado.json'",
+      "'/dashboard/whatsapp/qr.json'"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "estado",
+      "estado-bolinha",
+      "estado-texto",
+      "ok-box",
+      "qr",
+      "qr-aviso",
+      "qr-box",
+      "qr-erro"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "whatsapp-caiu": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [
+      "'/dashboard/whatsapp/estado.json'",
+      "'/dashboard/whatsapp/qr.json'"
+    ],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root",
+      "estado",
+      "estado-bolinha",
+      "estado-texto",
+      "ok-box",
+      "qr",
+      "qr-aviso",
+      "qr-box",
+      "qr-erro"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "assinatura-ativa": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/minha-assinatura/zap/confirmar",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "codigo",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/minha-assinatura/zap/solicitar",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "telefone",
+            "type": "text"
+          }
+        ]
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "assinatura-vencendo-pagar": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/minha-assinatura/zap/confirmar",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "codigo",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/minha-assinatura/zap/solicitar",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "telefone",
+            "type": "text"
+          }
+        ]
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "assinatura-travada": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "assinatura-sem-limite": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/minha-assinatura/zap/confirmar",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "codigo",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "action": "/dashboard/minha-assinatura/zap/solicitar",
+        "enctype": "",
+        "campos": [
+          {
+            "name": "telefone",
+            "type": "text"
+          }
+        ]
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  },
+  "assinatura-vazia": {
+    "formularios": [
+      {
+        "method": "POST",
+        "action": "/dashboard/logout",
+        "enctype": "",
+        "campos": []
+      }
+    ],
+    "fetches": [],
+    "links": [
+      "/dashboard/assinaturas",
+      "/dashboard/atencao",
+      "/dashboard/cadencia",
+      "/dashboard/cobrar",
+      "/dashboard/command-center",
+      "/dashboard/conhecimento",
+      "/dashboard/demonstrativos",
+      "/dashboard/energia",
+      "/dashboard/estatico/painel.be7136fb76.css",
+      "/dashboard/financeiro",
+      "/dashboard/fiscal",
+      "/dashboard/leads",
+      "/dashboard/leads/conversas",
+      "/dashboard/leads/kanban",
+      "/dashboard/marketing",
+      "/dashboard/marketing/blog",
+      "/dashboard/marketing/email",
+      "/dashboard/medicao",
+      "/dashboard/minha-assinatura",
+      "/dashboard/monitoramento",
+      "/dashboard/pastas",
+      "/dashboard/pos-venda",
+      "/dashboard/propostas",
+      "/dashboard/recados",
+      "/dashboard/rh/busca",
+      "/dashboard/rh/candidatos",
+      "/dashboard/rh/vagas",
+      "/dashboard/servicos",
+      "/dashboard/usinas/kanban",
+      "/dashboard/usuarios",
+      "/dashboard/whatsapp"
+    ],
+    "ids": [
+      "cc-menu-btn",
+      "cc-sidebar",
+      "dash-root"
+    ],
+    "idsAusentes": [],
+    "seletores": [
+      ".cc-nav a[href], .cc-nav summary"
+    ],
+    "dataAttrs": [],
+    "confirms": [],
+    "scriptsExternos": [
+      "https://cdn.tailwindcss.com"
+    ]
+  }
+}
