@@ -1,0 +1,19 @@
+// Renovação do miolo — R4: Funil (Kanban). CONTRATO gravado da tela antiga
+// (tests/fixtures/contrato-funil.json): fetch do set-etapa, data-lead-id /
+// data-etapa, seletores do Sortable (.kanban-list, draggable '.kanban-card')
+// e o CDN pinado do Sortable — nada disso pode mudar.
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { contratoDaTela } from './helpers/contrato-tela.js';
+import { CASOS_FUNIL } from './fixtures/casos-funil.js';
+
+const CONTRATO = JSON.parse(readFileSync(join(process.cwd(), 'tests', 'fixtures', 'contrato-funil.json'), 'utf-8'));
+
+describe('Funil (Kanban) — contrato da tela não muda', () => {
+  for (const [nome, render] of Object.entries(CASOS_FUNIL)) {
+    it(`contrato: ${nome}`, () => {
+      expect(contratoDaTela(render())).toEqual(CONTRATO[nome]);
+    });
+  }
+});

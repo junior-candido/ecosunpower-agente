@@ -1,0 +1,154 @@
+{
+ "cheio": {
+  "formularios": [
+   {
+    "method": "POST",
+    "action": "/dashboard/logout",
+    "enctype": "",
+    "campos": []
+   }
+  ],
+  "fetches": [
+   "'/dashboard/leads/' + id + '/set-etapa'"
+  ],
+  "links": [
+   "/dashboard/assinaturas",
+   "/dashboard/atencao",
+   "/dashboard/cadencia",
+   "/dashboard/cerebro",
+   "/dashboard/clientes",
+   "/dashboard/cobrar",
+   "/dashboard/cockpit",
+   "/dashboard/command-center",
+   "/dashboard/conhecimento",
+   "/dashboard/contratos",
+   "/dashboard/demonstrativos",
+   "/dashboard/empresas",
+   "/dashboard/energia",
+   "/dashboard/financeiro",
+   "/dashboard/fiscal",
+   "/dashboard/home",
+   "/dashboard/leads",
+   "/dashboard/leads/g1",
+   "/dashboard/leads/kanban",
+   "/dashboard/leads/n1",
+   "/dashboard/leads/n2",
+   "/dashboard/leads/p1",
+   "/dashboard/leads/q1",
+   "/dashboard/leads/w1",
+   "/dashboard/lojas",
+   "/dashboard/manutencao",
+   "/dashboard/marketing",
+   "/dashboard/marketing/blog",
+   "/dashboard/marketing/email",
+   "/dashboard/medicao",
+   "/dashboard/monitoramento",
+   "/dashboard/pastas",
+   "/dashboard/pos-venda",
+   "/dashboard/predio",
+   "/dashboard/propostas",
+   "/dashboard/recados",
+   "/dashboard/rh/busca",
+   "/dashboard/rh/candidatos",
+   "/dashboard/rh/vagas",
+   "/dashboard/servicos",
+   "/dashboard/tv",
+   "/dashboard/usinas/kanban",
+   "/dashboard/usuarios",
+   "/dashboard/vendas/fechar"
+  ],
+  "ids": [
+   "cc-menu-btn",
+   "cc-sidebar",
+   "dash-root"
+  ],
+  "idsAusentes": [],
+  "seletores": [
+   ".cc-nav a[href], .cc-nav summary",
+   ".kanban-list",
+   "draggable:.kanban-card"
+  ],
+  "dataAttrs": [
+   "data-etapa",
+   "data-lead-id"
+  ],
+  "confirms": [],
+  "scriptsExternos": [
+   "https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js",
+   "https://cdn.tailwindcss.com"
+  ]
+ },
+ "vazio": {
+  "formularios": [
+   {
+    "method": "POST",
+    "action": "/dashboard/logout",
+    "enctype": "",
+    "campos": []
+   }
+  ],
+  "fetches": [
+   "'/dashboard/leads/' + id + '/set-etapa'"
+  ],
+  "links": [
+   "/dashboard/assinaturas",
+   "/dashboard/atencao",
+   "/dashboard/cadencia",
+   "/dashboard/cerebro",
+   "/dashboard/clientes",
+   "/dashboard/cobrar",
+   "/dashboard/cockpit",
+   "/dashboard/command-center",
+   "/dashboard/conhecimento",
+   "/dashboard/contratos",
+   "/dashboard/demonstrativos",
+   "/dashboard/empresas",
+   "/dashboard/energia",
+   "/dashboard/financeiro",
+   "/dashboard/fiscal",
+   "/dashboard/home",
+   "/dashboard/leads",
+   "/dashboard/leads/kanban",
+   "/dashboard/lojas",
+   "/dashboard/manutencao",
+   "/dashboard/marketing",
+   "/dashboard/marketing/blog",
+   "/dashboard/marketing/email",
+   "/dashboard/medicao",
+   "/dashboard/monitoramento",
+   "/dashboard/pastas",
+   "/dashboard/pos-venda",
+   "/dashboard/predio",
+   "/dashboard/propostas",
+   "/dashboard/recados",
+   "/dashboard/rh/busca",
+   "/dashboard/rh/candidatos",
+   "/dashboard/rh/vagas",
+   "/dashboard/servicos",
+   "/dashboard/tv",
+   "/dashboard/usinas/kanban",
+   "/dashboard/usuarios",
+   "/dashboard/vendas/fechar"
+  ],
+  "ids": [
+   "cc-menu-btn",
+   "cc-sidebar",
+   "dash-root"
+  ],
+  "idsAusentes": [],
+  "seletores": [
+   ".cc-nav a[href], .cc-nav summary",
+   ".kanban-list",
+   "draggable:.kanban-card"
+  ],
+  "dataAttrs": [
+   "data-etapa",
+   "data-lead-id"
+  ],
+  "confirms": [],
+  "scriptsExternos": [
+   "https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js",
+   "https://cdn.tailwindcss.com"
+  ]
+ }
+}

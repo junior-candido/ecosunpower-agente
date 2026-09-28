@@ -74,7 +74,9 @@ export function cartaoKanban(k: CartaoKanbanInput): string {
   const cls = classes(k.classe);
   const href = hrefSeguro(k.href);
   const titulo = href
-    ? `<a class="cc-kb-card-t" href="${escapeHtml(href)}" draggable="false">${escapeHtml(k.titulo)}</a>`
+    // href ANTES da classe: o teste antigo do arrastar (dashboard-kanban-arrasta)
+    // procura exatamente `<a href="…" draggable="false"`.
+    ? `<a href="${escapeHtml(href)}" draggable="false" class="cc-kb-card-t">${escapeHtml(k.titulo)}</a>`
     : `<span class="cc-kb-card-t">${escapeHtml(k.titulo)}</span>`;
   return `<div class="cc-kb-card${tom}${cls ? ` ${cls}` : ''}"${dadosHtml(k.dados)}${k.dica ? ` title="${escapeHtml(k.dica)}"` : ''}>`
     + `<div class="cc-kb-card-l">${titulo}${k.direita ? `<span class="cc-kb-card-d">${escapeHtml(k.direita)}</span>` : ''}</div>`
