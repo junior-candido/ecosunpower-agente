@@ -163,6 +163,14 @@ describe('renderLayout — casca nova', () => {
     expect(bloco).toMatch(/\.sidebar-open \.cc-sb\{[^}]*visibility:visible/);
   });
 
+  it('menu no computador não fica por cima dos modais das páginas (z-index só na gaveta do celular)', async () => {
+    const { CSS_DESIGN_SYSTEM } = await import('../src/modules/dashboard/ui/estilo.js');
+    const ate = CSS_DESIGN_SYSTEM.indexOf('@media (max-width:1023px)');
+    const base = CSS_DESIGN_SYSTEM.slice(0, ate).match(/\.cc-sb\{[^}]*\}/)![0];
+    expect(base).not.toMatch(/z-index/);
+    expect(CSS_DESIGN_SYSTEM.slice(ate)).toMatch(/\.cc-sb\{position:fixed[^}]*z-index:40/);
+  });
+
   it('tenant: sem Modo TV (fica pra fase B)', () => {
     const h = renderLayout({ active: 'monitoramento', title: 'X', body: '', user: tenant });
     expect(h).not.toContain('href="/dashboard/tv"');

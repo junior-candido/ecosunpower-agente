@@ -266,7 +266,7 @@ ${CSS_DESIGN_SYSTEM}
       if (btn) btn.setAttribute('aria-expanded', aberto ? 'true' : 'false');
       if (aberto && !estava) {
         var sb = document.getElementById('cc-sidebar');
-        var primeiro = sb && sb.querySelector('a[href]');
+        var primeiro = sb && sb.querySelector('.cc-nav a[href], .cc-nav summary');
         if (primeiro) primeiro.focus();
       } else if (!aberto && estava && btn) {
         btn.focus();
@@ -276,8 +276,6 @@ ${CSS_DESIGN_SYSTEM}
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Escape' || !document.getElementById('dash-root').classList.contains('sidebar-open')) return;
       ccMenu(false);
-      var btn = document.getElementById('cc-menu-btn');
-      if (btn) btn.focus();
     });
   </script>
   ${scripts ?? ''}

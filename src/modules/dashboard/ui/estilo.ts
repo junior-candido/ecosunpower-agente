@@ -52,7 +52,7 @@ body.ecosun-body.ecosun-body-dark{color:#EAF1F8;background:radial-gradient(900px
 .cc-shell{display:flex;min-height:100vh}
 
 /* ---- Menu lateral ---- */
-.cc-sb{position:sticky;top:0;height:100vh;width:var(--cc-sb-w);flex:none;z-index:40;color:#fff;
+.cc-sb{position:sticky;top:0;height:100vh;width:var(--cc-sb-w);flex:none;color:#fff;
   background:linear-gradient(180deg,#0c4a6e 0%,#075985 55%,#0369a1 100%);
   display:flex;flex-direction:column;padding:20px 16px 16px;
   box-shadow:1px 0 0 rgba(255,255,255,.06),12px 0 40px rgba(0,0,0,.25)}
@@ -114,7 +114,7 @@ body.ecosun-body.ecosun-body-dark{color:#EAF1F8;background:radial-gradient(900px
 
 @media (max-width:1180px){ :root{--cc-sb-w:240px} .cc-main.cc-largo{padding:22px 24px 34px} }
 @media (max-width:1023px){
-  .cc-sb{position:fixed;top:0;left:0;bottom:0;height:auto;transform:translateX(-100%);visibility:hidden;transition:transform .25s ease,visibility 0s linear .25s;width:280px}
+  .cc-sb{position:fixed;top:0;left:0;bottom:0;height:auto;z-index:40;transform:translateX(-100%);visibility:hidden;transition:transform .25s ease,visibility 0s linear .25s;width:280px}
   .sidebar-open .cc-sb{transform:translateX(0);visibility:visible;transition:transform .25s ease,visibility 0s}
   .sidebar-open .cc-backdrop{display:block;position:fixed;inset:0;background:rgba(2,6,23,.55);z-index:30}
   .cc-mtop{display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:20;padding:10px 16px;
