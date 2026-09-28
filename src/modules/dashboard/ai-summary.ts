@@ -116,25 +116,28 @@ const LOSS_REASON_LABELS_AI: Record<string, string> = {
 export async function buildLeadsInsights(supabase: SupabaseClient): Promise<Insight[]> {
   const insights: Insight[] = [];
 
-  // 1) Leads novos nas últimas 24h
+  // perf/telas-leves (28/09): as consultas abaixo são independentes — vão ao
+  // banco TODAS na mesma rodada (antes: 6 rodadas em fila na lista de Leads).
+  // Os insights saem na MESMA ordem e com o MESMO texto de antes.
   const umDiaAtras = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
-  const { count: novos24h } = await supabase
-    .from('leads')
-    .select('id', { count: 'exact', head: true })
-    .gte('created_at', umDiaAtras)
-    .is('archived_at', null);
-
-  if ((novos24h ?? 0) >= 1) {
-    insights.push({
-      emoji: '🆕',
-      text: `${novos24h} lead(s) novo(s) nas últimas 24h.`,
-      severity: 'info',
-    });
-  }
-
-  // 1.5) Conversion rate últimos 30d (ganhos / total criado)
   const trintaDiasAtras = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
-  const [criados30d, ganhos30d] = await Promise.all([
+  const agora = new Date().toISOString();
+
+  const [
+    { count: novos24h },
+    criados30d,
+    ganhos30d,
+    { data: perdas30d },
+    semCadencia,
+    { count: agendadosPassados },
+  ] = await Promise.all([
+    // 1) Leads novos nas últimas 24h
+    supabase
+      .from('leads')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', umDiaAtras)
+      .is('archived_at', null),
+    // 1.5) Conversion rate últimos 30d (ganhos / total criado)
     supabase.from('leads')
       .select('id', { count: 'exact', head: true })
       .gte('created_at', trintaDiasAtras)
@@ -144,7 +147,49 @@ export async function buildLeadsInsights(supabase: SupabaseClient): Promise<Insi
       .gte('created_at', trintaDiasAtras)
       .in('installation_status', CLIENTE_STATUSES_AI)
       .is('archived_at', null),
+    // 1.6) Top motivo de perda nos ultimos 30d
+    supabase
+      .from('leads')
+      .select('loss_reason')
+      .eq('status', 'perdido')
+      .gte('lost_at', trintaDiasAtras)
+      .not('loss_reason', 'is', null),
+    // 2) Leads silentes (mais de 24h sem atividade) em status novo/qualificando, SEM cadencia pendente
+    (async (): Promise<number> => {
+      const { data: silentes } = await supabase
+        .from('leads')
+        .select('id')
+        .in('status', ['novo', 'qualificando'])
+        .lt('updated_at', umDiaAtras)
+        .is('archived_at', null)
+        .eq('opt_out', false)
+        .limit(500);
+      if (!silentes || silentes.length === 0) return 0;
+      const silenteIds = silentes.map((l: any) => l.id);
+      const { data: pendingCads } = await supabase
+        .from('eva_cadence')
+        .select('lead_id')
+        .in('lead_id', silenteIds)
+        .eq('status', 'pending');
+      const comCadenciaSet = new Set((pendingCads ?? []).map((c: any) => c.lead_id));
+      return silenteIds.filter((id: string) => !comCadenciaSet.has(id)).length;
+    })(),
+    // 3) Leads agendados mas com data passada (não cumpriu)
+    supabase
+      .from('eva_cadence')
+      .select('lead_id', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .lt('scheduled_for', agora),
   ]);
+
+  if ((novos24h ?? 0) >= 1) {
+    insights.push({
+      emoji: '🆕',
+      text: `${novos24h} lead(s) novo(s) nas últimas 24h.`,
+      severity: 'info',
+    });
+  }
+
   const totalCriados = criados30d.count ?? 0;
   const totalGanhos = ganhos30d.count ?? 0;
   if (totalCriados >= 10) {
@@ -155,14 +200,6 @@ export async function buildLeadsInsights(supabase: SupabaseClient): Promise<Insi
       severity: totalGanhos === 0 ? 'warning' : 'info',
     });
   }
-
-  // 1.6) Top motivo de perda nos ultimos 30d
-  const { data: perdas30d } = await supabase
-    .from('leads')
-    .select('loss_reason')
-    .eq('status', 'perdido')
-    .gte('lost_at', trintaDiasAtras)
-    .not('loss_reason', 'is', null);
 
   if (perdas30d && perdas30d.length >= 3) {
     const contagem: Record<string, number> = {};
@@ -183,42 +220,13 @@ export async function buildLeadsInsights(supabase: SupabaseClient): Promise<Insi
     }
   }
 
-  // 2) Leads silentes (mais de 24h sem atividade) em status novo/qualificando, SEM cadencia pendente
-  const { data: silentes } = await supabase
-    .from('leads')
-    .select('id')
-    .in('status', ['novo', 'qualificando'])
-    .lt('updated_at', umDiaAtras)
-    .is('archived_at', null)
-    .eq('opt_out', false)
-    .limit(500);
-
-  if (silentes && silentes.length > 0) {
-    const silenteIds = silentes.map((l: any) => l.id);
-    const { data: pendingCads } = await supabase
-      .from('eva_cadence')
-      .select('lead_id')
-      .in('lead_id', silenteIds)
-      .eq('status', 'pending');
-    const comCadenciaSet = new Set((pendingCads ?? []).map((c: any) => c.lead_id));
-    const semCadencia = silenteIds.filter((id: string) => !comCadenciaSet.has(id)).length;
-
-    if (semCadencia >= 3) {
-      insights.push({
-        emoji: '😴',
-        text: `${semCadencia} lead(s) silente(s) há mais de 24h sem cadência agendada. Agende ou descarte.`,
-        severity: 'warning',
-      });
-    }
+  if (semCadencia >= 3) {
+    insights.push({
+      emoji: '😴',
+      text: `${semCadencia} lead(s) silente(s) há mais de 24h sem cadência agendada. Agende ou descarte.`,
+      severity: 'warning',
+    });
   }
-
-  // 3) Leads agendados mas com data passada (não cumpriu)
-  const agora = new Date().toISOString();
-  const { count: agendadosPassados } = await supabase
-    .from('eva_cadence')
-    .select('lead_id', { count: 'exact', head: true })
-    .eq('status', 'pending')
-    .lt('scheduled_for', agora);
 
   if ((agendadosPassados ?? 0) >= 5) {
     insights.push({

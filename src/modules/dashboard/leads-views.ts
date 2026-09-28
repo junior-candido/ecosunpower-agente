@@ -236,7 +236,7 @@ export function renderLeadsListPage(
     .cc-leads .cc-busca input[name=q]{width:260px}
     @media (max-width:760px){ .cc-leads .cc-busca{width:100%} .cc-leads .cc-busca input[name=q]{flex:1;width:auto;min-width:0} }
   </style>`;
-  return renderLayout({ active: 'leads', title: 'Leads', body, user, dark: temaDaTela(user, 'claro') === 'escuro', largo: true });
+  return renderLayout({ active: 'leads', title: 'Leads', body, user, tailwind: false, dark: temaDaTela(user, 'claro') === 'escuro', largo: true });
 }
 
 // ---------------------------------------------------------------------------

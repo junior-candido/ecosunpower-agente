@@ -4,7 +4,7 @@
 // continuam valendo e rodam junto.
 import { describe, it, expect } from 'vitest';
 import { renderLayout } from '../src/modules/dashboard/views.js';
-import { LOGO_NEGATIVA_WIDE_BASE64 } from '../src/modules/dashboard/ui/logo-negativa-wide.js';
+import { CSS_PAINEL, URL_CSS_PAINEL, URL_LOGO_CASA } from '../src/modules/dashboard/ui/estatico.js';
 import type { DashUser } from '../src/modules/dashboard/permissions.js';
 
 const ECOSUN = '00000000-0000-0000-0000-000000000001';
@@ -21,7 +21,9 @@ describe('renderLayout — casca nova', () => {
   it('traz design system: fontes, tokens, sprite de ícones', () => {
     const h = renderLayout({ active: 'home', title: 'X', body: '', user: junior });
     expect(h).toContain('Space+Grotesk');
-    expect(h).toContain('--cc-bg');
+    // tokens no CSS do painel, servido por arquivo com hash (perf/telas-leves)
+    expect(h).toContain(`<link rel="stylesheet" href="${URL_CSS_PAINEL}">`);
+    expect(CSS_PAINEL).toContain('--cc-bg');
     expect(h).toContain('id="cc-i-gauge"');
   });
 
@@ -34,7 +36,8 @@ describe('renderLayout — casca nova', () => {
 
   it('logo negativa-wide GRANDE da EcoSun, link pra Home', () => {
     const h = renderLayout({ active: 'home', title: 'X', body: '', user: junior });
-    expect(h).toContain(LOGO_NEGATIVA_WIDE_BASE64.slice(0, 80));
+    // logo oficial por arquivo (nome com hash), não mais base64 no HTML
+    expect(h).toContain(`src="${URL_LOGO_CASA}"`);
     expect(h).toMatch(/<a href="\/dashboard\/home"[^>]*>\s*<img[^>]*alt="EcoSunPower"/);
   });
 

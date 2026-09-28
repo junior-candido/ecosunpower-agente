@@ -570,7 +570,7 @@ export function renderAtendimentoPage(p: AtendimentoInput): string {
   const script = `<script>${SCRIPT_COLUNAS}</script>` + (lead ? `<script>(function(){function fim(){var c=document.getElementById('cc-at-msgs');if(c){c.scrollTop=c.scrollHeight;}}fim();window.addEventListener('load',fim);})();</script>` : '');
 
   const titulo = lead ? `Conversa: ${lead.name ?? 'Sem nome'}` : 'Conversas';
-  return renderLayout({ active: 'conversas', title: titulo, body: body + script, user: p.user, dark: temaDaTela(p.user, 'escuro') === 'escuro', largo: true });
+  return renderLayout({ active: 'conversas', title: titulo, body: body + script, user: p.user, tailwind: false, dark: temaDaTela(p.user, 'escuro') === 'escuro', largo: true });
 }
 
 /**

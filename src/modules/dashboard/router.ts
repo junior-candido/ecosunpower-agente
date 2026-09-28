@@ -13,6 +13,7 @@
 //   GET  /manutencao - lembretes pendentes
 
 import express, { Router, type Request, type Response } from 'express';
+import { servirEstatico } from './ui/estatico.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -269,6 +270,10 @@ export function createDashboardRouter(
   // ----------------------------------------------------------------------
   // Rotas publicas (sem auth)
   // ----------------------------------------------------------------------
+
+  // CSS comum e logo da casa por arquivo (nome com hash, cache de 1 ano) —
+  // perf/telas-leves. Público: nada aqui é dado de cliente (ui/estatico.ts).
+  router.get('/estatico/:arquivo', servirEstatico);
 
   router.get('/login', (req: Request, res: Response) => {
     const next = typeof req.query.next === 'string' ? req.query.next : undefined;

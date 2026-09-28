@@ -3,6 +3,21 @@
 // teto tests/miolo-sem-tailwind.test.ts e pelos testes de cada fatia).
 // Exceção só com comentário `// tailwind-ok: <motivo>` na MESMA linha.
 
+/** Telas renovadas (lista ÚNICA): o teto (miolo-sem-tailwind.test.ts) garante
+ *  que o miolo delas não tem Tailwind e, por isso, elas NÃO carregam o Tailwind
+ *  do CDN (telas-leves.test.ts — perf/telas-leves, 28/09/2026).
+ *  Formato: 'arquivo.ts' (arquivo inteiro) ou 'arquivo.ts#funcao'. */
+export const TELAS_RENOVADAS: string[] = [
+  // R2 (lista) + R3 (ficha): leads-views.ts inteiro no padrão cc-
+  'leads-views.ts',
+  // R4 — Funil (Kanban)
+  'kanban-views.ts',
+  // Atendimento (Leads › Conversas, 28/09) — nasceu no padrão cc-
+  'atendimento-views.ts',
+  // Command Center, Central de Atenção e Modo TV — nasceram no padrão cc-
+  'command-center-views.ts',
+];
+
 export const RE_TAILWIND = /\b(bg|text|border|ring|from|to)-(white|black|slate|gray|zinc|sky|cyan|amber|emerald|rose|red|green|yellow|indigo|violet)(-\d{2,3})?\b|\b(p|px|py|m|mx|my|mt|mb|gap|space-[xy])-\d|\brounded(-\w+)?\b|\bgrid-cols-\d/;
 
 /** Corpo (texto) de uma função `function nome(`, casando parênteses e chaves. */
