@@ -5,11 +5,15 @@ import type { DashboardKpi, PropostaRow, ManutencaoRow, GraficoMensal, SistemaMo
 import type { DetalheCalendario } from '../monitoring/service.js';
 import type { IntradayPonto } from '../monitoring/types.js';
 import { LOGO_ECOSUNPOWER_BRANCO_BASE64 } from '../proposal/assets/logo-base64.js';
-import { escapeHtml } from './ui/html.js';
+import { escapeHtml, fmtNumero } from './ui/html.js';
 import { SPRITE_ICONES } from './ui/icones.js';
 import { FONTES_HEAD } from './ui/estilo.js';
 import { URL_CSS_PAINEL, URL_CSS_SEM_TAILWIND, URL_LOGO_CASA } from './ui/estatico.js';
-import { icone, selo } from './ui/componentes.js';
+import {
+  icone, selo, cabecalhoPagina, faixaKpis, cartaoSecao, chipsFiltro, celulaDupla, pilulaStatus, estadoVazio, botao,
+  type Tom,
+} from './ui/componentes.js';
+import { temaDaTela } from './ui/tema.js';
 import { montarMenu, type ItemMontado, type IdGrupo, type SeloGrupo } from './menu-areas.js';
 import { corDaMarca, logoDaEmpresa, LOGO_PADRAO_CASA } from './marca-empresa.js';
 import { formatPhoneBR, normalizeBrazilianPhone } from '../meta-leadgen.js';
@@ -694,6 +698,75 @@ export interface KPIsAbordagemMes {
   resolvidoSozinhoPct: number;
 }
 
+/** Marca do inversor no padrão cc- (logo oficial num fundo claro + nome). */
+function marcaCc(marca: string, soLogo = false): string {
+  const url = MARCAS_LOGO_URL[marca];
+  const label = MARCAS_LABEL[marca] ?? marca;
+  if (!url) return `<span class="cc-marca cc-marca-txt">${escapeHtml(label)}</span>`;
+  const img = `<img src="${url}" alt="${escapeHtml(label)}" loading="lazy">`;
+  return soLogo
+    ? `<span class="cc-marca" title="${escapeHtml(label)}">${img}</span>`
+    : `<span class="cc-marca">${img}<span>${escapeHtml(label)}</span></span>`;
+}
+
+/** kWh com 1 casa no formato brasileiro; sem dado → "—". */
+function kwhCc(v: number | null | undefined, casas = 1): string {
+  return v === null || v === undefined || !Number.isFinite(v) ? '—' : `${fmtNumero(v, casas)} kWh`;
+}
+
+// CSS da tela da frota (só classes cc-mon-* e os ganchos antigos que os testes
+// e o layout procuram: coluna-status, card-usina, orbita-frota, ponto-usina).
+const CSS_MONITORAMENTO = `
+.cc-mon .cc-kstrip{margin-bottom:16px}
+.cc-mon .cc-panel+.cc-panel,.cc-mon .cc-kstrip+.cc-panel{margin-top:16px}
+.cc-mon-filtro{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+.cc-mon-filtro input[name=q]{width:220px}
+.cc-mon-acoes{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.cc-mon-acoes form{margin:0}
+.orbita-frota .cc-mon-orb{display:flex;align-items:center;gap:22px}
+.orbita-frota svg{width:200px;height:200px;flex:none}
+.orbita-frota .cc-mon-orb-txt{flex:1;min-width:0}
+.orbita-frota .cc-mon-orb-res{font-size:13px;color:var(--cc-muted);margin:4px 0 10px}
+.orbita-frota .cc-mon-orb-res b{font-family:var(--cc-f-num);color:var(--cc-text)}
+.orbita-frota .anel{animation:orbita-giro 90s linear infinite;transform-origin:170px 170px}
+.orbita-frota .sol-pulso{animation:sol-pulsa 3.2s ease-in-out infinite;transform-origin:170px 170px}
+@keyframes orbita-giro{to{transform:rotate(360deg)}}
+@keyframes sol-pulsa{0%,100%{opacity:.45}50%{opacity:.85}}
+@media (prefers-reduced-motion: reduce){.orbita-frota .anel,.orbita-frota .sol-pulso{animation:none}}
+.orbita-frota .ponto-usina circle{cursor:pointer}
+.orbita-frota .ponto-usina:hover circle,.orbita-frota .ponto-usina:focus circle{stroke:var(--cc-text);stroke-width:2.5}
+.cc-mon-trilho{stroke:var(--cc-line-2)}
+.cc-mon-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:start}
+.cc-mon-board.cc-mon-um{grid-template-columns:minmax(0,1fr)}
+.cc-mon-board .cc-kb-col{max-height:none}
+.cc-mon-board .cc-kb-h a{display:flex;align-items:center;gap:8px;flex:1;min-width:0;color:var(--cc-text)}
+.cc-mon-board .cc-kb-h a:hover h3{color:var(--cc-gold-2)}
+.cc-mon-board .cc-kb-lista{max-height:560px}
+.cc-mon-board .card-usina{cursor:pointer}
+.cc-mon-card-al{font-size:11.5px;line-height:1.35;margin-top:4px}
+.cc-mon-card-al.cc-mon-crit{color:var(--cc-crit)} .cc-mon-card-al.cc-mon-warn{color:var(--cc-warn)}
+.cc-mon-card-b{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px}
+.cc-mon-card-b b{font-family:var(--cc-f-num);color:var(--cc-gold-2);font-size:12px;white-space:nowrap}
+.cc-mon-card-acts{display:flex;gap:6px;margin-top:8px}
+.cc-mon-card-acts form{margin:0}
+.cc-mon-pausadas{margin-top:10px;font-size:12px;color:var(--cc-muted)}
+.cc-marca{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--cc-text-2);white-space:nowrap}
+.cc-marca img{height:18px;width:auto;max-width:64px;object-fit:contain;background:#fff;border-radius:5px;padding:2px 4px;box-sizing:content-box}
+.cc-marca-txt{padding:2px 8px;border-radius:99px;background:var(--cc-surface-3)}
+.cc-mon-tbl td form{margin:0}
+.cc-mon-exc{color:var(--cc-crit)}
+.cc-mon-exc:hover{border-color:var(--cc-crit);background:var(--cc-crit-soft)}
+.cc-mon-nota{margin-top:12px;font-size:12px;color:var(--cc-faint);text-align:center}
+@media (max-width:1180px){.cc-mon-board{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:760px){
+  .cc-mon-filtro input[name=q]{flex:1 1 100%;width:100%}
+  .cc-mon-filtro select{flex:1 1 40%;min-width:0;width:auto}
+  .orbita-frota .cc-mon-orb{flex-direction:column;align-items:stretch}
+  .orbita-frota svg{align-self:center;width:180px;height:180px}
+  .cc-mon-board{grid-template-columns:minmax(0,1fr)}
+}
+`;
+
 export function renderMonitoramentoPage(
   rows: SistemaMonitorRow[],
   q: { q?: string; marca?: string; cidade?: string; status?: string; ord?: string; painel?: string },
@@ -702,6 +775,9 @@ export function renderMonitoramentoPage(
   kpisEva?: KPIsAbordagemMes,
   user?: DashUser,
 ): string {
+  // Renovação do miolo — R8 (28/09/2026): mesma tela, mesmos números, mesmas
+  // rotas e formulários; visual no padrão cc- (tema escuro do Command Center
+  // para todos — decisão D4 do Junior, em ui/tema.ts).
   const ativos = rows.filter((r) => r.ativo);
   const totalKwp = ativos.reduce((s, r) => s + (r.potencia_kwp ?? 0), 0);
   const totalHoje = rows.reduce((s, r) => s + (r.geracao_hoje_kwh ?? 0), 0);
@@ -710,84 +786,8 @@ export function renderMonitoramentoPage(
   const marcas = new Set(rows.map((r) => r.marca_inversor)).size;
   const problemas = rows.filter((r) => r.nivel === 'urgente' || r.nivel === 'aviso');
 
-  // [Tema claro do tenant — pedido do Thiago 27/07] O TENANT vê o painel no
-  // tema CLARO (mesma cara da página de detalhe que ele aprovou); a EcoSun
-  // segue no escuro de sempre, byte a byte (as strings do ramo escuro são as
-  // originais, intocadas — teste garante).
-  const claro = !!user && user.companyId !== ECOSUN_COMPANY_ID;
-  const P = claro ? {
-    kpiCard: 'bg-white rounded-xl border border-slate-200 p-5 shadow-sm',
-    kpiLabel: 'text-xs uppercase tracking-wider text-slate-500 font-semibold',
-    corKpi: { amber: 'text-amber-600', sky: 'text-sky-700', emerald: 'text-emerald-600', violet: 'text-violet-600' },
-    saudeOk: 'text-emerald-600', saudeRuim: 'text-rose-600', saudeMeia: 'text-amber-600',
-    cardUrgente: 'border-rose-300 bg-rose-50', cardAviso: 'border-amber-300 bg-amber-50',
-    linkUsina: 'text-sky-700', textoUrgente: 'text-rose-700', textoAviso: 'text-amber-700',
-    mutedCard: 'text-slate-500',
-    btnDetalhe: 'bg-slate-200 hover:bg-slate-300 text-slate-800',
-    pillPausado: 'bg-slate-200 text-slate-500', pillUrgente: 'bg-rose-100 text-rose-700',
-    pillAviso: 'bg-amber-100 text-amber-700', pillInfo: 'bg-sky-100 text-sky-700',
-    pillOk: 'bg-emerald-100 text-emerald-700',
-    linhaHover: 'hover:bg-slate-50', tdTexto: 'text-slate-700', tdHoje: 'text-amber-600', tdMes: 'text-emerald-600', tdIdade: 'text-slate-500',
-    h1: 'text-slate-900', sub: 'text-slate-600',
-    input: 'px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-800 text-sm',
-    btnLimpar: 'px-3 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm',
-    h2Acao: 'text-slate-800', vazioOk: 'rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-emerald-700 text-center font-medium',
-    tabelaWrap: 'bg-white rounded-xl border border-slate-200 overflow-x-auto',
-    thead: 'bg-slate-100 border-b border-slate-200', theadTexto: 'text-slate-500', tbodyDivide: 'divide-y divide-slate-100',
-    vazioWrap: 'bg-white rounded-xl border border-slate-200 p-8 text-center', vazioTexto: 'text-slate-800',
-  } : {
-    kpiCard: 'bg-slate-800/60 backdrop-blur rounded-xl border border-slate-700 p-5 shadow-lg',
-    kpiLabel: 'text-xs uppercase tracking-wider text-slate-400 font-semibold',
-    corKpi: { amber: 'text-amber-400', sky: 'text-sky-300', emerald: 'text-emerald-300', violet: 'text-violet-300' },
-    saudeOk: 'text-emerald-400', saudeRuim: 'text-rose-400', saudeMeia: 'text-amber-400',
-    cardUrgente: 'border-rose-500/60 bg-rose-500/10', cardAviso: 'border-amber-500/60 bg-amber-500/10',
-    linkUsina: 'text-sky-300', textoUrgente: 'text-rose-300', textoAviso: 'text-amber-300',
-    mutedCard: 'text-slate-400',
-    btnDetalhe: 'bg-slate-700 hover:bg-slate-600 text-slate-100',
-    pillPausado: 'bg-slate-700 text-slate-400', pillUrgente: 'bg-rose-500/20 text-rose-300',
-    pillAviso: 'bg-amber-500/20 text-amber-300', pillInfo: 'bg-sky-500/20 text-sky-300',
-    pillOk: 'bg-emerald-500/20 text-emerald-300',
-    linhaHover: 'hover:bg-slate-800/50', tdTexto: 'text-slate-300', tdHoje: 'text-amber-300', tdMes: 'text-emerald-300', tdIdade: 'text-slate-400',
-    h1: 'text-slate-100', sub: 'text-slate-400',
-    input: 'px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-100 text-sm',
-    btnLimpar: 'px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm',
-    h2Acao: 'text-slate-200', vazioOk: 'rounded-xl border border-emerald-600/40 bg-emerald-500/10 p-6 text-emerald-300 text-center font-medium',
-    tabelaWrap: 'bg-slate-800/60 rounded-xl border border-slate-700 overflow-x-auto',
-    thead: 'bg-slate-900/80 border-b border-slate-700', theadTexto: 'text-slate-400', tbodyDivide: 'divide-y divide-slate-800',
-    vazioWrap: 'bg-slate-800/60 rounded-xl border border-slate-700 p-8 text-center', vazioTexto: 'text-slate-200',
-  };
-
-  const kpi = (t: string, v: string, sub: string, cor: string) => `
-    <div class="${P.kpiCard}">
-      <div class="${P.kpiLabel}">${escapeHtml(t)}</div>
-      <div class="text-3xl font-bold ${cor} mt-2">${escapeHtml(v)}</div>
-      <div class="text-xs text-slate-500 mt-1">${escapeHtml(sub)}</div>
-    </div>`;
-
-  const saudeCor = okCount === ativos.length ? P.saudeOk
-    : problemas.some((p) => p.nivel === 'urgente') ? P.saudeRuim : P.saudeMeia;
-
   const sincOk = (r: SistemaMonitorRow) => r.ultima_sincronizacao
     && (Date.now() - new Date(r.ultima_sincronizacao).getTime() < 36 * 60 * 60 * 1000);
-
-  // [Painel de Operação em COLUNAS — referência do Thiago 27/07; "vamos fazer
-  // algo melhor" — Junior]. 4 grupos por status com contagem + kWp somado no
-  // cabeçalho; mini-card clicável com marca, kWp e GERAÇÃO DE HOJE (a
-  // referência só mostrava potência) + ações rápidas (sync/relatório).
-  const cardUsina = (r: SistemaMonitorRow) => `
-    <div class="card-usina rounded-lg border ${claro ? 'bg-white border-slate-200 shadow-sm hover:shadow' : 'bg-slate-800/70 border-slate-700 hover:border-slate-500'} p-3 cursor-pointer" onclick="window.location='/dashboard/monitoramento/${escapeHtml(r.id)}'">
-      <div class="font-semibold text-sm ${P.linkUsina} leading-tight">${escapeHtml(r.apelido)}</div>
-      <div class="text-[11px] ${P.mutedCard} mb-1">${escapeHtml([r.cidade, r.uf].filter(Boolean).join('/') || '—')}</div>
-      ${r.alertaTexto ? `<div class="text-[11px] ${r.nivel === 'urgente' ? P.textoUrgente : P.textoAviso} mb-1 leading-snug">${escapeHtml(r.alertaTexto)}</div>` : ''}
-      <div class="flex items-center justify-between gap-2 mt-1">
-        <span class="flex items-center gap-2">${marcaBadge(r.marca_inversor)}<span class="text-[11px] ${P.tdTexto}">${r.potencia_kwp ? `${r.potencia_kwp.toFixed(1)} kWp` : '—'}</span></span>
-        <span class="text-[11px] font-bold ${P.tdHoje}">${r.geracao_hoje_kwh !== null ? `☀️ ${r.geracao_hoje_kwh.toFixed(1)} kWh` : '—'}</span>
-      </div>
-      <div class="flex gap-1.5 mt-2" onclick="event.stopPropagation()">
-        <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/sync" method="post"><button title="Sincronizar" class="px-2 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white text-[11px]">🔄</button></form>
-        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}/relatorio" title="Gerar relatório" class="px-2 py-1 rounded bg-violet-600 hover:bg-violet-700 text-white text-[11px]">📄</a>
-      </div>
-    </div>`;
 
   const falhas = ativos.filter((r) => r.nivel === 'urgente');
   const atencoes = ativos.filter((r) => r.nivel === 'aviso');
@@ -795,64 +795,73 @@ export function renderMonitoramentoPage(
   const aguardando = ativos.filter((r) => (r.nivel === 'ok' || r.nivel === 'info') && !sincOk(r));
   const pausadas = rows.filter((r) => !r.ativo);
 
-  // [Filtro do board — pedido do Thiago 28/07: "ao clicar, entra somente no
-  // status"]. Cabeçalho vira link ?painel=<chave>; com filtro ativo só a
-  // coluna escolhida aparece e o cabeçalho ganha "✕ ver tudo". A Órbita segue
-  // mostrando a frota inteira (é o mapa geral) — só o board filtra.
-  const CORES_HEAD: Record<string, string> = {
-    falha: claro ? 'bg-rose-600 text-white' : 'bg-rose-700 text-white',
-    atencao: claro ? 'bg-amber-500 text-white' : 'bg-amber-600 text-white',
-    ok: claro ? 'bg-emerald-600 text-white' : 'bg-emerald-700 text-white',
-    aguardando: claro ? 'bg-slate-600 text-white' : 'bg-slate-700 text-white',
-  };
-  const PAINEIS: Record<string, { titulo: string; icone: string; lista: SistemaMonitorRow[] }> = {
-    falha: { titulo: 'Falha', icone: '🔴', lista: falhas },
-    atencao: { titulo: 'Atenção', icone: '🟡', lista: atencoes },
-    ok: { titulo: 'Gerando OK', icone: '🟢', lista: saudaveis },
-    aguardando: { titulo: 'Aguardando dados', icone: '⚪', lista: aguardando },
-  };
-  const painelAtivo = q.painel && q.painel in PAINEIS ? q.painel : null;
+  // Status de cada usina — MESMA regra de antes (nivel + sinal recente).
+  const statusDe = (r: SistemaMonitorRow): [Tom, string] => !r.ativo ? ['sem_dado', 'Pausada']
+    : r.nivel === 'urgente' ? ['critico', 'Falha']
+      : r.nivel === 'aviso' ? ['atencao', 'Atenção']
+        : r.nivel === 'info' ? ['oportunidade', 'Acima do esperado']
+          : sincOk(r) ? ['normal', 'Gerando OK'] : ['sem_dado', 'Sem sinal'];
 
-  const colunaStatus = (chave: string) => {
-    const { titulo, icone, lista } = PAINEIS[chave];
-    const ativa = painelAtivo === chave;
-    const href = ativa ? '/dashboard/monitoramento' : `/dashboard/monitoramento?painel=${chave}`;
+  // [Painel de Operação em COLUNAS — referência do Thiago 27/07] 4 grupos por
+  // status, contagem + kWp no cabeçalho; cabeçalho leva ao ?painel= (só aquele
+  // status, com "✕ ver tudo"). Mini-card clicável com marca, kWp e geração de hoje.
+  const cardUsina = (r: SistemaMonitorRow) => {
+    const tom = r.nivel === 'urgente' ? ' cc-kb-crit' : r.nivel === 'aviso' ? ' cc-kb-warn' : sincOk(r) ? ' cc-kb-ok' : '';
+    const hoje = r.geracao_hoje_kwh;
     return `
-    <div class="coluna-status">
-      <a href="${href}" class="flex items-center justify-between rounded-t-lg px-3 py-2 ${CORES_HEAD[chave]}" title="${ativa ? 'Voltar a ver todos os status' : 'Ver só este status'}">
-        <span class="text-sm font-bold">${icone} ${escapeHtml(titulo)}${ativa ? ' <span class="font-normal opacity-80">· ✕ ver tudo</span>' : ''}</span>
-        <span class="text-sm font-bold">${lista.length}</span>
-      </a>
-      <div class="text-[11px] ${P.mutedCard} px-3 py-1 ${claro ? 'bg-slate-100' : 'bg-slate-900/60'} rounded-b-none">${lista.reduce((s, r) => s + (r.potencia_kwp ?? 0), 0).toFixed(1)} kWp</div>
-      <div class="flex flex-col gap-2 p-2 rounded-b-lg ${claro ? 'bg-slate-50 border border-t-0 border-slate-200' : 'bg-slate-900/40 border border-t-0 border-slate-800'} min-h-[80px]">
-        ${lista.length ? lista.map(cardUsina).join('') : `<div class="text-xs ${P.mutedCard} text-center py-4">— nenhuma —</div>`}
+    <div class="cc-kb-card${tom} card-usina" onclick="window.location='/dashboard/monitoramento/${escapeHtml(r.id)}'"${hoje !== null ? ` data-kwh-hoje="${hoje.toFixed(1)}"` : ''}>
+      <div class="cc-kb-card-l"><span class="cc-kb-card-t">${escapeHtml(r.apelido)}</span></div>
+      <div class="cc-kb-card-m">${escapeHtml([r.cidade, r.uf].filter(Boolean).join('/') || '—')}</div>
+      ${r.alertaTexto ? `<div class="cc-mon-card-al ${r.nivel === 'urgente' ? 'cc-mon-crit' : 'cc-mon-warn'}">${escapeHtml(r.alertaTexto)}</div>` : ''}
+      <div class="cc-mon-card-b"><span class="cc-kb-card-m">${marcaCc(r.marca_inversor, true)}${r.potencia_kwp ? `${escapeHtml(fmtNumero(r.potencia_kwp, 1))} kWp` : '—'}</span><b>${hoje !== null ? `☀ ${escapeHtml(kwhCc(hoje))}` : '—'}</b></div>
+      <div class="cc-mon-card-acts" onclick="event.stopPropagation()">
+        <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/sync" method="post"><button type="submit" title="Sincronizar" class="cc-btn cc-btn-sm">${icone('zap', 'xs')}Sincronizar</button></form>
+        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}/relatorio" title="Gerar relatório" class="cc-btn cc-btn-sm">${icone('file', 'xs')}Relatório</a>
       </div>
     </div>`;
   };
 
-  const boardHtml = painelAtivo ? `
-    <div class="grid grid-cols-1 gap-4">
-      ${colunaStatus(painelAtivo)}
-    </div>` : `
-    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-      ${colunaStatus('falha')}
-      ${colunaStatus('atencao')}
-      ${colunaStatus('ok')}
-      ${colunaStatus('aguardando')}
-    </div>
-    ${pausadas.length ? `<div class="mt-2 text-xs ${P.mutedCard}">⏸ ${pausadas.length} usina(s) pausada(s) — aparecem só na tabela abaixo.</div>` : ''}`;
+  const PAINEIS: Record<string, { titulo: string; icone: string; cor: string; lista: SistemaMonitorRow[] }> = {
+    falha: { titulo: 'Falha', icone: '🔴', cor: 'var(--cc-crit)', lista: falhas },
+    atencao: { titulo: 'Atenção', icone: '🟡', cor: 'var(--cc-warn)', lista: atencoes },
+    ok: { titulo: 'Gerando OK', icone: '🟢', cor: 'var(--cc-ok)', lista: saudaveis },
+    aguardando: { titulo: 'Aguardando dados', icone: '⚪', cor: 'var(--cc-off)', lista: aguardando },
+  };
+  const painelAtivo = q.painel && q.painel in PAINEIS ? q.painel : null;
 
-  // [ÓRBITA DA FROTA — assinatura futurista, pedido do Junior 27/07 ("quero
-  // algo futurista e único")]. A carteira como SISTEMA SOLAR: sol central =
-  // geração de HOJE pulsando; um ponto em órbita por usina ativa, ordenados
-  // por status (os arcos coloridos são a saúde da frota num relance). Clique
-  // no ponto abre a usina; hover destaca e mostra o nome. Anel gira devagar
-  // (90s/volta); quem desativa movimento no sistema vê tudo parado.
+  const colunaStatus = (chave: string) => {
+    const { titulo, icone: ic, cor, lista } = PAINEIS[chave];
+    const ativa = painelAtivo === chave;
+    const href = ativa ? '/dashboard/monitoramento' : `/dashboard/monitoramento?painel=${chave}`;
+    const kwp = lista.reduce((s, r) => s + (r.potencia_kwp ?? 0), 0);
+    return `
+    <div class="coluna-status">
+      <section class="cc-kb-col" style="--kb:${cor}">
+        <header class="cc-kb-h"><a href="${href}" title="${ativa ? 'Voltar a ver todos os status' : 'Ver só este status'}"><h3>${ic} ${escapeHtml(titulo)}${ativa ? ' · ✕ ver tudo' : ''}</h3></a><span class="cc-kb-n">${lista.length}</span><small class="cc-kb-sub">${escapeHtml(fmtNumero(kwp, 1))} kWp</small></header>
+        <div class="cc-kb-lista">${lista.length ? lista.map(cardUsina).join('') : '<p class="cc-kb-vazio">— nenhuma —</p>'}</div>
+      </section>
+    </div>`;
+  };
+
+  const boardHtml = painelAtivo
+    ? `<div class="cc-mon-board cc-mon-um">${colunaStatus(painelAtivo)}</div>`
+    : `<div class="cc-mon-board">${colunaStatus('falha')}${colunaStatus('atencao')}${colunaStatus('ok')}${colunaStatus('aguardando')}</div>
+      ${pausadas.length ? `<div class="cc-mon-pausadas">${pausadas.length} usina(s) pausada(s) — aparecem só na carteira abaixo.</div>` : ''}`;
+
+  // Chips de status com contagem — os MESMOS destinos ?painel= de antes.
+  const chips = chipsFiltro([
+    { rotulo: 'Todos', valor: ativos.length, href: '/dashboard/monitoramento', ativo: !painelAtivo },
+    { rotulo: 'Falha', valor: falhas.length, href: '/dashboard/monitoramento?painel=falha', ativo: painelAtivo === 'falha', tom: falhas.length ? 'warn' : undefined },
+    { rotulo: 'Atenção', valor: atencoes.length, href: '/dashboard/monitoramento?painel=atencao', ativo: painelAtivo === 'atencao', tom: atencoes.length ? 'warn' : undefined },
+    { rotulo: 'Gerando OK', valor: saudaveis.length, href: '/dashboard/monitoramento?painel=ok', ativo: painelAtivo === 'ok', tom: 'ok' },
+    { rotulo: 'Aguardando', valor: aguardando.length, href: '/dashboard/monitoramento?painel=aguardando', ativo: painelAtivo === 'aguardando' },
+  ]);
+
+  // [ÓRBITA DA FROTA — pedido do Junior 27/07] a carteira como sistema solar:
+  // sol = geração de HOJE; um ponto por usina ativa, ordenado por status.
   const orbitaOrdem = [...falhas, ...atencoes, ...aguardando, ...saudaveis];
   const corPonto = (r: SistemaMonitorRow) =>
-    r.nivel === 'urgente' ? '#F43F5E'
-      : r.nivel === 'aviso' ? '#F59E0B'
-        : sincOk(r) ? '#10B981' : '#94A3B8';
+    r.nivel === 'urgente' ? '#E4574B' : r.nivel === 'aviso' ? '#F2862E' : sincOk(r) ? '#3DBB6E' : '#7F90A6';
   const N_ORB = orbitaOrdem.length;
   const RAIO_ORB = 132;
   const CENTRO_ORB = 170;
@@ -861,207 +870,157 @@ export function renderMonitoramentoPage(
     const ang = (i / Math.max(N_ORB, 1)) * 2 * Math.PI - Math.PI / 2;
     const x = (CENTRO_ORB + RAIO_ORB * Math.cos(ang)).toFixed(1);
     const y = (CENTRO_ORB + RAIO_ORB * Math.sin(ang)).toFixed(1);
-    return `<a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="ponto-usina"><circle cx="${x}" cy="${y}" r="${rPonto}" fill="${corPonto(r)}"><title>${escapeHtml(r.apelido)} · ${r.geracao_hoje_kwh !== null ? `${r.geracao_hoje_kwh.toFixed(1)} kWh hoje` : 'sem dados hoje'}</title></circle></a>`;
+    return `<a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="ponto-usina"><circle cx="${x}" cy="${y}" r="${rPonto}" fill="${corPonto(r)}"><title>${escapeHtml(r.apelido)} · ${r.geracao_hoje_kwh !== null ? `${escapeHtml(kwhCc(r.geracao_hoje_kwh))} hoje` : 'sem dados hoje'}</title></circle></a>`;
   }).join('');
 
-  // Chip clicável: leva pro board filtrado do status (mesmo destino dos
-  // cabeçalhos das colunas — pedido do Thiago 28/07).
-  const chipOrbita = (cor: string, label: string, lista: SistemaMonitorRow[], chave: string) => `
-    <a href="/dashboard/monitoramento?painel=${chave}" class="rounded-xl ${claro ? 'bg-white/70 border border-slate-200 hover:border-slate-400' : 'bg-slate-800/50 border border-slate-700 hover:border-slate-500'} backdrop-blur-sm px-3 py-2 flex items-center gap-2" title="Ver só ${escapeHtml(label)}">
-      <span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${cor}"></span>
-      <span class="text-xs ${P.mutedCard}">${escapeHtml(label)}</span>
-      <span class="ml-auto text-base font-bold ${P.h1}" style="font-family:'Space Grotesk',ui-sans-serif,system-ui">${lista.length}</span>
-    </a>`;
-
-  // Compacta ("cresce muito pra baixo" — Junior): a Órbita é uma FAIXA baixa
-  // que SUBSTITUI a fileira de KPIs — tudo que os 5 cartões mostravam está
-  // nela (hoje/usinas no sol, status nos chips, mês/kWp/marcas/saúde na
-  // linha-resumo). Página fica mais curta do que era ANTES da órbita.
-  const orbitaHtml = N_ORB === 0 ? '' : `
-    <section class="orbita-frota mb-6 rounded-2xl ${claro ? 'bg-gradient-to-r from-sky-50 via-white to-amber-50/40 border border-slate-200' : 'border border-slate-800'} p-3 md:p-4 relative overflow-hidden"${claro ? '' : ' style="background:radial-gradient(900px 300px at 25% -10%, rgba(14,165,233,.12), transparent), linear-gradient(180deg, #0B1220 0%, #070B14 100%)"'}>
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap');
-        .orbita-frota .anel { animation: orbita-giro 90s linear infinite; transform-origin: ${CENTRO_ORB}px ${CENTRO_ORB}px; }
-        .orbita-frota .sol-pulso { animation: sol-pulsa 3.2s ease-in-out infinite; transform-origin: ${CENTRO_ORB}px ${CENTRO_ORB}px; }
-        @keyframes orbita-giro { to { transform: rotate(360deg); } }
-        @keyframes sol-pulsa { 0%,100% { opacity: .45 } 50% { opacity: .85 } }
-        @media (prefers-reduced-motion: reduce) { .orbita-frota .anel, .orbita-frota .sol-pulso { animation: none } }
-        .orbita-frota .ponto-usina circle { cursor: pointer; }
-        .orbita-frota .ponto-usina:hover circle, .orbita-frota .ponto-usina:focus circle { stroke: ${claro ? '#0F172A' : '#F8FAFC'}; stroke-width: 2.5; }
-      </style>
-      <div class="flex flex-col md:flex-row items-center gap-4 md:gap-6">
-        <svg viewBox="0 0 340 340" class="w-[190px] h-[190px] md:w-[210px] md:h-[210px] shrink-0" role="img" aria-label="Órbita da frota: cada ponto é uma usina, a cor é o status">
-          <defs>
-            <radialGradient id="grad-sol" cx="50%" cy="42%">
-              <stop offset="0%" stop-color="#FDE68A"/><stop offset="55%" stop-color="#F59E0B"/><stop offset="100%" stop-color="#D97706"/>
-            </radialGradient>
-          </defs>
-          <circle cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="${RAIO_ORB}" fill="none" stroke="${claro ? '#CBD5E1' : '#1E293B'}" stroke-width="1" stroke-dasharray="2 7"/>
+  const orbitaHtml = N_ORB === 0 ? '' : cartaoSecao({
+    titulo: 'Órbita da Frota',
+    dica: 'Cada ponto é uma usina — a cor é o status. Clique pra abrir.',
+    classe: 'orbita-frota',
+    corpoHtml: `<div class="cc-mon-orb">
+        <svg viewBox="0 0 340 340" role="img" aria-label="Órbita da frota: cada ponto é uma usina, a cor é o status">
+          <defs><radialGradient id="grad-sol" cx="50%" cy="42%"><stop offset="0%" stop-color="#FDE68A"/><stop offset="55%" stop-color="#F59E0B"/><stop offset="100%" stop-color="#D97706"/></radialGradient></defs>
+          <circle class="cc-mon-trilho" cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="${RAIO_ORB}" fill="none" stroke-width="1" stroke-dasharray="2 7"/>
           <circle class="sol-pulso" cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="82" fill="url(#grad-sol)" opacity=".45"/>
-          <circle class="sol-central" cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="66" fill="url(#grad-sol)"/>
-          <text x="${CENTRO_ORB}" y="${CENTRO_ORB - 4}" text-anchor="middle" font-size="30" font-weight="700" fill="#3B2300" style="font-family:'Space Grotesk',ui-sans-serif,system-ui">${totalHoje.toFixed(1)}</text>
+          <circle class="sol-central" cx="${CENTRO_ORB}" cy="${CENTRO_ORB}" r="66" fill="url(#grad-sol)" data-kwh-hoje="${totalHoje.toFixed(1)}"/>
+          <text x="${CENTRO_ORB}" y="${CENTRO_ORB - 4}" text-anchor="middle" font-size="30" font-weight="700" fill="#3B2300" style="font-family:var(--cc-f-num)">${escapeHtml(fmtNumero(totalHoje, 1))}</text>
           <text x="${CENTRO_ORB}" y="${CENTRO_ORB + 17}" text-anchor="middle" font-size="12" font-weight="500" fill="#5A3E00">kWh hoje</text>
-          <text x="${CENTRO_ORB}" y="${CENTRO_ORB + 34}" text-anchor="middle" font-size="11" fill="#5A3E00">${ativos.length} usinas ☀️</text>
+          <text x="${CENTRO_ORB}" y="${CENTRO_ORB + 34}" text-anchor="middle" font-size="11" fill="#5A3E00">${ativos.length} usinas</text>
           <g class="anel">${pontosOrbita}</g>
         </svg>
-        <div class="flex-1 w-full min-w-0">
-          <div class="flex flex-wrap items-baseline gap-x-3">
-            <span class="text-lg font-bold ${P.h1}" style="font-family:'Space Grotesk',ui-sans-serif,system-ui">Órbita da Frota</span>
-            <span class="text-[11px] ${P.mutedCard}">Cada ponto é uma usina — a cor é o status. Clique pra abrir.</span>
-          </div>
-          <div class="text-xs ${P.mutedCard} mt-0.5 mb-2">
-            Mês: <b class="${P.tdMes}">${totalMes.toFixed(0)} kWh</b> · ${totalKwp.toFixed(1)} kWp · ${marcas} marca(s) · Saúde <b class="${saudeCor}">${okCount}/${ativos.length}</b>
-          </div>
-          <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
-            ${chipOrbita('#F43F5E', 'Falha', falhas, 'falha')}
-            ${chipOrbita('#F59E0B', 'Atenção', atencoes, 'atencao')}
-            ${chipOrbita('#10B981', 'Gerando OK', saudaveis, 'ok')}
-            ${chipOrbita('#94A3B8', 'Aguardando dados', aguardando, 'aguardando')}
-          </div>
+        <div class="cc-mon-orb-txt">
+          <div class="cc-mon-orb-res">Mês: <b>${escapeHtml(fmtNumero(totalMes, 0))} kWh</b> · ${escapeHtml(fmtNumero(totalKwp, 1))} kWp · ${marcas} marca(s) · Saúde <b>${okCount}/${ativos.length}</b></div>
+          ${chipsFiltro([
+            { rotulo: 'Falha', valor: falhas.length, href: '/dashboard/monitoramento?painel=falha' },
+            { rotulo: 'Atenção', valor: atencoes.length, href: '/dashboard/monitoramento?painel=atencao' },
+            { rotulo: 'Gerando OK', valor: saudaveis.length, href: '/dashboard/monitoramento?painel=ok' },
+            { rotulo: 'Aguardando dados', valor: aguardando.length, href: '/dashboard/monitoramento?painel=aguardando' },
+          ])}
         </div>
-      </div>
-    </section>`;
-  const statusPill = (r: SistemaMonitorRow) => !r.ativo
-    ? `<span class="px-2 py-1 rounded text-xs ${P.pillPausado}">⏸ Pausado</span>`
-    : r.nivel === 'urgente'
-      ? `<span class="px-2 py-1 rounded text-xs ${P.pillUrgente}">⚠️ Urgente</span>`
-      : r.nivel === 'aviso'
-        ? `<span class="px-2 py-1 rounded text-xs ${P.pillAviso}">⚠️ Atenção</span>`
-        : r.nivel === 'info'
-          ? `<span class="px-2 py-1 rounded text-xs ${P.pillInfo}">🌟 Acima</span>`
-          : sincOk(r)
-            ? `<span class="px-2 py-1 rounded text-xs ${P.pillOk}">✅ OK</span>`
-            : `<span class="px-2 py-1 rounded text-xs ${P.pillAviso}">⏳ Aguardando</span>`;
+      </div>`,
+  });
 
-  const linha = (r: SistemaMonitorRow) => `
-    <tr class="${P.linhaHover} cursor-pointer" onclick="window.location='/dashboard/monitoramento/${escapeHtml(r.id)}'">
-      <td class="px-4 py-3 text-sm">
-        <a href="/dashboard/monitoramento/${escapeHtml(r.id)}" class="font-medium ${P.linkUsina} hover:underline">${escapeHtml(r.apelido)}</a>
-        <div class="text-xs text-slate-500">${escapeHtml([r.cidade, r.uf].filter(Boolean).join('/') || '—')}</div>
-      </td>
-      <td class="px-4 py-3 text-sm">${marcaBadge(r.marca_inversor)}</td>
-      <td class="px-4 py-3 text-sm ${P.tdTexto}">${r.potencia_kwp ? `${r.potencia_kwp.toFixed(2)} kWp` : '—'}</td>
-      <td class="px-4 py-3 text-sm ${P.tdHoje} font-bold">${r.geracao_hoje_kwh !== null ? `${r.geracao_hoje_kwh.toFixed(1)} kWh` : '—'}</td>
-      <td class="px-4 py-3 text-sm ${P.tdMes}">${r.geracao_mes_kwh > 0 ? `${r.geracao_mes_kwh.toFixed(0)} kWh` : '—'}</td>
-      <td class="px-4 py-3 text-sm">${statusPill(r)}</td>
-      <td class="px-4 py-3 text-xs ${P.tdIdade}">⏱ ${escapeHtml(r.garantiaIdade)}</td>
-      <td class="px-4 py-3 text-right whitespace-nowrap" onclick="event.stopPropagation()">
-        <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/excluir" method="post" class="inline" onsubmit="return confirm('EXCLUIR esta usina de vez? Apaga todo o histórico. Sem volta.') && confirm('Confirma de novo: excluir esta usina permanentemente?')">
-          <button class="px-2.5 py-1.5 rounded-md bg-rose-700 hover:bg-rose-800 text-white text-xs">🗑</button>
-        </form>
-      </td>
-    </tr>`;
+  // Carteira inteira: tabela cc- que vira cartão no celular. A linha continua
+  // clicável (mesmo onclick de antes) e o excluir tem os MESMOS dois confirm().
+  const COLS = ['Usina', 'Marca', 'Potência', 'Hoje', 'Mês', 'Status', 'Sinal', 'Idade', ''];
+  const td = (i: number, html: string, cls = '') =>
+    `<td${cls ? ` class="${cls}"` : ''} data-label="${escapeHtml(COLS[i])}">${html}</td>`;
+  const linha = (r: SistemaMonitorRow) => {
+    const [tom, texto] = statusDe(r);
+    return `<tr class="cc-tr-link" onclick="window.location='/dashboard/monitoramento/${escapeHtml(r.id)}'">`
+      + td(0, celulaDupla(r.apelido, [r.cidade, r.uf].filter(Boolean).join('/') || '—', `/dashboard/monitoramento/${r.id}`))
+      + td(1, marcaCc(r.marca_inversor))
+      + td(2, r.potencia_kwp ? `${escapeHtml(fmtNumero(r.potencia_kwp, 2))} kWp` : '—', 'cc-r cc-n')
+      + td(3, escapeHtml(kwhCc(r.geracao_hoje_kwh)), 'cc-r cc-n')
+      + td(4, r.geracao_mes_kwh > 0 ? escapeHtml(kwhCc(r.geracao_mes_kwh, 0)) : '—', 'cc-r cc-n')
+      + td(5, pilulaStatus(tom, texto))
+      + td(6, `<span class="cc-muted">${escapeHtml(relativeTime(r.ultima_sincronizacao))}</span>`)
+      + td(7, `<span class="cc-muted">${escapeHtml(r.garantiaIdade)}</span>`)
+      + `<td class="cc-r" data-label="" onclick="event.stopPropagation()">
+          <form action="/dashboard/monitoramento/${escapeHtml(r.id)}/excluir" method="post" onsubmit="return confirm('EXCLUIR esta usina de vez? Apaga todo o histórico. Sem volta.') && confirm('Confirma de novo: excluir esta usina permanentemente?')">
+            <button type="submit" class="cc-btn cc-btn-sm cc-mon-exc" title="Excluir usina" aria-label="Excluir usina">Excluir</button>
+          </form>
+        </td></tr>`;
+  };
+  const tabelaHtml = `<div class="cc-tbl-wrap cc-tbl-cartoes cc-mon-tbl"><table class="cc-tbl"><thead><tr>${COLS.map((c, i) => `<th${[2, 3, 4, 8].includes(i) ? ' class="cc-r"' : ''}>${escapeHtml(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(linha).join('')}</tbody></table></div>`;
 
   const opt = (v: string, label: string, sel?: string) =>
     `<option value="${escapeHtml(v)}" ${sel === v ? 'selected' : ''}>${escapeHtml(label)}</option>`;
   const marcasUnicas = [...new Set(rows.map((r) => r.marca_inversor))].sort();
   const cidadesUnicas = [...new Set(rows.map((r) => r.cidade).filter(Boolean) as string[])].sort();
+  const ROTULO_STATUS: Record<string, string> = { urgente: 'Falha', aviso: 'Atenção', info: 'Acima do esperado', ok: 'OK' };
 
-  const body = `
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold ${P.h1}">⚡ Painel de Triagem — Usinas</h1>
-      <p class="${P.sub} text-sm">Primeiro o que precisa de ação. Depois a carteira inteira, filtrável.</p>
-    </div>
+  // Filtro: MESMO GET /dashboard/monitoramento com q/marca/cidade/status/ord.
+  // "Atualizar todas" (POST sync-todos) sai de DENTRO deste form: formulário
+  // dentro de formulário não existe no HTML — o botão acabava enviando o filtro.
+  const filtro = `
+    <form class="cc-form cc-mon-filtro" method="get" action="/dashboard/monitoramento">
+      <input name="q" value="${escapeHtml(q.q ?? '')}" placeholder="Cliente ou cidade" aria-label="Buscar usina">
+      <select name="marca" aria-label="Marca">${opt('', 'Todas as marcas', q.marca)}${marcasUnicas.map((m) => opt(m, MARCAS_LABEL[m] ?? m, q.marca)).join('')}</select>
+      <select name="cidade" aria-label="Cidade">${opt('', 'Todas as cidades', q.cidade)}${cidadesUnicas.map((c) => opt(c, c, q.cidade)).join('')}</select>
+      <select name="status" aria-label="Status">${opt('', 'Todos os status', q.status)}${['urgente', 'aviso', 'info', 'ok'].map((s) => opt(s, ROTULO_STATUS[s], q.status)).join('')}</select>
+      <select name="ord" aria-label="Ordenar">${opt('severidade', 'Ordenar: severidade', q.ord)}${opt('geracao_desc', 'Ordenar: geração ↓', q.ord)}${opt('nome', 'Ordenar: nome', q.ord)}</select>
+      ${botao({ rotulo: 'Filtrar', tipo: 'submit', icone: 'filter' })}
+      <a href="/dashboard/monitoramento" class="cc-link">limpar</a>
+    </form>`;
 
-    <form method="get" action="/dashboard/monitoramento" class="mb-6 flex flex-wrap gap-2 items-center">
-      <input name="q" value="${escapeHtml(q.q ?? '')}" placeholder="🔎 cliente ou cidade" class="${P.input}">
-      <select name="marca" class="${P.input}">${opt('', 'Todas as marcas', q.marca)}${marcasUnicas.map((m) => opt(m, m, q.marca)).join('')}</select>
-      <select name="cidade" class="${P.input}">${opt('', 'Todas as cidades', q.cidade)}${cidadesUnicas.map((c) => opt(c, c, q.cidade)).join('')}</select>
-      <select name="status" class="${P.input}">${opt('', 'Todos os status', q.status)}${['urgente', 'aviso', 'info', 'ok'].map((s) => opt(s, s, q.status)).join('')}</select>
-      <select name="ord" class="${P.input}">${opt('severidade', 'Ordenar: severidade', q.ord)}${opt('geracao_desc', 'Ordenar: geração ↓', q.ord)}${opt('nome', 'Ordenar: nome', q.ord)}</select>
-      <button class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold">Filtrar</button>
-      <a href="/dashboard/monitoramento" class="${P.btnLimpar}">Limpar</a>
-      <span class="ml-auto flex gap-2">
-        <a href="/dashboard/monitoramento/importar" class="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold">📥 Importar</a>
-        ${rows.length ? `<form action="/dashboard/monitoramento/sync-todos" method="post"><button class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold">🔄 Atualizar todas</button></form>` : ''}
-      </span>
-    </form>
+  const acoes = `<div class="cc-mon-acoes">
+      ${botao({ rotulo: '📥 Importar', href: '/dashboard/monitoramento/importar', tom: 'ouro' })}
+      ${rows.length ? `<form action="/dashboard/monitoramento/sync-todos" method="post">${botao({ rotulo: 'Atualizar todas', tipo: 'submit', icone: 'zap' })}</form>` : ''}
+    </div>`;
 
-    ${orbitaHtml || `
-    <section class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-      ${kpi('Usinas ativas', String(ativos.length), `${totalKwp.toFixed(1)} kWp total`, P.corKpi.amber)}
-      ${kpi('Geração hoje', `${totalHoje.toFixed(1)} kWh`, 'somatório', P.corKpi.sky)}
-      ${kpi('Geração mês', `${totalMes.toFixed(0)} kWh`, 'mês corrente', P.corKpi.emerald)}
-      ${kpi('Saúde da frota', `${okCount}/${ativos.length}`, 'usinas OK', saudeCor)}
-      ${kpi('Marcas', String(marcas), 'integradas', P.corKpi.violet)}
-    </section>`}
+  const cabecalho = cabecalhoPagina({
+    trilha: [{ rotulo: 'Usinas' }, { rotulo: 'Monitoramento' }],
+    titulo: 'Painel de Triagem — Usinas',
+    subtitulo: 'Primeiro o que precisa de ação. Depois a carteira inteira, filtrável.',
+    acoesHtml: acoes,
+  });
 
-    ${alertasResumo ? `
-    <section class="mb-8">
-      <h2 class="text-sm uppercase tracking-wider text-slate-400 font-semibold mb-3">🔔 Alertas proativos</h2>
-      <div class="grid grid-cols-3 gap-4">
-        <div class="rounded-xl border border-rose-600/40 bg-rose-500/10 p-4">
-          <div class="text-xs text-rose-300/70 font-semibold uppercase">Urgente</div>
-          <div class="text-3xl font-bold text-rose-300 mt-1">${alertasResumo.urgente}</div>
-        </div>
-        <div class="rounded-xl border border-amber-600/40 bg-amber-500/10 p-4">
-          <div class="text-xs text-amber-300/70 font-semibold uppercase">Aviso</div>
-          <div class="text-3xl font-bold text-amber-300 mt-1">${alertasResumo.aviso}</div>
-        </div>
-        <div class="rounded-xl border border-emerald-600/40 bg-emerald-500/10 p-4">
-          <div class="text-xs text-emerald-300/70 font-semibold uppercase">Bombando</div>
-          <div class="text-3xl font-bold text-emerald-300 mt-1">${alertasResumo.info}</div>
-        </div>
-      </div>
-      ${sparkline7d && sparkline7d.length ? `
-      <div class="mt-3 text-xs text-slate-500">
-        Enviados nos últimos 7d: <span class="text-slate-300 font-mono">${sparkline7d.map((d) => d.enviados).join(' · ')}</span>
-        <span class="text-slate-600 ml-2">(${sparkline7d.map((d) => d.dia.slice(5)).join(' · ')})</span>
-      </div>` : ''}
-    </section>` : ''}
+  const kpis = faixaKpis([
+    { rotulo: 'Usinas ativas', valor: ativos.length, detalhe: `${marcas} marca(s)` },
+    { rotulo: 'Potência instalada', valor: totalKwp, casas: 1, unidade: 'kWp' },
+    { rotulo: 'Geração hoje', valor: totalHoje, casas: 1, unidade: 'kWh', destaque: true },
+    { rotulo: 'Geração no mês', valor: totalMes, casas: 0, unidade: 'kWh', detalhe: 'mês corrente' },
+    { rotulo: 'Gerando OK', valor: saudaveis.length, detalhe: `saúde ${okCount}/${ativos.length}` },
+    { rotulo: 'Fora do normal', valor: problemas.length, detalhe: 'falha + atenção', href: problemas.length ? '/dashboard/monitoramento?painel=falha' : undefined },
+  ]);
 
-    ${kpisEva ? `
-    <section class="mb-8">
-      <h2 class="text-sm uppercase tracking-wider text-slate-400 font-semibold mb-3">🤖 Eva no mês</h2>
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div class="rounded-xl border border-sky-600/40 bg-sky-500/10 p-4">
-          <div class="text-xs text-sky-300/70 font-semibold uppercase">Abordagens enviadas</div>
-          <div class="text-3xl font-bold text-sky-300 mt-1">${escapeHtml(String(kpisEva.enviadas))}</div>
-        </div>
-        <div class="rounded-xl border border-emerald-600/40 bg-emerald-500/10 p-4">
-          <div class="text-xs text-emerald-300/70 font-semibold uppercase">Resolvido sozinho</div>
-          <div class="text-3xl font-bold text-emerald-300 mt-1">${escapeHtml(String(kpisEva.resolvidoSozinhoPct))}%</div>
-          <div class="text-xs text-emerald-400/60 mt-1">${escapeHtml(String(kpisEva.resolvidoSozinhoCount))} ocorrências</div>
-        </div>
-        <div class="rounded-xl border border-violet-600/40 bg-violet-500/10 p-4">
-          <div class="text-xs text-violet-300/70 font-semibold uppercase">Limpezas fechadas</div>
-          <div class="text-3xl font-bold text-violet-300 mt-1">${escapeHtml(String(kpisEva.limpezasFechadasCount))}</div>
-        </div>
-        <div class="rounded-xl border border-slate-600/40 bg-slate-700/40 p-4">
-          <div class="text-xs text-slate-400/70 font-semibold uppercase">Sem resposta</div>
-          <div class="text-3xl font-bold text-slate-300 mt-1">${escapeHtml(String(kpisEva.semRespostaCount))}</div>
-        </div>
-      </div>
-    </section>` : ''}
+  const alertasHtml = alertasResumo ? cartaoSecao({
+    titulo: 'Alertas proativos',
+    dica: sparkline7d && sparkline7d.length
+      ? `Enviados nos últimos 7 dias: ${sparkline7d.map((d) => d.enviados).join(' · ')} (${sparkline7d.map((d) => d.dia.slice(5)).join(' · ')})`
+      : undefined,
+    corpoHtml: faixaKpis([
+      { rotulo: 'Urgente', valor: alertasResumo.urgente },
+      { rotulo: 'Aviso', valor: alertasResumo.aviso },
+      { rotulo: 'Bombando', valor: alertasResumo.info },
+    ]),
+  }) : '';
 
-    <section class="mb-8">
-      <h2 class="text-lg font-bold ${P.h2Acao} mb-3">🗂 Painel de Operação ${problemas.length ? `<span class="text-rose-400">(${problemas.length} precisam de ação)</span>` : ''}</h2>
-      ${boardHtml}
-    </section>
+  const evaHtml = kpisEva ? cartaoSecao({
+    titulo: 'Eva no mês',
+    corpoHtml: faixaKpis([
+      { rotulo: 'Abordagens enviadas', valor: kpisEva.enviadas },
+      { rotulo: 'Resolvido sozinho', valor: kpisEva.resolvidoSozinhoPct, unidade: '%', detalhe: `${kpisEva.resolvidoSozinhoCount} ocorrências` },
+      { rotulo: 'Limpezas fechadas', valor: kpisEva.limpezasFechadasCount },
+      { rotulo: 'Sem resposta', valor: kpisEva.semRespostaCount },
+    ]),
+  }) : '';
 
-    ${rows.length === 0 ? `
-    <section class="${P.vazioWrap}">
-      <div class="text-5xl mb-3">⚡</div>
-      <div class="${P.vazioTexto} font-medium mb-2">Nenhum sistema cadastrado ainda.</div>
-      <a href="/dashboard/monitoramento/importar" class="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-gradient-to-r from-amber-500 to-amber-600 text-white font-semibold">📥 Importar agora</a>
-    </section>` : `
-    <section class="${P.tabelaWrap}">
-      <table class="w-full min-w-[820px]">
-        <thead class="${P.thead}">
-          <tr class="text-left text-xs uppercase tracking-wider ${P.theadTexto}">
-            <th class="px-4 py-3 font-semibold">Sistema</th><th class="px-4 py-3 font-semibold">Marca</th>
-            <th class="px-4 py-3 font-semibold">Potência</th><th class="px-4 py-3 font-semibold">Hoje</th>
-            <th class="px-4 py-3 font-semibold">Mês</th><th class="px-4 py-3 font-semibold">Status</th>
-            <th class="px-4 py-3 font-semibold">Idade</th><th class="px-4 py-3 font-semibold text-right">Excluir</th>
-          </tr>
-        </thead>
-        <tbody class="${P.tbodyDivide}">${rows.map(linha).join('')}</tbody>
-      </table>
-    </section>
-    <div class="mt-4 text-xs text-slate-500 text-center">💡 Sincronização automática a cada <strong>15 min</strong>. Página atualiza sozinha a cada <strong>30s</strong>.</div>`}
-  `;
+  const operacao = cartaoSecao({
+    titulo: 'Painel de Operação',
+    dica: problemas.length ? `${problemas.length} precisam de ação` : 'nada pedindo ação agora',
+    corpoHtml: `${chips}<div class="cc-mon-gap"></div>${boardHtml}`,
+  });
+
+  const carteira = rows.length === 0
+    ? cartaoSecao({
+      titulo: 'Carteira',
+      corpoHtml: `${estadoVazio({ tipo: 'vazio', titulo: 'Nenhum sistema cadastrado ainda.', texto: 'Importe a lista de usinas do portal do inversor para começar.', icone: 'sun' })}
+        <p class="cc-mon-nota">${botao({ rotulo: 'Importar agora', href: '/dashboard/monitoramento/importar', icone: 'download' })}</p>`,
+    })
+    : cartaoSecao({
+      titulo: 'Carteira',
+      dica: `${rows.length} usina(s)`,
+      corpoHtml: `${tabelaHtml}<div class="cc-mon-nota">Sincronização automática a cada 15 min. Página atualiza sozinha a cada 30 s.</div>`,
+    });
+
+  const body = `<div class="cc-root cc-mon">
+    ${cabecalho}
+    ${filtro}
+    ${kpis}
+    ${orbitaHtml}
+    ${alertasHtml}
+    ${evaHtml}
+    ${operacao}
+    ${carteira}
+  </div>
+  <style>${CSS_MONITORAMENTO}.cc-mon .cc-mon-gap{height:12px}</style>`;
   const scripts = `<script>setTimeout(() => location.reload(), 30000);</script>`;
-  return renderLayout({ active: 'monitoramento', title: 'Monitoramento', body, scripts, dark: !claro, user });
+  return renderLayout({
+    active: 'monitoramento', title: 'Monitoramento', body, scripts, user,
+    tailwind: false, dark: temaDaTela(user, 'escuro') === 'escuro', largo: true,
+  });
 }
 
 // =========================================================================

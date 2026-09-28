@@ -177,6 +177,9 @@ describe('telas renovadas não carregam o Tailwind (e não precisam dele)', () =
           'ecosun-body', 'ecosun-body-dark', 'bg-slate-950', 'text-slate-100',
           'hidden', 'sm:inline',
           'kanban-board', 'kanban-col', 'kanban-list', 'kanban-card', 'sla-urgent',
+          // Monitoramento (R8): ganchos da frota que os testes antigos procuram
+          // (coluna-status, card-usina) e a Órbita (SVG com CSS da própria tela).
+          'coluna-status', 'card-usina', 'orbita-frota', 'ponto-usina', 'sol-pulso', 'sol-central', 'anel',
         ]);
         const corpo = h.slice(h.indexOf('<body'));
         const estranhas = new Set<string>();
